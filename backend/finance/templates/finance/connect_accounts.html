@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{# 프로토타입 '계좌 연결' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}계좌 연결 · 머니쿠션{% endblock %}
+{% block header_title %}계좌 연결{% endblock %}
+
+{% block content %}
+<div class="mc-eyebrow">계좌 연결</div><h1>사용할 계좌를 골라 주세요</h1><p class="mc-muted">연결한 은행에서 조회한 내 계좌예요. 예산에 쓸 계좌만 고르세요.</p>
+<div class="mc-card"><div class="mc-row"><h2>신한은행</h2><span class="mc-badge">연결 완료</span></div><div class="mc-acctpick on"><button aria-pressed="true" class="mc-acctpick-row" data-toggle="" type="button"><span class="mc-acctpick-box">✓</span><span class="mc-grow"><strong>생활비통장</strong><small>****1234 · 입출금</small></span><strong class="">340,000원</strong></button><div class="mc-acctuse"><span>용도</span><button aria-pressed="true" data-choice="acctUse:sh1" type="button">생활비</button><button aria-pressed="false" data-choice="acctUse:sh1" type="button">고정지출</button><button aria-pressed="false" data-choice="acctUse:sh1" type="button">저축</button><button aria-pressed="false" data-choice="acctUse:sh1" type="button">쿠션</button></div></div><div class="mc-acctpick"><button aria-pressed="false" class="mc-acctpick-row" data-toggle="" type="button"><span class="mc-acctpick-box"></span><span class="mc-grow"><strong>자유적금</strong><small>****7890 · 적금</small></span><strong class="">1,200,000원</strong></button><p class="mc-acctpick-note">저축 계좌예요. 생활비 잔액에는 더하지 않아요.</p></div></div>
+<div class="mc-card"><div class="mc-row"><h2>국민은행</h2><span class="mc-badge">연결 완료</span></div><div class="mc-acctpick on"><button aria-pressed="true" class="mc-acctpick-row" data-toggle="" type="button"><span class="mc-acctpick-box">✓</span><span class="mc-grow"><strong>급여통장</strong><small>****5678 · 입출금</small></span><strong class="">2,460,000원</strong></button><div class="mc-acctuse"><span>용도</span><button aria-pressed="false" data-choice="acctUse:kb1" type="button">생활비</button><button aria-pressed="true" data-choice="acctUse:kb1" type="button">고정지출</button><button aria-pressed="false" data-choice="acctUse:kb1" type="button">저축</button><button aria-pressed="false" data-choice="acctUse:kb1" type="button">쿠션</button></div></div><div class="mc-acctpick"><button aria-pressed="false" class="mc-acctpick-row" data-toggle="" type="button"><span class="mc-acctpick-box"></span><span class="mc-grow"><strong>마이너스통장</strong><small>****3344 · 마이너스통장</small></span><strong class="mc-neg">−150,000원</strong></button><p class="mc-acctpick-note">한도 3,000,000원는 내 돈이 아니라서 잔액에 더하지 않아요.</p></div></div><p class="mc-note">조회 가능한 계좌만 보여요. 같은 은행 계좌를 나중에 추가해도 다시 인증하지 않아요.</p><div class="mc-error" role="alert"></div>
+{% endblock %}
+
+{% block foot %}
+<div class="mc-foot"><button class="mc-primary" data-href="{% url 'finance:connect_cards' %}" type="button">선택한 계좌 2개로 계속</button></div>
+{% endblock %}

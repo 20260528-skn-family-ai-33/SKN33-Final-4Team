@@ -30,8 +30,8 @@ HOME = {
 # 홈 '꼭 나갈 돈'
 MUST_PAY = [
     {"icon": "credit-card", "name": "신한카드 청구서", "sub": "10.15 출금예정 · 신한 ****1234", "amount": 420_000},
-    {"icon": "repeat", "name": "통신비", "sub": "매월 20일 · 고정지출", "amount": 55_000},
-    {"icon": "repeat", "name": "월세", "sub": "매월 25일 · 고정지출", "amount": 700_000},
+    {"icon": "repeat", "name": "통신비", "sub": "매월 20일 · 고정지출", "amount": 55_000, "link": "budgets:fixed"},
+    {"icon": "repeat", "name": "월세", "sub": "매월 25일 · 고정지출", "amount": 700_000, "link": "budgets:fixed"},
 ]
 
 # 카테고리 예산 '한 달 나눠보기'

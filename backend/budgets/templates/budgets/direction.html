@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{# 프로토타입 '예산 산정 방향' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}예산 산정 방향 · 머니쿠션{% endblock %}
+{% block header_title %}예산 산정 방향{% endblock %}
+
+{% block content %}
+<div aria-label="7단계 중 5단계" class="mc-step"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class=""></span><span class=""></span></div><div class="mc-eyebrow">예산 산정 방향</div><h1>어떤 방향으로 나눌까요?</h1><p class="mc-muted">고른 방향에 맞춰 지킬 돈과 카테고리 예산을 추천해요.</p><button aria-pressed="false" class="mc-choice" data-choice="dir"><strong>생활 안정형</strong><span class="mc-muted">생활은 안정되게, 저축은 최소한으로만</span></button><button aria-pressed="false" class="mc-choice" data-choice="dir"><strong>저축 집중형</strong><span class="mc-muted">생활을 빠듯하게, 저축에 집중</span></button><p class="mc-note">언제든 마이에서 바꿀 수 있어요.</p>
+{% endblock %}
+
+{% block foot %}
+<div class="mc-foot"><button class="mc-primary" data-href="{% url 'budgets:protect' %}" type="button">다음</button></div>
+{% endblock %}

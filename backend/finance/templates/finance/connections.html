@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{# 프로토타입 '연결 관리' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}연결 관리 · 머니쿠션{% endblock %}
+{% block header_title %}연결 관리{% endblock %}
+
+{% block content %}
+<h1>연결 관리</h1>
+<div class="mc-card"><div class="mc-row"><h2>은행 2곳 · 계좌 2개</h2><span class="mc-badge">필수 · 조회 전용</span></div><p class="mc-inst-st">신한은행 · <span class="ok">연결됨</span> · 마지막 조회 오늘 09:30</p><button class="mc-listrow" data-todo="5단계 팝업: acctDetail" type="button"><span class="mc-tile"><i aria-hidden="true" data-lucide="landmark"></i></span><span class="mc-grow"><strong>신한 ****1234</strong><span class="mc-muted">생활비통장 · 입출금 · 생활비 · 오늘 09:30</span></span><span class="mc-right">340,000원 <span class="mc-muted">›</span></span></button><button class="mc-link" data-href="{% url 'finance:connect' %}" type="button">+ 신한은행 계좌 추가</button><p class="mc-inst-st">국민은행 · <span class="ok">연결됨</span> · 마지막 조회 오늘 09:30</p><button class="mc-listrow" data-todo="5단계 팝업: acctDetail" type="button"><span class="mc-tile"><i aria-hidden="true" data-lucide="landmark"></i></span><span class="mc-grow"><strong>국민 ****5678</strong><span class="mc-muted">급여통장 · 입출금 · 고정지출 · 오늘 09:30</span></span><span class="mc-right">2,460,000원 <span class="mc-muted">›</span></span></button><button class="mc-link" data-href="{% url 'finance:connect' %}" type="button">+ 국민은행 계좌 추가</button><button class="mc-link" data-href="{% url 'finance:connect' %}" type="button">+ 다른 은행 연결</button></div>
+<div class="mc-card"><div class="mc-row"><h2>카드사 1곳 · 카드 2장</h2><span class="mc-hint">선택</span></div><button class="mc-listrow" data-todo="5단계 팝업: acctDetail" type="button"><span class="mc-tile"><i aria-hidden="true" data-lucide="credit-card"></i></span><span class="mc-grow"><strong>신한카드</strong><span class="mc-muted">카드 2장 · 청구서 10.15 출금예정</span></span><span class="mc-right">420,000원 <span class="mc-muted">›</span></span></button><button class="mc-listrow" data-href="{% url 'finance:connect' %}" type="button">카드사 추가 연결　›</button></div>
+<div class="mc-card"><h2>대출 <span class="mc-hint">CODEF · 조회 전용</span></h2><button class="mc-listrow" data-href="{% url 'finance:connect' %}" type="button">상환 중인 대출 연결　›</button></div><p class="mc-note">계좌를 누르면 별칭·선택 해제·은행 연결 해제를 할 수 있어요. 송금·결제는 실행하지 않아요.</p>
+{% endblock %}

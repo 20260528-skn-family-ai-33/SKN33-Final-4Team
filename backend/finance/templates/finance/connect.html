@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{# 프로토타입 '계좌 연결' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}계좌 연결 · 머니쿠션{% endblock %}
+{% block header_title %}계좌 연결{% endblock %}
+
+{% block content %}
+<div aria-label="7단계 중 2단계" class="mc-step"><span class="on"></span><span class="on"></span><span class=""></span><span class=""></span><span class=""></span><span class=""></span><span class=""></span></div><div class="mc-eyebrow">계좌 연결</div><h1>연결할 은행을 골라 주세요</h1><p class="mc-muted">기관 인증 후 내 계좌 목록을 불러와요. 사용할 계좌는 다음 단계에서 골라요.</p>
+<div class="mc-card mc-loanq"><h2>상환 중인 대출이 있나요?</h2><div class="mc-seg mc-seg-sm mc-loanq-seg" style="margin-top:8px"><button aria-pressed="false" data-choice="hasLoan" type="button">있어요</button><button aria-pressed="false" data-choice="hasLoan" type="button">없어요</button><button aria-pressed="false" data-choice="hasLoan" type="button">나중에 확인</button></div><p class="mc-picked">있으면 대출 정보도 불러와요.</p></div>
+<div class="mc-card"><div class="mc-row"><h2>연결할 은행 <span class="mc-hint">필수 · 복수 선택</span></h2><button class="mc-link" data-todo="기능 연결 전: allBanks" type="button">전체 선택</button></div><div class="mc-chipbar"><button aria-pressed="true" class="" data-toggle="" type="button">신한</button><button aria-pressed="true" class="" data-toggle="" type="button">국민</button><button aria-pressed="false" class="" data-toggle="" type="button">우리</button><button aria-pressed="false" class="" data-toggle="" type="button">하나</button><button aria-pressed="false" class="" data-toggle="" type="button">농협</button><button class="mc-soonchip" disabled="" type="button">카카오뱅크 <small>지원 확인 중</small></button><button class="mc-soonchip" disabled="" type="button">토스뱅크 <small>지원 확인 중</small></button></div><p class="mc-picked"><b>2곳</b> 선택 · 신한, 국민</p></div>
+<div class="mc-card"><div class="mc-row"><h2>카드사 <span class="mc-hint">선택 · 나중에 해도 돼요</span></h2><button class="mc-link" data-todo="기능 연결 전: allCards" type="button">전체 선택</button></div><div class="mc-chipbar"><button aria-pressed="true" class="" data-toggle="" type="button">신한카드</button><button aria-pressed="false" class="" data-toggle="" type="button">국민카드</button><button aria-pressed="false" class="" data-toggle="" type="button">삼성카드</button><button aria-pressed="false" class="" data-toggle="" type="button">현대카드</button><button aria-pressed="false" class="" data-toggle="" type="button">롯데카드</button><button aria-pressed="false" class="" data-toggle="" type="button">우리카드</button><button aria-pressed="false" class="" data-toggle="" type="button">하나카드</button></div><p class="mc-picked"><b>1곳</b> 선택 · 신한카드</p></div><label class="mc-field mc-check"><input id="mc-consent" type="checkbox"/>[필수] 계좌·카드 조회 동의 (조회 전용)</label><p class="mc-note">시안에서는 실제 인증 정보나 계좌 정보를 받지 않아요.</p><div class="mc-error" role="alert"></div>
+{% endblock %}
+
+{% block foot %}
+<div class="mc-foot"><button class="mc-primary" data-href="{% url 'finance:connect_auth' %}" type="button">선택한 기관 연결하기</button></div>
+{% endblock %}

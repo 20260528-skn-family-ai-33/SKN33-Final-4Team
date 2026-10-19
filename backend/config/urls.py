@@ -10,6 +10,7 @@ from budgets import views as budget_views
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("", budget_views.home, name="home"),
+    path("", include("users.urls")),
     path("budgets/", include("budgets.urls")),
     path("finance/", include("finance.urls")),
     path("chat/", include("chat.urls")),

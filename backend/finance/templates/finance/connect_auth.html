@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{# 프로토타입 '계좌 연결' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}계좌 연결 · 머니쿠션{% endblock %}
+{% block header_title %}계좌 연결{% endblock %}
+
+{% block content %}
+<div class="mc-eyebrow">계좌 연결</div><h1>금융기관 연결 상태예요</h1><p class="mc-muted">기관마다 인증을 마친 뒤 보유 계좌를 불러와요.</p>
+<div class="mc-card"><h2>은행</h2><div class="mc-inst"><span class="mc-tile"><i aria-hidden="true" data-lucide="landmark"></i></span><span class="mc-grow"><strong>신한은행</strong><small class="ok">연결 완료</small></span><i aria-hidden="true" data-lucide="circle-check"></i></div><div class="mc-inst"><span class="mc-tile"><i aria-hidden="true" data-lucide="landmark"></i></span><span class="mc-grow"><strong>국민은행</strong><small class="ok">연결 완료</small></span><i aria-hidden="true" data-lucide="circle-check"></i></div></div>
+<div class="mc-card"><h2>카드사</h2><div class="mc-inst"><span class="mc-tile"><i aria-hidden="true" data-lucide="credit-card"></i></span><span class="mc-grow"><strong>신한카드</strong><small class="ok">연결 완료</small></span><i aria-hidden="true" data-lucide="circle-check"></i></div></div><p class="mc-note">연결에 실패한 기관이 있어도 성공한 기관의 계좌는 그대로 쓸 수 있어요.</p><div class="mc-error" role="alert"></div>
+{% endblock %}
+
+{% block foot %}
+<div class="mc-foot"><button class="mc-primary" data-href="{% url 'finance:connect_accounts' %}" type="button">보유 계좌 불러오기 · 은행 2곳</button></div>
+{% endblock %}
