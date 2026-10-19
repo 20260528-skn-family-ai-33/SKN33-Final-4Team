@@ -1,7 +1,7 @@
-// 공통 틀 (장고 templates/base.html)
+// 공통 틀: 상단 바 + 본문 + 아래 고정 버튼 + 팝업 자리 + 하단 탭
 // props: title = 화면 제목, showBack = 뒤로 가기 표시
 //        activeTab = 켜진 탭 (탭 화면만. 있으면 하단 탭 + 오른쪽 위 마이 아이콘이 보인다)
-//        foot = 화면 맨 아래 고정 버튼 (장고 {% block foot %})
+//        foot = 화면 맨 아래 고정 버튼 (없어도 됨)
 //        children = 화면 본문
 import Header from './Header.jsx'
 import TabBar from './TabBar.jsx'

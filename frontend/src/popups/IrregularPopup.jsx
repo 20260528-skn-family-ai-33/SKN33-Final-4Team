@@ -1,4 +1,4 @@
-// 팝업: 비정기지출 준비금 (장고 budgets/_irregular.html) — 예산 "비정기지출 준비금 ›"
+// 팝업: 비정기지출 준비금 — 예산 "비정기지출 준비금 ›"
 import Popup from './Popup.jsx'
 
 const ITEMS = [

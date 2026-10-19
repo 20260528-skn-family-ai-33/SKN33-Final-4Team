@@ -1,4 +1,4 @@
-// 로그인 (장고: users/templates/users/login.html)
+// 로그인
 // 지금은 아무거나 넣어도 홈으로 간다. 진짜 로그인은 users.User 모델을 만든 뒤에 붙인다
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

@@ -1,4 +1,4 @@
-// 팝업: 동의·데이터 관리 (장고 users/_privacy.html) — 마이 "동의·데이터 관리"
+// 팝업: 동의·데이터 관리 — 마이 "동의·데이터 관리"
 import Popup from './Popup.jsx'
 
 export default function PrivacyPopup() {

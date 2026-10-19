@@ -1,4 +1,4 @@
-// 팝업: 매달 같은 금액으로 고정할까요? (장고 budgets/_cat_lock.html) — 예산 화면의 자물쇠
+// 팝업: 매달 같은 금액으로 고정할까요? — 예산 화면의 자물쇠
 import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'

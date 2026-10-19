@@ -64,7 +64,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],  # 공통 틀(base.html)과 팝업 조각
+        "DIRS": [],  # 화면은 React 가 그려서 장고 템플릿 폴더는 없음 (관리자 화면만)
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -110,7 +110,6 @@ USE_TZ = True
 
 # ===== 정적 파일 =====
 STATIC_URL = "static/"
-STATICFILES_DIRS = [BASE_DIR / "static"]  # 공통 CSS·JS
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

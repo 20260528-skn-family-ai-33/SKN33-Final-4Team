@@ -1,4 +1,4 @@
-// 계좌 연결 5: 연결 결과 (장고: finance/templates/finance/connect_done.html)
+// 계좌 연결 5: 연결 결과
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'

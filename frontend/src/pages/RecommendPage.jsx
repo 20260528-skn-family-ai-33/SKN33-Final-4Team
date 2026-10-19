@@ -1,4 +1,4 @@
-// 추천 예산 확인 (장고: budgets/templates/budgets/recommend.html)
+// 추천 예산 확인
 // 금액은 시안 예시값 — 예산 추천 API 가 생기면 바꾼다. 막대 길이는 금액으로 계산한다
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

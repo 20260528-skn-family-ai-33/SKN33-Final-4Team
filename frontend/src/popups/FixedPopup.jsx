@@ -1,4 +1,4 @@
-// 팝업: 고정지출 추가 / 수정 (장고 budgets/_fixed_add.html, _fixed_edit.html 을 하나로)
+// 팝업: 고정지출 추가 / 수정
 // props: item = 고칠 고정지출 (없으면 "추가", 있으면 "수정")
 // 저장·삭제는 아직 안 되고 닫히기만 한다
 import Popup from './Popup.jsx'

@@ -1,4 +1,4 @@
-// 계좌 연결 4: 사용할 카드 고르기 (장고: finance/templates/finance/connect_cards.html)
+// 계좌 연결 4: 사용할 카드 고르기
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import AcctPick from '../components/AcctPick.jsx'

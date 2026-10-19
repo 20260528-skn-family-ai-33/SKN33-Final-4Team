@@ -1,4 +1,4 @@
-// 시작하기 (장고: users/templates/users/onboard.html)
+// 시작하기
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import { PATHS } from '../routes.js'

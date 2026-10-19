@@ -1,4 +1,4 @@
-// 계좌 연결 2: 기관 인증 결과 (장고: finance/templates/finance/connect_auth.html)
+// 계좌 연결 2: 기관 인증 결과
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'

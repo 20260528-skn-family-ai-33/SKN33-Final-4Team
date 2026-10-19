@@ -1,4 +1,4 @@
-// 연결 관리 (장고: finance/templates/finance/connections.html) — 마이 > 연결 관리
+// 연결 관리 — 마이 > 연결 관리
 // 계좌 목록은 시안 예시값 — API 설계 후 useApi 로 바꾼다
 import { Fragment } from 'react'
 import { useNavigate } from 'react-router'

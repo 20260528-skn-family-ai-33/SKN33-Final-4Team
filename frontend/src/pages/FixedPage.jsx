@@ -1,4 +1,4 @@
-// 고정지출 확인 (장고: budgets/templates/budgets/fixed.html)
+// 고정지출 확인
 // 목록은 시안 예시값 — 고정지출 감지 API 가 생기면 바꾼다
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

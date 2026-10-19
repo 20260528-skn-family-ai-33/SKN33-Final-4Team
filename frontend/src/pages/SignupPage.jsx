@@ -1,4 +1,4 @@
-// 회원가입 (장고: users/templates/users/signup.html)
+// 회원가입
 // 비밀번호 조건(영문·숫자·특수문자·8자)과 확인 칸 일치 여부를 입력하는 즉시 보여 준다
 import { useState } from 'react'
 import { useNavigate } from 'react-router'

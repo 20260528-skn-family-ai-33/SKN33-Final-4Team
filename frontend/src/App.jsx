@@ -1,4 +1,4 @@
-// 주소 → 화면 연결 (장고 config/urls.py 역할)
+// 주소 → 화면 연결. 새 화면은 routes.js 에 주소, 여기 ROUTES 에 한 줄 추가
 import { Routes, Route } from 'react-router'
 import { PATHS } from './routes.js'
 // 하단 탭

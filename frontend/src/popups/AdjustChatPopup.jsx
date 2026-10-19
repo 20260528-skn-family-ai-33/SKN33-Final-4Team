@@ -1,4 +1,4 @@
-// 팝업: 예산 조정 챗봇 (장고 chat/_adjust.html) — 추천 예산 "챗봇과 조정하기 ›"
+// 팝업: 예산 조정 챗봇 — 추천 예산 "챗봇과 조정하기 ›"
 // 지금은 고르는 것까지만. "조정안 받기"·질문 보내기는 챗봇 기능을 만들 때 붙인다
 import { useState } from 'react'
 import Popup from './Popup.jsx'

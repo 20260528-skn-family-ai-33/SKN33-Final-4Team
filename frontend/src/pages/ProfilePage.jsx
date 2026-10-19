@@ -1,4 +1,4 @@
-// 내 정보 입력 (장고: users/templates/users/profile.html)
+// 내 정보 입력
 // 생년월일을 넣으면 만 나이를, 우선순위를 누르면 순위 번호를 바로 보여 준다
 import { useState } from 'react'
 import { useNavigate } from 'react-router'

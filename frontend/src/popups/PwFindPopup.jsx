@@ -1,4 +1,4 @@
-// 팝업: 비밀번호 재설정 (장고 users/_pw_find.html) — 로그인 "비밀번호를 잊으셨나요?"
+// 팝업: 비밀번호 재설정 — 로그인 "비밀번호를 잊으셨나요?"
 import Popup from './Popup.jsx'
 
 export default function PwFindPopup() {

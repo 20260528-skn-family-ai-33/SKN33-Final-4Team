@@ -1,4 +1,4 @@
-// 팝업: 연결 상세 · 은행 계좌 (장고 finance/_acct_sh1.html, _acct_kb1.html 을 하나로)
+// 팝업: 연결 상세 · 은행 계좌
 // props: acct = 연결 관리 화면에서 누른 계좌
 import Popup from './Popup.jsx'
 import Icon from '../components/Icon.jsx'

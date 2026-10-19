@@ -1,4 +1,4 @@
-// 대출 확인 (장고: finance/templates/finance/loan_check.html)
+// 대출 확인
 // 대출 목록은 시안 예시값 — CODEF 대출 조회 API 가 생기면 바꾼다
 import { useState } from 'react'
 import { useNavigate } from 'react-router'

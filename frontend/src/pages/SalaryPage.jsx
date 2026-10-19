@@ -1,4 +1,4 @@
-// 월급 설정 (장고: budgets/templates/budgets/salary.html)
+// 월급 설정
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

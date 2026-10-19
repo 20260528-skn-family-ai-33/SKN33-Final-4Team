@@ -1,4 +1,4 @@
-// 계좌 연결 3: 사용할 계좌 고르기 (장고: finance/templates/finance/connect_accounts.html)
+// 계좌 연결 3: 사용할 계좌 고르기
 // 계좌 목록은 시안 예시값 — CODEF 보유계좌 조회 API 가 생기면 바꾼다
 import { useState } from 'react'
 import { useNavigate } from 'react-router'

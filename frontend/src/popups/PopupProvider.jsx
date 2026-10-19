@@ -1,4 +1,4 @@
-// 지금 열려 있는 팝업을 기억하는 곳 (장고에서는 #mc-layer 안의 HTML 이 이 역할)
+// 지금 열려 있는 팝업을 기억하는 곳 (Layout 의 #mc-layer 자리에 그려진다)
 import { useEffect, useState } from 'react'
 import { useLocation } from 'react-router'
 import { PopupContext } from './context.js'

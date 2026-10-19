@@ -1,4 +1,4 @@
-// 계좌 연결 1: 은행·카드사 고르기 (장고: finance/templates/finance/connect.html)
+// 계좌 연결 1: 은행·카드사 고르기
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

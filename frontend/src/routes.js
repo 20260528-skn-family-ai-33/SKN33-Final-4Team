@@ -1,4 +1,4 @@
-// 화면 주소 목록. 장고 urls.py 의 주소와 똑같이 맞춘다
+// 화면 주소 목록. 데이터 API 는 같은 모양 앞에 /api 를 붙인다 (예: /budgets → /api/budgets/)
 export const PATHS = {
   // 하단 탭
   home: '/',

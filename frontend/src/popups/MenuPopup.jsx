@@ -1,4 +1,4 @@
-// 팝업: 돈관리 메뉴 (장고 budgets/_menu.html) — 하단 탭 가운데 "돈관리 ∧"
+// 팝업: 돈관리 메뉴 — 하단 탭 가운데 "돈관리 ∧"
 import { useNavigate } from 'react-router'
 import { Repeat, SlidersHorizontal } from 'lucide-react'
 import Popup from './Popup.jsx'

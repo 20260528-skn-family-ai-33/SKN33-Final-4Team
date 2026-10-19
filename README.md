@@ -108,6 +108,7 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 ```
 
 - 처음 세팅: [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) (Windows · macOS 단계별)
+- React 개발: [`docs/FRONTEND_GUIDE.md`](docs/FRONTEND_GUIDE.md) (화면 · 팝업 추가, API 쓰기, 자주 나는 에러)
 - 환경변수 설명: [`docs/ENV_SETUP.md`](docs/ENV_SETUP.md)
 - 실행: 터미널 2개 — `backend`에서 `python manage.py runserver`, `frontend`에서 `npm run dev` → http://localhost:5173
 - 로컬 DB: Docker로 띄운 PostgreSQL 17
@@ -115,7 +116,7 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 - API 코드: 각 앱의 `api.py`, 주소 목록은 `backend/config/api_urls.py`, **규칙은 [`docs/API_RULES.md`](docs/API_RULES.md)** (camelCase · 원 단위 정수 · 에러 모양 · 세션 로그인)
 - CODEF 조회: `backend/finance/codef.py`, 확인 명령 `python manage.py codef_check` ([`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) 맨 아래)
 - API 값은 DB 연결 전까지 각 앱의 `mock.py` 가짜 데이터를 씁니다. 회원 모델이 나오기 전에는 `makemigrations`를 하지 않습니다.
-- `backend/templates/`의 Django 화면은 React 이전이 끝나면 지울 예정입니다 (그 전까지 비교용).
+- Django는 화면을 그리지 않습니다. 주소는 `/api/...`(데이터)와 `/admin/`(관리자)만 있습니다.
 
 ---
 
@@ -170,9 +171,8 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 │       └── styles/              # 디자인 CSS
 ├── backend/                     # Django 프로젝트 (API 서버)
 │   ├── config/                  # 설정 · 주소(urls · api_urls) · API 공통 도구
-│   ├── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇 (api.py · mock.py)
-│   ├── templates/ static/       # 기존 Django 화면 (React 이전 후 삭제 예정)
-├── docs/                        # 개발 환경 · 환경변수 가이드
+│   └── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇 (api.py · mock.py · finance/codef.py)
+├── docs/                        # 개발 환경 · 환경변수 · React · API 규칙 가이드
 └── 산출물/
     ├── 01_기획/                  # 요구사항 정의서 · WBS · 프로젝트 기획서
     ├── 02_데이터 수집 및 저장/

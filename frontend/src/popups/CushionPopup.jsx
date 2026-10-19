@@ -1,4 +1,4 @@
-// 팝업: 쿠션 설정 (장고 budgets/_cushion.html) — 쿠션 화면 "쿠션 설정 변경"
+// 팝업: 쿠션 설정 — 쿠션 화면 "쿠션 설정 변경"
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 

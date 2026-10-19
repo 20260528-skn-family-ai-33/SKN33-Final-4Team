@@ -1,4 +1,4 @@
-// 팝업: 거래 유형 (장고 finance/_filter.html) — 거래 화면 맨 아래 "필터 · 거래 유형"
+// 팝업: 거래 유형 — 거래 화면 맨 아래 "필터 · 거래 유형"
 import Popup from './Popup.jsx'
 import HelpPopup from './HelpPopup.jsx'
 import { usePopup } from './context.js'

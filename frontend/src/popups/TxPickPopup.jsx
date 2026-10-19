@@ -1,4 +1,4 @@
-// 팝업: 어떤 카테고리인가요? (장고 finance/_tx_pick.html) — "카테고리 확인 필요" 거래의 "다른 카테고리"
+// 팝업: 어떤 카테고리인가요? — "카테고리 확인 필요" 거래의 "다른 카테고리"
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'

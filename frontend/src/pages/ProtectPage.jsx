@@ -1,4 +1,4 @@
-// 지킬 돈 설정 (장고: budgets/templates/budgets/protect.html)
+// 지킬 돈 설정
 // 금액을 고치면 아래 안내(하루 얼마, 1년 얼마, 여유 금액)가 바로 다시 계산된다
 // 추천값·월급·고정지출은 시안 예시값 — 추천 API 가 생기면 바꾼다
 import { useState } from 'react'

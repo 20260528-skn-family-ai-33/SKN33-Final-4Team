@@ -1,5 +1,5 @@
-// 하단 탭 (장고 templates/_tabbar.html)
-// <Link> = 새로고침 없이 화면을 바꾸는 링크. 장고 <a href> 와 같은 역할
+// 하단 탭 (탭 화면 5개에서만 보인다)
+// <Link> = 새로고침 없이 화면을 바꾸는 링크. HTML <a href> 와 같은 역할
 import { Link } from 'react-router'
 import { Receipt, Wallet, House, Shield, MessageCircle } from 'lucide-react'
 import { PATHS } from '../routes.js'

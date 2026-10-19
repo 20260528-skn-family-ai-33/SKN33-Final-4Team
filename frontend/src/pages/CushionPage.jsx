@@ -1,4 +1,4 @@
-// 머니 쿠션 (장고: budgets/templates/budgets/fund.html)
+// 머니 쿠션
 import Layout from '../components/Layout.jsx'
 import { comma, won } from '../utils/money.js'
 import { useApi } from '../utils/api.js'

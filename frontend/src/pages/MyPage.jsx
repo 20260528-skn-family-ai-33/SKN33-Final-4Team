@@ -1,4 +1,4 @@
-// 마이 (장고: users/templates/users/my.html). 탭 화면이 아니라 하단 탭 없음
+// 마이 — 탭 화면이 아니라 하단 탭 없음
 // 오른쪽 글자(월 280만원 등)는 시안 예시값 — API 설계 후 useApi 로 바꾼다
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

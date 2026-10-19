@@ -1,4 +1,4 @@
-// 예산 산정 방향 (장고: budgets/templates/budgets/direction.html)
+// 예산 산정 방향
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

@@ -1,4 +1,4 @@
-// 팝업: 머니쿠션 도움말 (장고 users/_help.html)
+// 팝업: 머니쿠션 도움말
 import Popup from './Popup.jsx'
 
 export default function HelpPopup() {

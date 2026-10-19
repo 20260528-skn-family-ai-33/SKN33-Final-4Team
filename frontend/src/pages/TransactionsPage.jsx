@@ -1,4 +1,4 @@
-// 거래 내역 (장고: finance/templates/finance/txs.html + finance/views.py 의 필터)
+// 거래 내역
 // 주소 ?category=식비 로 카테고리만 골라 본다. 고르는 일은 장고 API 가 해서 보내 준다
 import { useSearchParams } from 'react-router'
 import Layout from '../components/Layout.jsx'

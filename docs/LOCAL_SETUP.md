@@ -112,7 +112,7 @@ npm install        # 처음 한 번 + package.json이 바뀌었을 때
 npm run dev
 ```
 
-브라우저에서 `http://localhost:5173` → 홈 화면이 숫자와 함께 보이면 완료.
+브라우저에서 `http://localhost:5173` → 홈 화면이 숫자와 함께 보이면 완료. 화면 개발 방법은 [`FRONTEND_GUIDE.md`](FRONTEND_GUIDE.md).
 
 ---
 
@@ -198,7 +198,7 @@ npm install        # 처음 한 번 + package.json이 바뀌었을 때
 npm run dev
 ```
 
-브라우저에서 `http://localhost:5173` → 홈 화면이 숫자와 함께 보이면 완료.
+브라우저에서 `http://localhost:5173` → 홈 화면이 숫자와 함께 보이면 완료. 화면 개발 방법은 [`FRONTEND_GUIDE.md`](FRONTEND_GUIDE.md).
 
 ---
 

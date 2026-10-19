@@ -1,7 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router'
-// 디자인: 장고 backend/static/css 에서 그대로 복사해 온 파일
+// 디자인: MVP 프로토타입에서 옮겨 온 CSS (app.css = 원본, shell.css = 모바일 웹 보정)
 import './styles/app.css'
 import './styles/shell.css'
 import App from './App.jsx'
