@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{# 프로토타입 '시작하기' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}시작하기 · 머니쿠션{% endblock %}
+{% block header_title %}시작하기{% endblock %}
+
+{% block content %}
+<div class="mc-eyebrow">MONEY CUSHION</div><h1>첫 월급부터,<br/>흔들리지 않는 돈 관리</h1><div class="mc-hero" style="margin-top:28px"><span>내 돈을 세 가지로</span><div class="mc-money" style="font-size:28px;color:#fff">생활비 · 저축 · 쿠션</div><p>나갈 돈을 먼저 챙기고<br/>마음 편하게 쓸 돈을 확인하세요.</p></div><div class="mc-stack" style="margin:25px 0"><p>01　나이·가구·자차·소비 우선순위 입력</p><p>02　계좌·카드·대출 연결로 현재 자금 확인</p><p>03　월급과 고정지출 확인</p><p>04　예산 방향과 지킬 돈 설정</p><p>05　카테고리별 추천 예산 확인</p></div>
+{% endblock %}
+
+{% block foot %}
+<div class="mc-foot"><button class="mc-primary" data-href="{% url 'users:profile' %}" type="button">시작하기</button></div>
+{% endblock %}

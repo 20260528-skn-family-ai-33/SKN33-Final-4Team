@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{# 프로토타입 '고정지출 확인' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}고정지출 확인 · 머니쿠션{% endblock %}
+{% block header_title %}고정지출 확인{% endblock %}
+
+{% block content %}
+<div aria-label="7단계 중 4단계" class="mc-step"><span class="on"></span><span class="on"></span><span class="on"></span><span class="on"></span><span class=""></span><span class=""></span><span class=""></span></div><div class="mc-eyebrow">고정지출 확인</div><h1>매달 이 돈이 나가나요?</h1><p class="mc-muted">최근 2~3개월 거래에서 비슷한 결제가 3번 이상 나온 항목을 찾았어요. 다르면 고치거나 지워 주세요.</p>
+<div class="mc-card"><div class="mc-row"><span><strong style="font-size:15px">월세</strong><br/><span class="mc-muted">매월 25일 · 국민 · 5678 · 주거/통신</span></span><strong>700,000원</strong></div><span class="mc-badge" style="margin-top:8px">최근 3개월 3회 감지</span><div class="mc-inline"><button class="mc-secondary" hx-get="{% url 'budgets:pop_fixed_edit' 1 %}" hx-target="#mc-layer" type="button">수정</button><button class="mc-secondary" data-todo="기능 연결 전: delFixed:1" type="button">삭제</button></div></div>
+<div class="mc-card"><div class="mc-row"><span><strong style="font-size:15px">통신비</strong><br/><span class="mc-muted">매월 20일 · 국민 · 5678 · 주거/통신</span></span><strong>55,000원</strong></div><span class="mc-badge" style="margin-top:8px">최근 3개월 3회 감지</span><div class="mc-inline"><button class="mc-secondary" hx-get="{% url 'budgets:pop_fixed_edit' 2 %}" hx-target="#mc-layer" type="button">수정</button><button class="mc-secondary" data-todo="기능 연결 전: delFixed:2" type="button">삭제</button></div></div>
+<div class="mc-card"><div class="mc-row"><span><strong style="font-size:15px">구독료</strong><br/><span class="mc-muted">매월 5일 · 신한 · 1234 · 여가/관계</span></span><strong>15,000원</strong></div><span class="mc-badge" style="margin-top:8px">최근 3개월 3회 감지</span><div class="mc-inline"><button class="mc-secondary" hx-get="{% url 'budgets:pop_fixed_edit' 3 %}" hx-target="#mc-layer" type="button">수정</button><button class="mc-secondary" data-todo="기능 연결 전: delFixed:3" type="button">삭제</button></div></div><button class="mc-secondary" hx-get="{% url 'budgets:pop_fixed_add' %}" hx-target="#mc-layer" type="button">+ 고정지출 직접 추가</button>
+<div class="mc-card" style="margin-top:14px"><div class="mc-keyvalue"><span>고정지출 합계</span><strong>770,000원</strong></div></div>
+<div class="mc-card"><div class="mc-row"><h2>카드 청구서</h2><button class="mc-link" data-href="{% url 'finance:connect' %}" type="button">카드 관리</button></div>
+<div class="mc-cardday"><span><i aria-hidden="true" data-lucide="credit-card"></i>신한카드</span><strong>420,000원 · 10.15 출금예정</strong></div><p class="mc-note" style="padding-bottom:0">카드값은 청구서 금액 기준으로 출금예정일에 챙겨요. 승인 사용액과 청구액은 달라서 고정지출 합계에는 넣지 않아요.</p></div>
+{% endblock %}
+
+{% block foot %}
+<div class="mc-foot"><button class="mc-primary" data-href="{% url 'budgets:direction' %}" type="button">확인하고 다음</button></div>
+{% endblock %}

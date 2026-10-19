@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{# 프로토타입 '로그인' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}로그인 · 머니쿠션{% endblock %}
+{% block back %}{% endblock %}
+{% block header_title %}로그인{% endblock %}
+
+{% block content %}
+<div class="mc-eyebrow">MONEY CUSHION</div><h1>다시 만나서 반가워요</h1><form class="mc-form" id="mc-form" method="post">{% csrf_token %}<label class="mc-field">이메일<input autocomplete="email" name="loginEmail" placeholder="you@example.com" type="email" value=""/></label><label class="mc-field">비밀번호<input autocomplete="current-password" name="loginPw" placeholder="" type="password" value=""/></label><div class="mc-check-row"><label class="mc-field mc-check"><input name="autoLogin" type="checkbox"/>자동 로그인</label><label class="mc-field mc-check"><input name="saveId" type="checkbox"/>아이디 저장</label></div><div class="mc-error" role="alert"></div><div class="mc-foot"><button class="mc-primary" form="mc-form" type="submit">로그인</button></div></form><button class="mc-link" hx-get="{% url 'users:pop_pw_find' %}" hx-target="#mc-layer" type="button">비밀번호를 잊으셨나요?</button>
+<div class="mc-card" style="margin-top:22px;text-align:center"><p class="mc-muted">머니쿠션이 처음이신가요?</p><button class="mc-secondary" data-href="{% url 'users:signup' %}" type="button">회원가입</button></div>
+{% endblock %}

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{# 프로토타입 '계좌 연결' 화면을 옮김. 숫자·목록은 시안 예시값이고 DB 연결 때 바꾼다 #}
+{% block title %}계좌 연결 · 머니쿠션{% endblock %}
+{% block header_title %}계좌 연결{% endblock %}
+
+{% block content %}
+<div class="mc-eyebrow">계좌 연결</div><h1>연결을 마쳤어요</h1><p class="mc-muted">은행 2곳 · 계좌 2개 · 카드사 1곳 · 카드 2장을 연결했어요.</p>
+<div class="mc-card"><div class="mc-inst"><span class="mc-tile"><i aria-hidden="true" data-lucide="landmark"></i></span><span class="mc-grow"><strong>신한 생활비통장</strong><small>****1234 · 입출금 · 생활비</small></span><strong>340,000원</strong></div><div class="mc-inst"><span class="mc-tile"><i aria-hidden="true" data-lucide="landmark"></i></span><span class="mc-grow"><strong>국민 급여통장</strong><small>****5678 · 입출금 · 고정지출</small></span><strong>2,460,000원</strong></div></div>
+<div class="mc-card"><div class="mc-keyvalue"><span>잔액 조회</span><strong class="ok-t"><i aria-hidden="true" data-lucide="circle-check"></i> 완료 · 오늘 09:30</strong></div><div class="mc-keyvalue"><span>거래 내역</span><strong class="warn-t"><i aria-hidden="true" data-lucide="loader"></i> 최근 3개월 수집 중</strong></div><div class="mc-keyvalue"><span>카드 청구서</span><strong>조회됨</strong></div></div>
+{% endblock %}
+
+{% block foot %}
+<div class="mc-foot"><button class="mc-primary" data-href="{% url 'finance:loan_check' %}" type="button">다음</button></div>
+{% endblock %}

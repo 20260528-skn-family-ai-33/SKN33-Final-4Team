@@ -1,0 +1,26 @@
+{# 팝업: 거래 상세. 값은 finance/mock.py 의 거래에서 가져온다 #}
+{% load money %}
+<button type="button" class="mc-backdrop" aria-label="닫기"></button>
+<section class="mc-sheet mc-subsheet" role="dialog" aria-modal="true" aria-label="거래 상세">
+  <div class="mc-handle"></div>
+  <div class="mc-row"><span></span><button type="button" class="mc-link" data-close>닫기 ×</button></div>
+  <div class="mc-eyebrow">거래 상세</div>
+  <h1>{{ tx.name }}</h1>
+  <div class="mc-card">
+    <div class="mc-money">{{ tx.amount|won }}</div>
+    <div class="mc-keyvalue"><span>거래일</span><strong>{{ date }}</strong></div>
+    <div class="mc-keyvalue"><span>결제 계좌</span><strong>신한 · 1234</strong></div>
+    <div class="mc-keyvalue"><span>카테고리</span><strong>{{ tx.cat }}</strong></div>
+    <div class="mc-keyvalue"><span>분류</span><strong>AI 자동 분류</strong></div>
+  </div>
+  <div class="mc-card">
+    <h2>카테고리 수정</h2>
+    {# 고르면 닫힌다 · 저장은 DB 연결 후 #}
+    <div class="mc-pend-pick">
+      {% for cat in categories %}
+      <button type="button" data-close>{% if cat == tx.cat %}✓ {% endif %}{{ cat }}</button>
+      {% endfor %}
+    </div>
+    <p class="mc-note" style="padding-bottom:0">고른 카테고리는 이후 같은 가맹점 분류에 반영돼요.</p>
+  </div>
+</section>
