@@ -9,7 +9,7 @@
 |---|---|
 | 대상 | 첫 소득과 독립적인 금융생활을 시작한 사회초년생 (매월 급여를 받는 사용자) |
 | 이용 조건 | 본인 은행 계좌 1개 이상 연결 필수 (CODEF) · 카드 · 대출 조회는 선택 · **조회 전용** (송금 · 결제 · 가입 · 대출 실행 없음) |
-| 제공 형태 | React 모바일 웹 (React Native 앱은 후속) |
+| 제공 형태 | Django 템플릿 + HTMX 모바일 웹 (네이티브 앱은 후속) |
 | 기간 · 인원 | 2026. 9. 28. ~ 11. 20. (8주) · 3명 |
 
 ---
@@ -36,7 +36,7 @@
 | **2차** | 소액 돌발 · 카테고리 초과 감지 → 예산 조정 · 소비 분석 화면 · 예산 변경 이력 · 알림 (지난주 대비 소비) |
 | **3차** | 큰 지출 상담 (동의 기반 복지 검색 · 대출 비교) |
 | 검증 후 채택 | 카드 OCR |
-| 후순위 | 일정 · 예정 지출 (Google Calendar) · 목표 · 청년 정책 추천 · 예적금 · 카드 추천 · 소비 분석 LLM 문장 · React Native 앱 |
+| 후순위 | 일정 · 예정 지출 (Google Calendar) · 목표 · 청년 정책 추천 · 예적금 · 카드 추천 · 소비 분석 LLM 문장 · 네이티브 앱 |
 | 제외 | 공동 결제 정산 · 출금 계좌 잔액 부족 알림 · 구매 상담 |
 
 1차 통합 점검 후 2차 → 3차 순서로 붙입니다. 상세 요구사항은 [`산출물/01_기획/4팀_요구사항정의서.xlsx`](산출물/01_기획/)를 기준으로 합니다.
@@ -47,7 +47,7 @@
 
 ```mermaid
 flowchart LR
-    U[React 모바일 웹] --> API[Django REST API 서버<br/>Cognito JWT]
+    U[모바일 웹 브라우저] --> API[Django 서버<br/>템플릿 + HTMX · Cognito]
     API --> R{규칙 라우터}
     R -- 단순 조회 --> E[계산 엔진]
     R -- 판단 필요 --> Q[SQS] --> W[AI Worker<br/>LLM 에이전트]
@@ -77,11 +77,11 @@ flowchart LR
 
 ### ML 모델
 
-| 모델 | 쓰임 | 학습 데이터 | 기준선 → 평가 | 단계 |
-|---|---|---|---|---|
-| 거래 분류 (ML-001) | 거래 유형 · 소비 카테고리 | 상가(상권)정보 API · 검증 거래 표본 | 규칙 · 사전 · n-gram → macro-F1 | 1차 |
-| 카테고리 비율 예측 (ML-003) | 예산 설계 | MDIS · KOSIS 가계동향조사 | 평균 · 규칙 → MAE · 사용자 수정률 | 1차 |
-| 또래 비교 회귀 (ML-004) | 소비 분석 화면 | MDIS · KOSIS 가계동향조사 | 평균 → R² · 잔차 | 2차 |
+| 모델 | 쓰임 | 입력 | 학습 데이터 | 기준선 → 평가 | 단계 |
+|---|---|---|---|---|---|
+| 거래 분류 (ML-001) | 거래 유형 · 소비 카테고리 | 거래 적요 · 상호명 · 금액 · 시간 | 상가(상권)정보 API · 검증 거래 표본 | 규칙 · 사전 · n-gram → macro-F1 | 1차 |
+| 카테고리 비율 예측 (ML-003) | 예산 설계 | 연령대 · 성별 · 자차 보유 여부 · 소득 | MDIS · KOSIS 가계동향조사 | 평균 · 규칙 → MAE · 사용자 수정률 | 1차 |
+| 또래 비교 회귀 (ML-004) | 소비 분석 화면 | 연령대 · 자차 보유 여부 · 소득 | MDIS · KOSIS 가계동향조사 | 평균 → R² · 잔차 | 2차 |
 
 ---
 
@@ -89,8 +89,8 @@ flowchart LR
 
 | 영역 | 기술 |
 |---|---|
-| 모바일 웹 | React |
-| 백엔드 API | Python · Django · Django REST Framework · Amazon Cognito (JWT) |
+| 모바일 웹 (화면) | Django 템플릿 · HTMX |
+| 백엔드 | Python 3.12 · Django 5.2 LTS · Amazon Cognito (JWT) |
 | AI · 에이전트 | 규칙 라우터 + LLM 에이전트 4개 (AI Worker) |
 | ML | 거래 분류 · 카테고리 비율 예측 · 또래 비교 회귀 |
 | 데이터 | PostgreSQL (RDS) · S3 |
@@ -99,27 +99,15 @@ flowchart LR
 
 나머지 기술은 팀 숙련도와 최소 구현 검증 결과로 확정합니다.
 
-### 개발 의존성 설치
+### 개발 환경
 
-Python 3.12 이상과 Node.js 22 LTS의 npm을 사용합니다. 프로젝트 루트에서 실행합니다.
+화면과 서버를 Django 하나로 만듭니다. 별도 프론트엔드 앱(React 등)은 쓰지 않습니다.
 
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-cd frontend
-npm ci
-```
-
-Windows PowerShell에서는 가상환경 활성화 명령을 `.venv\Scripts\Activate.ps1`로 바꿉니다.
-
-- `requirements.txt`: Django 5.2 LTS, REST API(DRF), CORS, `.env` 로딩, PostgreSQL 드라이버를 설치합니다.
-- `frontend/package.json`과 `package-lock.json`: React와 React DOM의 npm 의존성을 관리합니다. 의존성 변경 시 `npm install`로 잠금 파일을 함께 갱신합니다.
-- Django 프로젝트와 React 앱 소스·빌드 도구는 아직 생성하지 않았습니다. 현재 파일은 의존성 설치용이며 서버 실행 명령은 앱 초기화 시 추가합니다.
-- Django 초기화 시 `rest_framework`, `corsheaders`를 `INSTALLED_APPS`에 등록하고 `CorsMiddleware`를 `CommonMiddleware` 앞에 배치해야 합니다. `CORS_ALLOWED_ORIGINS`에는 실제 프론트엔드 주소만 명시합니다.
-- `.env`는 설치만으로 읽히지 않습니다. Django 설정에서 `load_dotenv()`를 호출하고 DB 접속 정보를 환경변수로 읽도록 설정해야 합니다. Cognito JWT 검증과 AWS·AI 연동 패키지는 구현 방식을 확정한 뒤 추가합니다.
-- 생성한 `.venv/`, `frontend/node_modules/`와 비밀값이 들어 있는 `.env`는 Git에 포함하지 않습니다.
+- 처음 세팅: [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) (Windows · macOS 단계별)
+- 환경변수 설명: [`docs/ENV_SETUP.md`](docs/ENV_SETUP.md)
+- 로컬 DB: Docker로 띄운 PostgreSQL 17
+- 화면 코드 위치: `backend/templates/`, 각 앱의 `templates/`, `backend/static/` (CSS · JS)
+- 화면 값은 DB 연결 전까지 각 앱의 `mock.py` 가짜 데이터를 씁니다. 회원 모델이 나오기 전에는 `makemigrations`를 하지 않습니다.
 
 ---
 
@@ -149,7 +137,7 @@ Windows PowerShell에서는 가상환경 활성화 명령을 `.venv\Scripts\Acti
 | 1주 | 09.28 – 10.02 | 요구사항 정의서 · WBS |
 | 2주 | 10.06 – 10.08 | 프로젝트 기획서 · 화면설계서 · 수집 데이터 보고서 |
 | 3주 | 10.12 – 10.16 | v5 기획 · DB 설계 · 화면 프로토타입 · **중간 발표 (10/16)** |
-| 4주 | 10.19 – 10.23 | 전처리 · DB 설계 완료 · ML 기준선 · React 초기 설정 · 라우터 · 챗봇 골격 |
+| 4주 | 10.19 – 10.23 | 전처리 · DB 설계 완료 · ML 기준선 · Django 화면 초기 설정 · 라우터 · 챗봇 골격 |
 | 5주 | 10.26 – 10.30 | (1차) 예산 설계 → 초안 조정 → 승인 · 평소 조정 · 거래 분류 · 챗봇 소비 분석 · 홈 · 머니 쿠션 |
 | 6주 | 11.02 – 11.06 | 1차 MVP 통합 점검 · 단일 LLM 비교 · (2차) 돌발 · 초과 감지 → 예산 조정 · 소비 분석 화면 · 알림 |
 | 7주 | 11.09 – 11.13 | (3차) 큰 지출 상담 · 통합 테스트 · 결함 수정 |
@@ -162,8 +150,13 @@ Windows PowerShell에서는 가상환경 활성화 명령을 `.venv\Scripts\Acti
 ```
 .
 ├── README.md
-├── requirements.txt             # Django 백엔드 의존성
-├── frontend/                    # React npm 의존성 (앱 소스는 후속)
+├── requirements.txt             # Python 의존성 (Django · PostgreSQL · ML)
+├── backend/                     # Django 프로젝트 (화면 + 서버)
+│   ├── config/                  # 설정 · 주소(urls) · 공통 화면 도우미
+│   ├── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇
+│   ├── templates/               # 공통 틀(base.html) · 하단 탭
+│   └── static/                  # 공통 CSS · JS
+├── docs/                        # 개발 환경 · 환경변수 가이드
 └── 산출물/
     ├── 01_기획/                  # 요구사항 정의서 · WBS · 프로젝트 기획서
     ├── 02_데이터 수집 및 저장/
@@ -173,4 +166,3 @@ Windows PowerShell에서는 가상환경 활성화 명령을 `.venv\Scripts\Acti
     └── 06_발표 및 최종 제출/        # 중간 · 최종 발표 자료
 ```
 
-소스 코드 디렉터리는 개발을 시작하면서 추가합니다.
