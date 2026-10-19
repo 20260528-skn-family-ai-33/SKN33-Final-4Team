@@ -1,12 +1,17 @@
 // 머니 쿠션 (장고: budgets/templates/budgets/fund.html)
 import Layout from '../components/Layout.jsx'
 import { comma, won } from '../utils/money.js'
-import { CUSHION as c } from '../mock/budgets.js'
+import { useApi } from '../utils/api.js'
+import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import CushionPopup from '../popups/CushionPopup.jsx'
 
 export default function CushionPage() {
   const { openPopup } = usePopup()
+  const { data, error } = useApi('/api/budgets/cushion/')
+
+  if (!data) return <Layout title="머니 쿠션" activeTab="fund"><ApiStatus error={error} /></Layout>
+  const c = data.cushion
 
   return (
     <Layout title="머니 쿠션" activeTab="fund">
@@ -20,7 +25,7 @@ export default function CushionPage() {
         <div className="mc-row"><span className="mc-muted">목표 {c.goalLabel} · {won(c.goal)}</span><strong>{c.pct}%</strong></div>
         <div className="mc-keyvalue"><span>보호 하한</span><strong>{won(c.floor)}</strong></div>
         <div className="mc-keyvalue"><span>예산 조정 시 사용</span><strong>{c.useRule}</strong></div>
-        <button type="button" className="mc-secondary" onClick={() => openPopup(<CushionPopup />)}>쿠션 설정 변경</button>
+        <button type="button" className="mc-secondary" onClick={() => openPopup(<CushionPopup cushion={c} />)}>쿠션 설정 변경</button>
       </div>
 
       <div className="mc-card">

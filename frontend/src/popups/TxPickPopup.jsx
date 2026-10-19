@@ -2,9 +2,9 @@
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
-import { CATEGORIES } from '../mock/finance.js'
 
-export default function TxPickPopup({ tx }) {
+// props: tx = 고를 거래, categories = 카테고리 목록
+export default function TxPickPopup({ tx, categories }) {
   const { closePopup } = usePopup()
 
   return (
@@ -12,7 +12,7 @@ export default function TxPickPopup({ tx }) {
       <h2>어떤 카테고리인가요?</h2>
       <p className="mc-muted" style={{ margin: '4px 0 12px' }}>{tx.name} · {won(tx.amount)}</p>
       <div className="mc-lock-list">
-        {CATEGORIES.map((cat) => (
+        {categories.map((cat) => (
           <button type="button" className="mc-lock-opt" key={cat} onClick={closePopup}><span className="mc-grow">{cat}</span></button>
         ))}
       </div>

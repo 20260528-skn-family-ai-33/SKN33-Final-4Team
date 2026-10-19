@@ -12,7 +12,10 @@ const ICONS = {
   Sparkles, Store, Users, Utensils,
 }
 
+// 'credit-card'(장고 API 이름)도 'CreditCard'(리액트 이름)로 바꿔서 찾는다
+const toPascal = (name) => name.replace(/(^|-)([a-z0-9])/g, (_, __, c) => c.toUpperCase())
+
 export default function Icon({ name, size = 20 }) {
-  const Comp = ICONS[name] ?? Circle
+  const Comp = ICONS[toPascal(name)] ?? Circle
   return <Comp size={size} aria-hidden="true" />
 }

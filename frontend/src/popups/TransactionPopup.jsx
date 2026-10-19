@@ -1,11 +1,10 @@
 // 팝업: 거래 상세 (장고 finance/_transaction.html) — 거래 목록에서 거래 한 줄 누르기
-// props: tx = 누른 거래, date = 그 거래의 날짜
+// props: tx = 누른 거래, date = 그 거래의 날짜, categories = 카테고리 목록
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
-import { CATEGORIES } from '../mock/finance.js'
 
-export default function TransactionPopup({ tx, date }) {
+export default function TransactionPopup({ tx, date, categories }) {
   const { closePopup } = usePopup()
 
   return (
@@ -23,7 +22,7 @@ export default function TransactionPopup({ tx, date }) {
         <h2>카테고리 수정</h2>
         {/* 고르면 닫힌다 · 저장은 DB 연결 후 */}
         <div className="mc-pend-pick">
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button type="button" key={cat} onClick={closePopup}>{cat === tx.cat && '✓ '}{cat}</button>
           ))}
         </div>

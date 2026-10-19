@@ -1,34 +1,30 @@
 // 거래 내역 (장고: finance/templates/finance/txs.html + finance/views.py 의 필터)
-// 주소 ?category=식비 로 카테고리만 골라 본다 (장고와 같은 주소 규칙)
+// 주소 ?category=식비 로 카테고리만 골라 본다. 고르는 일은 장고 API 가 해서 보내 준다
 import { useSearchParams } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { won } from '../utils/money.js'
-import { MONTH, RECENT, PENDING_COUNT, PENDING_LABEL, CATEGORIES, TX_DAYS } from '../mock/finance.js'
+import { useApi } from '../utils/api.js'
+import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import TransactionPopup from '../popups/TransactionPopup.jsx'
 import TxPickPopup from '../popups/TxPickPopup.jsx'
 import FilterPopup from '../popups/FilterPopup.jsx'
 
-// 고른 카테고리에 맞는 거래만 남기기 (장고 views.transactions 의 keep 함수)
-function filterDays(selected) {
-  const keep = (tx) =>
-    selected === '전체' ? true : selected === PENDING_LABEL ? tx.kind === 'pending' : tx.cat === selected
-  return TX_DAYS
-    .map((day) => {
-      const items = day.items.filter(keep)
-      return { date: day.date, items, total: items.reduce((sum, tx) => sum + tx.amount, 0) }
-    })
-    .filter((day) => day.items.length > 0)
-}
-
 export default function TransactionsPage() {
   // 주소의 ?category= 값을 읽고 바꾸는 도구
   const [params, setParams] = useSearchParams()
   const selected = params.get('category') ?? '전체'
-  const days = filterDays(selected)
   const pick = (cat) => setParams({ category: cat })
   const { openPopup } = usePopup()
+  // 카테고리를 바꾸면 주소가 바뀌고 → 장고에게 다시 받아온다
+  const { data, error } = useApi(`/api/finance/transactions/?category=${encodeURIComponent(selected)}`)
+
+  if (!data) return <Layout title="거래 내역" activeTab="txs"><ApiStatus error={error} /></Layout>
+  const {
+    month: MONTH, recent: RECENT, pendingCount: PENDING_COUNT, pendingLabel: PENDING_LABEL,
+    categories: CATEGORIES, days,
+  } = data
 
   return (
     <Layout title="거래 내역" activeTab="txs">
@@ -85,11 +81,11 @@ export default function TransactionsPage() {
                 <p className="mc-pend-why">{tx.why} 어디에 쓴 돈인가요?</p>
                 <div className="mc-pend-pick">
                   {tx.picks.map((p) => <button type="button" key={p}>{p}</button>)}
-                  <button type="button" onClick={() => openPopup(<TxPickPopup tx={tx} />)}>다른 카테고리</button>
+                  <button type="button" onClick={() => openPopup(<TxPickPopup tx={tx} categories={CATEGORIES} />)}>다른 카테고리</button>
                 </div>
               </div>
             ) : (
-              <button type="button" className="mc-listrow" key={tx.id} onClick={() => openPopup(<TransactionPopup tx={tx} date={day.date} />)}>
+              <button type="button" className="mc-listrow" key={tx.id} onClick={() => openPopup(<TransactionPopup tx={tx} date={day.date} categories={CATEGORIES} />)}>
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow"><strong>{tx.name}</strong><span className="mc-muted">{tx.cat}</span></span>
                 <span className="mc-right">{won(tx.amount)} <span className="mc-muted">›</span></span>

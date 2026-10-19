@@ -3,9 +3,9 @@ import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
-import { CATEGORIES } from '../mock/budgets.js'
 
-export default function CatLockPopup() {
+// props: categories = 예산 화면이 장고에게 받아 온 카테고리 목록
+export default function CatLockPopup({ categories }) {
   const { closePopup } = usePopup()
   // 켜진 카테고리 이름 목록. 누를 때마다 넣었다 뺐다 (화면에서만 바뀌고 저장은 안 됨)
   const [picked, setPicked] = useState([])
@@ -17,7 +17,7 @@ export default function CatLockPopup() {
       <h2>매달 같은 금액으로 고정할까요?</h2>
       <p className="mc-muted" style={{ margin: '4px 0 12px' }}>고른 카테고리는 다음 예산부터 이 금액 그대로 들어가요. 챗봇과 조정할 때도 바뀌지 않아요.</p>
       <div className="mc-lock-list">
-        {CATEGORIES.map((c) => (
+        {categories.map((c) => (
           <button type="button" className="mc-lock-opt" key={c.name} aria-pressed={picked.includes(c.name)} onClick={() => toggle(c.name)}>
             <span className="mc-lock-box"></span><span className="mc-grow">{c.name}</span><strong>{won(c.budget)}</strong>
           </button>

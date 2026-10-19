@@ -4,7 +4,8 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import LockIcon from '../components/LockIcon.jsx'
 import { won } from '../utils/money.js'
-import { PERIOD, HOME, MONTHLY, MONTH_SPLIT, CATEGORIES, UNCLASSIFIED } from '../mock/budgets.js'
+import { useApi } from '../utils/api.js'
+import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import IrregularPopup from '../popups/IrregularPopup.jsx'
@@ -13,6 +14,10 @@ import CatLockPopup from '../popups/CatLockPopup.jsx'
 export default function BudgetPage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
+  const { data, error } = useApi('/api/budgets/')
+
+  if (!data) return <Layout title="카테고리 예산" activeTab="budget"><ApiStatus error={error} /></Layout>
+  const { period: PERIOD, monthly: MONTHLY, monthSplit: MONTH_SPLIT, categories: CATEGORIES, unclassified: UNCLASSIFIED } = data
 
   return (
     <Layout title="카테고리 예산" activeTab="budget">
@@ -35,13 +40,13 @@ export default function BudgetPage() {
       <div className="mc-card">
         <div className="mc-row">
           <h2>생활비 카테고리</h2>
-          <span className="mc-muted">{won(HOME.livingUsed)} / {won(HOME.livingBudget)}</span>
+          <span className="mc-muted">{won(data.livingUsed)} / {won(data.livingBudget)}</span>
         </div>
         {CATEGORIES.map((c) => (
           <div className="mc-catuse" key={c.name}>
             <div className="mc-row">
               <span className="mc-catname"><span className="mc-cat-ic"><Icon name={c.icon} /></span>{c.name}</span>
-              <button type="button" className="mc-lockt" aria-pressed={c.locked} aria-label={`${c.name} 자물쇠`} onClick={() => openPopup(<CatLockPopup />)}>
+              <button type="button" className="mc-lockt" aria-pressed={c.locked} aria-label={`${c.name} 자물쇠`} onClick={() => openPopup(<CatLockPopup categories={CATEGORIES} />)}>
                 <LockIcon />
               </button>
             </div>

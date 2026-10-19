@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { comma, won } from '../utils/money.js'
-import { PERIOD, HOME as h, MUST_PAY } from '../mock/budgets.js'
+import { useApi } from '../utils/api.js'
+import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
@@ -13,6 +14,11 @@ export default function HomePage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   const pendingUrl = `${PATHS.txs}?category=확인 필요`
+  const { data, error } = useApi('/api/home/')  // 장고에게 홈 데이터 받아오기
+
+  // 아직 못 받았으면 "불러오는 중…" (실패하면 안내)
+  if (!data) return <Layout title="머니쿠션" activeTab="home"><ApiStatus error={error} /></Layout>
+  const { period: PERIOD, home: h, mustPay: MUST_PAY } = data
 
   return (
     <Layout title="머니쿠션" activeTab="home">
