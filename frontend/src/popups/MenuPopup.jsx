@@ -2,7 +2,7 @@
 import { useNavigate } from 'react-router'
 import { Repeat, SlidersHorizontal } from 'lucide-react'
 import Popup from './Popup.jsx'
-import FixedAddPopup from './FixedAddPopup.jsx'
+import FixedPopup from './FixedPopup.jsx'
 import { usePopup } from './context.js'
 import { PATHS } from '../routes.js'
 
@@ -18,7 +18,7 @@ export default function MenuPopup() {
           <SlidersHorizontal size={20} aria-hidden="true" />예산 조정
         </button>
         {/* 팝업 안에서 다른 팝업 열기 = 갈아끼우기 */}
-        <button type="button" onClick={() => openPopup(<FixedAddPopup />)}>
+        <button type="button" onClick={() => openPopup(<FixedPopup />)}>
           <Repeat size={20} aria-hidden="true" />고정지출 추가
         </button>
       </div>
