@@ -6,9 +6,13 @@ import LockIcon from '../components/LockIcon.jsx'
 import { won } from '../utils/money.js'
 import { PERIOD, HOME, MONTHLY, MONTH_SPLIT, CATEGORIES, UNCLASSIFIED } from '../mock/budgets.js'
 import { PATHS } from '../routes.js'
+import { usePopup } from '../popups/context.js'
+import IrregularPopup from '../popups/IrregularPopup.jsx'
+import CatLockPopup from '../popups/CatLockPopup.jsx'
 
 export default function BudgetPage() {
   const navigate = useNavigate()
+  const { openPopup } = usePopup()
 
   return (
     <Layout title="카테고리 예산" activeTab="budget">
@@ -19,8 +23,7 @@ export default function BudgetPage() {
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(MONTHLY)}</span></div>
         {MONTH_SPLIT.map((s) =>
           s.popup ? (
-            // 5단계 팝업: 비정기지출 준비금 (irregular)
-            <button type="button" className="mc-keyvalue mc-kv-btn" key={s.name}>
+            <button type="button" className="mc-keyvalue mc-kv-btn" key={s.name} onClick={() => openPopup(<IrregularPopup />)}>
               <span>{s.name} ›</span><strong>{won(s.amount)}</strong>
             </button>
           ) : (
@@ -38,8 +41,7 @@ export default function BudgetPage() {
           <div className="mc-catuse" key={c.name}>
             <div className="mc-row">
               <span className="mc-catname"><span className="mc-cat-ic"><Icon name={c.icon} /></span>{c.name}</span>
-              {/* 5단계 팝업: 자물쇠 (catLock) */}
-              <button type="button" className="mc-lockt" aria-pressed={c.locked} aria-label={`${c.name} 자물쇠`}>
+              <button type="button" className="mc-lockt" aria-pressed={c.locked} aria-label={`${c.name} 자물쇠`} onClick={() => openPopup(<CatLockPopup />)}>
                 <LockIcon />
               </button>
             </div>

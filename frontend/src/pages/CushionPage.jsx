@@ -2,8 +2,12 @@
 import Layout from '../components/Layout.jsx'
 import { comma, won } from '../utils/money.js'
 import { CUSHION as c } from '../mock/budgets.js'
+import { usePopup } from '../popups/context.js'
+import CushionPopup from '../popups/CushionPopup.jsx'
 
 export default function CushionPage() {
+  const { openPopup } = usePopup()
+
   return (
     <Layout title="머니 쿠션" activeTab="fund">
       <div className="mc-eyebrow">갑작스러운 지출에도 흔들리지 않게</div>
@@ -16,8 +20,7 @@ export default function CushionPage() {
         <div className="mc-row"><span className="mc-muted">목표 {c.goalLabel} · {won(c.goal)}</span><strong>{c.pct}%</strong></div>
         <div className="mc-keyvalue"><span>보호 하한</span><strong>{won(c.floor)}</strong></div>
         <div className="mc-keyvalue"><span>예산 조정 시 사용</span><strong>{c.useRule}</strong></div>
-        {/* 5단계 팝업: 쿠션 설정 (cushion) */}
-        <button type="button" className="mc-secondary">쿠션 설정 변경</button>
+        <button type="button" className="mc-secondary" onClick={() => openPopup(<CushionPopup />)}>쿠션 설정 변경</button>
       </div>
 
       <div className="mc-card">

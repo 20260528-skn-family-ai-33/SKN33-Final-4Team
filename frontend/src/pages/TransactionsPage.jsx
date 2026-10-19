@@ -5,6 +5,10 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { won } from '../utils/money.js'
 import { MONTH, RECENT, PENDING_COUNT, PENDING_LABEL, CATEGORIES, TX_DAYS } from '../mock/finance.js'
+import { usePopup } from '../popups/context.js'
+import TransactionPopup from '../popups/TransactionPopup.jsx'
+import TxPickPopup from '../popups/TxPickPopup.jsx'
+import FilterPopup from '../popups/FilterPopup.jsx'
 
 // 고른 카테고리에 맞는 거래만 남기기 (장고 views.transactions 의 keep 함수)
 function filterDays(selected) {
@@ -24,6 +28,7 @@ export default function TransactionsPage() {
   const selected = params.get('category') ?? '전체'
   const days = filterDays(selected)
   const pick = (cat) => setParams({ category: cat })
+  const { openPopup } = usePopup()
 
   return (
     <Layout title="거래 내역" activeTab="txs">
@@ -80,13 +85,11 @@ export default function TransactionsPage() {
                 <p className="mc-pend-why">{tx.why} 어디에 쓴 돈인가요?</p>
                 <div className="mc-pend-pick">
                   {tx.picks.map((p) => <button type="button" key={p}>{p}</button>)}
-                  {/* 5단계 팝업: 어떤 카테고리인가요? (txPick) */}
-                  <button type="button">다른 카테고리</button>
+                  <button type="button" onClick={() => openPopup(<TxPickPopup tx={tx} />)}>다른 카테고리</button>
                 </div>
               </div>
             ) : (
-              // 5단계 팝업: 거래 상세 (transaction)
-              <button type="button" className="mc-listrow" key={tx.id}>
+              <button type="button" className="mc-listrow" key={tx.id} onClick={() => openPopup(<TransactionPopup tx={tx} date={day.date} />)}>
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow"><strong>{tx.name}</strong><span className="mc-muted">{tx.cat}</span></span>
                 <span className="mc-right">{won(tx.amount)} <span className="mc-muted">›</span></span>
@@ -96,8 +99,7 @@ export default function TransactionsPage() {
         </div>
       ))}
 
-      {/* 5단계 팝업: 거래 유형 필터 (filter) */}
-      <button type="button" className="mc-link">필터 · 거래 유형</button>
+      <button type="button" className="mc-link" onClick={() => openPopup(<FilterPopup />)}>필터 · 거래 유형</button>
     </Layout>
   )
 }

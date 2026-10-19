@@ -3,6 +3,8 @@
 import { Link } from 'react-router'
 import { Receipt, Wallet, House, Shield, MessageCircle } from 'lucide-react'
 import { PATHS } from '../routes.js'
+import { usePopup } from '../popups/context.js'
+import MenuPopup from '../popups/MenuPopup.jsx'
 
 const TABS = [
   { id: 'txs', label: '거래', Icon: Receipt },
@@ -12,17 +14,18 @@ const TABS = [
   { id: 'assistant', label: '챗봇', Icon: MessageCircle },
 ]
 
-export default function TabBar({ active }) {
+export default function TabBar({ active, inert = false }) {
+  const { openPopup } = usePopup()
+
   return (
-    <nav id="mc-nav" aria-label="주 메뉴">
+    <nav id="mc-nav" aria-label="주 메뉴" inert={inert}>
       {TABS.map(({ id, label, Icon }) =>
         id === 'home' ? (
           <div className="mc-center" key="home">
             <Link className="mc-home" to={PATHS.home} aria-label="홈">
               <House size={20} aria-hidden="true" />
             </Link>
-            {/* 5단계(팝업)에서 돈관리 메뉴 연결 */}
-            <button type="button" className="mc-expand">돈관리 ∧</button>
+            <button type="button" className="mc-expand" onClick={() => openPopup(<MenuPopup />)}>돈관리 ∧</button>
           </div>
         ) : (
           <Link key={id} to={PATHS[id]} aria-current={active === id ? 'page' : undefined}>

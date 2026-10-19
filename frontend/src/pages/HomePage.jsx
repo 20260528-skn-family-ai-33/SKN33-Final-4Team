@@ -5,9 +5,13 @@ import Icon from '../components/Icon.jsx'
 import { comma, won } from '../utils/money.js'
 import { PERIOD, HOME as h, MUST_PAY } from '../mock/budgets.js'
 import { PATHS } from '../routes.js'
+import { usePopup } from '../popups/context.js'
+import CalcPopup from '../popups/CalcPopup.jsx'
+import CardBillPopup from '../popups/CardBillPopup.jsx'
 
 export default function HomePage() {
   const navigate = useNavigate()
+  const { openPopup } = usePopup()
   const pendingUrl = `${PATHS.txs}?category=확인 필요`
 
   return (
@@ -22,8 +26,7 @@ export default function HomePage() {
           <p className="mc-home-updated">
             {PERIOD.updated}
             <br />
-            {/* 5단계 팝업: 쓸 수 있는 돈의 계산 (calc) */}
-            <button type="button" className="mc-link">계산 근거</button>
+            <button type="button" className="mc-link" onClick={() => openPopup(<CalcPopup />)}>계산 근거</button>
           </p>
         </div>
       </div>
@@ -88,7 +91,7 @@ export default function HomePage() {
             type="button"
             className="mc-listrow"
             key={p.name}
-            onClick={p.link ? () => navigate(p.link) : undefined /* 카드 청구서는 5단계 팝업 */}
+            onClick={() => (p.link ? navigate(p.link) : openPopup(<CardBillPopup />))  /* 링크가 없으면(카드 청구서) 팝업 */}
           >
             <span className="mc-tile"><Icon name={p.icon} /></span>
             <span className="mc-grow"><strong>{p.name}</strong><span className="mc-muted">{p.sub}</span></span>
