@@ -47,7 +47,7 @@
 
 ```mermaid
 flowchart LR
-    U[React 모바일 웹] --> API[FastAPI 서버<br/>Cognito JWT]
+    U[React 모바일 웹] --> API[Django REST API 서버<br/>Cognito JWT]
     API --> R{규칙 라우터}
     R -- 단순 조회 --> E[계산 엔진]
     R -- 판단 필요 --> Q[SQS] --> W[AI Worker<br/>LLM 에이전트]
@@ -90,7 +90,7 @@ flowchart LR
 | 영역 | 기술 |
 |---|---|
 | 모바일 웹 | React |
-| 백엔드 API | Python · FastAPI · Amazon Cognito (JWT) |
+| 백엔드 API | Python · Django · Django REST Framework · Amazon Cognito (JWT) |
 | AI · 에이전트 | 규칙 라우터 + LLM 에이전트 4개 (AI Worker) |
 | ML | 거래 분류 · 카테고리 비율 예측 · 또래 비교 회귀 |
 | 데이터 | PostgreSQL (RDS) · S3 |
@@ -98,6 +98,28 @@ flowchart LR
 | 외부 연동 | CODEF (계좌 · 카드 · 대출) · 상가정보 API · 검색/지도 · MDIS/KOSIS · 복지서비스 API |
 
 나머지 기술은 팀 숙련도와 최소 구현 검증 결과로 확정합니다.
+
+### 개발 의존성 설치
+
+Python 3.12 이상과 Node.js 22 LTS의 npm을 사용합니다. 프로젝트 루트에서 실행합니다.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cd frontend
+npm ci
+```
+
+Windows PowerShell에서는 가상환경 활성화 명령을 `.venv\Scripts\Activate.ps1`로 바꿉니다.
+
+- `requirements.txt`: Django 5.2 LTS, REST API(DRF), CORS, `.env` 로딩, PostgreSQL 드라이버를 설치합니다.
+- `frontend/package.json`과 `package-lock.json`: React와 React DOM의 npm 의존성을 관리합니다. 의존성 변경 시 `npm install`로 잠금 파일을 함께 갱신합니다.
+- Django 프로젝트와 React 앱 소스·빌드 도구는 아직 생성하지 않았습니다. 현재 파일은 의존성 설치용이며 서버 실행 명령은 앱 초기화 시 추가합니다.
+- Django 초기화 시 `rest_framework`, `corsheaders`를 `INSTALLED_APPS`에 등록하고 `CorsMiddleware`를 `CommonMiddleware` 앞에 배치해야 합니다. `CORS_ALLOWED_ORIGINS`에는 실제 프론트엔드 주소만 명시합니다.
+- `.env`는 설치만으로 읽히지 않습니다. Django 설정에서 `load_dotenv()`를 호출하고 DB 접속 정보를 환경변수로 읽도록 설정해야 합니다. Cognito JWT 검증과 AWS·AI 연동 패키지는 구현 방식을 확정한 뒤 추가합니다.
+- 생성한 `.venv/`, `frontend/node_modules/`와 비밀값이 들어 있는 `.env`는 Git에 포함하지 않습니다.
 
 ---
 
@@ -140,6 +162,8 @@ flowchart LR
 ```
 .
 ├── README.md
+├── requirements.txt             # Django 백엔드 의존성
+├── frontend/                    # React npm 의존성 (앱 소스는 후속)
 └── 산출물/
     ├── 01_기획/                  # 요구사항 정의서 · WBS · 프로젝트 기획서
     ├── 02_데이터 수집 및 저장/

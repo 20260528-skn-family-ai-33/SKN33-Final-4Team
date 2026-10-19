@@ -1,0 +1,10 @@
+# Python 3.12+; Django 5.2 LTS
+Django==5.2.18
+# REST API for the React frontend
+djangorestframework==3.18.3
+# Allow explicitly configured frontend origins
+django-cors-headers==4.9.0
+# Load local environment variables when configured in Django settings
+python-dotenv==1.2.4
+# PostgreSQL driver; binary extra avoids a local compiler/libpq setup
+psycopg[binary]==3.3.6

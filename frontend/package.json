@@ -1,0 +1,9 @@
+{
+  "name": "money-cushion-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  }
+}

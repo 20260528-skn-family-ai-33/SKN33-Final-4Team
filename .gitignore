@@ -1,9 +1,69 @@
 # Local AI instructions
 /AGENTS.md
 
-# OS / IDE
-.DS_Store
-.idea/
-
-# Environment variables
+# ===== Secrets / Environment variables =====
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
+secrets*.yaml
+
+# ===== OS / IDE =====
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Office temp/lock files (산출물 xlsx/docx/pptx 편집 중 생기는 파일)
+~$*
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ===== ML / Data =====
+# 대용량 데이터·모델 가중치는 별도 공유(Drive/HF Hub 등)
+/data/raw/
+/data/processed/
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.joblib
+*.pkl
+
+# Experiment logs
+wandb/
+mlruns/
+runs/
+*.log
+
+# Local DB / vector store
+*.sqlite3
+*.db
+chroma_db/
+
+# ===== Frontend =====
+node_modules/
+frontend/dist/
+frontend/build/
+npm-debug.log*
+yarn-error.log*
