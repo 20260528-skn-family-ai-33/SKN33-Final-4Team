@@ -7,7 +7,7 @@
 | 항목 | 기준 |
 |---|---|
 | Python | **3.12** |
-| 웹 프레임워크 | Django 5.2 LTS (백엔드 · 화면 모두 Django 템플릿 + HTMX) |
+| 웹 프레임워크 | Django 5.2 LTS + DRF (API) · 화면은 React (`frontend/`, 환경변수 없음) |
 | DB | PostgreSQL |
 | 의존성 | 프로젝트 루트 `requirements.txt` |
 | 환경변수 | 프로젝트 루트 `.env` (템플릿: `.env.example`) |

@@ -9,7 +9,7 @@
 |---|---|
 | 대상 | 첫 소득과 독립적인 금융생활을 시작한 사회초년생 (매월 급여를 받는 사용자) |
 | 이용 조건 | 본인 은행 계좌 1개 이상 연결 필수 (CODEF) · 카드 · 대출 조회는 선택 · **조회 전용** (송금 · 결제 · 가입 · 대출 실행 없음) |
-| 제공 형태 | Django 템플릿 + HTMX 모바일 웹 (네이티브 앱은 후속) |
+| 제공 형태 | 모바일 웹: React 화면 + Django API (네이티브 앱은 후속) |
 | 기간 · 인원 | 2026. 9. 28. ~ 11. 20. (8주) · 3명 |
 
 ---
@@ -47,7 +47,7 @@
 
 ```mermaid
 flowchart LR
-    U[모바일 웹 브라우저] --> API[Django 서버<br/>템플릿 + HTMX · Cognito]
+    U[모바일 웹 브라우저<br/>React] -- /api JSON --> API[Django 서버<br/>DRF · 세션 로그인]
     API --> R{규칙 라우터}
     R -- 단순 조회 --> E[계산 엔진]
     R -- 판단 필요 --> Q[SQS] --> W[AI Worker<br/>LLM 에이전트]
@@ -89,8 +89,8 @@ flowchart LR
 
 | 영역 | 기술 |
 |---|---|
-| 모바일 웹 (화면) | Django 템플릿 · HTMX |
-| 백엔드 | Python 3.12 · Django 5.2 LTS · Amazon Cognito (JWT) |
+| 모바일 웹 (화면) | React 19 · Vite · React Router · lucide-react |
+| 백엔드 | Python 3.12 · Django 5.2 LTS · Django REST framework · Django 세션 로그인 (자체 회원) |
 | AI · 에이전트 | 규칙 라우터 + LLM 에이전트 4개 (AI Worker) |
 | ML | 거래 분류 · 카테고리 비율 예측 · 또래 비교 회귀 |
 | 데이터 | PostgreSQL (RDS) · S3 |
@@ -101,13 +101,20 @@ flowchart LR
 
 ### 개발 환경
 
-화면과 서버를 Django 하나로 만듭니다. 별도 프론트엔드 앱(React 등)은 쓰지 않습니다.
+화면은 **React**(`frontend/`), 데이터와 계산은 **Django API**(`backend/`)가 맡습니다. React가 `/api/...`로 요청하면 Django가 JSON으로 답합니다.
+
+```
+React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.0.0.1:8000) ──▶ PostgreSQL
+```
 
 - 처음 세팅: [`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) (Windows · macOS 단계별)
 - 환경변수 설명: [`docs/ENV_SETUP.md`](docs/ENV_SETUP.md)
+- 실행: 터미널 2개 — `backend`에서 `python manage.py runserver`, `frontend`에서 `npm run dev` → http://localhost:5173
 - 로컬 DB: Docker로 띄운 PostgreSQL 17
-- 화면 코드 위치: `backend/templates/`, 각 앱의 `templates/`, `backend/static/` (CSS · JS)
-- 화면 값은 DB 연결 전까지 각 앱의 `mock.py` 가짜 데이터를 씁니다. 회원 모델이 나오기 전에는 `makemigrations`를 하지 않습니다.
+- 화면 코드: `frontend/src/` (`pages/` 화면 · `popups/` 팝업 · `components/` 공통 부품 · `styles/` CSS)
+- API 코드: 각 앱의 `api.py`, 주소 목록은 `backend/config/api_urls.py`
+- API 값은 DB 연결 전까지 각 앱의 `mock.py` 가짜 데이터를 씁니다. 회원 모델이 나오기 전에는 `makemigrations`를 하지 않습니다.
+- `backend/templates/`의 Django 화면은 React 이전이 끝나면 지울 예정입니다 (그 전까지 비교용).
 
 ---
 
@@ -126,7 +133,7 @@ flowchart LR
 |---|---|---|---|
 | 김나은 (PM) | 카테고리 비율 예측 | ② 예산 설계 · ③ 예산 조정 | 계산 엔진 · 공통 검수 · 승인 흐름, 머니 쿠션 · 돌발지출, DB 스키마 |
 | 김혜리 (APM) | 거래 분류 | ① 거래 분류 · 라우터 · 통합 챗봇 | CODEF · 거래 원장 · 검색/지도 API, 알림, API 서버 통합 |
-| 권세진 | 또래 비교 회귀 | ④ 큰 지출 상담 (④-1 복지 검색 · ④-2 대출 비교) | 자금 계산 엔진 · 복지/대출 데이터, 소비 분석 (서버 집계 · 템플릿), 배포 |
+| 권세진 | 또래 비교 회귀 | ④ 큰 지출 상담 (④-1 복지 검색 · ④-2 대출 비교) | 자금 계산 엔진 · 복지/대출 데이터, 소비 분석 (서버 집계 · 화면), 배포 |
 
 ---
 
@@ -137,7 +144,7 @@ flowchart LR
 | 1주 | 09.28 – 10.02 | 요구사항 정의서 · WBS |
 | 2주 | 10.06 – 10.08 | 프로젝트 기획서 · 화면설계서 · 수집 데이터 보고서 |
 | 3주 | 10.12 – 10.16 | v5 기획 · DB 설계 · 화면 프로토타입 · **중간 발표 (10/16)** |
-| 4주 | 10.19 – 10.23 | 전처리 · DB 설계 완료 · ML 기준선 · Django 화면 초기 설정 · 라우터 · 챗봇 골격 |
+| 4주 | 10.19 – 10.23 | 전처리 · DB 설계 완료 · ML 기준선 · React 화면 · Django API 초기 설정 · 라우터 · 챗봇 골격 |
 | 5주 | 10.26 – 10.30 | (1차) 예산 설계 → 초안 조정 → 승인 · 평소 조정 · 거래 분류 · 챗봇 소비 분석 · 홈 · 머니 쿠션 |
 | 6주 | 11.02 – 11.06 | 1차 MVP 통합 점검 · 단일 LLM 비교 · (2차) 돌발 · 초과 감지 → 예산 조정 · 소비 분석 화면 · 알림 |
 | 7주 | 11.09 – 11.13 | (3차) 큰 지출 상담 · 통합 테스트 · 결함 수정 |
@@ -150,12 +157,20 @@ flowchart LR
 ```
 .
 ├── README.md
-├── requirements.txt             # Python 의존성 (Django · PostgreSQL · ML)
-├── backend/                     # Django 프로젝트 (화면 + 서버)
-│   ├── config/                  # 설정 · 주소(urls) · 공통 화면 도우미
-│   ├── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇
-│   ├── templates/               # 공통 틀(base.html) · 하단 탭
-│   └── static/                  # 공통 CSS · JS
+├── requirements.txt             # Python 의존성 (Django · DRF · PostgreSQL · ML)
+├── frontend/                    # React 앱 (화면)
+│   ├── package.json             # npm 의존성 (React · Vite · react-router · lucide-react)
+│   ├── vite.config.js           # /api 프록시 → Django
+│   └── src/
+│       ├── pages/               # 화면
+│       ├── popups/              # 팝업 (PopupProvider · Popup 틀)
+│       ├── components/          # 상단 바 · 하단 탭 · 아이콘 등 공통 부품
+│       ├── utils/               # 돈 표시 · API 받아오기(useApi)
+│       └── styles/              # 디자인 CSS
+├── backend/                     # Django 프로젝트 (API 서버)
+│   ├── config/                  # 설정 · 주소(urls · api_urls) · API 공통 도구
+│   ├── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇 (api.py · mock.py)
+│   ├── templates/ static/       # 기존 Django 화면 (React 이전 후 삭제 예정)
 ├── docs/                        # 개발 환경 · 환경변수 가이드
 └── 산출물/
     ├── 01_기획/                  # 요구사항 정의서 · WBS · 프로젝트 기획서
