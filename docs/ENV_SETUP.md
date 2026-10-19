@@ -47,7 +47,7 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `DJANGO_SECRET_KEY` | ✅ | (1-4에서 생성한 값) | Django 서명·세션 암호화 키. 팀원마다 각자 생성해도 됨 |
 | `DJANGO_DEBUG` | ✅ | `True` | 로컬 `True`, 배포 `False` |
 | `DJANGO_ALLOWED_HOSTS` | ✅ | `localhost,127.0.0.1` | 접속 허용 호스트. 쉼표로 구분 |
-| `DJANGO_CSRF_TRUSTED_ORIGINS` | 배포 시 | `https://도메인` | HTTPS 배포 주소. 로컬은 비워둠 |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | 배포 시 | `https://도메인` | HTTPS 배포 주소. 로컬은 비워둠 (DEBUG면 React 개발 서버 `localhost:5173`은 자동 허용) |
 | `POSTGRES_DB` | ✅ | `money_cushion` | DB 이름 |
 | `POSTGRES_USER` | ✅ | `money_cushion` | DB 사용자 |
 | `POSTGRES_PASSWORD` | ✅ | (각자 설정) | DB 비밀번호 |
@@ -58,9 +58,10 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 
 | 변수 | 발급처 | 설명 |
 |---|---|---|
+| `CODEF_ENV` | — | `sandbox` · `demo` · `product` 중 하나. 비우면 `demo` |
 | `CODEF_DEMO_ID` | codef.io > MY > 키관리 | 데모 버전 client_id |
 | `CODEF_DEMO_SECRET` | codef.io > MY > 키관리 | 데모 버전 client_secret |
-| `CODEF_CONNECTED_ID` | 계정 등록 API 응답 | 테스트용 은행 계정 연결 ID (개인별) |
+| `CODEF_CONNECTED_ID` | `python manage.py codef_connect` 결과 | 테스트용 은행 계정 연결 ID (개인별) |
 | `CODEF_PUBLIC_KEY` | CODEF 개발자센터 | 계정 비밀번호 RSA 암호화용 공개키 |
 | `DATA_GO_KR_SERVICE_KEY` | 공공데이터포털 | 상가(상권)정보 · 복지서비스 API 공통 인증키 (활용 신청은 API별로 따로) |
 

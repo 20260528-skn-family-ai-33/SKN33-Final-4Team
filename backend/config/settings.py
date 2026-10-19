@@ -27,6 +27,9 @@ SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]  # 비어 있으면 바로 에러�
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+if DEBUG:
+    # 로컬: React 개발 서버(Vite 5173)에서 프록시로 오는 저장 요청 허용
+    CSRF_TRUSTED_ORIGINS += ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 # ===== 앱 =====
@@ -113,3 +116,41 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # 로컬 개발: 메일은 실제로 보내지 않고 터미널에 출력
 EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+
+
+# ===== API (Django REST framework) 공통 규칙 =====
+# 자세한 약속은 docs/API_RULES.md
+REST_FRAMEWORK = {
+    # 로그인 방식: Django 세션(쿠키). React 와 같은 주소(프록시)로 붙어서 쿠키가 그대로 오간다
+    "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
+    # 지금은 로그인 없이 다 열어 둔다. users.User 를 만들면 IsAuthenticated 로 바꾼다
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # 보낼 때: 키를 camelCase 로 (living_used → livingUsed). 개발 중엔 브라우저로 열면 보기 좋은 화면도
+    "DEFAULT_RENDERER_CLASSES": ["config.api.CamelJSONRenderer"]
+    + (["rest_framework.renderers.BrowsableAPIRenderer"] if DEBUG else []),
+    # 받을 때: React 가 보낸 camelCase 키를 snake_case 로 (livingUsed → living_used)
+    "DEFAULT_PARSER_CLASSES": ["config.api.SnakeJSONParser"],
+    # 에러는 항상 {"error": {"code", "message", "fields"}} 한 모양으로
+    "EXCEPTION_HANDLER": "config.api.exception_handler",
+    # 날짜·시각: ISO 8601 (예: 2026-10-19, 2026-10-19T15:30:00+09:00)
+    "DATETIME_FORMAT": "iso-8601",
+    "DATE_FORMAT": "iso-8601",
+    "TIME_FORMAT": "iso-8601",
+}
+
+# 세션·CSRF 쿠키 (배포에서는 https 에서만 보내기)
+SESSION_COOKIE_AGE = 60 * 60 * 24 * 14   # 로그인 유지 2주
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_HTTPONLY = False             # React 가 csrftoken 쿠키를 읽어 X-CSRFToken 헤더로 보낸다
+
+
+# ===== CODEF (계좌·카드·대출 조회) =====
+# 키는 .env 에만. 은행 비밀번호는 어디에도 저장하지 않는다 (연결 후 connectedId 만 보관)
+CODEF = {
+    "ENV": (os.getenv("CODEF_ENV") or "demo").strip().lower(),   # sandbox · demo · product
+    "CLIENT_ID": os.getenv("CODEF_DEMO_ID", ""),
+    "CLIENT_SECRET": os.getenv("CODEF_DEMO_SECRET", ""),
+    "PUBLIC_KEY": os.getenv("CODEF_PUBLIC_KEY", ""),
+    "CONNECTED_ID": os.getenv("CODEF_CONNECTED_ID", ""),  # 개발용 내 연결 ID (회원별 저장은 DB 연결 후)
+}

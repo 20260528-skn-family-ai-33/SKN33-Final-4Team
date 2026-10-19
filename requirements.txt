@@ -7,6 +7,8 @@ Django==5.2.18
 python-dotenv==1.2.4
 # API: 리액트에 JSON 데이터 주기 (/api/...)
 djangorestframework==3.18.3
+# CODEF 계좌·거래 조회 (backend/finance/codef.py)
+easycodefpy==1.0.1
 
 # ===== Database =====
 # PostgreSQL 드라이버; binary extra로 libpq·컴파일러 설치 없이 사용

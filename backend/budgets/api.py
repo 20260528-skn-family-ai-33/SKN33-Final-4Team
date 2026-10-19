@@ -6,8 +6,6 @@ from django.urls import reverse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from config.api import camel
-
 from . import mock
 
 
@@ -19,17 +17,17 @@ def _must_pay():
 @api_view(["GET"])
 def home(request):
     """GET /api/home/ — 홈 화면 데이터"""
-    return Response(camel({
+    return Response({
         "period": mock.PERIOD,
         "home": mock.HOME,
         "must_pay": _must_pay(),
-    }))
+    })
 
 
 @api_view(["GET"])
 def budget(request):
     """GET /api/budgets/ — 카테고리 예산 화면 데이터"""
-    return Response(camel({
+    return Response({
         "period": mock.PERIOD,
         "monthly": mock.MONTHLY,
         "month_split": mock.MONTH_SPLIT,
@@ -37,10 +35,10 @@ def budget(request):
         "living_used": mock.HOME["living_used"],
         "living_budget": mock.HOME["living_budget"],
         "unclassified": mock.UNCLASSIFIED,
-    }))
+    })
 
 
 @api_view(["GET"])
 def cushion(request):
     """GET /api/budgets/cushion/ — 머니 쿠션 화면 데이터"""
-    return Response(camel({"cushion": mock.CUSHION}))
+    return Response({"cushion": mock.CUSHION})

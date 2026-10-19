@@ -235,6 +235,16 @@ npm run dev
 ## CODEF (선택)
 
 - 키는 `.env`의 `CODEF_DEMO_ID` · `CODEF_DEMO_SECRET` · `CODEF_PUBLIC_KEY` · `CODEF_CONNECTED_ID`에 넣는다.
+- 확인은 `backend`에서 명령어로 한다 (코드: `backend/finance/codef.py`). 아무것도 저장하지 않는다.
+
+| 하고 싶은 것 | 명령어 |
+|---|---|
+| 은행 연결해서 `CODEF_CONNECTED_ID` 받기 (처음 한 번) | `python manage.py codef_connect` (국민은 `--org 0004`) |
+| 키 확인 + 보유 계좌 보기 | `python manage.py codef_check` |
+| 끝 4자리 1234 계좌의 최근 30일 거래 5건 | `python manage.py codef_check --tx 1234` |
+
+- 은행 코드: 신한 `0088` · 국민 `0004` · 우리 `0020` · 하나 `0081` · 농협 `0011`
+- 거래 설명에 개인정보가 있을 수 있으니 **터미널 화면을 그대로 공유하지 않는다.**
 - 키는 단톡방이 아니라 **개인 메시지**로 전달받는다.
 - 데모 키 하나를 팀이 같이 쓰면 **일일 호출 한도도 같이 쓴다.** 응답은 JSON으로 저장해두고 개발할 때는 저장본을 쓴다.
 - 실제 거래내역이 담긴 응답 파일은 **커밋하지 않는다.**
