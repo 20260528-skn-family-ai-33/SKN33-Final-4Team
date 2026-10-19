@@ -1,5 +1,5 @@
 # Python 3.12; Django 5.2 LTS
-# 백엔드·화면 모두 Django 템플릿으로 구현 (React 미사용)
+# 화면: Django 템플릿 (React 이전은 feat/react-trial 브랜치에서 실험 중)
 
 # ===== Web =====
 Django==5.2.18
@@ -7,6 +7,8 @@ Django==5.2.18
 django-htmx==1.29.0
 # .env 파일에서 환경변수 로드 (docs/ENV_SETUP.md 참고)
 python-dotenv==1.2.4
+# API: 리액트에 JSON 데이터 주기 (/api/...)
+djangorestframework==3.18.3
 
 # ===== Database =====
 # PostgreSQL 드라이버; binary extra로 libpq·컴파일러 설치 없이 사용
