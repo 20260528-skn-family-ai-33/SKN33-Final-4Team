@@ -50,13 +50,11 @@
       <p class="mc-pend-why">{{ tx.why }} 어디에 쓴 돈인가요?</p>
       <div class="mc-pend-pick">
         {% for pick in tx.picks %}<button type="button">{{ pick }}</button>{% endfor %}
-        {# 5단계 팝업: 어떤 카테고리인가요? (txPick) #}
-        <button type="button">다른 카테고리</button>
+        <button type="button" hx-get="{% url 'finance:pop_tx_pick' tx.id %}" hx-target="#mc-layer">다른 카테고리</button>
       </div>
     </div>
     {% else %}
-    {# 5단계 팝업: 거래 상세 (transaction) #}
-    <button type="button" class="mc-listrow">
+    <button type="button" class="mc-listrow" hx-get="{% url 'finance:pop_transaction' tx.id %}" hx-target="#mc-layer">
       <span class="mc-tile"><i data-lucide="{{ tx.icon }}" aria-hidden="true"></i></span>
       <span class="mc-grow"><strong>{{ tx.name }}</strong><span class="mc-muted">{{ tx.cat }}</span></span>
       <span class="mc-right">{{ tx.amount|won }} <span class="mc-muted">›</span></span>
@@ -68,8 +66,7 @@
 <div class="mc-card"><p class="mc-muted" style="margin:0">이 카테고리의 거래가 없어요.</p></div>
 {% endfor %}
 
-{# 5단계 팝업: 거래 유형 필터 (filter) #}
-<button type="button" class="mc-link">필터 · 거래 유형</button>
+<button type="button" class="mc-link" hx-get="{% url 'finance:pop_filter' %}" hx-target="#mc-layer">필터 · 거래 유형</button>
 {% endblock %}
 
 {% block nav %}{% include "_tabbar.html" with active="txs" %}{% endblock %}

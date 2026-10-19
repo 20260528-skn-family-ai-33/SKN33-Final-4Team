@@ -13,8 +13,7 @@
   <div class="mc-row"><h2>한 달 나눠보기</h2><span class="mc-muted">월 {{ monthly|won }}</span></div>
   {% for s in split %}
     {% if s.popup %}
-    {# 5단계 팝업: 비정기지출 준비금 (irregular) #}
-    <button type="button" class="mc-keyvalue mc-kv-btn"><span>{{ s.name }} ›</span><strong>{{ s.amount|won }}</strong></button>
+    <button type="button" class="mc-keyvalue mc-kv-btn" hx-get="{% url 'budgets:pop_irregular' %}" hx-target="#mc-layer"><span>{{ s.name }} ›</span><strong>{{ s.amount|won }}</strong></button>
     {% else %}
     <div class="mc-keyvalue"><span>{{ s.name }}</span><strong>{{ s.amount|won }}</strong></div>
     {% endif %}
@@ -27,8 +26,7 @@
   <div class="mc-catuse">
     <div class="mc-row">
       <span class="mc-catname"><span class="mc-cat-ic"><i data-lucide="{{ c.icon }}" aria-hidden="true"></i></span>{{ c.name }}</span>
-      {# 5단계 팝업: 자물쇠 (catLock) #}
-      <button type="button" class="mc-lockt" aria-pressed="{{ c.locked|yesno:'true,false' }}" aria-label="{{ c.name }} 자물쇠">
+      <button type="button" class="mc-lockt" hx-get="{% url 'budgets:pop_cat_lock' %}" hx-target="#mc-layer" aria-pressed="{{ c.locked|yesno:'true,false' }}" aria-label="{{ c.name }} 자물쇠">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>
       </button>
     </div>

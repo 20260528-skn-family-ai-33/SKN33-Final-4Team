@@ -13,3 +13,10 @@ def screen(template, next_url=None):
             return redirect(next_url)
         return render(request, template)
     return view
+
+
+def popup(template):
+    """팝업 조각(_이름.html)만 돌려준다. 버튼에 hx-get 으로 불러서 #mc-layer 에 띄운다."""
+    def view(request, **kwargs):
+        return render(request, template, kwargs)
+    return view

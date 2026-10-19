@@ -56,6 +56,13 @@
   document.addEventListener("click", (e) => {
     if (e.target.closest(".mc-backdrop, [data-close]")) closePopup();
   });
+  // 팝업 안의 저장 버튼: 지금은 저장하지 않고 닫기만 한다 (DB 연결 후 바꾼다)
+  document.addEventListener("submit", (e) => {
+    if (e.target.closest("#mc-layer")) {
+      e.preventDefault();
+      closePopup();
+    }
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") closePopup();
   });

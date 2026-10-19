@@ -16,8 +16,7 @@
   <div class="mc-row"><span class="mc-muted">목표 {{ c.goal_label }} · {{ c.goal|won }}</span><strong>{{ c.pct }}%</strong></div>
   <div class="mc-keyvalue"><span>보호 하한</span><strong>{{ c.floor|won }}</strong></div>
   <div class="mc-keyvalue"><span>예산 조정 시 사용</span><strong>{{ c.use_rule }}</strong></div>
-  {# 5단계 팝업: 쿠션 설정 (cushion) #}
-  <button type="button" class="mc-secondary">쿠션 설정 변경</button>
+  <button type="button" class="mc-secondary" hx-get="{% url 'budgets:pop_cushion' %}" hx-target="#mc-layer">쿠션 설정 변경</button>
 </div>
 
 <div class="mc-card">

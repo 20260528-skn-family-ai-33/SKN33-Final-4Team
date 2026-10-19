@@ -1,3 +1,4 @@
+from django.http import Http404
 from django.shortcuts import render
 
 from . import mock
@@ -31,3 +32,24 @@ def transactions(request):
         "pending_label": PENDING,
         "days": days,
     })
+
+
+def _find_tx(tx_id):
+    """mock 거래 목록에서 id로 거래와 날짜를 찾는다"""
+    for day in mock.TX_DAYS:
+        for tx in day["items"]:
+            if tx["id"] == tx_id:
+                return tx, day["date"]
+    raise Http404("거래를 찾을 수 없어요")
+
+
+def transaction_popup(request, tx_id):
+    """팝업: 거래 상세"""
+    tx, date = _find_tx(tx_id)
+    return render(request, "finance/_transaction.html", {"tx": tx, "date": date, "categories": mock.CATEGORIES})
+
+
+def tx_pick_popup(request, tx_id):
+    """팝업: 어떤 카테고리인가요?"""
+    tx, _ = _find_tx(tx_id)
+    return render(request, "finance/_tx_pick.html", {"tx": tx, "categories": mock.CATEGORIES})

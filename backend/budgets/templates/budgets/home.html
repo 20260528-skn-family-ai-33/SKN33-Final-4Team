@@ -12,8 +12,7 @@
   <div class="mc-home-heading-right">
     <span class="mc-badge">월급날 D−{{ period.dday }}</span>
     <p class="mc-home-updated">{{ period.updated }}<br>
-      {# 5단계 팝업: 쓸 수 있는 돈의 계산 (calc) #}
-      <button type="button" class="mc-link">계산 근거</button>
+      <button type="button" class="mc-link" hx-get="{% url 'budgets:pop_calc' %}" hx-target="#mc-layer">계산 근거</button>
     </p>
   </div>
 </div>
@@ -60,8 +59,8 @@
 <div class="mc-row mc-section"><h2>꼭 나갈 돈</h2></div>
 <div class="mc-card">
   {% for p in must_pay %}
-  {# 카드 청구서는 5단계 팝업(연결 상세), 고정지출은 고정지출 확인 화면으로 #}
-  <button type="button" class="mc-listrow"{% if p.link %} data-href="{% url p.link %}"{% else %} data-todo="5단계 팝업: acctDetail"{% endif %}>
+  {# 카드 청구서는 연결 상세 팝업, 고정지출은 고정지출 확인 화면으로 #}
+  <button type="button" class="mc-listrow"{% if p.link %} data-href="{% url p.link %}"{% else %} hx-get="{% url 'finance:pop_acct_card' %}" hx-target="#mc-layer"{% endif %}>
     <span class="mc-tile"><i data-lucide="{{ p.icon }}" aria-hidden="true"></i></span>
     <span class="mc-grow"><strong>{{ p.name }}</strong><span class="mc-muted">{{ p.sub }}</span></span>
     <span class="mc-right">{{ p.amount|won }} <span class="mc-muted">›</span></span>
