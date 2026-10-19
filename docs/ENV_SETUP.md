@@ -2,6 +2,8 @@
 
 머니쿠션 로컬 개발 환경을 준비하고 `.env`를 설정하는 방법을 정리한다.
 
+> 처음 세팅한다면 OS별 단계 가이드 [`LOCAL_SETUP.md`](LOCAL_SETUP.md)부터 따라 한다.
+
 | 항목 | 기준 |
 |---|---|
 | Python | **3.12** |
@@ -56,10 +58,10 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 
 | 변수 | 발급처 | 설명 |
 |---|---|---|
-| `CODEF_CLIENT_ID` | CODEF 개발자센터 | 금융 거래 API 클라이언트 ID |
-| `CODEF_CLIENT_SECRET` | CODEF 개발자센터 | 클라이언트 시크릿 |
+| `CODEF_DEMO_ID` | codef.io > MY > 키관리 | 데모 버전 client_id |
+| `CODEF_DEMO_SECRET` | codef.io > MY > 키관리 | 데모 버전 client_secret |
+| `CODEF_CONNECTED_ID` | 계정 등록 API 응답 | 테스트용 은행 계정 연결 ID (개인별) |
 | `CODEF_PUBLIC_KEY` | CODEF 개발자센터 | 계정 비밀번호 RSA 암호화용 공개키 |
-| `CODEF_ENV` | — | `sandbox`(샌드박스) · `demo`(데모) · `product`(정식) 중 사용 환경 |
 | `DATA_GO_KR_SERVICE_KEY` | 공공데이터포털 | 상가(상권)정보 · 복지서비스 API 공통 인증키 (활용 신청은 API별로 따로) |
 
 ### 제공자 확정 후 추가
@@ -103,7 +105,7 @@ psql postgres -c "CREATE DATABASE money_cushion OWNER money_cushion;"
 
 ## 4. Django 설정에서 읽기
 
-`settings.py` 예시. `manage.py`가 프로젝트 루트에 있고 `settings.py`가 그 한 단계 아래 폴더에 있는 구조를 기준으로 한다.
+실제 설정은 `backend/config/settings.py`. Django는 `backend/` 아래에 있고 `.env`는 프로젝트 루트에 있으므로 `BASE_DIR.parent`에서 읽는다.
 
 ```python
 import os
@@ -112,7 +114,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR.parent / ".env")  # BASE_DIR = backend/
 
 
 def env_list(name: str) -> list[str]:
