@@ -1,4 +1,4 @@
-// 카테고리 예산 (장고: budgets/templates/budgets/budget.html)
+// 카테고리 예산
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'

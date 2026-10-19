@@ -1,4 +1,4 @@
-// 홈 (장고: budgets/templates/budgets/home.html)
+// 홈
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
@@ -77,7 +77,7 @@ export default function HomePage() {
         <div className="mc-fc mc-fc-blue"><span>여윳돈</span><strong>{won(h.spare)}</strong></div>
       </div>
 
-      {/* {조건 && 화면} = 조건이 참일 때만 보여주기 (장고 {% if %}) */}
+      {/* {조건 && 화면} = 조건이 참일 때만 보여주기 */}
       {h.pendingCount > 0 && (
         <button type="button" className="mc-pend-banner" onClick={() => navigate(pendingUrl)}>
           <span className="mc-pend-dot">{h.pendingCount}</span>
@@ -91,7 +91,7 @@ export default function HomePage() {
 
       <div className="mc-row mc-section"><h2>꼭 나갈 돈</h2></div>
       <div className="mc-card">
-        {/* 목록.map(...) = 하나씩 꺼내서 그리기 (장고 {% for %}). key 는 항목마다 다른 값 */}
+        {/* 목록.map(...) = 하나씩 꺼내서 그리기. key 는 항목마다 다른 값 */}
         {MUST_PAY.map((p) => (
           <button
             type="button"

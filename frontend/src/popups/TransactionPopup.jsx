@@ -1,4 +1,4 @@
-// 팝업: 거래 상세 (장고 finance/_transaction.html) — 거래 목록에서 거래 한 줄 누르기
+// 팝업: 거래 상세 — 거래 목록에서 거래 한 줄 누르기
 // props: tx = 누른 거래, date = 그 거래의 날짜, categories = 카테고리 목록
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'

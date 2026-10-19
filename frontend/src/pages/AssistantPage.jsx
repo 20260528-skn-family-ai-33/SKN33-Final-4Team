@@ -1,4 +1,4 @@
-// 통합 챗봇 (장고: chat/templates/chat/assistant.html). 지금은 첫 화면(선택지 3개)만
+// 통합 챗봇 — 지금은 첫 화면(선택지 3개)만
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 

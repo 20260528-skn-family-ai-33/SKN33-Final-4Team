@@ -1,19 +1,13 @@
 """
 머니쿠션 주소 목록 (안내 데스크)
-- 각 앱의 urls.py 를 여기에 연결한다.
+- 화면은 React(frontend/)가 그린다. 장고는 데이터만 준다.
+- /api/...  : React 가 데이터를 받아 가는 곳. 목록은 config/api_urls.py, 규칙은 docs/API_RULES.md
+- /admin/   : 장고 관리자 화면 (DB 확인용)
 """
 from django.contrib import admin
 from django.urls import include, path
 
-from budgets import views as budget_views
-
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("", budget_views.home, name="home"),
-    path("", include("users.urls")),
-    path("budgets/", include("budgets.urls")),
-    path("finance/", include("finance.urls")),
-    path("chat/", include("chat.urls")),
-    # API: 리액트가 데이터(JSON)를 받아 가는 주소. 목록은 config/api_urls.py
     path("api/", include("config.api_urls")),
 ]

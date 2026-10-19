@@ -1,4 +1,4 @@
-// 팝업: 쓸 수 있는 돈의 계산 (장고 budgets/_calc.html) — 홈 "계산 근거"
+// 팝업: 쓸 수 있는 돈의 계산 — 홈 "계산 근거"
 import Popup from './Popup.jsx'
 
 const ROWS = [

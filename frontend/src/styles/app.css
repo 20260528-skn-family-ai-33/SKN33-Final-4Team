@@ -1,8 +1,8 @@
 /*
  * 머니쿠션 공통 디자인 (MVP 모바일 프로토타입에서 옮김)
  * 원본: 머니쿠션_MVP_프로토타입.html 의 <style> 블록 (2026-10-19)
- * - 모든 규칙이 #mc-new-preview 아래에 걸려 있어서 base.html 최상위 div id를 그대로 쓴다.
- * - 장고용 틀(화면 크기·탭 링크 등) 보정은 shell.css 에서 한다. 이 파일은 되도록 원본 그대로 둔다.
+ * - 모든 규칙이 #mc-new-preview 아래에 걸려 있어서 components/Layout.jsx 최상위 div id를 그대로 쓴다.
+ * - 모바일 웹 틀(화면 크기·탭 링크 등) 보정은 shell.css 에서 한다. 이 파일은 되도록 원본 그대로 둔다.
  */
 #mc-new-preview .mc-protected-values{margin-top:10px}
 #mc-new-preview .mc-protected-item{padding:15px 0;border-bottom:1px solid var(--mc-line)}

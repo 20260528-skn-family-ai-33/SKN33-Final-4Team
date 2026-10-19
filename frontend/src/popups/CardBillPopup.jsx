@@ -1,4 +1,4 @@
-// 팝업: 연결 상세 · 신한카드 (장고 finance/_acct_card.html) — 홈 "꼭 나갈 돈"의 카드 청구서
+// 팝업: 연결 상세 · 신한카드 — 홈 "꼭 나갈 돈"의 카드 청구서
 import { RefreshCw, Unlink } from 'lucide-react'
 import Popup from './Popup.jsx'
 

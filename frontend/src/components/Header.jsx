@@ -1,4 +1,4 @@
-// 상단 바 (장고 base.html 의 <header id="mc-header">)
+// 상단 바: 뒤로 가기 + 화면 제목 + (탭 화면이면) 마이 아이콘
 import { useNavigate } from 'react-router'
 import { ChevronLeft, UserRound } from 'lucide-react'
 import { PATHS } from '../routes.js'
