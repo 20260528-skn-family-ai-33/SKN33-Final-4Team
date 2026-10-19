@@ -1,10 +1,21 @@
-# Python 3.12+; Django 5.2 LTS
+# Python 3.12; Django 5.2 LTS
+# 백엔드·화면 모두 Django 템플릿으로 구현 (React 미사용)
+
+# ===== Web =====
 Django==5.2.18
-# REST API for the React frontend
-djangorestframework==3.18.3
-# Allow explicitly configured frontend origins
-django-cors-headers==4.9.0
-# Load local environment variables when configured in Django settings
+# 템플릿에서 HTMX 부분 갱신 요청 처리 (request.htmx)
+django-htmx==1.29.0
+# .env 파일에서 환경변수 로드 (docs/ENV_SETUP.md 참고)
 python-dotenv==1.2.4
-# PostgreSQL driver; binary extra avoids a local compiler/libpq setup
+
+# ===== Database =====
+# PostgreSQL 드라이버; binary extra로 libpq·컴파일러 설치 없이 사용
 psycopg[binary]==3.3.6
+
+# ===== ML =====
+# 거래 분류 · 카테고리 비율 예측 · 또래 비교 회귀
+numpy==2.5.4
+pandas==3.0.6
+scikit-learn==1.9.1
+
+# LLM·에이전트, AWS(S3·SQS), 외부 API 연동 패키지는 구현 방식 확정 후 추가
