@@ -1,0 +1,12 @@
+{# 하단 탭. 사용법: {% include "_tabbar.html" with active="home" %} #}
+<nav id="mc-nav" aria-label="주 메뉴">
+  <a href="{% url 'finance:txs' %}" {% if active == "txs" %}aria-current="page"{% endif %}><i data-lucide="receipt" aria-hidden="true"></i><span>거래</span></a>
+  <a href="{% url 'budgets:budget' %}" {% if active == "budget" %}aria-current="page"{% endif %}><i data-lucide="wallet" aria-hidden="true"></i><span>예산</span></a>
+  <div class="mc-center">
+    <a class="mc-home" href="{% url 'home' %}" aria-label="홈"><i data-lucide="house" aria-hidden="true"></i></a>
+    {# 5단계 팝업: 돈관리 메뉴 (menu) #}
+    <button type="button" class="mc-expand">돈관리 ∧</button>
+  </div>
+  <a href="{% url 'budgets:fund' %}" {% if active == "fund" %}aria-current="page"{% endif %}><i data-lucide="shield" aria-hidden="true"></i><span>쿠션</span></a>
+  <a href="{% url 'chat:assistant' %}" {% if active == "assistant" %}aria-current="page"{% endif %}><i data-lucide="message-circle" aria-hidden="true"></i><span>챗봇</span></a>
+</nav>

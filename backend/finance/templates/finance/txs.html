@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% load money %}
+{% block title %}거래 내역 · 머니쿠션{% endblock %}
+{% block back %}{% endblock %}
+{% block header_title %}거래 내역{% endblock %}
+{% block header_right %}{% include "_header_my.html" %}{% endblock %}
+
+{% block content %}
+<div class="mc-sumbar">
+  {# 달 이동은 DB 연결 후 #}
+  <button type="button" class="mc-icon" aria-label="이전 달">‹</button>
+  <strong class="mc-sumbar-m">{{ month.label }}</strong>
+  <button type="button" class="mc-icon" aria-label="다음 달">›</button>
+  <span class="mc-sumbar-v"><b>{{ month.used|won }}</b><span class="mc-muted"> / {{ month.budget_label }} · {{ month.pct }}%</span></span>
+</div>
+
+{% if pending_count %}
+<button type="button" class="mc-pend-banner" data-href="?category={{ pending_label }}" aria-pressed="{% if selected == pending_label %}true{% else %}false{% endif %}">
+  <span class="mc-pend-dot">{{ pending_count }}</span>
+  <span class="mc-grow"><strong>카테고리를 확인해 주세요</strong><small>AI가 확신하지 못한 거래 {{ pending_count }}건 · 확인하면 소비 분석에 반영돼요</small></span>
+  <span class="mc-muted">›</span>
+</button>
+{% endif %}
+
+{# 카테고리 고르기: 누르면 ?category=이름 으로 다시 불러온다 #}
+<div class="mc-chipbar mc-cat-filter" aria-label="카테고리 필터">
+  <button type="button" class="mc-chip-warn" data-href="?category={{ pending_label }}" aria-pressed="{% if selected == pending_label %}true{% else %}false{% endif %}">확인 필요 {{ pending_count }}</button>
+  <button type="button" data-href="?category=전체" aria-pressed="{% if selected == '전체' %}true{% else %}false{% endif %}">전체</button>
+  {% for cat in categories %}
+  <button type="button" data-href="?category={{ cat }}" aria-pressed="{% if selected == cat %}true{% else %}false{% endif %}">{{ cat }}</button>
+  {% endfor %}
+</div>
+
+<div class="mc-row mc-tx-sum">
+  <span class="mc-muted">최근 거래 {{ recent.count }}건 · <strong>{{ recent.total|won }}</strong></span>
+  {# 달력 보기는 나중에 #}
+  <div class="mc-tabs">
+    <button type="button" aria-pressed="true">리스트</button>
+    <button type="button" aria-pressed="false">달력</button>
+  </div>
+</div>
+
+{% for day in days %}
+<div class="mc-card mc-tx-day">
+  <div class="mc-row"><p class="mc-muted" style="margin:0">{{ day.date }}</p><span class="mc-muted">{{ day.total|won }}</span></div>
+  {% for tx in day.items %}
+    {% if tx.kind == "pending" %}
+    <div class="mc-tx-pend">
+      <div class="mc-row"><span class="mc-grow"><strong>{{ tx.name }}</strong><span class="mc-pend-badge">카테고리 확인 필요</span></span><strong>{{ tx.amount|won }}</strong></div>
+      <p class="mc-pend-why">{{ tx.why }} 어디에 쓴 돈인가요?</p>
+      <div class="mc-pend-pick">
+        {% for pick in tx.picks %}<button type="button">{{ pick }}</button>{% endfor %}
+        {# 5단계 팝업: 어떤 카테고리인가요? (txPick) #}
+        <button type="button">다른 카테고리</button>
+      </div>
+    </div>
+    {% else %}
+    {# 5단계 팝업: 거래 상세 (transaction) #}
+    <button type="button" class="mc-listrow">
+      <span class="mc-tile"><i data-lucide="{{ tx.icon }}" aria-hidden="true"></i></span>
+      <span class="mc-grow"><strong>{{ tx.name }}</strong><span class="mc-muted">{{ tx.cat }}</span></span>
+      <span class="mc-right">{{ tx.amount|won }} <span class="mc-muted">›</span></span>
+    </button>
+    {% endif %}
+  {% endfor %}
+</div>
+{% empty %}
+<div class="mc-card"><p class="mc-muted" style="margin:0">이 카테고리의 거래가 없어요.</p></div>
+{% endfor %}
+
+{# 5단계 팝업: 거래 유형 필터 (filter) #}
+<button type="button" class="mc-link">필터 · 거래 유형</button>
+{% endblock %}
+
+{% block nav %}{% include "_tabbar.html" with active="txs" %}{% endblock %}

@@ -1,0 +1,42 @@
+/*
+ * 장고용 틀 보정 (app.css 뒤에 불러온다)
+ * 프로토타입의 미리보기 도구(휴대폰 크기 선택 등)를 없애고, 실제 모바일 웹처럼 보이게 한다.
+ */
+:root { color-scheme: light; }
+html, body { margin: 0; padding: 0; background: var(--shell-bg, #EEF2F8); }
+
+/* 미리보기용 2단 배치 해제 */
+html body #mc-new-preview { display: block; max-width: none; margin: 0; padding: 0; }
+html body #mc-new-preview .mc-preview-tools { display: none; }
+html body #mc-new-preview .mc-preview-stage { display: flex; justify-content: center; padding: 0; overflow: visible; }
+
+/* 휴대폰: 화면 전체 */
+html body #mc-new-preview .mc-device {
+  width: 100%; max-width: 430px; height: 100vh; height: 100dvh;
+  margin: 0 auto; border: 0; border-radius: 0; box-shadow: none;
+}
+
+/* PC에서 열면 가운데 휴대폰 크기 틀로 보여주기 */
+@media (min-width: 600px) {
+  html body #mc-new-preview .mc-device {
+    width: 393px; height: min(852px, calc(100dvh - 48px));
+    margin: 24px auto; border: 1px solid var(--mc-line); border-radius: 28px;
+    box-shadow: 0 16px 60px #26365a16;
+  }
+}
+
+/* 하단 탭: 프로토타입은 button, 장고는 페이지 이동이라 a 태그 */
+html body #mc-new-preview #mc-nav > a {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; min-height: 44px; padding: 6px 0;
+  font-size: 11px; color: var(--mc-nav-off, var(--mc-sub)); text-decoration: none;
+}
+html body #mc-new-preview #mc-nav > a[aria-current=page] { color: var(--mc-brand); font-weight: 700; }
+html body #mc-new-preview a.mc-home { text-decoration: none; }
+
+/* 팝업 레이어가 비어 있으면 아무것도 안 보이게 */
+html body #mc-new-preview #mc-layer:empty { display: none; }
+
+/* 하단 '가상 데이터' 문구를 뺐으니, 그 자리(36px)만큼 띄워 두었던 시트를 바닥에 붙인다 */
+html body #mc-new-preview .mc-sheet { bottom: 0; max-height: calc(100% - 60px); }
+html body #mc-new-preview .mc-sheet:has(.mc-chat) { height: calc(100% - 60px); }

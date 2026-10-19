@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% load money %}
+{% block back %}{% endblock %}
+{% block header_right %}{% include "_header_my.html" %}{% endblock %}
+
+{% block content %}
+<div class="mc-home-heading">
+  <div class="mc-home-heading-left">
+    <div class="mc-eyebrow">{{ period.label }} · 이번 급여 주기</div>
+    <h2>오늘도 내 돈에 여유를</h2>
+  </div>
+  <div class="mc-home-heading-right">
+    <span class="mc-badge">월급날 D−{{ period.dday }}</span>
+    <p class="mc-home-updated">{{ period.updated }}<br>
+      {# 5단계 팝업: 쓸 수 있는 돈의 계산 (calc) #}
+      <button type="button" class="mc-link">계산 근거</button>
+    </p>
+  </div>
+</div>
+
+<div class="mc-card mc-bal">
+  <div class="mc-row">
+    <span class="mc-muted">입출금 계좌 잔액 총액</span>
+    {# 4단계: 연결 관리 #}
+    <button type="button" class="mc-link">계좌 {{ h.account_count }}개 ›</button>
+  </div>
+  <div class="mc-money mc-bal-n">{{ h.balance_total|won }}</div>
+  <div class="mc-row mc-bal-cu">
+    <span class="mc-muted">머니 쿠션 확보</span>
+    <span><strong>{{ h.cushion_now|won }}</strong> <span class="mc-muted">/ {{ h.cushion_goal|won }}</span></span>
+  </div>
+  <div class="mc-bar"><span style="width:{{ h.cushion_bar }}%"></span></div>
+</div>
+
+<div class="mc-hero mc-budget-hero">
+  <div class="mc-row">
+    <span class="mc-hero-title">이번 주기 생활비 <em class="mc-use-badge">{{ h.living_pct }}% 사용</em></span>
+    <button type="button" class="mc-link" data-href="{% url 'finance:txs' %}">거래 보기 ›</button>
+  </div>
+  <div class="mc-budget-amount"><strong>{{ h.living_used|comma }}<small>원</small></strong><span>/ {{ h.living_budget|won }}</span></div>
+  <div class="mc-bar" role="progressbar" aria-label="이번 주기 생활비 사용률" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ h.living_pct }}"><span style="width:{{ h.living_pct }}%"></span></div>
+  <div class="mc-row mc-budget-remaining">
+    <span>남은 생활비 <strong>{{ h.living_left|won }}</strong></span>
+    <button type="button" class="mc-link" data-href="{% url 'chat:assistant' %}">예산 조정</button>
+  </div>
+</div>
+
+<div class="mc-future-cards">
+  <div class="mc-fc mc-fc-lime"><span>하루 생활비</span><strong>{{ h.daily|won }}</strong></div>
+  <div class="mc-fc mc-fc-blue"><span>여윳돈</span><strong>{{ h.spare|won }}</strong></div>
+</div>
+
+{% if h.pending_count %}
+<button type="button" class="mc-pend-banner" data-href="{% url 'finance:txs' %}?category=확인 필요">
+  <span class="mc-pend-dot">{{ h.pending_count }}</span>
+  <span class="mc-grow"><strong>카테고리를 확인해 주세요</strong><small>AI가 확신하지 못한 거래 {{ h.pending_count }}건</small></span>
+  <span class="mc-muted">›</span>
+</button>
+{% endif %}
+
+<div class="mc-row mc-section"><h2>꼭 나갈 돈</h2></div>
+<div class="mc-card">
+  {% for p in must_pay %}
+  {# 4단계: 카드는 연결 상세 팝업, 고정지출은 고정지출 확인 화면 #}
+  <button type="button" class="mc-listrow">
+    <span class="mc-tile"><i data-lucide="{{ p.icon }}" aria-hidden="true"></i></span>
+    <span class="mc-grow"><strong>{{ p.name }}</strong><span class="mc-muted">{{ p.sub }}</span></span>
+    <span class="mc-right">{{ p.amount|won }} <span class="mc-muted">›</span></span>
+  </button>
+  {% endfor %}
+</div>
+
+<div class="mc-home-action">
+  <button type="button" class="mc-action" data-href="{% url 'chat:assistant' %}"><i data-lucide="message-circle" aria-hidden="true"></i> 챗봇에게 내 소비 물어보기</button>
+</div>
+{% endblock %}
+
+{% block nav %}{% include "_tabbar.html" with active="home" %}{% endblock %}

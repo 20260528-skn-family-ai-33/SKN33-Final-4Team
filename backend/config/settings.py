@@ -37,6 +37,11 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # 머니쿠션 앱
+    "users",
+    "finance",
+    "budgets",
+    "chat",
 ]
 
 MIDDLEWARE = [
@@ -54,7 +59,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],  # 공통 틀(base.html)과 팝업 조각
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -100,6 +105,7 @@ USE_TZ = True
 
 # ===== 정적 파일 =====
 STATIC_URL = "static/"
+STATICFILES_DIRS = [BASE_DIR / "static"]  # 공통 CSS·JS
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
