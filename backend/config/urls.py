@@ -14,4 +14,6 @@ urlpatterns = [
     path("budgets/", include("budgets.urls")),
     path("finance/", include("finance.urls")),
     path("chat/", include("chat.urls")),
+    # API: 리액트가 데이터(JSON)를 받아 가는 주소. 목록은 config/api_urls.py
+    path("api/", include("config.api_urls")),
 ]

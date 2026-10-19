@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # API (리액트에 JSON 데이터 주기)
+    "rest_framework",
     # 머니쿠션 앱
     "users",
     "finance",
