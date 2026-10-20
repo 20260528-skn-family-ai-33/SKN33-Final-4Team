@@ -5,7 +5,10 @@ import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { usePicked } from '../utils/usePicked.js'
 import { PATHS } from '../routes.js'
-import { BANKS, CARDS, NOT_SUPPORTED } from '../utils/institutions.js'
+import { BANKS, CARDS, EXTRA, NOT_SUPPORTED } from '../utils/institutions.js'
+import { usePopup } from '../popups/context.js'
+import TermsPopup from '../popups/TermsPopup.jsx'
+import { TERMS } from '../popups/termsText.js'
 
 const LOAN_ANSWERS = ['있어요', '없어요', '나중에 확인']
 
@@ -43,15 +46,31 @@ export default function ConnectPage() {
   const [hasLoan, setHasLoan] = useState(null)
   const banks = usePicked(['신한은행', '국민은행'])
   const cards = usePicked(['신한카드'])
+  const { openPopup } = usePopup()
+  const [consent, setConsent] = useState(false)
+  const [error, setError] = useState('')
+  const doc = TERMS.finance
+  // 팝업 안 "동의하고 닫기"를 누르면 체크된다
+  const openConsent = () => openPopup(<TermsPopup kind="finance" onAgree={() => { setConsent(true); setError('') }} />)
+
+  const notes = [...BANKS, ...CARDS]
+    .filter((x) => (banks.has(x.name) || cards.has(x.name)) && (EXTRA[x.name]?.note || !x.idLogin))
+    .map((x) => [x.name, x.idLogin ? EXTRA[x.name].note : '공동인증서로만 연결돼요. (공동인증서 로그인은 준비 중)'])
+
+  const next = () => {
+    if (banks.list.length === 0) return setError('연결할 은행을 1곳 이상 골라 주세요.')
+    if (!consent) return setError('금융 정보 조회에 동의해 주세요.')
+    navigate(PATHS.connectAuth, {
+      // 고른 기관을 다음 화면(기관 로그인)으로 넘긴다. 화면 순서대로
+      state: { banks: BANKS.filter((b) => banks.has(b.name)).map((b) => b.name), cards: CARDS.filter((c) => cards.has(c.name)).map((c) => c.name) },
+    })
+  }
 
   return (
     <Layout
       title="계좌 연결"
       showBack
-      foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.connectAuth, {
-        // 고른 기관을 다음 화면(기관 로그인)으로 넘긴다. 화면 순서대로
-        state: { banks: BANKS.filter((b) => banks.has(b.name)).map((b) => b.name), cards: CARDS.filter((c) => cards.has(c.name)).map((c) => c.name) },
-      })}>선택한 기관 연결하기</button>}
+      foot={<button type="button" className="mc-primary" onClick={next}>선택한 기관 연결하기</button>}
     >
       <StepBar step={2} />
       <div className="mc-eyebrow">계좌 연결</div>
@@ -59,19 +78,36 @@ export default function ConnectPage() {
       <p className="mc-muted">기관 인증 후 내 계좌 목록을 불러와요. 사용할 계좌는 다음 단계에서 골라요.</p>
 
       <div className="mc-card mc-loanq">
-        <h2>상환 중인 대출이 있나요?</h2>
+        <h2>은행 밖에서 받은 대출도 있나요?</h2>
         <div className="mc-seg mc-seg-sm mc-loanq-seg" style={{ marginTop: 8 }}>
           {LOAN_ANSWERS.map((x) => <button key={x} type="button" aria-pressed={hasLoan === x} onClick={() => setHasLoan(x)}>{x}</button>)}
         </div>
-        <p className="mc-picked">있으면 대출 정보도 불러와요.</p>
+        <p className="mc-picked">은행 대출은 은행을 연결하면 자동으로 불러와요. 학자금·캐피탈처럼 은행 밖 대출이 있으면 '있어요'를 골라 주세요.</p>
       </div>
 
       <PickCard title="연결할 은행" hint="필수 · 복수 선택" items={BANKS} picked={banks} moreLabel="다른 은행" notSupported={NOT_SUPPORTED} />
       <PickCard title="카드사" hint="선택 · 나중에 해도 돼요" items={CARDS} picked={cards} moreLabel="다른 카드사" />
 
-      <label className="mc-field mc-check"><input id="mc-consent" type="checkbox" />[필수] 계좌·카드 조회 동의 (조회 전용)</label>
+      {/* 고른 기관 중 미리 알아 둘 것이 있는 곳 (농협 조회계좌 · 씨티/롯데 문자 인증 · 대구 출금계좌 등) */}
+      {notes.length > 0 && (
+        <div className="mc-card mc-inst-notes">
+          <h2>연결 전에 확인해 주세요</h2>
+          <ul>{notes.map(([name, note]) => <li key={name}>{note.startsWith(name) ? note : <><b>{name}</b> {note}</>}</li>)}</ul>
+        </div>
+      )}
+
+      {/* 동의: 체크박스 + 이름(누르면 약관 상세 팝업) — 회원가입 약관과 같은 모양 */}
+      <div className="mc-card mc-consent-card">
+        <div className="mc-terms-row">
+          <input aria-label={doc.label} checked={consent} id="mc-consent" type="checkbox"
+            onChange={(e) => { setConsent(e.target.checked); setError('') }} />
+          <button type="button" className="mc-terms-open" aria-haspopup="dialog" onClick={openConsent}>
+            {doc.label}<span>보기</span>
+          </button>
+        </div>
+      </div>
       <p className="mc-note">시안에서는 실제 인증 정보나 계좌 정보를 받지 않아요.</p>
-      <div className="mc-error" role="alert"></div>
+      {error && <div className="mc-error" role="alert">{error}</div>}
     </Layout>
   )
 }

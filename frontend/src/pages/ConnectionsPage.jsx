@@ -1,19 +1,22 @@
 // 연결 관리 — 마이 > 연결 관리
 // 계좌 목록은 시안 예시값 — API 설계 후 useApi 로 바꾼다
-import { Fragment } from 'react'
+// status: ok = 연결됨 / relogin = 다시 연결 필요 (은행 비밀번호가 바뀌면 조회가 실패함 → CODEF 계정 수정 /v1/account/update)
+import { Fragment, useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { usePopup } from '../popups/context.js'
 import AccountPopup from '../popups/AccountPopup.jsx'
 import CardBillPopup from '../popups/CardBillPopup.jsx'
+import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
+import { mockConnect } from '../utils/mockConnect.js'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
 const ACCOUNTS = [
-  { id: 'sh1', bank: '신한은행', short: '신한', name: '생활비통장', no: '1234', kind: '입출금', use: '생활비', balance: 340_000, updated: '오늘 09:30',
+  { id: 'sh1', bank: '신한은행', short: '신한', name: '저축예금', nickname: null, no: '1234', kind: '입출금', use: '생활비', balance: 340_000, updated: '오늘 09:30', status: 'ok',
     fixed: [{ name: '구독료', day: 5, amount: 15_000 }] },
-  { id: 'kb1', bank: '국민은행', short: '국민', name: '급여통장', no: '5678', kind: '입출금', use: '고정지출', balance: 2_460_000, updated: '오늘 09:30',
+  { id: 'kb1', bank: '국민은행', short: '국민', name: 'KB국민ONE통장', nickname: '급여통장', no: '5678', kind: '입출금', use: '고정지출', balance: 2_460_000, updated: '10.17 09:30', status: 'relogin',
     fixed: [{ name: '월세', day: 25, amount: 700_000 }, { name: '통신비', day: 20, amount: 55_000 }] },
 ]
 
@@ -21,23 +24,49 @@ export default function ConnectionsPage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   const toConnect = () => navigate(PATHS.connect)
+  // 은행별 연결 상태 { 국민은행: { status: 'relogin' | 'busy' | 'ok' | 'fail', error?, updated? } }
+  const [conn, setConn] = useState(() => Object.fromEntries(ACCOUNTS.map((a) => [a.bank, { status: a.status, updated: a.updated }])))
+  const setBank = (bank, patch) => setConn((c) => ({ ...c, [bank]: { ...c[bank], ...patch } }))
+
+  // 다시 연결: 기관 로그인 팝업을 그대로 다시 쓴다
+  const relogin = (bank) => openPopup(
+    <ConnectLoginPopup inst={bank} onSubmit={async (form) => {
+      setBank(bank, { status: 'busy', error: null })
+      const r = await mockConnect(bank, form)
+      setBank(bank, r.status === 'ok' ? { status: 'ok', updated: '방금' } : { status: 'fail', error: r.message ?? '다시 시도해 주세요.' })
+    }} />,
+  )
 
   return (
     <Layout title="연결 관리" showBack>
       <h1>연결 관리</h1>
       <div className="mc-card">
         <div className="mc-row"><h2>은행 2곳 · 계좌 2개</h2><span className="mc-badge">필수 · 조회 전용</span></div>
-        {ACCOUNTS.map((a) => (
+        {ACCOUNTS.map((a) => {
+          const c = conn[a.bank]
+          const stale = c.status !== 'ok'
+          return (
           <Fragment key={a.id}>
-            <p className="mc-inst-st">{a.bank} · <span className="ok">연결됨</span> · 마지막 조회 {a.updated}</p>
+            <p className="mc-inst-st">{a.bank} · {stale
+              ? <span className="mc-conn-fail">다시 연결이 필요해요</span>
+              : <span className="ok">연결됨</span>} · 마지막 조회 {c.updated}</p>
+            {stale && (
+              <div className="mc-relogin" role="note">
+                <p>{c.status === 'fail' ? `연결 실패 · ${c.error}` : `${a.bank} 비밀번호가 바뀌어 조회하지 못했어요. 다시 연결하면 최신 잔액과 거래를 불러와요.`}</p>
+                <button type="button" className="mc-conn-btn" disabled={c.status === 'busy'} onClick={() => relogin(a.bank)}>
+                  {c.status === 'busy' ? '연결하는 중…' : '다시 연결'}
+                </button>
+              </div>
+            )}
             <button type="button" className="mc-listrow" onClick={() => openPopup(<AccountPopup acct={a} />)}>
               <span className="mc-tile"><Icon name="Landmark" /></span>
-              <span className="mc-grow"><strong>{a.short} ****{a.no}</strong><span className="mc-muted">{a.name} · {a.kind} · {a.use} · {a.updated}</span></span>
-              <span className="mc-right">{won(a.balance)} <span className="mc-muted">›</span></span>
+              <span className="mc-grow"><strong>{a.short} ****{a.no}</strong><span className="mc-muted">{a.nickname ?? a.name} · {a.kind} · {a.use} · {c.updated}</span></span>
+              <span className="mc-right">{won(a.balance)}{stale && <small className="mc-cancel-sub">{c.updated} 기준</small>} <span className="mc-muted">›</span></span>
             </button>
             <button type="button" className="mc-link" onClick={toConnect}>+ {a.bank} 계좌 추가</button>
           </Fragment>
-        ))}
+          )
+        })}
         <button type="button" className="mc-link" onClick={toConnect}>+ 다른 은행 연결</button>
       </div>
 

@@ -5,7 +5,7 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import TermsPopup from '../popups/TermsPopup.jsx'
-import { TERMS } from '../popups/termsText.js'
+import { SIGNUP_TERMS, TERMS } from '../popups/termsText.js'
 import { usePopup } from '../popups/context.js'
 import { PATHS } from '../routes.js'
 
@@ -22,7 +22,7 @@ export default function SignupPage() {
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   // 약관 동의: { terms: true/false, privacy: true/false } — termsText.js 에 약관을 추가하면 저절로 늘어난다
-  const everyTerm = (on) => Object.fromEntries(Object.keys(TERMS).map((k) => [k, on]))
+  const everyTerm = (on) => Object.fromEntries(SIGNUP_TERMS.map((k) => [k, on]))
   const [agree, setAgree] = useState(() => everyTerm(false))
   const [error, setError] = useState('')
   const termsCard = useRef(null)
@@ -80,7 +80,7 @@ export default function SignupPage() {
           <label className="mc-field mc-check mc-terms-all">
             <input type="checkbox" checked={allAgreed} onChange={(e) => setAll(e.target.checked)} />약관 전체 동의
           </label>
-          {Object.entries(TERMS).map(([key, doc]) => (
+          {SIGNUP_TERMS.map((key) => [key, TERMS[key]]).map(([key, doc]) => (
             <div className="mc-terms-row" key={key}>
               <input aria-label={doc.label} checked={agree[key]} name={`agree_${key}`} type="checkbox"
                 onChange={(e) => setOne(key, e.target.checked)} />

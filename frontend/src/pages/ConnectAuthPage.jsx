@@ -11,6 +11,7 @@ import { usePopup } from '../popups/context.js'
 import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 import SmsAuthPopup from '../popups/SmsAuthPopup.jsx'
 import { mockConnect, mockSms } from '../utils/mockConnect.js'
+import { RECHECK } from '../utils/institutions.js'
 
 // 앞 화면 없이 바로 들어왔을 때 보여 줄 기본값
 const DEFAULT = { banks: ['신한은행', '국민은행'], cards: ['신한카드'] }
@@ -28,7 +29,7 @@ export default function ConnectAuthPage() {
   const { state } = useLocation()
   const { openPopup } = usePopup()
   const picked = state?.banks ? state : DEFAULT
-  // [{ name, kind: 'bank' | 'card', status: todo·busy·sms·ok·fail, error?, phoneHint? }]
+  // [{ name, kind: 'bank' | 'card', status: todo·busy·sms·recheck·ok·fail, error?, phoneHint?, recheck? }]
   const [insts, setInsts] = useState(() => [
     ...picked.banks.map((name) => ({ name, kind: 'bank', status: 'todo' })),
     ...picked.cards.map((name) => ({ name, kind: 'card', status: 'todo' })),
@@ -49,14 +50,18 @@ export default function ConnectAuthPage() {
   )
 
   // 로그인 팝업 → 연결 시도
-  const login = (name) => openPopup(
-    <ConnectLoginPopup inst={name} onSubmit={async (form) => {
+  const login = (name, recheck) => openPopup(
+    <ConnectLoginPopup inst={name} recheck={recheck} onSubmit={async (form) => {
       update(name, { status: 'busy', error: null })
       setPageError('')
       const r = await mockConnect(name, form)
       if (r.status === 'sms') {
         update(name, { status: 'sms', phoneHint: r.phoneHint })
         askSms(name, r.phoneHint)
+      } else if (r.status === 'recheck') {
+        // 기관이 더 확인을 요구 → 필요한 칸을 붙여서 로그인 팝업을 다시 연다
+        update(name, { status: 'recheck', recheck: RECHECK[r.code] })
+        login(name, RECHECK[r.code])
       } else {
         update(name, r.status === 'ok' ? { status: 'ok' } : { status: 'fail', error: r.message })
       }
@@ -72,11 +77,16 @@ export default function ConnectAuthPage() {
   const right = (i) => {
     if (i.status === 'ok') return <Icon name="CircleCheck" />
     if (i.status === 'busy') return <span className="mc-conn-busy"><Icon name="Loader" /></span>
-    const label = { todo: '로그인', sms: '인증번호 입력', fail: '다시 시도' }[i.status]
-    const go = i.status === 'sms' ? () => askSms(i.name, i.phoneHint) : () => login(i.name)
+    const label = { todo: '로그인', sms: '인증번호 입력', recheck: i.recheck?.label, fail: '다시 시도' }[i.status]
+    const go = i.status === 'sms' ? () => askSms(i.name, i.phoneHint) : i.status === 'recheck' ? () => login(i.name, i.recheck) : () => login(i.name)
     return <button type="button" className={`mc-conn-btn${i.status === 'fail' ? ' is-retry' : ''}`} onClick={go}>{label}</button>
   }
-  const sub = (i) => (i.status === 'fail' ? [`연결 실패 · ${i.error}`, 'mc-conn-fail'] : i.error && i.status === 'sms' ? [i.error, 'mc-conn-fail'] : SUB[i.status])
+  const sub = (i) => {
+    if (i.status === 'fail') return [`연결 실패 · ${i.error}`, 'mc-conn-fail']
+    if (i.status === 'sms' && i.error) return [i.error, 'mc-conn-fail']
+    if (i.status === 'recheck') return [i.recheck?.sub, 'warn-t']
+    return SUB[i.status]
+  }
 
   const group = (kind, title) => {
     const list = insts.filter((i) => i.kind === kind)
@@ -104,7 +114,7 @@ export default function ConnectAuthPage() {
       {group('bank', '은행')}
       {group('card', '카드사')}
       <p className="mc-note">연결에 실패한 기관이 있어도 성공한 기관의 계좌는 그대로 쓸 수 있어요. 카드사는 나중에 연결해도 돼요.</p>
-      <p className="mc-note mc-conn-demo">시안 안내: 실제 정보는 넣지 마세요. 비밀번호에 <b>wrong</b>을 넣으면 실패 화면, 롯데카드는 문자 인증 화면을 볼 수 있어요.</p>
+      <p className="mc-note mc-conn-demo">시안 안내: 실제 정보는 넣지 마세요. 비밀번호에 <b>wrong</b>을 넣으면 실패 화면, 롯데카드·씨티는 문자 인증, 국민카드는 카드 소지 확인 화면을 볼 수 있어요.</p>
       {pageError && <div className="mc-error" role="alert">{pageError}</div>}
     </Layout>
   )

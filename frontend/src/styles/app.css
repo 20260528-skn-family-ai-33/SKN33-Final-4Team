@@ -879,6 +879,20 @@
 #mc-new-preview#mc-new-preview .mc-inst>svg{flex:none;color:var(--mc-brand)}
 #mc-new-preview#mc-new-preview .mc-chip-cert{display:block;font-size:9.5px;line-height:1.1;opacity:.75}
 #mc-new-preview#mc-new-preview .mc-pick-more{display:block;min-height:32px;padding:0;margin:-4px 0 6px;font-size:12.5px}
+#mc-new-preview#mc-new-preview .mc-consent-card{padding:12px 16px;margin-bottom:0}
+#mc-new-preview#mc-new-preview .mc-consent-card .mc-terms-open{font-size:13.5px}
+#mc-new-preview#mc-new-preview .mc-login-note.is-warn{background:light-dark(#FFF6E0,#3A2F14)}
+#mc-new-preview#mc-new-preview .mc-inst-notes h2{font-size:14px;margin-bottom:6px}
+#mc-new-preview#mc-new-preview .mc-inst-notes ul{margin:0;padding-left:18px;font-size:12.5px;line-height:1.6;color:var(--mc-ink)}
+#mc-new-preview#mc-new-preview .mc-inst-notes b{font-weight:650}
+#mc-new-preview#mc-new-preview .mc-relogin{display:flex;align-items:center;gap:10px;margin:6px 0 4px;padding:10px 12px;border-radius:12px;background:color-mix(in srgb,var(--mc-alert) 7%,var(--mc-paper));border:1px solid color-mix(in srgb,var(--mc-alert) 30%,transparent)}
+#mc-new-preview#mc-new-preview .mc-relogin p{flex:1;margin:0;font-size:12.5px;line-height:1.5;color:var(--mc-ink)}
+#mc-new-preview#mc-new-preview .mc-relogin .mc-conn-btn{border-color:var(--mc-alert);color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-bill-risk-kv span,#mc-new-preview#mc-new-preview .mc-bill-risk-kv strong{color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-bill-risk{margin:10px 0 0;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--mc-alert) 7%,var(--mc-paper));border:1px solid color-mix(in srgb,var(--mc-alert) 30%,transparent)}
+#mc-new-preview#mc-new-preview .mc-bill-risk>strong{display:block;font-size:13.5px;color:var(--mc-alert);margin-bottom:4px}
+#mc-new-preview#mc-new-preview .mc-bill-risk ul{margin:0;padding-left:18px;font-size:12.5px;line-height:1.55;color:var(--mc-ink)}
+#mc-new-preview#mc-new-preview .mc-acctkind{margin-top:6px}
 /* ===== 기관 연결 로그인·상태 끝 ===== */
 
 /* ===== 거래 취소 표시 (2026-10-20) 시작 ===== */
@@ -890,3 +904,20 @@
 /* 거래 상세 팝업의 카테고리 칩은 마지막(기타)도 같은 모양 — 목록의 '다른 카테고리' 버튼 규칙과 분리 */
 #mc-new-preview#mc-new-preview .mc-sheet .mc-pend-pick button{border-color:var(--mc-brand);color:var(--mc-brand);font-weight:650}
 /* ===== 거래 취소 표시 끝 ===== */
+
+/* ===== 초록색 항목 (2026-10-20) 시작 ===== */
+#mc-new-preview#mc-new-preview .mc-acctpick.is-dim:not(.on) .mc-acctpick-row strong{color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-card-off{padding:12px 0 12px 32px;border-bottom:1px solid var(--mc-line);opacity:.55}
+#mc-new-preview#mc-new-preview .mc-card-off:last-child{border-bottom:0}
+#mc-new-preview#mc-new-preview .mc-card-off strong{display:block;font-size:14px;text-decoration:line-through}
+#mc-new-preview#mc-new-preview .mc-card-off small{display:block;font-size:12px;color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-periods h2{font-size:15px;margin-bottom:2px}
+#mc-new-preview#mc-new-preview .mc-loan-ok{margin:6px 0 0;font-size:12px;color:var(--mc-brand);font-weight:600}
+#mc-new-preview#mc-new-preview .mc-loan-overdue{margin:8px 0 0;padding:10px 12px;border-radius:12px;font-size:12.5px;color:var(--mc-alert);background:color-mix(in srgb,var(--mc-alert) 7%,var(--mc-paper))}
+#mc-new-preview#mc-new-preview .mc-loan-table{width:100%;border-collapse:collapse;margin:4px 0 10px;font-size:12px;font-variant-numeric:tabular-nums}
+#mc-new-preview#mc-new-preview .mc-loan-table th{font-weight:600;color:var(--mc-sub);text-align:right;padding:4px 0;border-bottom:1px solid var(--mc-line)}
+#mc-new-preview#mc-new-preview .mc-loan-table td{text-align:right;padding:6px 0;border-bottom:1px solid var(--mc-line)}
+#mc-new-preview#mc-new-preview .mc-loan-table th:first-child,#mc-new-preview#mc-new-preview .mc-loan-table td:first-child{text-align:left}
+#mc-new-preview#mc-new-preview .mc-refresh .mc-grow{display:flex;flex-direction:column;align-items:flex-start;gap:2px}
+#mc-new-preview#mc-new-preview .mc-refresh small{font-size:11.5px}
+/* ===== 초록색 항목 끝 ===== */

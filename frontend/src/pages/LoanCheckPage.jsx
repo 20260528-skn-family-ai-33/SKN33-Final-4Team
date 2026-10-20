@@ -14,7 +14,13 @@ const LOANS = [
   {
     id: 'L1', name: '신용대출', org: 'KB국민은행', source: ['auto', 'CODEF 조회'], asOf: '오늘 09:30 기준',
     info: [['약정금액', 'auto', '조회됨', '10,000,000원'], ['잔액', 'auto', '조회됨', '6,420,000원'], ['금리', 'auto', '조회됨', '연 5.8%'], ['만기일', 'auto', '조회됨', '2028.03.25']],
-    history: '07.25 312,000원 · 08.25 310,500원 · 09.25 309,000원',
+    overdue: false,  // 연체 여부 (CODEF 대출 거래내역 resState)
+    // 지난 납부: 원금(resPrincipal) + 이자(resInterest) = 낸 돈(resTranAmount)
+    history: [
+      { date: '07.25', principal: 285_000, interest: 27_000 },
+      { date: '08.25', principal: 285_000, interest: 25_500 },
+      { date: '09.25', principal: 285_000, interest: 24_000 },
+    ],
     estimate: 310_500, estimateNote: '추정 310,500원 · 확인된 납부 3건(07~09월) 평균',
     day: '25', dayNote: '최근 납부일 09.25 · 기관에 따라 이자 납입일일 수 있어요',
   },
@@ -36,6 +42,8 @@ function LoanCard({ loan }) {
         <h2>{loan.name} <span className="mc-hint">{loan.org}</span></h2>
         <span className={`mc-loan-tag ${loan.source[0]}`}>{loan.source[1]}</span>
       </div>
+      {loan.overdue === true && <p className="mc-loan-overdue" role="note">연체 중인 대출이에요. 연체가 길어지면 신용점수가 떨어질 수 있어요. 은행에 먼저 확인해 주세요.</p>}
+      {loan.overdue === false && <p className="mc-loan-ok">연체 없음 · 조회됨</p>}
       <h3 className="mc-loan-h">조회된 대출 정보 {loan.asOf && <small>{loan.asOf}</small>}</h3>
       <div className="mc-loan-grid">
         {loan.info.map(([label, tag, tagText, value]) => (
@@ -43,7 +51,18 @@ function LoanCard({ loan }) {
         ))}
       </div>
       <h3 className="mc-loan-h">지난 납부 내역</h3>
-      <p className="mc-loan-hist">{loan.history}</p>
+      {Array.isArray(loan.history) ? (
+        <table className="mc-loan-table">
+          <thead><tr><th>납부일</th><th>원금</th><th>이자</th><th>낸 돈</th></tr></thead>
+          <tbody>
+            {loan.history.map((h) => (
+              <tr key={h.date}><td>{h.date}</td><td>{won(h.principal)}</td><td>{won(h.interest)}</td><td><b>{won(h.principal + h.interest)}</b></td></tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="mc-loan-hist">{loan.history}</p>
+      )}
       <div className="mc-loan-in">
         <h3>앞으로 낼 돈 <span className="mc-hint">직접 확인</span></h3>
         <p className="mc-loan-lab">상환 방식</p>

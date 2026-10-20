@@ -1,5 +1,6 @@
 // 팝업: 기관 로그인 — 계좌 연결 2단계에서 기관을 누르면 열린다
 // props: inst = '신한은행' 같은 기관 이름, onSubmit(form) = 입력이 다 되면 (팝업은 닫히고 화면이 연결을 진행)
+//        recheck = 기관이 더 요구한 확인(utils/institutions.js RECHECK). 있으면 그 칸을 더 받는다
 // 비밀번호는 이 팝업 안에서만 들고 있다가 넘기고 끝. 저장·출력하지 않는다 (진짜 연동 때는 서버에서 RSA 암호화)
 import { useState } from 'react'
 import Popup from './Popup.jsx'
@@ -9,11 +10,12 @@ import { josa } from '../utils/adjust.js'
 
 const METHODS = [['id', '아이디 로그인'], ['cert', '공동인증서']]
 
-export default function ConnectLoginPopup({ inst, onSubmit }) {
+export default function ConnectLoginPopup({ inst, onSubmit, recheck }) {
   const { closePopup } = usePopup()
   const extra = EXTRA[inst] ?? {}
   const info = instInfo(inst)  // 아이디 로그인 지원 여부 · 잠김 횟수
-  const keys = ['id', 'password', ...(extra.fields ?? [])]
+  const extraKeys = [...new Set([...(extra.fields ?? []), ...(recheck?.fields ?? [])])]
+  const keys = ['id', 'password', ...extraKeys]
   const [method, setMethod] = useState(info.idLogin ? 'id' : 'cert')
   const [form, setForm] = useState(() => Object.fromEntries(keys.map((k) => [k, ''])))
   const [error, setError] = useState('')
@@ -53,14 +55,14 @@ export default function ConnectLoginPopup({ inst, onSubmit }) {
       )}
       {method === 'id' && info.idLogin && (
         <form className="mc-form mc-login-form" onSubmit={submit}>
-          {extra.note && <p className="mc-login-note">{extra.note}</p>}
+          {recheck ? <p className="mc-login-note is-warn" role="note">{recheck.message}</p> : extra.note && <p className="mc-login-note">{extra.note}</p>}
           <label className="mc-field">아이디
             <input autoComplete="off" name="instId" value={form.id} onChange={(e) => set('id', e.target.value)} />
           </label>
           <label className="mc-field">비밀번호
             <input autoComplete="off" name="instPw" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} />
           </label>
-          {(extra.fields ?? []).map((k) => {
+          {extraKeys.map((k) => {
             const f = FIELD[k]
             return (
               <label className="mc-field" key={k}>{f.label}

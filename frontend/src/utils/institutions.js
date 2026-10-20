@@ -10,6 +10,8 @@ export const FIELD = {
   identity: { label: '생년월일 6자리 + 뒷자리 첫 숫자', placeholder: '9903151', inputMode: 'numeric', maxLength: 7 },
   telecom: { label: '통신사', options: ['SKT', 'KT', 'LG U+', '알뜰폰(SKT)', '알뜰폰(KT)', '알뜰폰(LG U+)'] },
   phoneNo: { label: '휴대폰 번호', placeholder: '01012345678', inputMode: 'numeric', maxLength: 11 },
+  withdrawAccountNo: { label: '출금 계좌번호', placeholder: '숫자만', inputMode: 'numeric', maxLength: 20 },
+  withdrawAccountPassword: { label: '출금 계좌 비밀번호 4자리', type: 'password', inputMode: 'numeric', maxLength: 4 },
 }
 
 export const EXTRA = {
@@ -18,6 +20,15 @@ export const EXTRA = {
   롯데카드: { fields: ['userName', 'identity', 'telecom', 'phoneNo'], note: '롯데카드는 로그인할 때 휴대폰 문자 인증을 한 번 더 해요.' },
   국민카드: { note: '카드사에서 카드 소지 확인을 요청하면 카드번호를 한 번 더 물어볼 수 있어요.' },
   농협은행: { note: 'e농협 홈페이지에서 "조회계좌"로 등록한 계좌만 불러올 수 있어요.' },
+  대구은행: { fields: ['withdrawAccountNo', 'withdrawAccountPassword'], note: '대구은행은 아이디 로그인 때 출금 계좌번호와 계좌 비밀번호도 필요해요.' },
+  씨티은행: { note: '씨티은행은 로그인할 때 휴대폰 문자 인증을 요청할 수 있어요.' },
+  씨티카드: { note: '씨티카드는 로그인할 때 휴대폰 문자 인증을 요청할 수 있어요.' },
+}
+
+// 연결 중에 기관이 더 요구하는 확인 (CODEF 응답 코드 → 다시 받을 칸)
+//   CF-12108: KB카드 카드 소지 확인 → 카드번호 전체 + 카드 비밀번호 앞 2자리
+export const RECHECK = {
+  'CF-12108': { fields: ['cardNo', 'cardPw2'], label: '카드 확인', sub: '카드 소지 확인이 필요해요', message: '카드사에서 카드 소지 확인을 요청했어요. 카드번호 전체와 비밀번호 앞 2자리를 넣어 주세요.' },
 }
 
 // CODEF 지원 기관 목록 (개발가이드 '은행 개요'·'카드 개요' 기준, 2026-10-20 확인: 은행 20곳 · 카드사 14곳)
