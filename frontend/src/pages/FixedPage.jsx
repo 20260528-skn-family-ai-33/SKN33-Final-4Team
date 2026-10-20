@@ -10,9 +10,9 @@ import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
 const FIXED = [
-  { id: 1, name: '월세', day: 25, account: '국민 · 5678', cat: '주거/통신', amount: 700_000 },
-  { id: 2, name: '통신비', day: 20, account: '국민 · 5678', cat: '주거/통신', amount: 55_000 },
-  { id: 3, name: '구독료', day: 5, account: '신한 · 1234', cat: '여가/관계', amount: 15_000 },
+  { id: 1, name: '월세', day: 25, account: '국민 · 5678', cat: '주거·통신', amount: 700_000 },
+  { id: 2, name: '통신비', day: 20, account: '국민 · 5678', cat: '주거·통신', amount: 55_000 },
+  { id: 3, name: '구독료', day: 5, account: '신한 · 1234', cat: '문화·여가', amount: 15_000 },
 ]
 const total = FIXED.reduce((sum, f) => sum + f.amount, 0)
 

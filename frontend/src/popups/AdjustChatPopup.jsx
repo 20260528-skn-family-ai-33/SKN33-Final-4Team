@@ -1,19 +1,14 @@
 // 팝업: 예산 조정 챗봇 — 추천 예산 "챗봇과 조정하기 ›"
 // 지금은 고르는 것까지만. "조정안 받기"·질문 보내기는 챗봇 기능을 만들 때 붙인다
-import { useState } from 'react'
+// 고르기 말풍선(AdjustForm)은 통합 챗봇과 같이 쓴다
 import Popup from './Popup.jsx'
 import Icon from '../components/Icon.jsx'
+import AdjustForm from '../components/AdjustForm.jsx'
 
-const CATS = ['식비', '주거/통신', '교통/차량', '생활용품', '건강/미용', '여가/관계']
-const MY_PRIO = ['식비', '여가/관계', '건강/미용']  // 내 우선순위 (시안 예시값)
-const AMOUNTS = ['1만원', '3만원', '5만원', '10만원']
-const DIRS = ['늘리고 싶어', '줄이고 싶어']
-const QUICK = [['식비', '식비를'], ['여가/관계', '여가비를'], ['교통/차량', '교통비를']]
+const MY_PRIO = ['식비', '문화·여가', '뷰티·미용']  // 내 우선순위 (시안 예시값)
+const QUICK = [['식비', '식비를'], ['문화·여가', '여가비를'], ['교통·차량', '교통비를']]
 
 export default function AdjustChatPopup() {
-  const [amount, setAmount] = useState('3만원')
-  const [dir, setDir] = useState('늘리고 싶어')
-
   return (
     <Popup>
       <div className="mc-chat">
@@ -30,23 +25,7 @@ export default function AdjustChatPopup() {
             </div>
           </div>
           <div className="mc-msg bot">
-            <div className="mc-cf">
-              <div className="mc-cf-line">
-                <select aria-label="카테고리" defaultValue="식비">{CATS.map((c) => <option key={c}>{c}</option>)}</select>
-                <span>를</span>
-              </div>
-              <div className="mc-cf-amts">
-                {AMOUNTS.map((a) => <button key={a} type="button" aria-pressed={amount === a} onClick={() => setAmount(a)}>{a}</button>)}
-                <label className="mc-cf-custom"><input aria-label="직접 입력 (만원)" inputMode="numeric" placeholder="직접" type="text" /><span>만원</span></label>
-              </div>
-              <div className="mc-cf-line">
-                <span>만큼</span>
-                <div className="mc-cf-dir">
-                  {DIRS.map((d) => <button key={d} type="button" aria-pressed={dir === d} onClick={() => setDir(d)}>{d}</button>)}
-                </div>
-              </div>
-              <button type="button" className="mc-primary mc-cf-go">조정안 받기</button>
-            </div>
+            <AdjustForm initial={{ cat: '식비', amount: 3, dir: 'up' }} />
           </div>
         </div>
         <div className="mc-chat-q">

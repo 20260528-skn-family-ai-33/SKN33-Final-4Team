@@ -5,9 +5,9 @@ import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { usePicked } from '../utils/usePicked.js'
+import { CAT_NAMES as CATS } from '../utils/categories.js'
 import { PATHS } from '../routes.js'
 
-const CATS = ['식비', '주거/통신', '교통/차량', '생활용품', '건강/미용', '여가/관계']
 const GENDERS = ['남성', '여성']
 const CARS = [['yes', '차가 있어요', '자차 보유'], ['no', '차가 없어요', '대중교통 · 기타']]
 
@@ -29,7 +29,7 @@ function ageInfo(raw) {
 
 function prioStatus(n) {
   if (n < 3) return <><b>{3 - n}개</b> 더 골라 주세요 · 1~3위는 필수예요</>
-  return n < CATS.length ? '필수 3순위 완료 · 4위부터는 선택이에요' : '모든 카테고리 순위를 정했어요'
+  return n < CATS.length ? '필수 3순위 완료 · 4위부터는 원하는 만큼 골라 주세요' : '모든 카테고리 순위를 정했어요'
 }
 
 export default function ProfilePage() {

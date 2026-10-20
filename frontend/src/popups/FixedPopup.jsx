@@ -4,9 +4,11 @@
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { MONTH_DAYS } from '../utils/days.js'
+import { BUDGET_CATS } from '../utils/categories.js'
 
 const ACCOUNTS = ['신한 · 1234', '국민 · 5678']
-const FIXED_CATS = ['식비', '주거/통신', '교통/차량', '생활용품', '건강/미용', '여가/관계', '저축/투자/부채']
+// 고정지출 카테고리 범위(구독 등)는 팀 결정 전 — 지금은 예산 카테고리 + 저축/투자/부채
+const FIXED_CATS = [...BUDGET_CATS, '저축/투자/부채']
 
 export default function FixedPopup({ item }) {
   const { closePopup } = usePopup()

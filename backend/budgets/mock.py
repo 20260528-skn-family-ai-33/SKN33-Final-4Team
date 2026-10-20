@@ -24,7 +24,7 @@ HOME = {
     "living_left": 650_000,
     "daily": 30_900,
     "spare": 265_000,
-    "pending_count": 2,
+    "pending_count": 4,
 }
 
 # 홈 '꼭 나갈 돈'
@@ -45,16 +45,21 @@ MONTH_SPLIT = [
     {"name": "여윳돈", "amount": 212_000},
 ]
 
-# 생활비 카테고리
+# 생활비 카테고리 — 2026-10-20 분류 기준 10개 + 기타 (기타도 예산 칸을 준다)
 CATEGORIES = [
-    {"name": "식비", "icon": "utensils", "used": 150_000, "budget": 400_000, "pct": 38, "left": 250_000, "locked": False},
-    {"name": "주거/통신", "icon": "house", "used": 60_000, "budget": 120_000, "pct": 50, "left": 60_000, "locked": False},
-    {"name": "교통/차량", "icon": "bus", "used": 35_000, "budget": 100_000, "pct": 35, "left": 65_000, "locked": False},
-    {"name": "생활용품", "icon": "shopping-basket", "used": 25_000, "budget": 80_000, "pct": 31, "left": 55_000, "locked": False},
-    {"name": "건강/미용", "icon": "heart-pulse", "used": 70_000, "budget": 120_000, "pct": 58, "left": 50_000, "locked": False},
-    {"name": "여가/관계", "icon": "users", "used": 130_000, "budget": 300_000, "pct": 43, "left": 170_000, "locked": False},
+    {"name": "식비", "icon": "utensils", "used": 150_000, "budget": 330_000, "pct": 45, "left": 180_000, "locked": False},
+    {"name": "주거·통신", "icon": "house", "used": 60_000, "budget": 110_000, "pct": 55, "left": 50_000, "locked": False},
+    {"name": "교통·차량", "icon": "bus", "used": 35_000, "budget": 90_000, "pct": 39, "left": 55_000, "locked": False},
+    {"name": "생활용품", "icon": "shopping-basket", "used": 15_000, "budget": 60_000, "pct": 25, "left": 45_000, "locked": False},
+    {"name": "패션·쇼핑", "icon": "shirt", "used": 30_000, "budget": 80_000, "pct": 38, "left": 50_000, "locked": False},
+    {"name": "의료·건강", "icon": "stethoscope", "used": 20_000, "budget": 50_000, "pct": 40, "left": 30_000, "locked": False},
+    {"name": "뷰티·미용", "icon": "scissors", "used": 40_000, "budget": 60_000, "pct": 67, "left": 20_000, "locked": False},
+    {"name": "교육", "icon": "graduation-cap", "used": 0, "budget": 50_000, "pct": 0, "left": 50_000, "locked": False},
+    {"name": "문화·여가", "icon": "ticket", "used": 100_000, "budget": 170_000, "pct": 59, "left": 70_000, "locked": False},
+    {"name": "여행·숙박", "icon": "plane", "used": 0, "budget": 60_000, "pct": 0, "left": 60_000, "locked": False},
+    {"name": "기타", "icon": "ellipsis", "used": 20_000, "budget": 60_000, "pct": 33, "left": 40_000, "locked": False},
 ]
-UNCLASSIFIED = {"count": 2, "amount": 38_900}
+UNCLASSIFIED = {"count": 4, "amount": 57_700}  # 화면에는 "확인 필요"로 보인다 (편의점·다이소 등)
 
 # 머니 쿠션
 CUSHION = {

@@ -59,7 +59,7 @@ export default function BudgetPage() {
         ))}
         {UNCLASSIFIED.count > 0 && (
           <button type="button" className="mc-catuse mc-catuse-pend" onClick={() => navigate(`${PATHS.txs}?category=확인 필요`)}>
-            <span>미분류 {UNCLASSIFIED.count}건</span><strong>{won(UNCLASSIFIED.amount)} 확인 필요 ›</strong>
+            <span>확인 필요 {UNCLASSIFIED.count}건</span><strong>{won(UNCLASSIFIED.amount)} 고르러 가기 ›</strong>
           </button>
         )}
       </div>

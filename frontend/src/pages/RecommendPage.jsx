@@ -10,6 +10,7 @@ import AdjustChatPopup from '../popups/AdjustChatPopup.jsx'
 import { usePicked } from '../utils/usePicked.js'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
+import { BUDGET_CATS, catIcon } from '../utils/categories.js'
 
 const MONTHLY = 2_800_000
 // [CSS 이름(색), 이름, 금액]
@@ -18,12 +19,14 @@ const SPLIT = [
   ['irr', '비정기 준비금', 78_000], ['cushion', '머니 쿠션 적립', 210_000], ['left', '여윳돈', 212_000],
 ]
 const LIVING = 1_120_000
-const CATS = [
-  ['식비', 'Utensils', 400_000], ['주거/통신', 'House', 120_000], ['교통/차량', 'Bus', 100_000],
-  ['생활용품', 'ShoppingBasket', 80_000], ['건강/미용', 'HeartPulse', 120_000], ['여가/관계', 'Users', 300_000],
-]
-const SHADES = [100, 78, 60, 45, 32, 20]  // 카테고리 막대 색 진하기 (%)
-const shade = (i) => `color-mix(in srgb,var(--mc-brand) ${SHADES[i]}%,var(--mc-paper))`
+// 카테고리별 추천 금액 (시안 예시값, 합계 = LIVING). 목록·아이콘은 utils/categories.js
+const AMOUNT = {
+  식비: 330_000, '주거·통신': 110_000, '교통·차량': 90_000, 생활용품: 60_000, '패션·쇼핑': 80_000,
+  '의료·건강': 50_000, '뷰티·미용': 60_000, 교육: 50_000, '문화·여가': 170_000, '여행·숙박': 60_000, 기타: 60_000,
+}
+const CATS = BUDGET_CATS.map((n) => [n, catIcon(n), AMOUNT[n] ?? 0])
+// 카테고리 막대 색 진하기: 첫 칸 100% → 마지막 칸 18% (카테고리 수가 바뀌어도 자동으로 나눔)
+const shade = (i) => `color-mix(in srgb,var(--mc-brand) ${Math.round(100 - (82 * i) / Math.max(CATS.length - 1, 1))}%,var(--mc-paper))`
 const pct = (part, whole) => (part / whole) * 100
 
 export default function RecommendPage() {
