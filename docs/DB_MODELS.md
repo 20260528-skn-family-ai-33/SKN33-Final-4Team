@@ -1,17 +1,17 @@
 # DB 모델 구조 (Django 앱 배치 · 공통 규칙 · 확인 방법)
 
-작성일: 2026-10-19 · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
+작성일: 2026-10-19 (10-20 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
 
 ## 1. 현재 상태 — 26개 테이블 모델 완료 ✅
 
 | 항목 | 결과 |
 |---|---|
 | 테이블 | 26 / 26 |
-| 칸(컬럼) | 340 / 340 — 타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치 |
-| FK | 79 / 79 — on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20 (`FK_삭제규칙.md`와 일치) |
+| 칸(컬럼) | 345 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) + 10-20 추가 5 |
+| FK | 82 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) + 10-20 추가 3 (RESTRICT) |
 | UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 |
 | CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) |
-| 검증 | PostgreSQL 16에서 `migrate` 성공 + 규칙 39개 실제 데이터로 시험 → 전부 통과 |
+| 검증 | PostgreSQL 16에서 `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과 |
 
 **ERD와 다른 점 (일부러 바꾼 것)**
 
@@ -20,6 +20,15 @@
 | `category.display_order` UNIQUE 제거 | 순서 바꿀 때(1↔2) 에러 나서. 2026-10-19 결정 |
 | `transaction_link` 자기 자신 연결 금지 CHECK 추가 | A→A 연결 방지 |
 | `budget_item`·`spending_allocation` UNIQUE 이름 | ERD 이름이 길어서 잘려 있어 짧게 바꿈 (내용은 같음) |
+
+**2026-10-20 추가 (화면 대조 결과 · ERD SQL에도 반영 필요)**
+
+| 무엇 | 왜 |
+|---|---|
+| `financial_profile.priority_4` · `priority_5` · `priority_6` (FK → category, RESTRICT) | 내 정보 화면에서 1~3위 필수, **4~6위 선택**으로 받기로 함. DB는 순서대로 채웠는지(1·2·4위 금지)·중복 없는지만 막고, 1~3위 필수는 API에서 검사 |
+| `financial_transaction.suggestion_candidates` (JSON) | 확인 필요 거래에 **후보 카테고리 여러 개**를 보여줌. `[{"category": "FOOD", "confidence": 0.41}, ...]` 확신도 높은 순. JSON 안 코드는 FK 검사가 안 되므로 저장할 때 category에 있는지 확인 |
+| `financial_transaction.suggestion_reason` (VARCHAR 300) | "카드 결제대행사 이름만 있어 가게를 특정하지 못했어요." 같은 **확인 필요 이유** |
+| 인덱스 `ft_user_merchant_idx` (user, merchant_name, occurred_on 역순) | "같은 가맹점 분류에 반영" 기능. 별도 테이블 없이 `finance/merchant_rules.py`의 `remembered_category()`가 같은 회원·가맹점의 **사용자가 확정한 최근 거래**를 찾음. 느려지거나 규칙 관리가 필요해지면 `merchant_rule` 테이블 추가 |
 
 ## 2. 테이블 → 앱 배치
 
@@ -59,7 +68,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 
 | 테이블 | 막는 것 |
 |---|---|
-| financial_profile | 급여일 1~31 밖, 최소 생활비 음수 |
+| financial_profile | 급여일 1~31 밖, 최소 생활비 음수, 우선순위 건너뛰기(1·2·4위), 같은 카테고리를 두 순위에 넣기 |
 | connection | 같은 회원·업권·기관에서 '연결 중'이 2개 (해제 후 재연결은 OK) |
 | card, loan | origin이 provider/manual 아님, 대출 status가 repaying/repaid 아님 |
 | sync_run | 조회 대상(계좌·카드·대출) 2개 이상 |
@@ -112,3 +121,19 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 3. migration 파일은 모델 코드와 **같이 커밋**
 4. 이미 커밋한 migration 파일은 고치지 않고, 바꿀 게 있으면 새로 `makemigrations`
 5. 카테고리 초기 데이터(UNCLASSIFIED 포함)는 2026-10-20 목록 확정 후 data migration으로 추가
+
+## 8. 가맹점 분류 기억 사용법 (거래 분류 담당)
+
+```python
+from finance.merchant_rules import remembered_category, normalize_merchant, USER_SOURCE
+
+# 새 거래 분류할 때 ML보다 먼저
+code = remembered_category(user, tx.merchant_name)   # 없으면 None → 원래대로 ML·검색
+
+# 사용자가 거래 상세에서 카테고리를 고쳤을 때
+tx.confirmed_category_id = "LIVING"
+tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면 이 값만 바꿈)
+```
+
+- 가맹점 이름은 저장할 때도 `normalize_merchant()`로 공백을 정리해 둔다. 그래야 같은 가게로 찾아진다.
+- 다른 회원의 기록은 쓰지 않는다 (회원별로만 기억).

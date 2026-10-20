@@ -15,7 +15,7 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 
@@ -90,6 +90,26 @@ class User(AbstractBaseUser, PermissionsMixin):
         super().save(*args, **kwargs)
 
 
+PRIORITY_FIELDS = [f"priority_{n}" for n in range(1, 7)]
+
+
+def _priority_in_order():
+    """n위가 있으면 n-1위도 있어야 한다 (1·2·4위처럼 건너뛰기 금지)"""
+    q = Q()
+    for prev, cur in zip(PRIORITY_FIELDS, PRIORITY_FIELDS[1:]):
+        q &= Q(**{f"{cur}__isnull": True}) | Q(**{f"{prev}__isnull": False})
+    return q
+
+
+def _priority_distinct():
+    """같은 카테고리를 두 순위에 넣지 않기 (빈칸끼리는 비교하지 않음)"""
+    q = Q()
+    for i, a in enumerate(PRIORITY_FIELDS):
+        for b in PRIORITY_FIELDS[i + 1:]:
+            q &= ~Q(**{a: F(b)})
+    return q
+
+
 class FinancialProfile(models.Model):
     """내 정보·예산 기준 (회원당 1개). PK가 곧 회원 ID"""
 
@@ -119,6 +139,19 @@ class FinancialProfile(models.Model):
         "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
         db_column="priority_3", related_name="+", verbose_name="소비 우선순위 3위",
     )
+    # 4~6위는 선택 입력 (1~3위 필수 여부는 API에서 검사. DB는 '순서대로 채웠는지'·'중복 없는지'만 막음)
+    priority_4 = models.ForeignKey(
+        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
+        db_column="priority_4", related_name="+", verbose_name="소비 우선순위 4위(선택)",
+    )
+    priority_5 = models.ForeignKey(
+        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
+        db_column="priority_5", related_name="+", verbose_name="소비 우선순위 5위(선택)",
+    )
+    priority_6 = models.ForeignKey(
+        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
+        db_column="priority_6", related_name="+", verbose_name="소비 우선순위 6위(선택)",
+    )
     living_floor = models.BigIntegerField("월 최소 생활비", null=True, blank=True)  # NULL=미설정, 0=보호액 없음
     savings_floor = models.BigIntegerField("월 저축 보호액", null=True, blank=True)
     cushion_enabled = models.BooleanField("쿠션 설정 여부", null=True, blank=True)
@@ -139,6 +172,8 @@ class FinancialProfile(models.Model):
                 condition=Q(payday__isnull=True) | Q(payday__gte=1, payday__lte=31),
                 name="fp_payday_1_31",
             ),
+            models.CheckConstraint(condition=_priority_in_order(), name="fp_priority_in_order"),
+            models.CheckConstraint(condition=_priority_distinct(), name="fp_priority_distinct"),
         ]
 
     def __str__(self):

@@ -268,6 +268,10 @@ class FinancialTransaction(models.Model):
     suggestion_confidence = models.DecimalField(
         "제안 신뢰도", max_digits=5, decimal_places=4, null=True, blank=True,
     )
+    # 확인 필요 거래의 후보 카테고리 (확신도 높은 순). 예: [{"category": "FOOD", "confidence": 0.41}, ...]
+    # 1순위 후보는 suggested_category 와 같다. JSON 안의 코드는 FK 검사가 안 되므로 저장할 때 category 테이블에 있는지 확인한다
+    suggestion_candidates = models.JSONField("후보 카테고리 목록", null=True, blank=True)
+    suggestion_reason = models.CharField("확인 필요 이유", max_length=300, null=True, blank=True)
     confirmed_category = models.ForeignKey(
         "budgets.Category", on_delete=models.RESTRICT,
         db_column="confirmed_category", related_name="+", verbose_name="적용 카테고리",
@@ -282,6 +286,10 @@ class FinancialTransaction(models.Model):
     class Meta:
         db_table = "financial_transaction"
         verbose_name = verbose_name_plural = "거래"
+        indexes = [
+            # 같은 가맹점의 '사용자가 확정한 최근 거래'를 빨리 찾기 (finance/merchant_rules.py)
+            models.Index(fields=["user", "merchant_name", "-occurred_on"], name="ft_user_merchant_idx"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["user", "request_key"], name="financial_transaction_user_id_request_key_key",
