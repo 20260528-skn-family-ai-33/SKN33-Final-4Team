@@ -28,6 +28,12 @@ class Conversation(models.Model):
     conversation_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="conversations")
     status = models.CharField("상태", max_length=20, choices=Status.choices, default=Status.ACTIVE)
+    # 대화 상태 — 서버가 기억한다 (2026-10-20 결정). 짧은 답("응", "5만원으로")을 지금 대화 중인 도우미가 받게 하려고
+    # 지금 대화 중인 도우미 (예: 소비 분석 · 예산 조정). 라우터만 거친 상태면 빈 값
+    active_agent = models.CharField("대화 중인 도우미", max_length=40, null=True, blank=True)  # 코드 미정
+    # 지금까지 문장에서 뽑아 모은 재료(슬롯). 예: {"category": "FOOD", "amount": 50000, "direction": "up"}
+    # 칸 이름·단위는 API 명세 때 확정 (금액은 원 단위 추천). 도우미가 바뀌거나 작업이 끝나면 비운다
+    slots = models.JSONField("모은 재료(슬롯)", null=True, blank=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
     class Meta:

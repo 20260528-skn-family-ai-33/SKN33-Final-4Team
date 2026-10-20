@@ -7,7 +7,7 @@
 | 항목 | 결과 |
 |---|---|
 | 테이블 | 26 / 26 |
-| 칸(컬럼) | 345 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) + 10-20 추가 5 |
+| 칸(컬럼) | 347 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) + 10-20 추가 7 |
 | FK | 82 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) + 10-20 추가 3 (RESTRICT) |
 | UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 |
 | CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) |
@@ -28,6 +28,8 @@
 | `financial_profile.priority_4` · `priority_5` · `priority_6` (FK → category, RESTRICT) | 내 정보 화면에서 1~3위 필수, **4~6위 선택**으로 받기로 함. DB는 순서대로 채웠는지(1·2·4위 금지)·중복 없는지만 막고, 1~3위 필수는 API에서 검사 |
 | `financial_transaction.suggestion_candidates` (JSON) | 확인 필요 거래에 **후보 카테고리 여러 개**를 보여줌. `[{"category": "FOOD", "confidence": 0.41}, ...]` 확신도 높은 순. JSON 안 코드는 FK 검사가 안 되므로 저장할 때 category에 있는지 확인 |
 | `financial_transaction.suggestion_reason` (VARCHAR 300) | "카드 결제대행사 이름만 있어 가게를 특정하지 못했어요." 같은 **확인 필요 이유** |
+| `conversation.active_agent` (VARCHAR 40, 비어도 됨) | **대화 상태를 서버가 기억**하기로 함(2026-10-20). 지금 대화 중인 도우미(소비 분석 · 예산 조정 등). "응", "5만원으로" 같은 짧은 답을 라우터가 다시 분류하지 않고 이 도우미에게 바로 넘기려고. 라우터만 거친 상태면 비어 있음. 코드 값은 미정(아래 5번) |
+| `conversation.slots` (JSON, 비어도 됨) | 지금까지 문장에서 뽑아 모은 **재료(슬롯)**. 예: `{"category": "FOOD", "amount": 50000, "direction": "up"}`. 다음 문장에서 빠진 것만 다시 물으려고. 칸 이름·단위는 API 명세 때 확정(금액은 원 단위 추천). 도우미가 바뀌거나 작업이 끝나면 비움. JSON 안 카테고리 코드는 FK 검사가 안 되므로 쓸 때 category에 있는지 확인. 대화 전체 기록은 지금처럼 `chat_message`에 저장 |
 | 인덱스 `ft_user_merchant_idx` (user, merchant_name, occurred_on 역순) | "같은 가맹점 분류에 반영" 기능. 별도 테이블 없이 `finance/merchant_rules.py`의 `remembered_category()`가 같은 회원·가맹점의 **사용자가 확정한 최근 거래**를 찾음. 느려지거나 규칙 관리가 필요해지면 `merchant_rule` 테이블 추가 |
 
 ## 2. 테이블 → 앱 배치
@@ -101,6 +103,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | budget_cycle.status | 주기 진행 상태 |
 | async_task.task_type / status | 작업 종류 / 대기 · 실행 · 완료 · 실패 · 취소 |
 | chat_message.role / content_type | 발화자 / 텍스트 · 결과 카드 |
+| conversation.active_agent | 대화 중인 도우미 (소비 분석 · 예산 조정 · 큰 지출 상담 등, 라우터 의도 목록과 같은 코드로) — 10-20 추가 |
 
 정해진 코드(loan.status, budget.status, payment_state, obligation_state, entry_type, item_type, bucket, funding_bucket, source_kind, obligation_type, relation_type, origin, conversation.status, app_user.status)는 이미 choices로 들어가 있다.
 
