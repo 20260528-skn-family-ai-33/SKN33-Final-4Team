@@ -26,6 +26,18 @@
 | 6 | 관리자 계정 + 서버 실행 | `/admin` 로그인 |
 | 7 | React 화면 실행 (터미널 하나 더) | `http://localhost:5173`에 홈 화면 |
 
+> ⚠️ **2026-10-19 회원 모델(`users.User`)과 26개 테이블 추가 — 전에 `migrate`를 한 번이라도 돌렸다면 DB를 비우고 다시 해야 한다.**
+> 안 하면 `InconsistentMigrationHistory` 에러가 난다. 지금은 진짜 데이터가 없어서 지워도 괜찮다. (Windows·macOS 같은 명령)
+>
+> ```
+> docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+> cd backend
+> python manage.py migrate
+> python manage.py createsuperuser   # 이제 아이디 대신 이메일을 물어본다
+> ```
+>
+> 테이블 확인 방법·모델 배치·작성 규칙은 [`DB_MODELS.md`](DB_MODELS.md).
+
 ---
 
 ## 🪟 Windows (PowerShell)
