@@ -1,5 +1,5 @@
 """
-회원 · 내 정보 · 동의 (ERD: app_user, financial_profile, consent)
+회원 · 내 정보 · 소비 우선순위 · 동의 (ERD: app_user, financial_profile, category_priority, consent)
 
 - Django 기본 User 대신 이 모델을 쓴다. settings.AUTH_USER_MODEL = "users.User"
 - 이메일로 로그인한다. 이메일은 전부 소문자로 바꿔서 저장한다.
@@ -15,7 +15,7 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
-from django.db.models import F, Q
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -90,26 +90,6 @@ class User(AbstractBaseUser, PermissionsMixin):
         super().save(*args, **kwargs)
 
 
-PRIORITY_FIELDS = [f"priority_{n}" for n in range(1, 7)]
-
-
-def _priority_in_order():
-    """n위가 있으면 n-1위도 있어야 한다 (1·2·4위처럼 건너뛰기 금지)"""
-    q = Q()
-    for prev, cur in zip(PRIORITY_FIELDS, PRIORITY_FIELDS[1:]):
-        q &= Q(**{f"{cur}__isnull": True}) | Q(**{f"{prev}__isnull": False})
-    return q
-
-
-def _priority_distinct():
-    """같은 카테고리를 두 순위에 넣지 않기 (빈칸끼리는 비교하지 않음)"""
-    q = Q()
-    for i, a in enumerate(PRIORITY_FIELDS):
-        for b in PRIORITY_FIELDS[i + 1:]:
-            q &= ~Q(**{a: F(b)})
-    return q
-
-
 class FinancialProfile(models.Model):
     """내 정보·예산 기준 (회원당 1개). PK가 곧 회원 ID"""
 
@@ -127,32 +107,6 @@ class FinancialProfile(models.Model):
     payday = models.SmallIntegerField("매월 급여일", null=True, blank=True)  # 1~31
     payday_rule = models.CharField("급여일 보정 규칙", max_length=30, null=True, blank=True)
     budget_direction = models.CharField("예산 산정 방향", max_length=30, null=True, blank=True)
-    priority_1 = models.ForeignKey(
-        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
-        db_column="priority_1", related_name="+", verbose_name="소비 우선순위 1위",
-    )
-    priority_2 = models.ForeignKey(
-        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
-        db_column="priority_2", related_name="+", verbose_name="소비 우선순위 2위",
-    )
-    priority_3 = models.ForeignKey(
-        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
-        db_column="priority_3", related_name="+", verbose_name="소비 우선순위 3위",
-    )
-    # 4~6위는 선택 입력 (1~3위 필수 여부는 API에서 검사. DB는 '순서대로 채웠는지'·'중복 없는지'만 막음)
-    priority_4 = models.ForeignKey(
-        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
-        db_column="priority_4", related_name="+", verbose_name="소비 우선순위 4위(선택)",
-    )
-    priority_5 = models.ForeignKey(
-        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
-        db_column="priority_5", related_name="+", verbose_name="소비 우선순위 5위(선택)",
-    )
-    priority_6 = models.ForeignKey(
-        "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
-        db_column="priority_6", related_name="+", verbose_name="소비 우선순위 6위(선택)",
-    )
-    living_floor = models.BigIntegerField("월 최소 생활비", null=True, blank=True)  # NULL=미설정, 0=보호액 없음
     savings_floor = models.BigIntegerField("월 저축 보호액", null=True, blank=True)
     cushion_enabled = models.BooleanField("쿠션 설정 여부", null=True, blank=True)
     cushion_target = models.BigIntegerField("쿠션 목표액", null=True, blank=True)
@@ -165,19 +119,43 @@ class FinancialProfile(models.Model):
         verbose_name = verbose_name_plural = "내 정보"
         constraints = [
             models.CheckConstraint(
-                condition=Q(living_floor__isnull=True) | Q(living_floor__gte=0),
-                name="fp_living_floor_gte_0",
-            ),
-            models.CheckConstraint(
                 condition=Q(payday__isnull=True) | Q(payday__gte=1, payday__lte=31),
                 name="fp_payday_1_31",
             ),
-            models.CheckConstraint(condition=_priority_in_order(), name="fp_priority_in_order"),
-            models.CheckConstraint(condition=_priority_distinct(), name="fp_priority_distinct"),
         ]
 
     def __str__(self):
         return f"내 정보({self.user_id})"
+
+
+class CategoryPriority(models.Model):
+    """소비 우선순위. 회원이 고른 카테고리 수만큼 한 줄씩 (2026-10-20: 1~3위 필수, 4위부터는 원하는 만큼)
+
+    - DB가 막는 것: 같은 순위 2개, 같은 카테고리를 두 순위에, 순위 0 이하
+    - API에서 검사할 것: 1~3위 필수, 순위 건너뛰기 금지(1·2·4위처럼)
+    - 순위를 바꿀 때는 한 줄씩 고치지 말고 그 회원의 순위를 전부 지운 뒤 새 목록을 다시 넣는다 (트랜잭션 하나로).
+      한 줄씩 1위↔2위를 바꾸면 중간에 UNIQUE(회원, 순위)에 걸린다
+    """
+
+    category_priority_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="category_priorities")
+    category = models.ForeignKey(
+        "budgets.Category", on_delete=models.RESTRICT,
+        db_column="category_code", related_name="+", verbose_name="카테고리",
+    )
+    rank = models.SmallIntegerField("순위")  # 1 = 가장 중요
+
+    class Meta:
+        db_table = "category_priority"
+        verbose_name = verbose_name_plural = "소비 우선순위"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "rank"], name="cp_user_rank_key"),
+            models.UniqueConstraint(fields=["user", "category"], name="cp_user_category_key"),
+            models.CheckConstraint(condition=Q(rank__gte=1), name="cp_rank_gte_1"),
+        ]
+
+    def __str__(self):
+        return f"{self.rank}위 {self.category_id}"
 
 
 class Consent(models.Model):

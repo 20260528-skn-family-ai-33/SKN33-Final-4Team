@@ -2,16 +2,16 @@
 
 작성일: 2026-10-19 (10-20 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
 
-## 1. 현재 상태 — 26개 테이블 모델 완료 ✅
+## 1. 현재 상태 — 27개 테이블 모델 완료 ✅
 
 | 항목 | 결과 |
 |---|---|
-| 테이블 | 26 / 26 |
-| 칸(컬럼) | 347 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) + 10-20 추가 7 |
-| FK | 82 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) + 10-20 추가 3 (RESTRICT) |
-| UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 |
+| 테이블 | 27 = ERD 26 + 10-20 추가 1 (`category_priority`) |
+| 칸(컬럼) | 344 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) |
+| FK | 78 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) → CASCADE 33 · RESTRICT 25 · SET_NULL 20 |
+| UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) |
 | CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) |
-| 검증 | PostgreSQL 16에서 `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과 |
+| 검증 | PostgreSQL 16에서 `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과 |
 
 **ERD와 다른 점 (일부러 바꾼 것)**
 
@@ -21,11 +21,13 @@
 | `transaction_link` 자기 자신 연결 금지 CHECK 추가 | A→A 연결 방지 |
 | `budget_item`·`spending_allocation` UNIQUE 이름 | ERD 이름이 길어서 잘려 있어 짧게 바꿈 (내용은 같음) |
 
-**2026-10-20 추가 (화면 대조 결과 · ERD SQL에도 반영 필요)**
+**2026-10-20 추가 · 변경 (화면 대조 결과 · ERD SQL에도 반영 필요)**
 
 | 무엇 | 왜 |
 |---|---|
-| `financial_profile.priority_4` · `priority_5` · `priority_6` (FK → category, RESTRICT) | 내 정보 화면에서 1~3위 필수, **4~6위 선택**으로 받기로 함. DB는 순서대로 채웠는지(1·2·4위 금지)·중복 없는지만 막고, 1~3위 필수는 API에서 검사 |
+| `category_priority` 표 추가 (회원 · 카테고리 · 순위) | 소비 우선순위를 **1~3위 필수, 4위부터는 원하는 만큼** 받기로 함. 칸으로 두면 최대 개수가 칸 수에 묶여서 표로 뺌 (회원이 고른 수만큼 한 줄씩). DB는 같은 순위 2개 · 같은 카테고리 두 번 · 순위 0 이하만 막고, 1~3위 필수 · 순위 건너뛰기(1·2·4위)는 API에서 검사. **순위를 바꿀 땐 그 회원 순위를 다 지우고 새 목록을 한 번에 다시 넣는다**(트랜잭션 하나). 한 줄씩 1위↔2위를 바꾸면 UNIQUE(회원, 순위)에 걸린다 |
+| `financial_profile.priority_1` ~ `priority_6` 삭제 | 위 `category_priority` 표로 옮김 |
+| `financial_profile.living_floor`(월 최소 생활비) 삭제 | 2026-10-15 최소생활비 개념 제외 결정 반영. 생활비는 전체 생활비 안에서 카테고리별로 나눈다. 화면(지킬 돈 설정)에서도 뺌 |
 | `financial_transaction.suggestion_candidates` (JSON) | 확인 필요 거래에 **후보 카테고리 여러 개**를 보여줌. `[{"category": "FOOD", "confidence": 0.41}, ...]` 확신도 높은 순. JSON 안 코드는 FK 검사가 안 되므로 저장할 때 category에 있는지 확인 |
 | `financial_transaction.suggestion_reason` (VARCHAR 300) | "카드 결제대행사 이름만 있어 가게를 특정하지 못했어요." 같은 **확인 필요 이유** |
 | `conversation.active_agent` (VARCHAR 40, 비어도 됨) | **대화 상태를 서버가 기억**하기로 함(2026-10-20). 지금 대화 중인 도우미(소비 분석 · 예산 조정 등). "응", "5만원으로" 같은 짧은 답을 라우터가 다시 분류하지 않고 이 도우미에게 바로 넘기려고. 라우터만 거친 상태면 비어 있음. 코드 값은 미정(아래 5번) |
@@ -36,7 +38,7 @@
 
 | 앱 | 테이블 (ERD 이름) | 모델 클래스 |
 |---|---|---|
-| `users` | app_user, financial_profile, consent | User, FinancialProfile, Consent |
+| `users` | app_user, financial_profile, category_priority, consent | User, FinancialProfile, CategoryPriority, Consent |
 | `finance` | connection, bank_account, card, loan, sync_run | Connection, BankAccount, Card, Loan, SyncRun |
 | `finance` | financial_transaction, transaction_link | FinancialTransaction, TransactionLink |
 | `finance` | card_bill, card_bill_item, recurring_expense, payment_due, payment_match | CardBill, CardBillItem, RecurringExpense, PaymentDue, PaymentMatch |
@@ -44,7 +46,7 @@
 | `budgets` | spending_allocation, reserve_plan, cushion_entry | SpendingAllocation, ReservePlan, CushionEntry |
 | `chat` | conversation, chat_message, async_task | Conversation, ChatMessage, AsyncTask |
 
-합계: users 3 + finance 12 + budgets 8 + chat 3 = **26개**
+합계: users 4 + finance 12 + budgets 8 + chat 3 = **27개**
 
 ## 3. 도커 PostgreSQL에서 확인하기
 
@@ -57,20 +59,21 @@ cd backend
 python manage.py migrate
 python manage.py createsuperuser      # 이메일로 만든다
 
-# 3) 테이블 목록 보기 (ERD 26개 + Django 기본 9개 = 35개)
+# 3) 테이블 목록 보기 (머니쿠션 27개 + Django 기본 9개 = 36개)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\dt"
 
 # 4) 한 테이블 구조 보기 (칸·제약·FK)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payment_due"
 ```
 
-화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 26개 테이블이 다 등록돼 있다.
+화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 27개 테이블이 다 등록돼 있다.
 
 ## 4. DB가 막아 주는 규칙 (CHECK · 조건부 UNIQUE)
 
 | 테이블 | 막는 것 |
 |---|---|
-| financial_profile | 급여일 1~31 밖, 최소 생활비 음수, 우선순위 건너뛰기(1·2·4위), 같은 카테고리를 두 순위에 넣기 |
+| financial_profile | 급여일 1~31 밖 |
+| category_priority | 같은 회원이 같은 순위 2개, 같은 카테고리를 두 순위에 넣기, 순위 0 이하 |
 | connection | 같은 회원·업권·기관에서 '연결 중'이 2개 (해제 후 재연결은 OK) |
 | card, loan | origin이 provider/manual 아님, 대출 status가 repaying/repaid 아님 |
 | sync_run | 조회 대상(계좌·카드·대출) 2개 이상 |
@@ -84,7 +87,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | budget_item · spending_allocation | 빈칸(NULL) 포함 중복 줄 (NULLS NOT DISTINCT), reserve인데 준비금 계획 없음 |
 | cushion_entry | 초기액 2번, 배분 1건에 사용 2번, 종류별 부호(initial ≥0, use <0, refund >0, 적립·정정 ≠0), 종류별 필수 연결 |
 
-**DB가 못 막는 것 (서비스 코드에서 꼭 검사)** — 같은 회원 데이터끼리만 연결, 지출 배분의 주기 = 예산의 주기, 여러 줄 합계(예산 항목 합 ≤ 배분 자금, 매칭 합 ≤ 거래 금액), approved 교체·쿠션 증감은 트랜잭션+잠금, A→B·B→A 역방향 중복 연결, 재연결 시 기존 자산·청구서 재사용.
+**DB가 못 막는 것 (서비스 코드에서 꼭 검사)** — 우선순위 1~3위 필수 · 순위 건너뛰기(1·2·4위), 같은 회원 데이터끼리만 연결, 지출 배분의 주기 = 예산의 주기, 여러 줄 합계(예산 항목 합 ≤ 배분 자금, 매칭 합 ≤ 거래 금액), approved 교체·쿠션 증감은 트랜잭션+잠금, A→B·B→A 역방향 중복 연결, 재연결 시 기존 자산·청구서 재사용.
 
 ## 5. 코드(값 목록) 미정 칸 — 팀이 정하면 choices 추가
 

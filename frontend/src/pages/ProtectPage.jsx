@@ -1,27 +1,23 @@
 // 지킬 돈 설정
-// 금액을 고치면 아래 안내(하루 얼마, 1년 얼마, 여유 금액)가 바로 다시 계산된다
+// 금액을 고치면 아래 안내(1년 얼마, 여유 금액)가 바로 다시 계산된다
+// 최소 생활비는 2026-10-15 기획에서 뺐다 (생활비는 전체 생활비 안에서 카테고리별로 나눈다)
 // 추천값·월급·고정지출은 시안 예시값 — 추천 API 가 생기면 바꾼다
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { won } from '../utils/money.js'
-import { payCycle, shortDate } from '../utils/days.js'
 import { PATHS } from '../routes.js'
 
 const MONTHLY = 2_800_000   // 월급
-const PAYDAY = 1            // 급여일 (매월 1일) — 월급 설정 값을 API로 받으면 바꾼다
-const CYCLE = payCycle(PAYDAY)  // 이번 급여 주기 실제 일수 (28~31일)
-const CYCLE_LABEL = `${shortDate(CYCLE.start)}~${shortDate(new Date(CYCLE.end - 86_400_000))} · ${CYCLE.days}일 기준`
 const FIXED = 770_000       // 고정지출 합계
 const IRREGULAR = 78_000    // 비정기지출 준비금
-const RECOMMEND = { minLiving: 1_120_000, savingFloor: 410_000, cushionFloor: 200_000 }
-const ROWS = [['minLiving', '최소 생활비'], ['savingFloor', '저축 목표액'], ['cushionFloor', '쿠션 보호 하한']]
+const RECOMMEND = { savingFloor: 410_000, cushionFloor: 200_000 }
+const ROWS = [['savingFloor', '저축 목표액'], ['cushionFloor', '쿠션 보호 하한']]
 
 // 칸 아래 한 줄 안내
 function hint(key, value) {
   if (!Number.isFinite(value) || value < 0) return '0 이상의 금액을 입력해 주세요.'
-  if (key === 'minLiving') return <>하루 약 <b>{won(Math.floor(value / CYCLE.days / 100) * 100)}</b>을 사용할 수 있어요. <span>({CYCLE_LABEL})</span></>
   if (key === 'savingFloor') return <>1년 모으면 <b>{won(value * 12)}</b>이 모여요. <span>(매달 같은 금액 · 이자 제외)</span></>
   return <>갑작스러운 지출에 대비해 <b>{won(value)}</b>은 남겨 두는 거예요.</>
 }
@@ -33,7 +29,7 @@ export default function ProtectPage() {
   const num = (k) => (values[k] === '' ? NaN : Number(values[k]))
 
   const available = Math.max(0, MONTHLY - FIXED)
-  const total = num('minLiving') + num('savingFloor') + num('cushionFloor') + IRREGULAR
+  const total = num('savingFloor') + num('cushionFloor') + IRREGULAR
   const left = available - total
   const bad = !Number.isFinite(total) || ROWS.some(([k]) => num(k) < 0)
 
@@ -92,7 +88,7 @@ export default function ProtectPage() {
           <p className="mc-muted" style={{ margin: '4px 0 8px' }}>연결 계좌 잔액 2,800,000원 &lt; 월급×3 8,400,000원</p>
           <p className="mc-note" style={{ padding: 0 }}>잔액이 월급×3보다 적어서 머니 쿠션을 꼭 배정해요. 목표는 월급×3이에요.</p>
         </div>
-        <p className="mc-note">월급 {won(MONTHLY)}에서 고정지출 {won(FIXED)}을 뺀 금액으로 계산했어요. 최소 생활비는 처음 3개월은 통계(KOSIS), 이후엔 내 거래 내역을 근거로 추천해요.</p>
+        <p className="mc-note">월급 {won(MONTHLY)}에서 고정지출 {won(FIXED)}을 뺀 금액으로 계산했어요.</p>
         <div className="mc-error" role="alert"></div>
       </form>
     </Layout>
