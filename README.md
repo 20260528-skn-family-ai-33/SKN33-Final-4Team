@@ -115,7 +115,9 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 - 화면 코드: `frontend/src/` (`pages/` 화면 · `popups/` 팝업 · `components/` 공통 부품 · `styles/` CSS)
 - API 코드: 각 앱의 `api.py`, 주소 목록은 `backend/config/api_urls.py`, **규칙은 [`docs/API_RULES.md`](docs/API_RULES.md)** (camelCase · 원 단위 정수 · 에러 모양 · 세션 로그인)
 - CODEF 조회: `backend/finance/codef.py`, 확인 명령 `python manage.py codef_check` ([`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) 맨 아래)
-- API 값은 DB 연결 전까지 각 앱의 `mock.py` 가짜 데이터를 씁니다. 회원 모델이 나오기 전에는 `makemigrations`를 하지 않습니다.
+- DB 모델: 26개 테이블 완료 (`users` · `finance` · `budgets` · `chat`), **[`docs/DB_MODELS.md`](docs/DB_MODELS.md)** (테이블 배치 · 작성 규칙 · 도커에서 확인하는 법)
+- `makemigrations`는 **DB 담당(김나은)만** 만들고, 나머지는 `git pull` 후 `python manage.py migrate`만 합니다.
+- API 값은 아직 각 앱의 `mock.py` 가짜 데이터입니다. API 설계 후 DB 값으로 바꿉니다.
 - Django는 화면을 그리지 않습니다. 주소는 `/api/...`(데이터)와 `/admin/`(관리자)만 있습니다.
 
 ---
@@ -172,7 +174,7 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 ├── backend/                     # Django 프로젝트 (API 서버)
 │   ├── config/                  # 설정 · 주소(urls · api_urls) · API 공통 도구
 │   └── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇 (api.py · mock.py · finance/codef.py)
-├── docs/                        # 개발 환경 · 환경변수 · React · API 규칙 가이드
+├── docs/                        # 개발 환경 · 환경변수 · React · API 규칙 · DB 모델 가이드
 └── 산출물/
     ├── 01_기획/                  # 요구사항 정의서 · WBS · 프로젝트 기획서
     ├── 02_데이터 수집 및 저장/
