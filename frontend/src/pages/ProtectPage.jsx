@@ -6,9 +6,13 @@ import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { won } from '../utils/money.js'
+import { payCycle, shortDate } from '../utils/days.js'
 import { PATHS } from '../routes.js'
 
 const MONTHLY = 2_800_000   // 월급
+const PAYDAY = 1            // 급여일 (매월 1일) — 월급 설정 값을 API로 받으면 바꾼다
+const CYCLE = payCycle(PAYDAY)  // 이번 급여 주기 실제 일수 (28~31일)
+const CYCLE_LABEL = `${shortDate(CYCLE.start)}~${shortDate(new Date(CYCLE.end - 86_400_000))} · ${CYCLE.days}일 기준`
 const FIXED = 770_000       // 고정지출 합계
 const IRREGULAR = 78_000    // 비정기지출 준비금
 const RECOMMEND = { minLiving: 1_120_000, savingFloor: 410_000, cushionFloor: 200_000 }
@@ -17,7 +21,7 @@ const ROWS = [['minLiving', '최소 생활비'], ['savingFloor', '저축 목표�
 // 칸 아래 한 줄 안내
 function hint(key, value) {
   if (!Number.isFinite(value) || value < 0) return '0 이상의 금액을 입력해 주세요.'
-  if (key === 'minLiving') return <>하루 약 <b>{won(Math.floor(value / 30 / 100) * 100)}</b>을 사용할 수 있어요. <span>(30일 기준)</span></>
+  if (key === 'minLiving') return <>하루 약 <b>{won(Math.floor(value / CYCLE.days / 100) * 100)}</b>을 사용할 수 있어요. <span>({CYCLE_LABEL})</span></>
   if (key === 'savingFloor') return <>1년 모으면 <b>{won(value * 12)}</b>이 모여요. <span>(매달 같은 금액 · 이자 제외)</span></>
   return <>갑작스러운 지출에 대비해 <b>{won(value)}</b>은 남겨 두는 거예요.</>
 }
