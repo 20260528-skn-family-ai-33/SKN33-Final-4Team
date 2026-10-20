@@ -19,7 +19,9 @@
 | | Windows | macOS |
 |---|---|---|
 | 설치 | nodejs.org → **LTS** 설치 파일 (npm 같이 설치됨) | `brew install node` |
-| 확인 | `node -v` → **v22 이상** · `npm -v` | 같음 |
+| 확인 | `node -v` → **v22.22 이상** · `npm -v` | 같음 |
+
+> 예전에 깔아둔 Node가 22.22보다 낮으면 nodejs.org에서 **LTS를 다시 설치**해요 (덮어써도 괜찮아요).
 
 > 설치 후에는 **터미널을 새로 열어야** `node` 명령이 잡혀요.
 

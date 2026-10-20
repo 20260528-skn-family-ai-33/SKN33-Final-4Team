@@ -7,7 +7,7 @@
 |---|---|
 | Python | 3.12 |
 | Django | 5.2 LTS + Django REST framework (`requirements.txt`) |
-| Node.js | 22 이상 (LTS) · React 화면용 (`frontend/package.json`) |
+| Node.js | **22.22 이상** (새로 설치하면 LTS 그대로 OK) · React 화면용 (`frontend/package.json`) |
 | DB | PostgreSQL 17 (Docker 컨테이너 `money-cushion-db`) |
 | Django 위치 | `backend/` (`backend/manage.py`, 설정 `backend/config/settings.py`) |
 | React 위치 | `frontend/` (화면 코드 `frontend/src/`) |
@@ -23,20 +23,8 @@
 | 3 | `.env` 만들기 | 필수 칸 채움 |
 | 4 | PostgreSQL 컨테이너 실행 | `docker ps`에 `money-cushion-db` |
 | 5 | `migrate` | `Applying ... OK` |
-| 6 | 관리자 계정 + 서버 실행 | `/admin` 로그인 |
+| 6 | 관리자 계정 + 서버 실행 | `/admin`에 **이메일**로 로그인 |
 | 7 | React 화면 실행 (터미널 하나 더) | `http://localhost:5173`에 홈 화면 |
-
-> ⚠️ **2026-10-19 회원 모델(`users.User`)과 26개 테이블 추가 — 전에 `migrate`를 한 번이라도 돌렸다면 DB를 비우고 다시 해야 한다.**
-> 안 하면 `InconsistentMigrationHistory` 에러가 난다. 지금은 진짜 데이터가 없어서 지워도 괜찮다. (Windows·macOS 같은 명령)
->
-> ```
-> docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
-> cd backend
-> python manage.py migrate
-> python manage.py createsuperuser   # 이제 아이디 대신 이메일을 물어본다
-> ```
->
-> 테이블 확인 방법·모델 배치·작성 규칙은 [`DB_MODELS.md`](DB_MODELS.md).
 
 ---
 
@@ -51,7 +39,7 @@
 
 ```powershell
 py -3.12 --version
-node -v      # v22 이상
+node -v      # v22.22 이상 (더 낮으면 nodejs.org에서 LTS 다시 설치)
 npm -v
 docker --version
 ```
@@ -112,6 +100,8 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+> `createsuperuser`는 아이디 대신 **이메일**을 물어본다 (예: `admin@test.com`). 로그인할 때도 이메일로 한다.
+
 브라우저에서 `http://127.0.0.1:8000/admin` 접속 → 로그인되면 Django 쪽은 완료. **이 터미널은 켜둔 채로** 7단계로.
 
 ### 7. React 화면 실행
@@ -136,11 +126,13 @@ npm run dev
 brew install python@3.12 node
 ```
 
+> `brew: command not found`가 나오면 [brew.sh](https://brew.sh) 첫 화면의 설치 명령을 먼저 실행한다.
+
 Docker Desktop을 docker.com에서 설치 후 실행 (메뉴바에 고래 아이콘).
 
 ```bash
 python3.12 --version
-node -v      # v22 이상
+node -v      # v22.22 이상 (더 낮으면 nodejs.org에서 LTS 다시 설치)
 npm -v
 docker --version
 ```
@@ -198,6 +190,8 @@ python manage.py createsuperuser
 python manage.py runserver
 ```
 
+> `createsuperuser`는 아이디 대신 **이메일**을 물어본다 (예: `admin@test.com`). 로그인할 때도 이메일로 한다.
+
 `http://127.0.0.1:8000/admin` 로그인되면 Django 쪽은 완료. **이 터미널은 켜둔 채로** 7단계로.
 
 ### 7. React 화면 실행
@@ -226,8 +220,34 @@ npm run dev
 | 보기 | `http://localhost:5173` | 같음 |
 
 > `docker run`은 **처음 한 번만**. 이후엔 `docker start`.
-> `git pull` 후 `requirements.txt`가 바뀌었으면 `pip install -r requirements.txt`, `frontend/package.json`이 바뀌었으면 `npm install`을 다시 한다.
 > `docker rm money-cushion-db`로 컨테이너를 지우면 **DB 데이터도 사라진다.**
+
+### `git pull` 받은 뒤 확인할 것
+
+| 바뀐 파일 | 할 일 |
+|---|---|
+| `backend/*/migrations/` | `cd backend` → `python manage.py migrate` (**DB 구조가 바뀐 것. 제일 자주 생김**) |
+| `requirements.txt` | `pip install -r requirements.txt` |
+| `frontend/package.json` | `cd frontend` → `npm install` |
+
+> 헷갈리면 셋 다 해도 괜찮다. 바뀐 게 없으면 아무 일도 안 일어난다.
+
+## 이미 세팅했던 사람만 (2026-10-19 이전에 `migrate` 해 본 경우)
+
+2026-10-19에 회원 모델(`users.User`)과 26개 테이블이 추가됐다. **그 전에 `migrate`를 한 번이라도 돌렸다면** DB를 한 번 비우고 다시 만들어야 한다.
+안 하면 `InconsistentMigrationHistory` 에러가 난다. 지금은 진짜 데이터가 없어서 지워도 괜찮다. (Windows·macOS 같은 명령, 가상환경 켜고)
+
+```
+git pull
+docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+cd backend
+python manage.py migrate
+python manage.py createsuperuser   # 이메일로 만든다
+```
+
+> 처음 세팅하는 사람은 이 부분을 건너뛴다.
+
+테이블 확인 방법·모델 배치·작성 규칙은 [`DB_MODELS.md`](DB_MODELS.md).
 
 ## 자주 나는 에러
 
@@ -238,6 +258,8 @@ npm run dev
 | `connection refused` (5432) | DB 컨테이너가 꺼져 있음 | Docker Desktop 실행 → `docker start money-cushion-db` |
 | `port is already allocated` (5432) | PC에 PostgreSQL이 따로 설치돼 실행 중 | 기존 PostgreSQL 서비스 중지. 또는 `-p 5433:5432`로 띄우고 `.env`의 `POSTGRES_PORT=5433` |
 | `Conflict. The container name ... is already in use` | 이미 만든 컨테이너 | `docker start money-cushion-db` |
+| `InconsistentMigrationHistory` | 예전 DB에 새 회원 모델을 얹으려 함 | 위 **이미 세팅했던 사람만** 따라 하기 |
+| `You have N unapplied migration(s)` (runserver 때) | `git pull`로 새 migration을 받았는데 적용 안 함 | `python manage.py migrate` |
 | `No module named 'django'` / `'rest_framework'` | 가상환경 꺼짐 / 패키지 안 깔림 | 가상환경 켜고 `pip install -r requirements.txt` |
 | 화면에 **"데이터를 못 불러왔어요"** | Django 서버가 꺼져 있음 | 터미널 1에서 `python manage.py runserver` |
 | `npm: command not found` / `'npm'은(는) ... 아닙니다` | Node.js 미설치 | 0단계의 Node.js 설치 후 터미널 다시 열기 |
