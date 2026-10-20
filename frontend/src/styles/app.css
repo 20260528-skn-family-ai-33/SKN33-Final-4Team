@@ -881,6 +881,8 @@
 #mc-new-preview#mc-new-preview .mc-pick-more{display:block;min-height:32px;padding:0;margin:-4px 0 6px;font-size:12.5px}
 #mc-new-preview#mc-new-preview .mc-consent-card{padding:12px 16px;margin-bottom:0}
 #mc-new-preview#mc-new-preview .mc-consent-card .mc-terms-open{font-size:13.5px}
+#mc-new-preview#mc-new-preview .mc-consent-card .mc-terms-row{margin:6px 0}
+#mc-new-preview#mc-new-preview .mc-consent-note{margin:8px 0 0}
 #mc-new-preview#mc-new-preview .mc-login-note.is-warn{background:light-dark(#FFF6E0,#3A2F14)}
 #mc-new-preview#mc-new-preview .mc-inst-notes h2{font-size:14px;margin-bottom:6px}
 #mc-new-preview#mc-new-preview .mc-inst-notes ul{margin:0;padding-left:18px;font-size:12.5px;line-height:1.6;color:var(--mc-ink)}

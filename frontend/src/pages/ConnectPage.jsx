@@ -8,7 +8,7 @@ import { PATHS } from '../routes.js'
 import { BANKS, CARDS, EXTRA, NOT_SUPPORTED } from '../utils/institutions.js'
 import { usePopup } from '../popups/context.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
-import { TERMS } from '../popups/termsText.js'
+import { FINANCE_TERMS, TERMS } from '../popups/termsText.js'
 
 const LOAN_ANSWERS = ['있어요', '없어요', '나중에 확인']
 
@@ -47,11 +47,14 @@ export default function ConnectPage() {
   const banks = usePicked(['신한은행', '국민은행'])
   const cards = usePicked(['신한카드'])
   const { openPopup } = usePopup()
-  const [consent, setConsent] = useState(false)
+  // 동의 3개: 계좌 필수 · 카드 선택 · 대출 선택 { financeBank: true/false, ... }
+  const [consent, setConsent] = useState(() => Object.fromEntries(FINANCE_TERMS.map((k) => [k, false])))
   const [error, setError] = useState('')
-  const doc = TERMS.finance
-  // 팝업 안 "동의하고 닫기"를 누르면 체크된다
-  const openConsent = () => openPopup(<TermsPopup kind="finance" onAgree={() => { setConsent(true); setError('') }} />)
+  const allConsent = FINANCE_TERMS.every((k) => consent[k])
+  const setOne = (k, on) => { setConsent((c) => ({ ...c, [k]: on })); setError('') }
+  const setAll = (on) => { setConsent(Object.fromEntries(FINANCE_TERMS.map((k) => [k, on]))); setError('') }
+  // 팝업 안 "동의하고 닫기"를 누르면 그 동의가 체크된다
+  const openConsent = (k) => openPopup(<TermsPopup kind={k} onAgree={() => setOne(k, true)} />)
 
   const notes = [...BANKS, ...CARDS]
     .filter((x) => (banks.has(x.name) || cards.has(x.name)) && (EXTRA[x.name]?.note || !x.idLogin))
@@ -59,10 +62,16 @@ export default function ConnectPage() {
 
   const next = () => {
     if (banks.list.length === 0) return setError('연결할 은행을 1곳 이상 골라 주세요.')
-    if (!consent) return setError('금융 정보 조회에 동의해 주세요.')
+    if (!consent.financeBank) return setError('은행 계좌 정보 조회는 꼭 동의해야 해요.')
+    if (cards.list.length > 0 && !consent.financeCard) return setError('카드를 연결하려면 카드 정보 조회에 동의해 주세요. 카드는 나중에 연결해도 돼요.')
     navigate(PATHS.connectAuth, {
       // 고른 기관을 다음 화면(기관 로그인)으로 넘긴다. 화면 순서대로
-      state: { banks: BANKS.filter((b) => banks.has(b.name)).map((b) => b.name), cards: CARDS.filter((c) => cards.has(c.name)).map((c) => c.name) },
+      // consent: 다음 단계에서 대출을 불러올지 등에 쓴다 (저장은 API 연결 후 동의 기록 consent 테이블에 목적별로)
+      state: {
+        banks: BANKS.filter((b) => banks.has(b.name)).map((b) => b.name),
+        cards: CARDS.filter((c) => cards.has(c.name)).map((c) => c.name),
+        consent,
+      },
     })
   }
 
@@ -98,13 +107,19 @@ export default function ConnectPage() {
 
       {/* 동의: 체크박스 + 이름(누르면 약관 상세 팝업) — 회원가입 약관과 같은 모양 */}
       <div className="mc-card mc-consent-card">
-        <div className="mc-terms-row">
-          <input aria-label={doc.label} checked={consent} id="mc-consent" type="checkbox"
-            onChange={(e) => { setConsent(e.target.checked); setError('') }} />
-          <button type="button" className="mc-terms-open" aria-haspopup="dialog" onClick={openConsent}>
-            {doc.label}<span>보기</span>
-          </button>
-        </div>
+        <label className="mc-field mc-check mc-terms-all">
+          <input type="checkbox" checked={allConsent} onChange={(e) => setAll(e.target.checked)} />금융 정보 조회 전체 동의
+        </label>
+        {FINANCE_TERMS.map((k) => (
+          <div className="mc-terms-row" key={k}>
+            <input aria-label={TERMS[k].label} checked={consent[k]} id={`mc-consent-${k}`} type="checkbox"
+              onChange={(e) => setOne(k, e.target.checked)} />
+            <button type="button" className="mc-terms-open" aria-haspopup="dialog" onClick={() => openConsent(k)}>
+              {TERMS[k].label}<span>보기</span>
+            </button>
+          </div>
+        ))}
+        <p className="mc-picked mc-consent-note">선택 동의를 하지 않아도 계좌로 예산을 짤 수 있어요. 대출에 동의하지 않으면 대출 정보는 불러오지 않아요.</p>
       </div>
       <p className="mc-note">시안에서는 실제 인증 정보나 계좌 정보를 받지 않아요.</p>
       {error && <div className="mc-error" role="alert">{error}</div>}

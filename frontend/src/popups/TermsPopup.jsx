@@ -16,7 +16,7 @@ export default function TermsPopup({ kind, onAgree }) {
   return (
     <Popup label={doc.title}>
       <h2>{doc.title}</h2>
-      <p className="mc-muted">필수 · {doc.version} · {doc.date} 시행</p>
+      <p className="mc-muted">{doc.required === false ? '선택' : '필수'} · {doc.version} · {doc.date} 시행</p>
       <div className="mc-terms-doc">
         {doc.sections.map((s) => (
           <section key={s.h}>
