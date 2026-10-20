@@ -9,6 +9,13 @@ from . import mock
 PENDING = "확인 필요"  # AI가 카테고리를 확신 못 한 거래 묶음 이름
 
 
+def net_amount(tx):
+    """취소를 뺀 실제 소비 금액 (전체 취소 = 0, 부분취소 = 금액 - 취소 금액)"""
+    if tx.get("cancel") == "full":
+        return 0
+    return tx["amount"] - tx.get("cancel_amount", 0)
+
+
 def filter_days(selected):
     """고른 카테고리의 거래만 남기고, 날짜별 합계를 다시 계산한다"""
     def keep(tx):
@@ -20,9 +27,9 @@ def filter_days(selected):
 
     days = []
     for day in mock.TX_DAYS:
-        items = [tx for tx in day["items"] if keep(tx)]
+        items = [{**tx, "net": net_amount(tx)} for tx in day["items"] if keep(tx)]
         if items:
-            days.append({"date": day["date"], "items": items, "total": sum(tx["amount"] for tx in items)})
+            days.append({"date": day["date"], "items": items, "total": sum(tx["net"] for tx in items)})
     return days
 
 

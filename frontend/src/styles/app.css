@@ -862,3 +862,31 @@
 #mc-new-preview#mc-new-preview .mc-cf-err{margin:0;font-size:12px}
 #mc-new-preview#mc-new-preview .mc-asst-form{max-width:94%}
 /* ===== 통합 챗봇 자유 입력창 끝 ===== */
+
+/* ===== 기관 연결 로그인·상태 (2026-10-20) 시작 ===== */
+#mc-new-preview#mc-new-preview .mc-conn-btn{flex:none;margin:0;min-height:34px;padding:6px 12px;border-radius:10px;border:1px solid var(--mc-brand);background:var(--mc-paper);color:var(--mc-brand);font-size:13px;font-weight:650;white-space:nowrap}
+#mc-new-preview#mc-new-preview .mc-conn-btn.is-retry{border-color:var(--mc-alert);color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-conn-fail{color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-conn-busy{flex:none;display:inline-flex;color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-conn-busy svg{animation:mc-spin 1s linear infinite}
+#mc-new-preview#mc-new-preview .mc-conn-demo{color:var(--mc-sub);background:var(--mc-paper);border-radius:12px;padding:10px 12px;margin-top:4px}
+#mc-new-preview#mc-new-preview .mc-login-form .mc-field{margin:12px 0}
+#mc-new-preview#mc-new-preview .mc-login-note{margin:4px 0 0;padding:10px 12px;border-radius:12px;background:var(--mc-soft);color:var(--mc-ink);font-size:12.5px;line-height:1.5}
+#mc-new-preview#mc-new-preview .mc-login-warn{margin:4px 0 0;font-size:12.5px;color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-login-cert{background:var(--mc-bg);border-radius:12px;padding:14px;margin:4px 0 0}
+@media (prefers-reduced-motion:reduce){#mc-new-preview#mc-new-preview .mc-conn-busy svg{animation:none}}
+#mc-new-preview#mc-new-preview .mc-inst .mc-grow{flex:1;min-width:0}
+#mc-new-preview#mc-new-preview .mc-inst>svg{flex:none;color:var(--mc-brand)}
+#mc-new-preview#mc-new-preview .mc-chip-cert{display:block;font-size:9.5px;line-height:1.1;opacity:.75}
+#mc-new-preview#mc-new-preview .mc-pick-more{display:block;min-height:32px;padding:0;margin:-4px 0 6px;font-size:12.5px}
+/* ===== 기관 연결 로그인·상태 끝 ===== */
+
+/* ===== 거래 취소 표시 (2026-10-20) 시작 ===== */
+#mc-new-preview#mc-new-preview .mc-listrow.is-full strong:first-child,#mc-new-preview#mc-new-preview .mc-listrow.is-full .mc-right{color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-listrow .mc-right s{color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-cancel-tag{display:inline-block;font-style:normal;font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:6px;background:var(--mc-line);color:var(--mc-sub);vertical-align:1px}
+#mc-new-preview#mc-new-preview .mc-cancel-sub{display:block;font-size:11px;color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-cancel-box{margin:-6px 0 8px;padding:10px 12px;border-radius:12px;background:var(--mc-bg);color:var(--mc-ink);font-size:12.5px}
+/* 거래 상세 팝업의 카테고리 칩은 마지막(기타)도 같은 모양 — 목록의 '다른 카테고리' 버튼 규칙과 분리 */
+#mc-new-preview#mc-new-preview .mc-sheet .mc-pend-pick button{border-color:var(--mc-brand);color:var(--mc-brand);font-weight:650}
+/* ===== 거래 취소 표시 끝 ===== */

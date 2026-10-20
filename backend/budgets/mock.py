@@ -54,8 +54,8 @@ CATEGORIES = [
     {"name": "패션·쇼핑", "icon": "shirt", "used": 30_000, "budget": 80_000, "pct": 38, "left": 50_000, "locked": False},
     {"name": "의료·건강", "icon": "stethoscope", "used": 20_000, "budget": 50_000, "pct": 40, "left": 30_000, "locked": False},
     {"name": "뷰티·미용", "icon": "scissors", "used": 40_000, "budget": 60_000, "pct": 67, "left": 20_000, "locked": False},
-    {"name": "교육", "icon": "graduation-cap", "used": 0, "budget": 50_000, "pct": 0, "left": 50_000, "locked": False},
-    {"name": "문화·여가", "icon": "ticket", "used": 100_000, "budget": 170_000, "pct": 59, "left": 70_000, "locked": False},
+    {"name": "교육", "icon": "graduation-cap", "used": 20_000, "budget": 50_000, "pct": 40, "left": 30_000, "locked": False},
+    {"name": "문화·여가", "icon": "ticket", "used": 80_000, "budget": 170_000, "pct": 47, "left": 90_000, "locked": False},
     {"name": "여행·숙박", "icon": "plane", "used": 0, "budget": 60_000, "pct": 0, "left": 60_000, "locked": False},
     {"name": "기타", "icon": "ellipsis", "used": 20_000, "budget": 60_000, "pct": 33, "left": 40_000, "locked": False},
 ]

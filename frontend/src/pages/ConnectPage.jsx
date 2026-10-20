@@ -5,26 +5,35 @@ import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { usePicked } from '../utils/usePicked.js'
 import { PATHS } from '../routes.js'
+import { BANKS, CARDS, NOT_SUPPORTED } from '../utils/institutions.js'
 
 const LOAN_ANSWERS = ['있어요', '없어요', '나중에 확인']
-const BANKS = ['신한', '국민', '우리', '하나', '농협']
-const BANKS_SOON = ['카카오뱅크', '토스뱅크']  // CODEF 지원 확인 중
-const CARDS = ['신한카드', '국민카드', '삼성카드', '현대카드', '롯데카드', '우리카드', '하나카드']
 
-// 칩 여러 개 + "전체 선택" + "2곳 선택 · 신한, 국민" 을 한 덩어리로
-function PickCard({ title, hint, items, picked, soon = [] }) {
+// 칩 여러 개 + "다른 ○○ 보기" + "2곳 선택 · 신한, 국민" 을 한 덩어리로
+// items = utils/institutions.js 의 BANKS · CARDS. 자주 쓰는 곳(popular)만 먼저 보이고 나머지는 펼친다
+function PickCard({ title, hint, items, picked, moreLabel, notSupported = [] }) {
+  const [open, setOpen] = useState(false)
+  // 펼치지 않았어도 이미 고른 기관은 보이게
+  const shown = items.filter((x) => open || x.popular || picked.has(x.name))
+  const rest = items.length - items.filter((x) => x.popular).length
+
   return (
     <div className="mc-card">
-      <div className="mc-row">
-        <h2>{title} <span className="mc-hint">{hint}</span></h2>
-        <button type="button" className="mc-link" onClick={() => picked.set(items)}>전체 선택</button>
-      </div>
+      <h2>{title} <span className="mc-hint">{hint}</span></h2>
       <div className="mc-chipbar">
-        {items.map((x) => <button key={x} type="button" aria-pressed={picked.has(x)} onClick={() => picked.toggle(x)}>{x}</button>)}
-        {soon.map((x) => <button key={x} type="button" className="mc-soonchip" disabled>{x} <small>지원 확인 중</small></button>)}
+        {shown.map((x) => (
+          <button key={x.name} type="button" aria-pressed={picked.has(x.name)} onClick={() => picked.toggle(x.name)}>
+            {x.label}{!x.idLogin && <small className="mc-chip-cert">인증서만</small>}
+          </button>
+        ))}
       </div>
+      <button type="button" className="mc-link mc-pick-more" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {open ? '접기 ∧' : `${moreLabel} ${rest}곳 더 보기 ∨`}
+      </button>
+      {open && items.some((x) => !x.idLogin) && <p className="mc-picked">'인증서만'은 공동인증서로만 연결돼요.</p>}
+      {notSupported.length > 0 && <p className="mc-picked">{notSupported.join('·')}는 아직 지원하지 않아요.</p>}
       {/* 고른 순서가 아니라 화면 순서대로 이름을 보여 준다 */}
-      <p className="mc-picked"><b>{picked.list.length}곳</b> 선택 · {items.filter(picked.has).join(', ')}</p>
+      <p className="mc-picked"><b>{picked.list.length}곳</b> 선택 · {items.filter((x) => picked.has(x.name)).map((x) => x.label).join(', ')}</p>
     </div>
   )
 }
@@ -32,14 +41,17 @@ function PickCard({ title, hint, items, picked, soon = [] }) {
 export default function ConnectPage() {
   const navigate = useNavigate()
   const [hasLoan, setHasLoan] = useState(null)
-  const banks = usePicked(['신한', '국민'])
+  const banks = usePicked(['신한은행', '국민은행'])
   const cards = usePicked(['신한카드'])
 
   return (
     <Layout
       title="계좌 연결"
       showBack
-      foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.connectAuth)}>선택한 기관 연결하기</button>}
+      foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.connectAuth, {
+        // 고른 기관을 다음 화면(기관 로그인)으로 넘긴다. 화면 순서대로
+        state: { banks: BANKS.filter((b) => banks.has(b.name)).map((b) => b.name), cards: CARDS.filter((c) => cards.has(c.name)).map((c) => c.name) },
+      })}>선택한 기관 연결하기</button>}
     >
       <StepBar step={2} />
       <div className="mc-eyebrow">계좌 연결</div>
@@ -54,8 +66,8 @@ export default function ConnectPage() {
         <p className="mc-picked">있으면 대출 정보도 불러와요.</p>
       </div>
 
-      <PickCard title="연결할 은행" hint="필수 · 복수 선택" items={BANKS} picked={banks} soon={BANKS_SOON} />
-      <PickCard title="카드사" hint="선택 · 나중에 해도 돼요" items={CARDS} picked={cards} />
+      <PickCard title="연결할 은행" hint="필수 · 복수 선택" items={BANKS} picked={banks} moreLabel="다른 은행" notSupported={NOT_SUPPORTED} />
+      <PickCard title="카드사" hint="선택 · 나중에 해도 돼요" items={CARDS} picked={cards} moreLabel="다른 카드사" />
 
       <label className="mc-field mc-check"><input id="mc-consent" type="checkbox" />[필수] 계좌·카드 조회 동의 (조회 전용)</label>
       <p className="mc-note">시안에서는 실제 인증 정보나 계좌 정보를 받지 않아요.</p>

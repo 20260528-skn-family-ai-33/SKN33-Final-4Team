@@ -85,10 +85,16 @@ export default function TransactionsPage() {
                 </div>
               </div>
             ) : (
-              <button type="button" className="mc-listrow" key={tx.id} onClick={() => openPopup(<TransactionPopup tx={tx} date={day.date} categories={CATEGORIES} />)}>
+              <button type="button" className={`mc-listrow${tx.cancel ? ` is-${tx.cancel}` : ''}`} key={tx.id}
+                onClick={() => openPopup(<TransactionPopup tx={tx} date={day.date} categories={CATEGORIES} />)}>
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
-                <span className="mc-grow"><strong>{tx.name}</strong><span className="mc-muted">{tx.cat}</span></span>
-                <span className="mc-right">{won(tx.amount)} <span className="mc-muted">›</span></span>
+                <span className="mc-grow"><strong>{tx.name}</strong><span className="mc-muted">{tx.cat}{tx.via && ` · ${tx.via}`}</span></span>
+                <span className="mc-right">
+                  {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}
+                  {tx.cancel === 'full' && <><s>{won(tx.amount)}</s> <em className="mc-cancel-tag">취소</em></>}
+                  {tx.cancel === 'partial' && <>{won(tx.net)}<small className="mc-cancel-sub">부분취소 −{won(tx.cancelAmount)}</small></>}
+                  {!tx.cancel && <>{won(tx.amount)} <span className="mc-muted">›</span></>}
+                </span>
               </button>
             )
           )}

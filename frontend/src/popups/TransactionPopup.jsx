@@ -12,9 +12,16 @@ export default function TransactionPopup({ tx, date, categories }) {
       <div className="mc-eyebrow">거래 상세</div>
       <h1>{tx.name}</h1>
       <div className="mc-card">
-        <div className="mc-money">{won(tx.amount)}</div>
+        <div className="mc-money">{tx.cancel === 'full' ? <s>{won(tx.amount)}</s> : won(tx.net ?? tx.amount)}</div>
+        {tx.cancel && (
+          <p className="mc-cancel-box" role="note">
+            {tx.cancel === 'full'
+              ? '카드사에서 취소된 거래예요. 소비에서 빠졌어요.'
+              : `${won(tx.amount)} 중 ${won(tx.cancelAmount)}이 취소됐어요. 소비에는 ${won(tx.net)}만 들어가요.`}
+          </p>
+        )}
         <div className="mc-keyvalue"><span>거래일</span><strong>{date}</strong></div>
-        <div className="mc-keyvalue"><span>결제 계좌</span><strong>신한 · 1234</strong></div>
+        <div className="mc-keyvalue"><span>결제 수단</span><strong>{tx.via ?? '신한 · 1234'}</strong></div>
         <div className="mc-keyvalue"><span>카테고리</span><strong>{tx.cat}</strong></div>
         <div className="mc-keyvalue"><span>분류</span><strong>AI 자동 분류</strong></div>
       </div>
