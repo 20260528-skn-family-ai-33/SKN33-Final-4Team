@@ -1,3 +1,53 @@
+"""관리자 화면(/admin)에 회원 등록. 기본 UserAdmin은 username을 찾기 때문에 이메일 기준으로 바꿔 쓴다."""
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 
-# Register your models here.
+from .models import Consent, FinancialProfile, User
+
+
+class UserAddForm(AdminUserCreationForm):
+    class Meta(AdminUserCreationForm.Meta):
+        model = User
+        fields = ("email", "nickname")
+        field_classes = {}
+
+
+class UserEditForm(UserChangeForm):
+    class Meta(UserChangeForm.Meta):
+        model = User
+        fields = "__all__"
+        field_classes = {}
+
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    form = UserEditForm
+    add_form = UserAddForm
+
+    ordering = ("-created_at",)
+    list_display = ("email", "nickname", "status", "is_active", "is_staff", "created_at")
+    list_filter = ("status", "is_active", "is_staff")
+    search_fields = ("email", "nickname")
+    readonly_fields = ("user_id", "last_login", "created_at", "updated_at")
+
+    fieldsets = (
+        (None, {"fields": ("user_id", "email", "password")}),
+        ("내 정보", {"fields": ("nickname", "status", "email_verified_at", "password_changed_at")}),
+        ("CODEF", {"fields": ("codef_connected_id_ciphertext", "codef_connected_at")}),
+        ("권한", {"fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions")}),
+        ("시각", {"fields": ("last_login", "created_at", "updated_at")}),
+    )
+    add_fieldsets = (
+        (None, {"classes": ("wide",), "fields": ("email", "nickname", "usable_password", "password1", "password2")}),
+    )
+
+
+@admin.register(FinancialProfile)
+class FinancialProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "payday", "monthly_take_home_income", "has_car", "budget_direction", "updated_at")
+
+
+@admin.register(Consent)
+class ConsentAdmin(admin.ModelAdmin):
+    list_display = ("user", "purpose", "document_version", "granted_at", "revoked_at")

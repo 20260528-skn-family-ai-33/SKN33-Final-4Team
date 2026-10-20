@@ -49,6 +49,11 @@ INSTALLED_APPS = [
     "chat",
 ]
 
+# ===== 회원 모델 =====
+# Django 기본 User 대신 users.User(테이블 app_user, 이메일 로그인)를 쓴다.
+# ⚠️ 첫 migrate 전에 정해야 하는 값이라 바꾸지 않는다. 다른 모델은 settings.AUTH_USER_MODEL로 회원을 가리킨다.
+AUTH_USER_MODEL = "users.User"
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -122,7 +127,7 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 REST_FRAMEWORK = {
     # 로그인 방식: Django 세션(쿠키). React 와 같은 주소(프록시)로 붙어서 쿠키가 그대로 오간다
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
-    # 지금은 로그인 없이 다 열어 둔다. users.User 를 만들면 IsAuthenticated 로 바꾼다
+    # 지금은 로그인 없이 다 열어 둔다. users.User 는 만들었고, 로그인 API·화면이 붙으면 IsAuthenticated 로 바꾼다
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
     # 보낼 때: 키를 camelCase 로 (living_used → livingUsed). 개발 중엔 브라우저로 열면 보기 좋은 화면도
     "DEFAULT_RENDERER_CLASSES": ["config.api.CamelJSONRenderer"]
