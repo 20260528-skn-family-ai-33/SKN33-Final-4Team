@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 
-from .models import CategoryMinimum, CategoryPriority, Consent, FinancialProfile, User
+from .models import CategoryMinimum, CategoryPriority, Consent, FinancialProfile, IdempotencyRecord, User
 
 
 class UserAddForm(AdminUserCreationForm):
@@ -61,3 +61,13 @@ class CategoryMinimumAdmin(admin.ModelAdmin):
 @admin.register(Consent)
 class ConsentAdmin(admin.ModelAdmin):
     list_display = ("user", "purpose", "document_version", "granted_at", "revoked_at")
+
+
+@admin.register(IdempotencyRecord)
+class IdempotencyRecordAdmin(admin.ModelAdmin):
+    """요청 번호 기록 (같은 저장 요청 두 번 막기, 10-21) — 확인용이라 읽기만"""
+
+    list_display = ("created_at", "user", "method", "path", "response_status", "key")
+    list_filter = ("method", "response_status")
+    search_fields = ("key", "path")
+    readonly_fields = [f.name for f in IdempotencyRecord._meta.fields]

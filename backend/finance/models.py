@@ -489,11 +489,13 @@ class RecurringExpense(models.Model):
         "budgets.Category", on_delete=models.RESTRICT, db_column="category_code",
         related_name="+", verbose_name="카테고리",
     )
-    category_detail = models.CharField("세부 분류", max_length=30, null=True, blank=True)
+    # category_detail(세부 분류) 칸은 10-21 삭제 — 화면에서 입력하지 않고 1차에 쓰는 곳이 없어서 (구독 모아보기가 생기면 다시 검토)
     status = models.CharField("상태", max_length=20, choices=Status.choices)
     source_type = models.CharField("등록 출처", max_length=20, choices=SourceType.choices)
     evidence = models.JSONField("확정 근거 거래 ID", default=empty_list, blank=True)
     confirmed_at = models.DateTimeField("사용자 확인 시각", null=True, blank=True)
+    # 10-21: 후보를 '최근에 찾은 순'으로 보여 주려고 추가 (직접 등록은 등록 시각)
+    created_at = models.DateTimeField("발견·등록 시각", auto_now_add=True)
 
     class Meta:
         db_table = "recurring_expense"

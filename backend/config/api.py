@@ -10,6 +10,8 @@ import logging
 import re
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.http import Http404
 from rest_framework import status
 from rest_framework.parsers import JSONParser
 from rest_framework.renderers import JSONRenderer
@@ -81,9 +83,19 @@ def exception_handler(exc, context):
         )
 
     data = response.data
-    error = {"code": getattr(exc, "default_code", "error")}
+    # Django 의 Http404(get_object_or_404) · PermissionDenied 는 default_code 가 없어서 'error' 가 되던 것을 바로잡음 (10-21)
+    if isinstance(exc, Http404):
+        code = "not_found"
+    elif isinstance(exc, DjangoPermissionDenied):
+        code = "permission_denied"
+    else:
+        code = getattr(exc, "default_code", "error")
+    error = {"code": code}
     if isinstance(data, dict) and set(data) == {"detail"}:
         error["message"] = str(data["detail"])
+        if error["code"] == "not_found":
+            # get_object_or_404 · NotFound 도 /api/ 맨 끝 줄(api_common.not_found)과 같은 문구로 (10-21 C-11)
+            error["message"] = "찾을 수 없어요."
     else:
         # 입력값 검사 에러: {"email": ["필수 항목입니다."]} 같은 칸별 목록
         error["message"] = "입력값을 확인해 주세요."

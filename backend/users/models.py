@@ -13,6 +13,7 @@
 import uuid
 
 from django.conf import settings
+from rest_framework.utils.encoders import JSONEncoder as DRFJSONEncoder
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.db.models import Q
@@ -219,3 +220,32 @@ class Consent(models.Model):
 
     def __str__(self):
         return f"{self.purpose} ({self.document_version})"
+
+
+class IdempotencyRecord(models.Model):
+    """같은 저장 요청이 두 번 와도 한 번만 반영하기 위한 '주문 번호' 기록 (10-21 C-10)
+
+    - 화면이 폼을 열 때 요청 번호(UUID)를 하나 만들어 Idempotency-Key 헤더로 보낸다.
+    - 같은 회원 · 같은 번호가 또 오면 새로 처리하지 않고 처음 응답을 그대로 돌려준다.
+    - 사용법과 규칙은 config/idempotency.py · docs/API_RULES.md '같은 요청을 두 번 보내면'
+    """
+
+    record_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="idempotency_records")
+    key = models.CharField("요청 번호", max_length=64)
+    method = models.CharField("요청 방식", max_length=10)
+    path = models.CharField("요청 주소", max_length=200)
+    request_hash = models.CharField("요청 내용 해시", max_length=64)  # 같은 번호에 다른 내용이 오면 막으려고
+    response_status = models.SmallIntegerField("처음 응답 상태 코드")
+    response_body = models.JSONField("처음 응답 내용", null=True, blank=True, encoder=DRFJSONEncoder)  # 응답과 똑같이 저장 (DRF 인코더: 시각의 마이크로초까지 유지)
+    created_at = models.DateTimeField("처리 시각", auto_now_add=True)
+
+    class Meta:
+        db_table = "idempotency_record"
+        verbose_name = verbose_name_plural = "요청 번호 기록"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "key"], name="idempotency_record_user_id_key_key"),
+        ]
+
+    def __str__(self):
+        return f"{self.method} {self.path} ({self.key})"

@@ -61,7 +61,7 @@ export default function FixedPage() {
       <div className="mc-card">
         <div className="mc-row"><h2>카드 청구서</h2><button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>카드 관리</button></div>
         <div className="mc-cardday"><span><Icon name="CreditCard" />신한카드</span><strong>420,000원 · 10.15 출금예정</strong></div>
-        <p className="mc-note" style={{ paddingBottom: 0 }}>카드값은 청구서 금액 기준으로 출금예정일에 챙겨요. 승인 사용액과 청구액은 달라서 고정지출 합계에는 넣지 않아요.</p>
+        <p className="mc-note" style={{ paddingBottom: 0 }}>카드값은 청구서 금액 기준으로 출금예정일에 챙겨요. 카드로 내는 고정지출(구독료 등)은 이 안에 들어 있어서 따로 빼지 않아요.</p>
       </div>
     </Layout>
   )

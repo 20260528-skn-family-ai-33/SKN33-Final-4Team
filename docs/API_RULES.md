@@ -39,9 +39,18 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 
 ## 에러 응답 — 항상 이 모양
 
+`code` · `message`는 항상 있고, **`fields`는 칸 오류가 있을 때만** 있다 (10-21 확정, `config/api.py`가 이미 이렇게 동작). 칸과 상관없는 오류(로그인 · 404 등)에는 `fields`를 **아예 넣지 않는다** (빈 `{}`도 아님).
+
 ```json
-{ "error": { "code": "invalid", "message": "입력값을 확인해 주세요.", "fields": { "livingBudget": ["이 값이 0보다 크거나 같은지 확인하세요."] } } }
+// 입력값 틀림 → fields 있음
+{ "error": { "code": "invalid", "message": "입력값을 확인해 주세요.", "fields": { "amount": ["금액은 1,000원 ~ 1억 원으로 입력해 주세요."] } } }
+
+// 칸과 상관없는 오류 → fields 없음
+{ "error": { "code": "not_authenticated", "message": "로그인이 필요해요." } }
 ```
+
+- 칸 하나에 묶이지 않는 입력 오류(예: 계좌와 카드를 둘 다 보냄)는 `fields.nonFieldErrors`에 넣는다.
+- React는 `err.fields?.amount`처럼 **없을 수도 있다고 보고** 읽는다.
 
 | 상황 | 상태 코드 | `code` | React에서 |
 |---|---|---|---|
@@ -49,9 +58,12 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 | JSON 깨짐 | 400 | `parse_error` | 개발 중 버그 |
 | 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 보내기 |
 | 권한 없음 · CSRF 실패 | 403 | `permission_denied` | `err.message` 표시 |
-| 없음 · 남의 데이터 | 404 | `not_found` | "찾을 수 없어요" |
+| 없음 · 남의 데이터 · **주소 속 ID 형식 틀림** · `/api/` 아래 없는 주소 | 404 | `not_found` | "찾을 수 없어요" |
+| 같은 요청 번호로 다른 내용 | 409 | `idempotency_conflict` | 개발 중 버그 (번호를 재사용함) |
 | 안 되는 메서드 | 405 | `method_not_allowed` | 개발 중 버그 |
 | 서버 버그 (배포) | 500 | `server_error` | "잠시 후 다시 시도해 주세요." |
+
+> **주소가 틀리면 404, 내용이 틀리면 400** (10-21 C-11). 주소 속 ID 자리는 `<uuid:이름>`으로 써서 `abc`처럼 형식이 틀리면 Django가 알아서 404로 보낸다. `/api/` 아래 맞는 주소가 없으면 `api_urls.py` 맨 끝 줄(`not_found`)이 HTML 대신 **JSON 404**로 답한다. 주소 끝 `/`를 빼먹으면 메시지가 "주소 끝에 /가 필요해요."로 나온다. 본문에 든 ID가 틀린 건 400 (아래 '보안 · 소유권').
 
 > 세션 로그인은 로그인 안 했을 때 401이 아니라 **403 + `not_authenticated`**를 준다. 상태 코드가 아니라 `code`로 구분한다.
 
@@ -66,9 +78,38 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 | 필수 칸에 `null` | 400 `invalid` | `{ "amount": null }` → "금액은 비울 수 없어요." |
 | 빈 글자 `""` | 400 `invalid` | 빈 값은 `null`로만 보낸다 |
 
-- 어떤 칸을 비울 수 있는지는 각 API 명세의 보내는 값 표에 적는다 (예: 고정지출은 `paymentDay` · `paymentAccountId` · `paymentCardId` · `categoryDetail`만).
+- 어떤 칸을 비울 수 있는지는 각 API 명세의 보내는 값 표에 적는다 (예: 고정지출은 `paymentDay` · `paymentAccountId` · `paymentCardId` · `evidenceTransactionId`만).
 - 서로 묶인 칸은 **같이 보낸다.** 예: 결제 수단을 계좌 → 카드로 바꿀 땐 `{ "paymentAccountId": null, "paymentCardId": "9a1b…" }`. 한쪽만 보내서 규칙(계좌와 카드 중 하나만)에 어긋나면 400. 서버가 다른 칸을 알아서 지우지 않는다.
 - Django: serializer를 `partial=True`로 쓰고, 비울 수 있는 칸에만 `allow_null=True`를 준다.
+
+## 같은 요청을 두 번 보내면
+
+2026-10-21 확정. 버튼을 두 번 누르거나 네트워크가 요청을 다시 보내도 **결과가 이미 원하는 상태면 성공**으로 답한다. 에러를 내지 않는다.
+
+| 예시 | 답 |
+|---|---|
+| 이미 중지한 고정지출을 또 중지 (`DELETE`) | 204 (그대로 중지 상태) |
+| 이미 승인한 예산을 또 승인 | 처음 승인했을 때와 같은 응답. 두 번 반영하지 않는다 |
+| 이미 연결 해제한 계좌를 또 해제 | 204 |
+
+- "이미 그 상태"인지는 서버가 DB를 보고 판단한다. 같은 일을 두 번 하지 않는다(돈 · 기록이 두 번 생기면 안 됨).
+- 남의 데이터이거나 없는 ID면 이 규칙과 상관없이 404다.
+
+### 새로 만드는 요청은 '요청 번호'로 막는다 (10-21 C-10)
+
+"이미 그 상태인지"를 알 수 없는 **새로 만들기 · 승인 요청**(고정지출 추가, 거래 직접 등록, 예산 승인, 조정안 승인 등)은 **요청 번호**(`Idempotency-Key` 헤더)로 막는다. 이름이 같다는 이유로 중복이라고 판단하지 않는다.
+
+| 단계 | 하는 일 |
+|---|---|
+| ① 화면 | 폼(팝업)을 열 때 `newRequestKey()`로 요청 번호를 하나 만든다. 저장하는 동안 버튼을 잠근다("저장 중…") |
+| ② 화면 | `apiSend(path, 'POST', body, { requestKey })` → `Idempotency-Key` 헤더로 보낸다. 다시 보내도 **같은 번호** |
+| ③ 서버 | view에 `@idempotent()`를 붙인다 (`config/idempotency.py`). 같은 회원 · 같은 번호 · 같은 내용이면 다시 처리하지 않고 **처음 응답을 그대로** 돌려준다 |
+
+- 같은 번호에 **다른 내용**이 오면 409 `idempotency_conflict`.
+- 처리가 **실패(4xx · 5xx)하면 기록하지 않는다.** 입력을 고쳐 같은 번호로 다시 보내면 처음 요청처럼 처리된다.
+- 새 항목을 하나 더 만들 땐 팝업을 다시 열어 **새 번호**를 받는다 → 이름이 같아도 별개 항목.
+- 승인처럼 꼭 막아야 하는 API는 `@idempotent(required=True)` (헤더 없으면 400).
+- 기록은 `idempotency_record` 표 (회원 · 요청 번호 UNIQUE). 로그인 안 한 요청에는 적용되지 않는다(회원을 몰라서). 로그인 API가 붙으면 자동으로 적용된다.
 
 ## 보안 · 소유권
 
@@ -160,6 +201,6 @@ try {
 ## 새 API 만드는 순서
 
 1. `backend/<앱>/api.py`에 함수를 만든다 (`@api_view`, 입력 검사는 `serializers`).
-2. `backend/config/api_urls.py`에 주소를 한 줄 추가한다.
+2. `backend/config/api_urls.py`에 주소를 한 줄 추가한다. **맨 끝 `not_found` 줄 위에** 넣고, ID 자리는 `<uuid:이름>`으로 쓴다.
 3. 브라우저로 `http://127.0.0.1:8000/api/...`를 열어 확인한다 (DEBUG면 보기 좋은 화면).
 4. React 화면에서 `useApi` / `apiSend`로 부른다.

@@ -58,15 +58,23 @@ async function csrfToken() {
   return readCookie('csrftoken') ?? ''
 }
 
-export async function apiSend(path, method, body) {
-  const options = {
+// 요청 번호 — 폼(팝업)을 열 때 하나 만들어 두고, 저장할 때 apiSend 에 같이 넘긴다 (10-21 C-10)
+// 같은 폼에서 다시 보내면 같은 번호라서 서버가 한 번만 반영한다. 새 항목을 또 만들려면 폼을 다시 열어 새 번호를 받는다
+// crypto.randomUUID 는 https · localhost 에서만 있어서(휴대폰으로 http://192.168… 접속하면 없음) 없으면 직접 만든다
+export const newRequestKey = () =>
+  crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
+
+// options.requestKey = newRequestKey() 로 만든 번호 (새로 만들기 · 승인 요청에 넣는다. docs/API_RULES.md '같은 요청을 두 번 보내면')
+export async function apiSend(path, method, body, options = {}) {
+  const request = {
     method,
     headers: {
       Accept: 'application/json',
       'Content-Type': 'application/json',
       'X-CSRFToken': await csrfToken(),
+      ...(options.requestKey ? { 'Idempotency-Key': options.requestKey } : {}),
     },
   }
-  if (body !== undefined) options.body = JSON.stringify(body)  // 보낼 내용 (DELETE 등은 없을 수 있음)
-  return readJson(await fetch(path, options))
+  if (body !== undefined) request.body = JSON.stringify(body)  // 보낼 내용 (DELETE 등은 없을 수 있음)
+  return readJson(await fetch(path, request))
 }

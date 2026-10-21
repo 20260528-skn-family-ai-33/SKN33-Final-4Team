@@ -2,16 +2,16 @@
 
 작성일: 2026-10-19 (10-20 · 10-21 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
 
-## 1. 현재 상태 — 28개 테이블 모델 완료 ✅
+## 1. 현재 상태 — 29개 테이블 모델 완료 ✅
 
 | 항목 | 결과 |
 |---|---|
-| 테이블 | 28 = ERD 26 + 10-20 추가 1 (`category_priority`) + 10-21 추가 1 (`category_minimum`) |
-| 칸(컬럼) | 349 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) + 10-21 추가 4 (`category_minimum`) + 10-21 지킬 돈 A안 +1 (`living_budget`·`cushion_monthly` 추가, `cushion_floor` 삭제) |
-| FK | 80 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) + 10-21 추가 2 (`category_minimum`: 회원 CASCADE · 카테고리 RESTRICT) → CASCADE 34 · RESTRICT 26 · SET_NULL 20 |
-| UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) + 10-21 추가 1개 (`category_minimum`) |
+| 테이블 | 29 = ERD 26 + 10-20 추가 1 (`category_priority`) + 10-21 추가 1 (`category_minimum`) + 10-21 추가 1 (`idempotency_record`) |
+| 칸(컬럼) | 358 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) + 10-21 추가 4 (`category_minimum`) + 10-21 지킬 돈 A안 +1 (`living_budget`·`cushion_monthly` 추가, `cushion_floor` 삭제) + 10-21 추가 9 (`idempotency_record`) − 10-21 삭제 1 (`recurring_expense.category_detail`) + 10-21 추가 1 (`recurring_expense.created_at`) |
+| FK | 80 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) + 10-21 추가 2 (`category_minimum`: 회원 CASCADE · 카테고리 RESTRICT) + 10-21 추가 1 (`idempotency_record`: 회원 CASCADE) → CASCADE 35 · RESTRICT 26 · SET_NULL 20 |
+| UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) + 10-21 추가 1개 (`category_minimum`) + 10-21 추가 1개 (`idempotency_record` 회원 · 요청 번호) |
 | CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) + 10-21 추가 1개 (`cm_min_amount_gte_1`) + 10-21 지킬 돈 A안 2개 (`fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0`) + 10-21 고정지출 4개 (`re_amount_1000_100m` · `re_payment_day_1_31` · `re_status_valid` · `re_source_type_valid`) |
-| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과. 10-21 카테고리 최소 금액 표(`users` 0005)도 PostgreSQL 16에서 `migrate` + 규칙 8개(정상 저장 · 1원·기타 저장 · 같은 카테고리 두 번 · 0원 · 음수 · 사용 중 카테고리 삭제 · 지우고 다시 넣기 · 회원 삭제 CASCADE) 시험 통과. 10-21 지킬 돈 A안(`users` 0006)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 5개(정상 저장 · 0원 · NULL · 생활비 음수 · 쿠션 적립금 음수) 시험 통과. 10-21 고정지출 금액·납부일 CHECK(`finance` 0003)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 9개(1,000원 · 999원 · 0원 · 1억 원 · 1억 원+1 · 납부일 없음 · 31일 · 0일 · 32일) 시험 통과. 고정지출 상태·출처 코드(`finance` 0004)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 12개(상태 4 × 출처 2 정상 저장 8개 · 한글 상태 · 없는 상태 · 없는 출처 · 빈 출처) 시험 통과 |
+| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과. 10-21 카테고리 최소 금액 표(`users` 0005)도 PostgreSQL 16에서 `migrate` + 규칙 8개(정상 저장 · 1원·기타 저장 · 같은 카테고리 두 번 · 0원 · 음수 · 사용 중 카테고리 삭제 · 지우고 다시 넣기 · 회원 삭제 CASCADE) 시험 통과. 10-21 지킬 돈 A안(`users` 0006)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 5개(정상 저장 · 0원 · NULL · 생활비 음수 · 쿠션 적립금 음수) 시험 통과. 10-21 고정지출 금액·납부일 CHECK(`finance` 0003)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 9개(1,000원 · 999원 · 0원 · 1억 원 · 1억 원+1 · 납부일 없음 · 31일 · 0일 · 32일) 시험 통과. 고정지출 상태·출처 코드(`finance` 0004)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 12개(상태 4 × 출처 2 정상 저장 8개 · 한글 상태 · 없는 상태 · 없는 출처 · 빈 출처) 시험 통과. 요청 번호 표(`users` 0007)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + `@idempotent` 시험 8개(같은 번호 두 번 → 1개만 생성 · 같은 번호 다른 내용 409 · 이름 같아도 번호 다르면 2개 · 실패는 기록 안 함 · 다른 회원 같은 번호 · 헤더 없음 · 번호 형식 틀림 · **동시에 같은 번호 2개 → 1개만 생성**) 통과. 세부 분류 칸 삭제(`finance` 0005)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) 확인. 고정지출 API 시제품으로 `docs/api/fixed.md` 규칙 56개 시험 통과 |
 
 **ERD와 다른 점 (일부러 바꾼 것)**
 
@@ -49,6 +49,9 @@
 | `financial_profile.cushion_floor`(쿠션 보호 하한액) 삭제 → `cushion_monthly`(월 쿠션 적립금, BIGINT, 원 단위) 추가 | 쿠션을 '이 아래로 안 쓰는 금액' 대신 **매달 적립할 금액**으로 정하기로 함. 의미가 달라 이름만 바꾸지 않고 지우고 새로 만듦(아직 실제 데이터 없음). 0원 = 이번엔 적립 안 함. 잔액 < 월급×3이면 0원 불가는 API에서 검사 |
 | `recurring_expense` CHECK 2개 추가 (금액 1,000원 ~ 1억 원 · 납부일 1~31, 비워도 됨) | 10-21 C-03 결정. 0원·0을 더 친 오타를 막고, 출금일을 몰라도 등록하게 함. 고정지출 합계가 월급보다 큰지는 막지 않고 예산 만들 때 부족액으로 안내(BUD-001). 그 달에 없는 납부일(2월 31일 등)은 그 달 말일(BUD-004) |
 | `recurring_expense.status` · `source_type` 코드 확정 (choices + CHECK) | 10-21 C-04 결정. 상태 `suggested`(후보) · `confirmed`(확정) · `stopped`(중지) · `ignored`(무시), 출처 `manual`(직접 등록) · `detected`(반복 탐지). 예산에는 `confirmed`만 들어간다. 직접 추가는 바로 `confirmed`, 자동 발견은 `suggested` → 사용자가 '맞아요'면 `confirmed`, '아니에요'면 `ignored`(같은 후보를 다시 묻지 않으려고 행을 남김). 고정지출은 매월만(연납은 비정기지출 준비금, 매주·매일 사는 건 생활비) |
+| `idempotency_record` 표 추가 (회원 · 요청 번호 UNIQUE · 방식 · 주소 · 내용 해시 · 처음 응답) | 10-21 C-10 결정. [추가하기] · [승인]을 두 번 눌러도 한 번만 반영하려고. 화면이 폼을 열 때 만든 요청 번호(`Idempotency-Key`)를 기억하고, 같은 번호가 또 오면 처음 응답을 돌려준다. 이름이 같다고 중복으로 보지 않는다. 사용법은 `config/idempotency.py` · `docs/API_RULES.md` |
+| `recurring_expense.category_detail`(세부 분류) 삭제 | 10-21 결정. 화면에서 입력하는 곳이 없고 1차에 쓰는 기능이 없어서 뺌. 거래(`financial_transaction`)·예산 항목(`budget_item`)의 같은 이름 칸은 용도가 달라 그대로 둠. '구독 모아보기' 같은 기능이 생기면 다시 검토 |
+| `recurring_expense.created_at`(발견·등록 시각) 추가 | 10-21 고정지출 API 검수. 고정지출 목록에서 후보를 **최근에 찾은 순**으로 보여 주는데 기준이 될 시각 칸이 없었음(`confirmed_at`은 확정 때만 채워짐). 저장할 때 자동으로 채움(`auto_now_add`). 이미 있던 행은 마이그레이션한 시각으로 채워짐 |
 | CHECK `fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0` | 음수 금액 방지 (비어 있으면 통과) |
 | ⚠️ 쿠션 **사용 한도 규칙은 미정** | 보호 하한이 없어져서 예산 조정 때 쿠션을 어디까지 쓸 수 있는지 다시 정해야 함(2차 돌발 지출·카테고리 초과 조정 구현 전). 그때 하한·비율 제한을 두면 칸을 추가하고, 승인만 받으면 쓰는 방식이면 `cushion_use_policy`로 충분 |
 
@@ -56,7 +59,7 @@
 
 | 앱 | 테이블 (ERD 이름) | 모델 클래스 |
 |---|---|---|
-| `users` | app_user, financial_profile, category_priority, category_minimum, consent | User, FinancialProfile, CategoryPriority, CategoryMinimum, Consent |
+| `users` | app_user, financial_profile, category_priority, category_minimum, consent, idempotency_record | User, FinancialProfile, CategoryPriority, CategoryMinimum, Consent, IdempotencyRecord |
 | `finance` | connection, bank_account, card, loan, sync_run | Connection, BankAccount, Card, Loan, SyncRun |
 | `finance` | financial_transaction, transaction_link | FinancialTransaction, TransactionLink |
 | `finance` | card_bill, card_bill_item, recurring_expense, payment_due, payment_match | CardBill, CardBillItem, RecurringExpense, PaymentDue, PaymentMatch |
@@ -64,7 +67,7 @@
 | `budgets` | spending_allocation, reserve_plan, cushion_entry | SpendingAllocation, ReservePlan, CushionEntry |
 | `chat` | conversation, chat_message, async_task | Conversation, ChatMessage, AsyncTask |
 
-합계: users 5 + finance 12 + budgets 8 + chat 3 = **28개**
+합계: users 6 + finance 12 + budgets 8 + chat 3 = **29개**
 
 ## 3. 도커 PostgreSQL에서 확인하기
 
@@ -77,14 +80,14 @@ cd backend
 python manage.py migrate
 python manage.py createsuperuser      # 이메일로 만든다
 
-# 3) 테이블 목록 보기 (머니쿠션 28개 + Django 기본 9개 = 37개)
+# 3) 테이블 목록 보기 (머니쿠션 29개 + Django 기본 9개 = 38개)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\dt"
 
 # 4) 한 테이블 구조 보기 (칸·제약·FK)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payment_due"
 ```
 
-화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 28개 테이블이 다 등록돼 있다.
+화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 29개 테이블이 다 등록돼 있다.
 
 ## 4. DB가 막아 주는 규칙 (CHECK · 조건부 UNIQUE)
 
