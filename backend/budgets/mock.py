@@ -46,18 +46,19 @@ MONTH_SPLIT = [
 ]
 
 # 생활비 카테고리 — 2026-10-20 분류 기준 10개 + 기타 (기타도 예산 칸을 준다)
+# minAmount: 카테고리 최소 금액 (2026-10-21, 설정 안 했으면 None). locked(자물쇠 = 금액 고정)와 다르다
 CATEGORIES = [
-    {"name": "식비", "icon": "utensils", "used": 150_000, "budget": 330_000, "pct": 45, "left": 180_000, "locked": False},
-    {"name": "주거·통신", "icon": "house", "used": 60_000, "budget": 110_000, "pct": 55, "left": 50_000, "locked": False},
-    {"name": "교통·차량", "icon": "bus", "used": 35_000, "budget": 90_000, "pct": 39, "left": 55_000, "locked": False},
-    {"name": "생활용품", "icon": "shopping-basket", "used": 15_000, "budget": 60_000, "pct": 25, "left": 45_000, "locked": False},
-    {"name": "패션·쇼핑", "icon": "shirt", "used": 30_000, "budget": 80_000, "pct": 38, "left": 50_000, "locked": False},
-    {"name": "의료·건강", "icon": "stethoscope", "used": 20_000, "budget": 50_000, "pct": 40, "left": 30_000, "locked": False},
-    {"name": "뷰티·미용", "icon": "scissors", "used": 40_000, "budget": 60_000, "pct": 67, "left": 20_000, "locked": False},
-    {"name": "교육", "icon": "graduation-cap", "used": 20_000, "budget": 50_000, "pct": 40, "left": 30_000, "locked": False},
-    {"name": "문화·여가", "icon": "ticket", "used": 80_000, "budget": 170_000, "pct": 47, "left": 90_000, "locked": False},
-    {"name": "여행·숙박", "icon": "plane", "used": 0, "budget": 60_000, "pct": 0, "left": 60_000, "locked": False},
-    {"name": "기타", "icon": "ellipsis", "used": 20_000, "budget": 60_000, "pct": 33, "left": 40_000, "locked": False},
+    {"name": "식비", "icon": "utensils", "used": 150_000, "budget": 330_000, "pct": 45, "left": 180_000, "locked": False, "minAmount": 300_000},
+    {"name": "주거·통신", "icon": "house", "used": 60_000, "budget": 110_000, "pct": 55, "left": 50_000, "locked": False, "minAmount": None},
+    {"name": "교통·차량", "icon": "bus", "used": 35_000, "budget": 90_000, "pct": 39, "left": 55_000, "locked": False, "minAmount": 80_000},
+    {"name": "생활용품", "icon": "shopping-basket", "used": 15_000, "budget": 60_000, "pct": 25, "left": 45_000, "locked": False, "minAmount": None},
+    {"name": "패션·쇼핑", "icon": "shirt", "used": 30_000, "budget": 80_000, "pct": 38, "left": 50_000, "locked": False, "minAmount": None},
+    {"name": "의료·건강", "icon": "stethoscope", "used": 20_000, "budget": 50_000, "pct": 40, "left": 30_000, "locked": False, "minAmount": None},
+    {"name": "뷰티·미용", "icon": "scissors", "used": 40_000, "budget": 60_000, "pct": 67, "left": 20_000, "locked": False, "minAmount": None},
+    {"name": "교육", "icon": "graduation-cap", "used": 20_000, "budget": 50_000, "pct": 40, "left": 30_000, "locked": False, "minAmount": None},
+    {"name": "문화·여가", "icon": "ticket", "used": 80_000, "budget": 170_000, "pct": 47, "left": 90_000, "locked": False, "minAmount": None},
+    {"name": "여행·숙박", "icon": "plane", "used": 0, "budget": 60_000, "pct": 0, "left": 60_000, "locked": False, "minAmount": None},
+    {"name": "기타", "icon": "ellipsis", "used": 20_000, "budget": 60_000, "pct": 33, "left": 40_000, "locked": False, "minAmount": None},
 ]
 UNCLASSIFIED = {"count": 4, "amount": 57_700}  # 화면에는 "확인 필요"로 보인다 (편의점·다이소 등)
 

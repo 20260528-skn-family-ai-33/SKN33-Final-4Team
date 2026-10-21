@@ -1,5 +1,5 @@
 """
-회원 · 내 정보 · 소비 우선순위 · 동의 (ERD: app_user, financial_profile, category_priority, consent)
+회원 · 내 정보 · 소비 우선순위 · 카테고리 최소 금액 · 동의 (ERD: app_user, financial_profile, category_priority, category_minimum, consent)
 
 - Django 기본 User 대신 이 모델을 쓴다. settings.AUTH_USER_MODEL = "users.User"
 - 이메일로 로그인한다. 이메일은 전부 소문자로 바꿔서 저장한다.
@@ -156,6 +156,37 @@ class CategoryPriority(models.Model):
 
     def __str__(self):
         return f"{self.rank}위 {self.category_id}"
+
+
+class CategoryMinimum(models.Model):
+    """카테고리 최소 금액. 회원이 설정한 카테고리만 한 줄씩 (2026-10-21, 온보딩에서 선택 입력)
+
+    - 우선순위와 상관없이 예산 칸이 있는 카테고리(10개 + 기타) 어디든 걸 수 있다
+    - 자물쇠와 다르다: 자물쇠 = 금액 그대로 고정 / 최소 금액 = 이 금액 밑으로만 안 내려감(올리는 건 가능)
+    - 설정 안 한 카테고리는 줄이 없다 (0원으로 저장하지 않는다)
+    - DB가 막는 것: 같은 카테고리 두 번, 1원 미만
+    - 서비스 코드에서 검사할 것: 최소 금액 합계 ≤ 생활비 총액 (예산 만들 때 검사, 넘으면 부족액 안내 후 수정 받기)
+    - 바꿀 때는 그 회원 것을 전부 지우고 새 목록을 다시 넣는다 (트랜잭션 하나로)
+    """
+
+    category_minimum_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="category_minimums")
+    category = models.ForeignKey(
+        "budgets.Category", on_delete=models.RESTRICT,
+        db_column="category_code", related_name="+", verbose_name="카테고리",
+    )
+    min_amount = models.BigIntegerField("카테고리 최소 금액")  # 원 단위
+
+    class Meta:
+        db_table = "category_minimum"
+        verbose_name = verbose_name_plural = "카테고리 최소 금액"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "category"], name="cm_user_category_key"),
+            models.CheckConstraint(condition=Q(min_amount__gte=1), name="cm_min_amount_gte_1"),
+        ]
+
+    def __str__(self):
+        return f"{self.category_id} 최소 {self.min_amount}원"
 
 
 class Consent(models.Model):

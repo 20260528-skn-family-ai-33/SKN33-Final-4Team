@@ -1,11 +1,15 @@
 // 내 정보 입력
 // 생년월일을 넣으면 만 나이를, 우선순위를 누르면 순위 번호를 바로 보여 준다
+// 카테고리 최소 금액(선택)은 팝업에서 받는다 — 우선순위와 상관없이 어느 카테고리든 (2026-10-21)
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { usePicked } from '../utils/usePicked.js'
-import { CAT_NAMES as CATS } from '../utils/categories.js'
+import { CAT_NAMES as CATS, BUDGET_CATS } from '../utils/categories.js'
+import { usePopup } from '../popups/context.js'
+import CatMinPopup from '../popups/CatMinPopup.jsx'
+import { manwon } from '../utils/adjust.js'
 import { PATHS } from '../routes.js'
 
 const GENDERS = ['남성', '여성']
@@ -38,6 +42,9 @@ export default function ProfilePage() {
   const [gender, setGender] = useState(null)
   const [car, setCar] = useState(null)
   const prio = usePicked()  // 누른 순서 = 우선순위
+  const { openPopup } = usePopup()
+  const [mins, setMins] = useState({})  // 카테고리 최소 금액 { 식비: 300000 } — 설정한 것만
+  const minList = BUDGET_CATS.filter((c) => mins[c])  // 카테고리 순서대로
 
   const a = ageInfo(birth)
   const onSubmit = (e) => {
@@ -108,6 +115,22 @@ export default function ProfilePage() {
             })}
           </div>
           <p className="mc-picked" id="mc-prio-status" style={{ marginTop: 12 }}>{prioStatus(prio.list.length)}</p>
+        </div>
+
+        <div className="mc-card">
+          <div className="mc-row">
+            <h2>카테고리 최소 금액 <span className="mc-opt">선택</span></h2>
+            <button type="button" className="mc-link" onClick={() => openPopup(<CatMinPopup value={mins} onSave={setMins} />)}>
+              {minList.length ? '수정' : '설정하기'} ›
+            </button>
+          </div>
+          {minList.length ? (
+            <div className="mc-min-chips">
+              {minList.map((c) => <span key={c} className="mc-min-chip">{c} <b>{manwon(mins[c])}</b></span>)}
+            </div>
+          ) : (
+            <p className="mc-picked" style={{ marginTop: 6 }}>이만큼은 꼭 남겨 둘 카테고리가 있다면 설정해 주세요. 그 밑으로는 예산을 줄이지 않아요.</p>
+          )}
         </div>
         <div className="mc-error" role="alert"></div>
       </form>

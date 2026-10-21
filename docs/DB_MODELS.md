@@ -1,17 +1,17 @@
 # DB 모델 구조 (Django 앱 배치 · 공통 규칙 · 확인 방법)
 
-작성일: 2026-10-19 (10-20 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
+작성일: 2026-10-19 (10-20 · 10-21 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
 
-## 1. 현재 상태 — 27개 테이블 모델 완료 ✅
+## 1. 현재 상태 — 28개 테이블 모델 완료 ✅
 
 | 항목 | 결과 |
 |---|---|
-| 테이블 | 27 = ERD 26 + 10-20 추가 1 (`category_priority`) |
-| 칸(컬럼) | 344 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) |
-| FK | 78 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) → CASCADE 33 · RESTRICT 25 · SET_NULL 20 |
-| UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) |
-| CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) |
-| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과 |
+| 테이블 | 28 = ERD 26 + 10-20 추가 1 (`category_priority`) + 10-21 추가 1 (`category_minimum`) |
+| 칸(컬럼) | 348 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) + 10-21 추가 4 (`category_minimum`) |
+| FK | 80 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) + 10-21 추가 2 (`category_minimum`: 회원 CASCADE · 카테고리 RESTRICT) → CASCADE 34 · RESTRICT 26 · SET_NULL 20 |
+| UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) + 10-21 추가 1개 (`category_minimum`) |
+| CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) + 10-21 추가 1개 (`cm_min_amount_gte_1`) |
+| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과. 10-21 카테고리 최소 금액 표(`users` 0005)도 PostgreSQL 16에서 `migrate` + 규칙 8개(정상 저장 · 1원·기타 저장 · 같은 카테고리 두 번 · 0원 · 음수 · 사용 중 카테고리 삭제 · 지우고 다시 넣기 · 회원 삭제 CASCADE) 시험 통과 |
 
 **ERD와 다른 점 (일부러 바꾼 것)**
 
@@ -34,11 +34,18 @@
 | `conversation.slots` (JSON, 비어도 됨) | 지금까지 문장에서 뽑아 모은 **재료(슬롯)**. 예: `{"category": "FOOD", "amount": 50000, "direction": "up"}`. 다음 문장에서 빠진 것만 다시 물으려고. 칸 이름·단위는 API 명세 때 확정(금액은 원 단위 추천). 도우미가 바뀌거나 작업이 끝나면 비움. JSON 안 카테고리 코드는 FK 검사가 안 되므로 쓸 때 category에 있는지 확인. 대화 전체 기록은 지금처럼 `chat_message`에 저장 |
 | 인덱스 `ft_user_merchant_idx` (user, merchant_name, occurred_on 역순) | "같은 가맹점 분류에 반영" 기능. 별도 테이블 없이 `finance/merchant_rules.py`의 `remembered_category()`가 같은 회원·가맹점의 **사용자가 확정한 최근 거래**를 찾음. 느려지거나 규칙 관리가 필요해지면 `merchant_rule` 테이블 추가 |
 
+**2026-10-21 추가 (온보딩 카테고리 최소 금액 · ERD SQL에도 반영 필요)**
+
+| 무엇 | 왜 |
+|---|---|
+| `category_minimum` 표 추가 (회원 · 카테고리 · `min_amount` BIGINT 원 단위) | 온보딩(내 정보 입력)에서 **원하는 카테고리에만 카테고리 최소 금액을 선택으로** 받기로 함. 우선순위와 상관없이 예산 칸이 있는 카테고리(10개 + 기타) 어디든 걸 수 있어서 `category_priority`에 칸을 붙이지 않고 따로 뺌. **설정 안 한 카테고리는 줄이 없다**(0원 저장 안 함). DB는 같은 카테고리 두 번 · 1원 미만만 막고, 합계 ≤ 생활비 총액은 예산 만들 때 엔진이 검사(넘으면 부족액 안내 후 수정 받기). 바꿀 땐 우선순위처럼 그 회원 것을 다 지우고 새 목록을 한 번에 다시 넣는다(트랜잭션 하나) |
+| 자물쇠(`budget_category_setting.locked`)와 다름 | 자물쇠 = 금액 그대로 고정(주기별) / 카테고리 최소 금액 = 이 금액 밑으로만 안 내려감, 올리는 건 가능(회원 설정) |
+
 ## 2. 테이블 → 앱 배치
 
 | 앱 | 테이블 (ERD 이름) | 모델 클래스 |
 |---|---|---|
-| `users` | app_user, financial_profile, category_priority, consent | User, FinancialProfile, CategoryPriority, Consent |
+| `users` | app_user, financial_profile, category_priority, category_minimum, consent | User, FinancialProfile, CategoryPriority, CategoryMinimum, Consent |
 | `finance` | connection, bank_account, card, loan, sync_run | Connection, BankAccount, Card, Loan, SyncRun |
 | `finance` | financial_transaction, transaction_link | FinancialTransaction, TransactionLink |
 | `finance` | card_bill, card_bill_item, recurring_expense, payment_due, payment_match | CardBill, CardBillItem, RecurringExpense, PaymentDue, PaymentMatch |
@@ -46,7 +53,7 @@
 | `budgets` | spending_allocation, reserve_plan, cushion_entry | SpendingAllocation, ReservePlan, CushionEntry |
 | `chat` | conversation, chat_message, async_task | Conversation, ChatMessage, AsyncTask |
 
-합계: users 4 + finance 12 + budgets 8 + chat 3 = **27개**
+합계: users 5 + finance 12 + budgets 8 + chat 3 = **28개**
 
 ## 3. 도커 PostgreSQL에서 확인하기
 
@@ -59,14 +66,14 @@ cd backend
 python manage.py migrate
 python manage.py createsuperuser      # 이메일로 만든다
 
-# 3) 테이블 목록 보기 (머니쿠션 27개 + Django 기본 9개 = 36개)
+# 3) 테이블 목록 보기 (머니쿠션 28개 + Django 기본 9개 = 37개)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\dt"
 
 # 4) 한 테이블 구조 보기 (칸·제약·FK)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payment_due"
 ```
 
-화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 27개 테이블이 다 등록돼 있다.
+화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 28개 테이블이 다 등록돼 있다.
 
 ## 4. DB가 막아 주는 규칙 (CHECK · 조건부 UNIQUE)
 
@@ -74,6 +81,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 |---|---|
 | financial_profile | 급여일 1~31 밖 |
 | category_priority | 같은 회원이 같은 순위 2개, 같은 카테고리를 두 순위에 넣기, 순위 0 이하 |
+| category_minimum | 같은 회원이 같은 카테고리 두 번, 최소 금액 1원 미만 |
 | connection | 같은 회원·업권·기관에서 '연결 중'이 2개 (해제 후 재연결은 OK) |
 | card, loan | origin이 provider/manual 아님, 대출 status가 repaying/repaid 아님 |
 | sync_run | 조회 대상(계좌·카드·대출) 2개 이상 |
@@ -87,7 +95,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | budget_item · spending_allocation | 빈칸(NULL) 포함 중복 줄 (NULLS NOT DISTINCT), reserve인데 준비금 계획 없음 |
 | cushion_entry | 초기액 2번, 배분 1건에 사용 2번, 종류별 부호(initial ≥0, use <0, refund >0, 적립·정정 ≠0), 종류별 필수 연결 |
 
-**DB가 못 막는 것 (서비스 코드에서 꼭 검사)** — 우선순위 1~3위 필수 · 순위 건너뛰기(1·2·4위), 같은 회원 데이터끼리만 연결, 지출 배분의 주기 = 예산의 주기, 여러 줄 합계(예산 항목 합 ≤ 배분 자금, 매칭 합 ≤ 거래 금액), approved 교체·쿠션 증감은 트랜잭션+잠금, A→B·B→A 역방향 중복 연결, 재연결 시 기존 자산·청구서 재사용.
+**DB가 못 막는 것 (서비스 코드에서 꼭 검사)** — 우선순위 1~3위 필수 · 순위 건너뛰기(1·2·4위), 카테고리 최소 금액 합계 ≤ 생활비 총액(예산 만들 때 검사, 넘으면 부족액 안내), 같은 회원 데이터끼리만 연결, 지출 배분의 주기 = 예산의 주기, 여러 줄 합계(예산 항목 합 ≤ 배분 자금, 매칭 합 ≤ 거래 금액), approved 교체·쿠션 증감은 트랜잭션+잠금, A→B·B→A 역방향 중복 연결, 재연결 시 기존 자산·청구서 재사용.
 
 ## 5. 코드(값 목록) 미정 칸 — 팀이 정하면 choices 추가
 

@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 
-from .models import CategoryPriority, Consent, FinancialProfile, User
+from .models import CategoryMinimum, CategoryPriority, Consent, FinancialProfile, User
 
 
 class UserAddForm(AdminUserCreationForm):
@@ -51,6 +51,11 @@ class FinancialProfileAdmin(admin.ModelAdmin):
 @admin.register(CategoryPriority)
 class CategoryPriorityAdmin(admin.ModelAdmin):
     list_display = ("user", "rank", "category")
+
+
+@admin.register(CategoryMinimum)
+class CategoryMinimumAdmin(admin.ModelAdmin):
+    list_display = ("user", "category", "min_amount")
 
 
 @admin.register(Consent)

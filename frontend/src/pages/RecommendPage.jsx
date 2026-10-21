@@ -11,6 +11,7 @@ import { usePicked } from '../utils/usePicked.js'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 import { BUDGET_CATS, catIcon } from '../utils/categories.js'
+import { manwon } from '../utils/adjust.js'
 
 const MONTHLY = 2_800_000
 // [CSS 이름(색), 이름, 금액]
@@ -25,6 +26,10 @@ const AMOUNT = {
   '의료·건강': 50_000, '뷰티·미용': 60_000, 교육: 50_000, '문화·여가': 170_000, '여행·숙박': 60_000, 기타: 60_000,
 }
 const CATS = BUDGET_CATS.map((n) => [n, catIcon(n), AMOUNT[n] ?? 0])
+// 내 정보 입력에서 받은 카테고리 최소 금액 (시안 예시값). 추천 금액은 이 금액 이상으로만 나온다
+const MIN = { 식비: 300_000, '교통·차량': 80_000 }
+// 최소 금액 합계가 생활비보다 크면 예산을 못 만든다 → 부족액 안내 후 수정 받기 (시안: 예시값으로는 안 뜸)
+const MIN_SHORT = Object.values(MIN).reduce((a, b) => a + b, 0) - LIVING
 // 카테고리 막대 색 진하기: 첫 칸 100% → 마지막 칸 18% (카테고리 수가 바뀌어도 자동으로 나눔)
 const shade = (i) => `color-mix(in srgb,var(--mc-brand) ${Math.round(100 - (82 * i) / Math.max(CATS.length - 1, 1))}%,var(--mc-paper))`
 const pct = (part, whole) => (part / whole) * 100
@@ -69,7 +74,7 @@ export default function RecommendPage() {
           <div className="mc-cat-list">
             {CATS.map(([n, icon, v]) => (
               <div className="mc-catrow" key={n}>
-                <span className="mc-catname"><span className="mc-cat-ic"><Icon name={icon} /></span>{n}</span>
+                <span className="mc-catname"><span className="mc-cat-ic"><Icon name={icon} /></span>{n}{MIN[n] && <em className="mc-min-tag">최소 {manwon(MIN[n])}</em>}</span>
                 <strong>{won(v)}</strong>
                 <button type="button" className="mc-lockt" aria-label={`${n} 금액 고정`} aria-pressed={locks.has(n)} onClick={() => locks.toggle(n)}>
                   <LockIcon />
@@ -77,12 +82,15 @@ export default function RecommendPage() {
               </div>
             ))}
           </div>
+          {MIN_SHORT > 0 && (
+            <p className="mc-min-warn" role="alert">카테고리 최소 금액 합계가 생활비보다 <b>{won(MIN_SHORT)}</b> 많아요. 내 정보에서 최소 금액을 줄여 주세요.</p>
+          )}
           <div className="mc-chat-alt">
             <span>꼭 바꾸고 싶은 부분이 있나요?</span>
             <button type="button" className="mc-link" onClick={() => openPopup(<AdjustChatPopup />)}>챗봇과 조정하기 ›</button>
           </div>
         </div>
-        <p className="mc-note">시안 예시: 생활비를 기본 비율로 나눴어요. 카테고리 배분 방법(거래 이력·모델·통계 비중)은 확정 전이에요.</p>
+        <p className="mc-note">최소 표시는 내 정보에서 정한 카테고리 최소 금액이에요. 그 밑으로는 줄지 않고, 자물쇠를 걸면 금액 그대로 고정돼요. 시안 예시: 생활비를 기본 비율로 나눴어요. 카테고리 배분 방법(거래 이력·모델·통계 비중)은 확정 전이에요.</p>
         <div className="mc-error" role="alert"></div>
       </form>
     </Layout>

@@ -10,6 +10,7 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import IrregularPopup from '../popups/IrregularPopup.jsx'
 import CatLockPopup from '../popups/CatLockPopup.jsx'
+import { manwon } from '../utils/adjust.js'
 
 export default function BudgetPage() {
   const navigate = useNavigate()
@@ -45,7 +46,7 @@ export default function BudgetPage() {
         {CATEGORIES.map((c) => (
           <div className="mc-catuse" key={c.name}>
             <div className="mc-row">
-              <span className="mc-catname"><span className="mc-cat-ic"><Icon name={c.icon} /></span>{c.name}</span>
+              <span className="mc-catname"><span className="mc-cat-ic"><Icon name={c.icon} /></span>{c.name}{c.minAmount > 0 && <em className="mc-min-tag">최소 {manwon(c.minAmount)}</em>}</span>
               <button type="button" className="mc-lockt" aria-pressed={c.locked} aria-label={`${c.name} 자물쇠`} onClick={() => openPopup(<CatLockPopup categories={CATEGORIES} />)}>
                 <LockIcon />
               </button>
@@ -67,7 +68,7 @@ export default function BudgetPage() {
       <button type="button" className="mc-primary" onClick={() => navigate(PATHS.assistant)}>
         <Icon name="MessageCircle" /> 챗봇으로 예산 조정
       </button>
-      <p className="mc-note">자물쇠를 건 카테고리는 조정할 때 그대로 둬요. 예산 변경은 챗봇이 만든 조정안을 확인하고 승인해야 반영돼요.</p>
+      <p className="mc-note">자물쇠를 건 카테고리는 조정할 때 그대로 두고, 최소 표시가 있는 카테고리는 그 금액 밑으로 줄이지 않아요. 예산 변경은 챗봇이 만든 조정안을 확인하고 승인해야 반영돼요.</p>
     </Layout>
   )
 }
