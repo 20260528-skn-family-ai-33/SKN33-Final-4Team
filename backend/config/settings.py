@@ -8,6 +8,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # backend/ 폴더
@@ -17,13 +18,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / ".env")
 
 
+def required(name):
+    """꼭 있어야 하는 값. 칸이 없거나 비어 있으면(.env.example을 복사만 한 상태) 서버를 켤 때 바로 알려준다"""
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ImproperlyConfigured(f".env에 {name} 값이 비어 있어요. docs/LOCAL_SETUP.md 3단계를 확인하세요.")
+    return value
+
+
 def env_list(name, default=""):
     """쉼표로 구분된 환경변수를 리스트로 변환"""
     return [v.strip() for v in os.getenv(name, default).split(",") if v.strip()]
 
 
 # ===== 보안 =====
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]  # 비어 있으면 바로 에러로 알려줌
+SECRET_KEY = required("DJANGO_SECRET_KEY")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
@@ -88,9 +97,9 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("POSTGRES_DB"),
-        "USER": os.getenv("POSTGRES_USER"),
-        "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
+        "NAME": required("POSTGRES_DB"),
+        "USER": required("POSTGRES_USER"),
+        "PASSWORD": required("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST", "localhost"),
         "PORT": os.getenv("POSTGRES_PORT", "5432"),
     }

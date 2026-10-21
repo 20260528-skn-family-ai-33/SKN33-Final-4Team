@@ -11,7 +11,7 @@
 | FK | 78 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) → CASCADE 33 · RESTRICT 25 · SET_NULL 20 |
 | UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) |
 | CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) |
-| 검증 | PostgreSQL 16에서 `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과 |
+| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과 |
 
 **ERD와 다른 점 (일부러 바꾼 것)**
 
@@ -126,7 +126,13 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 2. `makemigrations`는 **DB 담당(김나은)** 이 만들고, 나머지는 받아서 `migrate`만
 3. migration 파일은 모델 코드와 **같이 커밋**
 4. 이미 커밋한 migration 파일은 고치지 않고, 바꿀 게 있으면 새로 `makemigrations`
-5. 카테고리 초기 데이터(UNCLASSIFIED 포함)는 2026-10-20 목록 확정 후 data migration으로 추가
+5. 카테고리 목록은 2026-10-20 회의로 확정 (가게 업종 기준). **코드 이름(`category_code`)을 정한 뒤** 초기 데이터를 data migration으로 추가한다. 이름·순서는 `frontend/src/utils/categories.js`와 맞춘다.
+
+   | 구분 | 카테고리 | ML 정답 | 우선순위 | 예산 칸 |
+   |---|---|---|---|---|
+   | 10개 | 식비 · 주거·통신 · 교통·차량 · 생활용품 · 패션·쇼핑 · 의료·건강 · 뷰티·미용 · 교육 · 문화·여가 · 여행·숙박 | ✅ | ✅ | ✅ |
+   | 기타 | 10개 범위 밖 지출 (송금 · 경조사 등) | ❌ | ❌ | ✅ |
+   | 미분류 | 아직 판단 못 한 지출 (편의점 · 마트 · 종합몰). 화면에는 **'확인 필요'** | ❌ | ❌ | ❌ |
 
 ## 8. 가맹점 분류 기억 사용법 (거래 분류 담당)
 
@@ -137,7 +143,7 @@ from finance.merchant_rules import remembered_category, normalize_merchant, USER
 code = remembered_category(user, tx.merchant_name)   # 없으면 None → 원래대로 ML·검색
 
 # 사용자가 거래 상세에서 카테고리를 고쳤을 때
-tx.confirmed_category_id = "LIVING"
+tx.confirmed_category_id = "FOOD"     # 예시 코드 — 카테고리 코드가 정해지면 그 값으로
 tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면 이 값만 바꿈)
 ```
 

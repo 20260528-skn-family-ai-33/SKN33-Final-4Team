@@ -25,7 +25,7 @@ export default function AdjustChatPopup() {
             </div>
           </div>
           <div className="mc-msg bot">
-            <AdjustForm initial={{ cat: '식비', amount: 3, dir: 'up' }} />
+            <AdjustForm initial={{ cat: '식비', amount: 30_000, dir: 'up' }} />
           </div>
         </div>
         <div className="mc-chat-q">

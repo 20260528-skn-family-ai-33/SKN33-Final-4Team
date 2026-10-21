@@ -253,7 +253,7 @@ python manage.py createsuperuser   # 이메일로 만든다
 
 | 에러 | 원인 | 해결 |
 |---|---|---|
-| `KeyError: 'DJANGO_SECRET_KEY'` | `.env`에 시크릿 키 없음 / `.env`가 루트에 없음 | 3단계 다시. `.env`는 `backend` 안이 아니라 **프로젝트 루트**에 |
+| `ImproperlyConfigured: .env에 DJANGO_SECRET_KEY 값이 비어 있어요` (또는 `POSTGRES_PASSWORD` 등) | `.env`에 그 값이 비어 있음 / `.env`가 루트에 없음 | 3단계 다시. 시크릿 키 · DB 비밀번호를 채웠는지 확인. `.env`는 `backend` 안이 아니라 **프로젝트 루트**에 |
 | `password authentication failed` | `.env` 비밀번호 ≠ 컨테이너 비밀번호 | 둘을 맞추거나 컨테이너 재생성: `docker rm -f money-cushion-db` 후 4단계 |
 | `connection refused` (5432) | DB 컨테이너가 꺼져 있음 | Docker Desktop 실행 → `docker start money-cushion-db` |
 | `port is already allocated` (5432) | PC에 PostgreSQL이 따로 설치돼 실행 중 | 기존 PostgreSQL 서비스 중지. 또는 `-p 5433:5432`로 띄우고 `.env`의 `POSTGRES_PORT=5433` |

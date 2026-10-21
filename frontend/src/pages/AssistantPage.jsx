@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
-import { adjustSentence, josa } from '../utils/adjust.js'
+import { adjustSentence, josa, manwon } from '../utils/adjust.js'
 import { mockRoute, mockSlots } from '../utils/mockRouter.js'
 
 // 추천 질문 (누르면 그 문장을 보낸 것과 같다)
@@ -47,7 +47,7 @@ export default function AssistantPage() {
     const { cat, amount, dir } = slots
     add({
       who: 'bot',
-      text: `${cat}${josa(cat)} ${amount}만원 ${dir === 'up' ? '늘리는' : '줄이는'} 조정안을 만들게요. 나머지 카테고리는 내 우선순위에 맞춰 다시 짤게요.`,
+      text: `${cat}${josa(cat)} ${manwon(amount)} ${dir === 'up' ? '늘리는' : '줄이는'} 조정안을 만들게요. 나머지 카테고리는 내 우선순위에 맞춰 다시 짤게요.`,
       note: '조정안 카드는 서버가 연결되면 나와요.',
     })
   }

@@ -59,10 +59,10 @@ frontend/
     ├── main.jsx          # 앱 시작점 (CSS · 주소 장치 · 팝업 장치 연결)
     ├── App.jsx           # 주소 → 화면 연결
     ├── routes.js         # 화면 주소 목록 (PATHS)
-    ├── pages/            # 화면 22개 (HomePage.jsx …)
+    ├── pages/            # 화면 23개 (HomePage.jsx …)
     ├── popups/           # 팝업 (Popup 틀 · PopupProvider · 각 팝업)
     ├── components/       # 공통 부품 (Layout · Header · TabBar · Icon …)
-    ├── utils/            # 도우미 (api.js · money.js · usePicked.js · days.js)
+    ├── utils/            # 도우미 (api.js · money.js · categories.js · usePicked.js · days.js …)
     └── styles/           # 디자인 CSS (app.css 원본 · shell.css 보정)
 ```
 
@@ -73,6 +73,15 @@ frontend/
 | `StepBar` | 첫 설정 흐름의 "7단계 중 N단계" 막대 |
 | `AcctPick` · `InstRow` | 계좌 고르기 카드 · 기관 한 줄 |
 | `LockIcon` | 카테고리 자물쇠 아이콘 |
+
+| 도우미 (`utils/`) | 하는 일 |
+|---|---|
+| `api.js` | `useApi`(읽기) · `apiSend`(저장) — 5번 참고 |
+| `money.js` | `won(420000)` → `420,000원` |
+| `categories.js` | **소비 카테고리 목록 · 아이콘. 카테고리가 필요하면 꼭 여기서만 가져다 쓴다** (`SPEND_CATS` 10개 · `ETC` 기타 · `PENDING` 확인 필요 · `catIcon(이름)`). 화면에 카테고리 이름을 직접 적지 않는다. 기준이 바뀌면 이 파일만 고친다 |
+| `usePicked.js` | 여러 개 고르기 (6번 참고) |
+| `days.js` | 날짜 목록 · 급여 주기 계산 |
+| `mockRouter.js` · `mockConnect.js` | **임시**. 챗봇 라우터 · 계좌 연결 API가 생기기 전까지 화면 흐름만 보여 주는 가짜 |
 
 ---
 

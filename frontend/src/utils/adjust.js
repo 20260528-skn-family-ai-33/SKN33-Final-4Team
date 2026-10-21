@@ -1,5 +1,7 @@
 // 예산 조정 도우미 공통 값·문장 만들기 (AdjustForm · 통합 챗봇이 같이 쓴다)
 
+import { comma, won } from './money.js'
+
 // 예산을 조정할 수 있는 카테고리 (10개 + 기타) — utils/categories.js
 export { BUDGET_CATS as CATS } from './categories.js'
 
@@ -10,6 +12,9 @@ export function josa(word, withFinal = '을', without = '를') {
   return code % 28 ? withFinal : without
 }
 
-// 고른 값을 문장으로: { 식비, 5, up } → "식비를 5만원 늘리고 싶어요"
+// 원 단위 금액을 말로: 50000 → '5만원' / 12345 → '12,345원'
+export const manwon = (amount) => (amount % 10_000 === 0 ? `${comma(amount / 10_000)}만원` : won(amount))
+
+// 고른 값을 문장으로: { 식비, 50000, up } → "식비를 5만원 늘리고 싶어요" (amount 단위: 원)
 export const adjustSentence = ({ cat, amount, dir }) =>
-  `${cat}${josa(cat)} ${amount}만원 ${dir === 'up' ? '늘리고' : '줄이고'} 싶어요`
+  `${cat}${josa(cat)} ${manwon(amount)} ${dir === 'up' ? '늘리고' : '줄이고'} 싶어요`

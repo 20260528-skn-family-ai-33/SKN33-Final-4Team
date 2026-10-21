@@ -112,35 +112,46 @@ psql postgres -c "CREATE DATABASE money_cushion OWNER money_cushion;"
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR.parent / ".env")  # BASE_DIR = backend/
 
 
-def env_list(name: str) -> list[str]:
-    return [v.strip() for v in os.getenv(name, "").split(",") if v.strip()]
+def required(name):
+    """꼭 있어야 하는 값. 칸이 없거나 비어 있으면 서버를 켤 때 바로 알려준다"""
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ImproperlyConfigured(f".env에 {name} 값이 비어 있어요. docs/LOCAL_SETUP.md 3단계를 확인하세요.")
+    return value
 
 
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
-DEBUG = os.getenv("DJANGO_DEBUG", "False") == "True"
-ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS")
+def env_list(name, default=""):
+    return [v.strip() for v in os.getenv(name, default).split(",") if v.strip()]
+
+
+SECRET_KEY = required("DJANGO_SECRET_KEY")
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
+ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.environ["POSTGRES_DB"],
-        "USER": os.environ["POSTGRES_USER"],
-        "PASSWORD": os.environ["POSTGRES_PASSWORD"],
+        "NAME": required("POSTGRES_DB"),
+        "USER": required("POSTGRES_USER"),
+        "PASSWORD": required("POSTGRES_PASSWORD"),
         "HOST": os.getenv("POSTGRES_HOST", "localhost"),
         "PORT": os.getenv("POSTGRES_PORT", "5432"),
     }
 }
 ```
 
-- 필수 값은 `os.environ["..."]`로 읽어 **빠지면 바로 에러**가 나게 한다.
-- `DEBUG` 기본값은 `False`로 둔다. `.env`가 없는 서버에서 실수로 디버그 모드가 켜지는 것을 막는다.
+- 필수 값(시크릿 키 · DB 이름 · 사용자 · 비밀번호)은 `required()`로 읽는다. 칸이 없거나 **비어 있으면** 서버를 켤 때 `ImproperlyConfigured: .env에 ○○ 값이 비어 있어요`로 바로 알려준다. (`os.environ["..."]`만 쓰면 `.env.example`을 복사만 해서 빈 칸인 경우를 못 잡는다)
+- 필수가 아닌 값(호스트 · 포트 · 허용 호스트)은 `os.getenv`로 읽고 기본값을 둔다.
+- `DEBUG` 기본값은 `False`로 둔다. `.env`가 없는 서버에서 실수로 디버그 모드가 켜지는 것을 막는다. `True` · `true` 모두 켜짐으로 읽는다.
+- 새 필수 값을 추가하면 `required("이름")`으로 읽고, `.env.example`과 이 문서에도 같이 적는다.
 
 ---
 
@@ -149,4 +160,4 @@ DATABASES = {
 - `.env`는 절대 커밋하지 않는다. (`.gitignore`에 등록됨, `.env.example`만 커밋)
 - 실제 키를 README · 이슈 · PR · 단톡방에 그대로 붙여넣지 않는다. 팀원에게는 개인 메시지로만 전달한다.
 - 키가 커밋·노출되면 파일만 지우지 말고 **발급처에서 키를 즉시 재발급**한다.
-- 개발·시연에는 합성·모의 데이터와 CODEF 샌드박스를 사용한다.
+- 개발·시연에는 합성·모의 데이터와 CODEF **데모 버전**(`CODEF_ENV=demo`)을 사용한다. 데모 키는 팀이 일일 호출 한도를 같이 쓰므로, 응답은 JSON으로 저장해두고 저장본으로 개발한다. (`sandbox`는 라이브러리 공용 키로 도는 연습용, `product`는 실서비스용)

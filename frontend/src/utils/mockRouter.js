@@ -15,7 +15,7 @@ export function mockRoute(text) {
 }
 
 // 문장 속 재료(슬롯) 뽑기 — 예산 조정용. 진짜 라우터가 붙으면 API 의 slots 를 쓴다
-//   "식비 5만원 늘리고 싶어" → { cat: '식비', amount: 5, dir: 'up' }  (amount 단위: 만원, 없으면 그 칸은 빠짐)
+//   "식비 5만원 늘리고 싶어" → { cat: '식비', amount: 50000, dir: 'up' }  (amount 단위: 원 — API 규칙과 같게. 없으면 그 칸은 빠짐)
 const CAT_WORDS = [   // 위에서부터 먼저 맞는 것 (10/20 분류 기준: 헬스·운동 = 문화·여가, 병의원 = 의료·건강)
   ['의료·건강', /병원|의원|약국|치과|한의원|안경|영양제|건강/],
   ['뷰티·미용', /미용|화장품|네일|피부관리|헤어/],
@@ -36,8 +36,8 @@ export function mockSlots(text) {
   if (cat) slots.cat = cat[0]
   const man = text.match(/(\d+)\s*만/)            // 5만, 5만원
   const won = text.match(/(\d{4,})\s*원/)          // 50000원
-  if (man) slots.amount = Number(man[1])
-  else if (won) slots.amount = Math.round(Number(won[1]) / 10_000) || undefined
+  if (man) slots.amount = Number(man[1]) * 10_000
+  else if (won) slots.amount = Number(won[1])
   if (/늘리|늘려|올리|올려|더 쓰/.test(text)) slots.dir = 'up'
   else if (/줄이|줄여|내리|내려|아끼/.test(text)) slots.dir = 'down'
   return slots

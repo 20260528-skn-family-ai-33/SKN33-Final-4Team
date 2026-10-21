@@ -56,7 +56,7 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 - 모든 데이터는 **로그인한 사람 것만** 돌려준다. 조회할 때 항상 `user=request.user`로 거른다. (ERD: 단일 FK + 코드에서 소유 확인)
 - 남의 데이터 ID로 요청하면 403이 아니라 **404**로 답한다. 그런 데이터가 있다는 것도 알려주지 않기 위해서다.
 - 은행 비밀번호, CODEF 키, `connectedId`, 계좌번호 원문은 **응답에 넣지 않는다**. 계좌번호는 `****1234`로 보낸다.
-- 지금은 로그인 없이 다 열려 있다(`AllowAny`). `users.User`를 만들면 기본값을 `IsAuthenticated`로 바꾼다.
+- 지금은 로그인 없이 다 열려 있다(`AllowAny`). 회원 모델(`users.User`)은 이미 있고, **로그인 API가 붙으면** 기본값을 `IsAuthenticated`로 바꾼다.
 
 ## 코드로 보면
 

@@ -1,18 +1,19 @@
 // 예산 조정 고르기 말풍선: "(카테고리)를 (금액) 만큼 (늘리고/줄이고) 싶어"
 // 통합 챗봇과 추천 예산 "챗봇과 조정하기" 팝업이 같이 쓴다
-// props: initial = { cat, amount(만원), dir: 'up' | 'down' } 미리 채울 값 (문장에서 뽑은 재료)
-//        onSubmit({ cat, amount, dir }) = "조정안 받기"를 눌렀을 때 / done = 이미 보낸 말풍선이면 true (잠금)
+// props: initial = { cat, amount(원), dir: 'up' | 'down' } 미리 채울 값 (문장에서 뽑은 재료)
+//        onSubmit({ cat, amount(원), dir }) = "조정안 받기"를 눌렀을 때 / done = 이미 보낸 말풍선이면 true (잠금)
 import { useState } from 'react'
 import { CATS, josa } from '../utils/adjust.js'
 
-const AMOUNTS = [1, 3, 5, 10]  // 만원
+const AMOUNTS = [1, 3, 5, 10]  // 화면 버튼은 만원 단위. 밖으로 주고받을 때는 원 단위
 const DIRS = [['up', '늘리고 싶어'], ['down', '줄이고 싶어']]
 
 export default function AdjustForm({ initial = {}, onSubmit, done = false }) {
   const [cat, setCat] = useState(initial.cat ?? '')
-  const preset = AMOUNTS.includes(initial.amount) ? initial.amount : null
+  const initMan = initial.amount ? initial.amount / 10_000 : null                    // 원 → 만원
+  const preset = AMOUNTS.includes(initMan) ? initMan : null
   const [amount, setAmount] = useState(preset)                                       // 버튼으로 고른 금액
-  const [custom, setCustom] = useState(preset == null && initial.amount ? String(initial.amount) : '')  // 직접 입력
+  const [custom, setCustom] = useState(preset == null && Number.isInteger(initMan) ? String(initMan) : '')  // 직접 입력
   const [dir, setDir] = useState(initial.dir ?? null)
   const [error, setError] = useState('')
 
@@ -24,7 +25,7 @@ export default function AdjustForm({ initial = {}, onSubmit, done = false }) {
     if (!picked) return setError('금액을 골라 주세요.')
     if (!dir) return setError('늘릴지 줄일지 골라 주세요.')
     setError('')
-    onSubmit?.({ cat, amount: picked, dir })
+    onSubmit?.({ cat, amount: picked * 10_000, dir })  // 만원 → 원
   }
 
   return (
