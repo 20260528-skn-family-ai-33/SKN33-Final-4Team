@@ -19,6 +19,7 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 | 시각 | ISO 8601, 한국 시간 | `"2026-10-19T15:30:00+09:00"` |
 | ID | UUID 문자열 (ERD 기준) | `"3f2c…"` |
 | 빈 값 | `null` (빈 문자열 `""`로 대신하지 않음) | `"link": null` |
+| 카테고리 | 영문 대문자 코드 ([카테고리 코드](#카테고리-코드) 표). 요청은 코드만, 응답은 코드 + `categoryName` | `"HOUSING_TELECOM"` |
 | 로그인 | Django **세션 쿠키** (토큰 없음) | 로그인 API가 쿠키를 심어 줌 |
 | 저장 요청 보안 | **CSRF 토큰** — `apiSend`가 자동으로 붙임 | `X-CSRFToken` 헤더 |
 
@@ -57,6 +58,31 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 - 남의 데이터 ID로 요청하면 403이 아니라 **404**로 답한다. 그런 데이터가 있다는 것도 알려주지 않기 위해서다.
 - 은행 비밀번호, CODEF 키, `connectedId`, 계좌번호 원문은 **응답에 넣지 않는다**. 계좌번호는 `****1234`로 보낸다.
 - 지금은 로그인 없이 다 열려 있다(`AllowAny`). 회원 모델(`users.User`)은 이미 있고, **로그인 API가 붙으면** 기본값을 `IsAuthenticated`로 바꾼다.
+
+## 카테고리 코드
+
+2026-10-21 확정. 목록은 10/20 회의(가게 업종 기준 10개 + 상태값 2개) 그대로, 코드 이름만 새로 정했다.
+**서버는 코드로만 판단한다.** 화면 이름은 바뀔 수 있어도 코드는 바꾸지 않는다. 이름·순서는 `frontend/src/utils/categories.js`, DB 초기 데이터(`category` 표)와 맞춘다.
+
+| 순서 | 코드 | 화면 이름 | 소비 우선순위 | 예산 칸 · 최소 금액 | 거래 · 고정지출에서 고르기 | ML 정답 |
+|---|---|---|---|---|---|---|
+| 1 | `FOOD` | 식비 | O | O | O | O |
+| 2 | `HOUSING_TELECOM` | 주거·통신 | O | O | O | O |
+| 3 | `TRANSPORT_CAR` | 교통·차량 | O | O | O | O |
+| 4 | `HOUSEHOLD` | 생활용품 | O | O | O | O |
+| 5 | `FASHION_SHOPPING` | 패션·쇼핑 | O | O | O | O |
+| 6 | `MEDICAL_HEALTH` | 의료·건강 | O | O | O | O |
+| 7 | `BEAUTY` | 뷰티·미용 | O | O | O | O |
+| 8 | `EDUCATION` | 교육 | O | O | O | O |
+| 9 | `CULTURE_LEISURE` | 문화·여가 | O | O | O | O |
+| 10 | `TRAVEL_LODGING` | 여행·숙박 | O | O | O | O |
+| 11 | `ETC` | 기타 | X | O | O | X |
+| 12 | `UNCLASSIFIED` | 확인 필요 (미분류) | X | X | X (분류 전 상태값) | X |
+
+- 요청: `{ "category": "HOUSING_TELECOM" }` · 응답: `{ "category": "HOUSING_TELECOM", "categoryName": "주거·통신" }`
+- 저축 · 투자 · 대출 상환 · 카드값은 카테고리가 아니다. 저축은 저축 칸(`bucket=savings`), 대출 · 카드값은 각자의 납부 의무로 따로 다룬다.
+- JSON 안에 넣는 코드(`conversation.slots`, `suggestion_candidates` 등)는 FK 검사가 안 되므로 저장 전에 이 표에 있는지 확인한다.
+- 코드를 추가 · 변경하려면 이 표를 먼저 고치고(나은), 그다음 DB 초기 데이터와 `categories.js`를 맞춘다.
 
 ## 코드로 보면
 
