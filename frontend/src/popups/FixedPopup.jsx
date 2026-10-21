@@ -6,9 +6,10 @@
 //   서버로 보낼 때는 화면 이름이 아니라 카테고리 코드로 보낸다 (docs/API_RULES.md 카테고리 코드)
 // 주기 · 상태 (10/21 결정, C-04): 매월만. [추가하기] = 바로 확정(confirmed, 출처 manual)
 //   온보딩 뒤에 추가하면 이번 달 몫은 여윳돈으로 먼저 챙기고(모자라면 예산 조정 제안), 다음 달부터 고정비로 반영 (TXN-008 · BUD-005)
-// 같은 비용 찾기 (10/21 결정, C-08): 이름은 별명이라 이름으로 맞추지 않는다. 카드로 내면 그 카드의 실제 결제를 하나 골라 둘 수 있다(선택)
-//   고른 거래 = 근거 거래(evidence) → 그 가맹점을 기억해 다음 달부터 카드 내역과 자동 연결 (TXN-008)
-//   안 고르면 같은 카드 · 금액 ±10% · 날짜 ±3일로 찾아 한 번 물어본다. 카드로 내는 고정지출은 카드값 안에 들어 있어 따로 '나갈 돈'으로 세지 않는다 (COM-004)
+// 같은 비용 찾기 (10/21 결정, C-08 · C-16): 이름은 별명이라 이름으로 맞추지 않는다
+//   1차엔 이 팝업에서 실제 결제를 고르지 않는다 (보여 줄 결제 목록 API 가 없음, C-16)
+//   카드로 저장하면 목록에서 같은 카드 · 금액 ±10% · 날짜 ±3일로 찾은 결제를 "이 결제가 맞나요?" / [고르기]로 묻는다 (FixedPage · EvidencePopup)
+//   카드로 내는 고정지출은 카드값 안에 들어 있어 따로 '나갈 돈'으로 세지 않는다 (COM-004)
 // 두 번 저장 막기 (10/21 결정, C-10): 팝업을 열 때 요청 번호를 하나 만들고 저장할 때 같이 보낸다. 저장 중에는 버튼을 잠근다
 // 금액 · 출금일 (10/21 결정, C-03): 금액 1,000원 ~ 1억 원. 출금일은 비워도 됨('모름'). 그 달에 없는 날은 말일 (utils/days.js dayIn)
 //   고정지출 합계가 월급보다 커도 여기서는 막지 않는다 (예산 만들 때 부족액 안내, BUD-001)
@@ -26,8 +27,6 @@ import { newRequestKey } from '../utils/api.js'
 // 시안 예시값 — 연결 API 가 생기면 서버가 준 목록(displayName)으로 바꾼다
 const ACCOUNTS = ['국민 급여통장 · ****5678', '신한 저축예금 · ****1234']
 const CARDS = ['신한 Deep Dream · ****4321']
-// 고른 카드의 최근 결제 (시안 예시값 — 거래 API 가 생기면 그 카드의 최근 결제로 바꾼다)
-const CARD_TXS = ['10.05 NETFLIX.COM · 13,500원', '10.12 YOUTUBE PREMIUM · 14,900원', '10.03 스타벅스 · 5,600원']
 const PAYS = [['account', '계좌'], ['card', '카드'], ['none', '모름']]
 const MIN_AMOUNT = 1_000
 const MAX_AMOUNT = 100_000_000
@@ -48,7 +47,6 @@ export default function FixedPopup({ item }) {
   const [catTouched, setCatTouched] = useState(editing)   // 직접 고른 뒤에는 이름으로 바꾸지 않는다
   const [pay, setPay] = useState(() => payOf(item))
   const [payPick, setPayPick] = useState(disconnected ? '' : (item?.account ?? item?.card ?? ''))
-  const [evidence, setEvidence] = useState(item?.evidence ?? '')   // 카드로 낼 때 고른 실제 결제 ('' = 안 고름)
   const [error, setError] = useState('')
   const [requestKey] = useState(newRequestKey)   // 이 팝업의 요청 번호 (다시 눌러도 같은 번호)
   const [saving, setSaving] = useState(false)
@@ -58,7 +56,7 @@ export default function FixedPopup({ item }) {
     setCat(guessCat(e.target.value) ?? '')
   }
 
-  const choosePay = (value) => { setPay(value); setPayPick(''); setEvidence(''); setError('') }
+  const choosePay = (value) => { setPay(value); setPayPick(''); setError('') }
 
   const onSubmit = (e) => {
     e.preventDefault()  // 페이지 새로고침 막기
@@ -104,21 +102,13 @@ export default function FixedPopup({ item }) {
           <p className="mc-note" style={{ padding: 0 }}>출금 계좌를 몰라도 저장돼요. 나중에 고를 수 있어요.</p>
         ) : (
           <label className="mc-field">{pay === 'card' ? '결제 카드' : '출금 계좌'}
-            <select value={payPick} onChange={(e) => { setPayPick(e.target.value); setEvidence(''); setError('') }}>
+            <select value={payPick} onChange={(e) => { setPayPick(e.target.value); setError('') }}>
               <option value="" disabled>{pay === 'card' ? '카드 선택' : '계좌 선택'}</option>
               {options.map((o) => <option key={o}>{o}</option>)}
             </select>
           </label>
         )}
-        {pay === 'card' && payPick && (
-          <label className="mc-field">이 카드에서 어떤 결제인가요? <small className="mc-muted">(선택)</small>
-            <select value={evidence} onChange={(e) => setEvidence(e.target.value)}>
-              <option value="">고르지 않음 — 나중에 한 번 물어볼게요</option>
-              {CARD_TXS.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </label>
-        )}
-        {pay === 'card' && <p className="mc-note" style={{ padding: 0 }}>카드로 내는 돈은 카드값 안에 들어 있어서 따로 빼지 않아요.</p>}
+        {pay === 'card' && <p className="mc-note" style={{ padding: 0 }}>카드로 내는 돈은 카드값 안에 들어 있어서 따로 빼지 않아요. 저장하면 이 카드에서 비슷한 결제를 찾아 맞는지 물어볼게요.</p>}
 
         <label className="mc-field">카테고리
           <select value={cat} onChange={(e) => { setCat(e.target.value); setCatTouched(true); setError('') }}>

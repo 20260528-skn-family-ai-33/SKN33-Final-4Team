@@ -2,12 +2,16 @@
 // 여기 나오는 건 자동으로 찾은 후보(suggested). [확인하고 다음] = 남은 후보를 모두 확정(confirmed), [고정지출 아니에요] = 무시(ignored)
 // 감지 조건 (요구사항 TXN-008): 같은 받는 곳으로 한 달에 1건 · 매달 같은 날 ±3일 · 같은 금액(±10%) · 3달 연속 → 매일 사는 커피 같은 건 안 잡힌다
 // 목록은 시안 예시값 — 고정지출 감지 API 가 생기면 바꾼다
+// 결제 확인 (10/21 결정, C-14 · C-16): 직접 추가한 카드 고정지출은 서버가 비슷한 결제를 찾아 suggestion 으로 준다 (API: evidenceSuggestion)
+//   1건 = "이 결제가 맞나요? [맞아요] [아니에요]" / 여러 건 = "비슷한 결제가 N건 있어요 [고르기]" → EvidencePopup
+//   [맞아요] · 고른 결제 = PATCH /api/budgets/fixed/<id>/ { evidenceTransactionId }. [아니에요] = 요청 없음 (다음 달 다시 물어봄)
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import Icon from '../components/Icon.jsx'
 import { usePopup } from '../popups/context.js'
 import FixedPopup from '../popups/FixedPopup.jsx'
+import EvidencePopup from '../popups/EvidencePopup.jsx'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
@@ -17,6 +21,12 @@ const FIXED = [
   { id: 1, name: '월세', day: 25, account: '국민 급여통장 · ****5678', cat: '주거·통신', amount: 700_000 },
   { id: 2, name: '통신비', day: 20, account: '국민 급여통장 · ****5678', cat: '주거·통신', amount: 55_000 },
   { id: 3, name: '구독료', day: 5, card: '신한 Deep Dream · ****4321', cat: '문화·여가', amount: 15_000 },
+  // 직접 추가한 카드 고정지출 — 비슷한 결제가 2건이라 [고르기]로 묻는다
+  { id: 4, name: 'OTT', day: 5, card: '신한 Deep Dream · ****4321', cat: '문화·여가', amount: 13_500, manual: true,
+    suggestion: { count: 2, candidates: [
+      { id: 't1', merchant: 'NETFLIX.COM', date: '10.05', amount: 13_500 },
+      { id: 't2', merchant: 'YOUTUBE PREMIUM', date: '10.06', amount: 13_900 },
+    ] } },
 ]
 const total = FIXED.reduce((sum, f) => sum + f.amount, 0)
 
@@ -25,6 +35,27 @@ function payLabel(f) {
   const name = f.account ?? f.card
   if (!name) return '출금 계좌 확인 필요'
   return f.payStatus === 'disconnected' ? `${name} (연결 해제됨 · 다시 고르기)` : name
+}
+
+// 결제 확인 한 줄: 1건이면 맞아요/아니에요, 여러 건이면 고르기
+function Suggestion({ f, onPick }) {
+  const { count, candidates } = f.suggestion
+  if (count > 1) {
+    return (
+      <div className="mc-row mc-note" style={{ paddingBottom: 0 }}>
+        <span>비슷한 결제가 {count}건 있어요</span>
+        <button type="button" className="mc-link" onClick={onPick}>고르기</button>
+      </div>
+    )
+  }
+  const t = candidates[0]
+  return (
+    <div className="mc-note" style={{ paddingBottom: 0 }}>
+      <p style={{ margin: 0 }}>이 결제가 {f.name} 맞나요? {t.date} {t.merchant} {won(t.amount)}</p>
+      {/* 맞아요 = PATCH evidenceTransactionId: t.id / 아니에요 = 요청 없음. API 연결 후 */}
+      <div className="mc-inline"><button type="button" className="mc-secondary">맞아요</button><button type="button" className="mc-secondary">아니에요</button></div>
+    </div>
+  )
 }
 
 export default function FixedPage() {
@@ -45,11 +76,12 @@ export default function FixedPage() {
             <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">{f.day ? `매월 ${f.day}일` : '출금일 확인 필요'} · {payLabel(f)} · {f.cat}</span></span>
             <strong>{won(f.amount)}</strong>
           </div>
-          <span className="mc-badge" style={{ marginTop: 8 }}>3달 연속 감지</span>
+          <span className="mc-badge" style={{ marginTop: 8 }}>{f.manual ? '직접 추가' : '3달 연속 감지'}</span>
+          {f.suggestion && <Suggestion f={f} onPick={() => openPopup(<EvidencePopup item={f} />)} />}
           <div className="mc-inline">
             <button type="button" className="mc-secondary" onClick={() => openPopup(<FixedPopup item={f} />)}>수정</button>
-            {/* 고정지출 아니에요 = 이 후보를 무시(ignored). 같은 후보를 다시 묻지 않는다. API 연결 후 */}
-            <button type="button" className="mc-secondary">고정지출 아니에요</button>
+            {/* 고정지출 아니에요 = 이 후보를 무시(ignored). 같은 후보를 다시 묻지 않는다. API 연결 후. 직접 추가한 건 후보가 아니라 없음 */}
+            {!f.manual && <button type="button" className="mc-secondary">고정지출 아니에요</button>}
           </div>
         </div>
       ))}
