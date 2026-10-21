@@ -77,10 +77,11 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 | 칸에 `null` | **비운다** (비울 수 있는 칸만) | `{ "paymentAccountId": null }` → 계좌를 비움 |
 | 필수 칸에 `null` | 400 `invalid` | `{ "amount": null }` → "금액은 비울 수 없어요." |
 | 빈 글자 `""` | 400 `invalid` | 빈 값은 `null`로만 보낸다 |
+| 표에 없는 칸 | 400 `invalid` | `{ "status": "confirmed" }` → "이 칸은 보낼 수 없어요." (서버가 정하는 칸 · 없어진 칸 포함. 추가 `POST`도 같음, 10-21 검수) |
 
 - 어떤 칸을 비울 수 있는지는 각 API 명세의 보내는 값 표에 적는다 (예: 고정지출은 `paymentDay` · `paymentAccountId` · `paymentCardId` · `evidenceTransactionId`만).
 - 서로 묶인 칸은 **같이 보낸다.** 예: 결제 수단을 계좌 → 카드로 바꿀 땐 `{ "paymentAccountId": null, "paymentCardId": "9a1b…" }`. 한쪽만 보내서 규칙(계좌와 카드 중 하나만)에 어긋나면 400. 서버가 다른 칸을 알아서 지우지 않는다.
-- Django: serializer를 `partial=True`로 쓰고, 비울 수 있는 칸에만 `allow_null=True`를 준다.
+- Django: serializer를 `partial=True`로 쓰고, 비울 수 있는 칸에만 `allow_null=True`를 준다. DRF는 모르는 칸을 **조용히 무시**하므로 표에 없는 칸은 serializer `validate()`에서 `set(self.initial_data) - set(self.fields)`로 직접 막는다.
 
 ## 같은 요청을 두 번 보내면
 
@@ -94,6 +95,7 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 
 - "이미 그 상태"인지는 서버가 DB를 보고 판단한다. 같은 일을 두 번 하지 않는다(돈 · 기록이 두 번 생기면 안 됨).
 - 남의 데이터이거나 없는 ID면 이 규칙과 상관없이 404다.
+- 주소로 고른 항목이 **그 동작을 할 수 없는 상태**면(예: 중지된 고정지출 수정, 후보를 `DELETE`) 404다. 목록에 안 나오는 상태는 없는 것처럼 다룬다. (10-21 고정지출 검수)
 
 ### 새로 만드는 요청은 '요청 번호'로 막는다 (10-21 C-10)
 
@@ -101,7 +103,7 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 
 | 단계 | 하는 일 |
 |---|---|
-| ① 화면 | 폼(팝업)을 열 때 `newRequestKey()`로 요청 번호를 하나 만든다. 저장하는 동안 버튼을 잠근다("저장 중…") |
+| ① 화면 | 입력 폼(팝업)은 **열 때**, 버튼 하나로 끝나는 요청(후보 확정 · 무시, 승인)은 **누를 때** `newRequestKey()`로 요청 번호를 하나 만든다. 저장하는 동안 버튼을 잠근다("저장 중…") |
 | ② 화면 | `apiSend(path, 'POST', body, { requestKey })` → `Idempotency-Key` 헤더로 보낸다. 다시 보내도 **같은 번호** |
 | ③ 서버 | view에 `@idempotent()`를 붙인다 (`config/idempotency.py`). 같은 회원 · 같은 번호 · 같은 내용이면 다시 처리하지 않고 **처음 응답을 그대로** 돌려준다 |
 
