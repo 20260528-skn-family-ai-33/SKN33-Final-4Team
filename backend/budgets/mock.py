@@ -66,7 +66,7 @@ UNCLASSIFIED = {"count": 4, "amount": 57_700}  # 화면에는 "확인 필요"로
 CUSHION = {
     "now": 300_000,
     "goal": 8_400_000,
-    "goal_label": "월급×3",
+    "goal_label": "월급의 3배",
     "bar": 3.57,
     "pct": 4,
     "monthly": 210_000,  # 월 쿠션 적립금 (2026-10-21 보호 하한 floor 삭제, per_pay → monthly)

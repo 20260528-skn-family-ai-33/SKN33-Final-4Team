@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { MONTH_DAYS } from '../utils/days.js'
 import { won } from '../utils/money.js'
@@ -75,8 +76,8 @@ function LoanCard({ loan }) {
               // 지난 납부 평균을 칸에 채워 넣기
               <button type="button" className="mc-loan-link" onClick={() => setAmount(String(loan.estimate))}>추정액 쓰기</button>
             )}</span>
-            <input inputMode="numeric" min="0" step="100" type="number" placeholder={loan.estimate ? won(loan.estimate).replace('원', '') : '금액 입력'}
-              value={amount} onChange={(e) => setAmount(e.target.value)} />
+            <MoneyInput placeholder={loan.estimate ? won(loan.estimate).replace('원', '') : '금액 입력'}
+              value={amount} onChange={(digits) => setAmount(digits)} />
             {loan.estimateNote && <small className="mc-loan-sub">{loan.estimateNote}</small>}
           </label>
           <label className="mc-field">

@@ -28,7 +28,7 @@ function Preview({ dir }) {
         </div>
         <div className="mc-protected-item">
           <div className="mc-row"><span>월 쿠션 적립금</span><strong>{won(r.cushionMonthly)}</strong></div>
-          <p className="mc-projection">약 <b>{monthsToGoal(r.cushionMonthly)}개월</b>이면 쿠션 목표 {won(CUSHION_GOAL)}에 닿아요.<small>목표 = 월급×3</small></p>
+          <p className="mc-projection">약 <b>{monthsToGoal(r.cushionMonthly)}개월</b>이면 쿠션 목표 {won(CUSHION_GOAL)}에 닿아요.<small>목표 = 월급의 3배</small></p>
         </div>
       </div>
       <p className="mc-note" style={{ paddingBottom: 0 }}>

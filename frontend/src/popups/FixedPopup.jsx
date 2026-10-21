@@ -2,6 +2,7 @@
 // props: item = 고칠 고정지출 (없으면 "추가", 있으면 "수정")
 // 저장·삭제는 아직 안 되고 닫히기만 한다
 import Popup from './Popup.jsx'
+import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
 import { MONTH_DAYS } from '../utils/days.js'
 import { BUDGET_CATS } from '../utils/categories.js'
@@ -26,7 +27,7 @@ export default function FixedPopup({ item }) {
       <form className="mc-form" id="mc-pop-form" onSubmit={onSubmit}>
         {/* defaultValue = 처음 채워 둘 값 (수정일 때만) */}
         <label className="mc-field">항목 이름<input name="fxName" placeholder="월세, 통신비 등" type="text" defaultValue={item?.name} /></label>
-        <label className="mc-field">금액<input inputMode="numeric" min="0" name="fxAmount" placeholder="예: 55000" step="1" type="number" defaultValue={item?.amount} /></label>
+        <label className="mc-field">금액<MoneyInput name="fxAmount" placeholder="예: 55,000" defaultValue={item?.amount} /></label>
         <label className="mc-field">출금일
           <select defaultValue={item ? `매월 ${item.day}일` : undefined}>{MONTH_DAYS.map((d) => <option key={d}>매월 {d}일</option>)}</select>
         </label>

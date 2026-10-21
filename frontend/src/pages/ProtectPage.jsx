@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { won } from '../utils/money.js'
 import { CUSHION_GOAL, DIRS, FIXED, IRREGULAR, MONTHLY, monthsToGoal, recommendFor } from '../utils/direction.js'
@@ -21,7 +22,7 @@ function hint(key, value) {
   if (!Number.isFinite(value) || value < 0) return '0 이상의 금액을 입력해 주세요.'
   if (key === 'livingBudget') return <>하루 약 <b>{won(Math.floor(value / 30 / 100) * 100)}</b>을 쓸 수 있어요. <span>(30일 기준)</span></>
   if (key === 'savingFloor') return <>1년 모으면 <b>{won(value * 12)}</b>이 모여요. <span>(매달 같은 금액 · 이자 제외)</span></>
-  if (value === 0) return CUSHION_REQUIRED ? '잔액이 월급×3보다 적어서 쿠션을 꼭 적립해야 해요.' : '쿠션을 적립하지 않아요.'
+  if (value === 0) return CUSHION_REQUIRED ? '잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요.' : '쿠션을 적립하지 않아요.'
   return <>약 <b>{monthsToGoal(value)}개월</b>이면 쿠션 목표 {won(CUSHION_GOAL)}에 닿아요.</>
 }
 
@@ -70,9 +71,9 @@ export default function ProtectPage() {
                   <label className="mc-protect-line" htmlFor={`mc-p-${k}`}>
                     <span>{label}<b className="mc-protect-pct" aria-label={`배분 가능한 금액의 ${share(num(k))}`}>{share(num(k))}</b><small className="mc-cat-rec" hidden={!edited} id={`mc-p-rec-${k}`}>추천 {won(RECOMMEND[k])}</small></span>
                     <span className="mc-cat-input-wrap">
-                      <input aria-label={label} className={edited ? 'mc-cat-input mc-protect-input is-edited' : 'mc-cat-input mc-protect-input'}
-                        id={`mc-p-${k}`} inputMode="numeric" min="0" name={k} step="10000" type="number"
-                        value={values[k]} onChange={(e) => { setValues({ ...values, [k]: e.target.value }); setError('') }} />
+                      <MoneyInput aria-label={label} className={edited ? 'mc-cat-input mc-protect-input is-edited' : 'mc-cat-input mc-protect-input'}
+                        id={`mc-p-${k}`} name={k}
+                        value={values[k]} onChange={(digits) => { setValues({ ...values, [k]: digits }); setError('') }} />
                       <span>원</span>
                     </span>
                   </label>
@@ -97,8 +98,8 @@ export default function ProtectPage() {
 
         <div className="mc-card mc-cjudge">
           <div className="mc-row"><h2>머니 쿠션</h2><span className="mc-badge">{CUSHION_REQUIRED ? '필수' : '선택'}</span></div>
-          <p className="mc-muted" style={{ margin: '4px 0 8px' }}>연결 계좌 잔액 {won(BALANCE)} {CUSHION_REQUIRED ? '<' : '≥'} 월급×3 {won(CUSHION_GOAL)}</p>
-          <p className="mc-note" style={{ padding: 0 }}>잔액이 월급×3보다 적어서 머니 쿠션을 꼭 적립해요. 목표는 월급×3이에요.</p>
+          <div className="mc-row" style={{ margin: '10px 0 2px' }}><span className="mc-muted">목표액</span><strong>{won(CUSHION_GOAL)}</strong></div>
+          <p className="mc-note" style={{ padding: 0 }}>갑작스러운 지출에 대비해 월급의 3배만큼 모아 두는 돈이에요.</p>
         </div>
         <p className="mc-note">월급 {won(MONTHLY)}에서 고정지출 {won(FIXED)}을 뺀 금액으로 계산했어요.</p>
         {error && <p className="mc-error" role="alert">{error}</p>}
