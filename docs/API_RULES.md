@@ -10,7 +10,7 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 | 주소 | `/api/` + 화면 주소 모양, 끝에 `/` | `/api/finance/transactions/`, `/api/finance/transactions/<id>/` |
 | 읽기 | `GET` | 화면 데이터, 목록, 하나 보기 |
 | 만들기 | `POST` | 고정지출 추가, 예산 승인 |
-| 고치기 | `PATCH` (바꾼 칸만 보냄) | 거래 카테고리 수정 |
+| 고치기 | `PATCH` (바꾼 칸만 보냄). **안 보낸 칸 = 그대로, `null` = 비우기** ([수정 요청](#수정-요청-patch)) | 거래 카테고리 수정 |
 | 지우기 | `DELETE` | 고정지출 삭제 |
 | 키 이름 | React는 `camelCase`, 파이썬은 `snake_case` — **자동 변환** | `livingUsed` ↔ `living_used` |
 | 돈 | **원 단위 정수** (소수·문자열·콤마 없음) | `420000` |
@@ -54,6 +54,21 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 | 서버 버그 (배포) | 500 | `server_error` | "잠시 후 다시 시도해 주세요." |
 
 > 세션 로그인은 로그인 안 했을 때 401이 아니라 **403 + `not_authenticated`**를 준다. 상태 코드가 아니라 `code`로 구분한다.
+
+## 수정 요청 (PATCH)
+
+2026-10-21 확정. 모든 수정 API 공통. 수정 요청은 **"바꿀 것만 적어 보내는 쪽지"**다.
+
+| 쪽지에 | 뜻 | 예시 |
+|---|---|---|
+| 칸을 안 보냄 | **그대로 둔다** | `{ "amount": 720000 }` → 금액만 바뀌고 계좌·날짜는 그대로 |
+| 칸에 `null` | **비운다** (비울 수 있는 칸만) | `{ "paymentAccountId": null }` → 계좌를 비움 |
+| 필수 칸에 `null` | 400 `invalid` | `{ "amount": null }` → "금액은 비울 수 없어요." |
+| 빈 글자 `""` | 400 `invalid` | 빈 값은 `null`로만 보낸다 |
+
+- 어떤 칸을 비울 수 있는지는 각 API 명세의 보내는 값 표에 적는다 (예: 고정지출은 `paymentDay` · `paymentAccountId` · `paymentCardId` · `categoryDetail`만).
+- 서로 묶인 칸은 **같이 보낸다.** 예: 결제 수단을 계좌 → 카드로 바꿀 땐 `{ "paymentAccountId": null, "paymentCardId": "9a1b…" }`. 한쪽만 보내서 규칙(계좌와 카드 중 하나만)에 어긋나면 400. 서버가 다른 칸을 알아서 지우지 않는다.
+- Django: serializer를 `partial=True`로 쓰고, 비울 수 있는 칸에만 `allow_null=True`를 준다.
 
 ## 보안 · 소유권
 
