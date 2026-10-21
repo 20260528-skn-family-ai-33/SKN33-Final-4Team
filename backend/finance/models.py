@@ -464,7 +464,9 @@ class RecurringExpense(models.Model):
         Card, null=True, blank=True, on_delete=models.SET_NULL, related_name="recurring_expenses",
     )
     name = models.CharField("이름", max_length=100)
+    # 10-21 C-03: 1,000원 ~ 1억 원 (0원·오타 방지). 합계가 월급보다 큰지는 예산 만들 때 안내(BUD-001)
     amount = models.BigIntegerField("기준 지출액")
+    # 10-21 C-03: 비워도 됨(출금일 모름 → '출금일 확인 필요'). 그 달에 없는 날(2월 31일 등)은 그 달 말일 (BUD-004)
     payment_day = models.SmallIntegerField("매월 납부일", null=True, blank=True)
     category = models.ForeignKey(
         "budgets.Category", on_delete=models.RESTRICT, db_column="category_code",
@@ -479,6 +481,15 @@ class RecurringExpense(models.Model):
     class Meta:
         db_table = "recurring_expense"
         verbose_name = verbose_name_plural = "고정지출"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(amount__gte=1_000, amount__lte=100_000_000), name="re_amount_1000_100m",
+            ),
+            models.CheckConstraint(
+                condition=Q(payment_day__isnull=True) | Q(payment_day__gte=1, payment_day__lte=31),
+                name="re_payment_day_1_31",
+            ),
+        ]
 
     def __str__(self):
         return self.name

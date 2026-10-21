@@ -1,7 +1,7 @@
 // 예산 산정 방향
 // 방향을 고르면 버튼 바로 아래에 지킬 돈 추천액 미리보기가 열린다 (다음 화면과 같은 계산)
 import { Fragment, useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useNavigate, useLocation } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { won } from '../utils/money.js'
@@ -41,12 +41,13 @@ function Preview({ dir }) {
 
 export default function DirectionPage() {
   const navigate = useNavigate()
+  const savingsMin = useLocation().state?.savingsMin ?? 0   // 저축 확인에서 고른 저축 최소 금액
   const [dir, setDir] = useState(null)   // DIRS 순번
   const [error, setError] = useState('')
 
   const onNext = () => {
     if (dir === null) { setError('예산 산정 방향을 하나 선택해 주세요.'); return }
-    navigate(PATHS.protect, { state: { dir } })  // 저장은 API 연결 후
+    navigate(PATHS.protect, { state: { dir, savingsMin } })  // 저장은 API 연결 후
   }
 
   return (

@@ -20,9 +20,10 @@ export const PATHS = {
   connectDone: '/finance/connect/done',
   loanCheck: '/finance/loans',
   connections: '/finance/connections',
-  // 첫 예산 설정 흐름 (budgets): 월급 → 고정지출 → 방향 → 지킬 돈 → 추천 예산
+  // 첫 예산 설정 흐름 (budgets): 월급 → 고정지출 → 저축 확인 → 방향 → 지킬 돈 → 추천 예산
   salary: '/budgets/salary',
   fixed: '/budgets/fixed',
+  savings: '/budgets/savings',
   direction: '/budgets/direction',
   protect: '/budgets/protect',
   recommend: '/budgets/recommend',

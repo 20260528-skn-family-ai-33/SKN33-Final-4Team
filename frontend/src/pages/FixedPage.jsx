@@ -40,7 +40,7 @@ export default function FixedPage() {
       {FIXED.map((f) => (
         <div className="mc-card" key={f.id}>
           <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">매월 {f.day}일 · {payLabel(f)} · {f.cat}</span></span>
+            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">{f.day ? `매월 ${f.day}일` : '출금일 확인 필요'} · {payLabel(f)} · {f.cat}</span></span>
             <strong>{won(f.amount)}</strong>
           </div>
           <span className="mc-badge" style={{ marginTop: 8 }}>최근 3개월 3회 감지</span>

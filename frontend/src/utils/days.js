@@ -1,11 +1,14 @@
 // 매월 1일 ~ 31일 (출금일·납부일 고르기)
 export const MONTH_DAYS = Array.from({ length: 31 }, (_, i) => i + 1)
 
-// 그 달의 급여일. 그 달에 그날이 없으면(예: 2월 31일) 그 달 마지막 날로 (급여일 보정 규칙 확정 전 임시 규칙)
-function paydayIn(year, month, payday) {
+// 그 달의 'N일'. 그 달에 그날이 없으면(예: 2월 31일) 그 달 말일로 (2/28, 윤년 2/29)
+// 10-21 확정 규칙 (요구사항 BUD-004 · docs/API_RULES.md '매월 N일') — 급여일 · 고정지출 출금일 · 대출 납부일 공통
+// month 는 0부터 (1월 = 0), 범위를 넘어도 Date 가 알아서 연도를 넘긴다
+export function dayIn(year, month, day) {
   const last = new Date(year, month + 1, 0).getDate()
-  return new Date(year, month, Math.min(payday, last))
+  return new Date(year, month, Math.min(day, last))
 }
+const paydayIn = dayIn
 
 // 오늘이 속한 급여 주기 { start, end, days }
 // start = 가장 최근 급여일, end = 다음 급여일 (end 는 다음 주기 첫날이라 포함하지 않음), days = 실제 일수

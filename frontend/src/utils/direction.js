@@ -33,5 +33,13 @@ export function recommendFor(dir) {
   return { available, livingRate, savingRate, livingBudget, savingFloor, cushionMonthly }
 }
 
+// 저축 최소 금액(저축 확인에서 '저축이에요'로 고른 이체의 월 합계) 적용 — 요구사항 BUD-003
+// 추천 저축이 최소 금액보다 작으면 저축을 최소 금액까지 올리고 그만큼 생활비를 줄인다 (생활비는 0원 아래로 안 내림)
+export function applySavingsMin(rec, savingsMin = 0) {
+  if (!(savingsMin > rec.savingFloor)) return rec
+  const raise = savingsMin - rec.savingFloor
+  return { ...rec, savingFloor: savingsMin, livingBudget: Math.max(0, rec.livingBudget - raise) }
+}
+
 // 매달 perMonth 씩 모으면 쿠션 목표까지 몇 달 (0 이하면 null)
 export const monthsToGoal = (perMonth) => (perMonth > 0 ? Math.ceil(CUSHION_GOAL / perMonth) : null)

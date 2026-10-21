@@ -10,17 +10,18 @@ import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { won } from '../utils/money.js'
-import { CUSHION_GOAL, DIRS, FIXED, IRREGULAR, MONTHLY, monthsToGoal, recommendFor } from '../utils/direction.js'
+import { CUSHION_GOAL, DIRS, FIXED, IRREGULAR, MONTHLY, applySavingsMin, monthsToGoal, recommendFor } from '../utils/direction.js'
 import { PATHS } from '../routes.js'
 
 const BALANCE = 2_800_000   // 연결 계좌 잔액 (시안값)
 const CUSHION_REQUIRED = BALANCE < CUSHION_GOAL   // 잔액 < 월급×3 이면 쿠션 필수
 const ROWS = [['livingBudget', '생활비'], ['savingFloor', '저축 목표액'], ['cushionMonthly', '월 쿠션 적립금']]
 
-// 칸 아래 한 줄 안내
-function hint(key, value) {
+// 칸 아래 한 줄 안내 (savingsMin = 저축 확인에서 고른 저축 최소 금액)
+function hint(key, value, savingsMin) {
   if (!Number.isFinite(value) || value < 0) return '0 이상의 금액을 입력해 주세요.'
   if (key === 'livingBudget') return <>하루 약 <b>{won(Math.floor(value / 30 / 100) * 100)}</b>을 쓸 수 있어요. <span>(30일 기준)</span></>
+  if (key === 'savingFloor' && value < savingsMin) return `저축 확인에서 고른 ${won(savingsMin)}보다 적게 정할 수 없어요.`
   if (key === 'savingFloor') return <>1년 모으면 <b>{won(value * 12)}</b>이 모여요. <span>(매달 같은 금액 · 이자 제외)</span></>
   if (value === 0) return CUSHION_REQUIRED ? '잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요.' : '쿠션을 적립하지 않아요.'
   return <>약 <b>{monthsToGoal(value)}개월</b>이면 쿠션 목표 {won(CUSHION_GOAL)}에 닿아요.</>
@@ -28,8 +29,8 @@ function hint(key, value) {
 
 export default function ProtectPage() {
   const navigate = useNavigate()
-  const dir = useLocation().state?.dir   // 예산 산정 방향에서 넘겨받은 순번
-  const RECOMMEND = recommendFor(dir)
+  const { dir, savingsMin = 0 } = useLocation().state ?? {}   // 예산 산정 방향에서 넘겨받은 순번 · 저축 최소 금액
+  const RECOMMEND = applySavingsMin(recommendFor(dir), savingsMin)   // 추천 저축 < 최소 금액이면 올리고 생활비에서 줄임 (BUD-003)
   const reset = () => Object.fromEntries(ROWS.map(([k]) => [k, String(RECOMMEND[k])]))
   // 칸에 적힌 글자 그대로 기억 (빈 칸도 허용하려고 문자열로)
   const [values, setValues] = useState(reset)
@@ -46,6 +47,7 @@ export default function ProtectPage() {
     e.preventDefault()
     if (bad) { setError('금액을 확인해 주세요.'); return }
     if (left < 0) { setError('배분 가능한 금액을 넘었어요. 입력 금액을 줄여 주세요.'); return }
+    if (num('savingFloor') < savingsMin) { setError(`저축은 ${won(savingsMin)} 이상이어야 해요. 저축 확인에서 고른 금액이에요.`); return }
     if (CUSHION_REQUIRED && num('cushionMonthly') === 0) { setError('월 쿠션 적립금을 입력해 주세요.'); return }
     // 고친 금액을 추천 예산 확인으로 넘긴다 (저장은 API 연결 후)
     navigate(PATHS.recommend, { state: { dir, ...Object.fromEntries(ROWS.map(([k]) => [k, num(k)])), spare: left } })
@@ -77,7 +79,7 @@ export default function ProtectPage() {
                       <span>원</span>
                     </span>
                   </label>
-                  <p aria-live="polite" className="mc-projection" id={`mc-hint-${k}`}>{hint(k, num(k))}</p>
+                  <p aria-live="polite" className="mc-projection" id={`mc-hint-${k}`}>{hint(k, num(k), savingsMin)}</p>
                 </div>
               )
             })}
