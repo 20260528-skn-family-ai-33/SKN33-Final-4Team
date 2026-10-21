@@ -69,9 +69,8 @@ CUSHION = {
     "goal_label": "월급×3",
     "bar": 3.57,
     "pct": 4,
-    "floor": 200_000,
+    "monthly": 210_000,  # 월 쿠션 적립금 (2026-10-21 보호 하한 floor 삭제, per_pay → monthly)
     "use_rule": "내 승인 후 허용",
     "remain": 8_100_000,
-    "per_pay": 210_000,
     "eta": "39회 · 약 39개월",
 }

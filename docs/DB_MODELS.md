@@ -7,11 +7,11 @@
 | 항목 | 결과 |
 |---|---|
 | 테이블 | 28 = ERD 26 + 10-20 추가 1 (`category_priority`) + 10-21 추가 1 (`category_minimum`) |
-| 칸(컬럼) | 348 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) + 10-21 추가 4 (`category_minimum`) |
+| 칸(컬럼) | 349 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) + 10-21 추가 4 (`category_minimum`) + 10-21 지킬 돈 A안 +1 (`living_budget`·`cushion_monthly` 추가, `cushion_floor` 삭제) |
 | FK | 80 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) + 10-21 추가 2 (`category_minimum`: 회원 CASCADE · 카테고리 RESTRICT) → CASCADE 34 · RESTRICT 26 · SET_NULL 20 |
 | UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) + 10-21 추가 1개 (`category_minimum`) |
-| CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) + 10-21 추가 1개 (`cm_min_amount_gte_1`) |
-| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과. 10-21 카테고리 최소 금액 표(`users` 0005)도 PostgreSQL 16에서 `migrate` + 규칙 8개(정상 저장 · 1원·기타 저장 · 같은 카테고리 두 번 · 0원 · 음수 · 사용 중 카테고리 삭제 · 지우고 다시 넣기 · 회원 삭제 CASCADE) 시험 통과 |
+| CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) + 10-21 추가 1개 (`cm_min_amount_gte_1`) + 10-21 지킬 돈 A안 2개 (`fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0`) |
+| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과. 10-21 카테고리 최소 금액 표(`users` 0005)도 PostgreSQL 16에서 `migrate` + 규칙 8개(정상 저장 · 1원·기타 저장 · 같은 카테고리 두 번 · 0원 · 음수 · 사용 중 카테고리 삭제 · 지우고 다시 넣기 · 회원 삭제 CASCADE) 시험 통과. 10-21 지킬 돈 A안(`users` 0006)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 5개(정상 저장 · 0원 · NULL · 생활비 음수 · 쿠션 적립금 음수) 시험 통과 |
 
 **ERD와 다른 점 (일부러 바꾼 것)**
 
@@ -40,6 +40,15 @@
 |---|---|
 | `category_minimum` 표 추가 (회원 · 카테고리 · `min_amount` BIGINT 원 단위) | 온보딩(내 정보 입력)에서 **원하는 카테고리에만 카테고리 최소 금액을 선택으로** 받기로 함. 우선순위와 상관없이 예산 칸이 있는 카테고리(10개 + 기타) 어디든 걸 수 있어서 `category_priority`에 칸을 붙이지 않고 따로 뺌. **설정 안 한 카테고리는 줄이 없다**(0원 저장 안 함). DB는 같은 카테고리 두 번 · 1원 미만만 막고, 합계 ≤ 생활비 총액은 예산 만들 때 엔진이 검사(넘으면 부족액 안내 후 수정 받기). 바꿀 땐 우선순위처럼 그 회원 것을 다 지우고 새 목록을 한 번에 다시 넣는다(트랜잭션 하나) |
 | 자물쇠(`budget_category_setting.locked`)와 다름 | 자물쇠 = 금액 그대로 고정(주기별) / 카테고리 최소 금액 = 이 금액 밑으로만 안 내려감, 올리는 건 가능(회원 설정) |
+
+**2026-10-21 변경 (지킬 돈 A안 · ERD SQL에도 반영 필요)**
+
+| 무엇 | 왜 |
+|---|---|
+| `financial_profile.living_budget` (BIGINT, 원 단위, 비어도 됨) 추가 | 지킬 돈 설정에서 **생활비를 사용자가 직접 고치게** 됨. 그전엔 생활비가 방향 비율로 매번 계산되는 값이라 `budget_item`(bucket=`living`, 카테고리별)에만 있었음. 이제 사용자 설정값이라 저축(`savings_floor`)·쿠션과 나란히 여기에 둔다. 매 주기 예산을 나눌 때 이 값이 생활비 카테고리 합계의 기준이고, 실제 배정 결과는 여전히 `budget_item`. 10-20에 지운 `living_floor`(최소 생활비 = 보호 하한)와는 다른 칸(생활비 총액) |
+| `financial_profile.cushion_floor`(쿠션 보호 하한액) 삭제 → `cushion_monthly`(월 쿠션 적립금, BIGINT, 원 단위) 추가 | 쿠션을 '이 아래로 안 쓰는 금액' 대신 **매달 적립할 금액**으로 정하기로 함. 의미가 달라 이름만 바꾸지 않고 지우고 새로 만듦(아직 실제 데이터 없음). 0원 = 이번엔 적립 안 함. 잔액 < 월급×3이면 0원 불가는 API에서 검사 |
+| CHECK `fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0` | 음수 금액 방지 (비어 있으면 통과) |
+| ⚠️ 쿠션 **사용 한도 규칙은 미정** | 보호 하한이 없어져서 예산 조정 때 쿠션을 어디까지 쓸 수 있는지 다시 정해야 함(2차 돌발 지출·카테고리 초과 조정 구현 전). 그때 하한·비율 제한을 두면 칸을 추가하고, 승인만 받으면 쓰는 방식이면 `cushion_use_policy`로 충분 |
 
 ## 2. 테이블 → 앱 배치
 

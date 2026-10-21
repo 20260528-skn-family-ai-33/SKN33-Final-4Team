@@ -17,7 +17,8 @@ export default function CushionPopup({ cushion }) {
       <form className="mc-form" id="mc-pop-form" onSubmit={onSubmit}>
         {/* defaultValue = 처음 채워 둘 값. 그 뒤로는 사용자가 자유롭게 고칠 수 있다 */}
         <label className="mc-field">쿠션 목표액<input inputMode="numeric" min="0" name="cushionTarget" step="1" type="number" defaultValue={cushion.goal} /></label>
-        <label className="mc-field">보호 하한<input inputMode="numeric" min="0" name="cushionFloor" step="1" type="number" defaultValue={cushion.floor} /></label>
+        {/* 2026-10-21: '보호 하한' 대신 매달 적립할 금액을 정한다 (지킬 돈 설정의 월 쿠션 적립금과 같은 값) */}
+        <label className="mc-field">월 쿠션 적립금<input inputMode="numeric" min="0" name="cushionMonthly" step="10000" type="number" defaultValue={cushion.monthly} /></label>
         <label className="mc-field">예산 조정 시 쿠션 사용<select><option>승인 후 사용 허용</option><option>사용하지 않음</option></select></label>
         <div className="mc-error" role="alert"></div>
         <div className="mc-foot"><button className="mc-primary" form="mc-pop-form" type="submit">설정 저장</button></div>

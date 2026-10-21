@@ -107,10 +107,13 @@ class FinancialProfile(models.Model):
     payday = models.SmallIntegerField("매월 급여일", null=True, blank=True)  # 1~31
     payday_rule = models.CharField("급여일 보정 규칙", max_length=30, null=True, blank=True)
     budget_direction = models.CharField("예산 산정 방향", max_length=30, null=True, blank=True)
+    # 지킬 돈 (지킬 돈 설정 화면 · 2026-10-21 A안): 생활비 · 저축 · 월 쿠션 적립금 세 칸 모두 사용자 설정값
+    # 이 값으로 매 주기 예산(budget_item)을 나눈다. 실제 배정 결과는 budget_item 에 있다
+    living_budget = models.BigIntegerField("월 생활비", null=True, blank=True)  # NULL=미설정. 카테고리 예산 합계의 기준
     savings_floor = models.BigIntegerField("월 저축 보호액", null=True, blank=True)
     cushion_enabled = models.BooleanField("쿠션 설정 여부", null=True, blank=True)
     cushion_target = models.BigIntegerField("쿠션 목표액", null=True, blank=True)
-    cushion_floor = models.BigIntegerField("쿠션 보호 하한액", null=True, blank=True)
+    cushion_monthly = models.BigIntegerField("월 쿠션 적립금", null=True, blank=True)  # 2026-10-21 보호 하한(cushion_floor) 대체
     cushion_use_policy = models.CharField("쿠션 사용 조건", max_length=50, null=True, blank=True)
     updated_at = models.DateTimeField("수정 시각", auto_now=True)
 
@@ -121,6 +124,12 @@ class FinancialProfile(models.Model):
             models.CheckConstraint(
                 condition=Q(payday__isnull=True) | Q(payday__gte=1, payday__lte=31),
                 name="fp_payday_1_31",
+            ),
+            models.CheckConstraint(
+                condition=Q(living_budget__isnull=True) | Q(living_budget__gte=0), name="fp_living_budget_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(cushion_monthly__isnull=True) | Q(cushion_monthly__gte=0), name="fp_cushion_monthly_gte_0",
             ),
         ]
 

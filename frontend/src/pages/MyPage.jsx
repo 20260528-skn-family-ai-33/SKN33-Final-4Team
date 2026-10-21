@@ -13,7 +13,7 @@ const MENU = [
   { icon: 'Banknote', name: '월급·급여일', sub: '월 280만원 · 매월 1일', to: PATHS.salary },
   { icon: 'Repeat', name: '고정지출', sub: '3건 · 770,000원', to: PATHS.fixed },
   { icon: 'Compass', name: '예산 산정 방향', sub: '선택 전', to: PATHS.direction },
-  { icon: 'ShieldCheck', name: '지킬 돈', sub: '생활비 1,120,000원 · 저축 410,000원', to: PATHS.protect },
+  { icon: 'ShieldCheck', name: '지킬 돈', sub: '생활비 1,120,000원 · 저축 410,000원 · 쿠션 210,000원', to: PATHS.protect },
   { icon: 'Wallet', name: '카테고리 예산', sub: '추천 예산 확인·수정', to: PATHS.budget },
   { icon: 'Link', name: '연결 관리', sub: '은행 2곳 · 계좌 2개 · 카드 2장', to: PATHS.connections },
 ]
