@@ -1,4 +1,6 @@
-// 고정지출 확인
+// 고정지출 확인 (첫 설정 흐름)
+// 여기 나오는 건 자동으로 찾은 후보(suggested). [확인하고 다음] = 남은 후보를 모두 확정(confirmed), [고정지출 아니에요] = 무시(ignored)
+// 감지 조건 (요구사항 TXN-008): 같은 받는 곳으로 한 달에 1건 · 매달 같은 날 ±3일 · 같은 금액(±10%) · 3달 연속 → 매일 사는 커피 같은 건 안 잡힌다
 // 목록은 시안 예시값 — 고정지출 감지 API 가 생기면 바꾼다
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -34,7 +36,7 @@ export default function FixedPage() {
       <StepBar step={4} />
       <div className="mc-eyebrow">고정지출 확인</div>
       <h1>매달 이 돈이 나가나요?</h1>
-      <p className="mc-muted">최근 2~3개월 거래에서 비슷한 결제가 3번 이상 나온 항목을 찾았어요. 다르면 고치거나 지워 주세요.</p>
+      <p className="mc-muted">매달 비슷한 날, 같은 금액으로 3달 연속 나간 항목을 찾았어요. 맞으면 그대로, 다르면 고치거나 '고정지출 아니에요'를 눌러 주세요.</p>
       <p className="mc-note" style={{ paddingTop: 0 }}>대출 상환은 대출 확인에서, 내 계좌로 보내는 저축은 다음 화면에서 따로 챙겨요.</p>
 
       {FIXED.map((f) => (
@@ -43,11 +45,11 @@ export default function FixedPage() {
             <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">{f.day ? `매월 ${f.day}일` : '출금일 확인 필요'} · {payLabel(f)} · {f.cat}</span></span>
             <strong>{won(f.amount)}</strong>
           </div>
-          <span className="mc-badge" style={{ marginTop: 8 }}>최근 3개월 3회 감지</span>
+          <span className="mc-badge" style={{ marginTop: 8 }}>3달 연속 감지</span>
           <div className="mc-inline">
             <button type="button" className="mc-secondary" onClick={() => openPopup(<FixedPopup item={f} />)}>수정</button>
-            {/* 삭제는 API 연결 후 */}
-            <button type="button" className="mc-secondary">삭제</button>
+            {/* 고정지출 아니에요 = 이 후보를 무시(ignored). 같은 후보를 다시 묻지 않는다. API 연결 후 */}
+            <button type="button" className="mc-secondary">고정지출 아니에요</button>
           </div>
         </div>
       ))}

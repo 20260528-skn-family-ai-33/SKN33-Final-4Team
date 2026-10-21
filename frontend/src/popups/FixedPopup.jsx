@@ -4,6 +4,8 @@
 // 카테고리 (10/21 결정, 요구사항 TXN-008): 10개 + 기타 중 필수. 항목 이름을 보고 미리 골라 둔다(사용자가 직접 고르면 그대로 둠)
 //   저축 · 투자 · 대출 상환 · 카드값은 고정지출로 받지 않는다 (저축 = 저축 확인 · 대출 = 대출 확인 · 카드값 = 카드 청구서)
 //   서버로 보낼 때는 화면 이름이 아니라 카테고리 코드로 보낸다 (docs/API_RULES.md 카테고리 코드)
+// 주기 · 상태 (10/21 결정, C-04): 매월만. [추가하기] = 바로 확정(confirmed, 출처 manual)
+//   온보딩 뒤에 추가하면 이번 달 몫은 여윳돈으로 먼저 챙기고(모자라면 예산 조정 제안), 다음 달부터 고정비로 반영 (TXN-008 · BUD-005)
 // 금액 · 출금일 (10/21 결정, C-03): 금액 1,000원 ~ 1억 원. 출금일은 비워도 됨('모름'). 그 달에 없는 날은 말일 (utils/days.js dayIn)
 //   고정지출 합계가 월급보다 커도 여기서는 막지 않는다 (예산 만들 때 부족액 안내, BUD-001)
 // 결제 수단 (10/21 결정, C-02): 계좌 / 카드 / 모름 중 하나. 선택이라 몰라도 저장된다
@@ -101,7 +103,7 @@ export default function FixedPopup({ item }) {
             {PICK_CATS.map((c) => <option key={c}>{c}</option>)}
           </select>
         </label>
-        <p className="mc-note" style={{ padding: 0 }}>저축·대출 상환·카드값은 여기서 받지 않고 따로 챙겨요.</p>
+        <p className="mc-note" style={{ padding: 0 }}>매달 나가는 돈만 넣어요. 1년에 한 번 내는 건 비정기지출 준비금, 커피처럼 자주 사는 건 생활비 예산에서 챙겨요. 저축·대출 상환·카드값도 따로 챙겨요.</p>
         <div className="mc-error" role="alert">{error}</div>
         <div className="mc-foot"><button className="mc-primary" form="mc-pop-form" type="submit">{editing ? '수정 저장' : '추가하기'}</button></div>
       </form>

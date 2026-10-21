@@ -453,7 +453,24 @@ class CardBillItem(models.Model):
 
 
 class RecurringExpense(models.Model):
-    """고정지출. 화면에서 '삭제'해도 행은 지우지 않고 status를 중지로 바꾼다"""
+    """고정지출. 화면에서 '삭제'해도 행은 지우지 않고 status를 중지로 바꾼다
+
+    10-21 C-04: 고정지출 = 매달 금액·날짜가 정해져 피할 수 없는 돈. 매월만 받는다
+    (1년에 한 번 = 비정기지출 준비금 BUD-011, 매주·매일 사는 것 = 생활비 카테고리 예산)
+    상태 흐름: 자동 발견 → suggested ─맞아요→ confirmed ─그만 나가요→ stopped
+                                    └아니에요→ ignored (같은 후보를 다시 묻지 않으려고 남김)
+               직접 추가 → 바로 confirmed.  예산에는 confirmed 만 들어간다 (TXN-008)
+    """
+
+    class Status(models.TextChoices):
+        SUGGESTED = "suggested", "후보"
+        CONFIRMED = "confirmed", "확정"
+        STOPPED = "stopped", "중지"
+        IGNORED = "ignored", "무시"
+
+    class SourceType(models.TextChoices):
+        MANUAL = "manual", "직접 등록"
+        DETECTED = "detected", "반복 탐지"   # 후보를 고쳐서 확정해도 detected 유지
 
     recurring_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="recurring_expenses")
@@ -473,8 +490,8 @@ class RecurringExpense(models.Model):
         related_name="+", verbose_name="카테고리",
     )
     category_detail = models.CharField("세부 분류", max_length=30, null=True, blank=True)
-    status = models.CharField("상태(확정/중지/무시)", max_length=20)  # 코드 미정
-    source_type = models.CharField("등록 출처", max_length=20)  # 코드 미정
+    status = models.CharField("상태", max_length=20, choices=Status.choices)
+    source_type = models.CharField("등록 출처", max_length=20, choices=SourceType.choices)
     evidence = models.JSONField("확정 근거 거래 ID", default=empty_list, blank=True)
     confirmed_at = models.DateTimeField("사용자 확인 시각", null=True, blank=True)
 
@@ -489,6 +506,8 @@ class RecurringExpense(models.Model):
                 condition=Q(payment_day__isnull=True) | Q(payment_day__gte=1, payment_day__lte=31),
                 name="re_payment_day_1_31",
             ),
+            models.CheckConstraint(condition=Q(status__in=["suggested", "confirmed", "stopped", "ignored"]), name="re_status_valid"),
+            models.CheckConstraint(condition=Q(source_type__in=["manual", "detected"]), name="re_source_type_valid"),
         ]
 
     def __str__(self):
