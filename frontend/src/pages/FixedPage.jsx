@@ -9,28 +9,38 @@ import FixedPopup from '../popups/FixedPopup.jsx'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
+// 결제 수단: account(계좌) 또는 card(카드) 중 하나, 둘 다 없으면 모름. 이름은 서버 displayName 그대로 (docs/API_RULES.md)
+// payStatus: 'disconnected' 면 연결 해제된 계좌·카드 → 다시 고르게 안내
 const FIXED = [
-  { id: 1, name: '월세', day: 25, account: '국민 · 5678', cat: '주거·통신', amount: 700_000 },
-  { id: 2, name: '통신비', day: 20, account: '국민 · 5678', cat: '주거·통신', amount: 55_000 },
-  { id: 3, name: '구독료', day: 5, account: '신한 · 1234', cat: '문화·여가', amount: 15_000 },
+  { id: 1, name: '월세', day: 25, account: '국민 급여통장 · ****5678', cat: '주거·통신', amount: 700_000 },
+  { id: 2, name: '통신비', day: 20, account: '국민 급여통장 · ****5678', cat: '주거·통신', amount: 55_000 },
+  { id: 3, name: '구독료', day: 5, card: '신한 Deep Dream · ****4321', cat: '문화·여가', amount: 15_000 },
 ]
 const total = FIXED.reduce((sum, f) => sum + f.amount, 0)
+
+// 목록 한 줄에 보일 결제 수단
+function payLabel(f) {
+  const name = f.account ?? f.card
+  if (!name) return '출금 계좌 확인 필요'
+  return f.payStatus === 'disconnected' ? `${name} (연결 해제됨 · 다시 고르기)` : name
+}
 
 export default function FixedPage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
 
   return (
-    <Layout title="고정지출 확인" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.direction)}>확인하고 다음</button>}>
+    <Layout title="고정지출 확인" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.savings)}>확인하고 다음</button>}>
       <StepBar step={4} />
       <div className="mc-eyebrow">고정지출 확인</div>
       <h1>매달 이 돈이 나가나요?</h1>
       <p className="mc-muted">최근 2~3개월 거래에서 비슷한 결제가 3번 이상 나온 항목을 찾았어요. 다르면 고치거나 지워 주세요.</p>
+      <p className="mc-note" style={{ paddingTop: 0 }}>대출 상환은 대출 확인에서, 내 계좌로 보내는 저축은 다음 화면에서 따로 챙겨요.</p>
 
       {FIXED.map((f) => (
         <div className="mc-card" key={f.id}>
           <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">매월 {f.day}일 · {f.account} · {f.cat}</span></span>
+            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">매월 {f.day}일 · {payLabel(f)} · {f.cat}</span></span>
             <strong>{won(f.amount)}</strong>
           </div>
           <span className="mc-badge" style={{ marginTop: 8 }}>최근 3개월 3회 감지</span>
