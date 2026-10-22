@@ -60,12 +60,17 @@ React(`frontend/`)는 화면만, Django(`backend/`)는 데이터·계산·로그
 | 권한 없음 · CSRF 실패 | 403 | `permission_denied` | `err.message` 표시 |
 | 없음 · 남의 데이터 · **주소 속 ID 형식 틀림** · `/api/` 아래 없는 주소 | 404 | `not_found` | "찾을 수 없어요" |
 | 같은 요청 번호로 다른 내용 | 409 | `idempotency_conflict` | 개발 중 버그 (번호를 재사용함) |
+| 금융 조회 동의를 안 함 (10-22 O) | 403 | `consent_required` | 동의 화면으로 보내기 |
+| 다시 연결 필요 — 연결 · 다시 불러오기에서만 (10-22 O) | 409 | `relogin_required` | [다시 연결] 버튼 |
+| CODEF · 은행 응답 없음 — 연결 · 다시 불러오기에서만 (10-22 O) | 502 | `provider_unavailable` | "은행 연결이 잠시 안 돼요. 잠시 후 다시 시도해 주세요." |
 | 안 되는 메서드 | 405 | `method_not_allowed` | 개발 중 버그 |
 | 서버 버그 (배포) | 500 | `server_error` | "잠시 후 다시 시도해 주세요." |
 
 > **주소가 틀리면 404, 내용이 틀리면 400** (10-21 C-11). 주소 속 ID 자리는 `<uuid:이름>`으로 써서 `abc`처럼 형식이 틀리면 Django가 알아서 404로 보낸다. `/api/` 아래 맞는 주소가 없으면 `api_urls.py` 맨 끝 줄(`not_found`)이 HTML 대신 **JSON 404**로 답한다. 주소 끝 `/`를 빼먹으면 메시지가 "주소 끝에 /가 필요해요."로 나온다. 본문에 든 ID가 틀린 건 400 (아래 '보안 · 소유권').
 
 > 세션 로그인은 로그인 안 했을 때 401이 아니라 **403 + `not_authenticated`**를 준다. 상태 코드가 아니라 `code`로 구분한다.
+
+> **금융 조회 (10-22 결정기록 O)**: 목록 · 조회 `GET`은 저장된 것만 읽고 CODEF를 부르지 않는다. 그래서 `relogin_required` · `provider_unavailable`은 CODEF를 부르는 연결 · 다시 불러오기 API에서만 나온다. 실패를 빈 목록 · 0원으로 바꾸지 않는다.
 
 ## 수정 요청 (PATCH)
 
