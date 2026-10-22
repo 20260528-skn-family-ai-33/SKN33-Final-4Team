@@ -4,15 +4,15 @@
 > 공통 규칙은 `docs/API_RULES.md`를 따른다 (camelCase · 원 단위 정수 · UUID · 세션 쿠키 + CSRF · 에러 모양)
 > 반영한 결정 (10/21): 챗봇 소비 분석 = LLM 라우터가 문장 해석 + 서버 집계 + 템플릿 답변 (요구사항 CHT-006 · RPT-001 · RPT-004 · AGT-001). LLM은 문장 해석에만 쓰고, 카드의 숫자는 서버가 집계한다.
 > 이번 범위: 이전 대화 보기 · 메시지 보내기(요청 모양 · 라우팅 결과 · 소비 분석 카드) · 오래 걸리는 작업 진행 확인. 예산 조정 카드·조정안 승인·되묻기 흐름은 '결정 후'.
-> 공통 결정은 `docs/결정기록_2026-10-21.md`(4번 챗봇 소비 분석). 10/22 반영: ★ 2·3·4·8·10·14 · 0번 체크리스트(카테고리 키 `category` + `categoryName`)
+> 공통 결정은 `docs/결정기록_2026-10-21.md`(4번 챗봇 소비 분석). 10/22 반영: ★ 2·3·4·8·10·14 · 0번 체크리스트(카테고리 키 `category` + `categoryName`) · **결정기록 3-3 A·C·D·E·J 확정** (README 4-1 · 4-2 ①)
 
 **공통으로 쓰는 값**
 
 | 값 | 모양 | 뜻 |
 |---|---|---|
 | 메시지 `message` | `{ "messageId", "role", "contentType", "content", "taskId", "createdAt" }` | 대화 한 줄 |
-| `role` | `user` · `bot` | 보낸 쪽. 코드 확인 필요 |
-| `contentType` | `text` · `card` | 글 / 결과 카드. 코드 확인 필요 |
+| `role` | `user` · `bot` | 보낸 쪽 (10/22 E 확정) |
+| `contentType` | `text` · `card` | 글 / 결과 카드 (10/22 E 확정) |
 | `content` (text) | `{ "text": "…", "choices": [ { "value", "label" } ] }` | `choices`는 누를 수 있는 선택지(없으면 `[]`) |
 | `content` (card) | `{ "kind": "spending", … }` | 카드 종류별 모양. 이번에는 `spending`(소비 분석)만 |
 
@@ -123,8 +123,8 @@
 
 | 이름 | 타입 | 뜻 | 예시 |
 |---|---|---|---|
-| `period` | 객체 | 분석 기간 `{ "from", "to" }`. 없으면 이번 급여 주기(★14: 설정한 월급날 ~ 다음 월급날 전날, H-01) | `{ "from": "2026-09-25", "to": "2026-10-24" }` |
-| `compare` | 문자 | 비교 기준. 기본 `prev_month`(지난달) | `"prev_month"` |
+| `period` | 객체 | 분석 기간 `{ "from", "to" }`. 없으면 **이번 달 1일 ~ 오늘**(달력월, 10/22 A — 거래 목록 · 예산과 같은 기준) | `{ "from": "2026-10-01", "to": "2026-10-21" }` |
+| `compare` | 문자 | 비교 기준. 기본 `prev_month`(지난달). 이번 달이 안 끝났으면 지난달도 **같은 날짜까지만** 비교한다(10/1~21 vs 9/1~21, 10/22 C) | `"prev_month"` |
 | `category` | 문자 | 카테고리 코드 (결정기록 1번 코드표) | `"FOOD"` |
 | `amount` | 정수 | 금액(원) — 예산 조정용 | `50000` |
 | `direction` | 문자 | `up`(늘림) · `down`(줄임) — 예산 조정용 | `"up"` |
@@ -136,21 +136,27 @@
 | `kind` | 문자 | `"spending"` |
 | `scope` | 문자 | 답변 종류(CHT-006): `all`(카테고리 없음 → 전체) · `category`(그 카테고리) |
 | `period` | 객체 | 집계 기간 `{ "from", "to" }` |
-| `compare` | 객체 / null | 비교 기간 `{ "from", "to" }`. 비교하지 않으면 `null` |
+| `compare` | 객체 / null | 비교 기간 `{ "from", "to" }`. 이번 달이 안 끝났으면 지난달 1일 ~ 같은 날짜(C). 비교하지 않으면 `null` |
+| `comparison` | 객체 | 비교할 수 있는지 `{ "available", "reason" }` (10/22 J). 비교할 수 있으면 `available: true`, `reason: null` |
+| `comparison.reason` | 문자 / null | 비교할 수 없는 이유: `not_requested`(비교를 묻지 않음) · `previous_incomplete`(비교 기간 자료가 다 모이지 않음). 비교할 수 없으면 `previousTotal` · `categories[].previousAmount` · `prevDiff` · `prevDiffRate`는 모두 `null` |
 | `total` | 정수 | 기간 안 **전체** 소비 합계(원, 취소분 뺀 금액). `scope: category`여도 항상 전체 기준 |
-| `prevTotal` | 정수 / null | 비교 기간 **전체** 소비 합계. 비교하지 않으면 `null` |
+| `previousTotal` | 정수 / null | 비교 기간 **전체** 소비 합계(10/22 J: `prevTotal`에서 이름 바꿈). 비교할 수 없으면 `null` |
 | `categories` | 목록 | 카테고리별 합계(금액 큰 순). `scope: category`면 그 카테고리 1개 |
 | `categories[].category` | 문자 | 카테고리 코드 |
 | `categories[].categoryName` | 문자 | 카테고리 화면 이름 |
 | `categories[].amount` | 정수 | 이번 기간 금액(원) |
+| `categories[].previousAmount` | 정수 / null | 비교 기간 금액(원, 10/22 J). 비교할 수 없으면 `null` |
 | `categories[].ratio` | 숫자 | 전체 소비(`total`) 중 이 카테고리 비율(0~100) |
 | `categories[].prevDiff` | 정수 / null | 비교 기간 대비 금액 차이(원, 음수 = 줄어듦). 비교 안 하면 `null` |
 | `categories[].prevDiffRate` | 숫자 / null | 증감률(%). **음수·100 초과 가능**, 비교 기간이 0원이면 `null` |
+| `topSpending` | 객체 / null | 가장 많이 쓴 카테고리 `{ "basis": "category", "items": [ … ] }` (10/22 J). **동률이면 모두** `items`에 넣는다(카테고리 표 순서). `scope: category`이거나 소비가 0원이면 `null` |
+| `topSpending.items[]` | 객체 | `category` · `categoryName` · `amount` · `ratio` (`categories[]`의 같은 항목과 같은 값) |
 | `unclassifiedAmount` | 정수 | 기간 안 **전체** '확인 필요' 거래 합계(원). `total`에 포함 |
-| `lines` | 문자 목록 | 템플릿으로 만든 답변 문장 |
+| `lines` | 문자 목록 | 템플릿으로 만든 답변 문장. 같은 날짜까지 잘라 비교했으면 "9월 같은 기간보다"처럼 비교 기간을 밝힌다(C) |
 | `updatedAt` | 시각 | 집계 기준 시각 |
 
-> **합계 범위**: `total`·`prevTotal`·`unclassifiedAmount`는 `scope`와 상관없이 **항상 전체 소비 기준**이다. 선택한 카테고리의 금액은 `categories[]`에만 있다. 예) 식비를 물으면 `categories`는 식비 1개(42만 원), `total`은 전체 132만 원, `ratio` 32 = 42만 ÷ 132만.
+> **수집 상태(`coverage`)는 1차에서 넣지 않는다(10/22 J).**
+> **합계 범위**: `total`·`previousTotal`·`unclassifiedAmount`는 `scope`와 상관없이 **항상 전체 소비 기준**이다. 선택한 카테고리의 금액은 `categories[]`에만 있다. 예) 식비를 물으면 `categories`는 식비 1개(42만 원), `total`은 전체 132만 원, `ratio` 32 = 42만 ÷ 132만.
 > 같은 구매가 카드 승인·계좌 출금으로 두 번 들어온 경우의 처리는 `transactions.md`의 '같은 구매가 두 번 들어올 때'와 같은 규칙을 쓴다(한 번만 셈).
 > **고정지출 포함(안)**: 소비 분석에는 고정지출로 연결된 거래(`funding: fixed`, ★8 — 월세 출금, 넷플릭스 카드 결제 등)도 **포함**한다(결정기록 7번 팀 추천: 소비 분석엔 포함, 생활비 사용액에선 제외). 카드값 납부 · 저축 · 대출 상환은 카테고리가 아니라서 넣지 않는다.
 
@@ -165,13 +171,15 @@
       "content": {
         "kind": "spending",
         "scope": "category",
-        "period": { "from": "2026-09-25", "to": "2026-10-24" },
-        "compare": { "from": "2026-08-25", "to": "2026-09-24" },
+        "period": { "from": "2026-10-01", "to": "2026-10-21" },
+        "compare": { "from": "2026-09-01", "to": "2026-09-21" },
+        "comparison": { "available": true, "reason": null },
         "total": 1320000,
-        "prevTotal": 1250000,
-        "categories": [ { "category": "FOOD", "categoryName": "식비", "amount": 420000, "ratio": 32, "prevDiff": 40000, "prevDiffRate": 11 } ],
+        "previousTotal": 1250000,
+        "categories": [ { "category": "FOOD", "categoryName": "식비", "amount": 420000, "ratio": 32, "previousAmount": 380000, "prevDiff": 40000, "prevDiffRate": 11 } ],
+        "topSpending": null,
         "unclassifiedAmount": 35000,
-        "lines": [ "지난달보다 식비를 4만 원(11%) 더 썼어요." ],
+        "lines": [ "9월 같은 기간보다 식비를 4만 원(11%) 더 썼어요." ],
         "updatedAt": "2026-10-21T16:20:00+09:00"
       }
     }
@@ -183,9 +191,9 @@
 비교 기간이 0원일 때 (RPT-001):
 
 ```json
-{ "category": "TRAVEL_LODGING", "categoryName": "여행·숙박", "amount": 150000, "ratio": 11, "prevDiff": 150000, "prevDiffRate": null }
+{ "category": "TRAVEL_LODGING", "categoryName": "여행·숙박", "amount": 150000, "ratio": 11, "previousAmount": 0, "prevDiff": 150000, "prevDiffRate": null }
 ```
-→ 문장: "지난달에는 여행·숙박 지출이 없었고, 이번에는 15만 원 썼어요."
+→ 문장: "9월 같은 기간에는 여행·숙박 지출이 없었고, 이번 달에는 15만 원 썼어요."
 
 `unknown`일 때 (라우터가 판단, `fallback: false`):
 
@@ -227,15 +235,13 @@
 
 **확인 필요**
 
-- **진행 중인 기간 비교 방법**: 이번 기간이 끝나지 않았을 때 지난 기간 **전체**와 비교할지, **같은 경과일까지**(예: 10/1~10/21 vs 9/1~9/21) 비교할지 → 김나은
-- **소비 분석 기본 기간**: 목록 문서(CHT-006)는 "기간이 없으면 이번 급여주기"인데, 10/21 나은 님 메모는 "소비 분석은 달력월". 어느 쪽인지 확정하고 카드의 `period`에 `basis`(`cycle`·`month`)를 넣을지 → 김나은
-- 소비 분석 카드 칸 이름·항목 최종본(예: 남은 예산 대비 표시, 상위 N개만 보여 줄지) → **권세진이 항목·예시 전달 후 반영**
 - 거래가 하나도 없는 기간일 때 카드 대신 안내 글로 답할지 → 권세진
-- `compare` 코드: `prev_month` 외에 `prev_week`(2차)·`none`을 둘지, 급여주기 기준이면 이름을 `prev_cycle`로 할지 → 김나은
+- `compare` 코드: `prev_month` 외에 `prev_week`(2차)·`none`을 둘지 → 김나은
+- '확인 필요'(`UNCLASSIFIED`) 금액이 가장 클 때 `topSpending`에서 뺄지(세진 안 spending-analysis.md A-2: 순위에서 빼고 '분류된 소비 기준'이라고 안내) → 김혜리 · 권세진
+- 지난달에 같은 날짜가 없을 때(예: 3/31에 물으면 2월은 28일까지) 지난달 말일까지로 자를지 → 김나은
 - '확인 필요'(`UNCLASSIFIED`) 거래를 카드에서 따로 볼지 → 김나은
 - **소비 분석에 고정지출 포함**(위 안, 팀 추천) 확정 → 팀 회의 (집계: 권세진 · 예산: 김나은)
 - 사용자 메시지를 응답 `messages`에 다시 넣는 안(화면이 바로 그리기 쉬움) vs 봇 답변만 → 프런트 담당
-- 메시지 `role`·`contentType` 코드 이름 — DB '코드 미정' → 김나은
 - `budget` 의도의 1차 처리(안내 글만 vs 예산 조정 작업 시작 + `task`) → 결정 후
 
 ---
@@ -256,8 +262,8 @@
 | 이름 | 타입 | 뜻 |
 |---|---|---|
 | `taskId` | UUID | 작업 번호 |
-| `taskType` | 문자 | 작업 종류 (예: `budget_adjust`). 코드 확인 필요 |
-| `status` | 문자 | `queued`(대기) · `running`(실행) · `succeeded`(완료) · `failed`(실패) · `canceled`(취소). 코드 확인 필요 |
+| `taskType` | 문자 | 작업 종류 (예: `budget_adjust`, 10/22 E 확정) |
+| `status` | 문자 | `queued`(대기) · `running`(실행) · `succeeded`(완료) · `failed`(실패) · `canceled`(취소) (10/22 E 확정) |
 | `conversationId` | UUID / null | 챗봇에서 시작한 작업이면 그 대화 |
 | `createdAt` · `startedAt` · `completedAt` | 시각 / null | 만든 · 시작 · 끝난 시각 |
 | `result` | 객체 / null | `succeeded`일 때 결과. **모양은 작업 종류별로 결정 후** |
@@ -279,7 +285,7 @@
 - `queued`·`running`이면 2초 뒤 다시 묻는다.
 - `succeeded`·`failed`·`canceled`가 오면 **조회를 멈춘다.**
 - 완료되면 결과 메시지는 대화에도 저장되므로, 챗봇 화면은 `GET /api/chat/conversations/<id>/`로 다시 그려도 된다.
-- **초안 만료(★10)**: 예산 조정안이 만들어진 뒤 고정지출이 바뀌면(추가 · 금액 변경 · 중지) 그 조정안은 바뀌기 전 숫자로 만든 것이라 승인할 수 없다(COM-005 `EXPIRED`). 작업 자체는 `succeeded`로 남고, 승인 단계에서 만료를 알린다. 화면은 "고정지출이 바뀌어서 다시 만들어야 해요"와 [다시 만들기]를 보여 준다.
+- **초안 만료(★10)**: 예산 조정안이 만들어진 뒤 고정지출이나 저축이 바뀌면(추가 · 금액 변경 · 중지 등, 10/22 결정기록 D) 그 조정안은 바뀌기 전 숫자로 만든 것이라 승인할 수 없다(COM-005 `EXPIRED`). 작업 자체는 `succeeded`로 남고, 승인 단계에서 만료를 알린다. 화면은 "고정지출이나 저축이 바뀌어서 다시 만들어야 해요"와 [다시 만들기]를 보여 준다.
 
 **실패하면**
 
@@ -291,7 +297,6 @@
 **확인 필요**
 
 - 이 방식(작업 시작 → 진행 확인)을 실제로 쓸지, 1차 예산 조정은 바로 답하는 방식으로 할지 → 팀 회의 (예산 조정 에이전트 담당 권세진·김나은)
-- `status`·`taskType` 코드 이름 — DB '코드 미정' → 김나은
 - 조회 간격(2초)과 최대 대기 시간(예: 60초 뒤 '시간 초과' 안내) → 팀 회의
 - `error.code` 목록 (예: 재생성 3회 실패 `regeneration_limit`, 계산 엔진 검수 실패) → 결정 후
 - 만료(★10)를 작업 결과(`result`)에도 표시할지, 조정안 승인 API에서만 알릴지 → 결정 후(조정안 승인과 함께)
