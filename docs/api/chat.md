@@ -4,7 +4,7 @@
 > 공통 규칙은 `docs/API_RULES.md`를 따른다 (camelCase · 원 단위 정수 · UUID · 세션 쿠키 + CSRF · 에러 모양)
 > 반영한 결정 (10/21): 챗봇 소비 분석 = LLM 라우터가 문장 해석 + 서버 집계 + 템플릿 답변 (요구사항 CHT-006 · RPT-001 · RPT-004 · AGT-001). LLM은 문장 해석에만 쓰고, 카드의 숫자는 서버가 집계한다.
 > 이번 범위: 이전 대화 보기 · 메시지 보내기(요청 모양 · 라우팅 결과 · 소비 분석 카드) · 오래 걸리는 작업 진행 확인. 예산 조정 카드·조정안 승인·되묻기 흐름은 '결정 후'.
-> 공통 결정은 `docs/결정기록_2026-10-21.md`(4번 챗봇 소비 분석). 10/22 반영: ★ 2·3·4·8·10·14 · 0번 체크리스트(카테고리 키 `category` + `categoryName`) · **결정기록 3-3 A·C·D·E·J 확정** (README 4-1 · 4-2 ①)
+> 공통 결정은 `docs/결정기록_2026-10-21.md`(4번 챗봇 소비 분석). 10/22 반영: ★ 2·3·4·8·10·14 · 0번 체크리스트(카테고리 키 `category` + `categoryName`) · **결정기록 3-3 A·C·D·E·J 확정** (README 4-1 · 4-2 ①) · 10/22 결정 N①~⑤ · S · Z②(결정기록 반영 전, 전달 메시지 기준)
 
 **공통으로 쓰는 값**
 
@@ -59,9 +59,13 @@
 | 없는 대화·남의 대화 | 404 | `not_found` | 새 대화로 시작 |
 | 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 |
 
+**정해진 것 (10/22 N⑤)**
+
+- 챗봇 탭을 열면 화면이 기억해 둔 마지막 `conversationId`로 이 API를 부른다. 기억한 값이 없거나 404면 `conversationId: null`로 새 대화를 시작한다.
+- 대화 목록 API(`GET /api/chat/conversations/`)는 **2차**.
+
 **확인 필요**
 
-- 챗봇 탭을 열 때 '가장 최근 대화'를 어떻게 찾을지: 대화 목록 API(`GET /api/chat/conversations/`)를 추가할지, 화면이 마지막 `conversationId`를 기억할지 → 김나은
 - 메시지가 많을 때 나눠 받기(최근 N개) 필요 여부 → 김혜리
 - 예산 조정안·선택 버튼을 대화 안에 보여 주는 형식 → 결정 후(예산 조정 에이전트)
 
@@ -124,7 +128,7 @@
 | 이름 | 타입 | 뜻 | 예시 |
 |---|---|---|---|
 | `period` | 객체 | 분석 기간 `{ "from", "to" }`. 없으면 **이번 달 1일 ~ 오늘**(달력월, 10/22 A — 거래 목록과 같은 기준. 홈 · 예산은 급여 주기라서 다름, BUD-004) | `{ "from": "2026-10-01", "to": "2026-10-21" }` |
-| `compare` | 문자 | 비교 기준. 기본 `prev_month`(지난달). 이번 달이 안 끝났으면 지난달도 **같은 날짜까지만** 비교한다(10/1~21 vs 9/1~21, 10/22 C) | `"prev_month"` |
+| `compare` | 문자 | 비교 기준. **1차는 `prev_month`(지난달)만** 받는다(10/22 N③). 이번 달이 안 끝났으면 지난달도 **같은 날짜까지만** 비교한다(10/1~21 vs 9/1~21, C). 지난달에 그 날짜가 없으면 지난달 말일까지(예: 3/31 → 2/1~2/28, N①) | `"prev_month"` |
 | `category` | 문자 | 카테고리 코드 (결정기록 1번 코드표) | `"FOOD"` |
 | `amount` | 정수 | 금액(원) — 예산 조정용 | `50000` |
 | `direction` | 문자 | `up`(늘림) · `down`(줄임) — 예산 조정용 | `"up"` |
@@ -136,10 +140,11 @@
 | `kind` | 문자 | `"spending"` |
 | `scope` | 문자 | 답변 종류(CHT-006): `all`(카테고리 없음 → 전체) · `category`(그 카테고리) |
 | `period` | 객체 | 집계 기간 `{ "from", "to" }` |
-| `compare` | 객체 / null | 비교 기간 `{ "from", "to" }`. 이번 달이 안 끝났으면 지난달 1일 ~ 같은 날짜(C). 비교하지 않으면 `null` |
+| `compare` | 객체 / null | 비교 기간 `{ "from", "to" }`. 이번 달이 안 끝났으면 지난달 1일 ~ 같은 날짜(C), 그 날짜가 없으면 지난달 말일까지(N①). 비교하지 않으면 `null` |
 | `comparison` | 객체 | 비교할 수 있는지 `{ "available", "reason" }` (10/22 J). 비교할 수 있으면 `available: true`, `reason: null` |
 | `comparison.reason` | 문자 / null | 비교할 수 없는 이유: `not_requested`(비교를 묻지 않음) · `previous_incomplete`(비교 기간 자료가 다 모이지 않음). 비교할 수 없으면 `previousTotal` · `categories[].previousAmount` · `prevDiff` · `prevDiffRate`는 모두 `null` |
 | `total` | 정수 | 기간 안 **전체** 소비 합계(원, 취소분 뺀 금액). `scope: category`여도 항상 전체 기준 |
+| `fixedAmount` | 정수 | `total` 중 **고정지출**(`funding: fixed` — 월세 · 통신요금 · 구독 등) 합계(원, 10/22 S). 생활비로 쓴 돈 = `total − fixedAmount`. `scope`와 상관없이 전체 기준 |
 | `previousTotal` | 정수 / null | 비교 기간 **전체** 소비 합계(10/22 J: `prevTotal`에서 이름 바꿈). 비교할 수 없으면 `null` |
 | `categories` | 목록 | 카테고리별 합계(금액 큰 순). `scope: category`면 그 카테고리 1개 |
 | `categories[].category` | 문자 | 카테고리 코드 |
@@ -149,16 +154,16 @@
 | `categories[].ratio` | 숫자 | 전체 소비(`total`) 중 이 카테고리 비율(0~100) |
 | `categories[].prevDiff` | 정수 / null | 비교 기간 대비 금액 차이(원, 음수 = 줄어듦). 비교 안 하면 `null` |
 | `categories[].prevDiffRate` | 숫자 / null | 증감률(%). **음수·100 초과 가능**, 비교 기간이 0원이면 `null` |
-| `topSpending` | 객체 / null | 가장 많이 쓴 카테고리 `{ "basis": "category", "items": [ … ] }` (10/22 J). **동률이면 모두** `items`에 넣는다(카테고리 표 순서). `scope: category`이거나 소비가 0원이면 `null` |
+| `topSpending` | 객체 / null | 가장 많이 쓴 카테고리 `{ "basis": "category", "items": [ … ] }` (10/22 J). **동률이면 모두** `items`에 넣는다(카테고리 표 순서). `scope: category`이거나 소비가 0원이면 `null`. **'확인 필요'(`UNCLASSIFIED`) 금액은 순위에서 빼고**, 문장은 "분류된 소비 중 …"으로 쓴다(10/22 N②) |
 | `topSpending.items[]` | 객체 | `category` · `categoryName` · `amount` · `ratio` (`categories[]`의 같은 항목과 같은 값) |
-| `unclassifiedAmount` | 정수 | 기간 안 **전체** '확인 필요' 거래 합계(원). `total`에 포함 |
-| `lines` | 문자 목록 | 템플릿으로 만든 답변 문장. 같은 날짜까지 잘라 비교했으면 "9월 같은 기간보다"처럼 비교 기간을 밝힌다(C) |
+| `unclassifiedAmount` | 정수 | 기간 안 **전체** '확인 필요' 거래 합계(원). `total`에 포함. '확인 필요'는 이 한 줄로 보여 주고 칸을 더 두지 않는다(10/22 N④) |
+| `lines` | 문자 목록 | 템플릿으로 만든 답변 문장. 같은 날짜까지 잘라 비교했으면 "9월 같은 기간보다"처럼 비교 기간을 밝힌다(C). 고정지출이 있으면 예: "이번 달 132만 원 썼어요. 월세 같은 고정지출 77만 원을 빼면 생활비는 55만 원이에요."(S) |
 | `updatedAt` | 시각 | 집계 기준 시각 |
 
 > **수집 상태(`coverage`)는 1차에서 넣지 않는다(10/22 J).**
-> **합계 범위**: `total`·`previousTotal`·`unclassifiedAmount`는 `scope`와 상관없이 **항상 전체 소비 기준**이다. 선택한 카테고리의 금액은 `categories[]`에만 있다. 예) 식비를 물으면 `categories`는 식비 1개(42만 원), `total`은 전체 132만 원, `ratio` 32 = 42만 ÷ 132만.
+> **합계 범위**: `total`·`fixedAmount`·`previousTotal`·`unclassifiedAmount`는 `scope`와 상관없이 **항상 전체 소비 기준**이다. 선택한 카테고리의 금액은 `categories[]`에만 있다. 예) 식비를 물으면 `categories`는 식비 1개(42만 원), `total`은 전체 132만 원, `ratio` 32 = 42만 ÷ 132만.
 > 같은 구매가 카드 승인·계좌 출금으로 두 번 들어온 경우의 처리는 `transactions.md`의 '같은 구매가 두 번 들어올 때'와 같은 규칙을 쓴다(한 번만 셈).
-> **고정지출 포함(안)**: 소비 분석에는 고정지출로 연결된 거래(`funding: fixed`, ★8 — 월세 출금, 넷플릭스 카드 결제 등)도 **포함**한다(결정기록 7번 팀 추천: 소비 분석엔 포함, 생활비 사용액에선 제외). 카드값 납부 · 저축 · 대출 상환은 카테고리가 아니라서 넣지 않는다.
+> **고정지출 포함 (10/22 S 확정)**: 소비 분석에는 고정지출로 연결된 거래(`funding: fixed`, ★8 — 월세 출금, 넷플릭스 카드 결제 등)도 **포함**하고, 그중 고정지출 합계를 `fixedAmount`로 따로 준다(생활비 사용액에서는 제외 — 결정기록 7번). 카드값 납부 · 저축 · 대출 상환은 카테고리가 아니라서 넣지 않는다.
 
 ```json
 {
@@ -175,6 +180,7 @@
         "compare": { "from": "2026-09-01", "to": "2026-09-21" },
         "comparison": { "available": true, "reason": null },
         "total": 1320000,
+        "fixedAmount": 770000,
         "previousTotal": 1250000,
         "categories": [ { "category": "FOOD", "categoryName": "식비", "amount": 420000, "ratio": 32, "previousAmount": 380000, "prevDiff": 40000, "prevDiffRate": 11 } ],
         "topSpending": null,
@@ -194,6 +200,12 @@
 { "category": "TRAVEL_LODGING", "categoryName": "여행·숙박", "amount": 150000, "ratio": 11, "previousAmount": 0, "prevDiff": 150000, "prevDiffRate": null }
 ```
 → 문장: "9월 같은 기간에는 여행·숙박 지출이 없었고, 이번 달에는 15만 원 썼어요."
+
+소비가 없는 기간일 때 (10/22 Z②) — 에러나 안내 글이 아니라 **0원 카드**를 보낸다 (바뀌는 칸만):
+
+```json
+{ "total": 0, "fixedAmount": 0, "categories": [], "topSpending": null, "unclassifiedAmount": 0, "lines": [ "이 기간엔 소비가 없어요." ] }
+```
 
 `unknown`일 때 (라우터가 판단, `fallback: false`):
 
@@ -233,14 +245,17 @@
 | LLM 라우터가 응답하지 않음·형식이 깨짐 | 200 | — | 에러가 아니라 `intent: unknown`, `fallback: true` + "지금은 이해하지 못했어요, 아래에서 골라 주세요." (위 '라우터 실패 처리') |
 | 서버 버그 | 500 | `server_error` | "잠시 후 다시 시도해 주세요." |
 
+**정해진 것 (10/22, 이전 '확인 필요'에서 옮김)**
+
+- 지난달에 같은 날짜가 없으면 **지난달 말일까지** 비교한다 (예: 3/31에 물으면 2/1~2/28과 비교, N①)
+- `topSpending`에서 '확인 필요' 금액은 **빼고**, 문장은 "분류된 소비 중 …" (N②)
+- `compare`는 **1차 `prev_month`만** (`prev_week` · `none`은 2차, N③)
+- '확인 필요'는 `unclassifiedAmount` **한 줄로 충분**, 칸을 더 두지 않음 (N④)
+- 소비 분석에 **고정지출 포함**, 그중 합계를 `fixedAmount`로 따로 줌 (S)
+- 소비가 없는 기간은 **0원 카드** + "이 기간엔 소비가 없어요." (Z②)
+
 **확인 필요**
 
-- 거래가 하나도 없는 기간일 때 카드 대신 안내 글로 답할지 → 권세진
-- `compare` 코드: `prev_month` 외에 `prev_week`(2차)·`none`을 둘지 → 김나은
-- '확인 필요'(`UNCLASSIFIED`) 금액이 가장 클 때 `topSpending`에서 뺄지(세진 안 spending-analysis.md A-2: 순위에서 빼고 '분류된 소비 기준'이라고 안내) → 김혜리 · 권세진
-- 지난달에 같은 날짜가 없을 때(예: 3/31에 물으면 2월은 28일까지) 지난달 말일까지로 자를지 → 김나은
-- '확인 필요'(`UNCLASSIFIED`) 거래를 카드에서 따로 볼지 → 김나은
-- **소비 분석에 고정지출 포함**(위 안, 팀 추천) 확정 → 팀 회의 (집계: 권세진 · 예산: 김나은)
 - 사용자 메시지를 응답 `messages`에 다시 넣는 안(화면이 바로 그리기 쉬움) vs 봇 답변만 → 프런트 담당
 - `budget` 의도의 1차 처리(안내 글만 vs 예산 조정 작업 시작 + `task`) → 결정 후
 
