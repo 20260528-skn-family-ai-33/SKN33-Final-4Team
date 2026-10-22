@@ -118,17 +118,25 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 
 | 테이블.칸 | ERD 설명 |
 |---|---|
-| connection.status | 기관 연결 상태 |
 | sync_run.status | 성공 · 부분완료 · 실패 |
-| financial_transaction.direction | 입금 · 출금 |
-| financial_transaction.transaction_type | 소비 · 이체 · 카드납부 · 저축 등 |
-| *.confirmation_state (거래·거래연결·청구서·납부의무·준비금) | 확인 상태 |
+| *.confirmation_state (거래연결·청구서·납부의무·준비금) | 확인 상태 (거래는 10-22 확정, 아래) |
 | card_bill.scope_type / source_type | 카드사 전체·단일 카드 / 조회·직접 입력 |
 | payment_due.source_type | 조회 · 직접 입력 · 추정 |
-| budget_cycle.status | 주기 진행 상태 |
+| budget_cycle.status | 주기 진행 상태 — 홈 명세에서 `active` · `closed`로 정함 (모델 반영은 개발 때) |
 | async_task.task_type / status | 작업 종류 / 대기 · 실행 · 완료 · 실패 · 취소 |
 | chat_message.role / content_type | 발화자 / 텍스트 · 결과 카드 |
 | conversation.active_agent | 대화 중인 도우미 (소비 분석 · 예산 조정 · 큰 지출 상담 등, 라우터 의도 목록과 같은 코드로) — 10-20 추가 |
+
+**10-22 확정 (H-07) — 모델 choices · CHECK는 개발 때 추가.** 원칙: API 값 = DB 값, 소문자 영어
+
+| 테이블.칸 | 값 |
+|---|---|
+| connection.status | `connected` · `relogin` · `disconnected` (해제하면 `disconnected` + `disconnected_at`) |
+| bank_account.account_type | `demand`(입출금, CODEF 예금 구분 `11`) · `deposit`(예적금) · `other` — CODEF 원래 코드는 `field_states.codef_deposit_code` |
+| financial_transaction.direction | `in` · `out` (CODEF 수집 코드가 이미 이 값) |
+| financial_transaction.transaction_type | `spending` · `transfer` · `own_transfer` · `card_payment` · `saving` · `loan_repayment` · `income` |
+| financial_transaction.confirmation_state | `needs_review` · `suggested` · `confirmed` (카테고리 `UNCLASSIFIED`면 `needs_review`) |
+| financial_transaction.classification_source | `user` · `rule` · `ml` · `llm` |
 
 정해진 코드(loan.status, budget.status, payment_state, obligation_state, entry_type, item_type, bucket, funding_bucket, source_kind, obligation_type, relation_type, origin, conversation.status, app_user.status)는 이미 choices로 들어가 있다.
 
