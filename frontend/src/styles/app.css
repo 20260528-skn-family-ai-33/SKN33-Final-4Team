@@ -950,3 +950,12 @@
 
 /* 지킬 돈 설정 · 항목 옆 비율 (배분 가능한 금액 중 %) */
 #mc-new-preview .mc-protect-pct{margin-left:6px;font-size:12px;font-weight:650;color:var(--mc-brand);font-variant-numeric:tabular-nums}
+
+/* 홈 · 꼭 나갈 돈 상태 배지 (10/22 PR #26 리뷰): 출금 확인 중 = 파랑, 미납 확인 필요 = 빨강 */
+#mc-new-preview .mc-listrow .mc-paystate{display:table;margin-top:5px;padding:2px 7px;border-radius:7px;font-size:11px;font-weight:650}
+#mc-new-preview .mc-listrow .mc-paystate.is-check{background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview .mc-listrow .mc-paystate.is-review{background:var(--mc-warm);color:var(--mc-alert)}
+
+/* 정기 저축 팝업 · 찾은 저축(후보)은 계좌를 못 바꿈 (10/22 PR #29 리뷰, S-11) */
+#mc-new-preview .mc-field select:disabled{background:var(--mc-bg);color:var(--mc-sub);cursor:not-allowed}
+#mc-new-preview .mc-note.mc-saving-lock{margin:-8px 0 0;padding:10px 12px !important;border-radius:12px;background:var(--mc-bg)}

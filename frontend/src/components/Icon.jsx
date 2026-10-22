@@ -3,14 +3,14 @@
 import {
   Banknote, Building, Bus, ChartNoAxesCombined, ChevronRight, Circle, CircleCheck, CircleMinus, CircleQuestionMark, Compass,
   CreditCard, Ellipsis, Film, GraduationCap, Heart, HeartPulse, House, IdCard, Landmark, Link, Loader,
-  MessageCircle, Plane, RefreshCw, Repeat, Scissors, Send, ShieldCheck, Shirt, ShoppingBasket, ShoppingCart, SlidersHorizontal,
+  MessageCircle, PiggyBank, Plane, RefreshCw, Repeat, Scissors, Send, ShieldCheck, Shirt, ShoppingBasket, ShoppingCart, SlidersHorizontal,
   Sparkles, Stethoscope, Store, Ticket, Unlink, UserRound, Users, Utensils, Wallet,
 } from 'lucide-react'
 
 const ICONS = {
   Banknote, Building, Bus, ChartNoAxesCombined, ChevronRight, Circle, CircleCheck, CircleMinus, CircleQuestionMark, Compass,
   CreditCard, Ellipsis, Film, GraduationCap, Heart, HeartPulse, House, IdCard, Landmark, Link, Loader,
-  MessageCircle, Plane, RefreshCw, Repeat, Scissors, Send, ShieldCheck, Shirt, ShoppingBasket, ShoppingCart, SlidersHorizontal,
+  MessageCircle, PiggyBank, Plane, RefreshCw, Repeat, Scissors, Send, ShieldCheck, Shirt, ShoppingBasket, ShoppingCart, SlidersHorizontal,
   Sparkles, Stethoscope, Store, Ticket, Unlink, UserRound, Users, Utensils, Wallet,
 }
 

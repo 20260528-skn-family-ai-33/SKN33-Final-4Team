@@ -28,10 +28,16 @@ HOME = {
 }
 
 # 홈 '꼭 나갈 돈'
+# payment_state · due_date (10/22 PR #26 리뷰, docs/api/home.md '미납 안내') — 화면이 상태 배지를 그린다
+#   unpaid + 출금일 지남 = "출금 확인 중" / needs_review = "미납 확인 필요" (지난 주기 미납은 다음 월급날 전까지 보임)
 MUST_PAY = [
+    {"icon": "repeat", "name": "관리비", "sub": "09.25 출금예정 · 지난 주기", "amount": 150_000, "link": "/budgets/fixed",
+     "payment_state": "needs_review", "due_date": "2026-09-25"},
     {"icon": "credit-card", "name": "신한카드 청구서", "sub": "10.15 출금예정 · 신한 ****1234", "amount": 420_000},
-    {"icon": "repeat", "name": "통신비", "sub": "매월 20일 · 고정지출", "amount": 55_000, "link": "/budgets/fixed"},
-    {"icon": "repeat", "name": "월세", "sub": "매월 25일 · 고정지출", "amount": 700_000, "link": "/budgets/fixed"},
+    {"icon": "repeat", "name": "통신비", "sub": "매월 20일 · 고정지출", "amount": 55_000, "link": "/budgets/fixed",
+     "payment_state": "unpaid", "due_date": "2026-10-20"},
+    {"icon": "repeat", "name": "월세", "sub": "매월 25일 · 고정지출", "amount": 700_000, "link": "/budgets/fixed",
+     "payment_state": "unpaid", "due_date": "2026-10-25"},
 ]
 
 # 카테고리 예산 '한 달 나눠보기'

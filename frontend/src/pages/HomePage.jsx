@@ -41,6 +41,17 @@ function paceNote(usedPct, pace) {
   return { tone: 'ok', text: '적정 속도예요' }
 }
 
+// 꼭 나갈 돈 상태 배지 (10/22 PR #26 리뷰, docs/api/home.md '미납 안내')
+//   needs_review = 출금일 +3일이 지나도 출금을 못 찾음 → "미납 확인 필요 ›" (누르면 고정지출 화면의 [고르기])
+//   unpaid 인데 출금일이 지남 = 실제 출금과 자동 연결(±3일)을 기다리는 중 → "출금 확인 중"
+//   지난 주기 미납은 다음 월급날이 되면 서버가 목록에서 뺀다 (화면은 받은 것만 그린다)
+function payBadge(p) {
+  if (p.paymentState === 'needs_review') return { tone: 'review', text: '미납 확인 필요' }
+  const today = new Date().toLocaleDateString('sv-SE')   // 'YYYY-MM-DD' (내 컴퓨터 날짜 기준)
+  if (p.paymentState === 'unpaid' && p.dueDate && p.dueDate < today) return { tone: 'check', text: '출금 확인 중' }
+  return null
+}
+
 export default function HomePage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
@@ -108,18 +119,25 @@ export default function HomePage() {
       <div className="mc-row mc-section"><h2>꼭 나갈 돈</h2></div>
       <div className="mc-card">
         {/* 목록.map(...) = 하나씩 꺼내서 그리기. key 는 항목마다 다른 값 */}
-        {MUST_PAY.map((p) => (
-          <button
-            type="button"
-            className="mc-listrow"
-            key={p.name}
-            onClick={() => (p.link ? navigate(p.link) : openPopup(<CardBillPopup />))  /* 링크가 없으면(카드 청구서) 팝업 */}
-          >
-            <span className="mc-tile"><Icon name={p.icon} /></span>
-            <span className="mc-grow"><strong>{p.name}</strong><span className="mc-muted">{p.sub}</span></span>
-            <span className="mc-right">{won(p.amount)} <span className="mc-muted">›</span></span>
-          </button>
-        ))}
+        {MUST_PAY.map((p) => {
+          const badge = payBadge(p)
+          return (
+            <button
+              type="button"
+              className="mc-listrow"
+              key={p.name}
+              onClick={() => (p.link ? navigate(p.link) : openPopup(<CardBillPopup />))  /* 링크가 없으면(카드 청구서) 팝업 */}
+            >
+              <span className="mc-tile"><Icon name={p.icon} /></span>
+              <span className="mc-grow">
+                <strong>{p.name}</strong>
+                <span className="mc-muted">{p.sub}</span>
+                {badge && <span className={`mc-paystate is-${badge.tone}`}>{badge.text}{badge.tone === 'review' ? ' ›' : ''}</span>}
+              </span>
+              <span className="mc-right">{won(p.amount)} <span className="mc-muted">›</span></span>
+            </button>
+          )
+        })}
       </div>
 
       <div className="mc-home-action">
