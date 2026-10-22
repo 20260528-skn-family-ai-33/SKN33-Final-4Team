@@ -516,6 +516,66 @@ class RecurringExpense(models.Model):
         return self.name
 
 
+class RecurringSaving(models.Model):
+    """정기 저축 (10-22 S-01). 내 계좌끼리 매달 같은 금액을 보내는 저축(적금·청약 등)
+
+    고정지출과 따로 둔다 — 저축은 고정지출이 아니다(10-21 C-01). 같은 표에 섞으면 고정비 합계에 저축이 들어가 두 번 빠질 위험
+    상태 흐름은 고정지출과 같다: 자동 발견 → suggested ─저축이에요→ confirmed ─그만→ stopped
+                                         └아니에요→ ignored (다시 묻지 않음)
+                                직접 추가 → 바로 confirmed
+    저축 최소 금액 = confirmed 의 amount 합계 (저장하지 않고 계산, S-02). 지킬 돈 저축(financial_profile.savings_floor)은 이보다 작을 수 없다
+    """
+
+    class Status(models.TextChoices):
+        SUGGESTED = "suggested", "후보"
+        CONFIRMED = "confirmed", "확정"
+        STOPPED = "stopped", "중지"
+        IGNORED = "ignored", "무시"
+
+    class SourceType(models.TextChoices):
+        MANUAL = "manual", "직접 등록"
+        DETECTED = "detected", "반복 탐지"
+
+    saving_id = uuid_pk()
+    user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="recurring_savings")
+    # 보내는 내 입출금 계좌 · 받는 저축 계좌. 다른 은행이라 연결 안 했으면 비움
+    from_account = models.ForeignKey(
+        BankAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="savings_out",
+    )
+    to_account = models.ForeignKey(
+        BankAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="savings_in",
+    )
+    name = models.CharField("이름", max_length=100)
+    amount = models.BigIntegerField("매달 저축액")                          # 1,000원 ~ 1억 원 (고정지출과 같음)
+    transfer_day = models.SmallIntegerField("매월 이체일", null=True, blank=True)  # 1~31, 모르면 비움, 없는 날은 말일
+    status = models.CharField("상태", max_length=20, choices=Status.choices)
+    source_type = models.CharField("등록 출처", max_length=20, choices=SourceType.choices)
+    evidence = models.JSONField("근거 이체 거래 ID", default=empty_list, blank=True)
+    confirmed_at = models.DateTimeField("사용자 확인 시각", null=True, blank=True)
+    created_at = models.DateTimeField("발견·등록 시각", auto_now_add=True)
+
+    class Meta:
+        db_table = "recurring_saving"
+        verbose_name = verbose_name_plural = "정기 저축"
+        constraints = [
+            models.CheckConstraint(condition=Q(amount__gte=1_000, amount__lte=100_000_000), name="rs_amount_1000_100m"),
+            models.CheckConstraint(
+                condition=Q(transfer_day__isnull=True) | Q(transfer_day__gte=1, transfer_day__lte=31),
+                name="rs_transfer_day_1_31",
+            ),
+            models.CheckConstraint(condition=Q(status__in=["suggested", "confirmed", "stopped", "ignored"]), name="rs_status_valid"),
+            models.CheckConstraint(condition=Q(source_type__in=["manual", "detected"]), name="rs_source_type_valid"),
+            # 같은 계좌로 보내는 저축은 없다 (둘 다 알 때만 검사)
+            models.CheckConstraint(
+                condition=Q(from_account__isnull=True) | Q(to_account__isnull=True) | ~Q(from_account=models.F("to_account")),
+                name="rs_from_to_different",
+            ),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class PaymentDue(models.Model):
     """납부 의무(월세·카드값·대출 상환 등) 1회차"""
 
