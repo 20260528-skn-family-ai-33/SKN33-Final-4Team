@@ -72,3 +72,6 @@ yarn-error.log*
 transactions_raw.json
 test_codef.py
 test_transactions.py
+
+# Local model playground and temporary team sharing
+/living_expense_playground/
