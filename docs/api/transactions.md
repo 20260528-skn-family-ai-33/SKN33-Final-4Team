@@ -1,9 +1,9 @@
 # 거래 API 명세
 
-> 담당: 김혜리 · 명세 상태: 초안 · 개발 상태: 거래 목록 = 임시 데이터(`backend/finance/mock.py`), 나머지 = 미구현
+> 담당: 김혜리 · 명세 상태: **1차 확정 (10/24, 결정 AA)** · 개발 상태: 거래 목록 = 임시 데이터(`backend/finance/mock.py`), 나머지 = 미구현
 > 공통 규칙은 `docs/API_RULES.md`, 결정 사항은 `docs/결정기록_2026-10-21.md`를 따른다 (camelCase · 원 단위 정수 · UUID · 세션 쿠키 + CSRF · 에러 모양)
 > 카테고리: 2026-10-20 팀 분류 기준(10개 + 기타). 아직 판단하지 못한 거래는 `UNCLASSIFIED`이고 화면에는 '확인 필요'로 보인다. 거래 분류 ML이 나와도 아래 요청·응답 모양은 바뀌지 않는다.
-> 10/22 반영: 결정기록 ★ 1·2·3·4·7·8·9·10·12·13·14 · 0번 체크리스트 · **H-03 확정**(확인 필요 거래 전체 개수, 최신순) · **H-07 확정**(결정기록 3-1 코드표) · **결정기록 3-3 B·D 확정** · 10/22 결정 V① · W · V(결정기록 반영 전, 전달 메시지 기준)
+> 10/22 반영: 결정기록 ★ 1·2·3·4·7·8·9·10·12·13·14 · 0번 체크리스트 · **H-03 확정**(확인 필요 거래 전체 개수, 최신순) · **H-07 확정**(결정기록 3-1 코드표) · **결정기록 3-3 B·D 확정** · 10/22 결정 V① · W · V · **10/24 결정 AA⑤⑥⑦ (1차 확정)**
 
 **카테고리 코드 (결정기록 1번, DB `category.category_code`와 같음)**
 
@@ -159,9 +159,10 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 - 홈의 [확인할 거래 N건 ›]과 거래 화면의 '확인 필요' 칩은 모두 위 요청을 쓴다. 그래야 숫자와 목록이 같다.
 - `category=UNCLASSIFIED`에 기간을 안 보내면 전체 기간(`period.basis: all`), 기간을 보내면 그 기간만(`custom`). 다른 카테고리 · 전체 보기의 기본 기간은 그대로 달력월이다.
 
+- **거래 유형 필터(소비만 · 입금만 등)는 1차에 없다** — 목록의 '월급' · '이체' 표시로 구분한다 (10/24 AA⑦)
+
 **확인 필요**
 
-- 거래 유형 필터(소비만 · 입금만 등)가 필요한지 → 팀 회의 (목록 범위 자체는 V①로 정해짐)
 - 목록 나누기(페이지, `next`) 필요 여부: 3개월치 거래 수를 보고 결정 → 김혜리. 특히 `category=UNCLASSIFIED`는 전체 기간이라 오래 쓰면 길어질 수 있음
 
 ---
@@ -250,10 +251,16 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 - 저장하면 이 거래는 사용자 확정(`classifyState: confirmed`, `classifiedBy: user`)이 되고, **이후 같은 가맹점의 새 거래**는 이 카테고리를 먼저 쓴다(`finance/merchant_rules.py`의 `remembered_category()`).
 - **단, 다품목 가맹점은 기억하지 않는다.** 편의점·슈퍼마켓·대형마트·종합 온라인몰처럼 결정표 D1·D16에서 `UNCLASSIFIED`(사용자 선택)로 정한 가맹점(다품목 브랜드 사전에 있는 가맹점)은, 사용자가 이번 거래를 식비로 골라도 **다음 거래는 다시 `UNCLASSIFIED`** 로 들어온다. GS25 도시락을 식비로 고른 기록이 다음 생필품 구매까지 식비로 만들지 않게 하기 위해서다.
 - 고정지출로 연결된 거래(`funding: fixed`)도 카테고리는 바꿀 수 있다. 돈의 출처(고정비)는 그대로다.
+- **고정지출에 연결된 이체 (10/24 AA⑤)**: 월세를 집주인에게 계좌이체로 내는 경우처럼, 남에게 보낸 이체(`transfer`)가 확정된 고정지출의 납부 예정과 **금액 · 날짜(±3일)로 연결되면** 소비로 본다.
+    - `transactionType` `transfer` → `spending`, 카테고리는 **그 고정지출의 카테고리**, `funding: fixed`('고정' 표시). 생활비 사용액엔 안 들어가고 소비 분석엔 `fixedAmount`로 들어간다(S).
+    - 연결을 풀면 다시 `transfer`(카테고리 · `funding` 비움).
+    - 연결은 매칭 입구 6번 `match_payment_dues`(나은)가 한다. 사용자가 PATCH로 카테고리를 바꿔도 연결은 그대로다.
+    - 고정지출에 연결된 이체에 `category: null`을 보내면 400 — 고정지출 연결을 먼저 풀어야 이체로 돌아간다.
 - **이체를 소비로 바꾸기 (10/22 W)**: 남에게 보낸 이체(`transfer`)에 카테고리를 보내면 `transactionType`이 `spending`이 되고 소비 합계 · 예산에 들어간다(`classifyState: confirmed`, `classifiedBy: user`).
     - `category: null`을 보내면 다시 `transfer`로 돌아간다. **원래 이체였던 거래만** 된다. 원래 소비였던 거래에 `null`을 보내면 400.
     - 이체의 **받는 사람은 기억하지 않는다.** 같은 사람에게 다음에 보낸 이체는 다시 `transfer`로 들어온다(`remembered_category()`를 쓰지 않음).
-- 입금(`income`) 거래는 카테고리를 고를 수 없다 → 400 (안, 아래 실패 표).
+- 입금(`income`) 거래는 카테고리를 고를 수 없다 → 400 (10/24 AA⑦ 확정, 아래 실패 표).
+- **'원래 이체였던 거래' 표시 (10/24 AA⑥)**: 새 칸 없이 거래의 `field_states.original_transaction_type = "transfer"`로 남긴다. W로 소비가 된 이체 · AA⑤로 소비가 된 이체 모두. `category: null`로 되돌릴 수 있는지, 연결을 풀 때 무엇으로 돌릴지 이 값으로 판단한다. API 응답에는 내보내지 않는다.
 - 이 요청은 같은 값을 두 번 보내도 결과가 같아서 요청 번호(`Idempotency-Key`)를 쓰지 않는다(★4: 새로 만들기 · 승인 요청만).
 
 **받는 값 (200)** — 바뀐 거래 한 건(`GET /api/finance/transactions/<id>/`와 같은 모양)
@@ -271,7 +278,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | 상황 | 상태 | `code` | 화면 안내 |
 |---|---|---|---|
 | `category`가 없음, 모르는 코드, `UNCLASSIFIED`, 원래 소비였던 거래에 `null` | 400 | `invalid` | "카테고리를 다시 골라 주세요." (`fields.category`) |
-| 입금(`income`) 거래에 카테고리를 보냄 (안) | 400 | `invalid` | "이 거래는 카테고리를 고를 수 없어요." (`fields.category`) |
+| 입금(`income`) 거래에 카테고리를 보냄 (AA⑦) | 400 | `invalid` | "이 거래는 카테고리를 고를 수 없어요." (`fields.category`) |
 | 표에 없는 칸을 보냄 (★2) | 400 | `invalid` | `fields.<그 칸>: ["이 칸은 보낼 수 없어요."]` |
 | 없는 거래 · 남의 거래 · 목록에 안 나오는 거래 (★3) | 404 | `not_found` | "거래를 찾을 수 없어요." |
 | 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 |
@@ -285,7 +292,6 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 
 **확인 필요**
 
-- '원래 이체였던 거래'를 알아볼 방법: 바뀌기 전 유형을 DB에 남기는 칸(예: 원래 `transaction_type`)이 필요한지 → 김나은(DB)
 - 현재 `remembered_category()` 코드는 다품목 가맹점을 거르지 않음. 다품목 브랜드 사전 확정 후 제외 조건 추가 → 김나은(코드) · 김혜리(사전)
 - 분류를 바꾸면 그 주기의 카테고리 사용액·예산 화면 숫자도 바뀜. 예산 쪽 다시 계산 시점 → 김나은. 승인 전 예산 초안은 분류 변경으로 **만료 안 함**(10/22 결정기록 D: 초안 만료는 고정지출 또는 저축 최소 금액이 바뀔 때만)
 
@@ -324,7 +330,7 @@ AFTER_SAVE_STEPS = [
     ("match_loan_repayments", match_loan_repayments),  # 4 세진: 대출 상환 출금 ↔ 대출
     ("match_savings",         match_savings),          # 5 나은: 내 계좌끼리 이체 ↔ 확정 정기 저축 → saving
     ("match_payment_dues",    match_payment_dues),     # 6 나은: 계좌 출금 ↔ 고정지출 납부 예정(±3일), 카드 '맞나요?' 후보
-    ("detect_candidates",     detect_candidates),      # 7 감지 담당(미정): 고정지출 · 저축 후보 찾기
+    ("detect_candidates",     detect_candidates),      # 7 나은: 고정지출 · 저축 후보 찾기 (결정 T)
 ]
 ```
 
@@ -338,7 +344,8 @@ AFTER_SAVE_STEPS = [
 
 - **단계 함수 약속**: 모양은 `step(user, txs)`. 같은 거래로 두 번 불러도 결과가 같아야 한다(다시 돌려도 안전). 자기 표와 자기가 맡은 거래 칸만 바꾼다. 이미 앞 단계가 가져간 거래(예: `transaction_link`나 `payment_match`가 있는 거래)는 건너뛴다.
 - 실패 처리(안): 한 단계가 실패해도 기록만 남기고 다음 단계는 계속한다. 매칭은 다음 동기화 때 다시 돌면 된다.
-- 확인 필요: 7번 감지 담당(README 5 ⑨) · 월세처럼 남에게 보낸 이체(`transfer`)가 6번 고정지출에 연결되면 소비로 볼지(W와 관계) · 단계마다 DB 트랜잭션을 나눌지 → 팀
+- **고정지출에 연결된 이체는 소비** (10/24 AA⑤): 6번 `match_payment_dues`가 이체(`transfer`)를 고정지출에 연결하면 `spending`으로 바꾸고 카테고리 · `funding: fixed`를 채운다. 원래 유형은 `field_states.original_transaction_type`에 남긴다(AA⑥).
+- 확인 필요: 단계마다 DB 트랜잭션을 나눌지 → 팀 (개발 때)
 
 **H-07 DB 코드 (10/22 확정, 결정기록 3-1 코드표 · DB 반영은 김나은)**
 

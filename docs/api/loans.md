@@ -1,6 +1,6 @@
 # 대출 API 명세 — 조회·보완·직접 등록
 
-> 담당: 권세진 · 작성일: 2026-10-21 · 수정일: 2026-10-22 · 명세 상태: 검토용 초안
+> 담당: 권세진 · 작성일: 2026-10-21 · 수정일: 2026-10-24 · 명세 상태: **1차 확정 (10/24, 결정 AA)**
 > 개발 상태: 대출 API 3개 미구현, 관련 화면은 임시 동작·예시 데이터 사용
 > 기준: [공통 규칙](../API_RULES.md), [결정 기록](../결정기록_2026-10-21.md), [API 목록](../머니쿠션_API_명세_목록_2026-10-21.md), [작성 틀](./_TEMPLATE.md)
 > 관련 문서: [인증·회원](./auth.md) · [카드](./cards.md) · [대출](./loans.md) · [소비 분석](./spending-analysis.md)
@@ -31,6 +31,7 @@
 | ★ 14 / H-01 | 실제 입금일이 아닌 설정한 월급날 기준으로 급여주기 계산 |
 | H-07 / DB 코드표 | 연결 상태는 `connection.status`의 `connected`·`relogin`·`disconnected`를 그대로 사용. 계좌·카드에 별도 연결 상태를 저장하거나 API 전용 코드로 변환하지 않음. 모델 choices·CHECK 반영은 별도 구현 작업 |
 | 3-3 O·P·Q·T·Y | 저장 자료 GET·동의 오류, 보완 세 칸·조회 추가 칸, 홈 연계, 매칭·추정 담당, 직접 등록 |
+| 3-3 AA②③ (10/24) | `fieldStates`(값마다 `source`·`confirmationStatus`·`confirmedAt`) 채택, 대출 목록은 1차에 상환 중(`repaying`)만 |
 
 ### 요청·오류·재시도 공통 적용
 
@@ -90,7 +91,7 @@
 
 **보내는 값**
 
-본문 없음. **저장된 본인 대출만 읽으며 CODEF를 호출하지 않는다(O).** 조회 기간·상환 완료 포함 여부 등 쿼리는 미정이다.
+본문 없음. **저장된 본인 대출만 읽으며 CODEF를 호출하지 않는다(O).** **목록에는 상환 중(`repaying`) 대출만 보인다(AA③).** 상환 완료(`repaid`) 대출은 1차에 보여 주지 않으며, 쿼리 필터도 1차에는 없다.
 
 **받는 값 (200, 기본 응답 초안)**
 
@@ -99,7 +100,7 @@
 | `loanId` | UUID 문자열 | 내부 대출 ID |
 | `lenderName`, `productName` | 문자열 또는 null | 기관명·상품명 |
 | `origin` | 문자열 | 기존 모델의 `provider`(기관 조회), `manual`(직접 등록) |
-| `status` | 문자열 | 기존 모델의 `repaying`(상환 중), `repaid`(상환 완료). CODEF의 연체 여부 `resState`와 다른 뜻이며 직접 대응하지 않음 |
+| `status` | 문자열 | 기존 모델의 `repaying`(상환 중), `repaid`(상환 완료). 1차 목록에는 `repaying`만 나온다(AA③). CODEF의 연체 여부 `resState`와 다른 뜻이며 직접 대응하지 않음 |
 | `reportedPrincipal` | 정수 또는 null | 기관 조회 원금, 원 |
 | `reportedBalance` | 정수 또는 null | 기관 조회 잔액, 원 |
 | `reportedRate` | 숫자 또는 null | 서비스 응답 초안은 연 이율(%). CODEF `resRate`는 약정이율 문자열이며, 실제 은행의 단위·의미를 확인한 뒤 대응 |
@@ -116,10 +117,10 @@
 | `paymentHistory[].interest` | 정수 또는 null | 해당 납부의 이자, 원. 미제공은 null, 확인된 0원만 0 |
 | `estimatedMonthlyPayment` | 정수 또는 null | P: 확인된 지난 납부를 근거로 계산한 월 상환 추정액, 원. 자료가 없거나 산출할 수 없으면 null·화면 숨김. 사용자 저장값 `monthlyPayment`를 자동 덮어쓰지 않음 |
 | `overdue` | 불리언 또는 null | P: 연체 확인 true, 연체 없음 확인 false, 알 수 없으면 null·화면 숨김. `status: repaid`와 다른 뜻 |
-| `fieldStates` | 객체 | **제안·미정:** `manualBalance`·`manualRate`·`repaymentMethod`·`monthlyPayment`·`paymentDay` 각 보완값의 출처·사용자 확인 상태. DB JSON 전체를 그대로 노출하지 않고 아래 허용 항목만 구성 |
-| `fieldStates.<필드>.source` | 문자열 또는 null | `provider` 기관 조회 / `manual` 사용자 입력 / `estimated` 서버 추정 제안. 값이 없거나 출처를 확인할 수 없으면 null |
-| `fieldStates.<필드>.confirmationStatus` | 문자열 | `confirmed` 사용자 확인 완료 / `unconfirmed` 값은 있으나 사용자 미확인 / `unknown` 값 또는 확인 근거 없음 제안. 대출 상환 상태 `status`와 구분 |
-| `fieldStates.<필드>.confirmedAt` | 시각 문자열 또는 null | 해당 값을 사용자가 확인한 시각 제안. `confirmed`일 때만 시각을 주며 기관 조회 시각으로 대체하지 않음 |
+| `fieldStates` | 객체 | **AA 확정:** `manualBalance`·`manualRate`·`repaymentMethod`·`monthlyPayment`·`paymentDay` 각 보완값의 출처·사용자 확인 상태. DB JSON 전체를 그대로 노출하지 않고 아래 허용 항목만 구성 |
+| `fieldStates.<필드>.source` | 문자열 또는 null | `provider` 기관 조회 / `manual` 사용자 입력 / `estimated` 서버 추정. 값이 없거나 출처를 확인할 수 없으면 null |
+| `fieldStates.<필드>.confirmationStatus` | 문자열 | `confirmed` 사용자 확인 완료 / `unconfirmed` 값은 있으나 사용자 미확인 / `unknown` 값 또는 확인 근거 없음. 대출 상환 상태 `status`와 구분 |
+| `fieldStates.<필드>.confirmedAt` | 시각 문자열 또는 null | 해당 값을 사용자가 확인한 시각. `confirmed`일 때만 시각을 주며 기관 조회 시각으로 대체하지 않음 |
 | `fetchedAt` | 시각 문자열 또는 null | 마지막 정상 조회 시각 |
 
 ```json
@@ -159,9 +160,9 @@
 
 정상 조회로 대출이 없다고 확인된 경우에는 `{ "items": [] }`이다. 기관 잔액과 사용자 보완 잔액을 어느 순서로 우선할지 임의 결정하지 않으며, `monthlyPayment: null`은 0원 상환을 뜻하지 않는다.
 
-### 대출 보완값과 출처 — P 확정 범위 및 메타데이터 제안
+### 대출 보완값과 출처 — P · AA 확정
 
-ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `field_states`를 근거로 한 **메타데이터 제안**이다. 보완 세 필드·상환 방식 코드는 P로 확정됐고, `fieldStates`의 내부 필드·코드·저장 방식만 김나은·김혜리·권세진 확인 후 확정한다. `origin`은 대출 자체의 등록 출처이므로 기관 대출에서 월 상환액만 직접 보완해도 `origin: provider`를 유지한다. 보완 필드의 `source`를 따로 표시한다. `reportedPrincipal`·`reportedBalance`·`reportedRate`는 기관 원본이며 보완값의 확인 상태로 덮어쓰지 않는다. `manualBalance`·`manualRate`에 값이 있으면 출처는 `manual`이고, 확인 근거가 없는 기존 값은 확인 상태만 `unknown`으로 표시한다.
+ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `field_states`를 근거로 한 **메타데이터 제안**이다. 보완 세 필드·상환 방식 코드는 P로, `fieldStates`의 칸(`source`·`confirmationStatus`·`confirmedAt`)과 코드는 AA②로 확정됐다. DB에 어떻게 저장할지(`field_states` JSON 구조)만 개발 때 김나은·김혜리·권세진이 맞춘다. `origin`은 대출 자체의 등록 출처이므로 기관 대출에서 월 상환액만 직접 보완해도 `origin: provider`를 유지한다. 보완 필드의 `source`를 따로 표시한다. `reportedPrincipal`·`reportedBalance`·`reportedRate`는 기관 원본이며 보완값의 확인 상태로 덮어쓰지 않는다. `manualBalance`·`manualRate`에 값이 있으면 출처는 `manual`이고, 확인 근거가 없는 기존 값은 확인 상태만 `unknown`으로 표시한다.
 
 | 상환 방식 코드 (결정기록 3-3 P) | 뜻 |
 |---|---|
@@ -171,7 +172,7 @@ ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `fiel
 | `unknown` | 사용자가 “잘 모르겠어요”를 선택 |
 | null | 아직 입력하거나 확인하지 않음 |
 
-아래는 **9번 보완 저장 후 같은 대출을 GET으로 다시 읽을 때의 변경 필드 발췌**다. 현재 실행 결과가 아니며 `fieldStates`의 세부 구조는 제안이다. 나머지 필드는 위 응답과 같다.
+아래는 **9번 보완 저장 후 같은 대출을 GET으로 다시 읽을 때의 변경 필드 발췌**다. 현재 실행 결과가 아니다. 나머지 필드는 위 응답과 같다.
 
 ```json
 {
@@ -434,14 +435,13 @@ ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `fiel
 
 ## 확인 필요 사항 모음
 
-P의 보완 세 칸·null·상환 완료 404·단건 응답, Q의 홈 표시, O의 GET 실패, Y의 직접 등록, T의 담당 배분은 본문에 반영했다. 아래는 실제 원천 검증과 구현 조율이며, 확정 정책을 다시 정하는 목록이 아니다.
+P의 보완 세 칸·null·상환 완료 404·단건 응답, Q의 홈 표시, O의 GET 실패, Y의 직접 등록, T의 담당 배분, AA②③(`fieldStates` 채택·상환 중만 목록)은 본문에 반영했다. 아래는 실제 원천 검증과 구현 조율이며, 확정 정책을 다시 정하는 목록이 아니다.
 
 | 기능 | 확인할 내용 | 확인할 사람 |
 |---|---|---|
 | 8. CODEF 원천 | 실제 은행·상품별 값 제공 여부, `resRate` 단위·의미, `resDatePayment`가 이자 납입일인지 원금 포함 상환일인지, `resState` 실제 값과 미제공 처리. 기존 샌드박스 거래는 일반신규 1건이라 실제 납부 이력을 검증하지 못함 | 권세진, 수집 연계는 김혜리 |
 | 8. 월 상환 추정 | P의 지난 납부 평균에 사용할 실제 상환 거래·조회 기간·월별 묶음·부분 수집·원 미만 처리. 표시용 최근 3건과 평균 산정 범위를 구분하며 자료가 없으면 null | 권세진, 계산 세부 기준은 김나은과 조율 |
-| 8. 조회 범위 | 상환 완료 대출을 목록에 포함할지와 쿼리 필터. 상환 완료 대출 PATCH 404는 확정(P) | 김나은·권세진 |
-| 8. 메타데이터 | `fieldStates`의 필드별 출처·확인 시각 구조 제안과 저장 원천. 추정값 수락/직접 입력 구분, 기관 재조회와 보완값 충돌 처리 | 김나은·김혜리·권세진 |
+| 8. 메타데이터 | `fieldStates` 저장 원천(칸 모양은 AA② 확정). 추정값 수락/직접 입력 구분, 기관 재조회와 보완값 충돌 처리 | 김나은·김혜리·권세진 |
 | 8·11. 숫자 변환 | 기관 원본 잔액·원금의 예외값, 금리 정밀도·소수 자릿수 저장. 직접 등록 금액·금리 범위(Y)와 보완 금액 범위(P)는 변경하지 않음 | 권세진, 김나은과 조율 |
 | 9·11. 납부 예정·매칭 | 월 상환액·납부일 변경 및 null 전환 때 기존 납부 예정 처리, 실제 상환 출금 연결 키·부분 납부. 두 값이 있으면 납부 예정 생성·중복 차감 금지는 확정 | 권세진, 납부 예정 연계는 김나은, 수집 연계는 김혜리 |
 | 9. 화면 저장 | 여러 대출을 순서대로 보완하다 일부 실패했을 때의 화면 안내·재시도. 각 PATCH는 단일 대출이고 승인 예산을 임의 변경하지 않음 | 권세진·김혜리 |

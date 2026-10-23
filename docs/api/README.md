@@ -1,6 +1,6 @@
 # 머니쿠션 API 명세 — 1차 취합
 
-> 취합 · 검수: 김나은 · 2026-10-22 · 기준: `main` `7a431f0` (PR #26 ~ #32 병합 후) · **2차 검수 10/22 오후**
+> 취합 · 검수: 김나은 · 2026-10-22 · 기준: `main` `25bbb89` (PR #26 ~ #34 병합 후) · **3차 검수 10/22 저녁** · **1차 확정 10/24 (결정 AA)**
 > 명세 마감 **10/24(금)** · 개발 시작 **10/25(토)**
 > 이 문서는 **목차 + 검수 결과 + 남은 일**이다. API 하나하나의 보내는 값 · 받는 값 · 실패는 아래 표의 원본 문서를 본다.
 > 공통 규칙: [API_RULES.md](../API_RULES.md) · 결정: [결정기록](../결정기록_2026-10-21.md) · 전체 목록(ML 후 포함): [API 명세 목록](../머니쿠션_API_명세_목록_2026-10-21.md)
@@ -9,12 +9,12 @@
 
 | 항목 | 결과 |
 |---|---|
-| 1차 '지금 · 기본만' API | **35개** — 34개 작성 + **대출 직접 등록 1개 10/22 추가(작성 전, 세진)** |
+| 1차 '지금 · 기본만' API | **35개 모두 작성** (대출 직접 등록 포함, PR #33) |
 | 공통 규칙 지킴 | 로그인 안 됨 403 `not_authenticated` · `fields`는 칸 오류 때만 · 주소 ID 틀림 404 / 본문 ID 틀림 400 · 카테고리 대문자 코드 · 계좌 · 카드 `displayName` + `status` 3가지 → **API가 있는 9개 문서 모두 맞음** |
 | 1차 검수 반영 | 결정 A~F · J~M, 문서끼리 다른 것 5개 → **모두 반영** (PR #31 · #32, 4-1) |
 | 2차 검수 | 고칠 것 **5개**(4-2) — 연결 목록에 계좌 · 카드 ID 없음, 재연결 규칙, 해결된 '확인 필요' 6줄, 근거 표기, 거래 목록에 월급 · 이체 추가(V) |
-| '확인 필요' 108줄 | 이미 해결 6 · PM 답 12(**✅ N**) · 담당자끼리 20 · 회의 32(안건 9개 **모두 ✅ 결정 O ~ V**) · 개발 중 27 · 결정 · ML 후 11 (5번 · 6번) |
-| 개발을 막는 것 | 없음 — 대출(P) · 금융 공통 에러(O) 10/22 결정. 남은 건 **대출 직접 등록 명세 작성**(세진) |
+| '확인 필요' | 2차 108줄 → **3차 51줄** → 확정 전 정할 것 8개 **10/24 결정 AA로 해결** → 남은 43줄은 개발 중 · CODEF 확인 · ML 후 (4-4) |
+| 개발을 막는 것 | 없음. **35개 1차 확정 (10/24)** — 8개 모두 각 명세에 반영 (4-4) |
 | 남은 API | 1차 **18개**(ML 후 14 · 결정 후 4) + 2 · 3차 4개 (7번) |
 
 ---
@@ -23,24 +23,24 @@
 
 | # | 묶음 | 기능 | 방식 · 주소 | 문서 | 담당 | 리뷰 |
 |---|---|---|---|---|---|---|
-| 1 | 공통 · 인증 | 저장 전 보안값 준비 | `GET /api/csrf/` | [auth.md](auth.md) | 세진 | ✅ PR #31 (구현됨) |
-| 2 | | 회원가입 | `POST /api/auth/signup/` | auth.md | 세진 | ✅ PR #31 |
-| 3 | | 로그인 | `POST /api/auth/login/` | auth.md | 세진 | ✅ PR #31 |
-| 4 | | 로그아웃 | `POST /api/auth/logout/` | auth.md | 세진 | ✅ PR #31 |
-| 5 | | 내 계정 확인 | `GET /api/auth/me/` | auth.md | 세진 | ✅ PR #31 · 기본만 |
-| 6 | 금융 동의 · 연결 | 금융 조회 동의 저장 | `POST /api/finance/consents/` | [finance-connect.md](finance-connect.md) | 혜리 | ✅ PR #32 |
-| 7 | | 계좌 후보 보기 | `GET /api/finance/connect/accounts/` | finance-connect.md | 혜리 | ✅ PR #32 |
-| 8 | | 계좌 선택 저장 | `PUT /api/finance/connect/accounts/` | finance-connect.md | 혜리 | ✅ PR #32 |
-| 9 | | 연결 목록 보기 | `GET /api/finance/connections/` | finance-connect.md | 혜리 | ✅ PR #32 |
-| 10 | | 연결 해제 | `DELETE /api/finance/connections/<id>/` | finance-connect.md | 혜리 | ✅ PR #32 |
-| 11 | 카드 · 대출 | 카드 후보 보기 | `GET /api/finance/connect/cards/` | [cards.md](cards.md) | 세진 | ✅ PR #31 · 기본만 |
-| 12 | | 카드 선택 저장 | `PUT /api/finance/connect/cards/` | cards.md | 세진 | ✅ PR #31 · 기본만 |
-| 13 | | 카드 청구서 보기 | `GET /api/finance/card-bills/<id>/` | cards.md | 세진 | ✅ PR #31 · 기본만 |
-| 14 | | 대출 정보 보기 | `GET /api/finance/loans/` | [loans.md](loans.md) | 세진 | 초안 · 기본만 |
-| 15 | | 대출 정보 보완 | `PATCH /api/finance/loans/<id>/` | loans.md | 세진 | 🟡 **10/22 결정 P** — 3칸, 문서 반영 전 |
-| 16 | 거래 | 거래 목록 보기 | `GET /api/finance/transactions/` | [transactions.md](transactions.md) | 혜리 | ✅ PR #32 |
-| 17 | | 거래 한 건 보기 | `GET /api/finance/transactions/<id>/` | transactions.md | 혜리 | ✅ PR #32 |
-| 18 | | 거래 분류 수정 | `PATCH /api/finance/transactions/<id>/` | transactions.md | 혜리 | ✅ PR #32 |
+| 1 | 공통 · 인증 | 저장 전 보안값 준비 | `GET /api/csrf/` | [auth.md](auth.md) | 세진 | ✅ PR #33 (구현됨) |
+| 2 | | 회원가입 | `POST /api/auth/signup/` | auth.md | 세진 | ✅ PR #33 |
+| 3 | | 로그인 | `POST /api/auth/login/` | auth.md | 세진 | ✅ PR #33 |
+| 4 | | 로그아웃 | `POST /api/auth/logout/` | auth.md | 세진 | ✅ PR #33 |
+| 5 | | 내 계정 확인 | `GET /api/auth/me/` | auth.md | 세진 | ✅ PR #33 |
+| 6 | 금융 동의 · 연결 | 금융 조회 동의 저장 | `POST /api/finance/consents/` | [finance-connect.md](finance-connect.md) | 혜리 | ✅ PR #34 |
+| 7 | | 계좌 후보 보기 | `GET /api/finance/connect/accounts/` | finance-connect.md | 혜리 | ✅ PR #34 |
+| 8 | | 계좌 선택 저장 | `PUT /api/finance/connect/accounts/` | finance-connect.md | 혜리 | ✅ PR #34 |
+| 9 | | 연결 목록 보기 | `GET /api/finance/connections/` | finance-connect.md | 혜리 | ✅ PR #34 |
+| 10 | | 연결 해제 | `DELETE /api/finance/connections/<id>/` | finance-connect.md | 혜리 | ✅ PR #34 |
+| 11 | 카드 · 대출 | 카드 후보 보기 | `GET /api/finance/connect/cards/` | [cards.md](cards.md) | 세진 | ✅ PR #33 |
+| 12 | | 카드 선택 저장 | `PUT /api/finance/connect/cards/` | cards.md | 세진 | ✅ PR #33 |
+| 13 | | 카드 청구서 보기 | `GET /api/finance/card-bills/<id>/` | cards.md | 세진 | ✅ PR #33 |
+| 14 | | 대출 정보 보기 | `GET /api/finance/loans/` | [loans.md](loans.md) | 세진 | ✅ PR #33 |
+| 15 | | 대출 정보 보완 | `PATCH /api/finance/loans/<id>/` | loans.md | 세진 | ✅ PR #33 |
+| 16 | 거래 | 거래 목록 보기 | `GET /api/finance/transactions/` | [transactions.md](transactions.md) | 혜리 | ✅ PR #34 |
+| 17 | | 거래 한 건 보기 | `GET /api/finance/transactions/<id>/` | transactions.md | 혜리 | ✅ PR #34 |
+| 18 | | 거래 분류 수정 | `PATCH /api/finance/transactions/<id>/` | transactions.md | 혜리 | ✅ PR #34 |
 | 19 | 고정지출 | 고정지출 목록 보기 | `GET /api/budgets/fixed/` | [fixed.md](fixed.md) | 나은 | ✅ PR #27 |
 | 20 | | 고정지출 직접 추가 | `POST /api/budgets/fixed/` | fixed.md | 나은 | ✅ PR #27 |
 | 21 | | 고정지출 수정 | `PATCH /api/budgets/fixed/<id>/` | fixed.md | 나은 | ✅ PR #27 |
@@ -54,10 +54,10 @@
 | 29 | | 후보 확정 (저축이에요) | `POST /api/budgets/savings/confirm/` | savings.md | 나은 | ✅ PR #29 |
 | 30 | | 후보 무시 (아니에요) | `POST /api/budgets/savings/ignore/` | savings.md | 나은 | ✅ PR #29 |
 | 31 | 홈 | 홈 화면 보기 | `GET /api/home/` | [home.md](home.md) | 나은 | ✅ PR #26 · 기본만 |
-| 32 | 통합 챗봇 | 이전 대화 보기 | `GET /api/chat/conversations/<id>/` | [chat.md](chat.md) | 혜리 | ✅ PR #32 |
-| 33 | | 챗봇에 메시지 보내기 | `POST /api/chat/messages/` | chat.md (+ 소비 분석 카드 칸 [spending-analysis.md](spending-analysis.md), 세진) | 혜리 · 세진 | ✅ PR #31 · #32 (J) |
-| 34 | | 오래 걸리는 작업 진행 확인 | `GET /api/tasks/<id>/` | chat.md | 혜리 | ✅ PR #32 |
-| 35 | 카드 · 대출 | **대출 직접 등록** (10/22 추가) | `POST /api/finance/loans/` | loans.md | 세진 | 🟡 받는 칸 결정 Y · **명세 작성 전** |
+| 32 | 통합 챗봇 | 이전 대화 보기 | `GET /api/chat/conversations/<id>/` | [chat.md](chat.md) | 혜리 | ✅ PR #34 |
+| 33 | | 챗봇에 메시지 보내기 | `POST /api/chat/messages/` | chat.md (+ 소비 분석 카드 칸 [spending-analysis.md](spending-analysis.md), 세진) | 혜리 · 세진 | ✅ PR #33 · #34 (J · S) |
+| 34 | | 오래 걸리는 작업 진행 확인 | `GET /api/tasks/<id>/` | chat.md | 혜리 | ✅ PR #34 |
+| 35 | 카드 · 대출 | **대출 직접 등록** (10/22 추가) | `POST /api/finance/loans/` | loans.md | 세진 | ✅ PR #33 (결정 Y) |
 
 **요청 번호(`Idempotency-Key`)를 쓰는 API**: 6 동의 저장 · 35 대출 직접 등록 · 20 고정지출 추가 · 23 · 24 고정지출 확정 · 무시 · 26 저축 추가 · 29 · 30 저축 확정 · 무시 · 33 메시지 보내기. 나머지(선택 저장 `PUT`, 수정 `PATCH`, 중지 · 해제 `DELETE`)는 두 번 보내도 결과가 같아서 안 쓴다.
 **회원가입(2)**: 로그인 전이라 공통 요청 번호가 적용되지 않음 → 중복 가입 막는 방법은 5-3 '회원가입 · 로그인 기본값'.
@@ -117,7 +117,7 @@
 | 링크 · 문구 | `cards-loans.md` 링크, "선택할 수 없는 계좌예요." | ✅ PR #32 |
 | 나은 몫 | 목록 문서 7번(A · C), chat.md 기간 설명("예산과 같은 기준" → "홈 · 예산은 급여 주기", BUD-004), savings.md 403 표기 · 연결 해제(F) 줄 추가 | ✅ |
 
-### 4-2. 2차 검수(10/22 오후)에서 새로 찾은 것
+### 4-2. 2차 검수(10/22 오후)에서 새로 찾은 것 — ✅ 모두 반영 (PR #33 · #34, ② 재연결은 새 연결 API 때)
 
 | # | 무엇 | 왜 문제인가 | 고치는 방향 (제안) | 담당 |
 |---|---|---|---|---|
@@ -136,7 +136,57 @@
 
 ---
 
-## 5. '확인 필요' 전부 정리 — 108줄
+### 4-4. 3차 검수 (10/22 저녁, PR #33 · #34 병합 후)
+
+**반영 확인** — 결정 N ~ Z 요청은 세진(PR #33) · 혜리(PR #34) 모두 반영. 문서끼리 다른 곳 없음. 35개 주소가 각 명세의 "어디로"와 모두 일치.
+
+**취합하면서 바로 고친 것** (나은)
+- chat · transactions · finance-connect 머리말의 "(결정기록 반영 전, 전달 메시지 기준)" 삭제
+- finance-connect.md "`consent_required`가 API_RULES에 아직 없음" 줄 삭제 (이미 추가됨)
+- transactions.md 매칭 입구 7번 `detect_candidates` 담당 → 나은 (결정 T), savings.md '다른 명세에서 할 것'의 감지 담당도 같게
+
+**남은 '확인 필요' 51줄**
+
+| 문서 | 줄 | 확정 전 정할 것 | 개발 중 · CODEF 확인 | 결정 · ML 후 |
+|---|---|---|---|---|
+| fixed · savings · home | 0 | — | — | — |
+| finance-connect | 9 | — | 7 | 2 |
+| transactions | 8 | 3 (⑤ ⑥ ⑦) | 3 | 2 |
+| chat | 9 | 1 (⑧) | 2 | 6 |
+| auth | 5 | 1 (④) | 4 | — |
+| cards | 8 | 1 (①) | 7 | — |
+| loans | 7 | 2 (② ③) | 5 | — |
+| spending-analysis | 5 | — | 4 | 1 (2차) |
+| **합계** | **51** | **8** | **32** | **11** |
+
+**1차 확정 전 정할 것 8개** — ✅ **10/24 제안대로 확정 (결정기록 3-3 AA)**
+
+| # | 문서 | 정할 것 | 결정 |
+|---|---|---|---|
+| ① ✅ | cards 10 | 청구서 메타데이터 — `billingMonth` 표현 · 카드사 이름 · `cards` 목록 · 청구서 `fetchedAt` | `billingMonth`는 `"YYYY-MM"` 문자열, 카드사 이름 `issuerName` 함께 줌, `cards` · `fetchedAt`은 채택하되 모르면 `null` |
+| ② ✅ | loans 8 | `fieldStates`(값마다 출처 · 확인 여부) 채택 | **채택.** 대출 화면의 "조회됨 · 직접 입력 · 확인 필요" 표시에 필요. `source` · `confirmationStatus` · `confirmedAt` |
+| ③ ✅ | loans 8 | 상환 완료 대출도 목록에 보일까 | **1차는 상환 중만** 보임 |
+| ④ ✅ | auth 2 | 회원가입 201 응답에 `onboardingCompleted` | **넣음** (`false`). 가입하면 자동 로그인이라 로그인 · `/me/`와 같은 모양 |
+| ⑤ ✅ | transactions | ⭐ 월세처럼 고정지출에 연결된 **이체** | **소비로 봄** — 연결되면 `spending`, 카테고리는 그 고정지출을 따르고 '고정' 표시. 연결을 풀면 다시 `transfer` (결정 AA) |
+| ⑥ ✅ | transactions | 원래 이체였다는 표시를 어디에 | 새 칸 없이 거래 `field_states.original_transaction_type` |
+| ⑦ ✅ | transactions | 거래 유형 필터 · 입금에 카테고리 보내면 | 필터 1차 없음('월급' · '이체' 표시로 구분), 입금에 카테고리는 400 확정 |
+| ⑧ ✅ | chat | 메시지 보내기 응답에 사용자 메시지도 넣을까 | **넣음** (지금 예시 그대로 — 화면이 바로 그리기 쉬움) |
+
+**★ 확정 반영 (10/24) — ✅ 모두 반영 (나은이 대신 수정)**
+
+| 담당 | 문서 | 할 일 |
+|---|---|---|
+| ✅ 세진 | cards.md 10번 | ① `billingMonth` `"YYYY-MM"` · `issuerName` 추가 · `cards` · `fetchedAt` 칸 넣기(모르면 `null`), 예시 JSON도 |
+| ✅ 세진 | loans.md 8번 | ② `fieldStates` 응답 칸 표에 넣기(`source` · `confirmationStatus` · `confirmedAt`) ③ "목록은 상환 중(`repaying`)만" 명시 |
+| ✅ 세진 | auth.md 2번 | ④ 201 응답 예시 · 칸 표에 `onboardingCompleted: false` |
+| ✅ 혜리 | transactions.md | ⑤ 매칭 입구 · 18번 PATCH 설명에 "고정지출에 연결된 이체 = 소비(그 고정지출 카테고리 · `funding: fixed`), 연결 풀면 `transfer`" ⑥ `field_states.original_transaction_type` 명시 ⑦ 유형 필터 없음 · 입금 + 카테고리 400 → '(안)' 지우고 확정 |
+| ✅ 혜리 | chat.md 33번 | ⑧ "응답에 사용자 메시지 포함"을 '확인 필요'에서 본문으로 |
+| ✅ 나은 | 결정기록 · README | AA 기록, 4-4 표시 |
+
+
+---
+
+## 5. (기록) 2차 검수 때 '확인 필요' 108줄 정리 — 지금 남은 것은 4-4
 
 각 명세 끝의 '확인 필요'를 한 줄씩 다 봤다(fixed · savings는 0줄).
 
@@ -177,16 +227,16 @@
 
 | # | 질문 | 문서 | 결정 (N) |
 |---|---|---|---|
-| 1 | 지난달에 같은 날짜가 없으면? (3/31에 물으면) | chat · spending-analysis | **지난달 말일까지 자름** — 3/1~31 vs 2/1~28 |
-| 2 | '확인 필요' 금액이 제일 크면 `topSpending`에서 뺄지 | chat · spending-analysis | **뺌.** 문장에 "분류된 소비 기준" |
-| 3 | `compare`에 `prev_week` · `none`을 둘지 | chat | **1차는 `prev_month`만** |
-| 4 | '확인 필요' 거래를 카드에서 따로 볼지 | chat | **`unclassifiedAmount`로 충분**, 칸 추가 없음 |
-| 5 | 챗봇 탭을 열 때 최근 대화 찾기 | chat | **1차는 화면이 마지막 `conversationId`를 기억.** 없거나 404면 새 대화. 대화 목록 API는 2차 |
-| 6 | 같은 범위 동의가 이미 있을 때 | finance-connect | **같은 범위 · 같은 버전이 유효하면 새로 안 만들고 기존 기록을 돌려줌**(같은 요청 두 번 규칙) |
-| 7 | 연결 상세 화면용 API | finance-connect | **1차 없음.** 연결 목록 + 계좌 후보로 그림 |
-| 8 | 해제한 연결의 계좌 선택 · 과거 거래 | finance-connect | `isSelected`는 **그대로 둠**(다시 연결하면 복원). 잔액 · 월급 찾기 · 후보에서는 빠짐. **과거 거래는 소비 집계에 계속 포함**(실제로 쓴 돈) |
-| 9 | 카드사 · 끝 4자리 자체가 없을 때 표시 | cards | 카드사 없으면 "카드", 번호 없으면 ` · ****` 부분 생략. 추측해서 채우지 않음 |
-| 10 | 고정지출이 쓰는 카드를 선택 해제하면 | cards | **고정지출은 그대로.** 결제 수단도 유지(fixed.md "새로 고를 때만 검사"와 같음) |
+| 1 | 지난달에 같은 날짜가 없으면? (3/31에 물으면) | chat · spending-analysis | ✅ PR #33 (구현됨) |
+| 2 | '확인 필요' 금액이 제일 크면 `topSpending`에서 뺄지 | chat · spending-analysis | ✅ PR #33 |
+| 3 | `compare`에 `prev_week` · `none`을 둘지 | chat | ✅ PR #33 |
+| 4 | '확인 필요' 거래를 카드에서 따로 볼지 | chat | ✅ PR #33 |
+| 5 | 챗봇 탭을 열 때 최근 대화 찾기 | chat | ✅ PR #33 |
+| 6 | 같은 범위 동의가 이미 있을 때 | finance-connect | ✅ PR #34 |
+| 7 | 연결 상세 화면용 API | finance-connect | ✅ PR #34 |
+| 8 | 해제한 연결의 계좌 선택 · 과거 거래 | finance-connect | ✅ PR #34 |
+| 9 | 카드사 · 끝 4자리 자체가 없을 때 표시 | cards | ✅ PR #34 |
+| 10 | 고정지출이 쓰는 카드를 선택 해제하면 | cards | ✅ PR #34 |
 
 ### 5-3. 담당자끼리 정하면 되는 것 (20줄)
 

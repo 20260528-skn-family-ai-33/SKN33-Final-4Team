@@ -1,5 +1,6 @@
 // 로그인
 // 지금은 아무거나 넣어도 홈으로 간다. 진짜 로그인은 users.User 모델을 만든 뒤에 붙인다
+// 로그인할 때는 비밀번호 길이 · 조합을 검사하지 않는다 (규칙이 바뀌어도 기존 회원이 로그인, 결정기록 X ⑨)
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import { usePopup } from '../popups/context.js'
@@ -22,8 +23,8 @@ export default function LoginPage() {
       <form className="mc-form" id="mc-form" onSubmit={onSubmit}>
         <label className="mc-field">이메일<input autoComplete="email" name="loginEmail" placeholder="you@example.com" type="email" /></label>
         <label className="mc-field">비밀번호<input autoComplete="current-password" name="loginPw" type="password" /></label>
+        {/* [자동 로그인]은 1차에 없음 — 로그인하면 14일 유지 (10/22 결정기록 X ⑧). [아이디 저장]은 화면이 이메일만 기억 */}
         <div className="mc-check-row">
-          <label className="mc-field mc-check"><input name="autoLogin" type="checkbox" />자동 로그인</label>
           <label className="mc-field mc-check"><input name="saveId" type="checkbox" />아이디 저장</label>
         </div>
         <div className="mc-error" role="alert"></div>

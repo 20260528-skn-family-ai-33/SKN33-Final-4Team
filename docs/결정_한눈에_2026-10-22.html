@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>머니쿠션 명세 결정 한눈에</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F6F8FB; --paper:#FFFFFF; --ink:#172033; --sub:#5B6576; --line:#E3E8F0;
+  --brand:#2459D9; --brand-soft:#EAF0FF; --lime:#DDF58C; --lime-ink:#3D4A0E;
+  --red:#D81B3A; --red-soft:#FFEEF1; --amber:#B86E00; --amber-soft:#FFF4E0;
+  --green:#18794E; --green-soft:#E6F6EE; --gray-soft:#EEF1F5;
+  --radius:16px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121722; --paper:#1B2230; --ink:#EEF1F7; --sub:#A9B3C3; --line:#2E3747;
+    --brand:#8FAAFF; --brand-soft:#243258; --lime:#C7E948; --lime-ink:#1C2306;
+    --red:#FF8A9C; --red-soft:#3A1C24; --amber:#F2B45A; --amber-soft:#3A2E17;
+    --green:#5FD39B; --green-soft:#16362A; --gray-soft:#252D3B;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121722; --paper:#1B2230; --ink:#EEF1F7; --sub:#A9B3C3; --line:#2E3747;
+  --brand:#8FAAFF; --brand-soft:#243258; --lime:#C7E948; --lime-ink:#1C2306;
+  --red:#FF8A9C; --red-soft:#3A1C24; --amber:#F2B45A; --amber-soft:#3A2E17;
+  --green:#5FD39B; --green-soft:#16362A; --gray-soft:#252D3B;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.65 "Noto Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo",sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--brand)}
+code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--gray-soft);padding:1px 6px;border-radius:6px;white-space:nowrap}
+.wrap{max-width:1040px;margin:0 auto;padding:0 16px}
+header.hero{background:var(--paper);border-bottom:1px solid var(--line)}
+.hero .wrap{padding-top:36px;padding-bottom:28px}
+.eyebrow{color:var(--brand);font-weight:700;font-size:13px;letter-spacing:.3px}
+h1{font-size:30px;line-height:1.3;margin:6px 0 10px;letter-spacing:-.6px}
+.lead{color:var(--sub);margin:0;max-width:720px}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:24px}
+.stat{background:var(--bg);border-radius:var(--radius);padding:14px 16px}
+.stat b{display:block;font-size:26px;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.stat span{color:var(--sub);font-size:13px}
+nav.toc{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+nav.toc .wrap{display:flex;gap:6px;overflow-x:auto;padding-top:10px;padding-bottom:10px;scrollbar-width:none}
+nav.toc a{flex:none;text-decoration:none;color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;font-weight:500}
+nav.toc a:hover{border-color:var(--brand);color:var(--brand)}
+section{padding:36px 0 8px}
+h2{font-size:22px;margin:0 0 4px;letter-spacing:-.4px}
+.h2sub{color:var(--sub);margin:0 0 18px;font-size:14px}
+h3{font-size:16px;margin:0 0 10px}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+.grid2{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tag{display:inline-block;font-size:11px;font-weight:700;border-radius:6px;padding:1px 6px;margin-left:4px;vertical-align:1px;background:var(--brand-soft);color:var(--brand);white-space:nowrap}
+.tag.lime{background:var(--lime);color:var(--lime-ink)}
+.muted{color:var(--sub)}
+ul.easy{margin:0;padding:0;list-style:none}
+ul.easy li{position:relative;padding:7px 0 7px 22px;border-top:1px dashed var(--line)}
+ul.easy li:first-child{border-top:0}
+ul.easy li::before{content:"";position:absolute;left:4px;top:15px;width:7px;height:7px;border-radius:50%;background:var(--brand)}
+ul.easy li b{font-weight:700}
+/* timeline */
+.timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.tl{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:14px;position:relative}
+.tl .when{font-size:12px;color:var(--brand);font-weight:700}
+.tl .what{font-weight:700;margin:2px 0 6px}
+.tl .codes{display:flex;flex-wrap:wrap;gap:4px}
+.tl .codes span{font-size:11px;background:var(--gray-soft);border-radius:6px;padding:1px 6px}
+/* rules */
+.rule{display:flex;gap:12px;align-items:flex-start}
+.rule .ico{flex:none;width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:var(--brand-soft);color:var(--brand);font-weight:800;font-size:13px}
+.rule p{margin:2px 0 0;color:var(--sub);font-size:14px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:13px;background:var(--paper)}
+.chip.off{background:var(--gray-soft);color:var(--sub)}
+/* money flow */
+.flow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;align-items:stretch}
+.step{border-radius:var(--radius);padding:14px 12px;background:var(--paper);border:1px solid var(--line);position:relative}
+.step .n{width:24px;height:24px;border-radius:50%;background:var(--brand);color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;margin-bottom:6px}
+.step b{display:block;margin-bottom:4px}
+.step p{margin:0;font-size:13px;color:var(--sub)}
+.step.first{background:var(--brand-soft);border-color:transparent}
+.salary{background:var(--lime);color:var(--lime-ink);border-radius:var(--radius);padding:10px 14px;font-weight:800;margin-bottom:8px;display:inline-block}
+/* compare table */
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--sub);font-weight:500;font-size:13px}
+.tbl{overflow-x:auto}
+/* states */
+.states{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.st{border-radius:12px;padding:8px 12px;font-weight:700;font-size:14px;border:1px solid var(--line);background:var(--paper)}
+.st small{display:block;font-weight:500;color:var(--sub);font-size:12px}
+.st.blue{background:var(--brand-soft);border-color:transparent;color:var(--brand)}
+.st.red{background:var(--red-soft);border-color:transparent;color:var(--red)}
+.st.green{background:var(--green-soft);border-color:transparent;color:var(--green)}
+.st.gray{background:var(--gray-soft);border-color:transparent;color:var(--sub)}
+.arrow{color:var(--sub);font-size:18px}
+/* areas */
+.area{margin-bottom:12px}
+.area summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:16px 18px}
+.area summary::-webkit-details-marker{display:none}
+.area summary .emoji{font-size:22px}
+.area summary .t{font-weight:800;font-size:17px}
+.area summary .s{color:var(--sub);font-size:13px}
+.area summary .chev{margin-left:auto;color:var(--sub);transition:transform .2s}
+.area[open] summary .chev{transform:rotate(90deg)}
+.area .body{padding:0 18px 18px}
+.area{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius)}
+.ex{background:var(--bg);border-radius:12px;padding:12px 14px;margin-top:10px;font-size:14px}
+.ex b{color:var(--brand)}
+/* not now */
+.no{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px dashed var(--line)}
+.no:first-child{border-top:0}
+.no .x{flex:none;width:22px;height:22px;border-radius:50%;background:var(--gray-soft);color:var(--sub);display:grid;place-items:center;font-size:12px;font-weight:800}
+/* owners */
+.owner h3{display:flex;align-items:center;gap:8px}
+.dot{width:10px;height:10px;border-radius:50%}
+/* glossary */
+.search{width:100%;padding:12px 14px;border-radius:12px;border:1px solid var(--line);background:var(--paper);color:var(--ink);font:inherit;margin-bottom:12px}
+.gl{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.g{display:flex;gap:10px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:14px}
+.g .k{flex:none;min-width:40px;height:26px;border-radius:8px;background:var(--brand-soft);color:var(--brand);font-weight:800;display:grid;place-items:center;font-size:12px;padding:0 6px}
+.g .v b{display:block}
+.g .v span{color:var(--sub);font-size:13px}
+.empty{color:var(--sub);padding:12px;display:none}
+footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
+.theme{position:absolute;right:16px;top:16px;border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:999px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+.hero{position:relative}
+@media (max-width:860px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .timeline{grid-template-columns:1fr 1fr}
+  .flow{grid-template-columns:1fr}
+  .grid3{grid-template-columns:1fr}
+}
+@media (max-width:620px){
+  h1{font-size:24px}
+  .grid2,.gl{grid-template-columns:1fr}
+  .timeline{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <button class="theme" id="themeBtn" type="button">🌗 화면 밝기</button>
+  <div class="wrap">
+    <div class="eyebrow">머니쿠션 · API 명세 10/21 ~ 10/22</div>
+    <h1>명세 쓰면서 정한 것, 한눈에</h1>
+    <p class="lead">이틀 동안 명세를 쓰고, 리뷰하고, 회의하면서 정한 것들을 쉬운 말로 모았어요. 자세한 내용은 <code>docs/결정기록_2026-10-21.md</code>와 <code>docs/api/README.md</code>에 있어요. 이 페이지는 "무엇을 왜 그렇게 정했는지" 감을 잡는 용도예요.</p>
+    <div class="stats">
+      <div class="stat"><b>35개</b><span>1차 확정 API</span></div>
+      <div class="stat"><b>18개</b><span>남은 1차 API (ML 후 14)</span></div>
+      <div class="stat"><b>A ~ Z</b><span>10/22 결정 26개</span></div>
+      <div class="stat"><b>0개</b><span>10/24 전 정할 것</span></div>
+    </div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="목차"><div class="wrap">
+  <a href="#timeline">흐름</a><a href="#rules">공통 약속</a><a href="#money">돈의 순서</a><a href="#period">기간</a><a href="#states">상태</a><a href="#areas">기능별 결정</a><a href="#not">1차에 안 함</a><a href="#owners">담당</a><a href="#glossary">결정 기호 찾기</a>
+</div></nav>
+
+<main class="wrap">
+
+<!-- 1. 흐름 -->
+<section id="timeline">
+  <h2>이틀 동안 이렇게 정했어요</h2>
+  <p class="h2sub">결정마다 기호가 붙어 있어요. 문서에서 "결정 Q"처럼 나오면 아래 '결정 기호 찾기'에서 찾을 수 있어요.</p>
+  <div class="timeline">
+    <div class="tl"><div class="when">10/21</div><div class="what">공통 규칙 · 카테고리</div><p class="muted" style="margin:0 0 8px;font-size:13px">모든 API가 같은 모양으로 답하게</p><div class="codes"><span>API_RULES</span><span>카테고리 12개</span></div></div>
+    <div class="tl"><div class="when">10/21</div><div class="what">고정지출 · 홈</div><p class="muted" style="margin:0 0 8px;font-size:13px">첫 명세로 규칙의 기준을 만듦</p><div class="codes"><span>C-01~C-16</span><span>★ 1~15</span><span>H-01·02·05·06</span></div></div>
+    <div class="tl"><div class="when">10/22 오전</div><div class="what">홈 · 정기 저축</div><p class="muted" style="margin:0 0 8px;font-size:13px">저축을 고정지출과 분리</p><div class="codes"><span>H-03·07</span><span>S-01~S-12</span></div></div>
+    <div class="tl"><div class="when">10/22 오전</div><div class="what">PR 리뷰 · 1차 취합</div><p class="muted" style="margin:0 0 8px;font-size:13px">혜리 · 세진 명세와 맞추기</p><div class="codes"><span>A~F</span><span>G~I</span><span>J~M</span></div></div>
+    <div class="tl"><div class="when">10/22 오후</div><div class="what">2차 검수 · 회의</div><p class="muted" style="margin:0 0 8px;font-size:13px">'확인 필요' 108줄을 전부 정리</p><div class="codes"><span>N~Z</span></div></div>
+  </div>
+</section>
+
+<!-- 2. 공통 약속 -->
+<section id="rules">
+  <h2>모든 API가 지키는 약속</h2>
+  <p class="h2sub">누가 만든 API든 이 규칙은 똑같아요. 이것만 알아도 명세의 절반은 읽혀요.</p>
+  <div class="grid2">
+    <div class="card rule"><div class="ico">404</div><div><b>주소가 틀리면 404, 내용이 틀리면 400</b><p>없는 ID · 남의 ID · 지금 할 수 없는 상태(예: 중지된 고정지출 수정)는 주소 문제라 404. 보낸 값이 틀리면 400.</p></div></div>
+    <div class="card rule"><div class="ico">403</div><div><b>로그인 안 했으면 403</b><p>401이 아니라 403 + <code>not_authenticated</code>. 상태 코드보다 <code>code</code>로 구분해요.</p></div></div>
+    <div class="card rule"><div class="ico">✉️</div><div><b>고칠 때는 '바꿀 것만 적은 쪽지'</b><p>안 보낸 칸은 그대로, <code>null</code>은 비우기. 서버가 정하는 칸(<code>status</code> 등)을 보내면 400 "이 칸은 보낼 수 없어요."</p></div></div>
+    <div class="card rule"><div class="ico">2×</div><div><b>두 번 눌러도 한 번만</b><p>이미 그 상태면 성공으로 답해요. 새로 만드는 요청은 <b>요청 번호</b>로 막아요 — 팝업은 열 때, 버튼 하나짜리는 누를 때 번호를 만들어요.</p></div></div>
+    <div class="card rule"><div class="ico">₩</div><div><b>돈은 원 단위 정수, 날짜는 YYYY-MM-DD</b><p>"매월 31일"처럼 그 달에 없는 날은 그 달 말일. 비율은 0~100, 증감률만 음수 · 100 넘음 가능.</p></div></div>
+    <div class="card rule"><div class="ico">🏦</div><div><b>계좌 · 카드는 서버가 이름을 만들어 줌</b><p>요청엔 ID만, 응답엔 <code>"국민 급여통장 · ****5678"</code> + 연결 상태. 번호는 끝 4자리만.</p></div></div>
+    <div class="card rule"><div class="ico">⚠️</div><div><b>에러는 항상 같은 모양</b><p><code>{ error: { code, message, fields } }</code>. <code>fields</code>는 칸 오류가 있을 때만 들어가요.</p></div></div>
+    <div class="card rule"><div class="ico">O</div><div><b>목록 조회는 저장된 것만 읽어요</b><p>은행(CODEF)은 연결 · 다시 불러오기 때만 불러요. 동의를 안 했으면 403 <code>consent_required</code>. 실패를 "0원 · 없음"으로 보여 주지 않아요.</p></div></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <h3>카테고리 12개 <span class="tag">서버는 영문 코드로만 판단</span></h3>
+    <div class="chips">
+      <span class="chip">식비 FOOD</span><span class="chip">주거·통신</span><span class="chip">교통·차량</span><span class="chip">생활용품</span><span class="chip">패션·쇼핑</span><span class="chip">의료·건강</span><span class="chip">뷰티·미용</span><span class="chip">교육</span><span class="chip">문화·여가</span><span class="chip">여행·숙박</span><span class="chip">기타 ETC</span><span class="chip off">확인 필요 UNCLASSIFIED (고를 수 없음)</span>
+    </div>
+    <p class="muted" style="margin:10px 0 0;font-size:14px">저축 · 투자 · 대출 상환 · 카드값은 <b>카테고리가 아니에요.</b> 각자 따로 챙겨요.</p>
+  </div>
+</section>
+
+<!-- 3. 돈의 순서 -->
+<section id="money">
+  <h2>월급은 이 순서로 나뉘어요</h2>
+  <p class="h2sub">가장 중요한 원칙: <b>같은 돈은 한 번만 센다.</b> 월세를 고정비로 뺐으면 생활비에서 또 빼지 않아요.</p>
+  <div class="salary">💰 월급</div>
+  <div class="flow">
+    <div class="step first"><div class="n">1</div><b>꼭 나갈 돈</b><p>확정 고정지출 · 대출 월 상환액 · <b>첫</b> 카드 청구서 · 이번 할부금</p></div>
+    <div class="step"><div class="n">2</div><b>저축</b><p>저축 최소 금액(확정한 정기 저축 합계) 이상</p></div>
+    <div class="step"><div class="n">3</div><b>쿠션 · 준비금</b><p>머니 쿠션 적립, 1년에 한 번 나가는 돈 준비</p></div>
+    <div class="step"><div class="n">4</div><b>생활비</b><p>카테고리별 예산으로 나눔</p></div>
+    <div class="step"><div class="n">5</div><b>여윳돈</b><p>어디에도 안 나눈 돈</p></div>
+  </div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="card">
+      <h3>카드값은 왜 '첫' 청구서만 미리 떼나요? <span class="tag">Q · C-17</span></h3>
+      <p class="muted" style="margin:0 0 8px;font-size:14px">앱을 쓰기 전에 긁은 카드값은 앱이 몰라요. 그런데 돈은 이번 달에 빠져나가요. 그래서 처음 한 번만 미리 떼어 둬요. 그 뒤로는 카드를 쓸 때마다 생활비에서 이미 빼고 있어서 다시 떼지 않아요.</p>
+      <div class="ex">미리 뗄 돈 = <b>첫 청구서 총액 − 이번 주기 시작 뒤 그 카드로 쓴 돈</b><br><span class="muted">예) 청구서 40만 원 중 10만 원은 이번 주기에 쓴 것 → 30만 원만 미리 뗌</span></div>
+    </div>
+    <div class="card">
+      <h3>카드로 내는 고정지출은? <span class="tag">★6 · C-08</span></h3>
+      <p class="muted" style="margin:0 0 8px;font-size:14px">넷플릭스를 카드로 내면 그 돈은 <b>카드값 안에</b> 들어 있어요. 그래서 고정지출로 따로 빼지 않고, 카드 결제를 "이 결제가 맞나요?"로 확인해서 <b>고정비 표시</b>만 붙여요.</p>
+      <div class="ex">고정비 표시가 붙은 거래 → <b>생활비 사용액에서 빠짐</b><br><span class="muted">(소비 분석에는 들어가되 '고정지출'로 따로 보여 줌, 결정 S)</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. 기간 -->
+<section id="period">
+  <h2>"이번 달"은 화면마다 달라요</h2>
+  <p class="h2sub">헷갈리기 쉬운 부분이라 따로 모았어요.</p>
+  <div class="card tbl">
+    <table>
+      <thead><tr><th>화면</th><th>기준 기간</th><th>예시 (월급날 25일, 오늘 10/21)</th><th>고정지출</th></tr></thead>
+      <tbody>
+        <tr><td><b>홈 · 예산</b></td><td><span class="tag">급여 주기</span> 설정한 월급날 ~ 다음 월급날 전날</td><td>9/25 ~ 10/24</td><td>생활비에서 <b>뺌</b></td></tr>
+        <tr><td><b>거래 화면</b></td><td><span class="tag lime">달력월</span> 이번 달 1일 ~ 오늘</td><td>10/1 ~ 10/21</td><td>보이되 '고정' 표시</td></tr>
+        <tr><td><b>챗봇 소비 분석</b></td><td><span class="tag lime">달력월</span> 이번 달 1일 ~ 오늘 <span class="tag">A</span></td><td>10/1~21 vs <b>9/1~21</b> (같은 날짜까지) <span class="tag">C</span></td><td>넣고 따로 표시 <span class="tag">S</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="grid2" style="margin-top:12px">
+    <div class="card">
+      <h3>월급이 늦게 · 일찍 와도 주기는 월급날에 바뀜 <span class="tag">H-01</span></h3>
+      <ul class="easy">
+        <li>주기는 <b>항상 설정한 월급날</b>에 새로 시작해요. 입금은 "들어옴 · 아직 · 미리 옴" <b>상태로만</b> 알려요.</li>
+        <li>늦게 오면: 월급날부터 쓴 돈은 <b>새 주기</b> 생활비예요. 지난달 초과로 잡히지 않아요.</li>
+        <li>다음 달 월급이 미리 오면: <b>따로 빼 두고</b> 다음 월급날부터 예산에 넣어요.</li>
+        <li>월급으로 보는 입금 = 실수령액의 80% 이상 · 월급날 7일 전부터 · 내 계좌끼리 옮긴 돈 제외.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>지난달에 같은 날짜가 없으면? <span class="tag">N①</span></h3>
+      <p class="muted" style="margin:0;font-size:14px">3/31에 "지난달보다 얼마 썼어?"라고 물으면 2월엔 31일이 없어요. 이럴 땐 <b>지난달 말일까지</b> 잘라서 비교해요.</p>
+      <div class="ex">3/1 ~ 3/31 vs <b>2/1 ~ 2/28</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- 5. 상태 -->
+<section id="states">
+  <h2>상태는 이렇게 바뀌어요</h2>
+  <p class="h2sub">목록에 안 나오는 상태(중지 · 무시)는 없는 것처럼 다뤄요 → 주소로 고르면 404.</p>
+  <div class="grid2">
+    <div class="card">
+      <h3>고정지출 · 정기 저축 <span class="tag">C-04 · S-04</span></h3>
+      <div class="states">
+        <span class="st blue">후보<small>자동으로 찾음</small></span><span class="arrow">→</span>
+        <span class="st green">확정<small>예산에 들어감</small></span><span class="arrow">→</span>
+        <span class="st gray">중지<small>지우지 않고 멈춤</small></span>
+      </div>
+      <div class="states" style="margin-top:8px">
+        <span class="st blue">후보</span><span class="arrow">→</span><span class="st gray">무시<small>다시 안 물어봄</small></span>
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">직접 추가하면 바로 '확정'. 다시 시작하려면 새로 추가해요. 저축 후보는 사용자 확인 없이 확정하지 않아요.</p>
+    </div>
+    <div class="card">
+      <h3>꼭 나갈 돈 (홈) <span class="tag">G · Z</span></h3>
+      <div class="states">
+        <span class="st">미납<small>출금일 전</small></span><span class="arrow">→</span>
+        <span class="st blue">출금 확인 중<small>출금일 ~ +3일</small></span><span class="arrow">→</span>
+        <span class="st red">미납 확인 필요 ›<small>+3일 지나도 출금 없음</small></span>
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">미납 확인 필요는 <b>다음 월급날 전까지</b> 홈에 남고, 누르면 고정지출 화면에서 [고르기]로 늦게 낸 출금을 연결해요. 카드 청구서 금액이 확정 전이면 회색 <b>"예상"</b> 표시.</p>
+    </div>
+    <div class="card">
+      <h3>계좌 · 카드 연결 <span class="tag">★1 · M</span></h3>
+      <div class="states">
+        <span class="st green">connected<small>정상</small></span>
+        <span class="st blue">relogin<small>다시 연결 필요 · 선택은 유지</small></span>
+        <span class="st gray">disconnected<small>연결 해제 · 새로 못 고름</small></span>
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">해제된 계좌 · 카드는 고르는 목록에서 빠져요. 해제 전 거래는 소비에 계속 들어가요(N⑧).</p>
+    </div>
+    <div class="card">
+      <h3>거래 분류 <span class="tag">H-07 · V · W</span></h3>
+      <div class="states">
+        <span class="st red">확인 필요<small>뭘 샀는지 모름</small></span><span class="arrow">→</span>
+        <span class="st blue">제안<small>규칙 · ML이 정함</small></span><span class="arrow">→</span>
+        <span class="st green">확정<small>사용자가 고름</small></span>
+      </div>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">편의점 · 마트는 <b>매번 물어봐요</b>(기억 안 함). 친구에게 보낸 이체는 처음엔 소비가 아니고, 사용자가 카테고리를 고르면 그때부터 소비예요.</p>
+    </div>
+  </div>
+</section>
+
+<!-- 6. 기능별 -->
+<section id="areas">
+  <h2>기능별로 정한 것</h2>
+  <p class="h2sub">눌러서 펼쳐 보세요. 괄호 안 기호는 결정기록 번호예요.</p>
+
+  <details class="area" open>
+    <summary><span class="emoji">🔁</span><span><span class="t">고정지출</span><br><span class="s">fixed.md · 나은 · 확정</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li><b>매달 나가는 돈만</b> 받아요. 1년에 한 번은 준비금, 자주 사는 건 생활비 예산으로. <span class="tag">C-04</span></li>
+      <li>카테고리는 <b>꼭</b> 골라요. 저축 · 대출 · 카드값은 고정지출이 아니에요. <span class="tag">C-01</span></li>
+      <li>금액 1,000원 ~ 1억 원. 출금일은 비워도 돼요("모름"). <span class="tag">C-03</span></li>
+      <li>결제 수단은 계좌 / 카드 / 모름 중 하나. <span class="tag">C-02</span></li>
+      <li>자동으로 찾는 조건: 같은 곳 · 매달 같은 날 ±3일 · 같은 금액(±10%) · <b>3달 연속</b> → 매일 사는 커피는 안 잡혀요.</li>
+      <li>실제 결제 확인: <b>카드</b>는 "이 결제가 맞나요?" / <b>계좌</b>는 1건이면 자동 연결, 여러 건이면 [고르기]. <span class="tag">★7</span></li>
+      <li>납부 예정은 <b>출금일이 있을 때만</b>, 이번 주기 1건씩, 홈 · 예산을 처음 열 때 만들어요. <span class="tag">C-15</span></li>
+      <li>고치면 <b>아직 안 낸 회차만</b> 바뀌어요. 이미 낸 기록은 절대 안 바꿔요. <span class="tag">C-06</span></li>
+      <li>고정지출이 바뀌면 승인 전 예산 초안은 만료(다시 만들기). 승인된 이번 달 예산은 그대로, 다음 달부터 반영. <span class="tag">D</span></li>
+    </ul></div>
+  </details>
+
+  <details class="area">
+    <summary><span class="emoji">🐷</span><span><span class="t">정기 저축</span><br><span class="s">savings.md · 나은 · 확정</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li>고정지출과 <b>따로</b> 관리해요(새 표). 섞으면 저축이 고정비로 두 번 빠질 수 있어서요. <span class="tag">S-01</span></li>
+      <li>내 계좌끼리 매달 같은 금액을 보낸 기록을 찾아 <b>"저축인가요?"</b>를 물어요. 후보마다 <b>꼭 골라야</b> 다음으로 넘어가요. <span class="tag">S-08</span></li>
+      <li>[저축이에요] → 저축으로 / [아니에요] → 내 계좌끼리 옮긴 돈(소비도 저축도 아님). <span class="tag">S-06 · S-07</span></li>
+      <li><b>저축 최소 금액</b> = 확정한 정기 저축의 합계. 지킬 돈의 저축은 이보다 작게 못 정해요. <span class="tag">S-02</span></li>
+      <li>다른 은행 적금처럼 못 찾은 저축은 <b>직접 추가</b>해요. 마이 &gt; 정기 저축에서 다시 볼 수 있어요. <span class="tag">S-03 · I</span></li>
+      <li>찾은 후보는 <b>계좌를 못 바꿔요.</b> 계좌가 틀리면 [아니에요] 후 직접 추가. <span class="tag">H · S-11</span></li>
+    </ul></div>
+  </details>
+
+  <details class="area">
+    <summary><span class="emoji">🏠</span><span><span class="t">홈</span><br><span class="s">home.md · 나은 · 기본만 (예산 숫자는 ML 후)</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li>입출금 계좌 잔액 합계(저축용 입출금 계좌도 포함). 잔액을 모르면 0이 아니라 "모름". <span class="tag">H-02</span></li>
+      <li>"확인할 거래 N건" = <b>전체 기간</b>의 확인 필요 거래 수. 지난달 것도 안 사라져요. <span class="tag">H-03</span></li>
+      <li>출금일 모르는 고정지출이 있으면 "출금일을 확인할 고정지출 N건 ›" 알림. <span class="tag">H-05</span></li>
+      <li>꼭 나갈 돈 = 고정지출 + <b>카드 청구서</b> + <b>대출 상환</b>. 카드는 출금 예정일을 알 때, 대출은 월 상환액 · 납부일이 있을 때만. <span class="tag">Q</span></li>
+      <li>예산이 아직 없으면 파란 카드 자리에 <b>안내 카드</b>. <span class="tag">H-06</span></li>
+      <li>온보딩을 안 끝냈으면 홈 대신 온보딩으로 → <code>onboardingCompleted</code>가 false면. <b>첫 예산을 승인하면 true.</b> <span class="tag">R</span></li>
+    </ul></div>
+  </details>
+
+  <details class="area">
+    <summary><span class="emoji">🧾</span><span><span class="t">거래</span><br><span class="s">transactions.md · 혜리</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li>체크카드 결제는 카드 승인 + 계좌 출금으로 두 번 들어와요 → <b>카드 승인만</b> 소비로 셈. <span class="tag">B</span></li>
+      <li>목록에 보이는 것: 쓴 돈 + <b>월급 입금</b> + <b>친구에게 보낸 이체</b>. 내 계좌끼리 · 카드값 · 저축 · 대출 상환은 안 보여요. <span class="tag">V</span></li>
+      <li>친구 이체는 처음엔 소비가 아니에요. [소비로 분류하기]로 카테고리를 고르면 그때부터 소비 · 예산에 들어가요. 되돌리기도 가능. <span class="tag">W</span></li>
+      <li>분류를 고치면 <b>그 가맹점의 다음 거래</b>부터 기억해요. 단 편의점 · 마트는 매번 물어봐요. <span class="tag">V⑤</span></li>
+      <li>분류를 바꿔도 예산 초안은 만료되지 않아요. <span class="tag">D</span></li>
+    </ul></div>
+  </details>
+
+  <details class="area">
+    <summary><span class="emoji">🔗</span><span><span class="t">금융 동의 · 연결</span><br><span class="s">finance-connect.md · 혜리</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li>동의는 <b>은행 필수, 카드 · 대출 선택</b>. 동의한 것만 보내고 버전은 <code>v1</code>. <span class="tag">V⑦ · L</span></li>
+      <li>같은 범위 · 같은 버전 동의가 이미 있으면 새로 안 만들고 기존 기록을 돌려줘요. <span class="tag">N⑥</span></li>
+      <li>계좌 · 카드 고르기는 <b>체크한 것만 선택</b>(빠진 건 해제). 계좌는 1개 이상, 카드는 0개도 OK("카드는 나중에"). <span class="tag">K</span></li>
+      <li>연결 해제할 때 그 계좌 · 카드로 나가는 고정지출 · 저축도 <b>같이 그만할지 물어봐요</b>(기본은 체크 안 함). <span class="tag">F</span></li>
+      <li>연결 목록에 대출 기관도 보이고, 그 연결의 계좌 ID · 카드 ID도 같이 줘요. <span class="tag">Z</span></li>
+      <li>연결 상세 화면용 API는 1차에 따로 안 만들어요. <span class="tag">N⑦</span></li>
+    </ul></div>
+  </details>
+
+  <details class="area">
+    <summary><span class="emoji">💳</span><span><span class="t">카드 · 대출</span><br><span class="s">cards.md · loans.md · 세진</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li>카드 청구서에는 <b>예상 / 확정</b>, 카드 한 장 / 카드사 합산, 구매 내역 상세를 담아요. 은행이 안 주는 값은 <code>null</code>. <span class="tag">Z</span></li>
+      <li>대출은 은행에서 <b>월 상환액이 안 와요</b> → 사용자가 월 상환액 · 납부일 · 상환 방식을 직접 넣어요(모르면 비워도 됨). <span class="tag">P</span></li>
+      <li>대출 화면에 지난 납부 내역 · 추정 월 상환액 · 연체 여부를 보여 줘요. 없으면 숨김. <span class="tag">P</span></li>
+      <li>학자금대출처럼 은행 조회로 안 잡히는 대출은 <b>직접 등록</b>(35번째 API). <span class="tag">P · Y</span></li>
+      <li>대출 상환 출금은 고정지출 후보로 만들지 않고 대출에 연결해요.</li>
+      <li>고정지출이 쓰는 카드를 선택 해제해도 고정지출은 그대로예요. <span class="tag">N⑩</span></li>
+    </ul></div>
+  </details>
+
+  <details class="area">
+    <summary><span class="emoji">💬</span><span><span class="t">챗봇 · 소비 분석</span><br><span class="s">chat.md · 혜리 / spending-analysis.md · 세진</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li><b>LLM은 문장 해석에만</b> 써요. 숫자는 서버가 계산하고 답 문장은 템플릿으로. 버튼을 누르면 LLM을 안 써요.</li>
+      <li>라우터가 실패해도 에러 대신 "아래에서 골라 주세요" + 버튼(<code>fallback: true</code>).</li>
+      <li>소비 분석 카드: 총액 · 카테고리별 금액 · 비율 · 지난달 대비 · <b>가장 많이 쓴 곳</b> · 비교 가능 여부. <span class="tag">J</span></li>
+      <li>가장 많이 쓴 곳에서 '확인 필요'는 빼고 "분류된 소비 중"이라고 말해요. <span class="tag">N②</span></li>
+      <li>고정지출도 넣되 따로 보여 줘요: "132만 원 썼어요. 고정지출 77만 원을 빼면 생활비는 55만 원이에요." <span class="tag">S</span></li>
+      <li>소비가 없는 기간 → 0원 카드 + "이 기간엔 소비가 없어요". <span class="tag">Z</span></li>
+      <li>챗봇을 다시 열면 화면이 마지막 대화를 기억해서 이어 가요. <span class="tag">N⑤</span></li>
+    </ul></div>
+  </details>
+
+  <details class="area">
+    <summary><span class="emoji">🔐</span><span><span class="t">회원가입 · 로그인</span><br><span class="s">auth.md · 세진</span></span><span class="chev">›</span></summary>
+    <div class="body"><ul class="easy">
+      <li>비밀번호 <b>8~25자, 영문 · 숫자 · 특수문자 중 2가지 이상</b>. 화면에는 ●●●로 보여요. <span class="tag">X</span></li>
+      <li>"비밀번호 확인"은 화면에서만 비교하고, 서버엔 한 번만 보내요. <span class="tag">X</span></li>
+      <li>이름(닉네임) 필수. 약관 · 개인정보 동의 둘 다 있어야 가입. <span class="tag">L</span></li>
+      <li>가입하면 <b>바로 로그인</b>돼서 온보딩으로 가요. <span class="tag">X</span></li>
+      <li>[자동 로그인] 체크박스는 없어요. 로그인하면 14일 유지. <span class="tag">X</span></li>
+      <li>틀린 이메일 · 비밀번호 · 정지 계정은 모두 같은 문구: "이메일 또는 비밀번호를 확인해 주세요". <span class="tag">X</span></li>
+    </ul></div>
+  </details>
+</section>
+
+<!-- 7. 1차에 안 함 -->
+<section id="not">
+  <h2>1차에는 안 하는 것</h2>
+  <p class="h2sub">"안 한다"도 결정이에요. 나중에 "이거 왜 없어요?" 하면 여기를 보면 돼요.</p>
+  <div class="grid2">
+    <div class="card">
+      <div class="no"><span class="x">✕</span><div><b>분류 확신도 숫자</b><br><span class="muted">"식비일 확률 82%" 같은 숫자는 안 보여 줘요 (V②)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>은행 원본 상세</b><br><span class="muted">카드 승인번호 · 거래 후 잔액 (V③)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>같은 가맹점 과거 거래 한 번에 바꾸기</b><br><span class="muted">앞으로 들어올 거래만 기억해요 (V④)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>분류를 '확인 필요'로 되돌리기</b><br><span class="muted">다른 카테고리로 고치는 건 돼요 (V⑥)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>지난주 대비 비교</b><br><span class="muted">1차는 지난달 대비만 (N③)</span></div></div>
+    </div>
+    <div class="card">
+      <div class="no"><span class="x">✕</span><div><b>금융 동의 철회</b><br><span class="muted">연결 해제로 조회는 멈출 수 있어요 (V⑧)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>예적금을 '예산에 쓸 계좌'로</b><br><span class="muted">입출금만. 적금은 정기 저축에서 (V⑨)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>로그인 실패 횟수 제한</b><br><span class="muted">출시 전 2차에 꼭 (V⑩)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>챗봇 대화 목록 · 연결 상세 API</b><br><span class="muted">화면이 기억 / 있는 API 조합으로 (N⑤ · N⑦)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>대출 잔액 · 금리 직접 고치기</b><br><span class="muted">은행 값으로 충분 (P)</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 8. 담당 -->
+<section id="owners">
+  <h2>누가 무엇을 맡나요</h2>
+  <p class="h2sub">원칙: <b>그 명세를 쓴 사람이 그 매칭도 만든다</b>(T). 남은 API 18개는 U로 나눴어요.</p>
+  <div class="grid3">
+    <div class="card owner"><h3><span class="dot" style="background:#E2A400"></span>나은 · PM</h3>
+      <ul class="easy">
+        <li><b>명세</b>: 고정지출 · 정기 저축 · 홈 (13개)</li>
+        <li><b>매칭</b>: 고정지출 · 저축 후보 찾기, 납부 매칭</li>
+        <li><b>남은 API 7개</b>: 방향 · 지킬 돈 · 추천 예산 · 카테고리 예산 · 금액 고정 · 예산 승인 (ML 후)</li>
+      </ul></div>
+    <div class="card owner"><h3><span class="dot" style="background:#2459D9"></span>혜리</h3>
+      <ul class="easy">
+        <li><b>명세</b>: 동의 · 연결 · 거래 · 챗봇 (11개)</li>
+        <li><b>매칭</b>: 거래 수집 · 같은 구매 연결 · <b>매칭 입구 함수</b></li>
+        <li><b>남은 API 3개</b>: 금융기관 연결 · 다시 불러오기 · 예산 조정안 승인</li>
+      </ul></div>
+    <div class="card owner"><h3><span class="dot" style="background:#18794E"></span>세진</h3>
+      <ul class="easy">
+        <li><b>명세</b>: 인증 · 카드 · 대출 · 소비 분석 카드 (11개)</li>
+        <li><b>매칭</b>: 카드값 ↔ 청구서, 대출 상환 ↔ 대출, 월 상환 추정</li>
+        <li><b>남은 API 8개</b>: 내 정보 · 급여 · 쿠션 · 비정기 준비금 · 비밀번호 재설정</li>
+      </ul></div>
+  </div>
+  <div class="card" style="margin-top:12px">
+    <h3>확정 뒤에 명세를 바꿀 때</h3>
+    <div class="states">
+      <span class="st blue">① 명세 PR 먼저<small>코드부터 바꾸지 않기</small></span><span class="arrow">→</span>
+      <span class="st blue">② 결정기록에 한 줄<small>왜 바꿨는지</small></span><span class="arrow">→</span>
+      <span class="st blue">③ 영향받는 사람에게 알림<small>그 응답을 읽는 화면 담당</small></span>
+    </div>
+  </div>
+</section>
+
+<!-- 9. 결정 기호 찾기 -->
+<section id="glossary">
+  <h2>결정 기호 찾기</h2>
+  <p class="h2sub">문서에서 본 기호나 단어로 찾아보세요 (예: "Q", "카드", "저축").</p>
+  <input class="search" id="q" type="search" placeholder="기호나 단어로 찾기" aria-label="결정 기호 찾기">
+  <div class="gl" id="gl"></div>
+  <p class="empty" id="empty">찾는 결정이 없어요.</p>
+</section>
+
+</main>
+
+<footer><div class="wrap">기준: <code>docs/결정기록_2026-10-21.md</code> (2026-10-22 오후) · 자세한 API 모양은 <code>docs/api/README.md</code>와 각 명세 문서를 보세요.</div></footer>
+
+<script>
+const G = [
+  ['★7','결제 확인','카드는 "맞나요?", 계좌는 1건 자동 · 여러 건 [고르기]'],
+  ['C-02','결제 수단','계좌 / 카드 / 모름, 연결 해제돼도 고정지출 유지'],
+  ['C-08','같은 돈 두 번 빼기 금지','카드 고정지출은 카드값 안에 포함'],
+  ['C-15','납부 예정 만드는 때','이번 주기 1건씩, 홈 · 예산을 처음 열 때'],
+  ['C-17','첫 카드 청구서','→ 결정 Q로 확정'],
+  ['H-01','급여 주기','항상 설정한 월급날에 바뀜, 입금은 상태로만'],
+  ['H-02','홈 잔액','입출금 계좌 합계(저축용 입출금 포함)'],
+  ['H-03','확인할 거래 수','전체 기간의 확인 필요 거래 수'],
+  ['H-05','출금일 알림','출금일 모르는 고정지출 N건'],
+  ['H-06','예산 없을 때','안내 카드, 온보딩 전이면 온보딩으로'],
+  ['H-07','DB 코드','API 값 = DB 값, 소문자 영어'],
+  ['S-02','저축 최소 금액','확정한 정기 저축 합계'],
+  ['S-08','저축 확인','후보마다 꼭 골라야 다음으로'],
+  ['S-11','저축 후보 계좌','후보는 계좌를 못 바꿈'],
+  ['S-12','저축과 초안','저축이 바뀌면 승인 전 초안 만료'],
+  ['A','소비 분석 기간','기본은 이번 달 1일 ~ 오늘(달력월)'],
+  ['B','같은 구매','체크카드는 카드 승인만 소비로'],
+  ['C','진행 중인 달 비교','지난달도 같은 날짜까지만'],
+  ['D','예산 초안 만료','고정지출 · 저축 최소 금액이 바뀔 때만'],
+  ['E','챗봇 코드','role · contentType · 작업 상태 확정'],
+  ['F','연결 해제','고정지출 · 저축도 같이 그만할지 물어봄'],
+  ['G','미납 안내','+3일 뒤 "미납 확인 필요", 다음 월급날까지 홈에'],
+  ['H','저축 후보 계좌','후보는 보내는 · 받는 계좌를 못 바꿈'],
+  ['I','저축 관리 화면','직접 추가 · 마이 > 정기 저축'],
+  ['J','소비 분석 카드','chat.md 하나로, 가장 많이 쓴 곳 · 비교 가능 여부'],
+  ['K','선택 저장','계좌 · 카드 모두 체크한 것만 선택'],
+  ['L','동의 모양','동의한 것만 보냄, 버전 v1'],
+  ['M','해제된 것','고르는 목록에서 뺌'],
+  ['N','PM 답 10개','지난달 말일까지 · 확인 필요는 순위 제외 · 최근 대화는 화면이 기억 등'],
+  ['O','금융 공통 에러','목록은 저장된 것만, 동의 없으면 consent_required'],
+  ['P','대출','보완 3칸 · 납부 내역 · 직접 등록 API 추가'],
+  ['Q','꼭 나갈 돈 · 첫 청구서','카드 · 대출도 홈에, 미리 뗄 돈 = 총액 − 이번 주기 사용액'],
+  ['R','온보딩','onboardingCompleted, 첫 예산 승인 때 true'],
+  ['S','소비 분석과 고정지출','넣되 fixedAmount로 따로 표시'],
+  ['T','매칭 담당','명세 쓴 사람이 매칭도, 입구 함수는 혜리'],
+  ['U','남은 API 배분','나은 7 · 세진 8 · 혜리 3'],
+  ['V','1차 범위','거래 목록에 월급 · 이체, 나머지 9개는 1차 안 함'],
+  ['W','친구 이체','고르면 그때부터 소비'],
+  ['X','회원가입 · 로그인','비밀번호 8~25자 2가지 이상, 자동 로그인 체크박스 없음'],
+  ['Y','대출 직접 등록 칸','기관 · 이름 · 남은 금액 필수'],
+  ['Z','카드 청구서 · 작은 것','예상 표시 · 대출 기관 · 소비 0원 카드 · 계좌 ID'],
+];
+const gl = document.getElementById('gl'), q = document.getElementById('q'), empty = document.getElementById('empty');
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+function render(term) {
+  const t = term.trim().toLowerCase();
+  const rows = G.filter(([k, a, b]) => !t || k.toLowerCase() === t || (k + ' ' + a + ' ' + b).toLowerCase().includes(t));
+  gl.innerHTML = rows.map(([k, a, b]) => `<div class="g"><span class="k">${esc(k)}</span><span class="v"><b>${esc(a)}</b><span>${esc(b)}</span></span></div>`).join('');
+  empty.style.display = rows.length ? 'none' : 'block';
+}
+q.addEventListener('input', (e) => render(e.target.value));
+render('');
+// 화면 밝기 바꾸기 (저장은 이 브라우저에만)
+const root = document.documentElement;
+try { const saved = localStorage.getItem('mc-theme'); if (saved) root.dataset.theme = saved } catch (e) {}
+document.getElementById('themeBtn').addEventListener('click', () => {
+  const dark = root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  root.dataset.theme = dark ? 'light' : 'dark';
+  try { localStorage.setItem('mc-theme', root.dataset.theme) } catch (e) {}
+});
+</script>
+</body>
+</html>

@@ -52,6 +52,15 @@ function payBadge(p) {
   return null
 }
 
+// 카드 청구서 금액이 아직 확정 전이면 "예상" 표시 (10/22 결정기록 Z, home.md mustPay[].isEstimated)
+function payBadges(p) {
+  const out = []
+  if (p.isEstimated) out.push({ tone: 'est', text: '예상' })
+  const state = payBadge(p)
+  if (state) out.push(state)
+  return out
+}
+
 export default function HomePage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
@@ -120,7 +129,7 @@ export default function HomePage() {
       <div className="mc-card">
         {/* 목록.map(...) = 하나씩 꺼내서 그리기. key 는 항목마다 다른 값 */}
         {MUST_PAY.map((p) => {
-          const badge = payBadge(p)
+          const badges = payBadges(p)
           return (
             <button
               type="button"
@@ -132,7 +141,11 @@ export default function HomePage() {
               <span className="mc-grow">
                 <strong>{p.name}</strong>
                 <span className="mc-muted">{p.sub}</span>
-                {badge && <span className={`mc-paystate is-${badge.tone}`}>{badge.text}{badge.tone === 'review' ? ' ›' : ''}</span>}
+                {badges.length > 0 && (
+                  <span className="mc-paybadges">
+                    {badges.map((b) => <span key={b.tone} className={`mc-paystate is-${b.tone}`}>{b.text}{b.tone === 'review' ? ' ›' : ''}</span>)}
+                  </span>
+                )}
               </span>
               <span className="mc-right">{won(p.amount)} <span className="mc-muted">›</span></span>
             </button>
