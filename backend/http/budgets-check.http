@@ -1,0 +1,82 @@
+### 나은 · 껍데기 API 확인용 (19~30) — 요청 옆 ▶ 를 하나씩 누른다
+### 예시 ID는 fixed.md · savings.md 예시 그대로
+
+### 19 고정지출 목록 보기 → 200 · items 3개 · summary
+GET http://localhost:8000/api/budgets/fixed/
+
+### 20 고정지출 직접 추가 → 201 · "status": "confirmed" · "sourceType": "manual"
+POST http://localhost:8000/api/budgets/fixed/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{
+  "name": "월세",
+  "amount": 700000,
+  "paymentDay": 25,
+  "paymentAccountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+  "paymentCardId": null,
+  "category": "HOUSING_TELECOM",
+  "evidenceTransactionId": null
+}
+
+### 21 고정지출 수정 → 200 · "amount": 720000 · "paymentDay": 26
+PATCH http://localhost:8000/api/budgets/fixed/a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4/
+Content-Type: application/json
+
+{
+  "amount": 720000,
+  "paymentDay": 26
+}
+
+### 22 고정지출 중지 → 204 · 내용 없음
+DELETE http://localhost:8000/api/budgets/fixed/a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4/
+
+### 23 후보 확정 (맞아요) → 200 · items[0].status = "confirmed"
+POST http://localhost:8000/api/budgets/fixed/confirm/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{ "recurringIds": ["b3e26d97-05f6-4a12-bcde-953a2f7b0184"] }
+
+### 24 후보 무시 (아니에요) → 200 · items[0].status = "ignored"
+POST http://localhost:8000/api/budgets/fixed/ignore/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{ "recurringIds": ["b3e26d97-05f6-4a12-bcde-953a2f7b0184"] }
+
+### 25 정기 저축 목록 보기 → 200 · items 2개 · summary.minimumMonthly = 300000
+GET http://localhost:8000/api/budgets/savings/
+
+### 26 정기 저축 직접 추가 → 201 · "sourceType": "manual" · "evidenceCount": 0
+POST http://localhost:8000/api/budgets/savings/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{ "name": "청약", "amount": 100000, "transferDay": 10, "fromAccountId": null, "toAccountId": null }
+
+### 27 정기 저축 수정 → 200 · "amount": 350000
+PATCH http://localhost:8000/api/budgets/savings/6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b/
+Content-Type: application/json
+
+{ "amount": 350000 }
+
+### 28 정기 저축 중지 → 204 · 내용 없음
+DELETE http://localhost:8000/api/budgets/savings/6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b/
+
+### 29 후보 확정 (저축이에요) → 200 · items[0].status = "confirmed"
+POST http://localhost:8000/api/budgets/savings/confirm/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{ "savingIds": ["6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b"] }
+
+### 30 후보 무시 (아니에요) → 200 · items[0].status = "ignored"
+POST http://localhost:8000/api/budgets/savings/ignore/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{ "savingIds": ["6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b"] }
+
+### 덤 · ID 형식이 틀리면 → 404 · "code": "not_found"
+GET http://localhost:8000/api/budgets/fixed/abc/

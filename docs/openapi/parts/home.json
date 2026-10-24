@@ -1,0 +1,315 @@
+{
+  "paths": {
+    "/api/home/": {
+      "get": {
+        "operationId": "getHome",
+        "summary": "홈 화면 보기",
+        "tags": [
+          "홈"
+        ],
+        "x-source": "docs/api/home.md",
+        "description": "기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.",
+        "responses": {
+          "200": {
+            "description": "정상 처리",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeResponse"
+                },
+                "examples": {
+                  "normal": {
+                    "summary": "급여 주기와 고정지출",
+                    "value": {
+                      "period": {
+                        "startDate": "2026-09-25",
+                        "endDate": "2026-10-24",
+                        "nextPayday": "2026-10-25",
+                        "dday": 4,
+                        "salaryState": "received",
+                        "salaryReceivedOn": "2026-09-25",
+                        "nextSalaryEarlyOn": null
+                      },
+                      "balance": {
+                        "total": 2800000,
+                        "accountCount": 2,
+                        "unknownCount": 0,
+                        "reloginCount": 0,
+                        "asOf": "2026-10-21T09:30:00+09:00"
+                      },
+                      "pendingCount": 4,
+                      "needsPaydayCount": 1,
+                      "mustPay": [
+                        {
+                          "dueId": "5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90",
+                          "type": "recurring",
+                          "sourceId": "a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4",
+                          "name": "월세",
+                          "dueDate": "2026-10-24",
+                          "amount": 700000,
+                          "paymentState": "unpaid",
+                          "paymentAccount": {
+                            "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                            "displayName": "국민 급여통장 · ****5678",
+                            "status": "connected"
+                          },
+                          "isEstimated": false
+                        }
+                      ],
+                      "budget": null
+                    }
+                  },
+                  "empty": {
+                    "summary": "급여일·계좌 없음",
+                    "value": {
+                      "period": null,
+                      "balance": {
+                        "total": null,
+                        "accountCount": 0,
+                        "unknownCount": 0,
+                        "reloginCount": 0,
+                        "asOf": null
+                      },
+                      "pendingCount": 0,
+                      "needsPaydayCount": 0,
+                      "mustPay": [],
+                      "budget": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 안 됨(not_authenticated) 또는 CSRF 실패(permission_denied).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류(server_error).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HomeResponse": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "object",
+            "properties": {
+              "startDate": {
+                "type": "string",
+                "format": "date"
+              },
+              "endDate": {
+                "type": "string",
+                "format": "date"
+              },
+              "nextPayday": {
+                "type": "string",
+                "format": "date"
+              },
+              "dday": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "salaryState": {
+                "type": "string",
+                "enum": [
+                  "received",
+                  "waiting",
+                  "unknown"
+                ]
+              },
+              "salaryReceivedOn": {
+                "type": "string",
+                "format": "date",
+                "nullable": true
+              },
+              "nextSalaryEarlyOn": {
+                "type": "string",
+                "format": "date",
+                "nullable": true
+              }
+            },
+            "required": [
+              "startDate",
+              "endDate",
+              "nextPayday",
+              "dday",
+              "salaryState",
+              "salaryReceivedOn",
+              "nextSalaryEarlyOn"
+            ],
+            "nullable": true,
+            "description": "설정한 급여일 기준. 없는 날짜는 말일. 급여일 미입력 시 null. 실제 입금 시각은 주기를 바꾸지 않는다."
+          },
+          "balance": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "nullable": true,
+                "description": "잔액을 아는 대상 계좌 합계. 대상이 없거나 전부 미수집이면 null. 0원으로 대체하지 않는다."
+              },
+              "accountCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "unknownCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "reloginCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "asOf": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true,
+                "description": "합계에 포함된 계좌 중 가장 오래된 정상 조회 시각."
+              }
+            },
+            "required": [
+              "total",
+              "accountCount",
+              "unknownCount",
+              "reloginCount",
+              "asOf"
+            ]
+          },
+          "pendingCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "전체 기간 UNCLASSIFIED 소비 거래 수. 거래 목록의 summary.needsReviewCount와 같다."
+          },
+          "needsPaydayCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "출금일 없는 confirmed 고정지출 수."
+          },
+          "mustPay": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HomePaymentDue"
+            }
+          },
+          "budget": {
+            "type": "object",
+            "nullable": true,
+            "enum": [
+              null
+            ],
+            "description": "1차 명세는 항상 null. 예산 영역은 ML 후 별도 확정."
+          }
+        },
+        "required": [
+          "period",
+          "balance",
+          "pendingCount",
+          "needsPaydayCount",
+          "mustPay",
+          "budget"
+        ]
+      },
+      "HomePaymentDue": {
+        "type": "object",
+        "properties": {
+          "dueId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "recurring",
+              "card_bill",
+              "loan"
+            ]
+          },
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "예정 금액에서 이미 낸 금액을 뺀 남은 금액."
+          },
+          "paymentState": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "partial",
+              "needs_review"
+            ]
+          },
+          "isEstimated": {
+            "type": "boolean",
+            "description": "card_bill의 확정 상태가 confirmed가 아니면 true. 고정지출·대출은 false."
+          },
+          "paymentAccount": {
+            "type": "object",
+            "properties": {
+              "accountId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "relogin",
+                  "disconnected"
+                ]
+              }
+            },
+            "required": [
+              "accountId",
+              "displayName",
+              "status"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "dueId",
+          "type",
+          "sourceId",
+          "name",
+          "dueDate",
+          "amount",
+          "paymentState",
+          "isEstimated",
+          "paymentAccount"
+        ]
+      }
+    }
+  }
+}

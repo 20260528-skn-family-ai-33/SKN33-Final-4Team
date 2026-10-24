@@ -1,0 +1,1727 @@
+{
+  "paths": {
+    "/api/budgets/fixed/": {
+      "get": {
+        "summary": "고정지출 목록 보기",
+        "operationId": "fixedList",
+        "tags": [
+          "고정지출"
+        ],
+        "x-source": "docs/api/fixed.md",
+        "description": "후보(suggested)·확정(confirmed)을 함께 반환한다. 후보는 created_at 최신순, 확정은 출금일 빠른 순이며 출금일 null은 마지막. 페이지 나누기와 조회 쿼리 없음. 후보·확정이 없으면 items=[] 및 합계·후보 수 0으로 200. 연결 해제된 결제 수단도 고정지출과 월 합계에서 제외하지 않는다.\n\n근거 거래 제안은 목록에만 evidenceSuggestion으로 추가한다. 최대 5개 후보를 반환하며 count는 전체 수. 맞는 카드는 1건이면 “이 결제가 맞나요?”, 여러 건이면 [고르기]. 계좌는 여러 건일 때 [고르기]. 선택은 PATCH evidenceTransactionId로 저장하며 [아니에요]·“이 중에 없어요”는 요청·저장하지 않고 다음 달 새 결제에서 다시 묻는다. 출금일이 없으면 제안하지 않는다.\n\n근거 거래는 본인의 선택한 카드·계좌 거래이며 다른 고정지출에 이미 연결된 거래는 사용할 수 없다. 같은 고정지출의 같은 거래 재전송은 성공한다. 결제 수단 모름 상태에서 거래를 지정하면 400 invalid. 거래를 연결하면 재원을 fixed로 분류해 생활비에서 중복 집계하지 않는다. 이름으로 같은 비용을 찾지 않는다. 기억한 가맹점이 있으면 가맹점·같은 카드·금액 ±10%로 매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이면 자동 연결, 여러 개이면 사용자가 고른다. 출금일 +3일이 지나 미납 확인 필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액 ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.",
+        "responses": {
+          "200": {
+            "description": "후보·확정 목록과 표시용 월 합계.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixedListResponse"
+                },
+                "examples": {
+                  "withSuggestion": {
+                    "value": {
+                      "items": [
+                        {
+                          "recurringId": "b3e26d97-05f6-4a12-bcde-953a2f7b0184",
+                          "status": "suggested",
+                          "sourceType": "detected",
+                          "confirmedAt": null,
+                          "name": "통신비",
+                          "amount": 55000,
+                          "paymentDay": 20,
+                          "paymentAccount": {
+                            "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                            "displayName": "국민 급여통장 · ****5678",
+                            "status": "connected"
+                          },
+                          "paymentCard": null,
+                          "category": "HOUSING_TELECOM",
+                          "categoryName": "주거·통신",
+                          "evidence": {
+                            "transactionId": "e29c7514-07a1-49f2-b7ab-b2fb1acba264",
+                            "merchantName": "통신사",
+                            "date": "2026-10-20",
+                            "amount": 55000
+                          },
+                          "evidenceSuggestion": null
+                        },
+                        {
+                          "recurringId": "d4e8c728-6103-42d0-a9c7-17e5a694c01f",
+                          "status": "confirmed",
+                          "sourceType": "manual",
+                          "confirmedAt": "2026-10-21T17:35:00+09:00",
+                          "name": "OTT",
+                          "amount": 15000,
+                          "paymentDay": 5,
+                          "paymentAccount": null,
+                          "paymentCard": {
+                            "cardId": "6a213d92-887b-4ce1-a395-cd1e6e7482f0",
+                            "displayName": "신한 Deep Dream · ****1234",
+                            "status": "connected"
+                          },
+                          "category": "CULTURE_LEISURE",
+                          "categoryName": "문화·여가",
+                          "evidence": null,
+                          "evidenceSuggestion": {
+                            "count": 1,
+                            "candidates": [
+                              {
+                                "transactionId": "c8c60113-7ac4-4cc2-998e-6bbbf5404f10",
+                                "merchantName": "구독 서비스",
+                                "date": "2026-10-05",
+                                "amount": 15000
+                              }
+                            ]
+                          }
+                        },
+                        {
+                          "recurringId": "a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4",
+                          "status": "confirmed",
+                          "sourceType": "manual",
+                          "confirmedAt": "2026-10-21T17:30:00+09:00",
+                          "name": "월세",
+                          "amount": 700000,
+                          "paymentDay": 25,
+                          "paymentAccount": {
+                            "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                            "displayName": "국민 급여통장 · ****5678",
+                            "status": "connected"
+                          },
+                          "paymentCard": null,
+                          "category": "HOUSING_TELECOM",
+                          "categoryName": "주거·통신",
+                          "evidence": null,
+                          "evidenceSuggestion": null
+                        }
+                      ],
+                      "summary": {
+                        "confirmedMonthlyTotal": 715000,
+                        "suggestedCount": 1
+                      }
+                    }
+                  },
+                  "empty": {
+                    "value": {
+                      "items": [],
+                      "summary": {
+                        "confirmedMonthlyTotal": 0,
+                        "suggestedCount": 0
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를 넣지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notAuthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permissionDenied": {
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "권한이 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "지원하지 않는 메서드.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "methodNotAllowed": {
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "허용되지 않은 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류. 조회 실패를 빈 목록이나 0원으로 바꾸지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "serverError": {
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "고정지출 직접 추가",
+        "operationId": "fixedCreate",
+        "tags": [
+          "고정지출"
+        ],
+        "x-source": "docs/api/fixed.md",
+        "description": "직접 추가는 즉시 confirmed·manual로 저장하고 confirmedAt에 저장 시각을 기록한다. 저장 성공은 예산 변경 승인이나 실제 출금 실행이 아니다. 1차 추가 화면은 evidenceTransactionId를 보내지 않고 저장 뒤 목록의 제안에서 고른다.\n\n매월 반복 지출 설정을 다룬다. 저축·투자·대출 상환·카드 청구액 자체는 고정지출이 아니다. 고정지출 합계가 월급보다 커도 범위 안의 항목은 저장하며 부족액은 예산에서 안내한다. status·sourceType·confirmedAt은 서버가 정한다. 목록에 적힌 칸 외 요청과 빈 문자열은 400 invalid.\n\n결제 계좌는 내 관리 대상 입출금 계좌이며 연결 해제 상태와 저축 용도는 새로 고를 수 없다. 카드는 내 관리 대상이며 연결 해제 상태를 새로 고를 수 없다. 계좌와 카드를 동시에 지정할 수 없고 둘 다 null이면 모름이다. PATCH에서 현재와 동일한 계좌·카드 ID는 연결 해제되어도 그대로 유지할 수 있다.\n\n카드 고정지출은 별도 PaymentDue를 만들지 않는다. 계좌 또는 결제 수단 모름은 출금일이 있을 때만 이번 급여 주기 한 건을 만든다. 확정 당시 출금일이 이미 지났으면 실제 출금이 있을 때만 낸 것으로 연결하고, 없으면 이번 주기 납부 예정은 만들지 않는다. 다음 주기 것은 해당 주기에 홈·예산을 처음 열 때 만들며 중복 회차를 만들지 않는다. 이미 결제한 거래·지난 회차·승인된 예산은 보존한다. 고정지출 변경으로 영향을 받은 승인 전 예산 초안은 만료되며 승인된 예산은 자동 변경하지 않는다.\n\n근거 거래는 본인의 선택한 카드·계좌 거래이며 다른 고정지출에 이미 연결된 거래는 사용할 수 없다. 같은 고정지출의 같은 거래 재전송은 성공한다. 결제 수단 모름 상태에서 거래를 지정하면 400 invalid. 거래를 연결하면 재원을 fixed로 분류해 생활비에서 중복 집계하지 않는다. 이름으로 같은 비용을 찾지 않는다. 기억한 가맹점이 있으면 가맹점·같은 카드·금액 ±10%로 매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이면 자동 연결, 여러 개이면 사용자가 고른다. 출금일 +3일이 지나 미납 확인 필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액 ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.",
+        "responses": {
+          "201": {
+            "description": "생성한 고정지출 한 건. 추가 감싸기 없음.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixedExpense"
+                },
+                "example": {
+                  "recurringId": "a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4",
+                  "status": "confirmed",
+                  "sourceType": "manual",
+                  "confirmedAt": "2026-10-21T17:30:00+09:00",
+                  "name": "월세",
+                  "amount": 700000,
+                  "paymentDay": 25,
+                  "paymentAccount": {
+                    "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                    "displayName": "국민 급여통장 · ****5678",
+                    "status": "connected"
+                  },
+                  "paymentCard": null,
+                  "category": "HOUSING_TELECOM",
+                  "categoryName": "주거·통신",
+                  "evidence": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를 넣지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notAuthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permissionDenied": {
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "권한이 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "지원하지 않는 메서드.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "methodNotAllowed": {
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "허용되지 않은 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류. 조회 실패를 빈 목록이나 0원으로 바꾸지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "serverError": {
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력 형식·필수값·범위·선택 조건·알 수 없는 칸 오류: invalid. 잘못된 JSON: parse_error. 입력칸 오류는 fields에 문자열 배열로 표시하며 여러 칸에 걸친 오류는 nonFieldErrors에 넣는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "parseError": {
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "요청 JSON을 확인해 주세요."
+                      }
+                    }
+                  },
+                  "invalidAmount": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "amount": [
+                            "금액은 1,000원 ~ 1억 원으로 입력해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "invalidAccount": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "paymentAccountId": [
+                            "선택할 수 없는 계좌예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "invalidEvidence": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "evidenceTransactionId": [
+                            "선택할 수 없는 거래예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "bothPaymentMethods": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "계좌·카드·모름 중 하나만 선택해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unknownField": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "status": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "같은 회원·같은 Idempotency-Key에 다른 요청 내용. fields 없음.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixedCreateRequest"
+              },
+              "example": {
+                "name": "월세",
+                "amount": 700000,
+                "paymentDay": 25,
+                "paymentAccountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                "paymentCardId": null,
+                "category": "HOUSING_TELECOM",
+                "evidenceTransactionId": null
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/budgets/fixed/{id}/": {
+      "patch": {
+        "summary": "고정지출 수정",
+        "operationId": "fixedUpdate",
+        "tags": [
+          "고정지출"
+        ],
+        "x-source": "docs/api/fixed.md",
+        "description": "후보·확정 항목만 수정 가능. 중지·무시 항목은 404. 바꿀 칸만 보내며 빈 객체는 400. 이름·금액·카테고리 null은 400. 결제 수단 전환은 두 ID를 함께 보내 최종 상태에 하나만 남겨야 한다.\n\n금액·결제 수단·출금일 변경은 이번 주기와 앞으로의 unpaid 회차만 반영하며 paid·partial 회차는 보존한다. 카드로 바꾸거나 출금일을 비우면 미납 예정은 canceled. 출금일이 새로 생기면 납부 예정 생성 규칙에 따른다.\n\n근거 거래 바꾸기·비우기는 이번 주기 연결만 고치고 지난 주기 기록은 보존한다. 바꾸면 기존 연결을 풀고 새 거래를 연결한다. 비우면 가맹점 기억을 지운다. 원래 소비였던 거래는 fixed 재원을 living으로 되돌린다. 원래 이체였던 거래는 최신 결정 AA⑤·⑥에 따라 transaction_type을 transfer로 복원하고 category·funding을 비운다. 원래 유형은 field_states.original_transaction_type으로 확인한다. 계좌는 PaymentMatch를 지우고 남은 합계에 따라 paid/partial, 짝이 없으면 출금일 전 unpaid·지났으면 needs_review로 재계산한다. 결제 수단 변경은 이미 낸 거래를 보존하고 미납 회차만 취소하며 가맹점 기억을 비운다.\n\n매월 반복 지출 설정을 다룬다. 저축·투자·대출 상환·카드 청구액 자체는 고정지출이 아니다. 고정지출 합계가 월급보다 커도 범위 안의 항목은 저장하며 부족액은 예산에서 안내한다. status·sourceType·confirmedAt은 서버가 정한다. 목록에 적힌 칸 외 요청과 빈 문자열은 400 invalid.\n\n결제 계좌는 내 관리 대상 입출금 계좌이며 연결 해제 상태와 저축 용도는 새로 고를 수 없다. 카드는 내 관리 대상이며 연결 해제 상태를 새로 고를 수 없다. 계좌와 카드를 동시에 지정할 수 없고 둘 다 null이면 모름이다. PATCH에서 현재와 동일한 계좌·카드 ID는 연결 해제되어도 그대로 유지할 수 있다.\n\n카드 고정지출은 별도 PaymentDue를 만들지 않는다. 계좌 또는 결제 수단 모름은 출금일이 있을 때만 이번 급여 주기 한 건을 만든다. 확정 당시 출금일이 이미 지났으면 실제 출금이 있을 때만 낸 것으로 연결하고, 없으면 이번 주기 납부 예정은 만들지 않는다. 다음 주기 것은 해당 주기에 홈·예산을 처음 열 때 만들며 중복 회차를 만들지 않는다. 이미 결제한 거래·지난 회차·승인된 예산은 보존한다. 고정지출 변경으로 영향을 받은 승인 전 예산 초안은 만료되며 승인된 예산은 자동 변경하지 않는다.\n\n근거 거래는 본인의 선택한 카드·계좌 거래이며 다른 고정지출에 이미 연결된 거래는 사용할 수 없다. 같은 고정지출의 같은 거래 재전송은 성공한다. 결제 수단 모름 상태에서 거래를 지정하면 400 invalid. 거래를 연결하면 재원을 fixed로 분류해 생활비에서 중복 집계하지 않는다. 이름으로 같은 비용을 찾지 않는다. 기억한 가맹점이 있으면 가맹점·같은 카드·금액 ±10%로 매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이면 자동 연결, 여러 개이면 사용자가 고른다. 출금일 +3일이 지나 미납 확인 필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액 ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.\n\n결정 AA⑤·⑥: 확정 고정지출과 금액·날짜(±3일)가 맞아 연결된 원래 이체는 transfer → spending으로 바꾸고 그 고정지출의 category와 funding=fixed를 부여한다. 소비 분석에는 fixedAmount로 포함하고 생활비 사용액에서는 제외한다. 연결 해제 시 위 원래 이체 복원 규칙을 따른다. 일반 소비 거래의 재원 복원과 구분한다.",
+        "responses": {
+          "200": {
+            "description": "수정 후 한 건 전체. 보내지 않은 칸은 유지.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixedExpense"
+                },
+                "example": {
+                  "recurringId": "a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4",
+                  "status": "confirmed",
+                  "sourceType": "manual",
+                  "confirmedAt": "2026-10-21T17:30:00+09:00",
+                  "name": "월세",
+                  "amount": 720000,
+                  "paymentDay": 26,
+                  "paymentAccount": {
+                    "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                    "displayName": "국민 급여통장 · ****5678",
+                    "status": "connected"
+                  },
+                  "paymentCard": null,
+                  "category": "HOUSING_TELECOM",
+                  "categoryName": "주거·통신",
+                  "evidence": null
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를 넣지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notAuthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permissionDenied": {
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "권한이 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "지원하지 않는 메서드.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "methodNotAllowed": {
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "허용되지 않은 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류. 조회 실패를 빈 목록이나 0원으로 바꾸지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "serverError": {
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력 형식·필수값·범위·선택 조건·알 수 없는 칸 오류: invalid. 잘못된 JSON: parse_error. 입력칸 오류는 fields에 문자열 배열로 표시하며 여러 칸에 걸친 오류는 nonFieldErrors에 넣는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "parseError": {
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "요청 JSON을 확인해 주세요."
+                      }
+                    }
+                  },
+                  "invalidAmount": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "amount": [
+                            "금액은 1,000원 ~ 1억 원으로 입력해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "invalidAccount": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "paymentAccountId": [
+                            "선택할 수 없는 계좌예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "invalidEvidence": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "evidenceTransactionId": [
+                            "선택할 수 없는 거래예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "bothPaymentMethods": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "계좌·카드·모름 중 하나만 선택해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unknownField": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "status": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "emptyPatch": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "바꿀 값을 하나 이상 보내 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "requiredNull": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "amount": [
+                            "금액은 비울 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없는·남의·주소 형식이 틀린 ID 또는 stopped/ignored 항목. 모두 not_found, fields 없음.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notFound": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인 항목의 UUID. 없는 ID·남의 ID·UUID 형식이 틀린 주소는 모두 404 not_found.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixedPatchRequest"
+              },
+              "examples": {
+                "amountAndDay": {
+                  "value": {
+                    "amount": 720000,
+                    "paymentDay": 26
+                  }
+                },
+                "switchToCard": {
+                  "value": {
+                    "paymentAccountId": null,
+                    "paymentCardId": "6a213d92-887b-4ce1-a395-cd1e6e7482f0"
+                  }
+                },
+                "confirmEvidence": {
+                  "value": {
+                    "evidenceTransactionId": "c8c60113-7ac4-4cc2-998e-6bbbf5404f10"
+                  }
+                },
+                "clearEvidence": {
+                  "value": {
+                    "evidenceTransactionId": null
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "고정지출 중지",
+        "operationId": "fixedStop",
+        "tags": [
+          "고정지출"
+        ],
+        "x-source": "docs/api/fixed.md",
+        "description": "본문·쿼리 없음. confirmed 항목을 삭제하지 않고 stopped로 바꾼다. 이미 stopped이면 다시 요청해도 204. suggested·ignored는 404. 이번 주기 unpaid 납부 예정은 canceled로 바꾸며 이미 낸 회차·지난 거래는 보존한다. 카드 청구서의 납부 예정은 취소하지 않는다. 승인 전 초안은 변경 반영 후 만료되고 승인된 예산은 자동 변경하지 않는다. 다시 시작 API는 1차에 없으며 직접 추가로 새 항목을 만든다.\n\n은행 연결 해제 때 같이 중지하기로 선택한 항목도 이 API를 호출한다. 체크하지 않은 항목은 유지된다. 앱의 고정지출 관리만 중지하며 은행 자동이체·외부 구독은 해지하지 않는다.",
+        "responses": {
+          "204": {
+            "description": "중지 완료 또는 이미 중지됨. 응답 본문 없음."
+          },
+          "403": {
+            "description": "로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를 넣지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notAuthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permissionDenied": {
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "권한이 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "지원하지 않는 메서드.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "methodNotAllowed": {
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "허용되지 않은 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류. 조회 실패를 빈 목록이나 0원으로 바꾸지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "serverError": {
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "없는·남의·주소 형식이 틀린 ID 또는 suggested/ignored 항목. not_found, fields 없음.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notFound": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인 항목의 UUID. 없는 ID·남의 ID·UUID 형식이 틀린 주소는 모두 404 not_found.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/budgets/fixed/confirm/": {
+      "post": {
+        "summary": "고정지출 후보 확정",
+        "operationId": "fixedConfirm",
+        "tags": [
+          "고정지출"
+        ],
+        "x-source": "docs/api/fixed.md",
+        "description": "본인 suggested 후보들을 confirmed로 변경한다. 이미 confirmed이면 그대로 성공하며 두 번 반영하지 않는다. 허용 상태 외 항목·없는 ID·남의 ID가 하나라도 있으면 전체를 저장하지 않고 400 invalid. sourceType은 detected로 유지한다. confirmedAt에 확정 시각을 기록한다. 온보딩 [확인하고 다음]은 화면에 남은 고정지출 후보 전부를 한 번에 확정한다. 납부 예정 생성과 승인 전 예산 초안 만료는 공통 규칙을 따른다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.",
+        "responses": {
+          "200": {
+            "description": "확정 처리된 항목들. 같은 요청 번호·내용의 재전송은 첫 목록 그대로.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixedBatchResponse"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "recurringId": "b3e26d97-05f6-4a12-bcde-953a2f7b0184",
+                      "status": "confirmed",
+                      "sourceType": "detected",
+                      "confirmedAt": "2026-10-21T18:00:00+09:00",
+                      "name": "통신비",
+                      "amount": 55000,
+                      "paymentDay": 20,
+                      "paymentAccount": {
+                        "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                        "displayName": "국민 급여통장 · ****5678",
+                        "status": "connected"
+                      },
+                      "paymentCard": null,
+                      "category": "HOUSING_TELECOM",
+                      "categoryName": "주거·통신",
+                      "evidence": {
+                        "transactionId": "e29c7514-07a1-49f2-b7ab-b2fb1acba264",
+                        "merchantName": "통신사",
+                        "date": "2026-10-20",
+                        "amount": 55000
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를 넣지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notAuthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permissionDenied": {
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "권한이 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "지원하지 않는 메서드.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "methodNotAllowed": {
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "허용되지 않은 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류. 조회 실패를 빈 목록이나 0원으로 바꾸지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "serverError": {
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력 형식·필수값·범위·선택 조건·알 수 없는 칸 오류: invalid. 잘못된 JSON: parse_error. 입력칸 오류는 fields에 문자열 배열로 표시하며 여러 칸에 걸친 오류는 nonFieldErrors에 넣는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "parseError": {
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "요청 JSON을 확인해 주세요."
+                      }
+                    }
+                  },
+                  "invalidSelection": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "recurringIds": [
+                            "선택할 수 없는 항목이에요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "같은 회원·같은 Idempotency-Key에 다른 요청 내용. fields 없음.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixedBatchRequest"
+              },
+              "example": {
+                "recurringIds": [
+                  "b3e26d97-05f6-4a12-bcde-953a2f7b0184"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/budgets/fixed/ignore/": {
+      "post": {
+        "summary": "고정지출 후보 무시",
+        "operationId": "fixedIgnore",
+        "tags": [
+          "고정지출"
+        ],
+        "x-source": "docs/api/fixed.md",
+        "description": "본인 suggested 후보들을 ignored로 변경한다. 이미 ignored이면 그대로 성공하며 두 번 반영하지 않는다. 허용 상태 외 항목·없는 ID·남의 ID가 하나라도 있으면 전체를 저장하지 않고 400 invalid. sourceType은 detected로 유지한다. 무시한 후보를 다시 묻지 않는다. 미확정 후보의 confirmedAt은 null이다. 성공 후 목록을 다시 조회하면 ignored 항목은 빠진다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.",
+        "responses": {
+          "200": {
+            "description": "무시 처리된 항목들. 같은 요청 번호·내용의 재전송은 첫 목록 그대로.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixedBatchResponse"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "recurringId": "b3e26d97-05f6-4a12-bcde-953a2f7b0184",
+                      "status": "ignored",
+                      "sourceType": "detected",
+                      "confirmedAt": null,
+                      "name": "통신비",
+                      "amount": 55000,
+                      "paymentDay": 20,
+                      "paymentAccount": {
+                        "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                        "displayName": "국민 급여통장 · ****5678",
+                        "status": "connected"
+                      },
+                      "paymentCard": null,
+                      "category": "HOUSING_TELECOM",
+                      "categoryName": "주거·통신",
+                      "evidence": {
+                        "transactionId": "e29c7514-07a1-49f2-b7ab-b2fb1acba264",
+                        "merchantName": "통신사",
+                        "date": "2026-10-20",
+                        "amount": 55000
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를 넣지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "notAuthenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permissionDenied": {
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "권한이 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "지원하지 않는 메서드.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "methodNotAllowed": {
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "허용되지 않은 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "서버 오류. 조회 실패를 빈 목록이나 0원으로 바꾸지 않는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "serverError": {
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력 형식·필수값·범위·선택 조건·알 수 없는 칸 오류: invalid. 잘못된 JSON: parse_error. 입력칸 오류는 fields에 문자열 배열로 표시하며 여러 칸에 걸친 오류는 nonFieldErrors에 넣는다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "parseError": {
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "요청 JSON을 확인해 주세요."
+                      }
+                    }
+                  },
+                  "invalidSelection": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "recurringIds": [
+                            "선택할 수 없는 항목이에요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "같은 회원·같은 Idempotency-Key에 다른 요청 내용. fields 없음.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FixedBatchRequest"
+              },
+              "example": {
+                "recurringIds": [
+                  "b3e26d97-05f6-4a12-bcde-953a2f7b0184"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "FixedEvidence": {
+        "type": "object",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "merchantName": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "amount": {
+            "type": "integer",
+            "description": "실제 근거 거래 금액(원). 반복 기준 amount와 구분한다."
+          }
+        },
+        "required": [
+          "transactionId",
+          "merchantName",
+          "date",
+          "amount"
+        ]
+      },
+      "FixedEvidenceSuggestion": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "전체 후보 수. candidates가 최대 5건이어도 count는 전체 수."
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedEvidence"
+            },
+            "maxItems": 5,
+            "description": "출금일과 날짜가 가까운 순, 금액 차이가 작은 순. 다른 고정지출에 연결된 결제 제외."
+          }
+        },
+        "required": [
+          "count",
+          "candidates"
+        ],
+        "nullable": true,
+        "description": "카드: 출금일이 있고 근거 거래 없는 상태에서 후보 1건 이상. 계좌: 이번 회차 후보 2건 이상. 그 밖에는 null."
+      },
+      "FixedExpense": {
+        "type": "object",
+        "properties": {
+          "recurringId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "suggested",
+              "confirmed",
+              "stopped",
+              "ignored"
+            ]
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "detected"
+            ],
+            "description": "탐지 후보를 수정·확정해도 detected 유지."
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "한국 시간 ISO 8601. 미확정 후보는 null, 직접 추가는 저장 시각."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "사용자가 붙인 별명. 동일 비용 매칭 기준이 아니다."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 100000000,
+            "description": "원 단위 정수. 1,000원 이상 100,000,000원 이하."
+          },
+          "paymentDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "nullable": true,
+            "description": "매월 출금일, 모르면 null. 해당 월에 없는 날짜는 말일로 계산하며 저장한 일자는 유지한다. 주말·공휴일 이동은 계산하지 않는다."
+          },
+          "paymentAccount": {
+            "type": "object",
+            "properties": {
+              "accountId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "displayName": {
+                "type": "string",
+                "description": "서버가 만든 표시 이름. 계좌·카드 번호는 끝 4자리만 마스킹하여 포함한다."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "relogin",
+                  "disconnected"
+                ],
+                "description": "연결 상태. relogin은 조회만 멈추며 기존 선택 유지. disconnected는 새로 고를 수 없다."
+              }
+            },
+            "required": [
+              "accountId",
+              "displayName",
+              "status"
+            ],
+            "nullable": true,
+            "description": "지정하지 않았거나 기록 자체가 삭제되면 null. 연결 해제만으로 객체를 없애지 않는다."
+          },
+          "paymentCard": {
+            "type": "object",
+            "properties": {
+              "cardId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "displayName": {
+                "type": "string",
+                "description": "서버가 만든 표시 이름. 계좌·카드 번호는 끝 4자리만 마스킹하여 포함한다."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "relogin",
+                  "disconnected"
+                ],
+                "description": "연결 상태. relogin은 조회만 멈추며 기존 선택 유지. disconnected는 새로 고를 수 없다."
+              }
+            },
+            "required": [
+              "cardId",
+              "displayName",
+              "status"
+            ],
+            "nullable": true,
+            "description": "지정하지 않았거나 기록 자체가 삭제되면 null. 연결 해제만으로 객체를 없애지 않는다."
+          },
+          "category": {
+            "$ref": "#/components/schemas/SelectableCategoryCode"
+          },
+          "categoryName": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "transactionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "merchantName": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "amount": {
+                "type": "integer",
+                "description": "실제 근거 거래 금액(원). 반복 기준 amount와 구분한다."
+              }
+            },
+            "required": [
+              "transactionId",
+              "merchantName",
+              "date",
+              "amount"
+            ],
+            "nullable": true,
+            "description": "근거 거래 없으면 null. 근거 거래의 표시 정보."
+          }
+        },
+        "required": [
+          "recurringId",
+          "status",
+          "sourceType",
+          "confirmedAt",
+          "name",
+          "amount",
+          "paymentDay",
+          "paymentAccount",
+          "paymentCard",
+          "category",
+          "categoryName",
+          "evidence"
+        ]
+      },
+      "FixedExpenseListItem": {
+        "type": "object",
+        "properties": {
+          "recurringId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "suggested",
+              "confirmed"
+            ]
+          },
+          "sourceType": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "detected"
+            ],
+            "description": "탐지 후보를 수정·확정해도 detected 유지."
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "한국 시간 ISO 8601. 미확정 후보는 null, 직접 추가는 저장 시각."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "사용자가 붙인 별명. 동일 비용 매칭 기준이 아니다."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 100000000,
+            "description": "원 단위 정수. 1,000원 이상 100,000,000원 이하."
+          },
+          "paymentDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "nullable": true,
+            "description": "매월 출금일, 모르면 null. 해당 월에 없는 날짜는 말일로 계산하며 저장한 일자는 유지한다. 주말·공휴일 이동은 계산하지 않는다."
+          },
+          "paymentAccount": {
+            "type": "object",
+            "properties": {
+              "accountId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "displayName": {
+                "type": "string",
+                "description": "서버가 만든 표시 이름. 계좌·카드 번호는 끝 4자리만 마스킹하여 포함한다."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "relogin",
+                  "disconnected"
+                ],
+                "description": "연결 상태. relogin은 조회만 멈추며 기존 선택 유지. disconnected는 새로 고를 수 없다."
+              }
+            },
+            "required": [
+              "accountId",
+              "displayName",
+              "status"
+            ],
+            "nullable": true,
+            "description": "지정하지 않았거나 기록 자체가 삭제되면 null. 연결 해제만으로 객체를 없애지 않는다."
+          },
+          "paymentCard": {
+            "type": "object",
+            "properties": {
+              "cardId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "displayName": {
+                "type": "string",
+                "description": "서버가 만든 표시 이름. 계좌·카드 번호는 끝 4자리만 마스킹하여 포함한다."
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "connected",
+                  "relogin",
+                  "disconnected"
+                ],
+                "description": "연결 상태. relogin은 조회만 멈추며 기존 선택 유지. disconnected는 새로 고를 수 없다."
+              }
+            },
+            "required": [
+              "cardId",
+              "displayName",
+              "status"
+            ],
+            "nullable": true,
+            "description": "지정하지 않았거나 기록 자체가 삭제되면 null. 연결 해제만으로 객체를 없애지 않는다."
+          },
+          "category": {
+            "$ref": "#/components/schemas/SelectableCategoryCode"
+          },
+          "categoryName": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "object",
+            "properties": {
+              "transactionId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "merchantName": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "format": "date"
+              },
+              "amount": {
+                "type": "integer",
+                "description": "실제 근거 거래 금액(원). 반복 기준 amount와 구분한다."
+              }
+            },
+            "required": [
+              "transactionId",
+              "merchantName",
+              "date",
+              "amount"
+            ],
+            "nullable": true,
+            "description": "근거 거래 없으면 null. 근거 거래의 표시 정보."
+          },
+          "evidenceSuggestion": {
+            "$ref": "#/components/schemas/FixedEvidenceSuggestion"
+          }
+        },
+        "required": [
+          "recurringId",
+          "status",
+          "sourceType",
+          "confirmedAt",
+          "name",
+          "amount",
+          "paymentDay",
+          "paymentAccount",
+          "paymentCard",
+          "category",
+          "categoryName",
+          "evidence",
+          "evidenceSuggestion"
+        ]
+      },
+      "FixedListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedExpenseListItem"
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "confirmedMonthlyTotal": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "확정 항목 amount의 표시용 월 합계. 카드 고정지출도 포함한다. 실제 예산 차감액·남은 납부액이 아니며 후보는 제외."
+              },
+              "suggestedCount": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "suggested 고정지출 수. 근거 거래 연결 제안 수가 아니다."
+              }
+            },
+            "required": [
+              "confirmedMonthlyTotal",
+              "suggestedCount"
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "summary"
+        ]
+      },
+      "FixedBatchResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedExpense"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "FixedCreateRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "앞뒤 공백 제거 후 1~100자. null·빈 문자열 불가."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 100000000,
+            "description": "원 단위 정수. 1,000원 이상 100,000,000원 이하."
+          },
+          "paymentDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "nullable": true,
+            "description": "매월 출금일, 모르면 null. 해당 월에 없는 날짜는 말일로 계산하며 저장한 일자는 유지한다. 주말·공휴일 이동은 계산하지 않는다."
+          },
+          "paymentAccountId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "본인 관리 대상 입출금 계좌, 연결 해제 아님, budget_role=savings 제외. 카드와 동시 지정 불가. null=비우기."
+          },
+          "paymentCardId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "본인 관리 대상 카드, 연결 해제 아님. 계좌와 동시 지정 불가. null=비우기."
+          },
+          "evidenceTransactionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "선택한 카드·계좌의 본인 거래만. 다른 고정지출에 연결된 거래 불가. 카드·계좌 모름이면 지정 불가. null=이번 주기 연결 비우기. 1차 추가 화면은 보내지 않고 저장 뒤 목록에서 고른다."
+          },
+          "category": {
+            "$ref": "#/components/schemas/SelectableCategoryCode"
+          }
+        },
+        "required": [
+          "name",
+          "amount",
+          "category"
+        ],
+        "additionalProperties": false,
+        "description": "매월만 지원한다. 주기·userId·recurringId·status·sourceType·confirmedAt 등 정의되지 않은 칸은 400. 생략한 선택값은 null(모름)."
+      },
+      "FixedPatchRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "앞뒤 공백 제거 후 1~100자. null·빈 문자열 불가."
+          },
+          "amount": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 100000000,
+            "description": "원 단위 정수. 1,000원 이상 100,000,000원 이하."
+          },
+          "paymentDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 31,
+            "nullable": true,
+            "description": "매월 출금일, 모르면 null. 해당 월에 없는 날짜는 말일로 계산하며 저장한 일자는 유지한다. 주말·공휴일 이동은 계산하지 않는다."
+          },
+          "paymentAccountId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "본인 관리 대상 입출금 계좌, 연결 해제 아님, budget_role=savings 제외. 카드와 동시 지정 불가. null=비우기."
+          },
+          "paymentCardId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "본인 관리 대상 카드, 연결 해제 아님. 계좌와 동시 지정 불가. null=비우기."
+          },
+          "evidenceTransactionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "선택한 카드·계좌의 본인 거래만. 다른 고정지출에 연결된 거래 불가. 카드·계좌 모름이면 지정 불가. null=이번 주기 연결 비우기. 1차 추가 화면은 보내지 않고 저장 뒤 목록에서 고른다."
+          },
+          "category": {
+            "$ref": "#/components/schemas/SelectableCategoryCode"
+          }
+        },
+        "minProperties": 1,
+        "additionalProperties": false,
+        "description": "바꿀 칸만 보낸다. 생략=유지, null=paymentDay/paymentAccountId/paymentCardId/evidenceTransactionId만 비우기. 결제 수단을 바꿀 때 두 ID를 함께 보내며 기존 값과 요청을 합친 결과를 검사한다. 현재와 같은 계좌·카드 ID는 연결 해제되어도 유지 가능."
+      },
+      "FixedBatchRequest": {
+        "type": "object",
+        "properties": {
+          "recurringIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "본인 고정지출 ID들. 확정은 suggested 또는 confirmed, 무시는 suggested 또는 ignored. 하나라도 선택 불가이면 전부 미처리."
+          }
+        },
+        "required": [
+          "recurringIds"
+        ],
+        "additionalProperties": false,
+        "description": "여러 후보를 한 번에 처리한다. 원문에 빈 배열·중복 ID 정책의 별도 제한은 정의되어 있지 않다."
+      }
+    }
+  }
+}
