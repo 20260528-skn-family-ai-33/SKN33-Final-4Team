@@ -38,9 +38,15 @@ def filter_days(selected):
 
 @api_view(["GET"])
 def transactions(request):
-    """GET /api/finance/transactions/?category=식비 — 거래 내역 데이터"""
+    """16. GET /api/finance/transactions/?category=식비 — 거래 내역 데이터
+    2026-10-24 껍데기: 명세(transactions.md) 예시 칸 period · summary · items 를 더했다(혜리).
+    month · recent · pending_count · pending_label · categories · selected · days 는 지금 거래 화면(TransactionsPage.jsx)이
+    쓰는 옛 칸이라 남겨 둔다 → 화면을 명세 모양으로 바꾸는 PR에서 함께 지운다(transactions.md '정해진 것 10/21')"""
+    from .api_shell import example  # 명세 예시 응답
+
     selected = request.query_params.get("category", "전체")
     return Response({
+        **example("transactions_list"),
         "month": mock.MONTH,
         "recent": mock.RECENT,
         "pending_count": mock.PENDING_COUNT,
