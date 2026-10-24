@@ -49,7 +49,7 @@ class OpenAPIContractTests(SimpleTestCase):
         cls.contract = build_contract()
 
     def test_contract_covers_the_35_operations_in_the_source_manifest(self):
-        manifest = (ROOT / "docs/api/README.md").read_text()
+        manifest = (ROOT / "docs/api/README.md").read_text(encoding="utf-8")
         section = manifest.split("## 1. 한눈에 보기", 1)[1].split("## 2.", 1)[0]
         entries = re.findall(r"`(GET|POST|PUT|PATCH|DELETE)\s+(/api/[^`]+)`", section)
         expected = {(method.lower(), normalized_path(path)) for method, path in entries}

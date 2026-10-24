@@ -17,7 +17,7 @@ def canonical_path(path):
 
 def check_inventory(schema):
     """수기로 옮긴 계약의 API 누락/추가를 원본 목차와 대조한다."""
-    text = (ROOT / "docs/api/README.md").read_text()
+    text = (ROOT / "docs/api/README.md").read_text(encoding="utf-8")
     expected = set()
     for line in text.splitlines():
         if not re.match(r"\|\s*\d+\s*\|", line):
@@ -103,10 +103,10 @@ def main():
         }
         for target, rendered in artifacts.items():
             if args.check:
-                if not target.exists() or target.read_text() != rendered:
+                if not target.exists() or target.read_text(encoding="utf-8") != rendered:
                     raise ValueError(f"{target.name}이 최신이 아닙니다. python scripts/build_openapi.py 실행 후 확인하세요.")
             else:
-                target.write_text(rendered)
+                target.write_text(rendered, encoding="utf-8")
         message = f"OpenAPI {len(list(operations(schema)))}개 API · {len(schema['components']['schemas'])}개 모델"
         if examples is not None:
             message += f" · 예시 {examples}개 검증 통과"
