@@ -47,7 +47,7 @@
         <h1>머니쿠션 API 명세서</h1>
         <p class="docs-description">
           {% if runtime %}
-          현재 서버에 연결된 {{ runtime_count }}개 GET API를 직접 확인합니다. 홈·거래·고정지출·정기 저축 목록은 예시 데이터를 반환하는 목업이며, 실제 응답 구조를 표시합니다. 입력 검증·DB 저장까지 완료된 상태는 아닙니다.
+          현재 서버에 연결된 {{ runtime_count }}개 API를 직접 호출합니다. CSRF와 정기 저축은 구현된 API이며 저장·수정·중지까지 실행됩니다(로그인 필요). 홈·거래·고정지출 목록은 예시 데이터를 반환하는 목업(GET만)입니다.
           {% else %}
           현재 작성된 {{ contract_count }}개 API의 요청·응답·오류 규칙을 기능별로 확인합니다. 이 화면은 명세 조회용입니다. 실제 호출은 ‘현재 서버 확인’에서 할 수 있습니다.
           {% endif %}
@@ -65,9 +65,9 @@
       </div>
     </header>
     <p class="docs-note">
-      {% if runtime %}API를 펼친 뒤 <strong>Try it out → Execute</strong>로 GET 요청을 보낼 수 있습니다. {% endif %}
+      {% if runtime %}API를 펼친 뒤 <strong>Try it out → Execute</strong>로 요청을 보낼 수 있습니다. 로그인이 필요한 API는 같은 주소(localhost 또는 127.0.0.1)에서 먼저 로그인하세요. {% endif %}
       인증 계약은 Django 세션 쿠키 방식입니다. 저장 요청에는 CSRF 쿠키와 X-CSRFToken 헤더가 필요합니다.
-      {% if runtime %}현재 화면에서는 저장·수정·삭제 요청을 실행하지 않습니다.{% else %}‘미구현’ API는 명세가 작성된 상태이며 서버 기능은 아직 연결되지 않았습니다.{% endif %}
+      {% if runtime %}저장 요청의 X-CSRFToken은 이 화면이 자동으로 넣으며, 실제 DB가 바뀝니다.{% else %}‘미구현’ API는 명세가 작성된 상태이며 서버 기능은 아직 연결되지 않았습니다.{% endif %}
     </p>
     <main id="swagger-ui" aria-label="Swagger API 명세"></main>
     <script src="{{ swagger_ui_bundle }}"></script>
