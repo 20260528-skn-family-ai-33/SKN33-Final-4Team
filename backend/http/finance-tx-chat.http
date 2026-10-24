@@ -1,0 +1,77 @@
+### 세진 · API 간단 확인용 (6~10 · 16~18 · 32~34) — 요청 옆 ▶ 를 하나씩 누른다
+# 현재(2026-10-24): 11개 모두 목업. 주석의 상태 코드와 JSON을 응답 창에서 비교한다.
+# 고정지출처럼 준비된 예시를 반환한다. 본문을 바꿔도 실제 저장/수정/해제하지 않는다.
+# 입력 검증·인증·중복 저장 방지를 검증하는 파일은 아니다.
+# 로그인 기능이 연결되면 세션 로그인과 변경 요청의 X-CSRFToken 헤더를 추가해야 한다.
+# 아래 UUID는 목업 응답과 맞춘 값이라 바꾸지 않고 바로 실행할 수 있다.
+# 16번은 기존 화면용 응답(month/days)을 유지한다. 정식 period/summary/items는 구현 전이다.
+
+@accountId = 00000000-0000-4000-8000-000000000001
+@transactionId = 00000000-0000-4000-8000-000000000002
+@conversationId = 00000000-0000-4000-8000-000000000003
+@taskId = 00000000-0000-4000-8000-000000000004
+@connectionId = 00000000-0000-4000-8000-000000000005
+
+### 6 금융 조회 동의 저장 → 201 · items에 consentId · productScope
+POST http://localhost:8000/api/finance/consents/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{
+  "consents": [
+    { "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1" },
+    { "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1" }
+  ]
+}
+
+### 7 계좌 후보 보기 → 200 · items에 accountId · isSelected
+# 응답의 accountId는 위 @accountId와 같다.
+GET http://localhost:8000/api/finance/connect/accounts/
+
+### 8 계좌 선택 저장 → 200 · 선택한 계좌의 isSelected = true
+# 목업은 항상 예시 계좌의 isSelected = true를 반환한다. 실제 선택 상태는 바뀌지 않는다.
+PUT http://localhost:8000/api/finance/connect/accounts/
+Content-Type: application/json
+
+{ "selectedAccountIds": ["{{accountId}}"] }
+
+### 9 연결 목록 보기 → 200 · items에 connectionId · status
+# 응답의 connectionId는 위 @connectionId와 같다.
+GET http://localhost:8000/api/finance/connections/
+
+### 16 거래 목록 보기 → 200 · month · days (기존 화면용 목업)
+# 목록의 정수 id는 기존 화면용이다. 17/18번은 위 @transactionId로 별도 상세 예시를 확인한다.
+GET http://localhost:8000/api/finance/transactions/
+
+### 17 거래 한 건 보기 → 200 · 요청한 transactionId와 같은 거래
+GET http://localhost:8000/api/finance/transactions/{{transactionId}}/
+
+### 18 거래 분류 수정 → 200 · category = "FOOD" · classifyState = "confirmed"
+# 저장하지 않는다. 17번을 다시 호출하면 원래 예시(classifyState = suggested)가 나온다.
+PATCH http://localhost:8000/api/finance/transactions/{{transactionId}}/
+Content-Type: application/json
+
+{ "category": "FOOD" }
+
+### 33 챗봇에 메시지 보내기 → 200 · conversationId · route.intent = "spending" · messages
+# 응답의 conversationId는 위 @conversationId와 같다. 32번에서 같은 예시 대화를 볼 수 있다.
+# task는 null이다. 34번은 메시지와 무관한 별도 샘플 작업으로 실행할 수 있다.
+POST http://localhost:8000/api/chat/messages/
+Content-Type: application/json
+Idempotency-Key: {{$uuid}}
+
+{ "conversationId": null, "choice": "spending" }
+
+### 32 이전 대화 보기 → 200 · conversationId · messages (오래된 순)
+GET http://localhost:8000/api/chat/conversations/{{conversationId}}/
+
+### 34 오래 걸리는 작업 진행 확인 → 200 · taskId · status
+# 위 @taskId로 바로 실행한다. 목업은 항상 running이며 실제 작업이 진행되지는 않는다.
+GET http://localhost:8000/api/tasks/{{taskId}}/
+
+### 10 연결 해제 → 204 · 내용 없음 (실제 연결은 해제하지 않음)
+DELETE http://localhost:8000/api/finance/connections/{{connectionId}}/
+
+### 덤 · 거래 ID 형식이 틀리면 → 404 · error.code = "not_found"
+# URL의 UUID 형식 검사만 확인한다. 존재 여부·소유권 검증은 구현 전이다.
+GET http://localhost:8000/api/finance/transactions/abc/

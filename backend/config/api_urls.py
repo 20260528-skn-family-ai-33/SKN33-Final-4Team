@@ -10,6 +10,7 @@ API 주소 목록 (리액트가 데이터를 받아 가는 곳)
 from django.urls import path, re_path
 
 from budgets import api as budgets_api
+from chat import api as chat_api
 from finance import api as finance_api
 
 from . import api_common, api_docs
@@ -33,6 +34,17 @@ urlpatterns = [
     path("budgets/", budgets_api.budget, name="budget"),
     path("budgets/cushion/", budgets_api.cushion, name="cushion"),
     path("finance/transactions/", finance_api.transactions, name="transactions"),
+
+    # ---- 세진 테스트용: 금융 6~10 · 거래 17~18 · 챗봇 32~34 (껍데기) ----
+    # 16 거래 목록은 위 기존 화면용 목업을 유지한다.
+    path("finance/consents/", finance_api.consents, name="finance-consents"),
+    path("finance/connect/accounts/", finance_api.connect_accounts, name="connect-accounts"),
+    path("finance/connections/", finance_api.connections, name="connections"),
+    path("finance/connections/<uuid:connection_id>/", finance_api.connection_detail, name="connection-detail"),
+    path("finance/transactions/<uuid:transaction_id>/", finance_api.transaction_detail, name="transaction-detail"),
+    path("chat/conversations/<uuid:conversation_id>/", chat_api.conversation_detail, name="conversation-detail"),
+    path("chat/messages/", chat_api.messages, name="chat-messages"),
+    path("tasks/<uuid:task_id>/", chat_api.task_detail, name="task-detail"),
 
     # ---- 나은: 고정지출 19~24 · 정기 저축 25~30 (껍데기) ----
     path("budgets/fixed/", budgets_api.fixed_list, name="fixed-list"),
