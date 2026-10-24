@@ -1,0 +1,289 @@
+# 혜리 → 나은 API 테스트 (19~31) · docs/API_테스트_분배_2026-10-24.md 3번
+# PyCharm: 요청 옆 ▶ 로 하나씩 실행 (위에서부터 순서대로). 로그인 쿠키는 PyCharm이 기억한다.
+# 보는 것: 주소 · 방식 · 칸 이름이 명세(fixed.md · savings.md · home.md)와 같은지. 다르면 직접 고치지 말고 나은에게 알리기
+# 아직 만들어지지 않은 API는 404 not_found 가 나온다 (정상, 만들어지면 다시 실행)
+# ID는 명세 예시 값. 진짜 데이터가 생기면 목록 응답의 ID로 바꿔서 실행
+
+@host = http://localhost:8000
+@email = sejin@example.com
+@password = Example123!
+@missing = 00000000-0000-4000-8000-000000000000
+
+### 0-1 CSRF 쿠키 받기 (저장 · 수정 요청에 필요)
+GET {{host}}/api/csrf/
+
+> {%
+    for (const c of response.headers.valuesOf("Set-Cookie")) {
+        if (c.startsWith("csrftoken=")) client.global.set("csrf", c.split(";")[0].substring("csrftoken=".length));
+    }
+    client.test("csrf 200", () => client.assert(response.status === 200, "status " + response.status));
+%}
+
+### 0-2 로그인 (auth.md 3)
+POST {{host}}/api/auth/login/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+
+{ "email": "{{email}}", "password": "{{password}}" }
+
+> {%
+    for (const c of response.headers.valuesOf("Set-Cookie")) {
+        if (c.startsWith("csrftoken=")) client.global.set("csrf", c.split(";")[0].substring("csrftoken=".length));
+    }
+%}
+
+############################ 고정지출 19~24 (fixed.md) ############################
+
+### 19 고정지출 목록 보기 — 성공 200 (items · summary.confirmedMonthlyTotal · summary.suggestedCount)
+GET {{host}}/api/budgets/fixed/
+
+> {% client.test("19 200", () => client.assert(response.status === 200, "status " + response.status)); %}
+
+### 20-1 고정지출 직접 추가 — 성공 201 (요청 번호 새로 만듦)
+< {% client.global.set("key20", $random.uuid); %}
+POST {{host}}/api/budgets/fixed/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key20}}
+
+{
+  "name": "월세",
+  "amount": 700000,
+  "paymentDay": 25,
+  "paymentAccountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+  "paymentCardId": null,
+  "category": "HOUSING_TELECOM",
+  "evidenceTransactionId": null
+}
+
+> {% client.test("20-1 201", () => client.assert(response.status === 201, "status " + response.status)); %}
+
+### 20-2 같은 요청 번호 · 같은 내용 다시 — 처음 응답 그대로 (한 번만 저장)
+POST {{host}}/api/budgets/fixed/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key20}}
+
+{
+  "name": "월세",
+  "amount": 700000,
+  "paymentDay": 25,
+  "paymentAccountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+  "paymentCardId": null,
+  "category": "HOUSING_TELECOM",
+  "evidenceTransactionId": null
+}
+
+### 20-3 실패 409 — 같은 요청 번호 · 다른 내용 (idempotency_conflict, fields 없음)
+POST {{host}}/api/budgets/fixed/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key20}}
+
+{ "name": "월세", "amount": 710000, "paymentDay": 25, "paymentAccountId": null, "paymentCardId": null, "category": "HOUSING_TELECOM", "evidenceTransactionId": null }
+
+### 20-4 실패 400 — 금액 범위 밖 (fields.amount "금액은 1,000원 ~ 1억 원으로 입력해 주세요.")
+POST {{host}}/api/budgets/fixed/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{$uuid}}
+
+{ "name": "월세", "amount": 500, "paymentDay": 25, "paymentAccountId": null, "paymentCardId": null, "category": "HOUSING_TELECOM", "evidenceTransactionId": null }
+
+### 21-1 고정지출 수정 — 성공 200 (한 건 전체)
+PATCH {{host}}/api/budgets/fixed/a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+
+{ "amount": 720000 }
+
+### 21-2 실패 400 — 금액 비우기 (fields.amount "금액은 비울 수 없어요.")
+PATCH {{host}}/api/budgets/fixed/a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+
+{ "amount": null }
+
+### 22-1 고정지출 중지 — 성공 204 (본문 없음). 한 번 더 보내도 204
+DELETE {{host}}/api/budgets/fixed/a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4/
+X-CSRFToken: {{csrf}}
+
+### 22-2 실패 404 — 없는 ID ("찾을 수 없어요.", fields 없음)
+DELETE {{host}}/api/budgets/fixed/{{missing}}/
+X-CSRFToken: {{csrf}}
+
+### 23-1 후보 확정 (맞아요) — 성공 200 (items)
+< {% client.global.set("key23", $random.uuid); %}
+POST {{host}}/api/budgets/fixed/confirm/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key23}}
+
+{ "recurringIds": ["b3e26d97-05f6-4a12-bcde-953a2f7b0184"] }
+
+### 23-2 같은 요청 번호 다시 — 처음 응답 그대로
+POST {{host}}/api/budgets/fixed/confirm/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key23}}
+
+{ "recurringIds": ["b3e26d97-05f6-4a12-bcde-953a2f7b0184"] }
+
+### 23-3 실패 400 — 없는 ID (fields.recurringIds "선택할 수 없는 항목이에요.")
+POST {{host}}/api/budgets/fixed/confirm/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{$uuid}}
+
+{ "recurringIds": ["{{missing}}"] }
+
+### 24-1 후보 무시 (고정지출 아니에요) — 성공 200 (items)
+< {% client.global.set("key24", $random.uuid); %}
+POST {{host}}/api/budgets/fixed/ignore/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key24}}
+
+{ "recurringIds": ["b3e26d97-05f6-4a12-bcde-953a2f7b0184"] }
+
+### 24-2 같은 요청 번호 다시 — 처음 응답 그대로
+POST {{host}}/api/budgets/fixed/ignore/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key24}}
+
+{ "recurringIds": ["b3e26d97-05f6-4a12-bcde-953a2f7b0184"] }
+
+### 24-3 실패 400 — 없는 ID
+POST {{host}}/api/budgets/fixed/ignore/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{$uuid}}
+
+{ "recurringIds": ["{{missing}}"] }
+
+############################ 정기 저축 25~30 (savings.md) ############################
+
+### 25 정기 저축 목록 보기 — 성공 200 (items · summary.minimumMonthly)
+GET {{host}}/api/budgets/savings/
+
+> {% client.test("25 200", () => client.assert(response.status === 200, "status " + response.status)); %}
+
+### 26-1 정기 저축 직접 추가 — 성공 201
+< {% client.global.set("key26", $random.uuid); %}
+POST {{host}}/api/budgets/savings/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key26}}
+
+{ "name": "청약", "amount": 100000, "transferDay": 10, "fromAccountId": null, "toAccountId": null }
+
+### 26-2 같은 요청 번호 다시 — 처음 응답 그대로
+POST {{host}}/api/budgets/savings/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key26}}
+
+{ "name": "청약", "amount": 100000, "transferDay": 10, "fromAccountId": null, "toAccountId": null }
+
+### 26-3 실패 400 — 필수 칸 금액 없음
+POST {{host}}/api/budgets/savings/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{$uuid}}
+
+{ "name": "청약" }
+
+### 27-1 정기 저축 수정 — 성공 200
+PATCH {{host}}/api/budgets/savings/6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+
+{ "amount": 350000 }
+
+### 27-2 실패 400 — 빈 객체
+PATCH {{host}}/api/budgets/savings/6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+
+{}
+
+### 28-1 정기 저축 중지 — 성공 204. 한 번 더 보내도 204
+DELETE {{host}}/api/budgets/savings/6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b/
+X-CSRFToken: {{csrf}}
+
+### 28-2 실패 404 — 없는 ID
+DELETE {{host}}/api/budgets/savings/{{missing}}/
+X-CSRFToken: {{csrf}}
+
+### 29-1 후보 확정 (저축이에요) — 성공 200
+< {% client.global.set("key29", $random.uuid); %}
+POST {{host}}/api/budgets/savings/confirm/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key29}}
+
+{ "savingIds": ["6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b"] }
+
+### 29-2 같은 요청 번호 다시 — 처음 응답 그대로
+POST {{host}}/api/budgets/savings/confirm/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key29}}
+
+{ "savingIds": ["6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b"] }
+
+### 29-3 실패 400 — 빈 배열 (savingIds "선택할 수 없는 항목이에요.")
+POST {{host}}/api/budgets/savings/confirm/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{$uuid}}
+
+{ "savingIds": [] }
+
+### 30-1 후보 무시 (아니에요) — 성공 200
+< {% client.global.set("key30", $random.uuid); %}
+POST {{host}}/api/budgets/savings/ignore/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key30}}
+
+{ "savingIds": ["6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b"] }
+
+### 30-2 같은 요청 번호 다시 — 처음 응답 그대로
+POST {{host}}/api/budgets/savings/ignore/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{key30}}
+
+{ "savingIds": ["6f1d2a3b-4c5d-4e6f-8a9b-0c1d2e3f4a5b"] }
+
+### 30-3 실패 400 — 빈 배열
+POST {{host}}/api/budgets/savings/ignore/
+Content-Type: application/json
+X-CSRFToken: {{csrf}}
+Idempotency-Key: {{$uuid}}
+
+{ "savingIds": [] }
+
+############################ 홈 31 (home.md) ############################
+
+### 31 홈 화면 보기 — 성공 200 (period · balance · pendingCount · … · budget: null)
+GET {{host}}/api/home/
+
+> {% client.test("31 200", () => client.assert(response.status === 200, "status " + response.status)); %}
+
+############################ 로그인 없이 — 403 not_authenticated ############################
+
+### F-0 로그아웃 (auth.md 4)
+POST {{host}}/api/auth/logout/
+X-CSRFToken: {{csrf}}
+
+### 19-F 로그인 안 함 — 403 not_authenticated
+GET {{host}}/api/budgets/fixed/
+
+### 25-F 로그인 안 함 — 403 not_authenticated
+GET {{host}}/api/budgets/savings/
+
+### 31-F 로그인 안 함 — 403 not_authenticated
+GET {{host}}/api/home/

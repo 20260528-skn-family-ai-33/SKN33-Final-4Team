@@ -4,7 +4,7 @@ finance 앱 API: 거래 내역을 JSON으로 준다. ?category=식비 로 골라
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from . import examples, mock
+from . import mock
 
 PENDING = "확인 필요"  # AI가 카테고리를 확신 못 한 거래 묶음 이름
 NOT_SPENDING = ("income", "transfer")  # 월급 입금 · 남에게 보낸 이체 — 목록엔 보이지만 소비 합계엔 안 들어감 (V①)
@@ -38,9 +38,15 @@ def filter_days(selected):
 
 @api_view(["GET"])
 def transactions(request):
-    """GET /api/finance/transactions/?category=식비 — 거래 내역 데이터"""
+    """16. GET /api/finance/transactions/?category=식비 — 거래 내역 데이터
+    2026-10-24 껍데기: 명세(transactions.md) 예시 칸 period · summary · items 를 더했다(혜리).
+    month · recent · pending_count · pending_label · categories · selected · days 는 지금 거래 화면(TransactionsPage.jsx)이
+    쓰는 옛 칸이라 남겨 둔다 → 화면을 명세 모양으로 바꾸는 PR에서 함께 지운다(transactions.md '정해진 것 10/21')"""
+    from .api_shell import example  # 명세 예시 응답
+
     selected = request.query_params.get("category", "전체")
     return Response({
+        **example("transactions_list"),
         "month": mock.MONTH,
         "recent": mock.RECENT,
         "pending_count": mock.PENDING_COUNT,
@@ -49,36 +55,3 @@ def transactions(request):
         "selected": selected,
         "days": filter_days(selected),
     })
-
-
-# ======== 껍데기 API (2026-10-24) — DB 변경 없이 고정 예시 응답 ========
-# 16번은 위 기존 화면용 목업을 유지한다. 인증/입력 검증/멱등성은 구현 전이다.
-@api_view(["POST"])
-def consents(request):
-    return Response(examples.CONSENTS_EXAMPLE, status=201)  # 6 동의 저장
-
-
-@api_view(["GET", "PUT"])
-def connect_accounts(request):
-    return Response(examples.ACCOUNTS_EXAMPLE)  # 7 후보 / 8 선택 저장
-
-
-@api_view(["GET"])
-def connections(request):
-    return Response(examples.CONNECTIONS_EXAMPLE)  # 9 연결 목록
-
-
-@api_view(["DELETE"])
-def connection_detail(request, connection_id):
-    return Response(status=204)  # 10 연결 해제 (실제로 해제하지 않음)
-
-
-@api_view(["GET", "PATCH"])
-def transaction_detail(request, transaction_id):
-    # UUID 형식은 URL에서 검사. 존재 여부·소유권 검사는 실제 구현 때 추가한다.
-    example = (
-        examples.TRANSACTION_UPDATED_EXAMPLE
-        if request.method == "PATCH"
-        else examples.TRANSACTION_EXAMPLE
-    )
-    return Response({**example, "transactionId": str(transaction_id)})  # 17 상세 / 18 수정
