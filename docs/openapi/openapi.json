@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 1개(CSRF), 목업 14개(홈·거래 목록·고정지출·정기 저축), 미구현 20개입니다. 전체 명세는 읽기 전용이며, 실제 응답 확인은 [현재 서버 확인](/api/docs/runtime/)에서 합니다. 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈·거래 목록의 응답 형태도 확정 계약과 다릅니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), 금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 7개(CSRF·정기 저축), 목업 8개(홈·거래 목록·고정지출), 미구현 20개입니다. 전체 명세는 읽기 전용이며, 실제 응답 확인은 [현재 서버 확인](/api/docs/runtime/)에서 합니다. 정기 저축은 [현재 서버 확인]에서 저장·수정·중지까지 실행할 수 있습니다(로그인 필요). 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈·거래 목록의 응답 형태도 확정 계약과 다릅니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), 금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -4151,13 +4151,13 @@
     },
     "/api/budgets/savings/": {
       "get": {
-        "summary": "[목업] 정기 저축 목록 보기",
+        "summary": "[구현] 정기 저축 목록 보기",
         "operationId": "savingsList",
         "tags": [
           "정기 저축"
         ],
         "x-source": "docs/api/savings.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.\n\n온보딩 저축 확인과 마이 > 정기 저축에서 사용하는 목록. suggested·confirmed만 반환하고 중지·무시는 제외한다. 후보는 created_at 최신순, 그다음 확정은 이체일 빠른 순이며 null은 마지막. 페이지 나누기 없음.\n\n후보마다 [저축이에요]/[아니에요]를 모두 골라야 온보딩 다음 단계로 이동한다. 확정 목록과 무시 목록을 각자 요청 번호로 보내며 둘 다 성공해야 이동한다. 한쪽이 실패하면 성공한 쪽은 저장되어 있으므로 재시도 시 이미 그 상태로 성공한다. 화면에서 임시 선택한 합계는 미리보기이고 저장 뒤에는 summary.minimumMonthly를 사용한다.\n\n매달 하기로 한 저축 목록만 다룬다. 저축 실적 집계는 거래·예산 영역이다. 저축은 카테고리·고정지출과 별개이며 PaymentDue를 만들지 않는다. 확정된 저축 amount 합계가 저축 최소 금액이며 지킬 돈 savings_floor는 이보다 작을 수 없다. 추가·확정·금액 변경·중지로 저축 최소 금액이 바뀌면 승인 전 예산 초안은 즉시 만료한다. 승인된 이번 달 예산은 그대로 두며 다음 달부터 새 최소 금액을 사용한다.\n\n자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.\n\n원본: `docs/api/savings.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n온보딩 저축 확인과 마이 > 정기 저축에서 사용하는 목록. suggested·confirmed만 반환하고 중지·무시는 제외한다. 후보는 created_at 최신순, 그다음 확정은 이체일 빠른 순이며 null은 마지막. 페이지 나누기 없음.\n\n후보마다 [저축이에요]/[아니에요]를 모두 골라야 온보딩 다음 단계로 이동한다. 확정 목록과 무시 목록을 각자 요청 번호로 보내며 둘 다 성공해야 이동한다. 한쪽이 실패하면 성공한 쪽은 저장되어 있으므로 재시도 시 이미 그 상태로 성공한다. 화면에서 임시 선택한 합계는 미리보기이고 저장 뒤에는 summary.minimumMonthly를 사용한다.\n\n매달 하기로 한 저축 목록만 다룬다. 저축 실적 집계는 거래·예산 영역이다. 저축은 카테고리·고정지출과 별개이며 PaymentDue를 만들지 않는다. 확정된 저축 amount 합계가 저축 최소 금액이며 지킬 돈 savings_floor는 이보다 작을 수 없다. 추가·확정·금액 변경·중지로 저축 최소 금액이 바뀌면 승인 전 예산 초안은 즉시 만료한다. 승인된 이번 달 예산은 그대로 두며 다음 달부터 새 최소 금액을 사용한다.\n\n자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.\n\n원본: `docs/api/savings.md`",
         "responses": {
           "200": {
             "description": "후보·확정 목록과 저축 최소 금액.",
@@ -4301,16 +4301,16 @@
             }
           }
         },
-        "x-implementation-status": "mock"
+        "x-implementation-status": "implemented"
       },
       "post": {
-        "summary": "[목업] 정기 저축 직접 추가",
+        "summary": "[구현] 정기 저축 직접 추가",
         "operationId": "savingsCreate",
         "tags": [
           "정기 저축"
         ],
         "x-source": "docs/api/savings.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.\n\n감지되지 않는 저축을 직접 추가한다. confirmed·manual로 저장하고 confirmedAt=현재 시각, evidenceCount=0. 받는 계좌를 골랐으면 그 계좌 용도를 savings로 표시한다. 두 계좌는 서로 달라야 하며 없는·남의·선택 불가 계좌는 모두 같은 400 메시지로 답한다. 카테고리 등 표에 없는 칸과 빈 문자열은 400.\n\n매달 하기로 한 저축 목록만 다룬다. 저축 실적 집계는 거래·예산 영역이다. 저축은 카테고리·고정지출과 별개이며 PaymentDue를 만들지 않는다. 확정된 저축 amount 합계가 저축 최소 금액이며 지킬 돈 savings_floor는 이보다 작을 수 없다. 추가·확정·금액 변경·중지로 저축 최소 금액이 바뀌면 승인 전 예산 초안은 즉시 만료한다. 승인된 이번 달 예산은 그대로 두며 다음 달부터 새 최소 금액을 사용한다.\n\n자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.\n\n원본: `docs/api/savings.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n감지되지 않는 저축을 직접 추가한다. confirmed·manual로 저장하고 confirmedAt=현재 시각, evidenceCount=0. 받는 계좌를 골랐으면 그 계좌 용도를 savings로 표시한다. 두 계좌는 서로 달라야 하며 없는·남의·선택 불가 계좌는 모두 같은 400 메시지로 답한다. 카테고리 등 표에 없는 칸과 빈 문자열은 400.\n\n매달 하기로 한 저축 목록만 다룬다. 저축 실적 집계는 거래·예산 영역이다. 저축은 카테고리·고정지출과 별개이며 PaymentDue를 만들지 않는다. 확정된 저축 amount 합계가 저축 최소 금액이며 지킬 돈 savings_floor는 이보다 작을 수 없다. 추가·확정·금액 변경·중지로 저축 최소 금액이 바뀌면 승인 전 예산 초안은 즉시 만료한다. 승인된 이번 달 예산은 그대로 두며 다음 달부터 새 최소 금액을 사용한다.\n\n자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.\n\n원본: `docs/api/savings.md`",
         "responses": {
           "201": {
             "description": "생성한 정기 저축 한 건.",
@@ -4513,7 +4513,7 @@
             }
           }
         },
-        "x-implementation-status": "mock",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "$ref": "#/components/parameters/CsrfToken"
@@ -4526,13 +4526,13 @@
     },
     "/api/budgets/savings/{id}/": {
       "patch": {
-        "summary": "[목업] 정기 저축 수정",
+        "summary": "[구현] 정기 저축 수정",
         "operationId": "savingsUpdate",
         "tags": [
           "정기 저축"
         ],
         "x-source": "docs/api/savings.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.\n\nsuggested·confirmed만 수정할 수 있다. stopped·ignored는 404. 바꿀 칸만 보내며 생략=유지. transferDay/fromAccountId/toAccountId만 null로 비우기 가능. name/amount null, 빈 문자열, 빈 객체는 400.\n\n후보는 보내는·받는 계좌를 바꿀 수 없다(S-11). 현재와 다른 값을 보내면 해당 필드에 400 invalid, 현재와 같은 값은 통과한다. 계좌가 틀렸으면 후보를 무시하고 직접 추가한다. 이름·금액·이체일은 수정 가능. 확정 항목의 받는 계좌를 변경하면 새 계좌에 저축 용도를 붙이고 이미 saving으로 처리한 지난 이체는 보존한다. 두 계좌가 같아지는지는 최종 상태로 검사한다.\n\n매달 하기로 한 저축 목록만 다룬다. 저축 실적 집계는 거래·예산 영역이다. 저축은 카테고리·고정지출과 별개이며 PaymentDue를 만들지 않는다. 확정된 저축 amount 합계가 저축 최소 금액이며 지킬 돈 savings_floor는 이보다 작을 수 없다. 추가·확정·금액 변경·중지로 저축 최소 금액이 바뀌면 승인 전 예산 초안은 즉시 만료한다. 승인된 이번 달 예산은 그대로 두며 다음 달부터 새 최소 금액을 사용한다.\n\n자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.\n\n원본: `docs/api/savings.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nsuggested·confirmed만 수정할 수 있다. stopped·ignored는 404. 바꿀 칸만 보내며 생략=유지. transferDay/fromAccountId/toAccountId만 null로 비우기 가능. name/amount null, 빈 문자열, 빈 객체는 400.\n\n후보는 보내는·받는 계좌를 바꿀 수 없다(S-11). 현재와 다른 값을 보내면 해당 필드에 400 invalid, 현재와 같은 값은 통과한다. 계좌가 틀렸으면 후보를 무시하고 직접 추가한다. 이름·금액·이체일은 수정 가능. 확정 항목의 받는 계좌를 변경하면 새 계좌에 저축 용도를 붙이고 이미 saving으로 처리한 지난 이체는 보존한다. 두 계좌가 같아지는지는 최종 상태로 검사한다.\n\n매달 하기로 한 저축 목록만 다룬다. 저축 실적 집계는 거래·예산 영역이다. 저축은 카테고리·고정지출과 별개이며 PaymentDue를 만들지 않는다. 확정된 저축 amount 합계가 저축 최소 금액이며 지킬 돈 savings_floor는 이보다 작을 수 없다. 추가·확정·금액 변경·중지로 저축 최소 금액이 바뀌면 승인 전 예산 초안은 즉시 만료한다. 승인된 이번 달 예산은 그대로 두며 다음 달부터 새 최소 금액을 사용한다.\n\n자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.\n\n원본: `docs/api/savings.md`",
         "responses": {
           "200": {
             "description": "수정된 정기 저축 한 건 전체.",
@@ -4793,16 +4793,16 @@
             }
           }
         },
-        "x-implementation-status": "mock"
+        "x-implementation-status": "implemented"
       },
       "delete": {
-        "summary": "[목업] 정기 저축 중지",
+        "summary": "[구현] 정기 저축 중지",
         "operationId": "savingsStop",
         "tags": [
           "정기 저축"
         ],
         "x-source": "docs/api/savings.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.\n\nconfirmed 항목을 삭제하지 않고 stopped로 바꾸고 목록·저축 최소 금액에서 제외한다. 이미 stopped이면 재요청도 204. suggested·ignored는 404. 다시 시작 API는 1차에 없으며 직접 추가로 새로 만든다. 받는 계좌의 savings 용도는 유지하며 용도 변경은 계좌 관리에서 한다.\n\n연결 해제 때 함께 중지하기로 선택한 저축도 이 API를 호출한다. 체크하지 않은 저축은 남고 계좌 상태가 disconnected로 표시된다. 저축 최소 금액이 바뀌면 승인 전 예산 초안은 만료하고 승인된 이번 달 예산은 유지한다.\n\n원본: `docs/api/savings.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nconfirmed 항목을 삭제하지 않고 stopped로 바꾸고 목록·저축 최소 금액에서 제외한다. 이미 stopped이면 재요청도 204. suggested·ignored는 404. 다시 시작 API는 1차에 없으며 직접 추가로 새로 만든다. 받는 계좌의 savings 용도는 유지하며 용도 변경은 계좌 관리에서 한다.\n\n연결 해제 때 함께 중지하기로 선택한 저축도 이 API를 호출한다. 체크하지 않은 저축은 남고 계좌 상태가 disconnected로 표시된다. 저축 최소 금액이 바뀌면 승인 전 예산 초안은 만료하고 승인된 이번 달 예산은 유지한다.\n\n원본: `docs/api/savings.md`",
         "responses": {
           "204": {
             "description": "중지 완료 또는 이미 중지됨. 응답 본문 없음."
@@ -4911,18 +4911,18 @@
             "$ref": "#/components/parameters/CsrfToken"
           }
         ],
-        "x-implementation-status": "mock"
+        "x-implementation-status": "implemented"
       }
     },
     "/api/budgets/savings/confirm/": {
       "post": {
-        "summary": "[목업] 정기 저축 후보 확정",
+        "summary": "[구현] 정기 저축 후보 확정",
         "operationId": "savingsConfirm",
         "tags": [
           "정기 저축"
         ],
         "x-source": "docs/api/savings.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.\n\nsuggested → confirmed로 변경하며 이미 confirmed인 것은 그대로 성공한다. 원래 요청 순서를 보장하는 목록이 아니라 처리한 항목을 items로 반환한다. 빈 배열·형식 틀린 ID·없는 ID·남의 ID·선택할 수 없는 상태가 하나라도 있으면 전부 저장하지 않고 400 invalid. 확정 시 confirmedAt을 기록하고 sourceType=detected를 유지한다. 받는 계좌가 있으면 budget_role=savings로 표시하여 고정지출 결제 계좌 선택에서 제외한다. 근거 이체들의 transaction_type을 saving으로 바꿔 소비로 세지 않는다. 새 확정으로 저축 최소 금액이 바뀌면 승인 전 예산 초안이 만료된다. ignored·stopped는 선택 불가.\n\n온보딩은 모든 후보를 개별 선택해야 하며 확정·무시 요청은 서로 다른 요청 번호를 사용한다. 두 요청 중 하나만 성공하면 그 결과는 유지되며 실패한 쪽을 재시도한다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.\n\n원본: `docs/api/savings.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nsuggested → confirmed로 변경하며 이미 confirmed인 것은 그대로 성공한다. 원래 요청 순서를 보장하는 목록이 아니라 처리한 항목을 items로 반환한다. 빈 배열·형식 틀린 ID·없는 ID·남의 ID·선택할 수 없는 상태가 하나라도 있으면 전부 저장하지 않고 400 invalid. 확정 시 confirmedAt을 기록하고 sourceType=detected를 유지한다. 받는 계좌가 있으면 budget_role=savings로 표시하여 고정지출 결제 계좌 선택에서 제외한다. 근거 이체들의 transaction_type을 saving으로 바꿔 소비로 세지 않는다. 새 확정으로 저축 최소 금액이 바뀌면 승인 전 예산 초안이 만료된다. ignored·stopped는 선택 불가.\n\n온보딩은 모든 후보를 개별 선택해야 하며 확정·무시 요청은 서로 다른 요청 번호를 사용한다. 두 요청 중 하나만 성공하면 그 결과는 유지되며 실패한 쪽을 재시도한다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.\n\n원본: `docs/api/savings.md`",
         "responses": {
           "200": {
             "description": "확정 처리된 항목들.",
@@ -5096,7 +5096,7 @@
             }
           }
         },
-        "x-implementation-status": "mock",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "$ref": "#/components/parameters/CsrfToken"
@@ -5109,13 +5109,13 @@
     },
     "/api/budgets/savings/ignore/": {
       "post": {
-        "summary": "[목업] 정기 저축 후보 무시",
+        "summary": "[구현] 정기 저축 후보 무시",
         "operationId": "savingsIgnore",
         "tags": [
           "정기 저축"
         ],
         "x-source": "docs/api/savings.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.\n\nsuggested → ignored로 변경하며 이미 ignored인 것은 그대로 성공한다. 원래 요청 순서를 보장하는 목록이 아니라 처리한 항목을 items로 반환한다. 빈 배열·형식 틀린 ID·없는 ID·남의 ID·선택할 수 없는 상태가 하나라도 있으면 전부 저장하지 않고 400 invalid. 같은 후보를 다시 묻지 않는다. 근거 이체를 own_transfer로 분류하여 소비·저축 어디에도 세지 않는다. confirmed·stopped는 선택 불가.\n\n온보딩은 모든 후보를 개별 선택해야 하며 확정·무시 요청은 서로 다른 요청 번호를 사용한다. 두 요청 중 하나만 성공하면 그 결과는 유지되며 실패한 쪽을 재시도한다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.\n\n원본: `docs/api/savings.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nsuggested → ignored로 변경하며 이미 ignored인 것은 그대로 성공한다. 원래 요청 순서를 보장하는 목록이 아니라 처리한 항목을 items로 반환한다. 빈 배열·형식 틀린 ID·없는 ID·남의 ID·선택할 수 없는 상태가 하나라도 있으면 전부 저장하지 않고 400 invalid. 같은 후보를 다시 묻지 않는다. 근거 이체를 own_transfer로 분류하여 소비·저축 어디에도 세지 않는다. confirmed·stopped는 선택 불가.\n\n온보딩은 모든 후보를 개별 선택해야 하며 확정·무시 요청은 서로 다른 요청 번호를 사용한다. 두 요청 중 하나만 성공하면 그 결과는 유지되며 실패한 쪽을 재시도한다.\n\n선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는 기록하지 않아 입력을 고쳐 같은 번호로 재시도할 수 있다. 이름으로 중복을 판단하지 않는다.\n\n원본: `docs/api/savings.md`",
         "responses": {
           "200": {
             "description": "무시 처리된 항목들.",
@@ -5289,7 +5289,7 @@
             }
           }
         },
-        "x-implementation-status": "mock",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "$ref": "#/components/parameters/CsrfToken"
@@ -9279,7 +9279,7 @@
     "docs/api/loans.md": "42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077",
     "docs/api/transactions.md": "9b58ed6c31c250aac41200e15f0733cc5542d0736c29db3392d6932ee51af354",
     "docs/api/fixed.md": "cdb52d010b5f63b47dce5668b4c51f1ac1d6b0af728ef85a9dfc8da49000ca9d",
-    "docs/api/savings.md": "b8f79f200379a7537c63acf7fcb096983b13fdad735cc07449bfba1d5abf7f8d",
+    "docs/api/savings.md": "cb19c5749e296846764528142008f129e77dc2041886061b4b8ea511825612b7",
     "docs/api/home.md": "4c7fe1beedc5936c85ef48b8127605eb9a86a19095f2204cd5778435d2c6496d",
     "docs/api/chat.md": "611e6174450c84817e467226974d053bc8bd0c080155b543934115e6c08ce4b2"
   }

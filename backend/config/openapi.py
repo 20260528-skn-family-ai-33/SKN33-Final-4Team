@@ -17,9 +17,10 @@ IMPLEMENTATION = {
     ("get", "/api/home/"): "mock",
     ("get", "/api/finance/transactions/"): "mock",
 }
-for _domain in ("fixed", "savings"):
+# 고정지출은 아직 목업, 정기 저축은 입력 검증·로그인·DB 저장까지 구현 (10/24)
+for _domain, _state in (("fixed", "mock"), ("savings", "implemented")):
     for _method, _suffix in (("get", ""), ("post", ""), ("patch", "{id}/"), ("delete", "{id}/"), ("post", "confirm/"), ("post", "ignore/")):
-        IMPLEMENTATION[(_method, f"/api/budgets/{_domain}/{_suffix}")] = "mock"
+        IMPLEMENTATION[(_method, f"/api/budgets/{_domain}/{_suffix}")] = _state
 IDEMPOTENT_PATHS = {
     "/api/finance/consents/", "/api/finance/loans/", "/api/chat/messages/",
     "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
@@ -45,8 +46,9 @@ def _base():
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
                 "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
-                "현재 구현 1개(CSRF), 목업 14개(홈·거래 목록·고정지출·정기 저축), 미구현 20개입니다. "
+                "현재 구현 7개(CSRF·정기 저축), 목업 8개(홈·거래 목록·고정지출), 미구현 20개입니다. "
                 "전체 명세는 읽기 전용이며, 실제 응답 확인은 [현재 서버 확인](/api/docs/runtime/)에서 합니다. "
+                "정기 저축은 [현재 서버 확인]에서 저장·수정·중지까지 실행할 수 있습니다(로그인 필요). "
                 "목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈·거래 목록의 응답 형태도 확정 계약과 다릅니다.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "
                 "요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. "
@@ -168,6 +170,33 @@ def _sample_schema(value):
     return {"type": "object", "properties": {k: _sample_schema(v) for k, v in value.items()}, "required": list(value)}
 
 
+def _refs(value):
+    """값 안의 모든 $ref 주소를 모은다 (실행 화면에 필요한 공통 정의만 남기기 위해)."""
+    if isinstance(value, dict):
+        found = {value["$ref"]} if isinstance(value.get("$ref"), str) else set()
+        for item in value.values():
+            found |= _refs(item)
+        return found
+    if isinstance(value, list):
+        return set().union(*(_refs(item) for item in value)) if value else set()
+    return set()
+
+
+def _used_components(contract, paths):
+    """실행 화면 경로가 쓰는 components 만 (참조의 참조까지) 복사한다."""
+    used, todo = {}, list(_refs(paths))
+    while todo:
+        ref = todo.pop()
+        if not ref.startswith("#/components/"):
+            continue
+        kind, name = ref.removeprefix("#/components/").split("/", 1)
+        if name in used.setdefault(kind, {}):
+            continue
+        used[kind][name] = deepcopy(contract["components"][kind][name])
+        todo.extend(_refs(used[kind][name]))
+    return used
+
+
 def build_runtime_schema():
     # 현재 응답용 목업과 집계 함수를 재사용한다. DB나 CODEF를 호출하지 않는다.
     from budgets import mock as budget_mock
@@ -182,13 +211,17 @@ def build_runtime_schema():
     schema["paths"] = {}
     schema["security"] = []
     schema["info"]["title"] = "머니쿠션 — 현재 서버 확인"
-    schema["info"]["description"] = "현재 명세 범위에서 GET으로 호출 가능한 5개를 보여 줍니다. CSRF는 구현, 홈·거래 목록·고정지출 목록·정기 저축 목록은 예시 데이터입니다. 이 화면의 스키마는 현재 샘플의 모양만 설명하며 입력 검증·인증·DB 저장 구현 완료를 뜻하지 않습니다. 현재 기본 권한은 AllowAny입니다. 예산·쿠션 시안은 이번 35개 확정 명세 범위 밖이라 제외했습니다."
+    schema["info"]["description"] = (
+        "현재 서버에서 호출할 수 있는 API입니다. CSRF와 정기 저축 6개는 구현, 홈·거래 목록·고정지출 목록은 예시 데이터(GET만)입니다. "
+        "목업의 스키마는 현재 샘플의 모양만 설명하며 입력 검증·인증·DB 저장 구현 완료를 뜻하지 않습니다. "
+        "정기 저축은 로그인(세션)이 필요하고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
+        "예산·쿠션 시안은 이번 35개 확정 명세 범위 밖이라 제외했습니다."
+    )
     samples = {
         "/api/csrf/": {"ok": True},
         "/api/home/": camel({"period": budget_mock.PERIOD, "home": budget_mock.HOME, "must_pay": _must_pay(), "budget": None if budget_mock.BUDGET is None else {"sample": True}}),
         "/api/finance/transactions/": camel({"month": finance_mock.MONTH, "recent": finance_mock.RECENT, "pending_count": finance_mock.PENDING_COUNT, "pending_label": PENDING, "categories": finance_mock.CATEGORIES, "selected": "전체", "days": filter_days("전체")}),
         "/api/budgets/fixed/": camel(budget_examples.FIXED_LIST_EXAMPLE),
-        "/api/budgets/savings/": camel(budget_examples.SAVINGS_LIST_EXAMPLE),
     }
     for path, sample in samples.items():
         operation = deepcopy(contract["paths"][path]["get"])
@@ -200,7 +233,21 @@ def build_runtime_schema():
         if path == "/api/finance/transactions/":
             operation["parameters"] = [{"name": "category", "in": "query", "required": False, "description": "목업은 한글 이름을 사용. 정식 명세는 영문 코드.", "schema": {"type": "string", "default": "전체", "example": "식비"}}]
         schema["paths"][path] = {"get": operation}
+    # 구현된 API(정기 저축)는 확정 계약을 그대로 실행 대상으로 넣는다. CSRF 헤더는 화면이 자동으로 채운다.
+    implemented = {}
+    for path, method, operation in operations(contract):
+        if path == "/api/csrf/" or operation["x-implementation-status"] != "implemented":
+            continue
+        operation = deepcopy(operation)
+        operation["operationId"] = "runtime_" + operation["operationId"]
+        operation["security"] = []
+        operation["parameters"] = [p for p in operation.get("parameters", []) if not p.get("$ref", "").endswith("/CsrfToken")]
+        implemented.setdefault(path, {})[method] = operation
+        path_parameters = contract["paths"][path].get("parameters")
+        if path_parameters:
+            implemented[path]["parameters"] = deepcopy(path_parameters)
+    schema["paths"].update(implemented)
     schema["tags"] = [t for t in schema["tags"] if t["name"] in {"공통 · 인증", "홈", "거래", "고정지출", "정기 저축"}]
-    # 실행 화면은 별도 문서: 사용하지 않는 확정 계약 모델을 함께 보여 주지 않는다.
-    schema["components"] = {}
+    # 실행 화면은 별도 문서: 실행 대상이 쓰는 정의만 남기고 나머지 확정 계약 모델은 보여 주지 않는다.
+    schema["components"] = _used_components(contract, implemented)
     return schema
