@@ -115,11 +115,12 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 - 로컬 DB: Docker로 띄운 PostgreSQL 17
 - 화면 코드: `frontend/src/` (`pages/` 화면 · `popups/` 팝업 · `components/` 공통 부품 · `styles/` CSS)
 - API 코드: 각 앱의 `api.py`, 주소 목록은 `backend/config/api_urls.py`, **규칙은 [`docs/API_RULES.md`](docs/API_RULES.md)** (camelCase · 원 단위 정수 · 에러 모양 · 세션 로그인)
+- Swagger 문서: Django 실행 후 http://127.0.0.1:8000/api/docs/ — 확정 명세 35개와 현재 서버 확인 화면. [사용·갱신 가이드](docs/SWAGGER.md)
 - CODEF 조회: `backend/finance/codef.py`, 확인 명령 `python manage.py codef_check` ([`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) 맨 아래)
 - DB 모델: 27개 테이블 완료 (`users` · `finance` · `budgets` · `chat`), **[`docs/DB_MODELS.md`](docs/DB_MODELS.md)** (테이블 배치 · 작성 규칙 · 도커에서 확인하는 법)
 - `makemigrations`는 **DB 담당(김나은)만** 만들고, 나머지는 `git pull` 후 `python manage.py migrate`만 합니다.
 - API 값은 아직 각 앱의 `mock.py` 가짜 데이터입니다. API 설계 후 DB 값으로 바꿉니다.
-- Django는 화면을 그리지 않습니다. 주소는 `/api/...`(데이터)와 `/admin/`(관리자)만 있습니다.
+- 서비스 화면은 React가 그립니다. Django는 `/api/...`(데이터), `/api/docs/`(Swagger 문서), `/admin/`(관리자)를 제공합니다.
 
 ---
 

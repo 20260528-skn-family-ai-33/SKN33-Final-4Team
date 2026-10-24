@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title }}</title>
+    {% if favicon_href %}<link rel="icon" href="{{ favicon_href }}">{% endif %}
+    <link rel="stylesheet" href="{{ swagger_ui_css }}">
+    <style>
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #fafbf9; color: #20372c; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
+      .docs-header { border-bottom: 1px solid #dce5dc; background: #fff; }
+      .docs-header-inner { max-width: 1460px; margin: 0 auto; padding: 32px 20px 24px; }
+      .docs-brand { margin: 0 0 9px; color: #55785e; font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+      .docs-header h1 { margin: 0 0 12px; color: #20372c; font-size: clamp(24px, 3vw, 34px); letter-spacing: -.04em; }
+      .docs-description { max-width: 1000px; margin: 0; color: #546258; font-size: 15px; line-height: 1.75; }
+      .docs-status { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+      .docs-status span { padding: 5px 11px; border-radius: 6px; background: #eff4ee; color: #446048; font-size: 13px; }
+      .docs-status .mock { background: #fff2da; color: #805d24; }
+      .docs-status .planned { background: #f0f2f4; color: #59616d; }
+      .docs-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+      .docs-nav a { padding: 10px 15px; border: 1px solid #d7e1d5; border-radius: 7px; color: #3c6143; text-decoration: none; font-size: 14px; font-weight: 600; }
+      .docs-nav a[aria-current="page"] { background: #315b3b; color: #fff; border-color: #315b3b; }
+      .docs-nav .download { margin-left: auto; border-color: transparent; text-decoration: underline; text-underline-offset: 3px; }
+      .docs-note { max-width: 1460px; margin: 0 auto; padding: 17px 20px 0; color: #5c675e; font-size: 13px; line-height: 1.7; }
+      .swagger-ui .wrapper { max-width: 1460px; }
+      .swagger-ui .info { margin: 25px 0; }
+      .swagger-ui .info .title { font-size: 26px; }
+      .swagger-ui .opblock-tag { font-size: 20px; }
+      .swagger-ui .opblock .opblock-summary-description { line-height: 1.5; }
+      .swagger-ui .markdown p, .swagger-ui .markdown li { line-height: 1.75; }
+      .swagger-ui .scheme-container { background: #f7f9f5; box-shadow: none; }
+      a:focus-visible, button:focus-visible { outline: 3px solid #b8892c; outline-offset: 3px; }
+      @media (max-width: 640px) {
+        .docs-header-inner { padding-top: 24px; }
+        .docs-nav .download { margin-left: 0; }
+        .swagger-ui .opblock .opblock-summary { flex-wrap: wrap; gap: 5px; }
+        .swagger-ui .opblock .opblock-summary-description { flex-basis: 100%; padding: 3px 0 3px 5px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="docs-header">
+      <div class="docs-header-inner">
+        <p class="docs-brand">MONEY CUSHION · API DOCUMENTATION</p>
+        <h1>머니쿠션 API 명세서</h1>
+        <p class="docs-description">
+          {% if runtime %}
+          현재 서버에 연결된 {{ runtime_count }}개 GET API를 직접 확인합니다. 홈·거래·고정지출·정기 저축 목록은 예시 데이터를 반환하는 목업이며, 실제 응답 구조를 표시합니다. 입력 검증·DB 저장까지 완료된 상태는 아닙니다.
+          {% else %}
+          현재 작성된 {{ contract_count }}개 API의 요청·응답·오류 규칙을 기능별로 확인합니다. 이 화면은 명세 조회용입니다. 실제 호출은 ‘현재 서버 확인’에서 할 수 있습니다.
+          {% endif %}
+        </p>
+        <div class="docs-status" aria-label="전체 명세의 구현 상태">
+          <span>구현 {{ implemented_count }}개</span>
+          <span class="mock">목업 {{ mock_count }}개</span>
+          <span class="planned">미구현 {{ planned_count }}개</span>
+        </div>
+        <nav class="docs-nav" aria-label="API 문서 보기">
+          <a href="{{ contract_docs_url }}"{% if not runtime %} aria-current="page"{% endif %}>전체 명세 {{ contract_count }}개</a>
+          <a href="{{ runtime_docs_url }}"{% if runtime %} aria-current="page"{% endif %}>현재 서버 확인 {{ runtime_count }}개</a>
+          <a class="download" href="{{ schema_url }}" download="{{ download_filename }}">OpenAPI JSON 다운로드</a>
+        </nav>
+      </div>
+    </header>
+    <p class="docs-note">
+      {% if runtime %}API를 펼친 뒤 <strong>Try it out → Execute</strong>로 GET 요청을 보낼 수 있습니다. {% endif %}
+      인증 계약은 Django 세션 쿠키 방식입니다. 저장 요청에는 CSRF 쿠키와 X-CSRFToken 헤더가 필요합니다.
+      {% if runtime %}현재 화면에서는 저장·수정·삭제 요청을 실행하지 않습니다.{% else %}‘미구현’ API는 명세가 작성된 상태이며 서버 기능은 아직 연결되지 않았습니다.{% endif %}
+    </p>
+    <main id="swagger-ui" aria-label="Swagger API 명세"></main>
+    <script src="{{ swagger_ui_bundle }}"></script>
+    <script src="{{ swagger_ui_standalone }}"></script>
+    <script>{% include template_name_js %}</script>
+  </body>
+</html>

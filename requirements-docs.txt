@@ -1,0 +1,3 @@
+# OpenAPI 명세 · 예시 검증 (일반 서버 실행에는 필요 없음)
+-r requirements.txt
+openapi-spec-validator==0.9.0

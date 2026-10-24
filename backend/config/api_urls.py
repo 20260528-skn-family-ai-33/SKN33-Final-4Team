@@ -12,11 +12,20 @@ from django.urls import path, re_path
 from budgets import api as budgets_api
 from finance import api as finance_api
 
-from . import api_common
+from . import api_common, api_docs
 
 app_name = "api"
 
 urlpatterns = [
+    # Swagger: 확정 계약 조회와 현재 서버 GET 확인을 분리한다.
+    path("schema/", api_docs.contract_schema, name="schema"),
+    path("schema/runtime/", api_docs.runtime_schema, name="schema-runtime"),
+    path("docs/", api_docs.MoneyCushionSwaggerView.as_view(url_name="api:schema"), name="swagger-ui"),
+    path(
+        "docs/runtime/",
+        api_docs.MoneyCushionSwaggerView.as_view(url_name="api:schema-runtime", runtime=True),
+        name="swagger-ui-runtime",
+    ),
     # 공통
     path("csrf/", api_common.csrf, name="csrf"),
     # 화면 데이터
@@ -24,6 +33,17 @@ urlpatterns = [
     path("budgets/", budgets_api.budget, name="budget"),
     path("budgets/cushion/", budgets_api.cushion, name="cushion"),
     path("finance/transactions/", finance_api.transactions, name="transactions"),
+
+    # ---- 나은: 고정지출 19~24 · 정기 저축 25~30 (껍데기) ----
+    path("budgets/fixed/", budgets_api.fixed_list, name="fixed-list"),
+    path("budgets/fixed/confirm/", budgets_api.fixed_confirm, name="fixed-confirm"),
+    path("budgets/fixed/ignore/", budgets_api.fixed_ignore, name="fixed-ignore"),
+    path("budgets/fixed/<uuid:recurring_id>/", budgets_api.fixed_detail, name="fixed-detail"),
+    path("budgets/savings/", budgets_api.savings_list, name="savings-list"),
+    path("budgets/savings/confirm/", budgets_api.savings_confirm, name="savings-confirm"),
+    path("budgets/savings/ignore/", budgets_api.savings_ignore, name="savings-ignore"),
+    path("budgets/savings/<uuid:saving_id>/", budgets_api.savings_detail, name="savings-detail"),
+
     # ↑ 새 주소는 이 위에 추가
     # 맞는 주소가 없으면 JSON 404 (항상 맨 끝)
     re_path(r"^.*$", api_common.not_found, name="not_found"),

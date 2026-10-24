@@ -51,6 +51,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # API (리액트에 JSON 데이터 주기)
     "rest_framework",
+    "drf_spectacular",
+    "drf_spectacular_sidecar",
     # 머니쿠션 앱
     "users",
     "finance",
@@ -78,7 +80,7 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],  # 화면은 React 가 그려서 장고 템플릿 폴더는 없음 (관리자 화면만)
+        "DIRS": [BASE_DIR / "templates"],  # Swagger 문서 화면
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -134,6 +136,7 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 # ===== API (Django REST framework) 공통 규칙 =====
 # 자세한 약속은 docs/API_RULES.md
 REST_FRAMEWORK = {
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # 로그인 방식: Django 세션(쿠키). React 와 같은 주소(프록시)로 붙어서 쿠키가 그대로 오간다
     "DEFAULT_AUTHENTICATION_CLASSES": ["rest_framework.authentication.SessionAuthentication"],
     # 지금은 로그인 없이 다 열어 둔다. users.User 는 만들었고, 로그인 API·화면이 붙으면 IsAuthenticated 로 바꾼다
@@ -156,6 +159,16 @@ SESSION_COOKIE_AGE = 60 * 60 * 24 * 14   # 로그인 유지 2주
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_HTTPONLY = False             # React 가 csrftoken 쿠키를 읽어 X-CSRFToken 헤더로 보낸다
+
+# 확정 계약은 docs/openapi/parts/에서 관리한다. 아직 없는 API도 문서에 포함한다.
+# 실제 응답이 계약과 다른 목업은 별도 '현재 서버 확인' 화면에서 호출한다.
+SPECTACULAR_SETTINGS = {
+    "TITLE": "머니쿠션 API 명세서",
+    "VERSION": "2026-10-24",
+    "SERVE_PUBLIC": True,
+    "SWAGGER_UI_DIST": "SIDECAR",
+    "SWAGGER_UI_FAVICON_HREF": "SIDECAR",
+}
 
 
 # ===== CODEF (계좌·카드·대출 조회) =====

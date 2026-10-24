@@ -1,0 +1,810 @@
+{
+  "paths": {
+    "/api/finance/connect/cards/": {
+      "get": {
+        "summary": "카드 후보 보기",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "listCardCandidates",
+        "description": "저장된 본인 카드 후보만 읽고 CODEF를 호출하지 않습니다. disconnected 연결의 카드는 제외하고 connected/relogin만 반환합니다. relogin 상태에서도 저장된 마지막 자료와 원래 fetchedAt을 유지합니다. 연결 상태는 connection.status이며 기관의 cardStatus와 구분합니다.\n\n정상 확인된 후보 0건만 items: []입니다. 미조회·인증 실패·조회 실패를 빈 목록으로 바꾸지 않습니다. 카드 이름이 없으면 “{카드사} 카드”, 카드사도 없으면 “카드”; 끝 4자리가 없으면 번호 부분 전체를 생략합니다. 금융 조회 동의가 없으면 403 consent_required(fields 없음)입니다. 409 relogin_required·502 provider_unavailable은 외부 호출을 하는 연결/재조회 API의 오류이며 이 GET에는 적용하지 않습니다.\n\n구현 전 확인: 기관·연결별 쿼리 필터, 기관 원천 상태/종류 정규화·휴면/해지 카드 제외, 연결 FK가 없는 카드 노출, 재인증 상태에서 최초 선택 가능 범위, 기관별 정상 0건과 미조회 구분. 아직 확정되지 않은 쿼리 필터는 이 명세에 추가하지 않았습니다.",
+        "x-source": "docs/api/cards.md",
+        "responses": {
+          "200": {
+            "description": "카드 후보 목록. 정상 확인된 0건만 빈 목록.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardCandidateList"
+                },
+                "examples": {
+                  "candidates": {
+                    "summary": "조회된 카드 후보",
+                    "value": {
+                      "items": [
+                        {
+                          "cardId": "13cb7fb6-cff8-4c17-a76a-ea90f57ce330",
+                          "displayName": "신한 Deep Dream · ****4321",
+                          "status": "connected",
+                          "cardType": "체크",
+                          "cardStatus": "정상",
+                          "isSelected": true,
+                          "fetchedAt": "2026-10-21T09:30:00+09:00"
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "정상 확인된 후보 없음",
+                    "value": {
+                      "items": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "금융 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "카드 선택 저장",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "replaceCardSelection",
+        "description": "selectedCardIds는 본인의 전체 카드 선택을 대체합니다. 특정 카드사/연결만 바꾸지 않습니다. 필드 생략은 오류이고 []는 전체 선택 해제입니다. 목록에 빠진 기존 선택 카드는 해제하지만 금융기관 연결·과거 거래·기존 고정지출의 결제 수단은 유지합니다. 같은 선택을 재전송해도 성공하며 중복 기록이나 차감은 만들지 않습니다. Idempotency-Key는 쓰지 않습니다.\n\nID 형식 오류·없는 카드·타인 소유·선택 불가 카드를 동일한 400 invalid(fields.selectedCardIds)로 처리하며 하나라도 잘못되면 전체 미저장입니다. 허용 외 필드는 400입니다. 실패/미조회 때문에 기존 선택을 빈 배열로 덮어쓰지 않습니다. 카드 선택만으로 예산·고정비·기존 거래를 다시 계산하지 않습니다.\n\n응답은 후보 GET과 같은 items이며 변경된 isSelected를 반영합니다. [] 저장 후에도 후보가 있으면 isSelected:false인 후보 목록을 반환합니다. 선택 저장 시각으로 fetchedAt을 바꾸지 않습니다.\n\n미정: 중복 ID·최대 선택 수·동시 저장 세부 정책, 휴면/해지 카드 및 relogin 상태에서 최초 선택 허용 범위. 미정인 제한은 스키마에 추가하지 않았습니다.",
+        "x-source": "docs/api/cards.md",
+        "responses": {
+          "200": {
+            "description": "선택 결과를 반영한 전체 후보 목록.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardCandidateList"
+                },
+                "example": {
+                  "items": [
+                    {
+                      "cardId": "13cb7fb6-cff8-4c17-a76a-ea90f57ce330",
+                      "displayName": "신한 Deep Dream · ****4321",
+                      "status": "connected",
+                      "cardType": "체크",
+                      "cardStatus": "정상",
+                      "isSelected": true,
+                      "fetchedAt": "2026-10-21T09:30:00+09:00"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "selectedCardIds": [
+                            "선택할 수 없는 카드예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "parse_error": {
+                    "summary": "parse_error",
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "JSON 형식을 확인해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permission_denied": {
+                    "summary": "permission_denied",
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardSelectionRequest"
+              },
+              "example": {
+                "selectedCardIds": [
+                  "13cb7fb6-cff8-4c17-a76a-ea90f57ce330"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finance/card-bills/{id}/": {
+      "get": {
+        "summary": "카드 청구서 보기",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "retrieveCardBill",
+        "description": "홈 mustPay[].type=card_bill인 항목의 sourceId(청구서 ID)로 조회합니다. 카드 ID가 아닙니다. 저장된 본인 청구서만 읽고 CODEF를 호출하지 않습니다. 조회 동의가 없으면 403 consent_required입니다. 청구서가 없으면 404이며 0원짜리 청구서를 만들지 않습니다.\n\n금액은 원 단위 정수, billingMonth는 YYYY-MM입니다. totalAmount는 청구서 총액이며 급여주기 소비액·미납 잔액·선차감액으로 대신 쓰지 않습니다. 모르는 값은 null, 확인된 0원만 0입니다. scopeType·confirmationStatus·itemsState의 원천 값이 없으면 null이며 unknown/unavailable을 임의로 채우지 않습니다. card:null은 포함된 모든 카드가 없다는 뜻이 아니고, cards:null은 포함 카드 범위를 확인하지 못한 경우입니다. items:null은 미확보, []는 정상 확인된 0건입니다. partial이면 확보한 항목만 제공하며 항목 합계를 총액으로 대체하지 않습니다. 할부 원 구매액을 이번 회차 청구액에 다시 더하지 않습니다. fetchedAt은 해당 자료의 마지막 정상 조회 시각입니다.\n\n첫 청구서 선차감=max(0, 첫 청구서 총액−이번 급여주기 시작 뒤 그 카드로 쓴 돈). 이후 납부는 이미 반영한 카드 소비와 연결하고 다시 차감하지 않습니다. 카드 고정지출은 별도 납부 예정을 만들지 않습니다. 출금일이 있을 때만 납부 예정을 생성합니다. 홈 mustPay 금액은 총청구액−이미 낸 금액이며 선차감액과 다릅니다. confirmationStatus가 confirmed일 때만 홈 isEstimated=false입니다. 확정 청구/출금일 경과는 납부 완료를 뜻하지 않습니다.\n\n확정 후 원천/구현 검증 대기: 카드사 코드→이름 표, 상세·할부·취소 매핑, 통합 청구 범위, 부분 납부·매칭 키, 일부 누락·합계 불일치·조정액 음수 처리. 차이를 임의 조정 항목으로 맞추지 않습니다. 리볼빙·현금서비스·카드론·연체료의 별도 위험 요약과 급여주기 소비액은 이번 응답에 추가하지 않습니다.",
+        "x-source": "docs/api/cards.md",
+        "responses": {
+          "200": {
+            "description": "카드 청구서. 정상 조회와 자료 미확보를 구분.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardBill"
+                },
+                "examples": {
+                  "complete": {
+                    "summary": "총액·상세 전체 확인",
+                    "value": {
+                      "billId": "7521ba60-6358-4810-94e4-e62eed25b3c6",
+                      "issuerCode": "0306",
+                      "issuerName": "예시카드",
+                      "scopeType": "issuer",
+                      "billingMonth": "2026-10",
+                      "totalAmount": 420000,
+                      "confirmationStatus": "confirmed",
+                      "fetchedAt": "2026-10-21T09:30:00+09:00",
+                      "paymentDueDate": "2026-10-25",
+                      "withdrawalDueDate": "2026-10-25",
+                      "paymentAccount": {
+                        "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                        "displayName": "국민 급여통장 · ****5678",
+                        "status": "connected"
+                      },
+                      "card": null,
+                      "cards": [
+                        {
+                          "cardId": "71fca86c-b015-4c11-8fb9-2beaaab1fb81",
+                          "displayName": "예시 신용카드 · ****4321",
+                          "status": "connected"
+                        }
+                      ],
+                      "itemsState": "complete",
+                      "items": [
+                        {
+                          "billItemId": "80ae2a33-4157-486a-b31c-bd7a1a963ae5",
+                          "itemType": "one_time",
+                          "merchantName": "예시 가전 매장",
+                          "card": {
+                            "cardId": "71fca86c-b015-4c11-8fb9-2beaaab1fb81",
+                            "displayName": "예시 신용카드 · ****4321",
+                            "status": "connected"
+                          },
+                          "purchasedOn": "2026-09-15",
+                          "originalPurchaseAmount": 360000,
+                          "billedAmount": 360000,
+                          "installmentMonths": null,
+                          "installmentRound": null,
+                          "fetchedAt": "2026-10-21T09:30:00+09:00"
+                        },
+                        {
+                          "billItemId": "a8f2094b-e49c-4e9b-bc32-71be95817e2d",
+                          "itemType": "installment",
+                          "merchantName": "예시 생활용품점",
+                          "card": {
+                            "cardId": "71fca86c-b015-4c11-8fb9-2beaaab1fb81",
+                            "displayName": "예시 신용카드 · ****4321",
+                            "status": "connected"
+                          },
+                          "purchasedOn": "2026-08-20",
+                          "originalPurchaseAmount": 180000,
+                          "billedAmount": 60000,
+                          "installmentMonths": 3,
+                          "installmentRound": 2,
+                          "fetchedAt": "2026-10-21T09:30:00+09:00"
+                        }
+                      ]
+                    }
+                  },
+                  "totalOnly": {
+                    "summary": "총액만 확보, 범위·상태·상세 미제공",
+                    "value": {
+                      "billId": "7521ba60-6358-4810-94e4-e62eed25b3c6",
+                      "issuerCode": "0306",
+                      "issuerName": "예시카드",
+                      "scopeType": null,
+                      "billingMonth": "2026-10",
+                      "totalAmount": 420000,
+                      "confirmationStatus": null,
+                      "fetchedAt": "2026-10-21T09:30:00+09:00",
+                      "paymentDueDate": "2026-10-25",
+                      "withdrawalDueDate": "2026-10-25",
+                      "paymentAccount": {
+                        "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                        "displayName": "국민 급여통장 · ****5678",
+                        "status": "connected"
+                      },
+                      "card": null,
+                      "cards": null,
+                      "itemsState": null,
+                      "items": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "금융 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "청구서 ID(billId). 카드 ID가 아님. 잘못된 UUID·없음·타인 소유·동작 불가 상태는 모두 404 not_found.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CardCandidate": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "선택 저장에 사용하는 내부 카드 ID."
+          },
+          "displayName": {
+            "type": "string",
+            "description": "서버가 구성한 카드명과 마스킹 번호. 끝 4자리가 없으면 번호 부분 전체 생략."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "relogin"
+            ],
+            "description": "연결된 connection.status. disconnected 카드는 후보에서 제외."
+          },
+          "cardType": {
+            "type": "string",
+            "nullable": true,
+            "description": "저장된 기관 카드 종류. 정규화 기준 미정."
+          },
+          "cardStatus": {
+            "type": "string",
+            "nullable": true,
+            "description": "기관 원천 카드 상태. 연결 상태 status와 구분."
+          },
+          "isSelected": {
+            "type": "boolean",
+            "description": "현재 관리 대상으로 선택했는지 여부."
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "마지막 정상 조회 시각. 응답/선택 저장 시각으로 대체하지 않음."
+          }
+        },
+        "required": [
+          "cardId",
+          "displayName",
+          "status",
+          "cardType",
+          "cardStatus",
+          "isSelected",
+          "fetchedAt"
+        ]
+      },
+      "CardCandidateList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardCandidate"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "CardSelectionRequest": {
+        "type": "object",
+        "properties": {
+          "selectedCardIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "전체 선택을 대체. 빈 배열은 전체 해제. 중복/최대 개수 정책은 미정."
+          }
+        },
+        "required": [
+          "selectedCardIds"
+        ],
+        "additionalProperties": false
+      },
+      "CardBillItem": {
+        "type": "object",
+        "properties": {
+          "billItemId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "itemType": {
+            "type": "string",
+            "enum": [
+              "one_time",
+              "installment",
+              "fee",
+              "interest",
+              "adjustment",
+              "unknown"
+            ],
+            "description": "청구 항목 유형. 기관 원천값 매핑 검증 대기."
+          },
+          "merchantName": {
+            "type": "string",
+            "nullable": true
+          },
+          "card": {
+            "description": "해당 항목의 카드. 모르면 null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CardDisplay"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "purchasedOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "원 구매일. 청구일로 대신 채우지 않음."
+          },
+          "originalPurchaseAmount": {
+            "type": "integer",
+            "nullable": true,
+            "description": "전체 구매 금액, 원. 미제공은 null."
+          },
+          "billedAmount": {
+            "type": "integer",
+            "nullable": true,
+            "description": "이번 회차 청구액, 원. 음수 조정액 처리 정책은 확인 필요."
+          },
+          "installmentMonths": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "확인된 할부 총회차 1 이상. 일시불·회차 미확인은 null."
+          },
+          "installmentRound": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "description": "이번 회차. 1 이상이며 installmentMonths 이하. 일시불·미확인은 null."
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "해당 항목 마지막 정상 조회 시각."
+          }
+        },
+        "required": [
+          "billItemId",
+          "itemType",
+          "merchantName",
+          "card",
+          "purchasedOn",
+          "originalPurchaseAmount",
+          "billedAmount",
+          "installmentMonths",
+          "installmentRound",
+          "fetchedAt"
+        ]
+      },
+      "CardBill": {
+        "type": "object",
+        "properties": {
+          "billId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuerCode": {
+            "type": "string",
+            "description": "카드사 코드. 예시 코드는 실제 매핑을 보증하지 않음."
+          },
+          "issuerName": {
+            "type": "string",
+            "nullable": true,
+            "description": "카드사 표시 이름. 코드→이름 표가 없으면 null; 화면에서는 “카드사”."
+          },
+          "scopeType": {
+            "type": "string",
+            "enum": [
+              "issuer",
+              "card",
+              "unknown",
+              null
+            ],
+            "nullable": true,
+            "description": "카드사 통합/단일 카드/범위 확인 불가. 저장 근거 없으면 null. card의 null 여부로 추정하지 않음."
+          },
+          "billingMonth": {
+            "type": "string",
+            "pattern": "^\\d{4}-(0[1-9]|1[0-2])$",
+            "example": "2026-10",
+            "description": "청구 월. DB 날짜(그 달 1일)에서 월까지만 응답."
+          },
+          "totalAmount": {
+            "type": "integer",
+            "description": "이번 청구서 총액, 원. 다른 소비/미납/선차감 금액으로 대신 쓰지 않음."
+          },
+          "confirmationStatus": {
+            "type": "string",
+            "enum": [
+              "estimated",
+              "confirmed",
+              "unknown",
+              null
+            ],
+            "nullable": true,
+            "description": "예상/확정/확정 여부 확인 불가. 실제 납부 상태가 아님. 원천 값 없으면 null."
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "청구 총액·날짜의 마지막 정상 조회 시각. 상세 항목 조회 시각으로 대체하지 않음."
+          },
+          "paymentDueDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "결제 예정일."
+          },
+          "withdrawalDueDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "출금 예정일. 모르면 납부 예정 생성 안 함."
+          },
+          "paymentAccount": {
+            "description": "결제 계좌를 모르면 객체 전체 null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccountDisplay"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "card": {
+            "description": "단일 연결 카드. 카드사 통합 청구에서는 null. 포함 카드 전체 없음이라는 뜻이 아님.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CardDisplay"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "cards": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardDisplay"
+            },
+            "nullable": true,
+            "description": "포함된 것으로 확인한 카드 목록. 범위 미확인은 null, 정상 확인된 0건만 []."
+          },
+          "itemsState": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial",
+              "unavailable",
+              null
+            ],
+            "nullable": true,
+            "description": "상세 전체 확인/일부 확인/내역 미확보. 원천 상태값이 없으면 null. 총액 확정 상태와 별개."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardBillItem"
+            },
+            "nullable": true,
+            "description": "청구 상세. 미확보 null, 정상 확인된 0건 [], 일부면 확보분만."
+          }
+        },
+        "required": [
+          "billId",
+          "issuerCode",
+          "issuerName",
+          "scopeType",
+          "billingMonth",
+          "totalAmount",
+          "confirmationStatus",
+          "fetchedAt",
+          "paymentDueDate",
+          "withdrawalDueDate",
+          "paymentAccount",
+          "card",
+          "cards",
+          "itemsState",
+          "items"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,959 @@
+{
+  "paths": {
+    "/api/finance/loans/": {
+      "get": {
+        "summary": "대출 정보 보기",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "listLoans",
+        "description": "저장된 본인의 상환 중(repaying) 대출만 읽습니다. repaid 대출과 쿼리 필터는 1차에 제공하지 않습니다. CODEF를 호출하지 않으며 조회 동의가 없으면 403 consent_required입니다. relogin 상태에서도 마지막 저장 자료와 fetchedAt을 유지합니다. 미조회/조회 실패를 items: []로 바꾸지 않습니다.\n\n모르는 값은 null이고 확인된 0만 0입니다. 기관 원본 reported*와 직접 등록 manual*은 구분하며 잔액 우선순위를 임의로 정하지 않습니다. repaymentMethod의 unknown은 사용자가 “잘 모르겠어요”를 선택한 값, null은 미입력입니다. paymentHistory는 저장된 실제 납부 최근 3건(날짜 최신순)이며 없거나 미확보면 null입니다. 대출 실행 거래는 납부로 세지 않습니다. estimatedMonthlyPayment는 지난 납부 기반 추정이며 산출 불가 시 null; 사용자 저장 monthlyPayment를 덮어쓰지 않습니다. overdue:null은 확인 불가이고 repaid와 다른 뜻입니다.\n\nfieldStates는 manualBalance·manualRate·repaymentMethod·monthlyPayment·paymentDay의 출처/사용자 확인 정보만 구성하며 DB JSON 전체를 노출하지 않습니다. 기관 조회 대출의 일부를 보완해도 origin:provider를 유지합니다. 추정값을 그대로 확인하면 source:estimated를 유지하고 confirmationStatus만 confirmed로, 직접 바꾸면 source:manual로 구분합니다. confirmedAt은 confirmed일 때만 제공하며 기관 조회 시각이나 이전 값의 확인 시각을 재사용하지 않습니다. 확인 근거가 없는 기존 수동 값은 source:manual을 유지하되 확인 상태 unknown으로 표시합니다.\n\n저장한 월 상환액과 납부일이 모두 있을 때만 납부 예정을 만듭니다. 해당 월에 없는 납부일은 말일이고 주말·공휴일 보정은 하지 않습니다. 추정값만으로 납부액을 채우지 않습니다. 홈 mustPay의 type=loan, sourceId=loanId, 금액은 월 상환액−이미 낸 금액입니다. 납부 한 번으로 대출 전체를 repaid로 바꾸지 않고 고정지출 후보를 중복 생성하지 않습니다. GET 자체는 납부 생성·예산 승인·출금 매칭을 실행하지 않습니다.\n\n실제 은행별 원천 제공 여부·이율 단위/정밀도·납부일 의미·연체 코드, 추정 계산의 월별 묶음/기간/부분 수집/원 미만 처리, 기관 재조회와 보완값 충돌 및 DB 메타데이터 저장 방식은 구현 검증 대상입니다. CODEF 샌드박스 성공은 서비스 API 구현 완료나 실제 납부 이력 검증을 뜻하지 않습니다.",
+        "x-source": "docs/api/loans.md",
+        "responses": {
+          "200": {
+            "description": "본인의 상환 중 대출 목록.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanList"
+                },
+                "examples": {
+                  "loans": {
+                    "summary": "기관 조회 대출, 보완 전",
+                    "value": {
+                      "items": [
+                        {
+                          "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                          "lenderName": "예시은행",
+                          "productName": "예시 신용대출",
+                          "origin": "provider",
+                          "status": "repaying",
+                          "reportedPrincipal": 10000000,
+                          "reportedBalance": 6420000,
+                          "reportedRate": 5.8,
+                          "manualBalance": null,
+                          "manualRate": null,
+                          "maturityDate": "2028-03-25",
+                          "reportedPaymentDate": "2026-10-25",
+                          "repaymentMethod": null,
+                          "monthlyPayment": null,
+                          "paymentDay": null,
+                          "paymentHistory": null,
+                          "estimatedMonthlyPayment": null,
+                          "overdue": null,
+                          "fieldStates": {
+                            "manualBalance": {
+                              "source": null,
+                              "confirmationStatus": "unknown",
+                              "confirmedAt": null
+                            },
+                            "manualRate": {
+                              "source": null,
+                              "confirmationStatus": "unknown",
+                              "confirmedAt": null
+                            },
+                            "repaymentMethod": {
+                              "source": null,
+                              "confirmationStatus": "unknown",
+                              "confirmedAt": null
+                            },
+                            "monthlyPayment": {
+                              "source": null,
+                              "confirmationStatus": "unknown",
+                              "confirmedAt": null
+                            },
+                            "paymentDay": {
+                              "source": null,
+                              "confirmationStatus": "unknown",
+                              "confirmedAt": null
+                            }
+                          },
+                          "fetchedAt": "2026-10-21T09:30:00+09:00"
+                        }
+                      ]
+                    }
+                  },
+                  "empty": {
+                    "summary": "상환 중 대출 없음",
+                    "value": {
+                      "items": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "금융 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "대출 직접 등록",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "createManualLoan",
+        "description": "조회되지 않는 학자금대출 등을 본인 대출로 직접 등록합니다. 서버가 UUID·소유 회원·origin:manual·status:repaying을 정하며 이 칸을 요청으로 보내면 400입니다. CODEF 호출이나 기관 연결을 생성하지 않습니다. 기관 원본·납부 이력·연체 정보는 null이며 수동 입력값으로 채우지 않습니다.\n\n등록 팝업을 열 때 Idempotency-Key를 만들고 처리 중 버튼을 잠급니다. 같은 회원·키·내용은 처음 201 응답을 재사용하며 대출/납부 예정을 중복 생성하지 않습니다. 같은 키의 다른 내용은 409 idempotency_conflict입니다. 실패한 4xx/5xx는 기록하지 않으므로 수정 후 같은 키로 재시도할 수 있고 성공 후 키를 버립니다.\n\n월 상환액과 납부일이 모두 있으면 납부 예정을 만듭니다. 직접 등록 후에도 1차 PATCH는 상환액·납부일·상환 방식 세 칸만 허용하며 잔액·금리 수정은 지원하지 않습니다. 납부일은 없는 날이면 말일, 주말·공휴일 보정은 없습니다. 실제 원천 검증/메타데이터 저장 방식/금리 정밀도/기존 납부 예정의 변경 처리 등은 원문 확인 목록을 따릅니다.",
+        "x-source": "docs/api/loans.md",
+        "responses": {
+          "201": {
+            "description": "등록된 대출 한 건. 같은 키 재전송은 처음 201 응답 재사용.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                },
+                "example": {
+                  "loanId": "3404ede0-0fd6-4d08-b4c9-6626e58fc8a1",
+                  "lenderName": "한국장학재단",
+                  "productName": "학자금대출",
+                  "origin": "manual",
+                  "status": "repaying",
+                  "reportedPrincipal": null,
+                  "reportedBalance": null,
+                  "reportedRate": null,
+                  "manualBalance": 5000000,
+                  "manualRate": 1.7,
+                  "maturityDate": "2030-02-28",
+                  "reportedPaymentDate": null,
+                  "repaymentMethod": "equal_principal",
+                  "monthlyPayment": 100000,
+                  "paymentDay": 25,
+                  "paymentHistory": null,
+                  "estimatedMonthlyPayment": null,
+                  "overdue": null,
+                  "fieldStates": {
+                    "manualBalance": {
+                      "source": "manual",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T14:00:00+09:00"
+                    },
+                    "manualRate": {
+                      "source": "manual",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T14:00:00+09:00"
+                    },
+                    "repaymentMethod": {
+                      "source": "manual",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T14:00:00+09:00"
+                    },
+                    "monthlyPayment": {
+                      "source": "manual",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T14:00:00+09:00"
+                    },
+                    "paymentDay": {
+                      "source": "manual",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T14:00:00+09:00"
+                    }
+                  },
+                  "fetchedAt": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "manualBalance": [
+                            "남은 금액은 1원 ~ 10억 원으로 입력해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "parse_error": {
+                    "summary": "parse_error",
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "JSON 형식을 확인해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permission_denied": {
+                    "summary": "permission_denied",
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "idempotency_conflict. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "idempotency_conflict": {
+                    "summary": "idempotency_conflict",
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanCreateRequest"
+              },
+              "example": {
+                "lenderName": "한국장학재단",
+                "productName": "학자금대출",
+                "manualBalance": 5000000,
+                "manualRate": 1.7,
+                "maturityDate": "2030-02-28",
+                "monthlyPayment": 100000,
+                "paymentDay": 25,
+                "repaymentMethod": "equal_principal"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finance/loans/{id}/": {
+      "patch": {
+        "summary": "대출 정보 보완",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "updateLoanRepayment",
+        "description": "본인의 상환 중(repaying) 기관 조회/직접 등록 대출에서 monthlyPayment·paymentDay·repaymentMethod 세 칸만 수정합니다. 생략은 유지하고 null은 해당 값을 비웁니다. 빈 문자열·범위 밖·허용 외 필드는 400 invalid이며 전체 미저장입니다. manualBalance·manualRate·maturityDate·기관 원본·status·origin·소유자·연결 ID·fieldStates는 수정할 수 없습니다. 상환 완료(repaid) 대출은 없는/타인 대출과 같은 404입니다.\n\n같은 값을 재전송해도 같은 결과이며 Idempotency-Key를 쓰지 않습니다. 월 상환액과 납부일이 모두 있으면 이번 주기 납부 예정을 중복 없이 생성하고 둘 중 하나가 없으면 새 납부 예정을 만들지 않습니다. 승인된 예산을 사용자 승인 없이 바꾸지 않으며 보완 저장은 대출 전체 상환 완료 처리가 아닙니다.\n\n응답은 목록으로 감싸지 않은 대출 한 건입니다. 기관 조회 대출의 origin:provider는 유지하며 입력 확인 정보는 서버가 구성합니다. 이미 생성된 납부 예정의 금액/일자 변경·null 전환·부분 납부 처리, 여러 대출 순차 저장의 일부 실패 화면 안내는 구현 조율 대상입니다.",
+        "x-source": "docs/api/loans.md",
+        "responses": {
+          "200": {
+            "description": "보완된 대출 한 건. items로 감싸지 않음.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                },
+                "example": {
+                  "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                  "lenderName": "예시은행",
+                  "productName": "예시 신용대출",
+                  "origin": "provider",
+                  "status": "repaying",
+                  "reportedPrincipal": 10000000,
+                  "reportedBalance": 6420000,
+                  "reportedRate": 5.8,
+                  "manualBalance": null,
+                  "manualRate": null,
+                  "maturityDate": "2028-03-25",
+                  "reportedPaymentDate": "2026-10-25",
+                  "repaymentMethod": "equal_principal",
+                  "monthlyPayment": 310500,
+                  "paymentDay": 25,
+                  "paymentHistory": null,
+                  "estimatedMonthlyPayment": null,
+                  "overdue": null,
+                  "fieldStates": {
+                    "manualBalance": {
+                      "source": null,
+                      "confirmationStatus": "unknown",
+                      "confirmedAt": null
+                    },
+                    "manualRate": {
+                      "source": null,
+                      "confirmationStatus": "unknown",
+                      "confirmedAt": null
+                    },
+                    "repaymentMethod": {
+                      "source": "manual",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T11:00:00+09:00"
+                    },
+                    "monthlyPayment": {
+                      "source": "estimated",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T11:00:00+09:00"
+                    },
+                    "paymentDay": {
+                      "source": "manual",
+                      "confirmationStatus": "confirmed",
+                      "confirmedAt": "2026-10-22T11:00:00+09:00"
+                    }
+                  },
+                  "fetchedAt": "2026-10-21T09:30:00+09:00"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "monthlyPayment": [
+                            "월 상환액은 1원 ~ 1억 원으로 입력해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "parse_error": {
+                    "summary": "parse_error",
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "JSON 형식을 확인해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permission_denied": {
+                    "summary": "permission_denied",
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청 방식이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인의 상환 중 대출 ID. 잘못된 UUID·없음·타인 소유·동작 불가 상태는 모두 404 not_found.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanUpdateRequest"
+              },
+              "example": {
+                "monthlyPayment": 310500,
+                "paymentDay": 25,
+                "repaymentMethod": "equal_principal"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LoanFieldState": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "provider",
+              "manual",
+              "estimated",
+              null
+            ],
+            "nullable": true,
+            "description": "기관 조회/사용자 입력/서버 추정. 값이나 출처를 모르면 null."
+          },
+          "confirmationStatus": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "unconfirmed",
+              "unknown"
+            ],
+            "description": "사용자 확인 완료/값은 있으나 미확인/값 또는 확인 근거 없음. 대출 상환 상태가 아님."
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "confirmed일 때만 사용자 확인 시각. 그 외 null. 기관 조회 시각으로 대체하지 않음."
+          }
+        },
+        "required": [
+          "source",
+          "confirmationStatus",
+          "confirmedAt"
+        ]
+      },
+      "LoanFieldStates": {
+        "type": "object",
+        "properties": {
+          "manualBalance": {
+            "$ref": "#/components/schemas/LoanFieldState"
+          },
+          "manualRate": {
+            "$ref": "#/components/schemas/LoanFieldState"
+          },
+          "repaymentMethod": {
+            "$ref": "#/components/schemas/LoanFieldState"
+          },
+          "monthlyPayment": {
+            "$ref": "#/components/schemas/LoanFieldState"
+          },
+          "paymentDay": {
+            "$ref": "#/components/schemas/LoanFieldState"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "manualBalance",
+          "manualRate",
+          "repaymentMethod",
+          "monthlyPayment",
+          "paymentDay"
+        ]
+      },
+      "LoanPaymentHistory": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "실제 납부 날짜."
+          },
+          "principal": {
+            "type": "integer",
+            "nullable": true,
+            "description": "해당 납부 원금. 미제공 null."
+          },
+          "interest": {
+            "type": "integer",
+            "nullable": true,
+            "description": "해당 납부 이자. 미제공 null, 확인된 0만 0."
+          }
+        },
+        "required": [
+          "date",
+          "principal",
+          "interest"
+        ]
+      },
+      "Loan": {
+        "type": "object",
+        "properties": {
+          "loanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "lenderName": {
+            "type": "string",
+            "nullable": true
+          },
+          "productName": {
+            "type": "string",
+            "nullable": true
+          },
+          "origin": {
+            "type": "string",
+            "enum": [
+              "provider",
+              "manual"
+            ],
+            "description": "대출 자체의 등록 출처. 보완값 출처와 별개."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "repaying"
+            ],
+            "description": "1차 목록·수정·등록 응답은 상환 중만. DB의 repaid는 1차 목록 제외, 수정 404."
+          },
+          "reportedPrincipal": {
+            "type": "integer",
+            "nullable": true,
+            "description": "기관 조회 원금, 원. 직접 등록 값으로 채우지 않음."
+          },
+          "reportedBalance": {
+            "type": "integer",
+            "nullable": true,
+            "description": "기관 조회 잔액, 원."
+          },
+          "reportedRate": {
+            "type": "number",
+            "nullable": true,
+            "description": "기관 조회 연 이율(%). CODEF 단위·의미는 실제 은행 검증 대기."
+          },
+          "manualBalance": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 1000000000,
+            "description": "직접 등록 잔액, 원. 1차 PATCH로 수정 불가."
+          },
+          "manualRate": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 30,
+            "description": "직접 등록 연 이율(%). 0% 유효. 1차 PATCH로 수정 불가."
+          },
+          "maturityDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "만기일."
+          },
+          "reportedPaymentDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "기관 납부일자. 의미 검증 전 paymentDay로 바로 변환하지 않음."
+          },
+          "repaymentMethod": {
+            "type": "string",
+            "enum": [
+              "equal_payment",
+              "equal_principal",
+              "bullet",
+              "unknown",
+              null
+            ],
+            "nullable": true,
+            "description": "원리금균등/원금균등/만기일시/잘 모르겠어요. null은 미입력."
+          },
+          "monthlyPayment": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 100000000,
+            "description": "저장된 월 상환 예정액, 원. null은 0원 상환이 아님."
+          },
+          "paymentDay": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 31,
+            "description": "매월 납부일. 없는 날은 말일, 주말·공휴일 보정 없음."
+          },
+          "paymentHistory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LoanPaymentHistory"
+            },
+            "nullable": true,
+            "maxItems": 3,
+            "description": "실제 납부 최근 3건, 날짜 최신순. 없거나 미확보면 null; 대출 실행 제외."
+          },
+          "estimatedMonthlyPayment": {
+            "type": "integer",
+            "nullable": true,
+            "description": "확인한 지난 납부 기반 월 상환 추정액, 원. 산출 불가 null; monthlyPayment를 덮어쓰지 않음."
+          },
+          "overdue": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "연체 확인 true/없음 확인 false/모름 null. 상환 완료 상태와 별개."
+          },
+          "fieldStates": {
+            "$ref": "#/components/schemas/LoanFieldStates"
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "기관 자료의 마지막 정상 조회 시각. 직접 등록은 null."
+          }
+        },
+        "required": [
+          "loanId",
+          "lenderName",
+          "productName",
+          "origin",
+          "status",
+          "reportedPrincipal",
+          "reportedBalance",
+          "reportedRate",
+          "manualBalance",
+          "manualRate",
+          "maturityDate",
+          "reportedPaymentDate",
+          "repaymentMethod",
+          "monthlyPayment",
+          "paymentDay",
+          "paymentHistory",
+          "estimatedMonthlyPayment",
+          "overdue",
+          "fieldStates",
+          "fetchedAt"
+        ]
+      },
+      "LoanList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Loan"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "LoanUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "monthlyPayment": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 100000000,
+            "description": "저장된 월 상환 예정액, 원. null은 0원 상환이 아님."
+          },
+          "paymentDay": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 31,
+            "description": "매월 납부일. 없는 날은 말일, 주말·공휴일 보정 없음."
+          },
+          "repaymentMethod": {
+            "type": "string",
+            "enum": [
+              "equal_payment",
+              "equal_principal",
+              "bullet",
+              "unknown",
+              null
+            ],
+            "nullable": true,
+            "description": "원리금균등/원금균등/만기일시/잘 모르겠어요. null은 미입력."
+          }
+        },
+        "description": "생략은 유지, null은 비우기. 빈 문자열·허용 외 항목은 400. 최소 변경 칸 수 정책은 명세에 없음.",
+        "additionalProperties": false
+      },
+      "LoanCreateRequest": {
+        "type": "object",
+        "properties": {
+          "lenderName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "productName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "manualBalance": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000000
+          },
+          "manualRate": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 30,
+            "description": "직접 등록 연 이율(%). 0% 유효. 1차 PATCH로 수정 불가."
+          },
+          "maturityDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "만기일."
+          },
+          "monthlyPayment": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 100000000,
+            "description": "저장된 월 상환 예정액, 원. null은 0원 상환이 아님."
+          },
+          "paymentDay": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 1,
+            "maximum": 31,
+            "description": "매월 납부일. 없는 날은 말일, 주말·공휴일 보정 없음."
+          },
+          "repaymentMethod": {
+            "type": "string",
+            "enum": [
+              "equal_payment",
+              "equal_principal",
+              "bullet",
+              "unknown",
+              null
+            ],
+            "nullable": true,
+            "description": "원리금균등/원금균등/만기일시/잘 모르겠어요. null은 미입력."
+          }
+        },
+        "required": [
+          "lenderName",
+          "productName",
+          "manualBalance"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}
