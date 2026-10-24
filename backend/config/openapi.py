@@ -110,7 +110,7 @@ def operations(schema):
 def build_contract():
     schema = _base()
     for domain in DOMAINS:
-        part = json.loads((PARTS / f"{domain}.json").read_text())
+        part = json.loads((PARTS / f"{domain}.json").read_text(encoding="utf-8"))
         for path, item in part["paths"].items():
             target = schema["paths"].setdefault(path, {})
             if target.keys() & item.keys():
