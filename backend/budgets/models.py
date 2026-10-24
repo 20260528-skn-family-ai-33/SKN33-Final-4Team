@@ -45,6 +45,10 @@ class Category(models.Model):
 class BudgetCycle(models.Model):
     """급여 주기. starts_on 이상 ~ ends_before 미만"""
 
+    class Status(models.TextChoices):  # home.md (10-22)
+        ACTIVE = "active", "진행 중"
+        CLOSED = "closed", "끝남"
+
     cycle_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="budget_cycles")
     starts_on = models.DateField("주기 시작일")
@@ -52,7 +56,7 @@ class BudgetCycle(models.Model):
     expected_payday = models.DateField("다음 급여 예정일", null=True, blank=True)
     confirmed_income = models.BigIntegerField("확인된 주기 수입", null=True, blank=True)
     approved_carryover = models.BigIntegerField("승인된 이월금", null=True, blank=True)
-    status = models.CharField("진행 상태", max_length=20)  # 코드 미정
+    status = models.CharField("진행 상태", max_length=20, choices=Status.choices, default=Status.ACTIVE)
     revision_no = models.IntegerField("동시성 확인 번호", default=0)
 
     class Meta:
@@ -61,6 +65,7 @@ class BudgetCycle(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["user", "starts_on"], name="budget_cycle_user_id_starts_on_key"),
             models.CheckConstraint(condition=Q(starts_on__lt=models.F("ends_before")), name="bc_starts_before_ends"),
+            models.CheckConstraint(condition=Q(status__in=["active", "closed"]), name="bc_status_valid"),
         ]
 
     def __str__(self):

@@ -10,7 +10,7 @@ import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { won } from '../utils/money.js'
-import { CUSHION_GOAL, DIRS, FIXED, IRREGULAR, MONTHLY, applySavingsMin, monthsToGoal, recommendFor } from '../utils/direction.js'
+import { CUSHION_GOAL, DIRS, FIXED, MONTHLY, applySavingsMin, monthsToGoal, recommendFor } from '../utils/direction.js'
 import { PATHS } from '../routes.js'
 
 const BALANCE = 2_800_000   // 연결 계좌 잔액 (시안값)
@@ -38,7 +38,7 @@ export default function ProtectPage() {
   const num = (k) => (values[k] === '' ? NaN : Number(values[k]))
 
   const available = Math.max(0, MONTHLY - FIXED)
-  const total = ROWS.reduce((sum, [k]) => sum + num(k), 0) + IRREGULAR
+  const total = ROWS.reduce((sum, [k]) => sum + num(k), 0)
   const left = available - total   // 남으면 여윳돈 (아직 어느 예산에도 배정 안 된 돈)
   const bad = !Number.isFinite(total) || ROWS.some(([k]) => num(k) < 0)
   const share = (v) => (Number.isFinite(v) && v >= 0 && available > 0 ? `${Math.round((v / available) * 100)}%` : '–')
@@ -89,7 +89,6 @@ export default function ProtectPage() {
         <div aria-live="polite" className="mc-card" id="mc-protectsum" style={{ marginTop: 14 }}>
           {bad ? <p className="mc-error">금액을 확인해 주세요.</p> : <>
             <strong>{won(total)}</strong> <span className="mc-muted">/ 배분 가능한 금액 {won(available)}</span>
-            <p className="mc-muted" style={{ margin: '2px 0 0', fontSize: 12 }}>비정기지출 준비금 {won(IRREGULAR)}({share(IRREGULAR)}) 포함</p>
             <p className={left < 0 ? 'mc-error' : 'mc-muted'} style={{ margin: '4px 0 0' }}>
               {left === 0 ? '배분 가능한 금액에 딱 맞게 나눴어요.'
                 : left < 0 ? `배분 가능한 금액보다 ${won(-left)} 많아요. 입력 금액을 줄여 주세요.`

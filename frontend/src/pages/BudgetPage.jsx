@@ -8,7 +8,6 @@ import { useApi } from '../utils/api.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
-import IrregularPopup from '../popups/IrregularPopup.jsx'
 import CatLockPopup from '../popups/CatLockPopup.jsx'
 import { manwon } from '../utils/adjust.js'
 
@@ -27,15 +26,8 @@ export default function BudgetPage() {
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(MONTHLY)}</span></div>
-        {MONTH_SPLIT.map((s) =>
-          s.popup ? (
-            <button type="button" className="mc-keyvalue mc-kv-btn" key={s.name} onClick={() => openPopup(<IrregularPopup />)}>
-              <span>{s.name} ›</span><strong>{won(s.amount)}</strong>
-            </button>
-          ) : (
-            <div className="mc-keyvalue" key={s.name}><span>{s.name}</span><strong>{won(s.amount)}</strong></div>
-          )
-        )}
+        {/* 비정기지출 준비금 줄은 10/24 결정 AB로 2차 (IrregularPopup 은 2차에 다시 씀) */}
+        {MONTH_SPLIT.map((s) => <div className="mc-keyvalue" key={s.name}><span>{s.name}</span><strong>{won(s.amount)}</strong></div>)}
       </div>
 
       <div className="mc-card">

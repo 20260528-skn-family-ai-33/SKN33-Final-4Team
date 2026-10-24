@@ -20,6 +20,7 @@
     --brand:#8FAAFF; --brand-soft:#243258; --lime:#C7E948; --lime-ink:#1C2306;
     --red:#FF8A9C; --red-soft:#3A1C24; --amber:#F2B45A; --amber-soft:#3A2E17;
     --green:#5FD39B; --green-soft:#16362A; --gray-soft:#252D3B;
+    color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
@@ -27,6 +28,7 @@
   --brand:#8FAAFF; --brand-soft:#243258; --lime:#C7E948; --lime-ink:#1C2306;
   --red:#FF8A9C; --red-soft:#3A1C24; --amber:#F2B45A; --amber-soft:#3A2E17;
   --green:#5FD39B; --green-soft:#16362A; --gray-soft:#252D3B;
+  color-scheme:dark;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -63,7 +65,7 @@ ul.easy li:first-child{border-top:0}
 ul.easy li::before{content:"";position:absolute;left:4px;top:15px;width:7px;height:7px;border-radius:50%;background:var(--brand)}
 ul.easy li b{font-weight:700}
 /* timeline */
-.timeline{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}
+.timeline{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .tl{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:14px;position:relative}
 .tl .when{font-size:12px;color:var(--brand);font-weight:700}
 .tl .what{font-weight:700;margin:2px 0 6px}
@@ -147,14 +149,14 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
 <header class="hero">
   <button class="theme" id="themeBtn" type="button">🌗 화면 밝기</button>
   <div class="wrap">
-    <div class="eyebrow">머니쿠션 · API 명세 10/21 ~ 10/22</div>
+    <div class="eyebrow">머니쿠션 · API 명세 10/21 ~ 10/24</div>
     <h1>명세 쓰면서 정한 것, 한눈에</h1>
-    <p class="lead">이틀 동안 명세를 쓰고, 리뷰하고, 회의하면서 정한 것들을 쉬운 말로 모았어요. 자세한 내용은 <code>docs/결정기록_2026-10-21.md</code>와 <code>docs/api/README.md</code>에 있어요. 이 페이지는 "무엇을 왜 그렇게 정했는지" 감을 잡는 용도예요.</p>
+    <p class="lead">명세를 쓰고, 리뷰하고, 회의하면서 정한 것들을 쉬운 말로 모았어요. 10/24에 남은 8개까지 정해서 <b>1차 명세가 확정</b>됐어요. 자세한 내용은 <code>docs/결정기록_2026-10-21.md</code>와 <code>docs/api/README.md</code>에 있어요. 이 페이지는 "무엇을 왜 그렇게 정했는지" 감을 잡는 용도예요.</p>
     <div class="stats">
       <div class="stat"><b>35개</b><span>1차 확정 API</span></div>
-      <div class="stat"><b>18개</b><span>남은 1차 API (ML 후 14)</span></div>
-      <div class="stat"><b>A ~ Z</b><span>10/22 결정 26개</span></div>
-      <div class="stat"><b>0개</b><span>10/24 전 정할 것</span></div>
+      <div class="stat"><b>17개</b><span>남은 1차 API (ML 후 13)</span></div>
+      <div class="stat"><b>A ~ AB</b><span>결정 28개</span></div>
+      <div class="stat"><b>10/24</b><span>1차 명세 확정</span></div>
     </div>
   </div>
 </header>
@@ -167,7 +169,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
 
 <!-- 1. 흐름 -->
 <section id="timeline">
-  <h2>이틀 동안 이렇게 정했어요</h2>
+  <h2>이렇게 정해 왔어요</h2>
   <p class="h2sub">결정마다 기호가 붙어 있어요. 문서에서 "결정 Q"처럼 나오면 아래 '결정 기호 찾기'에서 찾을 수 있어요.</p>
   <div class="timeline">
     <div class="tl"><div class="when">10/21</div><div class="what">공통 규칙 · 카테고리</div><p class="muted" style="margin:0 0 8px;font-size:13px">모든 API가 같은 모양으로 답하게</p><div class="codes"><span>API_RULES</span><span>카테고리 12개</span></div></div>
@@ -175,6 +177,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
     <div class="tl"><div class="when">10/22 오전</div><div class="what">홈 · 정기 저축</div><p class="muted" style="margin:0 0 8px;font-size:13px">저축을 고정지출과 분리</p><div class="codes"><span>H-03·07</span><span>S-01~S-12</span></div></div>
     <div class="tl"><div class="when">10/22 오전</div><div class="what">PR 리뷰 · 1차 취합</div><p class="muted" style="margin:0 0 8px;font-size:13px">혜리 · 세진 명세와 맞추기</p><div class="codes"><span>A~F</span><span>G~I</span><span>J~M</span></div></div>
     <div class="tl"><div class="when">10/22 오후</div><div class="what">2차 검수 · 회의</div><p class="muted" style="margin:0 0 8px;font-size:13px">'확인 필요' 108줄을 전부 정리</p><div class="codes"><span>N~Z</span></div></div>
+    <div class="tl"><div class="when">10/24</div><div class="what">1차 확정 · DB 반영</div><p class="muted" style="margin:0 0 8px;font-size:13px">남은 8개를 정하고, 정한 코드를 DB에 넣음</p><div class="codes"><span>AA</span><span>AB</span><span>finance 0008</span></div></div>
   </div>
 </section>
 
@@ -209,7 +212,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
   <div class="flow">
     <div class="step first"><div class="n">1</div><b>꼭 나갈 돈</b><p>확정 고정지출 · 대출 월 상환액 · <b>첫</b> 카드 청구서 · 이번 할부금</p></div>
     <div class="step"><div class="n">2</div><b>저축</b><p>저축 최소 금액(확정한 정기 저축 합계) 이상</p></div>
-    <div class="step"><div class="n">3</div><b>쿠션 · 준비금</b><p>머니 쿠션 적립, 1년에 한 번 나가는 돈 준비</p></div>
+    <div class="step"><div class="n">3</div><b>쿠션</b><p>머니 쿠션 적립 (비정기지출 준비금은 2차, AB)</p></div>
     <div class="step"><div class="n">4</div><b>생활비</b><p>카테고리별 예산으로 나눔</p></div>
     <div class="step"><div class="n">5</div><b>여윳돈</b><p>어디에도 안 나눈 돈</p></div>
   </div>
@@ -220,9 +223,10 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
       <div class="ex">미리 뗄 돈 = <b>첫 청구서 총액 − 이번 주기 시작 뒤 그 카드로 쓴 돈</b><br><span class="muted">예) 청구서 40만 원 중 10만 원은 이번 주기에 쓴 것 → 30만 원만 미리 뗌</span></div>
     </div>
     <div class="card">
-      <h3>카드로 내는 고정지출은? <span class="tag">★6 · C-08</span></h3>
+      <h3>카드 · 이체로 내는 고정지출은? <span class="tag">★6 · C-08 · AA⑤</span></h3>
       <p class="muted" style="margin:0 0 8px;font-size:14px">넷플릭스를 카드로 내면 그 돈은 <b>카드값 안에</b> 들어 있어요. 그래서 고정지출로 따로 빼지 않고, 카드 결제를 "이 결제가 맞나요?"로 확인해서 <b>고정비 표시</b>만 붙여요.</p>
       <div class="ex">고정비 표시가 붙은 거래 → <b>생활비 사용액에서 빠짐</b><br><span class="muted">(소비 분석에는 들어가되 '고정지출'로 따로 보여 줌, 결정 S)</span></div>
+      <div class="ex">집주인에게 <b>계좌이체로 내는 월세</b>도 같아요. 이체는 원래 소비가 아니지만, 고정지출 "월세"와 금액 · 날짜(±3일)가 맞아 연결되면 <b>소비 + 고정 표시</b>가 돼요. 연결을 풀면 다시 이체로.</div>
     </div>
   </div>
 </section>
@@ -301,7 +305,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
         <span class="st blue">제안<small>규칙 · ML이 정함</small></span><span class="arrow">→</span>
         <span class="st green">확정<small>사용자가 고름</small></span>
       </div>
-      <p class="muted" style="margin:10px 0 0;font-size:13px">편의점 · 마트는 <b>매번 물어봐요</b>(기억 안 함). 친구에게 보낸 이체는 처음엔 소비가 아니고, 사용자가 카테고리를 고르면 그때부터 소비예요.</p>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">편의점 · 마트는 <b>매번 물어봐요</b>(기억 안 함). 친구에게 보낸 이체는 처음엔 소비가 아니고, 사용자가 카테고리를 고르면 그때부터 소비예요. 고정지출에 연결된 월세 이체는 자동으로 소비가 돼요(AA⑤).</p>
     </div>
   </div>
 </section>
@@ -314,7 +318,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
   <details class="area" open>
     <summary><span class="emoji">🔁</span><span><span class="t">고정지출</span><br><span class="s">fixed.md · 나은 · 확정</span></span><span class="chev">›</span></summary>
     <div class="body"><ul class="easy">
-      <li><b>매달 나가는 돈만</b> 받아요. 1년에 한 번은 준비금, 자주 사는 건 생활비 예산으로. <span class="tag">C-04</span></li>
+      <li><b>매달 나가는 돈만</b> 받아요. 자주 사는 건 생활비 예산으로. 1년에 한 번 내는 돈은 1차에서 따로 안 받아요(비정기지출 준비금은 2차). <span class="tag">C-04</span> <span class="tag lime">AB</span></li>
       <li>카테고리는 <b>꼭</b> 골라요. 저축 · 대출 · 카드값은 고정지출이 아니에요. <span class="tag">C-01</span></li>
       <li>금액 1,000원 ~ 1억 원. 출금일은 비워도 돼요("모름"). <span class="tag">C-03</span></li>
       <li>결제 수단은 계좌 / 카드 / 모름 중 하나. <span class="tag">C-02</span></li>
@@ -358,6 +362,9 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
       <li>친구 이체는 처음엔 소비가 아니에요. [소비로 분류하기]로 카테고리를 고르면 그때부터 소비 · 예산에 들어가요. 되돌리기도 가능. <span class="tag">W</span></li>
       <li>분류를 고치면 <b>그 가맹점의 다음 거래</b>부터 기억해요. 단 편의점 · 마트는 매번 물어봐요. <span class="tag">V⑤</span></li>
       <li>분류를 바꿔도 예산 초안은 만료되지 않아요. <span class="tag">D</span></li>
+      <li>⭐ 월세처럼 <b>고정지출에 연결된 이체는 소비</b>로 봐요. 카테고리는 그 고정지출 것(예: 주거·통신)에 '고정' 표시. 연결을 풀면 다시 이체. <span class="tag lime">AA⑤</span></li>
+      <li>원래 이체였다는 표시는 서버가 따로 기억해요. 그래서 [소비로 분류하기]를 되돌릴 수 있어요. <span class="tag lime">AA⑥</span></li>
+      <li>"소비만 · 입금만" 같은 유형 필터는 1차에 없어요. 목록의 '월급' · '이체' 표시로 구분해요. 입금에는 카테고리를 못 골라요. <span class="tag lime">AA⑦</span></li>
     </ul></div>
   </details>
 
@@ -382,6 +389,9 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
       <li>학자금대출처럼 은행 조회로 안 잡히는 대출은 <b>직접 등록</b>(35번째 API). <span class="tag">P · Y</span></li>
       <li>대출 상환 출금은 고정지출 후보로 만들지 않고 대출에 연결해요.</li>
       <li>고정지출이 쓰는 카드를 선택 해제해도 고정지출은 그대로예요. <span class="tag">N⑩</span></li>
+      <li>청구서의 청구 월은 <code>"2026-10"</code> 모양, 카드사 이름(<code>issuerName</code>)도 같이 줘요. 모르는 값은 <code>null</code>. <span class="tag lime">AA①</span></li>
+      <li>대출 값마다 "은행 조회 · 직접 입력 · 확인 필요"를 표시해요(<code>fieldStates</code>). <span class="tag lime">AA②</span></li>
+      <li>대출 목록에는 <b>갚고 있는 대출만</b> 보여요. 다 갚은 대출은 1차에 안 보여요. <span class="tag lime">AA③</span></li>
     </ul></div>
   </details>
 
@@ -395,6 +405,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
       <li>고정지출도 넣되 따로 보여 줘요: "132만 원 썼어요. 고정지출 77만 원을 빼면 생활비는 55만 원이에요." <span class="tag">S</span></li>
       <li>소비가 없는 기간 → 0원 카드 + "이 기간엔 소비가 없어요". <span class="tag">Z</span></li>
       <li>챗봇을 다시 열면 화면이 마지막 대화를 기억해서 이어 가요. <span class="tag">N⑤</span></li>
+      <li>메시지를 보내면 응답에 <b>내가 보낸 메시지도 같이</b> 와요. 화면은 받은 그대로 대화 뒤에 붙이면 돼요. <span class="tag lime">AA⑧</span></li>
     </ul></div>
   </details>
 
@@ -404,7 +415,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
       <li>비밀번호 <b>8~25자, 영문 · 숫자 · 특수문자 중 2가지 이상</b>. 화면에는 ●●●로 보여요. <span class="tag">X</span></li>
       <li>"비밀번호 확인"은 화면에서만 비교하고, 서버엔 한 번만 보내요. <span class="tag">X</span></li>
       <li>이름(닉네임) 필수. 약관 · 개인정보 동의 둘 다 있어야 가입. <span class="tag">L</span></li>
-      <li>가입하면 <b>바로 로그인</b>돼서 온보딩으로 가요. <span class="tag">X</span></li>
+      <li>가입하면 <b>바로 로그인</b>돼서 온보딩으로 가요. 가입 응답에도 <code>onboardingCompleted: false</code>가 들어 있어요. <span class="tag">X</span> <span class="tag lime">AA④</span></li>
       <li>[자동 로그인] 체크박스는 없어요. 로그인하면 14일 유지. <span class="tag">X</span></li>
       <li>틀린 이메일 · 비밀번호 · 정지 계정은 모두 같은 문구: "이메일 또는 비밀번호를 확인해 주세요". <span class="tag">X</span></li>
     </ul></div>
@@ -429,6 +440,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
       <div class="no"><span class="x">✕</span><div><b>로그인 실패 횟수 제한</b><br><span class="muted">출시 전 2차에 꼭 (V⑩)</span></div></div>
       <div class="no"><span class="x">✕</span><div><b>챗봇 대화 목록 · 연결 상세 API</b><br><span class="muted">화면이 기억 / 있는 API 조합으로 (N⑤ · N⑦)</span></div></div>
       <div class="no"><span class="x">✕</span><div><b>대출 잔액 · 금리 직접 고치기</b><br><span class="muted">은행 값으로 충분 (P)</span></div></div>
+      <div class="no"><span class="x">✕</span><div><b>비정기지출 준비금</b><br><span class="muted">연납 보험 · 경조사 대비 월 적립은 2차 (AB)</span></div></div>
     </div>
   </div>
 </section>
@@ -436,7 +448,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
 <!-- 8. 담당 -->
 <section id="owners">
   <h2>누가 무엇을 맡나요</h2>
-  <p class="h2sub">원칙: <b>그 명세를 쓴 사람이 그 매칭도 만든다</b>(T). 남은 API 18개는 U로 나눴어요.</p>
+  <p class="h2sub">원칙: <b>그 명세를 쓴 사람이 그 매칭도 만든다</b>(T). 남은 API는 U로 나눴어요 (18개 → 10/24 AB로 17개).</p>
   <div class="grid3">
     <div class="card owner"><h3><span class="dot" style="background:#E2A400"></span>나은 · PM</h3>
       <ul class="easy">
@@ -454,7 +466,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
       <ul class="easy">
         <li><b>명세</b>: 인증 · 카드 · 대출 · 소비 분석 카드 (11개)</li>
         <li><b>매칭</b>: 카드값 ↔ 청구서, 대출 상환 ↔ 대출, 월 상환 추정</li>
-        <li><b>남은 API 8개</b>: 내 정보 · 급여 · 쿠션 · 비정기 준비금 · 비밀번호 재설정</li>
+        <li><b>남은 API 7개</b>: 내 정보 · 급여 · 쿠션 · 비밀번호 재설정</li>
       </ul></div>
   </div>
   <div class="card" style="margin-top:12px">
@@ -478,7 +490,7 @@ footer{color:var(--sub);font-size:13px;padding:36px 0 48px}
 
 </main>
 
-<footer><div class="wrap">기준: <code>docs/결정기록_2026-10-21.md</code> (2026-10-22 오후) · 자세한 API 모양은 <code>docs/api/README.md</code>와 각 명세 문서를 보세요.</div></footer>
+<footer><div class="wrap">기준: <code>docs/결정기록_2026-10-21.md</code> (2026-10-24, 결정 AB까지) · 자세한 API 모양은 <code>docs/api/README.md</code>와 각 명세 문서를 보세요.</div></footer>
 
 <script>
 const G = [
@@ -517,12 +529,14 @@ const G = [
   ['R','온보딩','onboardingCompleted, 첫 예산 승인 때 true'],
   ['S','소비 분석과 고정지출','넣되 fixedAmount로 따로 표시'],
   ['T','매칭 담당','명세 쓴 사람이 매칭도, 입구 함수는 혜리'],
-  ['U','남은 API 배분','나은 7 · 세진 8 · 혜리 3'],
+  ['U','남은 API 배분','나은 7 · 세진 7(AB 후) · 혜리 3'],
   ['V','1차 범위','거래 목록에 월급 · 이체, 나머지 9개는 1차 안 함'],
   ['W','친구 이체','고르면 그때부터 소비'],
   ['X','회원가입 · 로그인','비밀번호 8~25자 2가지 이상, 자동 로그인 체크박스 없음'],
   ['Y','대출 직접 등록 칸','기관 · 이름 · 남은 금액 필수'],
   ['Z','카드 청구서 · 작은 것','예상 표시 · 대출 기관 · 소비 0원 카드 · 계좌 ID'],
+  ['AB','비정기지출 준비금 (10/24)','1차에서 뺌 → 2차. 돈의 순서 ③은 쿠션만, 연납은 1차에서 따로 안 받음, DB 표는 비워 둠'],
+  ['AA','1차 확정 8개 (10/24)','청구 월 "2026-10" · 대출 상환 중만 · 월세 이체는 소비 · 가입 응답 onboardingCompleted · 챗봇 응답에 내 메시지'],
 ];
 const gl = document.getElementById('gl'), q = document.getElementById('q'), empty = document.getElementById('empty');
 const esc = (s) => s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));

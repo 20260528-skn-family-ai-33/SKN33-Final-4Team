@@ -12,12 +12,21 @@ import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 import { mockConnect } from '../utils/mockConnect.js'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
+import LoanAddPopup from '../popups/LoanAddPopup.jsx'
+
+// 대출 (결정 P · Z①): 은행 연결로 불러온 대출 + 직접 등록한 대출. 1차 목록엔 상환 중인 대출만 (AA③)
+// 대출 기관(캐피탈 등)을 따로 연결하면 연결 목록에 businessType: loan 으로 함께 보인다
+const LOANS = [
+  { id: 'L1', name: '신용대출', org: 'KB국민은행', source: '은행 조회', balance: 6_420_000, pay: '매월 25일 · 310,500원' },
+  { id: 'L2', name: '학자금대출', org: '한국장학재단', source: '직접 등록', balance: 3_150_000, pay: '월 상환액 확인 필요' },
+]
 
 const ACCOUNTS = [
   { id: 'sh1', bank: '신한은행', short: '신한', name: '저축예금', nickname: null, no: '1234', kind: '입출금', use: '생활비', balance: 340_000, updated: '오늘 09:30', status: 'ok',
     fixed: [{ name: '구독료', day: 5, amount: 15_000 }] },
   { id: 'kb1', bank: '국민은행', short: '국민', name: 'KB국민ONE통장', nickname: '급여통장', no: '5678', kind: '입출금', use: '고정지출', balance: 2_460_000, updated: '10.17 09:30', status: 'relogin',
-    fixed: [{ name: '월세', day: 25, amount: 700_000 }, { name: '통신비', day: 20, amount: 55_000 }] },
+    fixed: [{ name: '월세', day: 25, amount: 700_000 }, { name: '통신비', day: 20, amount: 55_000 }],
+    savings: [{ name: '신한 자유적금', day: 25, amount: 300_000 }] },
 ]
 
 export default function ConnectionsPage() {
@@ -81,8 +90,16 @@ export default function ConnectionsPage() {
       </div>
 
       <div className="mc-card">
-        <h2>대출 <span className="mc-hint">CODEF · 조회 전용</span></h2>
-        <button type="button" className="mc-listrow" onClick={toConnect}>상환 중인 대출 연결　›</button>
+        <div className="mc-row"><h2>대출 {LOANS.length}건</h2><span className="mc-hint">상환 중 · 조회 전용</span></div>
+        {LOANS.map((l) => (
+          <button type="button" className="mc-listrow" key={l.id} onClick={() => navigate(PATHS.loanCheck, { state: { from: 'my' } })}>
+            <span className="mc-tile"><Icon name="Landmark" /></span>
+            <span className="mc-grow"><strong>{l.name}</strong><span className="mc-muted">{l.org} · {l.source} · {l.pay}</span></span>
+            <span className="mc-right">{won(l.balance)} <span className="mc-muted">›</span></span>
+          </button>
+        ))}
+        <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup />)}>+ 조회되지 않은 대출 직접 등록</button>
+        <button type="button" className="mc-listrow" onClick={toConnect}>대출 기관 연결　›</button>
       </div>
       <p className="mc-note">계좌를 누르면 별칭·선택 해제·은행 연결 해제를 할 수 있어요. 송금·결제는 실행하지 않아요.</p>
     </Layout>

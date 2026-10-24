@@ -116,7 +116,7 @@
 | `paymentHistory[].principal` | 정수 또는 null | 해당 납부의 원금, 원. 대출 약정원금과 구분하며 미제공은 null |
 | `paymentHistory[].interest` | 정수 또는 null | 해당 납부의 이자, 원. 미제공은 null, 확인된 0원만 0 |
 | `estimatedMonthlyPayment` | 정수 또는 null | P: 확인된 지난 납부를 근거로 계산한 월 상환 추정액, 원. 자료가 없거나 산출할 수 없으면 null·화면 숨김. 사용자 저장값 `monthlyPayment`를 자동 덮어쓰지 않음 |
-| `overdue` | 불리언 또는 null | P: 연체 확인 true, 연체 없음 확인 false, 알 수 없으면 null·화면 숨김. `status: repaid`와 다른 뜻 |
+| `overdue` | 불리언 또는 null | P: 연체 확인 true, 연체 없음 확인 false, 알 수 없으면 null·화면 숨김. `status: repaid`와 다른 뜻. DB `loan.overdue`(10/24 추가) |
 | `fieldStates` | 객체 | **AA 확정:** `manualBalance`·`manualRate`·`repaymentMethod`·`monthlyPayment`·`paymentDay` 각 보완값의 출처·사용자 확인 상태. DB JSON 전체를 그대로 노출하지 않고 아래 허용 항목만 구성 |
 | `fieldStates.<필드>.source` | 문자열 또는 null | `provider` 기관 조회 / `manual` 사용자 입력 / `estimated` 서버 추정. 값이 없거나 출처를 확인할 수 없으면 null |
 | `fieldStates.<필드>.confirmationStatus` | 문자열 | `confirmed` 사용자 확인 완료 / `unconfirmed` 값은 있으나 사용자 미확인 / `unknown` 값 또는 확인 근거 없음. 대출 상환 상태 `status`와 구분 |

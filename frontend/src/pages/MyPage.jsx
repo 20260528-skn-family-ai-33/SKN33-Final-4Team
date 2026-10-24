@@ -11,7 +11,7 @@ import { PATHS } from '../routes.js'
 const MENU = [
   { icon: 'IdCard', name: '내 정보', sub: '나이·우선순위 등', to: PATHS.profile },
   { icon: 'Banknote', name: '월급·급여일', sub: '월 280만원 · 매월 1일', to: PATHS.salary },
-  { icon: 'Repeat', name: '고정지출', sub: '3건 · 770,000원', to: PATHS.fixed },
+  { icon: 'Repeat', name: '고정지출', sub: '5건 · 962,000원', to: PATHS.fixed, state: { from: 'my' } },  // 고정지출 관리 모드 (확정 목록 · 중지 · 미납 고르기)
   { icon: 'PiggyBank', name: '정기 저축', sub: '2건 · 400,000원', to: PATHS.savings, state: { from: 'my' } },  // 저축 확인 화면을 관리 모드로 연다 (PR #29 리뷰)
   { icon: 'Compass', name: '예산 산정 방향', sub: '선택 전', to: PATHS.direction },
   { icon: 'ShieldCheck', name: '지킬 돈', sub: '생활비 1,120,000원 · 저축 410,000원 · 쿠션 210,000원', to: PATHS.protect },

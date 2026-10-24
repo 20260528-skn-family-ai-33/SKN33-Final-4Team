@@ -1,4 +1,5 @@
 // 팝업: 비정기지출 준비금 — 예산 "비정기지출 준비금 ›"
+// ⚠️ 10/24 결정 AB로 1차에서 뺌 (2차). 지금은 어디서도 열지 않는다 — 2차에 BudgetPage 에서 다시 연결
 import Popup from './Popup.jsx'
 
 const ITEMS = [

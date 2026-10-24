@@ -5,12 +5,11 @@
 // 배분 가능한 금액 = 월급 - 고정지출
 //   생활비 = 배분 가능 × 생활비 비율   (한 달 생활비 전체. 다음 화면에서 카테고리별로 나눈다)
 //   저축   = 배분 가능 × 저축 비율
-//   남는 돈 = 배분 가능 - 생활비 - 저축 - 비정기지출 준비금
+//   남는 돈 = 배분 가능 - 생활비 - 저축   (비정기지출 준비금은 10/24 결정 AB로 2차 — 1차 계산에 안 넣음)
 //   월 쿠션 적립금 = 남는 돈의 절반 (1만원 단위 내림) → 나머지는 여윳돈
 
 export const MONTHLY = 2_800_000   // 월급
 export const FIXED = 770_000       // 고정지출 합계
-export const IRREGULAR = 78_000    // 비정기지출 준비금
 export const CUSHION_GOAL = MONTHLY * 3   // 머니 쿠션 목표 = 월급×3
 
 // [이름, 설명, 생활비 비율, 저축 비율]
@@ -28,7 +27,7 @@ export function recommendFor(dir) {
   const available = Math.max(0, MONTHLY - FIXED)
   const livingBudget = round10k(available * livingRate)
   const savingFloor = round10k(available * savingRate)
-  const rest = available - livingBudget - savingFloor - IRREGULAR
+  const rest = available - livingBudget - savingFloor
   const cushionMonthly = Math.max(0, floor10k(rest * 0.5))
   return { available, livingRate, savingRate, livingBudget, savingFloor, cushionMonthly }
 }

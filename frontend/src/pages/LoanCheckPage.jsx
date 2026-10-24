@@ -1,13 +1,15 @@
 // 대출 확인
 // 대출 목록은 시안 예시값 — CODEF 대출 조회 API 가 생기면 바꾼다
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { MONTH_DAYS } from '../utils/days.js'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
+import { usePopup } from '../popups/context.js'
+import LoanAddPopup from '../popups/LoanAddPopup.jsx'
 
 const METHODS = ['원리금균등', '원금균등', '만기일시', '잘 모르겠어요']
 // tag: auto = CODEF 조회됨 / plan = 직접 입력 / warn = 확인 필요
@@ -96,24 +98,27 @@ function LoanCard({ loan }) {
 
 export default function LoanCheckPage() {
   const navigate = useNavigate()
-  const next = () => navigate(PATHS.salary)  // 저장은 API 연결 후
+  const { openPopup } = usePopup()
+  // 마이 > 연결 관리 · 홈 '꼭 나갈 돈'에서 열면 첫 설정 흐름이 아니라 확인 · 수정만 하고 돌아간다
+  const manage = ['my', 'home'].includes(useLocation().state?.from)
+  const next = () => (manage ? navigate(-1) : navigate(PATHS.salary))  // 저장은 API 연결 후 (PATCH /api/finance/loans/<id>/)
 
   return (
     <Layout
       title="대출 확인"
       showBack
       foot={<>
-        <button type="button" onClick={next}>나중에 입력</button>
+        {!manage && <button type="button" onClick={next}>나중에 입력</button>}
         <button type="button" className="mc-primary" onClick={next}>상환 예정액 저장</button>
       </>}
     >
-      <StepBar step={2} />
+      {!manage && <StepBar step={2} />}
       <div className="mc-eyebrow">대출 확인</div>
-      <h1>불러온 대출을 확인해 주세요</h1>
+      <h1>{manage ? '상환 중인 대출' : '불러온 대출을 확인해 주세요'}</h1>
       <p className="mc-muted">불러온 대출을 확인하고, 앞으로 낼 금액을 알려 주세요.</p>
       {LOANS.map((loan) => <LoanCard key={loan.id} loan={loan} />)}
-      {/* 직접 등록은 기능 연결 전 */}
-      <button type="button" className="mc-link">+ 조회되지 않은 대출 직접 등록</button>
+      {/* 직접 등록 (API 35, 결정 Y) — 학자금 · 캐피탈처럼 은행 연결로 안 잡히는 대출 */}
+      <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup />)}>+ 조회되지 않은 대출 직접 등록</button>
       <p className="mc-note">여기서는 상환 예정액만 저장해요. 예산에 넣을 때는 금액과 출처를 보여 드리고 승인 후 반영해요.</p>
       <div className="mc-error" role="alert"></div>
     </Layout>

@@ -961,3 +961,73 @@
 /* 정기 저축 팝업 · 찾은 저축(후보)은 계좌를 못 바꿈 (10/22 PR #29 리뷰, S-11) */
 #mc-new-preview .mc-field select:disabled{background:var(--mc-bg);color:var(--mc-sub);cursor:not-allowed}
 #mc-new-preview .mc-note.mc-saving-lock{margin:-8px 0 0;padding:10px 12px !important;border-radius:12px;background:var(--mc-bg)}
+
+/* ===== 10/24 명세 대조로 추가한 화면 ===== */
+/* 칸 아래 오류 한 줄 (대출 직접 등록 등) */
+#mc-new-preview .mc-field-error{margin:-8px 0 2px;color:var(--mc-alert);font-size:12px}
+
+/* 고정지출 관리 — 미납 확인 필요 회차 (결정 G) · 중지 확인 */
+#mc-new-preview .mc-fixed-late,#mc-new-preview .mc-fixed-stop{display:flex;flex-direction:column;gap:8px;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--mc-warm);color:var(--mc-ink);font-size:13px}
+#mc-new-preview .mc-fixed-late p,#mc-new-preview .mc-fixed-stop p{margin:0;line-height:1.5}
+#mc-new-preview .mc-fixed-late b,#mc-new-preview .mc-fixed-stop b{color:var(--mc-alert)}
+#mc-new-preview .mc-fixed-late .mc-secondary{margin:0;align-self:flex-start;padding:7px 16px}
+#mc-new-preview .mc-fixed-stop .mc-inline{margin-top:0}
+
+/* 홈 — 예산이 아직 없을 때 안내 카드 (H-06) */
+#mc-new-preview .mc-home2-nobudget{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:18px;border:1px dashed color-mix(in srgb,var(--mc-brand) 45%,var(--mc-line))}
+#mc-new-preview .mc-home2-nobudget h2{margin:4px 0 0;font-size:16px;line-height:1.4;text-wrap:balance}
+#mc-new-preview .mc-home2-nobudget p{margin:0;font-size:13px}
+#mc-new-preview .mc-home2-nobudget .mc-primary{margin-top:8px;width:auto;padding:9px 18px}
+
+/* 연결 해제 확인 (결정 F) */
+#mc-new-preview .mc-disc-list{margin:8px 0 12px;padding-left:18px;font-size:13px;color:var(--mc-sub);line-height:1.6}
+#mc-new-preview .mc-disc-rel{padding:12px;border-radius:12px;background:var(--mc-bg)}
+#mc-new-preview .mc-disc-rel h3{margin:0;font-size:14px}
+#mc-new-preview .mc-disc-rel>p{margin:4px 0 8px;font-size:12px}
+#mc-new-preview .mc-disc-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--mc-line);font-size:13px;cursor:pointer}
+#mc-new-preview .mc-disc-item input{width:18px;height:18px;margin:0;flex:none}
+#mc-new-preview .mc-disc-item .mc-grow{flex:1;min-width:0}
+#mc-new-preview .mc-disc-item small{display:block;color:var(--mc-sub);font-size:11.5px}
+#mc-new-preview .mc-disc-item b{white-space:nowrap}
+#mc-new-preview .mc-disc-tag{font-style:normal;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview .mc-disc-act{margin-top:14px}
+
+/* 거래 — 월급 · 이체 · 고정 · 이체였음 (결정 V① · W · AA⑤⑥) */
+#mc-new-preview .mc-tx-tag{display:inline-block;margin-left:6px;font-style:normal;font-size:10.5px;font-weight:700;padding:1px 6px;border-radius:6px;vertical-align:1px;background:var(--mc-line);color:var(--mc-sub)}
+#mc-new-preview .mc-tx-tag.is-fixed{background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview .mc-tx-in{color:var(--mc-brand);font-weight:700}
+#mc-new-preview .mc-tx-out{color:var(--mc-sub)}
+#mc-new-preview .mc-listrow.is-transfer .mc-tile,#mc-new-preview .mc-listrow.is-income .mc-tile{background:var(--mc-bg);color:var(--mc-sub)}
+
+/* 챗봇 — 소비 분석 카드 (결정 J · S · N · Z②) */
+#mc-new-preview .mc-asst-log .mc-msg.mc-asst-card{max-width:100%;width:100%}
+#mc-new-preview .mc-spend{display:flex;flex-direction:column;gap:12px;padding:14px;border-radius:16px;border-top-left-radius:4px;background:var(--mc-paper);border:1px solid var(--mc-line);font-size:13px;color:var(--mc-ink)}
+#mc-new-preview .mc-spend-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline;font-weight:650}
+#mc-new-preview .mc-spend-head small{color:var(--mc-sub);font-weight:400;font-size:11px;white-space:nowrap}
+#mc-new-preview .mc-spend-total{display:flex;flex-direction:column;gap:4px}
+#mc-new-preview .mc-spend-total strong{font-size:26px;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+#mc-new-preview .mc-spend-diff{align-self:flex-start;font-size:12px;font-weight:650;padding:2px 8px;border-radius:7px}
+#mc-new-preview .mc-spend-diff.is-up{background:var(--mc-warm);color:var(--mc-alert)}
+#mc-new-preview .mc-spend-diff.is-down{background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview .mc-spend-empty{margin:0;color:var(--mc-sub)}
+#mc-new-preview .mc-spend-bar{display:flex;height:10px;border-radius:6px;overflow:hidden;background:var(--mc-bg)}
+#mc-new-preview .mc-spend-bar .is-fixed,#mc-new-preview .mc-spend-legend i.is-fixed{background:var(--mc-brand)}
+#mc-new-preview .mc-spend-bar .is-living,#mc-new-preview .mc-spend-legend i.is-living{background:var(--mc-lime)}
+#mc-new-preview .mc-spend-legend{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:12px;color:var(--mc-sub)}
+#mc-new-preview .mc-spend-legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+#mc-new-preview .mc-spend-lines{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:4px;line-height:1.5}
+#mc-new-preview .mc-spend-lines li::before{content:'· ';color:var(--mc-sub)}
+#mc-new-preview .mc-spend-cats{display:flex;flex-direction:column;gap:8px;padding-top:10px;border-top:1px solid var(--mc-line)}
+#mc-new-preview .mc-spend-cat{display:grid;grid-template-columns:minmax(0,7.5em) 1fr auto;gap:10px;align-items:center}
+#mc-new-preview .mc-spend-cname{font-size:12.5px;min-width:0}
+#mc-new-preview .mc-spend-top{display:block;font-style:normal;font-size:10px;font-weight:700;color:var(--mc-brand)}
+#mc-new-preview .mc-spend-cbar{height:6px;border-radius:4px;background:var(--mc-bg);overflow:hidden}
+#mc-new-preview .mc-spend-cbar span{display:block;height:100%;border-radius:4px;background:var(--mc-brand)}
+#mc-new-preview .mc-spend-camt{text-align:right;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+#mc-new-preview .mc-spend-camt small{display:block;font-weight:400;font-size:11px;color:var(--mc-sub)}
+#mc-new-preview .mc-spend-unc{display:flex;justify-content:space-between;gap:8px;width:100%;margin:0;padding:9px 12px;border-radius:10px;border:0;text-align:left;font-size:12px;background:var(--mc-warm);color:var(--mc-ink);cursor:pointer}
+#mc-new-preview .mc-spend-unc span:last-child{color:var(--mc-alert);font-weight:650;white-space:nowrap}
+/* 카드 청구서 확정 상태 (결정 Z) */
+#mc-new-preview .mc-bill-st{font-size:11px;font-weight:700;padding:2px 8px;border-radius:7px;background:var(--mc-line);color:var(--mc-sub)}
+#mc-new-preview .mc-bill-st.is-confirmed{background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview .mc-bill-st.is-unknown{background:var(--mc-warm);color:var(--mc-alert)}

@@ -1,6 +1,7 @@
 // 팝업: 고정지출 추가 / 수정
-// props: item = 고칠 고정지출 (없으면 "추가", 있으면 "수정")
-// 저장·삭제는 아직 안 되고 닫히기만 한다
+// props: item = 고칠 고정지출 (없으면 "추가", 있으면 "수정"), manage = 마이 · 홈에서 연 고정지출 관리 화면
+// 저장·중지는 아직 안 되고 닫히기만 한다
+// 중지 (fixed.md 3. 고정지출 중지): 확정된 항목만. 행은 지우지 않고 stopped, 이번 주기 미납 납부 예정도 취소. 지난 기록은 남는다
 // 카테고리 (10/21 결정, 요구사항 TXN-008): 10개 + 기타 중 필수. 항목 이름을 보고 미리 골라 둔다(사용자가 직접 고르면 그대로 둠)
 //   저축 · 투자 · 대출 상환 · 카드값은 고정지출로 받지 않는다 (저축 = 저축 확인 · 대출 = 대출 확인 · 카드값 = 카드 청구서)
 //   서버로 보낼 때는 화면 이름이 아니라 카테고리 코드로 보낸다 (docs/API_RULES.md 카테고리 코드)
@@ -39,7 +40,7 @@ function payOf(item) {
   return 'none'
 }
 
-export default function FixedPopup({ item }) {
+export default function FixedPopup({ item, manage = false }) {
   const { closePopup } = usePopup()
   const editing = !!item
   const disconnected = item?.payStatus === 'disconnected'   // 연결 해제된 계좌·카드면 다시 고르게 비워 둔다
@@ -50,6 +51,8 @@ export default function FixedPopup({ item }) {
   const [error, setError] = useState('')
   const [requestKey] = useState(newRequestKey)   // 이 팝업의 요청 번호 (다시 눌러도 같은 번호)
   const [saving, setSaving] = useState(false)
+  const [stopAsk, setStopAsk] = useState(false)   // [더 이상 안 나가요]를 한 번 누르면 확인 문구를 보여 준다
+  const canStop = editing && (manage || item.manual)   // 후보(suggested)는 중지가 아니라 [고정지출 아니에요]
 
   const onName = (e) => {
     if (catTouched) return
@@ -116,11 +119,21 @@ export default function FixedPopup({ item }) {
             {PICK_CATS.map((c) => <option key={c}>{c}</option>)}
           </select>
         </label>
-        <p className="mc-note" style={{ padding: 0 }}>매달 나가는 돈만 넣어요. 1년에 한 번 내는 건 비정기지출 준비금, 커피처럼 자주 사는 건 생활비 예산에서 챙겨요. 저축·대출 상환·카드값도 따로 챙겨요.</p>
+        <p className="mc-note" style={{ padding: 0 }}>매달 나가는 돈만 넣어요. 커피처럼 자주 사는 건 생활비 예산에서 챙겨요. 저축·대출 상환·카드값도 따로 챙겨요.</p>
         <div className="mc-error" role="alert">{error}</div>
         <div className="mc-foot"><button className="mc-primary" form="mc-pop-form" type="submit" disabled={saving}>{saving ? '저장 중…' : editing ? '수정 저장' : '추가하기'}</button></div>
       </form>
-      {editing && <button type="button" className="mc-secondary">이 고정지출 삭제</button>}
+      {canStop && !stopAsk && <button type="button" className="mc-secondary" onClick={() => setStopAsk(true)}>더 이상 안 나가요</button>}
+      {canStop && stopAsk && (
+        <div className="mc-fixed-stop" role="alert">
+          <p><b>{item.name} 고정지출을 그만할까요?</b><br />다음 달 예산부터 빠지고, 이번 주기에 아직 안 낸 회차도 '꼭 나갈 돈'에서 빠져요. 앱의 고정지출 관리만 중지돼요. 자동이체 · 구독 해지는 그 서비스에서 해 주세요.</p>
+          <div className="mc-inline">
+            {/* 중지는 API 연결 후: apiSend(`/api/budgets/fixed/${item.id}/`, 'DELETE') → 204 */}
+            <button type="button" className="mc-secondary mc-danger" onClick={closePopup}>그만하기</button>
+            <button type="button" className="mc-secondary" onClick={() => setStopAsk(false)}>취소</button>
+          </div>
+        </div>
+      )}
     </Popup>
   )
 }

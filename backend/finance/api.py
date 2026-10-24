@@ -7,10 +7,11 @@ from rest_framework.response import Response
 from . import mock
 
 PENDING = "확인 필요"  # AI가 카테고리를 확신 못 한 거래 묶음 이름
+NOT_SPENDING = ("income", "transfer")  # 월급 입금 · 남에게 보낸 이체 — 목록엔 보이지만 소비 합계엔 안 들어감 (V①)
 
 
 def net_amount(tx):
-    """취소를 뺀 실제 소비 금액 (전체 취소 = 0, 부분취소 = 금액 - 취소 금액)"""
+    """취소를 뺀 실제 소비 금액 (전체 취소 = 0, 부분취소 = 금액 - 취소 금액). 입금 · 이체는 원래 금액"""
     if tx.get("cancel") == "full":
         return 0
     return tx["amount"] - tx.get("cancel_amount", 0)
@@ -29,7 +30,9 @@ def filter_days(selected):
     for day in mock.TX_DAYS:
         items = [{**tx, "net": net_amount(tx)} for tx in day["items"] if keep(tx)]
         if items:
-            days.append({"date": day["date"], "items": items, "total": sum(tx["net"] for tx in items)})
+            # 날짜 합계는 소비만 (입금 · 이체 제외)
+            total = sum(tx["net"] for tx in items if tx["kind"] not in NOT_SPENDING)
+            days.append({"date": day["date"], "items": items, "total": total})
     return days
 
 

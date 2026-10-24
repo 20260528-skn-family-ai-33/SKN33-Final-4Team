@@ -4,6 +4,10 @@
 - kind: "normal" 일반 거래 / "pending" AI가 카테고리를 확신 못 한 거래
 - name 은 실제 CODEF 응답처럼: 카드 = 가맹점명(resMemberStoreName), 계좌 = 적요(resAccountDesc)
 - via = 결제 수단 (카드명·계좌) / cancel = "full" 취소 · "partial" 부분취소 (cancel_amount = 취소된 금액)
+- 10/22 결정 V① · W · AA⑤⑥ (docs/api/transactions.md):
+  kind "income" = 월급 입금(H-01로 찾은 월급만) / "transfer" = 남에게 보낸 이체. 둘 다 카테고리가 없고 소비 합계에 안 들어간다
+  original = "transfer" → 원래 이체였는데 사용자가 [소비로 분류하기]로 카테고리를 고른 거래 (되돌릴 수 있음)
+  funding = "fixed" + fixed_name → 고정지출로 연결된 거래 ('고정' 표시, 생활비 사용액에서 빠짐)
 """
 
 MONTH = {"label": "10월", "used": 470_000, "budget_label": "112만원", "pct": 42}
@@ -22,6 +26,7 @@ TX_DAYS = [
     ]},
     {"date": "10월 10일", "items": [
         {"id": 2, "kind": "normal", "icon": "utensils", "name": "육전식당 역삼점", "cat": "식비", "amount": 60_000, "via": "신한 Mr.Life 신용"},
+        {"id": 14, "kind": "transfer", "icon": "send", "name": "이하늘", "amount": 30_000, "via": "국민 급여통장 · ****5678"},
         {"id": 10, "kind": "pending", "name": "(주)케이에스넷", "amount": 23_000, "via": "신한 Deep Dream 체크",
          "why": "카드 결제대행사 이름만 있어 가게를 특정하지 못했어요.", "picks": ["식비", "생활용품"]},
     ]},
@@ -45,9 +50,18 @@ TX_DAYS = [
     ]},
     {"date": "10월 5일", "items": [
         {"id": 7, "kind": "normal", "icon": "ticket", "name": "CGV 강남", "cat": "문화·여가", "amount": 28_000, "via": "신한 Mr.Life 신용"},
+        {"id": 15, "kind": "normal", "icon": "film", "name": "NETFLIX.COM", "cat": "문화·여가", "amount": 15_000, "via": "신한 Deep Dream 체크",
+         "funding": "fixed", "fixed_name": "구독료"},
         {"id": 8, "kind": "normal", "icon": "utensils", "name": "한우마을 정육점", "cat": "식비", "amount": 42_000, "via": "신한 Deep Dream 체크"},
+    ]},
+    {"date": "10월 4일", "items": [
+        {"id": 16, "kind": "normal", "icon": "send", "name": "김민수", "cat": "식비", "amount": 24_000, "via": "국민 급여통장 · ****5678",
+         "original": "transfer"},
     ]},
     {"date": "10월 3일", "items": [
         {"id": 9, "kind": "normal", "icon": "scissors", "name": "라헤어 역삼점", "cat": "뷰티·미용", "amount": 30_000, "via": "신한 Deep Dream 체크"},
+    ]},
+    {"date": "10월 1일", "items": [
+        {"id": 17, "kind": "income", "icon": "banknote", "name": "급여", "amount": 2_600_000, "via": "국민 급여통장 · ****5678"},
     ]},
 ]

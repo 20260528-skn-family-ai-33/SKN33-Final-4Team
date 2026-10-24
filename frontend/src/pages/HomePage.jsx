@@ -69,7 +69,8 @@ export default function HomePage() {
 
   // 아직 못 받았으면 "불러오는 중…" (실패하면 안내)
   if (!data) return <Layout title="머니쿠션" activeTab="home"><ApiStatus error={error} /></Layout>
-  const { period: PERIOD, home: h, mustPay: MUST_PAY } = data
+  const { period: PERIOD, home: h, mustPay: MUST_PAY, budget } = data
+  const toFixed = () => navigate(PATHS.fixed, { state: { from: 'home' } })  // 고정지출 관리 화면으로
   const pace = pacePct(PERIOD.label, PERIOD.dday)
   const note = paceNote(h.livingPct, pace)
 
@@ -89,8 +90,25 @@ export default function HomePage() {
           <span aria-hidden="true">›</span>
         </button>
       )}
+      {/* 할 일: 출금일을 모르는 고정지출 (H-05). 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다 */}
+      {h.needsPaydayCount > 0 && (
+        <button type="button" className="mc-home2-todo" onClick={toFixed}>
+          <span className="mc-home2-todo-dot">{h.needsPaydayCount}</span>
+          <span className="mc-grow">출금일을 확인할 고정지출 <strong>{h.needsPaydayCount}건</strong></span>
+          <span aria-hidden="true">›</span>
+        </button>
+      )}
 
-      {/* 3. 오늘 쓸 수 있는 돈 (가장 중요한 숫자) + 사용 속도 + 여윳돈 */}
+      {/* 3. 예산이 아직 없으면 (budget: null, H-06) 파란 카드 자리에 안내 카드 */}
+      {budget === null ? (
+        <div className="mc-card mc-home2-nobudget">
+          <span className="mc-tile"><Icon name="Wallet" /></span>
+          <h2>예산을 만들면 여기에 오늘 쓸 수 있는 돈이 보여요</h2>
+          <p className="mc-muted">월급과 고정지출을 확인하고, 지킬 돈을 정하면 카테고리별 예산을 추천해 드려요.</p>
+          <button type="button" className="mc-primary" onClick={() => navigate(PATHS.salary)}>예산 만들기</button>
+        </div>
+      ) : (
+      /* 3. 오늘 쓸 수 있는 돈 (가장 중요한 숫자) + 사용 속도 + 여윳돈 */
       <div className="mc-hero mc-budget-hero mc-home2-hero">
         <div className="mc-row">
           <span className="mc-hero-title">오늘 쓸 수 있는 돈</span>
@@ -118,6 +136,7 @@ export default function HomePage() {
           <button type="button" className="mc-link" onClick={() => navigate(PATHS.assistant)}>예산 조정 ›</button>
         </div>
       </div>
+      )}
 
       {/* 4. 입출금 계좌 잔액 (한 줄) */}
       <button type="button" className="mc-card mc-home2-bal" onClick={() => navigate(PATHS.connections)}>
@@ -135,7 +154,7 @@ export default function HomePage() {
               type="button"
               className="mc-listrow"
               key={p.name}
-              onClick={() => (p.link ? navigate(p.link) : openPopup(<CardBillPopup />))  /* 링크가 없으면(카드 청구서) 팝업 */}
+              onClick={() => (p.link ? navigate(p.link, { state: { from: 'home' } }) : openPopup(<CardBillPopup />))  /* 링크가 없으면(카드 청구서) 팝업 · 고정지출은 관리 화면으로 */}
             >
               <span className="mc-tile"><Icon name={p.icon} /></span>
               <span className="mc-grow">

@@ -20,6 +20,8 @@ def home(request):
         "period": mock.PERIOD,
         "home": mock.HOME,
         "must_pay": _must_pay(),
+        # H-06: 1차는 항상 null(예산 API 는 ML 후). 시안은 mock.BUDGET 이 None 일 때만 null 을 보내 안내 카드를 보여 준다
+        "budget": None if mock.BUDGET is None else {"sample": True},
     })
 
 

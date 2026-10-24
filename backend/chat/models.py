@@ -12,6 +12,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.db.models import Q
 
 USER = settings.AUTH_USER_MODEL
 
@@ -44,6 +45,13 @@ class Conversation(models.Model):
 class AsyncTask(models.Model):
     """예산 생성·조정 같은 오래 걸리는 작업. 같은 request_key로 다시 요청하면 새로 만들지 않는다"""
 
+    class Status(models.TextChoices):  # 10-22 결정 E
+        QUEUED = "queued", "대기"
+        RUNNING = "running", "실행 중"
+        SUCCEEDED = "succeeded", "완료"
+        FAILED = "failed", "실패"
+        CANCELED = "canceled", "취소"
+
     task_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="async_tasks")
     conversation = models.ForeignKey(
@@ -51,7 +59,7 @@ class AsyncTask(models.Model):
     )
     request_key = models.CharField("중복 요청 키", max_length=128)
     task_type = models.CharField("작업 종류", max_length=40)  # 코드 미정
-    status = models.CharField("상태(대기/실행/완료/실패/취소)", max_length=20)  # 코드 미정
+    status = models.CharField("상태(대기/실행/완료/실패/취소)", max_length=20, choices=Status.choices, default=Status.QUEUED)
     input_hash = models.CharField("입력 해시", max_length=128)
     llm_call_count = models.IntegerField("LLM 호출 수", default=0)
     regeneration_count = models.IntegerField("재생성 횟수", default=0)
@@ -66,19 +74,31 @@ class AsyncTask(models.Model):
         verbose_name = verbose_name_plural = "비동기 작업"
         constraints = [
             models.UniqueConstraint(fields=["user", "request_key"], name="async_task_user_id_request_key_key"),
+            models.CheckConstraint(
+                condition=Q(status__in=["queued", "running", "succeeded", "failed", "canceled"]),
+                name="at_status_valid",
+            ),
         ]
 
 
 class ChatMessage(models.Model):
+    class Role(models.TextChoices):  # 10-22 결정 E
+        USER = "user", "사용자"
+        BOT = "bot", "챗봇"
+
+    class ContentType(models.TextChoices):  # 10-22 결정 E
+        TEXT = "text", "텍스트"
+        CARD = "card", "결과 카드"
+
     message_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="chat_messages")
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     task = models.ForeignKey(
         AsyncTask, null=True, blank=True, on_delete=models.SET_NULL, related_name="messages",
     )
-    role = models.CharField("발화자", max_length=20)  # 코드 미정
+    role = models.CharField("발화자", max_length=20, choices=Role.choices)
     mode = models.CharField("모드", max_length=50, null=True, blank=True)
-    content_type = models.CharField("텍스트/결과 카드", max_length=20)  # 코드 미정
+    content_type = models.CharField("텍스트/결과 카드", max_length=20, choices=ContentType.choices)
     content = models.JSONField("메시지 내용")
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
 
@@ -86,3 +106,7 @@ class ChatMessage(models.Model):
         db_table = "chat_message"
         verbose_name = verbose_name_plural = "채팅 메시지"
         ordering = ["created_at"]
+        constraints = [
+            models.CheckConstraint(condition=Q(role__in=["user", "bot"]), name="cm_role_valid"),
+            models.CheckConstraint(condition=Q(content_type__in=["text", "card"]), name="cm_content_type_valid"),
+        ]

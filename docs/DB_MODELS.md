@@ -1,17 +1,17 @@
 # DB 모델 구조 (Django 앱 배치 · 공통 규칙 · 확인 방법)
 
-작성일: 2026-10-19 (10-20 · 10-21 · 10-22 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
+작성일: 2026-10-19 (10-20 · 10-21 · 10-22 · 10-24 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
 
 ## 1. 현재 상태 — 30개 테이블 모델 완료 ✅
 
 | 항목 | 결과 |
 |---|---|
-| 테이블 | 29 = ERD 26 + 10-20 추가 1 (`category_priority`) + 10-21 추가 1 (`category_minimum`) + 10-21 추가 1 (`idempotency_record`) + 10-22 추가 1 (`recurring_saving`) |
-| 칸(컬럼) | 370 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) + 10-21 추가 4 (`category_minimum`) + 10-21 지킬 돈 A안 +1 (`living_budget`·`cushion_monthly` 추가, `cushion_floor` 삭제) + 10-21 추가 9 (`idempotency_record`) − 10-21 삭제 1 (`recurring_expense.category_detail`) + 10-21 추가 1 (`recurring_expense.created_at`) + 10-22 추가 12 (`recurring_saving`) |
+| 테이블 | 30 = ERD 26 + 10-20 추가 1 (`category_priority`) + 10-21 추가 1 (`category_minimum`) + 10-21 추가 1 (`idempotency_record`) + 10-22 추가 1 (`recurring_saving`) |
+| 칸(컬럼) | 370 = ERD 340 (타입·길이·NULL 허용까지 ERD SQL과 자동 대조해서 전부 일치) − 10-20 삭제 4 (`priority_1~3` · `living_floor`) + 10-20 추가 8 (아래 표) + 10-21 추가 4 (`category_minimum`) + 10-21 지킬 돈 A안 +1 (`living_budget`·`cushion_monthly` 추가, `cushion_floor` 삭제) + 10-21 추가 9 (`idempotency_record`) − 10-21 삭제 1 (`recurring_expense.category_detail`) + 10-21 추가 1 (`recurring_expense.created_at`) + 10-22 추가 12 (`recurring_saving`) + 10-24 추가 3 (`card_bill.items_state` · `card_bill.fetched_at` · `loan.overdue`) = **373** |
 | FK | 83 = ERD 79 (on_delete CASCADE 32 · RESTRICT 27 · SET_NULL 20, `FK_삭제규칙.md`와 일치) − 10-20 삭제 3 (`priority_1~3`, RESTRICT) + 10-20 추가 2 (`category_priority`: 회원 CASCADE · 카테고리 RESTRICT) + 10-21 추가 2 (`category_minimum`: 회원 CASCADE · 카테고리 RESTRICT) + 10-21 추가 1 (`idempotency_record`: 회원 CASCADE) + 10-22 추가 3 (`recurring_saving`: 회원 CASCADE · 보내는/받는 계좌 SET_NULL) → CASCADE 36 · RESTRICT 26 · SET_NULL 22 |
 | UNIQUE | ERD 24개 중 23개 + 조건부 UNIQUE 5개 + 10-20 추가 2개 (`category_priority`) + 10-21 추가 1개 (`category_minimum`) + 10-21 추가 1개 (`idempotency_record` 회원 · 요청 번호) |
-| CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) + 10-21 추가 1개 (`cm_min_amount_gte_1`) + 10-21 지킬 돈 A안 2개 (`fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0`) + 10-21 고정지출 4개 (`re_amount_1000_100m` · `re_payment_day_1_31` · `re_status_valid` · `re_source_type_valid`) + 10-22 정기 저축 5개 (`rs_amount_1000_100m` · `rs_transfer_day_1_31` · `rs_status_valid` · `rs_source_type_valid` · `rs_from_to_different`) |
-| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과. 10-21 카테고리 최소 금액 표(`users` 0005)도 PostgreSQL 16에서 `migrate` + 규칙 8개(정상 저장 · 1원·기타 저장 · 같은 카테고리 두 번 · 0원 · 음수 · 사용 중 카테고리 삭제 · 지우고 다시 넣기 · 회원 삭제 CASCADE) 시험 통과. 10-21 지킬 돈 A안(`users` 0006)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 5개(정상 저장 · 0원 · NULL · 생활비 음수 · 쿠션 적립금 음수) 시험 통과. 10-21 고정지출 금액·납부일 CHECK(`finance` 0003)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 9개(1,000원 · 999원 · 0원 · 1억 원 · 1억 원+1 · 납부일 없음 · 31일 · 0일 · 32일) 시험 통과. 고정지출 상태·출처 코드(`finance` 0004)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 12개(상태 4 × 출처 2 정상 저장 8개 · 한글 상태 · 없는 상태 · 없는 출처 · 빈 출처) 시험 통과. 요청 번호 표(`users` 0007)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + `@idempotent` 시험 8개(같은 번호 두 번 → 1개만 생성 · 같은 번호 다른 내용 409 · 이름 같아도 번호 다르면 2개 · 실패는 기록 안 함 · 다른 회원 같은 번호 · 헤더 없음 · 번호 형식 틀림 · **동시에 같은 번호 2개 → 1개만 생성**) 통과. 세부 분류 칸 삭제(`finance` 0005)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) 확인. 고정지출 API 시제품으로 `docs/api/fixed.md` 규칙 56개 시험 통과. 10-22 정기 저축 표(`finance` 0007)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 저축 API 시제품으로 `docs/api/savings.md` 규칙 38개 시험 통과 |
+| CHECK | 10번 표의 "한 줄 규칙" 반영 (아래 4번) + 10-21 추가 1개 (`cm_min_amount_gte_1`) + 10-21 지킬 돈 A안 2개 (`fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0`) + 10-21 고정지출 4개 (`re_amount_1000_100m` · `re_payment_day_1_31` · `re_status_valid` · `re_source_type_valid`) + 10-22 정기 저축 5개 (`rs_amount_1000_100m` · `rs_transfer_day_1_31` · `rs_status_valid` · `rs_source_type_valid` · `rs_from_to_different`) + **10-24 정한 코드 20개** (아래 '2026-10-24 반영' 표) |
+| 검증 | PostgreSQL 16에서 확인 (팀 로컬 Docker는 17. 쓰는 기능 중 가장 최근 것인 `NULLS NOT DISTINCT`가 15부터 지원이라 17에서도 같다) — `migrate` 성공 + 규칙 54개(10-19 39개 + 10-20 15개) 실제 데이터로 시험 → 전부 통과. 10-20 우선순위 표·최소 생활비 삭제(`users` 0004)도 PostgreSQL 16에서 `migrate` + 규칙 7개 시험 통과. 10-21 카테고리 최소 금액 표(`users` 0005)도 PostgreSQL 16에서 `migrate` + 규칙 8개(정상 저장 · 1원·기타 저장 · 같은 카테고리 두 번 · 0원 · 음수 · 사용 중 카테고리 삭제 · 지우고 다시 넣기 · 회원 삭제 CASCADE) 시험 통과. 10-21 지킬 돈 A안(`users` 0006)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 5개(정상 저장 · 0원 · NULL · 생활비 음수 · 쿠션 적립금 음수) 시험 통과. 10-21 고정지출 금액·납부일 CHECK(`finance` 0003)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 9개(1,000원 · 999원 · 0원 · 1억 원 · 1억 원+1 · 납부일 없음 · 31일 · 0일 · 32일) 시험 통과. 고정지출 상태·출처 코드(`finance` 0004)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 규칙 12개(상태 4 × 출처 2 정상 저장 8개 · 한글 상태 · 없는 상태 · 없는 출처 · 빈 출처) 시험 통과. 요청 번호 표(`users` 0007)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + `@idempotent` 시험 8개(같은 번호 두 번 → 1개만 생성 · 같은 번호 다른 내용 409 · 이름 같아도 번호 다르면 2개 · 실패는 기록 안 함 · 다른 회원 같은 번호 · 헤더 없음 · 번호 형식 틀림 · **동시에 같은 번호 2개 → 1개만 생성**) 통과. 세부 분류 칸 삭제(`finance` 0005)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) 확인. 고정지출 API 시제품으로 `docs/api/fixed.md` 규칙 56개 시험 통과. 10-22 정기 저축 표(`finance` 0007)도 PostgreSQL 16에서 `migrate` + `makemigrations --check`(변경 없음) + 저축 API 시제품으로 `docs/api/savings.md` 규칙 38개 시험 통과. **10-24 정한 코드 반영(`finance` 0008 · `budgets` 0004 · `chat` 0003 · `users` 0008)도 PostgreSQL 16에서 빈 DB `migrate` · 기존 DB 위에 `migrate` · 0007로 되돌렸다 다시 올리기 · `makemigrations --check`(변경 없음) + 규칙 40개(정상 값 저장 17 · 오타 · 범위 밖 · 해제 상태와 시각 불일치 막힘 23) 시험 통과** |
 
 **ERD와 다른 점 (일부러 바꾼 것)**
 
@@ -56,6 +56,25 @@
 | CHECK `fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0` | 음수 금액 방지 (비어 있으면 통과) |
 | ⚠️ 쿠션 **사용 한도 규칙은 미정** | 보호 하한이 없어져서 예산 조정 때 쿠션을 어디까지 쓸 수 있는지 다시 정해야 함(2차 돌발 지출·카테고리 초과 조정 구현 전). 그때 하한·비율 제한을 두면 칸을 추가하고, 승인만 받으면 쓰는 방식이면 `cushion_use_policy`로 충분 |
 
+**2026-10-24 반영 (정한 코드 · 결정 Z · AA · P · Y · E · L — ERD 그림 · 설계문서에도 반영 완료)**
+
+| 무엇 | 왜 |
+|---|---|
+| H-07 코드 choices + CHECK — `connection.status` · `bank_account.account_type` · `financial_transaction.direction` · `transaction_type` · `confirmation_state` · `classification_source` | 10-22 H-07 확정. 오타나 CODEF 원래 코드(`11` 등)가 그대로 들어가는 걸 막음. CODEF 예금 구분은 `account_type`이 아니라 `field_states.codef_deposit_code`에 |
+| CHECK `conn_status_disconnected_at` | 해제(`disconnected`)면 `disconnected_at` 필수, 연결 중(`connected` · `relogin`)이면 비어 있어야 함 (H-07 "해제하면 disconnected + 해제 시각") |
+| `connection.business_type` choices + CHECK — `bank` · `card` · `loan` | 결정 Z① (연결 목록에 대출 기관도 보임) |
+| `card_bill.scope_type` · `confirmation_state` **비울 수 있게** + 코드 | 결정 Z: CODEF가 안 주면 `null`. 범위 `issuer` · `card` · `unknown`, 확정 상태 `estimated` · `confirmed` · `unknown` (API 이름은 `confirmationStatus`) |
+| `card_bill.items_state` 추가 (비어도 됨) | 결정 Z: 상세 항목 확보 상태 `complete` · `partial` · `unavailable` |
+| `card_bill.fetched_at` 추가 (비어도 됨) | 결정 AA①: 청구 총액 · 날짜의 마지막 정상 조회 시각. 상세 항목 시각으로 대신 채우지 않음 |
+| `loan.overdue` 추가 (불리언, 비어도 됨) | 결정 P: 연체 확인 true · 연체 없음 확인 false · 모름 null. 상환 상태 `status`와 다른 뜻 |
+| `loan` CHECK 5개 — 상환 방식 코드 4개 · 월 상환액 1원~1억 · 납부일 1~31 · 직접 등록 잔액 1원~10억 · 금리 0~30% | 결정 P · Y (모두 비우는 건 OK) |
+| `budget_cycle.status` choices + CHECK — `active` · `closed` (기본 `active`) | home.md |
+| `chat_message.role` (`user` · `bot`) · `content_type` (`text` · `card`), `async_task.status` (`queued` · `running` · `succeeded` · `failed` · `canceled`, 기본 `queued`) | 결정 E |
+| `consent.product_scope` choices + CHECK — `bank` · `card` · `loan` (회원가입 동의는 비움) | 결정 L |
+| `reserve_plan` 표 · `budget_item` · `spending_allocation` · `payment_due`의 `reserve` 칸 — **1차 미사용** | 10-24 결정 AB: 비정기지출 준비금은 2차. 표 · 칸은 지우지 않고 비워 둔다 (`bucket` · `funding_bucket` · `obligation_type`의 `reserve` 값도 1차엔 안 씀) |
+| JSON 칸에 넣기로 한 것 (DB 변경 없음) | 거래 `field_states.original_transaction_type`(원래 이체였다는 표시, AA⑥) · 대출 `field_states`의 값마다 `source` · `confirmationStatus` · `confirmedAt`(AA②) |
+| 아직 안 바꾼 것 | `app_user.nickname` 필수(결정 X) — 기존 빈 닉네임 회원 정리 방법이 정해지면(auth.md '확인 필요') NOT NULL로. `consent.purpose` — 금융 동의 목적 코드가 아직 '확인 필요'(finance-connect.md) |
+
 ## 2. 테이블 → 앱 배치
 
 | 앱 | 테이블 (ERD 이름) | 모델 클래스 |
@@ -81,14 +100,14 @@ cd backend
 python manage.py migrate
 python manage.py createsuperuser      # 이메일로 만든다
 
-# 3) 테이블 목록 보기 (머니쿠션 29개 + Django 기본 9개 = 38개)
+# 3) 테이블 목록 보기 (머니쿠션 30개 + Django 기본 9개 = 39개)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\dt"
 
 # 4) 한 테이블 구조 보기 (칸·제약·FK)
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payment_due"
 ```
 
-화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 29개 테이블이 다 등록돼 있다.
+화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 30개 테이블이 다 등록돼 있다.
 
 ## 4. DB가 막아 주는 규칙 (CHECK · 조건부 UNIQUE)
 
@@ -99,18 +118,23 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | recurring_saving | 금액 1,000원 미만 · 1억 원 초과, 이체일 1~31 밖 (비우는 건 OK), 상태 · 출처가 정해진 값이 아님, 보내는 계좌 = 받는 계좌 — 10-22 |
 | category_priority | 같은 회원이 같은 순위 2개, 같은 카테고리를 두 순위에 넣기, 순위 0 이하 |
 | category_minimum | 같은 회원이 같은 카테고리 두 번, 최소 금액 1원 미만 |
-| connection | 같은 회원·업권·기관에서 '연결 중'이 2개 (해제 후 재연결은 OK) |
+| connection | 같은 회원·업권·기관에서 '연결 중'이 2개 (해제 후 재연결은 OK), 업권 · 상태 오타, 해제인데 해제 시각 없음 / 연결 중인데 해제 시각 있음 — 10-24 |
+| bank_account | 계좌 종류가 demand·deposit·other 아님 (비우는 건 OK) — 10-24 |
 | card, loan | origin이 provider/manual 아님, 대출 status가 repaying/repaid 아님 |
+| loan | 상환 방식 코드 오타, 월 상환액 1원 미만 · 1억 초과, 납부일 1~31 밖, 직접 등록 잔액 1원 미만 · 10억 초과, 금리 0~30% 밖 (모두 비우는 건 OK) — 10-24 |
 | sync_run | 조회 대상(계좌·카드·대출) 2개 이상 |
-| financial_transaction | source_kind와 원천 FK 짝 안 맞음, 금액 음수, 취소액이 0~원거래 금액 밖, 신뢰도 0~1 밖 |
+| financial_transaction | source_kind와 원천 FK 짝 안 맞음, 금액 음수, 취소액이 0~원거래 금액 밖, 신뢰도 0~1 밖, 방향 · 거래 유형 · 확인 상태 · 분류 출처 오타 — 10-24 |
 | transaction_link | 자기 자신과 연결, relation_type 오타 |
+| card_bill | 범위 · 확정 상태 · 상세 항목 상태 오타 (셋 다 비우는 건 OK) — 10-24 |
 | card_bill_item | item_type 오타, 할부 회차 0 이하, 이번 회차 > 총회차 |
 | payment_due | 의무 종류와 원천 FK 짝 안 맞음, active인데 취소 시각 있음 / canceled인데 없음, payment_state 오타, 납부액 음수 |
 | payment_match | 매칭 금액 0 이하 |
-| budget_cycle | 시작일 ≥ 종료일 |
+| budget_cycle | 시작일 ≥ 종료일, 상태가 active·closed 아님 — 10-24 |
 | budget | 상태 오타, **주기마다 approved 2개 이상**, 자기 자신을 이전 예산으로 |
 | budget_item · spending_allocation | 빈칸(NULL) 포함 중복 줄 (NULLS NOT DISTINCT), reserve인데 준비금 계획 없음 |
 | cushion_entry | 초기액 2번, 배분 1건에 사용 2번, 종류별 부호(initial ≥0, use <0, refund >0, 적립·정정 ≠0), 종류별 필수 연결 |
+| chat_message · async_task | 발화자 · 내용 종류 · 작업 상태 오타 — 10-24 |
+| consent | 조회 범위가 bank·card·loan 아님 (비우는 건 OK) — 10-24 |
 
 **DB가 못 막는 것 (서비스 코드에서 꼭 검사)** — 우선순위 1~3위 필수 · 순위 건너뛰기(1·2·4위), 카테고리 최소 금액 합계 ≤ 생활비 총액(예산 만들 때 검사, 넘으면 부족액 안내), 같은 회원 데이터끼리만 연결, 지출 배분의 주기 = 예산의 주기, 여러 줄 합계(예산 항목 합 ≤ 배분 자금, 매칭 합 ≤ 거래 금액), approved 교체·쿠션 증감은 트랜잭션+잠금, A→B·B→A 역방향 중복 연결, 재연결 시 기존 자산·청구서 재사용.
 
@@ -121,26 +145,14 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | 테이블.칸 | ERD 설명 |
 |---|---|
 | sync_run.status | 성공 · 부분완료 · 실패 |
-| *.confirmation_state (거래연결·청구서·납부의무·준비금) | 확인 상태 (거래는 10-22 확정, 아래) |
-| card_bill.scope_type / source_type | 카드사 전체·단일 카드 / 조회·직접 입력 |
+| transaction_link · payment_due · reserve_plan `.confirmation_state` | 확인 상태 |
+| card_bill.source_type | 조회 · 직접 입력 |
 | payment_due.source_type | 조회 · 직접 입력 · 추정 |
-| budget_cycle.status | 주기 진행 상태 — 홈 명세에서 `active` · `closed`로 정함 (모델 반영은 개발 때) |
-| async_task.task_type / status | 작업 종류 / 대기 · 실행 · 완료 · 실패 · 취소 |
-| chat_message.role / content_type | 발화자 / 텍스트 · 결과 카드 |
+| async_task.task_type | 작업 종류 (예: `budget_adjust`, 결정 E는 예시만) |
 | conversation.active_agent | 대화 중인 도우미 (소비 분석 · 예산 조정 · 큰 지출 상담 등, 라우터 의도 목록과 같은 코드로) — 10-20 추가 |
+| consent.purpose | 회원가입 `terms` · `privacy`는 정해짐(L), 금융 조회 동의 목적 코드는 확인 필요 |
 
-**10-22 확정 (H-07) — 모델 choices · CHECK는 개발 때 추가.** 원칙: API 값 = DB 값, 소문자 영어
-
-| 테이블.칸 | 값 |
-|---|---|
-| connection.status | `connected` · `relogin` · `disconnected` (해제하면 `disconnected` + `disconnected_at`) |
-| bank_account.account_type | `demand`(입출금, CODEF 예금 구분 `11`) · `deposit`(예적금) · `other` — CODEF 원래 코드는 `field_states.codef_deposit_code` |
-| financial_transaction.direction | `in` · `out` (CODEF 수집 코드가 이미 이 값) |
-| financial_transaction.transaction_type | `spending` · `transfer` · `own_transfer` · `card_payment` · `saving` · `loan_repayment` · `income` |
-| financial_transaction.confirmation_state | `needs_review` · `suggested` · `confirmed` (카테고리 `UNCLASSIFIED`면 `needs_review`) |
-| financial_transaction.classification_source | `user` · `rule` · `ml` · `llm` |
-
-정해진 코드(loan.status, budget.status, payment_state, obligation_state, entry_type, item_type, bucket, funding_bucket, source_kind, obligation_type, relation_type, origin, conversation.status, app_user.status)는 이미 choices로 들어가 있다.
+정해진 코드(loan.status, budget.status, payment_state, obligation_state, entry_type, item_type, bucket, funding_bucket, source_kind, obligation_type, relation_type, origin, conversation.status, app_user.status)와 **10-24에 넣은 코드**(H-07 6칸 · connection.business_type · card_bill.scope_type · confirmation_state · items_state · loan.repayment_method · budget_cycle.status · chat_message.role · content_type · async_task.status · consent.product_scope)는 choices + CHECK로 들어가 있다. 값 목록은 위 '2026-10-24 반영' 표와 결정기록 3-1 H-07 코드표.
 
 ## 6. 모델 작성 공통 규칙 (새로 추가·수정할 때)
 

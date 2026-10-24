@@ -38,13 +38,23 @@ def empty_list():
 class Connection(models.Model):
     """은행·카드사 등 기관 연결 1건. 해제해도 행은 남기고 disconnected_at만 채운다"""
 
+    class BusinessType(models.TextChoices):  # 10-22 결정 Z①
+        BANK = "bank", "은행"
+        CARD = "card", "카드사"
+        LOAN = "loan", "대출 기관"
+
+    class Status(models.TextChoices):  # 10-22 H-07
+        CONNECTED = "connected", "연결됨"
+        RELOGIN = "relogin", "다시 로그인 필요"
+        DISCONNECTED = "disconnected", "연결 해제"
+
     connection_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="connections")
-    business_type = models.CharField("업권", max_length=20)
+    business_type = models.CharField("업권", max_length=20, choices=BusinessType.choices)
     organization_code = models.CharField("CODEF 기관 코드", max_length=50)
     auth_method = models.CharField("인증 방식", max_length=50, null=True, blank=True)
     alias = models.CharField("연결 별칭", max_length=100, null=True, blank=True)
-    status = models.CharField("연결 상태", max_length=30)  # 코드 미정
+    status = models.CharField("연결 상태", max_length=30, choices=Status.choices)
     last_authenticated_at = models.DateTimeField("최근 인증 시각", null=True, blank=True)
     disconnected_at = models.DateTimeField("연결 해제 시각", null=True, blank=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
@@ -59,6 +69,13 @@ class Connection(models.Model):
                 condition=Q(disconnected_at__isnull=True),
                 name="connection_one_active_per_org",
             ),
+            models.CheckConstraint(condition=Q(business_type__in=["bank", "card", "loan"]), name="conn_business_type_valid"),
+            # 해제하면 disconnected + 해제 시각, 연결 중(connected·relogin)이면 해제 시각 없음 (H-07)
+            models.CheckConstraint(
+                condition=Q(status="disconnected", disconnected_at__isnull=False)
+                | Q(status__in=["connected", "relogin"], disconnected_at__isnull=True),
+                name="conn_status_disconnected_at",
+            ),
         ]
 
     def __str__(self):
@@ -71,6 +88,11 @@ class Origin(models.TextChoices):
 
 
 class BankAccount(models.Model):
+    class AccountType(models.TextChoices):  # 10-22 H-07. CODEF 원래 코드는 field_states.codef_deposit_code
+        DEMAND = "demand", "입출금"
+        DEPOSIT = "deposit", "예적금"
+        OTHER = "other", "기타"
+
     account_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="bank_accounts")
     connection = models.ForeignKey(Connection, on_delete=models.RESTRICT, related_name="bank_accounts")
@@ -79,7 +101,7 @@ class BankAccount(models.Model):
     masked_number = models.CharField("마스킹 계좌번호", max_length=50, null=True, blank=True)
     name = models.CharField("계좌명", max_length=100, null=True, blank=True)
     alias = models.CharField("별칭", max_length=100, null=True, blank=True)
-    account_type = models.CharField("계좌 종류", max_length=30, null=True, blank=True)
+    account_type = models.CharField("계좌 종류", max_length=30, null=True, blank=True, choices=AccountType.choices)
     currency = models.CharField("통화", max_length=3, default="KRW")
     balance = models.BigIntegerField("잔액", null=True, blank=True)
     withdrawable_amount = models.BigIntegerField("출금 가능액", null=True, blank=True)
@@ -95,6 +117,10 @@ class BankAccount(models.Model):
             models.UniqueConstraint(
                 fields=["connection", "source_account_key"],
                 name="bank_account_connection_id_source_account_key_key",
+            ),
+            models.CheckConstraint(
+                condition=Q(account_type__isnull=True) | Q(account_type__in=["demand", "deposit", "other"]),
+                name="ba_account_type_valid",
             ),
         ]
 
@@ -142,6 +168,12 @@ class Loan(models.Model):
         REPAYING = "repaying", "상환 중"
         REPAID = "repaid", "상환 완료"
 
+    class RepaymentMethod(models.TextChoices):  # 10-22 결정 P
+        EQUAL_PAYMENT = "equal_payment", "원리금균등"
+        EQUAL_PRINCIPAL = "equal_principal", "원금균등"
+        BULLET = "bullet", "만기일시"
+        UNKNOWN = "unknown", "잘 모르겠어요"
+
     loan_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="loans")
     connection = models.ForeignKey(
@@ -163,9 +195,14 @@ class Loan(models.Model):
     manual_rate = models.DecimalField("사용자 보완 연 이율", max_digits=8, decimal_places=5, null=True, blank=True)
     maturity_date = models.DateField("만기일", null=True, blank=True)
     reported_payment_date = models.DateField("기관 제공 납부일자", null=True, blank=True)
-    repayment_method = models.CharField("상환 방식", max_length=50, null=True, blank=True)
+    repayment_method = models.CharField(
+        "상환 방식", max_length=50, null=True, blank=True, choices=RepaymentMethod.choices,
+    )
     monthly_payment = models.BigIntegerField("월 상환액", null=True, blank=True)
     payment_day = models.SmallIntegerField("매월 납부일", null=True, blank=True)
+    # 연체 확인 true / 연체 없음 확인 false / 모름 null (10-22 결정 P). status(상환 중·완료)와 다른 뜻
+    overdue = models.BooleanField("연체 여부", null=True, blank=True)
+    # 값마다 출처·확인 상태 (10-24 결정 AA②). 예: {"monthlyPayment": {"source": "estimated", "confirmationStatus": "confirmed", "confirmedAt": "…"}}
     field_states = models.JSONField("항목별 출처·확정 상태", default=empty_dict, blank=True)
     confirmed_at = models.DateTimeField("사용자 확인 시각", null=True, blank=True)
     fetched_at = models.DateTimeField("기관 조회 시각", null=True, blank=True)
@@ -180,6 +217,28 @@ class Loan(models.Model):
             ),
             models.CheckConstraint(condition=Q(status__in=["repaying", "repaid"]), name="loan_status_valid"),
             models.CheckConstraint(condition=Q(origin__in=Origin.values), name="loan_origin_valid"),
+            # 10-22 결정 P (보완 3칸) · Y (직접 등록 잔액 · 금리). 비우는 건 OK
+            models.CheckConstraint(
+                condition=Q(repayment_method__isnull=True)
+                | Q(repayment_method__in=["equal_payment", "equal_principal", "bullet", "unknown"]),
+                name="loan_repayment_method_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(monthly_payment__isnull=True) | Q(monthly_payment__gte=1, monthly_payment__lte=100_000_000),
+                name="loan_monthly_payment_1_100m",
+            ),
+            models.CheckConstraint(
+                condition=Q(payment_day__isnull=True) | Q(payment_day__gte=1, payment_day__lte=31),
+                name="loan_payment_day_1_31",
+            ),
+            models.CheckConstraint(
+                condition=Q(manual_balance__isnull=True) | Q(manual_balance__gte=1, manual_balance__lte=1_000_000_000),
+                name="loan_manual_balance_1_1b",
+            ),
+            models.CheckConstraint(
+                condition=Q(manual_rate__isnull=True) | Q(manual_rate__gte=0, manual_rate__lte=30),
+                name="loan_manual_rate_0_30",
+            ),
         ]
 
     def __str__(self):
@@ -234,6 +293,31 @@ class SourceKind(models.TextChoices):
 
 
 class FinancialTransaction(models.Model):
+    # 10-22 H-07 코드표. API 값 = DB 값
+    class Direction(models.TextChoices):
+        IN = "in", "입금"
+        OUT = "out", "출금"
+
+    class TransactionType(models.TextChoices):
+        SPENDING = "spending", "소비"
+        TRANSFER = "transfer", "남에게 보낸 이체"
+        OWN_TRANSFER = "own_transfer", "내 계좌 간 이체"
+        CARD_PAYMENT = "card_payment", "카드값"
+        SAVING = "saving", "저축"
+        LOAN_REPAYMENT = "loan_repayment", "대출 상환"
+        INCOME = "income", "입금"
+
+    class ConfirmationState(models.TextChoices):
+        NEEDS_REVIEW = "needs_review", "확인 필요"
+        SUGGESTED = "suggested", "규칙·ML이 정함"
+        CONFIRMED = "confirmed", "사용자 확정"
+
+    class ClassificationSource(models.TextChoices):
+        USER = "user", "사용자"
+        RULE = "rule", "규칙"
+        ML = "ml", "ML"
+        LLM = "llm", "LLM"
+
     transaction_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="transactions")
     source_kind = models.CharField("원천", max_length=20, choices=SourceKind.choices)
@@ -247,7 +331,7 @@ class FinancialTransaction(models.Model):
     occurred_on = models.DateField("거래일")
     occurred_time = models.TimeField("거래 시각", null=True, blank=True)
     amount = models.BigIntegerField("원거래 금액")  # 방향은 direction, 금액은 0 이상
-    direction = models.CharField("입출금 방향", max_length=3)  # 코드 미정
+    direction = models.CharField("입출금 방향", max_length=3, choices=Direction.choices)
     source_description = models.CharField("대표 설명", max_length=500, null=True, blank=True)
     source_detail = models.JSONField("기관 제공 설명 원문", null=True, blank=True)
     merchant_name = models.CharField("가맹점명", max_length=200, null=True, blank=True)
@@ -259,7 +343,7 @@ class FinancialTransaction(models.Model):
     reported_principal = models.BigIntegerField("원금 부분", null=True, blank=True)
     reported_interest = models.BigIntegerField("이자 부분", null=True, blank=True)
     approval_no = models.CharField("카드 승인번호", max_length=50, null=True, blank=True)
-    transaction_type = models.CharField("거래 유형", max_length=30)  # 코드 미정
+    transaction_type = models.CharField("거래 유형", max_length=30, choices=TransactionType.choices)
     suggested_category = models.ForeignKey(
         "budgets.Category", null=True, blank=True, on_delete=models.RESTRICT,
         db_column="suggested_category", related_name="+", verbose_name="모델 제안 카테고리",
@@ -277,8 +361,11 @@ class FinancialTransaction(models.Model):
         db_column="confirmed_category", related_name="+", verbose_name="적용 카테고리",
     )
     category_detail = models.CharField("세부 분류", max_length=30, null=True, blank=True)  # subscription
-    classification_source = models.CharField("분류 출처", max_length=20, null=True, blank=True)
-    confirmation_state = models.CharField("확인 상태", max_length=20)  # 코드 미정
+    classification_source = models.CharField(
+        "분류 출처", max_length=20, null=True, blank=True, choices=ClassificationSource.choices,
+    )
+    confirmation_state = models.CharField("확인 상태", max_length=20, choices=ConfirmationState.choices)
+    # 원래 이체였다는 표시도 여기에: {"original_transaction_type": "transfer"} (10-24 결정 AA⑥)
     field_states = models.JSONField("필드별 누락·근거", default=empty_dict, blank=True)
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
     updated_at = models.DateTimeField("수정 시각", auto_now=True)
@@ -323,6 +410,22 @@ class FinancialTransaction(models.Model):
                 condition=Q(suggestion_confidence__isnull=True)
                 | Q(suggestion_confidence__gte=0, suggestion_confidence__lte=1),
                 name="ft_confidence_0_1",
+            ),
+            models.CheckConstraint(condition=Q(direction__in=["in", "out"]), name="ft_direction_valid"),
+            models.CheckConstraint(
+                condition=Q(transaction_type__in=[
+                    "spending", "transfer", "own_transfer", "card_payment", "saving", "loan_repayment", "income",
+                ]),
+                name="ft_transaction_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(confirmation_state__in=["needs_review", "suggested", "confirmed"]),
+                name="ft_confirmation_state_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(classification_source__isnull=True)
+                | Q(classification_source__in=["user", "rule", "ml", "llm"]),
+                name="ft_classification_source_valid",
             ),
         ]
 
@@ -371,6 +474,22 @@ class TransactionLink(models.Model):
 # ===================== 카드 청구 · 고정지출 · 납부 =====================
 
 class CardBill(models.Model):
+    # 10-22 결정 Z: CODEF가 안 주면 null (unknown · unavailable은 '모른다'는 상태가 저장된 경우에만)
+    class ScopeType(models.TextChoices):
+        ISSUER = "issuer", "카드사 통합 청구"
+        CARD = "card", "카드 한 장"
+        UNKNOWN = "unknown", "범위 확인 불가"
+
+    class ConfirmationStatus(models.TextChoices):
+        ESTIMATED = "estimated", "예상 청구"
+        CONFIRMED = "confirmed", "확정 청구"
+        UNKNOWN = "unknown", "확정 여부 확인 불가"
+
+    class ItemsState(models.TextChoices):
+        COMPLETE = "complete", "항목 전체 확인"
+        PARTIAL = "partial", "일부만 확인"
+        UNAVAILABLE = "unavailable", "항목 내역 없음"
+
     bill_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="card_bills")
     connection = models.ForeignKey(
@@ -382,14 +501,24 @@ class CardBill(models.Model):
     )
     issuer_code = models.CharField("카드사 코드", max_length=50)
     statement_key = models.CharField("청구서 식별 근거", max_length=128, null=True, blank=True)
-    scope_type = models.CharField("범위(카드사 전체/단일 카드)", max_length=20)  # 코드 미정
+    scope_type = models.CharField(
+        "범위(카드사 전체/단일 카드)", max_length=20, null=True, blank=True, choices=ScopeType.choices,
+    )
     billing_month = models.DateField("청구 월")
     total_amount = models.BigIntegerField("청구 총액")
     payment_due_date = models.DateField("결제예정일", null=True, blank=True)
     withdrawal_due_date = models.DateField("출금예정일", null=True, blank=True)
     source_type = models.CharField("조회/직접 입력", max_length=20)  # 코드 미정
-    confirmation_state = models.CharField("확정 상태", max_length=20)  # 코드 미정
+    # API 이름은 confirmationStatus (cards.md 10번)
+    confirmation_state = models.CharField(
+        "확정 상태", max_length=20, null=True, blank=True, choices=ConfirmationStatus.choices,
+    )
+    items_state = models.CharField(
+        "상세 항목 확보 상태", max_length=20, null=True, blank=True, choices=ItemsState.choices,
+    )
     field_states = models.JSONField("필드별 제공 상태", default=empty_dict, blank=True)
+    # 청구 총액 · 날짜의 마지막 정상 조회 시각 (10-24 결정 AA①). 항목 시각으로 대신 채우지 않음
+    fetched_at = models.DateTimeField("최근 정상 조회 시각", null=True, blank=True)
 
     class Meta:
         db_table = "card_bill"
@@ -398,6 +527,19 @@ class CardBill(models.Model):
             # 재연결하면 connection_id가 바뀌므로, 재연결 시 기존 청구서 대조는 서비스에서 (계좌·카드 재연결 규칙과 같이)
             models.UniqueConstraint(
                 fields=["connection", "statement_key"], name="card_bill_connection_id_statement_key_key",
+            ),
+            models.CheckConstraint(
+                condition=Q(scope_type__isnull=True) | Q(scope_type__in=["issuer", "card", "unknown"]),
+                name="cb_scope_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(confirmation_state__isnull=True)
+                | Q(confirmation_state__in=["estimated", "confirmed", "unknown"]),
+                name="cb_confirmation_state_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(items_state__isnull=True) | Q(items_state__in=["complete", "partial", "unavailable"]),
+                name="cb_items_state_valid",
             ),
         ]
 

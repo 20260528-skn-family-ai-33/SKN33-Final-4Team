@@ -202,13 +202,20 @@ class CategoryMinimum(models.Model):
 class Consent(models.Model):
     """약관·개인정보·기관 조회 동의 기록. 철회해도 행은 남기고 revoked_at만 채운다"""
 
+    class ProductScope(models.TextChoices):  # 10-22 결정 L. 회원가입 동의(terms · privacy)는 비움
+        BANK = "bank", "은행"
+        CARD = "card", "카드"
+        LOAN = "loan", "대출"
+
     consent_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="consents")
     connection = models.ForeignKey(
         "finance.Connection", null=True, blank=True, on_delete=models.SET_NULL, related_name="consents",
     )
     purpose = models.CharField("동의 목적", max_length=50)
-    product_scope = models.CharField("조회 허용 상품 범위", max_length=50, null=True, blank=True)
+    product_scope = models.CharField(
+        "조회 허용 상품 범위", max_length=50, null=True, blank=True, choices=ProductScope.choices,
+    )
     document_version = models.CharField("동의 문서 버전", max_length=50)
     document_hash = models.CharField("동의 원문 해시", max_length=128)
     granted_at = models.DateTimeField("동의 시각", default=timezone.now)
@@ -217,6 +224,12 @@ class Consent(models.Model):
     class Meta:
         db_table = "consent"
         verbose_name = verbose_name_plural = "동의"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(product_scope__isnull=True) | Q(product_scope__in=["bank", "card", "loan"]),
+                name="consent_product_scope_valid",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.purpose} ({self.document_version})"

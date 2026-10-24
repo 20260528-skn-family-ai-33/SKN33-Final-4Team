@@ -25,7 +25,12 @@ HOME = {
     "daily": 30_900,
     "spare": 265_000,
     "pending_count": 4,
+    "needs_payday_count": 1,  # 출금일을 모르는 확정 고정지출 수 (H-05) → "출금일을 확인할 고정지출 N건 ›"
 }
+
+# 예산 영역 (H-06). 1차 API(GET /api/home/)는 항상 None → 홈은 파란 카드 대신 안내 카드.
+# 시안은 예산 화면을 보여 주려고 숫자를 채워 둔다. 안내 카드를 보려면 이 값을 None 으로
+BUDGET = "sample"
 
 # 홈 '꼭 나갈 돈'
 # payment_state · due_date (10/22 PR #26 리뷰, docs/api/home.md '미납 안내') — 화면이 상태 배지를 그린다
@@ -40,6 +45,9 @@ MUST_PAY = [
      "payment_state": "unpaid", "due_date": "2026-10-20"},
     {"icon": "repeat", "name": "월세", "sub": "매월 25일 · 고정지출", "amount": 700_000, "link": "/budgets/fixed",
      "payment_state": "unpaid", "due_date": "2026-10-25"},
+    # 대출 상환 (결정 Q · H-04): 월 상환액 · 납부일을 아는 대출만. 누르면 대출 확인 화면
+    {"icon": "landmark", "name": "신용대출 상환", "sub": "매월 25일 · KB국민은행", "amount": 310_500, "link": "/finance/loans",
+     "payment_state": "unpaid", "due_date": "2026-10-25"},
 ]
 
 # 카테고리 예산 '한 달 나눠보기'
@@ -48,9 +56,8 @@ MONTH_SPLIT = [
     {"name": "고정지출", "amount": 770_000},
     {"name": "저축", "amount": 410_000},
     {"name": "생활비", "amount": 1_120_000},
-    {"name": "비정기지출 준비금", "amount": 78_000, "popup": "irregular"},
     {"name": "머니 쿠션 적립", "amount": 210_000},
-    {"name": "여윳돈", "amount": 212_000},
+    {"name": "여윳돈", "amount": 290_000},  # 비정기지출 준비금 78,000원은 10/24 결정 AB로 2차 → 여윳돈으로
 ]
 
 # 생활비 카테고리 — 2026-10-20 분류 기준 10개 + 기타 (기타도 예산 칸을 준다)

@@ -2,11 +2,14 @@
 // 보낸 문장은 라우터가 의도를 보고 맞는 도우미에 연결한다
 // 지금은 백엔드 라우터 전이라 utils/mockRouter.js 로 흐름만 보여 준다 (실제 답변 X)
 // 예산 조정으로 연결되면: ① 질문 말풍선 + ② 고르기 말풍선(AdjustForm). 문장에 재료가 있으면 ②를 미리 채운다
+// 소비 분석으로 연결되면: 안내 한 줄 + 소비 분석 카드 (SpendingCard, 지금은 utils/mockSpending.js 예시값)
 // 예산 조정 중에는 "식비 5만원 늘려줘"처럼 적어도 되고, ②를 골라 "조정안 받기"를 눌러도 된다
 import { useEffect, useRef, useState } from 'react'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
+import SpendingCard from '../components/SpendingCard.jsx'
+import { SPENDING_ALL, SPENDING_FOOD } from '../utils/mockSpending.js'
 import { adjustSentence, josa, manwon } from '../utils/adjust.js'
 import { mockRoute, mockSlots } from '../utils/mockRouter.js'
 
@@ -84,6 +87,8 @@ export default function AssistantPage() {
         ...(r.agent ? [{ who: 'route', agent: r.agent }] : []),
         { who: 'bot', text: r.reply, showOptions: r.showOptions },
         ...(r.form ? [{ who: 'form', slots: mockSlots(q) }] : []),   // ② 고르기 말풍선 (문장 속 재료로 미리 채움)
+        // 소비 분석 카드 — 진짜로는 응답 messages 의 bot 메시지(contentType: card) content
+        ...(intent === 'spending' ? [{ who: 'card', card: /식비/.test(q) ? SPENDING_FOOD : SPENDING_ALL }] : []),
       )
       setBusy(false)
     }, 600)
@@ -132,6 +137,9 @@ export default function AssistantPage() {
           {log.map((m) => {
             if (m.who === 'route') {
               return <div key={m.id} className="mc-asst-route"><Icon name="Link" /> {m.agent} 도우미에 연결했어요</div>
+            }
+            if (m.who === 'card') {
+              return <div key={m.id} className="mc-msg bot mc-asst-card"><SpendingCard card={m.card} /></div>
             }
             if (m.who === 'form') {
               return (

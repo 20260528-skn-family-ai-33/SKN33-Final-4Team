@@ -13,7 +13,7 @@ import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 import { BUDGET_CATS, catIcon } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
-import { FIXED, IRREGULAR, MONTHLY, recommendFor } from '../utils/direction.js'
+import { FIXED, MONTHLY, recommendFor } from '../utils/direction.js'
 
 // 카테고리별 추천 금액 (시안 예시값, 생활비 1,120,000원 기준). 목록·아이콘은 utils/categories.js
 const BASE_LIVING = 1_120_000
@@ -45,11 +45,11 @@ export default function RecommendPage() {
   const LIVING = state?.livingBudget ?? rec.livingBudget
   const SAVING = state?.savingFloor ?? rec.savingFloor
   const CUSHION = state?.cushionMonthly ?? rec.cushionMonthly
-  const SPARE = state?.spare ?? MONTHLY - FIXED - LIVING - SAVING - CUSHION - IRREGULAR
+  const SPARE = state?.spare ?? MONTHLY - FIXED - LIVING - SAVING - CUSHION
   // [CSS 이름(색), 이름, 금액]
   const SPLIT = [
     ['fix', '고정지출', FIXED], ['save', '저축', SAVING], ['live', '생활비', LIVING],
-    ['irr', '비정기 준비금', IRREGULAR], ['cushion', '머니 쿠션 적립', CUSHION], ['left', '여윳돈', SPARE],
+    ['cushion', '머니 쿠션 적립', CUSHION], ['left', '여윳돈', SPARE],   // 비정기 준비금은 10/24 결정 AB로 2차
   ]
   const amount = splitLiving(LIVING)
   const CATS = BUDGET_CATS.map((n) => [n, catIcon(n), amount[n] ?? 0])

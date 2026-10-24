@@ -1,5 +1,8 @@
 // 거래 내역
 // 주소 ?category=식비 로 카테고리만 골라 본다. 고르는 일은 장고 API 가 해서 보내 준다
+// '전체'에는 소비 + 월급 입금 + 남에게 보낸 이체가 보인다 (10/22 결정 V①). 입금 · 이체는 카테고리가 없고 합계에 안 들어간다
+//   이체를 누르면 [소비로 분류하기] (결정 W) · 원래 이체였던 소비는 '이체였음' 표시 + 되돌리기 (AA⑥)
+//   고정지출로 연결된 거래(funding: fixed)는 '고정' 표시 — 생활비 사용액에서 빠진다 (★8 · AA⑤)
 import { useSearchParams } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
@@ -70,7 +73,7 @@ export default function TransactionsPage() {
       )}
       {days.map((day) => (
         <div className="mc-card mc-tx-day" key={day.date}>
-          <div className="mc-row"><p className="mc-muted" style={{ margin: 0 }}>{day.date}</p><span className="mc-muted">{won(day.total)}</span></div>
+          <div className="mc-row"><p className="mc-muted" style={{ margin: 0 }}>{day.date}</p>{day.total > 0 && <span className="mc-muted">{won(day.total)}</span>}</div>
           {day.items.map((tx) =>
             tx.kind === 'pending' ? (
               <div className="mc-tx-pend" key={tx.id}>
@@ -85,15 +88,20 @@ export default function TransactionsPage() {
                 </div>
               </div>
             ) : (
-              <button type="button" className={`mc-listrow${tx.cancel ? ` is-${tx.cancel}` : ''}`} key={tx.id}
+              <button type="button" className={`mc-listrow${tx.cancel ? ` is-${tx.cancel}` : ''}${tx.kind !== 'normal' ? ` is-${tx.kind}` : ''}`} key={tx.id}
                 onClick={() => openPopup(<TransactionPopup tx={tx} date={day.date} categories={CATEGORIES} />)}>
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
-                <span className="mc-grow"><strong>{tx.name}</strong><span className="mc-muted">{tx.cat}{tx.via && ` · ${tx.via}`}</span></span>
+                <span className="mc-grow">
+                  <strong>{tx.name}{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}{tx.original === 'transfer' && <em className="mc-tx-tag">이체였음</em>}</strong>
+                  <span className="mc-muted">{tx.kind === 'income' ? '월급' : tx.kind === 'transfer' ? '이체 · 소비 아님' : tx.cat}{tx.via && ` · ${tx.via}`}</span>
+                </span>
                 <span className="mc-right">
                   {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}
                   {tx.cancel === 'full' && <><s>{won(tx.amount)}</s> <em className="mc-cancel-tag">취소</em></>}
                   {tx.cancel === 'partial' && <>{won(tx.net)}<small className="mc-cancel-sub">부분취소 −{won(tx.cancelAmount)}</small></>}
-                  {!tx.cancel && <>{won(tx.amount)} <span className="mc-muted">›</span></>}
+                  {!tx.cancel && tx.kind === 'income' && <><span className="mc-tx-in">+{won(tx.amount)}</span> <span className="mc-muted">›</span></>}
+                  {!tx.cancel && tx.kind === 'transfer' && <><span className="mc-tx-out">{won(tx.amount)}</span> <span className="mc-muted">›</span></>}
+                  {!tx.cancel && tx.kind === 'normal' && <>{won(tx.amount)} <span className="mc-muted">›</span></>}
                 </span>
               </button>
             )

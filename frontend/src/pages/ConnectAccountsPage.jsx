@@ -39,6 +39,8 @@ export default function ConnectAccountsPage() {
   const kindOf = (a) => a.kind ?? kinds[a.id] ?? null
 
   const next = () => {
+    // 계좌는 1개 이상 골라야 한다 (10/22 결정 K, PUT selectedAccountIds 빈 목록은 400). 카드는 0개도 됨
+    if (picked.list.length === 0) { setError('예산에 쓸 계좌를 1개 이상 골라 주세요.'); return }
     const unknown = ALL.find((a) => picked.has(a.id) && !kindOf(a))
     if (unknown) { setError(`${unknown.nickname ?? unknown.product}의 종류를 골라 주세요.`); return }
     navigate(PATHS.connectCards)
