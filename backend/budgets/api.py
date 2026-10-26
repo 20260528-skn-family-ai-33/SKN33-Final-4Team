@@ -138,6 +138,13 @@ def saving_json(s):
 
 # ---------------- [공통] 보낸 값 검사 ----------------
 
+# 본문이 JSON 객체({...})가 아니면 400 ([] · 42 · "hello" 등)
+def body_dict(request):
+    data = request.data
+    if not isinstance(data, dict):
+        raise ValidationError({"non_field_errors": ["요청 본문은 JSON 객체로 보내 주세요."]})
+    return data
+
 # 추가 · 수정 때 보낼 수 있는 칸 (그 외 칸은 400)
 ALLOWED_FIELDS = {"name", "amount", "transfer_day", "from_account_id", "to_account_id"}
 
@@ -163,7 +170,7 @@ def find_account(user, value, sending):
 # [직접 추가] 보낸 값 검사 → 통과값 반환 / 틀리면 400
 def clean_create(request):
     """직접 추가 때 보낸 값 검사 -> 틀린 칸이 있으면 모아서 한번에 400"""
-    data = request.data
+    data = body_dict(request)
     errors = {}
     values = {}
 
@@ -220,7 +227,7 @@ def clean_create(request):
 
 # [수정] 보낸 칸만 검사 → 통과값 반환 / 틀리면 400
 def clean_update(request, saving):
-    data = request.data
+    data = body_dict(request)
     errors = {}
     values = {}
 
@@ -297,7 +304,7 @@ def clean_update(request, saving):
 
 # [확정 · 무시] 보낸 savingIds 검사 -> ID 목록 / 틀리면 400
 def clean_ids(request):
-    data = request.data
+    data = body_dict(request)
     errors = {}
 
     # 표에 없는 칸 -> 400 (savingIds 말고는 보내면 안 됨)
@@ -349,8 +356,9 @@ def savings_create(request):
 # [수정] 후보 · 확정만 찾기 → 보낸 칸만 바꿔 저장 → 200
 def savings_update(request, saving_id):
     with transaction.atomic():
+        # 잠그고 찾기 -> 저장 끝날 때까지 다른 요청은 기다림
         saving = get_object_or_404(
-            RecurringSaving,
+            RecurringSaving.objects.select_for_update(),
             pk = saving_id,
             user = request.user,
             status__in = ["suggested", "confirmed"],
@@ -407,23 +415,32 @@ def savings_detail(request, saving_id):
     if request.method == "PATCH":
         return savings_update(request, saving_id)
 
-    # DELETE
-    saving = get_object_or_404( # 찾아보고 없으면 자동으로 404
-        RecurringSaving, # 정기 저축 표
-        pk = saving_id,
-        user = request.user,
-        status__in = ["confirmed", "stopped"],
-    )
-    if saving.status == "confirmed":
-        saving.status = "stopped"
-        saving.save(update_fields=["status"])
-        # 저축 최소 금액이 줄었으니 승인 전 예산 초안 만료 (S-12)
-        Budget.objects.filter(user=request.user, status__in=["draft", "validated"]).update(status="expired")
+    # DELETE : 중지와 예산 초안 만료를 한 묶음으로 (하나가 실패하면 둘 다 취소)
+    with transaction.atomic():
+        saving = get_object_or_404( # 잠그고 찾기, 없으면 자동으로 404
+            RecurringSaving.objects.select_for_update(),
+            pk = saving_id,
+            user = request.user,
+            status__in = ["confirmed", "stopped"],
+        )
+        if saving.status == "confirmed":
+            saving.status = "stopped"
+            saving.save(update_fields=["status"])
+            # 저축 최소 금액이 줄었으니 승인 전 예산 초안 만료
+            Budget.objects.filter(user=request.user, status__in=["draft", "validated"]).update(status="expired")
     return Response(status=204)
 
 
 
-# ---------------- 후보 확정 · 무시 (아직 껍데기) ----------------
+# ---------------- 후보 확정 · 무시 ----------------
+
+# 내 저축 여러 개를 ID 순서대로 잠그고 가져오기 (확정 · 무시가 같은 순서로 잠가서 서로 막히지 않음)
+def lock_savings(user, ids, statuses):
+    return list(RecurringSaving.objects.select_for_update().filter(
+        user = user,
+        pk__in = ids,
+        status__in = statuses,
+    ).order_by("pk"))
 
 # /api/budgets/savings/confirm/   POST = 후보 확정 [저축이에요]
 @api_view(["POST"])
@@ -433,12 +450,8 @@ def savings_confirm(request):
     ids = clean_ids(request)
 
     with transaction.atomic():
-        # 먼저 다 찾기 - 내 것, 후보나 이미 확정인 것만
-        found = list(RecurringSaving.objects.filter(
-            user = request.user,
-            pk__in = ids,
-            status__in = ["suggested", "confirmed"],
-        ))
+        # 먼저 다 잠그고 찾기 - 내 것, 후보나 이미 확정인 것만
+        found = lock_savings(request.user, ids, ["suggested", "confirmed"])
 
         # 개수 비교
         if len(found) != len(ids):
@@ -477,11 +490,7 @@ def savings_ignore(request):
     ids = clean_ids(request)
 
     with transaction.atomic():
-        found = list(RecurringSaving.objects.filter(
-            user = request.user,
-            pk__in = ids,
-            status__in = ["suggested", "ignored"],
-        ))
+        found = lock_savings(request.user, ids, ["suggested", "ignored"])
 
         if len(found) != len(ids):
             raise ValidationError({"saving_ids" : ['선택할 수 없는 항목이에요.']})
