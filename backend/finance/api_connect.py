@@ -9,6 +9,7 @@ finance 앱 API — 금융 동의 · 계좌 · 연결 (docs/api/finance-connect.
 import hashlib
 import uuid
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
@@ -64,6 +65,10 @@ def _check_consent_rows(rows):
         if not isinstance(row, dict):
             raise ValidationError({"consents": ["동의 항목 형식을 확인해 주세요."]})
         reject_unknown_fields(row, {"purpose", "product_scope", "document_version"})
+        # 글자가 아닌 값([] · {} · 숫자 등)은 먼저 걸러 400으로 답한다 (목록·객체는 집합 검사에서 500이 났음, PR #41 리뷰)
+        for field in ("purpose", "product_scope", "document_version"):
+            if not isinstance(row.get(field), str):
+                raise ValidationError({field: ["글자로 보내 주세요."]})
         if row.get("purpose") != PURPOSE:
             raise ValidationError({"purpose": ["알 수 없는 동의 목적이에요."]})
         if row.get("product_scope") not in SCOPES:
@@ -86,11 +91,14 @@ def consents(request):
     data = body_dict(request)
     reject_unknown_fields(data, {"consents"})
     picked = _check_consent_rows(data.get("consents"))
-    if not any(scope == Consent.ProductScope.BANK for scope, _ in picked) and not has_bank_consent(request.user):
-        raise ValidationError({"consents": ["계좌 조회 동의는 꼭 필요해요."]})
 
     items = []
     with transaction.atomic():
+        # 회원 행을 잠가 같은 회원의 동의 저장을 한 번에 하나씩 처리한다.
+        # 요청 번호가 다른 같은 동의가 동시에 와도, 뒤의 요청은 앞의 저장이 끝난 뒤 기존 기록을 찾아 재사용한다 (PR #41 리뷰)
+        list(get_user_model().objects.select_for_update().filter(pk=request.user.pk).values_list("pk", flat=True))
+        if not any(scope == Consent.ProductScope.BANK for scope, _ in picked) and not has_bank_consent(request.user):
+            raise ValidationError({"consents": ["계좌 조회 동의는 꼭 필요해요."]})
         for scope, version in picked:
             found = Consent.objects.filter(
                 user=request.user, purpose=PURPOSE, product_scope=scope,

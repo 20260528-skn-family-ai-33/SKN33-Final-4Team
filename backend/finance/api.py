@@ -6,7 +6,9 @@ finance 앱 API — 거래 (docs/api/transactions.md)
 """
 from datetime import date
 
+from django.db import transaction
 from django.db.models import Exists, F, OuterRef, Q
+from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
@@ -250,20 +252,30 @@ def transaction_detail(request, transaction_id):
     """17. GET  /api/finance/transactions/<id>/ — 거래 한 건 보기
     18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null}
     없는 거래 · 남의 거래 · 목록에 안 나오는 거래(같은 구매로 빠진 계좌 출금, 카드값 등)는 모두 404 (★3)"""
-    tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
     if request.method == "GET":
+        tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
         return Response(transaction_detail_body(tx))
 
     data = body_dict(request)
     reject_unknown_fields(data, {"category"})
     if "category" not in data:
         raise ValidationError({"category": [CATEGORY_ERROR]})
-    if tx.transaction_type == Tx.TransactionType.INCOME:
-        raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
 
-    changed = _apply_category(tx, data["category"])
-    if changed:
-        tx.save(update_fields=[*changed, "updated_at"])
+    # 조회 → 검사 → 저장을 한 트랜잭션에서 하고, 그동안 이 거래 행을 잠근다.
+    # 같은 거래에 '카테고리 변경'과 '이체로 되돌리기'가 동시에 와도 하나씩 차례로 처리되어
+    # transfer + 카테고리 확정 같은 섞인 상태가 남지 않는다 (PR #41 리뷰).
+    with transaction.atomic():
+        # 1) 잠금: 조인 없이 거래 행만 잠근다 (outer join 쪽은 FOR UPDATE 불가)
+        row = Tx.objects.select_for_update().filter(user=request.user, pk=transaction_id)
+        if not list(row.values_list("pk", flat=True)):
+            raise Http404  # 없는 거래 · 남의 거래
+        # 2) 잠근 뒤 최신 상태를 다시 읽는다. 목록에 안 나오는 거래면 404
+        tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
+        if tx.transaction_type == Tx.TransactionType.INCOME:
+            raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
+        changed = _apply_category(tx, data["category"])
+        if changed:
+            tx.save(update_fields=[*changed, "updated_at"])
     # 바뀐 카테고리 이름 등을 새로 읽어서 17번과 같은 모양으로 돌려준다
     tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
     return Response(transaction_detail_body(tx))
