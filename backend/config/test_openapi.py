@@ -70,16 +70,13 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 7, "mock": 8, "planned": 20})
+        self.assertEqual(Counter(states.values()), {"implemented": 13, "mock": 2, "planned": 20})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("get", "/api/home/")], "mock")
         self.assertEqual(states[("get", "/api/finance/transactions/")], "mock")
         self.assertEqual(states[("post", "/api/finance/loans/")], "planned")
         for (method, path), state in states.items():
-            if path.startswith("/api/budgets/fixed/"):
-                with self.subTest(path=path, method=method):
-                    self.assertEqual(state, "mock")
-            if path.startswith("/api/budgets/savings/"):
+            if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
                 with self.subTest(path=path, method=method):
                     self.assertEqual(state, "implemented")
 
@@ -144,9 +141,9 @@ class OpenAPIContractTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         runtime = response.json()
         self.assertEqual(runtime, build_runtime_schema())
-        savings = {path: item for path, item in self.contract["paths"].items() if path.startswith("/api/budgets/savings/")}
+        savings = {path: item for path, item in self.contract["paths"].items() if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/"))}
         self.assertSetEqual(set(runtime["paths"]), {
-            "/api/csrf/", "/api/home/", "/api/finance/transactions/", "/api/budgets/fixed/", *savings,
+            "/api/csrf/", "/api/home/", "/api/finance/transactions/", *savings,
         })
         self.assertEqual(runtime["security"], [])
         for path, method, operation in operation_items(runtime):
@@ -161,7 +158,7 @@ class OpenAPIContractTests(SimpleTestCase):
         for path in savings:
             self.assertSetEqual({m for m in runtime["paths"][path] if m in HTTP_METHODS}, {m for m in savings[path] if m in HTTP_METHODS})
         self.assertNotIn("/api/budgets/", runtime["paths"])
-        self.assertNotIn("/api/budgets/fixed/{id}/", runtime["paths"])
+        self.assertIn("/api/budgets/fixed/{id}/", runtime["paths"])
 
     def test_runtime_references_resolve_to_included_components(self):
         runtime = build_runtime_schema()
@@ -176,7 +173,7 @@ class OpenAPIContractTests(SimpleTestCase):
     def test_runtime_response_examples_match_the_actual_http_payloads(self):
         runtime = self.client.get("/api/schema/runtime/").json()
         for path, methods in runtime["paths"].items():
-            if path.startswith("/api/budgets/savings/"):
+            if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
                 continue  # 구현된 API: 로그인 · DB 가 필요한 실제 응답이라 샘플 예시와 비교하지 않는다
             with self.subTest(path=path):
                 response = self.client.get(path)
@@ -212,8 +209,8 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 7개")
-                self.assertContains(response, "목업 8개")
+                self.assertContains(response, "구현 13개")
+                self.assertContains(response, "목업 2개")
                 self.assertContains(response, "미구현 20개")
                 self.assertContains(response, "/api/docs/runtime/")
                 options = json.loads(response.data["settings"])

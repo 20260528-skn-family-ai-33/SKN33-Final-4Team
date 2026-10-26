@@ -7,9 +7,9 @@ info:
   description: '확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**
 
 
-    현재 구현 7개(CSRF·정기 저축), 목업 8개(홈·거래 목록·고정지출), 미구현 20개입니다. 전체 명세는 읽기 전용이며, 실제 응답 확인은 [현재 서버 확인](/api/docs/runtime/)에서
-    합니다. 정기 저축은 [현재 서버 확인]에서 저장·수정·중지까지 실행할 수 있습니다(로그인 필요). 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈·거래 목록의 응답 형태도 확정 계약과
-    다릅니다.
+    현재 구현 13개(CSRF·고정지출·정기 저축), 목업 2개(홈·거래 목록), 미구현 20개입니다. 전체 명세는 읽기 전용이며, 실제 응답 확인은 [현재 서버 확인](/api/docs/runtime/)에서
+    합니다. 고정지출·정기 저축은 [현재 서버 확인]에서 저장·수정·중지까지 실행할 수 있습니다(로그인 필요). 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈·거래 목록의 응답 형태도 확정
+    계약과 다릅니다.
 
 
     기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은
@@ -2224,13 +2224,12 @@ paths:
       x-implementation-status: planned
   /api/budgets/fixed/:
     get:
-      summary: '[목업] 고정지출 목록 보기'
+      summary: '[구현] 고정지출 목록 보기'
       operationId: fixedList
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         후보(suggested)·확정(confirmed)을 함께 반환한다. 후보는 created_at 최신순, 확정은 출금일 빠른 순이며 출금일 null은 마지막. 페이지 나누기와 조회 쿼리 없음.
@@ -2369,15 +2368,14 @@ paths:
                     error:
                       code: server_error
                       message: 잠시 후 다시 시도해 주세요.
-      x-implementation-status: mock
+      x-implementation-status: implemented
     post:
-      summary: '[목업] 고정지출 직접 추가'
+      summary: '[구현] 고정지출 직접 추가'
       operationId: fixedCreate
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         직접 추가는 즉시 confirmed·manual로 저장하고 confirmedAt에 저장 시각을 기록한다. 저장 성공은 예산 변경 승인이나 실제 출금 실행이 아니다. 1차 추가 화면은 evidenceTransactionId를
@@ -2552,19 +2550,18 @@ paths:
               paymentCardId: null
               category: HOUSING_TELECOM
               evidenceTransactionId: null
-      x-implementation-status: mock
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
   /api/budgets/fixed/{id}/:
     patch:
-      summary: '[목업] 고정지출 수정'
+      summary: '[구현] 고정지출 수정'
       operationId: fixedUpdate
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         후보·확정 항목만 수정 가능. 중지·무시 항목은 404. 바꿀 칸만 보내며 빈 객체는 400. 이름·금액·카테고리 null은 400. 결제 수단 전환은 두 ID를 함께 보내 최종 상태에
@@ -2781,15 +2778,14 @@ paths:
               clearEvidence:
                 value:
                   evidenceTransactionId: null
-      x-implementation-status: mock
+      x-implementation-status: implemented
     delete:
-      summary: '[목업] 고정지출 중지'
+      summary: '[구현] 고정지출 중지'
       operationId: fixedStop
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         본문·쿼리 없음. confirmed 항목을 삭제하지 않고 stopped로 바꾼다. 이미 stopped이면 다시 요청해도 204. suggested·ignored는 404. 이번 주기 unpaid
@@ -2867,16 +2863,15 @@ paths:
           type: string
           format: uuid
       - $ref: '#/components/parameters/CsrfToken'
-      x-implementation-status: mock
+      x-implementation-status: implemented
   /api/budgets/fixed/confirm/:
     post:
-      summary: '[목업] 고정지출 후보 확정'
+      summary: '[구현] 고정지출 후보 확정'
       operationId: fixedConfirm
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         본인 suggested 후보들을 confirmed로 변경한다. 이미 confirmed이면 그대로 성공하며 두 번 반영하지 않는다. 허용 상태 외 항목·없는 ID·남의 ID가 하나라도 있으면
@@ -3001,19 +2996,18 @@ paths:
             example:
               recurringIds:
               - b3e26d97-05f6-4a12-bcde-953a2f7b0184
-      x-implementation-status: mock
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
   /api/budgets/fixed/ignore/:
     post:
-      summary: '[목업] 고정지출 후보 무시'
+      summary: '[구현] 고정지출 후보 무시'
       operationId: fixedIgnore
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         본인 suggested 후보들을 ignored로 변경한다. 이미 ignored이면 그대로 성공하며 두 번 반영하지 않는다. 허용 상태 외 항목·없는 ID·남의 ID가 하나라도 있으면 전체를
@@ -3138,7 +3132,7 @@ paths:
             example:
               recurringIds:
               - b3e26d97-05f6-4a12-bcde-953a2f7b0184
-      x-implementation-status: mock
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -6993,7 +6987,7 @@ x-source-sha256:
   docs/api/cards.md: 7b542541d1707c84fe38bff695f2646ec0003543283a2f3430b6cf144ebf5371
   docs/api/loans.md: 42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077
   docs/api/transactions.md: 9b58ed6c31c250aac41200e15f0733cc5542d0736c29db3392d6932ee51af354
-  docs/api/fixed.md: cdb52d010b5f63b47dce5668b4c51f1ac1d6b0af728ef85a9dfc8da49000ca9d
+  docs/api/fixed.md: 3229def7865c1148bd94c489d6bab4a9a9306bddbf4dd588a6fd7782c8d4bdd0
   docs/api/savings.md: cb19c5749e296846764528142008f129e77dc2041886061b4b8ea511825612b7
   docs/api/home.md: 4c7fe1beedc5936c85ef48b8127605eb9a86a19095f2204cd5778435d2c6496d
   docs/api/chat.md: 611e6174450c84817e467226974d053bc8bd0c080155b543934115e6c08ce4b2
