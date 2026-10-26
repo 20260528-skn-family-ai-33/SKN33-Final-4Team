@@ -15,7 +15,7 @@ TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거�
 IMPLEMENTATION = {
     ("get", "/api/csrf/"): "implemented",
     ("get", "/api/home/"): "mock",
-    ("get", "/api/finance/transactions/"): "mock",
+    ("get", "/api/finance/transactions/"): "implemented",
 }
 for _domain in ("fixed", "savings"):
     for _method, _suffix in (("get", ""), ("post", ""), ("patch", "{id}/"), ("delete", "{id}/"), ("post", "confirm/"), ("post", "ignore/")):
@@ -128,7 +128,7 @@ def build_contract():
         source = operation["x-source"]
         note = {
             "implemented": "현재 서버에서 구현된 API입니다.",
-            "mock": "현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.",
+            "mock": "현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.",
             "planned": "명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.",
         }[state]
         operation["description"] = f"**개발 상태: {label}** — {note}\n\n{operation.get('description', '')}\n\n원본: `{source}`"
@@ -174,19 +174,16 @@ def build_runtime_schema():
     from budgets import examples as budget_examples
     from budgets.api import _must_pay
     from config.api import camel
-    from finance import mock as finance_mock
-    from finance.api import filter_days, PENDING
 
     contract = build_contract()
     schema = deepcopy(contract)
     schema["paths"] = {}
     schema["security"] = []
     schema["info"]["title"] = "머니쿠션 — 현재 서버 확인"
-    schema["info"]["description"] = "현재 명세 범위에서 GET으로 호출 가능한 5개를 보여 줍니다. CSRF는 구현, 홈·거래 목록·고정지출 목록·정기 저축 목록은 예시 데이터입니다. 이 화면의 스키마는 현재 샘플의 모양만 설명하며 입력 검증·인증·DB 저장 구현 완료를 뜻하지 않습니다. 현재 기본 권한은 AllowAny입니다. 예산·쿠션 시안은 이번 35개 확정 명세 범위 밖이라 제외했습니다."
+    schema["info"]["description"] = "현재 명세 범위에서 로그인 없이 GET으로 호출 가능한 4개를 보여 줍니다. CSRF는 구현, 홈·고정지출 목록·정기 저축 목록은 예시 데이터입니다. 거래 목록(16)은 실제 구현되어 로그인이 필요하므로 이 화면에서 뺐습니다(전체 명세에서 [구현]으로 확인). 이 화면의 스키마는 현재 샘플의 모양만 설명하며 입력 검증·인증·DB 저장 구현 완료를 뜻하지 않습니다. 현재 기본 권한은 AllowAny입니다. 예산·쿠션 시안은 이번 35개 확정 명세 범위 밖이라 제외했습니다."
     samples = {
         "/api/csrf/": {"ok": True},
         "/api/home/": camel({"period": budget_mock.PERIOD, "home": budget_mock.HOME, "must_pay": _must_pay(), "budget": None if budget_mock.BUDGET is None else {"sample": True}}),
-        "/api/finance/transactions/": camel({"month": finance_mock.MONTH, "recent": finance_mock.RECENT, "pending_count": finance_mock.PENDING_COUNT, "pending_label": PENDING, "categories": finance_mock.CATEGORIES, "selected": "전체", "days": filter_days("전체")}),
         "/api/budgets/fixed/": camel(budget_examples.FIXED_LIST_EXAMPLE),
         "/api/budgets/savings/": camel(budget_examples.SAVINGS_LIST_EXAMPLE),
     }
@@ -197,10 +194,8 @@ def build_runtime_schema():
         operation["parameters"] = []
         operation["description"] = "현재 구현의 실제 응답 구조입니다. " + ("CSRF 쿠키를 발급합니다." if path == "/api/csrf/" else "목업 데이터이며 확정 계약과 다릅니다. 인증·저장·금융 연동 구현 완료를 뜻하지 않습니다.")
         operation["responses"] = {"200": {"description": "현재 서버 응답", "content": {"application/json": {"schema": _sample_schema(sample), "example": sample}}}}
-        if path == "/api/finance/transactions/":
-            operation["parameters"] = [{"name": "category", "in": "query", "required": False, "description": "목업은 한글 이름을 사용. 정식 명세는 영문 코드.", "schema": {"type": "string", "default": "전체", "example": "식비"}}]
         schema["paths"][path] = {"get": operation}
-    schema["tags"] = [t for t in schema["tags"] if t["name"] in {"공통 · 인증", "홈", "거래", "고정지출", "정기 저축"}]
+    schema["tags"] = [t for t in schema["tags"] if t["name"] in {"공통 · 인증", "홈", "고정지출", "정기 저축"}]
     # 실행 화면은 별도 문서: 사용하지 않는 확정 계약 모델을 함께 보여 주지 않는다.
     schema["components"] = {}
     return schema
