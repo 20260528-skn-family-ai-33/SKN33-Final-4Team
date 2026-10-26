@@ -16,7 +16,6 @@ from rest_framework.response import Response
 
 from budgets.models import Category
 
-from . import mock
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
 from .models import FinancialTransaction, SourceKind, TransactionLink
@@ -268,33 +267,3 @@ def transaction_detail(request, transaction_id):
     # 바뀐 카테고리 이름 등을 새로 읽어서 17번과 같은 모양으로 돌려준다
     tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
     return Response(transaction_detail_body(tx))
-
-
-# ---------- 옛 목업 도구 ----------
-# config/openapi.py(나은)의 '현재 서버 확인' 문서가 아직 아래 두 개를 가져다 쓴다.
-# 그 문서를 실제 응답 기준으로 바꾸면 함께 지운다. 화면(TransactionsPage.jsx)은 이 PR에서 새 모양으로 바꾼다.
-PENDING = "확인 필요"
-NOT_SPENDING = ("income", "transfer")
-
-
-def net_amount(tx):
-    if tx.get("cancel") == "full":
-        return 0
-    return tx["amount"] - tx.get("cancel_amount", 0)
-
-
-def filter_days(selected):
-    def keep(tx):
-        if selected == "전체":
-            return True
-        if selected == PENDING:
-            return tx["kind"] == "pending"
-        return tx.get("cat") == selected
-
-    days = []
-    for day in mock.TX_DAYS:
-        items = [{**tx, "net": net_amount(tx)} for tx in day["items"] if keep(tx)]
-        if items:
-            total = sum(tx["net"] for tx in items if tx["kind"] not in NOT_SPENDING)
-            days.append({"date": day["date"], "items": items, "total": total})
-    return days

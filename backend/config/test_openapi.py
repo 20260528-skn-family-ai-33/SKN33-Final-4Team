@@ -70,10 +70,10 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 1, "mock": 14, "planned": 20})
+        self.assertEqual(Counter(states.values()), {"implemented": 2, "mock": 13, "planned": 20})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("get", "/api/home/")], "mock")
-        self.assertEqual(states[("get", "/api/finance/transactions/")], "mock")
+        self.assertEqual(states[("get", "/api/finance/transactions/")], "implemented")
         self.assertEqual(states[("post", "/api/finance/loans/")], "planned")
         for (method, path), state in states.items():
             if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
@@ -136,14 +136,13 @@ class OpenAPIContractTests(SimpleTestCase):
         self.assertIn("not_authenticated", error_examples)
         self.assertIn("머니쿠션", response.content.decode())
 
-    def test_runtime_document_contains_only_the_five_callable_gets(self):
+    def test_runtime_document_contains_only_the_four_callable_gets(self):
         response = self.client.get("/api/schema/runtime/")
         self.assertEqual(response.status_code, 200)
         runtime = response.json()
         self.assertEqual(runtime, build_runtime_schema())
         self.assertSetEqual(set(runtime["paths"]), {
-            "/api/csrf/", "/api/home/", "/api/finance/transactions/",
-            "/api/budgets/fixed/", "/api/budgets/savings/",
+            "/api/csrf/", "/api/home/", "/api/budgets/fixed/", "/api/budgets/savings/",
         })
         self.assertEqual(runtime["security"], [])
         for path, methods in runtime["paths"].items():
@@ -151,6 +150,7 @@ class OpenAPIContractTests(SimpleTestCase):
                 self.assertSetEqual(set(methods), {"get"})
                 self.assertEqual(methods["get"]["security"], [])
         self.assertNotIn("/api/budgets/", runtime["paths"])
+        self.assertNotIn("/api/finance/transactions/", runtime["paths"])  # 16번은 실제 구현 · 로그인 필요
 
     def test_runtime_response_examples_match_the_actual_http_payloads(self):
         runtime = self.client.get("/api/schema/runtime/").json()
@@ -164,22 +164,6 @@ class OpenAPIContractTests(SimpleTestCase):
                     self.assertIn("csrftoken", response.cookies)
                     self.assertEqual(response.json(), {"ok": True})
 
-    def test_runtime_documents_and_accepts_the_current_korean_category_filter(self):
-        runtime = self.client.get("/api/schema/runtime/").json()
-        operation = runtime["paths"]["/api/finance/transactions/"]["get"]
-        parameter = next(p for p in operation["parameters"] if p["name"] == "category")
-        category = parameter["schema"]["example"]
-        self.assertEqual(category, "식비")
-        response = self.client.get("/api/finance/transactions/", {"category": category})
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["selected"], category)
-        items = [item for day in data["days"] for item in day["items"]]
-        self.assertTrue(items)
-        self.assertTrue(all(item["cat"] == category for item in items))
-        self.assertIn("pendingCount", data)
-        self.assertNotIn("pending_count", data)
-
     def test_swagger_pages_use_local_assets_and_the_correct_execution_mode(self):
         for path, schema_url, submit_methods in (
             ("/api/docs/", "/api/schema/", []),
@@ -189,8 +173,8 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 1개")
-                self.assertContains(response, "목업 14개")
+                self.assertContains(response, "구현 2개")
+                self.assertContains(response, "목업 13개")
                 self.assertContains(response, "미구현 20개")
                 self.assertContains(response, "/api/docs/runtime/")
                 options = json.loads(response.data["settings"])
