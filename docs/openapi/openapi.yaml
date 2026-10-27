@@ -7,8 +7,8 @@ info:
   description: '확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**
 
 
-    현재 구현 7개(CSRF·정기 저축), 목업 8개(홈·거래 목록·고정지출), 미구현 20개입니다. 전체 명세는 읽기 전용이며, 실제 응답 확인은 [현재 서버 확인](/api/docs/runtime/)에서
-    합니다. 정기 저축은 [현재 서버 확인]에서 저장·수정·중지까지 실행할 수 있습니다(로그인 필요). 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈·거래 목록의 응답 형태도 확정 계약과
+    현재 구현 25개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·이전 대화), 목업 4개(홈·연결 해제·챗봇 메시지·작업 확인), 미구현 6개(카드·대출)입니다. 전체 명세는 읽기
+    전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈의 응답 형태도 확정 계약과
     다릅니다.
 
 
@@ -77,11 +77,11 @@ paths:
       x-implementation-status: implemented
   /api/auth/signup/:
     post:
-      summary: '[미구현] 회원가입'
+      summary: '[구현] 회원가입'
       operationId: signUp
       tags:
       - 공통 · 인증
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현인 확정 API 계약이다. 회원과 필수 동의를 하나의 트랜잭션으로 저장하고 201 응답과 함께 자동 로그인 세션 쿠키를 설정한다. 로그인과 동일하게 CSRF 쿠키를 갱신한다.
@@ -186,16 +186,16 @@ paths:
                 documentVersion: v1
               - purpose: privacy
                 documentVersion: v1
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
   /api/auth/login/:
     post:
-      summary: '[미구현] 로그인'
+      summary: '[구현] 로그인'
       operationId: logIn
       tags:
       - 공통 · 인증
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현인 확정 API 계약이다. Django 세션 쿠키로 로그인하고 세션을 14일 유지한다. accessToken·refreshToken·JWT를 발급하거나 응답하지 않는다. 회원가입
@@ -275,16 +275,16 @@ paths:
             example:
               email: sejin@example.com
               password: Example123!
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
   /api/auth/logout/:
     post:
-      summary: '[미구현] 로그아웃'
+      summary: '[구현] 로그아웃'
       operationId: logOut
       tags:
       - 공통 · 인증
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현인 확정 API 계약이다. 요청 본문·회원 ID·세션 ID 없이 쿠키에 연결된 현재 세션을 종료한다. 로그인은 필수가 아니지만 CSRF는 검증한다. 유효한 CSRF 요청이면 이미
@@ -328,16 +328,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
   /api/auth/me/:
     get:
-      summary: '[미구현] 내 계정 확인'
+      summary: '[구현] 내 계정 확인'
       operationId: getCurrentMember
       tags:
       - 공통 · 인증
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현인 확정 API 계약이다. 현재 세션의 로그인 여부와 기본 회원 정보를 조회한다. 요청 본문·경로 변수·쿼리는 없으며 userId를 입력받지 않는다. 정상 응답의 nickname은
@@ -386,14 +386,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      x-implementation-status: planned
+      x-implementation-status: implemented
   /api/finance/consents/:
     post:
-      summary: '[미구현] 금융 조회 동의 저장'
+      summary: '[구현] 금융 조회 동의 저장'
       operationId: saveFinanceConsents
       tags:
       - 금융 동의 · 연결
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현이며 원문에 남은 확인 필요 사항을 유지한 API 계약이다. 은행 조회 동의는 필수이고 카드·대출은 선택이다. 동의하지 않은 항목은 보내지 않으며 거절 기록은 저장하지 않는다.
@@ -491,17 +491,17 @@ paths:
               - purpose: finance_inquiry
                 productScope: card
                 documentVersion: v1
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
   /api/finance/connect/accounts/:
     get:
-      summary: '[미구현] 계좌 후보 보기'
+      summary: '[구현] 계좌 후보 보기'
       operationId: listAccountCandidates
       tags:
       - 금융 동의 · 연결
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현인 API 계약이다. 저장된 계좌만 조회하며 CODEF를 새로 호출하지 않는다. 후보는 현재 회원의 해제되지 않은 은행 연결에서 가져온 입출금 계좌이고 예적금은 제외한다. relogin
@@ -568,13 +568,13 @@ paths:
                     error:
                       code: not_authenticated
                       message: 로그인이 필요해요.
-      x-implementation-status: planned
+      x-implementation-status: implemented
     put:
-      summary: '[미구현] 계좌 선택 저장'
+      summary: '[구현] 계좌 선택 저장'
       operationId: replaceSelectedAccounts
       tags:
       - 금융 동의 · 연결
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현인 API 계약이다. 선택한 계좌 전체 목록으로 기존 선택을 교체한다. 누락된 계좌는 선택 해제되며 적어도 하나는 선택해야 한다. 후보 GET에 나오는 내 입출금 계좌만 허용하고
@@ -673,16 +673,16 @@ paths:
             example:
               selectedAccountIds:
               - c91d3268-29ad-40a0-a3c7-576395f34f01
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
   /api/finance/connections/:
     get:
-      summary: '[미구현] 연결 목록 보기'
+      summary: '[구현] 연결 목록 보기'
       operationId: listFinanceConnections
       tags:
       - 금융 동의 · 연결
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         현재 미구현인 API 계약이다. 저장된 현재 회원의 연결을 조회하며 CODEF를 호출하지 않는다. connected·relogin만 반환하고 disconnected는 제외한다. 연결이 없으면
@@ -750,14 +750,15 @@ paths:
                     error:
                       code: not_authenticated
                       message: 로그인이 필요해요.
-      x-implementation-status: planned
+      x-implementation-status: implemented
   /api/finance/connections/{connectionId}/:
     delete:
-      summary: '[미구현] 연결 해제'
+      summary: '[목업] 연결 해제'
       operationId: disconnectFinanceConnection
       tags:
       - 금융 동의 · 연결
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
+        계약과 다릅니다.
 
 
         현재 미구현인 API 계약이다. 요청 본문 없이 기관 연결 하나를 해제한다. 행을 삭제하지 않고 disconnected_at과 status=disconnected를 기록한다. 연결의 계좌·카드도
@@ -810,7 +811,7 @@ paths:
           format: uuid
         example: 5e0a4c31-334b-498a-a1c5-b3d239c7c120
       - $ref: '#/components/parameters/CsrfToken'
-      x-implementation-status: planned
+      x-implementation-status: mock
   /api/finance/connect/cards/:
     get:
       summary: '[미구현] 카드 후보 보기'
@@ -1933,11 +1934,11 @@ paths:
       x-implementation-status: implemented
   /api/finance/transactions/{id}/:
     get:
-      summary: '[미구현] 거래 한 건 보기'
+      summary: '[구현] 거래 한 건 보기'
       tags:
       - 거래
       operationId: retrieveTransaction
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         목록에 노출 가능한 본인 거래 한 건을 반환합니다. 원문은 <uuid:transaction_id> 경로이며 OpenAPI의 {id}는 같은 transactionId를 뜻합니다. 없는/타인
@@ -2060,13 +2061,13 @@ paths:
         schema:
           type: string
           format: uuid
-      x-implementation-status: planned
+      x-implementation-status: implemented
     patch:
-      summary: '[미구현] 거래 분류 수정'
+      summary: '[구현] 거래 분류 수정'
       tags:
       - 거래
       operationId: updateTransactionCategory
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         요청은 필수 category 한 칸만 받습니다. 선택 가능한 10개 카테고리와 ETC만 허용하며 UNCLASSIFIED로 되돌릴 수 없습니다. 금액·날짜·가맹점명·classifyState·funding
@@ -2220,16 +2221,15 @@ paths:
               $ref: '#/components/schemas/TransactionCategoryUpdateRequest'
             example:
               category: FOOD
-      x-implementation-status: planned
+      x-implementation-status: implemented
   /api/budgets/fixed/:
     get:
-      summary: '[목업] 고정지출 목록 보기'
+      summary: '[구현] 고정지출 목록 보기'
       operationId: fixedList
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
-        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         후보(suggested)·확정(confirmed)을 함께 반환한다. 후보는 created_at 최신순, 확정은 출금일 빠른 순이며 출금일 null은 마지막. 페이지 나누기와 조회 쿼리 없음.
@@ -2368,15 +2368,14 @@ paths:
                     error:
                       code: server_error
                       message: 잠시 후 다시 시도해 주세요.
-      x-implementation-status: mock
+      x-implementation-status: implemented
     post:
-      summary: '[목업] 고정지출 직접 추가'
+      summary: '[구현] 고정지출 직접 추가'
       operationId: fixedCreate
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
-        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         직접 추가는 즉시 confirmed·manual로 저장하고 confirmedAt에 저장 시각을 기록한다. 저장 성공은 예산 변경 승인이나 실제 출금 실행이 아니다. 1차 추가 화면은 evidenceTransactionId를
@@ -2551,19 +2550,18 @@ paths:
               paymentCardId: null
               category: HOUSING_TELECOM
               evidenceTransactionId: null
-      x-implementation-status: mock
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
   /api/budgets/fixed/{id}/:
     patch:
-      summary: '[목업] 고정지출 수정'
+      summary: '[구현] 고정지출 수정'
       operationId: fixedUpdate
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
-        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         후보·확정 항목만 수정 가능. 중지·무시 항목은 404. 바꿀 칸만 보내며 빈 객체는 400. 이름·금액·카테고리 null은 400. 결제 수단 전환은 두 ID를 함께 보내 최종 상태에
@@ -2780,15 +2778,14 @@ paths:
               clearEvidence:
                 value:
                   evidenceTransactionId: null
-      x-implementation-status: mock
+      x-implementation-status: implemented
     delete:
-      summary: '[목업] 고정지출 중지'
+      summary: '[구현] 고정지출 중지'
       operationId: fixedStop
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
-        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         본문·쿼리 없음. confirmed 항목을 삭제하지 않고 stopped로 바꾼다. 이미 stopped이면 다시 요청해도 204. suggested·ignored는 404. 이번 주기 unpaid
@@ -2866,16 +2863,15 @@ paths:
           type: string
           format: uuid
       - $ref: '#/components/parameters/CsrfToken'
-      x-implementation-status: mock
+      x-implementation-status: implemented
   /api/budgets/fixed/confirm/:
     post:
-      summary: '[목업] 고정지출 후보 확정'
+      summary: '[구현] 고정지출 후보 확정'
       operationId: fixedConfirm
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
-        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         본인 suggested 후보들을 confirmed로 변경한다. 이미 confirmed이면 그대로 성공하며 두 번 반영하지 않는다. 허용 상태 외 항목·없는 ID·남의 ID가 하나라도 있으면
@@ -3000,19 +2996,18 @@ paths:
             example:
               recurringIds:
               - b3e26d97-05f6-4a12-bcde-953a2f7b0184
-      x-implementation-status: mock
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
   /api/budgets/fixed/ignore/:
     post:
-      summary: '[목업] 고정지출 후보 무시'
+      summary: '[구현] 고정지출 후보 무시'
       operationId: fixedIgnore
       tags:
       - 고정지출
       x-source: docs/api/fixed.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
-        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         본인 suggested 후보들을 ignored로 변경한다. 이미 ignored이면 그대로 성공하며 두 번 반영하지 않는다. 허용 상태 외 항목·없는 ID·남의 ID가 하나라도 있으면 전체를
@@ -3137,7 +3132,7 @@ paths:
             example:
               recurringIds:
               - b3e26d97-05f6-4a12-bcde-953a2f7b0184
-      x-implementation-status: mock
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
@@ -3985,8 +3980,8 @@ paths:
       tags:
       - 홈
       x-source: docs/api/home.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
-        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
+        계약과 다릅니다.
 
 
         기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.
@@ -4079,7 +4074,7 @@ paths:
   /api/chat/conversations/{id}/:
     get:
       operationId: getConversation
-      summary: '[미구현] 이전 대화 보기'
+      summary: '[구현] 이전 대화 보기'
       tags:
       - 통합 챗봇
       x-source: docs/api/chat.md
@@ -4091,7 +4086,7 @@ paths:
           type: string
           format: uuid
         description: UUID. 없는 항목·남의 항목·형식 오류는 모두 404.
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         메시지는 오래된 순. active_agent·slots 내부 상태는 응답하지 않습니다. 화면이 기억한 conversationId로 조회하고 없거나 404이면 새 대화로 시작합니다. 대화
@@ -4164,15 +4159,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      x-implementation-status: planned
+      x-implementation-status: implemented
   /api/chat/messages/:
     post:
       operationId: sendChatMessage
-      summary: '[미구현] 챗봇에 메시지 보내기'
+      summary: '[목업] 챗봇에 메시지 보내기'
       tags:
       - 통합 챗봇
       x-source: docs/api/chat.md
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
+        계약과 다릅니다.
 
 
         text와 choice 중 정확히 하나를 보냅니다. conversationId=null은 새 대화입니다. 응답 messages에는 사용자 메시지와 봇 답변 모두 포함됩니다.
@@ -4288,14 +4284,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      x-implementation-status: planned
+      x-implementation-status: mock
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
   /api/tasks/{id}/:
     get:
       operationId: getTask
-      summary: '[미구현] 오래 걸리는 작업 진행 확인'
+      summary: '[목업] 오래 걸리는 작업 진행 확인'
       tags:
       - 통합 챗봇
       x-source: docs/api/chat.md
@@ -4307,7 +4303,8 @@ paths:
           type: string
           format: uuid
         description: UUID. 없는 항목·남의 항목·형식 오류는 모두 404.
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
+        계약과 다릅니다.
 
 
         queued·running이면 원문 기본안은 2초 후 재조회, succeeded·failed·canceled이면 중단합니다. 실제 비동기 사용 여부·조회 간격·최대 대기 시간·result
@@ -4344,7 +4341,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      x-implementation-status: planned
+      x-implementation-status: mock
 components:
   securitySchemes:
     sessionAuth:
@@ -6988,11 +6985,11 @@ x-source-sha256:
   docs/api/spending-analysis.md: c8a479b72f10d6e222a36bc6892ac901980f0e4aac8d94c2998fb7ffd56344b9
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c
-  docs/api/finance-connect.md: f5d6fe07a783f144f682672d7f51ae968f433e7ea004a83d6ab70c9e05aba993
+  docs/api/finance-connect.md: 1a2ef298979ccc0b4c23c90a7fb02a0ecdaf47c30c0c14693ff88feebe781879
   docs/api/cards.md: 7b542541d1707c84fe38bff695f2646ec0003543283a2f3430b6cf144ebf5371
   docs/api/loans.md: 42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077
-  docs/api/transactions.md: 9b58ed6c31c250aac41200e15f0733cc5542d0736c29db3392d6932ee51af354
-  docs/api/fixed.md: cdb52d010b5f63b47dce5668b4c51f1ac1d6b0af728ef85a9dfc8da49000ca9d
+  docs/api/transactions.md: e5084b6466516b280bbfd837cdd27ccd80fd08a11624ec471dfb2112588ec17c
+  docs/api/fixed.md: 3229def7865c1148bd94c489d6bab4a9a9306bddbf4dd588a6fd7782c8d4bdd0
   docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
   docs/api/home.md: 4c7fe1beedc5936c85ef48b8127605eb9a86a19095f2204cd5778435d2c6496d
-  docs/api/chat.md: 611e6174450c84817e467226974d053bc8bd0c080155b543934115e6c08ce4b2
+  docs/api/chat.md: e70e267966add48bef90b34065f937213ba758f4bc0d300a227fbc305e398b3f

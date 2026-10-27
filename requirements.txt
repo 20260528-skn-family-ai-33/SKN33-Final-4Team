@@ -24,3 +24,5 @@ pandas==3.0.6
 scikit-learn==1.9.1
 
 # LLM·에이전트, AWS(S3·SQS), 외부 API 연동 패키지는 구현 방식 확정 후 추가
+
+typesafe-sdk==0.7.5

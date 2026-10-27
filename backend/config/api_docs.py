@@ -73,7 +73,7 @@ class MoneyCushionSwaggerView(SpectacularSwaggerView):
                 "download_filename": "moneycushion-openapi-runtime.json" if self.runtime else "moneycushion-openapi.json",
                 "settings": json.dumps(
                     {
-                        "supportedSubmitMethods": ["get", "post", "patch", "delete"] if self.runtime else [],
+                        "supportedSubmitMethods": ["get", "post", "put", "patch", "delete"] if self.runtime else [],
                         "validatorUrl": None,
                         "persistAuthorization": False,
                         "withCredentials": False,
