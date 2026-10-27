@@ -10,6 +10,15 @@ import re
 from .codef import BANKS  # 은행 기관 코드 → 짧은 이름 (예: "0004" → "국민")
 from .models import Connection
 
+# frontend/src/utils/institutions.js의 CARDS와 같은 기관 코드·표시 이름.
+CARD_ISSUERS = {
+    "0306": "신한카드", "0301": "국민카드", "0303": "삼성카드",
+    "0302": "현대카드", "0311": "롯데카드", "0309": "우리카드",
+    "0313": "하나카드", "0304": "NH카드", "0305": "BC카드",
+    "0307": "씨티카드", "0320": "수협카드", "0316": "광주카드",
+    "0315": "전북카드", "0321": "제주카드",
+}
+
 
 def organization_name(connection):
     """기관 이름. 은행은 '국민은행'처럼. 카드사 · 대출 기관 이름표는 아직 없어서 기관 코드를 그대로 쓴다 (표 생기면 추가)"""
@@ -50,14 +59,17 @@ def account_display(account):
 
 
 def card_display(card):
-    """카드: {카드명 → 없으면 '카드'} · ****{끝 4자리}. 카드가 없으면 None
-    규칙상 카드명이 없으면 '{카드사} 카드'인데, 카드사 코드 → 이름 표가 아직 없어서 '카드'만 쓴다 (cards.md 표 생기면 교체)
+    """카드: {카드명 → 카드사 이름 → '카드'} · ****{끝 4자리}. 카드가 없으면 None
     직접 등록한 카드(연결 없음)는 끊길 연결이 없으므로 connected"""
     if card is None:
         return None
     status = card.connection.status if card.connection else Connection.Status.CONNECTED
+    issuer_code = card.issuer_code or (card.connection.organization_code if card.connection else None)
+    label = card.name or CARD_ISSUERS.get(issuer_code) or "카드"
+    # 앞자리만 있는 마스킹 번호에서 끝 4자리를 추측하지 않는다.
+    tail = re.search(r"([0-9]{4})$", (card.masked_number or "").strip())
     return {
         "card_id": card.card_id,
-        "display_name": _with_number(card.name or "카드", card.masked_number),
+        "display_name": f"{label} · ****{tail.group(1)}" if tail else label,
         "status": status,
     }

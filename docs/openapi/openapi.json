@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 28개(CSRF·인증·금융 동의 및 연결·대출·거래·고정지출·정기 저축·이전 대화), 목업 4개(홈·연결 해제·챗봇 메시지·작업 확인), 미구현 3개(카드)입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈의 응답 형태도 확정 계약과 다릅니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), 금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 31개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·이전 대화), 목업 4개(홈·연결 해제·챗봇 메시지·작업 확인), 미구현 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈의 응답 형태도 확정 계약과 다릅니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), 금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -1123,12 +1123,12 @@
     },
     "/api/finance/connect/cards/": {
       "get": {
-        "summary": "[미구현] 카드 후보 보기",
+        "summary": "[구현] 카드 후보 보기",
         "tags": [
           "카드"
         ],
         "operationId": "listCardCandidates",
-        "description": "**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.\n\n저장된 본인 카드 후보만 읽고 CODEF를 호출하지 않습니다. disconnected 연결의 카드는 제외하고 connected/relogin만 반환합니다. relogin 상태에서도 저장된 마지막 자료와 원래 fetchedAt을 유지합니다. 연결 상태는 connection.status이며 기관의 cardStatus와 구분합니다.\n\n정상 확인된 후보 0건만 items: []입니다. 미조회·인증 실패·조회 실패를 빈 목록으로 바꾸지 않습니다. 카드 이름이 없으면 “{카드사} 카드”, 카드사도 없으면 “카드”; 끝 4자리가 없으면 번호 부분 전체를 생략합니다. 금융 조회 동의가 없으면 403 consent_required(fields 없음)입니다. 409 relogin_required·502 provider_unavailable은 외부 호출을 하는 연결/재조회 API의 오류이며 이 GET에는 적용하지 않습니다.\n\n구현 전 확인: 기관·연결별 쿼리 필터, 기관 원천 상태/종류 정규화·휴면/해지 카드 제외, 연결 FK가 없는 카드 노출, 재인증 상태에서 최초 선택 가능 범위, 기관별 정상 0건과 미조회 구분. 아직 확정되지 않은 쿼리 필터는 이 명세에 추가하지 않았습니다.\n\n원본: `docs/api/cards.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n저장된 본인 카드 후보만 읽고 CODEF를 호출하지 않습니다. disconnected 연결의 카드는 제외하고 connected/relogin만 반환합니다. relogin 상태에서도 저장된 마지막 자료와 원래 fetchedAt을 유지합니다. 연결 상태는 connection.status이며 기관의 cardStatus와 구분합니다.\n\n정상 확인된 후보 0건만 items: []입니다. 미조회·인증 실패·조회 실패를 빈 목록으로 바꾸지 않습니다. 카드 이름이 없으면 “{카드사} 카드”, 카드사도 없으면 “카드”; 끝 4자리가 없으면 번호 부분 전체를 생략합니다. 금융 조회 동의가 없으면 403 consent_required(fields 없음)입니다. 409 relogin_required·502 provider_unavailable은 외부 호출을 하는 연결/재조회 API의 오류이며 이 GET에는 적용하지 않습니다.\n\n구현 전 확인: 기관·연결별 쿼리 필터, 기관 원천 상태/종류 정규화·휴면/해지 카드 제외, 연결 FK가 없는 카드 노출, 재인증 상태에서 최초 선택 가능 범위, 기관별 정상 0건과 미조회 구분. 아직 확정되지 않은 쿼리 필터는 이 명세에 추가하지 않았습니다.\n\n원본: `docs/api/cards.md`",
         "x-source": "docs/api/cards.md",
         "responses": {
           "200": {
@@ -1238,15 +1238,15 @@
             }
           }
         },
-        "x-implementation-status": "planned"
+        "x-implementation-status": "implemented"
       },
       "put": {
-        "summary": "[미구현] 카드 선택 저장",
+        "summary": "[구현] 카드 선택 저장",
         "tags": [
           "카드"
         ],
         "operationId": "replaceCardSelection",
-        "description": "**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.\n\nselectedCardIds는 본인의 전체 카드 선택을 대체합니다. 특정 카드사/연결만 바꾸지 않습니다. 필드 생략은 오류이고 []는 전체 선택 해제입니다. 목록에 빠진 기존 선택 카드는 해제하지만 금융기관 연결·과거 거래·기존 고정지출의 결제 수단은 유지합니다. 같은 선택을 재전송해도 성공하며 중복 기록이나 차감은 만들지 않습니다. Idempotency-Key는 쓰지 않습니다.\n\nID 형식 오류·없는 카드·타인 소유·선택 불가 카드를 동일한 400 invalid(fields.selectedCardIds)로 처리하며 하나라도 잘못되면 전체 미저장입니다. 허용 외 필드는 400입니다. 실패/미조회 때문에 기존 선택을 빈 배열로 덮어쓰지 않습니다. 카드 선택만으로 예산·고정비·기존 거래를 다시 계산하지 않습니다.\n\n응답은 후보 GET과 같은 items이며 변경된 isSelected를 반영합니다. [] 저장 후에도 후보가 있으면 isSelected:false인 후보 목록을 반환합니다. 선택 저장 시각으로 fetchedAt을 바꾸지 않습니다.\n\n미정: 중복 ID·최대 선택 수·동시 저장 세부 정책, 휴면/해지 카드 및 relogin 상태에서 최초 선택 허용 범위. 미정인 제한은 스키마에 추가하지 않았습니다.\n\n원본: `docs/api/cards.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nselectedCardIds는 본인의 전체 카드 선택을 대체합니다. 특정 카드사/연결만 바꾸지 않습니다. 필드 생략은 오류이고 []는 전체 선택 해제입니다. 목록에 빠진 기존 선택 카드는 해제하지만 금융기관 연결·과거 거래·기존 고정지출의 결제 수단은 유지합니다. 같은 선택을 재전송해도 성공하며 중복 기록이나 차감은 만들지 않습니다. Idempotency-Key는 쓰지 않습니다.\n\nID 형식 오류·없는 카드·타인 소유·선택 불가 카드를 동일한 400 invalid(fields.selectedCardIds)로 처리하며 하나라도 잘못되면 전체 미저장입니다. 허용 외 필드는 400입니다. 실패/미조회 때문에 기존 선택을 빈 배열로 덮어쓰지 않습니다. 카드 선택만으로 예산·고정비·기존 거래를 다시 계산하지 않습니다.\n\n응답은 후보 GET과 같은 items이며 변경된 isSelected를 반영합니다. [] 저장 후에도 후보가 있으면 isSelected:false인 후보 목록을 반환합니다. 선택 저장 시각으로 fetchedAt을 바꾸지 않습니다.\n\n미정: 중복 ID·최대 선택 수·동시 저장 세부 정책, 휴면/해지 카드 및 relogin 상태에서 최초 선택 허용 범위. 미정인 제한은 스키마에 추가하지 않았습니다.\n\n원본: `docs/api/cards.md`",
         "x-source": "docs/api/cards.md",
         "responses": {
           "200": {
@@ -1395,7 +1395,7 @@
             }
           }
         },
-        "x-implementation-status": "planned",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "$ref": "#/components/parameters/CsrfToken"
@@ -1405,12 +1405,12 @@
     },
     "/api/finance/card-bills/{id}/": {
       "get": {
-        "summary": "[미구현] 카드 청구서 보기",
+        "summary": "[구현] 카드 청구서 보기",
         "tags": [
           "카드"
         ],
         "operationId": "retrieveCardBill",
-        "description": "**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.\n\n홈 mustPay[].type=card_bill인 항목의 sourceId(청구서 ID)로 조회합니다. 카드 ID가 아닙니다. 저장된 본인 청구서만 읽고 CODEF를 호출하지 않습니다. 조회 동의가 없으면 403 consent_required입니다. 청구서가 없으면 404이며 0원짜리 청구서를 만들지 않습니다.\n\n금액은 원 단위 정수, billingMonth는 YYYY-MM입니다. totalAmount는 청구서 총액이며 급여주기 소비액·미납 잔액·선차감액으로 대신 쓰지 않습니다. 모르는 값은 null, 확인된 0원만 0입니다. scopeType·confirmationStatus·itemsState의 원천 값이 없으면 null이며 unknown/unavailable을 임의로 채우지 않습니다. card:null은 포함된 모든 카드가 없다는 뜻이 아니고, cards:null은 포함 카드 범위를 확인하지 못한 경우입니다. items:null은 미확보, []는 정상 확인된 0건입니다. partial이면 확보한 항목만 제공하며 항목 합계를 총액으로 대체하지 않습니다. 할부 원 구매액을 이번 회차 청구액에 다시 더하지 않습니다. fetchedAt은 해당 자료의 마지막 정상 조회 시각입니다.\n\n첫 청구서 선차감=max(0, 첫 청구서 총액−이번 급여주기 시작 뒤 그 카드로 쓴 돈). 이후 납부는 이미 반영한 카드 소비와 연결하고 다시 차감하지 않습니다. 카드 고정지출은 별도 납부 예정을 만들지 않습니다. 출금일이 있을 때만 납부 예정을 생성합니다. 홈 mustPay 금액은 총청구액−이미 낸 금액이며 선차감액과 다릅니다. confirmationStatus가 confirmed일 때만 홈 isEstimated=false입니다. 확정 청구/출금일 경과는 납부 완료를 뜻하지 않습니다.\n\n확정 후 원천/구현 검증 대기: 카드사 코드→이름 표, 상세·할부·취소 매핑, 통합 청구 범위, 부분 납부·매칭 키, 일부 누락·합계 불일치·조정액 음수 처리. 차이를 임의 조정 항목으로 맞추지 않습니다. 리볼빙·현금서비스·카드론·연체료의 별도 위험 요약과 급여주기 소비액은 이번 응답에 추가하지 않습니다.\n\n원본: `docs/api/cards.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n홈 mustPay[].type=card_bill인 항목의 sourceId(청구서 ID)로 조회합니다. 카드 ID가 아닙니다. 저장된 본인 청구서만 읽고 CODEF를 호출하지 않습니다. 조회 동의가 없으면 403 consent_required입니다. 청구서가 없으면 404이며 0원짜리 청구서를 만들지 않습니다.\n\n금액은 원 단위 정수, billingMonth는 YYYY-MM입니다. totalAmount는 청구서 총액이며 급여주기 소비액·미납 잔액·선차감액으로 대신 쓰지 않습니다. 모르는 값은 null, 확인된 0원만 0입니다. scopeType·confirmationStatus·itemsState의 원천 값이 없으면 null이며 unknown/unavailable을 임의로 채우지 않습니다. card:null은 포함된 모든 카드가 없다는 뜻이 아니고, cards:null은 포함 카드 범위를 확인하지 못한 경우입니다. items:null은 미확보, []는 정상 확인된 0건입니다. partial이면 확보한 항목만 제공하며 항목 합계를 총액으로 대체하지 않습니다. 할부 원 구매액을 이번 회차 청구액에 다시 더하지 않습니다. fetchedAt은 해당 자료의 마지막 정상 조회 시각입니다.\n\n첫 청구서 선차감=max(0, 첫 청구서 총액−이번 급여주기 시작 뒤 그 카드로 쓴 돈). 이후 납부는 이미 반영한 카드 소비와 연결하고 다시 차감하지 않습니다. 카드 고정지출은 별도 납부 예정을 만들지 않습니다. 출금일이 있을 때만 납부 예정을 생성합니다. 홈 mustPay 금액은 총청구액−이미 낸 금액이며 선차감액과 다릅니다. confirmationStatus가 confirmed일 때만 홈 isEstimated=false입니다. 확정 청구/출금일 경과는 납부 완료를 뜻하지 않습니다.\n\n확정 후 원천/구현 검증 대기: 카드사 코드→이름 표, 상세·할부·취소 매핑, 통합 청구 범위, 부분 납부·매칭 키, 일부 누락·합계 불일치·조정액 음수 처리. 차이를 임의 조정 항목으로 맞추지 않습니다. 리볼빙·현금서비스·카드론·연체료의 별도 위험 요약과 급여주기 소비액은 이번 응답에 추가하지 않습니다.\n\n원본: `docs/api/cards.md`",
         "x-source": "docs/api/cards.md",
         "responses": {
           "200": {
@@ -1618,7 +1618,7 @@
             }
           }
         ],
-        "x-implementation-status": "planned"
+        "x-implementation-status": "implemented"
       }
     },
     "/api/finance/loans/": {
@@ -9277,7 +9277,7 @@
     "docs/api/finance-connect.md": "458e859145955d2fa6b18f7b6fdd0d000c8e27e91ab745f5b701d9dee1952d9d",
     "docs/api/cards.md": "afc9d170884fce29392a6734d3ae51b155a41303a5b47c4eb7d1d108f8ceec61",
     "docs/api/loans.md": "9ad0a8d882cedb6c7870c023fb7fef4f3777ad7afad4d3ab0812b2b13d4b7ca8",
-    "docs/api/transactions.md": "34c3f46eeef8c653f992f9e7f7d61e28c4789ee427312502228b55addabcd4a2",
+    "docs/api/transactions.md": "49e547ee9f7e4b90d59c35528a1aea3ed7031da11c14b78b8cf9916c35d29658",
     "docs/api/fixed.md": "8f698721903c31cbfafc70116676e8756453a3a4dfeacd7157b6e4df91b6ab7c",
     "docs/api/savings.md": "0914a0f8d797c5e69f7d9245feb2f653afcffced7d90a96a51dee4ced22e9377",
     "docs/api/home.md": "350cb0b8eb9cf64cf2b2e1f007b0cf2f4e9e308c22437499de044df786f4f7b6",
