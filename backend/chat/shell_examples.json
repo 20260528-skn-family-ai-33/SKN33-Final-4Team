@@ -1,34 +1,5 @@
 {
   "_설명": "혜리 담당 껍데기 API 응답 — docs/api/chat.md 예시 JSON 그대로 (2026-10-24)",
-  "conversation": {
-    "conversationId": "3f2c…",
-    "status": "active",
-    "createdAt": "2026-10-21T16:19:40+09:00",
-    "messages": [
-      {
-        "messageId": "a1…",
-        "role": "user",
-        "contentType": "text",
-        "content": {
-          "text": "지난달보다 식비 얼마 썼어?",
-          "choices": []
-        },
-        "taskId": null,
-        "createdAt": "2026-10-21T16:19:58+09:00"
-      },
-      {
-        "messageId": "a2…",
-        "role": "bot",
-        "contentType": "card",
-        "content": {
-          "kind": "spending",
-          "…": "아래 소비 분석 카드"
-        },
-        "taskId": null,
-        "createdAt": "2026-10-21T16:20:00+09:00"
-      }
-    ]
-  },
   "message": {
     "conversationId": "3f2c…",
     "route": {

@@ -70,10 +70,10 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 13, "mock": 2, "planned": 20})
+        self.assertEqual(Counter(states.values()), {"implemented": 14, "mock": 1, "planned": 20})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("get", "/api/home/")], "mock")
-        self.assertEqual(states[("get", "/api/finance/transactions/")], "mock")
+        self.assertEqual(states[("get", "/api/finance/transactions/")], "implemented")
         self.assertEqual(states[("post", "/api/finance/loans/")], "planned")
         for (method, path), state in states.items():
             if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
@@ -173,7 +173,7 @@ class OpenAPIContractTests(SimpleTestCase):
     def test_runtime_response_examples_match_the_actual_http_payloads(self):
         runtime = self.client.get("/api/schema/runtime/").json()
         for path, methods in runtime["paths"].items():
-            if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
+            if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/", "/api/finance/transactions/")):
                 continue  # 구현된 API: 로그인 · DB 가 필요한 실제 응답이라 샘플 예시와 비교하지 않는다
             with self.subTest(path=path):
                 response = self.client.get(path)
@@ -184,22 +184,6 @@ class OpenAPIContractTests(SimpleTestCase):
                     self.assertIn("csrftoken", response.cookies)
                     self.assertEqual(response.json(), {"ok": True})
 
-    def test_runtime_documents_and_accepts_the_current_korean_category_filter(self):
-        runtime = self.client.get("/api/schema/runtime/").json()
-        operation = runtime["paths"]["/api/finance/transactions/"]["get"]
-        parameter = next(p for p in operation["parameters"] if p["name"] == "category")
-        category = parameter["schema"]["example"]
-        self.assertEqual(category, "식비")
-        response = self.client.get("/api/finance/transactions/", {"category": category})
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["selected"], category)
-        items = [item for day in data["days"] for item in day["items"]]
-        self.assertTrue(items)
-        self.assertTrue(all(item["cat"] == category for item in items))
-        self.assertIn("pendingCount", data)
-        self.assertNotIn("pending_count", data)
-
     def test_swagger_pages_use_local_assets_and_the_correct_execution_mode(self):
         for path, schema_url, submit_methods in (
             ("/api/docs/", "/api/schema/", []),
@@ -209,8 +193,8 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 13개")
-                self.assertContains(response, "목업 2개")
+                self.assertContains(response, "구현 14개")
+                self.assertContains(response, "목업 1개")
                 self.assertContains(response, "미구현 20개")
                 self.assertContains(response, "/api/docs/runtime/")
                 options = json.loads(response.data["settings"])

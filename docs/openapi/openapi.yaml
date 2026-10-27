@@ -1682,12 +1682,11 @@ paths:
       x-implementation-status: planned
   /api/finance/transactions/:
     get:
-      summary: '[목업] 거래 목록 보기'
+      summary: '[구현] 거래 목록 보기'
       tags:
       - 거래
       operationId: listTransactions
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         거래 목록은 spending(소비)·income(입금)·transfer(남에게 보낸 이체)만 반환합니다. own_transfer·saving·loan_repayment·card_payment는
@@ -1931,7 +1930,7 @@ paths:
           type: string
           format: date
         example: '2026-10-24'
-      x-implementation-status: mock
+      x-implementation-status: implemented
   /api/finance/transactions/{id}/:
     get:
       summary: '[미구현] 거래 한 건 보기'
@@ -3980,8 +3979,8 @@ paths:
       tags:
       - 홈
       x-source: docs/api/home.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈·거래 목록은 응답 구조·필터도 아래
-        확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.
+        GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.
 
 
         기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.
@@ -6983,11 +6982,11 @@ x-source-sha256:
   docs/api/spending-analysis.md: c8a479b72f10d6e222a36bc6892ac901980f0e4aac8d94c2998fb7ffd56344b9
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c
-  docs/api/finance-connect.md: f5d6fe07a783f144f682672d7f51ae968f433e7ea004a83d6ab70c9e05aba993
+  docs/api/finance-connect.md: 1a2ef298979ccc0b4c23c90a7fb02a0ecdaf47c30c0c14693ff88feebe781879
   docs/api/cards.md: 7b542541d1707c84fe38bff695f2646ec0003543283a2f3430b6cf144ebf5371
   docs/api/loans.md: 42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077
-  docs/api/transactions.md: 9b58ed6c31c250aac41200e15f0733cc5542d0736c29db3392d6932ee51af354
+  docs/api/transactions.md: e5084b6466516b280bbfd837cdd27ccd80fd08a11624ec471dfb2112588ec17c
   docs/api/fixed.md: 3229def7865c1148bd94c489d6bab4a9a9306bddbf4dd588a6fd7782c8d4bdd0
-  docs/api/savings.md: cb19c5749e296846764528142008f129e77dc2041886061b4b8ea511825612b7
+  docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
   docs/api/home.md: 4c7fe1beedc5936c85ef48b8127605eb9a86a19095f2204cd5778435d2c6496d
-  docs/api/chat.md: 611e6174450c84817e467226974d053bc8bd0c080155b543934115e6c08ce4b2
+  docs/api/chat.md: e70e267966add48bef90b34065f937213ba758f4bc0d300a227fbc305e398b3f

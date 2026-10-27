@@ -182,6 +182,7 @@
 | 상황 | 상태 | `code` | 화면 |
 |---|---|---|---|
 | 칸 오류 (위 공통 규칙) | 400 | `invalid` | 칸 아래 `fields` 문구 |
+| 본문이 JSON 객체가 아님 (`[]` · `42` · `"hello"`) | 400 | `invalid` | `nonFieldErrors`: "요청 본문은 JSON 객체로 보내 주세요." |
 | 같은 요청 번호 · 다른 내용 | 409 | `idempotency_conflict` | "이미 처리 중인 요청이에요." 후 팝업 다시 열기 |
 | 로그인 안 됨 · 서버 오류 | 403 · 500 | `not_authenticated` · `server_error` | 공통 |
 
@@ -214,6 +215,7 @@
 | 상황 | 상태 | `code` |
 |---|---|---|
 | 칸 오류 · 빈 객체 · 필수 칸 `null` · 후보의 계좌 변경(S-11) | 400 | `invalid` |
+| 본문이 JSON 객체가 아님 (`[]` · `42` · `"hello"`) | 400 | `invalid` |
 | 주소의 없는 · 남의 · 형식 틀린 ID, 중지 · 무시 항목 | 404 | `not_found` ("찾을 수 없어요.", `fields` 없음) |
 
 ---
@@ -276,6 +278,7 @@
 | 상황 | 상태 | `code` | `fields` |
 |---|---|---|---|
 | 빈 배열 · 형식 틀린 ID · 고를 수 없는 ID | 400 | `invalid` | `savingIds`: "선택할 수 없는 항목이에요." |
+| 본문이 JSON 객체가 아님 (`[]` · `42` · `"hello"`) | 400 | `invalid` | `nonFieldErrors`: "요청 본문은 JSON 객체로 보내 주세요." |
 | 같은 요청 번호 · 다른 내용 | 409 | `idempotency_conflict` | 없음 |
 
 ---
