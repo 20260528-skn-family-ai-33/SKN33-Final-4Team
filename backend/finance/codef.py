@@ -26,6 +26,7 @@ BANKS = {"0004": "국민", "0088": "신한", "0020": "우리", "0081": "하나",
 # CODEF 상품 주소
 PATH_ACCOUNT_LIST = "/v1/kr/bank/p/account/account-list"
 PATH_TRANSACTIONS = "/v1/kr/bank/p/account/transaction-list"
+PATH_LOAN_TRANSACTIONS = "/v1/kr/bank/p/loan/transaction-list"
 
 SUCCESS = "CF-00000"
 _SERVICE = {"sandbox": ServiceType.SANDBOX, "demo": ServiceType.DEMO, "product": ServiceType.PRODUCT}
@@ -157,6 +158,31 @@ def list_transactions(connected_id, org, account_no, start, end):
         "inquiryType": "1",
     })
     return [normalize_transaction(row) for row in data.get("resTrHistoryList", [])]
+
+
+def list_loan_accounts(connected_id, org):
+    """보유계좌 중 resLoan만 조회한다. 기존 list_accounts와 독립된 진입점."""
+    from .codef_loans import normalize_loan_accounts
+
+    data = _request(PATH_ACCOUNT_LIST, {"connectedId": connected_id, "organization": org})
+    return normalize_loan_accounts(data)
+
+
+def get_loan_details(connected_id, org, account_no, start, end):
+    """대출 거래내역 상품의 계좌 단위 정보와 실제 조회 기간을 반환한다.
+
+    거래 원금은 약정원금과 다르므로 거래 행을 Loan에 합산하지 않는다.
+    """
+    from .codef_loans import normalize_loan_details
+
+    if start > end:
+        raise ValueError("조회 시작일은 종료일보다 늦을 수 없어요.")
+    data = _request(PATH_LOAN_TRANSACTIONS, {
+        "connectedId": connected_id, "organization": org, "account": account_no,
+        "startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d"),
+        "orderBy": "0", "inquiryType": "1",
+    })
+    return normalize_loan_details(data, account_no)
 
 
 # ----- CODEF 칸 → 우리 칸 -----
