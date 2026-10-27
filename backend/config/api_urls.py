@@ -13,7 +13,6 @@ from budgets import api as budgets_api
 from chat import api as chat_api
 from finance import api as finance_api
 from finance import api_connect as finance_connect
-from finance import api_shell as finance_shell
 
 from users import api as users_api
 
@@ -56,14 +55,14 @@ urlpatterns = [
     path("budgets/savings/ignore/", budgets_api.savings_ignore, name="savings-ignore"),
     path("budgets/savings/<uuid:saving_id>/", budgets_api.savings_detail, name="savings-detail"),
 
-    # ----- 혜리: 금융 동의 · 연결 6~10 · 거래 17 · 18 · 챗봇 32~34 (10/26 실제 구현: 6~9 · 17 · 18 · 32 / 껍데기: 10 · 33 · 34) -----
+    # ----- 혜리: 금융 동의 · 연결 6~10 · 거래 17 · 18 · 챗봇 32~34 (실제 구현: 6~10 · 17 · 18 · 32 · 33 / 껍데기: 34) -----
     path("finance/consents/", finance_connect.consents, name="finance-consents"),  # 6 POST
     path("finance/connect/accounts/", finance_connect.connect_accounts, name="finance-connect-accounts"),  # 7 GET · 8 PUT
     path("finance/connections/", finance_connect.connections, name="finance-connections"),  # 9 GET
-    path("finance/connections/<uuid:connection_id>/", finance_shell.connection_disconnect, name="finance-connection"),  # 10 DELETE (껍데기)
+    path("finance/connections/<uuid:connection_id>/", finance_connect.connection_disconnect, name="finance-connection"),  # 10 DELETE
     path("finance/transactions/<uuid:transaction_id>/", finance_api.transaction_detail, name="transaction-detail"),  # 17 GET · 18 PATCH
     path("chat/conversations/<uuid:conversation_id>/", chat_api.conversation, name="chat-conversation"),  # 32 GET
-    path("chat/messages/", chat_api.messages, name="chat-messages"),  # 33 POST (껍데기)
+    path("chat/messages/", chat_api.messages, name="chat-messages"),  # 33 POST
     path("tasks/<uuid:task_id>/", chat_api.task, name="task"),  # 34 GET (껍데기)
     # ----- 혜리 끝 -----
     # ↑ 새 주소는 이 위에 추가

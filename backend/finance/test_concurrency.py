@@ -160,3 +160,19 @@ class ConsentTypeTest(TestCase):
                     self.assertEqual(body["code"], "invalid")
                     self.assertIn(field, body["fields"])
         self.assertFalse(Consent.objects.exists())
+
+
+class DisconnectConcurrencyTest(ConcurrencyBase):
+    """10. 같은 연결 해제가 동시에 와도 모두 204, 해제는 한 번만 (해제 시각이 덮어써지지 않음)"""
+
+    def test_disconnect_at_once(self):
+        conn = self.account.connection
+
+        def delete():
+            return self.client_for_user().delete(f"/api/finance/connections/{conn.connection_id}/").status_code
+
+        statuses = run_together(delete, delete, delete)
+        self.assertEqual(statuses, [204, 204, 204])
+        conn.refresh_from_db()
+        self.assertEqual(conn.status, "disconnected")
+        self.assertIsNotNone(conn.disconnected_at)
