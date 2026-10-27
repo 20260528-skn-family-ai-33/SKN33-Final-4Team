@@ -7,16 +7,17 @@
 """
 import re
 
+from . import institutions
 from .codef import BANKS  # 은행 기관 코드 → 짧은 이름 (예: "0004" → "국민")
 from .models import Connection
 
 
 def organization_name(connection):
-    """기관 이름. 은행은 '국민은행'처럼. 카드사 · 대출 기관 이름표는 아직 없어서 기관 코드를 그대로 쓴다 (표 생기면 추가)"""
+    """기관 이름. 은행은 '국민은행', 카드사는 '현대카드'처럼 (institutions.py 표). 표에 없으면 기관 코드를 그대로 쓴다"""
     short = BANKS.get(connection.organization_code)
     if connection.business_type == Connection.BusinessType.BANK and short:
         return f"{short}은행"
-    return connection.organization_code
+    return institutions.name_of(connection.business_type, connection.organization_code)
 
 
 def masked_tail(masked_number):
