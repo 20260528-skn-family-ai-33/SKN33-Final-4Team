@@ -2,11 +2,12 @@
 import hashlib
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from . import codef
 from .models import BankAccount, Connection, FinancialTransaction, SyncRun
-from .pipeline import process_new_transactions
+from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
 
 
 def _mask_account_numbers(value, account_numbers):
@@ -54,19 +55,25 @@ def sync_bank(user, connected_id, org, start, end):
 
         with transaction.atomic():
             # 같은 연결의 저장은 한 번에 하나씩 처리한다.
-            Connection.objects.select_for_update().get(pk=connection.pk)
+            connection = Connection.objects.select_for_update().get(pk=connection.pk)
+            if connection.disconnected_at is not None:
+                raise ValueError("조회 중 연결이 해제되어 저장하지 않았어요.")
             new_ids = []
             existing_count = 0
             saved_accounts = []
             for data, rows in fetched_accounts:
                 number = data["account_no"]
-                account, _ = BankAccount.objects.get_or_create(
-                    connection=connection,
-                    source_account_key=hashlib.sha256(number.encode()).hexdigest(),
-                    defaults={"user": user},
-                )
-                if account.user_id != user.pk:
-                    raise ValueError("계좌 소유 정보가 연결과 맞지 않아요.")
+                key = hashlib.sha256(number.encode()).hexdigest()
+                try:
+                    # 같은 회원·은행의 이전 계좌를 옮겨 ID와 납부 연결을 보존한다.
+                    account = BankAccount.objects.select_for_update(of=("self",)).filter(
+                        Q(connection=connection) | Q(connection__disconnected_at__isnull=False),
+                        user=user, source_account_key=key, connection__user=user,
+                        connection__business_type="bank", connection__organization_code=org,
+                    ).get()
+                except BankAccount.DoesNotExist:
+                    account = BankAccount.objects.create(user=user, connection=connection, source_account_key=key)
+                account.connection = connection
                 account.source_account_ref_ciphertext = None
                 account.masked_number = codef.mask(number)
                 account.name = _mask_account_numbers(data["name"], account_numbers)
@@ -76,10 +83,17 @@ def sync_bank(user, connected_id, org, start, end):
                 account.field_states = {**account.field_states, "codef_deposit_code": data["kind_code"]}
                 account.fetched_at = timezone.now()
                 account.save(update_fields=[
+                    "connection",
                     "source_account_ref_ciphertext", "masked_number", "name", "balance",
                     "account_type", "field_states", "fetched_at",
                 ])
                 saved_accounts.append((account, rows))
+
+            # 조회 기간 밖의 실패도 재시도하되 이번에 생긴 거래는 제외한다.
+            retry_ids = list(FinancialTransaction.objects.filter(
+                user=user, source_kind="bank", account__connection=connection,
+                field_states__has_key=RETRY_STATE_KEY,
+            ).values_list("pk", flat=True))
 
             for account, rows in saved_accounts:
                 for row in rows:
@@ -101,6 +115,7 @@ def sync_bank(user, connected_id, org, start, end):
                     else:
                         existing_count += 1
 
+            retry_failed_transactions(user, retry_ids)
             process_new_transactions(user, new_ids)
             run.status = "success"
             run.business_code = codef.SUCCESS

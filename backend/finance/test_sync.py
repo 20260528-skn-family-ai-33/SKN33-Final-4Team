@@ -12,8 +12,8 @@ from django.db import IntegrityError, connection
 from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
-from . import codef
-from .models import BankAccount, Connection, FinancialTransaction, SyncRun
+from . import codef, pipeline
+from .models import BankAccount, Connection, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, SyncRun
 from .sync import sync_bank
 
 
@@ -247,6 +247,144 @@ class BankSyncTest(TestCase):
         self.list_transactions.assert_called_once_with(
             "test-connected-id", "0088", self.accounts[0]["account_no"], self.end - timedelta(days=90), self.end,
         )
+
+    def test_reconnection_reuses_accounts_transactions_and_fixed_expense_links(self):
+        self.sync()
+        account = BankAccount.objects.get(account_type="demand")
+        account.is_selected, account.budget_role, account.alias = True, "savings", "유지할 별칭"
+        account.save()
+        original_account_ids = set(BankAccount.objects.values_list("pk", flat=True))
+        original_tx_ids = set(FinancialTransaction.objects.values_list("pk", flat=True))
+        tx = FinancialTransaction.objects.get(direction="out")
+        recurring = RecurringExpense.objects.create(
+            user=self.user, payment_account=account, name="시험 고정지출", amount=10000,
+            category_id="HOUSING_TELECOM", status="confirmed", source_type="manual", evidence=[str(tx.pk)],
+        )
+        due = PaymentDue.objects.create(
+            user=self.user, recurring=recurring, payment_account=account, obligation_type="recurring",
+            occurrence_key="test-reconnect", due_date=self.end, confirmed_amount=10000,
+            source_type="manual", confirmation_state="confirmed", paid_amount=10000, payment_state="paid",
+        )
+        match = PaymentMatch.objects.create(user=self.user, due=due, transaction=tx, matched_amount=10000)
+        old_connection = account.connection
+        old_run = SyncRun.objects.get()
+        old_connection.status, old_connection.disconnected_at = "disconnected", timezone.now()
+        old_connection.save()
+
+        result = self.sync()
+
+        self.assertEqual(result["new_transaction_count"], 0)
+        self.assertEqual(result["existing_transaction_count"], 2)
+        self.assertEqual(set(BankAccount.objects.values_list("pk", flat=True)), original_account_ids)
+        self.assertEqual(set(FinancialTransaction.objects.values_list("pk", flat=True)), original_tx_ids)
+        account.refresh_from_db()
+        self.assertNotEqual(account.connection_id, old_connection.pk)
+        self.assertEqual((account.is_selected, account.budget_role, account.alias), (True, "savings", "유지할 별칭"))
+        recurring.refresh_from_db()
+        due.refresh_from_db()
+        match.refresh_from_db()
+        old_run.refresh_from_db()
+        self.assertEqual((recurring.payment_account_id, due.payment_account_id), (account.pk, account.pk))
+        self.assertEqual(recurring.evidence, [str(tx.pk)])
+        self.assertEqual((match.transaction_id, match.due_id), (tx.pk, due.pk))
+        self.assertEqual((due.paid_amount, due.payment_state), (10000, "paid"))
+        self.assertEqual(old_run.connection_id, old_connection.pk)
+
+    def test_failed_steps_retry_on_next_sync_without_new_transactions(self):
+        calls = []
+        fail = True
+
+        def basics(user, txs):
+            calls.append("basics")
+
+        def classify(user, txs):
+            calls.append("classify")
+            txs.update(merchant_name="재시도 성공")
+            if fail:
+                raise RuntimeError("저장하면 안 되는 시험 오류 원문")
+
+        def match(user, txs):
+            calls.append("match")
+
+        self.pipeline.side_effect = pipeline.process_new_transactions
+        steps = [("link_basics", basics), ("classify_spending", classify), ("match_payment_dues", match)]
+        with patch.object(pipeline, "AFTER_SAVE_STEPS", steps):
+            with self.assertLogs("finance.pipeline", level="ERROR"):
+                self.sync()
+            self.assertEqual(calls, ["basics", "classify", "match"])
+            for tx in FinancialTransaction.objects.all():
+                self.assertIsNone(tx.merchant_name)
+                self.assertIn("classify_spending", tx.field_states.get("after_save_pending", {}))
+
+            fail = False
+            calls.clear()
+            result = self.sync()
+            self.assertEqual(result["new_transaction_count"], 0)
+            self.assertEqual(calls, ["classify", "match"])
+            for tx in FinancialTransaction.objects.all():
+                self.assertEqual(tx.merchant_name, "재시도 성공")
+                self.assertNotIn("after_save_pending", tx.field_states)
+
+            calls.clear()
+            self.sync()
+            self.assertEqual(calls, [])
+
+    def test_retry_includes_old_transactions_but_not_other_users_or_banks(self):
+        self.sync()
+        self.sync(self.other)
+        sync_bank(self.user, "test-connected-id", "0004", self.start, self.end)
+        FinancialTransaction.objects.update(field_states={"after_save_pending": {"classify_spending": "step_error"}})
+        expected = set(FinancialTransaction.objects.filter(
+            user=self.user, account__connection__organization_code="0088",
+        ).values_list("pk", flat=True))
+        observed = []
+
+        def classify(user, txs):
+            observed.extend(txs.values_list("pk", flat=True))
+
+        self.list_transactions.return_value = []
+        self.start = self.end = date(2026, 10, 28)
+        with patch.object(pipeline, "AFTER_SAVE_STEPS", [("classify_spending", classify)]):
+            result = self.sync()
+        self.assertEqual(result["new_transaction_count"], 0)
+        self.assertEqual(set(observed), expected)
+        self.assertEqual(FinancialTransaction.objects.filter(field_states__has_key="after_save_pending").count(), 4)
+
+    def test_reconnection_does_not_reuse_other_users_or_banks_accounts(self):
+        self.sync(self.other)
+        sync_bank(self.user, "test-connected-id", "0004", self.start, self.end)
+        old_ids = set(BankAccount.objects.values_list("pk", flat=True))
+        Connection.objects.update(status="disconnected", disconnected_at=timezone.now())
+        result = self.sync()
+        self.assertEqual(result["new_transaction_count"], 2)
+        self.assertEqual(BankAccount.objects.count(), 6)
+        self.assertEqual(BankAccount.objects.filter(pk__in=old_ids, connection__status="disconnected").count(), 4)
+
+    def test_reconnection_rollback_restores_old_account_connection(self):
+        self.sync()
+        old_accounts = list(BankAccount.objects.order_by("pk").values())
+        old_connection = Connection.objects.get()
+        old_connection.status, old_connection.disconnected_at = "disconnected", timezone.now()
+        old_connection.save()
+        self.accounts[0]["balance"] = 1
+        self.list_transactions.return_value = [{**self.row(day="20261021"), "amount": -1}]
+        with self.assertRaises(IntegrityError):
+            self.sync()
+        self.assertEqual(list(BankAccount.objects.order_by("pk").values()), old_accounts)
+        self.assertEqual(FinancialTransaction.objects.count(), 2)
+        self.assertEqual(SyncRun.objects.filter(status="failed").count(), 1)
+
+    def test_disconnect_during_codef_call_prevents_saving(self):
+        def disconnect(*args):
+            Connection.objects.filter(user=self.user).update(status="disconnected", disconnected_at=timezone.now())
+            return self.rows
+
+        self.list_transactions.side_effect = disconnect
+        with self.assertRaisesMessage(ValueError, "조회 중 연결이 해제"):
+            self.sync()
+        self.assertFalse(BankAccount.objects.exists())
+        self.assertFalse(FinancialTransaction.objects.exists())
+        self.assertEqual(SyncRun.objects.get().status, "failed")
 
     def test_command_hides_provider_error_details(self):
         secret_message = f"{self.accounts[0]['account_no']} test-connected-id 시험 거래 설명"
