@@ -7,7 +7,7 @@ info:
   description: '확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**
 
 
-    현재 구현 26개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·홈·이전 대화), 목업 3개(연결 해제·챗봇 메시지·작업 확인), 미구현 6개(카드·대출)입니다. 전체 명세는 읽기
+    현재 구현 29개(CSRF·인증·금융 동의 및 연결·대출·거래·고정지출·정기 저축·홈·이전 대화), 목업 3개(연결 해제·챗봇 메시지·작업 확인), 미구현 3개(카드)입니다. 전체 명세는 읽기
     전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.
 
 
@@ -1202,11 +1202,11 @@ paths:
       x-implementation-status: planned
   /api/finance/loans/:
     get:
-      summary: '[미구현] 대출 정보 보기'
+      summary: '[구현] 대출 정보 보기'
       tags:
       - 대출
       operationId: listLoans
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         저장된 본인의 상환 중(repaying) 대출만 읽습니다. repaid 대출과 쿼리 필터는 1차에 제공하지 않습니다. CODEF를 호출하지 않으며 조회 동의가 없으면 403 consent_required입니다.
@@ -1337,13 +1337,13 @@ paths:
                     error:
                       code: server_error
                       message: 잠시 후 다시 시도해 주세요.
-      x-implementation-status: planned
+      x-implementation-status: implemented
     post:
-      summary: '[미구현] 대출 직접 등록'
+      summary: '[구현] 대출 직접 등록'
       tags:
       - 대출
       operationId: createManualLoan
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         조회되지 않는 학자금대출 등을 본인 대출로 직접 등록합니다. 서버가 UUID·소유 회원·origin:manual·status:repaying을 정하며 이 칸을 요청으로 보내면 400입니다.
@@ -1503,17 +1503,17 @@ paths:
               monthlyPayment: 100000
               paymentDay: 25
               repaymentMethod: equal_principal
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
       - $ref: '#/components/parameters/IdempotencyKey'
   /api/finance/loans/{id}/:
     patch:
-      summary: '[미구현] 대출 정보 보완'
+      summary: '[구현] 대출 정보 보완'
       tags:
       - 대출
       operationId: updateLoanRepayment
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         본인의 상환 중(repaying) 기관 조회/직접 등록 대출에서 monthlyPayment·paymentDay·repaymentMethod 세 칸만 수정합니다. 생략은 유지하고 null은
@@ -1678,7 +1678,7 @@ paths:
               monthlyPayment: 310500
               paymentDay: 25
               repaymentMethod: equal_principal
-      x-implementation-status: planned
+      x-implementation-status: implemented
   /api/finance/transactions/:
     get:
       summary: '[구현] 거래 목록 보기'
@@ -7052,15 +7052,15 @@ components:
       - error
 x-source-sha256:
   docs/API_RULES.md: eb6c8383e11d8f635050da8dadf150e7276fc9fde751dc2c2124bbba56c44a9b
-  docs/api/README.md: 4010f79ebe35fcc8245a7ac849c28423e1c4c79f2cae1a0d6ce70f144c6cce40
+  docs/api/README.md: ac3dad0f10db9f060ee4cd96b10292421171b0bdbc805c8163c383a52add89b4
   docs/api/spending-analysis.md: c8a479b72f10d6e222a36bc6892ac901980f0e4aac8d94c2998fb7ffd56344b9
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c
-  docs/api/finance-connect.md: 1a2ef298979ccc0b4c23c90a7fb02a0ecdaf47c30c0c14693ff88feebe781879
+  docs/api/finance-connect.md: df34a83c87ebc3d9dac4b6e9c315138c89abd1159e8bb8d63912e86b1c76d89a
   docs/api/cards.md: 7b542541d1707c84fe38bff695f2646ec0003543283a2f3430b6cf144ebf5371
-  docs/api/loans.md: 42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077
+  docs/api/loans.md: 5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c
   docs/api/transactions.md: 47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88
   docs/api/fixed.md: 76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115
   docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
   docs/api/home.md: 8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99
-  docs/api/chat.md: e70e267966add48bef90b34065f937213ba758f4bc0d300a227fbc305e398b3f
+  docs/api/chat.md: 01c713efdb505ee6bffb1e81d4d941aecc16283c70c1b752e4e44b53a4fc84a5

@@ -70,7 +70,7 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 26, "mock": 3, "planned": 6})
+        self.assertEqual(Counter(states.values()), {"implemented": 29, "mock": 3, "planned": 3})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("post", "/api/auth/login/")], "implemented")
         self.assertEqual(states[("put", "/api/finance/connect/accounts/")], "implemented")
@@ -80,12 +80,14 @@ class OpenAPIContractTests(SimpleTestCase):
         for mock_operation in (("delete", "/api/finance/connections/{connectionId}/"),
                                ("post", "/api/chat/messages/"), ("get", "/api/tasks/{id}/")):
             self.assertEqual(states[mock_operation], "mock")
-        # 카드 · 대출은 아직 서버 주소가 없다
-        self.assertEqual({k for k, v in states.items() if v == "planned"}, {
+        # 대출 3개는 구현 완료, 카드 3개는 후속 PR에서 구현한다.
+        for operation in {
             ("get", "/api/finance/connect/cards/"), ("put", "/api/finance/connect/cards/"),
             ("get", "/api/finance/card-bills/{id}/"), ("get", "/api/finance/loans/"),
             ("post", "/api/finance/loans/"), ("patch", "/api/finance/loans/{id}/"),
-        })
+        }:
+            expected = "implemented" if "/loans/" in operation[1] else "planned"
+            self.assertEqual(states[operation], expected)
         for (method, path), state in states.items():
             if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
                 with self.subTest(path=path, method=method):
@@ -157,9 +159,9 @@ class OpenAPIContractTests(SimpleTestCase):
             if operation["x-implementation-status"] == "implemented"
         }
         actual = {(method, path) for path, method, _ in operation_items(runtime)}
-        # 구현된 26개만. 껍데기 · 미구현은 실행 화면에 없다
+        # 구현된 29개만. 껍데기 · 미구현은 실행 화면에 없다
         self.assertSetEqual(actual, implemented)
-        self.assertEqual(len(actual), 26)
+        self.assertEqual(len(actual), 29)
         self.assertEqual(runtime["security"], [])
         for path, method, operation in operation_items(runtime):
             with self.subTest(path=path, method=method):
@@ -168,7 +170,8 @@ class OpenAPIContractTests(SimpleTestCase):
                 self.assertEqual(operation["x-implementation-status"], "implemented")
                 self.assertFalse(any(p.get("$ref", "").endswith("/CsrfToken") for p in operation.get("parameters", [])))
         self.assertNotIn("/api/budgets/", runtime["paths"])
-        self.assertNotIn("/api/finance/loans/", runtime["paths"])
+        self.assertIn("/api/finance/loans/", runtime["paths"])
+        self.assertNotIn("/api/finance/connect/cards/", runtime["paths"])
         self.assertNotIn("/api/chat/messages/", runtime["paths"])
         self.assertIn("/api/budgets/fixed/{id}/", runtime["paths"])
         self.assertIn("put", runtime["paths"]["/api/finance/connect/accounts/"])
@@ -206,9 +209,9 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 26개")
+                self.assertContains(response, "구현 29개")
                 self.assertContains(response, "목업 3개")
-                self.assertContains(response, "미구현 6개")
+                self.assertContains(response, "미구현 3개")
                 self.assertContains(response, "/api/docs/runtime/")
                 options = json.loads(response.data["settings"])
                 self.assertEqual(options["supportedSubmitMethods"], submit_methods)

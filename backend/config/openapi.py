@@ -20,6 +20,10 @@ IMPLEMENTATION = {
     ("post", "/api/auth/login/"): "implemented",
     ("post", "/api/auth/logout/"): "implemented",
     ("get", "/api/auth/me/"): "implemented",
+    # 대출: 저장 자료 조회·보완·직접 등록 (10/27)
+    ("get", "/api/finance/loans/"): "implemented",
+    ("post", "/api/finance/loans/"): "implemented",
+    ("patch", "/api/finance/loans/{id}/"): "implemented",
     # 금융 동의 · 계좌 · 연결 6~9 (혜리, 10/26). 10 연결 해제는 아직 204만 돌려주는 껍데기
     ("post", "/api/finance/consents/"): "implemented",
     ("get", "/api/finance/connect/accounts/"): "implemented",
@@ -73,8 +77,8 @@ def _base():
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
                 "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
-                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·홈·이전 대화), "
-                f"목업 {counts['mock']}개(연결 해제·챗봇 메시지·작업 확인), 미구현 {35 - counts['implemented'] - counts['mock']}개(카드·대출)입니다. "
+                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·대출·거래·고정지출·정기 저축·홈·이전 대화), "
+                f"목업 {counts['mock']}개(연결 해제·챗봇 메시지·작업 확인), 미구현 {35 - counts['implemented'] - counts['mock']}개(카드)입니다. "
                 "전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. "
                 "목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "
@@ -236,7 +240,7 @@ def build_runtime_schema():
         "순서: ① GET /api/csrf/ → ② POST /api/auth/signup/ 또는 /api/auth/login/ → ③ 나머지 API. "
         "로그인하면 세션 쿠키가 저장되어 이후 요청에 자동으로 붙고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
         "실제 DB가 바뀌므로 연습용 계정으로 확인하세요. 계좌 후보·거래·이전 대화는 DB에 저장된 데이터가 있어야 결과가 나옵니다(CODEF를 새로 부르지 않음). "
-        "껍데기(연결 해제·챗봇 메시지·작업 확인)와 미구현(카드·대출)은 전체 명세 화면에서만 봅니다."
+        "껍데기(연결 해제·챗봇 메시지·작업 확인)와 미구현(카드)은 전체 명세 화면에서만 봅니다."
     )
     samples = {"/api/csrf/": {"ok": True}}
     for path, sample in samples.items():
