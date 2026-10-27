@@ -658,13 +658,19 @@ def find_withdrawals(expense, due_date, today, key=None):
         return []
     end = min(due_date + timedelta(days=3), today)
     found = matching_payments(expense, due_date, due_date - timedelta(days=3), end)
-    if key is not None:
-        found = [t for t in found if key not in (t.field_states or {}).get(SKIP_AUTO, [])]
     if not found:
         return []
-    locked = FinancialTransaction.objects.select_for_update().filter(pk__in=[t.pk for t in found]).order_by("pk")
-    ok = {t.pk for t in locked if claimable(t, expense)}
-    return [t for t in found if t.pk in ok]
+    # 잠근 뒤 최신 값으로 다시 확인하고, 잠근(최신) 거래를 돌려줌 — 뒤에서 이 거래를 저장해도 다른 요청의 변경을 덮어쓰지 않게
+    locked = {t.pk: t for t in FinancialTransaction.objects.select_for_update().filter(pk__in=[t.pk for t in found]).order_by("pk")}
+    result = []
+    for t in found:
+        fresh = locked.get(t.pk)
+        if fresh is None or not claimable(fresh, expense):
+            continue
+        if key is not None and key in (fresh.field_states or {}).get(SKIP_AUTO, []):
+            continue  # 사용자가 이 회차에서 연결을 푼 거래
+        result.append(fresh)
+    return result
 
 # 지난 주기 시작일 (지난 주기 기록이 없으면 None → 지난 주기 회차도 없음)
 def previous_start(cycle):
@@ -921,9 +927,13 @@ def find_recent_due(expense, value, account):
 #   tx 가 있으면: 그 회차의 다른 연결을 풀고 tx 를 붙임 (tx 가 다른 회차에 붙어 있었으면 거기서 옮김)
 #   tx 가 None 이면: 그 회차의 연결만 풂 (그 회차에 자동으로 다시 붙지 않게 표시)
 def relink_due(expense, due, tx, cycle, today):
-    old = list(due.matches.select_related("transaction").exclude(transaction=tx) if tx else due.matches.select_related("transaction"))
-    release = [m.transaction for m in old]
-    PaymentMatch.objects.filter(pk__in=[m.pk for m in old]).delete()
+    old = due.matches.exclude(transaction=tx) if tx is not None else due.matches.all()
+    old_ids = list(old.values_list("pk", flat=True))
+    # 풀 거래를 ID 순서로 잠그고 최신 값으로 다시 읽음 (다른 요청이 저장한 표시를 옛 값으로 덮어쓰지 않게)
+    release = list(FinancialTransaction.objects.select_for_update().filter(
+        pk__in=PaymentMatch.objects.filter(pk__in=old_ids).values("transaction"),
+    ).order_by("pk"))
+    PaymentMatch.objects.filter(pk__in=old_ids).delete()
     for released in release:
         unmark_fixed(released)
         move_bucket(released, "fixed", "living")

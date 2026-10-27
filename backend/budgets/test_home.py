@@ -628,3 +628,107 @@ class FixedPickDueTest(LateDueFixture):
                 self.assertEqual(r.status_code, 400, r.content)
                 self.assertIn("evidenceDueId", r.json()["error"]["fields"])
         self.assertFalse(PaymentMatch.objects.exists())
+
+
+@skipUnless(connection.vendor == "postgresql", "행 잠금은 PostgreSQL 에서만 확인")
+class FixedLinkLockTest(TransactionTestCase):
+    """PR #46 3차 리뷰: 연결을 풀거나 자동 연결하는 동안 다른 요청이 거래에 저장한 표시(field_states)가 덮어써지지 않는지"""
+    serialized_rollback = True
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="lock-link@example.com", password="Example123!")
+        FinancialProfile.objects.create(user=self.user, payday=25, monthly_take_home_income=2_500_000)
+        bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0004", status="connected")
+        self.account = BankAccount.objects.create(user=self.user, connection=bank, source_account_key="k1",
+                                                  account_type="demand", is_selected=True, balance=1)
+        self.expense = RecurringExpense.objects.create(
+            user=self.user, name="월세", amount=700_000, payment_day=20, category_id="HOUSING_TELECOM",
+            status="confirmed", source_type="manual", payment_account=self.account,
+            confirmed_at=timezone.make_aware(datetime(2026, 8, 1)),
+        )
+
+    def make_tx(self, on):
+        return FinancialTransaction.objects.create(
+            user=self.user, source_kind="bank", account=self.account, occurred_on=on, amount=700_000,
+            direction="out", transaction_type="transfer", confirmed_category_id="UNCLASSIFIED",
+            confirmation_state="needs_review",
+        )
+
+    def other_writer(self, tx_id):
+        """다른 처리: 같은 거래를 잠그고 표시를 하나 저장"""
+        from django.db import transaction as db_transaction
+        with db_transaction.atomic():
+            t = FinancialTransaction.objects.select_for_update().get(pk=tx_id)
+            t.field_states = {**(t.field_states or {}), "other_mark": True}
+            t.save(update_fields=["field_states"])
+
+    def run_with_writer(self, slow_target, slow_name, action, tx_id, before=False):
+        """action 은 slow_target 의 slow_name 함수 앞(before) 또는 뒤에서 0.5초 멈추고, 그 사이 다른 처리가 같은 거래에 저장"""
+        errors = []
+        original = getattr(slow_target, slow_name)
+
+        def slow(*args, **kwargs):
+            is_slow = threading.current_thread().name == "slow"
+            if is_slow and before:
+                time.sleep(0.5)
+            result = original(*args, **kwargs)
+            if is_slow and not before:
+                time.sleep(0.5)
+            return result
+
+        def run_action():
+            try:
+                action()
+            except Exception as exc:
+                errors.append(exc)
+            finally:
+                connection.close()
+
+        def run_writer():
+            try:
+                self.other_writer(tx_id)
+            finally:
+                connection.close()
+
+        with patch.object(slow_target, slow_name, slow):
+            t1 = threading.Thread(target=run_action, name="slow")
+            t2 = threading.Thread(target=run_writer, name="fast")
+            t1.start()
+            time.sleep(0.1)
+            t2.start()
+            t1.join(15)
+            t2.join(15)
+        self.assertEqual(errors, [])
+
+    def test_unlink_due_keeps_mark_saved_by_other_request(self):
+        from . import api as budgets_api
+        home_data(self.user, date(2026, 10, 21))                      # 이번 회차 10/20
+        tx = self.make_tx(date(2026, 10, 20))
+        home_data(self.user, date(2026, 10, 21))                      # 자동 연결
+        due = PaymentDue.objects.get(recurring=self.expense)
+        self.assertTrue(due.matches.filter(transaction=tx).exists())
+
+        def unlink():
+            client = APIClient()
+            client.force_authenticate(self.user)
+            with patch("django.utils.timezone.localdate", return_value=date(2026, 10, 21)):
+                r = client.patch(f"/api/budgets/fixed/{self.expense.pk}/",
+                                 {"evidenceTransactionId": None, "evidenceDueId": str(due.pk)}, format="json")
+            assert r.status_code == 200, r.content
+
+        # 풀 거래를 읽은 뒤 · 저장하기 전에 멈춤 → 그 사이 다른 처리가 같은 거래에 저장
+        self.run_with_writer(budgets_api, "unmark_fixed", unlink, tx.pk, before=True)
+        tx.refresh_from_db()
+        self.assertTrue(tx.field_states.get("other_mark"))                         # 다른 처리의 표시가 남음
+        self.assertIn(due.occurrence_key, tx.field_states.get("skip_auto_match", []))  # 해제 표시도 남음
+
+    def test_auto_link_keeps_mark_saved_by_other_request(self):
+        from . import api as budgets_api
+        home_data(self.user, date(2026, 10, 19))                      # 이번 회차 10/20 (출금 전)
+        tx = self.make_tx(date(2026, 10, 20))
+
+        self.run_with_writer(budgets_api, "matching_payments", lambda: home_data(self.user, date(2026, 10, 21)), tx.pk)
+        tx.refresh_from_db()
+        self.assertTrue(tx.field_states.get("other_mark"))                         # 다른 처리의 표시가 남음
+        self.assertTrue(tx.field_states.get("converted_by_fixed"))                 # 자동 연결 표시도 남음
+        self.assertEqual(PaymentDue.objects.get(recurring=self.expense).payment_state, "paid")
