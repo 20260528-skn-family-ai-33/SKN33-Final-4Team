@@ -14,7 +14,7 @@ TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거�
 # 실제 API 구현 및 계약 검증이 끝났을 때 변경. URL 존재만으로 구현 완료가 되지 않는다.
 IMPLEMENTATION = {
     ("get", "/api/csrf/"): "implemented",
-    ("get", "/api/home/"): "mock",
+    ("get", "/api/home/"): "implemented",
     # 인증 2~5 (세진, 10/26)
     ("post", "/api/auth/signup/"): "implemented",
     ("post", "/api/auth/login/"): "implemented",
@@ -77,10 +77,10 @@ def _base():
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
                 "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
-                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·대출·거래·고정지출·정기 저축·이전 대화), "
-                f"목업 {counts['mock']}개(홈·연결 해제·챗봇 메시지·작업 확인), 미구현 {35 - counts['implemented'] - counts['mock']}개(카드)입니다. "
+                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·대출·거래·고정지출·정기 저축·홈·이전 대화), "
+                f"목업 {counts['mock']}개(연결 해제·챗봇 메시지·작업 확인), 미구현 {35 - counts['implemented'] - counts['mock']}개(카드)입니다. "
                 "전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. "
-                "목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈의 응답 형태도 확정 계약과 다릅니다.\n\n"
+                "목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "
                 "요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. "
                 "빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n"
@@ -161,7 +161,7 @@ def build_contract():
         source = operation["x-source"]
         note = {
             "implemented": "현재 서버에서 구현된 API입니다.",
-            "mock": "현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.",
+            "mock": "현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.",
             "planned": "명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.",
         }[state]
         operation["description"] = f"**개발 상태: {label}** — {note}\n\n{operation.get('description', '')}\n\n원본: `{source}`"
@@ -229,33 +229,26 @@ def _used_components(contract, paths):
 
 
 def build_runtime_schema():
-    # 현재 응답용 목업과 집계 함수를 재사용한다. DB나 CODEF를 호출하지 않는다.
-    from budgets import mock as budget_mock
-    from budgets.api import _must_pay
-    from config.api import camel
-
+    # 문서 생성은 DB나 CODEF를 호출하지 않는다.
     contract = build_contract()
     schema = deepcopy(contract)
     schema["paths"] = {}
     schema["security"] = []
     schema["info"]["title"] = "머니쿠션 — 현재 서버 확인"
     schema["info"]["description"] = (
-        "현재 서버에서 구현된 API를 직접 실행하는 화면입니다(홈만 예시 데이터를 돌려주는 목업). "
+        "현재 서버에서 구현된 API를 직접 실행하는 화면입니다. "
         "순서: ① GET /api/csrf/ → ② POST /api/auth/signup/ 또는 /api/auth/login/ → ③ 나머지 API. "
         "로그인하면 세션 쿠키가 저장되어 이후 요청에 자동으로 붙고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
         "실제 DB가 바뀌므로 연습용 계정으로 확인하세요. 계좌 후보·거래·이전 대화는 DB에 저장된 데이터가 있어야 결과가 나옵니다(CODEF를 새로 부르지 않음). "
         "껍데기(연결 해제·챗봇 메시지·작업 확인)와 미구현(카드)은 전체 명세 화면에서만 봅니다."
     )
-    samples = {
-        "/api/csrf/": {"ok": True},
-        "/api/home/": camel({"period": budget_mock.PERIOD, "home": budget_mock.HOME, "must_pay": _must_pay(), "budget": None if budget_mock.BUDGET is None else {"sample": True}}),
-    }
+    samples = {"/api/csrf/": {"ok": True}}
     for path, sample in samples.items():
         operation = deepcopy(contract["paths"][path]["get"])
         operation["operationId"] = "runtime_" + operation["operationId"]
         operation["security"] = []
         operation["parameters"] = []
-        operation["description"] = "현재 구현의 실제 응답 구조입니다. " + ("CSRF 쿠키를 발급합니다." if path == "/api/csrf/" else "목업 데이터이며 확정 계약과 다릅니다. 인증·저장·금융 연동 구현 완료를 뜻하지 않습니다.")
+        operation["description"] = "현재 구현의 실제 응답 구조입니다. CSRF 쿠키를 발급합니다."
         operation["responses"] = {"200": {"description": "현재 서버 응답", "content": {"application/json": {"schema": _sample_schema(sample), "example": sample}}}}
         schema["paths"][path] = {"get": operation}
     # 구현된 API는 확정 계약을 그대로 실행 대상으로 넣는다. CSRF 헤더는 화면이 자동으로 채운다.
