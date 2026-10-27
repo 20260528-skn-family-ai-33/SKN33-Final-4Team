@@ -1,5 +1,5 @@
 // 저축 확인 · 정기 저축 관리 — 한 화면을 두 곳에서 쓴다 (docs/api/savings.md)
-//   첫 설정 흐름: 고정지출 확인 다음, 예산 산정 방향 전. 찾은 후보마다 "저축인가요?"를 묻는다
+//   첫 설정 흐름: 고정지출 확인 다음, 지킬 돈 설정 전. 찾은 후보마다 "저축인가요?"를 묻는다
 //   마이 > 정기 저축 (location.state.from === 'my'): 확정된 저축 목록 + [수정] (10/22 PR #29 리뷰)
 // 내 계좌끼리 매달 같은 금액을 보낸 이체를 찾아 "저축인가요?"를 묻는다 (요구사항 TXN-005 · TXN-008)
 //   저축이에요 → 정기 저축으로 확정(recurring_saving). 확정된 것의 월 합계 = 저축 최소 금액 (서버가 계산, S-02)
@@ -86,7 +86,7 @@ function OnboardingView() {
 
   const onNext = () => {
     if (CANDIDATES.some((c) => !answers[c.id])) { setError('찾은 이체마다 저축인지 골라 주세요.'); return }
-    navigate(PATHS.direction, { state: { savingsMin } })  // 저장은 API 연결 후
+    navigate(PATHS.protect, { state: { savingsMin } })  // 저장은 API 연결 후
   }
 
   return (

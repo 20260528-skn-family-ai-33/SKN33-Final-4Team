@@ -20,11 +20,11 @@ export const PATHS = {
   connectDone: '/finance/connect/done',
   loanCheck: '/finance/loans',
   connections: '/finance/connections',
-  // 첫 예산 설정 흐름 (budgets): 월급 → 고정지출 → 저축 확인 → 방향 → 지킬 돈 → 추천 예산
+  // 첫 예산 설정 흐름 (budgets): 월급 → 고정지출 → 저축 확인 → 지킬 돈 → 추천 예산
+  //   예산 산정 방향(생활 안정형/저축 집중형)은 없애고 내 정보의 자취 여부 비율로 나눈다 (2026-10-27)
   salary: '/budgets/salary',
   fixed: '/budgets/fixed',
   savings: '/budgets/savings',
-  direction: '/budgets/direction',
   protect: '/budgets/protect',
   recommend: '/budgets/recommend',
 }

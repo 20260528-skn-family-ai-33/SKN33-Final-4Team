@@ -1,6 +1,6 @@
 // 추천 예산 확인
 // 금액은 시안 예시값 — 예산 추천 API 가 생기면 바꾼다. 막대 길이는 금액으로 계산한다
-// 생활비·저축·쿠션 적립·여윳돈은 지킬 돈 설정에서 넘겨받은 값 (바로 들어오면 생활 안정형 추천값)
+// 생활비·저축·쿠션 적립·여윳돈은 지킬 돈 설정에서 넘겨받은 값 (바로 들어오면 자취 여부 비율 추천값)
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
@@ -13,7 +13,7 @@ import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 import { BUDGET_CATS, catIcon } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
-import { FIXED, MONTHLY, recommendFor } from '../utils/direction.js'
+import { FIXED, MONTHLY, loadHousing, recommendFor } from '../utils/direction.js'
 
 // 카테고리별 추천 금액 (시안 예시값, 생활비 1,120,000원 기준). 목록·아이콘은 utils/categories.js
 const BASE_LIVING = 1_120_000
@@ -41,11 +41,11 @@ export default function RecommendPage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   const { state } = useLocation()
-  const rec = recommendFor(state?.dir)
+  const rec = recommendFor(state?.housing ?? loadHousing())
   const LIVING = state?.livingBudget ?? rec.livingBudget
   const SAVING = state?.savingFloor ?? rec.savingFloor
   const CUSHION = state?.cushionMonthly ?? rec.cushionMonthly
-  const SPARE = state?.spare ?? MONTHLY - FIXED - LIVING - SAVING - CUSHION
+  const SPARE = state?.spare ?? Math.max(0, MONTHLY - FIXED - LIVING - SAVING - CUSHION)
   // [CSS 이름(색), 이름, 금액]
   const SPLIT = [
     ['fix', '고정지출', FIXED], ['save', '저축', SAVING], ['live', '생활비', LIVING],
@@ -64,7 +64,7 @@ export default function RecommendPage() {
 
   return (
     <Layout title="추천 예산 확인" showBack foot={<button className="mc-primary" form="mc-form" type="submit">이 예산으로 시작하기</button>}>
-      <StepBar step={7} />
+      <StepBar step={6} />
       <div className="mc-eyebrow">추천 예산 확인</div>
       <h1>카테고리별 예산을<br />확인하고 고쳐 주세요</h1>
       <p className="mc-muted">내 정보와 소비 통계로 맞춘 추천 예산이에요.</p>
