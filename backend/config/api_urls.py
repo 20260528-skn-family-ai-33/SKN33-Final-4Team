@@ -46,7 +46,7 @@ urlpatterns = [
     path("budgets/cushion/", budgets_api.cushion, name="cushion"),
     path("finance/transactions/", finance_api.transactions, name="transactions"),
 
-    # ---- 나은: 고정지출 19~24 (껍데기) · 정기 저축 25~30 (구현) ----
+    # ---- 나은: 고정지출 19~24 · 정기 저축 25~30 (구현) ----
     path("budgets/fixed/", budgets_api.fixed_list, name="fixed-list"),
     path("budgets/fixed/confirm/", budgets_api.fixed_confirm, name="fixed-confirm"),
     path("budgets/fixed/ignore/", budgets_api.fixed_ignore, name="fixed-ignore"),

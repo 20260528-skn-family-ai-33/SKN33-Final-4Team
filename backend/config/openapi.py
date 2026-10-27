@@ -15,7 +15,25 @@ TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거�
 IMPLEMENTATION = {
     ("get", "/api/csrf/"): "implemented",
     ("get", "/api/home/"): "mock",
+    # 인증 2~5 (세진, 10/26)
+    ("post", "/api/auth/signup/"): "implemented",
+    ("post", "/api/auth/login/"): "implemented",
+    ("post", "/api/auth/logout/"): "implemented",
+    ("get", "/api/auth/me/"): "implemented",
+    # 금융 동의 · 계좌 · 연결 6~9 (혜리, 10/26). 10 연결 해제는 아직 204만 돌려주는 껍데기
+    ("post", "/api/finance/consents/"): "implemented",
+    ("get", "/api/finance/connect/accounts/"): "implemented",
+    ("put", "/api/finance/connect/accounts/"): "implemented",
+    ("get", "/api/finance/connections/"): "implemented",
+    ("delete", "/api/finance/connections/{connectionId}/"): "mock",
+    # 거래 16~18 (혜리, 10/26)
     ("get", "/api/finance/transactions/"): "implemented",
+    ("get", "/api/finance/transactions/{id}/"): "implemented",
+    ("patch", "/api/finance/transactions/{id}/"): "implemented",
+    # 챗봇: 32 이전 대화는 구현, 33 · 34 는 명세 예시를 돌려주는 껍데기
+    ("get", "/api/chat/conversations/{id}/"): "implemented",
+    ("post", "/api/chat/messages/"): "mock",
+    ("get", "/api/tasks/{id}/"): "mock",
 }
 # 고정지출(10/26) · 정기 저축(10/24): 입력 검증·로그인·DB 저장까지 구현
 for _domain, _state in (("fixed", "implemented"), ("savings", "implemented")):
@@ -39,17 +57,26 @@ def _display(kind):
     }
 
 
+def _state_counts():
+    """구현 상태별 개수 (설명 문장에 넣는다). 명세에 없는 주소는 세지 않는다"""
+    counts = {"implemented": 0, "mock": 0}
+    for (method, path), state in IMPLEMENTATION.items():
+        counts[state] += 1
+    return counts
+
+
 def _base():
+    counts = _state_counts()
     return {
         "openapi": "3.0.3",
         "info": {
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
                 "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
-                "현재 구현 13개(CSRF·고정지출·정기 저축), 목업 2개(홈·거래 목록), 미구현 20개입니다. "
-                "전체 명세는 읽기 전용이며, 실제 응답 확인은 [현재 서버 확인](/api/docs/runtime/)에서 합니다. "
-                "고정지출·정기 저축은 [현재 서버 확인]에서 저장·수정·중지까지 실행할 수 있습니다(로그인 필요). "
-                "목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈·거래 목록의 응답 형태도 확정 계약과 다릅니다.\n\n"
+                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·이전 대화), "
+                f"목업 {counts['mock']}개(홈·연결 해제·챗봇 메시지·작업 확인), 미구현 {35 - counts['implemented'] - counts['mock']}개(카드·대출)입니다. "
+                "전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. "
+                "목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈의 응답 형태도 확정 계약과 다릅니다.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "
                 "요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. "
                 "빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n"
@@ -130,7 +157,7 @@ def build_contract():
         source = operation["x-source"]
         note = {
             "implemented": "현재 서버에서 구현된 API입니다.",
-            "mock": "현재 서버는 예시 응답을 반환합니다. 입력 검증·인증·DB 저장 기능은 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다. GET의 실제 응답은 현재 서버 확인 화면을 이용하세요.",
+            "mock": "현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.",
             "planned": "명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.",
         }[state]
         operation["description"] = f"**개발 상태: {label}** — {note}\n\n{operation.get('description', '')}\n\n원본: `{source}`"
@@ -209,10 +236,11 @@ def build_runtime_schema():
     schema["security"] = []
     schema["info"]["title"] = "머니쿠션 — 현재 서버 확인"
     schema["info"]["description"] = (
-        "현재 서버에서 호출할 수 있는 API입니다. CSRF·거래 목록과 고정지출·정기 저축 12개는 구현, 홈은 예시 데이터(GET만)입니다. "
-        "목업의 스키마는 현재 샘플의 모양만 설명하며 입력 검증·인증·DB 저장 구현 완료를 뜻하지 않습니다. "
-        "거래 목록·고정지출·정기 저축은 로그인(세션)이 필요하고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
-        "예산·쿠션 시안은 이번 35개 확정 명세 범위 밖이라 제외했습니다."
+        "현재 서버에서 구현된 API를 직접 실행하는 화면입니다(홈만 예시 데이터를 돌려주는 목업). "
+        "순서: ① GET /api/csrf/ → ② POST /api/auth/signup/ 또는 /api/auth/login/ → ③ 나머지 API. "
+        "로그인하면 세션 쿠키가 저장되어 이후 요청에 자동으로 붙고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
+        "실제 DB가 바뀌므로 연습용 계정으로 확인하세요. 계좌 후보·거래·이전 대화는 DB에 저장된 데이터가 있어야 결과가 나옵니다(CODEF를 새로 부르지 않음). "
+        "껍데기(연결 해제·챗봇 메시지·작업 확인)와 미구현(카드·대출)은 전체 명세 화면에서만 봅니다."
     )
     samples = {
         "/api/csrf/": {"ok": True},
@@ -226,7 +254,7 @@ def build_runtime_schema():
         operation["description"] = "현재 구현의 실제 응답 구조입니다. " + ("CSRF 쿠키를 발급합니다." if path == "/api/csrf/" else "목업 데이터이며 확정 계약과 다릅니다. 인증·저장·금융 연동 구현 완료를 뜻하지 않습니다.")
         operation["responses"] = {"200": {"description": "현재 서버 응답", "content": {"application/json": {"schema": _sample_schema(sample), "example": sample}}}}
         schema["paths"][path] = {"get": operation}
-    # 구현된 API(고정지출 · 정기 저축)는 확정 계약을 그대로 실행 대상으로 넣는다. CSRF 헤더는 화면이 자동으로 채운다.
+    # 구현된 API는 확정 계약을 그대로 실행 대상으로 넣는다. CSRF 헤더는 화면이 자동으로 채운다.
     implemented = {}
     for path, method, operation in operations(contract):
         if path == "/api/csrf/" or operation["x-implementation-status"] != "implemented":
@@ -240,7 +268,8 @@ def build_runtime_schema():
         if path_parameters:
             implemented[path]["parameters"] = deepcopy(path_parameters)
     schema["paths"].update(implemented)
-    schema["tags"] = [t for t in schema["tags"] if t["name"] in {"공통 · 인증", "홈", "거래", "고정지출", "정기 저축"}]
+    used_tags = {tag for item in schema["paths"].values() for m, op in item.items() if m in METHODS for tag in op.get("tags", [])}
+    schema["tags"] = [t for t in schema["tags"] if t["name"] in used_tags]
     # 실행 화면은 별도 문서: 실행 대상이 쓰는 정의만 남기고 나머지 확정 계약 모델은 보여 주지 않는다.
     schema["components"] = _used_components(contract, implemented)
     return schema

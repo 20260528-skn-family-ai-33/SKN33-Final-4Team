@@ -134,6 +134,7 @@ class SavingsConcurrencyTest(TransactionTestCase):
     'slow' 스레드는 저축을 저장하기 직전에 잠깐 멈춘다 → 그 사이에 다른 요청이 끼어든다.
     잠금이 없으면 끼어든 요청이 옛 상태를 보고 진행해서 결과가 꼬인다.
     """
+    serialized_rollback = True   # 테스트마다 표를 비우므로 초기 데이터를 되살림 (다른 동시성 테스트와 같이 돌 때 충돌 방지)
 
     def setUp(self):
         self.user = make_user()
