@@ -3,19 +3,21 @@ budgets 앱 API: React 화면에 필요한 데이터를 JSON으로 준다.
 - 고정지출 · 정기 저축: DB에 저장하고 읽는 실제 기능
 - 홈 · 예산 · 쿠션: 아직 mock.py(가짜 데이터)를 그대로 보낸다
 """
+import calendar
 import uuid
+from datetime import date, timedelta
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import ValidationError
 from config.idempotency import idempotent
-from .models import Budget, BudgetCycle, Category
-from django.db import transaction
+from .models import Budget, BudgetCycle, Category, SpendingAllocation
+from django.db import IntegrityError, transaction
 from django.db.models import F, Max, Sum
 from django.utils import timezone
 from finance.codef import BANKS
-from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, RecurringExpense, RecurringSaving
+from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, RecurringSaving
 
 from . import mock
 
@@ -101,9 +103,9 @@ def fixed_list(request):
 # 고정지출 중지 — 확정만 중지하고, 이번 주기 안 낸 납부 예정 취소 → 204
 def fixed_stop(request, recurring_id):
     with transaction.atomic():
-        # 확정, 중지만 찾기
+        # 잠그고 찾기 (수정 · 중지가 동시에 와도 하나씩 처리) — 확정, 중지만, 없으면 404
         expense = get_object_or_404(
-            RecurringExpense, # 고정지출 테이블
+            RecurringExpense.objects.select_for_update(), # 고정지출 테이블
             pk = recurring_id,
             user = request.user,
             status__in = ["confirmed", "stopped"],
@@ -113,17 +115,8 @@ def fixed_stop(request, recurring_id):
             expense.status = "stopped"
             expense.save(update_fields=["status"])
 
-            # 이번 주기 시작일 -- 아직 주기가 없으면(온보딩 전) 오늘
-            cycle = BudgetCycle.objects.filter(user=request.user, status="active").first()
-            since = cycle.starts_on if cycle else timezone.localdate()
-
-            # 이번 주기부터 안 낸 납부 예정만 취소
-            PaymentDue.objects.filter(
-                recurring = expense, # 이 고정지출의 회차들 중
-                obligation_state="active", # 아직 유효하고
-                payment_state = "unpaid", # 미납 상태이고
-                due_date__gte=since, # 이번 주기 시작일 이후인 것
-            ).update(obligation_state="canceled", canceled_at=timezone.now())
+            # 이번 주기부터 안 낸 납부 예정만 취소 (이미 낸 · 일부 낸 회차는 그대로)
+            cancel_dues(open_dues(expense, current_since(request.user)))
 
             # 승인 전 예산 초안 만료
             Budget.objects.filter(user=request.user, status__in=["draft", "validated"]).update(status="expired")
@@ -138,6 +131,15 @@ def fixed_detail(request, recurring_id):
     return fixed_stop(request, recurring_id)         # 중지
 
 
+# 내 고정지출 여러 개를 ID 순서대로 잠그고 가져오기 (확정 · 무시가 같은 순서로 잠가서 서로 막히지 않음)
+def lock_expenses(user, ids, statuses):
+    return list(RecurringExpense.objects.select_for_update().filter(
+        user = user,
+        pk__in = ids,
+        status__in = statuses,
+    ).order_by("pk"))
+
+
 # 고정지출 후보 확정 [맞아요] — 후보만 확정, 못 고르는 ID가 섞이면 전부 취소
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
@@ -146,25 +148,23 @@ def fixed_confirm(request):
     ids = clean_ids(request, "recurring_ids")  # 검사 (칸 이름만 저축과 다름)
 
     with transaction.atomic():
-        # 먼저 다 찾기 - 내 것, 후보나 이미 확정인 것만
-        found = list(RecurringExpense.objects.filter(
-            user=request.user,
-            pk__in=ids,
-            status__in=["suggested", "confirmed"],
-        ))
+        # 먼저 다 잠그고 찾기 - 내 것, 후보나 이미 확정인 것만
+        found = lock_expenses(request.user, ids, ["suggested", "confirmed"])
 
         # 개수 비교 - 하나라도 못 찾았으면 아무것도 안 바꾸고 400
         if len(found) != len(ids):
             raise ValidationError({"recurring_ids": ["선택할 수 없는 항목이에요."]})
 
         # 후보만 확정으로 (이미 확정은 그대로 = 성공)
+        cycle = active_cycle(request.user)
+        today = timezone.localdate()
         changed = False
         for e in found:
             if e.status == "suggested":
                 e.status = "confirmed"
                 e.confirmed_at = timezone.now()
                 e.save(update_fields=["status", "confirmed_at"])
-                # TODO: 이번 주기 납부 예정 1건 만들기 (급여 주기가 생기면)
+                ensure_current_due(e, cycle, today)  # 이번 주기 납부 예정 1건
                 changed = True
 
         # 고정지출 합계가 늘었으니 승인 전 예산 초안 만료
@@ -182,11 +182,7 @@ def fixed_ignore(request):
     ids = clean_ids(request, "recurring_ids")
 
     with transaction.atomic():
-        found = list(RecurringExpense.objects.filter(
-            user=request.user,
-            pk__in=ids,
-            status__in=["suggested", "ignored"],  # 후보, 이미 무시
-        ))
+        found = lock_expenses(request.user, ids, ["suggested", "ignored"])  # 후보, 이미 무시
         if len(found) != len(ids):
             raise ValidationError({"recurring_ids": ["선택할 수 없는 항목이에요."]})
 
@@ -265,7 +261,7 @@ def find_card(user, value):
 
 # 고정지출 직접 추가 값 검사 → 통과값 / 틀리면 400
 def clean_fixed_create(request):
-    data = request.data
+    data = body_dict(request)  # [] · 42 · "hello" → 400
     errors = {}
     values = {}
 
@@ -330,17 +326,25 @@ def clean_fixed_create(request):
     if account_value is not None and card_value is not None:
         errors["non_field_errors"] = ["계좌와 카드 중 하나만 골라 주세요."]
 
-    # 근거 거래
-    if data.get("evidence_transaction_id") is not None:
-        errors["evidence_transaction_id"] = ["선택할 수 없는 거래예요."]
+    # 근거 거래 (선택) — 고른 카드 · 계좌의 내 출금 하나. 결제 수단 검사가 통과했을 때만 봄
+    values["evidence_tx"] = None
+    tx_value = data.get("evidence_transaction_id")
+    method_ok = not any(k in errors for k in ("payment_account_id", "payment_card_id", "non_field_errors"))
+    if tx_value is not None and method_ok:
+        tx = find_evidence(request.user, tx_value, values["payment_account"], values["payment_card"])
+        if tx is None:
+            errors["evidence_transaction_id"] = ["선택할 수 없는 거래예요."]
+        else:
+            values["evidence_tx"] = tx
 
     if errors:
         raise ValidationError(errors)
     return values
 
 # 고정지출 수정 값 검사 (보낸 칸만) → 통과값 / 틀리면 400
+#   근거 거래는 values["evidence_tx"] 로 돌려줌: 칸 없음 = 유지, None = 비우기, 거래 = 바꾸기
 def clean_fixed_update(request, expense):
-    data = request.data
+    data = body_dict(request)  # 42 · "hello" 등 → 400
     errors = {}
     values = {}
 
@@ -418,19 +422,27 @@ def clean_fixed_update(request, expense):
             else:
                 values["payment_card"] = card
 
-    # 근거 거래
-    if "evidence_transaction_id" in data:
-        if data["evidence_transaction_id"] is None:
-            values["evidence"] = []
-        else:
-            errors["evidence_transaction_id"] = ["선택할 수 없는 거래예요."]
+    # 저장 뒤 결제 수단 (보낸 칸이 없으면 지금 값)
+    final_account = values.get("payment_account", expense.payment_account)
+    final_card = values.get("payment_card", expense.payment_card)
+    method_ok = not any(k in errors for k in ("payment_account_id", "payment_card_id"))
 
     # 계좌, 카드가 둘 다 선택되어 있으면
-    if not errors:
-        final_account = values.get("payment_account", expense.payment_account)
-        final_card = values.get("payment_card", expense.payment_card)
-        if final_account and final_card:
-            errors["non_field_errors"] = ["계좌와 카드 중 하나만 골라 주세요."]
+    if method_ok and final_account and final_card:
+        errors["non_field_errors"] = ["계좌와 카드 중 하나만 골라 주세요."]
+        method_ok = False
+
+    # 근거 거래 — null 이면 비우기, ID 면 저장 뒤 결제 수단의 내 출금인지 검사
+    if "evidence_transaction_id" in data:
+        value = data["evidence_transaction_id"]
+        if value is None:
+            values["evidence_tx"] = None
+        elif method_ok:
+            tx = find_evidence(request.user, value, final_account, final_card, expense)
+            if tx is None:
+                errors["evidence_transaction_id"] = ["선택할 수 없는 거래예요."]
+            else:
+                values["evidence_tx"] = tx
 
     if errors:
         raise ValidationError(errors)
@@ -439,9 +451,10 @@ def clean_fixed_update(request, expense):
 # 고정지출 직접 추가 저장 → 바로 확정 → 201
 @idempotent() # 같은 요청 번호로 두 번 와도 한 번만 저장
 def fixed_create(request):
-    values = clean_fixed_create(request)
-
     with transaction.atomic():
+        values = clean_fixed_create(request)  # 근거 거래를 잠그면서 검사하므로 묶음 안에서
+        evidence_tx = values.pop("evidence_tx")
+
         expense = RecurringExpense.objects.create(
             user  = request.user,
             **values,
@@ -450,7 +463,11 @@ def fixed_create(request):
             confirmed_at=timezone.now(),
         )
 
-        # TODO: 이번 주기 납부 예정 1건 만들기 (급여 주기가 생기면)
+        cycle = active_cycle(request.user)
+        today = timezone.localdate()
+        if evidence_tx is not None:
+            link_evidence(expense, evidence_tx, cycle, today)  # 근거 거래 연결 (계좌면 납부 예정과 짝)
+        ensure_current_due(expense, cycle, today)               # 이번 주기 납부 예정 1건
 
         # 예산 초안 만료
         Budget.objects.filter(user=request.user, status__in=["draft", "validated"]).update(status="expired")
@@ -460,46 +477,327 @@ def fixed_create(request):
 # 고정지출 수정 저장 (보낸 칸만) → 이번 주기 안 낸 납부 예정도 맞춤 → 200
 def fixed_update(request, recurring_id):
     with transaction.atomic():
+        # 잠그고 찾기 — 중지가 동시에 와도 기다렸다가 다시 확인 (중지됐으면 404)
         expense = get_object_or_404(
-            RecurringExpense,
+            RecurringExpense.objects.select_for_update(),
             pk = recurring_id,
             user = request.user,
             status__in = ["suggested", "confirmed"],
         )
 
         values = clean_fixed_update(request, expense)
+        evidence_sent = "evidence_tx" in values
+        evidence_tx = values.pop("evidence_tx", None)
 
         # 바뀌기 전에 뭐가 바뀌는지 기억
         amount_changed = "amount" in values and values["amount"] != expense.amount
-        to_card = values.get("payment_card") is not None  # 새 카드로 바꿈
-        day_cleared = "payment_day" in values and values["payment_day"] is None  # 출금일 비움
+        method_changed = (
+            ("payment_account" in values and values["payment_account"] != expense.payment_account)
+            or ("payment_card" in values and values["payment_card"] != expense.payment_card)
+        )
 
         for key, value in values.items():
             setattr(expense, key, value)
-        expense.save()
+        fields = list(values)  # 보낸 칸만 저장 (status 는 건드리지 않음)
+
+        cycle = active_cycle(request.user)
+        today = timezone.localdate()
+
+        # 근거 거래: 이번 주기 연결만 고치고 지난 주기 기록은 그대로
+        if evidence_sent:
+            if evidence_tx is None:
+                unlink_current(expense, cycle, today)    # 비우기: 연결 풀고
+                expense.evidence = []                    # 가맹점 기억도 지움
+                fields.append("evidence")
+            elif str(evidence_tx.pk) not in id_set(expense.evidence):
+                expense.evidence = unlink_current(expense, cycle, today)  # 바꾸기: 기존 연결 풀고 (새 거래는 아래에서)
+                fields.append("evidence")
+        elif method_changed:
+            expense.evidence = []  # 결제 수단을 바꾸면 가맹점 기억은 비움 (이미 낸 기록은 그대로)
+            fields.append("evidence")
+
+        if fields:
+            expense.save(update_fields=fields)
 
         if expense.status == "confirmed":
-            # 이번 주기부터 안 낸 납부 예정
-            cycle = BudgetCycle.objects.filter(user=request.user, status="active").first()
-            since = cycle.starts_on if cycle else timezone.localdate()
-            unpaid = PaymentDue.objects.filter(
-                recurring=expense,
-                obligation_state="active",
-                payment_state="unpaid",
-                due_date__gte=since,
-            )
-
-            if to_card or day_cleared:
-                unpaid.update(obligation_state="canceled", canceled_at=timezone.now())
-            elif amount_changed:
-                unpaid.update(confirmed_amount=expense.amount)
-            # TODO: 출금일이 바뀌면 안 낸 회차 날짜 바꾸기 · 출금일이 새로 생기면 회차 만들기 (급여 주기가 생기면)
+            sync_dues(expense, cycle, today)  # 안 낸 회차의 금액 · 날짜 · 계좌 맞춤, 필요하면 취소 · 새로 만들기
 
             # 고정지출 합계가 바뀌면 승인 전 예산 초안 만료
             if amount_changed:
                 Budget.objects.filter(user=request.user, status__in=["draft", "validated"]).update(status="expired")
 
+        if evidence_tx is not None:
+            link_evidence(expense, evidence_tx, cycle, today)  # 새 근거 거래 연결
+
     return Response(fixed_json(expense))
+
+
+# ---------------- 고정지출: 납부 예정 · 근거 거래 ----------------
+#  납부 예정(PaymentDue)은 이번 주기 1건씩 (C-15). 계좌 · 결제 수단 모름 + 출금일이 있는 확정 고정지출만.
+#  '안 낸 회차' = 아직 짝지은 출금이 없는 unpaid · needs_review. 이미 낸(paid) · 일부 낸(partial) 회차는 건드리지 않는다.
+
+NOT_PAID = ["unpaid", "needs_review"]
+FIXED_TX_TYPES = ["spending", "transfer"]  # 고정지출 근거가 될 수 있는 거래 종류 (소비 · 남에게 보낸 이체)
+
+# 진행 중인 급여 주기 (온보딩 전이면 None)
+def active_cycle(user):
+    return BudgetCycle.objects.filter(user=user, status="active").first()
+
+# 이번 주기 시작일 — 아직 주기가 없으면(온보딩 전) 오늘
+def current_since(user):
+    cycle = active_cycle(user)
+    return cycle.starts_on if cycle else timezone.localdate()
+
+# 그 달의 출금일 날짜 (그 달에 없는 날은 말일: 2월 31일 → 2월 28일)
+def day_in_month(year, month, day):
+    return date(year, month, min(day, calendar.monthrange(year, month)[1]))
+
+# 주기(시작일 ~ 다음 시작일 전날) 안에서 출금일 날짜. 예: 10/25 ~ 11/24 주기, 출금일 5일 → 11/5
+def day_in_cycle(cycle, day):
+    year, month = cycle.starts_on.year, cycle.starts_on.month
+    for _ in range(2):
+        d = day_in_month(year, month, day)
+        if cycle.starts_on <= d < cycle.ends_before:
+            return d
+        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
+    return None
+
+# 거래 ID 목록 → 모양을 맞춘 문자열 집합 (대시 유무 등이 달라도 같은 ID로 봄)
+def id_set(ids):
+    result = set()
+    for value in ids or []:
+        try:
+            result.add(str(uuid.UUID(str(value))))
+        except ValueError:
+            pass
+    return result
+
+# 다른 고정지출의 근거 거래로 이미 쓰인 거래 ID
+def evidence_of_others(user, expense=None):
+    others = RecurringExpense.objects.filter(user=user)
+    if expense is not None:
+        others = others.exclude(pk=expense.pk)
+    taken = set()
+    for ids in others.values_list("evidence", flat=True):
+        taken |= id_set(ids)
+    return taken
+
+# 보낸 거래 ID → 근거로 고를 수 있는 거래 (못 고르면 None)
+#   고른 카드 · 계좌의 내 출금(취소 안 됨)이고, 다른 고정지출 · 다른 납부 예정에 연결 안 된 것
+def find_evidence(user, value, account, card, expense=None):
+    if account is None and card is None:  # 결제 수단 모름 → 고를 수 없음
+        return None
+    try:
+        tx_id = uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+    found = FinancialTransaction.objects.select_for_update().filter(  # 같은 거래를 두 고정지출이 동시에 못 고르게 잠금
+        user = user,
+        pk = tx_id,
+        direction = "out",
+        is_canceled = False,
+        transaction_type__in = FIXED_TX_TYPES,
+    )
+    found = found.filter(card=card) if card is not None else found.filter(account=account)
+    tx = found.first()
+    if tx is None:
+        return None
+
+    # 다른 고정지출의 근거 거래면 X (같은 고정지출에 다시 보내는 건 OK)
+    if str(tx.pk) in evidence_of_others(user, expense):
+        return None
+    # 다른 납부 예정(다른 고정지출 · 카드 청구서 등)과 이미 짝지어진 출금이면 X
+    matched = PaymentMatch.objects.filter(transaction=tx)
+    if expense is not None:
+        matched = matched.exclude(due__recurring=expense)
+    if matched.exists():
+        return None
+    return tx
+
+# 출금일이 지난 회차에 맞는 출금 찾기 — 같은 계좌, 금액 ±10%, 날짜 ±3일, 아직 어디에도 짝지어지지 않은 것
+def find_withdrawals(expense, due_date):
+    if expense.payment_account_id is None:
+        return []
+    low = (expense.amount * 9 + 9) // 10   # 90% (올림)
+    high = expense.amount * 11 // 10       # 110% (내림)
+    found = FinancialTransaction.objects.filter(
+        user = expense.user,
+        account_id = expense.payment_account_id,
+        direction = "out",
+        is_canceled = False,
+        transaction_type__in = FIXED_TX_TYPES,
+        amount__gte = low,
+        amount__lte = high,
+        occurred_on__gte = due_date - timedelta(days=3),
+        occurred_on__lte = due_date + timedelta(days=3),
+    ).exclude(pk__in=PaymentMatch.objects.values("transaction")).order_by("occurred_on", "pk")
+    taken = evidence_of_others(expense.user, expense)
+    return [t for t in found if str(t.pk) not in taken]
+
+# 납부 상태 다시 계산 — 짝 합계 ≥ 예정 금액 paid, 일부 partial, 없으면 출금일 전 unpaid · 지남 needs_review
+def refresh_due_state(due, today):
+    summary = due.matches.aggregate(total=Sum("matched_amount"), last=Max("matched_at"))
+    paid = summary["total"] or 0
+    if paid >= due.confirmed_amount:
+        state = "paid"
+    elif paid > 0:
+        state = "partial"
+    elif today <= due.due_date:
+        state = "unpaid"
+    else:
+        state = "needs_review"
+    due.paid_amount = paid
+    due.payment_state = state
+    due.matched_at = summary["last"]
+    due.save(update_fields=["paid_amount", "payment_state", "matched_at"])
+
+# 그 거래의 재원 바꾸기 (예산이 있어 배분 기록이 있을 때만) — 연결: 생활비 → 고정비, 풀기: 고정비 → 생활비
+def move_bucket(tx, from_bucket, to_bucket):
+    SpendingAllocation.objects.filter(transaction=tx, funding_bucket=from_bucket).update(funding_bucket=to_bucket)
+
+# 납부 예정 ↔ 출금 짝짓기 → 상태 다시 계산
+def match_withdrawal(due, tx, today):
+    amount = tx.amount - (tx.canceled_amount or 0)
+    if amount > 0:
+        PaymentMatch.objects.get_or_create(
+            due = due,
+            transaction = tx,
+            defaults = {"user": due.user, "matched_amount": amount},
+        )
+    refresh_due_state(due, today)
+
+# 이번 주기 '안 낸 회차' (잠금) — 이미 낸 · 일부 낸 회차와 짝이 있는 회차는 빼고
+def open_dues(expense, since):
+    return list(PaymentDue.objects.select_for_update().filter(
+        recurring = expense,
+        obligation_state = "active",
+        payment_state__in = NOT_PAID,
+        due_date__gte = since,
+    ).exclude(pk__in=PaymentMatch.objects.values("due")))
+
+# 납부 예정 취소 (지우지 않고 canceled 로 남김)
+def cancel_dues(dues):
+    PaymentDue.objects.filter(pk__in=[d.pk for d in dues]).update(
+        obligation_state="canceled", canceled_at=timezone.now(),
+    )
+
+# 이번 주기 납부 예정 1건 — 있으면 그대로, 없으면 만들기 (만들 대상이 아니면 None)
+#   출금일이 이미 지났으면 맞는 출금이 있을 때만 만든다: 1건이면 "냄"으로 연결, 여러 건이면 확인 필요([고르기])
+#   withdrawal: 사용자가 근거로 고른 출금 (이때는 지났어도 만든다)
+def ensure_current_due(expense, cycle, today, withdrawal=None):
+    if (expense.status != "confirmed" or cycle is None
+            or expense.payment_card_id is not None or expense.payment_day is None):
+        return None
+    due_date = day_in_cycle(cycle, expense.payment_day)
+    if due_date is None:
+        return None
+
+    key = f"recurring:{expense.pk}:{cycle.starts_on.isoformat()}"  # 회원 · 회차 UNIQUE → 같은 회차는 한 번만
+    due = PaymentDue.objects.select_for_update().filter(user=expense.user, occurrence_key=key).first()
+    if due is not None and due.obligation_state == "active":
+        return due
+    if due is not None and due.matches.exists():
+        return None  # 취소됐지만 낸 기록이 있는 회차는 건드리지 않음
+
+    found = []
+    if withdrawal is None and due_date < today:
+        found = find_withdrawals(expense, due_date)
+        if not found:
+            return None
+
+    fields = {
+        "due_date": due_date,
+        "confirmed_amount": expense.amount,
+        "payment_account": expense.payment_account,
+        "obligation_state": "active",
+        "canceled_at": None,
+        "paid_amount": 0,
+        "payment_state": "unpaid",
+        "matched_at": None,
+    }
+    if due is not None:  # 취소했던 회차를 다시 살림 (카드 → 계좌로 되돌린 경우 등)
+        for name, value in fields.items():
+            setattr(due, name, value)
+        due.save(update_fields=list(fields))
+    else:
+        try:
+            with transaction.atomic():  # 다른 요청이 같은 회차를 먼저 만들면 UNIQUE 에 걸림 → 그걸 씀
+                due = PaymentDue.objects.create(
+                    user = expense.user,
+                    obligation_type = "recurring",
+                    recurring = expense,
+                    occurrence_key = key,
+                    source_type = "manual" if expense.source_type == "manual" else "estimated",
+                    confirmation_state = "confirmed",
+                    **fields,
+                )
+        except IntegrityError:
+            return PaymentDue.objects.select_for_update().get(user=expense.user, occurrence_key=key)
+
+    if len(found) == 1:
+        link_evidence(expense, found[0], cycle, today)  # 맞는 출금 1건 → 자동 연결
+    else:
+        refresh_due_state(due, today)                   # 0건(미래) unpaid · 여러 건 needs_review
+    return due
+
+# 근거 거래 연결 — evidence 에 더하고(가맹점 기억), 고정비로 셈. 계좌 출금이면 이번 회차 납부 예정과 짝
+def link_evidence(expense, tx, cycle, today):
+    if str(tx.pk) not in id_set(expense.evidence):
+        expense.evidence = [*(expense.evidence or []), str(tx.pk)]
+        expense.save(update_fields=["evidence"])
+    move_bucket(tx, "living", "fixed")
+    if tx.account_id is not None:
+        due = ensure_current_due(expense, cycle, today, withdrawal=tx)
+        if due is not None:
+            match_withdrawal(due, tx, today)
+
+# 이번 주기 연결 풀기 → 남길 근거 ID(지난 주기 것) 목록
+#   계좌: 이번 주기 회차의 짝을 지우고 납부 상태 다시 계산 · 카드: 재원을 생활비로 되돌림
+def unlink_current(expense, cycle, today):
+    since = cycle.starts_on if cycle else None
+    current = FinancialTransaction.objects.filter(user=expense.user, pk__in=list(id_set(expense.evidence)))
+    if since is not None:
+        current = current.filter(occurred_on__gte=since)
+    current = list(current)
+
+    dues = PaymentDue.objects.select_for_update().filter(recurring=expense, obligation_state="active")
+    if since is not None:
+        dues = dues.filter(due_date__gte=since)
+    dues = list(dues)
+    matches = PaymentMatch.objects.filter(due__in=dues).select_related("transaction")
+    released = {t.pk: t for t in current}
+    released.update({m.transaction.pk: m.transaction for m in matches})
+    matches.delete()
+
+    for due in dues:
+        refresh_due_state(due, today)
+    for tx in released.values():
+        move_bucket(tx, "fixed", "living")
+
+    current_ids = {str(t.pk) for t in current}
+    return [value for value in (expense.evidence or []) if not (id_set([value]) & current_ids)]
+
+# 수정 뒤 안 낸 회차 맞추기 (이번 주기 미납분과 앞으로의 회차만)
+#   카드로 바꾸거나 출금일을 비우면 취소 · 아니면 금액 · 날짜 · 결제 계좌를 새 값으로 · 없으면 새로 만들기
+def sync_dues(expense, cycle, today):
+    since = cycle.starts_on if cycle else today
+    dues = open_dues(expense, since)
+    if expense.payment_card_id is not None or expense.payment_day is None:
+        cancel_dues(dues)
+        return
+
+    for due in dues:
+        if cycle is not None and cycle.starts_on <= due.due_date < cycle.ends_before:
+            due.due_date = day_in_cycle(cycle, expense.payment_day) or due.due_date
+        else:
+            due.due_date = day_in_month(due.due_date.year, due.due_date.month, expense.payment_day)
+        due.confirmed_amount = expense.amount
+        due.payment_account = expense.payment_account
+        due.save(update_fields=["due_date", "confirmed_amount", "payment_account"])
+        refresh_due_state(due, today)
+
+    ensure_current_due(expense, cycle, today)
 
 # 카드 → "신한 Deep Dream · ****1234" 이름표 (없으면 null)
 def card_json(c):

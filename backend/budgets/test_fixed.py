@@ -1,0 +1,433 @@
+"""고정지출 API 회귀 테스트 (PR #43 리뷰). 실행: backend 폴더에서 python manage.py test budgets
+
+- 본문 모양 검사: {} 가 아닌 본문([] · 42 · "hello")은 500 이 아니라 400 invalid
+- 납부 예정: 직접 추가 · 후보 확정 때 이번 주기 1건, 수정하면 안 낸 회차만 맞춤 (낸 회차는 그대로)
+- 근거 거래: 내 출금은 고를 수 있고, 비우면 납부 짝 · 상태도 다시 계산
+- 동시 요청: 같은 고정지출을 동시에 바꿔도 상태가 덮어써지지 않음 (PostgreSQL 에서만 실행)
+"""
+import json
+import threading
+import time
+from datetime import timedelta
+from unittest import mock, skipUnless
+
+from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test import TestCase, TransactionTestCase
+from django.utils import timezone
+from rest_framework.test import APIClient
+
+from finance.models import BankAccount, Card, Connection, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense
+
+from .models import BudgetCycle
+
+URL = "/api/budgets/fixed/"
+
+
+def send(client, method, url, body):
+    """본문을 JSON 그대로 보내기 ([] · 42 · "hello" 도 그대로)"""
+    return getattr(client, method)(url, data=json.dumps(body), content_type="application/json")
+
+
+class FixedFixture:
+    """회원 1명 + 입출금 계좌 2개 + 카드 1개 + 진행 중인 급여 주기(오늘 -10일 ~ +17일, 28일)"""
+
+    def make_world(self, email="naeun@example.com"):
+        self.today = timezone.localdate()
+        self.user = get_user_model().objects.create_user(email=email, password="Example123!")
+        bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0004", status="connected")
+        self.account = BankAccount.objects.create(
+            user=self.user, connection=bank, source_account_key=f"{email}-1", masked_number="****5678",
+            account_type="demand", is_selected=True,
+        )
+        self.account2 = BankAccount.objects.create(
+            user=self.user, connection=bank, source_account_key=f"{email}-2", masked_number="****1111",
+            account_type="demand", is_selected=True,
+        )
+        card_conn = Connection.objects.create(user=self.user, business_type="card", organization_code="0301", status="connected")
+        self.card = Card.objects.create(
+            user=self.user, connection=card_conn, name="Deep Dream", masked_number="****1234",
+            origin="provider", is_selected=True,
+        )
+        self.cycle = BudgetCycle.objects.create(
+            user=self.user, starts_on=self.today - timedelta(days=10), ends_before=self.today + timedelta(days=18),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+
+    def make_expense(self, status="confirmed", **fields):
+        data = dict(user=self.user, name="월세", amount=700000, payment_day=None, category_id="HOUSING_TELECOM",
+                    status=status, source_type="manual" if status == "confirmed" else "detected")
+        data.update(fields)
+        return RecurringExpense.objects.create(**data)
+
+    def make_tx(self, on, amount=700000, account=None, card=None, user=None, **fields):
+        data = dict(
+            user=user or self.user, occurred_on=on, amount=amount, direction="out",
+            transaction_type="transfer" if card is None else "spending",
+            confirmed_category_id="HOUSING_TELECOM", confirmation_state="confirmed",
+        )
+        if card is not None:
+            data.update(source_kind="card", card=card)
+        else:
+            data.update(source_kind="bank", account=account or self.account)
+        data.update(fields)
+        return FinancialTransaction.objects.create(**data)
+
+    def dues(self, expense, state="active"):
+        return list(PaymentDue.objects.filter(recurring=expense, obligation_state=state))
+
+    def paid_due(self, expense, tx):
+        """이미 낸 회차 1건 (짝 있음)"""
+        due = PaymentDue.objects.create(
+            user=self.user, obligation_type="recurring", recurring=expense, occurrence_key=f"recurring:{expense.pk}:{self.cycle.starts_on}",
+            due_date=tx.occurred_on, confirmed_amount=expense.amount, payment_account=expense.payment_account,
+            source_type="manual", confirmation_state="confirmed", paid_amount=tx.amount, payment_state="paid",
+        )
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=tx, matched_amount=tx.amount)
+        return due
+
+
+class FixedBodyTypeTest(FixedFixture, TestCase):
+    """리뷰 4. 본문이 JSON 객체가 아니면 400 invalid (500 이 나면 안 됨)"""
+
+    def setUp(self):
+        self.make_world()
+        self.expense = self.make_expense()
+
+    def test_not_object_body_is_400(self):
+        targets = [("post", URL), ("patch", f"{URL}{self.expense.pk}/"),
+                   ("post", f"{URL}confirm/"), ("post", f"{URL}ignore/")]
+        for method, url in targets:
+            for body in ([], [1, 2], 42, "hello", "", None):
+                with self.subTest(method=method, url=url, body=body):
+                    r = send(self.client, method, url, body)
+                    self.assertEqual(r.status_code, 400, r.content)
+                    self.assertEqual(r.json()["error"]["code"], "invalid")
+        self.assertEqual(RecurringExpense.objects.count(), 1)
+
+
+class FixedStateTest(FixedFixture, TestCase):
+    """한 번에 하나씩 보내도 상태 규칙이 지켜지는지"""
+
+    def setUp(self):
+        self.make_world()
+
+    def test_confirm_then_ignore_is_400(self):
+        e = self.make_expense(status="suggested")
+        self.assertEqual(send(self.client, "post", f"{URL}confirm/", {"recurringIds": [str(e.pk)]}).status_code, 200)
+        self.assertEqual(send(self.client, "post", f"{URL}ignore/", {"recurringIds": [str(e.pk)]}).status_code, 400)
+        e.refresh_from_db()
+        self.assertEqual(e.status, "confirmed")
+
+    def test_patch_after_stop_is_404(self):
+        e = self.make_expense()
+        self.assertEqual(self.client.delete(f"{URL}{e.pk}/").status_code, 204)
+        self.assertEqual(send(self.client, "patch", f"{URL}{e.pk}/", {"amount": 800000}).status_code, 404)
+        e.refresh_from_db()
+        self.assertEqual((e.status, e.amount), ("stopped", 700000))
+
+
+class FixedPaymentDueTest(FixedFixture, TestCase):
+    """리뷰 2. 납부 예정 만들기 · 맞추기"""
+
+    def setUp(self):
+        self.make_world()
+        self.future = self.today + timedelta(days=5)
+        self.past = self.today - timedelta(days=5)
+
+    def create(self, **body):
+        data = {"name": "월세", "amount": 700000, "category": "HOUSING_TELECOM", **body}
+        r = send(self.client, "post", URL, data)
+        self.assertEqual(r.status_code, 201, r.content)
+        return RecurringExpense.objects.get(pk=r.json()["recurringId"])
+
+    def test_create_makes_this_cycle_due(self):
+        e = self.create(paymentDay=self.future.day, paymentAccountId=str(self.account.pk))
+        [due] = self.dues(e)
+        self.assertEqual((due.due_date, due.confirmed_amount, due.payment_account_id, due.payment_state),
+                         (self.future, 700000, self.account.pk, "unpaid"))
+        self.assertEqual(due.occurrence_key, f"recurring:{e.pk}:{self.cycle.starts_on}")
+
+    def test_create_unknown_method_also_makes_due(self):
+        e = self.create(paymentDay=self.future.day)
+        self.assertEqual(len(self.dues(e)), 1)
+
+    def test_no_due_for_card_or_no_day_or_no_cycle(self):
+        self.assertEqual(self.dues(self.create(paymentDay=self.future.day, paymentCardId=str(self.card.pk))), [])
+        self.assertEqual(self.dues(self.create(paymentAccountId=str(self.account.pk))), [])
+        self.cycle.delete()
+        self.assertEqual(self.dues(self.create(paymentDay=self.future.day)), [])
+
+    def test_past_day_without_withdrawal_makes_nothing(self):
+        e = self.create(paymentDay=self.past.day, paymentAccountId=str(self.account.pk))
+        self.assertEqual(self.dues(e), [])
+
+    def test_past_day_with_one_withdrawal_is_paid(self):
+        tx = self.make_tx(self.past + timedelta(days=1))
+        e = self.create(paymentDay=self.past.day, paymentAccountId=str(self.account.pk))
+        [due] = self.dues(e)
+        self.assertEqual((due.payment_state, due.paid_amount), ("paid", 700000))
+        self.assertTrue(PaymentMatch.objects.filter(due=due, transaction=tx).exists())
+        self.assertEqual(e.evidence, [str(tx.pk)])
+
+    def test_past_day_with_two_withdrawals_needs_review(self):
+        self.make_tx(self.past)
+        self.make_tx(self.past + timedelta(days=1))
+        e = self.create(paymentDay=self.past.day, paymentAccountId=str(self.account.pk))
+        [due] = self.dues(e)
+        self.assertEqual(due.payment_state, "needs_review")
+        self.assertFalse(PaymentMatch.objects.filter(due=due).exists())
+
+    def test_confirm_candidate_makes_due(self):
+        e = self.make_expense(status="suggested", payment_day=self.future.day, payment_account=self.account)
+        r = send(self.client, "post", f"{URL}confirm/", {"recurringIds": [str(e.pk)]})
+        self.assertEqual(r.status_code, 200, r.content)
+        [due] = self.dues(e)
+        self.assertEqual((due.due_date, due.payment_state), (self.future, "unpaid"))
+
+    def test_update_moves_unpaid_due_date_and_account(self):
+        e = self.create(paymentDay=self.future.day, paymentAccountId=str(self.account.pk))
+        later = self.today + timedelta(days=7)
+        r = send(self.client, "patch", f"{URL}{e.pk}/",
+                 {"paymentDay": later.day, "paymentAccountId": str(self.account2.pk), "amount": 750000})
+        self.assertEqual(r.status_code, 200, r.content)
+        [due] = self.dues(e)
+        self.assertEqual((due.due_date, due.payment_account_id, due.confirmed_amount), (later, self.account2.pk, 750000))
+
+    def test_update_keeps_paid_due(self):
+        e = self.make_expense(payment_day=self.past.day, payment_account=self.account)
+        due = self.paid_due(e, self.make_tx(self.past))
+        r = send(self.client, "patch", f"{URL}{e.pk}/",
+                 {"paymentDay": self.future.day, "amount": 800000, "paymentAccountId": str(self.account2.pk)})
+        self.assertEqual(r.status_code, 200, r.content)
+        due.refresh_from_db()
+        self.assertEqual((due.due_date, due.confirmed_amount, due.payment_account_id, due.payment_state),
+                         (self.past, 700000, self.account.pk, "paid"))
+        self.assertEqual(PaymentDue.objects.filter(recurring=e).count(), 1)   # 새 회차를 또 만들지 않음
+
+    def test_update_keeps_partial_due(self):
+        e = self.make_expense(payment_day=self.past.day, payment_account=self.account)
+        due = self.paid_due(e, self.make_tx(self.past, amount=300000))
+        PaymentDue.objects.filter(pk=due.pk).update(payment_state="partial", paid_amount=300000)
+        send(self.client, "patch", f"{URL}{e.pk}/", {"paymentDay": self.future.day, "amount": 800000})
+        due.refresh_from_db()
+        self.assertEqual((due.due_date, due.confirmed_amount, due.payment_state), (self.past, 700000, "partial"))
+
+    def test_day_set_later_makes_due(self):
+        e = self.create(paymentAccountId=str(self.account.pk))
+        self.assertEqual(self.dues(e), [])
+        send(self.client, "patch", f"{URL}{e.pk}/", {"paymentDay": self.future.day})
+        self.assertEqual(len(self.dues(e)), 1)
+
+    def test_to_card_cancels_and_back_to_account_revives(self):
+        e = self.create(paymentDay=self.future.day, paymentAccountId=str(self.account.pk))
+        r = send(self.client, "patch", f"{URL}{e.pk}/", {"paymentAccountId": None, "paymentCardId": str(self.card.pk)})
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self.dues(e), [])
+        self.assertEqual(len(self.dues(e, "canceled")), 1)
+
+        send(self.client, "patch", f"{URL}{e.pk}/", {"paymentCardId": None, "paymentAccountId": str(self.account2.pk)})
+        [due] = self.dues(e)
+        self.assertEqual((due.payment_account_id, due.canceled_at), (self.account2.pk, None))
+
+    def test_clear_day_cancels_and_stop_cancels(self):
+        e = self.create(paymentDay=self.future.day, paymentAccountId=str(self.account.pk))
+        send(self.client, "patch", f"{URL}{e.pk}/", {"paymentDay": None})
+        self.assertEqual(self.dues(e), [])
+
+        e2 = self.create(paymentDay=self.future.day, paymentAccountId=str(self.account.pk))
+        self.assertEqual(self.client.delete(f"{URL}{e2.pk}/").status_code, 204)
+        self.assertEqual(self.dues(e2), [])
+
+
+class FixedEvidenceTest(FixedFixture, TestCase):
+    """리뷰 3. 근거 거래 고르기 · 바꾸기 · 비우기"""
+
+    def setUp(self):
+        self.make_world()
+        self.past = self.today - timedelta(days=2)
+        self.e = self.make_expense(payment_day=self.past.day, payment_account=self.account)
+
+    def pick(self, tx, expense=None):
+        expense = expense or self.e
+        return send(self.client, "patch", f"{URL}{expense.pk}/", {"evidenceTransactionId": None if tx is None else str(tx.pk)})
+
+    def test_pick_my_withdrawal_links_due(self):
+        tx = self.make_tx(self.past)
+        r = self.pick(tx)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["evidence"]["transactionId"], str(tx.pk))
+        [due] = self.dues(self.e)
+        self.assertEqual((due.payment_state, due.paid_amount), ("paid", 700000))
+        self.assertTrue(PaymentMatch.objects.filter(due=due, transaction=tx).exists())
+
+        # 같은 거래를 다시 보내도 그대로 성공 (짝이 두 개가 되지 않음)
+        self.assertEqual(self.pick(tx).status_code, 200)
+        self.assertEqual(PaymentMatch.objects.filter(due=due).count(), 1)
+
+    def test_pick_card_payment(self):
+        e = self.make_expense(name="OTT", amount=15000, payment_card=self.card, payment_day=self.past.day)
+        tx = self.make_tx(self.past, amount=15000, card=self.card, merchant_name="구독 서비스")
+        r = self.pick(tx, e)
+        self.assertEqual(r.status_code, 200, r.content)
+        e.refresh_from_db()
+        self.assertEqual(e.evidence, [str(tx.pk)])
+        self.assertEqual(self.dues(e), [])   # 카드는 납부 예정 없음
+
+    def test_pick_invalid_is_400(self):
+        other_user = get_user_model().objects.create_user(email="other@example.com", password="Example123!")
+        other_conn = Connection.objects.create(user=other_user, business_type="bank", organization_code="0004", status="connected")
+        other_account = BankAccount.objects.create(user=other_user, connection=other_conn, source_account_key="o-1",
+                                                   account_type="demand", is_selected=True)
+        used = self.make_tx(self.past)
+        self.make_expense(name="관리비", evidence=[str(used.pk)])
+        cases = {
+            "남의 거래": self.make_tx(self.past, user=other_user, account=other_account),
+            "다른 계좌": self.make_tx(self.past, account=self.account2),
+            "입금": self.make_tx(self.past, direction="in"),
+            "취소된 거래": self.make_tx(self.past, is_canceled=True),
+            "다른 고정지출의 근거": used,
+        }
+        for label, tx in cases.items():
+            with self.subTest(label):
+                r = self.pick(tx)
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertEqual(r.json()["error"]["fields"]["evidenceTransactionId"], ["선택할 수 없는 거래예요."])
+
+        unknown = self.make_expense(name="모름", payment_day=self.past.day)   # 결제 수단 모름
+        self.assertEqual(self.pick(self.make_tx(self.past), unknown).status_code, 400)
+
+    def test_clear_unlinks_payment_and_recalculates(self):
+        tx = self.make_tx(self.past)
+        self.pick(tx)
+        r = self.pick(None)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertIsNone(r.json()["evidence"])
+        [due] = self.dues(self.e)
+        self.assertEqual((due.payment_state, due.paid_amount), ("needs_review", 0))   # 출금일 지남 → 확인 필요
+        self.assertFalse(PaymentMatch.objects.filter(transaction=tx).exists())
+
+    def test_clear_before_due_date_is_unpaid(self):
+        future = self.today + timedelta(days=3)
+        e = self.make_expense(name="통신비", amount=55000, payment_day=future.day, payment_account=self.account)
+        tx = self.make_tx(self.today, amount=55000)
+        self.pick(tx, e)
+        self.pick(None, e)
+        [due] = self.dues(e)
+        self.assertEqual(due.payment_state, "unpaid")
+
+    def test_change_replaces_this_cycle_link_only(self):
+        last_cycle_tx = self.make_tx(self.cycle.starts_on - timedelta(days=20))
+        old_due = PaymentDue.objects.create(
+            user=self.user, obligation_type="recurring", recurring=self.e, occurrence_key="recurring:old",
+            due_date=last_cycle_tx.occurred_on, confirmed_amount=700000, payment_account=self.account,
+            source_type="manual", confirmation_state="confirmed", paid_amount=700000, payment_state="paid",
+        )
+        PaymentMatch.objects.create(user=self.user, due=old_due, transaction=last_cycle_tx, matched_amount=700000)
+        RecurringExpense.objects.filter(pk=self.e.pk).update(evidence=[str(last_cycle_tx.pk)])
+
+        first = self.make_tx(self.past)
+        second = self.make_tx(self.past + timedelta(days=1), amount=710000)
+        self.pick(first)
+        r = self.pick(second)
+        self.assertEqual(r.status_code, 200, r.content)
+
+        [due] = PaymentDue.objects.filter(recurring=self.e, due_date__gte=self.cycle.starts_on)
+        self.assertEqual(list(due.matches.values_list("transaction_id", flat=True)), [second.pk])
+        self.assertEqual((due.payment_state, due.paid_amount), ("paid", 710000))
+        # 지난 주기 기록은 그대로
+        self.assertTrue(PaymentMatch.objects.filter(due=old_due, transaction=last_cycle_tx).exists())
+        self.e.refresh_from_db()
+        self.assertEqual(self.e.evidence, [str(last_cycle_tx.pk), str(second.pk)])
+
+        # 비우면 이번 주기만 풀고 지난 주기 짝은 남김
+        self.pick(None)
+        self.assertTrue(PaymentMatch.objects.filter(due=old_due).exists())
+        old_due.refresh_from_db()
+        self.assertEqual(old_due.payment_state, "paid")
+
+
+@skipUnless(connection.vendor == "postgresql", "행 잠금(select_for_update)은 PostgreSQL 에서만 확인")
+class FixedConcurrencyTest(FixedFixture, TransactionTestCase):
+    """리뷰 1. 같은 고정지출에 요청 두 개가 동시에 와도 상태가 덮어써지지 않는지
+
+    'slow' 스레드는 고정지출을 저장하기 직전에 잠깐 멈춘다 → 그 사이에 다른 요청이 끼어든다.
+    잠금이 없으면 끼어든 요청이 옛 상태를 보고 진행해서 결과가 꼬인다.
+    """
+    serialized_rollback = True   # 테스트마다 표를 비우므로 마이그레이션의 카테고리 초기 데이터를 되살림
+
+    def setUp(self):
+        self.make_world()
+
+    def run_together(self, first, second, gap=0.1, pause=0.5):
+        results = {}
+        original_save = RecurringExpense.save
+
+        def slow_save(obj, *args, **kwargs):
+            if threading.current_thread().name == "slow":
+                time.sleep(pause)
+            return original_save(obj, *args, **kwargs)
+
+        def worker(key, request):
+            try:
+                client = APIClient()
+                client.force_authenticate(self.user)
+                results[key] = request(client).status_code
+            finally:
+                connection.close()
+
+        with mock.patch.object(RecurringExpense, "save", slow_save):
+            t1 = threading.Thread(target=worker, args=("first", first), name="slow")
+            t2 = threading.Thread(target=worker, args=("second", second), name="fast")
+            t1.start()
+            time.sleep(gap)
+            t2.start()
+            t1.join(10)
+            t2.join(10)
+        return results["first"], results["second"]
+
+    def test_patch_and_delete_do_not_revive_stopped(self):
+        """수정 중에 중지가 끼어들어도 → 최종 상태는 중지"""
+        e = self.make_expense()
+        codes = self.run_together(
+            lambda c: send(c, "patch", f"{URL}{e.pk}/", {"amount": 800000}),
+            lambda c: c.delete(f"{URL}{e.pk}/"),
+        )
+        self.assertEqual(codes, (200, 204))
+        e.refresh_from_db()
+        self.assertEqual((e.status, e.amount), ("stopped", 800000))
+
+    def test_delete_and_patch_patch_sees_stopped(self):
+        """중지 중에 수정이 끼어들면 → 수정은 404, 상태는 중지"""
+        e = self.make_expense()
+        codes = self.run_together(
+            lambda c: c.delete(f"{URL}{e.pk}/"),
+            lambda c: send(c, "patch", f"{URL}{e.pk}/", {"amount": 800000}),
+        )
+        self.assertEqual(codes, (204, 404))
+        e.refresh_from_db()
+        self.assertEqual((e.status, e.amount), ("stopped", 700000))
+
+    def test_confirm_and_ignore_only_one_wins(self):
+        """같은 후보에 확정 · 무시가 동시에 → 하나만 200, 나머지는 400"""
+        e = self.make_expense(status="suggested")
+        body = {"recurringIds": [str(e.pk)]}
+        codes = self.run_together(
+            lambda c: send(c, "post", f"{URL}confirm/", body),
+            lambda c: send(c, "post", f"{URL}ignore/", body),
+        )
+        self.assertEqual(codes, (200, 400))
+        e.refresh_from_db()
+        self.assertEqual(e.status, "confirmed")
+
+    def test_batch_reverse_order_no_deadlock(self):
+        """[A, B] 확정과 [B, A] 무시가 동시에 → 잠금 순서가 같아서 멈추지 않고 하나만 성공"""
+        a = self.make_expense(status="suggested", name="A")
+        b = self.make_expense(status="suggested", name="B")
+        codes = self.run_together(
+            lambda c: send(c, "post", f"{URL}confirm/", {"recurringIds": [str(a.pk), str(b.pk)]}),
+            lambda c: send(c, "post", f"{URL}ignore/", {"recurringIds": [str(b.pk), str(a.pk)]}),
+        )
+        self.assertEqual(codes, (200, 400))
+        self.assertEqual(sorted(RecurringExpense.objects.values_list("status", flat=True)), ["confirmed", "confirmed"])
