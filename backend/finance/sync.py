@@ -1,6 +1,7 @@
 """CODEF 은행 조회 결과를 저장한다. 금융 원문은 출력하지 않는다."""
 import hashlib
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -54,6 +55,9 @@ def sync_bank(user, connected_id, org, start, end):
             fetched_accounts.append((data, rows))
 
         with transaction.atomic():
+            # 홈 · 고정지출 · 거래 처리와 같은 순서: 회원 → 연결 → 계좌 → 거래.
+            # 외부 조회 중에는 잠그지 않고, 저장할 때 연결·계좌보다 먼저 잠근다.
+            get_user_model().objects.select_for_update(no_key=True).filter(pk=user.pk).first()
             # 같은 연결의 저장은 한 번에 하나씩 처리한다.
             connection = Connection.objects.select_for_update().get(pk=connection.pk)
             if connection.disconnected_at is not None:
