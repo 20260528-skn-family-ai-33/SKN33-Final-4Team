@@ -1,10 +1,11 @@
 import logging
 
-from django.db import transaction
+from django.db import DatabaseError, transaction
 
 from .models import FinancialTransaction
 
 logger = logging.getLogger(__name__)
+RETRY_STATE_KEY = "after_save_pending"
 
 
 # 혜리: 취소·SAME_PURCHASE 연결, 내 계좌 이체·카드값·입금 판단
@@ -54,14 +55,65 @@ AFTER_SAVE_STEPS = [
 
 
 def process_new_transactions(user, transaction_ids):
+    _process_transactions(user, transaction_ids, retry_only=False)
+
+
+def retry_failed_transactions(user, transaction_ids):
+    _process_transactions(user, transaction_ids, retry_only=True)
+
+
+def _save_pending(txs, pending):
+    changed = []
+    for tx in txs.all():
+        # 단계가 바꾼 다른 근거 값은 그대로 둔다.
+        states = dict(tx.field_states)
+        if pending[tx.pk]:
+            states[RETRY_STATE_KEY] = dict(pending[tx.pk])
+        else:
+            states.pop(RETRY_STATE_KEY, None)
+        if states != tx.field_states:
+            tx.field_states = states
+            changed.append(tx)
+    if changed:
+        FinancialTransaction.objects.bulk_update(changed, ["field_states"], batch_size=500)
+
+
+def _process_transactions(user, transaction_ids, *, retry_only):
     if not transaction_ids:
         return
 
     txs = FinancialTransaction.objects.filter(user=user, pk__in=transaction_ids)
-    for name, step in AFTER_SAVE_STEPS:
-        try:
-            with transaction.atomic():
-                # 앞 단계의 변경·롤백을 반영하도록 새로 조회한다.
-                step(user, txs.all())
-        except Exception:
-            logger.exception("거래 저장 뒤 처리 단계 실패: %s", name)
+    with transaction.atomic():
+        # 같은 거래의 처리·재시도 기록이 서로 덮어쓰이지 않게 잠근다.
+        pending = {}
+        for tx in txs.select_for_update().order_by("pk"):
+            pending[tx.pk] = dict(tx.field_states.get(RETRY_STATE_KEY, {}))
+            if not retry_only:
+                pending[tx.pk].update({name: "pending" for name, _ in AFTER_SAVE_STEPS})
+
+        failed_ids = set()
+        for index, (name, step) in enumerate(AFTER_SAVE_STEPS):
+            ids = [pk for pk, states in pending.items() if name in states]
+            if not ids:
+                continue
+            step_txs = txs.filter(pk__in=ids)
+            try:
+                with transaction.atomic():
+                    step(user, step_txs.all())
+            except Exception as exc:
+                code = "database_error" if isinstance(exc, DatabaseError) else "step_error"
+                # DB 오류 원문·traceback에는 거래 내용이 포함될 수 있다.
+                logger.error("거래 저장 뒤 처리 단계 실패: %s (%s)", name, code)
+                failed_ids.update(ids)
+                for pk in ids:
+                    pending[pk][name] = code
+                    for later_name, _ in AFTER_SAVE_STEPS[index + 1:]:
+                        pending[pk].setdefault(later_name, "upstream_failed")
+                        if pending[pk][later_name] == "pending":
+                            pending[pk][later_name] = "upstream_failed"
+            else:
+                for pk in ids:
+                    # 앞 단계가 실패했다면 뒤 단계도 다음번에 다시 확인한다.
+                    if pk not in failed_ids:
+                        pending[pk].pop(name, None)
+            _save_pending(step_txs, pending)
