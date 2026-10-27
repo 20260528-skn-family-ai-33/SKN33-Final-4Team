@@ -31,6 +31,7 @@
 - C-09·C-10 해결(10/21): `fields`는 칸 오류가 있을 때만 넣고, 칸 하나에 묶이지 않는 입력 오류는 `fields.nonFieldErrors`로 보낸다. 직접 추가·후보 확정·무시는 선택 헤더 `Idempotency-Key`로 같은 번호·같은 내용의 첫 응답을 재사용하며, 다른 내용은 `409 idempotency_conflict`이다. 성공 기록이 없는 4xx 실패는 기록하지 않아 같은 번호로 수정 재시도할 수 있고, 이름으로 중복을 판단하지 않는다. 저장 중에는 버튼을 잠근다.
 - C-11 해결(10/21): 주소의 없는·남의·형식 틀린 ID는 모두 `404 not_found`와 “찾을 수 없어요.”로 응답하며 `fields`는 없다. 본문 ID 오류는 `400 invalid`를 유지한다. 주소 끝 `/` 누락도 `404 not_found`이며 “주소를 확인해 주세요. 주소 끝에 /가 필요해요.”로 안내한다.
 - C-12·C-14 해결(10/21): 거래 분류 직후 서버가 기억한 가맹점·같은 카드·금액 ±10%로 매칭하고, 근거가 없으면 같은 카드·금액 ±10%·날짜 ±3일로 찾아 목록의 `evidenceSuggestion`으로 묻는다(1건이면 “이 결제가 맞나요?”, 여러 건이면 “비슷한 결제가 N건 있어요 [고르기]” — 10/21 추가). 연결하면 `funding_bucket=fixed`로 생활비 사용액에서 제외하고 거래 ID를 `evidence`에 더한다. [맞아요]는 기존 PATCH의 `evidenceTransactionId`를 쓰며, [아니에요]는 요청·저장 없이 다음 달 새 결제 때 다시 묻는다. 새 API는 만들지 않는다.
+- 10/27 PR #46 리뷰 반영(회차 구분): 근거 거래는 **회차 하나에만** 연결한다(출금 1건 = 회차 1개). 회차를 지정하지 않으면 목록 후보와 같은 기준(지난 주기 미납 회차가 남아 있으면 그 회차, 없으면 이번 회차)으로 연결하고, 같은 요청을 다시 보내도 결과가 같다. 지난 회차에 잘못 고른 출금은 수정 API의 `evidenceDueId`로 **그 회차만** 바꾸거나 비운다(아래 `2. 수정`). 목록에 회차별 납부 기록 `recentDues`를 추가했다. 사용자가 연결을 푼 출금은 그 회차에 자동으로 다시 붙지 않는다.
 - C-15 해결(10/21): 납부 예정(`PaymentDue`)은 **이번 주기 1건씩** 만든다(1년치를 미리 만들지 않음). 고정지출이 확정될 때 이번 주기 것을, 다음 주기 것은 **그 주기에 홈·예산을 처음 열 때** 만든다(매일 도는 자동 작업 없음, 같은 회차 중복은 `occurrence_key` UNIQUE가 막음). 확정할 때 이번 주기 출금일이 이미 지났으면 출금 거래가 있을 때만 “냄”으로 연결하고 없으면 만들지 않는다. 출금일이 없거나 카드로 내는 고정지출은 만들지 않는다. 수정·중지 규칙의 '이번 달'은 '이번 주기'(급여일 ~ 다음 급여일 전날)로 맞췄다.
 - C-16 해결(10/21): 1차에는 **추가 팝업에서 실제 결제를 고르지 않는다**(팝업에 보여 줄 결제 목록을 받을 API가 없어서). 카드 고정지출을 저장하면 목록의 `evidenceSuggestion`으로 바로 묻고(1건 “이 결제가 맞나요?”, 여러 건 [고르기]), 고른 결제는 `2. 수정`의 `evidenceTransactionId`로 보낸다. 추가 API의 `evidenceTransactionId`는 그대로 두되 1차 화면은 보내지 않는다. 같이 정한 것: **다른 고정지출에 이미 연결된 결제는 후보에서 빼고, 보내면 `400`**(결제 하나가 고정지출 두 개에 연결되지 않게).
 - 10/21 검수 반영: 계좌·카드 `status`에 `relogin` 추가 · 납부 예정은 출금일이 있을 때만 생성 · 후보 정렬 기준은 `created_at`(발견·등록 시각, DB 칸 추가) · 자동 발견 후보는 근거 거래의 계좌·카드를 결제 수단으로 채움 · `categoryDetail` 삭제(DB 칸도 삭제) · 추가의 `paymentDay`는 생략하면 `null` · 근거 거래 선택과 '이 결제가 맞나요?'는 1차에 카드만 · 중지·무시 항목 수정은 404 · 확정·무시의 요청 번호는 버튼을 누를 때 생성 · 고정지출이 바뀌면 이전 초안은 만료(승인 불가)로 확정. 납부 예정을 만드는 때는 C-15, 추가 팝업의 결제 고르기는 C-16으로 확정.
@@ -335,6 +336,15 @@
 | `paymentCardId` | UUID 또는 `null` | X | 비움 | 본인 카드 + `is_selected=true` + 연결 해제 안 됨. 생략하거나 지금과 같은 ID면 유지(연결 해제됐어도 OK), `null`이면 비움. 계좌와 동시 지정 불가 | `null` |
 | `evidenceTransactionId` | UUID 또는 `null` | X | 비움 | **카드 · 계좌로 낼 때만**. 선택한 카드 · 계좌의 본인 실제 결제 · 출금 하나. 근거 거래로 저장하고 가맹점을 기억함(계좌 출금이면 그 회차 납부 예정을 낸 것으로 연결). 목록의 `evidenceSuggestion`을 확정할 때도 이 칸을 쓴다. 생략하면 유지, `null`이면 비움 | `"c8c60113-7ac4-4cc2-998e-6bbbf5404f10"` |
 | `category` | 문자 | X | 400 | `API_RULES.md` 코드표의 10개 + `ETC`. `UNCLASSIFIED` 불가. 생략하면 유지, `null`로 삭제 불가 | `"HOUSING_TELECOM"` |
+| `evidenceDueId` | UUID | X | 400 | **계좌로 낼 때만, `evidenceTransactionId`와 같이**. 근거 거래를 붙이거나 풀 회차. 목록 `recentDues[].dueId`(지난 주기 · 이번 주기 회차) 중 하나. 생략하면 서버가 정한 회차(지난 주기 미납이 있으면 그 회차, 없으면 이번 회차) (10/27) | `"5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90"` |
+
+- **회차 지정 (`evidenceDueId`, 10/27)** — 지정한 회차만 바꾸고 다른 회차의 납부 기록은 그대로 둔다.
+
+  | 보내는 값 | 하는 일 |
+  |---|---|
+  | `evidenceTransactionId` + `evidenceDueId` | 그 회차의 기존 연결을 풀고 고른 출금을 연결한다. 고른 출금이 다른 회차에 붙어 있었으면 그 회차에서 옮긴다(옮겨 간 회차는 납부 상태를 다시 계산) |
+  | `evidenceTransactionId: null` + `evidenceDueId` | 그 회차의 연결만 푼다(지난 회차에 잘못 고른 출금 되돌리기). 푼 출금은 그 회차에 자동으로 다시 붙지 않고 가맹점 기억에서도 뺀다 |
+  | `evidenceDueId`만 보냄 | `400 invalid` (“근거 거래와 같이 보내 주세요.”) |
 
 - 최소 한 칸은 보내야 한다. 빈 객체 `{}`는 `400 invalid`(“바꿀 값을 하나 이상 보내 주세요.”)이다.
 - [공통 수정 요청 규칙](../API_RULES.md#수정-요청-patch)에 따라 안 보낸 칸은 그대로 두고, `null`은 비울 수 있는 칸만 비운다. `paymentDay`를 비우면 “출금일 확인 필요”로 표시하고, `paymentAccountId`·`paymentCardId`를 둘 다 비우면 결제 수단은 모름이다. `evidenceTransactionId`도 비울 수 있다.
@@ -441,6 +451,8 @@ PATCH /api/budgets/fixed/d4e8c728-6103-42d0-a9c7-17e5a694c01f/
 | 계좌·카드 둘 다 보냄(최종 상태에 두 ID 모두 값이 있음) | 400 | `invalid` | `fields.nonFieldErrors`로 계좌·카드·모름 중 하나만 선택하도록 안내 |
 | 선택할 수 없는 계좌/카드(없는 것·남의 것·선택 조건 밖 모두 포함) | 400 | `invalid` | 공통 규칙의 해당 `fields`에 “선택할 수 없는 계좌예요.” / “선택할 수 없는 카드예요.” 표시 |
 | 선택할 수 없는 거래(내 거래가 아님 · 선택한 카드 · 계좌의 거래가 아님 · 다른 고정지출에 이미 연결됨) | 400 | `invalid` | `fields.evidenceTransactionId`에 “선택할 수 없는 거래예요.” 표시 |
+| 선택할 수 없는 회차(`recentDues`에 없음 · 다른 고정지출 회차 · 형식 오류 · 카드 · 결제 수단 모름) | 400 | `invalid` | `fields.evidenceDueId`에 “선택할 수 없는 회차예요.” 표시 |
+| `evidenceDueId`만 보내고 `evidenceTransactionId`가 없음 | 400 | `invalid` | `fields.evidenceDueId`에 “근거 거래와 같이 보내 주세요.” 표시 |
 | `category`가 코드표에 없거나 `UNCLASSIFIED`임 | 400 | `invalid` | 카테고리를 다시 고르도록 안내 |
 | 주소의 없는·남의·형식 틀린 ID, 중지·무시된 항목 | 404 | `not_found` | “찾을 수 없어요.” 표시 후 목록 새로고침. `fields` 없음 |
 | 보내는 값 표에 없는 칸(`status`·`categoryDetail` 등) | 400 | `invalid` | 해당 칸의 `fields`에 “이 칸은 보낼 수 없어요.” |
@@ -566,6 +578,13 @@ GET /api/budgets/fixed/
 | `items[].evidenceSuggestion.candidates[].merchantName` | 문자 | 가맹점 이름 |
 | `items[].evidenceSuggestion.candidates[].date` | 날짜 | 거래일, `YYYY-MM-DD` |
 | `items[].evidenceSuggestion.candidates[].amount` | 정수 | 거래 금액, 원 단위 |
+| `items[].evidenceSuggestion.dueId` | UUID 또는 `null` | 이 후보로 갚을 회차(지난 주기 미납이 있으면 그 회차, 없으면 이번 회차). 카드 · 아직 회차가 없으면 `null` (10/27) |
+| `items[].evidenceSuggestion.dueDate` | 날짜 | 그 회차의 출금일 (10/27) |
+| `items[].recentDues` | 배열 | **계좌** 고정지출의 지난 주기 · 이번 주기 회차와 연결된 출금. 카드 · 모름이면 `[]`. 회차를 골라 근거 거래를 바꾸거나 비울 때 `dueId`를 수정 요청의 `evidenceDueId`로 보냄 (10/27) |
+| `items[].recentDues[].dueId` | UUID | 회차(납부 예정) ID |
+| `items[].recentDues[].dueDate` | 날짜 | 출금일 |
+| `items[].recentDues[].paymentState` | 문자 | `unpaid` · `partial` · `paid` · `needs_review` |
+| `items[].recentDues[].transactions` | 배열 | 이 회차에 연결된 출금 `{ transactionId, merchantName, date, amount }`. 없으면 `[]` |
 | `summary` | 객체 | 확정 항목의 월 금액 합계와 후보 수 |
 | `summary.confirmedMonthlyTotal` | 정수 | 확정 항목의 `amount` 합계, 원 단위. 후보 제외. “매달 고정지출 합계” 표시용이며 예산에서 뺄 금액이 아님 |
 | `summary.suggestedCount` | 정수 | 후보(`suggested`) 항목 수 |
