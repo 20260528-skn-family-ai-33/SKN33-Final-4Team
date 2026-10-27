@@ -431,3 +431,182 @@ class FixedConcurrencyTest(FixedFixture, TransactionTestCase):
         )
         self.assertEqual(codes, (200, 400))
         self.assertEqual(sorted(RecurringExpense.objects.values_list("status", flat=True)), ["confirmed", "confirmed"])
+
+
+class FixedTransferConvertTest(FixedFixture, TestCase):
+    """2차 리뷰 2. 월세 이체를 연결하면 소비 + 고정비로, 풀면 원래 이체로"""
+
+    def setUp(self):
+        self.make_world()
+        self.past = self.today - timedelta(days=2)
+        self.e = self.make_expense(payment_day=self.past.day, payment_account=self.account)
+
+    def detail(self, tx):
+        r = self.client.get(f"/api/finance/transactions/{tx.pk}/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()
+
+    def test_link_converts_transfer_and_unlink_restores(self):
+        tx = self.make_tx(self.past, source_description="집주인", confirmed_category_id="UNCLASSIFIED",
+                          confirmation_state="needs_review")
+        r = send(self.client, "patch", f"{URL}{self.e.pk}/", {"evidenceTransactionId": str(tx.pk)})
+        self.assertEqual(r.status_code, 200, r.content)
+
+        tx.refresh_from_db()
+        self.assertEqual((tx.transaction_type, tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
+                         ("spending", "HOUSING_TELECOM", "confirmed", "user"))
+        self.assertEqual(tx.field_states["original_transaction_type"], "transfer")
+        item = self.detail(tx)
+        self.assertEqual((item["funding"], item["fixedExpenseId"]), ("fixed", str(self.e.pk)))   # 소비 · 고정비로 보임
+
+        # 고정지출에 연결된 동안은 거래 목록에서 이체로 되돌릴 수 없음 (기존 규칙 AA⑤)
+        self.assertEqual(send(self.client, "patch", f"/api/finance/transactions/{tx.pk}/", {"category": None}).status_code, 400)
+
+        # 연결을 풀면 원래 이체로
+        self.assertEqual(send(self.client, "patch", f"{URL}{self.e.pk}/", {"evidenceTransactionId": None}).status_code, 200)
+        tx.refresh_from_db()
+        self.assertEqual((tx.transaction_type, tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
+                         ("transfer", "UNCLASSIFIED", "needs_review", None))
+        self.assertNotIn("original_transaction_type", tx.field_states)
+        self.assertNotIn("converted_by_fixed", tx.field_states)
+
+    def test_auto_link_on_create_converts_too(self):
+        tx = self.make_tx(self.past)
+        r = send(self.client, "post", URL, {"name": "월세", "amount": 700000, "category": "HOUSING_TELECOM",
+                                             "paymentDay": self.past.day, "paymentAccountId": str(self.account.pk)})
+        self.assertEqual(r.status_code, 201, r.content)
+        tx.refresh_from_db()
+        self.assertEqual((tx.transaction_type, tx.classification_source), ("spending", "rule"))
+        self.assertEqual(self.detail(tx)["funding"], "fixed")
+
+    def test_user_converted_spending_stays_spending_after_unlink(self):
+        """사용자가 거래 목록에서 직접 소비로 바꾼 거래는 연결을 풀어도 소비 그대로"""
+        tx = self.make_tx(self.past, transaction_type="spending", confirmed_category_id="FOOD",
+                          field_states={"original_transaction_type": "transfer"})
+        send(self.client, "patch", f"{URL}{self.e.pk}/", {"evidenceTransactionId": str(tx.pk)})
+        send(self.client, "patch", f"{URL}{self.e.pk}/", {"evidenceTransactionId": None})
+        tx.refresh_from_db()
+        self.assertEqual((tx.transaction_type, tx.confirmed_category_id), ("spending", "FOOD"))
+        self.assertEqual(tx.field_states, {"original_transaction_type": "transfer"})
+
+
+class FixedEvidenceSuggestionTest(FixedFixture, TestCase):
+    """2차 리뷰 3. 목록의 evidenceSuggestion — 고를 수 있는 후보 내려주기"""
+
+    def setUp(self):
+        self.make_world()
+        self.due_day = self.today - timedelta(days=1)
+
+    def suggestion(self, expense):
+        r = self.client.get(URL)
+        self.assertEqual(r.status_code, 200, r.content)
+        return next(i for i in r.json()["items"] if i["recurringId"] == str(expense.pk))["evidenceSuggestion"]
+
+    def test_account_two_withdrawals_gives_candidates(self):
+        e = self.make_expense(payment_day=self.due_day.day, payment_account=self.account)
+        near = self.make_tx(self.due_day, amount=705000, source_description="집주인")
+        far = self.make_tx(self.due_day - timedelta(days=2), amount=700000, source_description="집주인")
+        self.make_tx(self.due_day, account=self.account2)                       # 다른 계좌 X
+        self.make_tx(self.due_day, amount=500000)                               # 금액 차이 큼 X
+        self.make_tx(self.due_day - timedelta(days=5))                          # 날짜 멀음 X
+        s = self.suggestion(e)
+        self.assertEqual(s["count"], 2)
+        self.assertEqual([c["transactionId"] for c in s["candidates"]], [str(near.pk), str(far.pk)])   # 날짜 가까운 순
+        self.assertEqual(s["candidates"][0], {"transactionId": str(near.pk), "merchantName": "집주인",
+                                              "date": self.due_day.isoformat(), "amount": 705000})
+
+        # 고르면 → 연결되고 제안은 사라짐
+        send(self.client, "patch", f"{URL}{e.pk}/", {"evidenceTransactionId": str(near.pk)})
+        self.assertIsNone(self.suggestion(e))
+
+    def test_account_one_withdrawal_is_not_asked(self):
+        e = self.make_expense(payment_day=self.due_day.day, payment_account=self.account)
+        self.make_tx(self.due_day)
+        self.assertIsNone(self.suggestion(e))
+
+    def test_late_payment_on_needs_review_due(self):
+        """출금일 +3일이 지난 회차는 늦게 낸 출금 1건도 고를 수 있게"""
+        due_day = self.today - timedelta(days=6)
+        e = self.make_expense(payment_day=due_day.day, payment_account=self.account)
+        late = self.make_tx(self.today - timedelta(days=1))
+        s = self.suggestion(e)
+        self.assertEqual((s["count"], s["candidates"][0]["transactionId"]), (1, str(late.pk)))
+
+    def test_card_without_evidence_one_payment(self):
+        e = self.make_expense(name="OTT", amount=15000, payment_day=self.due_day.day, payment_card=self.card)
+        tx = self.make_tx(self.due_day, amount=15000, card=self.card, merchant_name="구독 서비스")
+        s = self.suggestion(e)
+        self.assertEqual((s["count"], s["candidates"][0]["merchantName"]), (1, "구독 서비스"))
+        RecurringExpense.objects.filter(pk=e.pk).update(evidence=[str(tx.pk)])
+        self.assertIsNone(self.suggestion(e))   # 근거 거래가 있으면 묻지 않음
+
+    def test_excludes_other_expense_and_caps_at_five(self):
+        e = self.make_expense(payment_day=self.due_day.day, payment_account=self.account)
+        taken = self.make_tx(self.due_day)
+        self.make_expense(name="관리비", evidence=[str(taken.pk)])
+        for _ in range(6):
+            self.make_tx(self.due_day)
+        s = self.suggestion(e)
+        self.assertEqual((s["count"], len(s["candidates"])), (6, 5))
+        self.assertNotIn(str(taken.pk), [c["transactionId"] for c in s["candidates"]])
+
+    def test_no_suggestion_without_day_or_for_candidates(self):
+        no_day = self.make_expense(payment_account=self.account)
+        candidate = self.make_expense(status="suggested", payment_day=self.due_day.day, payment_account=self.account)
+        self.make_tx(self.due_day)
+        self.make_tx(self.due_day)
+        self.assertIsNone(self.suggestion(no_day))
+        self.assertIsNone(self.suggestion(candidate))
+
+
+@skipUnless(connection.vendor == "postgresql", "행 잠금(select_for_update)은 PostgreSQL 에서만 확인")
+class FixedAutoLinkConcurrencyTest(FixedFixture, TransactionTestCase):
+    """2차 리뷰 1. 고정지출 두 개를 동시에 등록해도 같은 출금 하나가 두 번 '냄'이 되지 않음
+
+    'slow' 스레드는 맞는 출금을 찾은 직후(잠그기 전) 잠깐 멈춘다 → 그 사이 다른 요청이 같은 출금을 연결하고 끝냄.
+    잠근 뒤 다시 확인하지 않으면 slow 쪽도 같은 출금을 연결해 버린다.
+    """
+    serialized_rollback = True
+
+    def setUp(self):
+        self.make_world()
+        self.past = self.today - timedelta(days=5)
+
+    def test_same_withdrawal_is_linked_once(self):
+        from budgets import api
+
+        tx = self.make_tx(self.past)
+        original = api.matching_payments
+
+        def slow_matching(*args, **kwargs):
+            found = original(*args, **kwargs)
+            if threading.current_thread().name == "slow":
+                time.sleep(0.5)
+            return found
+
+        body = lambda name: {"name": name, "amount": 700000, "category": "HOUSING_TELECOM",  # noqa: E731
+                             "paymentDay": self.past.day, "paymentAccountId": str(self.account.pk)}
+        results = {}
+
+        def worker(key, name):
+            try:
+                client = APIClient()
+                client.force_authenticate(self.user)
+                results[key] = send(client, "post", URL, body(name)).status_code
+            finally:
+                connection.close()
+
+        with mock.patch.object(api, "matching_payments", slow_matching):
+            t1 = threading.Thread(target=worker, args=("first", "월세 A"), name="slow")
+            t2 = threading.Thread(target=worker, args=("second", "월세 B"), name="fast")
+            t1.start()
+            time.sleep(0.1)
+            t2.start()
+            t1.join(10)
+            t2.join(10)
+
+        self.assertEqual((results["first"], results["second"]), (201, 201))
+        self.assertEqual(PaymentMatch.objects.filter(transaction=tx).count(), 1)
+        self.assertEqual(PaymentDue.objects.filter(payment_state="paid").count(), 1)
+        linked = [e.name for e in RecurringExpense.objects.all() if str(tx.pk) in (e.evidence or [])]
+        self.assertEqual(len(linked), 1)
