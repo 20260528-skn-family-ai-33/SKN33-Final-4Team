@@ -9,7 +9,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import Client, SimpleTestCase, TestCase, override_settings
 from django.utils import timezone
 
 from users.models import Consent
@@ -271,13 +271,85 @@ class LoanSyncTest(TestCase):
         with self.assertRaises(PermissionError):
             self.sync()
         self.assertFalse(Loan.objects.filter(user=self.user).exists())
+        self.assertEqual(SyncRun.objects.get(user=self.user).error_code, "consent_required")
+
+    @override_settings(ALLOWED_HOSTS=["testserver"])
+    def test_disconnect_api_during_fetch_blocks_save(self):
+        client = Client()
+        client.force_login(self.user)
+        original = self.response
+        def response(path, params):
+            result = original(path, params)
+            if path == codef.PATH_LOAN_TRANSACTIONS:
+                reply = client.delete(f"/api/finance/connections/{self.connection.pk}/")
+                self.assertEqual(reply.status_code, 204, reply.content)
+            return result
+        self.request.side_effect = response
+        with self.assertRaisesMessage(ValueError, "연결 상태가 바뀌어"):
+            self.sync()
+        self.connection.refresh_from_db()
+        self.assertEqual(self.connection.status, "disconnected")
+        self.assertIsNotNone(self.connection.disconnected_at)
+        self.assertFalse(Loan.objects.filter(user=self.user).exists())
+        run = SyncRun.objects.get(user=self.user)
+        self.assertEqual((run.status, run.error_code), ("failed", "connection_changed"))
 
     def test_newer_snapshot_is_not_overwritten(self):
         self.sync()
-        Loan.objects.filter(user=self.user).update(fetched_at=timezone.now() + timedelta(minutes=1))
+        SyncRun.objects.filter(loan__user=self.user, status="success").update(
+            started_at=timezone.now() + timedelta(minutes=1),
+        )
         self.details[NUMBER]["resLoanBalance"] = "100"
         self.assertEqual(self.sync()["skipped_count"], 1)
         self.assertEqual(Loan.objects.get(user=self.user).reported_balance, 120000000)
+
+    def test_completion_time_does_not_define_request_order(self):
+        self.sync()
+        Loan.objects.filter(user=self.user).update(fetched_at=timezone.now() + timedelta(minutes=1))
+        self.details[NUMBER]["resLoanBalance"] = "100"
+        self.assertEqual(self.sync()["updated_count"], 1)
+        self.assertEqual(Loan.objects.get(user=self.user).reported_balance, 100)
+
+    def test_failed_newer_run_does_not_block_successful_refresh(self):
+        self.sync()
+        loan = Loan.objects.get(user=self.user)
+        SyncRun.objects.create(
+            user=self.user, connection=self.connection, loan=loan,
+            product_code="loan_transaction_list", status="failed",
+            started_at=timezone.now() + timedelta(minutes=1),
+        )
+        self.details[NUMBER]["resLoanBalance"] = "100"
+        self.assertEqual(self.sync()["updated_count"], 1)
+        loan.refresh_from_db()
+        self.assertEqual(loan.reported_balance, 100)
+
+    def test_legacy_loan_without_success_run_can_be_refreshed(self):
+        loan = Loan.objects.create(
+            user=self.user, connection=self.connection, origin="provider",
+            source_loan_key=hashlib.sha256(NUMBER.encode()).hexdigest(),
+            fetched_at=timezone.now() + timedelta(minutes=1),
+        )
+        self.assertEqual(self.sync()["updated_count"], 1)
+        loan.refresh_from_db()
+        self.assertEqual(loan.reported_balance, 120000000)
+
+    def test_unsupported_mixed_accounts_leave_all_previous_values_unchanged(self):
+        self.sync()
+        self.details[NUMBER]["resLoanBalance"] = "100"
+        for change, reason in [
+            ({"resAccountCurrency": "USD"}, "unsupported_loan_currency"),
+            ({"resAccountCurrency": ""}, "unsupported_loan_currency"),
+            ({"resAccountLoanExecNo": "1"}, "unsupported_loan_execution"),
+        ]:
+            with self.subTest(change=change):
+                self.accounts = [account(), {**account("22345678901234"), **change}]
+                self.request.reset_mock()
+                with self.assertRaises(LoanDataError):
+                    self.sync()
+                self.assertEqual(self.request.call_count, 1)
+                self.assertEqual(Loan.objects.get(user=self.user).reported_balance, 120000000)
+                run = SyncRun.objects.filter(user=self.user, product_code="loan_sync").latest("started_at")
+                self.assertEqual((run.status, run.error_code), ("failed", reason))
 
     def test_product_name_masks_raw_and_formatted_identifiers(self):
         self.accounts[0]["resAccountName"] = f"{NUMBER} / 123456-78-901234"
@@ -295,6 +367,15 @@ class LoanSyncTest(TestCase):
         with self.assertRaises(CommandError) as error:
             call_command("codef_sync_loans", email=self.user.email, org="0004", start=START, end=END)
         self.assertNotIn("secret", str(error.exception))
+        self.assertIn("CODEF 대출 조회", str(error.exception))
+        self.assertEqual(SyncRun.objects.get(user=self.user, status="failed").error_code, "provider_error")
+
+    def test_command_distinguishes_missing_user_and_connection(self):
+        with self.assertRaisesMessage(CommandError, "회원을 찾을 수"):
+            call_command("codef_sync_loans", email="missing-loan-user@example.invalid", org="0004", start=START, end=END)
+        with self.assertRaisesMessage(CommandError, "활성 은행 연결"):
+            call_command("codef_sync_loans", email=self.user.email, org="0088", start=START, end=END)
+        self.request.assert_not_called()
 
     @override_settings(CODEF={"ENV": "sandbox", "CONNECTED_ID": "example"})
     def test_command_rejects_sandbox_in_user_database(self):
