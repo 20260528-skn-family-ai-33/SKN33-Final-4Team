@@ -397,3 +397,52 @@ class HomeConcurrencyTest(TransactionTestCase):
         self.assertIsInstance(results.get("home"), dict, results.get("home"))
         self.assertEqual(results.get("patch"), 200)
         self.assertEqual(PaymentDue.objects.get(recurring=self.expense).payment_state, "paid")
+
+
+class HomePaymentReviewTest(HomeFixture):
+    """PR #46 리뷰: 늦게 낸 지난달 미납 · 연결 해제 후 자동 재연결 · 미래 날짜 출금"""
+
+    def at(self, day):
+        return patch("django.utils.timezone.localdate", return_value=day)
+
+    def fixed_patch(self, expense, body, day):
+        with self.at(day):
+            return self.client.patch(f"/api/budgets/fixed/{expense.pk}/", body, format="json")
+
+    def test_late_payment_links_to_previous_unpaid_due(self):
+        """9/20 회차를 못 내고 10/2에 늦게 냄 → 후보에 보이고, 고르면 이번 달(10/20)이 아니라 9/20 회차에 연결"""
+        expense = self.make_expense(payment_day=20, confirmed_at=timezone.make_aware(datetime(2026, 8, 1)))
+        self.home(date(2026, 9, 21))                       # 지난 주기(8/25~9/24) 회차 9/20
+        self.home(date(2026, 10, 1))                       # 이번 주기(9/25~10/24), 9/20 은 미납 확인 필요
+        tx = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+
+        with self.at(date(2026, 10, 2)):
+            item = self.client.get("/api/budgets/fixed/").json()["items"][0]
+        self.assertEqual([c["transactionId"] for c in item["evidenceSuggestion"]["candidates"]], [str(tx.pk)])
+
+        self.assertEqual(self.fixed_patch(expense, {"evidenceTransactionId": str(tx.pk)}, date(2026, 10, 2)).status_code, 200)
+        old = PaymentDue.objects.get(recurring=expense, due_date=date(2026, 9, 20))
+        new = PaymentDue.objects.get(recurring=expense, due_date=date(2026, 10, 20))
+        self.assertEqual((old.payment_state, new.payment_state), ("paid", "unpaid"))
+        self.assertFalse(new.matches.exists())
+        self.assertEqual([i["due_date"] for i in self.home(date(2026, 10, 2))["must_pay"]], ["2026-10-20"])
+
+    def test_unlinked_withdrawal_is_not_auto_linked_again(self):
+        """자동 연결된 출금을 사용자가 풀면, 홈을 다시 열어도 그 회차에 다시 붙지 않음"""
+        expense = self.make_expense(payment_day=19)
+        self.home(date(2026, 10, 17))
+        self.make_tx(date(2026, 10, 19), 700_000, direction="out")
+        self.home(date(2026, 10, 23))
+        self.assertEqual(PaymentDue.objects.get().payment_state, "paid")
+
+        self.assertEqual(self.fixed_patch(expense, {"evidenceTransactionId": None}, date(2026, 10, 23)).status_code, 200)
+        items = self.home(date(2026, 10, 23))["must_pay"]
+        self.assertEqual([i["payment_state"] for i in items], ["needs_review"])
+        self.assertFalse(PaymentDue.objects.get().matches.exists())
+
+    def test_future_dated_withdrawal_is_not_paid_yet(self):
+        """오늘보다 뒤 날짜로 저장된 출금은 아직 안 나간 돈 → 자동 연결하지 않음, 그날이 되면 연결"""
+        self.make_expense(payment_day=20)
+        self.make_tx(date(2026, 10, 22), 700_000, direction="out")
+        self.assertEqual([i["payment_state"] for i in self.home(date(2026, 10, 21))["must_pay"]], ["unpaid"])
+        self.assertEqual(self.home(date(2026, 10, 22))["must_pay"], [])
