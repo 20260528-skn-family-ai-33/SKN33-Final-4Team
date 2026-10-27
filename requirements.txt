@@ -17,6 +17,9 @@ easycodefpy==1.0.1
 # PostgreSQL 드라이버; binary extra로 libpq·컴파일러 설치 없이 사용
 psycopg[binary]==3.3.6
 
+# 벡터 검색 (가맹점 이름 유사도, finance.MerchantEmbedding)
+pgvector==0.5.1
+
 # ===== ML =====
 # 거래 분류 · 카테고리 비율 예측 · 또래 비교 회귀
 numpy==2.5.4

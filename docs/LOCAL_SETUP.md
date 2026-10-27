@@ -82,7 +82,7 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 `비밀번호` 부분을 3단계의 `POSTGRES_PASSWORD`와 **똑같이** 바꿔서 한 줄로 실행:
 
 ```powershell
-docker run --name money-cushion-db -e POSTGRES_DB=money_cushion -e POSTGRES_USER=money_cushion -e POSTGRES_PASSWORD=비밀번호 -p 5432:5432 -d postgres:17
+docker run --name money-cushion-db -e POSTGRES_DB=money_cushion -e POSTGRES_USER=money_cushion -e POSTGRES_PASSWORD=비밀번호 -p 5432:5432 -d pgvector/pgvector:pg17
 docker ps
 ```
 
@@ -172,7 +172,7 @@ docker run --name money-cushion-db \
   -e POSTGRES_DB=money_cushion \
   -e POSTGRES_USER=money_cushion \
   -e POSTGRES_PASSWORD=비밀번호 \
-  -p 5432:5432 -d postgres:17
+  -p 5432:5432 -d pgvector/pgvector:pg17
 docker ps
 ```
 
@@ -247,6 +247,19 @@ python manage.py createsuperuser   # 이메일로 만든다
 
 > 처음 세팅하는 사람은 이 부분을 건너뛴다.
 
+## 이미 세팅했던 사람만 (2026-10-27 이전에 `postgres:17`로 컨테이너를 만든 경우)
+
+2026-10-27에 벡터 검색 테이블(`finance` 0009)이 추가됐다. 이 마이그레이션은 DB에 **pgvector**가 있어야 한다.
+`git pull` 후 `migrate` 전에 **한 번만** 실행한다. (Windows·macOS 같은 명령, DB 데이터는 그대로 남는다)
+
+```
+docker exec money-cushion-db bash -c "apt-get update && apt-get install -y postgresql-17-pgvector"
+cd backend
+python manage.py migrate
+```
+
+> 컨테이너를 지우고(`docker rm`) 다시 만들면 이 설치도 사라진다. 다시 만들 때는 4단계처럼 `pgvector/pgvector:pg17` 이미지를 쓴다.
+
 테이블 확인 방법·모델 배치·작성 규칙은 [`DB_MODELS.md`](DB_MODELS.md).
 
 ## 자주 나는 에러
@@ -259,6 +272,7 @@ python manage.py createsuperuser   # 이메일로 만든다
 | `port is already allocated` (5432) | PC에 PostgreSQL이 따로 설치돼 실행 중 | 기존 PostgreSQL 서비스 중지. 또는 `-p 5433:5432`로 띄우고 `.env`의 `POSTGRES_PORT=5433` |
 | `Conflict. The container name ... is already in use` | 이미 만든 컨테이너 | `docker start money-cushion-db` |
 | `InconsistentMigrationHistory` | 예전 DB에 새 회원 모델을 얹으려 함 | 위 **이미 세팅했던 사람만** 따라 하기 |
+| `could not open extension control file ... vector.control` (migrate 때) | DB에 pgvector가 없음 | 위 **2026-10-27 이전에 `postgres:17`로 컨테이너를 만든 경우** 따라 하기 |
 | `You have N unapplied migration(s)` (runserver 때) | `git pull`로 새 migration을 받았는데 적용 안 함 | `python manage.py migrate` |
 | `No module named 'django'` / `'rest_framework'` | 가상환경 꺼짐 / 패키지 안 깔림 | 가상환경 켜고 `pip install -r requirements.txt` |
 | 화면에 **"데이터를 못 불러왔어요"** | Django 서버가 꺼져 있음 | 터미널 1에서 `python manage.py runserver` |

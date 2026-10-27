@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 25개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·이전 대화), 목업 4개(홈·연결 해제·챗봇 메시지·작업 확인), 미구현 6개(카드·대출)입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈의 응답 형태도 확정 계약과 다릅니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), 금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 26개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·홈·이전 대화), 목업 3개(연결 해제·챗봇 메시지·작업 확인), 미구현 6개(카드·대출)입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), 금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -1048,7 +1048,7 @@
         "tags": [
           "금융 동의 · 연결"
         ],
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.\n\n현재 미구현인 API 계약이다. 요청 본문 없이 기관 연결 하나를 해제한다. 행을 삭제하지 않고 disconnected_at과 status=disconnected를 기록한다. 연결의 계좌·카드도 응답에서 disconnected 상태가 되며 과거 거래는 남는다. 이미 해제한 본인 연결에도 204를 반환하며 Idempotency-Key는 사용하지 않는다. 없는 연결·타인 연결·주소 UUID 형식 오류는 404다. 해제한 계좌의 isSelected는 유지하고 해제 전 거래도 소비 집계에 포함한다. 이 API는 고정지출·정기 저축을 직접 중지하지 않는다. 화면의 별도 확인 선택은 기본 체크 안 함이며 선택한 항목만 기존 고정지출·저축 DELETE API로 중지한다. 선택하지 않은 항목은 유지하고 결제 수단을 연결 해제됨으로 표시한다. 여러 기관이 공유하는 connectedId의 마지막 기관 해제 처리, 진행 중 sync 결과 처리, 항목 중지와 연결 해제의 순서·부분 실패 정책은 원문 확인 필요 사항이다.\n\n원본: `docs/api/finance-connect.md`",
+        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.\n\n현재 미구현인 API 계약이다. 요청 본문 없이 기관 연결 하나를 해제한다. 행을 삭제하지 않고 disconnected_at과 status=disconnected를 기록한다. 연결의 계좌·카드도 응답에서 disconnected 상태가 되며 과거 거래는 남는다. 이미 해제한 본인 연결에도 204를 반환하며 Idempotency-Key는 사용하지 않는다. 없는 연결·타인 연결·주소 UUID 형식 오류는 404다. 해제한 계좌의 isSelected는 유지하고 해제 전 거래도 소비 집계에 포함한다. 이 API는 고정지출·정기 저축을 직접 중지하지 않는다. 화면의 별도 확인 선택은 기본 체크 안 함이며 선택한 항목만 기존 고정지출·저축 DELETE API로 중지한다. 선택하지 않은 항목은 유지하고 결제 수단을 연결 해제됨으로 표시한다. 여러 기관이 공유하는 connectedId의 마지막 기관 해제 처리, 진행 중 sync 결과 처리, 항목 중지와 연결 해제의 순서·부분 실패 정책은 원문 확인 필요 사항이다.\n\n원본: `docs/api/finance-connect.md`",
         "security": [
           {
             "sessionAuth": []
@@ -2969,7 +2969,8 @@
                             "date": "2026-10-20",
                             "amount": 55000
                           },
-                          "evidenceSuggestion": null
+                          "evidenceSuggestion": null,
+                          "recentDues": []
                         },
                         {
                           "recurringId": "d4e8c728-6103-42d0-a9c7-17e5a694c01f",
@@ -2997,8 +2998,11 @@
                                 "date": "2026-10-05",
                                 "amount": 15000
                               }
-                            ]
-                          }
+                            ],
+                            "dueId": null,
+                            "dueDate": "2026-10-05"
+                          },
+                          "recentDues": []
                         },
                         {
                           "recurringId": "a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4",
@@ -3017,7 +3021,28 @@
                           "category": "HOUSING_TELECOM",
                           "categoryName": "주거·통신",
                           "evidence": null,
-                          "evidenceSuggestion": null
+                          "evidenceSuggestion": null,
+                          "recentDues": [
+                            {
+                              "dueId": "5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90",
+                              "dueDate": "2026-09-25",
+                              "paymentState": "paid",
+                              "transactions": [
+                                {
+                                  "transactionId": "9a1f3c2e-4b5d-4e6f-8a7b-1c2d3e4f5a6b",
+                                  "merchantName": "집주인",
+                                  "date": "2026-09-25",
+                                  "amount": 700000
+                                }
+                              ]
+                            },
+                            {
+                              "dueId": "0d3b6f2a-1c4e-4a5b-9d8c-7e6f5a4b3c2d",
+                              "dueDate": "2026-10-25",
+                              "paymentState": "unpaid",
+                              "transactions": []
+                            }
+                          ]
                         }
                       ],
                       "summary": {
@@ -3563,6 +3588,19 @@
                         }
                       }
                     }
+                  },
+                  "invalidDue": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "evidenceDueId": [
+                            "선택할 수 없는 회차예요."
+                          ]
+                        }
+                      }
+                    }
                   }
                 }
               }
@@ -3632,6 +3670,13 @@
                 "clearEvidence": {
                   "value": {
                     "evidenceTransactionId": null
+                  }
+                },
+                "undoLastMonth": {
+                  "summary": "지난달 회차에 잘못 고른 출금 되돌리기",
+                  "value": {
+                    "evidenceTransactionId": null,
+                    "evidenceDueId": "5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90"
                   }
                 }
               }
@@ -5303,12 +5348,12 @@
     "/api/home/": {
       "get": {
         "operationId": "getHome",
-        "summary": "[목업] 홈 화면 보기",
+        "summary": "[구현] 홈 화면 보기",
         "tags": [
           "홈"
         ],
         "x-source": "docs/api/home.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.\n\n기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.\n\n원본: `docs/api/home.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.\n\n원본: `docs/api/home.md`",
         "responses": {
           "200": {
             "description": "정상 처리",
@@ -5401,7 +5446,7 @@
             }
           }
         },
-        "x-implementation-status": "mock"
+        "x-implementation-status": "implemented"
       }
     },
     "/api/chat/conversations/{id}/": {
@@ -5529,7 +5574,7 @@
           "통합 챗봇"
         ],
         "x-source": "docs/api/chat.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.\n\ntext와 choice 중 정확히 하나를 보냅니다. conversationId=null은 새 대화입니다. 응답 messages에는 사용자 메시지와 봇 답변 모두 포함됩니다.\n\nLLM은 문장을 해석하고 소비 숫자는 서버가 집계하며 문장은 템플릿으로 만듭니다. 라우터 실패는 200 + intent=unknown, fallback=true로 안내합니다. 선택지 요청은 fallback=false. 실패 시 기존 active_agent·slots는 유지합니다.\n\n소비는 달력월 기준이고 비교는 지난달 같은 일자까지(없는 날짜는 말일). 고정지출을 포함하고 fixedAmount로 따로 표시하며 카드값·저축·대출상환은 소비에 넣지 않습니다. 같은 구매는 한 번만 셉니다.\n\nbudget 의도는 현재 안내 글 + task=null인 기본 계약이며 실제 조정 작업 연결은 결정 후입니다. big은 3차 안내, out은 범위 안내 + 선택지입니다. 본문의 없는·남의·끝난 conversationId는 400이며 404가 아닙니다.\n\n원본: `docs/api/chat.md`",
+        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.\n\ntext와 choice 중 정확히 하나를 보냅니다. conversationId=null은 새 대화입니다. 응답 messages에는 사용자 메시지와 봇 답변 모두 포함됩니다.\n\nLLM은 문장을 해석하고 소비 숫자는 서버가 집계하며 문장은 템플릿으로 만듭니다. 라우터 실패는 200 + intent=unknown, fallback=true로 안내합니다. 선택지 요청은 fallback=false. 실패 시 기존 active_agent·slots는 유지합니다.\n\n소비는 달력월 기준이고 비교는 지난달 같은 일자까지(없는 날짜는 말일). 고정지출을 포함하고 fixedAmount로 따로 표시하며 카드값·저축·대출상환은 소비에 넣지 않습니다. 같은 구매는 한 번만 셉니다.\n\nbudget 의도는 현재 안내 글 + task=null인 기본 계약이며 실제 조정 작업 연결은 결정 후입니다. big은 3차 안내, out은 범위 안내 + 선택지입니다. 본문의 없는·남의·끝난 conversationId는 400이며 404가 아닙니다.\n\n원본: `docs/api/chat.md`",
         "requestBody": {
           "required": true,
           "content": {
@@ -5705,7 +5750,7 @@
             "description": "UUID. 없는 항목·남의 항목·형식 오류는 모두 404."
           }
         ],
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정 계약과 다릅니다.\n\nqueued·running이면 원문 기본안은 2초 후 재조회, succeeded·failed·canceled이면 중단합니다. 실제 비동기 사용 여부·조회 간격·최대 대기 시간·result 구조·error.code 목록·작업 취소 API는 결정 후입니다. 예산 조정안 만료는 작업 succeeded 상태를 바꾸지 않고 승인 시 알립니다.\n\n원본: `docs/api/chat.md`",
+        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.\n\nqueued·running이면 원문 기본안은 2초 후 재조회, succeeded·failed·canceled이면 중단합니다. 실제 비동기 사용 여부·조회 간격·최대 대기 시간·result 구조·error.code 목록·작업 취소 API는 결정 후입니다. 예산 조정안 만료는 작업 succeeded 상태를 바꾸지 않고 승인 시 알립니다.\n\n원본: `docs/api/chat.md`",
         "responses": {
           "200": {
             "description": "정상 처리",
@@ -7582,6 +7627,17 @@
             },
             "maxItems": 5,
             "description": "출금일과 날짜가 가까운 순, 금액 차이가 작은 순. 다른 고정지출에 연결된 결제 제외."
+          },
+          "dueId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "이 후보로 갚을 회차. 카드·아직 회차가 없으면 null (10/27)."
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "description": "그 회차의 출금일 (10/27)."
           }
         },
         "required": [
@@ -7889,6 +7945,13 @@
           },
           "evidenceSuggestion": {
             "$ref": "#/components/schemas/FixedEvidenceSuggestion"
+          },
+          "recentDues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedRecentDue"
+            },
+            "description": "계좌 고정지출의 지난 주기·이번 주기 회차. 카드·모름이면 []. dueId 를 수정 요청의 evidenceDueId 로 보냄 (10/27)."
           }
         },
         "required": [
@@ -8049,6 +8112,11 @@
           },
           "category": {
             "$ref": "#/components/schemas/SelectableCategoryCode"
+          },
+          "evidenceDueId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "계좌 고정지출에서 evidenceTransactionId 와 같이 보낼 때만. 근거 거래를 붙이거나(값) 풀(null) 회차. 목록 recentDues[].dueId 중 하나. 생략하면 서버가 정한 회차(지난 주기 미납이 있으면 그 회차, 없으면 이번 회차). 지정한 회차만 바꾸고 다른 회차의 납부 기록은 유지 (10/27)."
           }
         },
         "minProperties": 1,
@@ -8072,6 +8140,42 @@
         ],
         "additionalProperties": false,
         "description": "여러 후보를 한 번에 처리한다. 원문에 빈 배열·중복 ID 정책의 별도 제한은 정의되어 있지 않다."
+      },
+      "FixedRecentDue": {
+        "type": "object",
+        "properties": {
+          "dueId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "paymentState": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "partial",
+              "paid",
+              "needs_review"
+            ]
+          },
+          "transactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedEvidence"
+            },
+            "description": "이 회차에 연결된 출금. 없으면 []"
+          }
+        },
+        "required": [
+          "dueId",
+          "dueDate",
+          "paymentState",
+          "transactions"
+        ],
+        "description": "지난 주기·이번 주기 회차 하나와 연결된 출금 (10/27)."
       },
       "RecurringSaving": {
         "type": "object",
@@ -9277,10 +9381,10 @@
     "docs/api/finance-connect.md": "1a2ef298979ccc0b4c23c90a7fb02a0ecdaf47c30c0c14693ff88feebe781879",
     "docs/api/cards.md": "7b542541d1707c84fe38bff695f2646ec0003543283a2f3430b6cf144ebf5371",
     "docs/api/loans.md": "42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077",
-    "docs/api/transactions.md": "e5084b6466516b280bbfd837cdd27ccd80fd08a11624ec471dfb2112588ec17c",
-    "docs/api/fixed.md": "3229def7865c1148bd94c489d6bab4a9a9306bddbf4dd588a6fd7782c8d4bdd0",
+    "docs/api/transactions.md": "47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88",
+    "docs/api/fixed.md": "76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115",
     "docs/api/savings.md": "dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935",
-    "docs/api/home.md": "4c7fe1beedc5936c85ef48b8127605eb9a86a19095f2204cd5778435d2c6496d",
+    "docs/api/home.md": "8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99",
     "docs/api/chat.md": "e70e267966add48bef90b34065f937213ba758f4bc0d300a227fbc305e398b3f"
   }
 }
