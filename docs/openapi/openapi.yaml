@@ -7,9 +7,8 @@ info:
   description: '확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**
 
 
-    현재 구현 25개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·이전 대화), 목업 4개(홈·연결 해제·챗봇 메시지·작업 확인), 미구현 6개(카드·대출)입니다. 전체 명세는 읽기
-    전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·인증·DB 연동은 완료되지 않았고, 홈의 응답 형태도 확정 계약과
-    다릅니다.
+    현재 구현 26개(CSRF·인증·금융 동의 및 연결·거래·고정지출·정기 저축·홈·이전 대화), 목업 3개(연결 해제·챗봇 메시지·작업 확인), 미구현 6개(카드·대출)입니다. 전체 명세는 읽기
+    전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.
 
 
     기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은
@@ -757,8 +756,7 @@ paths:
       operationId: disconnectFinanceConnection
       tags:
       - 금융 동의 · 연결
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
-        계약과 다릅니다.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.
 
 
         현재 미구현인 API 계약이다. 요청 본문 없이 기관 연결 하나를 해제한다. 행을 삭제하지 않고 disconnected_at과 status=disconnected를 기록한다. 연결의 계좌·카드도
@@ -3976,12 +3974,11 @@ paths:
   /api/home/:
     get:
       operationId: getHome
-      summary: '[목업] 홈 화면 보기'
+      summary: '[구현] 홈 화면 보기'
       tags:
       - 홈
       x-source: docs/api/home.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
-        계약과 다릅니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.
@@ -4070,7 +4067,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-      x-implementation-status: mock
+      x-implementation-status: implemented
   /api/chat/conversations/{id}/:
     get:
       operationId: getConversation
@@ -4167,8 +4164,7 @@ paths:
       tags:
       - 통합 챗봇
       x-source: docs/api/chat.md
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
-        계약과 다릅니다.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.
 
 
         text와 choice 중 정확히 하나를 보냅니다. conversationId=null은 새 대화입니다. 응답 messages에는 사용자 메시지와 봇 답변 모두 포함됩니다.
@@ -4303,8 +4299,7 @@ paths:
           type: string
           format: uuid
         description: UUID. 없는 항목·남의 항목·형식 오류는 모두 404.
-      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다. 홈은 응답 구조도 아래 확정
-        계약과 다릅니다.
+      description: '**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.
 
 
         queued·running이면 원문 기본안은 2초 후 재조회, succeeded·failed·canceled이면 중단합니다. 실제 비동기 사용 여부·조회 간격·최대 대기 시간·result
@@ -6988,8 +6983,8 @@ x-source-sha256:
   docs/api/finance-connect.md: 1a2ef298979ccc0b4c23c90a7fb02a0ecdaf47c30c0c14693ff88feebe781879
   docs/api/cards.md: 7b542541d1707c84fe38bff695f2646ec0003543283a2f3430b6cf144ebf5371
   docs/api/loans.md: 42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077
-  docs/api/transactions.md: e5084b6466516b280bbfd837cdd27ccd80fd08a11624ec471dfb2112588ec17c
+  docs/api/transactions.md: 47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88
   docs/api/fixed.md: 3229def7865c1148bd94c489d6bab4a9a9306bddbf4dd588a6fd7782c8d4bdd0
   docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
-  docs/api/home.md: 4c7fe1beedc5936c85ef48b8127605eb9a86a19095f2204cd5778435d2c6496d
+  docs/api/home.md: 42fdf760d5b15f6ae9ee1d0218961712ac37063dec305370cad0a8e51bcf7d8b
   docs/api/chat.md: e70e267966add48bef90b34065f937213ba758f4bc0d300a227fbc305e398b3f

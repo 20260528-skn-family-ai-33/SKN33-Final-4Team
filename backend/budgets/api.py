@@ -1,7 +1,7 @@
 """
 budgets 앱 API: React 화면에 필요한 데이터를 JSON으로 준다.
-- 고정지출 · 정기 저축: DB에 저장하고 읽는 실제 기능
-- 홈 · 예산 · 쿠션: 아직 mock.py(가짜 데이터)를 그대로 보낸다
+- 홈 · 고정지출 · 정기 저축: DB에 저장하고 읽는 실제 기능 (홈 계산은 home.py)
+- 예산 · 쿠션: 아직 mock.py(가짜 데이터)를 그대로 보낸다 (ML 후)
 """
 import calendar
 import uuid
@@ -22,21 +22,12 @@ from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, 
 from . import mock
 
 
-def _must_pay():
-    """'꼭 나갈 돈' — link 는 누르면 갈 React 화면 주소 (없으면 null = 카드 청구서 팝업)"""
-    return [{**p, "link": p.get("link")} for p in mock.MUST_PAY]
-
-
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def home(request):
-    """GET /api/home/ — 홈 화면 데이터"""
-    return Response({
-        "period": mock.PERIOD,
-        "home": mock.HOME,
-        "must_pay": _must_pay(),
-        # 1차는 항상 null(예산 API 는 ML 후). 시안은 mock.BUDGET 이 None 일 때만 null 을 보내 안내 카드를 보여 준다
-        "budget": None if mock.BUDGET is None else {"sample": True},
-    })
+    """GET /api/home/ — 홈 화면 데이터 (docs/api/home.md, 계산은 home.py)"""
+    from .home import home_data  # home.py 가 이 파일의 납부 예정 함수를 쓰므로 여기서 불러옴
+    return Response(home_data(request.user, timezone.localdate()))
 
 
 @api_view(["GET"])
@@ -748,7 +739,8 @@ def cancel_dues(dues):
 # 이번 주기 납부 예정 1건 — 있으면 그대로, 없으면 만들기 (만들 대상이 아니면 None)
 #   출금일이 이미 지났으면 맞는 출금이 있을 때만 만든다: 1건이면 "냄"으로 연결, 여러 건이면 확인 필요([고르기])
 #   withdrawal: 사용자가 근거로 고른 출금 (이때는 지났어도 만든다)
-def ensure_current_due(expense, cycle, today, withdrawal=None):
+#   create_past: 홈을 열 때는 출금일이 지났어도 만든다 (home.md '주기 중간에 홈을 처음 열면')
+def ensure_current_due(expense, cycle, today, withdrawal=None, create_past=False):
     if (expense.status != "confirmed" or cycle is None
             or expense.payment_card_id is not None or expense.payment_day is None):
         return None
@@ -766,7 +758,7 @@ def ensure_current_due(expense, cycle, today, withdrawal=None):
     found = []
     if withdrawal is None and due_date < today:
         found = find_withdrawals(expense, due_date)
-        if not found:
+        if not found and not create_past:
             return None
 
     fields = {
@@ -800,9 +792,27 @@ def ensure_current_due(expense, cycle, today, withdrawal=None):
 
     if len(found) == 1:
         link_evidence(expense, found[0], cycle, today, source="rule")  # 맞는 출금 1건 → 자동 연결
-    else:
+    elif found or not create_past:
         refresh_due_state(due, today)                   # 0건(미래) unpaid · 여러 건 needs_review
+    # 홈이 지난 회차를 새로 만들고 출금이 0건이면 unpaid 로 두고, 출금일 +3일 규칙은 홈이 적용
     return due
+
+# 이번 회차가 아직 안 냈으면 맞는 출금(출금일 ±3일, 같은 계좌)을 찾아 1건이면 자동 연결 (홈을 열 때)
+#   여러 건이면 자동으로 고르지 않음 → 목록의 [고르기]. 지난 주기 회차는 늦게 낸 출금이라 자동 연결하지 않음
+def match_current_due(expense, cycle, today):
+    if expense.payment_account_id is None or cycle is None or expense.payment_day is None:
+        return
+    due_date = day_in_cycle(cycle, expense.payment_day)
+    if due_date is None or today < due_date - timedelta(days=3):
+        return
+    due = PaymentDue.objects.select_for_update().filter(
+        recurring=expense, obligation_state="active", due_date=due_date, payment_state__in=NOT_PAID,
+    ).exclude(pk__in=PaymentMatch.objects.values("due")).first()
+    if due is None:
+        return
+    found = find_withdrawals(expense, due_date)
+    if len(found) == 1:
+        link_evidence(expense, found[0], cycle, today, source="rule")
 
 # 근거 거래 연결 — evidence 에 더하고(가맹점 기억), 고정비로 셈. 계좌 출금이면 이번 회차 납부 예정과 짝
 def link_evidence(expense, tx, cycle, today, source="user"):
