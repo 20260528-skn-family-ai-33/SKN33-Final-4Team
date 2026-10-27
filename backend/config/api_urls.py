@@ -14,6 +14,8 @@ from chat import api as chat_api
 from finance import api as finance_api
 from finance import api_shell as finance_shell
 
+from users import api as users_api
+
 from . import api_common, api_docs
 
 app_name = "api"
@@ -30,6 +32,13 @@ urlpatterns = [
     ),
     # 공통
     path("csrf/", api_common.csrf, name="csrf"),
+
+    # 인증
+    path("auth/signup/", users_api.signup, name="signup"),
+    path("auth/login/", users_api.login, name="login"),
+    path("auth/logout/", users_api.logout, name="logout"),
+    path("auth/me/", users_api.me, name="me"),
+
     # 화면 데이터
     path("home/", budgets_api.home, name="home"),
     path("budgets/", budgets_api.budget, name="budget"),
