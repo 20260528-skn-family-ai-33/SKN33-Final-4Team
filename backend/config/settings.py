@@ -5,6 +5,8 @@
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import base64
+import binascii
 import os
 from pathlib import Path
 
@@ -180,3 +182,19 @@ CODEF = {
     "PUBLIC_KEY": os.getenv("CODEF_PUBLIC_KEY", ""),
     "CONNECTED_ID": os.getenv("CODEF_CONNECTED_ID", ""),  # 개발용 내 연결 ID (회원별 저장은 DB 연결 후)
 }
+
+
+# 회원별 CODEF connectedId 암호화 키 (finance/connected_id.py, 10/27 결정)
+# SECRET_KEY 와 따로 둔다: SECRET_KEY 를 바꿔도 저장된 connectedId 를 계속 풀 수 있게. 32바이트 urlsafe base64
+def encryption_key(name):
+    value = required(name)
+    try:
+        key = base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
+    except (ValueError, binascii.Error):
+        key = b""
+    if len(key) != 32:
+        raise ImproperlyConfigured(f".env의 {name}는 32바이트 키여야 해요. .env.example에 적힌 명령으로 다시 만들어 주세요.")
+    return key
+
+
+CONNECTED_ID_ENCRYPTION_KEY = encryption_key("CONNECTED_ID_ENCRYPTION_KEY")

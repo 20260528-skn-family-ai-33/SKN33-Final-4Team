@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core import serializers
-from django.test import Client, TestCase, TransactionTestCase
+from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from users.models import Consent
@@ -403,3 +403,25 @@ class FirstLoadStartTest(TestCase):
         self.assertEqual(first_load_start(date(2026, 10, 27)), date(2026, 6, 1))
         self.assertEqual(first_load_start(date(2026, 2, 28)), date(2025, 10, 1))
         self.assertEqual(first_load_start(date(2026, 4, 1)), date(2025, 12, 1))
+
+
+class ConnectedIdKeyTest(TestCase):
+    def test_round_trip_and_other_key_cannot_read(self):
+        sealed = connected_id.seal("cid-secret")
+        self.assertNotIn("cid-secret", sealed)
+        self.assertEqual(connected_id.unseal(sealed), "cid-secret")
+        with override_settings(CONNECTED_ID_ENCRYPTION_KEY=b"k" * 32):
+            with self.assertRaises(connected_id.ConnectedIdUnreadable):
+                connected_id.unseal(sealed)
+
+    def test_settings_key_must_be_32_bytes(self):
+        from django.core.exceptions import ImproperlyConfigured
+
+        from config.settings import encryption_key
+
+        good = "A" * 43 + "="
+        with patch.dict("os.environ", {"TEST_KEY": good}):
+            self.assertEqual(len(encryption_key("TEST_KEY")), 32)
+        for bad in ("", "short", "!!!not-base64!!!"):
+            with patch.dict("os.environ", {"TEST_KEY": bad}), self.assertRaises(ImproperlyConfigured):
+                encryption_key("TEST_KEY")

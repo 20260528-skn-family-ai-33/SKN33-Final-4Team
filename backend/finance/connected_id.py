@@ -3,19 +3,17 @@
 
 - connectedId 는 회원의 금융기관 로그인 묶음을 가리키는 값이라 원문으로 두지 않고 AES-GCM 으로 암호화해 저장한다.
 - 응답 · 로그에는 넣지 않는다 (API_RULES '보안 · 소유권').
-- 암호화 키: 지금은 DJANGO_SECRET_KEY 에서 이 용도 전용으로 만든다. SECRET_KEY 를 바꾸면 저장된 값을 못 읽으므로
-  전용 키(.env) 를 둘지는 명세 '확인 필요' (김나은 · 팀).
-- AES 는 easycodefpy 가 이미 쓰는 pycryptodome(Crypto) 을 쓴다.
+- 암호화 키: .env 의 CONNECTED_ID_ENCRYPTION_KEY (32바이트, 10/27 결정). SECRET_KEY 와 따로 둬서
+  SECRET_KEY 를 바꿔도 저장된 값을 계속 풀 수 있다. 키를 잃거나 바꾸면 저장된 connectedId 를 못 풀어 전원 다시 연결해야 한다.
+- AES 는 pycryptodome(Crypto) 을 쓴다 (requirements.txt 에 명시).
 """
 import base64
-import hashlib
 
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from django.conf import settings
 
 _PREFIX = "v1:"
-_PURPOSE = b"money-cushion/codef-connected-id/v1\x00"
 
 
 class ConnectedIdUnreadable(Exception):
@@ -23,7 +21,7 @@ class ConnectedIdUnreadable(Exception):
 
 
 def _key():
-    return hashlib.sha256(_PURPOSE + settings.SECRET_KEY.encode("utf-8")).digest()
+    return settings.CONNECTED_ID_ENCRYPTION_KEY
 
 
 def seal(connected_id):
