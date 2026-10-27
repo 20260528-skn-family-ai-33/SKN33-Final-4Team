@@ -446,3 +446,185 @@ class HomePaymentReviewTest(HomeFixture):
         self.make_tx(date(2026, 10, 22), 700_000, direction="out")
         self.assertEqual([i["payment_state"] for i in self.home(date(2026, 10, 21))["must_pay"]], ["unpaid"])
         self.assertEqual(self.home(date(2026, 10, 22))["must_pay"], [])
+
+
+class LateDueFixture(HomeFixture):
+    """지난달 회차 9/20(미납 확인 필요) + 이번 달 회차 10/20(미납)이 있는 상태"""
+
+    def setUp(self):
+        super().setUp()
+        self.expense = self.make_expense(payment_day=20, confirmed_at=timezone.make_aware(datetime(2026, 8, 1)))
+        self.home(date(2026, 9, 21))     # 지난 주기 회차 9/20 (출금 없음)
+        self.home(date(2026, 10, 1))     # 이번 주기 회차 10/20 생성, 9/20 은 미납 확인 필요
+
+    def at(self, day):
+        return patch("django.utils.timezone.localdate", return_value=day)
+
+    def pick(self, tx, day):
+        body = {"evidenceTransactionId": str(tx.pk) if tx else None}
+        with self.at(day):
+            response = self.client.patch(f"/api/budgets/fixed/{self.expense.pk}/", body, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+
+    def candidates(self, day):
+        with self.at(day):
+            item = self.client.get("/api/budgets/fixed/").json()["items"][0]
+        suggestion = item["evidenceSuggestion"]
+        return [c["transactionId"] for c in suggestion["candidates"]] if suggestion else []
+
+    def due(self, day):
+        return PaymentDue.objects.get(recurring=self.expense, due_date=day)
+
+    def states(self):
+        return self.due(date(2026, 9, 20)).payment_state, self.due(date(2026, 10, 20)).payment_state
+
+
+class HomeLateAndCurrentDueTest(LateDueFixture):
+    """PR #46 2차 리뷰: 지난달 미납(9/20)과 이번 달(10/20) 회차를 섞어서 처리해도 회차별 기록이 섞이지 않는지"""
+
+    def test_same_request_twice_keeps_one_payment(self):
+        """1. 지난달 출금 연결을 똑같이 다시 보내도 이번 달까지 납부되지 않음"""
+        late = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        self.pick(late, date(2026, 10, 2))
+        self.pick(late, date(2026, 10, 2))
+        self.assertEqual(self.states(), ("paid", "unpaid"))
+        self.assertEqual(PaymentMatch.objects.filter(transaction=late).count(), 1)
+        self.assertFalse(self.due(date(2026, 10, 20)).matches.exists())
+
+    def test_linking_this_month_keeps_last_month_payment(self):
+        """2. 지난달 미납을 해결한 뒤 이번 달 출금을 연결해도 지난달 납부 기록은 그대로"""
+        late = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        self.pick(late, date(2026, 10, 2))
+        now = self.make_tx(date(2026, 10, 20), 700_000, direction="out")
+        self.pick(now, date(2026, 10, 21))
+        self.assertEqual(self.states(), ("paid", "paid"))
+        self.assertEqual(list(self.due(date(2026, 9, 20)).matches.values_list("transaction_id", flat=True)), [late.pk])
+        self.assertEqual(list(self.due(date(2026, 10, 20)).matches.values_list("transaction_id", flat=True)), [now.pk])
+        self.assertEqual(self.home(date(2026, 10, 21))["must_pay"], [])
+
+    def test_candidate_near_this_month_goes_to_last_month(self):
+        """3. 지난달 미납 후보로 보여 준 거래는 이번 달 납부일 근처여도 지난달 회차에 연결 (후보 = 저장 기준)"""
+        tx = self.make_tx(date(2026, 10, 19), 700_000, direction="out")
+        self.assertEqual(self.candidates(date(2026, 10, 19)), [str(tx.pk)])
+        self.pick(tx, date(2026, 10, 19))
+        self.assertEqual(self.states(), ("paid", "unpaid"))
+        self.assertFalse(self.due(date(2026, 10, 20)).matches.exists())
+
+    def test_clearing_this_month_keeps_last_month(self):
+        """비우기는 이번 회차 연결만 풀고, 지난달 납부 기록은 그대로"""
+        late = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        self.pick(late, date(2026, 10, 2))
+        now = self.make_tx(date(2026, 10, 20), 700_000, direction="out")
+        self.pick(now, date(2026, 10, 21))
+        self.pick(None, date(2026, 10, 21))
+        self.assertEqual(self.due(date(2026, 9, 20)).payment_state, "paid")
+        self.assertFalse(self.due(date(2026, 10, 20)).matches.exists())
+        self.assertEqual(PaymentMatch.objects.filter(transaction=late).count(), 1)
+
+    def test_auto_link_this_month_while_last_month_unpaid(self):
+        """지난달 미납이 남아 있어도, 이번 달 출금일 ±3일의 출금 1건은 이번 달 회차에 자동 연결"""
+        now = self.make_tx(date(2026, 10, 20), 700_000, direction="out")
+        items = self.home(date(2026, 10, 23))["must_pay"]
+        self.assertEqual(self.states(), ("needs_review", "paid"))
+        self.assertEqual([i["due_date"] for i in items], ["2026-09-20"])
+        self.assertNotIn(str(now.pk), self.candidates(date(2026, 10, 23)))   # 이미 연결된 출금은 지난달 후보에서 빠짐
+
+    def test_one_withdrawal_never_pays_two_dues(self):
+        """어떤 순서로 보내도 출금 1건은 회차 1개만 갚음"""
+        tx = self.make_tx(date(2026, 10, 20), 700_000, direction="out")
+        self.pick(tx, date(2026, 10, 21))         # 지난달 미납이 있으니 지난달 회차로
+        self.home(date(2026, 10, 23))             # 홈 자동 연결이 같은 출금을 이번 달에 또 붙이지 않음
+        self.pick(tx, date(2026, 10, 23))
+        self.assertEqual(PaymentMatch.objects.filter(transaction=tx).count(), 1)
+        self.assertEqual(self.states(), ("paid", "needs_review"))
+
+
+class FixedPickDueTest(LateDueFixture):
+    """회차를 지정해서 근거 거래 바꾸기 · 비우기 (evidenceDueId) — 지난달 회차에 잘못 고른 출금 되돌리기"""
+
+    def pick_due(self, tx, due_day, day):
+        body = {"evidenceTransactionId": str(tx.pk) if tx else None, "evidenceDueId": str(self.due(due_day).pk)}
+        with self.at(day):
+            return self.client.patch(f"/api/budgets/fixed/{self.expense.pk}/", body, format="json")
+
+    def item(self, day):
+        with self.at(day):
+            return self.client.get("/api/budgets/fixed/").json()["items"][0]
+
+    def test_list_shows_recent_dues_and_suggestion_due(self):
+        late = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        item = self.item(date(2026, 10, 2))
+        self.assertEqual(item["evidenceSuggestion"]["dueId"], str(self.due(date(2026, 9, 20)).pk))
+        self.assertEqual(item["evidenceSuggestion"]["dueDate"], "2026-09-20")
+        self.pick(late, date(2026, 10, 2))
+        dues = self.item(date(2026, 10, 2))["recentDues"]
+        self.assertEqual([(d["dueDate"], d["paymentState"], [t["transactionId"] for t in d["transactions"]]) for d in dues],
+                         [("2026-09-20", "paid", [str(late.pk)]), ("2026-10-20", "unpaid", [])])
+
+    def test_undo_wrong_pick_on_last_month(self):
+        """지난달 회차에 잘못 고른 출금을 비우면 그 회차만 풀리고, 이번 달 납부는 그대로"""
+        wrong = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        self.pick(wrong, date(2026, 10, 2))
+        now = self.make_tx(date(2026, 10, 20), 700_000, direction="out")
+        self.pick(now, date(2026, 10, 21))
+        self.assertEqual(self.states(), ("paid", "paid"))
+
+        self.assertEqual(self.pick_due(None, date(2026, 9, 20), date(2026, 10, 21)).status_code, 200)
+        self.assertEqual(self.states(), ("needs_review", "paid"))
+        self.assertFalse(PaymentMatch.objects.filter(transaction=wrong).exists())
+        self.home(date(2026, 10, 22))                                    # 홈을 열어도 다시 자동으로 붙지 않음
+        self.assertFalse(PaymentMatch.objects.filter(transaction=wrong).exists())
+        self.expense.refresh_from_db()
+        self.assertNotIn(str(wrong.pk), self.expense.evidence)
+        self.assertIn(str(now.pk), self.expense.evidence)
+
+    def test_move_pick_from_last_month_to_this_month(self):
+        """지난달로 들어간 출금을 이번 달 회차로 옮김"""
+        tx = self.make_tx(date(2026, 10, 19), 700_000, direction="out")
+        self.pick(tx, date(2026, 10, 19))                                # 지난달 미납이 있어 지난달로 들어감
+        self.assertEqual(self.states(), ("paid", "unpaid"))
+        self.assertEqual(self.pick_due(tx, date(2026, 10, 20), date(2026, 10, 21)).status_code, 200)
+        self.assertEqual(self.states(), ("needs_review", "paid"))
+        self.assertEqual(PaymentMatch.objects.filter(transaction=tx).count(), 1)
+
+    def test_replace_pick_on_last_month(self):
+        """지난달 회차의 출금을 다른 출금으로 바꿈 → 이전 출금은 풀리고 새 출금으로 납부"""
+        first = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        second = self.make_tx(date(2026, 10, 3), 700_000, direction="out")
+        self.pick(first, date(2026, 10, 3))
+        self.assertEqual(self.pick_due(second, date(2026, 9, 20), date(2026, 10, 3)).status_code, 200)
+        self.assertEqual(list(self.due(date(2026, 9, 20)).matches.values_list("transaction_id", flat=True)), [second.pk])
+        self.assertEqual(self.states(), ("paid", "unpaid"))
+        self.assertFalse(PaymentMatch.objects.filter(transaction=first).exists())
+
+    def test_same_due_request_twice(self):
+        tx = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        self.pick_due(tx, date(2026, 9, 20), date(2026, 10, 2))
+        self.pick_due(tx, date(2026, 9, 20), date(2026, 10, 2))
+        self.assertEqual(self.states(), ("paid", "unpaid"))
+        self.assertEqual(PaymentMatch.objects.filter(transaction=tx).count(), 1)
+
+    def test_invalid_due_is_400(self):
+        tx = self.make_tx(date(2026, 10, 2), 700_000, direction="out")
+        other = self.make_expense(name="관리비", amount=150_000, payment_day=20,
+                                  confirmed_at=timezone.make_aware(datetime(2026, 8, 1)))
+        self.home(date(2026, 10, 2))
+        other_due = PaymentDue.objects.filter(recurring=other).first()
+        old = PaymentDue.objects.create(
+            user=self.user, obligation_type="recurring", recurring=self.expense, occurrence_key="too-old",
+            due_date=date(2026, 7, 20), confirmed_amount=700_000, source_type="manual",
+            confirmation_state="confirmed", payment_state="needs_review", payment_account=self.account,
+        )
+        url = f"/api/budgets/fixed/{self.expense.pk}/"
+        cases = [
+            {"evidenceDueId": str(self.due(date(2026, 9, 20)).pk)},                          # 근거 거래 없이
+            {"evidenceTransactionId": str(tx.pk), "evidenceDueId": str(other_due.pk)},        # 다른 고정지출 회차
+            {"evidenceTransactionId": str(tx.pk), "evidenceDueId": str(old.pk)},              # 지난 주기보다 오래됨
+            {"evidenceTransactionId": str(tx.pk), "evidenceDueId": "not-a-uuid"},
+        ]
+        for body in cases:
+            with self.subTest(body=body), self.at(date(2026, 10, 2)):
+                r = self.client.patch(url, body, format="json")
+                self.assertEqual(r.status_code, 400, r.content)
+                self.assertIn("evidenceDueId", r.json()["error"]["fields"])
+        self.assertFalse(PaymentMatch.objects.exists())

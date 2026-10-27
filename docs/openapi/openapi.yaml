@@ -2277,6 +2277,7 @@ paths:
                         date: '2026-10-20'
                         amount: 55000
                       evidenceSuggestion: null
+                      recentDues: []
                     - recurringId: d4e8c728-6103-42d0-a9c7-17e5a694c01f
                       status: confirmed
                       sourceType: manual
@@ -2299,6 +2300,9 @@ paths:
                           merchantName: 구독 서비스
                           date: '2026-10-05'
                           amount: 15000
+                        dueId: null
+                        dueDate: '2026-10-05'
+                      recentDues: []
                     - recurringId: a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4
                       status: confirmed
                       sourceType: manual
@@ -2315,6 +2319,19 @@ paths:
                       categoryName: 주거·통신
                       evidence: null
                       evidenceSuggestion: null
+                      recentDues:
+                      - dueId: 5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90
+                        dueDate: '2026-09-25'
+                        paymentState: paid
+                        transactions:
+                        - transactionId: 9a1f3c2e-4b5d-4e6f-8a7b-1c2d3e4f5a6b
+                          merchantName: 집주인
+                          date: '2026-09-25'
+                          amount: 700000
+                      - dueId: 0d3b6f2a-1c4e-4a5b-9d8c-7e6f5a4b3c2d
+                        dueDate: '2026-10-25'
+                        paymentState: unpaid
+                        transactions: []
                     summary:
                       confirmedMonthlyTotal: 715000
                       suggestedCount: 1
@@ -2734,6 +2751,14 @@ paths:
                       fields:
                         amount:
                         - 금액은 비울 수 없어요.
+                invalidDue:
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        evidenceDueId:
+                        - 선택할 수 없는 회차예요.
         '404':
           description: 없는·남의·주소 형식이 틀린 ID 또는 stopped/ignored 항목. 모두 not_found, fields 없음.
           content:
@@ -2776,6 +2801,11 @@ paths:
               clearEvidence:
                 value:
                   evidenceTransactionId: null
+              undoLastMonth:
+                summary: 지난달 회차에 잘못 고른 출금 되돌리기
+                value:
+                  evidenceTransactionId: null
+                  evidenceDueId: 5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90
       x-implementation-status: implemented
     delete:
       summary: '[구현] 고정지출 중지'
@@ -5700,6 +5730,15 @@ components:
             $ref: '#/components/schemas/FixedEvidence'
           maxItems: 5
           description: 출금일과 날짜가 가까운 순, 금액 차이가 작은 순. 다른 고정지출에 연결된 결제 제외.
+        dueId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 이 후보로 갚을 회차. 카드·아직 회차가 없으면 null (10/27).
+        dueDate:
+          type: string
+          format: date
+          description: 그 회차의 출금일 (10/27).
       required:
       - count
       - candidates
@@ -5936,6 +5975,11 @@ components:
           description: 근거 거래 없으면 null. 근거 거래의 표시 정보.
         evidenceSuggestion:
           $ref: '#/components/schemas/FixedEvidenceSuggestion'
+        recentDues:
+          type: array
+          items:
+            $ref: '#/components/schemas/FixedRecentDue'
+          description: 계좌 고정지출의 지난 주기·이번 주기 회차. 카드·모름이면 []. dueId 를 수정 요청의 evidenceDueId 로 보냄 (10/27).
       required:
       - recurringId
       - status
@@ -6063,6 +6107,11 @@ components:
             않고 저장 뒤 목록에서 고른다.
         category:
           $ref: '#/components/schemas/SelectableCategoryCode'
+        evidenceDueId:
+          type: string
+          format: uuid
+          description: 계좌 고정지출에서 evidenceTransactionId 와 같이 보낼 때만. 근거 거래를 붙이거나(값) 풀(null) 회차. 목록 recentDues[].dueId
+            중 하나. 생략하면 서버가 정한 회차(지난 주기 미납이 있으면 그 회차, 없으면 이번 회차). 지정한 회차만 바꾸고 다른 회차의 납부 기록은 유지 (10/27).
       minProperties: 1
       additionalProperties: false
       description: 바꿀 칸만 보낸다. 생략=유지, null=paymentDay/paymentAccountId/paymentCardId/evidenceTransactionId만 비우기.
@@ -6080,6 +6129,33 @@ components:
       - recurringIds
       additionalProperties: false
       description: 여러 후보를 한 번에 처리한다. 원문에 빈 배열·중복 ID 정책의 별도 제한은 정의되어 있지 않다.
+    FixedRecentDue:
+      type: object
+      properties:
+        dueId:
+          type: string
+          format: uuid
+        dueDate:
+          type: string
+          format: date
+        paymentState:
+          type: string
+          enum:
+          - unpaid
+          - partial
+          - paid
+          - needs_review
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/FixedEvidence'
+          description: 이 회차에 연결된 출금. 없으면 []
+      required:
+      - dueId
+      - dueDate
+      - paymentState
+      - transactions
+      description: 지난 주기·이번 주기 회차 하나와 연결된 출금 (10/27).
     RecurringSaving:
       type: object
       properties:
@@ -6984,7 +7060,7 @@ x-source-sha256:
   docs/api/cards.md: 7b542541d1707c84fe38bff695f2646ec0003543283a2f3430b6cf144ebf5371
   docs/api/loans.md: 42bea051741c47d8f4d44f43ffc562f6c709c5e58bf0cdb4231b56b33496b077
   docs/api/transactions.md: 47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88
-  docs/api/fixed.md: 3229def7865c1148bd94c489d6bab4a9a9306bddbf4dd588a6fd7782c8d4bdd0
+  docs/api/fixed.md: 76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115
   docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
   docs/api/home.md: 42fdf760d5b15f6ae9ee1d0218961712ac37063dec305370cad0a8e51bcf7d8b
   docs/api/chat.md: e70e267966add48bef90b34065f937213ba758f4bc0d300a227fbc305e398b3f
