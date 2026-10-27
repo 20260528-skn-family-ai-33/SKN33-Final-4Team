@@ -10,7 +10,7 @@ from django.utils import timezone
 from users.models import Consent
 
 from .merchant_rules import remembered_category
-from .models import BankAccount, Card, Connection, FinancialTransaction, TransactionLink
+from .models import BankAccount, Card, Connection, FinancialTransaction, RecurringExpense, TransactionLink
 
 URL = "/api/finance/transactions/"
 
@@ -331,3 +331,61 @@ class ConnectTest(FinanceData):
     def test_login_required(self):
         for path in ("/api/finance/connect/accounts/", "/api/finance/connections/"):
             self.assertEqual(self.client.get(path).status_code, 403)
+
+
+class DisconnectTest(FinanceData):
+    """10. DELETE /api/finance/connections/<id>/ (finance-connect.md '연결 해제')"""
+
+    def url(self, connection):
+        return f"/api/finance/connections/{connection.connection_id}/"
+
+    def test_disconnect_keeps_row_accounts_and_fixed_expenses(self):
+        conn = self.account.connection
+        BankAccount.objects.filter(pk=self.account.pk).update(is_selected=True)
+        fixed = RecurringExpense.objects.create(
+            user=self.user, payment_account=self.account, name="월세", amount=700000, payment_day=25,
+            category_id="HOUSING_TELECOM", status="confirmed", source_type="manual",
+        )
+        tx = self.tx()
+        self.client.force_login(self.user)
+
+        res = self.client.delete(self.url(conn))
+        self.assertEqual(res.status_code, 204)
+        self.assertEqual(res.content, b"")
+        conn.refresh_from_db()
+        self.assertEqual(conn.status, "disconnected")
+        self.assertIsNotNone(conn.disconnected_at)
+        first_time = conn.disconnected_at
+
+        # 행·계좌 선택·고정지출·지난 거래는 그대로
+        self.account.refresh_from_db()
+        self.assertTrue(self.account.is_selected)
+        fixed.refresh_from_db()
+        self.assertEqual((fixed.status, fixed.payment_account_id), ("confirmed", self.account.pk))
+        self.assertTrue(FinancialTransaction.objects.filter(pk=tx.pk).exists())
+
+        # 연결 목록에서 빠지고, 거래의 계좌 표시는 disconnected
+        self.assertEqual(self.client.get("/api/finance/connections/").json()["items"], [])
+        item = self.client.get("/api/finance/transactions/").json()["items"][0]
+        self.assertEqual(item["paymentAccount"]["status"], "disconnected")
+
+        # 다시 해제해도 204, 해제 시각은 처음 값 유지
+        self.assertEqual(self.client.delete(self.url(conn)).status_code, 204)
+        conn.refresh_from_db()
+        self.assertEqual(conn.disconnected_at, first_time)
+
+    def test_unknown_or_others_connection_is_404(self):
+        others = Connection.objects.create(user=self.other, business_type="bank", organization_code="0004", status="connected")
+        self.client.force_login(self.user)
+        for url in (self.url(others), "/api/finance/connections/00000000-0000-4000-8000-000000000000/"):
+            with self.subTest(url=url):
+                res = self.client.delete(url)
+                self.assertEqual(res.status_code, 404)
+                self.assertEqual(res.json()["error"]["code"], "not_found")
+        others.refresh_from_db()
+        self.assertEqual(others.status, "connected")
+
+    def test_login_required(self):
+        res = self.client.delete(self.url(self.account.connection))
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.json()["error"]["code"], "not_authenticated")

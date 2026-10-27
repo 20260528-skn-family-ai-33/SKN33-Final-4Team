@@ -487,7 +487,10 @@ class FixedTransferConvertTest(FixedFixture, TestCase):
         send(self.client, "patch", f"{URL}{self.e.pk}/", {"evidenceTransactionId": None})
         tx.refresh_from_db()
         self.assertEqual((tx.transaction_type, tx.confirmed_category_id), ("spending", "FOOD"))
-        self.assertEqual(tx.field_states, {"original_transaction_type": "transfer"})
+        # 원래 표시는 그대로 + 연결을 푼 회차 표시(그 회차에 자동으로 다시 붙지 않게)만 더해짐
+        states = dict(tx.field_states)
+        self.assertEqual(len(states.pop("skip_auto_match")), 1)
+        self.assertEqual(states, {"original_transaction_type": "transfer"})
 
 
 class FixedEvidenceSuggestionTest(FixedFixture, TestCase):
