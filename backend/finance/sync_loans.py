@@ -2,6 +2,7 @@
 import hashlib
 import re
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -13,13 +14,21 @@ from .codef_loans import LoanDataError
 from .models import Connection, Loan, Origin, SyncRun
 
 
+class LoanConsentRequired(PermissionError):
+    code = "consent_required"
+
+
+class LoanConnectionChanged(ValueError):
+    code = "connection_changed"
+
+
 def _check_consent(user, connection):
     if not Consent.objects.filter(
         Q(connection__isnull=True) | Q(connection=connection),
         user=user, purpose="finance_inquiry", product_scope="loan", revoked_at__isnull=True,
         granted_at__lte=timezone.now(),
     ).exists():
-        raise PermissionError("대출 조회 동의가 필요해요.")
+        raise LoanConsentRequired("대출 조회 동의가 필요해요.")
 
 
 def _safe_name(value, accounts):
@@ -63,9 +72,11 @@ def sync_bank_loans(user, connected_id, org, start, end):
         fetched_at = timezone.now()
         created_count = updated_count = skipped_count = 0
         with transaction.atomic():
+            # main의 저장/동의 변경과 동일하게 회원 → 연결 → 대출 순서로 잠근다.
+            get_user_model().objects.select_for_update(no_key=True).get(pk=user.pk)
             connection = Connection.objects.select_for_update().get(pk=connection.pk, user=user)
             if connection.disconnected_at is not None or connection.status != "connected":
-                raise ValueError("조회 중 연결 상태가 바뀌어 저장하지 않았어요.")
+                raise LoanConnectionChanged("조회 중 연결 상태가 바뀌어 저장하지 않았어요.")
             _check_consent(user, connection)
             for account, data in snapshots:
                 key = hashlib.sha256(account["account_no"].encode()).hexdigest()
@@ -78,8 +89,12 @@ def sync_bank_loans(user, connected_id, org, start, end):
                     loan = matches.get()
                     if loan.origin != Origin.PROVIDER:
                         raise LoanDataError("loan_origin_conflict")
-                    # 늦게 끝난 이전 조회가 더 최근 스냅샷을 덮어쓰지 않는다.
-                    if loan.fetched_at and loan.fetched_at > run.started_at:
+                    # 완료 시각과 시작 시각을 비교하면 정상적인 후속 조회도 누락된다.
+                    # Loan과 같은 트랜잭션에서 남긴 성공 기록의 '시작 시각'끼리 비교한다.
+                    last_started_at = loan.sync_runs.filter(
+                        user_id=loan.user_id, product_code="loan_transaction_list", status="success",
+                    ).order_by("-started_at").values_list("started_at", flat=True).first()
+                    if last_started_at and last_started_at > run.started_at:
                         skipped_count += 1
                         continue
                     updated_count += 1
@@ -137,7 +152,12 @@ def sync_bank_loans(user, connected_id, org, start, end):
         business_code = None
         if isinstance(exc, codef.CodefError) and re.fullmatch(r"CF-[0-9]{5}", str(exc.code)):
             business_code = exc.code
-        error_code = exc.code if isinstance(exc, LoanDataError) else "loan_sync_failed"
+        if isinstance(exc, (LoanDataError, LoanConsentRequired, LoanConnectionChanged)):
+            error_code = exc.code
+        elif isinstance(exc, codef.CodefError):
+            error_code = "provider_error"
+        else:
+            error_code = "loan_sync_failed"
         SyncRun.objects.filter(pk=run.pk).update(
             status="failed", business_code=business_code, error_code=error_code, completed_at=timezone.now(),
         )
