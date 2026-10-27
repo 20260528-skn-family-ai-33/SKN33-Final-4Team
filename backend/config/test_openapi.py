@@ -70,15 +70,18 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 2, "mock": 13, "planned": 20})
+        self.assertEqual(Counter(states.values()), {"implemented": 8, "mock": 7, "planned": 20})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("get", "/api/home/")], "mock")
         self.assertEqual(states[("get", "/api/finance/transactions/")], "implemented")
         self.assertEqual(states[("post", "/api/finance/loans/")], "planned")
         for (method, path), state in states.items():
-            if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
+            if path.startswith("/api/budgets/fixed/"):
                 with self.subTest(path=path, method=method):
                     self.assertEqual(state, "mock")
+            if path.startswith("/api/budgets/savings/"):
+                with self.subTest(path=path, method=method):
+                    self.assertEqual(state, "implemented")
 
     def test_session_csrf_and_request_number_contracts(self):
         public = {"/api/csrf/", "/api/auth/signup/", "/api/auth/login/", "/api/auth/logout/"}
@@ -136,25 +139,45 @@ class OpenAPIContractTests(SimpleTestCase):
         self.assertIn("not_authenticated", error_examples)
         self.assertIn("머니쿠션", response.content.decode())
 
-    def test_runtime_document_contains_only_the_four_callable_gets(self):
+    def test_runtime_document_contains_mock_gets_and_implemented_operations(self):
         response = self.client.get("/api/schema/runtime/")
         self.assertEqual(response.status_code, 200)
         runtime = response.json()
         self.assertEqual(runtime, build_runtime_schema())
+        savings = {path: item for path, item in self.contract["paths"].items() if path.startswith("/api/budgets/savings/")}
         self.assertSetEqual(set(runtime["paths"]), {
-            "/api/csrf/", "/api/home/", "/api/budgets/fixed/", "/api/budgets/savings/",
+            "/api/csrf/", "/api/home/", "/api/finance/transactions/", "/api/budgets/fixed/", *savings,
         })
         self.assertEqual(runtime["security"], [])
-        for path, methods in runtime["paths"].items():
-            with self.subTest(path=path):
-                self.assertSetEqual(set(methods), {"get"})
-                self.assertEqual(methods["get"]["security"], [])
+        for path, method, operation in operation_items(runtime):
+            with self.subTest(path=path, method=method):
+                self.assertEqual(operation["security"], [])
+                if path in savings:
+                    # 구현된 API는 확정 계약의 모든 방식을 실행할 수 있고, CSRF 헤더는 화면이 자동으로 넣는다.
+                    self.assertEqual(operation["x-implementation-status"], "implemented")
+                    self.assertFalse(any(p.get("$ref", "").endswith("/CsrfToken") for p in operation.get("parameters", [])))
+                else:
+                    self.assertEqual(method, "get")
+        for path in savings:
+            self.assertSetEqual({m for m in runtime["paths"][path] if m in HTTP_METHODS}, {m for m in savings[path] if m in HTTP_METHODS})
         self.assertNotIn("/api/budgets/", runtime["paths"])
-        self.assertNotIn("/api/finance/transactions/", runtime["paths"])  # 16번은 실제 구현 · 로그인 필요
+        self.assertNotIn("/api/budgets/fixed/{id}/", runtime["paths"])
+
+    def test_runtime_references_resolve_to_included_components(self):
+        runtime = build_runtime_schema()
+        text = json.dumps(runtime["paths"]) + json.dumps(runtime["components"])
+        for ref in set(re.findall(r'"\$ref": "(#/components/[^"]+)"', text)):
+            with self.subTest(ref=ref):
+                value = runtime
+                for segment in ref.removeprefix("#/").split("/"):
+                    self.assertIn(segment, value)
+                    value = value[segment]
 
     def test_runtime_response_examples_match_the_actual_http_payloads(self):
         runtime = self.client.get("/api/schema/runtime/").json()
         for path, methods in runtime["paths"].items():
+            if path.startswith(("/api/budgets/savings/", "/api/finance/transactions/")):
+                continue  # 구현된 API: 로그인 · DB 가 필요한 실제 응답이라 샘플 예시와 비교하지 않는다
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
@@ -167,14 +190,14 @@ class OpenAPIContractTests(SimpleTestCase):
     def test_swagger_pages_use_local_assets_and_the_correct_execution_mode(self):
         for path, schema_url, submit_methods in (
             ("/api/docs/", "/api/schema/", []),
-            ("/api/docs/runtime/", "/api/schema/runtime/", ["get"]),
+            ("/api/docs/runtime/", "/api/schema/runtime/", ["get", "post", "patch", "delete"]),
         ):
             with self.subTest(path=path):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 2개")
-                self.assertContains(response, "목업 13개")
+                self.assertContains(response, "구현 8개")
+                self.assertContains(response, "목업 7개")
                 self.assertContains(response, "미구현 20개")
                 self.assertContains(response, "/api/docs/runtime/")
                 options = json.loads(response.data["settings"])
