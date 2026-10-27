@@ -13,6 +13,7 @@ from budgets import api as budgets_api
 from chat import api as chat_api
 from finance import api as finance_api
 from finance import api_connect as finance_connect
+from finance import api_loans as finance_loans
 
 from users import api as users_api
 
@@ -65,6 +66,8 @@ urlpatterns = [
     path("chat/messages/", chat_api.messages, name="chat-messages"),  # 33 POST
     path("tasks/<uuid:task_id>/", chat_api.task, name="task"),  # 34 GET (껍데기)
     # ----- 혜리 끝 -----
+
+    path("finance/loans/", finance_loans.loans, name="loan-list"),
     # ↑ 새 주소는 이 위에 추가
     # 맞는 주소가 없으면 JSON 404 (항상 맨 끝)
     re_path(r"^.*$", api_common.not_found, name="not_found"),
