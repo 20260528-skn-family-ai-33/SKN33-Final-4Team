@@ -1,10 +1,15 @@
 """
-finance 앱 API
-- 16. GET /api/finance/transactions/ — 거래 목록 (docs/api/transactions.md '거래 목록 보기')
+finance 앱 API — 거래 (docs/api/transactions.md)
+- 16. GET   /api/finance/transactions/       거래 목록
+- 17. GET   /api/finance/transactions/<id>/  거래 한 건 보기
+- 18. PATCH /api/finance/transactions/<id>/  거래 분류 수정
 """
 from datetime import date
 
+from django.db import transaction
 from django.db.models import Exists, F, OuterRef, Q
+from django.http import Http404
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import ValidationError
@@ -14,6 +19,7 @@ from rest_framework.response import Response
 from budgets.models import Category
 
 from .display import account_display, card_display
+from .inputs import body_dict, reject_unknown_fields
 from .models import FinancialTransaction, SourceKind, TransactionLink
 
 Tx = FinancialTransaction
@@ -161,3 +167,115 @@ def transactions(request):
         "items": items,
     })
 
+
+# ---------- 17 · 18. 거래 한 건 보기 · 분류 수정 ----------
+
+CATEGORY_ERROR = "카테고리를 다시 골라 주세요."
+INCOME_ERROR = "이 거래는 카테고리를 고를 수 없어요."
+FIXED_TRANSFER_ERROR = "고정지출에 연결된 거래예요. 고정지출 연결을 먼저 풀어 주세요."
+ORIGINAL_TYPE = "original_transaction_type"  # field_states 에 남기는 '원래 이체였음' 표시 (10/24 AA⑥)
+
+
+def suggestion_info(tx):
+    """서비스가 제안한 분류 {candidates, reason}. 사용자가 확정했거나 소비가 아니면 None
+    후보의 확신도 숫자는 화면에 보내지 않는다 (10/22 V)"""
+    if tx.transaction_type != Tx.TransactionType.SPENDING or tx.confirmation_state == Tx.ConfirmationState.CONFIRMED:
+        return None
+    codes = [c.get("category") for c in (tx.suggestion_candidates or []) if c.get("category")]
+    if not codes and tx.suggested_category_id:
+        codes = [tx.suggested_category_id]
+    names = dict(Category.objects.filter(category_code__in=codes).values_list("category_code", "display_name"))
+    return {
+        "candidates": [{"category": code, "category_name": names[code]} for code in codes if code in names],
+        "reason": tx.suggestion_reason,
+    }
+
+
+def transaction_detail_body(tx):
+    """거래 한 건 = 목록 한 줄 + 상세 칸"""
+    return {
+        **transaction_item(tx),
+        # 할부 개월: 카드 거래만 (일시불 0). 계좌 거래는 None
+        "installment_months": tx.installment_months if tx.source_kind == SourceKind.CARD else None,
+        "suggestion": suggestion_info(tx),
+        "classified_by": tx.classification_source,
+        "updated_at": tx.updated_at,
+    }
+
+
+def is_fixed_linked(tx):
+    """고정지출에 연결됐거나 고정비로 충당된 거래인지"""
+    return fixed_expense_id(tx) is not None or any(a.funding_bucket == "fixed" for a in tx.allocations.all())
+
+
+def _apply_category(tx, code):
+    """18번 저장 규칙. 고칠 칸 목록을 돌려준다 (틀리면 400)"""
+    states = dict(tx.field_states or {})
+    if code is None:
+        # null = '원래 이체였던 거래'를 다시 이체로 돌리기 (10/22 W). 그 밖의 거래는 400
+        if tx.transaction_type == Tx.TransactionType.TRANSFER:
+            return []  # 이미 이체 — 같은 결과로 성공
+        if states.get(ORIGINAL_TYPE) != Tx.TransactionType.TRANSFER:
+            raise ValidationError({"category": [CATEGORY_ERROR]})
+        if is_fixed_linked(tx):
+            raise ValidationError({"category": [FIXED_TRANSFER_ERROR]})  # 10/24 AA⑤
+        states.pop(ORIGINAL_TYPE)
+        tx.transaction_type = Tx.TransactionType.TRANSFER
+        # 이체는 카테고리가 없지만 DB 칸은 비울 수 없어서 '확인 필요'로 둔다 (목록 응답에서는 None)
+        tx.confirmed_category_id = UNCLASSIFIED
+        tx.confirmation_state = Tx.ConfirmationState.NEEDS_REVIEW
+        tx.classification_source = None
+        tx.field_states = states
+        return ["transaction_type", "confirmed_category", "confirmation_state", "classification_source", "field_states"]
+
+    # 고를 수 있는 카테고리 = 10개 + 기타 (UNCLASSIFIED · 숨긴 카테고리는 안 됨)
+    if (not isinstance(code, str) or code == UNCLASSIFIED
+            or not Category.objects.filter(category_code=code, is_active=True).exists()):
+        raise ValidationError({"category": [CATEGORY_ERROR]})
+    changed = ["confirmed_category", "confirmation_state", "classification_source"]
+    if tx.transaction_type == Tx.TransactionType.TRANSFER:
+        # 이체를 소비로 바꾸기 (10/22 W). 원래 이체였다는 표시를 남긴다 (AA⑥)
+        states[ORIGINAL_TYPE] = Tx.TransactionType.TRANSFER
+        tx.transaction_type = Tx.TransactionType.SPENDING
+        tx.field_states = states
+        changed += ["transaction_type", "field_states"]
+    tx.confirmed_category_id = code
+    tx.confirmation_state = Tx.ConfirmationState.CONFIRMED
+    # 사용자 확정 → 이후 같은 가맹점의 새 거래는 이 카테고리를 먼저 쓴다 (merchant_rules.remembered_category)
+    tx.classification_source = Tx.ClassificationSource.USER
+    return changed
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+def transaction_detail(request, transaction_id):
+    """17. GET  /api/finance/transactions/<id>/ — 거래 한 건 보기
+    18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null}
+    없는 거래 · 남의 거래 · 목록에 안 나오는 거래(같은 구매로 빠진 계좌 출금, 카드값 등)는 모두 404 (★3)"""
+    if request.method == "GET":
+        tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
+        return Response(transaction_detail_body(tx))
+
+    data = body_dict(request)
+    reject_unknown_fields(data, {"category"})
+    if "category" not in data:
+        raise ValidationError({"category": [CATEGORY_ERROR]})
+
+    # 조회 → 검사 → 저장을 한 트랜잭션에서 하고, 그동안 이 거래 행을 잠근다.
+    # 같은 거래에 '카테고리 변경'과 '이체로 되돌리기'가 동시에 와도 하나씩 차례로 처리되어
+    # transfer + 카테고리 확정 같은 섞인 상태가 남지 않는다 (PR #41 리뷰).
+    with transaction.atomic():
+        # 1) 잠금: 조인 없이 거래 행만 잠근다 (outer join 쪽은 FOR UPDATE 불가)
+        row = Tx.objects.select_for_update().filter(user=request.user, pk=transaction_id)
+        if not list(row.values_list("pk", flat=True)):
+            raise Http404  # 없는 거래 · 남의 거래
+        # 2) 잠근 뒤 최신 상태를 다시 읽는다. 목록에 안 나오는 거래면 404
+        tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
+        if tx.transaction_type == Tx.TransactionType.INCOME:
+            raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
+        changed = _apply_category(tx, data["category"])
+        if changed:
+            tx.save(update_fields=[*changed, "updated_at"])
+    # 바뀐 카테고리 이름 등을 새로 읽어서 17번과 같은 모양으로 돌려준다
+    tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
+    return Response(transaction_detail_body(tx))

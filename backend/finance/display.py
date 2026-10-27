@@ -11,6 +11,20 @@ from .codef import BANKS  # 은행 기관 코드 → 짧은 이름 (예: "0004" 
 from .models import Connection
 
 
+def organization_name(connection):
+    """기관 이름. 은행은 '국민은행'처럼. 카드사 · 대출 기관 이름표는 아직 없어서 기관 코드를 그대로 쓴다 (표 생기면 추가)"""
+    short = BANKS.get(connection.organization_code)
+    if connection.business_type == Connection.BusinessType.BANK and short:
+        return f"{short}은행"
+    return connection.organization_code
+
+
+def masked_tail(masked_number):
+    """가린 번호를 '****1234' 모양으로 (숫자가 없으면 받은 값 그대로)"""
+    tail = last4(masked_number)
+    return f"****{tail}" if tail else masked_number
+
+
 def last4(masked_number):
     """마스킹 번호에서 숫자만 골라 끝 4자리 (숫자가 없으면 빈 문자)"""
     digits = re.sub(r"\D", "", masked_number or "")
