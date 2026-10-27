@@ -88,8 +88,16 @@ docker run --name money-cushion-db \
   -e POSTGRES_DB=money_cushion \
   -e POSTGRES_USER=money_cushion \
   -e POSTGRES_PASSWORD=<.env와 같은 비밀번호> \
-  -p 5432:5432 -d postgres:17
+  -p 5432:5432 -d pgvector/pgvector:pg17
 ```
+
+Windows PowerShell은 한 줄로 실행한다.
+
+```powershell
+docker run --name money-cushion-db -e POSTGRES_DB=money_cushion -e POSTGRES_USER=money_cushion -e POSTGRES_PASSWORD=<.env와 같은 비밀번호> -p 5432:5432 -d pgvector/pgvector:pg17
+```
+
+> `pgvector/pgvector:pg17`은 PostgreSQL 17에 벡터 검색 확장(pgvector)이 들어 있는 이미지다. 가맹점 이름 유사도 검색(`finance.MerchantEmbedding`)에 쓴다.
 
 **B. 직접 설치 (macOS)**
 
@@ -98,9 +106,41 @@ brew install postgresql@17
 brew services start postgresql@17
 psql postgres -c "CREATE USER money_cushion WITH PASSWORD '<비밀번호>' CREATEDB;"
 psql postgres -c "CREATE DATABASE money_cushion OWNER money_cushion;"
+brew install pgvector
+psql template1 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+psql money_cushion -c "CREATE EXTENSION IF NOT EXISTS vector;"
 ```
 
+> `template1`에 확장을 켜 두면 Django 테스트가 새로 만드는 테스트 DB에도 pgvector가 켜진다.
+
 > `CREATEDB` 권한은 Django 테스트(`manage.py test`)가 테스트 DB를 만들 때 필요하다.
+
+**이미 DB를 띄워 둔 경우 (pgvector 추가)** — `finance` 0009 마이그레이션부터 pgvector가 필요하다. `migrate` 전에 한 번만 실행한다.
+
+```bash
+# A. Docker (기존 데이터 유지)
+docker exec -it money-cushion-db bash -c "apt-get update && apt-get install -y postgresql-17-pgvector"
+
+# B. 직접 설치 (macOS)
+brew install pgvector
+psql template1 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+psql money_cushion -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+설치 확인: `installed_version`은 `migrate` 전에는 비어 있고, **`migrate` 후에 버전이 나오면** DB에 켜진 것이다.
+
+```bash
+# A. Docker (PC에 psql이 없어도 된다)
+docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "SELECT name, default_version, installed_version FROM pg_available_extensions WHERE name='vector';"
+
+# B. 직접 설치 (macOS)
+psql -h localhost -U money_cushion -d money_cushion -c "SELECT name, default_version, installed_version FROM pg_available_extensions WHERE name='vector';"
+```
+
+> 결과가 0줄이면 pgvector가 설치되지 않은 것이다.
+
+> `could not open extension control file` → pgvector가 설치되지 않은 것이다. 위 명령을 먼저 실행한다.
+> `permission denied to create extension "vector"` → 관리자 계정으로 `CREATE EXTENSION vector;`를 한 번 실행한 뒤 다시 `migrate`한다.
 
 ---
 
