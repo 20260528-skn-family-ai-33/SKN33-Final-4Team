@@ -1,16 +1,21 @@
 from datetime import datetime
 
+from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from budgets.api import day_in_cycle
+from budgets.models import BudgetCycle
+from config.idempotency import idempotent
 from users.models import Consent
 
 from .api_connect import PURPOSE, ConsentRequired
-from .models import FinancialTransaction, Loan
-
+from .models import FinancialTransaction, Loan, Origin, PaymentDue
+from .serializers import LoanCreateSerializer, LoanPatchSerializer
 
 FIELD_NAMES = {
     "manual_balance": "manualBalance",
@@ -118,9 +123,12 @@ def loan_item(loan):
         "fetched_at": local_iso(loan.fetched_at),
     }
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def loans(request):
+    if request.method == "POST":
+        return loan_create(request)
+
     has_consent = Consent.objects.filter(
         user=request.user,
         purpose=PURPOSE,
@@ -137,3 +145,186 @@ def loans(request):
     ).order_by("loan_id")
 
     return Response({"items": [loan_item(loan) for loan in rows]})
+
+
+@idempotent()
+@transaction.atomic
+def loan_create(request):
+    """POST 전용 처리: 대출·확인 정보·납부 예정을 함께 저장한다."""
+    serializer = LoanCreateSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    loan = Loan.objects.create(
+        user=request.user,
+        origin=Origin.MANUAL,
+        status=Loan.Status.REPAYING,
+        **serializer.validated_data,
+    )
+    # 입력한 값은 사용자 확인 완료, 생략·null인 값은 모름으로 기록한다.
+    apply_loan_patch(loan, {field: getattr(loan, field) for field in FIELD_NAMES})
+    sync_loan_due(loan)
+    return Response(loan_item(loan), status=201)
+
+
+def apply_loan_patch(loan, validated_data):
+    if not validated_data:
+        return loan
+
+    states = dict(loan.field_states) if isinstance(loan.field_states, dict) else {}
+    previous_states = loan_field_states(loan)
+    confirmed_at = local_iso(timezone.now())
+    fields_to_save = []
+
+    for field, value in validated_data.items():
+        stored_key = FIELD_NAMES[field]
+        old_value = getattr(loan, field)
+        previous = previous_states[field]
+
+        if value is None:
+            new_state = {
+                "source": None,
+                "confirmationStatus": "unknown",
+                "confirmedAt": None,
+            }
+        else:
+            same_value = old_value == value
+            source = "manual"
+
+            if same_value and previous["source"] is not None:
+                source = previous["source"]
+
+            if same_value and previous["confirmation_status"] == "confirmed":
+                field_confirmed_at = previous["confirmed_at"]
+            else:
+                field_confirmed_at = confirmed_at
+
+            new_state = {
+                "source": source,
+                "confirmationStatus": "confirmed",
+                "confirmedAt": field_confirmed_at,
+            }
+
+        if old_value != value:
+            setattr(loan, field, value)
+            fields_to_save.append(field)
+
+        states[stored_key] = new_state
+
+    if states != loan.field_states:
+        loan.field_states = states
+        fields_to_save.append("field_states")
+
+    if fields_to_save:
+        loan.save(update_fields=fields_to_save)
+
+    return loan
+
+
+def sync_loan_due(loan):
+    today = timezone.localdate()
+
+    cycle = BudgetCycle.objects.filter(
+        user_id=loan.user_id,
+        status=BudgetCycle.Status.ACTIVE,
+        starts_on__lte=today,
+        ends_before__gt=today,
+    ).order_by("-starts_on").first()
+
+    if cycle is None:
+        return None
+
+    lookup = {
+        "user_id": loan.user_id,
+        "loan_id": loan.loan_id,
+        "obligation_type": PaymentDue.ObligationType.LOAN,
+        "occurrence_key": f"loan:{loan.pk}:{cycle.starts_on.isoformat()}",
+    }
+
+    locked_dues = PaymentDue.objects.select_for_update()
+    has_schedule = loan.monthly_payment is not None and loan.payment_day is not None
+
+    if has_schedule:
+        due_date = day_in_cycle(cycle, loan.payment_day)
+        if due_date is None:
+            return None
+
+        amount_state = loan_field_states(loan)["monthly_payment"]
+        values = {
+            "due_date": due_date,
+            "confirmed_amount": loan.monthly_payment,
+            "source_type": amount_state["source"] or "unknown",
+            "confirmation_state": amount_state["confirmation_status"],
+            "obligation_state": PaymentDue.ObligationState.ACTIVE,
+            "canceled_at": None,
+            "payment_state": (
+                PaymentDue.PaymentState.UNPAID
+                if due_date >= today
+                else PaymentDue.PaymentState.NEEDS_REVIEW
+            ),
+        }
+
+        due, created = locked_dues.get_or_create(
+            **lookup,
+            defaults=values,
+        )
+
+        if created:
+            return due
+
+    else:
+        due = locked_dues.filter(**lookup).first()
+        if due is None:
+            return None
+
+    if (
+        due.payment_state in (
+            PaymentDue.PaymentState.PARTIAL,
+            PaymentDue.PaymentState.PAID,
+        )
+        or due.paid_amount > 0
+        or due.matches.exists()
+    ):
+        return due
+
+    if not has_schedule:
+        if due.obligation_state != PaymentDue.ObligationState.CANCELED:
+            due.obligation_state = PaymentDue.ObligationState.CANCELED
+            due.canceled_at = timezone.now()
+            due.save(update_fields=["obligation_state", "canceled_at"])
+
+        return due
+
+    changed_fields = []
+
+    for field, value in values.items():
+        if getattr(due, field) != value:
+            setattr(due, field, value)
+            changed_fields.append(field)
+
+    if changed_fields:
+        due.save(update_fields=changed_fields)
+
+    return due
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def loan_detail(request, loan_id):
+    with transaction.atomic():
+        loan = get_object_or_404(
+            Loan.objects.select_for_update(),
+            loan_id=loan_id,
+            user=request.user,
+            status=Loan.Status.REPAYING,
+        )
+
+        serializer = LoanPatchSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        if serializer.validated_data:
+            apply_loan_patch(loan, serializer.validated_data)
+            sync_loan_due(loan)
+
+        body = loan_item(loan)
+
+    return Response(body)

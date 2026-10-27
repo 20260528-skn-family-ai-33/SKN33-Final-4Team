@@ -69,6 +69,7 @@ urlpatterns = [
     # ----- 혜리 끝 -----
 
     path("finance/loans/", finance_loans.loans, name="loan-list"),
+    path("finance/loans/<uuid:loan_id>/", finance_loans.loan_detail, name="loan-detail",),
     # ↑ 새 주소는 이 위에 추가
     # 맞는 주소가 없으면 JSON 404 (항상 맨 끝)
     re_path(r"^.*$", api_common.not_found, name="not_found"),
