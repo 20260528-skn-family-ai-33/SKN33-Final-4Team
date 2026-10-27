@@ -1,8 +1,8 @@
 # 금융 동의·계좌·연결 API 명세
 
-> 담당: 김혜리 · 명세 상태: 초안 · 개발 상태: 동의 저장 · 계좌 후보 · 계좌 선택 · 연결 목록 = DB 구현 (10/26), 연결 해제 = DB 구현 (10/27, CODEF 기관 빼기는 미연결), 금융기관 인증 · 새 연결 = 구현 (10/27, CODEF 계정 등록 · 문자 인증) — `backend/finance/api_connect.py` · `api_new_connection.py`
+> 담당: 김혜리 · 명세 상태: 초안 · 개발 상태: 동의 저장 · 계좌 후보 · 계좌 선택 · 연결 목록 = DB 구현 (10/26), 연결 해제 = DB 구현 (10/27, CODEF 기관 빼기는 미연결), 금융기관 인증 · 새 연결 = 구현 (10/27, CODEF 계정 등록 · 문자 인증), 다시 불러오기 = 구현 (10/27, 작업 방식 · 자동 불러오기) — `backend/finance/api_connect.py` · `api_new_connection.py` · `api_sync.py`
 > 공통 규칙은 `docs/API_RULES.md`, 결정 사항은 `docs/결정기록_2026-10-21.md`를 따른다 (camelCase · 원 단위 정수 · UUID · 세션 쿠키 + CSRF · 에러 모양)
-> 범위: 목록 2번 중 동의·계좌·연결 6개(10/27 금융기관 인증·새 연결 추가). 카드 후보·선택, 대출, 카드 청구서는 권세진 담당(`cards.md` · `loans.md`). 다시 불러오기(`POST /api/finance/sync/`)는 10/27 결정이 나와 이어서 작성한다.
+> 범위: 목록 2번 중 동의·계좌·연결 7개(10/27 금융기관 인증·새 연결, 다시 불러오기 추가). 카드 후보·선택, 대출, 카드 청구서는 권세진 담당(`cards.md` · `loans.md`). 다시 불러오기의 작업 결과 확인은 `chat.md` '오래 걸리는 작업 진행 확인'(공용).
 > 연결 순서(화면): 동의 저장 → 금융기관 인증·새 연결 → 계좌 후보 보기 → 계좌 선택 저장
 > 10/22 반영: 결정기록 ★ 1·2·3·4 · 0번 체크리스트 · H-07 확정(결정기록 3-1 코드표) · **결정기록 3-3 D·F·K·L·M 확정** (README 4-1 · 4-2) · 10/22 결정 N⑥~⑧ · O · V · Z①③
 
@@ -102,6 +102,8 @@
 3. 카드사별 추가 값(현대카드 카드번호 · 카드 비밀번호)은 **저장하지 않고 매번 받는다**. CODEF에 보내고 바로 버린다(DB · 로그 저장 금지). 현대카드는 조회할 때도 매번 필요해서 다시 불러오기 API에서도 받는다.
 4. 여러 기관을 한 번에 보내면 **성공한 것만 저장**한다. 하나라도 연결되거나 문자 인증 대기면 **200 + 기관별 결과**, 전부 실패하면 아래 '실패하면' 기준으로 에러.
 5. 실패 안내는 아래 표. CODEF 원래 코드(`CF-xxxxx`)는 **로그에만** 남기고 응답에는 넣지 않는다.
+6. `connectedId` 암호화 키는 **전용 키**를 쓴다: `.env`의 `CONNECTED_ID_ENCRYPTION_KEY`(32바이트 urlsafe base64, 필수 — 없거나 형식이 틀리면 서버가 켜지지 않음). `SECRET_KEY`에서 만들지 않는다(바꾸면 전원 재연결이 필요해서). 키는 단톡방에 올리지 않고 같은 DB를 쓰는 사람끼리만 따로 전달한다. 만드는 명령은 `.env.example`에 있다.
+7. AES 암호화 라이브러리 `pycryptodome==4.1.0`을 `requirements.txt`에 명시한다(지금 `.venv` 버전, `easycodefpy`도 같은 라이브러리 사용).
 
 **보내는 값**
 
@@ -204,8 +206,7 @@
 - **CODEF 실패 코드 표**: 실제 응답으로 확인된 코드는 `CF-03002`(문자 인증), `CF-12401`(현대카드 카드 값 누락, 10/27 나은) 둘뿐이다. 아이디 · 비밀번호 오류(`CF-12100`, 기존 `codef.py` 주석) · 잠김 · 비밀번호 변경 · 인증번호 틀림 · 인증 시간 지남 · 이미 등록된 기관 코드는 데모 계정으로 한 번씩 받아서 `codef_accounts.py`의 `CODE_REASONS`에 옮겨야 한다. 그전까지는 CODEF 안내 문장의 낱말(예: '비밀번호' + '일치')로 임시 판단하고, 판단이 안 되면 502 안내로 보낸다 → 김혜리 · 김나은(`codef_card_check` 결과 공유 부탁)
 - **문자 인증 2-way 세부**: 인증번호를 보내는 칸 이름(`smsAuthNo`)과 위치(요청 맨 바깥), CODEF 응답의 `method` 값(`smsAuthNo`), 인증 제한 시간, 문자 받은 번호(`phoneHint`)를 응답에서 얻을 수 있는지 → 실제 문자 인증 기관(롯데카드 · 씨티)으로 확인 필요 (김혜리)
 - **502 / 503**: 나은 추천안은 기관 점검 · 응답 없음을 503으로 적었지만, 공통 규칙(`API_RULES.md` 10-22 O)은 `provider_unavailable`을 **502**로 정해 두어서 502로 구현했다. 바꾸려면 공통 규칙부터 → 김나은
-- **`connectedId` 암호화 키**: 지금은 `DJANGO_SECRET_KEY`에서 이 용도 전용 키를 만들어 AES-GCM으로 암호화한다. SECRET_KEY를 바꾸면 저장된 값을 못 읽으므로 전용 키(`.env`)를 따로 둘지 → 김나은(공통 설정)
-- **pycryptodome**: AES 암호화에 `easycodefpy`가 이미 쓰는 `pycryptodome`을 쓴다. `requirements.txt`에 직접 적어 둘지 → 김나은
+- 새 환경변수 `CONNECTED_ID_ENCRYPTION_KEY`를 `docs/ENV_SETUP.md` · `LOCAL_SETUP.md` 3단계(.env 필수 칸) 표에도 적어 줄지 → 김나은(공통 문서)
 - **연결 직후 불러오기를 요청 안에서 기다림**: 은행 여러 곳을 한 번에 연결하면 응답이 길어질 수 있다. 다시 불러오기처럼 작업(`taskId`) 방식으로 바꿀지는 실제 속도를 보고 정한다
 - **CODEF에서 기관 빼기**가 아직 없어서(연결 해제 '정해진 것'), 한 번 연결한 기관은 해제했어도 다시 연결할 때 CODEF '계정 갱신'(`/v1/account/update`)으로 보낸다. 기관 빼기를 붙이면 '추가'(`/v1/account/add`)로 바뀐다. 추가가 '이미 등록됨'으로 실패하면 갱신으로 한 번 더 시도한다
 - `connection.auth_method` 값 `id_password`는 H-07 코드표에 없다 → 코드표에 넣을지 김나은
@@ -418,6 +419,135 @@
 - 중지 호출과 해제 호출의 순서, 중지 중 일부가 실패했을 때 해제를 계속할지 → 프런트 담당
 - 조회 중 해제로 저장을 버린 경우 지금은 `sync_run`이 `failed / sync_error`로 남고 `codef_sync` 명령도 "동기화에 실패했어요"로 나온다. 실제 오류와 구분할 코드(예: `error_code = disconnected`)를 둘지 → 김나은
 - `sync_bank`는 `disconnected_at=None` 조건으로 연결을 `get_or_create`하므로, 해제된 은행에 동기화를 돌리면 새 연결이 생긴다(= 재연결). 수동 명령은 괜찮지만, 자동 동기화를 붙일 때는 연결 ID를 받아 해제된 연결은 건너뛸지 → 김나은
+
+---
+
+## 금융 정보 다시 불러오기
+
+| 칸 | 내용 |
+|---|---|
+| 어떤 기능 | 홈 · 연결 관리에서 [새로고침]을 누를 때(연결 전부), 연결 관리에서 기관 하나의 [다시 불러오기]를 누를 때(그 기관만) |
+| 어디로 | `POST /api/finance/sync/` → 202 + 작업 번호, 결과는 `GET /api/tasks/<taskId>/`(`chat.md` '오래 걸리는 작업 진행 확인') |
+| 로그인 필요 | O |
+| 요청 번호 | 쓰지 않음. 대신 **"이 회원이 이미 불러오는 중인가"**로 막는다(아래 중복 요청) |
+| 명세 상태 | 초안 (10/27 나은 결정 반영) |
+| 개발 상태 | 구현 (10/27) — `backend/finance/api_sync.py` · `config/tasks.py` · 자동 불러오기 명령 `finance_auto_sync` |
+
+**정해진 것 (10/27 나은)**
+
+1. **대상**: 기본은 연결된 기관 전부 × 기관마다 **동의한 범위 전부**(은행: 계좌 · 거래 + 대출 / 카드: 카드 · 청구서). `connectionIds`로 특정 기관만 고를 수 있다(연결 관리 화면용). 동의하지 않은 범위는 건너뛴다(**실패로 세지 않음**).
+2. **기간**: 거래 = 마지막으로 성공한 조회일 **7일 전 ~ 오늘**(겹친 거래는 `sync.py`가 중복 없이 저장) / 카드 청구서 = **지난달 + 이번 달**(CODEF billing-list는 월 단위 `YYYYMM`) / 계좌 잔액 · 카드 목록 · 대출 = 지금 상태를 통째로 다시 받기. 성공한 적이 없는 연결은 첫 연결과 같게 **4달 전 1일 ~ 오늘**.
+3. **일부 실패**: 성공한 기관만 저장하고, 실패한 기관은 기관별 결과에 이유를 넣는다. 문구 · 코드는 '금융기관 인증 · 새 연결' 실패 안내 표와 같다. **로그인 오류 · 잠김이면 연결 상태를 `relogin`으로** 바꾼다.
+4. **카드번호 · 카드 비밀번호가 필요한 곳(현대카드)**: 요청으로 받아서 CODEF에 보내고 바로 버린다(저장 · 로그 금지). 요청에 없으면 **그 기관만** "카드 비밀번호가 필요해요."로 실패, 나머지는 정상 저장.
+5. **작업 방식**: 바로 답하지 않고 `202 {taskId, status}` → `GET /api/tasks/<taskId>/`로 상태와 기관별 결과를 본다. **1차는 요청 안에서 끝까지 처리하고 응답만 작업 모양**이라 보통 `status: succeeded`로 온다. 나중에 느려지면 서버 속만 뒤에서 돌리게 바꾸고 API · 화면은 그대로 둔다.
+6. **중복 요청**: 그 회원이 이미 불러오는 중이면 새로 시작하지 않고 **진행 중인 `taskId`**를 그대로 돌려준다(에러 아님). 끝난 지 **1분 안**에 같은 대상으로 또 누르면 다시 부르지 않고 **마지막 결과**를 돌려준다.
+7. **자동 불러오기**: 하루 3번(07 · 13 · 21시, 자정 전후 은행 점검 시간 피함). 연결이 살아 있는(`connected`) 회원만, 수동과 같은 범위 규칙. 그 회원이 불러오는 중이면 건너뛴다. 카드 값이 필요한 기관은 자동에서 뺀다. 1차는 cron으로 명령을 돌린다.
+8. 연결 해제된 뒤 도착한 데이터는 저장하지 않고 버린다(연결 해제 '정해진 것', #51).
+
+**보내는 값** — 전부 생략 가능 (`{}` 또는 본문 없음 = 연결 전부)
+
+| 이름 | 타입 | 필수 | 범위 · 설명 | 예시 |
+|---|---|---|---|---|
+| `connectionIds` | UUID 목록 | X | 불러올 연결만 고를 때. 1~50개, 중복 없이. 내 연결 · 해제 안 한 것만(아니면 400 "선택할 수 없는 연결이에요.") | `["5e0a…"]` |
+| `cardCredentials` | 목록 | X | 카드 값이 필요한 카드사 연결의 카드번호 · 카드 비밀번호. 이번 대상 안의 카드사 연결만 | |
+| `cardCredentials[].connectionId` | UUID | O | 카드사 연결 번호 | |
+| `cardCredentials[].cardNo` | 문자 | O | 숫자만 14~19자리 | `"4111222233334444"` |
+| `cardCredentials[].cardPassword` | 문자 | O | 숫자 2자리 또는 4자리 | |
+
+```json
+// [새로고침] — 연결 전부
+{}
+// 연결 관리에서 현대카드만, 카드 값과 함께
+{ "connectionIds": ["91f2…"], "cardCredentials": [{ "connectionId": "91f2…", "cardNo": "4111222233334444", "cardPassword": "••••" }] }
+```
+
+**받는 값 (202)**
+
+| 이름 | 타입 | 뜻 |
+|---|---|---|
+| `taskId` | UUID | 작업 번호 → `GET /api/tasks/<taskId>/` |
+| `status` | 문자 | `queued` · `running` · `succeeded` · `failed` (1차는 대부분 `succeeded`. 진행 중인 작업을 돌려받으면 `running`) |
+
+```json
+{ "taskId": "d71c…", "status": "succeeded" }
+```
+
+**작업 결과** — `GET /api/tasks/<taskId>/`의 `result` (`taskType: "finance_sync"`)
+
+| 이름 | 타입 | 뜻 |
+|---|---|---|
+| `summary` | 객체 | `{total, succeeded, failed, skipped}` 기관 수 |
+| `items` | 목록 | 기관별 결과 (대상 순서) |
+| `items[].connectionId` · `businessType` · `organizationCode` · `organizationName` | | 연결 정보 |
+| `items[].status` | 문자 | `succeeded` 하나 이상 저장 / `failed` 실패(이유는 `error`) / `skipped` 할 일 없음(동의 안 함 · 준비 중 · 조회 중 해제) |
+| `items[].parts` | 목록 | 범위별 결과 `{kind, status, reason?}`. `kind`: `accounts`(계좌 · 거래) · `loans`(대출) · `cards`(카드 · 승인 · 청구서). `reason`(건너뛴 이유): `no_consent` 동의 안 함 · `not_supported` 아직 불러오기 기능 없음 · `disconnected` 조회 중 해제 · `not_run` 앞 범위가 실패해서 안 함 |
+| `items[].newTransactionCount` | 정수 / null | 새로 저장한 은행 거래 수 |
+| `items[].error` | 객체 / null | (`failed`) `{code, message, fields?}` |
+
+```json
+{ "taskId": "d71c…", "taskType": "finance_sync", "status": "succeeded", "conversationId": null,
+  "createdAt": "2026-10-27T17:50:00+09:00", "startedAt": "2026-10-27T17:50:00+09:00", "completedAt": "2026-10-27T17:50:06+09:00",
+  "result": {
+    "summary": { "total": 3, "succeeded": 1, "failed": 2, "skipped": 0 },
+    "items": [
+      { "connectionId": "5e0a…", "businessType": "bank", "organizationCode": "0088", "organizationName": "신한은행", "status": "succeeded",
+        "parts": [{ "kind": "accounts", "status": "succeeded" }, { "kind": "loans", "status": "skipped", "reason": "no_consent" }],
+        "newTransactionCount": 5, "error": null },
+      { "connectionId": "91f2…", "businessType": "card", "organizationCode": "0302", "organizationName": "현대카드", "status": "failed",
+        "parts": [], "newTransactionCount": null,
+        "error": { "code": "invalid", "message": "카드 비밀번호가 필요해요.", "fields": { "cardNo": ["카드 비밀번호가 필요해요."], "cardPassword": ["카드 비밀번호가 필요해요."] } } },
+      { "connectionId": "77ab…", "businessType": "bank", "organizationCode": "0004", "organizationName": "국민은행", "status": "failed",
+        "parts": [{ "kind": "accounts", "status": "failed" }, { "kind": "loans", "status": "skipped", "reason": "not_run" }], "newTransactionCount": null,
+        "error": { "code": "relogin_required", "message": "아이디 또는 비밀번호를 확인해 주세요." } }
+    ]
+  },
+  "error": null }
+```
+
+- **작업 상태와 기관 결과는 다르다**: 작업이 끝까지 돌았으면 기관이 전부 실패해도 작업은 `succeeded`이고, 실패는 `items[].error`로 본다. 작업 `failed`는 서버 오류로 중간에 멈춘 경우뿐이다(`error.code`: `server_error`, 10분 넘게 멈춘 작업은 `stale`).
+- **기관별 실패 코드**: '금융기관 인증 · 새 연결' 실패 안내 표의 문구를 그대로 쓰되, 로그인 오류 · 잠김은 `code: relogin_required`로 보낸다(그 연결은 `relogin`이 되고 화면은 [다시 연결]). 이미 `relogin`인 연결이나 저장된 `connectedId`가 없는 회원은 CODEF를 부르지 않고 "○○ 다시 연결이 필요해요. 연결 관리에서 다시 연결해 주세요."(`relogin_required`). 기관 점검 · 응답 없음은 `provider_unavailable`.
+- **카드 값이 필요해요**를 받으면 화면은 그 기관의 카드번호 · 카드 비밀번호를 받아 `connectionIds`(그 기관) + `cardCredentials`로 다시 보낸다. 카드 값을 보낸 요청은 1분 안이어도 새로 부른다.
+- 은행 거래 저장은 나은의 `sync_bank`(PR #44 · #45), 대출은 권세진의 `sync_bank_loans`(PR #50)를 부른다. **카드 · 승인 · 청구서 저장 함수는 아직 없어서** 카드사는 지금 `cards: skipped / not_supported`로 온다(아래 확인 필요).
+- 진행 중 판단과 결과 보관은 공용 작업 표(`async_task`, `taskType = finance_sync`)로 한다. 기관 조회 한 번 한 번의 기록은 기존대로 `sync_run`에 남는다.
+
+**중복 요청**
+
+| 상황 | 답 |
+|---|---|
+| 그 회원의 불러오기 작업이 진행 중(수동 · 자동 모두) | 202 + **그 작업**의 `taskId` · `running`. 새로 부르지 않음 |
+| 같은 대상으로 끝난 지 1분 안 | 202 + **마지막 작업**의 `taskId` · `succeeded`. 새로 부르지 않음 |
+| 대상이 다르거나 카드 값을 보냄 · 1분 지남 | 새 작업 |
+| 진행 중 작업이 10분 넘게 끝나지 않음 (서버가 중간에 멈춤) | 그 작업을 `failed / stale`로 닫고 새 작업 |
+
+**자동 불러오기 (cron)**
+
+```
+# 매일 07:00 · 13:00 · 21:00 (한국 시간)
+0 7,13,21 * * *  cd <앱 경로>/backend && python manage.py finance_auto_sync
+```
+
+- 대상: 활성 회원 중 `connected` 연결이 있는 회원. `relogin` 연결과 카드 값이 필요한 카드사(현대카드)는 뺀다.
+- 그 회원이 불러오는 중이면 건너뛴다. 회원마다 작업 하나(`request_key`가 `finance_sync_auto:`로 시작)를 남기므로, 자동이 도는 중에 수동으로 누르면 그 작업 번호를 받는다.
+- 출력은 숫자만: "자동 불러오기 N명 · 진행 중이라 건너뜀 N명 · 대상 기관 없음 N명".
+
+**실패하면** (작업을 만들기 전)
+
+| 상황 | 상태 | `code` | 화면 안내 |
+|---|---|---|---|
+| 연결된 기관이 없음 | 400 | `invalid` | `fields.nonFieldErrors: ["연결된 기관이 없어요. 먼저 기관을 연결해 주세요."]` |
+| 내 연결이 아님 · 해제된 연결 · UUID 아님 · 중복 · 빈 목록 | 400 | `invalid` | `fields.connectionIds: ["선택할 수 없는 연결이에요."]` |
+| 카드 값 형식 · 대상 밖 연결 | 400 | `invalid` | `fields["cardCredentials[0].cardNo"]` 등 |
+| 표에 없는 칸 | 400 | `invalid` | "이 칸은 보낼 수 없어요." |
+| 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 |
+
+**확인 필요**
+
+- **카드 · 카드 승인 · 청구서 저장 함수 담당**: 은행(나은) · 대출(권세진 PR #50)은 있는데 카드사 저장은 아직 없다. 만들면 `finance/sync_cards.py`에 `sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None)` 모양으로 두면 다시 불러오기 · 자동 불러오기가 바로 부른다(`api_sync.card_syncer`). 실패 시 `codef.CodefError`를 그대로 올리고, 저장 직전 연결 해제를 확인해 달라 → 김나은 · 권세진 (나은 `codef_card_check` 결과와 함께)
+- **대출(PR #50)**: 병합되면 따로 고칠 것 없이 `loans` 범위가 켜진다. 대출 거래 기간도 은행 거래와 같은 기간(마지막 성공 7일 전 ~ 오늘)을 넘긴다 → 권세진 확인
+- **진행 중 판단 기준**: 나은은 `sync_run`(PR #50)을 쓰자고 했는데, `sync_run`은 기관 조회 한 번마다 생기는 기록이라 "이 회원의 불러오기 전체가 진행 중인가"와 "1분 안 마지막 결과"를 보기 어려워 공용 작업 표(`async_task`)로 판단했다. 기관별 기록은 그대로 `sync_run`에 남는다 → 김나은 확인
+- **자동 불러오기 명령**: `codef_sync`(나은, 개발용 한 회원 · `.env` 연결 ID)를 넓히는 대신 새 명령 `finance_auto_sync`를 만들었다. `codef_sync`와 합칠지 → 김나은
+- **cron 실행 위치 · 시간대**: 배포 서버 cron이 한국 시간인지(아니면 UTC 22 · 4 · 12시) → 배포 담당
+- 작업 상태(`succeeded`)와 기관별 결과(`failed`)가 다를 때 화면 문구 → 프런트 담당. 예: 전부 실패면 "불러오지 못했어요", 일부면 "○곳은 불러오지 못했어요"
 
 ---
 
