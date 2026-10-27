@@ -4,6 +4,7 @@ finance 앱 API — 금융 동의 · 계좌 · 연결 (docs/api/finance-connect.
 - 7. GET  /api/finance/connect/accounts/  계좌 후보 보기
 - 8. PUT  /api/finance/connect/accounts/  계좌 선택 저장
 - 9. GET  /api/finance/connections/       연결 목록 보기
+- 10. DELETE /api/finance/connections/<id>/ 연결 해제
 모두 저장된 값만 읽고 쓴다. CODEF 를 새로 부르지 않는다 (10/22 O)
 """
 import hashlib
@@ -11,6 +12,8 @@ import uuid
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.http import Http404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -216,3 +219,27 @@ def connections(request):
         .order_by("created_at")
     )
     return Response({"items": [connection_item(connection) for connection in rows]})
+
+
+# ---------- 10. 연결 해제 ----------
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def connection_disconnect(request, connection_id):
+    """10. DELETE /api/finance/connections/<id>/ — 204 (본문 없음)
+    - 행은 지우지 않고 status=disconnected + disconnected_at 만 채운다. 이 연결의 계좌·카드는 연결 상태를 따라 disconnected 로 보인다
+    - 이미 해제한 연결이면 아무것도 바꾸지 않고 204 (결정기록 0번)
+    - 없는 연결 · 남의 연결은 404
+    - 고정지출 · 정기 저축, 계좌 isSelected, 지난 거래는 건드리지 않는다 (결정기록 F · 10/22 N⑧)
+    - 동시에 여러 번 와도 한 번만 해제되도록 연결 행을 잠그고 처리한다
+    - CODEF 쪽(그 은행만 connectedId 에서 빼기, connectedId 자체는 유지)은 DB 처리 뒤 별도로 붙인다 (10/27 결정)
+      해제 뒤 도착한 조회 결과를 버리는 처리는 codef_sync 쪽(나은)에서 한다"""
+    with transaction.atomic():
+        connection = Connection.objects.select_for_update().filter(user=request.user, pk=connection_id).first()
+        if connection is None:
+            raise Http404
+        if connection.disconnected_at is None:
+            connection.status = Connection.Status.DISCONNECTED
+            connection.disconnected_at = timezone.now()
+            connection.save(update_fields=["status", "disconnected_at"])
+    return Response(status=status.HTTP_204_NO_CONTENT)

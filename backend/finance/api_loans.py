@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -123,6 +124,16 @@ def loan_item(loan):
         "fetched_at": local_iso(loan.fetched_at),
     }
 
+def owned_loans(user):
+    """단일 FK는 관련 객체의 소유권까지 보장하지 않으므로 함께 검사한다."""
+    return Loan.objects.filter(
+        Q(connection__isnull=True) | Q(connection__user=user),
+        Q(linked_account__isnull=True)
+        | Q(linked_account__user=user, linked_account__connection__user=user),
+        user=user,
+    )
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def loans(request):
@@ -139,8 +150,7 @@ def loans(request):
     if not has_consent:
         raise ConsentRequired("대출 조회 동의가 필요해요.")
 
-    rows = Loan.objects.filter(
-        user=request.user,
+    rows = owned_loans(request.user).filter(
         status=Loan.Status.REPAYING,
     ).order_by("loan_id")
 
@@ -241,13 +251,15 @@ def sync_loan_due(loan):
     }
 
     locked_dues = PaymentDue.objects.select_for_update()
-    has_schedule = loan.monthly_payment is not None and loan.payment_day is not None
+    due_date = (
+        day_in_cycle(cycle, loan.payment_day)
+        if loan.monthly_payment is not None and loan.payment_day is not None
+        else None
+    )
+    # 값이 있어도 이번 주기 밖이면 기존 미납 예정을 취소하는 경로로 보낸다.
+    has_schedule = due_date is not None
 
     if has_schedule:
-        due_date = day_in_cycle(cycle, loan.payment_day)
-        if due_date is None:
-            return None
-
         amount_state = loan_field_states(loan)["monthly_payment"]
         values = {
             "due_date": due_date,
@@ -312,9 +324,9 @@ def sync_loan_due(loan):
 def loan_detail(request, loan_id):
     with transaction.atomic():
         loan = get_object_or_404(
-            Loan.objects.select_for_update(),
+            # nullable 관계의 OUTER JOIN까지 잠그면 PostgreSQL에서 실패한다.
+            owned_loans(request.user).select_for_update(of=("self",)),
             loan_id=loan_id,
-            user=request.user,
             status=Loan.Status.REPAYING,
         )
 

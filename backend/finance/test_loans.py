@@ -11,11 +11,12 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
+from django.utils import timezone
 
 from budgets.models import BudgetCycle
-from users.models import IdempotencyRecord
+from users.models import Consent, IdempotencyRecord
 
-from .models import Connection, Loan, PaymentDue
+from .models import BankAccount, Connection, FinancialTransaction, Loan, PaymentDue, PaymentMatch
 
 
 URL = "/api/finance/loans/"
@@ -323,3 +324,126 @@ class LoanCreateTest(TestCase):
         self.assertEqual(response.status_code, 400)
         loan.refresh_from_db()
         self.assertEqual(loan.manual_balance, BASE["manualBalance"])
+
+    def short_cycle(self):
+        self.cycle.starts_on, self.cycle.ends_before = date(2027, 1, 31), date(2027, 2, 28)
+        self.cycle.save(update_fields=["starts_on", "ends_before"])
+
+    def test_payment_day_outside_cycle_cancels_then_reactivates_unpaid_due(self):
+        self.short_cycle()
+        with patch("django.utils.timezone.localdate", return_value=date(2027, 2, 1)):
+            response = self.post({**FULL, "paymentDay": 1})
+            self.assertEqual(response.status_code, 201)
+            loan = Loan.objects.get(pk=response.json()["loanId"])
+            due = PaymentDue.objects.get(loan=loan)
+            self.assertEqual(due.due_date, date(2027, 2, 1))
+            self.assertEqual(self.patch_loan(loan, {"paymentDay": 30}).status_code, 200)
+            due.refresh_from_db()
+            self.assertEqual(due.obligation_state, "canceled")
+            self.assertIsNotNone(due.canceled_at)
+            canceled_at = due.canceled_at
+            loan.refresh_from_db()
+            self.assertEqual(loan.payment_day, 30)
+            self.assertEqual(self.patch_loan(loan, {"paymentDay": 30}).status_code, 200)
+            due.refresh_from_db()
+            self.assertEqual(due.canceled_at, canceled_at)
+            self.assertEqual(self.patch_loan(loan, {"paymentDay": 2}).status_code, 200)
+            due.refresh_from_db()
+            self.assertEqual((due.obligation_state, due.due_date), ("active", date(2027, 2, 2)))
+            self.assertIsNone(due.canceled_at)
+            self.assertEqual(PaymentDue.objects.filter(loan=loan).count(), 1)
+
+    def test_payment_day_outside_cycle_preserves_paid_due(self):
+        self.short_cycle()
+        with patch("django.utils.timezone.localdate", return_value=date(2027, 2, 1)):
+            for state, amount in (("partial", 10000), ("paid", 100000)):
+                with self.subTest(state=state):
+                    response = self.post({**FULL, "paymentDay": 1})
+                    loan = Loan.objects.get(pk=response.json()["loanId"])
+                    due = PaymentDue.objects.get(loan=loan)
+                    due.payment_state, due.paid_amount = state, amount
+                    due.save(update_fields=["payment_state", "paid_amount"])
+                    before = PaymentDue.objects.filter(pk=due.pk).values().get()
+                    self.assertEqual(self.patch_loan(loan, {"paymentDay": 30, "monthlyPayment": 400000}).status_code, 200)
+                    self.assertEqual(PaymentDue.objects.filter(pk=due.pk).values().get(), before)
+
+    def test_payment_day_outside_cycle_does_not_create_due(self):
+        self.short_cycle()
+        with patch("django.utils.timezone.localdate", return_value=date(2027, 2, 1)):
+            for day in (28, 29, 30):
+                with self.subTest(day=day):
+                    response = self.post({**FULL, "paymentDay": day})
+                    self.assertEqual(response.status_code, 201)
+                    self.assertFalse(PaymentDue.objects.filter(loan_id=response.json()["loanId"]).exists())
+
+    def test_payment_day_outside_cycle_preserves_due_with_payment_match(self):
+        self.short_cycle()
+        with patch("django.utils.timezone.localdate", return_value=date(2027, 2, 1)):
+            response = self.post({**FULL, "paymentDay": 1})
+            loan = Loan.objects.get(pk=response.json()["loanId"])
+            due = PaymentDue.objects.get(loan=loan)
+            tx = FinancialTransaction.objects.create(
+                user=self.user, source_kind="loan", loan=loan, occurred_on=date(2027, 2, 1),
+                amount=10000, direction="out", transaction_type="loan_repayment",
+                confirmed_category_id="UNCLASSIFIED", confirmation_state="confirmed",
+            )
+            PaymentMatch.objects.create(user=self.user, due=due, transaction=tx, matched_amount=10000)
+            # 집계 칸이 아직 갱신되지 않았어도 실제 연결 기록만 있으면 보존한다.
+            before = PaymentDue.objects.filter(pk=due.pk).values().get()
+            self.assertEqual(self.patch_loan(loan, {"paymentDay": 30}).status_code, 200)
+            self.assertEqual(PaymentDue.objects.filter(pk=due.pk).values().get(), before)
+            self.assertEqual(PaymentMatch.objects.filter(due=due).count(), 1)
+
+    def related_objects(self):
+        other = get_user_model().objects.create_user(email=f"loan-owner-{uuid.uuid4().hex}@example.invalid")
+        own_connection = Connection.objects.create(
+            user=self.user, business_type="bank", organization_code="0004", status="connected",
+        )
+        foreign_connection = Connection.objects.create(
+            user=other, business_type="bank", organization_code="0004", status="connected",
+        )
+        own_account = BankAccount.objects.create(user=self.user, connection=own_connection, source_account_key="own")
+        foreign_account = BankAccount.objects.create(user=other, connection=foreign_connection, source_account_key="foreign")
+        mismatched_account = BankAccount.objects.create(user=self.user, connection=foreign_connection, source_account_key="mismatched")
+        Consent.objects.create(user=self.user, purpose="finance_inquiry", product_scope="loan",
+                               document_version="test", document_hash="test-only")
+        return own_connection, foreign_connection, own_account, foreign_account, mismatched_account
+
+    def test_foreign_related_objects_hidden_and_patch_rejected_without_changes(self):
+        own_connection, foreign_connection, own_account, foreign_account, mismatched_account = self.related_objects()
+        for related in (
+            {"connection": foreign_connection, "linked_account": own_account},
+            {"connection": own_connection, "linked_account": foreign_account},
+            {"connection": own_connection, "linked_account": mismatched_account},
+        ):
+            with self.subTest(related=list(related.values())):
+                response = self.post(FULL)
+                loan = Loan.objects.get(pk=response.json()["loanId"])
+                Loan.objects.filter(pk=loan.pk).update(**related)
+                before_loan = Loan.objects.filter(pk=loan.pk).values().get()
+                before_due = PaymentDue.objects.filter(loan=loan).values().get()
+                response = self.client.get(URL)
+                self.assertEqual(response.status_code, 200)
+                self.assertNotIn(str(loan.pk), [row["loanId"] for row in response.json()["items"]])
+                for body in ({"monthlyPayment": 400000}, {}, {"paymentDay": 32}):
+                    response = self.patch_loan(loan, body)
+                    self.assertEqual(response.status_code, 404, response.content)
+                    self.assertEqual(response.json()["error"]["code"], "not_found")
+                self.assertEqual(Loan.objects.filter(pk=loan.pk).values().get(), before_loan)
+                self.assertEqual(PaymentDue.objects.filter(loan=loan).values().get(), before_due)
+
+    def test_owned_nullable_and_disconnected_related_objects_remain_accessible(self):
+        own_connection, _, own_account, _, _ = self.related_objects()
+        for state in ("connected", "relogin", "disconnected"):
+            own_connection.status = state
+            own_connection.disconnected_at = timezone.now() if state == "disconnected" else None
+            own_connection.save(update_fields=["status", "disconnected_at"])
+            for connection, account in ((None, None), (own_connection, None), (None, own_account), (own_connection, own_account)):
+                with self.subTest(state=state, connection=connection, account=account):
+                    response = self.post(BASE)
+                    loan = Loan.objects.get(pk=response.json()["loanId"])
+                    Loan.objects.filter(pk=loan.pk).update(connection=connection, linked_account=account)
+                    response = self.client.get(URL)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn(str(loan.pk), [row["loanId"] for row in response.json()["items"]])
+                    self.assertEqual(self.patch_loan(loan, {"monthlyPayment": 400000}).status_code, 200)
