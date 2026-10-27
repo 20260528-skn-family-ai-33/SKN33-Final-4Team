@@ -15,9 +15,11 @@ from config.idempotency import idempotent
 from .models import Budget, BudgetCycle, Category, SpendingAllocation
 from django.db import IntegrityError, transaction
 from django.db.models import F, Max, Sum
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from finance.codef import BANKS
 from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, RecurringSaving
+from users.models import FinancialProfile
 
 from . import mock
 
@@ -97,6 +99,7 @@ def fixed_list(request):
 # 고정지출 중지 — 확정만 중지하고, 이번 주기 안 낸 납부 예정 취소 → 204
 def fixed_stop(request, recurring_id):
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         # 잠그고 찾기 (수정 · 중지가 동시에 와도 하나씩 처리) — 확정, 중지만, 없으면 404
         expense = get_object_or_404(
             RecurringExpense.objects.select_for_update(), # 고정지출 테이블
@@ -142,6 +145,7 @@ def fixed_confirm(request):
     ids = clean_ids(request, "recurring_ids")  # 검사 (칸 이름만 저축과 다름)
 
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         # 먼저 다 잠그고 찾기 - 내 것, 후보나 이미 확정인 것만
         found = lock_expenses(request.user, ids, ["suggested", "confirmed"])
 
@@ -176,6 +180,7 @@ def fixed_ignore(request):
     ids = clean_ids(request, "recurring_ids")
 
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         found = lock_expenses(request.user, ids, ["suggested", "ignored"])  # 후보, 이미 무시
         if len(found) != len(ids):
             raise ValidationError({"recurring_ids": ["선택할 수 없는 항목이에요."]})
@@ -453,6 +458,7 @@ def clean_fixed_update(request, expense):
 @idempotent() # 같은 요청 번호로 두 번 와도 한 번만 저장
 def fixed_create(request):
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         values = clean_fixed_create(request)  # 근거 거래를 잠그면서 검사하므로 묶음 안에서
         evidence_tx = values.pop("evidence_tx")
 
@@ -478,6 +484,7 @@ def fixed_create(request):
 # 고정지출 수정 저장 (보낸 칸만) → 이번 주기 안 낸 납부 예정도 맞춤 → 200
 def fixed_update(request, recurring_id):
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         # 잠그고 찾기 — 중지가 동시에 와도 기다렸다가 다시 확인 (중지됐으면 404)
         expense = get_object_or_404(
             RecurringExpense.objects.select_for_update(),
@@ -542,6 +549,12 @@ def fixed_update(request, recurring_id):
 #  '안 낸 회차' = 아직 짝지은 출금이 없는 unpaid · needs_review. 이미 낸(paid) · 일부 낸(partial) 회차는 건드리지 않는다.
 
 NOT_PAID = ["unpaid", "needs_review"]
+
+# 회원 잠금 — 거래 · 고정지출 · 저축 · 납부 예정을 바꾸는 모든 처리(홈 · 고정지출 · 저축 API, 거래 저장 뒤 처리 · 재시도)는
+#   같은 트랜잭션에서 이걸 **가장 먼저** 부른다. 한 회원의 처리가 한 번에 하나씩 돌아서, 안에서 거래를 잠그는 순서가 달라도
+#   서로 기다리다 멈추지(교착) 않는다. no_key: 회원을 참조하는 행 추가(납부 예정 · 납부 짝 등)는 막지 않음
+def lock_user(user):
+    get_user_model().objects.select_for_update(no_key=True).filter(pk=getattr(user, "pk", user)).first()
 SKIP_AUTO = "skip_auto_match"  # 거래 field_states: 사용자가 연결을 푼 회차(occurrence_key) 목록 → 그 회차에는 자동으로 다시 붙이지 않음
 ORIGINAL_TYPE = "original_transaction_type"  # 거래 목록 API와 같은 '원래 이체였음' 표시 (finance/api.py, 10/24 AA⑥)
 CONVERTED_BY_FIXED = "converted_by_fixed"    # 고정지출 연결이 이체를 소비로 바꿨다는 표시 (풀 때 되돌리려고)
@@ -672,10 +685,14 @@ def find_withdrawals(expense, due_date, today, key=None):
         result.append(fresh)
     return result
 
-# 지난 주기 시작일 (지난 주기 기록이 없으면 None → 지난 주기 회차도 없음)
+# 실제 지난 급여 주기 시작일 = 이번 주기 시작일의 한 달 전 월급날 (저장된 마지막 주기가 아님 — 한 달을 건너뛰고 접속해도 맞게)
+#   예: 급여일 25일, 이번 주기 11/25 시작 → 10/25 (9/25 주기에 마지막으로 접속했어도)
 def previous_start(cycle):
-    prev = BudgetCycle.objects.filter(user_id=cycle.user_id, starts_on__lt=cycle.starts_on).order_by("-starts_on").first()
-    return prev.starts_on if prev else None
+    profile = FinancialProfile.objects.filter(user_id=cycle.user_id).first()
+    payday = (profile.payday if profile else None) or cycle.starts_on.day
+    year, month = cycle.starts_on.year, cycle.starts_on.month
+    year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    return day_in_month(year, month, payday)
 
 # 지난 주기의 '미납 확인 필요' 회차 — 홈 '꼭 나갈 돈'에 남아 있는 것과 같음 (출금일 +3일 지남 · 짝 없음). 오래된 것부터
 def late_dues(expense, cycle, today, lock=False):
@@ -1291,6 +1308,7 @@ def savings_create(request):
     values = clean_create(request) # 검사
 
     with transaction.atomic(): # 아래 저장들을 한 묶음으로
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         saving = RecurringSaving.objects.create(
             user = request.user,
             **values, # name, amount, transfer_day, from_account, to_account
@@ -1311,6 +1329,7 @@ def savings_create(request):
 # 저축 수정 저장 (보낸 칸만) → 200
 def savings_update(request, saving_id):
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         # 잠그고 찾기 -> 저장 끝날 때까지 다른 요청은 기다림
         saving = get_object_or_404(
             RecurringSaving.objects.select_for_update(),
@@ -1372,6 +1391,7 @@ def savings_detail(request, saving_id):
 
     # DELETE : 중지와 예산 초안 만료를 한 묶음으로 (하나가 실패하면 둘 다 취소)
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         saving = get_object_or_404( # 잠그고 찾기, 없으면 자동으로 404
             RecurringSaving.objects.select_for_update(),
             pk = saving_id,
@@ -1405,6 +1425,7 @@ def savings_confirm(request):
     ids = clean_ids(request)
 
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         # 먼저 다 잠그고 찾기 - 내 것, 후보나 이미 확정인 것만
         found = lock_savings(request.user, ids, ["suggested", "confirmed"])
 
@@ -1445,6 +1466,7 @@ def savings_ignore(request):
     ids = clean_ids(request)
 
     with transaction.atomic():
+        lock_user(request.user)  # 잠금 순서: 회원 → 고정지출·저축 → 납부 예정 → 거래 (아래 lock_user 설명)
         found = lock_savings(request.user, ids, ["suggested", "ignored"])
 
         if len(found) != len(ids):

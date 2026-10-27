@@ -1,5 +1,6 @@
 import logging
 
+from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 
 from .models import FinancialTransaction
@@ -84,6 +85,9 @@ def _process_transactions(user, transaction_ids, *, retry_only):
 
     txs = FinancialTransaction.objects.filter(user=user, pk__in=transaction_ids)
     with transaction.atomic():
+        # 잠금 순서: 회원 먼저 (budgets.api.lock_user 와 같음) → 거래(ID 순).
+        # 홈 · 고정지출 수정과 한 회원에 하나씩 돌아서, 거래를 잠그는 순서가 달라도 서로 기다리다 멈추지 않는다
+        get_user_model().objects.select_for_update(no_key=True).filter(pk=getattr(user, "pk", user)).first()
         # 같은 거래의 처리·재시도 기록이 서로 덮어쓰이지 않게 잠근다.
         pending = {}
         for tx in txs.select_for_update().order_by("pk"):

@@ -1,5 +1,6 @@
 """홈 API 테스트 (docs/api/home.md). 실행: backend 폴더에서 python manage.py test budgets.test_home"""
 import threading
+import uuid
 import time
 from datetime import date, datetime, timedelta
 from unittest import skipUnless
@@ -45,10 +46,11 @@ class HomeFixture(TestCase):
         return FinancialTransaction.objects.create(**data)
 
     def make_expense(self, **fields):
-        # 기본: 9/1에 등록해 둔 고정지출 (등록한 뒤에 오는 출금일은 미납이면 알림)
+        # 기본: 이번 주기(9/25~) 시작일에 등록한 고정지출 — 등록 뒤에 오는 출금일은 미납이면 알림,
+        #       등록 전 지난 주기 회차는 출금이 있을 때만 생김
         data = dict(user=self.user, name="월세", amount=700_000, payment_day=10, category_id="HOUSING_TELECOM",
                     status="confirmed", source_type="manual", payment_account=self.account,
-                    confirmed_at=timezone.make_aware(datetime(2026, 9, 1, 12, 0)))
+                    confirmed_at=timezone.make_aware(datetime(2026, 9, 25, 0, 0)))
         data.update(fields)
         return RecurringExpense.objects.create(**data)
 
@@ -91,14 +93,16 @@ class HomePeriodTest(HomeFixture):
             {"start_date": "2026-09-25", "end_date": "2026-10-24", "next_payday": "2026-10-25", "dday": 4},
         )
         self.home()
-        cycle = BudgetCycle.objects.get()
+        cycle = BudgetCycle.objects.get(status="active")
         self.assertEqual((cycle.starts_on, cycle.ends_before, cycle.status), (date(2026, 9, 25), date(2026, 10, 25), "active"))
+        # 실제 지난 주기(8/25~)도 끝난 주기로 남김
+        self.assertEqual(list(BudgetCycle.objects.filter(status="closed").values_list("starts_on", flat=True)), [date(2026, 8, 25)])
 
     def test_new_payday_closes_old_cycle(self):
         self.home()
         self.home(date(2026, 10, 25))
         states = dict(BudgetCycle.objects.values_list("starts_on", "status"))
-        self.assertEqual(states, {date(2026, 9, 25): "closed", date(2026, 10, 25): "active"})
+        self.assertEqual(states, {date(2026, 8, 25): "closed", date(2026, 9, 25): "closed", date(2026, 10, 25): "active"})
 
     def test_salary_states(self):
         self.assertEqual(self.home()["period"]["salary_state"], "waiting")
@@ -109,7 +113,7 @@ class HomePeriodTest(HomeFixture):
         self.make_tx(date(2026, 9, 25), 2_500_000)
         period = self.home()["period"]
         self.assertEqual((period["salary_state"], period["salary_received_on"]), ("received", "2026-09-25"))
-        self.assertEqual(BudgetCycle.objects.get().confirmed_income, 2_500_000)
+        self.assertEqual(BudgetCycle.objects.get(status="active").confirmed_income, 2_500_000)
 
     def test_unknown_without_income(self):
         self.profile.monthly_take_home_income = None
@@ -251,7 +255,7 @@ class HomeMustPayTest(HomeFixture):
 
     def test_missed_due_after_registration_is_shown(self):
         """등록한 뒤의 출금일인데 앱을 늦게 열었고 출금도 없음 → 만들어서 미납 확인 필요로 알림"""
-        self.make_expense(payment_day=26)   # 9/1 등록, 새 주기(10/25~) 출금일 10/26
+        self.make_expense(payment_day=26, confirmed_at=timezone.make_aware(datetime(2026, 10, 1)))  # 10/1 등록, 새 주기(10/25~) 출금일 10/26
         items = self.home(date(2026, 10, 30))["must_pay"]
         self.assertEqual([(i["due_date"], i["payment_state"]) for i in items], [("2026-10-26", "needs_review")])
 
@@ -350,7 +354,7 @@ class HomeConcurrencyTest(TransactionTestCase):
         self.expense = RecurringExpense.objects.create(
             user=self.user, name="월세", amount=700_000, payment_day=24, category_id="HOUSING_TELECOM",
             status="confirmed", source_type="manual", payment_account=self.account,
-            confirmed_at=timezone.make_aware(datetime(2026, 9, 1)),
+            confirmed_at=timezone.make_aware(datetime(2026, 9, 25)),
         )
         home_data(self.user, TODAY)   # 주기 · 회차 미리 만들기
         self.tx = FinancialTransaction.objects.create(
@@ -396,7 +400,7 @@ class HomeConcurrencyTest(TransactionTestCase):
         t2.join(15)
         self.assertIsInstance(results.get("home"), dict, results.get("home"))
         self.assertEqual(results.get("patch"), 200)
-        self.assertEqual(PaymentDue.objects.get(recurring=self.expense).payment_state, "paid")
+        self.assertEqual(PaymentDue.objects.get(recurring=self.expense, due_date=date(2026, 10, 24)).payment_state, "paid")
 
 
 class HomePaymentReviewTest(HomeFixture):
@@ -705,7 +709,7 @@ class FixedLinkLockTest(TransactionTestCase):
         home_data(self.user, date(2026, 10, 21))                      # 이번 회차 10/20
         tx = self.make_tx(date(2026, 10, 20))
         home_data(self.user, date(2026, 10, 21))                      # 자동 연결
-        due = PaymentDue.objects.get(recurring=self.expense)
+        due = PaymentDue.objects.get(recurring=self.expense, due_date=date(2026, 10, 20))
         self.assertTrue(due.matches.filter(transaction=tx).exists())
 
         def unlink():
@@ -731,4 +735,163 @@ class FixedLinkLockTest(TransactionTestCase):
         tx.refresh_from_db()
         self.assertTrue(tx.field_states.get("other_mark"))                         # 다른 처리의 표시가 남음
         self.assertTrue(tx.field_states.get("converted_by_fixed"))                 # 자동 연결 표시도 남음
-        self.assertEqual(PaymentDue.objects.get(recurring=self.expense).payment_state, "paid")
+        self.assertEqual(PaymentDue.objects.get(recurring=self.expense, due_date=date(2026, 10, 20)).payment_state, "paid")
+
+
+class HomeSkippedMonthTest(HomeFixture):
+    """PR #46 4차 리뷰: 9월에 접속하고 10월을 건너뛰어 11월에 접속 — 11월 출금이 9월 미납으로 연결되면 안 됨
+    (저장된 마지막 주기가 아니라 실제 지난 급여 주기 10/25~11/24 기준)"""
+
+    def setUp(self):
+        super().setUp()
+        self.expense = self.make_expense(payment_day=20, confirmed_at=timezone.make_aware(datetime(2026, 8, 1)))
+        self.home(date(2026, 9, 21))          # 9/20 회차 (출금 없음), 10월은 접속 안 함
+
+    def at(self, day):
+        return patch("django.utils.timezone.localdate", return_value=day)
+
+    def due(self, day):
+        return PaymentDue.objects.get(recurring=self.expense, due_date=day)
+
+    def test_november_withdrawal_pays_november_due_automatically(self):
+        tx = self.make_tx(date(2026, 11, 20), 700_000, direction="out")
+        items = self.home(date(2026, 11, 26))["must_pay"]     # 이번 주기 11/25~, 실제 지난 주기 10/25~11/24
+        self.assertEqual(self.due(date(2026, 11, 20)).payment_state, "paid")
+        self.assertEqual(list(self.due(date(2026, 11, 20)).matches.values_list("transaction_id", flat=True)), [tx.pk])
+        self.assertFalse(self.due(date(2026, 9, 20)).matches.exists())
+        self.assertEqual([i["due_date"] for i in items], ["2026-12-20"])   # 9/20 은 두 주기 전이라 홈에 없음
+        self.assertTrue(BudgetCycle.objects.filter(starts_on=date(2026, 10, 25), status="closed").exists())
+
+    def test_picked_november_withdrawal_goes_to_november_due(self):
+        """출금이 2건이라 자동 연결이 안 될 때, 고르면 9월이 아니라 지난 주기(11/20) 회차로"""
+        self.make_tx(date(2026, 11, 19), 700_000, direction="out")
+        picked = self.make_tx(date(2026, 11, 21), 700_000, direction="out")
+        self.home(date(2026, 11, 26))
+        self.assertEqual(self.due(date(2026, 11, 20)).payment_state, "needs_review")
+
+        with self.at(date(2026, 11, 26)):
+            item = self.client.get("/api/budgets/fixed/").json()["items"][0]
+        self.assertEqual(item["evidenceSuggestion"]["dueDate"], "2026-11-20")
+        self.assertEqual([d["dueDate"] for d in item["recentDues"]], ["2026-11-20", "2026-12-20"])
+
+        with self.at(date(2026, 11, 26)):
+            r = self.client.patch(f"/api/budgets/fixed/{self.expense.pk}/", {"evidenceTransactionId": str(picked.pk)}, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self.due(date(2026, 11, 20)).payment_state, "paid")
+        self.assertFalse(self.due(date(2026, 9, 20)).matches.exists())
+
+    def test_old_due_cannot_be_picked_by_id(self):
+        """두 주기 전 회차(9/20)는 회차 지정으로도 고를 수 없음"""
+        tx = self.make_tx(date(2026, 11, 21), 700_000, direction="out")
+        self.home(date(2026, 11, 26))
+        with self.at(date(2026, 11, 26)):
+            r = self.client.patch(f"/api/budgets/fixed/{self.expense.pk}/",
+                                  {"evidenceTransactionId": str(tx.pk), "evidenceDueId": str(self.due(date(2026, 9, 20)).pk)},
+                                  format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+
+
+@skipUnless(connection.vendor == "postgresql", "행 잠금은 PostgreSQL 에서만 확인")
+class LockOrderTest(TransactionTestCase):
+    """PR #46 4차 리뷰: 홈 자동 연결 · 납부 거래 교체가 거래 일괄 처리(재시도)와 동시에 돌아도 교착되지 않는지
+    거래 ID 를 일부러 정해서, 홈 · 교체는 큰 ID → 작은 ID, 일괄 처리는 작은 ID → 큰 ID 순서로 거래를 잠그게 만든다"""
+    serialized_rollback = True
+    LOW = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    HIGH = uuid.UUID("ffffffff-ffff-4fff-bfff-ffffffffffff")
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="lock-order@example.com", password="Example123!")
+        FinancialProfile.objects.create(user=self.user, payday=25, monthly_take_home_income=2_500_000)
+        bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0004", status="connected")
+        self.account = BankAccount.objects.create(user=self.user, connection=bank, source_account_key="k1",
+                                                  account_type="demand", is_selected=True, balance=1)
+
+    def expense(self, pk, amount, day):
+        return RecurringExpense.objects.create(
+            recurring_id=pk, user=self.user, name=f"고정 {day}", amount=amount, payment_day=day,
+            category_id="HOUSING_TELECOM", status="confirmed", source_type="manual", payment_account=self.account,
+            confirmed_at=timezone.make_aware(datetime(2026, 9, 25)),
+        )
+
+    def tx(self, pk, amount, on):
+        return FinancialTransaction.objects.create(
+            transaction_id=pk, user=self.user, source_kind="bank", account=self.account, occurred_on=on,
+            amount=amount, direction="out", transaction_type="transfer",
+            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
+        )
+
+    def race(self, slow_target, slow_name, slow_action, fast_action, before=False):
+        """slow_action 은 slow_name 함수 앞(before)/뒤에서 0.5초 멈추고, 0.1초 뒤 fast_action(일괄 처리)이 시작"""
+        errors = []
+        original = getattr(slow_target, slow_name)
+        state = {"paused": False}
+
+        def slow(*args, **kwargs):
+            pause = threading.current_thread().name == "slow" and not state["paused"]
+            if pause and before:
+                state["paused"] = True
+                time.sleep(0.5)
+            result = original(*args, **kwargs)
+            if pause and not before:
+                state["paused"] = True
+                time.sleep(0.5)
+            return result
+
+        def wrap(fn):
+            def run():
+                try:
+                    fn()
+                except Exception as exc:
+                    errors.append(exc)
+                finally:
+                    connection.close()
+            return run
+
+        with patch.object(slow_target, slow_name, slow):
+            t1 = threading.Thread(target=wrap(slow_action), name="slow")
+            t2 = threading.Thread(target=wrap(fast_action), name="fast")
+            t1.start()
+            time.sleep(0.1)
+            t2.start()
+            t1.join(20)
+            t2.join(20)
+        self.assertEqual(errors, [])
+
+    def test_home_auto_link_and_batch_retry(self):
+        from finance.pipeline import process_new_transactions
+        from . import api as budgets_api
+        first = self.expense(uuid.UUID(int=1), 700_000, 20)   # 고정지출 ID 순서로 처리 → 큰 ID 거래 먼저
+        second = self.expense(uuid.UUID(int=2), 500_000, 21)
+        home_data(self.user, date(2026, 10, 19))               # 10/20 · 10/21 회차 (출금 전)
+        self.tx(self.HIGH, 700_000, date(2026, 10, 20))
+        self.tx(self.LOW, 500_000, date(2026, 10, 21))
+
+        self.race(
+            budgets_api, "find_withdrawals",
+            lambda: home_data(self.user, date(2026, 10, 23)),
+            lambda: process_new_transactions(self.user, [self.LOW, self.HIGH]),
+        )
+        for e in (first, second):
+            self.assertEqual(PaymentDue.objects.get(recurring=e).payment_state, "paid")
+
+    def test_replace_payment_and_batch_retry(self):
+        from finance.pipeline import process_new_transactions
+        from . import api as budgets_api
+        e = self.expense(uuid.UUID(int=1), 700_000, 20)
+        home_data(self.user, date(2026, 10, 19))
+        self.tx(self.LOW, 700_000, date(2026, 10, 20))
+        home_data(self.user, date(2026, 10, 21))               # 작은 ID 거래가 자동 연결됨
+        self.tx(self.HIGH, 700_000, date(2026, 10, 21))
+
+        def replace():
+            client = APIClient()
+            client.force_authenticate(self.user)
+            with patch("django.utils.timezone.localdate", return_value=date(2026, 10, 22)):
+                r = client.patch(f"/api/budgets/fixed/{e.pk}/", {"evidenceTransactionId": str(self.HIGH)}, format="json")
+            assert r.status_code == 200, r.content
+
+        # 교체: 새 거래(큰 ID)를 잠근 뒤, 기존 연결(작은 ID)을 풀기 직전에 멈춤
+        self.race(budgets_api, "unlink_current", replace,
+                  lambda: process_new_transactions(self.user, [self.LOW, self.HIGH]), before=True)
+        due = PaymentDue.objects.get(recurring=e)
+        self.assertEqual(list(due.matches.values_list("transaction_id", flat=True)), [self.HIGH])

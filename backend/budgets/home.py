@@ -11,7 +11,6 @@
 """
 from datetime import timedelta
 
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
@@ -20,7 +19,7 @@ from finance.api import UNCLASSIFIED, listed_transactions
 from finance.models import BankAccount, FinancialTransaction, PaymentDue, RecurringExpense
 from users.models import FinancialProfile
 
-from .api import account_json, day_in_cycle, day_in_month, ensure_current_due, match_current_due
+from .api import account_json, day_in_cycle, day_in_month, ensure_current_due, lock_user, match_current_due
 from .models import BudgetCycle
 
 EARLY_DAYS = 7             # 월급날 7일 전부터 들어온 입금은 그 월급으로 본다 (명절 전 지급)
@@ -49,6 +48,15 @@ def cycle_dates(payday, today):
     next_payday = payday_in(*add_month(year, month, 1), payday)
     previous_start = payday_in(*add_month(year, month, -1), payday)
     return start, next_payday, previous_start
+
+
+def ensure_previous_cycle(user, previous_start, start):
+    """실제 지난 급여 주기를 budget_cycle 에 남긴다 (끝남). 한 달을 건너뛰고 접속하면 그 주기 기록이 없어서 여기서 만든다"""
+    previous, _ = BudgetCycle.objects.get_or_create(
+        user=user, starts_on=previous_start,
+        defaults={"ends_before": start, "expected_payday": start, "status": "closed"},
+    )
+    return previous
 
 
 def ensure_cycle(user, start, next_payday):
@@ -164,21 +172,30 @@ def registered_on(expense):
     return timezone.localtime(expense.confirmed_at or expense.created_at).date()
 
 
-def prepare_dues(user, cycle, today, previous_start):
-    """이번 회차 납부 예정 만들기 (C-15) → 출금일 +3일이 지난 안 낸 회차는 '미납 확인 필요'로
+def prepare_dues(user, cycle, today, previous_start, previous_cycle):
+    """지난 주기 · 이번 주기 회차 납부 예정 만들기 (C-15) → 출금일 +3일이 지난 안 낸 회차는 '미납 확인 필요'로
 
     출금일이 이미 지난 회차는
       - 등록하기 전 출금일(등록한 첫 달)이면 fixed.md 규칙: 맞는 출금이 있을 때만 "냄"으로 만든다
       - 등록한 뒤 출금일이면 home.md 규칙: 출금이 없어도 만들어 미납을 알린다 (앱을 한동안 안 연 경우)
+    지난 주기 회차는 한 달을 건너뛰고 접속해서 아직 없을 때만 새로 만든다 (취소 · 납부 기록이 있으면 그대로 둠)
     """
     expenses = RecurringExpense.objects.select_for_update().filter(
         user=user, status="confirmed", payment_card__isnull=True, payment_day__isnull=False,
     ).order_by("pk")  # 고정지출 수정 · 중지와 같은 순서로 잠금
     for expense in expenses:
-        due_date = day_in_cycle(cycle, expense.payment_day)
-        create_past = due_date is not None and registered_on(expense) <= due_date
-        ensure_current_due(expense, cycle, today, create_past=create_past)
-        match_current_due(expense, cycle, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 1건이면 자동 연결)
+        for c in (previous_cycle, cycle):
+            due_date = day_in_cycle(c, expense.payment_day)
+            if due_date is None:
+                continue
+            if c is previous_cycle and PaymentDue.objects.filter(
+                user=user, occurrence_key=f"recurring:{expense.pk}:{c.starts_on.isoformat()}",
+            ).exists():
+                match_current_due(expense, c, today)  # 이미 있는 지난 회차는 늦게 들어온 출금(±3일)만 맞춰 봄
+                continue
+            create_past = registered_on(expense) <= due_date
+            ensure_current_due(expense, c, today, create_past=create_past)
+            match_current_due(expense, c, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 1건이면 자동 연결)
 
     PaymentDue.objects.filter(
         user=user, obligation_state="active", payment_state="unpaid", paid_amount=0,
@@ -237,11 +254,11 @@ def home_data(user, today):
     if payday:
         start, next_payday, previous_start = cycle_dates(payday, today)
         with transaction.atomic():
-            # 같은 회원의 홈 요청이 동시에 와도 주기 · 납부 예정을 한 번만 만든다
-            # no_key: 회원을 참조하는 행 추가(납부 예정 · 납부 짝 등)는 막지 않음 → 고정지출 수정과 서로 기다리다 멈추지 않음
-            get_user_model().objects.select_for_update(no_key=True).filter(pk=user.pk).first()
+            # 회원 잠금이 먼저 (lock_user 설명: 홈 · 고정지출 · 거래 처리 재시도가 한 회원에 하나씩)
+            lock_user(user)
             cycle = ensure_cycle(user, start, next_payday)
-            prepare_dues(user, cycle, today, previous_start)
+            previous_cycle = ensure_previous_cycle(user, previous_start, start)
+            prepare_dues(user, cycle, today, previous_start, previous_cycle)
             period = period_json(user, profile, today, cycle, start, next_payday)
         must_pay = must_pay_json(user, next_payday, previous_start)
 
