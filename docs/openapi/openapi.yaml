@@ -7,8 +7,8 @@ info:
   description: '확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**
 
 
-    현재 구현 29개(CSRF·인증·금융 동의 및 연결·대출·거래·고정지출·정기 저축·홈·이전 대화), 목업 3개(연결 해제·챗봇 메시지·작업 확인), 미구현 3개(카드)입니다. 전체 명세는 읽기
-    전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.
+    현재 구현 32개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화), 목업 3개(연결 해제·챗봇 메시지·작업 확인), 미구현 0개입니다. 전체 명세는 읽기 전용이며,
+    구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.
 
 
     기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은
@@ -812,11 +812,11 @@ paths:
       x-implementation-status: mock
   /api/finance/connect/cards/:
     get:
-      summary: '[미구현] 카드 후보 보기'
+      summary: '[구현] 카드 후보 보기'
       tags:
       - 카드
       operationId: listCardCandidates
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         저장된 본인 카드 후보만 읽고 CODEF를 호출하지 않습니다. disconnected 연결의 카드는 제외하고 connected/relogin만 반환합니다. relogin 상태에서도 저장된
@@ -902,13 +902,13 @@ paths:
                     error:
                       code: server_error
                       message: 잠시 후 다시 시도해 주세요.
-      x-implementation-status: planned
+      x-implementation-status: implemented
     put:
-      summary: '[미구현] 카드 선택 저장'
+      summary: '[구현] 카드 선택 저장'
       tags:
       - 카드
       operationId: replaceCardSelection
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         selectedCardIds는 본인의 전체 카드 선택을 대체합니다. 특정 카드사/연결만 바꾸지 않습니다. 필드 생략은 오류이고 []는 전체 선택 해제입니다. 목록에 빠진 기존 선택 카드는
@@ -1020,16 +1020,16 @@ paths:
             example:
               selectedCardIds:
               - 13cb7fb6-cff8-4c17-a76a-ea90f57ce330
-      x-implementation-status: planned
+      x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
   /api/finance/card-bills/{id}/:
     get:
-      summary: '[미구현] 카드 청구서 보기'
+      summary: '[구현] 카드 청구서 보기'
       tags:
       - 카드
       operationId: retrieveCardBill
-      description: '**개발 상태: 미구현** — 명세는 작성되었으며 서버 API는 아직 구현되지 않았습니다.
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
         홈 mustPay[].type=card_bill인 항목의 sourceId(청구서 ID)로 조회합니다. 카드 ID가 아닙니다. 저장된 본인 청구서만 읽고 CODEF를 호출하지 않습니다. 조회
@@ -1199,7 +1199,7 @@ paths:
         schema:
           type: string
           format: uuid
-      x-implementation-status: planned
+      x-implementation-status: implemented
   /api/finance/loans/:
     get:
       summary: '[구현] 대출 정보 보기'
@@ -7057,7 +7057,7 @@ x-source-sha256:
   docs/결정기록_2026-10-21.md: c926734ba5e9b436c7ae4b980415bf90ff45027e8ec7c4f34d333e7d54296594
   docs/api/auth.md: d1411754295869282a08137af473da7ed9088921de73539d2c0f242ef6d2eb31
   docs/api/finance-connect.md: 32e4c9d239b8328136f48442eb501216b4d0bee6d3202ebf3d1dc4f63b0e8604
-  docs/api/cards.md: 6d718c1cfac8d94dcf537f4923021f97f3eb9b112f3f86bf9d16de8209802555
+  docs/api/cards.md: afc9d170884fce29392a6734d3ae51b155a41303a5b47c4eb7d1d108f8ceec61
   docs/api/loans.md: 9ad0a8d882cedb6c7870c023fb7fef4f3777ad7afad4d3ab0812b2b13d4b7ca8
   docs/api/transactions.md: 49e547ee9f7e4b90d59c35528a1aea3ed7031da11c14b78b8cf9916c35d29658
   docs/api/fixed.md: a0c718088dff3c88917a4470beb327e09dea9debe90f27abd8106ba3b4f04eec
