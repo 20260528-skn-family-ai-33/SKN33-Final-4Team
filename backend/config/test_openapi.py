@@ -158,7 +158,7 @@ class OpenAPIContractTests(SimpleTestCase):
             if operation["x-implementation-status"] == "implemented"
         }
         actual = {(method, path) for path, method, _ in operation_items(runtime)}
-        # 구현된 32개만. 껍데기 · 미구현은 실행 화면에 없다
+        # 카드·대출·홈을 포함한 구현된 32개만. 껍데기는 실행 화면에 없다
         self.assertSetEqual(actual, implemented)
         self.assertEqual(len(actual), 32)
         self.assertEqual(runtime["security"], [])
