@@ -63,7 +63,10 @@ export function applySavingsMin(rec, savingsMin = 0) {
   if (rest <= 0) {
     return { ...rec, savingsMin, savingFloor: savingsMin, livingBudget: 0, cushionMonthly: 0, spare: 0, rebalanced: true, blocked: true, deficit: -rest }
   }
-  const { living, spare, cushion } = rec.rates
+  // 소수 비율의 합(예: 0.55 + 0.05 + 0.10)의 오차로 1만원이 덜 배분되지 않도록 정수로 계산
+  const living = Math.round(rec.rates.living * 100)
+  const spare = Math.round(rec.rates.spare * 100)
+  const cushion = Math.round(rec.rates.cushion * 100)
   const sum = living + spare + cushion
   const livingBudget = floor10k((rest * living) / sum)
   const cushionMonthly = floor10k((rest * cushion) / sum)
