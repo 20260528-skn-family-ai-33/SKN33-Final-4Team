@@ -291,7 +291,7 @@
             "description": "UUID. 없는 항목·남의 항목·형식 오류는 모두 404."
           }
         ],
-        "description": "queued·running이면 원문 기본안은 2초 후 재조회, succeeded·failed·canceled이면 중단합니다. 실제 비동기 사용 여부·조회 간격·최대 대기 시간·result 구조·error.code 목록·작업 취소 API는 결정 후입니다. 예산 조정안 만료는 작업 succeeded 상태를 바꾸지 않고 승인 시 알립니다.",
+        "description": "회원 본인의 공용 async_task를 조회한다. queued·running이면 재조회, succeeded·failed·canceled이면 중단한다. 시작 API는 1차로 요청 안에서 작업을 끝내므로 처음부터 succeeded일 수 있다. result는 succeeded일 때, error는 failed일 때만 객체이며 나머지는 null이다. finance_sync 결과는 FinanceSyncResult를 참고한다. 기관 전부 실패해도 실행을 마치면 작업은 succeeded이고 기관별 실패는 result.items[].error에 있다. 공용 실패 코드는 server_error·stale. 10분 넘게 멈춘 작업은 다음 시작 요청 때 failed/stale로 닫는다. 예산 조정안의 조건 변경은 succeeded를 바꾸지 않고 승인 단계에서 만료를 알린다. 조회 간격·최대 대기 시간·작업 취소 API는 결정 후다.",
         "responses": {
           "200": {
             "description": "정상 처리",
@@ -300,16 +300,131 @@
                 "schema": {
                   "$ref": "#/components/schemas/ChatTask"
                 },
-                "example": {
-                  "taskId": "d71c0000-0000-4000-8000-000000000001",
-                  "taskType": "budget_adjust",
-                  "status": "running",
-                  "conversationId": "3f2c0000-0000-4000-8000-000000000001",
-                  "createdAt": "2026-10-21T16:30:00+09:00",
-                  "startedAt": "2026-10-21T16:30:01+09:00",
-                  "completedAt": null,
-                  "result": null,
-                  "error": null
+                "examples": {
+                  "running": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "budget_adjust",
+                      "status": "running",
+                      "conversationId": "3f2c0000-0000-4000-8000-000000000001",
+                      "createdAt": "2026-10-21T16:30:00+09:00",
+                      "startedAt": "2026-10-21T16:30:01+09:00",
+                      "completedAt": null,
+                      "result": null,
+                      "error": null
+                    }
+                  },
+                  "financeSync": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "finance_sync",
+                      "status": "succeeded",
+                      "conversationId": null,
+                      "createdAt": "2026-10-28T17:50:00+09:00",
+                      "startedAt": "2026-10-28T17:50:00+09:00",
+                      "completedAt": "2026-10-28T17:50:06+09:00",
+                      "result": {
+                        "summary": {
+                          "total": 3,
+                          "succeeded": 1,
+                          "failed": 1,
+                          "skipped": 1
+                        },
+                        "items": [
+                          {
+                            "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+                            "businessType": "bank",
+                            "organizationCode": "0088",
+                            "organizationName": "신한은행",
+                            "status": "succeeded",
+                            "parts": [
+                              {
+                                "kind": "accounts",
+                                "status": "succeeded"
+                              },
+                              {
+                                "kind": "loans",
+                                "status": "skipped",
+                                "reason": "no_consent"
+                              }
+                            ],
+                            "newTransactionCount": 5,
+                            "error": null
+                          },
+                          {
+                            "connectionId": "91f20000-0000-4000-8000-000000000001",
+                            "businessType": "card",
+                            "organizationCode": "0302",
+                            "organizationName": "현대카드",
+                            "status": "failed",
+                            "parts": [],
+                            "newTransactionCount": null,
+                            "error": {
+                              "code": "invalid",
+                              "message": "카드 비밀번호가 필요해요.",
+                              "fields": {
+                                "cardNo": [
+                                  "카드 비밀번호가 필요해요."
+                                ],
+                                "cardPassword": [
+                                  "카드 비밀번호가 필요해요."
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "connectionId": "77ab0000-0000-4000-8000-000000000001",
+                            "businessType": "card",
+                            "organizationCode": "0311",
+                            "organizationName": "롯데카드",
+                            "status": "skipped",
+                            "parts": [
+                              {
+                                "kind": "cards",
+                                "status": "skipped",
+                                "reason": "not_supported"
+                              }
+                            ],
+                            "newTransactionCount": null,
+                            "error": null
+                          }
+                        ]
+                      },
+                      "error": null
+                    }
+                  },
+                  "stale": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "finance_sync",
+                      "status": "failed",
+                      "conversationId": null,
+                      "createdAt": "2026-10-28T17:50:00+09:00",
+                      "startedAt": "2026-10-28T17:50:00+09:00",
+                      "completedAt": "2026-10-28T17:50:06+09:00",
+                      "result": null,
+                      "error": {
+                        "code": "stale",
+                        "message": "작업이 중간에 멈췄어요. 다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "serverError": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "finance_sync",
+                      "status": "failed",
+                      "conversationId": null,
+                      "createdAt": "2026-10-28T17:50:00+09:00",
+                      "startedAt": "2026-10-28T17:50:00+09:00",
+                      "completedAt": "2026-10-28T17:50:06+09:00",
+                      "result": null,
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -852,7 +967,7 @@
           },
           "taskType": {
             "type": "string",
-            "description": "예: budget_adjust. 작업 종류 전체 목록은 추후 확정."
+            "description": "finance_sync(수동 금융 조회), finance_auto_sync(자동 금융 조회), budget_recommend(추천 예산), budget_adjust(예산 조정) 등."
           },
           "status": {
             "type": "string",
@@ -888,14 +1003,17 @@
             "type": "object",
             "nullable": true,
             "additionalProperties": true,
-            "description": "성공 시 결과. 작업 종류별 구조는 결정 후이며 현재 임의로 정의하지 않는다."
+            "description": "succeeded일 때 작업 종류별 결과. finance_sync·finance_auto_sync는 FinanceSyncResult(finance-connect.md), budget_recommend는 BudgetRecommendationResult(budgets.md)를 참조한다.",
+            "x-finance-sync-schema": {
+              "$ref": "#/components/schemas/FinanceSyncResult"
+            }
           },
           "error": {
             "type": "object",
             "properties": {
               "code": {
                 "type": "string",
-                "description": "작업 오류 코드 목록 미정."
+                "description": "공용: server_error(서버 오류), stale(10분 넘게 멈춘 작업). 작업 종류별 추가 코드 가능."
               },
               "message": {
                 "type": "string"

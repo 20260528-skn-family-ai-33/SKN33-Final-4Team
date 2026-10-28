@@ -487,6 +487,291 @@
             }
           }
         }
+      },
+      "post": {
+        "operationId": "createFinanceConnections",
+        "summary": "금융기관 인증 · 새 연결",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "아이디·비밀번호 로그인 및 SMS 2-way 인증만 지원한다. 같은 기관 재요청은 다시 로그인으로 처리하므로 Idempotency-Key를 쓰지 않는다. 기관별 동의를 먼저 검사한다. 하나라도 연결되거나 문자 인증 대기면 200, 전부 실패하면 400 이유가 하나라도 있을 때 400 invalid, 나머지는 502 provider_unavailable. 여러 기관 전부 실패 시 message는 \"연결하지 못했어요. 기관별 안내를 확인해 주세요.\"이고 fields[\"institutions[i]\"]에 기관별 안내를 넣는다. 한 기관이면 그 기관의 문구·상태를 그대로 보낸다. SMS 토큰은 3분 유효하며 같은 회원·기관에서만 사용한다. 잘못된 인증번호는 200 sms_required와 새 토큰·error로 응답한다. 은행은 연결 직후 4달 전 1일부터 오늘까지 계좌·거래를 불러오고 실패해도 연결은 유지한다. 재연결은 기존 계좌·카드를 재사용한다. connectedId·비밀번호·카드 값은 응답에 포함하거나 로그에 저장하지 않는다. CODEF 원래 오류 코드는 응답에 넣지 않는다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinanceConnectionCreateRequest"
+              },
+              "examples": {
+                "bankAndCard": {
+                  "value": {
+                    "institutions": [
+                      {
+                        "businessType": "bank",
+                        "organizationCode": "0088",
+                        "loginId": "example-user",
+                        "password": "example-password"
+                      },
+                      {
+                        "businessType": "card",
+                        "organizationCode": "0302",
+                        "loginId": "example-user",
+                        "password": "example-password",
+                        "cardNo": "4111222233334444",
+                        "cardPassword": "12"
+                      }
+                    ]
+                  }
+                },
+                "smsVerification": {
+                  "value": {
+                    "institutions": [
+                      {
+                        "businessType": "card",
+                        "organizationCode": "0311",
+                        "loginId": "example-user",
+                        "password": "example-password",
+                        "smsAuth": {
+                          "authToken": "example-signed-token",
+                          "code": "123456"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "하나 이상 연결됨 또는 SMS 인증 대기. 실패 기관도 함께 반환.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceConnectionCreateResponse"
+                },
+                "examples": {
+                  "mixedResults": {
+                    "value": {
+                      "results": [
+                        {
+                          "businessType": "bank",
+                          "organizationCode": "0088",
+                          "organizationName": "신한은행",
+                          "status": "connected",
+                          "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+                          "reconnected": false,
+                          "syncStatus": "done",
+                          "accountCount": 2
+                        },
+                        {
+                          "businessType": "card",
+                          "organizationCode": "0311",
+                          "organizationName": "롯데카드",
+                          "status": "sms_required",
+                          "smsAuth": {
+                            "authToken": "example-signed-token",
+                            "expiresAt": "2026-10-28T17:53:00+09:00",
+                            "phoneHint": null
+                          }
+                        },
+                        {
+                          "businessType": "card",
+                          "organizationCode": "0306",
+                          "organizationName": "신한카드",
+                          "status": "failed",
+                          "error": {
+                            "code": "invalid",
+                            "message": "아이디 또는 비밀번호를 확인해 주세요."
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "smsRetry": {
+                    "value": {
+                      "results": [
+                        {
+                          "businessType": "card",
+                          "organizationCode": "0311",
+                          "organizationName": "롯데카드",
+                          "status": "sms_required",
+                          "smsAuth": {
+                            "authToken": "example-signed-token",
+                            "expiresAt": "2026-10-28T17:53:00+09:00",
+                            "phoneHint": null
+                          },
+                          "error": {
+                            "code": "invalid",
+                            "message": "인증번호가 맞지 않아요."
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reconnected": {
+                    "value": {
+                      "results": [
+                        {
+                          "businessType": "bank",
+                          "organizationCode": "0088",
+                          "organizationName": "신한은행",
+                          "status": "connected",
+                          "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+                          "reconnected": true,
+                          "syncStatus": "failed",
+                          "accountCount": 2
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력 오류·중복 기관·미지원 기관/인증·로그인 실패·SMS 토큰 만료. 알 수 없는 칸은 400 invalid. JSON 형식 오류는 parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalidLogin": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "아이디 또는 비밀번호를 확인해 주세요."
+                      }
+                    }
+                  },
+                  "cardFields": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "institutions[0].cardNo": [
+                            "카드번호를 입력해 주세요."
+                          ],
+                          "institutions[0].cardPassword": [
+                            "카드 비밀번호를 입력해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "expiredSms": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "인증 시간이 지났어요. 처음부터 다시 연결해 주세요."
+                      }
+                    }
+                  },
+                  "invalidSmsToken": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "문자 인증 정보가 맞지 않아요. 처음부터 다시 연결해 주세요."
+                      }
+                    }
+                  },
+                  "allFailed": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "연결하지 못했어요. 기관별 안내를 확인해 주세요.",
+                        "fields": {
+                          "institutions[0]": [
+                            "아이디 또는 비밀번호를 확인해 주세요."
+                          ],
+                          "institutions[1]": [
+                            "현대카드 홈페이지에서 직접 로그인해 잠금을 풀어 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 또는 기관 업권별 동의 필요. 동의 없으면 CODEF 호출 안 함.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "bankConsent": {
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "계좌 조회 동의가 필요해요."
+                      }
+                    }
+                  },
+                  "cardConsent": {
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "카드 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "기관 점검·응답 없음·알 수 없는 CODEF 오류.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "providerUnavailable": {
+                    "value": {
+                      "error": {
+                        "code": "provider_unavailable",
+                        "message": "신한은행 연결이 잠시 어려워요. 잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "allUnavailable": {
+                    "value": {
+                      "error": {
+                        "code": "provider_unavailable",
+                        "message": "연결하지 못했어요. 기관별 안내를 확인해 주세요.",
+                        "fields": {
+                          "institutions[0]": [
+                            "신한은행 연결이 잠시 어려워요. 잠시 후 다시 시도해 주세요."
+                          ],
+                          "institutions[1]": [
+                            "현대카드 연결이 잠시 어려워요. 잠시 후 다시 시도해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/finance/connections/{connectionId}/": {
@@ -563,6 +848,152 @@
             "example": "5e0a4c31-334b-498a-a1c5-b3d239c7c120"
           }
         ]
+      }
+    },
+    "/api/finance/sync/": {
+      "post": {
+        "operationId": "syncFinanceConnections",
+        "summary": "금융 정보 다시 불러오기",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "본문 없음 또는 {}는 해제되지 않은 연결 전부에서 동의한 범위를 조회한다. Idempotency-Key는 쓰지 않는다. 수동·자동 작업이 진행 중이면 그 작업, 같은 대상이 끝난 지 1분 안이면 마지막 성공 작업을 반환한다. 대상이 다르거나 카드 값을 보내면 새로 조회한다. 10분 넘게 멈춘 작업은 failed/stale로 닫고 새 작업을 만든다. 1차는 요청 안에서 실행을 끝내므로 202 status=succeeded일 수 있다. 거래는 마지막 성공 조회일 7일 전~오늘, 성공 이력이 없으면 4달 전 1일~오늘. 청구서는 지난달+이번 달, 잔액·카드·대출은 현재 상태다. 동의가 없거나 조회 중 철회·해제되면 해당 범위를 건너뛴다. 카드 저장 함수는 아직 없어 cards: skipped/not_supported다. 기관별 실패는 GET /api/tasks/{id}/ result.items[].error에서 확인한다. 로그인 오류·잠김은 relogin_required이고 연결 상태를 relogin으로 바꾼다. 작업 자체가 끝까지 돌면 모든 기관이 실패해도 succeeded, 서버 오류로 중단될 때만 failed다. 현대카드 인증값은 저장·로그에 남기지 않으며 없으면 해당 기관만 실패한다.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinanceSyncRequest"
+              },
+              "examples": {
+                "allConnections": {
+                  "value": {}
+                },
+                "selectedCard": {
+                  "value": {
+                    "connectionIds": [
+                      "91f20000-0000-4000-8000-000000000001"
+                    ],
+                    "cardCredentials": [
+                      {
+                        "connectionId": "91f20000-0000-4000-8000-000000000001",
+                        "cardNo": "4111222233334444",
+                        "cardPassword": "12"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-task-result-schema": {
+          "$ref": "#/components/schemas/FinanceSyncResult"
+        },
+        "responses": {
+          "202": {
+            "description": "작업 번호. GET /api/tasks/{id}/에서 진행 상태 및 기관별 결과 확인.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceSyncAccepted"
+                },
+                "examples": {
+                  "completed": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "status": "succeeded"
+                    }
+                  },
+                  "alreadyRunning": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "status": "running"
+                    }
+                  },
+                  "serverFailed": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "status": "failed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "작업 생성 전 검사: 없는·남의·해제된 연결, 잘못된 UUID·중복·빈 목록, 카드 값 형식·대상 밖 연결, 알 수 없는 칸. JSON 형식 오류는 parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "noConnections": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "연결된 기관이 없어요. 먼저 기관을 연결해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unselectable": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "connectionIds": [
+                            "선택할 수 없는 연결이에요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unknownField": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "extra": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -876,6 +1307,589 @@
         "required": [
           "items"
         ]
+      },
+      "FinanceOperationError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "FinanceSmsAuthInput": {
+        "type": "object",
+        "properties": {
+          "authToken": {
+            "type": "string",
+            "minLength": 1,
+            "description": "첫 응답의 서명 토큰. 같은 회원·기관에서 3분 안에 사용."
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "authToken",
+          "code"
+        ]
+      },
+      "FinanceInstitutionInput": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string",
+            "description": "finance/institutions.py 표의 아이디 로그인 지원 기관만. 공동인증서 전용 기관은 400."
+          },
+          "loginId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "writeOnly": true,
+            "description": "기관 홈페이지 아이디. 앞뒤 공백 제거."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "format": "password",
+            "writeOnly": true,
+            "description": "RSA 암호화 후 CODEF에 보내고 버린다."
+          },
+          "cardNo": {
+            "type": "string",
+            "pattern": "^[0-9]{14,19}$",
+            "writeOnly": true,
+            "description": "숫자만 14~19자리. 저장·로그에 남기지 않는다."
+          },
+          "cardPassword": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{2}|[0-9]{4})$",
+            "format": "password",
+            "writeOnly": true,
+            "description": "숫자 2자리 또는 4자리. 저장·로그에 남기지 않는다."
+          },
+          "smsAuth": {
+            "$ref": "#/components/schemas/FinanceSmsAuthInput"
+          }
+        },
+        "additionalProperties": false,
+        "description": "현대카드(0302)는 cardNo·cardPassword 필수. 은행에 카드 값을 보내면 400. 문자 인증 때는 해당 기관 하나와 로그인·카드 값을 다시 보낸다.",
+        "required": [
+          "businessType",
+          "organizationCode",
+          "loginId",
+          "password"
+        ]
+      },
+      "FinanceConnectionCreateRequest": {
+        "type": "object",
+        "properties": {
+          "institutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceInstitutionInput"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "업권+기관 코드 중복 불가. smsAuth가 있으면 기관 하나만."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "institutions"
+        ]
+      },
+      "FinanceSmsChallenge": {
+        "type": "object",
+        "properties": {
+          "authToken": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "phoneHint": {
+            "type": "string",
+            "nullable": true,
+            "description": "현재 항상 null."
+          }
+        },
+        "required": [
+          "authToken",
+          "expiresAt",
+          "phoneHint"
+        ]
+      },
+      "FinanceConnectedResult": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected"
+            ]
+          },
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reconnected": {
+            "type": "boolean"
+          },
+          "syncStatus": {
+            "type": "string",
+            "enum": [
+              "done",
+              "failed",
+              "not_supported"
+            ]
+          },
+          "accountCount": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          }
+        },
+        "required": [
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "connectionId",
+          "reconnected",
+          "syncStatus",
+          "accountCount"
+        ]
+      },
+      "FinanceSmsRequiredResult": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sms_required"
+            ]
+          },
+          "smsAuth": {
+            "$ref": "#/components/schemas/FinanceSmsChallenge"
+          },
+          "error": {
+            "$ref": "#/components/schemas/FinanceOperationError"
+          }
+        },
+        "required": [
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "smsAuth"
+        ]
+      },
+      "FinanceConnectionFailedResult": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          },
+          "error": {
+            "$ref": "#/components/schemas/FinanceOperationError"
+          }
+        },
+        "required": [
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "error"
+        ]
+      },
+      "FinanceConnectionCreateResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/FinanceConnectedResult"
+                },
+                {
+                  "$ref": "#/components/schemas/FinanceSmsRequiredResult"
+                },
+                {
+                  "$ref": "#/components/schemas/FinanceConnectionFailedResult"
+                }
+              ]
+            },
+            "description": "보낸 순서대로 기관별 결과."
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "FinanceSyncCardCredential": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cardNo": {
+            "type": "string",
+            "pattern": "^[0-9]{14,19}$",
+            "writeOnly": true,
+            "description": "숫자만 14~19자리. 저장·로그에 남기지 않는다."
+          },
+          "cardPassword": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{2}|[0-9]{4})$",
+            "format": "password",
+            "writeOnly": true,
+            "description": "숫자 2자리 또는 4자리. 저장·로그에 남기지 않는다."
+          }
+        },
+        "additionalProperties": false,
+        "description": "이번 조회 대상에 포함된 카드사 연결만. 같은 연결 중복 불가.",
+        "required": [
+          "connectionId",
+          "cardNo",
+          "cardPassword"
+        ]
+      },
+      "FinanceSyncRequest": {
+        "type": "object",
+        "properties": {
+          "connectionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "uniqueItems": true,
+            "description": "내 연결 중 해제되지 않은 연결만. 생략하면 연결 전부."
+          },
+          "cardCredentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceSyncCardCredential"
+            },
+            "maxItems": 50
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceSyncAccepted": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "status"
+        ]
+      },
+      "FinanceSyncPart": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "accounts",
+              "loans",
+              "cards"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_consent",
+              "not_supported",
+              "disconnected",
+              "not_run"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "status"
+        ]
+      },
+      "FinanceSyncItem": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceSyncPart"
+            }
+          },
+          "newTransactionCount": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "connectionId",
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "parts",
+          "newTransactionCount",
+          "error"
+        ]
+      },
+      "FinanceSyncResult": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "succeeded": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skipped": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "total",
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceSyncItem"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "items"
+        ],
+        "example": {
+          "summary": {
+            "total": 3,
+            "succeeded": 1,
+            "failed": 1,
+            "skipped": 1
+          },
+          "items": [
+            {
+              "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+              "businessType": "bank",
+              "organizationCode": "0088",
+              "organizationName": "신한은행",
+              "status": "succeeded",
+              "parts": [
+                {
+                  "kind": "accounts",
+                  "status": "succeeded"
+                },
+                {
+                  "kind": "loans",
+                  "status": "skipped",
+                  "reason": "no_consent"
+                }
+              ],
+              "newTransactionCount": 5,
+              "error": null
+            },
+            {
+              "connectionId": "91f20000-0000-4000-8000-000000000001",
+              "businessType": "card",
+              "organizationCode": "0302",
+              "organizationName": "현대카드",
+              "status": "failed",
+              "parts": [],
+              "newTransactionCount": null,
+              "error": {
+                "code": "invalid",
+                "message": "카드 비밀번호가 필요해요.",
+                "fields": {
+                  "cardNo": [
+                    "카드 비밀번호가 필요해요."
+                  ],
+                  "cardPassword": [
+                    "카드 비밀번호가 필요해요."
+                  ]
+                }
+              }
+            },
+            {
+              "connectionId": "77ab0000-0000-4000-8000-000000000001",
+              "businessType": "card",
+              "organizationCode": "0311",
+              "organizationName": "롯데카드",
+              "status": "skipped",
+              "parts": [
+                {
+                  "kind": "cards",
+                  "status": "skipped",
+                  "reason": "not_supported"
+                }
+              ],
+              "newTransactionCount": null,
+              "error": null
+            }
+          ]
+        }
       }
     }
   }
