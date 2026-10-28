@@ -56,6 +56,14 @@
 | CHECK `fp_living_budget_gte_0` · `fp_cushion_monthly_gte_0` | 음수 금액 방지 (비어 있으면 통과) |
 | ⚠️ 쿠션 **사용 한도 규칙은 미정** | 보호 하한이 없어져서 예산 조정 때 쿠션을 어디까지 쓸 수 있는지 다시 정해야 함(2차 돌발 지출·카테고리 초과 조정 구현 전). 그때 하한·비율 제한을 두면 칸을 추가하고, 승인만 받으면 쓰는 방식이면 `cushion_use_policy`로 충분 |
 
+**2026-10-27 · 28 추가 (온보딩 자취 여부 · 예산 명세 리뷰 · ERD SQL에도 반영 필요)**
+
+| 무엇 | 왜 |
+|---|---|
+| `financial_profile.housing_type` (VARCHAR 10, `alone` 자취 · `family` 본가 거주, 비어도 됨) | 10-27 온보딩 변경. 예산 산정 방향(생활 안정형 · 저축 집중형) 대신 **자취 여부로 지킬 돈 비율**을 정한다 (자취 55·30·5·10 / 본가 45·40·5·10, `docs/api/budgets.md` P-02). 비어 있으면 아직 안 고름 → 지킬 돈 API가 `missing`으로 알림. `budget_direction`은 아직 지우지 않음(내 정보 API 정리 때) |
+| `budget_category_setting.locked_amount` (BIGINT, 원 단위, 비어도 됨) | 10-28 예산 명세 리뷰. 자물쇠는 주기 전체가 같이 쓰는데, 초안 · 승인 예산의 금액이 다를 수 있어서 **걸 때 그 예산의 금액을 같이 저장**하고 다시 추천할 때 이 금액을 유지한다. 풀면 NULL |
+| CHECK `fp_housing_type_valid` · `bcs_locked_amount_gte_0` · `bcs_unlocked_no_amount` | 거주 형태 코드 오타, 잠긴 금액 음수, 자물쇠가 풀렸는데 금액이 남아 있는 것 방지 |
+
 **2026-10-24 반영 (정한 코드 · 결정 Z · AA · P · Y · E · L — ERD 그림 · 설계문서에도 반영 완료)**
 
 | 무엇 | 왜 |
@@ -107,13 +115,15 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\dt"
 docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payment_due"
 ```
 
+
 화면으로 보고 싶으면 `python manage.py runserver` → `http://127.0.0.1:8000/admin` 에 30개 테이블이 다 등록돼 있다.
 
 ## 4. DB가 막아 주는 규칙 (CHECK · 조건부 UNIQUE)
 
 | 테이블 | 막는 것 |
 |---|---|
-| financial_profile | 급여일 1~31 밖 |
+| financial_profile | 급여일 1~31 밖, 거주 형태가 alone·family 아님 (비우는 건 OK) — 10-27 |
+| budget_category_setting | 잠긴 금액 음수, 자물쇠가 풀렸는데 잠긴 금액이 있음 — 10-28 |
 | recurring_expense | 금액 1,000원 미만 · 1억 원 초과, 납부일 1~31 밖 (납부일을 비우는 건 OK), 상태가 suggested·confirmed·stopped·ignored 아님, 출처가 manual·detected 아님 — 10-21 |
 | recurring_saving | 금액 1,000원 미만 · 1억 원 초과, 이체일 1~31 밖 (비우는 건 OK), 상태 · 출처가 정해진 값이 아님, 보내는 계좌 = 받는 계좌 — 10-22 |
 | category_priority | 같은 회원이 같은 순위 2개, 같은 카테고리를 두 순위에 넣기, 순위 0 이하 |

@@ -89,7 +89,7 @@
 | 메시지 `role` · `contentType` | `user` · `bot` / `text` · `card` | **결정기록 3-3 E로 확정** | chat |
 | 작업 `status` | `queued` · `running` · `succeeded` · `failed` · `canceled` | **결정기록 3-3 E로 확정**. `taskType` 예: `budget_adjust` | chat |
 | 동의 범위 `productScope` | `bank` · `card` · `loan` | | finance-connect |
-| 에러 `code` | `invalid` · `parse_error` · `not_authenticated` · `permission_denied` · `not_found` · `method_not_allowed` · `idempotency_conflict` · `server_error` · **`consent_required` · `relogin_required` · `provider_unavailable`** | 뒤 셋은 금융 조회용 (10/22 결정 O) | API_RULES |
+| 에러 `code` | `invalid` · `parse_error` · `not_authenticated` · `permission_denied` · `not_found` · `method_not_allowed` · `idempotency_conflict` · `server_error` · **`consent_required` · `relogin_required` · `provider_unavailable`** · **`not_ready`** · **`expired`** | 금융 조회용 셋은 10/22 결정 O. `not_ready`(409)는 먼저 필요한 정보가 없거나 지금 상태로 저장 불가, `expired`(409)는 조건이 바뀌어 승인할 수 없는 초안 · 조정안 (10/27, budgets.md) | API_RULES |
 
 ---
 
