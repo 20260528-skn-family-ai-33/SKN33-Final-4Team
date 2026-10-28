@@ -440,6 +440,26 @@
 - 청구 총액은 저장값 그대로 반환하며 상세 합계로 덮어쓰지 않는다. GET·선택 저장에서 납부 예정이나 예산을 변경하지 않는다.
 - 재검증: 프로젝트 루트에서 `python backend/manage.py test finance.test_cards` (별도 테스트 DB 사용).
 
+### 10/28 CODEF 카드 저장 메모 (`finance/sync_cards.py`)
+
+- 다시 불러오기가 `sync_card(...)`를 부른다(`finance-connect.md` 11번). 보유카드(`card-list`) · 청구내역(`billing-list`, 지난달 · 이번 달) · 승인내역(`approval-list`, 카드 전체 조회)을 모두 받은 뒤 한 트랜잭션으로 저장한다. 하나라도 실패하면 아무것도 저장하지 않는다.
+- 칸 대응은 CODEF 개발가이드 출력부 기준(10/28 확인, 데모 응답 대조 전 — `codef_card_check`로 확인 필요). 나은 10/28 기준(P-12) 반영.
+
+| CODEF | DB | 메모 |
+|---|---|---|
+| card-list `resCardNo` | `card.source_card_key`(해시) · `masked_number` | 원문 저장 안 함. 같은 해시면 재연결해도 같은 카드 행(ID · 선택 · `first_connected_at` 유지) |
+| `resCardName` · `resCardType` · `resState` | `name` · `card_type` · `card_status` | 기관 값 그대로(정규화 기준 미정). 20자 넘으면 비움 |
+| billing-list 명세서 1건 | `card_bill` | **카드번호 없이 상세마다 `resUsedCard`만 있어 `scope_type = issuer`, `card = null`**. 확정 여부는 원천 값이 없어 `confirmation_state = null` |
+| `resTotalAmount` · `resPaymentDueDate` · `resWithdrawalDueDate` | `total_amount` · `payment_due_date` · `withdrawal_due_date` | 총액이 비면 저장하지 않고 실패(`bill_total_missing`). 날짜 빈칸은 null |
+| `resChargeHistoryList[]` | `card_bill_item` | 결제방법 1 일시불 · 2 할부 · 그 외 unknown. 이번 회차 금액 = `resPaymentAmt`, 비면 `원금 + 수수료`(명세 공식, `field_states.billedAmount.source = derived`) |
+| (상세 상태) | `items_state` | 상세 없음 → `unavailable`, 모든 항목 금액이 있고 합계 = 총액 → `complete`, 그 외 `partial` |
+| approval-list 한 줄 | `financial_transaction` (`source_kind=card`, `direction=out`, `transaction_type=spending`, `card`) | 마스킹 번호(`1234********5678`)를 보유카드와 대조해 **한 장으로만 맞을 때** 저장. 취소: `resCancelYN` 1 취소 · 2 부분취소 → `canceled_amount`, 3 거절 → 전액 취소. 해외는 `resKRWAmt` |
+
+- **조회 기록(P-12)**: 카드마다 `card_bill_list`(달마다 1일 ~ 말일, 이번 달은 조회일까지) · `card_approval_list`(카드사가 응답한 `commStartDate ~ commEndDate`, 없으면 요청 기간). **승인 한 줄이라도 카드를 하나로 특정 못 하거나 금액을 모르면**(부분취소 금액 없음 · 음수 이용금액 · 원화금액 없는 해외) 그 줄은 저장하지 않고 이번 `card_approval_list` 기록도 남기지 않는다. 덜 센 사용액으로 선차감이 작아지지 않게.
+- **선차감 영향**: 청구서가 카드사 통합(`issuer`)이라 지금 규칙(카드별로 나눠 추정하지 않음)으로는 실제 CODEF 자료로 **선차감이 항상 `bill_scope_unknown` 보류**된다. 카드 한 장 청구를 얻는 방법(예: 카드사 연결에 카드가 한 장뿐일 때, 상세 `resUsedCard`로 카드별 합산)을 정해야 한다 — 김나은 · 권세진 확인 필요.
+- 원천 확인 필요: 같은 승인의 취소가 별도 줄로 오는 카드사가 있는지(있으면 사용액이 두 번 잡히지는 않지만 원거래가 그대로 남음), 요청 기간보다 짧게 조회되는데 0건이라 `commStartDate`가 없는 경우.
+- 재검증: `python backend/manage.py test finance.test_card_sync`.
+
 C-17·H-04(Q), 금융 GET 실패(O), 표시·선택 해제(N⑨⑩), 7번 응답 구조, 청구서 네 필드(Z), 청구서 메타데이터(AA①), 매칭 담당(T)은 확정되어 목록에서 제외했다. 남은 것은 실제 원천 제공 여부와 구현 세부 사항이다.
 
 | 기능 | 확인할 내용 | 확인할 사람 |

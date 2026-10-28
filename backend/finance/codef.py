@@ -27,6 +27,9 @@ BANKS = {"0004": "국민", "0088": "신한", "0020": "우리", "0081": "하나",
 PATH_ACCOUNT_LIST = "/v1/kr/bank/p/account/account-list"
 PATH_TRANSACTIONS = "/v1/kr/bank/p/account/transaction-list"
 PATH_LOAN_TRANSACTIONS = "/v1/kr/bank/p/loan/transaction-list"
+PATH_CARD_LIST = "/v1/kr/card/p/account/card-list"
+PATH_CARD_BILLS = "/v1/kr/card/p/account/billing-list"
+PATH_CARD_APPROVALS = "/v1/kr/card/p/account/approval-list"
 
 SUCCESS = "CF-00000"
 _SERVICE = {"sandbox": ServiceType.SANDBOX, "demo": ServiceType.DEMO, "product": ServiceType.PRODUCT}
@@ -183,6 +186,60 @@ def get_loan_details(connected_id, org, account_no, start, end):
         "orderBy": "0", "inquiryType": "1",
     })
     return normalize_loan_details(data, account_no)
+
+
+def _card_auth(card_no, card_password):
+    """현대카드처럼 조회 때도 카드번호 · 카드 비밀번호가 필요한 곳. 요청에만 싣고 저장 · 출력하지 않는다"""
+    params = {}
+    if card_no:
+        params["cardNo"] = card_no
+    if card_password:
+        params["cardPassword"] = encrypt_rsa(card_password, settings.CODEF["PUBLIC_KEY"])
+    return params
+
+
+def list_cards(connected_id, org, card_no=None, card_password=None):
+    """보유카드 목록 → [{"source_card_key", "masked_number", "name", "card_type", "card_status"}]"""
+    from .codef_cards import normalize_cards
+
+    data = _request(PATH_CARD_LIST, {
+        "connectedId": connected_id, "organization": org, "inquiryType": "0",   # 0 = 카드 이미지 미포함
+        **_card_auth(card_no, card_password),
+    })
+    return normalize_cards(data)
+
+
+def list_card_bills(connected_id, org, month, card_no=None, card_password=None):
+    """청구내역 (청구년월 YYYYMM 한 달). 일 단위로 보내면 CF-13001"""
+    from .codef_cards import MONTH, normalize_card_bills
+
+    if not isinstance(month, str) or not MONTH.fullmatch(month):
+        raise ValueError("청구년월은 YYYYMM 이어야 해요.")
+    data = _request(PATH_CARD_BILLS, {
+        "connectedId": connected_id, "organization": org, "startDate": month,
+        "memberStoreInfoYN": "0",   # 가맹점 상세(주소 · 전화) 미포함
+        **_card_auth(card_no, card_password),
+    })
+    return normalize_card_bills(data, month, org)
+
+
+def list_card_approvals(connected_id, org, start, end, card_no=None, card_password=None):
+    """카드 승인내역 (start ~ end, 카드 전체). → (거래 목록, 실제 조회 기간)
+    승인내역에서는 인증용 카드번호를 loginCardNo 로 보낸다 (cardNo 는 '카드별 조회' 대상 카드라 다른 뜻)"""
+    from .codef_cards import normalize_approvals
+
+    if start > end:
+        raise ValueError("조회 시작일은 종료일보다 늦을 수 없어요.")
+    auth = _card_auth(card_no, card_password)
+    if "cardNo" in auth:
+        auth["loginCardNo"] = auth.pop("cardNo")
+    data = _request(PATH_CARD_APPROVALS, {
+        "connectedId": connected_id, "organization": org,
+        "startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d"),
+        "orderBy": "0", "inquiryType": "1",   # 1 = 전체 카드 조회
+        "memberStoreInfoType": "0", **auth,
+    })
+    return normalize_approvals(data, start, end)
 
 
 # ----- CODEF 칸 → 우리 칸 -----
