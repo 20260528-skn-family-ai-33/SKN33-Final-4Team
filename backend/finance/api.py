@@ -21,6 +21,7 @@ from budgets.models import Category
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
 from .models import FinancialTransaction, SourceKind, TransactionLink
+from .spending import spending_summary
 
 Tx = FinancialTransaction
 UNCLASSIFIED = "UNCLASSIFIED"
@@ -152,7 +153,7 @@ def transactions(request):
     rows = rows.order_by("-occurred_on", F("occurred_time").desc(nulls_last=True), "-created_at")
 
     items = [transaction_item(tx) for tx in rows]
-    spending = [item for item in items if item["transaction_type"] == Tx.TransactionType.SPENDING]
+    summary = spending_summary(items)
     if start is None:
         # 전체 기간: 시작일 = 가장 오래된 거래일 (없으면 None)
         start = min((item["occurred_on"] for item in items), default=None)
@@ -161,8 +162,8 @@ def transactions(request):
         "period": {"from": start, "to": end, "basis": basis},
         "summary": {
             # 이번 응답의 소비 거래 소계 (입금 · 이체 제외). 홈 · 예산의 사용액과는 다른 값
-            "spent_total": sum(item["net_amount"] for item in spending),
-            "needs_review_count": sum(1 for item in spending if item["category"] == UNCLASSIFIED),
+            "spent_total": summary["spent_total"],
+            "needs_review_count": summary["needs_review_count"],
         },
         "items": items,
     })

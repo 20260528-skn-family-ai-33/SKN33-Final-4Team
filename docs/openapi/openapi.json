@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 32개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화), 목업 3개(연결 해제·챗봇 메시지·작업 확인), 미구현 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), 금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 43개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 42개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -38,6 +38,9 @@
     },
     {
       "name": "통합 챗봇"
+    },
+    {
+      "name": "예산"
     }
   ],
   "security": [
@@ -1039,16 +1042,307 @@
           }
         },
         "x-implementation-status": "implemented"
+      },
+      "post": {
+        "operationId": "createFinanceConnections",
+        "summary": "[구현] 금융기관 인증 · 새 연결",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n아이디·비밀번호 로그인 및 SMS 2-way 인증만 지원한다. 같은 기관 재요청은 다시 로그인으로 처리하므로 Idempotency-Key를 쓰지 않는다. 기관별 동의를 먼저 검사한다. 하나라도 연결되거나 문자 인증 대기면 200, 전부 실패하면 400 이유가 하나라도 있을 때 400 invalid, 나머지는 502 provider_unavailable. 여러 기관 전부 실패 시 message는 \"연결하지 못했어요. 기관별 안내를 확인해 주세요.\"이고 fields[\"institutions[i]\"]에 기관별 안내를 넣는다. 한 기관이면 그 기관의 문구·상태를 그대로 보낸다. SMS 토큰은 3분 유효하며 같은 회원·기관에서만 사용한다. 잘못된 인증번호는 200 sms_required와 새 토큰·error로 응답한다. 은행은 연결 직후 4달 전 1일부터 오늘까지 계좌·거래를 불러오고 실패해도 연결은 유지한다. 재연결은 기존 계좌·카드를 재사용한다. connectedId·비밀번호·카드 값은 응답에 포함하거나 로그에 저장하지 않는다. CODEF 원래 오류 코드는 응답에 넣지 않는다.\n\n원본: `docs/api/finance-connect.md`",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinanceConnectionCreateRequest"
+              },
+              "examples": {
+                "bankAndCard": {
+                  "value": {
+                    "institutions": [
+                      {
+                        "businessType": "bank",
+                        "organizationCode": "0088",
+                        "loginId": "example-user",
+                        "password": "example-password"
+                      },
+                      {
+                        "businessType": "card",
+                        "organizationCode": "0302",
+                        "loginId": "example-user",
+                        "password": "example-password",
+                        "cardNo": "4111222233334444",
+                        "cardPassword": "12"
+                      }
+                    ]
+                  }
+                },
+                "smsVerification": {
+                  "value": {
+                    "institutions": [
+                      {
+                        "businessType": "card",
+                        "organizationCode": "0311",
+                        "loginId": "example-user",
+                        "password": "example-password",
+                        "smsAuth": {
+                          "authToken": "example-signed-token",
+                          "code": "123456"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "하나 이상 연결됨 또는 SMS 인증 대기. 실패 기관도 함께 반환.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceConnectionCreateResponse"
+                },
+                "examples": {
+                  "mixedResults": {
+                    "value": {
+                      "results": [
+                        {
+                          "businessType": "bank",
+                          "organizationCode": "0088",
+                          "organizationName": "신한은행",
+                          "status": "connected",
+                          "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+                          "reconnected": false,
+                          "syncStatus": "done",
+                          "accountCount": 2
+                        },
+                        {
+                          "businessType": "card",
+                          "organizationCode": "0311",
+                          "organizationName": "롯데카드",
+                          "status": "sms_required",
+                          "smsAuth": {
+                            "authToken": "example-signed-token",
+                            "expiresAt": "2026-10-28T17:53:00+09:00",
+                            "phoneHint": null
+                          }
+                        },
+                        {
+                          "businessType": "card",
+                          "organizationCode": "0306",
+                          "organizationName": "신한카드",
+                          "status": "failed",
+                          "error": {
+                            "code": "invalid",
+                            "message": "아이디 또는 비밀번호를 확인해 주세요."
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "smsRetry": {
+                    "value": {
+                      "results": [
+                        {
+                          "businessType": "card",
+                          "organizationCode": "0311",
+                          "organizationName": "롯데카드",
+                          "status": "sms_required",
+                          "smsAuth": {
+                            "authToken": "example-signed-token",
+                            "expiresAt": "2026-10-28T17:53:00+09:00",
+                            "phoneHint": null
+                          },
+                          "error": {
+                            "code": "invalid",
+                            "message": "인증번호가 맞지 않아요."
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  "reconnected": {
+                    "value": {
+                      "results": [
+                        {
+                          "businessType": "bank",
+                          "organizationCode": "0088",
+                          "organizationName": "신한은행",
+                          "status": "connected",
+                          "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+                          "reconnected": true,
+                          "syncStatus": "failed",
+                          "accountCount": 2
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력 오류·중복 기관·미지원 기관/인증·로그인 실패·SMS 토큰 만료. 알 수 없는 칸은 400 invalid. JSON 형식 오류는 parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalidLogin": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "아이디 또는 비밀번호를 확인해 주세요."
+                      }
+                    }
+                  },
+                  "cardFields": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "institutions[0].cardNo": [
+                            "카드번호를 입력해 주세요."
+                          ],
+                          "institutions[0].cardPassword": [
+                            "카드 비밀번호를 입력해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "expiredSms": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "인증 시간이 지났어요. 처음부터 다시 연결해 주세요."
+                      }
+                    }
+                  },
+                  "invalidSmsToken": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "문자 인증 정보가 맞지 않아요. 처음부터 다시 연결해 주세요."
+                      }
+                    }
+                  },
+                  "allFailed": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "연결하지 못했어요. 기관별 안내를 확인해 주세요.",
+                        "fields": {
+                          "institutions[0]": [
+                            "아이디 또는 비밀번호를 확인해 주세요."
+                          ],
+                          "institutions[1]": [
+                            "현대카드 홈페이지에서 직접 로그인해 잠금을 풀어 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 또는 기관 업권별 동의 필요. 동의 없으면 CODEF 호출 안 함. CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "bankConsent": {
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "계좌 조회 동의가 필요해요."
+                      }
+                    }
+                  },
+                  "cardConsent": {
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "카드 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "기관 점검·응답 없음·알 수 없는 CODEF 오류.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "providerUnavailable": {
+                    "value": {
+                      "error": {
+                        "code": "provider_unavailable",
+                        "message": "신한은행 연결이 잠시 어려워요. 잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "allUnavailable": {
+                    "value": {
+                      "error": {
+                        "code": "provider_unavailable",
+                        "message": "연결하지 못했어요. 기관별 안내를 확인해 주세요.",
+                        "fields": {
+                          "institutions[0]": [
+                            "신한은행 연결이 잠시 어려워요. 잠시 후 다시 시도해 주세요."
+                          ],
+                          "institutions[1]": [
+                            "현대카드 연결이 잠시 어려워요. 잠시 후 다시 시도해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
       }
     },
     "/api/finance/connections/{connectionId}/": {
       "delete": {
-        "summary": "[목업] 연결 해제",
+        "summary": "[구현] 연결 해제",
         "operationId": "disconnectFinanceConnection",
         "tags": [
           "금융 동의 · 연결"
         ],
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.\n\n현재 미구현인 API 계약이다. 요청 본문 없이 기관 연결 하나를 해제한다. 행을 삭제하지 않고 disconnected_at과 status=disconnected를 기록한다. 연결의 계좌·카드도 응답에서 disconnected 상태가 되며 과거 거래는 남는다. 이미 해제한 본인 연결에도 204를 반환하며 Idempotency-Key는 사용하지 않는다. 없는 연결·타인 연결·주소 UUID 형식 오류는 404다. 해제한 계좌의 isSelected는 유지하고 해제 전 거래도 소비 집계에 포함한다. 이 API는 고정지출·정기 저축을 직접 중지하지 않는다. 화면의 별도 확인 선택은 기본 체크 안 함이며 선택한 항목만 기존 고정지출·저축 DELETE API로 중지한다. 선택하지 않은 항목은 유지하고 결제 수단을 연결 해제됨으로 표시한다. 여러 기관이 공유하는 connectedId의 마지막 기관 해제 처리, 진행 중 sync 결과 처리, 항목 중지와 연결 해제의 순서·부분 실패 정책은 원문 확인 필요 사항이다.\n\n원본: `docs/api/finance-connect.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n현재 미구현인 API 계약이다. 요청 본문 없이 기관 연결 하나를 해제한다. 행을 삭제하지 않고 disconnected_at과 status=disconnected를 기록한다. 연결의 계좌·카드도 응답에서 disconnected 상태가 되며 과거 거래는 남는다. 이미 해제한 본인 연결에도 204를 반환하며 Idempotency-Key는 사용하지 않는다. 없는 연결·타인 연결·주소 UUID 형식 오류는 404다. 해제한 계좌의 isSelected는 유지하고 해제 전 거래도 소비 집계에 포함한다. 이 API는 고정지출·정기 저축을 직접 중지하지 않는다. 화면의 별도 확인 선택은 기본 체크 안 함이며 선택한 항목만 기존 고정지출·저축 DELETE API로 중지한다. 선택하지 않은 항목은 유지하고 결제 수단을 연결 해제됨으로 표시한다. 여러 기관이 공유하는 connectedId의 마지막 기관 해제 처리, 진행 중 sync 결과 처리, 항목 중지와 연결 해제의 순서·부분 실패 정책은 원문 확인 필요 사항이다.\n\n원본: `docs/api/finance-connect.md`",
         "security": [
           {
             "sessionAuth": []
@@ -1118,7 +1412,159 @@
             "$ref": "#/components/parameters/CsrfToken"
           }
         ],
-        "x-implementation-status": "mock"
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/finance/sync/": {
+      "post": {
+        "operationId": "syncFinanceConnections",
+        "summary": "[구현] 금융 정보 다시 불러오기",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n본문 없음 또는 {}는 해제되지 않은 연결 전부에서 동의한 범위를 조회한다. Idempotency-Key는 쓰지 않는다. 수동·자동 작업이 진행 중이면 그 작업, 같은 대상이 끝난 지 1분 안이면 마지막 성공 작업을 반환한다. 대상이 다르거나 카드 값을 보내면 새로 조회한다. 10분 넘게 멈춘 작업은 failed/stale로 닫고 새 작업을 만든다. 1차는 요청 안에서 실행을 끝내므로 202 status=succeeded일 수 있다. 거래는 마지막 성공 조회일 7일 전~오늘, 성공 이력이 없으면 4달 전 1일~오늘. 청구서는 지난달+이번 달, 잔액·카드·대출은 현재 상태다. 동의가 없거나 조회 중 철회·해제되면 해당 범위를 건너뛴다. 카드 저장 함수는 아직 없어 cards: skipped/not_supported다. 기관별 실패는 GET /api/tasks/{id}/ result.items[].error에서 확인한다. 로그인 오류·잠김은 relogin_required이고 연결 상태를 relogin으로 바꾼다. 작업 자체가 끝까지 돌면 모든 기관이 실패해도 succeeded, 서버 오류로 중단될 때만 failed다. 현대카드 인증값은 저장·로그에 남기지 않으며 없으면 해당 기관만 실패한다.\n\n원본: `docs/api/finance-connect.md`",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FinanceSyncRequest"
+              },
+              "examples": {
+                "allConnections": {
+                  "value": {}
+                },
+                "selectedCard": {
+                  "value": {
+                    "connectionIds": [
+                      "91f20000-0000-4000-8000-000000000001"
+                    ],
+                    "cardCredentials": [
+                      {
+                        "connectionId": "91f20000-0000-4000-8000-000000000001",
+                        "cardNo": "4111222233334444",
+                        "cardPassword": "12"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-task-result-schema": {
+          "$ref": "#/components/schemas/FinanceSyncResult"
+        },
+        "responses": {
+          "202": {
+            "description": "작업 번호. GET /api/tasks/{id}/에서 진행 상태 및 기관별 결과 확인.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceSyncAccepted"
+                },
+                "examples": {
+                  "completed": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "status": "succeeded"
+                    }
+                  },
+                  "alreadyRunning": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "status": "running"
+                    }
+                  },
+                  "serverFailed": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "status": "failed"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "작업 생성 전 검사: 없는·남의·해제된 연결, 잘못된 UUID·중복·빈 목록, 카드 값 형식·대상 밖 연결, 알 수 없는 칸. JSON 형식 오류는 parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "noConnections": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "연결된 기관이 없어요. 먼저 기관을 연결해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unselectable": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "connectionIds": [
+                            "선택할 수 없는 연결이에요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unknownField": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "extra": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요. CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
       }
     },
     "/api/finance/connect/cards/": {
@@ -5733,7 +6179,7 @@
     "/api/tasks/{id}/": {
       "get": {
         "operationId": "getTask",
-        "summary": "[목업] 오래 걸리는 작업 진행 확인",
+        "summary": "[구현] 오래 걸리는 작업 진행 확인",
         "tags": [
           "통합 챗봇"
         ],
@@ -5750,7 +6196,7 @@
             "description": "UUID. 없는 항목·남의 항목·형식 오류는 모두 404."
           }
         ],
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.\n\nqueued·running이면 원문 기본안은 2초 후 재조회, succeeded·failed·canceled이면 중단합니다. 실제 비동기 사용 여부·조회 간격·최대 대기 시간·result 구조·error.code 목록·작업 취소 API는 결정 후입니다. 예산 조정안 만료는 작업 succeeded 상태를 바꾸지 않고 승인 시 알립니다.\n\n원본: `docs/api/chat.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n회원 본인의 공용 async_task를 조회한다. queued·running이면 재조회, succeeded·failed·canceled이면 중단한다. 시작 API는 1차로 요청 안에서 작업을 끝내므로 처음부터 succeeded일 수 있다. result는 succeeded일 때, error는 failed일 때만 객체이며 나머지는 null이다. finance_sync 결과는 FinanceSyncResult를 참고한다. 기관 전부 실패해도 실행을 마치면 작업은 succeeded이고 기관별 실패는 result.items[].error에 있다. 공용 실패 코드는 server_error·stale. 10분 넘게 멈춘 작업은 다음 시작 요청 때 failed/stale로 닫는다. 예산 조정안의 조건 변경은 succeeded를 바꾸지 않고 승인 단계에서 만료를 알린다. 조회 간격·최대 대기 시간·작업 취소 API는 결정 후다.\n\n원본: `docs/api/chat.md`",
         "responses": {
           "200": {
             "description": "정상 처리",
@@ -5759,16 +6205,131 @@
                 "schema": {
                   "$ref": "#/components/schemas/ChatTask"
                 },
-                "example": {
-                  "taskId": "d71c0000-0000-4000-8000-000000000001",
-                  "taskType": "budget_adjust",
-                  "status": "running",
-                  "conversationId": "3f2c0000-0000-4000-8000-000000000001",
-                  "createdAt": "2026-10-21T16:30:00+09:00",
-                  "startedAt": "2026-10-21T16:30:01+09:00",
-                  "completedAt": null,
-                  "result": null,
-                  "error": null
+                "examples": {
+                  "running": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "budget_adjust",
+                      "status": "running",
+                      "conversationId": "3f2c0000-0000-4000-8000-000000000001",
+                      "createdAt": "2026-10-21T16:30:00+09:00",
+                      "startedAt": "2026-10-21T16:30:01+09:00",
+                      "completedAt": null,
+                      "result": null,
+                      "error": null
+                    }
+                  },
+                  "financeSync": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "finance_sync",
+                      "status": "succeeded",
+                      "conversationId": null,
+                      "createdAt": "2026-10-28T17:50:00+09:00",
+                      "startedAt": "2026-10-28T17:50:00+09:00",
+                      "completedAt": "2026-10-28T17:50:06+09:00",
+                      "result": {
+                        "summary": {
+                          "total": 3,
+                          "succeeded": 1,
+                          "failed": 1,
+                          "skipped": 1
+                        },
+                        "items": [
+                          {
+                            "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+                            "businessType": "bank",
+                            "organizationCode": "0088",
+                            "organizationName": "신한은행",
+                            "status": "succeeded",
+                            "parts": [
+                              {
+                                "kind": "accounts",
+                                "status": "succeeded"
+                              },
+                              {
+                                "kind": "loans",
+                                "status": "skipped",
+                                "reason": "no_consent"
+                              }
+                            ],
+                            "newTransactionCount": 5,
+                            "error": null
+                          },
+                          {
+                            "connectionId": "91f20000-0000-4000-8000-000000000001",
+                            "businessType": "card",
+                            "organizationCode": "0302",
+                            "organizationName": "현대카드",
+                            "status": "failed",
+                            "parts": [],
+                            "newTransactionCount": null,
+                            "error": {
+                              "code": "invalid",
+                              "message": "카드 비밀번호가 필요해요.",
+                              "fields": {
+                                "cardNo": [
+                                  "카드 비밀번호가 필요해요."
+                                ],
+                                "cardPassword": [
+                                  "카드 비밀번호가 필요해요."
+                                ]
+                              }
+                            }
+                          },
+                          {
+                            "connectionId": "77ab0000-0000-4000-8000-000000000001",
+                            "businessType": "card",
+                            "organizationCode": "0311",
+                            "organizationName": "롯데카드",
+                            "status": "skipped",
+                            "parts": [
+                              {
+                                "kind": "cards",
+                                "status": "skipped",
+                                "reason": "not_supported"
+                              }
+                            ],
+                            "newTransactionCount": null,
+                            "error": null
+                          }
+                        ]
+                      },
+                      "error": null
+                    }
+                  },
+                  "stale": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "finance_sync",
+                      "status": "failed",
+                      "conversationId": null,
+                      "createdAt": "2026-10-28T17:50:00+09:00",
+                      "startedAt": "2026-10-28T17:50:00+09:00",
+                      "completedAt": "2026-10-28T17:50:06+09:00",
+                      "result": null,
+                      "error": {
+                        "code": "stale",
+                        "message": "작업이 중간에 멈췄어요. 다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "serverError": {
+                    "value": {
+                      "taskId": "d71c0000-0000-4000-8000-000000000001",
+                      "taskType": "finance_sync",
+                      "status": "failed",
+                      "conversationId": null,
+                      "createdAt": "2026-10-28T17:50:00+09:00",
+                      "startedAt": "2026-10-28T17:50:00+09:00",
+                      "completedAt": "2026-10-28T17:50:06+09:00",
+                      "result": null,
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -5794,7 +6355,1226 @@
             }
           }
         },
-        "x-implementation-status": "mock"
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/budgets/protect/": {
+      "get": {
+        "summary": "[구현] 지킬 돈 보기",
+        "operationId": "protectGet",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nP-01~P-11. missing은 housingType·takeHomeIncome·payday 순서. missing이면 base·recommended·blocked는 null, savingsMin은 계속 계산한다. fixedTotal은 결제 수단과 무관한 확정 고정지출 + 상환 중 대출 + 카드 선차감이다. available은 음수도 그대로 반환한다. 쿠션 목표는 실수령액 × 3이며 실수령액이 없으면 null. 잔액을 모르면 쿠션 필수. blocked도 200이다. 자취 비율은 생활비55·저축30·여윳돈5·쿠션10, 본가는45·40·5·10이다. 생활비·저축은 1만원 반올림, 쿠션은 내림, 자투리는 여윳돈. 확정 정기 저축 합계가 비율 저축보다 크면 최소 저축을 먼저 떼고 생활비:여윳돈:쿠션 비율로 재배분한다. 반올림 초과는 생활비에서 빼고, 필수 쿠션이 0이면 여윳돈→생활비에서 최대 1만원, 그래도 0일 때만 최소를 넘는 저축에서 가져온다. 카드 첫 청구서 선차감은 관리 대상 카드별로 계산하며, 한 장이라도 자료 미확인이면 0원으로 치지 않고 base·recommended는 null, blocked = {reason: card_bill_pending, shortfall: null}, cardPending에 카드와 이유를 담는다. 청구 이력·카드 거래가 다 들어왔는지는 sync_run(card_bill_list·card_approval_list, success)의 이어진 조회 기간으로만 판단하고, 기준일은 마지막으로 다 불러온 날이다. 카드로 내는 확정 고정지출은 선차감에서 빼되 고정지출 하나는 카드 전체에서 한 번만 뺀다(이번 주기 실제 결제 카드 우선, 없으면 등록한 결제 카드, P-04·P-12).\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "필수 정보·추천·부족 상태·저장 값",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectResponse"
+                },
+                "examples": {
+                  "ready": {
+                    "value": {
+                      "missing": [],
+                      "housingType": "family",
+                      "rates": {
+                        "living": 45,
+                        "saving": 40,
+                        "spare": 5,
+                        "cushion": 10
+                      },
+                      "base": {
+                        "takeHomeIncome": 2800000,
+                        "fixedTotal": 770000,
+                        "available": 2030000
+                      },
+                      "savingsMin": 1000000,
+                      "recommended": {
+                        "livingBudget": 770000,
+                        "savingFloor": 1000000,
+                        "cushionMonthly": 170000,
+                        "spare": 90000,
+                        "rebalanced": true,
+                        "restAmount": 1030000,
+                        "ratioSavingFloor": 810000
+                      },
+                      "blocked": null,
+                      "saved": null,
+                      "cushion": {
+                        "required": true,
+                        "target": 8400000,
+                        "balanceTotal": 2800000
+                      },
+                      "cardPending": [],
+                      "locksReleased": []
+                    }
+                  },
+                  "missingIncome": {
+                    "value": {
+                      "missing": [
+                        "takeHomeIncome"
+                      ],
+                      "housingType": "family",
+                      "rates": {
+                        "living": 45,
+                        "saving": 40,
+                        "spare": 5,
+                        "cushion": 10
+                      },
+                      "base": null,
+                      "savingsMin": 1000000,
+                      "recommended": null,
+                      "blocked": null,
+                      "saved": null,
+                      "cushion": {
+                        "required": true,
+                        "target": null,
+                        "balanceTotal": null
+                      },
+                      "cardPending": [],
+                      "locksReleased": []
+                    }
+                  },
+                  "blocked": {
+                    "value": {
+                      "missing": [],
+                      "housingType": "family",
+                      "rates": {
+                        "living": 45,
+                        "saving": 40,
+                        "spare": 5,
+                        "cushion": 10
+                      },
+                      "base": {
+                        "takeHomeIncome": 700000,
+                        "fixedTotal": 770000,
+                        "available": -70000
+                      },
+                      "savingsMin": 1000000,
+                      "recommended": null,
+                      "blocked": {
+                        "reason": "fixed_over_income",
+                        "shortfall": 70000
+                      },
+                      "saved": null,
+                      "cushion": {
+                        "required": true,
+                        "target": 2100000,
+                        "balanceTotal": null
+                      },
+                      "cardPending": [],
+                      "locksReleased": []
+                    }
+                  },
+                  "cardBillPending": {
+                    "value": {
+                      "missing": [],
+                      "housingType": "family",
+                      "rates": {
+                        "living": 45,
+                        "saving": 40,
+                        "spare": 5,
+                        "cushion": 10
+                      },
+                      "base": null,
+                      "savingsMin": 1000000,
+                      "recommended": null,
+                      "blocked": {
+                        "reason": "card_bill_pending",
+                        "shortfall": null
+                      },
+                      "saved": null,
+                      "cushion": {
+                        "required": true,
+                        "target": 2100000,
+                        "balanceTotal": null
+                      },
+                      "cardPending": [
+                        {
+                          "cardId": "7b1e2f40-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+                          "reason": "bill_history_incomplete"
+                        }
+                      ],
+                      "locksReleased": []
+                    },
+                    "summary": "카드 첫 청구서 확인 중"
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      },
+      "put": {
+        "summary": "[구현] 지킬 돈 저장",
+        "operationId": "protectPut",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n검사 순서: missing → blocked → 세 칸의 정수·0 이상·알 수 없는 칸 → 저축 최소 금액 → 필수 쿠션 0 금지 → 합계 ≤ available. 앞 두 조건은 409 not_ready(card_bill_pending이면 \"카드 청구서를 아직 확인하지 못했어요. 카드 내역을 다시 불러온 뒤 시도해 주세요.\"), 나머지는 400 invalid. 합계 초과는 fields.nonFieldErrors. 같은 값이면 수정 시각·초안 그대로. 변경 시 living_budget·savings_floor·cushion_monthly·cushion_target 저장과 이 회원의 draft·validated 만료를 같은 트랜잭션에서 수행한다. approved는 유지한다. 생활비(livingBudget)가 바뀌었고 이번 주기 자물쇠가 새 생활비와 안 맞으면(자물쇠를 빼면 추천이 되는데 자물쇠 때문에 막히면) 이번 주기 자물쇠를 모두 풀고 locksReleased에 코드를 담는다. 자물쇠 변경 횟수(잔소리)는 늘리지 않는다 (P-13).\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "방금 저장한 saved 포함",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProtectResponse"
+                },
+                "examples": {
+                  "saved": {
+                    "value": {
+                      "missing": [],
+                      "housingType": "family",
+                      "rates": {
+                        "living": 45,
+                        "saving": 40,
+                        "spare": 5,
+                        "cushion": 10
+                      },
+                      "base": {
+                        "takeHomeIncome": 2800000,
+                        "fixedTotal": 770000,
+                        "available": 2030000
+                      },
+                      "savingsMin": 1000000,
+                      "recommended": {
+                        "livingBudget": 770000,
+                        "savingFloor": 1000000,
+                        "cushionMonthly": 170000,
+                        "spare": 90000,
+                        "rebalanced": true,
+                        "restAmount": 1030000,
+                        "ratioSavingFloor": 810000
+                      },
+                      "blocked": null,
+                      "saved": {
+                        "livingBudget": 770000,
+                        "savingFloor": 1000000,
+                        "cushionMonthly": 170000,
+                        "spare": 90000,
+                        "updatedAt": "2026-10-28T13:00:00+09:00"
+                      },
+                      "cushion": {
+                        "required": true,
+                        "target": 8400000,
+                        "balanceTotal": 2800000
+                      },
+                      "cardPending": [],
+                      "locksReleased": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "savingsMinimum": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "savingFloor": [
+                            "저축 확인에서 고른 1,000,000원보다 적게 정할 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "requiredCushion": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "cushionMonthly": [
+                            "잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "totalExceeded": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "배분 가능한 금액보다 1원 많아요. 입력 금액을 줄여 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "missing": {
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "내 정보 · 급여를 먼저 입력해 주세요."
+                      }
+                    }
+                  },
+                  "blocked": {
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "정기 저축이나 고정지출을 먼저 고쳐 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProtectSaveRequest"
+              },
+              "example": {
+                "livingBudget": 770000,
+                "savingFloor": 1000000,
+                "cushionMonthly": 170000
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
+      }
+    },
+    "/api/budgets/recommend/": {
+      "post": {
+        "summary": "[구현] 추천 예산 만들기",
+        "operationId": "budgetRecommend",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n지킬 돈 missing·blocked(카드 청구서 미확인 포함)·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 10개에 배분한다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다. proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과 검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다. 이번 주기에 예산(validated·approved)이 하나도 없고 자물쇠 때문에 추천이 막히면(자물쇠를 빼면 막히지 않을 때) 추천 전에 이번 주기 자물쇠를 풀고 result.locksReleased에 담는다 — 자물쇠는 예산 화면에서만 풀 수 있어 막다른 길이 되기 때문 (P-13 ②). 바꾼 횟수는 늘리지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "202": {
+            "description": "작업 번호. 1차는 요청 안에서 실행되어 succeeded 또는 failed일 수 있다.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetTaskResponse"
+                },
+                "examples": {
+                  "completed": {
+                    "value": {
+                      "task": {
+                        "taskId": "c14d022f-5d81-4f29-b465-4d9d941c8a23",
+                        "status": "succeeded"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "요청 본문은 JSON 객체로 보내 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "missingRequestKey": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "요청 번호(Idempotency-Key)가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready · idempotency_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "지킬 돈을 다시 확인해 주세요."
+                      }
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  },
+                  "missingProtect": {
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "지킬 돈을 먼저 정해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "필수 요청 번호. 같은 번호·본문은 처음 응답, 다른 본문은 409 idempotency_conflict. 실패 응답은 기록하지 않는다.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{8,64}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetEmptyRequest"
+              },
+              "example": {}
+            }
+          }
+        },
+        "x-task-result-schema": {
+          "$ref": "#/components/schemas/BudgetRecommendationResult"
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/budgets/": {
+      "get": {
+        "summary": "[구현] 카테고리 예산 보기",
+        "operationId": "budgetList",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n급여일이 없으면 cycle=null이고 unclassifiedCount는 오늘까지 전체 기간을 센다. 예산이 없으면 budget·split·living·overspend·nag=null, categories=[], unclassifiedCount는 계산한다. 쓴 돈은 거래 목록의 같은 구매 제외·취소 차감 기준을 재사용하고 소비 중 funding=fixed는 쓴 돈에서 뺀다. unclassifiedCount는 고정비 소비도 포함한다. 미분류·기타도 living.spent에 포함하지만 categories는 11개만 display_order 순서로 표시한다. 초과액은 여윳돈으로만 충당한다. salaryConfirmed는 홈 salaryState=received. nag는 보호 카테고리(주거·통신, 교통·차량) 외 자물쇠 changeCount≥3 또는 이번 주기 approved_at이 있는 예산≥3일 때 표시한다.\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "이번 주기 validated 초안 우선, 없으면 approved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetResponse"
+                },
+                "examples": {
+                  "budget": {
+                    "value": {
+                      "cycle": {
+                        "startsOn": "2026-10-25",
+                        "endsBefore": "2026-11-25"
+                      },
+                      "budget": {
+                        "budgetId": "c14d022f-5d81-4f29-b465-4d9d941c8a23",
+                        "versionNo": 1,
+                        "status": "validated",
+                        "salaryConfirmed": false
+                      },
+                      "split": {
+                        "funding": 2800000,
+                        "fixed": 770000,
+                        "saving": 610000,
+                        "cushion": 200000,
+                        "living": 1120000,
+                        "spare": 100000
+                      },
+                      "living": {
+                        "budget": 1120000,
+                        "spent": 1200000,
+                        "remaining": 0
+                      },
+                      "overspend": {
+                        "over": 80000,
+                        "coveredBySpare": 80000,
+                        "spareRemaining": 20000,
+                        "shortfall": 0
+                      },
+                      "categories": [
+                        {
+                          "category": "FOOD",
+                          "categoryName": "식비",
+                          "allocated": 330000,
+                          "spent": 1200000,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "HOUSING_TELECOM",
+                          "categoryName": "주거·통신",
+                          "allocated": 110000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "TRANSPORT_CAR",
+                          "categoryName": "교통·차량",
+                          "allocated": 90000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "HOUSEHOLD",
+                          "categoryName": "생활용품",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "FASHION_SHOPPING",
+                          "categoryName": "패션·쇼핑",
+                          "allocated": 80000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "MEDICAL_HEALTH",
+                          "categoryName": "의료·건강",
+                          "allocated": 50000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "BEAUTY",
+                          "categoryName": "뷰티·미용",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "EDUCATION",
+                          "categoryName": "교육",
+                          "allocated": 50000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "CULTURE_LEISURE",
+                          "categoryName": "문화·여가",
+                          "allocated": 170000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "TRAVEL_LODGING",
+                          "categoryName": "여행·숙박",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "ETC",
+                          "categoryName": "기타",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        }
+                      ],
+                      "unclassifiedCount": 0,
+                      "nag": null
+                    }
+                  },
+                  "noBudget": {
+                    "value": {
+                      "cycle": {
+                        "startsOn": "2026-10-25",
+                        "endsBefore": "2026-11-25"
+                      },
+                      "budget": null,
+                      "split": null,
+                      "living": null,
+                      "overspend": null,
+                      "categories": [],
+                      "unclassifiedCount": 3,
+                      "nag": null
+                    }
+                  },
+                  "noPayday": {
+                    "value": {
+                      "cycle": null,
+                      "budget": null,
+                      "split": null,
+                      "living": null,
+                      "overspend": null,
+                      "categories": [],
+                      "unclassifiedCount": 3,
+                      "nag": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/budgets/{id}/categories/{code}/": {
+      "patch": {
+        "summary": "[구현] 카테고리 금액 고정 · 해제",
+        "operationId": "budgetCategoryLock",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기의 validated·approved만 가능하다. 지난 예산은 409 not_ready: 지난 예산은 바꿀 수 없어요. 없는·남의 예산 또는 11개 예산 코드가 아니면 404. true는 주소의 예산 생활비 금액을 저장, false는 lockedAmount=null. 잠금 여부가 바뀔 때만 changeCount+1. 이미 true인데 다른 예산에서 다시 걸면 금액만 바뀌며 횟수는 유지한다. 자물쇠 변경은 초안을 만료시키지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "현재 자물쇠",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetLockResponse"
+                },
+                "examples": {
+                  "locked": {
+                    "value": {
+                      "category": "FOOD",
+                      "categoryName": "식비",
+                      "locked": true,
+                      "lockedAmount": 330000,
+                      "changeCount": 1,
+                      "nag": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "locked": [
+                            "자물쇠는 참 또는 거짓으로 보내 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "지난 예산은 바꿀 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "FOOD",
+                "HOUSING_TELECOM",
+                "TRANSPORT_CAR",
+                "HOUSEHOLD",
+                "FASHION_SHOPPING",
+                "MEDICAL_HEALTH",
+                "BEAUTY",
+                "EDUCATION",
+                "CULTURE_LEISURE",
+                "TRAVEL_LODGING",
+                "ETC"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetLockRequest"
+              },
+              "example": {
+                "locked": true
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/budgets/{id}/approve/": {
+      "post": {
+        "summary": "[구현] 예산 승인",
+        "operationId": "budgetApprove",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기에 이미 approved이면 성공으로 현재 상태를 반환한다. 지난 주기 approved·superseded·rejected·draft는 409 not_ready(지난 예산은 승인할 수 없어요). 카드 첫 청구서 선차감은 다시 계산하지 않고 초안 input_snapshot에 저장한 값으로 검사한다(입력 해시에는 선차감 금액 대신 대상 카드 목록만 포함). expired, validated의 주기가 지났거나, 지금의 지킬 돈이 쓸 수 없는 상태(필수 쿠션인데 쿠션 0원 · 저축 최소 미달 · 합계 초과 · missing · blocked)이거나, 입력 해시가 다르면 409 expired: 조건이 바뀌어서 다시 추천받아야 해요. 발견한 만료 상태는 409에도 저장하고 실패 요청 번호는 기록하지 않는다. 승인 시 같은 주기 approved를 superseded로 바꾸고 이 예산의 approved_at·approval_key를 저장한다. auth.onboardingCompleted는 approved_at이 있는 예산 존재 여부로 계산된다. 자물쇠는 만료 해시에서 제외한다.\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "승인된 예산의 현재 화면 데이터",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetResponse"
+                },
+                "examples": {
+                  "approved": {
+                    "value": {
+                      "cycle": {
+                        "startsOn": "2026-10-25",
+                        "endsBefore": "2026-11-25"
+                      },
+                      "budget": {
+                        "budgetId": "c14d022f-5d81-4f29-b465-4d9d941c8a23",
+                        "versionNo": 1,
+                        "status": "approved",
+                        "salaryConfirmed": false
+                      },
+                      "split": {
+                        "funding": 2800000,
+                        "fixed": 770000,
+                        "saving": 610000,
+                        "cushion": 200000,
+                        "living": 1120000,
+                        "spare": 100000
+                      },
+                      "living": {
+                        "budget": 1120000,
+                        "spent": 1200000,
+                        "remaining": 0
+                      },
+                      "overspend": {
+                        "over": 80000,
+                        "coveredBySpare": 80000,
+                        "spareRemaining": 20000,
+                        "shortfall": 0
+                      },
+                      "categories": [
+                        {
+                          "category": "FOOD",
+                          "categoryName": "식비",
+                          "allocated": 330000,
+                          "spent": 1200000,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "HOUSING_TELECOM",
+                          "categoryName": "주거·통신",
+                          "allocated": 110000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "TRANSPORT_CAR",
+                          "categoryName": "교통·차량",
+                          "allocated": 90000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "HOUSEHOLD",
+                          "categoryName": "생활용품",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "FASHION_SHOPPING",
+                          "categoryName": "패션·쇼핑",
+                          "allocated": 80000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "MEDICAL_HEALTH",
+                          "categoryName": "의료·건강",
+                          "allocated": 50000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "BEAUTY",
+                          "categoryName": "뷰티·미용",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "EDUCATION",
+                          "categoryName": "교육",
+                          "allocated": 50000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "CULTURE_LEISURE",
+                          "categoryName": "문화·여가",
+                          "allocated": 170000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "TRAVEL_LODGING",
+                          "categoryName": "여행·숙박",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        },
+                        {
+                          "category": "ETC",
+                          "categoryName": "기타",
+                          "allocated": 60000,
+                          "spent": 0,
+                          "minAmount": null,
+                          "locked": false,
+                          "lockedAmount": null,
+                          "reason": null
+                        }
+                      ],
+                      "unclassifiedCount": 0,
+                      "nag": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "요청 본문은 JSON 객체로 보내 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "missingRequestKey": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "요청 번호(Idempotency-Key)가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready · expired · idempotency_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "지난 예산은 승인할 수 없어요."
+                      }
+                    }
+                  },
+                  "expired": {
+                    "value": {
+                      "error": {
+                        "code": "expired",
+                        "message": "조건이 바뀌어서 다시 추천받아야 해요."
+                      }
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "필수 요청 번호. 같은 번호·본문은 처음 응답, 다른 본문은 409 idempotency_conflict. 실패 응답은 기록하지 않는다.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{8,64}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetEmptyRequest"
+              },
+              "example": {}
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
       }
     }
   },
@@ -5846,7 +7626,7 @@
             "properties": {
               "code": {
                 "type": "string",
-                "description": "invalid, parse_error, not_authenticated, permission_denied, not_found, method_not_allowed, idempotency_conflict, consent_required, relogin_required, provider_unavailable, server_error 등. 사용 가능한 코드는 각 API 참조."
+                "description": "invalid, parse_error, not_authenticated, permission_denied, not_found, method_not_allowed, idempotency_conflict, not_ready, expired, consent_required, relogin_required, provider_unavailable, server_error 등. 사용 가능한 코드는 각 API 참조."
               },
               "message": {
                 "type": "string"
@@ -6412,6 +8192,589 @@
         "required": [
           "items"
         ]
+      },
+      "FinanceOperationError": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "FinanceSmsAuthInput": {
+        "type": "object",
+        "properties": {
+          "authToken": {
+            "type": "string",
+            "minLength": 1,
+            "description": "첫 응답의 서명 토큰. 같은 회원·기관에서 3분 안에 사용."
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "writeOnly": true
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "authToken",
+          "code"
+        ]
+      },
+      "FinanceInstitutionInput": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string",
+            "description": "finance/institutions.py 표의 아이디 로그인 지원 기관만. 공동인증서 전용 기관은 400."
+          },
+          "loginId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "writeOnly": true,
+            "description": "기관 홈페이지 아이디. 앞뒤 공백 제거."
+          },
+          "password": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "format": "password",
+            "writeOnly": true,
+            "description": "RSA 암호화 후 CODEF에 보내고 버린다."
+          },
+          "cardNo": {
+            "type": "string",
+            "pattern": "^[0-9]{14,19}$",
+            "writeOnly": true,
+            "description": "숫자만 14~19자리. 저장·로그에 남기지 않는다."
+          },
+          "cardPassword": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{2}|[0-9]{4})$",
+            "format": "password",
+            "writeOnly": true,
+            "description": "숫자 2자리 또는 4자리. 저장·로그에 남기지 않는다."
+          },
+          "smsAuth": {
+            "$ref": "#/components/schemas/FinanceSmsAuthInput"
+          }
+        },
+        "additionalProperties": false,
+        "description": "현대카드(0302)는 cardNo·cardPassword 필수. 은행에 카드 값을 보내면 400. 문자 인증 때는 해당 기관 하나와 로그인·카드 값을 다시 보낸다.",
+        "required": [
+          "businessType",
+          "organizationCode",
+          "loginId",
+          "password"
+        ]
+      },
+      "FinanceConnectionCreateRequest": {
+        "type": "object",
+        "properties": {
+          "institutions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceInstitutionInput"
+            },
+            "minItems": 1,
+            "maxItems": 10,
+            "description": "업권+기관 코드 중복 불가. smsAuth가 있으면 기관 하나만."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "institutions"
+        ]
+      },
+      "FinanceSmsChallenge": {
+        "type": "object",
+        "properties": {
+          "authToken": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "phoneHint": {
+            "type": "string",
+            "nullable": true,
+            "description": "현재 항상 null."
+          }
+        },
+        "required": [
+          "authToken",
+          "expiresAt",
+          "phoneHint"
+        ]
+      },
+      "FinanceConnectedResult": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected"
+            ]
+          },
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reconnected": {
+            "type": "boolean"
+          },
+          "syncStatus": {
+            "type": "string",
+            "enum": [
+              "done",
+              "failed",
+              "not_supported"
+            ]
+          },
+          "accountCount": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          }
+        },
+        "required": [
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "connectionId",
+          "reconnected",
+          "syncStatus",
+          "accountCount"
+        ]
+      },
+      "FinanceSmsRequiredResult": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "sms_required"
+            ]
+          },
+          "smsAuth": {
+            "$ref": "#/components/schemas/FinanceSmsChallenge"
+          },
+          "error": {
+            "$ref": "#/components/schemas/FinanceOperationError"
+          }
+        },
+        "required": [
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "smsAuth"
+        ]
+      },
+      "FinanceConnectionFailedResult": {
+        "type": "object",
+        "properties": {
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          },
+          "error": {
+            "$ref": "#/components/schemas/FinanceOperationError"
+          }
+        },
+        "required": [
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "error"
+        ]
+      },
+      "FinanceConnectionCreateResponse": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/FinanceConnectedResult"
+                },
+                {
+                  "$ref": "#/components/schemas/FinanceSmsRequiredResult"
+                },
+                {
+                  "$ref": "#/components/schemas/FinanceConnectionFailedResult"
+                }
+              ]
+            },
+            "description": "보낸 순서대로 기관별 결과."
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "FinanceSyncCardCredential": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cardNo": {
+            "type": "string",
+            "pattern": "^[0-9]{14,19}$",
+            "writeOnly": true,
+            "description": "숫자만 14~19자리. 저장·로그에 남기지 않는다."
+          },
+          "cardPassword": {
+            "type": "string",
+            "pattern": "^(?:[0-9]{2}|[0-9]{4})$",
+            "format": "password",
+            "writeOnly": true,
+            "description": "숫자 2자리 또는 4자리. 저장·로그에 남기지 않는다."
+          }
+        },
+        "additionalProperties": false,
+        "description": "이번 조회 대상에 포함된 카드사 연결만. 같은 연결 중복 불가.",
+        "required": [
+          "connectionId",
+          "cardNo",
+          "cardPassword"
+        ]
+      },
+      "FinanceSyncRequest": {
+        "type": "object",
+        "properties": {
+          "connectionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "uniqueItems": true,
+            "description": "내 연결 중 해제되지 않은 연결만. 생략하면 연결 전부."
+          },
+          "cardCredentials": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceSyncCardCredential"
+            },
+            "maxItems": 50
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceSyncAccepted": {
+        "type": "object",
+        "properties": {
+          "taskId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed"
+            ]
+          }
+        },
+        "required": [
+          "taskId",
+          "status"
+        ]
+      },
+      "FinanceSyncPart": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "accounts",
+              "loans",
+              "cards"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "no_consent",
+              "not_supported",
+              "disconnected",
+              "not_run"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "status"
+        ]
+      },
+      "FinanceSyncItem": {
+        "type": "object",
+        "properties": {
+          "connectionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessType": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card"
+            ]
+          },
+          "organizationCode": {
+            "type": "string"
+          },
+          "organizationName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceSyncPart"
+            }
+          },
+          "newTransactionCount": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "connectionId",
+          "businessType",
+          "organizationCode",
+          "organizationName",
+          "status",
+          "parts",
+          "newTransactionCount",
+          "error"
+        ]
+      },
+      "FinanceSyncResult": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "succeeded": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "failed": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "skipped": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "total",
+              "succeeded",
+              "failed",
+              "skipped"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceSyncItem"
+            }
+          }
+        },
+        "required": [
+          "summary",
+          "items"
+        ],
+        "example": {
+          "summary": {
+            "total": 3,
+            "succeeded": 1,
+            "failed": 1,
+            "skipped": 1
+          },
+          "items": [
+            {
+              "connectionId": "5e0a0000-0000-4000-8000-000000000001",
+              "businessType": "bank",
+              "organizationCode": "0088",
+              "organizationName": "신한은행",
+              "status": "succeeded",
+              "parts": [
+                {
+                  "kind": "accounts",
+                  "status": "succeeded"
+                },
+                {
+                  "kind": "loans",
+                  "status": "skipped",
+                  "reason": "no_consent"
+                }
+              ],
+              "newTransactionCount": 5,
+              "error": null
+            },
+            {
+              "connectionId": "91f20000-0000-4000-8000-000000000001",
+              "businessType": "card",
+              "organizationCode": "0302",
+              "organizationName": "현대카드",
+              "status": "failed",
+              "parts": [],
+              "newTransactionCount": null,
+              "error": {
+                "code": "invalid",
+                "message": "카드 비밀번호가 필요해요.",
+                "fields": {
+                  "cardNo": [
+                    "카드 비밀번호가 필요해요."
+                  ],
+                  "cardPassword": [
+                    "카드 비밀번호가 필요해요."
+                  ]
+                }
+              }
+            },
+            {
+              "connectionId": "77ab0000-0000-4000-8000-000000000001",
+              "businessType": "card",
+              "organizationCode": "0311",
+              "organizationName": "롯데카드",
+              "status": "skipped",
+              "parts": [
+                {
+                  "kind": "cards",
+                  "status": "skipped",
+                  "reason": "not_supported"
+                }
+              ],
+              "newTransactionCount": null,
+              "error": null
+            }
+          ]
+        }
       },
       "CardCandidate": {
         "type": "object",
@@ -9302,7 +11665,7 @@
           },
           "taskType": {
             "type": "string",
-            "description": "예: budget_adjust. 작업 종류 전체 목록은 추후 확정."
+            "description": "finance_sync(수동 금융 조회), finance_auto_sync(자동 금융 조회), budget_recommend(추천 예산), budget_adjust(예산 조정) 등."
           },
           "status": {
             "type": "string",
@@ -9338,14 +11701,17 @@
             "type": "object",
             "nullable": true,
             "additionalProperties": true,
-            "description": "성공 시 결과. 작업 종류별 구조는 결정 후이며 현재 임의로 정의하지 않는다."
+            "description": "succeeded일 때 작업 종류별 결과. finance_sync·finance_auto_sync는 FinanceSyncResult(finance-connect.md), budget_recommend는 BudgetRecommendationResult(budgets.md)를 참조한다.",
+            "x-finance-sync-schema": {
+              "$ref": "#/components/schemas/FinanceSyncResult"
+            }
           },
           "error": {
             "type": "object",
             "properties": {
               "code": {
                 "type": "string",
-                "description": "작업 오류 코드 목록 미정."
+                "description": "공용: server_error(서버 오류), stale(10분 넘게 멈춘 작업). 작업 종류별 추가 코드 가능."
               },
               "message": {
                 "type": "string"
@@ -9369,22 +11735,841 @@
           "result",
           "error"
         ]
+      },
+      "ProtectRates": {
+        "type": "object",
+        "required": [
+          "living",
+          "saving",
+          "spare",
+          "cushion"
+        ],
+        "properties": {
+          "living": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "saving": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "spare": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "cushion": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "ProtectBase": {
+        "type": "object",
+        "required": [
+          "takeHomeIncome",
+          "fixedTotal",
+          "available"
+        ],
+        "properties": {
+          "takeHomeIncome": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "fixedTotal": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "available": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "ProtectRecommendation": {
+        "type": "object",
+        "required": [
+          "livingBudget",
+          "savingFloor",
+          "cushionMonthly",
+          "spare",
+          "rebalanced",
+          "restAmount",
+          "ratioSavingFloor"
+        ],
+        "properties": {
+          "livingBudget": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "savingFloor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cushionMonthly": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "spare": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "rebalanced": {
+            "type": "boolean"
+          },
+          "restAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "ratioSavingFloor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "ProtectBlocked": {
+        "type": "object",
+        "required": [
+          "reason",
+          "shortfall"
+        ],
+        "properties": {
+          "reason": {
+            "type": "string",
+            "enum": [
+              "fixed_over_income",
+              "savings_over_available",
+              "card_bill_pending"
+            ]
+          },
+          "shortfall": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true,
+            "description": "부족액(원). card_bill_pending이면 고정지출 합계를 몰라 null"
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true,
+        "description": "fixed_over_income·savings_over_available은 부족액이 있고, card_bill_pending은 카드 첫 청구서 선차감을 아직 계산할 수 없어 배분 기준을 모르는 상태(이때 base·recommended는 null)"
+      },
+      "ProtectSaved": {
+        "type": "object",
+        "required": [
+          "livingBudget",
+          "savingFloor",
+          "cushionMonthly",
+          "spare",
+          "updatedAt"
+        ],
+        "properties": {
+          "livingBudget": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "savingFloor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cushionMonthly": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "spare": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "ProtectCushion": {
+        "type": "object",
+        "required": [
+          "required",
+          "target",
+          "balanceTotal"
+        ],
+        "properties": {
+          "required": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "balanceTotal": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProtectResponse": {
+        "type": "object",
+        "required": [
+          "missing",
+          "housingType",
+          "rates",
+          "base",
+          "savingsMin",
+          "recommended",
+          "blocked",
+          "saved",
+          "cushion",
+          "cardPending",
+          "locksReleased"
+        ],
+        "properties": {
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "housingType",
+                "takeHomeIncome",
+                "payday"
+              ]
+            }
+          },
+          "housingType": {
+            "type": "string",
+            "enum": [
+              "alone",
+              "family",
+              null
+            ],
+            "nullable": true
+          },
+          "rates": {
+            "$ref": "#/components/schemas/ProtectRates"
+          },
+          "base": {
+            "$ref": "#/components/schemas/ProtectBase"
+          },
+          "savingsMin": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "recommended": {
+            "$ref": "#/components/schemas/ProtectRecommendation"
+          },
+          "blocked": {
+            "$ref": "#/components/schemas/ProtectBlocked"
+          },
+          "saved": {
+            "$ref": "#/components/schemas/ProtectSaved"
+          },
+          "cushion": {
+            "$ref": "#/components/schemas/ProtectCushion"
+          },
+          "cardPending": {
+            "type": "array",
+            "description": "카드 첫 청구서 선차감을 계산하지 못한 카드. 비어 있지 않으면 blocked.reason = card_bill_pending",
+            "items": {
+              "type": "object",
+              "required": [
+                "cardId",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "cardId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "reason": {
+                  "type": "string",
+                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · card_data_invalid(연결·금액 자료가 맞지 않음)"
+                }
+              }
+            }
+          },
+          "locksReleased": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SelectableCategoryCode"
+            },
+            "description": "P-13. 이번 저장(PUT)으로 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞아 풀린 카테고리 코드(화면 순서). GET과 그 밖의 PUT은 []"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ProtectSaveRequest": {
+        "type": "object",
+        "required": [
+          "livingBudget",
+          "savingFloor",
+          "cushionMonthly"
+        ],
+        "properties": {
+          "livingBudget": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "savingFloor": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cushionMonthly": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetCycleSummary": {
+        "type": "object",
+        "required": [
+          "startsOn",
+          "endsBefore"
+        ],
+        "properties": {
+          "startsOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "endsBefore": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "BudgetSummary": {
+        "type": "object",
+        "required": [
+          "budgetId",
+          "versionNo",
+          "status",
+          "salaryConfirmed"
+        ],
+        "properties": {
+          "budgetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "versionNo": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "validated",
+              "approved"
+            ]
+          },
+          "salaryConfirmed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "BudgetSplit": {
+        "type": "object",
+        "required": [
+          "funding",
+          "fixed",
+          "saving",
+          "cushion",
+          "living",
+          "spare"
+        ],
+        "properties": {
+          "funding": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "fixed": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "saving": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "cushion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "living": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "spare": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "BudgetLiving": {
+        "type": "object",
+        "required": [
+          "budget",
+          "spent",
+          "remaining"
+        ],
+        "properties": {
+          "budget": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "spent": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "BudgetOverspend": {
+        "type": "object",
+        "required": [
+          "over",
+          "coveredBySpare",
+          "spareRemaining",
+          "shortfall"
+        ],
+        "properties": {
+          "over": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "coveredBySpare": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "spareRemaining": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "shortfall": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false,
+        "nullable": true
+      },
+      "BudgetCategory": {
+        "type": "object",
+        "required": [
+          "category",
+          "categoryName",
+          "allocated",
+          "spent",
+          "minAmount",
+          "locked",
+          "lockedAmount",
+          "reason"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD",
+              "HOUSING_TELECOM",
+              "TRANSPORT_CAR",
+              "HOUSEHOLD",
+              "FASHION_SHOPPING",
+              "MEDICAL_HEALTH",
+              "BEAUTY",
+              "EDUCATION",
+              "CULTURE_LEISURE",
+              "TRAVEL_LODGING",
+              "ETC"
+            ]
+          },
+          "categoryName": {
+            "type": "string"
+          },
+          "allocated": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "spent": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "minAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "lockedAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetResponse": {
+        "type": "object",
+        "required": [
+          "cycle",
+          "budget",
+          "split",
+          "living",
+          "overspend",
+          "categories",
+          "unclassifiedCount",
+          "nag"
+        ],
+        "properties": {
+          "cycle": {
+            "$ref": "#/components/schemas/BudgetCycleSummary"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/BudgetSummary"
+          },
+          "split": {
+            "$ref": "#/components/schemas/BudgetSplit"
+          },
+          "living": {
+            "$ref": "#/components/schemas/BudgetLiving"
+          },
+          "overspend": {
+            "$ref": "#/components/schemas/BudgetOverspend"
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetCategory"
+            }
+          },
+          "unclassifiedCount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "nag": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetLockRequest": {
+        "type": "object",
+        "required": [
+          "locked"
+        ],
+        "properties": {
+          "locked": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetLockResponse": {
+        "type": "object",
+        "required": [
+          "category",
+          "categoryName",
+          "locked",
+          "lockedAmount",
+          "changeCount",
+          "nag"
+        ],
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD",
+              "HOUSING_TELECOM",
+              "TRANSPORT_CAR",
+              "HOUSEHOLD",
+              "FASHION_SHOPPING",
+              "MEDICAL_HEALTH",
+              "BEAUTY",
+              "EDUCATION",
+              "CULTURE_LEISURE",
+              "TRAVEL_LODGING",
+              "ETC"
+            ]
+          },
+          "categoryName": {
+            "type": "string"
+          },
+          "locked": {
+            "type": "boolean"
+          },
+          "lockedAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "changeCount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "nag": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetMinimumConflict": {
+        "type": "object",
+        "required": [
+          "type",
+          "shortfall"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "minimums_over_living"
+            ]
+          },
+          "shortfall": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetLockMinimumConflict": {
+        "type": "object",
+        "required": [
+          "type",
+          "category",
+          "lockedAmount",
+          "minAmount"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "lock_below_minimum"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "FOOD",
+              "HOUSING_TELECOM",
+              "TRANSPORT_CAR",
+              "HOUSEHOLD",
+              "FASHION_SHOPPING",
+              "MEDICAL_HEALTH",
+              "BEAUTY",
+              "EDUCATION",
+              "CULTURE_LEISURE",
+              "TRAVEL_LODGING",
+              "ETC"
+            ]
+          },
+          "lockedAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "minAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetLocksMismatchConflict": {
+        "type": "object",
+        "required": [
+          "type",
+          "difference"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "locks_mismatch_living"
+            ]
+          },
+          "difference": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetRecommendationResult": {
+        "type": "object",
+        "required": [
+          "outcome",
+          "budgetId",
+          "summary",
+          "conflicts",
+          "locksReleased"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "infeasible"
+            ]
+          },
+          "budgetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "summary": {
+            "type": "string"
+          },
+          "conflicts": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/BudgetMinimumConflict"
+                },
+                {
+                  "$ref": "#/components/schemas/BudgetLockMinimumConflict"
+                },
+                {
+                  "$ref": "#/components/schemas/BudgetLocksMismatchConflict"
+                }
+              ]
+            }
+          },
+          "locksReleased": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SelectableCategoryCode"
+            },
+            "description": "P-13 ②. 이번 주기에 예산(초안·승인)이 없는데 자물쇠 때문에 추천이 막혀서 이번 추천 전에 푼 자물쇠 카테고리. 보통은 []"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetTaskResponse": {
+        "type": "object",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "object",
+            "required": [
+              "taskId",
+              "status"
+            ],
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "queued",
+                  "running",
+                  "succeeded",
+                  "failed"
+                ]
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetEmptyRequest": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
       }
     }
   },
   "x-source-sha256": {
-    "docs/API_RULES.md": "eb6c8383e11d8f635050da8dadf150e7276fc9fde751dc2c2124bbba56c44a9b",
-    "docs/api/README.md": "ac3dad0f10db9f060ee4cd96b10292421171b0bdbc805c8163c383a52add89b4",
+    "docs/API_RULES.md": "5a862eacd4fddf7e0e26bc290b0fbc99995fbfa5f8b48c575b831a5ade53e952",
+    "docs/api/README.md": "f43501b82b906923224ebe8010ebeacdb0276c1304b8fa24b38106bcaf4aa0b4",
     "docs/api/spending-analysis.md": "c8a479b72f10d6e222a36bc6892ac901980f0e4aac8d94c2998fb7ffd56344b9",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
     "docs/api/auth.md": "dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c",
-    "docs/api/finance-connect.md": "df34a83c87ebc3d9dac4b6e9c315138c89abd1159e8bb8d63912e86b1c76d89a",
-    "docs/api/cards.md": "65e0847a806a929f679fc93705c38fa018c42dcdfe30d22b9b491dc67aab2f62",
+    "docs/api/finance-connect.md": "1478b22e97b026c5d00bf315e73833a1f8915ace997f3d525608a09ec320a57d",
+    "docs/api/cards.md": "1fc656eddd9569863c5f0681624e8382ce6d169994995739d5718110a21eb7b4",
     "docs/api/loans.md": "5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c",
     "docs/api/transactions.md": "47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88",
     "docs/api/fixed.md": "76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115",
     "docs/api/savings.md": "dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935",
     "docs/api/home.md": "8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99",
-    "docs/api/chat.md": "01c713efdb505ee6bffb1e81d4d941aecc16283c70c1b752e4e44b53a4fc84a5"
+    "docs/api/chat.md": "e841a20e4a8577141cb830600aa55619bba3f8116edb883c4f4ef95d9c3b0033",
+    "docs/api/budgets.md": "bbdb86bc9702184cdea9636b4b3aed949a8dedb9a9571efdcad80a83b2007106"
   }
 }

@@ -44,7 +44,8 @@ def _replay(record):
     return Response(record.response_body, status=record.response_status)
 
 
-def idempotent(required=False):
+def idempotent(required=False, *, commit_error_codes=()):
+    """commit_error_codes는 승인 시 발견한 expired 상태 보존용. 실패 응답은 번호 기록에 남기지 않는다."""
     def decorator(view):
         @functools.wraps(view)
         def wrapper(request, *args, **kwargs):
@@ -78,7 +79,9 @@ def idempotent(required=False):
                             request_hash=request_hash, response_status=response.status_code,
                             response_body=response.data,
                         )
-                    else:
+                    elif not (response.status_code == 409
+                              and isinstance(response.data, dict)
+                              and response.data.get("error", {}).get("code") in commit_error_codes):
                         transaction.set_rollback(True)   # 실패한 요청은 기록하지 않고 저장한 것도 되돌림
                     return response
             except IntegrityError:
