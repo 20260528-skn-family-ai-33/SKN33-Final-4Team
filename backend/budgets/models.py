@@ -82,6 +82,8 @@ class BudgetCategorySetting(models.Model):
         Category, on_delete=models.RESTRICT, db_column="category_code", related_name="+",
     )
     locked = models.BooleanField("자물쇠", default=False)
+    # 자물쇠를 걸 때 그 예산(budget_id)의 배정 금액. 다시 추천할 때 이 금액을 유지한다. 풀면 NULL (2026-10-28 리뷰)
+    locked_amount = models.BigIntegerField("잠긴 금액", null=True, blank=True)
     change_count = models.IntegerField("변경 횟수", default=0)
     revision_no = models.IntegerField("동시 변경 확인 번호", default=0)
     updated_at = models.DateTimeField("수정 시각", auto_now=True)
@@ -92,6 +94,13 @@ class BudgetCategorySetting(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=["cycle", "category"], name="budget_category_setting_cycle_id_category_code_key",
+            ),
+            models.CheckConstraint(
+                condition=Q(locked_amount__isnull=True) | Q(locked_amount__gte=0), name="bcs_locked_amount_gte_0",
+            ),
+            # 자물쇠가 풀려 있으면 잠긴 금액도 비어 있어야 한다
+            models.CheckConstraint(
+                condition=Q(locked=True) | Q(locked_amount__isnull=True), name="bcs_unlocked_no_amount",
             ),
         ]
 

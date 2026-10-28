@@ -45,7 +45,7 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(FinancialProfile)
 class FinancialProfileAdmin(admin.ModelAdmin):
-    list_display = ("user", "payday", "monthly_take_home_income", "has_car", "budget_direction", "living_budget", "savings_floor", "cushion_monthly", "updated_at")
+    list_display = ("user", "payday", "monthly_take_home_income", "has_car", "housing_type", "budget_direction", "living_budget", "savings_floor", "cushion_monthly", "updated_at")
 
 
 @admin.register(CategoryPriority)

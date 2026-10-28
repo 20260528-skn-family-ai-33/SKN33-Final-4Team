@@ -94,6 +94,10 @@ class User(AbstractBaseUser, PermissionsMixin):
 class FinancialProfile(models.Model):
     """내 정보·예산 기준 (회원당 1개). PK가 곧 회원 ID"""
 
+    class HousingType(models.TextChoices):  # 2026-10-27 온보딩: 자취 여부로 지킬 돈 비율을 정한다
+        ALONE = "alone", "자취"
+        FAMILY = "family", "본가 거주"
+
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, primary_key=True, on_delete=models.CASCADE,
         db_column="user_id", related_name="financial_profile",
@@ -102,6 +106,9 @@ class FinancialProfile(models.Model):
     gender = models.CharField("성별", max_length=20, null=True, blank=True)
     loan_presence = models.CharField("대출 보유 응답", max_length=20, null=True, blank=True)
     has_car = models.BooleanField("자동차 보유", null=True, blank=True)  # NULL=미응답, false=미보유
+    housing_type = models.CharField(
+        "거주 형태", max_length=10, choices=HousingType.choices, null=True, blank=True,
+    )  # NULL=미응답. 자취 55·30·5·10 / 본가 45·40·5·10 (docs/api/budgets.md P-02)
     monthly_take_home_income = models.BigIntegerField("월 실수령액", null=True, blank=True)
     monthly_disposable_income = models.BigIntegerField("모델용 처분가능소득", null=True, blank=True)
     disposable_income_basis = models.CharField("처분가능소득 근거", max_length=30, null=True, blank=True)
@@ -131,6 +138,10 @@ class FinancialProfile(models.Model):
             ),
             models.CheckConstraint(
                 condition=Q(cushion_monthly__isnull=True) | Q(cushion_monthly__gte=0), name="fp_cushion_monthly_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(housing_type__isnull=True) | Q(housing_type__in=["alone", "family"]),
+                name="fp_housing_type_valid",
             ),
         ]
 
