@@ -147,6 +147,9 @@ class Card(models.Model):
     card_status = models.CharField("기관 제공 카드 상태", max_length=20, null=True, blank=True)
     origin = models.CharField("출처", max_length=20, choices=Origin.choices)
     is_selected = models.BooleanField("관리 대상 선택", default=False)
+    # 최초 연결 이후 첫 청구서 선차감 기준. 재연결·선택 변경 때 갱신하지 않는다.
+    # 기존 자료는 근거 없이 연결 시점을 추정하지 않고 null로 남긴다.
+    first_connected_at = models.DateTimeField("최초 카드 연결 시각", null=True, blank=True, editable=False)
     fetched_at = models.DateTimeField("최근 정상 조회 시각", null=True, blank=True)
 
     class Meta:
@@ -162,6 +165,12 @@ class Card(models.Model):
 
     def __str__(self):
         return self.name or self.masked_number or str(self.card_id)
+
+    def save(self, *args, **kwargs):
+        # 신규 카드만 최초 시각 기록. 기존 null은 유지하며 bulk_create는 직접 지정한다.
+        if self._state.adding and self.connection_id and self.origin == Origin.PROVIDER and self.first_connected_at is None:
+            self.first_connected_at = timezone.now()
+        super().save(*args, **kwargs)
 
 
 class Loan(models.Model):
