@@ -1,0 +1,6 @@
+# Separate comparison environment; existing v13 requirements are unchanged.
+numpy>=1.26,<3
+pandas>=2.2,<4
+scikit-learn>=1.5,<2
+catboost>=1.2.7,<2
+joblib>=1.4,<2

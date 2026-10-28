@@ -1,0 +1,137 @@
+{
+  "model_name": "catboost_shallow",
+  "artifact_id": "20261026T074827Z_53769d64",
+  "created_at_utc": "2026-10-26T07:48:27.507577+00:00",
+  "features": [
+    "age",
+    "sex",
+    "log_disposable_income",
+    "has_vehicle",
+    "fixed_expense_amount",
+    "living_budget_amount"
+  ],
+  "categorical_features": [
+    "sex",
+    "has_vehicle"
+  ],
+  "categories": [
+    "식비",
+    "주거·통신",
+    "교통·차량",
+    "생활용품",
+    "패션·쇼핑",
+    "의료·건강",
+    "뷰티·미용",
+    "교육",
+    "문화·여가",
+    "여행·숙박"
+  ],
+  "params": {
+    "iterations": 200,
+    "learning_rate": 0.05,
+    "depth": 4,
+    "loss_function": "MultiRMSE",
+    "thread_count": 2,
+    "random_seed": 42,
+    "verbose": false,
+    "allow_writing_files": false
+  },
+  "training_years": [
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "training_rows": 7936,
+  "training_rows_by_year": {
+    "2019": 842,
+    "2020": 1177,
+    "2021": 1292,
+    "2022": 1421,
+    "2023": 1624,
+    "2024": 1580
+  },
+  "training_weights": {
+    "survey_weighted": true,
+    "half_life_years": 2.0,
+    "normalization": "mean_one"
+  },
+  "seed": 42,
+  "input_contract": {
+    "population": "single-person worker households, ages 20-34",
+    "sex": "0=male, 1=female; converted to categorical strings",
+    "has_vehicle": "0=no, 1=yes; converted to categorical strings",
+    "disposable_income": "income minus non-consumption expenses, positive KRW; natural log once",
+    "fixed_expense_amount": "canonical rent/water/management/fuel/telecom, nonnegative KRW",
+    "living_budget_amount": "known positive living allocation total, excluding canonical fixed costs"
+  },
+  "postprocessing": "clip negative ratios to zero; zero sum uses weighted mean; normalize sum to one",
+  "limitations": [
+    "Known-total allocation model, not a predictor of total living expenses.",
+    "No claim of validation for reduced budgets, LLM adjustments, or users outside the training population.",
+    "2025/2026 were previously inspected retrospective evaluation data and are not included in this fit.",
+    "Upstream category aggregation and 2024 missing vehicle values filled as zero are unchanged."
+  ],
+  "python": "3.12.14",
+  "packages": {
+    "numpy": "2.5.4",
+    "pandas": "3.1.0",
+    "catboost": "1.2.10",
+    "joblib": "1.6.0",
+    "scikit-learn": "1.9.1"
+  },
+  "serialization_verification": {
+    "raw_prediction_rows": 7936,
+    "full_inference_rows": 64,
+    "max_allowed_ratio_difference": 1e-12
+  },
+  "artifact_sha256": "2fb8d5e15a5175a1d21830bacc51a44bf4b0bf5e90cceee6c2f7bfff6e7c74ce",
+  "status": "saved_and_reload_verified",
+  "model_file": "budget_allocation.joblib",
+  "selection_metric": "equal-year mean of survey-weighted macro ratio MAE (%p)",
+  "validation_years": [
+    2022,
+    2023,
+    2024
+  ],
+  "candidate_count": 33,
+  "cv_ratio_mae_pp": 5.325005906848777,
+  "cv_improvement_vs_mean_percent": 7.035101788875009,
+  "evaluation_role": "retrospective_confirmation_only_not_used_for_selection",
+  "evaluation": [
+    {
+      "name": "catboost_shallow",
+      "family": "catboost",
+      "year": 2025,
+      "weighting": "survey_weighted",
+      "n": 1707,
+      "ratio_mae_pp": 5.31731320193042,
+      "category_macro_mae_won": 89005.838784833,
+      "category_macro_rmse_won": 175959.5228035365,
+      "category_abs_error_sum_mean_won": 890058.38784833,
+      "allocation_distance_percent": 26.586566009652106,
+      "actual_total_mean_won": 1508488.0117374663,
+      "known_total_max_error_won": 1.862645149230957e-09,
+      "negative_clipped_rows": 33,
+      "fallback_rows": 0
+    },
+    {
+      "name": "catboost_shallow",
+      "family": "catboost",
+      "year": 2026,
+      "weighting": "survey_weighted",
+      "n": 926,
+      "ratio_mae_pp": 5.307300271161689,
+      "category_macro_mae_won": 86997.21090348148,
+      "category_macro_rmse_won": 167907.20415832667,
+      "category_abs_error_sum_mean_won": 869972.1090348148,
+      "allocation_distance_percent": 26.53650135580845,
+      "actual_total_mean_won": 1492856.7561770217,
+      "known_total_max_error_won": 1.862645149230957e-09,
+      "negative_clipped_rows": 15,
+      "fallback_rows": 0
+    }
+  ]
+}

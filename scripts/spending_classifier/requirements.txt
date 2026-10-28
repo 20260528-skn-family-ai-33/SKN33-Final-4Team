@@ -1,0 +1,9 @@
+# 2026-10-22 실제 실험 환경. 웹 서버 의존성은 포함하지 않는다.
+numpy==2.5.4
+pandas==3.0.6
+scikit-learn==1.9.1
+scipy==1.18.1
+joblib==1.6.0
+threadpoolctl==3.7.0
+matplotlib==3.11.2
+psutil==7.2.2
