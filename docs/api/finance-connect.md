@@ -443,10 +443,11 @@
 5. **작업 방식**: 바로 답하지 않고 `202 {taskId, status}` → `GET /api/tasks/<taskId>/`로 상태와 기관별 결과를 본다. **1차는 요청 안에서 끝까지 처리하고 응답만 작업 모양**이라 보통 `status: succeeded`로 온다. 나중에 느려지면 서버 속만 뒤에서 돌리게 바꾸고 API · 화면은 그대로 둔다.
 6. **중복 요청**: 그 회원이 이미 불러오는 중이면 새로 시작하지 않고 **진행 중인 `taskId`**를 그대로 돌려준다(에러 아님). 끝난 지 **1분 안**에 같은 대상으로 또 누르면 다시 부르지 않고 **마지막 결과**를 돌려준다.
 7. **자동 불러오기**: 하루 3번(07 · 13 · 21시, 자정 전후 은행 점검 시간 피함). 연결이 살아 있는(`connected`) 회원만, 수동과 같은 범위 규칙. 그 회원이 불러오는 중이면 건너뛴다. 카드 값이 필요한 기관은 자동에서 뺀다. 1차는 cron으로 명령을 돌린다.
-8. 연결 해제된 뒤 도착한 데이터는 저장하지 않고 버린다(연결 해제 '정해진 것', #51).
+8. 연결 해제된 뒤 도착한 데이터는 저장하지 않고 버린다(연결 해제 '정해진 것', #51). 여러 기관을 차례로 불러오는 동안 **아직 차례가 안 온 기관이 해제되면** 그 기관은 건너뛴다(`skipped / disconnected`): 기관마다 시작 전에 연결 ID로 다시 읽고, 저장 함수(`sync_bank`)에도 연결 ID를 넘겨 **새 연결 · 계좌를 만들지 않는다**(PR #53 리뷰).
+8-1. **동의는 범위마다 다시 확인한다**: 시작할 때 읽은 동의를 계속 쓰지 않고, 범위를 부르기 전과 저장 트랜잭션 안(회원 행을 잠근 뒤)에서 유효한 동의를 확인한다. 조회 중 철회되면 그 범위는 저장하지 않고 `skipped / no_consent`(PR #53 리뷰). 은행은 `sync_bank(..., require_consent=True)`, 대출은 `sync_bank_loans`가 같은 방식으로 확인한다.
 9. **진행 중 판단은 공용 작업 표(`async_task`)** 로 한다(10/28 나은). 자동 불러오기(`finance_auto_sync`)도 같은 표로 진행 중인지 확인해서 수동 · 자동이 겹치지 않는다. `sync_run`은 기관 조회 실행 기록용으로 그대로 둔다.
 10. **자동 불러오기는 새 명령 `finance_auto_sync`** (10/28 나은). 실제 저장 함수는 개발용 `codef_sync`와 같은 `finance/sync.py` `sync_bank`(대출은 `sync_loans.sync_bank_loans`)를 쓴다 — 로직 두 벌 없음. 수동 API와 자동 명령도 같은 실행(`api_sync.sync_connections`)을 쓴다.
-11. **카드 · 카드 승인 · 청구서 저장 함수는 권세진 담당**(대출 #50과 같은 방식, 10/28 나은). 그전까지 카드사는 "준비 중"(`cards: skipped / not_supported`)으로 건너뛴다. 만들 때 모양: `finance/sync_cards.py`의 `sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None)` — 실패 시 `codef.CodefError`를 그대로 올리고 저장 직전 연결 해제를 확인. 청구서 `startDate`는 월 단위 `YYYYMM`(`CF-13001` 주의)
+11. **카드 · 카드 승인 · 청구서 저장 함수는 권세진 담당**(대출 #50과 같은 방식, 10/28 나은). 그전까지 카드사는 "준비 중"(`cards: skipped / not_supported`)으로 건너뛴다. 만들 때 모양: `finance/sync_cards.py`의 `sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None, connection_id=None)` — `connection_id` 연결에만 저장하고 해제됐으면 새로 만들지 않기, 카드 조회 동의는 외부 조회 전 · 저장 트랜잭션 안에서 확인, 실패 시 `codef.CodefError`를 그대로 올리기. 청구서 `startDate`는 월 단위 `YYYYMM`(`CF-13001` 주의)
 
 **보내는 값** — 전부 생략 가능 (`{}` 또는 본문 없음 = 연결 전부)
 

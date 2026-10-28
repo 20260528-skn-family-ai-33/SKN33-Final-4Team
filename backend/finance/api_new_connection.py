@@ -68,7 +68,8 @@ def _check_entry(entry, index, errors):
             errors[key(field)] = [NOT_ALLOWED]
 
     business_type, code = entry.get("business_type"), entry.get("organization_code")
-    if business_type not in institutions.TABLE:
+    # [] · {} 같은 값은 표 조회 · 중복 검사에서 500 이 나서 글자인지 먼저 본다 (PR #53 리뷰)
+    if not isinstance(business_type, str) or business_type not in institutions.TABLE:
         errors[key("business_type")] = ["업권은 bank 또는 card 로 보내 주세요."]
         info = None
     else:
@@ -127,7 +128,9 @@ def parse_body(request):
         _check_entry(entry, index, errors)
         if isinstance(entry, dict):
             pair = (entry.get("business_type"), entry.get("organization_code"))
-            if pair in seen and isinstance(pair[1], str):
+            if not all(isinstance(value, str) for value in pair):
+                continue  # 형식 오류는 위에서 이미 칸 오류로 넣었다
+            if pair in seen:
                 errors[f"institutions[{index}].organization_code"] = ["같은 기관이 두 번 들어 있어요."]
             seen.add(pair)
     if len(rows) > 1 and any(isinstance(e, dict) and e.get("sms_auth") is not None for e in rows):
@@ -326,7 +329,8 @@ def load_bank(user, cid, code, row):
     """연결 직후 계좌 · 거래 불러오기 (나은 sync_bank). 실패해도 연결은 그대로 두고 sync_status 로 알려 준다"""
     end = timezone.localdate()
     try:
-        sync_bank(user, cid, code, first_load_start(end), end)  # 첫 연결: 4달 전 1일 ~ 오늘 (10/27)
+        # 첫 연결: 4달 전 1일 ~ 오늘 (10/27). 방금 만든 연결에만 저장하고, 동의는 저장 직전에도 확인 (PR #53 리뷰)
+        sync_bank(user, cid, code, first_load_start(end), end, connection_id=row.pk, require_consent=True)
         sync_status = "done"
     except Exception as exc:
         logger.warning(

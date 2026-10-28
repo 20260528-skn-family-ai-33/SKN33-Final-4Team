@@ -55,8 +55,9 @@ def loan_syncer():
 
 
 def card_syncer():
-    """카드 · 카드 승인 · 청구서 저장 (담당 확인 필요, finance/sync_cards.py 의 sync_card). 아직 없으면 None
-    약속한 모양: sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None)"""
+    """카드 · 카드 승인 · 청구서 저장 (권세진 담당, finance/sync_cards.py 의 sync_card). 아직 없으면 None
+    약속한 모양: sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None, connection_id=None)
+    - connection_id 연결에만 저장하고 해제됐으면 새로 만들지 않는다. 카드 조회 동의는 외부 조회 전 · 저장 트랜잭션 안에서 확인"""
     try:
         from .sync_cards import sync_card
     except ImportError:
@@ -173,8 +174,20 @@ def run_part(kind, connection, work):
     return {"kind": kind, "status": "succeeded"}, None
 
 
-def sync_connection(user, connection, cid, scopes, cred, today):
-    """기관 하나 → 기관별 결과 dict (JSON 그대로 저장되는 값만)"""
+def current_scopes(user):
+    """지금 유효한 동의 범위. 시작할 때 한 번 읽은 값을 계속 쓰지 않고 범위마다 다시 읽는다 (PR #53 리뷰)"""
+    return set(Consent.objects.filter(
+        user=user, purpose=PURPOSE, revoked_at__isnull=True, granted_at__lte=timezone.now(),
+    ).values_list("product_scope", flat=True))
+
+
+MAIN_KIND = {institutions.BANK: "accounts", institutions.CARD: "cards"}
+
+
+def sync_connection(user, connection, cid, cred, today):
+    """기관 하나 → 기관별 결과 dict (JSON 그대로 저장되는 값만)
+    - 앞 기관을 불러오는 사이 이 연결이 해제됐을 수 있어서, 시작 전에 연결 ID 로 다시 읽는다 (해제됐으면 건너뜀)
+    - 저장 함수에는 이 연결 ID 를 넘겨 새 연결을 만들지 않게 하고, 동의는 외부 조회 전 · 저장 직전에 다시 확인한다"""
     name = institutions.name_of(connection.business_type, connection.organization_code)
     item = {
         "connection_id": str(connection.connection_id), "business_type": connection.business_type,
@@ -188,6 +201,12 @@ def sync_connection(user, connection, cid, scopes, cred, today):
         item["status"], item["error"] = "failed", _error(reason, name, connection, missing)
         return item
 
+    fresh = Connection.objects.filter(pk=connection.pk, user=user).first()
+    if fresh is None or fresh.disconnected_at is not None:
+        item["parts"].append({"kind": MAIN_KIND.get(connection.business_type, connection.business_type),
+                              "status": "skipped", "reason": "disconnected"})
+        return item
+    connection = fresh
     if connection.status == Connection.Status.RELOGIN or cid is None:
         return failed("relogin")
 
@@ -195,15 +214,17 @@ def sync_connection(user, connection, cid, scopes, cred, today):
     reason = None
     if connection.business_type == institutions.BANK:
         start = refresh_start(today, last_success_day(connection, "bank_sync"))
-        if institutions.BANK not in scopes:
+        if institutions.BANK not in current_scopes(user):
             item["parts"].append({"kind": "accounts", "status": "skipped", "reason": "no_consent"})
         else:
             counts = {}
-            part, reason = run_part("accounts", connection, lambda: counts.update(sync_bank(user, cid, org, start, today)))
+            part, reason = run_part("accounts", connection, lambda: counts.update(sync_bank(
+                user, cid, org, start, today, connection_id=connection.pk, require_consent=True,
+            )))
             item["parts"].append(part)
             item["new_transaction_count"] = counts.get("new_transaction_count")
         loans = loan_syncer()
-        if "loan" not in scopes:
+        if "loan" not in current_scopes(user):
             item["parts"].append({"kind": "loans", "status": "skipped", "reason": "no_consent"})
         elif loans is None:
             item["parts"].append({"kind": "loans", "status": "skipped", "reason": "not_supported"})
@@ -213,7 +234,7 @@ def sync_connection(user, connection, cid, scopes, cred, today):
             part, reason = run_part("loans", connection, lambda: loans(user, cid, org, start, today))
             item["parts"].append(part)
     elif connection.business_type == institutions.CARD:
-        if institutions.CARD not in scopes:
+        if institutions.CARD not in current_scopes(user):
             item["parts"].append({"kind": "cards", "status": "skipped", "reason": "no_consent"})
         elif needs_card_fields(connection) and not cred:
             item["status"] = "failed"
@@ -229,7 +250,7 @@ def sync_connection(user, connection, cid, scopes, cred, today):
                 cred = cred or {}
                 part, reason = run_part("cards", connection, lambda: cards(
                     user, cid, org, start, today, bill_months(today),
-                    card_no=cred.get("card_no"), card_password=cred.get("card_password"),
+                    card_no=cred.get("card_no"), card_password=cred.get("card_password"), connection_id=connection.pk,
                 ))
                 item["parts"].append(part)
     else:
@@ -250,10 +271,7 @@ def sync_connections(user, connections, creds=None, today=None):
     except connected_id.ConnectedIdUnreadable:
         logger.error("저장된 connectedId 를 풀 수 없어요 user=%s", user.pk)
         cid = None
-    scopes = set(Consent.objects.filter(
-        user=user, purpose=PURPOSE, revoked_at__isnull=True,
-    ).values_list("product_scope", flat=True))
-    items = [sync_connection(user, row, cid, scopes, creds.get(row.connection_id), today) for row in connections]
+    items = [sync_connection(user, row, cid, creds.get(row.connection_id), today) for row in connections]
     summary = {"total": len(items)}
     for key in ("succeeded", "failed", "skipped"):
         summary[key] = sum(1 for item in items if item["status"] == key)

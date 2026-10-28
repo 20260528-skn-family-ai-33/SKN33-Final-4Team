@@ -18,7 +18,7 @@ from chat.models import AsyncTask
 from users.models import Consent
 
 from . import codef, connected_id
-from .models import Connection, SyncRun
+from .models import BankAccount, Connection, SyncRun
 from .sync_ranges import bill_months, first_load_start
 
 URL = "/api/finance/sync/"
@@ -102,6 +102,8 @@ class SyncTest(SyncBase):
         self.bank.assert_called_once()
         user, cid, org, start, end = self.bank.call_args.args
         self.assertEqual((user, cid, org, start, end), (self.user, "cid-1", "0088", first_load_start(self.today), self.today))
+        # 이 연결에만 저장(새 연결 금지) + 동의 다시 확인 (PR #53 리뷰)
+        self.assertEqual(self.bank.call_args.kwargs, {"connection_id": self.shinhan.pk, "require_consent": True})
 
     def test_refresh_range_is_last_success_minus_7_days(self):
         last = self.today - timedelta(days=3)
@@ -125,7 +127,7 @@ class SyncTest(SyncBase):
         self.assertEqual(items["0302"]["status"], "succeeded")
         args, kwargs = self.cards.call_args
         self.assertEqual(args, (self.user, "cid-1", "0302", first_load_start(self.today), self.today, bill_months(self.today)))
-        self.assertEqual(kwargs, {"card_no": CARD_NO, "card_password": CARD_PW})
+        self.assertEqual(kwargs, {"card_no": CARD_NO, "card_password": CARD_PW, "connection_id": self.hyundai.pk})
 
     def test_card_values_are_not_stored_or_logged(self):
         self.card_syncer.return_value = self.cards
@@ -153,7 +155,7 @@ class SyncTest(SyncBase):
     def test_login_error_marks_relogin_and_others_still_saved(self):
         bank2 = Connection.objects.create(user=self.user, business_type="bank", organization_code="0020", status="connected")
 
-        def by_org(user, cid, org, start, end):
+        def by_org(user, cid, org, start, end, **kwargs):
             if org == "0088":
                 raise codef.CodefError("CF-12100", "아이디 또는 비밀번호가 일치하지 않습니다.")
             return {"new_transaction_count": 1}
@@ -179,7 +181,7 @@ class SyncTest(SyncBase):
         self.assertEqual(self.shinhan.status, "connected")
 
     def test_disconnected_during_sync_is_discarded_not_failed(self):
-        def disconnect(*args):
+        def disconnect(*args, **kwargs):
             Connection.objects.filter(pk=self.shinhan.pk).update(status="disconnected", disconnected_at=timezone.now())
             raise ValueError("조회 중 연결이 해제되어 저장하지 않았어요.")
 
@@ -323,3 +325,75 @@ class RangeTest(TestCase):
         self.assertEqual(bill_months(date(2026, 1, 15)), ("202512", "202601"))
         self.assertEqual(refresh_start(date(2026, 10, 27), date(2026, 10, 25)), date(2026, 10, 18))
         self.assertEqual(refresh_start(date(2026, 10, 27), None), date(2026, 6, 1))
+
+
+class RealBankSaveTest(TestCase):
+    """실제 저장 함수(sync.sync_bank)로 확인: 새로고침 중 해제 · 동의 철회 (PR #53 리뷰 P1 두 개)"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = get_user_model().objects.create_user(email="real@example.com", password="Example123!")
+        cls.user.codef_connected_id_ciphertext = connected_id.seal("cid-1")
+        cls.user.save(update_fields=["codef_connected_id_ciphertext"])
+        cls.consent = Consent.objects.create(user=cls.user, purpose="finance_inquiry", product_scope="bank",
+                                             document_version="v1", document_hash="x")
+        cls.a = Connection.objects.create(user=cls.user, business_type="bank", organization_code="0088", status="connected")
+        cls.b = Connection.objects.create(user=cls.user, business_type="bank", organization_code="0004", status="connected")
+
+    def setUp(self):
+        self.client.force_login(self.user)
+        self.accounts = lambda org: [{"account_no": f"{org}-123456", "name": "입출금", "balance": 1000, "kind_code": "11", "org": org}]
+        self.rows = [codef.normalize_transaction({
+            "resAccountTrDate": "20261020", "resAccountTrTime": "120000", "resAccountOut": "1000",
+            "resAccountIn": "0", "resAfterTranBalance": "1000", "resAccountDesc3": "시험",
+        })]
+        for target, kwargs in (
+            ("finance.codef.list_accounts", {"side_effect": lambda cid, org: self.accounts(org)}),
+            ("finance.sync.process_new_transactions", {}),
+            ("finance.sync.retry_failed_transactions", {}),
+            ("finance.api_sync.loan_syncer", {"return_value": None}),
+        ):
+            patcher = patch(target, **kwargs)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def run_both(self):
+        res = self.client.post(URL, data=json.dumps({"connectionIds": [str(self.a.pk), str(self.b.pk)]}),
+                               content_type="application/json")
+        task = self.client.get(f"/api/tasks/{res.json()['taskId']}/").json()
+        return {item["organizationCode"]: item for item in task["result"]["items"]}
+
+    def test_connection_disconnected_while_waiting_is_not_recreated(self):
+        def transactions(cid, org, account_no, start, end):
+            if org == "0088":  # A은행을 불러오는 사이 B은행 연결 해제
+                self.assertEqual(self.client.delete(f"/api/finance/connections/{self.b.pk}/").status_code, 204)
+            return self.rows
+
+        with patch("finance.codef.list_transactions", side_effect=transactions):
+            items = self.run_both()
+        self.assertEqual(items["0088"]["status"], "succeeded")
+        self.assertEqual((items["0004"]["status"], items["0004"]["parts"]),
+                         ("skipped", [{"kind": "accounts", "status": "skipped", "reason": "disconnected"}]))
+        # B은행 연결이 새로 생기지 않고 계좌도 저장되지 않음
+        self.assertEqual(Connection.objects.filter(user=self.user, organization_code="0004").count(), 1)
+        self.assertFalse(BankAccount.objects.filter(user=self.user, connection__organization_code="0004").exists())
+
+    def test_save_function_never_creates_connection_for_gone_id(self):
+        from .sync import BankConnectionGone, sync_bank
+
+        Connection.objects.filter(pk=self.b.pk).update(status="disconnected", disconnected_at=timezone.now())
+        with patch("finance.codef.list_transactions", return_value=self.rows), self.assertRaises(BankConnectionGone):
+            sync_bank(self.user, "cid-1", "0004", date(2026, 10, 1), date(2026, 10, 27), connection_id=self.b.pk)
+        self.assertEqual(Connection.objects.filter(user=self.user, organization_code="0004").count(), 1)
+
+    def test_consent_revoked_during_fetch_saves_nothing(self):
+        def transactions(cid, org, account_no, start, end):
+            Consent.objects.filter(pk=self.consent.pk).update(revoked_at=timezone.now())
+            return self.rows
+
+        with patch("finance.codef.list_transactions", side_effect=transactions):
+            items = self.run_both()
+        self.assertEqual(items["0088"]["parts"][0], {"kind": "accounts", "status": "skipped", "reason": "no_consent"})
+        self.assertEqual(items["0004"]["parts"][0], {"kind": "accounts", "status": "skipped", "reason": "no_consent"})
+        self.assertFalse(BankAccount.objects.filter(user=self.user).exists())
+        self.assertEqual(SyncRun.objects.get(user=self.user, connection=self.a).status, "failed")

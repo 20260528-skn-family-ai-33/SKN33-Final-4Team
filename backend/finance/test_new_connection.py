@@ -92,7 +92,7 @@ class ConnectBase(TestCase):
         self.sync = sync.start()
         self.addCleanup(sync.stop)
 
-    def fake_sync(self, user, cid, org, start, end):
+    def fake_sync(self, user, cid, org, start, end, connection_id=None, require_consent=False):
         conn = Connection.objects.get(user=user, organization_code=org, disconnected_at=None)
         BankAccount.objects.get_or_create(user=user, connection=conn, source_account_key=f"key-{org}",
                                           defaults={"masked_number": "****1234", "account_type": "demand"})
@@ -135,6 +135,7 @@ class NewConnectionTest(ConnectBase):
             "loginType": "1", "id": "hong-login", "password": "rsa(12)",
         })
         user, cid, org, start, end = self.sync.call_args.args
+        self.assertEqual(self.sync.call_args.kwargs, {"connection_id": conn.pk, "require_consent": True})
         self.assertEqual((user, cid, org, end), (self.user, "cid-1", "0088", timezone.localdate()))
         self.assertEqual(start, first_load_start(end))  # 4달 전 1일
         self.assert_no_secret(res.content.decode())
@@ -371,6 +372,12 @@ class CardFieldsAndInputTest(ConnectBase):
             ({"institutions": [card(smsAuth={**token, "code": "12"})]}, "institutions[0].smsAuth.code"),
             ({"institutions": [card(smsAuth=token), bank()]}, "nonFieldErrors"),
             ({"institutions": ["x"]}, "institutions[0]"),
+            # 글자가 아닌 값도 500 이 아니라 400 (PR #53 리뷰)
+            ({"institutions": [{**bank(), "businessType": []}]}, "institutions[0].businessType"),
+            ({"institutions": [{**bank(), "organizationCode": {}}]}, "institutions[0].organizationCode"),
+            ({"institutions": [{**bank(), "businessType": [], "organizationCode": {}}, bank()]}, "institutions[0].businessType"),
+            ({"institutions": [card(cardNo=[], cardPassword={})]}, "institutions[0].cardNo"),
+            ({"institutions": [card(smsAuth={"authToken": [], "code": {}})]}, "institutions[0].smsAuth.code"),
         ]
         for body, field in cases:
             with self.subTest(field=field):
