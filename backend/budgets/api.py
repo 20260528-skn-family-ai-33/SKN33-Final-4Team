@@ -23,6 +23,7 @@ from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, 
 from users.models import FinancialProfile
 
 from . import mock
+from .salary import current_salary_profile, salary_cycle_dates
 
 
 @api_view(["GET"])
@@ -65,8 +66,9 @@ class ProtectNotReady(APIException):
 def protect(request):
     with transaction.atomic():
         lock_user(request.user)  # 홈 · 고정지출 · 정기 저축과 같은 잠금 순서
-        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
-        data = protect_json(request.user, profile, timezone.localdate())
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
+        data = protect_json(request.user, profile, today)
         if request.method == "PUT":
             values = clean_protect(request, data)
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
@@ -187,7 +189,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
 
     card_reserved를 주면 카드 선차감을 새로 계산하지 않고 그 값을 쓴다 (승인 때 초안에 저장한 값).
     """
-    from .home import balance_json, cycle_dates, ensure_cycle
+    from .home import balance_json, ensure_cycle
     from .protect import RATES, blocked, cushion_required, fixed_breakdown, fixed_sum, recommend, savings_min
 
     housing = profile.housing_type if profile else None
@@ -202,7 +204,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
     base = recommendation = blocked_state = None
     pending_cards = []
     if not missing:
-        start, next_payday, _ = cycle_dates(payday, today)
+        start, next_payday, _ = salary_cycle_dates(profile, today)
         cycle = ensure_cycle(user, start, next_payday)
         breakdown = fixed_breakdown(user, cycle, card=card_reserved is _COMPUTE)
         if card_reserved is not _COMPUTE:
@@ -266,8 +268,8 @@ def recommend(request):
 
     with transaction.atomic():
         lock_user(request.user)
-        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
         today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
         state = protect_json(request.user, profile, today)  # home.ensure_cycle도 같은 잠금 안에서 재사용
         clean_recommend(request, state)
         pending = AsyncTask.objects.filter(
@@ -382,10 +384,11 @@ def budget_category(request, budget_id, code):
 
     with transaction.atomic():
         lock_user(request.user)
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
         category = get_object_or_404(Category, pk=code, category_code__in=LIVING_CODES)
-        profile = FinancialProfile.objects.filter(user=request.user).first()
-        cycle = current_cycle(request.user, profile, timezone.localdate())
+        cycle = current_cycle(request.user, profile, today)
         if cycle is None or chosen.cycle_id != cycle.pk or chosen.status not in ("validated", "approved"):
             raise ProtectNotReady("지난 예산은 바꿀 수 없어요.")
         data = body_dict(request)
@@ -420,12 +423,12 @@ def budget_approve(request, budget_id):
 
     with transaction.atomic():
         lock_user(request.user)
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
         data = body_dict(request)
         if data:
             raise ValidationError({key: ["이 칸은 보낼 수 없어요."] for key in data})
-        today = timezone.localdate()
-        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
         cycle = current_cycle(request.user, profile, today)
         this_cycle = cycle is not None and chosen.cycle_id == cycle.pk
         if chosen.status == "approved":

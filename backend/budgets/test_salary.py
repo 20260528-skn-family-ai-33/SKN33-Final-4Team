@@ -2,6 +2,7 @@ from datetime import date, datetime, timezone as dt_timezone
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 from time import monotonic, sleep
+from uuid import uuid4
 from unittest import skipUnless
 from unittest.mock import patch
 
@@ -202,6 +203,106 @@ class SalaryTests(TestCase):
         self.today.return_value = date(2026, 12, 10)
         period = self.home_period()
         self.assertEqual((period["startDate"], period["endDate"]), ("2026-12-10", "2027-01-09"))
+
+    def prepare_budget_transition(self):
+        self.assertEqual(self.put(payload()).status_code, 200)
+        FinancialProfile.objects.filter(user=self.user).update(
+            housing_type="family", birth_date=date(1999, 3, 15), gender="female", has_car=False,
+            living_budget=1_000_000, savings_floor=200_000, cushion_monthly=100_000,
+        )
+        self.home_period()
+        self.assertEqual(self.put(payload(payday=10, paydayApplyFrom="next_cycle")).status_code, 200)
+
+    def assert_active_period(self, start, end):
+        active = BudgetCycle.objects.get(user=self.user, status="active")
+        self.assertEqual((active.starts_on, active.ends_before), (start, end))
+        return active
+
+    def test_protect_budget_home_navigation_keeps_scheduled_boundary(self):
+        self.prepare_budget_transition()
+        cycle_count = BudgetCycle.objects.filter(user=self.user).count()
+        for _ in range(2):
+            for url in ("/api/budgets/protect/", "/api/budgets/", "/api/home/"):
+                with self.subTest(url=url):
+                    response = self.client.get(url)
+                    self.assertEqual(response.status_code, 200, response.content)
+                    self.assert_active_period(date(2026, 10, 25), date(2026, 11, 10))
+                    if url == "/api/budgets/":
+                        self.assertEqual(response.json()["cycle"], {
+                            "startsOn": "2026-10-25", "endsBefore": "2026-11-10",
+                        })
+        self.assertEqual(BudgetCycle.objects.filter(user=self.user).count(), cycle_count)
+
+    def test_protect_first_after_transition_applies_new_payday(self):
+        self.prepare_budget_transition()
+        self.today.return_value = date(2026, 11, 10)
+        for url in ("/api/budgets/protect/", "/api/budgets/", "/api/home/"):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200, response.content)
+            self.assertEqual(FinancialProfile.objects.get(user=self.user).payday, 10)
+            self.assert_active_period(date(2026, 11, 10), date(2026, 12, 10))
+        old = BudgetCycle.objects.get(user=self.user, starts_on=date(2026, 10, 25))
+        self.assertEqual((old.ends_before, old.status), (date(2026, 11, 10), "closed"))
+
+    def test_budget_first_after_transition_applies_new_payday(self):
+        self.prepare_budget_transition()
+        self.today.return_value = date(2026, 11, 11)
+        response = self.client.get("/api/budgets/")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(FinancialProfile.objects.get(user=self.user).payday, 10)
+        self.assert_active_period(date(2026, 11, 10), date(2026, 12, 10))
+
+    def recommend_budget(self):
+        response = self.client.post("/api/budgets/recommend/", {}, format="json",
+                                    HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+        self.assertEqual(response.status_code, 202, response.content)
+        return Budget.objects.get(user=self.user, task_id=response.json()["task"]["taskId"])
+
+    def test_recommend_lock_approve_keep_scheduled_boundary(self):
+        self.prepare_budget_transition()
+        budget = self.recommend_budget()
+        cycle = self.assert_active_period(date(2026, 10, 25), date(2026, 11, 10))
+        self.assertEqual(budget.cycle_id, cycle.pk)
+        response = self.client.patch(f"/api/budgets/{budget.pk}/categories/FOOD/",
+                                     {"locked": False}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assert_active_period(date(2026, 10, 25), date(2026, 11, 10))
+        response = self.client.post(f"/api/budgets/{budget.pk}/approve/", {}, format="json",
+                                    HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assert_active_period(date(2026, 10, 25), date(2026, 11, 10))
+        budget.refresh_from_db()
+        self.assertEqual(budget.status, "approved")
+
+    def test_recommend_first_after_transition_uses_new_cycle(self):
+        self.prepare_budget_transition()
+        self.today.return_value = date(2026, 11, 10)
+        budget = self.recommend_budget()
+        cycle = self.assert_active_period(date(2026, 11, 10), date(2026, 12, 10))
+        self.assertEqual(budget.cycle_id, cycle.pk)
+        self.assertEqual(FinancialProfile.objects.get(user=self.user).payday, 10)
+
+    def test_lock_first_after_transition_rejects_previous_approved_budget(self):
+        self.prepare_budget_transition()
+        budget = self.make_budget(status="approved")
+        self.today.return_value = date(2026, 11, 10)
+        response = self.client.patch(f"/api/budgets/{budget.pk}/categories/FOOD/",
+                                     {"locked": False}, format="json")
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["error"]["code"], "not_ready")
+        budget.refresh_from_db()
+        self.assertEqual(budget.status, "approved")
+
+    def test_approve_first_after_transition_rejects_previous_approved_budget(self):
+        self.prepare_budget_transition()
+        budget = self.make_budget(status="approved")
+        self.today.return_value = date(2026, 11, 10)
+        response = self.client.post(f"/api/budgets/{budget.pk}/approve/", {}, format="json",
+                                    HTTP_IDEMPOTENCY_KEY=str(uuid4()))
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["error"]["code"], "not_ready")
+        budget.refresh_from_db()
+        self.assertEqual(budget.status, "approved")
 
     def test_transition_can_extend_current_cycle(self):
         self.put(payload(payday=10))

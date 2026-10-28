@@ -42,7 +42,7 @@ PUT은 두 필수 값을 모두 받는다. 같은 값으로 반복 요청해도 
 - 예약 중 같은 새 급여일과 `next_cycle`을 재전송해도 전환일을 뒤로 미루지 않는다.
 - 예약 중 현재 급여일을 보내고 선택을 생략하면 예약을 유지한다(금액만 수정 가능). 현재 급여일과 `current_cycle`을 보내면 예약을 취소한다. 다른 날을 선택하면 예약을 교체한다.
 - 전환일 이후 급여 GET·PUT, 홈, 활성 주기를 읽는 고정지출·저축 API, 대출 납부 예정 저장에서 예약을 반영한다. 별도 스케줄러는 필요 없다. 첫 전환 주기의 이전 주기를 알 수 있도록 전환 정보는 DB에 보존한다.
-- 지킬 돈·예산 등 후속 구현도 급여일을 읽기 전에 `budgets.salary.activate_salary_if_due(user, today)`로 예약을 반영하고, 주기 날짜는 `salary_cycle_dates(profile, today)`를 사용한다. 일반 `cycle_dates`만 쓰면 전환 중인 주기의 경계를 놓칠 수 있다.
+- 지킬 돈·추천·카테고리 잠금·승인·예산 조회는 회원 잠금 뒤 `current_salary_profile(user, today)`로 예약을 반영한 프로필을 읽고, 주기 날짜는 `salary_cycle_dates(profile, today)`로 계산한다. 별도 호출부에서 예약 적용만 필요하면 `activate_salary_if_due(user, today)`를 사용한다. 일반 `cycle_dates`만 쓰면 전환 중인 주기의 경계를 놓칠 수 있다.
 
 ## 받는 값
 

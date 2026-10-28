@@ -3,11 +3,12 @@ from django.db.models import Sum
 
 from finance.api import listed_transactions, transaction_item
 from finance.spending import spending_summary
-from users.models import CategoryMinimum, FinancialProfile
+from users.models import CategoryMinimum
 
-from .home import cycle_dates, ensure_cycle, period_json
+from .home import ensure_cycle, period_json
 from .models import Budget, BudgetCategorySetting, Category
 from .recommend import CATEGORY_CODES
+from .salary import current_salary_profile, salary_cycle_dates
 
 
 LIVING_CODES = (*CATEGORY_CODES, "ETC")
@@ -17,7 +18,7 @@ NAG = "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까
 def current_cycle(user, profile, today):
     if profile is None or profile.payday is None:
         return None
-    start, end, _ = cycle_dates(profile.payday, today)
+    start, end, _ = salary_cycle_dates(profile, today)
     return ensure_cycle(user, start, end)
 
 
@@ -31,7 +32,7 @@ def budget_nag(user, cycle):
 
 
 def budget_data(user, today, *, selected=None):
-    profile = FinancialProfile.objects.filter(user=user).first()
+    profile = current_salary_profile(user, today)
     cycle = current_cycle(user, profile, today)
     rows = listed_transactions(user)
     if cycle:
