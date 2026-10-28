@@ -543,7 +543,7 @@
 **확인 필요**
 
 - **카드 · 카드 승인 · 청구서 저장 함수 담당**: 은행(나은) · 대출(권세진 PR #50)은 있는데 카드사 저장은 아직 없다. 만들면 `finance/sync_cards.py`에 `sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None)` 모양으로 두면 다시 불러오기 · 자동 불러오기가 바로 부른다(`api_sync.card_syncer`). 실패 시 `codef.CodefError`를 그대로 올리고, 저장 직전 연결 해제를 확인해 달라 → 김나은 · 권세진 (나은 `codef_card_check` 결과와 함께)
-- **대출(PR #50)**: 병합되면 따로 고칠 것 없이 `loans` 범위가 켜진다. 대출 거래 기간도 은행 거래와 같은 기간(마지막 성공 7일 전 ~ 오늘)을 넘긴다 → 권세진 확인
+- **대출**: PR #50이 main에 병합돼(10/28) `loans` 범위가 켜졌다(`sync_bank_loans` 호출). 대출 거래 기간도 은행 거래와 같은 기간(마지막 성공 7일 전 ~ 오늘)을 넘긴다 → 권세진 확인
 - **진행 중 판단 기준**: 나은은 `sync_run`(PR #50)을 쓰자고 했는데, `sync_run`은 기관 조회 한 번마다 생기는 기록이라 "이 회원의 불러오기 전체가 진행 중인가"와 "1분 안 마지막 결과"를 보기 어려워 공용 작업 표(`async_task`)로 판단했다. 기관별 기록은 그대로 `sync_run`에 남는다 → 김나은 확인
 - **자동 불러오기 명령**: `codef_sync`(나은, 개발용 한 회원 · `.env` 연결 ID)를 넓히는 대신 새 명령 `finance_auto_sync`를 만들었다. `codef_sync`와 합칠지 → 김나은
 - **cron 실행 위치 · 시간대**: 배포 서버 cron이 한국 시간인지(아니면 UTC 22 · 4 · 12시) → 배포 담당
