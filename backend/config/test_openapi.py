@@ -48,7 +48,7 @@ class OpenAPIContractTests(SimpleTestCase):
         super().setUpClass()
         cls.contract = build_contract()
 
-    def test_contract_covers_the_41_operations_in_the_source_manifest(self):
+    def test_contract_covers_the_43_operations_in_the_source_manifest(self):
         manifest = (ROOT / "docs/api/README.md").read_text(encoding="utf-8")
         section = manifest.split("## 1. 한눈에 보기", 1)[1].split("## 2.", 1)[0]
         entries = re.findall(r"`(GET|POST|PUT|PATCH|DELETE)\s+(/api/[^`]+)`", section)
@@ -56,10 +56,10 @@ class OpenAPIContractTests(SimpleTestCase):
         operations = list(operation_items(self.contract))
         actual = {(method, normalized_path(path)) for path, method, _ in operations}
 
-        self.assertEqual(len(entries), 41)
-        self.assertEqual(len(operations), 41)
+        self.assertEqual(len(entries), 43)
+        self.assertEqual(len(operations), 43)
         self.assertSetEqual(actual, expected)
-        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 41)
+        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 43)
         self.assertEqual(len({tag for _, _, op in operations for tag in op["tags"]}), 10)
         for path, method, operation in operations:
             with self.subTest(path=path, method=method):
@@ -70,15 +70,20 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 39, "mock": 2})
+        self.assertEqual(Counter(states.values()), {"implemented": 42, "mock": 1})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("post", "/api/auth/login/")], "implemented")
         self.assertEqual(states[("put", "/api/finance/connect/accounts/")], "implemented")
         self.assertEqual(states[("patch", "/api/finance/transactions/{id}/")], "implemented")
         self.assertEqual(states[("get", "/api/chat/conversations/{id}/")], "implemented")
         self.assertEqual(states[("get", "/api/home/")], "implemented")
-        for mock_operation in (("post", "/api/chat/messages/"), ("get", "/api/tasks/{id}/")):
+        for mock_operation in (("post", "/api/chat/messages/"),):
             self.assertEqual(states[mock_operation], "mock")
+        for operation in {
+            ("post", "/api/finance/connections/"), ("post", "/api/finance/sync/"),
+            ("get", "/api/tasks/{id}/"),
+        }:
+            self.assertEqual(states[operation], "implemented")
         # 카드 · 대출 6개는 DB 연동 및 계약 검증을 마친 실제 API다.
         for operation in {
             ("get", "/api/finance/connect/cards/"), ("put", "/api/finance/connect/cards/"),
@@ -164,9 +169,9 @@ class OpenAPIContractTests(SimpleTestCase):
             if operation["x-implementation-status"] == "implemented"
         }
         actual = {(method, path) for path, method, _ in operation_items(runtime)}
-        # 카드·대출·홈을 포함한 구현된 32개만. 껍데기는 실행 화면에 없다
+        # 새 연결·다시 불러오기·작업 확인을 포함한 구현된 API만 실행 화면에 둔다
         self.assertSetEqual(actual, implemented)
-        self.assertEqual(len(actual), 39)
+        self.assertEqual(len(actual), 42)
         self.assertEqual(runtime["security"], [])
         for path, method, operation in operation_items(runtime):
             with self.subTest(path=path, method=method):
@@ -214,8 +219,8 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 39개")
-                self.assertContains(response, "목업 2개")
+                self.assertContains(response, "구현 42개")
+                self.assertContains(response, "목업 1개")
                 self.assertContains(response, "미구현 0개")
                 self.assertContains(response, "/api/docs/runtime/")
                 options = json.loads(response.data["settings"])

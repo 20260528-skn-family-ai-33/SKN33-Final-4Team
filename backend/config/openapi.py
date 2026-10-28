@@ -32,6 +32,8 @@ IMPLEMENTATION = {
     ("get", "/api/finance/connect/accounts/"): "implemented",
     ("put", "/api/finance/connect/accounts/"): "implemented",
     ("get", "/api/finance/connections/"): "implemented",
+    ("post", "/api/finance/connections/"): "implemented",
+    ("post", "/api/finance/sync/"): "implemented",
     ("delete", "/api/finance/connections/{connectionId}/"): "implemented",
     # 거래 16~18 (혜리, 10/26)
     ("get", "/api/finance/transactions/"): "implemented",
@@ -44,10 +46,10 @@ IMPLEMENTATION = {
     ("get", "/api/budgets/"): "implemented",
     ("patch", "/api/budgets/{id}/categories/{code}/"): "implemented",
     ("post", "/api/budgets/{id}/approve/"): "implemented",
-    # 챗봇: 32 이전 대화는 구현, 33 · 34 는 명세 예시를 돌려주는 껍데기
+    # 이전 대화 · 공용 작업 확인은 구현, 챗봇 메시지는 목업 표시 유지
     ("get", "/api/chat/conversations/{id}/"): "implemented",
     ("post", "/api/chat/messages/"): "mock",
-    ("get", "/api/tasks/{id}/"): "mock",
+    ("get", "/api/tasks/{id}/"): "implemented",
 }
 # 고정지출(10/26) · 정기 저축(10/24): 입력 검증·로그인·DB 저장까지 구현
 for _domain, _state in (("fixed", "implemented"), ("savings", "implemented")):
@@ -87,9 +89,9 @@ def _base():
         "info": {
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
-                "확정 명세 41개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
-                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·예산), "
-                f"목업 {counts['mock']}개(챗봇 메시지·작업 확인), 미구현 {41 - counts['implemented'] - counts['mock']}개입니다. "
+                "확정 명세 43개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
+                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), "
+                f"목업 {counts['mock']}개(챗봇 메시지), 미구현 {43 - counts['implemented'] - counts['mock']}개입니다. "
                 "전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. "
                 "목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "
@@ -100,7 +102,7 @@ def _base():
                 "주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. "
                 "오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n"
                 "미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), "
-                "금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
+                "그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
             ),
         },
         "servers": [{"url": "/", "description": "문서를 제공하는 동일 서버"}],
@@ -251,7 +253,7 @@ def build_runtime_schema():
         "순서: ① GET /api/csrf/ → ② POST /api/auth/signup/ 또는 /api/auth/login/ → ③ 나머지 API. "
         "로그인하면 세션 쿠키가 저장되어 이후 요청에 자동으로 붙고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
         "실제 DB가 바뀌므로 연습용 계정으로 확인하세요. 계좌 후보·거래·이전 대화는 DB에 저장된 데이터가 있어야 결과가 나옵니다(CODEF를 새로 부르지 않음). "
-        "껍데기(챗봇 메시지·작업 확인)는 전체 명세 화면에서만 봅니다."
+        "새 연결·다시 불러오기는 CODEF를 호출하고, 작업 확인에서 결과를 봅니다. 껍데기(챗봇 메시지)는 전체 명세 화면에서만 봅니다."
     )
     samples = {"/api/csrf/": {"ok": True}}
     for path, sample in samples.items():
