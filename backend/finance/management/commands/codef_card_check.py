@@ -3,8 +3,10 @@ CODEF 카드 확인 명령 (저장하지 않고 출력만) — 카드 API 구현
 
     python manage.py codef_card_check --connect          # 1) 현대카드를 connectedId 에 붙이기 (아이디·비밀번호 물어봄)
     python manage.py codef_card_check                    # 2) 보유 카드 목록 (현대카드는 --card-auth 붙이기)
-    python manage.py codef_card_check --path <주소> --start 20260901 --end 20261027
-                                                         # 3) 승인내역 · 청구내역 (주소·필수값은 CODEF 개발가이드 '카드 > 개인')
+    # 3) 승인내역: 시작일 · 종료일 YYYYMMDD
+    python manage.py codef_card_check --path /v1/kr/card/p/account/approval-list --card-auth --start 20260901 --end 20261027
+    # 4) 청구내역: 청구년월 YYYYMM (종료일 없음)
+    python manage.py codef_card_check --path /v1/kr/card/p/account/billing-list --card-auth --start 202609
     python manage.py codef_card_check --path <주소> --extra memberStoreInfoType=1   # 필수값 더 넣기
 
 --org 로 카드사 바꾸기 (기본 0302 현대카드 · 신한카드 0306).
@@ -23,6 +25,7 @@ from easycodefpy import encrypt_rsa
 from finance import codef
 
 CARD_LIST = "/v1/kr/card/p/account/card-list"
+APPROVAL_LIST = "/v1/kr/card/p/account/approval-list"
 
 
 def _card_secret(env_name, prompt):
@@ -43,12 +46,12 @@ class Command(BaseCommand):
         parser.add_argument("--connect", action="store_true", help="카드사 계정을 connectedId 에 붙이기")
         parser.add_argument("--id", dest="login_id", help="카드사 홈페이지 아이디 (안 주면 물어봄)")
         parser.add_argument("--path", default=CARD_LIST, help="조회할 CODEF 상품 주소 (기본: 보유 카드 목록)")
-        parser.add_argument("--start", help="시작일 YYYYMMDD (승인 · 청구내역)")
-        parser.add_argument("--end", help="종료일 YYYYMMDD")
+        parser.add_argument("--start", help="승인내역: 시작일 YYYYMMDD / 청구내역: 청구년월 YYYYMM")
+        parser.add_argument("--end", help="승인내역 종료일 YYYYMMDD (청구내역에는 사용하지 않음)")
         parser.add_argument("--extra", action="append", default=[], metavar="키=값", help="필수값 더 넣기 (여러 번 가능)")
         parser.add_argument("--show", action="store_true", help="첫 줄 값까지 보기 (개인정보 주의)")
         parser.add_argument("--card-auth", action="store_true",
-                            help="조회 때도 카드 번호 · 카드 비밀번호를 같이 보내기 (현대카드처럼 요구하는 카드사)")
+                            help="카드 인증 정보 전송 (승인내역: loginCardNo / 보유 카드·청구내역: cardNo, 비밀번호는 RSA 암호화)")
 
     def handle(self, *args, org, connect, login_id, path, start, end, extra, show, card_auth, **options):
         cid = settings.CODEF["CONNECTED_ID"]
@@ -63,7 +66,9 @@ class Command(BaseCommand):
         if end:
             params["endDate"] = end
         if card_auth:   # 화면에 안 보이게 받고, 보낸 뒤 버린다
-            params["cardNo"] = _clean(_card_secret("CODEF_CARD_NO", "카드 번호 16자리 (숫자만 · 화면에 안 보임): ")).replace("-", "")
+            # 승인내역의 cardNo는 조회 대상 카드이고, 인증용 번호는 loginCardNo로 구분한다.
+            card_no_field = "loginCardNo" if path == APPROVAL_LIST else "cardNo"
+            params[card_no_field] = _clean(_card_secret("CODEF_CARD_NO", "카드 번호 16자리 (숫자만 · 화면에 안 보임): ")).replace("-", "")
             params["cardPassword"] = encrypt_rsa(_card_secret("CODEF_CARD_PASSWORD", "카드 비밀번호 (화면에 안 보임): "),
                                                  settings.CODEF["PUBLIC_KEY"])
         for kv in extra:
@@ -74,7 +79,9 @@ class Command(BaseCommand):
         except codef.CodefError as e:
             raise CommandError(f"조회 실패 {e}")
         finally:
-            params.pop("cardNo", None); params.pop("cardPassword", None)
+            params.pop("loginCardNo", None)
+            params.pop("cardNo", None)
+            params.pop("cardPassword", None)
 
         rows = data if isinstance(data, list) else [data]
         self.stdout.write(self.style.SUCCESS(f"{path} → {len(rows)}줄"))
