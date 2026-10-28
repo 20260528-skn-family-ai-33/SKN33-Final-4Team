@@ -111,3 +111,57 @@ class LockCarryTest(TestCase):
 
     def test_get_has_empty_locks_released(self):
         self.assertEqual(self.client.get(URL).json()["locksReleased"], [])
+
+    # ---------- 리뷰 10/28: 넘어온 자물쇠 + 최소 금액 변경 → 새 달 추천이 막히면 안 됨 ----------
+
+    def recommend(self):
+        import uuid
+        response = self.client.post("/api/budgets/recommend/", "{}", content_type="application/json",
+                                    HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+        self.assertEqual(response.status_code, 202, response.content)
+        return self.client.get(f"/api/tasks/{response.json()['task']['taskId']}/").json()
+
+    def test_carried_lock_below_new_minimum_is_released_when_no_budget_this_cycle(self):
+        previous = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 9, 25), ends_before=date(2026, 10, 25))
+        self.lock(previous, "FOOD", 300_000)
+        cycle = ensure_cycle(self.user, date(2026, 10, 25), date(2026, 11, 25))  # 10월: 식비 30만 자물쇠 넘어옴
+        CategoryMinimum.objects.create(user=self.user, category_id="FOOD", min_amount=400_000)  # 내 정보에서 최소 40만
+        task = self.recommend()
+        self.assertEqual((task["status"], task["result"]["outcome"]), ("succeeded", "proposed"))
+        self.assertEqual(task["result"]["locksReleased"], ["FOOD"])
+        self.assertEqual(self.settings(cycle)["FOOD"], (False, None, 0))
+
+    def test_locks_kept_when_this_cycle_has_a_budget_to_unlock_from(self):
+        from .models import Budget
+        cycle = ensure_cycle(self.user, date(2026, 10, 25), date(2026, 11, 25))
+        self.lock(cycle, "FOOD", 300_000)
+        Budget.objects.create(user=self.user, cycle=cycle, status="approved", funding_amount=2_800_000, version_no=1)
+        CategoryMinimum.objects.create(user=self.user, category_id="FOOD", min_amount=400_000)
+        task = self.recommend()
+        self.assertEqual(task["result"]["outcome"], "infeasible")  # 승인 예산 화면에서 자물쇠를 풀 수 있음
+        self.assertEqual(task["result"]["locksReleased"], [])
+        self.assertTrue(self.settings(cycle)["FOOD"][0])
+
+
+class ProfileInputsHashTest(TestCase):
+    """리뷰 10/28: 추천 엔진 입력인 내 정보가 바뀌면 옛 초안을 승인할 수 없어야 한다"""
+
+    def test_profile_inputs_change_hash(self):
+        from users.models import CategoryPriority
+
+        from .recommend import budget_input_hash
+        user = get_user_model().objects.create_user(email="hash@example.com")
+        profile = FinancialProfile.objects.create(user=user, housing_type="alone", monthly_take_home_income=2_000_000, payday=25,
+                                                  living_budget=1_000_000, savings_floor=500_000, cushion_monthly=100_000)
+        cycle = BudgetCycle.objects.create(user=user, starts_on=date(2026, 10, 25), ends_before=date(2026, 11, 25))
+        with patch("django.utils.timezone.localdate", return_value=TODAY):
+            first = budget_input_hash(user, cycle)
+            for change in (lambda: setattr(profile, "has_car", True), lambda: setattr(profile, "gender", "female"),
+                           lambda: setattr(profile, "birth_date", date(2000, 1, 1))):
+                change()
+                profile.save()
+                now = budget_input_hash(user, cycle)
+                self.assertNotEqual(now, first)
+                first = now
+            CategoryPriority.objects.create(user=user, category_id="FOOD", rank=1)
+            self.assertNotEqual(budget_input_hash(user, cycle), first)

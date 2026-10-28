@@ -43,6 +43,9 @@ export default function RecommendPage() {
   const [loadError, setLoadError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState(null)  // { message, conflicts?, code? }
+  // 서버가 푼 자물쇠 (P-13): 지킬 돈에서 생활비를 바꿔 풀렸거나(이전 화면에서 넘겨받음), 추천할 때 막혀서 풀린 것
+  const { state: navState } = useLocation()
+  const [released, setReleased] = useState(() => navState?.locksReleased ?? [])
   const approveKeys = useRef(new Map())  // 초안 하나에 요청 번호 하나 (같은 초안을 다시 눌러도 한 번만 승인)
 
   const load = useCallback(async () => {
@@ -57,7 +60,6 @@ export default function RecommendPage() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
 
   const draft = data?.budget?.status === 'validated' ? data.budget : null
   const approveKey = (budgetId) => {
@@ -67,7 +69,7 @@ export default function RecommendPage() {
 
   // 새 추천 만들기: 작업을 만들고(응답은 taskId · status만) 작업 확인 API로 결과를 읽은 뒤 초안을 다시 불러온다
   const creating = useRef(false)  // 빠르게 두 번 눌러도 한 번만 (state는 다음 그림까지 안 바뀜)
-  const makeDraft = async () => {
+  const makeDraft = useCallback(async () => {
     if (creating.current) return
     creating.current = true
     setBusy(true)
@@ -84,8 +86,9 @@ export default function RecommendPage() {
         setProblem({ message: '아직 추천을 만드는 중이에요. 잠시 후 다시 눌러 주세요.' })
       } else if (now.status !== 'succeeded') {
         setProblem({ message: now.error?.message ?? '추천을 만들지 못했어요. 잠시 후 다시 시도해 주세요.' })
-      } else if (now.result?.outcome === 'infeasible') {
-        setProblem({ message: now.result.summary, conflicts: now.result.conflicts })
+      } else {
+        if (now.result?.locksReleased?.length) setReleased(now.result.locksReleased)  // 막혀서 풀린 자물쇠 (P-13 ②)
+        if (now.result?.outcome === 'infeasible') setProblem({ message: now.result.summary, conflicts: now.result.conflicts })
       }
       await load()
     } catch (err) {
@@ -94,7 +97,7 @@ export default function RecommendPage() {
       creating.current = false
       setBusy(false)
     }
-  }
+  }, [load])
 
   const toggleLock = async (c) => {
     setProblem(null)
@@ -126,19 +129,25 @@ export default function RecommendPage() {
     }
   }
 
-  // 지킬 돈을 저장하고 넘어오면(state.autoRecommend) 처음 불러온 데이터에 초안이 없을 때만 새 추천을 한 번 만든다.
+  // 처음 불러오기. 지킬 돈을 저장하고 넘어왔으면(state.autoRecommend) 처음 불러온 데이터에 초안이 없을 때만 새 추천을 한 번 만든다.
   // 표시는 들어오자마자 지워서, 승인 뒤 뒤로 가기로 다시 와도 새 초안을 만들지 않는다
-  const { state } = useLocation()
-  const autoRecommend = useRef(Boolean(state?.autoRecommend))
-  const [released] = useState(() => state?.locksReleased ?? [])  // 생활비가 바뀌어 풀린 자물쇠 (P-13). 처음 들어올 때만
+  const autoRecommend = useRef(Boolean(navState?.autoRecommend))
   useEffect(() => {
-    if (state?.autoRecommend) navigate(PATHS.recommend, { replace: true, state: null })
-  }, [state, navigate])
+    if (navState?.autoRecommend) navigate(PATHS.recommend, { replace: true, state: null })
+  }, [navState, navigate])
   useEffect(() => {
-    if (!data || !autoRecommend.current) return
-    autoRecommend.current = false  // 첫 데이터로만 판단
-    if (!draft) makeDraft()
-  })
+    let alive = true  // 화면을 떠나면 늦게 온 응답은 버린다
+    apiSend('/api/budgets/', 'GET')
+      .then((first) => {
+        if (!alive) return
+        setData(first)
+        if (!autoRecommend.current) return
+        autoRecommend.current = false  // 첫 데이터로만 판단
+        if (first.budget?.status !== 'validated') makeDraft()
+      })
+      .catch((err) => { if (alive) setLoadError(err) })
+    return () => { alive = false }
+  }, [makeDraft])  // makeDraft는 useCallback이라 화면을 열 때 한 번만 돈다
 
   if (!data) return <Layout title="추천 예산 확인" showBack><ApiStatus error={loadError} /></Layout>
 

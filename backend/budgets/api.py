@@ -130,17 +130,38 @@ def release_stale_locks(user, profile):
     풀어 주지 않으면 초안이 없어서 자물쇠를 풀 곳이 없다. 사용자가 직접 바꾼 게 아니라서 바꾼 횟수(잔소리)는 늘리지 않는다.
     반환: 푼 카테고리 코드 (화면 순서)
     """
-    from .models import BudgetCategorySetting
     from .overview import current_cycle
     from .recommend import locks_block_recommendation
 
     cycle = current_cycle(user, profile, timezone.localdate())
     if cycle is None or not locks_block_recommendation(user, cycle, profile.living_budget):
         return []
+    return release_locks(user, cycle)
+
+
+def release_locks(user, cycle):
+    """이번 주기 자물쇠를 모두 푼다. 바꾼 횟수(잔소리)는 늘리지 않는다. 반환: 푼 카테고리 코드 (화면 순서)"""
+    from .models import BudgetCategorySetting
+
     locked = BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True)
     codes = list(locked.order_by("category__display_order", "category_id").values_list("category_id", flat=True))
     locked.update(locked=False, locked_amount=None, updated_at=timezone.now())
     return codes
+
+
+def release_locks_without_budget(user, cycle, living_budget):
+    """P-13 ②: 이번 주기에 예산(초안 · 승인)이 하나도 없는데 자물쇠 때문에 추천이 막히면 자물쇠를 푼다.
+
+    자물쇠는 예산 화면에서만 풀 수 있어서, 예산이 없으면 빠져나갈 길이 없다
+    (예: 지난달 자물쇠가 넘어온 뒤 내 정보에서 최소 금액을 올림). 예산이 있으면 그 화면에서 풀 수 있으므로 그대로 둔다.
+    """
+    from .recommend import locks_block_recommendation
+
+    if Budget.objects.filter(user=user, cycle=cycle, status__in=["validated", "approved"]).exists():
+        return []
+    if not locks_block_recommendation(user, cycle, living_budget):
+        return []
+    return release_locks(user, cycle)
 
 
 def protect_saved_json(profile, base):
@@ -256,12 +277,13 @@ def recommend(request):
             return Response(recommend_task_json(pending), status=202)
 
         cycle = active_cycle(request.user)
+        released = release_locks_without_budget(request.user, cycle, profile.living_budget)
         snapshot = budget_input_snapshot(request.user, cycle, profile=profile, today=today)
         task = AsyncTask.objects.create(
             user=request.user, task_type="budget_recommend", request_key=request.headers["Idempotency-Key"],
             input_hash=hash_snapshot(snapshot), status="running", started_at=timezone.now(),
         )
-        run_recommend(task, cycle, snapshot, state["saved"]["spare"])
+        run_recommend(task, cycle, snapshot, state["saved"]["spare"], released)
     return Response(recommend_task_json(task), status=202)
 
 
@@ -277,7 +299,7 @@ def clean_recommend(request, state):
         raise ValidationError({key: ["이 칸은 보낼 수 없어요."] for key in data})
 
 
-def run_recommend(task, cycle, snapshot, expected_spare):
+def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
     from .recommend import EngineCheckFailed, check_result, infeasible, recommend_category_budgets
 
     try:
@@ -301,6 +323,7 @@ def run_recommend(task, cycle, snapshot, expected_spare):
             task.result = {
                 "outcome": out["status"], "budget_id": str(budget.pk) if budget else None,
                 "summary": out["summary"], "conflicts": out["conflicts"],
+                "locks_released": list(locks_released),  # P-13 ②: 예산이 없어 막혀서 이번에 푼 자물쇠
             }
         task.status = "succeeded"  # infeasible도 조건을 확인한 정상 작업 결과
     except EngineCheckFailed:

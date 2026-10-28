@@ -358,7 +358,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "지킬 돈 missing·blocked(카드 청구서 미확인 포함)·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 10개에 배분한다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다. proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과 검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다.",
+        "description": "지킬 돈 missing·blocked(카드 청구서 미확인 포함)·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 10개에 배분한다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다. proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과 검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다. 이번 주기에 예산(validated·approved)이 하나도 없고 자물쇠 때문에 추천이 막히면(자물쇠를 빼면 막히지 않을 때) 추천 전에 이번 주기 자물쇠를 풀고 result.locksReleased에 담는다 — 자물쇠는 예산 화면에서만 풀 수 있어 막다른 길이 되기 때문 (P-13 ②). 바꾼 횟수는 늘리지 않는다.",
         "responses": {
           "202": {
             "description": "작업 번호. 1차는 요청 안에서 실행되어 succeeded 또는 failed일 수 있다.",
@@ -1938,7 +1938,8 @@
           "outcome",
           "budgetId",
           "summary",
-          "conflicts"
+          "conflicts",
+          "locksReleased"
         ],
         "properties": {
           "outcome": {
@@ -1971,6 +1972,13 @@
                 }
               ]
             }
+          },
+          "locksReleased": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SelectableCategoryCode"
+            },
+            "description": "P-13 ②. 이번 주기에 예산(초안·승인)이 없는데 자물쇠 때문에 추천이 막혀서 이번 추천 전에 푼 자물쇠 카테고리. 보통은 []"
           }
         },
         "additionalProperties": false
