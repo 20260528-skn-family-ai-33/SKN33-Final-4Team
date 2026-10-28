@@ -45,11 +45,12 @@ class BudgetViewTest(TestCase):
         clock.start()
         self.addCleanup(clock.stop)
 
-    def make_budget(self, status="validated", cycle=None, food=1_000_000):
+    def make_budget(self, status="validated", cycle=None, food=1_000_000, card_reserved=0):
         cycle = cycle or self.cycle
         budget = Budget.objects.create(user=self.user, cycle=cycle, status=status, funding_amount=1_500_000,
             version_no=(cycle.budgets.order_by("-version_no").values_list("version_no", flat=True).first() or 0) + 1,
-            input_hash=budget_input_hash(self.user, cycle), approved_at=timezone.now() if status == "approved" else None)
+            input_hash=budget_input_hash(self.user, cycle), input_snapshot={"fixed": {"card_reserved": card_reserved}},
+            approved_at=timezone.now() if status == "approved" else None)
         BudgetItem.objects.bulk_create([
             BudgetItem(user=self.user, budget=budget, bucket="living", category_id=code, allocated_amount=food if code == "FOOD" else 0)
             for code in LIVING_CODES
@@ -303,6 +304,49 @@ class BudgetViewTest(TestCase):
         self.profile.living_budget = None
         self.profile.save()
         self.assert_expired(chosen)
+
+    def test_approval_expires_when_cushion_became_required(self):
+        # 리뷰 1: 잔액이 넉넉할 때 쿠션 0원으로 만든 초안 → 잔액이 줄어 쿠션이 필수가 되면 승인 안 됨
+        self.account.balance = 5_000_000
+        self.account.save()
+        self.profile.cushion_monthly = 0
+        self.profile.save()
+        chosen = self.make_budget()
+        self.account.balance = 1_000_000
+        self.account.save()
+        self.assertEqual(budget_input_hash(self.user, self.cycle), chosen.input_hash)  # 해시만으로는 못 잡는 경우
+        self.assert_expired(chosen)
+
+    def test_approval_with_zero_cushion_ok_while_balance_is_enough(self):
+        self.account.balance = 5_000_000
+        self.account.save()
+        self.profile.cushion_monthly = 0
+        self.profile.save()
+        self.assertEqual(self.approve(self.make_budget()).status_code, 200)
+
+    def test_past_cycle_approved_budget_is_not_ready_with_new_key(self):
+        # 리뷰 2: 지난 주기 승인 예산을 새 요청 번호로 다시 보내도 이번 주기 초안이 성공으로 나오면 안 됨
+        past_cycle = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 9, 25), ends_before=date(2026, 10, 25))
+        past = self.make_budget("approved", cycle=past_cycle)
+        draft = self.make_budget()
+        response = self.approve(past)
+        self.assertEqual((response.status_code, response.json()["error"]["code"]), (409, "not_ready"))
+        self.assertEqual(response.json()["error"]["message"], "지난 예산은 승인할 수 없어요.")
+        for budget in (past, draft):
+            budget.refresh_from_db()
+        self.assertEqual((past.status, draft.status), ("approved", "validated"))
+
+    def test_approval_uses_card_amount_saved_in_draft(self):
+        # 카드 선차감은 초안에 저장한 값을 쓴다: 지금 다시 계산하면 보류(None)여도 승인된다
+        chosen = self.make_budget(card_reserved=0)
+        pending = {"amount": None, "pending": [{"card_id": str(self.card.pk), "reason": "bill_history_incomplete"}]}
+        with patch("budgets.protect.card_reserved", return_value=pending) as reserved:
+            self.assertEqual(self.approve(chosen).status_code, 200)
+        reserved.assert_not_called()
+
+    def test_approval_expires_when_saved_card_amount_no_longer_fits(self):
+        # 초안의 카드 선차감 때문에 지킬 돈 합계가 배분 기준을 넘으면 만료 (1,500,000 − 100,000 − 200,000 < 1,300,000)
+        self.assert_expired(self.make_budget(card_reserved=200_000))
 
     def test_already_expired_is_409(self):
         self.assert_expired(self.make_budget("expired"))

@@ -8,7 +8,7 @@ from django.utils import timezone
 from users.models import CategoryMinimum, CategoryPriority, FinancialProfile
 
 from .models import BudgetCategorySetting
-from .protect import fixed_breakdown, savings_min
+from .protect import fixed_base, fixed_breakdown, fixed_sum, savings_min
 
 
 # TODO ML 담당 fallback_ratios 로 교체
@@ -26,7 +26,9 @@ SUMMARY = "비슷한 또래 1인 가구의 평균 소비 비율로 나눴어요.
 ENGINE_VERSION = "temp-fallback-1"
 POLICY_VERSION = "2026-10-27"
 INPUT_VERSION = 1
-HASH_FIELDS = ("cycle", "take_home_income", "fixed_total", "savings_min", "saved", "minimums")
+# 카드 선차감(card_reserved)은 카드로 쓸 때마다 바뀌므로 해시에 넣지 않는다. 초안을 만들 때 값을 input_snapshot에 저장해 두고
+# 승인 때는 그 값을 쓴다. 대신 어떤 카드가 대상인지(card_ids)는 넣어서 카드를 고르거나 빼면 초안이 만료된다.
+HASH_FIELDS = ("cycle", "take_home_income", "fixed_base", "card_ids", "savings_min", "saved", "minimums")
 
 
 # ---------------- 순수 계산 · 엔진 결과 검사 (DB를 읽지 않음) ----------------
@@ -134,12 +136,12 @@ def hash_snapshot(snapshot):
 
 # ---------------- DB 조회 (호출 쪽에서 회원 잠금, 저장하지 않음) ----------------
 
-def budget_input_snapshot(user, cycle, *, profile=None, today=None):
+def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
     profile = profile or FinancialProfile.objects.get(user=user)
     today = today or timezone.localdate()
     minimums = dict(CategoryMinimum.objects.filter(user=user).values_list("category_id", "min_amount"))
     locks = dict(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True).values_list("category_id", "locked_amount"))
-    fixed = fixed_breakdown(user, cycle)
+    fixed = fixed_breakdown(user, cycle, card=card)
     saved = {"living_budget": profile.living_budget, "saving_floor": profile.savings_floor, "cushion_monthly": profile.cushion_monthly}
     birth = profile.birth_date
     age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
@@ -147,7 +149,9 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None):
     return {
         "cycle": {"id": str(cycle.pk), "starts_on": cycle.starts_on.isoformat(), "ends_before": cycle.ends_before.isoformat()},
         "take_home_income": profile.monthly_take_home_income,
-        "fixed_total": sum(fixed["categories"].values()) + fixed["loan"] + fixed["card_reserved"],
+        "fixed_total": fixed_sum(fixed),
+        "fixed_base": fixed_base(fixed),
+        "card_ids": fixed["card_ids"],
         "fixed": fixed,
         "savings_min": savings_min(user),
         "saved": saved, "minimums": minimums, "locks": locks, "etc": etc,
@@ -166,4 +170,5 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None):
 
 
 def budget_input_hash(user, cycle):
-    return hash_snapshot(budget_input_snapshot(user, cycle))
+    """승인 때 비교용. 카드 선차감은 해시에 없으므로 계산하지 않는다"""
+    return hash_snapshot(budget_input_snapshot(user, cycle, card=False))

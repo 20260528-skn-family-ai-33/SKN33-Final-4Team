@@ -78,6 +78,8 @@ def clean_protect(request, state):
     """검사 1~6. 앞 단계가 실패하면 뒤 단계는 검사하지 않는다."""
     if state["missing"]:
         raise ProtectNotReady()
+    if card_pending(state):
+        raise ProtectNotReady(CARD_PENDING_MESSAGE)
     if state["blocked"]:
         raise ProtectNotReady("정기 저축이나 고정지출을 먼저 고쳐 주세요.")
 
@@ -136,10 +138,16 @@ def protect_saved_json(profile, base):
     }
 
 
-def protect_json(user, profile, today):
-    """GET · PUT 공통 응답. 주기 준비는 회원 잠금을 잡은 호출 쪽 트랜잭션에서 한다."""
+_COMPUTE = object()
+
+
+def protect_json(user, profile, today, card_reserved=_COMPUTE):
+    """GET · PUT 공통 응답. 주기 준비는 회원 잠금을 잡은 호출 쪽 트랜잭션에서 한다.
+
+    card_reserved를 주면 카드 선차감을 새로 계산하지 않고 그 값을 쓴다 (승인 때 초안에 저장한 값).
+    """
     from .home import balance_json, cycle_dates, ensure_cycle
-    from .protect import RATES, blocked, cushion_required, fixed_total, recommend, savings_min
+    from .protect import RATES, blocked, cushion_required, fixed_breakdown, fixed_sum, recommend, savings_min
 
     housing = profile.housing_type if profile else None
     income = profile.monthly_take_home_income if profile else None
@@ -151,15 +159,24 @@ def protect_json(user, profile, today):
     balance = balance_json(user)["total"]
     required = cushion_required(balance, income)
     base = recommendation = blocked_state = None
+    pending_cards = []
     if not missing:
         start, next_payday, _ = cycle_dates(payday, today)
         cycle = ensure_cycle(user, start, next_payday)
-        fixed = fixed_total(user, cycle)
-        available = income - fixed
-        base = {"take_home_income": income, "fixed_total": fixed, "available": available}
-        blocked_state = blocked(available, minimum)
-        if blocked_state is None:
-            recommendation = recommend(available, housing, minimum, cushion_required=required)
+        breakdown = fixed_breakdown(user, cycle, card=card_reserved is _COMPUTE)
+        if card_reserved is not _COMPUTE:
+            breakdown["card_reserved"] = card_reserved
+        pending_cards = breakdown["card_pending"]
+        fixed = fixed_sum(breakdown)
+        if fixed is None:
+            # 카드 첫 청구서 선차감을 아직 계산할 수 없음 → 고정지출 합계 · 배분 기준도 모른다 (0원으로 치지 않음)
+            blocked_state = {"reason": "card_bill_pending", "shortfall": None}
+        else:
+            available = income - fixed
+            base = {"take_home_income": income, "fixed_total": fixed, "available": available}
+            blocked_state = blocked(available, minimum)
+            if blocked_state is None:
+                recommendation = recommend(available, housing, minimum, cushion_required=required)
     return {
         "missing": missing,
         "housing_type": housing,
@@ -170,7 +187,28 @@ def protect_json(user, profile, today):
         "blocked": blocked_state,
         "saved": protect_saved_json(profile, base),
         "cushion": {"required": required, "target": income * 3 if income is not None else None, "balance_total": balance},
+        "card_pending": pending_cards,
     }
+
+
+CARD_PENDING_MESSAGE = "카드 청구서를 아직 확인하지 못했어요. 카드 내역을 다시 불러온 뒤 시도해 주세요."
+
+
+def card_pending(state):
+    return bool(state["blocked"]) and state["blocked"]["reason"] == "card_bill_pending"
+
+
+def protect_ready(state):
+    """저장된 지킬 돈이 지금 조건에서도 쓸 수 있는지 (추천 만들기 · 승인 공통)"""
+    saved = state["saved"]
+    if state["missing"] or state["blocked"] or saved is None:
+        return False
+    amounts = [saved[key] for key in ("living_budget", "saving_floor", "cushion_monthly")]
+    return not (any(type(amount) is not int or amount < 0 for amount in amounts)
+                or saved["saving_floor"] < state["savings_min"]
+                or sum(amounts) > state["base"]["available"]
+                # 잔액이 줄어 쿠션이 필수가 됐는데 저장된 쿠션이 0원이면 안 됨 (P-08)
+                or (state["cushion"]["required"] and saved["cushion_monthly"] == 0))
 
 
 # ==================================================================
@@ -209,14 +247,9 @@ def recommend(request):
 def clean_recommend(request, state):
     if state["missing"] or state["saved"] is None:
         raise ProtectNotReady("지킬 돈을 먼저 정해 주세요.")
-    if state["blocked"]:
-        raise ProtectNotReady("지킬 돈을 다시 확인해 주세요.")
-    saved = state["saved"]
-    amounts = [saved[key] for key in ("living_budget", "saving_floor", "cushion_monthly")]
-    if (any(type(amount) is not int or amount < 0 for amount in amounts)
-            or saved["saving_floor"] < state["savings_min"]
-            or sum(amounts) > state["base"]["available"]
-            or (state["cushion"]["required"] and saved["cushion_monthly"] == 0)):
+    if card_pending(state):
+        raise ProtectNotReady(CARD_PENDING_MESSAGE)
+    if not protect_ready(state):
         raise ProtectNotReady("지킬 돈을 다시 확인해 주세요.")
     data = body_dict(request)
     if data:
@@ -348,15 +381,23 @@ def budget_approve(request, budget_id):
         if data:
             raise ValidationError({key: ["이 칸은 보낼 수 없어요."] for key in data})
         today = timezone.localdate()
+        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
+        cycle = current_cycle(request.user, profile, today)
+        this_cycle = cycle is not None and chosen.cycle_id == cycle.pk
         if chosen.status == "approved":
-            return Response(budget_data(request.user, today, selected=chosen))
+            # 이번 주기에 승인된 예산만 '이미 승인'으로 돌려준다. 지난 주기 승인 예산은 지난 예산이다.
+            if this_cycle:
+                return Response(budget_data(request.user, today, selected=chosen))
+            raise ProtectNotReady("지난 예산은 승인할 수 없어요.")
         if chosen.status == "expired":
             raise BudgetExpired()
         if chosen.status != "validated":
             raise ProtectNotReady("지난 예산은 승인할 수 없어요.")
-        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
-        cycle = current_cycle(request.user, profile, today)
-        if cycle is None or chosen.cycle_id != cycle.pk or budget_input_hash(request.user, cycle) != chosen.input_hash:
+        # 카드 선차감은 초안을 만들 때 저장한 값을 쓴다 (카드로 쓸 때마다 바뀌는 값이라 다시 계산하면 초안이 계속 만료됨)
+        frozen = ((chosen.input_snapshot or {}).get("fixed") or {}).get("card_reserved")
+        state = protect_json(request.user, profile, today, card_reserved=frozen) if this_cycle else None
+        if (not this_cycle or not protect_ready(state)
+                or budget_input_hash(request.user, cycle) != chosen.input_hash):
             chosen.status = "expired"
             chosen.save(update_fields=["status"])
             # raise하면 이 트랜잭션도 롤백된다. 공통 에러 모양으로 반환하고 위 옵션으로 만료만 보존한다.

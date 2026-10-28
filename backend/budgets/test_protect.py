@@ -157,6 +157,7 @@ class ProtectAPITest(TestCase):
                             "spare": 90_000, "rebalanced": True, "restAmount": 1_030_000, "ratioSavingFloor": 810_000},
             "blocked": None, "saved": None,
             "cushion": {"required": True, "target": 8_400_000, "balanceTotal": 2_800_000},
+            "cardPending": [],
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual((cycle.starts_on, cycle.ends_before), (date(2026, 10, 25), date(2026, 11, 25)))
@@ -226,7 +227,7 @@ class ProtectAPITest(TestCase):
             values.update(fields)
             RecurringSaving.objects.create(**values)
         cycle = self.make_budget().cycle
-        with patch("budgets.protect.card_reserved_amount", return_value=30_000) as reserved:
+        with patch("budgets.protect.card_reserved", return_value={"amount": 30_000, "pending": []}) as reserved:
             self.assertEqual(fixed_total(self.user, cycle), 900_000)
             reserved.assert_called_once_with(self.user, cycle)
         self.assertEqual(savings_min(self.user), 1_000_000)

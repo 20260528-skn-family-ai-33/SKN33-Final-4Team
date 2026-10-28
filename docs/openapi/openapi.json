@@ -6366,7 +6366,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nP-01~P-11. missing은 housingType·takeHomeIncome·payday 순서. missing이면 base·recommended·blocked는 null, savingsMin은 계속 계산한다. fixedTotal은 결제 수단과 무관한 확정 고정지출 + 상환 중 대출 + 카드 선차감이다. available은 음수도 그대로 반환한다. 쿠션 목표는 실수령액 × 3이며 실수령액이 없으면 null. 잔액을 모르면 쿠션 필수. blocked도 200이다. 자취 비율은 생활비55·저축30·여윳돈5·쿠션10, 본가는45·40·5·10이다. 생활비·저축은 1만원 반올림, 쿠션은 내림, 자투리는 여윳돈. 확정 정기 저축 합계가 비율 저축보다 크면 최소 저축을 먼저 떼고 생활비:여윳돈:쿠션 비율로 재배분한다. 반올림 초과는 생활비에서 빼고, 필수 쿠션이 0이면 여윳돈→생활비에서 최대 1만원, 그래도 0일 때만 최소를 넘는 저축에서 가져온다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nP-01~P-11. missing은 housingType·takeHomeIncome·payday 순서. missing이면 base·recommended·blocked는 null, savingsMin은 계속 계산한다. fixedTotal은 결제 수단과 무관한 확정 고정지출 + 상환 중 대출 + 카드 선차감이다. available은 음수도 그대로 반환한다. 쿠션 목표는 실수령액 × 3이며 실수령액이 없으면 null. 잔액을 모르면 쿠션 필수. blocked도 200이다. 자취 비율은 생활비55·저축30·여윳돈5·쿠션10, 본가는45·40·5·10이다. 생활비·저축은 1만원 반올림, 쿠션은 내림, 자투리는 여윳돈. 확정 정기 저축 합계가 비율 저축보다 크면 최소 저축을 먼저 떼고 생활비:여윳돈:쿠션 비율로 재배분한다. 반올림 초과는 생활비에서 빼고, 필수 쿠션이 0이면 여윳돈→생활비에서 최대 1만원, 그래도 0일 때만 최소를 넘는 저축에서 가져온다. 카드 첫 청구서 선차감은 관리 대상 카드별로 계산하며, 한 장이라도 자료 미확인이면 0원으로 치지 않고 base·recommended는 null, blocked = {reason: card_bill_pending, shortfall: null}, cardPending에 카드와 이유를 담는다. 청구 이력·카드 거래가 다 들어왔는지는 sync_run(card_bill_list·card_approval_list, success)의 이어진 조회 기간으로만 판단하고, 기준일은 마지막으로 다 불러온 날이다. 그 카드의 확정 고정지출은 선차감에서 뺀다(P-04).\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "200": {
             "description": "필수 정보·추천·부족 상태·저장 값",
@@ -6407,7 +6407,8 @@
                         "required": true,
                         "target": 8400000,
                         "balanceTotal": 2800000
-                      }
+                      },
+                      "cardPending": []
                     }
                   },
                   "missingIncome": {
@@ -6431,7 +6432,8 @@
                         "required": true,
                         "target": null,
                         "balanceTotal": null
-                      }
+                      },
+                      "cardPending": []
                     }
                   },
                   "blocked": {
@@ -6460,8 +6462,41 @@
                         "required": true,
                         "target": 2100000,
                         "balanceTotal": null
-                      }
+                      },
+                      "cardPending": []
                     }
+                  },
+                  "cardBillPending": {
+                    "value": {
+                      "missing": [],
+                      "housingType": "family",
+                      "rates": {
+                        "living": 45,
+                        "saving": 40,
+                        "spare": 5,
+                        "cushion": 10
+                      },
+                      "base": null,
+                      "savingsMin": 1000000,
+                      "recommended": null,
+                      "blocked": {
+                        "reason": "card_bill_pending",
+                        "shortfall": null
+                      },
+                      "saved": null,
+                      "cushion": {
+                        "required": true,
+                        "target": 2100000,
+                        "balanceTotal": null
+                      },
+                      "cardPending": [
+                        {
+                          "cardId": "7b1e2f40-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+                          "reason": "bill_history_incomplete"
+                        }
+                      ]
+                    },
+                    "summary": "카드 첫 청구서 확인 중"
                   }
                 }
               }
@@ -6497,7 +6532,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n검사 순서: missing → blocked → 세 칸의 정수·0 이상·알 수 없는 칸 → 저축 최소 금액 → 필수 쿠션 0 금지 → 합계 ≤ available. 앞 두 조건은 409 not_ready, 나머지는 400 invalid. 합계 초과는 fields.nonFieldErrors. 같은 값이면 수정 시각·초안 그대로. 변경 시 living_budget·savings_floor·cushion_monthly·cushion_target 저장과 이 회원의 draft·validated 만료를 같은 트랜잭션에서 수행한다. approved는 유지한다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n검사 순서: missing → blocked → 세 칸의 정수·0 이상·알 수 없는 칸 → 저축 최소 금액 → 필수 쿠션 0 금지 → 합계 ≤ available. 앞 두 조건은 409 not_ready(card_bill_pending이면 \"카드 청구서를 아직 확인하지 못했어요. 카드 내역을 다시 불러온 뒤 시도해 주세요.\"), 나머지는 400 invalid. 합계 초과는 fields.nonFieldErrors. 같은 값이면 수정 시각·초안 그대로. 변경 시 living_budget·savings_floor·cushion_monthly·cushion_target 저장과 이 회원의 draft·validated 만료를 같은 트랜잭션에서 수행한다. approved는 유지한다.\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "200": {
             "description": "방금 저장한 saved 포함",
@@ -6544,7 +6579,8 @@
                         "required": true,
                         "target": 8400000,
                         "balanceTotal": 2800000
-                      }
+                      },
+                      "cardPending": []
                     }
                   }
                 }
@@ -6682,7 +6718,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n지킬 돈 missing·blocked·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 10개에 배분한다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다. proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과 검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n지킬 돈 missing·blocked(카드 청구서 미확인 포함)·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 10개에 배분한다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다. proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과 검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다.\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "202": {
             "description": "작업 번호. 1차는 요청 안에서 실행되어 succeeded 또는 failed일 수 있다.",
@@ -7225,7 +7261,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이미 approved이면 성공으로 현재 상태를 반환한다. superseded·rejected·draft는 409 not_ready. expired 또는 validated의 주기·입력 해시가 다르면 409 expired: 조건이 바뀌어서 다시 추천받아야 해요. 발견한 만료 상태는 409에도 저장하고 실패 요청 번호는 기록하지 않는다. 승인 시 같은 주기 approved를 superseded로 바꾸고 이 예산의 approved_at·approval_key를 저장한다. auth.onboardingCompleted는 approved_at이 있는 예산 존재 여부로 계산된다. 자물쇠는 만료 해시에서 제외한다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기에 이미 approved이면 성공으로 현재 상태를 반환한다. 지난 주기 approved·superseded·rejected·draft는 409 not_ready(지난 예산은 승인할 수 없어요). 카드 첫 청구서 선차감은 다시 계산하지 않고 초안 input_snapshot에 저장한 값으로 검사한다(입력 해시에는 선차감 금액 대신 대상 카드 목록만 포함). expired, validated의 주기가 지났거나, 지금의 지킬 돈이 쓸 수 없는 상태(필수 쿠션인데 쿠션 0원 · 저축 최소 미달 · 합계 초과 · missing · blocked)이거나, 입력 해시가 다르면 409 expired: 조건이 바뀌어서 다시 추천받아야 해요. 발견한 만료 상태는 409에도 저장하고 실패 요청 번호는 기록하지 않는다. 승인 시 같은 주기 approved를 superseded로 바꾸고 이 예산의 approved_at·approval_key를 저장한다. auth.onboardingCompleted는 approved_at이 있는 예산 존재 여부로 계산된다. 자물쇠는 만료 해시에서 제외한다.\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "200": {
             "description": "승인된 예산의 현재 화면 데이터",
@@ -11815,17 +11851,21 @@
             "type": "string",
             "enum": [
               "fixed_over_income",
-              "savings_over_available"
+              "savings_over_available",
+              "card_bill_pending"
             ]
           },
           "shortfall": {
             "type": "integer",
             "format": "int64",
-            "minimum": 0
+            "minimum": 0,
+            "nullable": true,
+            "description": "부족액(원). card_bill_pending이면 고정지출 합계를 몰라 null"
           }
         },
         "additionalProperties": false,
-        "nullable": true
+        "nullable": true,
+        "description": "fixed_over_income·savings_over_available은 부족액이 있고, card_bill_pending은 카드 첫 청구서 선차감을 아직 계산할 수 없어 배분 기준을 모르는 상태(이때 base·recommended는 null)"
       },
       "ProtectSaved": {
         "type": "object",
@@ -11901,7 +11941,8 @@
           "recommended",
           "blocked",
           "saved",
-          "cushion"
+          "cushion",
+          "cardPending"
         ],
         "properties": {
           "missing": {
@@ -11946,6 +11987,28 @@
           },
           "cushion": {
             "$ref": "#/components/schemas/ProtectCushion"
+          },
+          "cardPending": {
+            "type": "array",
+            "description": "카드 첫 청구서 선차감을 계산하지 못한 카드. 비어 있지 않으면 blocked.reason = card_bill_pending",
+            "items": {
+              "type": "object",
+              "required": [
+                "cardId",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "cardId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "reason": {
+                  "type": "string",
+                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · card_data_invalid(연결·금액 자료가 맞지 않음)"
+                }
+              }
+            }
           }
         },
         "additionalProperties": false
@@ -12479,13 +12542,13 @@
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
     "docs/api/auth.md": "dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c",
     "docs/api/finance-connect.md": "1478b22e97b026c5d00bf315e73833a1f8915ace997f3d525608a09ec320a57d",
-    "docs/api/cards.md": "65e0847a806a929f679fc93705c38fa018c42dcdfe30d22b9b491dc67aab2f62",
+    "docs/api/cards.md": "1fc656eddd9569863c5f0681624e8382ce6d169994995739d5718110a21eb7b4",
     "docs/api/loans.md": "5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c",
     "docs/api/transactions.md": "47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88",
     "docs/api/fixed.md": "76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115",
     "docs/api/savings.md": "dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935",
     "docs/api/home.md": "8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99",
     "docs/api/chat.md": "e841a20e4a8577141cb830600aa55619bba3f8116edb883c4f4ef95d9c3b0033",
-    "docs/api/budgets.md": "37e93305df7df0e283fa0f7583da49d02b7ed35ab5912ae552f3bf3678fa57dd"
+    "docs/api/budgets.md": "d84f0f056391bd7f99884ed1623a98b44c4fa817a7bee8cad03488e8a5b93523"
   }
 }

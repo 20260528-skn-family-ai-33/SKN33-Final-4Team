@@ -227,7 +227,7 @@ class RecommendAPITest(TestCase):
         self.assertEqual(inp["priorities"], [{"category": "FOOD", "rank": 1}])
 
     def test_card_reserved_line_and_spare_use_same_amount(self):
-        with patch("budgets.protect.card_reserved_amount", return_value=30_000):
+        with patch("budgets.protect.card_reserved", return_value={"amount": 30_000, "pending": []}):
             task = self.task(self.post())
         budget = Budget.objects.get(task=task)
         self.assertEqual(budget.items.get(category_detail="card_reserved").allocated_amount, 30_000)
@@ -383,7 +383,7 @@ class RecommendAPITest(TestCase):
         self.assertFalse(Budget.objects.exists())
 
     def test_line_total_mismatch_fails_task(self):
-        with patch("budgets.recommend.fixed_breakdown", return_value={"categories": {"FOOD": 1}, "loan": 0, "card_reserved": 0}):
+        with patch("budgets.recommend.fixed_breakdown", return_value={"categories": {"FOOD": 1}, "loan": 0, "card_ids": [], "card_reserved": 0, "card_pending": []}):
             task = self.task(self.post())
         self.assertEqual((task.status, task.error_code), ("failed", "engine_check_failed"))
         self.assertFalse(Budget.objects.exists())
