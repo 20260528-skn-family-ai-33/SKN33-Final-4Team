@@ -1,6 +1,7 @@
 // 내 정보 입력
 // 생년월일을 넣으면 만 나이를, 우선순위를 누르면 순위 번호를 바로 보여 준다
 // 카테고리 최소 금액(선택)은 팝업에서 받는다 — 우선순위와 상관없이 어느 카테고리든 (2026-10-21)
+// 자취 여부(필수)로 지킬 돈 비율이 정해진다 — 고르면 비율을 바로 보여 준다 (2026-10-27, utils/direction.js)
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -10,6 +11,7 @@ import { CAT_NAMES as CATS, BUDGET_CATS } from '../utils/categories.js'
 import { usePopup } from '../popups/context.js'
 import CatMinPopup from '../popups/CatMinPopup.jsx'
 import { manwon } from '../utils/adjust.js'
+import { HOUSING, HOUSING_KEYS, loadHousing, rateLine, saveHousing } from '../utils/direction.js'
 import { PATHS } from '../routes.js'
 
 const GENDERS = ['남성', '여성']
@@ -41,6 +43,8 @@ export default function ProfilePage() {
   const [birth, setBirth] = useState('')
   const [gender, setGender] = useState(null)
   const [car, setCar] = useState(null)
+  const [housing, setHousing] = useState(loadHousing)  // 'alone' | 'family'
+  const [error, setError] = useState('')
   const prio = usePicked()  // 누른 순서 = 우선순위
   const { openPopup } = usePopup()
   const [mins, setMins] = useState({})  // 카테고리 최소 금액 { 식비: 300000 } — 설정한 것만
@@ -49,6 +53,8 @@ export default function ProfilePage() {
   const a = ageInfo(birth)
   const onSubmit = (e) => {
     e.preventDefault()
+    if (!housing) { setError('자취 여부를 골라 주세요. 지킬 돈을 나누는 기준이에요.'); return }
+    saveHousing(housing)
     navigate(PATHS.connect)  // 저장은 API 연결 후
   }
 
@@ -86,6 +92,20 @@ export default function ProfilePage() {
             </div>
             <p className="mc-mini-note">본인 성별</p>
           </div>
+        </div>
+
+        <div className="mc-card">
+          <h2>자취 여부</h2>
+          <div className="mc-seg">
+            {HOUSING_KEYS.map((k) => (
+              <button key={k} type="button" aria-pressed={housing === k} onClick={() => { setHousing(k); setError('') }}>
+                <strong>{HOUSING[k].label}</strong><small>{HOUSING[k].sub}</small>
+              </button>
+            ))}
+          </div>
+          <p className="mc-picked" aria-live="polite" style={{ marginTop: 10 }}>
+            {housing ? <>{HOUSING[housing].name} 기준 · <b>{rateLine(housing)}</b></> : '자취 여부에 따라 생활비와 저축 비율이 달라져요.'}
+          </p>
         </div>
 
         <div className="mc-card">
@@ -132,7 +152,7 @@ export default function ProfilePage() {
             <p className="mc-picked" style={{ marginTop: 6 }}>이만큼은 꼭 남겨 둘 카테고리가 있다면 설정해 주세요. 그 밑으로는 예산을 줄이지 않아요.</p>
           )}
         </div>
-        <div className="mc-error" role="alert"></div>
+        <div className="mc-error" role="alert">{error}</div>
       </form>
     </Layout>
   )
