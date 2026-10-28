@@ -6,9 +6,29 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from users.models import Consent
+
 from . import codef
 from .models import BankAccount, Connection, FinancialTransaction, SyncRun
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
+
+
+class BankConsentRequired(PermissionError):
+    """은행 조회 동의가 없거나 조회 중 철회됨 → 저장하지 않음 (다시 불러오기에서는 '동의 안 함'으로 건너뜀)"""
+
+
+class BankConnectionGone(ValueError):
+    """지정한 연결이 이미 해제됨 → 새 연결을 만들지 않고 멈춤 (다시 불러오기 PR #53 리뷰)"""
+
+
+def _check_bank_consent(user, connection):
+    # sync_loans._check_consent 와 같은 기준 (회원 전체 동의 또는 이 연결 동의)
+    if not Consent.objects.filter(
+        Q(connection__isnull=True) | Q(connection=connection),
+        user=user, purpose="finance_inquiry", product_scope="bank", revoked_at__isnull=True,
+        granted_at__lte=timezone.now(),
+    ).exists():
+        raise BankConsentRequired("계좌 조회 동의가 필요해요.")
 
 
 def _mask_account_numbers(value, account_numbers):
@@ -22,7 +42,11 @@ def _mask_account_numbers(value, account_numbers):
     return value
 
 
-def sync_bank(user, connected_id, org, start, end):
+def sync_bank(user, connected_id, org, start, end, *, connection_id=None, require_consent=False):
+    """은행 계좌 · 거래 저장.
+    - connection_id: 이 연결에만 저장한다. 해제됐으면 새 연결을 만들지 않고 BankConnectionGone (다시 불러오기 · 새 연결 API)
+      없으면 기존처럼 활성 연결을 찾거나 만든다 (개발용 codef_sync 명령)
+    - require_consent: 외부 조회 전과 저장 트랜잭션 안에서 은행 조회 동의를 확인한다 (조회 중 철회되면 저장 안 함)"""
     if not connected_id:
         raise ValueError("CODEF 연결 ID가 필요해요.")
     if start > end:
@@ -30,10 +54,19 @@ def sync_bank(user, connected_id, org, start, end):
 
     # 실패 기록의 연결 FK는 계좌·거래 롤백 뒤에도 유지한다.
     with transaction.atomic():
-        connection, _ = Connection.objects.get_or_create(
-            user=user, business_type="bank", organization_code=org,
-            disconnected_at=None, defaults={"status": "connected"},
-        )
+        if connection_id is None:
+            connection, _ = Connection.objects.get_or_create(
+                user=user, business_type="bank", organization_code=org,
+                disconnected_at=None, defaults={"status": "connected"},
+            )
+        else:
+            connection = Connection.objects.filter(
+                pk=connection_id, user=user, business_type="bank", organization_code=org,
+            ).first()
+            if connection is None or connection.disconnected_at is not None:
+                raise BankConnectionGone("연결이 해제되어 불러오지 않았어요.")
+        if require_consent:
+            _check_bank_consent(user, connection)
         run = SyncRun.objects.create(
             user=user, connection=connection, product_code="bank_sync",
             requested_from=start, requested_to=end, status="running",
@@ -62,6 +95,8 @@ def sync_bank(user, connected_id, org, start, end):
             connection = Connection.objects.select_for_update().get(pk=connection.pk)
             if connection.disconnected_at is not None:
                 raise ValueError("조회 중 연결이 해제되어 저장하지 않았어요.")
+            if require_consent:  # 조회 중 동의를 철회했으면 저장하지 않는다 (회원 행을 잠근 뒤라 동의 저장과 순서가 맞음)
+                _check_bank_consent(user, connection)
             new_ids = []
             existing_count = 0
             saved_accounts = []

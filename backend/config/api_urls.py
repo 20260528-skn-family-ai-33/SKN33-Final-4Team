@@ -13,12 +13,13 @@ from budgets import api as budgets_api
 from chat import api as chat_api
 from finance import api as finance_api
 from finance import api_connect as finance_connect
+from finance import api_sync as finance_sync
 from finance import api_loans as finance_loans
 from finance import api_cards as finance_cards
 
 from users import api as users_api
 
-from . import api_common, api_docs
+from . import api_common, api_docs, tasks
 
 app_name = "api"
 
@@ -57,15 +58,16 @@ urlpatterns = [
     path("budgets/savings/ignore/", budgets_api.savings_ignore, name="savings-ignore"),
     path("budgets/savings/<uuid:saving_id>/", budgets_api.savings_detail, name="savings-detail"),
 
-    # ----- 혜리: 금융 동의 · 연결 6~10 · 거래 17 · 18 · 챗봇 32~34 (실제 구현: 6~10 · 17 · 18 · 32 · 33 / 껍데기: 34) -----
+    # ----- 혜리: 금융 동의 · 연결 6~10 · 거래 17 · 18 · 챗봇 32~34 (실제 구현: 6~10 · 새 연결 · 다시 불러오기 · 17 · 18 · 32~34) -----
     path("finance/consents/", finance_connect.consents, name="finance-consents"),  # 6 POST
     path("finance/connect/accounts/", finance_connect.connect_accounts, name="finance-connect-accounts"),  # 7 GET · 8 PUT
-    path("finance/connections/", finance_connect.connections, name="finance-connections"),  # 9 GET
+    path("finance/connections/", finance_connect.connections, name="finance-connections"),  # 9 GET · 새 연결 POST
     path("finance/connections/<uuid:connection_id>/", finance_connect.connection_disconnect, name="finance-connection"),  # 10 DELETE
+    path("finance/sync/", finance_sync.sync, name="finance-sync"),  # 다시 불러오기 POST → 202 + 작업 번호
     path("finance/transactions/<uuid:transaction_id>/", finance_api.transaction_detail, name="transaction-detail"),  # 17 GET · 18 PATCH
     path("chat/conversations/<uuid:conversation_id>/", chat_api.conversation, name="chat-conversation"),  # 32 GET
     path("chat/messages/", chat_api.messages, name="chat-messages"),  # 33 POST
-    path("tasks/<uuid:task_id>/", chat_api.task, name="task"),  # 34 GET (껍데기)
+    path("tasks/<uuid:task_id>/", tasks.task_detail, name="task"),  # 34 GET (공용 작업 확인, config/tasks.py)
     # ----- 혜리 끝 -----
 
     path("finance/loans/", finance_loans.loans, name="loan-list"),

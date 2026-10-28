@@ -5,7 +5,8 @@ finance 앱 API — 금융 동의 · 계좌 · 연결 (docs/api/finance-connect.
 - 8. PUT  /api/finance/connect/accounts/  계좌 선택 저장
 - 9. GET  /api/finance/connections/       연결 목록 보기
 - 10. DELETE /api/finance/connections/<id>/ 연결 해제
-모두 저장된 값만 읽고 쓴다. CODEF 를 새로 부르지 않는다 (10/22 O)
+- 새 연결 POST /api/finance/connections/ 금융기관 인증 · 새 연결 → api_new_connection.py (CODEF 를 부르는 유일한 API)
+새 연결 말고는 모두 저장된 값만 읽고 쓴다. CODEF 를 새로 부르지 않는다 (10/22 O)
 """
 import hashlib
 import uuid
@@ -208,11 +209,16 @@ def connection_item(connection):
     }
 
 
-@api_view(["GET"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def connections(request):
     """9. GET /api/finance/connections/ — 해제하지 않은 기관 연결 목록 (disconnected 는 안 나옴, ★3)
-    connectedId · CODEF 키 · 인증 정보는 넣지 않는다"""
+    connectedId · CODEF 키 · 인증 정보는 넣지 않는다
+    POST 는 금융기관 인증 · 새 연결 (api_new_connection.create)"""
+    if request.method == "POST":
+        from . import api_new_connection  # 이 파일의 동의 확인 도구를 그쪽에서 쓰므로 여기선 늦게 부른다
+
+        return api_new_connection.create(request)
     rows = (
         Connection.objects.filter(user=request.user, disconnected_at__isnull=True)
         .prefetch_related("bank_accounts", "cards")
