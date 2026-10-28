@@ -237,3 +237,30 @@ class CardReservedTest(TestCase):
         PaymentMatch.objects.create(user=self.user, due=due, transaction=linked, matched_amount=17_000)
         # 300,000 − (67,000 − 17,000) − 17,000
         self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 233_000)
+
+    def test_fixed_expense_is_subtracted_once_when_registered_and_paid_cards_differ(self):
+        # 리뷰 10/28: 고정지출에 적은 카드(A)와 실제 결제 카드(B)가 다르면 두 카드에서 각각 빼면 안 됨
+        self.collect_all()
+        other = Card.objects.create(user=self.user, connection=self.connection, origin="provider", issuer_code="0306",
+                                    first_connected_at=datetime(2026, 10, 19, 15, tzinfo=dt_timezone.utc), is_selected=True)
+        CardBill.objects.create(user=self.user, connection=self.connection, card=other, issuer_code="0306",
+                                billing_month=date(2026, 11, 1), total_amount=100_000, source_type="provider",
+                                scope_type="card", withdrawal_due_date=date(2026, 11, 12))
+        SyncRun.objects.create(user=self.user, connection=self.connection, card=other, product_code=CARD_BILL_SYNC,
+                               covered_from=date(2026, 10, 20), covered_to=TODAY, status="success")
+        SyncRun.objects.create(user=self.user, connection=self.connection, card=other, product_code=CARD_SPENDING_SYNC,
+                               covered_from=date(2026, 10, 25), covered_to=TODAY, status="success")
+        before = card_reserved(self.user, self.cycle)["amount"]  # 250,000 + 100,000
+        self.assertEqual(before, 350_000)
+        expense = RecurringExpense.objects.create(user=self.user, name="구독", amount=17_000, category_id="CULTURE_LEISURE",
+                                                  status="confirmed", source_type="manual", payment_card=self.card)  # A로 등록
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], before - 17_000)  # 아직 결제 전: A에서 한 번
+        linked = FinancialTransaction.objects.create(user=self.user, card=other, source_kind="card", occurred_on=TODAY,
+                                                     amount=17_000, direction="out", transaction_type="spending",
+                                                     confirmed_category_id="CULTURE_LEISURE", confirmation_state="confirmed")
+        due = PaymentDue.objects.create(user=self.user, recurring=expense, obligation_type="recurring", occurrence_key="sub-b",
+                                        due_date=TODAY, confirmed_amount=17_000, paid_amount=17_000,
+                                        payment_state="paid", obligation_state="active")
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=linked, matched_amount=17_000)
+        # 실제로는 B로 결제: B에서만 한 번 (A 250,000 그대로 + B 100,000 − 17,000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], before - 17_000)

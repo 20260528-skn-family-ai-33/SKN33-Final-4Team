@@ -4772,7 +4772,7 @@ paths:
         0이면 여윳돈→생활비에서 최대 1만원, 그래도 0일 때만 최소를 넘는 저축에서 가져온다. 카드 첫 청구서 선차감은 관리 대상 카드별로 계산하며, 한 장이라도 자료 미확인이면 0원으로 치지
         않고 base·recommended는 null, blocked = {reason: card_bill_pending, shortfall: null}, cardPending에 카드와 이유를
         담는다. 청구 이력·카드 거래가 다 들어왔는지는 sync_run(card_bill_list·card_approval_list, success)의 이어진 조회 기간으로만 판단하고, 기준일은
-        마지막으로 다 불러온 날이다. 그 카드의 확정 고정지출은 선차감에서 뺀다(P-04).
+        마지막으로 다 불러온 날이다. 카드로 내는 확정 고정지출은 선차감에서 빼되 고정지출 하나는 카드 전체에서 한 번만 뺀다(이번 주기 실제 결제 카드 우선, 없으면 등록한 결제 카드, P-04·P-12).
 
 
         원본: `docs/api/budgets.md`'
@@ -4813,6 +4813,7 @@ paths:
                       target: 8400000
                       balanceTotal: 2800000
                     cardPending: []
+                    locksReleased: []
                 missingIncome:
                   value:
                     missing:
@@ -4833,6 +4834,7 @@ paths:
                       target: null
                       balanceTotal: null
                     cardPending: []
+                    locksReleased: []
                 blocked:
                   value:
                     missing: []
@@ -4857,6 +4859,7 @@ paths:
                       target: 2100000
                       balanceTotal: null
                     cardPending: []
+                    locksReleased: []
                 cardBillPending:
                   value:
                     missing: []
@@ -4880,6 +4883,7 @@ paths:
                     cardPending:
                     - cardId: 7b1e2f40-1c2d-4e5f-8a9b-0c1d2e3f4a5b
                       reason: bill_history_incomplete
+                    locksReleased: []
                   summary: 카드 첫 청구서 확인 중
         '403':
           description: not_authenticated
@@ -4906,7 +4910,8 @@ paths:
         검사 순서: missing → blocked → 세 칸의 정수·0 이상·알 수 없는 칸 → 저축 최소 금액 → 필수 쿠션 0 금지 → 합계 ≤ available. 앞 두 조건은 409 not_ready(card_bill_pending이면
         "카드 청구서를 아직 확인하지 못했어요. 카드 내역을 다시 불러온 뒤 시도해 주세요."), 나머지는 400 invalid. 합계 초과는 fields.nonFieldErrors. 같은 값이면
         수정 시각·초안 그대로. 변경 시 living_budget·savings_floor·cushion_monthly·cushion_target 저장과 이 회원의 draft·validated
-        만료를 같은 트랜잭션에서 수행한다. approved는 유지한다.
+        만료를 같은 트랜잭션에서 수행한다. approved는 유지한다. 생활비(livingBudget)가 바뀌었고 이번 주기 자물쇠가 새 생활비와 안 맞으면(자물쇠를 빼면 추천이 되는데 자물쇠
+        때문에 막히면) 이번 주기 자물쇠를 모두 풀고 locksReleased에 코드를 담는다. 자물쇠 변경 횟수(잔소리)는 늘리지 않는다 (P-13).
 
 
         원본: `docs/api/budgets.md`'
@@ -4952,6 +4957,7 @@ paths:
                       target: 8400000
                       balanceTotal: 2800000
                     cardPending: []
+                    locksReleased: []
         '400':
           description: invalid
           content:
@@ -8938,6 +8944,7 @@ components:
       - saved
       - cushion
       - cardPending
+      - locksReleased
       properties:
         missing:
           type: array
@@ -8988,6 +8995,11 @@ components:
                 description: '계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete
                   · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous ·
                   spending_history_incomplete · bill_amount_invalid) · card_data_invalid(연결·금액 자료가 맞지 않음)'
+        locksReleased:
+          type: array
+          items:
+            $ref: '#/components/schemas/SelectableCategoryCode'
+          description: P-13. 이번 저장(PUT)으로 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞아 풀린 카테고리 코드(화면 순서). GET과 그 밖의 PUT은 []
       additionalProperties: false
     ProtectSaveRequest:
       type: object
@@ -9397,4 +9409,4 @@ x-source-sha256:
   docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
   docs/api/home.md: 8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99
   docs/api/chat.md: e841a20e4a8577141cb830600aa55619bba3f8116edb883c4f4ef95d9c3b0033
-  docs/api/budgets.md: d84f0f056391bd7f99884ed1623a98b44c4fa817a7bee8cad03488e8a5b93523
+  docs/api/budgets.md: 3a441429007212929176a6ca10bb89f3b9087a642b221752ae3c80957c62a6e7

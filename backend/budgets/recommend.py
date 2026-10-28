@@ -12,7 +12,7 @@ from .protect import fixed_base, fixed_breakdown, fixed_sum, savings_min
 
 
 # TODO ML 담당 fallback_ratios 로 교체
-# RecommendPage.jsx AMOUNT의 기타 제외 10개 금액 / 합계 1,060,000원.
+# 화면 시안(이전 RecommendPage.jsx 예시 금액)의 기타 제외 10개 금액 / 합계 1,060,000원.
 FALLBACK_RATIOS = {
     code: Fraction(amount, 1_060_000) for code, amount in (
         ("FOOD", 330_000), ("HOUSING_TELECOM", 110_000), ("TRANSPORT_CAR", 90_000),
@@ -167,6 +167,31 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
             "input_version": INPUT_VERSION,
         },
     }
+
+
+def locks_block_recommendation(user, cycle, living_budget):
+    """지금 생활비 · 최소 금액 · 자물쇠로 추천하면 자물쇠 때문에 막히는지 (run_recommend · allocation_conflicts와 같은 조건).
+
+    자물쇠를 빼고 계산하면 막히지 않을 때만 True — 최소 금액만으로 모자란 경우는 자물쇠를 풀어도 소용없으므로 False.
+    """
+    if living_budget is None:
+        return False
+    minimums = dict(CategoryMinimum.objects.filter(user=user).values_list("category_id", "min_amount"))
+    locks = dict(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True).values_list("category_id", "locked_amount"))
+    if not locks:
+        return False
+
+    def blocked(locks):
+        etc = locks.get("ETC", minimums.get("ETC", 0))
+        if etc < minimums.get("ETC", 0) or etc > living_budget:
+            return True
+        return bool(allocation_conflicts({
+            "target": living_budget - etc,
+            "minimums": {code: amount for code, amount in minimums.items() if code != "ETC"},
+            "locks": {code: amount for code, amount in locks.items() if code != "ETC"},
+        }))
+
+    return blocked(locks) and not blocked({})
 
 
 def budget_input_hash(user, cycle):

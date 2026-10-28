@@ -20,7 +20,7 @@ from finance.models import BankAccount, FinancialTransaction, PaymentDue, Recurr
 from users.models import FinancialProfile
 
 from .api import account_json, day_in_cycle, day_in_month, ensure_current_due, lock_user, match_current_due
-from .models import BudgetCycle
+from .models import BudgetCategorySetting, BudgetCycle
 
 EARLY_DAYS = 7             # 월급날 7일 전부터 들어온 입금은 그 월급으로 본다 (명절 전 지급)
 REVIEW_AFTER_DAYS = 3      # 출금일 +3일이 지나도 출금을 못 찾으면 '미납 확인 필요'
@@ -64,9 +64,11 @@ def ensure_cycle(user, start, next_payday):
     BudgetCycle.objects.filter(user=user, status="active").exclude(starts_on=start).update(status="closed")
     cycle = BudgetCycle.objects.filter(user=user, starts_on=start).first()
     if cycle is None:
-        return BudgetCycle.objects.create(
+        cycle = BudgetCycle.objects.create(
             user=user, starts_on=start, ends_before=next_payday, expected_payday=next_payday, status="active",
         )
+        carry_over_locks(user, cycle)
+        return cycle
     changed = []
     for field, value in (("ends_before", next_payday), ("expected_payday", next_payday), ("status", "active")):
         if getattr(cycle, field) != value:
@@ -75,6 +77,21 @@ def ensure_cycle(user, start, next_payday):
     if changed:
         cycle.save(update_fields=changed)
     return cycle
+
+
+def carry_over_locks(user, cycle):
+    """새 주기에 바로 전 주기의 자물쇠(잠긴 카테고리 · 잠긴 금액)를 이어받는다 (기획: 자물쇠는 다음 달에도 적용).
+
+    바꾼 횟수는 '이번 주기' 잔소리 기준이라 0부터 다시 센다. 지난 주기에 푼 카테고리는 가져오지 않는다.
+    """
+    previous = BudgetCycle.objects.filter(user=user, starts_on__lt=cycle.starts_on).order_by("-starts_on").first()
+    if previous is None:
+        return
+    BudgetCategorySetting.objects.bulk_create([
+        BudgetCategorySetting(user=user, cycle=cycle, category_id=setting.category_id,
+                              locked=True, locked_amount=setting.locked_amount)
+        for setting in BudgetCategorySetting.objects.filter(user=user, cycle=previous, locked=True)
+    ])
 
 
 def salary_deposits(user, income):

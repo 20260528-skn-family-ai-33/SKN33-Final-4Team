@@ -138,11 +138,8 @@ def selected_cards(user):
     return list(candidate_cards(user).filter(is_selected=True))
 
 
-def fixed_linked(user, card, start, end):
-    """이번 주기 그 카드 소비 중 고정지출 납부로 연결된 거래: (취소 차감 금액 합계, 연결된 고정지출 ID 목록)
-
-    카드 고정지출을 두 번 빼지 않으려고 쓴다. 고정지출에 결제 카드를 안 적었어도 이 카드로 결제돼 연결됐으면 포함한다.
-    """
+def fixed_linked_amount(user, card, start, end):
+    """이번 주기 그 카드 소비 중 고정지출 납부로 연결된 금액 (취소 차감). '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않게 쓴다"""
     from finance.api import cancel_info, fixed_expense_id
     from finance.models import FinancialTransaction
 
@@ -150,16 +147,42 @@ def fixed_linked(user, card, start, end):
         user=user, card=card, source_kind="card", direction="out", transaction_type="spending",
         occurred_on__gte=start, occurred_on__lte=end,
     ).prefetch_related("payment_matches__due")
-    amount, expense_ids = 0, set()
-    for tx in rows:
+    return sum(tx.amount - cancel_info(tx)["amount"] for tx in rows if fixed_expense_id(tx) is not None)
+
+
+def card_fixed_by_card(user, cards, cycle, today):
+    """카드별로 선차감에서 뺄 확정 고정지출 합계. 고정지출 하나는 카드 한 장에서만 뺀다 (리뷰 10/28).
+
+    어느 카드에서 뺄지: ① 이번 주기에 실제로 결제돼 납부로 연결된 카드(먼저 결제된 것) ② 없으면 고정지출에 적어 둔 결제 카드.
+    적어 둔 카드와 실제 결제 카드가 달라도 한 번만 빠진다. 대상 카드(관리 대상) 밖이면 빼지 않는다.
+    """
+    from finance.api import fixed_expense_id
+    from finance.models import FinancialTransaction
+
+    card_ids = {card.pk for card in cards}
+    if not card_ids:
+        return {}
+    end = min(today, cycle.ends_before - timedelta(days=1))
+    owner = {}
+    paid = FinancialTransaction.objects.filter(
+        user=user, card_id__in=card_ids, source_kind="card", direction="out", transaction_type="spending",
+        occurred_on__gte=cycle.starts_on, occurred_on__lte=end,
+    ).prefetch_related("payment_matches__due").order_by("occurred_on", "pk")
+    for tx in paid:
         expense_id = fixed_expense_id(tx)
         if expense_id is not None:
-            amount += tx.amount - cancel_info(tx)["amount"]
-            expense_ids.add(expense_id)
-    return amount, expense_ids
+            owner.setdefault(expense_id, tx.card_id)
+    expenses = RecurringExpense.objects.filter(user=user, status="confirmed").filter(
+        Q(pk__in=list(owner)) | Q(payment_card_id__in=card_ids),
+    ).values_list("pk", "payment_card_id", "amount")
+    totals = {}
+    for expense_id, payment_card_id, amount in expenses:
+        card_id = owner.get(expense_id, payment_card_id)
+        totals[card_id] = totals.get(card_id, 0) + amount
+    return totals
 
 
-def card_deduction(user, card, cycle, today):
+def card_deduction(user, card, cycle, today, card_fixed=0):
     """카드 한 장의 첫 청구서 선차감. (금액, 보류 이유) — 금액이 None이면 보류"""
     from django.http import Http404
     from finance.card_deduction import get_card_first_bill_deduction
@@ -195,14 +218,13 @@ def card_deduction(user, card, cycle, today):
         # 코드 버그도 여기로 올 수 있어 로그는 남긴다 (예외 원문 · 금액은 남기지 않음)
         logger.warning("카드 선차감 계산 보류 card=%s error=%s", card.pk, type(error).__name__)
         return None, "card_data_invalid"
-    # P-04: 확정 고정지출은 결제 수단과 상관없이 고정비에 이미 들어 있으므로, 이 카드로 내는 고정지출 금액은 선차감에서 뺀다.
+    # P-04: 확정 고정지출은 결제 수단과 상관없이 고정비에 이미 들어 있으므로, 이 카드에 배정된 고정지출(card_fixed_by_card)은 선차감에서 뺀다.
     # 이번 주기에 이미 결제돼 고정지출에 연결된 카드 거래는 '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않는다.
     end = min(as_of, cycle.ends_before - timedelta(days=1))
-    linked_amount, linked_ids = fixed_linked(user, card, cycle.starts_on, end)
-    card_fixed = RecurringExpense.objects.filter(
-        Q(payment_card=card) | Q(pk__in=linked_ids), user=user, status="confirmed",
-    ).aggregate(total=Sum("amount"))["total"] or 0
-    return max(0, total - (result.cycle_card_spending - linked_amount) - card_fixed), None
+    other_spending = result.cycle_card_spending - fixed_linked_amount(user, card, cycle.starts_on, end)
+    # 카드별로 0원 아래로는 안 내리므로, 배정된 카드의 남은 금액보다 고정지출이 크면 그 차이는 다른 카드에서 빼지 않는다
+    # (선차감이 조금 커지는 쪽 = 예산이 모자라지 않는 쪽).
+    return max(0, total - other_spending - card_fixed), None
 
 
 def card_reserved(user, cycle, as_of=None):
@@ -214,8 +236,10 @@ def card_reserved(user, cycle, as_of=None):
     """
     today = as_of or timezone.localdate()
     total, pending = 0, []
-    for card in selected_cards(user):
-        amount, reason = card_deduction(user, card, cycle, today)
+    cards = selected_cards(user)
+    card_fixed = card_fixed_by_card(user, cards, cycle, today)
+    for card in cards:
+        amount, reason = card_deduction(user, card, cycle, today, card_fixed.get(card.pk, 0))
         if amount is None:
             pending.append({"card_id": str(card.pk), "reason": reason})
         else:

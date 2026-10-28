@@ -8,7 +8,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "P-01~P-11. missing은 housingType·takeHomeIncome·payday 순서. missing이면 base·recommended·blocked는 null, savingsMin은 계속 계산한다. fixedTotal은 결제 수단과 무관한 확정 고정지출 + 상환 중 대출 + 카드 선차감이다. available은 음수도 그대로 반환한다. 쿠션 목표는 실수령액 × 3이며 실수령액이 없으면 null. 잔액을 모르면 쿠션 필수. blocked도 200이다. 자취 비율은 생활비55·저축30·여윳돈5·쿠션10, 본가는45·40·5·10이다. 생활비·저축은 1만원 반올림, 쿠션은 내림, 자투리는 여윳돈. 확정 정기 저축 합계가 비율 저축보다 크면 최소 저축을 먼저 떼고 생활비:여윳돈:쿠션 비율로 재배분한다. 반올림 초과는 생활비에서 빼고, 필수 쿠션이 0이면 여윳돈→생활비에서 최대 1만원, 그래도 0일 때만 최소를 넘는 저축에서 가져온다. 카드 첫 청구서 선차감은 관리 대상 카드별로 계산하며, 한 장이라도 자료 미확인이면 0원으로 치지 않고 base·recommended는 null, blocked = {reason: card_bill_pending, shortfall: null}, cardPending에 카드와 이유를 담는다. 청구 이력·카드 거래가 다 들어왔는지는 sync_run(card_bill_list·card_approval_list, success)의 이어진 조회 기간으로만 판단하고, 기준일은 마지막으로 다 불러온 날이다. 그 카드의 확정 고정지출은 선차감에서 뺀다(P-04).",
+        "description": "P-01~P-11. missing은 housingType·takeHomeIncome·payday 순서. missing이면 base·recommended·blocked는 null, savingsMin은 계속 계산한다. fixedTotal은 결제 수단과 무관한 확정 고정지출 + 상환 중 대출 + 카드 선차감이다. available은 음수도 그대로 반환한다. 쿠션 목표는 실수령액 × 3이며 실수령액이 없으면 null. 잔액을 모르면 쿠션 필수. blocked도 200이다. 자취 비율은 생활비55·저축30·여윳돈5·쿠션10, 본가는45·40·5·10이다. 생활비·저축은 1만원 반올림, 쿠션은 내림, 자투리는 여윳돈. 확정 정기 저축 합계가 비율 저축보다 크면 최소 저축을 먼저 떼고 생활비:여윳돈:쿠션 비율로 재배분한다. 반올림 초과는 생활비에서 빼고, 필수 쿠션이 0이면 여윳돈→생활비에서 최대 1만원, 그래도 0일 때만 최소를 넘는 저축에서 가져온다. 카드 첫 청구서 선차감은 관리 대상 카드별로 계산하며, 한 장이라도 자료 미확인이면 0원으로 치지 않고 base·recommended는 null, blocked = {reason: card_bill_pending, shortfall: null}, cardPending에 카드와 이유를 담는다. 청구 이력·카드 거래가 다 들어왔는지는 sync_run(card_bill_list·card_approval_list, success)의 이어진 조회 기간으로만 판단하고, 기준일은 마지막으로 다 불러온 날이다. 카드로 내는 확정 고정지출은 선차감에서 빼되 고정지출 하나는 카드 전체에서 한 번만 뺀다(이번 주기 실제 결제 카드 우선, 없으면 등록한 결제 카드, P-04·P-12).",
         "responses": {
           "200": {
             "description": "필수 정보·추천·부족 상태·저장 값",
@@ -50,7 +50,8 @@
                         "target": 8400000,
                         "balanceTotal": 2800000
                       },
-                      "cardPending": []
+                      "cardPending": [],
+                      "locksReleased": []
                     }
                   },
                   "missingIncome": {
@@ -75,7 +76,8 @@
                         "target": null,
                         "balanceTotal": null
                       },
-                      "cardPending": []
+                      "cardPending": [],
+                      "locksReleased": []
                     }
                   },
                   "blocked": {
@@ -105,7 +107,8 @@
                         "target": 2100000,
                         "balanceTotal": null
                       },
-                      "cardPending": []
+                      "cardPending": [],
+                      "locksReleased": []
                     }
                   },
                   "cardBillPending": {
@@ -136,7 +139,8 @@
                           "cardId": "7b1e2f40-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
                           "reason": "bill_history_incomplete"
                         }
-                      ]
+                      ],
+                      "locksReleased": []
                     },
                     "summary": "카드 첫 청구서 확인 중"
                   }
@@ -173,7 +177,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "검사 순서: missing → blocked → 세 칸의 정수·0 이상·알 수 없는 칸 → 저축 최소 금액 → 필수 쿠션 0 금지 → 합계 ≤ available. 앞 두 조건은 409 not_ready(card_bill_pending이면 \"카드 청구서를 아직 확인하지 못했어요. 카드 내역을 다시 불러온 뒤 시도해 주세요.\"), 나머지는 400 invalid. 합계 초과는 fields.nonFieldErrors. 같은 값이면 수정 시각·초안 그대로. 변경 시 living_budget·savings_floor·cushion_monthly·cushion_target 저장과 이 회원의 draft·validated 만료를 같은 트랜잭션에서 수행한다. approved는 유지한다.",
+        "description": "검사 순서: missing → blocked → 세 칸의 정수·0 이상·알 수 없는 칸 → 저축 최소 금액 → 필수 쿠션 0 금지 → 합계 ≤ available. 앞 두 조건은 409 not_ready(card_bill_pending이면 \"카드 청구서를 아직 확인하지 못했어요. 카드 내역을 다시 불러온 뒤 시도해 주세요.\"), 나머지는 400 invalid. 합계 초과는 fields.nonFieldErrors. 같은 값이면 수정 시각·초안 그대로. 변경 시 living_budget·savings_floor·cushion_monthly·cushion_target 저장과 이 회원의 draft·validated 만료를 같은 트랜잭션에서 수행한다. approved는 유지한다. 생활비(livingBudget)가 바뀌었고 이번 주기 자물쇠가 새 생활비와 안 맞으면(자물쇠를 빼면 추천이 되는데 자물쇠 때문에 막히면) 이번 주기 자물쇠를 모두 풀고 locksReleased에 코드를 담는다. 자물쇠 변경 횟수(잔소리)는 늘리지 않는다 (P-13).",
         "responses": {
           "200": {
             "description": "방금 저장한 saved 포함",
@@ -221,7 +225,8 @@
                         "target": 8400000,
                         "balanceTotal": 2800000
                       },
-                      "cardPending": []
+                      "cardPending": [],
+                      "locksReleased": []
                     }
                   }
                 }
@@ -1408,7 +1413,8 @@
           "blocked",
           "saved",
           "cushion",
-          "cardPending"
+          "cardPending",
+          "locksReleased"
         ],
         "properties": {
           "missing": {
@@ -1475,6 +1481,13 @@
                 }
               }
             }
+          },
+          "locksReleased": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SelectableCategoryCode"
+            },
+            "description": "P-13. 이번 저장(PUT)으로 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞아 풀린 카테고리 코드(화면 순서). GET과 그 밖의 PUT은 []"
           }
         },
         "additionalProperties": false

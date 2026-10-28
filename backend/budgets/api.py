@@ -69,7 +69,7 @@ def protect(request):
         data = protect_json(request.user, profile, timezone.localdate())
         if request.method == "PUT":
             values = clean_protect(request, data)
-            save_protect(request.user, profile, values, data["cushion"]["target"])
+            data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
             data["saved"] = protect_saved_json(profile, data["base"])
     return Response(data)
 
@@ -121,6 +121,26 @@ def save_protect(user, profile, values, target):
     if changed:
         profile.save(update_fields=changed + ["updated_at"])
         Budget.objects.filter(user=user, status__in=["draft", "validated"]).update(status="expired")
+    return release_stale_locks(user, profile) if "living_budget" in changed else []
+
+
+def release_stale_locks(user, profile):
+    """P-13: 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞으면(추천이 막히면) 이번 주기 자물쇠를 모두 푼다.
+
+    풀어 주지 않으면 초안이 없어서 자물쇠를 풀 곳이 없다. 사용자가 직접 바꾼 게 아니라서 바꾼 횟수(잔소리)는 늘리지 않는다.
+    반환: 푼 카테고리 코드 (화면 순서)
+    """
+    from .models import BudgetCategorySetting
+    from .overview import current_cycle
+    from .recommend import locks_block_recommendation
+
+    cycle = current_cycle(user, profile, timezone.localdate())
+    if cycle is None or not locks_block_recommendation(user, cycle, profile.living_budget):
+        return []
+    locked = BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True)
+    codes = list(locked.order_by("category__display_order", "category_id").values_list("category_id", flat=True))
+    locked.update(locked=False, locked_amount=None, updated_at=timezone.now())
+    return codes
 
 
 def protect_saved_json(profile, base):
@@ -188,6 +208,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
         "saved": protect_saved_json(profile, base),
         "cushion": {"required": required, "target": income * 3 if income is not None else None, "balance_total": balance},
         "card_pending": pending_cards,
+        "locks_released": [],  # PUT으로 저장할 때만 채운다 (P-13)
     }
 
 
