@@ -6,10 +6,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PARTS = ROOT / "docs" / "openapi" / "parts"
-DOMAINS = ("auth", "finance-connect", "cards", "loans", "transactions", "fixed", "savings", "home", "chat")
+DOMAINS = ("auth", "finance-connect", "cards", "loans", "transactions", "fixed", "savings", "home", "chat", "budgets")
 METHODS = {"get", "post", "put", "patch", "delete"}
 CATEGORIES = ["FOOD", "HOUSING_TELECOM", "TRANSPORT_CAR", "HOUSEHOLD", "FASHION_SHOPPING", "MEDICAL_HEALTH", "BEAUTY", "EDUCATION", "CULTURE_LEISURE", "TRAVEL_LODGING", "ETC", "UNCLASSIFIED"]
-TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거래", "고정지출", "정기 저축", "홈", "통합 챗봇"]
+TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거래", "고정지출", "정기 저축", "홈", "통합 챗봇", "예산"]
 
 # 실제 API 구현 및 계약 검증이 끝났을 때 변경. URL 존재만으로 구현 완료가 되지 않는다.
 IMPLEMENTATION = {
@@ -27,16 +27,23 @@ IMPLEMENTATION = {
     ("get", "/api/finance/loans/"): "implemented",
     ("post", "/api/finance/loans/"): "implemented",
     ("patch", "/api/finance/loans/{id}/"): "implemented",
-    # 금융 동의 · 계좌 · 연결 6~9 (혜리, 10/26). 10 연결 해제는 아직 204만 돌려주는 껍데기
+    # 금융 동의 · 계좌 · 연결 6~10 (연결 해제도 DB 구현)
     ("post", "/api/finance/consents/"): "implemented",
     ("get", "/api/finance/connect/accounts/"): "implemented",
     ("put", "/api/finance/connect/accounts/"): "implemented",
     ("get", "/api/finance/connections/"): "implemented",
-    ("delete", "/api/finance/connections/{connectionId}/"): "mock",
+    ("delete", "/api/finance/connections/{connectionId}/"): "implemented",
     # 거래 16~18 (혜리, 10/26)
     ("get", "/api/finance/transactions/"): "implemented",
     ("get", "/api/finance/transactions/{id}/"): "implemented",
     ("patch", "/api/finance/transactions/{id}/"): "implemented",
+    # 예산: 지킬 돈 · 추천 · 보기 · 자물쇠 · 승인 (10/28)
+    ("get", "/api/budgets/protect/"): "implemented",
+    ("put", "/api/budgets/protect/"): "implemented",
+    ("post", "/api/budgets/recommend/"): "implemented",
+    ("get", "/api/budgets/"): "implemented",
+    ("patch", "/api/budgets/{id}/categories/{code}/"): "implemented",
+    ("post", "/api/budgets/{id}/approve/"): "implemented",
     # 챗봇: 32 이전 대화는 구현, 33 · 34 는 명세 예시를 돌려주는 껍데기
     ("get", "/api/chat/conversations/{id}/"): "implemented",
     ("post", "/api/chat/messages/"): "mock",
@@ -48,6 +55,7 @@ for _domain, _state in (("fixed", "implemented"), ("savings", "implemented")):
         IMPLEMENTATION[(_method, f"/api/budgets/{_domain}/{_suffix}")] = _state
 IDEMPOTENT_PATHS = {
     "/api/finance/consents/", "/api/finance/loans/", "/api/chat/messages/",
+    "/api/budgets/recommend/", "/api/budgets/{id}/approve/",
     "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
     "/api/budgets/savings/", "/api/budgets/savings/confirm/", "/api/budgets/savings/ignore/",
 }
@@ -79,9 +87,9 @@ def _base():
         "info": {
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
-                "확정 명세 35개 · 9개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
-                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화), "
-                f"목업 {counts['mock']}개(연결 해제·챗봇 메시지·작업 확인), 미구현 {35 - counts['implemented'] - counts['mock']}개입니다. "
+                "확정 명세 41개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
+                f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·예산), "
+                f"목업 {counts['mock']}개(챗봇 메시지·작업 확인), 미구현 {41 - counts['implemented'] - counts['mock']}개입니다. "
                 "전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. "
                 "목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "
@@ -91,7 +99,7 @@ def _base():
                 "일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, "
                 "주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. "
                 "오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n"
-                "미정 항목은 설명에 남겼습니다. ML 후 예산·쿠션, 비정기 준비금(2차), "
+                "미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), "
                 "금융기관 새 연결·재조회 등 아직 작성하지 않은 명세는 포함하지 않습니다."
             ),
         },
@@ -122,7 +130,7 @@ def _base():
                     "properties": {"error": {
                         "type": "object", "required": ["code", "message"],
                         "properties": {
-                            "code": {"type": "string", "description": "invalid, parse_error, not_authenticated, permission_denied, not_found, method_not_allowed, idempotency_conflict, consent_required, relogin_required, provider_unavailable, server_error 등. 사용 가능한 코드는 각 API 참조."},
+                            "code": {"type": "string", "description": "invalid, parse_error, not_authenticated, permission_denied, not_found, method_not_allowed, idempotency_conflict, not_ready, expired, consent_required, relogin_required, provider_unavailable, server_error 등. 사용 가능한 코드는 각 API 참조."},
                             "message": {"type": "string"},
                             "fields": {"type": "object", "description": "입력 항목 오류일 때만 포함. 여러 칸의 조합 오류는 nonFieldErrors.", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
                         },
@@ -243,7 +251,7 @@ def build_runtime_schema():
         "순서: ① GET /api/csrf/ → ② POST /api/auth/signup/ 또는 /api/auth/login/ → ③ 나머지 API. "
         "로그인하면 세션 쿠키가 저장되어 이후 요청에 자동으로 붙고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
         "실제 DB가 바뀌므로 연습용 계정으로 확인하세요. 계좌 후보·거래·이전 대화는 DB에 저장된 데이터가 있어야 결과가 나옵니다(CODEF를 새로 부르지 않음). "
-        "껍데기(연결 해제·챗봇 메시지·작업 확인)는 전체 명세 화면에서만 봅니다."
+        "껍데기(챗봇 메시지·작업 확인)는 전체 명세 화면에서만 봅니다."
     )
     samples = {"/api/csrf/": {"ok": True}}
     for path, sample in samples.items():

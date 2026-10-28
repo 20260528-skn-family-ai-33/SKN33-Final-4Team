@@ -43,6 +43,10 @@ urlpatterns = [
 
     # 화면 데이터
     path("home/", budgets_api.home, name="home"),
+    path("budgets/protect/", budgets_api.protect, name="protect"),
+    path("budgets/recommend/", budgets_api.recommend, name="recommend"),
+    path("budgets/<uuid:budget_id>/categories/<str:code>/", budgets_api.budget_category, name="budget-category"),
+    path("budgets/<uuid:budget_id>/approve/", budgets_api.budget_approve, name="budget-approve"),
     path("budgets/", budgets_api.budget, name="budget"),
     path("budgets/cushion/", budgets_api.cushion, name="cushion"),
     path("finance/transactions/", finance_api.transactions, name="transactions"),
