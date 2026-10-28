@@ -9,7 +9,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from budgets.api import day_in_cycle
+from budgets.api import day_in_cycle, lock_user
 from budgets.models import BudgetCycle
 from config.idempotency import idempotent
 from users.models import Consent
@@ -161,6 +161,7 @@ def loans(request):
 @transaction.atomic
 def loan_create(request):
     """POST 전용 처리: 대출·확인 정보·납부 예정을 함께 저장한다."""
+    lock_user(request.user)
     serializer = LoanCreateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
 
@@ -232,6 +233,8 @@ def apply_loan_patch(loan, validated_data):
 
 def sync_loan_due(loan):
     today = timezone.localdate()
+    from budgets.salary import activate_salary_if_due
+    activate_salary_if_due(loan.user_id, today)
 
     cycle = BudgetCycle.objects.filter(
         user_id=loan.user_id,
@@ -242,6 +245,10 @@ def sync_loan_due(loan):
 
     if cycle is None:
         return None
+
+    from budgets.due_periods import uses_monthly_dues
+    if uses_monthly_dues(loan.user_id):
+        return sync_monthly_loan_dues(loan, cycle, today)
 
     lookup = {
         "user_id": loan.user_id,
@@ -319,10 +326,59 @@ def sync_loan_due(loan):
     return due
 
 
+def sync_monthly_loan_dues(loan, cycle, today):
+    from budgets.due_periods import monthly_due, occurrence_cycles, occurrence_key
+
+    locked = PaymentDue.objects.select_for_update().filter(user_id=loan.user_id, loan=loan)
+    def protected(due):
+        return due.paid_amount > 0 or due.payment_state in ("partial", "paid") or due.matches.exists()
+    parts = occurrence_cycles(loan.user_id, cycle)
+    dates = [day_in_cycle(part, loan.payment_day) for part in parts] if loan.payment_day else []
+    dates = {value for value in dates if value is not None} if loan.monthly_payment is not None else set()
+    for due in locked.filter(due_date__gte=cycle.starts_on, due_date__lt=cycle.ends_before):
+        if not dates or (due.due_date not in dates and not any(
+            (value.year, value.month) == (due.due_date.year, due.due_date.month) for value in dates
+        )):
+            if not protected(due) and due.obligation_state != "canceled":
+                due.obligation_state, due.canceled_at = "canceled", timezone.now()
+                due.save(update_fields=["obligation_state", "canceled_at"])
+    result = None
+    for part in parts:
+        due_date = day_in_cycle(part, loan.payment_day) if loan.payment_day else None
+        if due_date not in dates:
+            continue
+        due = monthly_due(locked, due_date)
+        if due is not None and protected(due):
+            result = result or due
+            continue
+        amount_state = loan_field_states(loan)["monthly_payment"]
+        values = {
+            "due_date": due_date, "confirmed_amount": loan.monthly_payment,
+            "source_type": amount_state["source"] or "unknown",
+            "confirmation_state": amount_state["confirmation_status"],
+            "obligation_state": "active", "canceled_at": None,
+            "payment_state": "unpaid" if due_date >= today else "needs_review",
+        }
+        if due is None:
+            due = PaymentDue.objects.create(
+                user_id=loan.user_id, loan=loan, obligation_type="loan",
+                occurrence_key=occurrence_key("loan", loan.pk, part, due_date), **values,
+            )
+        else:
+            changed = [name for name, value in values.items() if getattr(due, name) != value]
+            for name in changed:
+                setattr(due, name, values[name])
+            if changed:
+                due.save(update_fields=changed)
+        result = result or due
+    return result
+
+
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def loan_detail(request, loan_id):
     with transaction.atomic():
+        lock_user(request.user)
         loan = get_object_or_404(
             # nullable 관계의 OUTER JOIN까지 잠그면 PostgreSQL에서 실패한다.
             owned_loans(request.user).select_for_update(of=("self",)),

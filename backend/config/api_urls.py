@@ -10,6 +10,7 @@ API 주소 목록 (리액트가 데이터를 받아 가는 곳)
 from django.urls import path, re_path
 
 from budgets import api as budgets_api
+from budgets import api_salary as budgets_salary
 from chat import api as chat_api
 from finance import api as finance_api
 from finance import api_connect as finance_connect
@@ -46,6 +47,7 @@ urlpatterns = [
     path("home/", budgets_api.home, name="home"),
     path("budgets/", budgets_api.budget, name="budget"),
     path("budgets/cushion/", budgets_api.cushion, name="cushion"),
+    path("budgets/salary/", budgets_salary.salary, name="salary"),
     path("finance/transactions/", finance_api.transactions, name="transactions"),
 
     # ---- 나은: 고정지출 19~24 · 정기 저축 25~30 (구현) ----

@@ -17,7 +17,6 @@ from django.utils import timezone
 
 from finance.api import UNCLASSIFIED, listed_transactions
 from finance.models import BankAccount, FinancialTransaction, PaymentDue, RecurringExpense
-from users.models import FinancialProfile
 
 from .api import account_json, day_in_cycle, day_in_month, ensure_current_due, lock_user, match_current_due
 from .models import BudgetCycle
@@ -180,17 +179,25 @@ def prepare_dues(user, cycle, today, previous_start, previous_cycle):
       - 등록한 뒤 출금일이면 home.md 규칙: 출금이 없어도 만들어 미납을 알린다 (앱을 한동안 안 연 경우)
     지난 주기 회차는 한 달을 건너뛰고 접속해서 아직 없을 때만 새로 만든다 (취소 · 납부 기록이 있으면 그대로 둠)
     """
+    from .due_periods import occurrence_cycles, monthly_due
+
     expenses = RecurringExpense.objects.select_for_update().filter(
         user=user, status="confirmed", payment_card__isnull=True, payment_day__isnull=False,
     ).order_by("pk")  # 고정지출 수정 · 중지와 같은 순서로 잠금
     for expense in expenses:
-        for c in (previous_cycle, cycle):
+        periods = [(part, original is previous_cycle) for original in (previous_cycle, cycle)
+                   for part in occurrence_cycles(user, original)]
+        for c, is_previous in periods:
             due_date = day_in_cycle(c, expense.payment_day)
             if due_date is None:
                 continue
-            if c is previous_cycle and PaymentDue.objects.filter(
-                user=user, occurrence_key=f"recurring:{expense.pk}:{c.starts_on.isoformat()}",
-            ).exists():
+            if getattr(c, "monthly_occurrence", False):
+                existing = monthly_due(PaymentDue.objects.filter(user=user, recurring=expense), due_date)
+            else:
+                existing = PaymentDue.objects.filter(
+                    user=user, occurrence_key=f"recurring:{expense.pk}:{c.starts_on.isoformat()}",
+                ).first()
+            if is_previous and existing is not None:
                 match_current_due(expense, c, today)  # 이미 있는 지난 회차는 늦게 들어온 출금(±3일)만 맞춰 봄
                 continue
             create_past = registered_on(expense) <= due_date
@@ -245,21 +252,24 @@ def must_pay_json(user, next_payday, previous_start):
 
 # ---------------- 모으기 ----------------
 
+@transaction.atomic
 def home_data(user, today):
-    profile = FinancialProfile.objects.filter(user=user).first()
+    from .salary import current_salary_profile, salary_cycle_dates
+
+    lock_user(user)
+    profile = current_salary_profile(user, today)
     payday = profile.payday if profile else None
 
     period = None
     must_pay = []
     if payday:
-        start, next_payday, previous_start = cycle_dates(payday, today)
-        with transaction.atomic():
-            # 회원 잠금이 먼저 (lock_user 설명: 홈 · 고정지출 · 거래 처리 재시도가 한 회원에 하나씩)
-            lock_user(user)
-            cycle = ensure_cycle(user, start, next_payday)
-            previous_cycle = ensure_previous_cycle(user, previous_start, start)
-            prepare_dues(user, cycle, today, previous_start, previous_cycle)
-            period = period_json(user, profile, today, cycle, start, next_payday)
+        start, next_payday, previous_start = salary_cycle_dates(profile, today)
+        cycle = ensure_cycle(user, start, next_payday)
+        previous_cycle = ensure_previous_cycle(user, previous_start, start)
+        prepare_dues(user, cycle, today, previous_start, previous_cycle)
+        from .salary import prepare_salary_loans
+        prepare_salary_loans(user)
+        period = period_json(user, profile, today, cycle, start, next_payday)
         must_pay = must_pay_json(user, next_payday, previous_start)
 
     return {
