@@ -2,11 +2,8 @@
 통합 챗봇 API (docs/api/chat.md)
 - 32. GET  /api/chat/conversations/<id>/ — 이전 대화 보기 (10/26)
 - 33. POST /api/chat/messages/ — 메시지 보내기 (10/27: 저장 · 선택지 처리. 소비 분석 집계 · LLM 라우터는 다음 단계)
-- 34 는 아직 껍데기: 응답 = 명세 예시 JSON(chat/shell_examples.json). 예산 조정 에이전트와 같이 만든다
+- 34. GET /api/tasks/<id>/ 는 공용 작업 도구로 옮겼다 → config/tasks.py (10/27)
 """
-import copy
-import json
-from pathlib import Path
 import uuid
 
 from django.db import transaction
@@ -21,14 +18,6 @@ from finance.inputs import body_dict, reject_unknown_fields
 
 from . import replies, router
 from .models import ChatMessage, Conversation
-
-EXAMPLES = json.loads(Path(__file__).with_name("shell_examples.json").read_text(encoding="utf-8"))
-
-
-def example(name):
-    """명세 예시 응답 하나를 복사해서 준다 (원본이 바뀌지 않게)"""
-    return copy.deepcopy(EXAMPLES[name])
-
 
 def message_item(message):
     """메시지 한 줄 {messageId, role, contentType, content, taskId, createdAt}"""
@@ -141,8 +130,3 @@ def messages(request):
         "task": None,
     })
 
-
-@api_view(["GET"])
-def task(request, task_id):
-    """34. GET /api/tasks/<id>/ — 오래 걸리는 작업 진행 확인 (running 예시)"""
-    return Response(example("task"))

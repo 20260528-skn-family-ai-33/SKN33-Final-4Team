@@ -12,6 +12,8 @@ drf-spectacular==0.29.0
 drf-spectacular-sidecar==2026.10.1
 # CODEF 계좌·거래 조회 (backend/finance/codef.py)
 easycodefpy==1.0.1
+# connectedId 암호화 (AES-GCM, backend/finance/connected_id.py). easycodefpy 도 쓰는 라이브러리라 같은 버전으로 명시
+pycryptodome==4.1.0
 
 # ===== Database =====
 # PostgreSQL 드라이버; binary extra로 libpq·컴파일러 설치 없이 사용
