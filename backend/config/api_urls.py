@@ -18,6 +18,7 @@ from finance import api_loans as finance_loans
 from finance import api_cards as finance_cards
 
 from users import api as users_api
+from users import api_profile as users_profile
 
 from . import api_common, api_docs, tasks
 
@@ -43,6 +44,7 @@ urlpatterns = [
     path("auth/me/", users_api.me, name="me"),
 
     # 화면 데이터
+    path("profile/", users_profile.profile, name="profile"),
     path("home/", budgets_api.home, name="home"),
     path("budgets/protect/", budgets_api.protect, name="protect"),
     path("budgets/recommend/", budgets_api.recommend, name="recommend"),
