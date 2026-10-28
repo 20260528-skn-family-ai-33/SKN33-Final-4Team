@@ -23,6 +23,7 @@ from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, 
 from users.models import FinancialProfile
 
 from . import mock
+from .salary import current_salary_profile, salary_cycle_dates
 
 
 @api_view(["GET"])
@@ -65,8 +66,9 @@ class ProtectNotReady(APIException):
 def protect(request):
     with transaction.atomic():
         lock_user(request.user)  # 홈 · 고정지출 · 정기 저축과 같은 잠금 순서
-        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
-        data = protect_json(request.user, profile, timezone.localdate())
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
+        data = protect_json(request.user, profile, today)
         if request.method == "PUT":
             values = clean_protect(request, data)
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
@@ -187,7 +189,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
 
     card_reserved를 주면 카드 선차감을 새로 계산하지 않고 그 값을 쓴다 (승인 때 초안에 저장한 값).
     """
-    from .home import balance_json, cycle_dates, ensure_cycle
+    from .home import balance_json, ensure_cycle
     from .protect import RATES, blocked, cushion_required, fixed_breakdown, fixed_sum, recommend, savings_min
 
     housing = profile.housing_type if profile else None
@@ -202,7 +204,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
     base = recommendation = blocked_state = None
     pending_cards = []
     if not missing:
-        start, next_payday, _ = cycle_dates(payday, today)
+        start, next_payday, _ = salary_cycle_dates(profile, today)
         cycle = ensure_cycle(user, start, next_payday)
         breakdown = fixed_breakdown(user, cycle, card=card_reserved is _COMPUTE)
         if card_reserved is not _COMPUTE:
@@ -266,8 +268,8 @@ def recommend(request):
 
     with transaction.atomic():
         lock_user(request.user)
-        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
         today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
         state = protect_json(request.user, profile, today)  # home.ensure_cycle도 같은 잠금 안에서 재사용
         clean_recommend(request, state)
         pending = AsyncTask.objects.filter(
@@ -382,10 +384,11 @@ def budget_category(request, budget_id, code):
 
     with transaction.atomic():
         lock_user(request.user)
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
         category = get_object_or_404(Category, pk=code, category_code__in=LIVING_CODES)
-        profile = FinancialProfile.objects.filter(user=request.user).first()
-        cycle = current_cycle(request.user, profile, timezone.localdate())
+        cycle = current_cycle(request.user, profile, today)
         if cycle is None or chosen.cycle_id != cycle.pk or chosen.status not in ("validated", "approved"):
             raise ProtectNotReady("지난 예산은 바꿀 수 없어요.")
         data = body_dict(request)
@@ -420,12 +423,12 @@ def budget_approve(request, budget_id):
 
     with transaction.atomic():
         lock_user(request.user)
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
         data = body_dict(request)
         if data:
             raise ValidationError({key: ["이 칸은 보낼 수 없어요."] for key in data})
-        today = timezone.localdate()
-        profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
         cycle = current_cycle(request.user, profile, today)
         this_cycle = cycle is not None and chosen.cycle_id == cycle.pk
         if chosen.status == "approved":
@@ -965,6 +968,8 @@ FIXED_TX_TYPES = ["spending", "transfer"]  # 고정지출 근거가 될 수 있�
 
 # 진행 중인 급여 주기 (온보딩 전이면 None)
 def active_cycle(user):
+    from .salary import activate_salary_if_due
+    activate_salary_if_due(user, timezone.localdate())
     return BudgetCycle.objects.filter(user=user, status="active").first()
 
 # 이번 주기 시작일 — 아직 주기가 없으면(온보딩 전) 오늘
@@ -1092,6 +1097,8 @@ def find_withdrawals(expense, due_date, today, key=None):
 #   예: 급여일 25일, 이번 주기 11/25 시작 → 10/25 (9/25 주기에 마지막으로 접속했어도)
 def previous_start(cycle):
     profile = FinancialProfile.objects.filter(user_id=cycle.user_id).first()
+    if profile and profile.payday_changes_on == cycle.starts_on:
+        return profile.payday_previous_start
     payday = (profile.payday if profile else None) or cycle.starts_on.day
     year, month = cycle.starts_on.year, cycle.starts_on.month
     year, month = (year - 1, 12) if month == 1 else (year, month - 1)
@@ -1224,15 +1231,25 @@ def ensure_current_due(expense, cycle, today, withdrawal=None, create_past=False
     if (expense.status != "confirmed" or cycle is None
             or expense.payment_card_id is not None or expense.payment_day is None):
         return None
+    from .due_periods import monthly_due, occurrence_cycles, occurrence_key
+    periods = occurrence_cycles(expense.user_id, cycle)
+    if periods != [cycle]:
+        dues = [ensure_current_due(expense, part, today, withdrawal=withdrawal,
+                                   create_past=create_past, user_pick=user_pick) for part in periods]
+        return next((due for due in dues if due is not None), None)
     due_date = day_in_cycle(cycle, expense.payment_day)
     if due_date is None:
         return None
 
-    key = f"recurring:{expense.pk}:{cycle.starts_on.isoformat()}"  # 회원 · 회차 UNIQUE → 같은 회차는 한 번만
-    due = PaymentDue.objects.select_for_update().filter(user=expense.user, occurrence_key=key).first()
+    key = occurrence_key("recurring", expense.pk, cycle, due_date)
+    locked = PaymentDue.objects.select_for_update().filter(user=expense.user, recurring=expense)
+    due = (monthly_due(locked, due_date) if getattr(cycle, "monthly_occurrence", False)
+           else locked.filter(occurrence_key=key).first())
+    if due is not None:
+        key = due.occurrence_key
     if due is not None and due.obligation_state == "active":
         return due
-    if due is not None and due.matches.exists():
+    if due is not None and (due.matches.exists() or due.paid_amount > 0 or due.payment_state in ("partial", "paid")):
         return None  # 취소됐지만 낸 기록이 있는 회차는 건드리지 않음
 
     found = []
@@ -1281,6 +1298,12 @@ def ensure_current_due(expense, cycle, today, withdrawal=None, create_past=False
 #   여러 건이면 자동으로 고르지 않음 → 목록의 [고르기]. 지난 주기 회차는 늦게 낸 출금이라 자동 연결하지 않음
 def match_current_due(expense, cycle, today):
     if expense.payment_account_id is None or cycle is None or expense.payment_day is None:
+        return
+    from .due_periods import occurrence_cycles
+    periods = occurrence_cycles(expense.user_id, cycle)
+    if periods != [cycle]:
+        for part in periods:
+            match_current_due(expense, part, today)
         return
     due_date = day_in_cycle(cycle, expense.payment_day)
     if due_date is None or today < due_date - timedelta(days=3):
@@ -1462,6 +1485,8 @@ def unlink_current(expense, cycle, today):
 # 수정 뒤 안 낸 회차 맞추기 (이번 주기 미납분과 앞으로의 회차만)
 #   카드로 바꾸거나 출금일을 비우면 취소 · 아니면 금액 · 날짜 · 결제 계좌를 새 값으로 · 없으면 새로 만들기
 def sync_dues(expense, cycle, today, user_pick=False):
+    from .due_periods import uses_monthly_dues
+    monthly = uses_monthly_dues(expense.user_id)
     since = cycle.starts_on if cycle else today
     dues = open_dues(expense, since)
     if expense.payment_card_id is not None or expense.payment_day is None:
@@ -1469,7 +1494,7 @@ def sync_dues(expense, cycle, today, user_pick=False):
         return
 
     for due in dues:
-        if cycle is not None and cycle.starts_on <= due.due_date < cycle.ends_before:
+        if not monthly and cycle is not None and cycle.starts_on <= due.due_date < cycle.ends_before:
             due.due_date = day_in_cycle(cycle, expense.payment_day) or due.due_date
         else:
             due.due_date = day_in_month(due.due_date.year, due.due_date.month, expense.payment_day)

@@ -113,6 +113,10 @@ class FinancialProfile(models.Model):
     monthly_disposable_income = models.BigIntegerField("모델용 처분가능소득", null=True, blank=True)
     disposable_income_basis = models.CharField("처분가능소득 근거", max_length=30, null=True, blank=True)
     payday = models.SmallIntegerField("매월 급여일", null=True, blank=True)  # 1~31
+    scheduled_payday = models.SmallIntegerField("변경 급여일", null=True, blank=True)
+    payday_revision = models.PositiveIntegerField("급여일 변경 횟수", default=0)
+    payday_changes_on = models.DateField("급여일 전환일", null=True, blank=True)
+    payday_previous_start = models.DateField("전환 전 주기 시작일", null=True, blank=True)
     payday_rule = models.CharField("급여일 보정 규칙", max_length=30, null=True, blank=True)
     budget_direction = models.CharField("예산 산정 방향", max_length=30, null=True, blank=True)
     # 지킬 돈 (지킬 돈 설정 화면 · 2026-10-21 A안): 생활비 · 저축 · 월 쿠션 적립금 세 칸 모두 사용자 설정값
@@ -132,6 +136,15 @@ class FinancialProfile(models.Model):
             models.CheckConstraint(
                 condition=Q(payday__isnull=True) | Q(payday__gte=1, payday__lte=31),
                 name="fp_payday_1_31",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(scheduled_payday__isnull=True, payday_changes_on__isnull=True, payday_previous_start__isnull=True)
+                    | Q(scheduled_payday__isnull=False, scheduled_payday__gte=1, scheduled_payday__lte=31,
+                        payday_changes_on__isnull=False, payday_previous_start__isnull=False,
+                        payday_previous_start__lt=models.F("payday_changes_on"))
+                ),
+                name="fp_payday_change_valid",
             ),
             models.CheckConstraint(
                 condition=Q(living_budget__isnull=True) | Q(living_budget__gte=0), name="fp_living_budget_gte_0",
