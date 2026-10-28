@@ -4,10 +4,10 @@ import Layout from '../components/Layout.jsx'
 import { PATHS } from '../routes.js'
 
 const STEPS = [
-  '내 정보 · 소비 우선순위 입력',
+  '내 정보 · 자취 여부 · 소비 우선순위 입력',
   '계좌·카드·대출 연결로 현재 자금 확인',
   '월급과 고정지출 확인',
-  '예산 방향과 지킬 돈 설정',
+  '자취 여부에 맞춰 지킬 돈 나누기',
   '카테고리별 추천 예산 확인',
 ]
 

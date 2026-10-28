@@ -9373,18 +9373,18 @@
     }
   },
   "x-source-sha256": {
-    "docs/API_RULES.md": "95e1674bb7fb53cd9ce3fca0bb3c0f908dfac87f79fc821003f4be0d10d5fbcd",
-    "docs/api/README.md": "0c54cf468a2aa977edb4d897ccd94b1a64ac098e8f8c28f1ed6c36075c967f65",
-    "docs/api/spending-analysis.md": "ac3f0c58d9f0e56225052d8dba4d9026545d7bb257505634faebf7ea0a0b00b7",
-    "docs/결정기록_2026-10-21.md": "c926734ba5e9b436c7ae4b980415bf90ff45027e8ec7c4f34d333e7d54296594",
-    "docs/api/auth.md": "d1411754295869282a08137af473da7ed9088921de73539d2c0f242ef6d2eb31",
-    "docs/api/finance-connect.md": "32e4c9d239b8328136f48442eb501216b4d0bee6d3202ebf3d1dc4f63b0e8604",
-    "docs/api/cards.md": "afc9d170884fce29392a6734d3ae51b155a41303a5b47c4eb7d1d108f8ceec61",
-    "docs/api/loans.md": "9ad0a8d882cedb6c7870c023fb7fef4f3777ad7afad4d3ab0812b2b13d4b7ca8",
-    "docs/api/transactions.md": "49e547ee9f7e4b90d59c35528a1aea3ed7031da11c14b78b8cf9916c35d29658",
-    "docs/api/fixed.md": "a0c718088dff3c88917a4470beb327e09dea9debe90f27abd8106ba3b4f04eec",
-    "docs/api/savings.md": "0914a0f8d797c5e69f7d9245feb2f653afcffced7d90a96a51dee4ced22e9377",
-    "docs/api/home.md": "0382703a2bd5bb2d581dd035bd0e6ba9298b66d3099670d3581bfa8d4217fdab",
-    "docs/api/chat.md": "7af436d3582c144b3259d495db301a08ff64b2a8f2e55fb39c6c3b2ccc6d3431"
+    "docs/API_RULES.md": "eb6c8383e11d8f635050da8dadf150e7276fc9fde751dc2c2124bbba56c44a9b",
+    "docs/api/README.md": "ac3dad0f10db9f060ee4cd96b10292421171b0bdbc805c8163c383a52add89b4",
+    "docs/api/spending-analysis.md": "c8a479b72f10d6e222a36bc6892ac901980f0e4aac8d94c2998fb7ffd56344b9",
+    "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
+    "docs/api/auth.md": "dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c",
+    "docs/api/finance-connect.md": "df34a83c87ebc3d9dac4b6e9c315138c89abd1159e8bb8d63912e86b1c76d89a",
+    "docs/api/cards.md": "65e0847a806a929f679fc93705c38fa018c42dcdfe30d22b9b491dc67aab2f62",
+    "docs/api/loans.md": "5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c",
+    "docs/api/transactions.md": "47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88",
+    "docs/api/fixed.md": "76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115",
+    "docs/api/savings.md": "dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935",
+    "docs/api/home.md": "8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99",
+    "docs/api/chat.md": "01c713efdb505ee6bffb1e81d4d941aecc16283c70c1b752e4e44b53a4fc84a5"
   }
 }
