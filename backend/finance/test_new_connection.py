@@ -22,6 +22,7 @@ from .test_concurrency import run_together
 
 URL = "/api/finance/connections/"
 SECRETS = ("hong-login", "Bank-Pass-9!", "4111222233334444", "8642")
+CARD_NO_SAMPLE = "5555666677778888"
 
 
 def ok(cid="cid-1"):
@@ -320,6 +321,18 @@ class CardFieldsAndInputTest(ConnectBase):
         self.assert_no_secret(dump)
         self.assert_no_secret("\n".join(logs.output))
         self.assert_no_secret(res.content.decode())
+
+    def test_codef_04000_uses_error_list_and_missing_field_names(self):
+        # 10/28 나은 데모 확인: 겉은 CF-04000, 진짜 이유는 errorList 첫 줄 CF-12401, 빠진 칸은 extraMessage 의 {칸}
+        answer = {"result": {"code": "CF-04000", "message": "계정 등록에 실패했습니다."},
+                  "data": {"errorList": [{"code": "CF-12401", "message": "로그인 파라미터 누락", "extraMessage": "{cardPassword}"}]}}
+        self.fake.responses = [answer]
+        res = self.post(card("0301", cardNo=CARD_NO_SAMPLE))
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["error"]["fields"], {"institutions[0].cardPassword": ["카드번호와 카드 비밀번호를 확인해 주세요."]})
+        self.fake.responses = [{"result": {"code": "CF-04000", "message": "계정 등록에 실패했습니다."},
+                                "data": {"errorList": [{"code": "CF-12100", "message": "x", "extraMessage": ""}]}}]
+        self.assertEqual(self.post(card("0301")).json()["error"]["message"], "아이디 또는 비밀번호를 확인해 주세요.")
 
     def test_codef_card_fields_error_points_to_fields(self):
         self.fake.responses = [fail("CF-12401", "카드번호 누락")]

@@ -152,15 +152,16 @@ def check_consents(user, rows):
 
 # ---------- 실패 안내 (10/27 결정 5) ----------
 
-def failure(reason, name):
-    """실패 이유 → (HTTP 상태, code, 화면 문구, 칸 오류)"""
+def failure(reason, name, missing=()):
+    """실패 이유 → (HTTP 상태, code, 화면 문구, 칸 오류). missing = CODEF 가 빠졌다고 한 카드 칸"""
     if reason == "login":
         return 400, "invalid", "아이디 또는 비밀번호를 확인해 주세요.", None
     if reason == "locked":
         return 400, "invalid", f"{name} 홈페이지에서 직접 로그인해 잠금을 풀어 주세요.", None
     if reason == "card_fields":
         message = "카드번호와 카드 비밀번호를 확인해 주세요."
-        return 400, "invalid", message, {"card_no": [message], "card_password": [message]}
+        # CODEF 가 빠진 칸을 알려 주면 그 칸만, 모르면 두 칸 다 표시
+        return 400, "invalid", message, {field: [message] for field in (missing or ("card_no", "card_password"))}
     if reason == "sms_wrong":
         return 400, "invalid", "인증번호가 맞지 않아요.", None
     if reason == "sms_expired":
@@ -255,12 +256,12 @@ def connect_one(user, entry):
     name = institutions.name_of(business_type, code)
     base = {"business_type": business_type, "organization_code": code, "organization_name": name}
 
-    def failed(reason, codef_code=None):
+    def failed(reason, codef_code=None, missing=()):
         logger.warning(
             "기관 연결 실패 user=%s business_type=%s organization=%s reason=%s codef_code=%s",
             user.pk, business_type, code, reason, codef_code,
         )
-        http, error_code, message, fields = failure(reason, name)
+        http, error_code, message, fields = failure(reason, name, missing)
         error = {"code": error_code, "message": message}
         if fields:
             error["fields"] = fields
@@ -309,7 +310,7 @@ def connect_one(user, entry):
                 result["error"] = {"code": "invalid", "message": failure("sms_wrong", name)[2]}
             return result, None
         if outcome.kind == "failed":
-            return failed(outcome.reason, outcome.codef_code)
+            return failed(outcome.reason, outcome.codef_code, outcome.missing)
         row, reconnected = save_connection(user, business_type, code, outcome.connected_id)
 
     result = {**base, "status": "connected", "connection_id": row.connection_id, "reconnected": reconnected}

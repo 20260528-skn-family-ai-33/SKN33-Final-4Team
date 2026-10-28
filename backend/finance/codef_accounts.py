@@ -9,6 +9,7 @@ CODEF 계정 등록 (금융기관 로그인) — 새 연결 API(POST /api/financ
 - CODEF 원래 코드(CF-xxxxx)는 호출한 쪽이 로그에만 남긴다. 화면에는 reason 으로 바꾼 안내만 보낸다.
 """
 import json
+import re
 from dataclasses import dataclass
 
 from django.conf import settings
@@ -26,11 +27,15 @@ SMS_REQUIRED = "CF-03002"
 SMS_METHOD = "smsAuthNo"
 TWO_WAY_KEYS = ("jobIndex", "threadIndex", "jti", "twoWayTimestamp")
 
-# CODEF 코드 → 실패 이유. 실제 응답으로 확인한 것만 넣는다.
+# CODEF 코드 → 실패 이유. 실제 응답으로 확인한 것만 넣는다 (10/28 나은: CODEF 데모 현대카드로 확인)
+# - CF-04000(계정 등록 실패)은 겉 코드라 표에 넣지 않는다. 진짜 이유는 data.errorList 첫 줄의 코드로 고른다 (read_result)
 CODE_REASONS = {
-    "CF-12401": "card_fields",  # 현대카드 cardNo · cardPassword 누락 (10/27 나은 codef_card_check 확인)
-    "CF-12100": "login",        # 아이디 · 비밀번호 오류 (기존 codef.py 주석. 실제 응답 확인 필요)
+    "CF-12401": "card_fields",  # 로그인 값 누락. extraMessage 에 빠진 칸 이름이 {cardNo} · {cardPassword} 처럼 온다
+    "CF-13001": "unavailable",  # 조회일 · 기간 오류 (청구서 startDate 를 일 단위로 보냄 = 우리 요청 실수 → 로그로 확인)
+    "CF-12100": "login",        # 아이디 · 비밀번호 오류 (codef.py 주석 기준, 직접 재현은 아직)
 }
+# CODEF 칸 이름 → 우리 요청 칸 이름 (CF-12401 extraMessage 의 {칸})
+CODEF_FIELDS = {"cardNo": "card_no", "cardPassword": "card_password"}
 
 # 위 표에 없는 코드는 CODEF 안내 문장으로 임시 판단한다 (실제 코드를 확인하면 CODE_REASONS 로 옮긴다).
 # 순서가 중요하다: '카드 비밀번호' · '비밀번호 오류 횟수 초과' 가 일반 로그인 오류로 먼저 잡히지 않게 한다.
@@ -56,6 +61,18 @@ class Outcome:
     two_way: dict = None
     reason: str = None
     codef_code: str = None
+    missing: tuple = ()  # card_fields 일 때 CODEF 가 빠졌다고 한 칸 (예: ("card_no",))
+
+
+def missing_fields(*texts):
+    """CF-12401 extraMessage 의 {cardNo} · {cardPassword} → ("card_no", "card_password"). 우리가 받는 칸만"""
+    found = []
+    for text in texts:
+        for name in re.findall(r"\{(\w+)\}", text or "") if isinstance(text, str) else ():
+            field = CODEF_FIELDS.get(name)
+            if field and field not in found:
+                found.append(field)
+    return tuple(found)
 
 
 def classify(code, *texts):
@@ -130,7 +147,9 @@ def read_result(mode, body, connected_id=None):
             return Outcome("failed", reason="unavailable", codef_code=code)
         return Outcome("connected", connected_id=new_id, codef_code=code)
 
+    # CF-04000(계정 등록 실패) 같은 겉 코드면 errorList 첫 줄이 진짜 이유
     first = errors[0] if errors and isinstance(errors[0], dict) else result
     failed_code = first.get("code") or code
     reason = classify(failed_code, first.get("message"), first.get("extraMessage"))
-    return Outcome("failed", reason=reason, codef_code=failed_code)
+    missing = missing_fields(first.get("extraMessage"), first.get("message")) if reason == "card_fields" else ()
+    return Outcome("failed", reason=reason, codef_code=failed_code, missing=missing)

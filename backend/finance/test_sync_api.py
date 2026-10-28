@@ -141,6 +141,15 @@ class SyncTest(SyncBase):
             self.assertNotIn(CARD_PW, text)
         self.assertNotIn("CF-", json.dumps(task))
 
+    def test_card_value_error_from_codef_points_to_missing_field(self):
+        self.card_syncer.return_value = self.cards
+        self.cards.side_effect = codef.CodefError("CF-12401", "로그인 파라미터 누락", "{cardNo}")
+        _, task = self.run_sync({"connectionIds": [str(self.lotte.connection_id)]})
+        self.assertEqual(self.items(task)["0311"]["error"], {
+            "code": "invalid", "message": "카드번호와 카드 비밀번호를 확인해 주세요.",
+            "fields": {"cardNo": ["카드번호와 카드 비밀번호를 확인해 주세요."]},
+        })
+
     def test_login_error_marks_relogin_and_others_still_saved(self):
         bank2 = Connection.objects.create(user=self.user, business_type="bank", organization_code="0020", status="connected")
 

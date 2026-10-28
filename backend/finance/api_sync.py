@@ -29,7 +29,7 @@ from users.models import Consent
 
 from . import codef, connected_id, institutions
 from .api_new_connection import CARD_NO, CARD_PASSWORD, failure
-from .codef_accounts import classify
+from .codef_accounts import classify, missing_fields
 from .inputs import body_dict, reject_unknown_fields
 from .models import Connection, SyncRun
 from .sync import sync_bank
@@ -137,9 +137,9 @@ def last_success_day(connection, product_code):
     return row
 
 
-def _error(reason, name, connection=None):
+def _error(reason, name, connection=None, missing=()):
     """실패 이유 → 기관별 결과의 error. 로그인 오류 · 잠김은 연결을 relogin 으로 바꾸고 code=relogin_required"""
-    _http, code, message, fields = failure(reason, name)
+    _http, code, message, fields = failure(reason, name, missing)
     if reason in ("login", "locked", "relogin"):
         code = "relogin_required"
         if reason == "relogin":
@@ -153,22 +153,23 @@ def _error(reason, name, connection=None):
 
 
 def run_part(kind, connection, work):
-    """범위 하나 실행 → (part, 실패 이유 또는 None)"""
+    """범위 하나 실행 → (part, 실패면 (이유, 빠진 카드 칸) · 아니면 None)"""
     try:
         work()
     except PermissionError:  # 저장 직전 동의 철회 (sync_loans)
         return {"kind": kind, "status": "skipped", "reason": "no_consent"}, None
     except codef.CodefError as exc:
         reason = classify(exc.code, exc.message, exc.extra)
+        missing = missing_fields(exc.extra, exc.message) if reason == "card_fields" else ()
         logger.warning("다시 불러오기 실패 connection=%s kind=%s reason=%s codef_code=%s",
                        connection.pk, kind, reason, exc.code)
-        return {"kind": kind, "status": "failed"}, reason
+        return {"kind": kind, "status": "failed"}, (reason, missing)
     except Exception as exc:
         connection.refresh_from_db(fields=["disconnected_at"])
         if connection.disconnected_at is not None:  # 조회 중 해제 → 저장하지 않고 버림 (#51)
             return {"kind": kind, "status": "skipped", "reason": "disconnected"}, None
         logger.warning("다시 불러오기 실패 connection=%s kind=%s error=%s", connection.pk, kind, type(exc).__name__)
-        return {"kind": kind, "status": "failed"}, "unavailable"
+        return {"kind": kind, "status": "failed"}, ("unavailable", ())
     return {"kind": kind, "status": "succeeded"}, None
 
 
@@ -181,8 +182,10 @@ def sync_connection(user, connection, cid, scopes, cred, today):
         "status": "skipped", "parts": [], "new_transaction_count": None, "error": None,
     }
 
-    def failed(reason):
-        item["status"], item["error"] = "failed", _error(reason, name, connection)
+    def failed(reason, missing=()):
+        if isinstance(reason, tuple):  # run_part 가 준 (이유, 빠진 카드 칸)
+            reason, missing = reason
+        item["status"], item["error"] = "failed", _error(reason, name, connection, missing)
         return item
 
     if connection.status == Connection.Status.RELOGIN or cid is None:
