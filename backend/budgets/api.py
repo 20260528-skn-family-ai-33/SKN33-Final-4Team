@@ -1,7 +1,7 @@
 """
 budgets 앱 API: React 화면에 필요한 데이터를 JSON으로 준다.
 - 홈 · 고정지출 · 정기 저축 · 예산: DB에 저장하고 읽는 실제 기능
-- 예산 추천은 임시 비율 엔진, 쿠션 화면은 아직 mock.py 데이터를 사용한다
+- 예산 추천은 임시 비율 엔진을 사용한다
 """
 import calendar
 import copy
@@ -22,7 +22,6 @@ from finance.codef import BANKS
 from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, RecurringSaving
 from users.models import FinancialProfile
 
-from . import mock
 from .salary import current_salary_profile, salary_cycle_dates
 
 
@@ -46,9 +45,11 @@ def budget(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def cushion(request):
     """GET /api/budgets/cushion/ — 머니 쿠션 화면 데이터"""
-    return Response({"cushion": mock.CUSHION})
+    from .cushion import cushion_data
+    return Response(cushion_data(request.user))
 
 
 # ==================================================================

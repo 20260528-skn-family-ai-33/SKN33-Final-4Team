@@ -20,6 +20,7 @@
 - 데이터: [users/models.py](../../backend/users/models.py)의 `FinancialProfile`(`monthly_take_home_income` · `living_budget` · `savings_floor` · `cushion_monthly` · `cushion_target` · **자취 여부 칸 — 세진 내 정보 API에서 추가**), [budgets/models.py](../../backend/budgets/models.py)의 `BudgetCycle` · `Budget` · `BudgetItem` · `BudgetCategorySetting`, [finance/models.py](../../backend/finance/models.py)의 `RecurringSaving` · `BankAccount`.
 - 근거 문서: [결정기록](../결정기록_2026-10-21.md) 2번(돈이 나뉘는 순서) · 예산 예측 최종 플로우(ML 담당, 10/27 수정본) 4.2 · 4.3.
 - 요구사항: `BUD-001`(지킬 돈) · `BUD-003`(저축 최소 금액) · `BUD-005`(승인된 예산은 승인 없이 안 바꿈) · `CUS-001`(쿠션 목표 = 월급 × 3).
+- 쿠션 조회 GET 구현·설정 PATCH 후속 명세는 [cushion.md](./cushion.md)에 정리한다. PATCH는 아직 구현하지 않았다.
 
 ### 10/27 결정 (온보딩)
 
