@@ -114,6 +114,26 @@ class SyncTest(SyncBase):
         self.run_sync({"connectionIds": [str(self.shinhan.connection_id)]})
         self.assertEqual(self.bank.call_args.args[3], last - timedelta(days=7))
 
+    def test_card_bill_months_start_from_last_continuous_bill_day(self):
+        # 10/29: 두 달 넘게 안 불러와도 빈 달이 생기지 않게, 빈틈없이 불러온 마지막 날의 달부터 다음 달까지
+        from .models import Card
+
+        self.card_syncer.return_value = self.cards
+        old = Connection.objects.create(user=self.user, business_type="card", organization_code="0302",
+                                        status="disconnected", disconnected_at=timezone.now())
+        card = Card.objects.create(user=self.user, connection=old, origin="provider", issuer_code="0302")
+        last = self.today - timedelta(days=70)
+        for start, end in ((last - timedelta(days=20), last), (self.today - timedelta(days=5), self.today - timedelta(days=2))):
+            # 다시 연결하기 전 연결의 기록도 이어 본다 · 뒤의 기록은 빈 날 다음이라 세지 않는다
+            SyncRun.objects.create(user=self.user, connection=old, card=card, product_code="card_bill_list",
+                                   status="success", covered_from=start, covered_to=end)
+        self.run_sync({
+            "connectionIds": [str(self.hyundai.connection_id)],
+            "cardCredentials": [{"connectionId": str(self.hyundai.connection_id), "cardNo": CARD_NO, "cardPassword": CARD_PW}],
+        })
+        self.assertEqual(self.cards.call_args.args[5], bill_months(self.today, last))
+        self.assertEqual(self.cards.call_args.args[5][0], last.strftime("%Y%m"))
+
     def test_loans_and_cards_when_available(self):
         self.loan_syncer.return_value = self.loans
         self.card_syncer.return_value = self.cards
@@ -322,7 +342,11 @@ class RangeTest(TestCase):
     def test_bill_months_and_refresh_start(self):
         from .sync_ranges import refresh_start
 
-        self.assertEqual(bill_months(date(2026, 1, 15)), ("202512", "202601"))
+        # 카드 청구서: 마지막으로 다 불러온 달 ~ 다음 달 (없으면 지난달부터, 10/29)
+        self.assertEqual(bill_months(date(2026, 1, 15)), ("202512", "202601", "202602"))
+        self.assertEqual(bill_months(date(2026, 10, 28)), ("202609", "202610", "202611"))
+        self.assertEqual(bill_months(date(2026, 10, 28), date(2026, 10, 3)), ("202610", "202611"))
+        self.assertEqual(bill_months(date(2026, 1, 5), date(2025, 11, 20)), ("202511", "202512", "202601", "202602"))
         self.assertEqual(refresh_start(date(2026, 10, 27), date(2026, 10, 25)), date(2026, 10, 18))
         self.assertEqual(refresh_start(date(2026, 10, 27), None), date(2026, 6, 1))
 

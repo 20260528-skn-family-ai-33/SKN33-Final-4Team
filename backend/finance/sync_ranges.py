@@ -3,7 +3,9 @@ CODEF 불러오기 기간 (10/27 나은 결정)
 
 - 첫 연결: 4달 전 1일 ~ 오늘
 - 다시 불러오기 · 자동 불러오기: 마지막으로 성공한 조회일 7일 전 ~ 오늘 (겹친 거래는 sync.py 가 중복 없이 처리)
-- 카드 청구서: 지난달 + 이번 달 (CODEF billing-list 는 월 단위 YYYYMM)
+- 카드 청구서: 마지막으로 다 불러온 달 ~ 다음 달 (CODEF billing-list 는 월 단위 YYYYMM, 10/29 나은).
+  다음 달에 낼 청구서도 받아야 이번 달 가입한 사람의 첫 청구서를 찾고, 두 달 넘게 안 불러와도 빈 달이 생기지 않는다.
+  불러온 적이 없으면 지난달부터
 """
 from datetime import date, timedelta
 
@@ -29,6 +31,12 @@ def refresh_start(today, last_success):
     return min(last_success - timedelta(days=OVERLAP_DAYS), today)
 
 
-def bill_months(today):
-    """카드 청구서 조회 달: (지난달 YYYYMM, 이번 달 YYYYMM)"""
-    return months_back(today, 1).strftime("%Y%m"), today.strftime("%Y%m")
+def bill_months(today, last_success=None):
+    """카드 청구서 조회 달 (YYYYMM, 오래된 순): last_success 가 속한 달(없으면 지난달) ~ 다음 달"""
+    first = months_back(today, 1) if last_success is None else min(last_success, today).replace(day=1)
+    last = months_back(today, -1)
+    months = []
+    while first <= last:
+        months.append(first.strftime("%Y%m"))
+        first = months_back(first, -1)
+    return tuple(months)

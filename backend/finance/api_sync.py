@@ -5,7 +5,7 @@ POST /api/finance/sync/ — 금융 정보 다시 불러오기 (docs/api/finance-
 10/27 나은 결정
 1. 대상: 기본 = 연결된 기관 전부 × 기관마다 동의한 범위 전부 (은행: 계좌 · 거래 + 대출 / 카드: 카드 · 청구서).
    connectionIds 로 특정 기관만. 동의 안 한 범위는 건너뜀 (실패로 안 셈)
-2. 기간: 거래 = 마지막 성공 조회일 7일 전 ~ 오늘 / 카드 청구서 = 지난달 + 이번 달 / 잔액 · 카드 · 대출 = 지금 상태 통째로
+2. 기간: 거래 = 마지막 성공 조회일 7일 전 ~ 오늘 / 카드 청구서 = 마지막으로 다 불러온 달 ~ 다음 달 (10/29) / 잔액 · 카드 · 대출 = 지금 상태 통째로
 3. 일부 실패: 성공한 기관만 저장, 실패는 기관별 결과에 이유 (새 연결 실패 안내 표와 같은 문구). 로그인 오류면 relogin
 4. 카드번호 · 카드 비밀번호가 필요한 곳(현대카드)은 요청으로 받아 보내고 버림. 없으면 그 기관만 실패
 5. 작업 방식: 202 {taskId, status} → GET /api/tasks/<id>/ 로 결과. 1차는 요청 안에서 끝까지 처리 (config/tasks.py)
@@ -138,6 +138,18 @@ def last_success_day(connection, product_code):
     return row
 
 
+def last_bill_day(connection):
+    """카드 청구서를 빈틈없이 불러온 마지막 날 (없으면 None). 중간에 빈 날이 있으면 그 앞날이라 다음 불러오기가 빈 달부터 채운다.
+    다시 연결하면 연결이 바뀌므로 회원 · 카드사의 카드 조회 기록으로 본다 (선차감 budgets.protect.history_until 과 같은 기준)"""
+    from budgets.protect import covered_until
+
+    runs = list(SyncRun.objects.filter(
+        user_id=connection.user_id, card__issuer_code=connection.organization_code,
+        product_code="card_bill_list", status="success", covered_from__isnull=False, covered_to__isnull=False,
+    ).values_list("covered_from", "covered_to"))
+    return covered_until(runs, min(run_from for run_from, _ in runs)) if runs else None
+
+
 def _error(reason, name, connection=None, missing=()):
     """실패 이유 → 기관별 결과의 error. 로그인 오류 · 잠김은 연결을 relogin 으로 바꾸고 code=relogin_required"""
     _http, code, message, fields = failure(reason, name, missing)
@@ -249,7 +261,7 @@ def sync_connection(user, connection, cid, cred, today):
                 start = refresh_start(today, last_success_day(connection, "card_sync"))
                 cred = cred or {}
                 part, reason = run_part("cards", connection, lambda: cards(
-                    user, cid, org, start, today, bill_months(today),
+                    user, cid, org, start, today, bill_months(today, last_bill_day(connection)),
                     card_no=cred.get("card_no"), card_password=cred.get("card_password"), connection_id=connection.pk,
                 ))
                 item["parts"].append(part)

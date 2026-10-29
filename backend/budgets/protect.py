@@ -118,10 +118,11 @@ def covered(runs, start, end):
     return reach is not None and reach >= end
 
 
-def history_until(card, product_code, start):
-    """서버가 남긴 조회 기록으로만 판단한다 (화면 입력 · 거래 건수로 대신하지 않음, cards.md 선차감 함수 계약)"""
+def history_until(cards, product_code, start):
+    """서버가 남긴 조회 기록으로만 판단한다 (화면 입력 · 거래 건수로 대신하지 않음, cards.md 선차감 함수 계약).
+    청구서 · 승인내역은 카드사 단위로 한 번에 불러오므로 그 카드사 카드들의 기록을 이어 붙인다"""
     runs = SyncRun.objects.filter(
-        card=card, product_code=product_code, status="success",
+        card__in=cards, product_code=product_code, status="success",
         covered_from__isnull=False, covered_to__isnull=False,
     ).values_list("covered_from", "covered_to")
     return covered_until(list(runs), start)
@@ -138,13 +139,20 @@ def selected_cards(user):
     return list(candidate_cards(user).filter(is_selected=True))
 
 
-def fixed_linked_amount(user, card, start, end):
-    """이번 주기 그 카드 소비 중 고정지출 납부로 연결된 금액 (취소 차감). '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않게 쓴다"""
+def provider_cards(user):
+    """카드사에서 불러온 카드 전체 (관리 대상 아닌 카드 · 해제된 연결 포함). 카드사 단위로 묶을 때 쓴다"""
+    from finance.models import Card, Origin
+
+    return list(Card.objects.filter(user=user, origin=Origin.PROVIDER).exclude(issuer_code=None).order_by("card_id"))
+
+
+def fixed_linked_amount(user, cards, start, end):
+    """이번 주기 그 카드들 소비 중 고정지출 납부로 연결된 금액 (취소 차감). '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않게 쓴다"""
     from finance.api import cancel_info, fixed_expense_id
     from finance.models import FinancialTransaction
 
     rows = FinancialTransaction.objects.filter(
-        user=user, card=card, source_kind="card", direction="out", transaction_type="spending",
+        user=user, card__in=cards, source_kind="card", direction="out", transaction_type="spending",
         occurred_on__gte=start, occurred_on__lte=end,
     ).prefetch_related("payment_matches__due")
     return sum(tx.amount - cancel_info(tx)["amount"] for tx in rows if fixed_expense_id(tx) is not None)
@@ -154,7 +162,7 @@ def card_fixed_by_card(user, cards, cycle, today):
     """카드별로 선차감에서 뺄 확정 고정지출 합계. 고정지출 하나는 카드 한 장에서만 뺀다 (리뷰 10/28).
 
     어느 카드에서 뺄지: ① 이번 주기에 실제로 결제돼 납부로 연결된 카드(먼저 결제된 것) ② 없으면 고정지출에 적어 둔 결제 카드.
-    적어 둔 카드와 실제 결제 카드가 달라도 한 번만 빠진다. 대상 카드(관리 대상) 밖이면 빼지 않는다.
+    적어 둔 카드와 실제 결제 카드가 달라도 한 번만 빠진다. 넘겨준 카드 밖이면 빼지 않는다.
     """
     from finance.api import fixed_expense_id
     from finance.models import FinancialTransaction
@@ -182,15 +190,18 @@ def card_fixed_by_card(user, cards, cycle, today):
     return totals
 
 
-def card_deduction(user, card, cycle, today, card_fixed=0):
-    """카드 한 장의 첫 청구서 선차감. (금액, 보류 이유) — 금액이 None이면 보류"""
-    from django.http import Http404
-    from finance.card_deduction import get_card_first_bill_deduction
-    from finance.models import CardBill
+def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today, issuer_fixed=0):
+    """카드사 한 곳의 첫 청구서 선차감 (10/29 나은: 카드사 단위). (금액, 보류 이유) — 금액이 None이면 보류
 
-    connected_on = timezone.localdate(card.first_connected_at) if card.first_connected_at else None
-    bill_until = history_until(card, CARD_BILL_SYNC, connected_on)
-    spend_until = history_until(card, CARD_SPENDING_SYNC, cycle.starts_on)
+    managed: 그 카드사 관리 대상 카드 (쓴 돈을 뺄 카드) · issuer_cards: 그 카드사 카드 전체 (첫 연결일 · 조회 기록)
+    """
+    from django.http import Http404
+    from finance.card_deduction import get_issuer_first_bill_deduction
+
+    connected = [card.first_connected_at for card in issuer_cards]
+    connected_on = timezone.localdate(min(connected)) if connected and None not in connected else None
+    bill_until = history_until(issuer_cards, CARD_BILL_SYNC, connected_on)
+    spend_until = history_until(issuer_cards, CARD_SPENDING_SYNC, cycle.starts_on)
     # 기준일 = 청구서 · 거래를 마지막으로 다 불러온 날 (오늘 조회가 없다고 매일 막지 않는다).
     # 그 뒤에 쓴 돈은 빼지 않으므로 선차감이 조금 클 수는 있어도 작아지지는 않는다.
     as_of = min(today, cycle.ends_before - timedelta(days=1))
@@ -204,44 +215,60 @@ def card_deduction(user, card, cycle, today, card_fixed=0):
         # 이번 주기에 연결했는데 카드 거래를 연결일까지 못 불러옴 → 기준일이 연결 전으로 가면 '연결 전'으로 0원이 되므로 보류
         return None, "spending_history_incomplete"
     try:
-        result = get_card_first_bill_deduction(
-            user, card.pk, cycle, as_of=as_of,
+        result = get_issuer_first_bill_deduction(
+            user, issuer_code, cycle, card_ids=[card.pk for card in managed], as_of=as_of,
             bill_history_complete=bill_complete, spending_history_complete=spend_until is not None,
         )
         if result.amount is None:
             return None, result.reason
         if result.cycle_card_spending is None:
             return result.amount, None  # 첫 청구서가 이번 주기 밖 · 연결 전 → 0원
-        total = CardBill.objects.get(pk=result.bill_id, user=user).total_amount
-    except (Http404, CardBill.DoesNotExist, ValueError, TypeError) as error:
-        # 남의 연결이 섞이거나 금액이 음수인 이상한 자료 → 화면 전체를 에러로 만들지 않고 이 카드만 보류.
+    except (Http404, ValueError, TypeError) as error:
+        # 남의 연결이 섞이거나 금액이 음수인 이상한 자료 → 화면 전체를 에러로 만들지 않고 이 카드사만 보류.
         # 코드 버그도 여기로 올 수 있어 로그는 남긴다 (예외 원문 · 금액은 남기지 않음)
-        logger.warning("카드 선차감 계산 보류 card=%s error=%s", card.pk, type(error).__name__)
+        logger.warning("카드 선차감 계산 보류 issuer=%s error=%s", issuer_code, type(error).__name__)
         return None, "card_data_invalid"
-    # P-04: 확정 고정지출은 결제 수단과 상관없이 고정비에 이미 들어 있으므로, 이 카드에 배정된 고정지출(card_fixed_by_card)은 선차감에서 뺀다.
-    # 이번 주기에 이미 결제돼 고정지출에 연결된 카드 거래는 '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않는다.
+    # P-04: 확정 고정지출은 결제 수단과 상관없이 고정비에 이미 들어 있으므로, 이 카드사 카드에 배정된 고정지출(card_fixed_by_card)은 선차감에서 뺀다.
+    # 이번 주기에 이미 결제돼 고정지출에 연결된 관리 대상 카드 거래는 '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않는다.
     end = min(as_of, cycle.ends_before - timedelta(days=1))
-    other_spending = result.cycle_card_spending - fixed_linked_amount(user, card, cycle.starts_on, end)
-    # 카드별로 0원 아래로는 안 내리므로, 배정된 카드의 남은 금액보다 고정지출이 크면 그 차이는 다른 카드에서 빼지 않는다
+    other_spending = result.cycle_card_spending - fixed_linked_amount(user, managed, cycle.starts_on, end)
+    # 카드사별로 0원 아래로는 안 내리므로, 남은 금액보다 고정지출이 크면 그 차이는 다른 카드사에서 빼지 않는다
     # (선차감이 조금 커지는 쪽 = 예산이 모자라지 않는 쪽).
-    return max(0, total - other_spending - card_fixed), None
+    return max(0, result.total_amount - other_spending - issuer_fixed), None
 
 
 def card_reserved(user, cycle, as_of=None):
     """첫 카드 청구서 선차감(결정 Q · cards.md C-17) 합계.
 
-    관리 대상 카드마다 세진의 get_card_first_bill_deduction으로 계산한다.
-    한 장이라도 계산 보류면 amount=None (0원으로 치지 않음) 이고 pending에 카드와 이유를 담는다.
+    관리 대상 카드가 있는 카드사마다 세진의 get_issuer_first_bill_deduction으로 계산한다 (10/29 나은: 카드사 단위).
+    한 곳이라도 계산 보류면 amount=None (0원으로 치지 않음) 이고 pending에 그 카드사의 관리 대상 카드와 이유를 담는다.
     TODO 세진: 이번 회차 할부금 (cards.md C-17 · 366줄)
     """
     today = as_of or timezone.localdate()
     total, pending = 0, []
-    cards = selected_cards(user)
-    card_fixed = card_fixed_by_card(user, cards, cycle, today)
-    for card in cards:
-        amount, reason = card_deduction(user, card, cycle, today, card_fixed.get(card.pk, 0))
+    managed = selected_cards(user)
+    if not managed:
+        return {"amount": 0, "pending": []}
+    cards = provider_cards(user)
+    issuer_of = {card.pk: card.issuer_code for card in cards}
+    # 고정지출은 그 카드사 카드 전체(관리 대상 아닌 카드 포함)로 묶는다: 그 몫도 첫 청구서에 같이 들어 있어서
+    issuer_fixed = {}
+    for card_id, amount in card_fixed_by_card(user, cards, cycle, today).items():
+        issuer_fixed[issuer_of[card_id]] = issuer_fixed.get(issuer_of[card_id], 0) + amount
+    by_issuer = {}
+    for card in managed:
+        by_issuer.setdefault(card.issuer_code, []).append(card)
+    for issuer_code in sorted(by_issuer, key=lambda code: code or ""):
+        group = by_issuer[issuer_code]
+        if not issuer_code:
+            amount, reason = None, "card_data_invalid"  # 카드사를 모르는 카드
+        else:
+            amount, reason = issuer_deduction(
+                user, issuer_code, group, [card for card in cards if card.issuer_code == issuer_code],
+                cycle, today, issuer_fixed.get(issuer_code, 0),
+            )
         if amount is None:
-            pending.append({"card_id": str(card.pk), "reason": reason})
+            pending.extend({"card_id": str(card.pk), "reason": reason} for card in group)
         else:
             total += amount
     return {"amount": None if pending else total, "pending": pending}
