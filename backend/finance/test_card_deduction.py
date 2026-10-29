@@ -209,9 +209,9 @@ class StoredFirstBillDeductionTests(TestCase):
         self.bill(date(2026, 10, 25), amount=430_000)
         self.assertEqual(self.result().reason, "first_bill_ambiguous")
 
-    def test_single_statement_is_used_regardless_of_type(self):
+    def test_single_non_loan_statement_is_used_regardless_of_type(self):
         self.tx()
-        for value in ("0", "1", "기타", "카드론", "장기카드대출", "카드사용"):
+        for value in ("", "0", "1", "기타", "카드사용"):
             with self.subTest(value=value):
                 CardBill.objects.filter(pk=self.first.pk).update(field_states={"codefBillType": value})
                 result = self.result()
@@ -225,10 +225,14 @@ class StoredFirstBillDeductionTests(TestCase):
                 CardBill.objects.filter(pk=self.first.pk).update(field_states={"codefBillType": value})
                 self.assertEqual((self.result().amount, self.result().reason), (None, "bill_type_unknown"))
 
-    def test_single_card_loan_statement_is_included(self):
-        loan = self.bill(date(2026, 10, 12), amount=1_000_000, bill_type="장기카드대출(카드론)")
-        result = self.result()
-        self.assertEqual((result.bill_ids, result.amount), ((loan.pk,), 1_000_000))
+    def test_single_card_loan_statement_is_skipped_for_next_usage_bill(self):
+        self.tx()
+        for value in ("장기카드대출(카드론)", "카드론"):
+            with self.subTest(value=value):
+                loan = self.bill(date(2026, 10, 12), amount=1_000_000, bill_type=value)
+                result = self.result()
+                self.assertEqual((result.bill_ids, result.amount), ((self.first.pk,), 300_000))
+                loan.delete()
 
     def test_multiple_card_loan_statements_are_skipped_for_next_usage_bill(self):
         self.bill(date(2026, 10, 12), amount=1_000_000, bill_type="장기카드대출(카드론)")

@@ -55,10 +55,10 @@ def bill_kind(bill):
 
 
 def usage_statements(bills):
-    """한 장이면 구분 없이 포함하고, 여러 장이면 사용 명세서만 합친다."""
-    if len(bills) == 1:
-        return bills, None
+    """카드론 명세서는 뺀다. 한 장이면 빈 값·모르는 값도 포함하고, 여러 장이면 사용 명세서만 합친다."""
     kinds = [bill_kind(bill) for bill in bills]
+    if len(bills) == 1:
+        return ([] if kinds[0] == "loan" else bills), None
     if "unknown" in kinds:
         return None, "bill_type_unknown"
     if "blank" in kinds and len(bills) > 1:
@@ -83,7 +83,7 @@ def get_issuer_first_bill_deduction(
     """저장 자료로 카드사 첫 청구서의 주기 선차감액을 계산한다 (10/29 나은: 카드사 단위).
 
     - 첫 청구서: 그 카드사 카드 중 가장 먼저 연결된 날(first_connected_at) 이후 처음 내는 카드 사용 명세서.
-      같은 날 한 장이면 구분 없이 포함하고, 여러 장이면 사용 명세서만 합친다. 카드사에 한 번뿐이다.
+      카드론 명세서는 빼고, 같은 날 한 장이면 빈 값·모르는 값도 포함하며, 여러 장이면 사용 명세서만 합친다. 카드사에 한 번뿐이다.
     - 쓴 돈: card_ids(그 카드사 관리 대상 카드)로 이번 주기에 쓴 돈만 뺀다. 관리 대상 아닌 카드 몫은 같이 뗀다.
     서버가 청구 이력(최초 연결~기준일)과 거래·취소(주기 시작~기준일)의 수집 완료 여부를 전달한다.
     거래 범위는 주기 마지막 날까지만 포함한다. amount=None은 계산 보류이며 reason을 확인한다. DB·승인 예산은 변경하지 않는다.
