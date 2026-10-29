@@ -1,16 +1,17 @@
 """
 budgets 앱 API: React 화면에 필요한 데이터를 JSON으로 준다.
-- 홈 · 고정지출 · 정기 저축: DB에 저장하고 읽는 실제 기능 (홈 계산은 home.py)
-- 예산 · 쿠션: 아직 mock.py(가짜 데이터)를 그대로 보낸다 (ML 후)
+- 홈 · 고정지출 · 정기 저축 · 예산: DB에 저장하고 읽는 실제 기능
+- 예산 추천은 임시 비율 엔진, 쿠션 화면은 아직 mock.py 데이터를 사용한다
 """
 import calendar
+import copy
 import uuid
 from datetime import date, timedelta
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 from config.idempotency import idempotent
 from .models import Budget, BudgetCycle, Category, SpendingAllocation
 from django.db import IntegrityError, transaction
@@ -22,6 +23,7 @@ from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, 
 from users.models import FinancialProfile
 
 from . import mock
+from .salary import current_salary_profile, salary_cycle_dates
 
 
 @api_view(["GET"])
@@ -33,23 +35,427 @@ def home(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
 def budget(request):
     """GET /api/budgets/ — 카테고리 예산 화면 데이터"""
-    return Response({
-        "period": mock.PERIOD,
-        "monthly": mock.MONTHLY,
-        "month_split": mock.MONTH_SPLIT,
-        "categories": mock.CATEGORIES,
-        "living_used": mock.HOME["living_used"],
-        "living_budget": mock.HOME["living_budget"],
-        "unclassified": mock.UNCLASSIFIED,
-    })
+    from .overview import budget_data
+    with transaction.atomic():
+        lock_user(request.user)
+        data = budget_data(request.user, timezone.localdate())
+    return Response(data)
 
 
 @api_view(["GET"])
 def cushion(request):
     """GET /api/budgets/cushion/ — 머니 쿠션 화면 데이터"""
     return Response({"cushion": mock.CUSHION})
+
+
+# ==================================================================
+#  지킬 돈 API (docs/api/budgets.md, 계산 · 합계 조회는 protect.py)
+# ==================================================================
+
+class ProtectNotReady(APIException):
+    status_code = 409
+    default_code = "not_ready"
+    default_detail = "내 정보 · 급여를 먼저 입력해 주세요."
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def protect(request):
+    with transaction.atomic():
+        lock_user(request.user)  # 홈 · 고정지출 · 정기 저축과 같은 잠금 순서
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
+        data = protect_json(request.user, profile, today)
+        if request.method == "PUT":
+            values = clean_protect(request, data)
+            data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
+            data["saved"] = protect_saved_json(profile, data["base"])
+    return Response(data)
+
+
+def clean_protect(request, state):
+    """검사 1~6. 앞 단계가 실패하면 뒤 단계는 검사하지 않는다."""
+    if state["missing"]:
+        raise ProtectNotReady()
+    if card_pending(state):
+        raise ProtectNotReady(CARD_PENDING_MESSAGE)
+    if state["blocked"]:
+        raise ProtectNotReady("정기 저축이나 고정지출을 먼저 고쳐 주세요.")
+
+    data = body_dict(request)
+    fields = ("living_budget", "saving_floor", "cushion_monthly")
+    errors = {key: ["이 칸은 보낼 수 없어요."] for key in data if key not in fields}
+    for key in fields:
+        if type(data.get(key)) is not int or data[key] < 0:
+            errors[key] = ["금액은 0 이상의 정수로 입력해 주세요."]
+    if errors:
+        raise ValidationError(errors)
+    if data["saving_floor"] < state["savings_min"]:
+        raise ValidationError({
+            "saving_floor": [f"저축 확인에서 고른 {state['savings_min']:,}원보다 적게 정할 수 없어요."],
+        })
+    if state["cushion"]["required"] and data["cushion_monthly"] == 0:
+        raise ValidationError({"cushion_monthly": ["잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요."]})
+    excess = sum(data[key] for key in fields) - state["base"]["available"]
+    if excess > 0:
+        raise ValidationError({
+            "non_field_errors": [f"배분 가능한 금액보다 {excess:,}원 많아요. 입력 금액을 줄여 주세요."],
+        })
+    return {key: data[key] for key in fields}
+
+
+def save_protect(user, profile, values, target):
+    """검사 7. 호출 쪽의 트랜잭션 안에서 설정 변경과 초안 만료를 함께 저장한다."""
+    fields = {
+        "living_budget": values["living_budget"],
+        "savings_floor": values["saving_floor"],
+        "cushion_monthly": values["cushion_monthly"],
+        "cushion_target": target,
+    }
+    changed = []
+    for key, value in fields.items():
+        if getattr(profile, key) != value:
+            setattr(profile, key, value)
+            changed.append(key)
+    if changed:
+        profile.save(update_fields=changed + ["updated_at"])
+        Budget.objects.filter(user=user, status__in=["draft", "validated"]).update(status="expired")
+    return release_stale_locks(user, profile) if "living_budget" in changed else []
+
+
+def release_stale_locks(user, profile):
+    """P-13: 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞으면(추천이 막히면) 이번 주기 자물쇠를 모두 푼다.
+
+    풀어 주지 않으면 초안이 없어서 자물쇠를 풀 곳이 없다. 사용자가 직접 바꾼 게 아니라서 바꾼 횟수(잔소리)는 늘리지 않는다.
+    반환: 푼 카테고리 코드 (화면 순서)
+    """
+    from .overview import current_cycle
+    from .recommend import locks_block_recommendation
+
+    cycle = current_cycle(user, profile, timezone.localdate())
+    if cycle is None or not locks_block_recommendation(user, cycle, profile.living_budget):
+        return []
+    return release_locks(user, cycle)
+
+
+def release_locks(user, cycle):
+    """이번 주기 자물쇠를 모두 푼다. 바꾼 횟수(잔소리)는 늘리지 않는다. 반환: 푼 카테고리 코드 (화면 순서)"""
+    from .models import BudgetCategorySetting
+
+    locked = BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True)
+    codes = list(locked.order_by("category__display_order", "category_id").values_list("category_id", flat=True))
+    locked.update(locked=False, locked_amount=None, updated_at=timezone.now())
+    return codes
+
+
+def release_locks_without_budget(user, cycle, living_budget):
+    """P-13 ②: 이번 주기에 예산(초안 · 승인)이 하나도 없는데 자물쇠 때문에 추천이 막히면 자물쇠를 푼다.
+
+    자물쇠는 예산 화면에서만 풀 수 있어서, 예산이 없으면 빠져나갈 길이 없다
+    (예: 지난달 자물쇠가 넘어온 뒤 내 정보에서 최소 금액을 올림). 예산이 있으면 그 화면에서 풀 수 있으므로 그대로 둔다.
+    """
+    from .recommend import locks_block_recommendation
+
+    if Budget.objects.filter(user=user, cycle=cycle, status__in=["validated", "approved"]).exists():
+        return []
+    if not locks_block_recommendation(user, cycle, living_budget):
+        return []
+    return release_locks(user, cycle)
+
+
+def protect_saved_json(profile, base):
+    if profile is None or any(value is None for value in (
+        profile.living_budget, profile.savings_floor, profile.cushion_monthly,
+    )):
+        return None
+    return {
+        "living_budget": profile.living_budget,
+        "saving_floor": profile.savings_floor,
+        "cushion_monthly": profile.cushion_monthly,
+        # 필수 정보가 지워지면 배분 기준도 모르므로 여윳돈은 계산할 수 없다.
+        "spare": base["available"] - profile.living_budget - profile.savings_floor - profile.cushion_monthly if base else None,
+        "updated_at": timezone.localtime(profile.updated_at).isoformat(),
+    }
+
+
+_COMPUTE = object()
+
+
+def protect_json(user, profile, today, card_reserved=_COMPUTE):
+    """GET · PUT 공통 응답. 주기 준비는 회원 잠금을 잡은 호출 쪽 트랜잭션에서 한다.
+
+    card_reserved를 주면 카드 선차감을 새로 계산하지 않고 그 값을 쓴다 (승인 때 초안에 저장한 값).
+    """
+    from .home import balance_json, ensure_cycle
+    from .protect import RATES, blocked, cushion_required, fixed_breakdown, fixed_sum, recommend, savings_min
+
+    housing = profile.housing_type if profile else None
+    income = profile.monthly_take_home_income if profile else None
+    payday = profile.payday if profile else None
+    missing = [key for key, value in (
+        ("housingType", housing), ("takeHomeIncome", income), ("payday", payday),
+    ) if value is None]
+    minimum = savings_min(user)
+    balance = balance_json(user)["total"]
+    required = cushion_required(balance, income)
+    base = recommendation = blocked_state = None
+    pending_cards = []
+    if not missing:
+        start, next_payday, _ = salary_cycle_dates(profile, today)
+        cycle = ensure_cycle(user, start, next_payday)
+        breakdown = fixed_breakdown(user, cycle, card=card_reserved is _COMPUTE)
+        if card_reserved is not _COMPUTE:
+            breakdown["card_reserved"] = card_reserved
+        pending_cards = breakdown["card_pending"]
+        fixed = fixed_sum(breakdown)
+        if fixed is None:
+            # 카드 첫 청구서 선차감을 아직 계산할 수 없음 → 고정지출 합계 · 배분 기준도 모른다 (0원으로 치지 않음)
+            blocked_state = {"reason": "card_bill_pending", "shortfall": None}
+        else:
+            available = income - fixed
+            base = {"take_home_income": income, "fixed_total": fixed, "available": available}
+            blocked_state = blocked(available, minimum)
+            if blocked_state is None:
+                recommendation = recommend(available, housing, minimum, cushion_required=required)
+    return {
+        "missing": missing,
+        "housing_type": housing,
+        "rates": RATES.get(housing),
+        "base": base,
+        "savings_min": minimum,
+        "recommended": recommendation,
+        "blocked": blocked_state,
+        "saved": protect_saved_json(profile, base),
+        "cushion": {"required": required, "target": income * 3 if income is not None else None, "balance_total": balance},
+        "card_pending": pending_cards,
+        "locks_released": [],  # PUT으로 저장할 때만 채운다 (P-13)
+    }
+
+
+CARD_PENDING_MESSAGE = "카드 청구서를 아직 확인하지 못했어요. 카드 내역을 다시 불러온 뒤 시도해 주세요."
+
+
+def card_pending(state):
+    return bool(state["blocked"]) and state["blocked"]["reason"] == "card_bill_pending"
+
+
+def protect_ready(state):
+    """저장된 지킬 돈이 지금 조건에서도 쓸 수 있는지 (추천 만들기 · 승인 공통)"""
+    saved = state["saved"]
+    if state["missing"] or state["blocked"] or saved is None:
+        return False
+    amounts = [saved[key] for key in ("living_budget", "saving_floor", "cushion_monthly")]
+    return not (any(type(amount) is not int or amount < 0 for amount in amounts)
+                or saved["saving_floor"] < state["savings_min"]
+                or sum(amounts) > state["base"]["available"]
+                # 잔액이 줄어 쿠션이 필수가 됐는데 저장된 쿠션이 0원이면 안 됨 (P-08)
+                or (state["cushion"]["required"] and saved["cushion_monthly"] == 0))
+
+
+# ==================================================================
+#  추천 예산 API (엔진 · 입력 해시는 recommend.py, 작업 조회는 chat 담당)
+# ==================================================================
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@idempotent(required=True)
+def recommend(request):
+    from chat.models import AsyncTask
+    from .recommend import budget_input_snapshot, hash_snapshot
+
+    with transaction.atomic():
+        lock_user(request.user)
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
+        state = protect_json(request.user, profile, today)  # home.ensure_cycle도 같은 잠금 안에서 재사용
+        clean_recommend(request, state)
+        pending = AsyncTask.objects.filter(
+            user=request.user, task_type="budget_recommend", status__in=["queued", "running"],
+        ).order_by("created_at", "pk").first()
+        if pending:
+            return Response(recommend_task_json(pending), status=202)
+
+        cycle = active_cycle(request.user)
+        released = release_locks_without_budget(request.user, cycle, profile.living_budget)
+        snapshot = budget_input_snapshot(request.user, cycle, profile=profile, today=today)
+        task = AsyncTask.objects.create(
+            user=request.user, task_type="budget_recommend", request_key=request.headers["Idempotency-Key"],
+            input_hash=hash_snapshot(snapshot), status="running", started_at=timezone.now(),
+        )
+        run_recommend(task, cycle, snapshot, state["saved"]["spare"], released)
+    return Response(recommend_task_json(task), status=202)
+
+
+def clean_recommend(request, state):
+    if state["missing"] or state["saved"] is None:
+        raise ProtectNotReady("지킬 돈을 먼저 정해 주세요.")
+    if card_pending(state):
+        raise ProtectNotReady(CARD_PENDING_MESSAGE)
+    if not protect_ready(state):
+        raise ProtectNotReady("지킬 돈을 다시 확인해 주세요.")
+    data = body_dict(request)
+    if data:
+        raise ValidationError({key: ["이 칸은 보낼 수 없어요."] for key in data})
+
+
+def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
+    from .recommend import EngineCheckFailed, check_result, infeasible, recommend_category_budgets
+
+    try:
+        # 엔진 검증 · 예산 · 항목 · 이전 초안 만료는 전부 성공하거나 전부 취소한다.
+        # 실패 작업 자체는 바깥 트랜잭션에 남긴다.
+        with transaction.atomic():
+            etc = snapshot["etc"]
+            etc_minimum = snapshot["minimums"].get("ETC", 0)
+            if etc < etc_minimum:
+                out = infeasible([{"type": "lock_below_minimum", "category": "ETC",
+                                   "locked_amount": etc, "min_amount": etc_minimum}])
+            elif etc > snapshot["saved"]["living_budget"]:
+                out = infeasible([{"type": "minimums_over_living", "shortfall": etc - snapshot["saved"]["living_budget"]}])
+            else:
+                inp = snapshot["engine_input"]
+                out = recommend_category_budgets(copy.deepcopy(inp))
+                check_result(inp, out)
+            budget = None
+            if out["status"] == "proposed":
+                budget = save_recommended_budget(task, cycle, snapshot, out, expected_spare)
+            task.result = {
+                "outcome": out["status"], "budget_id": str(budget.pk) if budget else None,
+                "summary": out["summary"], "conflicts": out["conflicts"],
+                "locks_released": list(locks_released),  # P-13 ②: 예산이 없어 막혀서 이번에 푼 자물쇠
+            }
+        task.status = "succeeded"  # infeasible도 조건을 확인한 정상 작업 결과
+    except EngineCheckFailed:
+        task.status = "failed"
+        task.error_code = "engine_check_failed"
+        task.result = None
+    task.completed_at = timezone.now()
+    task.save(update_fields=["status", "result", "error_code", "completed_at"])
+
+
+def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
+    from .models import BudgetItem, Bucket
+    from .recommend import CATEGORY_CODES, ENGINE_VERSION, POLICY_VERSION, EngineCheckFailed
+
+    fixed, saved = snapshot["fixed"], snapshot["saved"]
+    lines = [{"bucket": Bucket.FIXED, "category_id": code, "allocated_amount": amount}
+             for code, amount in sorted(fixed["categories"].items()) if amount]
+    lines += [{"bucket": Bucket.FIXED, "category_detail": detail, "allocated_amount": fixed[detail]}
+              for detail in ("loan", "card_reserved") if fixed[detail]]
+    lines += [
+        {"bucket": Bucket.SAVINGS, "allocated_amount": saved["saving_floor"]},
+        {"bucket": Bucket.CUSHION, "allocated_amount": saved["cushion_monthly"]},
+    ]
+    lines += [{"bucket": Bucket.LIVING, "category_id": code, "allocated_amount": out["allocations"][code]}
+              for code in CATEGORY_CODES]
+    lines.append({"bucket": Bucket.LIVING, "category_id": "ETC", "allocated_amount": snapshot["etc"]})
+    if (any(type(line["allocated_amount"]) is not int or line["allocated_amount"] < 0 for line in lines)
+            or snapshot["take_home_income"] - sum(line["allocated_amount"] for line in lines) != expected_spare):
+        raise EngineCheckFailed("예산 항목 합계가 지킬 돈의 여윳돈과 맞지 않아요.")
+    version = (Budget.objects.filter(user=task.user, cycle=cycle).aggregate(last=Max("version_no"))["last"] or 0) + 1
+    budget = Budget.objects.create(
+        user=task.user, cycle=cycle, task=task, version_no=version, status="validated",
+        funding_amount=snapshot["take_home_income"], input_hash=task.input_hash, input_snapshot=snapshot,
+        engine_version=ENGINE_VERSION, policy_version=POLICY_VERSION, validated_at=timezone.now(),
+    )
+    BudgetItem.objects.bulk_create([BudgetItem(user=task.user, budget=budget, **line) for line in lines])
+    Budget.objects.filter(user=task.user, cycle=cycle, status__in=["draft", "validated"]).exclude(pk=budget.pk).update(status="expired")
+    return budget
+
+
+def recommend_task_json(task):
+    return {"task": {"task_id": str(task.pk), "status": task.status}}
+
+
+class BudgetExpired(APIException):
+    status_code = 409
+    default_code = "expired"
+    default_detail = "조건이 바뀌어서 다시 추천받아야 해요."
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def budget_category(request, budget_id, code):
+    from .models import BudgetCategorySetting, BudgetItem
+    from .overview import LIVING_CODES, budget_nag, current_cycle
+
+    with transaction.atomic():
+        lock_user(request.user)
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
+        chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
+        category = get_object_or_404(Category, pk=code, category_code__in=LIVING_CODES)
+        cycle = current_cycle(request.user, profile, today)
+        if cycle is None or chosen.cycle_id != cycle.pk or chosen.status not in ("validated", "approved"):
+            raise ProtectNotReady("지난 예산은 바꿀 수 없어요.")
+        data = body_dict(request)
+        errors = {key: ["이 칸은 보낼 수 없어요."] for key in data if key != "locked"}
+        if type(data.get("locked")) is not bool:
+            errors["locked"] = ["자물쇠는 참 또는 거짓으로 보내 주세요."]
+        if errors:
+            raise ValidationError(errors)
+        amount = None
+        if data["locked"]:
+            amount = get_object_or_404(BudgetItem, budget=chosen, user=request.user, bucket="living", category=category).allocated_amount
+        setting, _ = BudgetCategorySetting.objects.get_or_create(user=request.user, cycle=cycle, category=category)
+        if setting.locked != data["locked"] or setting.locked_amount != amount:
+            setting.change_count += setting.locked != data["locked"]
+            setting.locked = data["locked"]
+            setting.locked_amount = amount
+            setting.save(update_fields=["locked", "locked_amount", "change_count", "updated_at"])
+        return Response({
+            "category": category.pk, "category_name": category.display_name, "locked": setting.locked,
+            "locked_amount": setting.locked_amount, "change_count": setting.change_count,
+            "nag": budget_nag(request.user, cycle),
+        })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@idempotent(required=True, commit_error_codes=("expired",))
+def budget_approve(request, budget_id):
+    from config.api import exception_handler
+    from .overview import budget_data, current_cycle
+    from .recommend import budget_input_hash
+
+    with transaction.atomic():
+        lock_user(request.user)
+        today = timezone.localdate()
+        profile = current_salary_profile(request.user, today)
+        chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
+        data = body_dict(request)
+        if data:
+            raise ValidationError({key: ["이 칸은 보낼 수 없어요."] for key in data})
+        cycle = current_cycle(request.user, profile, today)
+        this_cycle = cycle is not None and chosen.cycle_id == cycle.pk
+        if chosen.status == "approved":
+            # 이번 주기에 승인된 예산만 '이미 승인'으로 돌려준다. 지난 주기 승인 예산은 지난 예산이다.
+            if this_cycle:
+                return Response(budget_data(request.user, today, selected=chosen))
+            raise ProtectNotReady("지난 예산은 승인할 수 없어요.")
+        if chosen.status == "expired":
+            raise BudgetExpired()
+        if chosen.status != "validated":
+            raise ProtectNotReady("지난 예산은 승인할 수 없어요.")
+        # 카드 선차감은 초안을 만들 때 저장한 값을 쓴다 (카드로 쓸 때마다 바뀌는 값이라 다시 계산하면 초안이 계속 만료됨)
+        frozen = ((chosen.input_snapshot or {}).get("fixed") or {}).get("card_reserved")
+        state = protect_json(request.user, profile, today, card_reserved=frozen) if this_cycle else None
+        if (not this_cycle or not protect_ready(state)
+                or budget_input_hash(request.user, cycle) != chosen.input_hash):
+            chosen.status = "expired"
+            chosen.save(update_fields=["status"])
+            # raise하면 이 트랜잭션도 롤백된다. 공통 에러 모양으로 반환하고 위 옵션으로 만료만 보존한다.
+            return exception_handler(BudgetExpired(), {"request": request})
+        Budget.objects.filter(user=request.user, cycle=cycle, status="approved").update(status="superseded")
+        chosen.status = "approved"
+        chosen.approved_at = timezone.now()
+        chosen.approval_key = request.headers["Idempotency-Key"]
+        chosen.save(update_fields=["status", "approved_at", "approval_key"])
+        # auth.onboardingCompleted는 approved_at이 있는 예산의 존재 여부로 계산한다.
+        return Response(budget_data(request.user, today, selected=chosen))
 
 # ==================================================================
 #  고정지출 · 정기 저축 API   (명세: docs/api/fixed.md · savings.md)
@@ -562,6 +968,8 @@ FIXED_TX_TYPES = ["spending", "transfer"]  # 고정지출 근거가 될 수 있�
 
 # 진행 중인 급여 주기 (온보딩 전이면 None)
 def active_cycle(user):
+    from .salary import activate_salary_if_due
+    activate_salary_if_due(user, timezone.localdate())
     return BudgetCycle.objects.filter(user=user, status="active").first()
 
 # 이번 주기 시작일 — 아직 주기가 없으면(온보딩 전) 오늘
@@ -689,6 +1097,8 @@ def find_withdrawals(expense, due_date, today, key=None):
 #   예: 급여일 25일, 이번 주기 11/25 시작 → 10/25 (9/25 주기에 마지막으로 접속했어도)
 def previous_start(cycle):
     profile = FinancialProfile.objects.filter(user_id=cycle.user_id).first()
+    if profile and profile.payday_changes_on == cycle.starts_on:
+        return profile.payday_previous_start
     payday = (profile.payday if profile else None) or cycle.starts_on.day
     year, month = cycle.starts_on.year, cycle.starts_on.month
     year, month = (year - 1, 12) if month == 1 else (year, month - 1)
@@ -821,15 +1231,25 @@ def ensure_current_due(expense, cycle, today, withdrawal=None, create_past=False
     if (expense.status != "confirmed" or cycle is None
             or expense.payment_card_id is not None or expense.payment_day is None):
         return None
+    from .due_periods import monthly_due, occurrence_cycles, occurrence_key
+    periods = occurrence_cycles(expense.user_id, cycle)
+    if periods != [cycle]:
+        dues = [ensure_current_due(expense, part, today, withdrawal=withdrawal,
+                                   create_past=create_past, user_pick=user_pick) for part in periods]
+        return next((due for due in dues if due is not None), None)
     due_date = day_in_cycle(cycle, expense.payment_day)
     if due_date is None:
         return None
 
-    key = f"recurring:{expense.pk}:{cycle.starts_on.isoformat()}"  # 회원 · 회차 UNIQUE → 같은 회차는 한 번만
-    due = PaymentDue.objects.select_for_update().filter(user=expense.user, occurrence_key=key).first()
+    key = occurrence_key("recurring", expense.pk, cycle, due_date)
+    locked = PaymentDue.objects.select_for_update().filter(user=expense.user, recurring=expense)
+    due = (monthly_due(locked, due_date) if getattr(cycle, "monthly_occurrence", False)
+           else locked.filter(occurrence_key=key).first())
+    if due is not None:
+        key = due.occurrence_key
     if due is not None and due.obligation_state == "active":
         return due
-    if due is not None and due.matches.exists():
+    if due is not None and (due.matches.exists() or due.paid_amount > 0 or due.payment_state in ("partial", "paid")):
         return None  # 취소됐지만 낸 기록이 있는 회차는 건드리지 않음
 
     found = []
@@ -878,6 +1298,12 @@ def ensure_current_due(expense, cycle, today, withdrawal=None, create_past=False
 #   여러 건이면 자동으로 고르지 않음 → 목록의 [고르기]. 지난 주기 회차는 늦게 낸 출금이라 자동 연결하지 않음
 def match_current_due(expense, cycle, today):
     if expense.payment_account_id is None or cycle is None or expense.payment_day is None:
+        return
+    from .due_periods import occurrence_cycles
+    periods = occurrence_cycles(expense.user_id, cycle)
+    if periods != [cycle]:
+        for part in periods:
+            match_current_due(expense, part, today)
         return
     due_date = day_in_cycle(cycle, expense.payment_day)
     if due_date is None or today < due_date - timedelta(days=3):
@@ -1059,6 +1485,8 @@ def unlink_current(expense, cycle, today):
 # 수정 뒤 안 낸 회차 맞추기 (이번 주기 미납분과 앞으로의 회차만)
 #   카드로 바꾸거나 출금일을 비우면 취소 · 아니면 금액 · 날짜 · 결제 계좌를 새 값으로 · 없으면 새로 만들기
 def sync_dues(expense, cycle, today, user_pick=False):
+    from .due_periods import uses_monthly_dues
+    monthly = uses_monthly_dues(expense.user_id)
     since = cycle.starts_on if cycle else today
     dues = open_dues(expense, since)
     if expense.payment_card_id is not None or expense.payment_day is None:
@@ -1066,7 +1494,7 @@ def sync_dues(expense, cycle, today, user_pick=False):
         return
 
     for due in dues:
-        if cycle is not None and cycle.starts_on <= due.due_date < cycle.ends_before:
+        if not monthly and cycle is not None and cycle.starts_on <= due.due_date < cycle.ends_before:
             due.due_date = day_in_cycle(cycle, expense.payment_day) or due.due_date
         else:
             due.due_date = day_in_month(due.due_date.year, due.due_date.month, expense.payment_day)

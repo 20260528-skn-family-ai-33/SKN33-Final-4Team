@@ -5,7 +5,7 @@
 > **10/27 온보딩 변경**: 예산 산정 방향 삭제, 자취 여부 비율로 지킬 돈 배분 → 온보딩 · 예산 API 12개 명세 시작 가능 (7번)
 > 이 문서는 **목차 + 검수 결과 + 남은 일**이다. API 하나하나의 보내는 값 · 받는 값 · 실패는 아래 표의 원본 문서를 본다.
 > 공통 규칙: [API_RULES.md](../API_RULES.md) · 결정: [결정기록](../결정기록_2026-10-21.md) · 전체 목록(ML 후 포함): [API 명세 목록](../머니쿠션_API_명세_목록_2026-10-21.md)
-> **Swagger 보기**: Django 실행 후 http://127.0.0.1:8000/api/docs/ · [사용·갱신 방법](../SWAGGER.md) · [OpenAPI YAML](../openapi/openapi.yaml). 전체 35개 계약과 현재 서버의 구현·목업 상태를 구분한다.
+> **Swagger 보기**: Django 실행 후 http://127.0.0.1:8000/api/docs/ · [사용·갱신 방법](../SWAGGER.md) · [OpenAPI YAML](../openapi/openapi.yaml). 전체 43개 계약(예산 6개 · 새 연결/다시 불러오기 2개 추가)과 현재 서버의 구현·목업 상태를 구분한다.
 
 ## 0. 요약
 
@@ -21,7 +21,7 @@
 
 ---
 
-## 1. 한눈에 보기 — 35개
+## 1. 한눈에 보기 — 43개 (기존 35개 + 예산 6개 + 금융 연결 2개)
 
 | # | 묶음 | 기능 | 방식 · 주소 | 문서 | 담당 | 리뷰 |
 |---|---|---|---|---|---|---|
@@ -58,10 +58,18 @@
 | 31 | 홈 | 홈 화면 보기 | `GET /api/home/` | [home.md](home.md) | 나은 | ✅ PR #26 · 기본만 |
 | 32 | 통합 챗봇 | 이전 대화 보기 | `GET /api/chat/conversations/<id>/` | [chat.md](chat.md) | 혜리 | ✅ PR #34 |
 | 33 | | 챗봇에 메시지 보내기 | `POST /api/chat/messages/` | chat.md (+ 소비 분석 카드 칸 [spending-analysis.md](spending-analysis.md), 세진) | 혜리 · 세진 | ✅ PR #33 · #34 (J · S) |
-| 34 | | 오래 걸리는 작업 진행 확인 | `GET /api/tasks/<id>/` | chat.md | 혜리 | ✅ PR #34 |
+| 34 | | 오래 걸리는 작업 진행 확인 | `GET /api/tasks/<id>/` | chat.md | 혜리 | ✅ PR #53 구현 |
 | 35 | 카드 · 대출 | **대출 직접 등록** (10/22 추가) | `POST /api/finance/loans/` | loans.md | 세진 | ✅ PR #33 (결정 Y) |
+| 36 | 예산 | 지킬 돈 보기 | `GET /api/budgets/protect/` | [budgets.md](budgets.md) | 나은 | 10/28 구현 |
+| 37 | | 지킬 돈 저장 | `PUT /api/budgets/protect/` | budgets.md | 나은 | 10/28 구현 |
+| 38 | | 추천 예산 만들기 | `POST /api/budgets/recommend/` | budgets.md | 나은 | 10/28 임시 엔진 구현 |
+| 39 | | 카테고리 예산 보기 | `GET /api/budgets/` | budgets.md | 나은 | 10/28 구현 |
+| 40 | | 금액 고정 · 해제 | `PATCH /api/budgets/<id>/categories/<code>/` | budgets.md | 나은 | 10/28 구현 |
+| 41 | | 예산 승인 | `POST /api/budgets/<id>/approve/` | budgets.md | 나은 | 10/28 구현 |
+| 42 | 금융 연결 | 금융기관 인증 · 새 연결 | `POST /api/finance/connections/` | finance-connect.md | 혜리 | ✅ PR #53 구현 |
+| 43 | | 금융 정보 다시 불러오기 | `POST /api/finance/sync/` | finance-connect.md | 혜리 | ✅ PR #53 구현 |
 
-**요청 번호(`Idempotency-Key`)를 쓰는 API**: 6 동의 저장 · 35 대출 직접 등록 · 20 고정지출 추가 · 23 · 24 고정지출 확정 · 무시 · 26 저축 추가 · 29 · 30 저축 확정 · 무시 · 33 메시지 보내기. 나머지(선택 저장 `PUT`, 수정 `PATCH`, 중지 · 해제 `DELETE`)는 두 번 보내도 결과가 같아서 안 쓴다.
+**요청 번호(`Idempotency-Key`)를 쓰는 API**: 6 동의 저장 · 35 대출 직접 등록 · 20 고정지출 추가 · 23 · 24 고정지출 확정 · 무시 · 26 저축 추가 · 29 · 30 저축 확정 · 무시 · 33 메시지 보내기 · **38 추천 예산 · 41 예산 승인(둘은 필수 헤더)**. 42 새 연결 · 43 다시 불러오기는 요청 번호 없이 기관 재로그인·진행 중 작업 재사용으로 중복을 처리한다. 나머지(선택 저장 `PUT`, 수정 `PATCH`, 중지 · 해제 `DELETE`)는 두 번 보내도 결과가 같아서 안 쓴다.
 **회원가입(2)**: 로그인 전이라 공통 요청 번호가 적용되지 않음 → 중복 가입 막는 방법은 5-3 '회원가입 · 로그인 기본값'.
 
 ---
