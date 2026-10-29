@@ -1,0 +1,460 @@
+{
+  "version": "fixture-design-2026-10-29-v1",
+  "basis": "Independent arithmetic over design rows, no service calculation imports; requires code verification later.",
+  "as_of": "2026-10-29T23:59:59+09:00",
+  "personas": {
+    "A": {
+      "monthly_known_sums": {
+        "7": {
+          "total": 1420000,
+          "fixed_amount": 700000,
+          "living_amount": 720000,
+          "by_category": {
+            "FOOD": 330000,
+            "TRANSPORT_CAR": 80000,
+            "HOUSEHOLD": 40000,
+            "FASHION_SHOPPING": 60000,
+            "CULTURE_LEISURE": 70000,
+            "MEDICAL_HEALTH": 20000,
+            "BEAUTY": 30000,
+            "EDUCATION": 70000,
+            "ETC": 20000,
+            "HOUSING_TELECOM": 700000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "8": {
+          "total": 1460000,
+          "fixed_amount": 700000,
+          "living_amount": 760000,
+          "by_category": {
+            "FOOD": 350000,
+            "TRANSPORT_CAR": 90000,
+            "HOUSEHOLD": 50000,
+            "FASHION_SHOPPING": 80000,
+            "CULTURE_LEISURE": 70000,
+            "BEAUTY": 30000,
+            "EDUCATION": 70000,
+            "ETC": 20000,
+            "HOUSING_TELECOM": 700000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "9": {
+          "total": 1480000,
+          "fixed_amount": 700000,
+          "living_amount": 780000,
+          "by_category": {
+            "FOOD": 360000,
+            "TRANSPORT_CAR": 90000,
+            "HOUSEHOLD": 50000,
+            "FASHION_SHOPPING": 60000,
+            "CULTURE_LEISURE": 70000,
+            "MEDICAL_HEALTH": 30000,
+            "BEAUTY": 30000,
+            "EDUCATION": 70000,
+            "ETC": 20000,
+            "HOUSING_TELECOM": 700000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "10": {
+          "total": 1510000,
+          "fixed_amount": 700000,
+          "living_amount": 810000,
+          "by_category": {
+            "FOOD": 390000,
+            "TRANSPORT_CAR": 90000,
+            "HOUSEHOLD": 50000,
+            "FASHION_SHOPPING": 70000,
+            "CULTURE_LEISURE": 90000,
+            "BEAUTY": 30000,
+            "EDUCATION": 70000,
+            "ETC": 20000,
+            "HOUSING_TELECOM": 700000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        }
+      },
+      "current_month_known": {
+        "total": 1510000,
+        "fixed_amount": 700000,
+        "living_amount": 810000,
+        "by_category": {
+          "FOOD": 390000,
+          "TRANSPORT_CAR": 90000,
+          "HOUSEHOLD": 50000,
+          "FASHION_SHOPPING": 70000,
+          "CULTURE_LEISURE": 90000,
+          "BEAUTY": 30000,
+          "EDUCATION": 70000,
+          "ETC": 20000,
+          "HOUSING_TELECOM": 700000
+        },
+        "unclassified_amount": 0,
+        "needs_review_count": 0
+      },
+      "previous_same_dates_known": {
+        "total": 1468000,
+        "fixed_amount": 700000,
+        "living_amount": 768000,
+        "by_category": {
+          "FOOD": 348000,
+          "TRANSPORT_CAR": 90000,
+          "HOUSEHOLD": 50000,
+          "FASHION_SHOPPING": 60000,
+          "CULTURE_LEISURE": 70000,
+          "MEDICAL_HEALTH": 30000,
+          "BEAUTY": 30000,
+          "EDUCATION": 70000,
+          "ETC": 20000,
+          "HOUSING_TELECOM": 700000
+        },
+        "unclassified_amount": 0,
+        "needs_review_count": 0
+      },
+      "current_cycle_living_known": {
+        "total": 180000,
+        "fixed_amount": 0,
+        "living_amount": 180000,
+        "by_category": {
+          "FOOD": 60000,
+          "TRANSPORT_CAR": 15000,
+          "HOUSEHOLD": 25000,
+          "FASHION_SHOPPING": 35000,
+          "CULTURE_LEISURE": 45000
+        },
+        "unclassified_amount": 0,
+        "needs_review_count": 0
+      },
+      "comparison_available": true,
+      "completeness": "complete",
+      "current_approved_budget_available": true,
+      "comparison": {
+        "total_delta": 42000,
+        "total_rate_exact": {
+          "numerator": 4200000,
+          "denominator": 1468000
+        },
+        "food_delta": 42000,
+        "food_rate_exact": {
+          "numerator": 4200000,
+          "denominator": 348000
+        }
+      },
+      "budget": {
+        "living_budget": 900000,
+        "living_spent": 180000,
+        "living_remaining": 720000,
+        "over": 0,
+        "covered_by_spare": 0,
+        "spare_remaining": 200000,
+        "shortfall": 0,
+        "food_budget": 350000,
+        "food_spent": 60000,
+        "food_signed_difference": 290000
+      },
+      "authoritative_monthly_totals": {
+        "7": 1420000,
+        "8": 1460000,
+        "9": 1480000,
+        "10": 1510000
+      },
+      "authoritative_current_cycle_living_spent": 180000
+    },
+    "B": {
+      "monthly_known_sums": {
+        "7": {
+          "total": 1790000,
+          "fixed_amount": 750000,
+          "living_amount": 1040000,
+          "by_category": {
+            "FOOD": 380000,
+            "TRANSPORT_CAR": 300000,
+            "HOUSEHOLD": 50000,
+            "FASHION_SHOPPING": 140000,
+            "CULTURE_LEISURE": 120000,
+            "MEDICAL_HEALTH": 30000,
+            "BEAUTY": 40000,
+            "EDUCATION": 60000,
+            "ETC": 20000,
+            "HOUSING_TELECOM": 650000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "8": {
+          "total": 1980000,
+          "fixed_amount": 750000,
+          "living_amount": 1230000,
+          "by_category": {
+            "FOOD": 400000,
+            "TRANSPORT_CAR": 310000,
+            "HOUSEHOLD": 50000,
+            "FASHION_SHOPPING": 180000,
+            "CULTURE_LEISURE": 140000,
+            "BEAUTY": 50000,
+            "EDUCATION": 60000,
+            "TRAVEL_LODGING": 120000,
+            "ETC": 20000,
+            "HOUSING_TELECOM": 650000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "9": {
+          "total": 1870000,
+          "fixed_amount": 750000,
+          "living_amount": 1120000,
+          "by_category": {
+            "FOOD": 420000,
+            "TRANSPORT_CAR": 300000,
+            "HOUSEHOLD": 60000,
+            "FASHION_SHOPPING": 160000,
+            "CULTURE_LEISURE": 120000,
+            "MEDICAL_HEALTH": 30000,
+            "BEAUTY": 50000,
+            "EDUCATION": 60000,
+            "ETC": 20000,
+            "HOUSING_TELECOM": 650000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "10": {
+          "total": 2290000,
+          "fixed_amount": 750000,
+          "living_amount": 1540000,
+          "by_category": {
+            "FOOD": 630000,
+            "TRANSPORT_CAR": 340000,
+            "CULTURE_LEISURE": 180000,
+            "FASHION_SHOPPING": 300000,
+            "HOUSEHOLD": 60000,
+            "HOUSING_TELECOM": 650000,
+            "BEAUTY": 50000,
+            "EDUCATION": 60000,
+            "ETC": 20000
+          },
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        }
+      },
+      "current_month_known": {
+        "total": 2290000,
+        "fixed_amount": 750000,
+        "living_amount": 1540000,
+        "by_category": {
+          "FOOD": 630000,
+          "TRANSPORT_CAR": 340000,
+          "CULTURE_LEISURE": 180000,
+          "FASHION_SHOPPING": 300000,
+          "HOUSEHOLD": 60000,
+          "HOUSING_TELECOM": 650000,
+          "BEAUTY": 50000,
+          "EDUCATION": 60000,
+          "ETC": 20000
+        },
+        "unclassified_amount": 0,
+        "needs_review_count": 0
+      },
+      "previous_same_dates_known": {
+        "total": 1856000,
+        "fixed_amount": 750000,
+        "living_amount": 1106000,
+        "by_category": {
+          "FOOD": 406000,
+          "TRANSPORT_CAR": 300000,
+          "HOUSEHOLD": 60000,
+          "FASHION_SHOPPING": 160000,
+          "CULTURE_LEISURE": 120000,
+          "MEDICAL_HEALTH": 30000,
+          "BEAUTY": 50000,
+          "EDUCATION": 60000,
+          "ETC": 20000,
+          "HOUSING_TELECOM": 650000
+        },
+        "unclassified_amount": 0,
+        "needs_review_count": 0
+      },
+      "current_cycle_living_known": {
+        "total": 1362000,
+        "fixed_amount": 0,
+        "living_amount": 1362000,
+        "by_category": {
+          "FOOD": 532000,
+          "TRANSPORT_CAR": 180000,
+          "FASHION_SHOPPING": 300000,
+          "HOUSEHOLD": 60000,
+          "BEAUTY": 50000,
+          "EDUCATION": 60000,
+          "CULTURE_LEISURE": 160000,
+          "ETC": 20000
+        },
+        "unclassified_amount": 0,
+        "needs_review_count": 0
+      },
+      "comparison_available": true,
+      "completeness": "complete",
+      "current_approved_budget_available": true,
+      "comparison": {
+        "total_delta": 434000,
+        "total_rate_exact": {
+          "numerator": 43400000,
+          "denominator": 1856000
+        },
+        "food_delta": 224000,
+        "food_rate_exact": {
+          "numerator": 22400000,
+          "denominator": 406000
+        }
+      },
+      "budget": {
+        "living_budget": 1300000,
+        "living_spent": 1362000,
+        "living_remaining": 0,
+        "over": 62000,
+        "covered_by_spare": 62000,
+        "spare_remaining": 138000,
+        "shortfall": 0,
+        "food_budget": 400000,
+        "food_spent": 532000,
+        "food_signed_difference": -132000
+      },
+      "food_explanation_evidence": {
+        "previous_same_dates": {
+          "count": 29,
+          "net_amount": 406000
+        },
+        "current": {
+          "count": 35,
+          "net_amount": 630000
+        }
+      },
+      "authoritative_monthly_totals": {
+        "7": 1790000,
+        "8": 1980000,
+        "9": 1870000,
+        "10": 2290000
+      },
+      "authoritative_current_cycle_living_spent": 1362000
+    },
+    "C": {
+      "monthly_known_sums": {
+        "7": {
+          "total": 0,
+          "fixed_amount": 0,
+          "living_amount": 0,
+          "by_category": {},
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "8": {
+          "total": 0,
+          "fixed_amount": 0,
+          "living_amount": 0,
+          "by_category": {},
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "9": {
+          "total": 0,
+          "fixed_amount": 0,
+          "living_amount": 0,
+          "by_category": {},
+          "unclassified_amount": 0,
+          "needs_review_count": 0
+        },
+        "10": {
+          "total": 390000,
+          "fixed_amount": 100000,
+          "living_amount": 290000,
+          "by_category": {
+            "FOOD": 110000,
+            "TRANSPORT_CAR": 30000,
+            "UNCLASSIFIED": 50000,
+            "FASHION_SHOPPING": 40000,
+            "HOUSING_TELECOM": 50000,
+            "EDUCATION": 70000,
+            "CULTURE_LEISURE": 10000,
+            "HOUSEHOLD": 30000
+          },
+          "unclassified_amount": 50000,
+          "needs_review_count": 2
+        }
+      },
+      "current_month_known": {
+        "total": 390000,
+        "fixed_amount": 100000,
+        "living_amount": 290000,
+        "by_category": {
+          "FOOD": 110000,
+          "TRANSPORT_CAR": 30000,
+          "UNCLASSIFIED": 50000,
+          "FASHION_SHOPPING": 40000,
+          "HOUSING_TELECOM": 50000,
+          "EDUCATION": 70000,
+          "CULTURE_LEISURE": 10000,
+          "HOUSEHOLD": 30000
+        },
+        "unclassified_amount": 50000,
+        "needs_review_count": 2
+      },
+      "previous_same_dates_known": {
+        "total": 0,
+        "fixed_amount": 0,
+        "living_amount": 0,
+        "by_category": {},
+        "unclassified_amount": 0,
+        "needs_review_count": 0
+      },
+      "current_cycle_living_known": {
+        "total": 290000,
+        "fixed_amount": 0,
+        "living_amount": 290000,
+        "by_category": {
+          "FOOD": 110000,
+          "TRANSPORT_CAR": 30000,
+          "UNCLASSIFIED": 50000,
+          "FASHION_SHOPPING": 40000,
+          "EDUCATION": 20000,
+          "CULTURE_LEISURE": 10000,
+          "HOUSEHOLD": 30000
+        },
+        "unclassified_amount": 50000,
+        "needs_review_count": 2
+      },
+      "comparison_available": false,
+      "completeness": "partial",
+      "current_approved_budget_available": false,
+      "presentation_requirements": {
+        "July_August_September": "unknown_not_zero",
+        "October_total": "observed_partial_not_full_month_total",
+        "current_budget": "no_approved_budget_not_zero_remaining",
+        "compare_previous": "unavailable_previous_incomplete"
+      },
+      "authoritative_monthly_totals": {
+        "7": null,
+        "8": null,
+        "9": null,
+        "10": null
+      },
+      "authoritative_current_cycle_living_spent": null
+    }
+  },
+  "micro_fixture_expected": {
+    "total": 123000,
+    "fixed_amount": 70000,
+    "living_spent": 53000,
+    "unclassified_amount": 8000,
+    "food_net": 39000,
+    "living_budget": 100000,
+    "living_remaining": 47000,
+    "food_budget": 50000,
+    "food_signed_difference": 11000
+  }
+}

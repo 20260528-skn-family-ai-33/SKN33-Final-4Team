@@ -1,0 +1,140 @@
+{
+ "run": "2026-10-29_b160_run28",
+ "pre_run": {
+  "recorded_before_run": "2026-10-29",
+  "model": "gpt-6-luna",
+  "reasoning_effort": "low",
+  "structured_outputs": true,
+  "retries": 0,
+  "ledger": {
+   "limit": 160
+  },
+  "prompts": {
+   "router": "19c9f8c9023be5af3e30cc20bd6f73281c07a2402e71f38015708996af2e2d9e",
+   "spending": "a7547d3d199df6653dfad1ac49d4dfcaa1d735c3a97a3e6396675d954a2b6d64",
+   "legacy_not_used": "6a3bb2a3397193c03c112eb5e0b2a368b55b9ad0d8bbb6d9cb70ef00d64c267c"
+  },
+  "cases_b": {
+   "version": "B-2026-10-29.1",
+   "sha256": "fb159e29be0ab46bb609fe155862a36142fd6dfae1acbce2cbd4c480caa74cf7"
+  },
+  "cases_source": {
+   "version": "2026-10-29.3",
+   "sha256": "cffc9d75ef3d4e468af0907f34485e75c536b4a3c62f01c1f7ca5cf6a37d29cf"
+  },
+  "files": {
+   "scripts/router_eval/stage_b.py": "f794924ccbd7417893abae37c24210d7e276cf884354adbbc30fb600a484cfe5",
+   "scripts/router_eval/run.py": "66d156d25edfc6f9ce7cbb1c0326dee2993dcbdf7db40e2ee7716fb9f2b713a5",
+   "scripts/router_eval/openai_rest.py": "37ff9fce9ec423bbf879edb806922dfca77d2201fb1e7a9009b2fbe765b08316",
+   "backend/chat/router_core/__init__.py": "fd9af1ecf336af8112d284d51ab1e829043b92fc28afec9694e27d52aec75411",
+   "backend/chat/router_core/reading.py": "8df3a7bdc6c73fc44d1056893b07bb12c6cc11b2f0a057d7e87595e9816b19a2",
+   "backend/spending_analysis/reading.py": "47b8738bb05297a15d4ee256d7c4ca972d4229facef5328dc69c38dd70708295",
+   "backend/spending_analysis/dialog.py": "7a030a84bc9d4f2964fd8b0957168934374a9d7bb5e5ebf0156d174dcc3e0790",
+   "backend/spending_analysis/agent.py": "9fd14d56ad1df8ea70c75dfe92ed6bb9a4fd62206211ebc905b8e01e3cefe963"
+  },
+  "prices_usd_per_1m": {
+   "in": 0.1,
+   "out": 0.5,
+   "note": "17차와 같은 값 (그때 기록 /bin/zsh.00909 재현), 이번에 공식 가격표 재확인 안 함"
+  },
+  "plan": {
+   "check": [
+    "b05"
+   ],
+   "rest": "regression_dev · regression_new · new_b 나머지 (reference 제외)",
+   "planned_calls": 139
+  }
+ },
+ "ledger": {
+  "limit": 160,
+  "used": 138
+ },
+ "scored_calls": {
+  "router": 71,
+  "spending": 67
+ },
+ "units": {
+  "single": 48,
+  "scenarios": 10,
+  "scenario_turns": 38,
+  "policy_pending": [
+   "d28",
+   "n06",
+   "bs1#3",
+   "bs2#3"
+  ],
+  "policy_review": []
+ },
+ "scores_policy_pending_excluded": {
+  "regression_dev": {
+   "router_reading": "28/31",
+   "spending_reading": "28/32",
+   "format": "35/35",
+   "decision": "36/37",
+   "state": "36/37",
+   "flows_strict": "2/3",
+   "flows_decision_state": "3/3"
+  },
+  "regression_new": {
+   "router_reading": "18/26",
+   "spending_reading": "17/27",
+   "format": "30/30",
+   "decision": "27/33",
+   "state": "31/33",
+   "flows_strict": "0/5",
+   "flows_decision_state": "3/5"
+  },
+  "new_b": {
+   "router_reading": "10/10",
+   "spending_reading": "6/7",
+   "format": "12/12",
+   "decision": "12/12",
+   "state": "12/12",
+   "flows_strict": "2/2",
+   "flows_decision_state": "2/2"
+  },
+  "total": {
+   "router_reading": "56/67",
+   "spending_reading": "51/66",
+   "format": "77/77",
+   "decision": "75/82",
+   "state": "79/82",
+   "flows_strict": "4/10",
+   "flows_decision_state": "8/10"
+  }
+ },
+ "failed_units": [
+  "d22",
+  "d25",
+  "d27",
+  "n10",
+  "n11",
+  "b06",
+  "s3#3",
+  "s4#2",
+  "s5#3",
+  "s6#2",
+  "s6#4",
+  "s6#5",
+  "s7#1",
+  "s7#2",
+  "s7#3",
+  "s8#2"
+ ],
+ "latency_ms": {
+  "call_median": 1751.0,
+  "call_p90": 2527,
+  "call_max": 8777,
+  "turn_median": 3313,
+  "turn_p90": 4692,
+  "turn_max": 10894,
+  "turns_with_calls": 81
+ },
+ "tokens": {
+  "input": 187385,
+  "cached": 111340,
+  "output": 14059,
+  "reasoning": 5363
+ },
+ "responses_file": "2026-10-29_b160_run28-responses.jsonl"
+}

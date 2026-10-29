@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>로컬 채팅 (개발용)</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#667085; --line:#e4e7ec; --accent:#2f6fed;
+          --dev:#fff7e6; --dev-ink:#8a5a00; --notice:#eef4ff; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:12px 16px; background:var(--card); border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0 0 6px; }
+  .meta { font-size:12px; color:var(--muted); display:flex; flex-wrap:wrap; gap:10px; }
+  .warn { margin:8px 0 0; padding:8px 10px; background:var(--dev); color:var(--dev-ink); border-radius:8px; font-size:12px; line-height:1.5; }
+  main { max-width:720px; margin:0 auto; padding:12px 16px 200px; }
+  .personas { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+  .personas button, .actions button, .chips button { border:1px solid var(--line); background:var(--card); border-radius:999px;
+    padding:6px 12px; font-size:13px; cursor:pointer; color:var(--ink); }
+  .personas button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .personas .new { margin-left:auto; }
+  .msg { margin:8px 0; display:flex; }
+  .msg.user { justify-content:flex-end; }
+  .bubble { max-width:85%; padding:9px 12px; border-radius:12px; background:var(--card); border:1px solid var(--line); font-size:14px; line-height:1.55; }
+  .user .bubble { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .notice { margin-top:6px; padding:6px 8px; background:var(--notice); border-radius:6px; font-size:12px; }
+  .dev { margin-top:6px; padding:6px 8px; background:var(--dev); color:var(--dev-ink); border-radius:6px; font-size:12px; }
+  .lead { margin-bottom:6px; padding:6px 8px; border-left:3px solid var(--ink); font-weight:600; }
+  .section { margin-top:8px; padding-top:6px; border-top:1px solid var(--line); }
+  .section .title { font-weight:600; }
+  details.chart { margin-top:8px; }
+  details.chart summary { cursor:pointer; color:var(--accent); font-size:13px; }
+  .row { margin-top:6px; font-size:12px; }
+  .bar { height:8px; background:var(--line); border-radius:4px; margin-top:2px; }
+  .bar span { display:block; height:100%; background:var(--muted); border-radius:4px; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .examples { font-size:12px; color:var(--muted); margin:8px 0; }
+  .examples button { border:none; background:none; color:var(--accent); cursor:pointer; padding:2px 4px; font-size:12px; }
+  footer { position:fixed; left:0; right:0; bottom:0; background:var(--card); border-top:1px solid var(--line); padding:10px 16px; }
+  .inner { max-width:720px; margin:0 auto; }
+  .actions { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px; }
+  form { display:flex; gap:8px; }
+  input { flex:1; min-width:0; padding:10px 12px; border:1px solid var(--line); border-radius:10px; font-size:14px; }
+  form button { padding:10px 16px; border:none; border-radius:10px; background:var(--accent); color:#fff; font-size:14px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+</style>
+</head>
+<body>
+<header>
+  <h1>머니쿠션 로컬 채팅 · 개발용</h1>
+  <div class="meta" id="meta"></div>
+  <div class="warn" id="warn"></div>
+</header>
+<main>
+  <div class="personas" id="personas"></div>
+  <div class="examples" id="examples"></div>
+  <div id="log"></div>
+</main>
+<footer><div class="inner">
+  <div class="actions" id="actions"></div>
+  <form id="form"><input id="text" placeholder="질문을 적어 주세요" autocomplete="off"><button>보내기</button></form>
+</div></footer>
+<script>
+const $ = (id) => document.getElementById(id);
+let info = null, persona = null, busy = false;
+
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+async function post(path, body) {
+  const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '요청 실패');
+  return data;
+}
+
+function showCalls(calls) {
+  const c = calls.fake != null ? `가짜 해석 호출 ${calls.fake}회 (실제 LLM 호출 없음)`
+    : `LLM 호출 ${calls.used} / 상한 ${calls.limit}` + (calls.failed ? ` · 실패 ${calls.failed}` : '') + (calls.blocked ? ` · 상한으로 막힘 ${calls.blocked}` : '');
+  $('calls').textContent = c;
+}
+
+function bot(entry) {
+  const box = el('div', 'msg'), b = el('div', 'bubble');
+  const { bot: out, dev } = entry;
+  // 핵심 안내(lead)는 서버가 나눈 칸 그대로 맨 위에 (문자열을 찾아 옮기지 않음). 굵기 · 테두리 + '안내:' 글자로 구분
+  (out.lead || []).forEach((l) => { const d = el('div', 'lead', '안내: ' + l); d.setAttribute('role', 'note'); b.appendChild(d); });
+  (out.lines || []).forEach((l) => b.appendChild(el('div', null, l)));
+  (out.sections || []).forEach((s) => {
+    const sec = el('div', 'section'); sec.appendChild(el('div', 'title', s.title));
+    s.lines.forEach((l) => sec.appendChild(el('div', null, l))); b.appendChild(sec);
+  });
+  if (out.chart) b.appendChild(chart(out.chart));
+  if (!(out.lines || []).length && !(out.notices || []).length) b.appendChild(el('div', null, '(보일 문구 없음)'));
+  (out.notices || []).forEach((n) => b.appendChild(el('div', 'notice', n)));
+  if ((out.examples || []).length) b.appendChild(el('div', 'notice', '예: ' + out.examples.join(' / ')));
+  (dev || []).forEach((n) => b.appendChild(el('div', 'dev', n)));
+  if ((out.choices || []).length) {
+    const chips = el('div', 'chips');
+    out.choices.forEach((c) => { const btn = el('button', null, c.label); btn.onclick = () => send({ choice: c }); chips.appendChild(btn); });
+    b.appendChild(chips);
+  }
+  box.appendChild(b); $('log').appendChild(box);
+}
+
+// 서버가 준 금액 · 비율로만 그린다 (화면에서 다시 계산하지 않음). 막대 길이 = 비율, 금액 · 비율은 글자로도
+function chart(c) {
+  const box = el('details', 'chart'); box.appendChild(el('summary', null, c.title));
+  box.appendChild(el('div', 'row', c.basis));
+  if (c.limited) box.appendChild(el('div', 'row', c.limited));
+  if (c.empty) box.appendChild(el('div', 'row', c.empty));
+  c.rows.forEach((r) => {
+    const row = el('div', 'row'); row.appendChild(el('div', null, r.text));
+    const bar = el('div', 'bar'), fill = el('span'); fill.style.width = `${Math.max(Number(r.share), 0)}%`;
+    bar.setAttribute('role', 'img'); bar.setAttribute('aria-label', r.text);
+    bar.appendChild(fill); row.appendChild(bar); box.appendChild(row);
+  });
+  return box;
+}
+
+function user(text) { const box = el('div', 'msg user'); box.appendChild(el('div', 'bubble', text)); $('log').appendChild(box); }
+
+function draw(log) {
+  $('log').innerHTML = ''; log.forEach((m) => (m.who === 'user' ? user(m.text) : bot(m)));
+  const chips = document.querySelectorAll('.chips');  // 마지막 답변의 선택지만 누를 수 있다 (서버도 지난 선택지를 거절)
+  chips.forEach((c, i) => { if (i < chips.length - 1) c.querySelectorAll('button').forEach((b) => (b.disabled = true)); });
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function pick(p, fresh) {
+  persona = p;
+  document.querySelectorAll('.personas button[data-p]').forEach((b) => b.classList.toggle('on', b.dataset.p === p));
+  const data = await post(fresh ? '/api/new' : '/api/history', { persona: p });
+  $('conv').textContent = `${info.personas[p].alias} · 대화 ${data.conversation}`;
+  draw(data.log);
+}
+
+async function send(body) {
+  if (busy || !persona) return;
+  busy = true; document.querySelectorAll('footer button, .chips button').forEach((b) => (b.disabled = true));
+  const label = body.text ?? body.choice?.label ?? `[${info.buttons[body.button]}]`;
+  user(label);
+  try {
+    const data = await post('/api/send', { persona, ...body });
+    bot(data); showCalls(data.calls);
+  } catch (e) {
+    bot({ bot: { lines: [], notices: [] }, dev: [`[화면] ${e.message}`] });
+  }
+  busy = false; document.querySelectorAll('footer button').forEach((b) => (b.disabled = false));
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function start() {
+  info = await (await fetch('/api/info')).json();
+  $('meta').innerHTML = '';
+  [`기준일 ${info.today} (fixture 기준 시각 ${info.as_of})`, `해석: ${info.mode}${info.model ? ' · ' + info.model : ''}`].forEach((t) => $('meta').appendChild(el('span', null, t)));
+  const calls = el('span'); calls.id = 'calls'; $('meta').appendChild(calls); showCalls(info.calls);
+  const conv = el('span'); conv.id = 'conv'; $('meta').appendChild(conv);
+  $('warn').innerHTML = '';
+  ['실제 서비스와 분리된 개발용 화면이에요. 격리 fixture DB(가상 회원 3명)만 읽고, 대화는 서버 메모리에만 있어 서버를 다시 켜면 초기화돼요.',
+   `예산 조정 · 청년 정책은 실제 에이전트가 아니라 대역이에요. 예산 대역: ${info.doubles.budget} 정책 대역: ${info.doubles.policy}`,
+   info.explains ? '"왜 늘었어?"는 서버가 계산한 거래 근거로 답하고, 근거 문장은 설명 LLM 이 써요(검사를 통과한 문장만, 숫자는 서버 값). 호출이 1회 더 들어요.'
+     : '"왜 늘었어?"는 서버가 계산한 거래 근거로 템플릿 문장만 보여줘요. 설명 LLM 은 실제 LLM 모드에서만 써요.']
+    .forEach((t) => $('warn').appendChild(el('div', null, t)));
+  const ps = $('personas'); ps.innerHTML = '';
+  Object.entries(info.personas).forEach(([p, v]) => { const b = el('button', null, `${v.alias} · ${v.job}`); b.dataset.p = p; b.onclick = () => pick(p, false); ps.appendChild(b); });
+  const fresh = el('button', 'new', '새 대화'); fresh.onclick = () => persona && pick(persona, true); ps.appendChild(fresh);
+  const acts = $('actions'); acts.innerHTML = '';
+  Object.entries(info.buttons).forEach(([k, v]) => { const b = el('button', null, `[${v}]`); b.onclick = () => send({ button: k }); acts.appendChild(b); });
+  const ex = $('examples'); ex.innerHTML = '';
+  if (info.examples.length) {
+    ex.appendChild(el('span', null, '가짜 해석은 정해 둔 문장만 이해해요. 예시: '));
+    info.examples.forEach((t) => { const b = el('button', null, t); b.onclick = () => send({ text: t }); ex.appendChild(b); });
+  }
+  await pick(Object.keys(info.personas)[0], false);
+}
+
+$('form').onsubmit = (e) => { e.preventDefault(); const t = $('text').value.trim(); if (!t) return; $('text').value = ''; send({ text: t }); };
+start();
+</script>
+</body>
+</html>
