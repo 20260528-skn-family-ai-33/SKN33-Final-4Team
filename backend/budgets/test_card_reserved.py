@@ -321,7 +321,8 @@ class SyncedCardReservedTest(TestCase):
         self.connection = Connection.objects.create(user=self.user, business_type="card", organization_code="0302",
                                                     status="connected")
         Consent.objects.create(user=self.user, purpose="finance_inquiry", product_scope="card",
-                               document_version="v1", document_hash="test")
+                               document_version="v1", document_hash="test",
+                               granted_at=datetime(2026, 6, 1, tzinfo=dt_timezone.utc))
         # 10/29 데모(현대카드 · 결제일 5일): 명세서 구분 빈 값, 그날 명세서 1장
         self.bills = {
             "202609": bill(due="20260905", resBillType=""), "202610": bill(due="20261005", resBillType=""),
