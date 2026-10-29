@@ -152,6 +152,20 @@ class CardReservedTest(TestCase):
         return client.post(f"/api/budgets/{budget.pk}/approve/", "{}", content_type="application/json",
                            HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
 
+    def test_single_numeric_statement_allows_protect_and_recommend(self):
+        self.collect_all()
+        client = self.client_()
+        for value in ("0", "1"):
+            with self.subTest(value=value):
+                CardBill.objects.filter(user=self.user).update(field_states={"codefBillType": value})
+                self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 250_000, "pending": []})
+                response = client.get(URL)
+                self.assertEqual(response.status_code, 200, response.content)
+                self.assertIsNone(response.json()["blocked"])
+                self.assertEqual(response.json()["cardPending"], [])
+                draft = self.recommend_draft(client)
+                self.assertEqual(draft.items.get(category_detail="card_reserved").allocated_amount, 250_000)
+
     def test_card_purchase_after_recommend_does_not_expire_draft(self):
         self.collect_all()
         client = self.client_()
