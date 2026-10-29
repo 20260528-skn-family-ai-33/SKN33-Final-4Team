@@ -192,7 +192,8 @@ def normalize_card_bills(data, month, org):
             "total_amount": total,
             "payment_due_date": payment_due,
             "withdrawal_due_date": _date(row.get("resWithdrawalDueDate")),
-            "bill_type": _code(row.get("resBillType")),
+            # 명세서 구분은 선차감에서 카드론 명세서를 가르는 데 쓴다. 길어도 비우지 않고 잘라 둔다 (비우면 빈 값으로 읽힘)
+            "bill_type": _short(row.get("resBillType"), 50),
             "items": items,
             "items_state": items_state(total, items),
         })

@@ -12,7 +12,7 @@ from budgets.models import BudgetCycle
 from users.models import Consent
 
 from .api_connect import ConsentRequired
-from .card_deduction import calculate_first_bill_deduction, get_card_first_bill_deduction
+from .card_deduction import calculate_first_bill_deduction, get_issuer_first_bill_deduction
 from .models import BankAccount, Card, CardBill, Connection, FinancialTransaction, TransactionLink
 
 
@@ -89,6 +89,8 @@ class FirstBillDeductionTests(SimpleTestCase):
 
 
 class StoredFirstBillDeductionTests(TestCase):
+    """카드사 단위 첫 청구서 (10/29 나은): CODEF 청구서는 명세서 단위 카드사 통합(issuer)이다."""
+
     def setUp(self):
         self.user = get_user_model().objects.create_user(email="deduction@example.invalid")
         self.other = get_user_model().objects.create_user(email="other-deduction@example.invalid")
@@ -118,10 +120,11 @@ class StoredFirstBillDeductionTests(TestCase):
         fields.update(overrides)
         return Card.objects.create(**fields)
 
-    def bill(self, due, *, card=None, amount=420_000, **overrides):
-        fields = dict(user=self.user, connection=self.connection, card=card or self.card,
+    def bill(self, due, *, amount=420_000, bill_type=None, **overrides):
+        fields = dict(user=self.user, connection=self.connection, card=None,
                       issuer_code="0306", billing_month=(due or date(2026, 10, 1)).replace(day=1),
-                      total_amount=amount, source_type="provider", scope_type="card", withdrawal_due_date=due)
+                      total_amount=amount, source_type="provider", scope_type="issuer", withdrawal_due_date=due,
+                      field_states={"codefBillType": bill_type} if bill_type is not None else {})
         fields.update(overrides)
         return CardBill.objects.create(**fields)
 
@@ -133,21 +136,94 @@ class StoredFirstBillDeductionTests(TestCase):
         return FinancialTransaction.objects.create(**fields)
 
     def result(self, **overrides):
-        fields = dict(user=self.user, card_id=self.card.pk, cycle=self.cycle,
+        fields = dict(user=self.user, issuer_code="0306", card_ids=[self.card.pk], cycle=self.cycle,
                       bill_history_complete=True, spending_history_complete=True, as_of=date(2026, 10, 20))
         fields.update(overrides)
-        return get_card_first_bill_deduction(**fields)
+        return get_issuer_first_bill_deduction(**fields)
 
     def test_selects_first_due_after_connection_not_oldest_imported_bill(self):
         self.tx()
         result = self.result()
-        self.assertEqual(result.bill_id, self.first.pk)
-        self.assertEqual(result.amount, 300_000)
-        self.assertEqual(result.cycle_card_spending, 120_000)
+        self.assertEqual(result.bill_ids, (self.first.pk,))
+        self.assertEqual((result.total_amount, result.cycle_card_spending, result.amount), (420_000, 120_000, 300_000))
         self.assertIsNone(result.reason)
 
+    # ---------- 카드사 단위 (10/29 나은 규칙 1 ~ 4) ----------
+
+    def test_unmanaged_card_share_is_deducted_with_first_bill(self):
+        # 같은 카드사 카드 2장, A만 관리 대상 → B로 쓴 돈은 빼지 않아 B 몫까지 같이 뗀다
+        other = self.make_card(is_selected=False)
+        self.tx()
+        self.tx(card=other, amount=50_000)
+        self.assertEqual(self.result().amount, 300_000)
+        # 둘 다 관리 대상이면 둘 다 뺀다
+        self.assertEqual(self.result(card_ids=[self.card.pk, other.pk]).amount, 250_000)
+
+    def test_issuer_first_connection_is_earliest_card(self):
+        # 한국 시간 10/5에 먼저 연결한 카드가 있으면 카드사 첫 연결일은 10/5
+        self.make_card(first_connected_at=datetime(2026, 10, 4, 15, tzinfo=dt_timezone.utc), is_selected=False)
+        earlier = self.bill(date(2026, 10, 7), amount=100_000)
+        result = self.result()
+        self.assertEqual((result.bill_ids, result.amount), ((earlier.pk,), 100_000))
+
+    def test_card_selected_later_does_not_start_new_first_bill(self):
+        # 카드사에 첫 청구서는 한 번뿐: 나중에 연결 · 선택한 카드도 같은 첫 청구서
+        later = self.make_card(first_connected_at=datetime(2026, 10, 30, 15, tzinfo=dt_timezone.utc))
+        result = self.result(card_ids=[later.pk])
+        self.assertEqual((result.bill_ids, result.amount), ((self.first.pk,), 420_000))
+        cycle = BudgetCycle.objects.create(
+            user=self.user, starts_on=date(2026, 11, 1), ends_before=date(2026, 12, 1),
+        )
+        result = self.result(card_ids=[later.pk], cycle=cycle, as_of=date(2026, 11, 20))
+        self.assertEqual((result.amount, result.reason), (0, "first_bill_outside_cycle"))
+
+    def test_other_issuer_bills_are_not_used(self):
+        self.bill(date(2026, 10, 12), amount=50_000, issuer_code="0301")
+        self.assertEqual(self.result().bill_ids, (self.first.pk,))
+
+    def test_card_ids_must_be_this_issuers_cards(self):
+        other_issuer = self.make_card(issuer_code="0301")
+        for card_ids in ([], [other_issuer.pk], [self.card.pk, other_issuer.pk], [self.make_card(user=self.other).pk]):
+            with self.subTest(card_ids=card_ids), self.assertRaises(Http404):
+                self.result(card_ids=card_ids)
+
+    # ---------- 같은 날 여러 장 (규칙 5) ----------
+
+    def test_same_day_usage_statements_are_summed_and_card_loan_excluded(self):
+        CardBill.objects.filter(pk=self.first.pk).update(field_states={"codefBillType": "카드이용대금명세서"})
+        extra = self.bill(date(2026, 10, 25), amount=30_000, bill_type="해외이용 명세서")
+        self.bill(date(2026, 10, 25), amount=1_000_000, bill_type="카드론 명세서")
+        self.tx()
+        result = self.result()
+        self.assertEqual(result.bill_ids, tuple(sorted((self.first.pk, extra.pk))))
+        self.assertEqual((result.total_amount, result.amount), (450_000, 330_000))
+
+    def test_blank_type_is_usage_only_when_alone_that_day(self):
+        self.assertEqual(self.result().amount, 420_000)  # 빈 값 + 그날 한 장 (10/29 데모 현대카드)
+        self.bill(date(2026, 10, 25), amount=30_000, bill_type="카드론")
+        result = self.result()
+        self.assertEqual((result.amount, result.reason), (None, "first_bill_ambiguous"))
+        self.assertEqual(len(result.bill_ids), 2)
+
+    def test_two_blank_statements_same_day_are_not_chosen_by_uuid(self):
+        self.bill(date(2026, 10, 25), amount=430_000)
+        self.assertEqual(self.result().reason, "first_bill_ambiguous")
+
+    def test_unknown_bill_type_code_is_pending_not_guessed(self):
+        # CODEF 공통 코드표가 없어 숫자 코드는 카드론인지 모른다
+        for value in ("0", "1", "기타"):
+            with self.subTest(value=value):
+                CardBill.objects.filter(pk=self.first.pk).update(field_states={"codefBillType": value})
+                self.assertEqual((self.result().amount, self.result().reason), (None, "bill_type_unknown"))
+
+    def test_card_loan_only_day_is_skipped_for_next_usage_bill(self):
+        self.bill(date(2026, 10, 12), amount=1_000_000, bill_type="장기카드대출(카드론)")
+        self.assertEqual(self.result().bill_ids, (self.first.pk,))
+
+    # ---------- 날짜 · 기간 ----------
+
     def test_old_bill_connection_scope_does_not_block_deduction(self):
-        old = CardBill.objects.get(card=self.card, withdrawal_due_date=date(2026, 9, 25))
+        old = CardBill.objects.get(withdrawal_due_date=date(2026, 9, 25))
         mismatched = Connection.objects.create(
             user=self.user, business_type="card", organization_code="0302", status="connected",
         )
@@ -159,7 +235,7 @@ class StoredFirstBillDeductionTests(TestCase):
                     business_type=business_type, organization_code=organization_code,
                 )
                 result = self.result()
-                self.assertEqual(result.bill_id, self.first.pk)
+                self.assertEqual(result.bill_ids, (self.first.pk,))
                 self.assertEqual(result.amount, 300_000)
                 self.assertIsNone(result.reason)
 
@@ -178,7 +254,7 @@ class StoredFirstBillDeductionTests(TestCase):
                 self.assertEqual(result.reason, "bill_scope_unknown")
 
     def test_old_bill_foreign_connection_owner_is_still_rejected(self):
-        old = CardBill.objects.get(card=self.card, withdrawal_due_date=date(2026, 9, 25))
+        old = CardBill.objects.get(withdrawal_due_date=date(2026, 9, 25))
         foreign = Connection.objects.create(
             user=self.other, business_type="card", organization_code="0306", status="connected",
         )
@@ -186,27 +262,18 @@ class StoredFirstBillDeductionTests(TestCase):
         with self.assertRaises(Http404):
             self.result()
 
-    def test_first_is_per_card_even_for_same_issuer(self):
-        second = self.make_card()
-        bill = self.bill(date(2026, 10, 28), card=second, amount=200_000)
-        self.tx()
-        self.tx(card=second, amount=50_000)
-        self.assertEqual(self.result().amount, 300_000)
-        result = self.result(card_id=second.pk)
-        self.assertEqual((result.bill_id, result.amount), (bill.pk, 150_000))
-
     def test_connection_day_is_inclusive_and_uses_korean_date(self):
         self.bill(date(2026, 10, 9), amount=900_000)  # 한국 날짜로 연결 전
         same_day = self.bill(date(2026, 10, 10), amount=100_000)
         result = self.result()
-        self.assertEqual((result.bill_id, result.amount), (same_day.pk, 100_000))
+        self.assertEqual((result.bill_ids, result.amount), ((same_day.pk,), 100_000))
 
     def test_first_bill_is_not_reset_in_next_cycle(self):
         cycle = BudgetCycle.objects.create(
             user=self.user, starts_on=date(2026, 11, 1), ends_before=date(2026, 12, 1),
         )
         result = self.result(cycle=cycle, as_of=date(2026, 11, 20), spending_history_complete=False)
-        self.assertEqual((result.bill_id, result.amount), (self.first.pk, 0))
+        self.assertEqual((result.bill_ids, result.amount), ((self.first.pk,), 0))
 
     def test_cycle_end_is_exclusive_for_due_date(self):
         self.first.withdrawal_due_date = date(2026, 11, 1)
@@ -262,7 +329,7 @@ class StoredFirstBillDeductionTests(TestCase):
         self.assertEqual(result.reason, "bill_history_incomplete")
 
     def test_no_first_bill_is_unknown_not_zero(self):
-        CardBill.objects.filter(card=self.card).delete()
+        CardBill.objects.all().delete()
         self.assertEqual(self.result().reason, "first_bill_unavailable")
         self.assertIsNone(self.result().amount)
 
@@ -274,28 +341,16 @@ class StoredFirstBillDeductionTests(TestCase):
         self.first.withdrawal_due_date = None
         self.first.payment_due_date = date(2026, 10, 25)
         self.first.save()
-        self.assertEqual(self.result().bill_id, self.first.pk)
+        self.assertEqual(self.result().bill_ids, (self.first.pk,))
         self.first.withdrawal_due_date = date(2026, 11, 1)
         self.first.save()
         self.assertEqual(self.result().amount, 0)
 
-    def test_duplicate_first_due_is_not_chosen_by_uuid(self):
-        self.bill(date(2026, 10, 25), amount=430_000)
-        self.assertEqual(self.result().reason, "first_bill_ambiguous")
-
-    def test_issuer_total_and_unknown_scope_are_not_card_totals(self):
-        for scope in (None, "unknown", "issuer"):
+    def test_card_or_unknown_scope_is_not_issuer_total(self):
+        for scope in (None, "unknown", "card"):
             with self.subTest(scope=scope):
                 CardBill.objects.filter(pk=self.first.pk).update(scope_type=scope)
                 self.assertEqual(self.result().reason, "bill_scope_unknown")
-
-    def test_unmapped_issuer_bill_does_not_disappear(self):
-        CardBill.objects.filter(pk=self.first.pk).update(card=None, scope_type="issuer")
-        self.assertEqual(self.result().reason, "bill_scope_unknown")
-
-    def test_issuer_mismatch_is_not_silently_used(self):
-        CardBill.objects.filter(pk=self.first.pk).update(issuer_code="0301")
-        self.assertEqual(self.result().reason, "bill_scope_unknown")
 
     def test_negative_adjustment_bill_needs_confirmation(self):
         CardBill.objects.filter(pk=self.first.pk).update(total_amount=-100)
@@ -313,7 +368,7 @@ class StoredFirstBillDeductionTests(TestCase):
         self.card.save()
         self.card.refresh_from_db()
         self.assertEqual(self.card.first_connected_at, self.connected_at)
-        self.assertEqual(self.result().bill_id, self.first.pk)
+        self.assertEqual(self.result().bill_ids, (self.first.pk,))
 
     def test_new_card_records_first_connection_once(self):
         with patch("finance.models.timezone.now", return_value=self.connected_at):
@@ -330,14 +385,21 @@ class StoredFirstBillDeductionTests(TestCase):
         self.assertIsNone(self.card.first_connected_at)
         self.assertEqual(self.result().reason, "first_connection_unknown")
 
+    def test_unknown_date_of_any_issuer_card_is_pending(self):
+        # 그 카드는 관리 대상이 아니어도 더 먼저 연결됐을 수 있다
+        legacy = self.make_card(is_selected=False)
+        Card.objects.filter(pk=legacy.pk).update(first_connected_at=None)
+        self.assertEqual(self.result().reason, "first_connection_unknown")
+
     def test_unconnected_manual_card_does_not_invent_connection_date(self):
         card = self.make_card(origin="manual", connection=None, first_connected_at=None)
         self.assertIsNone(card.first_connected_at)
+        self.assertEqual(self.result().bill_ids, (self.first.pk,))  # 직접 입력 카드는 카드사 첫 연결일에 안 씀
 
     def test_other_user_and_foreign_cycle_are_rejected(self):
         other_card = self.make_card(user=self.other)
         with self.assertRaises(Http404):
-            self.result(card_id=other_card.pk)
+            self.result(card_ids=[other_card.pk])
         self.cycle.user = self.other
         with self.assertRaises(Http404):
             self.result()
@@ -368,9 +430,9 @@ class StoredFirstBillDeductionTests(TestCase):
     def test_repeated_reads_do_not_change_bill_or_create_dues(self):
         from .models import PaymentDue
         self.tx()
-        before = list(CardBill.objects.filter(card=self.card).values())
+        before = list(CardBill.objects.values())
         self.assertEqual(self.result(), self.result())
-        self.assertEqual(list(CardBill.objects.filter(card=self.card).values()), before)
+        self.assertEqual(list(CardBill.objects.values()), before)
         self.assertEqual(PaymentDue.objects.count(), 0)
 
     def test_paid_bill_still_uses_total_not_remaining_balance(self):

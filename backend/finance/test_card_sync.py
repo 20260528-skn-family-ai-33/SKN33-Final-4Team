@@ -477,19 +477,36 @@ class CardSyncTest(TestCase):
         self.assertEqual(len(self.runs("card_approval_list")), 2)
 
     def test_deduction_reads_synced_data(self):
-        """카드사 통합 청구서만 있으면 선차감은 0원으로 치지 않고 보류된다 (cards.md · P-12)"""
+        """카드사 통합 청구서로 카드사 단위 선차감을 계산한다 (10/29 나은 · P-12)"""
         from types import SimpleNamespace
 
-        from .card_deduction import get_card_first_bill_deduction
+        from .card_deduction import get_issuer_first_bill_deduction
 
-        self.bills["202610"] = bill(due="20261105")
+        self.bills["202610"] = bill(due="20261105", resBillType="")
         self.run_sync()
         saved = Card.objects.get(user=self.user)
         Card.objects.filter(pk=saved.pk).update(first_connected_at=timezone.make_aware(datetime(2026, 10, 1)))
         cycle = SimpleNamespace(user_id=self.user.pk, starts_on=date(2026, 10, 10), ends_before=date(2026, 11, 10))
-        result = get_card_first_bill_deduction(self.user, saved.pk, cycle, as_of=END,
-                                               bill_history_complete=True, spending_history_complete=True)
-        self.assertEqual((result.amount, result.reason), (None, "bill_scope_unknown"))
+        result = get_issuer_first_bill_deduction(self.user, ORG, cycle, card_ids=[saved.pk], as_of=END,
+                                                 bill_history_complete=True, spending_history_complete=True)
+        # 첫 청구서 420,000 − 10/20 승인 22,000
+        self.assertEqual((result.amount, result.reason), (398_000, None))
+
+    def test_next_month_bill_is_saved_without_coverage_record(self):
+        self.bills["202611"] = bill(due="20261105")
+        sync_card(self.user, "cid", ORG, START, END, MONTHS + ("202611",), connection_id=self.connection.pk)
+        self.assertTrue(CardBill.objects.filter(user=self.user, billing_month=date(2026, 11, 1)).exists())
+        saved = Card.objects.get(user=self.user)
+        # 아직 오지 않은 11월 날짜는 조회했다고 남기지 않는다
+        self.assertEqual(self.runs("card_bill_list"), [
+            (saved.pk, date(2026, 9, 1), date(2026, 9, 30)), (saved.pk, date(2026, 10, 1), END),
+        ])
+
+    def test_long_bill_type_is_kept_for_card_loan_check(self):
+        self.bills["202610"] = bill(resBillType="장기카드대출(카드론) 이용대금 명세서 - 별도 청구분")
+        self.run_sync()
+        october = CardBill.objects.get(user=self.user, billing_month=date(2026, 10, 1))
+        self.assertTrue(october.field_states["codefBillType"].startswith("장기카드대출(카드론)"))
 
     def test_refresh_api_finds_card_syncer(self):
         from .api_sync import card_syncer

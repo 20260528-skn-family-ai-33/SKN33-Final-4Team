@@ -2,7 +2,7 @@
 
 - 다시 불러오기(api_sync.card_syncer)가 부른다. 약속한 모양은 docs/api/finance-connect.md 11번.
 - 첫 청구서 선차감(budgets/protect.py P-12)이 아래 조회 기록으로 '자료가 다 들어왔는지'를 판단한다 (10/28 나은):
-  · 청구서: product_code=card_bill_list, 카드마다 · 달마다, 그 달 1일 ~ 말일(이번 달은 조회일까지)
+  · 청구서: product_code=card_bill_list, 카드마다 · 달마다, 그 달 1일 ~ 말일(이번 달은 조회일까지). 다음 달 청구서는 기록 없음
   · 승인내역: product_code=card_approval_list, 카드마다, 카드사가 실제로 조회해 준 기간
   · 승인 한 줄이라도 카드를 특정 못 하거나 금액을 모르면 승인내역 기록을 남기지 않는다 (덜 센 사용액으로 선차감이 작아지지 않게)
 - 카드값 출금 ↔ 청구서 매칭 · 납부 예정 생성은 별도 작업이다.
@@ -137,9 +137,9 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
                 counts["skipped"] += 1
                 continue
         states[BILL_STARTED_AT] = run.started_at.isoformat()
-        states["codefBillType"] = data["bill_type"]
+        states["codefBillType"] = data["bill_type"]   # 선차감: 같은 날 명세서 중 카드론 명세서 빼기 (card_deduction.bill_kind)
         bill.connection = connection
-        # 명세서 단위 청구라 카드사 통합. 카드별로 나눠 추정하지 않는다 (cards.md) → 선차감은 '확인 중'으로 보류된다
+        # 명세서 단위 청구라 카드사 통합. 카드별로 나누지 않고 선차감도 카드사 단위로 계산한다 (10/29 나은)
         bill.card, bill.scope_type = None, CardBill.ScopeType.ISSUER
         # 확정 / 예상 구분은 CODEF 가 주지 않아 비워 둔다 (cards.md Z)
         for field in ("billing_month", "total_amount", "payment_due_date", "withdrawal_due_date"):
@@ -245,6 +245,8 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             for card in cards:
                 for month in months:
                     bill_from, bill_to = month_range(month, end)
+                    if bill_from > bill_to:
+                        continue  # 다음 달 청구서(결제 예정)는 받기만 하고, 아직 오지 않은 날을 조회했다고 남기지 않는다
                     SyncRun.objects.create(
                         user=user, connection=connection, card=card, product_code=BILL_RUN, status="success",
                         business_code=codef.SUCCESS, requested_from=bill_from, requested_to=bill_to,
