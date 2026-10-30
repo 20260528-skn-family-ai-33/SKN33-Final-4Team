@@ -84,9 +84,12 @@ class ClassifyTest(TestCase):
 class MultiItemTest(SimpleTestCase):
     def test_known_multi_item_names(self):
         for name in ("GS25 역삼점", "이마트24 서초서리아점", "세븐일레븐 서초으뜸점", "웰빙마트", "카카오쇼핑하기_카카오페이",
-                     "(주)쿠팡", "(주)아성다이소", "현대백화점 판교점", "번개장터"):
+                     "(주)쿠팡", "(주)아성다이소", "현대백화점 판교점", "번개장터",
+                     # 동명 브랜드 CSV
+                     "CU", "CU 역삼점", "씨유 정선사북점", "씨유대전", "지에스25 태백진주점", "롯데슈퍼 탑동3점", "노브랜드 원주단구점", "농협하나로마트 광교점", "신앙촌상회", "매점"):
             self.assertTrue(classifier.is_multi_item(name), name)
-        for name in ("루덴치과의원", "스타벅스 강남역점", "쿠팡이츠", "롯데하이마트 강남점", "", None):
+        for name in ("루덴치과의원", "스타벅스 강남역점", "쿠팡이츠", "롯데하이마트 강남점", "", None,
+                     "CUBE카페", "씨유엔터테인먼트", "노브랜드버거 강릉사천점", "씨제이올리브영 원주기업도시점", "아이스크림할인점", "신앙촌상회 문정점"):
             self.assertFalse(classifier.is_multi_item(name), name)
 
 

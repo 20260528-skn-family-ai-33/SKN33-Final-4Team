@@ -9,6 +9,7 @@
 import functools
 import importlib.util
 import os
+import re
 from decimal import Decimal
 from pathlib import Path
 
@@ -27,15 +28,22 @@ REVIEW_REASON = "가게 이름만으로는 카테고리를 정하기 어려워�
 MULTI_ITEM_REASON = "여러 종류의 물건을 파는 곳이라 무엇을 샀는지 골라 주세요."
 # 다품목(편의점·마트·종합몰)은 정책상 사용자 선택. 과거 선택은 후보로만 보여 주고 자동 적용하지 않는다 (분류 워크플로 10/26 단계 2)
 # 대상 = 분류 기준 10/20의 미분류: 편의점·슈퍼마켓·대형마트·백화점·다이소·중고·종합 온라인몰 (D1, D16)
+# 브랜드는 혜리 님 multi_category_brand_candidates.csv(10/30) 기준 (한글 표기 지에스25·씨유 포함)
 # shortcut: 상가 업종이 아니라 가맹점 이름으로 판별한다 (정리된 이름 기준). 검색 업종 연결 때 업종으로도 판별
 MULTI_ITEM_PREFIXES = (
-    "gs25", "cu", "세븐일레븐", "이마트", "미니스톱", "홈플러스", "롯데마트", "코스트코", "트레이더스", "하나로마트",
-    "쿠팡", "11번가", "g마켓", "지마켓", "옥션", "ssg", "위메프", "티몬", "롯데온", "카카오쇼핑",
-    "갤러리아", "번개장터", "중고나라", "당근마켓",
+    "gs25", "지에스25", "세븐일레븐", "이마트", "미니스톱", "홈플러스", "롯데마트", "롯데슈퍼", "노브랜드", "코스트코", "트레이더스",
+    "하나로마트", "농협하나로마트", "쿠팡", "11번가", "g마켓", "지마켓", "옥션", "ssg", "위메프", "티몬", "롯데온",
+    "카카오쇼핑", "갤러리아", "번개장터", "중고나라", "당근마켓",
 )
+# CSV: cu·씨유·매점은 단순 접두어 금지 → 이름 그대로이거나 '지점명+점'일 때만. 나머지는 이름이 정확히 같을 때만
+MULTI_ITEM_PATTERNS = tuple(re.compile(p) for p in (
+    r"^cu(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유(?:$|[가-힣0-9]+(?:지점|점)$)", r"^매점(?:$|[가-힣0-9]+(?:지점|점)$)",
+    r"^씨유대전$", r"^신앙촌상회$", r"^중국식품$",
+))
 MULTI_ITEM_KEYWORDS = ("다이소", "백화점")  # 법인명이 붙어도 잡히게 이름 어디에 있어도 (예: (주)아성다이소)
 MULTI_ITEM_SUFFIXES = ("마트", "편의점", "슈퍼", "슈퍼마켓")
-NOT_MULTI_ITEM_PREFIXES = ("쿠팡이츠", "롯데하이마트", "하이마트")  # 배달 = 식비, 전자제품 = 생활용품
+# 배달 = 식비, 전자제품 = 생활용품, 버거 = 식비. CSV의 아이스크림 할인점류·올리브영은 분류 기준상 식비·뷰티라 목록에 넣지 않음
+NOT_MULTI_ITEM_PREFIXES = ("쿠팡이츠", "롯데하이마트", "하이마트", "노브랜드버거")
 
 
 @functools.cache
@@ -72,7 +80,8 @@ def is_multi_item(name):
     if not name or name.startswith(NOT_MULTI_ITEM_PREFIXES):
         return False
     return (name.startswith(MULTI_ITEM_PREFIXES) or name.endswith(MULTI_ITEM_SUFFIXES)
-            or any(keyword in name for keyword in MULTI_ITEM_KEYWORDS))
+            or any(keyword in name for keyword in MULTI_ITEM_KEYWORDS)
+            or any(pattern.match(name) for pattern in MULTI_ITEM_PATTERNS))
 
 
 FIELDS = [
