@@ -1,3 +1,4 @@
+import os
 from decimal import Decimal
 from unittest import skipUnless
 from unittest.mock import patch
@@ -22,6 +23,12 @@ class ClassifyTest(TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.user = get_user_model().objects.create_user(email="classifier@example.com")
+
+    def setUp(self):
+        # 5단계(외부 API)는 JudgeTest 에서 본다. 여기서는 '쓸 수 없음'(None)이 기본
+        judge = patch("finance.classifier.judge", return_value=None)
+        self.judge = judge.start()
+        self.addCleanup(judge.stop)
 
     def tx(self, merchant, **fields):
         data = dict(user=self.user, source_kind="manual", occurred_on="2026-10-29", amount=10000, direction="out",
@@ -69,6 +76,34 @@ class ClassifyTest(TestCase):
         self.assertEqual((fresh.suggested_category_id, fresh.suggestion_candidates), (None, None))
         predict.assert_called_once_with([])
 
+    def test_rules_classify_before_ml(self, predict):
+        taxi, ott, laundry, delivery = self.run_classify(
+            self.tx("이동의즐거움_택시_0"), self.tx("넷플릭스서비시스코리아"), self.tx("크린토피아세탁"), self.tx("(주)우아한형제들"))
+        self.assertEqual([(t.confirmed_category_id, t.confirmation_state, t.classification_source)
+                          for t in (taxi, ott, laundry, delivery)],
+                         [("TRANSPORT_CAR", "suggested", "rule"), ("CULTURE_LEISURE", "suggested", "rule"),
+                          ("ETC", "suggested", "rule"), ("FOOD", "suggested", "rule")])
+        predict.assert_called_once_with([])
+
+    def test_pg_prefix_is_removed_before_checks(self, predict):
+        (tx,) = self.run_classify(self.tx("NICE*쿠팡"))
+        self.assertEqual((tx.confirmed_category_id, tx.suggestion_reason), ("UNCLASSIFIED", classifier.MULTI_ITEM_REASON))
+
+    def test_unsure_ml_goes_to_search_and_jev(self, predict):
+        record = {"step": "search_jev", "source": "naver", "industry": "미용실", "ms": 120}
+        self.judge.return_value = {"apply": ("BEAUTY", 0.96), "record": record}
+        (tx,) = self.run_classify(self.tx("청담"))
+        self.judge.assert_called_once_with("청담")
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source, tx.suggestion_confidence),
+                         ("BEAUTY", "suggested", "llm", Decimal("0.9600")))
+        self.assertEqual(tx.field_states["classifier"], record)
+
+        self.judge.return_value = {"review": ([("FOOD", 0.5), ("BEAUTY", 0.3)], classifier.UNSURE_REASON), "record": record}
+        (tx,) = self.run_classify(tx)
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_source, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", "llm", classifier.UNSURE_REASON))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["FOOD", "BEAUTY"])
+
     def test_leaves_confirmed_non_spending_and_nameless_alone(self, predict):
         confirmed = self.tx("루덴치과의원", confirmed_category_id="FOOD", confirmation_state="confirmed",
                             classification_source="user")
@@ -91,6 +126,62 @@ class MultiItemTest(SimpleTestCase):
         for name in ("루덴치과의원", "스타벅스 강남역점", "쿠팡이츠", "롯데하이마트 강남점", "", None,
                      "CUBE카페", "씨유엔터테인먼트", "노브랜드버거 강릉사천점", "씨제이올리브영 원주기업도시점", "아이스크림할인점", "신앙촌상회 문정점"):
             self.assertFalse(classifier.is_multi_item(name), name)
+
+
+class RuleTest(SimpleTestCase):
+    def test_rule_categories(self):
+        cases = {
+            "전국고속버스운송사업조합": "TRANSPORT_CAR", "카카오페이택시": "TRANSPORT_CAR", "카카오페이택시충전": None,
+            "쿠팡플레이": "CULTURE_LEISURE", "멜론": "CULTURE_LEISURE", "리디(주)": "CULTURE_LEISURE", "리디아울렛": None,
+            "강남장례식장": "ETC", "OO화재해상보험": "ETC", "옷수선": "ETC", "수선화꽃집": None, "루덴치과의원": None,
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+        self.assertFalse(classifier.is_multi_item("쿠팡플레이"))
+
+
+@patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
+class JudgeTest(SimpleTestCase):
+    def run_judge(self, found, answer=None, name="새봄동물"):
+        with patch("finance.classifier.search_store", **({"side_effect": found} if isinstance(found, Exception) else {"return_value": found})), \
+                patch("finance.classifier.ask_jev", return_value=answer) as ask:
+            return classifier.judge(name), ask
+
+    def test_confident_jev_applies(self):
+        result, ask = self.run_judge(("naver", "새봄동물병원", "동물병원"),
+                                     ("MEDICAL_HEALTH", 0.97, {"MEDICAL_HEALTH": 0.97, "HOUSEHOLD": 0.03}, "jev-test"))
+        self.assertEqual(result["apply"], ("MEDICAL_HEALTH", 0.97))
+        self.assertEqual(ask.call_args.args[0], "가맹점 이름: 새봄동물\n검색 업종: 동물병원")
+        self.assertEqual((result["record"]["source"], result["record"]["jev_model"]), ("naver", "jev-test"))
+        self.assertIn("ms", result["record"])
+
+    def test_unknown_or_low_stays_unclassified(self):
+        result, _ = self.run_judge(("naver", "새봄", "음식점"),
+                                   ("UNKNOWN", 0.8, {"UNKNOWN": 0.8, "FOOD": 0.15, "ETC": 0.05}, "jev-test"))
+        self.assertEqual(result["review"], ([("FOOD", 0.15), ("ETC", 0.05)], classifier.UNSURE_REASON))
+        result, _ = self.run_judge(None, ("FOOD", 0.6, {"FOOD": 0.6, "BEAUTY": 0.4}, "jev-test"))
+        self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
+
+    def test_multi_item_industry_skips_jev(self):
+        result, ask = self.run_judge(("naver", "OO상회", "편의점"))
+        self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
+        ask.assert_not_called()
+
+    def test_non_store_industry_is_not_evidence(self):
+        result, ask = self.run_judge(("kakao", "비바리퍼블리카", "금융서비스"),
+                                     ("UNKNOWN", 0.9, {"UNKNOWN": 0.9, "FOOD": 0.1}, "jev-test"), name="비바리퍼블리카")
+        self.assertEqual(ask.call_args.args[0], "가맹점 이름: 비바리퍼블리카")
+        self.assertTrue(result["record"]["dropped_industry"])
+
+    def test_api_failure_ends_in_review(self):
+        with self.assertLogs("finance.classifier", "WARNING"):
+            result, _ = self.run_judge(OSError("timeout"))
+        self.assertEqual(result["review"], ([], classifier.LOOKUP_FAILED_REASON))
+        self.assertEqual(result["record"]["error"], "OSError")
+
+    def test_without_jev_key_returns_none(self):
+        with patch.dict(os.environ, {"TYPESAFE_API_KEY": ""}):
+            self.assertIsNone(classifier.judge("새봄동물"))
 
 
 @skipUnless(classifier.MODEL_PATH.exists(), "모델 파일이 없는 PC (docs/ML_MODELS.md)")
