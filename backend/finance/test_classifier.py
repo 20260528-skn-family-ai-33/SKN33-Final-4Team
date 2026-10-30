@@ -69,6 +69,24 @@ class ClassifyTest(TestCase):
         self.assertEqual((fresh.suggested_category_id, fresh.suggestion_candidates), (None, None))
         predict.assert_called_once_with([])
 
+    def test_pg_prefixed_multi_item_ignores_memory(self, predict):
+        # PR #63 리뷰: 'NICE*쿠팡'을 식비로 고른 기억이 있어도 새 거래는 확인 필요
+        self.tx("NICE*쿠팡", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("NICE*쿠팡"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", None, classifier.MULTI_ITEM_REASON))
+        self.assertEqual(tx.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
+        predict.assert_called_once_with([])
+
+    def test_pg_prefixed_multi_item_ignores_confident_svm(self, predict):
+        # PR #63 리뷰: SVM 이 FOOD 0.99 를 줘도 다품목이면 SVM 을 부르지 않는다. 다품목이 아니면 접두어를 뗀 이름으로 SVM
+        predict.side_effect = lambda names: [[("FOOD", 0.99)] for _ in names]
+        coupang, gs25, musinsa = self.run_classify(self.tx("NICE*쿠팡"), self.tx("KCP*GS25 역삼점"), self.tx("KCP*무신사"))
+        for tx in (coupang, gs25):
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("UNCLASSIFIED", "needs_review"))
+        self.assertEqual((musinsa.confirmed_category_id, musinsa.classification_source), ("FOOD", "ml"))
+        predict.assert_called_once_with(["무신사"])
+
     def test_leaves_confirmed_non_spending_and_nameless_alone(self, predict):
         confirmed = self.tx("루덴치과의원", confirmed_category_id="FOOD", confirmation_state="confirmed",
                             classification_source="user")
@@ -84,7 +102,7 @@ class ClassifyTest(TestCase):
 class MultiItemTest(SimpleTestCase):
     def test_known_multi_item_names(self):
         for name in ("GS25 역삼점", "이마트24 서초서리아점", "세븐일레븐 서초으뜸점", "웰빙마트", "카카오쇼핑하기_카카오페이",
-                     "(주)쿠팡", "(주)아성다이소", "현대백화점 판교점", "번개장터",
+                     "(주)쿠팡", "(주)아성다이소", "현대백화점 판교점", "번개장터", "NICE*쿠팡", "KCP*GS25 역삼점",
                      # 동명 브랜드 CSV
                      "CU", "CU 역삼점", "씨유 정선사북점", "씨유대전", "지에스25 태백진주점", "롯데슈퍼 탑동3점", "노브랜드 원주단구점", "농협하나로마트 광교점", "신앙촌상회", "매점"):
             self.assertTrue(classifier.is_multi_item(name), name)

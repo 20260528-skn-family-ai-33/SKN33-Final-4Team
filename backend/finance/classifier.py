@@ -26,6 +26,8 @@ MODEL_PATH = Path(os.getenv("SPENDING_MODEL_PATH") or ROOT / "local_workspace/mo
 THRESHOLD = 0.85  # 임시: 상가정보 검증에서 자동 확정 정확도 98.5%. 실거래 표본으로 다시 정함
 REVIEW_REASON = "가게 이름만으로는 카테고리를 정하기 어려워요."
 MULTI_ITEM_REASON = "여러 종류의 물건을 파는 곳이라 무엇을 샀는지 골라 주세요."
+# 결제대행(PG) 접두어: 'NICE*쿠팡' → '쿠팡'. 이름 정리가 '*'만 지워 'nice쿠팡'이 되면 다품목 검사를 빠져나가서 먼저 뗀다
+PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
 # 다품목(편의점·마트·종합몰)은 정책상 사용자 선택. 과거 선택은 후보로만 보여 주고 자동 적용하지 않는다 (분류 워크플로 10/26 단계 2)
 # 대상 = 분류 기준 10/20의 미분류: 편의점·슈퍼마켓·대형마트·백화점·다이소·중고·종합 온라인몰 (D1, D16)
 # 브랜드는 혜리 님 multi_category_brand_candidates.csv(10/30) 기준 (한글 표기 지에스25·씨유 포함)
@@ -75,8 +77,13 @@ def predict(names):
     return rows
 
 
+def store_name(name):
+    """결제대행 접두어를 뗀 가맹점명. 없으면 None"""
+    return PG_PREFIX.sub("", name or "").strip() or None
+
+
 def is_multi_item(name):
-    name = _common().normalize_name(name or "")
+    name = _common().normalize_name(store_name(name) or "")
     if not name or name.startswith(NOT_MULTI_ITEM_PREFIXES):
         return False
     return (name.startswith(MULTI_ITEM_PREFIXES) or name.endswith(MULTI_ITEM_SUFFIXES)
@@ -98,8 +105,9 @@ def classify(user, txs):
     ]
     changed, for_ml = [], []
     for tx in todo:
+        name = store_name(tx.merchant_name)
         code = remembered_category(user, tx.merchant_name)
-        if is_multi_item(tx.merchant_name):
+        if is_multi_item(name):
             # 다품목은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
             _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
             changed.append(tx)
@@ -107,10 +115,10 @@ def classify(user, txs):
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
             changed.append(tx)
-        elif tx.merchant_name:
-            for_ml.append(tx)
+        elif name:
+            for_ml.append((tx, name))
 
-    for tx, top in zip(for_ml, predict([tx.merchant_name for tx in for_ml])):
+    for (tx, _), top in zip(for_ml, predict([name for _, name in for_ml])):
         if not top:
             continue
         code, confidence = top[0]
