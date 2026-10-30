@@ -97,7 +97,7 @@ Windows PowerShell은 한 줄로 실행한다.
 docker run --name money-cushion-db -e POSTGRES_DB=money_cushion -e POSTGRES_USER=money_cushion -e POSTGRES_PASSWORD=<.env와 같은 비밀번호> -p 5432:5432 -d pgvector/pgvector:pg17
 ```
 
-> `pgvector/pgvector:pg17`은 PostgreSQL 17에 벡터 검색 확장(pgvector)이 들어 있는 이미지다. 가맹점 이름 유사도 검색(`finance.MerchantEmbedding`)에 쓴다.
+> `pgvector/pgvector:pg17`은 PostgreSQL 17에 벡터 검색 확장(pgvector)이 들어 있는 이미지다. 벡터 검색(정책 RAG 예정)에 쓴다. `finance` 0009 마이그레이션도 이 확장이 있어야 돈다.
 
 **B. 직접 설치 (macOS)**
 
