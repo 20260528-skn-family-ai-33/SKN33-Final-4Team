@@ -229,3 +229,12 @@ class ClassifyCommandTest(TestCase):
         self.assertEqual((waiting.confirmed_category_id, waiting.classification_source), ("MEDICAL_HEALTH", "ml"))
         self.assertEqual((mine.confirmed_category_id, mine.confirmation_state), ("BEAUTY", "confirmed"))
         self.assertIn("reclassify@example.com: ml 1건", out.getvalue())
+
+
+class DeliveryAppTest(SimpleTestCase):
+    def test_delivery_app_is_food_but_b_mart_is_multi_item(self):
+        for name in ("배달의민족", "(주)우아한형제들", "요기요"):
+            self.assertFalse(classifier.is_multi_item(name), name)
+            self.assertEqual(classifier.rule_category(name), "FOOD", name)
+        for name in ("배민B마트", "배민B마트 강남점", "배민스토어", "NICE*배민B마트"):
+            self.assertTrue(classifier.is_multi_item(name), name)
