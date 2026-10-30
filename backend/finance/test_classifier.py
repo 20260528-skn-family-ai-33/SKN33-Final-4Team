@@ -206,3 +206,26 @@ class RealModelTest(SimpleTestCase):
         self.assertGreaterEqual(top[0][1], classifier.THRESHOLD)
         self.assertEqual(len(top), 3)
         self.assertEqual(empty, [])
+
+
+@patch("finance.classifier.judge", return_value=None)
+@patch("finance.classifier.predict", side_effect=fake_predict)
+class ClassifyCommandTest(TestCase):
+    def test_reclassifies_saved_spending_but_not_confirmed(self, predict, judge):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        user = get_user_model().objects.create_user(email="reclassify@example.com")
+        base = dict(user=user, source_kind="manual", occurred_on="2026-10-30", amount=10000, direction="out",
+                    transaction_type="spending", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        waiting = Tx.objects.create(merchant_name="루덴치과의원", **base)
+        mine = Tx.objects.create(merchant_name="청담", **{**base, "confirmed_category_id": "BEAUTY",
+                                                         "confirmation_state": "confirmed", "classification_source": "user"})
+        out = StringIO()
+        call_command("classify_transactions", "--email", "Reclassify@example.com", stdout=out)
+        waiting.refresh_from_db()
+        mine.refresh_from_db()
+        self.assertEqual((waiting.confirmed_category_id, waiting.classification_source), ("MEDICAL_HEALTH", "ml"))
+        self.assertEqual((mine.confirmed_category_id, mine.confirmation_state), ("BEAUTY", "confirmed"))
+        self.assertIn("reclassify@example.com: ml 1건", out.getvalue())
