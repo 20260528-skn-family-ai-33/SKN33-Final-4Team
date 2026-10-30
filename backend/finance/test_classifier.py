@@ -118,6 +118,14 @@ class ClassifyTest(TestCase):
                          ("UNCLASSIFIED", "needs_review", "llm", classifier.UNSURE_REASON))
         self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["FOOD", "BEAUTY"])
 
+    def test_pay_charge_asks_user_and_ignores_memory(self, predict):
+        self.tx("토스페이충전", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("토스페이충전"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.PAY_CHARGE_REASON))
+        self.assertEqual(tx.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
+        predict.assert_called_once_with([])
+
     def test_leaves_confirmed_non_spending_and_nameless_alone(self, predict):
         confirmed = self.tx("루덴치과의원", confirmed_category_id="FOOD", confirmation_state="confirmed",
                             classification_source="user")
@@ -155,6 +163,12 @@ class RuleTest(SimpleTestCase):
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
         self.assertFalse(classifier.is_multi_item("쿠팡플레이"))
+
+    def test_pay_charge_names(self):
+        for name in ("토스페이충전", "네이버페이충전", "카카오페이 충전", "NICE*토스페이충전"):
+            self.assertTrue(classifier.is_pay_charge(name), name)
+        for name in ("네이버페이", "카카오페이택시", "토스", "", None):
+            self.assertFalse(classifier.is_pay_charge(name), name)
 
 
 @patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})

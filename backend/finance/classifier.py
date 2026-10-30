@@ -43,6 +43,11 @@ MULTI_ITEM_REASON = "여러 종류의 물건을 파는 곳이라 무엇을 샀�
 NOT_FOUND_REASON = "가게 정보를 찾지 못해 카테고리를 정하지 못했어요."
 UNSURE_REASON = "가게 정보를 찾았지만 카테고리를 확실히 정하지 못했어요."
 LOOKUP_FAILED_REASON = "가게 정보를 확인하지 못했어요. 직접 골라 주세요."
+PAY_CHARGE_REASON = "페이 충전이라 무엇에 썼는지 골라 주세요."
+
+# 토스·네이버페이 등 충전 출금 (10/30): 충전 뒤 무엇을 샀는지는 페이 안에만 있어서 사용자에게 묻는다
+# link_basics(혜리)가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
+PAY_CHARGE = re.compile(r"(페이|머니|pay)충전")
 
 # 결제대행(PG) 접두어: 'NICE*쿠팡' → '쿠팡'
 PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
@@ -144,6 +149,10 @@ def is_multi_item(name):
     return (name.startswith(MULTI_ITEM_PREFIXES) or name.endswith(MULTI_ITEM_SUFFIXES)
             or any(keyword in name for keyword in MULTI_ITEM_KEYWORDS)
             or any(pattern.match(name) for pattern in MULTI_ITEM_PATTERNS))
+
+
+def is_pay_charge(name):
+    return bool(PAY_CHARGE.search(common.normalize_name(store_name(name) or "")))
 
 
 def rule_category(name):
@@ -264,6 +273,9 @@ def classify(user, txs):
         if is_multi_item(name):
             # 다품목은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
             _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
+        elif is_pay_charge(name):
+            # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
+            _review(tx, [(code, None)] if code else [], PAY_CHARGE_REASON, Tx.ClassificationSource.RULE if code else None)
         elif code:
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
