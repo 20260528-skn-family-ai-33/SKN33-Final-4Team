@@ -26,7 +26,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import remembered_category
+from .merchant_rules import last_user_choice
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -269,14 +269,15 @@ def classify(user, txs):
     changed, for_ml = [], []
     for tx in todo:
         name = store_name(tx.merchant_name)
-        code = remembered_category(user, tx.merchant_name)
+        # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
+        code, future = last_user_choice(user, tx.merchant_name)
         if is_multi_item(name):
             # 다품목은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
             _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
         elif is_pay_charge(name):
             # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
             _review(tx, [(code, None)] if code else [], PAY_CHARGE_REASON, Tx.ClassificationSource.RULE if code else None)
-        elif code:
+        elif code and future:
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
         elif name and (rule := rule_category(name)):

@@ -156,6 +156,7 @@ class TransactionDetailTest(FinanceData):
         ])  # 확신도 숫자는 안 보냄
         self.assertEqual(body["suggestion"]["reason"], "편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요.")
         self.assertIsNone(body["classifiedBy"])
+        self.assertFalse(body["canApplyToFuture"])  # 다품목(편의점)은 '앞으로도 적용' 없음
         self.assertIn("updatedAt", body)
 
     def test_not_found_cases(self):
@@ -184,8 +185,24 @@ class TransactionDetailTest(FinanceData):
         self.assertEqual((body["category"], body["categoryName"]), ("FOOD", "식비"))
         self.assertEqual((body["classifyState"], body["classifiedBy"]), ("confirmed", "user"))
         self.assertIsNone(body["suggestion"])
-        self.assertEqual(remembered_category(self.user, "김밥천국"), "FOOD")  # 같은 가맹점 새 거래에 먼저 쓰임
+        self.assertTrue(body["canApplyToFuture"])
+        self.assertIsNone(remembered_category(self.user, "김밥천국"))  # '앞으로도 적용'을 안 골랐으면 재사용 안 함 (10/30)
         self.assertEqual(self.patch(tx, {"category": "FOOD"}).status_code, 200)  # 같은 값 다시 보내도 성공
+
+        self.assertEqual(self.patch(tx, {"category": "FOOD", "applyToFuture": True}).status_code, 200)
+        self.assertEqual(remembered_category(self.user, "김밥천국"), "FOOD")  # 같은 가맹점 새 거래에 먼저 쓰임
+        self.patch(tx, {"category": "BEAUTY"})  # 마지막 선택이 '앞으로도 적용'이 아니면 재사용 멈춤
+        self.assertIsNone(remembered_category(self.user, "김밥천국"))
+
+    def test_apply_to_future_is_ignored_for_multi_item_and_transfer(self):
+        store = self.tx(source_kind="card", card=self.card, merchant_name="GS25 역삼점",
+                        confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        transfer = self.tx(merchant_name="이하늘", transaction_type="transfer")
+        for tx in (store, transfer):
+            with self.subTest(tx=tx.merchant_name):
+                body = self.patch(tx, {"category": "FOOD", "applyToFuture": True}).json()
+                self.assertFalse(body["canApplyToFuture"])
+                self.assertIsNone(remembered_category(self.user, tx.merchant_name))
 
     def test_patch_bad_requests(self):
         spending = self.tx()
@@ -196,6 +213,7 @@ class TransactionDetailTest(FinanceData):
             (spending, {"category": "UNCLASSIFIED"}, "category", "카테고리를 다시 골라 주세요."),
             (spending, {"category": "NOPE"}, "category", "카테고리를 다시 골라 주세요."),
             (spending, {"category": None}, "category", "카테고리를 다시 골라 주세요."),  # 원래 소비였던 거래
+            (spending, {"category": "FOOD", "applyToFuture": "yes"}, "applyToFuture", "true 또는 false 로 보내 주세요."),
             (income, {"category": "FOOD"}, "category", "이 거래는 카테고리를 고를 수 없어요."),
         ]
         for tx, body, field, message in cases:

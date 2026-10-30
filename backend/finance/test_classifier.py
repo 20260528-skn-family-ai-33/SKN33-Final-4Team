@@ -57,11 +57,19 @@ class ClassifyTest(TestCase):
         self.assertEqual(tx.suggestion_reason, classifier.REVIEW_REASON)
 
     def test_user_memory_comes_before_ml(self, predict):
-        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user",
+                field_states={"apply_to_future": True})
         (tx,) = self.run_classify(self.tx("청담"))
         self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
                          ("BEAUTY", "suggested", "rule"))
         predict.assert_called_once_with([])
+
+    def test_memory_without_apply_to_future_is_not_reused(self, predict):
+        # 10/30: 사용자가 '앞으로도 적용'을 고르지 않았으면 다음 거래는 원래대로 SVM
+        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("청담"))
+        self.assertEqual((tx.confirmed_category_id, tx.suggestion_source), ("UNCLASSIFIED", "ml"))
+        predict.assert_called_once_with(["청담"])
 
     def test_multi_item_never_reuses_memory_or_calls_ml(self, predict):
         self.tx("GS25 역삼점", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
