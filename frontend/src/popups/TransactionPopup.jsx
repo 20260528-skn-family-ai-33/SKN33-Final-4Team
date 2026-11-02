@@ -104,7 +104,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
             ))}
           </div>
           {data?.canApplyToFuture && (
-            <label className="mc-field" style={{ margin: '14px 0 0' }}>
+            <label className="mc-field mc-check">
               <input type="checkbox" checked={applyToFuture} onChange={(e) => setApplyToFuture(e.target.checked)} />
               앞으로 이 가게 거래도 이 카테고리로 분류
             </label>

@@ -43,7 +43,7 @@ export default function TxPickPopup({ tx, categories, onSaved }) {
       <p className="mc-muted" style={{ margin: '4px 0 12px' }}>{tx.name} · {won(tx.net ?? tx.amount)}</p>
       {data?.suggestion?.reason && <p className="mc-pend-why">{data.suggestion.reason}</p>}
       {data?.canApplyToFuture && (
-        <label className="mc-field" style={{ margin: '0 0 12px' }}>
+        <label className="mc-field mc-check">
           <input type="checkbox" checked={applyToFuture} onChange={(e) => setApplyToFuture(e.target.checked)} />
           앞으로 이 가게 거래도 이 카테고리로 분류
         </label>
