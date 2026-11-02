@@ -60,7 +60,7 @@ class DesignTests(SimpleTestCase):
         result = build_candidates(data,self.ratios,policy=limits(data,total=10000))
         self.assertEqual(result['transfers'][0]['from'],'CULTURE_LEISURE')
 
-    def test_travel_is_not_monthly_funding_or_receiver_without_explicit_setting(self):
+    def test_travel_is_never_monthly_funding_or_receiver(self):
         data = inp(priorities=priorities('FOOD','EDUCATION','MEDICAL_HEALTH'))
         result = build_candidates(data,self.ratios,policy=limits(data))
         self.assertNotIn('TRAVEL_LODGING',result['active_categories'])
@@ -98,15 +98,21 @@ class DesignTests(SimpleTestCase):
         self.assertIsNone(selected['fallback'])
         self.assertEqual(select_candidate(data,candidates[:1])['candidate_id'],'base')
 
-    def test_explicit_travel_minimum_or_lock_is_respected(self):
-        for changes in ({'minimums':{'TRAVEL_LODGING':50000}},
-                        {'locks':{'TRAVEL_LODGING':80000}}, {'locks':{'TRAVEL_LODGING':0}}):
+    def test_travel_minimum_and_lock_are_rejected_without_changing_input(self):
+        for changes, code in (({'minimums':{'TRAVEL_LODGING':50000}}, 'travel_minimum_not_allowed'),
+                              ({'locks':{'TRAVEL_LODGING':80000}}, 'travel_lock_not_allowed'),
+                              ({'locks':{'TRAVEL_LODGING':0}}, 'travel_lock_not_allowed')):
             with self.subTest(changes=changes):
                 data = inp(**changes)
-                result = build_candidates(data,self.ratios,policy=limits(data))
-                self.assertIn('TRAVEL_LODGING',result['active_categories'])
-                for candidate in result['candidates']:
-                    check_result(data,candidate['result'])
+                before = deepcopy(data)
+                with self.assertRaisesRegex(ValueError, '^' + code + '$'):
+                    build_candidates(data, self.ratios, policy=limits(data))
+                self.assertEqual(data, before)
+
+    def test_default_zero_travel_minimum_does_not_activate_travel(self):
+        result = build_candidates(inp(minimums={'TRAVEL_LODGING': 0}), self.ratios)
+        self.assertNotIn('TRAVEL_LODGING', result['active_categories'])
+        self.assertEqual(result['candidates'][0]['result']['allocations']['TRAVEL_LODGING'], 0)
 
     def test_protected_discretionary_is_last_resort_and_only_lower_rank(self):
         for donor in ('CULTURE_LEISURE', 'BEAUTY'):
@@ -169,18 +175,18 @@ class DesignTests(SimpleTestCase):
         self.assertGreaterEqual(result['candidates'][0]['result']['allocations']['BEAUTY'],300000)
 
     def test_no_headroom_no_duplicate(self):
-        data = inp(minimums=dict.fromkeys(CATEGORY_CODES,100000))
+        data = inp(target=900000, minimums={c:100000 for c in CATEGORY_CODES if c != 'TRAVEL_LODGING'})
         result = build_candidates(data,self.ratios,policy=limits(data))
         self.assertEqual(len(result['candidates']),1)
         self.assertTrue(all(v == 'no_funding' for v in result['stop_reasons'].values()))
 
     def test_lock_is_never_changed(self):
-        data = inp(locks={'FOOD':100000,'TRAVEL_LODGING':100000})
+        data = inp(locks={'FOOD':100000,'HOUSEHOLD':100000})
         result = build_candidates(data,self.ratios,policy=limits(data))
         self.assertTrue(result['transfers'])
         for candidate in result['candidates']:
             self.assertEqual(candidate['result']['allocations']['FOOD'],100000)
-            self.assertEqual(candidate['result']['allocations']['TRAVEL_LODGING'],100000)
+            self.assertEqual(candidate['result']['allocations']['HOUSEHOLD'],100000)
 
     def test_zero_prediction_has_no_percentage_increase_but_minimum_is_guaranteed(self):
         data = inp(priorities=priorities('EDUCATION','FOOD','MEDICAL_HEALTH'))
@@ -294,9 +300,59 @@ class DesignTests(SimpleTestCase):
             with self.assertRaises(ValueError): build_candidates(data,self.ratios,policy=policy)
 
     def test_zero_and_all_locked_skip_ratios(self):
-        for data in [inp(target=0),inp(locks=dict.fromkeys(CATEGORY_CODES,100000))]:
+        for data in [inp(target=0),inp(target=900000, locks={c:100000 for c in CATEGORY_CODES if c != 'TRAVEL_LODGING'})]:
             result=build_candidates(data,None)['candidates'][0]['result']
             check_result(data,result)
+
+    def test_all_active_locked_mismatch_returns_conflict_without_changing_input(self):
+        locks = {c: 100000 for c in CATEGORY_CODES if c not in ('HOUSING_TELECOM', 'TRAVEL_LODGING')}
+        for target in (1000000, 600000):
+            for ratios in (self.ratios, None):
+                with self.subTest(target=target, ratios=ratios):
+                    data = inp(target=target, locks=deepcopy(locks))
+                    before = deepcopy(data)
+                    result = build_candidates(data, ratios, policy=limits(data))
+                    self.assertEqual(result['status'], 'infeasible')
+                    self.assertEqual(result['candidates'], [])
+                    self.assertEqual(result['result']['allocations'], {})
+                    self.assertEqual(result['result']['conflicts'], [
+                        {'type': 'locks_mismatch_living', 'difference': 800000 - target}])
+                    self.assertIn({'code': 'constraints_conflict'}, result['warnings'])
+                    self.assertEqual(result['next_action'], 'review_settings_or_budget_chat')
+                    self.assertIn('잠금', result['result']['summary'])
+                    self.assertIn('생활비', result['result']['summary'])
+                    effective = {**data, 'locks': {**locks, 'HOUSING_TELECOM': 0, 'TRAVEL_LODGING': 0}}
+                    check_result(effective, result['result'])
+                    self.assertEqual(data, before)
+
+    def test_all_active_locked_exact_match_skips_ratios_and_keeps_inactive_zero(self):
+        locks = {c: 100000 for c in CATEGORY_CODES if c not in ('HOUSING_TELECOM', 'TRAVEL_LODGING')}
+        data = inp(target=800000, locks=locks)
+        before = deepcopy(data)
+        result = build_candidates(data, None, policy=limits(data))
+        self.assertEqual(result['status'], 'proposed')
+        self.assertEqual(result['active_categories'], list(locks))
+        self.assertEqual(result['candidates'][0]['result']['allocations'],
+                         {**locks, 'HOUSING_TELECOM': 0, 'TRAVEL_LODGING': 0})
+        check_result(data, result['candidates'][0]['result'])
+        self.assertEqual(data, before)
+
+    def test_remaining_money_can_go_to_unlocked_active_category(self):
+        locks = {c: 100000 for c in CATEGORY_CODES if c not in ('HOUSING_TELECOM', 'TRAVEL_LODGING')}
+        for category in ('FOOD', 'HOUSING_TELECOM'):
+            with self.subTest(category=category):
+                data = inp(locks=deepcopy(locks))
+                if category == 'FOOD':
+                    del data['locks'][category]
+                else:
+                    data['minimums'][category] = 1000
+                before = deepcopy(data)
+                result = build_candidates(data, self.ratios)
+                self.assertEqual(result['status'], 'proposed')
+                proposal = result['candidates'][0]['result']
+                self.assertEqual(proposal['allocations'][category], data['target'] - sum(data['locks'].values()))
+                check_result(data, proposal)
+                self.assertEqual(data, before)
 
     def test_zero_free_ratio_does_not_invent_weights(self):
         ratios=dict.fromkeys(CATEGORY_CODES,0); ratios['FOOD']=1

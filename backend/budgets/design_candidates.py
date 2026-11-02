@@ -8,8 +8,7 @@ from .recommend import (
     check_result, infeasible,
 )
 
-DISCRETIONARY = frozenset(("FASHION_SHOPPING", "BEAUTY", "CULTURE_LEISURE", "TRAVEL_LODGING"))
-CONDITIONAL_CATEGORIES = frozenset(("HOUSING_TELECOM", "TRAVEL_LODGING"))
+DISCRETIONARY = frozenset(("FASHION_SHOPPING", "BEAUTY", "CULTURE_LEISURE"))
 # Static labels keep candidate explanations independent of DB reads.
 CATEGORY_NAMES = {
     "FOOD": "식비", "HOUSING_TELECOM": "주거·통신", "TRANSPORT_CAR": "교통·차량",
@@ -175,7 +174,7 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
     """ETC reserved upstream. Explicit limits enable adjustment; no DB/LLM calls.
 
     Travel is excluded by monthly-budget policy and cannot be ranked.
-    Housing/travel currently activate for a positive minimum or any lock.
+    Travel minimums/locks are not accepted; only housing can activate explicitly.
     Keep zero entries for the existing ten-code validator; UI needs review.
     """
     inp = deepcopy(inp)
@@ -183,6 +182,10 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
     if inp["target"] < 0:
         raise EngineCheckFailed("negative_target")
     order = _priority_order(inp.get("priorities"))
+    if inp['minimums'].get('TRAVEL_LODGING', 0) > 0:
+        raise ValueError('travel_minimum_not_allowed')
+    if 'TRAVEL_LODGING' in inp['locks']:
+        raise ValueError('travel_lock_not_allowed')
     policy = deepcopy(policy)
     warning_thresholds = _money_map(
         {} if warning_thresholds is None else warning_thresholds,
@@ -191,17 +194,19 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
                  "amount": inp["minimums"][c], "reference": threshold}
                 for c, threshold in warning_thresholds.items()
                 if inp["minimums"].get(c, 0) > threshold]
+    active = [c for c in CATEGORY_CODES if c != 'TRAVEL_LODGING'
+              and (c != 'HOUSING_TELECOM' or inp["minimums"].get(c, 0) > 0 or c in inp["locks"])]
+    # Inactive categories are fixed at zero for both feasibility and validation.
+    inp["locks"].update({c: 0 for c in CATEGORY_CODES if c not in active})
     conflicts = allocation_conflicts(inp)
     if conflicts:
         out = infeasible(conflicts)
+        if any(c["type"] == "locks_mismatch_living" for c in conflicts):
+            out["summary"] = "모든 배분 가능 카테고리가 잠겨 있어요. 잠금을 해제하거나 잠금 금액·생활비를 수정해 주세요."
         check_result(inp, out)
         return {"status": "infeasible", "result": out, "candidates": [],
                 "warnings": warnings + [{"code": "constraints_conflict"}],
                 "next_action": "review_settings_or_budget_chat"}
-    # TODO: Team must decide whether travel minimums/locks are rejected or mean
-    # a trip-month budget. Preserve current protection until that decision.
-    active = [c for c in CATEGORY_CODES if c not in CONDITIONAL_CATEGORIES
-              or inp["minimums"].get(c, 0) > 0 or c in inp["locks"]]
     ml_amounts = dict.fromkeys(CATEGORY_CODES, Fraction(0))
     if inp["target"] == 0:
         amounts = dict.fromkeys(CATEGORY_CODES, 0)
