@@ -126,6 +126,14 @@ class ClassifyTest(TestCase):
                          ("UNCLASSIFIED", "needs_review", "llm", classifier.UNSURE_REASON))
         self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["FOOD", "BEAUTY"])
 
+    def test_unknown_store_skips_svm_and_jev(self, predict):
+        predict.side_effect = lambda names: [[("FOOD", 0.91)] for _ in names]
+        (tx,) = self.run_classify(self.tx("비식별거래처_0042"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.UNKNOWN_STORE_REASON))
+        predict.assert_called_once_with([])
+        self.judge.assert_not_called()
+
     def test_pay_charge_asks_user_and_ignores_memory(self, predict):
         self.tx("토스페이충전", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
         (tx,) = self.run_classify(self.tx("토스페이충전"))
@@ -171,6 +179,12 @@ class RuleTest(SimpleTestCase):
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
         self.assertFalse(classifier.is_multi_item("쿠팡플레이"))
+
+    def test_unknown_store_names(self):
+        for name in ("비식별거래처_0001", "비식별가맹점", "거래처_12", "1234", "A", ""):
+            self.assertTrue(classifier.is_unknown_store(name), name)
+        for name in ("루덴치과의원", "GS25 역삼점", "티머니731", "11번가", "CU"):
+            self.assertFalse(classifier.is_unknown_store(name), name)
 
     def test_pay_charge_names(self):
         for name in ("토스페이충전", "네이버페이충전", "카카오페이 충전", "NICE*토스페이충전"):

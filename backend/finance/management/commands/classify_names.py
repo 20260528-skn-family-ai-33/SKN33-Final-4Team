@@ -16,6 +16,8 @@ def stage(tx):
         return "1 다품목"
     if tx.suggestion_reason == classifier.PAY_CHARGE_REASON:
         return "1 페이 충전"
+    if tx.suggestion_reason == classifier.UNKNOWN_STORE_REASON:
+        return "3 이름 모름"
     if "classifier" in tx.field_states:
         return "5 검색+Jev"
     if tx.classification_source == "rule":

@@ -49,6 +49,11 @@ PAY_CHARGE_REASON = "페이 충전이라 무엇에 썼는지 골라 주세요."
 # link_basics(혜리)가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
 PAY_CHARGE = re.compile(r"(페이|머니|pay)충전")
 
+# 상호처럼 안 생긴 이름: SVM 은 뜻 없는 이름도 식비로 확신해서(11/02 실거래 비식별거래처 6건 식비 0.85~0.91) SVM·검색 전에 거른다
+# shortcut: 아는 표기만 (비식별 처리된 이름, 숫자뿐인 이름, 한 글자). 실거래에서 새 표기가 보이면 추가
+UNKNOWN_STORE = re.compile(r"비식별|거래처\d+$|^\d*$")
+UNKNOWN_STORE_REASON = "가게 이름을 알 수 없어 카테고리를 정하지 못했어요."
+
 # 결제대행(PG) 접두어: 'NICE*쿠팡' → '쿠팡'
 PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
 
@@ -149,6 +154,11 @@ def is_multi_item(name):
     return (name.startswith(MULTI_ITEM_PREFIXES) or name.endswith(MULTI_ITEM_SUFFIXES)
             or any(keyword in name for keyword in MULTI_ITEM_KEYWORDS)
             or any(pattern.match(name) for pattern in MULTI_ITEM_PATTERNS))
+
+
+def is_unknown_store(name):
+    normalized = common.normalize_name(store_name(name) or "")
+    return len(normalized) < 2 or bool(UNKNOWN_STORE.search(normalized))
 
 
 def is_pay_charge(name):
@@ -282,6 +292,8 @@ def classify(user, txs):
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
         elif name and (rule := rule_category(name)):
             _apply(tx, rule, Tx.ClassificationSource.RULE, None)
+        elif name and is_unknown_store(name):
+            _review(tx, [], UNKNOWN_STORE_REASON, None)
         else:
             if name:
                 for_ml.append((tx, name))
