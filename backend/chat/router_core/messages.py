@@ -10,9 +10,9 @@
 """
 from chat.router import CHOICES
 from spending_analysis.answer import NAMES, josa
-from spending_analysis.dialog import REPICK
+from spending_analysis.dialog import REPICK, YES_NO
 
-from . import CANCEL_WORDS
+from . import CANCEL_WORDS, rules
 
 # 의도 선택지: 기존 API 선택값(spending · budget)과 이름. 정책은 API 합의 전이라 [임시] 값 · 이름
 CHOICE = {"spending": CHOICES[0], "budget_adjust": CHOICES[1], "policy": {"value": "policy", "label": "청년 정책"}}
@@ -34,6 +34,8 @@ ASK = {
     "scope": "어떤 기간이나 카테고리를 볼지 알려 주세요.",
     "explain_target": "어느 카테고리를 설명해 드릴까요?",
     "budget_current": "현재 예산 기간의 {name} 남은 예산을 확인할까요?",
+    "self_instead": "대신 내 {words}{words_obj} 볼까요?",
+    "spend_instead": "대신 이번 달 {words} 사용액을 볼까요?",
 }
 # 질문 앞에 붙는 사유 (budget_current 의 사유는 사용자가 말한 기간 방식)
 REASON = {
@@ -47,16 +49,26 @@ REASON = {
     "recent": "남은 예산은 현재 예산 기간으로만 볼 수 있어요.",
     "prev_month": "남은 예산은 현재 예산 기간으로만 볼 수 있어요.",
     "last_month": "남은 예산은 현재 예산 기간으로만 볼 수 있어요.",
+    "custom": "남은 예산은 현재 예산 기간으로만 볼 수 있어요.",
+    "other_person": "다른 사람의 소비 내역은 볼 수 없어요.",
+    "out_of_budget": "{words}{topic} 예산 범위가 아니에요.",
+    # 기간 안내는 _ask 가 실제 볼 수 있는 범위(ask_about = 말한 기간 · 첫 달 · 이번 달)로 만든다
 }
-OPTION = {"question": "방금 질문", "budget_task": "예산 조정", "resume": "이어서 하기", "restart": "취소하고 새로 시작",
-          True: "네", False: "아니요"}
+OPTION = {**rules.OPTION_LABELS, **YES_NO}  # 이름은 규칙 쪽 한 곳에서 (이름 그대로 보내면 LLM 없이 처리)
 UNSUPPORTED = {
     "out_of_scope": "머니쿠션은 소비 분석과 예산 조정을 도와드려요.",
     "last_month_only": "지난달 소비만 따로 보는 건 아직 지원하지 않아요.",
     "category_compare": "카테고리끼리 비교하는 건 아직 지원하지 않아요.",
     "no_budget_category": "확인 필요 거래는 예산 카테고리가 없어 남은 예산을 알려드릴 수 없어요.",
-    "reference_not_available": "불러오지 못한 결과라 설명해 드릴 수 없어요.",
+    "reference_not_available": "무엇을 설명할지 찾지 못했어요. '식비는 왜 늘었어?'처럼 카테고리를 넣어 물어봐 주세요.",
     "evidence_incomplete": "자료가 다 모이지 않아 이유를 설명해 드릴 수 없어요.",
+    # 범용 조회에서 지원하지 않는 조합 (MEMO 23-6): 어려운 것 + 대신 볼 수 있는 것
+    "budget_query": "예산은 요일 · 시간대 · 금액이나 건수로 나눠 보기 어려워요. 대신 같은 조건의 소비는 볼 수 있어요. "
+                    "예: '주말 식비 얼마 썼어?'",
+    "period_compare": "기간끼리 비교는 지금 '지난달 같은 기간 대비'만 볼 수 있어요. 대신 각 기간을 따로 볼 수 있어요. "
+                      "예: '지난주 얼마 썼어?'",
+    "compare_query": "지난달과 비교는 합계로만 볼 수 있어요. 대신 이번 달 건수 · 평균 · 가게별은 따로 볼 수 있어요. "
+                     "예: '이번 달 가게별로 보여줘'",
 }
 SUPPORTED_VIEWS = "지금은 이번 달 소비, 지난달 같은 기간 대비, 최근 3개월 추이를 볼 수 있어요."
 # 취소 세 가지를 구분한다: 질문 취소(라우터 · 소비가 직접) / 에이전트에 취소 요청 전달 / 서버가 확인한 작업 취소(OUTCOME)
@@ -89,7 +101,9 @@ OUTCOME = {
 UNDECIDED = {"policy_resume_undecided": "보류된 청년 정책 추천이 있을 때 다시 정책을 고르면 이어서 할지 새로 할지",
              "policy_cancel_undecided": "청년 정책 추천 중 '취소'가 질문만 취소인지 추천 대화 종료인지"}
 # 소비 답변이 제안하는 다음 행동 → 안내 + 기능 선택지 (선택만으로 승인 · 저장하지 않는다. 기존 버튼 전환 경로 그대로)
-SUGGEST = {"budget_adjust": ("필요하면 예산 조정을 요청할 수 있어요.", {"value": "budget", "label": "예산 조정하기"})}
+SUGGEST = {"budget_adjust": ("필요하면 예산 조정을 요청할 수 있어요.", {"value": "budget", "label": "예산 조정하기"}),
+           # 요일 · 시간대 · 묶기 조회는 고정지출을 기본으로 뺀다 → 이름 그대로 보내면 "고정지출 포함해서" 후속 질문
+           "include_fixed": ("고정지출까지 넣어 볼 수도 있어요.", {"value": "include_fixed", "label": "고정지출 포함해서 보기"})}
 # 이 대화에서 사용자가 고른 카테고리 별칭 (처음 기억할 때 · 기억한 대응을 쓸 때)
 ALIAS = {True: "이번 대화에서는 '{word}'{obj} {name} 전체로 조회할게요.",
          False: "'{word}'{topic} 이번 대화에서 정한 대로 {name} 전체로 조회했어요."}
@@ -119,18 +133,37 @@ def _choices(asking, options):
         return [dict(CHOICE[o]) for o in options]
     if asking in ("category", "explain_target", "fallback_category"):
         return [{"value": o["code"], "label": o["name"]} for o in options]
-    if asking in ("period_choice", "category_choice", "include_choice", "fallback_scope"):
+    if asking in ("period_choice", "category_choice", "include_choice", "fallback_scope", "self_instead", "spend_instead"):
         return [{"value": o["value"], "label": o["label"]} for o in options]
     return [{"value": o, "label": OPTION[o]} for o in options]
 
 
+OUT_OF_BUDGET_SKIPPED = "{names}{topic} 예산 범위가 아니라 남은 예산에서 뺐어요."
+PERIOD_REASON = {"period_unavailable": "{said}{topic} 볼 수 없어요.", "period_mismatch": "{said}{topic} 맞춰 조회하지 못했어요.",
+                 "period_future": "{said}{topic} 아직 지나지 않은 기간이에요."}
+PERIOD_RANGE = ("지금은 {start}부터 이번 달({end})까지 볼 수 있어요.", "지금은 최근 3개월과 이번 달만 볼 수 있어요.")
+
+
+def _period_ask(reason, ask_about, options):
+    """볼 수 없는 · 맞지 않는 기간: '5월은 볼 수 없어요. 지금은 7월부터 이번 달(10월)까지 볼 수 있어요. 어느 기간을 볼까요?'
+    말한 기간 표현은 안내 문장에만 넣고 질문 문장에는 넣지 않는다"""
+    said = ask_about[0]
+    head = PERIOD_REASON[reason].format(said=said, topic=josa(said, ("은", "는")))
+    if reason == "period_future":  # 볼 수 있는 범위 대신 지난달 같은 날짜를 선택지로
+        return {"lines": [head, "어느 기간을 볼까요?"], "choices": _choices("period_choice", options)}
+    span = PERIOD_RANGE[0].format(start=ask_about[1], end=ask_about[2]) if len(ask_about) == 3 else PERIOD_RANGE[1]
+    return {"lines": [f"{head} {span}", "어느 기간을 볼까요?"], "choices": _choices("period_choice", options)}
+
+
 def _ask(asking, reason, ask_about, options, router):
+    if reason in PERIOD_REASON:
+        return _period_ask(reason, ask_about, options)
     words = _names(ask_about)
     name = words or ("소비" if asking in ("period_choice", "include_choice") else "생활비")
     scope = NAMES[options[0]["code"]] if asking == "fallback_scope" else None
     stem = ASK[asking].format(words=words, words_obj=josa(words, ("을", "를")), name=name, name_obj=josa(name, ("을", "를")),
                               scope=scope)
-    lines = [REASON[reason].format(words=words), stem] if reason in REASON else [stem]
+    lines = [REASON[reason].format(words=words, topic=josa(words, ("은", "는"))), stem] if reason in REASON else [stem]
     choices = _choices(asking, options)
     if asking == "detail" and router:
         choices = [dict(c) for c in CHOICES]  # chat.md: 불명확 의도는 기능 선택지와 함께
@@ -212,6 +245,9 @@ def render(turn, budget_outcome=None):
             notices.append(UNSUPPORTED["no_budget_category"])
     else:
         out = {"lines": [], "choices": []}  # 예산 · 정책 에이전트가 reply 없이 답함 — 문구는 에이전트 몫
+    outside = [NAMES[x["category"]] for x in ((r or {}).get("detail") or {}).get("skipped", []) if x["reason"] == "out_of_budget"]
+    if outside and (r.get("reply") or r["status"] == "replied"):  # 식비랑 주거비 예산 → 식비만 답하고 범위 밖은 짧게
+        notices.append(OUT_OF_BUDGET_SKIPPED.format(names=", ".join(outside), topic=josa(outside[-1], ("은", "는"))))
     if r and (r.get("detail") or {}).get("aliases"):
         lines, extra = _alias_lines(r["detail"]["aliases"])
         if r["detail"]["reason"] == "alias_set":  # 조회 없이 기준만 정한 답(별칭)이면 그 안내가 본문

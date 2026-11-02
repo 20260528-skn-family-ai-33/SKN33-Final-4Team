@@ -82,9 +82,10 @@ class MessagesTest(SimpleTestCase):
                          {"lines": ["지금은 이해하지 못했어요, 아래에서 골라 주세요."], "choices": MENU, "notices": [], "review": []})
 
     def test_unsupported_adds_what_is_supported(self):
-        self.assertEqual(self.say("지난달 얼마 썼어?")["lines"],
-                         ["지난달 소비만 따로 보는 건 아직 지원하지 않아요.",
-                          "지금은 이번 달 소비, 지난달 같은 기간 대비, 최근 3개월 추이를 볼 수 있어요."])
+        # 지원하지 않는 조합은 '어렵지만 대신 이런 건 볼 수 있어요' (MEMO 23-6)
+        self.assertEqual(self.say("예산 밤 시간대로 보여줘")["lines"],
+                         ["예산은 요일 · 시간대 · 금액이나 건수로 나눠 보기 어려워요. 대신 같은 조건의 소비는 볼 수 있어요. "
+                          "예: '주말 식비 얼마 썼어?'"])
 
     def test_switch_notice_once_and_cancel_target_choices(self):
         self.say("식비 예산 줄여줘")  # 예산 대역: 진행 중 작업 T1

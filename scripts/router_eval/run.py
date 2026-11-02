@@ -62,6 +62,18 @@ LIVE_PENDING = ("단계 B: 역할별 프롬프트의 실제 LLM 평가는 아직
 
 # ---------- 사례 · 상태 ----------
 
+# 분리 전 사례 파일(cases.json)은 그대로 두고, 그 뒤 사용자 결정으로 바뀐 결정 기대값만 여기서 덮어쓴다 (이유 · 날짜와 함께)
+POLICY_CHANGES = {
+    "d12": {"expect_route": {"status": "ready", "items": [{"type": 2, "category": "FOOD"}, {"type": 2, "category": "TRANSPORT_CAR"}]},
+            "why": "10/30 사용자 결정: 카테고리끼리 비교 → 이번 달 카테고리별 금액 목록 (이전 10/29 결정은 미지원 안내)"},
+    "d10": {"expect_route": {"status": "ready",
+                             "items": [{"type": 10, "category": None, "query": {"period": "last_month", "measure": "sum"}}]},
+            "why": "10/30 사용자 결정(MEMO 23-11): 지난달 단독 조회 = 범용 조회 10번 지난달 전체 (이전 10/29 결정은 미지원 안내)"},
+    "n02": {"expect_route": {"status": "ask", "asking": "spend_instead", "reason": "out_of_budget"},
+            "why": "11/2 팀 결정(임시, MEMO 23-17): 주거·통신은 예산 범위 밖 → '예산 범위가 아니에요' + 이번 달 사용액 보기 제안"},
+}
+
+
 def load(path=CASES):
     raw = path.read_bytes()
     data = json.loads(raw)
@@ -74,7 +86,8 @@ def load(path=CASES):
             return {k: resolve(v) for k, v in value.items()}
         return value
 
-    data["cases"] = [resolve(c) for c in data["cases"]]
+    data["cases"] = [{**resolve(c), **{k: v for k, v in POLICY_CHANGES.get(c["id"], {}).items() if k != "why"}}
+                     for c in data["cases"]]
     data["scenarios"] = [resolve(s) for s in data["scenarios"]]
     data["sha256"] = hashlib.sha256(raw).hexdigest()
     return data
@@ -152,7 +165,12 @@ def same_categories(got, want):
     if not isinstance(got, list) or len(got) != len(want):
         return False
     for g, w in zip(got, want):
-        if isinstance(w, dict):
+        if isinstance(w, dict) and "detail" in w:  # 세부 지출: 원문 표기 차이 허용 + 속한 카테고리 일치 (다른 표기 names 는 채점 안 함)
+            a = (str(g.get("detail", "")) if isinstance(g, dict) else "").replace(" ", "")
+            b = w["detail"].replace(" ", "")
+            if not a or not (a in b or b in a) or g.get("category") != w["category"]:
+                return False
+        elif isinstance(w, dict):
             a, b = (str(g.get("unknown", "")) if isinstance(g, dict) else "").replace(" ", ""), w["unknown"].replace(" ", "")
             if not a or not (a in b or b in a):
                 return False

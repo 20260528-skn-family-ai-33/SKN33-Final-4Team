@@ -1,9 +1,16 @@
 {
- "version": "B-2026-10-29.2",
+ "version": "B-2026-11-02.3",
  "format": "role",
  "changes": [
   "B-2026-10-29.1: 첫 변환 (frozen/cases_b_B-2026-10-29.1.json 에 보존, 28차 실제 평가에 사용)",
-  "B-2026-10-29.2: ① followup 기대는 그 역할이 질문 중일 때만 (역할별 계약) — 예산 진행 중 재분류 턴 d25 · n11 · s3#3 · s5#3 · s6#2 ② chosen 소비 기대값은 원래 문장의 기대값으로 — s8#2 ③ 정책 검토 표시 n10 · s8#2"
+  "B-2026-10-29.2: ① followup 기대는 그 역할이 질문 중일 때만 (역할별 계약) — 예산 진행 중 재분류 턴 d25 · n11 · s3#3 · s5#3 · s6#2 ② chosen 소비 기대값은 원래 문장의 기대값으로 — s8#2 ③ 정책 검토 표시 n10 · s8#2",
+  "B-2026-10-30.1: 사용자 결정으로 바뀐 결정 기대값 d12 (카테고리 비교 → 카테고리별 금액, run.POLICY_CHANGES) · 소비 해석 칸 payment · 세부 지출 names 추가 (이전 판은 frozen/cases_b_B-2026-10-29.2.json)",
+  "B-2026-10-30.2: 바뀐 결정 기대값 d10 (지난달 단독 → 범용 조회 10번, MEMO 23-11) · 소비 해석 칸 weekday · time_slot · amount_min · amount_max · measure · group_by · top_n · payment bank (30.1 은 10/30 실제 평가 174회에 사용, 파일은 보존 안 함)",
+  "B-2026-10-30.3: 범용 조회 A 경로 새 사례 c01~c19 + 연속 대화 cs1 (MEMO 23절 3단계)",
+  "B-2026-10-30.4: 지정 기간 · 볼 수 없는 기간 · 기간 비교 · 고정지출 포함 p01~p07 + 연속 ps1. 소비 해석 칸 period(이번 주 · 지난주 · 특정 달 · 날짜 범위) · month · date_from · date_to · period_said(채점 안 함) · include_fixed · compare other_period",
+  "B-2026-11-02.1: 기간 + 카테고리별 g01 · 다른 사람의 소비 g02~g03 · 대조 g04. 소비 해석 칸 other_person",
+  "B-2026-11-02.2: 바뀐 결정 기대값 n02 (주거·통신 예산 → 예산 범위 밖 안내, 11/2 팀 결정 임시 · MEMO 23-17)",
+  "B-2026-11-02.3: 월 · 연도 생략 날짜 r01~r03 (date_from · date_to 에 일만 'DD' 허용)"
  ],
  "source": {
   "cases_file": "cases.json",
@@ -555,9 +562,17 @@
    "split": "regression_dev",
    "text": "지난달 얼마 썼어?",
    "expect_route": {
-    "status": "unsupported",
-    "reason": "last_month_only",
-    "items": []
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "last_month",
+       "measure": "sum"
+      }
+     }
+    ]
    },
    "expect_router": {
     "must": {
@@ -580,6 +595,7 @@
      ]
     }
    },
+   "policy_change": "10/30 사용자 결정(MEMO 23-11): 지난달 단독 조회 = 범용 조회 10번 지난달 전체 (이전 10/29 결정은 미지원 안내)",
    "origin": "d10"
   },
   {
@@ -635,8 +651,17 @@
    "split": "regression_dev",
    "text": "식비랑 교통비 중 뭐가 더 많아?",
    "expect_route": {
-    "status": "unsupported",
-    "reason": "category_compare"
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FOOD"
+     },
+     {
+      "type": 2,
+      "category": "TRANSPORT_CAR"
+     }
+    ]
    },
    "expect_router": {
     "must": {
@@ -667,6 +692,7 @@
      ]
     }
    },
+   "policy_change": "10/30 사용자 결정: 카테고리끼리 비교 → 이번 달 카테고리별 금액 목록 (이전 10/29 결정은 미지원 안내)",
    "origin": "d12"
   },
   {
@@ -1063,6 +1089,11 @@
      "refers_to": [
       "previous",
       null
+     ],
+     "explain_kind": [
+      null,
+      "change",
+      "composition"
      ]
     }
    },
@@ -1566,6 +1597,11 @@
      "refers_to": [
       "previous",
       null
+     ],
+     "explain_kind": [
+      null,
+      "change",
+      "composition"
      ]
     }
    },
@@ -1700,13 +1736,9 @@
    "split": "regression_new",
    "text": "주거비 예산 남은 거 보여줘",
    "expect_route": {
-    "status": "ready",
-    "items": [
-     {
-      "type": 3,
-      "category": "HOUSING_TELECOM"
-     }
-    ]
+    "status": "ask",
+    "asking": "spend_instead",
+    "reason": "out_of_budget"
    },
    "expect_router": {
     "must": {
@@ -1735,6 +1767,7 @@
      ]
     }
    },
+   "policy_change": "11/2 팀 결정(임시, MEMO 23-17): 주거·통신은 예산 범위 밖 → '예산 범위가 아니에요' + 이번 달 사용액 보기 제안",
    "origin": "n02"
   },
   {
@@ -2364,6 +2397,2206 @@
    },
    "expect_state": {
     "pending": null
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b09",
+   "text": "이번 달 카드 얼마 긁었지?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "payment": "card"
+    },
+    "allow": {
+     "target": [
+      "spend",
+      null,
+      "overview"
+     ],
+     "period": [
+      "this_month",
+      null
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "items": [
+     {
+      "type": 1,
+      "category": null,
+      "payment": "card"
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b10",
+   "text": "스타벅스에서 얼마나 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "target": "spend",
+     "categories": [
+      {
+       "detail": "스타벅스",
+       "category": "FOOD"
+      }
+     ]
+    },
+    "allow": {
+     "period": [
+      "this_month",
+      null
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "fallback_scope"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b11",
+   "text": "카테고리별로 예산 얼마나 남았어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "target": "budget_left",
+     "compare": "category"
+    },
+    "allow": {
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "all_categories": [
+      null,
+      true
+     ]
+    }
+   },
+   "expect_route": {
+    "items": [
+     {
+      "type": 4,
+      "category": null,
+      "breakdown": true
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b12",
+   "text": "그럼 카테고리별로는?",
+   "state": {
+    "last_analysis": {
+     "request": {
+      "target": "budget_left",
+      "period": null,
+      "compare": null,
+      "months": null,
+      "categories": [
+       "FOOD"
+      ]
+     },
+     "items": [
+      {
+       "type": 3,
+       "category": "FOOD",
+       "period": {
+        "from": "2026-10-25",
+        "to": "2026-10-29"
+       },
+       "ok": true,
+       "evidence": "confirmed",
+       "as_of": "2026-10-29T10:00:00+09:00"
+      }
+     ]
+    }
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "compare": "category",
+     "refers_to": "previous"
+    },
+    "allow": {
+     "all_categories": [
+      null,
+      true
+     ]
+    }
+   },
+   "expect_route": {
+    "items": [
+     {
+      "type": 4,
+      "category": null,
+      "breakdown": true
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b13",
+   "text": "남은 기간 동안 식비 하루에 얼마 쓸 수 있어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "target": "budget_left",
+     "categories": [
+      "FOOD"
+     ]
+    },
+    "allow": {
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ]
+    }
+   },
+   "expect_route": {
+    "items": [
+     {
+      "type": 3,
+      "category": "FOOD"
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b14",
+   "text": "식비는 왜 늘었을까?",
+   "state": {
+    "last_analysis": {
+     "request": {
+      "target": "spend",
+      "period": null,
+      "compare": "prev_month",
+      "months": null,
+      "categories": [
+       "TRANSPORT_CAR"
+      ]
+     },
+     "items": [
+      {
+       "type": 7,
+       "category": "TRANSPORT_CAR",
+       "period": {
+        "from": "2026-10-01",
+        "to": "2026-10-29"
+       },
+       "compare_period": {
+        "from": "2026-09-01",
+        "to": "2026-09-29"
+       },
+       "ok": true,
+       "evidence": "confirmed",
+       "as_of": "2026-10-29T10:00:00+09:00"
+      }
+     ]
+    }
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FOOD"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "explain": true,
+     "categories": [
+      "FOOD"
+     ],
+     "explain_kind": "change"
+    },
+    "allow": {
+     "refers_to": [
+      "previous",
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "explain.items.category": [
+     "FOOD"
+    ],
+    "explain.items.fresh": [
+     true
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b15",
+   "text": "왜 이렇게 많이 썼어?",
+   "state": {
+    "last_analysis": {
+     "request": {
+      "target": "spend",
+      "period": null,
+      "compare": "prev_month",
+      "months": null,
+      "categories": [
+       "FOOD"
+      ]
+     },
+     "items": [
+      {
+       "type": 7,
+       "category": "FOOD",
+       "period": {
+        "from": "2026-10-01",
+        "to": "2026-10-29"
+       },
+       "compare_period": {
+        "from": "2026-09-01",
+        "to": "2026-09-29"
+       },
+       "ok": true,
+       "evidence": "confirmed",
+       "as_of": "2026-10-29T10:00:00+09:00"
+      }
+     ]
+    }
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "explain": true,
+     "explain_kind": "composition"
+    },
+    "allow": {
+     "refers_to": [
+      "previous",
+      null
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "explain.items.type": [
+     2
+    ],
+    "explain.items.category": [
+     "FOOD"
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b16",
+   "text": "그럼 왜 늘었는데?",
+   "state": {
+    "last_analysis": {
+     "request": {
+      "target": "spend",
+      "period": null,
+      "compare": null,
+      "months": null,
+      "categories": [
+       "FOOD"
+      ]
+     },
+     "items": [
+      {
+       "type": 2,
+       "category": "FOOD",
+       "period": {
+        "from": "2026-10-01",
+        "to": "2026-10-29"
+       },
+       "ok": true,
+       "evidence": "confirmed",
+       "as_of": "2026-10-29T10:00:00+09:00"
+      }
+     ]
+    }
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "explain": true,
+     "explain_kind": "change"
+    },
+    "allow": {
+     "refers_to": [
+      "previous",
+      null
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "explain.items.type": [
+     7
+    ],
+    "explain.items.fresh": [
+     true
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b17",
+   "text": "제일 많이 쓴 데는 왜 이렇게 많이 나왔어?",
+   "state": {
+    "last_analysis": {
+     "request": {
+      "target": "overview",
+      "period": null,
+      "compare": null,
+      "months": null,
+      "categories": []
+     },
+     "items": [
+      {
+       "type": 5,
+       "category": null,
+       "period": {
+        "from": "2026-10-01",
+        "to": "2026-10-29"
+       },
+       "ok": true,
+       "evidence": "confirmed",
+       "as_of": "2026-10-29T10:00:00+09:00"
+      }
+     ]
+    }
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "explain": true,
+     "explain_kind": "composition"
+    },
+    "allow": {
+     "refers_to": [
+      "previous",
+      null
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "explain.items.type": [
+     5
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c01",
+   "text": "주말에 외식비 얼마나 나갔어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FOOD"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "weekday": [
+      "weekend"
+     ],
+     "categories": [
+      "FOOD"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FOOD",
+      "weekdays": [
+       5,
+       6
+      ]
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c02",
+   "text": "평일 점심값으로 얼마 썼지?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FOOD"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "weekday": [
+      "weekday"
+     ],
+     "time_slot": [
+      "lunch"
+     ],
+     "categories": [
+      "FOOD"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FOOD",
+      "weekdays": [
+       0,
+       1,
+       2,
+       3,
+       4
+      ],
+      "time_slots": [
+       "lunch"
+      ]
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c03",
+   "text": "새벽에 쓴 돈 합계 알려줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "time_slot": [
+      "dawn"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null,
+      "time_slots": [
+       "dawn"
+      ]
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c04",
+   "text": "퇴근하고 나서 쓴 돈 얼마야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "time_slot": [
+      "after_work"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null,
+      "time_slots": [
+       "evening",
+       "night"
+      ]
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c05",
+   "text": "늦은 밤에 시켜 먹은 거 합치면 얼마야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "time_slot": [
+      [
+       "late_night"
+      ],
+      [
+       "night"
+      ],
+      [
+       "night",
+       "dawn"
+      ]
+     ],
+     "categories": [
+      [
+       "FOOD"
+      ],
+      []
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c06",
+   "text": "3만 원 이상 결제한 거 몇 건이야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "amount_min": 30000,
+     "measure": "count"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "amount_min": 30000,
+      "query": {
+       "period": "this_month",
+       "measure": "count"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c07",
+   "text": "5천 원 이하 소액 결제는 다 합쳐서 얼마야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "amount_max": 5000
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "measure": [
+      null,
+      "sum"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null,
+      "amount_max": 5000
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c08",
+   "text": "이번 달 결제 횟수 알려줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "measure": "count"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "this_month",
+       "measure": "count"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c09",
+   "text": "교통비는 건당 평균 얼마 정도야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "TRANSPORT_CAR"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "measure": "avg",
+     "categories": [
+      "TRANSPORT_CAR"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": "TRANSPORT_CAR",
+      "query": {
+       "period": "this_month",
+       "measure": "avg"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c10",
+   "text": "하루에 평균 얼마씩 쓰고 있어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "measure": "daily_avg"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "this_month",
+       "measure": "daily_avg"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c11",
+   "text": "이번 달 가장 비싸게 결제한 건 뭐야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "measure": "max"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "this_month",
+       "measure": "max"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c12",
+   "text": "제일 많이 간 가게 다섯 곳",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "measure": "count",
+     "group_by": "merchant",
+     "top_n": 5
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "this_month",
+       "measure": "count",
+       "group_by": "merchant",
+       "top_n": 5
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c13",
+   "text": "요일마다 얼마씩 썼는지 보여줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "group_by": "weekday"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "measure": [
+      null,
+      "sum"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "this_month",
+       "measure": "sum",
+       "group_by": "weekday"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c14",
+   "text": "시간대별 지출 나눠서 보여줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "group_by": "time_slot"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "measure": [
+      null,
+      "sum"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "this_month",
+       "measure": "sum",
+       "group_by": "time_slot"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c15",
+   "text": "최근 3개월 식비를 달마다 보여줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FOOD"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "months": 3,
+     "categories": [
+      "FOOD"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "recent"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "group_by": [
+      null,
+      "month"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c16",
+   "text": "지난달 한 달 동안 교통비 얼마 들었어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "TRANSPORT_CAR"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "last_month",
+     "categories": [
+      "TRANSPORT_CAR"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "measure": [
+      null,
+      "sum"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": "TRANSPORT_CAR",
+      "query": {
+       "period": "last_month",
+       "measure": "sum"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c17",
+   "text": "계좌로 빠져나간 돈만 얼마야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "payment": "bank"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null,
+      "payment": "bank"
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c18",
+   "text": "예산을 요일별로 쪼개서 보여줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "target": "budget_left",
+     "group_by": "weekday"
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "unsupported",
+    "reason": "budget_query"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "c19",
+   "text": "지난달보다 가게별로 몇 번 더 갔어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "compare": "prev_month",
+     "group_by": "merchant",
+     "measure": "count"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "unsupported",
+    "reason": "compare_query"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "p01",
+   "text": "이번 주에 쓴 돈 얼마야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "this_week"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "query": {
+       "period": "this_week",
+       "measure": "sum"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "p02",
+   "text": "지난주 교통비 얼마 나왔어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "TRANSPORT_CAR"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "last_week",
+     "categories": [
+      "TRANSPORT_CAR"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": "TRANSPORT_CAR",
+      "query": {
+       "period": "last_week",
+       "measure": "sum"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "p03",
+   "text": "8월에 식비 얼마 썼지?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FOOD"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "month",
+     "month": 8,
+     "categories": [
+      "FOOD"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": "FOOD",
+      "month": 8,
+      "query": {
+       "period": "month",
+       "measure": "sum"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "p04",
+   "text": "10월 5일부터 12일까지 쓴 돈 알려줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "range",
+     "date_from": "10-05",
+     "date_to": "10-12"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "date_from": "10-05",
+      "date_to": "10-12",
+      "query": {
+       "period": "range",
+       "measure": "sum"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "p05",
+   "text": "작년 이맘때 얼마 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period_said": "작년 이맘때"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "period_choice",
+    "reason": "period_unavailable"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "p06",
+   "text": "지난주랑 비교하면 이번 주에 더 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "compare": "other_period"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_week"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "unsupported",
+    "reason": "period_compare"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "p07",
+   "text": "고정지출까지 넣어서 요일별로 보여줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "include_fixed": true,
+     "group_by": "weekday"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "measure": [
+      null,
+      "sum"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "include_fixed": true,
+      "query": {
+       "period": "this_month",
+       "measure": "sum",
+       "group_by": "weekday"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "g01",
+   "text": "10월 5일부터 10일까지 카테고리별로 얼마 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "range",
+     "date_from": "10-05",
+     "date_to": "10-10"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "compare": [
+      "category",
+      null
+     ],
+     "group_by": [
+      null,
+      "category"
+     ],
+     "measure": [
+      null,
+      "sum"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "date_from": "10-05",
+      "date_to": "10-10",
+      "query": {
+       "period": "range",
+       "measure": "sum",
+       "group_by": "category"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "g02",
+   "text": "남자친구가 이번 달 쇼핑에 얼마 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FASHION_SHOPPING"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "other_person": true,
+     "categories": [
+      "FASHION_SHOPPING"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "self_instead",
+    "reason": "other_person"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "g03",
+   "text": "우리 엄마 이번 달 카드값 얼마 나왔어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "other_person": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "payment": [
+      null,
+      "card"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "self_instead",
+    "reason": "other_person"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "g04",
+   "text": "내가 이번 달 쇼핑에 얼마 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FASHION_SHOPPING"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "categories": [
+      "FASHION_SHOPPING"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FASHION_SHOPPING"
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "r01",
+   "text": "20일부터 27일까지 쓴 돈 얼마야?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "range",
+     "date_from": "20",
+     "date_to": "27"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "date_from": "20",
+      "date_to": "27",
+      "query": {
+       "period": "range",
+       "measure": "sum"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "r02",
+   "text": "3일부터 지금까지 식비 얼마 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      [],
+      [
+       "FOOD"
+      ]
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "range",
+     "date_from": "03",
+     "categories": [
+      "FOOD"
+     ]
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": "FOOD",
+      "date_from": "03",
+      "query": {
+       "period": "range",
+       "measure": "sum"
+      }
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "r03",
+   "text": "10월 25일부터 11월 3일까지 얼마 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {
+     "categories": [
+      []
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "period": "range",
+     "date_from": "10-25",
+     "date_to": "11-03"
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 10,
+      "category": null,
+      "date_from": "10-25",
+      "date_to": "11-03",
+      "query": {
+       "period": "range",
+       "measure": "sum"
+      }
+     }
+    ]
    },
    "split": "new_b"
   }
@@ -3284,6 +5517,11 @@
        "refers_to": [
         "previous",
         null
+       ],
+       "explain_kind": [
+        null,
+        "change",
+        "composition"
        ]
       }
      }
@@ -3467,6 +5705,184 @@
      }
     }
    ]
+  },
+  {
+   "id": "ps1",
+   "note": "고정지출 기본 제외 → '고정지출도 넣어서' 후속 (직전 조건 + 포함)",
+   "turns": [
+    {
+     "text": "시간대별로 얼마 썼는지 알려줘",
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": true,
+       "group_by": "time_slot"
+      },
+      "allow": {
+       "target": [
+        null,
+        "spend",
+        "overview"
+       ],
+       "period": [
+        null,
+        "this_month"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ],
+       "measure": [
+        null,
+        "sum"
+       ]
+      }
+     },
+     "expect_route": {
+      "items": [
+       {
+        "type": 10,
+        "category": null,
+        "query": {
+         "period": "this_month",
+         "measure": "sum",
+         "group_by": "time_slot"
+        }
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     }
+    },
+    {
+     "text": "고정지출도 넣어서 다시 보여줘",
+     "expect_spending": {
+      "must": {
+       "mine": true,
+       "refers_to": "previous",
+       "include_fixed": true
+      },
+      "observe": [
+       "followup"
+      ]
+     },
+     "expect_route": {
+      "items": [
+       {
+        "type": 10,
+        "category": null,
+        "include_fixed": true,
+        "query": {
+         "period": "this_month",
+         "measure": "sum",
+         "group_by": "time_slot"
+        }
+       }
+      ]
+     }
+    }
+   ],
+   "split": "new_b"
+  },
+  {
+   "id": "cs1",
+   "note": "범용 조회 조건 이어받기: 주말 쇼핑 → 그럼 식비는? (주말 그대로)",
+   "turns": [
+    {
+     "text": "주말에 쇼핑 얼마나 했어?",
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {
+       "categories": [
+        [],
+        [
+         "FASHION_SHOPPING"
+        ]
+       ]
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": true,
+       "weekday": [
+        "weekend"
+       ],
+       "categories": [
+        "FASHION_SHOPPING"
+       ]
+      },
+      "allow": {
+       "target": [
+        null,
+        "spend",
+        "overview"
+       ],
+       "period": [
+        null,
+        "this_month"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     },
+     "expect_route": {
+      "items": [
+       {
+        "type": 2,
+        "category": "FASHION_SHOPPING",
+        "weekdays": [
+         5,
+         6
+        ]
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     }
+    },
+    {
+     "text": "그럼 식비는?",
+     "expect_spending": {
+      "must": {
+       "mine": true,
+       "refers_to": "previous",
+       "categories": [
+        "FOOD"
+       ]
+      },
+      "observe": [
+       "followup"
+      ]
+     },
+     "expect_route": {
+      "items": [
+       {
+        "type": 2,
+        "category": "FOOD",
+        "weekdays": [
+         5,
+         6
+        ]
+       }
+      ]
+     }
+    }
+   ],
+   "split": "new_b"
   },
   {
    "id": "bs1",

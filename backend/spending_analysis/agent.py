@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from django.db import DatabaseError
 
-from . import adapter, dialog, explain
+from . import adapter, dialog, explain, tools
 from .answer import compose
 
 START = {"lines": ["어떤 소비가 궁금하세요?"],
@@ -25,8 +25,24 @@ def _result(status, reply=None, decision=None, **extra):
             "detail": detail, "decision": decision, **extra}
 
 
+def _today(request):
+    return request.get("today") and date.fromisoformat(request["today"])
+
+
+def _merchant(user, request):
+    """가게 이름 검색 가능 여부 (dialog 는 DB 를 모른다). 조회 실패면 검색하지 않고 기존 '카테고리 전체로 볼까요?'로"""
+    def known(word, names=()):
+        if not _today(request):  # 기준 날짜가 없는 대역(평가 · 테스트)은 가게 이름 검색 없이
+            return False
+        try:
+            return tools.has_merchant(user, word, _today(request), names)
+        except DatabaseError:
+            return False
+    return known
+
+
 def _run(user, request):
-    today = request.get("today") and date.fromisoformat(request["today"])
+    today = _today(request)
     as_of = request.get("as_of") and datetime.fromisoformat(request["as_of"])
     return lambda decision: adapter.run(user, decision, today=today, as_of=as_of)
 
@@ -49,13 +65,14 @@ def handle(request, *, store, complete, user=None, execute=None, explain_complet
         decision = dialog.start_button(store, cid)
     else:
         decision = dialog.step(store, cid, text, complete, mode="start" if mode == "start" else "continue",
-                               chosen=bool(context.get("selected_from")), budget_change=context.get("budget_change"))
+                               chosen=bool(context.get("selected_from")), budget_change=context.get("budget_change"),
+                               merchant=user and _merchant(user, request), today=_today(request))
     if decision.status == "not_mine":
         return _result("not_mine", reason=decision.reason, decision=decision)
     if decision.status == "failed":
         return _result("failed", error=decision.reason, decision=decision)
     result = _outcome(decision, store, cid, execute or _run(user, request),
-                      user and (lambda items: explain.answer(user, items, explain_complete)))
+                      user and (lambda items: explain.answer(user, items, explain_complete, today=_today(request))))
     dialog.publish(store, cid)
     return result
 

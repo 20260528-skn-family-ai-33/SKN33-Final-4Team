@@ -145,7 +145,7 @@ class LivePathTest(unittest.TestCase):
 
     def test_live_counts_every_call_with_role_schema(self):
         opener, path = RoleOpener(), self.ledger()
-        meta, cases, _ = quiet(["--live", "--max-calls", "50", "--ledger", path, "--structured", "--split", "new_b",
+        meta, cases, _ = quiet(["--live", "--max-calls", "100", "--ledger", path, "--structured", "--split", "new_b",
                                 "--price-in", "0.1", "--price-out", "0.5"], opener=opener, env=LIVE_ENV)
         planned = sum(meta["planned_calls"].values())
         self.assertEqual((len(opener.requests), meta["ledger"]["used"]), (planned, planned))

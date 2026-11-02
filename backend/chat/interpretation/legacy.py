@@ -13,7 +13,9 @@ from chat.router_core import reading as router_reading
 
 # 통합 형식에서 소비 해석에만 있는 칸 / 라우터 해석에만 있는 칸
 SPENDING_ONLY = ("target", "period", "compare", "months", "all_categories", "refers_to", "explain",
-                 "after_budget_change", "confirm", "include_current", "alias")
+                 "after_budget_change", "confirm", "include_current", "alias", "payment", "explain_kind",
+                 "weekday", "time_slot", "amount_min", "amount_max", "measure", "group_by", "top_n",
+                 "month", "date_from", "date_to", "period_said", "include_fixed", "other_person")
 ROUTER_ONLY = ("intents", "choice", "resume", "direction", "amount", "amount_mode")
 
 

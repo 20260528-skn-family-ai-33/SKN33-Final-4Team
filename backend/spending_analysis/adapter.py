@@ -78,6 +78,11 @@ def summarize(result):
         else:
             facts = {"current": result["current"]["confirmed"], "previous": result["previous"]["confirmed"],
                      "comparison": result["comparison"]}
+    elif kind == 10:  # 범용 조회: 기간 전체 · 기간마다 수집 상태, 확정 수치는 계산 결과 그대로
+        periods = result["periods"]
+        period = Period(periods[0].start, periods[-1].end_before)
+        limits = [f"period:{p.start:%Y-%m}:{state}" for p, state in zip(periods, result["states"]) if state != "complete"]
+        facts = result["confirmed"]
     else:
         months = result["months"]
         period = Period(months[0]["period"].start, months[-1]["period"].end_before)

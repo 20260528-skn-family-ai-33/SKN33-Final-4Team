@@ -26,15 +26,15 @@ from zoneinfo import ZoneInfo
 DATA = Path(__file__).with_name("data")
 # 첨부 08_전달파일해시.json 의 04 · 05 해시. 사본이 바뀌면 멈춘다
 SHA256 = {
-    "design.json": "7d8cb4f6644696d237609c533a807b9267bc94a732ef5724c615681e8eba6c26",
+    "design.json": "7bdc1f7bcdbb6396e077c76e55d8b70738287839efd97f7bb4d85e5e5ba18570",  # v2: 가게 · 고정지출 이름 · 시각 · 여행·숙박 배정 → 기타 (23-17)
     "expected.json": "66216db3f340fc8e6ae0c7210ad9d1778b8dfa9007103bf78c6500fead9034c2",
 }
 KST = ZoneInfo("Asia/Seoul")
 AS_OF = datetime(2026, 10, 29, 23, 59, 59, tzinfo=KST)
 NS = uuid.UUID("5e1f7c2a-2026-4029-a000-000000f1c7e5")  # fixture 전용 UUID5 이름공간
 ENGINE = "fixture-snapshot-v1"  # 실제 엔진 버전이 아님을 드러낸다
-NON_SPENDING_DESC = {"income": "가상급여입금", "saving": "가상저축이체", "transfer": "가상송금",
-                     "own_transfer": "가상내계좌이체", "card_payment": "가상카드대금"}
+NON_SPENDING_DESC = {"income": "급여", "saving": "적금 자동이체", "transfer": "송금",
+                     "own_transfer": "내 계좌 이체", "card_payment": "카드대금"}  # 비소비 거래 적요 (표시 이름, 집계와 무관)
 
 
 def load(name):

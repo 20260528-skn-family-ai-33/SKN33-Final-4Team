@@ -7,6 +7,12 @@ from django.db import DatabaseError
 
 from budgets.models import Budget, BudgetCycle, BudgetItem
 
+# 예산을 짜는 범위 밖 카테고리 (팀 결정 11/2, 임시 — 예산 담당 확인 후 바뀔 수 있음 · MEMO 22-9 · 23-17).
+# 카테고리 자체 · 소비 조회(12개)는 그대로, 생활비 예산 · 사용액 · 잔액 · 카테고리별 잔액 · 예산 선택지에서만 뺀다.
+# 이유: ML 초안 추천액이 사실상 0(천 원 수준)이고 주거·통신 지출은 대부분 고정지출로 잡힌다.
+# shortcut: 팀 예산 코드(budgets)에는 아직 정의가 없어 여기 한 곳에 둔다, 팀이 같은 목록을 정하면 그것을 가져다 쓴다
+OUT_OF_BUDGET = ("HOUSING_TELECOM", "TRAVEL_LODGING")
+
 
 def approved_budget(user, on_date):
     """→ {"state": "approved" | "no_cycle" | "no_approved" | "error", ...}
@@ -32,10 +38,12 @@ def approved_budget(user, on_date):
     for bucket, _, amount in items:
         buckets[bucket] = buckets.get(bucket, 0) + amount
     funding = budget.pop("funding_amount")
+    living = {code: amount for bucket, code, amount in items if bucket == "living" and code not in OUT_OF_BUDGET}
     return {
         "state": "approved", "cycle": cycle, "budget": budget,
-        "living": {code: amount for bucket, code, amount in items if bucket == "living"},
-        "living_total": buckets.get("living", 0),
+        "living": living,
+        # 예산 범위 밖 카테고리의 생활비 배정은 생활비 예산에서 뺀다 (더미 예산은 그 배정을 기타로 옮겨 총액을 맞췄다 — 23-17)
+        "living_total": sum(living.values()),
         "buckets": buckets,  # living · fixed · savings · reserve · cushion 합계
         "funding": funding,
         "spare": None if funding is None else funding - sum(buckets.values()),  # 여윳돈은 저장하지 않는다

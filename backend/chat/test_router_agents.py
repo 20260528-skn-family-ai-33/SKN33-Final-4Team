@@ -25,6 +25,7 @@ PHASE_B_SAID = {
     "잘 모르겠어": {"intents": ["unclear"]},
     "예산을 5만 원 줄여줘": {"intents": ["budget_adjust"], "direction": "down", "amount": 50000, "amount_mode": "by",
                        "followup": "new"},
+    "예산 밤 시간대로 보여줘": {"intents": ["spending"], "target": "budget_left", "time_slot": ["night"]},
 }
 
 
@@ -135,9 +136,9 @@ class AgentRoutingTest(SimpleTestCase):
     def test_own_domain_unsupported_is_not_sent_elsewhere(self):
         self.turn("식비 얼마 썼어?")
         calls = len(self.llm.calls)
-        turn = self.turn("지난달 얼마 썼어?")
+        turn = self.turn("예산 밤 시간대로 보여줘")  # 10/30 부터 지난달 단독은 지원 → 다른 미지원 조합으로
         self.assertEqual((turn["delivered"], turn["result"]["status"], turn["result"]["reason"]),
-                         (["spending"], "unsupported", "last_month_only"))
+                         (["spending"], "unsupported", "budget_query"))
         self.assertEqual((self.budget.calls, self.roles()[calls:]), ([], ["spending"]))
 
     def test_budget_in_progress_gets_raw_text_first(self):

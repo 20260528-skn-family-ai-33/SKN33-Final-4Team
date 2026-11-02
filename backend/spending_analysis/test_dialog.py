@@ -48,7 +48,8 @@ class SpendingDialogTest(SimpleTestCase):
                 self.assertEqual(self.store.export("talk-1"), before)
 
     def test_own_domain_unsupported_and_missing_info_are_not_not_mine(self):
-        self.assertEqual(self.say("지난달 얼마 썼어?").reason, "last_month_only")  # 미지원 = 소비가 안내
+        budget_by_slot = lambda system, user: json.dumps({"mine": True, "target": "budget_left", "time_slot": ["night"]})  # noqa: E731
+        self.assertEqual(self.say("예산 밤 시간대로", llm=budget_by_slot).reason, "budget_query")  # 미지원 = 소비가 안내
         self.assertEqual(self.say("최근 0개월 식비 알려줘").asking, "months")    # 정보 부족 = 소비가 되물음
         self.assertEqual(self.say("모르는 카테고리 코드").status, "failed")      # 해석 오류 = failed
 
@@ -106,10 +107,11 @@ class SpendingDialogTest(SimpleTestCase):
         self.assertEqual(results[0]["result"], {"category": "FOOD"})
         self.assertEqual(results[1]["error"], "LookupError")
 
-    def test_last_month_alone_is_unsupported(self):
+    def test_last_month_alone_is_general_query(self):
+        # 10/30 결정: 지난달 단독 = 범용 조회 10번의 지난달 전체 (이전엔 미지원)
         decision = self.say("지난달 얼마 썼어?")
-        self.assertEqual((decision.status, decision.intent, decision.reason, decision.items),
-                         ("unsupported", "spending", "last_month_only", ()))
+        self.assertEqual((decision.status, decision.items),
+                         ("ready", ({"type": 10, "category": None, "query": {"period": "last_month", "measure": "sum"}},)))
 
     def test_target_follows_analysis_subject_not_request_wording(self):
         # 같은 '알려줘 · 보여줘'라도 총액 → spend, 잔액 → budget_left, 전반 → overview 로 유형이 갈린다
@@ -126,9 +128,10 @@ class SpendingDialogTest(SimpleTestCase):
     def test_food_overview_is_type_2(self):
         self.assertEqual(self.say("식비 알려줘").items, (item(2, "FOOD"),))
 
-    def test_category_compare_is_unsupported(self):
+    def test_category_compare_lists_categories(self):
+        # 10/30 사용자 결정: 카테고리끼리 비교 · 카테고리별 질문 → 이번 달 카테고리별 금액 (이전엔 미지원)
         decision = self.say("식비와 교통비 중 뭐가 더 많아?")
-        self.assertEqual((decision.status, decision.reason, decision.items), ("unsupported", "category_compare", ()))
+        self.assertEqual((decision.status, decision.items), ("ready", (item(2, "FOOD"), item(2, "TRANSPORT_CAR"))))
         self.assertIsNone(dialog.pending(self.store, "talk-1"))
         self.assertEqual(self.say("최근 2개월 식비랑 교통비 알려줘").status, "ready")  # 단순 복수 조회는 그대로
 
@@ -161,10 +164,10 @@ class SpendingDialogTest(SimpleTestCase):
                                  ("ask", "budget_current", mode, ()))  # reason = 지원 안 하는 비교 방식 (미지원 안내용)
                 self.assertEqual(self.say("응 이번 기간으로").items, done)
 
-    def test_budget_left_category_compare_is_unsupported_not_asked(self):
+    def test_budget_left_category_compare_lists_categories(self):
+        # 10/30 사용자 결정: 카테고리끼리 비교한 남은 예산 → 카테고리마다 3번 (이전엔 미지원)
         decision = self.say("식비랑 교통비 중 예산 뭐가 더 남았어?")
-        self.assertEqual((decision.status, decision.reason, decision.asking, decision.items),
-                         ("unsupported", "category_compare", None, ()))
+        self.assertEqual((decision.status, decision.items), ("ready", (item(3, "FOOD"), item(3, "TRANSPORT_CAR"))))
         self.assertIsNone(dialog.pending(self.store, "talk-1"))
         # 단순 복수 카테고리 잔액 조회는 각각 3번
         self.assertEqual(self.say("식비랑 교통비 예산 얼마 남았어?").items, (item(3, "FOOD"), item(3, "TRANSPORT_CAR")))
@@ -229,8 +232,8 @@ class SpendingDialogTest(SimpleTestCase):
 
     def test_budget_left_category_question_leaves_out_unclassified(self):
         options = self.say("데이트비 예산 얼마 남았어?").options
-        self.assertEqual(len(options), 11)
-        self.assertNotIn("UNCLASSIFIED", [o["code"] for o in options])
+        self.assertEqual(len(options), 9)  # 12 − 확인 필요 − 예산 범위 밖 2개(주거·통신 · 여행·숙박, 11/2 팀 결정)
+        self.assertFalse({"UNCLASSIFIED", "HOUSING_TELECOM", "TRAVEL_LODGING"} & {o["code"] for o in options})
         self.assertIn({"code": "ETC", "name": "기타"}, options)
 
     def test_category_pick_by_code_or_name_fills_each_hole_in_order(self):
@@ -327,8 +330,8 @@ class SpendingDialogTest(SimpleTestCase):
         self.assertEqual([(i["category"], i["ok"]) for i in items], [("FOOD", True), ("TRANSPORT_CAR", False)])
         self.assertEqual((items[0]["period"], items[0]["as_of"]), (PERIOD, "2026-10-29T10:00:00+09:00"))
         self.assertNotIn("period", items[1])  # 실패 항목은 결과 없음
-        # 실패한 항목을 설명 대상으로 참조하지 않는다
-        self.assertEqual(self.say("교통비는 왜 늘었어?").reason, "reference_not_available")
+        # 실패한 항목은 근거로 쓰지 않는다 → 그 카테고리를 새로 비교해 설명 (fresh)
+        self.assertEqual(self.say("교통비는 왜 늘었어?").explain["items"], [{"type": 7, "category": "TRANSPORT_CAR", "fresh": True}])
         decision = self.say("왜 늘었어?")  # 성공한 결과가 하나뿐 → 그것
         self.assertEqual([i["category"] for i in decision.explain["items"]], ["FOOD"])
 
@@ -455,7 +458,7 @@ class SpendingDialogTest(SimpleTestCase):
         self.assertEqual(self.say("이번 달 지난달보다 더 썼어?", llm=llm).items, (item(6),))
         decision = self.say("지난달 2개월 교통비", llm=llm)
         self.assertEqual([o["label"] for o in decision.options], ["지난달", "최근 2개월"])
-        self.assertEqual(self.say("지난달").reason, "last_month_only")  # 고른 뒤에는 원래 규칙 (지난달 단독 미지원)
+        self.assertEqual(self.say("지난달").items[0]["query"]["period"], "last_month")  # 고른 뒤에는 원래 규칙 (지난달 단독 = 10번)
 
 
     def test_earlier_analysis_is_not_linked_to_previous(self):
@@ -636,7 +639,7 @@ class UserTestScenarioTest(SimpleTestCase):
         self.say("이번 달 3개월 식비 궁금해")
         self.assertEqual(self.say("아니다 이번 달만").items, (item(2, "FOOD"),))
         self.say("이번 달 3개월 식비 궁금해")
-        self.assertEqual(self.say("아니 그냥 지난달").reason, "last_month_only")  # 고친 조건 그대로 규칙 적용 (임의 대체 없음)
+        self.assertEqual(self.say("아니 그냥 지난달").items[0]["query"]["period"], "last_month")  # 고친 조건 그대로 (지난달 전체)
 
     def test_2_compared_to_last_month_is_not_last_month_alone(self):
         self.assertEqual(self.say("지난달보다 병원비 얼마나 썼어?").items, (item(7, "MEDICAL_HEALTH"),))

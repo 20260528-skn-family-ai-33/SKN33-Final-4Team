@@ -132,6 +132,11 @@ def _spending_summary(store, cid):
     return store.get_shared(cid, "spending") or {}
 
 
+def current_agent(store, cid):
+    """지금 담당 에이전트 (진행 중 예산 · 정책 작업 또는 소비 담당, 없으면 None) — 화면의 담당 표시용"""
+    return _active(store, cid)
+
+
 def current_question(store, cid):
     """사용자가 지금 답할 질문: 라우터 질문, 없으면 담당이 소비일 때의 소비 되묻기 (진단 · 테스트용 — 소비 내부 칸을 읽는다)"""
     if store.get(cid):
@@ -387,7 +392,11 @@ def _task_answer(text, request, cid, store, server, asked, task):
 
 def _router_answer(text, cid, store, server, asked, task, complete):
     """라우터 질문이 있을 때: 질문의 답을 담당 에이전트보다 먼저 처리"""
-    request = _read(text, asked, store, cid, complete)
+    label = " ".join(text.split())
+    picked = next((o for o in asked["options"] if rules.OPTION_LABELS.get(o) == label), None) \
+        if asked["asking"] in TASK_QUESTIONS else None
+    # 선택지 이름 그대로면 정형 선택 — LLM 없이 답으로 본다 (그 밖의 말은 해석)
+    request = RouterReading((), followup="answer", choice=picked) if picked else _read(text, asked, store, cid, complete)
     if asked["asking"] in TASK_QUESTIONS and request.followup != "new":
         return replace(_task_answer(text, request, cid, store, server, asked, task), reading=request)
     if request.followup == "cancel":

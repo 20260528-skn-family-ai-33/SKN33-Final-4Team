@@ -179,7 +179,7 @@ class PersonaAnalysisTest(TestCase):
         self.assertTrue(sql and all(s.startswith("SELECT") and "FOR UPDATE" not in s for s in sql))
 
     def test_db_errors_are_not_zero(self):
-        with mock.patch("spending_analysis.analyze.listed_transactions", side_effect=OperationalError("down")):
+        with mock.patch("spending_analysis.tools.listed_transactions", side_effect=OperationalError("down")):
             self.assertEqual(run(user("A"), 1)["state"], "error")
         with mock.patch.object(BudgetCycle.objects, "filter", side_effect=OperationalError("down")):
             got = run(user("A"), 4)

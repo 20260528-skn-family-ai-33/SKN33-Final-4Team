@@ -10,6 +10,8 @@ INTENT_OF = {"spending": "spending", "budget": "budget_adjust", "policy": "polic
 AGENT_OF = {v: k for k, v in INTENT_OF.items()}
 # 라우터가 직접 묻는 질문 (답은 담당 에이전트보다 라우터가 먼저 처리)
 ROUTER_QUESTIONS = ("intent", "cancel_target", "budget_task_choice")
+# 작업 질문(cancel_target · budget_task_choice) 선택지의 화면 이름. 사용자가 이 이름을 그대로 보내면 LLM 없이 그 선택지로 본다
+OPTION_LABELS = {"question": "방금 질문", "budget_task": "예산 조정", "resume": "이어서 하기", "restart": "취소하고 새로 시작"}
 
 
 @dataclass(frozen=True)

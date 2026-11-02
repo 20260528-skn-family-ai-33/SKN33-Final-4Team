@@ -73,10 +73,10 @@ def role_schema(role):
         {"type": "string", "enum": list(run.CATEGORY_NAMES)},
         {"type": "object", "properties": {"unknown": {"type": "string"}}, "required": ["unknown"],
          "additionalProperties": False}]}}
-    # 소비 해석만: 세부 지출 {detail, category | null} (서버가 붙이는 accepted 는 넣지 않는다)
+    # 소비 해석만: 세부 지출 {detail, category | null, names: 가게 이름의 다른 표기} (서버가 붙이는 accepted 는 넣지 않는다)
     spending_categories = {"type": "array", "items": {"anyOf": [*categories["items"]["anyOf"], {
-        "type": "object", "properties": {"detail": {"type": "string"}, "category": enum(run.CATEGORY_NAMES)},
-        "required": ["detail", "category"], "additionalProperties": False}]}}
+        "type": "object", "properties": {"detail": {"type": "string"}, "category": enum(run.CATEGORY_NAMES), "names": strings},
+        "required": ["detail", "category", "names"], "additionalProperties": False}]}}
     alias = {"anyOf": [{"type": "object", "properties": {"word": {"type": "string"},
                                                           "category": {"type": "string", "enum": list(run.CATEGORY_NAMES)}},
                         "required": ["word", "category"], "additionalProperties": False}, {"type": "null"}]}
@@ -93,7 +93,14 @@ def role_schema(role):
                  "followup": enum(r.FOLLOWUPS), "confirm": nullable("boolean"), "unclear": strings,
                  "refers_to": enum(r.REFERS), "explain": nullable("boolean"),
                  "after_budget_change": nullable("boolean"), "all_categories": nullable("boolean"),
-                 "include_current": nullable("boolean"), "alias": alias}
+                 "include_current": nullable("boolean"), "alias": alias, "payment": enum(r.PAYMENTS),
+                 "explain_kind": enum(r.EXPLAIN_KINDS),
+                 "weekday": {"type": "array", "items": {"type": "string", "enum": list(r.WEEKDAYS)}},
+                 "time_slot": {"type": "array", "items": {"type": "string", "enum": list(r.TIME_SLOTS)}},
+                 "amount_min": nullable("integer"), "amount_max": nullable("integer"), "measure": enum(r.MEASURES),
+                 "group_by": enum(r.GROUPS), "top_n": nullable("integer"), "month": nullable("integer"),
+                 "date_from": nullable("string"), "date_to": nullable("string"), "period_said": nullable("string"),
+                 "include_fixed": nullable("boolean"), "other_person": nullable("boolean")}
     assert set(props) == set(ROLES[role][1].__dataclass_fields__), f"{role} 스키마와 해석 칸이 다름"
     return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
 
@@ -141,8 +148,8 @@ def score_role(raw, expect, role):
     must, allow, observe = expect.get("must", {}), expect.get("allow", {}), set(expect.get("observe", []))
     fields = {}
     for field in reading_type.__dataclass_fields__:
-        if field == "unclear" or field in observe:
-            continue  # 자유 설명 · 관찰만 하는 예산 보조값은 채점하지 않는다
+        if field in ("unclear", "period_said") or field in observe:
+            continue  # 자유 설명 · 기간 원문 복사 · 관찰만 하는 예산 보조값은 채점하지 않는다
         got = data.get(field)
         if field in must:
             ok, want = run.same(field, got, must[field]), must[field]

@@ -1253,3 +1253,681 @@ LLM 입력
 - 그래프는 전반 분석(카테고리 없음)에만 있어 세부 지출 대체 범위와 겹치지 않는다.
 - 실제 LLM 확인 전: 원칙 6 · 7, include_current · alias 추출, 기간 질문 중 고쳐 말하기를 followup=answer 로 내는지.
 - 테스트: 전체(fixture 설정) 904개 통과(기대 실패 1 · skip 1), router_eval 35개 통과.
+
+## 22. 서비스 연결 설계안 (36차, 2026-10-29 — 설계만. 코드 · 설정 · 모델 · DB 변경 없음, 실제 LLM · 외부 API 호출 없음)
+
+목표: 새 라우터(run_turn) + 소비 에이전트를 서비스 채팅 API(`POST /api/chat/messages/`) · 화면(AssistantPage)에 붙인다.
+1차는 더미 DB(money_cushion_router_fixture)에서만 — 같은 코드를 fixture 설정 + 별도 포트로 실행. 팀원 기본 설정 · DB · 실행은 그대로.
+
+확인한 현재 상태 (근거)
+- chat/api.py: choice 는 router.CHOICE_LABELS 2종(spending · budget)만, text 는 route_text 가 항상 RouterUnavailable → unknown + fallback.
+  응답 {conversationId, route{intent, slots, fallback}, messages[user, bot], task}. 봇 content(text) = {text, choices[{value,label}]}.
+  라우팅은 select_for_update 밖에서 하지만 @idempotent 가 뷰 전체를 transaction.atomic 으로 감싼다 → LLM 호출이 트랜잭션 안(행 잠금은 없음).
+- Conversation.active_agent(문자) · slots(JSON, null) 이미 있음, 쓰는 코드 없음. ChatMessage.content_type 은 text · card 만(체크 제약).
+- fixture 회원(윤서 A · 민재 B · 지우 C)은 비밀번호 "!fixture-unusable"(로그인 불가), 이메일 fixture-a/b/c@example.test, ID 는 seed.user_ids 가 만든 값.
+- vite 프록시는 /api → 127.0.0.1:8000 고정. 쿠키는 포트를 가리지 않는다(localhost 의 sessionid · csrftoken 을 두 백엔드가 같이 씀).
+- CODEF 를 부르는 API: finance/connect · connections · sync · cards · loans … , cron 명령 finance_auto_sync(외부 cron 이 부름).
+
+### 22-1. 실행 방식 [제안]
+- 새 설정 `spending_fixture/service_settings.py`(spending_fixture.settings 확장 — DB 이름 고정 · 로컬 호스트 검사 그대로) +
+  새 주소 `spending_fixture/service_urls.py`(ROOT_URLCONF). 공통 config 는 import 만 하고 고치지 않는다.
+  `cd backend && python manage.py runserver 127.0.0.1:8001 --settings=spending_fixture.service_settings`
+- 프론트: 팀 vite.config.js 를 바꾸지 않고 새 파일 `frontend/vite.fixture.config.js`(프록시 → 8001, 포트 5174, define VITE_FIXTURE=1)
+  `cd frontend && npx vite --config vite.fixture.config.js`. 팀원은 기존 `npm run dev`(5173 → 8000) 그대로.
+- 쿠키 분리: service_settings 에서 SESSION_COOKIE_NAME="mc_fixture_session" 만 바꾼다 → 서비스 로그인과 더미 로그인이 서로 덮지 않음.
+  csrftoken 은 이름을 그대로 둔다(프론트가 이름을 하드코딩, 값을 공유해도 쿠키 = 헤더 비교라 안전). CSRF_TRUSTED_ORIGINS 에 5174 추가.
+- "테스트 환경" 표시: 화면 상단 고정 띠 "테스트 환경 · 가상 회원 데이터 · 기준일 2026-10-29"(VITE_FIXTURE 일 때만) +
+  백엔드 응답 헤더 `X-Money-Cushion-Env: fixture`. 챗봇 첫 말풍선 아래에도 한 줄.
+- 외부 호출 차단 (세 겹):
+  ① service_urls 가 CODEF 를 부르는 주소(finance/connect* · connections · sync · cards 연결 · loans 연결)를 먼저 가로채 503
+     {"error": {"code": "unavailable", "message": "테스트 환경에서는 금융 연결 · 다시 불러오기를 쓸 수 없어요."}} — 목록은 api_urls 에서 뽑아 테스트로 고정.
+  ② service_settings 가 CODEF 키를 빈 값 · ENV="disabled" 로 덮는다(실수로 불려도 인증 실패).
+  ③ 시작 때 소켓 허용 목록 설치(로컬 DB · 127.0.0.1, 실제 LLM 모드일 때만 api.openai.com) — 그 밖 접속은 예외. 테스트로 확인.
+  예약 작업: cron(finance_auto_sync)은 서비스 설정으로만 등록돼 있고 fixture 설정으로는 돌리지 않는다. 혹시 돌려도 fixture 회원은 connected_id 가 없어 대상 0.
+- 기준 날짜: 더미 데이터는 2026-10-29 기준. 채팅 쪽 today · as_of 는 seed.AS_OF 로 고정(local_chat 과 같음). [확인 필요] 홈 · 예산 화면은 실제 날짜를 쓰므로
+  날짜가 지나면 다른 화면과 어긋난다 — 1차는 채팅 화면만 테스트 대상으로 한정.
+
+### 22-2. 로그인 [제안]
+- 기존 세션 로그인(/api/auth/login/ · LoginPage) 그대로. fixture DB 의 세 회원에만 비밀번호를 넣는 명령
+  `python -m spending_fixture.set_login --settings=spending_fixture.service_settings` — 비밀번호는 환경변수 FIXTURE_LOGIN_PASSWORD 에서 읽고 출력하지 않는다.
+  seed.guard 로 fixture DB 인지 먼저 검사. seed --apply 를 다시 하면 비밀번호가 지워지므로 그 뒤 다시 실행.
+- 회원은 이메일로 찾는다(fixture-a/b/c@example.test). 서비스 DB 의 사용자 ID · 세션과 연결하지 않는다(쿠키 이름도 분리).
+- 화면에서 페르소나 전환 = 로그아웃 → 다른 이메일로 로그인. [확인 필요] 테스트 편의용 '빠른 로그인' 버튼(5174 에서만)을 둘지.
+
+### 22-3. API 계약 [제안 — chat.md 담당(김혜리) 협의 필요]
+- 요청: 기존 그대로 + 선택지 모양만 넓힌다.
+  `{conversationId, text}` 또는 `{conversationId, choice: {value, turn}}` — 하위 호환으로 choice 가 문자열이면 기능 선택지(spending · budget · policy)로 본다.
+  서버는 choice.turn 이 그 대화의 마지막 봇 메시지 turn 과 같은지, value 가 그 메시지의 choices 에 있는지 확인 → 아니면 409 `stale_choice`
+  "이전 질문의 선택지예요. 가장 최근 질문에서 골라 주세요."(메시지 · 상태 저장 없음). 선택지 value 는 모두 문자열(참 · 거짓도 "true" · "false").
+  선택지 처리 = local_chat 과 같게: 기능 선택지는 버튼(run_turn button), 나머지는 그 선택지 이름을 문장으로 run_turn(text) — 소비 에이전트가 이름을 LLM 없이 알아본다.
+- 응답 봉투 {conversationId, route, messages, task} 유지. 봇 메시지 contentType 은 text 그대로(제약 변경 없음), content 를 넓힌다:
+  `{text, turn, lead[], lines[], sections[{title, lines[]}], notices[], choices[{value, label}], chart?, examples?, agent}`
+  — text = lead + lines 를 줄바꿈으로 이은 값(옛 화면 · 옛 메시지 호환). 개발용 dev 표시 · review 코드 · 해석 원문은 넣지 않는다.
+- route 칸: intent 는 새 결정에서 계산(spending · budget · policy · out · unknown — policy 는 새 값), slots 는 소비 조회 조건 요약 또는 {},
+  fallback = 라우터 해석 실패(run_turn decision.status=failed 이고 handoff 없음). [확인 필요] route 를 유지할지 · 2차에 뺄지.
+- 소비 분석 카드(kind: spending, chat.md 10/22 확정 칸)와의 관계: 새 에이전트는 문장 + 묶음 + 그래프로 답한다. 1차 연결은 text content 로 보내고,
+  카드 칸(total · categories[] · comparison …)은 [확인 필요] 세진과 — analyze 결과에서 대부분 만들 수 있다(chart rows = categories[], comparison 그대로).
+- chat.md 변경안: ① 보내는 값 choice 객체 · turn ② 409 stale_choice · 409 conversation_busy(22-4) ③ content(text) 확장 칸 표
+  ④ intent 에 policy 추가 ⑤ '구현 순서' 3 · 4 를 새 구조로 교체 ⑥ 테스트 환경(포트 · 헤더) 메모.
+- 기존 테스트 · 팀원 코드 영향: 1차는 service_urls 에서만 새 뷰로 가로채므로 chat/api.py · router.py · replies.py · chat/tests.py 는 그대로 통과.
+  팀 합류(22-8 6단계) 때 api.py 에 엔진 전환을 넣으면 chat/tests.py 의 fallback 기대(문장 = 항상 unknown)가 바뀐다 → 같이 고친다.
+
+### 22-4. 상태 저장 [제안]
+- `ConversationStateStore`(MemoryStateStore 와 같은 메서드): 요청 시작 때 Conversation.slots 를 읽어 메모리 dict 로 만들고, run_turn 은 그 위에서 돈다.
+  끝나면 한 번에 slots 로 쓴다. slots = {"schema": "router_core/1", "rev": n, "turn": t, "state": {(종류, 에이전트) 키 → 값}} ·
+  active_agent = store.get_active 값(관리자 화면 · 조회용 사본). 키는 문자열로 바꾼다("agent:spending" 등). 결과 기록(분석 요약 · facts)도 같이 들어간다.
+- 마이그레이션: 필요 없음(기존 JSON 칸). fixture DB 는 이미 모든 마이그레이션 적용 — 새 마이그레이션 · makemigrations 없음.
+  [확인 필요] slots 칸의 원래 뜻("모은 재료")과 달라지므로 DB_MODELS.md 설명 수정 · slots 크기 상한(분석 기록 facts 가 커질 수 있음 → 기록 항목 수 · 크기 제한).
+- 순서 (DB 잠금은 저장 순간만):
+  1) 대화 확인(잠금 없음), rev 읽기 → 2) run_turn(LLM 호출 · 분석 조회, 잠금 없음) → 3) atomic + select_for_update 로 대화 행 잠금,
+  rev 가 그대로면 사용자 · 봇 메시지 + 새 상태(rev+1, turn+1) 저장, 바뀌었으면 저장하지 않고 409 `conversation_busy`
+  "앞 메시지를 처리하는 중이에요. 잠시 후 다시 보내 주세요."(낙관적 잠금). 쓴 LLM 호출은 장부에 남는다.
+- 중복 입력: 기존 @idempotent 재사용(같은 Idempotency-Key = 처음 응답 그대로, 다시 처리 안 함). 화면은 [보내기] · 선택지마다 새 번호.
+  주의: @idempotent 가 뷰 전체를 트랜잭션으로 감싸 LLM 호출 시간 동안 DB 연결 · 트랜잭션이 열려 있다(행 잠금은 3단계에만).
+  [확인 필요] 1차는 그대로 두고, 길어지면 '번호 확인 → 처리 → 기록'을 나누는 idempotency 옵션을 config 담당과 협의.
+- 에이전트 실패 · 해석 실패 때 run_turn 이 이미 상태를 되돌리므로 그 결과 그대로 저장(메시지는 남기고 상태는 이전 값).
+
+### 22-5. LLM 모드 [제안]
+- 기본 = 가짜 해석(local_chat.FakeReading 과 같은 정해 둔 문장 + 선택지 이름). 서비스 화면에서 자유 문장은 대부분 "지금은 이해하지 못했어요"가 되므로
+  가짜 모드에서는 첫 화면 예시 질문을 보여 준다.
+- 실제 = 환경변수 CHAT_LLM_LIVE=1 + CHAT_LLM_MAX_CALLS + CHAT_LLM_LEDGER(저장소 밖) 셋 다 있을 때만(local_chat 과 같은 조건). 평가 도구 ResponsesClient ·
+  Ledger · 역할별 스키마(설명 포함) 재사용, 재시도 없음. 서버 프로세스 하나에 클라이언트 하나 + threading.Lock 으로 장부 갱신을 순서대로
+  (또는 1차는 runserver --nothreading). 상한 · 장부는 서버를 다시 켜도 이어진다.
+- 실패 때: 라우터 · 소비 해석 실패 · 상한 = 200 + "지금은 이해하지 못했어요, 아래에서 골라 주세요." + 기능 선택지(chat.md 라우터 실패와 같음, route.fallback=true),
+  상태 그대로. 설명 LLM 실패 = 템플릿 문장. 상한 도달은 서버 로그에 종류만(문장 원문 · 키 없음).
+- [확인 필요] 서비스 실행용 호출 상한 기본값과 하루 상한, 모델명(평가 때 gpt-6-luna).
+
+### 22-6. 프론트 [제안]
+- 바꾸는 범위: AssistantPage 의 send() 안 mockRoute · setTimeout · mockSpending 카드를 apiSend('/api/chat/messages/', 'POST', …, {requestKey}) 로.
+  conversationId 는 localStorage 에 두고(chat.md N⑤) 첫 화면에서 GET conversations/<id> 로 다시 그림 → 404 면 새 대화.
+  mockRouter.js · mockSpending.js 는 지우지 않고 import 만 뺀다. AdjustForm(예산 조정 고르기)은 1차 연결에서 숨김.
+- 새 컴포넌트 `ChatReply`(local_chat.html 의 bot() · chart() 를 React 로 옮김): lead(맨 위, 굵게 + "안내:" 글자, role=note) → lines → sections →
+  접이식 '카테고리별 소비 보기'(서버 rows 의 text + 막대, 막대 길이 = share, aria-label) → notices → choices.
+  choices 는 마지막 봇 메시지(turn 이 가장 큰 것)만 활성, 나머지 disabled · aria-disabled. 409 stale_choice 면 안내 말풍선만.
+- 추천 질문 3개: '소비를 분석해주세요' = choice "spending", '예산을 조정하고 싶어요' = choice "budget"(준비 중 답), 큰 지출 = 기존처럼 '준비 중' 비활성.
+- 상단 '테스트 환경' 띠(VITE_FIXTURE). 기존 CSS 클래스(mc-msg · mc-bubble · mc-asst-*) 재사용, 새 클래스는 lead · section · chart 만.
+
+### 22-7. 예산 · 정책 [제안]
+- 서비스 화면에서는 로컬 대역(BudgetDouble · PolicyDouble — 상태가 메모리에만 있고 개발 표시용)을 쓰지 않는다.
+  대신 '준비 중' 에이전트: 시작 · 이어서 모두 {"status": "ended", "reply": {lines: ["예산 조정 챗봇은 준비 중이에요. 지금은 예산 화면에서 바꿀 수 있어요."]}}
+  (작업 번호 없음 → record_budget_task 가 ended_without_task 로 정리, 보류 작업이 남지 않음). 정책도 같은 모양 "청년 정책 추천은 준비 중이에요."
+- 소비 답변의 [예산 조정하기] 제안 버튼: 1차는 숨긴다(누르면 '준비 중'만 나와 혼란). 예산 에이전트가 붙으면 다시 켠다. [확인 필요]
+
+### 22-8. 구현 단계 (작은 것부터, 각 단계 끝 = 완료 기준 통과 · 팀 기본 실행 무영향)
+1. 실행 골격: service_settings · service_urls(가로채기 없이 config 그대로) · 세션 쿠키 이름 · 외부 호출 차단 ①~③ · set_login · vite.fixture.config.js.
+   완료: 5174 에서 윤서로 로그인 → /api/auth/me 가 fixture 회원, CODEF 주소 503, 허용 밖 소켓 예외 테스트, 5173 · 8000 동작 그대로.
+2. 텍스트 → 소비 답변: service_urls 가 chat/messages · chat/conversations 를 새 뷰로 가로챔(ConversationStateStore + run_turn + messages.render),
+   가짜 해석, content 확장 칸, 프론트는 text 만 그려도 됨. 완료: "이번 달 얼마 썼어?" → 1,510,000원 말풍선, 새로고침 뒤 같은 대화 다시 그림,
+   후속 "그럼 교통비는?" 이어받기(상태가 DB 에 남음), 다른 회원 대화 400.
+3. 선택지 + turn: choice 객체 · stale_choice · 기능 선택지 문자열 호환. 완료: 커피 대체 조회 · 기간 충돌 갱신 · 지난 버튼 409 를 API 테스트로.
+4. 화면 표시: ChatReply(lead · sections · 그래프 · 지난 버튼 비활성) · 테스트 환경 띠. 완료: 로컬 확인 질문 목록(21절)을 5174 에서 그대로 재현.
+5. 동시성 · 중복: rev 낙관적 잠금 · conversation_busy · Idempotency-Key 재전송 테스트(스레드 두 개, budgets 동시성 테스트 방식).
+6. 실제 LLM 모드(상한 · 장부 · 실패 문구). 완료: 가짜 응답 API 로 호출 수 · 장부 테스트, 실제 호출은 사용자가 따로 켜서 확인.
+7. 예산 · 정책 '준비 중' 에이전트.
+8. 팀 합류(협의 후): chat.md 갱신 → chat/api.py 에 엔진 전환(설정값, 기본은 기존) → 실제 DB 이전은 그다음.
+
+### 22-9. 협의 필요 · 위험
+- [확인 필요 · 김혜리] chat.md: choice 객체 · turn, 409 두 종, content 확장, intent policy, route 유지 여부, 소비 카드(kind spending)를 계속 쓸지.
+- [확인 필요 · 권세진] 소비 분석 카드 칸과 새 답변(lines · sections · chart) 관계, spending-analysis.md.
+- [확인 필요 · DB(나은)] Conversation.slots 를 라우터 상태 저장소로 쓰는 것(뜻 · 크기 · DB_MODELS.md), ChatMessage.content_type 은 그대로.
+- [확인 필요 · config 담당] @idempotent 트랜잭션 안 LLM 호출 시간, 나중에 api.py 엔진 전환 설정값 이름.
+- [확인 필요 · 예산 담당] 예산 · 정책 '준비 중' 문구와 [예산 조정하기] 버튼 노출 시점.
+- [확인 필요 · 예산 · 홈 담당, 11/2 추가] 예산 범위 변경(팀 결정): 주거·통신 · 여행·숙박을 예산을 짜는 범위 · 생활비 사용액 · 잔액 · 막대에서 뺀다.
+  팀 예산 코드(budgets.recommend 의 HOUSING_TELECOM 110,000 · TRAVEL_LODGING 60,000 기본 배분, overview 의 HOUSING_TELECOM 제외 조건)와
+  홈 · 예산 화면의 생활비 계산이 같은 제외 목록을 써야 한다 — 소비 분석 쪽 정의를 팀 코드 한 곳으로 옮길지 결정 (23-16).
+  [11/2 임시 (나) 구현 — 23-17] 소비 분석은 spending_analysis.budget.OUT_OF_BUDGET 한 곳에서 제외. 팀 예산 추천 코드(budgets.recommend)에는
+  주거·통신 110,000 · 여행·숙박 60,000 기본 배분이 그대로 남아 있다 → 추천 · 승인 예산에 두 카테고리 배정이 생기면 소비 분석은 생활비 예산에서
+  빼고(그 금액은 여윳돈으로도 안 옮김), 홈 · 예산 화면은 포함하는 불일치가 생긴다. 예산 담당 확인 필요.
+- 위험: ① 쿠키 — 이름을 분리하지 않으면 5173 · 5174 로그인이 서로 덮음. ② 날짜 고정 — 채팅만 2026-10-29 기준이라 다른 화면과 숫자가 다를 수 있음.
+  ③ 가짜 해석은 정해 둔 문장만 이해 → 사용자 테스트는 실제 LLM 모드가 필요하고 호출 비용이 든다. ④ slots 에 분석 기록 facts 가 쌓이면 행이 커짐.
+  ⑤ 새 뷰를 service_urls 로만 붙이는 동안 두 구현(기존 api.py · 새 뷰)이 갈라짐 — 6단계 전에 합칠 시점을 정한다.
+  ⑥ 실제 LLM 장부를 멀티스레드 서버에서 쓰면 수가 틀릴 수 있음 → 잠금 또는 --nothreading.
+
+### 22-10. 결정 (37차) · 1단계 구현 결과 (2026-10-29 — 새 파일만, 팀 파일 · 설정 · 모델 변경 없음)
+결정:
+- chat.md 확장 · 카드 형식 · slots 사용 · 트랜잭션 처리는 1차에 fixture 실행에서만 적용하고, 팀 코드 합류 때 담당자와 확정한다.
+- 1차 테스트 대상은 채팅 화면만. 홈 · 예산 화면 숫자 불일치는 허용하고 띠에 기준일을 표시한다.
+- 실제 LLM 서비스 실행 상한 기본값 50(장부당). (5단계 · LLM 모드 구현 때 적용)
+- 22-1 에서 제안한 소켓 수준 차단은 하지 않는다(요청에 따라). 웹 API 중 CODEF 를 부르는 곳은 finance/sync/ 하나라 주소 차단 + 빈 키로 충분하다고 봄.
+  남는 경로: CLI 명령(codef_* · finance_auto_sync)은 서비스 설정으로 돌릴 때만 실제 키를 쓴다 — fixture 설정으로 돌리면 키가 비어 인증에서 실패.
+
+1단계 구현:
+- `spending_fixture/service_settings.py`: spending_fixture.settings 확장 · ROOT_URLCONF=service_urls · SESSION_COOKIE_NAME=mc_fixture_sessionid ·
+  CSRF_COOKIE_NAME=mc_fixture_csrftoken · 쿠키 secure 끔(로컬 http 전용) · CSRF 허용 출처 5174 · CODEF 키 4개 빈 값.
+- `spending_fixture/service_urls.py`: config.urls 그대로 + 앞에 503 주소. 막는 것 = finance/sync(유일하게 CODEF 호출) · consents · connect/accounts ·
+  connect/cards · connections POST · connections/<id>. 연결 목록 GET · 거래 · 대출 조회는 그대로. 주소 문자열은 api_urls 의 이름으로 찾아 쓰고, 이름이 사라지면 시작 때 멈춤.
+  503 본문 {"error": {"code": "unavailable", "message": "테스트 환경에서는 금융 연결 · 다시 불러오기를 쓸 수 없어요."}} — code 'unavailable' 은 fixture 전용 [임시].
+- `spending_fixture/set_login.py`: FIXTURE_LOGIN_PASSWORD(8자 이상)를 fixture 회원 3명(이메일로 찾음)에게만 set_password. seed.guard 먼저, 셋이 다 없으면 아무것도 안 바꿈.
+  비밀번호는 출력하지 않는다(별칭 · 이메일만). seed --apply 뒤에는 다시 실행.
+- `frontend/vite.fixture.config.js`: 5174(strictPort) → /api 프록시 8001. utils/api.js 는 고치지 않고 이 실행에서만 빌드 변환으로
+  readCookie('csrftoken') → readCookie('mc_fixture_csrftoken') (못 찾으면 멈춤). index.html 에 고정 띠 "테스트 환경 · 기준일 2026-10-29"
+  (design.json as_of 에서 읽음, role=note, 클릭 통과). [확인 필요] 띠가 화면 맨 위 고정이라 앱 상단 헤더 일부를 가릴 수 있다 — 실제 화면에서 확인.
+- 테스트 `spending_fixture/test_service.py`(7개): 윤서 로그인 → /api/auth/me 가 fixture 회원(ID = seed.user_ids), 쿠키는 mc_fixture_* 만 생기고
+  서비스 sessionid · csrftoken 값은 그대로, 더미 로그인 쿠키로 서비스 쿠키 이름 설정에서는 403, 막은 주소 8가지 503(로그인 전에도), 읽기 주소 200,
+  다른 회원 비밀번호 불변 · 짧은 값 거절, 프론트 설정의 쿠키 이름 · 프록시가 백엔드 설정과 같음.
+- 확인: manage.py check(service_settings) 이상 없음, 프론트 fixture 빌드(스크래치 폴더) 결과에 'csrftoken' 문자열 없음 · 띠 포함, oxlint 통과,
+  전체 테스트 911개 통과(기대 실패 1 · skip 1), router_eval 35개 통과.
+- 남은 것: 실제 브라우저 확인(사용자), 2단계(텍스트 → 소비 답변) 시작 전 chat 주소 가로채기는 아직 없음 — 지금 5174 챗봇은 기존 chat API(문장 = 라우터 실패 안내)를 쓴다.
+
+### 22-11. 2단계 구현: 텍스트 질문 → 소비 답변 (38차, 2026-10-29 — 가짜 해석, 팀 파일 변경 없음)
+- `spending_fixture/service_chat.py`: POST /api/chat/messages/ 새 뷰. 기존 chat/api.py 의 _check_message_body · _active_conversations ·
+  message_item · CONVERSATION_ERROR · router.CHOICE_LABELS 와 config.idempotency.idempotent 를 그대로 가져다 쓴다(복사 없음).
+  대화 조회(GET conversations/<id>)는 가로채지 않는다 — 기존 뷰가 소유자 확인 · 확장 content 를 그대로 돌려줘서 바꿀 것이 없음.
+- 상태: `ConversationStore`(MemoryStateStore 상속) — 요청마다 Conversation.slots {"schema": "router_core/1", "rev", "state"} 에서 만들고
+  저장할 때 rev+1. 칸 키 (종류, 대화[, 에이전트]) → "종류" · "종류:에이전트". 대화 번호 자리는 고정값("conversation") — 저장소 하나 = 대화 하나.
+  메모리에 남는 것이 없어 서버를 다시 켜도 이어진다. active_agent 칸에 담당 사본. 마이그레이션 없음.
+- 순서: 대화 확인(잠금 없음) → run_turn(가짜 해석 · 분석, 잠금 없음) → atomic + select_for_update → rev 가 다르면 409 conversation_busy(저장 없음)
+  → 사용자 · 봇 메시지 + slots 저장. @idempotent 는 기존대로 뷰 전체를 감싼다(22-4 확인 필요 그대로).
+- 봇 content(text): {text = lead+lines 줄바꿈, choices, lead, lines, sections, notices, chart?, examples?}. 선택지는 보여 주기만(다음 단계: 누르기 · turn · 409 stale).
+  기능 선택지 문자열(spending · budget)은 기존 검사 그대로 받아 run_turn 버튼으로.
+- 예산 · 정책: '준비 중' 에이전트 — {"status": "ended", "work_ref": None, reply} → 라우터가 작업을 남기지 않음(보류 안내 없음).
+  소비 답변의 suggest(예산 조정하기)는 1차에서 뺀다. route = 실제로 답한 에이전트 · out · unknown(fallback = 해석 실패).
+- 가짜 해석기를 `spending_fixture/fake_reading.py` 로 옮김(local_chat 은 import 해서 그대로 씀 — local_chat 을 import 하면 설정 모듈이 바뀌어서).
+- 프론트(새 파일만): `src/fixture/FixtureAssistantPage.jsx` · `ChatReply.jsx`(local_chat.html bot() · chart() 이식) · `fixture.css`.
+  vite.fixture.config.js 의 resolveId 플러그인이 App.jsx 의 pages/AssistantPage.jsx 가져오기를 이 화면으로 바꿔 끼운다(5174 에서만).
+  대화 번호는 localStorage 'mc_fixture_conversation'(서비스 화면과 따로), 새로고침 = 기존 조회 API. 예시 문장 버튼 · [새 대화].
+  확인: fixture 빌드엔 새 화면만 · 팀 설정 빌드엔 팀 화면만(문자열 검사), npm run lint 통과(기존 MoneyInput 경고 1개만).
+- 테스트 `spending_fixture/test_service_chat.py`(7개): 윤서 "이번 달 얼마 썼어?" = 05 기대값 1,510,000원 · text 칸 채움 · route,
+  "그럼 교통비는?" 이어받기 · 조회 API 로 4개 다시 그림 · slots(schema · rev 2 · active_agent), slots JSON 왕복 · 해석기 요청마다 새로(재시작과 같은 조건),
+  민재가 윤서 대화에 보내면 400 · 조회 404 · 메시지 안 남음, 예산 · 정책 준비 중 후 작업 없음, 확장 content(그래프 · lead · 예산 제안 숨김 · 해석 실패 fallback),
+  같은 Idempotency-Key 한 번만 처리, 처리 중 rev 가 바뀌면 409 · 저장 없음.
+- 전체 테스트 918개 통과(기대 실패 1 · skip 1), router_eval 통과.
+- 남은 것(3단계~): 답변 선택지 누르기 · turn · 409 stale_choice, 실제 LLM 모드(상한 50 · 장부), 브라우저 확인(사용자).
+
+### 22-12. 3단계: 선택 버튼 처리 + 에이전트에 맞춘 채팅 화면 (39차, 2026-10-29 — 가짜 해석, 팀 파일 변경 없음)
+결정 (팀): 큰 지출 상담 → 청년 정책으로 대체. 소비 결과는 SpendingCard 대신 에이전트 답변(ChatReply) — chat.md 카드 형식 변경은 팀 합류 때
+권세진에게 알린다. 예산 고르기 폼(AdjustForm)은 계속 쓴다.
+
+요청 · 응답 (fixture 실행에서만, 22-3 제안 적용):
+- 기능 버튼: choice "spending" · "budget" · "policy" → run_turn(button) — 라우터 해석 없이 담당 에이전트로. spending · budget 은 기존 검사, policy 는 새로 받음.
+- 답변 선택지: choice {value, turn}. 마지막 봇 메시지의 turn 과 같고 그 선택지에 value 가 있어야 한다 → 아니면 409 stale_choice(메시지 · 상태 저장 없음).
+  답변 선택지는 이어서 말하는 대화에서만(새 대화면 400). 값은 모두 문자열(참 · 거짓 → "true" · "false"). 사용자 말풍선 = 선택지 이름.
+  처리: 기능 선택지 값이면 버튼, 아니면 그 이름을 문장으로 run_turn — 이름이 정해진 선택지는 LLM 없이:
+  소비 쪽(카테고리 · 기간 · 범위 · 포함 여부 · 대체 범위 · 다시 고르기 · 예/아니요 YES_NO) / 라우터 작업 질문(rules.OPTION_LABELS: 방금 질문 · 예산 조정 · 이어서 하기 · 취소하고 새로 시작).
+  messages.OPTION 은 이 두 이름표를 그대로 쓴다(이름 한 곳).
+- 봇 content 추가: turn(= 저장 뒤 slots.rev), agent(지금 담당 = router_core.current_agent, 없으면 이번에 답한 에이전트 — 문장으로 추측 안 함),
+  inputs(["budget_form"] = 예산이 담당이고 폼을 기다릴 때), result(소비 분석 결과 답변). 응답 최상위에도 agent.
+- 예산 '준비 중' 에이전트: 문장 없이 시작(기능 버튼 · 재개) = awaiting_input + "어느 카테고리를 얼마나 조정할까요? 아래에서 골라 보내 주세요."(담당 유지 → 폼),
+  문장이 오면(폼 문장 · 직접 입력) 금액 해석 없이 "준비 중"으로 ended, 취소 = "예산 조정을 그만뒀어요." 정책 = 바로 "준비 중" ended.
+  [임시 · 제한] 예산 폼을 기다리는 중 직접 입력한 다른 질문도 예산 에이전트가 먼저 받아 '준비 중'으로 끝낸다(담당 우선 흐름). 다시 물으면 정상 처리.
+  예산 폼 대기 중 다른 기능으로 가면 기존 규칙대로 "진행 중이던 예산 조정은 잠시 멈춰 뒀어요" → 다시 [예산 조정]이면 [이어서 하기] [취소하고 새로 시작].
+
+화면 (새 파일만: src/fixture/FixtureAssistantPage.jsx · ChatReply.jsx · fixture.css):
+- 팀 AssistantPage 와 같은 틀 · 클래스: 라우터 카드(mc-bc-ctx · mc-asst-ctx, 담당 이름 = content.agent), 인사 말풍선, 기능 버튼 3개(mc-asst-opt),
+  연결 안내 pill(mc-asst-route — 담당이 바뀐 답변 앞에만), 말풍선(mc-msg · mc-bubble), 분석 결과는 소비 카드 틀(mc-spend · mc-spend-head · lines ·
+  cats · cat · cbar · camt), 핵심 안내 = mc-spend-unc + '안내:' 글자, 선택지 = mc-chipbar(마지막 답변만 활성), 예산 폼 = AdjustForm 그대로(adjustSentence 문장 전송),
+  입력창 · '요청을 이해하는 중…'. 개발용 예시 문장 · 새 대화는 접힌 details 로 분리.
+- fixture.css 는 기존에 없는 것만: lead 커서, 그래프 summary, 선택지 위아래 여백, 개발용 접힘. 새 색 · 글꼴 없음(기존 변수만).
+- 비교: 헤드리스 Chrome 430×940 으로 팀 설정(5175 임시) /chat 과 fixture(5174) /chat 첫 화면을 찍어 비교 — 틀 · 버튼 · 입력 · 탭 같음.
+  다른 점: 세 번째 버튼(청년 정책, 결정대로), 개발용 접힘 줄, 테스트 띠(헤더 위 여백을 일부 덮음, 제목은 보임).
+  맞추지 못한 · 확인 못 한 것: ① 대화 중 화면(결과 카드 · 칩 · 폼)은 로그인이 필요해 찍지 않음(비밀번호는 사용자가 정함) — 사용자 확인 필요
+  ② 결과 카드 머리줄에 기간 · 기준 시각이 없음(SpendingCard 는 '10월 1일 ~ 29일 · 기준 시각') — 서버 답변에 기간 칸이 따로 없어서. 문장에 기간이 들어 있음
+  ③ 큰 금액 강조(mc-spend-total 26px) · 고정/생활비 막대 · 증감 배지(is-up/is-down)는 쓰지 않음 — 답변이 문장 · 묶음 형식이라 대응 칸이 없음(카드 형식 합의 때)
+  ④ 그래프는 접이식 details(기존 화면에 없는 요소) ⑤ 테스트 띠 위치.
+- 테스트 `test_service_chat.py` ServiceChoiceTest 6개: 기간 버튼 선택(LLM 0회) → 다른 질문 뒤 지난 버튼 409 · 저장 없음 · 없는 값 409,
+  커피 [식비 전체 보기] → lead · "식비 전체" · result / [취소] → 질문 취소, 버튼 3개 담당 전환 · 예산 폼 차례 → 폼 문장 → 준비 중(LLM 0회),
+  예산 보류 → [이어서 하기](LLM 0회), 예/아니요(LLM 0회), 잘못된 선택지 본문 400.
+- 전체 테스트 924개 통과(기대 실패 1 · skip 1), router_eval 통과, npm run lint 경고는 기존 MoneyInput 1개뿐.
+
+### 22-13. 답변 가독성: 카드 보기(view) (40차, 2026-10-29 — 팀 파일 · 팀 CSS 변경 없음)
+- 문제: 결과가 문장 목록뿐이라 핵심 숫자가 문장 속에 묻히고 기간 · 비교 · 월별 값이 같은 무게로 보임. 화면이 문장을 쪼개 숫자를 뽑는 방식은 쓰지 않는다.
+- `answer.view(results)` → reply.view = 블록 목록 (숫자는 같은 서버 결과 그대로, 막대 길이만 percent 로 가장 큰 달 대비):
+  head(기간 · 범위 머리줄 — 문장에서는 기간을 뺌) · total(큰 금액 + caption · note) · rows(이름 · 막대 또는 증감 배지 · 금액 · 메모) · text(짧은 문장).
+  1 · 2 · 5 = 큰 금액(+비중 메모), 5 는 고정지출 · 1위 문장을 둘로 나눔 / 여러 카테고리 = 줄 목록(일부 실패해도) / 6 · 7 = 줄마다 배지
+  "42,000원 증가 (12.07%)" · "변화 없음"(글자 + 색), 비교 불가면 머리줄 '이번 달 금액' + 일부 내역 메모(핵심 안내는 lead) / 8 · 9 = 달별 줄 + 막대,
+  내역 없는 달 · 평균 · 증감 문장 / 3 · 4 = 남은 · 초과 금액 크게 + "예산 … 중 … 사용 · 10월 29일까지", 확정 아님 · 예산 없음은 기존 문장.
+  실패 항목은 text 로 덧붙임. lines(문장)는 그대로 → text 칸 · 로컬 채팅 · 기존 테스트 영향 없음.
+- 화면: ChatReply 결과 카드가 view 를 SpendingCard 클래스로 그림(mc-spend-head · mc-spend-total · mc-spend-cats/cat/cname/cbar/camt · mc-spend-diff is-up/down ·
+  mc-spend-lines). view 없는 결과(설명 답변)는 기존 문장 목록. fixture.css 추가 1줄(배지 폭).
+- 확인: 빌드 CSS + 같은 DOM 임시 페이지 헤드리스 캡처(식비 · 전반 · 비교 · 추이 · 예산 초과). 테스트 CardViewTest 4개(05 기대값) + 서비스 content.view 1개.
+  전체 928개 통과(기대 실패 1 · skip 1).
+- [확인 필요 · 권세진] chat.md 카드(kind spending) 칸과 view 블록을 어떻게 맞출지 — 팀 합류 때.
+- (40차 추가) 카테고리 그래프: 토글 대신 금액 상위 5줄은 카드 안에 바로, 나머지는 '나머지 N개 더 보기'로 접음(5줄 이하면 접기 없음).
+  기존 SpendingCard 처럼 막대를 바로 보여 주는 쪽에 맞춤. 순서 · 금액 · 비율은 서버 chart.rows 그대로, 화면은 앞에서 자르기만(ChatReply SHOWN=5).
+  로컬 채팅(local_chat.html)은 개발용이라 기존 접기 그대로.
+- (생활비 예산 막대) "이번 달 얼마 썼어?"(1번) · "소비 분석해줘"(5번) 단독 답 카드 아래에 '이번 예산 기간(주기) · 생활비' 막대(view meter 블록)를 붙인다.
+  '이번 달'은 chat.md 대로 달력월 그대로 두고, 막대는 4번 계산(analyze._budget)을 함께 돌린 값(living_budget)이라 기간을 제목에 따로 적는다.
+  승인 예산 + 사용액 확정일 때만. 초과는 빨간 막대(is-hot) + '…원 초과' 글자. 예산 조회 실패 시 막대만 빠지고 본문은 그대로. 카테고리 질문 · 여러 항목 답에는 없음.
+  '이번 달'을 급여 주기로 바꿀지는 팀 논의 안건(chat.md 10/22 결정 A 변경 필요).
+- (대체 범위 안내 문구) "커피에 쓴 돈만 따로 구분할 수 없어 …" → "커피만 따로 볼 수 없어 식비 전체로 조회했어요." 360px 폰 카드에서도 한 줄.
+  말이 긴 경우(예: 문화·여가 세부)는 두 줄이 될 수 있음. 화면 줄바꿈은 낱말 단위(fixture.css keep-all).
+- (지난달 비교 카드) 한 항목 비교(예: "지난달보다 식비 더 썼어?")는 표 한 줄 대신: 머리줄 "식비 · 지난달 같은 기간과 비교" → 큰 금액 = 차이
+  ("지난달보다 더/덜 쓴 금액" + "12.07% 늘었어요") → 이번 달 · 지난달 두 줄 막대(길이 = 큰 쪽 대비, 기간은 줄마다). 여러 항목 · 비교 불가는 기존 표 그대로.
+- (설명 카드) "왜 늘었어?" 한 항목 설명도 카드 보기(view): 머리줄 "식비 · 지난달 같은 기간과 비교" → 큰 금액 = 증감(+ "12.07% 늘었어요")
+  → 줄 "거래에서 확인한 변화 (지난달 같은 기간 → 이번 달)": 결제 건수 "29건 → 26건" · 건당 평균 · 가맹점(카테고리) "+42,000원"
+  → 맨 아래 "위 변화는 … 단정할 수는 없어요". rows 에 글자 값 value 칸 추가(금액이 아닌 줄). 설명 LLM 문장을 쓴 경우 줄 대신 그 문장.
+  여러 항목 설명 · 거절은 카드 없이 문장 그대로. lines(문장)는 기존 그대로.
+- (개월 상한 안내 문구) "최근 3개월까지만 볼 수 있어요. 최근 3개월 기준으로 알려드릴게요." → "3개월까지만 볼 수 있어 3개월로 보여드려요." 360px 한 줄.
+  실제 기간(7월~9월)은 카드 머리줄에 있으므로 문구에서 반복하지 않음.
+- (더미 서비스 실제 LLM) FIXTURE_LIVE_LLM=1 로 8001 을 켜면 해석 + "왜 늘었어?" 설명이 실제 LLM. 사용자 결정으로 호출 상한 · 장부 없음(22절 계획의 기본 50회 상한 대신).
+  LiveReading 은 spending_fixture/live_reading.py 로 옮겨 로컬 채팅과 같이 씀 (max_calls · ledger 를 None 이면 상한 없음). 재시도 없음, 키 · 모델은 .env.
+  키 · 모델이 없으면 서버 시작 때 멈춤(service_settings). 끄면(기본) 가짜 해석 그대로.
+- (질문 말풍선) 선택지가 붙은 여러 줄 질문은 한 문단으로 잇고 마지막 줄(물음표로 끝나는 묻는 말)만 굵게 — 화면(ChatReply Bubble)만, 서버 lines 그대로.
+  예: "카페에 쓴 돈만 따로 구분해서 보여드리기는 아직 어려워요. **대신 식비 전체를 확인할까요?**"
+- (사용자 테스트 후속 · 10/30) 결정: 1번 카드 결제만 (a) / 2번 가게 이름 검색 지금 / 4번 설명 확장. 증감 색 · 채팅방 나가면 새 대화도 반영.
+  · 카드 결제만: 해석 칸 payment="card"("카드 얼마 긁었지?"). 항목 payment → analyze 가 source_kind=card 만 집계(소비 조회만, 예산 3 · 4 는 무시).
+    이름 "카드 결제" · "교통·차량 카드 결제", 안내 "계좌 이체 · 자동이체는 빼고 카드 결제만 모았어요." 후속 질문도 카드 결제만 이어받음(overlay).
+    카드만이면 '전체 소비 중 n%' · 생활비 막대 · 전반 분석(5→1)은 뺌 (분모가 달라서).
+  · 가게 이름 검색: 세부 지출(detail)이 이번 달 + 최근 3개월 결제의 가게 이름(가맹점명 · 적요, 공백 · 대소문자 무시)에 들어 있으면
+    카테고리 없이 merchant 로 거른 1 · 6 · 8번 조회, 핵심 안내 "가게 이름에 '스타벅스'가 들어간 결제만 모았어요."
+    없으면 기존 "대신 식비 전체를 확인할까요?". [임시] 이름 포함만 봄 — 'STARBUCKS' 같은 다른 표기는 못 묶음(가맹점 규칙 미정).
+    '카페' 같은 종류는 가게 이름에 그 말이 있을 때만 잡힘 (세부 분류는 ML 담당과 협의 필요).
+  · 설명 확장: (가) 말한 카테고리가 직전 결과에 없으면 이번 달 vs 지난달 같은 기간을 새로 비교해 설명({type 7, fresh}).
+    직전 결과가 그 카테고리를 부분 자료로만 봤으면 기존대로 evidence_incomplete. 직전 분석이 없어도 카테고리를 말했으면 새로 비교.
+    (나) 이번 달 결과(1 · 2 · 5)에 "왜?"면 구성 설명: 금액 · 결제 건수 · 건당 평균 · 많이 쓴 곳 3곳(전체면 카테고리 3개) · 고정지출.
+    전반 분석(5)이면 가장 많이 쓴 카테고리로 좁힘("이번 달 가장 많이 쓴 주거·통신 기준으로 봤어요."). 구성 설명은 템플릿만(설명 LLM 안 씀).
+    예산 결과(3 · 4)는 여전히 설명 근거 아님. "왜 늘었어?"와 "왜 많이 나왔어?"를 해석에서 구분하지 않고 직전 결과 종류로 정함.
+- (사용자 테스트 후속 2 · 10/30)
+  · 가게 이름 다른 표기: 해석 LLM 이 세부 지출에 names(같은 가게의 다른 표기, 예: 스타벅스 → STARBUCKS · 스타벅스코리아)를 붙이고,
+    서버는 원래 말 + names 중 하나라도 가게 이름에 들어 있으면 그 가게로 본다. 사용자 거래 내역(가맹점 목록)은 LLM 에 보내지 않는다.
+    LLM 이 모르는 표기 · 지점명만 다른 경우는 여전히 못 묶음 (가맹점 규칙 미정).
+  · "카테고리별로 예산 얼마나 남았어?"(compare=category + 남은 예산) → 4번 + breakdown: 승인 예산에 배정된 카테고리마다 남은 · 초과 금액
+    (막대 = 쓴 비율, 초과는 붉은 글자 + '초과'). 특정 카테고리를 말했으면 카테고리마다 3번. 소비 쪽 카테고리 비교 · 카테고리별은
+    이번 달 카테고리별 금액(말한 카테고리면 2번 여러 개, 아니면 5번 그래프). 10/29 '카테고리 비교 미지원' 결정을 바꿈.
+  · 하루에 쓸 수 있는 금액: 남은 예산 답(3 · 4번)에 "남은 26일 동안 하루 27,692원씩 쓸 수 있어요." 남은 날 = 사용액을 센 다음 날 ~ 주기 끝,
+    금액 = 남은 금액 ÷ 남은 날(원 미만 버림). 초과 · 마지막 날이면 없음. 해석 칸을 따로 두지 않고 남은 예산 답에 늘 붙인다.
+    홈 화면의 '하루 쓸 수 있는 돈'(home.daily)은 아직 가짜 값이라 같은 식인지 확인 필요 [확인 필요 · 홈 담당].
+  · 화면: 보낸 말을 답이 오기 전에 바로 말풍선으로 보이고, 그 아래 '답변을 준비하고 있어요…'(기존 회전 아이콘). 답이 오면 서버 메시지로 바뀜.
+- (구조 검토 후속 · 10/30)
+  1) 버그: 가게 이름 · 카드 · 전체 결과가 카테고리 결과와 섞인 뒤 "왜?" → '어느 걸 설명할까요?' 선택지가 카테고리 이름만 가정해 KeyError.
+     → 카테고리로 고를 수 없는 결과가 섞이면 묻지 않고 모두 설명(여러 항목 = 문장만). reference_not_available 문구를
+     "무엇을 설명할지 찾지 못했어요. '식비는 왜 늘었어?'처럼 카테고리를 넣어 물어봐 주세요."로 (오류처럼 들리지 않게).
+  2) 조회 범위 한 곳: spending_analysis/scope.py — 범위 칸(category · instead_of · merchant · merchant_names · payment)의
+     이름(name · label) · 좁힌 조회인지(narrowed) · 옮길 거르기 칸(filters) · 검사(check). analyze 는 거르기만, answer · explain · dialog 는
+     이 모듈의 이름을 쓴다. 동작 변화 없음. 상권 사전의 업종 범위도 여기에 더한다.
+  3) 설명 종류: 해석 칸 explain_kind = change(달라진 이유) · composition(금액이 큰 이유 · 어디에 썼는지) · null.
+     직전 결과와 종류가 다르면 같은 범위로 바꿔 봄 — 이번 달 결과 + change → 이번 달 vs 지난달 같은 기간 새 비교,
+     지난달 비교 + composition → 그 비교의 이번 달 구성. null 이면 기존처럼 직전 결과 종류로.
+  4) 실제 LLM 재평가: 새 사례 b09~b17(카드 · 가게 · 카테고리별 · 후속 카테고리별 · 하루 금액 · 설명 종류 4개) + 세부 지출 채점
+     (원문 표기 차이 허용 + 카테고리 일치, names 는 채점 안 함). 분리 전 설명 사례는 explain_kind 를 어느 값이든 허용.
+     첫 실행은 지시문 예시에 평가 문장 2개('왜 늘었어?' 등)가 들어간 것을 누출 검사가 잡아 113회 호출 뒤 중단(결과 없음),
+     예시를 바꿔 다시 실행. 결과는 아래 줄에.
+     결과(B-2026-10-30.1, 174회): 새 사례 b09~b17 해석 모두 맞음(b14 는 라우터 기대값이 좁았던 사례 쪽 문제 → 고침).
+     스타벅스 → names ["STARBUCKS", "스타벅스코리아"]. 회귀: '각각 얼마야?'를 카테고리 비교로 읽음(h05 · n07) — 내 '카테고리별' 규칙 탓 →
+     "카테고리를 나열하고 '각각'이면 비교 아님"으로 좁힘. 그 밖 실패는 전부터 있던 것(d27 · d28 · n10 · b06, 미정 정책 n06)과
+     라우터 카테고리 칸 흔들림(d09 · n04 · b08). 고친 뒤 영향 사례 8개만 다시(15회): 8/8 맞음.
+     오늘 실제 호출 합계 317회 = 누출로 중단 113 + 전체 174 + 채점 오류(allow 에 None)로 결과 없이 끝난 15 + 다시 15.
+     전체 재평가는 고친 지시문으로 다시 돌리지 않았다 (영향 사례만).
+- (배달앱 별칭 표 · 10/30) scope.ONLINE — 상가 정보에 없는 온라인 서비스. 묶음 '배달앱'(카테고리 식비 쪽):
+  부르는 말 배달 · 배달앱 · 배달어플 · 배달음식 · 배달비 / 브랜드 배달의민족(배민 · 우아한형제들) · 쿠팡이츠 · 요기요(위대한상상) · 땡겨요 ·
+  배달특급(경기 공공) · 먹깨비(공공). 지역명과 헷갈리는 공공앱(대구로 등) · 쇼핑 '쿠팡'은 넣지 않음.
+  "배달 얼마 썼어?" → 6개 앱 표기 중 하나가 이름에 든 결제 합계, 이름 '배달앱', 핵심 안내 "배달의민족 · 쿠팡이츠 · 요기요 등 배달앱 결제만 모았어요."
+  + "앱 결제 금액이라 음식값과 배달비가 함께 들어 있어요." / "배민 얼마 썼어?" → 배달의민족 표기만. 해석 프롬프트는 그대로(세부 지출 detail 로 옴).
+  [확인 필요] 운영사 이름이 실제 카드 · 계좌 내역에 그렇게 찍히는지(CODEF 데이터) · 지난달 단독 조회는 여전히 미지원.
+- (더미 가게 이름 · 10/30) design.json 의 '가상…점' 357행을 상가(상권)정보 서울 상호로 바꿈 (spending_fixture/rename_merchants.py, 같은 입력이면 같은 결과).
+  업종 라벨 확정 · 기호 없는 이름 · 회원마다 겹치지 않게, 식비 10곳 · 그 밖 카테고리 3곳씩. 차 없는 회원(A · C) 교통은 자전거 가게.
+  고정지출 · 계좌 이체 이름(가상임대료 · 관리비 · 통신료 · 자동차보험 · 온라인수강료 · 결제대행)은 가게가 아니라 그대로.
+  금액 · 날짜 · 카테고리 · 414행 · expected.json 그대로, seed 의 design.json SHA 고정값만 새 값. 테스트 속 '가상한끼점' 예시는 '과자서원'으로.
+  테스트가 '검색 안 됨 → 카테고리 전체?'를 쓰는 말(커피 · 배달 · 택시)이 든 상호는 고르지 않음.
+
+### 22-14. 더미 거래 시각 다양화 (2026-10-30 — design.json 의 occurred_time 만, 시간대 조회 · 시연용)
+
+- 도구: spending_fixture/retime_transactions.py (한 번 돌림, plan_id sha256 → 같은 입력이면 같은 결과). seed 의 design.json SHA 고정값 갱신.
+  날짜 · 금액 · 카테고리 · 가게 · 414행 · expected.json 그대로 (expected.json 바이트 동일 확인).
+- 규칙: 급여 09:00 · 카드대금 07:30 · 저축 10:00 · 이체 11:00 · 내 계좌 이체 11:30 · 자동이체 · 고정지출 08:10~08:40(가게마다 매달 같은 시각).
+  생활 소비는 카테고리별 시간대 가중치 — 식비 점심 · 저녁 중심 + 야식 일부, 교통 출퇴근(주말은 낮), 쇼핑 · 여가 저녁~밤, 의료 진료 시간대.
+  회원 경향: 민재 밤 외식 · 쇼핑 가중치 조금 ↑, 윤서 15,000원 이하 결제의 저녁 가중치 ↑, 지우 기본.
+  같은 구매 쌍은 계좌 출금 = 카드 승인 1분 뒤. 취소는 원거래 행 안의 금액이라 맞출 시각이 없음.
+- 시간대 구간(새벽 · 아침 · 점심 · 오후 · 저녁 · 밤)은 보고용 임시 구간. 공식 경계는 다음 설계 단계에서 정한다.
+
+## 23. 소비 분석 범용 조회 + 도구 선택 설계 (2026-10-30 — 설계만. 코드 · DB 변경 없음, 실제 LLM 호출 없음)
+
+배경: 사용자 테스트마다 질문별 규칙(카테고리별 · '각각' · 배달앱 · 카드 결제 · 가게 검색 · 하루 금액 · 설명 종류)을 더해 왔다.
+같은 일을 하는 조회를 도구 3개로 모으고, 분석 질문(왜 · 무엇 때문 · 뭘 줄이면)에서만 에이전트가 도구를 골라 쓰게 한다.
+원칙은 그대로: 숫자는 서버만 계산, LLM 은 조건을 읽고 문장 틀을 쓴다, 사용자 거래 원문은 LLM 에 보내지 않는다(23-4 확인 필요).
+
+### 23-1. 도구 3개 [제안]
+
+공통: 입력은 JSON 하나, 서버가 검사(23-6) 뒤 실행. 결과는 항상 {coverage(기간별 complete · partial · none), observed, confirmed?}
+— 지금 analyze 블록과 같은 뜻 (확정 아님이면 confirmed=None, 0원으로 바꾸지 않음).
+
+1) spend_query (소비 조회)
+   - where (조건, 모두 선택):
+     · period: this_month | month(YYYY-MM, 완료된 달 — 지난달 단독 조회 열기로 결정 10/30) | recent(n, include_current)
+     · scope: category[] · merchant{word, names[]} · industry(가게 사전 업종, 상권 데이터 붙인 뒤) · online(배달앱 등 별칭 묶음)
+       · payment(card | bank — 계좌 추가 결정 10/30) · instead_of(세부 지출 대신 카테고리 전체를 봄 — 표시용)
+     · weekday: weekday(평일) | weekend(주말) | [mon..sun]
+     · time_slot: [dawn, morning, lunch, afternoon, evening, night]
+     · amount: {min?, max?} (한 건 결제액, 원 · 취소 뺀 순금액 기준)
+   - measure (계산): sum(합계) · count(건수) · avg(건당 평균) · max(가장 큰 1건) · top(상위 N, group_by 필요)
+   - group_by (묶기): none · category · merchant · weekday · time_slot · month
+   - top_n: 1~5
+2) period_compare (기간 비교): spend_query 의 where(기간 빼고) + measure(sum · count · avg) + group_by(none · category · merchant)
+   - 기간 짝은 서버 규칙만: 이번 달 vs 지난달 같은 날짜까지(N①) · 최근 N개월 이웃한 달끼리(추이)
+   - 결과: 기간별 값 · 차이 · 증감률(이전 0이면 없음) · 묶음별 증감 (지금 R.compare · explain._movers)
+3) budget_left (예산 잔액, 읽기만): category | all · breakdown(카테고리별) → 배정 · 사용 · 남음 · 초과 · 여윳돈 충당 · 남은 날 · 하루 금액
+   - 예산 주기 기준(달력월 아님). 시간대 · 요일 · 가게 · 결제 수단 · 금액 조건은 받지 않는다 (23-6 거절)
+
+scope.py 확장: 지금 범위 칸(category · instead_of · merchant · merchant_names · payment)에 industry · online · weekday · time_slot · amount 를
+더하고, 이름(name · label) · 검사(check) · 거르기 칸(filters)을 같은 모듈에서 정한다. 실제 거르기는 23-8 의 한 함수.
+
+시간대 구간 경계 (KST, 시각만 · 날짜 넘김 없음) [제안 — 22-14 의 보고용 임시 구간을 공식으로]:
+새벽 00:00–05:59 · 아침 06:00–10:59 · 점심 11:00–13:59 · 오후 14:00–17:59 · 저녁 18:00–20:59 · 밤 21:00–23:59 [결정 10/30 확정].
+'야식'은 밤 + 새벽, '퇴근 후'는 저녁 + 밤으로 해석 규칙에서 묶음 이름으로 매핑. 시각이 없는 거래(occurred_time null)는
+시간대 조건 · 묶기에서 빼고 "시각이 없는 거래 N건은 뺐어요" 안내 (0시로 넣지 않는다). 요일은 거래 날짜 기준(KST).
+
+### 23-2. 기존 1~9번 = 도구 호출 프리셋 [제안]
+
+| 번호 | 지금 | 도구 호출 |
+|---|---|---|
+| 1 | 이번 달 총소비 | spend_query(period=this_month, measure=sum) (+ budget_left(all) 막대, 거르기 없을 때만 — 지금 living_budget) |
+| 2 | 이번 달 카테고리 | spend_query(period=this_month, scope.category=[c], measure=sum) + 전체 대비 비중 |
+| 3 | 카테고리 남은 예산 | budget_left(category=c) |
+| 4 | 생활비 남은 예산 | budget_left(all[, breakdown]) |
+| 5 | 전반 분석 | spend_query(this_month, sum, group_by=category) (그래프 · 상위 카테고리 · 고정지출 줄) |
+| 6 · 7 | 지난달 비교 | period_compare(this_month vs 지난달 같은 날짜, [scope.category]) |
+| 8 · 9 | 최근 N개월 추이 | spend_query(recent(n), sum, group_by=month[, category]) + 서버 통계(평균 · 이웃 달 증감) |
+| 가게 · 카드 · 배달 | 1 · 6 · 8 + merchant/payment | 같은 프리셋 + where.scope |
+| 설명(증감) | explain 증감 | period_compare(group_by=merchant | category) + count · avg |
+| 설명(구성) | explain 구성 | spend_query(group_by=merchant, top 3) + count · avg · 고정지출 합 |
+
+바꾸지 않을 규칙: 비교 기준일(지난달 같은 날짜까지, 없는 날은 말일 — N①) · 최근 N개월 상한 3 · 기본은 완료된 달(이번 달 포함은 명시할 때만) ·
+수집 완전성(complete 일 때만 확정, partial 은 '일부 내역 기준', none 은 0원 아님) · 같은 구매 1번만 · 취소 차감 · 비소비 제외 ·
+예산은 승인 예산 · 예산 주기 기준 · UNCLASSIFIED 는 예산 줄 없음.
+지난달 단독 조회는 연다 [결정 10/30 — 범용 조회의 기간 옵션 month, 구현은 뒤 단계]. "지난달보다 · 대비"는 계속 비교(period_compare)로 읽는다.
+
+### 23-3. 두 경로 [제안]
+
+A. 한 번 조회 (대부분): 해석(SpendingReading) → dialog 가 조건을 이어받기 · 되묻기 · 충돌 처리 → 도구 호출 하나로 바꿈(결정적) → 서버 실행 → 템플릿 · view.
+   LLM 은 해석 1회(라우터 포함 2회). 도구 호출 JSON 을 LLM 이 직접 쓰지 않는다 — 이어받기 · 되묻기 규칙(dialog)을 그대로 쓰기 위해.
+B. 도구 선택 (분석 질문만): 해석에서 explain=true 이고 analysis 종류가 아래 중 하나일 때
+   - why(왜 늘었어 · 왜 많아 — 지금 explain_kind change · composition) · attribution("배달 때문이야?" — 특정 원인 확인) · reduce("뭘 줄이면 돼?")
+   흐름 [결정 10/30]: 서버가 첫 도구 호출을 프리셋으로 먼저 실행(why=change → period_compare by merchant, composition → spend_query top merchant,
+   attribution → period_compare(scope=그 원인) + 전체 비교, reduce → spend_query this_month group_by category + budget_left breakdown)
+   → 계획 LLM 이 첫 결과(23-4 형태)를 보고 추가 도구를 **한 번에** 최대 2개 고름 → 서버가 실행 → 문장 LLM 이 자리표시로 답
+   → 서버 검사(explain.checked 와 같은 규칙: 숫자 직접 금지 · 모르는 키 금지 · 금지 표현) → 실패면 템플릿 답.
+   - 턴당 LLM 상한 [결정]: 해석 1 + 계획 1 + 답 1 = 최대 3회 (라우터 해석은 기존대로 따로 — 소비가 담당 중이면 없음).
+     계획 LLM 이 추가 도구 없음을 고르면 계획 다음 바로 답. 계획 · 답 호출이 실패하면 그때까지 결과로 템플릿 답 (재시도 없음).
+   - 도구 실패(DB · 검사 거절): 그 도구 결과를 {error: code} 로 계획 LLM 에 한 번 알리고, 같은 호출 재시도 없음. 첫 도구가 실패하면 B 를 멈추고 기존 거절 문구.
+   - 동기 · 습관 · 평가는 단정하지 않는다(금지 표현 + 지시문). "배달 때문이야?"는 "배달앱 결제가 X 늘어 전체 증가의 Y%예요"처럼 숫자 관계만.
+   - explain.py 와의 관계: 감싸기. 근거 계산(_side · _movers · _mix)은 도구 실행기로 옮기고, explain.answer 는 B 의 '템플릿 답'(가짜 해석 ·
+     LLM 실패 · 상한)으로 남긴다. explain_kind 는 B 의 첫 프리셋을 고르는 힌트로 남김(대체하지 않음).
+
+### 23-4. B 에서 LLM 에 보낼 도구 결과의 범위 [결정 10/30: 선택지 1 + 서버가 계산한 상대 정보]
+
+결정: 키 + 비식별 라벨(업종 · 카테고리) + 서버가 계산한 상대 정보(방향 증가/감소 · 증감 순위 · 비중 구간)만 보낸다.
+정확한 금액 · 건수 · 가게 이름은 보내지 않고 자리표시 · 키로만 쓰게 한다 (서버가 끼움). 아래는 검토한 선택지.
+
+지금 원칙: 사용자 거래 원문 · 가맹점 목록을 LLM 에 보내지 않는다 (설명 LLM 도 근거 '이름표'와 자리표시만).
+- 선택지 1 (추천 · 기본): 키 + 비식별 라벨만. 금액 · 건수 · 비율은 자리표시({F3})만, 가게는 키(M1 · M2)와 업종 · 카테고리 라벨("M1: 카페 업종 · 식비"),
+  방향(증가/감소) · 순위 · 비중 구간("30~40%")은 글자로. LLM 은 "가장 크게 는 곳은 {M1}({F3})"처럼 쓰고 서버가 이름 · 숫자를 끼운다.
+  위험: 업종 라벨이 없는 가게(개인 가게 · 사전에 없음)는 '알 수 없는 가게'라 판단 근거가 약해짐. 비중 구간이 거칠어 순위 판단만 가능.
+- 선택지 2: 집계값(금액 · 건수)은 보내고 가게 이름만 키로. 판단(예: "줄이면 효과 큰 곳")이 정확해지지만 소비 규모가 외부로 나간다.
+- 선택지 3: 가게 이름 · 집계값 모두 보냄. 가장 자연스러운 답, 그러나 병원 · 약국 · 지역 상호 등 민감 정보가 외부 LLM 으로 감 →
+  동의 문구 · 처리방침 · 보관 기간 결정이 먼저 필요. 1차에는 비추천.
+- 공통 위험: 키 방식은 LLM 이 키를 지어내거나 섞을 수 있음 → 모르는 키 거절(지금 checked 와 같음), 문장에 쓴 키가 결과에 있는지 서버가 확인.
+
+### 23-5. 해석 확장 [제안]
+
+- SpendingReading 에 칸 추가(기존 칸과 겹치지 않게): weekday(weekday · weekend · 요일 목록) · time_slot(구간 목록 · '야식' · '퇴근 후'는 묶음 이름) ·
+  amount_min · amount_max · measure(sum · count · avg · max · top) · group_by(category · merchant · weekday · time_slot · month) · top_n ·
+  analysis(why · attribution · reduce — explain=true 일 때만, explain_kind 는 why 의 하위로 유지) · payment 에 bank 추가 검토.
+- 기존 칸 유지: target(spend · overview · budget_left → 도구 선택), period · compare · months · include_current(기간), categories(범위),
+  all_categories · refers_to · followup · confirm · alias · after_budget_change.
+- 겹침 정리: compare="category"(카테고리별)는 group_by=category 로 옮김(프롬프트 규칙 하나 삭제), '각각'은 규칙 없이 categories 만,
+  target=overview 는 measure=sum + group_by=category 프리셋.
+- 프롬프트: 칸 설명 6~8줄 추가 + 예시는 평가 문장과 겹치지 않게(누출 검사). 기존 원칙(말한 조건만 · 이어받기는 서버) 그대로.
+  예시 수를 늘리지 않고 칸 정의 위주 — 지시문이 이미 길다(23-10 재평가 필수).
+
+### 23-6. 서버 검사 · 거절 [제안]
+
+- 허용 조합: budget_left 는 category · breakdown 만 / period_compare 는 group_by 에 weekday · time_slot · month 불가(1차) /
+  group_by=month 는 period=recent 일 때만 / measure=top 은 group_by 필요 / max 는 group_by 없이(가장 큰 1건 = 날짜 · 시각 · 가게 · 금액 1줄).
+- 상한: top_n 1~5(넘으면 5 + 안내) · 개월 3(지금 months_capped 그대로) · amount 는 0 이상 · min ≤ max · 시간대 · 요일 조합은 모두 허용.
+- 지원 안 하는 조합 안내 틀: "{요청}은 아직 어려워요. 대신 {가능한 것}은 볼 수 있어요." + 선택지 버튼(가능한 프리셋).
+  예) "예산을 시간대별로" → "예산은 시간대별로 나눠 보기 어려워요. 대신 이번 달 시간대별 소비는 볼 수 있어요." [시간대별 소비 보기]
+- 검사는 실행 전 한 곳(scope.check 확장 + 도구별 validate). 잘못된 입력은 지금처럼 ValueError → 해석 실패 · 되묻기로.
+
+### 23-7. 답 모양 [제안]
+
+view 블록 재사용: sum · count · avg → total(caption 으로 무엇인지) · 묶기 → rows(ratio = 가장 큰 묶음 대비, 요일 · 시간대 · 월은 정해진 순서 그대로 —
+금액순 정렬 안 함) · top → rows(금액순) · max → rows 한 줄(note = 날짜 · 시각) · 비교 → 지금 한 항목 비교 카드 / badge 줄 · 예산 → total + meter + rows.
+새 블록은 0개를 목표로 하고, 필요하면 rows 에 order: fixed 표시 하나만. 문장(lines)은 지금처럼 같이 만든다(팀 카드 형식 결정 전).
+
+### 23-8. 수집 완전성 · 중복 · 취소 · 비소비 제외가 자동 적용되는 위치 [제안]
+
+도구 실행기의 한 함수 rows(user, period, where) 만 거래를 읽는다:
+listed_transactions(같은 구매의 계좌 쪽 제외) → 기간 → scope 거르기(카테고리 · 가게 · 업종 · 결제 수단) → transaction_item(취소 차감 순금액)
+→ 소비만(transaction_type=spending) → 요일 · 시간대 · 금액 조건. 기간마다 coverage 를 붙이고 complete 일 때만 confirmed.
+도구 3개 · 프리셋 · B 의 추가 호출 모두 이 함수만 쓴다 (지금 analyze._items + R.figures + coverage 를 한곳으로). 예산은 지금 approved_budget 그대로.
+
+### 23-9. 범용 경로로 대체할 수 있는 특수 규칙 (바로 지우지 않음) [제안]
+
+compare=category → 카테고리별 목록 매핑(dialog._spend · _budget_left) · breakdown 칸 · 프롬프트의 '각각' · '카테고리별' 규칙 ·
+전반 분석의 그래프 · 상위 카테고리(answer.chart · top_spending) · 1 · 5번 생활비 막대(living_budget) · 하루 금액 줄(_daily) ·
+explain 의 fresh 새 비교 · _as_kind 종류 바꾸기 · 구성 설명 _mix(가장 많이 쓴 카테고리 고르기) · 가게 검색 merchant 항목(1 · 6 · 8 제한) ·
+카드 결제 payment 처리의 5→1 바꾸기. 유지(데이터 · 정책): ONLINE 별칭 표 · 가게 사전 · 수집 완전성 · 기준일 · 개월 상한.
+프리셋 결과가 지금 답과 같다는 비교 테스트가 통과한 뒤에 하나씩 지운다.
+
+### 23-10. 구현 단계 · 완료 기준 · 평가 [제안]
+
+1단계 실행기 + 프리셋 (동작 변화 없음): rows() · spend_query · period_compare · budget_left 를 만들고 analyze 1~9번이 이것을 부르게.
+  완료 = 기존 테스트 전부 통과 + 3명 × 1~9번 analyze 결과가 바꾸기 전과 같음(골든 비교) + expected.json 숫자 그대로.
+2단계 새 조건 · 계산 · 묶기: 요일 · 시간대 · 금액 · count · avg · max · top · group_by. 완료 = 조건마다 design.json 에서 독립 계산한 기대값 테스트 ·
+  시각 없는 거래 · partial 기간 · 0건 테스트 · 거절 안내 테스트.
+3단계 경로 A 해석: SpendingReading 칸 + 프롬프트 + dialog 매핑 + 거절 문구. 완료 = 가짜 해석 테스트 + 평가 사례 c01~c20 dry-run 통과
+  → 실제 재평가(라우터 + 해석 ≈ 2회 × 사례 ≈ 40~50회, 전체 회귀는 ≈ 180회).
+4단계 경로 B (가짜 계획 LLM 으로): 프리셋 첫 호출 · 계획 루프 · 상한 · 실패 처리 · 자리표시 검사 · 템플릿 대체.
+  완료 = 정해진 대본 계획으로 도구 선택 · 상한 · 실패 · 금지 표현 테스트.
+5단계 경로 B 실제 평가: 분석 질문 15개 × 최대 3회(+ 라우터) ≈ 45~60회.
+평가 방식: A = 해석 정답 비교(지금 stage_b) + 도구 호출 정답 비교(정규화한 JSON) + 실행 숫자 = 독립 계산값.
+  B = 도구 선택이 허용 집합 안인지(질문마다 허용 도구 · 순서) · 최종 문장의 숫자가 모두 자리표시에서 왔는지(숫자 직접 금지 검사) ·
+  쓴 키가 결과에 있는지 · 금지 표현 · 사람이 읽는 표본 검토(단정 · 과장).
+호출 수 · 응답 시간(예상, low reasoning 기준): A = 2회 · 3~6초(지금과 같음). B = 최대 3회(+ 라우터) · 6~12초 → '분석하는 중…' 단계 표시 필요.
+
+### 23-11. 결정 (2026-10-30)
+
+1) B 전송 범위 = 선택지 1 + 서버가 계산한 상대 정보(방향 · 증감 순위 · 비중 구간). 정확한 금액 · 가게 이름은 보내지 않는다 (23-4).
+2) 지난달 단독 조회를 연다 — 범용 조회의 기간 옵션. "지난달보다 · 대비"는 계속 비교 (23-1 · 23-2).
+3) 시간대 6구간 확정: 새벽 0~6 · 아침 6~11 · 점심 11~14 · 오후 14~18 · 저녁 18~21 · 밤 21~24 (23-1).
+4) 결제 수단에 계좌(bank) 추가 (23-1).
+5) B 의 LLM 호출 = 해석 1 + 계획 1(추가 도구 최대 2개를 한 번에) + 답 1 = 최대 3회 (23-3).
+2~5는 설계에만 반영, 구현은 뒤 단계.
+
+### 23-12. 1단계 구현: 거래 읽기 함수 + 도구 3개 (2026-10-30 — 동작 변화 없음, 실제 LLM 호출 없음)
+
+- 새 파일 spending_analysis/tools.py: rows(거래 읽기 유일 함수 — 같은 구매 제외 · 기간 · 카드 결제 · 가게 이름 거르기 · 취소 차감 한 줄 모양)
+  · spend_query(기존 _block, detail=설명 근거 집계) · period_compare(기존 6 · 7번) · budget_left(기존 _budget) · has_merchant · DbError.
+- analyze 1~9번은 이 도구 호출로만 (_block · _items · _budget · 가게 검색 함수는 tools 로 옮김), explain 근거(_side)는 spend_query(detail=True).
+  agent 의 가게 이름 검색은 tools.has_merchant. 테스트의 DB 오류 대역 경로만 spending_analysis.tools.listed_transactions 로.
+- 같음 확인(골든 비교): 바꾸기 전에 로컬 fixture DB 에서 3명 × 64가지 항목(1~9번 · 카테고리 12개 · 예산 카테고리 · 개월 1~3 · 이번 달 포함 ·
+  카드 결제 · 가게 이름 · 배달 묶음 · 다른 표기 · instead_of · breakdown)의 analyze 결과 · compose 답(문장 · view · 안내) ·
+  설명 답(증감 · 구성 · 새 비교 fresh) · 가게 검색 여부를 JSON 으로 저장(195개) → 바꾼 뒤 같은 스크립트로 다시 저장 → 바이트까지 같음.
+  expected.json 은 바뀌지 않음(바이트 비교 · git 기준).
+
+### 23-13. 2단계 구현: 범용 조회(A) — 새 조건 · 계산 · 묶기 (2026-10-30 — 가짜 해석, 실제 LLM 호출 없음)
+
+- tools.rows 조건 추가: payment bank · weekdays · time_slots(6구간, 시각 없는 거래는 빼고 stats 에 센다) · amount_min · amount_max.
+  tools.query = 범용 조회 10번: 기간(이번 달 · 지난달 전체 periods.last_month · 최근 N개월) + 계산(sum · count · avg · daily_avg · max)
+  + 묶기(category · merchant · weekday · time_slot · month) + top_n(1~5). 묶기는 합계 · 건수와만, 월별은 최근 N개월만 (check_query).
+  요일 · 시간대 · 월은 정해진 순서, 카테고리 · 가게는 큰 순서(건수를 물으면 건수 → 금액 → 이름). 모든 기간 complete 일 때만 확정.
+- scope: 거르기 칸 · 이름(" · 주말", " · 밤", "10,000원 이상"), 야식 = 밤+새벽 · 퇴근 후 = 저녁+밤, 평일 · 주말 → 요일 번호.
+- 해석 칸: weekday · time_slot · amount_min · amount_max · measure · group_by · top_n, payment 에 bank. 프롬프트 칸 설명만 추가.
+- 경로 A(dialog): 조건만 → 기존 1 · 2 · 6~9번 항목에 거르기 칸(전반 분석 5 → 1), 계산 · 묶기 · 지난달 단독 → 10번.
+  예산 + 조건 · 계산 → unsupported budget_query, 지난달 비교 + 계산 · 묶기 → compare_query (문구: 어렵지만 대신 볼 수 있는 것 + 예).
+  조건 · 계산은 후속 질문에서 이어받음("주말 식비" → "그럼 교통비는?" = 주말 교통비). 질문별 특수 규칙은 새로 만들지 않음.
+- 답: 기존 view 블록 재사용. 새 블록 없음 — total 에 글자 값(value, '26건')만 더함(건수는 돈이 아니라서). 거른 조회엔 '전체 소비 중 n%' 안 붙임.
+- 지난달 단독 결정으로 바뀐 테스트 · 평가 사례: test_dialog 4곳 · router 테스트 2곳 → 지원 · budget_query 예로, 평가 d10 은 POLICY_CHANGES
+  (사례 판 B-2026-10-30.2).
+- 독립 기대값: spending_fixture/make_expected_query.py(앱 import 없음, design.json 만) → data/expected_query.json (윤서 13문항).
+  expected.json 그대로. 1단계 골든 비교(195개) 다시 같음.
+- 지시문 해시: 소비 7770b7d1 (10/30 실제 평가 때 9f9acb18) · 라우터 9f9b8abd (변경 없음).
+- [다음] 3단계 실제 평가: 새 사례 c01~c20(요일 · 시간대 · 야식 · 퇴근 후 · 금액 범위 · 건수 · 건당 평균 · 하루 평균 · 최대 · 자주 간 가게 ·
+  요일별 · 시간대별 · 월별 · 지난달 단독 · 계좌 · 예산+조건 거절 · 비교+묶기 거절 · 후속 이어받기 2턴) ≈ 2회 × 22턴 ≈ 45회
+  + 지시문이 바뀌었으니 전체 회귀 ≈ 180회 → 합계 ≈ 225회. 평가 문장은 지시문 예시 · 가짜 해석 문장과 다르게.
+
+### 23-14. 3단계: 평가 전 보완 + A 경로 실제 LLM 평가 (2026-10-30 — 상한 250회 승인, 사용 227회)
+
+평가 전 보완 (실제 LLM 없음)
+- 독립 기대값: make_expected_query.py → expected_query.json 을 회원별로 {A, B, C}. 민재 = 같은 구매(계좌 쪽 제외) · 부분 취소(순금액) ·
+  전액 취소(건수 0) 의 패션 건수 · 평균 · 최대 · 가게 상위 · 요일별 건수 · 하루 평균. 지우 = 일부 수집(관측값 + '일부 내역 기준') ·
+  확인 필요 포함 카테고리별 건수 · 가게 상위 · 최대 · 자료 없는 지난달("확인할 수 있는 내역이 없어요", 0원 아님). 수집 상태도 따로 계산.
+- 가장 큰 1건이 고정지출이면 "고정지출을 빼면 가장 큰 지출은 …" 한 줄 + 카드 제목 '(고정지출)'. 하루 평균은 '고정지출 포함' 표시 +
+  고정지출 뺀 하루 평균을 함께 (fig.daily_avg_living · fixed · max_living).
+- 고정지출 · 결제대행 이름에서 '가상' 제거: 월세 · 관리비 · 통신요금 · 자동차보험료 · 온라인 강의 수강료 · 간편결제 대행 · 온라인 결제 대행
+  (rename_merchants.FIXED, 32행), 비소비 적요: 급여 · 적금 자동이체 · 송금 · 내 계좌 이체 · 카드대금 (seed.NON_SPENDING_DESC).
+  design.json SHA aba7c480. 금액 · 날짜 · 414행 · expected.json 그대로.
+- 골든 비교를 임시 테스트 DB 에서(로컬 fixture DB 는 그대로): 바꾸기 전 · 후 195개, 옛 이름 → 새 이름으로 바꾸면 바이트까지 같음(이름 26곳 외 차이 없음).
+
+실제 평가 (사례 B-2026-10-30.3, sha 45b5a8ca, 라우터 지시문 9f9b8abd 고정)
+- 1차(소비 지시문 7770b7d1, 41회): 새 사례 c01~c19 + 연속 cs1. 라우터 19/19, 소비 해석 15/19, 결정 14/19, 연속 대화 2/2.
+  실패 원인: c03 · c07 '합계' · '다 합쳐서'에 measure=sum 을 채움(금액은 같음) / c02 '점심값' · c05 '시켜 먹은 거'를 세부 지출로 /
+  c18 '예산을 요일별로 쪼개서 보여줘'를 예산 변경(mine=false)으로.
+- 고친 것(질문별 규칙 없음): 서버 — 묶기 없는 합계(measure=sum)는 계산으로 보지 않음(기존 1 · 2번 그대로) / 지시문 — '합계 · 다 합치면'도 null,
+  끼니를 시간대로 말한 것은 FOOD + time_slot, 예산을 보거나 나눠 보는 조회는 mine=true. → 소비 지시문 3131e579.
+  영향 5사례 다시(10회): c03 · c05 · c07 맞음, c02(점심값 → 세부 지출 '점심' + 점심 시간대) · c18(여전히 mine=false) 남음.
+- 2차 회귀(3131e579, 기존 단위 79개, 174회): 단일 — 라우터 60/60, 소비 해석 47/53, 결정 64/67, 상태 67/67.
+  연속 대화 — 라우터 23/24, 소비 해석 25/29, 결정 35/36, 흐름 7/10.
+  결정 실패: b13(남은 예산 + 하루에 얼마 → 해석이 measure=daily_avg 를 채워 budget_query 거절) · d21('예산은?' 대상 빠짐, 이번이 처음) ·
+  n10 · s7#2(전부터 있던 실패). 해석만 틀린 것: 새 칸을 채움(b13 daily_avg · s7#1 max) 외엔 전부터 있던 것(d28 · h10 · n06 · b06 · b08 · s4 · s8#2).
+- 고친 것: 남은 예산의 하루 평균(daily_avg, 묶기 없음)은 계산이 아니라 예산 답(하루 쓸 수 있는 금액)으로 → b13 다시(2회) 결정 맞음.
+- 정답(기대값)은 바꾸지 않았다. 남은 것: c02 · c18 · d21 해석, 소비 해석이 새 칸을 과하게 채우는 경향(점수만 영향, 결정은 서버가 흡수).
+- 응답 시간: 호출 1회 중앙값 2.4~2.5초 · 최대 5.2초, 한 턴(라우터 + 소비) 평균 약 4.4~5.6초.
+- 호출 수(장부): 1차 41 + 다시 10 + 2차 174 + 다시 2 = 227회. 전체 단위를 고친 지시문으로 한 번에 다시 돌리지는 않았다
+  (1차 통과 14사례는 7770b7d1 기준).
+
+### 23-15. 사용자 테스트 보완: 기간 지정 · 고정지출 기본 제외 · 설명 문장 (2026-10-30 — 실제 LLM 23회 / 상한 40)
+
+- 설명 문장 원인: "식비 지출이 42,000원했어요"는 템플릿이 아니라 설명 LLM 문장. 자리표시 {F1} = 방향 없는 금액('42,000원')이라
+  LLM 이 '{F1}했어요'로 쓰고, 검사는 숫자 · 모르는 키 · 금지 표현만 봐서 통과했다.
+  → 증감 자리표시는 방향까지 든 완성 단위('42,000원 늘었어요'), 그런 자리표시는 문장 끝에만(뒤에 말이 오면 거절 → 템플릿),
+  마침표 없으면 붙임. 설명 LLM 은 건수 · 평균 1~2문장만, 가게(카테고리)별 변화는 서버가 늘 같은 기준으로:
+  많이 늘어난 곳 · 줄어든 곳 (지난달 → 이번 달 금액, 각 3곳) + "늘어난 곳에서 모두 X 늘고 줄어든 곳에서 Y 줄어, 전체로는 Z 늘었어요."
+  (합계는 이름 없는 가게까지 더해 X − Y = Z). 카테고리 하나면 가게별, 전체면 카테고리별. 카드도 같은 기준(늘어난 곳 · 줄어든 곳 줄 + 잇는 문장).
+  LLM 에는 근거 이름표 · 키만(가게 이름 안 보냄 — 23-4 와 같은 원칙). 3명 × 설명 답 214문장 점검: 문법 깨짐 없음.
+- 기간 지정: 범용 조회 기간에 이번 주(월~기준일) · 지난주(월~일) · 특정 달(month 1~12, 가장 가까운 지난 그 달) ·
+  날짜 범위(date_from · date_to 'MM-DD'). 볼 수 있는 범위 = 최근 3개월 첫날 ~ 기준일 (periods.window · month_of · date_range).
+  해석 칸 period_said(기간 말 원문, 채점 안 함): 기간을 말했는데 칸으로 못 담았거나(작년 · 3주 전) 범위 밖(5월)이면
+  다른 기간으로 바꾸지 않고 "말씀하신 기간(작년)은 볼 수 없어요…" + [이번 달] [지난달] [최근 3개월]. compare=other_period(지난주 대비 등)
+  → "기간끼리 비교는 지금 '지난달 같은 기간 대비'만…" 안내. 예산 + 지정 기간 → 현재 예산 기간 확인 질문(기존과 같음).
+- 고정지출 기본 제외: 요일 · 시간대 조건이나 묶기(~별 · 상위)는 고정지출을 빼고 "월세 같은 고정지출 700,000원은 빼고 봤어요." +
+  [고정지출 포함해서 보기](이름 그대로 보내면 직전 조건 + include_fixed). "고정지출 포함해서"라고 말하면 처음부터 포함.
+  총액 · 카테고리 · 금액 범위 · 건수 · 평균 · 최대는 지금처럼 포함. 서비스 화면은 [예산 조정하기] 제안만 숨긴다.
+  독립 기대값 판 2026-10-30.2 로 다시 계산(바뀐 것: 윤서 요일별 · 시간대별, 민재 가게 상위 · 요일별 건수, 지우 카테고리별 건수 · 가게 상위).
+- 골든(임시 테스트 DB): 바뀐 칸은 설명 답(explain 37 · explain_fresh 68)뿐, 1~9번 조회 답은 그대로.
+- 실제 LLM: 사례 B-2026-10-30.4(76dcebeb), 소비 지시문 dd54d6a4 고정 — p01~p07 + 연속 ps1 해석 · 결정 모두 맞음(17회).
+  설명 LLM 3회 → 목록을 빠뜨리고 '…늘었어요 줄어든…'처럼 이어 씀 → 위처럼 고침 → 다시 3회: 2개 LLM 문장 사용 · 1개 검사 탈락(템플릿).
+  그 뒤 근거 이름표에서 '전체'를 뺐다(식비 설명에 '전체 지출은'이라 써서) — 실제 호출로 다시 보지 않음. 합계 17 + 3 + 3 = 23회.
+
+
+### 23-16. 사용자 테스트 보완 11/2 (짧은 기간 고정지출 · 기간 누락 버그 · 기간 안내 · 다른 사람 · 설명 근거) + 예산 범위 변경 영향 조사
+
+- 짧은 기간 고정지출: 이번 주 · 지난주 · 날짜 범위의 총액은 고정지출을 빼고 "같은 기간 고정지출 700,000원(월세 · 관리비 · 통신요금)은 따로
+  뺐어요." 한 줄(카드에도) + [고정지출 포함해서 보기]. 달 단위 총액은 그대로 포함. 요일 · 시간대 · 묶기 안내도 항목 이름을 함께
+  ("고정지출 700,000원(월세 · 관리비 · 통신요금)은 빼고 봤어요."). 독립 기대값 판 2026-11-02.1 (바뀐 값: 이번 주 865,000 → 165,000).
+- 기간 누락 버그 원인: '카테고리별로'를 해석이 compare=category 로 주면 대화 규칙의 카테고리별 경로(_spend → 이번 달 전반 분석 5번)가
+  날짜 범위를 버렸다. → 이번 달이 아닌 기간의 카테고리별은 그 기간의 카테고리별 묶기(10번 group_by=category).
+  구조 검사: decide 를 감싸 period_said 가 있는데 항목의 실제 기간(1 · 2 · 5 이번 달 / 6 · 7 지난달 비교 / 8 · 9 최근 / 10 query.period)이
+  말한 기간과 다르면 답하지 않고 기간 선택 질문(period_mismatch). 예산 3 · 4번은 예산 주기라 제외.
+- 볼 수 없는 기간 문구: "5월은 볼 수 없어요. 지금은 7월부터 이번 달(10월)까지 볼 수 있어요." + "어느 기간을 볼까요?"(질문 문장엔
+  말한 표현을 넣지 않음). 범위는 periods.window 기준(기준일 없으면 '최근 3개월과 이번 달').
+- 다른 사람의 소비: 해석 칸 other_person 하나 + 규칙 한 줄 → "다른 사람의 소비 내역은 볼 수 없어요." + "대신 내 식비를 볼까요?"
+  [내 식비 보기] [취소] (같은 조건 그대로 내 것으로). 사람 · 관계 단어 규칙 없음, 라우터 변경 없음.
+- "왜 늘었어?" 근거: 큰 결제 3건 · 늘어난(줄어든) 금액이 가장 몰린 시간대 · 요일 (이 셋은 고정지출 제외) → 새로 간 곳 · 자주 가던 곳 ·
+  이번엔 안 간 곳으로 전체 증감과 잇는 문장(이름 없는 결제까지 넣어 세 합 = 전체 증감) → 가게별 늘어난 곳 · 줄어든 곳은 두 기간 모두 간
+  가게가 있을 때만(카테고리 전체 설명은 카테고리별) → 늘었을 때 줄이는 방법 한 줄: 가장 크게 늘어난 요인(시간대 · 요일 · 가게) 하나의
+  이번 기간 건당 평균 × N(4번 이상이면 2, 아니면 1), 천 원 반올림 "약" — "점심 시간대 식비 결제는 12번, 건당 평균 15,000원이에요.
+  한 달에 2번 줄이면 약 30,000원 덜 쓰게 돼요." + [예산 조정하기](서비스 화면은 22-7 결정대로 숨김). 지시형 · 동기 단정 없음.
+  템플릿 · 설명 LLM · 카드 모두 같은 근거 · 순서 (LLM 은 건수 · 평균 1~2문장만). 3명 × 설명 답 270문장 점검(조사 · '결제' 반복 고침).
+- 골든(임시 테스트 DB): 바뀐 칸은 설명 답(explain 37 · explain_fresh 68)뿐, 1~9번 조회 답은 그대로.
+- 지시문 판 (토큰은 이번 실제 실행 입력 토큰으로 맞춘 추정, 글자당 약 0.56):
+  소비 해석 d4fb7599 · 6,738자 · 약 3,800토큰 / 라우터 9f9b8abd · 1,757자 · 약 1,000토큰 / 설명 c3a16660 · 556자 · 약 300토큰.
+- 실제 LLM(상한 50, 사용 28): 사례 B-2026-11-02.1(d4c73fb4) — g01(기간 + 카테고리별) · g02 · g03(다른 사람) · g04(대조) + p01~p07 · ps1
+  12단위 모두 맞음(25회, 호출 중앙값 2.1초 · 최대 6.8초). 설명 LLM 3회 모두 검사 통과.
+
+예산 범위 변경(6번) — 영향 조사만, 아직 바꾸지 않음 (바꾸기 전 보고 요청)
+- 팀 코드에 '예산 범위 밖 카테고리' 정의 없음 (main 도 API_RULES 표에서 여행·숙박 예산 O). 소비 분석 쪽 한 곳에 두고 팀 합류 목록에 올림(22-9).
+- 이번 예산 주기의 두 카테고리 생활비 지출: 3명 모두 0원(주거·통신 지출은 전부 고정지출) → 생활비 사용액은 그대로.
+- 바뀌는 것 = 더미 예산 배정의 여행·숙박: 윤서 30,000 · 민재 70,000 · 지우(초안) 20,000, 주거·통신은 0.
+  expected.json 영향은 그 배정을 어떻게 처리하느냐에 달림 — (가) 생활비 예산에서 빼고 여윳돈으로: 윤서 생활비 900,000 → 870,000 ·
+  남음 720,000 → 690,000, 민재 1,300,000 → 1,230,000 · 초과 62,000 → 132,000(여윳돈 충당 후 남는 여윳돈 138,000 그대로) /
+  (나) 다른 카테고리로 옮겨 생활비 총액 유지: expected.json 생활비 값 그대로, 카테고리 줄만 바뀜.
+
+
+### 23-17. main 병합 점검 + 예산 범위 (나) 구현 + 설명 문장 다듬기 (2026-11-02)
+
+- main 병합(55c7459, 사용자 병합): 들어온 변경 = finance.classifier(거래 분류 ML) · pipeline.classify_spending 연결 · MerchantEmbedding 삭제
+  (마이그레이션 0011). 챗봇 · 소비 분석 · fixture 코드는 둘 다 쓰지 않음(참조 없음). 쓰는 함수(listed_transactions · transaction_item ·
+  SourceKind · spending_summary · normalize_merchant) 변경 없음. 전체 테스트 970개 통과(건너뜀 2 — 하나는 main 의 ML 가중치 없는 분류 테스트),
+  더미 DB 0011 적용 확인. 팀 테스트 중 'classify_spending (step_error)' 로그는 팀 파이프라인 쪽(챗봇 무관).
+- 예산 범위 (나, 임시): spending_analysis.budget.OUT_OF_BUDGET = 주거·통신 · 여행·숙박 한 곳 정의.
+  approved_budget 의 생활비 배정 · 생활비 예산 합계에서 빼고, tools.budget_left 의 생활비 사용액에서도 빼서(뺀 금액 excluded_spent)
+  생활비 잔액 · 막대 · 카테고리별 잔액에 반영. 예산 선택지(category_options)에서 제외(9개). 두 카테고리 예산을 물으면
+  "주거·통신은 예산 범위가 아니에요." + "대신 이번 달 주거·통신 사용액을 볼까요?" [이번 달 주거·통신 보기] [취소](spend_instead),
+  섞어 물으면 범위 안만 답하고 "…은 예산 범위가 아니라 남은 예산에서 뺐어요." 생활비 답엔 해당 지출이 있을 때만
+  "주거·통신, 여행·숙박은 예산 범위가 아니라 생활비 사용액에서 뺐어요." 설명의 [예산 조정하기]도 두 카테고리면 붙이지 않음.
+  소비 조회는 12개 그대로.
+- design.json 판 v2 (fixture-design-2026-11-02-v2, SHA 7bdc1f7b): 여행·숙박 배정 → 기타(윤서 30,000 · 민재 70,000 · 지우 초안 20,000),
+  생활비 총액 유지. expected.json 그대로(생활비 값 · 식비 값 변화 없음).
+- 설명 문장: 요일 근거는 하루 평균(요일 합계 ÷ 그 기간의 그 요일 수)으로 비교 — "요일로는 화요일 하루 평균이 3,000원 늘었어요."
+  (동률이면 앞 요일. 윤서 식비는 화 · 목 · 금 · 일이 모두 +3,000 — 독립 계산으로 확인). 줄이는 방법 후보에서 요일은 뺌(하루 평균은 합계와
+  크기를 견줄 수 없음). 증감이 한 묶음에서만 나오면 "늘어난 금액은 모두 자주 가던 곳에서 나왔어요."(숫자 되풀이 없음).
+  템플릿 · 설명 LLM · 카드 같은 기준(카드 줄 이름 '점심 시간대' · '화요일 하루 평균').
+- 골든(임시 테스트 DB): 바뀐 답 = 설명 답 + 예산 8건(두 사람 × 주거·통신 · 여행·숙박 · 기타 3번, 카테고리별 4번). 그 밖 33건은
+  분석 결과에 excluded_spent 칸(0)만 늘었고 답은 같음. 생활비 전체(4번) 답 그대로.
+- 실제 LLM: 설명 3회(상한 10) 모두 검사 통과.
+- 평가 사례 n02("주거비 예산 남은 거 보여줘") 기대 결정을 바뀐 결정으로 덮어씀(run.POLICY_CHANGES, 사례 판 B-2026-11-02.2) — 3번 → spend_instead 안내.
+  n05(지난달보다 여행비, 소비 비교)는 소비 조회라 그대로.
+
+### 23-18. 사용자 테스트 보완 2차 (2026-11-02 — 실제 LLM 6회 / 상한 15)
+
+- 짧은 기간 고정지출 줄은 금액만: "같은 기간 고정지출 700,000원은 따로 뺐어요." ([고정지출 포함해서 보기] 그대로). 요일 · 시간대 · 묶기 안내는
+  항목 이름 포함 그대로.
+- 월 · 연도 생략 날짜 원인: 날짜 칸이 'MM-DD'만 받아서, 월을 말하지 않은 "20일부터 27일까지"는 해석이 날짜를 비우고 기간 말만 남기거나
+  (→ '기간을 말했는데 칸에 못 담음' = 볼 수 없는 기간 안내) 월을 짐작해 채웠다(기준일을 모르는 LLM 이 11월 등 → 서버가 '기준일 뒤 날짜는 작년'으로
+  옮겨 범위 밖). 둘 다 생략한 월 · 연도를 채우는 규칙이 없던 탓.
+  → 해석은 말한 값만: 월을 말하지 않으면 일만 'DD'. 서버(periods._day)가 기준일로 채움: 일만 → 이번 달, 'MM-DD' 의 해 = 올해(이번 달이 아닌
+  기준일 뒤 달이면 작년). periods.resolve_range 의 상태: ok · clipped(끝이 기준일 뒤 → 기준일까지 + "끝 날짜가 아직 지나지 않아 10월 29일까지만
+  봤어요.") · future(시작이 기준일 뒤 → "30일부터 31일까지는 아직 지나지 않은 기간이에요." + [지난달 같은 날짜(9월 30일)] [이번 달] [지난달]) ·
+  out(범위 밖 · 뒤집힘 → 기존 볼 수 없는 기간 안내). 지난달 같은 날짜 선택지는 기간 말(period_said)을 비워 말한 기간 검사와 어긋나지 않게.
+  하루짜리 기간 이름은 '9월 30일'(…~30일 아님).
+- "왜 늘었어?" 요일 문장 기준(explain._clear_day): 같은 방향으로 하루 평균이 가장 크게 바뀐 요일이 1,000원 이상이고, 2위보다 1,000원 이상 ·
+  1.5배 이상 클 때만 문장 · 카드 줄에 넣는다(2위가 없으면 1위만 본다). 같은 값이 여럿이거나 차이가 작으면 뺀다.
+  → 윤서 식비(화 · 목 · 금 · 일 모두 +3,000)는 요일 문장 없음. 3명 설명 답 중 요일 문장이 남은 것 9문장.
+- 골든(임시 테스트 DB): 바뀐 칸은 설명 답(explain 26 · explain_fresh 46)뿐.
+- 실제 LLM: 사례 B-2026-11-02.3(812993cc), 소비 지시문 14e5d099 고정 — r01 "20일부터 27일까지"(→ '20' · '27') · r02 "3일부터 지금까지"(→ '03', 끝 없음) ·
+  r03 "10월 25일부터 11월 3일까지"(→ '10-25' · '11-03') 해석 · 결정 모두 맞음(6회).
+
+## 24. 소비 분석 v1 완료 (2026-11-02 — 정리만. 코드 변경 · LLM 호출 없음)
+
+### 24-1. 지원 범위
+- 1~9번: 이번 달 총액 · 카테고리 · 남은 예산(카테고리 · 생활비 · 카테고리별) · 전반 분석(그래프) · 지난달 같은 날짜 비교 · 최근 1~3개월 추이
+  (이번 달 포함 선택). 하루 쓸 수 있는 금액 · 생활비 막대.
+- 범용 조회(10번, 23-13): 조건(요일 · 시간대 6구간 · 한 건 금액 · 카드 · 계좌 · 가게 이름 · 배달앱 묶음) · 계산(합계 · 건수 · 건당 평균 · 하루 평균 ·
+  가장 큰 1건) · 묶기(카테고리 · 가게 · 요일 · 시간대 · 월, 상위 1~5). 고정지출은 요일 · 시간대 · 묶기 · 짧은 기간에서 기본 제외(안내 + 포함 선택지).
+- 기간 지정(23-15 · 23-18): 이번 달 · 지난달 전체 · 이번 주 · 지난주 · 특정 달 · 날짜 범위(월 · 연도 생략은 기준일로). 볼 수 있는 범위 = 최근 3개월 + 이번 달.
+  범위 밖 · 아직 안 온 기간 · 말한 기간과 다른 조회는 바꾸지 않고 안내 + 선택지.
+- 대화 기능: 되묻기(개월 · 카테고리 · 기간 충돌 · 이번 달 포함 · 예산 기간), 이어받기(직전 조건 · 카드 · 조건 · 계산), 대체 조회(세부 지출 → 카테고리 전체),
+  별칭("데이트비는 식비로"), 다른 사람의 소비 → 내 것 제안, 예산 범위 밖 → 사용액 제안, 지원하지 않는 조합 → 볼 수 있는 것 안내.
+- 설명(23-15 · 23-16 · 23-17): "왜 늘었어?" 증감 · "왜 많아?" 구성 · 직전 결과에 없는 카테고리는 새로 비교. 근거 = 건수 · 평균 · 큰 결제 · 몰린 시간대 ·
+  (뚜렷할 때만) 요일 하루 평균 · 새로 간 곳 / 자주 가던 곳 / 안 간 곳으로 전체와 잇기 · 가게(카테고리)별 보조. 늘었을 때 줄이는 방법 한 줄(서버 계산값) +
+  [예산 조정하기]. 설명 LLM 은 건수 · 평균 1~2문장만(자리표시 · 검사, 실패하면 템플릿).
+- 예산 범위(23-17, 임시): 주거·통신 · 여행·숙박은 생활비 예산 · 사용액 · 잔액 · 선택지에서 제외, 소비 조회는 12개 그대로.
+
+### 24-2. 검증
+- 테스트: 전체 977개 통과(건너뜀 2 · 기대 실패 1, spending_fixture.settings) + router_eval 35개. 1단계부터 골든 비교(3명 × 64항목, 195개)로
+  바뀐 답이 결정에 따른 것뿐인지 매번 확인. 독립 기대값 expected.json(그대로) + expected_query.json(판 2026-11-02.1, 앱 import 없이 계산).
+- 실제 LLM 평가 (10/30~11/2, 장부 합계 604회 · 재시도 0):
+  · B-2026-10-30.1 (174회 + 지시문 누출로 중단 113 · 채점 오류 15 + 다시 15): 새 사례 b09~b17 해석 모두 맞음, '각각' 회귀 고침.
+  · B-2026-10-30.3 범용 조회 (227회): 1차 새 사례 라우터 19/19 · 소비 15/19 · 결정 14/19 · 연속 2/2 → 고쳐 영향 5개 다시(3개 해결) →
+    회귀 단일 라우터 60/60 · 소비 47/53 · 결정 64/67, 연속 결정 35/36 · 흐름 7/10 → b13 다시 결정 맞음.
+  · B-2026-10-30.4 기간 · 고정지출 (17회 8/8) + 설명 6회 / B-2026-11-02.1 기간+카테고리별 · 다른 사람 (25회 12/12) + 설명 3회 /
+    설명 다듬기 3회 / B-2026-11-02.3 생략 날짜 (6회 3/3).
+  · 그 전 이력(라우터 · 단계 A/B 평가)은 13~19절.
+- 지시문(현재, 토큰은 실제 입력 토큰으로 맞춘 추정 · 글자당 약 0.56): 소비 해석 14e5d099 · 6,796자 · 약 3,800 /
+  라우터 9f9b8abd · 1,757자 · 약 1,000 / 설명 c3a16660 · 556자 · 약 300. 평가 사례 판 B-2026-11-02.3 (단일 102 · 연속 12).
+
+### 24-3. 알려진 한계 · 남은 일
+- 경로 B 미구현(23-3): 도구 선택(계획 LLM), 정해진 계산 위의 추가 분석, 지난달 비교 + 건수 · 묶기(지금은 compare_query 안내).
+- 템플릿 점검: 설명 답은 3명 × 270문장 점검했지만 범용 조회 · 기간 안내 · 예산 문구 전체를 한 번에 읽어 보는 점검은 아직.
+- 최종 지시문(14e5d099)으로 전체 회귀를 한 번에 돌리지 않음 — 판마다 영향 사례만. 남은 해석 실패: c02('점심값'을 세부 지출로) ·
+  c18(예산 나눠 보기를 예산 변경으로) · d21 · n10 · s7#2 · 새 칸을 과하게 채우는 경향(결정은 서버가 흡수).
+- [미정] 카테고리 선택으로 정한 별칭의 기억 범위(이번 대화만 · 계속) — 지금은 대화 상태 안에서만.
+- 팀 합류 목록 22-9: chat.md(김혜리) · 카드 형식(권세진) · Conversation.slots(DB) · 멱등 트랜잭션(config) · 예산 '준비 중' · 예산 범위 목록과
+  팀 예산 추천 코드(주거·통신 110,000 · 여행·숙박 60,000 기본 배분) 맞추기 · chat/api.py 엔진 전환.
+- 실제 DB 점검 항목: 수집 기록(SyncRun covered 범위)으로 complete 판정이 되는지 · occurred_time 이 비는 비율(시간대 조회) · 고정지출 funding 표시가
+  실제 자동이체와 맞는지 · 같은 구매 연결(카드 승인 + 계좌 출금) · 확인 필요(UNCLASSIFIED) 비율 · 실제 가맹점 표기(STARBUCKS · 지점명 · 결제대행 접두어)와
+  가게 이름 검색 · 배달앱 운영사 표기(우아한형제들 · 위대한상상) · 승인 예산에 범위 밖 카테고리 배정이 있는지.
+- 실제 날짜 전환 시 정책: 지금 채팅은 fixture 기준 시각(2026-10-29) 고정 → 실제 오늘로 바꾸면 '이번 달 · 지난주 · 볼 수 있는 범위 · 생략 날짜 채우기'가
+  모두 그날 기준이 된다. 정할 것: 월초(1~3일) 이번 달 답의 의미 · 수집이 아직 안 끝난 오늘을 넣을지 · 예산 주기 경계일 · 해석 LLM 은 오늘을 모르므로
+  상대 날짜는 계속 서버가 채운다(원칙 유지) · 평가 사례의 기준일 고정 방법.

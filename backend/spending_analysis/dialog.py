@@ -15,7 +15,10 @@ DB · 계산 없음 (계산은 analyze, 실행은 agent.py). chat 의 라우터 
 """
 from dataclasses import asdict, dataclass, replace
 
-from . import reading
+from . import reading, scope
+from .budget import OUT_OF_BUDGET
+from .answer import span
+from .periods import month_before, month_of, resolve_range, window
 from .reading import CATEGORY_NAMES, ReadFailed, SpendingReading, find_category
 
 
@@ -84,6 +87,9 @@ def label(c):
     return c["unknown"] if _unknown(c) else c["detail"] if _detail(c) else CATEGORY_NAMES[c]
 
 
+# 예 · 아니요 질문(budget_current) 선택지의 화면 이름. 이 이름 그대로면 LLM 없이 답으로 본다
+YES_NO = {True: "네", False: "아니요"}
+
 # 별칭을 쓴 답변에 붙는 선택지 이름 — 사용자가 이 이름을 그대로 보내면 그 말의 카테고리를 다시 묻는다
 REPICK = "'{word}' 카테고리 다시 고르기"
 
@@ -109,8 +115,8 @@ def summary(store, conversation_id):
     """라우터 · 다른 에이전트에 공개하는 소비 요약: 되묻기 중인지, 직전 조회 조건, 항목별 근거 상태.
     확정 수치(facts)는 evidence=confirmed 항목만 넣는다 (부분 자료는 조건 · 제한 코드만). 거래 원문은 넣지 않는다"""
     last = store.get_analysis(conversation_id)
-    keep = ("type", "category", "instead_of", "include_current", "ok", "evidence", "limits", "period", "compare_period",
-            "as_of")  # instead_of · include_current = 실제 조회 범위가 말한 것과 다를 때 · 이번 달 포함
+    keep = ("type", "category", "instead_of", "include_current", "payment", "merchant", "ok", "evidence", "limits", "period",
+            "compare_period", "as_of")  # instead_of · include_current = 실제 조회 범위가 말한 것과 다를 때 · 이번 달 포함
     items = [{**{k: i[k] for k in keep if k in i}, **({"facts": i["facts"]} if i.get("evidence") == "confirmed" and "facts" in i
                                                      else {})} for i in (last or {}).get("items", [])]
     return {"has_question": pending(store, conversation_id) is not None,
@@ -133,13 +139,15 @@ def _reask(asked):
                     options=tuple(asked["options"]), agent=AGENT)
 
 
-def step(store, conversation_id, text, complete, *, mode="continue", chosen=False, budget_change=None):
+def step(store, conversation_id, text, complete, *, mode="continue", chosen=False, budget_change=None, merchant=None,
+         today=None):
     """소비 입력(원문) 하나 → Decision. 해석은 소비 전용 프롬프트로 직접 한다 (complete 주입)
     - mode=continue: 소비가 담당일 때 입력을 먼저 받는다. 되묻기 답 · 새 소비 요청 · 다른 분야(not_mine) 를 가린다
     - mode=start: 라우터가 소비로 보낸 새 요청. 보류된 되묻기 없이 해석한다
       [임시 · 미정] 새 소비 요청이 보류된 되묻기를 대신한다 (기존 '새 요청이면 질문을 바꾼다' 규칙을 그대로 씀)
     - chosen: 사용자가 라우터 질문에서 소비 분석을 골랐다 (복합 문장 중 소비 부분만 해석)
-    - not_mine · 해석 실패(failed)면 아무 상태도 바꾸지 않는다"""
+    - not_mine · 해석 실패(failed)면 아무 상태도 바꾸지 않는다
+    - merchant(말) → 그 말이 이름에 들어간 가게 결제가 있는지 (DB 조회는 부르는 쪽). 없으면 가게 이름 검색을 하지 않는다"""
     last, state = store.get_analysis(conversation_id), _state(store, conversation_id)
     asked = pending(store, conversation_id) if mode == "continue" else None
     repick = state.get("repick")
@@ -148,6 +156,8 @@ def step(store, conversation_id, text, complete, *, mode="continue", chosen=Fals
     picked = asked and asked["asking"] in ("category", "explain_target", "fallback_category") and find_category(text)
     option = asked and asked["asking"] in LABELED and next(
         (o for o in asked["options"] if o["label"] == _word(text)), None)
+    if asked and asked["asking"] == "budget_current" and _word(text) in YES_NO.values():
+        option = {"set": {"confirm": _word(text) == YES_NO[True]}}
     try:
         # 목록에서 고른 코드 · 이름 · 선택지 이름이면 LLM 없이 답으로 본다 (조회 조건만 정함, 거래 카테고리는 안 바꿈)
         if picked:
@@ -174,7 +184,8 @@ def step(store, conversation_id, text, complete, *, mode="continue", chosen=Fals
         if interp.followup == "cancel":
             _save_pending(store, conversation_id, None)
             return Decision("cancelled", reason="cancel", agent=AGENT)
-        if interp.followup == "answer" and asked["asking"] in ("budget_current", "fallback_scope") and interp.confirm is False:
+        if interp.followup == "answer" and asked["asking"] in ("budget_current", "fallback_scope", "self_instead", "spend_instead") \
+                and interp.confirm is False:
             _save_pending(store, conversation_id, None)
             return Decision("cancelled", reason="declined", agent=AGENT)
         if interp.followup == "answer":
@@ -194,7 +205,7 @@ def step(store, conversation_id, text, complete, *, mode="continue", chosen=Fals
     asked_request = request
     request, used = _with_aliases(request, state.get("aliases", {}))
     used = fresh + used
-    decision = decide(request, source, last)
+    decision = decide(request, source, last, merchant, today)
     request = decision.request or request  # 직전 분석을 이어받았으면 그 요청
     if request.after_budget_change and decision.status != "failed":
         # 최신 적용 예산은 소비 분석 쪽이 다시 조회한다. 과거 결과의 예산 참조를 현재 예산으로 고정하지 않는다
@@ -240,18 +251,75 @@ def _ask_repick(store, conversation_id, repick):
 # ---------- 규칙 (router_core/rules.py 에서 그대로 옮김) ----------
 
 def _ready(interp, by_category, overall, **extra):
-    """대체 범위에 동의한 세부 지출은 그 카테고리 전체로 조회하고, 원래 말(instead_of)을 항목에 남긴다 (답변 · 설명이 범위를 밝힌다)"""
-    if not interp.categories:
-        items = ({"type": overall, "category": None, **extra},)
-    else:
-        items = tuple({"type": by_category, "category": c["category"], "instead_of": c["detail"], **extra} if _detail(c)
-                      else {"type": by_category, "category": c, **extra} for c in interp.categories)
+    """대체 범위에 동의한 세부 지출은 그 카테고리 전체로 조회하고, 원래 말(instead_of)을 항목에 남긴다 (답변 · 설명이 범위를 밝힌다)
+    동의 전 세부 지출이 여기까지 왔으면 가게 이름 검색(decide 가 결제를 확인함) → 카테고리 없이 merchant 로 거른 전체 조회.
+    카드 결제만(payment)은 소비 조회에만 (남은 예산은 결제 수단과 상관없음). 거른 조회는 전반 분석(5) 대신 총액(1)"""
+    card = {"payment": interp.payment, **_filters(interp)} if by_category != 3 else {}
+    card = {k: v for k, v in card.items() if v is not None}  # 결제 수단 · 요일 · 시간대 · 금액 (남은 예산엔 없음)
+    whole = 1 if overall == 5 and card else overall
+
+    def one(c):
+        if _detail(c) and c.get("accepted"):
+            return {"type": by_category, "category": c["category"], "instead_of": c["detail"], **card, **extra}
+        if _detail(c):
+            names = {"merchant_names": list(c["names"])} if c.get("names") else {}
+            return {"type": 1 if overall == 5 else overall, "category": None, "merchant": c["detail"], **names, **card, **extra}
+        return {"type": by_category, "category": c, **card, **extra}
+    items = tuple(one(c) for c in interp.categories) if interp.categories else ({"type": whole, "category": None, **card, **extra},)
     return Decision("ready", "spending", items)
 
 
+QUERY_CALC = ("measure", "group_by", "top_n")  # 계산 · 묶기 (말하면 범용 조회 10번)
+QUERY_FILTERS = ("weekday", "time_slot", "amount_min", "amount_max", "include_fixed")  # 조건 (기존 1 · 2 · 6~9번에도 붙는다)
+CUSTOM_PERIODS = ("this_week", "last_week", "month", "range")  # 지정 기간 → 범용 조회 10번
+
+
+def _filters(interp):
+    """해석의 조건 → 항목 거르기 칸 (scope.FILTERS 이름). 야식 · 퇴근 후 · 평일 · 주말은 여기서 구간 · 요일로 푼다"""
+    out = {}
+    if interp.weekday:
+        out["weekdays"] = scope.expand_days(interp.weekday)
+    if interp.time_slot:
+        out["time_slots"] = scope.expand_slots(interp.time_slot)
+    out.update({k: getattr(interp, k) for k in ("amount_min", "amount_max") if getattr(interp, k) is not None})
+    if interp.include_fixed:
+        out["include_fixed"] = True
+    return out
+
+
+def _calc(interp):
+    """계산 · 묶기를 말했는지. 묶기 없는 합계(measure=sum)는 기본 계산이라 계산으로 보지 않는다 (기존 1 · 2번 그대로)"""
+    return interp.group_by is not None or interp.top_n is not None or interp.measure not in (None, "sum")
+
+
+def _query(interp, period, **months):
+    """범용 조회 10번 항목 (MEMO 23-1). 합계를 물었으면 measure 기본 sum, 상위 N 은 서버 상한 5.
+    특정 달 · 날짜 범위는 말한 값 그대로(month · date_from · date_to) — 실제 날짜는 기준일로 periods 가 정한다"""
+    top = min(interp.top_n, 5) if interp.top_n else None
+    q = {"period": period, "measure": interp.measure or "sum", "group_by": interp.group_by, "top_n": top}
+    said = {"month": interp.month} if period == "month" else \
+        {k: getattr(interp, k) for k in ("date_from", "date_to") if getattr(interp, k)} if period == "range" else {}
+    return _ready(interp, 10, 10, query={k: v for k, v in q.items() if v is not None}, **said, **months)
+
+
+def _period_unavailable(interp, today):
+    """말한 기간을 볼 수 없으면 그 말(아니면 None). 해석이 기간 말을 놓쳤거나(period_said 만 있음) 범위 밖(최근 3개월 + 이번 달)"""
+    said = interp.period_said
+    named = interp.period or interp.months is not None or interp.compare or interp.include_current
+    if said and not named:
+        return said
+    if today is not None and interp.period == "month" and month_of(today, interp.month) is None:
+        return said or f"{interp.month}월"
+    if today is not None and interp.period == "range" \
+            and resolve_range(today, interp.date_from, interp.date_to)["state"] == "out":
+        return said or f"{interp.date_from}~{interp.date_to or ''}"
+    return None
+
+
 def _mode(interp):
-    """비교 방식: current(이번 기간) · prev_month(지난달 대비) · recent(최근 N개월) · last_month(지난달 단독) · category_compare"""
-    if interp.compare == "category":
+    """비교 방식: current(이번 기간) · prev_month(지난달 대비) · recent(최근 N개월) · last_month(지난달 단독) · category_compare
+    카테고리별(compare=category)이라도 계산 · 묶기를 함께 말했으면 범용 조회의 이번 달로 본다"""
+    if interp.compare == "category" and not _calc(interp):
         return "category_compare"
     if interp.compare == "prev_month":
         return "prev_month"
@@ -260,6 +328,8 @@ def _mode(interp):
         return "recent"
     if interp.period == "last_month":
         return "last_month"
+    if interp.period in CUSTOM_PERIODS:
+        return "custom"
     return "current"
 
 
@@ -268,32 +338,46 @@ def _budget_left(interp, mode):
     if mode == "current":
         return _ready(interp, 3, 4)
     if mode == "category_compare":
-        # 카테고리끼리 비교는 대상과 상관없이 미지원. 현재 기간 질문으로 보내지 않는다
-        return Decision("unsupported", "spending", reason="category_compare")
+        # "카테고리별로 예산 얼마나 남았어?" → 카테고리마다 남은 예산 목록 (10/30 사용자 결정 — 이전엔 미지원)
+        return _ready(interp, 3, 4, **({} if interp.categories else {"breakdown": True}))
     # 지난달 대비 · 최근 N개월 · 지난달 단독 → 미지원 안내(reason) + 현재 예산 기간 잔액으로 볼지 되묻기
     return Decision("ask", "spending", asking="budget_current", ask_about=interp.categories,
                     options=(True, False), reason=mode)
 
 
+def _months(interp):
+    """최근 N개월: (적용 개월 칸, 안내). 0 이하면 None (개월 수를 다시 묻는다)"""
+    months = interp.months
+    if months is not None and months < 1:
+        return None
+    applied = MONTHS_DEFAULT if months is None else min(months, MONTHS_MAX)
+    extra = {"include_current": True} if interp.include_current else {}  # 이번 달 포함은 따로 요청했을 때만
+    return {"months_requested": months, "months_applied": applied, **extra}, \
+        ("months_capped",) if months is not None and months > MONTHS_MAX else ()
+
+
 def _spend(interp, mode):
-    """쓴 돈 · 전반 분석"""
+    """쓴 돈 · 전반 분석. 계산 · 묶기(건수 · 평균 · 최대 · 상위 · ~별)나 지난달 단독은 범용 조회 10번"""
+    if _calc(interp) or mode in ("last_month", "custom"):
+        if mode == "prev_month":  # 지난달과 비교하면서 건수 · 묶기는 아직 없다 → 볼 수 있는 것을 안내
+            return Decision("unsupported", "spending", reason="compare_query")
+        if mode == "recent":
+            months = _months(interp)
+            if months is None:
+                return Decision("ask", "spending", asking="months")
+            return replace(_query(interp, "recent", **months[0]), notices=months[1])
+        return _query(interp, interp.period if mode == "custom" else "last_month" if mode == "last_month" else "this_month")
     if mode == "category_compare":
-        # 1차 미지원 (10/29 확정). 단순 복수 카테고리 조회(compare 없음)와 다르다
-        return Decision("unsupported", "spending", reason="category_compare")
-    if mode == "last_month":
-        # 지난달 단독 조회는 미지원. 비교나 최근 1개월로 바꾸지 않는다
-        return Decision("unsupported", "spending", reason="last_month_only")
+        # "카테고리별로 얼마 썼어?" · "식비랑 교통비 비교" → 이번 달 카테고리별 금액 목록 (말한 카테고리면 그것만,
+        # 아니면 전반 분석의 카테고리 그래프). 이전엔 미지원 (10/30 사용자 결정)
+        return _ready(interp, 2, 5)
     if mode == "prev_month":
         return _ready(interp, 7, 6)
     if mode == "recent":
-        months = interp.months
-        if months is not None and months < 1:
+        months = _months(interp)
+        if months is None:
             return Decision("ask", "spending", asking="months")
-        applied = MONTHS_DEFAULT if months is None else min(months, MONTHS_MAX)
-        notices = ("months_capped",) if months is not None and months > MONTHS_MAX else ()
-        # 이번 달 포함은 따로 요청했을 때만 (기존 '최근 N개월' = 완료된 달 기준 그대로)
-        extra = {"include_current": True} if interp.include_current else {}
-        return replace(_ready(interp, 9, 8, months_requested=months, months_applied=applied, **extra), notices=notices)
+        return replace(_ready(interp, 9, 8, **months[0]), notices=months[1])
     if interp.target == "spend":
         return _ready(interp, 2, 1)
     # "식비 알려줘" 처럼 전반 분석 + 카테고리면 2번 (10/29 확정)
@@ -305,20 +389,24 @@ def unknown_words(interp):
 
 
 def category_options(budget):
-    # 소비 조회는 12개 전부, 남은 예산 조회는 예산 줄이 없는 UNCLASSIFIED 를 뺀다 (10/29 확정)
+    # 소비 조회는 12개 전부, 남은 예산 조회는 예산 줄이 없는 UNCLASSIFIED (10/29) · 예산 범위 밖(11/2)을 뺀다
     return tuple({"code": code, "name": name} for code, name in CATEGORY_NAMES.items()
-                 if not (budget and code in NO_BUDGET))
+                 if not (budget and (code in NO_BUDGET or code in OUT_OF_BUDGET)))
 
 
-CONDITIONS = ("target", "period", "compare", "months", "include_current", "categories")
-PERIOD_GROUP = ("period", "compare", "months", "include_current")
+CONDITIONS = ("target", "period", "compare", "months", "include_current", "categories", "payment", *QUERY_FILTERS, *QUERY_CALC)
+PERIOD_GROUP = ("period", "compare", "months", "include_current", "month", "date_from", "date_to", "period_said")
 
 
 def conditions(interp):
     """이어받을 수 있는 조회 조건만 (JSON 으로 저장 가능한 모양)"""
     out = {"target": interp.target, "period": interp.period, "compare": interp.compare,
            "months": interp.months, "categories": list(interp.categories)}
-    return {**out, "include_current": True} if interp.include_current else out  # 이번 달 포함일 때만 (기존 기록 모양 그대로)
+    out = {**out, "include_current": True} if interp.include_current else out  # 이번 달 포함일 때만 (기존 기록 모양 그대로)
+    out = {**out, "payment": interp.payment} if interp.payment else out  # 결제 수단을 말했을 때만
+    # 범용 조회 조건 · 계산은 말했을 때만 (기존 기록 모양 그대로)
+    return {**out, **{k: list(v) if isinstance(v, tuple) else v for k in (*QUERY_FILTERS, *QUERY_CALC, *PERIOD_GROUP[4:])
+                      if (v := getattr(interp, k)) not in (None, ())}}
 
 
 def overlay(top, base):
@@ -333,14 +421,21 @@ def overlay(top, base):
         fields["target"] = base["target"]
     if all(getattr(top, k) is None for k in PERIOD_GROUP):
         fields.update({k: base.get(k) for k in PERIOD_GROUP})
-    if not top.categories and not top.all_categories:
+    # "그럼 카테고리별로는?"(compare=category, 카테고리 말 없음)은 범위를 전체로 넓히는 말 → 직전 카테고리를 이어받지 않는다
+    if not top.categories and not top.all_categories and top.compare != "category":
         fields["categories"] = tuple(base["categories"])
+    if top.payment is None and base.get("payment"):  # 카드 결제만 → 후속 질문도 카드 결제만 ("그럼 식비는?")
+        fields["payment"] = base["payment"]
+    for k in (*QUERY_FILTERS, *QUERY_CALC):  # 주말 · 밤 · 건수 · 가게별 … 도 말하지 않았으면 이어받는다 ("그럼 교통비는?")
+        if getattr(top, k) in (None, ()) and base.get(k) not in (None, []):
+            fields[k] = tuple(base[k]) if isinstance(base[k], list) else base[k]
     return replace(top, refers_to=None, **fields)
 
 
 CHOICE_ASKS = ("period_choice", "category_choice", "include_choice")
-LABELED = CHOICE_ASKS + ("fallback_scope",)  # 선택지 이름을 그대로 보내면 LLM 없이 답으로 본다
-_NONE = {"period": None, "compare": None, "months": None, "include_current": None}
+LABELED = CHOICE_ASKS + ("fallback_scope", "self_instead", "spend_instead")  # 선택지 이름을 그대로 보내면 LLM 없이 답으로 본다
+_NONE = {"period": None, "compare": None, "months": None, "include_current": None, "month": None, "date_from": None,
+         "date_to": None, "period_said": None}
 VIEWS = {  # 기간 묶음 하나를 고르면 그 묶음 칸만 바꾼다 (최근 N개월의 개월 수 · 이번 달 포함은 말한 값 그대로)
     "this_month": ("이번 달", {**_NONE, "period": "this_month"}),
     "last_month": ("지난달", {**_NONE, "period": "last_month"}),
@@ -398,32 +493,112 @@ def _picked_view(answer, asking, options):
 
 
 def _explain(interp, text, last):
-    """설명 요청 → 참조할 직전 분석 항목만 정한다. 설명 생성 · 재조회는 소비 분석 계층 몫
-    근거는 직전 조회의 확정(evidence=confirmed) 항목뿐. 부분 자료 · 비교 불가면 evidence_incomplete 로 멈춘다
-    (더 이전의 다른 분석으로 바꿔 설명하지 않는다)"""
-    if last is None:
+    """설명 요청 → 참조할 분석 항목만 정한다. 설명 생성 · 재조회는 소비 분석 계층 몫
+    - 근거는 직전 조회의 확정(evidence=confirmed) 항목. 부분 자료 · 비교 불가면 evidence_incomplete 로 멈춘다
+      (더 이전의 다른 분석으로 바꿔 설명하지 않는다)
+    - 설명 종류(explain_kind): change = 증감 설명, composition = 구성 설명(얼마나 · 어디에 썼는지).
+      말하지 않았으면 직전 결과로 정한다 — 비교(6~9)면 증감, 이번 달(1 · 2 · 5)이면 구성
+    - 직전 결과와 종류가 다르면 같은 범위로 바꿔 본다: 이번 달 결과에 '왜 늘었어?' → 이번 달 vs 지난달 같은 기간 새 비교,
+      지난달 비교에 '왜 이렇게 많아?' → 그 비교의 이번 달 구성
+    - 말한 카테고리가 직전 결과에 없으면(다른 걸 봤거나 직전 분석이 없음) 그 카테고리를 새로 본다 (종류 없으면 증감)"""
+    named = [c for c in interp.categories if isinstance(c, str)]
+    if last is None and not named:
         return Decision("ask", "spending", asking="detail", reason="no_previous_analysis")
-    finished = [i for i in last["items"] if i["ok"]]  # 실패한 항목은 참조하지 않는다
+    finished = [i for i in (last or {}).get("items", []) if i["ok"]]  # 실패한 항목은 참조하지 않는다
     done = [i for i in finished if i.get("evidence") == "confirmed"]
     if interp.categories:
-        picked = [i for i in done if i["category"] in interp.categories]
-        if len(picked) != len(interp.categories):
-            limited = any(i["category"] in interp.categories for i in finished)
-            return Decision("unsupported", "spending", reason="evidence_incomplete" if limited else "reference_not_available")
+        picked = []
+        for code in named:
+            seen = [i for i in done if i["category"] == code]
+            if seen:
+                picked.append(seen[0])
+            elif any(i["category"] == code for i in finished):
+                return Decision("unsupported", "spending", reason="evidence_incomplete")
+            else:
+                picked.append(_fresh({"type": 2, "category": code}, interp.explain_kind or "change"))
+        if len(picked) != len(interp.categories):  # 모르는 말 · 세부 지출로만 물음
+            return Decision("unsupported", "spending", reason="reference_not_available")
     elif not done:
         return Decision("unsupported", "spending", reason="evidence_incomplete" if finished else "reference_not_available")
-    elif len(done) == 1:
+    elif len(done) == 1 or not all(i["category"] and not scope.filters(i) for i in done):
+        # 하나뿐이거나, 카테고리로 고를 수 없는 결과(가게 이름 · 카드 결제 · 전체)가 섞였으면 모두 설명한다
         picked = done
     else:
-        # 여러 결과 중 무엇인지 모르면 고르지 않고 묻는다
+        # 여러 카테고리 결과 중 무엇인지 모르면 고르지 않고 묻는다
         return Decision("ask", "spending", asking="explain_target", ask_about=tuple(i["category"] for i in done),
                         options=tuple({"code": i["category"], "name": CATEGORY_NAMES[i["category"]]} for i in done))
+    picked = [_as_kind(i, interp.explain_kind) for i in picked]
     return Decision("ready", "spending", explain={"question": text, "items": picked})
 
 
-def decide(interp, text, last=None):
+CHANGE_TYPES, CURRENT_TYPES = (6, 7, 8, 9), (1, 2, 5)
+
+
+def _fresh(item, kind):
+    """직전 결과 밖의 설명 항목. change = 이번 달 vs 지난달 같은 기간 새 비교(fresh) · composition = 이번 달 구성 (기록 수치 없음)"""
+    base = {"category": item.get("category"), **scope.filters(item)}
+    if kind == "change":
+        return {"type": 7 if base["category"] else 6, **base, "fresh": True}
+    return {"type": 2 if base["category"] else 1, **base, **({"period": item["period"]} if item.get("period") else {})}
+
+
+def _as_kind(item, kind):
+    """직전 결과 항목을 물은 설명 종류에 맞춘다 (종류를 말하지 않았거나 이미 맞으면 그대로)"""
+    if item.get("fresh") or kind is None or item["type"] in (3, 4):
+        return item
+    if kind == "change" and item["type"] in CURRENT_TYPES:
+        return _fresh(item, "change")
+    if kind == "composition" and item["type"] in (6, 7):
+        return _fresh(item, "composition")  # 비교의 이번 달 기간 그대로 (period = 이번 달 쪽)
+    return item
+
+
+def decide(interp, text, last=None, merchant=None, today=None):
+    """소비 요청 → Decision (_decide) + 기간 검사: 사용자가 기간을 말했는데(period_said) 실제 조회 항목의 기간이 다르면
+    답하지 않고 안내한다 (어느 경로든 기간을 버리거나 바꾸지 않게 — 10/30 '날짜 범위 + 카테고리별 → 10월 전체' 버그)"""
+    decision = _decide(interp, text, last, merchant, today)
+    request = decision.request or interp
+    if decision.status == "ready" and decision.items and request.period_said and _period_differs(request, decision.items):
+        return replace(_period_ask(request.period_said, today, "period_mismatch"), request=request)
+    return decision
+
+
+ITEM_PERIOD = {1: "this_month", 2: "this_month", 5: "this_month", 6: "prev_month", 7: "prev_month", 8: "recent", 9: "recent"}
+
+
+def _period_differs(interp, items):
+    """해석이 말한 기간 vs 항목이 실제로 볼 기간 (예산 3 · 4번은 예산 주기라 보지 않는다)"""
+    said = "prev_month" if interp.compare == "prev_month" else interp.period or \
+        ("recent" if interp.months is not None or interp.include_current else None)
+    if said is None:
+        return False
+    actual = {ITEM_PERIOD.get(i["type"]) or i.get("query", {}).get("period") for i in items if i["type"] not in (3, 4)}
+    return bool(actual) and actual != {said}
+
+
+def _period_ask(said, today, reason):
+    """볼 수 없는 · 맞지 않는 기간: 다른 기간으로 바꾸지 않고, 볼 수 있는 범위(7월 ~ 이번 달)를 말하고 고르게 한다"""
+    about = (said, f"{window(today).month}월", f"{today.month}월") if today else (said,)
+    return Decision("ask", "spending", asking="period_choice", ask_about=about, reason=reason,
+                    options=tuple({"value": v, "label": VIEWS[v][0].format(n=MONTHS_DEFAULT),
+                                   "set": {**VIEWS[v][1], **({"months": MONTHS_DEFAULT} if v == "recent" else {})}}
+                                  for v in ("this_month", "last_month", "recent")))
+
+
+def _future_ask(interp, today):
+    """시작 날짜가 아직 안 온 기간: 다른 기간으로 바꾸지 않고 안내 + 지난달 같은 날짜 · 이번 달 · 지난달 선택지"""
+    start, end = month_before(today, interp.date_from), interp.date_to and month_before(today, interp.date_to)
+    first = resolve_range(today, start, end or None)["period"]
+    options = [] if first is None else [{"value": "same_days", "label": f"지난달 같은 날짜({span(first)})",
+                                         "set": {**_NONE, "period": "range", "date_from": start, "date_to": end}}]
+    options += [{"value": v, "label": VIEWS[v][0], "set": dict(VIEWS[v][1])} for v in ("this_month", "last_month")]
+    return Decision("ask", "spending", asking="period_choice", ask_about=(interp.period_said or "그 기간",),
+                    reason="period_future", options=tuple(options))
+
+
+def _decide(interp, text, last=None, merchant=None, today=None):
     """소비 요청(mine=true 인 해석) → Decision. text = 원래 문장, last = 직전 조회 (없으면 None)
-    복합 의도 · 예산 조정 · 범위 밖 판단은 라우터 몫"""
+    merchant = 가게 이름 검색 가능 여부 함수 (step 참고). 복합 의도 · 예산 조정 · 범위 밖 판단은 라우터 몫"""
     if interp.after_budget_change and interp.refers_to != "previous" \
             and interp.target is None and not interp.categories and not interp.all_categories:
         # "바뀐 예산"이라는 말만으로 3 · 4번에 고정하지 않는다 → 볼 분석 범위만 묻는다
@@ -437,7 +612,27 @@ def decide(interp, text, last=None):
             return Decision("ask", "spending", asking="scope", ask_about=interp.categories, reason=reason)
         merged = overlay(interp, last["request"])
         # 이어받은 요청을 결과에 남긴다 → 대기 상태 · 성공 기록이 이어받은 조건으로 이어진다
-        return replace(decide(merged, text, last), request=merged)
+        return replace(_decide(merged, text, last, merchant, today), request=merged)
+    if interp.other_person:
+        # 다른 사람의 소비 · 예산은 볼 수 없다 → 같은 조건으로 '내 것'을 볼지 묻는다 (사람 · 관계 말로 규칙을 두지 않는다)
+        name = ", ".join(label(c) for c in interp.categories) if interp.categories else \
+            ("예산" if interp.target == "budget_left" else "소비")
+        return Decision("ask", "spending", asking="self_instead", ask_about=(name,), reason="other_person",
+                        options=({"value": True, "label": f"내 {name} 보기", "set": {"confirm": True}},
+                                 {"value": False, "label": "취소", "set": {"confirm": False}}))
+    if interp.compare == "other_period":  # 지난주 · 작년 대비 같은 기간끼리 비교는 아직 → 볼 수 있는 것을 안내
+        return Decision("unsupported", "spending", reason="period_compare")
+    if today is not None and interp.period == "range" \
+            and resolve_range(today, interp.date_from, interp.date_to)["state"] == "future":
+        return _future_ask(interp, today)
+    unavailable = _period_unavailable(interp, today)
+    if unavailable:
+        # 볼 수 없는 기간을 다른 기간으로 조용히 바꾸지 않는다 → 안내 + 볼 수 있는 기간 선택지 (고르면 그 기간 묶음만 바뀜)
+        return _period_ask(unavailable, today, "period_unavailable")
+    if interp.compare == "category" and interp.target != "budget_left" and \
+            (interp.period not in (None, "this_month") or interp.months is not None or interp.include_current):
+        # 이번 달이 아닌 기간의 '카테고리별' = 그 기간의 카테고리별 묶기 (이번 달 전반 분석으로 바꾸지 않는다)
+        interp = replace(interp, compare=None, group_by=interp.group_by or "category")
     conflict = _conflict(interp)
     if conflict:
         # 이어받은 뒤 검사 (대기 상태에 이어받은 조건이 남게). 추측해서 하나를 고르지 않고 말한 조건 중 무엇인지 묻는다
@@ -449,6 +644,9 @@ def decide(interp, text, last=None):
         return Decision("ask", "spending", asking="category", ask_about=unknown_words(interp),
                         options=category_options(budget))
     details = [c for c in interp.categories if _detail(c) and not c.get("accepted")]
+    # 가게 이름(스타벅스 · 한끼점 등)으로 찾을 수 있으면 그 결제만 조회한다 (소비 조회만 · 말한 세부 지출 전부가 찾아질 때만)
+    if details and not budget and merchant is not None and all(merchant(c["detail"], c.get("names", ())) for c in details):
+        details = []
     if details:
         # 세부 지출(커피 등)만 따로 볼 수는 없다 → 같은 뜻으로 바꾸지 않고, 대신 볼 카테고리 전체를 제안 · 동의를 받는다
         word, code = details[0]["detail"], details[0]["category"]
@@ -462,11 +660,24 @@ def decide(interp, text, last=None):
     skipped = ()
     if budget:
         # 예산 줄이 없는 카테고리는 다른 코드로 바꾸거나 0 원으로 만들지 않고 빼서 이유와 함께 돌려준다
-        skipped = tuple({"category": c, "reason": "no_budget_category"} for c in interp.categories if c in NO_BUDGET)
+        skipped = tuple({"category": c, "reason": "no_budget_category" if c in NO_BUDGET else "out_of_budget"}
+                        for c in interp.categories if c in NO_BUDGET or c in OUT_OF_BUDGET)
         if skipped:
-            interp = replace(interp, categories=tuple(c for c in interp.categories if c not in NO_BUDGET))
+            interp = replace(interp, categories=tuple(c for c in interp.categories if c not in NO_BUDGET and c not in OUT_OF_BUDGET))
+            outside = tuple(x["category"] for x in skipped if x["reason"] == "out_of_budget")
+            if not interp.categories and outside:
+                # 예산 범위 밖 → '예산 범위가 아니에요' + 같은 카테고리의 이번 달 사용액을 볼지 (조회 대상만 쓴 돈으로)
+                names = ", ".join(CATEGORY_NAMES[c] for c in outside)
+                return Decision("ask", "spending", asking="spend_instead", ask_about=outside, reason="out_of_budget",
+                                skipped=skipped, options=({"value": True, "label": f"이번 달 {names} 보기", "set": {"confirm": True}},
+                                                          {"value": False, "label": "취소", "set": {"confirm": False}}))
             if not interp.categories:
                 return Decision("unsupported", "spending", reason="no_budget_category", skipped=skipped)
+    # 남은 예산의 '하루 평균'은 하루에 쓸 수 있는 금액 = 예산 답에 이미 있다 → 계산으로 보지 않는다
+    budget_calc = _calc(interp) and not (interp.measure == "daily_avg" and interp.group_by is None and interp.top_n is None)
+    if budget and (budget_calc or any(getattr(interp, k) not in (None, ()) for k in QUERY_FILTERS)):
+        # 예산은 예산 주기의 잔액만 — 요일 · 시간대 · 금액 · 건수 · 묶기로 나누지 않는다 (볼 수 있는 것을 안내)
+        return Decision("unsupported", "spending", reason="budget_query", skipped=skipped)
     mode = _mode(interp)
     return replace(_budget_left(interp, mode) if budget else _spend(interp, mode), skipped=skipped)
 
@@ -495,6 +706,10 @@ def merge(request, answer, asking, options):
         return _accept(request, options[0]["code"])
     if asking == "fallback_category" and len(answer.categories) == 1 and isinstance(answer.categories[0], str):
         return _accept(request, answer.categories[0])
+    if asking == "self_instead" and answer.confirm is True:  # 다른 사람 대신 내 것 → 같은 조건 그대로
+        return replace(request, other_person=None)
+    if asking == "spend_instead" and answer.confirm is True:  # 예산 범위 밖 → 같은 카테고리의 이번 달 쓴 돈
+        return replace(request, target="spend", period=None, months=None, compare=None)
     if asking == "budget_current" and answer.confirm is True:
         return replace(request, months=None, period=None, compare=None)
     return None

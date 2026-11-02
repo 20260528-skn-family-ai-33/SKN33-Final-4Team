@@ -12,7 +12,6 @@
 import argparse
 import json
 import os
-import sys
 from functools import partial
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -22,37 +21,21 @@ import django  # noqa: E402
 
 django.setup()
 
-from chat.interpretation.legacy import SAID, RoleFakeLLM  # noqa: E402
+from chat.interpretation.legacy import SAID  # noqa: E402,F401  (테스트가 local_chat.SAID 로 쓴다)
 from chat.router_core import CANCEL_WORDS, MemoryStateStore, messages, run_turn  # noqa: E402
 from spending_analysis import agent as spending_agent  # noqa: E402
-from spending_analysis import reading as spending_reading  # noqa: E402
 from users.models import User  # noqa: E402
 
 from . import seed  # noqa: E402
+from .fake_reading import EXTRA_SAID, SPENDING_SAID, FakeReading  # noqa: E402,F401
+from .live_reading import LiveReading  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-ROUTER_EVAL = HERE.parents[1] / "scripts" / "router_eval"
 HOST, PORT = "127.0.0.1", 8765
 DESIGN = seed.load("design.json")
 AS_OF = seed.AS_OF
 TODAY = AS_OF.date()
 PERSONAS = {p: {"alias": v["alias"], "job": v["job"]} for p, v in DESIGN["personas"].items()}
-# 가짜 해석에 더 넣는 문장 (기존 대역 SAID 에 없는 정책 요청 · 예시용)
-EXTRA_SAID = {
-    "청년 정책 추천해줘": {"intents": ["policy"]},
-    "소비 분석해줘": {"intents": ["spending"], "target": "overview"},
-    "왜 식비가 늘었어?": {"intents": ["spending"], "explain": True, "categories": ["FOOD"], "refers_to": "previous"},
-    "이번 달 3개월 식비": {"intents": ["spending"], "period": "this_month", "months": 3, "categories": ["FOOD"]},
-}
-# 소비 형식으로만 답하는 가짜 해석 (통합 형식에 없는 칸 — 세부 지출 · 이번 달 포함 · 별칭)
-SPENDING_SAID = {
-    "커피 얼마나 썼어?": {"mine": True, "target": "spend", "categories": [{"detail": "커피", "category": "FOOD"}]},
-    "이번 달 포함 최근 3개월 식비 어때?": {"mine": True, "target": "overview", "period": "recent", "months": 3,
-                                 "include_current": True, "categories": ["FOOD"]},
-    "지난달 대비 최근 3개월로 비교해줘": {"mine": True, "target": "spend", "compare": "prev_month", "period": "recent",
-                                "months": 3},
-    "데이트비는 식비로 볼게": {"mine": True, "alias": {"word": "데이트비", "category": "FOOD"}},
-}
 EXAMPLES = ["이번 달 얼마 썼어?", "식비 얼마 썼어?", "그럼 교통비는?", "식비 예산 얼마 남았어?", "지난달보다 식비 더 썼어?",
             "최근 6개월 식비 어때?", "커피값 얼마 썼어?", "최근 0개월 식비 알려줘", "왜 늘었어?", "왜 식비가 늘었어?",
             "이번 달 3개월 식비", "소비 분석해줘", "식비 예산 줄여줘",
@@ -133,50 +116,6 @@ class PolicyDouble:
 
 
 # ---------- LLM ----------
-
-class FakeReading(RoleFakeLLM):
-    """가짜 해석: 정해 둔 문장만 이해한다(SAID). 모르는 문장은 해석 실패 → 라우터 실패 문구. 설명 LLM 은 없다(템플릿)"""
-    explains = False
-
-    def __init__(self):
-        super().__init__({**SAID, **EXTRA_SAID})
-        self.missed = 0
-
-    def __call__(self, system, user):
-        text = json.loads(user)["text"]
-        if text in SPENDING_SAID:  # 라우터에는 소비 요청으로, 소비 해석에는 소비 형식 그대로
-            self.calls.append({**json.loads(user), "role": "fake"})
-            data = SPENDING_SAID[text] if system == spending_reading.PROMPT else {"intents": ["spending"]}
-            return json.dumps(data, ensure_ascii=False)
-        if text not in self.said:
-            self.missed += 1
-        return super().__call__(system, user)
-
-
-class LiveReading:
-    """실제 호출: 평가 도구의 ResponsesClient(역할별 Structured Outputs) + 저장소 밖 장부. 재시도 없음
-    설명 LLM 도 같은 클라이언트 · 상한 · 장부를 쓴다 ("왜 늘었어?" 한 번에 1회 더)"""
-    explains = True
-
-    def __init__(self, max_calls, ledger_path, model=None):
-        sys.path.insert(0, str(ROUTER_EVAL))
-        import run as eval_run  # noqa: PLC0415  (평가 도구: 장부)
-        import stage_b  # noqa: PLC0415  (역할별 스키마 · 호출 어댑터)
-        key, model = os.environ.get("OPENAI_API_KEY"), model or os.environ.get("LLM_MODEL")
-        if not key or not model:
-            raise SystemExit("OPENAI_API_KEY · LLM_MODEL 이 필요해요")
-        self.ledger = eval_run.Ledger(ledger_path, max_calls)
-        self.client = stage_b.ResponsesClient(model, key, min(max_calls, self.ledger.remaining), schema=stage_b.schema_for,
-                                              on_attempt=self.ledger.spend)
-        self.model, self.missed = model, 0
-
-    def __call__(self, system, user):
-        return self.client.complete(system, user)
-
-    def usage(self):
-        return {"used": self.ledger.data["used"], "limit": self.ledger.data["limit"], "blocked": self.client.blocked,
-                "failed": sum(1 for a in self.client.attempts if a["kind"] not in (None, "ok"))}
-
 
 # ---------- 대화 ----------
 
