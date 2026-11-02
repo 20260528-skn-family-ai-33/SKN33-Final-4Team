@@ -276,6 +276,10 @@ class CardSyncTest(TestCase):
         encrypt = patch("finance.codef.encrypt_rsa", side_effect=lambda value, key: "encrypted")
         encrypt.start()
         self.addCleanup(encrypt.stop)
+        # 저장 뒤 분류는 test_classifier 에서 본다. 모델 파일이 없는 PC 에서도 같은 결과가 나오게 '판단 못 함'으로 고정
+        classify = patch("finance.classifier.predict", side_effect=lambda names: [[] for _ in names])
+        classify.start()
+        self.addCleanup(classify.stop)
 
     def response(self, path, params):
         if path == codef.PATH_CARD_LIST:

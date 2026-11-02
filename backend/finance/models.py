@@ -17,7 +17,6 @@ from django.conf import settings
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
-from pgvector.django import HnswIndex, VectorField
 
 USER = settings.AUTH_USER_MODEL
 
@@ -834,40 +833,4 @@ class PaymentMatch(models.Model):
                 fields=["due", "transaction"], name="payment_match_due_id_transaction_id_key",
             ),
             models.CheckConstraint(condition=Q(matched_amount__gt=0), name="pm_matched_amount_positive"),
-        ]
-
-
-# ===================== 벡터 검색 =====================
-
-class MerchantEmbedding(models.Model):
-    """가맹점 이름 벡터. (검색키, 업종 소분류, 출처)마다 1줄. 분류 근거로만 쓴다"""
-    id = uuid_pk()
-    search_key = models.CharField("정리된 이름(상호명_검색키)", max_length=200)
-    display_name = models.CharField("대표 원문 상호명", max_length=200)
-    industry = models.CharField("업종 소분류", max_length=100)
-    category = models.CharField("카테고리 코드", max_length=30, null=True, blank=True)  # 다품목·기타는 null
-    label_status = models.CharField("라벨 상태", max_length=30)
-    store_count = models.PositiveIntegerField("가게 수", default=1)
-    source = models.CharField("출처", max_length=20, default="store_data")
-    data_version = models.CharField("데이터 버전", max_length=40)
-    embedding = VectorField("이름 벡터", dimensions=512)
-    created_at = models.DateTimeField("생성 시각", default=timezone.now)
-
-    class Meta:
-        db_table = "merchant_embedding"
-        verbose_name = verbose_name_plural = "가맹점 임베딩"
-        constraints = [
-            models.UniqueConstraint(
-                fields=["search_key", "industry", "source"],
-                name="uq_merchant_embedding_key_industry_source",
-            ),
-        ]
-        indexes = [
-            HnswIndex(
-                name="merchant_embedding_hnsw",
-                fields=["embedding"],
-                m=16,
-                ef_construction=64,
-                opclasses=["vector_cosine_ops"],
-            ),
         ]

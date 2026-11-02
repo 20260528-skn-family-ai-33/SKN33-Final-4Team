@@ -3,6 +3,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 
+from . import classifier
 from .models import FinancialTransaction
 
 logger = logging.getLogger(__name__)
@@ -14,9 +15,9 @@ def link_basics(user, txs):
     pass
 
 
-# 혜리: 소비 카테고리 분류 (규칙 → 사전 → ML → LLM)
+# 세진: 소비 카테고리 분류 (사용자 기억 → 규칙 → ML → 검색·Jev), finance/classifier.py
 def classify_spending(user, txs):
-    pass
+    classifier.classify(user, txs)
 
 
 # 세진: 카드값 출금과 카드 청구서 매칭
