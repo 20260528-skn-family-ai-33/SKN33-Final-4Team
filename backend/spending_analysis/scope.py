@@ -7,6 +7,8 @@ weekdays(요일 0=월 ~ 6=일) · time_slots(시간대 구간 코드) · amount_
 """
 from .reading import CATEGORY_NAMES
 
+# 줄이는 방법을 제안하지 않는 카테고리 — 필요한 지출이라 설명까지만 (11/2 2차 검수). "왜 늘었어?" 의 줄이는 방법 계산에서 뺀다
+NO_REDUCE = ("MEDICAL_HEALTH", "EDUCATION", "HOUSING_TELECOM")
 FILTERS = ("payment", "merchant", "merchant_names", "weekdays", "time_slots", "amount_min", "amount_max")  # 카테고리 말고 거르는 칸
 PAYMENTS = ("card", "bank")
 # 시간대 6구간 (KST, MEMO 23-11 결정): 코드 → (이름, 시작 시, 끝 시(포함))

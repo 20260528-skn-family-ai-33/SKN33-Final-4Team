@@ -82,6 +82,7 @@ SPENDING_SAID = {
     "야식으로 얼마 썼어?": {"mine": True, "target": "spend", "time_slot": ["late_night"]},
     "이번 달 제일 큰 지출 뭐야?": {"mine": True, "measure": "max"},
     "하루 평균 얼마 썼어?": {"mine": True, "measure": "daily_avg"},
+    "주말 식비 하루 평균 얼마야?": {"mine": True, "measure": "daily_avg", "weekday": ["weekend"], "categories": ["FOOD"]},
     "과자서원 몇 번 갔어?": {"mine": True, "measure": "count", "categories": [{"detail": "과자서원", "category": "FOOD"}]},
     "배달 몇 번 시켰어?": {"mine": True, "measure": "count", "categories": [{"detail": "배달", "category": "FOOD"}]},
     "지난달 식비 얼마 썼어?": {"mine": True, "target": "spend", "period": "last_month", "categories": ["FOOD"]},
@@ -351,6 +352,25 @@ class PersonaAnswerTest(TestCase):
         self.assertEqual(out["suggest"], ["budget_adjust"])  # 줄이는 방법을 보이면 [예산 조정하기]
         self.assertEqual(out["explain"], {"llm": False, "rejected": False, "failed": False})
 
+    def test_category_query_notes_unclassified_in_same_period(self):
+        """11/2 2차 검수: 카테고리로 좁힌 범용 조회도 같은 기간 확인 필요가 있으면 안내. design.json: 지우(C) 10/21 확인 필요 25,000원"""
+        out = Chat(user("C")).say("지난주 식비 얼마야?")[1]
+        self.assertIn("식비로 분류된 금액 기준이에요. 확인 필요 25,000원에 따라 달라질 수 있어요.", out["notices"])
+        # 고정지출 줄도 같은 조건(식비)으로 센다 — 지우의 지난주 고정지출 100,000원은 식비가 아니라 안내 · [고정지출 포함해서 보기] 없음
+        self.assertFalse([l for l in out["lines"] if "고정지출" in l])
+        self.assertNotIn("include_fixed", out.get("suggest", []))
+        out = Chat(user("A")).say("지난주 식비 얼마야?")[1]  # A 는 확인 필요 결제가 없다
+        self.assertFalse([n for n in out["notices"] if "분류된 금액" in n])
+
+    def test_reduce_skips_needed_categories_and_single_payment(self):
+        """11/2 2차 검수: 줄이는 방법은 scope.NO_REDUCE(의료·건강 · 교육 · 주거·통신) 범위 · 후보에서 빼고, 가장 큰 요인 결제가 1번이면 없다"""
+        before = {"reducible_slots": {"lunch": 10_000}, "counts": {}}
+        now = {"reducible_slots": {"lunch": 40_000}, "counts": {("reducible", "lunch"): 2, ("reducible_merchant", "병원"): 0}}
+        moves = {"kind": "merchant", "up": [{"key": "병원", "name": "병원", "after": 300_000, "delta": 290_000}]}
+        self.assertEqual(explain._reduce(now, before, moves, 30_000)["name"], "점심")  # 병원(의료) 가게는 후보가 아니다
+        self.assertIsNone(explain._reduce(now, before, moves, 30_000, "MEDICAL_HEALTH"))
+        self.assertIsNone(explain._reduce({**now, "counts": {("reducible", "lunch"): 1}}, before, moves, 30_000))
+
     def test_explain_total_lists_categories_in_the_same_direction(self):
         a = Chat(user("A"))
         a.say("지난달보다 많이 썼어?")
@@ -431,7 +451,9 @@ class PersonaAnswerTest(TestCase):
         d, out = c.say("식비랑 교통비 얼마 썼어?")
         self.assertEqual(out["lines"], ["이번 달(10월 1일~29일) 식비 지출은 일부 내역 기준 110,000원이에요.",
                                         "이번 달(10월 1일~29일) 교통·차량 지출은 일부 내역 기준 30,000원이에요."])
-        self.assertEqual(out["notices"], ["일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요."])  # 한 번만
+        self.assertEqual(out["notices"], ["일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",  # 한 번만
+                                          # 11/2 2차 검수: 같은 기간 확인 필요가 있으면 분류된 금액 기준 안내 (카테고리 여러 개도 한 줄)
+                                          "식비 · 교통·차량으로 분류된 금액 기준이에요. 확인 필요 50,000원에 따라 달라질 수 있어요."])
 
         def flaky(u, item, **kw):
             return {"state": "error", "reason": "db_error"} if item["category"] == "TRANSPORT_CAR" else analyze(u, item, **kw)
@@ -651,7 +673,7 @@ class UserTestAnswerTest(TestCase):
         self.assertEqual(out["lead"], ["지난달 같은 기간의 내역이 충분하지 않아 비교하기 어려워요."])
         self.assertEqual(out["lines"], ["참고로 이번 달(10월 1일~29일) 금액이에요."])
         self.assertEqual(out["sections"], [{"title": "식비 · 일부 내역 기준 110,000원", "lines": []}])
-        self.assertEqual(out["notices"], [])  # 일부 내역 기준은 금액 줄에 직접 표시
+        self.assertEqual(out["notices"], ["식비로 분류된 금액 기준이에요. 확인 필요 50,000원에 따라 달라질 수 있어요."])  # 일부 내역 기준은 금액 줄에 직접 표시
 
 
 @fixture_db_only
@@ -975,6 +997,10 @@ class GeneralQueryTest(TestCase):
         self.assertEqual(b["total"]["value"], f"{EXP['만 원 넘게 쓴 거 몇 번이야?']['count']}건")
         _, b = self.view("식비 한 번에 평균 얼마 써?")
         self.assertEqual(b["total"]["amount"], EXP["식비 한 번에 평균 얼마 써?"]["avg"])
+        # 11/2 2차 검수: 요일 조건 하루 평균 = 조건 합계 ÷ 그 요일 날짜 수(안 쓴 날 포함) — 10/1~29 토 · 일 8일. 고정지출은 뺀 계산이라 '제외'
+        weekend = EXP["주말 식비 얼마 썼어?"]["sum"]
+        _, b = self.view("주말 식비 하루 평균 얼마야?")
+        self.assertEqual((b["total"]["amount"], b["total"]["caption"]), ((2 * weekend + 8) // 16, "하루 평균 (8일 · 고정지출 제외)"))
         want = EXP["하루 평균 얼마 썼어?"]
         _, b = self.view("하루 평균 얼마 썼어?")
         self.assertEqual((b["total"]["amount"], b["total"]["caption"], b["total"]["note"]),
@@ -1130,7 +1156,20 @@ class BudgetScopeTest(TestCase):
         _, out = Chat(user("A")).say("예산 얼마 남았어?")
         self.assertIn(f"생활비 예산 {b['living_budget']:,}원 중 {b['living_spent']:,}원을 썼고 {b['living_remaining']:,}원 남았어요.",
                       out["lines"])
-        self.assertNotIn("주거·통신, 여행·숙박은 예산 범위가 아니라 생활비 사용액에서 뺐어요.", out["notices"])  # 이번 주기 해당 지출 0원
+        self.assertFalse([n for n in out["notices"] if n.startswith("예산 밖 지출")])  # 이번 주기 해당 지출 0원
+
+    def test_outside_spending_counts_in_remaining_with_notice(self):
+        """11/2 2차 결정(MEMO 23-19): 예산 밖 카테고리의 생활비 지출도 사용액 · 남은 돈에 넣고 안내한다 (예산 줄은 여전히 없음)"""
+        b = EXPECTED["personas"]["A"]["budget"]
+        FinancialTransaction.objects.create(
+            user=user("A"), source_kind="card", card=Card.objects.filter(user=user("A")).first(), source_key="fixture:outside-travel",
+            occurred_on=date(2026, 10, 27), occurred_time=time(15), amount=120_000, direction="out", transaction_type="spending",
+            merchant_name="바다펜션", confirmed_category_id="TRAVEL_LODGING", confirmation_state="confirmed")
+        _, out = Chat(user("A")).say("예산 얼마 남았어?")
+        spent, left = b["living_spent"] + 120_000, b["living_remaining"] - 120_000  # 고정 산술: 기존 기대값 ± 추가 결제
+        self.assertIn(f"생활비 예산 {b['living_budget']:,}원 중 {spent:,}원을 썼고 {left:,}원 남았어요.", out["lines"])
+        self.assertIn(f"남은 26일 동안 하루 {left // 26:,}원씩 쓸 수 있어요.", out["lines"])  # 하루 금액도 줄어든 남은 돈 기준
+        self.assertIn("예산 밖 지출(여행·숙박) 120,000원도 남은 돈에 반영했어요.", out["notices"])
 
 
 @fixture_db_only
@@ -1168,3 +1207,31 @@ class OmittedDateTest(TestCase):
         self.assertIsNone(explain._clear_day([row(0, 3000), row(1, 2500)], 1))  # 차이가 작다
         self.assertIsNone(explain._clear_day([row(0, 900)], 1))  # 너무 작다
         self.assertEqual(explain._clear_day([row(0, 6000), row(1, 2000), row(2, -5000)], 1)["key"], 0)
+
+
+
+@fixture_db_only
+class QueryExplainTest(TestCase):
+    """11/2 2차 검수: 범용 조회(지난달 · 지난주 · N월) 뒤 '왜 이렇게 많이 썼어?' = 같은 기간 · 조건 구성 설명,
+    '왜 늘었어?' = 비교 기준이 없을 때만 비교를 먼저 보라고 (이번 달 조회면 같은 조건으로 새 비교)"""
+
+    @classmethod
+    def setUpTestData(cls):
+        seed.apply(DESIGN)
+
+    def test_composition_keeps_period_and_conditions(self):
+        for said, label in (("지난달 식비 얼마 썼어?", "지난달(9월 1일~30일)"), ("지난주 식비 얼마야?", "지난주(10월 19일~25일)"),
+                            ("8월 식비 얼마 썼어?", "8월(8월 1일~31일)")):
+            a = Chat(user("A"))
+            a.say(said)
+            out = a.say("왜 이렇게 많이 썼어?")[1]
+            self.assertEqual(out["lines"][0], f"{label} 식비에 {EXP[said]['sum']:,}원 썼어요.")  # 독립 기대값 그대로
+            self.assertEqual(out["lines"][-1], "거래 내역에서 확인한 구성이에요. 이것만으로 이유를 단정할 수는 없어요.")
+
+    def test_change_asks_for_comparison_only_without_basis(self):
+        a = Chat(user("A"))
+        a.say("지난달 식비 얼마 썼어?")
+        self.assertEqual(a.say("그럼 왜 늘었는데?")[1]["lines"], [explain.REFUSE["no_basis"]])
+        a = Chat(user("A"))
+        a.say("밤에 쓴 돈 얼마야?")  # 이번 달 · 밤 → 같은 조건으로 지난달 같은 기간과 새 비교
+        self.assertIn("지난달 같은 기간보다", a.say("그럼 왜 늘었는데?")[1]["lines"][0])

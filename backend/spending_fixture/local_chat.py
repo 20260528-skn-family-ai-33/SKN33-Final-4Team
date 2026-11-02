@@ -27,8 +27,8 @@ from spending_analysis import agent as spending_agent  # noqa: E402
 from users.models import User  # noqa: E402
 
 from . import seed  # noqa: E402
-from .fake_reading import EXTRA_SAID, SPENDING_SAID, FakeReading  # noqa: E402,F401
-from .live_reading import LiveReading  # noqa: E402
+from chat.llm.fake import EXTRA_SAID, SPENDING_SAID, FakeReading  # noqa: E402,F401
+from chat.llm.live import LiveReading  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 HOST, PORT = "127.0.0.1", 8765

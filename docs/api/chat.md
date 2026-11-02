@@ -1,6 +1,7 @@
 # 통합 챗봇 API 명세
 
 > 담당: 김혜리(최종 편집) · 소비 분석 카드 항목: 권세진 · 명세 상태: **1차 확정 (10/24, 결정 AA)** · 개발 상태: 이전 대화 보기 = DB 구현 (10/26), 메시지 보내기 = 저장 · 선택지 처리 구현 (10/27, 소비 분석 집계 · LLM 라우터는 다음 단계), 작업 진행 확인 = 구현 (10/27, 공용 `backend/config/tasks.py`) — `backend/chat/api.py`
+> **11/2 (나은, MEMO 25절)**: 새 챗봇 엔진(라우터 + 소비 분석 에이전트) 계약을 아래 '새 엔진(router) 계약'에 더했다. 서버 설정 `CHAT_ENGINE`이 `"router"`일 때만 쓰고, 기본(`"legacy"`)은 이 문서의 기존 표 그대로다. 두 엔진 모두 응답에 `engine` · `features`(기능 버튼 목록)를 준다.
 > 공통 규칙은 `docs/API_RULES.md`를 따른다 (camelCase · 원 단위 정수 · UUID · 세션 쿠키 + CSRF · 에러 모양)
 > 반영한 결정 (10/21): 챗봇 소비 분석 = LLM 라우터가 문장 해석 + 서버 집계 + 템플릿 답변 (요구사항 CHT-006 · RPT-001 · RPT-004 · AGT-001). LLM은 문장 해석에만 쓰고, 카드의 숫자는 서버가 집계한다.
 > 이번 범위: 이전 대화 보기 · 메시지 보내기(요청 모양 · 라우팅 결과 · 소비 분석 카드) · 오래 걸리는 작업 진행 확인. 예산 조정 카드·조정안 승인·되묻기 흐름은 '결정 후'.
@@ -37,6 +38,7 @@
 | `status` | 문자 | 대화 상태 (`active` 등, DB choices 기준) |
 | `createdAt` | 시각 | 대화 시작 시각 |
 | `messages` | 목록 | 메시지(위 공통 값) |
+| `engine` · `features` | 문자 · 목록 | 지금 엔진과 기능 버튼 목록 (11/2, 아래 '새 엔진(router) 계약') |
 
 ```json
 {
@@ -62,6 +64,7 @@
 **정해진 것 (10/22 N⑤)**
 
 - 챗봇 탭을 열면 화면이 기억해 둔 마지막 `conversationId`로 이 API를 부른다. 기억한 값이 없거나 404면 `conversationId: null`로 새 대화를 시작한다.
+  → **11/2 변경(사용자 결정 10/30 · 11/2)**: 채팅 화면은 새로고침 · 나갔다 오기 모두 새 대화로 시작하고 이 API를 부르지 않는다(대화 번호는 화면 안에서만). API는 그대로 둔다.
 - 대화 목록 API(`GET /api/chat/conversations/`)는 **2차**.
 
 **확인 필요**
@@ -266,6 +269,69 @@
 2. ✅ 선택지(`choice`)는 라우터를 거치지 않고 처리 (`fallback: false`)
 3. ⏳ 소비 분석 숫자 집계 → 카드 (권세진과 같이, 카드 칸은 `spending-analysis.md`). **그전까지 `spending`은 임시 안내 글**("소비 분석 카드는 곧 연결돼요. …")
 4. ⏳ LLM 라우터 (`chat/router.py`의 `route_text`). **그전까지 문장(`text`)은 라우터 실패로 처리** → `intent: unknown`, `fallback: true` + 선택지
+
+---
+
+## 새 엔진(router) 계약 (11/2, MEMO 25절)
+
+서버 설정 `CHAT_ENGINE = "router"`일 때의 차이만 적는다. 주소 · 로그인 · `Idempotency-Key` · 본문 칸 검사 · `conversationId` 오류(400)는 위 '챗봇에 메시지 보내기'와 같다. 지금은 더미 서비스 실행(`spending_fixture.service_settings`)에서만 켠다.
+
+**기능 버튼 목록 — 두 엔진 공통**
+
+- `GET /api/chat/messages/` (로그인 필요, 저장 없음) → `{ "engine", "features" }`. 대화를 시작하기 전 첫 화면이 버튼을 그릴 때 쓴다.
+- 메시지 보내기 응답 · 이전 대화 보기 응답에도 같은 두 칸을 넣는다. 화면은 서버가 준 목록만 그린다.
+
+| 이름 | 타입 | 뜻 |
+|---|---|---|
+| `engine` | 문자 | `legacy`(기존) · `router`(새 엔진) |
+| `features` | 목록 | 기능 버튼 `[{ "value", "label" }]`. legacy = `spending` 소비 분석 · `budget` 예산 조정, router = 여기에 `policy` 청년 정책 |
+
+```json
+{ "engine": "router", "features": [ { "value": "spending", "label": "소비 분석" }, { "value": "budget", "label": "예산 조정" }, { "value": "policy", "label": "청년 정책" } ] }
+```
+
+**보내는 값 `choice`** — 둘 중 하나
+
+| 모양 | 뜻 |
+|---|---|
+| 문자 `"spending"` · `"budget"` · `"policy"` | 기능 버튼 (기존과 같은 문자열. `policy`는 router 만 — legacy 에선 400 "알 수 없는 선택지예요.") |
+| 객체 `{ "value", "turn" }` | 답변 선택지. `value` = 누른 `choices[].value`(1~100자), `turn` = 그 봇 메시지 `content.turn`(1 이상 정수). 이어서 말하는 대화에서만(`conversationId` 필수) |
+
+**받는 값 (200)** — 기존 봉투 + 칸 몇 개
+
+| 이름 | 타입 | 뜻 |
+|---|---|---|
+| `route.intent` | 문자 | 기존 코드 + `policy`(청년 정책). 실제로 답한 에이전트 · `out`(범위 밖) · `unknown` |
+| `route.slots` | 객체 | router 에선 항상 `{}` (조건은 서버 대화 상태에만 둔다) |
+| `route.fallback` | 참/거짓 | 라우터 해석 실패면 `true` (기존과 같은 뜻) |
+| `agent` | 문자 / null | 지금 대화 중인 도우미 (`spending` · `budget` · `policy`) |
+| `engine` · `features` | | 위 '기능 버튼 목록' |
+
+**봇 메시지 `content` (`contentType: "text"`)** — 기존 `{ text, choices }`를 그대로 채우고 칸을 더한다. 확장 칸을 모르는 화면도 `text`만으로 읽을 수 있다.
+
+| 이름 | 타입 | 뜻 |
+|---|---|---|
+| `text` | 문자 | `lead` + `lines`를 줄바꿈으로 이은 문장 (호환용) |
+| `choices` | 목록 | `[{ "value", "label" }]` — 누르면 `{ value, turn }`으로 보낸다 |
+| `lead` | 문자 목록 | 맨 위 핵심 안내 (예: 비교할 수 없는 이유) |
+| `lines` | 문자 목록 | 본문 문장 (숫자는 모두 서버 계산값) |
+| `sections` | 목록 | `[{ "title", "lines" }]` 묶음 문장 (예: 카테고리별 남은 예산) |
+| `notices` | 문자 목록 | 작은 안내 (일부 내역 기준 · 확인 필요 · 고정지출 뺌 등) |
+| `view` | 목록 / 없음 | 카드 블록 `head` · `total` · `rows` · `text` · `meter` (서버가 준 금액 · 비율 · 글자 그대로 그린다) |
+| `chart` | 객체 / 없음 | 전반 분석의 카테고리 막대 `{ title, basis, limited, empty, rows: [{ code, name, amount, share, text }] }` |
+| `examples` | 목록 / 없음 | 예시 질문 |
+| `turn` | 정수 | 이 봇 메시지 차례 번호 (답변 선택지 확인용) |
+| `agent` | 문자 / null | 이 답을 한 도우미 |
+| `inputs` | 문자 목록 | 화면이 더 보여 줄 입력. `budget_form` = 예산 고르기 폼 |
+| `result` | 참/거짓 | 분석 결과 카드면 `true`, 짧은 답 · 질문이면 `false` |
+
+**실패하면 (router 만, 둘 다 저장 없음)**
+
+| 상황 | 상태 | `code` | 화면 안내 |
+|---|---|---|---|
+| 같은 대화의 다른 메시지가 먼저 저장됨 | 409 | `conversation_busy` | "앞 메시지를 처리하는 중이에요. 잠시 후 다시 보내 주세요." |
+| 마지막 봇 메시지의 선택지가 아님(지난 질문의 선택지) | 409 | `stale_choice` | "이전 질문의 선택지예요. 가장 최근 질문에서 골라 주세요." |
+| `choice` 객체 모양이 틀림 | 400 | `invalid` | `fields.choice: ["알 수 없는 선택지예요."]` |
 
 ---
 

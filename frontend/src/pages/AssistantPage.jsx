@@ -1,165 +1,176 @@
-// 통합 챗봇 — 처음부터 자유 입력창 + 추천 질문 (LLM 라우터 방향, 요구사항 CHT-001·002)
-// 보낸 문장은 라우터가 의도를 보고 맞는 도우미에 연결한다
-// 지금은 백엔드 라우터 전이라 utils/mockRouter.js 로 흐름만 보여 준다 (실제 답변 X)
-// 예산 조정으로 연결되면: ① 질문 말풍선 + ② 고르기 말풍선(AdjustForm). 문장에 재료가 있으면 ②를 미리 채운다
-// 소비 분석으로 연결되면: 안내 한 줄 + 소비 분석 카드 (SpendingCard, 지금은 utils/mockSpending.js 예시값)
-// 예산 조정 중에는 "식비 5만원 늘려줘"처럼 적어도 되고, ②를 골라 "조정안 받기"를 눌러도 된다
+// 통합 챗봇 — 처음부터 자유 입력창 + 기능 버튼 (요구사항 CHT-001·002, backend/chat/router_core/MEMO.md 25절 2단계)
+// - 보내기: POST /api/chat/messages/ — 문장 {text} · 기능 버튼 {choice: value} · 답변 선택지 {choice: {value, turn}} (꺼짐 엔진은 문자열 value)
+// - 테스트 환경 띠: 서버가 testMode · today(고정 기준일)를 주면 '테스트 환경 · 기준일 …' (켜짐 엔진 + CHAT_TODAY 일 때만)
+// - 기능 버튼 목록은 서버가 준다 (첫 화면 = GET /api/chat/messages/, 그 뒤 응답마다 features). 꺼짐(legacy) 2개 · 켜짐(router) 3개
+// - 답 모양: 켜짐 = 카드 · 그래프 · 선택지(ChatReply), 꺼짐 = 옛 답 {text, choices} 말풍선. 둘 다 ChatReply 가 그린다
+// - 담당 표시 · 예산 폼은 서버가 준 content.agent · content.inputs 로만 정한다 (문장으로 추측하지 않음)
+// - 채팅방을 나갔다 오거나 새로고침하면 빈 대화로 시작한다 (사용자 결정 10/30 · 11/2 — 지난 대화를 다시 불러오지 않음. 대화 번호는 화면 안에서만)
 import { useEffect, useRef, useState } from 'react'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
-import SpendingCard from '../components/SpendingCard.jsx'
-import { SPENDING_ALL, SPENDING_FOOD } from '../utils/mockSpending.js'
-import { adjustSentence, josa, manwon } from '../utils/adjust.js'
-import { mockRoute, mockSlots } from '../utils/mockRouter.js'
+import ChatReply, { Choices } from '../components/ChatReply.jsx'
+import { adjustSentence } from '../utils/adjust.js'
+import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import '../styles/chat.css'
 
-// 추천 질문 (누르면 그 문장을 보낸 것과 같다)
-const SUGGESTIONS = [
-  { icon: 'ChartNoAxesCombined', text: '소비를 분석해주세요' },
-  { icon: 'SlidersHorizontal', text: '예산을 조정하고 싶어요' },
-  { icon: 'Landmark', text: '큰 지출을 상담하고 싶어요', soon: true },
-]
-
-// 라우터가 고른 도우미별 안내
-const ROUTED = {
-  spending: { agent: '소비 분석', reply: '내 소비를 기간별·카테고리별로 정리해 드릴게요.' },
-  budget: { agent: '예산 조정', reply: '어느 카테고리를 얼마나 조정할까요? 바로 적어 주시거나 아래에서 골라 주세요.', form: true },
-  big: { agent: '큰 지출 상담', reply: '큰 지출 상담은 아직 준비 중이에요. 곧 열릴 예정이에요.' },
-  out: { agent: null, reply: '투자 관련 질문은 도와드리기 어려워요. 소비 분석이나 예산 조정은 바로 도와드릴 수 있어요.' },
-  unknown: { agent: null, reply: '어떤 걸 도와드릴지 잘 모르겠어요. 아래에서 골라 주시거나 조금 더 자세히 적어 주세요.', showOptions: true },
+const AGENTS = { spending: '소비 분석', budget: '예산 조정', policy: '청년 정책' }
+// 기능 버튼 모양 (목록 · 순서는 서버가 준 features 그대로, 모르는 값은 서버 이름 그대로)
+const LOOK = {
+  spending: { icon: 'ChartNoAxesCombined', text: '소비를 분석해주세요' },
+  budget: { icon: 'SlidersHorizontal', text: '예산을 조정하고 싶어요' },
+  policy: { icon: 'Landmark', text: '청년 정책을 추천받고 싶어요' },
 }
-
-let nextId = 1
+// 개발 모드 · 켜짐 엔진에서만: 가짜 해석이 아는 문장 (backend/chat/llm/fake.py · legacy.SAID)
+const EXAMPLES = ['이번 달 얼마 썼어?', '그럼 교통비는?', '이번 달 3개월 식비', '커피 얼마나 썼어?', '지난달보다 식비 더 썼어?',
+  '왜 식비가 늘었어?', '최근 6개월 식비 어때?', '소비 분석해줘', '최근 3개월 식비 예산 얼마나 남았어?', '식비 예산 줄여줘', '날씨 어때?',
+  '이번 달 카드 얼마 긁었지?', '과자서원에서 얼마 썼어?', '식비는 왜 늘었을까?', '제일 많이 쓴 데는 왜 많이 나왔을까?']
 
 export default function AssistantPage() {
+  const first = useApi('/api/chat/messages/')  // 첫 화면의 엔진 · 기능 버튼 (저장 없음)
+  const [engine, setEngine] = useState(null)   // 응답마다 서버가 다시 알려 준 값 { engine, features, testMode, today }
+  const [conversationId, setConversationId] = useState(null)
+  const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
-  const [log, setLog] = useState([])      // { id, who: 'me' | 'bot' | 'route', ... }
-  const [busy, setBusy] = useState(false)  // 라우터가 문장을 읽는 중
-  const [agent, setAgent] = useState(null)  // 지금 대화 중인 도우미 (진짜로는 서버 대화 상태에 저장)
+  const [busy, setBusy] = useState(false)
+  const [sent, setSent] = useState(null)  // 답을 기다리는 동안 먼저 보여 줄 내 말 (서버 답이 오면 서버 메시지로 바뀜)
+  const [error, setError] = useState(null)
   const end = useRef(null)
 
-  // 새 말풍선이 생기면 맨 아래로
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [log, busy])
+  }, [messages, busy])
 
-  const add = (...items) => setLog((l) => [...l, ...items.map((m) => ({ id: nextId++, ...m }))])
-
-  // 예산 조정 요청이 다 모였을 때 (진짜로는 예산 조정 에이전트 작업을 만든다)
-  const requestAdjust = (slots) => {
-    const { cat, amount, dir } = slots
-    add({
-      who: 'bot',
-      text: `${cat}${josa(cat)} ${manwon(amount)} ${dir === 'up' ? '늘리는' : '줄이는'} 조정안을 만들게요. 나머지 카테고리는 내 우선순위에 맞춰 다시 짤게요.`,
-      note: '조정안 카드는 서버가 연결되면 나와요.',
-    })
-  }
-
-  // ② 고르기 말풍선에서 "조정안 받기"
-  const submitForm = (formId, slots) => {
-    setLog((l) => l.map((m) => (m.id === formId ? { ...m, done: true } : m)))
-    add({ who: 'me', text: adjustSentence(slots) })
-    requestAdjust(slots)
-  }
-
-  const send = (msg) => {
-    const q = msg.trim()
-    if (!q || busy) return
-    setText('')
-    add({ who: 'me', text: q })
-
-    // 예산 조정 중이면 문장은 예산 조정 도우미가 먼저 받는다 (라우터를 다시 타지 않음)
-    if (agent === 'budget') {
-      const slots = mockSlots(q)
-      if (slots.cat && slots.amount && slots.dir) return requestAdjust(slots)        // 다 있으면 바로 요청
-      if (Object.keys(slots).length) {                                               // 일부만 있으면 채워서 다시 보여 주기
-        return add({ who: 'bot', text: '빠진 것만 골라 주세요.' }, { who: 'form', slots })
-      }
-    }
-
+  const info = engine ?? first.data
+  const send = async (body, said) => {
+    if (busy) return
     setBusy(true)
-    // 진짜 라우터를 부르는 자리. 지금은 잠깐 기다리는 척만 한다
-    setTimeout(() => {
-      const intent = mockRoute(q).intent
-      const r = ROUTED[intent]
-      if (r.agent) setAgent(intent)
-      add(
-        ...(r.agent ? [{ who: 'route', agent: r.agent }] : []),
-        { who: 'bot', text: r.reply, showOptions: r.showOptions },
-        ...(r.form ? [{ who: 'form', slots: mockSlots(q) }] : []),   // ② 고르기 말풍선 (문장 속 재료로 미리 채움)
-        // 소비 분석 카드 — 진짜로는 응답 messages 의 bot 메시지(contentType: card) content
-        ...(intent === 'spending' ? [{ who: 'card', card: /식비/.test(q) ? SPENDING_FOOD : SPENDING_ALL }] : []),
-      )
-      setBusy(false)
-    }, 600)
+    setSent(said ?? null)
+    setError(null)
+    try {
+      const out = await apiSend('/api/chat/messages/', 'POST', { conversationId, ...body }, { requestKey: newRequestKey() })
+      setConversationId(out.conversationId)
+      setMessages((m) => [...m, ...out.messages])
+      setEngine({ engine: out.engine, features: out.features, testMode: out.testMode, today: out.today })
+    } catch (err) {
+      if (err.fields?.conversationId) setConversationId(null)  // 끝났거나 남의 대화 → 다음 문장부터 새 대화
+      setError(err.status === 403 ? '로그인해 주세요.' : err.message)
+    }
+    setSent(null)
+    setBusy(false)
   }
 
-  const options = (
-    <div className="mc-asst-opts" role="group" aria-label="추천 질문">
-      {SUGGESTIONS.map((s) => (
-        <button key={s.text} type="button" className={`mc-asst-opt${s.soon ? ' is-soon' : ''}`}
-          disabled={s.soon} aria-disabled={s.soon || undefined} onClick={() => send(s.text)}>
-          <span className="mc-asst-ic"><Icon name={s.icon} /></span>
-          <span className="mc-grow">{s.text}</span>
-          {s.soon ? <span className="mc-soon">준비 중</span> : <Icon name="ChevronRight" />}
-        </button>
-      ))}
+  const submit = (e) => {
+    e.preventDefault()
+    const q = text.trim()
+    if (!q) return
+    setText('')
+    send({ text: q }, q)
+  }
+
+  const startOver = () => {
+    setConversationId(null)
+    setMessages([])
+    setError(null)
+  }
+
+  const bots = messages.filter((m) => m.role === 'bot')
+  const last = bots.at(-1)
+  const agent = last?.content.agent ?? null
+
+  const features = (
+    <div className="mc-asst-opts" role="group" aria-label="기능 고르기">
+      {(info?.features ?? []).map((f) => {
+        const look = LOOK[f.value] ?? { icon: 'ChevronRight', text: f.label }
+        return (
+          <button key={f.value} type="button" className="mc-asst-opt" disabled={busy} onClick={() => send({ choice: f.value }, look.text)}>
+            <span className="mc-asst-ic"><Icon name={look.icon} /></span>
+            <span className="mc-grow">{look.text}</span>
+            <Icon name="ChevronRight" />
+          </button>
+        )
+      })}
     </div>
   )
+
+  // 담당이 바뀐 답변 앞에만 '… 도우미에 연결했어요'
+  const switched = new Set()
+  messages.reduce((prev, m) => {
+    if (m.role !== 'bot' || !m.content.agent) return prev
+    if (m.content.agent !== prev) switched.add(m.messageId)
+    return m.content.agent
+  }, null)
+
+  // 답변 선택지: 켜짐 엔진은 어느 질문의 선택지인지(turn)도 보낸다. 꺼짐(옛 답)은 turn 이 없어 value 문자열만
+  const pick = (c, p) => send({ choice: c.turn == null ? p.value : { value: p.value, turn: c.turn } }, p.label)
 
   return (
     <Layout
       title="통합 챗봇"
       activeTab="assistant"
       foot={
-        <form className="mc-chat-in mc-asst-in" onSubmit={(e) => { e.preventDefault(); send(text) }}>
-          <input aria-label="챗봇에게 보낼 메시지" autoComplete="off" placeholder="예: 지난달보다 얼마나 썼어?" type="text"
+        <form className="mc-chat-in mc-asst-in" onSubmit={submit}>
+          <input aria-label="챗봇에게 보낼 메시지" autoComplete="off" placeholder="예: 이번 달 얼마 썼어?" type="text" maxLength={500}
             value={text} onChange={(e) => setText(e.target.value)} />
-          <button type="submit" className="mc-chat-send" aria-label="보내기"><Icon name="Send" /></button>
+          <button type="submit" className="mc-chat-send" aria-label="보내기" disabled={busy}><Icon name="Send" /></button>
         </form>
       }
     >
       <div className="mc-bc mc-asst">
+        {info?.testMode && <p className="mc-fx-band" role="note">테스트 환경 · 기준일 {info.today}</p>}
         <div className="mc-bc-ctx mc-asst-ctx">
           <span className="mc-cat-ic mc-big-ic"><Icon name="Sparkles" /></span>
           <div>
-            <em className="mc-asst-who">라우터</em>
+            <em className="mc-asst-who">{agent ? `${AGENTS[agent]} 도우미` : '라우터'}</em>
             <strong>머니쿠션 챗봇</strong>
-            <small>편하게 물어보면 맞는 도우미를 연결해 드려요</small>
+            <small>{agent ? `지금은 ${AGENTS[agent]} 도우미와 대화 중이에요` : '편하게 물어보면 맞는 도우미를 연결해 드려요'}</small>
           </div>
         </div>
         <div className="mc-bc-log mc-chat-log mc-asst-log" aria-live="polite">
           <div className="mc-msg bot">
             <div className="mc-bubble">안녕하세요! 무엇을 도와드릴까요?<br /><small>아래에서 고르거나 하고 싶은 말을 바로 적어 주세요.</small></div>
           </div>
-          {options}
+          {features}
+          {first.error && !info && (
+            <div className="mc-msg bot"><div className="mc-bubble" role="alert">{first.error.status === 403 ? '로그인해 주세요.' : first.error.message}</div></div>
+          )}
 
-          {log.map((m) => {
-            if (m.who === 'route') {
-              return <div key={m.id} className="mc-asst-route"><Icon name="Link" /> {m.agent} 도우미에 연결했어요</div>
+          {messages.map((m) => {
+            if (m.role === 'user') {
+              return <div key={m.messageId} className="mc-asst-turn"><div className="mc-msg me"><div className="mc-bubble">{m.content.text}</div></div></div>
             }
-            if (m.who === 'card') {
-              return <div key={m.id} className="mc-msg bot mc-asst-card"><SpendingCard card={m.card} /></div>
-            }
-            if (m.who === 'form') {
-              return (
-                <div key={m.id} className="mc-msg bot mc-asst-form">
-                  <AdjustForm initial={m.slots} done={m.done} onSubmit={(slots) => submitForm(m.id, slots)} />
-                </div>
-              )
-            }
+            const c = m.content
+            const isLast = m === last
             return (
-              <div key={m.id} className="mc-asst-turn">
-                <div className={`mc-msg ${m.who}`}>
-                  <div className="mc-bubble">{m.text}{m.note && <><br /><small>{m.note}</small></>}</div>
+              <div key={m.messageId} className="mc-asst-turn">
+                {switched.has(m.messageId) && <div className="mc-asst-route"><Icon name="Link" /> {AGENTS[c.agent]} 도우미에 연결했어요</div>}
+                <div className={`mc-msg bot${c.result ? ' mc-asst-card' : ''}`}>
+                  <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} />
                 </div>
-                {m.showOptions && options}
+                <Choices choices={c.choices} active={isLast && !busy} onPick={(p) => pick(c, p)} />
+                {(c.inputs ?? []).includes('budget_form') && (
+                  <div className="mc-msg bot mc-asst-form">
+                    <AdjustForm done={!isLast} onSubmit={(slots) => send({ text: adjustSentence(slots) }, adjustSentence(slots))} />
+                  </div>
+                )}
               </div>
             )
           })}
-          {busy && <div className="mc-asst-route is-busy"><Icon name="Loader" /> 요청을 이해하는 중…</div>}
+          {busy && sent && <div className="mc-asst-turn"><div className="mc-msg me"><div className="mc-bubble">{sent}</div></div></div>}
+          {busy && <div className="mc-asst-route is-busy" role="status"><Icon name="Loader" /> 답을 준비하고 있어요…</div>}
+          {error && <div className="mc-msg bot"><div className="mc-bubble" role="alert">{error}</div></div>}
           <div ref={end} />
         </div>
+
+        {import.meta.env.DEV && info?.engine === 'router' && (
+          <details className="mc-fx-dev">
+            <summary>개발용 · 가짜 해석 예시 문장</summary>
+            <div className="mc-chipbar">
+              <button type="button" onClick={startOver}>새 대화</button>
+              {EXAMPLES.map((q) => <button key={q} type="button" disabled={busy} onClick={() => send({ text: q }, q)}>{q}</button>)}
+            </div>
+          </details>
+        )}
       </div>
     </Layout>
   )

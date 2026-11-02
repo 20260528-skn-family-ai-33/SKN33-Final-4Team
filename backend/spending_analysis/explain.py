@@ -22,6 +22,7 @@ from . import result as R
 from . import tools
 from .answer import NAMES, VIEW, _plain, day, josa, span, won
 from .budget import OUT_OF_BUDGET
+from . import scope as scopes
 from .scope import DAY_NAMES, SLOTS, name as scope
 from .periods import Period, previous_month_same_days, this_month
 
@@ -132,13 +133,14 @@ def _mix(user, item, today):
     side = _side(user, period, code, item)
     if side is None:
         return {"state": "incomplete"}
-    recorded = facts.get("by_category", {}).get(code, 0) if top else \
+    recorded = facts.get("sum") if item["type"] == 10 else facts.get("by_category", {}).get(code, 0) if top else \
         (facts.get("category") or {}).get("amount") if code else facts.get("total")
     if recorded is not None and side["amount"] != recorded:
         return {"state": "changed"}
     biggest = lambda d: sorted(((k, v) for k, v in d.items() if k is not None and v > 0),  # noqa: E731
                                key=lambda kv: (-kv[1], str(kv[0])))[:TOP]
-    return {"state": "ok", "kind": "mix", "category": code, "top": top, "period": period, "amount": side["amount"],
+    return {"state": "ok", "kind": "mix", "category": code, "top": top, "period": period, "word": _word(item, period),
+            "amount": side["amount"],
             "count": side["count"], "average": side["average"], "fixed": side["fixed"],
             "merchants": biggest(side["merchants"]), "categories": biggest(side["categories"]) if code is None else []}
 
@@ -190,24 +192,37 @@ def _visits(now, before):
             "regular_delta": sum(now[k] - before[k] for k in both), "regular_count": sum(k is not None for k in both)}
 
 
-def _reduce(now, before, moves, delta):
-    """늘었을 때만: 늘어난 금액이 가장 큰 요인(시간대 · 요일 · 가게 하나)의 이번 기간 건당 평균 × N번 (서버 계산값만).
-    N = 그 요인 결제가 4번 이상이면 2, 아니면 1. 금액은 천 원 단위로 반올림해 '약'"""
-    if delta <= 0:
+def _reduce(now, before, moves, delta, category=None):
+    """늘었을 때만: 늘어난 금액이 가장 큰 요인(시간대 · 가게 하나)의 이번 기간 건당 평균 × N번 (서버 계산값만).
+    N = 그 요인 결제가 4번 이상이면 2, 아니면 1. 금액은 천 원 단위로 반올림해 '약'.
+    제안하지 않는 경우: 범위가 줄이지 않는 카테고리(scope.NO_REDUCE — 의료·건강 · 교육 · 주거·통신) · 그 요인의 결제가 1번뿐.
+    후보 계산에서도 NO_REDUCE 카테고리 결제는 뺀다 (전체 범위 설명에서 병원비 시간대를 줄이라고 하지 않게)"""
+    if delta <= 0 or category in scopes.NO_REDUCE:
         return None
-    shift = _shift(now, before, delta) or {}
-    # 요일은 하루 평균 변화라 합계(시간대 · 가게)와 크기를 견줄 수 없어 줄이는 방법 후보에서 뺀다
-    candidates = [("slot", shift.get("slots")), ("merchant", moves["up"][0] if moves["kind"] == "merchant" and moves["up"] else None)]
-    kind, row = max(((k, r) for k, r in candidates if r), key=lambda kr: kr[1]["delta"], default=(None, None))
-    if row is None:
-        return None
-    count = now["counts"].get((kind, row["key"]), 0)
-    if not count:
+    slots = [_row(k, SLOTS[k][0], before["reducible_slots"].get(k, 0), now["reducible_slots"].get(k, 0))
+             for k in set(now["reducible_slots"]) | set(before["reducible_slots"]) if k is not None]
+    slot = max((r for r in slots if r["delta"] > 0), key=lambda r: (r["delta"], -list(SLOTS).index(r["key"])), default=None)
+    merchant = moves["up"][0] if moves["kind"] == "merchant" and moves["up"] else None
+    if merchant and not now["counts"].get(("reducible_merchant", merchant["key"])):
+        merchant = None  # 줄이지 않는 카테고리(병원 등) 가게는 후보가 아니다
+    candidates = [("slot", slot, ("reducible", slot and slot["key"])),
+                  ("merchant", merchant, ("reducible_merchant", merchant and merchant["key"]))]
+    kind, row, key = max(((k, r, c) for k, r, c in candidates if r), key=lambda krc: krc[1]["delta"], default=(None, None, None))
+    count = now["counts"].get(key, 0) if row else 0
+    if count < 2:  # 결제가 1번뿐이면 '한 달에 N번 줄이기'가 맞지 않는다
         return None
     avg = R.average(row["after"], count)["value"]
     times = 2 if count >= 4 else 1
     return {"kind": kind, "name": row["name"], "count": count, "average": avg, "times": times,
             "saving": (avg * times + 500) // 1000 * 1000 or avg * times}  # 천 원 단위 반올림(0.5 올림)
+
+
+def _word(item, period):
+    """구성 설명의 기간 이름 (이번 달 · 지난달 · 이번 주 · 지난주 · N월). 날짜 범위 · 최근 N개월은 날짜만"""
+    kind = (item.get("query") or {}).get("period", "this_month")
+    if kind == "month":
+        return f"{period.start.month}월"
+    return {"this_month": "이번 달", "last_month": "지난달", "this_week": "이번 주", "last_week": "지난주"}.get(kind)
 
 
 def evidence(user, item, today=None):
@@ -217,8 +232,8 @@ def evidence(user, item, today=None):
         return {"state": "no_basis"}
     if item.get("fresh"):
         basis = this_month(today), previous_month_same_days(today), ("이번 달", "지난달 같은 기간"), None
-    elif item["type"] in (1, 2, 5):
-        return _mix(user, item, today)
+    elif item["type"] in (1, 2, 5) or (item["type"] == 10 and item.get("explain_kind") != "change"):
+        return _mix(user, item, today)  # 범용 조회(10번)는 그 기간 · 조건 그대로 구성 설명 (11/2 2차 검수)
     else:
         basis = _basis(item)
     if isinstance(basis, str):
@@ -240,7 +255,7 @@ def evidence(user, item, today=None):
             "delta": change["delta"], "rate": change["rate"], "moves": moves,
             "unnamed": bool(code) and (None in now["merchants"] or None in before["merchants"]),
             "big": now["big"], "shift": _shift(now, before, change["delta"]), "visits": _visits(now["merchants"], before["merchants"]),
-            "reduce": _reduce(now, before, moves, change["delta"])}
+            "reduce": _reduce(now, before, moves, change["delta"], code)}
 
 
 def _changed(delta):
@@ -427,7 +442,7 @@ def _place(value, particle):
 def _mix_answer(ev, item):
     """구성 설명 → (문장, 카드 블록). 설명 LLM 은 쓰지 않는다 (템플릿만 — 증감 설명용 프롬프트라)"""
     name = NAMES[ev["category"]] if ev["top"] else scope(item)
-    label = f"이번 달({span(ev['period'])})"
+    label = f"{ev['word']}({span(ev['period'])})" if ev["word"] else span(ev["period"])
     if ev["amount"] <= 0:
         return [TEXT["mix_none"].format(period=label, name=name)], None
     lines = [TEXT["mix_top"].format(name=name)] if ev["top"] else []
@@ -443,7 +458,7 @@ def _mix_answer(ev, item):
     if ev["fixed"] > 0:
         lines.append(TEXT["mix_fixed"].format(fixed=won(ev["fixed"])))
     lines.append(TEXT["mix_basis"])
-    blocks = [{"kind": "head", "title": f"{name} · 이번 달 쓴 곳"},
+    blocks = [{"kind": "head", "title": f"{name} · {ev['word'] or span(ev['period'])} 쓴 곳"},
               {"kind": "total", "caption": f"{span(ev['period'])} 쓴 금액", "amount": ev["amount"],
                "note": TEXT["mix_fixed"].format(fixed=won(ev["fixed"])) if ev["fixed"] > 0 else None}]
     if rows:

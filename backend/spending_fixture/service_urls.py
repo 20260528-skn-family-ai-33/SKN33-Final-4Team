@@ -1,4 +1,5 @@
-"""더미 서비스 실행 주소 (MEMO 22절 1 · 2단계) — config.urls 그대로 + 금융 연결 · 다시 불러오기만 503 + 챗봇 메시지는 새 라우터
+"""더미 서비스 실행 주소 (MEMO 22절 1단계) — config.urls 그대로 + 금융 연결 · 다시 불러오기만 503
+챗봇 메시지는 가로채지 않는다 — chat.api.messages 가 설정(CHAT_ENGINE = "router", service_settings)을 보고 새 엔진으로 답한다 (MEMO 25절 1단계)
 
 웹 API 중 CODEF 를 실제로 부르는 것은 finance/sync/ 하나다. 나머지 막는 주소는 CODEF 연결 흐름(동의 · 계좌 · 카드 연결 ·
 연결 추가 · 해제)이라 테스트 환경에서 쓸 수 없다. 연결 목록 조회(GET finance/connections/)는 읽기라 그대로 둔다.
@@ -10,8 +11,6 @@ from django.views.decorators.csrf import csrf_exempt
 
 from config import api_urls
 from config.urls import urlpatterns as service_urlpatterns
-
-from . import service_chat
 
 UNAVAILABLE = {"error": {"code": "unavailable", "message": "테스트 환경에서는 금융 연결 · 다시 불러오기를 쓸 수 없어요."}}
 EVERY = None  # 모든 메서드
@@ -43,13 +42,5 @@ def _blocked_patterns():
             for name, p in found.items()]
 
 
-def _chat_messages():
-    """POST chat/messages/ → 새 라우터 뷰 (주소 문자열은 api_urls 그대로). 대화 조회(GET)는 기존 뷰 — 확장 content 도 그대로 돌려준다"""
-    found = next((p for p in api_urls.urlpatterns if p.name == "chat-messages"), None)
-    if found is None:
-        raise RuntimeError("config/api_urls.py 에 chat-messages 주소가 없어요 — service_urls 를 맞춰 주세요")
-    return path(f"api/{found.pattern}", service_chat.messages, name="fixture-chat-messages")
-
-
-# 가로채는 주소가 먼저 (Django 는 처음 맞는 주소를 쓴다)
-urlpatterns = [*_blocked_patterns(), _chat_messages(), *service_urlpatterns]
+# 막는 주소가 먼저 (Django 는 처음 맞는 주소를 쓴다)
+urlpatterns = [*_blocked_patterns(), *service_urlpatterns]

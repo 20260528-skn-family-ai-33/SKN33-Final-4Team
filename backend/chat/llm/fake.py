@@ -1,5 +1,5 @@
-"""가짜 해석 (LLM 대역) — 정해 둔 문장만 이해한다. 로컬 채팅 · 더미 서비스 실행(MEMO 22절)이 같이 쓴다
-DB · 네트워크 · 설정 변경 없음. 실제 LLM 은 live_reading.LiveReading (명시적으로 켤 때만)
+"""가짜 해석 (LLM 대역, CHAT_LLM = "fake" 기본값) — 정해 둔 문장만 이해한다. 챗봇 엔진 · 로컬 채팅이 같이 쓴다
+DB · 네트워크 · 설정 변경 없음. 실제 LLM 은 chat.llm.live.LiveReading (명시적으로 켤 때만). spending_fixture/fake_reading.py 에서 옮김 (MEMO 25-12)
 """
 import json
 

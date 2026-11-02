@@ -12,7 +12,7 @@ from importlib import import_module
 
 from .periods import Period
 from .result import CATEGORY_ORDER, percent
-from .scope import ONLINE, SHORT_PERIODS, filters, name as scope, label as _name, narrowed, online
+from .scope import ONLINE, SHORT_PERIODS, excludes_fixed, filters, name as scope, label as _name, narrowed, online
 
 NAMES = {code: name for code, name, *_ in import_module("budgets.migrations.0003_seed_categories").CATEGORIES}
 
@@ -66,7 +66,7 @@ TEXT = {
     # 범용 조회 (10번)
     "q_count": "{period} {who}결제는 {count}건이에요.",
     "q_avg": "{period} {who}결제는 건당 평균 {approx}{amount}이에요.",
-    "q_daily": "{period} {who}하루 평균 {approx}{amount}을 썼어요(고정지출 포함, {days}일로 나눈 값).",
+    "q_daily": "{period} {who}하루 평균 {approx}{amount}을 썼어요(고정지출 {fixed}, {days}일로 나눈 값).",
     "q_daily_living": "고정지출을 빼면 하루 평균 {approx}{amount}이에요.",
     "q_max": "{period} {who}가장 큰 지출은 {date} {merchant}에서 쓴 {amount}이에요.",
     "q_max_living": "고정지출을 빼면 가장 큰 지출은 {date} {merchant}에서 쓴 {amount}이에요.",
@@ -90,8 +90,9 @@ NOTICE = {
     "no_time": "시각이 없는 거래 {count}건은 시간대 조회에서 뺐어요.",
     "clipped": "끝 날짜가 아직 지나지 않아 {until}까지만 봤어요.",
     "fixed_excluded": "고정지출 {amount}({names})은 빼고 봤어요.",
-    "out_of_budget": "주거·통신, 여행·숙박은 예산 범위가 아니라 생활비 사용액에서 뺐어요.",
+    "outside_spent": "예산 밖 지출({names}) {amount}도 남은 돈에 반영했어요.",
     "unclassified": "카테고리가 아직 정해지지 않은 거래 {count}건, 총 {amount}도 포함했어요.",
+    "classified_only": "{name}{particle} 분류된 금액 기준이에요. 확인 필요 {amount}에 따라 달라질 수 있어요.",
     "months_capped": "{n}개월까지만 볼 수 있어 {n}개월로 보여드려요.",  # 360px 폰에서도 한 줄 (기간은 카드 머리줄에)
     "retry": "불러오지 못한 항목은 잠시 후 다시 물어봐 주세요.",
 }
@@ -161,6 +162,7 @@ def _plain(rate):
 class _Out:
     def __init__(self):
         self.lines, self.notices, self.sections, self.lead = [], [], [], []
+        self.classified = {}  # 확인 필요 금액 → 카테고리 이름들 (여러 카테고리 조회도 안내 한 줄)
 
     def line(self, key, **values):
         self.lines.append(TEXT[key].format(**values))
@@ -196,9 +198,17 @@ def _period_block(out, block, item, label):
 
 
 def _unclassified(out, fig, item):
-    """'확인 필요' 금액은 전체 합계에 들어 있으므로 전체 범위 답변에만 안내한다"""
+    """'확인 필요' 금액: 전체 범위면 합계에 포함했다고, 카테고리로 좁혔으면 분류된 금액 기준이라 달라질 수 있다고 (11/2 2차 검수)"""
     if fig["unclassified_amount"] and not narrowed(item):
         out.notice("unclassified", count=fig["needs_review_count"], amount=won(fig["unclassified_amount"]))
+    elif fig["unclassified_amount"]:
+        _classified_only(out, item, fig["unclassified_amount"])
+
+
+def _classified_only(out, item, amount):
+    code = item.get("category")
+    if code and code != "UNCLASSIFIED" and NAMES[code] not in out.classified.get(amount, []):  # 가게 · 결제 수단만 좁힌 조회는 분류와 상관없다
+        out.classified.setdefault(amount, []).append(NAMES[code])
 
 
 def _current(out, result):
@@ -380,6 +390,11 @@ def _q_period(result):
     return f"{head}({span(whole)})", whole
 
 
+def _fixed_word(item):
+    """하루 평균 표시의 고정지출 포함 · 제외 — 실제 계산(rows 가 scope.excludes_fixed 로 뺐는지)과 같은 판단"""
+    return "제외" if excludes_fixed(item) else "포함"
+
+
 def _when(m):
     return f"{day(m['occurred_on'])}" + (f" {m['occurred_time']}" if m["occurred_time"] else "")
 
@@ -396,6 +411,8 @@ def _query(out, result):
         out.notice("no_time", count=result["no_time"])
     if result.get("clipped"):  # 끝 날짜가 기준일 뒤 → 기준일까지로 잘랐다
         out.notice("clipped", until=day(result["periods"][-1].last_day))
+    if result.get("unclassified"):
+        _classified_only(out, item, result["unclassified"])
     if not fig["count"] and not fig["sum"]:  # 수집 기록이 없으면 0원 · 결제 없음이 아니라 확인할 내역이 없다
         return out.line("no_data", period=label, name=scope(item) if narrowed(item) else "소비") \
             if result["coverage"]["state"] == "none" else out.line("q_none", period=label, who=who)
@@ -415,7 +432,7 @@ def _query(out, result):
         return out.line("q_avg", period=label, who=who, approx=approx(fig["avg"]["exact"]), amount=won(fig["avg"]["value"]))
     if m == "daily_avg":
         out.line("q_daily", period=label, who=who, approx=approx(fig["daily_avg"]["exact"]),
-                 amount=won(fig["daily_avg"]["value"]), days=result["days"])
+                 amount=won(fig["daily_avg"]["value"]), days=result["days"], fixed=_fixed_word(item))
         if fig["fixed"]:
             out.line("q_daily_living", approx=approx(fig["daily_avg_living"]["exact"]), amount=won(fig["daily_avg_living"]["value"]))
         return
@@ -670,7 +687,7 @@ def _view_one_query(r):
                  "note": f"{_when(big)} · {big['merchant_name'] or '이름 없는 곳'} · {NAMES.get(big['category'], '')}"}
     else:
         value = fig[m] if m == "sum" else fig[m]["value"]
-        caption = f"하루 평균 ({r['days']}일 · 고정지출 포함)" if m == "daily_avg" else QUERY_CAPTION[m]
+        caption = f"하루 평균 ({r['days']}일 · 고정지출 {_fixed_word(item)})" if m == "daily_avg" else QUERY_CAPTION[m]
         if m == "daily_avg" and fig["fixed"] and not note:
             note = f"고정지출 빼면 하루 {won(fig['daily_avg_living']['value'])}"
         total = {"kind": "total", "caption": caption, "amount": value, "note": note}
@@ -740,10 +757,15 @@ def compose(results, notices=()):
             out.notice("retry")
             continue
         BODY[r["result"]["type"]](out, r["result"])
-    # 생활비(4번 · 생활비 막대)에 예산 범위 밖 지출이 실제로 있었을 때만 짧게
-    if any((r["result"].get("excluded_spent") or (r["result"].get("living_budget") or {}).get("excluded_spent"))
-           for r in results if r["ok"]):
-        out.notice("out_of_budget")
+    # 생활비(4번 · 생활비 막대)에 예산 범위 밖 지출이 실제로 있었을 때만 — 남은 돈에 넣었다고 짧게
+    outside = {}
+    for r in results:
+        if r["ok"]:
+            for c, v in ({**(r["result"].get("outside_spent") or {}),
+                          **((r["result"].get("living_budget") or {}).get("outside_spent") or {})}).items():
+                outside[c] = v
+    if outside:
+        out.notice("outside_spent", names=", ".join(NAMES[c] for c in outside), amount=won(sum(outside.values())))
     excluded = sum(_fixed_excluded(r["result"]) for r in results if r["ok"])
     if excluded:  # 요일 · 시간대 · 묶기 · 짧은 기간 조회에서 기본으로 뺀 고정지출 → 금액(항목 이름) + [고정지출 포함해서 보기]
         names = " · ".join(dict.fromkeys(n for r in results if r["ok"] for n in _fixed_names(r["result"])))
@@ -751,6 +773,8 @@ def compose(results, notices=()):
             out.line("fixed_same_period", amount=won(excluded))  # 짧은 기간 총액: 본문 아래 따로 한 줄 (금액만)
         else:
             out.notice("fixed_excluded", amount=won(excluded), names=names)
+    for amount, names in out.classified.items():
+        out.notice("classified_only", name=" · ".join(names), particle=josa(names[-1], ("으로", "로")), amount=won(amount))
     if "months_capped" in notices:
         applied = next((r["item"]["months_applied"] for r in results if r["item"].get("months_applied")), None)
         if applied:

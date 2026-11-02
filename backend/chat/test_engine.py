@@ -1,16 +1,20 @@
-"""더미 서비스 챗봇 메시지 API (MEMO 22절 2단계) — 가짜 해석 · fixture DB 실제 분석 · Conversation.slots 저장. 네트워크 호출 없음
-실행: python manage.py test spending_fixture.test_service_chat --settings=spending_fixture.settings
+"""새 챗봇 엔진(chat/engine.py, CHAT_ENGINE = "router") — 가짜 해석 · fixture DB 실제 분석 · Conversation.slots 저장. 네트워크 호출 없음
+더미 설정 값(spending_fixture.service_settings)으로 켜서 chat.api.messages 경로로 시험한다 (MEMO 25절 1단계, 이전 spending_fixture/test_engine.py).
+팀 기본 설정(엔진 legacy)의 동작은 chat/tests.py 가 그대로 확인한다.
+실행: python manage.py test chat.test_engine --settings=spending_fixture.settings
 """
 import json
 from unittest import mock
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from chat.models import ChatMessage, Conversation
 
-from . import seed, service_chat
-from .test_fixture import DESIGN, EXPECTED, fixture_db_only
-from .test_service import NO_NETWORK, PASSWORD, SERVICE, login
+from spending_fixture import seed
+from spending_fixture.test_fixture import DESIGN, EXPECTED, fixture_db_only
+from spending_fixture.test_service import NO_NETWORK, PASSWORD, SERVICE, login
+
+from . import engine
 
 URL = "/api/chat/messages/"
 
@@ -21,7 +25,7 @@ class ServiceChatBase(TestCase):
     @classmethod
     def setUpTestData(cls):
         seed.apply(DESIGN)
-        from . import set_login
+        from spending_fixture import set_login
         set_login.set_passwords(PASSWORD, DESIGN)
 
     def setUp(self):
@@ -70,14 +74,34 @@ class ServiceChatTest(ServiceChatBase):
         talk = Conversation.objects.get(pk=cid)
         self.assertEqual((talk.slots["schema"], talk.slots["rev"], talk.active_agent), ("router_core/1", 2, "spending"))
 
+    def test_engine_and_feature_buttons_come_from_server(self):
+        """MEMO 25-9 ①: 엔진 종류 · 기능 버튼 목록을 첫 화면(GET) · 메시지 응답 · 대화 조회에 같은 값으로. 꺼짐(legacy)은 기존 2개"""
+        router = {"engine": "router", "features": [{"value": "spending", "label": "소비 분석"},
+                                                    {"value": "budget", "label": "예산 조정"}, {"value": "policy", "label": "청년 정책"}],
+                  "testMode": True, "today": "2026-10-29"}  # 고정 기준일 → 화면이 '테스트 환경 · 기준일' 띠
+        first = self.client_for("A").get(URL)
+        self.assertEqual((first.status_code, first.json()), (200, router))
+        out = self.send("A", text="이번 달 얼마 썼어?").json()
+        self.assertEqual({k: out[k] for k in router}, router)
+        history = self.client_for("A").get(f"/api/chat/conversations/{out['conversationId']}/").json()
+        self.assertEqual({k: history[k] for k in router}, router)
+        self.assertEqual(Conversation.objects.filter(user__email=DESIGN["personas"]["A"]["synthetic_email"]).count(), 1)  # GET 은 저장 없음
+        with override_settings(CHAT_ENGINE="legacy"):
+            self.assertEqual(self.client_for("A").get(URL).json(),
+                             {"engine": "legacy", "features": [{"value": "spending", "label": "소비 분석"},
+                                                               {"value": "budget", "label": "예산 조정"}],
+                              "testMode": False, "today": None})
+        with override_settings(CHAT_TODAY=None):  # 켜짐이어도 기준일이 오늘이면 띠 없음
+            self.assertEqual({k: self.client_for("A").get(URL).json()[k] for k in ("testMode", "today")}, {"testMode": False, "today": None})
+
     def test_state_lives_only_in_the_database(self):
         """서버 재시작 = 메모리에 남은 것 없이 DB 의 slots 만으로 이어받는다 (요청마다 저장소를 slots 에서 새로 만든다)"""
         cid = self.send("A", text="식비 얼마 썼어?").json()["conversationId"]
         slots = Conversation.objects.get(pk=cid).slots
         self.assertEqual(json.loads(json.dumps(slots)), slots)  # JSON 그대로 저장 가능
-        restored = service_chat.ConversationStore.load(slots)
-        self.assertEqual(restored.get_analysis(service_chat.KEY)["request"]["categories"], ["FOOD"])
-        with mock.patch.object(service_chat, "FakeReading", wraps=service_chat.FakeReading) as fresh:
+        restored = engine.ConversationStore.load(slots)
+        self.assertEqual(restored.get_analysis(engine.KEY)["request"]["categories"], ["FOOD"])
+        with mock.patch.object(engine, "FakeReading", wraps=engine.FakeReading) as fresh:
             follow = self.bot(self.send("A", cid, text="그럼 교통비는?"))
         self.assertEqual(fresh.call_count, 1)  # 해석기도 요청마다 새로 — 이전 요청의 메모리를 쓰지 않는다
         self.assertIn("교통·차량", follow["lines"][0])
@@ -92,12 +116,12 @@ class ServiceChatTest(ServiceChatBase):
     def test_budget_and_policy_are_not_ready_and_end(self):
         out = self.send("A", text="식비 예산 줄여줘")
         cid = out.json()["conversationId"]
-        self.assertEqual(self.bot(out)["lines"], [service_chat.NOT_READY["budget"]])
-        store = service_chat.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
-        self.assertIsNone(store.get_task(service_chat.KEY))  # 보류 작업이 남지 않는다
+        self.assertEqual(self.bot(out)["lines"], [engine.NOT_READY["budget"]])
+        store = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
+        self.assertIsNone(store.get_task(engine.KEY))  # 보류 작업이 남지 않는다
         after = self.bot(self.send("A", cid, text="이번 달 얼마 썼어?"))
         self.assertEqual(after["notices"], [])  # '예산 조정은 잠시 멈춰 뒀어요' 같은 안내가 없다
-        self.assertEqual(self.bot(self.send("A", cid, text="청년 정책 추천해줘"))["lines"], [service_chat.NOT_READY["policy"]])
+        self.assertEqual(self.bot(self.send("A", cid, text="청년 정책 추천해줘"))["lines"], [engine.NOT_READY["policy"]])
         self.assertEqual(self.bot(self.send("A", choice="spending"))["lines"], ["어떤 소비가 궁금하세요?"])
 
     def test_extended_content_and_hidden_budget_suggestion(self):
@@ -123,7 +147,7 @@ class ServiceChatTest(ServiceChatBase):
 
     def test_conversation_changed_meanwhile_is_not_saved(self):
         cid = self.send("A", text="이번 달 얼마 썼어?").json()["conversationId"]
-        real = service_chat.answer
+        real = engine.answer
 
         def racing(*args, **kwargs):  # 이 요청이 답을 만드는 사이 같은 대화의 다른 메시지가 먼저 저장됨
             out = real(*args, **kwargs)
@@ -131,9 +155,9 @@ class ServiceChatTest(ServiceChatBase):
             talk.slots = {**talk.slots, "rev": talk.slots["rev"] + 1}
             talk.save(update_fields=["slots"])
             return out
-        with mock.patch.object(service_chat, "answer", side_effect=racing):
+        with mock.patch.object(engine, "answer", side_effect=racing):
             response = self.send("A", cid, text="그럼 교통비는?")
-        self.assertEqual((response.status_code, response.json()), (409, service_chat.BUSY))
+        self.assertEqual((response.status_code, response.json()), (409, engine.BUSY))
         self.assertEqual(ChatMessage.objects.filter(conversation_id=cid).count(), 2)
 
 
@@ -144,7 +168,7 @@ class ServiceChoiceTest(ServiceChatBase):
 
     def setUp(self):
         super().setUp()
-        from .fake_reading import FakeReading
+        from chat.llm.fake import FakeReading
         self.llm = mock.patch.object(FakeReading, "__call__", autospec=True, side_effect=FakeReading.__call__)
         self.calls = self.llm.start()
         self.addCleanup(self.llm.stop)
@@ -165,7 +189,7 @@ class ServiceChoiceTest(ServiceChatBase):
         self.send("A", cid, text="이번 달 얼마 썼어?")
         before = (ChatMessage.objects.filter(conversation_id=cid).count(), Conversation.objects.get(pk=cid).slots)
         stale = self.pick("A", cid, asked, "이번 달")  # 지난 질문의 버튼을 강제로 보냄
-        self.assertEqual((stale.status_code, stale.json()), (409, service_chat.STALE))
+        self.assertEqual((stale.status_code, stale.json()), (409, engine.STALE))
         self.assertEqual((ChatMessage.objects.filter(conversation_id=cid).count(), Conversation.objects.get(pk=cid).slots), before)
         last = self.bot(self.send("A", cid, text="이번 달 3개월 식비"))
         wrong = self.send("A", cid, choice={"value": "last_month", "turn": last["turn"]})  # 최신 turn 이어도 없는 선택지
@@ -186,15 +210,15 @@ class ServiceChoiceTest(ServiceChatBase):
         out = self.send("A", choice="budget")
         cid, budget = out.json()["conversationId"], self.bot(out)
         self.assertEqual((out.json()["agent"], budget["agent"], budget["inputs"], budget["lines"]),
-                         ("budget", "budget", ["budget_form"], [service_chat.BUDGET_ASK]))
+                         ("budget", "budget", ["budget_form"], [engine.BUDGET_ASK]))
         self.calls.reset_mock()
         sent = self.bot(self.send("A", cid, text="식비를 5만원 늘리고 싶어요"))  # 화면 adjustSentence 문장 그대로
-        self.assertEqual((sent["lines"], sent["agent"], sent["inputs"]), ([service_chat.NOT_READY["budget"]], "budget", []))
+        self.assertEqual((sent["lines"], sent["agent"], sent["inputs"]), ([engine.NOT_READY["budget"]], "budget", []))
         self.assertEqual(self.calls.call_count, 0)  # 담당(예산)에게 원문 그대로 — 라우터 해석 · 금액 해석 없음
         spending = self.bot(self.send("A", cid, choice="spending"))
         self.assertEqual((spending["agent"], spending["lines"]), ("spending", ["어떤 소비가 궁금하세요?"]))
         policy = self.send("A", cid, choice="policy")
-        self.assertEqual((policy.json()["agent"], self.bot(policy)["lines"]), ("policy", [service_chat.NOT_READY["policy"]]))
+        self.assertEqual((policy.json()["agent"], self.bot(policy)["lines"]), ("policy", [engine.NOT_READY["policy"]]))
         self.assertEqual(policy.json()["messages"][0]["content"]["text"], "청년 정책")
         self.assertEqual(self.calls.call_count, 0)  # 기능 버튼은 라우터 해석 없이
 
@@ -206,7 +230,7 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual([c["label"] for c in asked["choices"]], ["이어서 하기", "취소하고 새로 시작"])
         self.calls.reset_mock()
         resumed = self.bot(self.pick("A", cid, asked, "이어서 하기"))
-        self.assertEqual((resumed["lines"], resumed["inputs"], self.calls.call_count), ([service_chat.BUDGET_ASK], ["budget_form"], 0))
+        self.assertEqual((resumed["lines"], resumed["inputs"], self.calls.call_count), ([engine.BUDGET_ASK], ["budget_form"], 0))
 
     def test_yes_no_choice_without_llm(self):
         out = self.send("A", text="최근 3개월 식비 예산 얼마나 남았어?")
@@ -229,16 +253,16 @@ class ServiceChoiceTest(ServiceChatBase):
 @fixture_db_only
 @SERVICE
 class ServiceLiveTest(ServiceChatBase):
-    """FIXTURE_LIVE_LLM=1: 실제 LLM 자리(가짜 응답 opener) 하나를 서버 동안 같이 쓰고, 설명 LLM 도 붙는다. 상한 · 장부 없음"""
+    """CHAT_LLM = "live"(더미 실행은 FIXTURE_LIVE_LLM=1): 실제 LLM 자리(가짜 응답 opener) 하나를 서버 동안 같이 쓰고, 설명 LLM 도 붙는다. 상한 · 장부 없음"""
 
     def setUp(self):
         super().setUp()
         import os
         from chat.interpretation.legacy import RoleFakeLLM
         from spending_analysis import explain
-        from . import local_chat
-        from .live_reading import LiveReading
-        from .test_local_chat import FakeResponse
+        from spending_fixture import local_chat
+        from chat.llm.live import LiveReading
+        from spending_fixture.test_local_chat import FakeResponse
         reader, self.sent = RoleFakeLLM({**local_chat.SAID, **local_chat.EXTRA_SAID}), []
 
         def opener(request, timeout):
@@ -249,14 +273,17 @@ class ServiceLiveTest(ServiceChatBase):
             return FakeResponse(reader(body["instructions"], body["input"]))
         with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-not-real", "LLM_MODEL": "test-model"}):
             live = LiveReading(None, None)
-        live.client.opener = opener
-        for patcher in (mock.patch.dict(os.environ, {"FIXTURE_LIVE_LLM": "1"}), mock.patch.object(service_chat, "_live", live)):
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        live.client.opener = self.opener = opener
+        live_setting = override_settings(CHAT_LLM="live")
+        live_setting.enable()
+        self.addCleanup(live_setting.disable)
+        patcher = mock.patch.object(engine, "_live", live)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.live = live
 
     def test_live_reading_and_explain_without_cap(self):
-        self.assertIs(service_chat.reading(), self.live)
+        self.assertIs(engine.reading(), self.live)
         cid = self.send("A", text="지난달보다 식비 더 썼어?").json()["conversationId"]
         out = self.bot(self.send("A", cid, text="왜 식비가 늘었어?"))
         self.assertEqual(self.sent[-2:], ["spending_reading", "spending_explanation"])
@@ -265,6 +292,27 @@ class ServiceLiveTest(ServiceChatBase):
         self.assertEqual(self.live.usage()["limit"], None)
         self.assertEqual(self.live.usage()["used"], len(self.sent))
 
+    def test_cap_reached_answers_router_failure_and_keeps_state(self):
+        """CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER(MEMO 25-12): 상한에 닿으면 보내지 않고 라우터 실패 문구 + 선택지, 대화 상태는 그대로"""
+        import os
+        import tempfile
+        ledger = os.path.join(tempfile.mkdtemp(), "ledger.json")
+        with override_settings(CHAT_LLM_MAX_CALLS=2, CHAT_LLM_LEDGER=ledger), mock.patch.object(engine, "_live", None), \
+                mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-not-real", "LLM_MODEL": "test-model"}):
+            live = engine.reading()
+            live.client.opener = self.opener
+            cid = self.send("A", text="이번 달 얼마 썼어?").json()["conversationId"]  # 라우터 1 + 소비 1 = 상한 2
+            before = Conversation.objects.get(pk=cid)
+            out = self.send("A", cid, text="그럼 교통비는?").json()
+        bot, after = out["messages"][1]["content"], Conversation.objects.get(pk=cid)
+        self.assertEqual((out["route"]["fallback"], bot["lines"]), (True, ["지금은 이해하지 못했어요, 아래에서 골라 주세요."]))
+        self.assertTrue(bot["choices"])
+        self.assertEqual((after.slots["state"], after.active_agent), (before.slots["state"], before.active_agent))
+        self.assertEqual((len(self.sent), live.usage()["blocked"]), (2, 1))  # 세 번째는 보내지 않았다
+        with open(ledger) as f:
+            self.assertEqual(json.load(f), {"limit": 2, "used": 2})
+
     def test_off_means_fake_reading(self):
-        with mock.patch.dict("os.environ", {"FIXTURE_LIVE_LLM": "0"}):
-            self.assertIsInstance(service_chat.reading(), service_chat.FakeReading)
+        from chat.llm.fake import FakeReading
+        with override_settings(CHAT_LLM="fake"):
+            self.assertIsInstance(engine.reading(), FakeReading)

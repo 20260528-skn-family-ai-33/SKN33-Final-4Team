@@ -9,7 +9,7 @@
   바꿔 새 구조(담당 우선 · not_mine 재분류)에 넣는다 — '역할별 모델이 같은 뜻으로 답했다'는 가정의 변환이다
 - 추출 채점은 통합 형식 원문 그대로(기존 평가와 비교 가능), 결정 · 상태 채점은 새 구조. 턴 시작 때 예산 작업이 진행 중이면
   원문이 예산 에이전트로 가서 결과가 그 판단에 달린다 → comparable=False 로 따로 센다
-- live(실제 호출)는 역할별 기대값 · 스키마 · 장부 계획(MEMO 13번) 확정 전이라 막아 둔다. 호출 어댑터(openai_rest) · 장부는 그대로 둔다
+- live(실제 호출)는 역할별 기대값 · 스키마 · 장부 계획(MEMO 13번) 확정 전이라 막아 둔다. 호출 어댑터 · 장부는 chat/llm 으로 옮겼다(MEMO 25-12)
 
 - 사례: cases.json (가상 문장 · 상태). 단일 입력(split dev · holdout)과 연속 대화(scenarios) 점수는 따로 낸다
 - 라우터 · 에이전트가 주입받는 complete 로만 모델을 부른다 → 코드가 처리하는 입력은 호출 0회, 역할마다 한 번
@@ -49,7 +49,8 @@ from spending_analysis import agent as spending_agent  # noqa: E402
 from spending_analysis import dialog  # noqa: E402
 from spending_analysis import reading as spending_reading  # noqa: E402
 from spending_analysis.dialog import record_analysis, run_items  # noqa: E402
-from openai_rest import CapReached, ResponseError, ResponsesClient  # noqa: E402
+from chat.llm.ledger import Ledger  # noqa: E402,F401  (옮김 — stage_b · 테스트가 run.Ledger 로 쓴다)
+from chat.llm.openai_rest import CapReached, ResponseError, ResponsesClient  # noqa: E402
 
 CASES = Path(__file__).resolve().parent / "cases.json"
 # 추출 채점 대상 칸. unclear(자유 설명)는 채점하지 않는다
@@ -421,41 +422,6 @@ def usage_totals(attempts, price_in, price_out):
             "cost_usd_known_part": cost, "cost_complete": unknown == 0 and cost is not None,
             "latency_ms_median": latencies[len(latencies) // 2] if latencies else None,
             "latency_ms_max": latencies[-1] if latencies else None}
-
-
-class Ledger:
-    """저장소 밖 JSON {"limit", "used"}. 처음 만들 때의 상한을 고정, 시도마다 바로 늘려 쓴다 (재실행해도 초기화 안 됨)"""
-
-    def __init__(self, path, limit):
-        self.path = Path(path).expanduser().resolve()
-        if self.path == ROOT or ROOT in self.path.parents:
-            raise SystemExit("--ledger 는 저장소 밖 경로여야 해요")
-        if self.path.exists():
-            self.data = json.loads(self.path.read_text(encoding="utf-8"))
-        else:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.data = {"limit": limit, "used": 0}
-            self.save()
-
-    @property
-    def remaining(self):
-        return max(self.data["limit"] - self.data["used"], 0)
-
-    def claim(self, ids):
-        """이 장부로 보낼 단위를 실행 전에 기록. 이미 보낸 단위가 섞이면 아무것도 보내지 않고 멈춘다 (점검 단위 재실행 방지)"""
-        done = set(self.data.get("units", []))  # 이 칸이 생기기 전 장부는 빈 목록으로 본다
-        again = [i for i in ids if i in done]
-        if again:
-            raise SystemExit(f"이 장부로 이미 실행한 단위예요: {', '.join(again)}")
-        self.data["units"] = [*self.data.get("units", []), *ids]
-        self.save()
-
-    def spend(self):
-        self.data["used"] += 1
-        self.save()
-
-    def save(self):
-        self.path.write_text(json.dumps(self.data), encoding="utf-8")
 
 
 def output_dir(value):

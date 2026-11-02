@@ -1378,6 +1378,12 @@ LLM 입력
   [11/2 임시 (나) 구현 — 23-17] 소비 분석은 spending_analysis.budget.OUT_OF_BUDGET 한 곳에서 제외. 팀 예산 추천 코드(budgets.recommend)에는
   주거·통신 110,000 · 여행·숙박 60,000 기본 배분이 그대로 남아 있다 → 추천 · 승인 예산에 두 카테고리 배정이 생기면 소비 분석은 생활비 예산에서
   빼고(그 금액은 여윳돈으로도 안 옮김), 홈 · 예산 화면은 포함하는 불일치가 생긴다. 예산 담당 확인 필요.
+- [실제 DB 단계로 넘김 · 11/2 정리 — 25절 · 24-3] 날짜 정책(CHAT_TODAY 를 오늘로: 월초 '이번 달' 의미 · 수집 안 끝난 오늘 · 예산 주기 경계 ·
+  평가 사례 기준일 고정) · 수집 범위(SyncRun covered 로 complete 판정, 실패 · 재수집) · 같은 구매 연결(카드 승인 + 계좌 출금 TransactionLink) ·
+  가게 이름 표기(STARBUCKS · 지점명 · 결제대행 접두어 → 가게 검색 · 배달앱 운영사) · occurred_time 빈 비율(시간대 조회) · 고정지출 funding 표시 ·
+  확인 필요 비율 · 예산 제외 목록(OUT_OF_BUDGET)을 팀 예산 코드 · 홈 화면과 같게 · 팀 settings 에 CHAT_ENGINE · CHAT_TODAY · CHAT_LLM 넣기 ·
+  legacy(chat/router.py · replies.py) 정리.
+  + 운영 호출 상한 · 장부 기본값(사용자 테스트는 지금 방식 유지 — 25-9 ⑤).
 - 위험: ① 쿠키 — 이름을 분리하지 않으면 5173 · 5174 로그인이 서로 덮음. ② 날짜 고정 — 채팅만 2026-10-29 기준이라 다른 화면과 숫자가 다를 수 있음.
   ③ 가짜 해석은 정해 둔 문장만 이해 → 사용자 테스트는 실제 LLM 모드가 필요하고 호출 비용이 든다. ④ slots 에 분석 기록 facts 가 쌓이면 행이 커짐.
   ⑤ 새 뷰를 service_urls 로만 붙이는 동안 두 구현(기존 api.py · 새 뷰)이 갈라짐 — 6단계 전에 합칠 시점을 정한다.
@@ -1888,6 +1894,28 @@ explain 의 fresh 새 비교 · _as_kind 종류 바꾸기 · 구성 설명 _mix(
 - 실제 LLM: 사례 B-2026-11-02.3(812993cc), 소비 지시문 14e5d099 고정 — r01 "20일부터 27일까지"(→ '20' · '27') · r02 "3일부터 지금까지"(→ '03', 끝 없음) ·
   r03 "10월 25일부터 11월 3일까지"(→ '10-25' · '11-03') 해석 · 결정 모두 맞음(6회).
 
+### 23-19. 검수 지적 보완 (2026-11-02, 엔진 옮기기 뒤 — 실제 LLM 16회 / 상한 20)
+
+- [결정 변경 · 기대값 판] 예산 밖 카테고리(주거·통신 · 여행·숙박, budget.OUT_OF_BUDGET): 23-17 에선 생활비 사용액에서도 뺐는데,
+  실제로 쓴 생활비라 남은 돈 · 하루 금액이 실제보다 커 보이는 문제 → 예산 줄 · 예산 선택지에서만 빼고, 사용액 · 남은 돈 · 하루 금액엔 넣는다.
+  있으면 "예산 밖 지출(여행·숙박) 120,000원도 남은 돈에 반영했어요." (tools.budget_left 의 outside_spent). 지금 fixture 주기엔 예산 밖 생활비
+  지출이 3명 모두 0원(주거는 전부 고정지출)이라 expected.json · expected_query.json 은 그대로(design.json 에서 10월 이후 예산 밖 생활비 결제 0건 확인, expected_query 독립 계산 다시 돌려 같음).
+  확인은 추가 결제 테스트(BudgetScopeTest: 기존 기대값 + 120,000 고정 산술).
+- 줄이는 방법: scope.NO_REDUCE = 의료·건강 · 교육 · 주거·통신(한 곳). 그 범위 설명엔 없음, 전체 범위 설명의 후보(시간대 · 가게)에서도 그 결제를 뺌.
+  가장 큰 요인의 결제가 1번뿐이면 없음. 줄이는 방법이 없으면 [예산 조정하기]도 없음.
+- 미분류 안내: 카테고리로 좁힌 조회(1 · 2 · 6 · 7 · 10번)에 같은 기간 · 같은 조건 '확인 필요'가 있으면 "식비로 분류된 금액 기준이에요.
+  확인 필요 25,000원에 따라 달라질 수 있어요." (여러 카테고리는 한 줄). 가게 · 결제 수단만 좁힌 조회 · 추이(8 · 9)는 넣지 않음.
+- 하루 평균 분모 = 조건에 맞는 날짜 수(안 쓴 날 포함): 요일 조건이면 그 요일 날만(10/1~29 주말 = 8일), 시간대는 날짜를 줄이지 않음.
+  '고정지출 포함 · 제외' 표시는 실제 계산과 같은 판단(scope.excludes_fixed).
+- 설명 이어가기: 범용 조회(지난달 · 지난주 · N월 · 날짜 범위 등) 뒤 "왜 이렇게 많이 썼어?" = 그 기간 · 조건 그대로 구성 설명(기록 합계와 다르면
+  changed). "왜 늘었어?" = 이번 달 조회면 같은 조건으로 지난달 같은 기간과 새 비교, 다른 기간은 비교 기준이 없어 no_basis 안내.
+- 새로고침: 엔진 옮기기(25-10)는 화면을 건드리지 않았다. '새로고침하면 빈 대화'는 10/30 사용자 결정(FixtureAssistantPage.jsx 7줄)대로 — 되돌리지 않음.
+- 고정지출 안내 버그(마무리): 기본으로 뺀 고정지출 금액 · 이름을 카테고리로 거르기 전에 셌다(지우 "지난주 식비" → 주거·통신 50,000 + 교육
+  50,000 = 100,000원). tools.rows 에 조회 카테고리를 넘겨 같은 조건의 고정지출만 센다 → 0원이면 안내 · [고정지출 포함해서 보기] 없음.
+- 새로고침: 지금 동작(새로고침 · 나갔다 오기 모두 새 대화) 유지 — 사용자 확정 (11/2).
+- 골든(임시 테스트 DB, s8 대비): 바뀐 칸은 ① 내부 칸 이름(excluded_spent → outside_spent, 값 0 · 빈 값) ② 결제 1번 · 줄이지 않는 카테고리의
+  줄이는 방법 줄 · [예산 조정하기] 삭제, 전체 저녁 후보 21번 17,286원 → 20번 14,650원(줄이지 않는 카테고리 결제 제외) ③ 지우 카테고리 답의 미분류 안내뿐.
+
 ## 24. 소비 분석 v1 완료 (2026-11-02 — 정리만. 코드 변경 · LLM 호출 없음)
 
 ### 24-1. 지원 범위
@@ -1931,3 +1959,133 @@ explain 의 fresh 새 비교 · _as_kind 종류 바꾸기 · 구성 설명 _mix(
 - 실제 날짜 전환 시 정책: 지금 채팅은 fixture 기준 시각(2026-10-29) 고정 → 실제 오늘로 바꾸면 '이번 달 · 지난주 · 볼 수 있는 범위 · 생략 날짜 채우기'가
   모두 그날 기준이 된다. 정할 것: 월초(1~3일) 이번 달 답의 의미 · 수집이 아직 안 끝난 오늘을 넣을지 · 예산 주기 경계일 · 해석 LLM 은 오늘을 모르므로
   상대 날짜는 계속 서버가 채운다(원칙 유지) · 평가 사례의 기준일 고정 방법.
+
+## 25. 챗봇 서비스 코드 연결 설계 (2026-11-02 — 설계만. 코드 · DB 변경 없음, 실제 LLM 호출 없음)
+
+범위: 5174 전용 연결(spending_fixture/service_urls · service_chat · frontend/src/fixture)을 챗봇 서비스 코드(chat/api.py · AssistantPage.jsx · chat.md)로
+옮긴다. 실제 DB 전환 · budgets/finance/users 수정 · 예산 · 정책 에이전트 실제 연결은 하지 않는다(예산 제외 목록은 OUT_OF_BUDGET 그대로, 예산 · 정책은 '준비 중').
+담당: chat API · chat.md · 채팅 화면 · slots 사용 = 나은(직접 결정). 팀원 영역(config · budgets · finance · users · 공용 utils · app.css)은 건드리지 않는다.
+
+### 25-1. 켜고 끄기 [제안]
+- 설정값 하나: settings.CHAT_ENGINE = "legacy" | "router". chat/api.py 는 getattr(settings, "CHAT_ENGINE", "legacy") 로 읽는다
+  → config/settings.py 를 고치지 않아도 팀 기본은 legacy(지금 동작 그대로). 더미 설정(spending_fixture/service_settings)은 "router".
+  [확인 필요 · config 담당] 팀 설정에서 환경변수(CHAT_ENGINE)로 켤 수 있게 settings.py 에 한 줄 넣을지 — 실제 DB 단계에서.
+- 꺼짐(legacy): 응답 · 저장 · 테스트 모두 지금 그대로(route_text 실패 → unknown + fallback, 임시 문구). 새 화면은 옛 content({text, choices})도
+  그대로 그린다(ChatReply 의 말풍선 경로) → 화면은 하나로 두 엔진을 다 받는다. 기능 버튼 'policy'는 꺼짐에서 400(알 수 없는 선택지)이므로
+  화면이 엔진을 알아야 한다 → GET /api/chat/engine/ 대신 대화 응답에 "engine" 칸을 두지 않고, 꺼짐이면 기존 CHOICES(소비 · 예산)만 보내고
+  화면은 '청년 정책' 버튼을 숨긴다 [제안: 첫 화면 진입 때 GET /api/chat/options/ 로 버튼 목록을 받는 것보다 단순 — 확인 필요는 아래 결정 ①].
+
+### 25-2. 백엔드 [제안]
+- chat/engine.py(새 파일, chat 앱): service_chat 의 ConversationStore(slots 저장 · 복원) · answer(run_turn + 소비 에이전트 + 준비 중 대역) ·
+  _content(봇 content 확장) · 선택지 검사({value, turn}) · 409 두 종을 옮긴다. chat/api.py 의 messages 뷰는 인증 · @idempotent · 본문 검사 ·
+  소유자 확인(_active_conversations) · 행 잠금 저장을 그대로 두고, 엔진이 router 면 engine.answer · 저장 규칙(rev 비교 → 409 conversation_busy)만 다르게.
+  service_chat.messages 는 지우고 service_urls 의 가로채기도 지운다(더미 실행도 같은 chat/api.py 를 탄다 — 두 구현이 갈라지는 위험 22-9 ⑤ 해소).
+- 본문 검사: choice 는 legacy 면 문자열(기존), router 면 문자열(기능 버튼) 또는 {value, turn}(답변 선택지). reject_unknown_fields 그대로.
+- chat/router.py · replies.py: 지우지 않는다(legacy 경로). router 경로에서 쓰지 않음. 실제 DB 전환 뒤 legacy 를 없앨 때 함께 정리
+  (route_text · CHOICES 는 legacy 전용, 새 엔진의 기능 버튼 목록은 engine.FEATURES).
+- 기준 날짜: settings.CHAT_TODAY = None(오늘, KST) | "2026-10-29"(고정). 더미 설정은 고정, 그 외 오늘. as_of 는 고정이면 그날 23:59:59 KST,
+  아니면 요청 시각. engine 이 한 곳에서 읽는다(지금 service_chat 의 seed.AS_OF 직접 참조를 없앰).
+
+### 25-3. API 계약 (chat.md 반영할 변경, 나은 담당) [제안]
+- 요청: choice = "spending" | "budget" | "policy"(기능 버튼, 문자열 — 기존 호환) 또는 {value, turn}(답변 선택지, router 엔진만).
+- 오류: 409 conversation_busy(같은 대화의 다른 메시지가 먼저 저장됨) · 409 stale_choice(마지막 봇 메시지의 선택지가 아님). 둘 다 저장 없음.
+- 봇 content(text): 기존 {text, choices} 유지 + 확장 칸 lead · lines · sections · notices · view · chart? · examples? · turn · agent · inputs · result.
+  text 는 lines(+ 안내)를 이어 붙인 문자열로 계속 채운다 → 확장 칸을 모르는 화면도 읽을 수 있다(호환).
+- route: {intent, slots, fallback} 유지(router 엔진은 intent 에 policy 추가, slots 는 비움). 응답 최상위 agent 칸(지금 담당) 추가.
+- 대화 조회 GET 은 그대로(저장된 content 를 그대로 돌려줌).
+
+### 25-4. 프론트 [제안]
+- pages/AssistantPage.jsx 를 FixtureAssistantPage 내용으로 바꾼다(채팅 화면 = 나은 담당). ChatReply.jsx 는 components/ChatReply.jsx 로 옮긴다.
+  기능 버튼 3개(소비 분석 · 예산 조정 · 청년 정책, legacy 면 2개), 예산 고르기 폼(AdjustForm, content.inputs 에 budget_form 일 때), 기다림 표시
+  (보낸 말 먼저 + '답변을 준비하고 있어요…'), 나갔다 오면 새 대화 — 지금 5174 동작 그대로.
+  mockRouter · mockSpending · SpendingCard 사용을 걷어낸다(파일은 남김 — SpendingCard 는 권세진 카드 형식 결정 전까지).
+- fixture.css → 새 styles/chat.css(채팅 화면이 import). app.css 는 고치지 않는다 [확인 필요 · 프론트 공통: chat.css 를 app.css 로 합칠지].
+  옮길 것: mc-fx-lead(안내 줄) · mc-fx-fold · mc-fx-chart summary(접기) · mc-fx-choices · mc-fx-up/down(증감 색) · mc-asst-log 낱말 줄바꿈 ·
+  mc-spend-cat 배지 정렬. 개발용(mc-fx-dev · 예시 문장)은 개발 모드에서만 보이게.
+- 5174 가 계속 필요한가: 화면이 하나로 합쳐지면 vite.fixture.config.js 의 AssistantPage 바꿔치기는 필요 없다. 다만 더미 DB 백엔드(8001)와
+  쿠키 이름 분리는 실제 DB 단계 전까지 필요 → 5174 는 '프록시 대상 8001 + CSRF 쿠키 이름'만 하는 설정으로 남긴다.
+  5173 + 8001 로 대체하려면 vite.config.js(공용)의 프록시 대상을 환경변수로 바꿔야 한다 [확인 필요 · 프론트 공통].
+- api.js CSRF 쿠키 이름: 지금 'csrftoken' 고정 → 더미 실행만 플러그인으로 바꿔 읽음. [제안] api.js 가 import.meta.env.VITE_CSRF_COOKIE ?? 'csrftoken' 을
+  읽게 한 줄 바꾸면 플러그인이 없어진다 — 공용 파일이라 [확인 필요 · 프론트 공통].
+
+### 25-5. LLM 설정 [제안]
+- 환경변수: CHAT_LLM = fake | live (기본 fake — 정해 둔 문장만), live 일 때 OPENAI_API_KEY · LLM_MODEL(.env). 지금 FIXTURE_LIVE_LLM 을 이 이름으로 바꾼다.
+- 호출 상한 · 장부: CHAT_LLM_MAX_CALLS(기본 50, 0 = 상한 없음 — 사용자 테스트 때만) · CHAT_LLM_LEDGER(저장소 밖 경로, 없으면 장부 없이 메모리 수만).
+  재시도 없음 · 모델 바꾸지 않음은 그대로. 시작할 때 키 · 모델 · 장부 경로를 검사(지금 service_settings 처럼, 값은 출력하지 않음).
+- 동시 요청: runserver · gunicorn 스레드가 같은 장부 파일을 동시에 고치면 수가 틀린다(22-9 ⑥). [제안] 장부 갱신을 파일 잠금(fcntl.flock) 안에서
+  '읽기 → 더하기 → 쓰기' 한 번으로, 상한 확인도 같은 잠금 안에서. 여러 프로세스(gunicorn workers)도 같은 파일 잠금이라 맞는다.
+  DB 표로 세는 방법은 모델 추가(마이그레이션)라 이번 범위 밖.
+
+### 25-6. 테스트 [제안]
+- 팀 chat/tests.py: 엔진 legacy(기본)에서 그대로 통과해야 한다 — 고치지 않는다. 엔진 router 는 override_settings 로 따로.
+- 옮길 테스트: test_service_chat(문장 · 버튼 · 선택지 · 409 · slots 저장 · 새로고침 · 실제 LLM 대역) → chat/test_engine.py, 같은 내용을 chat/api.py 경로로.
+- 새로 필요: legacy/router 양쪽에서 같은 요청의 저장 모양(user 메시지 text · choices), router 의 choice 문자열 호환(기능 버튼), legacy 에서 'policy' 400,
+  CHAT_TODAY 고정 · 오늘, 장부 잠금(스레드 여러 개로 상한 정확도), GET 대화 조회가 확장 칸을 그대로 돌려주는지.
+- 프론트: 지금은 lint 만 — 화면 동작은 5174 로 사람 확인. node:test 로 ChatReply 의 블록 그리기 순수 함수만 떼어 시험할지는 선택.
+
+### 25-7. 구현 단계 · 완료 기준 [제안]
+1) 엔진 옮기기(동작 변화 없음): chat/engine.py 로 service_chat 내용 이동 + chat/api.py 에 CHAT_ENGINE 분기, service_urls 가로채기 제거.
+   완료 = 팀 chat 테스트(legacy) 통과 + 옮긴 엔진 테스트(router, 더미 설정) 통과 + 5174 수동 확인 + 1~9번 골든 그대로.
+2) 기준 날짜 · LLM 설정 이름 정리(CHAT_TODAY · CHAT_LLM · 상한 · 장부 잠금). 완료 = 설정별 테스트 + 장부 동시성 테스트.
+3) 화면 합치기: AssistantPage 교체 · ChatReply 이동 · chat.css. 완료 = lint + 5173(legacy)에서 기존처럼 · 5174(router)에서 지금처럼 동작.
+4) chat.md 갱신(25-3). 완료 = 계약 표와 응답 예시가 router 엔진 응답과 일치(테스트 응답을 예시로).
+5) (실제 DB 단계로 넘김) 팀 설정에서 router 켜기 · legacy 정리.
+
+### 25-8. 결정할 것 [확인 필요]
+① legacy 에서 화면의 기능 버튼을 어떻게 맞출지(첫 응답 전엔 엔진을 모름): 서버가 버튼 목록을 주는 GET 을 새로 둘지, 화면 설정값으로 둘지.
+② CHAT_ENGINE · CHAT_TODAY · CHAT_LLM 을 팀 settings.py 에 둘 시점(config 담당) — 이번엔 getattr 기본값으로 피한다.
+③ api.js CSRF 쿠키 이름 · vite 프록시 대상을 환경변수로 바꿀지(프론트 공통) — 바꾸면 5174 전용 설정이 거의 필요 없다.
+④ chat.css 를 app.css 에 합칠지.
+⑤ 장부 상한 기본값(사용자 테스트 50 · 서비스 운영 값).
+
+
+### 25-9. 결정 (2026-11-02)
+① 기능 버튼 목록은 서버가 응답에 엔진 종류와 함께 내려주고 화면은 그걸 따른다 — 구현은 화면 단계(25-7 ③).
+② CHAT_ENGINE · CHAT_TODAY · CHAT_LLM 은 팀 settings.py 에 넣지 않고 더미 설정(spending_fixture.service_settings)에만 둔다 — 실제 DB 단계에서 추가.
+③ api.js CSRF 쿠키 이름 · vite 프록시 대상을 환경변수로(기본값은 지금 그대로) — 화면 단계에서.
+④ chat.css 는 app.css 에 합치지 않고 따로 둔다.
+⑤ 호출 상한: 사용자 테스트는 지금 방식 유지, 운영 상한은 실제 DB 단계에서(22-9).
+
+### 25-10. 1단계 구현: 엔진 옮기기 (2026-11-02 — 동작 변화 없음, 실제 LLM 호출 없음)
+- chat/engine.py(새 파일): spending_fixture/service_chat.py 의 엔진(ConversationStore · not_ready · answer · _content · _route · 본문 검사 ·
+  선택지 확인 · 409 두 종)을 그대로 옮기고, 뷰는 respond(request) 함수로. 기준 날짜는 today_and_as_of(): CHAT_TODAY 가 있으면 그날 23:59:59 KST
+  (더미 = 2026-10-29, 이전 seed.AS_OF 와 같은 값), 없으면 지금. 해석은 reading(): CHAT_LLM = "live" 면 실제 LLM 하나, 아니면 요청마다 가짜 해석.
+  shortcut: 가짜 · 실제 해석기는 아직 spending_fixture 에 있어 엔진이 켜졌을 때만 함수 안에서 불러온다 → LLM 설정 단계(25-7 ②)에서 chat 으로.
+- chat/api.py: messages 뷰 맨 앞에 getattr(settings, "CHAT_ENGINE", "legacy") == "router" 면 engine.respond(request) — 인증 · @idempotent 는 그 뷰
+  그대로, legacy 코드는 한 줄도 안 바뀜. engine 은 api 의 _check_message_body · _active_conversations · message_item · CONVERSATION_ERROR 를 쓴다
+  (서로 import 하지 않게 api 쪽은 함수 안에서 불러옴).
+- 더미 설정(service_settings): CHAT_ENGINE = "router" · CHAT_TODAY = "2026-10-29" · CHAT_LLM = FIXTURE_LIVE_LLM=1 이면 "live" 아니면 "fake"
+  (실행 명령은 그대로). service_urls 의 챗봇 가로채기 삭제(금융 연결 503 만 남음), service_chat.py 삭제.
+- 테스트: spending_fixture/test_service_chat.py → chat/test_engine.py(같은 내용, 더미 설정 값으로 chat.api.messages 경로). 팀 chat/tests.py 는
+  그대로 — 엔진 설정이 없어 legacy 로 통과. test_service.SERVICE 에 CHAT_* 더미 값 추가.
+- 확인: chat · spending_fixture 280개 통과, 골든(임시 테스트 DB) 바이트까지 같음.
+
+### 25-11. 2단계 구현: 서비스 채팅 화면 연결 (2026-11-02 — 실제 LLM 호출 없음)
+- 기능 버튼 목록(25-9 ①): chat.api.engine_info() = {engine, features}. legacy = 기존 CHOICES(소비 분석 · 예산 조정), router = engine.FEATURES(+ 청년 정책).
+  메시지 응답 · 대화 조회에 같은 칸. 첫 화면(대화 전)은 버튼을 알 길이 없어 같은 주소의 GET /api/chat/messages/ 로 받는다
+  (새 주소를 만들면 config/api_urls.py 를 고쳐야 해서 — 저장 없음, 로그인 필요). 팀 chat/tests.py 는 고치지 않고 통과.
+- 화면: pages/AssistantPage.jsx = 5174 화면 내용 + 서버 버튼 목록. 꺼짐 엔진의 옛 답({text, choices}, turn 없음)은 말풍선 + value 문자열 선택지.
+  ChatReply → components/ChatReply.jsx, fixture.css → styles/chat.css, src/fixture/ 삭제. 기다림 "답을 준비하고 있어요…", 새로고침 = 새 대화.
+  개발용 예시 문장은 개발 모드 · router 엔진에서만.
+- api.js CSRF 쿠키 = VITE_CSRF_COOKIE || 'csrftoken', vite.config.js 프록시 = API_PROXY_TARGET || 8000 (기본값 그대로).
+  vite.fixture.config.js 는 5174 · 8001 프록시 · 쿠키 이름만(화면 바꿔치기 · 테스트 환경 띠 삭제).
+- mockRouter · mockSpending · SpendingCard: 지우지 않음. 지금 어느 화면도 import 하지 않는다(주석에서만 언급).
+- chat.md: '새 엔진(router) 계약' 절 추가(기능 버튼 목록 · choice 두 모양 · 확장 content · agent · intent policy · 409 두 종).
+- 확인: 백엔드 983개 통과, 골든 그대로, lint(기존 경고 1개) · build 통과, 5173 → 8001 프록시 · 쿠키 이름 확인(로그인 전 GET 403).
+
+### 25-12. 3단계 구현: LLM 설정 정리 (2026-11-02 — 실제 LLM 3회 / 상한 5)
+- chat/llm/ 새 패키지: fake.py(가짜 해석 + 예시 문장 표, spending_fixture/fake_reading.py 에서) · live.py(실제 해석, live_reading.py 에서) ·
+  openai_rest.py(호출 어댑터, scripts/router_eval 에서) · ledger.py(호출 장부, run.Ledger 에서) · schemas.py(역할별 스키마, stage_b 에서).
+  engine.py 의 함수 안 임시 import 삭제 → chat/ 코드(테스트 제외)는 spending_fixture 를 import 하지 않는다.
+  로컬 채팅 · 평가 도구(run.py · stage_b.py · 테스트)는 chat.llm 을 쓴다 (run.Ledger · stage_b.schema_for 등 예전 이름도 그대로 불린다).
+- 설정값(더미 설정 service_settings 에만, 환경변수 같은 이름 · 값 없으면 안전한 기본):
+  CHAT_LLM = fake(기본) | live (예전 FIXTURE_LIVE_LLM=1 도 live) · CHAT_LLM_MAX_CALLS = 1 이상 정수(기본 없음 = 상한 없음, 사용자 테스트 지금 방식) ·
+  CHAT_LLM_LEDGER = 저장소 밖 경로(기본 없음 = 메모리 수만). 잘못된 값 · 저장소 안 장부 · live 인데 키/모델 없음은 시작할 때 멈춤(값 출력 없음).
+  운영 상한은 22-9 목록 그대로.
+- 동시성: 장부 갱신 · 상한 확인을 파일 잠금(fcntl.flock) 안에서 '읽기 → 확인 → 더하기 → 쓰기' 한 번(임시 파일 바꿔 끼우기). 장부가 차면
+  CapReached(보내지 않음, 시도로 안 셈). 메모리 상한도 클라이언트 잠금 안에서. 테스트: 스레드 20개 · 상한 7 → 정확히 7 (chat/test_llm.py).
+- 상한 · 호출 실패: 라우터 해석은 원래대로 ReadFailed → 라우터 실패 문구 + 선택지. 소비 에이전트 해석의 호출 실패(error = "call")도
+  이제 같은 문구 · 선택지 + route {unknown, fallback: true} (전엔 "지금은 처리하지 못했어요." 선택지 없음 — 대화 중 후속 질문은 라우터 LLM 을
+  거치지 않아서). 분석 실패 등 다른 에이전트 실패 문구는 그대로. 대화 상태는 바꾸지 않음(테스트로 확인). 재시도 · 모델 변경 없음.
+- 확인: 백엔드 988개 · 평가 도구 35개 통과, 골든 그대로, lint · build 통과, 로컬 채팅 시작 확인.
+  실제 LLM: 임시 테스트 DB + chat.api.messages(CHAT_LLM=live · 상한 5 · 장부) "이번 달 얼마 썼어?" → "그럼 교통비는?" 3회, 답 정상.

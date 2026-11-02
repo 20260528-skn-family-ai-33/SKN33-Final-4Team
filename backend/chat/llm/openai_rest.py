@@ -1,14 +1,17 @@
-"""라우터 평가용 OpenAI Responses API 어댑터 — 표준 라이브러리만 쓴다 (SDK · 의존성 추가 없음)
+"""OpenAI Responses API 어댑터 — 표준 라이브러리만 쓴다 (SDK · 의존성 추가 없음). 평가 도구에서 옮김 (MEMO 25-12)
 
 - router_core 의 complete(system, user) -> str 자리에 끼운다 (ResponsesClient.complete)
 - 생성 요청은 보내기 **전에** 시도로 센다. 실패한 시도도 상한(max_calls)에 포함. 자동 재시도 · 다른 모델 · 설정 전환 없음
 - 같은 조건에서 되풀이될 오류(인증 · 권한 · 모델 · 요청 설정 · 한도)가 나면 fatal 로 표시 → 남은 요청을 보내지 않는다
+- 여러 스레드(runserver 요청)가 같이 써도 상한 확인 · 시도 기록은 잠금 안에서 한 번에. 장부(on_attempt)도 그 안에서 부른다
+  — 장부가 상한을 넘었다고 CapReached 를 던지면 시도로 세지 않고 보내지 않는다
 - 키 · 헤더는 어디에도 기록하지 않는다. attempts 에는 결과 종류 · 상태 · 사용량 · 시간만 남는다
 - 근거(공식 문서 검색, 2026-10-29): gpt-6-luna, POST /v1/responses, Structured Outputs 지원,
   reasoning.effort = none · low · medium(기본) · high · xhigh · max, 최대 출력 128,000,
   max_output_tokens 는 추론 토큰 포함, 잘리면 status=incomplete + incomplete_details.reason, 추론 시 temperature 등은 보내지 않음
 """
 import json
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -40,6 +43,7 @@ class ResponsesClient:
         self.attempts = []   # 보낸 요청마다 {"kind", "status", "detail", "usage", "latency_ms"}
         self.blocked = 0     # 상한 · fatal 때문에 보내지 않은 요청 수
         self.fatal = None    # 첫 fatal 오류 종류
+        self._lock = threading.Lock()
 
     def body(self, system, user):
         body = {"model": self.model, "instructions": system, "input": user, "store": False,
@@ -51,13 +55,18 @@ class ResponsesClient:
         return body
 
     def complete(self, system, user):
-        if self.fatal or len(self.attempts) >= self.max_calls:
-            self.blocked += 1
-            raise CapReached()
         record = {"kind": None, "status": None, "detail": None, "usage": None, "latency_ms": None}
-        self.attempts.append(record)  # 보내기 전에 센다
-        if self.on_attempt:
-            self.on_attempt()  # 실행을 다시 해도 줄지 않는 호출 장부
+        with self._lock:  # 상한 확인 → 장부 → 시도 기록을 한 번에 (동시 요청이 상한을 넘지 않게)
+            if self.fatal or (self.max_calls is not None and len(self.attempts) >= self.max_calls):
+                self.blocked += 1
+                raise CapReached()
+            if self.on_attempt:
+                try:
+                    self.on_attempt()  # 실행을 다시 해도 줄지 않는 호출 장부 (파일 잠금 안에서 상한 확인 · 더하기)
+                except CapReached:
+                    self.blocked += 1
+                    raise
+            self.attempts.append(record)  # 보내기 전에 센다
         request = urllib.request.Request(
             URL, data=json.dumps(self.body(system, user)).encode("utf-8"), method="POST",
             headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"})

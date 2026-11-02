@@ -14,7 +14,8 @@ from .test_fixture import DESIGN, fixture_db_only
 
 NO_NETWORK = mock.patch("urllib.request.urlopen", side_effect=AssertionError("네트워크 호출 금지"))
 SERVICE = override_settings(ROOT_URLCONF=svc.ROOT_URLCONF, SESSION_COOKIE_NAME=svc.SESSION_COOKIE_NAME,
-                            CSRF_COOKIE_NAME=svc.CSRF_COOKIE_NAME, CODEF=svc.CODEF)
+                            CSRF_COOKIE_NAME=svc.CSRF_COOKIE_NAME, CODEF=svc.CODEF,
+                            CHAT_ENGINE=svc.CHAT_ENGINE, CHAT_TODAY=svc.CHAT_TODAY, CHAT_LLM="fake")
 PASSWORD = "fixture-test-pass"  # 테스트 DB 안에서만 쓰는 값
 
 

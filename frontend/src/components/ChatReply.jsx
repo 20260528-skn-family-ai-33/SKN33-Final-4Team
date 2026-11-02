@@ -1,9 +1,9 @@
-// 챗봇 답변 한 개 — 더미 서비스 실행(5174) 전용. backend/spending_fixture/local_chat.html 의 bot() · chart() 를 옮겼다
+// 챗봇 답변 한 개 (pages/AssistantPage.jsx). backend/spending_fixture/local_chat.html 의 bot() · chart() 를 옮겼다 (MEMO 25절 2단계)
 // content = 서버 봇 메시지 content: { text, lead, lines, sections, notices, choices, chart?, view?, turn, agent, inputs, result } (MEMO 22-3 · 22-12 · 22-13)
 // 디자인은 기존 클래스만: 분석 결과(result) = 소비 분석 카드(mc-spend*), 그 밖의 답 = 채팅 말풍선(mc-bubble)
 // - 핵심 안내(lead)는 서버가 나눈 칸 그대로 맨 위에. '안내:' 글자 + 굵게 (색만으로 구분하지 않음)
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
-// - 옛 메시지(text · choices 만 있는 것)도 그린다
+// - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
 import { won } from '../utils/money.js'
 
 const Lead = ({ items }) => items.map((l, i) => (

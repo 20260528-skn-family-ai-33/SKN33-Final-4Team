@@ -1,5 +1,5 @@
-/* 더미 서비스 실행(5174) 챗봇 화면 전용 — 기존 클래스(mc-spend* · mc-chipbar · mc-asst-* · mc-note)에 없는 것만.
-   색 · 글꼴 · 간격은 기존 변수 · 기존 규칙의 값만 쓴다. 팀 CSS 는 그대로 */
+/* 챗봇 화면(pages/AssistantPage.jsx) 전용 — 기존 클래스(mc-spend* · mc-chipbar · mc-asst-* · mc-note)에 없는 것만 (MEMO 25절 2단계, 이전 fixture.css).
+   색 · 글꼴 · 간격은 기존 변수 · 기존 규칙의 값만 쓴다. app.css 는 그대로 */
 /* 안내 줄은 mc-spend-unc(확인 필요 줄)의 색 · 여백만 빌린다 — 양 끝 정렬(flex) · 손가락 표시 대신 문장이 줄바꿈되는 블록 */
 #mc-new-preview .mc-fx-lead { display: block; cursor: default; }
 #mc-new-preview .mc-fx-chart summary { cursor: pointer; color: var(--mc-brand); font-weight: 650; margin-top: 8px; }
@@ -16,3 +16,6 @@
 #mc-new-preview .mc-fx-down { color: var(--mc-brand); font-weight: 650; }
 /* 줄 목록이 많은 카드(설명 근거)를 접는 토글 — 그래프 접기와 같은 모양 */
 #mc-new-preview .mc-fx-fold summary { cursor: pointer; color: var(--mc-brand); font-weight: 650; margin-top: 8px; }
+/* 테스트 환경 띠 (서버가 testMode 를 줄 때만) — 색만이 아니라 글자로 알린다 */
+#mc-new-preview .mc-fx-band { margin: 0 0 8px; padding: 4px 8px; border: 1px solid var(--mc-line); border-radius: 8px;
+  background: var(--mc-lime-soft); color: var(--mc-olive); font-size: 12px; font-weight: 650; text-align: center; }

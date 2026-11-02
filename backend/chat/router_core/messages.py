@@ -231,6 +231,9 @@ def render(turn, budget_outcome=None):
         for key in r["reply"].get("suggest", []):
             notices.append(SUGGEST[key][0])
             out["choices"] = [*out["choices"], dict(SUGGEST[key][1])]
+    elif r["status"] == "failed" and r.get("error") == "call":
+        # 에이전트 해석의 LLM 호출 실패 · 상한(MEMO 25-12) = 라우터 해석 실패와 같은 문구 · 선택지 (상태는 에이전트가 바꾸지 않았다)
+        out = {"lines": [FAILED["router"]], "choices": [dict(c) for c in CHOICES]}
     elif r["status"] == "failed":
         out = {"lines": [FAILED["agent"]], "choices": []}
     elif r.get("detail") is not None:  # 소비 에이전트: 본문 없는 결정(질문 · 미지원 · 취소). 공통 결과 칸만 읽는다

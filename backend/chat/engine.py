@@ -1,45 +1,38 @@
-"""더미 서비스 실행의 챗봇 메시지 API (MEMO 22절 2단계) — service_urls 가 POST /api/chat/messages/ 를 이 뷰로 가로챈다
+"""새 챗봇 엔진 (MEMO 22 · 25절) — 라우터(run_turn) + 소비 분석 에이전트 + 예산 · 정책 '준비 중'. chat.api.messages 가 settings.CHAT_ENGINE
+= "router" 일 때만 쓴다 (기본 "legacy" = 기존 router.py · replies.py 그대로). 더미 실행(spending_fixture.service_settings)에서 켠다.
 
-기존 chat/api.py 와 같은 계약 · 같은 도구를 쓴다: 로그인 필수 · @idempotent · 본문 검사(_check_message_body) ·
-본인의 진행 중 대화만(_active_conversations) · 메시지 한 줄 모양(message_item). 대화 조회(GET)는 기존 뷰 그대로.
-다른 점 (fixture 실행에서만, 22-10 결정):
-- 문장 · 기능 선택지 → 새 라우터(run_turn) → 소비 분석 에이전트(fixture DB 실제 분석) / 예산 · 정책은 '준비 중' 후 종료
+기존 chat/api.py 와 같은 계약 · 같은 도구: 로그인 · @idempotent(뷰) · 본문 검사(_check_message_body) · 본인의 진행 중 대화만(_active_conversations) ·
+메시지 한 줄 모양(message_item). 대화 조회(GET)는 기존 뷰 그대로(확장 content 도 그대로 돌려준다).
 - 대화 상태(라우터 · 소비 에이전트 칸 전체)를 Conversation.slots 에 {"schema", "rev", "state"} 로 저장 · 복원 (마이그레이션 없음)
-- 봇 메시지 content(text) = 기존 {text, choices} + lead · lines · sections · notices · chart? · examples? (22-3 확장)
-- 해석은 가짜 해석(정해 둔 문장만). 기준일은 fixture 기준 시각(seed.AS_OF)
-  FIXTURE_LIVE_LLM=1 로 서버를 켜면 실제 LLM(해석 + "왜 늘었어?" 설명). 호출 상한 · 장부 없음 (사용자 결정) — 켠 서버에서만, 재시도 없음
 - LLM · 분석은 DB 잠금 밖에서 하고, 저장할 때만 대화 행을 잠근다. 그사이 상태(rev)가 바뀌었으면 저장하지 않고 409 conversation_busy
-- 3단계: 기능 버튼 3개(choice "spending" · "budget" · "policy") = 라우터 해석 없이 담당 에이전트로 (run_turn button)
-  답변 선택지 = choice {value, turn}. 마지막 봇 메시지(turn)의 선택지가 아니면 409 stale_choice (저장 없음).
-  고른 선택지는 기능 선택지면 버튼으로, 아니면 그 이름을 문장으로 보낸다 — 이름이 정해진 선택지는 라우터 · 소비 에이전트가 LLM 없이 알아본다
-  봇 content 에 turn · agent(지금 담당, 화면 표시용) · inputs(["budget_form"] = 예산 고르기 폼을 받을 차례) · result(분석 결과 답변)
-- 카드 보기 view(머리줄 · 큰 금액 · 줄 목록 · 짧은 문장, answer.view) — 결과 카드는 이것으로 그리고, text · lines 는 그대로 둔다
+- 기능 버튼(choice "spending" · "budget" · "policy") = 라우터 해석 없이 담당 에이전트로 / 답변 선택지 = choice {value, turn},
+  마지막 봇 메시지의 선택지가 아니면 409 stale_choice. 기능 선택지면 버튼으로, 아니면 그 이름을 문장으로
+- 봇 content(text) = 기존 {text, choices} + lead · lines · sections · notices · view · chart? · examples? · turn · agent · inputs · result
+- 기준 날짜 = settings.CHAT_TODAY(고정) 또는 오늘, 해석 = settings.CHAT_LLM(fake · live) · CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER (chat/llm)
 """
 import json
-import os
 import uuid
+from datetime import date, datetime, time
 from functools import partial
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.db import transaction
-from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import ValidationError
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from chat import api as chat_api
-from chat.models import ChatMessage, Conversation
 from chat.router_core import CANCEL_WORDS, MemoryStateStore, current_agent, messages as router_messages, run_turn
-from config.idempotency import idempotent
 from finance.inputs import body_dict, reject_unknown_fields
 from spending_analysis import agent as spending_agent
 
-from . import seed
-from .fake_reading import FakeReading
-from .live_reading import LiveReading
+from . import api as chat_api
+from .llm.fake import FakeReading
+from .llm.live import LiveReading
+from .models import ChatMessage, Conversation
 
+KST = ZoneInfo("Asia/Seoul")
 SCHEMA = "router_core/1"
 KEY = "conversation"  # 저장소 하나 = 대화 하나라 run_turn 의 대화 번호 자리는 고정값
-AS_OF = seed.AS_OF
 BUSY = {"error": {"code": "conversation_busy", "message": "앞 메시지를 처리하는 중이에요. 잠시 후 다시 보내 주세요."}}
 STALE = {"error": {"code": "stale_choice", "message": "이전 질문의 선택지예요. 가장 최근 질문에서 골라 주세요."}}
 # 기능 버튼 (큰 지출 상담 → 청년 정책으로 대체, 22-12 결정). spending · budget 은 기존 chat API 선택지와 같은 값 · 이름
@@ -107,7 +100,9 @@ def _content(bot, turn):
 
 def _route(turn):
     """기존 응답의 route 칸: 실제로 답한 에이전트 · 범위 밖 · 불명확. fallback = 라우터 해석 실패"""
-    d = turn["decision"]
+    d, r = turn["decision"], turn["result"] or {}
+    if r.get("status") == "failed" and r.get("error") == "call":  # 에이전트 해석 LLM 실패 · 상한 — 라우터 실패와 같이 (MEMO 25-12)
+        return {"intent": "unknown", "slots": {}, "fallback": True}
     if turn["delivered"]:
         return {"intent": turn["delivered"][-1], "slots": {}, "fallback": False}
     if d.status == "unsupported" and d.reason == "out_of_scope":
@@ -119,13 +114,24 @@ _live = None
 
 
 def reading():
-    """FIXTURE_LIVE_LLM=1 이면 실제 LLM 하나를 서버 동안 같이 쓴다 (키 · 모델은 .env, 상한 없음). 아니면 요청마다 가짜 해석"""
+    """settings.CHAT_LLM = "live" 면 실제 LLM 하나를 서버 동안 같이 쓴다 (키 · 모델은 환경변수, 상한 = CHAT_LLM_MAX_CALLS(None = 없음),
+    장부 = CHAT_LLM_LEDGER(None = 메모리 수만)). 그 밖(값 없음 포함)은 요청마다 가짜 해석 — 안전한 기본값"""
     global _live
-    if os.environ.get("FIXTURE_LIVE_LLM") != "1":
+    if getattr(settings, "CHAT_LLM", "fake") != "live":
         return FakeReading()
     if _live is None:
-        _live = LiveReading(None, None)
+        _live = LiveReading(getattr(settings, "CHAT_LLM_MAX_CALLS", None), getattr(settings, "CHAT_LLM_LEDGER", None))
     return _live
+
+
+def today_and_as_of():
+    """기준 날짜 · 조회 시각: settings.CHAT_TODAY 가 있으면 그날 23:59:59 KST 로 고정(더미 = 2026-10-29), 없으면 지금(KST)"""
+    fixed = getattr(settings, "CHAT_TODAY", None)
+    if fixed:
+        day = date.fromisoformat(fixed)
+        return day, datetime.combine(day, time(23, 59, 59), KST)
+    now = datetime.now(KST)
+    return now.date(), now
 
 
 def answer(user, store, text=None, button=None):
@@ -134,7 +140,8 @@ def answer(user, store, text=None, button=None):
     agents = {"spending": partial(spending_agent.handle, store=store, complete=llm, user=user,
                                   explain_complete=llm if llm.explains else None),
               "budget": not_ready("budget"), "policy": not_ready("policy")}
-    turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, today=AS_OF.date(), as_of=AS_OF)
+    today, as_of = today_and_as_of()
+    turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, today=today, as_of=as_of)
     result = turn["result"] or {}
     if "budget_adjust" in (result.get("reply") or {}).get("suggest", []):
         # [예산 조정하기] 제안은 1차에서 숨긴다 (예산은 '준비 중'이라 눌러도 진행되지 않음, 22-7). 다른 제안은 그대로
@@ -190,11 +197,9 @@ def _picked(talk, choice):
     return next((c["label"] for c in content.get("choices", []) if c["value"] == choice["value"]), None)
 
 
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-@idempotent()
-def messages(request):
-    """POST /api/chat/messages/ {"conversationId": null | "<id>", "text": "…" | "choice": "spending" | {"value", "turn"}}
+def respond(request):
+    """chat.api.messages 가 CHAT_ENGINE = "router" 일 때 부른다 (인증 · @idempotent 는 그 뷰에 그대로).
+    {"conversationId": null | "<id>", "text": "…" | "choice": "spending" | "budget" | "policy" | {"value", "turn"}}
     응답은 기존 봉투 + agent(지금 담당). 지난 선택지 409 stale_choice · 처리 중 상태가 바뀌면 409 conversation_busy (둘 다 저장 없음)"""
     conversation_id, text, feature, choice = _check_body(request)
     talk = None
@@ -230,4 +235,5 @@ def messages(request):
         talk.slots, talk.active_agent = store.dump(), store.get_active(KEY)
         talk.save(update_fields=["slots", "active_agent"])
     return Response({"conversation_id": talk.conversation_id, "route": route, "agent": bot["agent"],
-                     "messages": [chat_api.message_item(mine), chat_api.message_item(reply)], "task": None})
+                     "messages": [chat_api.message_item(mine), chat_api.message_item(reply)], "task": None,
+                     **chat_api.engine_info()})

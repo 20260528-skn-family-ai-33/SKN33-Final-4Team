@@ -3,7 +3,7 @@
     cd <저장소> && .venv/bin/python -m unittest discover -s scripts/router_eval -p 'test_*.py' -v
 
 단계 B: 평가 실행(run.main)은 dry-run · replay(통합 형식 원문 → 역할별 형식 변환)만 한다. live 는 계획 확정 전이라 막혀 있다.
-호출 어댑터(openai_rest.ResponsesClient)와 장부(run.Ledger)의 동작은 가짜 HTTP 응답으로 직접 확인한다
+호출 어댑터(chat.llm.openai_rest.ResponsesClient)와 장부(chat.llm.ledger.Ledger = run.Ledger)의 동작은 가짜 HTTP 응답으로 직접 확인한다
 (분리 전에는 run.main --live 를 거쳐 같은 동작을 확인했다).
 """
 import copy
@@ -16,7 +16,7 @@ import urllib.error
 from unittest import mock
 
 import run  # django.setup() 포함
-from openai_rest import CapReached, ResponseError, ResponsesClient
+from chat.llm.openai_rest import CapReached, ResponseError, ResponsesClient
 
 DATA = run.load()
 TURNS = DATA["cases"] + [t for s in DATA["scenarios"] for t in s["turns"]]

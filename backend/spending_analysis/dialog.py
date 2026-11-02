@@ -548,6 +548,8 @@ def _as_kind(item, kind):
         return item
     if kind == "change" and item["type"] in CURRENT_TYPES:
         return _fresh(item, "change")
+    if kind == "change" and item["type"] == 10:  # 범용 조회(11/2 2차 검수): 이번 달이면 같은 조건 새 비교, 다른 기간은 비교 기준이 없다
+        return _fresh(item, "change") if item["query"]["period"] == "this_month" else {**item, "explain_kind": "change"}
     if kind == "composition" and item["type"] in (6, 7):
         return _fresh(item, "composition")  # 비교의 이번 달 기간 그대로 (period = 이번 달 쪽)
     return item

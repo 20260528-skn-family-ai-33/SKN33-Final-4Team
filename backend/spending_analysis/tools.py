@@ -8,6 +8,8 @@
 1단계는 기존 1~9번 · 설명 근거가 이 도구를 부르게만 했다. 요일 · 시간대 · 금액 조건, 건수 · 평균 · 묶기 같은 새 계산은 아직 열지 않음
 수집 판정 · 승인 예산 조회의 DB 실패는 DbError (부르는 쪽이 state="error" 로 바꾼다)
 """
+from datetime import timedelta
+
 from finance.api import listed_transactions, transaction_item
 from finance.merchant_rules import normalize_merchant
 from finance.models import SourceKind
@@ -46,7 +48,7 @@ def _words(word, names=()):
     return [w for w in {scope.plain(word), *(scope.plain(n) for n in (*(names or ()), *scope.online(word)[1]))} if w]
 
 
-def rows(user, period, where=None, stats=None):
+def rows(user, period, where=None, stats=None, category=None):
     """기간 거래 → 목록 한 줄 모양. where(분석 항목 · 범위 칸)로 거른다:
     payment(card · bank) · merchant(가게 이름) · weekdays(요일) · time_slots(시간대) · amount_min · amount_max(한 건 순금액)
     시간대 조건이 있으면 시각 없는 거래는 빼고, stats 를 주면 뺀 소비 건수를 stats["no_time"] 에 더한다
@@ -71,6 +73,8 @@ def rows(user, period, where=None, stats=None):
     if scope.excludes_fixed(where):
         fixed = [r for r in items if r["transaction_type"] == "spending" and r["funding"] == "fixed"]
         if stats is not None:
+            # 안내할 금액 · 이름은 답과 같은 조건 — 카테고리로 좁힌 조회면 그 카테고리의 고정지출만 (11/2: 지우 지난주 식비에 월세가 세어졌다)
+            fixed = [r for r in fixed if category is None or r["category"] == category]
             stats["fixed_excluded"] = stats.get("fixed_excluded", 0) + sum(r["net_amount"] for r in fixed)
             names = stats.setdefault("fixed_names", [])
             names += [r["merchant_name"] for r in fixed if r["merchant_name"] and r["merchant_name"] not in names]
@@ -103,7 +107,7 @@ def _detail(items, category):
     [임시] 건수 = 순금액이 0 보다 큰 소비 거래 (전액 취소는 세지 않는다), 가게 = normalize_merchant (MEMO 20번)"""
     picked = [r for r in items if r["transaction_type"] == "spending" and (category is None or r["category"] == category)]
     paid = [r for r in picked if r["net_amount"] > 0]
-    merchants, categories, slots, days, counts = {}, {}, {}, {}, {}
+    merchants, categories, slots, days, counts, reducible = {}, {}, {}, {}, {}, {}
     for r in picked:
         name = normalize_merchant(r["merchant_name"])
         merchants[name] = merchants.get(name, 0) + r["net_amount"]
@@ -116,11 +120,17 @@ def _detail(items, category):
         if r["net_amount"] > 0:  # 줄이는 방법의 건당 평균용 결제 건수 (가게 · 시간대 · 요일)
             for key in (("merchant", name), ("slot", slot), ("weekday", day)):
                 counts[key] = counts.get(key, 0) + 1
+        if r["category"] not in scope.NO_REDUCE:  # 줄이는 방법 후보는 줄일 수 있는 카테고리의 결제만
+            reducible[slot] = reducible.get(slot, 0) + r["net_amount"]
+            if r["net_amount"] > 0:
+                counts["reducible", slot] = counts.get(("reducible", slot), 0) + 1
+                counts["reducible_merchant", name] = counts.get(("reducible_merchant", name), 0) + 1
     big = sorted((r for r in paid if r["funding"] != "fixed"),
                  key=lambda r: (-r["net_amount"], r["occurred_on"], r["occurred_time"] or ""))[:3]
     return {"amount": sum(r["net_amount"] for r in picked), "count": len(paid),
             "average": R.average(sum(r["net_amount"] for r in paid), len(paid)),
             "merchants": merchants, "categories": categories, "slots": slots, "weekdays": days, "counts": counts,
+            "reducible_slots": reducible,
             "big": [{"name": normalize_merchant(r["merchant_name"]), "amount": r["net_amount"], "day": r["occurred_on"]} for r in big],
             "fixed": sum(r["net_amount"] for r in picked if r["funding"] == "fixed")}
 
@@ -129,7 +139,7 @@ def spend_query(user, period, category=None, *, where=None, overview=False, deta
     """한 기간 소비 조회. category = 카테고리 금액 · 전체 대비 비중, overview = 상위 카테고리 · 비중(5번),
     detail = 설명 근거 집계(observed 에 'detail')"""
     cov, stats = _ok(coverage(user, period)), {}
-    items = rows(user, period, where, stats)
+    items = rows(user, period, where, stats, category)
     fig = R.figures(items)
     if category:
         fig["category"] = R.category_view(fig, category)
@@ -167,12 +177,13 @@ def budget_left(user, category, today, breakdown=False):
     span = budget_period(cycle["starts_on"], cycle["ends_before"], today)
     cov = _ok(coverage(user, span["spent"]))
     living = spending_summary(rows(user, span["spent"]), living_only=True)
-    # 예산 범위 밖 카테고리(주거·통신 · 여행·숙박)의 생활비 지출은 생활비 사용액에서 뺀다 — 뺀 금액은 안내용으로 남긴다
-    excluded = sum(living["by_category"].get(c, 0) for c in OUT_OF_BUDGET)
-    spent = living["by_category"].get(category, 0) if category else living["spent_total"] - excluded
+    # 예산 범위 밖 카테고리(주거·통신 · 여행·숙박)는 예산 줄이 없지만 실제로 쓴 생활비라 사용액 · 남은 돈 · 하루 금액에 넣는다
+    # (11/2 2차 결정 — 처음엔 뺐다). 그 금액은 안내용으로 카테고리별로 남긴다
+    outside = {c: living["by_category"][c] for c in OUT_OF_BUDGET if living["by_category"].get(c)}
+    spent = living["by_category"].get(category, 0) if category else living["spent_total"]
     out.update(cycle_period=span["cycle"], spent_period=span["spent"], coverage=cov,
                observed={"spent": spent}, confirmed=None, days_left=(span["cycle"].end_before - span["spent"].end_before).days,
-               excluded_spent=0 if category else excluded)
+               outside_spent={} if category else outside)
     if found["state"] == "approved":  # no_approved 면 초안 · 프로필 목표 금액을 담지 않는다
         allocated = found["living"].get(category) if category else found["living_total"]
         out["budget"].update({k: found["budget"][k] for k in ("budget_id", "version_no", "approved_at")},
@@ -280,13 +291,18 @@ def query(user, item, today):
     """10번 범용 조회 → {"periods", "states", "coverage", "observed", "confirmed", "no_time", "days"}
     모든 기간이 complete 일 때만 confirmed. 소비만 · 카테고리 · 범위 조건은 rows · 여기서. 금액은 순금액(취소 차감)"""
     q, category, stats = item["query"], item.get("category"), {"no_time": 0, "fixed_excluded": 0, "fixed_names": []}
-    periods, states, picked = _periods(item, today), [], []
+    periods, states, picked, unclassified = _periods(item, today), [], [], 0
     for period in periods:
         states.append(_ok(coverage(user, period))["state"])
-        picked += [(period, r) for r in rows(user, period, item, stats)
-                   if r["transaction_type"] == "spending" and (category is None or r["category"] == category)]
+        spent = [r for r in rows(user, period, item, stats, category) if r["transaction_type"] == "spending"]
+        picked += [(period, r) for r in spent if category is None or r["category"] == category]
+        # 카테고리로 좁힌 조회: 같은 조건의 '확인 필요' 금액 (분류가 정해지면 답이 달라질 수 있다는 안내용)
+        unclassified += sum(r["net_amount"] for r in spent if category and r["category"] == R.UNCLASSIFIED)
     paid = [r for _, r in picked if r["net_amount"] > 0]
-    total, days = sum(r["net_amount"] for _, r in picked), sum((p.end_before - p.start).days for p in periods)
+    # 하루 평균 분모 = 조건에 맞는 날짜 수(쓴 돈이 없는 날 포함). 요일 조건이면 그 요일인 날만, 시간대는 날짜 수를 줄이지 않는다
+    days = sum(1 for p in periods for n in range((p.end_before - p.start).days)
+               if not item.get("weekdays") or (p.start + timedelta(n)).weekday() in item["weekdays"])
+    total = sum(r["net_amount"] for _, r in picked)
     living = sum(r["net_amount"] for _, r in picked if r["funding"] != "fixed")
     fig = {"sum": total, "count": len(paid), "avg": R.average(sum(r["net_amount"] for r in paid), len(paid)),
            "daily_avg": R.average(total, days), "daily_avg_living": R.average(living, days), "fixed": total - living,
@@ -297,4 +313,5 @@ def query(user, item, today):
     clipped = q["period"] == "range" and resolve_range(today, item.get("date_from"), item.get("date_to"))["state"] == "clipped"
     return {"periods": periods, "states": states, "coverage": {"state": state}, "observed": fig, "clipped": clipped,
             "confirmed": fig if state == "complete" else None, "no_time": stats["no_time"], "days": days,
+            "unclassified": unclassified if category != R.UNCLASSIFIED else 0,
             "fixed_excluded": stats["fixed_excluded"] if scope.excludes_fixed(item) else None, "fixed_names": stats["fixed_names"]}
