@@ -183,7 +183,9 @@ def budget_left(user, category, today, breakdown=False):
     spent = living["by_category"].get(category, 0) if category else living["spent_total"]
     out.update(cycle_period=span["cycle"], spent_period=span["spent"], coverage=cov,
                observed={"spent": spent}, confirmed=None, days_left=(span["cycle"].end_before - span["spent"].end_before).days,
-               outside_spent={} if category else outside)
+               outside_spent={} if category else outside,
+               # 같은 예산 기간의 '확인 필요' 생활비 결제 — 카테고리 잔액 · 하루 금액은 분류된 결제 기준이라 안내용 (MEMO 25-13)
+               unclassified=living["by_category"].get(R.UNCLASSIFIED, 0))
     if found["state"] == "approved":  # no_approved 면 초안 · 프로필 목표 금액을 담지 않는다
         allocated = found["living"].get(category) if category else found["living_total"]
         out["budget"].update({k: found["budget"][k] for k in ("budget_id", "version_no", "approved_at")},

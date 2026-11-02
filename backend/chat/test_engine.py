@@ -10,6 +10,7 @@ from django.test import Client, TestCase, override_settings
 
 from chat.models import ChatMessage, Conversation
 
+from spending_analysis import explain
 from spending_fixture import seed
 from spending_fixture.test_fixture import DESIGN, EXPECTED, fixture_db_only
 from spending_fixture.test_service import NO_NETWORK, PASSWORD, SERVICE, login
@@ -316,3 +317,71 @@ class ServiceLiveTest(ServiceChatBase):
         from chat.llm.fake import FakeReading
         with override_settings(CHAT_LLM="fake"):
             self.assertIsInstance(engine.reading(), FakeReading)
+
+
+
+@fixture_db_only
+@SERVICE
+class ExplainPlanTest(ServiceChatBase):
+    """B 증감 설명(MEMO 26, CHAT_EXPLAIN_PLAN) — 가짜 계획 · 답 LLM(chat.llm.fake 의 정해 둔 출력)으로 끝까지. 꺼짐 = 지금 템플릿"""
+
+    def ask(self, persona, question, first=None):
+        cid = self.send(persona, text=first).json()["conversationId"] if first else None
+        return self.send(persona, cid, text=question).json()["messages"][1]["content"]
+
+    def test_off_is_the_current_template(self):
+        out = self.ask("B", "왜 식비가 늘었어?")
+        self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 224,000원 늘었어요. ↑ 55.17%")
+        self.assertNotIn("devTrace", out)
+
+    def test_minjae_plans_a_time_slot_query(self):
+        with override_settings(CHAT_EXPLAIN_PLAN=True):
+            out = self.ask("B", "왜 식비가 늘었어?")
+        # 서버 절(26-16) + 가짜 답의 연결 말. 가설 없는 질문 → 핵심 요인(가장 크게 바뀐 묶음 = 자주 가던 곳 +280,000) 필수 (26-17).
+        # 280,000 · 167,000 = 템플릿 설명의 '자주 가던 곳에서 280,000원 늘고' · '저녁 시간대(+167,000원)'과 같은 값
+        # 자주 가던 곳(+280,000)이 식비 전체(+224,000)보다 커서 템플릿의 잇는 문장을 서버가 붙인다 (26-18 ①),
+        # 고른 시간대 조회의 1위(저녁)는 꼭 인용 (26-18 ②)
+        self.assertEqual(out["lines"][:4], ["식비 지출은 지난달 같은 기간보다 224,000원 늘었어요.", "특히 자주 가던 곳(9곳)에서 280,000원 늘었어요.",
+                                            "자주 가던 곳에서 280,000원 늘고, 이번엔 안 간 곳(1곳)에서 56,000원 줄어, 전체로는 224,000원 늘었어요.",
+                                            "그다음으로 고정지출을 빼고 보면 저녁 시간대는 70,000원에서 237,000원으로 167,000원 늘어 시간대 중 가장 많이 늘었어요."
+                                            " 전체 증가분의 절반 이상이에요."])
+        self.assertEqual(out["lines"][-1], "거래 내역에서 확인한 내용이에요. 이것만으로 이유를 단정할 수는 없어요.")
+        trace = out["devTrace"]
+        self.assertEqual((trace["stop"], trace["queries"], trace["check"], trace["fallback"]),
+                         (None, [{"by": "time_slot", "focus": None}], [], None))
+        self.assertNotIn("budget_adjust", json.dumps(out))  # B 답엔 줄이는 방법 · [예산 조정하기] 없음 (26-12 ⑤)
+
+    def test_yunseo_plan_stops_with_no_query(self):
+        with override_settings(CHAT_EXPLAIN_PLAN=True):
+            out = self.ask("A", "건당 금액이 올라서야?", first="지난달보다 식비 더 썼어?")
+        self.assertEqual(out["lines"][:2], ["네, 건당 평균은 12,000원에서 15,000원으로 올랐어요.", "반면 결제 건수는 29건에서 26건으로 줄었어요."])
+        self.assertEqual((out["devTrace"]["stop"], out["devTrace"]["queries"], out["devTrace"]["plan"]["reason"]),
+                         (None, [], "첫 결과의 건당 평균 주장으로 답할 수 있다"))  # 멈춤은 서버가 아니라 계획 LLM 이 (26-12 ②)
+
+    def test_jiwoo_server_stops_for_missing_data(self):
+        with override_settings(CHAT_EXPLAIN_PLAN=True), mock.patch("chat.llm.fake.fake_plan_answer") as llm:
+            out = self.ask("C", "왜 식비가 늘었어?")
+        self.assertEqual(out["lines"], [explain.REFUSE["incomplete"]])
+        self.assertEqual(out["devTrace"], {"stop": "insufficient", "fallback": "template"})
+        llm.assert_not_called()  # 계획 · 답 LLM 을 부르지 않는다
+
+    def test_delivery_question_says_only_checked_range(self):
+        with override_settings(CHAT_EXPLAIN_PLAN=True):
+            out = self.ask("A", "배달 때문이야?", first="지난달보다 식비 더 썼어?")
+        self.assertEqual(out["lines"][0], "배달 때문이라고 보기는 어려워요. 확인한 배달앱 이름(배달의민족 · 쿠팡이츠 · 요기요 등) 범위에서는 결제가 없었어요.")
+        self.assertEqual(out["devTrace"]["queries"], [{"by": "merchant", "focus": "배달"}])
+
+    def test_rejected_answer_falls_back_to_template(self):
+        bad = {"왜 식비가 늘었어?": [("회식이 잦아서 {id}", {"axis": "scope"})]}
+        with override_settings(CHAT_EXPLAIN_PLAN=True), mock.patch.dict("chat.llm.fake.ANSWER_SAID", bad):
+            out = self.ask("B", "왜 식비가 늘었어?")
+        self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 224,000원 늘었어요. ↑ 55.17%")  # 지금 템플릿 그대로
+        self.assertEqual((out["devTrace"]["fallback"], out["devTrace"]["check"]), ("rejected", ["1:free_text", "0:missing_must1", "0:missing_must2"]))  # 새 원인 · 핵심 요인 · 고른 조회 1위 빠짐
+
+    def test_timeout_falls_back_to_template(self):
+        from spending_analysis import claims
+        ticks = iter([0, 0, 1, 1, 1, 13])  # 시작 · 계획 한도 · 계획 뒤 · 답 차례 확인 · 답 한도 · 답 뒤(12초 넘음)
+        with override_settings(CHAT_EXPLAIN_PLAN=True), mock.patch.object(claims, "clock", lambda: next(ticks)):
+            out = self.ask("B", "왜 식비가 늘었어?")
+        self.assertTrue(out["lines"][0].endswith("↑ 55.17%"))
+        self.assertEqual(out["devTrace"]["fallback"], "timeout")

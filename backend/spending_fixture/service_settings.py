@@ -38,6 +38,9 @@ CHAT_LLM = "live" if os.environ.get("CHAT_LLM") == "live" or os.environ.get("FIX
 if os.environ.get("CHAT_LLM") not in (None, "", "fake", "live"):
     raise ImproperlyConfigured("CHAT_LLM 은 fake 또는 live 예요")
 CHAT_LLM_MAX_CALLS = os.environ.get("CHAT_LLM_MAX_CALLS") or None
+# B 증감 설명(MEMO 26): CHAT_EXPLAIN_PLAN=on 일 때만 (기본 꺼짐 = 지금 템플릿 설명 그대로). 분석 과정(dev_trace)은 더미 실행에서만 응답에 싣는다
+CHAT_EXPLAIN_PLAN = os.environ.get("CHAT_EXPLAIN_PLAN") == "on"
+CHAT_DEV_TRACE = True
 CHAT_LLM_LEDGER = os.environ.get("CHAT_LLM_LEDGER") or None
 
 # 잘못된 값은 첫 메시지가 아니라 시작할 때 멈춘다 (키 값은 출력하지 않음)

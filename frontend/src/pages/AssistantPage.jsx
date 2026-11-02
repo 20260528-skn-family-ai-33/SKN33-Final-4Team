@@ -26,6 +26,31 @@ const EXAMPLES = ['이번 달 얼마 썼어?', '그럼 교통비는?', '이번 �
   '왜 식비가 늘었어?', '최근 6개월 식비 어때?', '소비 분석해줘', '최근 3개월 식비 예산 얼마나 남았어?', '식비 예산 줄여줘', '날씨 어때?',
   '이번 달 카드 얼마 긁었지?', '과자서원에서 얼마 썼어?', '식비는 왜 늘었을까?', '제일 많이 쓴 데는 왜 많이 나왔을까?']
 
+// 개발 모드 전용: B 증감 설명의 분석 과정 (서버가 더미 설정에서만 devTrace 를 준다 — 서비스 응답 칸 아님, MEMO 26)
+const STOP = { insufficient: '근거 부족 — 서버가 멈춤', nothing_more: '더 볼 묶음 없음 · 상한 — 서버가 멈춤' }
+const FALLBACK = { template: '근거 부족이라 지금 설명(거절 · 안내)', rejected: '검사 탈락 → 지금 템플릿 설명', timeout: '시간 초과 → 지금 템플릿 설명',
+  answer_failed: '답 LLM 실패 → 지금 템플릿 설명', no_time: '답 기다릴 시간 부족 → 지금 템플릿 설명' }
+
+function Trace({ trace }) {
+  const query = (q) => q.by + (q.focus ? `(${q.focus})` : '')
+  return (
+    <details className="mc-fx-dev">
+      <summary>분석 과정 (개발용)</summary>
+      <ul className="mc-spend-lines">
+        <li>멈춤: {trace.stop ? STOP[trace.stop] : '없음 — 계획 LLM 이 정함'}</li>
+        {trace.plan && <li>계획: {trace.plan.queries.length ? trace.plan.queries.map(query).join(', ') : '추가 조회 없음'} · {trace.plan.reason}</li>}
+        {trace.plan === null && <li>계획: 응답 형식이 틀려 추가 조회 없이</li>}
+        {(trace.dropped ?? []).length > 0 && <li>버린 조회(서버 검사): {trace.dropped.map(query).join(', ')}</li>}
+        {trace.plan && <li>가설: {trace.hypothesis ? `${trace.hypothesis.axis}${trace.hypothesis.subject ? `(${trace.hypothesis.subject})` : ''}` : '없음'}{(trace.must ?? []).length > 0 && ` · 꼭 쓸 주장 ${trace.must.map((g) => g.join('/')).join(', ')}`}</li>}
+        {(trace.unusedQueries ?? []).length > 0 && <li>답에 안 쓴 조회: {trace.unusedQueries.join(', ')}</li>}
+        {(trace.used ?? []).length > 0 && <li>쓴 주장: {trace.used.join(', ')}</li>}
+        {trace.check && <li>검사: {trace.check.length ? `탈락 ${trace.check.join(', ')}` : '통과'}</li>}
+        <li>결과: {trace.fallback ? FALLBACK[trace.fallback] ?? trace.fallback : 'B 답'}</li>
+      </ul>
+    </details>
+  )
+}
+
 export default function AssistantPage() {
   const first = useApi('/api/chat/messages/')  // 첫 화면의 엔진 · 기능 버튼 (저장 없음)
   const [engine, setEngine] = useState(null)   // 응답마다 서버가 다시 알려 준 값 { engine, features, testMode, today }
@@ -147,6 +172,7 @@ export default function AssistantPage() {
                 <div className={`mc-msg bot${c.result ? ' mc-asst-card' : ''}`}>
                   <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} />
                 </div>
+                {import.meta.env.DEV && c.devTrace && <Trace trace={c.devTrace} />}
                 <Choices choices={c.choices} active={isLast && !busy} onPick={(p) => pick(c, p)} />
                 {(c.inputs ?? []).includes('budget_form') && (
                   <div className="mc-msg bot mc-asst-form">

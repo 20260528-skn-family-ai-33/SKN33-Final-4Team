@@ -5,7 +5,7 @@ spending_fixture/live_reading.py 에서 옮김 (MEMO 25-12)
 import os
 
 from .ledger import Ledger
-from .openai_rest import ResponsesClient
+from .openai_rest import SERVICE_STOP, ResponsesClient
 from .schemas import schema_for
 
 
@@ -21,12 +21,13 @@ class LiveReading:
         if not key or not model:
             raise SystemExit("OPENAI_API_KEY · LLM_MODEL 이 필요해요")
         self.ledger = Ledger(ledger_path, max_calls) if ledger_path else None
-        self.client = ResponsesClient(model, key, max_calls, schema=schema_for,
+        # 서비스: 429 · 400 은 그 요청만 실패(다음 요청은 보냄), 설정 오류(인증 · 권한 · 모델)와 상한만 계속 막는다
+        self.client = ResponsesClient(model, key, max_calls, schema=schema_for, stop_on=SERVICE_STOP,
                                       on_attempt=self.ledger.spend if self.ledger else None)
         self.model, self.missed = model, 0
 
-    def __call__(self, system, user):
-        return self.client.complete(system, user)
+    def __call__(self, system, user, timeout=None):
+        return self.client.complete(system, user, timeout)
 
     def usage(self):
         used, limit = (self.ledger.data["used"], self.ledger.data["limit"]) if self.ledger else \

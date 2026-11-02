@@ -3,6 +3,7 @@
 """
 from chat.interpretation.schema import CATEGORY_NAMES
 from chat.router_core import reading as router_reading
+from spending_analysis import claims as spending_claims
 from spending_analysis import explain as spending_explain
 from spending_analysis import reading as spending_reading
 
@@ -57,8 +58,27 @@ EXPLAIN_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array"
                   "required": ["sentences"], "additionalProperties": False}
 
 
+# B 계획 · 답 (MEMO 26) — 받은 뒤 서버가 claims._plan · claims.check 로 다시 검사한다
+PLAN_SCHEMA = {"type": "object", "properties": {
+    "queries": {"type": "array", "items": {"type": "object", "properties": {
+        "by": {"type": "string", "enum": list(spending_claims.AXES)}, "focus": {"type": ["string", "null"]}},
+        "required": ["by", "focus"], "additionalProperties": False}},
+    "reason": {"type": "string"},
+    "hypothesis": {"anyOf": [{"type": "object", "properties": {
+        "axis": {"type": "string", "enum": list(spending_claims.HYPOTHESIS_AXES)}, "subject": {"type": ["string", "null"]}},
+        "required": ["axis", "subject"], "additionalProperties": False}, {"type": "null"}]}},
+    "required": ["queries", "reason", "hypothesis"], "additionalProperties": False}
+ANSWER_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array", "items": {"type": "object", "properties": {
+    "text": {"type": "string"}, "claims": {"type": "array", "items": {"type": "string"}}},
+    "required": ["text", "claims"], "additionalProperties": False}}}, "required": ["sentences"], "additionalProperties": False}
+
+
 def schema_for(system):
     if system == spending_explain.PROMPT:
         return "spending_explanation", EXPLAIN_SCHEMA
+    if system == spending_claims.PLAN_PROMPT:
+        return "explain_plan", PLAN_SCHEMA
+    if system == spending_claims.ANSWER_PROMPT:
+        return "explain_answer", ANSWER_SCHEMA
     role = ROLE_OF[system]
     return f"{role}_reading", role_schema(role)

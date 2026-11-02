@@ -82,6 +82,12 @@ SPENDING_SAID = {
     "야식으로 얼마 썼어?": {"mine": True, "target": "spend", "time_slot": ["late_night"]},
     "이번 달 제일 큰 지출 뭐야?": {"mine": True, "measure": "max"},
     "하루 평균 얼마 썼어?": {"mine": True, "measure": "daily_avg"},
+    "이번 달 포함 최근 3개월 식비 얼마 썼어?": {"mine": True, "target": "spend", "period": "recent", "months": 3,
+                                    "include_current": True, "categories": ["FOOD"], "measure": "sum"},
+    "최근 3개월 밤에 쓴 돈 얼마야?": {"mine": True, "target": "spend", "period": "recent", "months": 3, "time_slot": ["night"]},
+    "이번 달 포함 최근 3개월 식비 몇 번 결제했어?": {"mine": True, "measure": "count", "period": "recent", "months": 3,
+                                        "include_current": True, "categories": ["FOOD"]},
+    "최근 3개월 밤에 몇 번 결제했어?": {"mine": True, "measure": "count", "period": "recent", "months": 3, "time_slot": ["night"]},
     "주말 식비 하루 평균 얼마야?": {"mine": True, "measure": "daily_avg", "weekday": ["weekend"], "categories": ["FOOD"]},
     "과자서원 몇 번 갔어?": {"mine": True, "measure": "count", "categories": [{"detail": "과자서원", "category": "FOOD"}]},
     "배달 몇 번 시켰어?": {"mine": True, "measure": "count", "categories": [{"detail": "배달", "category": "FOOD"}]},
@@ -1235,3 +1241,77 @@ class QueryExplainTest(TestCase):
         a = Chat(user("A"))
         a.say("밤에 쓴 돈 얼마야?")  # 이번 달 · 밤 → 같은 조건으로 지난달 같은 기간과 새 비교
         self.assertIn("지난달 같은 기간보다", a.say("그럼 왜 늘었는데?")[1]["lines"][0])
+
+
+@fixture_db_only
+class UnclassifiedBudgetCompareTest(TestCase):
+    """MEMO 25-13: 같은 기간 '확인 필요' 결제가 있으면 카테고리 예산 잔액 · 하루 금액 · 비교 · 증감 설명을 분류된 결제 기준으로 말한다.
+    추가 결제(고정 산술): 윤서(A) 10/27 확인 필요 20,000원(예산 기간 · 이번 달) · 9/10 확인 필요 10,000원(지난달 같은 기간)"""
+
+    @classmethod
+    def setUpTestData(cls):
+        seed.apply(DESIGN)
+        card = Card.objects.filter(user=user("A")).first()
+        for key, day_, amount in (("now", date(2026, 10, 27), 20_000), ("before", date(2026, 9, 10), 10_000)):
+            FinancialTransaction.objects.create(
+                user=user("A"), source_kind="card", card=card, source_key=f"fixture:unclassified-{key}", occurred_on=day_,
+                occurred_time=time(13), amount=amount, direction="out", transaction_type="spending", merchant_name="알수없는가게",
+                confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+
+    def test_category_budget_and_daily_are_classified_basis(self):
+        out = Chat(user("A")).say("식비 예산 얼마 남았어?")[1]
+        self.assertIn("식비 예산 350,000원 중 60,000원을 썼고 290,000원 남았어요.", out["lines"])  # 잔액 숫자는 그대로(분류된 결제)
+        self.assertIn(f"분류된 결제 기준으로는 남은 26일 동안 하루 {290_000 // 26:,}원 정도예요.", out["lines"])
+        self.assertIn("식비로 분류된 결제 기준이에요. 확인 필요 20,000원이 있어 실제로 쓸 수 있는 돈은 더 적을 수 있어요.", out["notices"])
+        self.assertEqual(out["view"][-1]["lines"], [f"분류된 결제 기준으로는 남은 26일 동안 하루 {290_000 // 26:,}원 정도예요."])
+
+    def test_living_total_already_includes_unclassified(self):
+        b = EXPECTED["personas"]["A"]["budget"]
+        out = Chat(user("A")).say("예산 얼마 남았어?")[1]
+        spent, left = b["living_spent"] + 20_000, b["living_remaining"] - 20_000  # 생활비 전체는 확인 필요까지 넣은 금액
+        self.assertIn(f"생활비 예산 {b['living_budget']:,}원 중 {spent:,}원을 썼고 {left:,}원 남았어요.", out["lines"])
+        self.assertFalse([n for n in out["notices"] if "분류된" in n])
+
+    def test_compare_and_explain_do_not_state_rate(self):
+        a = Chat(user("A"))
+        out = a.say("지난달보다 식비 더 썼어?")[1]
+        self.assertEqual(out["sections"], [{"title": "식비 · 390,000원", "lines": ["분류된 내역 기준으로 지난달보다 42,000원 증가했어요."]}])
+        self.assertIn("식비로 분류된 내역 기준으로 비교했어요. 확인 필요(이번 달 20,000원 · 지난달 10,000원)에 따라 증감이 달라질 수 있어요.",
+                      out["notices"])
+        self.assertEqual(out["view"][1]["note"], "분류된 내역 기준")  # 증감률 배지 대신
+        out = a.say("왜 늘었어?")[1]
+        self.assertEqual(out["lines"][0], "식비 지출은 분류된 내역 기준으로 지난달 같은 기간보다 42,000원 늘었어요.")
+        self.assertIn("식비로 분류된 내역 기준이에요. 확인 필요(이번 달 20,000원 · 지난달 같은 기간 10,000원)에 따라 증감이 달라질 수 있어요.",
+                      out["lines"])
+        self.assertEqual(out["view"][1]["note"], "분류된 내역 기준")
+
+
+
+@fixture_db_only
+class MultiPeriodExplainTest(TestCase):
+    """MEMO 25-13: 여러 기간 조회(10번 최근 N개월) 뒤 설명 재조회 · 이어진 조회는 기록된 기간 목록 · 조건을 그대로 쓴다 (이어 붙이지 않음).
+    기대값: 같은 기간의 달별 식비(8 · 9 · 10월 각 1일~29일) 336,000 + 348,000 + 390,000 — 추이 답(9번)이 따로 계산한 값"""
+
+    @classmethod
+    def setUpTestData(cls):
+        seed.apply(DESIGN)
+
+    def test_explain_reuses_month_slices(self):
+        a = Chat(user("A"))
+        a.say("이번 달 포함 최근 3개월 식비 얼마 썼어?")  # 추이(9번)로 달별 금액
+        months = [int(l.split()[-1].replace(",", "").rstrip("원")) for l in a.say("이번 달 포함 최근 3개월 식비 얼마 썼어?")[1]["lines"][1:4]]
+        self.assertEqual(months, [336_000, 348_000, 390_000])
+        b = Chat(user("A"))
+        b.say("이번 달 포함 최근 3개월 식비 몇 번 결제했어?")
+        self.assertEqual(len(b.store.get_analysis("talk-1")["items"][0]["periods"]), 3)
+        out = b.say("왜 이렇게 많이 썼어?")[1]  # 예전: 8/30~31 · 9/30 이 끼어 기록과 달라 '내역이 바뀌어' 거절
+        self.assertEqual(out["lines"][0], f"이번 달을 포함한 최근 3개월(8~10월, 달마다 1일~29일) 식비에 {sum(months):,}원 썼어요.")
+        # 조회 답도 실제 범위로 (MEMO 26-0, 숫자 그대로)
+        self.assertEqual(Chat(user("A")).say("이번 달 포함 최근 3개월 식비 몇 번 결제했어?")[1]["lines"],
+                         ["이번 달을 포함한 최근 3개월(8~10월, 달마다 1일~29일) 식비 결제는 79건이에요."])
+
+    def test_follow_up_keeps_periods_and_filters(self):
+        a = Chat(user("A"))
+        a.say("최근 3개월 밤에 몇 번 결제했어?")
+        self.assertEqual(a.say("왜 이렇게 많이 썼어?")[1]["lines"][0].split(" 밤에 ")[0], "최근 3개월(7월 1일~9월 30일)")
+        self.assertTrue(a.say("그럼 교통비는?")[1]["lines"][0].startswith("최근 3개월(7월 1일~9월 30일) 교통·차량 · 밤"))

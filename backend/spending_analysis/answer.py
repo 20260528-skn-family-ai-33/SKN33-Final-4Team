@@ -30,6 +30,7 @@ TEXT = {
     "budget_left": "{name} 예산 {allocated} 중 {spent}을 썼고 {remaining} 남았어요.",
     "budget_over": "{name} 예산 {allocated} 중 {spent}을 써서 {over} 초과했어요.",
     "budget_daily": "남은 {days}일 동안 하루 {daily}씩 쓸 수 있어요.",
+    "budget_daily_classified": "분류된 결제 기준으로는 남은 {days}일 동안 하루 {daily} 정도예요.",
     "budget_category": "{name} {allocated} 중 {spent} 사용 · {rest}",
     "spare_cover": "초과한 {covered}은 여윳돈으로 메울 수 있어요. 남는 여윳돈은 {spare}이에요.",
     "spare_short": "여윳돈으로 메워도 {shortfall}이 모자라요.",
@@ -44,6 +45,11 @@ TEXT = {
     "compare_title_observed": "{name} · 일부 내역 기준 {amount}",
     "compare_title_none": "{name} · 확인할 수 있는 내역이 없어요",
     "compare_up": "지난달보다 {delta} 증가했어요. ↑ {rate}%",
+    # 두 기간 중 하나라도 '확인 필요'가 있으면 분류된 내역 기준 — 증감률은 쓰지 않는다 (MEMO 25-13)
+    "compare_up_classified": "분류된 내역 기준으로 지난달보다 {delta} 증가했어요.",
+    "compare_down_classified": "분류된 내역 기준으로 지난달보다 {delta} 감소했어요.",
+    "compare_same_classified": "분류된 내역 기준으로 지난달과 같아요.",
+    "compare_from_zero_classified": "분류된 내역 기준으로 지난달엔 0원이었고 {delta} 증가했어요.",
     "compare_down": "지난달보다 {delta} 감소했어요. ↓ {rate}%",
     "compare_same": "지난달과 같아요.",
     "compare_from_zero": "지난달엔 0원이라 증감률 없이 금액으로 알려드려요. {delta} 증가했어요.",
@@ -93,6 +99,9 @@ NOTICE = {
     "outside_spent": "예산 밖 지출({names}) {amount}도 남은 돈에 반영했어요.",
     "unclassified": "카테고리가 아직 정해지지 않은 거래 {count}건, 총 {amount}도 포함했어요.",
     "classified_only": "{name}{particle} 분류된 금액 기준이에요. 확인 필요 {amount}에 따라 달라질 수 있어요.",
+    "classified_budget": "{name}{particle} 분류된 결제 기준이에요. 확인 필요 {amount}이 있어 실제로 쓸 수 있는 돈은 더 적을 수 있어요.",
+    "classified_budget_rows": "카테고리별 남은 예산은 분류된 결제 기준이에요. 확인 필요 {amount}이 있어 실제로 쓸 수 있는 돈은 더 적을 수 있어요.",
+    "classified_compare": "{name}{particle} 분류된 내역 기준으로 비교했어요. 확인 필요(이번 달 {current} · 지난달 {previous})에 따라 증감이 달라질 수 있어요.",
     "months_capped": "{n}개월까지만 볼 수 있어 {n}개월로 보여드려요.",  # 360px 폰에서도 한 줄 (기간은 카드 머리줄에)
     "retry": "불러오지 못한 항목은 잠시 후 다시 물어봐 주세요.",
 }
@@ -129,6 +138,16 @@ def span(p):
         return f"{a.month}월 {a.day}일"
     return f"{a.month}월 {a.day}일~{b.day}일" if (a.year, a.month) == (b.year, b.month) else \
         f"{a.month}월 {a.day}일~{b.month}월 {b.day}일"
+
+
+def spans(periods):
+    """기간 목록 → 실제 범위 이름. 이어진 기간이면 '7월 1일~9월 30일', 달마다 같은 날짜까지 자른 목록이면 '8~10월, 달마다 1일~29일',
+    그 밖엔 기간마다 · 로 (MEMO 26-0 — 이어 붙인 범위로 쓰면 사이 날짜까지 본 것처럼 읽힌다)"""
+    if all(a.end_before == b.start for a, b in zip(periods, periods[1:])):
+        return span(Period(periods[0].start, periods[-1].end_before))
+    if len({p.last_day.day for p in periods}) == 1 and all(p.start.day == 1 for p in periods):
+        return f"{periods[0].start.month}~{periods[-1].start.month}월, 달마다 1일~{periods[0].last_day.day}일"
+    return " · ".join(span(p) for p in periods)
 
 
 def day(d):
@@ -280,11 +299,33 @@ def _budget(out, result):
     else:
         out.line("budget_left", remaining=won(done["remaining"]), **values)
         if _daily(result):
-            out.line("budget_daily", days=result["days_left"], daily=won(_daily(result)))
+            out.line(_daily_key(result), days=result["days_left"], daily=won(_daily(result)))
     rows = [TEXT["budget_category"].format(name=NAMES[c["category"]], allocated=won(c["allocated"]), spent=won(c["spent"]),
                                            rest=_rest(c)) for c in result.get("categories", [])]
     if rows:
         out.section("카테고리별 남은 예산", *rows)
+    _classified_budget(out, result, bool(rows))
+
+
+def _budget_uncertain(result):
+    """카테고리 예산인데 같은 예산 기간에 '확인 필요' 결제가 있음 → 잔액 · 하루 금액은 분류된 결제 기준"""
+    code = result["item"].get("category")
+    return bool(code and code != "UNCLASSIFIED" and result.get("unclassified"))
+
+
+def _daily_key(result):
+    return "budget_daily_classified" if _budget_uncertain(result) else "budget_daily"
+
+
+def _classified_budget(out, result, rows):
+    amount = result.get("unclassified")
+    if not amount or result.get("confirmed") is None:
+        return
+    if _budget_uncertain(result):
+        name = NAMES[result["item"]["category"]]
+        out.notice("classified_budget", name=name, particle=josa(name, ("으로", "로")), amount=won(amount))
+    elif rows:  # 생활비 전체 잔액은 확인 필요까지 넣은 금액이라 맞다 — 카테고리별 줄만 분류 기준
+        out.notice("classified_budget_rows", amount=won(amount))
 
 
 def _daily(result):
@@ -302,7 +343,9 @@ def _compare(out, result):
     item, cur, prev = result["item"], result["current"], result["previous"]
     name = scope(item)
     c = result["comparison"]["category" if item.get("category") else "total"]
-    _unclassified(out, cur["observed"], item)
+    pair = _compare_unclassified(result) if c["available"] else (0, 0)  # 비교 못 하면 이번 달 금액 안내(기존)만
+    if not any(pair):
+        _unclassified(out, cur["observed"], item)
     seen = _amount(cur["observed"], item)
     if not c["available"]:  # 비교 못 함이 핵심(lead), 이번 달 금액은 참고. '비교했어요' 라고 쓰지 않는다
         out.head("compare_reference", current=span(cur["period"]))
@@ -315,17 +358,29 @@ def _compare(out, result):
         out.section(title)
         out.notice("previous_incomplete" if c["previous_incomplete"] else "current_incomplete")
         return
+    tail = "_classified" if any(pair) else ""
     if c["rate"] is None:  # 이전 0원: 서버의 금액 차이만
-        change = TEXT["compare_from_zero"].format(delta=won(c["delta"]))
+        change = TEXT["compare_from_zero" + tail].format(delta=won(c["delta"]))
     elif c["delta"] > 0:
-        change = TEXT["compare_up"].format(delta=won(c["delta"]), rate=_plain(c["rate"]))
+        change = TEXT["compare_up" + tail].format(delta=won(c["delta"]), rate=_plain(c["rate"]))
     elif c["delta"] < 0:
-        change = TEXT["compare_down"].format(delta=won(-c["delta"]), rate=_plain(c["rate"]))
+        change = TEXT["compare_down" + tail].format(delta=won(-c["delta"]), rate=_plain(c["rate"]))
     else:
-        change = TEXT["compare_same"]
+        change = TEXT["compare_same" + tail]
+    if any(pair):
+        name_ = NAMES[item["category"]]
+        out.notice("classified_compare", name=name_, particle=josa(name_, ("으로", "로")), current=won(pair[0]), previous=won(pair[1]))
     out.head("compare_head", current=span(cur["period"]))
     out.head("compare_basis", previous=span(prev["period"]))
     out.section(TEXT["compare_title"].format(name=name, amount=won(seen)), change)
+
+
+def _compare_unclassified(result):
+    """카테고리 비교의 두 기간 '확인 필요' 금액 (이번 달, 지난달). 카테고리가 없거나 확인 필요 자체를 보면 (0, 0) — 전체 합계엔 이미 들어 있다"""
+    code = result["item"].get("category")
+    if not code or code == "UNCLASSIFIED":
+        return 0, 0
+    return tuple((result[k]["observed"] or {}).get("unclassified_amount", 0) for k in ("current", "previous"))
 
 
 def _trend(out, result):
@@ -387,7 +442,7 @@ def _q_period(result):
         head = f"{whole.start.month}월"
     else:
         head = {"this_month": "이번 달", "last_month": "지난달", "this_week": "이번 주", "last_week": "지난주"}[kind]
-    return f"{head}({span(whole)})", whole
+    return f"{head}({spans(periods)})", whole
 
 
 def _fixed_word(item):
@@ -569,7 +624,7 @@ def _view_budget(results, many):
         if not many:
             blocks.append({"kind": "total", "caption": "초과한 금액" if done["over"] else "남은 금액",
                            "amount": done["over"] or done["remaining"], "note": note})
-            spare = [TEXT["budget_daily"].format(days=r["days_left"], daily=won(_daily(r)))] if _daily(r) else []
+            spare = [TEXT[_daily_key(r)].format(days=r["days_left"], daily=won(_daily(r)))] if _daily(r) else []
             if done.get("covered_by_spare"):
                 spare.append(TEXT["spare_cover"].format(covered=won(done["covered_by_spare"]), spare=won(done["spare_remaining"])))
             if done.get("shortfall"):
@@ -590,7 +645,11 @@ def _view_budget(results, many):
     return blocks + _text(other)
 
 
-def _badge(c):
+def _badge(c, uncertain=False):
+    if uncertain:  # 분류된 내역 기준 — 증감률 없이 금액만
+        word = "증가" if c["delta"] > 0 else "감소" if c["delta"] < 0 else None
+        return {"text": f"{won(abs(c['delta']))} {word} (분류 기준)" if word else VIEW["same"],
+                "direction": "up" if c["delta"] > 0 else "down" if c["delta"] < 0 else "same"}
     if c["rate"] is None:
         return {"text": VIEW["from_zero"].format(delta=won(c["delta"])), "direction": "up"}
     if c["delta"] > 0:
@@ -604,7 +663,9 @@ def _view_one_compare(r):
     """한 항목 비교: 큰 금액 = 차이(더 · 덜 쓴 금액), 아래 두 줄 = 이번 달 · 지난달 금액 막대 (길이 = 큰 쪽 대비)"""
     c, item = r["comparison"]["category" if r["item"].get("category") else "total"], r["item"]
     now, before = _amount(r["current"]["confirmed"], item), _amount(r["previous"]["confirmed"], item)
-    if c["rate"] is None:
+    if any(_compare_unclassified(r)):
+        note = "분류된 내역 기준"
+    elif c["rate"] is None:
         note = VIEW["from_zero"].format(delta=won(c["delta"]))
     else:
         note = c["delta"] and VIEW["rate_up" if c["delta"] > 0 else "rate_down"].format(rate=_plain(c["rate"])) or VIEW["same"]
@@ -630,7 +691,7 @@ def _view_compare(results, many):
         amount, note = _seen(r["current"], r["item"])
         row = {"name": _name(r["item"]), "amount": amount, "note": note}
         if c["available"]:
-            row["badge"] = _badge(c)
+            row["badge"] = _badge(c, any(_compare_unclassified(r)))
         rows.append(row)
     return [head, {"kind": "rows", "rows": rows}]
 
@@ -670,8 +731,7 @@ QUERY_CAPTION = {"sum": "쓴 금액", "avg": "건당 평균", "daily_avg": "하�
 def _view_one_query(r):
     """10번 한 항목 카드: 머리줄 · 큰 금액(건수는 글자 값) · 묶음 줄(막대 = 가장 큰 묶음 대비, 요일 · 시간대 · 월은 정해진 순서)"""
     item, q = r["item"], r["item"]["query"]
-    _, whole = _q_period(r)
-    head = _head(f"{span(whole)} · {scope(item) if narrowed(item) else '소비'}")
+    head = _head(f"{spans(r['periods'])} · {scope(item) if narrowed(item) else '소비'}")
     fig = r["confirmed"] or r["observed"]
     note = None if r["confirmed"] else VIEW["partial"]
     if not fig["count"] and not fig["sum"]:
@@ -719,9 +779,8 @@ def _view_query(results, many):
                  "daily_avg": (fig["daily_avg"] or {}).get("value", 0), "max": (fig["max"] or {}).get("net_amount", 0)}[m]
         rows.append({"name": scope(r["item"]), "amount": value, **({"value": f"{fig['count']}건"} if m == "count" else {}),
                      "note": None if r["confirmed"] else VIEW["partial"]})
-    _, whole = _q_period(results[0])
     title = "결제 건수" if results[0]["item"]["query"]["measure"] == "count" else QUERY_CAPTION[results[0]["item"]["query"]["measure"]]
-    return [_head(f"{span(whole)} · {title}"), {"kind": "rows", "rows": rows}]
+    return [_head(f"{spans(results[0]['periods'])} · {title}"), {"kind": "rows", "rows": rows}]
 
 
 VIEWS = {10: _view_query, 1: _view_current, 2: _view_current, 5: _view_current, 3: _view_budget, 4: _view_budget,

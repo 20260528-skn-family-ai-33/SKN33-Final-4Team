@@ -20,7 +20,7 @@ from datetime import date, timedelta
 
 from . import result as R
 from . import tools
-from .answer import NAMES, VIEW, _plain, day, josa, span, won
+from .answer import NAMES, VIEW, _plain, day, josa, span, spans, won
 from .budget import OUT_OF_BUDGET
 from . import scope as scopes
 from .scope import DAY_NAMES, SLOTS, name as scope
@@ -32,6 +32,10 @@ TEXT = {
     "head_down": "{name} 지출은 {previous}보다 {delta} 줄었어요. ↓ {rate}%",
     "head_from_zero": "{name} 지출은 {previous}엔 0원이었고 {current}에 {delta} 썼어요.",
     "head_same": "{name} 지출은 {previous}과 같아서 설명할 증감이 없어요.",
+    # 두 기간 중 하나라도 '확인 필요'가 있으면 분류된 내역 기준 — 증감률을 단정하지 않는다 (MEMO 25-13)
+    "head_up_classified": "{name} 지출은 분류된 내역 기준으로 {previous}보다 {delta} 늘었어요.",
+    "head_down_classified": "{name} 지출은 분류된 내역 기준으로 {previous}보다 {delta} 줄었어요.",
+    "classified": "{name}{particle} 분류된 내역 기준이에요. 확인 필요({current} {now} · {previous} {before})에 따라 증감이 달라질 수 있어요.",
     "basis": "아래는 거래 내역에서 확인한 변화예요. 이것만으로 이유를 단정할 수는 없어요.",
     "basis_below": "위 변화는 거래 내역에서 확인한 것이라, 이것만으로 이유를 단정할 수는 없어요.",  # 카드: 안내가 맨 아래
     "count": "결제 건수는 {previous} {before}건, {current} {after}건이에요.",
@@ -50,6 +54,7 @@ TEXT = {
     "mix_categories": "카테고리별로는 {items} 순으로 많이 썼어요.",
     "mix_fixed": "이 중 {fixed}은 매달 나가는 고정지출이에요.",
     "mix_basis": "거래 내역에서 확인한 구성이에요. 이것만으로 이유를 단정할 수는 없어요.",
+    "planned_basis": "거래 내역에서 확인한 내용이에요. 이것만으로 이유를 단정할 수는 없어요.",  # B 답 맨 아래 (MEMO 26)
     "mix_none": "{period} {name}엔 쓴 돈이 없어서 설명할 구성이 없어요.",
 }
 REFUSE = {
@@ -103,11 +108,25 @@ def _side(user, period, code, item=None):
         block = tools.spend_query(user, period, code, where=item, detail=True)
     except tools.DbError:
         return None
-    detail = block["confirmed"] and block["confirmed"]["detail"]
+    detail = block["confirmed"] and {**block["confirmed"]["detail"], "unclassified": block["confirmed"]["unclassified_amount"]}
     if detail:  # 요일 근거는 하루 평균으로 비교한다 → 기간 안 요일별 날 수
         days = [period.start + timedelta(days=n) for n in range((period.end_before - period.start).days)]
         detail = {**detail, "weekday_days": {w: sum(d.weekday() == w for d in days) for w in range(7)}}
     return detail
+
+
+def _sides(user, periods, code, item):
+    """기간 여러 개의 구성 근거를 더한다 (금액 · 건수 · 고정지출 · 가게 · 카테고리 합, 건당 평균은 합계 ÷ 건수로 다시). 하나라도 없으면 None"""
+    sides = [_side(user, p, code, item) for p in periods]
+    if any(s is None for s in sides):
+        return None
+    if len(sides) == 1:
+        return sides[0]
+    total = lambda key: {k: sum(s[key].get(k, 0) for s in sides) for s in sides for k in s[key]}  # noqa: E731
+    paid = [s["average"]["exact"] for s in sides if s["average"]]
+    return {"amount": sum(s["amount"] for s in sides), "count": sum(s["count"] for s in sides),
+            "average": R.average(sum(e["numerator"] for e in paid), sum(e["denominator"] for e in paid)) if paid else None,
+            "fixed": sum(s["fixed"] for s in sides), "merchants": total("merchants"), "categories": total("categories")}
 
 
 def _moves(now, before, kind):
@@ -127,10 +146,12 @@ def _mix(user, item, today):
     """구성 설명 근거: 이번 달 결과(1 · 2 · 5) 하나 → 그 기간의 금액 · 건수 · 평균 · 많이 쓴 곳 · 고정지출.
     카테고리 없는 전반 분석(5)은 가장 많이 쓴 카테고리 하나로 좁힌다 (동률이면 앞 순서). 기록된 금액과 다르면 changed"""
     period = _period(item["period"]) if item.get("period") else this_month(today)
+    # 여러 기간 조회(10번 최근 N개월 등)는 기록된 기간 목록을 그대로 — 이어 붙인 한 기간으로 바꾸면 사이 날짜가 끼어든다 (MEMO 25-13)
+    periods = [_period(p) for p in item["periods"]] if item.get("periods") else [period]
     code, facts, top = item.get("category"), item.get("facts") or {}, False
     if code is None and item["type"] == 5 and facts.get("top_spending"):
         code, top = facts["top_spending"][0]["category"], True
-    side = _side(user, period, code, item)
+    side = _sides(user, periods, code, item)
     if side is None:
         return {"state": "incomplete"}
     recorded = facts.get("sum") if item["type"] == 10 else facts.get("by_category", {}).get(code, 0) if top else \
@@ -139,7 +160,8 @@ def _mix(user, item, today):
         return {"state": "changed"}
     biggest = lambda d: sorted(((k, v) for k, v in d.items() if k is not None and v > 0),  # noqa: E731
                                key=lambda kv: (-kv[1], str(kv[0])))[:TOP]
-    return {"state": "ok", "kind": "mix", "category": code, "top": top, "period": period, "word": _word(item, period),
+    return {"state": "ok", "kind": "mix", "category": code, "top": top, "period": period, "where": spans(periods),
+            "word": _word(item, period),
             "amount": side["amount"],
             "count": side["count"], "average": side["average"], "fixed": side["fixed"],
             "merchants": biggest(side["merchants"]), "categories": biggest(side["categories"]) if code is None else []}
@@ -222,6 +244,9 @@ def _word(item, period):
     kind = (item.get("query") or {}).get("period", "this_month")
     if kind == "month":
         return f"{period.start.month}월"
+    if kind == "recent":  # 조회 답과 같은 이름 (answer._q_period)
+        n = len(item.get("periods") or [period])
+        return f"이번 달을 포함한 최근 {n}개월" if item.get("include_current") else f"최근 {n}개월"
     return {"this_month": "이번 달", "last_month": "지난달", "this_week": "이번 주", "last_week": "지난주"}.get(kind)
 
 
@@ -255,7 +280,11 @@ def evidence(user, item, today=None):
             "delta": change["delta"], "rate": change["rate"], "moves": moves,
             "unnamed": bool(code) and (None in now["merchants"] or None in before["merchants"]),
             "big": now["big"], "shift": _shift(now, before, change["delta"]), "visits": _visits(now["merchants"], before["merchants"]),
-            "reduce": _reduce(now, before, moves, change["delta"], code)}
+            "reduce": _reduce(now, before, moves, change["delta"], code),
+            # 카테고리 설명이면 두 기간의 '확인 필요' 금액 (전체 범위는 합계에 이미 들어 있어 0)
+            "unclassified": (now["unclassified"], before["unclassified"]) if code and code != R.UNCLASSIFIED else (0, 0),
+            # B(MEMO 26): 주장 · 비교하며 묶기가 같은 집계를 다시 쓴다 (DB 를 다시 읽지 않음). 문장 · 카드에는 쓰지 않는다
+            "sides": (now, before), "periods": (current, previous)}
 
 
 def _changed(delta):
@@ -286,7 +315,7 @@ def _head(ev, name):
         return TEXT["head_from_zero"].format(name=name, previous=prev, current=cur, delta=won(ev["delta"]))
     if ev["delta"] == 0:
         return TEXT["head_same"].format(name=name, previous=prev)
-    key = "head_up" if ev["delta"] > 0 else "head_down"
+    key = ("head_up" if ev["delta"] > 0 else "head_down") + ("_classified" if any(ev["unclassified"]) else "")
     return TEXT[key].format(name=name, previous=prev, delta=won(abs(ev["delta"])), rate=_plain(ev["rate"]))
 
 
@@ -374,7 +403,8 @@ def view(ev, name, body, extra):
     cur, prev, moves, v = *ev["labels"], ev["moves"], ev["visits"]
     up = ev["delta"] > 0
     word = "곳" if moves["kind"] == "merchant" else "카테고리"
-    note = VIEW["rate_up" if up else "rate_down"].format(rate=_plain(ev["rate"])) if ev["rate"] is not None else f"{prev}엔 0원"
+    note = "분류된 내역 기준" if any(ev["unclassified"]) else \
+        VIEW["rate_up" if up else "rate_down"].format(rate=_plain(ev["rate"])) if ev["rate"] is not None else f"{prev}엔 0원"
     blocks = [{"kind": "head", "title": f"{name} · {prev}{josa(prev, ('과', '와'))} 비교"},
               {"kind": "total", "caption": f"{prev}보다 {'늘어난' if up else '줄어든'} 금액", "amount": abs(ev["delta"]), "note": note,
                "direction": "up" if up else "down"}]
@@ -442,7 +472,7 @@ def _place(value, particle):
 def _mix_answer(ev, item):
     """구성 설명 → (문장, 카드 블록). 설명 LLM 은 쓰지 않는다 (템플릿만 — 증감 설명용 프롬프트라)"""
     name = NAMES[ev["category"]] if ev["top"] else scope(item)
-    label = f"{ev['word']}({span(ev['period'])})" if ev["word"] else span(ev["period"])
+    label = f"{ev['word']}({ev['where']})" if ev["word"] else ev["where"]
     if ev["amount"] <= 0:
         return [TEXT["mix_none"].format(period=label, name=name)], None
     lines = [TEXT["mix_top"].format(name=name)] if ev["top"] else []
@@ -458,8 +488,8 @@ def _mix_answer(ev, item):
     if ev["fixed"] > 0:
         lines.append(TEXT["mix_fixed"].format(fixed=won(ev["fixed"])))
     lines.append(TEXT["mix_basis"])
-    blocks = [{"kind": "head", "title": f"{name} · {ev['word'] or span(ev['period'])} 쓴 곳"},
-              {"kind": "total", "caption": f"{span(ev['period'])} 쓴 금액", "amount": ev["amount"],
+    blocks = [{"kind": "head", "title": f"{name} · {ev['word'] or ev['where']} 쓴 곳"},
+              {"kind": "total", "caption": f"{ev['where']} 쓴 금액", "amount": ev["amount"],
                "note": TEXT["mix_fixed"].format(fixed=won(ev["fixed"])) if ev["fixed"] > 0 else None}]
     if rows:
         blocks.append({"kind": "rows", "rows": rows})
@@ -470,13 +500,42 @@ def _mix_answer(ev, item):
     return lines, blocks + [{"kind": "text", "lines": texts}]
 
 
-def answer(user, items, complete=None, today=None):
+def _planned(ev, item, question, plan):
+    """B 한 번 → ({"lines", "view"} | None, trace). 근거 부족(거절 · 늘지 않음)이면 B 를 건너뛰고 템플릿의 거절 · 안내 문구로.
+    줄이는 방법 · [예산 조정하기]는 붙이지 않는다 (26-12 ⑤). 확인 필요 · 세부 지출 안내는 템플릿과 같은 문장"""
+    from . import claims  # B 흐름이 이 모듈의 근거 · 금지어를 쓴다 — 서로 import 하지 않게 여기서
+    if ev["state"] != "ok" or ev["delta"] <= 0:
+        return None, {"stop": "insufficient", "fallback": "template"}
+    said, trace = claims.run(ev, item, question, plan)
+    if said is None:
+        return None, trace
+    name, extra = scope(item), []
+    if item.get("instead_of"):
+        extra.append(TEXT["instead_of"].format(name=name, word=item["instead_of"]))
+    if any(ev["unclassified"]):
+        cur_label, prev_label = ev["labels"]
+        code_name = NAMES[ev["category"]]
+        extra.append(TEXT["classified"].format(name=code_name, particle=josa(code_name, ("으로", "로")), current=cur_label,
+                                               now=won(ev["unclassified"][0]), previous=prev_label, before=won(ev["unclassified"][1])))
+    lines = [*said, TEXT["planned_basis"], *extra]
+    return {"lines": lines, "view": view(ev, name, None, [])[:2] + [{"kind": "text", "lines": lines}]}, trace
+
+
+def answer(user, items, complete=None, today=None, plan=None, question=None):
     """설명 요청의 항목들 → {"lines", "notices", "explain": {llm, rejected, failed}} (항목마다 근거 → 문장)
-    llm = 설명 LLM 을 쓰게 했는지, rejected = 응답을 검사에서 버림, failed = 호출 실패 · 상한 (둘 다 템플릿으로 답함, 개발 표시용)"""
-    lines, rejected, failed, views, suggest = [], False, False, [], False
+    llm = 설명 LLM 을 쓰게 했는지, rejected = 응답을 검사에서 버림, failed = 호출 실패 · 상한 (둘 다 템플릿으로 답함, 개발 표시용)
+    plan = B(MEMO 26) 계획 · 답 LLM complete — 주면 항목 하나의 증감 설명을 B 로 먼저 답하고, 실패 · 시간 초과면 아래 템플릿 그대로.
+    B 를 거쳤으면 out["trace"] = 개발용 분석 과정 (서비스 응답 칸 아님 — 화면에 보낼지는 엔진 설정이 정한다)"""
+    lines, rejected, failed, views, suggest, trace = [], False, False, [], False, None
     for item in items:
         ev = evidence(user, item, today)
         name = scope(item)  # 세부 지출 대신 본 항목은 "식비 전체"
+        if plan is not None and len(items) == 1 and ev.get("kind") != "mix":
+            planned, trace = _planned(ev, item, question or "", plan)
+            if planned is not None:
+                lines += planned["lines"]
+                views.append(planned["view"])
+                continue
         if ev["state"] != "ok":
             lines.append(REFUSE[ev["state"]])
             continue
@@ -508,6 +567,11 @@ def answer(user, items, complete=None, today=None):
             extra.append(TEXT["instead_of"].format(name=name, word=item["instead_of"]))
         if ev["unnamed"] and (ev["moves"]["up"] or ev["moves"]["down"]):
             extra.append(TEXT["unnamed"])
+        if any(ev["unclassified"]):
+            cur_label, prev_label = ev["labels"]
+            code_name = NAMES[ev["category"]]
+            extra.append(TEXT["classified"].format(name=code_name, particle=josa(code_name, ("으로", "로")), current=cur_label,
+                                                   now=won(ev["unclassified"][0]), previous=prev_label, before=won(ev["unclassified"][1])))
         lines += extra
         views.append(view(ev, name, body, extra))
     out = {"lines": lines, "notices": [], "explain": {"llm": complete is not None, "rejected": rejected, "failed": failed}}
@@ -515,4 +579,6 @@ def answer(user, items, complete=None, today=None):
         out["view"] = views[0]
     if suggest:  # 줄이는 방법을 보였으면 [예산 조정하기] 제안 (문구 · 선택지는 라우터 안내가 붙인다)
         out["suggest"] = ["budget_adjust"]
+    if trace is not None:
+        out["trace"] = trace
     return out

@@ -95,6 +95,8 @@ def _content(bot, turn):
                "sections": bot.get("sections", []), "notices": bot.get("notices", []), "turn": turn,
                "agent": bot["agent"], "inputs": bot["inputs"], "result": bot["result"]}
     content.update({k: bot[k] for k in ("chart", "examples", "view") if bot.get(k)})
+    if getattr(settings, "CHAT_DEV_TRACE", False) and bot.get("trace"):
+        content["dev_trace"] = bot["trace"]  # 개발용 분석 과정 — 더미 설정에서만 (chat.md 계약 칸 아님)
     return content
 
 
@@ -138,7 +140,9 @@ def answer(user, store, text=None, button=None):
     """한 입력 → (render 결과, route). DB 를 잠그지 않는다 (가짜 · 실제 LLM 호출과 분석은 여기서)"""
     llm = reading()
     agents = {"spending": partial(spending_agent.handle, store=store, complete=llm, user=user,
-                                  explain_complete=llm if llm.explains else None),
+                                  explain_complete=llm if llm.explains else None,
+                                  # B 증감 설명(MEMO 26) — CHAT_EXPLAIN_PLAN 이 켜졌을 때만, 해석과 같은 LLM(장부 · 상한 공유)
+                                  explain_plan=llm if getattr(settings, "CHAT_EXPLAIN_PLAN", False) else None),
               "budget": not_ready("budget"), "policy": not_ready("policy")}
     today, as_of = today_and_as_of()
     turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, today=today, as_of=as_of)

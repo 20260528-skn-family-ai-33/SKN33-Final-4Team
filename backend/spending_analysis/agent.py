@@ -47,7 +47,7 @@ def _run(user, request):
     return lambda decision: adapter.run(user, decision, today=today, as_of=as_of)
 
 
-def handle(request, *, store, complete, user=None, execute=None, explain_complete=None):
+def handle(request, *, store, complete, user=None, execute=None, explain_complete=None, explain_plan=None):
     """request = 공통 입력 {agent: "spending", mode, entry, text, input_id, conversation_id, today, as_of, context}
     context = {selected_from?, budget_change?: {outcome, checked_at}, switched_from?, declined_by?}
     → {"status": replied | awaiting_input | unsupported | failed | not_mine, "reply", "detail", "reason", "error", ...}
@@ -55,7 +55,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_complet
     - 모든 항목 조회 실패면 failed (라우터가 이번 입력 전 상태로 되돌린다). 일부 실패는 replied + 항목별 안내
     - execute(decision) → run_items 결과 (기본: 실제 분석). None 을 돌려주면 실행을 건너뛴다(평가 · 테스트 대역)
     - 설명 요청은 서버가 거래 근거를 계산해 템플릿 문장으로 답한다. explain_complete(설명 LLM)를 주면 검사를 통과한 문장만 쓴다
-      user 가 없으면(라우터 · 평가 대역) 설명 근거를 만들지 않는다"""
+      user 가 없으면(라우터 · 평가 대역) 설명 근거를 만들지 않는다
+    - explain_plan(B 계획 · 답 LLM, MEMO 26)을 주면 증감 설명을 B 로 먼저 답하고 실패하면 위 템플릿 그대로"""
     cid, text, mode = request["conversation_id"], request["text"], request["mode"]
     context = request.get("context") or {}
     if mode == "cancel":
@@ -72,7 +73,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_complet
     if decision.status == "failed":
         return _result("failed", error=decision.reason, decision=decision)
     result = _outcome(decision, store, cid, execute or _run(user, request),
-                      user and (lambda items: explain.answer(user, items, explain_complete, today=_today(request))))
+                      user and (lambda items, question=None: explain.answer(user, items, explain_complete, today=_today(request),
+                                                                            plan=explain_plan, question=question)))
     dialog.publish(store, cid)
     return result
 
@@ -91,7 +93,7 @@ def _outcome(decision, store, cid, execute, explainer=None):
         if explainer is None:
             return _result("replied", decision=decision)  # 근거 조회 대역 없음 — 참조할 확정 항목만(detail.explain)
         try:
-            reply = explainer(decision.explain["items"])
+            reply = explainer(decision.explain["items"], decision.explain["question"])
         except DatabaseError:
             return _result("failed", decision=decision, error="analysis_failed")
         return _result("replied", reply, decision)

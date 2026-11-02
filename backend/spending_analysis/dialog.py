@@ -768,7 +768,7 @@ def _fill_categories(request, answers):
 def record_analysis(store, conversation_id, decision, results):
     """분석 실행 뒤 부른다. results = run_items 결과,
     성공 항목의 result = {"evidence": "confirmed" | "limited", "limits"?: 자료 제한 코드, "period": 실제 조회 기간,
-    "as_of": 조회 시점, "compare_period"?: 비교 기간, "facts"?: 확정 수치} — 모두 JSON 으로 저장 가능한 값
+    "as_of": 조회 시점, "compare_period"?: 비교 기간, "periods"?: 여러 기간 조회의 기간 목록(10번), "facts"?: 확정 수치} — 모두 JSON 으로 저장 가능한 값
     - 결정(ready)만으로는 기록하지 않는다. 전부 실패면 직전 기록을 그대로 둔다
     - 일부만 성공하면 항목마다 ok 로 구분해 남긴다 (실패 항목은 조건만, 결과 없음)
     - ok 는 '조회가 끝났다'는 뜻일 뿐이다. 설명 근거는 evidence == "confirmed" 만 (없으면 "unknown" — 근거 아님)"""
@@ -778,7 +778,7 @@ def record_analysis(store, conversation_id, decision, results):
     for r in results:
         row = {**r["item"], "ok": r["ok"]}
         if r["ok"]:
-            row.update({k: r["result"][k] for k in ("limits", "period", "as_of", "compare_period", "facts") if k in r["result"]})
+            row.update({k: r["result"][k] for k in ("limits", "period", "periods", "as_of", "compare_period", "facts") if k in r["result"]})
             row["evidence"] = r["result"].get("evidence", "unknown")
         items.append(row)
     store.save_analysis(conversation_id, {"request": conditions(decision.request), "items": items})

@@ -1,4 +1,4 @@
-"""chat/llm 호출 장부 · 호출 어댑터의 동시 사용 (MEMO 25-12) — 네트워크 · DB 없음
+"""chat/llm 호출 장부 · 호출 어댑터의 동시 사용 (MEMO 25-12) · 서비스 오류 처리 (25-13) — 네트워크 · DB 없음
 실행: python manage.py test chat.test_llm --settings=spending_fixture.settings
 """
 import json
@@ -72,3 +72,98 @@ class LedgerTest(SimpleTestCase):
         client = ResponsesClient("test-model", "sk-test-not-real", 4, opener=_Ok)
         out = _together(10, lambda: client.complete("s", "u"))
         self.assertEqual((out.count(True), len(client.attempts), client.blocked), (4, 4, 6))
+
+
+class _Http:
+    """정해 둔 순서로 HTTP 오류(상태, Retry-After) 또는 정상 응답을 돌려주는 가짜 연결. 보낸 요청 수를 센다"""
+
+    def __init__(self, *plan):
+        self.plan, self.sent = list(plan), 0
+
+    def __call__(self, request, timeout):
+        import io
+        import urllib.error
+        from email.message import Message
+        self.sent += 1
+        step = self.plan.pop(0) if self.plan else None
+        if step is None:
+            return _Ok(request, timeout)
+        status, retry_after = step
+        headers = Message()
+        if retry_after is not None:
+            headers["Retry-After"] = retry_after
+        raise urllib.error.HTTPError("https://example.invalid", status, "err", headers, io.BytesIO(b"{}"))
+
+
+class ServiceErrorTest(SimpleTestCase):
+    """MEMO 25-13: 서비스(SERVICE_STOP)는 429 · 400 다음 요청을 다시 보내고, Retry-After 동안만 쉬고, 설정 오류만 계속 막는다.
+    평가 도구 기본(FATAL)은 그대로 멈춘다"""
+
+    def service_client(self, opener, **kw):
+        from .llm.openai_rest import SERVICE_STOP
+        self.now = 100.0
+        return ResponsesClient("test-model", "sk-test-not-real", None, opener=opener, stop_on=SERVICE_STOP,
+                               clock=lambda: self.now, **kw)
+
+    def test_rate_limit_without_retry_after_sends_next_request(self):
+        from .llm.openai_rest import ResponseError
+        http = _Http((429, None), (400, None))
+        c = self.service_client(http)
+        for _ in range(2):
+            with self.assertRaises(ResponseError):
+                c.complete("s", "u")  # 이번 요청만 실패 (재시도 없음)
+        self.assertEqual((c.complete("s", "u"), http.sent, c.fatal), ("{}", 3, None))
+
+    def test_retry_after_pauses_only_that_long(self):
+        from .llm.openai_rest import ResponseError
+        http = _Http((429, "30"))
+        c = self.service_client(http)
+        with self.assertRaises(ResponseError):
+            c.complete("s", "u")
+        self.now += 29
+        with self.assertRaises(CapReached):
+            c.complete("s", "u")  # 쉬는 동안은 보내지 않는다
+        self.assertEqual(http.sent, 1)
+        self.now += 1
+        self.assertEqual((c.complete("s", "u"), http.sent), ("{}", 2))
+
+    def test_config_errors_keep_blocking_and_log_once(self):
+        from .llm.openai_rest import ResponseError
+        for status in (401, 403, 404):
+            with self.subTest(status=status):
+                http = _Http((status, None))
+                c = self.service_client(http)
+                with self.assertLogs("chat.llm.openai_rest", "ERROR") as logs, self.assertRaises(ResponseError):
+                    c.complete("s", "u")
+                for _ in range(2):
+                    with self.assertRaises(CapReached):
+                        c.complete("s", "u")
+                self.assertEqual((http.sent, len(logs.output)), (1, 1))
+                self.assertNotIn("sk-test-not-real", "".join(logs.output))
+
+    def test_cap_logs_once(self):
+        c = self.service_client(_Http())
+        c.max_calls = 1
+        c.complete("s", "u")
+        with self.assertLogs("chat.llm.openai_rest", "WARNING") as logs:
+            for _ in range(3):
+                with self.assertRaises(CapReached):
+                    c.complete("s", "u")
+        self.assertEqual(len(logs.output), 1)
+
+    def test_eval_default_still_stops_on_rate_limit(self):
+        from .llm.openai_rest import ResponseError
+        http = _Http((429, None))
+        c = ResponsesClient("test-model", "sk-test-not-real", 5, opener=http)
+        with self.assertRaises(ResponseError):
+            c.complete("s", "u")
+        with self.assertRaises(CapReached):
+            c.complete("s", "u")
+        self.assertEqual((http.sent, c.fatal), (1, "rate_limit"))
+
+    def test_live_reading_uses_service_policy(self):
+        from unittest import mock
+        from .llm.live import LiveReading
+        from .llm.openai_rest import SERVICE_STOP
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-not-real", "LLM_MODEL": "test-model"}):
+            self.assertEqual(LiveReading(None, None).client.stop_on, SERVICE_STOP)

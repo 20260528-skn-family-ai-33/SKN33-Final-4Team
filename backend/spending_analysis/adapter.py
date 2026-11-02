@@ -83,6 +83,7 @@ def summarize(result):
         period = Period(periods[0].start, periods[-1].end_before)
         limits = [f"period:{p.start:%Y-%m}:{state}" for p, state in zip(periods, result["states"]) if state != "complete"]
         facts = result["confirmed"]
+        many = periods if len(periods) > 1 else None  # 여러 기간(최근 N개월 · 달마다 같은 날짜까지)은 목록 그대로 — 설명 재조회가 합치지 않게
     else:
         months = result["months"]
         period = Period(months[0]["period"].start, months[-1]["period"].end_before)
@@ -94,6 +95,8 @@ def summarize(result):
            "period": period, "as_of": result["as_of"]}
     if compare_period:
         out["compare_period"] = compare_period
+    if kind == 10 and many:
+        out["periods"] = many
     if out["evidence"] == "confirmed":
         out["facts"] = facts
     return jsonable(out)
