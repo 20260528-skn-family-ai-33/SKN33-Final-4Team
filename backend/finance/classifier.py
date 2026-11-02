@@ -68,11 +68,14 @@ MULTI_ITEM_SUFFIXES = ("마트", "편의점", "슈퍼", "슈퍼마켓")
 NOT_MULTI_ITEM_PREFIXES = ("쿠팡이츠", "쿠팡플레이", "롯데하이마트", "하이마트", "노브랜드버거")
 
 # ----- 3. 규칙·사전 (분류 기준 문서) -----
-# OTT·음악 스트리밍 구독 = 문화·여가 (10/21 결정). 브랜드 이름으로 시작하면
+# OTT·음악 스트리밍 구독 = 문화·여가 (10/21 결정)
+# 다른 가게 이름에 들어가기 어려운 서비스명만 앞부분으로 (예: 넷플릭스서비시스코리아)
 SUBSCRIPTION_PREFIXES = (
-    "넷플릭스", "netflix", "유튜브프리미엄", "youtubepremium", "티빙", "웨이브", "왓챠", "디즈니플러스", "쿠팡플레이",
-    "멜론", "지니뮤직", "벅스", "플로", "스포티파이", "spotify", "애플뮤직",
+    "넷플릭스", "netflix", "유튜브프리미엄", "youtubepremium", "디즈니플러스", "쿠팡플레이",
+    "지니뮤직", "스포티파이", "spotify", "애플뮤직",
 )
+# 짧은 이름은 일반 가게(웨이브헤어·멜론카페·플로렌스치과)와 겹쳐서 이름이 정확히 같을 때만 (PR #64 리뷰)
+SUBSCRIPTION_NAMES = {"티빙", "웨이브", "왓챠", "멜론", "벅스", "플로"}
 # 콘텐츠 플랫폼 = 문화·여가 (D11 예외). 동명 상호에 번지지 않게 이름이 정확히 같을 때만 (분류 기준 3장)
 CONTENT_PLATFORMS = {"리디", "리디북스", "레진코믹스", "레진엔터테인먼트", "봄툰", "미스터블루"}
 # 배달 앱 서비스명·운영사 법인명 (검색하면 본사가 나와서 틀림). 이름이 정확히 같을 때만. B마트·배민스토어는 다품목(위)
@@ -150,7 +153,7 @@ def rule_category(name):
         return "TRANSPORT_CAR"
     if normalized in CORPORATE_NAMES:
         return CORPORATE_NAMES[normalized]
-    if normalized in CONTENT_PLATFORMS or normalized.startswith(SUBSCRIPTION_PREFIXES):
+    if normalized in CONTENT_PLATFORMS or normalized in SUBSCRIPTION_NAMES or normalized.startswith(SUBSCRIPTION_PREFIXES):
         return "CULTURE_LEISURE"
     if normalized.endswith(ETC_SUFFIXES) or any(keyword in normalized for keyword in ETC_KEYWORDS):
         return "ETC"
@@ -160,6 +163,18 @@ def rule_category(name):
 def _get_json(url, headers):
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=5) as res:
         return json.loads(res.read())
+
+
+def same_store(query, found_name):
+    """검색된 가게가 거래 가맹점과 같은 가게로 보이는지. 다른 가게면 그 업종을 근거로 쓰지 않는다 (PR #64 리뷰)
+    shortcut: 이름만 비교 (한쪽 이름이 다른 쪽에 들어 있거나, 상호 첫 단어로 시작). 지점·주소 대조는 카드 응답에 주소가 생기면"""
+    q, f = common.normalize_name(query), common.normalize_name(found_name or "")
+    if not q or not f:
+        return False
+    if q in f or f in q:
+        return True
+    head = common.normalize_name(query.split()[0]) if len(query.split()) > 1 else ""
+    return len(head) >= 2 and f.startswith(head)
 
 
 def search_store(query):
@@ -209,6 +224,9 @@ def judge(name):
         found = search_store(query)
         industry = found[2] if found else None
         record.update(source=found and found[0], industry=industry)
+        if found and not same_store(query, found[1]):
+            industry = None  # 첫 결과가 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
+            record["store_mismatch"] = True
         if industry and (industry in MULTI_ITEM_INDUSTRIES or industry.endswith("마트")):
             return {"review": ([], MULTI_ITEM_REASON), "record": record}
         if industry and any(word in industry for word in NON_STORE_INDUSTRIES):
@@ -224,10 +242,11 @@ def judge(name):
         record["ms"] = round((time.monotonic() - started) * 1000)
     record.update(jev_model=model, choice=choice, confidence=round(confidence, 4),
                   probability=round(probabilities.get(choice, 0), 4))
-    if choice != UNKNOWN and confidence >= JEV_THRESHOLD:
+    # Jev 점수만으로는 확정하지 않는다: 같은 가게로 확인된 검색 업종이 있을 때만 자동 적용 (PR #64 리뷰)
+    if industry and choice != UNKNOWN and confidence >= JEV_THRESHOLD:
         return {"apply": (choice, confidence), "record": record}
     top = sorted(((c, p) for c, p in probabilities.items() if c != UNKNOWN), key=lambda x: -x[1])[:3]
-    return {"review": (top, UNSURE_REASON if found else NOT_FOUND_REASON), "record": record}
+    return {"review": (top, UNSURE_REASON if industry else NOT_FOUND_REASON), "record": record}
 
 
 FIELDS = [

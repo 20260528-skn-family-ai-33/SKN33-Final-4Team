@@ -148,6 +148,9 @@ class RuleTest(SimpleTestCase):
             "전국고속버스운송사업조합": "TRANSPORT_CAR", "카카오페이택시": "TRANSPORT_CAR", "카카오페이택시충전": None,
             "쿠팡플레이": "CULTURE_LEISURE", "멜론": "CULTURE_LEISURE", "리디(주)": "CULTURE_LEISURE", "리디아울렛": None,
             "강남장례식장": "ETC", "OO화재해상보험": "ETC", "옷수선": "ETC", "수선화꽃집": None, "루덴치과의원": None,
+            # PR #64 리뷰: 짧은 구독 이름은 정확히 같을 때만
+            "웨이브": "CULTURE_LEISURE", "티빙": "CULTURE_LEISURE", "넷플릭스서비시스코리아": "CULTURE_LEISURE",
+            "웨이브헤어": None, "멜론카페": None, "플로렌스치과": None,
         }
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
@@ -177,7 +180,7 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
 
     def test_multi_item_industry_skips_jev(self):
-        result, ask = self.run_judge(("naver", "OO상회", "편의점"))
+        result, ask = self.run_judge(("naver", "새봄동물", "편의점"))
         self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
         ask.assert_not_called()
 
@@ -192,6 +195,28 @@ class JudgeTest(SimpleTestCase):
             result, _ = self.run_judge(OSError("timeout"))
         self.assertEqual(result["review"], ([], classifier.LOOKUP_FAILED_REASON))
         self.assertEqual(result["record"]["error"], "OSError")
+
+    def test_high_jev_score_without_store_evidence_stays_in_review(self):
+        # PR #64 리뷰: 검색 0건 · 가게가 아닌 업종 · 다른 가게가 검색됐으면 Jev 0.99 여도 확정하지 않음
+        food = ("FOOD", 0.99, {"FOOD": 0.99, "ETC": 0.01}, "jev-test")
+        cases = {
+            "검색 0건": None,
+            "가게 아닌 업종": ("kakao", "새봄동물", "금융서비스"),
+            "다른 가게": ("naver", "새봄식당", "한식"),
+        }
+        for label, found in cases.items():
+            with self.subTest(label):
+                result, ask = self.run_judge(found, food)
+                self.assertNotIn("apply", result)
+                self.assertEqual(result["review"], ([("FOOD", 0.99), ("ETC", 0.01)], classifier.NOT_FOUND_REASON))
+                self.assertEqual(ask.call_args.args[0], "가맹점 이름: 새봄동물")  # 다른 가게 업종은 Jev 에도 안 넘김
+        self.assertTrue(result["record"]["store_mismatch"])
+
+    def test_same_store(self):
+        self.assertTrue(classifier.same_store("새봄동물", "새봄동물병원"))
+        self.assertTrue(classifier.same_store("스타벅스 강남역점", "스타벅스 강남구청역점"))
+        self.assertFalse(classifier.same_store("새봄동물", "새봄식당"))
+        self.assertFalse(classifier.same_store("새봄동물", ""))
 
     def test_without_jev_key_returns_none(self):
         with patch.dict(os.environ, {"TYPESAFE_API_KEY": ""}):
