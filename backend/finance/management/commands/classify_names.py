@@ -27,6 +27,40 @@ def stage(tx):
     return "-"
 
 
+def classify_names(names):
+    """이름 목록을 실제 classify() 로 분류한 결과 행 목록 (노트북에서 pd.DataFrame 으로 바로 본다)"""
+    rows = []
+    # 임시 회원·거래로 실제 classify() 를 그대로 돌리고, 결과만 읽은 뒤 전부 되돌린다
+    with transaction.atomic():
+        user = get_user_model().objects.create_user(email=f"classify-names-{uuid.uuid4().hex}@example.test")
+        txs = [
+            FinancialTransaction.objects.create(
+                user=user, source_kind="manual", occurred_on="2026-01-01", amount=10000, direction="out",
+                transaction_type="spending", merchant_name=name,
+                confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
+            )
+            for name in names
+        ]
+        classifier.classify(user, FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs]))
+        for tx in FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs]).order_by("created_at"):
+            record = tx.field_states.get("classifier", {})
+            candidates = [c["category"] for c in tx.suggestion_candidates or []]
+            rows.append({
+                "이름": tx.merchant_name,
+                "결과": tx.confirmed_category_id,
+                "단계": stage(tx),
+                "확신도": "" if tx.suggestion_confidence is None else f"{tx.suggestion_confidence:.2f}",
+                "후보": " ".join(candidates),
+                "검색": f"{record.get('source') or '0건'}:{record.get('industry') or '-'}" if record else "",
+                "메모": " ".join(k for k in ("dropped_industry", "store_mismatch", "error") if record.get(k)),
+                "Jev": f"{record.get('choice')} {record.get('confidence')}" if record.get("choice") else "",
+                "ms": record.get("ms", ""),
+                "이유": tx.suggestion_reason or "",
+            })
+        transaction.set_rollback(True)
+    return rows
+
+
 class Command(BaseCommand):
     help = "가맹점 이름 목록을 실제 거래 분류 에이전트(1~6단계, 실제 SVM·검색·Jev)로 분류해 표로 보여 준다. DB에는 아무것도 남기지 않는다"
 
@@ -42,36 +76,7 @@ class Command(BaseCommand):
         if not names:
             raise CommandError("이름이 비어 있어요.")
 
-        rows = []
-        # 임시 회원·거래로 실제 classify() 를 그대로 돌리고, 결과만 읽은 뒤 전부 되돌린다
-        with transaction.atomic():
-            user = get_user_model().objects.create_user(email=f"classify-names-{uuid.uuid4().hex}@example.test")
-            txs = [
-                FinancialTransaction.objects.create(
-                    user=user, source_kind="manual", occurred_on="2026-01-01", amount=10000, direction="out",
-                    transaction_type="spending", merchant_name=name,
-                    confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
-                )
-                for name in names
-            ]
-            classifier.classify(user, FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs]))
-            for tx in FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs]).order_by("created_at"):
-                record = tx.field_states.get("classifier", {})
-                candidates = [c["category"] for c in tx.suggestion_candidates or []]
-                rows.append({
-                    "이름": tx.merchant_name,
-                    "결과": tx.confirmed_category_id,
-                    "단계": stage(tx),
-                    "확신도": "" if tx.suggestion_confidence is None else f"{tx.suggestion_confidence:.2f}",
-                    "후보": " ".join(candidates),
-                    "검색": f"{record.get('source') or '0건'}:{record.get('industry') or '-'}" if record else "",
-                    "메모": " ".join(k for k in ("dropped_industry", "store_mismatch", "error") if record.get(k)),
-                    "Jev": f"{record.get('choice')} {record.get('confidence')}" if record.get("choice") else "",
-                    "ms": record.get("ms", ""),
-                    "이유": tx.suggestion_reason or "",
-                })
-            transaction.set_rollback(True)
-
+        rows = classify_names(names)
         for r in rows:
             self.stdout.write(" | ".join(str(r[k]) for k in ("이름", "결과", "단계", "확신도", "후보", "검색", "Jev", "ms", "메모")))
         counts = {}
