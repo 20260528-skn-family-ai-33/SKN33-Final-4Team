@@ -288,3 +288,26 @@ class DeliveryAppTest(SimpleTestCase):
             self.assertEqual(classifier.rule_category(name), "FOOD", name)
         for name in ("배민B마트", "배민B마트 강남점", "배민스토어", "NICE*배민B마트"):
             self.assertTrue(classifier.is_multi_item(name), name)
+
+
+@patch("finance.classifier.judge", return_value=None)
+@patch("finance.classifier.predict", side_effect=fake_predict)
+class ClassifyNamesCommandTest(TestCase):
+    def test_prints_table_and_leaves_nothing_in_db(self, predict, judge):
+        import tempfile
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        with tempfile.TemporaryDirectory() as tmp:
+            names = os.path.join(tmp, "names.txt")
+            with open(names, "w", encoding="utf-8") as f:
+                f.write("루덴치과의원\nGS25 역삼점\n크린토피아세탁\n")
+            out = StringIO()
+            call_command("classify_names", names, stdout=out)
+        text = out.getvalue()
+        self.assertIn("루덴치과의원 | MEDICAL_HEALTH | 4 SVM", text)
+        self.assertIn("GS25 역삼점 | UNCLASSIFIED | 1 다품목", text)
+        self.assertIn("크린토피아세탁 | ETC | 3 규칙", text)
+        self.assertFalse(Tx.objects.exists())
+        self.assertFalse(get_user_model().objects.filter(email__startswith="classify-names-").exists())
