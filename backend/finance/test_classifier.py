@@ -142,6 +142,26 @@ class ClassifyTest(TestCase):
         self.assertEqual(tx.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
         predict.assert_called_once_with([])
 
+    def test_apple_asks_user_until_apply_to_future(self, predict):
+        # 11/02: 애플은 음악·iCloud·앱이 한 이름으로 찍혀서 '확인 필요' + 문화·여가 후보. '앞으로도 적용'이면 자동
+        fresh, kcp = self.run_classify(self.tx("Apple Services"), self.tx("Apple_KCP"))
+        for tx in (fresh, kcp):
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.MIXED_SERVICE_REASON))
+            self.assertEqual(tx.suggestion_candidates, [{"category": "CULTURE_LEISURE", "confidence": None}])
+
+        self.tx("Apple Services", confirmed_category_id="HOUSING_TELECOM", confirmation_state="confirmed",
+                classification_source="user")
+        (tx,) = self.run_classify(self.tx("Apple Services"))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["HOUSING_TELECOM", "CULTURE_LEISURE"])
+
+        self.tx("Apple Services", confirmed_category_id="HOUSING_TELECOM", confirmation_state="confirmed",
+                classification_source="user", occurred_on="2026-10-30", field_states={"apply_to_future": True})
+        (tx,) = self.run_classify(self.tx("Apple Services"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("HOUSING_TELECOM", "suggested"))
+        self.assertTrue(all(call.args == ([],) for call in predict.call_args_list))  # SVM 에 보낸 이름 없음
+        self.judge.assert_not_called()
+
     def test_leaves_confirmed_non_spending_and_nameless_alone(self, predict):
         confirmed = self.tx("루덴치과의원", confirmed_category_id="FOOD", confirmation_state="confirmed",
                             classification_source="user")
@@ -179,6 +199,13 @@ class RuleTest(SimpleTestCase):
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
         self.assertFalse(classifier.is_multi_item("쿠팡플레이"))
+
+    def test_pay_suffix_is_removed(self):
+        # 11/02 실거래 명세: 결제수단이 이름 뒤에 붙는다
+        for name, store in {"멜론_카카오페이": "멜론", "Apple_KCP": "Apple", "NICE*멜론_네이버페이": "멜론",
+                            "이동의즐거움_택시_0": "이동의즐거움_택시_0", "카카오페이택시": "카카오페이택시"}.items():
+            self.assertEqual(classifier.store_name(name), store, name)
+        self.assertEqual(classifier.rule_category(classifier.store_name("멜론_카카오페이")), "CULTURE_LEISURE")
 
     def test_unknown_store_names(self):
         for name in ("비식별거래처_0001", "비식별가맹점", "거래처_12", "1234", "A", ""):

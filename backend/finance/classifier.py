@@ -46,16 +46,19 @@ LOOKUP_FAILED_REASON = "가게 정보를 확인하지 못했어요. 직접 골�
 PAY_CHARGE_REASON = "페이 충전이라 무엇에 썼는지 골라 주세요."
 
 # 토스·네이버페이 등 충전 출금 (10/30): 충전 뒤 무엇을 샀는지는 페이 안에만 있어서 사용자에게 묻는다
-# link_basics(혜리)가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
+# link_basics가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
 PAY_CHARGE = re.compile(r"(페이|머니|pay)충전")
 
-# 상호처럼 안 생긴 이름: SVM 은 뜻 없는 이름도 식비로 확신해서(11/02 실거래 비식별거래처 6건 식비 0.85~0.91) SVM·검색 전에 거른다
+# 상호처럼 안 생긴 이름: SVM 은 뜻 없는 이름도 식비로 확신해서(11/02 실거래 비식별거래처 5건 식비 0.85~0.91) SVM·검색 전에 거른다
 # shortcut: 아는 표기만 (비식별 처리된 이름, 숫자뿐인 이름, 한 글자). 실거래에서 새 표기가 보이면 추가
 UNKNOWN_STORE = re.compile(r"비식별|거래처\d+$|^\d*$")
 UNKNOWN_STORE_REASON = "가게 이름을 알 수 없어 카테고리를 정하지 못했어요."
 
 # 결제대행(PG) 접두어: 'NICE*쿠팡' → '쿠팡'
 PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
+# 결제수단 꼬리표: '멜론_카카오페이' → '멜론', 'Apple_KCP' → 'Apple' (11/02 실거래 명세)
+# shortcut: 확인된 결제수단만. 실거래에서 새 꼬리표가 보이면 추가
+PAY_SUFFIX = re.compile(r"_(카카오페이|네이버페이|토스페이|kcp)$", re.IGNORECASE)
 
 # ----- 1. 다품목 -----
 # 다품목(편의점·마트·종합몰)은 정책상 사용자 선택. 과거 선택은 후보로만 보여 주고 자동 적용하지 않는다 (분류 워크플로 10/26 단계 2)
@@ -97,6 +100,10 @@ ETC_SUFFIXES = (
     "펫샵", "애견용품", "원단",
 )
 ETC_KEYWORDS = ("연회비", "보험")
+# 한 이름으로 여러 서비스가 찍히는 곳 (애플: 음악·iCloud·앱·TV+). 무엇에 썼는지 몰라 '확인 필요' + 문화·여가 후보 (11/02 결정)
+# 다품목과 달리 사용자가 '앞으로도 적용'을 고르면 다음부터 그 카테고리로 자동 분류
+MIXED_SERVICE_NAMES = {"apple", "appleservices"}
+MIXED_SERVICE_REASON = "애플 결제는 음악·저장공간·앱이 같은 이름으로 찍혀서 무엇에 썼는지 골라 주세요."
 
 # ----- 5. 검색 + Jev -----
 # Jev 선택지 = 10개 + 기타 + 판단 보류 (10/30 결정). 설명은 분류 기준 문서 2장
@@ -123,8 +130,8 @@ NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은�
 
 
 def store_name(name):
-    """결제대행 접두어를 뗀 가맹점명. 없으면 None"""
-    return PG_PREFIX.sub("", name or "").strip() or None
+    """결제대행 접두어·결제수단 꼬리표를 뗀 가맹점명. 없으면 None"""
+    return PAY_SUFFIX.sub("", PG_PREFIX.sub("", name or "").strip()).strip() or None
 
 
 @functools.cache
@@ -290,6 +297,10 @@ def classify(user, txs):
         elif code and future:
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
+        elif common.normalize_name(name or "") in MIXED_SERVICE_NAMES:
+            # 과거 선택(앞으로도 적용 아님)이 있으면 첫 후보로
+            candidates = [c for c in dict.fromkeys((code, "CULTURE_LEISURE")) if c]
+            _review(tx, [(c, None) for c in candidates], MIXED_SERVICE_REASON, Tx.ClassificationSource.RULE)
         elif name and (rule := rule_category(name)):
             _apply(tx, rule, Tx.ClassificationSource.RULE, None)
         elif name and is_unknown_store(name):
