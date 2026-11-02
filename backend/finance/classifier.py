@@ -167,14 +167,10 @@ def _get_json(url, headers):
 
 def same_store(query, found_name):
     """검색된 가게가 거래 가맹점과 같은 가게로 보이는지. 다른 가게면 그 업종을 근거로 쓰지 않는다 (PR #64 리뷰)
-    shortcut: 이름만 비교 (한쪽 이름이 다른 쪽에 들어 있거나, 상호 첫 단어로 시작). 지점·주소 대조는 카드 응답에 주소가 생기면"""
+    정리한 전체 이름이 한쪽에 다른 쪽이 들어 있을 때만 같은 가게. 첫 단어만 같으면 다른 가게일 수 있어 인정하지 않는다 (PR #64 재리뷰: 새봄 동물 ↔ 새봄식당)
+    shortcut: 이름만 비교. 프랜차이즈 다른 지점도 불일치('확인 필요')가 된다. 지점·주소 대조는 카드 응답에 주소가 생기면"""
     q, f = common.normalize_name(query), common.normalize_name(found_name or "")
-    if not q or not f:
-        return False
-    if q in f or f in q:
-        return True
-    head = common.normalize_name(query.split()[0]) if len(query.split()) > 1 else ""
-    return len(head) >= 2 and f.startswith(head)
+    return bool(q and f) and (q in f or f in q)
 
 
 def search_store(query):

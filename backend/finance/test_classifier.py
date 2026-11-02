@@ -214,8 +214,11 @@ class JudgeTest(SimpleTestCase):
 
     def test_same_store(self):
         self.assertTrue(classifier.same_store("새봄동물", "새봄동물병원"))
-        self.assertTrue(classifier.same_store("스타벅스 강남역점", "스타벅스 강남구청역점"))
+        self.assertTrue(classifier.same_store("스타벅스 강남역점", "스타벅스 강남역점"))
         self.assertFalse(classifier.same_store("새봄동물", "새봄식당"))
+        # PR #64 재리뷰: 공백만 다른 이름도 같은 결과, 첫 단어만 같으면 다른 가게
+        self.assertFalse(classifier.same_store("새봄 동물", "새봄식당"))
+        self.assertFalse(classifier.same_store("스타벅스 강남역점", "스타벅스 강남구청역점"))
         self.assertFalse(classifier.same_store("새봄동물", ""))
 
     def test_without_jev_key_returns_none(self):
