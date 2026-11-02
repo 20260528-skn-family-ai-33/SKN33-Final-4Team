@@ -59,6 +59,9 @@ PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
 # 결제수단 꼬리표: '멜론_카카오페이' → '멜론', 'Apple_KCP' → 'Apple' (11/02 실거래 명세)
 # shortcut: 확인된 결제수단만. 실거래에서 새 꼬리표가 보이면 추가
 PAY_SUFFIX = re.compile(r"_(카카오페이|네이버페이|토스페이|kcp)$", re.IGNORECASE)
+# 결제대행 이름이 '-'·'_'로 붙는 표기: 'KCP-쿠팡_쿠팡' → '쿠팡_쿠팡', '이니시스(빌링)_3_레벨업 피시방' → '레벨업 피시방' (11/02 카드 명세)
+# shortcut: 확인된 결제대행사만. 실거래에서 새 표기가 보이면 추가
+PG_NAMED_PREFIX = re.compile(r"^(kcp|kg이니시스|이니시스|nice|ksnet|토스페이먼츠)(\([^)]*\))?[-_](\d+_)?", re.IGNORECASE)
 
 # ----- 1. 다품목 -----
 # 다품목(편의점·마트·종합몰)은 정책상 사용자 선택. 과거 선택은 후보로만 보여 주고 자동 적용하지 않는다 (분류 워크플로 10/26 단계 2)
@@ -100,6 +103,12 @@ ETC_SUFFIXES = (
     "펫샵", "애견용품", "원단",
 )
 ETC_KEYWORDS = ("연회비", "보험")
+# 택시 (11/02): 이름에 '택시'만 들어 있으면 택시파스타·피자택시 같은 식당도 걸려서(카카오 장소 193곳 중 식당 6곳),
+# '개인택시'가 들어 있거나 '택시'가 띄어 쓴 한 낱말일 때만. 택시조합·조합 금고는 소비처가 아니라 뺀다
+TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
+NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
+# PC방 = 문화·여가 (분류 기준 2장). 표기가 피시방·PC방 둘 다
+CULTURE_KEYWORDS = ("피시방", "pc방")
 # 한 이름으로 여러 서비스가 찍히는 곳 (애플: 음악·iCloud·앱·TV+). 무엇에 썼는지 몰라 '확인 필요' + 문화·여가 후보 (11/02 결정)
 # 다품목과 달리 사용자가 '앞으로도 적용'을 고르면 다음부터 그 카테고리로 자동 분류
 MIXED_SERVICE_NAMES = {"apple", "appleservices"}
@@ -131,7 +140,8 @@ NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은�
 
 def store_name(name):
     """결제대행 접두어·결제수단 꼬리표를 뗀 가맹점명. 없으면 None"""
-    return PAY_SUFFIX.sub("", PG_PREFIX.sub("", name or "").strip()).strip() or None
+    name = PG_NAMED_PREFIX.sub("", PG_PREFIX.sub("", name or "").strip())
+    return PAY_SUFFIX.sub("", name).strip() or None
 
 
 @functools.cache
@@ -177,6 +187,10 @@ def rule_category(name):
     normalized = common.normalize_name(name)
     if transport_rule(name, "N"):  # 혜리 님 교통 적요 규칙. 'N' = 소비로 정해진 거래 (분류 대상은 이미 소비)
         return "TRANSPORT_CAR"
+    if ("개인택시" in normalized or TAXI_WORD.search(name)) and not any(w in normalized for w in NOT_TAXI_WORDS):
+        return "TRANSPORT_CAR"
+    if any(keyword in normalized for keyword in CULTURE_KEYWORDS):
+        return "CULTURE_LEISURE"
     if normalized in CORPORATE_NAMES:
         return CORPORATE_NAMES[normalized]
     if normalized in CONTENT_PLATFORMS or normalized in SUBSCRIPTION_NAMES or normalized.startswith(SUBSCRIPTION_PREFIXES):

@@ -207,6 +207,24 @@ class RuleTest(SimpleTestCase):
             self.assertEqual(classifier.store_name(name), store, name)
         self.assertEqual(classifier.rule_category(classifier.store_name("멜론_카카오페이")), "CULTURE_LEISURE")
 
+    def test_taxi_and_pc_room(self):
+        # 11/02 카드 명세·카카오 장소 조사: '택시'가 낱말이거나 '개인택시'일 때만 교통. 이름 속 '택시' 식당은 제외
+        cases = {
+            "카카오_개인택시": "TRANSPORT_CAR", "카카오T 택시": "TRANSPORT_CAR", "개인택시 서울12가3456": "TRANSPORT_CAR",
+            "택시파스타 압구정로데오역점": None, "피자택시": None, "옐로우택시": None, "택시종사자쉼터": None,
+            "서울개인택시조합새마을금고": None, "카카오페이택시충전": None,
+            "레벨업 피시방 남부터미널점": "CULTURE_LEISURE", "탑PC방": "CULTURE_LEISURE",
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+
+    def test_named_pg_prefix_is_removed(self):
+        # 11/02 카드 명세: 결제대행 이름이 '-'·'_'로 붙는 표기
+        self.assertEqual(classifier.store_name("이니시스(빌링)_3_레벨업 피시방 남부터미널점"), "레벨업 피시방 남부터미널점")
+        self.assertEqual(classifier.store_name("KCP-쿠팡_쿠팡"), "쿠팡_쿠팡")
+        self.assertTrue(classifier.is_multi_item("KCP-쿠팡_쿠팡"))
+        self.assertEqual(classifier.store_name("카카오_개인택시"), "카카오_개인택시")
+
     def test_unknown_store_names(self):
         for name in ("비식별거래처_0001", "비식별가맹점", "거래처_12", "1234", "A", ""):
             self.assertTrue(classifier.is_unknown_store(name), name)
