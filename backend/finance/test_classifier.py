@@ -218,6 +218,12 @@ class RuleTest(SimpleTestCase):
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
 
+    def test_starbucks_brand(self):
+        # 11/02: 지점명·회사명·앱 충전 모두 식비. 이름 뒤쪽에 '스타벅스'가 들어간 다른 가게는 제외
+        for name in ("스타벅스 강남역점", "스타벅스코리아", "스타벅스계좌", "STARBUCKS KOREA", "(주)스타벅스코리아"):
+            self.assertEqual(classifier.rule_category(name), "FOOD", name)
+        self.assertIsNone(classifier.rule_category("홍단헤어 스타벅스점"))
+
     def test_named_pg_prefix_is_removed(self):
         # 11/02 카드 명세: 결제대행 이름이 '-'·'_'로 붙는 표기
         self.assertEqual(classifier.store_name("이니시스(빌링)_3_레벨업 피시방 남부터미널점"), "레벨업 피시방 남부터미널점")

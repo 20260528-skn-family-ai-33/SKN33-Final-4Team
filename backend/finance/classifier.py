@@ -109,6 +109,9 @@ TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
 NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
 # PC방 = 문화·여가 (분류 기준 2장). 표기가 피시방·PC방 둘 다
 CULTURE_KEYWORDS = ("피시방", "pc방")
+# 검증된 브랜드 = 식비 (11/02): SVM 확신이 낮고(0.81~0.84) 검색하면 다른 지점·본사가 자주 나와서(7건 중 5건) 이름으로 정한다
+# 앱 충전은 '스타벅스계좌'로 찍힘. '들어 있으면'이 아니라 '시작하면' (카카오 장소 256곳 중 '홍단헤어 스타벅스점' 같은 미용실 제외)
+FOOD_BRANDS = ("스타벅스", "starbucks")
 # 한 이름으로 여러 서비스가 찍히는 곳 (애플: 음악·iCloud·앱·TV+). 무엇에 썼는지 몰라 '확인 필요' + 문화·여가 후보 (11/02 결정)
 # 다품목과 달리 사용자가 '앞으로도 적용'을 고르면 다음부터 그 카테고리로 자동 분류
 MIXED_SERVICE_NAMES = {"apple", "appleservices"}
@@ -191,6 +194,8 @@ def rule_category(name):
         return "TRANSPORT_CAR"
     if any(keyword in normalized for keyword in CULTURE_KEYWORDS):
         return "CULTURE_LEISURE"
+    if normalized.startswith(FOOD_BRANDS):
+        return "FOOD"
     if normalized in CORPORATE_NAMES:
         return CORPORATE_NAMES[normalized]
     if normalized in CONTENT_PLATFORMS or normalized in SUBSCRIPTION_NAMES or normalized.startswith(SUBSCRIPTION_PREFIXES):
