@@ -53,7 +53,8 @@ class CategoryCodeField(serializers.CharField):
         code = super().to_internal_value(data)
         categories = Category.objects.filter(is_active=True, is_living_budget_category=True)
         if self.priority:
-            categories = categories.filter(is_ml_label=True)
+            # 생활비 배분에서 뺀 카테고리는 소비 우선순위로도 고르지 않는다 (11/03 리뷰)
+            categories = categories.filter(is_ml_label=True).exclude(pk__in=OUT_OF_BUDGET)
         if not categories.filter(pk=code).exists():
             raise serializers.ValidationError("선택할 수 없는 카테고리예요.")
         return code
@@ -61,7 +62,7 @@ class CategoryCodeField(serializers.CharField):
 
 class PrioritySerializer(StrictSerializer):
     category = CategoryCodeField(priority=True)
-    rank = StrictIntegerField(min_value=1, max_value=10)
+    rank = StrictIntegerField(min_value=1, max_value=8)
 
 
 class MinimumSerializer(StrictSerializer):
@@ -74,7 +75,7 @@ class ProfileSerializer(StrictSerializer):
     gender = serializers.ChoiceField(choices=["male", "female"])
     housing_type = serializers.ChoiceField(choices=FinancialProfile.HousingType.choices)
     has_car = StrictBooleanField()
-    priorities = PrioritySerializer(many=True, min_length=3, max_length=10, allow_empty=False)
+    priorities = PrioritySerializer(many=True, min_length=3, max_length=8, allow_empty=False)
     category_minimums = MinimumSerializer(many=True, max_length=9)
 
     def validate_priorities(self, rows):

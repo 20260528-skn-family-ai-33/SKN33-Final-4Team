@@ -9,7 +9,7 @@ import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePicked } from '../utils/usePicked.js'
-import { CAT_NAMES as CATS, MIN_CATS, SPEND_CATS, ETC, catName } from '../utils/categories.js'
+import { PRIORITY_CATS as CATS, MIN_CATS, SPEND_CATS, ETC, catName } from '../utils/categories.js'
 import { usePopup } from '../popups/context.js'
 import CatMinPopup from '../popups/CatMinPopup.jsx'
 import { manwon } from '../utils/adjust.js'
@@ -59,7 +59,8 @@ function ProfileForm({ saved }) {
   const [housing, setHousing] = useState(saved.housingType)  // 'alone' | 'family' | null
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const prio = usePicked(saved.priorities.map((p) => catName(p.category)))  // 누른 순서 = 우선순위 (응답은 순위순)
+  // 누른 순서 = 우선순위 (응답은 순위순). 예산에서 뺀 카테고리의 예전 순위는 빼고, 저장할 때 남은 순서대로 1위부터 다시 매긴다
+  const prio = usePicked(saved.priorities.map((p) => catName(p.category)).filter((c) => CATS.includes(c)))
   const { openPopup } = usePopup()
   // 카테고리 최소 금액 { 식비: 300000 } — 설정한 것만
   const [mins, setMins] = useState(() => Object.fromEntries(saved.categoryMinimums.map((m) => [catName(m.category), m.minAmount])))

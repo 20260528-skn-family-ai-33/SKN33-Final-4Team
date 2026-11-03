@@ -25,7 +25,7 @@ def payload():
         "priorities": [
             {"category": "FOOD", "rank": 1},
             {"category": "CULTURE_LEISURE", "rank": 2},
-            {"category": "TRAVEL_LODGING", "rank": 3},
+            {"category": "MEDICAL_HEALTH", "rank": 3},
         ],
         "categoryMinimums": [{"category": "FOOD", "minAmount": 300000}],
     }
@@ -158,7 +158,7 @@ class ProfileTests(TestCase):
                 self.assert_invalid({**payload(), "priorities": value}, "priorities")
 
     def test_priority_rank_gaps_duplicates_and_types(self):
-        for ranks in ([1, 2, 4], [1, 1, 2], [2, 3, 4], [0, 1, 2], [1, 2, 11],
+        for ranks in ([1, 2, 4], [1, 1, 2], [2, 3, 4], [0, 1, 2], [1, 2, 9],
                       [1, 2, "3"], [1, 2, 3.0], [True, 2, 3]):
             with self.subTest(ranks=ranks):
                 data = payload()
@@ -172,14 +172,16 @@ class ProfileTests(TestCase):
             data["priorities"][0]["category"] = value
             self.assert_invalid(data, "priorities")
 
-    def test_all_ten_priorities_and_response_sort(self):
-        codes = list(Category.objects.filter(is_ml_label=True).order_by("display_order").values_list("pk", flat=True))
+    def test_all_eight_priorities_and_response_sort(self):
+        codes = list(Category.objects.filter(is_ml_label=True).exclude(pk__in=OUT_OF_BUDGET)
+                     .order_by("display_order").values_list("pk", flat=True))
+        self.assertEqual(len(codes), 8)
         data = payload()
         data["priorities"] = [{"category": code, "rank": rank} for rank, code in enumerate(codes, 1)]
         expected = deepcopy(data)
         data["priorities"].reverse()
         self.assertEqual(self.put(data).json(), expected_response(expected))
-        data["priorities"].append({"category": "ETC", "rank": 11})
+        data["priorities"].append({"category": "ETC", "rank": 9})
         self.assert_invalid(data, "priorities")
 
     def test_minimum_bounds_types_categories_and_duplicates(self):
@@ -219,10 +221,18 @@ class ProfileTests(TestCase):
         self.assertEqual(FinancialProfile.objects.get(user=self.user).housing_type, "alone")
         self.assertEqual(list(CategoryMinimum.objects.filter(user=self.user).values_list("category_id", "min_amount")), [("FOOD", 300000)])
 
-    def test_out_of_budget_stays_selectable_as_priority(self):
-        data = payload()
-        data["priorities"][2]["category"] = "HOUSING_TELECOM"
-        self.assertEqual(self.put(data).status_code, 200)
+    def test_out_of_budget_priorities_rejected_without_partial_write(self):
+        self.put()
+        before = list(CategoryPriority.objects.filter(user=self.user).order_by("rank").values_list("category_id", "rank"))
+        for code in OUT_OF_BUDGET:
+            for index in (0, 2):
+                with self.subTest(code=code, index=index):
+                    data = {**payload(), "housingType": "family", "categoryMinimums": []}
+                    data["priorities"][index]["category"] = code
+                    self.assert_invalid(data, "priorities")
+        self.assertEqual(FinancialProfile.objects.get(user=self.user).housing_type, "alone")
+        self.assertEqual(list(CategoryPriority.objects.filter(user=self.user).order_by("rank").values_list("category_id", "rank")), before)
+        self.assertTrue(CategoryMinimum.objects.filter(user=self.user, category_id="FOOD").exists())
 
     def test_inactive_category_rejected(self):
         Category.objects.filter(pk="FOOD").update(is_active=False)
@@ -237,7 +247,7 @@ class ProfileTests(TestCase):
         data["categoryMinimums"] = []
         self.assertEqual(self.put(data).json(), expected_response(data))
         self.assertFalse(CategoryMinimum.objects.filter(user=self.user).exists())
-        self.assertFalse(CategoryPriority.objects.filter(user=self.user, category_id="TRAVEL_LODGING").exists())
+        self.assertFalse(CategoryPriority.objects.filter(user=self.user, category_id="MEDICAL_HEALTH").exists())
 
     def test_repeat_put_is_idempotent(self):
         first = self.put().json()
@@ -305,7 +315,7 @@ class ProfileConcurrencyTests(TransactionTestCase):
 
     def setUp(self):
         self.user = get_user_model().objects.create_user(email="concurrent-profile@example.com")
-        for order, code in enumerate(("FOOD", "CULTURE_LEISURE", "TRAVEL_LODGING"), 1):
+        for order, code in enumerate(("FOOD", "CULTURE_LEISURE", "MEDICAL_HEALTH"), 1):
             Category.objects.update_or_create(pk=code, defaults={
                 "display_name": code, "display_order": order, "is_active": True,
                 "is_ml_label": True, "is_living_budget_category": True,

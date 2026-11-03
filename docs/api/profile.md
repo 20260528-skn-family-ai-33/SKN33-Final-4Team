@@ -24,11 +24,11 @@ PUT은 이 API가 관리하는 여섯 항목의 전체 교체다. 누락·null�
 | `gender` | 문자열 | `male` 남성 / `female` 여성 |
 | `housingType` | 문자열 | `alone` 자취 / `family` 본가 거주 |
 | `hasCar` | boolean | true 보유 / false 미보유. 0·1·문자열 불가 |
-| `priorities` | 배열 | 3~10개, `category`와 정수 `rank` |
+| `priorities` | 배열 | 3~8개, `category`와 정수 `rank` |
 | `categoryMinimums` | 배열 | 0~9개, `category`와 정수 `minAmount` |
 
-- 우선순위: 활성 소비 카테고리 10개 중 선택. `rank`는 1부터 항목 수까지 연속, 순위·카테고리 중복 불가. 요청 배열 순서는 자유이며 응답은 순위순이다. `ETC`·`UNCLASSIFIED`는 불가.
-- 최소 금액: 활성 예산 카테고리 10개와 `ETC` 중 원하는 항목만 설정. 생활비 배분에서 빼는 `HOUSING_TELECOM`·`TRAVEL_LODGING`(budgets/scope.py `OUT_OF_BUDGET`)은 400이며 우선순위로는 고를 수 있다. 우선순위에 없는 카테고리도 가능. 항목당 1~9,999,999,999원(화면 입력 상한 10자리), 중복 불가. 0원으로 저장하지 않는다. 응답은 카테고리 표시 순서다.
+- 우선순위: 활성 소비 카테고리 10개 중 생활비 배분 대상 8개에서 선택. `HOUSING_TELECOM`·`TRAVEL_LODGING`(budgets/scope.py `OUT_OF_BUDGET`)은 400. `rank`는 1부터 항목 수까지 연속, 순위·카테고리 중복 불가. 요청 배열 순서는 자유이며 응답은 순위순이다. `ETC`·`UNCLASSIFIED`는 불가.
+- 최소 금액: 활성 예산 카테고리 10개와 `ETC` 중 원하는 항목만 설정. 생활비 배분에서 빼는 `HOUSING_TELECOM`·`TRAVEL_LODGING`(budgets/scope.py `OUT_OF_BUDGET`)은 400. 우선순위에 없는 카테고리도 가능. 항목당 1~9,999,999,999원(화면 입력 상한 10자리), 중복 불가. 0원으로 저장하지 않는다. 응답은 카테고리 표시 순서다.
 - 최소 금액 합계와 생활비 비교는 예산 생성 단계에서 검사한다. 아직 급여·생활비가 없어도 내 정보를 저장할 수 있다.
 - 알 수 없는 필드, 잘못된 자료형·카테고리, 소수·문자열 금액은 400이다. 배열 내부에서도 미정의 필드를 허용하지 않는다.
 - 화면의 생년월일 6자리는 연도를 확정해 `YYYY-MM-DD`로, 성별 표시와 자차 선택은 위 코드·boolean으로 변환해서 보내야 한다. 프런트 API 연결은 별도다.
@@ -42,7 +42,7 @@ PUT은 이 API가 관리하는 여섯 항목의 전체 교체다. 누락·null�
   "priorities": [
     {"category": "FOOD", "rank": 1},
     {"category": "CULTURE_LEISURE", "rank": 2},
-    {"category": "TRAVEL_LODGING", "rank": 3}
+    {"category": "MEDICAL_HEALTH", "rank": 3}
   ],
   "categoryMinimums": [
     {"category": "FOOD", "minAmount": 300000},
