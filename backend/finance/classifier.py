@@ -26,7 +26,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import last_user_choice
+from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -233,6 +233,7 @@ def judge(name):
             industry = None  # 첫 결과가 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
             record["store_mismatch"] = True
         if industry and (industry in MULTI_ITEM_INDUSTRIES or industry.endswith("마트")):
+            record[SEARCHED_MULTI_ITEM] = True  # '앞으로도 적용'을 막는 근거 (merchant_rules.searched_multi_item, PR #67 리뷰)
             return {"review": ([], MULTI_ITEM_REASON), "record": record}
         if industry and any(word in industry for word in NON_STORE_INDUSTRIES):
             industry = None  # 본사·사무소가 검색된 경우. 근거로 쓰면 확신하며 틀림 (10/29 테스트)

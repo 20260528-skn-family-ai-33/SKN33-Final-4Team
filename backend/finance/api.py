@@ -21,7 +21,7 @@ from budgets.models import Category
 from . import classifier
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
-from .merchant_rules import FUTURE_KEY
+from .merchant_rules import FUTURE_KEY, searched_multi_item
 from .models import FinancialTransaction, SourceKind, TransactionLink
 from .spending import spending_summary
 
@@ -196,10 +196,11 @@ def suggestion_info(tx):
 
 
 def can_apply_to_future(tx):
-    """'앞으로도 적용' 체크박스를 보여 줄 거래 (10/30): 소비 · 원래 이체 아님(받는 사람은 기억 안 함, W) · 다품목 · 페이 충전 아님"""
+    """'앞으로도 적용' 체크박스를 보여 줄 거래 (10/30): 소비 · 원래 이체 아님(받는 사람은 기억 안 함, W) · 다품목(이름·검색 업종) · 페이 충전 아님"""
     return (tx.transaction_type == Tx.TransactionType.SPENDING and bool(tx.merchant_name)
             and (tx.field_states or {}).get(ORIGINAL_TYPE) != Tx.TransactionType.TRANSFER
-            and not classifier.is_multi_item(tx.merchant_name) and not classifier.is_pay_charge(tx.merchant_name))
+            and not classifier.is_multi_item(tx.merchant_name) and not searched_multi_item(tx.field_states)
+            and not classifier.is_pay_charge(tx.merchant_name))
 
 
 def transaction_detail_body(tx):
