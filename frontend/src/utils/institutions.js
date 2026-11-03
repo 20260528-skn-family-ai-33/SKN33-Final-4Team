@@ -6,6 +6,7 @@ export const FIELD = {
   cardNo: { label: '카드번호', placeholder: '숫자만 16자리', inputMode: 'numeric', maxLength: 16 },
   cardPw4: { label: '카드 비밀번호 4자리', type: 'password', inputMode: 'numeric', maxLength: 4 },
   cardPw2: { label: '카드 비밀번호 앞 2자리', type: 'password', inputMode: 'numeric', maxLength: 2 },
+  cardPw: { label: '카드 비밀번호 (2자리 또는 4자리)', type: 'password', inputMode: 'numeric', maxLength: 4 },
   userName: { label: '이름', placeholder: '홍길동' },
   identity: { label: '생년월일 6자리 + 뒷자리 첫 숫자', placeholder: '9903151', inputMode: 'numeric', maxLength: 7 },
   telecom: { label: '통신사', options: ['SKT', 'KT', 'LG U+', '알뜰폰(SKT)', '알뜰폰(KT)', '알뜰폰(LG U+)'] },
@@ -24,6 +25,12 @@ export const EXTRA = {
   씨티은행: { note: '씨티은행은 로그인할 때 휴대폰 문자 인증을 요청할 수 있어요.' },
   씨티카드: { note: '씨티카드는 로그인할 때 휴대폰 문자 인증을 요청할 수 있어요.' },
 }
+
+// 서버(POST /api/finance/connections/)가 받는 추가 칸은 카드번호 · 카드 비밀번호뿐 (finance-connect.md 10/27 결정 3)
+// 나머지(이름 · 휴대폰 · 출금 계좌 등)는 받지 않아서 묻지 않는다. 그 칸이 필요한 기관은 연결이 실패할 수 있다고 안내
+export const SERVER_FIELDS = { cardNo: 'cardNo', cardPw4: 'cardPassword', cardPw2: 'cardPassword', cardPw: 'cardPassword' }
+// 서버가 카드 값을 더 요구하면(fields 에 cardNo · cardPassword) 다시 받을 칸
+export const CARD_RECHECK = { fields: ['cardNo', 'cardPw'], label: '카드 확인', sub: '카드번호 · 카드 비밀번호가 필요해요', message: '카드사에서 카드번호와 카드 비밀번호를 요청했어요.' }
 
 // 연결 중에 기관이 더 요구하는 확인 (CODEF 응답 코드 → 다시 받을 칸)
 //   CF-12108: KB카드 카드 소지 확인 → 카드번호 전체 + 카드 비밀번호 앞 2자리

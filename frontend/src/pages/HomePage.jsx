@@ -142,7 +142,7 @@ export default function HomePage() {
         <div className="mc-budget-amount">
           {b.daily == null ? <strong>—</strong> : <strong>{comma(b.daily)}<small>원</small></strong>}
         </div>
-        <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · {period?.dday}일 남음</p>
+        <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · 내일부터 {b.daysLeft}일 기준</p>
         <OutOfBudgetLine value={b.outOfBudget} className="mc-home2-left" />
         <OldScopeNote amount={b.outOfBudgetAllocated} className="mc-home2-left" />
         <div className="mc-bar mc-home2-bar" role="progressbar" aria-label="이번 주기 생활비 사용률"

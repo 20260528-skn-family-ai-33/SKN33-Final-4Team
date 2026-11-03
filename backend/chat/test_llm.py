@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from django.test import SimpleTestCase
 
@@ -14,21 +15,18 @@ from .llm.openai_rest import CapReached, ResponsesClient
 
 def _together(n, work):
     """스레드 n 개가 동시에 work() — 결과 [(성공 여부)]"""
-    start, out = threading.Barrier(n), []
+    start = threading.Barrier(n, timeout=10)
 
-    def run():
+    def run(_):
         start.wait()
         try:
             work()
-            out.append(True)
+            return True
         except CapReached:
-            out.append(False)
-    threads = [threading.Thread(target=run) for _ in range(n)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-    return out
+            return False
+    # 잠금 오류를 작업 스레드에서 출력만 하고 잃어버리지 않도록 테스트 본문에 전달한다.
+    with ThreadPoolExecutor(n) as pool:
+        return list(pool.map(run, range(n), timeout=30))
 
 
 class _Ok:

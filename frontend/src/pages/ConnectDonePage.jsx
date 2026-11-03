@@ -1,44 +1,69 @@
 // 계좌 연결 5: 연결 결과
+// 연결 목록(GET /api/finance/connections/) · 고른 계좌(GET /api/finance/connect/accounts/)를 그대로 보여 준다 (11/03 S2)
+// [다시 불러오기] = POST /api/finance/sync/ → 작업 결과의 기관별 성공 · 실패를 그대로 보여 준다 (실패를 0건으로 보이지 않기)
+// [다음] = 월급 입력. 대출 확인 화면은 아직 예시 대출이라 알파에서는 건너뛴다 (11/03 S2 리뷰)
+import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
-import Icon from '../components/Icon.jsx'
 import InstRow from '../components/InstRow.jsx'
+import ApiStatus from '../components/ApiStatus.jsx'
 import { won } from '../utils/money.js'
+import { useApi } from '../utils/api.js'
+import { runFinanceSync, syncLines } from '../utils/financeSync.js'
 import { PATHS } from '../routes.js'
-
-const ACCOUNTS = [
-  { name: '신한 저축예금', sub: '****1234 · 입출금 · 생활비', balance: 340_000 },
-  { name: '국민 급여통장', sub: '****5678 · 입출금 · 고정지출', balance: 2_460_000 },
-]
-// 기관이 실제로 조회해 준 기간 (CODEF 응답 commStartDate ~ commEndDate). 기관마다 가능 기간이 달라 요청보다 짧을 수 있다
-// 시안 예시: 3개월(07.20 ~ 10.20)을 요청
-const PERIODS = [
-  { inst: '신한은행', from: '07.20', to: '10.20' },
-  { inst: '국민은행', from: '07.20', to: '10.20' },
-  { inst: '신한카드', from: '07.20', to: '10.20' },
-]
 
 export default function ConnectDonePage() {
   const navigate = useNavigate()
+  const conns = useApi('/api/finance/connections/')
+  const accts = useApi('/api/finance/connect/accounts/')
+  const [sync, setSync] = useState({ busy: false, lines: null, error: '' })
+
+  const refresh = async () => {
+    setSync({ busy: true, lines: null, error: '' })
+    try {
+      const result = await runFinanceSync()
+      setSync({ busy: false, lines: syncLines(result), error: '' })
+      conns.reload()
+      accts.reload()
+    } catch (err) {
+      setSync({ busy: false, lines: null, error: err.message })
+    }
+  }
+
+  if (!conns.data || !accts.data) return <Layout title="계좌 연결" showBack><ApiStatus error={conns.error ?? accts.error} /></Layout>
+
+  const banks = conns.data.items.filter((c) => c.businessType === 'bank')
+  const cards = conns.data.items.filter((c) => c.businessType === 'card')
+  const selected = accts.data.items.filter((a) => a.isSelected)
+  const cardCount = cards.reduce((n, c) => n + c.cardCount, 0)
 
   return (
-    <Layout title="계좌 연결" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.loanCheck)}>다음</button>}>
+    <Layout title="계좌 연결" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.salary)}>다음</button>}>
       <div className="mc-eyebrow">계좌 연결</div>
       <h1>연결을 마쳤어요</h1>
-      <p className="mc-muted">은행 2곳 · 계좌 2개 · 카드사 1곳 · 카드 2장을 연결했어요.</p>
+      <p className="mc-muted">은행 {banks.length}곳 · 고른 계좌 {selected.length}개 · 카드사 {cards.length}곳 · 카드 {cardCount}장이 연결돼 있어요.</p>
       <div className="mc-card">
-        {ACCOUNTS.map((a) => <InstRow key={a.name} name={a.name} sub={a.sub} right={<strong>{won(a.balance)}</strong>} />)}
+        <h2>고른 계좌</h2>
+        {selected.length === 0 && <p className="mc-muted">고른 계좌가 없어요.</p>}
+        {selected.map((a) => (
+          <InstRow key={a.accountId} name={a.displayName} sub={a.status === 'relogin' ? '다시 연결 필요 · 마지막으로 받은 잔액' : a.organizationName}
+            right={<strong>{a.balance == null ? '확인 안 됨' : won(a.balance)}</strong>} />
+        ))}
       </div>
       <div className="mc-card">
-        <div className="mc-keyvalue"><span>잔액 조회</span><strong className="ok-t"><Icon name="CircleCheck" /> 완료 · 오늘 09:30</strong></div>
-        <div className="mc-keyvalue"><span>거래 내역</span><strong className="warn-t"><Icon name="Loader" /> 최근 3개월 수집 중</strong></div>
-        <div className="mc-keyvalue"><span>카드 청구서</span><strong>조회됨</strong></div>
+        <h2>연결한 기관</h2>
+        {conns.data.items.map((c) => (
+          <InstRow key={c.connectionId} icon={c.businessType === 'card' ? 'CreditCard' : 'Landmark'} name={c.organizationName}
+            sub={c.status === 'relogin' ? '다시 연결이 필요해요' : c.businessType === 'card' ? `카드 ${c.cardCount}장` : `계좌 ${c.accountCount}개`}
+            subClass={c.status === 'relogin' ? 'mc-conn-fail' : ''} />
+        ))}
+        <button type="button" className="mc-secondary" disabled={sync.busy} onClick={refresh}>{sync.busy ? '불러오는 중…' : '거래 다시 불러오기'}</button>
+        {sync.lines && sync.lines.map((l) => (
+          <p key={l.name} className={l.ok ? 'mc-note' : 'mc-error'} role={l.ok ? undefined : 'alert'}>{l.name} · {l.text}</p>
+        ))}
+        {sync.error && <p className="mc-error" role="alert">{sync.error}</p>}
       </div>
-      <div className="mc-card mc-periods">
-        <h2>불러온 거래 기간</h2>
-        {PERIODS.map((p) => <div className="mc-keyvalue" key={p.inst}><span>{p.inst}</span><strong>{p.from}부터 불러왔어요</strong></div>)}
-        <p className="mc-note" style={{ paddingBottom: 0 }}>기관마다 불러올 수 있는 기간이 달라요. 요청한 기간보다 짧으면 그 기관은 짧게 보여요.</p>
-      </div>
+      <p className="mc-note">거래 화면에서 불러온 거래를 확인할 수 있어요. 카드번호가 필요한 카드사(현대카드)는 연결 관리에서 다시 불러와 주세요.</p>
     </Layout>
   )
 }

@@ -1,5 +1,7 @@
 import os
+import tempfile
 from decimal import Decimal
+from pathlib import Path
 from unittest import skipUnless
 from unittest.mock import patch
 
@@ -29,6 +31,10 @@ class ClassifyTest(TestCase):
         judge = patch("finance.classifier.judge", return_value=None)
         self.judge = judge.start()
         self.addCleanup(judge.stop)
+        # 동명 충돌 목록은 로컬 파일(label_conflicts.csv)이 있으면 결과가 달라지니 빈 목록이 기본. 필요한 테스트만 바꿔 넣는다
+        conflicts = patch("finance.classifier.conflict_names", return_value=frozenset())
+        conflicts.start()
+        self.addCleanup(conflicts.stop)
 
     def tx(self, merchant, **fields):
         data = dict(user=self.user, source_kind="manual", occurred_on="2026-10-29", amount=10000, direction="out",
@@ -57,11 +63,19 @@ class ClassifyTest(TestCase):
         self.assertEqual(tx.suggestion_reason, classifier.REVIEW_REASON)
 
     def test_user_memory_comes_before_ml(self, predict):
-        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user",
+                field_states={"apply_to_future": True})
         (tx,) = self.run_classify(self.tx("청담"))
         self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
                          ("BEAUTY", "suggested", "rule"))
         predict.assert_called_once_with([])
+
+    def test_memory_without_apply_to_future_is_not_reused(self, predict):
+        # 10/30: 사용자가 '앞으로도 적용'을 고르지 않았으면 다음 거래는 원래대로 SVM
+        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("청담"))
+        self.assertEqual((tx.confirmed_category_id, tx.suggestion_source), ("UNCLASSIFIED", "ml"))
+        predict.assert_called_once_with(["청담"])
 
     def test_multi_item_never_reuses_memory_or_calls_ml(self, predict):
         self.tx("GS25 역삼점", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
@@ -103,6 +117,63 @@ class ClassifyTest(TestCase):
         self.assertEqual((musinsa.confirmed_category_id, musinsa.classification_source), ("FOOD", "ml"))
         predict.assert_called_once_with(["무신사"])
 
+    def test_name_conflict_skips_confident_svm(self, predict):
+        # 분류 워크플로 10/26 4장: 같은 이름에 다른 업종이 있으면 SVM 0.99 여도 확정하지 않고 검색+Jev
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"루덴치과의원"})):
+            (tx,) = self.run_classify(self.tx("루덴치과의원"))
+            self.judge.assert_called_once_with("루덴치과의원")
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+            self.assertEqual(tx.suggested_category_id, "MEDICAL_HEALTH")  # SVM 답은 후보로 남김
+
+            # PR #68 리뷰: 같은 이름의 검색 결과 + 높은 Jev 점수여도 어느 가게인지 모르니 후보로만
+            record = {"step": "search_jev", "source": "naver", "industry": "치과의원", "ms": 100}
+            self.judge.return_value = {"apply": ("MEDICAL_HEALTH", 0.97), "record": record}
+            (tx,) = self.run_classify(tx)
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", None, classifier.CONFLICT_REASON))
+            self.assertEqual((tx.suggested_category_id, tx.suggestion_source), ("MEDICAL_HEALTH", "llm"))
+            self.assertTrue(tx.field_states["classifier"]["name_conflict"])
+
+    def test_name_conflict_keeps_jev_answer_as_candidate_only(self, predict):
+        # PR #68 리뷰 재현: 청담(충돌) · SVM 은 BEAUTY · 검색은 같은 이름 '청담' 한식 · Jev 는 FOOD 0.99
+        predict.side_effect = lambda names: [[("BEAUTY", 0.99), ("FOOD", 0.005)] for _ in names]
+        record = {"step": "search_jev", "source": "naver", "industry": "한식", "ms": 100}
+        self.judge.return_value = {"apply": ("FOOD", 0.99), "record": record}
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"청담"})):
+            (tx,) = self.run_classify(self.tx("청담"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["FOOD", "BEAUTY"])
+        self.assertTrue(tx.field_states["classifier"]["name_conflict"])
+
+        # 검색 실패·결과 없음도 확인 필요 그대로
+        for reason in (classifier.LOOKUP_FAILED_REASON, classifier.NOT_FOUND_REASON):
+            self.judge.return_value = {"review": ([], reason), "record": record}
+            with patch("finance.classifier.conflict_names", return_value=frozenset({"청담"})):
+                (tx,) = self.run_classify(tx)
+            self.assertEqual((tx.confirmation_state, tx.suggestion_reason), ("needs_review", reason))
+
+        # 충돌 목록에 없으면 같은 Jev 답은 그대로 자동 적용
+        self.judge.return_value = {"apply": ("FOOD", 0.99), "record": record}
+        predict.side_effect = fake_predict
+        (tx,) = self.run_classify(tx)
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
+                         ("FOOD", "suggested", "llm"))
+
+    def test_user_past_choice_differs_from_model(self, predict):
+        # 사용자가 전에 고친 가게('앞으로도 적용' 아님)는 SVM 이 확신해도 다르면 다시 묻는다. 같으면 그대로 적용
+        self.tx("루덴치과의원", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("루덴치과의원"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.USER_DIFFERS_REASON))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["BEAUTY", "MEDICAL_HEALTH", "FOOD"])
+
+        self.tx("루덴치과의원", confirmed_category_id="MEDICAL_HEALTH", confirmation_state="confirmed",
+                classification_source="user", occurred_on="2026-10-30")
+        (tx,) = self.run_classify(self.tx("루덴치과의원"))
+        self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("MEDICAL_HEALTH", "ml"))
+
     def test_unsure_ml_goes_to_search_and_jev(self, predict):
         record = {"step": "search_jev", "source": "naver", "industry": "미용실", "ms": 120}
         self.judge.return_value = {"apply": ("BEAUTY", 0.96), "record": record}
@@ -117,6 +188,42 @@ class ClassifyTest(TestCase):
         self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_source, tx.suggestion_reason),
                          ("UNCLASSIFIED", "needs_review", "llm", classifier.UNSURE_REASON))
         self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["FOOD", "BEAUTY"])
+
+    def test_unknown_store_skips_svm_and_jev(self, predict):
+        predict.side_effect = lambda names: [[("FOOD", 0.91)] for _ in names]
+        (tx,) = self.run_classify(self.tx("비식별거래처_0042"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.UNKNOWN_STORE_REASON))
+        predict.assert_called_once_with([])
+        self.judge.assert_not_called()
+
+    def test_pay_charge_asks_user_and_ignores_memory(self, predict):
+        self.tx("토스페이충전", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("토스페이충전"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.PAY_CHARGE_REASON))
+        self.assertEqual(tx.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
+        predict.assert_called_once_with([])
+
+    def test_apple_asks_user_until_apply_to_future(self, predict):
+        # 11/02: 애플은 음악·iCloud·앱이 한 이름으로 찍혀서 '확인 필요' + 문화·여가 후보. '앞으로도 적용'이면 자동
+        fresh, kcp = self.run_classify(self.tx("Apple Services"), self.tx("Apple_KCP"))
+        for tx in (fresh, kcp):
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.MIXED_SERVICE_REASON))
+            self.assertEqual(tx.suggestion_candidates, [{"category": "CULTURE_LEISURE", "confidence": None}])
+
+        self.tx("Apple Services", confirmed_category_id="HOUSING_TELECOM", confirmation_state="confirmed",
+                classification_source="user")
+        (tx,) = self.run_classify(self.tx("Apple Services"))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["HOUSING_TELECOM", "CULTURE_LEISURE"])
+
+        self.tx("Apple Services", confirmed_category_id="HOUSING_TELECOM", confirmation_state="confirmed",
+                classification_source="user", occurred_on="2026-10-30", field_states={"apply_to_future": True})
+        (tx,) = self.run_classify(self.tx("Apple Services"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("HOUSING_TELECOM", "suggested"))
+        self.assertTrue(all(call.args == ([],) for call in predict.call_args_list))  # SVM 에 보낸 이름 없음
+        self.judge.assert_not_called()
 
     def test_leaves_confirmed_non_spending_and_nameless_alone(self, predict):
         confirmed = self.tx("루덴치과의원", confirmed_category_id="FOOD", confirmation_state="confirmed",
@@ -156,6 +263,61 @@ class RuleTest(SimpleTestCase):
             self.assertEqual(classifier.rule_category(name), code, name)
         self.assertFalse(classifier.is_multi_item("쿠팡플레이"))
 
+    def test_pay_suffix_is_removed(self):
+        # 11/02 실거래 명세: 결제수단이 이름 뒤에 붙는다
+        for name, store in {"멜론_카카오페이": "멜론", "Apple_KCP": "Apple", "NICE*멜론_네이버페이": "멜론",
+                            "이동의즐거움_택시_0": "이동의즐거움_택시_0", "카카오페이택시": "카카오페이택시"}.items():
+            self.assertEqual(classifier.store_name(name), store, name)
+        self.assertEqual(classifier.rule_category(classifier.store_name("멜론_카카오페이")), "CULTURE_LEISURE")
+
+    def test_conflict_names_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "label_conflicts.csv"
+            path.write_text('name,counts,majority_ratio,kept\n리디,"{""FASHION_SHOPPING"": 3}",0.75,False\n', encoding="utf-8-sig")
+            classifier.conflict_names.cache_clear()
+            with patch("finance.classifier.CONFLICTS_PATH", path):
+                self.assertEqual(classifier.conflict_names(), {"리디"})
+            classifier.conflict_names.cache_clear()
+            with patch("finance.classifier.CONFLICTS_PATH", Path(tmp) / "없음.csv"):
+                self.assertEqual(classifier.conflict_names(), frozenset())  # 파일이 없으면 차단 없이 지금처럼
+        classifier.conflict_names.cache_clear()
+
+    def test_taxi_and_pc_room(self):
+        # 11/02 카드 명세·카카오 장소 조사: '택시'가 낱말이거나 '개인택시'일 때만 교통. 이름 속 '택시' 식당은 제외
+        cases = {
+            "카카오_개인택시": "TRANSPORT_CAR", "카카오T 택시": "TRANSPORT_CAR", "개인택시 서울12가3456": "TRANSPORT_CAR",
+            "택시파스타 압구정로데오역점": None, "피자택시": None, "옐로우택시": None, "택시종사자쉼터": None,
+            "서울개인택시조합새마을금고": None, "카카오페이택시충전": None,
+            "레벨업 피시방 남부터미널점": "CULTURE_LEISURE", "탑PC방": "CULTURE_LEISURE",
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+
+    def test_starbucks_brand(self):
+        # 11/02: 지점명·회사명·앱 충전 모두 식비. 이름 뒤쪽에 '스타벅스'가 들어간 다른 가게는 제외
+        for name in ("스타벅스 강남역점", "스타벅스코리아", "스타벅스계좌", "STARBUCKS KOREA", "(주)스타벅스코리아"):
+            self.assertEqual(classifier.rule_category(name), "FOOD", name)
+        self.assertIsNone(classifier.rule_category("홍단헤어 스타벅스점"))
+
+    def test_named_pg_prefix_is_removed(self):
+        # 11/02 카드 명세: 결제대행 이름이 '-'·'_'로 붙는 표기
+        self.assertEqual(classifier.store_name("이니시스(빌링)_3_레벨업 피시방 남부터미널점"), "레벨업 피시방 남부터미널점")
+        self.assertEqual(classifier.store_name("KCP-쿠팡_쿠팡"), "쿠팡_쿠팡")
+        self.assertTrue(classifier.is_multi_item("KCP-쿠팡_쿠팡"))
+        self.assertEqual(classifier.store_name("카카오_개인택시"), "카카오_개인택시")
+
+    def test_unknown_store_names(self):
+        for name in ("비식별거래처_0001", "비식별가맹점", "거래처_12", "1234", "A", ""):
+            self.assertTrue(classifier.is_unknown_store(name), name)
+        for name in ("루덴치과의원", "GS25 역삼점", "티머니731", "11번가", "CU"):
+            self.assertFalse(classifier.is_unknown_store(name), name)
+
+    def test_pay_charge_names(self):
+        for name in ("토스페이충전", "네이버페이충전", "카카오페이 충전", "NICE*토스페이충전"):
+            self.assertTrue(classifier.is_pay_charge(name), name)
+        for name in ("네이버페이", "카카오페이택시", "토스", "", None):
+            self.assertFalse(classifier.is_pay_charge(name), name)
+
 
 @patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
 class JudgeTest(SimpleTestCase):
@@ -182,6 +344,7 @@ class JudgeTest(SimpleTestCase):
     def test_multi_item_industry_skips_jev(self):
         result, ask = self.run_judge(("naver", "새봄동물", "편의점"))
         self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
+        self.assertTrue(result["record"]["multi_item"])
         ask.assert_not_called()
 
     def test_non_store_industry_is_not_evidence(self):
@@ -266,3 +429,26 @@ class DeliveryAppTest(SimpleTestCase):
             self.assertEqual(classifier.rule_category(name), "FOOD", name)
         for name in ("배민B마트", "배민B마트 강남점", "배민스토어", "NICE*배민B마트"):
             self.assertTrue(classifier.is_multi_item(name), name)
+
+
+@patch("finance.classifier.judge", return_value=None)
+@patch("finance.classifier.predict", side_effect=fake_predict)
+class ClassifyNamesCommandTest(TestCase):
+    def test_prints_table_and_leaves_nothing_in_db(self, predict, judge):
+        import tempfile
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        with tempfile.TemporaryDirectory() as tmp:
+            names = os.path.join(tmp, "names.txt")
+            with open(names, "w", encoding="utf-8") as f:
+                f.write("루덴치과의원\nGS25 역삼점\n크린토피아세탁\n")
+            out = StringIO()
+            call_command("classify_names", names, stdout=out)
+        text = out.getvalue()
+        self.assertIn("루덴치과의원 | MEDICAL_HEALTH | 4 SVM", text)
+        self.assertIn("GS25 역삼점 | UNCLASSIFIED | 1 다품목", text)
+        self.assertIn("크린토피아세탁 | ETC | 3 규칙", text)
+        self.assertFalse(Tx.objects.exists())
+        self.assertFalse(get_user_model().objects.filter(email__startswith="classify-names-").exists())

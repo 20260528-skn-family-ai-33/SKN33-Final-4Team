@@ -709,6 +709,7 @@ paths:
                     items:
                     - connectionId: 5e0a4c31-334b-498a-a1c5-b3d239c7c120
                       businessType: bank
+                      organizationCode: '0004'
                       organizationName: 국민은행
                       alias: null
                       status: connected
@@ -722,6 +723,7 @@ paths:
                       cardIds: []
                     - connectionId: 91f24d28-b681-434e-b142-5557f345df09
                       businessType: card
+                      organizationCode: '0306'
                       organizationName: 신한카드
                       alias: null
                       status: relogin
@@ -2293,6 +2295,8 @@ paths:
                     categoryName: 생활용품
                   reason: 편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요.
                 classifiedBy: null
+                canApplyToFuture: false
+                wasTransfer: false
                 updatedAt: '2026-10-09T08:05:00+09:00'
         '403':
           description: not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
@@ -2422,6 +2426,8 @@ paths:
                 installmentMonths: 0
                 suggestion: null
                 classifiedBy: user
+                canApplyToFuture: true
+                wasTransfer: false
                 updatedAt: '2026-10-22T09:12:00+09:00'
         '400':
           description: invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
@@ -4312,7 +4318,8 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.
+        기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. budget은 이번 주기 approved 예산이 있을 때만 채우며(초안 제외) 계산은 GET /api/budgets/와 같습니다.
+        쿠션 계산은 아직 없습니다.
 
 
         급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의
@@ -5043,12 +5050,13 @@ paths:
 
 
         지킬 돈 missing·blocked(카드 청구서 미확인 포함)·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend
-        queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 10개에 배분한다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다.
-        proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult:
-        infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과
-        검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다. 이번 주기에 예산(validated·approved)이
-        하나도 없고 자물쇠 때문에 추천이 막히면(자물쇠를 빼면 막히지 않을 때) 추천 전에 이번 주기 자물쇠를 풀고 result.locksReleased에 담는다 — 자물쇠는 예산 화면에서만 풀
-        수 있어 막다른 길이 되기 때문 (P-13 ②). 바꾼 횟수는 늘리지 않는다.
+        queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 배분 대상 카테고리(주거·통신·여행·숙박 제외, R-13)에 배분한다. 예전에
+        걸어 둔 두 카테고리의 최소 금액·자물쇠는 DB에 두되 계산에서 뺀다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다. proposed이면 validated 예산 및 항목을
+        만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업
+        succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과 검증 실패만 failed
+        / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다. 이번 주기에 예산(validated·approved)이 하나도 없고 자물쇠
+        때문에 추천이 막히면(자물쇠를 빼면 막히지 않을 때) 추천 전에 이번 주기 자물쇠를 풀고 result.locksReleased에 담는다 — 자물쇠는 예산 화면에서만 풀 수 있어 막다른 길이
+        되기 때문 (P-13 ②). 바꾼 횟수는 늘리지 않는다.
 
 
         원본: `docs/api/budgets.md`'
@@ -5152,9 +5160,11 @@ paths:
 
         급여일이 없으면 cycle=null이고 unclassifiedCount는 오늘까지 전체 기간을 센다. 예산이 없으면 budget·split·living·overspend·nag=null,
         categories=[], unclassifiedCount는 계산한다. 쓴 돈은 거래 목록의 같은 구매 제외·취소 차감 기준을 재사용하고 소비 중 funding=fixed는 쓴 돈에서 뺀다.
-        unclassifiedCount는 고정비 소비도 포함한다. 미분류·기타도 living.spent에 포함하지만 categories는 11개만 display_order 순서로 표시한다. 초과액은
-        여윳돈으로만 충당한다. salaryConfirmed는 홈 salaryState=received. nag는 보호 카테고리(주거·통신, 교통·차량) 외 자물쇠 changeCount≥3 또는
-        이번 주기 approved_at이 있는 예산≥3일 때 표시한다.
+        unclassifiedCount는 고정비 소비도 포함한다. 쓴 돈 기간은 주기 시작일~오늘(홈·채팅과 같음). 미분류·기타도 living.spent에 포함하고 예산 밖 카테고리(주거·통신·여행·숙박)
+        지출은 living.spent에서 뺀다(R-13). outOfBudget은 그 빼낸 지출을 안내용으로 준다(예산이 없으면 null). budget.engineVersion이 temp-로
+        시작하면 화면에 테스트 추천 표시. categories는 배분 대상 카테고리 + 기타만 display_order 순서로 표시한다. 초과액은 여윳돈으로만 충당한다. salaryConfirmed는
+        홈 salaryState=received. nag는 보호 카테고리(주거·통신, 교통·차량) 외 자물쇠 changeCount≥3 또는 이번 주기 approved_at이 있는 예산≥3일 때
+        표시한다.
 
 
         원본: `docs/api/budgets.md`'
@@ -5176,6 +5186,8 @@ paths:
                       versionNo: 1
                       status: validated
                       salaryConfirmed: false
+                      engineVersion: temp-fallback-1
+                      outOfBudgetAllocated: 0
                     split:
                       funding: 2800000
                       fixed: 770000
@@ -5283,6 +5295,9 @@ paths:
                       reason: null
                     unclassifiedCount: 0
                     nag: null
+                    outOfBudget:
+                      total: 0
+                      categories: []
                 noBudget:
                   value:
                     cycle:
@@ -5295,6 +5310,7 @@ paths:
                     categories: []
                     unclassifiedCount: 3
                     nag: null
+                    outOfBudget: null
                 noPayday:
                   value:
                     cycle: null
@@ -5305,6 +5321,7 @@ paths:
                     categories: []
                     unclassifiedCount: 3
                     nag: null
+                    outOfBudget: null
         '403':
           description: not_authenticated
           content:
@@ -5328,9 +5345,9 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        이번 주기의 validated·approved만 가능하다. 지난 예산은 409 not_ready: 지난 예산은 바꿀 수 없어요. 없는·남의 예산 또는 11개 예산 코드가 아니면 404.
-        true는 주소의 예산 생활비 금액을 저장, false는 lockedAmount=null. 잠금 여부가 바뀔 때만 changeCount+1. 이미 true인데 다른 예산에서 다시 걸면 금액만
-        바뀌며 횟수는 유지한다. 자물쇠 변경은 초안을 만료시키지 않는다.
+        이번 주기의 validated·approved만 가능하다. 지난 예산은 409 not_ready: 지난 예산은 바꿀 수 없어요. 없는·남의 예산 또는 예산 카테고리 코드(배분 대상 + 기타,
+        주거·통신·여행·숙박 제외)가 아니면 404. true는 주소의 예산 생활비 금액을 저장, false는 lockedAmount=null. 잠금 여부가 바뀔 때만 changeCount+1.
+        이미 true인데 다른 예산에서 다시 걸면 금액만 바뀌며 횟수는 유지한다. 자물쇠 변경은 초안을 만료시키지 않는다.
 
 
         원본: `docs/api/budgets.md`'
@@ -5448,9 +5465,9 @@ paths:
         이번 주기에 이미 approved이면 성공으로 현재 상태를 반환한다. 지난 주기 approved·superseded·rejected·draft는 409 not_ready(지난 예산은 승인할
         수 없어요). 카드 첫 청구서 선차감은 다시 계산하지 않고 초안 input_snapshot에 저장한 값으로 검사한다(입력 해시에는 선차감 금액 대신 대상 카드 목록만 포함). expired,
         validated의 주기가 지났거나, 지금의 지킬 돈이 쓸 수 없는 상태(필수 쿠션인데 쿠션 0원 · 저축 최소 미달 · 합계 초과 · missing · blocked)이거나, 입력 해시가
-        다르면 409 expired: 조건이 바뀌어서 다시 추천받아야 해요. 발견한 만료 상태는 409에도 저장하고 실패 요청 번호는 기록하지 않는다. 승인 시 같은 주기 approved를 superseded로
-        바꾸고 이 예산의 approved_at·approval_key를 저장한다. auth.onboardingCompleted는 approved_at이 있는 예산 존재 여부로 계산된다. 자물쇠는
-        만료 해시에서 제외한다.
+        다르거나, 초안의 계산 규칙 버전(policy_version)이 지금과 다르면 409 expired: 조건이 바뀌어서 다시 추천받아야 해요. 발견한 만료 상태는 409에도 저장하고 실패
+        요청 번호는 기록하지 않는다. 승인 시 같은 주기 approved를 superseded로 바꾸고 이 예산의 approved_at·approval_key를 저장한다. auth.onboardingCompleted는
+        approved_at이 있는 예산 존재 여부로 계산된다. 자물쇠는 만료 해시에서 제외한다.
 
 
         원본: `docs/api/budgets.md`'
@@ -5472,6 +5489,8 @@ paths:
                       versionNo: 1
                       status: approved
                       salaryConfirmed: false
+                      engineVersion: temp-fallback-1
+                      outOfBudgetAllocated: 0
                     split:
                       funding: 2800000
                       fixed: 770000
@@ -5579,6 +5598,9 @@ paths:
                       reason: null
                     unclassifiedCount: 0
                     nag: null
+                    outOfBudget:
+                      total: 0
+                      categories: []
         '400':
           description: invalid
           content:
@@ -6073,6 +6095,9 @@ components:
           - card
           - loan
           description: 조회 범위 또는 금융 업권.
+        organizationCode:
+          type: string
+          description: CODEF 기관 코드. 다시 연결(POST /api/finance/connections/)에 그대로 보낸다.
         organizationName:
           type: string
           description: 기관 이름.
@@ -6118,6 +6143,7 @@ components:
       required:
       - connectionId
       - businessType
+      - organizationCode
       - organizationName
       - alias
       - status
@@ -6267,7 +6293,6 @@ components:
           enum:
           - done
           - failed
-          - not_supported
         accountCount:
           type: integer
           minimum: 0
@@ -7402,10 +7427,19 @@ components:
             type: string
             format: date-time
             description: 마지막 수정 시각, 한국 시간 ISO 8601.
+          wasTransfer:
+            type: boolean
+            description: '원래 이체였다가 소비로 바뀐 거래인지 (11/03). true면 화면이 [이체로 되돌리기](category: null)를 보여 준다. 고정지출에 연결된 거래는
+              되돌리기가 400(AA⑤).'
+          canApplyToFuture:
+            type: boolean
+            description: '''앞으로 이 가게 거래도 이 카테고리로'' 체크박스를 보여 줄지 (10/30). 소비 거래이고 원래 이체·다품목 가맹점·페이 충전이 아니면 true.'
         required:
         - installmentMonths
         - suggestion
         - classifiedBy
+        - canApplyToFuture
+        - wasTransfer
         - updatedAt
     TransactionCategoryUpdateRequest:
       type: object
@@ -7418,6 +7452,11 @@ components:
             enum:
             - null
           description: 선택 가능한 10개 카테고리+ETC. null은 원래 이체였고 고정지출 연결이 없는 거래를 transfer로 복원할 때만 허용. UNCLASSIFIED 금지.
+        applyToFuture:
+          type: boolean
+          default: false
+          description: true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고
+            재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래.
       required:
       - category
       additionalProperties: false
@@ -8282,9 +8321,70 @@ components:
         budget:
           type: object
           nullable: true
-          enum:
-          - null
-          description: 1차 명세는 항상 null. 예산 영역은 ML 후 별도 확정.
+          description: 이번 주기 승인 예산 (없으면 null). docs/api/home.md ⑤
+          properties:
+            budgetId:
+              type: string
+              format: uuid
+            versionNo:
+              type: integer
+            livingBudget:
+              type: integer
+              description: 승인 생활비
+            livingLeft:
+              type: integer
+              description: 남은 생활비 (0 미만 없음)
+            livingPct:
+              type: integer
+              description: 사용률 % 반올림, 100 초과 가능
+            spare:
+              type: integer
+              description: 남은 여윳돈
+            daily:
+              type: integer
+              nullable: true
+              description: livingLeft ÷ daysLeft 버림. 마지막 날 null
+            daysLeft:
+              type: integer
+              description: 다음 월급날 − 오늘 − 1
+            outOfBudgetAllocated:
+              type: integer
+              description: 이전 기준 예산의 주거·통신·여행·숙박 배정 합계 (N-F1). 0보다 크면 재추천 안내
+            outOfBudget:
+              type: object
+              description: 예산 밖 지출 안내 (계산에 안 넣음)
+              properties:
+                total:
+                  type: integer
+                categories:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      category:
+                        type: string
+                        enum:
+                        - HOUSING_TELECOM
+                        - TRAVEL_LODGING
+                      spent:
+                        type: integer
+                    required:
+                    - category
+                    - spent
+              required:
+              - total
+              - categories
+          required:
+          - budgetId
+          - versionNo
+          - livingBudget
+          - livingLeft
+          - livingPct
+          - spare
+          - daily
+          - daysLeft
+          - outOfBudget
+          - outOfBudgetAllocated
       required:
       - period
       - balance
@@ -9045,6 +9145,8 @@ components:
       - versionNo
       - status
       - salaryConfirmed
+      - engineVersion
+      - outOfBudgetAllocated
       properties:
         budgetId:
           type: string
@@ -9060,6 +9162,15 @@ components:
           - approved
         salaryConfirmed:
           type: boolean
+        engineVersion:
+          type: string
+          nullable: true
+          description: 계산 엔진 버전. temp-로 시작하면 임시 비율 추천(화면 '테스트 추천')
+        outOfBudgetAllocated:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 이전 기준 예산의 주거·통신·여행·숙박 생활비 배정 합계. 0보다 크면 재추천 안내 (N-F1)
       additionalProperties: false
       nullable: true
     BudgetSplit:
@@ -9208,6 +9319,7 @@ components:
       - categories
       - unclassifiedCount
       - nag
+      - outOfBudget
       properties:
         cycle:
           $ref: '#/components/schemas/BudgetCycleSummary'
@@ -9230,6 +9342,36 @@ components:
         nag:
           type: string
           nullable: true
+        outOfBudget:
+          type: object
+          nullable: true
+          additionalProperties: false
+          description: 예산 밖 지출 안내(계산에 안 넣음). 예산이 없으면 null
+          required:
+          - total
+          - categories
+          properties:
+            total:
+              type: integer
+              format: int64
+              minimum: 0
+            categories:
+              type: array
+              items:
+                type: object
+                additionalProperties: false
+                required:
+                - category
+                - spent
+                properties:
+                  category:
+                    type: string
+                    enum:
+                    - HOUSING_TELECOM
+                    - TRAVEL_LODGING
+                  spent:
+                    type: integer
+                    format: int64
       additionalProperties: false
     BudgetLockRequest:
       type: object
@@ -9407,15 +9549,15 @@ components:
 x-source-sha256:
   docs/API_RULES.md: 5a862eacd4fddf7e0e26bc290b0fbc99995fbfa5f8b48c575b831a5ade53e952
   docs/api/README.md: f43501b82b906923224ebe8010ebeacdb0276c1304b8fa24b38106bcaf4aa0b4
-  docs/api/spending-analysis.md: c8a479b72f10d6e222a36bc6892ac901980f0e4aac8d94c2998fb7ffd56344b9
+  docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c
-  docs/api/finance-connect.md: 2e21b4763d4af0b089d86d89d992db76e92a6b187fb84d64f75fe7fdcc33e213
+  docs/api/finance-connect.md: 6081ac66a61ba8a61a9cede014a06195d37e3b9ec7e99ff4f1791ab441c5ea3e
   docs/api/cards.md: 3fb0ff75f9d446a535ced2bc166091483b05b4b7f3e5af1715bf1e4272c9701d
   docs/api/loans.md: 5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c
-  docs/api/transactions.md: 47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88
-  docs/api/fixed.md: 76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115
-  docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
-  docs/api/home.md: 8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99
-  docs/api/chat.md: e841a20e4a8577141cb830600aa55619bba3f8116edb883c4f4ef95d9c3b0033
-  docs/api/budgets.md: 890afd291ca79a1288c57c70e11663ccbe3c21aa143983d82742b67583dd6aa4
+  docs/api/transactions.md: 8f8329c37b3536e515f229ea2ca203ad4dbc985bc8c11c66caa32bee4b02220b
+  docs/api/fixed.md: 0cc56bad79052eb5dd00f766b5eb2a52400c6a1b6ecd176e71db7cde86211800
+  docs/api/savings.md: 391dc532b0c9b6a694566770cb983c7423817bec4004265d20387320435b0782
+  docs/api/home.md: 19c10e6d9969d9d9c4bcde0c8c81021abb06ae4dafe28fdf11299ec6c119904c
+  docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5
+  docs/api/budgets.md: 38e66a1c6e872c23540169a85e534a4589d0376a8b310464eb8b0496578d115b

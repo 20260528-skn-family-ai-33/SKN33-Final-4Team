@@ -28,6 +28,7 @@ export const CAT_NAMES = SPEND_CATS.map((c) => c.name)                       // 
 export const OUT_OF_BUDGET = ['HOUSING_TELECOM', 'TRAVEL_LODGING']
 export const PRIORITY_CATS = SPEND_CATS.filter((c) => !OUT_OF_BUDGET.includes(c.code)).map((c) => c.name)  // 소비 우선순위 (예산 대상만, 기타 없음)
 export const BUDGET_CATS = [...PRIORITY_CATS, ...(ETC.budget ? [ETC.name] : [])]  // 예산 칸이 있는 카테고리 (최소 금액 · 조정)
+export const MIN_CATS = BUDGET_CATS  // 프로필 최소 금액: 배분 대상 8개 + 기타
 export const PICK_CATS = [...CAT_NAMES, ETC.name]                           // 사용자가 거래 카테고리를 고를 때
 
 // 항목 이름으로 카테고리 미리 고르기 (고정지출 추가 등) — 못 찾으면 null, 사용자가 직접 고른다

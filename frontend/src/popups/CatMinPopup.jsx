@@ -6,19 +6,19 @@ import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import Icon from '../components/Icon.jsx'
-import { BUDGET_CATS, catIcon } from '../utils/categories.js'
+import { MIN_CATS, catIcon } from '../utils/categories.js'
 import { comma, won } from '../utils/money.js'
 
 const PER_PAGE = 5
-const PAGES = Math.ceil(BUDGET_CATS.length / PER_PAGE)
+const PAGES = Math.ceil(MIN_CATS.length / PER_PAGE)
 
 // props: value = { 식비: 300000, ... } 지금 설정값 / onSave(next) = 저장 누르면 새 값을 돌려준다
 export default function CatMinPopup({ value = {}, onSave }) {
   const { closePopup } = usePopup()
   const [page, setPage] = useState(0)
-  const shown = BUDGET_CATS.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE)
+  const shown = MIN_CATS.slice(page * PER_PAGE, page * PER_PAGE + PER_PAGE)
   // 입력칸 글자 그대로 들고 있다가 저장할 때 숫자로 바꾼다 (쉼표 표시용)
-  const [draft, setDraft] = useState(() => Object.fromEntries(BUDGET_CATS.map((c) => [c, value[c] ? comma(value[c]) : ''])))
+  const [draft, setDraft] = useState(() => Object.fromEntries(MIN_CATS.map((c) => [c, value[c] ? comma(value[c]) : ''])))
   const onType = (cat, raw) => {
     const digits = raw.replace(/\D/g, '').replace(/^0+/, '').slice(0, 10)
     setDraft((now) => ({ ...now, [cat]: digits ? comma(digits) : '' }))
@@ -56,7 +56,7 @@ export default function CatMinPopup({ value = {}, onSave }) {
           <button type="button" aria-label="이전 카테고리" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
           <span className="mc-min-dots">
             {Array.from({ length: PAGES }, (_, i) => {
-              const has = BUDGET_CATS.slice(i * PER_PAGE, i * PER_PAGE + PER_PAGE).some((c) => draft[c])
+              const has = MIN_CATS.slice(i * PER_PAGE, i * PER_PAGE + PER_PAGE).some((c) => draft[c])
               return <button type="button" key={i} aria-label={`${i + 1}쪽`} aria-current={i === page} className={has ? 'has' : undefined} onClick={() => setPage(i)}></button>
             })}
           </span>

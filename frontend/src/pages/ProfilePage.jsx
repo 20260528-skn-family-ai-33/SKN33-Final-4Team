@@ -2,20 +2,26 @@
 // 생년월일을 넣으면 만 나이를, 우선순위를 누르면 순위 번호를 바로 보여 준다
 // 카테고리 최소 금액(선택)은 팝업에서 받는다 — 우선순위와 상관없이 어느 카테고리든 (2026-10-21)
 // 자취 여부(필수)로 지킬 돈 비율이 정해진다 — 고르면 비율을 바로 보여 준다 (2026-10-27, utils/direction.js)
+// GET · PUT /api/profile/ (docs/api/profile.md). 서버 값이 기준 — 저장에 성공해야 다음 화면으로 간다 (11/03 S1)
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
+import ApiStatus from '../components/ApiStatus.jsx'
 import { usePicked } from '../utils/usePicked.js'
-import { PRIORITY_CATS as CATS, BUDGET_CATS } from '../utils/categories.js'
+import { PRIORITY_CATS as CATS, MIN_CATS, SPEND_CATS, ETC, catName } from '../utils/categories.js'
 import { usePopup } from '../popups/context.js'
 import CatMinPopup from '../popups/CatMinPopup.jsx'
 import { manwon } from '../utils/adjust.js'
-import { HOUSING, HOUSING_KEYS, loadHousing, rateLine, saveHousing } from '../utils/direction.js'
+import { apiSend, useApi } from '../utils/api.js'
+import { HOUSING, HOUSING_KEYS, rateLine } from '../utils/direction.js'
 import { PATHS } from '../routes.js'
 
-const GENDERS = ['남성', '여성']
-const CARS = [['yes', '차가 있어요', '자차 보유'], ['no', '차가 없어요', '대중교통 · 기타']]
+// 화면 이름 ↔ API 코드 (docs/api/profile.md '보내는 값')
+const GENDERS = [['male', '남성'], ['female', '여성']]
+const CARS = [[true, '차가 있어요', '자차 보유'], [false, '차가 없어요', '대중교통 · 기타']]
+const CODE_BY_NAME = Object.fromEntries([...SPEND_CATS, ETC].map((c) => [c.name, c.code]))
+const birthDigits = (iso) => (iso ? iso.slice(2).replaceAll('-', '') : '')  // '1999-03-15' → '990315'
 
 // 990315 → { age: 만 나이, band: '20대 후반', y, mm, dd } / 잘못된 날짜면 { bad: true } / 6자리 전이면 null
 function ageInfo(raw) {
@@ -39,30 +45,62 @@ function prioStatus(n) {
 }
 
 export default function ProfilePage() {
+  const { data, error } = useApi('/api/profile/')
+  if (!data) return <Layout title="내 정보 입력" showBack><ApiStatus error={error} /></Layout>
+  return <ProfileForm saved={data} />
+}
+
+// 서버 값으로 처음 채운 뒤 고친다
+function ProfileForm({ saved }) {
   const navigate = useNavigate()
-  const [birth, setBirth] = useState('')
-  const [gender, setGender] = useState(null)
-  const [car, setCar] = useState(null)
-  const [housing, setHousing] = useState(loadHousing)  // 'alone' | 'family'
+  const [birth, setBirth] = useState(() => birthDigits(saved.birthDate))
+  const [gender, setGender] = useState(saved.gender)  // 'male' | 'female' | null
+  const [car, setCar] = useState(saved.hasCar)  // true | false | null
+  const [housing, setHousing] = useState(saved.housingType)  // 'alone' | 'family' | null
   const [error, setError] = useState('')
-  const prio = usePicked()  // 누른 순서 = 우선순위
+  const [busy, setBusy] = useState(false)
+  // 누른 순서 = 우선순위 (응답은 순위순). 예산에서 뺀 카테고리의 예전 순위는 빼고, 저장할 때 남은 순서대로 1위부터 다시 매긴다
+  const prio = usePicked(saved.priorities.map((p) => catName(p.category)).filter((c) => CATS.includes(c)))
   const { openPopup } = usePopup()
-  const [mins, setMins] = useState({})  // 카테고리 최소 금액 { 식비: 300000 } — 설정한 것만
-  const minList = BUDGET_CATS.filter((c) => mins[c])  // 카테고리 순서대로
+  // 카테고리 최소 금액 { 식비: 300000 } — 설정한 것만
+  const [mins, setMins] = useState(() => Object.fromEntries(saved.categoryMinimums.map((m) => [catName(m.category), m.minAmount])))
+  const minList = MIN_CATS.filter((c) => mins[c])  // 카테고리 순서대로. 예산에서 뺀 카테고리의 예전 값은 다시 보내지 않는다
 
   const a = ageInfo(birth)
-  const onSubmit = (e) => {
+  const onSubmit = async (e) => {
     e.preventDefault()
-    if (!housing) { setError('자취 여부를 골라 주세요. 지킬 돈을 나누는 기준이에요.'); return }
-    saveHousing(housing)
-    navigate(PATHS.connect)  // 저장은 API 연결 후
+    if (busy) return
+    const missing = !a || a.bad ? '생년월일 6자리를 확인해 주세요.'
+      : !gender ? '성별을 골라 주세요.'
+      : !housing ? '자취 여부를 골라 주세요. 지킬 돈을 나누는 기준이에요.'
+      : car === null ? '자차 보유 여부를 골라 주세요.'
+      : prio.list.length < 3 ? '소비 우선순위를 3개 이상 골라 주세요.' : ''
+    if (missing) { setError(missing); return }
+    setBusy(true)
+    setError('')
+    try {
+      await apiSend('/api/profile/', 'PUT', {
+        birthDate: `${a.y}-${String(a.mm).padStart(2, '0')}-${String(a.dd).padStart(2, '0')}`,
+        gender,
+        housingType: housing,
+        hasCar: car,
+        priorities: prio.list.map((name, i) => ({ category: CODE_BY_NAME[name], rank: i + 1 })),
+        categoryMinimums: minList.map((name) => ({ category: CODE_BY_NAME[name], minAmount: mins[name] })),
+      })
+      navigate(PATHS.connect)
+    } catch (err) {
+      // 칸별 오류가 있으면 첫 문장을 보여 준다. 입력값은 그대로 둔다
+      const first = Object.values(err.fields ?? {}).flat().find((m) => typeof m === 'string')
+      setError(first ?? err.message)
+      setBusy(false)
+    }
   }
 
   return (
     <Layout
       title="내 정보 입력"
       showBack
-      foot={<button className="mc-primary" form="mc-form" type="submit">저장하고 계속</button>}
+      foot={<button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '저장 중…' : '저장하고 계속'}</button>}
     >
       <StepBar step={1} />
       <div className="mc-eyebrow">내 정보 입력</div>
@@ -88,7 +126,7 @@ export default function ProfilePage() {
           <div>
             <h2 className="mc-mini-h">성별</h2>
             <div className="mc-seg mc-seg-sm">
-              {GENDERS.map((g) => <button key={g} type="button" aria-pressed={gender === g} onClick={() => setGender(g)}>{g}</button>)}
+              {GENDERS.map(([k, label]) => <button key={k} type="button" aria-pressed={gender === k} onClick={() => setGender(k)}>{label}</button>)}
             </div>
             <p className="mc-mini-note">본인 성별</p>
           </div>
@@ -112,7 +150,7 @@ export default function ProfilePage() {
           <h2>자차 보유</h2>
           <div className="mc-seg">
             {CARS.map(([k, label, sub]) => (
-              <button key={k} type="button" aria-pressed={car === k} onClick={() => setCar(k)}><strong>{label}</strong><small>{sub}</small></button>
+              <button key={label} type="button" aria-pressed={car === k} onClick={() => setCar(k)}><strong>{label}</strong><small>{sub}</small></button>
             ))}
           </div>
         </div>
