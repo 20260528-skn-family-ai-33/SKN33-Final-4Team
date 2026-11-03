@@ -1,4 +1,5 @@
 // 계좌 연결 1: 은행·카드사 고르기
+// [선택한 기관 연결하기] = 금융 조회 동의 저장(POST /api/finance/consents/) 성공 후 기관 로그인 화면으로 (11/03 S2)
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -9,6 +10,10 @@ import { BANKS, CARDS, EXTRA, NOT_SUPPORTED } from '../utils/institutions.js'
 import { usePopup } from '../popups/context.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
 import { FINANCE_TERMS, TERMS } from '../popups/termsText.js'
+import { apiSend, newRequestKey } from '../utils/api.js'
+
+// 동의 키 → 서버 조회 범위 (docs/api/finance-connect.md '금융 조회 동의 저장')
+const SCOPE = { financeBank: 'bank', financeCard: 'card', financeLoan: 'loan' }
 
 const LOAN_ANSWERS = ['있어요', '없어요', '나중에 확인']
 
@@ -44,8 +49,9 @@ function PickCard({ title, hint, items, picked, moreLabel, notSupported = [] }) 
 export default function ConnectPage() {
   const navigate = useNavigate()
   const [hasLoan, setHasLoan] = useState(null)
-  const banks = usePicked(['신한은행', '국민은행'])
-  const cards = usePicked(['신한카드'])
+  const banks = usePicked()
+  const cards = usePicked()
+  const [busy, setBusy] = useState(false)
   const { openPopup } = usePopup()
   // 동의 3개: 계좌 필수 · 카드 선택 · 대출 선택 { financeBank: true/false, ... }
   const [consent, setConsent] = useState(() => Object.fromEntries(FINANCE_TERMS.map((k) => [k, false])))
@@ -60,17 +66,26 @@ export default function ConnectPage() {
     .filter((x) => (banks.has(x.name) || cards.has(x.name)) && (EXTRA[x.name]?.note || !x.idLogin))
     .map((x) => [x.name, x.idLogin ? EXTRA[x.name].note : '공동인증서로만 연결돼요. (공동인증서 로그인은 준비 중)'])
 
-  const next = () => {
+  const next = async () => {
+    if (busy) return
     if (banks.list.length === 0) return setError('연결할 은행을 1곳 이상 골라 주세요.')
     if (!consent.financeBank) return setError('은행 계좌 정보 조회는 꼭 동의해야 해요.')
     if (cards.list.length > 0 && !consent.financeCard) return setError('카드를 연결하려면 카드 정보 조회에 동의해 주세요. 카드는 나중에 연결해도 돼요.')
+    setBusy(true)
+    try {
+      // 같은 범위 · 같은 문서 버전의 동의가 이미 있으면 서버가 새로 만들지 않는다 (N⑥)
+      await apiSend('/api/finance/consents/', 'POST', {
+        consents: FINANCE_TERMS.filter((k) => consent[k]).map((k) => ({ purpose: 'finance_inquiry', productScope: SCOPE[k], documentVersion: TERMS[k].version })),
+      }, { requestKey: newRequestKey() })
+    } catch (err) {
+      setBusy(false)
+      return setError(err.message)
+    }
+    // 고른 기관을 다음 화면(기관 로그인)으로 넘긴다. 화면 순서대로
     navigate(PATHS.connectAuth, {
-      // 고른 기관을 다음 화면(기관 로그인)으로 넘긴다. 화면 순서대로
-      // consent: 다음 단계에서 대출을 불러올지 등에 쓴다 (저장은 API 연결 후 동의 기록 consent 테이블에 목적별로)
       state: {
         banks: BANKS.filter((b) => banks.has(b.name)).map((b) => b.name),
         cards: CARDS.filter((c) => cards.has(c.name)).map((c) => c.name),
-        consent,
       },
     })
   }
@@ -79,7 +94,7 @@ export default function ConnectPage() {
     <Layout
       title="계좌 연결"
       showBack
-      foot={<button type="button" className="mc-primary" onClick={next}>선택한 기관 연결하기</button>}
+      foot={<button type="button" className="mc-primary" disabled={busy} onClick={next}>{busy ? '동의 저장 중…' : '선택한 기관 연결하기'}</button>}
     >
       <StepBar step={2} />
       <div className="mc-eyebrow">계좌 연결</div>
@@ -121,7 +136,6 @@ export default function ConnectPage() {
         ))}
         <p className="mc-picked mc-consent-note">선택 동의를 하지 않아도 계좌로 예산을 짤 수 있어요. 대출에 동의하지 않으면 대출 정보는 불러오지 않아요.</p>
       </div>
-      <p className="mc-note">시안에서는 실제 인증 정보나 계좌 정보를 받지 않아요.</p>
       {error && <div className="mc-error" role="alert">{error}</div>}
     </Layout>
   )

@@ -91,6 +91,9 @@ class ConnectBase(TestCase):
         sync = patch("finance.api_new_connection.sync_bank", side_effect=self.fake_sync)
         self.sync = sync.start()
         self.addCleanup(sync.stop)
+        card_sync = patch("finance.api_new_connection.sync_card", return_value={})
+        self.card_sync = card_sync.start()
+        self.addCleanup(card_sync.stop)
 
     def fake_sync(self, user, cid, org, start, end, connection_id=None, require_consent=False):
         conn = Connection.objects.get(user=user, organization_code=org, disconnected_at=None)
@@ -225,6 +228,24 @@ class NewConnectionTest(ConnectBase):
         self.fake.responses = [fail("CF-90002", "기관 점검 중"), {}]
         self.assertEqual(self.post(bank("0088"), bank("0004")).status_code, 502)
 
+    def test_card_connection_loads_cards_with_request_card_values(self):
+        # 11/03 S2: 카드 후보 GET 이 저장된 카드만 읽으므로 연결 직후 sync_card 로 카드 · 승인 · 청구서를 받는다
+        self.fake.responses = [ok("cid-3")]
+        item = self.post(card("0302", cardNo="4111222233334444", cardPassword="1234")).json()["results"][0]
+        conn = Connection.objects.get(user=self.user)
+        self.assertEqual((item["status"], item["syncStatus"], item["accountCount"]), ("connected", "done", None))
+        args, kwargs = self.card_sync.call_args
+        self.assertEqual((args[1], args[2]), ("cid-3", "0302"))
+        self.assertEqual((kwargs["card_no"], kwargs["card_password"], kwargs["connection_id"]), ("4111222233334444", "1234", conn.pk))
+        self.sync.assert_not_called()
+
+        self.card_sync.side_effect = RuntimeError("조회 실패")
+        Connection.objects.all().delete()
+        self.fake.responses = [ok("cid-3")]
+        item = self.post(card("0302", cardNo="4111222233334444", cardPassword="1234")).json()["results"][0]
+        self.assertEqual((item["status"], item["syncStatus"]), ("connected", "failed"))  # 불러오기 실패해도 연결은 남김
+        self.assertEqual(Connection.objects.get().status, "connected")
+
     def test_sync_failure_keeps_connection(self):
         self.fake.responses = [ok("cid-1")]
         self.sync.side_effect = RuntimeError("조회 실패")
@@ -250,7 +271,8 @@ class SmsAuthTest(ConnectBase):
         self.fake.responses = [ok("cid-7")]
         res = self.post(card(smsAuth={"authToken": first["smsAuth"]["authToken"], "code": "123456"}))
         item = res.json()["results"][0]
-        self.assertEqual((item["status"], item["organizationName"], item["syncStatus"]), ("connected", "롯데카드", "not_supported"))
+        # 11/03: 카드사도 연결 직후 카드 · 승인 · 청구서를 불러온다 (sync_card)
+        self.assertEqual((item["status"], item["organizationName"], item["syncStatus"]), ("connected", "롯데카드", "done"))
         kind, path, params = self.fake.calls[-1]
         self.assertEqual((kind, path), ("certification", "/v1/account/create"))
         self.assertEqual((params["smsAuthNo"], params["is2Way"]), ("123456", True))

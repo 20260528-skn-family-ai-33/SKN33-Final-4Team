@@ -8,6 +8,7 @@
 - 모델 파일이 없으면 예외 → 파이프라인이 실패로 기록하고 다음 동기화 때 다시 시도한다
 - 5단계는 .env 에 TYPESAFE_API_KEY · JEV_MODEL 이 있을 때만 돈다. 없으면 4단계 결과로 '확인 필요'
 """
+import csv
 import functools
 import json
 import logging
@@ -26,7 +27,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice
+from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,9 @@ ROOT = Path(settings.BASE_DIR).parent
 MODEL_PATH = Path(os.getenv("SPENDING_MODEL_PATH") or ROOT / "local_workspace/models/spending_classifier/artifacts/content_policy_svm/spending_category_svm.joblib")
 THRESHOLD = 0.85  # 임시: 상가정보 검증에서 자동 확정 정확도 98.5%. 실거래 표본으로 다시 정함
 JEV_THRESHOLD = 0.9  # 임시: Jev confidence 기준. 정답 붙인 실거래 표본으로 다시 정함
+# 동명 충돌 목록 (분류 워크플로 10/26 4장): 상가 데이터에서 같은 이름에 다른 카테고리가 붙은 상호.
+# 혜리 님 prepare_data.py 가 만드는 label_conflicts.csv (정리한 이름 기준). 모델처럼 Git 에 없다. 다른 곳이면 .env 의 SPENDING_CONFLICTS_PATH
+CONFLICTS_PATH = Path(os.getenv("SPENDING_CONFLICTS_PATH") or ROOT / "local_workspace/models/spending_classifier/label_conflicts.csv")
 
 # '확인 필요' 이유 문장 (사유별 템플릿)
 REVIEW_REASON = "가게 이름만으로는 카테고리를 정하기 어려워요."
@@ -44,13 +48,26 @@ NOT_FOUND_REASON = "가게 정보를 찾지 못해 카테고리를 정하지 못
 UNSURE_REASON = "가게 정보를 찾았지만 카테고리를 확실히 정하지 못했어요."
 LOOKUP_FAILED_REASON = "가게 정보를 확인하지 못했어요. 직접 골라 주세요."
 PAY_CHARGE_REASON = "페이 충전이라 무엇에 썼는지 골라 주세요."
+CONFLICT_REASON = "같은 이름의 다른 업종 가게가 있어 카테고리를 정하지 못했어요."
+USER_DIFFERS_REASON = "전에 이 가게를 다른 카테고리로 고르셨어요. 이번 거래도 확인해 주세요."
 
 # 토스·네이버페이 등 충전 출금 (10/30): 충전 뒤 무엇을 샀는지는 페이 안에만 있어서 사용자에게 묻는다
-# link_basics(혜리)가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
+# link_basics가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
 PAY_CHARGE = re.compile(r"(페이|머니|pay)충전")
+
+# 상호처럼 안 생긴 이름: SVM 은 뜻 없는 이름도 식비로 확신해서(11/02 실거래 비식별거래처 5건 식비 0.85~0.91) SVM·검색 전에 거른다
+# shortcut: 아는 표기만 (비식별 처리된 이름, 숫자뿐인 이름, 한 글자). 실거래에서 새 표기가 보이면 추가
+UNKNOWN_STORE = re.compile(r"비식별|거래처\d+$|^\d*$")
+UNKNOWN_STORE_REASON = "가게 이름을 알 수 없어 카테고리를 정하지 못했어요."
 
 # 결제대행(PG) 접두어: 'NICE*쿠팡' → '쿠팡'
 PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
+# 결제수단 꼬리표: '멜론_카카오페이' → '멜론', 'Apple_KCP' → 'Apple' (11/02 실거래 명세)
+# shortcut: 확인된 결제수단만. 실거래에서 새 꼬리표가 보이면 추가
+PAY_SUFFIX = re.compile(r"_(카카오페이|네이버페이|토스페이|kcp)$", re.IGNORECASE)
+# 결제대행 이름이 '-'·'_'로 붙는 표기: 'KCP-쿠팡_쿠팡' → '쿠팡_쿠팡', '이니시스(빌링)_3_레벨업 피시방' → '레벨업 피시방' (11/02 카드 명세)
+# shortcut: 확인된 결제대행사만. 실거래에서 새 표기가 보이면 추가
+PG_NAMED_PREFIX = re.compile(r"^(kcp|kg이니시스|이니시스|nice|ksnet|토스페이먼츠)(\([^)]*\))?[-_](\d+_)?", re.IGNORECASE)
 
 # ----- 1. 다품목 -----
 # 다품목(편의점·마트·종합몰)은 정책상 사용자 선택. 과거 선택은 후보로만 보여 주고 자동 적용하지 않는다 (분류 워크플로 10/26 단계 2)
@@ -92,6 +109,19 @@ ETC_SUFFIXES = (
     "펫샵", "애견용품", "원단",
 )
 ETC_KEYWORDS = ("연회비", "보험")
+# 택시 (11/02): 이름에 '택시'만 들어 있으면 택시파스타·피자택시 같은 식당도 걸려서(카카오 장소 193곳 중 식당 6곳),
+# '개인택시'가 들어 있거나 '택시'가 띄어 쓴 한 낱말일 때만. 택시조합·조합 금고는 소비처가 아니라 뺀다
+TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
+NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
+# PC방 = 문화·여가 (분류 기준 2장). 표기가 피시방·PC방 둘 다
+CULTURE_KEYWORDS = ("피시방", "pc방")
+# 검증된 브랜드 = 식비 (11/02): SVM 확신이 낮고(0.81~0.84) 검색하면 다른 지점·본사가 자주 나와서(7건 중 5건) 이름으로 정한다
+# 앱 충전은 '스타벅스계좌'로 찍힘. '들어 있으면'이 아니라 '시작하면' (카카오 장소 256곳 중 '홍단헤어 스타벅스점' 같은 미용실 제외)
+FOOD_BRANDS = ("스타벅스", "starbucks")
+# 한 이름으로 여러 서비스가 찍히는 곳 (애플: 음악·iCloud·앱·TV+). 무엇에 썼는지 몰라 '확인 필요' + 문화·여가 후보 (11/02 결정)
+# 다품목과 달리 사용자가 '앞으로도 적용'을 고르면 다음부터 그 카테고리로 자동 분류
+MIXED_SERVICE_NAMES = {"apple", "appleservices"}
+MIXED_SERVICE_REASON = "애플 결제는 음악·저장공간·앱이 같은 이름으로 찍혀서 무엇에 썼는지 골라 주세요."
 
 # ----- 5. 검색 + Jev -----
 # Jev 선택지 = 10개 + 기타 + 판단 보류 (10/30 결정). 설명은 분류 기준 문서 2장
@@ -118,8 +148,9 @@ NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은�
 
 
 def store_name(name):
-    """결제대행 접두어를 뗀 가맹점명. 없으면 None"""
-    return PG_PREFIX.sub("", name or "").strip() or None
+    """결제대행 접두어·결제수단 꼬리표를 뗀 가맹점명. 없으면 None"""
+    name = PG_NAMED_PREFIX.sub("", PG_PREFIX.sub("", name or "").strip())
+    return PAY_SUFFIX.sub("", name).strip() or None
 
 
 @functools.cache
@@ -128,6 +159,17 @@ def _estimator():
     if bundle["normalization_version"] != common.NORMALIZATION_VERSION:
         raise RuntimeError("모델과 이름 정리 규칙 버전이 다릅니다")
     return bundle["estimator"]
+
+
+@functools.cache
+def conflict_names():
+    """동명 충돌 상호(정리한 이름) 집합. 파일이 없으면 빈 집합 — 충돌 차단 없이 지금처럼 동작한다
+    shortcut: 파일에 정리 규칙 버전이 없어 모델과 같은 버전인지 확인하지 못한다. 혜리 님 파일에 버전이 생기면 모델처럼 검사"""
+    if not CONFLICTS_PATH.exists():
+        logger.warning("동명 충돌 목록이 없어 충돌 차단을 건너뜀: %s", CONFLICTS_PATH.name)
+        return frozenset()
+    with CONFLICTS_PATH.open(encoding="utf-8-sig", newline="") as f:
+        return frozenset(row["name"] for row in csv.DictReader(f))
 
 
 def predict(names):
@@ -151,6 +193,11 @@ def is_multi_item(name):
             or any(pattern.match(name) for pattern in MULTI_ITEM_PATTERNS))
 
 
+def is_unknown_store(name):
+    normalized = common.normalize_name(store_name(name) or "")
+    return len(normalized) < 2 or bool(UNKNOWN_STORE.search(normalized))
+
+
 def is_pay_charge(name):
     return bool(PAY_CHARGE.search(common.normalize_name(store_name(name) or "")))
 
@@ -160,6 +207,12 @@ def rule_category(name):
     normalized = common.normalize_name(name)
     if transport_rule(name, "N"):  # 혜리 님 교통 적요 규칙. 'N' = 소비로 정해진 거래 (분류 대상은 이미 소비)
         return "TRANSPORT_CAR"
+    if ("개인택시" in normalized or TAXI_WORD.search(name)) and not any(w in normalized for w in NOT_TAXI_WORDS):
+        return "TRANSPORT_CAR"
+    if any(keyword in normalized for keyword in CULTURE_KEYWORDS):
+        return "CULTURE_LEISURE"
+    if normalized.startswith(FOOD_BRANDS):
+        return "FOOD"
     if normalized in CORPORATE_NAMES:
         return CORPORATE_NAMES[normalized]
     if normalized in CONTENT_PLATFORMS or normalized in SUBSCRIPTION_NAMES or normalized.startswith(SUBSCRIPTION_PREFIXES):
@@ -272,8 +325,8 @@ def classify(user, txs):
         name = store_name(tx.merchant_name)
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
         code, future = last_user_choice(user, tx.merchant_name)
-        if is_multi_item(name):
-            # 다품목은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
+        if is_multi_item(name) or seen_multi_item(user, tx.merchant_name):
+            # 다품목(이름 사전 또는 같은 가게의 지난 검색 업종)은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
             _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
         elif is_pay_charge(name):
             # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
@@ -281,32 +334,49 @@ def classify(user, txs):
         elif code and future:
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
+        elif common.normalize_name(name or "") in MIXED_SERVICE_NAMES:
+            # 과거 선택(앞으로도 적용 아님)이 있으면 첫 후보로
+            candidates = [c for c in dict.fromkeys((code, "CULTURE_LEISURE")) if c]
+            _review(tx, [(c, None) for c in candidates], MIXED_SERVICE_REASON, Tx.ClassificationSource.RULE)
         elif name and (rule := rule_category(name)):
             _apply(tx, rule, Tx.ClassificationSource.RULE, None)
+        elif name and is_unknown_store(name):
+            _review(tx, [], UNKNOWN_STORE_REASON, None)
         else:
             if name:
-                for_ml.append((tx, name))
+                for_ml.append((tx, name, code))
             continue
         changed.append(tx)
 
-    for (tx, name), top in zip(for_ml, predict([name for _, name in for_ml])):
+    for (tx, name, past), top in zip(for_ml, predict([name for _, name, _ in for_ml])):
         if not top:
             continue
         code, confidence = top[0]
-        if confidence >= THRESHOLD:
-            _apply(tx, code, Tx.ClassificationSource.ML, confidence)
+        # 동명 충돌이면 SVM 이 확신해도 확정하지 않고 검색+Jev 로 (분류 워크플로 10/26 3단계·4장)
+        conflict = common.normalize_name(name) in conflict_names()
+        if confidence >= THRESHOLD and not conflict:
+            _apply_unless_user_differs(tx, code, Tx.ClassificationSource.ML, confidence, past, top)
         else:
             # shortcut: 거래 잠금 안에서 외부 API 를 부른다. record 의 ms 로 시간을 재고 길면 잠금 밖으로 옮길지 팀 회의 (메모 참고)
             result = judge(name)
             if result is None:
-                _review(tx, top, REVIEW_REASON, Tx.ClassificationSource.ML)
+                _review(tx, top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
+            elif "apply" in result and conflict:
+                # 동명 충돌: 검색 이름이 같아도 동명 가게 중 어느 곳의 거래인지 모른다 → Jev 답은 후보로만 (PR #68 리뷰)
+                # shortcut: 지금 입력(이름뿐)으로는 구별 근거가 없다. 카드 응답에 주소·업종 코드가 생기면 그걸로 풀기
+                code, confidence = result["apply"]
+                candidates = [(code, confidence)] + [(c, p) for c, p in top if c != code]
+                if past:
+                    candidates = [(past, None)] + [(c, p) for c, p in candidates if c != past]
+                _review(tx, candidates[:3], CONFLICT_REASON, Tx.ClassificationSource.LLM)
             elif "apply" in result:
                 code, confidence = result["apply"]
-                _apply(tx, code, Tx.ClassificationSource.LLM, confidence)
+                _apply_unless_user_differs(tx, code, Tx.ClassificationSource.LLM, confidence, past, top)
             else:
                 _review(tx, *result["review"], Tx.ClassificationSource.LLM)
             if result is not None:
-                tx.field_states = {**tx.field_states, "classifier": result["record"]}
+                record = {**result["record"], "name_conflict": True} if conflict else result["record"]
+                tx.field_states = {**tx.field_states, "classifier": record}
         changed.append(tx)
 
     if changed:
@@ -318,6 +388,16 @@ def _apply(tx, code, source, confidence):
     tx.confirmation_state, tx.classification_source, tx.suggestion_source = Tx.ConfirmationState.SUGGESTED, source, source
     tx.suggestion_confidence = None if confidence is None else Decimal(f"{confidence:.4f}")
     tx.suggestion_candidates = tx.suggestion_reason = None
+
+
+def _apply_unless_user_differs(tx, code, source, confidence, past, top):
+    """사용자가 같은 가게를 전에 다른 카테고리로 골랐으면('앞으로도 적용' 아님) 자동 적용하지 않고 묻는다.
+    사용자 수정이 반복되는 가게 = 동명 충돌 후보 (분류 워크플로 10/26 4장). 지난 선택을 첫 후보로"""
+    if past and past != code:
+        candidates = [(past, None)] + [(c, p) for c, p in top if c != past]
+        _review(tx, candidates[:3], USER_DIFFERS_REASON, source)
+    else:
+        _apply(tx, code, source, confidence)
 
 
 def _review(tx, top, reason, source):

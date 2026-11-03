@@ -15,7 +15,7 @@
 - 같은 번호 · 같은 내용  → 다시 처리하지 않고 기록해 둔 처음 응답을 돌려준다.
 - 같은 번호 · 다른 내용  → 409 idempotency_conflict (번호를 재사용한 버그)
 - 처리 결과가 실패(4xx·5xx)면 기록하지 않는다 → 입력을 고쳐 같은 번호로 다시 보내면 처음 요청처럼 처리
-- 동시에 같은 번호가 두 번 오면: 두 번째 요청은 DB UNIQUE 에서 첫 번째가 끝나길 기다렸다가 처음 응답을 받는다
+- 동시에 같은 번호가 두 번 오면: 성공 저장은 DB UNIQUE로 중복을 막고, 처리 중 충돌 응답도 먼저 완료된 기록이 있으면 처음 응답으로 복구한다
 - 헤더가 없으면: required=False 면 그냥 처리, True 면 400
 - 로그인 안 한 요청은 회원을 몰라서 번호 확인 없이 그냥 처리한다 (로그인 API 가 붙으면 자동으로 적용)
 """
@@ -44,6 +44,12 @@ def _replay(record):
     return Response(record.response_body, status=record.response_status)
 
 
+def _recorded_response(record, request_hash):
+    if record.request_hash != request_hash:
+        return _error("idempotency_conflict", "같은 요청 번호로 다른 내용을 보낼 수 없어요.", status.HTTP_409_CONFLICT)
+    return _replay(record)
+
+
 def idempotent(required=False, *, commit_error_codes=()):
     """commit_error_codes는 승인 시 발견한 expired 상태 보존용. 실패 응답은 번호 기록에 남기지 않는다."""
     def decorator(view):
@@ -65,9 +71,7 @@ def idempotent(required=False, *, commit_error_codes=()):
             request_hash = _request_hash(request)
             found = IdempotencyRecord.objects.filter(user=user, key=key).first()
             if found:
-                if found.request_hash != request_hash:
-                    return _error("idempotency_conflict", "같은 요청 번호로 다른 내용을 보낼 수 없어요.", status.HTTP_409_CONFLICT)
-                return _replay(found)
+                return _recorded_response(found, request_hash)
 
             try:
                 with transaction.atomic():
@@ -79,18 +83,23 @@ def idempotent(required=False, *, commit_error_codes=()):
                             request_hash=request_hash, response_status=response.status_code,
                             response_body=response.data,
                         )
-                    elif not (response.status_code == 409
-                              and isinstance(response.data, dict)
-                              and response.data.get("error", {}).get("code") in commit_error_codes):
-                        transaction.set_rollback(True)   # 실패한 요청은 기록하지 않고 저장한 것도 되돌림
+                    else:
+                        # 대화 행 잠금을 기다리는 동안 같은 키의 요청이 먼저 성공할 수 있다.
+                        # 이 경우 rev 검사 등에서 실패해도 성공 기록을 우선한다. 다른 키는 그대로 충돌한다.
+                        found = IdempotencyRecord.objects.filter(user=user, key=key).first()
+                        if found:
+                            transaction.set_rollback(True)
+                            return _recorded_response(found, request_hash)
+                        if not (response.status_code == 409
+                                and isinstance(response.data, dict)
+                                and response.data.get("error", {}).get("code") in commit_error_codes):
+                            transaction.set_rollback(True)   # 실패한 요청은 기록하지 않고 저장한 것도 되돌림
                     return response
             except IntegrityError:
                 found = IdempotencyRecord.objects.filter(user=user, key=key).first()
                 if found is None:
                     raise
-                if found.request_hash != request_hash:
-                    return _error("idempotency_conflict", "같은 요청 번호로 다른 내용을 보낼 수 없어요.", status.HTTP_409_CONFLICT)
-                return _replay(found)
+                return _recorded_response(found, request_hash)
 
         return wrapper
 

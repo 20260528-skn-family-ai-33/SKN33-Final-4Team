@@ -3,9 +3,11 @@
 - 32. GET  /api/chat/conversations/<id>/ — 이전 대화 보기 (10/26)
 - 33. POST /api/chat/messages/ — 메시지 보내기 (10/27: 저장 · 선택지 처리. 소비 분석 집계 · LLM 라우터는 다음 단계)
 - 34. GET /api/tasks/<id>/ 는 공용 작업 도구로 옮겼다 → config/tasks.py (10/27)
+- GET /api/chat/messages/ — 첫 화면용 엔진 종류 · 기능 버튼 목록 (11/2, MEMO 25-9 ①). 메시지 응답 · 대화 조회에도 같은 칸
 """
 import uuid
 
+from django.conf import settings
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
@@ -31,6 +33,18 @@ def message_item(message):
     }
 
 
+def engine_info():
+    """지금 엔진 · 기능 버튼 목록 · 테스트 모드 {engine, features: [{value, label}], test_mode, today} — 화면은 이 값만 따른다 (MEMO 25-9 ①)
+    legacy = 기존 선택지(소비 분석 · 예산 조정), router = 새 엔진 기능 버튼(+ 청년 정책).
+    test_mode = router 가 고정 기준일(CHAT_TODAY)로 동작 → 화면이 '테스트 환경 · 기준일' 띠를 그린다. today = 그 기준일(아니면 null)"""
+    if getattr(settings, "CHAT_ENGINE", "legacy") == "router":
+        from .engine import FEATURES  # noqa: PLC0415  (engine 이 이 모듈을 쓴다 — 서로 import 하지 않게 여기서)
+        today = getattr(settings, "CHAT_TODAY", None)
+        return {"engine": "router", "features": [{"value": v, "label": label} for v, label in FEATURES.items()],
+                "test_mode": bool(today), "today": today or None}
+    return {"engine": "legacy", "features": [dict(c) for c in router.CHOICES], "test_mode": False, "today": None}
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def conversation(request, conversation_id):
@@ -44,6 +58,7 @@ def conversation(request, conversation_id):
         "status": talk.status,
         "created_at": talk.created_at,
         "messages": [message_item(message) for message in rows],
+        **engine_info(),
     })
 
 
@@ -79,7 +94,7 @@ def _active_conversations(user):
     return Conversation.objects.filter(user=user, status=Conversation.Status.ACTIVE)
 
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 @idempotent()
 def messages(request):
@@ -87,7 +102,13 @@ def messages(request):
     - conversationId 가 null 이면 새 대화. 본문 속 ID 라서 없는/남의/끝난 대화는 404 가 아니라 400 (API_RULES 예외)
     - 선택지는 라우터를 거치지 않는다(fallback: false). 문장은 LLM 라우터 연결 전이라 unknown + fallback: true
     - 응답 messages = 이번에 새로 생긴 메시지 (사용자 1개 + 봇 1개, AA⑧)
-    - 라우터 실패 때는 대화 중인 도우미(active_agent)와 모은 재료(slots)를 바꾸지 않는다"""
+    - 라우터 실패 때는 대화 중인 도우미(active_agent)와 모은 재료(slots)를 바꾸지 않는다
+    - settings.CHAT_ENGINE = "router" 면 새 엔진(chat/engine.py, MEMO 25절)이 답한다. 기본 "legacy" 는 아래 그대로"""
+    if request.method == "GET":  # 첫 화면(대화 전)의 기능 버튼 — 저장 없음
+        return Response(engine_info())
+    if getattr(settings, "CHAT_ENGINE", "legacy") == "router":
+        from . import engine  # noqa: PLC0415  (engine 이 이 모듈의 검사 · 모양 함수를 쓴다 — 서로 import 하지 않게 여기서)
+        return engine.respond(request)
     conversation_id, text, choice = _check_message_body(request)
     talk = None
     if conversation_id is not None:
@@ -128,5 +149,6 @@ def messages(request):
         "route": {"intent": intent, "slots": slots, "fallback": fallback},
         "messages": [message_item(said), message_item(answer)],
         "task": None,
+        **engine_info(),
     })
 

@@ -197,6 +197,7 @@ def connection_item(connection):
     return {
         "connection_id": connection.connection_id,
         "business_type": connection.business_type,
+        "organization_code": connection.organization_code,  # 다시 연결(POST connections)에 그대로 보낸다 (11/03)
         "organization_name": organization_name(connection),
         "alias": connection.alias,
         "status": connection.status,

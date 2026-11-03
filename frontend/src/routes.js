@@ -28,3 +28,9 @@ export const PATHS = {
   protect: '/budgets/protect',
   recommend: '/budgets/recommend',
 }
+
+// 계좌 선택 저장 뒤 갈 화면 (location.state)
+//   from: 'manage' = 연결 관리에서 들어옴 → 연결 관리로 돌아간다 (카드 선택 · 카드 동의를 거치지 않음)
+//   가입 과정 = 카드사를 연결했으면(cards !== false) 카드 선택, 아니면 연결 결과
+export const afterAccountPick = (state) =>
+  state?.from === 'manage' ? PATHS.connections : state?.cards === false ? PATHS.connectDone : PATHS.connectCards
