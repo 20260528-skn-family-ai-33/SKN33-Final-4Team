@@ -208,10 +208,11 @@ class TransactionDetailTest(FinanceData):
                 self.assertIsNone(remembered_category(self.user, tx.merchant_name))
 
     @mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
+    @mock.patch("finance.classifier.conflict_names", return_value=frozenset())  # 로컬 충돌 목록 파일과 무관하게
     @mock.patch("finance.classifier.ask_jev")
     @mock.patch("finance.classifier.search_store", return_value=("naver", "행복상회", "슈퍼마켓"))
     @mock.patch("finance.classifier.predict", return_value=[[("FOOD", 0.4)]])
-    def test_searched_multi_item_cannot_apply_to_future(self, predict, search, ask):
+    def test_searched_multi_item_cannot_apply_to_future(self, predict, search, ask, conflicts):
         # PR #67 리뷰: 이름 사전에 없어도 검색 업종이 다품목이면 '앞으로도 적용' 없음
         first = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
         classifier.classify(self.user, FinancialTransaction.objects.filter(pk=first.pk))

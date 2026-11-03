@@ -31,6 +31,10 @@ class ClassifyTest(TestCase):
         judge = patch("finance.classifier.judge", return_value=None)
         self.judge = judge.start()
         self.addCleanup(judge.stop)
+        # 동명 충돌 목록은 로컬 파일(label_conflicts.csv)이 있으면 결과가 달라지니 빈 목록이 기본. 필요한 테스트만 바꿔 넣는다
+        conflicts = patch("finance.classifier.conflict_names", return_value=frozenset())
+        conflicts.start()
+        self.addCleanup(conflicts.stop)
 
     def tx(self, merchant, **fields):
         data = dict(user=self.user, source_kind="manual", occurred_on="2026-10-29", amount=10000, direction="out",
