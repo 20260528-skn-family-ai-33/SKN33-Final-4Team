@@ -1480,8 +1480,7 @@
             "type": "string",
             "enum": [
               "done",
-              "failed",
-              "not_supported"
+              "failed"
             ]
           },
           "accountCount": {

@@ -149,7 +149,7 @@
 | `results[].status` | 문자 | `connected` 연결됨 / `sms_required` 문자 인증 필요 / `failed` 실패 |
 | `results[].connectionId` | UUID | (`connected`) 연결 번호. 연결 목록 · 해제와 같은 값 |
 | `results[].reconnected` | 불리언 | (`connected`) 전에 연결한 적 있는 기관이면 true. 다시 연결이면 **기존 계좌 · 카드를 다시 쓴다** |
-| `results[].syncStatus` | 문자 | (`connected`) 연결 직후 불러오기 결과: `done` 완료 / `failed` 연결은 됐지만 불러오기 실패(다시 불러오기로 재시도) / `not_supported` 카드사(카드 · 청구서 불러오기는 다시 불러오기 API에서) |
+| `results[].syncStatus` | 문자 | (`connected`) 연결 직후 불러오기 결과: `done` 완료 / `failed` 연결은 됐지만 불러오기 실패(다시 불러오기로 재시도). 카드사도 연결 직후 보유카드 · 승인내역 · 청구서를 불러온다(11/03, 다시 불러오기와 같은 `sync_card`. 카드 후보 화면이 저장된 카드만 읽기 때문) |
 | `results[].accountCount` | 정수 / null | (`connected`, 은행) 이 연결에서 가져온 계좌 수. 카드사는 null |
 | `results[].smsAuth.authToken` | 문자 | (`sms_required`) 문자 인증 때 그대로 보낼 값 |
 | `results[].smsAuth.expiresAt` | 시각 | (`sms_required`) 이 시각까지 인증번호를 보내야 함 (3분) |
@@ -169,7 +169,7 @@
 
 - 연결되면 서버가 CODEF `connectedId`(회원의 기관 로그인 묶음)를 **암호화해서** 회원 정보에 저장하고, 기관 연결 행(`connection`, 상태 `connected`, 인증 방식 `id_password`)을 만든다. `connectedId` · 비밀번호 · 카드 값은 응답에 넣지 않는다.
 - **다시 연결**: `relogin`인 기관을 보내면 같은 연결 행을 `connected`로 되돌린다. 해제한 기관을 다시 보내면 새 연결 행을 만들고(해제 기록은 남김), 계좌 · 거래는 거래 저장(`sync.py`)이 기존 것을 다시 쓴다(10/22).
-- **은행은 연결 직후 계좌 · 거래를 불러온다**: 기간은 **4달 전 1일 ~ 오늘**(10/27). 저장은 나은의 거래 저장 흐름(`finance/sync.py` `sync_bank`, PR #44 · #45)을 그대로 쓴다. 불러오기가 실패해도 연결은 남기고 `syncStatus: failed`로 알린다.
+- **은행은 연결 직후 계좌 · 거래를 불러온다**: 기간은 **4달 전 1일 ~ 오늘**(10/27). **카드사는 연결 직후 보유카드 · 승인내역(같은 기간) · 청구서(지난달 ~ 다음 달)를 불러온다**(11/03, `sync_card`). 현대카드 카드번호 · 카드 비밀번호는 이 요청의 값만 쓰고 버린다. 저장은 나은의 거래 저장 흐름(`finance/sync.py` `sync_bank`, PR #44 · #45)을 그대로 쓴다. 불러오기가 실패해도 연결은 남기고 `syncStatus: failed`로 알린다.
 - 기관은 보낸 순서대로 하나씩 처리한다. 같은 회원의 CODEF 계정 등록은 한 번에 하나씩만 하도록 서버가 잠근다(동시에 두 기관을 처음 연결해도 `connectedId`는 하나).
 
 **문자 인증 흐름**
@@ -512,7 +512,7 @@
 - **작업 상태와 기관 결과는 다르다**: 작업이 끝까지 돌았으면 기관이 전부 실패해도 작업은 `succeeded`이고, 실패는 `items[].error`로 본다. 작업 `failed`는 서버 오류로 중간에 멈춘 경우뿐이다(`error.code`: `server_error`, 10분 넘게 멈춘 작업은 `stale`).
 - **기관별 실패 코드**: '금융기관 인증 · 새 연결' 실패 안내 표의 문구를 그대로 쓰되, 로그인 오류 · 잠김은 `code: relogin_required`로 보낸다(그 연결은 `relogin`이 되고 화면은 [다시 연결]). 이미 `relogin`인 연결이나 저장된 `connectedId`가 없는 회원은 CODEF를 부르지 않고 "○○ 다시 연결이 필요해요. 연결 관리에서 다시 연결해 주세요."(`relogin_required`). 기관 점검 · 응답 없음은 `provider_unavailable`.
 - **카드 값이 필요해요**를 받으면 화면은 그 기관의 카드번호 · 카드 비밀번호를 받아 `connectionIds`(그 기관) + `cardCredentials`로 다시 보낸다. 카드 값을 보낸 요청은 1분 안이어도 새로 부른다.
-- 은행 거래 저장은 나은의 `sync_bank`(PR #44 · #45), 대출은 권세진의 `sync_bank_loans`(PR #50)를 부른다. **카드 · 승인 · 청구서 저장 함수는 아직 없어서**(권세진 담당, 위 11번) 카드사는 지금 `cards: skipped / not_supported`로 온다.
+- 은행 거래 저장은 나은의 `sync_bank`(PR #44 · #45), 대출은 권세진의 `sync_bank_loans`(PR #50)를 부른다. 카드 · 승인 · 청구서는 권세진의 `sync_card`(위 11번, 10/28 구현)를 부른다.
 - 진행 중 판단과 결과 보관은 공용 작업 표(`async_task`, `taskType = finance_sync`)로 한다. 기관 조회 한 번 한 번의 기록은 기존대로 `sync_run`에 남는다.
 
 **중복 요청**

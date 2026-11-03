@@ -35,7 +35,8 @@ from . import codef_accounts, connected_id, institutions
 from .inputs import NOT_ALLOWED, body_dict, reject_unknown_fields
 from .models import BankAccount, Connection
 from .sync import sync_bank
-from .sync_ranges import first_load_start
+from .sync_cards import sync_card
+from .sync_ranges import bill_months, first_load_start
 
 logger = logging.getLogger(__name__)
 
@@ -320,8 +321,7 @@ def connect_one(user, entry):
     if business_type == institutions.BANK:
         result.update(load_bank(user, current_id or outcome.connected_id, code, row))
     else:
-        # 카드 거래 · 청구서 불러오기는 아직 없다 (카드 조회 흐름이 생기면 여기서 이어 부른다)
-        result.update({"sync_status": "not_supported", "account_count": None})
+        result.update(load_card(user, current_id or outcome.connected_id, code, row, entry))
     return result, None
 
 
@@ -339,6 +339,23 @@ def load_bank(user, cid, code, row):
         )
         sync_status = "failed"
     return {"sync_status": sync_status, "account_count": BankAccount.objects.filter(connection=row).count()}
+
+
+def load_card(user, cid, code, row, entry):
+    """연결 직후 보유카드 · 승인내역 · 청구서 불러오기 (다시 불러오기와 같은 sync_card, 11/03).
+    카드 후보 GET 은 저장된 카드만 읽으므로 연결과 함께 받아 둔다. 카드번호 · 카드 비밀번호는 이 요청의 값만 쓰고 버린다"""
+    end = timezone.localdate()
+    try:
+        sync_card(user, cid, code, first_load_start(end), end, bill_months(end),
+                  card_no=entry.get("card_no"), card_password=entry.get("card_password"), connection_id=row.pk)
+        sync_status = "done"
+    except Exception as exc:
+        logger.warning(
+            "연결 직후 카드 불러오기 실패 user=%s organization=%s codef_code=%s",
+            user.pk, code, getattr(exc, "code", None),
+        )
+        sync_status = "failed"
+    return {"sync_status": sync_status, "account_count": None}
 
 
 # ---------- view 본체 ----------
