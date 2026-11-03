@@ -14,7 +14,7 @@ from users.models import CategoryMinimum, FinancialProfile, IdempotencyRecord
 
 from .models import Budget, BudgetCategorySetting, BudgetCycle, BudgetItem, SpendingAllocation
 from .overview import LIVING_CODES, NAG
-from .recommend import budget_input_hash
+from .recommend import POLICY_VERSION, budget_input_hash
 
 
 TODAY = date(2026, 10, 28)
@@ -50,6 +50,7 @@ class BudgetViewTest(TestCase):
         budget = Budget.objects.create(user=self.user, cycle=cycle, status=status, funding_amount=1_500_000,
             version_no=(cycle.budgets.order_by("-version_no").values_list("version_no", flat=True).first() or 0) + 1,
             input_hash=budget_input_hash(self.user, cycle), input_snapshot={"fixed": {"card_reserved": card_reserved}},
+            policy_version=POLICY_VERSION,  # 11/3: 승인 때 계산 규칙 버전도 비교한다
             approved_at=timezone.now() if status == "approved" else None)
         BudgetItem.objects.bulk_create([
             BudgetItem(user=self.user, budget=budget, bucket="living", category_id=code, allocated_amount=food if code == "FOOD" else 0)
@@ -224,8 +225,10 @@ class BudgetViewTest(TestCase):
 
     def test_lock_404_ownership_and_category(self):
         budget = self.make_budget()
-        for code in ("UNCLASSIFIED", "UNKNOWN"):
+        # 11/3: 예산 밖 카테고리(주거·통신 · 여행·숙박)는 자물쇠 대상이 아니다
+        for code in ("UNCLASSIFIED", "UNKNOWN", "HOUSING_TELECOM", "TRAVEL_LODGING"):
             self.assertEqual(self.lock(budget, {"locked": True}, code).status_code, 404)
+        self.assertFalse(BudgetCategorySetting.objects.exists())
         for pk in (uuid.uuid4(), budget.pk):
             if pk == budget.pk:
                 self.client.force_authenticate(self.other)
@@ -298,6 +301,42 @@ class BudgetViewTest(TestCase):
         self.profile.savings_floor += 1
         self.profile.save()
         self.assert_expired(chosen)
+
+    def test_approval_expires_old_policy_version(self):
+        # 11/3 정책 전에 만든 초안(주거·통신 · 여행·숙박 배분 포함)은 승인하지 않고 다시 추천받게 한다
+        chosen = self.make_budget()
+        Budget.objects.filter(pk=chosen.pk).update(policy_version="2026-10-27")
+        self.assert_expired(chosen)
+
+    def test_out_of_budget_spending_stays_in_total_but_not_living(self):
+        # 주거·통신(고정비 미등록) · 여행 지출은 전체 소비에 남고 생활비 사용액 · 남은 생활비에서는 빠진다
+        self.make_budget()
+        self.tx(120_000)
+        before = self.get()["living"]
+        self.tx(20_000, "HOUSING_TELECOM")
+        self.tx(200_000, "TRAVEL_LODGING")
+        data = self.get()
+        self.assertEqual(data["living"], before)
+        self.assertEqual(data["living"], {"budget": 1_000_000, "spent": 120_000, "remaining": 880_000})
+        self.assertNotIn("TRAVEL_LODGING", {item["category"] for item in data["categories"]})
+        transactions = self.client.get("/api/finance/transactions/?from=2026-10-25&to=2026-11-24").json()
+        self.assertEqual(transactions["summary"]["spentTotal"], 340_000)
+
+    def test_linked_rent_is_fixed_not_living_or_out_of_budget(self):
+        # N1: 월세(주거·통신) 출금을 고정비 납부로 연결하면 생활비 사용액 · 예산 밖 지출에 다시 잡히지 않고 전체 소비에는 남는다
+        self.make_budget()
+        rent = self.tx(700_000, "HOUSING_TELECOM", source_kind="bank", account=self.account)
+        due = PaymentDue.objects.create(user=self.user, recurring=self.expense, obligation_type="recurring", occurrence_key="test-rent",
+            due_date=TODAY, confirmed_amount=700_000, paid_amount=700_000, payment_state="paid", obligation_state="active")
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=rent, matched_amount=700_000)
+        self.assertEqual(self.get()["living"]["spent"], 0)
+        from finance.api import listed_transactions, transaction_item
+        from finance.spending import spending_summary
+        from .scope import outside_spent
+        summary = spending_summary((transaction_item(t) for t in listed_transactions(self.user)), living_only=True)
+        self.assertEqual(outside_spent(summary), {})
+        transactions = self.client.get("/api/finance/transactions/?from=2026-10-25&to=2026-11-24").json()
+        self.assertEqual(transactions["summary"]["spentTotal"], 700_000)
 
     def test_approval_expires_when_saved_living_is_cleared(self):
         chosen = self.make_budget()

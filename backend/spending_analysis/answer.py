@@ -96,7 +96,7 @@ NOTICE = {
     "no_time": "시각이 없는 거래 {count}건은 시간대 조회에서 뺐어요.",
     "clipped": "끝 날짜가 아직 지나지 않아 {until}까지만 봤어요.",
     "fixed_excluded": "고정지출 {amount}({names})은 빼고 봤어요.",
-    "outside_spent": "예산 밖 지출({names}) {amount}도 남은 돈에 반영했어요.",
+    "outside_spent": "예산 밖 지출({names}) {amount}은 남은 생활비에서 빼고 따로 보여드려요.",
     "unclassified": "카테고리가 아직 정해지지 않은 거래 {count}건, 총 {amount}도 포함했어요.",
     "classified_only": "{name}{particle} 분류된 금액 기준이에요. 확인 필요 {amount}에 따라 달라질 수 있어요.",
     "classified_budget": "{name}{particle} 분류된 결제 기준이에요. 확인 필요 {amount}이 있어 실제로 쓸 수 있는 돈은 더 적을 수 있어요.",
@@ -816,7 +816,7 @@ def compose(results, notices=()):
             out.notice("retry")
             continue
         BODY[r["result"]["type"]](out, r["result"])
-    # 생활비(4번 · 생활비 막대)에 예산 범위 밖 지출이 실제로 있었을 때만 — 남은 돈에 넣었다고 짧게
+    # 생활비(4번 · 생활비 막대)에 예산 범위 밖 지출이 실제로 있었을 때만 — 남은 돈에서 뺐다고 짧게 (11/3)
     outside = {}
     for r in results:
         if r["ok"]:

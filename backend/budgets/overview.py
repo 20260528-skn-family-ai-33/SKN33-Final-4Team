@@ -7,11 +7,12 @@ from users.models import CategoryMinimum
 
 from .home import ensure_cycle, period_json
 from .models import Budget, BudgetCategorySetting, Category
-from .recommend import CATEGORY_CODES
+from .recommend import ALLOCATION_CODES
 from .salary import current_salary_profile, salary_cycle_dates
+from .scope import living_spent
 
 
-LIVING_CODES = (*CATEGORY_CODES, "ETC")
+LIVING_CODES = (*ALLOCATION_CODES, "ETC")  # 예산 화면 · 자물쇠 대상. 예산 밖(scope.OUT_OF_BUDGET)은 없음
 NAG = "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?"
 
 
@@ -25,7 +26,7 @@ def current_cycle(user, profile, today):
 def budget_nag(user, cycle):
     changed = BudgetCategorySetting.objects.filter(
         user=user, cycle=cycle, category_id__in=LIVING_CODES, change_count__gte=3,
-    ).exclude(category_id__in=["HOUSING_TELECOM", "TRANSPORT_CAR"]).exists()
+    ).exclude(category_id="TRANSPORT_CAR").exists()
     if changed or Budget.objects.filter(user=user, cycle=cycle, approved_at__isnull=False).count() >= 3:
         return NAG
     return None
@@ -58,7 +59,7 @@ def budget_data(user, today, *, selected=None):
     totals = dict(selected.items.values("bucket").annotate(total=Sum("allocated_amount")).values_list("bucket", "total"))
     living = totals.get("living", 0)
     spare = selected.funding_amount - sum(totals.values())
-    spent = summary["spent_total"]
+    spent = living_spent(summary)  # 예산 밖 지출은 빼고 센다 (전체 소비 집계는 그대로)
     over = max(spent - living, 0)
     covered = min(over, spare)
     allocated = dict(selected.items.filter(bucket="living").values("category_id").annotate(total=Sum("allocated_amount")).values_list("category_id", "total"))

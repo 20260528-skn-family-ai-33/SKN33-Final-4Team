@@ -376,3 +376,37 @@ class ProtectAPITest(TestCase):
             self.assertEqual(response.status_code, 403)
             self.assertEqual(response.json()["error"]["code"], "not_authenticated")
         self.assertFalse(BudgetCycle.objects.exists())
+
+
+class EmptyOnboardingFlowTest(TestCase):
+    """N1: 고정지출 · 저축 0건 · 직접 추가 없이 [계속하기] → 지킬 돈 조회 · 저장까지 진행 (가짜 후보 없음)"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = get_user_model().objects.create_user(email="empty@example.com")
+        cls.profile = FinancialProfile.objects.create(
+            user=cls.user, housing_type="alone", monthly_take_home_income=2_500_000, payday=25,
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        clock = patch("budgets.api.timezone.localdate", return_value=TODAY)
+        clock.start()
+        self.addCleanup(clock.stop)
+
+    def test_no_fixed_no_savings_reaches_protect_save(self):
+        self.assertEqual(self.client.get("/api/budgets/fixed/").json(),
+                         {"items": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
+        self.assertEqual(self.client.get("/api/budgets/savings/?v=1").json(),  # 화면이 다시 받을 때 붙이는 ?v= 는 무시
+                         {"items": [], "summary": {"minimumMonthly": 0, "suggestedCount": 0}})
+        data = self.client.get(URL).json()
+        self.assertEqual((data["missing"], data["blocked"], data["savingsMin"]), ([], None, 0))
+        self.assertEqual(data["base"], {"takeHomeIncome": 2_500_000, "fixedTotal": 0, "available": 2_500_000})
+        rec = data["recommended"]
+        body = {"livingBudget": rec["livingBudget"], "savingFloor": rec["savingFloor"], "cushionMonthly": rec["cushionMonthly"]}
+        response = self.client.put(URL, data=json.dumps(body), content_type="application/json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual({k: response.json()["saved"][k] for k in body}, body)
+        self.assertFalse(RecurringExpense.objects.filter(user=self.user).exists())
+        self.assertFalse(RecurringSaving.objects.filter(user=self.user).exists())

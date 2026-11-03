@@ -9,6 +9,7 @@ from users.models import CategoryMinimum, CategoryPriority, FinancialProfile
 
 from .models import BudgetCategorySetting
 from .protect import fixed_base, fixed_breakdown, fixed_sum, savings_min
+from .scope import OUT_OF_BUDGET
 
 
 # TODO ML 담당 fallback_ratios 로 교체
@@ -21,10 +22,12 @@ FALLBACK_RATIOS = {
         ("TRAVEL_LODGING", 60_000),
     )
 }
-CATEGORY_CODES = tuple(FALLBACK_RATIOS)
+CATEGORY_CODES = tuple(FALLBACK_RATIOS)  # 기타 제외 소비 카테고리 전체 (design_candidates도 씀 — 의미 유지)
+# 생활비 배분 대상 = 전체 − 예산 밖(scope.OUT_OF_BUDGET). 비율은 이 안에서 다시 나눈다
+ALLOCATION_CODES = tuple(code for code in CATEGORY_CODES if code not in OUT_OF_BUDGET)
 SUMMARY = "비슷한 또래 1인 가구의 평균 소비 비율로 나눴어요. 최소 금액과 자물쇠 건 카테고리는 그대로 지켰어요."
 ENGINE_VERSION = "temp-fallback-1"
-POLICY_VERSION = "2026-10-27"
+POLICY_VERSION = "2026-11-03"  # 11/3 주거·통신 · 여행·숙박 배분 제외. 다른 버전 초안은 승인 때 만료
 INPUT_VERSION = 1
 # 카드 선차감(card_reserved)은 카드로 쓸 때마다 바뀌므로 해시에 넣지 않는다. 초안을 만들 때 값을 input_snapshot에 저장해 두고
 # 승인 때는 그 값을 쓴다. 대신 어떤 카드가 대상인지(card_ids)는 넣어서 카드를 고르거나 빼면 초안이 만료된다.
@@ -55,22 +58,25 @@ def check_inputs(inp):
             raise EngineCheckFailed("카테고리 코드가 맞지 않아요.")
         if any(type(value) is not int or value < 0 for value in values.values()):
             raise EngineCheckFailed("최소 금액 · 잠긴 금액은 0 이상의 정수여야 해요.")
+        # 예산 밖 카테고리는 0원(= 배분 안 함)일 때만 허용 (design_candidates가 0원 자물쇠로 넘김)
+        if any(values.get(code, 0) != 0 for code in OUT_OF_BUDGET):
+            raise EngineCheckFailed("예산 밖 카테고리에는 최소 금액 · 자물쇠를 걸 수 없어요.")
 
 
 def allocation_conflicts(inp):
     minimums, locks = inp["minimums"], inp["locks"]
     below = [{"type": "lock_below_minimum", "category": code, "locked_amount": locks[code], "min_amount": minimums[code]}
-             for code in CATEGORY_CODES if code in locks and locks[code] < minimums.get(code, 0)]
+             for code in ALLOCATION_CODES if code in locks and locks[code] < minimums.get(code, 0)]
     if below:
         return below
-    if len(locks) == len(CATEGORY_CODES) and sum(locks.values()) != inp["target"]:
+    if all(code in locks for code in ALLOCATION_CODES) and sum(locks.values()) != inp["target"]:
         return [{"type": "locks_mismatch_living", "difference": sum(locks.values()) - inp["target"]}]
     shortfall = required_total(inp) - inp["target"]
     return [{"type": "minimums_over_living", "shortfall": shortfall}] if shortfall > 0 else []
 
 
 def required_total(inp):
-    return sum(inp["locks"].get(code, inp["minimums"].get(code, 0)) for code in CATEGORY_CODES)
+    return sum(inp["locks"].get(code, inp["minimums"].get(code, 0)) for code in ALLOCATION_CODES)
 
 
 def recommend_category_budgets(inp):
@@ -80,8 +86,8 @@ def recommend_category_budgets(inp):
     conflicts = allocation_conflicts(inp)
     if conflicts:
         return infeasible(conflicts)
-    allocations = dict(inp["locks"])
-    free = [code for code in CATEGORY_CODES if code not in allocations]
+    allocations = {code: amount for code, amount in inp["locks"].items() if code in ALLOCATION_CODES}
+    free = [code for code in ALLOCATION_CODES if code not in allocations]
     while free:
         remaining = target - sum(allocations.values())
         weight = sum(FALLBACK_RATIOS[code] for code in free)
@@ -117,13 +123,17 @@ def check_result(inp, out):
             raise EngineCheckFailed("부족액이 입력 조건과 맞지 않아요.")
         return
     values = out.get("allocations")
-    if out.get("status") != "proposed" or not isinstance(values, dict) or set(values) != set(CATEGORY_CODES):
-        raise EngineCheckFailed("10개 카테고리 배분이 필요해요.")
+    # 예산 밖 카테고리는 없거나 0원이면 통과 (ML이 전체 코드를 0원 포함해 내보내도 됨). 저장은 배분 대상만
+    if (out.get("status") != "proposed" or not isinstance(values, dict)
+            or not set(ALLOCATION_CODES) <= set(values) <= set(CATEGORY_CODES)):
+        raise EngineCheckFailed("배분 대상 카테고리 금액이 필요해요.")
+    if any(values.get(code, 0) != 0 for code in OUT_OF_BUDGET):
+        raise EngineCheckFailed("예산 밖 카테고리에 금액을 배분했어요.")
     if any(type(value) is not int or value < 0 for value in values.values()) or sum(values.values()) != inp["target"]:
         raise EngineCheckFailed("배분 합계 · 금액이 맞지 않아요.")
-    if any(values[code] < amount for code, amount in inp["minimums"].items()):
+    if any(values.get(code, 0) < amount for code, amount in inp["minimums"].items()):
         raise EngineCheckFailed("최소 금액보다 작게 배분했어요.")
-    if any(values[code] != amount for code, amount in inp["locks"].items()):
+    if any(values.get(code, 0) != amount for code, amount in inp["locks"].items()):
         raise EngineCheckFailed("잠긴 금액을 바꿨어요.")
     if out.get("conflicts") != []:
         raise EngineCheckFailed("성공 결과에 충돌이 있어요.")
@@ -137,18 +147,27 @@ def hash_snapshot(snapshot):
 
 # ---------------- DB 조회 (호출 쪽에서 회원 잠금, 저장하지 않음) ----------------
 
+def budget_settings(user, cycle):
+    """→ (최소 금액, 자물쇠). 예전에 걸어 둔 예산 밖 카테고리 설정은 새 계산에서 뺀다 (DB 값은 지우지 않음)"""
+    minimums = dict(CategoryMinimum.objects.filter(user=user).exclude(category_id__in=OUT_OF_BUDGET)
+                    .values_list("category_id", "min_amount"))
+    locks = dict(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True)
+                 .exclude(category_id__in=OUT_OF_BUDGET).values_list("category_id", "locked_amount"))
+    return minimums, locks
+
+
 def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
     profile = profile or FinancialProfile.objects.get(user=user)
     today = today or timezone.localdate()
-    minimums = dict(CategoryMinimum.objects.filter(user=user).values_list("category_id", "min_amount"))
-    locks = dict(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True).values_list("category_id", "locked_amount"))
+    minimums, locks = budget_settings(user, cycle)
     fixed = fixed_breakdown(user, cycle, card=card)
     saved = {"living_budget": profile.living_budget, "saving_floor": profile.savings_floor, "cushion_monthly": profile.cushion_monthly}
     birth = profile.birth_date
     age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
     etc = locks.get("ETC", minimums.get("ETC", 0))
-    priorities = [{"category": code, "rank": rank} for code, rank in
-                  CategoryPriority.objects.filter(user=user).order_by("rank").values_list("category_id", "rank")]
+    # 예산 밖 카테고리는 순위에서 빼고 1부터 다시 매긴다 (예전에 고른 순위는 DB에 그대로)
+    ranked = CategoryPriority.objects.filter(user=user).exclude(category_id__in=OUT_OF_BUDGET).order_by("rank")
+    priorities = [{"category": code, "rank": rank} for rank, code in enumerate(ranked.values_list("category_id", flat=True), 1)]
     return {
         "cycle": {"id": str(cycle.pk), "starts_on": cycle.starts_on.isoformat(), "ends_before": cycle.ends_before.isoformat()},
         "take_home_income": profile.monthly_take_home_income,
@@ -180,8 +199,7 @@ def locks_block_recommendation(user, cycle, living_budget):
     """
     if living_budget is None:
         return False
-    minimums = dict(CategoryMinimum.objects.filter(user=user).values_list("category_id", "min_amount"))
-    locks = dict(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True).values_list("category_id", "locked_amount"))
+    minimums, locks = budget_settings(user, cycle)
     if not locks:
         return False
 

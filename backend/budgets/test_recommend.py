@@ -17,7 +17,7 @@ from users.models import CategoryMinimum, CategoryPriority, FinancialProfile, Id
 
 from .models import Budget, BudgetCategorySetting, BudgetCycle, Category
 from .recommend import (
-    CATEGORY_CODES, FALLBACK_RATIOS, SUMMARY, EngineCheckFailed,
+    ALLOCATION_CODES, CATEGORY_CODES, FALLBACK_RATIOS, POLICY_VERSION, SUMMARY, EngineCheckFailed,
     budget_input_hash, check_result, hash_snapshot, recommend_category_budgets,
 )
 
@@ -35,21 +35,25 @@ def engine_input(target=1_060_000, **fields):
 
 class CategoryRecommendationTest(SimpleTestCase):
     def test_fallback_amounts_and_total(self):
+        # 11/3: 임시 비율 금액은 내일 ML로 바뀌므로 금액 대신 규칙만 본다 (배분 대상만 · 합계 · 0 이상 정수)
         inp = engine_input()
         out = recommend_category_budgets(inp)
         self.assertEqual(sum(FALLBACK_RATIOS.values()), 1)
-        self.assertEqual(out["allocations"], {code: int(ratio * 1_060_000) for code, ratio in FALLBACK_RATIOS.items()})
+        self.assertEqual(set(out["allocations"]), set(ALLOCATION_CODES))
+        self.assertEqual(sum(out["allocations"].values()), inp["target"])
+        self.assertTrue(all(type(v) is int and v >= 0 for v in out["allocations"].values()))
         self.assertEqual(out["summary"], SUMMARY)
         self.assertEqual(out["reasons"], [])
         self.assertEqual(out["conflicts"], [])
         check_result(inp, out)
 
     def test_minimum_155000_is_not_rounded_down(self):
-        for target in (1_000_000, 1_510_000):
-            # 두 번째는 주거 비율 몫 약 156,698원: 내림하면 최소 155,000원을 깨는 경계.
-            inp = engine_input(target, minimums={"HOUSING_TELECOM": 155_000})
+        for target in (1_000_000, 1_650_000):
+            # 두 번째는 교통 비율 몫 약 156,315원(9만/95만): 내림하면 최소 155,000원을 깨는 경계.
+            # 11/3: 주거·통신이 배분 대상에서 빠져 교통·차량으로 바꿈
+            inp = engine_input(target, minimums={"TRANSPORT_CAR": 155_000})
             out = recommend_category_budgets(inp)
-            self.assertGreaterEqual(out["allocations"]["HOUSING_TELECOM"], 155_000)
+            self.assertGreaterEqual(out["allocations"]["TRANSPORT_CAR"], 155_000)
             self.assertEqual(sum(out["allocations"].values()), target)
             check_result(inp, out)
 
@@ -76,21 +80,22 @@ class CategoryRecommendationTest(SimpleTestCase):
         check_result(inp, out)
 
     def test_all_locked_mismatch_in_both_directions_and_exact_match(self):
-        locks = dict.fromkeys(CATEGORY_CODES, 10_000)
-        for target in (90_000, 110_000):
+        locks = dict.fromkeys(ALLOCATION_CODES, 10_000)  # 11/3: '모두 잠김'은 배분 대상 기준
+        total = sum(locks.values())
+        for target in (total - 10_000, total + 10_000):
             inp = engine_input(target, locks=locks)
             out = recommend_category_budgets(inp)
-            self.assertEqual(out["conflicts"], [{"type": "locks_mismatch_living", "difference": 100_000 - target}])
+            self.assertEqual(out["conflicts"], [{"type": "locks_mismatch_living", "difference": total - target}])
             check_result(inp, out)
-        inp = engine_input(100_000, locks=locks)
+        inp = engine_input(total, locks=locks)
         self.assertEqual(recommend_category_budgets(inp)["allocations"], locks)
 
     def test_varied_feasible_inputs_preserve_every_constraint(self):
         rng = random.Random(1028)
         for index in range(300):
-            minimums = {code: rng.randrange(0, 200_000) for code in CATEGORY_CODES}
-            locks = {code: minimums[code] + rng.randrange(0, 100_000) for code in CATEGORY_CODES[:index % 10]}
-            needed = sum(locks.get(code, minimums[code]) for code in CATEGORY_CODES)
+            minimums = {code: rng.randrange(0, 200_000) for code in ALLOCATION_CODES}  # 11/3: 배분 대상만
+            locks = {code: minimums[code] + rng.randrange(0, 100_000) for code in ALLOCATION_CODES[:index % len(ALLOCATION_CODES)]}
+            needed = sum(locks.get(code, minimums[code]) for code in ALLOCATION_CODES)
             inp = engine_input(needed + rng.randrange(0, 1_000_000), minimums=minimums, locks=locks)
             original = copy.deepcopy(inp)
             out = recommend_category_budgets(inp)
@@ -109,10 +114,16 @@ class CategoryRecommendationTest(SimpleTestCase):
             value = copy.deepcopy(good)
             value["allocations"][code] = amount
             bad.append(value)
-        for code in ("BEAUTY", "FOOD"):
+        # 11/3: 비율이 8개로 바뀌어 '1만원 빼기'가 최소 금액 위반이 아닐 수 있어, 최소 금액 바로 아래로 직접 맞춘다
+        for code, below in (("BEAUTY", 54_999), ("FOOD", 329_999)):
             value = copy.deepcopy(good)
-            value["allocations"][code] -= 10_000
-            value["allocations"]["CULTURE_LEISURE"] += 10_000
+            value["allocations"]["CULTURE_LEISURE"] += value["allocations"][code] - below
+            value["allocations"][code] = below
+            bad.append(value)
+        for code in ("HOUSING_TELECOM", "TRAVEL_LODGING"):  # 예산 밖 카테고리에 금액을 주면 거부
+            value = copy.deepcopy(good)
+            value["allocations"][code] = 10_000
+            value["allocations"]["CULTURE_LEISURE"] -= 10_000
             bad.append(value)
         value = copy.deepcopy(good)
         del value["allocations"]["BEAUTY"]
@@ -125,6 +136,42 @@ class CategoryRecommendationTest(SimpleTestCase):
         for value in bad:
             with self.subTest(value=value), self.assertRaises(EngineCheckFailed):
                 check_result(inp, value)
+
+    def test_out_of_budget_codes_pass_only_when_missing_or_zero(self):
+        # ML · design_candidates가 전체 10개 코드를 0원 포함해 내보내도 통과한다
+        inp = engine_input(minimums={"BEAUTY": 55_000})
+        out = recommend_category_budgets(inp)
+        self.assertFalse(set(out["allocations"]) & {"HOUSING_TELECOM", "TRAVEL_LODGING"})
+        check_result(inp, out)
+        check_result(inp, {**out, "allocations": {**out["allocations"], "HOUSING_TELECOM": 0, "TRAVEL_LODGING": 0}})
+        # 예산 밖 코드의 최소 금액 · 자물쇠는 입력에서 거부 (budget_input_snapshot이 미리 뺀다)
+        for field in ("minimums", "locks"):
+            with self.subTest(field=field), self.assertRaises(EngineCheckFailed):
+                recommend_category_budgets(engine_input(**{field: {"TRAVEL_LODGING": 10_000}}))
+
+    def test_out_of_budget_zero_minimum_and_lock_are_allowed(self):
+        # design_candidates처럼 예산 밖 코드를 0원 최소 금액 · 자물쇠로 넘겨도 입력 · 결과 검사를 통과하고 배분은 0원
+        zero = {"HOUSING_TELECOM": 0, "TRAVEL_LODGING": 0}
+        inp = engine_input(minimums={**zero, "BEAUTY": 55_000}, locks={**zero, "FOOD": 330_000})
+        out = recommend_category_budgets(inp)
+        self.assertEqual(out["status"], "proposed")
+        self.assertEqual(set(out["allocations"]), set(ALLOCATION_CODES))
+        self.assertEqual(sum(out["allocations"].values()), inp["target"])
+        check_result(inp, out)
+        check_result(inp, {**out, "allocations": {**out["allocations"], **zero}})
+        # 배분 대상이 모두 잠겼는지는 0원 예산 밖 자물쇠를 세지 않는다
+        locks = {**zero, **dict.fromkeys(ALLOCATION_CODES, 10_000)}
+        self.assertEqual(recommend_category_budgets(engine_input(80_000, locks=locks))["status"], "proposed")
+        self.assertEqual(recommend_category_budgets(engine_input(90_000, locks=locks))["conflicts"],
+                         [{"type": "locks_mismatch_living", "difference": -10_000}])
+
+    def test_etc_minimum_rule(self):
+        # 생활비 100만 · 기타 최소 10만 → 기타 10만, 배분 대상 합계 90만, 예산 밖 코드 없음, 음수 없음 · 정수
+        for etc, target in ((100_000, 900_000), (0, 1_000_000)):  # 기타 최소 금액이 없으면 기타 0원 · 생활비 전체를 배분
+            out = recommend_category_budgets(engine_input(target))
+            self.assertEqual(set(out["allocations"]), set(ALLOCATION_CODES))
+            self.assertEqual(sum(out["allocations"].values()) + etc, 1_000_000)
+            self.assertTrue(all(type(v) is int and v >= 0 for v in out["allocations"].values()))
 
 
 class RecommendAPITest(TestCase):
@@ -198,14 +245,14 @@ class RecommendAPITest(TestCase):
         self.assertIsNone(task.error_code)
         budget = Budget.objects.get(task=task)
         self.assertEqual((budget.status, budget.version_no, budget.funding_amount), ("validated", 5, 2_800_000))
-        self.assertEqual((budget.engine_version, budget.policy_version), ("temp-fallback-1", "2026-10-27"))
+        self.assertEqual((budget.engine_version, budget.policy_version), ("temp-fallback-1", POLICY_VERSION))
         self.assertIsNotNone(budget.validated_at)
         self.assertEqual(task.input_hash, budget.input_hash)
         self.assertEqual(task.input_hash, budget_input_hash(self.user, self.cycle))
         self.assertEqual(task.result, {"outcome": "proposed", "budget_id": str(budget.pk), "summary": SUMMARY, "conflicts": [],
                                        "locks_released": []})
         living = dict(budget.items.filter(bucket="living").values_list("category_id", "allocated_amount"))
-        self.assertEqual(set(living), set(CATEGORY_CODES) | {"ETC"})
+        self.assertEqual(set(living), set(ALLOCATION_CODES) | {"ETC"})  # 11/3: 예산 밖 카테고리 줄은 만들지 않는다
         self.assertEqual(sum(living.values()), 1_120_000)
         self.assertEqual(living["FOOD"], 333_333)
         self.assertGreaterEqual(living["BEAUTY"], 155_000)
@@ -348,11 +395,11 @@ class RecommendAPITest(TestCase):
 
     def test_all_locks_mismatch_is_infeasible(self):
         self.budget("approved")  # 자물쇠를 풀 수 있는 예산이 있음 (P-13 ②)
-        for code in CATEGORY_CODES:
+        for code in ALLOCATION_CODES:  # 11/3: '모두 잠김'은 배분 대상 기준 (8 × 10만 − 112만)
             self.lock(code, 100_000)
         task = self.task(self.post())
         self.assertEqual(task.status, "succeeded")
-        self.assertEqual(task.result["conflicts"], [{"type": "locks_mismatch_living", "difference": -120_000}])
+        self.assertEqual(task.result["conflicts"], [{"type": "locks_mismatch_living", "difference": -320_000}])
         self.assertEqual(Budget.objects.count(), 1)
 
     def test_all_locks_mismatch_without_budget_releases_locks(self):
@@ -361,8 +408,38 @@ class RecommendAPITest(TestCase):
             self.lock(code, 100_000)
         task = self.task(self.post())
         self.assertEqual(task.result["outcome"], "proposed")
-        self.assertEqual(task.result["locks_released"], list(Category.objects.filter(pk__in=CATEGORY_CODES).order_by("display_order", "pk").values_list("pk", flat=True)))
-        self.assertFalse(BudgetCategorySetting.objects.filter(locked=True).exists())
+        # 11/3: 예산 밖 카테고리 자물쇠는 계산에 안 쓰므로 풀지 않고 DB에 그대로 둔다
+        self.assertEqual(task.result["locks_released"], list(Category.objects.filter(pk__in=ALLOCATION_CODES).order_by("display_order", "pk").values_list("pk", flat=True)))
+        self.assertEqual(set(BudgetCategorySetting.objects.filter(locked=True).values_list("category_id", flat=True)),
+                         {"HOUSING_TELECOM", "TRAVEL_LODGING"})
+
+    def test_old_out_of_budget_priorities_are_skipped_and_reranked(self):
+        # 예전에 여행·숙박 · 주거·통신을 순위에 넣은 회원도 추천이 성공하고, 엔진 입력 순위는 1부터 다시 매긴다 (DB 값은 그대로)
+        CategoryPriority.objects.filter(user=self.user).delete()
+        for rank, code in enumerate(("TRAVEL_LODGING", "FOOD", "HOUSING_TELECOM", "BEAUTY"), 1):
+            CategoryPriority.objects.create(user=self.user, category_id=code, rank=rank)
+        task = self.task(self.post())
+        self.assertEqual(task.result["outcome"], "proposed", task.result)
+        expected = [{"category": "FOOD", "rank": 1}, {"category": "BEAUTY", "rank": 2}]
+        snapshot = Budget.objects.get(task=task).input_snapshot
+        self.assertEqual(snapshot["engine_input"]["priorities"], expected)
+        self.assertEqual(snapshot["profile_inputs"]["priorities"], expected)
+        self.assertEqual(CategoryPriority.objects.filter(user=self.user).count(), 4)
+
+    def test_old_out_of_budget_minimum_and_lock_are_ignored(self):
+        # 예전에 걸어 둔 주거·통신 · 여행·숙박 최소 금액 · 자물쇠가 있어도 추천은 성공하고 DB 값은 남는다
+        self.minimum("HOUSING_TELECOM", 300_000)
+        self.lock("TRAVEL_LODGING", 200_000)
+        task = self.task(self.post())
+        self.assertEqual(task.result["outcome"], "proposed", task.result)
+        budget = Budget.objects.get(task=task)
+        living = dict(budget.items.filter(bucket="living").values_list("category_id", "allocated_amount"))
+        self.assertEqual(set(living), set(ALLOCATION_CODES) | {"ETC"})
+        self.assertEqual(sum(living.values()), 1_120_000)
+        self.assertNotIn("HOUSING_TELECOM", budget.input_snapshot["minimums"])
+        self.assertNotIn("TRAVEL_LODGING", budget.input_snapshot["locks"])
+        self.assertTrue(CategoryMinimum.objects.filter(user=self.user, category_id="HOUSING_TELECOM").exists())
+        self.assertTrue(BudgetCategorySetting.objects.filter(category_id="TRAVEL_LODGING", locked=True).exists())
 
     def test_minimums_over_living_is_infeasible(self):
         self.minimum("FOOD", 1_120_001)

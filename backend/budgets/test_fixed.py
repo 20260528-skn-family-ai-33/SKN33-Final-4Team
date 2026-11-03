@@ -128,6 +128,29 @@ class FixedStateTest(FixedFixture, TestCase):
         self.assertEqual((e.status, e.amount), ("stopped", 700000))
 
 
+class FixedScreenFlowTest(FixedFixture, TestCase):
+    """N1 화면 연결: 월세 직접 추가 → 목록 재조회 → 수정 → 중지 → 목록에서 빠짐 (주거·통신은 고정지출 카테고리로 계속 사용)"""
+
+    def setUp(self):
+        self.make_world()
+
+    def test_rent_create_list_update_stop(self):
+        r = send(self.client, "post", URL, {"name": "월세", "amount": 700000, "category": "HOUSING_TELECOM",
+                                            "paymentDay": None, "paymentAccountId": str(self.account.pk), "paymentCardId": None})
+        self.assertEqual(r.status_code, 201, r.content)
+        rid = r.json()["recurringId"]
+        listed = self.client.get(URL).json()
+        self.assertEqual([(i["recurringId"], i["amount"], i["category"], i["status"]) for i in listed["items"]],
+                         [(rid, 700000, "HOUSING_TELECOM", "confirmed")])
+        self.assertEqual(listed["summary"], {"confirmedMonthlyTotal": 700000, "suggestedCount": 0})
+        self.assertEqual(self.client.get(f"{URL}?v=3").json(), listed)  # 화면이 다시 받을 때 붙이는 ?v= 는 무시
+        r = send(self.client, "patch", f"{URL}{rid}/", {"amount": 720000})
+        self.assertEqual((r.status_code, r.json()["amount"]), (200, 720000))
+        self.assertEqual(self.client.get(URL).json()["summary"]["confirmedMonthlyTotal"], 720000)
+        self.assertEqual(self.client.delete(f"{URL}{rid}/").status_code, 204)
+        self.assertEqual(self.client.get(URL).json(), {"items": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
+
+
 class FixedPaymentDueTest(FixedFixture, TestCase):
     """리뷰 2. 납부 예정 만들기 · 맞추기"""
 

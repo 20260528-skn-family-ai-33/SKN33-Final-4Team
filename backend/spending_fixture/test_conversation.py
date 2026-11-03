@@ -1163,18 +1163,19 @@ class BudgetScopeTest(TestCase):
                       out["lines"])
         self.assertFalse([n for n in out["notices"] if n.startswith("예산 밖 지출")])  # 이번 주기 해당 지출 0원
 
-    def test_outside_spending_counts_in_remaining_with_notice(self):
-        """11/2 2차 결정(MEMO 23-19): 예산 밖 카테고리의 생활비 지출도 사용액 · 남은 돈에 넣고 안내한다 (예산 줄은 여전히 없음)"""
+    def test_outside_spending_excluded_from_remaining_with_notice(self):
+        """11/3 확정(11/2 2차 '포함'을 바꿈): 예산 밖 카테고리 지출은 사용액 · 남은 돈 · 하루 금액에서 빼고 안내만 한다
+        기대값 수정 이유: 정책 변경 — 이전엔 사용액 +120,000 · 남은 돈 −120,000 · '남은 돈에 반영했어요'를 기대했다"""
         b = EXPECTED["personas"]["A"]["budget"]
         FinancialTransaction.objects.create(
             user=user("A"), source_kind="card", card=Card.objects.filter(user=user("A")).first(), source_key="fixture:outside-travel",
             occurred_on=date(2026, 10, 27), occurred_time=time(15), amount=120_000, direction="out", transaction_type="spending",
             merchant_name="바다펜션", confirmed_category_id="TRAVEL_LODGING", confirmation_state="confirmed")
         _, out = Chat(user("A")).say("예산 얼마 남았어?")
-        spent, left = b["living_spent"] + 120_000, b["living_remaining"] - 120_000  # 고정 산술: 기존 기대값 ± 추가 결제
+        spent, left = b["living_spent"], b["living_remaining"]  # 여행 결제를 넣어도 그대로
         self.assertIn(f"생활비 예산 {b['living_budget']:,}원 중 {spent:,}원을 썼고 {left:,}원 남았어요.", out["lines"])
-        self.assertIn(f"남은 26일 동안 하루 {left // 26:,}원씩 쓸 수 있어요.", out["lines"])  # 하루 금액도 줄어든 남은 돈 기준
-        self.assertIn("예산 밖 지출(여행·숙박) 120,000원도 남은 돈에 반영했어요.", out["notices"])
+        self.assertIn(f"남은 26일 동안 하루 {left // 26:,}원씩 쓸 수 있어요.", out["lines"])  # 하루 금액도 그대로
+        self.assertIn("예산 밖 지출(여행·숙박) 120,000원은 남은 생활비에서 빼고 따로 보여드려요.", out["notices"])
 
 
 @fixture_db_only
