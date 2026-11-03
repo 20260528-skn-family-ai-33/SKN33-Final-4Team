@@ -26,7 +26,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import remembered_category
+from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,11 @@ MULTI_ITEM_REASON = "여러 종류의 물건을 파는 곳이라 무엇을 샀�
 NOT_FOUND_REASON = "가게 정보를 찾지 못해 카테고리를 정하지 못했어요."
 UNSURE_REASON = "가게 정보를 찾았지만 카테고리를 확실히 정하지 못했어요."
 LOOKUP_FAILED_REASON = "가게 정보를 확인하지 못했어요. 직접 골라 주세요."
+PAY_CHARGE_REASON = "페이 충전이라 무엇에 썼는지 골라 주세요."
+
+# 토스·네이버페이 등 충전 출금 (10/30): 충전 뒤 무엇을 샀는지는 페이 안에만 있어서 사용자에게 묻는다
+# link_basics(혜리)가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
+PAY_CHARGE = re.compile(r"(페이|머니|pay)충전")
 
 # 결제대행(PG) 접두어: 'NICE*쿠팡' → '쿠팡'
 PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
@@ -146,6 +151,10 @@ def is_multi_item(name):
             or any(pattern.match(name) for pattern in MULTI_ITEM_PATTERNS))
 
 
+def is_pay_charge(name):
+    return bool(PAY_CHARGE.search(common.normalize_name(store_name(name) or "")))
+
+
 def rule_category(name):
     """3단계 규칙·사전으로 정해지는 카테고리 코드. 없으면 None"""
     normalized = common.normalize_name(name)
@@ -224,6 +233,7 @@ def judge(name):
             industry = None  # 첫 결과가 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
             record["store_mismatch"] = True
         if industry and (industry in MULTI_ITEM_INDUSTRIES or industry.endswith("마트")):
+            record[SEARCHED_MULTI_ITEM] = True  # '앞으로도 적용'을 막는 근거 (merchant_rules.searched_multi_item, PR #67 리뷰)
             return {"review": ([], MULTI_ITEM_REASON), "record": record}
         if industry and any(word in industry for word in NON_STORE_INDUSTRIES):
             industry = None  # 본사·사무소가 검색된 경우. 근거로 쓰면 확신하며 틀림 (10/29 테스트)
@@ -260,11 +270,15 @@ def classify(user, txs):
     changed, for_ml = [], []
     for tx in todo:
         name = store_name(tx.merchant_name)
-        code = remembered_category(user, tx.merchant_name)
-        if is_multi_item(name):
-            # 다품목은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
+        # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
+        code, future = last_user_choice(user, tx.merchant_name)
+        if is_multi_item(name) or seen_multi_item(user, tx.merchant_name):
+            # 다품목(이름 사전 또는 같은 가게의 지난 검색 업종)은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
             _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
-        elif code:
+        elif is_pay_charge(name):
+            # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
+            _review(tx, [(code, None)] if code else [], PAY_CHARGE_REASON, Tx.ClassificationSource.RULE if code else None)
+        elif code and future:
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
         elif name and (rule := rule_category(name)):

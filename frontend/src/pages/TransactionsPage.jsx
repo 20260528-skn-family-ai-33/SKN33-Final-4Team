@@ -9,14 +9,14 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { won } from '../utils/money.js'
 import { useApi } from '../utils/api.js'
-import { SPEND_CATS, ETC, PENDING, PICK_CATS, catIcon } from '../utils/categories.js'
+import { SPEND_CATS, ETC, PENDING, catIcon } from '../utils/categories.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import TransactionPopup from '../popups/TransactionPopup.jsx'
 import TxPickPopup from '../popups/TxPickPopup.jsx'
 import FilterPopup from '../popups/FilterPopup.jsx'
 
-const CHIPS = [...SPEND_CATS, ETC]  // 카테고리 칩 (확인 필요는 따로)
+const CHIPS = [...SPEND_CATS, ETC]  // 카테고리 칩 (확인 필요는 따로) · 사용자가 거래 카테고리를 고를 때도 이 목록
 // 다른 화면(홈 · 예산 · 소비 분석 카드)이 아직 ?category=확인 필요 처럼 이름으로 보내서, 이름이 오면 코드로 바꿔 읽는다
 const CODE_BY_NAME = Object.fromEntries([...CHIPS, PENDING].map((c) => [c.name, c.code]))
 const KIND = { spending: 'normal', income: 'income', transfer: 'transfer' }
@@ -75,9 +75,11 @@ export default function TransactionsPage() {
   const pick = (code) => setParams(code ? { category: code } : {})
   const { openPopup } = usePopup()
   // 카테고리를 바꾸면 주소가 바뀌고 → 장고에게 다시 받아온다
-  const { data, error } = useApi(`/api/finance/transactions/${selected ? `?category=${encodeURIComponent(selected)}` : ''}`)
+  const { data, error, reload } = useApi(`/api/finance/transactions/${selected ? `?category=${encodeURIComponent(selected)}` : ''}`)
   // '확인 필요' 건수 = 기간 없이 전체 (H-03). 칩 · 배너 숫자가 홈과 같아진다
-  const { data: pending } = useApi('/api/finance/transactions/?category=UNCLASSIFIED')
+  const { data: pending, reload: reloadPending } = useApi('/api/finance/transactions/?category=UNCLASSIFIED')
+  // 카테고리를 저장하면 목록과 '확인 필요' 건수를 다시 받는다
+  const refresh = () => { reload(); reloadPending() }
   const pendingCount = pending?.summary.needsReviewCount ?? 0
 
   if (!data) return <Layout title="거래 내역" activeTab="txs"><ApiStatus error={error} /></Layout>
@@ -138,15 +140,15 @@ export default function TransactionsPage() {
                   <span className="mc-grow"><strong>{tx.name}</strong><span className="mc-pend-badge">카테고리 확인 필요</span></span>
                   <strong>{won(tx.net)}</strong>
                 </div>
-                {/* 확인 필요 이유 · 후보 카테고리는 거래 한 건 보기(17번 suggestion)가 연결되면 보여 준다 */}
+                {/* 확인 필요 이유 · 후보 카테고리는 [카테고리 고르기] 팝업이 거래 한 건 보기(17번 suggestion)로 받아 보여 준다 (10/30 A안) */}
                 <p className="mc-pend-why">어디에 쓴 돈인가요?</p>
                 <div className="mc-pend-pick">
-                  <button type="button" onClick={() => openPopup(<TxPickPopup tx={tx} categories={PICK_CATS} />)}>카테고리 고르기</button>
+                  <button type="button" onClick={() => openPopup(<TxPickPopup tx={tx} categories={CHIPS} onSaved={refresh} />)}>카테고리 고르기</button>
                 </div>
               </div>
             ) : (
               <button type="button" className={`mc-listrow${tx.cancel ? ` is-${tx.cancel}` : ''}${tx.kind !== 'normal' ? ` is-${tx.kind}` : ''}`} key={tx.id}
-                onClick={() => openPopup(<TransactionPopup tx={tx} date={dayLabel(day.date)} categories={PICK_CATS} />)}>
+                onClick={() => openPopup(<TransactionPopup tx={tx} date={dayLabel(day.date)} categories={CHIPS} onSaved={refresh} />)}>
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow">
                   <strong>{tx.name}{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>

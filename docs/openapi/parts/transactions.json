@@ -368,6 +368,7 @@
                     "reason": "편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요."
                   },
                   "classifiedBy": null,
+                  "canApplyToFuture": false,
                   "updatedAt": "2026-10-09T08:05:00+09:00"
                 }
               }
@@ -523,6 +524,7 @@
                   "installmentMonths": 0,
                   "suggestion": null,
                   "classifiedBy": "user",
+                  "canApplyToFuture": true,
                   "updatedAt": "2026-10-22T09:12:00+09:00"
                 }
               }
@@ -1165,12 +1167,17 @@
                 "type": "string",
                 "format": "date-time",
                 "description": "마지막 수정 시각, 한국 시간 ISO 8601."
+              },
+              "canApplyToFuture": {
+                "type": "boolean",
+                "description": "'앞으로 이 가게 거래도 이 카테고리로' 체크박스를 보여 줄지 (10/30). 소비 거래이고 원래 이체·다품목 가맹점·페이 충전이 아니면 true."
               }
             },
             "required": [
               "installmentMonths",
               "suggestion",
               "classifiedBy",
+              "canApplyToFuture",
               "updatedAt"
             ]
           }
@@ -1193,6 +1200,11 @@
               }
             ],
             "description": "선택 가능한 10개 카테고리+ETC. null은 원래 이체였고 고정지출 연결이 없는 거래를 transfer로 복원할 때만 허용. UNCLASSIFIED 금지."
+          },
+          "applyToFuture": {
+            "type": "boolean",
+            "default": false,
+            "description": "true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고 재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래."
           }
         },
         "required": [

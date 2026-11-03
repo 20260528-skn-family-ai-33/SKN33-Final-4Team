@@ -57,11 +57,19 @@ class ClassifyTest(TestCase):
         self.assertEqual(tx.suggestion_reason, classifier.REVIEW_REASON)
 
     def test_user_memory_comes_before_ml(self, predict):
-        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user",
+                field_states={"apply_to_future": True})
         (tx,) = self.run_classify(self.tx("청담"))
         self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
                          ("BEAUTY", "suggested", "rule"))
         predict.assert_called_once_with([])
+
+    def test_memory_without_apply_to_future_is_not_reused(self, predict):
+        # 10/30: 사용자가 '앞으로도 적용'을 고르지 않았으면 다음 거래는 원래대로 SVM
+        self.tx("청담", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("청담"))
+        self.assertEqual((tx.confirmed_category_id, tx.suggestion_source), ("UNCLASSIFIED", "ml"))
+        predict.assert_called_once_with(["청담"])
 
     def test_multi_item_never_reuses_memory_or_calls_ml(self, predict):
         self.tx("GS25 역삼점", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
@@ -118,6 +126,14 @@ class ClassifyTest(TestCase):
                          ("UNCLASSIFIED", "needs_review", "llm", classifier.UNSURE_REASON))
         self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["FOOD", "BEAUTY"])
 
+    def test_pay_charge_asks_user_and_ignores_memory(self, predict):
+        self.tx("토스페이충전", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("토스페이충전"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.PAY_CHARGE_REASON))
+        self.assertEqual(tx.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
+        predict.assert_called_once_with([])
+
     def test_leaves_confirmed_non_spending_and_nameless_alone(self, predict):
         confirmed = self.tx("루덴치과의원", confirmed_category_id="FOOD", confirmation_state="confirmed",
                             classification_source="user")
@@ -156,6 +172,12 @@ class RuleTest(SimpleTestCase):
             self.assertEqual(classifier.rule_category(name), code, name)
         self.assertFalse(classifier.is_multi_item("쿠팡플레이"))
 
+    def test_pay_charge_names(self):
+        for name in ("토스페이충전", "네이버페이충전", "카카오페이 충전", "NICE*토스페이충전"):
+            self.assertTrue(classifier.is_pay_charge(name), name)
+        for name in ("네이버페이", "카카오페이택시", "토스", "", None):
+            self.assertFalse(classifier.is_pay_charge(name), name)
+
 
 @patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
 class JudgeTest(SimpleTestCase):
@@ -182,6 +204,7 @@ class JudgeTest(SimpleTestCase):
     def test_multi_item_industry_skips_jev(self):
         result, ask = self.run_judge(("naver", "새봄동물", "편의점"))
         self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
+        self.assertTrue(result["record"]["multi_item"])
         ask.assert_not_called()
 
     def test_non_store_industry_is_not_evidence(self):

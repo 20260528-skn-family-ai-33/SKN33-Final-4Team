@@ -18,8 +18,10 @@ from rest_framework.response import Response
 
 from budgets.models import Category
 
+from . import classifier
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
+from .merchant_rules import FUTURE_KEY, searched_multi_item, seen_multi_item
 from .models import FinancialTransaction, SourceKind, TransactionLink
 from .spending import spending_summary
 
@@ -175,6 +177,7 @@ CATEGORY_ERROR = "카테고리를 다시 골라 주세요."
 INCOME_ERROR = "이 거래는 카테고리를 고를 수 없어요."
 FIXED_TRANSFER_ERROR = "고정지출에 연결된 거래예요. 고정지출 연결을 먼저 풀어 주세요."
 ORIGINAL_TYPE = "original_transaction_type"  # field_states 에 남기는 '원래 이체였음' 표시 (10/24 AA⑥)
+APPLY_TO_FUTURE_ERROR = "true 또는 false 로 보내 주세요."
 
 
 def suggestion_info(tx):
@@ -192,6 +195,15 @@ def suggestion_info(tx):
     }
 
 
+def can_apply_to_future(tx):
+    """'앞으로도 적용' 체크박스를 보여 줄 거래 (10/30): 소비 · 원래 이체 아님(받는 사람은 기억 안 함, W) · 다품목(이름·검색 업종) · 페이 충전 아님"""
+    return (tx.transaction_type == Tx.TransactionType.SPENDING and bool(tx.merchant_name)
+            and (tx.field_states or {}).get(ORIGINAL_TYPE) != Tx.TransactionType.TRANSFER
+            and not classifier.is_multi_item(tx.merchant_name) and not classifier.is_pay_charge(tx.merchant_name)
+            # 이 거래 또는 같은 회원·같은 가맹점의 다른 거래가 검색으로 다품목 확인 (분류 1단계와 같은 기준, PR #67 재리뷰)
+            and not searched_multi_item(tx.field_states) and not seen_multi_item(tx.user_id, tx.merchant_name))
+
+
 def transaction_detail_body(tx):
     """거래 한 건 = 목록 한 줄 + 상세 칸"""
     return {
@@ -200,6 +212,7 @@ def transaction_detail_body(tx):
         "installment_months": tx.installment_months if tx.source_kind == SourceKind.CARD else None,
         "suggestion": suggestion_info(tx),
         "classified_by": tx.classification_source,
+        "can_apply_to_future": can_apply_to_future(tx),
         "updated_at": tx.updated_at,
     }
 
@@ -242,7 +255,7 @@ def _apply_category(tx, code):
         changed += ["transaction_type", "field_states"]
     tx.confirmed_category_id = code
     tx.confirmation_state = Tx.ConfirmationState.CONFIRMED
-    # 사용자 확정 → 이후 같은 가맹점의 새 거래는 이 카테고리를 먼저 쓴다 (merchant_rules.remembered_category)
+    # 사용자 확정. "앞으로도 적용"이면 이후 같은 가맹점의 새 거래가 이 카테고리를 먼저 쓴다 (아래 view, merchant_rules)
     tx.classification_source = Tx.ClassificationSource.USER
     return changed
 
@@ -251,16 +264,19 @@ def _apply_category(tx, code):
 @permission_classes([IsAuthenticated])
 def transaction_detail(request, transaction_id):
     """17. GET  /api/finance/transactions/<id>/ — 거래 한 건 보기
-    18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null}
+    18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null, "applyToFuture": true}
     없는 거래 · 남의 거래 · 목록에 안 나오는 거래(같은 구매로 빠진 계좌 출금, 카드값 등)는 모두 404 (★3)"""
     if request.method == "GET":
         tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
         return Response(transaction_detail_body(tx))
 
     data = body_dict(request)
-    reject_unknown_fields(data, {"category"})
+    reject_unknown_fields(data, {"category", "apply_to_future"})
     if "category" not in data:
         raise ValidationError({"category": [CATEGORY_ERROR]})
+    apply_to_future = data.get("apply_to_future", False)
+    if not isinstance(apply_to_future, bool):
+        raise ValidationError({"apply_to_future": [APPLY_TO_FUTURE_ERROR]})
 
     # 조회 → 검사 → 저장을 한 트랜잭션에서 하고, 그동안 이 거래 행을 잠근다.
     # 같은 거래에 '카테고리 변경'과 '이체로 되돌리기'가 동시에 와도 하나씩 차례로 처리되어
@@ -275,6 +291,15 @@ def transaction_detail(request, transaction_id):
         if tx.transaction_type == Tx.TransactionType.INCOME:
             raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
         changed = _apply_category(tx, data["category"])
+        # '앞으로도 적용': 고를 수 있는 거래만 남기고, 아니면 지운다 (merchant_rules.remembered_category 가 읽음)
+        states = dict(tx.field_states or {})
+        if data["category"] is not None and apply_to_future and can_apply_to_future(tx):
+            states[FUTURE_KEY] = True
+        else:
+            states.pop(FUTURE_KEY, None)
+        if states != (tx.field_states or {}):
+            tx.field_states = states
+            changed = [*dict.fromkeys([*changed, "field_states"])]
         if changed:
             tx.save(update_fields=[*changed, "updated_at"])
     # 바뀐 카테고리 이름 등을 새로 읽어서 17번과 같은 모양으로 돌려준다

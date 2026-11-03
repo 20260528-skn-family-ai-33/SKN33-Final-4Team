@@ -2293,6 +2293,7 @@ paths:
                     categoryName: 생활용품
                   reason: 편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요.
                 classifiedBy: null
+                canApplyToFuture: false
                 updatedAt: '2026-10-09T08:05:00+09:00'
         '403':
           description: not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
@@ -2422,6 +2423,7 @@ paths:
                 installmentMonths: 0
                 suggestion: null
                 classifiedBy: user
+                canApplyToFuture: true
                 updatedAt: '2026-10-22T09:12:00+09:00'
         '400':
           description: invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
@@ -7402,10 +7404,14 @@ components:
             type: string
             format: date-time
             description: 마지막 수정 시각, 한국 시간 ISO 8601.
+          canApplyToFuture:
+            type: boolean
+            description: '''앞으로 이 가게 거래도 이 카테고리로'' 체크박스를 보여 줄지 (10/30). 소비 거래이고 원래 이체·다품목 가맹점·페이 충전이 아니면 true.'
         required:
         - installmentMonths
         - suggestion
         - classifiedBy
+        - canApplyToFuture
         - updatedAt
     TransactionCategoryUpdateRequest:
       type: object
@@ -7418,6 +7424,11 @@ components:
             enum:
             - null
           description: 선택 가능한 10개 카테고리+ETC. null은 원래 이체였고 고정지출 연결이 없는 거래를 transfer로 복원할 때만 허용. UNCLASSIFIED 금지.
+        applyToFuture:
+          type: boolean
+          default: false
+          description: true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고
+            재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래.
       required:
       - category
       additionalProperties: false
@@ -9413,7 +9424,7 @@ x-source-sha256:
   docs/api/finance-connect.md: 2e21b4763d4af0b089d86d89d992db76e92a6b187fb84d64f75fe7fdcc33e213
   docs/api/cards.md: 3fb0ff75f9d446a535ced2bc166091483b05b4b7f3e5af1715bf1e4272c9701d
   docs/api/loans.md: 5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c
-  docs/api/transactions.md: 47bd35a08112d016bddcde1c75d01b957bfa1d75b4f7edb3857404bdcf86ff88
+  docs/api/transactions.md: b50861d91d9b72e829289924604050a89a8f63678a36339df20b668e2ad380a9
   docs/api/fixed.md: 76ea3706c76e81c3e0dddabf8718411fa40ae3843ed27c706048ac3fe4917115
   docs/api/savings.md: dcb21f9061d325e6cab71cfc27b788b2ca8aadb83db7681ab3374c11b3c2d935
   docs/api/home.md: 8f341733455693bff956f2caadacb249a3ef50292f4fe3cd1c2984494976ad99
