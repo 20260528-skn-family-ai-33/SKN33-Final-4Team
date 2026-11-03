@@ -11,12 +11,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from concurrent.futures import ProcessPoolExecutor
+import threading
+import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest import TestCase, mock, skipUnless
 
 from chat.llm.ledger import Ledger
-from chat.llm.openai_rest import CapReached
+from chat.llm.openai_rest import CapReached, ResponsesClient
 
 
 def _spend_process(path):
@@ -39,6 +41,10 @@ def _claim_process(path):
         return False
 
 
+def _spend_once(path):
+    Ledger(path, None).spend()
+
+
 class PortableLedgerTest(TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -58,6 +64,74 @@ class PortableLedgerTest(TestCase):
         self.assertEqual(sorted(claimed), [False, True])
         self.assertEqual(json.loads(self.path.read_text())["units"], ["same-unit"])
 
+    def windows_threads(self, limit):
+        # Windows CRT처럼 같은 프로세스 내 경합을 오류로 돌려주는 대역.
+        # 실제 OS 파일 잠금은 아래 프로세스 검사에서 따로 확인한다.
+        gate, ready = threading.Lock(), threading.Barrier(15, timeout=10)
+
+        def locking(_fd, mode, _size):
+            if mode == 1:
+                if not gate.acquire(blocking=False):
+                    raise OSError(errno.EDEADLK, "Resource deadlock avoided")
+                time.sleep(0.005)  # 다른 스레드가 진입할 기회를 주어 수정 전 경합도 재현
+            else:
+                gate.release()
+
+        def spend(number):
+            ready.wait()
+            # 각 스레드가 새 인스턴스를 만든다. ../로 표현된 경로도 같은 파일이다.
+            path = self.path if number % 2 else str(self.path.parent / "unused") + "/../ledger.json"
+            ledger = Ledger(path, limit)
+            try:
+                ledger.spend()
+                return True
+            except CapReached:
+                return False
+
+        crt = SimpleNamespace(LK_LOCK=1, LK_UNLCK=0, locking=locking)
+        with mock.patch("chat.llm.ledger.sys.platform", "win32"), mock.patch.dict(sys.modules, msvcrt=crt):
+            with ThreadPoolExecutor(15) as pool:
+                results = list(pool.map(spend, range(15), timeout=20))
+        return results, json.loads(self.path.read_text())
+
+    def test_windows_threads_multiple_instances_count_every_call(self):
+        results, data = self.windows_threads(None)
+        self.assertEqual(results, [True] * 15)
+        self.assertEqual(data, {"limit": None, "used": 15})
+
+    def test_windows_threads_multiple_instances_never_pass_cap(self):
+        results, data = self.windows_threads(7)
+        self.assertEqual((results.count(True), results.count(False)), (7, 8))
+        self.assertEqual(data, {"limit": 7, "used": 7})
+
+    def test_different_ledger_paths_do_not_block_each_other(self):
+        ledgers = [Ledger(self.path, None), Ledger(self.path.with_name("other.json"), None)]
+        ready = threading.Barrier(2, timeout=5)
+
+        def enter(ledger):
+            with ledger._locked():
+                ready.wait()  # 경로와 무관한 전역 잠금이면 이 검사에서 실패한다.
+
+        with ThreadPoolExecutor(2) as pool:
+            list(pool.map(enter, ledgers, timeout=10))
+
+    @skipUnless("fork" in multiprocessing.get_all_start_methods(), "fork를 제공하는 OS")
+    def test_fork_does_not_inherit_locked_thread_mutex(self):
+        ledger = Ledger(self.path, None)
+        child = multiprocessing.get_context("fork").Process(target=_spend_once, args=(str(self.path),))
+        try:
+            with ledger._locked():
+                child.start()  # 부모가 잠근 동안 fork해도 자식은 새 스레드 잠금을 사용한다.
+            child.join(timeout=10)
+            self.assertFalse(child.is_alive(), "자식이 부모의 스레드 잠금을 기다리며 멈췄어요")
+            self.assertEqual(child.exitcode, 0)
+            self.assertEqual(json.loads(self.path.read_text())["used"], 1)
+        finally:
+            if child.is_alive():
+                child.terminate()
+                child.join(timeout=5)
+            child.close()
+
     def test_windows_locks_and_unlocks_same_byte_even_on_failure(self):
         calls = []
 
@@ -75,11 +149,17 @@ class PortableLedgerTest(TestCase):
         ledger = Ledger(self.path, 7)
         fail = mock.Mock(side_effect=OSError(errno.EACCES, "locked"))
         crt = SimpleNamespace(LK_LOCK=1, LK_UNLCK=0, locking=fail)
+        opener = mock.Mock()
+        client = ResponsesClient("test-model", "not-a-real-key", None, opener=opener, on_attempt=ledger.spend)
         with mock.patch("chat.llm.ledger.sys.platform", "win32"), mock.patch.dict(sys.modules, msvcrt=crt):
             with self.assertRaises(OSError):
-                ledger.spend()
+                client.complete("system", "user")
         self.assertEqual(fail.call_count, 1)  # 얻지 못한 잠금은 풀지 않는다
         self.assertEqual(json.loads(self.path.read_text())["used"], 0)
+        opener.assert_not_called()
+        self.assertEqual(client.attempts, [])
+        ledger.spend()  # 실패 시 프로세스 내부 잠금도 해제되어 다음 갱신이 가능하다.
+        self.assertEqual(json.loads(self.path.read_text())["used"], 1)
 
     def test_live_without_ledger_does_not_import_ledger_or_os_lock(self):
         # 이미 import된 모듈에 가려지지 않도록 새 인터프리터에서 import를 차단한다.

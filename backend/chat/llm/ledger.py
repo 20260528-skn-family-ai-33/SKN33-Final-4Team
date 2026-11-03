@@ -1,16 +1,45 @@
 """호출 장부 — 저장소 밖 JSON {"limit", "used"(, "units")}. 처음 만들 때의 상한을 고정하고, 시도마다 바로 늘려 쓴다 (재실행해도 초기화 안 됨).
-평가 도구(run.Ledger)에서 옮김 (MEMO 25-12). 갱신 · 상한 확인은 운영체제 파일 잠금 안에서 '읽기 → 확인 → 더하기 → 쓰기' 한 번으로
+평가 도구(run.Ledger)에서 옮김 (MEMO 25-12). 갱신 · 상한 확인은 경로별 스레드 잠금 + 운영체제 파일 잠금 안에서 '읽기 → 확인 → 더하기 → 쓰기' 한 번으로
 → 스레드 · 프로세스 여러 개가 같은 장부를 써도 수가 맞는다. limit = None 이면 상한 없이 세기만 한다.
 Windows는 msvcrt.locking, macOS · Linux는 fcntl.flock. 잠금 실패 시 장부를 갱신하지 않고 호출도 보내지 않는다.
 """
 import json
+import os
 import sys
+import threading
+from weakref import WeakValueDictionary
 from contextlib import contextmanager
 from pathlib import Path
 
 from .openai_rest import CapReached
 
 ROOT = Path(__file__).resolve().parents[3]  # 저장소 루트 (backend/chat/llm/ledger.py)
+
+
+# 여러 Ledger 인스턴스도 같은 경로의 잠금을 공유한다. 사용이 끝난 잠금은 보관하지 않는다.
+_thread_locks = WeakValueDictionary()
+_thread_locks_guard = threading.Lock()
+
+
+def _thread_lock(path):
+    key = os.path.normcase(str(path))  # path는 resolve 완료. Windows의 대소문자 차이도 같은 경로로 본다.
+    with _thread_locks_guard:
+        lock = _thread_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _thread_locks[key] = lock
+        return lock
+
+
+def _reset_thread_locks():
+    # fork한 자식은 부모의 잠긴 스레드 잠금을 물려받지 않는다. 프로세스 간 잠금은 파일이 담당한다.
+    global _thread_locks, _thread_locks_guard
+    _thread_locks = WeakValueDictionary()
+    _thread_locks_guard = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_thread_locks)
 
 
 class Ledger:
@@ -63,7 +92,8 @@ class Ledger:
     def _locked(self):
         # 빈 파일도 0번 바이트 잠금이 가능하다. 데이터를 쓰지 않아 생성/초기화 경합도 없다.
         # 실제 장부 파일은 원자적으로 교체하므로 잠금 파일은 따로 유지한다.
-        with open(self._lock_path, "a+b") as lock:
+        # Windows CRT 잠금을 여러 스레드가 동시에 기다리지 않게 프로세스 내부에서 먼저 줄을 세운다.
+        with _thread_lock(self.path), open(self._lock_path, "a+b") as lock:
             if sys.platform == "win32":
                 import msvcrt
                 lock.seek(0)
