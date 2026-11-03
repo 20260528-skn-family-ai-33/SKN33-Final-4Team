@@ -1,0 +1,3 @@
+# fixture는 원본 바이트의 SHA-256을 검사한다. Windows 체크아웃에서도 LF를 유지한다.
+/backend/spending_fixture/data/design.json text eol=lf
+/backend/spending_fixture/data/expected.json text eol=lf

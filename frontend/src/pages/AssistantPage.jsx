@@ -70,8 +70,9 @@ export default function AssistantPage() {
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
-  const [sent, setSent] = useState(null)  // 답을 기다리는 동안 먼저 보여 줄 내 말 (서버 답이 오면 서버 메시지로 바뀜)
+  const [pending, setPending] = useState(null)  // 성공을 확인할 때까지 본문 · 대화 번호 · 요청 키를 함께 보관
   const [error, setError] = useState(null)
+  const inFlight = useRef(false)  // React가 다시 그리기 전의 연속 클릭도 한 번만 보낸다
   const end = useRef(null)
 
   useEffect(() => {
@@ -79,33 +80,47 @@ export default function AssistantPage() {
   }, [messages, busy])
 
   const info = engine ?? first.data
+  const blocked = busy || pending !== null
   const send = async (body, said) => {
-    if (busy) return
+    if (inFlight.current || (pending && body)) return
+    const request = pending ?? {
+      body: { conversationId, ...body }, said: said ?? null, key: newRequestKey(),
+    }
+    inFlight.current = true
+    setPending(request)
     setBusy(true)
-    setSent(said ?? null)
     setError(null)
     try {
-      const out = await apiSend('/api/chat/messages/', 'POST', { conversationId, ...body }, { requestKey: newRequestKey() })
+      const out = await apiSend('/api/chat/messages/', 'POST', request.body, { requestKey: request.key })
+      if (!out?.conversationId || !Array.isArray(out.messages)) throw new Error('답변을 정상적으로 받지 못했어요.')
       setConversationId(out.conversationId)
       setMessages((m) => [...m, ...out.messages])
       setEngine({ engine: out.engine, features: out.features, testMode: out.testMode, today: out.today })
+      setPending(null)
     } catch (err) {
-      if (err.fields?.conversationId) setConversationId(null)  // 끝났거나 남의 대화 → 다음 문장부터 새 대화
+      // 서버가 명시적으로 거절한 요청은 수정할 수 있게 돌려준다. 타임아웃 · 통신/서버 오류는 성공 여부가 불명확하다.
+      if (err.status >= 400 && err.status < 500 && err.status !== 408) {
+        setPending(null)
+        if (request.body.text) setText(request.body.text)
+        if (err.fields?.conversationId) setConversationId(null)  // 끝났거나 남의 대화 → 다음 문장부터 새 대화
+      }
       setError(err.status === 403 ? '로그인해 주세요.' : err.message)
+    } finally {
+      inFlight.current = false
+      setBusy(false)
     }
-    setSent(null)
-    setBusy(false)
   }
 
   const submit = (e) => {
     e.preventDefault()
     const q = text.trim()
-    if (!q) return
+    if (!q || blocked || inFlight.current) return
     setText('')
     send({ text: q }, q)
   }
 
   const startOver = () => {
+    if (blocked || inFlight.current) return
     setConversationId(null)
     setMessages([])
     setError(null)
@@ -120,7 +135,7 @@ export default function AssistantPage() {
       {(info?.features ?? []).map((f) => {
         const look = LOOK[f.value] ?? { icon: 'ChevronRight', text: f.label }
         return (
-          <button key={f.value} type="button" className="mc-asst-opt" disabled={busy} onClick={() => send({ choice: f.value }, look.text)}>
+          <button key={f.value} type="button" className="mc-asst-opt" disabled={blocked} onClick={() => send({ choice: f.value }, look.text)}>
             <span className="mc-asst-ic"><Icon name={look.icon} /></span>
             <span className="mc-grow">{look.text}</span>
             <Icon name="ChevronRight" />
@@ -148,8 +163,8 @@ export default function AssistantPage() {
       foot={
         <form className="mc-chat-in mc-asst-in" onSubmit={submit}>
           <input aria-label="챗봇에게 보낼 메시지" autoComplete="off" placeholder="예: 이번 달 얼마 썼어?" type="text" maxLength={500}
-            value={text} onChange={(e) => setText(e.target.value)} />
-          <button type="submit" className="mc-chat-send" aria-label="보내기" disabled={busy}><Icon name="Send" /></button>
+            value={text} disabled={blocked} onChange={(e) => setText(e.target.value)} />
+          <button type="submit" className="mc-chat-send" aria-label="보내기" disabled={blocked}><Icon name="Send" /></button>
         </form>
       }
     >
@@ -185,18 +200,24 @@ export default function AssistantPage() {
                   <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} />
                 </div>
                 {import.meta.env.DEV && c.devTrace && <Trace trace={c.devTrace} />}
-                <Choices choices={c.choices} active={isLast && !busy} onPick={(p) => pick(c, p)} />
+                <Choices choices={c.choices} active={isLast && !blocked} onPick={(p) => pick(c, p)} />
                 {(c.inputs ?? []).includes('budget_form') && (
                   <div className="mc-msg bot mc-asst-form">
-                    <AdjustForm done={!isLast} onSubmit={(slots) => send({ text: adjustSentence(slots) }, adjustSentence(slots))} />
+                    <AdjustForm done={!isLast || blocked} onSubmit={(slots) => send({ text: adjustSentence(slots) }, adjustSentence(slots))} />
                   </div>
                 )}
               </div>
             )
           })}
-          {busy && sent && <div className="mc-asst-turn"><div className="mc-msg me"><div className="mc-bubble">{sent}</div></div></div>}
+          {pending?.said && <div className="mc-asst-turn"><div className="mc-msg me"><div className="mc-bubble">{pending.said}</div></div></div>}
           {busy && <div className="mc-asst-route is-busy" role="status"><Icon name="Loader" /> 답을 준비하고 있어요…</div>}
-          {error && <div className="mc-msg bot"><div className="mc-bubble" role="alert">{error}</div></div>}
+          {error && <div className="mc-msg bot"><div className="mc-bubble" role="alert">
+            <p>{error}</p>
+            {pending && !busy && <>
+              <p>답변을 받았는지 확인하지 못했어요. 같은 메시지를 다시 보내 주세요.</p>
+              <button type="button" className="mc-btn" onClick={() => send()}>다시 보내기</button>
+            </>}
+          </div></div>}
           <div ref={end} />
         </div>
 
@@ -206,8 +227,8 @@ export default function AssistantPage() {
             <p>더미 A(윤서)에서 확인: 새 대화 → 지난달보다 식비 더 썼어? → 점심값이 비싸진 거야? / 커피를 자주 사 먹어서 그래?</p>
             <p>점심은 대상의 평균과 가격 판단의 한계를, 커피는 품목 식별 불가를 안내해야 합니다. 기간 확인은 새 대화 → 지난달 식비는 왜 많이 나왔어? → 그럼 교통비는?</p>
             <div className="mc-chipbar">
-              <button type="button" disabled={busy} onClick={startOver}>새 대화</button>
-              {EXAMPLES.map((q) => <button key={q} type="button" disabled={busy} onClick={() => send({ text: q }, q)}>{q}</button>)}
+              <button type="button" disabled={blocked} onClick={startOver}>새 대화</button>
+              {EXAMPLES.map((q) => <button key={q} type="button" disabled={blocked} onClick={() => send({ text: q }, q)}>{q}</button>)}
             </div>
           </details>
         )}

@@ -28,7 +28,6 @@ from spending_analysis import agent as spending_agent
 
 from . import api as chat_api
 from .llm.fake import FakeReading
-from .llm.live import LiveReading
 from .models import ChatMessage, Conversation
 
 KST = ZoneInfo("Asia/Seoul")
@@ -124,6 +123,7 @@ def reading():
     if getattr(settings, "CHAT_LLM", "fake") != "live":
         return FakeReading()
     if _live is None:
+        from .llm.live import LiveReading  # fake · 첫 화면 조회에서는 실제 LLM 의존성을 불러오지 않는다
         _live = LiveReading(getattr(settings, "CHAT_LLM_MAX_CALLS", None), getattr(settings, "CHAT_LLM_LEDGER", None))
     return _live
 

@@ -59,6 +59,21 @@ class ServiceChatBase(TestCase):
 @fixture_db_only
 @SERVICE
 class ServiceChatTest(ServiceChatBase):
+    def test_fake_engine_first_screen_and_message_without_live_imports(self):
+        import builtins
+        import importlib
+        original = builtins.__import__
+
+        def guarded(name, *args, **kwargs):
+            if name in ("fcntl", "msvcrt", "llm.live", "chat.llm.live", "ledger", "chat.llm.ledger"):
+                raise AssertionError(f"fake 경로의 불필요한 import: {name}")
+            return original(name, *args, **kwargs)
+
+        with mock.patch("builtins.__import__", side_effect=guarded):
+            importlib.reload(engine)
+            self.assertEqual(self.client_for("A").get(URL).status_code, 200)
+            self.assertEqual(self.send("A", text="이번 달 얼마 썼어?").status_code, 200)
+
     def test_first_question_follow_up_and_reload(self):
         total = EXPECTED["personas"]["A"]["current_month_known"]["total"]
         out = self.send("A", text="이번 달 얼마 썼어?")

@@ -1,10 +1,10 @@
 """호출 장부 — 저장소 밖 JSON {"limit", "used"(, "units")}. 처음 만들 때의 상한을 고정하고, 시도마다 바로 늘려 쓴다 (재실행해도 초기화 안 됨).
-평가 도구(run.Ledger)에서 옮김 (MEMO 25-12). 갱신 · 상한 확인은 파일 잠금(fcntl.flock) 안에서 '읽기 → 확인 → 더하기 → 쓰기' 한 번으로
+평가 도구(run.Ledger)에서 옮김 (MEMO 25-12). 갱신 · 상한 확인은 운영체제 파일 잠금 안에서 '읽기 → 확인 → 더하기 → 쓰기' 한 번으로
 → 스레드 · 프로세스 여러 개가 같은 장부를 써도 수가 맞는다. limit = None 이면 상한 없이 세기만 한다.
-shortcut: fcntl 은 macOS · 리눅스 전용, 윈도에서 실행하게 되면 다른 잠금으로 바꾼다
+Windows는 msvcrt.locking, macOS · Linux는 fcntl.flock. 잠금 실패 시 장부를 갱신하지 않고 호출도 보내지 않는다.
 """
-import fcntl
 import json
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -61,9 +61,22 @@ class Ledger:
 
     @contextmanager
     def _locked(self):
-        with open(self._lock_path, "a") as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        # 빈 파일도 0번 바이트 잠금이 가능하다. 데이터를 쓰지 않아 생성/초기화 경합도 없다.
+        # 실제 장부 파일은 원자적으로 교체하므로 잠금 파일은 따로 유지한다.
+        with open(self._lock_path, "a+b") as lock:
+            if sys.platform == "win32":
+                import msvcrt
+                lock.seek(0)
+                msvcrt.locking(lock.fileno(), msvcrt.LK_LOCK, 1)
+                def unlock():
+                    lock.seek(0)
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                def unlock():
+                    fcntl.flock(lock, fcntl.LOCK_UN)
             try:
                 yield
             finally:
-                fcntl.flock(lock, fcntl.LOCK_UN)
+                unlock()
