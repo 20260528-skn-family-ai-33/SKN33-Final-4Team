@@ -1,6 +1,7 @@
 // 계좌 연결 5: 연결 결과
 // 연결 목록(GET /api/finance/connections/) · 고른 계좌(GET /api/finance/connect/accounts/)를 그대로 보여 준다 (11/03 S2)
 // [다시 불러오기] = POST /api/finance/sync/ → 작업 결과의 기관별 성공 · 실패를 그대로 보여 준다 (실패를 0건으로 보이지 않기)
+// [다음] = 월급 입력. 대출 확인 화면은 아직 예시 대출이라 알파에서는 건너뛴다 (11/03 S2 리뷰)
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -37,7 +38,7 @@ export default function ConnectDonePage() {
   const cardCount = cards.reduce((n, c) => n + c.cardCount, 0)
 
   return (
-    <Layout title="계좌 연결" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.loanCheck)}>다음</button>}>
+    <Layout title="계좌 연결" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.salary)}>다음</button>}>
       <div className="mc-eyebrow">계좌 연결</div>
       <h1>연결을 마쳤어요</h1>
       <p className="mc-muted">은행 {banks.length}곳 · 고른 계좌 {selected.length}개 · 카드사 {cards.length}곳 · 카드 {cardCount}장이 연결돼 있어요.</p>

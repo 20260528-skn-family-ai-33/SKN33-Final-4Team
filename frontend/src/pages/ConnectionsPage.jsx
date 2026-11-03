@@ -2,6 +2,8 @@
 // 연결 GET /api/finance/connections/ · 계좌 GET /api/finance/connect/accounts/ · 카드 GET /api/finance/connect/cards/ · 대출 GET /api/finance/loans/
 // relogin = 다시 연결 필요 → 기관 로그인 팝업으로 POST /api/finance/connections/ (같은 연결 행을 되살림)
 // [다시 불러오기] = POST /api/finance/sync/ (그 연결만). 현대카드처럼 카드 값이 필요하면 그 자리에서 받아 한 번만 보낸다
+// 계좌 · 카드 · 대출 목록은 영역마다 따로 보여 준다. 카드 · 대출 조회 동의는 선택이라 403 이어도 은행 관리는 그대로 쓴다
+// 대출 확인 화면 · 직접 등록은 아직 예시 · 미저장이라 알파에서는 열지 않는다 (11/03 S2 리뷰)
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -10,7 +12,6 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 import DisconnectPopup from '../popups/DisconnectPopup.jsx'
-import LoanAddPopup from '../popups/LoanAddPopup.jsx'
 import { apiSend, useApi } from '../utils/api.js'
 import { runFinanceSync, syncLines } from '../utils/financeSync.js'
 import { SERVER_FIELDS } from '../utils/institutions.js'
@@ -18,16 +19,27 @@ import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '조회 기록 없음')
+const items = (q) => q.data?.items ?? []
 
 export default function ConnectionsPage() {
   const conns = useApi('/api/finance/connections/')
   const accts = useApi('/api/finance/connect/accounts/')
   const cards = useApi('/api/finance/connect/cards/')
   const loans = useApi('/api/finance/loans/')
-  const loading = [conns, accts, cards, loans].find((x) => !x.data)
-  if (loading) return <Layout title="연결 관리" showBack><ApiStatus error={loading.error} /></Layout>
+  if (!conns.data) return <Layout title="연결 관리" showBack><ApiStatus error={conns.error} /></Layout>
   const reload = () => [conns, accts, cards, loans].forEach((x) => x.reload())
-  return <Connections conns={conns.data.items} accts={accts.data.items} cards={cards.data.items} loans={loans.data.items} reload={reload} />
+  return <Connections conns={conns.data.items} accts={accts} cards={cards} loans={loans} reload={reload} />
+}
+
+// 영역 목록을 못 받았을 때의 문장. 동의 안 함 · 오류를 '항목 없음'으로 보이지 않는다
+function ListStatus({ q, what }) {
+  if (q.data) return null
+  if (!q.error) return <p className="mc-muted">불러오는 중…</p>
+  if (q.error.code === 'consent_required') return <p className="mc-muted">{what} 조회 동의가 필요해요. 연결 화면에서 동의하면 여기에 보여 드려요.</p>
+  return (
+    <p className="mc-error" role="alert">{what} 목록을 못 불러왔어요. ({q.error.status ? q.error.message : '서버에 연결하지 못했어요.'}){' '}
+      <button type="button" className="mc-link" onClick={q.reload}>다시 시도</button></p>
+  )
 }
 
 function Connections({ conns, accts, cards, loans, reload }) {
@@ -113,12 +125,13 @@ function Connections({ conns, accts, cards, loans, reload }) {
     <Layout title="연결 관리" showBack>
       <h1>연결 관리</h1>
       <div className="mc-card">
-        <div className="mc-row"><h2>은행 {banks.length}곳 · 계좌 {accts.length}개</h2><span className="mc-badge">필수 · 조회 전용</span></div>
+        <div className="mc-row"><h2>은행 {banks.length}곳{accts.data && ` · 계좌 ${accts.data.items.length}개`}</h2><span className="mc-badge">필수 · 조회 전용</span></div>
         {banks.length === 0 && <p className="mc-muted">연결된 은행이 없어요.</p>}
+        {banks.length > 0 && <ListStatus q={accts} what="계좌" />}
         {banks.map((c) => (
           <div key={c.connectionId}>
             {head(c)}
-            {accts.filter((a) => a.connectionId === c.connectionId).map((a) => (
+            {items(accts).filter((a) => a.connectionId === c.connectionId).map((a) => (
               <div className="mc-listrow" key={a.accountId}>
                 <span className="mc-tile"><Icon name="Landmark" /></span>
                 <span className="mc-grow"><strong>{a.displayName}</strong><span className="mc-muted">{a.isSelected ? '관리 중' : '고르지 않음'} · 조회 {when(a.fetchedAt)}</span></span>
@@ -132,11 +145,12 @@ function Connections({ conns, accts, cards, loans, reload }) {
       </div>
 
       <div className="mc-card">
-        <div className="mc-row"><h2>카드사 {cardConns.length}곳 · 카드 {cards.length}장</h2><span className="mc-hint">선택</span></div>
+        <div className="mc-row"><h2>카드사 {cardConns.length}곳{cards.data && ` · 카드 ${cards.data.items.length}장`}</h2><span className="mc-hint">선택</span></div>
+        <ListStatus q={cards} what="카드" />
         {cardConns.map((c) => (
           <div key={c.connectionId}>
             {head(c)}
-            {cards.filter((k) => c.cardIds.includes(k.cardId)).map((k) => (
+            {items(cards).filter((k) => c.cardIds.includes(k.cardId)).map((k) => (
               <div className="mc-listrow" key={k.cardId}>
                 <span className="mc-tile"><Icon name="CreditCard" /></span>
                 <span className="mc-grow"><strong>{k.displayName}</strong><span className="mc-muted">{k.isSelected ? '관리 중' : '고르지 않음'}{k.cardType ? ` · ${k.cardType}` : ''}</span></span>
@@ -144,20 +158,21 @@ function Connections({ conns, accts, cards, loans, reload }) {
             ))}
           </div>
         ))}
-        <button type="button" className="mc-link" onClick={() => navigate(PATHS.connectCards)}>카드 선택 바꾸기</button>
+        {cards.data && <button type="button" className="mc-link" onClick={() => navigate(PATHS.connectCards)}>카드 선택 바꾸기</button>}
         <button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>+ 카드사 연결</button>
       </div>
 
       <div className="mc-card">
-        <div className="mc-row"><h2>대출 {loans.length}건</h2><span className="mc-hint">상환 중 · 조회 전용</span></div>
-        {loans.map((l) => (
-          <button type="button" className="mc-listrow" key={l.loanId} onClick={() => navigate(PATHS.loanCheck, { state: { from: 'my' } })}>
+        <div className="mc-row"><h2>대출{loans.data && ` ${loans.data.items.length}건`}</h2><span className="mc-hint">상환 중 · 조회 전용</span></div>
+        <ListStatus q={loans} what="대출" />
+        {items(loans).map((l) => (
+          <div className="mc-listrow" key={l.loanId}>
             <span className="mc-tile"><Icon name="Landmark" /></span>
             <span className="mc-grow"><strong>{l.productName ?? '대출'}</strong><span className="mc-muted">{l.lenderName ?? '기관 확인 필요'} · {l.origin === 'manual' ? '직접 등록' : '은행 조회'}</span></span>
-            <span className="mc-right">{(l.reportedBalance ?? l.manualBalance) == null ? '잔액 확인 필요' : won(l.reportedBalance ?? l.manualBalance)} <span className="mc-muted">›</span></span>
-          </button>
+            <span className="mc-right">{(l.reportedBalance ?? l.manualBalance) == null ? '잔액 확인 필요' : won(l.reportedBalance ?? l.manualBalance)}</span>
+          </div>
         ))}
-        <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup />)}>+ 조회되지 않은 대출 직접 등록</button>
+        <button type="button" className="mc-link" disabled>+ 조회되지 않은 대출 직접 등록 (준비 중)</button>
       </div>
       <p className="mc-note">송금·결제는 실행하지 않아요. 연결을 해제해도 지금까지 불러온 거래는 남아요.</p>
     </Layout>
