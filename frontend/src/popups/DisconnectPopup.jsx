@@ -1,5 +1,6 @@
 // 팝업: 연결 해제 확인 — 연결 상세(계좌 · 카드사)의 [연결 해제]
-// props: inst = 기관 이름, kind = 'bank' | 'card', related = 이 연결의 계좌 · 카드로 나가는 고정지출 · 정기 저축
+// props: inst = 기관 이름, kind = 'bank' | 'card', connectionId = 해제할 연결, onDone() = 해제한 뒤(목록 새로고침)
+//        related = 이 연결의 계좌 · 카드로 나가는 고정지출 · 정기 저축
 //   related 는 화면이 연결 목록의 accountIds · cardIds(결정 Z③)로 고정지출 · 저축 목록에서 골라 만든다
 //   [{ id, type: 'fixed' | 'saving', name, line, amount }]
 // 결정 F (docs/api/finance-connect.md '연결 해제'):
@@ -11,8 +12,9 @@ import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
+import { apiSend } from '../utils/api.js'
 
-export default function DisconnectPopup({ inst, kind = 'bank', related = [] }) {
+export default function DisconnectPopup({ inst, kind = 'bank', connectionId, onDone, related = [] }) {
   const { closePopup } = usePopup()
   const [stop, setStop] = useState(() => new Set())   // 같이 그만할 항목 id
   const toggle = (id) => setStop((prev) => {
@@ -22,9 +24,26 @@ export default function DisconnectPopup({ inst, kind = 'bank', related = [] }) {
     return next
   })
   const what = kind === 'card' ? '카드' : '계좌'
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
 
-  // 해제 · 중지는 API 연결 후. 순서: 체크한 고정지출 · 저축 중지 → 연결 해제
-  const onDisconnect = () => closePopup()
+  // 순서: 체크한 고정지출 · 저축 중지 → 연결 해제 (11/03 S2). 중지가 실패하면 해제하지 않고 멈춘다
+  const onDisconnect = async () => {
+    if (busy) return
+    setBusy(true)
+    setError('')
+    try {
+      for (const x of related.filter((r) => stop.has(`${r.type}-${r.id}`))) {
+        await apiSend(`/api/budgets/${x.type === 'saving' ? 'savings' : 'fixed'}/${x.id}/`, 'DELETE')
+      }
+      await apiSend(`/api/finance/connections/${connectionId}/`, 'DELETE')
+      onDone?.()
+      closePopup()
+    } catch (err) {
+      setError(err.message)
+      setBusy(false)
+    }
+  }
 
   return (
     <Popup label="연결 해제">
@@ -52,9 +71,10 @@ export default function DisconnectPopup({ inst, kind = 'bank', related = [] }) {
         </div>
       )}
 
+      {error && <p className="mc-error" role="alert">{error}</p>}
       <div className="mc-inline mc-disc-act">
         <button type="button" className="mc-secondary" onClick={closePopup}>취소</button>
-        <button type="button" className="mc-secondary mc-danger" onClick={onDisconnect}>
+        <button type="button" className="mc-secondary mc-danger" disabled={busy} onClick={onDisconnect}>
           {stop.size > 0 ? `${stop.size}건 그만하고 연결 해제` : '연결 해제'}
         </button>
       </div>

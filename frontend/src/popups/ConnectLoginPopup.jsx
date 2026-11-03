@@ -1,11 +1,11 @@
 // 팝업: 기관 로그인 — 계좌 연결 2단계에서 기관을 누르면 열린다
 // props: inst = '신한은행' 같은 기관 이름, onSubmit(form) = 입력이 다 되면 (팝업은 닫히고 화면이 연결을 진행)
 //        recheck = 기관이 더 요구한 확인(utils/institutions.js RECHECK). 있으면 그 칸을 더 받는다
-// 비밀번호는 이 팝업 안에서만 들고 있다가 넘기고 끝. 저장·출력하지 않는다 (진짜 연동 때는 서버에서 RSA 암호화)
+// 비밀번호는 이 팝업 안에서만 들고 있다가 넘기고 끝. 저장·출력하지 않는다 (서버가 RSA 로 암호화해 CODEF 에 한 번 보내고 버림)
 import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
-import { EXTRA, FIELD, instInfo } from '../utils/institutions.js'
+import { EXTRA, FIELD, SERVER_FIELDS, instInfo } from '../utils/institutions.js'
 import { josa } from '../utils/adjust.js'
 
 const METHODS = [['id', '아이디 로그인'], ['cert', '공동인증서']]
@@ -14,7 +14,9 @@ export default function ConnectLoginPopup({ inst, onSubmit, recheck }) {
   const { closePopup } = usePopup()
   const extra = EXTRA[inst] ?? {}
   const info = instInfo(inst)  // 아이디 로그인 지원 여부 · 잠김 횟수
-  const extraKeys = [...new Set([...(extra.fields ?? []), ...(recheck?.fields ?? [])])]
+  const wanted = [...new Set([...(extra.fields ?? []), ...(recheck?.fields ?? [])])]
+  const extraKeys = wanted.filter((k) => k in SERVER_FIELDS)  // 서버가 받는 칸만 묻는다
+  const unsupported = wanted.length > extraKeys.length
   const keys = ['id', 'password', ...extraKeys]
   const [method, setMethod] = useState(info.idLogin ? 'id' : 'cert')
   const [form, setForm] = useState(() => Object.fromEntries(keys.map((k) => [k, ''])))
@@ -56,6 +58,7 @@ export default function ConnectLoginPopup({ inst, onSubmit, recheck }) {
       {method === 'id' && info.idLogin && (
         <form className="mc-form mc-login-form" onSubmit={submit}>
           {recheck ? <p className="mc-login-note is-warn" role="note">{recheck.message}</p> : extra.note && <p className="mc-login-note">{extra.note}</p>}
+          {unsupported && <p className="mc-login-warn" role="note">{inst}에서 요구하는 추가 확인 항목은 아직 지원하지 않아 연결이 실패할 수 있어요.</p>}
           <label className="mc-field">아이디
             <input autoComplete="off" name="instId" value={form.id} onChange={(e) => set('id', e.target.value)} />
           </label>

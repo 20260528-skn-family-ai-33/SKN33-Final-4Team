@@ -1224,6 +1224,10 @@
             ],
             "description": "조회 범위 또는 금융 업권."
           },
+          "organizationCode": {
+            "type": "string",
+            "description": "CODEF 기관 코드. 다시 연결(POST /api/finance/connections/)에 그대로 보낸다."
+          },
           "organizationName": {
             "type": "string",
             "description": "기관 이름."
@@ -1282,6 +1286,7 @@
         "required": [
           "connectionId",
           "businessType",
+          "organizationCode",
           "organizationName",
           "alias",
           "status",

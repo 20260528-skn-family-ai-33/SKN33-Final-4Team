@@ -341,6 +341,7 @@
 | `items` | 목록 | 해제하지 않은 기관 연결. `disconnected`는 목록에 나오지 않는다(★3) |
 | `items[].connectionId` | UUID | 연결 번호 (해제할 때 사용) |
 | `items[].businessType` | 문자 | 업권: `bank` · `card` · `loan` (10/22 Z①) |
+| `items[].organizationCode` | 문자 | CODEF 기관 코드. [다시 연결] 때 '금융기관 인증 · 새 연결'에 그대로 보낸다 (11/03) |
 | `items[].organizationName` | 문자 | 기관 이름 |
 | `items[].alias` | 문자 / null | 사용자가 붙인 별칭 |
 | `items[].status` | 문자 | `connected` · `relogin` (★1) |
@@ -354,8 +355,8 @@
 ```json
 {
   "items": [
-    { "connectionId": "5e0a…", "businessType": "bank", "organizationName": "국민은행", "alias": null, "status": "connected", "connectedAt": "2026-10-22T10:05:30+09:00", "lastAuthenticatedAt": "2026-10-22T10:05:30+09:00", "accountCount": 2, "cardCount": 0, "accountIds": ["c91d…", "0b77…"], "cardIds": [] },
-    { "connectionId": "91f2…", "businessType": "card", "organizationName": "신한카드", "alias": null, "status": "relogin", "connectedAt": "2026-10-22T10:07:02+09:00", "lastAuthenticatedAt": "2026-10-22T10:07:02+09:00", "accountCount": 0, "cardCount": 2, "accountIds": [], "cardIds": ["1c90…", "77ab…"] }
+    { "connectionId": "5e0a…", "businessType": "bank", "organizationCode": "0004", "organizationName": "국민은행", "alias": null, "status": "connected", "connectedAt": "2026-10-22T10:05:30+09:00", "lastAuthenticatedAt": "2026-10-22T10:05:30+09:00", "accountCount": 2, "cardCount": 0, "accountIds": ["c91d…", "0b77…"], "cardIds": [] },
+    { "connectionId": "91f2…", "businessType": "card", "organizationCode": "0306", "organizationName": "신한카드", "alias": null, "status": "relogin", "connectedAt": "2026-10-22T10:07:02+09:00", "lastAuthenticatedAt": "2026-10-22T10:07:02+09:00", "accountCount": 0, "cardCount": 2, "accountIds": [], "cardIds": ["1c90…", "77ab…"] }
   ]
 }
 ```
