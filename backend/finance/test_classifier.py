@@ -122,11 +122,40 @@ class ClassifyTest(TestCase):
                              ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
             self.assertEqual(tx.suggested_category_id, "MEDICAL_HEALTH")  # SVM 답은 후보로 남김
 
+            # PR #68 리뷰: 같은 이름의 검색 결과 + 높은 Jev 점수여도 어느 가게인지 모르니 후보로만
             record = {"step": "search_jev", "source": "naver", "industry": "치과의원", "ms": 100}
             self.judge.return_value = {"apply": ("MEDICAL_HEALTH", 0.97), "record": record}
             (tx,) = self.run_classify(tx)
-            self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("MEDICAL_HEALTH", "llm"))
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", None, classifier.CONFLICT_REASON))
+            self.assertEqual((tx.suggested_category_id, tx.suggestion_source), ("MEDICAL_HEALTH", "llm"))
             self.assertTrue(tx.field_states["classifier"]["name_conflict"])
+
+    def test_name_conflict_keeps_jev_answer_as_candidate_only(self, predict):
+        # PR #68 리뷰 재현: 청담(충돌) · SVM 은 BEAUTY · 검색은 같은 이름 '청담' 한식 · Jev 는 FOOD 0.99
+        predict.side_effect = lambda names: [[("BEAUTY", 0.99), ("FOOD", 0.005)] for _ in names]
+        record = {"step": "search_jev", "source": "naver", "industry": "한식", "ms": 100}
+        self.judge.return_value = {"apply": ("FOOD", 0.99), "record": record}
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"청담"})):
+            (tx,) = self.run_classify(self.tx("청담"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["FOOD", "BEAUTY"])
+        self.assertTrue(tx.field_states["classifier"]["name_conflict"])
+
+        # 검색 실패·결과 없음도 확인 필요 그대로
+        for reason in (classifier.LOOKUP_FAILED_REASON, classifier.NOT_FOUND_REASON):
+            self.judge.return_value = {"review": ([], reason), "record": record}
+            with patch("finance.classifier.conflict_names", return_value=frozenset({"청담"})):
+                (tx,) = self.run_classify(tx)
+            self.assertEqual((tx.confirmation_state, tx.suggestion_reason), ("needs_review", reason))
+
+        # 충돌 목록에 없으면 같은 Jev 답은 그대로 자동 적용
+        self.judge.return_value = {"apply": ("FOOD", 0.99), "record": record}
+        predict.side_effect = fake_predict
+        (tx,) = self.run_classify(tx)
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
+                         ("FOOD", "suggested", "llm"))
 
     def test_user_past_choice_differs_from_model(self, predict):
         # 사용자가 전에 고친 가게('앞으로도 적용' 아님)는 SVM 이 확신해도 다르면 다시 묻는다. 같으면 그대로 적용

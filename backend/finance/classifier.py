@@ -361,6 +361,14 @@ def classify(user, txs):
             result = judge(name)
             if result is None:
                 _review(tx, top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
+            elif "apply" in result and conflict:
+                # 동명 충돌: 검색 이름이 같아도 동명 가게 중 어느 곳의 거래인지 모른다 → Jev 답은 후보로만 (PR #68 리뷰)
+                # shortcut: 지금 입력(이름뿐)으로는 구별 근거가 없다. 카드 응답에 주소·업종 코드가 생기면 그걸로 풀기
+                code, confidence = result["apply"]
+                candidates = [(code, confidence)] + [(c, p) for c, p in top if c != code]
+                if past:
+                    candidates = [(past, None)] + [(c, p) for c, p in candidates if c != past]
+                _review(tx, candidates[:3], CONFLICT_REASON, Tx.ClassificationSource.LLM)
             elif "apply" in result:
                 code, confidence = result["apply"]
                 _apply_unless_user_differs(tx, code, Tx.ClassificationSource.LLM, confidence, past, top)
