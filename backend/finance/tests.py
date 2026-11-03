@@ -300,12 +300,15 @@ class TransactionDetailTest(FinanceData):
         tx = self.tx(source_description="이하늘", transaction_type="transfer")
         body = self.patch(tx, {"category": "FOOD"}).json()
         self.assertEqual(body["transactionType"], "spending")
+        self.assertTrue(body["wasTransfer"])  # 화면이 [이체로 되돌리기]를 보여 줄 근거 (11/03)
         tx.refresh_from_db()
         self.assertEqual(tx.field_states["original_transaction_type"], "transfer")
 
         body = self.patch(tx, {"category": None}).json()
         self.assertEqual(body["transactionType"], "transfer")
         self.assertIsNone(body["category"])
+        self.assertFalse(body["wasTransfer"])
+        self.assertFalse(self.client.get(self.url(self.tx())).json()["wasTransfer"])  # 처음부터 소비
         tx.refresh_from_db()
         self.assertNotIn("original_transaction_type", tx.field_states)
 

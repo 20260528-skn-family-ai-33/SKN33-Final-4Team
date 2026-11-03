@@ -213,6 +213,8 @@ def transaction_detail_body(tx):
         "suggestion": suggestion_info(tx),
         "classified_by": tx.classification_source,
         "can_apply_to_future": can_apply_to_future(tx),
+        # 원래 이체였는지 (화면의 [이체로 되돌리기] 표시용, 11/03). field_states 원값은 내보내지 않는다 (AA⑥)
+        "was_transfer": (tx.field_states or {}).get(ORIGINAL_TYPE) == Tx.TransactionType.TRANSFER,
         "updated_at": tx.updated_at,
     }
 
