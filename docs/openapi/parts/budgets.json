@@ -508,7 +508,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "급여일이 없으면 cycle=null이고 unclassifiedCount는 오늘까지 전체 기간을 센다. 예산이 없으면 budget·split·living·overspend·nag=null, categories=[], unclassifiedCount는 계산한다. 쓴 돈은 거래 목록의 같은 구매 제외·취소 차감 기준을 재사용하고 소비 중 funding=fixed는 쓴 돈에서 뺀다. unclassifiedCount는 고정비 소비도 포함한다. 미분류·기타도 living.spent에 포함하고 예산 밖 카테고리(주거·통신·여행·숙박) 지출은 living.spent에서 뺀다(R-13). categories는 배분 대상 카테고리 + 기타만 display_order 순서로 표시한다. 초과액은 여윳돈으로만 충당한다. salaryConfirmed는 홈 salaryState=received. nag는 보호 카테고리(주거·통신, 교통·차량) 외 자물쇠 changeCount≥3 또는 이번 주기 approved_at이 있는 예산≥3일 때 표시한다.",
+        "description": "급여일이 없으면 cycle=null이고 unclassifiedCount는 오늘까지 전체 기간을 센다. 예산이 없으면 budget·split·living·overspend·nag=null, categories=[], unclassifiedCount는 계산한다. 쓴 돈은 거래 목록의 같은 구매 제외·취소 차감 기준을 재사용하고 소비 중 funding=fixed는 쓴 돈에서 뺀다. unclassifiedCount는 고정비 소비도 포함한다. 쓴 돈 기간은 주기 시작일~오늘(홈·채팅과 같음). 미분류·기타도 living.spent에 포함하고 예산 밖 카테고리(주거·통신·여행·숙박) 지출은 living.spent에서 뺀다(R-13). outOfBudget은 그 빼낸 지출을 안내용으로 준다(예산이 없으면 null). budget.engineVersion이 temp-로 시작하면 화면에 테스트 추천 표시. categories는 배분 대상 카테고리 + 기타만 display_order 순서로 표시한다. 초과액은 여윳돈으로만 충당한다. salaryConfirmed는 홈 salaryState=received. nag는 보호 카테고리(주거·통신, 교통·차량) 외 자물쇠 changeCount≥3 또는 이번 주기 approved_at이 있는 예산≥3일 때 표시한다.",
         "responses": {
           "200": {
             "description": "이번 주기 validated 초안 우선, 없으면 approved",
@@ -528,7 +528,8 @@
                         "budgetId": "c14d022f-5d81-4f29-b465-4d9d941c8a23",
                         "versionNo": 1,
                         "status": "validated",
-                        "salaryConfirmed": false
+                        "salaryConfirmed": false,
+                        "engineVersion": "temp-fallback-1"
                       },
                       "split": {
                         "funding": 2800000,
@@ -662,7 +663,11 @@
                         }
                       ],
                       "unclassifiedCount": 0,
-                      "nag": null
+                      "nag": null,
+                      "outOfBudget": {
+                        "total": 0,
+                        "categories": []
+                      }
                     }
                   },
                   "noBudget": {
@@ -677,7 +682,8 @@
                       "overspend": null,
                       "categories": [],
                       "unclassifiedCount": 3,
-                      "nag": null
+                      "nag": null,
+                      "outOfBudget": null
                     }
                   },
                   "noPayday": {
@@ -689,7 +695,8 @@
                       "overspend": null,
                       "categories": [],
                       "unclassifiedCount": 3,
-                      "nag": null
+                      "nag": null,
+                      "outOfBudget": null
                     }
                   }
                 }
@@ -912,7 +919,8 @@
                         "budgetId": "c14d022f-5d81-4f29-b465-4d9d941c8a23",
                         "versionNo": 1,
                         "status": "approved",
-                        "salaryConfirmed": false
+                        "salaryConfirmed": false,
+                        "engineVersion": "temp-fallback-1"
                       },
                       "split": {
                         "funding": 2800000,
@@ -1046,7 +1054,11 @@
                         }
                       ],
                       "unclassifiedCount": 0,
-                      "nag": null
+                      "nag": null,
+                      "outOfBudget": {
+                        "total": 0,
+                        "categories": []
+                      }
                     }
                   }
                 }
@@ -1543,7 +1555,8 @@
           "budgetId",
           "versionNo",
           "status",
-          "salaryConfirmed"
+          "salaryConfirmed",
+          "engineVersion"
         ],
         "properties": {
           "budgetId": {
@@ -1564,6 +1577,11 @@
           },
           "salaryConfirmed": {
             "type": "boolean"
+          },
+          "engineVersion": {
+            "type": "string",
+            "nullable": true,
+            "description": "계산 엔진 버전. temp-로 시작하면 임시 비율 추천(화면 '테스트 추천')"
           }
         },
         "additionalProperties": false,
@@ -1748,7 +1766,8 @@
           "overspend",
           "categories",
           "unclassifiedCount",
-          "nag"
+          "nag",
+          "outOfBudget"
         ],
         "properties": {
           "cycle": {
@@ -1780,6 +1799,47 @@
           "nag": {
             "type": "string",
             "nullable": true
+          },
+          "outOfBudget": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": false,
+            "description": "예산 밖 지출 안내(계산에 안 넣음). 예산이 없으면 null",
+            "required": [
+              "total",
+              "categories"
+            ],
+            "properties": {
+              "total": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "categories": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "category",
+                    "spent"
+                  ],
+                  "properties": {
+                    "category": {
+                      "type": "string",
+                      "enum": [
+                        "HOUSING_TELECOM",
+                        "TRAVEL_LODGING"
+                      ]
+                    },
+                    "spent": {
+                      "type": "integer",
+                      "format": "int64"
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "additionalProperties": false

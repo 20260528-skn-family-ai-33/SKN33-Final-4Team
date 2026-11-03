@@ -9,7 +9,7 @@ from .home import ensure_cycle, period_json
 from .models import Budget, BudgetCategorySetting, Category
 from .recommend import ALLOCATION_CODES
 from .salary import current_salary_profile, salary_cycle_dates
-from .scope import living_spent
+from .scope import living_spent, outside_spent
 
 
 LIVING_CODES = (*ALLOCATION_CODES, "ETC")  # 예산 화면 · 자물쇠 대상. 예산 밖(scope.OUT_OF_BUDGET)은 없음
@@ -32,12 +32,19 @@ def budget_nag(user, cycle):
     return None
 
 
+def out_of_budget_json(summary):
+    """예산 밖 지출 안내 (계산에는 안 넣음). 채팅 outside_spent 와 같은 budgets.scope 계산"""
+    outside = outside_spent(summary)
+    return {"total": sum(outside.values()), "categories": [{"category": c, "spent": v} for c, v in outside.items()]}
+
+
 def budget_data(user, today, *, selected=None):
     profile = current_salary_profile(user, today)
     cycle = current_cycle(user, profile, today)
     rows = listed_transactions(user)
     if cycle:
-        rows = rows.filter(occurred_on__gte=cycle.starts_on, occurred_on__lt=cycle.ends_before)
+        # 채팅(spending_analysis budget_left)과 같은 기간: 주기 시작일 ~ 오늘
+        rows = rows.filter(occurred_on__gte=cycle.starts_on, occurred_on__lt=cycle.ends_before, occurred_on__lte=today)
     else:
         # 급여일을 아직 정하지 않았으면 홈처럼 오늘까지 전체 기간의 확인할 소비를 센다.
         rows = rows.filter(occurred_on__lte=today)
@@ -45,7 +52,7 @@ def budget_data(user, today, *, selected=None):
     data = {
         "cycle": {"starts_on": cycle.starts_on.isoformat(), "ends_before": cycle.ends_before.isoformat()} if cycle else None,
         "budget": None, "split": None, "living": None, "overspend": None,
-        "categories": [], "unclassified_count": summary["needs_review_count"], "nag": None,
+        "categories": [], "unclassified_count": summary["needs_review_count"], "nag": None, "out_of_budget": None,
     }
     if cycle is None:
         return data
@@ -76,11 +83,12 @@ def budget_data(user, today, *, selected=None):
         })
     data.update({
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,
-                   "salary_confirmed": period["salary_state"] == "received"},
+                   "salary_confirmed": period["salary_state"] == "received", "engine_version": selected.engine_version},
         "split": {"funding": selected.funding_amount, "fixed": totals.get("fixed", 0), "saving": totals.get("savings", 0),
                   "cushion": totals.get("cushion", 0), "living": living, "spare": spare},
         "living": {"budget": living, "spent": spent, "remaining": max(living - spent, 0)},
         "overspend": {"over": over, "covered_by_spare": covered, "spare_remaining": spare - covered, "shortfall": over - covered},
         "categories": categories, "nag": budget_nag(user, cycle),
+        "out_of_budget": out_of_budget_json(summary),
     })
     return data

@@ -1178,6 +1178,26 @@ class BudgetScopeTest(TestCase):
         self.assertIn("예산 밖 지출(여행·숙박) 120,000원은 남은 생활비에서 빼고 따로 보여드려요.", out["notices"])
 
 
+    def test_total_includes_travel_but_living_left_does_not(self):
+        """N3 · 11/3: 같은 대화에서 전체 소비 질문은 여행비를 포함하고, 남은 생활비 질문은 빼고 '예산 밖 지출'로만 안내한다"""
+        from spending_analysis.periods import this_month
+        from spending_analysis.tools import spend_query
+        b = EXPECTED["personas"]["A"]["budget"]
+        today = date(2026, 10, 29)
+        before = spend_query(user("A"), this_month(today))["observed"]["total"]
+        FinancialTransaction.objects.create(
+            user=user("A"), source_kind="card", card=Card.objects.filter(user=user("A")).first(), source_key="fixture:n3-travel",
+            occurred_on=date(2026, 10, 27), occurred_time=time(15), amount=120_000, direction="out", transaction_type="spending",
+            merchant_name="바다펜션", confirmed_category_id="TRAVEL_LODGING", confirmation_state="confirmed")
+        chat = Chat(user("A"))
+        total = chat.say("이번 달 얼마 썼어?")[1]
+        self.assertIn(f"{before + 120_000:,}원", total["lines"][0])
+        left = chat.say("예산 얼마 남았어?")[1]
+        self.assertIn(f"생활비 예산 {b['living_budget']:,}원 중 {b['living_spent']:,}원을 썼고 {b['living_remaining']:,}원 남았어요.",
+                      left["lines"])
+        self.assertIn("예산 밖 지출(여행·숙박) 120,000원은 남은 생활비에서 빼고 따로 보여드려요.", left["notices"])
+
+
 @fixture_db_only
 class OmittedDateTest(TestCase):
     """11/2 2차: 월 · 연도를 생략한 날짜는 기준일로 채운다 · 끝이 기준일 뒤면 자르고 안내 · 시작이 뒤면 지난달 같은 날짜 선택지"""

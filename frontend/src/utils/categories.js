@@ -25,7 +25,7 @@ export const PENDING = { code: 'UNCLASSIFIED', name: '확인 필요', icon: 'Cir
 
 export const CAT_NAMES = SPEND_CATS.map((c) => c.name)                       // 10개 이름 전체 (우선순위는 PRIORITY_CATS)
 // 생활비 예산 밖 (11/3 확정, 서버 budgets/scope.py OUT_OF_BUDGET과 같게) — 소비 조회 · 거래 · 고정지출 카테고리에는 그대로 둔다
-const OUT_OF_BUDGET = ['HOUSING_TELECOM', 'TRAVEL_LODGING']
+export const OUT_OF_BUDGET = ['HOUSING_TELECOM', 'TRAVEL_LODGING']
 export const PRIORITY_CATS = SPEND_CATS.filter((c) => !OUT_OF_BUDGET.includes(c.code)).map((c) => c.name)  // 소비 우선순위 (예산 대상만, 기타 없음)
 export const BUDGET_CATS = [...PRIORITY_CATS, ...(ETC.budget ? [ETC.name] : [])]  // 예산 칸이 있는 카테고리 (최소 금액 · 조정)
 export const PICK_CATS = [...CAT_NAMES, ETC.name]                           // 사용자가 거래 카테고리를 고를 때

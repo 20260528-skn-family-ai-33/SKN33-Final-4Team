@@ -202,3 +202,17 @@ def encryption_key(name):
 
 
 CONNECTED_ID_ENCRYPTION_KEY = encryption_key("CONNECTED_ID_ENCRYPTION_KEY")
+
+
+# ===== 챗봇 엔진 (chat/api.py · chat/engine.py) =====
+# CHAT_ENGINE = legacy(기본, 기존 선택지 챗봇) | router(새 엔진: 라우터 + 소비 분석 + 예산 · 정책 '준비 중')
+# CHAT_LLM = fake(기본, 가짜 해석 — 네트워크 없음) | live(실제 LLM, OPENAI_API_KEY · LLM_MODEL 필요)
+# 기준 날짜(CHAT_TODAY)는 두지 않는다: 일반 서버는 오늘 날짜로 실제 거래를 읽는다 (고정 날짜는 spending_fixture.service_settings 만)
+CHAT_ENGINE = os.getenv("CHAT_ENGINE", "").strip() or "legacy"
+CHAT_LLM = os.getenv("CHAT_LLM", "").strip() or "fake"
+if CHAT_ENGINE not in ("legacy", "router"):
+    raise ImproperlyConfigured("CHAT_ENGINE 은 legacy 또는 router 예요")
+if CHAT_LLM not in ("fake", "live"):
+    raise ImproperlyConfigured("CHAT_LLM 은 fake 또는 live 예요")
+if CHAT_LLM == "live" and not (os.getenv("OPENAI_API_KEY") and os.getenv("LLM_MODEL")):
+    raise ImproperlyConfigured("CHAT_LLM=live 에는 .env 의 OPENAI_API_KEY · LLM_MODEL 이 필요해요")

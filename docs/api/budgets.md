@@ -279,8 +279,9 @@
 | `budget.budgetId` · `versionNo` | UUID · 정수 | 예산 번호 · 이번 주기 안 버전 |
 | `budget.status` | 문자 | `validated`(승인 전 초안) · `approved`(지금 적용 중) |
 | `budget.salaryConfirmed` | 참/거짓 | 이번 주기 월급이 들어왔는지 (홈 `salaryState = received`). `false`면 "이번 주기 월급이 확인되지 않았어요" 안내 (R-07) |
+| `budget.engineVersion` | 문자 / null | 이 예산을 만든 계산 엔진 버전. `temp-`로 시작하면 임시 비율 추천 → 추천 화면에 "테스트 추천" 표시 (11/3) |
 | `split` | 객체 / null | 한 달 나눠보기: `{ "funding", "fixed", "saving", "cushion", "living", "spare" }` (원). `funding = fixed + saving + cushion + living + spare` |
-| `living` | 객체 / null | `{ "budget", "spent", "remaining" }` 이번 주기 생활비 · 쓴 돈 · 남은 돈(0 아래 안 내림). 쓴 돈에서 예산 밖 카테고리(R-13) 지출은 뺀다 |
+| `living` | 객체 / null | `{ "budget", "spent", "remaining" }` 이번 주기 생활비 · 쓴 돈 · 남은 돈(0 아래 안 내림). 쓴 돈은 **주기 시작일 ~ 오늘**(홈 · 채팅과 같은 기간, 11/3) 거래이며 예산 밖 카테고리(R-13) 지출은 뺀다 |
 | `overspend` | 객체 / null | 생활비를 넘게 썼을 때 여윳돈 충당 (플로우 4.7): `{ "over", "coveredBySpare", "spareRemaining", "shortfall" }` = 생활비 초과액 · 여윳돈으로 충당한 금액 · 남은 여윳돈 · 그래도 모자란 금액. 안 넘었으면 `over`·`coveredBySpare`·`shortfall` = 0, `spareRemaining` = 여윳돈 전체. 저축 · 쿠션에서는 가져오지 않는다 |
 | `categories` | 배열 | 배분 대상 카테고리 + 기타(R-13, 주거·통신 · 여행·숙박 없음), 화면 순서(`display_order`). 예산이 없으면 `[]`. 옛 정책 승인 예산에 두 카테고리 줄이 있어도 목록에 넣지 않는다 |
 | `categories[].category` · `categoryName` | 문자 | 카테고리 코드 · 이름 |
@@ -290,12 +291,13 @@
 | `categories[].locked` · `lockedAmount` | 참/거짓 · 정수 / null | 자물쇠 · 잠긴 금액. 보고 있는 예산의 `allocated`와 다를 수 있다 (예: 초안에서 잠근 금액을 승인 예산 화면에서 볼 때) |
 | `categories[].reason` | 문자 / null | 추천 이유 한 줄 (에이전트가 주면) |
 | `unclassifiedCount` | 정수 | 이번 주기의 '확인 필요' 소비 거래 수 |
+| `outOfBudget` | 객체 / null | **예산 밖 지출 안내** (11/3, R-13) `{ "total", "categories": [{ "category", "spent" }] }`. 생활비 쪽으로 잡힌 주거·통신 · 여행·숙박 지출(고정지출로 연결된 거래는 빼고). 생활비 사용액과 같은 기간. 계산(사용액 · 남은 돈 · 하루 금액)에는 넣지 않고 안내만. 쓴 돈이 없으면 `total` 0 · `categories` `[]`, 예산이 없으면 `null`. 홈 `budget.outOfBudget` · 채팅 `outside_spent`와 같은 금액 |
 | `nag` | 문자 / null | 잔소리 문구 (아래 금액 고정 API 참고). 없으면 `null` |
 
 ```json
 {
   "cycle": { "startsOn": "2026-10-25", "endsBefore": "2026-11-25" },
-  "budget": { "budgetId": "5c2a…", "versionNo": 1, "status": "validated", "salaryConfirmed": true },
+  "budget": { "budgetId": "5c2a…", "versionNo": 1, "status": "validated", "salaryConfirmed": true, "engineVersion": "temp-fallback-1" },
   "split": { "funding": 2800000, "fixed": 770000, "saving": 610000, "cushion": 200000, "living": 1120000, "spare": 100000 },
   "living": { "budget": 1120000, "spent": 0, "remaining": 1120000 },
   "overspend": { "over": 0, "coveredBySpare": 0, "spareRemaining": 100000, "shortfall": 0 },
@@ -303,6 +305,7 @@
     { "category": "FOOD", "categoryName": "식비", "allocated": 330000, "spent": 0, "minAmount": 300000, "locked": false, "lockedAmount": null, "reason": null }
   ],
   "unclassifiedCount": 0,
+  "outOfBudget": { "total": 0, "categories": [] },
   "nag": null
 }
 ```

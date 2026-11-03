@@ -4,6 +4,7 @@
 - 대상 = 집계 대상과 같게: listed_transactions 는 사용자의 모든 계좌 · 카드 거래를 담는다
   (is_selected · 연결 해제 · 연결 시점으로 거르지 않음) → 사용자의 모든 계좌 · 카드가 대상
 - 계좌: bank_sync 성공(연결 단위 기록, account FK 가 있으면 그 계좌만). sync_bank 는 입출금(demand) 계좌의 거래만 받는다
+  → 적금 · 예금 등 입출금 외 계좌는 거래를 수집하지 않는 계좌라 판정 대상에서 뺀다 (11/3 — 전에는 '범위 미정'으로 complete 를 막았다)
 - 카드: card_approval_list 성공(카드 FK). 청구서(card_bill_list) · 연결 단위 card_sync 기록은 승인내역 근거로 쓰지 않는다
 - SyncRun.covered_to 는 포함(CODEF endDate, budgets.protect.covered_until 과 같은 해석) → Period(covered_from, covered_to + 1일)
 - 실패 기록은 읽지 않는다: 나중 실패가 이미 확보한 성공 범위를 지우지 않고, 실패 요청 범위(requested)를 성공으로 쓰지 않는다
@@ -86,8 +87,7 @@ def coverage(user, period):
 
     targets, undetermined = [], []
     for a in accounts:
-        if a["account_type"] != "demand":  # sync_bank 가 거래를 받지 않는 계좌 — 범위 정책 미정
-            undetermined.append({"kind": "account", "id": a["account_id"], "reason": "not_demand_account"})
+        if a["account_type"] != "demand":  # sync_bank 가 거래를 받지 않는 계좌 (적금 · 예금) — 대상 아님
             continue
         used = [r for r in runs if r["product_code"] == BANK_RUN and (
             r["account_id"] == a["account_id"] or (r["account_id"] is None and r["connection_id"] == a["connection_id"]))]

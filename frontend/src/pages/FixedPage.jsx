@@ -33,6 +33,8 @@ function payLabel(f) {
   return method.status === 'disconnected' ? `${method.displayName} (연결 해제됨 · 다시 고르기)` : method.displayName
 }
 
+// 카테고리는 이름 옆에 작게 — 아래 줄(출금일 · 결제 수단)이 길어지지 않게
+const CatTag = ({ f }) => <span className="mc-muted" style={{ fontSize: 12, marginLeft: 6 }}>{f.categoryName}</span>
 const dayLabel = (f, unknown) => (f.paymentDay ? `매월 ${f.paymentDay}일` : unknown)
 const lateDue = (f) => f.recentDues?.find((d) => d.paymentState === 'needs_review')
 
@@ -115,7 +117,7 @@ function ManageView() {
       {rows.map((f) => (
         <div className="mc-card" key={f.recurringId}>
           <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">{dayLabel(f, '출금일 모름')} · {payLabel(f)} · {f.categoryName}</span></span>
+            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><CatTag f={f} /><span className="mc-muted" style={{ display: 'block', marginTop: 4 }}>{dayLabel(f, '출금일 모름')} · {payLabel(f)}</span></span>
             <strong style={{ whiteSpace: 'nowrap' }}>{won(f.amount)}</strong>
           </div>
           <div className="mc-row" style={{ marginTop: 8 }}>
@@ -184,16 +186,19 @@ function OnboardingView() {
       {data.items.map((f) => (
         <div className="mc-card" key={f.recurringId}>
           <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><br /><span className="mc-muted">{dayLabel(f, '출금일 확인 필요')} · {payLabel(f)} · {f.categoryName}</span></span>
-            <strong>{won(f.amount)}</strong>
+            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><CatTag f={f} /><span className="mc-muted" style={{ display: 'block', marginTop: 4 }}>{dayLabel(f, '출금일 확인 필요')} · {payLabel(f)}</span></span>
+            <strong style={{ whiteSpace: 'nowrap' }}>{won(f.amount)}</strong>
           </div>
-          <span className="mc-badge" style={{ marginTop: 8 }}>{f.status === 'suggested' ? '3달 연속 감지' : f.sourceType === 'manual' ? '직접 추가' : '확인함'}</span>
+          {/* 배지 왼쪽 · [수정] 오른쪽 — 저축 확인 화면과 같은 모양 */}
+          <div className="mc-row" style={{ marginTop: 8 }}>
+            <span className="mc-badge">{f.status === 'suggested' ? '3달 연속 감지' : f.sourceType === 'manual' ? '직접 추가' : '확인함'}</span>
+            <button type="button" className="mc-link" onClick={() => openPopup(<FixedPopup item={f} onSaved={reload} />)}>수정</button>
+          </div>
           {f.evidenceSuggestion && <Suggestion f={f} onSaved={reload} />}
-          <div className="mc-inline">
-            <button type="button" className="mc-secondary" onClick={() => openPopup(<FixedPopup item={f} onSaved={reload} />)}>수정</button>
-            {/* 고정지출 아니에요 = 이 후보를 무시(ignored). 같은 후보를 다시 묻지 않는다. 확정된 건 후보가 아니라 없음 */}
-            {f.status === 'suggested' && <button type="button" className="mc-secondary" disabled={busy} onClick={() => ignore(f)}>고정지출 아니에요</button>}
-          </div>
+          {/* 고정지출 아니에요 = 이 후보를 무시(ignored). 같은 후보를 다시 묻지 않는다. 확정된 건 후보가 아니라 없음 */}
+          {f.status === 'suggested' && (
+            <div className="mc-inline"><button type="button" className="mc-secondary" disabled={busy} onClick={() => ignore(f)}>고정지출 아니에요</button></div>
+          )}
         </div>
       ))}
       <button type="button" className="mc-secondary" onClick={() => openPopup(<FixedPopup onSaved={reload} />)}>+ 고정지출 직접 추가</button>

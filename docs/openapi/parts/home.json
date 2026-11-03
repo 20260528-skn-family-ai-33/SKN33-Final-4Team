@@ -8,7 +8,7 @@
           "홈"
         ],
         "x-source": "docs/api/home.md",
-        "description": "기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. 오늘 쓸 돈·생활비·쿠션 계산은 ML 후이며 budget은 항상 null입니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.",
+        "description": "기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. budget은 이번 주기 approved 예산이 있을 때만 채우며(초안 제외) 계산은 GET /api/budgets/와 같습니다. 쿠션 계산은 아직 없습니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.",
         "responses": {
           "200": {
             "description": "정상 처리",
@@ -213,10 +213,29 @@
           "budget": {
             "type": "object",
             "nullable": true,
-            "enum": [
-              null
-            ],
-            "description": "1차 명세는 항상 null. 예산 영역은 ML 후 별도 확정."
+            "description": "이번 주기 승인 예산 (없으면 null). docs/api/home.md ⑤",
+            "properties": {
+              "budgetId": { "type": "string", "format": "uuid" },
+              "versionNo": { "type": "integer" },
+              "livingBudget": { "type": "integer", "description": "승인 생활비" },
+              "livingLeft": { "type": "integer", "description": "남은 생활비 (0 미만 없음)" },
+              "livingPct": { "type": "integer", "description": "사용률 % 반올림, 100 초과 가능" },
+              "spare": { "type": "integer", "description": "남은 여윳돈" },
+              "daily": { "type": "integer", "nullable": true, "description": "livingLeft ÷ daysLeft 버림. 마지막 날 null" },
+              "daysLeft": { "type": "integer", "description": "다음 월급날 − 오늘 − 1" },
+              "outOfBudget": {
+                "type": "object",
+                "description": "예산 밖 지출 안내 (계산에 안 넣음)",
+                "properties": {
+                  "total": { "type": "integer" },
+                  "categories": { "type": "array", "items": { "type": "object", "properties": {
+                    "category": { "type": "string", "enum": ["HOUSING_TELECOM", "TRAVEL_LODGING"] },
+                    "spent": { "type": "integer" } }, "required": ["category", "spent"] } }
+                },
+                "required": ["total", "categories"]
+              }
+            },
+            "required": ["budgetId", "versionNo", "livingBudget", "livingLeft", "livingPct", "spare", "daily", "daysLeft", "outOfBudget"]
           }
         },
         "required": [

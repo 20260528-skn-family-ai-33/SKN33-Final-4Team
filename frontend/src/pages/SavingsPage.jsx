@@ -55,7 +55,7 @@ function ManageView() {
       {confirmed.map((s) => (
         <div className="mc-card" key={s.savingId}>
           <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{s.name}</strong><br /><span className="mc-muted">{savingLine(s)}</span></span>
+            <span><strong style={{ fontSize: 15 }}>{s.name}</strong><span className="mc-muted" style={{ display: 'block', marginTop: 4 }}>{savingLine(s)}</span></span>
             <strong style={{ whiteSpace: 'nowrap' }}>{won(s.amount)}</strong>
           </div>
           <div className="mc-row" style={{ marginTop: 8 }}>
@@ -122,7 +122,7 @@ function OnboardingView() {
       {candidates.map((c) => (
         <div className="mc-card" key={c.savingId}>
           <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{c.toAccount?.displayName ?? c.name}</strong><br /><span className="mc-muted">{savingLine(c)}</span></span>
+            <span><strong style={{ fontSize: 15 }}>{c.toAccount?.displayName ?? c.name}</strong><span className="mc-muted" style={{ display: 'block', marginTop: 4 }}>{savingLine(c)}</span></span>
             <strong style={{ whiteSpace: 'nowrap' }}>{won(c.amount)}</strong>
           </div>
           <div className="mc-row" style={{ marginTop: 8 }}>
@@ -140,7 +140,7 @@ function OnboardingView() {
       {confirmed.map((s) => (
         <div className="mc-card" key={s.savingId}>
           <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{s.name}</strong><br /><span className="mc-muted">{savingLine(s)}</span></span>
+            <span><strong style={{ fontSize: 15 }}>{s.name}</strong><span className="mc-muted" style={{ display: 'block', marginTop: 4 }}>{savingLine(s)}</span></span>
             <strong style={{ whiteSpace: 'nowrap' }}>{won(s.amount)}</strong>
           </div>
           <div className="mc-row" style={{ marginTop: 8 }}>
