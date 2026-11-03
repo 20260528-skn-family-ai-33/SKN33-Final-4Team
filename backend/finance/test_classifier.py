@@ -204,6 +204,7 @@ class JudgeTest(SimpleTestCase):
     def test_multi_item_industry_skips_jev(self):
         result, ask = self.run_judge(("naver", "새봄동물", "편의점"))
         self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
+        self.assertTrue(result["record"]["multi_item"])
         ask.assert_not_called()
 
     def test_non_store_industry_is_not_evidence(self):

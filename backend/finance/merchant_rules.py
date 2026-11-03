@@ -5,7 +5,7 @@
 "앞으로도 적용"(PATCH applyToFuture)을 고르면 그 거래의 field_states 에 FUTURE_KEY 가 남는다 (10/30).
 새 거래가 들어오면 같은 회원·같은 가맹점의 '사용자가 확정한 가장 최근 거래'를 찾는다.
 - 그 거래가 "앞으로도 적용"이면 그 카테고리를 자동으로 쓴다 (remembered_category)
-- 아니면 자동으로 쓰지 않고, 거래 분류가 '확인 필요' 후보로만 보여 줄 수 있다 (last_user_choice)
+- 아니면(검색으로 다품목이 확인된 거래 포함) 자동으로 쓰지 않고, 거래 분류가 '확인 필요' 후보로만 보여 줄 수 있다 (last_user_choice)
 
 이 방법이 느리거나(거래가 아주 많아질 때) 규칙을 따로 관리해야 하면 merchant_rule 테이블을 추가한다.
 """
@@ -14,6 +14,12 @@ from .models import FinancialTransaction
 # classification_source 코드는 아직 미정 (docs/DB_MODELS.md 5번). 정해지면 이 값만 맞춘다
 USER_SOURCE = "user"
 FUTURE_KEY = "apply_to_future"
+SEARCHED_MULTI_ITEM = "multi_item"  # field_states["classifier"] 안: 5단계 검색 업종이 다품목 (PR #67 리뷰)
+
+
+def searched_multi_item(field_states):
+    """검색으로 다품목(편의점·마트 등)이 확인된 거래인지. 이름 사전에 없는 가게도 '앞으로도 적용'을 막는다"""
+    return bool(((field_states or {}).get("classifier") or {}).get(SEARCHED_MULTI_ITEM))
 
 
 def normalize_merchant(name):
@@ -37,7 +43,7 @@ def last_user_choice(user, merchant_name):
     )
     if row is None:
         return None, False
-    return row[0], bool((row[1] or {}).get(FUTURE_KEY))
+    return row[0], bool((row[1] or {}).get(FUTURE_KEY)) and not searched_multi_item(row[1])
 
 
 def remembered_category(user, merchant_name):

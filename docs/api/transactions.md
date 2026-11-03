@@ -190,7 +190,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `suggestion.reason` | 문자 / null | 확인 필요 이유(사용자에게 보여 줄 문장) |
 | `classifiedBy` | 문자 / null | 분류 출처: `user` · `rule` · `ml` · `llm`. DB `classification_source`와 같음(H-07 확정) |
 | `wasTransfer` | 불린 | 원래 이체였다가 소비로 바뀐 거래인지 (11/03). `true`면 화면이 [이체로 되돌리기](`category: null`)를 보여 준다. 고정지출에 연결된 거래는 `true`여도 되돌리기가 400(AA⑤) |
-| `canApplyToFuture` | 불린 | 화면에 "앞으로 이 가게 거래도 이 카테고리로" 체크박스를 보여 줄지 (10/30). 소비 거래이고 다품목 가맹점·페이 충전이 아니면 `true`. 이체는 `false`(받는 사람은 기억하지 않음, W) |
+| `canApplyToFuture` | 불린 | 화면에 "앞으로 이 가게 거래도 이 카테고리로" 체크박스를 보여 줄지 (10/30). 소비 거래이고 다품목 가맹점(이름 사전 또는 가게 검색 업종이 편의점·마트 등)·페이 충전이 아니면 `true`. 이체는 `false`(받는 사람은 기억하지 않음, W) |
 | `updatedAt` | 시각 | 마지막 수정 시각 |
 
 ```json
