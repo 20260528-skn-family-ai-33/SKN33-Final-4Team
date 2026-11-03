@@ -1,5 +1,7 @@
 import os
+import tempfile
 from decimal import Decimal
+from pathlib import Path
 from unittest import skipUnless
 from unittest.mock import patch
 
@@ -111,6 +113,34 @@ class ClassifyTest(TestCase):
         self.assertEqual((musinsa.confirmed_category_id, musinsa.classification_source), ("FOOD", "ml"))
         predict.assert_called_once_with(["무신사"])
 
+    def test_name_conflict_skips_confident_svm(self, predict):
+        # 분류 워크플로 10/26 4장: 같은 이름에 다른 업종이 있으면 SVM 0.99 여도 확정하지 않고 검색+Jev
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"루덴치과의원"})):
+            (tx,) = self.run_classify(self.tx("루덴치과의원"))
+            self.judge.assert_called_once_with("루덴치과의원")
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+            self.assertEqual(tx.suggested_category_id, "MEDICAL_HEALTH")  # SVM 답은 후보로 남김
+
+            record = {"step": "search_jev", "source": "naver", "industry": "치과의원", "ms": 100}
+            self.judge.return_value = {"apply": ("MEDICAL_HEALTH", 0.97), "record": record}
+            (tx,) = self.run_classify(tx)
+            self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("MEDICAL_HEALTH", "llm"))
+            self.assertTrue(tx.field_states["classifier"]["name_conflict"])
+
+    def test_user_past_choice_differs_from_model(self, predict):
+        # 사용자가 전에 고친 가게('앞으로도 적용' 아님)는 SVM 이 확신해도 다르면 다시 묻는다. 같으면 그대로 적용
+        self.tx("루덴치과의원", confirmed_category_id="BEAUTY", confirmation_state="confirmed", classification_source="user")
+        (tx,) = self.run_classify(self.tx("루덴치과의원"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.USER_DIFFERS_REASON))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["BEAUTY", "MEDICAL_HEALTH", "FOOD"])
+
+        self.tx("루덴치과의원", confirmed_category_id="MEDICAL_HEALTH", confirmation_state="confirmed",
+                classification_source="user", occurred_on="2026-10-30")
+        (tx,) = self.run_classify(self.tx("루덴치과의원"))
+        self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("MEDICAL_HEALTH", "ml"))
+
     def test_unsure_ml_goes_to_search_and_jev(self, predict):
         record = {"step": "search_jev", "source": "naver", "industry": "미용실", "ms": 120}
         self.judge.return_value = {"apply": ("BEAUTY", 0.96), "record": record}
@@ -206,6 +236,18 @@ class RuleTest(SimpleTestCase):
                             "이동의즐거움_택시_0": "이동의즐거움_택시_0", "카카오페이택시": "카카오페이택시"}.items():
             self.assertEqual(classifier.store_name(name), store, name)
         self.assertEqual(classifier.rule_category(classifier.store_name("멜론_카카오페이")), "CULTURE_LEISURE")
+
+    def test_conflict_names_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "label_conflicts.csv"
+            path.write_text('name,counts,majority_ratio,kept\n리디,"{""FASHION_SHOPPING"": 3}",0.75,False\n', encoding="utf-8-sig")
+            classifier.conflict_names.cache_clear()
+            with patch("finance.classifier.CONFLICTS_PATH", path):
+                self.assertEqual(classifier.conflict_names(), {"리디"})
+            classifier.conflict_names.cache_clear()
+            with patch("finance.classifier.CONFLICTS_PATH", Path(tmp) / "없음.csv"):
+                self.assertEqual(classifier.conflict_names(), frozenset())  # 파일이 없으면 차단 없이 지금처럼
+        classifier.conflict_names.cache_clear()
 
     def test_taxi_and_pc_room(self):
         # 11/02 카드 명세·카카오 장소 조사: '택시'가 낱말이거나 '개인택시'일 때만 교통. 이름 속 '택시' 식당은 제외

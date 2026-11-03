@@ -8,6 +8,7 @@
 - 모델 파일이 없으면 예외 → 파이프라인이 실패로 기록하고 다음 동기화 때 다시 시도한다
 - 5단계는 .env 에 TYPESAFE_API_KEY · JEV_MODEL 이 있을 때만 돈다. 없으면 4단계 결과로 '확인 필요'
 """
+import csv
 import functools
 import json
 import logging
@@ -36,6 +37,9 @@ ROOT = Path(settings.BASE_DIR).parent
 MODEL_PATH = Path(os.getenv("SPENDING_MODEL_PATH") or ROOT / "local_workspace/models/spending_classifier/artifacts/content_policy_svm/spending_category_svm.joblib")
 THRESHOLD = 0.85  # 임시: 상가정보 검증에서 자동 확정 정확도 98.5%. 실거래 표본으로 다시 정함
 JEV_THRESHOLD = 0.9  # 임시: Jev confidence 기준. 정답 붙인 실거래 표본으로 다시 정함
+# 동명 충돌 목록 (분류 워크플로 10/26 4장): 상가 데이터에서 같은 이름에 다른 카테고리가 붙은 상호.
+# 혜리 님 prepare_data.py 가 만드는 label_conflicts.csv (정리한 이름 기준). 모델처럼 Git 에 없다. 다른 곳이면 .env 의 SPENDING_CONFLICTS_PATH
+CONFLICTS_PATH = Path(os.getenv("SPENDING_CONFLICTS_PATH") or ROOT / "local_workspace/models/spending_classifier/label_conflicts.csv")
 
 # '확인 필요' 이유 문장 (사유별 템플릿)
 REVIEW_REASON = "가게 이름만으로는 카테고리를 정하기 어려워요."
@@ -44,6 +48,8 @@ NOT_FOUND_REASON = "가게 정보를 찾지 못해 카테고리를 정하지 못
 UNSURE_REASON = "가게 정보를 찾았지만 카테고리를 확실히 정하지 못했어요."
 LOOKUP_FAILED_REASON = "가게 정보를 확인하지 못했어요. 직접 골라 주세요."
 PAY_CHARGE_REASON = "페이 충전이라 무엇에 썼는지 골라 주세요."
+CONFLICT_REASON = "같은 이름의 다른 업종 가게가 있어 카테고리를 정하지 못했어요."
+USER_DIFFERS_REASON = "전에 이 가게를 다른 카테고리로 고르셨어요. 이번 거래도 확인해 주세요."
 
 # 토스·네이버페이 등 충전 출금 (10/30): 충전 뒤 무엇을 샀는지는 페이 안에만 있어서 사용자에게 묻는다
 # link_basics가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
@@ -153,6 +159,17 @@ def _estimator():
     if bundle["normalization_version"] != common.NORMALIZATION_VERSION:
         raise RuntimeError("모델과 이름 정리 규칙 버전이 다릅니다")
     return bundle["estimator"]
+
+
+@functools.cache
+def conflict_names():
+    """동명 충돌 상호(정리한 이름) 집합. 파일이 없으면 빈 집합 — 충돌 차단 없이 지금처럼 동작한다
+    shortcut: 파일에 정리 규칙 버전이 없어 모델과 같은 버전인지 확인하지 못한다. 혜리 님 파일에 버전이 생기면 모델처럼 검사"""
+    if not CONFLICTS_PATH.exists():
+        logger.warning("동명 충돌 목록이 없어 충돌 차단을 건너뜀: %s", CONFLICTS_PATH.name)
+        return frozenset()
+    with CONFLICTS_PATH.open(encoding="utf-8-sig", newline="") as f:
+        return frozenset(row["name"] for row in csv.DictReader(f))
 
 
 def predict(names):
@@ -326,28 +343,31 @@ def classify(user, txs):
             _review(tx, [], UNKNOWN_STORE_REASON, None)
         else:
             if name:
-                for_ml.append((tx, name))
+                for_ml.append((tx, name, code))
             continue
         changed.append(tx)
 
-    for (tx, name), top in zip(for_ml, predict([name for _, name in for_ml])):
+    for (tx, name, past), top in zip(for_ml, predict([name for _, name, _ in for_ml])):
         if not top:
             continue
         code, confidence = top[0]
-        if confidence >= THRESHOLD:
-            _apply(tx, code, Tx.ClassificationSource.ML, confidence)
+        # 동명 충돌이면 SVM 이 확신해도 확정하지 않고 검색+Jev 로 (분류 워크플로 10/26 3단계·4장)
+        conflict = common.normalize_name(name) in conflict_names()
+        if confidence >= THRESHOLD and not conflict:
+            _apply_unless_user_differs(tx, code, Tx.ClassificationSource.ML, confidence, past, top)
         else:
             # shortcut: 거래 잠금 안에서 외부 API 를 부른다. record 의 ms 로 시간을 재고 길면 잠금 밖으로 옮길지 팀 회의 (메모 참고)
             result = judge(name)
             if result is None:
-                _review(tx, top, REVIEW_REASON, Tx.ClassificationSource.ML)
+                _review(tx, top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
             elif "apply" in result:
                 code, confidence = result["apply"]
-                _apply(tx, code, Tx.ClassificationSource.LLM, confidence)
+                _apply_unless_user_differs(tx, code, Tx.ClassificationSource.LLM, confidence, past, top)
             else:
                 _review(tx, *result["review"], Tx.ClassificationSource.LLM)
             if result is not None:
-                tx.field_states = {**tx.field_states, "classifier": result["record"]}
+                record = {**result["record"], "name_conflict": True} if conflict else result["record"]
+                tx.field_states = {**tx.field_states, "classifier": record}
         changed.append(tx)
 
     if changed:
@@ -359,6 +379,16 @@ def _apply(tx, code, source, confidence):
     tx.confirmation_state, tx.classification_source, tx.suggestion_source = Tx.ConfirmationState.SUGGESTED, source, source
     tx.suggestion_confidence = None if confidence is None else Decimal(f"{confidence:.4f}")
     tx.suggestion_candidates = tx.suggestion_reason = None
+
+
+def _apply_unless_user_differs(tx, code, source, confidence, past, top):
+    """사용자가 같은 가게를 전에 다른 카테고리로 골랐으면('앞으로도 적용' 아님) 자동 적용하지 않고 묻는다.
+    사용자 수정이 반복되는 가게 = 동명 충돌 후보 (분류 워크플로 10/26 4장). 지난 선택을 첫 후보로"""
+    if past and past != code:
+        candidates = [(past, None)] + [(c, p) for c, p in top if c != past]
+        _review(tx, candidates[:3], USER_DIFFERS_REASON, source)
+    else:
+        _apply(tx, code, source, confidence)
 
 
 def _review(tx, top, reason, source):
