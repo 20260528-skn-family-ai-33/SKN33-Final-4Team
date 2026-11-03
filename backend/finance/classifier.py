@@ -26,7 +26,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice
+from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -272,8 +272,8 @@ def classify(user, txs):
         name = store_name(tx.merchant_name)
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
         code, future = last_user_choice(user, tx.merchant_name)
-        if is_multi_item(name):
-            # 다품목은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
+        if is_multi_item(name) or seen_multi_item(user, tx.merchant_name):
+            # 다품목(이름 사전 또는 같은 가게의 지난 검색 업종)은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
             _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
         elif is_pay_charge(name):
             # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
