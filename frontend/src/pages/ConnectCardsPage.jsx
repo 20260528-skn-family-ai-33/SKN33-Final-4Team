@@ -20,9 +20,8 @@ export default function ConnectCardsPage() {
 
 function CardPick({ items }) {
   const navigate = useNavigate()
-  // 처음 고르는 사람(선택된 카드가 하나도 없음)은 다 골라 두고 뺀다
-  const first = items.some((c) => c.isSelected) ? items.filter((c) => c.isSelected) : items
-  const picked = usePicked(first.map((c) => c.cardId))
+  // 서버에 저장된 선택 그대로 (0개로 저장했으면 0개). 빈 선택을 전체로 바꾸면 '나중에 고를게요'가 되돌려진다
+  const picked = usePicked(items.filter((c) => c.isSelected).map((c) => c.cardId))
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
