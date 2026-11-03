@@ -1,7 +1,9 @@
 """finance API 테스트. 실행: backend 폴더에서 python manage.py test finance
 (테스트용 DB를 따로 만들었다가 지운다. 내 연습 데이터는 건드리지 않는다)"""
 import json
+import os
 from datetime import date, time
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -9,7 +11,8 @@ from django.utils import timezone
 
 from users.models import Consent
 
-from .merchant_rules import remembered_category
+from . import classifier
+from .merchant_rules import FUTURE_KEY, remembered_category
 from .models import BankAccount, Card, Connection, FinancialTransaction, RecurringExpense, TransactionLink
 
 URL = "/api/finance/transactions/"
@@ -203,6 +206,35 @@ class TransactionDetailTest(FinanceData):
                 body = self.patch(tx, {"category": "FOOD", "applyToFuture": True}).json()
                 self.assertFalse(body["canApplyToFuture"])
                 self.assertIsNone(remembered_category(self.user, tx.merchant_name))
+
+    @mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
+    @mock.patch("finance.classifier.ask_jev")
+    @mock.patch("finance.classifier.search_store", return_value=("naver", "행복상회", "슈퍼마켓"))
+    @mock.patch("finance.classifier.predict", return_value=[[("FOOD", 0.4)]])
+    def test_searched_multi_item_cannot_apply_to_future(self, predict, search, ask):
+        # PR #67 리뷰: 이름 사전에 없어도 검색 업종이 다품목이면 '앞으로도 적용' 없음
+        first = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        classifier.classify(self.user, FinancialTransaction.objects.filter(pk=first.pk))
+        self.client.force_login(self.user)
+        body = self.client.get(self.url(first)).json()
+        self.assertEqual(body["suggestion"]["reason"], classifier.MULTI_ITEM_REASON)
+        self.assertFalse(body["canApplyToFuture"])
+
+        body = self.patch(first, {"category": "FOOD", "applyToFuture": True}).json()  # 화면을 거치지 않고 보내도
+        self.assertEqual((body["category"], body["classifyState"], body["canApplyToFuture"]), ("FOOD", "confirmed", False))
+        first.refresh_from_db()
+        self.assertNotIn(FUTURE_KEY, first.field_states)
+        self.assertIsNone(remembered_category(self.user, "행복상회"))
+
+        # 예전 데이터에 표시가 남아 있어도 다음 거래는 자동 적용하지 않는다
+        first.field_states = {**first.field_states, FUTURE_KEY: True}
+        first.save(update_fields=["field_states"])
+        nxt = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        classifier.classify(self.user, FinancialTransaction.objects.filter(pk=nxt.pk))
+        nxt.refresh_from_db()
+        self.assertEqual((nxt.confirmed_category_id, nxt.confirmation_state, nxt.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.MULTI_ITEM_REASON))
+        ask.assert_not_called()
 
     def test_patch_bad_requests(self):
         spending = self.tx()
