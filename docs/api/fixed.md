@@ -17,7 +17,7 @@
 
 - 범위·주소: [API 명세 목록 4번](../머니쿠션_API_명세_목록_2026-10-21.md#4-고정지출).
 - 주소: [API 명세 작성 순서](../머니쿠션_API_명세_작성_순서_2026-10-21.docx)의 고정지출 묶음. 목록·후보 확정·무시는 10/21 확정된 API 명세 목록을 따른다.
-- 화면: [FixedPage.jsx](../../frontend/src/pages/FixedPage.jsx), [FixedPopup.jsx](../../frontend/src/popups/FixedPopup.jsx). 현재 목록은 예시 데이터이고 저장·수정·삭제 API는 연결되지 않았다. 팝업에는 계좌·카드·모름 선택이 있고 실제 결제 고르기는 없다(C-16). 결제 확인은 목록의 “이 결제가 맞나요?”와 [고르기]([EvidencePopup.jsx](../../frontend/src/popups/EvidencePopup.jsx))로 한다. 실제 저장은 API 연결 후 구현한다.
+- 화면: [FixedPage.jsx](../../frontend/src/pages/FixedPage.jsx), [FixedPopup.jsx](../../frontend/src/popups/FixedPopup.jsx). **11/3 화면 연결**: 목록 · 직접 추가 · 수정(바꾼 칸만) · 중지 · 후보 확정 · 무시 · 결제 확인이 이 API를 쓴다. 저장 뒤 목록을 다시 받고, 실패하면 팝업을 닫지 않는다. 계좌 · 카드 선택지는 금융 연결 후보(`GET /api/finance/connect/accounts/` · `/cards/`)의 관리 대상 · 연결 중인 것이며, 동의가 없으면 '모름'만 고를 수 있다. 팝업에는 실제 결제 고르기가 없다(C-16). 결제 확인은 목록의 “이 결제가 맞나요?”와 [고르기]([EvidencePopup.jsx](../../frontend/src/popups/EvidencePopup.jsx))로 하며, 서버가 `evidenceSuggestion`을 줄 때만 보인다. 후보가 0건이면 감지 안내 대신 직접 추가 · [계속하기]만 보인다.
 - 데이터: [finance/models.py](../../backend/finance/models.py)의 `RecurringExpense.evidence`, `BankAccount`, `Card`, `Connection`, `PaymentDue`, `PaymentMatch`, [budgets/models.py](../../backend/budgets/models.py)의 `SpendingAllocation.funding_bucket`과 [DB_MODELS.md](../DB_MODELS.md). 고정지출 API 경로는 아직 [api_urls.py](../../backend/config/api_urls.py)에 없다.
 - 요구사항: [4팀_요구사항정의서.xlsx](../../산출물/01_기획/4팀_요구사항정의서.xlsx) `시트1`의 `FIX-003`(141행), `FIX-004`(142행), `COM-004`(126행), `TXN-008`(21행), `TXN-009`(22행), `TXN-005`(18행), `BUD-001`(23행), `BUD-005`(28행), `BUD-011`(138행). 카테고리·저축·대출 분리와 고정지출의 주기·상태·출처·근거 거래·중복 차감 방지는 10/21 수정분을 따른다.
 - C-01 해결(10/21): 카테고리는 10개 + `ETC` 중 필수(`UNCLASSIFIED` 제외), 항목 이름으로 미리 선택하되 서버는 코드를 검사한다. 요청은 `category`, 응답은 `category` + `categoryName`이며 저축·투자·대출 상환·카드값은 고정지출에서 제외한다.
@@ -556,7 +556,7 @@ DELETE /api/budgets/fixed/a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4/
 | 어디로 | `GET /api/budgets/fixed/` |
 | 로그인 필요 | O · 세션 쿠키 |
 | 명세 상태 | 확정 (10/21) |
-| 개발 상태 | 구현 (10/26) · 화면은 예시 데이터 |
+| 개발 상태 | 구현 (10/26) · 화면 연결 (11/3) |
 
 **보내는 값**
 
@@ -705,7 +705,7 @@ GET /api/budgets/fixed/
 - 카드 결제 항목은 “카드값에 포함”으로 표시한다. 별도 고정지출 납부 예정이 아닌 카드 청구서에 포함된 금액이라는 뜻이다.
 - 카드 결제라도 확정 항목이면 `confirmedMonthlyTotal`에 포함한다. 표시용 월 합계와 실제 납부 예정은 구분한다.
 - 계좌·카드 이름과 번호는 서버가 만든 표시 이름을 사용한다. 프론트에서 번호 원문을 조합하거나 누락된 번호를 추측하지 않는다.
-- 현재 화면의 자동 감지 안내와 감지 횟수 배지는 예시 데이터다. 응답에 근거가 없는 “최근 3개월 3회 감지” 문구를 모든 항목에 표시하지 않는다.
+- 자동 감지 안내와 감지 배지는 `status = suggested`인 항목에만 표시한다(11/3). 응답에 근거가 없는 “최근 3개월 3회 감지” 문구를 모든 항목에 표시하지 않는다.
 - 금액 합계는 `confirmedMonthlyTotal`만 넣고, 남은 결제액·예산 차감액은 넣지 않는다. “다음 급여일까지 아직 나갈 금액”은 홈 계산과 함께 정한다. 카드 청구서도 이번 응답에는 넣지 않는다. `confirmedMonthlyTotal`을 예산에서 차감할 금액으로 사용하지 않는다. 카드 고정지출은 별도 납부 예정 없이 카드 청구서에 포함하며, 첫 청구서의 예산 선차감 계산은 이 API에서 하지 않는다.
 
 **실패하면**

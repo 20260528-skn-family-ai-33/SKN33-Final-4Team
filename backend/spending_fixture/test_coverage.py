@@ -213,6 +213,15 @@ class CoverageVariantTest(TestCase):
         empty = User.objects.create_user(email="fixture-empty@example.test")
         self.assertEqual(coverage(empty, self.OCT), {"state": "none", "period": self.OCT, "targets": [], "undetermined": []})
 
+    def test_deposit_account_is_not_a_target(self):
+        # 11/3: 적금 · 예금(입출금 외) 계좌는 거래를 수집하지 않는 계좌라 판정 대상에서 뺀다 → 입출금 · 카드가 다 있으면 complete
+        self.both()
+        deposit = BankAccount.objects.create(user=self.u, connection=self.bank_conn, source_account_key="fixture:cov-deposit",
+                                             account_type="deposit")
+        got = coverage(self.u, self.OCT)
+        self.assertEqual((got["state"], got["undetermined"]), ("complete", []))
+        self.assertNotIn(deposit.pk, [t["id"] for t in got["targets"]])
+
     def test_undetermined_sources_block_complete(self):
         self.both()
         FinancialTransaction.objects.create(

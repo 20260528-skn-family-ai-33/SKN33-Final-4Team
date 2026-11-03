@@ -4,7 +4,7 @@ import json
 import uuid
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from .models import ChatMessage, Conversation
 
@@ -49,6 +49,7 @@ class ConversationTest(TestCase):
         self.assertEqual(self.client.get(self.url(self.talk)).status_code, 403)
 
 
+@override_settings(CHAT_ENGINE="legacy")  # 기존 엔진 계약 — .env 의 CHAT_ENGINE 과 상관없이
 class MessageTest(TestCase):
     """33. POST /api/chat/messages/ (chat.md '챗봇에 메시지 보내기') — 저장 · 선택지 · 라우터 실패 처리"""
     URL = "/api/chat/messages/"

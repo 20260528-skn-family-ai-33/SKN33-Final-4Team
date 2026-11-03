@@ -38,7 +38,7 @@
 | 출금일을 확인할 고정지출 수 | ✅ 씀 | H-05 |
 | 꼭 나갈 돈 — 고정지출 | ✅ 씀 | 납부 예정 규칙(C-15) 확정 |
 | 꼭 나갈 돈 — 카드 청구서 · 대출 상환 | ✅ 씀 | 10/22 결정 Q (H-04). 같은 모양에 `type`만 다름 |
-| 오늘 쓸 수 있는 돈 · 남은 생활비 · 사용률 · 여윳돈 · 더 써도 되는 돈 | ❌ 안 씀 | **ML 후**. 추천 예산 · 배분 규칙을 추측해 채우지 않는다. 응답은 `budget: null` |
+| 하루에 쓸 수 있는 돈 · 남은 생활비 · 사용률 · 여윳돈 · 예산 밖 지출 | ✅ 씀 (11/3) | **이번 주기 승인 예산이 있을 때만** 채운다(⑤). 추천 엔진 · 초안 값은 쓰지 않는다. 더 써도 되는 돈은 안 씀 |
 | 머니 쿠션 상태 | ❌ 안 씀 | ML 후 · 결정 후 (쿠션 배분 규칙) |
 
 ---
@@ -91,7 +91,16 @@ GET /api/home/
 | `mustPay[].paymentState` | 문자 | `unpaid`(미납 — 출금일이 지났으면 "출금 확인 중") · `partial`(일부 납부) · `needs_review`(**미납 확인 필요** — 출금일 +3일이 지나도 출금을 못 찾음) |
 | `mustPay[].isEstimated` | 참/거짓 | 금액이 **예상**인지. `card_bill`이고 청구서가 아직 확정 전(`confirmationStatus` ≠ `confirmed`)이면 `true` → 화면 "예상" 표시. 고정지출 · 대출은 항상 `false` (10/22 결정 Z) |
 | `mustPay[].paymentAccount` | 객체 또는 `null` | 출금 계좌 `{ accountId, displayName, status }` ([계좌 · 카드 표시](../API_RULES.md#계좌--카드-표시)). 결제 수단 모름이면 `null` |
-| `budget` | `null` | **예산 영역 자리**. 이번 명세에서는 항상 `null`. 칸 구성은 예산 API 명세(ML 후)에서 정한다 |
+| `budget` | 객체 / `null` | **이번 주기 승인(`approved`) 예산이 있으면 채움** (11/3, H-06). 승인 전 초안(`draft` · `validated`)은 넣지 않는다. 없으면 `null`. 값은 예산 화면(`GET /api/budgets/`)과 같은 계산 |
+| `budget.budgetId` · `versionNo` | UUID · 정수 | 승인 예산 번호 · 이번 주기 안 버전 |
+| `budget.livingBudget` | 정수 | 승인 생활비 (= 예산 화면 `living.budget`) |
+| `budget.livingLeft` | 정수 | 남은 생활비 (= `living.remaining`, 0 아래로 안 내림). 생활비 사용액은 고정지출 · 예산 밖 카테고리(주거·통신, 여행·숙박) 지출을 뺀 값 (budgets.md R-13) |
+| `budget.livingPct` | 정수 | 쓴 돈 ÷ 생활비 × 100, 반올림. **100을 넘어도 그대로**(화면 막대만 100에서 멈춤). 생활비 0원이면 쓴 돈이 있을 때 100, 없으면 0 |
+| `budget.spare` | 정수 | 남은 여윳돈 (= `overspend.spareRemaining`) |
+| `budget.daily` | 정수 / `null` | 하루에 쓸 수 있는 돈 = `livingLeft ÷ daysLeft` (원 미만 버림). `daysLeft`가 0(주기 마지막 날)이면 `null` → 화면 "—" |
+| `budget.daysLeft` | 정수 | 오늘까지 쓴 돈을 뺀 뒤 나누는 날 수 = 다음 월급날 − 오늘 − 1 (채팅 소비 분석의 남은 일수와 같음) |
+| `budget.outOfBudgetAllocated` | 정수 | 이전 기준 예산의 주거·통신 · 여행·숙박 배정 (예산 화면 `budget.outOfBudgetAllocated`와 같음, N-F1). 0보다 크면 파란 카드 안에 재추천 안내. `livingBudget`은 이 금액을 포함한 저장값 그대로 |
+| `budget.outOfBudget` | 객체 | 예산 밖 지출 안내 — 예산 화면 `outOfBudget`과 같은 모양 · 금액 (budgets.md) |
 
 ```json
 {
@@ -282,9 +291,10 @@ GET /api/home/
 
 **⑤ 예산 영역 (`budget`) · 온보딩 — H-06**
 
-- 오늘 쓸 수 있는 돈 · 남은 생활비 · 사용률 · 여윳돈 · 더 써도 되는 돈(= 남은 생활비 + 여윳돈) · 쿠션 상태는 **이번 명세에서 정하지 않는다.** 추천 예산 금액이나 배분 규칙을 추측해 채우지 않는다.
-- 응답에는 자리만 두고 `budget: null`로 준다. 칸 구성 · 계산은 예산 API 명세(ML 후)에서 정하고, 그때 `budget` 객체를 채운다.
-- 화면: `budget`이 `null`이면 파란 카드 자리에 **안내 카드**를 보여 준다 — "예산을 만들면 여기에 오늘 쓸 수 있는 돈이 보여요 [예산 만들기]".
+- **11/3**: 이번 주기 **승인(`approved`) 예산이 있으면** `budget` 객체를 채운다(칸은 위 표). DB의 승인 예산만 읽고 에이전트 · 추천 엔진을 부르지 않는다. 초안(`draft` · `validated`)은 홈에 보이지 않는다. 더 써도 되는 돈 · 쿠션 상태는 아직 정하지 않는다.
+- 계산은 예산 화면(`budgets/overview.py` `budget_data`)을 그대로 쓴다. 사용액 기간은 주기 시작일 ~ 오늘로 예산 화면 · 채팅과 같다.
+- 화면: 파란 카드 제목은 **"하루에 쓸 수 있는 돈"**(오늘 쓴 돈까지 빼고 내일부터 나눈 금액이라). `daily`가 `null`(마지막 날)이면 "—". [계산 근거]는 `livingLeft ÷ daysLeft`를 그대로 보여 준다. `outOfBudget.total > 0`이면 남은 생활비 줄 아래 "예산 밖 지출 N원 · 주거·통신, 여행·숙박은 생활비에서 빼고 따로 보여드려요".
+- 화면: `budget`이 `null`이면 파란 카드 자리에 **안내 카드**를 보여 준다 — "예산을 만들면 여기에 하루에 쓸 수 있는 돈이 보여요 [예산 만들기]".
 - **온보딩을 안 끝낸 회원은 홈을 열지 않는다.** 화면이 로그인 응답 · `GET /api/auth/me/`의 **`onboardingCompleted`**가 `false`면 온보딩으로 보낸다(10/22 결정 R — 첫 예산을 승인하면 `true`). 이 API는 막지 않는다(온보딩 중에 불러도 위 규칙대로 답함).
 
 **실패하면**
@@ -311,7 +321,7 @@ GET /api/home/
 | (없음) | `needsPaydayCount` — "출금일을 확인할 고정지출 N건 ›" 알림 줄 (확인할 거래 줄과 같은 모양) |
 | `mustPay[].name · sub · amount · icon · link` | `mustPay[]` — `sub`(예: "10.24 · 국민 급여통장")와 아이콘 · 이동할 화면은 화면이 `type` · `dueDate` · `paymentAccount`로 만든다 |
 | (없음) | `mustPay[].paymentState` — 출금일이 지난 `unpaid`는 "출금 확인 중", `needs_review`는 **"미납 확인 필요 ›"** 배지 + 누르면 고정지출 화면 |
-| `home.daily` · `livingLeft` · `livingPct` · `livingBudget` · `spare` | `budget` (ML 후) — `null`이면 파란 카드 대신 안내 카드 |
+| `home.daily` · `livingLeft` · `livingPct` · `livingBudget` · `spare` | `budget.daily` · `livingLeft` · `livingPct` · `livingBudget` · `spare` (11/3 연결) — `null`이면 파란 카드 대신 안내 카드 |
 
 ---
 

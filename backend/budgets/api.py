@@ -146,7 +146,10 @@ def release_locks(user, cycle):
     """이번 주기 자물쇠를 모두 푼다. 바꾼 횟수(잔소리)는 늘리지 않는다. 반환: 푼 카테고리 코드 (화면 순서)"""
     from .models import BudgetCategorySetting
 
-    locked = BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True)
+    from .scope import OUT_OF_BUDGET
+
+    # 예산 밖 카테고리 자물쇠는 계산에 안 쓰므로 풀지도 알리지도 않는다 (DB 값 유지)
+    locked = BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True).exclude(category_id__in=OUT_OF_BUDGET)
     codes = list(locked.order_by("category__display_order", "category_id").values_list("category_id", flat=True))
     locked.update(locked=False, locked_amount=None, updated_at=timezone.now())
     return codes
@@ -339,7 +342,7 @@ def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
 
 def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
     from .models import BudgetItem, Bucket
-    from .recommend import CATEGORY_CODES, ENGINE_VERSION, POLICY_VERSION, EngineCheckFailed
+    from .recommend import ALLOCATION_CODES, ENGINE_VERSION, POLICY_VERSION, EngineCheckFailed
 
     fixed, saved = snapshot["fixed"], snapshot["saved"]
     lines = [{"bucket": Bucket.FIXED, "category_id": code, "allocated_amount": amount}
@@ -351,7 +354,7 @@ def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
         {"bucket": Bucket.CUSHION, "allocated_amount": saved["cushion_monthly"]},
     ]
     lines += [{"bucket": Bucket.LIVING, "category_id": code, "allocated_amount": out["allocations"][code]}
-              for code in CATEGORY_CODES]
+              for code in ALLOCATION_CODES]
     lines.append({"bucket": Bucket.LIVING, "category_id": "ETC", "allocated_amount": snapshot["etc"]})
     if (any(type(line["allocated_amount"]) is not int or line["allocated_amount"] < 0 for line in lines)
             or snapshot["take_home_income"] - sum(line["allocated_amount"] for line in lines) != expected_spare):
@@ -420,7 +423,7 @@ def budget_category(request, budget_id, code):
 def budget_approve(request, budget_id):
     from config.api import exception_handler
     from .overview import budget_data, current_cycle
-    from .recommend import budget_input_hash
+    from .recommend import POLICY_VERSION, budget_input_hash
 
     with transaction.atomic():
         lock_user(request.user)
@@ -444,7 +447,8 @@ def budget_approve(request, budget_id):
         # 카드 선차감은 초안을 만들 때 저장한 값을 쓴다 (카드로 쓸 때마다 바뀌는 값이라 다시 계산하면 초안이 계속 만료됨)
         frozen = ((chosen.input_snapshot or {}).get("fixed") or {}).get("card_reserved")
         state = protect_json(request.user, profile, today, card_reserved=frozen) if this_cycle else None
-        if (not this_cycle or not protect_ready(state)
+        # 계산 규칙(policy_version)이 바뀐 초안도 입력이 바뀐 것과 같이 만료 → 다시 추천
+        if (not this_cycle or not protect_ready(state) or chosen.policy_version != POLICY_VERSION
                 or budget_input_hash(request.user, cycle) != chosen.input_hash):
             chosen.status = "expired"
             chosen.save(update_fields=["status"])

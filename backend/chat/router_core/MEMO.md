@@ -367,7 +367,7 @@
 **쓰는 함수 (입력 · 출력)**
 - `coverage(user, period)` → `{"state", "period", "targets", "undetermined"}` (`error` 일 때는 `{"state": "error", "reason": "db_error", "period"}`)
   - targets: 계좌 · 카드마다 `{"kind": "account" | "card", "id", "covered": [Period], "missing": [Period], "evidence": [{"sync_id", "covered", "completed_at"}], "latest_success_at"}`
-  - undetermined: 범위 규칙이 없는 원천 `{"kind", "id", "reason"}` — `not_demand_account` · `manual_card` · `<source_kind>_transactions/no_sync_record`(기간 안의 직접 입력 · 대출 원천 목록 거래)
+  - undetermined: 범위 규칙이 없는 원천 `{"kind", "id", "reason"}` — `manual_card` · `<source_kind>_transactions/no_sync_record`(기간 안의 직접 입력 · 대출 원천 목록 거래). 입출금 외 계좌(적금 · 예금)는 대상에서 뺀다(11/3, 전엔 `not_demand_account`)
   - state: `complete` = 대상 1개 이상 + 모든 대상 빈 날 없음 + undetermined 없음 / `none` = 확보된 날이 하나도 없음(대상 없음 포함) / `partial` = 그 밖(undetermined 가 있으면 다 덮여도 partial) / `error` = 이 함수의 DB 조회 실패. 기관 조회 실패 기록은 '성공 없음'일 뿐 error 가 아니다.
   - **원천 범위 자체를 확정할 수 없는 경우는 complete 가 될 수 없다** — 호출 쪽은 state 만 보지 말고 undetermined 로 이유를 구분한다.
   - complete 는 범위가 다 있다는 뜻이지 최신이라는 뜻이 아니다. 최신성은 `latest_success_at` · evidence 의 `completed_at` 으로 따로 본다.

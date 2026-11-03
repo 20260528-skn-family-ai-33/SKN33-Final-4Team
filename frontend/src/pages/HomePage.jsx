@@ -1,5 +1,5 @@
 // 홈 (2026-10-20 배치 개선안)
-// 위에서부터: 급여 주기 줄 → 확인할 거래 알림 → 오늘 쓸 수 있는 돈(파란 카드, 여윳돈 포함) → 계좌 잔액 → 꼭 나갈 돈
+// 위에서부터: 급여 주기 줄 → 확인할 거래 알림 → 하루에 쓸 수 있는 돈(파란 카드, 여윳돈 포함) → 계좌 잔액 → 꼭 나갈 돈
 // 머니 쿠션은 쿠션 탭에서 따로 본다
 // 되돌리기: 이 파일을 git 의 이전 버전으로 돌리고, app.css 맨 아래 "홈 개선안" 블록을 지우면 원래 화면으로 돌아간다
 import { Navigate, useNavigate } from 'react-router'
@@ -11,6 +11,7 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
+import OutOfBudgetLine, { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 
 // '2026-10-24' → '10.24'
 const mmdd = (iso) => (iso ? `${iso.slice(5, 7)}.${iso.slice(8, 10)}` : '')
@@ -77,9 +78,9 @@ export default function HomePage() {
   // 로그인이 풀렸으면 로그인 화면으로
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
   if (!data) return <Layout title="머니쿠션" activeTab="home"><ApiStatus error={error} /></Layout>
-  // 응답 모양: docs/api/home.md (budget 은 ML 후까지 항상 null)
+  // 응답 모양: docs/api/home.md (budget = 이번 주기 승인 예산, 없으면 null)
   const { period, balance, pendingCount, needsPaydayCount, mustPay, budget } = data
-  const b = budget ?? {}  // 예산 칸 이름은 예산 API 가 정해지면 맞춘다
+  const b = budget ?? {}
   const toFixed = () => navigate(PATHS.fixed, { state: { from: 'home' } })  // 고정지출 관리 화면으로
   const pace = pacePct(period)
   const note = paceNote(b.livingPct, pace)
@@ -127,21 +128,23 @@ export default function HomePage() {
       {budget === null ? (
         <div className="mc-card mc-home2-nobudget">
           <span className="mc-tile"><Icon name="Wallet" /></span>
-          <h2>예산을 만들면 여기에 오늘 쓸 수 있는 돈이 보여요</h2>
+          <h2>예산을 만들면 여기에 하루에 쓸 수 있는 돈이 보여요</h2>
           <p className="mc-muted">월급과 고정지출을 확인하고, 지킬 돈을 정하면 카테고리별 예산을 추천해 드려요.</p>
           <button type="button" className="mc-primary" onClick={() => navigate(PATHS.salary)}>예산 만들기</button>
         </div>
       ) : (
-      /* 3. 오늘 쓸 수 있는 돈 (가장 중요한 숫자) + 사용 속도 + 여윳돈 */
+      /* 3. 하루에 쓸 수 있는 돈 (가장 중요한 숫자) + 사용 속도 + 여윳돈. 마지막 날은 daily = null → '—' */
       <div className="mc-hero mc-budget-hero mc-home2-hero">
         <div className="mc-row">
-          <span className="mc-hero-title">오늘 쓸 수 있는 돈</span>
-          <button type="button" className="mc-link" onClick={() => openPopup(<CalcPopup />)}>계산 근거</button>
+          <span className="mc-hero-title">하루에 쓸 수 있는 돈</span>
+          <button type="button" className="mc-link" onClick={() => openPopup(<CalcPopup budget={b} />)}>계산 근거</button>
         </div>
         <div className="mc-budget-amount">
-          <strong>{comma(b.daily)}<small>원</small></strong>
+          {b.daily == null ? <strong>—</strong> : <strong>{comma(b.daily)}<small>원</small></strong>}
         </div>
-        <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · {period?.dday}일 남음</p>
+        <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · 내일부터 {b.daysLeft}일 기준</p>
+        <OutOfBudgetLine value={b.outOfBudget} className="mc-home2-left" />
+        <OldScopeNote amount={b.outOfBudgetAllocated} className="mc-home2-left" />
         <div className="mc-bar mc-home2-bar" role="progressbar" aria-label="이번 주기 생활비 사용률"
           aria-valuemin={0} aria-valuemax={100} aria-valuenow={b.livingPct}
           aria-valuetext={`${b.livingPct}% 사용${note ? `, ${note.text}` : ''}`}>

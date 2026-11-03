@@ -4,7 +4,8 @@
 // - 기능 버튼 목록은 서버가 준다 (첫 화면 = GET /api/chat/messages/, 그 뒤 응답마다 features). 꺼짐(legacy) 2개 · 켜짐(router) 3개
 // - 답 모양: 켜짐 = 카드 · 그래프 · 선택지(ChatReply), 꺼짐 = 옛 답 {text, choices} 말풍선. 둘 다 ChatReply 가 그린다
 // - 담당 표시 · 예산 폼은 서버가 준 content.agent · content.inputs 로만 정한다 (문장으로 추측하지 않음)
-// - 채팅방을 나갔다 오거나 새로고침하면 빈 대화로 시작한다 (사용자 결정 10/30 · 11/2 — 지난 대화를 다시 불러오지 않음. 대화 번호는 화면 안에서만)
+// - 새로고침하면 이 대화를 다시 불러온다 (11/3, GET /api/chat/conversations/<id>/). 대화 번호는 sessionStorage 에 두고
+//   채팅 화면을 떠나면 지운다 → 다른 화면에 갔다 오면 지금처럼 빈 대화 (10/30 · 11/2 결정 유지). 404(다른 계정 · 없는 대화)면 새 대화
 import { useEffect, useRef, useState } from 'react'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
@@ -63,14 +64,25 @@ function Trace({ trace }) {
   )
 }
 
+// 새로고침 복원용 대화 번호 — 저장소를 못 쓰는 브라우저(사생활 보호 모드 등)는 그냥 새 대화
+const SAVED = 'mc-chat-conversation'
+function savedId() {
+  try { return sessionStorage.getItem(SAVED) } catch { return null }
+}
+function saveId(id) {
+  try { if (id) sessionStorage.setItem(SAVED, id); else sessionStorage.removeItem(SAVED) } catch { /* 저장 못 해도 대화는 계속 */ }
+}
+
 export default function AssistantPage() {
   const first = useApi('/api/chat/messages/')  // 첫 화면의 엔진 · 기능 버튼 (저장 없음)
   const [engine, setEngine] = useState(null)   // 응답마다 서버가 다시 알려 준 값 { engine, features, testMode, today }
-  const [conversationId, setConversationId] = useState(null)
+  const [restoreId] = useState(savedId)        // 화면을 열 때 남아 있던 번호 = 새로고침 전 대화
+  const [conversationId, setConversationId] = useState(restoreId)
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [pending, setPending] = useState(null)  // 성공을 확인할 때까지 본문 · 대화 번호 · 요청 키를 함께 보관
+  const [busy, setBusy] = useState(() => Boolean(restoreId))  // 복원 중에는 전송하지 않는다
+  const [pending, setPending] = useState(null)  // 실패한 요청은 같은 키로 재시도
+
   const [error, setError] = useState(null)
   const inFlight = useRef(false)  // React가 다시 그리기 전의 연속 클릭도 한 번만 보낸다
   const end = useRef(null)
@@ -79,10 +91,31 @@ export default function AssistantPage() {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
+  // 번호를 저장해 두고, 화면을 떠나면(언마운트) 지운다. 새로고침은 언마운트 없이 페이지가 바뀌어 번호가 남는다
+  useEffect(() => {
+    saveId(conversationId)
+    return () => saveId(null)
+  }, [conversationId])
+
+  // 새로고침 전 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
+  useEffect(() => {
+    if (!restoreId) return
+    let live = true
+    apiSend(`/api/chat/conversations/${restoreId}/`, 'GET')
+      .then((talk) => { if (live) setMessages(talk.messages) })
+      .catch((err) => {
+        if (!live) return
+        if (err.status === 404) setConversationId(null)
+        else setError(err.status === 403 ? '로그인해 주세요.' : err.message)
+      })
+      .finally(() => { if (live) setBusy(false) })
+    return () => { live = false }
+  }, [restoreId])
+
   const info = engine ?? first.data
   const blocked = busy || pending !== null
   const send = async (body, said) => {
-    if (inFlight.current || (pending && body)) return
+    if (busy || inFlight.current || (pending && body)) return
     const request = pending ?? {
       body: { conversationId, ...body }, said: said ?? null, key: newRequestKey(),
     }

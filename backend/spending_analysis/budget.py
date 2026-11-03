@@ -7,12 +7,10 @@ from django.db import DatabaseError
 
 from budgets.models import Budget, BudgetCycle, BudgetItem
 
-# 예산을 짜는 범위 밖 카테고리 (팀 결정 11/2, 임시 — 예산 담당 확인 후 바뀔 수 있음 · MEMO 22-9 · 23-17).
-# 카테고리 자체 · 소비 조회(12개)는 그대로, 예산 줄(생활비 예산 합계 · 카테고리별 잔액) · 예산 선택지에서만 뺀다.
-# 실제 지출은 생활비 사용액 · 남은 돈 · 하루 금액에 넣는다 (11/2 2차 — 처음엔 사용액에서도 뺐다, MEMO 23-19).
-# 이유: ML 초안 추천액이 사실상 0(천 원 수준)이고 주거·통신 지출은 대부분 고정지출로 잡힌다.
-# shortcut: 팀 예산 코드(budgets)에는 아직 정의가 없어 여기 한 곳에 둔다, 팀이 같은 목록을 정하면 그것을 가져다 쓴다
-OUT_OF_BUDGET = ("HOUSING_TELECOM", "TRAVEL_LODGING")
+# 예산 범위 밖 카테고리 목록은 budgets.scope 한 곳에 둔다 (11/3 확정 — 11/2 2차의 '사용액에 포함'을 바꿈).
+# 카테고리 자체 · 소비 조회(12개)는 그대로, 예산 줄 · 예산 선택지 · 생활비 사용액 · 남은 돈 · 하루 금액에서 뺀다.
+# 그 지출은 outside_spent 로 '예산 밖 지출' 안내에만 쓴다.
+from budgets.scope import OUT_OF_BUDGET  # noqa: F401 (dialog · explain · tools 가 여기서 가져간다)
 
 
 def approved_budget(user, on_date):
@@ -40,11 +38,13 @@ def approved_budget(user, on_date):
         buckets[bucket] = buckets.get(bucket, 0) + amount
     funding = budget.pop("funding_amount")
     living = {code: amount for bucket, code, amount in items if bucket == "living" and code not in OUT_OF_BUDGET}
+    old_scope = sum(amount for bucket, code, amount in items if bucket == "living" and code in OUT_OF_BUDGET)
     return {
         "state": "approved", "cycle": cycle, "budget": budget,
-        "living": living,
-        # 예산 범위 밖 카테고리의 생활비 배정은 생활비 예산에서 뺀다 (더미 예산은 그 배정을 기타로 옮겨 총액을 맞췄다 — 23-17)
-        "living_total": sum(living.values()),
+        "living": living,  # 카테고리별 잔액용 — 예산 범위 밖 카테고리 줄은 없다
+        # 생활비 총액 = 승인 때 저장한 생활비 줄 전체 (홈 · 예산 화면과 같은 값, N-F1). 옛 기준 예산의 두 카테고리 배정도 그대로 둔다
+        "living_total": buckets.get("living", 0),
+        "out_of_budget_allocated": old_scope,  # 0 보다 크면 이전 기준(11/3 전)으로 승인한 예산 → 재추천 안내
         "buckets": buckets,  # living · fixed · savings · reserve · cushion 합계
         "funding": funding,
         "spare": None if funding is None else funding - sum(buckets.values()),  # 여윳돈은 저장하지 않는다
