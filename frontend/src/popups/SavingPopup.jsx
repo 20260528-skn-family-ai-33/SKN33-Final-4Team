@@ -16,7 +16,8 @@ import Popup from './Popup.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
 import { MONTH_DAYS } from '../utils/days.js'
-import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { apiSend, newRequestKey } from '../utils/api.js'
+import { payOptionsNote, usePayOptions } from '../utils/fixed.js'
 
 const MIN_AMOUNT = 1_000
 const MAX_AMOUNT = 100_000_000
@@ -29,8 +30,8 @@ export default function SavingPopup({ item, manage = false, onSaved }) {
   const [error, setError] = useState('')
   const [requestKey] = useState(newRequestKey)
   const [saving, setSaving] = useState(false)
-  const { data: accountData } = useApi('/api/finance/connect/accounts/')
-  const live = (accountData?.items ?? []).filter((a) => a.status !== 'disconnected')
+  const load = usePayOptions('/api/finance/connect/accounts/')  // 실패를 빈 목록으로 바꾸지 않는다 (N-F2)
+  const live = load.items.filter((a) => a.status !== 'disconnected')
   // 지금 저장된 계좌는 후보에 없어도 보이게 둔다
   const withCurrent = (list, current) => (current && !list.some((a) => a.accountId === current.accountId) ? [current, ...list] : list)
   const fromOptions = withCurrent(live.filter((a) => a.isSelected), item?.fromAccount)
@@ -96,6 +97,13 @@ export default function SavingPopup({ item, manage = false, onSaved }) {
             <option value="">연결 안 함 · 모름</option>
           </select>
         </label>
+        {/* 목록을 못 받았으면 이유 + 다시 불러오기. 저장된 계좌는 그대로 남고 '모름'으로 바꾸지 않는다 */}
+        {!suggested && payOptionsNote(load.status, live.length, '계좌') && (
+          <p className="mc-note" role={load.status === 'ready' || load.status === 'loading' ? undefined : 'alert'} style={{ padding: 0 }}>
+            {payOptionsNote(load.status, live.length, '계좌')}
+            {['error', 'consent', 'login'].includes(load.status) && <> <button type="button" className="mc-link" disabled={load.retrying} onClick={load.retry}>다시 불러오기</button></>}
+          </p>
+        )}
         {suggested
           ? <p className="mc-note mc-saving-lock" style={{ padding: 0 }}>찾은 저축의 계좌는 바꿀 수 없어요. 계좌가 다르면 [아니에요]를 누르고 직접 추가해 주세요.</p>
           : <p className="mc-note" style={{ padding: 0 }}>다른 은행 적금처럼 앱에 연결 안 한 계좌면 '연결 안 함'으로 두면 돼요.</p>}

@@ -8,7 +8,7 @@ import LockIcon from '../components/LockIcon.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import ApiStatus from '../components/ApiStatus.jsx'
-import OutOfBudgetLine from '../components/OutOfBudgetLine.jsx'
+import OutOfBudgetLine, { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 import { PATHS } from '../routes.js'
 import { catIcon, PENDING } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
@@ -121,6 +121,7 @@ export default function BudgetPage() {
           )
         })}
         <OutOfBudgetLine value={data.outOfBudget} />
+        <OldScopeNote amount={budget.outOfBudgetAllocated} />
         {lockError && <p className="mc-note" role="alert" style={{ padding: 0 }}>{lockError}</p>}
         {shownNag && <p className="mc-note" style={{ padding: 0 }}>{shownNag}</p>}
         {unclassifiedCount > 0 && (

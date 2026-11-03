@@ -38,11 +38,13 @@ def approved_budget(user, on_date):
         buckets[bucket] = buckets.get(bucket, 0) + amount
     funding = budget.pop("funding_amount")
     living = {code: amount for bucket, code, amount in items if bucket == "living" and code not in OUT_OF_BUDGET}
+    old_scope = sum(amount for bucket, code, amount in items if bucket == "living" and code in OUT_OF_BUDGET)
     return {
         "state": "approved", "cycle": cycle, "budget": budget,
-        "living": living,
-        # 예산 범위 밖 카테고리의 생활비 배정은 생활비 예산에서 뺀다 (더미 예산은 그 배정을 기타로 옮겨 총액을 맞췄다 — 23-17)
-        "living_total": sum(living.values()),
+        "living": living,  # 카테고리별 잔액용 — 예산 범위 밖 카테고리 줄은 없다
+        # 생활비 총액 = 승인 때 저장한 생활비 줄 전체 (홈 · 예산 화면과 같은 값, N-F1). 옛 기준 예산의 두 카테고리 배정도 그대로 둔다
+        "living_total": buckets.get("living", 0),
+        "out_of_budget_allocated": old_scope,  # 0 보다 크면 이전 기준(11/3 전)으로 승인한 예산 → 재추천 안내
         "buckets": buckets,  # living · fixed · savings · reserve · cushion 합계
         "funding": funding,
         "spare": None if funding is None else funding - sum(buckets.values()),  # 여윳돈은 저장하지 않는다

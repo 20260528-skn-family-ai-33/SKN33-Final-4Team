@@ -199,7 +199,7 @@ def budget_left(user, category, today, breakdown=False):
     if found["state"] == "approved":  # no_approved 면 초안 · 프로필 목표 금액을 담지 않는다
         allocated = found["living"].get(category) if category else found["living_total"]
         out["budget"].update({k: found["budget"][k] for k in ("budget_id", "version_no", "approved_at")},
-                             allocated=allocated)
+                             allocated=allocated, out_of_budget_allocated=found["out_of_budget_allocated"])
         if cov["state"] == "complete" and allocated is not None:
             out["confirmed"] = R.budget_numbers(allocated, spent, None if category else found["spare"])
             if breakdown:  # 승인 예산에 배정된 카테고리만, 화면 순서대로

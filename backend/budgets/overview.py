@@ -9,7 +9,7 @@ from .home import ensure_cycle, period_json
 from .models import Budget, BudgetCategorySetting, Category
 from .recommend import ALLOCATION_CODES
 from .salary import current_salary_profile, salary_cycle_dates
-from .scope import living_spent, outside_spent
+from .scope import OUT_OF_BUDGET, living_spent, outside_spent
 
 
 LIVING_CODES = (*ALLOCATION_CODES, "ETC")  # 예산 화면 · 자물쇠 대상. 예산 밖(scope.OUT_OF_BUDGET)은 없음
@@ -83,7 +83,9 @@ def budget_data(user, today, *, selected=None):
         })
     data.update({
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,
-                   "salary_confirmed": period["salary_state"] == "received", "engine_version": selected.engine_version},
+                   "salary_confirmed": period["salary_state"] == "received", "engine_version": selected.engine_version,
+                   # 이전 기준으로 승인한 예산의 주거·통신 · 여행·숙박 배정 (생활비 총액에는 들어 있고 카테고리 줄에는 없음, N-F1)
+                   "out_of_budget_allocated": sum(v for c, v in allocated.items() if c in OUT_OF_BUDGET)},
         "split": {"funding": selected.funding_amount, "fixed": totals.get("fixed", 0), "saving": totals.get("savings", 0),
                   "cushion": totals.get("cushion", 0), "living": living, "spare": spare},
         "living": {"budget": living, "spent": spent, "remaining": max(living - spent, 0)},

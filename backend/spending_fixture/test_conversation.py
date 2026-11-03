@@ -1198,6 +1198,23 @@ class BudgetScopeTest(TestCase):
         self.assertIn("예산 밖 지출(여행·숙박) 120,000원은 남은 생활비에서 빼고 따로 보여드려요.", left["notices"])
 
 
+    def test_old_scope_approved_budget_keeps_total_and_notices(self):
+        """N-F1: 이전 기준 승인 예산(주거·통신 배정 100,000원 남음) — 저장된 생활비 총액 그대로(홈 · 예산 화면과 같게) + 재추천 안내"""
+        from budgets.models import Budget, BudgetItem
+        b = EXPECTED["personas"]["A"]["budget"]
+        from spending_analysis.budget import approved_budget
+        budget = Budget.objects.get(pk=approved_budget(user("A"), date(2026, 10, 29))["budget"]["budget_id"])  # 기준일 주기의 승인 예산
+        line = BudgetItem.objects.get(budget=budget, bucket="living", category_id="HOUSING_TELECOM")  # 더미 예산은 0원 줄이 있다
+        self.assertEqual(line.allocated_amount, 0)
+        line.allocated_amount = 100_000
+        line.save(update_fields=["allocated_amount"])
+        out = Chat(user("A")).say("예산 얼마 남았어?")[1]
+        total, left = b["living_budget"] + 100_000, b["living_remaining"] + 100_000
+        self.assertIn(f"생활비 예산 {total:,}원 중 {b['living_spent']:,}원을 썼고 {left:,}원 남았어요.", out["lines"])
+        self.assertIn("이전 기준으로 승인한 예산이에요. 주거·통신 · 여행·숙박 배정 100,000원이 생활비에 들어 있어요. "
+                      "새 기준으로 추천을 다시 받아 주세요.", out["notices"])
+
+
 @fixture_db_only
 class OmittedDateTest(TestCase):
     """11/2 2차: 월 · 연도를 생략한 날짜는 기준일로 채운다 · 끝이 기준일 뒤면 자르고 안내 · 시작이 뒤면 지난달 같은 날짜 선택지"""

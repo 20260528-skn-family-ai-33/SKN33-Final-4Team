@@ -24,7 +24,8 @@ import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
 import { MONTH_DAYS } from '../utils/days.js'
 import { PICK_CATS, catCode, guessCat } from '../utils/categories.js'
-import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { apiSend, newRequestKey } from '../utils/api.js'
+import { payOptionsNote, usePayOptions } from '../utils/fixed.js'
 
 const PAYS = [['account', '계좌'], ['card', '카드'], ['none', '모름']]
 const MIN_AMOUNT = 1_000
@@ -39,11 +40,8 @@ function payOf(item) {
   return 'none'
 }
 
-// 금융 연결 후보 → 고를 수 있는 것만 { id, name } (동의가 없거나 못 받으면 빈 목록 → '모름'으로 저장)
-function usePayOptions(path, idKey) {
-  const { data } = useApi(path)
-  return (data?.items ?? []).filter((o) => o.isSelected && o.status !== 'disconnected').map((o) => ({ id: o[idKey], name: o.displayName }))
-}
+// 금융 연결 후보 중 고를 수 있는 것만 { id, name } — 관리 대상 · 연결 중 (최종 검사는 서버)
+const pickable = (items, idKey) => items.filter((o) => o.isSelected && o.status !== 'disconnected').map((o) => ({ id: o[idKey], name: o.displayName }))
 
 export default function FixedPopup({ item, onSaved }) {
   const { closePopup } = usePopup()
@@ -59,8 +57,11 @@ export default function FixedPopup({ item, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [stopAsk, setStopAsk] = useState(false)   // [더 이상 안 나가요]를 한 번 누르면 확인 문구를 보여 준다
   const canStop = editing && item.status === 'confirmed'   // 후보(suggested)는 중지가 아니라 [고정지출 아니에요]
-  const accounts = usePayOptions('/api/finance/connect/accounts/', 'accountId')
-  const cards = usePayOptions('/api/finance/connect/cards/', 'cardId')
+  // 계좌 · 카드는 따로 받는다 — 한쪽이 실패해도 다른 결제 수단 · 팝업 입력은 그대로 (N-F2)
+  const accountLoad = usePayOptions('/api/finance/connect/accounts/')
+  const cardLoad = usePayOptions('/api/finance/connect/cards/')
+  const accounts = pickable(accountLoad.items, 'accountId')
+  const cards = pickable(cardLoad.items, 'cardId')
 
   const onName = (e) => {
     if (catTouched) return
@@ -111,6 +112,8 @@ export default function FixedPopup({ item, onSaved }) {
 
   // 지금 저장된 계좌·카드가 후보 목록에 없어도(관리 대상에서 뺐어도) 이름은 보이게 둔다
   const listed = pay === 'card' ? cards : accounts
+  const load = pay === 'card' ? cardLoad : accountLoad
+  const loadNote = payOptionsNote(load.status, listed.length, pay === 'card' ? '카드' : '계좌')
   const options = !payPick || listed.some((o) => o.id === payPick) ? listed : [{ id: payPick, name: method?.displayName }, ...listed]
 
   return (
@@ -147,7 +150,13 @@ export default function FixedPopup({ item, onSaved }) {
             </select>
           </label>
         )}
-        {pay !== 'none' && options.length === 0 && <p className="mc-note" style={{ padding: 0 }}>고를 수 있는 {pay === 'card' ? '카드' : '계좌'}가 없어요. 금융 연결에서 관리할 {pay === 'card' ? '카드' : '계좌'}를 고르거나 '모름'으로 저장해 주세요.</p>}
+        {/* 목록을 못 받았으면 빈 목록이라고 하지 않고 이유를 보여 준다. 저장된 결제 수단은 그대로 남는다 (모름으로 바꾸지 않음) */}
+        {pay !== 'none' && loadNote && (
+          <p className="mc-note" role={load.status === 'ready' || load.status === 'loading' ? undefined : 'alert'} style={{ padding: 0 }}>
+            {loadNote}
+            {['error', 'consent', 'login'].includes(load.status) && <> <button type="button" className="mc-link" disabled={load.retrying} onClick={load.retry}>다시 불러오기</button></>}
+          </p>
+        )}
         {pay === 'card' && <p className="mc-note" style={{ padding: 0 }}>카드로 내는 돈은 카드값 안에 들어 있어서 따로 빼지 않아요. 저장하면 이 카드에서 비슷한 결제를 찾아 맞는지 물어볼게요.</p>}
 
         <label className="mc-field">카테고리

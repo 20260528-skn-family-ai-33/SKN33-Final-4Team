@@ -289,6 +289,7 @@ def home_budget(user, today, cycle):
         "daily": living["remaining"] // days_left if days_left > 0 else None,  # 마지막 날은 null
         "days_left": days_left,
         "out_of_budget": data["out_of_budget"],
+        "out_of_budget_allocated": data["budget"]["out_of_budget_allocated"],
     }
 
 

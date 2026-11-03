@@ -279,6 +279,7 @@
 | `budget.budgetId` · `versionNo` | UUID · 정수 | 예산 번호 · 이번 주기 안 버전 |
 | `budget.status` | 문자 | `validated`(승인 전 초안) · `approved`(지금 적용 중) |
 | `budget.salaryConfirmed` | 참/거짓 | 이번 주기 월급이 들어왔는지 (홈 `salaryState = received`). `false`면 "이번 주기 월급이 확인되지 않았어요" 안내 (R-07) |
+| `budget.outOfBudgetAllocated` | 정수 | **이전 기준 예산 표시** (N-F1). 이 예산의 생활비 줄 중 주거·통신 · 여행·숙박 배정 합계. 11/3 전에 승인한 예산만 0보다 크다. 생활비 총액(`living.budget` · `split.living`)은 승인 때 저장한 그대로 이 금액을 포함하고, `categories`에는 두 카테고리가 없어 카테고리 합계 = 생활비 − 이 금액. 0보다 크면 화면이 "이전 기준으로 승인한 예산이에요 … 새 기준으로 추천을 다시 받아 주세요"를 보여 준다. 조회만으로 DB 금액 · 상태를 바꾸지 않는다 |
 | `budget.engineVersion` | 문자 / null | 이 예산을 만든 계산 엔진 버전. `temp-`로 시작하면 임시 비율 추천 → 추천 화면에 "테스트 추천" 표시 (11/3) |
 | `split` | 객체 / null | 한 달 나눠보기: `{ "funding", "fixed", "saving", "cushion", "living", "spare" }` (원). `funding = fixed + saving + cushion + living + spare` |
 | `living` | 객체 / null | `{ "budget", "spent", "remaining" }` 이번 주기 생활비 · 쓴 돈 · 남은 돈(0 아래 안 내림). 쓴 돈은 **주기 시작일 ~ 오늘**(홈 · 채팅과 같은 기간, 11/3) 거래이며 예산 밖 카테고리(R-13) 지출은 뺀다 |

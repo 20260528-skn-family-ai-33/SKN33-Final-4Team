@@ -97,6 +97,7 @@ NOTICE = {
     "clipped": "끝 날짜가 아직 지나지 않아 {until}까지만 봤어요.",
     "fixed_excluded": "고정지출 {amount}({names})은 빼고 봤어요.",
     "outside_spent": "예산 밖 지출({names}) {amount}은 남은 생활비에서 빼고 따로 보여드려요.",
+    "old_scope_budget": "이전 기준으로 승인한 예산이에요. 주거·통신 · 여행·숙박 배정 {amount}이 생활비에 들어 있어요. 새 기준으로 추천을 다시 받아 주세요.",
     "unclassified": "카테고리가 아직 정해지지 않은 거래 {count}건, 총 {amount}도 포함했어요.",
     "classified_only": "{name}{particle} 분류된 금액 기준이에요. 확인 필요 {amount}에 따라 달라질 수 있어요.",
     "classified_budget": "{name}{particle} 분류된 결제 기준이에요. 확인 필요 {amount}이 있어 실제로 쓸 수 있는 돈은 더 적을 수 있어요.",
@@ -125,6 +126,12 @@ def josa(word, pair):
     if pair[1] == "로":
         return "로" if final in (0, 8) else "으로"  # ㄹ 받침은 '로'
     return pair[0] if final else pair[1]
+
+
+def _old_scope(result):
+    """승인 예산의 이전 기준 배정액 (3 · 4번 결과 또는 1 · 5번 생활비 막대의 budget_left 결과)"""
+    budget = result.get("budget") or (result.get("living_budget") or {}).get("budget") or {}
+    return budget.get("out_of_budget_allocated") or 0
 
 
 def won(n):
@@ -825,6 +832,10 @@ def compose(results, notices=()):
                 outside[c] = v
     if outside:
         out.notice("outside_spent", names=", ".join(NAMES[c] for c in outside), amount=won(sum(outside.values())))
+    # 승인 예산에 이전 기준(11/3 전) 주거·통신 · 여행·숙박 배정이 남아 있으면 — 홈 · 예산 화면과 같은 안내 (N-F1)
+    old_scope = max((_old_scope(r["result"]) for r in results if r["ok"]), default=0)
+    if old_scope:
+        out.notice("old_scope_budget", amount=won(old_scope))
     excluded = sum(_fixed_excluded(r["result"]) for r in results if r["ok"])
     if excluded:  # 요일 · 시간대 · 묶기 · 짧은 기간 조회에서 기본으로 뺀 고정지출 → 금액(항목 이름) + [고정지출 포함해서 보기]
         names = " · ".join(dict.fromkeys(n for r in results if r["ok"] for n in _fixed_names(r["result"])))

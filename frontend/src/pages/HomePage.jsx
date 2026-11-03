@@ -11,7 +11,7 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
-import OutOfBudgetLine from '../components/OutOfBudgetLine.jsx'
+import OutOfBudgetLine, { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 
 // '2026-10-24' → '10.24'
 const mmdd = (iso) => (iso ? `${iso.slice(5, 7)}.${iso.slice(8, 10)}` : '')
@@ -144,6 +144,7 @@ export default function HomePage() {
         </div>
         <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · {period?.dday}일 남음</p>
         <OutOfBudgetLine value={b.outOfBudget} className="mc-home2-left" />
+        <OldScopeNote amount={b.outOfBudgetAllocated} className="mc-home2-left" />
         <div className="mc-bar mc-home2-bar" role="progressbar" aria-label="이번 주기 생활비 사용률"
           aria-valuemin={0} aria-valuemax={100} aria-valuenow={b.livingPct}
           aria-valuetext={`${b.livingPct}% 사용${note ? `, ${note.text}` : ''}`}>

@@ -529,7 +529,8 @@
                         "versionNo": 1,
                         "status": "validated",
                         "salaryConfirmed": false,
-                        "engineVersion": "temp-fallback-1"
+                        "engineVersion": "temp-fallback-1",
+                        "outOfBudgetAllocated": 0
                       },
                       "split": {
                         "funding": 2800000,
@@ -920,7 +921,8 @@
                         "versionNo": 1,
                         "status": "approved",
                         "salaryConfirmed": false,
-                        "engineVersion": "temp-fallback-1"
+                        "engineVersion": "temp-fallback-1",
+                        "outOfBudgetAllocated": 0
                       },
                       "split": {
                         "funding": 2800000,
@@ -1556,7 +1558,8 @@
           "versionNo",
           "status",
           "salaryConfirmed",
-          "engineVersion"
+          "engineVersion",
+          "outOfBudgetAllocated"
         ],
         "properties": {
           "budgetId": {
@@ -1582,6 +1585,12 @@
             "type": "string",
             "nullable": true,
             "description": "계산 엔진 버전. temp-로 시작하면 임시 비율 추천(화면 '테스트 추천')"
+          },
+          "outOfBudgetAllocated": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "이전 기준 예산의 주거·통신·여행·숙박 생활비 배정 합계. 0보다 크면 재추천 안내 (N-F1)"
           }
         },
         "additionalProperties": false,

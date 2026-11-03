@@ -901,6 +901,7 @@ class HomeBudgetTest(TestCase):
     """N2 홈 예산 영역 · 공통 정답표 (11/3 기준, 주기 11/1~12/1, 승인 생활비 1,000,000원).
     합성 거래 · 연결을 테스트 안에서 만든다 — 판별 알고리즘이 아니라 저장 · 집계 · 세 화면 일치를 검증한다"""
     TODAY = date(2026, 11, 3)
+    OLD_ALLOCATED = 0  # 이전 기준 예산의 주거·통신 · 여행·숙박 배정 (OldPolicyBudgetTest 가 바꾼다)
 
     def setUp(self):
         from finance.models import TransactionLink
@@ -972,7 +973,7 @@ class HomeBudgetTest(TestCase):
             {"category": "HOUSING_TELECOM", "spent": 20_000}, {"category": "TRAVEL_LODGING", "spent": 200_000}]})
         self.assertEqual(home, {"budgetId": str(self.budget.pk), "versionNo": 1, "livingBudget": 1_000_000, "livingLeft": 680_000,
                                 "livingPct": 32, "spare": 400_000, "daily": 680_000 // 27, "daysLeft": 27,
-                                "outOfBudget": home["outOfBudget"]})
+                                "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED})  # N-F1 칸 추가
         self.assertEqual(page["budget"]["engineVersion"], "temp-fallback-1")
 
     def test_friend_transfer_to_food_and_back(self):
@@ -1007,3 +1008,59 @@ class HomeBudgetTest(TestCase):
         self.tx(900_000, "FOOD", account=self.account)
         home = self.client.get("/api/home/").json()["budget"]
         self.assertEqual((home["livingPct"], home["livingLeft"]), (122, 0))
+
+
+class OldPolicyBudgetTest(HomeBudgetTest):
+    """N-F1: 주거·통신 · 여행·숙박 배정이 남은 옛 승인 예산 — 저장된 생활비 총액을 홈 · 예산 · 채팅이 같게 읽고, 이전 기준이라고 안내한다.
+    사용액은 새 기준(두 카테고리 제외). GET 은 DB 를 바꾸지 않는다. HomeBudgetTest 의 정답표 테스트도 이 예산으로 다시 돈다"""
+
+    OLD_CODE = "HOUSING_TELECOM"
+    OLD_ALLOCATED = 100_000
+
+    def setUp(self):
+        super().setUp()
+        from .models import BudgetItem
+        items = BudgetItem.objects.filter(budget=self.budget, bucket="living")
+        items.filter(category_id="FOOD").update(allocated_amount=900_000)
+        BudgetItem.objects.create(user=self.user, budget=self.budget, bucket="living", category_id=self.OLD_CODE, allocated_amount=100_000)
+
+    def items(self, budget):
+        return sorted(budget.items.values_list("bucket", "category_id", "allocated_amount"), key=str)
+
+    def test_same_total_and_previous_policy_notice(self):
+        from spending_analysis.tools import budget_left
+        before = self.items(self.budget)
+        home, page, _ = self.screens()
+        chat = budget_left(self.user, None, self.TODAY)
+        self.assertEqual((home["livingBudget"], page["living"]["budget"], chat["budget"]["allocated"]), (1_000_000,) * 3)
+        self.assertEqual((home["livingLeft"], home["daily"]), (680_000, 680_000 // 27))
+        self.assertEqual((home["outOfBudgetAllocated"], page["budget"]["outOfBudgetAllocated"],
+                          chat["budget"]["out_of_budget_allocated"]), (100_000,) * 3)
+        # 예산 화면 카테고리 줄에는 두 카테고리가 없어 합계(900,000)가 생활비(1,000,000)와 다르다 — 그 차이 = outOfBudgetAllocated
+        self.assertEqual(sum(c["allocated"] for c in page["categories"]) + page["budget"]["outOfBudgetAllocated"], page["living"]["budget"])
+        self.assertEqual(self.items(self.budget), before)  # 조회만으로 금액 · 항목 · 상태를 바꾸지 않는다
+        self.budget.refresh_from_db()
+        self.assertEqual(self.budget.status, "approved")
+
+    def test_new_draft_keeps_old_approved_until_approval(self):
+        from .models import Budget, BudgetItem
+        from .overview import LIVING_CODES
+        draft = Budget.objects.create(user=self.user, cycle=self.cycle, status="validated", version_no=2, funding_amount=2_500_000)
+        BudgetItem.objects.bulk_create([BudgetItem(user=self.user, budget=draft, bucket="living", category_id=c,
+                                                   allocated_amount=1_000_000 if c == "FOOD" else 0) for c in LIVING_CODES])
+        home = self.client.get("/api/home/").json()["budget"]
+        self.assertEqual((home["budgetId"], home["outOfBudgetAllocated"]), (str(self.budget.pk), 100_000))  # 초안은 홈에 안 보임
+        self.assertEqual(self.client.get("/api/budgets/").json()["budget"]["outOfBudgetAllocated"], 0)  # 예산 화면은 초안을 보여 준다
+        before = self.items(self.budget)
+        Budget.objects.filter(pk=self.budget.pk).update(status="superseded")  # 승인 흐름(api.budget_approve)과 같은 결과
+        Budget.objects.filter(pk=draft.pk).update(status="approved", approved_at=timezone.now())
+        home = self.client.get("/api/home/").json()["budget"]
+        self.assertEqual((home["budgetId"], home["livingBudget"], home["outOfBudgetAllocated"]), (str(draft.pk), 1_000_000, 0))
+        self.assertEqual(self.items(self.budget), before)
+
+
+class OldPolicyTravelBudgetTest(OldPolicyBudgetTest):
+    OLD_CODE = "TRAVEL_LODGING"
+
+    def test_new_draft_keeps_old_approved_until_approval(self):
+        pass  # 배정 카테고리만 다른 같은 흐름 — 위 클래스에서 확인
