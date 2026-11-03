@@ -53,9 +53,12 @@ function readCookie(name) {
   return hit ? decodeURIComponent(hit.slice(name.length + 1)) : null
 }
 
+// 쿠키 이름은 기본 'csrftoken'(장고 기본). 다른 백엔드 설정(예: 더미 서비스 8001)에 붙일 때만 VITE_CSRF_COOKIE 로 바꾼다
+const CSRF_COOKIE = import.meta.env.VITE_CSRF_COOKIE || 'csrftoken'
+
 async function csrfToken() {
-  if (!readCookie('csrftoken')) await fetch('/api/csrf/')
-  return readCookie('csrftoken') ?? ''
+  if (!readCookie(CSRF_COOKIE)) await fetch('/api/csrf/')
+  return readCookie(CSRF_COOKIE) ?? ''
 }
 
 // 요청 번호 — 폼(팝업)을 열 때 하나 만들어 두고, 저장할 때 apiSend 에 같이 넘긴다 (10-21 C-10)

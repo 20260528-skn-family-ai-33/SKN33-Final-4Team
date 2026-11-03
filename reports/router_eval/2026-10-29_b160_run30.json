@@ -1,0 +1,152 @@
+{
+ "run": "2026-10-29_b160_run30",
+ "pre_run": {
+  "recorded_before_run": "2026-10-29",
+  "model": "gpt-6-luna",
+  "reasoning_effort": "low",
+  "structured_outputs": true,
+  "retries": 0,
+  "ledger": {
+   "limit": 160,
+   "new": true
+  },
+  "prompts": {
+   "router": "f894b1699c6fc8fb40833bd2fea95c5ca63236f2dd54d83a8c506d5d7e9dd818",
+   "spending": "302b9cd81c5e09a69f4254b5d5f77d67d168c1d6244a1a1a11756c44f96c670c"
+  },
+  "cases_b": {
+   "version": "B-2026-10-29.2",
+   "sha256": "730ef08b03227811e42c20662b547d6e23a59d0015fc67359302f0db33a8238f"
+  },
+  "cases_source": {
+   "version": "2026-10-29.3",
+   "sha256": "cffc9d75ef3d4e468af0907f34485e75c536b4a3c62f01c1f7ca5cf6a37d29cf"
+  },
+  "files": {
+   "scripts/router_eval/stage_b.py": "107bf5adca2c777ed873068e3695c220b40de7ae62573dfbc5004d3e5d205970",
+   "scripts/router_eval/run.py": "66d156d25edfc6f9ce7cbb1c0326dee2993dcbdf7db40e2ee7716fb9f2b713a5",
+   "scripts/router_eval/openai_rest.py": "37ff9fce9ec423bbf879edb806922dfca77d2201fb1e7a9009b2fbe765b08316",
+   "scripts/router_eval/make_cases_b.py": "cf56ae30b0e64c10cbf2bb164536f80b20909631a18c4ef606885013c2b91ec6",
+   "backend/chat/router_core/__init__.py": "256c2fb626206809b51c82ee4ce584a026040089124cf0f402db4f9b122d5d3f",
+   "backend/chat/router_core/reading.py": "db9e20a15c1f429cb810dd93fb82a7a57108d6a20468a8534b8aad78dc11b896",
+   "backend/chat/router_core/rules.py": "c0499f04deac23534ed03d9df6f3cd12a3dd577206b705c3ad8f81e669affdda",
+   "backend/spending_analysis/reading.py": "a6d8000f9ea81a3df05051eee89ab2ed5ad373c83f188fc9b316237e988097d1",
+   "backend/spending_analysis/dialog.py": "7a030a84bc9d4f2964fd8b0957168934374a9d7bb5e5ebf0156d174dcc3e0790",
+   "backend/spending_analysis/agent.py": "9fd14d56ad1df8ea70c75dfe92ed6bb9a4fd62206211ebc905b8e01e3cefe963"
+  },
+  "prices_usd_per_1m": {
+   "in": 0.1,
+   "out": 0.5,
+   "note": "28차와 같은 값, 공식 가격표 재확인 안 함"
+  },
+  "plan": {
+   "units": "28차와 같은 58 (단일 48 + 연속 대화 10 = 38턴), holdout(h*) 제외",
+   "check": [
+    "b05"
+   ],
+   "planned_calls": {
+    "router": 69,
+    "spending": 70,
+    "total": 139
+   },
+   "policy_pending": [
+    "d28",
+    "n06",
+    "bs1#3",
+    "bs2#3"
+   ],
+   "policy_review": [
+    "n10",
+    "s8#2"
+   ]
+  }
+ },
+ "ledger": {
+  "limit": 160,
+  "used": 141
+ },
+ "scored_calls": {
+  "router": 69,
+  "spending": 70
+ },
+ "units": {
+  "single": 48,
+  "scenarios": 10,
+  "scenario_turns": 38,
+  "policy_pending": [
+   "d28",
+   "n06",
+   "bs1#3",
+   "bs2#3"
+  ],
+  "policy_review": [
+   "n10",
+   "s8#2"
+  ]
+ },
+ "scores_policy_pending_excluded": {
+  "regression_dev": {
+   "router_reading": "31/31",
+   "spending_reading": "31/32",
+   "format": "35/35",
+   "decision": "37/37",
+   "state": "37/37",
+   "flows_strict": "3/3",
+   "flows_decision_state": "3/3"
+  },
+  "regression_new": {
+   "router_reading": "23/24",
+   "spending_reading": "21/27",
+   "format": "30/30",
+   "decision": "31/33",
+   "state": "33/33",
+   "flows_strict": "1/5",
+   "flows_decision_state": "5/5"
+  },
+  "new_b": {
+   "router_reading": "10/10",
+   "spending_reading": "6/7",
+   "format": "12/12",
+   "decision": "12/12",
+   "state": "12/12",
+   "flows_strict": "2/2",
+   "flows_decision_state": "2/2"
+  },
+  "total": {
+   "router_reading": "64/65",
+   "spending_reading": "58/66",
+   "format": "77/77",
+   "decision": "80/82",
+   "state": "82/82",
+   "flows_strict": "6/10",
+   "flows_decision_state": "10/10"
+  }
+ },
+ "failed_units": [
+  "d27",
+  "n05",
+  "n10",
+  "b06",
+  "s4#2",
+  "s4#5",
+  "s5#3",
+  "s7#2",
+  "s8#2"
+ ],
+ "latency_ms": {
+  "call_median": 1724,
+  "call_p90": 2328,
+  "call_max": 4987,
+  "turn_median": 3202,
+  "turn_p90": 4125,
+  "turn_max": 5890,
+  "turns_with_calls": 81
+ },
+ "tokens": {
+  "input": 204058,
+  "cached": 193668,
+  "output": 12950,
+  "reasoning": 4111
+ },
+ "responses_file": "2026-10-29_b160_run30-responses.jsonl"
+}

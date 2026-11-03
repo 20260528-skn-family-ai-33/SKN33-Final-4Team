@@ -1,0 +1,3669 @@
+{
+ "version": "B-2026-10-29.1",
+ "format": "role",
+ "source": {
+  "cases_file": "cases.json",
+  "version": "2026-10-29.3",
+  "sha256": "cffc9d75ef3d4e468af0907f34485e75c536b4a3c62f01c1f7ca5cf6a37d29cf"
+ },
+ "note": "역할별 기대값(expect_router · expect_spending) · 최종 결정(expect_route) · 상태(expect_state). 기존 사례는 make_cases_b.py 로 변환한 회귀용, review 가 있는 단위는 사람 확인 필요",
+ "splits": {
+  "regression_dev": "분리 전 dev 28 + s1~s3 — 회귀용 (프롬프트 개선에 쓴 사례)",
+  "regression_new": "분리 전 new 12 + s4~s8 — 회귀용 (17차에 이미 실행)",
+  "reference": "분리 전 holdout 12 — 참고용 (오염 이력, 기본 실행 안 함)",
+  "new_b": "단계 B 새 사례 — 프롬프트 작성자와 같은 작성자, 실행 전 기대값 고정"
+ },
+ "independent": {
+  "regression_dev": false,
+  "regression_new": false,
+  "reference": false,
+  "new_b": false,
+  "why": "모든 사례를 프롬프트 작성자가 썼다 — 독립 평가가 아니다"
+ },
+ "fixtures": {
+  "food_2m": {
+   "request": {
+    "target": "overview",
+    "period": "recent",
+    "compare": null,
+    "months": 2,
+    "categories": [
+     "FOOD"
+    ]
+   },
+   "items": [
+    {
+     "type": 9,
+     "category": "FOOD",
+     "months_requested": 2,
+     "months_applied": 2,
+     "ok": true,
+     "period": {
+      "from": "2026-08-01",
+      "to": "2026-09-30"
+     },
+     "as_of": "2026-10-29T10:00:00+09:00"
+    }
+   ]
+  },
+  "food_prev": {
+   "request": {
+    "target": "spend",
+    "period": null,
+    "compare": "prev_month",
+    "months": null,
+    "categories": [
+     "FOOD"
+    ]
+   },
+   "items": [
+    {
+     "type": 7,
+     "category": "FOOD",
+     "ok": true,
+     "period": {
+      "from": "2026-10-01",
+      "to": "2026-10-29"
+     },
+     "compare_period": {
+      "from": "2026-09-01",
+      "to": "2026-09-29"
+     },
+     "as_of": "2026-10-29T10:00:00+09:00"
+    }
+   ]
+  },
+  "all_3m": {
+   "request": {
+    "target": "overview",
+    "period": "recent",
+    "compare": null,
+    "months": null,
+    "categories": []
+   },
+   "items": [
+    {
+     "type": 8,
+     "category": null,
+     "months_requested": null,
+     "months_applied": 3,
+     "ok": true,
+     "period": {
+      "from": "2026-07-01",
+      "to": "2026-09-30"
+     },
+     "as_of": "2026-10-29T10:00:00+09:00"
+    }
+   ]
+  },
+  "food_transport_2m": {
+   "request": {
+    "target": "overview",
+    "period": "recent",
+    "compare": null,
+    "months": 2,
+    "categories": [
+     "FOOD",
+     "TRANSPORT_CAR"
+    ]
+   },
+   "items": [
+    {
+     "type": 9,
+     "category": "FOOD",
+     "months_requested": 2,
+     "months_applied": 2,
+     "ok": true,
+     "period": {
+      "from": "2026-08-01",
+      "to": "2026-09-30"
+     },
+     "as_of": "2026-10-29T10:00:00+09:00"
+    },
+    {
+     "type": 9,
+     "category": "TRANSPORT_CAR",
+     "months_requested": 2,
+     "months_applied": 2,
+     "ok": true,
+     "period": {
+      "from": "2026-08-01",
+      "to": "2026-09-30"
+     },
+     "as_of": "2026-10-29T10:00:00+09:00"
+    }
+   ]
+  },
+  "task_awaiting": {
+   "task_ref": "T1",
+   "phase": "awaiting_approval",
+   "suspended": false
+  },
+  "task_suspended": {
+   "task_ref": "T1",
+   "phase": "awaiting_approval",
+   "suspended": true
+  },
+  "ask_months": {
+   "request": {
+    "period": "recent",
+    "months": 0,
+    "categories": [
+     "FOOD"
+    ],
+    "mine": true
+   },
+   "text": "최근 0개월 식비 알려줘",
+   "intent": "spending",
+   "asking": "months",
+   "ask_about": [],
+   "options": []
+  }
+ },
+ "cases": [
+  {
+   "id": "d01",
+   "split": "regression_dev",
+   "text": "이번 달 얼마 썼어?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "spend",
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d01"
+  },
+  {
+   "id": "d02",
+   "split": "regression_dev",
+   "text": "식비 얼마 썼어?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FOOD"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "spend",
+     "categories": [
+      "FOOD"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d02"
+  },
+  {
+   "id": "d03",
+   "split": "regression_dev",
+   "text": "식비 예산 얼마 남았어?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 3,
+      "category": "FOOD"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "budget_left",
+     "categories": [
+      "FOOD"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d03"
+  },
+  {
+   "id": "d04",
+   "split": "regression_dev",
+   "text": "생활비 예산 얼마 남았어?",
+   "note": "'생활비'는 카테고리가 아니라 전체 생활비 예산",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 4,
+      "category": null
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "budget_left",
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "all_categories": [
+      null,
+      true
+     ]
+    }
+   },
+   "origin": "d04"
+  },
+  {
+   "id": "d05",
+   "split": "regression_dev",
+   "text": "이번 달 소비 분석해줘",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 5,
+      "category": null
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "overview",
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d05"
+  },
+  {
+   "id": "d06",
+   "split": "regression_dev",
+   "text": "지난달보다 교통비 더 나왔어?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 7,
+      "category": "TRANSPORT_CAR"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "compare": "prev_month",
+     "categories": [
+      "TRANSPORT_CAR"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d06"
+  },
+  {
+   "id": "d07",
+   "split": "regression_dev",
+   "text": "요즘 몇 달 소비 흐름 어때?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 8,
+      "category": null,
+      "months_requested": null,
+      "months_applied": 3
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "period": "recent",
+     "mine": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d07"
+  },
+  {
+   "id": "d08",
+   "split": "regression_dev",
+   "text": "최근 6개월 식비 추이 보여줘",
+   "expect_route": {
+    "status": "ready",
+    "notices": [
+     "months_capped"
+    ],
+    "items": [
+     {
+      "type": 9,
+      "category": "FOOD",
+      "months_requested": 6,
+      "months_applied": 3
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "months": 6,
+     "categories": [
+      "FOOD"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "recent",
+      null
+     ],
+     "target": [
+      null,
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d08"
+  },
+  {
+   "id": "d09",
+   "split": "regression_dev",
+   "text": "최근 0개월 식비 알려줘",
+   "expect_route": {
+    "status": "ask",
+    "asking": "months"
+   },
+   "expect_state": {
+    "pending.asking": "months"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "months": 0,
+     "categories": [
+      "FOOD"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "recent",
+      null
+     ],
+     "target": [
+      null,
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d09"
+  },
+  {
+   "id": "d10",
+   "split": "regression_dev",
+   "text": "지난달 얼마 썼어?",
+   "expect_route": {
+    "status": "unsupported",
+    "reason": "last_month_only",
+    "items": []
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "spend",
+     "period": "last_month",
+     "mine": true
+    },
+    "allow": {
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d10"
+  },
+  {
+   "id": "d11",
+   "split": "regression_dev",
+   "text": "교통비랑 데이트비 최근 2개월 알려줘",
+   "expect_route": {
+    "status": "ask",
+    "asking": "category"
+   },
+   "expect_state": {
+    "pending.asking": "category"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "months": 2,
+     "categories": [
+      "TRANSPORT_CAR",
+      {
+       "unknown": "데이트비"
+      }
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "recent",
+      null
+     ],
+     "target": [
+      null,
+      "overview",
+      "spend"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d11"
+  },
+  {
+   "id": "d12",
+   "split": "regression_dev",
+   "text": "식비랑 교통비 중 뭐가 더 많아?",
+   "expect_route": {
+    "status": "unsupported",
+    "reason": "category_compare"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "compare": "category",
+     "categories": [
+      "FOOD",
+      "TRANSPORT_CAR"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d12"
+  },
+  {
+   "id": "d13",
+   "split": "regression_dev",
+   "text": "식비 예산 5만 원 줄여줘",
+   "expect_route": {
+    "status": "ready",
+    "intent": "budget_adjust",
+    "handoff.mode": "start",
+    "handoff.text": "식비 예산 5만 원 줄여줘"
+   },
+   "expect_state": {
+    "budget_task.phase": "started",
+    "budget_task.task_ref": null
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "budget_adjust"
+     ]
+    },
+    "allow": {},
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "origin": "d13"
+  },
+  {
+   "id": "d14",
+   "split": "regression_dev",
+   "text": "이번 달 소비 분석하고 예산도 줄여줘",
+   "expect_route": {
+    "status": "ask",
+    "asking": "intent",
+    "options": [
+     "spending",
+     "budget_adjust"
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending",
+      "budget_adjust"
+     ]
+    },
+    "allow": {},
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "origin": "d14"
+  },
+  {
+   "id": "d15",
+   "split": "regression_dev",
+   "text": "최근 3개월 식비 예산 얼마나 남았어?",
+   "expect_route": {
+    "status": "ask",
+    "asking": "budget_current",
+    "reason": "recent",
+    "ask_about": [
+     "FOOD"
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "budget_left",
+     "months": 3,
+     "categories": [
+      "FOOD"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "recent",
+      null
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d15"
+  },
+  {
+   "id": "d16",
+   "split": "regression_dev",
+   "text": "그럼 교통비는?",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 9,
+      "category": "TRANSPORT_CAR",
+      "months_requested": 2,
+      "months_applied": 2
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "categories": [
+      "TRANSPORT_CAR"
+     ],
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "d16"
+  },
+  {
+   "id": "d17",
+   "split": "regression_dev",
+   "text": "이번 달은?",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FOOD"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "period": "this_month",
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "d17"
+  },
+  {
+   "id": "d18",
+   "split": "regression_dev",
+   "text": "전체는?",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 8,
+      "category": null,
+      "months_requested": 2,
+      "months_applied": 2
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "all_categories": true,
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "d18"
+  },
+  {
+   "id": "d19",
+   "split": "regression_dev",
+   "text": "그럼 3개월은?",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 9,
+      "category": "FOOD",
+      "months_requested": 3,
+      "months_applied": 3
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "months": 3,
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "recent"
+     ]
+    }
+   },
+   "origin": "d19"
+  },
+  {
+   "id": "d20",
+   "split": "regression_dev",
+   "text": "이번 달 총소비 알려줘",
+   "state": {
+    "last_analysis": "@all_3m"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "spend",
+     "period": "this_month",
+     "mine": true
+    },
+    "allow": {
+     "refers_to": [
+      null,
+      "none",
+      "previous"
+     ],
+     "all_categories": [
+      null,
+      true
+     ]
+    }
+   },
+   "origin": "d20"
+  },
+  {
+   "id": "d21",
+   "split": "regression_dev",
+   "text": "예산은?",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "budget_current",
+    "reason": "recent",
+    "ask_about": [
+     "FOOD"
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "target": "budget_left",
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "d21"
+  },
+  {
+   "id": "d22",
+   "split": "regression_dev",
+   "text": "그럼 교통비는?",
+   "note": "직전 분석 없음 → 이어받을 대상이 없으니 unclear",
+   "expect_route": {
+    "status": "ask",
+    "asking": "scope",
+    "reason": "reference_unclear"
+   },
+   "expect_state": {
+    "pending.asking": "scope"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "unclear",
+     "categories": [
+      "TRANSPORT_CAR"
+     ],
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "d22"
+  },
+  {
+   "id": "d23",
+   "split": "regression_dev",
+   "text": "왜 늘었어?",
+   "state": {
+    "last_analysis": "@food_prev"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [],
+    "explain.items.category": [
+     "FOOD"
+    ]
+   },
+   "expect_state": {
+    "last_analysis.request.compare": "prev_month"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "explain": true,
+     "mine": true
+    },
+    "allow": {
+     "refers_to": [
+      "previous",
+      null
+     ]
+    }
+   },
+   "origin": "d23"
+  },
+  {
+   "id": "d24",
+   "split": "regression_dev",
+   "text": "응",
+   "state": {
+    "budget_task": "@task_awaiting"
+   },
+   "expect_route": {
+    "status": "ready",
+    "handoff.mode": "continue",
+    "handoff.text": "응"
+   },
+   "expect_state": {
+    "budget_task.phase": "awaiting_approval",
+    "budget_result": null
+   },
+   "origin": "d24"
+  },
+  {
+   "id": "d25",
+   "split": "regression_dev",
+   "text": "일단 이번 달 소비부터 보여줘",
+   "state": {
+    "budget_task": "@task_awaiting"
+   },
+   "note": "정책: '소비 알려줘/보여줘' = 5번 (기존 단위 테스트 가짜 응답은 target=spend → 1번으로 되어 있어 정책과 다름)",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 5,
+      "category": null
+     }
+    ],
+    "notices": [
+     "budget_task_suspended"
+    ]
+   },
+   "expect_state": {
+    "budget_task.suspended": true,
+    "budget_task.phase": "awaiting_approval"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ],
+     "followup": "new"
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "followup": "new",
+     "target": "overview",
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "doubles": {
+    "budget": "not_mine"
+   },
+   "origin": "d25"
+  },
+  {
+   "id": "d26",
+   "split": "regression_dev",
+   "text": "아까 예산 조정 이어서 하자",
+   "state": {
+    "budget_task": "@task_suspended"
+   },
+   "server": {
+    "T1": {
+     "state": "awaiting_approval"
+    }
+   },
+   "expect_route": {
+    "status": "ready",
+    "handoff.mode": "resume",
+    "handoff.context.task_state": "awaiting_approval"
+   },
+   "expect_state": {
+    "budget_task.suspended": false
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "budget_adjust"
+     ],
+     "resume": true
+    },
+    "allow": {
+     "followup": [
+      null,
+      "new",
+      "answer"
+     ]
+    },
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "origin": "d26"
+  },
+  {
+   "id": "d27",
+   "split": "regression_dev",
+   "text": "2개월로 해줘",
+   "state": {
+    "pending": "@ask_months"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 9,
+      "category": "FOOD",
+      "months_requested": 2,
+      "months_applied": 2
+     }
+    ]
+   },
+   "expect_state": {
+    "pending": null
+   },
+   "expect_spending": {
+    "must": {
+     "followup": "answer",
+     "months": 2,
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "recent"
+     ]
+    }
+   },
+   "origin": "d27"
+  },
+  {
+   "id": "d28",
+   "split": "regression_dev",
+   "policy_pending": true,
+   "text": "식비 얼마 썼는지 알려주고 주식도 추천해줘",
+   "note": "지원 요청 + 범위 밖 혼합 정책 미정. 현재 동작(소비 분석만)은 기록만, 정확도 분모 제외",
+   "expect_route": {},
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending",
+      "unsupported"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "spend",
+     "categories": [
+      "FOOD"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "d28"
+  },
+  {
+   "id": "h01",
+   "split": "reference",
+   "text": "주식 뭐 사면 좋아?",
+   "expect_route": {
+    "status": "unsupported",
+    "reason": "out_of_scope"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "unsupported"
+     ]
+    },
+    "allow": {}
+   },
+   "origin": "h01"
+  },
+  {
+   "id": "h02",
+   "split": "reference",
+   "text": "이거 그만할래요",
+   "state": {
+    "budget_task": "@task_awaiting"
+   },
+   "expect_route": {
+    "status": "ready",
+    "handoff.mode": "continue",
+    "handoff.text": "이거 그만할래요"
+   },
+   "expect_state": {
+    "budget_task.phase": "awaiting_approval",
+    "budget_result": null
+   },
+   "origin": "h02"
+  },
+  {
+   "id": "h03",
+   "split": "reference",
+   "text": "지난달이랑 비교해서 쇼핑 많이 했어?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 7,
+      "category": "FASHION_SHOPPING"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "compare": "prev_month",
+     "categories": [
+      "FASHION_SHOPPING"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "h03"
+  },
+  {
+   "id": "h04",
+   "split": "reference",
+   "text": "12개월 치 식비 보여줘",
+   "expect_route": {
+    "status": "ready",
+    "notices": [
+     "months_capped"
+    ],
+    "items": [
+     {
+      "type": 9,
+      "category": "FOOD",
+      "months_requested": 12,
+      "months_applied": 3
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "months": 12,
+     "categories": [
+      "FOOD"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "recent",
+      null
+     ],
+     "target": [
+      null,
+      "overview",
+      "spend"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "h04"
+  },
+  {
+   "id": "h05",
+   "split": "reference",
+   "text": "식비, 교통비, 의료비 이번 달 각각 얼마야?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FOOD"
+     },
+     {
+      "type": 2,
+      "category": "TRANSPORT_CAR"
+     },
+     {
+      "type": 2,
+      "category": "MEDICAL_HEALTH"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "spend",
+     "categories": [
+      "FOOD",
+      "TRANSPORT_CAR",
+      "MEDICAL_HEALTH"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "h05"
+  },
+  {
+   "id": "h06",
+   "split": "reference",
+   "text": "예산 짜는 거 다시 하고 싶어",
+   "expect_route": {
+    "status": "ready",
+    "handoff.mode": "start",
+    "handoff.text": "예산 짜는 거 다시 하고 싶어"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "budget_adjust"
+     ]
+    },
+    "allow": {},
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "origin": "h06"
+  },
+  {
+   "id": "h07",
+   "split": "reference",
+   "text": "교통비도",
+   "state": {
+    "last_analysis": "@food_prev"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 7,
+      "category": "TRANSPORT_CAR"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "categories": [
+      "TRANSPORT_CAR"
+     ],
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "h07"
+  },
+  {
+   "id": "h08",
+   "split": "reference",
+   "text": "그럼 이번 달 기준으로는?",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "FOOD"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "period": "this_month",
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "h08"
+  },
+  {
+   "id": "h09",
+   "split": "reference",
+   "text": "왜 늘었어?",
+   "state": {
+    "last_analysis": "@food_transport_2m"
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "explain_target",
+    "ask_about": [
+     "FOOD",
+     "TRANSPORT_CAR"
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "explain": true,
+     "mine": true
+    },
+    "allow": {
+     "refers_to": [
+      "previous",
+      null
+     ]
+    }
+   },
+   "origin": "h09"
+  },
+  {
+   "id": "h10",
+   "split": "reference",
+   "text": "그 전에 본 거 다시 보여줘",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "scope",
+    "reason": "reference_unclear"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "unclear",
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "h10"
+  },
+  {
+   "id": "h11",
+   "split": "reference",
+   "text": "그렇게 진행해줘",
+   "state": {
+    "budget_task": "@task_awaiting"
+   },
+   "expect_route": {
+    "status": "ready",
+    "handoff.mode": "continue",
+    "handoff.text": "그렇게 진행해줘"
+   },
+   "expect_state": {
+    "budget_task.phase": "awaiting_approval"
+   },
+   "origin": "h11"
+  },
+  {
+   "id": "h12",
+   "split": "reference",
+   "text": "교통비 예산도 늘려줘",
+   "state": {
+    "budget_task": "@task_suspended"
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "budget_task_choice",
+    "options": [
+     "resume",
+     "restart"
+    ]
+   },
+   "expect_state": {
+    "budget_task.task_ref": "T1",
+    "pending.asking": "budget_task_choice"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "budget_adjust"
+     ]
+    },
+    "allow": {
+     "followup": [
+      null,
+      "new"
+     ]
+    },
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "origin": "h12"
+  },
+  {
+   "id": "n01",
+   "split": "regression_new",
+   "text": "이번 달 교육비 합계 알려줘",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 2,
+      "category": "EDUCATION"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "spend",
+     "categories": [
+      "EDUCATION"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "this_month",
+      null
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "n01"
+  },
+  {
+   "id": "n02",
+   "split": "regression_new",
+   "text": "주거비 예산 남은 거 보여줘",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 3,
+      "category": "HOUSING_TELECOM"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "budget_left",
+     "categories": [
+      "HOUSING_TELECOM"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      null,
+      "this_month"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "n02"
+  },
+  {
+   "id": "n03",
+   "split": "regression_new",
+   "text": "이번 달 소비 전체적으로 평가해줘",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 5,
+      "category": null
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "target": "overview",
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "this_month",
+      null
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ],
+     "all_categories": [
+      null,
+      true
+     ]
+    }
+   },
+   "origin": "n03"
+  },
+  {
+   "id": "n04",
+   "split": "regression_new",
+   "text": "최근 넉 달 교통비 흐름 보여줘",
+   "expect_route": {
+    "status": "ready",
+    "notices": [
+     "months_capped"
+    ],
+    "items": [
+     {
+      "type": 9,
+      "category": "TRANSPORT_CAR",
+      "months_requested": 4,
+      "months_applied": 3
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "months": 4,
+     "categories": [
+      "TRANSPORT_CAR"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "recent",
+      null
+     ],
+     "target": [
+      null,
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "n04"
+  },
+  {
+   "id": "n05",
+   "split": "regression_new",
+   "text": "지난달보다 여행비 더 나갔어?",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 7,
+      "category": "TRAVEL_LODGING"
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "compare": "prev_month",
+     "categories": [
+      "TRAVEL_LODGING"
+     ],
+     "mine": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend",
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "n05"
+  },
+  {
+   "id": "n06",
+   "split": "regression_new",
+   "policy_pending": true,
+   "text": "식비 빼고 나머지는 얼마 썼어?",
+   "note": "특정 카테고리 제외 조회 — 지원 여부 · 처리 정책 미정. 현재 동작만 기록, 분모 제외",
+   "expect_route": {},
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true
+    },
+    "allow": {
+     "target": [
+      null,
+      "spend"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "n06"
+  },
+  {
+   "id": "n07",
+   "split": "regression_new",
+   "text": "의료비랑 미용비랑 반려동물 용품 이번 달 각각 보여줘",
+   "expect_route": {
+    "status": "ask",
+    "asking": "category"
+   },
+   "expect_state": {
+    "pending.asking": "category"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "categories": [
+      "MEDICAL_HEALTH",
+      "BEAUTY",
+      {
+       "unknown": "반려동물 용품"
+      }
+     ],
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "this_month",
+      null
+     ],
+     "target": [
+      null,
+      "overview"
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "origin": "n07"
+  },
+  {
+   "id": "n08",
+   "split": "regression_new",
+   "text": "그럼 이번 달 전체는?",
+   "state": {
+    "last_analysis": "@food_prev"
+   },
+   "note": "기간 방식을 명시해 바꾸면 이전 지난달 비교는 해제(8차 정책), 대상(쓴 돈)은 이어받음",
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "period": "this_month",
+     "all_categories": true,
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "n08"
+  },
+  {
+   "id": "n09",
+   "split": "regression_new",
+   "text": "교통비로 바꾸고 기간은 그대로",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 9,
+      "category": "TRANSPORT_CAR",
+      "months_requested": 2,
+      "months_applied": 2
+     }
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "categories": [
+      "TRANSPORT_CAR"
+     ],
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "n09"
+  },
+  {
+   "id": "n10",
+   "split": "regression_new",
+   "text": "남은 예산은 얼마야?",
+   "state": {
+    "last_analysis": "@food_2m"
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "budget_current",
+    "reason": "recent",
+    "ask_about": [
+     "FOOD"
+    ]
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "refers_to": "previous",
+     "target": "budget_left",
+     "mine": true
+    },
+    "allow": {}
+   },
+   "origin": "n10"
+  },
+  {
+   "id": "n11",
+   "split": "regression_new",
+   "text": "잠깐, 이번 달 총액부터 확인할게",
+   "state": {
+    "budget_task": "@task_awaiting"
+   },
+   "expect_route": {
+    "status": "ready",
+    "items": [
+     {
+      "type": 1,
+      "category": null
+     }
+    ],
+    "notices": [
+     "budget_task_suspended"
+    ]
+   },
+   "expect_state": {
+    "budget_task.suspended": true,
+    "budget_task.phase": "awaiting_approval"
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ],
+     "followup": "new"
+    },
+    "allow": {}
+   },
+   "expect_spending": {
+    "must": {
+     "followup": "new",
+     "target": "spend",
+     "mine": true
+    },
+    "allow": {
+     "period": [
+      "this_month",
+      null
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "doubles": {
+    "budget": "not_mine"
+   },
+   "origin": "n11"
+  },
+  {
+   "id": "n12",
+   "split": "regression_new",
+   "text": "취소",
+   "state": {
+    "budget_task": "@task_suspended",
+    "pending": "@ask_months"
+   },
+   "note": "코드가 처리하는 취소 단어 — 대상이 둘(라우터 질문 · 보류 작업)이라 무엇을 취소할지 묻는다. 모델 호출 0회",
+   "expect_route": {
+    "status": "ask",
+    "asking": "cancel_target",
+    "options": [
+     "question",
+     "budget_task"
+    ]
+   },
+   "expect_state": {
+    "pending.asking": "cancel_target",
+    "budget_task.task_ref": "T1",
+    "budget_result": null
+   },
+   "origin": "n12"
+  },
+  {
+   "id": "b01",
+   "text": "청년 월세 지원 같은 거 나도 받을 수 있어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "policy"
+     ]
+    }
+   },
+   "doubles": {
+    "policy": {
+     "status": "awaiting_input",
+     "work_ref": "P1"
+    }
+   },
+   "expect_route": {
+    "intent": "policy",
+    "handoff.mode": "start"
+   },
+   "expect_state": {
+    "policy_work.work_ref": "P1"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b02",
+   "text": "다음 달 교통비 예산 좀 늘려줄래?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "budget_adjust"
+     ]
+    },
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "expect_route": {
+    "intent": "budget_adjust",
+    "handoff.mode": "start"
+   },
+   "expect_state": {
+    "budget_task.phase": "started"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b03",
+   "text": "주말에 뭐 먹을지 추천해줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "unsupported"
+     ]
+    }
+   },
+   "expect_route": {
+    "status": "unsupported",
+    "reason": "out_of_scope"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b04",
+   "text": "식비 예산 줄이고 청년 정책도 알려줘",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "budget_adjust",
+      "policy"
+     ]
+    },
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "intent",
+    "options": [
+     "budget_adjust",
+     "policy"
+    ]
+   },
+   "expect_state": {
+    "pending.asking": "intent"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b05",
+   "text": "이번 달 쇼핑에 얼마 썼어?",
+   "expect_router": {
+    "must": {
+     "intents": [
+      "spending"
+     ]
+    }
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "target": "spend",
+     "categories": [
+      "FASHION_SHOPPING"
+     ]
+    },
+    "allow": {
+     "period": [
+      "this_month",
+      null
+     ],
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "items": [
+     {
+      "type": 2,
+      "category": "FASHION_SHOPPING"
+     }
+    ]
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b06",
+   "text": "5만 원만큼",
+   "state": {
+    "pending": "@ask_months"
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "followup": "unclear"
+    }
+   },
+   "expect_route": {
+    "status": "ask",
+    "asking": "months"
+   },
+   "expect_state": {
+    "pending.asking": "months"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b07",
+   "text": "예산을 5만 원 줄여줘",
+   "state": {
+    "pending": "@ask_months"
+   },
+   "expect_spending": {
+    "must": {
+     "mine": false
+    }
+   },
+   "expect_router": {
+    "must": {
+     "intents": [
+      "budget_adjust"
+     ]
+    },
+    "observe": [
+     "categories",
+     "direction",
+     "amount",
+     "amount_mode"
+    ]
+   },
+   "expect_route": {
+    "intent": "budget_adjust",
+    "handoff.mode": "start"
+   },
+   "expect_state": {
+    "pending": null,
+    "spending_pending.asking": "months",
+    "budget_task.phase": "started"
+   },
+   "split": "new_b"
+  },
+  {
+   "id": "b08",
+   "text": "지난달보다 5만 원 더 썼어?",
+   "state": {
+    "pending": "@ask_months"
+   },
+   "expect_spending": {
+    "must": {
+     "mine": true,
+     "followup": "new",
+     "compare": "prev_month",
+     "target": "spend"
+    },
+    "allow": {
+     "refers_to": [
+      null,
+      "none"
+     ]
+    }
+   },
+   "expect_route": {
+    "items": [
+     {
+      "type": 6,
+      "category": null
+     }
+    ]
+   },
+   "expect_state": {
+    "pending": null
+   },
+   "split": "new_b"
+  }
+ ],
+ "scenarios": [
+  {
+   "id": "s1",
+   "split": "regression_dev",
+   "note": "최근 2개월 식비 → 그럼 교통비는? → 전체는?",
+   "origin": "s1",
+   "turns": [
+    {
+     "text": "최근 2개월 식비 어때?",
+     "expect_route": {
+      "items": [
+       {
+        "type": 9,
+        "category": "FOOD",
+        "months_requested": 2,
+        "months_applied": 2
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "months": 2,
+       "categories": [
+        "FOOD"
+       ],
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        "recent",
+        null
+       ],
+       "target": [
+        null,
+        "overview"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     }
+    },
+    {
+     "text": "그럼 교통비는?",
+     "expect_route": {
+      "items": [
+       {
+        "type": 9,
+        "category": "TRANSPORT_CAR",
+        "months_requested": 2,
+        "months_applied": 2
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_spending": {
+      "must": {
+       "refers_to": "previous",
+       "categories": [
+        "TRANSPORT_CAR"
+       ],
+       "mine": true
+      },
+      "allow": {}
+     }
+    },
+    {
+     "text": "전체는?",
+     "expect_route": {
+      "items": [
+       {
+        "type": 8,
+        "category": null,
+        "months_requested": 2,
+        "months_applied": 2
+       }
+      ]
+     },
+     "expect_spending": {
+      "must": {
+       "refers_to": "previous",
+       "all_categories": true,
+       "mine": true
+      },
+      "allow": {}
+     }
+    }
+   ]
+  },
+  {
+   "id": "s2",
+   "split": "regression_dev",
+   "note": "모르는 카테고리 되묻기 → 선택 → 기간 변경",
+   "origin": "s2",
+   "turns": [
+    {
+     "text": "데이트비 이번 달 얼마 썼어?",
+     "expect_route": {
+      "status": "ask",
+      "asking": "category"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "target": "spend",
+       "categories": [
+        {
+         "unknown": "데이트비"
+        }
+       ],
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        null,
+        "this_month"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     }
+    },
+    {
+     "text": "문화·여가",
+     "expect_route": {
+      "items": [
+       {
+        "type": 2,
+        "category": "CULTURE_LEISURE"
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     }
+    },
+    {
+     "text": "최근 2개월로 보면?",
+     "expect_route": {
+      "items": [
+       {
+        "type": 9,
+        "category": "CULTURE_LEISURE",
+        "months_requested": 2,
+        "months_applied": 2
+       }
+      ]
+     },
+     "expect_spending": {
+      "must": {
+       "refers_to": "previous",
+       "months": 2,
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        "recent",
+        null
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "s3",
+   "split": "regression_dev",
+   "note": "소비 분석 → 예산 조정 → 소비 분석으로 전환 → 조정 재개",
+   "origin": "s3",
+   "turns": [
+    {
+     "text": "최근 2개월 식비 어때?",
+     "expect_route": {
+      "items": [
+       {
+        "type": 9,
+        "category": "FOOD",
+        "months_requested": 2,
+        "months_applied": 2
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "months": 2,
+       "categories": [
+        "FOOD"
+       ],
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        "recent",
+        null
+       ],
+       "target": [
+        null,
+        "overview"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     }
+    },
+    {
+     "text": "식비 예산 좀 줄여줘",
+     "expect_route": {
+      "handoff.mode": "start"
+     },
+     "after": {
+      "agent": {
+       "task_ref": "T1"
+      },
+      "server": {
+       "T1": {
+        "state": "awaiting_approval"
+       }
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": false
+      },
+      "allow": {}
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ]
+      },
+      "allow": {},
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    },
+    {
+     "text": "일단 이번 달 소비부터 보여줘",
+     "expect_route": {
+      "items": [
+       {
+        "type": 5,
+        "category": null
+       }
+      ],
+      "notices": [
+       "budget_task_suspended"
+      ]
+     },
+     "expect_state": {
+      "budget_task.suspended": true
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ],
+       "followup": "new"
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "followup": "new",
+       "target": "overview",
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        null,
+        "this_month"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     },
+     "doubles": {
+      "budget": "not_mine"
+     }
+    },
+    {
+     "text": "아까 예산 조정 이어서 하자",
+     "expect_route": {
+      "handoff.mode": "resume",
+      "handoff.context.task_state": "awaiting_approval"
+     },
+     "expect_state": {
+      "budget_task.suspended": false
+     },
+     "expect_spending": {
+      "must": {
+       "mine": false
+      },
+      "allow": {}
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ],
+       "resume": true
+      },
+      "allow": {
+       "followup": [
+        null,
+        "new"
+       ]
+      },
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "s4",
+   "split": "regression_new",
+   "note": "지난달 비교 → 모르는 카테고리 되묻기 → 선택 → 기간 변경 → 잔액 전환 확인 질문 → 동의",
+   "origin": "s4",
+   "turns": [
+    {
+     "text": "지난달보다 데이트 비용 많이 썼어?",
+     "expect_route": {
+      "status": "ask",
+      "asking": "category"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "compare": "prev_month",
+       "categories": [
+        {
+         "unknown": "데이트 비용"
+        }
+       ],
+       "mine": true
+      },
+      "allow": {
+       "target": [
+        null,
+        "spend",
+        "overview"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     }
+    },
+    {
+     "text": "문화·여가로 봐줘",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 7,
+        "category": "CULTURE_LEISURE"
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_spending": {
+      "must": {
+       "followup": "answer",
+       "categories": [
+        "CULTURE_LEISURE"
+       ],
+       "mine": true
+      },
+      "allow": {}
+     }
+    },
+    {
+     "text": "최근 2개월로 보면?",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 9,
+        "category": "CULTURE_LEISURE",
+        "months_requested": 2,
+        "months_applied": 2
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_spending": {
+      "must": {
+       "refers_to": "previous",
+       "months": 2,
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        "recent",
+        null
+       ]
+      }
+     }
+    },
+    {
+     "text": "그 카테고리 예산은 얼마 남았어?",
+     "expect_route": {
+      "status": "ask",
+      "asking": "budget_current",
+      "reason": "recent",
+      "ask_about": [
+       "CULTURE_LEISURE"
+      ]
+     },
+     "expect_spending": {
+      "must": {
+       "refers_to": "previous",
+       "target": "budget_left",
+       "mine": true
+      },
+      "allow": {}
+     }
+    },
+    {
+     "text": "응 지금 기간으로",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 3,
+        "category": "CULTURE_LEISURE"
+       }
+      ]
+     },
+     "expect_state": {
+      "pending": null
+     },
+     "expect_spending": {
+      "must": {
+       "followup": "answer",
+       "confirm": true,
+       "mine": true
+      },
+      "allow": {}
+     }
+    }
+   ]
+  },
+  {
+   "id": "s5",
+   "split": "regression_new",
+   "note": "분석 → 예산 조정 → 진행 중 다른 카테고리 총액(보류) → 서버가 저장 중일 때 재개",
+   "origin": "s5",
+   "turns": [
+    {
+     "text": "이번 달 소비 어땠는지 정리해줘",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 5,
+        "category": null
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "target": "overview",
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        "this_month",
+        null
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     }
+    },
+    {
+     "text": "교육비 예산을 3만 원 늘려줘",
+     "expect_route": {
+      "status": "ready",
+      "handoff.mode": "start",
+      "handoff.text": "교육비 예산을 3만 원 늘려줘"
+     },
+     "after": {
+      "agent": {
+       "task_ref": "T5"
+      },
+      "server": {
+       "T5": {
+        "state": "awaiting_approval"
+       }
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": false
+      },
+      "allow": {}
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ]
+      },
+      "allow": {},
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    },
+    {
+     "text": "잠깐, 교육비 이번 달 얼마 썼는지만 알려줘",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 2,
+        "category": "EDUCATION"
+       }
+      ],
+      "notices": [
+       "budget_task_suspended"
+      ]
+     },
+     "expect_state": {
+      "budget_task.suspended": true,
+      "budget_task.phase": "awaiting_approval"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ],
+       "followup": "new"
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "followup": "new",
+       "target": "spend",
+       "categories": [
+        "EDUCATION"
+       ],
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        "this_month",
+        null
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     },
+     "doubles": {
+      "budget": "not_mine"
+     }
+    },
+    {
+     "text": "아까 하던 예산 조정 계속하자",
+     "before": {
+      "server": {
+       "T5": {
+        "state": "saving"
+       }
+      }
+     },
+     "expect_route": {
+      "status": "ready",
+      "handoff.mode": "resume",
+      "handoff.context.task_state": "saving"
+     },
+     "expect_state": {
+      "budget_task.suspended": false,
+      "budget_task.phase": "saving",
+      "budget_result": null
+     },
+     "expect_spending": {
+      "must": {
+       "mine": false
+      },
+      "allow": {}
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ],
+       "resume": true
+      },
+      "allow": {
+       "followup": [
+        null,
+        "new",
+        "answer"
+       ]
+      },
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "s6",
+   "split": "regression_new",
+   "note": "조정 진행 중 → 소비 질문(개월 0, 보류) → 취소 대상 질문 → 질문만 취소 → 조정 재개",
+   "origin": "s6",
+   "turns": [
+    {
+     "text": "생활용품 예산 2만 원 줄여줘",
+     "expect_route": {
+      "status": "ready",
+      "handoff.mode": "start"
+     },
+     "after": {
+      "agent": {
+       "task_ref": "T6"
+      },
+      "server": {
+       "T6": {
+        "state": "awaiting_approval"
+       }
+      }
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ]
+      },
+      "allow": {},
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    },
+    {
+     "text": "근데 최근 0개월 쇼핑 내역 보여줘",
+     "expect_route": {
+      "status": "ask",
+      "asking": "months",
+      "notices": [
+       "budget_task_suspended"
+      ]
+     },
+     "expect_state": {
+      "pending.asking": "months",
+      "budget_task.suspended": true
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ],
+       "followup": "new"
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "followup": "new",
+       "months": 0,
+       "categories": [
+        "FASHION_SHOPPING"
+       ],
+       "mine": true
+      },
+      "allow": {
+       "period": [
+        "recent",
+        null
+       ],
+       "target": [
+        null,
+        "overview"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     },
+     "doubles": {
+      "budget": "not_mine"
+     }
+    },
+    {
+     "text": "취소",
+     "expect_route": {
+      "status": "ask",
+      "asking": "cancel_target",
+      "options": [
+       "question",
+       "budget_task"
+      ]
+     }
+    },
+    {
+     "text": "방금 질문만 취소해줘",
+     "expect_route": {
+      "status": "cancelled",
+      "reason": "cancel"
+     },
+     "expect_state": {
+      "pending": null,
+      "budget_task.task_ref": "T6",
+      "budget_task.suspended": true,
+      "budget_result": null
+     },
+     "expect_router": {
+      "must": {
+       "followup": "answer",
+       "choice": "question"
+      },
+      "allow": {}
+     }
+    },
+    {
+     "text": "예산 조정 다시 이어가자",
+     "expect_route": {
+      "status": "ready",
+      "handoff.mode": "resume",
+      "handoff.context.task_state": "awaiting_approval"
+     },
+     "expect_state": {
+      "budget_task.suspended": false
+     },
+     "expect_spending": {
+      "must": {
+       "mine": false
+      },
+      "allow": {}
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ],
+       "resume": true
+      },
+      "allow": {
+       "followup": [
+        null,
+        "new",
+        "answer"
+       ]
+      },
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    }
+   ]
+  },
+  {
+   "id": "s7",
+   "split": "regression_new",
+   "note": "직전 분석 없음 + 모호한 지시어 → 조건 되묻기 → 답 → 설명 요청",
+   "origin": "s7",
+   "turns": [
+    {
+     "text": "거기서 제일 많이 나간 건 뭐야?",
+     "expect_route": {
+      "status": "ask",
+      "asking": "scope",
+      "reason": "reference_unclear"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "refers_to": "unclear",
+       "mine": true
+      },
+      "allow": {
+       "target": [
+        null,
+        "overview"
+       ]
+      }
+     }
+    },
+    {
+     "text": "이번 달 기준으로 봐줘",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 5,
+        "category": null
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_spending": {
+      "must": {
+       "followup": "answer",
+       "period": "this_month",
+       "mine": true
+      },
+      "allow": {}
+     }
+    },
+    {
+     "text": "왜 이렇게 많이 나왔어?",
+     "expect_route": {
+      "status": "ready",
+      "items": [],
+      "explain.items.category": [
+       null
+      ]
+     },
+     "expect_spending": {
+      "must": {
+       "explain": true,
+       "mine": true
+      },
+      "allow": {
+       "refers_to": [
+        "previous",
+        null
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "s8",
+   "split": "regression_new",
+   "note": "복합 의도 → 소비 먼저 → 예산 조정 → 에이전트가 취소(서버 확인) → 바뀐 예산 기준 잔액 (저장 안 됨 안내)",
+   "origin": "s8",
+   "turns": [
+    {
+     "text": "이번 달 소비 보고 예산도 좀 손보고 싶어",
+     "expect_route": {
+      "status": "ask",
+      "asking": "intent"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending",
+        "budget_adjust"
+       ]
+      },
+      "allow": {},
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    },
+    {
+     "text": "소비 먼저",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 5,
+        "category": null
+       }
+      ]
+     },
+     "after": {
+      "analysis": true
+     },
+     "expect_router": {
+      "must": {
+       "followup": "answer",
+       "choice": "spending"
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "followup": "answer",
+       "mine": true
+      },
+      "allow": {}
+     }
+    },
+    {
+     "text": "이제 예산 조정하자",
+     "expect_route": {
+      "status": "ready",
+      "handoff.mode": "start"
+     },
+     "after": {
+      "agent": {
+       "task_ref": "T8"
+      },
+      "server": {
+       "T8": {
+        "state": "awaiting_approval"
+       }
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": false
+      },
+      "allow": {}
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ]
+      },
+      "allow": {},
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     }
+    },
+    {
+     "text": "아니 그냥 그만둘래",
+     "expect_route": {
+      "status": "ready",
+      "handoff.mode": "continue",
+      "handoff.text": "아니 그냥 그만둘래"
+     },
+     "expect_state": {
+      "budget_task.task_ref": "T8",
+      "budget_result": null
+     },
+     "after": {
+      "agent": {
+       "content": "취소했어요"
+      },
+      "server": {
+       "T8": {
+        "state": "canceled"
+       }
+      }
+     }
+    },
+    {
+     "text": "바뀐 예산 기준으로 남은 거 보여줘",
+     "expect_route": {
+      "status": "ready",
+      "items": [
+       {
+        "type": 4,
+        "category": null
+       }
+      ],
+      "notices": [
+       "budget_change_not_saved"
+      ],
+      "budget_basis.refetch_current_budget": true,
+      "budget_basis.last_change.outcome": "canceled"
+     },
+     "expect_state": {
+      "budget_task": null,
+      "budget_result.outcome": "canceled"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      },
+      "allow": {}
+     },
+     "expect_spending": {
+      "must": {
+       "target": "budget_left",
+       "after_budget_change": true,
+       "mine": true
+      },
+      "allow": {
+       "refers_to": [
+        null,
+        "none",
+        "previous"
+       ],
+       "period": [
+        null,
+        "this_month"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": "bs1",
+   "note": "되묻기 중 다른 분야 → 예산 → (예산 진행 중) 소비로 돌아오기",
+   "turns": [
+    {
+     "text": "최근 0개월 식비 알려줘",
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": true,
+       "months": 0,
+       "categories": [
+        "FOOD"
+       ]
+      },
+      "allow": {
+       "period": [
+        "recent",
+        null
+       ],
+       "target": [
+        null,
+        "overview"
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     },
+     "expect_route": {
+      "status": "ask",
+      "asking": "months"
+     }
+    },
+    {
+     "text": "예산을 5만 원 줄여줘",
+     "expect_spending": {
+      "must": {
+       "mine": false
+      }
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "budget_adjust"
+       ]
+      },
+      "observe": [
+       "categories",
+       "direction",
+       "amount",
+       "amount_mode"
+      ]
+     },
+     "expect_route": {
+      "intent": "budget_adjust",
+      "handoff.mode": "start"
+     },
+     "expect_state": {
+      "spending_pending.asking": "months"
+     }
+    },
+    {
+     "text": "식비 얼마 썼어?",
+     "doubles": {
+      "budget": "not_mine"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": true,
+       "target": "spend",
+       "categories": [
+        "FOOD"
+       ]
+      },
+      "allow": {
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     },
+     "expect_route": {
+      "items": [
+       {
+        "type": 2,
+        "category": "FOOD"
+       }
+      ],
+      "notices": [
+       "budget_task_suspended"
+      ]
+     },
+     "expect_state": {
+      "budget_task.suspended": true,
+      "spending_pending": null
+     },
+     "policy_pending": "보류된 소비 되묻기로 돌아와 새 소비 요청을 할 때 질문을 대신할지 (MEMO 13 미정)"
+    }
+   ],
+   "split": "new_b"
+  },
+  {
+   "id": "bs2",
+   "note": "청년 정책 진행 중 소비로 전환 → 정책 재진입(미정)",
+   "turns": [
+    {
+     "text": "청년 정책 추천받고 싶어",
+     "expect_router": {
+      "must": {
+       "intents": [
+        "policy"
+       ]
+      }
+     },
+     "doubles": {
+      "policy": {
+       "status": "awaiting_input",
+       "work_ref": "P1"
+      }
+     },
+     "expect_route": {
+      "intent": "policy",
+      "handoff.mode": "start"
+     }
+    },
+    {
+     "text": "이번 달 소비부터 볼래",
+     "doubles": {
+      "policy": "not_mine"
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "spending"
+       ]
+      }
+     },
+     "expect_spending": {
+      "must": {
+       "mine": true
+      },
+      "allow": {
+       "target": [
+        null,
+        "overview"
+       ],
+       "period": [
+        "this_month",
+        null
+       ],
+       "refers_to": [
+        null,
+        "none"
+       ]
+      }
+     },
+     "expect_route": {
+      "items": [
+       {
+        "type": 5,
+        "category": null
+       }
+      ],
+      "notices": [
+       "policy_work_suspended"
+      ]
+     },
+     "expect_state": {
+      "policy_work.suspended": true
+     }
+    },
+    {
+     "text": "아까 정책 추천 계속하자",
+     "expect_spending": {
+      "must": {
+       "mine": false
+      }
+     },
+     "expect_router": {
+      "must": {
+       "intents": [
+        "policy"
+       ]
+      }
+     },
+     "expect_route": {
+      "status": "unsupported",
+      "reason": "policy_resume_undecided"
+     },
+     "expect_state": {
+      "policy_work.work_ref": "P1"
+     },
+     "policy_pending": "보류된 정책 작업이 있을 때 이어서 · 새로 (MEMO 13 미정)"
+    }
+   ],
+   "split": "new_b"
+  }
+ ]
+}
