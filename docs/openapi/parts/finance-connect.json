@@ -423,6 +423,7 @@
                         {
                           "connectionId": "5e0a4c31-334b-498a-a1c5-b3d239c7c120",
                           "businessType": "bank",
+                          "organizationCode": "0004",
                           "organizationName": "국민은행",
                           "alias": null,
                           "status": "connected",
@@ -439,6 +440,7 @@
                         {
                           "connectionId": "91f24d28-b681-434e-b142-5557f345df09",
                           "businessType": "card",
+                          "organizationCode": "0306",
                           "organizationName": "신한카드",
                           "alias": null,
                           "status": "relogin",
