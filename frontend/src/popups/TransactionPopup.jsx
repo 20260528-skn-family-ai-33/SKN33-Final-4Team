@@ -26,7 +26,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
   const [step, setStep] = useState('idle')
   const isIncome = tx.kind === 'income'
   const isTransfer = tx.kind === 'transfer'
-  const wasTransfer = tx.original === 'transfer'
+  const wasTransfer = Boolean(data?.wasTransfer)  // 원래 이체였던 소비 → [이체로 되돌리기] (거래 한 건 보기, 11/03)
   const isFixed = tx.funding === 'fixed'
 
   // category = 카테고리 코드. null = 원래 이체였던 거래를 이체로 되돌리기 (W)
@@ -60,7 +60,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
           </p>
         )}
         <div className="mc-keyvalue"><span>거래일</span><strong>{date}</strong></div>
-        <div className="mc-keyvalue"><span>{isIncome ? '들어온 계좌' : isTransfer || wasTransfer ? '보낸 계좌' : '결제 수단'}</span><strong>{tx.via ?? '신한 · 1234'}</strong></div>
+        <div className="mc-keyvalue"><span>{isIncome ? '들어온 계좌' : isTransfer || wasTransfer ? '보낸 계좌' : '결제 수단'}</span><strong>{tx.via ?? '확인 안 됨'}</strong></div>
         {!isIncome && !isTransfer && <div className="mc-keyvalue"><span>카테고리</span><strong>{tx.cat}</strong></div>}
         {!isIncome && !isTransfer && (
           <div className="mc-keyvalue"><span>분류</span><strong>{wasTransfer ? '내가 소비로 분류함' : CLASSIFIED_BY[data?.classifiedBy] ?? (data ? '확인 필요' : '')}</strong></div>

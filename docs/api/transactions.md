@@ -189,6 +189,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `suggestion.candidates` | 목록 | 후보 카테고리, 확신도 높은 순 `[{ "category", "categoryName" }]` |
 | `suggestion.reason` | 문자 / null | 확인 필요 이유(사용자에게 보여 줄 문장) |
 | `classifiedBy` | 문자 / null | 분류 출처: `user` · `rule` · `ml` · `llm`. DB `classification_source`와 같음(H-07 확정) |
+| `wasTransfer` | 불린 | 원래 이체였다가 소비로 바뀐 거래인지 (11/03). `true`면 화면이 [이체로 되돌리기](`category: null`)를 보여 준다. 고정지출에 연결된 거래는 `true`여도 되돌리기가 400(AA⑤) |
 | `canApplyToFuture` | 불린 | 화면에 "앞으로 이 가게 거래도 이 카테고리로" 체크박스를 보여 줄지 (10/30). 소비 거래이고 다품목 가맹점·페이 충전이 아니면 `true`. 이체는 `false`(받는 사람은 기억하지 않음, W) |
 | `updatedAt` | 시각 | 마지막 수정 시각 |
 
@@ -206,6 +207,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
   },
   "classifiedBy": null,
   "canApplyToFuture": false,
+  "wasTransfer": false,
   "updatedAt": "2026-10-09T08:05:00+09:00"
 }
 ```
@@ -267,7 +269,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
     - `category: null`을 보내면 다시 `transfer`로 돌아간다. **원래 이체였던 거래만** 된다. 원래 소비였던 거래에 `null`을 보내면 400.
     - 이체의 **받는 사람은 기억하지 않는다.** 같은 사람에게 다음에 보낸 이체는 다시 `transfer`로 들어온다(`remembered_category()`를 쓰지 않음).
 - 입금(`income`) 거래는 카테고리를 고를 수 없다 → 400 (10/24 AA⑦ 확정, 아래 실패 표).
-- **'원래 이체였던 거래' 표시 (10/24 AA⑥)**: 새 칸 없이 거래의 `field_states.original_transaction_type = "transfer"`로 남긴다. W로 소비가 된 이체 · AA⑤로 소비가 된 이체 모두. `category: null`로 되돌릴 수 있는지, 연결을 풀 때 무엇으로 돌릴지 이 값으로 판단한다. API 응답에는 내보내지 않는다.
+- **'원래 이체였던 거래' 표시 (10/24 AA⑥)**: 새 칸 없이 거래의 `field_states.original_transaction_type = "transfer"`로 남긴다. W로 소비가 된 이체 · AA⑤로 소비가 된 이체 모두. `category: null`로 되돌릴 수 있는지, 연결을 풀 때 무엇으로 돌릴지 이 값으로 판단한다. 원값은 내보내지 않고, 거래 한 건 보기에 `wasTransfer`(불린)만 준다(11/03).
 - 이 요청은 같은 값을 두 번 보내도 결과가 같아서 요청 번호(`Idempotency-Key`)를 쓰지 않는다(★4: 새로 만들기 · 승인 요청만).
 
 **받는 값 (200)** — 바뀐 거래 한 건(`GET /api/finance/transactions/<id>/`와 같은 모양)

@@ -369,6 +369,7 @@
                   },
                   "classifiedBy": null,
                   "canApplyToFuture": false,
+                  "wasTransfer": false,
                   "updatedAt": "2026-10-09T08:05:00+09:00"
                 }
               }
@@ -525,6 +526,7 @@
                   "suggestion": null,
                   "classifiedBy": "user",
                   "canApplyToFuture": true,
+                  "wasTransfer": false,
                   "updatedAt": "2026-10-22T09:12:00+09:00"
                 }
               }
@@ -1168,6 +1170,10 @@
                 "format": "date-time",
                 "description": "마지막 수정 시각, 한국 시간 ISO 8601."
               },
+              "wasTransfer": {
+                "type": "boolean",
+                "description": "원래 이체였다가 소비로 바뀐 거래인지 (11/03). true면 화면이 [이체로 되돌리기](category: null)를 보여 준다. 고정지출에 연결된 거래는 되돌리기가 400(AA⑤)."
+              },
               "canApplyToFuture": {
                 "type": "boolean",
                 "description": "'앞으로 이 가게 거래도 이 카테고리로' 체크박스를 보여 줄지 (10/30). 소비 거래이고 원래 이체·다품목 가맹점·페이 충전이 아니면 true."
@@ -1178,6 +1184,7 @@
               "suggestion",
               "classifiedBy",
               "canApplyToFuture",
+              "wasTransfer",
               "updatedAt"
             ]
           }
