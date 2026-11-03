@@ -164,6 +164,37 @@ class SpendingDialogTest(SimpleTestCase):
                                  ("ask", "budget_current", mode, ()))  # reason = 지원 안 하는 비교 방식 (미지원 안내용)
                 self.assertEqual(self.say("응 이번 기간으로").items, done)
 
+    def test_budget_period_consent_discards_period_text_and_dates(self):
+        periods = [
+            {"period": "recent", "months": 2, "include_current": True, "period_said": "이번 달 포함 최근 2개월"},
+            {"period": "range", "date_from": "10-05", "date_to": "10-12", "period_said": "10월 5일부터 12일까지"},
+            {"period": "month", "month": 9, "period_said": "9월"},
+            {"compare": "prev_month", "period_said": "지난달 대비"},
+        ]
+        for index, fields in enumerate(periods):
+            with self.subTest(fields):
+                talk = f"period-consent-{index}"
+                request = {"mine": True, "target": "budget_left", "categories": ["FOOD"], **fields}
+                pending = self.say("지정 기간 식비 예산", talk=talk, llm=lambda s, u: json.dumps(request))
+                self.assertEqual(pending.asking, "budget_current")
+                decision = self.say("현재 예산 기간으로 볼게", talk=talk,
+                                    llm=lambda s, u: json.dumps({"mine": True, "followup": "answer", "confirm": True}))
+                self.assertEqual((decision.status, decision.items), ("ready", (item(3, "FOOD"),)))
+                self.assertTrue(all(getattr(decision.request, key) is None for key in dialog.PERIOD_GROUP))
+                self.assertIsNone(dialog.pending(self.store, talk))
+
+    def test_inherited_budget_period_consent_does_not_reask(self):
+        query = {"mine": True, "target": "overview", "period": "recent", "months": 2,
+                 "period_said": "최근 2개월", "categories": ["CULTURE_LEISURE"]}
+        self.done(self.say("최근 문화비 추이", llm=lambda s, u: json.dumps(query)))
+        pending = self.say("그 카테고리 남은 예산", llm=lambda s, u: json.dumps(
+            {"mine": True, "target": "budget_left", "refers_to": "previous"}))
+        self.assertEqual(pending.asking, "budget_current")
+        answer = self.say("응 지금 기간으로", llm=lambda s, u: json.dumps(
+            {"mine": True, "followup": "answer", "confirm": True, "refers_to": "previous"}))
+        self.assertEqual((answer.status, answer.items), ("ready", (item(3, "CULTURE_LEISURE"),)))
+        self.assertIsNone(dialog.pending(self.store, "talk-1"))
+
     def test_budget_left_category_compare_lists_categories(self):
         # 10/30 사용자 결정: 카테고리끼리 비교한 남은 예산 → 카테고리마다 3번 (이전엔 미지원)
         decision = self.say("식비랑 교통비 중 예산 뭐가 더 남았어?")
@@ -700,3 +731,29 @@ class UserTestScenarioTest(SimpleTestCase):
         self.say("커피 얼마나 썼어?")
         self.assertEqual(self.say("데이트비는 식비로 볼게").status, "noted")
         self.assertEqual(dialog.pending(self.store, "talk-1")["asking"], "fallback_scope")  # 묻던 질문은 그대로
+
+
+class FollowupOperationTest(SimpleTestCase):
+    """비교 대상만 바꾸는 후속 질문과 새로운 수치 조회를 구별한다."""
+    def test_new_query_resets_only_implicit_comparison(self):
+        from .reading import parse
+        base = {"target": "spend", "compare": "prev_month", "categories": ["FOOD"], "weekday": ["weekend"]}
+        for data in ({"measure": "count", "time_slot": ["lunch"]}, {"target": "spend", "categories": [{"detail": "배달", "category": "FOOD"}]}):
+            with self.subTest(data=data):
+                out = dialog.overlay(parse({"mine": True, **data}), base)
+                self.assertEqual((out.period, out.compare, out.weekday), ("this_month", None, ("weekend",)))
+        for data in ({"categories": ["TRANSPORT_CAR"]}, {"explain": True}):
+            self.assertEqual(dialog.overlay(parse({"mine": True, **data}), base).compare, "prev_month")
+        explicit = dialog.overlay(parse({"mine": True, "measure": "count", "compare": "prev_month"}), base)
+        self.assertEqual(explicit.compare, "prev_month")
+        last = dialog.overlay(parse({"mine": True, "measure": "count", "period": "last_month"}), base)
+        self.assertEqual((last.period, last.compare), ("last_month", None))
+
+    def test_limit_is_distinct_from_bad_json_or_service_pause(self):
+        from .reading import read, ReadFailed
+        from chat.llm.openai_rest import CapReached
+        for kind, expected in (("call_limit", "call_limit"), ("rate_limit", "call"), ("auth", "call")):
+            def complete(*args):
+                raise CapReached(kind)
+            with self.subTest(kind=kind), self.assertRaisesRegex(ReadFailed, expected):
+                read("식비", None, complete)

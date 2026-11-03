@@ -73,8 +73,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_complet
     if decision.status == "failed":
         return _result("failed", error=decision.reason, decision=decision)
     result = _outcome(decision, store, cid, execute or _run(user, request),
-                      user and (lambda items, question=None: explain.answer(user, items, explain_complete, today=_today(request),
-                                                                            plan=explain_plan, question=question)))
+                      user and (lambda items, question=None, hypothesis=None: explain.answer(user, items, explain_complete, today=_today(request),
+                                                                            plan=explain_plan, question=question, hypothesis=hypothesis)))
     dialog.publish(store, cid)
     return result
 
@@ -93,9 +93,12 @@ def _outcome(decision, store, cid, execute, explainer=None):
         if explainer is None:
             return _result("replied", decision=decision)  # 근거 조회 대역 없음 — 참조할 확정 항목만(detail.explain)
         try:
-            reply = explainer(decision.explain["items"], decision.explain["question"])
-        except DatabaseError:
+            items, records = adapter.prepare_explanation(decision, execute)
+            reply = explainer(items, decision.explain["question"], decision.explain.get("hypothesis"))
+        except (DatabaseError, adapter.AnalysisFailed):
             return _result("failed", decision=decision, error="analysis_failed")
+        if records is not None:
+            dialog.record_analysis(store, cid, decision, records)
         return _result("replied", reply, decision)
     if decision.status == "ask":
         return _result("awaiting_input", START if decision.reason == "start" else None, decision)

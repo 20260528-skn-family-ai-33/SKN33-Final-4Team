@@ -73,7 +73,7 @@ class DryRunTest(unittest.TestCase):
         new_b = meta["scenarios"]["new_b"]
         self.assertEqual(new_b["policy_pending_excluded"], ["bs1#3", "bs2#3"])
         self.assertIn("bs2#2", new_b["double_dependent"])  # 정책 대역 결과가 결정에 쓰인 단위
-        self.assertEqual(set(meta["independent"]) - {"why"}, {"regression_dev", "regression_new", "reference", "new_b"})
+        self.assertEqual(set(meta["independent"]) - {"why"}, {"regression_dev", "regression_new", "reference", "new_b", "entry_b"})
         self.assertFalse(any(v for k, v in meta["independent"].items() if k != "why"))  # 독립 평가 아님
 
     def test_scenario_state_is_carried_not_replaced(self):

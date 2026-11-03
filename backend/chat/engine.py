@@ -11,6 +11,7 @@
 - 기준 날짜 = settings.CHAT_TODAY(고정) 또는 오늘, 해석 = settings.CHAT_LLM(fake · live) · CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER (chat/llm)
 """
 import json
+from dataclasses import asdict
 import uuid
 from datetime import date, datetime, time
 from functools import partial
@@ -95,15 +96,16 @@ def _content(bot, turn):
                "sections": bot.get("sections", []), "notices": bot.get("notices", []), "turn": turn,
                "agent": bot["agent"], "inputs": bot["inputs"], "result": bot["result"]}
     content.update({k: bot[k] for k in ("chart", "examples", "view") if bot.get(k)})
-    if getattr(settings, "CHAT_DEV_TRACE", False) and bot.get("trace"):
-        content["dev_trace"] = bot["trace"]  # 개발용 분석 과정 — 더미 설정에서만 (chat.md 계약 칸 아님)
+    if getattr(settings, "CHAT_DEV_TRACE", False) and (bot.get("trace") or bot.get("entry")):
+        # 개발용 분석 과정 — 더미 설정에서만 (chat.md 계약 칸 아님). entry = B 전 단계, 그 밖 = B 흐름
+        content["dev_trace"] = {**(bot.get("trace") or {}), "entry": bot.get("entry")}
     return content
 
 
 def _route(turn):
     """기존 응답의 route 칸: 실제로 답한 에이전트 · 범위 밖 · 불명확. fallback = 라우터 해석 실패"""
     d, r = turn["decision"], turn["result"] or {}
-    if r.get("status") == "failed" and r.get("error") == "call":  # 에이전트 해석 LLM 실패 · 상한 — 라우터 실패와 같이 (MEMO 25-12)
+    if r.get("status") == "failed" and r.get("error") in ("call", "call_limit"):  # 에이전트 해석 LLM 실패 · 상한 — 라우터 실패와 같이 (MEMO 25-12)
         return {"intent": "unknown", "slots": {}, "fallback": True}
     if turn["delivered"]:
         return {"intent": turn["delivered"][-1], "slots": {}, "fallback": False}
@@ -159,7 +161,20 @@ def answer(user, store, text=None, button=None):
     now = current_agent(store, KEY)
     bot.update(agent=now or answered, inputs=["budget_form"] if now == "budget" else [],
                result=answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
+    if getattr(settings, "CHAT_DEV_TRACE", False):
+        bot["entry"] = _entry(result.get("decision"))
     return bot, _route(turn)
+
+
+def _entry(decision):
+    """개발용 분석 과정의 B 전 단계 — 소비 해석 칸 값(채운 것만) · dialog 갈림길 · 설명 요청 판정 (26-20, 금액 없음)"""
+    if decision is None:
+        return None
+    interp = decision.interpretation
+    filled = {k: v for k, v in (asdict(interp) if interp else {}).items() if v not in (None, (), [], False)}
+    return {"reading": filled, "decision": {"status": decision.status, "reason": decision.reason, "asking": decision.asking},
+            "items": [{k: i.get(k) for k in ("type", "category") if i.get(k) is not None} for i in decision.items],
+            "explain": bool(decision.explain)}
 
 
 def _check_body(request):

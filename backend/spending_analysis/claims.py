@@ -1,4 +1,4 @@
-"""B 1차 서버 부분 (MEMO 26절) — 증가 이유 · 가설 확인 질문의 주장(claim) · 비교하며 묶기 · 멈춤 판정 · 답 검사. LLM 호출 없음.
+"""소비 설명 B — 서버 근거·적용 범위, 제한된 조회 계획과 답변 검사.
 
 - 주장은 서버만 만든다: 지금 "왜 늘었어?" 근거(explain.evidence)를 그대로 옮긴 것이라 숫자가 템플릿 설명과 같다.
   {"id", "kind", "axis", "subject", "metric", "direction", "rank", "share", "text", "conditions"}
@@ -6,7 +6,7 @@
   visit · merchant · category, share = 전체 증감 대비 몫 구간(small · part · most · all), text = 자리표시({C3})에 끼울 서버 값
 - LLM 에 보내는 것은 for_llm(): id · 종류 · 묶음 이름(시간대 · 요일 · 카테고리 · 가게 순번) · 방향 · 순위 · 몫 · 조건 플래그. 금액 · 가게 이름 · 날짜 없음
 - 비교하며 묶기(compare_group)는 첫 조회가 읽은 두 기간 집계(ev["sides"])를 다시 묶는다 → 기간 목록 · 필터가 원래 조회와 같다(DB 다시 안 읽음)
-- 답 검사(check): 문장마다 쓴 주장 id · 증감 · 순위 · 몫 표현 · 범위 밖 부정 · 새 원인 · 평가 · 조건 꼬리. 하나라도 틀리면 답 전체를 버린다(None)
+- 답 검사(check): 실제 자리표시와 선언한 id의 일치 · 질문의 대상/지표/기간 · 필수 근거 · 연결 말 허용 목록. 실패하면 답 전체를 버린다(None)
 - 흐름(run): 첫 주장 → 서버 멈춤(데이터 이유만) → 계획 LLM(추가 조회 0~2개 + 이유) → 서버 인자 검사 · 묶기 → 답 LLM → 검사.
   실패 · 시간 초과면 None → 부르는 쪽(explain.answer)이 지금 템플릿 설명으로 답한다. trace = 개발용 분석 과정(금액 · 가게 이름 없음)
 """
@@ -15,18 +15,17 @@ import re
 import time
 
 from . import result as R
+from . import investigation as I
 from .answer import NAMES, josa, won
-from .explain import BANNED, _changed, _per_day, _visits_line
+from .clauses import validate as validate_clause
+from .explain import _changed, _per_day, _visits_line, regular_name
 from .scope import DAY_NAMES, ONLINE, SLOTS, name as scope_name, online, plain
 
 MAX_QUERIES = 2  # 질문 하나의 추가 조회 상한 (26-3)
 TIMEOUT = 12  # 초 — B 한 번(계획 + 답)이 이보다 오래 걸리면 그 요청만 템플릿 (26-12 ④, 목표 중간값 6초)
 ANSWER_MIN = 3  # 초 — 답 호출에 남겨 둘 최소 시간. 계획 호출의 대기 한도 = 남은 시간 − 이것, 답 차례에 이보다 적게 남으면 답 호출 없이 템플릿
 AXES = ("category", "merchant", "time_slot", "weekday")  # 비교하며 묶기 기준 — 서버가 받는 by 값은 이것뿐
-VISITS = (("new", "새로 간 곳"), ("regular", "자주 가던 곳"), ("gone", "이번엔 안 간 곳"))
-AVERAGE_WORDS = ("건당", "한 번에", "단가", "비싸", "비싼", "가격")  # 가설 축 말 (26-1 ②) — 기존 묶음 이름 표 + 지표 이름만, 질문별 규칙 없음
-COUNT_WORDS = ("자주", "횟수", "건수", "여러 번", "많이 가", "많이 써서", "많이 시켜")
-VISIT_WORDS = ("새로 간", "처음 간", "새 가게", "새로운 가게")
+VISITS = (("new", "새로 간 곳"), ("regular", None), ("gone", "이번엔 안 간 곳"))  # None = explain.regular_name(ev) ('지난달에도 간 곳')
 
 
 def _share(part, total):
@@ -47,7 +46,12 @@ def _conditions(ev, item, fixed_excluded=False):
             "unclassified": any(ev["unclassified"]),
             "search_scope": item.get("merchant") and f"가게 이름에 '{item['merchant']}'",
             "period_match": (current.end_before - current.start) == (previous.end_before - previous.start),
-            "fixed_excluded": fixed_excluded}
+            "fixed_excluded": fixed_excluded,
+            # 근거의 적용 범위는 서버에 남긴다. LLM에는 for_llm의 익명 상대 정보만 보낸다.
+            "basis": {"periods": [(p.start.isoformat(), p.end_before.isoformat()) for p in (current, previous)],
+                      "scope": scope_name(item), "category": item.get("category"),
+                      "filters": {k: item[k] for k in ("payment", "merchant", "merchant_names", "weekdays", "time_slots",
+                                                       "amount_min", "amount_max", "include_fixed") if k in item}}}
 
 
 class _Ids:
@@ -128,6 +132,7 @@ def first_claims(ev, item):
                                                           top=AXIS_WORD[axis]) + _share_tail(share, total)})
     v = ev["visits"]
     for key, place in VISITS:
+        place = place or regular_name(ev)
         part = {"new": v["new_total"], "regular": v["regular_delta"], "gone": -v["gone_total"]}[key]
         if part:
             n = {"new": v["new_count"], "regular": v["regular_count"], "gone": v["gone_count"]}[key]
@@ -140,6 +145,20 @@ def first_claims(ev, item):
         for side in ("up", "down"):
             for r, rank, alone in _ranked(moves[side]):
                 out.append(_group_claim(nid(), moves["kind"], r, rank, delta, base, alone=alone))
+    # 기초 근거도 같은 대상 코드로 식별한다. 이름은 표시 전용이다.
+    for claim in out:
+        if claim["axis"] in ("scope", "count", "average"):
+            claim["target"] = "scope"
+        elif claim["axis"] == "visit":
+            claim["target"] = next((f"visit:{key}" for key, label in VISITS if claim["subject"] == (label or regular_name(ev))), None)
+        elif claim["axis"] in ("time_slot", "weekday") and (
+                item.get("include_fixed") or (claim["axis"] == "time_slot" and any(
+                    side.get("metric_groups", {}).get("time_slot", {}).get(None, {}).get("count", 0) for side in ev["sides"]))):
+            # 기존 시간대 요약은 고정지출 제외다. 포함 요청·시각 누락 때는 정밀 조회로 확인한다.
+            claim["target"] = None
+        else:
+            claim["target"] = next((key for key, spec in I.TARGETS.items()
+                                    if spec["by"] == claim["axis"] and spec["label"] == claim["subject"]), None)
     return out
 
 
@@ -205,6 +224,16 @@ def compare_group(ev, item, by, focus=None, start=1):
     out = [_group_claim(nid(), by, r, rank, delta if by != "weekday" else 0, base, metric, alone)
            for r, rank, alone in _ranked(same)]
     out += [_group_claim(nid(), by, r, None, 0, base, metric) for r in other]
+    if focus is not None:
+        # 한 브랜드의 증감으로 배달앱 전체를 판단하지 않도록 검색 범위 전체의 합계를 따로 둔다.
+        group, words = online(focus)
+        name = group or focus
+        b, a = sum(r["before"] for r in rows), sum(r["after"] for r in rows)
+        row = {"name": name, "before": b, "after": a, "delta": a - b}
+        conditions = {**base, "search_scope": name}
+        aggregate = _group_claim(nid(), by, row, None, delta, conditions)
+        aggregate["text"] = "확인한 가게 이름 범위에서 " + aggregate["text"]
+        out.append({**aggregate, "group": True})
     if by == "weekday":  # 주말 · 평일 묶음 하루 평균 (묶음 합계 ÷ 그 기간의 그 요일 수) — 순위 없음
         for name, days in DAY_GROUPS:
             per = [_group_day(side, days) for side in (before, now)]
@@ -218,53 +247,82 @@ def _group_day(side, days):
     return R.average(sum(side["weekdays"].get(d, 0) for d in days), count)["value"] if count else 0
 
 
-def hypothesis(text):
-    """질문에 든 가설의 축 → {"axis", "name"} 또는 None. 기존 묶음 이름 표(시간대 · 요일 · 카테고리 · 온라인 별칭)와 지표 이름만 본다.
-    판단에는 쓰지 않는다(26-12 ② — 첫 결과로 답할 수 있는지는 계획 LLM 이 정한다). 평가에서 계획 LLM 판단과 견줄 참고값"""
-    said = text.replace(" ", "")
-    for code, (name, _, _) in SLOTS.items():
-        if name in said:
-            return {"axis": "time_slot", "name": name}
-    for i, d in enumerate(DAY_NAMES):
-        if f"{d}요일" in said:
-            return {"axis": "weekday", "name": f"{d}요일"}
-    for group, spec in ONLINE.items():
-        if any(plain(w) in plain(text) for w in (group, *spec["words"], *spec["brands"])):
-            return {"axis": "merchant", "name": group, "focus": group}
-    for code, name in NAMES.items():
-        if name.replace("·", "") in said.replace("·", "") and code != "UNCLASSIFIED":
-            return {"axis": "category", "name": name}
-    for axis, words in (("average", AVERAGE_WORDS), ("count", COUNT_WORDS), ("visit", VISIT_WORDS)):
-        if any(w.replace(" ", "") in said for w in words):
-            return {"axis": axis, "name": None}
-    return None
+def target_claims(ev, item, hyp, start):
+    """질문한 대상·지표 하나를 같은 기간/필터의 집계에서 계산한다. 외부 조회·범위 확장 없음."""
+    target, metric = hyp["target"], hyp["metric"]
+    spec = I.TARGETS[target]
+    axis = spec["by"]
+    if axis == "unavailable":
+        return [], "unsupported_target"
+    if not I.compatible(item, target):
+        return [], "outside_scope"
+    if axis in ("scope", "visit"):
+        return [], "no_comparable_metric"
+    sides = ev["sides"]
+    if any("metric_groups" not in side for side in sides):
+        return [], "missing_metric_data"
+    if axis in ("time_slot", "merchant") and any(side["metric_groups"][axis].get(None, {}).get("count", 0) for side in sides):
+        return [], "missing_time_or_merchant"
+    values, counts = [], []
+    for side in sides:
+        cells = side["metric_groups"][axis]
+        keys = [k for k in cells if k is not None and
+                (any(plain(w) in plain(k) for w in spec["keys"]) if axis == "merchant" else k in spec["keys"])]
+        amount = sum(cells[k]["amount"] for k in keys)
+        count = sum(cells[k]["count"] for k in keys)
+        counts.append(count)
+        if metric == "average":
+            if not count:
+                return [], "empty_average"
+            value = R.average(amount, count)["value"]
+        elif metric == "day_average":
+            days = sum(side["weekday_days"].get(d, 0) for d in spec["keys"])
+            if not days:
+                return [], "no_matching_days"
+            value = R.average(amount, days)["value"]
+        else:
+            value = count if metric == "count" else amount
+        values.append(value)
+    after, before = values
+    fixed = axis in ("time_slot", "weekday") and not item.get("include_fixed")
+    cond = _conditions(ev, item, fixed_excluded=fixed)
+    label = spec["label"]
+    noun = label + {"amount": " 지출", "count": " 결제 건수", "average": " 건당 평균", "day_average": " 하루 평균"}[metric]
+    text = _moved(noun, before, after, (lambda n: f"{n}건") if metric == "count" else won,
+                  _dir(after - before), metric, delta=metric == "amount")
+    kind = "change"
+    if axis == "merchant":
+        cond = {**cond, "search_scope": label}
+        text = "확인한 가게 이름 범위에서 " + text
+        if not any(counts):
+            kind = "absent"
+            text = f"확인한 {label} 이름 범위에서는 두 기간 모두 결제가 없었어요."
+    if fixed:
+        text = FIXED + text
+    return [{"id": f"C{start}", "target": target, "metric": metric, "axis": hyp["axis"], "subject": label,
+             "kind": kind, "direction": _dir(after - before), "rank": None, "share": None, "conditions": cond,
+             "text": text, "before": before, "after": after}], "target_metric_compared"
 
 
-def stop(ev, item, text, claims, used=0):
-    """추가 조회 전 멈춤 판정(데이터 이유만) → (이유 | None, 가설 참고값). 이유: insufficient(근거 부족 · 늘지 않음) · nothing_more(더 볼 묶음 없음 ·
+def stop(ev, item, claims, used=0):
+    """추가 조회 전 멈춤 판정(데이터 이유만) → 이유 | None. 이유: insufficient(근거 부족 · 늘지 않음) · nothing_more(더 볼 묶음 없음 ·
     상한). None 이면 계획 LLM 이 추가 조회 0~2개를 고른다 — 첫 결과로 답할 수 있으면 0개 + 이유 (26-12 ②)"""
-    guess = hypothesis(text)
     if ev.get("state") != "ok" or ev.get("kind") == "mix" or ev["delta"] <= 0:
-        return "insufficient", guess  # 수집 미완 · 비교 기준 없음 · 바뀐 내역 · 늘지 않음 → 지금 거절 · 안내 문구
+        return "insufficient"  # 수집 미완 · 비교 기준 없음 · 바뀐 내역 · 늘지 않음 → 지금 거절 · 안내 문구
     if used >= MAX_QUERIES:
-        return "nothing_more", guess
+        return "nothing_more"
     now, before = ev["sides"]
     if now["count"] + before["count"] <= 1:
-        return "nothing_more", guess  # 결제가 한 건뿐이면 묶어 볼 것이 없다
+        return "nothing_more"  # 결제가 한 건뿐이면 묶어 볼 것이 없다
     if not candidates(ev, item, claims):
-        return "nothing_more", guess
-    return None, guess
+        return "nothing_more"
+    return None
 
 
 def candidates(ev, item, claims):
     """추가 조회로 새로 볼 수 있는 묶음 기준 — 첫 주장에 순위 전체가 없고(가장 큰 것 하나뿐) 범위와 같은 축이 아닌 것"""
     listed = {c["axis"] for c in claims if c["rank"] and c["rank"] > 1}
-    out = [a for a in AXES if a not in listed]
-    if item.get("category"):
-        out.remove("category")
-    if item.get("merchant"):
-        out.remove("merchant")
-    return out
+    return [a for a in AXES if a not in listed and not (a in ("category", "merchant") and item.get(a))]
 
 
 def for_llm(claims):
@@ -277,38 +335,22 @@ def for_llm(claims):
         cond = c["conditions"]
         out.append({"id": c["id"], "kind": c["kind"], "axis": c["axis"], "subject": subject, "metric": c["metric"],
                     "direction": c["direction"], "rank": c["rank"], "share": c["share"],
+                    **({"target": c["target"]} if c.get("target") else {}),
                     "flags": [k for k in ("unclassified", "fixed_excluded") if cond[k]] + (["search_scope"] if cond["search_scope"] else [])
                     + ([] if cond["period_match"] else ["period_mismatch"])})
     return out
 
 
 # ---------- 답 검사 (26-4 · 26-16) ----------
-# 답 LLM 이 직접 쓰는 말은 연결 말과 완곡한 가설 부정뿐 — 증감 · 순위 · 몫 · 금액은 서버 절(자리표시) 안에만 있다
-CONNECTIVES = ("그다음으로", "그리고", "그런데", "아니요", "이어서", "다만", "반면", "특히", "한편", "먼저", "또한", "또", "네")
-# 가설 부정은 '…라고 보기는 어려워요'만 — 같은 문장에 반대 방향(줄었어요 · 같아요) 또는 확인 범위 안에서 없음 주장을 인용했을 때 (26-12 ②)
-SOFT_NEGATION = re.compile(r"[^.?!{}]*(?:라고|다고)\s*보기(?:는|엔|에는)?\s*어려워요[.!]?")
-NEGATE = ("때문은 아니", "때문이 아니", "원인이 아니", "상관없", "관계없", "영향이 없", "영향은 없")
-CAUSE = ("때문", "덕분", "원인", "영향", "탓")
-EVALUATE = ("잘하", "잘 하", "아쉽", "걱정", "문제", "조심", "줄여야", "아껴")
-REASONED = re.compile(r"((?<!에)서|니까|라서|므로|느라)\s*\S*\s*(늘|줄|증가|감소|올랐|많아)")
-
-
-def _opposite(claim):
-    return claim["kind"] == "absent" or claim["direction"] in ("down", "same")
-
-
-def _groups():
-    """새 원인 검사용 묶음 이름 — 시간대 · 요일 · 주말/평일 · 카테고리 · 온라인 묶음"""
-    return ([n for n, _, _ in SLOTS.values()] + [f"{d}요일" for d in DAY_NAMES] + ["주말", "평일"]
-            + [n for c, n in NAMES.items() if c != "UNCLASSIFIED"] + list(ONLINE))
+# 관측 사실로 원인·가격·행동을 긍정/부정하지 않는다. 예외 금지어 대신 허용된 연결 말만 검사한다.
 
 
 HYPOTHESIS_AXES = ("count", "average", "time_slot", "weekday", "visit", "merchant", "category")
-MAX_CLAUSES = 2  # 한 문장에 서버 절 2개까지
+QUERY_TOP_SHARE = 0.2  # 추가 조회 1위를 꼭 쓸 최소 크기 (범위 전체 증감 대비)
 
 
 def key_claims(claims):
-    """가설 없는 '왜 늘었어?'에 꼭 인용할 핵심 요인 — 전체와 같은 방향으로 가장 크게 바뀐 묶음 주장(시간대 · 새로 간 곳/자주 가던 곳 · 가게 · 카테고리,
+    """가설 없는 '왜 늘었어?'에 꼭 인용할 핵심 요인 — 전체와 같은 방향으로 가장 크게 바뀐 묶음 주장(시간대 · 새로 간 곳/지난달에도 간 곳 · 가게 · 카테고리,
     금액 기준). 동률이면 모두 후보(그중 하나만 인용하면 된다). 요일(하루 평균)은 단위가 달라 뺀다"""
     total = claims[0]["direction"]
     pool = [c for c in claims if c["kind"] == "change" and c["axis"] in ("time_slot", "visit", "merchant", "category")
@@ -319,32 +361,97 @@ def key_claims(claims):
 
 def offsets(ev):
     """일부가 전체보다 클 때 붙일 맞물림 문장 (축마다 하나, 서버 값 · 템플릿 표현). 인용한 묶음 주장의 금액이 범위 전체 증감보다 크면
-    반대로 움직인 쪽을 이어 전체와 맞춘다 — 새로 간 곳/자주 가던 곳은 템플릿의 잇는 문장 그대로(세 합 = 전체 증감).
+    반대로 움직인 쪽을 이어 전체와 맞춘다 — 새로 간 곳/지난달에도 간 곳은 템플릿의 잇는 문장 그대로(세 합 = 전체 증감).
     가게 · 카테고리는 전체 결제 기준이라 '전체로는'까지, 시간대는 고정지출을 뺀 기준이라 반대쪽 합계만"""
     now, before = ev["sides"]
     up = ev["delta"] > 0
     out = {"visit": _visits_line(ev)}
-    for axis, field, word in (("merchant", "merchants", "곳"), ("category", "categories", "카테고리"), ("time_slot", "slots", "시간대")):
+    # 시간대는 고정지출을 뺀 기준이라 전체와 맞물리지 않고, 앞에서 말한 줄어든 시간대와 겹쳐 읽힌다 → 붙이지 않는다 (26-19)
+    for axis, field, word in (("merchant", "merchants", "곳"), ("category", "categories", "카테고리")):
         deltas = [now[field].get(k, 0) - before[field].get(k, 0) for k in set(now[field]) | set(before[field])]
         opposite = -sum(d for d in deltas if (d < 0 if up else d > 0))
         if not opposite:
             continue
         head = f"반대로 {'줄어든' if up else '늘어난'} {word}에서 {won(abs(opposite))}"
-        out[axis] = f"{head} {'줄어' if up else '늘어'}, 전체로는 {_changed(ev['delta'])}." if axis != "time_slot" else \
-            f"{head} {'줄었어요' if up else '늘었어요'}."
+        out[axis] = f"{head} {'줄어' if up else '늘어'}, 전체로는 {_changed(ev['delta'])}."
     return {k: v for k, v in out.items() if v}
 
 
+def _short(join):
+    """범위 증감 절도 인용한 답이면 맞물림 문장의 ', 전체로는 ○원 늘었어요' 꼬리를 뗀다 (같은 숫자를 두 번 말하지 않게)"""
+    return re.sub(r"(늘|줄)어, 전체로는 .*$", r"\1었어요.", join)
+
+
+def _subject(value):
+    """대상 비교는 정확히 일치하거나 서버의 별칭 표로 같은 대상일 때만. 부분 문자열은 쓰지 않는다."""
+    group, words = online(value)
+    return plain(group or (words[0] if words else value))
+
+
 def _matches(claim, hyp):
-    """주장이 가설과 같은 축 · 대상인지 (대상이 없으면 축만). 대상은 서로 포함이면 같다고 본다 ('배민' ↔ '배민', '배달' ↔ '배달앱')"""
+    """지표와 대상이 같은 근거만 선택한다. 전체 건수/평균은 이름 붙은 부분 집합의 근거가 아니다."""
+    if "target" in hyp:
+        return (hyp["target"] != "unavailable" and claim.get("target") == hyp["target"]
+                and claim["metric"] == hyp["metric"] and claim["kind"] in ("change", "absent"))
     if claim["axis"] != hyp["axis"] or claim["kind"] not in ("change", "absent"):
         return False
-    return not hyp.get("subject") or hyp["subject"] in claim["subject"] or claim["subject"] in hyp["subject"]
+    subject = hyp.get("subject")
+    if not subject:
+        return hyp["axis"] in ("count", "average", "visit")
+    actual = (claim.get("conditions", {}).get("basis") or {}).get("scope") \
+        if hyp["axis"] in ("count", "average") else claim["subject"]
+    return actual is not None and _subject(subject) == _subject(actual)
+
+
+def support(claims, hypothesis):
+    """서버가 판정한 답변 계약. 근거 없음도 정상 결과이며 전체 지표로 메우지 않는다."""
+    if hypothesis is None:
+        return {"status": "observation", "claims": [], "limitation": None}
+    basis = claims[0].get("conditions", {}).get("basis")
+    matched = [c["id"] for c in claims if _matches(c, hypothesis)
+               and c.get("conditions", {}).get("basis") == basis]
+    if not matched:
+        limit = "질문하신 대상과 지표를 함께 확인할 비교 근거가 없어요. 전체 지출 통계만으로는 그 가설을 판단할 수 없어요."
+        if hypothesis.get("target") == "unavailable":
+            limit = f"{hypothesis['unavailable']}에 해당하는 내역을 지금 자료에서 구분할 수 없어요. 가게 이름이나 카테고리 전체 결제로 대신 판단하지 않을게요."
+        return {"status": "insufficient", "claims": [], "limitation": limit}
+    if all(c["kind"] == "absent" for c in claims if c["id"] in matched):
+        return {"status": "observation", "claims": matched,
+                "limitation": "확인한 가게 이름으로 기록된 결제에 한정한 결과예요. 다른 이름으로 기록된 결제까지 없었다는 뜻은 아니에요."}
+    limit = "거래에서 확인한 변화예요. 이것만으로 실제 원인이나 구매 행동을 단정할 수는 없어요."
+    if hypothesis.get("metric") == "count":
+        limit = "결제 내역의 건수를 비교한 결과예요. 결제 건수만으로 방문·약속 횟수나 구매한 개수를 알 수는 없어요."
+    if hypothesis.get("metric", hypothesis["axis"]) == "average":
+        limit = "결제 한 건당 평균의 변화예요. 구매한 품목이나 수량을 알 수 없어 상품 가격이 올랐는지는 판단할 수 없어요."
+    return {"status": "observation", "claims": matched, "limitation": limit}
+
+
+def next_check(claims, hypothesis, contract, cited_ids=()):
+    """확인된 근거 다음에 볼 항목 하나. 절약액·원인·예산 변경 효과를 만들어내지 않는다."""
+    if contract["status"] != "observation":
+        return None
+    matched = [c for c in claims if c["id"] in contract["claims"]]
+    if hypothesis is None:
+        return "예산을 조정하기 전, 늘어난 항목에 일시적인 큰 결제가 포함됐는지 먼저 확인해 보세요."
+    if matched and all(c["kind"] == "absent" for c in matched):
+        return "예산을 조정하기 전, 이번 내역에서 실제로 증가한 다른 항목을 확인해 보세요."
+    metric = hypothesis.get("metric", hypothesis["axis"])
+    counterpart = {"average": "count", "count": "average"}.get(metric)
+    if counterpart and any(c["id"] in cited_ids and c.get("metric") == counterpart
+                           and c.get("target") == hypothesis.get("target") for c in claims):
+        return "예산을 조정하기 전, 반복되는 지출인지 일시적인 큰 결제인지 확인해 보세요."
+    if metric == "average":
+        return "같은 범위의 결제 건수도 늘었는지 함께 보면, 금액이 늘어난 부분을 더 좁혀 볼 수 있어요."
+    if metric == "count":
+        return "같은 범위의 건당 평균도 함께 보면, 횟수와 한 번에 쓴 금액의 변화를 나눠 볼 수 있어요."
+    if matched and all(c["direction"] != "up" for c in matched):
+        return "예산을 조정하기 전, 이번 내역에서 실제로 증가한 다른 항목을 확인해 보세요."
+    return "같은 범위의 결제 건수와 건당 평균을 나눠 보면, 어떤 부분부터 조정할지 판단하는 데 도움이 돼요."
 
 
 def check(raw, claims, hypothesis=None, must=(), joins=None):
     """답 LLM 응답 {"sentences": [{"text", "claims"}]} → (서버 절을 끼운 문장 목록 | None, 탈락 이유 목록)
-    hypothesis = 계획 LLM 이 읽은 가설 {axis, subject} | None — '네 · 아니요' · 가설 부정은 이것과 같은 축 · 대상 주장으로만 (26-17).
+    hypothesis = 계획 LLM이 읽은 가설 {axis, subject} | None. 같은 대상·지표·기간의 근거를 첫 문장에 쓰며 인과 판정은 하지 않는다.
     must = 꼭 인용할 주장 묶음 목록 [[id 후보 …], …] — 묶음마다 하나 이상 (가설 없을 때 핵심 요인 · 실행한 추가 조회의 1위, 26-18)
     joins = offsets(ev) — 인용한 묶음 주장이 전체 증감보다 크면 그 문장 뒤에 맞물림 문장을 붙인다"""
     try:
@@ -355,31 +462,28 @@ def check(raw, claims, hypothesis=None, must=(), joins=None):
         return None, ["format"]
     known = {c["id"]: c for c in claims}
     reasons, out = [], []
+    contract = support(claims, hypothesis)
+    if contract["status"] == "insufficient":
+        return None, ["unsupported_hypothesis"]
     for i, s in enumerate(sentences, 1):
         if not isinstance(s, dict) or not isinstance(s.get("text"), str) or not isinstance(s.get("claims"), list):
             return None, ["format"]
         text, ids = s["text"], s["claims"]
-        why = _sentence(text, ids, known, hypothesis)
+        why = validate_clause(text, ids, known)
         if why:
             reasons += [f"{i}:{w}" for w in why]
             continue
-        filled = re.sub(r"\{(C\d+)\}", lambda m: known[m.group(1)]["text"], text).strip()
+        filled = text.strip()  # 절은 아래 _joined 에서 끼운다 (맞물림 문장으로 바꿀 절이 있어서)
         out.append(re.sub(r"\.\s*\.", ".", re.sub(r"\s+", " ", filled)))
-    cited = {i for s in sentences for i in s["claims"]}
+    cited = {i for s in sentences for i in re.findall(r"\{(C\d+)\}", s["text"])}
+    if contract["claims"] and not set(contract["claims"]) & set(re.findall(r"\{(C\d+)\}", sentences[0]["text"])):
+        reasons.append("0:hypothesis_first")
     for n, group in enumerate(must, 1):
         if group and not cited & set(group):
             reasons.append(f"0:missing_must{n}")  # 핵심 요인 · 고른 추가 조회의 1위를 빼지 않는다
     if reasons:
         return None, reasons
-    whole, joined, extended = claims[0].get("size", 0), set(), []
-    for line, s in zip(out, sentences):  # 일부 > 전체 → 그 문장 뒤에 맞물림 문장 (축마다 한 번)
-        extended.append(line)
-        for c in (known[i] for i in s["claims"]):
-            if (joins or {}).get(c["axis"]) and c["axis"] not in joined and c["direction"] == claims[0]["direction"] \
-                    and c.get("size", 0) > whole:
-                extended.append(joins[c["axis"]])
-                joined.add(c["axis"])
-    out = extended
+    out = _joined(sentences, out, known, claims, joins or {})
     seen = False  # '고정지출을 빼고 보면'은 답 전체에서 처음 한 번만
     for n, line in enumerate(out):
         while FIXED in line and seen:
@@ -391,99 +495,114 @@ def check(raw, claims, hypothesis=None, must=(), joins=None):
     return out, []
 
 
-def _sentence(text, ids, known, hypothesis=None):
-    if not ids or any(i not in known for i in ids):
-        return ["claim_id"]
-    why, used = [], [known[i] for i in ids]
-    marks = re.findall(r"\{(C\d+)\}", text)
-    if not marks:
-        why.append("no_clause")  # 문장마다 서버 절 하나 이상
-    if len(marks) > MAX_CLAUSES:
-        why.append("too_many_clauses")
-    if any(m not in ids for m in marks) or re.search(r"\{(?!C\d+\})", text):
-        why.append("placeholder")
-    bare = re.sub(r"\{C\d+\}", " ", text)
-    soft = SOFT_NEGATION.findall(bare)
-    rest = SOFT_NEGATION.sub(" ", bare)
-    if re.search(r"[0-9%]", bare):
-        why.append("number")
-    if any(w in bare for w in NEGATE):
-        why.append("negation")  # 단정한 부정 ('배달 때문은 아니에요')
-    elif soft and not any(_opposite(c) and (hypothesis is None or _matches(c, hypothesis)) for c in used):
-        why.append("negation")  # 근거(가설과 같은 축 · 대상의 반대 방향 · 범위 안에서 없음) 없는 완곡한 부정 — 주말이면 주말 묶음 주장
-    elif any(w in rest for w in CAUSE) or REASONED.search(rest):
-        why.append("cause")
-    if any(w in bare for w in (*BANNED, *EVALUATE)):
-        why.append("evaluation")
-    yes, no = (re.search(r"(?<![가-힣])" + w + r"(?![가-힣])", rest) for w in ("네", "아니요"))
-    if (yes or no) and hypothesis is None:
-        why.append("yes_no")  # 가설이 없는 질문에 네 · 아니요
-    elif yes and not any(_matches(c, hypothesis) and c["direction"] == "up" and c["rank"] in (1, None) for c in used):
-        why.append("yes_no")  # '네' = 같은 축 · 대상이 늘었고 그 축 1위(동률 포함)일 때만
-    elif no and not any(_matches(c, hypothesis) and _opposite(c) for c in used):
-        why.append("yes_no")  # '아니요' = 같은 축 · 대상이 반대 방향 · 범위 안에서 없음일 때만
-    left = re.sub(r"[\s,.!?~·…()]", "", rest)
-    for word in CONNECTIVES:
-        left = left.replace(word, "")
-    if left:
-        why.append("free_text")  # 연결 말 밖의 말 (증감 동사 · 순위 · 새 원인을 직접 쓰지 않는다)
-    subjects = {c["subject"] for c in used} | {c["subject"] for c in known.values() if c["axis"] == "scope"}  # 물은 범위 이름은 늘 쓸 수 있다
-    # 주말 · 평일은 그 안의 요일 주장을 인용했으면 쓸 수 있다
-    subjects |= {name for name, days in (("주말", "토일"), ("평일", "월화수목금")) if any(s[:1] in days and s.endswith("요일") for s in subjects)}
-    if any(g in bare and not any(g in s for s in subjects) for g in _groups()):
-        why.append("new_group")  # 인용하지 않은 묶음 이름
-    return list(dict.fromkeys(why))
+def _joined(sentences, texts, known, claims, joins):
+    """자리표시 → 서버 절. 인용한 묶음 주장(같은 방향)이 범위 전체 증감보다 크면 그 절을 맞물림 문장으로 바꾼다(같은 숫자를 두 번 말하지 않게, 축마다
+    한 번). 답이 같은 축의 반대 방향 주장도 인용했으면 겹쳐 읽혀 바꾸지 않는다 (26-19)"""
+    whole, total = claims[0].get("size", 0), claims[0]["direction"]
+    cited = [known[i] for s in sentences for i in s["claims"]]
+    scope_cited = any(c["axis"] == "scope" for c in cited)
+    joined, out, previous_axis = set(), [], None
+    for text in texts:
+        def place(m):
+            c = known[m.group(1)]
+            overlap = any(o["axis"] == c["axis"] and o["direction"] not in (total, None) for o in cited)
+            if joins.get(c["axis"]) and c["axis"] not in joined and c["direction"] == total and c.get("size", 0) > whole and not overlap:
+                joined.add(c["axis"])
+                if c["axis"] == "visit" and scope_cited:
+                    # 방문 유형은 같은 전체 거래를 나눈 분할이다. 세 유형을 모두 나열하는 대신
+                    # 선택한 유형과 나머지 유형의 순변화를 서버 값으로 설명한다.
+                    rest = won(c["size"] - whole)
+                    verb = "줄어" if total == "up" else "늘어"
+                    return f"{c['text']} 다른 방문 유형에서는 합계 {rest} {verb} 이 변화의 일부를 상쇄했어요."
+                join = _short(joins[c["axis"]]) if scope_cited else joins[c["axis"]]
+                # 새로 간 곳/지난달에도 간 곳 문장은 그 절의 금액까지 담아 절을 바꾸고, 가게 · 카테고리 문장은 반대쪽만 말해 절 뒤에 잇는다
+                return join if c["axis"] == "visit" else f"{c['text']} {join}"
+            return c["text"]
+        axes = {known[i]["axis"] for i in re.findall(r"\{(C\d+)\}", text)}
+        axis = next(iter(axes)) if len(axes) == 1 else None
+        filled = re.sub(r"\.\s*\.", ".", re.sub(r"\s+", " ", re.sub(r"\{(C\d+)\}", place, text)))
+        if axis in AXIS_WORD and previous_axis not in (None, "scope", axis):
+            filled = f"같은 기간 내역을 {AXIS_WORD[axis]}별로 보면, {filled}"
+        out.append(filled)
+        previous_axis = axis
+    return out
 
 
 # ---------- 흐름 (26-1) ----------
-PLAN_PROMPT = """너는 가계부 앱에서 소비가 늘어난 이유 질문에 답하기 전에, 더 볼 묶음을 고른다.
-입력: question(사용자 질문), claims(서버가 이미 확인한 주장 [{id, kind, axis, subject, direction, rank, share, flags}]),
-candidates(더 볼 수 있는 묶음 기준), max_queries.
-규칙: 질문에 답하는 데 claims 만으로 충분하면 queries 를 비운다. 부족하면 candidates 안에서 0~max_queries 개를 고른다.
-by 는 category · merchant · time_slot · weekday 중 하나. 질문이 focus_groups 의 온라인 묶음(앱 · 브랜드 이름 포함)을 물으면 candidates 와 상관없이
-by=merchant, focus 에 사용자가 쓴 말을 넣는다. 그 밖엔 focus=null.
-같은 by 를 두 번 고르지 않는다. 금액 · 날짜 · 가게 이름을 쓰지 않는다. reason 은 고른 이유 한 문장(숫자 없이).
-hypothesis: 질문이 특정 요인을 짐작하면(○○ 때문이야? · ○○해서 그래?) 그 요인의 축과 대상, 아니면(왜 늘었어? · 왜 이렇게 많아?) null.
-axis 는 count(자주 · 횟수) · average(값 · 가격 · 단가) · time_slot · weekday(요일 · 주말 · 평일) · visit(새로 간 곳) · merchant(앱 · 브랜드 · 가게) · category 중 하나,
-subject 는 시간대 · 요일 · 주말 · 평일 · 카테고리 이름 · 사용자가 쓴 앱 · 브랜드 이름, 정할 대상이 없으면 null.
-JSON 하나로만 답한다: {"queries": [{"by": "...", "focus": null}], "reason": "...", "hypothesis": {"axis": "...", "subject": null} 또는 null}"""
-ANSWER_PROMPT = """너는 가계부 앱에서 소비가 늘어난 이유 질문에 2~4문장으로 답한다. 입력 claims 는 서버가 확인한 주장이다.
-자리표시 {C3} 하나는 서버가 만든 완성 문장(주어 · 금액 · 증감 · 마침표까지)으로 바뀐다. 너는 문장을 고르고 순서를 정해, 앞에 연결 말
-(네 · 아니요 · 다만 · 반면 · 특히 · 그리고 · 또 · 또한 · 한편 · 먼저 · 그다음으로 · 이어서)만 붙인다. 그 밖의 말 · 숫자 · 증감 동사 · 가게 이름은 쓰지 않는다.
-예: "네, {C3}" · "다만 {C2}" · "{C1} 특히 {C4}"
-규칙: hypothesis(서버가 받은 가설 {axis, subject})가 있으면 첫 문장에서 그 축 · 대상의 주장으로 먼저 답한다. 주말 · 평일 가설은 subject 가 같은 묶음 주장을 쓴다.
-'네'는 그 주장이 늘었고(direction=up) 그 축에서 rank=1(또는 rank 없음)일 때만, '아니요'는 반대 방향(down · same)이거나 kind=absent 일 때만 쓴다.
-반대 방향 · absent 이면 '아니요' 대신 '○○라고 보기는 어려워요.'(○○ = 질문의 가설을 짧게)를 그 자리표시 앞에 쓸 수 있다. '때문은 아니에요' · '원인은' 같은 단정은 쓰지 않는다.
-hypothesis 가 null 이면 '네 · 아니요'를 쓰지 않고 첫 문장은 axis=scope 주장(전체 증감)으로 시작한다.
-must 는 꼭 쓸 주장 묶음 목록이다 — 묶음마다 id 하나 이상을 반드시 쓴다(가장 크게 바뀐 요인 · 더 조회한 묶음의 1위). 2~4문장 안에 모두 넣는다.
-한 문장에 자리표시는 2개까지. 그다음 질문에 맞는 주장만 골라 잇는다. 문장마다 쓴 주장 id 를 claims 칸에 적는다(자리표시로 쓴 것 모두). 평가 · 조언하지 않는다.
-JSON 하나로만 답한다: {"sentences": [{"text": "...", "claims": ["C1"]}]}"""
+PLAN_PROMPT = """소비 분석의 질문과 다음 확인을 정한다. 금액 계산·원인 단정은 하지 않는다.
+question_hypothesis가 있으면 그대로 사용하고, 없으면 question에서 가설을 읽는다.
+""" + I.INSTRUCTION + """
+claims의 대상·지표로 이미 답할 수 있으면 queries=[]. 가설에 필요한 지표가 없으면 그 대상에 해당하는 by 하나만 요청한다.
+서버는 같은 기간·필터에서 그 대상의 금액·횟수·평균을 계산한다. 지원하지 않는 대상에는 무관한 조회로 대체하지 않는다.
+일반 설명은 candidates 안에서 현재 근거로 부족한 비교만 최대 max_queries개 고른다. 충분하면 0개. 질문에 없는 배달 등 특정 대상을 추측하지 않는다.
+queries 원소는 {by: category|merchant|time_slot|weekday, focus: null 또는 사용자가 말한 온라인 묶음/브랜드}.
+reason은 선택 이유 한 문장(금액·날짜·거래 가게 이름 제외).
+JSON: {queries, reason, hypothesis}."""
+ANSWER_PROMPT = """서버 문장 ID만 선택해 JSON으로 반환한다. 자연어 답변을 작성하지 않는다.
+각 sentences 원소의 text에는 선택한 ID의 자리표시만 그대로 쓴다. 예를 들어 C7을 선택하면 text는 정확히 "{C7}"이고 claims는 ["C7"]이다.
+text에 주어·숫자·증감 설명·마침표를 작성하지 않는다. 서버가 자리표시 전체를 완성 문장으로 치환한다.
+선택한 ID 하나당 sentences 원소 하나를 만들며, 전체 1~4개다. 동일 ID는 한 번만 선택한다.
+must의 각 묶음에서 적어도 하나를 선택한다. support.claims가 있으면 그중 하나를 첫 원소에, 없으면 scope 주장을 첫 원소에 둔다.
+나머지는 질문에 필요한 근거만 선택한다. 같은 거래를 나눠 본 수치를 별개 원인처럼 합치지 않는다.
+출력 형식: {"sentences":[{"text":"{C7}","claims":["C7"]}]}"""
 clock = time.monotonic  # 테스트가 바꿔 끼운다
 
 
-def run(ev, item, question, complete):
+def run(ev, item, question, complete, hypothesis=None):
     """B 한 번 → (문장 목록 | None, trace). None = 템플릿으로 (trace["fallback"] 에 이유). LLM 호출 오류는 재시도 없이 실패로.
     complete(system, user, timeout=초) — 호출마다 12초 안의 남은 시간을 대기 한도로 넘긴다"""
     started, claims = clock(), first_claims(ev, item)
     trace = {"stop": None, "plan": None, "hypothesis": None, "queries": [], "dropped": [], "used": [], "check": [], "fallback": None}
-    trace["stop"], _ = stop(ev, item, question, claims)
+    trace["stop"] = stop(ev, item, claims)
     added = {}
     if trace["stop"] is None:
         allowed = candidates(ev, item, claims)
+        resolved = I.resolve(I.internal(hypothesis) if hypothesis is not None else None, item)
+        # 범위 전체의 금액 반복은 구체적인 가설이 아니다. 계획 단계가 원문에서
+        # 가격/빈도 등의 후보를 다시 확인할 수 있게 하되 확정된 대상·지표는 보존한다.
+        question_hypothesis = {k: resolved[k] for k in ("metric", "target", "unavailable")} if resolved else None
         try:
             raw = complete(PLAN_PROMPT, json.dumps({"question": question, "claims": for_llm(claims), "candidates": allowed,
-                                                    "focus_groups": list(ONLINE), "max_queries": MAX_QUERIES}, ensure_ascii=False),
+                                                    "focus_groups": list(ONLINE), "max_queries": MAX_QUERIES,
+                                                    "targets": I.catalog(), "question_hypothesis": question_hypothesis}, ensure_ascii=False),
                            timeout=_left(started) - ANSWER_MIN)
-        except Exception:  # 계획 실패 = 추가 조회 0개로 답 (26-5)
-            raw = None
+        except Exception:  # 해석하지 못한 가설을 '가설 없음'으로 처리하지 않는다
+            return None, {**trace, "fallback": "plan_failed"}
         if clock() - started > TIMEOUT:
             return None, {**trace, "fallback": "timeout"}
         plan = _plan(raw)
+        if plan is None:
+            return None, {**trace, "fallback": "invalid_plan"}
         trace["plan"] = plan
-        trace["hypothesis"] = (plan or {}).get("hypothesis")
-        for q in (plan or {}).get("queries", [])[:MAX_QUERIES]:
+        trace["hypothesis"] = resolved if resolved is not None else I.resolve(plan["hypothesis"], item)
+        hyp = trace["hypothesis"]
+        trace["query_decisions"] = []
+        requested = plan["queries"]
+        if hyp and "target" in hyp:
+            # 질문한 대상·지표의 부족만 채운다. 불필요한 전체 목록 조회는 실행하지 않는다.
+            present = support(claims, hyp)["status"] == "observation"
+            more, reason = ([], "already_supported") if present else target_claims(ev, item, hyp, len(claims) + 1)
+            trace["query_decisions"] = [{"query": q, "action": "skipped", "reason": reason} for q in requested]
+            if more:
+                spec = I.TARGETS[hyp["target"]]
+                q = {"by": spec["by"], "focus": spec["label"], "metric": hyp["metric"], "target": hyp["target"]}
+                trace["queries"].append(q)
+                trace["query_decisions"].append({"query": q, "action": "executed", "reason": "missing_target_metric"})
+                claims += more
+                added[spec["by"]] = {c["id"] for c in more}
+            trace["target_resolution"] = reason
+            requested = []
+        for q in requested[:MAX_QUERIES]:
             if q["by"] in [d["by"] for d in trace["queries"]] or not (q["by"] in allowed or (q["by"] == "merchant" and q["focus"])):
                 trace["dropped"].append(q)
+                continue
+            if hyp is None and q["by"] == "weekday":
+                # 일반 증가액 설명에는 하루 평균을 기여 금액으로 섞지 않는다. 요일 가설은 위의 대상 조회로 처리한다.
+                trace["query_decisions"].append({"query": q, "action": "skipped", "reason": "different_metric"})
+                continue
+            if hyp is None and q["focus"]:
+                trace["dropped"].append(q)
+                trace["query_decisions"].append({"query": q, "action": "skipped", "reason": "unrequested_target"})
                 continue
             try:
                 more = compare_group(ev, item, q["by"], q["focus"], start=len(claims) + 1)
@@ -495,13 +614,34 @@ def run(ev, item, question, complete):
             trace["queries"].append(q)
     if _left(started) < ANSWER_MIN:  # 답을 기다릴 시간이 모자라면 부르지 않고 템플릿 (사용자 대기가 12초를 넘지 않게)
         return None, {**trace, "fallback": "no_time"}
+    contract = support(claims, trace["hypothesis"])
+    if contract["status"] == "insufficient":
+        limits = {
+            "outside_scope": "질문한 대상은 앞서 조회한 범위 밖이에요. 해당 대상의 소비를 먼저 조회한 뒤 비교해 주세요.",
+            "empty_average": "비교 기간 중 한쪽에 해당 대상의 결제가 없어 건당 평균을 비교할 수 없어요. 결제 없음은 평균 0원과 달라요.",
+            "missing_time_or_merchant": "시간이나 가게 이름이 없는 내역이 있어 질문한 대상의 비교를 확정할 수 없어요.",
+            "no_matching_days": "비교 기간에 해당 요일이 없어 하루 평균을 비교할 수 없어요.",
+        }
+        if trace.get("target_resolution") in limits:
+            contract = {**contract, "limitation": limits[trace["target_resolution"]]}
+    trace["support"] = contract
+    if contract["status"] == "insufficient":
+        # 답 LLM을 불러 근거 없는 결론을 만들게 하지 않는다. 확인 불가도 정상적인 분석 결과다.
+        trace.update(resolution="insufficient", cited=[], unused_queries=list(added))
+        return [contract["limitation"]], trace
     try:
         hyp, key = trace.get("hypothesis"), key_claims(claims)
         trace["key"] = key if hyp is None else []
         # 실행한 추가 조회마다 그 조회의 1위(동률 포함) · 범위 안에서 없음 주장 — 하나는 답에 써야 한다
-        tops = [[c["id"] for c in claims if c["id"] in ids and (c["rank"] == 1 or c["kind"] == "absent")] for ids in added.values()]
-        trace["must"] = [g for g in [trace["key"], *tops] if g]
+        # 단, 변화가 범위 전체 증감의 20% 미만인 1위(작은 요인)는 필수가 아니다 — 안 쓰면 분석 과정의 '답에 안 쓴 조회'로만 (26-19)
+        floor = claims[0].get("size", 0) * QUERY_TOP_SHARE
+        tops = [[c["id"] for c in claims if c["id"] in ids and (c["kind"] == "absent" or
+                 (c["metric"] == "amount" and c["rank"] == 1 and c.get("size", 0) >= floor))]
+                for ids in added.values()]
+        scope_claim = [claims[0]["id"]] if hyp is None else []
+        trace["must"] = [g for g in [scope_claim, contract["claims"], trace["key"], *tops] if g]
         raw = complete(ANSWER_PROMPT, json.dumps({"question": question, "hypothesis": hyp, "must": trace["must"],
+                                                  "support": contract,
                                                   "claims": for_llm(claims)}, ensure_ascii=False), timeout=_left(started))
     except Exception:
         return None, {**trace, "fallback": "answer_failed"}
@@ -514,8 +654,9 @@ def run(ev, item, question, complete):
     trace["used"] = [i for s in json.loads(raw)["sentences"] for i in s["claims"]]
     # 고른 추가 조회를 답에 하나도 쓰지 않았으면 표시만 (탈락 아님 — 호출만 늘었다)
     trace["unused_queries"] = [by for by, ids in (added if trace["stop"] is None else {}).items() if not ids & set(trace["used"])]
-    by_id = {c["id"]: c for c in claims}
-    trace["cited"] = [{"axis": by_id[i]["axis"], "kind": by_id[i]["kind"]} for i in dict.fromkeys(trace["used"])]  # 평가용 (금액 · 이름 없음)
+    public = {c["id"]: c for c in for_llm(claims)}
+    trace["cited"] = [{k: public[i][k] for k in ("axis", "kind", "subject", "metric")} for i in dict.fromkeys(trace["used"])]
+    trace["next_check"] = next_check(claims, trace["hypothesis"], contract, trace["used"])
     return lines, trace
 
 
@@ -524,18 +665,24 @@ def _left(started):
 
 
 def _plan(raw):
-    """계획 LLM 응답 → {"queries": [{by, focus}], "reason"} 또는 None(형식 틀림 → 추가 조회 0개)"""
+    """계획 LLM 응답 → {queries, reason, hypothesis} 또는 None(형식 틀림 → 서버 설명으로 대체)"""
     try:
         data = json.loads(raw)
         queries = [{"by": q["by"], "focus": q.get("focus") or None} for q in data["queries"]]
         reason, hyp = data["reason"], data.get("hypothesis")
     except Exception:
         return None
-    if not isinstance(reason, str) or re.search(r"[0-9]", reason) or not all(isinstance(q["by"], str) for q in queries):
+    if not isinstance(reason, str) or re.search(r"[0-9]", reason) or not all(isinstance(q["by"], str) and
+            (q["focus"] is None or isinstance(q["focus"], str)) for q in queries):
         return None
+    if isinstance(hyp, dict) and "target" in hyp:
+        try:
+            hyp = I.internal(hyp)
+        except (ValueError, TypeError):
+            return None
+        return {"queries": queries, "reason": reason, "hypothesis": hyp}
+    # 과거 저장 응답 재생·기존 대역용 읽기 호환. 실제 LLM 스키마는 코드 기반 계약만 출력한다.
     if hyp is not None and not (isinstance(hyp, dict) and hyp.get("axis") in HYPOTHESIS_AXES
                                 and (hyp.get("subject") is None or isinstance(hyp.get("subject"), str))):
-        hyp = None  # 모르는 축 · 형식이면 가설 없음으로 (네 · 아니요를 못 쓴다)
-    if hyp is not None and hyp["axis"] in ("count", "average", "visit"):
-        hyp = {**hyp, "subject": None}  # 이름 붙은 대상이 없는 축 — LLM 이 붙인 대상('식비' 등)은 버린다 (e08)
+        return None  # 잘못된 가설을 '가설 없음'으로 바꿔 성공 처리하지 않는다
     return {"queries": queries, "reason": reason, "hypothesis": hyp and {"axis": hyp["axis"], "subject": hyp.get("subject")}}

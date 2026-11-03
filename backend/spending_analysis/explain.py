@@ -1,7 +1,7 @@
 """'왜 늘었어?' — 직전 확정 분석의 거래 근거 (읽기 전용 · 금액 계산은 서버만)
 
-- 근거는 직전 분석의 확정(evidence=confirmed) 항목 하나의 두 기간 · 카테고리로만 다시 조회해 만든다
-  6 · 7번 = 이번 달 vs 지난달 같은 기간, 8 · 9번 = 가장 최근의 이웃한 두 달. 1~5번은 비교 기준이 없어 설명하지 않는다
+- 근거는 일반 조회로 검증한 기간 · 카테고리 · 필터를 그대로 사용한다. 기존 결과는 확정(evidence=confirmed) 항목만 참조한다
+  6 · 7번 = 이번 달 vs 지난달 같은 기간, 8 · 9번 = 가장 최근의 이웃한 두 달. 1 · 2 · 5 · 10번은 해당 기간의 구성을 설명한다
 - 집계는 소비 분석과 같은 규칙: listed_transactions(같은 구매 제외) → transaction_item(취소 차감) → 소비 거래만
 - 다시 조회한 기간이 완전 수집이 아니거나 합계가 기록된 확정 수치와 다르면 근거로 쓰지 않는다 (자료가 바뀜)
 - 계산하는 것: 금액 · 증감 · 건수 · 평균 결제액 · 가맹점별 증감 (전체 범위면 카테고리별 증감)
@@ -9,9 +9,9 @@
   [임시] 가맹점 = finance.merchant_rules.normalize_merchant (공백만 정리한 이름 — 지점이 다르면 다른 곳). MEMO 20번 질문
 - 원인 · 동기 · 생활 습관은 추측하지 않는다. 답변은 '거래에서 확인한 변화'와 '이유는 단정할 수 없음'을 나눠 쓴다
 
-문장: 기본은 서버 템플릿. 설명 LLM(complete)을 주면 근거 항목 이름과 키만 넘기고({F1} 자리표시), 돌아온 문장은
-숫자 · 모르는 키 · 금지 표현이 없을 때만 서버 값을 끼워 쓴다. 하나라도 어긋나면 템플릿으로 돌아간다 (재시도 없음)
-자리표시 바로 뒤 조사(을/를 · 은/는 · 이/가 · 과/와 · 으로/로)는 끼운 값의 받침에 맞춰 서버가 고친다
+문장: 기본은 서버 템플릿. 설명 LLM(complete)은 완성 문장 키({F1})를 선택한다. B와 같은 clauses 검사로
+자리표시와 허용된 연결 말만 받아 서버 문장을 끼운다. 실패하면 템플릿으로 돌아간다 (재시도 없음).
+B 계획·답이 실패한 뒤 기존 설명 LLM을 다시 호출하지 않는다.
 """
 import json
 import re
@@ -24,7 +24,7 @@ from .answer import NAMES, VIEW, _plain, day, josa, span, spans, won
 from .budget import OUT_OF_BUDGET
 from . import scope as scopes
 from .scope import DAY_NAMES, SLOTS, name as scope
-from .periods import Period, previous_month_same_days, this_month
+from .periods import Period, previous_month_same_days, recent_months, recent_months_to_date, this_month
 
 TOP = 3  # 가맹점 · 카테고리 증감은 변화 방향이 같은 큰 순서로 이만큼만
 TEXT = {
@@ -54,7 +54,7 @@ TEXT = {
     "mix_categories": "카테고리별로는 {items} 순으로 많이 썼어요.",
     "mix_fixed": "이 중 {fixed}은 매달 나가는 고정지출이에요.",
     "mix_basis": "거래 내역에서 확인한 구성이에요. 이것만으로 이유를 단정할 수는 없어요.",
-    "planned_basis": "거래 내역에서 확인한 내용이에요. 이것만으로 이유를 단정할 수는 없어요.",  # B 답 맨 아래 (MEMO 26)
+    "planned_checked": "거래 내역에서 확인한 내용이에요.",  # 가설 없는 일반 설명의 꼬리
     "mix_none": "{period} {name}엔 쓴 돈이 없어서 설명할 구성이 없어요.",
 }
 REFUSE = {
@@ -63,19 +63,10 @@ REFUSE = {
     "changed": "그 사이 내역이 바뀌어 앞의 결과로는 설명할 수 없어요. 다시 조회한 뒤 물어봐 주세요.",
     "no_pair": "이웃한 두 달 내역이 모두 모이지 않아 비교 근거를 만들 수 없어요.",
 }
-# 설명 LLM 출력에서 막는 표현 — 숫자는 서버 값만, 소비 동기 · 습관 · 평가 추측 금지 (완전한 차단이 아니라 최소 검사)
-BANNED = ("습관", "과소비", "아마", "것 같", "때문일", "탓", "충동", "낭비")
-PROMPT = """너는 가계부 앱의 소비 증감 설명 문장을 쓴다. 입력 facts 는 서버가 계산한 근거 목록이다 [{key, label}].
-규칙: 1~2문장. 결제 건수 · 건당 평균의 변화와 전체 증감만 쓴다 (가게 · 카테고리별 변화는 서버가 따로 쓴다). 숫자 · 금액 · 비율을 직접 쓰지 말고 반드시 {key} 자리표시로만 쓴다 (예: "{F2}").
-label 에 '서술어 포함'이 있는 자리표시는 값 안에 '늘었어요 · 줄었어요'까지 들어 있다 → 그 자리표시로 문장을 끝내고 뒤에 말을 붙이지 않는다
-(예: "전체 지출은 {F1}"). 목록 자리표시는 명사처럼 쓴다.
-facts 에 없는 사실을 더하지 않는다. 소비 이유 · 동기 · 생활 습관을 추측하거나 평가하지 않는다.
-입력의 scope 가 실제 조회 범위다. requested(사용자가 원래 말한 세부 지출)가 있으면 근거는 scope 전체의 것이므로
-requested 만의 변화나 원인처럼 쓰지 않는다 (requested 라는 말을 문장에 쓰지 않는다).
-JSON 하나로만 답한다: {"sentences": ["...", "..."]}"""
-# 자리표시 바로 뒤 조사 → 받침에 맞는 쌍 (뒤가 띄어쓰기 · 문장부호 · 끝일 때만 — '이에요' 같은 서술은 건드리지 않는다)
-PARTICLES = {p: pair for pair in (("을", "를"), ("은", "는"), ("이", "가"), ("과", "와"), ("으로", "로")) for p in pair}
-PLACED = re.compile(r"\{(F\d+)\}(으로|로|을|를|은|는|이|가|과|와)?(?=[\s.,!?]|$)|\{(F\d+)\}")
+PROMPT = """소비 증감 설명의 서버 문장을 1~3개 고른다. facts의 key는 주어·값·마침표가 포함된 완성 문장으로 바뀐다.
+자리표시 {F1}을 쓰고, 필요하면 앞에 연결 말(다만·반면·특히·그리고·또한·한편·먼저·그다음으로·이어서·또·그런데)만 붙인다.
+숫자·증감·원인·판정·조언을 직접 쓰지 않는다. 한 문장에 자리표시는 2개까지.
+JSON: {"sentences": ["{F1}", "그리고 {F2}"]}"""
 
 
 def _period(value):
@@ -145,9 +136,14 @@ def _moves(now, before, kind):
 def _mix(user, item, today):
     """구성 설명 근거: 이번 달 결과(1 · 2 · 5) 하나 → 그 기간의 금액 · 건수 · 평균 · 많이 쓴 곳 · 고정지출.
     카테고리 없는 전반 분석(5)은 가장 많이 쓴 카테고리 하나로 좁힌다 (동률이면 앞 순서). 기록된 금액과 다르면 changed"""
-    period = _period(item["period"]) if item.get("period") else this_month(today)
     # 여러 기간 조회(10번 최근 N개월 등)는 기록된 기간 목록을 그대로 — 이어 붙인 한 기간으로 바꾸면 사이 날짜가 끼어든다 (MEMO 25-13)
-    periods = [_period(p) for p in item["periods"]] if item.get("periods") else [period]
+    if item.get("periods"):
+        periods = [_period(p) for p in item["periods"]]
+    elif item.get("period"):
+        periods = [_period(item["period"])]
+    else:
+        periods = tools.query_periods(item, today) if item["type"] == 10 else [this_month(today)]
+    period = Period(periods[0].start, periods[-1].end_before)
     code, facts, top = item.get("category"), item.get("facts") or {}, False
     if code is None and item["type"] == 5 and facts.get("top_spending"):
         code, top = facts["top_spending"][0]["category"], True
@@ -161,7 +157,7 @@ def _mix(user, item, today):
     biggest = lambda d: sorted(((k, v) for k, v in d.items() if k is not None and v > 0),  # noqa: E731
                                key=lambda kv: (-kv[1], str(kv[0])))[:TOP]
     return {"state": "ok", "kind": "mix", "category": code, "top": top, "period": period, "where": spans(periods),
-            "word": _word(item, period),
+            "word": _word({**item, "periods": periods}, period),
             "amount": side["amount"],
             "count": side["count"], "average": side["average"], "fixed": side["fixed"],
             "merchants": biggest(side["merchants"]), "categories": biggest(side["categories"]) if code is None else []}
@@ -204,8 +200,16 @@ def _clear_day(days, sign):
     return next(r for r in days if abs(r["delta"]) == ranked[0] and r["delta"] * sign > 0)
 
 
+def regular_name(ev):
+    """두 기간 모두 결제가 있는 가게 묶음 이름 — 횟수가 아니라 '비교 기간에도 간 곳' (26-19). 비교 기간이 지난달이면 '지난달에도 간 곳',
+    추이처럼 다른 달이면 그 달 이름('8월에도 간 곳')"""
+    if ev["labels"][1].startswith("지난달"):
+        return "지난달에도 간 곳"
+    return f"{ev['periods'][1].start.month}월에도 간 곳"  # 추이의 이웃한 달 (달마다 같은 날짜까지여도 달 이름으로)
+
+
 def _visits(now, before):
-    """새로 간 곳(이번에만) · 자주 가던 곳(두 기간 모두) · 이번엔 안 간 곳(지난번에만). 이름 없는 결제도 넣어 합이 전체 증감과 같다"""
+    """새로 간 곳(이번에만) · 비교 기간에도 간 곳(두 기간 모두, regular_name) · 이번엔 안 간 곳(지난번에만). 이름 없는 결제도 넣어 합이 전체 증감과 같다"""
     new = [k for k in now if k not in before]
     gone = [k for k in before if k not in now]
     both = [k for k in now if k in before]
@@ -253,12 +257,23 @@ def _word(item, period):
 def evidence(user, item, today=None):
     """분석 항목 하나 → {"state": "ok", ...근거} 또는 {"state": 거절 사유}
     fresh(직전 결과에 없던 카테고리) = 이번 달 vs 지난달 같은 기간을 새로 비교 · 이번 달 결과(1 · 2 · 5) = 구성 설명"""
+    if item.get("evidence") not in (None, "confirmed"):
+        return {"state": "incomplete"}
     if item.get("fresh") and today is None:
         return {"state": "no_basis"}
-    if item.get("fresh"):
-        basis = this_month(today), previous_month_same_days(today), ("이번 달", "지난달 같은 기간"), None
-    elif item["type"] in (1, 2, 5) or (item["type"] == 10 and item.get("explain_kind") != "change"):
+    if item["type"] in (1, 2, 5) or (item["type"] == 10 and item.get("explain_kind") != "change"):
         return _mix(user, item, today)  # 범용 조회(10번)는 그 기간 · 조건 그대로 구성 설명 (11/2 2차 검수)
+    if item.get("fresh") and item["type"] in (6, 7):
+        basis = this_month(today), previous_month_same_days(today), ("이번 달", "지난달 같은 기간"), None
+    elif item.get("fresh") and item["type"] in (8, 9):
+        periods = (recent_months_to_date if item.get("include_current") else recent_months)(today, item["months_applied"])
+        if len(periods) < 2:
+            return {"state": "no_pair"}
+        current, previous = periods[-1], periods[-2]
+        label = span if item.get("include_current") else lambda p: f"{p.start.month}월"
+        basis = current, previous, (label(current), label(previous)), None
+    elif item.get("fresh"):
+        return {"state": "no_basis"}
     else:
         basis = _basis(item)
     if isinstance(basis, str):
@@ -297,16 +312,9 @@ def _span(r):
 
 
 def facts(ev):
-    """근거 → 문장 재료 [{key, label, text}]. text 는 서버가 만든 표기 그대로 (LLM 에는 label · key 만 — 가게 이름도 보내지 않는다).
-    증감은 방향까지 든 완성 단위('42,000원 늘었어요')라 LLM 이 동사를 붙이지 않는다 (checked 가 확인)"""
-    cur, prev = ev["labels"]
-    out = [("이 범위(scope) 지출의 증감(서술어 포함)", _changed(ev["delta"])), (f"{prev} 결제 건수", f"{ev['previous']['count']}건"),
-           (f"{cur} 결제 건수", f"{ev['current']['count']}건")]
-    if ev["previous"]["average"] and ev["current"]["average"]:
-        out += [(f"{prev} 건당 평균 결제액", won(ev["previous"]["average"]["value"])),
-                (f"{cur} 건당 평균 결제액", won(ev["current"]["average"]["value"]))]
-    # 많이 늘어난 곳 · 줄어든 곳 목록과 전체와 잇는 문장은 서버 템플릿이 늘 쓴다 (LLM 에 맡기면 빠뜨리거나 잇는 말이 흔들림)
-    return [{"key": f"F{i}", "label": label, "text": text} for i, (label, text) in enumerate(out, 1)]
+    """옛 설명 LLM도 숫자 조각 대신 완성된 사실 문장을 쓴다. B와 같은 문장 검사를 적용한다."""
+    return [{"key": f"F{i}", "label": label, "text": text} for i, (label, text) in enumerate(
+        zip(("결제 건수 비교", "건당 평균 비교"), _template(ev)), 1)]
 
 
 def _head(ev, name):
@@ -320,17 +328,17 @@ def _head(ev, name):
 
 
 def _visits_line(ev):
-    """새로 간 곳 · 자주 가던 곳 · 안 간 곳으로 전체 증감을 잇는 한 문장 (세 합 = 전체 증감).
-    한 묶음에서만 나왔으면 같은 숫자를 되풀이하지 않고 '늘어난 금액은 모두 자주 가던 곳에서 나왔어요.'"""
-    v, parts = ev["visits"], []
-    only = [name for name, amount in ((f"새로 간 곳({v['new_count']}곳)", v["new_total"]), ("자주 가던 곳", v["regular_delta"]),
+    """새로 간 곳 · 지난달에도 간 곳 · 안 간 곳으로 전체 증감을 잇는 한 문장 (세 합 = 전체 증감).
+    한 묶음에서만 나왔으면 같은 숫자를 되풀이하지 않고 '늘어난 금액은 모두 지난달에도 간 곳에서 나왔어요.'"""
+    v, parts, regular = ev["visits"], [], regular_name(ev)
+    only = [name for name, amount in ((f"새로 간 곳({v['new_count']}곳)", v["new_total"]), (regular, v["regular_delta"]),
                                       (f"이번엔 안 간 곳({v['gone_count']}곳)", v["gone_total"])) if amount]
     if len(only) == 1:
         return f"{'늘어난' if ev['delta'] > 0 else '줄어든'} 금액은 모두 {only[0]}에서 나왔어요."
     if v["new_total"]:
         parts.append(f"새로 간 곳({v['new_count']}곳)에서 {won(v['new_total'])} 늘고")
     if v["regular_delta"]:
-        parts.append(f"자주 가던 곳에서 {won(abs(v['regular_delta']))} {'늘고' if v['regular_delta'] > 0 else '줄고'}")
+        parts.append(f"{regular}에서 {won(abs(v['regular_delta']))} {'늘고' if v['regular_delta'] > 0 else '줄고'}")
     if v["gone_total"]:
         parts.append(f"이번엔 안 간 곳({v['gone_count']}곳)에서 {won(v['gone_total'])} 줄고")
     if not parts:
@@ -382,7 +390,7 @@ def _template(ev):
 
 def _evidence_lines(ev, name):
     """건수 · 평균 다음의 근거 — 템플릿 · 설명 LLM 어느 쪽이든 서버가 늘 같은 기준으로:
-    큰 결제 → 많이 몰린 시간대 · 요일 → 새로 간 곳 · 자주 가던 곳으로 전체와 잇기 → (두 기간 모두 간 가게가 있을 때만) 가게별 보조 →
+    큰 결제 → 많이 몰린 시간대 · 요일 → 새로 간 곳 · 지난달에도 간 곳으로 전체와 잇기 → (두 기간 모두 간 가게가 있을 때만) 가게별 보조 →
     (늘었을 때) 줄이는 방법 한 줄"""
     moves = ev["moves"]
     word = "곳" if moves["kind"] == "merchant" else "카테고리"
@@ -398,7 +406,7 @@ def _evidence_lines(ev, name):
 
 def view(ev, name, body, extra):
     """한 항목 설명 → 카드 블록 (answer.view 와 같은 모양) — 문장과 같은 근거 · 같은 순서:
-    큰 금액 = 증감 / 건수 · 평균 / 큰 결제 / 많이 몰린 때(시간대 · 요일) / 새로 간 곳 · 자주 가던 곳 · 안 간 곳 /
+    큰 금액 = 증감 / 건수 · 평균 / 큰 결제 / 많이 몰린 때(시간대 · 요일) / 새로 간 곳 · 지난달에도 간 곳 · 안 간 곳 /
     (두 기간 모두 간 가게가 있을 때만) 많이 늘어난 곳 · 줄어든 곳 / 맨 아래 = 잇는 문장 · 줄이는 방법 · 단정 불가 안내"""
     cur, prev, moves, v = *ev["labels"], ev["moves"], ev["visits"]
     up = ev["delta"] > 0
@@ -425,13 +433,13 @@ def view(ev, name, body, extra):
                             (ev["shift"]["weekdays"] and f"{ev['shift']['weekdays']['name']} 하루 평균", ev["shift"]["weekdays"])) if r]})
     visit_rows = [r for r in (
         v["new_total"] and {"name": f"새로 간 곳 ({v['new_count']}곳)", "value": "+" + won(v["new_total"]), "direction": "up"},
-        v["regular_delta"] and {"name": f"자주 가던 곳 ({v['regular_count']}곳)",
+        v["regular_delta"] and {"name": f"{regular_name(ev)} ({v['regular_count']}곳)",
                                 "value": ("+" if v["regular_delta"] > 0 else "−") + won(abs(v["regular_delta"])),
                                 "direction": "up" if v["regular_delta"] > 0 else "down"},
         v["gone_total"] and {"name": f"이번엔 안 간 곳 ({v['gone_count']}곳)", "value": "−" + won(v["gone_total"]), "direction": "down"},
     ) if r]
     if visit_rows:
-        blocks.append({"kind": "rows", "title": "새로 간 곳 · 자주 가던 곳", "rows": visit_rows})
+        blocks.append({"kind": "rows", "title": f"새로 간 곳 · {regular_name(ev)}", "rows": visit_rows})
     if moves["kind"] == "category" or v["regular_count"]:
         for side, title, sign, way in (("up", f"많이 늘어난 {word}", "+", "up"), ("down", f"줄어든 {word}", "−", "down")):
             if moves[side]:
@@ -443,30 +451,24 @@ def view(ev, name, body, extra):
 
 
 def checked(raw, table):
-    """설명 LLM 응답 → 서버 값을 끼운 문장 목록. 형식 · 숫자 · 모르는 키 · 금지 표현 · 자리표시 없는 문장이면 None"""
+    """기존 설명 LLM과 B가 같은 허용 문장 규칙을 쓴다. 실패하면 서버 템플릿으로 돌아간다."""
+    from .clauses import validate
     try:
         sentences = json.loads(raw)["sentences"]
-    except Exception:  # JSON 아님 · 칸 없음
+    except Exception:
         return None
     if not isinstance(sentences, list) or not 1 <= len(sentences) <= 3:
         return None
     out = []
-    for s in sentences:
-        if not isinstance(s, str) or re.search(r"[0-9%]", re.sub(r"\{F\d+\}", "", s)) or any(b in s for b in BANNED):
+    for sentence in sentences:
+        if not isinstance(sentence, str):
             return None
-        keys = re.findall(r"\{(F\d+)\}", s)
-        if not keys or any(k not in table for k in keys) or re.search(r"\{(?!F\d+\})", s):
+        ids = list(dict.fromkeys(re.findall(r"\{(F\d+)\}", sentence)))
+        if validate(sentence, ids, table, "F"):
             return None
-        # 서술어까지 든 값('…늘었어요')의 자리표시 바로 뒤에 글자를 붙이면 문법이 깨진다 ('42,000원 늘었어요했어요') → 거절
-        if any(table[k].endswith("요") and re.search(r"\{" + k + r"\}(?![.!?]|$)", s.strip()) for k in keys):
-            return None
-        s = s.strip() if s.strip()[-1:] in ".!?" else s.strip() + "."  # 마침표 없이 끝나면 붙인다
-        out.append(PLACED.sub(lambda m: _place(table[m.group(1) or m.group(3)], m.group(2)), s))
+        filled = re.sub(r"\{(F\d+)\}", lambda m: table[m.group(1)], sentence)
+        out.append(re.sub(r"\.\s*\.", ".", filled.strip()))
     return out
-
-
-def _place(value, particle):
-    return value + (josa(value, PARTICLES[particle]) if particle else "")
 
 
 def _mix_answer(ev, item):
@@ -500,13 +502,13 @@ def _mix_answer(ev, item):
     return lines, blocks + [{"kind": "text", "lines": texts}]
 
 
-def _planned(ev, item, question, plan):
+def _planned(ev, item, question, plan, hypothesis=None):
     """B 한 번 → ({"lines", "view"} | None, trace). 근거 부족(거절 · 늘지 않음)이면 B 를 건너뛰고 템플릿의 거절 · 안내 문구로.
-    줄이는 방법 · [예산 조정하기]는 붙이지 않는다 (26-12 ⑤). 확인 필요 · 세부 지출 안내는 템플릿과 같은 문장"""
+    계산하지 않은 절약액 · [예산 조정하기]는 붙이지 않는다. 확인된 지표에 맞는 다음 확인 항목만 제안한다."""
     from . import claims  # B 흐름이 이 모듈의 근거 · 금지어를 쓴다 — 서로 import 하지 않게 여기서
     if ev["state"] != "ok" or ev["delta"] <= 0:
         return None, {"stop": "insufficient", "fallback": "template"}
-    said, trace = claims.run(ev, item, question, plan)
+    said, trace = claims.run(ev, item, question, plan, hypothesis=hypothesis)
     if said is None:
         return None, trace
     name, extra = scope(item), []
@@ -517,11 +519,16 @@ def _planned(ev, item, question, plan):
         code_name = NAMES[ev["category"]]
         extra.append(TEXT["classified"].format(name=code_name, particle=josa(code_name, ("으로", "로")), current=cur_label,
                                                now=won(ev["unclassified"][0]), previous=prev_label, before=won(ev["unclassified"][1])))
-    lines = [*said, TEXT["planned_basis"], *extra]
-    return {"lines": lines, "view": view(ev, name, None, [])[:2] + [{"kind": "text", "lines": lines}]}, trace
+    contract = trace.get("support") or {}
+    tail = [contract["limitation"]] if contract.get("status") != "insufficient" and contract.get("limitation") else []
+    if trace.get("next_check"):
+        tail.append(trace["next_check"])
+    lines = [*said, *tail, *extra]
+    blocks = [] if contract.get("status") == "insufficient" else view(ev, name, None, [])[:2]
+    return {"lines": lines, "view": blocks + [{"kind": "text", "lines": lines}]}, trace
 
 
-def answer(user, items, complete=None, today=None, plan=None, question=None):
+def answer(user, items, complete=None, today=None, plan=None, question=None, hypothesis=None):
     """설명 요청의 항목들 → {"lines", "notices", "explain": {llm, rejected, failed}} (항목마다 근거 → 문장)
     llm = 설명 LLM 을 쓰게 했는지, rejected = 응답을 검사에서 버림, failed = 호출 실패 · 상한 (둘 다 템플릿으로 답함, 개발 표시용)
     plan = B(MEMO 26) 계획 · 답 LLM complete — 주면 항목 하나의 증감 설명을 B 로 먼저 답하고, 실패 · 시간 초과면 아래 템플릿 그대로.
@@ -531,7 +538,7 @@ def answer(user, items, complete=None, today=None, plan=None, question=None):
         ev = evidence(user, item, today)
         name = scope(item)  # 세부 지출 대신 본 항목은 "식비 전체"
         if plan is not None and len(items) == 1 and ev.get("kind") != "mix":
-            planned, trace = _planned(ev, item, question or "", plan)
+            planned, trace = _planned(ev, item, question or "", plan, hypothesis=hypothesis)
             if planned is not None:
                 lines += planned["lines"]
                 views.append(planned["view"])
@@ -549,7 +556,7 @@ def answer(user, items, complete=None, today=None, plan=None, question=None):
             continue
         lines.append(TEXT["basis"])
         body = None
-        if complete is not None:
+        if complete is not None and plan is None:  # B 검사 실패 뒤 더 느슨한 옛 설명 LLM으로 우회하지 않는다
             table = facts(ev)
             payload = {"scope": name, "requested": item.get("instead_of"), "direction": "up" if ev["delta"] > 0 else "down",
                        "facts": [{"key": f["key"], "label": f["label"]} for f in table]}

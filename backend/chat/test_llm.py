@@ -121,8 +121,9 @@ class ServiceErrorTest(SimpleTestCase):
         with self.assertRaises(ResponseError):
             c.complete("s", "u")
         self.now += 29
-        with self.assertRaises(CapReached):
+        with self.assertRaises(CapReached) as blocked:
             c.complete("s", "u")  # 쉬는 동안은 보내지 않는다
+        self.assertEqual(blocked.exception.kind, "rate_limit")
         self.assertEqual(http.sent, 1)
         self.now += 1
         self.assertEqual((c.complete("s", "u"), http.sent), ("{}", 2))
@@ -147,8 +148,9 @@ class ServiceErrorTest(SimpleTestCase):
         c.complete("s", "u")
         with self.assertLogs("chat.llm.openai_rest", "WARNING") as logs:
             for _ in range(3):
-                with self.assertRaises(CapReached):
+                with self.assertRaises(CapReached) as blocked:
                     c.complete("s", "u")
+                self.assertEqual(blocked.exception.kind, "call_limit")
         self.assertEqual(len(logs.output), 1)
 
     def test_eval_default_still_stops_on_rate_limit(self):

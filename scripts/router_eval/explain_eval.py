@@ -99,10 +99,15 @@ def score(case, trace, first):
     if not out["stop"]:
         why.append(f"stop={trace.get('stop')}")
     if case["stop"] is not None:
-        return {**out, "plan": None, "answer": None, "why": why}
+        return {**out, "plan": None, "answer": None, "semantic": None, "why": why}
     plan = trace.get("plan") or {"queries": []}
-    got = [(q["by"], bool(q["focus"])) for q in plan["queries"]]
-    ok = True
+    got = [(q["by"], bool(q["focus"])) for q in trace.get("queries", plan["queries"])]
+    ok = trace.get("plan") is not None
+    if not ok:
+        why.append("plan_missing_response")
+    if trace.get("dropped"):
+        ok = False
+        why.append("plan_dropped_query")
     for m in case["plan"]["must"]:
         if not any(by == m["by"] and (not m.get("focus") or focus) for by, focus in got):
             ok, _ = False, why.append(f"plan_missing={m['by']}")
@@ -121,11 +126,16 @@ def score(case, trace, first):
         ans, _ = False, why.append(f"answer_missing={','.join(missing)}")
     if ans and case["answer"]["any"] and not cited & set(case["answer"]["any"]):
         ans, _ = False, why.append("answer_any")
-    out["answer"] = ans
-    # 가설 참고값(hypothesis 단어 목록)과 계획 LLM 판단 비교 — 단어 목록이 '첫 결과로 답함'이라 볼지 vs 계획 0개
-    guess = claims.hypothesis(case["question"])
-    ref = bool(guess and any(c["axis"] == guess["axis"] and (guess["name"] is None or c["subject"] == guess["name"]) for c in first))
-    out["hypothesis"] = {"ref": guess, "ref_answered": ref, "plan_zero": not got, "differs": ref != (not got)}
+    # axis 포함 여부만으로 부분 집합/전체 혼동을 성공으로 세지 않는다. 가설 대상과 서버 판정도 독립 채점한다.
+    expected = case["answer"].get("support")
+    semantic = expected is None or (trace.get("support") or {}).get("status") == expected
+    if "hypothesis" in case:
+        got_hyp = trace.get("hypothesis")
+        want = case["hypothesis"]
+        semantic = semantic and isinstance(got_hyp, dict) and all(got_hyp.get(k) == v for k, v in want.items())
+    if not semantic:
+        why.append("semantic_scope_or_conclusion")
+    out["semantic"], out["answer"] = semantic, ans and semantic
     return {**out, "why": why}
 
 
@@ -156,11 +166,10 @@ def summarize(rows, calls):
         if reason:
             fallbacks[reason] = fallbacks.get(reason, 0) + 1
     ms = sorted(r["ms"] for r in llm)
-    return {"stop": rate("stop"), "plan": rate("plan"), "answer": rate("answer"),
+    return {"stop": rate("stop"), "plan": rate("plan"), "answer": rate("answer"), "semantic": rate("semantic"),
             "fallback": {"count": sum(fallbacks.values()), "of": len(llm), "reasons": fallbacks},
             "latency_ms": {"median": statistics.median(ms) if ms else None, "max": ms[-1] if ms else None,
                            "p90": ms[min(len(ms) - 1, int(len(ms) * 0.9))] if ms else None},
-            "hypothesis_differs": [r["id"] for r in rows if r.get("hypothesis", {}).get("differs")],
             "calls": len(calls), "call_errors": sum(1 for c in calls if c["error"])}
 
 

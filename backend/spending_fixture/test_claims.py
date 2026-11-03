@@ -55,12 +55,12 @@ class ClaimValueTest(TestCase):
         got = [(c["axis"], c["subject"], c["direction"], c["rank"], c["share"], c["text"]) for c in C.first_claims(ev, item)]
         self.assertEqual([g[:5] for g in got[:5]], [("scope", "식비", "up", None, None), ("count", "결제 건수", "down", None, None),
                                                    ("average", "건당 평균", "up", None, None), ("time_slot", "점심", "up", 1, "all"),
-                                                   ("visit", "자주 가던 곳", "up", None, "all")])
-        # 서버 절 (26-16) — 방향 · 조사 · 단위까지. 시간대 · 자주 가던 곳 금액은 템플릿의 '점심 시간대(+48,000원)' · '42,000원'과 같다
+                                                   ("visit", "지난달에도 간 곳", "up", None, "all")])
+        # 서버 절 (26-16) — 방향 · 조사 · 단위까지. 시간대 · 지난달에도 간 곳 금액은 템플릿의 '점심 시간대(+48,000원)' · '42,000원'과 같다
         self.assertEqual([g[5] for g in got[:3]], ["식비 지출은 지난달 같은 기간보다 42,000원 늘었어요.", "결제 건수는 29건에서 26건으로 줄었어요.",
                                                   "건당 평균은 12,000원에서 15,000원으로 올랐어요."])
         self.assertRegex(got[3][5], r"^고정지출을 빼고 보면 점심 시간대는 [\d,]+원에서 [\d,]+원으로 48,000원 늘어 시간대 중 가장 많이 늘었어요\.$")
-        self.assertRegex(got[4][5], r"^자주 가던 곳\(\d+곳\)에서 42,000원 늘었어요\.$")
+        self.assertRegex(got[4][5], r"^지난달에도 간 곳\(\d+곳\)에서 42,000원 늘었어요\.$")
         shops = [c for c in C.first_claims(ev, item) if c["axis"] == "merchant"]
         self.assertEqual([(c["direction"], c["rank"]) for c in shops], [("up", 1), ("up", 2), ("up", 3), ("down", 1), ("down", 2), ("down", 3)])
         sent = json.dumps(C.for_llm(C.first_claims(ev, item)), ensure_ascii=False)
@@ -97,24 +97,24 @@ class StopTest(TestCase):
         item = a.store.get_analysis("talk-1")["items"][0]
         ev = explain.evidence(user("A"), item, TODAY)
         # 첫 결과로 답할 수 있는지는 계획 LLM 이 정한다(26-12 ②) — 서버는 멈추지 않고, 가설 축은 평가용 참고값으로만
-        self.assertEqual(C.stop(ev, item, "건당 금액이 올라서야?", C.first_claims(ev, item)), (None, {"axis": "average", "name": None}))
+        self.assertEqual(C.stop(ev, item, C.first_claims(ev, item)), None)
 
     def test_minjae_needs_a_plan(self):
         item, ev = _ev("B", "FOOD")
-        reason, guess = C.stop(ev, item, "왜 식비 늘었어?", C.first_claims(ev, item))
-        self.assertEqual((reason, guess), (None, {"axis": "category", "name": "식비"}))
+        reason = C.stop(ev, item, C.first_claims(ev, item))
+        self.assertIsNone(reason)
         # 가게별 순위는 첫 주장에 이미 있다 → 추가로 볼 묶음은 시간대 · 요일 전체 순위
         self.assertEqual(C.candidates(ev, item, C.first_claims(ev, item)), ["time_slot", "weekday"])
-        self.assertEqual(C.stop(ev, item, "왜 식비 늘었어?", [], used=2)[0], "nothing_more")  # 상한
+        self.assertEqual(C.stop(ev, item, [], used=2), "nothing_more")  # 상한
 
     def test_jiwoo_insufficient(self):
         item, ev = _ev("C", "FOOD")  # 지난달 자료 없음
-        self.assertEqual((ev["state"], C.stop(ev, item, "왜 식비 늘었어?", [])[0]), ("incomplete", "insufficient"))
+        self.assertEqual((ev["state"], C.stop(ev, item, [])), ("incomplete", "insufficient"))
 
     def test_delivery_question_is_not_answered_by_first_claims(self):
         item, ev = _ev("A", "FOOD")
-        reason, guess = C.stop(ev, item, "배달 때문이야?", C.first_claims(ev, item))
-        self.assertEqual((reason, guess["focus"]), (None, "배달앱"))  # 계획 LLM 이 배달 묶음을 찾아보게
+        reason = C.stop(ev, item, C.first_claims(ev, item))
+        self.assertIsNone(reason)  # 계획 LLM 이 배달 묶음을 찾아보게
 
 
 @fixture_db_only
@@ -136,38 +136,29 @@ class CheckTest(TestCase):
     def test_good_answer_passes_with_server_clauses(self):
         i = self.id
         out, why = C.check(_answer(
-            (f"{{{i['scope']}}}", [i["scope"]]),
-            (f"네, {{{i['average']}}} 반면 {{{i['count']}}}", [i["average"], i["count"]]),
-            (f"특히 {{{i['time_slot']}}}", [i["time_slot"]])), self.claims, {"axis": "average", "subject": None})
+            (f"{{{i['average']}}} 반면 {{{i['count']}}}", [i["average"], i["count"]]),
+            (f"{{{i['scope']}}}", [i["scope"]])), self.claims, {"axis": "average", "subject": None})
         self.assertEqual(why, [])
-        self.assertEqual(out[1], "네, 건당 평균은 12,000원에서 15,000원으로 올랐어요. 반면 결제 건수는 29건에서 26건으로 줄었어요.")
-        delivery = {"axis": "merchant", "subject": "배달"}
-        out, why = C.check(_answer((f"배달 때문이라고 보기는 어려워요. {{{i['absent']}}}", [i["absent"]])), self.claims, delivery)
-        self.assertTrue(out[0].startswith("배달 때문이라고 보기는 어려워요. 확인한 배달앱 이름("), why)
-        # 같은 축 반대 방향(건수 감소) 주장을 인용한 완곡한 가설 부정은 허용 (26-16 ②)
-        self.assertEqual(C.check(_answer((f"자주 사 먹어서라고 보기는 어려워요. {{{i['count']}}}", [i["count"]])), self.claims,
-                                 {"axis": "count", "subject": None})[1], [])
+        self.assertEqual(out[0], "건당 평균은 12,000원에서 15,000원으로 올랐어요. 반면 결제 건수는 29건에서 26건으로 줄었어요.")
+        out, why = C.check(_answer((f"{{{i['absent']}}}", [i["absent"]])), self.claims,
+                           {"axis": "merchant", "subject": "배달"})
+        self.assertTrue(out[0].startswith("확인한 배달앱 이름("), why)
 
-    def test_yes_no_follow_the_hypothesis_claim(self):
-        """26-17 ①: '네' = 같은 축 · 대상이 늘었고 그 축 1위(동률 포함) · '아니요' = 반대 방향 · 없음 · 가설 없으면 둘 다 금지"""
-        i, avg, count = self.id, {"axis": "average", "subject": None}, {"axis": "count", "subject": None}
-        night = {"axis": "time_slot", "subject": "밤"}
-        claims = self.claims + C.compare_group(self.ev, self.item, "time_slot", start=len(self.claims) + 1)
-        night_id = next(c["id"] for c in claims if c["subject"] == "밤")
-        cases = [((f"네, {{{i['average']}}}", [i["average"]]), avg, []),                   # 건당 평균 증가 → 네
-                 ((f"네, {{{i['count']}}}", [i["count"]]), count, ["1:yes_no"]),           # 건수는 줄었는데 네
-                 ((f"아니요, {{{i['count']}}}", [i["count"]]), count, []),                 # 건수 감소 → 아니요
-                 ((f"아니요, {{{i['average']}}}", [i["average"]]), avg, ["1:yes_no"]),     # 늘었는데 아니요
-                 ((f"네, {{{night_id}}}", [night_id]), night, ["1:yes_no"]),               # 밤은 늘었지만 1위가 아님 (e05)
-                 ((f"네, {{{i['scope']}}} 특히 {{{i['time_slot']}}}", [i["scope"], i["time_slot"]]), None, ["1:yes_no"])]  # 가설 없는데 네 (e12)
-        for sentence, hyp, want in cases:
-            with self.subTest(sentence=sentence[0]):
-                self.assertEqual(C.check(_answer(sentence), claims, hyp, [C.key_claims(claims)] if hyp is None else [])[1], want)
+    def test_observations_do_not_license_yes_no_or_soft_negation(self):
+        # 증감·검색 부재가 맞아도 사용자가 추측한 원인·행동의 긍정/부정은 별개의 결론이다.
+        for axis in ("average", "count"):
+            for prefix in ("네, ", "아니요, ", "자주 사 먹어서라고 보기는 어려워요. "):
+                with self.subTest(axis=axis, prefix=prefix):
+                    cid = self.id[axis]
+                    lines, why = C.check(_answer((prefix + "{" + cid + "}", [cid])), self.claims,
+                                         {"axis": axis, "subject": None})
+                    self.assertIsNone(lines)
+                    self.assertIn("1:free_text", why)
 
     def test_key_factor_is_required_without_hypothesis(self):
         """26-17 ②: 가설 없는 '왜 늘었어?'는 가장 크게 바뀐 묶음 주장(동률이면 그중 하나)을 인용해야 한다"""
         i, key = self.id, C.key_claims(self.claims)
-        # 윤서 식비: 점심 시간대 · 범카츠건대역점 모두 +48,000 (동률 — 둘 중 하나면 된다), 자주 가던 곳 +42,000 보다 큼
+        # 윤서 식비: 점심 시간대 · 범카츠건대역점 모두 +48,000 (동률 — 둘 중 하나면 된다), 지난달에도 간 곳 +42,000 보다 큼
         self.assertEqual([c["subject"] for c in self.claims if c["id"] in key], ["점심", "범카츠건대역점"])
         self.assertEqual(C.check(_answer((f"{{{i['scope']}}}", [i["scope"]])), self.claims, None, [key])[1], ["0:missing_must1"])
         self.assertEqual(C.check(_answer((f"{{{i['scope']}}} 특히 {{{i['time_slot']}}}", [i["scope"], i["time_slot"]])),
@@ -183,13 +174,13 @@ class CheckTest(TestCase):
         hyp = {"axis": "weekday", "subject": "주말"}
         self.assertEqual(weekend["text"].split(" 하루 평균")[0], "고정지출을 빼고 보면 주말")
         only_saturday = C.check(_answer((f"주말 쇼핑이라고 보기는 어려워요. {{{saturday['id']}}}", [saturday["id"]])), claims, hyp)[1]
-        self.assertEqual(only_saturday, ["1:negation"])  # 토요일 하나로 주말을 부정하지 않는다 (e11)
+        self.assertIn("0:hypothesis_first", only_saturday)  # 토요일 하나로 주말을 부정하지 않는다 (e11)
         if weekend["direction"] in ("down", "same"):
-            self.assertEqual(C.check(_answer((f"주말 쇼핑이라고 보기는 어려워요. {{{weekend['id']}}}", [weekend["id"]])), claims, hyp)[1], [])
+            self.assertEqual(C.check(_answer((f"{{{weekend['id']}}}", [weekend["id"]])), claims, hyp)[1], [])
         three = [c["id"] for c in claims[:3]]
-        self.assertEqual(C.check(_answer(("{%s} {%s} {%s}" % tuple(three), three)), claims, hyp)[1], ["1:too_many_clauses"])
+        self.assertIn("1:too_many_clauses", C.check(_answer(("{%s} {%s} {%s}" % tuple(three), three)), claims, hyp)[1])
         slot = [c for c in claims if c["axis"] == "time_slot"] + [c for c in claims if c["axis"] == "weekday" and c["subject"] == "토요일"]
-        out, _ = C.check(_answer((f"{{{slot[0]['id']}}}", [slot[0]["id"]]), (f"또 {{{slot[1]['id']}}}", [slot[1]["id"]])), claims, hyp)
+        out, _ = C.check(_answer((f"{{{slot[0]['id']}}}", [slot[0]["id"]]), (f"또 {{{slot[1]['id']}}}", [slot[1]["id"]])), claims)
         self.assertEqual(sum(line.count(C.FIXED) for line in out), 1)
 
     def test_bad_answers_are_all_rejected(self):
@@ -211,7 +202,7 @@ class CheckTest(TestCase):
             with self.subTest(reason=reason):
                 out, why = C.check(_answer((f"{{{i['scope']}}}", [i["scope"]]), sentence), self.claims)
                 self.assertIsNone(out)
-                self.assertIn(f"2:{reason.strip()}", why)
+                self.assertIn(f"2:{reason.strip() if reason.strip() in ('number', 'claim_id', 'placeholder', 'no_clause') else 'free_text'}", why)
 
     def test_unclassified_scope_clause_says_classified_basis(self):
         ev = {**self.ev, "unclassified": (20_000, 10_000)}
@@ -250,7 +241,7 @@ class TimeLimitTest(TestCase):
     def run_with(self, plan, answer):
         from unittest import mock
         item, ev = _ev("B", "FOOD")
-        sid = C.first_claims(ev, item)[0]["id"]
+        sid = _by(C.first_claims(ev, item), "average")["id"]
         slow = _Slow(plan, answer, _answer((f"{{{sid}}}", [sid])))
         with mock.patch.object(C, "clock", slow.clock):
             lines, trace = C.run(ev, item, "왜 식비가 늘었어?", slow)
@@ -258,14 +249,44 @@ class TimeLimitTest(TestCase):
 
     def test_fast_calls_answer(self):
         lines, trace, slow = self.run_with(1, 1)
-        self.assertEqual((lines, trace["fallback"]), (["식비 지출은 지난달 같은 기간보다 224,000원 늘었어요."], None))
+        item, ev = _ev("B", "FOOD")
+        self.assertEqual((lines, trace["fallback"]), ([_by(C.first_claims(ev, item), "average")["text"]], None))
         self.assertEqual(slow.calls, [("plan", C.TIMEOUT - C.ANSWER_MIN), ("answer", C.TIMEOUT - 1)])
 
     def test_slow_plan_and_slow_answer_stop_at_the_limit(self):
         lines, trace, slow = self.run_with("hang", "hang")
+        self.assertEqual((lines, trace["fallback"]), (None, "plan_failed"))
+        self.assertEqual([c[0] for c in slow.calls], ["plan"])
+        self.assertLessEqual(slow.now, C.TIMEOUT)  # 계획 실패면 답을 더 호출하지 않는다
+
+    def test_slow_answer_stops_at_the_limit(self):
+        lines, trace, slow = self.run_with(1, "hang")
         self.assertEqual((lines, trace["fallback"]), (None, "answer_failed"))
-        self.assertLessEqual(slow.now, C.TIMEOUT)  # 계획 9초 + 답 3초 = 12초에서 끝난다 (예전: 30초씩)
+        self.assertLessEqual(slow.now, C.TIMEOUT)
 
     def test_no_time_left_skips_the_answer_call(self):
         lines, trace, slow = self.run_with(10.5, 1)  # 계획이 한도를 넘겨 10.5초 → 답에 1.5초뿐
         self.assertEqual((lines, trace["fallback"], [c[0] for c in slow.calls]), (None, "no_time", ["plan"]))
+
+
+@fixture_db_only
+class QueryTopShareTest(TestCase):
+    """26-19 ③: 추가 조회 1위는 범위 전체 증감의 20% 이상일 때만 필수 — 작으면 답에 안 써도 통과, 분석 과정에 '답에 안 쓴 조회'"""
+
+    @classmethod
+    def setUpTestData(cls):
+        seed.apply(DESIGN)
+
+    def test_general_explanation_skips_incomparable_daily_average(self):
+        item, ev = _ev("B", "FOOD")  # 식비 +224,000, 요일 1위 하루 평균 변화는 그 20%(44,800) 미만
+        first = C.first_claims(ev, item)
+        key = next(i for i in C.key_claims(first))
+
+        def complete(system, user, timeout=None):
+            if system == C.PLAN_PROMPT:
+                return json.dumps({"queries": [{"by": "weekday", "focus": None}], "reason": "요일을 본다", "hypothesis": None})
+            return _answer((f"{{{first[0]['id']}}}", [first[0]["id"]]), (f"특히 {{{key}}}", [key]))
+        lines, trace = C.run(ev, item, "왜 식비가 늘었어?", complete)
+        self.assertIsNotNone(lines, trace)
+        self.assertEqual((trace["must"], trace["unused_queries"], trace["queries"]), ([[first[0]["id"]], C.key_claims(first)], [], []))
+        self.assertEqual(trace["query_decisions"][0]["reason"], "different_metric")

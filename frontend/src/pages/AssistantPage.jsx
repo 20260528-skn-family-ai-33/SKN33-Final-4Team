@@ -24,28 +24,40 @@ const LOOK = {
 // 개발 모드 · 켜짐 엔진에서만: 가짜 해석이 아는 문장 (backend/chat/llm/fake.py · legacy.SAID)
 const EXAMPLES = ['이번 달 얼마 썼어?', '그럼 교통비는?', '이번 달 3개월 식비', '커피 얼마나 썼어?', '지난달보다 식비 더 썼어?',
   '왜 식비가 늘었어?', '최근 6개월 식비 어때?', '소비 분석해줘', '최근 3개월 식비 예산 얼마나 남았어?', '식비 예산 줄여줘', '날씨 어때?',
-  '이번 달 카드 얼마 긁었지?', '과자서원에서 얼마 썼어?', '식비는 왜 늘었을까?', '제일 많이 쓴 데는 왜 많이 나왔을까?']
+  '이번 달 카드 얼마 긁었지?', '과자서원에서 얼마 썼어?', '식비는 왜 늘었을까?', '제일 많이 쓴 데는 왜 많이 나왔을까?',
+  '지난달 식비는 왜 많이 나왔어?', '지난주 식비는 왜 많이 나왔어?', '이번 달 주말 식비 왜 늘었어?',
+  '커피를 자주 사 먹어서 그래?', '점심값이 비싸진 거야?', '점심을 더 자주 먹어서 그래?', '건당 금액이 올라서야?', '배달 때문이야?']
 
 // 개발 모드 전용: B 증감 설명의 분석 과정 (서버가 더미 설정에서만 devTrace 를 준다 — 서비스 응답 칸 아님, MEMO 26)
 const STOP = { insufficient: '근거 부족 — 서버가 멈춤', nothing_more: '더 볼 묶음 없음 · 상한 — 서버가 멈춤' }
-const FALLBACK = { template: '근거 부족이라 지금 설명(거절 · 안내)', rejected: '검사 탈락 → 지금 템플릿 설명', timeout: '시간 초과 → 지금 템플릿 설명',
+const FALLBACK = { plan_failed: '계획 호출 실패 → 서버 설명', invalid_plan: '계획 형식 오류 → 서버 설명', template: '근거 부족이라 지금 설명(거절 · 안내)', rejected: '검사 탈락 → 지금 템플릿 설명', timeout: '시간 초과 → 지금 템플릿 설명',
   answer_failed: '답 LLM 실패 → 지금 템플릿 설명', no_time: '답 기다릴 시간 부족 → 지금 템플릿 설명' }
 
 function Trace({ trace }) {
-  const query = (q) => q.by + (q.focus ? `(${q.focus})` : '')
+  const query = (q) => q.by + (q.focus ? `(${q.focus})` : '') + (q.metric ? ` · ${q.metric}` : '')
+  const reasons = { already_supported: '기존 근거로 충분', unsupported_target: '자료에서 구분할 수 없는 대상', outside_scope: '조회 범위 밖',
+    missing_target_metric: '질문한 대상·지표를 비교', unrequested_target: '질문에 없는 대상', different_metric: '증가액과 단위가 달라 생략', empty_average: '한쪽 기간에 결제 없음',
+    missing_time_or_merchant: '시간·가게 정보 부족' }
+  const entry = trace.entry
+  const planned = 'stop' in trace  // B 흐름까지 갔는지 (아니면 B 전 단계만)
   return (
     <details className="mc-fx-dev">
       <summary>분석 과정 (개발용)</summary>
       <ul className="mc-spend-lines">
-        <li>멈춤: {trace.stop ? STOP[trace.stop] : '없음 — 계획 LLM 이 정함'}</li>
+        {entry && <li>해석: {JSON.stringify(entry.reading)}</li>}
+        {entry && <li>dialog: {entry.decision.status}{entry.decision.reason ? ` · ${entry.decision.reason}` : ''}{entry.decision.asking ? ` · 묻기 ${entry.decision.asking}` : ''}{entry.items.length > 0 && ` · 조회 ${entry.items.map((i) => `${i.type}${i.category ? `/${i.category}` : ''}`).join(', ')}`}</li>}
+        {entry && <li>설명 요청: {entry.explain ? '예 — B 로' : '아니요'}</li>}
+        {planned && <li>멈춤: {trace.stop ? STOP[trace.stop] : '없음 — 계획 LLM 이 정함'}</li>}
         {trace.plan && <li>계획: {trace.plan.queries.length ? trace.plan.queries.map(query).join(', ') : '추가 조회 없음'} · {trace.plan.reason}</li>}
-        {trace.plan === null && <li>계획: 응답 형식이 틀려 추가 조회 없이</li>}
+        {planned && trace.plan === null && <li>계획: 응답 없음 · 서버 설명으로 대체</li>}
         {(trace.dropped ?? []).length > 0 && <li>버린 조회(서버 검사): {trace.dropped.map(query).join(', ')}</li>}
-        {trace.plan && <li>가설: {trace.hypothesis ? `${trace.hypothesis.axis}${trace.hypothesis.subject ? `(${trace.hypothesis.subject})` : ''}` : '없음'}{(trace.must ?? []).length > 0 && ` · 꼭 쓸 주장 ${trace.must.map((g) => g.join('/')).join(', ')}`}</li>}
+        {trace.plan && <li>가설: {trace.hypothesis ? `${trace.hypothesis.target ?? trace.hypothesis.axis} · ${trace.hypothesis.metric ?? trace.hypothesis.axis}${trace.hypothesis.subject ? `(${trace.hypothesis.subject})` : ''}` : '없음'}{(trace.must ?? []).length > 0 && ` · 꼭 쓸 주장 ${trace.must.map((g) => g.join('/')).join(', ')}`}</li>}
+        {trace.support && <li>근거: {trace.support.status === 'observation' ? '질문 대상의 비교 근거 확인' : '확인 불가'}{trace.support.limitation && ` · ${trace.support.limitation}`}</li>}
+        {(trace.queryDecisions ?? []).map((d, n) => <li key={n}>{d.action === 'executed' ? '실행' : '생략'}: {query(d.query)} · {reasons[d.reason] ?? d.reason}</li>)}
         {(trace.unusedQueries ?? []).length > 0 && <li>답에 안 쓴 조회: {trace.unusedQueries.join(', ')}</li>}
         {(trace.used ?? []).length > 0 && <li>쓴 주장: {trace.used.join(', ')}</li>}
         {trace.check && <li>검사: {trace.check.length ? `탈락 ${trace.check.join(', ')}` : '통과'}</li>}
-        <li>결과: {trace.fallback ? FALLBACK[trace.fallback] ?? trace.fallback : 'B 답'}</li>
+        {planned && <li>결과: {trace.fallback ? FALLBACK[trace.fallback] ?? trace.fallback : trace.support?.status === 'insufficient' ? '확인 불가 안내' : 'B 답'}</li>}
       </ul>
     </details>
   )
@@ -191,8 +203,10 @@ export default function AssistantPage() {
         {import.meta.env.DEV && info?.engine === 'router' && (
           <details className="mc-fx-dev">
             <summary>개발용 · 가짜 해석 예시 문장</summary>
+            <p>더미 A(윤서)에서 확인: 새 대화 → 지난달보다 식비 더 썼어? → 점심값이 비싸진 거야? / 커피를 자주 사 먹어서 그래?</p>
+            <p>점심은 대상의 평균과 가격 판단의 한계를, 커피는 품목 식별 불가를 안내해야 합니다. 기간 확인은 새 대화 → 지난달 식비는 왜 많이 나왔어? → 그럼 교통비는?</p>
             <div className="mc-chipbar">
-              <button type="button" onClick={startOver}>새 대화</button>
+              <button type="button" disabled={busy} onClick={startOver}>새 대화</button>
               {EXAMPLES.map((q) => <button key={q} type="button" disabled={busy} onClick={() => send({ text: q }, q)}>{q}</button>)}
             </div>
           </details>

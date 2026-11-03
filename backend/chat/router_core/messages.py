@@ -74,6 +74,7 @@ SUPPORTED_VIEWS = "지금은 이번 달 소비, 지난달 같은 기간 대비, 
 # 취소 세 가지를 구분한다: 질문 취소(라우터 · 소비가 직접) / 에이전트에 취소 요청 전달 / 서버가 확인한 작업 취소(OUTCOME)
 CANCELLED = {"cancel": "방금 질문은 취소했어요.", "declined": "알겠어요. 확인하지 않을게요."}
 FAILED = {
+    "call_limit": "설정된 AI 호출 상한에 도달해 질문을 처리하지 못했어요. 호출 한도를 확인한 뒤 다시 시도해 주세요.",
     "router": "지금은 이해하지 못했어요, 아래에서 골라 주세요.",
     "task_check_failed": "예산 조정 상태를 확인하지 못했어요. 잠시 후 다시 시도해 주세요.",
     "agent": "지금은 처리하지 못했어요. 잠시 후 다시 말씀해 주세요.",
@@ -184,7 +185,7 @@ def _decision(status, asking, reason, ask_about, options, router):
     if status == "cancelled":
         return {"lines": [CANCELLED[reason]], "choices": []}
     if status == "failed":
-        if reason == "task_check_failed":
+        if reason in ("task_check_failed", "call_limit"):
             return {"lines": [FAILED[reason]], "choices": []}
         return {"lines": [FAILED["router"]], "choices": [dict(c) for c in CHOICES]}  # 라우터 해석 실패 (chat.md)
     raise ValueError(f"문구 없는 결정: {status}/{reason}")
@@ -231,8 +232,10 @@ def render(turn, budget_outcome=None):
         for key in r["reply"].get("suggest", []):
             notices.append(SUGGEST[key][0])
             out["choices"] = [*out["choices"], dict(SUGGEST[key][1])]
+    elif r["status"] == "failed" and r.get("error") == "call_limit":
+        out = {"lines": [FAILED["call_limit"]], "choices": []}
     elif r["status"] == "failed" and r.get("error") == "call":
-        # 에이전트 해석의 LLM 호출 실패 · 상한(MEMO 25-12) = 라우터 해석 실패와 같은 문구 · 선택지 (상태는 에이전트가 바꾸지 않았다)
+        # 에이전트 해석의 일반 호출 실패 = 라우터 해석 실패와 같은 문구 · 선택지 (상태는 에이전트가 바꾸지 않았다)
         out = {"lines": [FAILED["router"]], "choices": [dict(c) for c in CHOICES]}
     elif r["status"] == "failed":
         out = {"lines": [FAILED["agent"]], "choices": []}

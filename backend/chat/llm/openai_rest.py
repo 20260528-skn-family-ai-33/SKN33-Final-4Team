@@ -31,6 +31,10 @@ HTTP_KINDS = {400: "bad_request", 401: "auth", 403: "permission", 404: "not_foun
 class CapReached(Exception):
     """호출 상한 또는 앞선 fatal 오류 때문에 보내지 않은 요청"""
 
+    def __init__(self, kind="call_limit"):
+        super().__init__(kind)
+        self.kind = kind
+
 
 class ResponseError(Exception):
     """보낸 요청이 쓸 수 있는 텍스트 없이 끝남. kind 로 원인 구분"""
@@ -70,7 +74,7 @@ class ResponsesClient:
         with self._lock:  # 상한 확인 → 장부 → 시도 기록을 한 번에 (동시 요청이 상한을 넘지 않게)
             if self.fatal or (self.paused_until is not None and self.clock() < self.paused_until):
                 self.blocked += 1
-                raise CapReached()
+                raise CapReached(self.fatal or "rate_limit")
             if self.max_calls is not None and len(self.attempts) >= self.max_calls:
                 self._capped()
             if self.on_attempt:

@@ -97,6 +97,7 @@ intents: 해당하는 것 모두 (복합이면 여러 개)
 - "spending": 내 소비 · 남은 예산의 조회 · 분석 · 비교 · 추이 · 설명 (예: "이달 외식비 정리해줘", "병원비 예산 남은 거 알려줘")
 - "budget_adjust": 예산을 늘리기 · 줄이기 · 바꾸기 (예: "교육비 예산 3만 원 올려줘")
 - "policy": 청년 정책 · 지원 제도 추천이나 찾기 (예: "청년 월세 지원 받을 수 있어?")
+- 소비·예산 조회는 누구의 내역을 묻든 "spending"으로 분류한다. 다른 사람의 내역을 볼 수 있는지는 소비 담당이 권한 안내로 처리한다.
 - "unsupported": 위 세 기능이 아닌 주제 (예: "주식 종목 추천해줘")
 - "unclear": 무엇을 원하는지 알 수 없음
 - 소비 분석 직전 맥락(context.previous_spending)이 있고 문장이 그것을 이어받는 짧은 후속 질문이면 "spending" (예: "쇼핑 쪽은?")
@@ -126,5 +127,5 @@ def read(text, pending, complete, context=None):
         payload = {"text": text, "pending": asked, "context": context or {}}
         data = json.loads(complete(PROMPT, json.dumps(payload, ensure_ascii=False)))
     except Exception as error:  # SDK · 호출 오류 종류를 모른다
-        raise ReadFailed("call") from error
+        raise ReadFailed("call_limit" if getattr(error, "kind", None) == "call_limit" else "call") from error
     return parse(data)

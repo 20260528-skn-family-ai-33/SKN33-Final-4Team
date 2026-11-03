@@ -102,11 +102,20 @@ def amount(fig, category):
     return fig["category"]["amount"] if category else fig["total"]
 
 
-def _detail(items, category):
+def _detail(items, category, include_fixed=False):
     """설명 근거용 소비 집계: 금액 · 결제 건수(순금액 > 0) · 건당 평균 · 가게별 · 카테고리별 · 고정지출 합
     [임시] 건수 = 순금액이 0 보다 큰 소비 거래 (전액 취소는 세지 않는다), 가게 = normalize_merchant (MEMO 20번)"""
     picked = [r for r in items if r["transaction_type"] == "spending" and (category is None or r["category"] == category)]
     paid = [r for r in picked if r["net_amount"] > 0]
+    metrics = {axis: {} for axis in ("merchant", "category", "time_slot", "weekday")}
+    for r in paid:
+        dimensions = [("merchant", normalize_merchant(r["merchant_name"])), ("category", r["category"])]
+        if include_fixed or r["funding"] != "fixed":
+            dimensions += [("time_slot", scope.slot_of(r["occurred_time"])), ("weekday", r["occurred_on"].weekday())]
+        for axis, key in dimensions:
+            cell = metrics[axis].setdefault(key, {"amount": 0, "count": 0})
+            cell["amount"] += r["net_amount"]
+            cell["count"] += 1
     merchants, categories, slots, days, counts, reducible = {}, {}, {}, {}, {}, {}
     for r in picked:
         name = normalize_merchant(r["merchant_name"])
@@ -130,7 +139,7 @@ def _detail(items, category):
     return {"amount": sum(r["net_amount"] for r in picked), "count": len(paid),
             "average": R.average(sum(r["net_amount"] for r in paid), len(paid)),
             "merchants": merchants, "categories": categories, "slots": slots, "weekdays": days, "counts": counts,
-            "reducible_slots": reducible,
+            "reducible_slots": reducible, "metric_groups": metrics,
             "big": [{"name": normalize_merchant(r["merchant_name"]), "amount": r["net_amount"], "day": r["occurred_on"]} for r in big],
             "fixed": sum(r["net_amount"] for r in picked if r["funding"] == "fixed")}
 
@@ -146,7 +155,7 @@ def spend_query(user, period, category=None, *, where=None, overview=False, deta
     if overview:
         fig["top_spending"], fig["shares"] = R.top_spending(fig["by_category"]), R.shares(fig)
     if detail:
-        fig["detail"] = _detail(items, category)
+        fig["detail"] = _detail(items, category, bool((where or {}).get("include_fixed")))
     out = {"period": period, "coverage": cov, "observed": fig, "confirmed": fig if cov["state"] == "complete" else None}
     return {**out, "fixed_excluded": stats["fixed_excluded"], "fixed_names": stats["fixed_names"]} if "fixed_excluded" in stats else out
 
@@ -222,7 +231,8 @@ def check_query(item):
         raise ValueError(f"top_n 은 1~{TOP_MAX}, 묶기와 함께: {q!r}")
 
 
-def _periods(item, today):
+def query_periods(item, today):
+    """범용 조회와 구성 설명이 공유하는 기간 해석. 중간 날짜를 채워 이어 붙이지 않는다."""
     period = item["query"]["period"]
     if period in ("month", "range"):
         found = month_of(today, item.get("month")) if period == "month" else \
@@ -293,7 +303,7 @@ def query(user, item, today):
     """10번 범용 조회 → {"periods", "states", "coverage", "observed", "confirmed", "no_time", "days"}
     모든 기간이 complete 일 때만 confirmed. 소비만 · 카테고리 · 범위 조건은 rows · 여기서. 금액은 순금액(취소 차감)"""
     q, category, stats = item["query"], item.get("category"), {"no_time": 0, "fixed_excluded": 0, "fixed_names": []}
-    periods, states, picked, unclassified = _periods(item, today), [], [], 0
+    periods, states, picked, unclassified = query_periods(item, today), [], [], 0
     for period in periods:
         states.append(_ok(coverage(user, period))["state"])
         spent = [r for r in rows(user, period, item, stats, category) if r["transaction_type"] == "spending"]

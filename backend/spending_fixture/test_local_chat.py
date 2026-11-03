@@ -201,7 +201,7 @@ class LiveExplainTest(TestCase):
         seed.apply(DESIGN)
 
     def setUp(self):
-        self.sent, self.explain_reply = [], {"sentences": ["건당 평균 결제액이 {F4}에서 {F5}로 바뀌었어요."]}
+        self.sent, self.explain_reply = [], {"sentences": ["{F2}"]}
         self.ledger = os.path.join(tempfile.mkdtemp(), "ledger.json")
         reader = RoleFakeLLM({**local_chat.SAID, **local_chat.EXTRA_SAID})
 
@@ -227,7 +227,7 @@ class LiveExplainTest(TestCase):
         before = len(self.sent)
         out = self.say("왜 식비가 늘었어?")
         self.assertEqual(self.sent[before:], ["spending_reading", "spending_explanation"])  # 해석 1 + 설명 1, 설명 전용 스키마
-        self.assertEqual(out["bot"]["lines"][2], "건당 평균 결제액이 12,000원에서 15,000원으로 바뀌었어요.")
+        self.assertEqual(out["bot"]["lines"][2], "건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요.")
         self.assertIn("근거 문장은 설명 LLM 이 쓰고 숫자는 서버 값을 끼웠어요.", text(out))
         self.assertEqual(out["calls"]["used"], len(self.sent))
         with open(self.ledger) as f:

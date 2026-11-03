@@ -88,6 +88,9 @@ SPENDING_SAID = {
     "이번 달 포함 최근 3개월 식비 몇 번 결제했어?": {"mine": True, "measure": "count", "period": "recent", "months": 3,
                                         "include_current": True, "categories": ["FOOD"]},
     "최근 3개월 밤에 몇 번 결제했어?": {"mine": True, "measure": "count", "period": "recent", "months": 3, "time_slot": ["night"]},
+    # 가설은 조회 대상과 분리한다. 계획 단계가 원문에서 배달 가설을 읽는다.
+    "배달음식이 늘어서 그런가...": {"mine": True, "explain": True, "explain_kind": "change", "refers_to": "previous",
+                            "categories": []},
     "주말 식비 하루 평균 얼마야?": {"mine": True, "measure": "daily_avg", "weekday": ["weekend"], "categories": ["FOOD"]},
     "과자서원 몇 번 갔어?": {"mine": True, "measure": "count", "categories": [{"detail": "과자서원", "category": "FOOD"}]},
     "배달 몇 번 시켰어?": {"mine": True, "measure": "count", "categories": [{"detail": "배달", "category": "FOOD"}]},
@@ -345,13 +348,13 @@ class PersonaAnswerTest(TestCase):
             "결제 건수는 지난달 같은 기간 29건, 이번 달 26건이에요.",
             "건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요.",
             # 10/30 사용자 결정: 늘어난 곳 · 줄어든 곳을 나눠 지난달 → 이번 달 금액과 함께, 전체 증감과 잇는 한 문장
-            # 11/2 보완: 큰 결제 · 몰린 때(고정지출 제외) → 새로 간 곳 · 자주 가던 곳으로 전체와 잇기 → (두 달 모두 간 가게가 있어) 가게별 보조
+            # 11/2 보완: 큰 결제 · 몰린 때(고정지출 제외) → 새로 간 곳 · 지난달에도 간 곳으로 전체와 잇기 → (두 달 모두 간 가게가 있어) 가게별 보조
             # → 줄이는 방법 한 줄 (가장 크게 늘어난 요인의 건당 평균 × 2번, 서버 계산)
             "이번 달 큰 결제(고정지출 제외)는 목삼화로 15,000원(10월 1일), 과자서원 15,000원(10월 2일), 범카츠건대역점 15,000원(10월 3일)이에요.",
             # 11/2: 요일은 하루 평균(요일 합계 ÷ 그 달의 그 요일 수)으로 비교, 한 묶음에서만 나온 증가는 숫자를 되풀이하지 않는다
             # 요일은 화 · 목 · 금 · 일이 모두 하루 평균 +3,000원(뚜렷한 한 요일 없음) → 요일 문장을 쓰지 않는다 (MEMO 23-18)
             "고정지출을 빼고 보면 늘어난 금액은 점심 시간대(+48,000원)에 가장 많이 몰렸어요.",
-            "늘어난 금액은 모두 자주 가던 곳에서 나왔어요.",
+            "늘어난 금액은 모두 지난달에도 간 곳에서 나왔어요.",
             "많이 늘어난 곳은 범카츠건대역점(12,000원 → 60,000원), 명일탄(24,000원 → 45,000원), 삼촌네가마솥순대국(12,000원 → 30,000원)이에요.",
             "줄어든 곳은 난곡반점(60,000원 → 15,000원), 상아김밥문정 직영점(48,000원 → 15,000원), 옐로우피자(60,000원 → 30,000원)이에요.",
             "점심 시간대 식비 결제는 12번, 건당 평균 15,000원이에요. 한 달에 2번 줄이면 약 30,000원 덜 쓰게 돼요."])
@@ -388,8 +391,8 @@ class PersonaAnswerTest(TestCase):
         self.assertIn("많이 늘어난 카테고리는 식비(348,000원 → 390,000원), 문화·여가(70,000원 → 90,000원), "
                       "패션·쇼핑(60,000원 → 70,000원)이에요.", lines)
         self.assertIn("줄어든 카테고리는 의료·건강(30,000원 → 0원)이에요.", lines)  # 줄어든 쪽도 따로 (이전엔 빠졌다)
-        # 새로 간 곳 + 자주 가던 곳 − 안 간 곳 = 전체 증감 (이름 없는 결제까지 넣어 합이 맞는다)
-        self.assertIn("새로 간 곳(4곳)에서 150,000원 늘고, 자주 가던 곳에서 77,000원 늘고, 이번엔 안 간 곳(5곳)에서 185,000원 줄어, "
+        # 새로 간 곳 + 지난달에도 간 곳 − 안 간 곳 = 전체 증감 (이름 없는 결제까지 넣어 합이 맞는다)
+        self.assertIn("새로 간 곳(4곳)에서 150,000원 늘고, 지난달에도 간 곳에서 77,000원 늘고, 이번엔 안 간 곳(5곳)에서 185,000원 줄어, "
                       "전체로는 42,000원 늘었어요.", lines)
         self.assertEqual(150_000 + 77_000 - 185_000, 42_000)
         self.assertFalse(any("월세" in line for line in lines[4:]))  # 큰 결제 · 몰린 때 · 줄이는 방법은 고정지출 제외
@@ -421,20 +424,16 @@ class PersonaAnswerTest(TestCase):
 
         def good(system, payload):
             seen.append(payload)
-            return json.dumps({"sentences": ["건당 평균 결제액은 {F4}에서 {F5}까지 올랐어요."]}, ensure_ascii=False)
+            return json.dumps({"sentences": ["{F2}"]}, ensure_ascii=False)
         out = explain.answer(user("A"), [item], good)
-        self.assertEqual((out["lines"][2], out["explain"]), ("건당 평균 결제액은 12,000원에서 15,000원까지 올랐어요.",
-                                                             {"llm": True, "rejected": False, "failed": False}))
-        # 자리표시 바로 뒤 조사는 끼운 값의 받침으로 고친다. 증감은 방향까지 든 완성 단위({F1} = '42,000원 늘었어요')
-        said = json.dumps({"sentences": ["건당 평균 결제액이 {F4}에서 {F5}로 바뀌었어요.", "결제는 {F3}가 있었고 전체로 {F1}."]},
-                          ensure_ascii=False)
-        out = explain.answer(user("A"), [item], lambda system, payload: said)
-        self.assertEqual(out["lines"][2:4], ["건당 평균 결제액이 12,000원에서 15,000원으로 바뀌었어요.",
-                                             "결제는 26건이 있었고 전체로 42,000원 늘었어요."])
-        # 서술어까지 든 값 뒤에 말을 붙이면('{F1}했어요' → '42,000원 늘었어요했어요') 거절하고 템플릿으로
-        glued = json.dumps({"sentences": ["식비 지출이 {F1}했어요."]}, ensure_ascii=False)
-        out = explain.answer(user("A"), [item], lambda system, payload: glued)
-        self.assertEqual((out["lines"][2], out["explain"]["rejected"]), ("결제 건수는 지난달 같은 기간 29건, 이번 달 26건이에요.", True))
+        self.assertEqual((out["lines"][2], out["explain"]),
+                         ("건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요.",
+                          {"llm": True, "rejected": False, "failed": False}))
+        # 옛 설명 경로도 완성 절만 허용한다. 숫자 자리표시 뒤의 방향을 뒤집거나 조사를 덧붙일 수 없다.
+        for bad_text in ("결제는 {F1}에서 {F2}로 늘었어요.", "{F1}했어요.", "네, {F2}"):
+            raw = json.dumps({"sentences": [bad_text]}, ensure_ascii=False)
+            out = explain.answer(user("A"), [item], lambda system, payload: raw)
+            self.assertTrue(out["explain"]["rejected"])
 
         def down(system, payload):
             raise TimeoutError("응답 없음")
@@ -732,8 +731,8 @@ class CardViewTest(TestCase):
                                                                      "note": "+48,000원", "direction": "up"}))
         self.assertEqual((down["title"], down["rows"][0]["note"], down["rows"][0]["direction"]), ("줄어든 곳", "−45,000원", "down"))
         self.assertEqual((big["title"], when["title"], visits["title"]),
-                         ("이번 달 큰 결제 (고정지출 제외)", "늘어난 금액이 몰린 때", "새로 간 곳 · 자주 가던 곳"))
-        self.assertEqual(text["lines"], ["늘어난 금액은 모두 자주 가던 곳에서 나왔어요.",
+                         ("이번 달 큰 결제 (고정지출 제외)", "늘어난 금액이 몰린 때", "새로 간 곳 · 지난달에도 간 곳"))
+        self.assertEqual(text["lines"], ["늘어난 금액은 모두 지난달에도 간 곳에서 나왔어요.",
                                          "점심 시간대 식비 결제는 12번, 건당 평균 15,000원이에요. 한 달에 2번 줄이면 약 30,000원 덜 쓰게 돼요.",
                                          "위 변화는 거래 내역에서 확인한 것이라, 이것만으로 이유를 단정할 수는 없어요."])
 
@@ -1038,7 +1037,7 @@ class GeneralQueryTest(TestCase):
 
     def test_unsupported_and_no_store(self):
         a = Chat(user("A"))
-        self.assertIsNone(a.say("배달 몇 번 시켰어?")[1])  # 배달앱 결제 없음 → 식비 전체로 볼지 되묻기 (답 카드 없음)
+        self.assertIn("배달앱 조건에 맞는 결제가 없어요.", " ".join(a.say("배달 몇 번 시켰어?")[1]["lines"]))  # 지원 묶음: 대체 질문 대신 결제 없음
         _, out = Chat(user("A")).say("예산 밤 시간대로 보여줘")
         self.assertIsNone(out)  # 미지원 안내는 라우터 문구 (messages.UNSUPPORTED budget_query)
 
@@ -1315,3 +1314,19 @@ class MultiPeriodExplainTest(TestCase):
         a.say("최근 3개월 밤에 몇 번 결제했어?")
         self.assertEqual(a.say("왜 이렇게 많이 썼어?")[1]["lines"][0].split(" 밤에 ")[0], "최근 3개월(7월 1일~9월 30일)")
         self.assertTrue(a.say("그럼 교통비는?")[1]["lines"][0].startswith("최근 3개월(7월 1일~9월 30일) 교통·차량 · 밤"))
+
+
+@fixture_db_only
+class HypothesisEntryTest(TestCase):
+    """26-20: 직전 분석 뒤 원인을 짐작하는 질문은 설명 요청 — 그 안의 세부 지출 · 모르는 말은 조회 대상이 아니라 가설(B 계획 LLM 이 원문으로)"""
+
+    @classmethod
+    def setUpTestData(cls):
+        seed.apply(DESIGN)
+
+    def test_detail_in_hypothesis_explains_previous_result(self):
+        a = Chat(user("A"))
+        a.say("지난달보다 식비 더 썼어?")
+        decision, out = a.say("배달음식이 늘어서 그런가...")  # 예전: reference_not_available ('무엇을 설명할지 찾지 못했어요')
+        self.assertEqual([(i["type"], i["category"]) for i in decision.explain["items"]], [(7, "FOOD")])
+        self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 42,000원 늘었어요. ↑ 12.07%")

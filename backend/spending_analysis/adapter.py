@@ -1,4 +1,4 @@
-"""라우터 Decision.items → 소비 분석 analyze 연결 어댑터 (독립 실행용 — chat API · replies.py · 대화 상태 DB 미연결)
+"""라우터 Decision.items → 소비 분석 analyze 연결 어댑터 (서비스 에이전트와 독립 검증에서 공유)
 
 - run(user, decision, *, today, as_of) → dialog.run_items 결과 [{item, ok, result | error}], 항목 순서 그대로.
   한 항목이 실패해도 다른 결과는 남는다. analyze 가 예외 없이 state=error 를 돌려줘도 그 항목은 실패(ok=False)다.
@@ -9,11 +9,12 @@
   · Decimal → 문자열 "25.83"(float 로 바꾸지 않는다) · UUID → 문자열 · 금액은 원 정수 그대로
 """
 import uuid
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 
-from .analyze import analyze
+from .analyze import ITEM_KEYS, analyze
 from .dialog import record_analysis, run_items
 from .periods import Period
 
@@ -105,3 +106,25 @@ def summarize(result):
 def record(store, conversation_id, decision, results):
     record_analysis(store, conversation_id, decision,
                     [{**r, "result": summarize(r["result"])} if r["ok"] else r for r in results])
+
+
+def prepare_explanation(decision, execute):
+    """새 설명 요청의 조회도 일반 실행·요약을 사용한다. 기존 참조는 유지하고 새 조회만 후속 대화에 기록한다."""
+    items = decision.explain["items"]
+    fresh = [i for i in items if i.get("fresh") and not (i["type"] == 10 and i.get("explain_kind") == "change")]
+    if not fresh:
+        return items, None
+    clean = lambda i: {k: v for k, v in i.items() if k in ITEM_KEYS}  # noqa: E731
+    results = execute(replace(decision, items=tuple(clean(i) for i in fresh), explain=None))
+    if results is None:
+        return items, None  # 실행을 생략하는 평가 대역
+    if not all(r["ok"] for r in results):
+        raise AnalysisFailed("analysis_failed")
+    summaries = iter(summarize(r["result"]) for r in results)
+    resolved, records = [], []
+    for item in items:
+        if item in fresh:
+            item = {**clean(item), **next(summaries)}
+        resolved.append(item)
+        records.append({"item": clean(item), "ok": item.get("evidence") is not None, "result": item})
+    return resolved, records

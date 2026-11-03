@@ -11,7 +11,7 @@ from .schemas import schema_for
 
 class LiveReading:
     """설명 LLM 도 같은 클라이언트 · 상한 · 장부를 쓴다 ("왜 늘었어?" 한 번에 1회 더).
-    상한에 닿거나 호출이 실패하면 complete 가 예외 → 해석기(read)가 해석 실패로 받아 라우터 실패 문구로 답한다 (대화 상태 그대로)"""
+    상한은 call_limit으로 안내하고, 그 밖의 호출 실패는 해석 실패로 답한다 (대화 상태 그대로)"""
     explains = True
 
     def __init__(self, max_calls, ledger_path, model=None):

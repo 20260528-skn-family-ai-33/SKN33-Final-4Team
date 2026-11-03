@@ -4,6 +4,7 @@
 from chat.interpretation.schema import CATEGORY_NAMES
 from chat.router_core import reading as router_reading
 from spending_analysis import claims as spending_claims
+from spending_analysis import investigation
 from spending_analysis import explain as spending_explain
 from spending_analysis import reading as spending_reading
 
@@ -42,7 +43,7 @@ def role_schema(role):
                  "refers_to": enum(r.REFERS), "explain": nullable("boolean"),
                  "after_budget_change": nullable("boolean"), "all_categories": nullable("boolean"),
                  "include_current": nullable("boolean"), "alias": alias, "payment": enum(r.PAYMENTS),
-                 "explain_kind": enum(r.EXPLAIN_KINDS),
+                 "explain_kind": enum(r.EXPLAIN_KINDS), "hypothesis": investigation.SCHEMA,
                  "weekday": {"type": "array", "items": {"type": "string", "enum": list(r.WEEKDAYS)}},
                  "time_slot": {"type": "array", "items": {"type": "string", "enum": list(r.TIME_SLOTS)}},
                  "amount_min": nullable("integer"), "amount_max": nullable("integer"), "measure": enum(r.MEASURES),
@@ -64,9 +65,7 @@ PLAN_SCHEMA = {"type": "object", "properties": {
         "by": {"type": "string", "enum": list(spending_claims.AXES)}, "focus": {"type": ["string", "null"]}},
         "required": ["by", "focus"], "additionalProperties": False}},
     "reason": {"type": "string"},
-    "hypothesis": {"anyOf": [{"type": "object", "properties": {
-        "axis": {"type": "string", "enum": list(spending_claims.HYPOTHESIS_AXES)}, "subject": {"type": ["string", "null"]}},
-        "required": ["axis", "subject"], "additionalProperties": False}, {"type": "null"}]}},
+    "hypothesis": investigation.SCHEMA},
     "required": ["queries", "reason", "hypothesis"], "additionalProperties": False}
 ANSWER_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array", "items": {"type": "object", "properties": {
     "text": {"type": "string"}, "claims": {"type": "array", "items": {"type": "string"}}},

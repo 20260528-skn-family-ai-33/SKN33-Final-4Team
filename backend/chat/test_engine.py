@@ -270,7 +270,7 @@ class ServiceLiveTest(ServiceChatBase):
             body = json.loads(request.data)
             self.sent.append(body["text"]["format"]["name"])
             if body["instructions"] == explain.PROMPT:
-                return FakeResponse(json.dumps({"sentences": ["건당 평균 결제액이 {F4}에서 {F5}로 바뀌었어요."]}, ensure_ascii=False))
+                return FakeResponse(json.dumps({"sentences": ["{F2}"]}, ensure_ascii=False))
             return FakeResponse(reader(body["instructions"], body["input"]))
         with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-not-real", "LLM_MODEL": "test-model"}):
             live = LiveReading(None, None)
@@ -289,12 +289,12 @@ class ServiceLiveTest(ServiceChatBase):
         out = self.bot(self.send("A", cid, text="왜 식비가 늘었어?"))
         self.assertEqual(self.sent[-2:], ["spending_reading", "spending_explanation"])
         texts = [l for b in out["view"] if b["kind"] == "text" for l in b["lines"]]
-        self.assertIn("건당 평균 결제액이 12,000원에서 15,000원으로 바뀌었어요.", texts)
+        self.assertIn("건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요.", texts)
         self.assertEqual(self.live.usage()["limit"], None)
         self.assertEqual(self.live.usage()["used"], len(self.sent))
 
-    def test_cap_reached_answers_router_failure_and_keeps_state(self):
-        """CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER(MEMO 25-12): 상한에 닿으면 보내지 않고 라우터 실패 문구 + 선택지, 대화 상태는 그대로"""
+    def test_cap_reached_answers_limit_and_keeps_state(self):
+        """CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER(MEMO 25-12): 상한에 닿으면 보내지 않고 상한 안내, 대화 상태는 그대로"""
         import os
         import tempfile
         ledger = os.path.join(tempfile.mkdtemp(), "ledger.json")
@@ -306,8 +306,8 @@ class ServiceLiveTest(ServiceChatBase):
             before = Conversation.objects.get(pk=cid)
             out = self.send("A", cid, text="그럼 교통비는?").json()
         bot, after = out["messages"][1]["content"], Conversation.objects.get(pk=cid)
-        self.assertEqual((out["route"]["fallback"], bot["lines"]), (True, ["지금은 이해하지 못했어요, 아래에서 골라 주세요."]))
-        self.assertTrue(bot["choices"])
+        self.assertEqual((out["route"]["fallback"], bot["lines"]), (True, ["설정된 AI 호출 상한에 도달해 질문을 처리하지 못했어요. 호출 한도를 확인한 뒤 다시 시도해 주세요."]))
+        self.assertFalse(bot["choices"])
         self.assertEqual((after.slots["state"], after.active_agent), (before.slots["state"], before.active_agent))
         self.assertEqual((len(self.sent), live.usage()["blocked"]), (2, 1))  # 세 번째는 보내지 않았다
         with open(ledger) as f:
@@ -329,23 +329,61 @@ class ExplainPlanTest(ServiceChatBase):
         cid = self.send(persona, text=first).json()["conversationId"] if first else None
         return self.send(persona, cid, text=question).json()["messages"][1]["content"]
 
+    def test_dev_trace_shows_entry_stage(self):
+        """26-20: 분석 과정에 B 전 단계(해석 칸 · dialog 갈림길 · 설명 요청 판정)도 — B 를 거치지 않은 답에도"""
+        out = self.ask("A", "이번 달 얼마 썼어?")
+        self.assertEqual(out["devTrace"]["entry"], {"reading": {"mine": True, "target": "spend", "period": "this_month"},
+                                                    "decision": {"status": "ready", "reason": None, "asking": None},
+                                                    "items": [{"type": 1}], "explain": False})
+
+    def test_unsupported_product_and_supported_lunch_average_in_service(self):
+        with override_settings(CHAT_EXPLAIN_PLAN=True):
+            coffee = self.ask("A", "커피를 자주 사 먹어서 그래?", first="지난달보다 식비 더 썼어?")
+            lunch = self.ask("A", "점심값이 비싸진 거야?", first="지난달보다 식비 더 썼어?")
+        self.assertEqual(coffee["devTrace"]["support"]["status"], "insufficient")
+        self.assertIn("커피에 해당하는 내역", coffee["lines"][0])
+        self.assertEqual(coffee["devTrace"]["queries"], [])
+        self.assertEqual(lunch["devTrace"]["support"]["status"], "observation")
+        self.assertEqual(lunch["devTrace"]["queries"][0]["target"], "slot:lunch")
+        self.assertIn("점심 건당 평균", lunch["lines"][0])
+        self.assertTrue(any("상품 가격이 올랐는지는 판단할 수 없어요" in line for line in lunch["lines"]))
+        self.assertIn("결제 건수", lunch["lines"][-1])
+        self.assertFalse(any(line.startswith(("네,", "아니요,")) for line in coffee["lines"] + lunch["lines"]))
+
+    def test_direct_past_period_explanation_keeps_its_dates(self):
+        for question, prefix in (("지난달 식비는 왜 많이 나왔어?", "지난달(9월 1일~30일)"),
+                                 ("지난주 식비는 왜 많이 나왔어?", "지난주(10월 19일~25일)")):
+            with self.subTest(question=question):
+                out = self.ask("A", question)
+                self.assertTrue(out["lines"][0].startswith(prefix), out["lines"])
+
+    def test_fresh_explanation_records_the_scope_for_followups(self):
+        first = self.send("A", text="지난달 식비는 왜 많이 나왔어?").json()
+        out = self.bot(self.send("A", first["conversationId"], text="그럼 교통비는?"))
+        self.assertTrue(out["lines"][0].startswith("지난달(9월 1일~30일)"), out)
+        first = self.send("A", text="왜 식비가 늘었어?").json()
+        out = self.bot(self.send("A", first["conversationId"], text="그럼 교통비는?"))
+        self.assertEqual(out["devTrace"]["entry"]["items"][0]["type"], 7)
+
     def test_off_is_the_current_template(self):
         out = self.ask("B", "왜 식비가 늘었어?")
         self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 224,000원 늘었어요. ↑ 55.17%")
-        self.assertNotIn("devTrace", out)
+        self.assertNotIn("stop", out["devTrace"])  # B 를 거치지 않았다 (분석 과정엔 B 전 단계만)
 
     def test_minjae_plans_a_time_slot_query(self):
         with override_settings(CHAT_EXPLAIN_PLAN=True):
             out = self.ask("B", "왜 식비가 늘었어?")
-        # 서버 절(26-16) + 가짜 답의 연결 말. 가설 없는 질문 → 핵심 요인(가장 크게 바뀐 묶음 = 자주 가던 곳 +280,000) 필수 (26-17).
-        # 280,000 · 167,000 = 템플릿 설명의 '자주 가던 곳에서 280,000원 늘고' · '저녁 시간대(+167,000원)'과 같은 값
-        # 자주 가던 곳(+280,000)이 식비 전체(+224,000)보다 커서 템플릿의 잇는 문장을 서버가 붙인다 (26-18 ①),
-        # 고른 시간대 조회의 1위(저녁)는 꼭 인용 (26-18 ②)
-        self.assertEqual(out["lines"][:4], ["식비 지출은 지난달 같은 기간보다 224,000원 늘었어요.", "특히 자주 가던 곳(9곳)에서 280,000원 늘었어요.",
-                                            "자주 가던 곳에서 280,000원 늘고, 이번엔 안 간 곳(1곳)에서 56,000원 줄어, 전체로는 224,000원 늘었어요.",
-                                            "그다음으로 고정지출을 빼고 보면 저녁 시간대는 70,000원에서 237,000원으로 167,000원 늘어 시간대 중 가장 많이 늘었어요."
-                                            " 전체 증가분의 절반 이상이에요."])
-        self.assertEqual(out["lines"][-1], "거래 내역에서 확인한 내용이에요. 이것만으로 이유를 단정할 수는 없어요.")
+        # 서버 절(26-16) + 가짜 답의 연결 말. 가설 없는 질문 → 핵심 요인(지난달에도 간 곳 +280,000) · 고른 시간대 조회 1위(저녁) 필수 (26-17 · 18).
+        # 전체 → 주요 변화 → 다른 분류 기준 → 다음 확인. 숫자를 합산 가능한 별개 원인처럼 나열하지 않는다.
+        self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 224,000원 늘었어요.")
+        self.assertIn("280,000원", out["lines"][1])
+        self.assertIn("56,000원", out["lines"][1])
+        self.assertIn("상쇄", out["lines"][1])
+        self.assertTrue(out["lines"][2].startswith("같은 기간 내역을 시간대별로 보면,"))
+        self.assertIn("70,000원에서 237,000원으로 167,000원", out["lines"][2])
+        self.assertIn("일시적인 큰 결제", out["lines"][-1])
+        self.assertEqual(" ".join(out["lines"]).count("224,000원"), 1)
+
         trace = out["devTrace"]
         self.assertEqual((trace["stop"], trace["queries"], trace["check"], trace["fallback"]),
                          (None, [{"by": "time_slot", "focus": None}], [], None))
@@ -354,7 +392,8 @@ class ExplainPlanTest(ServiceChatBase):
     def test_yunseo_plan_stops_with_no_query(self):
         with override_settings(CHAT_EXPLAIN_PLAN=True):
             out = self.ask("A", "건당 금액이 올라서야?", first="지난달보다 식비 더 썼어?")
-        self.assertEqual(out["lines"][:2], ["네, 건당 평균은 12,000원에서 15,000원으로 올랐어요.", "반면 결제 건수는 29건에서 26건으로 줄었어요."])
+        self.assertEqual(out["lines"][:2], ["건당 평균은 12,000원에서 15,000원으로 올랐어요.", "반면 결제 건수는 29건에서 26건으로 줄었어요."])
+        self.assertNotIn("결제 건수도 늘었는지", out["lines"][-1])  # 이미 답한 지표를 다시 확인하라고 하지 않는다.
         self.assertEqual((out["devTrace"]["stop"], out["devTrace"]["queries"], out["devTrace"]["plan"]["reason"]),
                          (None, [], "첫 결과의 건당 평균 주장으로 답할 수 있다"))  # 멈춤은 서버가 아니라 계획 LLM 이 (26-12 ②)
 
@@ -362,21 +401,21 @@ class ExplainPlanTest(ServiceChatBase):
         with override_settings(CHAT_EXPLAIN_PLAN=True), mock.patch("chat.llm.fake.fake_plan_answer") as llm:
             out = self.ask("C", "왜 식비가 늘었어?")
         self.assertEqual(out["lines"], [explain.REFUSE["incomplete"]])
-        self.assertEqual(out["devTrace"], {"stop": "insufficient", "fallback": "template"})
+        self.assertEqual({k: v for k, v in out["devTrace"].items() if k != "entry"}, {"stop": "insufficient", "fallback": "template"})
         llm.assert_not_called()  # 계획 · 답 LLM 을 부르지 않는다
 
     def test_delivery_question_says_only_checked_range(self):
         with override_settings(CHAT_EXPLAIN_PLAN=True):
             out = self.ask("A", "배달 때문이야?", first="지난달보다 식비 더 썼어?")
-        self.assertEqual(out["lines"][0], "배달 때문이라고 보기는 어려워요. 확인한 배달앱 이름(배달의민족 · 쿠팡이츠 · 요기요 등) 범위에서는 결제가 없었어요.")
-        self.assertEqual(out["devTrace"]["queries"], [{"by": "merchant", "focus": "배달"}])
+        self.assertEqual(out["lines"][0], "확인한 배달앱 이름 범위에서는 두 기간 모두 결제가 없었어요.")
+        self.assertEqual(out["devTrace"]["queries"], [{"by": "merchant", "focus": "배달앱", "metric": "amount", "target": "online:배달앱"}])
 
     def test_rejected_answer_falls_back_to_template(self):
         bad = {"왜 식비가 늘었어?": [("회식이 잦아서 {id}", {"axis": "scope"})]}
         with override_settings(CHAT_EXPLAIN_PLAN=True), mock.patch.dict("chat.llm.fake.ANSWER_SAID", bad):
             out = self.ask("B", "왜 식비가 늘었어?")
         self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 224,000원 늘었어요. ↑ 55.17%")  # 지금 템플릿 그대로
-        self.assertEqual((out["devTrace"]["fallback"], out["devTrace"]["check"]), ("rejected", ["1:free_text", "0:missing_must1", "0:missing_must2"]))  # 새 원인 · 핵심 요인 · 고른 조회 1위 빠짐
+        self.assertEqual((out["devTrace"]["fallback"], out["devTrace"]["check"]), ("rejected", ["1:free_text", "0:missing_must2", "0:missing_must3"]))  # 전체는 인용했지만 새 원인 생성 · 핵심 요인 · 고른 조회 1위 빠짐
 
     def test_timeout_falls_back_to_template(self):
         from spending_analysis import claims
