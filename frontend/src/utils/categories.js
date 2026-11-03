@@ -26,6 +26,9 @@ export const PENDING = { code: 'UNCLASSIFIED', name: '확인 필요', icon: 'Cir
 export const CAT_NAMES = SPEND_CATS.map((c) => c.name)                       // 우선순위 고르기
 export const BUDGET_CATS = [...CAT_NAMES, ...(ETC.budget ? [ETC.name] : [])]  // 예산 칸이 있는 카테고리
 export const PICK_CATS = [...CAT_NAMES, ETC.name]                           // 사용자가 거래 카테고리를 고를 때
+// 생활비 배분에서 빼는 카테고리 (백엔드 budgets/scope.py OUT_OF_BUDGET). 최소 금액만 못 정하고 우선순위 · 거래 분류는 그대로
+const OUT_OF_BUDGET = ['HOUSING_TELECOM', 'TRAVEL_LODGING']
+export const MIN_CATS = BUDGET_CATS.filter((name) => !SPEND_CATS.some((c) => c.name === name && OUT_OF_BUDGET.includes(c.code)))
 
 // 항목 이름으로 카테고리 미리 고르기 (고정지출 추가 등) — 못 찾으면 null, 사용자가 직접 고른다
 // 위에서부터 먼저 맞는 것 (10/20 분류 기준: 헬스·운동 = 문화·여가). 자동차보험이 일반 보험보다 먼저

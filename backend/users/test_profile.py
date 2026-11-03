@@ -12,6 +12,7 @@ from django.test import TestCase, TransactionTestCase, override_settings
 from rest_framework.test import APIClient
 
 from budgets.models import Category
+from budgets.scope import OUT_OF_BUDGET
 from .models import CategoryMinimum, CategoryPriority, FinancialProfile
 
 
@@ -196,8 +197,10 @@ class ProfileTests(TestCase):
         for rows in ({}, "FOOD", [1]):
             self.assert_invalid({**payload(), "categoryMinimums": rows}, "categoryMinimums")
 
-    def test_all_eleven_minimums_and_upper_bound(self):
-        codes = list(Category.objects.filter(is_living_budget_category=True).order_by("display_order").values_list("pk", flat=True))
+    def test_all_budget_minimums_and_upper_bound(self):
+        codes = list(Category.objects.filter(is_living_budget_category=True).exclude(pk__in=OUT_OF_BUDGET)
+                     .order_by("display_order").values_list("pk", flat=True))
+        self.assertIn("ETC", codes)
         data = payload()
         data["categoryMinimums"] = [{"category": code, "minAmount": 9_999_999_999} for code in codes]
         expected = deepcopy(data)
@@ -205,6 +208,21 @@ class ProfileTests(TestCase):
         self.assertEqual(self.put(data).json(), expected_response(expected))
         data["categoryMinimums"].append({"category": "FOOD", "minAmount": 1})
         self.assert_invalid(data, "categoryMinimums")
+
+    def test_out_of_budget_minimums_rejected_without_partial_write(self):
+        self.put()
+        for code in OUT_OF_BUDGET:
+            with self.subTest(code=code):
+                data = {**payload(), "housingType": "family"}
+                data["categoryMinimums"].append({"category": code, "minAmount": 100000})
+                self.assert_invalid(data, "categoryMinimums")
+        self.assertEqual(FinancialProfile.objects.get(user=self.user).housing_type, "alone")
+        self.assertEqual(list(CategoryMinimum.objects.filter(user=self.user).values_list("category_id", "min_amount")), [("FOOD", 300000)])
+
+    def test_out_of_budget_stays_selectable_as_priority(self):
+        data = payload()
+        data["priorities"][2]["category"] = "HOUSING_TELECOM"
+        self.assertEqual(self.put(data).status_code, 200)
 
     def test_inactive_category_rejected(self):
         Category.objects.filter(pk="FOOD").update(is_active=False)

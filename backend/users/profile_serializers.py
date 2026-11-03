@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from budgets.models import Category
+from budgets.scope import OUT_OF_BUDGET
 from finance.inputs import reject_unknown_fields
 from .models import FinancialProfile
 
@@ -74,7 +75,7 @@ class ProfileSerializer(StrictSerializer):
     housing_type = serializers.ChoiceField(choices=FinancialProfile.HousingType.choices)
     has_car = StrictBooleanField()
     priorities = PrioritySerializer(many=True, min_length=3, max_length=10, allow_empty=False)
-    category_minimums = MinimumSerializer(many=True, max_length=11)
+    category_minimums = MinimumSerializer(many=True, max_length=9)
 
     def validate_priorities(self, rows):
         if len({row["category"] for row in rows}) != len(rows):
@@ -86,4 +87,6 @@ class ProfileSerializer(StrictSerializer):
     def validate_category_minimums(self, rows):
         if len({row["category"] for row in rows}) != len(rows):
             raise serializers.ValidationError("카테고리를 중복 선택할 수 없어요.")
+        if any(row["category"] in OUT_OF_BUDGET for row in rows):
+            raise serializers.ValidationError("생활비 예산에서 뺀 카테고리는 최소 금액을 정할 수 없어요.")
         return rows

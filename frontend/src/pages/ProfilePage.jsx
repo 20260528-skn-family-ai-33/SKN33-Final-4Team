@@ -9,7 +9,7 @@ import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePicked } from '../utils/usePicked.js'
-import { CAT_NAMES as CATS, BUDGET_CATS, SPEND_CATS, ETC, catName } from '../utils/categories.js'
+import { CAT_NAMES as CATS, MIN_CATS, SPEND_CATS, ETC, catName } from '../utils/categories.js'
 import { usePopup } from '../popups/context.js'
 import CatMinPopup from '../popups/CatMinPopup.jsx'
 import { manwon } from '../utils/adjust.js'
@@ -63,7 +63,7 @@ function ProfileForm({ saved }) {
   const { openPopup } = usePopup()
   // 카테고리 최소 금액 { 식비: 300000 } — 설정한 것만
   const [mins, setMins] = useState(() => Object.fromEntries(saved.categoryMinimums.map((m) => [catName(m.category), m.minAmount])))
-  const minList = BUDGET_CATS.filter((c) => mins[c])  // 카테고리 순서대로
+  const minList = MIN_CATS.filter((c) => mins[c])  // 카테고리 순서대로. 예산에서 뺀 카테고리의 예전 값은 다시 보내지 않는다
 
   const a = ageInfo(birth)
   const onSubmit = async (e) => {
