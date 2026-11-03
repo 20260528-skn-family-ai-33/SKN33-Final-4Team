@@ -46,6 +46,15 @@ def last_user_choice(user, merchant_name):
     return row[0], bool((row[1] or {}).get(FUTURE_KEY)) and not searched_multi_item(row[1])
 
 
+def seen_multi_item(user, merchant_name):
+    """같은 회원·같은 가맹점의 거래 중 검색으로 다품목이 확인된 게 있는지 (PR #67 재리뷰)
+    있으면 다음 거래도 SVM·Jev 로 확정하지 않는다. 검색은 거래마다 하지 않아서(SVM 이 확신하면 건너뜀) 여기서 이어 준다"""
+    merchant = normalize_merchant(merchant_name)
+    return merchant is not None and FinancialTransaction.objects.filter(
+        user=user, merchant_name=merchant, **{f"field_states__classifier__{SEARCHED_MULTI_ITEM}": True},
+    ).exists()
+
+
 def remembered_category(user, merchant_name):
     """같은 가맹점의 새 거래에 자동으로 쓸 카테고리 코드. 마지막 선택이 "앞으로도 적용"일 때만, 아니면 None"""
     code, future = last_user_choice(user, merchant_name)
