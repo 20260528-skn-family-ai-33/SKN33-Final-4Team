@@ -140,7 +140,7 @@ function Connections({ conns, accts, cards, loans, reload }) {
             ))}
           </div>
         ))}
-        <button type="button" className="mc-link" onClick={() => navigate(PATHS.connectAccounts)}>계좌 선택 바꾸기</button>
+        <button type="button" className="mc-link" onClick={() => navigate(PATHS.connectAccounts, { state: { from: 'manage' } })}>계좌 선택 바꾸기</button>
         <button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>+ 다른 은행 연결</button>
       </div>
 

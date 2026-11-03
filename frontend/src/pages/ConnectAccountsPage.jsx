@@ -12,7 +12,7 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { usePicked } from '../utils/usePicked.js'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
-import { PATHS } from '../routes.js'
+import { PATHS, afterAccountPick } from '../routes.js'
 
 export default function ConnectAccountsPage() {
   const { data, error } = useApi('/api/finance/connect/accounts/')
@@ -36,7 +36,9 @@ function AccountPick({ items }) {
     setError('')
     try {
       await apiSend('/api/finance/connect/accounts/', 'PUT', { selectedAccountIds: picked.list })
-      navigate(state?.cards === false ? PATHS.connectDone : PATHS.connectCards)
+      const to = afterAccountPick(state)
+      // 연결 관리로 돌아갈 때는 계좌 선택 화면을 기록에서 지워 뒤로 가기가 다시 이 화면으로 오지 않게 한다
+      navigate(to, { replace: to === PATHS.connections })
     } catch (err) {
       setError(err.fields?.selectedAccountIds?.[0] ?? err.message)
       setBusy(false)
