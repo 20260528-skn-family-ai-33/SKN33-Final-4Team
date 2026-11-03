@@ -8,6 +8,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 import base64
 import binascii
 import os
+import sys
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -15,6 +16,9 @@ from dotenv import load_dotenv
 
 # backend/ 폴더
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# 프로젝트 루트의 scripts/ (ML 코드)를 import 하려고 (finance/classifier.py 가 scripts.spending_classifier 를 씀)
+sys.path.append(str(BASE_DIR.parent))
 
 # 프로젝트 루트(backend의 한 칸 위)의 .env 읽기
 load_dotenv(BASE_DIR.parent / ".env")
