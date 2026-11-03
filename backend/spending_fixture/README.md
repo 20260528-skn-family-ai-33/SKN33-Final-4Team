@@ -34,6 +34,54 @@ python manage.py test spending_fixture --settings=spending_fixture.settings
 `--apply` 는 반복해도 ID · 시각 · 건수 · 합계가 같다(UUID5 · 고정 시각). 기존 DB flush/drop 은 하지 않는다.
 공통 설정으로 `python manage.py test` 를 돌리면 이 테스트는 건너뛴다.
 
+## 알파 페르소나 모드
+
+기존 3인 시드와 별도로 `--alpha`를 지정하면 자취 직장인의 승인 계정
+`alpha.home@example.test`와 온보딩 계정 `alpha.onboarding@example.test`를 만든다.
+개인 데이터와 코드는 `local_workspace/data/alpha_test/`, `local_workspace/scripts/alpha_test/`에 있다. local_workspace는 기본적으로 Git 제외 대상이지만, 이 알파 기능에 필요한 코드·합성 자료·검증 파일만 명시적으로 추적한다. 해당 파일은 저장소를 받으면 함께 포함된다. 원자료·모델·개인 환경은 포함하지 않는다.
+`generate.py`로 CSV와 독립 정답을 만들고 `seed.py --alpha`가 CSV를 검증해 모델에 넣는다.
+
+```powershell
+# 저장소 루트에서 데이터 생성·재현 검사
+.venv/Scripts/python.exe local_workspace/scripts/alpha_test/generate.py
+.venv/Scripts/python.exe local_workspace/scripts/alpha_test/generate.py --check
+
+# backend/에서, 위와 같은 별도 로컬 fixture DB만 사용
+../.venv/Scripts/python.exe -m spending_fixture.seed --alpha
+../.venv/Scripts/python.exe -m spending_fixture.seed --alpha --apply
+../.venv/Scripts/python.exe -m spending_fixture.set_login --alpha
+
+# FIXTURE_LOGIN_PASSWORD 환경변수를 기존 방식으로 설정한 뒤 로그인 설정 명령을 실행한다.
+# PowerShell에서 빈 환경변수 처리 차이를 피하려고 today를 사용한다.
+$env:CHAT_TODAY = 'today'
+../.venv/Scripts/python.exe manage.py runserver 127.0.0.1:8001 --settings=spending_fixture.service_settings
+```
+
+`--alpha --apply`는 알파 두 계정만 트랜잭션 안에서 재생성한다. 기존 A/B/C는 건드리지 않는다.
+재생성 후 로그인 비밀번호를 다시 설정해야 한다. 다른 회원의 이메일·UUID 충돌 시 변경하지 않고 멈춘다.
+알파 모드에는 `--reset`을 제공하지 않는다. 기본 모드의 초기화·해시·기준일은 유지한다.
+
+현재 KST **날짜** 이하의 합성 전표만 적재한다. 거래 시각은 생활 패턴용 가상 시각이며 당일 전표는 포함한다.
+따라서 11/3에 실행하면 11/4~5 행은 들어가지 않는다. 11/5에 `--apply` 후 비밀번호를 다시 설정하면
+11/5 정답 세트가 된다. 11/5 이후의 새 거래는 생성하지 않으므로 이후 조회는 최신 자료가 아니다.
+
+승인 계정은 7~11월 승인 예산·고정지출·납부 의무·저축·쿠션·배분을 포함한다.
+온보딩 계정은 계좌·카드·거래·청구서·합성 조회 동의 및 조회 이력만 있고, 프로필·예산·고정지출 설정은 없다.
+두 계정의 금융 자료가 같아도 온보딩 계정은 고정비 설정 전이라 생활비 범위 정답은 승인 계정 기준이다.
+가맹점 메타데이터는 거래의 `source_detail`에 보관하고, `ans_category_if_user_set`은 CSV의 외부 정답으로만 둔다.
+
+알려진 서비스 제약: 적금 C는 실제 유형을 `deposit`으로 유지하므로 현재 소비 분석 수집 판정이
+`not_demand_account`로 부분 수집을 표시한다. 조회된 소비 합계와 확정 수집 상태를 구별한다.
+현재 `home_data`의 `budget` 칸은 아직 `None`이다. 승인 예산 적재만으로 홈 기능이 구현되지는 않으며,
+예산 확인은 `/api/budgets/`와 실제 모델로 검증한다. 첨부 기준은 `budgets/scope.py`에 추가했지만,
+현재 `overview`·`spending_analysis.tools`의 예산 밖 사용액 연결은 별도 팀 코드 반영이 필요하다.
+
+알파 테스트:
+
+```powershell
+../.venv/Scripts/python.exe manage.py test ../local_workspace/tests -p test_alpha_fixture.py --settings=spending_fixture.settings --keepdb --noinput
+```
+
 ## 기본 적재 건수
 
 category 12(기존 시드) · app_user 3 · financial_profile 3 · category_priority 9 · category_minimum 5 · connection 6 ·

@@ -1,0 +1,376 @@
+{
+  "seed": 20261105,
+  "opening_as_of": "2026-06-30",
+  "opening_balances": {
+    "A": 1520000,
+    "B": 98500,
+    "C": 2700000
+  },
+  "travel_free_deduction": "assumption_pending_user_decision",
+  "months": {
+    "2026-07": {
+      "before": {
+        "as_of": "2026-07-31",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 1055800,
+        "living_remaining": -5800,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1945800,
+        "by_category": {
+          "BEAUTY": 53500,
+          "CULTURE_LEISURE": 92100,
+          "EDUCATION": 43900,
+          "ETC": 20400,
+          "FASHION_SHOPPING": 108200,
+          "FOOD": 557400,
+          "HOUSEHOLD": 72000,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 28300,
+          "TRANSPORT_CAR": 87200,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 12800
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 12800,
+        "balances": {
+          "A": 1680000,
+          "B": 92700,
+          "C": 3600000
+        },
+        "demand_balance": 1772700,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      },
+      "after": {
+        "as_of": "2026-07-31",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 1055800,
+        "living_remaining": -5800,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1945800,
+        "by_category": {
+          "BEAUTY": 53500,
+          "CULTURE_LEISURE": 92100,
+          "EDUCATION": 43900,
+          "ETC": 20400,
+          "FASHION_SHOPPING": 108200,
+          "FOOD": 557400,
+          "HOUSEHOLD": 72000,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 28300,
+          "TRANSPORT_CAR": 87200,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 12800
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 12800,
+        "balances": {
+          "A": 1680000,
+          "B": 92700,
+          "C": 3600000
+        },
+        "demand_balance": 1772700,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      }
+    },
+    "2026-08": {
+      "before": {
+        "as_of": "2026-08-31",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 954400,
+        "living_remaining": 95600,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1844400,
+        "by_category": {
+          "BEAUTY": 54900,
+          "CULTURE_LEISURE": 98600,
+          "EDUCATION": 25300,
+          "ETC": 26200,
+          "FASHION_SHOPPING": 54700,
+          "FOOD": 529600,
+          "HOUSEHOLD": 58500,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 20500,
+          "TRANSPORT_CAR": 95600,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 10500
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 10500,
+        "balances": {
+          "A": 1840000,
+          "B": 188300,
+          "C": 4500000
+        },
+        "demand_balance": 2028300,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      },
+      "after": {
+        "as_of": "2026-08-31",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 954400,
+        "living_remaining": 95600,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1844400,
+        "by_category": {
+          "BEAUTY": 54900,
+          "CULTURE_LEISURE": 98600,
+          "EDUCATION": 25300,
+          "ETC": 26200,
+          "FASHION_SHOPPING": 54700,
+          "FOOD": 529600,
+          "HOUSEHOLD": 58500,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 20500,
+          "TRANSPORT_CAR": 95600,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 10500
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 10500,
+        "balances": {
+          "A": 1840000,
+          "B": 188300,
+          "C": 4500000
+        },
+        "demand_balance": 2028300,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      }
+    },
+    "2026-09": {
+      "before": {
+        "as_of": "2026-09-30",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 1038300,
+        "living_remaining": 11700,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1928300,
+        "by_category": {
+          "BEAUTY": 57300,
+          "CULTURE_LEISURE": 90700,
+          "EDUCATION": 35200,
+          "ETC": 18500,
+          "FASHION_SHOPPING": 87400,
+          "FOOD": 562000,
+          "HOUSEHOLD": 69300,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 46300,
+          "TRANSPORT_CAR": 78700,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 12900
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 12900,
+        "balances": {
+          "A": 2000000,
+          "B": 200000,
+          "C": 5400000
+        },
+        "demand_balance": 2200000,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      },
+      "after": {
+        "as_of": "2026-09-30",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 1038300,
+        "living_remaining": 11700,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1928300,
+        "by_category": {
+          "BEAUTY": 57300,
+          "CULTURE_LEISURE": 90700,
+          "EDUCATION": 35200,
+          "ETC": 18500,
+          "FASHION_SHOPPING": 87400,
+          "FOOD": 562000,
+          "HOUSEHOLD": 69300,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 46300,
+          "TRANSPORT_CAR": 78700,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 12900
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 12900,
+        "balances": {
+          "A": 2000000,
+          "B": 200000,
+          "C": 5400000
+        },
+        "demand_balance": 2200000,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      }
+    },
+    "2026-10": {
+      "before": {
+        "as_of": "2026-10-31",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 930000,
+        "living_remaining": 120000,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1820000,
+        "by_category": {
+          "BEAUTY": 40000,
+          "CULTURE_LEISURE": 90000,
+          "EDUCATION": 30000,
+          "ETC": 20000,
+          "FASHION_SHOPPING": 90000,
+          "FOOD": 500000,
+          "HOUSEHOLD": 60000,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 30000,
+          "TRANSPORT_CAR": 80000,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 10000
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 10000,
+        "balances": {
+          "A": 2160000,
+          "B": 320000,
+          "C": 6300000
+        },
+        "demand_balance": 2480000,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      },
+      "after": {
+        "as_of": "2026-10-31",
+        "raw_rows": 147,
+        "spending_count": 73,
+        "living_spent": 930000,
+        "living_remaining": 120000,
+        "housing": 750000,
+        "travel": 120000,
+        "outside_budget": 870000,
+        "fixed": 770000,
+        "total_spending": 1820000,
+        "by_category": {
+          "BEAUTY": 40000,
+          "CULTURE_LEISURE": 90000,
+          "EDUCATION": 30000,
+          "ETC": 20000,
+          "FASHION_SHOPPING": 90000,
+          "FOOD": 500000,
+          "HOUSEHOLD": 60000,
+          "HOUSING_TELECOM": 750000,
+          "MEDICAL_HEALTH": 30000,
+          "TRANSPORT_CAR": 80000,
+          "TRAVEL_LODGING": 120000,
+          "UNCLASSIFIED": 10000
+        },
+        "unclassified_count": 2,
+        "unclassified_amount": 10000,
+        "balances": {
+          "A": 2160000,
+          "B": 320000,
+          "C": 6300000
+        },
+        "demand_balance": 2480000,
+        "travel_free_deduction_assumed": 120000,
+        "free_remaining_if_deducted": 10000
+      }
+    },
+    "2026-11": {
+      "before": {
+        "as_of": "2026-11-05",
+        "raw_rows": 46,
+        "spending_count": 20,
+        "living_spent": 246000,
+        "living_remaining": 804000,
+        "housing": 600000,
+        "travel": 0,
+        "outside_budget": 600000,
+        "fixed": 600000,
+        "total_spending": 846000,
+        "by_category": {
+          "BEAUTY": 40000,
+          "CULTURE_LEISURE": 20000,
+          "EDUCATION": 15000,
+          "ETC": 10000,
+          "FOOD": 96000,
+          "HOUSEHOLD": 30000,
+          "HOUSING_TELECOM": 600000,
+          "MEDICAL_HEALTH": 30000,
+          "UNCLASSIFIED": 5000
+        },
+        "unclassified_count": 1,
+        "unclassified_amount": 5000,
+        "balances": {
+          "A": 2610000,
+          "B": 1084000,
+          "C": 7200000
+        },
+        "demand_balance": 3694000,
+        "travel_free_deduction_assumed": 0,
+        "free_remaining_if_deducted": 130000
+      },
+      "after": {
+        "as_of": "2026-11-05",
+        "raw_rows": 46,
+        "spending_count": 22,
+        "living_spent": 286000,
+        "living_remaining": 764000,
+        "housing": 600000,
+        "travel": 0,
+        "outside_budget": 600000,
+        "fixed": 600000,
+        "total_spending": 886000,
+        "by_category": {
+          "BEAUTY": 40000,
+          "CULTURE_LEISURE": 42000,
+          "EDUCATION": 15000,
+          "ETC": 10000,
+          "FOOD": 114000,
+          "HOUSEHOLD": 30000,
+          "HOUSING_TELECOM": 600000,
+          "MEDICAL_HEALTH": 30000,
+          "UNCLASSIFIED": 5000
+        },
+        "unclassified_count": 1,
+        "unclassified_amount": 5000,
+        "balances": {
+          "A": 2610000,
+          "B": 1084000,
+          "C": 7200000
+        },
+        "demand_balance": 3694000,
+        "travel_free_deduction_assumed": 0,
+        "free_remaining_if_deducted": 130000
+      }
+    }
+  }
+}

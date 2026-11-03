@@ -33,7 +33,9 @@ CSRF_TRUSTED_ORIGINS = [*CSRF_TRUSTED_ORIGINS, "http://localhost:5174", "http://
 CODEF = {**CODEF, "CLIENT_ID": "", "CLIENT_SECRET": "", "PUBLIC_KEY": "", "CONNECTED_ID": ""}
 
 CHAT_ENGINE = "router"
-CHAT_TODAY = "2026-10-29"  # spending_fixture.seed.AS_OF 의 날짜 — 더미 거래 · 수집 기록 · 예산 주기가 이날 기준
+CHAT_TODAY = os.environ.get("CHAT_TODAY", "2026-10-29")
+if CHAT_TODAY in ("", "today"):
+    CHAT_TODAY = None  # 알파는 실제 오늘; 기본 3인 시드는 기존 날짜
 CHAT_LLM = "live" if os.environ.get("CHAT_LLM") == "live" or os.environ.get("FIXTURE_LIVE_LLM") == "1" else "fake"
 if os.environ.get("CHAT_LLM") not in (None, "", "fake", "live"):
     raise ImproperlyConfigured("CHAT_LLM 은 fake 또는 live 예요")
