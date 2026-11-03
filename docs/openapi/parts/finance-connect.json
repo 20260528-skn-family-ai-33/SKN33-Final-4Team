@@ -423,6 +423,7 @@
                         {
                           "connectionId": "5e0a4c31-334b-498a-a1c5-b3d239c7c120",
                           "businessType": "bank",
+                          "organizationCode": "0004",
                           "organizationName": "국민은행",
                           "alias": null,
                           "status": "connected",
@@ -439,6 +440,7 @@
                         {
                           "connectionId": "91f24d28-b681-434e-b142-5557f345df09",
                           "businessType": "card",
+                          "organizationCode": "0306",
                           "organizationName": "신한카드",
                           "alias": null,
                           "status": "relogin",
@@ -1224,6 +1226,10 @@
             ],
             "description": "조회 범위 또는 금융 업권."
           },
+          "organizationCode": {
+            "type": "string",
+            "description": "CODEF 기관 코드. 다시 연결(POST /api/finance/connections/)에 그대로 보낸다."
+          },
           "organizationName": {
             "type": "string",
             "description": "기관 이름."
@@ -1282,6 +1288,7 @@
         "required": [
           "connectionId",
           "businessType",
+          "organizationCode",
           "organizationName",
           "alias",
           "status",
@@ -1480,8 +1487,7 @@
             "type": "string",
             "enum": [
               "done",
-              "failed",
-              "not_supported"
+              "failed"
             ]
           },
           "accountCount": {

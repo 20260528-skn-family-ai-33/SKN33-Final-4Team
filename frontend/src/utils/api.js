@@ -28,8 +28,10 @@ async function readJson(res) {
   return body
 }
 
+// reload() = 같은 주소를 다시 받아오기 (예: 거래 카테고리를 저장한 뒤 목록 새로고침)
 export function useApi(path) {
   const [state, setState] = useState({ data: null, error: null })
+  const [version, setVersion] = useState(0)
 
   // path 가 바뀔 때마다(예: 카테고리 필터를 바꿀 때) 다시 받아온다
   useEffect(() => {
@@ -41,9 +43,9 @@ export function useApi(path) {
         if (err.name !== 'AbortError') setState({ data: null, error: err })
       })
     return () => ctrl.abort()
-  }, [path])
+  }, [path, version])
 
-  return state
+  return { ...state, reload: () => setVersion((v) => v + 1) }
 }
 
 // 장고가 준 csrftoken 쿠키 꺼내기 (없으면 /api/csrf/ 에서 받아 온다)

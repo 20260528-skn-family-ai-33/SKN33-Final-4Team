@@ -1,109 +1,84 @@
 // 계좌 연결 3: 사용할 계좌 고르기
-// 계좌 목록은 시안 예시값 — CODEF 보유계좌 조회 API 가 생기면 바꾼다
-// 실제 응답처럼: 이름 = 별칭(resAccountNickName)이 있으면 별칭, 없으면 상품명(resAccountName)
-//               종류 = 예금구분(resAccountDeposit) 11 입출금 · 12 적금 · 10/14 미분류 → 미분류는 사용자가 고른다
+// GET · PUT /api/finance/connect/accounts/ (docs/api/finance-connect.md '계좌 후보 보기' · '계좌 선택 저장', 11/03 S2)
+//   - 저장된 계좌만 읽는다(CODEF 를 부르지 않음). 후보 = 연결이 살아 있는 은행의 입출금 계좌
+//   - 고른 계좌 전체 목록을 보낸다. 1개 이상 (빈 목록 400). 하나라도 틀리면 서버가 전부 저장하지 않는다
+//   - 계좌 용도 · 종류 지정은 서버가 받지 않아서 이 화면에서 받지 않는다 (미지원)
+// 지금 수집은 기관 단위라 선택 전에 그 은행 계좌의 거래도 이미 불러와 있다. 선택은 관리 대상(잔액 · 월급 찾기)만 정한다
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import AcctPick from '../components/AcctPick.jsx'
+import ApiStatus from '../components/ApiStatus.jsx'
 import { usePicked } from '../utils/usePicked.js'
 import { won } from '../utils/money.js'
-import { PATHS } from '../routes.js'
-
-const USES = ['생활비', '고정지출', '저축', '쿠션']
-const KIND_PICK = [['입출금', '입출금'], ['적금', '적금·예금']]  // 미분류 계좌에서 고르는 값 [값, 버튼 글자]
-const SAVING_NOTE = '저축 계좌예요. 생활비 잔액에는 더하지 않아요.'
-const BANKS = [
-  { bank: '신한은행', accounts: [
-    { id: 'sh1', product: '저축예금', nickname: null, no: '1234', kind: '입출금', balance: 340_000, use: '생활비' },
-    { id: 'sh2', product: '신한 자유적금', nickname: null, no: '7890', kind: '적금', balance: 1_200_000 },
-  ] },
-  { bank: '국민은행', accounts: [
-    { id: 'kb1', product: 'KB국민ONE통장', nickname: '급여통장', no: '5678', kind: '입출금', balance: 2_460_000, use: '고정지출' },
-    { id: 'kb3', product: 'KB마이핏통장', nickname: null, no: '9012', kind: null, balance: 150_000 },  // 예금구분 미분류
-    { id: 'kb2', product: '직장인 마이너스통장', nickname: null, no: '3344', kind: '마이너스통장', balance: -150_000,
-      note: '한도는 은행에서 확인되지 않았어요. 마이너스 금액은 내 돈이 아니라서 잔액에 더하지 않아요.' },
-  ] },
-]
-const ALL = BANKS.flatMap((b) => b.accounts)
-// 입출금 계좌는 처음부터 골라 둔다
-const FIRST_PICKED = ALL.filter((a) => a.use).map((a) => a.id)
-const FIRST_USES = Object.fromEntries(ALL.filter((a) => a.use).map((a) => [a.id, a.use]))
+import { apiSend, useApi } from '../utils/api.js'
+import { PATHS, afterAccountPick } from '../routes.js'
 
 export default function ConnectAccountsPage() {
-  const navigate = useNavigate()
-  const picked = usePicked(FIRST_PICKED)
-  const [uses, setUses] = useState(FIRST_USES)  // { sh1: '생활비', kb1: '고정지출' }
-  const [kinds, setKinds] = useState({})         // 미분류 계좌에 사용자가 고른 종류 { kb3: '입출금' }
-  const [error, setError] = useState('')
-  const kindOf = (a) => a.kind ?? kinds[a.id] ?? null
+  const { data, error } = useApi('/api/finance/connect/accounts/')
+  if (!data) return <Layout title="계좌 연결" showBack><ApiStatus error={error} /></Layout>
+  return <AccountPick items={data.items} />
+}
 
-  const next = () => {
-    // 계좌는 1개 이상 골라야 한다 (10/22 결정 K, PUT selectedAccountIds 빈 목록은 400). 카드는 0개도 됨
+function AccountPick({ items }) {
+  const navigate = useNavigate()
+  const { state } = useLocation()
+  const picked = usePicked(items.filter((a) => a.isSelected).map((a) => a.accountId))
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const banks = [...new Set(items.map((a) => a.organizationName))]
+
+  const next = async () => {
+    if (busy) return
+    // 계좌는 1개 이상 골라야 한다 (10/22 결정 K). 카드는 0개도 됨
     if (picked.list.length === 0) { setError('예산에 쓸 계좌를 1개 이상 골라 주세요.'); return }
-    const unknown = ALL.find((a) => picked.has(a.id) && !kindOf(a))
-    if (unknown) { setError(`${unknown.nickname ?? unknown.product}의 종류를 골라 주세요.`); return }
-    navigate(PATHS.connectCards)
+    setBusy(true)
+    setError('')
+    try {
+      await apiSend('/api/finance/connect/accounts/', 'PUT', { selectedAccountIds: picked.list })
+      const to = afterAccountPick(state)
+      // 연결 관리로 돌아갈 때는 계좌 선택 화면을 기록에서 지워 뒤로 가기가 다시 이 화면으로 오지 않게 한다
+      navigate(to, { replace: to === PATHS.connections })
+    } catch (err) {
+      setError(err.fields?.selectedAccountIds?.[0] ?? err.message)
+      setBusy(false)
+    }
   }
 
-  const purposeButtons = (a) => (
-    <div className="mc-acctuse">
-      <span>용도</span>
-      {USES.map((u) => (
-        <button key={u} type="button" aria-pressed={uses[a.id] === u} onClick={() => setUses({ ...uses, [a.id]: u })}>{u}</button>
-      ))}
-    </div>
-  )
-
-  const detail = (a) => {
-    const kind = kindOf(a)
-    if (!a.kind) {
-      // 종류를 모르는 계좌: 먼저 종류를 고르고, 입출금이면 용도까지
-      return (
-        <>
-          <div className="mc-acctuse mc-acctkind">
-            <span>종류</span>
-            {KIND_PICK.map(([v, label]) => (
-              <button key={v} type="button" aria-pressed={kind === v}
-                onClick={() => { setKinds({ ...kinds, [a.id]: v }); setError('') }}>{label}</button>
-            ))}
-          </div>
-          {!kind && <p className="mc-acctpick-note">은행에서 계좌 종류를 알려 주지 않았어요. 어떤 통장인지 골라 주세요.</p>}
-          {kind === '입출금' && purposeButtons(a)}
-          {kind === '적금' && <p className="mc-acctpick-note">{SAVING_NOTE}</p>}
-        </>
-      )
-    }
-    if (a.use) return purposeButtons(a)
-    return <p className="mc-acctpick-note">{a.note ?? SAVING_NOTE}</p>
+  if (items.length === 0) {
+    return (
+      <Layout title="계좌 연결" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.connect)}>은행 연결하기</button>}>
+        <div className="mc-eyebrow">계좌 연결</div>
+        <h1>연결된 계좌가 없어요</h1>
+        <p className="mc-muted">은행을 연결하면 입출금 계좌를 여기서 고를 수 있어요. 연결은 됐는데 계좌가 없으면 연결 결과 화면에서 다시 불러오기를 해 주세요.</p>
+      </Layout>
+    )
   }
 
   return (
     <Layout
       title="계좌 연결"
       showBack
-      foot={<button type="button" className="mc-primary" onClick={next}>선택한 계좌 {picked.list.length}개로 계속</button>}
+      foot={<button type="button" className="mc-primary" disabled={busy} onClick={next}>{busy ? '저장 중…' : `선택한 계좌 ${picked.list.length}개로 계속`}</button>}
     >
       <div className="mc-eyebrow">계좌 연결</div>
       <h1>사용할 계좌를 골라 주세요</h1>
-      <p className="mc-muted">연결한 은행에서 조회한 내 계좌예요. 예산에 쓸 계좌만 고르세요.</p>
-      {BANKS.map((b) => (
-        <div className="mc-card" key={b.bank}>
-          <div className="mc-row"><h2>{b.bank}</h2><span className="mc-badge">연결 완료</span></div>
-          {b.accounts.map((a) => {
-            const kind = kindOf(a)
-            return (
-              <AcctPick key={a.id} on={picked.has(a.id)} onToggle={() => { picked.toggle(a.id); setError('') }}
-                name={a.nickname ?? a.product}
-                sub={`****${a.no} · ${kind ?? '종류 확인 필요'}${a.nickname ? ` · ${a.product}` : ''}`}
-                amount={won(a.balance).replace('-', '−')} negative={a.balance < 0}>
-                {detail(a)}
-              </AcctPick>
-            )
-          })}
-        </div>
-      ))}
-      <p className="mc-note">조회 가능한 계좌만 보여요. 별칭은 은행 앱에서 붙인 이름이에요. 같은 은행 계좌를 나중에 추가해도 다시 인증하지 않아요.</p>
+      <p className="mc-muted">연결한 은행에서 불러온 입출금 계좌예요. 예산에 쓸 계좌만 고르세요.</p>
+      {banks.map((bank) => {
+        const list = items.filter((a) => a.organizationName === bank)
+        const relogin = list.some((a) => a.status === 'relogin')
+        return (
+          <div className="mc-card" key={bank}>
+            <div className="mc-row"><h2>{bank}</h2><span className="mc-badge">{relogin ? '다시 연결 필요' : '연결 완료'}</span></div>
+            {list.map((a) => (
+              <AcctPick key={a.accountId} on={picked.has(a.accountId)} onToggle={() => { picked.toggle(a.accountId); setError('') }}
+                name={a.displayName} sub={[a.name, a.maskedNumber].filter(Boolean).join(' · ')}
+                amount={a.balance == null ? '잔액 확인 안 됨' : won(a.balance).replace('-', '−')} negative={a.balance < 0} />
+            ))}
+          </div>
+        )
+      })}
+      <p className="mc-note">계좌 용도 지정은 아직 지원하지 않아요. 예적금 계좌는 후보에 나오지 않아요.</p>
       {error && <div className="mc-error" role="alert">{error}</div>}
     </Layout>
   )

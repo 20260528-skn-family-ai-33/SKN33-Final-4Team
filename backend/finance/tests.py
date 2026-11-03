@@ -324,6 +324,7 @@ class ConnectTest(FinanceData):
         self.assertEqual(len(items), 1)  # 해제한 연결은 안 나옴
         item = items[0]
         self.assertEqual((item["businessType"], item["organizationName"], item["status"]), ("bank", "국민은행", "connected"))
+        self.assertEqual(item["organizationCode"], "0004")  # 다시 연결에 쓰는 기관 코드 (11/03)
         self.assertEqual(item["accountCount"], 3)
         self.assertEqual(item["cardCount"], 0)
         self.assertNotIn("connectedId", item)
