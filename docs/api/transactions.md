@@ -189,7 +189,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `suggestion.candidates` | 목록 | 후보 카테고리, 확신도 높은 순 `[{ "category", "categoryName" }]` |
 | `suggestion.reason` | 문자 / null | 확인 필요 이유(사용자에게 보여 줄 문장) |
 | `classifiedBy` | 문자 / null | 분류 출처: `user` · `rule` · `ml` · `llm`. DB `classification_source`와 같음(H-07 확정) |
-| `canApplyToFuture` | 불린 | 화면에 "앞으로 이 가게 거래도 이 카테고리로" 체크박스를 보여 줄지 (10/30). 소비 거래이고 다품목 가맹점(이름 사전 또는 가게 검색 업종이 편의점·마트 등)·페이 충전이 아니면 `true`. 이체는 `false`(받는 사람은 기억하지 않음, W) |
+| `canApplyToFuture` | 불린 | 화면에 "앞으로 이 가게 거래도 이 카테고리로" 체크박스를 보여 줄지 (10/30). 소비 거래이고 다품목 가맹점(이름 사전, 또는 이 거래나 같은 가맹점의 다른 거래에서 가게 검색 업종이 편의점·마트 등)·페이 충전이 아니면 `true`. 이체는 `false`(받는 사람은 기억하지 않음, W) |
 | `updatedAt` | 시각 | 마지막 수정 시각 |
 
 ```json

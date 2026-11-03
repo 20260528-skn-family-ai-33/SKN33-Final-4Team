@@ -252,6 +252,31 @@ class TransactionDetailTest(FinanceData):
             self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
                              ("FOOD", "suggested", "ml"), tx.merchant_name)
 
+    def test_later_tx_of_searched_multi_item_store_cannot_apply_to_future(self):
+        # PR #67 재리뷰: 다품목 근거는 앞 거래에만 있어도 같은 회원·같은 가맹점의 다음 거래 GET·PATCH 에서 막는다
+        searched = {"classifier": {"step": "search_jev", "industry": "슈퍼마켓", "multi_item": True}}
+        self.tx(merchant_name="행복상회", field_states=searched)
+        nxt = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        stale = self.tx(merchant_name="행복상회", classification_source="user", field_states={FUTURE_KEY: True})
+        self.client.force_login(self.user)
+        self.assertFalse(self.client.get(self.url(nxt)).json()["canApplyToFuture"])
+        for tx in (nxt, stale):  # stale = 잘못 남은 재사용 설정. 다시 저장하면 지운다
+            with self.subTest(tx=tx.pk):
+                body = self.patch(tx, {"category": "FOOD", "applyToFuture": True}).json()
+                self.assertEqual((body["category"], body["classifyState"], body["canApplyToFuture"]), ("FOOD", "confirmed", False))
+                tx.refresh_from_db()
+                self.assertNotIn(FUTURE_KEY, tx.field_states)
+        self.assertIsNone(remembered_category(self.user, "행복상회"))
+
+        # 다른 가맹점·다른 회원은 그대로 '앞으로도 적용' 가능
+        other_store = self.tx(merchant_name="행복식당", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        self.assertTrue(self.patch(other_store, {"category": "FOOD", "applyToFuture": True}).json()["canApplyToFuture"])
+        self.assertEqual(remembered_category(self.user, "행복식당"), "FOOD")
+        theirs = self.tx(user=self.other, merchant_name="행복상회", account=None, source_kind="manual",
+                         confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        self.client.force_login(self.other)
+        self.assertTrue(self.client.get(self.url(theirs)).json()["canApplyToFuture"])
+
     def test_patch_bad_requests(self):
         spending = self.tx()
         income = self.tx(direction="in", transaction_type="income")
