@@ -1075,7 +1075,11 @@ def matching_payments(expense, due_date, start, end):
         found = found.filter(account_id=expense.payment_account_id)
     else:
         return []  # 결제 수단 모름 → 찾을 곳이 없음
-    taken = evidence_of_others(expense.user_id, expense) | id_set(expense.evidence)
+    # 자기 근거 거래: 카드는 근거 = 이미 고정비로 연결된 결제라 뺀다. 계좌는 납부로 연결된 출금이 위 PaymentMatch 로 빠지므로
+    #   남은 근거(감지 후보의 근거 출금 등 아직 회차와 짝이 없는 것)는 후보로 둔다 (PR #80 리뷰)
+    taken = evidence_of_others(expense.user_id, expense)
+    if expense.payment_card_id is not None:
+        taken |= id_set(expense.evidence)
     found = [t for t in found if str(t.pk) not in taken]
     found.sort(key=lambda t: (abs((t.occurred_on - due_date).days), abs(t.amount - expense.amount), str(t.pk)))
     return found
@@ -1332,7 +1336,9 @@ def match_current_due(expense, cycle, today):
 def remembered_withdrawal(expense, found):
     if len(found) != 1:
         return False
-    picked = [t for t in remembered_evidence(expense) if t.account_id is not None and t.classification_source == "user"]
+    # 기억한 출금 = 사용자가 직접 고른 출금, 또는 사용자가 확정한 감지 후보의 근거 출금 (확정 = 그 출금들이 맞다고 확인, PR #80 리뷰)
+    picked = [t for t in remembered_evidence(expense) if t.account_id is not None
+              and (t.classification_source == "user" or expense.source_type == "detected")]
     label = normalize_merchant(found[0].merchant_name or found[0].source_description)
     return label is not None and any(normalize_merchant(t.merchant_name or t.source_description) == label for t in picked)
 
@@ -1979,9 +1985,7 @@ def savings_ignore(request):
             if s.status == "suggested":
                 s.status = "ignored"
                 s.save(update_fields=["status"])
-                # 근거 이체 -> '내 계좌끼리 옮긴 돈'. 남에게 보낸 이체(transfer — 이름 · 저축 단어로 찾은 후보)는 그대로 둔다 (11/4)
-                if s.evidence:
-                    FinancialTransaction.objects.filter(pk__in=list(id_set(s.evidence))).exclude(
-                        transaction_type="transfer").update(transaction_type="own_transfer")
+                # 근거 이체의 유형은 바꾸지 않는다 — 내 계좌 이체는 이미 own_transfer, 남에게 보낸 이체(transfer)와
+                #   후보가 생긴 뒤 사용자가 바꾼 분류(소비 등)는 그대로 (PR #80 리뷰)
 
     return Response({"items" : [saving_json(s) for s in found]})

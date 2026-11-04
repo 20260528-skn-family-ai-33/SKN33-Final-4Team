@@ -277,3 +277,43 @@ class AlphaOnboardingTest(TestCase):
         self.assertEqual(len(items), 2)
         self.assertEqual(items[0]["name"], "합성 첫목돈적금")
         self.assertIn(str(self.uid("onboarding", "asset", "B")), to_ids)
+
+
+class ReviewFlowTest(CandidateFixture):
+    """PR #80 리뷰: 감지한 후보를 실제 API 순서로 확정 · 거절"""
+
+    def test_account_candidate_confirm_links_this_cycle_withdrawal(self):
+        from users.models import FinancialProfile
+        from .home import home_data
+        FinancialProfile.objects.create(user=self.user, payday=25, monthly_take_home_income=2_500_000)
+        rents = self.monthly(day=10, amount=700_000, kind="transfer", label="월세")
+        self.detect()
+        [e] = self.expenses()
+        self.client.force_login(self.user)
+        with patch("django.utils.timezone.localdate", return_value=TODAY):
+            res = self.client.post("/api/budgets/fixed/confirm/", {"recurringIds": [str(e.pk)]}, content_type="application/json")
+            self.assertEqual(res.status_code, 200, res.content)
+            must_pay = home_data(self.user, TODAY)["must_pay"]
+            item = next(i for i in self.client.get("/api/budgets/fixed/").json()["items"] if i["recurringId"] == str(e.pk))
+        october = rents[-1]
+        self.assertTrue(PaymentMatch.objects.filter(transaction=october, due__recurring=e).exists())
+        self.assertEqual(PaymentDue.objects.get(recurring=e, due_date=date(2026, 10, 10)).payment_state, "paid")
+        self.assertEqual(item["paidThisCycle"]["transactionId"], str(october.pk))
+        self.assertIn("paid", [d["paymentState"] for d in item["recentDues"]])
+        self.assertNotIn(str(e.pk), [m["sourceId"] for m in must_pay])
+
+    def test_ignore_saving_keeps_user_spending(self):
+        from finance.api import listed_transactions
+        txs = self.monthly(day=5, amount=300_000, kind="transfer", label="김나은")
+        self.detect()
+        [s] = self.savings()
+        self.client.force_login(self.user)
+        res = self.client.patch(f"/api/finance/transactions/{txs[0].pk}/", {"category": "FOOD"}, content_type="application/json")
+        self.assertEqual(res.status_code, 200, res.content)  # 사용자가 소비(식비)로 분류
+        res = self.client.post("/api/budgets/savings/ignore/", {"savingIds": [str(s.pk)]}, content_type="application/json")
+        self.assertEqual(res.status_code, 200, res.content)
+        mine = FinancialTransaction.objects.get(pk=txs[0].pk)
+        self.assertEqual((mine.transaction_type, mine.classification_source, mine.confirmed_category_id), ("spending", "user", "FOOD"))
+        self.assertTrue(listed_transactions(self.user).filter(pk=mine.pk).exists())
+        self.assertEqual(set(FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs[1:]]).values_list("transaction_type", flat=True)),
+                         {"transfer"})
