@@ -357,8 +357,10 @@ def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
     lines += [{"bucket": Bucket.LIVING, "category_id": code, "allocated_amount": out["allocations"][code]}
               for code in ALLOCATION_CODES]
     lines.append({"bucket": Bucket.LIVING, "category_id": "ETC", "allocated_amount": snapshot["etc"]})
-    if (any(type(line["allocated_amount"]) is not int or line["allocated_amount"] < 0 for line in lines)
-            or snapshot["take_home_income"] - sum(line["allocated_amount"] for line in lines) != expected_spare):
+    unallocated = out.get("unallocated", 0)
+    if (type(unallocated) is not int or unallocated < 0
+            or any(type(line["allocated_amount"]) is not int or line["allocated_amount"] < 0 for line in lines)
+            or snapshot["take_home_income"] - sum(line["allocated_amount"] for line in lines) != expected_spare + unallocated):
         raise EngineCheckFailed("예산 항목 합계가 지킬 돈의 여윳돈과 맞지 않아요.")
     version = (Budget.objects.filter(user=task.user, cycle=cycle).aggregate(last=Max("version_no"))["last"] or 0) + 1
     budget = Budget.objects.create(

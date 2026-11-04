@@ -34,6 +34,67 @@ def engine_input(target=1_060_000, **fields):
 
 
 class CategoryRecommendationTest(SimpleTestCase):
+    def test_unallocated_is_explicit_opt_in_and_preserves_inputs(self):
+        inp = engine_input()
+        original = copy.deepcopy(inp)
+        out = recommend_category_budgets(inp)
+        self.assertNotIn("unallocated", out)
+        check_result(inp, out)
+        check_result(inp, {**out, "unallocated": 0})
+        out["allocations"]["FOOD"] -= 100_000
+        with self.assertRaises(EngineCheckFailed):
+            check_result(inp, out)
+        out["unallocated"] = 100_000
+        before = copy.deepcopy(out)
+        check_result(inp, out)
+        self.assertEqual((inp, out), (original, before))
+
+    def test_unallocated_rejects_bad_amounts(self):
+        inp = engine_input()
+        out = recommend_category_budgets(inp)
+        out["allocations"]["FOOD"] -= 100_000
+        for value in (0, 99_999, 100_001, -1, True, False, 100_000.0, "100000", None):
+            with self.subTest(value=value), self.assertRaises(EngineCheckFailed):
+                check_result(inp, {**out, "unallocated": value})
+
+    def test_unallocated_cannot_bypass_minimum_lock_or_other_checks(self):
+        inp = engine_input(minimums={"BEAUTY": 55_000}, locks={"FOOD": 330_000})
+        good = recommend_category_budgets(inp)
+        for code, amount in (("BEAUTY", 54_999), ("FOOD", 329_999), ("EDUCATION", -1)):
+            out = copy.deepcopy(good)
+            out["unallocated"] = out["allocations"][code] - amount
+            out["allocations"][code] = amount
+            with self.subTest(code=code), self.assertRaises(EngineCheckFailed):
+                check_result(inp, out)
+        for code in ("HOUSING_TELECOM", "TRAVEL_LODGING", "ETC"):
+            out = copy.deepcopy(good)
+            out["allocations"]["CULTURE_LEISURE"] -= 100_001
+            out["allocations"][code] = 1
+            out["unallocated"] = 100_000
+            with self.subTest(code=code), self.assertRaises(EngineCheckFailed):
+                check_result(inp, out)
+        out = copy.deepcopy(good)
+        out["unallocated"] = out["allocations"].pop("EDUCATION")
+        with self.assertRaises(EngineCheckFailed):
+            check_result(inp, out)
+        with self.assertRaises(EngineCheckFailed):
+            check_result(inp, {**good, "unallocated": 0, "conflicts": [{"type": "unexpected"}]})
+
+    def test_infeasible_cannot_have_unallocated_even_zero(self):
+        inp = engine_input(100_000, minimums={"FOOD": 100_001})
+        out = recommend_category_budgets(inp)
+        check_result(inp, out)
+        for value in (0, 1, None):
+            with self.subTest(value=value), self.assertRaises(EngineCheckFailed):
+                check_result(inp, {**out, "unallocated": value})
+
+    def test_all_locked_plan_b_can_leave_money_unallocated(self):
+        locks = dict.fromkeys(ALLOCATION_CODES, 10_000)
+        inp = engine_input(100_000, locks=locks)
+        out = {"status": "proposed", "allocations": locks, "unallocated": 20_000,
+               "summary": "합성 플랜 B", "reasons": [], "conflicts": []}
+        check_result(inp, out)
+
     def test_fallback_amounts_and_total(self):
         # 11/3: 임시 비율 금액은 내일 ML로 바뀌므로 금액 대신 규칙만 본다 (배분 대상만 · 합계 · 0 이상 정수)
         inp = engine_input()
@@ -280,6 +341,59 @@ class RecommendAPITest(TestCase):
         budget = Budget.objects.get(task=task)
         self.assertEqual(budget.items.get(category_detail="card_reserved").allocated_amount, 30_000)
         self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 70_000)
+
+    def test_plan_b_unallocated_is_saved_and_displayed_as_spare(self):
+        self.minimum("ETC", 60_000)
+        def engine(inp):
+            out = recommend_category_budgets(inp)
+            out["allocations"]["FOOD"] -= 100_000
+            return {**out, "unallocated": 100_000}
+        with patch("budgets.recommend.recommend_category_budgets", side_effect=engine):
+            task = self.task(self.post())
+        self.assertEqual(task.status, "succeeded")
+        budget = Budget.objects.get(task=task)
+        self.assertEqual(budget.status, "validated")
+        self.assertEqual(budget.funding_amount, 2_800_000)
+        living = budget.items.filter(bucket="living")
+        self.assertEqual(living.aggregate(total=Sum("allocated_amount"))["total"], 1_020_000)
+        self.assertEqual(living.get(category_id="ETC").allocated_amount, 60_000)
+        self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 200_000)
+        self.assertEqual(set(task.result), {"outcome", "budget_id", "summary", "conflicts", "locks_released"})
+        view = self.client.get("/api/budgets/")
+        self.assertEqual(view.status_code, 200)
+        self.assertEqual(view.json()["split"]["spare"], 200_000)
+        self.assertEqual(view.json()["split"]["living"], 1_020_000)
+        approval = self.client.post(f"/api/budgets/{budget.pk}/approve/", data="{}",
+            content_type="application/json", HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+        self.assertEqual(approval.status_code, 200, approval.content)
+        self.assertEqual(self.client.get("/api/budgets/").json()["split"]["spare"], 200_000)
+
+    def test_invalid_unallocated_fails_without_saving_or_expiring_budget(self):
+        draft = self.budget()
+        for value in (99_999, -1, True, 100_000.0):
+            def engine(inp):
+                out = recommend_category_budgets(inp)
+                out["allocations"]["FOOD"] -= 100_000
+                return {**out, "unallocated": value}
+            with self.subTest(value=value), patch("budgets.recommend.recommend_category_budgets", side_effect=engine):
+                task = self.task(self.post())
+            self.assertEqual((task.status, task.error_code), ("failed", "engine_check_failed"))
+            self.assertIsNone(task.result)
+            self.assertEqual(Budget.objects.count(), 1)
+            draft.refresh_from_db()
+            self.assertEqual(draft.status, "draft")
+
+    def test_save_rechecks_unallocated_even_if_engine_check_is_bypassed(self):
+        for value in (99_999, -1, True, False, 100_000.0, None):
+            def engine(inp):
+                out = recommend_category_budgets(inp)
+                out["allocations"]["FOOD"] -= 100_000
+                return {**out, "unallocated": value}
+            with self.subTest(value=value), patch("budgets.recommend.recommend_category_budgets", side_effect=engine), \
+                    patch("budgets.recommend.check_result"):
+                task = self.task(self.post())
+            self.assertEqual((task.status, task.error_code), ("failed", "engine_check_failed"))
+            self.assertFalse(Budget.objects.exists())
 
     def test_not_ready_missing(self):
         for field in ("housing_type", "monthly_take_home_income", "payday"):
