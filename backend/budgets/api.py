@@ -499,6 +499,7 @@ def fixed_list(request):
         item = fixed_json(e)
         item["evidence_suggestion"] = evidence_suggestion(e, cycle, today)  # 고를 수 있는 결제 · 출금 제안
         item["recent_dues"] = recent_dues_json(e, cycle)                     # 지난 · 이번 회차 납부 기록 (회차 지정용)
+        item["paid_this_cycle"] = paid_this_cycle(e, cycle)                  # 이번 주기에 낸 거래 (화면 '이번 달 납부 완료')
         items.append(item)
 
     return Response({
@@ -627,11 +628,11 @@ def account_json(a):
 # 고정지출 한 건 → 응답 JSON (목록 · 추가 · 수정 · 확정 · 무시 공통)
 def fixed_json(e):
     # 근거 거래 : evidence(거래 ID 목록) 중 가장 최근 거래 1건을 보여줌. 없으면 null
-    evidence = None
-    if e.evidence:
-        t = FinancialTransaction.objects.filter(pk__in=e.evidence).order_by("-occurred_on").first()
-        if t:
-            evidence = tx_brief(t)
+    #   비우기 · 결제 수단 변경으로 기억에서 뺀 지난 기록(MEMORY_OFF)은 보여 주지 않음 (11/4)
+    from finance.api import has_payment_remaining
+    remembered = sorted((t for t in remembered_evidence(e) if has_payment_remaining(t)),
+                        key=lambda t: t.occurred_on, reverse=True)
+    evidence = tx_brief(remembered[0]) if remembered else None
 
     return{
         "recurring_id" : str(e.pk),
@@ -929,15 +930,14 @@ def fixed_update(request, recurring_id):
         # 근거 거래: 이번 주기 연결만 고치고 지난 주기 기록은 그대로 (회차를 지정하면 아래에서 그 회차만)
         if evidence_sent and evidence_due is None:
             if evidence_tx is None:
-                unlink_current(expense, cycle, today)    # 비우기: 연결 풀고
-                expense.evidence = []                    # 가맹점 기억도 지움
+                expense.evidence = unlink_current(expense, cycle, today)  # 비우기: 이번 주기 연결만 풀고 지난 기록은 고정비로 남김
+                forget_memory(expense, expense.evidence)                   # 가맹점 기억은 지움 (사용자가 틀렸다고 함, 11/4)
                 fields.append("evidence")
             elif str(evidence_tx.pk) not in id_set(expense.evidence):
                 expense.evidence = unlink_current(expense, cycle, today)  # 바꾸기: 기존 연결 풀고 (새 거래는 아래에서)
                 fields.append("evidence")
         elif method_changed:
-            expense.evidence = []  # 결제 수단을 바꾸면 가맹점 기억은 비움 (이미 낸 기록은 그대로)
-            fields.append("evidence")
+            forget_memory(expense, expense.evidence)  # 결제 수단을 바꾸면 가맹점 기억은 비움 (이미 낸 기록은 고정비로 그대로, 11/4)
 
         if fields:
             expense.save(update_fields=fields)
@@ -971,6 +971,7 @@ def lock_user(user):
     get_user_model().objects.select_for_update(no_key=True).filter(pk=getattr(user, "pk", user)).first()
 SKIP_AUTO = "skip_auto_match"  # 거래 field_states: 사용자가 연결을 푼 회차(occurrence_key) 목록 → 그 회차에는 자동으로 다시 붙이지 않음
 ORIGINAL_TYPE = "original_transaction_type"  # 거래 목록 API와 같은 '원래 이체였음' 표시 (finance/api.py, 10/24 AA⑥)
+MEMORY_OFF = "fixed_memory_off"  # 거래 field_states: 이 고정지출(ID 목록)의 가맹점 기억으로 쓰지 않음 — 지난 기록은 고정비로 남김 (11/4)
 CONVERTED_BY_FIXED = "converted_by_fixed"    # 고정지출 연결이 이체를 소비로 바꿨다는 표시 (풀 때 되돌리려고)
 FIXED_TX_TYPES = ["spending", "transfer"]  # 고정지출 근거가 될 수 있는 거래 종류 (소비 · 남에게 보낸 이체)
 
@@ -1144,8 +1145,9 @@ def evidence_suggestion(expense, cycle, today):
     start, end = due_date - timedelta(days=3), due_date + timedelta(days=3)
     due_id = None
     if expense.payment_card_id is not None:
-        if expense.evidence:
-            return None  # 기억한 가맹점이 있으면 서버가 맞추고 묻지 않음
+        # 이번 주기에 연결된 결제가 있으면 묻지 않음. 근거 거래가 있어도 자동 연결이 안 된 달(가게 이름이 바뀜 등)은 묻는다 (11/4)
+        if card_linked_in(expense, cycle):
+            return None
     elif late_dues(expense, cycle, today):
         # 지난 주기 미납 회차가 남아 있으면 그 회차부터: 출금일 −3일 ~ 오늘 (늦게 낸 출금)
         # 저장(link_evidence → evidence_target)도 같은 회차에 붙인다
@@ -1181,11 +1183,12 @@ def tx_brief(t):
         "amount" : t.amount,
     }
 
-# 납부 상태 다시 계산 — 짝 합계 ≥ 예정 금액 paid, 일부 partial, 없으면 출금일 전 unpaid · 지남 needs_review
+# 납부 상태 다시 계산 — 짝 합계 ≥ 예정 금액의 90%(올림) paid, 그보다 적으면 partial, 없으면 출금일 전 unpaid · 지남 needs_review
+#   90%: 15,000원 등록에 14,900원 출금처럼 조금 다르게 나가도 '냄'으로 (11/4). 등록 금액 · 예산 금액은 그대로
 def refresh_due_state(due, today):
     summary = due.matches.aggregate(total=Sum("matched_amount"), last=Max("matched_at"))
     paid = summary["total"] or 0
-    if paid >= due.confirmed_amount:
+    if paid >= (due.confirmed_amount * 9 + 9) // 10:  # [임시] 90% — 알파 뒤 "앞으로 이 금액으로 바꿀까요?"로 등록 금액을 고칠 예정
         state = "paid"
     elif paid > 0:
         state = "partial"
@@ -1329,11 +1332,43 @@ def match_current_due(expense, cycle, today):
 def remembered_withdrawal(expense, found):
     if len(found) != 1:
         return False
-    picked = FinancialTransaction.objects.filter(
-        pk__in=list(id_set(expense.evidence)), account__isnull=False, classification_source="user",
-    )
+    picked = [t for t in remembered_evidence(expense) if t.account_id is not None and t.classification_source == "user"]
     label = normalize_merchant(found[0].merchant_name or found[0].source_description)
     return label is not None and any(normalize_merchant(t.merchant_name or t.source_description) == label for t in picked)
+
+# 근거 거래 중 가맹점 기억으로 쓰는 것 — 비우기 · 결제 수단 변경으로 뺀 지난 기록(MEMORY_OFF)은 제외 (11/4)
+#   evidence 에는 남아 있어서 고정비로는 계속 보임 (finance/api.py listed_transactions)
+def remembered_evidence(expense):
+    found = FinancialTransaction.objects.filter(user_id=expense.user_id, pk__in=list(id_set(expense.evidence)))
+    return [t for t in found if str(expense.pk) not in (t.field_states or {}).get(MEMORY_OFF, [])]
+
+# 이 근거 거래들을 이 고정지출의 가맹점 기억에서 뺀다 (거래 field_states 에 표시, 모델 변경 없이)
+def forget_memory(expense, ids):
+    for tx in FinancialTransaction.objects.select_for_update().filter(
+            user_id=expense.user_id, pk__in=list(id_set(ids))).order_by("pk"):
+        states = dict(tx.field_states or {})
+        off = set(states.get(MEMORY_OFF, []))
+        if str(expense.pk) in off:
+            continue
+        states[MEMORY_OFF] = sorted(off | {str(expense.pk)})
+        tx.field_states = states
+        tx.save(update_fields=["field_states", "updated_at"])
+
+# 카드 고정지출이 이 주기에 연결된 결제(같은 카드의 근거 거래)가 있는지 — 주기마다 1건
+def valid_card_evidence(expense, cycle=None):
+    """기록·가맹점 기억은 보존하되, 납부 판단에는 취소 후 잔액이 있는 카드 결제만 쓴다 (11/4)."""
+    from finance.api import has_payment_remaining
+    found = FinancialTransaction.objects.filter(
+        user_id=expense.user_id, pk__in=list(id_set(expense.evidence)),
+        source_kind="card", card_id=expense.payment_card_id,
+    )
+    if cycle is not None:
+        found = found.filter(occurred_on__gte=cycle.starts_on, occurred_on__lt=cycle.ends_before)
+    return [tx for tx in found.order_by("-occurred_on", "pk") if has_payment_remaining(tx)]
+
+
+def card_linked_in(expense, cycle):
+    return bool(valid_card_evidence(expense, cycle))
 
 # 근거 거래 연결 — evidence 에 더하고(가맹점 기억), 고정비로 셈. 계좌 출금이면 회차 1개와 짝
 #   due: 붙일 회차. 자동 연결은 그 회차를 넘기고, 사용자가 고른 거래는 evidence_target 으로 정함
@@ -1344,6 +1379,10 @@ def link_evidence(expense, tx, cycle, today, source="user", due=None):
     if str(tx.pk) not in id_set(expense.evidence):
         expense.evidence = [*(expense.evidence or []), str(tx.pk)]
         expense.save(update_fields=["evidence"])
+    off = (tx.field_states or {}).get(MEMORY_OFF, [])
+    if source == "user" and str(expense.pk) in off:  # 기억에서 뺐던 거래를 사용자가 다시 고름 → 다시 기억
+        tx.field_states = {**tx.field_states, MEMORY_OFF: [v for v in off if v != str(expense.pk)]}
+        tx.save(update_fields=["field_states", "updated_at"])
     mark_fixed(tx, expense, source)
     move_bucket(tx, "living", "fixed")
     if tx.account_id is not None:
@@ -1361,6 +1400,22 @@ def recent_dues(expense, cycle):
     return PaymentDue.objects.filter(
         recurring=expense, obligation_state="active", due_date__gte=since, due_date__lt=cycle.ends_before,
     ).order_by("due_date")
+
+# 이번 급여 주기에 낸 거래 1건 (11/4) — 계좌: 이번 주기 회차가 paid 면 그 출금 · 카드: 이번 주기에 연결된 결제. 없으면 None
+def paid_this_cycle(expense, cycle):
+    if cycle is None or expense.status != "confirmed":
+        return None
+    if expense.payment_card_id is not None:
+        found = valid_card_evidence(expense, cycle)
+        return tx_brief(found[0]) if found else None
+    else:
+        found = FinancialTransaction.objects.filter(
+            payment_matches__due__recurring=expense, payment_matches__due__obligation_state="active",
+            payment_matches__due__payment_state="paid",
+            payment_matches__due__due_date__gte=cycle.starts_on, payment_matches__due__due_date__lt=cycle.ends_before,
+        )
+    tx = found.order_by("-occurred_on").first()
+    return tx_brief(tx) if tx else None
 
 # 회차별 납부 기록 → 응답 (화면이 회차를 골라 근거 거래를 바꾸거나 비울 때 dueId 를 씀)
 def recent_dues_json(expense, cycle):

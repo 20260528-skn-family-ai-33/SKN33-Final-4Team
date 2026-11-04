@@ -184,7 +184,7 @@ export default function HomePage() {
       <div className="mc-row mc-section"><h2>꼭 나갈 돈</h2></div>
       <div className="mc-card">
         {/* 목록.map(...) = 하나씩 꺼내서 그리기. key 는 항목마다 다른 값 */}
-        {mustPay.length === 0 && <p className="mc-muted">이번 주기에 아직 나갈 돈이 없어요</p>}
+        {mustPay.length === 0 && <p className="mc-muted" style={{ textAlign: 'center' }}>이번 주기에 아직 나갈 돈이 없어요</p>}
         {/* 한 줄 = 이름 · 금액만. 날짜 · 계좌 · 상태는 누르면 팝업. 미납 확인 필요만 놓치지 않게 빨간 점 */}
         {mustPay.map((p) => {
           const badges = payBadges(p)
@@ -202,7 +202,8 @@ export default function HomePage() {
           )
         })}
         {/* 이번 주기에 안 나가는 고정지출 · 출금일 모르는 것까지 전부 보는 곳 (목록이 비어도 보임) */}
-        <button type="button" className="mc-link" onClick={toFixed}>고정지출 전체 보기 ›</button>
+        {/* 파란 버튼 · 카드 너비 90% · 가운데 (좌우 margin auto) */}
+        <button type="button" className="mc-primary" style={{ width: '90%', margin: '16px auto 0', padding: '10px 0' }} onClick={toFixed}>고정지출 전체 보기</button>
       </div>
 
       <div className="mc-home-action">
