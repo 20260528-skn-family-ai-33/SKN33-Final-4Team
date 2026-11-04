@@ -337,7 +337,7 @@ def process_new_transactions(user, transaction_ids):   # 입구: 거래 저장 �
         step(user, txs)
 
 AFTER_SAVE_STEPS = [
-    ("link_basics",           link_basics),            # 1 혜리: 취소 연결 · SAME_PURCHASE · 내 계좌끼리 이체(own_transfer) · 카드값(card_payment) · 입금(income) 판단
+    ("link_basics",           link_basics),            # 1 세진: 취소 연결 · 내 계좌끼리 이체(own_transfer) · 카드값(card_payment) · 대출 상환 후보(loan_repayment) 판단 (SAME_PURCHASE 연결은 아직 없음)
     ("classify_spending",     classify_spending),      # 2 혜리: spending 카테고리 분류 (규칙 → 사전 → ML → LLM)
     ("match_card_payments",   match_card_payments),    # 3 세진: 카드값 출금 ↔ 카드 청구서
     ("match_loan_repayments", match_loan_repayments),  # 4 세진: 대출 상환 출금 ↔ 대출

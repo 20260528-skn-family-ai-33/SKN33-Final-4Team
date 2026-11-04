@@ -3,16 +3,16 @@ import logging
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 
-from . import classifier
+from . import classifier, transfer_rules
 from .models import FinancialTransaction
 
 logger = logging.getLogger(__name__)
 RETRY_STATE_KEY = "after_save_pending"
 
 
-# 혜리: 취소·SAME_PURCHASE 연결, 내 계좌 이체·카드값·입금 판단
+# 세진: 취소 연결, 내 계좌 이체·카드값·대출 상환 후보 판단, finance/transfer_rules.py (SAME_PURCHASE 연결은 아직 없음)
 def link_basics(user, txs):
-    pass
+    transfer_rules.apply(user, txs)
 
 
 # 세진: 소비 카테고리 분류 (사용자 기억 → 규칙 → ML → 검색·Jev), finance/classifier.py
