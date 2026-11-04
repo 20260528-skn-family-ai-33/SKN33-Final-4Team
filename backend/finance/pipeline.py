@@ -2,6 +2,9 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
+from django.utils import timezone
+
+from budgets import candidates
 
 from . import classifier, transfer_rules
 from .models import FinancialTransaction
@@ -40,9 +43,10 @@ def match_payment_dues(user, txs):
     pass
 
 
-# 나은: 고정지출·저축 후보 감지
+# 나은: 고정지출·저축 후보 감지 (같은 결제 수단·받는 곳 · 한 달 1건 · ±3일 · 같은 금액(고정지출 ±10%) · 3달 연속)
+#   받은 거래만이 아니라 회원 전체 출금을 본다 (첫 연결 때 4달치가 한 번에 들어옴) — budgets/candidates.py
 def detect_candidates(user, txs):
-    pass
+    candidates.detect_candidates(user, timezone.localdate())
 
 
 AFTER_SAVE_STEPS = [

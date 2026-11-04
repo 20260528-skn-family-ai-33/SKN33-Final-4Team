@@ -3507,8 +3507,8 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        온보딩 저축 확인과 마이 > 정기 저축에서 사용하는 목록. suggested·confirmed만 반환하고 중지·무시는 제외한다. 후보는 created_at 최신순, 그다음 확정은 이체일
-        빠른 순이며 null은 마지막. 페이지 나누기 없음.
+        온보딩 저축 확인과 마이 > 정기 저축에서 사용하는 목록. suggested·confirmed만 반환하고 중지·무시는 제외한다. 후보는 받는 계좌가 예적금(deposit)인 것 먼저, 그다음
+        created_at 최신순(11/4), 그다음 확정은 이체일 빠른 순이며 null은 마지막. 페이지 나누기 없음.
 
 
         후보마다 [저축이에요]/[아니에요]를 모두 골라야 온보딩 다음 단계로 이동한다. 확정 목록과 무시 목록을 각자 요청 번호로 보내며 둘 다 성공해야 이동한다. 한쪽이 실패하면 성공한 쪽은
@@ -3520,7 +3520,8 @@ paths:
         그대로 두며 다음 달부터 새 최소 금액을 사용한다.
 
 
-        자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.
+        자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 11/4부터 연결 안 한 계좌로 보낸 이체도 적요에 회원 이름이나 [임시] 저축 단어(적금·예금·저축·청약·파킹·납입)가
+        있으면 저축 후보로 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.
 
 
         원본: `docs/api/savings.md`'
@@ -3639,7 +3640,8 @@ paths:
         그대로 두며 다음 달부터 새 최소 금액을 사용한다.
 
 
-        자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.
+        자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 11/4부터 연결 안 한 계좌로 보낸 이체도 적요에 회원 이름이나 [임시] 저축 단어(적금·예금·저축·청약·파킹·납입)가
+        있으면 저축 후보로 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.
 
 
         선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는
@@ -3804,7 +3806,8 @@ paths:
         그대로 두며 다음 달부터 새 최소 금액을 사용한다.
 
 
-        자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.
+        자동 후보는 내 계좌끼리 같은 받는 계좌로 매달 같은 날 ±3일·같은 금액이 3달 연속일 때 감지한다. 11/4부터 연결 안 한 계좌로 보낸 이체도 적요에 회원 이름이나 [임시] 저축 단어(적금·예금·저축·청약·파킹·납입)가
+        있으면 저축 후보로 감지한다. 후보 감지 로직 자체와 이번 달 실제 저축 실적은 이 API 범위 밖이다.
 
 
         원본: `docs/api/savings.md`'
@@ -4209,7 +4212,8 @@ paths:
 
         suggested → ignored로 변경하며 이미 ignored인 것은 그대로 성공한다. 원래 요청 순서를 보장하는 목록이 아니라 처리한 항목을 items로 반환한다. 빈 배열·형식 틀린
         ID·없는 ID·남의 ID·선택할 수 없는 상태가 하나라도 있으면 전부 저장하지 않고 400 invalid. 같은 후보를 다시 묻지 않는다. 근거 이체를 own_transfer로 분류하여
-        소비·저축 어디에도 세지 않는다. confirmed·stopped는 선택 불가.
+        소비·저축 어디에도 세지 않는다. 단 남에게 보낸 이체(transfer — 회원 이름·저축 단어로 찾은 후보)는 유형을 바꾸지 않는다(11/4). confirmed·stopped는 선택
+        불가.
 
 
         온보딩은 모든 후보를 개별 선택해야 하며 확정·무시 요청은 서로 다른 요청 번호를 사용한다. 두 요청 중 하나만 성공하면 그 결과는 유지되며 실패한 쪽을 재시도한다.
@@ -9584,13 +9588,13 @@ x-source-sha256:
   docs/api/README.md: f43501b82b906923224ebe8010ebeacdb0276c1304b8fa24b38106bcaf4aa0b4
   docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
-  docs/api/auth.md: dd53b6ff0062db8e2f795a490fa0d8d4999786f0e74106c3878499bdb707110c
+  docs/api/auth.md: b05a52188ec37319768f41cceeea4ce84c45899a7a725e60e6a088475fee785b
   docs/api/finance-connect.md: 6081ac66a61ba8a61a9cede014a06195d37e3b9ec7e99ff4f1791ab441c5ea3e
   docs/api/cards.md: 3fb0ff75f9d446a535ced2bc166091483b05b4b7f3e5af1715bf1e4272c9701d
   docs/api/loans.md: 5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c
-  docs/api/transactions.md: 3e0fb0fbe35cb1909f7010260fb052b7a0f4e9fc3adf30ab63c6e8953fc5cf6b
-  docs/api/fixed.md: 57421e8c0c6db952db2ed34e66b7b2df5566a2af69a394aafa154968486180c2
-  docs/api/savings.md: 391dc532b0c9b6a694566770cb983c7423817bec4004265d20387320435b0782
+  docs/api/transactions.md: 9f6d83c9d57f02a0176b48a4d04d9ee9ff582e02c30d9b9339b2dfa2def01f1a
+  docs/api/fixed.md: 32ffdbc7f8d6910e71d0b0bd3837d81dd83c5b65a5aff2b280127d89f5d69062
+  docs/api/savings.md: 8e39726d1263c5426df6f486b450a673588e574290b5e93290ac255fad9c7cea
   docs/api/home.md: 87c087b9a7789905eebac3b6f6e2e17845e164aaa553dbcd9126e25d28058c5c
   docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5
-  docs/api/budgets.md: 38e66a1c6e872c23540169a85e534a4589d0376a8b310464eb8b0496578d115b
+  docs/api/budgets.md: ca2c786fb573bfaf4a9ac685ff288bd829b99194737da079a1996f39c4410051

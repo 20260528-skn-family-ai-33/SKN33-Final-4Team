@@ -1816,15 +1816,17 @@ def savings_list(request):
         return savings_create(request)
 
     # 목록 : 후보 먼저 -> 확정 (이체일 빠른 순, 모르면 제일 아래)
+    #   후보는 받는 계좌가 예적금(deposit)인 것 먼저, 그다음 최근에 찾은 순 (11/4 — 감지 후보는 남에게 보낸 이체일 수도 있어서)
     mine = RecurringSaving.objects.filter(user = request.user) # user가 요청한 user와 동일한 객체
-    suggested = mine.filter(status = "suggested").order_by("-created_at")
+    suggested = sorted(mine.filter(status = "suggested").select_related("to_account").order_by("-created_at"),
+                       key = lambda s: not (s.to_account and s.to_account.account_type == "deposit"))
     confirmed = mine.filter(status = "confirmed").order_by(F("transfer_day").asc(nulls_last=True))
 
     return Response({
         "items" : [saving_json(s) for s in suggested] + [saving_json(s) for s in confirmed],
         "summary" : {
             "minimum_monthly" : confirmed.aggregate(total=Sum("amount"))["total"] or 0, # 확정 금액 합계
-            "suggested_count" : suggested.count()
+            "suggested_count" : len(suggested)
         }
     })
 
@@ -1922,8 +1924,9 @@ def savings_ignore(request):
             if s.status == "suggested":
                 s.status = "ignored"
                 s.save(update_fields=["status"])
-                # 근거 이체 -> '내 계좌끼리 옮긴 돈'
+                # 근거 이체 -> '내 계좌끼리 옮긴 돈'. 남에게 보낸 이체(transfer — 이름 · 저축 단어로 찾은 후보)는 그대로 둔다 (11/4)
                 if s.evidence:
-                    FinancialTransaction.objects.filter(pk__in=s.evidence).update(transaction_type="own_transfer")
+                    FinancialTransaction.objects.filter(pk__in=list(id_set(s.evidence))).exclude(
+                        transaction_type="transfer").update(transaction_type="own_transfer")
 
     return Response({"items" : [saving_json(s) for s in found]})
