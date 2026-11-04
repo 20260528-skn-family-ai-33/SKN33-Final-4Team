@@ -340,7 +340,9 @@ class SyncedCardReservedTest(TestCase):
         # 10/29 데모(현대카드 · 결제일 5일): 명세서 구분 빈 값, 그날 명세서 1장
         self.bills = {
             "202609": bill(due="20260905", resBillType=""), "202610": bill(due="20261005", resBillType=""),
-            "202611": bill(due="20261105", resBillType="", resTotalAmount="300,000"),
+            "202611": bill(due="20261105", resBillType="", resTotalAmount="300,000", resChargeHistoryList=[
+                {"resPaymentType": "1", "resPaymentAmt": "300,000", "resUsedDate": "20261001"},
+            ]),
         }
         self.cards = [card()]
         self.approvals = [approval(resUsedDate="20261026", resUsedAmount="50,000")]

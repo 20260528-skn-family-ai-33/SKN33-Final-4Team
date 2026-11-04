@@ -3,9 +3,13 @@ import logging
 from datetime import timedelta
 
 from django.db.models import Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from finance.models import Loan, RecurringExpense, RecurringSaving, SyncRun
+from finance.card_deduction import bill_kind
+from finance.models import CardBill, CardBillItem, Loan, RecurringExpense, RecurringSaving, SyncRun
+
+from .models import BudgetCycle
 
 logger = logging.getLogger(__name__)
 
@@ -190,8 +194,36 @@ def card_fixed_by_card(user, cards, cycle, today):
     return totals
 
 
+def installment_rounds(user, issuer_code, cycle, connected_on, first_bill_ids):
+    """이번 회차 할부금 (cards.md C-17): 이번 주기에 내는 청구서(첫 청구서 · 카드론 명세서 제외)의 할부 중 예산에 아직 안 잡힌 구매.
+
+    할부는 긁을 때 전액이 소비로 잡힌다. 이번 주기나 연결 뒤 승인 예산이 있던 주기에 산 것은 회차를 또 떼면 두 번 빠지므로 뺀다.
+    그 밖의 구매(연결 전 · 연결 뒤 첫 예산 주기 전)와 구매일을 모르는 할부는 뗀다.
+    None = 상세를 다 못 받았거나 회차 금액을 몰라 판단할 수 없음 (보류, 0원으로 치지 않는다)
+    [임시] 아직 안 온 청구서는 0원으로 친다
+    [임시] 카드 고정지출로 등록한 할부는 이름으로 가려내지 않아 고정비와 함께 잡힐 수 있다 (예산이 모자라지 않는 쪽)
+    """
+    bills = CardBill.objects.filter(user=user, issuer_code=issuer_code).annotate(
+        due_on=Coalesce("withdrawal_due_date", "payment_due_date"),
+    ).filter(due_on__gte=max(cycle.starts_on, connected_on), due_on__lt=cycle.ends_before).exclude(pk__in=first_bill_ids)
+    bills = [bill for bill in bills if bill_kind(bill) != "loan"]
+    if any(bill.items_state != CardBill.ItemsState.COMPLETE for bill in bills):
+        return None
+    counted = [(cycle.starts_on, cycle.ends_before)] + [
+        (max(start, connected_on), end) for start, end in BudgetCycle.objects.filter(
+            user=user, budgets__status="approved",
+        ).values_list("starts_on", "ends_before")
+    ]
+    items = CardBillItem.objects.filter(bill__in=bills, item_type=CardBillItem.ItemType.INSTALLMENT)
+    amounts = [
+        billed for billed, bought in items.values_list("billed_amount", "purchased_on")
+        if bought is None or not any(start <= bought < end for start, end in counted)
+    ]
+    return None if None in amounts else sum(amounts)
+
+
 def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today, issuer_fixed=0):
-    """카드사 한 곳의 첫 청구서 선차감 (10/29 나은: 카드사 단위). (금액, 보류 이유) — 금액이 None이면 보류
+    """카드사 한 곳의 첫 청구서 선차감 + 이번 회차 할부금 (10/29 나은: 카드사 단위). (금액, 보류 이유) — 금액이 None이면 보류
 
     managed: 그 카드사 관리 대상 카드 (쓴 돈을 뺄 카드) · issuer_cards: 그 카드사 카드 전체 (첫 연결일 · 조회 기록)
     """
@@ -221,8 +253,11 @@ def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today, iss
         )
         if result.amount is None:
             return None, result.reason
+        rounds = installment_rounds(user, issuer_code, cycle, connected_on, result.bill_ids)
+        if rounds is None:
+            return None, "installment_amount_unknown"
         if result.cycle_card_spending is None:
-            return result.amount, None  # 첫 청구서가 이번 주기 밖 · 연결 전 → 0원
+            return result.amount + rounds, None  # 첫 청구서가 이번 주기 밖 · 연결 전 → 할부금만
     except (Http404, ValueError, TypeError) as error:
         # 남의 연결이 섞이거나 금액이 음수인 이상한 자료 → 화면 전체를 에러로 만들지 않고 이 카드사만 보류.
         # 코드 버그도 여기로 올 수 있어 로그는 남긴다 (예외 원문 · 금액은 남기지 않음)
@@ -234,15 +269,14 @@ def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today, iss
     other_spending = result.cycle_card_spending - fixed_linked_amount(user, managed, cycle.starts_on, end)
     # 카드사별로 0원 아래로는 안 내리므로, 남은 금액보다 고정지출이 크면 그 차이는 다른 카드사에서 빼지 않는다
     # (선차감이 조금 커지는 쪽 = 예산이 모자라지 않는 쪽).
-    return max(0, result.total_amount - other_spending - issuer_fixed), None
+    return max(0, result.total_amount - other_spending - issuer_fixed) + rounds, None
 
 
 def card_reserved(user, cycle, as_of=None):
-    """첫 카드 청구서 선차감(결정 Q · cards.md C-17) 합계.
+    """첫 카드 청구서 선차감(결정 Q · cards.md C-17)과 이번 회차 할부금 합계.
 
     관리 대상 카드가 있는 카드사마다 세진의 get_issuer_first_bill_deduction으로 계산한다 (10/29 나은: 카드사 단위).
     한 곳이라도 계산 보류면 amount=None (0원으로 치지 않음) 이고 pending에 그 카드사의 관리 대상 카드와 이유를 담는다.
-    TODO 세진: 이번 회차 할부금 (cards.md C-17 · 366줄)
     """
     today = as_of or timezone.localdate()
     total, pending = 0, []

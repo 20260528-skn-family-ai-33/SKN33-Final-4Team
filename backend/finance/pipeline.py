@@ -3,7 +3,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 
-from . import classifier, transfer_rules
+from . import card_payments, classifier, loan_payments, transfer_rules
 from .models import FinancialTransaction
 
 logger = logging.getLogger(__name__)
@@ -20,14 +20,14 @@ def classify_spending(user, txs):
     classifier.classify(user, txs)
 
 
-# 세진: 카드값 출금과 카드 청구서 매칭
+# 세진: 카드값 출금과 카드 청구서 매칭, finance/card_payments.py
 def match_card_payments(user, txs):
-    pass
+    card_payments.match(user)
 
 
-# 세진: 대출 상환 출금과 대출 매칭
+# 세진: 대출 상환 출금과 대출 매칭, finance/loan_payments.py
 def match_loan_repayments(user, txs):
-    pass
+    loan_payments.match(user)
 
 
 # 나은: 내 계좌 이체와 확정 정기 저축 매칭, saving 전환
@@ -62,6 +62,18 @@ def process_new_transactions(user, transaction_ids):
 
 def retry_failed_transactions(user, transaction_ids):
     _process_transactions(user, transaction_ids, retry_only=True)
+
+
+def rematch_payments(user):
+    """새 거래 없이 청구서 · 대출 · 납부 회차만 늦게 생기면 파이프라인이 돌지 않아서 홈을 열 때 다시 맞춘다.
+    실패해도 홈은 열리고 다음에 다시 돈다"""
+    try:
+        with transaction.atomic():
+            card_payments.match(user)
+            loan_payments.match(user)
+    except Exception as exc:
+        # DB 오류 원문·traceback에는 거래 내용이 포함될 수 있다.
+        logger.error("납부 다시 맞추기 실패 (%s)", "database_error" if isinstance(exc, DatabaseError) else "step_error")
 
 
 def _save_pending(txs, pending):
