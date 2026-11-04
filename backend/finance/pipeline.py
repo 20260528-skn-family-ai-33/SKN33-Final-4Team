@@ -3,7 +3,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 
-from . import card_payments, classifier, transfer_rules
+from . import card_payments, classifier, loan_payments, transfer_rules
 from .models import FinancialTransaction
 
 logger = logging.getLogger(__name__)
@@ -25,9 +25,9 @@ def match_card_payments(user, txs):
     card_payments.match(user)
 
 
-# 세진: 대출 상환 출금과 대출 매칭
+# 세진: 대출 상환 출금과 대출 매칭, finance/loan_payments.py
 def match_loan_repayments(user, txs):
-    pass
+    loan_payments.match(user)
 
 
 # 나은: 내 계좌 이체와 확정 정기 저축 매칭, saving 전환
