@@ -145,6 +145,28 @@ class SavingMatchTest(TestCase):
         self.match(cancel)                                    # 이번 거래 ID 에는 취소 내역만 있음
         self.assertEqual(self.kind(again), "saving")
 
+    def test_user_reclassified_between_lookup_and_update(self):
+        from . import saving_match
+        s = self.saving(self.own(date(2026, 8, 2)), to=self.c)
+        tx = self.own(date(2026, 9, 2))
+        original = saving_match.same_receiver
+
+        def user_patches_meanwhile(row, *args):
+            ok = original(row, *args)
+            if row.pk == tx.pk:  # 조회 직후 사용자가 거래 PATCH 로 식비 지정
+                FinancialTransaction.objects.filter(pk=tx.pk).update(
+                    transaction_type="spending", confirmed_category_id="FOOD", classification_source="user")
+            return ok
+
+        with patch.object(saving_match, "same_receiver", user_patches_meanwhile):
+            self.match(tx)
+        s.refresh_from_db()
+        self.assertEqual(self.kind(tx), "spending")
+        self.assertNotIn(str(tx.pk), s.evidence)              # 소비 거래는 저축 근거가 아님
+        again = self.own(date(2026, 9, 4))
+        self.match(again)                                     # 이후 정상 이체는 그대로 매칭
+        self.assertEqual(self.kind(again), "saving")
+
     def test_other_saving_candidate_evidence_is_protected(self):
         self.saving(self.own(date(2026, 8, 2)), to=self.c)
         tx = self.own(date(2026, 9, 2))

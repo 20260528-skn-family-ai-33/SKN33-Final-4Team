@@ -56,7 +56,10 @@ def match_savings(user, tx_ids, today):
             if month in saved_months or len(found) != 1 or (found[0].pk not in new and month not in reopened):
                 continue  # 이번 달 저축은 이미 셈 · 여러 건이면 고르지 않음 · 예전 거래는 건드리지 않음 (다시 열린 달은 봄)
             tx = found[0]
-            FinancialTransaction.objects.filter(pk=tx.pk, transaction_type__in=TYPES).update(transaction_type="saving")
+            # 조회한 뒤 사용자가 분류를 바꿨으면(소비 등) 조건 불일치로 0건 → 근거에도 넣지 않음 (PR #85 재검토)
+            if not FinancialTransaction.objects.filter(
+                    pk=tx.pk, transaction_type__in=TYPES, is_canceled=False).update(transaction_type="saving"):
+                continue
             s.evidence = [*(s.evidence or []), str(tx.pk)]
             s.save(update_fields=["evidence"])
             taken.add(str(tx.pk))
