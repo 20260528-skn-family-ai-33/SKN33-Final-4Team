@@ -41,6 +41,8 @@ def match_savings(user, tx_ids, today):
         labels = {normalize_merchant(t.source_description or t.merchant_name) for t in mine} - {None}
         # 그 달 저축 완료 = 취소되지 않은 근거 이체가 있음 (취소 후 다시 보낸 이체는 맞춘다, PR #85 리뷰)
         saved_months = {(t.occurred_on.year, t.occurred_on.month) for t in mine if not t.is_canceled}
+        # 근거 이체가 취소된 달 = 다시 열린 달 — 취소 내역이 늦게 와도 이미 저장된 재이체를 다시 본다 (PR #85 재검토)
+        reopened = {(t.occurred_on.year, t.occurred_on.month) for t in mine if t.is_canceled}
         rows = FinancialTransaction.objects.filter(
             user=user, account_id=s.from_account_id, direction="out", is_canceled=False,
             transaction_type__in=TYPES, amount=s.amount, occurred_on__lte=today,
@@ -51,8 +53,8 @@ def match_savings(user, tx_ids, today):
                 continue
             by_month[(tx.occurred_on.year, tx.occurred_on.month)].append(tx)
         for month, found in by_month.items():
-            if month in saved_months or len(found) != 1 or found[0].pk not in new:
-                continue  # 이번 달 저축은 이미 셈 · 여러 건이면 고르지 않음 · 예전 거래는 건드리지 않음
+            if month in saved_months or len(found) != 1 or (found[0].pk not in new and month not in reopened):
+                continue  # 이번 달 저축은 이미 셈 · 여러 건이면 고르지 않음 · 예전 거래는 건드리지 않음 (다시 열린 달은 봄)
             tx = found[0]
             FinancialTransaction.objects.filter(pk=tx.pk, transaction_type__in=TYPES).update(transaction_type="saving")
             s.evidence = [*(s.evidence or []), str(tx.pk)]

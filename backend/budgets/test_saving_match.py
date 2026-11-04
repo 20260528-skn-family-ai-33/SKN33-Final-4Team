@@ -133,6 +133,18 @@ class SavingMatchTest(TestCase):
         self.match(again)
         self.assertEqual(self.kind(again), "saving")
 
+    def test_late_cancel_rechecks_saved_retransfer(self):
+        self.saving(self.own(date(2026, 8, 2)), to=self.c)
+        first = self.own(date(2026, 9, 1))
+        self.match(first)                                     # 9/1 출금 → saving
+        again = self.own(date(2026, 9, 3))
+        self.match(again)                                     # 9/3 재이체 먼저 조회 → 이달은 이미 저축함 → 그대로
+        self.assertEqual((self.kind(first), self.kind(again)), ("saving", "own_transfer"))
+        FinancialTransaction.objects.filter(pk=first.pk).update(is_canceled=True)  # 9/2 취소 내역이 늦게 조회됨
+        cancel = self.out(date(2026, 9, 2), kind="transfer", label="취소")
+        self.match(cancel)                                    # 이번 거래 ID 에는 취소 내역만 있음
+        self.assertEqual(self.kind(again), "saving")
+
     def test_other_saving_candidate_evidence_is_protected(self):
         self.saving(self.own(date(2026, 8, 2)), to=self.c)
         tx = self.own(date(2026, 9, 2))
