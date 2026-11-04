@@ -14,8 +14,8 @@ from budgets.overview import budget_data
 from budgets.scope import living_spent
 from finance.api import listed_transactions, transaction_item, _apply_category
 from finance.spending import spending_summary
-from finance.models import BankAccount, Card, FinancialTransaction, CardBill, PaymentDue, SyncRun, RecurringExpense, RecurringSaving
-from users.models import FinancialProfile, User
+from finance.models import BankAccount, Card, Connection, FinancialTransaction, CardBill, PaymentDue, SyncRun, RecurringExpense, RecurringSaving
+from users.models import Consent, FinancialProfile, User
 from budgets.models import Budget
 from spending_fixture import seed
 
@@ -204,16 +204,31 @@ class AlphaDatabaseTest(TestCase):
             user=User.objects.get(pk=S['uid']('onboarding','user'))
             self.assertFalse(RecurringExpense.objects.filter(user=user).exists())
             self.assertFalse(RecurringSaving.objects.filter(user=user).exists())
+            response=client.get('/api/finance/connect/accounts/?v=0')
+            self.assertEqual(response.status_code,200,response.content)
+            accounts=response.json()['items']
+            salary=next(a for a in accounts if a['name']=='합성 월급통장' and a['isSelected'])
+            deposit=next(a for a in accounts if a['name']=='합성 첫목돈적금')
+            self.assertFalse(deposit['isSelected'])
+            self.assertEqual(deposit['status'],'connected')
+            response=client.get('/api/finance/connect/cards/?v=0')
+            self.assertEqual(response.status_code,200,response.content)
+            credit=next(c for c in response.json()['items'] if c['cardType']=='신용' and c['isSelected'])
+            self.assertTrue(all(item['displayName'] for item in [salary,deposit,credit]))
             for role,name,amount,day,category,instrument in S['G']['FIXED']:
-                payment={'paymentAccountId':str(S['uid']('onboarding','asset','A'))} if instrument=='A' else {
-                         'paymentCardId':str(S['uid']('onboarding','asset','E'))}
+                payment={'paymentAccountId':salary['accountId']} if instrument=='A' else {
+                         'paymentCardId':credit['cardId']}
                 response=client.post('/api/budgets/fixed/',dict(name=name,amount=amount,paymentDay=day,
                                      category=category,**payment),content_type='application/json')
                 self.assertEqual(response.status_code,201,response.content)
             response=client.post('/api/budgets/savings/',dict(name='직접 등록 적금',amount=900000,transferDay=2,
-                                fromAccountId=str(S['uid']('onboarding','asset','A')),
-                                toAccountId=str(S['uid']('onboarding','asset','C'))),content_type='application/json')
+                                fromAccountId=salary['accountId'],toAccountId=deposit['accountId']),content_type='application/json')
             self.assertEqual(response.status_code,201,response.content)
+            saving=RecurringSaving.objects.get(user=user)
+            self.assertEqual(str(saving.from_account_id),salary['accountId'])
+            self.assertEqual(str(saving.to_account_id),deposit['accountId'])
+            self.assertEqual(set(RecurringExpense.objects.filter(user=user).values_list('payment_card_id',flat=True)),
+                             {None,Card.objects.get(pk=credit['cardId']).pk})
             response=client.get('/api/budgets/protect/')
             self.assertIsNone(response.json()['blocked'])
             self.assertEqual(response.json()['base']['available'],2230000)
@@ -246,8 +261,8 @@ class AlphaDatabaseTest(TestCase):
         client=self.onboarding_client()
         response=client.put('/api/profile/',{**self.profile_body(),'onboardingNextStep':'salary'},content_type='application/json')
         self.assertEqual(response.status_code,400)
-        for method,url in [('post','/api/finance/consents/'),('get','/api/finance/connect/accounts/'),
-                           ('put','/api/finance/connect/accounts/'),('get','/api/finance/connect/cards/'),
+        for method,url in [('post','/api/finance/consents/'),('put','/api/finance/connect/accounts/'),
+                           ('put','/api/finance/connect/cards/'),
                            ('post','/api/finance/connect/cards/'),('post','/api/finance/sync/')]:
             self.assertEqual(getattr(client,method)(url,content_type='application/json').status_code,503)
         self.assertEqual(Client().get('/api/profile/').status_code,403)
@@ -256,17 +271,84 @@ class AlphaDatabaseTest(TestCase):
         self.assertEqual(no_csrf.put('/api/profile/',self.profile_body(),content_type='application/json').status_code,403)
 
     @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
+    def test_saved_lists_require_exact_alpha_identity_and_authentication(self):
+        for kind,model,key in [('accounts',BankAccount,'accountId'),('cards',Card,'cardId')]:
+            url=f'/api/finance/connect/{kind}/'
+            self.assertEqual(Client().get(url).status_code,403)
+            self.assertEqual(self.onboarding_client(self.other).get(url).status_code,503)
+            for persona in ('home','onboarding'):
+                user=User.objects.get(pk=S['uid'](persona,'user'))
+                response=self.onboarding_client(user).get(url)
+                self.assertEqual(response.status_code,200,response.content)
+                self.assertEqual({row[key] for row in response.json()['items']},
+                                 {str(pk) for pk in model.objects.filter(user=user).values_list('pk',flat=True)})
+            user.email='different@example.test'
+            user.save(update_fields=['email'])
+            self.assertEqual(self.onboarding_client(user).get(url).status_code,503)
+            user.email=S['ACCOUNTS']['onboarding']
+            user.save(update_fields=['email'])
+
+    @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
+    def test_saved_lists_keep_consent_connection_and_owner_checks(self):
+        client=self.onboarding_client()
+        user=User.objects.get(pk=S['uid']('onboarding','user'))
+        for kind,model in [('accounts',BankAccount),('cards',Card)]:
+            url=f'/api/finance/connect/{kind}/'
+            rows=model.objects.filter(user=user)
+            connection=rows.first().connection
+            connection.status='disconnected'
+            connection.disconnected_at=AS_OF
+            connection.save(update_fields=['status','disconnected_at'])
+            hidden={str(pk) for pk in rows.filter(connection=connection).values_list('pk',flat=True)}
+            key='accountId' if kind=='accounts' else 'cardId'
+            self.assertTrue(hidden.isdisjoint(item[key] for item in client.get(url).json()['items']))
+            connection.status='connected'
+            connection.disconnected_at=None
+            connection.save(update_fields=['status','disconnected_at'])
+            rows.filter(pk=rows.first().pk).update(user=self.other)
+            connections=rows.values_list('connection_id',flat=True)
+            Connection.objects.filter(pk__in=connections).update(user=self.other)
+            self.assertEqual(client.get(url).json()['items'],[])
+        Consent.objects.filter(user=user).update(revoked_at=AS_OF)
+        for kind in ('accounts','cards'):
+            response=client.get(f'/api/finance/connect/{kind}/')
+            self.assertEqual(response.status_code,403,response.content)
+            self.assertEqual(response.json()['error']['code'],'consent_required')
+
+    @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
+    def test_other_alpha_assets_cannot_be_used_for_direct_registration(self):
+        home=self.onboarding_client(self.home())
+        account=home.get('/api/finance/connect/accounts/').json()['items'][0]['accountId']
+        card=home.get('/api/finance/connect/cards/').json()['items'][0]['cardId']
+        client=self.onboarding_client()
+        for payment in ({'paymentAccountId':account},{'paymentCardId':card}):
+            response=client.post('/api/budgets/fixed/',dict(name='남의 결제수단',amount=10000,
+                                 paymentDay=1,category='FOOD',**payment),content_type='application/json')
+            self.assertEqual(response.status_code,400,response.content)
+        for field in ('fromAccountId','toAccountId'):
+            response=client.post('/api/budgets/savings/',dict(name='남의 계좌',amount=10000,
+                                 transferDay=2,**{field:account}),content_type='application/json')
+            self.assertEqual(response.status_code,400,response.content)
+
+    @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
     def test_same_email_with_different_uuid_cannot_skip(self):
         User.objects.filter(pk=S['uid']('onboarding','user')).delete()
         other=User.objects.create_user(S['ACCOUNTS']['onboarding'])
         response=self.onboarding_client(other).put('/api/profile/',self.profile_body(),content_type='application/json')
         self.assertEqual(response.json()['onboardingNextStep'],'connect')
+        for kind in ('accounts','cards'):
+            self.assertEqual(self.onboarding_client(other).get(f'/api/finance/connect/{kind}/').status_code,503)
 
     @override_settings(ROOT_URLCONF='config.urls')
     def test_normal_service_profile_keeps_connection_flow(self):
-        response=self.onboarding_client().put('/api/profile/',self.profile_body(),content_type='application/json')
+        client=self.onboarding_client()
+        response=client.put('/api/profile/',self.profile_body(),content_type='application/json')
         self.assertEqual(response.status_code,200,response.content)
         self.assertNotIn('onboardingNextStep',response.json())
+        response=client.get('/api/finance/connect/accounts/')
+        self.assertEqual(response.status_code,200,response.content)
+        self.assertEqual({a['name'] for a in response.json()['items']},{'합성 월급통장','합성 생활통장'})
+        self.assertEqual(client.get('/api/finance/connect/cards/').status_code,200)
 
     def test_latest_main_home_budget_and_outside_scope_remain_connected(self):
         client=self.onboarding_client(self.home())

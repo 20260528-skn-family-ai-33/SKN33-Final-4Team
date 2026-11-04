@@ -5,13 +5,16 @@
 연결 추가 · 해제)이라 테스트 환경에서 쓸 수 없다. 연결 목록 조회(GET finance/connections/)는 읽기라 그대로 둔다.
 주소 문자열은 config/api_urls.py 의 이름으로 찾아 그대로 쓴다 (팀이 주소를 바꿔도 따라간다, 이름이 없어지면 시작 때 멈춘다).
 프로필 응답에서 지정된 알파 온보딩 계정의 준비된 금융 자료만 확인해 다음 단계를 안내한다.
-기존 프로필 인증·검증·저장과 금융 API 차단은 유지한다.
+지정된 알파 계정의 저장된 계좌·카드 GET만 예외이며 금융 연결·선택 변경은 차단한다.
 """
 from functools import wraps
 
 from django.http import JsonResponse
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 from config import api_urls
 from config.urls import urlpatterns as service_urlpatterns
@@ -31,9 +34,11 @@ BLOCKED = {  # api_urls 이름 → 막을 메서드
 }
 
 
-def _blocked(view, methods):
-    @csrf_exempt  # 로그인 · CSRF 확인 전에 바로 503 (막힌 주소는 아무것도 처리하지 않는다)
+def _blocked(view, methods, read_view=None):
+    @csrf_exempt  # 차단 요청은 로그인 · CSRF 확인 전에 503. 허용한 GET은 별도 인증을 거친다.
     def wrapper(request, *args, **kwargs):
+        if request.method == 'GET' and read_view is not None:
+            return read_view(request, *args, **kwargs)
         if methods is EVERY or request.method in methods:
             return JsonResponse(UNAVAILABLE, status=503)
         return view(request, *args, **kwargs)
@@ -45,14 +50,53 @@ def _blocked_patterns():
     missing = set(BLOCKED) - set(found)
     if missing:
         raise RuntimeError(f"config/api_urls.py 에 없는 주소 이름: {sorted(missing)} — service_urls.BLOCKED 를 맞춰 주세요")
-    return [path(f"api/{p.pattern}", _blocked(p.callback, BLOCKED[name]), name=f"fixture-blocked-{name}")
+    return [path(f"api/{p.pattern}", _blocked(p.callback, BLOCKED[name], READ_ONLY.get(name)), name=f"fixture-blocked-{name}")
             for name, p in found.items()]
 
 
+def alpha_persona(user):
+    if user.is_authenticated:
+        for persona in ('home', 'onboarding'):
+            if user.pk == uid('alpha-persona-v1', persona, 'user') and user.email == f'alpha.{persona}@example.test':
+                return persona
+    return None
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def alpha_accounts(request):
+    if alpha_persona(request.user) is None:
+        return Response(UNAVAILABLE, status=503)
+    from finance.api_connect import ConsentRequired, account_item, has_bank_consent
+    from finance.models import BankAccount
+
+    if not has_bank_consent(request.user):
+        raise ConsentRequired()
+    # 저축 팝업의 받는 계좌에는 관리 대상이 아닌 적금 C도 필요하다.
+    accounts = BankAccount.objects.filter(user=request.user, connection__user=request.user,
+        connection__business_type='bank', connection__status__in=['connected', 'relogin'],
+        connection__disconnected_at__isnull=True).select_related('connection').order_by('account_id')
+    return Response({'items': [account_item(account) for account in accounts]})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def alpha_cards(request):
+    if alpha_persona(request.user) is None:
+        return Response(UNAVAILABLE, status=503)
+    from finance.api_cards import candidate_cards, candidate_item, require_card_consent
+
+    require_card_consent(request.user)
+    cards = candidate_cards(request.user).filter(connection__disconnected_at__isnull=True)
+    return Response({'items': [candidate_item(card) for card in cards]})
+
+
+READ_ONLY = {'finance-connect-accounts': alpha_accounts, 'card-candidates': alpha_cards}
+
+
 def alpha_finance_ready(user):
-    """지정 알파 계정의 준비된 자료만 사용한다. 실제 금융 연결·선택 API는 열지 않는다."""
-    if (not user.is_authenticated or user.pk != uid('alpha-persona-v1', 'onboarding', 'user')
-            or user.email != 'alpha.onboarding@example.test'):
+    """지정 알파 계정의 준비된 자료만 사용한다. 금융 연결·선택 변경 API는 열지 않는다."""
+    if alpha_persona(user) != 'onboarding':
         return False
     from finance.models import BankAccount, Card, FinancialTransaction
 
