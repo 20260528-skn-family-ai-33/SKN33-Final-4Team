@@ -52,7 +52,7 @@ const CARD_FIXED = [
   { id: 4, type: 'fixed', name: 'OTT', line: '매월 5일 · 신한 Deep Dream · ****4321', amount: 13_500 },
 ]
 
-export default function CardBillPopup() {
+export default function CardBillPopup({ connectionId }) {
   const { openPopup } = usePopup()
   const b = BILL
   const [label, why] = STATUS[b.confirmationStatus] ?? STATUS.unknown
@@ -95,12 +95,12 @@ export default function CardBillPopup() {
         {ITEMS_NOTE[b.itemsState] && b.items !== null && <p className="mc-note" style={{ paddingBottom: 0 }}>{ITEMS_NOTE[b.itemsState]}</p>}
         <p className="mc-note" style={{ paddingBottom: 0 }}>카드사 청구서 하나로 묶어서 보여요. 출금일이 지나도 실제 출금을 확인하기 전에는 납부 완료로 바꾸지 않아요.</p>
       </div>
-      {/* 별칭 수정 · 새로고침은 기능 연결 전. 연결 해제는 확인 창까지 (결정 F) */}
+      {/* 별칭 수정은 기능 연결 전. 연결 해제는 확인 창까지 (결정 F) */}
       <div className="mc-card">
         <div className="mc-keyvalue mc-alias-kv"><span>별칭</span><strong><em>없음</em><button type="button" className="mc-alias-btn">수정</button></strong></div>
       </div>
       <div className="mc-card mc-acct-act">
-        <RefreshRow target="신한카드" />
+        <RefreshRow connectionId={connectionId} />
         <button type="button" className="mc-listrow mc-unlink" onClick={() => openPopup(<DisconnectPopup inst="신한카드" kind="card" related={CARD_FIXED} />)}><Unlink size={20} aria-hidden="true" /><span>카드사 연결 해제</span></button>
       </div>
     </Popup>

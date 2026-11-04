@@ -2,12 +2,15 @@
 // 위에서부터: 급여 주기 줄 → 하루에 쓸 수 있는 돈(파란 카드, 여윳돈 포함) → 계좌 잔액 → 예산 밖 지출(있을 때만) → 꼭 나갈 돈
 // 알림(확인할 거래 · 출금일 · 월급 안내)은 오른쪽 위 종 아이콘 팝업 (11/3)
 // 머니 쿠션은 쿠션 탭에서 따로 본다
+// 오른쪽 위 [새로고침] = 연결 전부 다시 불러오기 (docs/api/finance-connect.md) → 끝나면 홈 데이터를 다시 받는다
 // 되돌리기: 이 파일을 git 의 이전 버전으로 돌리고, app.css 맨 아래 "홈 개선안" 블록을 지우면 원래 화면으로 돌아간다
+import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { comma, won } from '../utils/money.js'
 import { useApi } from '../utils/api.js'
+import { runFinanceSync, syncLines } from '../utils/financeSync.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
@@ -76,7 +79,19 @@ export default function HomePage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   const pendingUrl = `${PATHS.txs}?category=확인 필요`
-  const { data, error } = useApi('/api/home/')  // 장고에게 홈 데이터 받아오기
+  const { data, error, reload } = useApi('/api/home/')  // 장고에게 홈 데이터 받아오기
+  const [sync, setSync] = useState({ busy: false, lines: null, error: '' })
+
+  const refresh = async () => {
+    setSync({ busy: true, lines: null, error: '' })
+    try {
+      const result = await runFinanceSync()
+      setSync({ busy: false, lines: syncLines(result), error: '' })
+      reload()
+    } catch (err) {
+      setSync({ busy: false, lines: null, error: err.message })
+    }
+  }
 
   // 아직 못 받았으면 "불러오는 중…" (실패하면 안내)
   // 로그인이 풀렸으면 로그인 화면으로
@@ -103,16 +118,26 @@ export default function HomePage() {
     pendingCount > 0 && { key: 'pending', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
     needsPaydayCount > 0 && { key: 'payday', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
   ].filter(Boolean)
-  const bell = (
-    <button type="button" className="mc-icon mc-bell" onClick={() => openPopup(<NoticePopup items={notices} />)}
-      aria-label={notices.length ? `알림 ${notices.length}개` : '알림'}>
-      <Icon name="Bell" />
-      {notices.length > 0 && <span className="mc-bell-n" aria-hidden="true">{notices.length}</span>}
-    </button>
+  const headAction = (
+    <>
+      <button type="button" className="mc-icon" onClick={refresh} disabled={sync.busy} aria-busy={sync.busy} aria-label={sync.busy ? '새로고침 중' : '새로고침'}>
+        <span className={sync.busy ? 'mc-conn-busy' : undefined}><Icon name="RefreshCw" /></span>
+      </button>
+      <button type="button" className="mc-icon mc-bell" onClick={() => openPopup(<NoticePopup items={notices} />)}
+        aria-label={notices.length ? `알림 ${notices.length}개` : '알림'}>
+        <Icon name="Bell" />
+        {notices.length > 0 && <span className="mc-bell-n" aria-hidden="true">{notices.length}</span>}
+      </button>
+    </>
   )
 
   return (
-    <Layout title={LOGO} activeTab="home" headAction={bell}>
+    <Layout title={LOGO} activeTab="home" headAction={headAction}>
+      {/* 새로고침 결과: 기관별로 실패할 수 있어서 한 줄씩. 다시 연결 · 카드 값 입력은 연결 관리에서 한다 */}
+      {sync.error && <p className="mc-error" role="alert">{sync.error}</p>}
+      {sync.lines?.map((l) => <p key={l.name} className={l.ok ? 'mc-note' : 'mc-error'} role="status">{l.name} · {l.text}</p>)}
+      {sync.lines?.some((l) => !l.ok) && <button type="button" className="mc-link" onClick={() => navigate(PATHS.connections)}>연결 관리에서 확인하기 ›</button>}
+
       {/* 1. 급여 주기 · 기준 시각 한 줄 + 월급날 칩 (급여일을 아직 안 넣었으면 period 가 null) */}
       {period && (
         <div className="mc-row mc-home2-period">

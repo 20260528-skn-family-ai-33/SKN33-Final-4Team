@@ -1,7 +1,7 @@
 // 마이 — 탭 화면이 아니라 하단 탭 없음
 // 오른쪽 글자(월 280만원 등)는 시안 예시값 — API 설계 후 useApi 로 바꾼다
 import { useRef, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router'
+import { Navigate, useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { usePopup } from '../popups/context.js'
@@ -11,11 +11,11 @@ import { PATHS } from '../routes.js'
 import { apiSend, useApi } from '../utils/api.js'
 
 const MENU = [
-  { icon: 'IdCard', name: '내 정보', sub: '나이·자취 여부·우선순위 등', to: PATHS.profile },
-  { icon: 'Banknote', name: '월급·급여일', sub: '월 280만원 · 매월 1일', to: PATHS.salary },
+  { icon: 'IdCard', name: '내 정보', sub: '나이·자취 여부·우선순위 등', to: PATHS.profile, state: { from: 'my' } },
+  { icon: 'Banknote', name: '월급·급여일', sub: '월 280만원 · 매월 1일', to: PATHS.salary, state: { from: 'my' } },
   { icon: 'Repeat', name: '고정지출', sub: '5건 · 962,000원', to: PATHS.fixed, state: { from: 'my' } },  // 고정지출 관리 모드 (확정 목록 · 중지 · 미납 고르기)
   { icon: 'PiggyBank', name: '정기 저축', sub: '2건 · 400,000원', to: PATHS.savings, state: { from: 'my' } },  // 저축 확인 화면을 관리 모드로 연다 (PR #29 리뷰)
-  { icon: 'ShieldCheck', name: '지킬 돈', sub: '생활비 1,120,000원 · 저축 410,000원 · 쿠션 210,000원', to: PATHS.protect },
+  { icon: 'ShieldCheck', name: '지킬 돈', sub: '생활비 1,120,000원 · 저축 410,000원 · 쿠션 210,000원', to: PATHS.protect, state: { from: 'my' } },
   { icon: 'Wallet', name: '카테고리 예산', sub: '추천 예산 확인·수정', to: PATHS.budget },
   { icon: 'Link', name: '연결 관리', sub: '은행 2곳 · 계좌 2개 · 카드 2장', to: PATHS.connections },
 ]
@@ -23,6 +23,7 @@ const MENU = [
 export default function MyPage() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
+  const { state: navState } = useLocation()
 
     const { data: user, error: userError } = useApi('/api/auth/me/')
   const [logoutError, setLogoutError] = useState('')
@@ -99,6 +100,15 @@ export default function MyPage() {
           </div>
         </div>
       </div>
+
+      {/* 내 정보 · 월급을 고치고 돌아왔을 때. 승인 예산은 자동으로 다시 나누지 않는다 (salary.md '저장과 연동').
+          저장한 지킬 돈이 그대로면 월급이 바뀌어도 생활비가 안 바뀌어서 추천 화면이 아니라 지킬 돈으로 보낸다 */}
+      {navState?.budgetNote && (
+        <p className="mc-note" role="status">
+          승인한 예산은 그대로예요. 바뀐 내용으로 다시 나누려면{' '}
+          <button type="button" className="mc-link" onClick={() => navigate(PATHS.protect, { state: { from: 'my' } })}>예산 다시 추천받기</button>
+        </p>
+      )}
 
       <div className="mc-row mc-section"><h2>내 돈 관리</h2></div>
       <div className="mc-card">
