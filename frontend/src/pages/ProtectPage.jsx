@@ -5,8 +5,9 @@
 // 항목 옆 % = 배분 가능한 금액(월급 - 고정지출) 중 비율. 금액을 고치면 같이 바뀐다
 // 남는 돈은 여윳돈. 저축이에요 합계 > 추천 저축이면 서버가 저축을 먼저 떼고 다시 나눈 추천을 준다 (recommended.rebalanced)
 // [추천 예산 보기] = 저장(PUT) 후 추천 예산 확인으로 가서 새 추천을 바로 만든다
+// 마이에서 들어오면(location.state.from === 'my') 단계 표시줄 없이 버튼만 [저장]. 저장 뒤는 같다 (생활비가 바뀌면 카테고리를 다시 나눠야 해서)
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
@@ -39,6 +40,9 @@ function hint(key, value, data) {
 
 export default function ProtectPage() {
   const navigate = useNavigate()
+  const { state: navState } = useLocation()
+  const manage = navState?.from === 'my'
+  const go = (to) => navigate(to, { state: navState })  // 고치러 가는 화면도 마이에서 왔으면 관리 모드로
   const { data, error: loadError } = useApi('/api/budgets/protect/')
   const [edits, setValues] = useState(null)  // 고친 칸 글자 그대로 (빈 칸도 허용하려고 문자열로). 안 고쳤으면 null
   const [error, setError] = useState('')
@@ -80,11 +84,11 @@ export default function ProtectPage() {
     }
   }
 
-  const foot = <button className="mc-primary" form="mc-form" type="submit" disabled={!ready || busy}>{busy ? '저장하는 중…' : '추천 예산 보기'}</button>
+  const foot = <button className="mc-primary" form="mc-form" type="submit" disabled={!ready || busy}>{busy ? '저장하는 중…' : manage ? '저장' : '추천 예산 보기'}</button>
 
   return (
     <Layout title="지킬 돈 설정" showBack foot={foot}>
-      <StepBar step={5} />
+      {!manage && <StepBar step={5} />}
       <div className="mc-eyebrow">지킬 돈 설정</div>
       <h1>먼저 지킬 돈을 정해요</h1>
       {ready && <p className="mc-muted">{housingName} 비율로 나눈 추천 금액이에요. 바꾸고 싶은 칸만 고치세요.</p>}
@@ -93,7 +97,7 @@ export default function ProtectPage() {
         <div className="mc-card" role="alert">
           <h2>먼저 입력해야 할 정보가 있어요</h2>
           <p className="mc-muted" style={{ margin: '6px 0 0' }}>{data.missing.map((m) => MISSING[m]?.[0] ?? m).join(' · ')}이 있어야 지킬 돈을 나눌 수 있어요.</p>
-          <button type="button" className="mc-secondary" onClick={() => navigate(MISSING[data.missing[0]]?.[1] ?? PATHS.salary)}>
+          <button type="button" className="mc-secondary" onClick={() => go(MISSING[data.missing[0]]?.[1] ?? PATHS.salary)}>
             {MISSING[data.missing[0]]?.[2] ?? '입력하러 가기'}
           </button>
         </div>
@@ -115,8 +119,8 @@ export default function ProtectPage() {
             월급 {won(base.takeHomeIncome)}보다 {blocked.shortfall > 0 ? <><b className="mc-error">{won(blocked.shortfall)}</b> 많아요.</> : '남는 돈이 없어요.'} 생활비를 나눌 수 없어서 하나를 줄여야 해요.
           </p>
           <div className="mc-two" style={{ marginTop: 12, gap: 8 }}>
-            <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.savings)}>정기 저축 고치기</button>
-            <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.fixed)}>고정지출 확인</button>
+            <button type="button" className="mc-secondary" onClick={() => go(PATHS.savings)}>정기 저축 고치기</button>
+            <button type="button" className="mc-secondary" onClick={() => go(PATHS.fixed)}>고정지출 확인</button>
           </div>
         </div>
       )}
