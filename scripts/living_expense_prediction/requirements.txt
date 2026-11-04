@@ -1,0 +1,5 @@
+# Historical A/B/C research package; independent from the service inference bundle.
+numpy>=1.26,<3
+pandas>=2.2,<4
+catboost>=1.2.7,<2
+matplotlib>=3.9,<4

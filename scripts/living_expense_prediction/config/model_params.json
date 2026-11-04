@@ -1,0 +1,12 @@
+{
+  "iterations": 85,
+  "learning_rate": 0.05,
+  "depth": 6,
+  "loss_function": "MultiRMSE",
+  "thread_count": 2,
+  "random_seed": 42,
+  "verbose": false,
+  "allow_const_label": true,
+  "eval_metric": "MultiRMSE",
+  "allow_writing_files": false
+}

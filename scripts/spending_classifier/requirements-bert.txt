@@ -1,0 +1,7 @@
+# 기존 .venv-ml에 선택 설치. SVM A/B에는 필요하지 않음.
+# PyTorch(BSD), Transformers(Apache-2.0), safetensors(Apache-2.0), Hub(Apache-2.0).
+# 정확한 실행 버전은 각 실험 metrics.json에 기록한다.
+torch>=2.6,<3
+transformers>=4.45,<6
+safetensors>=0.4.5,<1
+huggingface-hub>=0.26,<2

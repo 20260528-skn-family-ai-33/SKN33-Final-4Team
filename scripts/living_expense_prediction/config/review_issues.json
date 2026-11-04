@@ -1,0 +1,613 @@
+{
+  "version": "v13_share",
+  "issue_definitions": {
+    "mixed_living": {
+      "title": "생활비에 정기 지출이 섞일 가능성",
+      "meaning": "현재 생활비 처리를 유지하고 정기성 확인 대상으로 표시한다."
+    },
+    "housing_cash_proxy": {
+      "title": "현금 주거비와 다른 평가액 혼합 가능성",
+      "meaning": "무상·사택·영구임대의 실제주거비. 보조 월세로 교체하지 않는다."
+    },
+    "category_mixed": {
+      "title": "여러 용도가 섞인 카테고리 근사",
+      "meaning": "원천 금액을 임의 배분하지 않는다."
+    },
+    "nonroutine_unverified": {
+      "title": "비정기성 미확인 P95 후보",
+      "meaning": "지출 빈도 대신 금액 기준으로 분리하는 기존 정책이다."
+    },
+    "threshold_unavailable": {
+      "title": "양수 표본 부족으로 P95 미적용",
+      "meaning": "임계값을 만들지 않고 전액 생활비에 남긴다."
+    },
+    "interest_scope": {
+      "title": "대출 이자를 고정비 입력으로 포함",
+      "meaning": "100번째 원천으로 기타 원지출에 포함하고 고정비로 전액 분리한다. 생활비에서 다시 차감하지 않으며 대출 원금은 포함하지 않는다."
+    },
+    "vehicle_missing": {
+      "title": "차량 대수 원문 공백",
+      "meaning": "0대와 구분하여 결측으로 보존한다."
+    },
+    "invalid_profile": {
+      "title": "입력 또는 가중치 유효성 제외",
+      "meaning": "입력·가중치·생활비 정답의 유효성을 검사한다. 행은 삭제하지 않고 제외 사유를 기록한다."
+    }
+  },
+  "sources": {
+    "가계지출_소비지출_식료품비주류음료_곡물구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_곡물가공품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_빵떡류구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_육류구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_육류가공품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_신선수산동물구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_염건수산동물구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_기타수산동물가공구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_유제품및알구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_유지류구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_과일가공품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_채소가공품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_해조가공품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_당류과자류구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_조미식품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_기타식품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_커피차구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_주스기타음료구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_식품가공서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_주류담배_주류구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_음식숙박_식대": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_주거수도광열_실제주거비구입비": {
+      "issue_codes": [
+        "housing_cash_proxy"
+      ],
+      "reason": "일부 주거 형태에서 시장 임대료 평가 차액 포함",
+      "evidence": "항목분류설명 C218:D220"
+    },
+    "가계지출_소비지출_주거수도광열_주택유지수선구입비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "작은 정기 수선과 큰 보수 공사가 섞일 수 있다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_주거수도광열_상하수도폐기물처리비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_주거수도광열_기타주거관련서비스구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_주거수도광열_연료비구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_가정용품가사서비스_실내장식구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_가정용품가사서비스_가구조명장식서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_가정용품가사서비스_가사서비스금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "가사서비스 정기 이용 여부 미관측",
+      "evidence": "C296:D299"
+    },
+    "가계지출_소비지출_정보통신_통신서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_자동차구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_기타운송기구구입비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "자동차 구입과 별도이며 운송기구의 종류가 혼합되어 있다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_교통운송_운송기구유지수리비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_운송기구연료비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_기타개인교통서비스이용금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "주차·대여 등의 정기 이용 여부 미관측",
+      "evidence": "C334:D339"
+    },
+    "가계지출_소비지출_교통운송_철도운송이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_육상운송이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_기타운송이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_가정용품가사서비스_가구조명구입비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "필수 교체와 선택적 구입의 목적을 구별할 수 없다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_가정용품가사서비스_가정용섬유구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_가정용품가사서비스_가전가정용기기구입비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "기기 종류와 교체 주기를 관측하지 못한다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_가정용품가사서비스_가전관련서비스이용금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "수리·설치·관리와 렌탈 혼합",
+      "evidence": "C275:D276"
+    },
+    "가계지출_소비지출_가정용품가사서비스_가사용품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_가정용품가사서비스_가정용공구기타구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_가정용품가사서비스_가사소모품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_정보통신_통신장비구입비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "휴대전화 등의 할부·교체와 구매 맥락을 구별하지 못한다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_정보통신_영상음향기기구입비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "기기의 세부 종류와 구입 목적을 구별하지 못한다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_정보통신_정보처리장치기록매체구입비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "컴퓨터와 기록매체가 섞인 혼합 항목이다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_정보통신_기타영상정보관련서비스비용": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "소프트웨어 구입과 구독 혼합",
+      "evidence": "C376:D379"
+    },
+    "가계지출_소비지출_의류신발_직물및외의구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_의류신발_내의구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_의류신발_기타의복구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_의류신발_신발구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_기타상품서비스_시계장신구구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_기타상품서비스_기타개인용품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_식료품비주류음료_건강보조식품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_보건_의약품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_보건_의료용소모품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_보건_보건의료용품기구구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_보건_외래의료서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_보건_치과서비스이용금액": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "정기 진료와 큰 치료가 섞이며 진료 목적을 확정할 수 없다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_보건_기타의료서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_보건_입원서비스이용금액": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "금액이 커도 반복 치료인지 일회성인지 확인할 수 없다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_기타상품서비스_이미용서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_기타상품서비스_이미용기기구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_기타상품서비스_위생이미용용품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_서적구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_문구구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교육_초등교육비": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "정규교육 납부 주기 미관측",
+      "evidence": "항목분류설명 C438:D440"
+    },
+    "가계지출_소비지출_교육_중등교육비": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "정규교육 납부 주기 미관측",
+      "evidence": "항목분류설명 C441:D443"
+    },
+    "가계지출_소비지출_교육_고등교육비": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "대학·대학원 등 등록금 납부 주기 미관측",
+      "evidence": "항목분류설명 C444:D447"
+    },
+    "가계지출_소비지출_교육_학생학원교육비": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "학원·방문학습지·과외뿐 아니라 체험교육 여행비·적립금이 포함되며 납부 주기를 구분하지 못한다.",
+      "evidence": "C449:D458"
+    },
+    "가계지출_소비지출_교육_성인학원비": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "직업·외국어·운동·교양 강습을 합산하며 월 정기와 단기 과정을 구분하지 못한다.",
+      "evidence": "C459:D462"
+    },
+    "가계지출_소비지출_교육_기타교육비": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "교육 서비스 납부 주기 미관측",
+      "evidence": "C463:D465"
+    },
+    "가계지출_소비지출_정보통신_방송시청각콘텐츠이용금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "콘텐츠 구입·구독·스트리밍·방송수신료가 합쳐져 있으며 월 정기 결제 여부를 분리할 수 없다.",
+      "evidence": "C373:D375"
+    },
+    "가계지출_소비지출_오락문화_내구재구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_악기음반비디오물구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_오락문화내구재유지수리비용": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_게임장난감취미용품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_캠핑운동관련용품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_화훼원예용품구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_운동오락서비스이용금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "정기 운동시설과 일회성 오락·관람 혼합",
+      "evidence": "C406:D413"
+    },
+    "가계지출_소비지출_오락문화_문화서비스이용금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "대여·이용 서비스 정기성 미관측",
+      "evidence": "C413:D418"
+    },
+    "가계지출_소비지출_오락문화_기타인쇄물구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_단체여행경비": {
+      "issue_codes": [
+        "nonroutine_unverified"
+      ],
+      "reason": "실제 여행 빈도나 정기성을 확인할 수 없다.",
+      "evidence": "기존 nonroutine_policy.json 후보 정의"
+    },
+    "가계지출_소비지출_음식숙박_숙박비": {
+      "issue_codes": [
+        "mixed_living",
+        "category_mixed"
+      ],
+      "reason": "호텔·모텔과 고시원·기숙사·하숙이 혼합되어 여행/주거와 정기성을 구분하지 못한다. 임의 분할 없이 전액 여행·숙박 생활비에 잠정 보존하고 P95에서 제외한다.",
+      "evidence": "항목분류설명 C473:D476"
+    },
+    "가계지출_소비지출_주류담배_담배구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_의류신발_의복관련서비스구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_의류신발_신발서비스구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_기타운송관련서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_교통운송_우편서비스이용금액": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_반려동물및관련용품비용": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_오락문화_화훼반려동물서비스이용금액": {
+      "issue_codes": [
+        "category_mixed"
+      ],
+      "reason": "동물병원 외의 반려동물·화훼 서비스 혼합",
+      "evidence": "항목분류설명 C403:D405"
+    },
+    "가계지출_소비지출_오락문화_복권구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_기타상품서비스_보험료": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_기타상품서비스_기타금융구입비": {
+      "issue_codes": [],
+      "reason": "",
+      "evidence": ""
+    },
+    "가계지출_소비지출_기타상품서비스_복지시설비용금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "복지 서비스 이용 주기 미관측",
+      "evidence": "C509:D512"
+    },
+    "가계지출_소비지출_기타상품서비스_기타서비스금액구입비": {
+      "issue_codes": [
+        "category_mixed",
+        "mixed_living"
+      ],
+      "reason": "중개·법무·시험·예식·장례 등 다양한 서비스 혼합; 묘지·납골당 관리료 등의 지출 주기를 구분할 수 없다.",
+      "evidence": "C513:D519"
+    },
+    "가계지출_비소비지출_가구간이전지출금액": {
+      "issue_codes": [
+        "mixed_living"
+      ],
+      "reason": "정기 송금과 경조사 등 혼합",
+      "evidence": "C542:D548"
+    },
+    "가계지출_비소비지출_이자비용": {
+      "issue_codes": [
+        "interest_scope"
+      ],
+      "reason": "대출 이자는 기타 원지출 및 고정비 입력에 포함한다. 생활비에 원래 포함되지 않았으므로 추가 차감하지 않는다. 원금 상환은 별도 미포함이다.",
+      "evidence": "항목분류설명 C539:D541"
+    }
+  },
+  "housing_cash_proxy_tenure_codes": [
+    2,
+    3,
+    5
+  ],
+  "unlisted_recurrence_status": "not_observed",
+  "partial_split_estimated": false,
+  "evidence_source": {
+    "path": "data/raw/household_codebook_2024.xlsx",
+    "sheet": "항목분류설명"
+  },
+  "status": "student_package_reproducible"
+}

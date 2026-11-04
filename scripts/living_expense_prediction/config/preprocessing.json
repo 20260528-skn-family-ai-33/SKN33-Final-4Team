@@ -1,0 +1,50 @@
+{
+  "version": "v13_share",
+  "status": "student_package_reproducible",
+  "age_min": 20,
+  "age_max": 34,
+  "household_size": 1,
+  "employed_code": 1,
+  "employment_status_codes": [
+    1,
+    2,
+    3
+  ],
+  "years": [
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+  ],
+  "features": [
+    "age",
+    "sex",
+    "net_income",
+    "vehicle_count",
+    "fixed_expense_amount"
+  ],
+  "stored_only": [
+    "tenure"
+  ],
+  "income_source": "소득_경상소득",
+  "income_deductions": [
+    "가계지출_비소비지출_경상조세",
+    "가계지출_비소비지출_연금기여금",
+    "가계지출_비소비지출_사회보험료"
+  ],
+  "rounding_tolerance_won": 10,
+  "vehicle_missing": "preserve",
+  "vehicle_valid": "nonnegative_integer_or_missing",
+  "currency": "KRW",
+  "period_unit": "monthly_average",
+  "source_encoding": "cp949",
+  "output_encoding": "utf-8-sig",
+  "diagnostic_only_columns": [],
+  "column_aliases": {
+    "쥬스기타음료": "주스기타음료"
+  }
+}
