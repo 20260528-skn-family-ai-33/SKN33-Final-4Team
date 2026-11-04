@@ -115,6 +115,36 @@ class SavingMatchTest(TestCase):
                 self.match(tx)
                 self.assertEqual(self.kind(tx), "own_transfer")
 
+    # ---- PR #85 리뷰 ----
+    def test_late_income_matches_earlier_withdrawal(self):
+        self.saving(self.own(date(2026, 8, 2)), to=self.c)
+        tx = self.own(date(2026, 9, 2))                      # 출금은 먼저 저장됐고, 이번에 입금이 들어와 짝이 생김
+        income = TransactionLink.objects.get(from_transaction=tx).to_transaction
+        match_savings(self.user, [income.pk], TODAY)
+        self.assertEqual(self.kind(tx), "saving")
+
+    def test_retransfer_after_cancel_is_saving(self):
+        s = self.saving(self.own(date(2026, 8, 2)), to=self.c)
+        canceled = self.own(date(2026, 9, 2))
+        FinancialTransaction.objects.filter(pk=canceled.pk).update(transaction_type="saving", is_canceled=True)
+        s.evidence = [*s.evidence, str(canceled.pk)]         # 9월 이체가 근거로 들어간 뒤 취소됨
+        s.save(update_fields=["evidence"])
+        again = self.own(date(2026, 9, 4))
+        self.match(again)
+        self.assertEqual(self.kind(again), "saving")
+
+    def test_other_saving_candidate_evidence_is_protected(self):
+        self.saving(self.own(date(2026, 8, 2)), to=self.c)
+        tx = self.own(date(2026, 9, 2))
+        for status in ("ignored", "suggested", "stopped"):
+            with self.subTest(status=status):
+                RecurringSaving.objects.filter(user=self.user).exclude(status="confirmed").delete()
+                RecurringSaving.objects.create(user=self.user, name="다른 저축", amount=900_000, transfer_day=2,
+                                               from_account=self.a, to_account=self.c, status=status,
+                                               source_type="detected", evidence=[str(tx.pk)])
+                self.match(tx)
+                self.assertEqual(self.kind(tx), "own_transfer")
+
     def test_pipeline_twice_same_result(self):
         s = self.saving(self.own(date(2026, 8, 2)), to=self.c)
         tx = self.own(date(2026, 9, 2))

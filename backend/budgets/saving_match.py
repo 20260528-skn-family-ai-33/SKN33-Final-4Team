@@ -24,20 +24,23 @@ def match_savings(user, tx_ids, today):
     ).order_by("pk"))  # [임시] 이체일을 모르는 저축은 맞출 날짜가 없어서 대상이 아님
     if not savings or not new:
         return
-    taken = set()  # 다른 고정지출 · 저축의 근거 거래
-    for ids in RecurringExpense.objects.filter(user=user).values_list("evidence", flat=True):
-        taken |= id_set(ids)
+    taken = set()  # 고정지출 · 저축의 근거 거래 — 저축은 상태 무관 (후보 · 무시 · 중지한 저축의 이체도 보호, PR #85 리뷰)
+    for model in (RecurringExpense, RecurringSaving):
+        for ids in model.objects.filter(user=user).values_list("evidence", flat=True):
+            taken |= id_set(ids)
     evidence = {s.pk: id_set(s.evidence) for s in savings}
-    for s in savings:
-        taken |= evidence[s.pk]
-    own_to = dict(TransactionLink.objects.filter(
+    links = list(TransactionLink.objects.filter(
         user=user, relation_type=TransactionLink.Relation.OWN_TRANSFER,
-    ).values_list("from_transaction_id", "to_transaction__account_id"))
+    ).values_list("from_transaction_id", "to_transaction_id", "to_transaction__account_id"))
+    own_to = {out: to_account for out, _, to_account in links}
+    # 입금이 늦게 조회돼 이번에 짝이 생긴 예전 출금도 새 거래로 본다 (PR #85 리뷰)
+    new |= {out for out, income, _ in links if income in new}
 
     for s in savings:
         mine = list(FinancialTransaction.objects.filter(user=user, pk__in=list(evidence[s.pk])))
         labels = {normalize_merchant(t.source_description or t.merchant_name) for t in mine} - {None}
-        saved_months = {(t.occurred_on.year, t.occurred_on.month) for t in mine}
+        # 그 달 저축 완료 = 취소되지 않은 근거 이체가 있음 (취소 후 다시 보낸 이체는 맞춘다, PR #85 리뷰)
+        saved_months = {(t.occurred_on.year, t.occurred_on.month) for t in mine if not t.is_canceled}
         rows = FinancialTransaction.objects.filter(
             user=user, account_id=s.from_account_id, direction="out", is_canceled=False,
             transaction_type__in=TYPES, amount=s.amount, occurred_on__lte=today,
