@@ -3,7 +3,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 
-from . import classifier, transfer_rules
+from . import card_payments, classifier, transfer_rules
 from .models import FinancialTransaction
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,9 @@ def classify_spending(user, txs):
     classifier.classify(user, txs)
 
 
-# 세진: 카드값 출금과 카드 청구서 매칭
+# 세진: 카드값 출금과 카드 청구서 매칭, finance/card_payments.py
 def match_card_payments(user, txs):
-    pass
+    card_payments.match(user)
 
 
 # 세진: 대출 상환 출금과 대출 매칭

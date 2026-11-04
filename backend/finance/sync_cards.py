@@ -16,7 +16,7 @@ from django.utils import timezone
 
 from users.models import Consent
 
-from . import codef
+from . import card_payments, codef
 from .codef_cards import MONTH, CardDataError, approval_source_key, card_matches, month_range
 from .models import Card, CardBill, CardBillItem, Connection, FinancialTransaction, Origin, SyncRun
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
@@ -241,6 +241,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             new_ids, existing_count, complete = _save_approvals(user, cards, card_rows, approvals)
             retry_failed_transactions(user, retry_ids)
             process_new_transactions(user, new_ids)
+            card_payments.match(user)   # 새 거래가 없어도 이번에 온 청구서에 먼저 저장된 출금을 맞춘다
 
             for card in cards:
                 for month in months:
