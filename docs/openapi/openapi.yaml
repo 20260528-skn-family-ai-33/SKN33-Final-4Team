@@ -9603,9 +9603,9 @@ x-source-sha256:
   docs/api/finance-connect.md: 6081ac66a61ba8a61a9cede014a06195d37e3b9ec7e99ff4f1791ab441c5ea3e
   docs/api/cards.md: 5d7229aa0f80e848a17f1af5442563d377fb6b319b4de218adfb1f9b8b68c858
   docs/api/loans.md: 5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c
-  docs/api/transactions.md: 9f6d83c9d57f02a0176b48a4d04d9ee9ff582e02c30d9b9339b2dfa2def01f1a
+  docs/api/transactions.md: e1b863e74fe8bd77b0ba9996def70511edd609b6d36e59e2738ee68ecaf0c3be
   docs/api/fixed.md: 6eda341b01b9df157a3587305613d5b9f2b77a38e4e4686ca0d67787e566aff0
-  docs/api/savings.md: fc603e82be203d9c3a76539460ca16adffb147fdb2555e3ee9effe636279cfc1
+  docs/api/savings.md: d5a65c112b4b9b8272c6c55412da41a93af16087a0f4c9fe1bc1d5931b573211
   docs/api/home.md: 1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf
   docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5
   docs/api/budgets.md: bc2e0bf7fa33177a0535fae61d0558ca41639afb84246510ebecba21e1c01b36
