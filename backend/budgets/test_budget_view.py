@@ -14,7 +14,7 @@ from users.models import CategoryMinimum, FinancialProfile, IdempotencyRecord
 
 from .models import Budget, BudgetCategorySetting, BudgetCycle, BudgetItem, SpendingAllocation
 from .overview import LIVING_CODES, NAG
-from .recommend import budget_input_hash
+from .recommend import POLICY_VERSION, budget_input_hash
 
 
 TODAY = date(2026, 10, 28)
@@ -50,6 +50,7 @@ class BudgetViewTest(TestCase):
         budget = Budget.objects.create(user=self.user, cycle=cycle, status=status, funding_amount=1_500_000,
             version_no=(cycle.budgets.order_by("-version_no").values_list("version_no", flat=True).first() or 0) + 1,
             input_hash=budget_input_hash(self.user, cycle), input_snapshot={"fixed": {"card_reserved": card_reserved}},
+            policy_version=POLICY_VERSION,  # 11/3: 승인 때 계산 규칙 버전도 비교한다
             approved_at=timezone.now() if status == "approved" else None)
         BudgetItem.objects.bulk_create([
             BudgetItem(user=self.user, budget=budget, bucket="living", category_id=code, allocated_amount=food if code == "FOOD" else 0)
@@ -224,8 +225,10 @@ class BudgetViewTest(TestCase):
 
     def test_lock_404_ownership_and_category(self):
         budget = self.make_budget()
-        for code in ("UNCLASSIFIED", "UNKNOWN"):
+        # 11/3: 예산 밖 카테고리(주거·통신 · 여행·숙박)는 자물쇠 대상이 아니다
+        for code in ("UNCLASSIFIED", "UNKNOWN", "HOUSING_TELECOM", "TRAVEL_LODGING"):
             self.assertEqual(self.lock(budget, {"locked": True}, code).status_code, 404)
+        self.assertFalse(BudgetCategorySetting.objects.exists())
         for pk in (uuid.uuid4(), budget.pk):
             if pk == budget.pk:
                 self.client.force_authenticate(self.other)
@@ -298,6 +301,42 @@ class BudgetViewTest(TestCase):
         self.profile.savings_floor += 1
         self.profile.save()
         self.assert_expired(chosen)
+
+    def test_approval_expires_old_policy_version(self):
+        # 11/3 정책 전에 만든 초안(주거·통신 · 여행·숙박 배분 포함)은 승인하지 않고 다시 추천받게 한다
+        chosen = self.make_budget()
+        Budget.objects.filter(pk=chosen.pk).update(policy_version="2026-10-27")
+        self.assert_expired(chosen)
+
+    def test_out_of_budget_spending_stays_in_total_but_not_living(self):
+        # 주거·통신(고정비 미등록) · 여행 지출은 전체 소비에 남고 생활비 사용액 · 남은 생활비에서는 빠진다
+        self.make_budget()
+        self.tx(120_000)
+        before = self.get()["living"]
+        self.tx(20_000, "HOUSING_TELECOM")
+        self.tx(200_000, "TRAVEL_LODGING")
+        data = self.get()
+        self.assertEqual(data["living"], before)
+        self.assertEqual(data["living"], {"budget": 1_000_000, "spent": 120_000, "remaining": 880_000})
+        self.assertNotIn("TRAVEL_LODGING", {item["category"] for item in data["categories"]})
+        transactions = self.client.get("/api/finance/transactions/?from=2026-10-25&to=2026-11-24").json()
+        self.assertEqual(transactions["summary"]["spentTotal"], 340_000)
+
+    def test_linked_rent_is_fixed_not_living_or_out_of_budget(self):
+        # N1: 월세(주거·통신) 출금을 고정비 납부로 연결하면 생활비 사용액 · 예산 밖 지출에 다시 잡히지 않고 전체 소비에는 남는다
+        self.make_budget()
+        rent = self.tx(700_000, "HOUSING_TELECOM", source_kind="bank", account=self.account)
+        due = PaymentDue.objects.create(user=self.user, recurring=self.expense, obligation_type="recurring", occurrence_key="test-rent",
+            due_date=TODAY, confirmed_amount=700_000, paid_amount=700_000, payment_state="paid", obligation_state="active")
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=rent, matched_amount=700_000)
+        self.assertEqual(self.get()["living"]["spent"], 0)
+        from finance.api import listed_transactions, transaction_item
+        from finance.spending import spending_summary
+        from .scope import outside_spent
+        summary = spending_summary((transaction_item(t) for t in listed_transactions(self.user)), living_only=True)
+        self.assertEqual(outside_spent(summary), {})
+        transactions = self.client.get("/api/finance/transactions/?from=2026-10-25&to=2026-11-24").json()
+        self.assertEqual(transactions["summary"]["spentTotal"], 700_000)
 
     def test_approval_expires_when_saved_living_is_cleared(self):
         chosen = self.make_budget()
@@ -392,3 +431,105 @@ class BudgetViewTest(TestCase):
         self.client.force_authenticate(user=None)
         for response in (self.client.get(URL), self.lock(chosen, {"locked": True}), self.approve(chosen)):
             self.assertEqual((response.status_code, response.json()["error"]["code"]), (403, "not_authenticated"))
+
+
+class OldScopeReRecommendFlowTest(TestCase):
+    """N-F1 후속: 이전 기준 승인 예산(주거·통신 · 여행 배정 남음) → 실제 추천 API → 실제 승인 API.
+    합성 데이터 · 테스트 DB 만 쓴다. DB 를 직접 바꾸는 건 옛 승인 예산을 만드는 준비 단계뿐"""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = get_user_model().objects.create_user(email="rerecommend@example.com")
+        FinancialProfile.objects.create(
+            user=cls.user, housing_type="family", monthly_take_home_income=1_500_000, payday=25,
+            living_budget=1_000_000, savings_floor=200_000, cushion_monthly=100_000, cushion_target=4_500_000,
+        )
+        cls.cycle = BudgetCycle.objects.create(user=cls.user, starts_on=date(2026, 10, 25), ends_before=date(2026, 11, 25))
+        RecurringExpense.objects.create(user=cls.user, name="통신", amount=100_000, category_id="HOUSING_TELECOM",
+                                        status="confirmed", source_type="manual")
+        bank = Connection.objects.create(user=cls.user, business_type="bank", organization_code="0004", status="connected")
+        cls.account = BankAccount.objects.create(user=cls.user, connection=bank, source_account_key="rerecommend",
+                                                 account_type="demand", currency="KRW", is_selected=True, balance=1_000_000)
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(self.user)
+        clock = patch("django.utils.timezone.localdate", return_value=TODAY)
+        clock.start()
+        self.addCleanup(clock.stop)
+        for amount, category in ((120_000, "FOOD"), (20_000, "HOUSING_TELECOM"), (200_000, "TRAVEL_LODGING")):
+            FinancialTransaction.objects.create(user=self.user, source_kind="bank", account=self.account, occurred_on=TODAY,
+                amount=amount, direction="out", transaction_type="spending", confirmed_category_id=category,
+                confirmation_state="confirmed")
+
+    def old_approved(self, code):
+        """11/3 전 정책으로 승인한 예산: 식비 900,000 + {code} 100,000 (생활비 1,000,000)"""
+        old = Budget.objects.create(user=self.user, cycle=self.cycle, status="approved", version_no=1, funding_amount=1_500_000,
+                                    policy_version="2026-10-27", engine_version="temp-fallback-1", approved_at=timezone.now())
+        BudgetItem.objects.bulk_create(
+            [BudgetItem(user=self.user, budget=old, bucket="living", category_id=c,
+                        allocated_amount={"FOOD": 900_000, code: 100_000}.get(c, 0)) for c in (*LIVING_CODES, code)]
+            + [BudgetItem(user=self.user, budget=old, bucket=bucket, category_id=cat, allocated_amount=amount)
+               for bucket, cat, amount in (("fixed", "HOUSING_TELECOM", 100_000), ("savings", None, 200_000), ("cushion", None, 100_000))])
+        return old
+
+    def items(self, budget):
+        return sorted(budget.items.values_list("bucket", "category_id", "allocated_amount"), key=str)
+
+    def screens(self):
+        from spending_analysis.tools import budget_left
+        home = self.client.get("/api/home/").json()["budget"]
+        page = self.client.get(URL).json()
+        chat = budget_left(self.user, None, TODAY)
+        if "budget_id" in chat["budget"]:
+            chat["budget"]["budget_id"] = str(chat["budget"]["budget_id"])  # 채팅 내부 값은 UUID 객체
+        return home, page, chat
+
+    def run_flow(self, code):
+        old = self.old_approved(code)
+        before = self.items(old)
+        home, page, chat = self.screens()
+        self.assertEqual((home["budgetId"], page["budget"]["budgetId"], chat["budget"]["budget_id"]), (str(old.pk),) * 3)
+        self.assertEqual((home["outOfBudgetAllocated"], page["budget"]["outOfBudgetAllocated"],
+                          chat["budget"]["out_of_budget_allocated"]), (100_000,) * 3)
+
+        # 1) 실제 추천 API → 새 초안. 승인 전까지 옛 승인 예산 · 항목은 그대로
+        response = self.client.post("/api/budgets/recommend/", data="{}", content_type="application/json",
+                                    HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+        self.assertEqual(response.status_code, 202, response.content)
+        task = self.client.get(f"/api/tasks/{response.json()['task']['taskId']}/").json()
+        self.assertEqual((task["status"], task["result"]["outcome"]), ("succeeded", "proposed"), task)
+        draft = Budget.objects.get(pk=task["result"]["budgetId"])
+        old.refresh_from_db()
+        self.assertEqual((old.status, self.items(old), draft.status), ("approved", before, "validated"))
+        self.assertFalse(draft.items.filter(bucket="living", category_id__in=["HOUSING_TELECOM", "TRAVEL_LODGING"]).exists())
+        home, page, chat = self.screens()
+        self.assertEqual((home["budgetId"], chat["budget"]["budget_id"]), (str(old.pk),) * 2)  # 홈 · 채팅 = 승인 예산
+        self.assertEqual((page["budget"]["budgetId"], page["budget"]["status"]), (str(draft.pk), "validated"))  # 예산 화면 = 새 초안
+        self.assertEqual(home["outOfBudgetAllocated"], 100_000)
+
+        # 2) 실제 승인 API → 세 화면이 새 승인 예산으로 일치, 이전 기준 안내 사라짐, 옛 예산 항목은 그대로(superseded)
+        response = self.client.post(f"{URL}{draft.pk}/approve/", data="{}", content_type="application/json",
+                                    HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+        self.assertEqual(response.status_code, 200, response.content)
+        old.refresh_from_db()
+        self.assertEqual((old.status, self.items(old)), ("superseded", before))
+        home, page, chat = self.screens()
+        self.assertEqual((home["budgetId"], page["budget"]["budgetId"], chat["budget"]["budget_id"]), (str(draft.pk),) * 3)
+        self.assertEqual((home["livingBudget"], page["living"]["budget"], chat["budget"]["allocated"]), (1_000_000,) * 3)
+        self.assertEqual((home["outOfBudgetAllocated"], page["budget"]["outOfBudgetAllocated"],
+                          chat["budget"]["out_of_budget_allocated"]), (0,) * 3)
+
+        # 3) 두 카테고리: 배분 · 생활비 사용액에서는 빠지고, 예산 밖 지출 안내 · 거래 · 전체 소비에는 남는다
+        self.assertEqual((page["living"]["spent"], chat["observed"]["spent"], home["livingLeft"]), (120_000, 120_000, 880_000))
+        self.assertEqual(home["outOfBudget"]["total"], 220_000)
+        self.assertNotIn(code, {c["category"] for c in page["categories"]})
+        listed = self.client.get("/api/finance/transactions/?from=2026-10-25&to=2026-11-24").json()
+        self.assertEqual(listed["summary"]["spentTotal"], 340_000)
+        self.assertEqual({i["category"] for i in listed["items"]}, {"FOOD", "HOUSING_TELECOM", "TRAVEL_LODGING"})
+
+    def test_housing_old_budget(self):
+        self.run_flow("HOUSING_TELECOM")
+
+    def test_travel_old_budget(self):
+        self.run_flow("TRAVEL_LODGING")

@@ -10,13 +10,14 @@
 """
 from datetime import timedelta
 
+from budgets.scope import living_spent, outside_spent
 from finance.api import listed_transactions, transaction_item
 from finance.merchant_rules import normalize_merchant
 from finance.models import SourceKind
 from finance.spending import spending_summary
 
 from . import result as R, scope
-from .budget import OUT_OF_BUDGET, approved_budget
+from .budget import approved_budget
 from .coverage import coverage
 from .periods import (budget_period, last_month, last_week, month_of, recent_months, recent_months_to_date, resolve_range,
                       this_month, this_week)
@@ -186,10 +187,10 @@ def budget_left(user, category, today, breakdown=False):
     span = budget_period(cycle["starts_on"], cycle["ends_before"], today)
     cov = _ok(coverage(user, span["spent"]))
     living = spending_summary(rows(user, span["spent"]), living_only=True)
-    # 예산 범위 밖 카테고리(주거·통신 · 여행·숙박)는 예산 줄이 없지만 실제로 쓴 생활비라 사용액 · 남은 돈 · 하루 금액에 넣는다
-    # (11/2 2차 결정 — 처음엔 뺐다). 그 금액은 안내용으로 카테고리별로 남긴다
-    outside = {c: living["by_category"][c] for c in OUT_OF_BUDGET if living["by_category"].get(c)}
-    spent = living["by_category"].get(category, 0) if category else living["spent_total"]
+    # 예산 범위 밖 카테고리(주거·통신 · 여행·숙박)는 사용액 · 남은 돈 · 하루 금액에서 뺀다 (11/3 확정 — 11/2 2차의 '포함'을 바꿈).
+    # 그 금액은 '예산 밖 지출' 안내용으로 카테고리별로 남긴다 (홈 · 예산 화면과 같은 budgets.scope 계산)
+    outside = outside_spent(living)
+    spent = living["by_category"].get(category, 0) if category else living_spent(living)
     out.update(cycle_period=span["cycle"], spent_period=span["spent"], coverage=cov,
                observed={"spent": spent}, confirmed=None, days_left=(span["cycle"].end_before - span["spent"].end_before).days,
                outside_spent={} if category else outside,
@@ -198,7 +199,7 @@ def budget_left(user, category, today, breakdown=False):
     if found["state"] == "approved":  # no_approved 면 초안 · 프로필 목표 금액을 담지 않는다
         allocated = found["living"].get(category) if category else found["living_total"]
         out["budget"].update({k: found["budget"][k] for k in ("budget_id", "version_no", "approved_at")},
-                             allocated=allocated)
+                             allocated=allocated, out_of_budget_allocated=found["out_of_budget_allocated"])
         if cov["state"] == "complete" and allocated is not None:
             out["confirmed"] = R.budget_numbers(allocated, spent, None if category else found["spare"])
             if breakdown:  # 승인 예산에 배정된 카테고리만, 화면 순서대로

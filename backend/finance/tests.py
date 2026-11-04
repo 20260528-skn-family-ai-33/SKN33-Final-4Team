@@ -1,7 +1,9 @@
 """finance API 테스트. 실행: backend 폴더에서 python manage.py test finance
 (테스트용 DB를 따로 만들었다가 지운다. 내 연습 데이터는 건드리지 않는다)"""
 import json
+import os
 from datetime import date, time
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -9,7 +11,8 @@ from django.utils import timezone
 
 from users.models import Consent
 
-from .merchant_rules import remembered_category
+from . import classifier
+from .merchant_rules import FUTURE_KEY, remembered_category
 from .models import BankAccount, Card, Connection, FinancialTransaction, RecurringExpense, TransactionLink
 
 URL = "/api/finance/transactions/"
@@ -90,6 +93,40 @@ class TransactionListTest(FinanceData):
         body = self.get("?category=FOOD").json()
         self.assertEqual([i["merchantName"] for i in body["items"]], ["스타벅스"])
 
+    def test_several_categories(self):
+        """11/3: 쉼표로 여러 카테고리 — 그중 하나면 나옴, 기간은 여전히 이번 달"""
+        self.tx(source_description="스타벅스", occurred_time=time(9, 0))
+        self.tx(source_description="지하철", confirmed_category_id="TRANSPORT_CAR", occurred_time=time(8, 0))
+        self.tx(source_description="영화", confirmed_category_id="CULTURE_LEISURE", occurred_time=time(7, 0))
+        body = self.get("?category=FOOD,TRANSPORT_CAR").json()
+        self.assertEqual([i["merchantName"] for i in body["items"]], ["스타벅스", "지하철"])
+        self.assertEqual(body["period"]["basis"], "month")
+        self.assertEqual(self.get("?category=FOOD,NOPE").status_code, 400)
+
+    def test_unclassified_with_other_category_keeps_month(self):
+        """확인 필요 + 다른 카테고리를 같이 고르면 전체 기간이 아니라 이번 달"""
+        self.tx(occurred_on=date(2025, 1, 15), confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        body = self.get("?category=UNCLASSIFIED,FOOD").json()
+        self.assertEqual((body["period"]["basis"], body["items"]), ("month", []))
+
+    def test_account_and_card_filter(self):
+        """11/3: 고른 계좌 · 카드의 거래만. 둘 다 고르면 둘 중 하나"""
+        self.tx(source_description="계좌 소비", occurred_time=time(9, 0))
+        self.tx(source_kind="card", card=self.card, merchant_name="카드 소비", occurred_time=time(8, 0))
+        names = lambda q: [i["merchantName"] for i in self.get(q).json()["items"]]  # noqa: E731
+        self.assertEqual(names(f"?accountId={self.account.pk}"), ["계좌 소비"])
+        self.assertEqual(names(f"?cardId={self.card.pk}"), ["카드 소비"])
+        self.assertEqual(names(f"?accountId={self.account.pk}&cardId={self.card.pk}"), ["계좌 소비", "카드 소비"])
+        self.assertEqual(names(f"?cardId={self.card.pk}&category=TRANSPORT_CAR"), [])
+
+    def test_account_card_filter_rejects_unknown_or_others(self):
+        other_card = Card.objects.create(user=self.other, name="남의 카드", masked_number="****9999", origin="manual")
+        for query, field in ((f"?cardId={other_card.pk}", "cardId"), ("?accountId=not-a-uuid", "accountId"),
+                             (f"?accountId={self.account.pk},{other_card.pk}", "accountId")):
+            res = self.get(query)
+            self.assertEqual(res.status_code, 400, query)
+            self.assertEqual(res.json()["error"]["fields"][field], ["선택할 수 없는 계좌 · 카드예요."])
+
     def test_unclassified_without_period_is_all_time(self):
         old = date(2025, 1, 15)
         self.tx(occurred_on=old, confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
@@ -156,6 +193,7 @@ class TransactionDetailTest(FinanceData):
         ])  # 확신도 숫자는 안 보냄
         self.assertEqual(body["suggestion"]["reason"], "편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요.")
         self.assertIsNone(body["classifiedBy"])
+        self.assertFalse(body["canApplyToFuture"])  # 다품목(편의점)은 '앞으로도 적용' 없음
         self.assertIn("updatedAt", body)
 
     def test_not_found_cases(self):
@@ -184,8 +222,95 @@ class TransactionDetailTest(FinanceData):
         self.assertEqual((body["category"], body["categoryName"]), ("FOOD", "식비"))
         self.assertEqual((body["classifyState"], body["classifiedBy"]), ("confirmed", "user"))
         self.assertIsNone(body["suggestion"])
-        self.assertEqual(remembered_category(self.user, "김밥천국"), "FOOD")  # 같은 가맹점 새 거래에 먼저 쓰임
+        self.assertTrue(body["canApplyToFuture"])
+        self.assertIsNone(remembered_category(self.user, "김밥천국"))  # '앞으로도 적용'을 안 골랐으면 재사용 안 함 (10/30)
         self.assertEqual(self.patch(tx, {"category": "FOOD"}).status_code, 200)  # 같은 값 다시 보내도 성공
+
+        self.assertEqual(self.patch(tx, {"category": "FOOD", "applyToFuture": True}).status_code, 200)
+        self.assertEqual(remembered_category(self.user, "김밥천국"), "FOOD")  # 같은 가맹점 새 거래에 먼저 쓰임
+        self.patch(tx, {"category": "BEAUTY"})  # 마지막 선택이 '앞으로도 적용'이 아니면 재사용 멈춤
+        self.assertIsNone(remembered_category(self.user, "김밥천국"))
+
+    def test_apply_to_future_is_ignored_for_multi_item_and_transfer(self):
+        store = self.tx(source_kind="card", card=self.card, merchant_name="GS25 역삼점",
+                        confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        transfer = self.tx(merchant_name="이하늘", transaction_type="transfer")
+        for tx in (store, transfer):
+            with self.subTest(tx=tx.merchant_name):
+                body = self.patch(tx, {"category": "FOOD", "applyToFuture": True}).json()
+                self.assertFalse(body["canApplyToFuture"])
+                self.assertIsNone(remembered_category(self.user, tx.merchant_name))
+
+    @mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
+    @mock.patch("finance.classifier.conflict_names", return_value=frozenset())  # 로컬 충돌 목록 파일과 무관하게
+    @mock.patch("finance.classifier.ask_jev")
+    @mock.patch("finance.classifier.search_store", return_value=("naver", "행복상회", "슈퍼마켓"))
+    @mock.patch("finance.classifier.predict", return_value=[[("FOOD", 0.4)]])
+    def test_searched_multi_item_cannot_apply_to_future(self, predict, search, ask, conflicts):
+        # PR #67 리뷰: 이름 사전에 없어도 검색 업종이 다품목이면 '앞으로도 적용' 없음
+        first = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        classifier.classify(self.user, FinancialTransaction.objects.filter(pk=first.pk))
+        self.client.force_login(self.user)
+        body = self.client.get(self.url(first)).json()
+        self.assertEqual(body["suggestion"]["reason"], classifier.MULTI_ITEM_REASON)
+        self.assertFalse(body["canApplyToFuture"])
+
+        body = self.patch(first, {"category": "FOOD", "applyToFuture": True}).json()  # 화면을 거치지 않고 보내도
+        self.assertEqual((body["category"], body["classifyState"], body["canApplyToFuture"]), ("FOOD", "confirmed", False))
+        first.refresh_from_db()
+        self.assertNotIn(FUTURE_KEY, first.field_states)
+        self.assertIsNone(remembered_category(self.user, "행복상회"))
+
+        # PR #67 재리뷰: 다음 거래는 SVM 이 0.99 로 확신해도(검색을 건너뛰는 경로) 확인 필요, 지난 선택은 후보로만
+        # 예전 데이터에 '앞으로도 적용' 표시가 잘못 남아 있어도 마찬가지
+        predict.return_value = [[("FOOD", 0.99)]]
+        for future in (False, True):
+            with self.subTest(apply_to_future=future):
+                first.field_states = {**first.field_states, FUTURE_KEY: True} if future else first.field_states
+                first.save(update_fields=["field_states"])
+                nxt = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+                classifier.classify(self.user, FinancialTransaction.objects.filter(pk=nxt.pk))
+                nxt.refresh_from_db()
+                self.assertEqual((nxt.confirmed_category_id, nxt.confirmation_state, nxt.suggestion_reason),
+                                 ("UNCLASSIFIED", "needs_review", classifier.MULTI_ITEM_REASON))
+                self.assertEqual(nxt.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
+        search.assert_called_once()  # 첫 거래에서만 검색
+        ask.assert_not_called()
+
+        # 근거는 같은 회원·같은 가맹점에만: 다른 회원·다른 가게는 SVM 0.99 로 그대로 자동 분류
+        others = [self.tx(user=self.other, merchant_name="행복상회", account=None, source_kind="manual",
+                          confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review"),
+                  self.tx(merchant_name="행복식당", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")]
+        for tx in others:
+            classifier.classify(tx.user, FinancialTransaction.objects.filter(pk=tx.pk))
+            tx.refresh_from_db()
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
+                             ("FOOD", "suggested", "ml"), tx.merchant_name)
+
+    def test_later_tx_of_searched_multi_item_store_cannot_apply_to_future(self):
+        # PR #67 재리뷰: 다품목 근거는 앞 거래에만 있어도 같은 회원·같은 가맹점의 다음 거래 GET·PATCH 에서 막는다
+        searched = {"classifier": {"step": "search_jev", "industry": "슈퍼마켓", "multi_item": True}}
+        self.tx(merchant_name="행복상회", field_states=searched)
+        nxt = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        stale = self.tx(merchant_name="행복상회", classification_source="user", field_states={FUTURE_KEY: True})
+        self.client.force_login(self.user)
+        self.assertFalse(self.client.get(self.url(nxt)).json()["canApplyToFuture"])
+        for tx in (nxt, stale):  # stale = 잘못 남은 재사용 설정. 다시 저장하면 지운다
+            with self.subTest(tx=tx.pk):
+                body = self.patch(tx, {"category": "FOOD", "applyToFuture": True}).json()
+                self.assertEqual((body["category"], body["classifyState"], body["canApplyToFuture"]), ("FOOD", "confirmed", False))
+                tx.refresh_from_db()
+                self.assertNotIn(FUTURE_KEY, tx.field_states)
+        self.assertIsNone(remembered_category(self.user, "행복상회"))
+
+        # 다른 가맹점·다른 회원은 그대로 '앞으로도 적용' 가능
+        other_store = self.tx(merchant_name="행복식당", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        self.assertTrue(self.patch(other_store, {"category": "FOOD", "applyToFuture": True}).json()["canApplyToFuture"])
+        self.assertEqual(remembered_category(self.user, "행복식당"), "FOOD")
+        theirs = self.tx(user=self.other, merchant_name="행복상회", account=None, source_kind="manual",
+                         confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        self.client.force_login(self.other)
+        self.assertTrue(self.client.get(self.url(theirs)).json()["canApplyToFuture"])
 
     def test_patch_bad_requests(self):
         spending = self.tx()
@@ -196,6 +321,7 @@ class TransactionDetailTest(FinanceData):
             (spending, {"category": "UNCLASSIFIED"}, "category", "카테고리를 다시 골라 주세요."),
             (spending, {"category": "NOPE"}, "category", "카테고리를 다시 골라 주세요."),
             (spending, {"category": None}, "category", "카테고리를 다시 골라 주세요."),  # 원래 소비였던 거래
+            (spending, {"category": "FOOD", "applyToFuture": "yes"}, "applyToFuture", "true 또는 false 로 보내 주세요."),
             (income, {"category": "FOOD"}, "category", "이 거래는 카테고리를 고를 수 없어요."),
         ]
         for tx, body, field, message in cases:
@@ -208,12 +334,15 @@ class TransactionDetailTest(FinanceData):
         tx = self.tx(source_description="이하늘", transaction_type="transfer")
         body = self.patch(tx, {"category": "FOOD"}).json()
         self.assertEqual(body["transactionType"], "spending")
+        self.assertTrue(body["wasTransfer"])  # 화면이 [이체로 되돌리기]를 보여 줄 근거 (11/03)
         tx.refresh_from_db()
         self.assertEqual(tx.field_states["original_transaction_type"], "transfer")
 
         body = self.patch(tx, {"category": None}).json()
         self.assertEqual(body["transactionType"], "transfer")
         self.assertIsNone(body["category"])
+        self.assertFalse(body["wasTransfer"])
+        self.assertFalse(self.client.get(self.url(self.tx())).json()["wasTransfer"])  # 처음부터 소비
         tx.refresh_from_db()
         self.assertNotIn("original_transaction_type", tx.field_states)
 

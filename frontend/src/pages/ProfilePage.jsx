@@ -79,7 +79,7 @@ function ProfileForm({ saved }) {
     setBusy(true)
     setError('')
     try {
-      await apiSend('/api/profile/', 'PUT', {
+      const updated = await apiSend('/api/profile/', 'PUT', {
         birthDate: `${a.y}-${String(a.mm).padStart(2, '0')}-${String(a.dd).padStart(2, '0')}`,
         gender,
         housingType: housing,
@@ -87,7 +87,7 @@ function ProfileForm({ saved }) {
         priorities: prio.list.map((name, i) => ({ category: CODE_BY_NAME[name], rank: i + 1 })),
         categoryMinimums: minList.map((name) => ({ category: CODE_BY_NAME[name], minAmount: mins[name] })),
       })
-      navigate(PATHS.connect)
+      navigate(updated?.onboardingNextStep === 'salary' ? PATHS.salary : PATHS.connect)
     } catch (err) {
       // 칸별 오류가 있으면 첫 문장을 보여 준다. 입력값은 그대로 둔다
       const first = Object.values(err.fields ?? {}).flat().find((m) => typeof m === 'string')

@@ -151,8 +151,8 @@ def plan(as_of=None):
         # 청구서는 온보딩 계정에도 금융 조회 자료로 보관. 납부 의무는 승인 계정에만 둔다.
         for month in range(7,12):
             bill=uid(persona,'bill',month)
-            add('CardBill',bill,user_id=user,connection_id=conn('card'),card_id=asset('E'),payment_account_id=asset('A'),
-                issuer_code='FIXTURE_CARD',statement_key=f'alpha:bill:{month}',scope_type='card',billing_month=date(2026,month,1),
+            add('CardBill',bill,user_id=user,connection_id=conn('card'),card_id=None,payment_account_id=asset('A'),
+                issuer_code='FIXTURE_CARD',statement_key=f'alpha:bill:{month}',scope_type='issuer',billing_month=date(2026,month,1),
                 total_amount=140000,payment_due_date=date(2026,month,14),withdrawal_due_date=date(2026,month,14),
                 source_type='provider',confirmation_state='confirmed',items_state='complete',fetched_at=fetched)
             for role,amount,day in [('ott',12000,8),('music',8000,12),('hotel',120000,24)]:
@@ -178,6 +178,12 @@ def plan(as_of=None):
                 product_code='bank_sync' if name in ('A','B') else 'card_approval_list',status='success',
                 requested_from=date(2026,7,1),requested_to=cutoff,covered_from=date(2026,7,1),covered_to=cutoff,
                 started_at=fetched,completed_at=fetched)
+        # 최초 연결일부터의 카드사 청구서 조회 근거. 승인내역 조회와 별개다.
+        for name in ('D','E'):
+            add('SyncRun',uid(persona,'sync','bills',name),user_id=user,connection_id=conn('card'),
+                card_id=asset(name),product_code='card_bill_list',status='success',
+                requested_from=date(2026,6,1),requested_to=cutoff,
+                covered_from=date(2026,6,1),covered_to=cutoff,started_at=fetched,completed_at=fetched)
     return out,tx,opening,as_of
 
 

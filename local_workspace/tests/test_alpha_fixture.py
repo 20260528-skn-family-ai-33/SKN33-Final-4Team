@@ -9,12 +9,12 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
-from django.test import TestCase, SimpleTestCase
+from django.test import TestCase, SimpleTestCase, Client, override_settings
 from budgets.overview import budget_data
 from budgets.scope import living_spent
 from finance.api import listed_transactions, transaction_item, _apply_category
 from finance.spending import spending_summary
-from finance.models import BankAccount, FinancialTransaction, CardBill, PaymentDue
+from finance.models import BankAccount, Card, FinancialTransaction, CardBill, PaymentDue, SyncRun, RecurringExpense, RecurringSaving
 from users.models import FinancialProfile, User
 from budgets.models import Budget
 from spending_fixture import seed
@@ -94,6 +94,20 @@ class AlphaPlanTest(SimpleTestCase):
                 spec.loader.exec_module(module)
             self.assertIsNone(module.CHAT_TODAY)
 
+    def test_bill_plan_covers_first_connection_and_issuer_scope(self):
+        rows,_,_,_=S['plan'](AS_OF)
+        cards={pk:fields for name,pk,fields in rows if name=='Card'}
+        runs=[fields for name,_,fields in rows if name=='SyncRun' and fields['product_code']=='card_bill_list']
+        self.assertEqual(len(runs),4)
+        for pk,card in cards.items():
+            run=next(r for r in runs if r['card_id']==pk)
+            self.assertEqual(run['covered_from'],card['first_connected_at'].date())
+            self.assertEqual(run['covered_to'],AS_OF.date())
+        for name,_,fields in rows:
+            if name=='CardBill':
+                self.assertEqual(fields['scope_type'],'issuer')
+                self.assertIsNone(fields['card_id'])
+
 
 @unittest.skipUnless(settings.SETTINGS_MODULE=='spending_fixture.settings','fixture DB only')
 class AlphaDatabaseTest(TestCase):
@@ -159,3 +173,122 @@ class AlphaDatabaseTest(TestCase):
         User.objects.create_user(S['ACCOUNTS']['home'])
         with self.assertRaisesRegex(ValueError,'다른 회원'):
             apply_snapshot()
+
+    def onboarding_client(self, user=None):
+        client=Client(enforce_csrf_checks=True)
+        client.force_login(user or User.objects.get(pk=S['uid']('onboarding','user')))
+        client.get('/api/csrf/')
+        client.defaults['HTTP_X_CSRFTOKEN']=client.cookies[settings.CSRF_COOKIE_NAME].value
+        return client
+
+    def profile_body(self):
+        return dict(birthDate='1998-04-12',gender='female',housingType='alone',hasCar=False,
+                    priorities=[dict(category=c,rank=i+1) for i,c in enumerate(('FOOD','TRANSPORT_CAR','CULTURE_LEISURE'))],
+                    categoryMinimums=[])
+
+    @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
+    def test_onboarding_profile_salary_and_protect_without_bill_hold(self):
+        client=self.onboarding_client()
+        with mock.patch('finance.codef._request',side_effect=AssertionError('외부 연결 금지')), \
+                mock.patch('django.utils.timezone.localdate',return_value=AS_OF.date()):
+            response=client.put('/api/profile/',self.profile_body(),content_type='application/json')
+            self.assertEqual(response.status_code,200,response.content)
+            self.assertEqual(response.json()['onboardingNextStep'],'salary')
+            response=client.put('/api/budgets/salary/',dict(takeHomeIncome=3000000,payday=1),content_type='application/json')
+            self.assertEqual(response.status_code,200,response.content)
+            response=client.get('/api/budgets/protect/')
+            self.assertEqual(response.status_code,200,response.content)
+            self.assertEqual(response.json()['missing'],[])
+            self.assertIsNone(response.json()['blocked'])
+            self.assertEqual(response.json()['base']['fixedTotal'],0)
+            user=User.objects.get(pk=S['uid']('onboarding','user'))
+            self.assertFalse(RecurringExpense.objects.filter(user=user).exists())
+            self.assertFalse(RecurringSaving.objects.filter(user=user).exists())
+            for role,name,amount,day,category,instrument in S['G']['FIXED']:
+                payment={'paymentAccountId':str(S['uid']('onboarding','asset','A'))} if instrument=='A' else {
+                         'paymentCardId':str(S['uid']('onboarding','asset','E'))}
+                response=client.post('/api/budgets/fixed/',dict(name=name,amount=amount,paymentDay=day,
+                                     category=category,**payment),content_type='application/json')
+                self.assertEqual(response.status_code,201,response.content)
+            response=client.post('/api/budgets/savings/',dict(name='직접 등록 적금',amount=900000,transferDay=2,
+                                fromAccountId=str(S['uid']('onboarding','asset','A')),
+                                toAccountId=str(S['uid']('onboarding','asset','C'))),content_type='application/json')
+            self.assertEqual(response.status_code,201,response.content)
+            response=client.get('/api/budgets/protect/')
+            self.assertIsNone(response.json()['blocked'])
+            self.assertEqual(response.json()['base']['available'],2230000)
+            response=client.put('/api/budgets/protect/',dict(livingBudget=1050000,savingFloor=900000,cushionMonthly=150000),
+                                content_type='application/json')
+            self.assertEqual(response.status_code,200,response.content)
+        user=User.objects.get(pk=S['uid']('onboarding','user'))
+        self.assertEqual(RecurringExpense.objects.filter(user=user,source_type='manual',status='confirmed').count(),6)
+        self.assertEqual(RecurringSaving.objects.filter(user=user,source_type='manual',status='confirmed').count(),1)
+        self.assertFalse(Budget.objects.filter(user=user,status='approved').exists())
+
+    @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
+    def test_only_designated_prepared_account_skips(self):
+        for user in (self.other,self.home()):
+            client=self.onboarding_client(user)
+            response=client.put('/api/profile/',self.profile_body(),content_type='application/json')
+            self.assertEqual(response.status_code,200,response.content)
+            self.assertEqual(response.json()['onboardingNextStep'],'connect')
+        client=self.onboarding_client()
+        Card.objects.filter(pk=S['uid']('onboarding','asset','E')).update(is_selected=False)
+        self.assertEqual(client.put('/api/profile/',self.profile_body(),content_type='application/json').json()['onboardingNextStep'],'connect')
+        Card.objects.filter(pk=S['uid']('onboarding','asset','E')).update(is_selected=True)
+        connection=BankAccount.objects.get(pk=S['uid']('onboarding','asset','A')).connection
+        connection.user=self.other
+        connection.save(update_fields=['user'])
+        self.assertEqual(client.get('/api/profile/').json()['onboardingNextStep'],'connect')
+
+    @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
+    def test_client_cannot_choose_bypass_or_open_finance_calls(self):
+        client=self.onboarding_client()
+        response=client.put('/api/profile/',{**self.profile_body(),'onboardingNextStep':'salary'},content_type='application/json')
+        self.assertEqual(response.status_code,400)
+        for method,url in [('post','/api/finance/consents/'),('get','/api/finance/connect/accounts/'),
+                           ('put','/api/finance/connect/accounts/'),('get','/api/finance/connect/cards/'),
+                           ('post','/api/finance/connect/cards/'),('post','/api/finance/sync/')]:
+            self.assertEqual(getattr(client,method)(url,content_type='application/json').status_code,503)
+        self.assertEqual(Client().get('/api/profile/').status_code,403)
+        no_csrf=Client(enforce_csrf_checks=True)
+        no_csrf.force_login(User.objects.get(pk=S['uid']('onboarding','user')))
+        self.assertEqual(no_csrf.put('/api/profile/',self.profile_body(),content_type='application/json').status_code,403)
+
+    @override_settings(ROOT_URLCONF='spending_fixture.service_urls')
+    def test_same_email_with_different_uuid_cannot_skip(self):
+        User.objects.filter(pk=S['uid']('onboarding','user')).delete()
+        other=User.objects.create_user(S['ACCOUNTS']['onboarding'])
+        response=self.onboarding_client(other).put('/api/profile/',self.profile_body(),content_type='application/json')
+        self.assertEqual(response.json()['onboardingNextStep'],'connect')
+
+    @override_settings(ROOT_URLCONF='config.urls')
+    def test_normal_service_profile_keeps_connection_flow(self):
+        response=self.onboarding_client().put('/api/profile/',self.profile_body(),content_type='application/json')
+        self.assertEqual(response.status_code,200,response.content)
+        self.assertNotIn('onboardingNextStep',response.json())
+
+    def test_latest_main_home_budget_and_outside_scope_remain_connected(self):
+        client=self.onboarding_client(self.home())
+        with mock.patch('django.utils.timezone.localdate',return_value=AS_OF.date()):
+            response=client.get('/api/home/')
+        self.assertEqual(response.status_code,200,response.content)
+        self.assertEqual(response.json()['budget']['livingLeft'],804000)
+        with transaction.atomic(): data=budget_data(self.home(),date(2026,10,31))
+        self.assertEqual(data['living']['spent'],930000)
+
+    def test_missing_bill_history_and_wrong_scope_are_not_silently_bypassed(self):
+        from budgets.home import ensure_cycle
+        from budgets.protect import card_reserved
+        user=User.objects.get(pk=S['uid']('onboarding','user'))
+        cycle=ensure_cycle(user,date(2026,11,1),date(2026,12,1))
+        self.assertEqual(card_reserved(user,cycle,AS_OF.date()),dict(amount=0,pending=[]))
+        SyncRun.objects.filter(user=user,product_code='card_bill_list').delete()
+        self.assertEqual({p['reason'] for p in card_reserved(user,cycle,AS_OF.date())['pending']},{'bill_history_incomplete'})
+        # 지킬 돈 검사를 우회한 것이 아니라 시드 근거를 보완한 것인지 확인한다.
+        with transaction.atomic():
+            for name,pk,fields in S['plan'](AS_OF)[0]:
+                if name=='SyncRun' and fields['user_id']==user.pk and fields['product_code']=='card_bill_list':
+                    SyncRun.objects.create(pk=pk,**fields)
+            CardBill.objects.filter(user=user).update(scope_type='card')
+            self.assertEqual({p['reason'] for p in card_reserved(user,cycle,AS_OF.date())['pending']},{'bill_scope_unknown'})

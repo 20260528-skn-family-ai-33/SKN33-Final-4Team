@@ -189,7 +189,8 @@ export default function RecommendPage() {
   return (
     <Layout title="추천 예산 확인" showBack foot={foot}>
       <StepBar step={6} />
-      <div className="mc-eyebrow">추천 예산 확인 · 예산 {draft.versionNo}</div>
+      {/* 임시 엔진(temp-…)일 때만 — ML 엔진으로 바뀌면 서버 값이 바뀌어 저절로 사라진다 */}
+      <div className="mc-eyebrow">추천 예산 확인 · 예산 {draft.versionNo}{draft.engineVersion?.startsWith('temp-') && ' · 테스트 추천'}</div>
       <h1>카테고리별 예산을<br />확인하고 고쳐 주세요</h1>
       <p className="mc-muted">지킬 돈에서 정한 생활비를 카테고리별로 나눴어요.</p>
       {!draft.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}

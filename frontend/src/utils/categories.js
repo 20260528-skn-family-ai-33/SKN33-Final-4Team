@@ -2,7 +2,7 @@
 // 화면에서 카테고리 목록이 필요하면 전부 여기서 가져다 쓴다. 기준이 바뀌면 이 파일만 고치면 된다
 // 백엔드 category 초기 데이터(DB)와 이름·순서를 맞춘다
 
-// 10개 카테고리 (ML 정답 · 우선순위 · 예산 대상). code = API · DB 코드 (docs/API_RULES.md 카테고리 코드)
+// 10개 카테고리 (ML 정답 · 우선순위 · 소비 조회. 예산 대상은 BUDGET_CATS). code = API · DB 코드 (docs/API_RULES.md 카테고리 코드)
 export const SPEND_CATS = [
   { code: 'FOOD', name: '식비', icon: 'Utensils' },
   { code: 'HOUSING_TELECOM', name: '주거·통신', icon: 'House' },
@@ -23,14 +23,13 @@ export const ETC = { code: 'ETC', name: '기타', icon: 'Ellipsis', budget: true
 // 미분류: 아직 판단 못 한 지출 (편의점·마트·종합몰). 화면에는 '확인 필요'로 보여 준다 (10/20 결정)
 export const PENDING = { code: 'UNCLASSIFIED', name: '확인 필요', icon: 'CircleQuestionMark' }
 
-export const CAT_NAMES = SPEND_CATS.map((c) => c.name)                       // 10개 전체 (거래 분류 · 소비 조회)
-export const BUDGET_CATS = [...CAT_NAMES, ...(ETC.budget ? [ETC.name] : [])]  // 예산 칸이 있는 카테고리
+export const CAT_NAMES = SPEND_CATS.map((c) => c.name)                       // 10개 이름 전체 (우선순위는 PRIORITY_CATS)
+// 생활비 예산 밖 (11/3 확정, 서버 budgets/scope.py OUT_OF_BUDGET과 같게) — 소비 조회 · 거래 · 고정지출 카테고리에는 그대로 둔다
+export const OUT_OF_BUDGET = ['HOUSING_TELECOM', 'TRAVEL_LODGING']
+export const PRIORITY_CATS = SPEND_CATS.filter((c) => !OUT_OF_BUDGET.includes(c.code)).map((c) => c.name)  // 소비 우선순위 (예산 대상만, 기타 없음)
+export const BUDGET_CATS = [...PRIORITY_CATS, ...(ETC.budget ? [ETC.name] : [])]  // 예산 칸이 있는 카테고리 (최소 금액 · 조정)
+export const MIN_CATS = BUDGET_CATS  // 프로필 최소 금액: 배분 대상 8개 + 기타
 export const PICK_CATS = [...CAT_NAMES, ETC.name]                           // 사용자가 거래 카테고리를 고를 때
-// 생활비 배분에서 빼는 카테고리 (백엔드 budgets/scope.py OUT_OF_BUDGET). 소비 우선순위 · 최소 금액만 못 고르고 거래 분류 · 소비 조회는 그대로
-const OUT_OF_BUDGET = ['HOUSING_TELECOM', 'TRAVEL_LODGING']
-const inBudget = (name) => !SPEND_CATS.some((c) => c.name === name && OUT_OF_BUDGET.includes(c.code))
-export const PRIORITY_CATS = CAT_NAMES.filter(inBudget)  // 소비 우선순위 고르기 (8개)
-export const MIN_CATS = BUDGET_CATS.filter(inBudget)     // 카테고리 최소 금액 (8개 + 기타)
 
 // 항목 이름으로 카테고리 미리 고르기 (고정지출 추가 등) — 못 찾으면 null, 사용자가 직접 고른다
 // 위에서부터 먼저 맞는 것 (10/20 분류 기준: 헬스·운동 = 문화·여가). 자동차보험이 일반 보험보다 먼저
@@ -54,3 +53,5 @@ export const catIcon = (name) => ICONS[name] ?? 'Circle'
 // 코드 ↔ 화면 이름 (API는 코드, 화면은 이름)
 const NAME_BY_CODE = Object.fromEntries([...SPEND_CATS, ETC, PENDING].map((c) => [c.code, c.name]))
 export const catName = (code) => NAME_BY_CODE[code] ?? code
+const CODE_BY_NAME = Object.fromEntries([...SPEND_CATS, ETC, PENDING].map((c) => [c.name, c.code]))
+export const catCode = (name) => CODE_BY_NAME[name] ?? null

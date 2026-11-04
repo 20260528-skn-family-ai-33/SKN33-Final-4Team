@@ -1,9 +1,10 @@
-// 상단 바: 뒤로 가기 + 화면 제목 + (탭 화면이면) 마이 아이콘
+// 상단 바: 뒤로 가기 + 화면 제목 + (탭 화면이면) 마이 메뉴 아이콘(가로선 세 개, 11/3)
 import { useNavigate } from 'react-router'
-import { ChevronLeft, UserRound } from 'lucide-react'
+import { ChevronLeft, Menu } from 'lucide-react'
 import { PATHS } from '../routes.js'
 
-export default function Header({ title, showBack = false, showMy = true, inert = false }) {
+// action = 메뉴 아이콘 왼쪽 버튼 (홈의 알림 종)
+export default function Header({ title, showBack = false, showMy = true, action = null, inert = false }) {
   const navigate = useNavigate()  // 코드로 화면 이동할 때 쓰는 함수
 
   return (
@@ -18,8 +19,9 @@ export default function Header({ title, showBack = false, showMy = true, inert =
       </div>
       {showMy && (
         <div className="mc-head-r">
+          {action}
           <button type="button" className="mc-icon" onClick={() => navigate(PATHS.my)} aria-label="마이">
-            <UserRound size={20} aria-hidden="true" />
+            <Menu size={20} aria-hidden="true" />
           </button>
         </div>
       )}

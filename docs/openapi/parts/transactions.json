@@ -282,16 +282,37 @@
             "name": "category",
             "in": "query",
             "required": false,
-            "description": "없으면 전체. UNCLASSIFIED는 확인 필요 소비만. 필터 사용 시 입금·이체 제외.",
+            "description": "없으면 전체. 쉼표로 여러 개(11/3, 그중 하나면 포함). UNCLASSIFIED 하나만이면 확인 필요 소비만·기간 생략 시 전체 기간. 필터 사용 시 입금·이체 제외. 모르는 코드가 있으면 400.",
             "schema": {
-              "$ref": "#/components/schemas/CategoryCode"
-            }
+              "type": "string"
+            },
+            "example": "FOOD,CULTURE_LEISURE"
+          },
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "description": "이 계좌의 거래만(11/3). 쉼표로 여러 개. cardId와 같이 보내면 둘 중 하나. 형식 오류·없음·남의 것은 400.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4"
+          },
+          {
+            "name": "cardId",
+            "in": "query",
+            "required": false,
+            "description": "이 카드의 거래만(11/3). 쉼표로 여러 개. 형식 오류·없음·남의 것은 400.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "38e76a37-6016-4291-87c2-58688f50542a"
           },
           {
             "name": "from",
             "in": "query",
             "required": false,
-            "description": "시작일 포함. 기본 이번 달 1일. UNCLASSIFIED이고 기간을 생략하면 전체 기간. from>to는 400.",
+            "description": "시작일 포함. 기본 이번 달 1일. category=UNCLASSIFIED 하나만이고 기간을 생략하면 전체 기간. from>to는 400.",
             "schema": {
               "type": "string",
               "format": "date"
@@ -368,6 +389,8 @@
                     "reason": "편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요."
                   },
                   "classifiedBy": null,
+                  "canApplyToFuture": false,
+                  "wasTransfer": false,
                   "updatedAt": "2026-10-09T08:05:00+09:00"
                 }
               }
@@ -523,6 +546,8 @@
                   "installmentMonths": 0,
                   "suggestion": null,
                   "classifiedBy": "user",
+                  "canApplyToFuture": true,
+                  "wasTransfer": false,
                   "updatedAt": "2026-10-22T09:12:00+09:00"
                 }
               }
@@ -1165,12 +1190,22 @@
                 "type": "string",
                 "format": "date-time",
                 "description": "마지막 수정 시각, 한국 시간 ISO 8601."
+              },
+              "wasTransfer": {
+                "type": "boolean",
+                "description": "원래 이체였다가 소비로 바뀐 거래인지 (11/03). true면 화면이 [이체로 되돌리기](category: null)를 보여 준다. 고정지출에 연결된 거래는 되돌리기가 400(AA⑤)."
+              },
+              "canApplyToFuture": {
+                "type": "boolean",
+                "description": "'앞으로 이 가게 거래도 이 카테고리로' 체크박스를 보여 줄지 (10/30). 소비 거래이고 원래 이체·다품목 가맹점·페이 충전이 아니면 true."
               }
             },
             "required": [
               "installmentMonths",
               "suggestion",
               "classifiedBy",
+              "canApplyToFuture",
+              "wasTransfer",
               "updatedAt"
             ]
           }
@@ -1193,6 +1228,11 @@
               }
             ],
             "description": "선택 가능한 10개 카테고리+ETC. null은 원래 이체였고 고정지출 연결이 없는 거래를 transfer로 복원할 때만 허용. UNCLASSIFIED 금지."
+          },
+          "applyToFuture": {
+            "type": "boolean",
+            "default": false,
+            "description": "true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고 재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래."
           }
         },
         "required": [

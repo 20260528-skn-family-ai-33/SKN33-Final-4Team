@@ -16,7 +16,7 @@
 | 후보 확정 ([저축이에요]) | `POST /api/budgets/savings/confirm/` | 요청 · 응답 · 실패 |
 | 후보 무시 ([아니에요]) | `POST /api/budgets/savings/ignore/` | 요청 · 응답 · 실패 |
 
-- 화면: [SavingsPage.jsx](../../frontend/src/pages/SavingsPage.jsx) (첫 설정 흐름: 고정지출 확인 → **저축 확인** → 예산 방향, 그리고 **마이 > 정기 저축**에서 다시 열기), [SavingPopup.jsx](../../frontend/src/popups/SavingPopup.jsx)(직접 추가 · 수정 · 중지). 지금은 예시 데이터이고 API는 연결되지 않았다.
+- 화면: [SavingsPage.jsx](../../frontend/src/pages/SavingsPage.jsx) (첫 설정 흐름: 고정지출 확인 → **저축 확인** → 예산 방향, 그리고 **마이 > 정기 저축**에서 다시 열기), [SavingPopup.jsx](../../frontend/src/popups/SavingPopup.jsx)(직접 추가 · 수정 · 중지). **11/3 화면 연결**: 목록 · 직접 추가 · 수정(바꾼 칸만, 후보는 계좌 칸 제외) · 중지 · 후보 확정 · 무시가 이 API를 쓴다. 후보가 0건이면 직접 추가 · [계속하기]로 지킬 돈 설정에 넘어간다. 계좌 선택지는 금융 연결 입출금 계좌 후보뿐이라(예적금 후보 API 없음) 받는 계좌는 입출금 계좌 또는 '연결 안 함'만 고를 수 있다.
 - 데이터: [finance/models.py](../../backend/finance/models.py)의 `RecurringSaving`(표 `recurring_saving`, 10/22 추가), `BankAccount`(`account_type` · `budget_role`), `FinancialTransaction`(`transaction_type`).
 - 요구사항: `TXN-005`(저축 이동 · 실적 분리, 저축 후보), `BUD-003`(저축 최소 금액), `BUD-005`(승인된 예산은 사용자 승인 후 변경).
 - 모양은 [fixed.md](fixed.md)(고정지출)와 같다. 다른 점만 아래 "고정지출과 다른 점"에 모았다.

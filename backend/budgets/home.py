@@ -5,7 +5,7 @@
   ② 계좌 잔액 (balance)     관리 대상 입출금 계좌 잔액 합계
   ③ 알림 줄 수              카테고리를 확인할 거래 수 · 출금일을 확인할 고정지출 수
   ④ 꼭 나갈 돈 (mustPay)    이번 주기 + 지난 주기 미납 납부 예정
-  ⑤ 예산 (budget)          ML 후. 지금은 항상 null
+  ⑤ 예산 (budget)          이번 주기 승인(approved) 예산이 있을 때만. 계산은 budgets.overview.budget_data 그대로
 
 매일 도는 작업이 없어서 '새 주기 만들기 · 이번 회차 납부 예정 만들기 · 미납 확인 필요로 바꾸기'를 홈을 열 때 한다.
 """
@@ -219,7 +219,7 @@ def prepare_dues(user, cycle, today, previous_start, previous_cycle):
                 continue
             create_past = registered_on(expense) <= due_date
             ensure_current_due(expense, c, today, create_past=create_past)
-            match_current_due(expense, c, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 1건이면 자동 연결)
+            match_current_due(expense, c, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 기억한 출금 1건이면 자동 연결)
 
     PaymentDue.objects.filter(
         user=user, obligation_state="active", payment_state="unpaid", paid_amount=0,
@@ -267,6 +267,32 @@ def must_pay_json(user, next_payday, previous_start):
     return items
 
 
+# ---------------- ⑤ 예산 ----------------
+
+def home_budget(user, today, cycle):
+    """이번 주기 approved 예산만 (초안은 홈에 안 보임). 하루 금액 일수는 채팅 budget_left 의 days_left 와 같다"""
+    from .models import Budget
+    from .overview import budget_data  # overview 가 이 파일을 쓰므로 여기서 불러옴
+
+    approved = Budget.objects.filter(user=user, cycle=cycle, status="approved").first()
+    if approved is None:
+        return None
+    data = budget_data(user, today, selected=approved)
+    living = data["living"]
+    budget, spent = living["budget"], living["spent"]
+    days_left = (cycle.ends_before - today).days - 1  # 오늘까지 쓴 돈을 뺀 뒤 내일부터 나눈다
+    return {
+        "budget_id": data["budget"]["budget_id"], "version_no": data["budget"]["version_no"],
+        "living_budget": budget, "living_left": living["remaining"],
+        "living_pct": (spent * 100 + budget // 2) // budget if budget else (100 if spent else 0),  # 반올림, 100 넘어도 그대로
+        "spare": data["overspend"]["spare_remaining"],
+        "daily": living["remaining"] // days_left if days_left > 0 else None,  # 마지막 날은 null
+        "days_left": days_left,
+        "out_of_budget": data["out_of_budget"],
+        "out_of_budget_allocated": data["budget"]["out_of_budget_allocated"],
+    }
+
+
 # ---------------- 모으기 ----------------
 
 @transaction.atomic
@@ -295,5 +321,5 @@ def home_data(user, today):
         "pending_count": pending_count(user, today),
         "needs_payday_count": needs_payday_count(user),
         "must_pay": must_pay,
-        "budget": None,  # 예산 영역은 ML 후 (H-06)
+        "budget": home_budget(user, today, cycle) if payday else None,  # H-06: 승인 예산이 없으면 null
     }

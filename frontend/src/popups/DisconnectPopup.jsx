@@ -14,7 +14,8 @@ import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
 import { apiSend } from '../utils/api.js'
 
-export default function DisconnectPopup({ inst, kind = 'bank', connectionId, onDone, related = [] }) {
+// relatedMissing = 고정지출 · 저축 목록을 못 받아서 related 가 비었을 수 있음 → 물어보지 못했다고 알린다
+export default function DisconnectPopup({ inst, kind = 'bank', connectionId, onDone, related = [], relatedMissing = false }) {
   const { closePopup } = usePopup()
   const [stop, setStop] = useState(() => new Set())   // 같이 그만할 항목 id
   const toggle = (id) => setStop((prev) => {
@@ -71,6 +72,9 @@ export default function DisconnectPopup({ inst, kind = 'bank', connectionId, onD
         </div>
       )}
 
+      {relatedMissing && (
+        <p className="mc-note">고정지출 · 정기 저축 목록을 불러오지 못해 같이 그만할 항목을 보여 드리지 못했어요. 해제해도 그 항목은 그대로 남아요.</p>
+      )}
       {error && <p className="mc-error" role="alert">{error}</p>}
       <div className="mc-inline mc-disc-act">
         <button type="button" className="mc-secondary" onClick={closePopup}>취소</button>

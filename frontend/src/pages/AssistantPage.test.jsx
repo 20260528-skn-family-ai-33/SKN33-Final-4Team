@@ -21,6 +21,7 @@ const reply = (engine, number, text, content = {}) => ({
 
 beforeEach(() => {
   vi.clearAllMocks()
+  sessionStorage.clear()
   keyNumber = 0
   newRequestKey.mockImplementation(() => `request-key-${++keyNumber}`)
   useApi.mockReturnValue({ data: info('router'), error: null })
@@ -150,4 +151,42 @@ it('성공 상태여도 응답 본문이 유실되면 같은 요청으로 복구
   await click(button('다시 보내기'))
   expect(apiSend.mock.calls[1]).toEqual(apiSend.mock.calls[0])
   expect(host.querySelectorAll('.mc-msg.me')).toHaveLength(1)
+})
+
+
+describe.each(['legacy', 'router'])('%s 엔진 새로고침 복원과 재전송 통합', (engine) => {
+  it('복원 중 전송을 막고 복원된 대화에서 실패한 요청은 같은 키로 재전송한다', async () => {
+    sessionStorage.setItem('mc-chat-conversation', 'conversation-1')
+    useApi.mockReturnValue({ data: info(engine), error: null })
+    let finishRestore
+    apiSend.mockImplementationOnce(() => new Promise((resolve) => { finishRestore = resolve }))
+      .mockRejectedValueOnce(new TypeError('응답 유실'))
+      .mockResolvedValueOnce(reply(engine, 2, '이어서 질문'))
+    await mount()
+    expect(apiSend.mock.calls[0]).toEqual(['/api/chat/conversations/conversation-1/', 'GET'])
+    expect(input().disabled).toBe(true)
+    expect(button('소비를 분석해주세요').disabled).toBe(true)
+    await act(() => finishRestore(reply(engine, 1, '이전 질문')))
+    expect(host.textContent).toContain('이전 질문')
+    expect(input().disabled).toBe(false)
+    await submit('이어서 질문')
+    expect(apiSend.mock.calls[1][2].conversationId).toBe('conversation-1')
+    await click(button('다시 보내기'))
+    expect(apiSend.mock.calls[2]).toEqual(apiSend.mock.calls[1])
+    expect(host.querySelectorAll('.mc-msg.me')).toHaveLength(2)
+    expect(sessionStorage.getItem('mc-chat-conversation')).toBe('conversation-1')
+    await act(() => root.render(null))
+    expect(sessionStorage.getItem('mc-chat-conversation')).toBeNull()
+  })
+
+  it('복원 대상이 없으면 저장된 번호를 버리고 새 대화로 보낸다', async () => {
+    sessionStorage.setItem('mc-chat-conversation', 'missing-conversation')
+    useApi.mockReturnValue({ data: info(engine), error: null })
+    apiSend.mockRejectedValueOnce(Object.assign(new Error('없는 대화'), { status: 404 }))
+      .mockResolvedValueOnce(reply(engine, 1, '새 질문'))
+    await mount()
+    expect(sessionStorage.getItem('mc-chat-conversation')).toBeNull()
+    await submit('새 질문')
+    expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: null, text: '새 질문' })
+  })
 })

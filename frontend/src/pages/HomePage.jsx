@@ -1,5 +1,6 @@
 // 홈 (2026-10-20 배치 개선안)
-// 위에서부터: 급여 주기 줄 → 확인할 거래 알림 → 오늘 쓸 수 있는 돈(파란 카드, 여윳돈 포함) → 계좌 잔액 → 꼭 나갈 돈
+// 위에서부터: 급여 주기 줄 → 하루에 쓸 수 있는 돈(파란 카드, 여윳돈 포함) → 계좌 잔액 → 예산 밖 지출(있을 때만) → 꼭 나갈 돈
+// 알림(확인할 거래 · 출금일 · 월급 안내)은 오른쪽 위 종 아이콘 팝업 (11/3)
 // 머니 쿠션은 쿠션 탭에서 따로 본다
 // 되돌리기: 이 파일을 git 의 이전 버전으로 돌리고, app.css 맨 아래 "홈 개선안" 블록을 지우면 원래 화면으로 돌아간다
 import { Navigate, useNavigate } from 'react-router'
@@ -11,6 +12,13 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
+import MustPayPopup from '../popups/MustPayPopup.jsx'
+import NoticePopup from '../popups/NoticePopup.jsx'
+import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
+import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
+
+// 홈 왼쪽 위 로고 (11/3): cushion = 서비스 파란색, -ing = 서비스 라임색
+const LOGO = <span className="mc-logo">cushion<span className="mc-logo-ing">-ing</span></span>
 
 // '2026-10-24' → '10.24'
 const mmdd = (iso) => (iso ? `${iso.slice(5, 7)}.${iso.slice(8, 10)}` : '')
@@ -55,9 +63,6 @@ function payBadge(p) {
   return null
 }
 
-// 꼭 나갈 돈 종류별 아이콘 (home.md mustPay[].type)
-const PAY_ICON = { recurring: 'repeat', card_bill: 'credit-card', loan: 'landmark' }
-
 // 카드 청구서 금액이 아직 확정 전이면 "예상" 표시 (10/22 결정기록 Z, home.md mustPay[].isEstimated)
 function payBadges(p) {
   const out = []
@@ -76,19 +81,38 @@ export default function HomePage() {
   // 아직 못 받았으면 "불러오는 중…" (실패하면 안내)
   // 로그인이 풀렸으면 로그인 화면으로
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
-  if (!data) return <Layout title="머니쿠션" activeTab="home"><ApiStatus error={error} /></Layout>
-  // 응답 모양: docs/api/home.md (budget 은 ML 후까지 항상 null)
+  if (!data) return <Layout title={LOGO} activeTab="home"><ApiStatus error={error} /></Layout>
+  // 응답 모양: docs/api/home.md (budget = 이번 주기 승인 예산, 없으면 null)
   const { period, balance, pendingCount, needsPaydayCount, mustPay, budget } = data
-  const b = budget ?? {}  // 예산 칸 이름은 예산 API 가 정해지면 맞춘다
+  const b = budget ?? {}
   const toFixed = () => navigate(PATHS.fixed, { state: { from: 'home' } })  // 고정지출 관리 화면으로
   const pace = pacePct(period)
   const note = paceNote(b.livingPct, pace)
-  // 꼭 나갈 돈을 누르면: 고정지출 → 관리 화면
-  //   카드 청구서 · 대출 상세는 아직 실제 데이터와 연결 전이라 누를 수 없게 둔다 (연결되면 sourceId 로 열기)
-  const canOpen = (p) => p.type === 'recurring'
+  // 꼭 나갈 돈을 누르면 자세히 팝업 → 고정지출이면 [관리하기]로 관리 화면
+  //   카드 청구서 · 대출 상세는 아직 실제 데이터와 연결 전이라 관리 버튼 없이 (연결되면 sourceId 로 열기)
+  const openPay = (p, badges) => openPopup(
+    <MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={p.type === 'recurring' ? toFixed : undefined} />,
+  )
+
+  // 2. 알림 (11/3: 메인 카드 위 → 오른쪽 위 종 아이콘 팝업). 종에는 알림 개수
+  //   월급 상태 (H-01): 늦게 오면 '아직', 다음 달 월급이 미리 오면 안내
+  //   할 일: 확인할 거래 · 출금일을 모르는 고정지출 (H-05 — 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다)
+  const notices = [
+    period?.salaryState === 'waiting' && { key: 'salary-wait', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
+    period?.nextSalaryEarlyOn && { key: 'salary-early', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
+    pendingCount > 0 && { key: 'pending', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
+    needsPaydayCount > 0 && { key: 'payday', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
+  ].filter(Boolean)
+  const bell = (
+    <button type="button" className="mc-icon mc-bell" onClick={() => openPopup(<NoticePopup items={notices} />)}
+      aria-label={notices.length ? `알림 ${notices.length}개` : '알림'}>
+      <Icon name="Bell" />
+      {notices.length > 0 && <span className="mc-bell-n" aria-hidden="true">{notices.length}</span>}
+    </button>
+  )
 
   return (
-    <Layout title="머니쿠션" activeTab="home">
+    <Layout title={LOGO} activeTab="home" headAction={bell}>
       {/* 1. 급여 주기 · 기준 시각 한 줄 + 월급날 칩 (급여일을 아직 안 넣었으면 period 가 null) */}
       {period && (
         <div className="mc-row mc-home2-period">
@@ -98,50 +122,27 @@ export default function HomePage() {
           <span className="mc-badge">월급날 D−{period.dday}</span>
         </div>
       )}
-      {/* 월급 상태 (H-01): 늦게 오면 '아직', 다음 달 월급이 미리 오면 안내 */}
-      {period?.salaryState === 'waiting' && <p className="mc-muted">월급이 아직 안 들어왔어요</p>}
-      {period?.nextSalaryEarlyOn && (
-        <p className="mc-muted">
-          월급이 {mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. {mmdd(period.nextPayday)}부터 예산에 넣을게요
-        </p>
-      )}
-
-      {/* 2. 할 일: 확인할 거래 (있을 때만) */}
-      {pendingCount > 0 && (
-        <button type="button" className="mc-home2-todo" onClick={() => navigate(pendingUrl)}>
-          <span className="mc-home2-todo-dot">{pendingCount}</span>
-          <span className="mc-grow">카테고리를 확인할 거래 <strong>{pendingCount}건</strong></span>
-          <span aria-hidden="true">›</span>
-        </button>
-      )}
-      {/* 할 일: 출금일을 모르는 고정지출 (H-05). 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다 */}
-      {needsPaydayCount > 0 && (
-        <button type="button" className="mc-home2-todo" onClick={toFixed}>
-          <span className="mc-home2-todo-dot">{needsPaydayCount}</span>
-          <span className="mc-grow">출금일을 확인할 고정지출 <strong>{needsPaydayCount}건</strong></span>
-          <span aria-hidden="true">›</span>
-        </button>
-      )}
 
       {/* 3. 예산이 아직 없으면 (budget: null, H-06) 파란 카드 자리에 안내 카드 */}
       {budget === null ? (
         <div className="mc-card mc-home2-nobudget">
           <span className="mc-tile"><Icon name="Wallet" /></span>
-          <h2>예산을 만들면 여기에 오늘 쓸 수 있는 돈이 보여요</h2>
+          <h2>예산을 만들면 여기에 하루에 쓸 수 있는 돈이 보여요</h2>
           <p className="mc-muted">월급과 고정지출을 확인하고, 지킬 돈을 정하면 카테고리별 예산을 추천해 드려요.</p>
           <button type="button" className="mc-primary" onClick={() => navigate(PATHS.salary)}>예산 만들기</button>
         </div>
       ) : (
-      /* 3. 오늘 쓸 수 있는 돈 (가장 중요한 숫자) + 사용 속도 + 여윳돈 */
+      /* 3. 하루에 쓸 수 있는 돈 (가장 중요한 숫자) + 사용 속도 + 여윳돈. 마지막 날은 daily = null → '—' */
       <div className="mc-hero mc-budget-hero mc-home2-hero">
         <div className="mc-row">
-          <span className="mc-hero-title">오늘 쓸 수 있는 돈</span>
-          <button type="button" className="mc-link" onClick={() => openPopup(<CalcPopup />)}>계산 근거</button>
+          <span className="mc-hero-title">하루에 쓸 수 있는 돈</span>
+          <button type="button" className="mc-link" onClick={() => openPopup(<CalcPopup budget={b} />)}>계산 근거</button>
         </div>
         <div className="mc-budget-amount">
-          <strong>{comma(b.daily)}<small>원</small></strong>
+          {b.daily == null ? <strong>—</strong> : <strong>{comma(b.daily)}<small>원</small></strong>}
         </div>
-        <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · {period?.dday}일 남음</p>
+        <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · 내일부터 {b.daysLeft}일 기준</p>
+        <OldScopeNote amount={b.outOfBudgetAllocated} className="mc-home2-left" />
         <div className="mc-bar mc-home2-bar" role="progressbar" aria-label="이번 주기 생활비 사용률"
           aria-valuemin={0} aria-valuemax={100} aria-valuenow={b.livingPct}
           aria-valuetext={`${b.livingPct}% 사용${note ? `, ${note.text}` : ''}`}>
@@ -162,42 +163,46 @@ export default function HomePage() {
       </div>
       )}
 
-      {/* 4. 입출금 계좌 잔액 (한 줄). 잔액을 모르면 0원 대신 '—' (H-02) */}
-      <button type="button" className="mc-card mc-home2-bal" onClick={() => navigate(PATHS.connections)}>
-        <span className="mc-muted">
-          입출금 계좌 {balance.accountCount}개
-          {balance.reloginCount > 0 && ' · 다시 연결 필요'}
-          {balance.unknownCount > 0 && ' · 잔액을 못 불러온 계좌가 있어요'}
-        </span>
-        <strong>{balance.total == null ? '—' : won(balance.total)} <span className="mc-muted">›</span></strong>
-      </button>
-
+      {/* 4. 입출금 계좌 잔액 (한 줄). 잔액을 모르면 0원 대신 '—' (H-02)
+          + 예산 밖 지출 (주거·통신 · 여행·숙박, 있을 때만) — 계산에 안 넣는 참고 금액이라 파란 카드 밖, 같은 카드 안 둘째 줄. 누르면 카테고리별 팝업 (11/3) */}
+      <div className="mc-card mc-home2-balcard">
+        <button type="button" className="mc-home2-bal" onClick={() => navigate(PATHS.connections)}>
+          <span className="mc-muted">
+            입출금 계좌 {balance.accountCount}개
+            {balance.reloginCount > 0 && ' · 다시 연결 필요'}
+            {balance.unknownCount > 0 && ' · 잔액을 못 불러온 계좌가 있어요'}
+          </span>
+          <strong>{balance.total == null ? '—' : won(balance.total)} <span className="mc-muted">›</span></strong>
+        </button>
+        {b.outOfBudget?.total > 0 && (
+          <button type="button" className="mc-home2-bal" onClick={() => openPopup(<OutOfBudgetPopup value={b.outOfBudget} />)}>
+            <span className="mc-muted">예산 밖 지출</span>
+            <strong>{won(b.outOfBudget.total)} <span className="mc-muted">›</span></strong>
+          </button>
+        )}
+      </div>
       <div className="mc-row mc-section"><h2>꼭 나갈 돈</h2></div>
       <div className="mc-card">
         {/* 목록.map(...) = 하나씩 꺼내서 그리기. key 는 항목마다 다른 값 */}
         {mustPay.length === 0 && <p className="mc-muted">이번 주기에 아직 나갈 돈이 없어요</p>}
+        {/* 한 줄 = 이름 · 금액만. 날짜 · 계좌 · 상태는 누르면 팝업. 미납 확인 필요만 놓치지 않게 빨간 점 */}
         {mustPay.map((p) => {
           const badges = payBadges(p)
-          const Row = canOpen(p) ? 'button' : 'div'
+          const review = badges.some((b) => b.tone === 'review')
           return (
-            <Row {...(canOpen(p) ? { type: 'button', onClick: toFixed } : {})} className="mc-listrow" key={p.dueId}>
-              <span className="mc-tile"><Icon name={PAY_ICON[p.type] ?? 'repeat'} /></span>
-              <span className="mc-grow">
-                <strong>{p.name}</strong>
-                <span className="mc-muted">
-                  {mmdd(p.dueDate)} · {p.paymentAccount?.displayName ?? '결제 계좌 모름'}
-                  {!canOpen(p) && ' · 상세 화면 준비 중'}
-                </span>
-                {badges.length > 0 && (
-                  <span className="mc-paybadges">
-                    {badges.map((b) => <span key={b.tone} className={`mc-paystate is-${b.tone}`}>{b.text}{b.tone === 'review' ? ' ›' : ''}</span>)}
-                  </span>
-                )}
+            <button type="button" onClick={() => openPay(p, badges)} className="mc-listrow" key={p.dueId}>
+              <span className="mc-tile mc-tile-date">
+                <small>{Number(p.dueDate.slice(5, 7))}월</small><b>{Number(p.dueDate.slice(8, 10))}</b>
               </span>
-              <span className="mc-right">{won(p.amount)} {canOpen(p) && <span className="mc-muted">›</span>}</span>
-            </Row>
+              <span className="mc-grow">
+                <strong>{p.name}{review && <span className="mc-paydot" role="img" aria-label="미납 확인 필요"></span>}</strong>
+              </span>
+              <span className="mc-right">{won(p.amount)} <span className="mc-muted">›</span></span>
+            </button>
           )
         })}
+        {/* 이번 주기에 안 나가는 고정지출 · 출금일 모르는 것까지 전부 보는 곳 (목록이 비어도 보임) */}
+        <button type="button" className="mc-link" onClick={toFixed}>고정지출 전체 보기 ›</button>
       </div>
 
       <div className="mc-home-action">

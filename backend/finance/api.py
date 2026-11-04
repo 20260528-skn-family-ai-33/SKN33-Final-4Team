@@ -4,6 +4,7 @@ finance 앱 API — 거래 (docs/api/transactions.md)
 - 17. GET   /api/finance/transactions/<id>/  거래 한 건 보기
 - 18. PATCH /api/finance/transactions/<id>/  거래 분류 수정
 """
+import uuid
 from datetime import date
 
 from django.db import transaction
@@ -18,9 +19,11 @@ from rest_framework.response import Response
 
 from budgets.models import Category
 
+from . import classifier
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
-from .models import FinancialTransaction, SourceKind, TransactionLink
+from .merchant_rules import FUTURE_KEY, searched_multi_item, seen_multi_item
+from .models import BankAccount, Card, FinancialTransaction, SourceKind, TransactionLink
 from .spending import spending_summary
 
 Tx = FinancialTransaction
@@ -122,17 +125,39 @@ def _parse_day(value):
         raise ValidationError({"from": [PERIOD_ERROR]})
 
 
+def _list_param(params, name):
+    """'A,B' → ['A', 'B'] (빈 값 · 중복 제외, 순서 유지)"""
+    return list(dict.fromkeys(v.strip() for v in (params.get(name) or "").split(",") if v.strip()))
+
+
+def _owned_ids(user, model, ids, field):
+    """내 계좌 · 카드 ID만. 형식이 틀리거나 · 없거나 · 남의 것이면 400 (본문 ID 와 같은 규칙: 없음 · 남의 것 같은 문구)"""
+    if not ids:
+        return []
+    try:
+        ids = [uuid.UUID(v) for v in ids]
+    except ValueError:
+        ids = None
+    if ids is None or model.objects.filter(user=user, pk__in=ids).count() != len(ids):
+        raise ValidationError({field: ["선택할 수 없는 계좌 · 카드예요."]})
+    return ids
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])  # 로그인 안 하면 403 not_authenticated
 def transactions(request):
-    """16. GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
+    """16. GET /api/finance/transactions/?category=FOOD,CULTURE_LEISURE&accountId=…&cardId=…&from=2026-10-01&to=2026-10-31
     - 기간: 달력월 기준. from 없으면 이번 달 1일, to 없으면 오늘
-      단 category=UNCLASSIFIED에 기간을 안 보내면 전체 기간 (H-03, 홈 '확인할 거래 수'와 같은 숫자)
+      단 category=UNCLASSIFIED 하나만 보내고 기간을 안 보내면 전체 기간 (H-03, 홈 '확인할 거래 수'와 같은 숫자)
+    - category · accountId · cardId 는 쉼표로 여러 개 (11/3). 카테고리는 그중 하나, 결제 수단은 고른 계좌 또는 카드
     - 정렬: 최신순 (거래일 → 거래 시각, 시각이 없으면 같은 날의 맨 뒤)"""
     params = request.query_params
-    category = params.get("category") or None
-    if category and not Category.objects.filter(category_code=category).exists():
+    codes = _list_param(params, "category")
+    if Category.objects.filter(category_code__in=codes).count() != len(codes):
         raise ValidationError({"category": ["모르는 카테고리예요."]})
+    category = UNCLASSIFIED if codes == [UNCLASSIFIED] else None  # 전체 기간 규칙은 확인 필요만 골랐을 때만
+    account_ids = _owned_ids(request.user, BankAccount, _list_param(params, "accountId"), "account_id")
+    card_ids = _owned_ids(request.user, Card, _list_param(params, "cardId"), "card_id")
 
     period_sent = bool(params.get("from") or params.get("to"))
     start, end = _parse_day(params.get("from")), _parse_day(params.get("to"))
@@ -147,9 +172,11 @@ def transactions(request):
     rows = listed_transactions(request.user).filter(occurred_on__lte=end)
     if start:
         rows = rows.filter(occurred_on__gte=start)
-    if category:
+    if codes:
         # 카테고리를 걸면 소비 거래만 (입금 · 이체는 카테고리가 없음)
-        rows = rows.filter(transaction_type=Tx.TransactionType.SPENDING, confirmed_category_id=category)
+        rows = rows.filter(transaction_type=Tx.TransactionType.SPENDING, confirmed_category_id__in=codes)
+    if account_ids or card_ids:
+        rows = rows.filter(Q(account_id__in=account_ids) | Q(card_id__in=card_ids))
     rows = rows.order_by("-occurred_on", F("occurred_time").desc(nulls_last=True), "-created_at")
 
     items = [transaction_item(tx) for tx in rows]
@@ -175,6 +202,7 @@ CATEGORY_ERROR = "카테고리를 다시 골라 주세요."
 INCOME_ERROR = "이 거래는 카테고리를 고를 수 없어요."
 FIXED_TRANSFER_ERROR = "고정지출에 연결된 거래예요. 고정지출 연결을 먼저 풀어 주세요."
 ORIGINAL_TYPE = "original_transaction_type"  # field_states 에 남기는 '원래 이체였음' 표시 (10/24 AA⑥)
+APPLY_TO_FUTURE_ERROR = "true 또는 false 로 보내 주세요."
 
 
 def suggestion_info(tx):
@@ -192,6 +220,15 @@ def suggestion_info(tx):
     }
 
 
+def can_apply_to_future(tx):
+    """'앞으로도 적용' 체크박스를 보여 줄 거래 (10/30): 소비 · 원래 이체 아님(받는 사람은 기억 안 함, W) · 다품목(이름·검색 업종) · 페이 충전 아님"""
+    return (tx.transaction_type == Tx.TransactionType.SPENDING and bool(tx.merchant_name)
+            and (tx.field_states or {}).get(ORIGINAL_TYPE) != Tx.TransactionType.TRANSFER
+            and not classifier.is_multi_item(tx.merchant_name) and not classifier.is_pay_charge(tx.merchant_name)
+            # 이 거래 또는 같은 회원·같은 가맹점의 다른 거래가 검색으로 다품목 확인 (분류 1단계와 같은 기준, PR #67 재리뷰)
+            and not searched_multi_item(tx.field_states) and not seen_multi_item(tx.user_id, tx.merchant_name))
+
+
 def transaction_detail_body(tx):
     """거래 한 건 = 목록 한 줄 + 상세 칸"""
     return {
@@ -200,6 +237,9 @@ def transaction_detail_body(tx):
         "installment_months": tx.installment_months if tx.source_kind == SourceKind.CARD else None,
         "suggestion": suggestion_info(tx),
         "classified_by": tx.classification_source,
+        "can_apply_to_future": can_apply_to_future(tx),
+        # 원래 이체였는지 (화면의 [이체로 되돌리기] 표시용, 11/03). field_states 원값은 내보내지 않는다 (AA⑥)
+        "was_transfer": (tx.field_states or {}).get(ORIGINAL_TYPE) == Tx.TransactionType.TRANSFER,
         "updated_at": tx.updated_at,
     }
 
@@ -242,7 +282,7 @@ def _apply_category(tx, code):
         changed += ["transaction_type", "field_states"]
     tx.confirmed_category_id = code
     tx.confirmation_state = Tx.ConfirmationState.CONFIRMED
-    # 사용자 확정 → 이후 같은 가맹점의 새 거래는 이 카테고리를 먼저 쓴다 (merchant_rules.remembered_category)
+    # 사용자 확정. "앞으로도 적용"이면 이후 같은 가맹점의 새 거래가 이 카테고리를 먼저 쓴다 (아래 view, merchant_rules)
     tx.classification_source = Tx.ClassificationSource.USER
     return changed
 
@@ -251,16 +291,19 @@ def _apply_category(tx, code):
 @permission_classes([IsAuthenticated])
 def transaction_detail(request, transaction_id):
     """17. GET  /api/finance/transactions/<id>/ — 거래 한 건 보기
-    18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null}
+    18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null, "applyToFuture": true}
     없는 거래 · 남의 거래 · 목록에 안 나오는 거래(같은 구매로 빠진 계좌 출금, 카드값 등)는 모두 404 (★3)"""
     if request.method == "GET":
         tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
         return Response(transaction_detail_body(tx))
 
     data = body_dict(request)
-    reject_unknown_fields(data, {"category"})
+    reject_unknown_fields(data, {"category", "apply_to_future"})
     if "category" not in data:
         raise ValidationError({"category": [CATEGORY_ERROR]})
+    apply_to_future = data.get("apply_to_future", False)
+    if not isinstance(apply_to_future, bool):
+        raise ValidationError({"apply_to_future": [APPLY_TO_FUTURE_ERROR]})
 
     # 조회 → 검사 → 저장을 한 트랜잭션에서 하고, 그동안 이 거래 행을 잠근다.
     # 같은 거래에 '카테고리 변경'과 '이체로 되돌리기'가 동시에 와도 하나씩 차례로 처리되어
@@ -275,6 +318,15 @@ def transaction_detail(request, transaction_id):
         if tx.transaction_type == Tx.TransactionType.INCOME:
             raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
         changed = _apply_category(tx, data["category"])
+        # '앞으로도 적용': 고를 수 있는 거래만 남기고, 아니면 지운다 (merchant_rules.remembered_category 가 읽음)
+        states = dict(tx.field_states or {})
+        if data["category"] is not None and apply_to_future and can_apply_to_future(tx):
+            states[FUTURE_KEY] = True
+        else:
+            states.pop(FUTURE_KEY, None)
+        if states != (tx.field_states or {}):
+            tx.field_states = states
+            changed = [*dict.fromkeys([*changed, "field_states"])]
         if changed:
             tx.save(update_fields=[*changed, "updated_at"])
     # 바뀐 카테고리 이름 등을 새로 읽어서 17번과 같은 모양으로 돌려준다

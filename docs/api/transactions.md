@@ -43,8 +43,10 @@
 
 | 이름 | 타입 | 필수 | 범위·설명 | 예시 |
 |---|---|---|---|---|
-| `category` | 문자 | X | 카테고리 코드(`UNCLASSIFIED` = 확인 필요만). 없으면 전체 | `FOOD` |
-| `from` | 날짜 | X | 시작일(포함). 없으면 **이번 달 1일**(달력월). 단 `category=UNCLASSIFIED`이면 기본값 없음(**전체 기간**) | `2026-10-01` |
+| `category` | 문자 | X | 카테고리 코드(`UNCLASSIFIED` = 확인 필요만). 없으면 전체. **쉼표로 여러 개**(11/3, 그중 하나면 나옴). 모르는 코드가 하나라도 있으면 400 | `FOOD,CULTURE_LEISURE` |
+| `accountId` | UUID | X | 이 계좌의 거래만. 쉼표로 여러 개(11/3). `cardId`와 같이 보내면 **둘 중 하나** | `27d3…` |
+| `cardId` | UUID | X | 이 카드의 거래만. 쉼표로 여러 개(11/3) | `38e7…` |
+| `from` | 날짜 | X | 시작일(포함). 없으면 **이번 달 1일**(달력월). 단 `category=UNCLASSIFIED` **하나만** 보내면 기본값 없음(**전체 기간**). 다른 카테고리와 같이 보내면 이번 달 | `2026-10-01` |
 | `to` | 날짜 | X | 종료일(포함). 없으면 **오늘** | `2026-10-31` |
 
 ```
@@ -144,6 +146,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 |---|---|---|---|
 | 모르는 카테고리 코드 | 400 | `invalid` | (개발 중 버그) `fields.category` |
 | 날짜 형식이 틀리거나 `from`이 `to`보다 늦음 | 400 | `invalid` | "기간을 다시 골라 주세요." (`fields.from`) |
+| `accountId` · `cardId`가 UUID 형식이 아니거나 · 없거나 · 남의 것 (11/3) | 400 | `invalid` | "선택할 수 없는 계좌 · 카드예요." (`fields.accountId` · `fields.cardId`) |
 | 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 |
 
 **H-03 확정 (10/22): 홈 '확인할 거래 수' = 확인 필요 거래 전체 개수, 최신순**
@@ -189,6 +192,8 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `suggestion.candidates` | 목록 | 후보 카테고리, 확신도 높은 순 `[{ "category", "categoryName" }]` |
 | `suggestion.reason` | 문자 / null | 확인 필요 이유(사용자에게 보여 줄 문장) |
 | `classifiedBy` | 문자 / null | 분류 출처: `user` · `rule` · `ml` · `llm`. DB `classification_source`와 같음(H-07 확정) |
+| `wasTransfer` | 불린 | 원래 이체였다가 소비로 바뀐 거래인지 (11/03). `true`면 화면이 [이체로 되돌리기](`category: null`)를 보여 준다. 고정지출에 연결된 거래는 `true`여도 되돌리기가 400(AA⑤) |
+| `canApplyToFuture` | 불린 | 화면에 "앞으로 이 가게 거래도 이 카테고리로" 체크박스를 보여 줄지 (10/30). 소비 거래이고 다품목 가맹점(이름 사전, 또는 이 거래나 같은 가맹점의 다른 거래에서 가게 검색 업종이 편의점·마트 등)·페이 충전이 아니면 `true`. 이체는 `false`(받는 사람은 기억하지 않음, W) |
 | `updatedAt` | 시각 | 마지막 수정 시각 |
 
 ```json
@@ -204,6 +209,8 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
     "reason": "편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요."
   },
   "classifiedBy": null,
+  "canApplyToFuture": false,
+  "wasTransfer": false,
   "updatedAt": "2026-10-09T08:05:00+09:00"
 }
 ```
@@ -236,20 +243,25 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | 로그인 필요 | O |
 | 명세 상태 | 초안 |
 
-**보내는 값** — 보낼 수 있는 칸은 아래 하나뿐이다.
+**보내는 값** — 보낼 수 있는 칸은 아래 두 개뿐이다.
 
 | 이름 | 타입 | 필수 | 범위·설명 | 예시 |
 |---|---|---|---|---|
 | `category` | 문자 / null | O | 10개 카테고리 + `ETC`(기타) 중 하나. `UNCLASSIFIED`는 보낼 수 없음. `null`은 **원래 이체였던 거래를 다시 이체로 돌릴 때만**(W) | `"FOOD"` |
+| `applyToFuture` | 불린 | X (기본 `false`) | `true`면 **같은 가맹점의 다음 새 거래**도 이 카테고리로 자동 분류 (10/30). `canApplyToFuture: false`인 거래에 `true`를 보내도 400을 내지 않고 재사용하지 않는다 | `true` |
 
 ```json
-{ "category": "FOOD" }
+{ "category": "FOOD", "applyToFuture": true }
 ```
 
 - 금액·날짜·가맹점명·`classifyState`·`funding` 등 표에 없는 칸을 보내면 **400 "이 칸은 보낼 수 없어요."** (★2)
 - 이미 같은 카테고리로 확정된 거래에 같은 값을 다시 보내면 **성공(200)** 으로 같은 결과를 돌려준다(결정기록 0번 '같은 요청 두 번').
-- 저장하면 이 거래는 사용자 확정(`classifyState: confirmed`, `classifiedBy: user`)이 되고, **이후 같은 가맹점의 새 거래**는 이 카테고리를 먼저 쓴다(`finance/merchant_rules.py`의 `remembered_category()`).
-- **단, 다품목 가맹점은 기억하지 않는다.** 편의점·슈퍼마켓·대형마트·종합 온라인몰처럼 결정표 D1·D16에서 `UNCLASSIFIED`(사용자 선택)로 정한 가맹점(다품목 브랜드 사전에 있는 가맹점)은, 사용자가 이번 거래를 식비로 골라도 **다음 거래는 다시 `UNCLASSIFIED`** 로 들어온다. GS25 도시락을 식비로 고른 기록이 다음 생필품 구매까지 식비로 만들지 않게 하기 위해서다.
+- 저장하면 이 거래는 사용자 확정(`classifyState: confirmed`, `classifiedBy: user`)이 된다.
+- **같은 가맹점의 다음 거래에 쓰기 (10/30 변경)**: `applyToFuture: true`로 저장했을 때만, 이후 같은 가맹점의 새 거래가 이 카테고리를 먼저 쓴다(`finance/merchant_rules.py`의 `remembered_category()`, 출처 `rule`).
+    - 기준은 같은 가맹점에서 사용자가 고른 거래 중 **가장 최근 거래**(거래일 순, 같은 날이면 마지막 수정 순)다. 그 거래가 `applyToFuture: true`일 때만 재사용하고, 아니면 재사용하지 않는다. 사용자가 선택을 바꾸면 마지막 선택을 따른다.
+    - 새 칸 없이 그 거래의 `field_states.apply_to_future = true`로 남긴다. API 응답에는 내보내지 않는다.
+    - 10/30 이전에 확정한 거래는 이 표시가 없어서 재사용되지 않는다.
+- **단, 다품목 가맹점·페이 충전은 기억하지 않는다** (`applyToFuture`를 보내도 같음). 편의점·슈퍼마켓·대형마트·종합 온라인몰처럼 결정표 D1·D16에서 `UNCLASSIFIED`(사용자 선택)로 정한 가맹점(다품목 브랜드 사전에 있는 가맹점)은, 사용자가 이번 거래를 식비로 골라도 **다음 거래는 다시 `UNCLASSIFIED`** 로 들어온다. GS25 도시락을 식비로 고른 기록이 다음 생필품 구매까지 식비로 만들지 않게 하기 위해서다.
 - 고정지출로 연결된 거래(`funding: fixed`)도 카테고리는 바꿀 수 있다. 돈의 출처(고정비)는 그대로다.
 - **고정지출에 연결된 이체 (10/24 AA⑤)**: 월세를 집주인에게 계좌이체로 내는 경우처럼, 남에게 보낸 이체(`transfer`)가 확정된 고정지출의 납부 예정과 **금액 · 날짜(±3일)로 연결되면** 소비로 본다.
     - `transactionType` `transfer` → `spending`, 카테고리는 **그 고정지출의 카테고리**, `funding: fixed`('고정' 표시). 생활비 사용액엔 안 들어가고 소비 분석엔 `fixedAmount`로 들어간다(S).
@@ -260,7 +272,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
     - `category: null`을 보내면 다시 `transfer`로 돌아간다. **원래 이체였던 거래만** 된다. 원래 소비였던 거래에 `null`을 보내면 400.
     - 이체의 **받는 사람은 기억하지 않는다.** 같은 사람에게 다음에 보낸 이체는 다시 `transfer`로 들어온다(`remembered_category()`를 쓰지 않음).
 - 입금(`income`) 거래는 카테고리를 고를 수 없다 → 400 (10/24 AA⑦ 확정, 아래 실패 표).
-- **'원래 이체였던 거래' 표시 (10/24 AA⑥)**: 새 칸 없이 거래의 `field_states.original_transaction_type = "transfer"`로 남긴다. W로 소비가 된 이체 · AA⑤로 소비가 된 이체 모두. `category: null`로 되돌릴 수 있는지, 연결을 풀 때 무엇으로 돌릴지 이 값으로 판단한다. API 응답에는 내보내지 않는다.
+- **'원래 이체였던 거래' 표시 (10/24 AA⑥)**: 새 칸 없이 거래의 `field_states.original_transaction_type = "transfer"`로 남긴다. W로 소비가 된 이체 · AA⑤로 소비가 된 이체 모두. `category: null`로 되돌릴 수 있는지, 연결을 풀 때 무엇으로 돌릴지 이 값으로 판단한다. 원값은 내보내지 않고, 거래 한 건 보기에 `wasTransfer`(불린)만 준다(11/03).
 - 이 요청은 같은 값을 두 번 보내도 결과가 같아서 요청 번호(`Idempotency-Key`)를 쓰지 않는다(★4: 새로 만들기 · 승인 요청만).
 
 **받는 값 (200)** — 바뀐 거래 한 건(`GET /api/finance/transactions/<id>/`와 같은 모양)
@@ -289,10 +301,11 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 - 같은 가맹점의 이미 있는 거래를 **한꺼번에 바꾸지 않는다** (새 거래에만 반영, `sameMerchantUpdatedCount` 없음).
 - 확정한 분류를 '확인 필요'로 **되돌리는 기능은 없다.** (다른 카테고리로 다시 고르는 것은 됨)
 - 편의점 · 마트 등 다품목 가맹점은 이전 선택과 상관없이 **항상 사용자에게 물어본다.**
+- (10/30 팀 결정) 같은 가맹점 재사용은 사용자가 "앞으로도 적용"(`applyToFuture`)을 고른 경우에만.
 
 **확인 필요**
 
-- 현재 `remembered_category()` 코드는 다품목 가맹점을 거르지 않음. 다품목 브랜드 사전 확정 후 제외 조건 추가 → 김나은(코드) · 김혜리(사전)
+- ~~현재 `remembered_category()` 코드는 다품목 가맹점을 거르지 않음~~ → 10/30 해결: 거래 분류(`finance/classifier.py`)가 사용자 기억보다 다품목·페이 충전을 먼저 걸러 과거 선택은 후보로만 보여 준다 (세진)
 - 분류를 바꾸면 그 주기의 카테고리 사용액·예산 화면 숫자도 바뀜. 예산 쪽 다시 계산 시점 → 김나은. 승인 전 예산 초안은 분류 변경으로 **만료 안 함**(10/22 결정기록 D: 초안 만료는 고정지출 또는 저축 최소 금액이 바뀔 때만)
 
 ---
