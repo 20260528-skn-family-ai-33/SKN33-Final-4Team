@@ -155,12 +155,24 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
 
 
 def _save_approvals(user, cards, card_rows, rows):
-    """→ (새 거래 ID 목록, 기존 거래 수, 다 저장했는지). 카드를 하나로 특정 못 하거나 금액을 모르는 줄은 저장하지 않는다"""
+    """→ (새 거래 ID 목록, 기존 거래 수, 다 저장했는지). 카드를 하나로 특정 못 하거나 금액을 모르는 줄은 저장하지 않는다.
+    재발급하면 예전 카드는 보유카드 목록에서 사라져 번호로 못 찾는다 (승인내역엔 숫자 3자리 등으로 옴).
+    같은 응답에서 번호가 맞은 줄의 승인 카드명으로 잇는다. 그 이름이 두 카드에 걸리면 고르지 않는다"""
+    def by_number(shown):
+        return [card for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
+
+    by_name = {}
+    for row in rows:
+        found = by_number(row["card_number"])
+        if len(found) == 1 and row["card_name"]:
+            by_name.setdefault(row["card_name"], {})[found[0].pk] = found[0]
+
     new_ids, existing_count, complete = [], 0, True
     for row in rows:
         row = dict(row)
-        shown, unknown, identity = row.pop("card_number"), row.pop("unknown_reason"), row.pop("identity")
-        matched = [card for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
+        shown, name = row.pop("card_number"), row.pop("card_name")
+        unknown, identity = row.pop("unknown_reason"), row.pop("identity")
+        matched = by_number(shown) or list(by_name.get(name, {}).values())
         if len(matched) != 1 or unknown:
             complete = False
             continue

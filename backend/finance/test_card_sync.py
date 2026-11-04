@@ -167,6 +167,13 @@ class ApprovalNormalizationTest(SimpleTestCase):
         self.assertFalse(card_matches(CARD_NO, "949098******1111"))
         self.assertFalse(card_matches(CARD_NO, "949098******00000"))
 
+    def test_whole_won_amount_with_zero_decimals(self):
+        # 해외 가맹점 원화 결제는 12345.00 처럼 온다. 이 한 줄 때문에 조회 전체가 저장되지 않았다
+        self.assertEqual(normalize_approvals(approval(resUsedAmount="12345.00"), START, END)[0][0]["amount"], 12345)
+        self.assertEqual(normalize_card_bills(bill(resTotalAmount="-1,200.00"), "202610", ORG)[0]["total_amount"], -1200)
+        with self.assertRaises(CardDataError):  # 소수부가 있는 원화는 어떤 값인지 몰라 받지 않는다
+            normalize_approvals(approval(resUsedAmount="12345.67"), START, END)
+
     def test_spending_row_and_actual_period(self):
         rows, covered = normalize_approvals(approval(), START, END)
         row = rows[0]
@@ -471,6 +478,26 @@ class CardSyncTest(TestCase):
                 self.assertEqual(len(self.runs("card_bill_list")) % 4, 0)
                 run = SyncRun.objects.filter(user=self.user, product_code="card_sync").latest("started_at")
                 self.assertEqual((run.covered_from, run.covered_to), (None, None))
+
+    def test_reissued_card_rows_follow_the_same_card_name(self):
+        # 재발급 전 카드는 목록에 없고 승인내역 번호가 짧게 온다. 같은 승인 카드명이 맞은 카드에 붙인다
+        self.approvals = [approval(resCardName="내 카드"),
+                          approval("123", resCardName="내 카드", resApprovalNo="2", resUsedAmount="5000"),
+                          approval("123", resCardName="모르는 카드", resApprovalNo="3", resUsedAmount="7000")]
+        result = self.run_sync()
+        self.assertEqual(sorted(FinancialTransaction.objects.filter(user=self.user).values_list("amount", flat=True)), [5000, 22000])
+        self.assertFalse(result["approvals_complete"])
+        before = FinancialTransaction.objects.filter(user=self.user).count()
+        self.run_sync()
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), before)  # 다시 불러와도 그대로
+
+    def test_same_card_name_on_two_cards_is_not_guessed(self):
+        self.cards = [card(), card("9490981234561111")]
+        self.approvals = [approval(resCardName="내 카드"),
+                          approval("949098******1111", resCardName="내 카드", resApprovalNo="2", resUsedAmount="5000"),
+                          approval("123", resCardName="내 카드", resApprovalNo="3", resUsedAmount="7000")]
+        self.run_sync()
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user, amount=7000).exists())
 
     def test_approval_goes_to_matching_card(self):
         self.cards = [card(), card("9490981234561111", resCardName="다른 카드")]
