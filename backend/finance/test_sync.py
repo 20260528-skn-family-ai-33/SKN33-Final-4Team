@@ -87,6 +87,19 @@ class BankSyncTest(TestCase):
         self.assertGreaterEqual(run.completed_at, run.started_at)
         self.assertEqual(run.business_code, codef.SUCCESS)
 
+    def test_negative_withdrawal_is_saved_as_cancel_and_does_not_fail_the_sync(self):
+        # 음수 출금 한 줄이 DB 제약에 걸려 조회한 거래 전체가 저장되지 않았다
+        cancel = codef.normalize_transaction({
+            "resAccountTrDate": "20261020", "resAccountTrTime": "123001", "resAccountOut": "-10000",
+            "resAccountIn": "0", "resAfterTranBalance": "100000", "resAccountDesc3": "시험 거래",
+        })
+        self.assertEqual((cancel["amount"], cancel["direction"], cancel["is_canceled"], cancel["canceled_amount"]),
+                         (10000, "out", True, 10000))
+        self.list_transactions.return_value = [*self.rows, cancel]
+        self.assertEqual(self.sync()["new_transaction_count"], 3)
+        self.assertEqual(SyncRun.objects.get().status, "success")
+        self.assertEqual(self.sync()["existing_transaction_count"], 3)  # 다시 불러와도 같은 줄로 본다
+
     def test_repeated_sync_keeps_transactions_and_account_choices(self):
         self.sync()
         account = BankAccount.objects.get(account_type="demand")

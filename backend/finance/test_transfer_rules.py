@@ -7,7 +7,7 @@ from django.utils import timezone
 
 from . import pipeline
 from .models import (BankAccount, Card, Connection, FinancialTransaction as Tx, Loan, PaymentDue, PaymentMatch,
-                     TransactionLink)
+                     RecurringExpense, TransactionLink)
 from .tests import URL
 from .transfer_rules import LOAN_CANDIDATE
 
@@ -192,6 +192,73 @@ class CancellationTest(Fixture):
         self.run_on(cancel)
         self.run_on(cancel)
         self.assertEqual(TransactionLink.objects.count(), 1)
+
+    def cancel_row(self, amount=12_000, desc="택시", when=time(20, 0, 1), **fields):
+        return self.bank(self.a, "out", amount, desc, occurred_time=when, is_canceled=True, canceled_amount=amount, **fields)
+
+    def test_bank_cancel_row_cancels_its_original(self):
+        # 선결제 뒤 환불이 음수 출금으로 옴. 한 쌍이 0원이 되고 뒤의 실제 결제는 남는다
+        original = self.bank(self.a, "out", 12_000, "택시", occurred_time=time(20, 0, 0))
+        cancel = self.cancel_row()
+        real = self.bank(self.a, "out", 9_500, "택시", occurred_time=time(20, 5, 0))
+        self.run_on(original, cancel, real)
+        link = TransactionLink.objects.get(relation_type="CANCELLATION")
+        self.assertEqual((link.from_transaction, link.to_transaction, link.matched_amount), (original, cancel, 12_000))
+        self.assertEqual((original.is_canceled, original.canceled_amount), (True, 12_000))
+        self.assertFalse(real.is_canceled)
+
+    def test_bank_cancel_picks_nearest_earlier_not_later_rebooking(self):
+        # 결제 → 취소 → 같은 금액 재결제: 취소 뒤의 재결제는 짝이 아니다
+        first = self.bank(self.a, "out", 50_000, "예약", occurred_time=time(9, 0, 0))
+        cancel = self.cancel_row(50_000, "예약", time(9, 30, 0))
+        again = self.bank(self.a, "out", 50_000, "예약", occurred_time=time(9, 30, 30))
+        self.run_on(first, cancel, again)
+        self.assertEqual((first.is_canceled, again.is_canceled), (True, False))
+
+    def test_bank_cancel_finds_original_in_the_same_second_or_saved_later(self):
+        cancel = self.cancel_row(7_000, when=time(18, 0, 0))
+        self.run_on(cancel)
+        self.assertFalse(TransactionLink.objects.exists())
+        original = self.bank(self.a, "out", 7_000, "택시", occurred_time=time(18, 0, 0))
+        self.run_on(original)
+        self.run_on(original)
+        self.assertEqual(TransactionLink.objects.filter(relation_type="CANCELLATION").count(), 1)
+        self.assertTrue(original.is_canceled)
+
+    def test_bank_cancel_needs_same_account_description_amount(self):
+        others = [self.bank(self.b, "out", 12_000, "택시", occurred_time=time(1, 0)),
+                  self.bank(self.a, "out", 12_000, "편의점", occurred_time=time(1, 0)),
+                  self.bank(self.a, "out", 9_000, "택시", occurred_time=time(1, 0))]
+        self.run_on(*others, self.cancel_row())
+        self.assertFalse(TransactionLink.objects.filter(relation_type="CANCELLATION").exists())
+        self.assertFalse(any(tx.is_canceled for tx in others))
+
+    def mark_paid(self, tx):
+        due = PaymentDue.objects.create(user=self.user, obligation_type="recurring", occurrence_key="k", due_date=date(2026, 11, 3),
+                                        confirmed_amount=12_000, paid_amount=12_000, payment_state="paid", obligation_state="active",
+                                        recurring=RecurringExpense.objects.create(user=self.user, name="x", amount=12_000, category_id="FOOD",
+                                                                                  status="confirmed", source_type="manual"))
+        return PaymentMatch.objects.create(user=self.user, due=due, transaction=tx, matched_amount=12_000)
+
+    def test_paid_due_withdrawal_is_not_canceled(self):
+        original = self.bank(self.a, "out", 12_000, "택시", occurred_time=time(1, 0))
+        self.mark_paid(original)
+        self.run_on(original, self.cancel_row())
+        self.assertFalse(original.is_canceled)
+
+    def test_bank_cancel_holds_instead_of_canceling_an_older_payment(self):
+        # 어제 정상 결제 → 오늘 납부에 붙은 결제 → 오늘 취소: 어제 결제를 대신 취소하지 않는다
+        yesterday = self.bank(self.a, "out", 12_000, "택시", day=date(2026, 11, 2), occurred_time=time(20, 0, 0))
+        today = self.bank(self.a, "out", 12_000, "택시", occurred_time=time(20, 0, 0))
+        paid = self.mark_paid(today)
+        cancel = self.cancel_row()
+        self.run_on(yesterday, today, cancel)
+        self.assertEqual((yesterday.is_canceled, today.is_canceled), (False, False))
+        self.assertFalse(TransactionLink.objects.filter(relation_type="CANCELLATION").exists())
+        # 납부 연결이 풀리면 다음 처리 때 오늘 결제에 이어진다
+        paid.delete()
+        self.run_on(yesterday, today, cancel)
+        self.assertEqual((yesterday.is_canceled, today.is_canceled), (False, True))
 
     def test_no_link_without_separate_original(self):
         in_place = self.approval("A1", is_canceled=True)         # 카드사가 원거래 줄을 취소로 바꿔 준 경우
