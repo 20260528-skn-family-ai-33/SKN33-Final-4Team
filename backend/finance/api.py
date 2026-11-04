@@ -8,7 +8,8 @@ import uuid
 from datetime import date
 
 from django.db import transaction
-from django.db.models import Exists, F, OuterRef, Q
+from django.db.models import Exists, F, OuterRef, Q, UUIDField
+from django.db.models.expressions import RawSQL
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -23,7 +24,7 @@ from . import classifier
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
 from .merchant_rules import FUTURE_KEY, searched_multi_item, seen_multi_item
-from .models import BankAccount, Card, FinancialTransaction, SourceKind, TransactionLink
+from .models import BankAccount, Card, FinancialTransaction, RecurringExpense, SourceKind, TransactionLink
 from .spending import spending_summary
 
 Tx = FinancialTransaction
@@ -44,9 +45,21 @@ def listed_transactions(user):
         Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")),
         relation_type=TransactionLink.Relation.SAME_PURCHASE,
     )
+    # 카드 고정지출의 근거 거래(evidence)인 카드 결제 → 그 고정지출 (11/4). 카드는 납부 예정이 없어서 evidence 로 본다
+    #   확정 · 중지만 (계좌 쪽 납부 짝처럼 중지해도 낸 기록은 고정비로 남음, 후보 · 무시는 아님)
+    #   ID 는 budgets.api.id_set 처럼 대소문자 · 대시 · 중괄호 · urn:uuid: 를 떼고 비교
+    re, tx = RecurringExpense._meta, Tx._meta
+    card_fixed = RawSQL(f"""
+        SELECT r.{re.pk.column} FROM {re.db_table} r
+        WHERE r.user_id = {tx.db_table}.user_id AND r.status IN ('confirmed', 'stopped')
+          AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(
+                          CASE WHEN jsonb_typeof(r.evidence) = 'array' THEN r.evidence ELSE '[]'::jsonb END) AS e(v)
+                      WHERE regexp_replace(lower(e.v), 'urn:|uuid:|[{{}}-]', '', 'g')
+                            = replace({tx.db_table}.{tx.pk.column}::text, '-', ''))
+        ORDER BY r.{re.pk.column} LIMIT 1""", [], output_field=UUIDField())
     return (
         Tx.objects.filter(user=user, transaction_type__in=LIST_TYPES)
-        .annotate(in_same_purchase=Exists(same_purchase))
+        .annotate(in_same_purchase=Exists(same_purchase), card_fixed_id=card_fixed)
         .exclude(source_kind=SourceKind.BANK, in_same_purchase=True)
         # 화면 한 줄에 필요한 계좌 · 카드 · 카테고리 · 고정지출 정보를 미리 같이 가져온다 (거래마다 DB를 또 부르지 않게)
         .select_related("account__connection", "card__connection", "confirmed_category")
@@ -66,10 +79,12 @@ def cancel_info(tx):
 
 
 def fixed_expense_id(tx):
-    """이 거래가 납부로 연결된 고정지출 ID (★8 · 13). 없으면 None"""
+    """이 거래가 납부로 연결된 고정지출 ID (★8 · 13). 카드 결제는 카드 고정지출의 근거 거래면 그 고정지출. 없으면 None"""
     for match in tx.payment_matches.all():
         if match.due.obligation_type == "recurring":
             return match.due.recurring_id
+    if tx.source_kind == SourceKind.CARD:
+        return getattr(tx, "card_fixed_id", None)  # listed_transactions 가 붙인 값 (다른 조회로 온 거래는 None)
     return None
 
 

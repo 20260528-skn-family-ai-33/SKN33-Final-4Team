@@ -14,6 +14,9 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import FixedPopup from '../popups/FixedPopup.jsx'
 import EvidencePopup from '../popups/EvidencePopup.jsx'
+import Popup from '../popups/Popup.jsx'
+import TransactionPopup from '../popups/TransactionPopup.jsx'
+import { CHIPS, toView } from '../utils/transactions.js'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
 import { pickEvidence, shortDate } from '../utils/fixed.js'
@@ -88,6 +91,13 @@ function LateDue({ f, due, onSaved }) {
   )
 }
 
+// 이번 달 낸 거래 → 거래 내역과 같은 상세 팝업 (거래 한 건을 불러와서 연다)
+function PaidTxPopup({ id, onSaved }) {
+  const { data, error } = useApi(`/api/finance/transactions/${id}/`)
+  if (!data) return <Popup label="거래 상세" sub><ApiStatus error={error} /></Popup>
+  return <TransactionPopup tx={toView(data)} date={shortDate(data.occurredOn)} categories={CHIPS} onSaved={onSaved} />
+}
+
 // 마이 > 고정지출 · 홈 '꼭 나갈 돈'에서 열기
 function ManageView() {
   const { openPopup } = usePopup()
@@ -125,6 +135,12 @@ function ManageView() {
             <button type="button" className="mc-link" onClick={() => openPopup(<FixedPopup item={f} onSaved={reload} />)}>{f.paymentDay ? '수정' : '출금일 정하기'}</button>
           </div>
           {lateDue(f) && <LateDue f={f} due={lateDue(f)} onSaved={reload} />}
+          {!lateDue(f) && f.paidThisCycle && (
+            <div className="mc-row mc-note" style={{ paddingBottom: 0 }}>
+              <span>이번 달 납부 완료 · {shortDate(f.paidThisCycle.date)} {f.paidThisCycle.merchantName} {won(f.paidThisCycle.amount)}</span>
+              <button type="button" className="mc-link" onClick={() => openPopup(<PaidTxPopup id={f.paidThisCycle.transactionId} onSaved={reload} />)}>거래 보기</button>
+            </div>
+          )}
           {!lateDue(f) && f.evidenceSuggestion && <Suggestion f={f} onSaved={reload} />}
           {!f.paymentDay && <p className="mc-note" style={{ paddingBottom: 0 }}>출금일을 정하면 홈 '꼭 나갈 돈'에 나오고, 출금됐는지 확인해 드려요.</p>}
         </div>

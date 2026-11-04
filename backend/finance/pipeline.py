@@ -2,6 +2,9 @@ import logging
 
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
+from django.utils import timezone
+
+from budgets import due_match
 
 from . import classifier, transfer_rules
 from .models import FinancialTransaction
@@ -35,9 +38,10 @@ def match_savings(user, txs):
     pass
 
 
-# 나은: 출금과 고정지출 납부 예정 매칭(±3일), 카드 '맞나요?' 후보
+# 나은: 계좌 고정지출 납부 예정 연결(출금일 ±3일 · 기억한 출금) + 카드 고정지출 고정비 자동 연결(기억한 가맹점 · 같은 카드 · ±10%)
+#   홈을 열 때와 같은 함수 (budgets/due_match.py). 받은 거래만이 아니라 이 회원의 지난 · 이번 주기를 다시 맞춰 본다
 def match_payment_dues(user, txs):
-    pass
+    due_match.sync_payment_dues(user, timezone.localdate())
 
 
 # 나은: 고정지출·저축 후보 감지

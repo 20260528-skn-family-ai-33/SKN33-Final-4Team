@@ -18,7 +18,7 @@ from django.utils import timezone
 from finance.api import UNCLASSIFIED, listed_transactions
 from finance.models import BankAccount, FinancialTransaction, PaymentDue, RecurringExpense
 
-from .api import account_json, day_in_cycle, day_in_month, ensure_current_due, lock_user, match_current_due
+from .api import account_json, day_in_month, lock_user
 from .models import BudgetCategorySetting, BudgetCycle
 
 EARLY_DAYS = 7             # 월급날 7일 전부터 들어온 입금은 그 월급으로 본다 (명절 전 지급)
@@ -189,37 +189,10 @@ def registered_on(expense):
 
 
 def prepare_dues(user, cycle, today, previous_start, previous_cycle):
-    """지난 주기 · 이번 주기 회차 납부 예정 만들기 (C-15) → 출금일 +3일이 지난 안 낸 회차는 '미납 확인 필요'로
+    """지난 주기 · 이번 주기 회차 납부 예정 만들기 (C-15, budgets/due_match.py) → 출금일 +3일이 지난 안 낸 회차는 '미납 확인 필요'로"""
+    from .due_match import match_dues
 
-    출금일이 이미 지난 회차는
-      - 등록하기 전 출금일(등록한 첫 달)이면 fixed.md 규칙: 맞는 출금이 있을 때만 "냄"으로 만든다
-      - 등록한 뒤 출금일이면 home.md 규칙: 출금이 없어도 만들어 미납을 알린다 (앱을 한동안 안 연 경우)
-    지난 주기 회차는 한 달을 건너뛰고 접속해서 아직 없을 때만 새로 만든다 (취소 · 납부 기록이 있으면 그대로 둠)
-    """
-    from .due_periods import occurrence_cycles, monthly_due
-
-    expenses = RecurringExpense.objects.select_for_update().filter(
-        user=user, status="confirmed", payment_card__isnull=True, payment_day__isnull=False,
-    ).order_by("pk")  # 고정지출 수정 · 중지와 같은 순서로 잠금
-    for expense in expenses:
-        periods = [(part, original is previous_cycle) for original in (previous_cycle, cycle)
-                   for part in occurrence_cycles(user, original)]
-        for c, is_previous in periods:
-            due_date = day_in_cycle(c, expense.payment_day)
-            if due_date is None:
-                continue
-            if getattr(c, "monthly_occurrence", False):
-                existing = monthly_due(PaymentDue.objects.filter(user=user, recurring=expense), due_date)
-            else:
-                existing = PaymentDue.objects.filter(
-                    user=user, occurrence_key=f"recurring:{expense.pk}:{c.starts_on.isoformat()}",
-                ).first()
-            if is_previous and existing is not None:
-                match_current_due(expense, c, today)  # 이미 있는 지난 회차는 늦게 들어온 출금(±3일)만 맞춰 봄
-                continue
-            create_past = registered_on(expense) <= due_date
-            ensure_current_due(expense, c, today, create_past=create_past)
-            match_current_due(expense, c, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 기억한 출금 1건이면 자동 연결)
+    match_dues(user, cycle, today, previous_cycle)  # 계좌 회차 만들기 · 출금 연결 + 카드 고정비 연결 (파이프라인과 같은 함수)
 
     PaymentDue.objects.filter(
         user=user, obligation_state="active", payment_state="unpaid", paid_amount=0,
