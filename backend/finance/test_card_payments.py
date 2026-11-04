@@ -1,5 +1,6 @@
 """카드대금 매칭 테스트 (pipeline.match_card_payments → finance/card_payments.py)."""
 from datetime import date
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -123,6 +124,13 @@ class CardPaymentTest(TestCase):
             self.assertEqual(PaymentDue.objects.get(bill=bill).payment_state, "paid")
         self.assertEqual(sum(m.matched_amount for m in PaymentMatch.objects.filter(transaction=tx)), 420_000)
 
+    def test_zero_won_statement_is_left_out_of_same_day_group(self):
+        paid, empty = self.bill(key="u1", bill_type="이용대금"), self.bill(key="u2", amount=0, bill_type="사용대금")
+        tx = self.payment()
+        self.run_step(tx)
+        self.assert_paid(paid, tx)
+        self.assertFalse(PaymentDue.objects.filter(bill=empty).exists())
+
     def test_rerun_and_second_withdrawal_do_not_pay_twice(self):
         bill = self.bill()
         tx, again = self.payment(), self.payment(day=date(2026, 11, 6))
@@ -137,3 +145,21 @@ class CardPaymentTest(TestCase):
         bill = self.bill()
         match(self.user)
         self.assert_paid(bill, tx)
+
+    def test_rematch_catches_bill_saved_without_new_transaction(self):
+        tx = self.payment()
+        bill = self.bill()
+        pipeline.rematch_payments(self.user)
+        self.assert_paid(bill, tx)
+
+    def test_rematch_failure_is_contained_and_rolled_back(self):
+        self.bill()
+        self.payment()
+
+        def half_done(user):
+            match(user)
+            raise ValueError("중간 실패")
+
+        with patch.object(pipeline.card_payments, "match", side_effect=half_done), self.assertLogs("finance.pipeline", "ERROR"):
+            pipeline.rematch_payments(self.user)
+        self.assertFalse(PaymentMatch.objects.exists())

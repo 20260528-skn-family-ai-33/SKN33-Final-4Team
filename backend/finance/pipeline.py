@@ -64,6 +64,18 @@ def retry_failed_transactions(user, transaction_ids):
     _process_transactions(user, transaction_ids, retry_only=True)
 
 
+def rematch_payments(user):
+    """새 거래 없이 청구서 · 대출 · 납부 회차만 늦게 생기면 파이프라인이 돌지 않아서 홈을 열 때 다시 맞춘다.
+    실패해도 홈은 열리고 다음에 다시 돈다"""
+    try:
+        with transaction.atomic():
+            card_payments.match(user)
+            loan_payments.match(user)
+    except Exception as exc:
+        # DB 오류 원문·traceback에는 거래 내용이 포함될 수 있다.
+        logger.error("납부 다시 맞추기 실패 (%s)", "database_error" if isinstance(exc, DatabaseError) else "step_error")
+
+
 def _save_pending(txs, pending):
     changed = []
     for tx in txs.all():

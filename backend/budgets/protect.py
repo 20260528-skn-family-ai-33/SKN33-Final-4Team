@@ -196,7 +196,8 @@ def installment_rounds(user, issuer_code, cycle, connected_on, first_bill_ids):
     """이번 회차 할부금 (cards.md C-17): 이번 주기에 내는 청구서(첫 청구서 · 카드론 명세서 제외)의 할부 중 연결 전에 산 것.
 
     [임시] 연결 뒤에 산 할부는 긁을 때 전액이 소비로 잡혀서, 회차를 또 떼면 두 번 빠진다. 구매일을 모르면 떼는 쪽으로 둔다.
-    [임시] 상세 항목을 못 받은 청구서는 0원으로 친다. None = 회차 금액을 모르는 할부가 있음 (보류)
+    [임시] 상세 항목을 못 받았거나 아직 안 온 청구서는 0원으로 친다. None = 회차 금액을 모르는 할부가 있음 (보류)
+    [임시] 카드 고정지출로 등록한 할부는 이름으로 가려내지 않아 고정비와 함께 잡힐 수 있다 (예산이 모자라지 않는 쪽)
     """
     bills = CardBill.objects.filter(user=user, issuer_code=issuer_code).annotate(
         due_on=Coalesce("withdrawal_due_date", "payment_due_date"),

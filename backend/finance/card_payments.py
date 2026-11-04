@@ -16,10 +16,10 @@ WINDOW = timedelta(days=3)
 
 
 def unpaid_bills(user, issuer_code, day):
-    """출금일(없으면 결제일)이 ±3일 안인 카드사 통합 청구서를 날짜별로. 이미 납부가 붙은 청구서는 뺀다.
+    """출금일(없으면 결제일)이 ±3일 안인 카드사 통합 청구서를 날짜별로. 이미 납부가 붙은 청구서와 낼 돈이 없는 0원 명세서는 뺀다.
     [임시] 청구 월은 따로 비교하지 않는다: 달이 다른 청구서는 날짜에서 걸러진다"""
     bills = CardBill.objects.filter(
-        user=user, issuer_code=issuer_code, scope_type=CardBill.ScopeType.ISSUER,
+        user=user, issuer_code=issuer_code, scope_type=CardBill.ScopeType.ISSUER, total_amount__gt=0,
     ).annotate(
         due_on=Coalesce("withdrawal_due_date", "payment_due_date"),
         paid=Exists(PaymentMatch.objects.filter(due__bill=OuterRef("pk"))),
@@ -42,7 +42,7 @@ def find_statements(user, tx):
     """이 출금이 낸 명세서들. [임시] 총액이 정확히 같을 때만 (분할 납부는 안 붙는다), 날짜가 가까운 쪽 먼저"""
     issuer_code = card_issuer(tx.source_description)
     if issuer_code is None:
-        return None
+        return []
     by_due = unpaid_bills(user, issuer_code, tx.occurred_on)
     for due_on in sorted(by_due, key=lambda day: abs((day - tx.occurred_on).days)):
         statements, reason = usage_statements(by_due[due_on])
@@ -51,7 +51,7 @@ def find_statements(user, tx):
         accounts = paying_accounts(user, issuer_code, statements)
         if not accounts or tx.account_id in accounts:
             return statements
-    return None
+    return []
 
 
 def bill_due(bill, tx):
@@ -74,7 +74,7 @@ def match(user):
         user=user, source_kind="bank", transaction_type=Tx.TransactionType.CARD_PAYMENT, is_canceled=False,
     ).exclude(pk__in=PaymentMatch.objects.filter(user=user).values("transaction")).select_related("account")
     for tx in payments.order_by("occurred_on", "pk"):
-        for bill in find_statements(user, tx) or ():
+        for bill in find_statements(user, tx):
             due = bill_due(bill, tx)
             PaymentMatch.objects.get_or_create(due=due, transaction=tx, defaults={
                 "user": user, "matched_amount": bill.total_amount,

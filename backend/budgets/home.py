@@ -7,7 +7,7 @@
   ④ 꼭 나갈 돈 (mustPay)    이번 주기 + 지난 주기 미납 납부 예정
   ⑤ 예산 (budget)          이번 주기 승인(approved) 예산이 있을 때만. 계산은 budgets.overview.budget_data 그대로
 
-매일 도는 작업이 없어서 '새 주기 만들기 · 이번 회차 납부 예정 만들기 · 미납 확인 필요로 바꾸기'를 홈을 열 때 한다.
+매일 도는 작업이 없어서 '새 주기 만들기 · 이번 회차 납부 예정 만들기 · 카드값 · 대출 납부 다시 맞추기 · 미납 확인 필요로 바꾸기'를 홈을 열 때 한다.
 """
 from datetime import timedelta
 
@@ -291,7 +291,9 @@ def home_data(user, today):
         previous_cycle = ensure_previous_cycle(user, previous_start, start)
         prepare_dues(user, cycle, today, previous_start, previous_cycle)
         from .salary import prepare_salary_loans
+        from finance.pipeline import rematch_payments
         prepare_salary_loans(user)
+        rematch_payments(user)
         period = period_json(user, profile, today, cycle, start, next_payday)
         must_pay = must_pay_json(user, next_payday, previous_start)
 

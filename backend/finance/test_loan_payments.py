@@ -6,11 +6,12 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 
+from budgets.home import home_data
 from budgets.models import BudgetCycle
+from users.models import FinancialProfile
 
 from . import pipeline
 from .models import BankAccount, Connection, FinancialTransaction as Tx, Loan, PaymentDue, PaymentMatch, TransactionLink
-from .transfer_rules import LOAN_CANDIDATE
 
 TODAY = date(2026, 11, 12)
 
@@ -35,11 +36,12 @@ class LoanPaymentTest(TestCase):
             due_date=day, confirmed_amount=150_000, source_type="manual", confirmation_state="confirmed",
         )
 
-    def repayment(self, amount=150_000, day=date(2026, 11, 10), desc="한국장학재단", account=None):
+    def repayment(self, amount=150_000, day=date(2026, 11, 10), desc="한국장학재단", account=None,
+                  transaction_type="transfer", confirmation_state="needs_review"):
         return Tx.objects.create(
             user=self.user, source_kind="bank", account=account or self.account, occurred_on=day, amount=amount,
-            direction="out", source_description=desc, transaction_type="transfer", field_states={LOAN_CANDIDATE: True},
-            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
+            direction="out", source_description=desc, transaction_type=transaction_type,
+            confirmed_category_id="UNCLASSIFIED", confirmation_state=confirmation_state,
         )
 
     def run_step(self):
@@ -82,11 +84,75 @@ class LoanPaymentTest(TestCase):
         tx.refresh_from_db()
         self.assertEqual(tx.transaction_type, "transfer")
 
-    def test_only_marked_withdrawals_are_candidates(self):
+    def test_user_confirmed_withdrawal_is_left_alone(self):
         self.due()
-        Tx.objects.filter(pk=self.repayment().pk).update(field_states={})
+        tx = self.repayment(confirmation_state="confirmed")
+        self.run_step()
+        tx.refresh_from_db()
+        self.assertEqual(tx.transaction_type, "transfer")
+        self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_loan_details_filled_after_withdrawal_match_on_next_run(self):
+        Loan.objects.filter(pk=self.loan.pk).update(monthly_payment=None, payment_day=None)
+        self.due()
+        tx = self.repayment()
         self.run_step()
         self.assertFalse(PaymentMatch.objects.exists())
+        Loan.objects.filter(pk=self.loan.pk).update(monthly_payment=150_000, payment_day=10)
+        self.run_step()
+        self.assertEqual(PaymentMatch.objects.get().transaction, tx)
+
+    def test_home_matches_when_due_is_created_after_withdrawal(self):
+        tx = self.repayment()
+        self.run_step()
+        self.assertFalse(PaymentDue.objects.exists())   # 아직 급여 주기가 없어 회차가 없다
+        FinancialProfile.objects.create(user=self.user, housing_type="family", monthly_take_home_income=1_500_000, payday=25)
+        body = home_data(self.user, TODAY)
+        tx.refresh_from_db()
+        self.assertEqual(tx.transaction_type, "loan_repayment")
+        self.assertEqual(PaymentDue.objects.get(loan=self.loan).payment_state, "paid")
+        self.assertEqual(body["must_pay"], [])
+
+    def test_same_terms_loans_each_take_one_withdrawal(self):
+        twin = Loan.objects.create(
+            user=self.user, origin="manual", lender_name="한국장학재단", linked_account=self.account,
+            monthly_payment=150_000, payment_day=10,
+        )
+        self.due()
+        self.due(date(2026, 11, 11), loan=twin)
+        self.repayment()
+        self.repayment(day=date(2026, 11, 11))
+        self.run_step()
+        self.assertEqual(set(PaymentDue.objects.values_list("payment_state", flat=True)), {"paid"})
+
+    def test_card_company_loan_repayment_is_matched(self):
+        Loan.objects.filter(pk=self.loan.pk).update(lender_name="현대카드")
+        self.due()
+        tx = self.repayment(desc="현대카드", transaction_type="card_payment")
+        self.run_step()
+        tx.refresh_from_db()
+        self.assertEqual(tx.transaction_type, "loan_repayment")
+
+    def test_bank_code_lender_uses_institution_name(self):
+        Loan.objects.filter(pk=self.loan.pk).update(lender_name="0003")
+        self.due()
+        self.repayment(desc="기업은행 대출이자")
+        self.run_step()
+        self.assertEqual(PaymentMatch.objects.count(), 1)
+
+    def test_blank_lender_matches_nothing(self):
+        Loan.objects.filter(pk=self.loan.pk).update(lender_name="")
+        self.due()
+        self.repayment(desc="다른 기관")
+        self.run_step()
+        self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_syncs_each_loan_once_per_run(self):
+        self.repayment(day=date(2026, 9, 10))
+        self.repayment(day=date(2026, 10, 10))
+        with patch("finance.api_loans.sync_loan_due") as sync:
+            self.run_step()
+        sync.assert_called_once()
 
     def test_missing_linked_account_is_not_checked(self):
         Loan.objects.filter(pk=self.loan.pk).update(linked_account=None)
