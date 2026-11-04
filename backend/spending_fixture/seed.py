@@ -351,7 +351,14 @@ def main(argv=None):
     action = parser.add_mutually_exclusive_group()
     for flag in ("--create-db", "--apply", "--reset", "--status"):
         action.add_argument(flag, action="store_true")
+    parser.add_argument("--alpha", action="store_true", help="7~11월 자취 직장인 2계정 (오늘까지, 기본 3인 시드와 별도)")
     args = parser.parse_args(argv)
+    if args.alpha:
+        from runpy import run_path
+        helper = Path(__file__).resolve().parents[2] / "local_workspace/scripts/alpha_test/seed.py"
+        if not helper.is_file():
+            parser.error("local_workspace/scripts/alpha_test/seed.py가 필요합니다")
+        return run_path(str(helper))["main"](args)
     design = load("design.json")
 
     if args.create_db:

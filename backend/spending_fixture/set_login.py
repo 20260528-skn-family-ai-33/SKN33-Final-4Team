@@ -7,6 +7,7 @@
 """
 import os
 import sys
+import argparse
 
 os.environ["DJANGO_SETTINGS_MODULE"] = "spending_fixture.service_settings"  # 다른 설정이 들어와도 fixture DB 로만
 import django  # noqa: E402
@@ -22,7 +23,7 @@ ENV = "FIXTURE_LOGIN_PASSWORD"
 MIN_LENGTH = 8
 
 
-def set_passwords(password, design=None):
+def set_passwords(password, design=None, expected_ids=None):
     """→ [(별칭, 이메일)]. 비밀번호가 짧거나 · fixture DB 가 아니거나 · 회원이 빠졌으면 SystemExit (아무것도 바꾸지 않음)"""
     design = design or seed.load("design.json")
     if not password or len(password) < MIN_LENGTH:
@@ -32,6 +33,8 @@ def set_passwords(password, design=None):
     users = list(get_user_model().objects.filter(email__in=emails))
     if len(users) != len(emails):
         raise SystemExit("fixture 회원이 없어요. 먼저: python -m spending_fixture.seed --apply")
+    if expected_ids is not None and {u.pk for u in users} != set(expected_ids):
+        raise SystemExit("알파 이메일의 회원 ID가 다릅니다. 비밀번호를 변경하지 않습니다.")
     with transaction.atomic():
         for user in users:
             user.set_password(password)
@@ -40,7 +43,20 @@ def set_passwords(password, design=None):
 
 
 def main():
-    done = set_passwords(os.environ.get(ENV))
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--alpha", action="store_true", help="알파 전용 두 계정만 설정")
+    args = parser.parse_args()
+    design = None
+    expected_ids = None
+    if args.alpha:
+        from pathlib import Path
+        from runpy import run_path
+        helper = Path(__file__).resolve().parents[2] / "local_workspace/scripts/alpha_test/seed.py"
+        alpha = run_path(str(helper))
+        accounts = alpha["ACCOUNTS"]
+        expected_ids = [alpha["uid"](p, "user") for p in accounts]
+        design = {"personas": {k: {"synthetic_email": v, "alias": k} for k, v in accounts.items()}}
+    done = set_passwords(os.environ.get(ENV), design, expected_ids)
     print("로그인 비밀번호를 넣었어요: " + " · ".join(f"{alias}({email})" for alias, email in done))
 
 

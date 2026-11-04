@@ -34,6 +34,75 @@ python manage.py test spending_fixture --settings=spending_fixture.settings
 `--apply` 는 반복해도 ID · 시각 · 건수 · 합계가 같다(UUID5 · 고정 시각). 기존 DB flush/drop 은 하지 않는다.
 공통 설정으로 `python manage.py test` 를 돌리면 이 테스트는 건너뛴다.
 
+## 알파 페르소나 모드
+
+기존 3인 시드와 별도로 `--alpha`를 지정하면 자취 직장인의 승인 계정
+`alpha.home@example.test`와 온보딩 계정 `alpha.onboarding@example.test`를 만든다.
+개인 데이터와 코드는 `local_workspace/data/alpha_test/`, `local_workspace/scripts/alpha_test/`에 있다. local_workspace는 기본적으로 Git 제외 대상이지만, 이 알파 기능에 필요한 코드·합성 자료·검증 파일만 명시적으로 추적한다. 해당 파일은 저장소를 받으면 함께 포함된다. 원자료·모델·개인 환경은 포함하지 않는다.
+`generate.py`로 CSV와 독립 정답을 만들고 `seed.py --alpha`가 CSV를 검증해 모델에 넣는다.
+
+```powershell
+# 저장소 루트에서 데이터 생성·재현 검사
+.venv/Scripts/python.exe local_workspace/scripts/alpha_test/generate.py
+.venv/Scripts/python.exe local_workspace/scripts/alpha_test/generate.py --check
+
+# backend/에서, 위와 같은 별도 로컬 fixture DB만 사용
+../.venv/Scripts/python.exe -m spending_fixture.seed --alpha
+../.venv/Scripts/python.exe -m spending_fixture.seed --alpha --apply
+../.venv/Scripts/python.exe -m spending_fixture.set_login --alpha
+
+# FIXTURE_LOGIN_PASSWORD 환경변수를 기존 방식으로 설정한 뒤 로그인 설정 명령을 실행한다.
+# PowerShell에서 빈 환경변수 처리 차이를 피하려고 today를 사용한다.
+$env:CHAT_TODAY = 'today'
+../.venv/Scripts/python.exe manage.py runserver 127.0.0.1:8001 --settings=spending_fixture.service_settings
+```
+
+`--alpha --apply`는 알파 두 계정만 트랜잭션 안에서 재생성한다. 기존 A/B/C는 건드리지 않는다.
+재생성 후 로그인 비밀번호를 다시 설정해야 한다. 다른 회원의 이메일·UUID 충돌 시 변경하지 않고 멈춘다.
+알파 모드에는 `--reset`을 제공하지 않는다. 기본 모드의 초기화·해시·기준일은 유지한다.
+
+현재 KST **날짜** 이하의 합성 전표만 적재한다. 거래 시각은 생활 패턴용 가상 시각이며 당일 전표는 포함한다.
+따라서 11/3에 실행하면 11/4~5 행은 들어가지 않는다. 11/5에 `--apply` 후 비밀번호를 다시 설정하면
+11/5 정답 세트가 된다. 11/5 이후의 새 거래는 생성하지 않으므로 이후 조회는 최신 자료가 아니다.
+
+승인 계정은 7~11월 승인 예산·고정지출·납부 의무·저축·쿠션·배분을 포함한다.
+온보딩 계정은 계좌·카드·거래·청구서·합성 조회 동의 및 조회 이력만 있고, 프로필·예산·고정지출 설정은 없다.
+두 계정의 금융 자료가 같아도 온보딩 계정은 고정비 설정 전이라 생활비 범위 정답은 승인 계정 기준이다.
+가맹점 메타데이터는 거래의 `source_detail`에 보관하고, `ans_category_if_user_set`은 CSV의 외부 정답으로만 둔다.
+
+`service_settings` 환경에서는 프로필 GET·PUT 응답의 `onboardingNextStep`을 서버가 결정한다.
+지정된 온보딩 UUID와 이메일이 일치하고, 시드의 관리 계좌 A/B·카드 D/E·거래가 준비되어 있을 때만
+`salary`를 반환한다. 프로필 저장 성공 후 화면이 월급 설정으로 이동한다. 다른 계정은 `connect`이고,
+일반 서비스의 프로필 응답과 연결 흐름은 바꾸지 않는다. 요청 본문으로 이 값을 지정할 수 없다.
+지정된 두 알파 계정(UUID와 이메일 모두 일치)에만 `GET /api/finance/connect/accounts/`와
+`GET /api/finance/connect/cards/`를 허용한다. 기존 표시 형식·조회 동의·인증·소유자 검사를 적용하며,
+자신과 연결의 소유자가 모두 일치하고 해제되지 않은 연결의 저장된 자료만 읽는다. 계좌 목록에는
+입출금 A/B와 관리 대상이 아닌 적금 C도 포함되어 고정지출 결제 수단과 저축 송·수신 계좌를 고를 수 있다.
+일반 계정의 두 조회는 기존처럼 503, 미인증 조회는 403이다. 일반 서비스 API는 바꾸지 않는다.
+금융 동의·계좌/카드 선택 변경·연결·동기화 요청은 알파 계정에도 계속 503이며 실제 금융기관을 호출하지 않는다.
+
+연결 생략과 자동 감지는 별개다. `detect_candidates()`는 구현하지 않는다. 온보딩 시드는 고정지출·저축의
+후보와 확정 설정을 모두 비워 두므로, 이 PR은 **직접 등록**으로 테스트한다. 프로필→월급 저장 후
+고정지출 6개(월세 60만·관리비 7만·공과금 3만·통신 5만·영상 1.2만·음악 0.8만)와 적금 90만원을
+목록에서 월급통장·카드와 적금계좌를 골라 직접 등록한다. 이때 고정비 77만원, 배분 가능액 223만원이 되고 지킬 돈을 저장할 수 있다.
+승인 계정에 미리 넣은 `confirmed/manual` 설정은 합성 시드이며 실제 자동 감지 결과가 아니다.
+
+청구서는 카드사 단위 `scope_type=issuer`, `card=None`이고 상세 항목만 카드 E에 연결한다.
+승인 내역 수집(`card_approval_list`, 7/1부터)과 별도로 청구서 수집(`card_bill_list`)의 성공 이력을
+각 카드의 최초 연결일 6/1부터 적재일(최대 11/5)까지 넣는다. 보호 계산을 우회하거나 실제 조회를 한 기록이
+아니라 테스트용 수집 근거다. 첫 청구서의 납부일이 7/14라 11월 주기의 첫 청구서 선차감은 0원이다.
+기존 알파 DB에는 새 청구서 형태·수집 이력이 자동 반영되지 않는다. 수정 후 `--alpha --apply`로
+두 계정을 재적재하고 `set_login --alpha`를 다시 실행한다(기존 시연 변경·비밀번호 초기화).
+
+최신 main의 홈 승인 예산 표시와 주거·통신·여행의 생활비 제외 연결을 유지한다. main에서 적금·예금은
+소비 수집 범위 판정 대상에서 제외하므로 C를 `deposit`으로 보존한다.
+
+알파 테스트:
+
+```powershell
+../.venv/Scripts/python.exe manage.py test ../local_workspace/tests -p test_alpha_fixture.py --settings=spending_fixture.settings --keepdb --noinput
+```
+
 ## 기본 적재 건수
 
 category 12(기존 시드) · app_user 3 · financial_profile 3 · category_priority 9 · category_minimum 5 · connection 6 ·
