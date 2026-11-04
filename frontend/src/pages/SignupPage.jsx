@@ -65,7 +65,7 @@ export default function SignupPage() {
     const email = String(form.get('suEmail') ?? '').trim()
 
     if (!nickname) {
-      setFieldErrors({ nickname: ['이름(닉네임)을 입력해 주세요.'] })
+      setFieldErrors({ nickname: ['이름을 입력해 주세요.'] })
       return
     }
 
@@ -165,7 +165,7 @@ export default function SignupPage() {
           style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
         >
           <label className="mc-field">
-            이름(닉네임)
+            이름
             <input
               name="suName"
               placeholder="홍길동"
@@ -174,9 +174,13 @@ export default function SignupPage() {
               maxLength={100}
               aria-invalid={Boolean(fieldErrors.nickname)}
               aria-describedby={
-                fieldErrors.nickname ? 'signup-nickname-error' : undefined
+                fieldErrors.nickname ? 'signup-nickname-hint signup-nickname-error' : 'signup-nickname-hint'
               }
             />
+            {/* 저축 후보 감지가 이체 적요의 이름과 비교한다 (11/4) */}
+            <span id="signup-nickname-hint" className="mc-muted" style={{ display: 'block', marginTop: 6 }}>
+              통장에 찍히는 이름과 같게 적어 주세요. 내 계좌끼리 옮긴 돈을 찾는 데 써요.
+            </span>
           </label>
 
           {fieldErrors.nickname && (
