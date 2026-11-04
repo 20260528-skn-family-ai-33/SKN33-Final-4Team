@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
-from budgets import candidates, due_match
+from budgets import candidates, due_match, saving_match
 
 from . import card_payments, classifier, loan_payments, transfer_rules
 from .models import FinancialTransaction
@@ -33,9 +33,9 @@ def match_loan_repayments(user, txs):
     loan_payments.match(user)
 
 
-# 나은: 내 계좌 이체와 확정 정기 저축 매칭, saving 전환
+# 나은: 새 출금 ↔ 확정 정기 저축(보내는 계좌 · 금액 · 이체일 ±3일 · 받는 곳) → saving, 근거 이체에 더함 (budgets/saving_match.py)
 def match_savings(user, txs):
-    pass
+    saving_match.match_savings(user, [tx.pk for tx in txs], timezone.localdate())
 
 
 # 나은: 계좌 고정지출 납부 예정 연결(출금일 ±3일 · 기억한 출금) + 카드 고정지출 고정비 자동 연결(기억한 가맹점 · 같은 카드 · ±10%)
