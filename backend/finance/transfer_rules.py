@@ -3,7 +3,7 @@
 은행 거래는 출금 transfer · 입금 income 으로 저장되는데, 이 단계가 내 계좌 간 이체 · 카드값 · 대출 상환 후보를 나눈다.
 친구 송금은 그대로 transfer 다 (11/3 결정: 기본은 소비 아님). 반대쪽 거래는 전에 저장된 것까지 찾는다 (은행마다 조회 시점이 달라서).
 """
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Q
 
 from .institutions import CARDS
 from .models import FinancialTransaction as Tx, Loan, PaymentMatch, TransactionLink
@@ -78,7 +78,7 @@ def mark_by_description(user, txs):
 
 
 def link_cancellations(user, txs):
-    """[임시] 취소가 따로 온 줄을 같은 카드 · 같은 승인번호의 원거래에 잇는다. 은행 거래는 취소 표시가 없어 보지 않는다.
+    """[임시] 취소가 따로 온 줄을 같은 카드 · 같은 승인번호의 원거래에 잇는다. 은행은 승인번호가 없어 link_bank_cancellations 가 본다.
     취소 줄이 먼저 저장될 수 있어서 새 거래의 승인번호마다 양쪽을 다 찾는다"""
     keys = txs.filter(source_kind="card", approval_no__isnull=False).values_list("card_id", "approval_no").distinct()
     for card_id, approval_no in keys:
@@ -89,7 +89,32 @@ def link_cancellations(user, txs):
                 link(user, original, cancel, Relation.CANCELLATION, cancel.canceled_amount or cancel.amount)
 
 
+def link_bank_cancellations(user):
+    """[임시] 은행 취소 줄(음수 금액, 택시 선결제 환불 · 예약 취소)을 원거래에 잇고 원거래도 취소로 표시해 한 쌍을 0원으로 만든다.
+    같은 계좌 · 방향 · 금액 · 적요에서 취소 줄보다 앞선 가장 가까운 거래가 원거래다. 뒤에 같은 금액으로 다시 낸 거래는 짝이 아니다.
+    원거래가 나중에 저장될 수 있어서 아직 안 이은 취소 줄을 모두 본다. 부분 환불(금액이 다름)은 못 잇고, 납부에 붙은 거래는 바꾸지 않는다"""
+    links = TransactionLink.objects.filter(relation_type=Relation.CANCELLATION)
+    waiting = Tx.objects.filter(user=user, source_kind="bank", is_canceled=True).exclude(
+        Exists(links.filter(Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")))),
+    )
+    for cancel in waiting.order_by("occurred_on", "occurred_time", "pk"):
+        same_day = Q(occurred_on=cancel.occurred_on)
+        if cancel.occurred_time is not None:
+            same_day &= Q(occurred_time__lte=cancel.occurred_time)
+        original = Tx.objects.filter(
+            Q(occurred_on__lt=cancel.occurred_on) | same_day,
+            user=user, account_id=cancel.account_id, direction=cancel.direction, amount=cancel.amount,
+            source_description=cancel.source_description, is_canceled=False,
+        ).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk")))).order_by(
+            "-occurred_on", "-occurred_time", "-pk",
+        ).first()
+        if original is not None:
+            Tx.objects.filter(pk=original.pk).update(is_canceled=True, canceled_amount=original.amount)
+            link(user, original, cancel, Relation.CANCELLATION, cancel.amount)
+
+
 def apply(user, txs):
     link_cancellations(user, txs)
+    link_bank_cancellations(user)
     link_own_transfers(user, txs)
     mark_by_description(user, txs)
