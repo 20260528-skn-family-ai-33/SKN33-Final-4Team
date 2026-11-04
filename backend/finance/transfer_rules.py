@@ -92,7 +92,8 @@ def link_cancellations(user, txs):
 def link_bank_cancellations(user):
     """[임시] 은행 취소 줄(음수 금액, 택시 선결제 환불 · 예약 취소)을 원거래에 잇고 원거래도 취소로 표시해 한 쌍을 0원으로 만든다.
     같은 계좌 · 방향 · 금액 · 적요에서 취소 줄보다 앞선 가장 가까운 거래가 원거래다. 뒤에 같은 금액으로 다시 낸 거래는 짝이 아니다.
-    원거래가 나중에 저장될 수 있어서 아직 안 이은 취소 줄을 모두 본다. 부분 환불(금액이 다름)은 못 잇고, 납부에 붙은 거래는 바꾸지 않는다"""
+    원거래가 나중에 저장될 수 있어서 아직 안 이은 취소 줄을 모두 본다. 부분 환불(금액이 다름)은 못 잇는다.
+    가장 가까운 거래가 납부에 붙어 있으면 자동 취소를 보류한다. 건너뛰고 찾으면 더 오래된 정상 거래를 대신 취소하게 된다"""
     links = TransactionLink.objects.filter(relation_type=Relation.CANCELLATION)
     waiting = Tx.objects.filter(user=user, source_kind="bank", is_canceled=True).exclude(
         Exists(links.filter(Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")))),
@@ -105,12 +106,11 @@ def link_bank_cancellations(user):
             Q(occurred_on__lt=cancel.occurred_on) | same_day,
             user=user, account_id=cancel.account_id, direction=cancel.direction, amount=cancel.amount,
             source_description=cancel.source_description, is_canceled=False,
-        ).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk")))).order_by(
-            "-occurred_on", "-occurred_time", "-pk",
-        ).first()
-        if original is not None:
-            Tx.objects.filter(pk=original.pk).update(is_canceled=True, canceled_amount=original.amount)
-            link(user, original, cancel, Relation.CANCELLATION, cancel.amount)
+        ).order_by("-occurred_on", "-occurred_time", "-pk").first()
+        if original is None or PaymentMatch.objects.filter(transaction=original).exists():
+            continue
+        Tx.objects.filter(pk=original.pk).update(is_canceled=True, canceled_amount=original.amount)
+        link(user, original, cancel, Relation.CANCELLATION, cancel.amount)
 
 
 def apply(user, txs):

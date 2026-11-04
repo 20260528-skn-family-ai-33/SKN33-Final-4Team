@@ -233,15 +233,32 @@ class CancellationTest(Fixture):
         self.assertFalse(TransactionLink.objects.filter(relation_type="CANCELLATION").exists())
         self.assertFalse(any(tx.is_canceled for tx in others))
 
-    def test_paid_due_withdrawal_is_not_canceled(self):
-        original = self.bank(self.a, "out", 12_000, "택시", occurred_time=time(1, 0))
+    def mark_paid(self, tx):
         due = PaymentDue.objects.create(user=self.user, obligation_type="recurring", occurrence_key="k", due_date=date(2026, 11, 3),
                                         confirmed_amount=12_000, paid_amount=12_000, payment_state="paid", obligation_state="active",
                                         recurring=RecurringExpense.objects.create(user=self.user, name="x", amount=12_000, category_id="FOOD",
                                                                                   status="confirmed", source_type="manual"))
-        PaymentMatch.objects.create(user=self.user, due=due, transaction=original, matched_amount=12_000)
+        return PaymentMatch.objects.create(user=self.user, due=due, transaction=tx, matched_amount=12_000)
+
+    def test_paid_due_withdrawal_is_not_canceled(self):
+        original = self.bank(self.a, "out", 12_000, "택시", occurred_time=time(1, 0))
+        self.mark_paid(original)
         self.run_on(original, self.cancel_row())
         self.assertFalse(original.is_canceled)
+
+    def test_bank_cancel_holds_instead_of_canceling_an_older_payment(self):
+        # 어제 정상 결제 → 오늘 납부에 붙은 결제 → 오늘 취소: 어제 결제를 대신 취소하지 않는다
+        yesterday = self.bank(self.a, "out", 12_000, "택시", day=date(2026, 11, 2), occurred_time=time(20, 0, 0))
+        today = self.bank(self.a, "out", 12_000, "택시", occurred_time=time(20, 0, 0))
+        paid = self.mark_paid(today)
+        cancel = self.cancel_row()
+        self.run_on(yesterday, today, cancel)
+        self.assertEqual((yesterday.is_canceled, today.is_canceled), (False, False))
+        self.assertFalse(TransactionLink.objects.filter(relation_type="CANCELLATION").exists())
+        # 납부 연결이 풀리면 다음 처리 때 오늘 결제에 이어진다
+        paid.delete()
+        self.run_on(yesterday, today, cancel)
+        self.assertEqual((yesterday.is_canceled, today.is_canceled), (False, True))
 
     def test_no_link_without_separate_original(self):
         in_place = self.approval("A1", is_canceled=True)         # 카드사가 원거래 줄을 취소로 바꿔 준 경우
