@@ -19,6 +19,7 @@ export function toView(item) {
     cancelAmount: item.cancel.amount,
     via: (item.paymentCard ?? item.paymentAccount)?.displayName,
     funding: item.funding,
+    isSalary: item.isSalary === true,  // 서버가 월급으로 본 입금만 (11/4)
   }
 }
 

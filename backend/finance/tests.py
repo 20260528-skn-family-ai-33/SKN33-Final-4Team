@@ -519,3 +519,40 @@ class DisconnectTest(FinanceData):
         res = self.client.delete(self.url(self.account.connection))
         self.assertEqual(res.status_code, 403)
         self.assertEqual(res.json()["error"]["code"], "not_authenticated")
+
+
+class TransactionIsSalaryTest(FinanceData):
+    """16 · 17. isSalary — 홈과 같은 salary_deposits() 기준 (11/4)"""
+
+    def setUp(self):
+        from users.models import FinancialProfile
+        FinancialProfile.objects.create(user=self.user, payday=25, monthly_take_home_income=2_500_000)
+        BankAccount.objects.filter(pk=self.account.pk).update(is_selected=True)  # 월급은 관리 대상 계좌 입금만
+        self.salary = self.tx(source_description="급여", amount=2_600_000, direction="in", transaction_type="income")
+        self.refund = self.tx(source_description="환불", amount=30_000, direction="in", transaction_type="income")
+        # 내 다른 계좌에서 같은 날 같은 금액이 나간 큰 입금 = 내 계좌끼리 옮긴 돈 (월급 아님)
+        savings = BankAccount.objects.create(user=self.user, connection=self.account.connection, source_account_key="acc-2",
+                                             masked_number="999-****-0000", name="저축", account_type="demand")
+        self.tx(account=savings, amount=3_000_000, transaction_type="own_transfer")
+        self.moved = self.tx(source_description="내 저축에서", amount=3_000_000, direction="in", transaction_type="income")
+        self.sent = self.tx(merchant_name="홍길동", amount=2_600_000, transaction_type="transfer",
+                            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        self.spent = self.tx(amount=2_600_000)
+
+    def flags(self):
+        return {i["transactionId"]: i["isSalary"] for i in self.get().json()["items"]}
+
+    def test_only_salary_deposit_is_true(self):
+        self.assertEqual(self.flags(), {
+            str(self.salary.pk): True, str(self.refund.pk): False, str(self.moved.pk): False,
+            str(self.sent.pk): False, str(self.spent.pk): False,
+        })
+
+    def test_detail_matches_list(self):
+        flags = self.flags()
+        for tx_id, flag in flags.items():
+            self.assertIs(self.client.get(f"{URL}{tx_id}/").json()["isSalary"], flag)
+
+    def test_no_take_home_income_means_no_salary(self):
+        self.user.financial_profile.delete()
+        self.assertFalse(any(self.flags().values()))
