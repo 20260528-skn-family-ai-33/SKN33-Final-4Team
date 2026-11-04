@@ -202,8 +202,11 @@ class AlphaDatabaseTest(TestCase):
             self.assertIsNone(response.json()['blocked'])
             self.assertEqual(response.json()['base']['fixedTotal'],0)
             user=User.objects.get(pk=S['uid']('onboarding','user'))
-            self.assertFalse(RecurringExpense.objects.filter(user=user).exists())
-            self.assertFalse(RecurringSaving.objects.filter(user=user).exists())
+            # 11/4: 시드가 파이프라인을 거쳐 감지 후보(suggested · detected)만 있음 — 확정 · 직접 등록은 없음
+            self.assertFalse(RecurringExpense.objects.filter(user=user).exclude(status='suggested').exists())
+            self.assertFalse(RecurringSaving.objects.filter(user=user).exclude(status='suggested').exists())
+            self.assertEqual(RecurringExpense.objects.filter(user=user,source_type='detected').count(),7)
+            self.assertEqual(RecurringSaving.objects.filter(user=user,source_type='detected').count(),2)
             response=client.get('/api/finance/connect/accounts/?v=0')
             self.assertEqual(response.status_code,200,response.content)
             accounts=response.json()['items']
@@ -224,7 +227,7 @@ class AlphaDatabaseTest(TestCase):
             response=client.post('/api/budgets/savings/',dict(name='직접 등록 적금',amount=900000,transferDay=2,
                                 fromAccountId=salary['accountId'],toAccountId=deposit['accountId']),content_type='application/json')
             self.assertEqual(response.status_code,201,response.content)
-            saving=RecurringSaving.objects.get(user=user)
+            saving=RecurringSaving.objects.get(user=user,source_type='manual')
             self.assertEqual(str(saving.from_account_id),salary['accountId'])
             self.assertEqual(str(saving.to_account_id),deposit['accountId'])
             self.assertEqual(set(RecurringExpense.objects.filter(user=user).values_list('payment_card_id',flat=True)),

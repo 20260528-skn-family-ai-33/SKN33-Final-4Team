@@ -245,22 +245,20 @@ ALPHA = ROOT / "local_workspace/scripts/alpha_test/seed.py"
 
 
 class AlphaOnboardingTest(TestCase):
-    """알파 온보딩 계정(고정지출 · 저축 설정 없음)의 거래로 감지. 시드의 적금 이체는 이미 transaction_type=saving 인데,
-    실제 흐름에선 확정 저축이 생기기 전까지 내 계좌 이체(own_transfer)라서 그렇게 바꿔 넣는다"""
+    """알파 온보딩 계정(고정지출 · 저축 설정 없음) — 시드처럼 은행 거래를 transfer · income 으로 넣고
+    실제 첫 연결처럼 파이프라인 전체(① 유형 판단 → … → ⑦ 감지)를 돌린다 (seed.run_onboarding_pipeline, 11/4)"""
 
     @classmethod
     def setUpTestData(cls):
         seed = run_path(str(ALPHA))
-        rows, *_ = seed["plan"](datetime(2026, 11, 5, 12, tzinfo=ZoneInfo("Asia/Seoul")))
+        as_of = datetime(2026, 11, 5, 12, tzinfo=ZoneInfo("Asia/Seoul"))
+        rows, *_ = seed["plan"](as_of)
         models = {m.__name__: m for app in ("users", "finance", "budgets") for m in apps.get_app_config(app).get_models()}
-        user_id = seed["uid"]("onboarding", "user")
         for name, pk, fields in rows:
-            if name == "FinancialTransaction" and fields.get("transaction_type") == "saving":
-                fields = {**fields, "transaction_type": "own_transfer"}
             models[name](pk=pk, **fields).save(force_insert=True)
-        cls.user = models["User"].objects.get(pk=user_id)
+        seed["run_onboarding_pipeline"](models, as_of)
+        cls.user = models["User"].objects.get(pk=seed["uid"]("onboarding", "user"))
         cls.uid = seed["uid"]
-        detect_candidates(cls.user, date(2026, 11, 5))
 
     def test_fixed_candidates(self):
         names = sorted(RecurringExpense.objects.filter(user=self.user, status="suggested").values_list("name", flat=True))
