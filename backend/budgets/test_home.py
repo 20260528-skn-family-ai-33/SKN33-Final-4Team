@@ -19,6 +19,18 @@ from . import home as home_module
 from .home import cycle_dates, home_data
 from .models import BudgetCycle
 
+def remember(expense, label="월세"):
+    """사용자가 전에 이 고정지출로 같은 적요의 출금을 직접 고른 적 있음 → 그 적요의 출금 1건은 자동 연결 (11/3)"""
+    tx = FinancialTransaction.objects.create(
+        user=expense.user, source_kind="bank", account=expense.payment_account, occurred_on=date(2026, 6, 20),
+        amount=expense.amount, direction="out", transaction_type="spending", source_description=label,
+        confirmed_category_id=expense.category_id, confirmation_state="confirmed", classification_source="user",
+    )
+    expense.evidence = [*(expense.evidence or []), str(tx.pk)]
+    expense.save(update_fields=["evidence"])
+    return tx
+
+
 TODAY = date(2026, 10, 21)  # 급여일 25일 → 이번 주기 9/25 ~ 10/24, 다음 월급날 10/25, 지난 주기 시작 8/25
 
 
@@ -246,12 +258,12 @@ class HomeMustPayTest(HomeFixture):
         self.assertEqual(self.home(date(2026, 10, 23))["must_pay"], [])
         self.assertFalse(PaymentDue.objects.exists())
 
-    def test_first_month_past_due_with_withdrawal_is_paid(self):
-        """등록한 첫 달이라도 맞는 출금이 있으면 "냄"으로 만들어 연결 (fixed.md)"""
+    def test_first_month_past_due_with_withdrawal_is_asked(self):
+        """등록한 첫 달: 맞는 출금이 있으면 회차는 만들되, 처음 보는 출금이라 자동 연결하지 않고 묻는다 (11/3)"""
         self.make_expense(payment_day=19, confirmed_at=timezone.make_aware(datetime(2026, 10, 21, 9, 0)))
         self.make_tx(date(2026, 10, 19), 700_000, direction="out")
-        self.assertEqual(self.home()["must_pay"], [])
-        self.assertEqual(PaymentDue.objects.get().payment_state, "paid")
+        self.assertEqual([i["payment_state"] for i in self.home()["must_pay"]], ["needs_review"])
+        self.assertFalse(PaymentMatch.objects.exists())
 
     def test_missed_due_after_registration_is_shown(self):
         """등록한 뒤의 출금일인데 앱을 늦게 열었고 출금도 없음 → 만들어서 미납 확인 필요로 알림"""
@@ -260,10 +272,10 @@ class HomeMustPayTest(HomeFixture):
         self.assertEqual([(i["due_date"], i["payment_state"]) for i in items], [("2026-10-26", "needs_review")])
 
     def test_withdrawal_saved_after_due_was_created_is_matched(self):
-        """10/17 홈에서 회차를 만든 뒤 10/19 출금이 들어오면, 다음에 홈을 열 때 자동 연결 → 빠짐"""
-        self.make_expense(payment_day=19)
+        """10/17 홈에서 회차를 만든 뒤 10/19 기억한 출금이 들어오면, 다음에 홈을 열 때 자동 연결 → 빠짐"""
+        remember(self.make_expense(payment_day=19))
         self.assertEqual(len(self.home(date(2026, 10, 17))["must_pay"]), 1)
-        self.make_tx(date(2026, 10, 19), 700_000, direction="out")
+        self.make_tx(date(2026, 10, 19), 700_000, direction="out", source_description="월세")
         self.assertEqual(self.home(date(2026, 10, 23))["must_pay"], [])
         self.assertEqual(PaymentDue.objects.get().payment_state, "paid")
 
@@ -276,11 +288,25 @@ class HomeMustPayTest(HomeFixture):
         items = self.home(date(2026, 10, 23))["must_pay"]
         self.assertEqual([i["payment_state"] for i in items], ["needs_review"])
 
-    def test_past_due_with_one_withdrawal_is_paid_and_hidden(self):
-        self.make_expense(payment_day=19)
-        self.make_tx(date(2026, 10, 19), 700_000, direction="out")
+    def test_past_due_with_remembered_withdrawal_is_paid_and_hidden(self):
+        remember(self.make_expense(payment_day=19))
+        self.make_tx(date(2026, 10, 19), 700_000, direction="out", source_description="월세")
         self.assertEqual(self.home()["must_pay"], [])
         self.assertEqual(PaymentDue.objects.get().payment_state, "paid")
+
+    def test_one_unknown_withdrawal_is_not_auto_linked(self):
+        """맞는 출금이 1건이라도 처음 보는 적요면 자동 연결하지 않음 → 미납 확인 필요 ([고르기]) (11/3)"""
+        self.make_expense(payment_day=19)
+        self.make_tx(date(2026, 10, 19), 700_000, direction="out", source_description="카카오페이")
+        self.assertEqual([i["payment_state"] for i in self.home()["must_pay"]], ["needs_review"])
+        self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_remembered_expense_still_asks_other_label(self):
+        """기억한 적요(월세)와 다른 적요의 출금은 자동 연결하지 않음"""
+        remember(self.make_expense(payment_day=19))
+        self.make_tx(date(2026, 10, 19), 700_000, direction="out", source_description="카카오페이")
+        self.assertEqual([i["payment_state"] for i in self.home()["must_pay"]], ["needs_review"])
+        self.assertFalse(PaymentMatch.objects.exists())
 
     def test_previous_cycle_unpaid_shown_until_next_payday(self):
         expense = self.make_expense(payment_day=20)
@@ -434,8 +460,9 @@ class HomePaymentReviewTest(HomeFixture):
     def test_unlinked_withdrawal_is_not_auto_linked_again(self):
         """자동 연결된 출금을 사용자가 풀면, 홈을 다시 열어도 그 회차에 다시 붙지 않음"""
         expense = self.make_expense(payment_day=19)
+        remember(expense)
         self.home(date(2026, 10, 17))
-        self.make_tx(date(2026, 10, 19), 700_000, direction="out")
+        self.make_tx(date(2026, 10, 19), 700_000, direction="out", source_description="월세")
         self.home(date(2026, 10, 23))
         self.assertEqual(PaymentDue.objects.get().payment_state, "paid")
 
@@ -445,9 +472,9 @@ class HomePaymentReviewTest(HomeFixture):
         self.assertFalse(PaymentDue.objects.get().matches.exists())
 
     def test_future_dated_withdrawal_is_not_paid_yet(self):
-        """오늘보다 뒤 날짜로 저장된 출금은 아직 안 나간 돈 → 자동 연결하지 않음, 그날이 되면 연결"""
-        self.make_expense(payment_day=20)
-        self.make_tx(date(2026, 10, 22), 700_000, direction="out")
+        """오늘보다 뒤 날짜로 저장된 출금은 아직 안 나간 돈 → 자동 연결하지 않음, 그날이 되면 연결 (기억한 출금)"""
+        remember(self.make_expense(payment_day=20))
+        self.make_tx(date(2026, 10, 22), 700_000, direction="out", source_description="월세")
         self.assertEqual([i["payment_state"] for i in self.home(date(2026, 10, 21))["must_pay"]], ["unpaid"])
         self.assertEqual(self.home(date(2026, 10, 22))["must_pay"], [])
 
@@ -526,8 +553,9 @@ class HomeLateAndCurrentDueTest(LateDueFixture):
         self.assertEqual(PaymentMatch.objects.filter(transaction=late).count(), 1)
 
     def test_auto_link_this_month_while_last_month_unpaid(self):
-        """지난달 미납이 남아 있어도, 이번 달 출금일 ±3일의 출금 1건은 이번 달 회차에 자동 연결"""
-        now = self.make_tx(date(2026, 10, 20), 700_000, direction="out")
+        """지난달 미납이 남아 있어도, 이번 달 출금일 ±3일의 기억한 출금 1건은 이번 달 회차에 자동 연결"""
+        remember(self.expense)
+        now = self.make_tx(date(2026, 10, 20), 700_000, direction="out", source_description="월세")
         items = self.home(date(2026, 10, 23))["must_pay"]
         self.assertEqual(self.states(), ("needs_review", "paid"))
         self.assertEqual([i["due_date"] for i in items], ["2026-09-20"])
@@ -655,7 +683,7 @@ class FixedLinkLockTest(TransactionTestCase):
         return FinancialTransaction.objects.create(
             user=self.user, source_kind="bank", account=self.account, occurred_on=on, amount=700_000,
             direction="out", transaction_type="transfer", confirmed_category_id="UNCLASSIFIED",
-            confirmation_state="needs_review",
+            confirmation_state="needs_review", source_description="월세",
         )
 
     def other_writer(self, tx_id):
@@ -706,9 +734,10 @@ class FixedLinkLockTest(TransactionTestCase):
 
     def test_unlink_due_keeps_mark_saved_by_other_request(self):
         from . import api as budgets_api
+        remember(self.expense)
         home_data(self.user, date(2026, 10, 21))                      # 이번 회차 10/20
         tx = self.make_tx(date(2026, 10, 20))
-        home_data(self.user, date(2026, 10, 21))                      # 자동 연결
+        home_data(self.user, date(2026, 10, 21))                      # 기억한 출금 → 자동 연결
         due = PaymentDue.objects.get(recurring=self.expense, due_date=date(2026, 10, 20))
         self.assertTrue(due.matches.filter(transaction=tx).exists())
 
@@ -728,6 +757,7 @@ class FixedLinkLockTest(TransactionTestCase):
 
     def test_auto_link_keeps_mark_saved_by_other_request(self):
         from . import api as budgets_api
+        remember(self.expense)
         home_data(self.user, date(2026, 10, 19))                      # 이번 회차 10/20 (출금 전)
         tx = self.make_tx(date(2026, 10, 20))
 
@@ -754,7 +784,8 @@ class HomeSkippedMonthTest(HomeFixture):
         return PaymentDue.objects.get(recurring=self.expense, due_date=day)
 
     def test_november_withdrawal_pays_november_due_automatically(self):
-        tx = self.make_tx(date(2026, 11, 20), 700_000, direction="out")
+        remember(self.expense)
+        tx = self.make_tx(date(2026, 11, 20), 700_000, direction="out", source_description="월세")
         items = self.home(date(2026, 11, 26))["must_pay"]     # 이번 주기 11/25~, 실제 지난 주기 10/25~11/24
         self.assertEqual(self.due(date(2026, 11, 20)).payment_state, "paid")
         self.assertEqual(list(self.due(date(2026, 11, 20)).matches.values_list("transaction_id", flat=True)), [tx.pk])
@@ -817,7 +848,7 @@ class LockOrderTest(TransactionTestCase):
         return FinancialTransaction.objects.create(
             transaction_id=pk, user=self.user, source_kind="bank", account=self.account, occurred_on=on,
             amount=amount, direction="out", transaction_type="transfer",
-            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
+            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review", source_description="월세",
         )
 
     def race(self, slow_target, slow_name, slow_action, fast_action, before=False):
@@ -862,6 +893,8 @@ class LockOrderTest(TransactionTestCase):
         from . import api as budgets_api
         first = self.expense(uuid.UUID(int=1), 700_000, 20)   # 고정지출 ID 순서로 처리 → 큰 ID 거래 먼저
         second = self.expense(uuid.UUID(int=2), 500_000, 21)
+        remember(first)
+        remember(second)                                       # 둘 다 기억한 출금 → 자동 연결 대상
         home_data(self.user, date(2026, 10, 19))               # 10/20 · 10/21 회차 (출금 전)
         self.tx(self.HIGH, 700_000, date(2026, 10, 20))
         self.tx(self.LOW, 500_000, date(2026, 10, 21))
@@ -878,9 +911,10 @@ class LockOrderTest(TransactionTestCase):
         from finance.pipeline import process_new_transactions
         from . import api as budgets_api
         e = self.expense(uuid.UUID(int=1), 700_000, 20)
+        remember(e)
         home_data(self.user, date(2026, 10, 19))
         self.tx(self.LOW, 700_000, date(2026, 10, 20))
-        home_data(self.user, date(2026, 10, 21))               # 작은 ID 거래가 자동 연결됨
+        home_data(self.user, date(2026, 10, 21))               # 작은 ID 거래가 자동 연결됨 (기억한 출금)
         self.tx(self.HIGH, 700_000, date(2026, 10, 21))
 
         def replace():

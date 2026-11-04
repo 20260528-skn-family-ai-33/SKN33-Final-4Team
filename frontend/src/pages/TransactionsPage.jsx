@@ -1,9 +1,12 @@
 // 거래 내역 — GET /api/finance/transactions/ (docs/api/transactions.md '거래 목록 보기')
-// 주소 ?category=FOOD 처럼 카테고리 코드로 골라 본다. 고르는 일 · 합계는 장고 API 가 해서 보내 준다
+// 주소 ?category=FOOD,CULTURE_LEISURE 처럼 카테고리 코드로 골라 본다 (11/3: 칩을 눌러 여러 개 켜고 끔). 고르는 일 · 합계는 장고 API 가 해서 보내 준다
+// 계좌 · 카드는 [필터]에서 고른다 → 주소 ?account=…&card=… (API 의 accountId · cardId, 둘 다 고르면 둘 중 하나)
 // '전체'에는 소비 + 월급 입금 + 남에게 보낸 이체가 보인다 (10/22 결정 V①). 입금 · 이체는 카테고리가 없고 합계에 안 들어간다
 //   이체를 누르면 [소비로 분류하기] (결정 W) · 고정지출로 연결된 거래(funding: fixed)는 '고정' 표시 (★8 · AA⑤)
-// 기간은 달력월(이번 달 1일 ~ 오늘). '확인 필요'는 기간 없이 전체 (H-03 — 홈 숫자와 같게)
+// 기간은 달력월. ‹ › 로 달을 옮긴다 (주소 ?month=2026-10, 없으면 이번 달)
+// '확인 필요'는 기본이 전체 기간(H-03 — 홈 숫자와 같게), [달별로 보기]로 달마다도 본다. 칩 · 배너 숫자는 늘 전체 기간
 // 날짜별 묶음 · 날짜 합계는 화면에서 만든다 (API 는 평평한 목록)
+import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
@@ -59,23 +62,58 @@ function groupByDay(items) {
   return days
 }
 
-// 화면 위 제목: 달력월 = '10월', 직접 고른 기간 = '9.01 ~ 9.30', 전체 기간 = '전체 기간'
-function periodLabel(period) {
-  if (period.basis === 'all') return '전체 기간'
-  const short = (iso) => iso && `${Number(iso.slice(5, 7))}.${iso.slice(8, 10)}`
-  if (period.basis === 'month') return `${Number(period.from.slice(5, 7))}월`
-  return `${short(period.from) ?? '처음'} ~ ${short(period.to)}`
+// 'YYYY-MM' 달 계산 (Date 가 연도 넘김을 알아서 한다)
+const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+const shiftMonth = (month, n) => ym(new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + n, 1))
+const lastDay = (month) => new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate()
+
+// 그 달의 조회 기간. 이번 달은 to 를 안 보내서 서버가 오늘까지로 자른다
+function monthQuery(month, thisMonth) {
+  return `from=${month}-01${month === thisMonth ? '' : `&to=${month}-${lastDay(month)}`}`
+}
+
+// 화면 위 제목: '10월', 다른 해면 '2025년 12월'
+function monthLabel(month, thisMonth) {
+  const m = `${Number(month.slice(5, 7))}월`
+  return month.slice(0, 4) === thisMonth.slice(0, 4) ? m : `${month.slice(0, 4)}년 ${m}`
 }
 
 export default function TransactionsPage() {
-  // 주소의 ?category= 값(카테고리 코드)을 읽고 바꾸는 도구. 없으면 전체
+  // 주소의 ?category= 값(카테고리 코드, 쉼표로 여러 개)을 읽고 바꾸는 도구. 없으면 전체
   const [params, setParams] = useSearchParams()
-  const raw = params.get('category') ?? ''
-  const selected = CODE_BY_NAME[raw] ?? raw
-  const pick = (code) => setParams(code ? { category: code } : {})
+  const list = (name) => (params.get(name) ?? '').split(',').filter(Boolean)
+  const codes = list('category').map((c) => CODE_BY_NAME[c] ?? c)
+  const accountIds = list('account')
+  const cardIds = list('card')
+  const isPending = codes.length === 1 && codes[0] === PENDING.code  // 확인 필요는 다른 카테고리와 섞지 않는다
+  const [thisMonth] = useState(() => ym(new Date()))  // 화면을 연 날 기준
+  // ?month= 값: 'YYYY-MM' 또는 'all'(확인 필요만). 없으면 확인 필요는 전체 기간, 그 밖은 이번 달
+  const month = params.get('month') ?? (isPending ? 'all' : thisMonth)
+  const all = isPending && month === 'all'
+  const shown = month === 'all' ? thisMonth : month
+  // 기본값과 같은 달은 주소에 안 남긴다
+  const go = (cats, m, acc = accountIds, crd = cardIds) => setParams({
+    ...(cats.length && { category: cats.join(',') }),
+    ...(m !== (cats.length === 1 && cats[0] === PENDING.code ? 'all' : thisMonth) && { month: m }),
+    ...(acc.length && { account: acc.join(',') }),
+    ...(crd.length && { card: crd.join(',') }),
+  })
+  // 확인 필요 칩 · 배너는 그것만 · 전체 기간(숫자와 같게). 다른 칩은 눌러서 켜고 끄고(여러 개), 보던 달 그대로. [전체] = 모두 끄기
+  const pick = (code) => {
+    if (code === PENDING.code) return go([PENDING.code], 'all')
+    const base = isPending ? [] : codes
+    go(!code ? [] : base.includes(code) ? base.filter((c) => c !== code) : [...base, code], shown)
+  }
   const { openPopup } = usePopup()
-  // 카테고리를 바꾸면 주소가 바뀌고 → 장고에게 다시 받아온다
-  const { data, error, reload } = useApi(`/api/finance/transactions/${selected ? `?category=${encodeURIComponent(selected)}` : ''}`)
+  // 카테고리 · 달을 바꾸면 주소가 바뀌고 → 장고에게 다시 받아온다
+  const query = [
+    codes.length && `category=${codes.map(encodeURIComponent).join(',')}`,
+    accountIds.length && `accountId=${accountIds.join(',')}`,
+    cardIds.length && `cardId=${cardIds.join(',')}`,
+    !all && monthQuery(shown, thisMonth),
+  ].filter(Boolean).join('&')
+  const payCount = accountIds.length + cardIds.length
+  const { data, error, reload } = useApi(`/api/finance/transactions/?${query}`)
   // '확인 필요' 건수 = 기간 없이 전체 (H-03). 칩 · 배너 숫자가 홈과 같아진다
   const { data: pending, reload: reloadPending } = useApi('/api/finance/transactions/?category=UNCLASSIFIED')
   // 카테고리를 저장하면 목록과 '확인 필요' 건수를 다시 받는다
@@ -83,22 +121,26 @@ export default function TransactionsPage() {
   const pendingCount = pending?.summary.needsReviewCount ?? 0
 
   if (!data) return <Layout title="거래 내역" activeTab="txs"><ApiStatus error={error} /></Layout>
-  const { period, summary, items } = data
+  const { summary, items } = data
   const days = groupByDay(items)
 
   return (
     <Layout title="거래 내역" activeTab="txs">
       <div className="mc-sumbar">
-        {/* 달 이동은 다음 단계 (from · to 를 바꿔 다시 받기) */}
-        <button type="button" className="mc-icon" aria-label="이전 달">‹</button>
-        <strong className="mc-sumbar-m">{periodLabel(period)}</strong>
-        <button type="button" className="mc-icon" aria-label="다음 달">›</button>
+        {all ? <strong className="mc-sumbar-m">전체 기간</strong> : <>
+          <button type="button" className="mc-icon" aria-label="이전 달" onClick={() => go(codes, shiftMonth(shown, -1))}>‹</button>
+          <strong className="mc-sumbar-m">{monthLabel(shown, thisMonth)}</strong>
+          <button type="button" className="mc-icon" aria-label="다음 달" disabled={shown >= thisMonth} onClick={() => go(codes, shiftMonth(shown, 1))}>›</button>
+        </>}
+        {isPending && (
+          <button type="button" className="mc-link" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간'}</button>
+        )}
         {/* 이 목록의 소비 소계일 뿐 — 예산 · 남은 생활비는 홈 · 예산 화면 값 (급여 주기 기준이라 다름) */}
         <span className="mc-sumbar-v"><b>{won(summary.spentTotal)}</b><span className="mc-muted"> 소비</span></span>
       </div>
 
       {pendingCount > 0 && (
-        <button type="button" className="mc-pend-banner" aria-pressed={selected === PENDING.code} onClick={() => pick(PENDING.code)}>
+        <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => pick(PENDING.code)}>
           <span className="mc-pend-dot">{pendingCount}</span>
           <span className="mc-grow">
             <strong>카테고리를 확인해 주세요</strong>
@@ -109,22 +151,21 @@ export default function TransactionsPage() {
       )}
 
       <div className="mc-chipbar mc-cat-filter" aria-label="카테고리 필터">
-        <button type="button" className="mc-chip-warn" aria-pressed={selected === PENDING.code} onClick={() => pick(PENDING.code)}>
+        <button type="button" className="mc-chip-warn" aria-pressed={isPending} onClick={() => pick(PENDING.code)}>
           {PENDING.name} {pendingCount}
         </button>
-        <button type="button" aria-pressed={selected === ''} onClick={() => pick('')}>전체</button>
+        <button type="button" aria-pressed={codes.length === 0} onClick={() => pick('')}>전체</button>
         {CHIPS.map((cat) => (
-          <button type="button" key={cat.code} aria-pressed={selected === cat.code} onClick={() => pick(cat.code)}>{cat.name}</button>
+          <button type="button" key={cat.code} aria-pressed={!isPending && codes.includes(cat.code)} onClick={() => pick(cat.code)}>{cat.name}</button>
         ))}
       </div>
 
       <div className="mc-row mc-tx-sum">
         <span className="mc-muted">거래 {items.length}건 · 소비 <strong>{won(summary.spentTotal)}</strong></span>
-        {/* 달력 보기는 나중에 */}
-        <div className="mc-tabs">
-          <button type="button" aria-pressed="true">리스트</button>
-          <button type="button" aria-pressed="false">달력</button>
-        </div>
+        {/* 달력 보기는 기능이 생기면 여기에 [리스트 | 달력] (11/3: 누를 수 없는 버튼이라 뺌) */}
+        <button type="button" className="mc-filter-btn" aria-pressed={payCount > 0} onClick={() => openPopup(
+          <FilterPopup accountIds={accountIds} cardIds={cardIds} onApply={(acc, crd) => go(codes, month, acc, crd)} />,
+        )}><Icon name="SlidersHorizontal" size={14} />{payCount > 0 ? `계좌 · 카드 ${payCount}` : '계좌 · 카드'}</button>
       </div>
 
       {days.length === 0 && (
@@ -168,7 +209,6 @@ export default function TransactionsPage() {
         </div>
       ))}
 
-      <button type="button" className="mc-link" onClick={() => openPopup(<FilterPopup />)}>필터 · 거래 유형</button>
     </Layout>
   )
 }

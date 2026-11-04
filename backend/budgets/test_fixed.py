@@ -186,13 +186,14 @@ class FixedPaymentDueTest(FixedFixture, TestCase):
         e = self.create(paymentDay=self.past.day, paymentAccountId=str(self.account.pk))
         self.assertEqual(self.dues(e), [])
 
-    def test_past_day_with_one_withdrawal_is_paid(self):
+    def test_past_day_with_one_withdrawal_is_asked(self):
+        """출금일이 지났고 맞는 출금이 1건 → 회차는 만들되 자동 연결하지 않음. 새 고정지출은 기억한 출금이 없어서 (11/3)"""
         tx = self.make_tx(self.past + timedelta(days=1))
         e = self.create(paymentDay=self.past.day, paymentAccountId=str(self.account.pk))
         [due] = self.dues(e)
-        self.assertEqual((due.payment_state, due.paid_amount), ("paid", 700000))
-        self.assertTrue(PaymentMatch.objects.filter(due=due, transaction=tx).exists())
-        self.assertEqual(e.evidence, [str(tx.pk)])
+        self.assertEqual((due.payment_state, due.paid_amount), ("needs_review", 0))
+        self.assertFalse(PaymentMatch.objects.filter(transaction=tx).exists())
+        self.assertEqual(e.evidence, [])
 
     def test_past_day_with_two_withdrawals_needs_review(self):
         self.make_tx(self.past)
@@ -493,13 +494,17 @@ class FixedTransferConvertTest(FixedFixture, TestCase):
         self.assertNotIn("original_transaction_type", tx.field_states)
         self.assertNotIn("converted_by_fixed", tx.field_states)
 
-    def test_auto_link_on_create_converts_too(self):
+    def test_create_converts_only_after_pick(self):
+        """추가할 때는 자동 연결하지 않아 이체 그대로 → 사용자가 고르면 소비 + 고정비로 (11/3)"""
         tx = self.make_tx(self.past)
         r = send(self.client, "post", URL, {"name": "월세", "amount": 700000, "category": "HOUSING_TELECOM",
                                              "paymentDay": self.past.day, "paymentAccountId": str(self.account.pk)})
         self.assertEqual(r.status_code, 201, r.content)
         tx.refresh_from_db()
-        self.assertEqual((tx.transaction_type, tx.classification_source), ("spending", "rule"))
+        self.assertEqual(tx.transaction_type, "transfer")
+        send(self.client, "patch", f"{URL}{r.json()['recurringId']}/", {"evidenceTransactionId": str(tx.pk)})
+        tx.refresh_from_db()
+        self.assertEqual((tx.transaction_type, tx.classification_source), ("spending", "user"))
         self.assertEqual(self.detail(tx)["funding"], "fixed")
 
     def test_user_converted_spending_stays_spending_after_unlink(self):
@@ -545,10 +550,12 @@ class FixedEvidenceSuggestionTest(FixedFixture, TestCase):
         send(self.client, "patch", f"{URL}{e.pk}/", {"evidenceTransactionId": str(near.pk)})
         self.assertIsNone(self.suggestion(e))
 
-    def test_account_one_withdrawal_is_not_asked(self):
+    def test_account_one_withdrawal_is_asked(self):
+        """계좌도 1건이면 "이 결제가 맞나요?"로 묻는다 (11/3 — 전에는 묻지 않고 자동 연결)"""
         e = self.make_expense(payment_day=self.due_day.day, payment_account=self.account)
-        self.make_tx(self.due_day)
-        self.assertIsNone(self.suggestion(e))
+        tx = self.make_tx(self.due_day)
+        s = self.suggestion(e)
+        self.assertEqual((s["count"], s["candidates"][0]["transactionId"]), (1, str(tx.pk)))
 
     def test_late_payment_on_needs_review_due(self):
         """출금일 +3일이 지난 회차는 늦게 낸 출금 1건도 고를 수 있게"""
@@ -631,8 +638,9 @@ class FixedAutoLinkConcurrencyTest(FixedFixture, TransactionTestCase):
             t1.join(10)
             t2.join(10)
 
+        # 11/3: 추가할 때는 자동 연결하지 않으므로 동시에 추가해도 어느 쪽에도 붙지 않음 (사용자가 [고르기]로 연결)
         self.assertEqual((results["first"], results["second"]), (201, 201))
-        self.assertEqual(PaymentMatch.objects.filter(transaction=tx).count(), 1)
-        self.assertEqual(PaymentDue.objects.filter(payment_state="paid").count(), 1)
+        self.assertEqual(PaymentMatch.objects.filter(transaction=tx).count(), 0)
+        self.assertEqual(PaymentDue.objects.filter(payment_state="paid").count(), 0)
         linked = [e.name for e in RecurringExpense.objects.all() if str(tx.pk) in (e.evidence or [])]
-        self.assertEqual(len(linked), 1)
+        self.assertEqual(len(linked), 0)

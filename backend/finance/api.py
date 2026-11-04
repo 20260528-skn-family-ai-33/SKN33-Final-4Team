@@ -4,6 +4,7 @@ finance 앱 API — 거래 (docs/api/transactions.md)
 - 17. GET   /api/finance/transactions/<id>/  거래 한 건 보기
 - 18. PATCH /api/finance/transactions/<id>/  거래 분류 수정
 """
+import uuid
 from datetime import date
 
 from django.db import transaction
@@ -22,7 +23,7 @@ from . import classifier
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
 from .merchant_rules import FUTURE_KEY, searched_multi_item, seen_multi_item
-from .models import FinancialTransaction, SourceKind, TransactionLink
+from .models import BankAccount, Card, FinancialTransaction, SourceKind, TransactionLink
 from .spending import spending_summary
 
 Tx = FinancialTransaction
@@ -124,17 +125,39 @@ def _parse_day(value):
         raise ValidationError({"from": [PERIOD_ERROR]})
 
 
+def _list_param(params, name):
+    """'A,B' → ['A', 'B'] (빈 값 · 중복 제외, 순서 유지)"""
+    return list(dict.fromkeys(v.strip() for v in (params.get(name) or "").split(",") if v.strip()))
+
+
+def _owned_ids(user, model, ids, field):
+    """내 계좌 · 카드 ID만. 형식이 틀리거나 · 없거나 · 남의 것이면 400 (본문 ID 와 같은 규칙: 없음 · 남의 것 같은 문구)"""
+    if not ids:
+        return []
+    try:
+        ids = [uuid.UUID(v) for v in ids]
+    except ValueError:
+        ids = None
+    if ids is None or model.objects.filter(user=user, pk__in=ids).count() != len(ids):
+        raise ValidationError({field: ["선택할 수 없는 계좌 · 카드예요."]})
+    return ids
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])  # 로그인 안 하면 403 not_authenticated
 def transactions(request):
-    """16. GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
+    """16. GET /api/finance/transactions/?category=FOOD,CULTURE_LEISURE&accountId=…&cardId=…&from=2026-10-01&to=2026-10-31
     - 기간: 달력월 기준. from 없으면 이번 달 1일, to 없으면 오늘
-      단 category=UNCLASSIFIED에 기간을 안 보내면 전체 기간 (H-03, 홈 '확인할 거래 수'와 같은 숫자)
+      단 category=UNCLASSIFIED 하나만 보내고 기간을 안 보내면 전체 기간 (H-03, 홈 '확인할 거래 수'와 같은 숫자)
+    - category · accountId · cardId 는 쉼표로 여러 개 (11/3). 카테고리는 그중 하나, 결제 수단은 고른 계좌 또는 카드
     - 정렬: 최신순 (거래일 → 거래 시각, 시각이 없으면 같은 날의 맨 뒤)"""
     params = request.query_params
-    category = params.get("category") or None
-    if category and not Category.objects.filter(category_code=category).exists():
+    codes = _list_param(params, "category")
+    if Category.objects.filter(category_code__in=codes).count() != len(codes):
         raise ValidationError({"category": ["모르는 카테고리예요."]})
+    category = UNCLASSIFIED if codes == [UNCLASSIFIED] else None  # 전체 기간 규칙은 확인 필요만 골랐을 때만
+    account_ids = _owned_ids(request.user, BankAccount, _list_param(params, "accountId"), "account_id")
+    card_ids = _owned_ids(request.user, Card, _list_param(params, "cardId"), "card_id")
 
     period_sent = bool(params.get("from") or params.get("to"))
     start, end = _parse_day(params.get("from")), _parse_day(params.get("to"))
@@ -149,9 +172,11 @@ def transactions(request):
     rows = listed_transactions(request.user).filter(occurred_on__lte=end)
     if start:
         rows = rows.filter(occurred_on__gte=start)
-    if category:
+    if codes:
         # 카테고리를 걸면 소비 거래만 (입금 · 이체는 카테고리가 없음)
-        rows = rows.filter(transaction_type=Tx.TransactionType.SPENDING, confirmed_category_id=category)
+        rows = rows.filter(transaction_type=Tx.TransactionType.SPENDING, confirmed_category_id__in=codes)
+    if account_ids or card_ids:
+        rows = rows.filter(Q(account_id__in=account_ids) | Q(card_id__in=card_ids))
     rows = rows.order_by("-occurred_on", F("occurred_time").desc(nulls_last=True), "-created_at")
 
     items = [transaction_item(tx) for tx in rows]

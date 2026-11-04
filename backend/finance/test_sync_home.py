@@ -13,6 +13,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from budgets import home
+from budgets.test_home import remember
 from users.models import FinancialProfile
 
 from . import codef
@@ -44,6 +45,7 @@ class BankSyncHomeConcurrencyTest(TransactionTestCase):
             status="confirmed", source_type="manual", payment_account=self.account,
             confirmed_at=timezone.make_aware(datetime(2026, 9, 25)),
         )
+        remember(self.expense, "시험 출금")  # 사용자가 전에 고른 출금과 같은 적요 → 홈이 자동 연결 (11/3)
         self.payment_row = self.row(700000)
         self.payment = FinancialTransaction.objects.create(
             user=self.user, account=self.account, source_kind="bank", transaction_type="transfer",
@@ -154,16 +156,16 @@ class BankSyncHomeConcurrencyTest(TransactionTestCase):
     def test_home_and_sync_with_new_transaction(self):
         result = self.race_home_and_sync([self.row(10000)])
         self.assertEqual(result, {"account_count": 1, "new_transaction_count": 1, "existing_transaction_count": 0})
-        self.assertEqual(FinancialTransaction.objects.count(), 2)
+        self.assertEqual(FinancialTransaction.objects.count(), 3)  # + 기억용 지난 출금 1건
 
     def test_home_and_sync_retry_without_new_transaction(self):
         self.payment.field_states = {RETRY_STATE_KEY: {"classify_spending": "step_error"}}
         self.payment.save(update_fields=["field_states"])
         result = self.race_home_and_sync([self.payment_row])
         self.assertEqual(result, {"account_count": 1, "new_transaction_count": 0, "existing_transaction_count": 1})
-        self.assertEqual(FinancialTransaction.objects.count(), 1)
+        self.assertEqual(FinancialTransaction.objects.count(), 2)  # + 기억용 지난 출금 1건
 
     def test_home_and_sync_without_fetched_transactions(self):
         result = self.race_home_and_sync([])
         self.assertEqual(result, {"account_count": 1, "new_transaction_count": 0, "existing_transaction_count": 0})
-        self.assertEqual(FinancialTransaction.objects.count(), 1)
+        self.assertEqual(FinancialTransaction.objects.count(), 2)  # + 기억용 지난 출금 1건

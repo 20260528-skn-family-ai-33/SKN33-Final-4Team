@@ -93,6 +93,40 @@ class TransactionListTest(FinanceData):
         body = self.get("?category=FOOD").json()
         self.assertEqual([i["merchantName"] for i in body["items"]], ["스타벅스"])
 
+    def test_several_categories(self):
+        """11/3: 쉼표로 여러 카테고리 — 그중 하나면 나옴, 기간은 여전히 이번 달"""
+        self.tx(source_description="스타벅스", occurred_time=time(9, 0))
+        self.tx(source_description="지하철", confirmed_category_id="TRANSPORT_CAR", occurred_time=time(8, 0))
+        self.tx(source_description="영화", confirmed_category_id="CULTURE_LEISURE", occurred_time=time(7, 0))
+        body = self.get("?category=FOOD,TRANSPORT_CAR").json()
+        self.assertEqual([i["merchantName"] for i in body["items"]], ["스타벅스", "지하철"])
+        self.assertEqual(body["period"]["basis"], "month")
+        self.assertEqual(self.get("?category=FOOD,NOPE").status_code, 400)
+
+    def test_unclassified_with_other_category_keeps_month(self):
+        """확인 필요 + 다른 카테고리를 같이 고르면 전체 기간이 아니라 이번 달"""
+        self.tx(occurred_on=date(2025, 1, 15), confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        body = self.get("?category=UNCLASSIFIED,FOOD").json()
+        self.assertEqual((body["period"]["basis"], body["items"]), ("month", []))
+
+    def test_account_and_card_filter(self):
+        """11/3: 고른 계좌 · 카드의 거래만. 둘 다 고르면 둘 중 하나"""
+        self.tx(source_description="계좌 소비", occurred_time=time(9, 0))
+        self.tx(source_kind="card", card=self.card, merchant_name="카드 소비", occurred_time=time(8, 0))
+        names = lambda q: [i["merchantName"] for i in self.get(q).json()["items"]]  # noqa: E731
+        self.assertEqual(names(f"?accountId={self.account.pk}"), ["계좌 소비"])
+        self.assertEqual(names(f"?cardId={self.card.pk}"), ["카드 소비"])
+        self.assertEqual(names(f"?accountId={self.account.pk}&cardId={self.card.pk}"), ["계좌 소비", "카드 소비"])
+        self.assertEqual(names(f"?cardId={self.card.pk}&category=TRANSPORT_CAR"), [])
+
+    def test_account_card_filter_rejects_unknown_or_others(self):
+        other_card = Card.objects.create(user=self.other, name="남의 카드", masked_number="****9999", origin="manual")
+        for query, field in ((f"?cardId={other_card.pk}", "cardId"), ("?accountId=not-a-uuid", "accountId"),
+                             (f"?accountId={self.account.pk},{other_card.pk}", "accountId")):
+            res = self.get(query)
+            self.assertEqual(res.status_code, 400, query)
+            self.assertEqual(res.json()["error"]["fields"][field], ["선택할 수 없는 계좌 · 카드예요."])
+
     def test_unclassified_without_period_is_all_time(self):
         old = date(2025, 1, 15)
         self.tx(occurred_on=old, confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")

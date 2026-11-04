@@ -26,9 +26,12 @@ export default function ConnectionsPage() {
   const accts = useApi('/api/finance/connect/accounts/')
   const cards = useApi('/api/finance/connect/cards/')
   const loans = useApi('/api/finance/loans/')
+  // 연결 해제 때 같이 그만할지 물을 고정지출 · 정기 저축 (결정 F)
+  const fixed = useApi('/api/budgets/fixed/')
+  const savings = useApi('/api/budgets/savings/')
   if (!conns.data) return <Layout title="연결 관리" showBack><ApiStatus error={conns.error} /></Layout>
-  const reload = () => [conns, accts, cards, loans].forEach((x) => x.reload())
-  return <Connections conns={conns.data.items} accts={accts} cards={cards} loans={loans} reload={reload} />
+  const reload = () => [conns, accts, cards, loans, fixed, savings].forEach((x) => x.reload())
+  return <Connections conns={conns.data.items} accts={accts} cards={cards} loans={loans} fixed={fixed} savings={savings} reload={reload} />
 }
 
 // 영역 목록을 못 받았을 때의 문장. 동의 안 함 · 오류를 '항목 없음'으로 보이지 않는다
@@ -42,7 +45,19 @@ function ListStatus({ q, what }) {
   )
 }
 
-function Connections({ conns, accts, cards, loans, reload }) {
+// 결정 F: 이 연결의 계좌 · 카드(accountIds · cardIds)로 나가는 확정 고정지출 · 정기 저축 → DisconnectPopup 의 related 모양
+function relatedTo(c, fixed, savings) {
+  const ids = new Set([...(c.accountIds ?? []), ...(c.cardIds ?? [])])
+  const line = (day, method) => `${day ? `매월 ${day}일` : '날짜 모름'} · ${method.displayName}`
+  return [
+    ...items(fixed).filter((f) => f.status === 'confirmed' && ids.has(f.paymentAccount?.accountId ?? f.paymentCard?.cardId))
+      .map((f) => ({ id: f.recurringId, type: 'fixed', name: f.name, amount: f.amount, line: line(f.paymentDay, f.paymentAccount ?? f.paymentCard) })),
+    ...items(savings).filter((s) => s.status === 'confirmed' && ids.has(s.fromAccount?.accountId))
+      .map((s) => ({ id: s.savingId, type: 'saving', name: s.name, amount: s.amount, line: line(s.transferDay, s.fromAccount) })),
+  ]
+}
+
+function Connections({ conns, accts, cards, loans, fixed, savings, reload }) {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   // 연결별 진행 상태 { [connectionId]: { busy, lines, error, needCard } }
@@ -89,7 +104,8 @@ function Connections({ conns, accts, cards, loans, reload }) {
   )
 
   const disconnect = (c) => openPopup(
-    <DisconnectPopup inst={c.organizationName} kind={c.businessType === 'card' ? 'card' : 'bank'} connectionId={c.connectionId} onDone={reload} />,
+    <DisconnectPopup inst={c.organizationName} kind={c.businessType === 'card' ? 'card' : 'bank'} connectionId={c.connectionId} onDone={reload}
+      related={relatedTo(c, fixed, savings)} relatedMissing={!fixed.data || !savings.data} />,
   )
 
   const head = (c) => {

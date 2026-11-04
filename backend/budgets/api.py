@@ -19,6 +19,7 @@ from django.db.models import F, Max, Sum
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from finance.codef import BANKS
+from finance.merchant_rules import normalize_merchant
 from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, RecurringSaving
 from users.models import FinancialProfile
 
@@ -1124,7 +1125,7 @@ def late_dues(expense, cycle, today, lock=False):
 
 # 목록의 근거 거래 제안 (evidenceSuggestion) — 확정 · 출금일 있는 고정지출만, 최대 5건
 #   카드: 근거 거래가 없을 때 이번 회차 출금일 ±3일 결제가 1건 이상
-#   계좌: 이번 회차가 아직 안 냈고 출금일 ±3일 출금이 2건 이상 (1건이면 자동 연결 대상이라 묻지 않음)
+#   계좌: 이번 회차가 아직 안 냈고 출금일 ±3일 출금이 1건 이상 (11/3: 1건도 묻는다. 기억한 출금 1건은 홈을 열 때 자동 연결돼 여기 안 남음)
 #         출금일 +3일이 지난 회차(확인 필요)는 늦게 낸 출금도 고를 수 있게 출금일 −3일 ~ 오늘, 1건 이상
 def evidence_suggestion(expense, cycle, today):
     if expense.status != "confirmed" or expense.payment_day is None:
@@ -1138,7 +1139,7 @@ def evidence_suggestion(expense, cycle, today):
     if due_date is None:
         return None
 
-    start, end, need = due_date - timedelta(days=3), due_date + timedelta(days=3), 1
+    start, end = due_date - timedelta(days=3), due_date + timedelta(days=3)
     due_id = None
     if expense.payment_card_id is not None:
         if expense.evidence:
@@ -1158,11 +1159,9 @@ def evidence_suggestion(expense, cycle, today):
         due_id = due.pk if due is not None else None
         if today > due_date + timedelta(days=3):
             end = today  # 늦게 낸 출금도 고를 수 있게
-        else:
-            need = 2
 
     found = matching_payments(expense, due_date, start, min(end, today))  # 미래 날짜 거래는 후보 아님
-    if len(found) < need:
+    if not found:
         return None
     return {
         "count": len(found),
@@ -1292,14 +1291,14 @@ def ensure_current_due(expense, cycle, today, withdrawal=None, create_past=False
         except IntegrityError:
             return PaymentDue.objects.select_for_update().get(user=expense.user, occurrence_key=key)
 
-    if len(found) == 1:
-        link_evidence(expense, found[0], cycle, today, source="rule", due=due)  # 맞는 출금 1건 → 이 회차에 자동 연결
+    if remembered_withdrawal(expense, found):
+        link_evidence(expense, found[0], cycle, today, source="rule", due=due)  # 기억한 출금 1건 → 이 회차에 자동 연결
     elif found or not create_past:
-        refresh_due_state(due, today)                   # 0건(미래) unpaid · 여러 건 needs_review
+        refresh_due_state(due, today)                   # 0건(미래) unpaid · 처음 보는 1건 · 여러 건은 사용자에게 묻는다
     # 홈이 지난 회차를 새로 만들고 출금이 0건이면 unpaid 로 두고, 출금일 +3일 규칙은 홈이 적용
     return due
 
-# 이번 회차가 아직 안 냈으면 맞는 출금(출금일 ±3일, 같은 계좌)을 찾아 1건이면 자동 연결 (홈을 열 때)
+# 이번 회차가 아직 안 냈으면 맞는 출금(출금일 ±3일, 같은 계좌)을 찾아 기억한 출금 1건이면 자동 연결 (홈을 열 때)
 #   여러 건이면 자동으로 고르지 않음 → 목록의 [고르기]. 지난 주기 회차는 늦게 낸 출금이라 자동 연결하지 않음
 def match_current_due(expense, cycle, today):
     if expense.payment_account_id is None or cycle is None or expense.payment_day is None:
@@ -1319,8 +1318,20 @@ def match_current_due(expense, cycle, today):
     if due is None:
         return
     found = find_withdrawals(expense, due_date, today, due.occurrence_key)
-    if len(found) == 1:
+    if remembered_withdrawal(expense, found):
         link_evidence(expense, found[0], cycle, today, source="rule", due=due)
+
+
+# 자동 연결해도 되는 출금인지: 맞는 출금이 1건이고, 사용자가 전에 이 고정지출로 직접 고른 출금과 적요가 같을 때만 (11/3)
+#   처음 · 적요가 다르면 묻는다(evidenceSuggestion 1건 = "이 결제가 맞나요?"). '카카오페이'처럼 무엇인지 모르는 적요에 붙지 않게
+def remembered_withdrawal(expense, found):
+    if len(found) != 1:
+        return False
+    picked = FinancialTransaction.objects.filter(
+        pk__in=list(id_set(expense.evidence)), account__isnull=False, classification_source="user",
+    )
+    label = normalize_merchant(found[0].merchant_name or found[0].source_description)
+    return label is not None and any(normalize_merchant(t.merchant_name or t.source_description) == label for t in picked)
 
 # 근거 거래 연결 — evidence 에 더하고(가맹점 기억), 고정비로 셈. 계좌 출금이면 회차 1개와 짝
 #   due: 붙일 회차. 자동 연결은 그 회차를 넘기고, 사용자가 고른 거래는 evidence_target 으로 정함

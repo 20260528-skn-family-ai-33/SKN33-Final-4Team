@@ -2,12 +2,13 @@
 // props: title = 화면 제목, showBack = 뒤로 가기 표시
 //        activeTab = 켜진 탭 (탭 화면만. 있으면 하단 탭 + 오른쪽 위 마이 아이콘이 보인다)
 //        foot = 화면 맨 아래 고정 버튼 (없어도 됨)
+//        headAction = 오른쪽 위 메뉴 아이콘 왼쪽에 둘 버튼 (홈의 알림 종)
 //        children = 화면 본문
 import Header from './Header.jsx'
 import TabBar from './TabBar.jsx'
 import { usePopup } from '../popups/context.js'
 
-export default function Layout({ title, showBack = false, activeTab, foot, children }) {
+export default function Layout({ title, showBack = false, activeTab, foot, headAction, children }) {
   const { popup } = usePopup()
   const locked = !!popup  // 팝업이 떠 있으면 뒤 화면은 못 누르게 잠근다 (inert)
 
@@ -16,7 +17,7 @@ export default function Layout({ title, showBack = false, activeTab, foot, child
     <div id="mc-new-preview">
       <div className="mc-preview-stage">
         <div className="mc-device">
-          <Header title={title} showBack={showBack} showMy={!!activeTab} inert={locked} />
+          <Header title={title} showBack={showBack} showMy={!!activeTab} action={headAction} inert={locked} />
           <div id="mc-toast" role="status"></div>
           <main id="mc-main" inert={locked}>
             <div className="mc-screen">

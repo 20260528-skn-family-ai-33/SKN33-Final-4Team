@@ -219,7 +219,7 @@ def prepare_dues(user, cycle, today, previous_start, previous_cycle):
                 continue
             create_past = registered_on(expense) <= due_date
             ensure_current_due(expense, c, today, create_past=create_past)
-            match_current_due(expense, c, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 1건이면 자동 연결)
+            match_current_due(expense, c, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 기억한 출금 1건이면 자동 연결)
 
     PaymentDue.objects.filter(
         user=user, obligation_state="active", payment_state="unpaid", paid_amount=0,
