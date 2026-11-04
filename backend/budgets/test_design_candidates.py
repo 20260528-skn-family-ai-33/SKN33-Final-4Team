@@ -1,11 +1,11 @@
 """Synthetic money invariants and exact D2 proposal cases; no DB or external API."""
 from copy import deepcopy
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase
 
-from budgets.design_candidates import build_candidates, ml_profile, select_candidate
-from budgets.recommend import CATEGORY_CODES, check_result
+from budgets.design_candidates import apply_priority_decisions, build_candidates, ml_profile, select_candidate
+from budgets.recommend import CATEGORY_CODES, EngineCheckFailed, check_result
 
 
 def inp(**changes):
@@ -44,6 +44,103 @@ class DesignTests(SimpleTestCase):
                                                {'from':'BEAUTY','to':'FOOD','amount':10000},
                                                {'from':'CULTURE_LEISURE','to':'FOOD','amount':10000}])
 
+    def test_system_floor_reallocation_and_original_unchanged(self):
+        data = inp()
+        before = deepcopy(data)
+        ratios = dict(self.ratios)
+        ratios['TRANSPORT_CAR'] = 0.001
+        plain = build_candidates(data, ratios)
+        out = build_candidates(data, ratios, reality_profile={'has_vehicle': False})
+        self.assertLess(plain['candidates'][0]['result']['allocations']['TRANSPORT_CAR'],55000)
+        self.assertEqual(out['candidates'][0]['result']['allocations']['TRANSPORT_CAR'],55000)
+        self.assertIn('TRANSPORT_CAR',out['floor_applied'])
+        self.assertEqual(data,before)
+        for candidate in out['candidates']:
+            check_result(data,candidate['result'])
+            self.assertEqual(sum(candidate['result']['allocations'].values()),data['target'])
+
+    def test_system_floor_user_minimum_lock_and_unaffordable(self):
+        data = inp(minimums={'TRANSPORT_CAR':80000})
+        out = build_candidates(data,self.ratios,reality_profile={'has_vehicle':False})
+        self.assertGreaterEqual(out['candidates'][0]['result']['allocations']['TRANSPORT_CAR'],80000)
+        data = inp(locks={'TRANSPORT_CAR':20000})
+        out = build_candidates(data,self.ratios,reality_profile={'has_vehicle':False})
+        self.assertEqual(out['candidates'][0]['result']['allocations']['TRANSPORT_CAR'],20000)
+        self.assertEqual(out['floor_ignored_locked'],['TRANSPORT_CAR'])
+        data = inp(target=50000)
+        out = build_candidates(data,self.ratios,reality_profile={'has_vehicle':False})
+        self.assertEqual(out['status'],'needs_upper_allocation_review')
+        self.assertEqual(out['reason'],'system_floor_unaffordable')
+        self.assertEqual(out['shortfall'],5000)
+        self.assertIsNone(out['result'])
+
+    def test_floor_protects_donor_and_none_is_unchanged(self):
+        data = inp(priorities=priorities('FOOD','EDUCATION','MEDICAL_HEALTH'))
+        out = build_candidates(data,self.ratios,policy=limits(data,total=400000),reality_profile={'has_vehicle':False})
+        for candidate in out['candidates']:
+            self.assertGreaterEqual(candidate['result']['allocations']['TRANSPORT_CAR'],55000)
+        self.assertEqual(build_candidates(data,self.ratios),build_candidates(data,self.ratios,reality_profile=None))
+
+    def test_llm_replay_floor_protects_donor_and_input(self):
+        # Synthetic policy: only transport can fund the requested food increase.
+        data = inp(target=500000, priorities=priorities('FOOD', 'EDUCATION', 'MEDICAL_HEALTH'))
+        policy = limits(data, total=100000, increase=100000)
+        policy['decrease_limits'] = dict.fromkeys(CATEGORY_CODES, 0)
+        policy['decrease_limits']['TRANSPORT_CAR'] = 100000
+        before = deepcopy((data, policy))
+        result = apply_priority_decisions(data, self.ratios, policy=policy,
+            decisions=[{'category': 'FOOD', 'action': 'increase'}], reality_profile={'has_vehicle': False})
+        self.assertEqual(result['allocations']['TRANSPORT_CAR'], 55000)
+        self.assertEqual(result['allocations']['FOOD'], 85000)
+        self.assertEqual(result['transfers'], [{'from': 'TRANSPORT_CAR', 'to': 'FOOD', 'amount': 5000}])
+        self.assertEqual(sum(result['allocations'].values()), 500000)
+        self.assertEqual((data, policy), before)
+
+    def test_llm_replay_floor_none_unaffordable_and_lock(self):
+        data = inp()
+        kwargs = {'policy': limits(data), 'decisions': []}
+        self.assertEqual(apply_priority_decisions(data, self.ratios, **kwargs),
+                         apply_priority_decisions(data, self.ratios, **kwargs, reality_profile=None))
+        data['target'] = 50000
+        result = apply_priority_decisions(data, self.ratios, **kwargs, reality_profile={'has_vehicle': False})
+        self.assertEqual(result, build_candidates(data, self.ratios, policy=kwargs['policy'],
+                                                  reality_profile={'has_vehicle': False}))
+        self.assertEqual(result['reason'], 'system_floor_unaffordable')
+        data = inp(locks={'TRANSPORT_CAR': 20000})
+        result = apply_priority_decisions(data, self.ratios, **kwargs, reality_profile={'has_vehicle': False})
+        self.assertEqual(result['allocations']['TRANSPORT_CAR'], 20000)
+        self.assertEqual(result['floor_ignored_locked'], ['TRANSPORT_CAR'])
+
+    def test_system_floor_is_not_user_minimum_warning(self):
+        data = inp()
+        policy = limits(data)
+        policy['ceilings']['TRANSPORT_CAR'] = 30000
+        for minimum, expected in (({}, False), ({'TRANSPORT_CAR': 60000}, True)):
+            data['minimums'] = minimum
+            for result in (build_candidates(data, self.ratios, policy=policy, reality_profile={'has_vehicle': False}),
+                           apply_priority_decisions(data, self.ratios, policy=policy, decisions=[], reality_profile={'has_vehicle': False})):
+                self.assertEqual(any(w['code'] == 'minimum_above_ceiling' for w in result['warnings']), expected)
+
+    def test_floor_explanation_uses_reference_label(self):
+        from .design_reality import REALITY_FLOORS
+        for category, label in (('TRANSPORT_CAR', '교통 테스트 기준'), ('FOOD', '식비 테스트 기준')):
+            ratios = {**self.ratios, category: 0.001}
+            with patch('budgets.design_reality.system_floors', return_value={category: 55000}), \
+                    patch.dict(REALITY_FLOORS[category], {'label': label}):
+                result = build_candidates(inp(), ratios, reality_profile={'has_vehicle': False})
+            self.assertIn(f'{label}(55,000원)', result['candidates'][0]['result']['reasons'][0])
+
+    def test_replay_checks_system_floor_after_adjustment(self):
+        data = inp()
+        invalid = dict.fromkeys(CATEGORY_CODES, 0)
+        invalid['FOOD'] = data['target']
+        engine = build_candidates(data, self.ratios, policy=limits(data), reality_profile={'has_vehicle': False})
+        with patch('budgets.design_candidates.build_candidates', return_value=engine), \
+                patch('budgets.design_candidates._adjust', return_value=(invalid, [], {}, {})):
+            with self.assertRaisesRegex(EngineCheckFailed, 'system_floor_violated'):
+                apply_priority_decisions(data, self.ratios, policy=limits(data), decisions=[],
+                                         reality_profile={'has_vehicle': False})
+
     def test_multiple_receivers_in_priority_order(self):
         data = inp(priorities=priorities('FOOD', 'EDUCATION', 'MEDICAL_HEALTH'))
         result = build_candidates(data, self.ratios, policy=limits(data, total=30000, increase=10000))
@@ -56,7 +153,7 @@ class DesignTests(SimpleTestCase):
         self.assertNotEqual(result['transfers'][0]['from'],'FASHION_SHOPPING')
 
     def test_low_rank_discretionary_before_other_low_rank(self):
-        data = inp(minimums={'HOUSING_TELECOM':1})
+        data = inp()
         result = build_candidates(data,self.ratios,policy=limits(data,total=10000))
         self.assertEqual(result['transfers'][0]['from'],'CULTURE_LEISURE')
 
@@ -76,7 +173,9 @@ class DesignTests(SimpleTestCase):
             for changes in ({}, {'minimums':{'TRAVEL_LODGING':50000}},
                             {'locks':{'TRAVEL_LODGING':80000}}):
                 with self.subTest(order=order,changes=changes):
-                    with self.assertRaisesRegex(ValueError, '^travel_not_rankable$'):
+                    # Shared input checks reject positive out-of-budget settings before rank checks.
+                    expected = '예산 밖 카테고리' if changes else '^travel_not_rankable$'
+                    with self.assertRaisesRegex(ValueError, expected):
                         build_candidates(inp(priorities=order,**changes),self.ratios)
 
     def test_reasons_use_transfer_amounts_and_receiver_rank(self):
@@ -99,13 +198,13 @@ class DesignTests(SimpleTestCase):
         self.assertEqual(select_candidate(data,candidates[:1])['candidate_id'],'base')
 
     def test_travel_minimum_and_lock_are_rejected_without_changing_input(self):
-        for changes, code in (({'minimums':{'TRAVEL_LODGING':50000}}, 'travel_minimum_not_allowed'),
-                              ({'locks':{'TRAVEL_LODGING':80000}}, 'travel_lock_not_allowed'),
-                              ({'locks':{'TRAVEL_LODGING':0}}, 'travel_lock_not_allowed')):
+        for changes, code in (({'minimums':{'TRAVEL_LODGING':50000}}, '예산 밖 카테고리'),
+                              ({'locks':{'TRAVEL_LODGING':80000}}, '예산 밖 카테고리'),
+                              ({'locks':{'TRAVEL_LODGING':0}}, '^travel_lock_not_allowed$')):
             with self.subTest(changes=changes):
                 data = inp(**changes)
                 before = deepcopy(data)
-                with self.assertRaisesRegex(ValueError, '^' + code + '$'):
+                with self.assertRaisesRegex(ValueError, code):
                     build_candidates(data, self.ratios, policy=limits(data))
                 self.assertEqual(data, before)
 
@@ -175,7 +274,7 @@ class DesignTests(SimpleTestCase):
         self.assertGreaterEqual(result['candidates'][0]['result']['allocations']['BEAUTY'],300000)
 
     def test_no_headroom_no_duplicate(self):
-        data = inp(target=900000, minimums={c:100000 for c in CATEGORY_CODES if c != 'TRAVEL_LODGING'})
+        data = inp(target=800000, minimums={c:100000 for c in CATEGORY_CODES if c not in ('TRAVEL_LODGING','HOUSING_TELECOM')})
         result = build_candidates(data,self.ratios,policy=limits(data))
         self.assertEqual(len(result['candidates']),1)
         self.assertTrue(all(v == 'no_funding' for v in result['stop_reasons'].values()))
@@ -222,8 +321,10 @@ class DesignTests(SimpleTestCase):
         self.assertNotIn('HOUSING_TELECOM',result['active_categories'])
         self.assertEqual(result['candidates'][0]['result']['allocations']['HOUSING_TELECOM'],0)
         self.assertEqual(sum(result['candidates'][0]['result']['allocations'].values()),1000000)
-        for changes in [{'minimums':{'HOUSING_TELECOM':1000}}, {'locks':{'HOUSING_TELECOM':0}}]:
-            self.assertIn('HOUSING_TELECOM',build_candidates(inp(**changes),self.ratios)['active_categories'])
+        for changes in [{'minimums':{'HOUSING_TELECOM':1000}}, {'locks':{'HOUSING_TELECOM':0}}, {'locks':{'HOUSING_TELECOM':1000}}]:
+            with self.assertRaises(ValueError):
+                build_candidates(inp(**changes),self.ratios)
+        self.assertEqual(build_candidates(inp(minimums={'HOUSING_TELECOM':0}),self.ratios)['candidates'][0]['result']['allocations']['HOUSING_TELECOM'], 0)
 
     def test_warn_high_discretionary_minimum_without_changing_it(self):
         data = inp(minimums={'FASHION_SHOPPING':300000})
@@ -300,7 +401,7 @@ class DesignTests(SimpleTestCase):
             with self.assertRaises(ValueError): build_candidates(data,self.ratios,policy=policy)
 
     def test_zero_and_all_locked_skip_ratios(self):
-        for data in [inp(target=0),inp(target=900000, locks={c:100000 for c in CATEGORY_CODES if c != 'TRAVEL_LODGING'})]:
+        for data in [inp(target=0),inp(target=800000, locks={c:100000 for c in CATEGORY_CODES if c not in ('TRAVEL_LODGING','HOUSING_TELECOM')})]:
             result=build_candidates(data,None)['candidates'][0]['result']
             check_result(data,result)
 
@@ -339,13 +440,10 @@ class DesignTests(SimpleTestCase):
 
     def test_remaining_money_can_go_to_unlocked_active_category(self):
         locks = {c: 100000 for c in CATEGORY_CODES if c not in ('HOUSING_TELECOM', 'TRAVEL_LODGING')}
-        for category in ('FOOD', 'HOUSING_TELECOM'):
+        for category in ('FOOD', 'EDUCATION'):
             with self.subTest(category=category):
                 data = inp(locks=deepcopy(locks))
-                if category == 'FOOD':
-                    del data['locks'][category]
-                else:
-                    data['minimums'][category] = 1000
+                del data['locks'][category]
                 before = deepcopy(data)
                 result = build_candidates(data, self.ratios)
                 self.assertEqual(result['status'], 'proposed')
