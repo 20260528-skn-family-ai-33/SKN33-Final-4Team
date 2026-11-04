@@ -38,14 +38,8 @@ PERIOD_ERROR = "기간을 다시 골라 주세요."
 
 # ---------- 목록에 나오는 거래 고르기 (17번 '한 건 보기'도 같은 기준을 쓴다) ----------
 
-def listed_transactions(user):
-    """이 회원의 거래 중 목록에 나오는 것만.
-    체크카드 결제처럼 카드 승인 + 계좌 출금이 같은 구매(SAME_PURCHASE)로 이어져 있으면
-    계좌 출금 쪽은 빼서 한 번만 센다 (10/22 B)"""
-    same_purchase = TransactionLink.objects.filter(
-        Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")),
-        relation_type=TransactionLink.Relation.SAME_PURCHASE,
-    )
+def with_card_fixed_id(rows):
+    """회원·거래 범위 쿼리에 카드 근거 연결을 붙인다. 추가 쿼리 없이 목록·선차감이 같은 판정을 쓴다."""
     # 카드 고정지출의 근거 거래(evidence)인 카드 결제 → 그 고정지출 (11/4). 카드는 납부 예정이 없어서 evidence 로 본다
     #   확정 · 중지만 (계좌 쪽 납부 짝처럼 중지해도 낸 기록은 고정비로 남음, 후보 · 무시는 아님)
     #   ID 는 budgets.api.id_set 처럼 대소문자 · 대시 · 중괄호 · urn:uuid: 를 떼고 비교
@@ -58,9 +52,20 @@ def listed_transactions(user):
                       WHERE regexp_replace(lower(e.v), 'urn:|uuid:|[{{}}-]', '', 'g')
                             = replace({tx.db_table}.{tx.pk.column}::text, '-', ''))
         ORDER BY r.{re.pk.column} LIMIT 1""", [], output_field=UUIDField())
+    return rows.annotate(card_fixed_id=card_fixed)
+
+
+def listed_transactions(user):
+    """이 회원의 거래 중 목록에 나오는 것만.
+    체크카드 결제처럼 카드 승인 + 계좌 출금이 같은 구매(SAME_PURCHASE)로 이어져 있으면
+    계좌 출금 쪽은 빼서 한 번만 센다 (10/22 B)"""
+    same_purchase = TransactionLink.objects.filter(
+        Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")),
+        relation_type=TransactionLink.Relation.SAME_PURCHASE,
+    )
     return (
-        Tx.objects.filter(user=user, transaction_type__in=LIST_TYPES)
-        .annotate(in_same_purchase=Exists(same_purchase), card_fixed_id=card_fixed)
+        with_card_fixed_id(Tx.objects.filter(user=user, transaction_type__in=LIST_TYPES))
+        .annotate(in_same_purchase=Exists(same_purchase))
         .exclude(source_kind=SourceKind.BANK, in_same_purchase=True)
         # 화면 한 줄에 필요한 계좌 · 카드 · 카테고리 · 고정지출 정보를 미리 같이 가져온다 (거래마다 DB를 또 부르지 않게)
         .select_related("account__connection", "card__connection", "confirmed_category")
@@ -79,13 +84,18 @@ def cancel_info(tx):
     return {"state": "full" if canceled >= tx.amount else "partial", "amount": canceled}
 
 
+def has_payment_remaining(tx):
+    """전액 취소는 납부가 아니며, 부분 취소는 잔액이 있으면 납부로 유지한다."""
+    return tx.amount - cancel_info(tx)["amount"] > 0
+
+
 def fixed_expense_id(tx):
     """이 거래가 납부로 연결된 고정지출 ID (★8 · 13). 카드 결제는 카드 고정지출의 근거 거래면 그 고정지출. 없으면 None"""
     for match in tx.payment_matches.all():
         if match.due.obligation_type == "recurring":
             return match.due.recurring_id
     if tx.source_kind == SourceKind.CARD:
-        return getattr(tx, "card_fixed_id", None)  # listed_transactions 가 붙인 값 (다른 조회로 온 거래는 None)
+        return getattr(tx, "card_fixed_id", None)  # with_card_fixed_id가 붙인 값
     return None
 
 

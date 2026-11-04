@@ -148,14 +148,14 @@ def provider_cards(user):
 
 def fixed_linked_amount(user, cards, start, end):
     """이번 주기 그 카드들 소비 중 고정지출 납부로 연결된 금액 (취소 차감). '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않게 쓴다"""
-    from finance.api import cancel_info, fixed_expense_id
+    from finance.api import cancel_info, fixed_expense_id, with_card_fixed_id
     from finance.models import FinancialTransaction
 
     rows = FinancialTransaction.objects.filter(
         user=user, card__in=cards, source_kind="card", direction="out", transaction_type="spending",
         occurred_on__gte=start, occurred_on__lte=end,
     ).prefetch_related("payment_matches__due")
-    return sum(tx.amount - cancel_info(tx)["amount"] for tx in rows if fixed_expense_id(tx) is not None)
+    return sum(tx.amount - cancel_info(tx)["amount"] for tx in with_card_fixed_id(rows) if fixed_expense_id(tx) is not None)
 
 
 def card_fixed_by_card(user, cards, cycle, today):
@@ -164,7 +164,7 @@ def card_fixed_by_card(user, cards, cycle, today):
     어느 카드에서 뺄지: ① 이번 주기에 실제로 결제돼 납부로 연결된 카드(먼저 결제된 것) ② 없으면 고정지출에 적어 둔 결제 카드.
     적어 둔 카드와 실제 결제 카드가 달라도 한 번만 빠진다. 넘겨준 카드 밖이면 빼지 않는다.
     """
-    from finance.api import fixed_expense_id
+    from finance.api import fixed_expense_id, has_payment_remaining, with_card_fixed_id
     from finance.models import FinancialTransaction
 
     card_ids = {card.pk for card in cards}
@@ -176,7 +176,9 @@ def card_fixed_by_card(user, cards, cycle, today):
         user=user, card_id__in=card_ids, source_kind="card", direction="out", transaction_type="spending",
         occurred_on__gte=cycle.starts_on, occurred_on__lte=end,
     ).prefetch_related("payment_matches__due").order_by("occurred_on", "pk")
-    for tx in paid:
+    for tx in with_card_fixed_id(paid):
+        if not has_payment_remaining(tx):
+            continue
         expense_id = fixed_expense_id(tx)
         if expense_id is not None:
             owner.setdefault(expense_id, tx.card_id)

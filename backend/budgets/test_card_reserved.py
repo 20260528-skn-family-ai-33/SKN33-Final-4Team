@@ -98,6 +98,61 @@ class CardReservedTest(TestCase):
         self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 250_000, "pending": []})
         self.assertEqual(fixed_total(self.user, self.cycle), 350_000)
 
+    def auto_link_card_expense(self):
+        from .due_match import match_card_fixed
+        from django.db import transaction
+        old = FinancialTransaction.objects.create(
+            user=self.user, card=self.card, source_kind="card", occurred_on=date(2026, 9, 27),
+            amount=12_000, direction="out", transaction_type="spending", merchant_name="넷플릭스",
+            confirmed_category_id="CULTURE_LEISURE", confirmation_state="confirmed")
+        expense = RecurringExpense.objects.create(
+            user=self.user, name="넷플릭스", amount=12_000, category_id="CULTURE_LEISURE",
+            status="confirmed", source_type="manual", payment_card=self.card, evidence=[str(old.pk)])
+        self.collect_all()
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 238_000)
+        tx = FinancialTransaction.objects.create(
+            user=self.user, card=self.card, source_kind="card", occurred_on=TODAY,
+            amount=12_000, direction="out", transaction_type="spending", merchant_name="넷플릭스",
+            confirmed_category_id="CULTURE_LEISURE", confirmation_state="confirmed")
+        with transaction.atomic():
+            match_card_fixed(expense, [self.cycle], TODAY)
+        self.assertFalse(PaymentMatch.objects.filter(transaction=tx).exists())
+        expense.refresh_from_db()
+        self.assertIn(str(tx.pk), expense.evidence)
+        return expense, tx
+
+    def test_evidence_auto_link_keeps_reserved_and_transaction_funding(self):
+        from .protect import fixed_linked_amount
+        from finance.api import listed_transactions, transaction_item, with_card_fixed_id
+        expense, tx = self.auto_link_card_expense()
+        self.assertEqual(fixed_linked_amount(self.user, [self.card], self.cycle.starts_on, TODAY), 12_000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 238_000)
+        item = transaction_item(listed_transactions(self.user).get(pk=tx.pk))
+        self.assertEqual((item["funding"], item["fixed_expense_id"]), ("fixed", expense.pk))
+        # 기억에서 뺀 기록·중지 항목·UUID 표현도 공통 판정 유지, 거래 수와 무관하게 한 쿼리.
+        tx.field_states = {"fixed_memory_off": [str(expense.pk)]}
+        tx.save()
+        expense.evidence = ["{" + str(tx.pk).upper() + "}"]
+        expense.status = "stopped"
+        expense.save()
+        with self.assertNumQueries(1):
+            rows = list(with_card_fixed_id(FinancialTransaction.objects.filter(user=self.user)))
+        self.assertEqual(next(t.card_fixed_id for t in rows if t.pk == tx.pk), expense.pk)
+        self.assertEqual(fixed_linked_amount(self.user, [self.card], self.cycle.starts_on, TODAY), 12_000)
+
+    def test_evidence_actual_card_owns_fixed_amount_once(self):
+        from .protect import card_fixed_by_card
+        expense, tx = self.auto_link_card_expense()
+        other = self.same_issuer_card(is_selected=True)
+        expense.payment_card = other
+        expense.save()
+        self.assertEqual(card_fixed_by_card(self.user, [self.card, other], self.cycle, TODAY),
+                         {self.card.pk: 12_000})
+        tx.is_canceled, tx.canceled_amount = True, 12_000
+        tx.save()
+        self.assertEqual(card_fixed_by_card(self.user, [self.card, other], self.cycle, TODAY),
+                         {other.pk: 12_000})
+
     def test_missing_history_is_pending_not_zero(self):
         self.run_(CARD_BILL_SYNC, date(2026, 10, 20), TODAY)
         self.run_(CARD_SPENDING_SYNC, date(2026, 10, 25), TODAY, status="failed")

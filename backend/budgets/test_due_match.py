@@ -186,6 +186,54 @@ class CardFixedTest(HomeFixture):
         self.assertEqual(spending_summary(map(transaction_item, rows), living_only=True)["spent_total"], 0)
         self.assertFalse(PaymentDue.objects.filter(recurring=self.netflix).exists())  # 카드는 납부 예정 없음
 
+    def cancel_linked(self, canceled=12_000):
+        tx = self.pay(date(2026, 10, 8))
+        self.home()
+        tx.is_canceled, tx.canceled_amount = True, canceled
+        tx.save(update_fields=["is_canceled", "canceled_amount"])
+        self.home()
+        return tx
+
+    def test_full_cancellation_allows_repayment(self):
+        old = self.cancel_linked()
+        self.assertIsNone(paid_this_cycle(self, self.netflix))
+        new = self.pay(date(2026, 10, 9))
+        with patch("django.utils.timezone.localdate", return_value=TODAY):
+            process_new_transactions(self.user, [new.pk])
+        self.home()
+        self.assertEqual(self.linked(), {str(old.pk), str(new.pk)})
+        self.assertEqual(paid_this_cycle(self, self.netflix)["transactionId"], str(new.pk))
+        self.assertEqual(self.item(new)["funding"], "fixed")
+        self.assertFalse(PaymentMatch.objects.filter(transaction__in=[old, new]).exists())
+        rows = listed_transactions(self.user).filter(occurred_on__gte=date(2026, 9, 25))
+        self.assertEqual(spending_summary(map(transaction_item, rows), living_only=True)["spent_total"], 0)
+
+    def test_full_cancellation_allows_renamed_suggestion(self):
+        old = self.cancel_linked()
+        new = self.pay(date(2026, 10, 9), name="NFX 정기결제")
+        self.home()
+        self.assertEqual(self.linked(), {str(old.pk)})
+        self.assertIsNone(paid_this_cycle(self, self.netflix))
+        self.assertEqual(self.suggestion()["candidates"][0]["transaction_id"], str(new.pk))
+
+    def test_partial_cancellation_still_paid(self):
+        tx = self.cancel_linked(2_000)
+        self.assertEqual(paid_this_cycle(self, self.netflix)["transactionId"], str(tx.pk))
+        self.assertIsNone(self.suggestion())
+        self.pay(date(2026, 10, 9))
+        self.home()
+        self.assertEqual(self.linked(), {str(tx.pk)})
+
+    def test_full_cancellation_not_displayed_as_latest_evidence(self):
+        from .api import fixed_json
+        self.cancel_linked()
+        self.netflix.refresh_from_db()
+        self.assertEqual(fixed_json(self.netflix)["evidence"]["transaction_id"], str(self.first.pk))
+        self.first.is_canceled = True
+        self.first.canceled_amount = None
+        self.first.save()
+        self.assertIsNone(fixed_json(self.netflix)["evidence"])
+
     def test_previous_cycle_payment_is_linked_too(self):
         tx = self.pay(date(2026, 9, 8))  # 지난 주기 8/25 ~ 9/24
         self.home()
