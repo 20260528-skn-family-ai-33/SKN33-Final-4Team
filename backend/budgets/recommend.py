@@ -113,11 +113,17 @@ def recommend_category_budgets(inp):
 
 
 def check_result(inp, out):
-    """에이전트를 바꿔도 유지할 서버 검증. 잘못된 결과는 예산에 저장하지 않는다."""
+    """성공 결과에 unallocated가 있으면 카테고리 합계 + 남는 여윳돈 = target.
+
+    키가 없는 기존 엔진은 합계 = target을 유지한다. 여윳돈은 bool이 아닌
+    0 이상 정수이며 infeasible에는 허용하지 않는다. 나머지 보호 검수는 동일하다.
+    """
     check_inputs(inp)
     if not isinstance(out, dict) or not isinstance(out.get("summary"), str) or not isinstance(out.get("reasons"), list):
         raise EngineCheckFailed("엔진 응답 모양이 맞지 않아요.")
     if out.get("status") == "infeasible":
+        if "unallocated" in out:
+            raise EngineCheckFailed("조건 충돌 결과에는 남는 여윳돈을 넣을 수 없어요.")
         expected = allocation_conflicts(inp)
         if not expected or out.get("conflicts") != expected or out.get("allocations") != {}:
             raise EngineCheckFailed("부족액이 입력 조건과 맞지 않아요.")
@@ -129,7 +135,11 @@ def check_result(inp, out):
         raise EngineCheckFailed("배분 대상 카테고리 금액이 필요해요.")
     if any(values.get(code, 0) != 0 for code in OUT_OF_BUDGET):
         raise EngineCheckFailed("예산 밖 카테고리에 금액을 배분했어요.")
-    if any(type(value) is not int or value < 0 for value in values.values()) or sum(values.values()) != inp["target"]:
+    unallocated = out.get("unallocated", 0)
+    if type(unallocated) is not int or unallocated < 0:
+        raise EngineCheckFailed("남는 여윳돈은 0 이상의 정수여야 해요.")
+    if (any(type(value) is not int or value < 0 for value in values.values())
+            or sum(values.values()) + unallocated != inp["target"]):
         raise EngineCheckFailed("배분 합계 · 금액이 맞지 않아요.")
     if any(values.get(code, 0) < amount for code, amount in inp["minimums"].items()):
         raise EngineCheckFailed("최소 금액보다 작게 배분했어요.")
