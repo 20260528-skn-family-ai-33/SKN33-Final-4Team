@@ -54,7 +54,8 @@
                           "funding": "living",
                           "fixedExpenseId": null,
                           "direction": "out",
-                          "transactionType": "spending"
+                          "transactionType": "spending",
+                          "isSalary": false
                         },
                         {
                           "transactionId": "62314f23-1694-584c-9b30-245f16e9b36a",
@@ -79,7 +80,8 @@
                           "funding": "living",
                           "fixedExpenseId": null,
                           "direction": "out",
-                          "transactionType": "spending"
+                          "transactionType": "spending",
+                          "isSalary": false
                         },
                         {
                           "transactionId": "179a8e43-1e83-57b0-b1d2-121f2db28813",
@@ -104,7 +106,8 @@
                           "funding": "living",
                           "fixedExpenseId": null,
                           "direction": "out",
-                          "transactionType": "spending"
+                          "transactionType": "spending",
+                          "isSalary": false
                         },
                         {
                           "transactionId": "d4a1be9f-f842-59d5-8c08-acd0080eab25",
@@ -129,7 +132,8 @@
                           "funding": null,
                           "fixedExpenseId": null,
                           "direction": "out",
-                          "transactionType": "transfer"
+                          "transactionType": "transfer",
+                          "isSalary": false
                         },
                         {
                           "transactionId": "5bac6b57-6fdb-5eb8-a20b-fd1367e13f23",
@@ -154,7 +158,8 @@
                           "funding": null,
                           "fixedExpenseId": null,
                           "direction": "in",
-                          "transactionType": "income"
+                          "transactionType": "income",
+                          "isSalary": true
                         }
                       ]
                     }
@@ -391,7 +396,8 @@
                   "classifiedBy": null,
                   "canApplyToFuture": false,
                   "wasTransfer": false,
-                  "updatedAt": "2026-10-09T08:05:00+09:00"
+                  "updatedAt": "2026-10-09T08:05:00+09:00",
+                  "isSalary": false
                 }
               }
             }
@@ -548,7 +554,8 @@
                   "classifiedBy": "user",
                   "canApplyToFuture": true,
                   "wasTransfer": false,
-                  "updatedAt": "2026-10-22T09:12:00+09:00"
+                  "updatedAt": "2026-10-22T09:12:00+09:00",
+                  "isSalary": false
                 }
               }
             }
@@ -811,6 +818,10 @@
             "format": "uuid",
             "nullable": true,
             "description": "연결된 고정지출. 없으면 null."
+          },
+          "isSalary": {
+            "type": "boolean",
+            "description": "월급 입금이면 true (11/4). 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 salaryReceivedOn·nextSalaryEarlyOn의 입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 후보: 관리 대상 원화 입출금 계좌로 들어온 실수령액 80% 이상 입금(내 계좌끼리 옮긴 돈 제외), 구간은 급여일 7일 전부터. 급여일·실수령액 미등록이면 모두 false. 출금·이체는 항상 false."
           }
         },
         "required": [
@@ -824,7 +835,8 @@
           "netAmount",
           "paymentCard",
           "paymentAccount",
-          "fixedExpenseId"
+          "fixedExpenseId",
+          "isSalary"
         ]
       },
       "TransactionSpending": {

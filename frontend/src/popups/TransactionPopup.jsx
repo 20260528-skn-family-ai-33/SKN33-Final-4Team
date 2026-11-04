@@ -45,7 +45,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
 
   return (
     <Popup label="거래 상세" sub>
-      <div className="mc-eyebrow">{isIncome ? '월급 입금' : isTransfer ? '보낸 이체' : '거래 상세'}</div>
+      <div className="mc-eyebrow">{isIncome ? (tx.isSalary ? '월급 입금' : '입금') : isTransfer ? '보낸 이체' : '거래 상세'}</div>
       <h1>{tx.name}</h1>
       <div className="mc-card">
         <div className="mc-money">
@@ -71,7 +71,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
       {/* 월급: 카테고리를 고를 수 없다 */}
       {isIncome && (
         <div className="mc-card">
-          <p className="mc-muted" style={{ margin: 0 }}>월급으로 찾은 입금이에요. 거래 목록에는 보이지만 소비 합계 · 예산에는 들어가지 않아요. 입금은 카테고리를 고를 수 없어요.</p>
+          <p className="mc-muted" style={{ margin: 0 }}>{tx.isSalary ? '월급으로 찾은 입금이에요. ' : ''}거래 목록에는 보이지만 소비 합계 · 예산에는 들어가지 않아요. 입금은 카테고리를 고를 수 없어요.</p>
         </div>
       )}
 

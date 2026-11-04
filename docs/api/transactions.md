@@ -80,6 +80,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `items[].paymentAccount` | 객체 / null | 거래한 계좌 `{ accountId, displayName, status }` |
 | `items[].funding` | 문자 / null | `living` · `fixed` (위 공통 값). 입금 · 이체는 `null` |
 | `items[].fixedExpenseId` | UUID / null | 이 거래가 연결된 고정지출(★8·13). 없으면 `null` |
+| `items[].isSalary` | 불린 | 월급 입금인지 (11/4). 화면은 `true`인 거래에만 "월급" 표시를 한다. 판단 기준: 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 `salaryReceivedOn`·`nextSalaryEarlyOn`의 입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 월급 후보는 관리 대상 원화 입출금 계좌로 들어온 **실수령액 80% 이상** 입금(내 계좌끼리 옮긴 돈 제외)이고, 주기 구간은 급여일 7일 전부터(조기 지급). 급여일·실수령액을 등록하지 않았으면 모두 `false`. 출금·이체는 항상 `false`. 거래 한 건 보기에도 같은 값 |
 
 > **`summary`는 필터가 걸린 목록의 소계일 뿐이다.** 홈의 '남은 생활비'·'이번 주기 사용액', 예산 화면의 카테고리 사용액과는 **다른 값**이다. 그 값들은 급여 주기 기준이고, 고정비(`funding: fixed`)를 빼는 등 예산 규칙이 들어간 계산이라 이 숫자를 가져다 쓰지 않는다. 이 소계에는 `funding: fixed` 거래도 들어 있다. '확인 필요' 칩과 홈 알림에 붙일 건수는 아래 H-03 기준(기간 없이 전체)이다.
 
@@ -92,27 +93,27 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
       "cancel": { "state": "full", "amount": 89000 }, "netAmount": 0,
       "category": "FASHION_SHOPPING", "categoryName": "패션·쇼핑", "classifyState": "suggested",
       "paymentCard": { "cardId": "77ab…", "displayName": "신한 Mr.Life · ****5678", "status": "connected" }, "paymentAccount": null,
-      "funding": "living", "fixedExpenseId": null, "direction": "out", "transactionType": "spending" },
+      "funding": "living", "fixedExpenseId": null, "isSalary": false, "direction": "out", "transactionType": "spending" },
     { "transactionId": "e2a1…", "occurredOn": "2026-10-11", "occurredTime": "12:10", "merchantName": "김밥천국 역삼점", "amount": 18000,
       "cancel": { "state": "none", "amount": 0 }, "netAmount": 18000,
       "category": "FOOD", "categoryName": "식비", "classifyState": "suggested",
       "paymentCard": { "cardId": "1c90…", "displayName": "신한 Deep Dream · ****1234", "status": "connected" }, "paymentAccount": null,
-      "funding": "living", "fixedExpenseId": null, "direction": "out", "transactionType": "spending" },
+      "funding": "living", "fixedExpenseId": null, "isSalary": false, "direction": "out", "transactionType": "spending" },
     { "transactionId": "9d3b…", "occurredOn": "2026-10-09", "occurredTime": "08:02", "merchantName": "GS25 역삼점", "amount": 6800,
       "cancel": { "state": "none", "amount": 0 }, "netAmount": 6800,
       "category": "UNCLASSIFIED", "categoryName": "확인 필요", "classifyState": "needs_review",
       "paymentCard": { "cardId": "1c90…", "displayName": "신한 Deep Dream · ****1234", "status": "connected" }, "paymentAccount": null,
-      "funding": "living", "fixedExpenseId": null, "direction": "out", "transactionType": "spending" },
+      "funding": "living", "fixedExpenseId": null, "isSalary": false, "direction": "out", "transactionType": "spending" },
     { "transactionId": "5b7e…", "occurredOn": "2026-10-08", "occurredTime": "19:20", "merchantName": "이하늘", "amount": 30000,
       "cancel": { "state": "none", "amount": 0 }, "netAmount": 30000,
       "category": null, "categoryName": null, "classifyState": null,
       "paymentCard": null, "paymentAccount": { "accountId": "c91d…", "displayName": "국민 급여통장 · ****5678", "status": "connected" },
-      "funding": null, "fixedExpenseId": null, "direction": "out", "transactionType": "transfer" },
+      "funding": null, "fixedExpenseId": null, "isSalary": false, "direction": "out", "transactionType": "transfer" },
     { "transactionId": "0a42…", "occurredOn": "2026-10-01", "occurredTime": null, "merchantName": "급여", "amount": 2600000,
       "cancel": { "state": "none", "amount": 0 }, "netAmount": 2600000,
       "category": null, "categoryName": null, "classifyState": null,
       "paymentCard": null, "paymentAccount": { "accountId": "c91d…", "displayName": "국민 급여통장 · ****5678", "status": "connected" },
-      "funding": null, "fixedExpenseId": null, "direction": "in", "transactionType": "income" }
+      "funding": null, "fixedExpenseId": null, "isSalary": true, "direction": "in", "transactionType": "income" }
   ]
 }
 ```
@@ -211,6 +212,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
   "classifiedBy": null,
   "canApplyToFuture": false,
   "wasTransfer": false,
+  "isSalary": false,
   "updatedAt": "2026-10-09T08:05:00+09:00"
 }
 ```
