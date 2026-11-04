@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from budgets.models import Category
+from budgets.salary import salary_transaction_ids
 
 from . import classifier
 from .display import account_display, card_display
@@ -179,7 +180,8 @@ def transactions(request):
         rows = rows.filter(Q(account_id__in=account_ids) | Q(card_id__in=card_ids))
     rows = rows.order_by("-occurred_on", F("occurred_time").desc(nulls_last=True), "-created_at")
 
-    items = [transaction_item(tx) for tx in rows]
+    salary = salary_transaction_ids(request.user, today)
+    items = [{**transaction_item(tx), "is_salary": tx.pk in salary} for tx in rows]
     summary = spending_summary(items)
     if start is None:
         # 전체 기간: 시작일 = 가장 오래된 거래일 (없으면 None)
@@ -233,6 +235,7 @@ def transaction_detail_body(tx):
     """거래 한 건 = 목록 한 줄 + 상세 칸"""
     return {
         **transaction_item(tx),
+        "is_salary": tx.pk in salary_transaction_ids(tx.user_id, timezone.localdate()),
         # 할부 개월: 카드 거래만 (일시불 0). 계좌 거래는 None
         "installment_months": tx.installment_months if tx.source_kind == SourceKind.CARD else None,
         "suggestion": suggestion_info(tx),

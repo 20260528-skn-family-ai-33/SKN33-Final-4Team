@@ -1098,3 +1098,53 @@ class OldPolicyTravelBudgetTest(OldPolicyBudgetTest):
 
     def test_new_draft_keeps_old_approved_until_approval(self):
         pass  # 배정 카테고리만 다른 같은 흐름 — 위 클래스에서 확인
+
+
+class SalaryTransactionIdsTest(HomeFixture):
+    """거래 isSalary 의 주기별 월급 (salary.salary_transaction_ids, 11/4). TODAY 10/21 · 급여일 25일
+    이번 주기 월급 구간 9/18 ~ 10/17, 다음 월급 조기 10/18 ~ 오늘, 지난 주기 8/18 ~ 9/17 · 7/18 ~ 8/17"""
+
+    def ids(self, today=TODAY):
+        from .salary import salary_transaction_ids
+        return salary_transaction_ids(self.user, today)
+
+    def salary_on(self, *days):
+        return [self.make_tx(d, 2_600_000) for d in days]
+
+    def assert_home_same(self, today):
+        """이번 주기에서 true 인 입금 날짜 = 홈 received · early 날짜 (홈보다 먼저 계산 — 홈은 예약 급여일을 저장함)"""
+        ids = self.ids(today)
+        period = self.home(today)["period"]
+        start = date.fromisoformat(period["start_date"]) - timedelta(days=home_module.EARLY_DAYS)
+        mine = {tx.occurred_on.isoformat() for tx in FinancialTransaction.objects.filter(pk__in=ids, occurred_on__gte=start)}
+        home = {period["salary_received_on"], period["next_salary_early_on"]} - {None}
+        self.assertTrue(home)
+        self.assertEqual(mine, home)
+
+    def test_two_in_one_cycle_only_first(self):
+        past_first, past_second, first, second = self.salary_on(date(2026, 8, 25), date(2026, 9, 1),
+                                                                date(2026, 9, 25), date(2026, 10, 5))
+        self.assertEqual(self.ids(), {past_first.pk, first.pk})
+
+    def test_each_cycle_has_its_salary(self):
+        txs = self.salary_on(date(2026, 7, 25), date(2026, 8, 25), date(2026, 9, 25))
+        self.assertEqual(self.ids(), {tx.pk for tx in txs})
+
+    def test_seven_days_early_counts_for_that_cycle(self):
+        early, on_payday = self.salary_on(date(2026, 8, 18), date(2026, 8, 25))  # 8/18 = 8/25 주기의 7일 전
+        july_last = self.make_tx(date(2026, 8, 17), 2_600_000)                     # 하루 더 이르면 7/25 주기
+        self.assertEqual(self.ids(), {early.pk, july_last.pk})
+        self.assertNotIn(on_payday.pk, self.ids())
+
+    def test_current_cycle_matches_home_received_and_early(self):
+        self.salary_on(date(2026, 9, 20), date(2026, 10, 1), date(2026, 10, 19))  # 받음 · 같은 주기 두 번째 · 다음 월급 조기
+        self.assert_home_same(TODAY)
+
+    def test_scheduled_payday_change_matches_home(self):
+        # 25일 → 10일 예약: 11/10 전까지는 9/25 ~ 11/9 한 주기, 11/10 부터 10일 주기
+        self.profile.scheduled_payday, self.profile.payday_changes_on = 10, date(2026, 11, 10)
+        self.profile.payday_previous_start = date(2026, 9, 25)
+        self.profile.save()
+        self.salary_on(date(2026, 9, 25), date(2026, 10, 30), date(2026, 11, 4))
+        self.assert_home_same(TODAY)
+        self.assert_home_same(date(2026, 11, 12))  # 전환 후: 11/3 ~ 오늘 구간의 첫 입금 11/4

@@ -12,14 +12,14 @@
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from finance.api import UNCLASSIFIED, listed_transactions
-from finance.models import BankAccount, FinancialTransaction, PaymentDue, RecurringExpense
+from finance.models import BankAccount, PaymentDue, RecurringExpense
 
 from .api import account_json, day_in_cycle, day_in_month, ensure_current_due, lock_user, match_current_due
 from .models import BudgetCategorySetting, BudgetCycle
+from .salary import salary_deposits
 
 EARLY_DAYS = 7             # 월급날 7일 전부터 들어온 입금은 그 월급으로 본다 (명절 전 지급)
 REVIEW_AFTER_DAYS = 3      # 출금일 +3일이 지나도 출금을 못 찾으면 '미납 확인 필요'
@@ -91,26 +91,6 @@ def carry_over_locks(user, cycle):
                               locked=True, locked_amount=setting.locked_amount)
         for setting in BudgetCategorySetting.objects.filter(user=user, cycle=previous, locked=True)
     ])
-
-
-def salary_deposits(user, income):
-    """월급으로 볼 수 있는 입금: 관리 대상 입출금 계좌로 들어온 실수령액 80% 이상 입금.
-    같은 날 같은 금액이 내 다른 계좌에서 나간 입금(내 계좌끼리 옮긴 돈)은 뺀다"""
-    moved_from_mine = FinancialTransaction.objects.filter(
-        user=user, source_kind="bank", direction="out", is_canceled=False,  # 취소된 출금은 옮긴 돈이 아님
-        occurred_on=OuterRef("occurred_on"), amount=OuterRef("amount"),
-    ).exclude(account_id=OuterRef("account_id"))
-    return (
-        FinancialTransaction.objects.filter(
-            user=user, source_kind="bank", direction="in", is_canceled=False,
-            account__account_type="demand", account__is_selected=True, account__currency="KRW",
-            account__connection__disconnected_at__isnull=True,
-            amount__gte=-(-income * 8 // 10),   # 80% (올림)
-        )
-        .exclude(transaction_type="own_transfer")
-        .exclude(Exists(moved_from_mine))
-        .order_by("occurred_on", "occurred_time", "created_at")
-    )
 
 
 def first_deposit(deposits, start, end, today):

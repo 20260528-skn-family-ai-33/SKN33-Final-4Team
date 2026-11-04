@@ -1,7 +1,7 @@
 // 거래 내역 — GET /api/finance/transactions/ (docs/api/transactions.md '거래 목록 보기')
 // 주소 ?category=FOOD,CULTURE_LEISURE 처럼 카테고리 코드로 골라 본다 (11/3: 칩을 눌러 여러 개 켜고 끔). 고르는 일 · 합계는 장고 API 가 해서 보내 준다
 // 계좌 · 카드는 [필터]에서 고른다 → 주소 ?account=…&card=… (API 의 accountId · cardId, 둘 다 고르면 둘 중 하나)
-// '전체'에는 소비 + 월급 입금 + 남에게 보낸 이체가 보인다 (10/22 결정 V①). 입금 · 이체는 카테고리가 없고 합계에 안 들어간다
+// '전체'에는 소비 + 입금(월급은 isSalary) + 남에게 보낸 이체가 보인다 (10/22 결정 V①). 입금 · 이체는 카테고리가 없고 합계에 안 들어간다
 //   이체를 누르면 [소비로 분류하기] (결정 W) · 고정지출로 연결된 거래(funding: fixed)는 '고정' 표시 (★8 · AA⑤)
 // 기간은 달력월. ‹ › 로 달을 옮긴다 (주소 ?month=2026-10, 없으면 이번 달)
 // '확인 필요'는 기본이 전체 기간(H-03 — 홈 숫자와 같게), [달별로 보기]로 달마다도 본다. 칩 · 배너 숫자는 늘 전체 기간
@@ -39,6 +39,7 @@ function toView(item) {
     cancelAmount: item.cancel.amount,
     via: (item.paymentCard ?? item.paymentAccount)?.displayName,
     funding: item.funding,
+    isSalary: item.isSalary === true,  // 서버가 월급으로 본 입금만 (11/4)
   }
 }
 
@@ -193,7 +194,7 @@ export default function TransactionsPage() {
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow">
                   <strong>{tx.name}{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>
-                  <span className="mc-muted">{tx.kind === 'income' ? '월급' : tx.kind === 'transfer' ? '이체 · 소비 아님' : tx.cat}{tx.via && ` · ${tx.via}`}</span>
+                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? '월급' : '입금') : tx.kind === 'transfer' ? '이체 · 소비 아님' : tx.cat}{tx.via && ` · ${tx.via}`}</span>
                 </span>
                 <span className="mc-right">
                   {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}

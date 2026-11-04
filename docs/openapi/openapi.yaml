@@ -2053,6 +2053,7 @@ paths:
                       fixedExpenseId: null
                       direction: out
                       transactionType: spending
+                      isSalary: false
                     - transactionId: 62314f23-1694-584c-9b30-245f16e9b36a
                       occurredOn: '2026-10-11'
                       occurredTime: '12:10'
@@ -2074,6 +2075,7 @@ paths:
                       fixedExpenseId: null
                       direction: out
                       transactionType: spending
+                      isSalary: false
                     - transactionId: 179a8e43-1e83-57b0-b1d2-121f2db28813
                       occurredOn: '2026-10-09'
                       occurredTime: 08:02
@@ -2095,6 +2097,7 @@ paths:
                       fixedExpenseId: null
                       direction: out
                       transactionType: spending
+                      isSalary: false
                     - transactionId: d4a1be9f-f842-59d5-8c08-acd0080eab25
                       occurredOn: '2026-10-08'
                       occurredTime: '19:20'
@@ -2116,6 +2119,7 @@ paths:
                       fixedExpenseId: null
                       direction: out
                       transactionType: transfer
+                      isSalary: false
                     - transactionId: 5bac6b57-6fdb-5eb8-a20b-fd1367e13f23
                       occurredOn: '2026-10-01'
                       occurredTime: null
@@ -2137,6 +2141,7 @@ paths:
                       fixedExpenseId: null
                       direction: in
                       transactionType: income
+                      isSalary: true
                 emptyReview:
                   summary: 전체 기간 확인 필요 거래 없음
                   value:
@@ -2213,13 +2218,29 @@ paths:
       - name: category
         in: query
         required: false
-        description: 없으면 전체. UNCLASSIFIED는 확인 필요 소비만. 필터 사용 시 입금·이체 제외.
+        description: 없으면 전체. 쉼표로 여러 개(11/3, 그중 하나면 포함). UNCLASSIFIED 하나만이면 확인 필요 소비만·기간 생략 시 전체 기간. 필터 사용 시 입금·이체
+          제외. 모르는 코드가 있으면 400.
         schema:
-          $ref: '#/components/schemas/CategoryCode'
+          type: string
+        example: FOOD,CULTURE_LEISURE
+      - name: accountId
+        in: query
+        required: false
+        description: 이 계좌의 거래만(11/3). 쉼표로 여러 개. cardId와 같이 보내면 둘 중 하나. 형식 오류·없음·남의 것은 400.
+        schema:
+          type: string
+        example: 27d3dbb3-1ee8-43b7-9134-9e8ff01991d4
+      - name: cardId
+        in: query
+        required: false
+        description: 이 카드의 거래만(11/3). 쉼표로 여러 개. 형식 오류·없음·남의 것은 400.
+        schema:
+          type: string
+        example: 38e76a37-6016-4291-87c2-58688f50542a
       - name: from
         in: query
         required: false
-        description: 시작일 포함. 기본 이번 달 1일. UNCLASSIFIED이고 기간을 생략하면 전체 기간. from>to는 400.
+        description: 시작일 포함. 기본 이번 달 1일. category=UNCLASSIFIED 하나만이고 기간을 생략하면 전체 기간. from>to는 400.
         schema:
           type: string
           format: date
@@ -2298,6 +2319,7 @@ paths:
                 canApplyToFuture: false
                 wasTransfer: false
                 updatedAt: '2026-10-09T08:05:00+09:00'
+                isSalary: false
         '403':
           description: not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -2429,6 +2451,7 @@ paths:
                 canApplyToFuture: true
                 wasTransfer: false
                 updatedAt: '2026-10-22T09:12:00+09:00'
+                isSalary: false
         '400':
           description: invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -2548,8 +2571,9 @@ paths:
 
         근거 거래는 본인의 선택한 카드·계좌 거래이며 다른 고정지출에 이미 연결된 거래는 사용할 수 없다. 같은 고정지출의 같은 거래 재전송은 성공한다. 결제 수단 모름 상태에서 거래를 지정하면
         400 invalid. 거래를 연결하면 재원을 fixed로 분류해 생활비에서 중복 집계하지 않는다. 이름으로 같은 비용을 찾지 않는다. 기억한 가맹점이 있으면 가맹점·같은 카드·금액 ±10%로
-        매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이면 자동 연결, 여러 개이면 사용자가 고른다. 출금일 +3일이 지나 미납 확인
-        필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액 ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.
+        매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이고 사용자가 전에 이 고정지출로 고른 출금과 적요가 같을 때만 자동 연결하고,
+        그 밖(처음 보는 1건·여러 건)은 사용자가 확인하거나 고른다(11/3). 출금일 +3일이 지나 미납 확인 필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액
+        ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.
 
 
         원본: `docs/api/fixed.md`'
@@ -2719,8 +2743,9 @@ paths:
 
         근거 거래는 본인의 선택한 카드·계좌 거래이며 다른 고정지출에 이미 연결된 거래는 사용할 수 없다. 같은 고정지출의 같은 거래 재전송은 성공한다. 결제 수단 모름 상태에서 거래를 지정하면
         400 invalid. 거래를 연결하면 재원을 fixed로 분류해 생활비에서 중복 집계하지 않는다. 이름으로 같은 비용을 찾지 않는다. 기억한 가맹점이 있으면 가맹점·같은 카드·금액 ±10%로
-        매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이면 자동 연결, 여러 개이면 사용자가 고른다. 출금일 +3일이 지나 미납 확인
-        필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액 ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.
+        매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이고 사용자가 전에 이 고정지출로 고른 출금과 적요가 같을 때만 자동 연결하고,
+        그 밖(처음 보는 1건·여러 건)은 사용자가 확인하거나 고른다(11/3). 출금일 +3일이 지나 미납 확인 필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액
+        ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.
 
 
         선택 Idempotency-Key로 같은 회원·같은 번호·같은 내용이면 첫 성공의 상태 코드와 본문을 그대로 반환한다. 다른 내용이면 409 idempotency_conflict. 실패(4xx·5xx)는
@@ -2915,8 +2940,9 @@ paths:
 
         근거 거래는 본인의 선택한 카드·계좌 거래이며 다른 고정지출에 이미 연결된 거래는 사용할 수 없다. 같은 고정지출의 같은 거래 재전송은 성공한다. 결제 수단 모름 상태에서 거래를 지정하면
         400 invalid. 거래를 연결하면 재원을 fixed로 분류해 생활비에서 중복 집계하지 않는다. 이름으로 같은 비용을 찾지 않는다. 기억한 가맹점이 있으면 가맹점·같은 카드·금액 ±10%로
-        매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이면 자동 연결, 여러 개이면 사용자가 고른다. 출금일 +3일이 지나 미납 확인
-        필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액 ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.
+        매칭한다. 근거 없는 카드는 같은 카드·금액 ±10%·날짜 ±3일로 제안한다. 계좌 출금은 맞는 건이 1개이고 사용자가 전에 이 고정지출로 고른 출금과 적요가 같을 때만 자동 연결하고,
+        그 밖(처음 보는 1건·여러 건)은 사용자가 확인하거나 고른다(11/3). 출금일 +3일이 지나 미납 확인 필요(needs_review)가 된 회차는 출금일 −3일부터 오늘까지의 같은 계좌·금액
+        ±10% 출금을 후보로 보여 늦게 낸 출금도 고르게 한다. 늦은 출금은 자동 연결하지 않는다.
 
 
         결정 AA⑤·⑥: 확정 고정지출과 금액·날짜(±3일)가 맞아 연결된 원래 이체는 transfer → spending으로 바꾸고 그 고정지출의 category와 funding=fixed를
@@ -7164,6 +7190,11 @@ components:
           format: uuid
           nullable: true
           description: 연결된 고정지출. 없으면 null.
+        isSalary:
+          type: boolean
+          description: '월급 입금이면 true (11/4). 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 salaryReceivedOn·nextSalaryEarlyOn의
+            입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 후보: 관리 대상 원화 입출금 계좌로 들어온 실수령액 80% 이상 입금(내
+            계좌끼리 옮긴 돈 제외), 구간은 급여일 7일 전부터. 급여일·실수령액 미등록이면 모두 false. 출금·이체는 항상 false.'
       required:
       - transactionId
       - occurredOn
@@ -7176,6 +7207,7 @@ components:
       - paymentCard
       - paymentAccount
       - fixedExpenseId
+      - isSalary
     TransactionSpending:
       allOf:
       - $ref: '#/components/schemas/TransactionBase'
@@ -7505,7 +7537,8 @@ components:
       - count
       - candidates
       nullable: true
-      description: '카드: 출금일이 있고 근거 거래 없는 상태에서 후보 1건 이상. 계좌: 이번 회차 후보 2건 이상. 그 밖에는 null.'
+      description: '카드: 출금일이 있고 근거 거래 없는 상태에서 후보 1건 이상. 계좌: 이번 회차 후보 1건 이상(11/3, 기억한 출금 1건은 자동 연결돼 남지 않음). 그 밖에는
+        null.'
     FixedExpense:
       type: object
       properties:
@@ -9555,9 +9588,9 @@ x-source-sha256:
   docs/api/finance-connect.md: 6081ac66a61ba8a61a9cede014a06195d37e3b9ec7e99ff4f1791ab441c5ea3e
   docs/api/cards.md: 3fb0ff75f9d446a535ced2bc166091483b05b4b7f3e5af1715bf1e4272c9701d
   docs/api/loans.md: 5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c
-  docs/api/transactions.md: 8f8329c37b3536e515f229ea2ca203ad4dbc985bc8c11c66caa32bee4b02220b
-  docs/api/fixed.md: 0cc56bad79052eb5dd00f766b5eb2a52400c6a1b6ecd176e71db7cde86211800
+  docs/api/transactions.md: 3e0fb0fbe35cb1909f7010260fb052b7a0f4e9fc3adf30ab63c6e8953fc5cf6b
+  docs/api/fixed.md: 57421e8c0c6db952db2ed34e66b7b2df5566a2af69a394aafa154968486180c2
   docs/api/savings.md: 391dc532b0c9b6a694566770cb983c7423817bec4004265d20387320435b0782
-  docs/api/home.md: 19c10e6d9969d9d9c4bcde0c8c81021abb06ae4dafe28fdf11299ec6c119904c
+  docs/api/home.md: 87c087b9a7789905eebac3b6f6e2e17845e164aaa553dbcd9126e25d28058c5c
   docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5
   docs/api/budgets.md: 38e66a1c6e872c23540169a85e534a4589d0376a8b310464eb8b0496578d115b
