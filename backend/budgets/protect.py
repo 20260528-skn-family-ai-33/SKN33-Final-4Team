@@ -9,6 +9,8 @@ from django.utils import timezone
 from finance.card_deduction import bill_kind
 from finance.models import CardBill, CardBillItem, Loan, RecurringExpense, RecurringSaving, SyncRun
 
+from .models import BudgetCycle
+
 logger = logging.getLogger(__name__)
 
 
@@ -193,18 +195,30 @@ def card_fixed_by_card(user, cards, cycle, today):
 
 
 def installment_rounds(user, issuer_code, cycle, connected_on, first_bill_ids):
-    """이번 회차 할부금 (cards.md C-17): 이번 주기에 내는 청구서(첫 청구서 · 카드론 명세서 제외)의 할부 중 연결 전에 산 것.
+    """이번 회차 할부금 (cards.md C-17): 이번 주기에 내는 청구서(첫 청구서 · 카드론 명세서 제외)의 할부 중 예산에 아직 안 잡힌 구매.
 
-    [임시] 연결 뒤에 산 할부는 긁을 때 전액이 소비로 잡혀서, 회차를 또 떼면 두 번 빠진다. 구매일을 모르면 떼는 쪽으로 둔다.
-    [임시] 상세 항목을 못 받았거나 아직 안 온 청구서는 0원으로 친다. None = 회차 금액을 모르는 할부가 있음 (보류)
+    할부는 긁을 때 전액이 소비로 잡힌다. 이번 주기나 연결 뒤 승인 예산이 있던 주기에 산 것은 회차를 또 떼면 두 번 빠지므로 뺀다.
+    그 밖의 구매(연결 전 · 연결 뒤 첫 예산 주기 전)와 구매일을 모르는 할부는 뗀다.
+    None = 상세를 다 못 받았거나 회차 금액을 몰라 판단할 수 없음 (보류, 0원으로 치지 않는다)
+    [임시] 아직 안 온 청구서는 0원으로 친다
     [임시] 카드 고정지출로 등록한 할부는 이름으로 가려내지 않아 고정비와 함께 잡힐 수 있다 (예산이 모자라지 않는 쪽)
     """
     bills = CardBill.objects.filter(user=user, issuer_code=issuer_code).annotate(
         due_on=Coalesce("withdrawal_due_date", "payment_due_date"),
     ).filter(due_on__gte=max(cycle.starts_on, connected_on), due_on__lt=cycle.ends_before).exclude(pk__in=first_bill_ids)
-    amounts = list(CardBillItem.objects.filter(
-        bill__in=[bill for bill in bills if bill_kind(bill) != "loan"], item_type=CardBillItem.ItemType.INSTALLMENT,
-    ).exclude(purchased_on__gte=connected_on).values_list("billed_amount", flat=True))
+    bills = [bill for bill in bills if bill_kind(bill) != "loan"]
+    if any(bill.items_state != CardBill.ItemsState.COMPLETE for bill in bills):
+        return None
+    counted = [(cycle.starts_on, cycle.ends_before)] + [
+        (max(start, connected_on), end) for start, end in BudgetCycle.objects.filter(
+            user=user, budgets__status="approved",
+        ).values_list("starts_on", "ends_before")
+    ]
+    items = CardBillItem.objects.filter(bill__in=bills, item_type=CardBillItem.ItemType.INSTALLMENT)
+    amounts = [
+        billed for billed, bought in items.values_list("billed_amount", "purchased_on")
+        if bought is None or not any(start <= bought < end for start, end in counted)
+    ]
     return None if None in amounts else sum(amounts)
 
 
