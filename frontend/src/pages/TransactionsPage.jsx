@@ -12,37 +12,16 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { won } from '../utils/money.js'
 import { useApi } from '../utils/api.js'
-import { SPEND_CATS, ETC, PENDING, catIcon } from '../utils/categories.js'
+import { PENDING } from '../utils/categories.js'
+import { CHIPS, toView } from '../utils/transactions.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import TransactionPopup from '../popups/TransactionPopup.jsx'
 import TxPickPopup from '../popups/TxPickPopup.jsx'
 import FilterPopup from '../popups/FilterPopup.jsx'
 
-const CHIPS = [...SPEND_CATS, ETC]  // 카테고리 칩 (확인 필요는 따로) · 사용자가 거래 카테고리를 고를 때도 이 목록
 // 다른 화면(홈 · 예산 · 소비 분석 카드)이 아직 ?category=확인 필요 처럼 이름으로 보내서, 이름이 오면 코드로 바꿔 읽는다
 const CODE_BY_NAME = Object.fromEntries([...CHIPS, PENDING].map((c) => [c.name, c.code]))
-const KIND = { spending: 'normal', income: 'income', transfer: 'transfer' }
-
-// API 한 줄 → 화면 · 팝업이 쓰는 모양
-function toView(item) {
-  const kind = KIND[item.transactionType] ?? 'normal'
-  return {
-    id: item.transactionId,
-    kind: item.classifyState === 'needs_review' ? 'pending' : kind,
-    icon: kind === 'income' ? 'Banknote' : kind === 'transfer' ? 'Send' : catIcon(item.categoryName),
-    name: item.merchantName,
-    cat: item.categoryName,
-    amount: item.amount,
-    net: item.netAmount,
-    cancel: item.cancel.state === 'none' ? null : item.cancel.state,  // null · 'partial' · 'full'
-    cancelAmount: item.cancel.amount,
-    via: (item.paymentCard ?? item.paymentAccount)?.displayName,
-    funding: item.funding,
-    isSalary: item.isSalary === true,  // 서버가 월급으로 본 입금만 (11/4)
-  }
-}
-
 // '2026-10-11' → '10월 11일' (오늘이면 ' · 오늘')
 function dayLabel(iso) {
   const [, m, d] = iso.split('-').map(Number)

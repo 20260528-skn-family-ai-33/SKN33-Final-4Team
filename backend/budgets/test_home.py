@@ -899,11 +899,13 @@ class LockOrderTest(TransactionTestCase):
         self.tx(self.HIGH, 700_000, date(2026, 10, 20))
         self.tx(self.LOW, 500_000, date(2026, 10, 21))
 
-        self.race(
-            budgets_api, "find_withdrawals",
-            lambda: home_data(self.user, date(2026, 10, 23)),
-            lambda: process_new_transactions(self.user, [self.LOW, self.HIGH]),
-        )
+        # 파이프라인도 고정지출 연결을 하므로(⑥, 11/4) 같은 '오늘'로 돈다
+        with patch("django.utils.timezone.localdate", return_value=date(2026, 10, 23)):
+            self.race(
+                budgets_api, "find_withdrawals",
+                lambda: home_data(self.user, date(2026, 10, 23)),
+                lambda: process_new_transactions(self.user, [self.LOW, self.HIGH]),
+            )
         for e in (first, second):
             self.assertEqual(PaymentDue.objects.get(recurring=e).payment_state, "paid")
 
@@ -925,8 +927,9 @@ class LockOrderTest(TransactionTestCase):
             assert r.status_code == 200, r.content
 
         # 교체: 새 거래(큰 ID)를 잠근 뒤, 기존 연결(작은 ID)을 풀기 직전에 멈춤
-        self.race(budgets_api, "unlink_current", replace,
-                  lambda: process_new_transactions(self.user, [self.LOW, self.HIGH]), before=True)
+        with patch("django.utils.timezone.localdate", return_value=date(2026, 10, 22)):  # 파이프라인도 같은 '오늘' (⑥)
+            self.race(budgets_api, "unlink_current", replace,
+                      lambda: process_new_transactions(self.user, [self.LOW, self.HIGH]), before=True)
         due = PaymentDue.objects.get(recurring=e)
         self.assertEqual(list(due.matches.values_list("transaction_id", flat=True)), [self.HIGH])
 
