@@ -493,6 +493,8 @@ def budget_approve(request, budget_id):
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def fixed_list(request):
+    from .fixed_bills import fixed_bill_preview
+
     if request.method == "POST":
         return fixed_create(request)
 
@@ -513,6 +515,7 @@ def fixed_list(request):
 
     return Response({
         "items" : items,
+        "card_bills": fixed_bill_preview(request.user, cycle, today),
         "summary" : {
             "confirmed_monthly_total" : confirmed.aggregate(total = Sum("amount"))["total"] or 0, # 확정 합계
             "suggested_count" : suggested.count()

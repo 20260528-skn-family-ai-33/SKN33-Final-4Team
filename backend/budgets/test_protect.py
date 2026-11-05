@@ -397,7 +397,7 @@ class EmptyOnboardingFlowTest(TestCase):
 
     def test_no_fixed_no_savings_reaches_protect_save(self):
         self.assertEqual(self.client.get("/api/budgets/fixed/").json(),
-                         {"items": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
+                         {"items": [], "cardBills": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
         self.assertEqual(self.client.get("/api/budgets/savings/?v=1").json(),  # 화면이 다시 받을 때 붙이는 ?v= 는 무시
                          {"items": [], "summary": {"minimumMonthly": 0, "suggestedCount": 0}})
         data = self.client.get(URL).json()

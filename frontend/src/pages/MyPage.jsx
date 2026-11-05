@@ -6,6 +6,7 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { usePopup } from '../popups/context.js'
 import PrivacyPopup from '../popups/PrivacyPopup.jsx'
+import WithdrawPopup from '../popups/WithdrawPopup.jsx'
 import HelpPopup from '../popups/HelpPopup.jsx'
 import { PATHS } from '../routes.js'
 import { apiSend, useApi } from '../utils/api.js'
@@ -108,10 +109,11 @@ export default function MyPage() {
       <div className="mc-card">
         <div className="mc-row">
           <span className="mc-tile"><Icon name="UserRound" /></span>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
             <h2>{user.nickname}</h2>
             <span className="mc-muted">{user.email}</span>
           </div>
+          <button type="button" className="mc-link" onClick={() => navigate(PATHS.myInfo)}>내 정보 보기 ›</button>
         </div>
       </div>
 
@@ -151,6 +153,7 @@ export default function MyPage() {
         >
           {isLoggingOut ? '로그아웃 중…' : '로그아웃　›'}
         </button>
+        <button type="button" className="mc-listrow" disabled={isLoggingOut} onClick={() => openPopup(<WithdrawPopup />)}>회원 탈퇴　›</button>
 
         {logoutError && (
           <p className="mc-error" role="alert">

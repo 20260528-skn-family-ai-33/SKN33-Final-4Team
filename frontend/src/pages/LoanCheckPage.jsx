@@ -141,22 +141,26 @@ export default function LoanCheckPage() {
   const unfinished = Object.values(editing).some(Boolean)
   const onEditing = (id, value) => setEditing((old) => ({ ...old, [id]: value }))
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
-  const done = () => navigate(manage ? (state?.from === 'home' ? PATHS.home : PATHS.connections) : PATHS.salary)
+  const done = () => navigate(manage ? (state?.from === 'home' ? PATHS.home : PATHS.connections) : PATHS.protect)
   const rows = [...(data?.items ?? [])].sort((a, b) => Number(b.loanId === state?.loanId) - Number(a.loanId === state?.loanId))
   return (
     <Layout title="대출 확인" showBack foot={<button type="button" className="mc-primary" disabled={unfinished} onClick={done}>{manage ? '확인 마침' : '다음'}</button>}>
-      {!manage && <StepBar step={2} />}
+      {!manage && <StepBar step={4} />}
       <h1>상환 중인 대출</h1>
       <p className="mc-muted">대출별로 상환 정보를 확인하고 저장해 주세요.</p>
       {error ? <div className="mc-card">
-        <p className="mc-error" role="alert">{error.code === 'consent_required' ? '대출 목록을 보려면 대출 조회 동의가 필요해요.' : error.status ? error.message : '대출 목록을 불러오지 못했어요.'}</p>
+        <p className="mc-error" role="alert">{error.code === 'consent_required' ? '기관 대출을 보려면 대출 조회 동의가 필요해요.' : error.status ? error.message : '대출 목록을 불러오지 못했어요.'}</p>
         {error.code === 'consent_required' ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>연결 화면에서 동의하기</button> : <button type="button" className="mc-secondary" onClick={reload}>다시 시도</button>}
       </div> : !data ? <p role="status">대출을 불러오는 중…</p> : <>
-        {rows.length === 0 && <p className="mc-note">저장된 상환 중 대출이 없어요. 조회되지 않는 대출은 직접 등록할 수 있어요.</p>}
+        {data.hasInquiryConsent === false && <div className="mc-card">
+          <p className="mc-note">직접 등록한 대출은 조회 동의 없이 확인하고 수정할 수 있어요. 금융기관에서 대출을 불러오려면 대출 조회에 동의해 주세요.</p>
+          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>기관 대출 조회에 동의하기</button>
+        </div>}
+        {rows.length === 0 && <p className="mc-note">{data.hasInquiryConsent === false ? '직접 등록한 상환 중 대출이 없어요. 대출을 직접 등록할 수 있어요.' : '저장된 상환 중 대출이 없어요. 조회되지 않는 대출은 직접 등록할 수 있어요.'}</p>}
         {rows.map((loan) => <LoanCard key={loan.loanId} loan={loan} onEditing={onEditing} />)}
       </>}
       {(data || error?.code === 'consent_required') && <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup onSaved={(created) => { setRegistered(created.productName); reload() }} />)}>+ 조회되지 않은 대출 직접 등록</button>}
-      {registered && <p className="mc-note" role="status">{registered} 대출을 등록했어요.{error?.code === 'consent_required' && ' 등록한 대출의 목록 조회는 대출 조회 동의 후 이용할 수 있어요.'}</p>}
+      {registered && <p className="mc-note" role="status">{registered} 대출을 등록했어요.</p>}
       {unfinished && <p className="mc-note" role="status">수정한 대출의 상환 정보를 저장한 뒤 이동해 주세요.</p>}
     </Layout>
   )

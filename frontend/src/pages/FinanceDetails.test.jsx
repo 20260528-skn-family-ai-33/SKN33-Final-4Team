@@ -7,6 +7,7 @@ import PopupProvider from '../popups/PopupProvider.jsx'
 import LoanCheckPage from './LoanCheckPage.jsx'
 import ConnectionsPage from './ConnectionsPage.jsx'
 import ConnectDonePage from './ConnectDonePage.jsx'
+import SavingsPage from './SavingsPage.jsx'
 import HomePage from './HomePage.jsx'
 import { PATHS } from '../routes.js'
 
@@ -31,7 +32,7 @@ const home = {
 }
 const reply = (body, status = 200) => ({ ok: status < 400, status, json: async () => body })
 const failure = (code, message, fields) => reply({ error: { code, message, ...(fields ? { fields } : {}) } }, 400)
-let host, root, loans, billData, homeData, loanError, billError, writes, fetchMock
+let host, root, loans, billData, homeData, loanError, billError, writes, fetchMock, hasInquiryConsent
 function Location() { return <output data-path>{useLocation().pathname}</output> }
 const button = (text) => [...host.querySelectorAll('button')].find((b) => b.textContent.includes(text))
 const click = (text) => act(async () => button(text).click())
@@ -49,6 +50,7 @@ async function mount(path = PATHS.loanCheck, state) {
         <Route path={PATHS.loanCheck} element={<LoanCheckPage />} />
         <Route path={PATHS.connections} element={<ConnectionsPage />} />
         <Route path={PATHS.connectDone} element={<ConnectDonePage />} />
+        <Route path={PATHS.savings} element={<SavingsPage />} />
         <Route path={PATHS.home} element={<HomePage />} />
         <Route path="*" element={<p>이동한 화면</p>} />
       </Routes></PopupProvider>
@@ -62,6 +64,7 @@ const sent = (method) => fetchMock.mock.calls.filter(([, options]) => options?.m
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   loans = [structuredClone(loan)]
+  hasInquiryConsent = true
   billData = structuredClone(bill)
   homeData = structuredClone(home)
   loanError = billError = null
@@ -78,7 +81,8 @@ beforeEach(() => {
   })
   fetchMock = vi.fn(async (url, options) => {
     if (options?.method) return writes(url, options)
-    if (url === '/api/finance/loans/') return loanError ?? reply({ items: structuredClone(loans) })
+    if (url === '/api/finance/loans/') return loanError ?? reply({ items: structuredClone(loans), hasInquiryConsent })
+    if (url.startsWith('/api/budgets/savings/')) return reply({ items: [], summary: { minimumMonthly: 0, suggestedCount: 0 } })
     if (url === '/api/finance/card-bills/bill-1/') return billError ?? reply(billData)
     if (url === '/api/home/') return reply(homeData)
     if (url === '/api/csrf/') return reply({ ok: true })
@@ -121,7 +125,7 @@ it('보완 세 칸만 PATCH하고 지운 값은 null, 모름 선택은 unknown�
   expect(host.textContent).toContain('상환 정보를 저장했어요')
   expect(button('다음').disabled).toBe(false)
   await click('다음')
-  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.salary)
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.protect)
 })
 it('수정 실패는 입력을 유지하고 재시도 성공 뒤 관리 화면으로 돌아간다', async () => {
   writes.mockResolvedValueOnce(failure('invalid', '입력값을 확인해 주세요.', { monthlyPayment: ['상환 금액 확인 필요'] }))
@@ -263,26 +267,50 @@ it('홈 대출 항목에서 해당 대출을 우선 표시하고 저장 후 홈�
   await click('확인 마침')
   expect(host.querySelector('[data-path]').textContent).toBe(PATHS.home)
 })
-it('연결 완료에서 대출 확인을 선택하고 이후 월급 입력으로 진행한다', async () => {
-  loans = []
+it('연결 완료에서는 월급 입력으로 진행한다', async () => {
   await mount(PATHS.connectDone)
-  await click('대출 상환 정보 확인·등록')
-  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.loanCheck)
-  expect(host.textContent).toContain('저장된 상환 중 대출이 없어요')
   await click('다음')
   expect(host.querySelector('[data-path]').textContent).toBe(PATHS.salary)
 })
 
+it('저축 확인 후 대출이 없어도 대출 확인을 거쳐 지킬 돈으로 진행한다', async () => {
+  loans = []
+  await mount(PATHS.savings)
+  await click('계속하기')
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.loanCheck)
+  expect(host.textContent).toContain('저장된 상환 중 대출이 없어요')
+  await click('다음')
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.protect)
+})
+
 // 수동 등록은 조회 동의를 요구하지 않는 서버 계약을 따른다.
-it('조회 동의 없이도 직접 등록할 수 있고 목록 조회 제한을 알린다', async () => {
-  loanError = failure('consent_required', '동의 필요')
-  await mount(PATHS.connections)
+it('조회 동의 없이 직접 등록한 대출을 목록에서 확인하고 상환 정보를 수정한다', async () => {
+  loans = []
+  hasInquiryConsent = false
+  await mount()
   await fillCreate()
   await submit(dialogForm())
   expect(sent('POST')).toHaveLength(1)
   expect(host.textContent).toContain('새 학자금 대출을 등록했어요')
-  expect(host.textContent).toContain('목록 조회는 대출 조회 동의 후')
+  expect(host.textContent).toContain('직접 등록한 대출은 조회 동의 없이 확인하고 수정할 수 있어요')
+  expect(host.textContent).not.toContain('목록 조회는 대출 조회 동의 후')
+  expect(loanForm()).toBeTruthy()
+  await input(loanForm().querySelector('input[type=text]'), '130000')
+  await submit(loanForm())
+  expect(sent('PATCH')).toHaveLength(1)
+  expect(host.textContent).toContain('상환 정보를 저장했어요')
   expect(fetchMock.mock.calls.some(([url]) => url === '/api/finance/consents/')).toBe(false)
+})
+
+it('직접 등록 목록이 비어도 기관 대출이 없다고 단정하지 않고 선택적인 조회 동의를 안내한다', async () => {
+  loans = []
+  hasInquiryConsent = false
+  await mount()
+  expect(host.textContent).toContain('직접 등록한 상환 중 대출이 없어요')
+  expect(host.textContent).toContain('금융기관에서 대출을 불러오려면')
+  expect(button('다음').disabled).toBe(false)
+  await click('기관 대출 조회에 동의하기')
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connect)
 })
 
 it('등록 요청 뒤 닫은 팝업의 늦은 응답은 새로 연 팝업을 닫지 않는다', async () => {

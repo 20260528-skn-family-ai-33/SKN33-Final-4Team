@@ -148,7 +148,7 @@ class FixedScreenFlowTest(FixedFixture, TestCase):
         self.assertEqual((r.status_code, r.json()["amount"]), (200, 720000))
         self.assertEqual(self.client.get(URL).json()["summary"]["confirmedMonthlyTotal"], 720000)
         self.assertEqual(self.client.delete(f"{URL}{rid}/").status_code, 204)
-        self.assertEqual(self.client.get(URL).json(), {"items": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
+        self.assertEqual(self.client.get(URL).json(), {"items": [], "cardBills": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
 
 
 class FixedPaymentDueTest(FixedFixture, TestCase):

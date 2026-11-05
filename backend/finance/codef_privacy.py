@@ -3,11 +3,22 @@
 계약: https://github.com/codef-io/codef-python (계정 목록 조회 / 계정 삭제).
 목록을 먼저 읽어 이미 지운 기관의 재요청도 안전하게 처리한다.
 """
+import json
+
 from . import codef
 
 
 def registered_accounts(connected_id):
-    data = codef._check(codef._client().get_account_list(codef._service_type(), {"connectedId": connected_id}))
+    raw = codef._client().get_account_list(codef._service_type(), {"connectedId": connected_id})
+    body = json.loads(raw)
+    data = body.get("data")
+    # 마지막 인증수단을 삭제한 뒤 목록 조회는 성공 코드 대신 '연결된 계정 없음'을 반환할 수 있다.
+    # 이 목록 API의 해당 코드 + 명시적인 빈 전체 목록에만 허용한다. 다른 오류는 삭제 완료로 보지 않는다.
+    if (body.get("result", {}).get("code") == "CF-04014"
+            and isinstance(data, dict) and data.get("accountList") == []
+            and not data.get("hasNext") and not data.get("errorList")):
+        return []
+    data = codef._check(raw)
     rows = data.get("accountList")
     if not isinstance(rows, list) or data.get("hasNext"):
         raise ValueError("provider_account_list_incomplete")

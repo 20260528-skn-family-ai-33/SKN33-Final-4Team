@@ -592,6 +592,21 @@ GET /api/budgets/fixed/
 | `summary` | 객체 | 확정 항목의 월 금액 합계와 후보 수 |
 | `summary.confirmedMonthlyTotal` | 정수 | 확정 항목의 `amount` 합계, 원 단위. 후보 제외. “매달 고정지출 합계” 표시용이며 예산에서 뺄 금액이 아님 |
 | `summary.suggestedCount` | 정수 | 후보(`suggested`) 항목 수 |
+| `cardBills` | 배열 | 관리 대상 카드가 있는 카드사별 참고 청구금액. 유효한 카드 동의·연결·선택이 없으면 `[]` |
+| `cardBills[].issuerCode` / `issuerName` | 문자 | 카드사 코드와 표시 이름 |
+| `cardBills[].confirmedFixedAmount` | 정수 | 해당 카드사에서 내는 확정 고정비 월 합계. 후보·중지·무시 항목 제외 |
+| `cardBills[].totalAmount` | 정수 또는 `null` | 이번 급여 주기에 낼 조회된 카드 사용 명세서 합계 |
+| `cardBills[].amountAfterFixed` | 정수 또는 `null` | `max(0, totalAmount - confirmedFixedAmount)`. 예산 선차감액과 다른 참고 금액 |
+| `cardBills[].isEstimated` | 참/거짓 또는 `null` | 예상·확정 여부 불명 청구서가 포함되면 `true`. 금액을 모르면 `null` |
+| `cardBills[].reason` | 문자 또는 `null` | 정상은 `null`. `cycle_unavailable`, `bill_scope_unknown`, `bill_due_date_unknown`, `bill_type_unknown`, `first_bill_ambiguous`, `bill_unavailable`, `bill_amount_invalid` |
+
+- 11/5: 온보딩 후보에 **고정지출 맞아요** 버튼을 제공한다. 해당 1건만 확정한 뒤 목록을 재조회해 확정 합계와 카드 고정비 제외 청구금액을 함께 갱신한다. 저장·재조회 중 버튼을 잠그고, 저장 실패 시 합계를 올리지 않는다. 남은 후보를 일괄 확정하는 **확인하고 다음** 동작은 유지하며 화면에서 이를 알린다.
+- 청구서는 `withdrawalDueDate` 우선, 없으면 `paymentDueDate`로 급여 주기 시작일 이상·종료 경계일 미만을 선택한다. 카드사 통합 청구만 합산하고 카드론 명세서는 제외한다. 같은 날 여러 명세서의 유형을 구분할 수 없으면 금액을 `null`로 둔다. 같은 카드사의 카드가 여러 장이어도 청구서를 중복 합산하지 않는다.
+- 카드 고정비 귀속은 지킬 돈과 같은 규칙으로, 이번 주기에 납부로 연결된 실제 결제 카드가 우선이고 없으면 고정지출에 등록한 카드를 사용한다. 카드사 전체 청구서이므로 관리 대상이 아닌 카드의 확정 고정비도 포함한다. 연결 카드가 없는 고정지출은 카드사에 임의 배분하지 않는다.
+- 청구서 미확보·날짜/범위/금액 오류는 0원이 아닌 **청구서 확인 필요**로 표시한다. 정상 조회된 0원은 그대로 표시한다. 현재 저장된 자료의 참고 금액이며 조회 기간 전체 확보를 보증하지 않는다. 실제 예산 선차감은 기존 지킬 돈 계산에서 첫 청구서 여부·이번 주기 사용액·할부금·수집 완료 여부를 따로 반영한다.
+- 활성 급여 주기가 없거나 오늘을 포함하지 않으면(`startsOn ≤ 오늘 < endsBefore` 불충족), 저장된 급여 설정으로 현재 표시 기간을 계산한다. 홈 조회 전 이전 주기가 active로 남아 있어도 지난 청구금액을 표시하지 않는다. 급여 설정도 없으면 `cycle_unavailable`로 보류한다. 표시 기간 보완으로 급여 주기·예산·납부 예정은 생성하지 않는다.
+- 화면은 월 카드 고정비를 별도 줄로 표시하지 않고, 이번 청구금액에서 실제로 제외한 금액(`min(totalAmount, confirmedFixedAmount)`)만 ‘이번 청구금액에서 제외’에 표시한다. 청구금액이 0원이면 제외액도 0원이며 월 고정지출 합계는 유지한다. 0원만으로 납부 완료를 추정하지 않는다.
+
 
 - `suggested`(후보)와 `confirmed`(확정)를 함께 반환한다. `stopped`·`ignored`는 목록에 포함하지 않는다.
 - 서버가 후보를 먼저 최근에 찾은 순(`created_at` 최신순, 발견·등록 시각 — 10/21 DB 칸 추가)으로 정렬하고, 그다음 확정 항목을 `paymentDay`가 빠른 순으로 정렬한다. 확정 항목 중 `paymentDay`가 `null`이면 맨 아래에 둔다.
@@ -676,6 +691,7 @@ GET /api/budgets/fixed/
       "evidenceSuggestion": null
     }
   ],
+  "cardBills": [],
   "summary": {
     "confirmedMonthlyTotal": 715000,
     "suggestedCount": 1
@@ -688,6 +704,7 @@ GET /api/budgets/fixed/
 ```json
 {
   "items": [],
+  "cardBills": [],
   "summary": {
     "confirmedMonthlyTotal": 0,
     "suggestedCount": 0
@@ -710,7 +727,7 @@ GET /api/budgets/fixed/
 - 카드 결제라도 확정 항목이면 `confirmedMonthlyTotal`에 포함한다. 표시용 월 합계와 실제 납부 예정은 구분한다.
 - 계좌·카드 이름과 번호는 서버가 만든 표시 이름을 사용한다. 프론트에서 번호 원문을 조합하거나 누락된 번호를 추측하지 않는다.
 - 자동 감지 안내와 감지 배지는 `status = suggested`인 항목에만 표시한다(11/3). 응답에 근거가 없는 “최근 3개월 3회 감지” 문구를 모든 항목에 표시하지 않는다.
-- 금액 합계는 `confirmedMonthlyTotal`만 넣고, 남은 결제액·예산 차감액은 넣지 않는다. “다음 급여일까지 아직 나갈 금액”은 홈 계산과 함께 정한다. 카드 청구서도 이번 응답에는 넣지 않는다. `confirmedMonthlyTotal`을 예산에서 차감할 금액으로 사용하지 않는다. 카드 고정지출은 별도 납부 예정 없이 카드 청구서에 포함하며, 첫 청구서의 예산 선차감 계산은 이 API에서 하지 않는다.
+- 금액 합계는 `confirmedMonthlyTotal`만 넣고, 남은 결제액·예산 차감액은 넣지 않는다. “다음 급여일까지 아직 나갈 금액”은 홈 계산과 함께 정한다. 카드 청구서는 별도 `cardBills`에 참고 금액으로 제공한다. `confirmedMonthlyTotal`을 예산에서 차감할 금액으로 사용하지 않는다. 카드 고정지출은 별도 납부 예정 없이 카드 청구서에 포함하며, 첫 청구서의 예산 선차감 계산은 이 API에서 하지 않는다.
 
 **실패하면**
 

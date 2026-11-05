@@ -285,12 +285,63 @@ class LoanCreateTest(TestCase):
             self.assertEqual(response.status_code, 201)
             self.assertEqual(PaymentDue.objects.get(loan_id=response.json()["loanId"]).payment_state, "needs_review")
 
-    def test_get_still_requires_consent_and_post_does_not(self):
-        self.assertEqual(self.post(BASE).status_code, 201)
+    def test_manual_loan_can_be_listed_and_updated_without_inquiry_consent(self):
+        created = self.post(BASE)
+        self.assertEqual(created.status_code, 201)
+        loan = Loan.objects.get(pk=created.json()["loanId"])
+        provider = Loan.objects.create(user=self.user, origin="provider", status="repaying")
+        other = get_user_model().objects.create_user(email="other-manual-loan@example.invalid")
+        Loan.objects.create(user=other, origin="manual", status="repaying")
         response = self.client.get(URL)
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.json()["hasInquiryConsent"])
+        self.assertEqual([row["loanId"] for row in response.json()["items"]], [str(loan.pk)])
+        self.assertEqual(self.patch_loan(loan, {"monthlyPayment": 120000}).status_code, 200)
+        response = self.patch_loan(provider, {"monthlyPayment": 120000})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.json()["error"]["code"], "consent_required")
-        self.assertEqual(self.counts(), (1, 0, 1))
+        provider.refresh_from_db()
+        self.assertIsNone(provider.monthly_payment)
+
+    def test_missing_or_revoked_loan_consent_does_not_expose_provider_loans(self):
+        provider = Loan.objects.create(user=self.user, origin="provider", status="repaying")
+        consent = Consent.objects.create(user=self.user, purpose="finance_inquiry", product_scope="bank",
+                                         document_version="v1", document_hash="test")
+        self.assertEqual(self.client.get(URL).json(), {"items": [], "hasInquiryConsent": False})
+        consent.product_scope = "loan"
+        consent.save()
+        body = self.client.get(URL).json()
+        self.assertTrue(body["hasInquiryConsent"])
+        self.assertEqual([row["loanId"] for row in body["items"]], [str(provider.pk)])
+        self.assertEqual(self.patch_loan(provider, {"monthlyPayment": 120000}).status_code, 200)
+        consent.revoked_at = timezone.now()
+        consent.save()
+        self.assertEqual(self.client.get(URL).json(), {"items": [], "hasInquiryConsent": False})
+        self.assertEqual(self.patch_loan(provider, {"monthlyPayment": 130000}).status_code, 403)
+
+    def test_withdrawal_preserves_manual_loan_management(self):
+        loan = Loan.objects.get(pk=self.post(FULL).json()["loanId"])
+        Consent.objects.create(user=self.user, purpose="finance_inquiry", product_scope="loan",
+                               document_version="v1", document_hash="test")
+        provider = Loan.objects.create(user=self.user, origin="provider", status="repaying")
+        response = self.client.delete('/api/finance/consents/loan/', data=json.dumps({"confirm": True}),
+                                      content_type="application/json", HTTP_X_CSRFTOKEN=self.token)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(Loan.objects.filter(pk=provider.pk).exists())
+        body = self.client.get(URL).json()
+        self.assertFalse(body["hasInquiryConsent"])
+        self.assertEqual([row["loanId"] for row in body["items"]], [str(loan.pk)])
+        self.assertEqual(self.patch_loan(loan, {"monthlyPayment": 130000}).status_code, 200)
+
+    def test_manual_list_and_update_still_require_login_and_ownership(self):
+        loan = Loan.objects.get(pk=self.post(BASE).json()["loanId"])
+        other = get_user_model().objects.create_user(email="manual-loan-owner@example.invalid")
+        self.client.force_login(other)
+        self.assertEqual(self.client.get(URL).json(), {"items": [], "hasInquiryConsent": False})
+        self.assertEqual(self.patch_loan(loan, {"monthlyPayment": 120000}).status_code, 404)
+        self.client.logout()
+        self.assertEqual(self.client.get(URL).status_code, 403)
+        self.assertEqual(self.patch_loan(loan, {"monthlyPayment": 120000}).status_code, 403)
 
     def test_manual_loan_patch_cancels_reactivates_and_protects_paid_due(self):
         response = self.post(FULL)
