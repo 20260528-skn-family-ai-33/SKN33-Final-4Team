@@ -150,6 +150,37 @@
             }
           }
         }
+      },
+      "get": {
+        "summary": "금융 조회 동의 상태",
+        "operationId": "getConsentStates",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "은행·카드·대출 동의의 실제 상태와 버전·시각. 미동의는 날짜와 버전 null. 외부 호출 없음.",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStates"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/finance/connect/accounts/": {
@@ -997,6 +1028,116 @@
           }
         }
       }
+    },
+    "/api/finance/consents/{scope}/": {
+      "delete": {
+        "summary": "동의 철회와 해당 범위 데이터 삭제",
+        "operationId": "revokeFinanceConsent",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "해당 범위 원천 데이터 및 자동 탐지 항목 삭제. 혼합 예산·쿠션·대화·작업 캐시는 초기화. 직접 등록 항목과 다른 범위 원천은 보존. 은행 인증은 계좌·대출 동의가 모두 없어질 때 삭제. 반복 요청은 현재 상태 반환.",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStates"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "확인 누락·잘못된 본문: invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "알 수 없는 scope: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "진행 중 작업: privacy_busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "외부 연결 삭제 실패: provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "bank",
+                "card",
+                "loan"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1775,6 +1916,16 @@
               "message"
             ],
             "nullable": true
+          },
+          "cardReviewCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 이번 조회의 결제 카드 확인 필요 건수"
+          },
+          "approvalsComplete": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "카드 승인 내역 실제 조회 범위를 모두 반영했는지. 기관 status=succeeded와 별개."
           }
         },
         "required": [
@@ -1896,6 +2047,65 @@
             }
           ]
         }
+      },
+      "ConsentStates": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productScope",
+                "required",
+                "status",
+                "documentVersion",
+                "grantedAt",
+                "revokedAt"
+              ],
+              "properties": {
+                "productScope": {
+                  "type": "string",
+                  "enum": [
+                    "bank",
+                    "card",
+                    "loan"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "granted",
+                    "revoked",
+                    "not_granted"
+                  ]
+                },
+                "documentVersion": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "grantedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time"
+                },
+                "revokedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

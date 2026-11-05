@@ -260,11 +260,15 @@ def sync_connection(user, connection, cid, cred, today):
             else:
                 start = refresh_start(today, last_success_day(connection, "card_sync"))
                 cred = cred or {}
-                part, reason = run_part("cards", connection, lambda: cards(
+                counts = {}
+                part, reason = run_part("cards", connection, lambda: counts.update(cards(
                     user, cid, org, start, today, bill_months(today, last_bill_day(connection)),
                     card_no=cred.get("card_no"), card_password=cred.get("card_password"), connection_id=connection.pk,
-                ))
+                ) or {}))
                 item["parts"].append(part)
+                if counts:
+                    item["card_review_count"] = counts.get("card_review_count", 0)
+                    item["approvals_complete"] = counts.get("approvals_complete")
     else:
         item["parts"].append({"kind": connection.business_type, "status": "skipped", "reason": "not_supported"})
 

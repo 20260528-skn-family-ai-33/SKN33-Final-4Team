@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 43개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 42개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 48개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -536,6 +536,135 @@
           }
         },
         "x-implementation-status": "implemented"
+      },
+      "delete": {
+        "summary": "[구현] 회원 탈퇴와 전체 데이터 삭제",
+        "operationId": "withdrawAccount",
+        "tags": [
+          "공통 · 인증"
+        ],
+        "x-source": "docs/api/auth.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n앱 로그인 비밀번호와 confirm=true 확인 후 본인 및 소유 데이터·세션·CODEF 등록 인증수단 삭제. 진행 중 작업은 완료 후 재시도. 외부 삭제 실패 시 DB를 삭제하지 않고 재시도할 수 있다.\n\n원본: `docs/api/auth.md`",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthOk"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "확인·비밀번호 입력 오류: invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "진행 중 작업: privacy_busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "외부 연결 삭제 실패: provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "password",
+                  "confirm"
+                ],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "minLength": 1,
+                    "writeOnly": true
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
+      }
+    },
+    "/api/my/": {
+      "get": {
+        "summary": "[구현] 마이페이지 실제 요약",
+        "operationId": "mySummary",
+        "tags": [
+          "공통 · 인증"
+        ],
+        "x-source": "docs/api/auth.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n저장된 급여·확정 고정지출·정기 저축·지킬 돈·활성 연결을 집계한다. 미설정은 null, 실제 0건은 0. CODEF를 호출하지 않는다.\n\n원본: `docs/api/auth.md`",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MySummary"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
       }
     },
     "/api/finance/consents/": {
@@ -697,6 +826,38 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ]
+      },
+      "get": {
+        "summary": "[구현] 금융 조회 동의 상태",
+        "operationId": "getConsentStates",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n은행·카드·대출 동의의 실제 상태와 버전·시각. 미동의는 날짜와 버전 null. 외부 호출 없음.\n\n원본: `docs/api/finance-connect.md`",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStates"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
       }
     },
     "/api/finance/connect/accounts/": {
@@ -1569,6 +1730,120 @@
         ]
       }
     },
+    "/api/finance/consents/{scope}/": {
+      "delete": {
+        "summary": "[구현] 동의 철회와 해당 범위 데이터 삭제",
+        "operationId": "revokeFinanceConsent",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n해당 범위 원천 데이터 및 자동 탐지 항목 삭제. 혼합 예산·쿠션·대화·작업 캐시는 초기화. 직접 등록 항목과 다른 범위 원천은 보존. 은행 인증은 계좌·대출 동의가 모두 없어질 때 삭제. 반복 요청은 현재 상태 반환.\n\n원본: `docs/api/finance-connect.md`",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStates"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "확인 누락·잘못된 본문: invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "알 수 없는 scope: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "진행 중 작업: privacy_busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "외부 연결 삭제 실패: provider_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "bank",
+                "card",
+                "loan"
+              ]
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
     "/api/finance/connect/cards/": {
       "get": {
         "summary": "[구현] 카드 후보 보기",
@@ -2066,6 +2341,178 @@
             }
           }
         ],
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/finance/card-reviews/": {
+      "get": {
+        "tags": [
+          "카드"
+        ],
+        "summary": "[구현] 결제 카드 확인이 필요한 승인 조회",
+        "operationId": "listCardReviews",
+        "x-source": "docs/api/cards.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n저장된 본인 미확인 승인만 조회한다. 카드명 일치는 참고 정보이며 자동 연결하지 않는다. canResolve=false면 최신 금액 정보가 불확실하므로 재조회해야 한다. 원문 번호·승인 식별 키는 반환하지 않는다.\n\n원본: `docs/api/cards.md`",
+        "responses": {
+          "200": {
+            "description": "미확인 승인 목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardReviewList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/finance/card-reviews/{id}/": {
+      "put": {
+        "tags": [
+          "카드"
+        ],
+        "summary": "[구현] 승인 한 건의 결제 카드 확인",
+        "operationId": "resolveCardReview",
+        "x-source": "docs/api/cards.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n같은 회원·카드사의 연결 중인 카드만 허용. 동일 카드 재전송은 동일 거래를 반환하며 다른 카드로 재확인은 409. 조회의 모든 미확인 거래가 해소되고 금액 오류가 없을 때만 실제 조회 범위의 완료 기록을 생성한다. 승인된 예산은 자동 변경하지 않는다.\n\n원본: `docs/api/cards.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cardId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "cardId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "확인한 거래",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardReviewResolution"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid: 잘못된 입력 또는 금액·취소 정보 미확인",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "card_review_conflict: 이미 다른 카드로 확인한 거래",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
         "x-implementation-status": "implemented"
       }
     },
@@ -7932,6 +8379,146 @@
         ],
         "additionalProperties": false
       },
+      "MySummary": {
+        "type": "object",
+        "required": [
+          "salary",
+          "fixed",
+          "savings",
+          "protect",
+          "connections"
+        ],
+        "properties": {
+          "salary": {
+            "type": "object",
+            "required": [
+              "takeHomeIncome",
+              "payday",
+              "pendingPaydayChange"
+            ],
+            "properties": {
+              "takeHomeIncome": {
+                "type": "integer",
+                "minimum": 0,
+                "nullable": true
+              },
+              "payday": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 31,
+                "nullable": true
+              },
+              "pendingPaydayChange": {
+                "type": "object",
+                "required": [
+                  "payday",
+                  "effectiveOn"
+                ],
+                "properties": {
+                  "payday": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 31
+                  },
+                  "effectiveOn": {
+                    "type": "string",
+                    "format": "date"
+                  }
+                },
+                "additionalProperties": false,
+                "nullable": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "fixed": {
+            "type": "object",
+            "required": [
+              "count",
+              "monthlyTotal"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "monthlyTotal": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "savings": {
+            "type": "object",
+            "required": [
+              "count",
+              "monthlyTotal"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "monthlyTotal": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "protect": {
+            "type": "object",
+            "required": [
+              "livingBudget",
+              "savingsFloor",
+              "cushionMonthly"
+            ],
+            "properties": {
+              "livingBudget": {
+                "type": "integer",
+                "minimum": 0,
+                "nullable": true
+              },
+              "savingsFloor": {
+                "type": "integer",
+                "minimum": 0,
+                "nullable": true
+              },
+              "cushionMonthly": {
+                "type": "integer",
+                "minimum": 0,
+                "nullable": true
+              }
+            },
+            "additionalProperties": false
+          },
+          "connections": {
+            "type": "object",
+            "required": [
+              "bankCount",
+              "accountCount",
+              "cardCount"
+            ],
+            "properties": {
+              "bankCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "accountCount": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "cardCount": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
       "FinanceConsentInput": {
         "type": "object",
         "properties": {
@@ -8706,6 +9293,16 @@
               "message"
             ],
             "nullable": true
+          },
+          "cardReviewCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 이번 조회의 결제 카드 확인 필요 건수"
+          },
+          "approvalsComplete": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "카드 승인 내역 실제 조회 범위를 모두 반영했는지. 기관 status=succeeded와 별개."
           }
         },
         "required": [
@@ -8827,6 +9424,65 @@
             }
           ]
         }
+      },
+      "ConsentStates": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productScope",
+                "required",
+                "status",
+                "documentVersion",
+                "grantedAt",
+                "revokedAt"
+              ],
+              "properties": {
+                "productScope": {
+                  "type": "string",
+                  "enum": [
+                    "bank",
+                    "card",
+                    "loan"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "granted",
+                    "revoked",
+                    "not_granted"
+                  ]
+                },
+                "documentVersion": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "grantedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time"
+                },
+                "revokedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
       },
       "CardCandidate": {
         "type": "object",
@@ -9137,6 +9793,155 @@
           "itemsState",
           "items"
         ]
+      },
+      "CardReviewCandidate": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "relogin"
+            ]
+          },
+          "isSelected": {
+            "type": "boolean"
+          },
+          "nameMatches": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cardId",
+          "displayName",
+          "status",
+          "isSelected",
+          "nameMatches"
+        ],
+        "additionalProperties": false
+      },
+      "CardReview": {
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuerCode": {
+            "type": "string"
+          },
+          "issuerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "occurredTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "merchantName": {
+            "type": "string",
+            "nullable": true
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "isCanceled": {
+            "type": "boolean"
+          },
+          "canceledAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "canResolve": {
+            "type": "boolean"
+          },
+          "fetchedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardReviewCandidate"
+            }
+          }
+        },
+        "required": [
+          "reviewId",
+          "issuerCode",
+          "issuerName",
+          "occurredOn",
+          "occurredTime",
+          "merchantName",
+          "amount",
+          "isCanceled",
+          "canceledAmount",
+          "canResolve",
+          "fetchedAt",
+          "candidates"
+        ],
+        "additionalProperties": false
+      },
+      "CardReviewList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardReview"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "CardReviewResolution": {
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cardId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "resolved"
+            ]
+          }
+        },
+        "required": [
+          "reviewId",
+          "cardId",
+          "transactionId",
+          "status"
+        ],
+        "additionalProperties": false
       },
       "LoanFieldState": {
         "type": "object",
@@ -12175,7 +12980,7 @@
                 },
                 "reason": {
                   "type": "string",
-                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번 회차 할부 금액을 모름) · card_data_invalid(연결·금액 자료가 맞지 않음)"
+                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번 회차 할부 금액을 모름) · card_data_invalid(연결·금액 자료가 맞지 않음) · card_assignment_required(거래별 결제 카드 확인 필요)"
                 }
               }
             }
@@ -12777,18 +13582,18 @@
   },
   "x-source-sha256": {
     "docs/API_RULES.md": "5a862eacd4fddf7e0e26bc290b0fbc99995fbfa5f8b48c575b831a5ade53e952",
-    "docs/api/README.md": "f43501b82b906923224ebe8010ebeacdb0276c1304b8fa24b38106bcaf4aa0b4",
+    "docs/api/README.md": "4b4d5f5215d09644f14eaa2bd8f68b5210633a89192e484cd0f387ec760716f2",
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
-    "docs/api/auth.md": "b05a52188ec37319768f41cceeea4ce84c45899a7a725e60e6a088475fee785b",
-    "docs/api/finance-connect.md": "6081ac66a61ba8a61a9cede014a06195d37e3b9ec7e99ff4f1791ab441c5ea3e",
-    "docs/api/cards.md": "5d7229aa0f80e848a17f1af5442563d377fb6b319b4de218adfb1f9b8b68c858",
-    "docs/api/loans.md": "5e10ff3aed9226de07dba47fee6209fd2fe971af5c7e475a8371d6fe295c039c",
+    "docs/api/auth.md": "8bbbbde90dede70b16a100288cc33e5562495b1b23b6140354581b0dfecd70d1",
+    "docs/api/finance-connect.md": "4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4",
+    "docs/api/cards.md": "55710df4bb6d1f896efa14a5adf895f6695695808099e292828e9301b6d37931",
+    "docs/api/loans.md": "4ce00163f1f80a152113e5f2def5a0181c760241e0f5981c897d89948c1b09b8",
     "docs/api/transactions.md": "e1b863e74fe8bd77b0ba9996def70511edd609b6d36e59e2738ee68ecaf0c3be",
     "docs/api/fixed.md": "6eda341b01b9df157a3587305613d5b9f2b77a38e4e4686ca0d67787e566aff0",
     "docs/api/savings.md": "8d101c55ad8314a93e6f1fa549d2f5603c3acd8b29bd0fa19c58ba99768d39ed",
     "docs/api/home.md": "1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf",
     "docs/api/chat.md": "194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5",
-    "docs/api/budgets.md": "bc2e0bf7fa33177a0535fae61d0558ca41639afb84246510ebecba21e1c01b36"
+    "docs/api/budgets.md": "59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29"
   }
 }

@@ -12,6 +12,8 @@ import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
+import CardSyncPanel from '../components/CardSyncPanel.jsx'
+import CardReviewList from '../components/CardReviewList.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { HOUSING } from '../utils/direction.js'
@@ -43,16 +45,21 @@ export default function ProtectPage() {
   const { state: navState } = useLocation()
   const manage = navState?.from === 'my'
   const go = (to) => navigate(to, { state: navState })  // 고치러 가는 화면도 마이에서 왔으면 관리 모드로
-  const { data, error: loadError } = useApi('/api/budgets/protect/')
+  const { data, error: loadError, reload } = useApi('/api/budgets/protect/')
   const [edits, setValues] = useState(null)  // 고친 칸 글자 그대로 (빈 칸도 허용하려고 문자열로). 안 고쳤으면 null
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [busy, setBusy] = useState(false)
+  const [showReviews, setShowReviews] = useState(false)
+  const [showCardSync, setShowCardSync] = useState(false)
+  const [reviewVersion, setReviewVersion] = useState(0)
 
 
   if (!data) return <Layout title="지킬 돈 설정" showBack><ApiStatus error={loadError} /></Layout>
 
   const { base, blocked, recommended: rec, cushion } = data
+  const needsCardReview = data.cardPending?.some((item) => item.reason === 'card_assignment_required')
+  const pendingCardIds = (data.cardPending ?? []).map((item) => item.cardId)
   const start = data.saved ?? rec  // 저장한 값이 있으면 그 값, 없으면 추천값
   const values = edits ?? (start ? Object.fromEntries(ROWS.map(([k]) => [k, String(start[k])])) : null)
   const housingName = HOUSING[data.housingType]?.name
@@ -105,9 +112,23 @@ export default function ProtectPage() {
 
       {blocked?.reason === 'card_bill_pending' && (
         <div className="mc-card" role="alert">
-          <h2>카드 청구서를 확인하고 있어요</h2>
-          <p className="mc-muted" style={{ margin: '6px 0 0' }}>첫 카드 청구서에서 미리 뗄 돈을 알아야 고정비를 정할 수 있어요. 카드 내역을 다시 불러온 뒤 확인해 주세요.</p>
-          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connections)}>연결 관리로 가기</button>
+          <h2>{needsCardReview ? '결제 카드를 확인할 거래가 있어요' : '카드 내역을 더 확인해야 해요'}</h2>
+          <p className="mc-muted" style={{ margin: '6px 0 0' }}>{needsCardReview
+            ? '어떤 카드로 결제했는지 확인하면 카드 내역을 반영해 지킬 돈을 다시 계산할 수 있어요.'
+            : '청구서와 카드 사용 내역의 조회 기간·금액이 확인되어야 계산할 수 있어요. 아래에서 해당 카드사의 내역을 다시 불러와 주세요.'}</p>
+          {needsCardReview && <>
+            <button type="button" className="mc-secondary" onClick={() => setShowReviews((shown) => !shown)} aria-expanded={showReviews}>
+              {showReviews ? '확인할 거래 접기' : '결제 카드 확인하기'}
+            </button>
+            {showReviews && <CardReviewList key={reviewVersion} cardIds={pendingCardIds} onChanged={reload} />}
+            <button type="button" className="mc-link" onClick={() => setShowCardSync((shown) => !shown)} aria-expanded={showCardSync}>
+              {showCardSync ? '카드 내역 재조회 접기' : '카드 내역도 다시 불러오기'}
+            </button>
+          </>}
+          {(!needsCardReview || showCardSync) && <CardSyncPanel cardIds={pendingCardIds} onChanged={() => {
+            reload()
+            setReviewVersion((version) => version + 1)
+          }} />}
         </div>
       )}
 

@@ -16,6 +16,7 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
 import MustPayPopup from '../popups/MustPayPopup.jsx'
+import CardBillPopup from '../popups/CardBillPopup.jsx'
 import NoticePopup from '../popups/NoticePopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
 import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
@@ -103,11 +104,14 @@ export default function HomePage() {
   const toFixed = () => navigate(PATHS.fixed, { state: { from: 'home' } })  // 고정지출 관리 화면으로
   const pace = pacePct(period)
   const note = paceNote(b.livingPct, pace)
-  // 꼭 나갈 돈을 누르면 자세히 팝업 → 고정지출이면 [관리하기]로 관리 화면
-  //   카드 청구서 · 대출 상세는 아직 실제 데이터와 연결 전이라 관리 버튼 없이 (연결되면 sourceId 로 열기)
-  const openPay = (p, badges) => openPopup(
-    <MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={p.type === 'recurring' ? toFixed : undefined} />,
-  )
+  // 카드 청구서 sourceId는 billId, 대출 sourceId는 loanId다.
+  const openPay = (p, badges) => {
+    const onManage = p.type === 'recurring' ? toFixed
+      : p.type === 'card_bill' && p.sourceId ? () => openPopup(<CardBillPopup key={p.sourceId} billId={p.sourceId} />)
+      : p.type === 'loan' && p.sourceId ? () => navigate(PATHS.loanCheck, { state: { from: 'home', loanId: p.sourceId } })
+      : undefined
+    openPopup(<MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={onManage} />)
+  }
 
   // 2. 알림 (11/3: 메인 카드 위 → 오른쪽 위 종 아이콘 팝업). 종에는 알림 개수
   //   월급 상태 (H-01): 늦게 오면 '아직', 다음 달 월급이 미리 오면 안내

@@ -68,6 +68,9 @@ class ProtectNotReady(APIException):
 def protect(request):
     with transaction.atomic():
         lock_user(request.user)  # 홈 · 고정지출 · 정기 저축과 같은 잠금 순서
+        from users.privacy import require_bank_not_revoked
+        if request.method == "PUT":
+            require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         data = protect_json(request.user, profile, today)
@@ -273,6 +276,8 @@ def recommend(request):
 
     with transaction.atomic():
         lock_user(request.user)
+        from users.privacy import require_bank_not_revoked
+        require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         state = protect_json(request.user, profile, today)  # home.ensure_cycle도 같은 잠금 안에서 재사용
@@ -391,6 +396,8 @@ def budget_category(request, budget_id, code):
 
     with transaction.atomic():
         lock_user(request.user)
+        from users.privacy import require_bank_not_revoked
+        require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
@@ -430,6 +437,8 @@ def budget_approve(request, budget_id):
 
     with transaction.atomic():
         lock_user(request.user)
+        from users.privacy import require_bank_not_revoked
+        require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)

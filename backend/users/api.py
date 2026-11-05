@@ -54,9 +54,12 @@ def login(request):
     })
 
 # login
-@api_view(["GET"])
+@api_view(["GET", "DELETE"])
 @permission_classes([IsAuthenticated])
 def me(request):
+    if request.method == "DELETE":
+        from .api_privacy import withdraw
+        return withdraw(request)
     user = request.user
 
     onboarding_completed = Budget.objects.filter(

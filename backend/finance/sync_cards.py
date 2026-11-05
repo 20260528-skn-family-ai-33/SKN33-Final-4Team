@@ -4,7 +4,8 @@
 - 첫 청구서 선차감(budgets/protect.py P-12)이 아래 조회 기록으로 '자료가 다 들어왔는지'를 판단한다 (10/28 나은):
   · 청구서: product_code=card_bill_list, 카드마다 · 달마다, 그 달 1일 ~ 말일(이번 달은 조회일까지). 다음 달 청구서는 기록 없음
   · 승인내역: product_code=card_approval_list, 카드마다, 카드사가 실제로 조회해 준 기간
-  · 승인 한 줄이라도 카드를 특정 못 하거나 금액을 모르면 승인내역 기록을 남기지 않는다 (덜 센 사용액으로 선차감이 작아지지 않게)
+  · 카드만 특정 못 한 승인은 별도 보관하고 사용자 확인 후 실제 조회 범위를 승격한다.
+  · 금액·취소 정보가 불확실한 조회는 카드 확인만으로 승격하지 않는다.
 - 카드값 출금 ↔ 청구서 매칭 · 납부 예정 생성은 별도 작업이다.
 """
 import re
@@ -17,8 +18,9 @@ from django.utils import timezone
 from users.models import Consent
 
 from . import codef
-from .codef_cards import MONTH, CardDataError, approval_source_key, card_matches, month_range
-from .models import Card, CardBill, CardBillItem, Connection, FinancialTransaction, Origin, SyncRun
+from .codef_cards import MONTH, CardDataError, month_range
+from .models import Card, CardBill, CardBillItem, CardApprovalCoverage, Connection, FinancialTransaction, Origin, SyncRun
+from .card_review import save_approvals, promote_coverage
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
 
 CARD_RUN = "card_list"                     # 카드별 성공 기록 (sync_loans 의 loan_transaction_list 와 같은 쓰임)
@@ -154,35 +156,6 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
     return counts
 
 
-def _save_approvals(user, cards, card_rows, rows):
-    """→ (새 거래 ID 목록, 기존 거래 수, 다 저장했는지). 카드를 하나로 특정 못 하거나 금액을 모르는 줄은 저장하지 않는다"""
-    new_ids, existing_count, complete = [], 0, True
-    for row in rows:
-        row = dict(row)
-        shown, unknown, identity = row.pop("card_number"), row.pop("unknown_reason"), row.pop("identity")
-        matched = [card for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
-        if len(matched) != 1 or unknown:
-            complete = False
-            continue
-        card = matched[0]
-        defaults = {
-            **row, "user": user, "source_kind": "card", "direction": "out", "transaction_type": "spending",
-            "confirmation_state": "needs_review", "confirmed_category_id": "UNCLASSIFIED",
-        }
-        tx, created = FinancialTransaction.objects.get_or_create(
-            card=card, source_key=approval_source_key(card.source_card_key, identity), defaults=defaults,
-        )
-        if created:
-            new_ids.append(tx.pk)
-            continue
-        existing_count += 1
-        # 이미 있는 거래는 분류를 건드리지 않고 취소 상태만 최신으로
-        if (tx.is_canceled, tx.canceled_amount) != (row["is_canceled"], row["canceled_amount"]):
-            tx.is_canceled, tx.canceled_amount = row["is_canceled"], row["canceled_amount"]
-            tx.save(update_fields=["is_canceled", "canceled_amount", "updated_at"])
-    return new_ids, existing_count, complete
-
-
 def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None, connection_id=None):
     """신뢰된 서버 호출 전용. 보유카드 · 청구서(bill_months 의 달마다) · 승인내역(start ~ end)을 조회한 뒤
     한 트랜잭션으로 저장한다.
@@ -230,6 +203,11 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             if connection.disconnected_at is not None or connection.status != "connected":
                 raise CardConnectionChanged("조회 중 연결 상태가 바뀌어 저장하지 않았어요.")
             _check_consent(user, connection)
+            if SyncRun.objects.filter(
+                user=user, connection=connection, product_code="card_sync", status="success",
+                started_at__gt=run.started_at,
+            ).exists():
+                raise CardConnectionChanged("더 최근 조회가 저장되어 이전 응답은 반영하지 않았어요.")
             cards, card_counts = _save_cards(user, connection, org, card_rows, run, fetched_at)
             bill_counts = _save_bills(user, connection, org, bills, run, fetched_at)
 
@@ -238,7 +216,9 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
                 user=user, source_kind="card", card__connection=connection,
                 field_states__has_key=RETRY_STATE_KEY,
             ).values_list("pk", flat=True))
-            new_ids, existing_count, complete = _save_approvals(user, cards, card_rows, approvals)
+            new_ids, existing_count, reviews, unknown = save_approvals(
+                user, cards, card_rows, approvals, run, fetched_at,
+            )
             retry_failed_transactions(user, retry_ids)
             process_new_transactions(user, new_ids)
 
@@ -252,17 +232,16 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
                         business_code=codef.SUCCESS, requested_from=bill_from, requested_to=bill_to,
                         covered_from=bill_from, covered_to=bill_to, started_at=run.started_at, completed_at=fetched_at,
                     )
-                if complete:
-                    SyncRun.objects.create(
-                        user=user, connection=connection, card=card, product_code=APPROVAL_RUN, status="success",
-                        business_code=codef.SUCCESS, requested_from=start, requested_to=end,
-                        covered_from=covered[0], covered_to=covered[1],
-                        started_at=run.started_at, completed_at=fetched_at,
-                    )
-            # 다시 불러오기 시작일(api_sync.last_success_day)은 승인내역을 다 받은 기간으로만 정한다
             run.status, run.business_code, run.completed_at = "success", codef.SUCCESS, timezone.now()
-            run.covered_from, run.covered_to = covered if complete else (None, None)
-            run.save(update_fields=["status", "business_code", "completed_at", "covered_from", "covered_to"])
+            run.save(update_fields=["status", "business_code", "completed_at"])
+            coverage = CardApprovalCoverage.objects.create(
+                run=run, covered_from=covered[0], covered_to=covered[1], has_unknown_amount=unknown,
+            )
+            coverage.cards.set(cards)
+            coverage.reviews.set(reviews)
+            promote_coverage(user, org)
+            coverage.refresh_from_db(fields=["promoted_at"])
+            complete = coverage.promoted_at is not None
         return {
             "card_count": len(card_rows), "created_card_count": card_counts["created"],
             "updated_card_count": card_counts["updated"], "skipped_card_count": card_counts["skipped"],
@@ -270,6 +249,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             "updated_bill_count": bill_counts["updated"], "skipped_bill_count": bill_counts["skipped"],
             "new_transaction_count": len(new_ids), "existing_transaction_count": existing_count,
             "approvals_complete": complete,
+            "card_review_count": sum(review.transaction_id is None and review.data_valid for review in reviews),
         }
     except Exception as exc:
         # 기관 오류의 message/extra 에는 개인정보가 섞일 수 있어 저장하지 않는다.

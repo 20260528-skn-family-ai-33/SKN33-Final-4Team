@@ -283,7 +283,10 @@ def connect_one(user, entry):
         business_type, code, entry["login_id"], entry["password"], entry.get("card_no"), entry.get("card_password"),
     )
     with codef_account_lock(user):
-        fresh = get_user_model().objects.get(pk=user.pk)
+        fresh = get_user_model().objects.filter(pk=user.pk, is_active=True).first()
+        if fresh is None:
+            return failed("unavailable")
+        check_consents(fresh, [entry])  # 잠금을 기다리는 동안 철회됐으면 외부 인증을 다시 등록하지 않는다.
         try:
             current_id = connected_id.load(fresh)
         except connected_id.ConnectedIdUnreadable:

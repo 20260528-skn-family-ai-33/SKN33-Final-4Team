@@ -14,6 +14,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -293,6 +294,45 @@ class SyncRun(models.Model):
 
 
 # ===================== 거래 =====================
+
+class CardApprovalReview(models.Model):
+    """카드만 특정하지 못한 승인. 카드번호 원문 없이 거래별 확인을 보존한다."""
+
+    review_id = uuid_pk()
+    user = models.ForeignKey(USER, on_delete=models.CASCADE)
+    issuer_code = models.CharField(max_length=50)
+    source_key = models.CharField(max_length=128)
+    identity = models.JSONField(encoder=DjangoJSONEncoder)
+    payload = models.JSONField(encoder=DjangoJSONEncoder)
+    card_name = models.CharField(max_length=100, null=True, blank=True)
+    data_valid = models.BooleanField(default=True)
+    fetched_at = models.DateTimeField()
+    started_at = models.DateTimeField()
+    resolved_card = models.ForeignKey(Card, null=True, on_delete=models.RESTRICT)
+    resolved_at = models.DateTimeField(null=True)
+    transaction = models.OneToOneField("FinancialTransaction", null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        db_table = "card_approval_review"
+        constraints = [models.UniqueConstraint(
+            fields=["user", "issuer_code", "source_key"], name="car_user_issuer_source_unique",
+        )]
+
+
+class CardApprovalCoverage(models.Model):
+    """조회 당시 범위·차단 원인. 모든 거래 확인 후에만 성공 조회 기록으로 승격한다."""
+
+    run = models.OneToOneField(SyncRun, primary_key=True, on_delete=models.CASCADE)
+    covered_from = models.DateField()
+    covered_to = models.DateField()
+    has_unknown_amount = models.BooleanField(default=False)
+    reviews = models.ManyToManyField(CardApprovalReview)
+    cards = models.ManyToManyField(Card)
+    promoted_at = models.DateTimeField(null=True)
+
+    class Meta:
+        db_table = "card_approval_coverage"
+
 
 class SourceKind(models.TextChoices):
     BANK = "bank", "계좌"

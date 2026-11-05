@@ -85,13 +85,16 @@ def _check_consent_rows(rows):
     return picked
 
 
-@api_view(["POST"])
+@api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 @idempotent()
 def consents(request):
     """6. POST /api/finance/consents/ — 201 {"items": [...]}
     - 은행 동의는 필수. 이번에 보냈거나 이미 유효한 은행 동의가 있어야 한다 (카드 · 대출은 선택, 10/22 V)
     - 같은 범위 · 같은 문서 버전의 유효한 동의가 이미 있으면 새로 만들지 않고 그 기록을 돌려준다 (10/22 N⑥)"""
+    if request.method == "GET":
+        from users.privacy import consent_states
+        return Response(consent_states(request.user))
     data = body_dict(request)
     reject_unknown_fields(data, {"consents"})
     picked = _check_consent_rows(data.get("consents"))
