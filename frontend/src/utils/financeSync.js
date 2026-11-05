@@ -28,6 +28,8 @@ export function syncLines(result) {
   return (result?.items ?? []).map((it) => {
     if (it.status === 'failed') return { name: it.organizationName, ok: false, text: it.error?.message ?? '불러오지 못했어요.' }
     if (it.status === 'skipped') return { name: it.organizationName, ok: true, text: '불러올 항목이 없어요 (동의하지 않았거나 준비 중)' }
+    if (it.cardReviewCount > 0) return { name: it.organizationName, ok: true, text: `내역을 불러왔어요. 결제 카드를 확인할 거래 ${it.cardReviewCount}건이 있어요.` }
+    if (it.approvalsComplete === false) return { name: it.organizationName, ok: false, text: '일부 카드 사용 내역을 확인하지 못했어요. 조회 기간과 금액·취소 정보를 확인해 주세요.' }
     const n = it.newTransactionCount
     return { name: it.organizationName, ok: true, text: n == null ? '불러왔어요' : `새 거래 ${n}건을 불러왔어요` }
   })

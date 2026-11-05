@@ -1,6 +1,6 @@
 // 팝업: 꼭 나갈 돈 한 건 자세히 — 홈 목록은 이름 · 금액만, 나머지(나갈 날 · 계좌 · 상태)는 여기서 (11/3)
 // props: item = GET /api/home/ 의 mustPay 한 건 (docs/api/home.md), date = '10.15' 처럼 짧은 날짜,
-//        badges = 홈이 만든 상태 배지 [{tone, text}], onManage = 고정지출이면 관리 화면으로 (없으면 버튼 없음)
+//        badges = 홈이 만든 상태 배지 [{tone, text}], onManage = 종류별 상세·관리 화면 열기
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
@@ -31,7 +31,7 @@ export default function MustPayPopup({ item, date, badges, onManage }) {
         {badges.map((b) => WHY[b.tone] && <p className="mc-note" style={{ paddingBottom: 0 }} key={b.tone}><strong>{b.text}</strong> · {WHY[b.tone]}</p>)}
       </div>
       {onManage
-        ? <button type="button" className="mc-primary" onClick={manage}>{item.paymentState === 'needs_review' ? '고정지출에서 출금 고르기' : '고정지출에서 관리하기'}</button>
+        ? <button type="button" className="mc-primary" onClick={manage}>{item.type === 'card_bill' ? '청구서 상세 보기' : item.type === 'loan' ? '대출 상환 정보 확인' : item.paymentState === 'needs_review' ? '고정지출에서 출금 고르기' : '고정지출에서 관리하기'}</button>
         : <p className="mc-note">상세 화면은 준비 중이에요.</p>}
     </Popup>
   )

@@ -491,6 +491,173 @@
           }
         ]
       }
+    },
+    "/api/finance/card-reviews/": {
+      "get": {
+        "tags": [
+          "카드"
+        ],
+        "summary": "결제 카드 확인이 필요한 승인 조회",
+        "operationId": "listCardReviews",
+        "x-source": "docs/api/cards.md",
+        "description": "저장된 본인 미확인 승인만 조회한다. 카드명 일치는 참고 정보이며 자동 연결하지 않는다. canResolve=false면 최신 금액 정보가 불확실하므로 재조회해야 한다. 원문 번호·승인 식별 키는 반환하지 않는다.",
+        "responses": {
+          "200": {
+            "description": "미확인 승인 목록",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardReviewList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finance/card-reviews/{id}/": {
+      "put": {
+        "tags": [
+          "카드"
+        ],
+        "summary": "승인 한 건의 결제 카드 확인",
+        "operationId": "resolveCardReview",
+        "x-source": "docs/api/cards.md",
+        "description": "같은 회원·카드사의 연결 중인 카드만 허용. 동일 카드 재전송은 동일 거래를 반환하며 다른 카드로 재확인은 409. 조회의 모든 미확인 거래가 해소되고 금액 오류가 없을 때만 실제 조회 범위의 완료 기록을 생성한다. 승인된 예산은 자동 변경하지 않는다.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cardId": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "required": [
+                  "cardId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "확인한 거래",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardReviewResolution"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid: 잘못된 입력 또는 금액·취소 정보 미확인",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "card_review_conflict: 이미 다른 카드로 확인한 거래",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -804,6 +971,155 @@
           "itemsState",
           "items"
         ]
+      },
+      "CardReviewCandidate": {
+        "type": "object",
+        "properties": {
+          "cardId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "relogin"
+            ]
+          },
+          "isSelected": {
+            "type": "boolean"
+          },
+          "nameMatches": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cardId",
+          "displayName",
+          "status",
+          "isSelected",
+          "nameMatches"
+        ],
+        "additionalProperties": false
+      },
+      "CardReview": {
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuerCode": {
+            "type": "string"
+          },
+          "issuerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "occurredOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "occurredTime": {
+            "type": "string",
+            "nullable": true
+          },
+          "merchantName": {
+            "type": "string",
+            "nullable": true
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "isCanceled": {
+            "type": "boolean"
+          },
+          "canceledAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "canResolve": {
+            "type": "boolean"
+          },
+          "fetchedAt": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "candidates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardReviewCandidate"
+            }
+          }
+        },
+        "required": [
+          "reviewId",
+          "issuerCode",
+          "issuerName",
+          "occurredOn",
+          "occurredTime",
+          "merchantName",
+          "amount",
+          "isCanceled",
+          "canceledAmount",
+          "canResolve",
+          "fetchedAt",
+          "candidates"
+        ],
+        "additionalProperties": false
+      },
+      "CardReviewList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardReview"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "CardReviewResolution": {
+        "type": "object",
+        "properties": {
+          "reviewId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "cardId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "resolved"
+            ]
+          }
+        },
+        "required": [
+          "reviewId",
+          "cardId",
+          "transactionId",
+          "status"
+        ],
+        "additionalProperties": false
       }
     }
   }

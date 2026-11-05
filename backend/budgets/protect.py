@@ -232,6 +232,11 @@ def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today, iss
     from django.http import Http404
     from finance.card_deduction import get_issuer_first_bill_deduction
 
+    from finance.card_review import approval_blocker
+
+    blocker = approval_blocker(user, issuer_code)
+    if blocker:
+        return None, blocker
     connected = [card.first_connected_at for card in issuer_cards]
     connected_on = timezone.localdate(min(connected)) if connected and None not in connected else None
     bill_until = history_until(issuer_cards, CARD_BILL_SYNC, connected_on)

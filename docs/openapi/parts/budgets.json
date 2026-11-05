@@ -1491,7 +1491,7 @@
                 },
                 "reason": {
                   "type": "string",
-                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번 회차 할부 금액을 모름) · card_data_invalid(연결·금액 자료가 맞지 않음)"
+                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번 회차 할부 금액을 모름) · card_data_invalid(연결·금액 자료가 맞지 않음) · card_assignment_required(거래별 결제 카드 확인 필요)"
                 }
               }
             }

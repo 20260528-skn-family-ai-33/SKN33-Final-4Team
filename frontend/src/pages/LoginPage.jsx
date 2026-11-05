@@ -3,8 +3,6 @@
 // 로그인할 때는 비밀번호 길이 · 조합을 검사하지 않는다 (규칙이 바뀌어도 기존 회원이 로그인, 결정기록 X ⑨)
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
-import { usePopup } from '../popups/context.js'
-import PwFindPopup from '../popups/PwFindPopup.jsx'
 import { PATHS } from '../routes.js'
 
 import { useRef, useState } from 'react'
@@ -22,7 +20,6 @@ function readSavedEmail() {
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { openPopup } = usePopup()
   const [savedEmail] = useState(readSavedEmail)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
@@ -178,7 +175,6 @@ export default function LoginPage() {
           </button>
         </div>
       </form>
-      <button type="button" className="mc-link" onClick={() => openPopup(<PwFindPopup />)}>비밀번호를 잊으셨나요?</button>
       <div className="mc-card" style={{ marginTop: 22, textAlign: 'center' }}>
         <p className="mc-muted">머니쿠션이 처음이신가요?</p>
         <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.signup)}>회원가입</button>
