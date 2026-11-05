@@ -12,11 +12,12 @@ from scripts.spending_classifier.common import (
     CATEGORIES, NORMALIZATION_VERSION, ROOT, normalize_name, sha256, write_json, work_path,
 )
 
-POLICY = "20261026_books_content_beoltoon_v1"
+POLICY = "20261105_content_stationery_v2"
 BASE = ROOT / "data/spending_classifier/prepared/baseline_svm"
 STORE = ROOT / "data/store_labels/v3.2_20261020/stores_ml_training.csv"
 MAIL = ROOT / "data/ml_training_candidates/mail_order_training_candidates_v3_20261020.csv"
 TARGET = "CULTURE_LEISURE"
+STATIONERY_INDUSTRY = "문구/회화용품 소매업"
 BEOLTOON_INDUSTRIES = {
     "카페", "만화방", "김밥/만두/분식", "기타 오락장", "그 외 기타 간이 음식점",
     "기타 개인/가정용품 대여업", "백반/한정식",
@@ -47,6 +48,8 @@ def domain_matches(value, expected):
 def source_policy(row, source):
     if source == "store":
         name = normalize_name(row["상호명"])
+        if row["상권업종소분류명"] == STATIONERY_INDUSTRY:
+            return "문구/회화용품 소매업 업종 확인"
         if name.startswith("벌툰") and row["상권업종소분류명"] in BEOLTOON_INDUSTRIES:
             return "벌툰 상호 접두어 + 만화카페 관련 업종 확인"
     else:
@@ -85,15 +88,21 @@ def correct(args):
     for filename, key in (("prepared.csv", "prepared_sha256"), ("split_ids.csv", "split_ids_sha256")):
         if hashes[base / filename] != prep[key]:
             raise ValueError(f"원본 해시 불일치: {filename}")
-    recorded = {str(Path(p).resolve()).casefold(): h for p, h in prep["input_sha256"].items()}
+    recorded = {Path(p).name: h for p, h in prep["input_sha256"].items()}
     for path in (args.store, args.mail):
-        if recorded.get(str(path.resolve()).casefold()) != hashes[path]:
+        if recorded.get(path.name) != hashes[path]:
             raise ValueError(f"원래 전처리에 사용한 원천 CSV와 다릅니다: {path}")
 
+    # 상호에 문구라는 단어가 없어도 업종으로 후보를 찾는다.
+    stationery_names = set()
+    with args.store.open(encoding="utf-8-sig", newline="") as stream:
+        for row in csv.DictReader(stream):
+            if row["학습대상여부"] == "Y" and row["상권업종소분류명"] == STATIONERY_INDUSTRY:
+                stationery_names.add(normalize_name(row["상호명"]))
     targets = {}
     with (base / "prepared.csv").open(encoding="utf-8-sig", newline="") as stream:
         for row in csv.DictReader(stream):
-            if candidate(row["name"]):
+            if candidate(row["name"]) or row["name"] in stationery_names:
                 targets[row["name"]] = row
     evidence = defaultdict(Counter)
     reasons = defaultdict(set)
@@ -112,6 +121,8 @@ def correct(args):
                 reason = source_policy(row, source)
                 if reason:
                     evidence[name]["confirmed"] += 1
+                    target = "HOUSEHOLD" if source == "store" and row["상권업종소분류명"] == STATIONERY_INDUSTRY else TARGET
+                    evidence[name][target] += 1
                     reasons[name].add(reason)
                 industries[name].add(row.get("상권업종소분류명", row.get("취급품목", "")))
 
@@ -121,12 +132,14 @@ def correct(args):
         # 다수결로 대표 상호만 남은 경우에도 같은 이름의 원천 행 모두를 확인한다.
         confirmed = counts["total"] > 0 and counts["total"] == counts["confirmed"]
         confirmed &= counts["total"] == int(row["original_count"])
+        target = "HOUSEHOLD" if counts["HOUSEHOLD"] else TARGET
+        confirmed &= counts[target] == counts["total"]
         reason = "; ".join(sorted(reasons[name])) if confirmed else "동명 상호/출처 불확실: 원래 라벨 유지"
-        if confirmed and row["category"] != TARGET:
-            changes[name] = reason
+        if confirmed and row["category"] != target:
+            changes[name] = (target, reason)
         review.append({"name": name, "original_name": row["original_name"],
                        "split": row["split"], "from_category": row["category"],
-                       "to_category": TARGET if confirmed else row["category"],
+                       "to_category": target if confirmed else row["category"],
                        "decision": "change" if name in changes else "keep",
                        "source_rows": counts["total"], "confirmed_rows": counts["confirmed"],
                        "industries": "; ".join(sorted(industries[name])), "reason": reason})
@@ -138,16 +151,17 @@ def correct(args):
     eval_changes = []
     for index, row in enumerate(eval_rows, 2):
         name = normalize_name(row["가맹점명"])
-        known_beoltoon = name in targets and evidence[name]["total"] > 0 and (
-            evidence[name]["total"] == evidence[name]["confirmed"] == int(targets[name]["original_count"]))
+        known_policy = name in targets and evidence[name]["total"] > 0 and (
+            evidence[name]["total"] == max(evidence[name]["HOUSEHOLD"], evidence[name][TARGET]) == int(targets[name]["original_count"]))
         if row["비소비여부"] != "N" or not (
-            row["가맹점명"].strip() in CONFIRMED_EVALUATION_NAMES or known_beoltoon
+            row["가맹점명"].strip() in CONFIRMED_EVALUATION_NAMES or known_policy
         ):
             continue
-        if row["category"] != TARGET:
-            eval_changes.append({"row": index, "from_category": row["category"], "to_category": TARGET})
-            row["category"], row["categoryName"] = TARGET, CATEGORIES[TARGET]
-            row["근거"] += f"; {POLICY}: 사용자 확정 콘텐츠/만화카페 정책"
+        target = "HOUSEHOLD" if name in stationery_names and evidence[name]["HOUSEHOLD"] == evidence[name]["total"] else TARGET
+        if row["category"] != target:
+            eval_changes.append({"row": index, "from_category": row["category"], "to_category": target})
+            row["category"], row["categoryName"] = target, CATEGORIES[target]
+            row["근거"] += f"; {POLICY}: 사용자 확정 콘텐츠/만화카페/문구 정책"
 
     output.mkdir(parents=True, exist_ok=False)
     write_json(output / "preparation.json", {"status": "running", "policy_revision": POLICY})
@@ -161,12 +175,18 @@ def correct(args):
             row["source_category"] = row["category"]
             row["label_policy"] = ""
             if row["name"] in changes:
-                row["category"], row["label_policy"] = TARGET, POLICY
+                row["category"], row["label_policy"] = changes[row["name"]][0], POLICY
                 changed_splits[row["split"]] += 1
             split_counts[row["split"]] += 1
             categories[row["split"]][row["category"]] += 1
             writer.writerow(row)
     shutil.copyfile(base / "split_ids.csv", output / "split_ids.csv")
+    # 동일 이름의 모든 원천 행을 같은 정책으로 보정한 경우 충돌이 해소된다.
+    conflicts = base / "label_conflicts.csv"
+    if conflicts.exists():
+        fields, conflict_rows = read_csv(conflicts)
+        write_csv(output / "label_conflicts.csv", fields,
+                  [r for r in conflict_rows if r["name"] not in changes])
     write_csv(output / "policy_review.csv", list(review[0]) if review else ["name", "decision", "reason"], review)
     write_csv(output / "evaluation_labels.csv", eval_fields, eval_rows)
     if any(sha256(path) != digest for path, digest in hashes.items()):
@@ -178,6 +198,8 @@ def correct(args):
         "inputs_unchanged": True, "split_counts": dict(split_counts),
         "split_categories": {k: dict(v) for k, v in categories.items()},
         "changed_by_split": dict(changed_splits), "changed_names": len(changes),
+        "changed_categories": dict(Counter(v[0] for v in changes.values())),
+        "conflicts_note": "전체 원천 행이 확인되어 보정한 이름만 충돌 목록에서 제거. 불확실/학습 제외 이름은 기존 정책 유지",
         "evaluation_changes": eval_changes, "evaluation_rows": len(eval_rows),
         "prepared_sha256": sha256(output / "prepared.csv"),
         "split_ids_sha256": sha256(output / "split_ids.csv"),

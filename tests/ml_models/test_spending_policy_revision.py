@@ -34,18 +34,29 @@ class PolicyRevisionTests(unittest.TestCase):
             base.mkdir()
             rows = []
             for name, code, split in (("벌툰송도점", "FOOD", "train"), ("리디", "FASHION_SHOPPING", "valid"),
-                                      ("교보문고", "EDUCATION", "test"), ("벌툰혼재점", "FOOD", "train")):
-                rows.append(dict(name=name, category=code, original_count=2 if name == "벌툰혼재점" else 1,
+                                      ("교보문고", "EDUCATION", "test"), ("벌툰혼재점", "FOOD", "train"), ("새봄문구", "EDUCATION", "train"),
+                                      ("동명문구", "EDUCATION", "valid")):
+                rows.append(dict(name=name, category=code, original_count=2 if name in {"벌툰혼재점", "동명문구"} else 1,
                                  majority_count=1, source_mask=1, original_name=name,
                                  brand_candidates="", brand_candidate=False, split=split))
             save_csv(base / "prepared.csv", rows)
             save_csv(base / "split_ids.csv", [{"name": r["name"], "split": r["split"]} for r in rows])
+            save_csv(base / "label_conflicts.csv", [
+                {"name": "새봄문구", "counts": '{"EDUCATION":1}', "majority_ratio": 1, "kept": True},
+                {"name": "동명문구", "counts": '{"EDUCATION":1,"HOUSEHOLD":1}', "majority_ratio": .5, "kept": False},
+            ])
             store, mail, labels = root / "store.csv", root / "mail.csv", root / "labels.csv"
             save_csv(store, [{"상호명": n, "상권업종소분류명": i, "학습대상여부": "Y"}
                              for n, i in (("벌툰송도점", "카페"), ("리디", "여성 의류 소매업"),
-                                          ("교보문고", "서점"), ("벌툰혼재점", "카페"), ("벌툰혼재점", "미용실"))])
+                                          ("교보문고", "서점"), ("벌툰혼재점", "카페"), ("벌툰혼재점", "미용실"),
+                                          ("새봄문구", "문구/회화용품 소매업"),
+                                          ("동명문구", "문구/회화용품 소매업"), ("동명문구", "서점"))])
             save_csv(mail, [{"상호": "없음", "인터넷도메인": "", "학습사용": "N"}])
             save_csv(labels, [{"가맹점명": "리디(주)", "비소비여부": "N", "category": "EDUCATION",
+                               "categoryName": "교육", "근거": "이전 기준"},
+                              {"가맹점명": "새봄문구", "비소비여부": "N", "category": "EDUCATION",
+                               "categoryName": "교육", "근거": "이전 기준"},
+                              {"가맹점명": "동명문구", "비소비여부": "N", "category": "EDUCATION",
                                "categoryName": "교육", "근거": "이전 기준"}])
             prep = {"status": "complete", "normalization_version": NORMALIZATION_VERSION,
                     "input_sha256": {str(p.resolve()): sha256(p) for p in (store, mail)},
@@ -58,16 +69,21 @@ class PolicyRevisionTests(unittest.TestCase):
             with (args.output / "prepared.csv").open(encoding="utf-8-sig", newline="") as stream:
                 revised = {r["name"]: r for r in csv.DictReader(stream)}
             self.assertEqual(revised["벌툰송도점"]["category"], "CULTURE_LEISURE")
+            self.assertEqual(revised["새봄문구"]["category"], "HOUSEHOLD")
+            self.assertEqual(revised["동명문구"]["category"], "EDUCATION")
             self.assertEqual(revised["리디"]["category"], "FASHION_SHOPPING")
             self.assertEqual(revised["교보문고"]["category"], "EDUCATION")
             self.assertEqual(revised["벌툰혼재점"]["category"], "FOOD")
             self.assertEqual(sha256(args.output / "split_ids.csv"), prep["split_ids_sha256"])
             self.assertEqual(set(revised), {r["name"] for r in rows})
+            with (args.output / "label_conflicts.csv").open(encoding="utf-8-sig", newline="") as stream:
+                self.assertEqual([r["name"] for r in csv.DictReader(stream)], ["동명문구"])
             for row in rows:
                 self.assertEqual(revised[row["name"]]["split"], row["split"])
             self.assertEqual({p: sha256(p) for p in original}, original)
             with (args.output / "evaluation_labels.csv").open(encoding="utf-8-sig", newline="") as stream:
-                self.assertEqual(next(csv.DictReader(stream))["category"], "CULTURE_LEISURE")
+                self.assertEqual([r["category"] for r in csv.DictReader(stream)],
+                                 ["CULTURE_LEISURE", "HOUSEHOLD", "EDUCATION"])
             with self.assertRaises(FileExistsError):
                 correct(args)
 
