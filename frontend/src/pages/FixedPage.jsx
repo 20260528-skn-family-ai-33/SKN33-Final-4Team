@@ -1,8 +1,8 @@
 // 고정지출 확인 · 고정지출 관리 — 한 화면을 두 곳에서 쓴다 (docs/api/fixed.md)
 //   첫 설정 흐름: 월급 다음, 저축 확인 전. 자동으로 찾은 후보(suggested)를 확인한다 (아래 OnboardingView)
 //   마이 > 고정지출 · 홈 '꼭 나갈 돈' (location.state.from === 'my' | 'home'): 확정된 고정지출 + [수정] · 중지 · 미납 [고르기] (ManageView)
-// 목록 = GET /api/budgets/fixed/. [확인하고 다음] = 남은 후보를 모두 확정(confirm), [고정지출 아니에요] = 무시(ignore)
-// 감지 조건 (요구사항 TXN-008): 같은 받는 곳으로 한 달에 1건 · 매달 같은 날 ±3일 · 같은 금액(±10%) · 3달 연속 — 자동 감지는 아직 없어 후보가 없으면 직접 추가만 보여 준다
+// 목록 = GET /api/budgets/fixed/. [고정지출 맞아요] = 개별 확정, [확인하고 다음] = 남은 후보 모두 확정, [고정지출 아니에요] = 무시
+// 감지 조건 (요구사항 TXN-008): 같은 받는 곳으로 한 달에 1건 · 매달 같은 날 ±3일 · 같은 금액(±10%) · 3달 연속
 // 결제 확인 (10/21 결정, C-14 · C-16): 서버가 찾은 비슷한 결제를 evidenceSuggestion 으로 준다 (있을 때만 묻는다)
 //   1건 = "이 결제가 맞나요? [맞아요] [아니에요]" / 여러 건 = "비슷한 결제가 N건 있어요 [고르기]" → EvidencePopup
 //   [맞아요] · 고른 결제 = PATCH /api/budgets/fixed/<id>/ { evidenceTransactionId }. [아니에요] = 요청 없음 (다음 달 다시 물어봄)
@@ -160,21 +160,27 @@ function OnboardingView() {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   const { data, error, reload } = useFixedList()
-  const [busy, setBusy] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [refreshingData, setRefreshingData] = useState(null)
+  const busy = saving || (refreshingData !== null && data === refreshingData)
   const [actionError, setActionError] = useState('')
 
   // 후보 확정 · 무시. 누를 때 요청 번호를 새로 만든다 (버튼을 잠가서 응답 전 재전송은 없다)
-  const decide = async (path, ids) => {
-    setBusy(true)
+  const decide = async (path, ids, refresh = false) => {
+    setSaving(true)
     setActionError('')
     try {
       await apiSend(path, 'POST', { recurringIds: ids }, { requestKey: newRequestKey() })
+      if (refresh) {
+        setRefreshingData(data)
+        reload()
+      }
       return true
     } catch (err) {
       setActionError(err.fields?.recurringIds?.[0] ?? err.message)
       return false
     } finally {
-      setBusy(false)
+      setSaving(false)
     }
   }
 
@@ -186,7 +192,8 @@ function OnboardingView() {
     if (suggested.length && !(await decide('/api/budgets/fixed/confirm/', suggested.map((f) => f.recurringId)))) return
     navigate(PATHS.savings)
   }
-  const ignore = async (f) => { if (!busy && await decide('/api/budgets/fixed/ignore/', [f.recurringId])) reload() }
+  const confirm = (f) => { if (!busy) return decide('/api/budgets/fixed/confirm/', [f.recurringId], true) }
+  const ignore = (f) => { if (!busy) return decide('/api/budgets/fixed/ignore/', [f.recurringId], true) }
 
   const foot = <button type="button" className="mc-primary" disabled={busy} onClick={onNext}>{busy ? '저장 중…' : suggested.length ? '확인하고 다음' : '계속하기'}</button>
   return (
@@ -195,8 +202,8 @@ function OnboardingView() {
       <div className="mc-eyebrow">고정지출 확인</div>
       <h1>매달 이 돈이 나가나요?</h1>
       {suggested.length > 0
-        ? <p className="mc-muted">매달 비슷한 날, 같은 금액으로 3달 연속 나간 항목을 찾았어요. 맞으면 그대로, 다르면 고치거나 '고정지출 아니에요'를 눌러 주세요.</p>
-        : <p className="mc-muted">자동으로 찾은 고정지출이 없어요. 월세 · 통신비처럼 매달 나가는 돈이 있으면 직접 추가하고, 없으면 계속하기를 눌러 주세요.</p>}
+        ? <p className="mc-muted">매달 비슷한 날, 같은 금액으로 3달 연속 나간 항목을 찾았어요. '고정지출 맞아요'를 누르면 아래 확정 합계에 바로 반영돼요. 다르면 수정하거나 '고정지출 아니에요'를 눌러 주세요.</p>
+        : <p className="mc-muted">{data.items.length ? '고정지출을 모두 확인했어요. 빠진 항목이 있으면 직접 추가해 주세요.' : '자동으로 찾은 고정지출이 없어요. 월세 · 통신비처럼 매달 나가는 돈이 있으면 직접 추가하고, 없으면 계속하기를 눌러 주세요.'}</p>}
       <p className="mc-note" style={{ paddingTop: 0 }}>대출 상환은 대출 확인에서, 내 계좌로 보내는 저축은 다음 화면에서 따로 챙겨요.</p>
 
       {data.items.map((f) => (
@@ -208,25 +215,43 @@ function OnboardingView() {
           {/* 배지 왼쪽 · [수정] 오른쪽 — 저축 확인 화면과 같은 모양 */}
           <div className="mc-row" style={{ marginTop: 8 }}>
             <span className="mc-badge">{f.status === 'suggested' ? '3달 연속 감지' : f.sourceType === 'manual' ? '직접 추가' : '확인함'}</span>
-            <button type="button" className="mc-link" onClick={() => openPopup(<FixedPopup item={f} onSaved={reload} />)}>수정</button>
+            <button type="button" className="mc-link" disabled={busy} onClick={() => openPopup(<FixedPopup item={f} onSaved={reload} />)}>수정</button>
           </div>
           {f.evidenceSuggestion && <Suggestion f={f} onSaved={reload} />}
           {/* 고정지출 아니에요 = 이 후보를 무시(ignored). 같은 후보를 다시 묻지 않는다. 확정된 건 후보가 아니라 없음 */}
           {f.status === 'suggested' && (
-            <div className="mc-inline"><button type="button" className="mc-secondary" disabled={busy} onClick={() => ignore(f)}>고정지출 아니에요</button></div>
+            <div className="mc-inline">
+              <button type="button" className="mc-primary" disabled={busy} onClick={() => confirm(f)}>고정지출 맞아요</button>
+              <button type="button" className="mc-secondary" disabled={busy} onClick={() => ignore(f)}>고정지출 아니에요</button>
+            </div>
           )}
         </div>
       ))}
-      <button type="button" className="mc-secondary" onClick={() => openPopup(<FixedPopup onSaved={reload} />)}>+ 고정지출 직접 추가</button>
+      <button type="button" className="mc-secondary" disabled={busy} onClick={() => openPopup(<FixedPopup onSaved={reload} />)}>+ 고정지출 직접 추가</button>
 
       <div className="mc-card" style={{ marginTop: 14 }}>
-        <div className="mc-keyvalue"><span>확정한 고정지출 합계</span><strong>{won(data.summary.confirmedMonthlyTotal)}</strong></div>
-        {suggested.length > 0 && <p className="mc-muted" style={{ margin: '4px 0 0', fontSize: 12 }}>찾은 후보 {suggested.length}건은 확인하고 다음을 누르면 더해져요.</p>}
+        <div className="mc-keyvalue" aria-live="polite"><span>확정한 고정지출 합계</span><strong>{won(data.summary.confirmedMonthlyTotal)}</strong></div>
+        {suggested.length > 0 && <p className="mc-muted" style={{ margin: '4px 0 0', fontSize: 12 }}>아직 확인하지 않은 {suggested.length}건은 합계에서 제외했어요. '확인하고 다음'을 누르면 남은 항목을 모두 확정해요.</p>}
       </div>
       {actionError && <p className="mc-error" role="alert">{actionError}</p>}
       <div className="mc-card">
         <div className="mc-row"><h2>카드 청구서</h2><button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>카드 관리</button></div>
-        <p className="mc-note" style={{ paddingBottom: 0 }}>카드값은 청구서 금액 기준으로 출금예정일에 챙겨요. 카드로 내는 고정지출(구독료 등)은 이 안에 들어 있어서 따로 빼지 않아요.</p>
+        {(data.cardBills ?? []).length === 0
+          ? <p className="mc-muted">관리할 카드를 연결하고 선택하면 청구금액을 확인할 수 있어요.</p>
+          : data.cardBills.map((bill) => (
+            <div key={bill.issuerCode} style={{ marginTop: 14 }}>
+              <strong>{bill.issuerName}</strong>
+              {bill.amountAfterFixed === null
+                ? <p className="mc-muted">{bill.reason === 'cycle_unavailable' ? '월급 정보를 설정하면 이번 주기 청구금액을 확인할 수 있어요.' : '청구서 확인 필요 · 카드 관리에서 이번 주기 청구서를 불러와 주세요.'}</p>
+                : <>
+                  <div className="mc-keyvalue"><span>조회된 청구금액{bill.isEstimated ? ' (예상·미확정 포함)' : ''}</span><span>{won(bill.totalAmount)}</span></div>
+                  <div className="mc-keyvalue"><span>이번 청구금액에서 제외</span><span>−{won(Math.min(bill.totalAmount, bill.confirmedFixedAmount))}</span></div>
+                  <div className="mc-keyvalue"><span>고정비 제외 청구금액</span><strong>{won(bill.amountAfterFixed)}</strong></div>
+                  {bill.totalAmount === 0 && <p className="mc-note">조회된 청구금액이 0원이어서 추가로 빼는 금액은 없어요. 월 고정지출은 위 확정 합계에 유지돼요.</p>}
+                </>}
+            </div>
+          ))}
+        <p className="mc-note" style={{ paddingBottom: 0 }}>이번 급여 주기에 낼 카드사 청구금액에서 위 합계에 포함된 카드 고정비를 뺀 참고 금액이에요(최소 0원). 실제 예산에서는 지킬 돈 단계에서 첫 청구서 여부와 이번 주기 사용액 등을 반영해 계산해요.</p>
       </div>
     </Layout>
   )

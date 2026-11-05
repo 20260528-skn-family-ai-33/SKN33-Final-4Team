@@ -3984,7 +3984,8 @@
                       "summary": {
                         "confirmedMonthlyTotal": 715000,
                         "suggestedCount": 1
-                      }
+                      },
+                      "cardBills": []
                     }
                   },
                   "empty": {
@@ -3993,7 +3994,8 @@
                       "summary": {
                         "confirmedMonthlyTotal": 0,
                         "suggestedCount": 0
-                      }
+                      },
+                      "cardBills": []
                     }
                   }
                 }
@@ -11260,11 +11262,19 @@
               "confirmedMonthlyTotal",
               "suggestedCount"
             ]
+          },
+          "cardBills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedCardBillPreview"
+            },
+            "description": "관리 대상 카드가 있는 카드사별 참고 청구금액. 유효한 카드 동의·연결·선택이 없으면 빈 배열. 별도 CODEF 조회 없이 저장 자료 사용."
           }
         },
         "required": [
           "items",
-          "summary"
+          "summary",
+          "cardBills"
         ]
       },
       "FixedBatchResponse": {
@@ -11439,6 +11449,62 @@
           "transactions"
         ],
         "description": "지난 주기·이번 주기 회차 하나와 연결된 출금 (10/27)."
+      },
+      "FixedCardBillPreview": {
+        "type": "object",
+        "properties": {
+          "issuerCode": {
+            "type": "string"
+          },
+          "issuerName": {
+            "type": "string"
+          },
+          "confirmedFixedAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "이 카드사에서 내는 확정 고정비 월 합계. 실제 결제 연결 카드 우선, 없으면 등록 카드. 후보 제외."
+          },
+          "totalAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "이번 급여 주기에 낼 조회된 카드사 사용 명세서 합계. 미확보·판단 불가면 null."
+          },
+          "amountAfterFixed": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "max(0, totalAmount - confirmedFixedAmount). 참고 표시용이며 실제 예산 선차감액이 아님."
+          },
+          "isEstimated": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "확정 여부가 confirmed가 아닌 청구서를 포함하면 true. 금액을 알 수 없으면 null."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              null,
+              "cycle_unavailable",
+              "bill_scope_unknown",
+              "bill_due_date_unknown",
+              "bill_type_unknown",
+              "first_bill_ambiguous",
+              "bill_unavailable",
+              "bill_amount_invalid"
+            ]
+          }
+        },
+        "required": [
+          "issuerCode",
+          "issuerName",
+          "confirmedFixedAmount",
+          "totalAmount",
+          "amountAfterFixed",
+          "isEstimated",
+          "reason"
+        ]
       },
       "RecurringSaving": {
         "type": "object",
@@ -13602,10 +13668,10 @@
     "docs/api/auth.md": "8bbbbde90dede70b16a100288cc33e5562495b1b23b6140354581b0dfecd70d1",
     "docs/api/finance-connect.md": "4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4",
     "docs/api/cards.md": "0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34",
-    "docs/api/loans.md": "91c6f3ccbcbabb818931967c704ae200d9b033ad8b8af6415d7988599caf8481",
+    "docs/api/loans.md": "3b83de5ba2e7e9f5ea7cc9705de4ece7a1ef060339bc13aaed4651cca986e120",
     "docs/api/transactions.md": "e1b863e74fe8bd77b0ba9996def70511edd609b6d36e59e2738ee68ecaf0c3be",
-    "docs/api/fixed.md": "6eda341b01b9df157a3587305613d5b9f2b77a38e4e4686ca0d67787e566aff0",
-    "docs/api/savings.md": "8d101c55ad8314a93e6f1fa549d2f5603c3acd8b29bd0fa19c58ba99768d39ed",
+    "docs/api/fixed.md": "c086728a9fca28948bb66278a664c5a5e692e6aab3de93628b2c7f32ebe8b3bb",
+    "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
     "docs/api/home.md": "1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf",
     "docs/api/chat.md": "194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5",
     "docs/api/budgets.md": "59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29"

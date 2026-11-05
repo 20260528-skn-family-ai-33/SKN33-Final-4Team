@@ -122,7 +122,8 @@
                       "summary": {
                         "confirmedMonthlyTotal": 715000,
                         "suggestedCount": 1
-                      }
+                      },
+                      "cardBills": []
                     }
                   },
                   "empty": {
@@ -131,7 +132,8 @@
                       "summary": {
                         "confirmedMonthlyTotal": 0,
                         "suggestedCount": 0
-                      }
+                      },
+                      "cardBills": []
                     }
                   }
                 }
@@ -1655,11 +1657,19 @@
               "confirmedMonthlyTotal",
               "suggestedCount"
             ]
+          },
+          "cardBills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FixedCardBillPreview"
+            },
+            "description": "관리 대상 카드가 있는 카드사별 참고 청구금액. 유효한 카드 동의·연결·선택이 없으면 빈 배열. 별도 CODEF 조회 없이 저장 자료 사용."
           }
         },
         "required": [
           "items",
-          "summary"
+          "summary",
+          "cardBills"
         ]
       },
       "FixedBatchResponse": {
@@ -1834,6 +1844,62 @@
           "transactions"
         ],
         "description": "지난 주기·이번 주기 회차 하나와 연결된 출금 (10/27)."
+      },
+      "FixedCardBillPreview": {
+        "type": "object",
+        "properties": {
+          "issuerCode": {
+            "type": "string"
+          },
+          "issuerName": {
+            "type": "string"
+          },
+          "confirmedFixedAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "이 카드사에서 내는 확정 고정비 월 합계. 실제 결제 연결 카드 우선, 없으면 등록 카드. 후보 제외."
+          },
+          "totalAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "이번 급여 주기에 낼 조회된 카드사 사용 명세서 합계. 미확보·판단 불가면 null."
+          },
+          "amountAfterFixed": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "max(0, totalAmount - confirmedFixedAmount). 참고 표시용이며 실제 예산 선차감액이 아님."
+          },
+          "isEstimated": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "확정 여부가 confirmed가 아닌 청구서를 포함하면 true. 금액을 알 수 없으면 null."
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              null,
+              "cycle_unavailable",
+              "bill_scope_unknown",
+              "bill_due_date_unknown",
+              "bill_type_unknown",
+              "first_bill_ambiguous",
+              "bill_unavailable",
+              "bill_amount_invalid"
+            ]
+          }
+        },
+        "required": [
+          "issuerCode",
+          "issuerName",
+          "confirmedFixedAmount",
+          "totalAmount",
+          "amountAfterFixed",
+          "isEstimated",
+          "reason"
+        ]
       }
     }
   }

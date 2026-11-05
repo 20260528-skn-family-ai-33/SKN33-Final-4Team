@@ -141,11 +141,11 @@ export default function LoanCheckPage() {
   const unfinished = Object.values(editing).some(Boolean)
   const onEditing = (id, value) => setEditing((old) => ({ ...old, [id]: value }))
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
-  const done = () => navigate(manage ? (state?.from === 'home' ? PATHS.home : PATHS.connections) : PATHS.salary)
+  const done = () => navigate(manage ? (state?.from === 'home' ? PATHS.home : PATHS.connections) : PATHS.protect)
   const rows = [...(data?.items ?? [])].sort((a, b) => Number(b.loanId === state?.loanId) - Number(a.loanId === state?.loanId))
   return (
     <Layout title="대출 확인" showBack foot={<button type="button" className="mc-primary" disabled={unfinished} onClick={done}>{manage ? '확인 마침' : '다음'}</button>}>
-      {!manage && <StepBar step={2} />}
+      {!manage && <StepBar step={4} />}
       <h1>상환 중인 대출</h1>
       <p className="mc-muted">대출별로 상환 정보를 확인하고 저장해 주세요.</p>
       {error ? <div className="mc-card">

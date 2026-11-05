@@ -1,7 +1,7 @@
 // 계좌 연결 5: 연결 결과
 // 연결 목록(GET /api/finance/connections/) · 고른 계좌(GET /api/finance/connect/accounts/)를 그대로 보여 준다 (11/03 S2)
 // [다시 불러오기] = POST /api/finance/sync/ → 작업 결과의 기관별 성공 · 실패를 그대로 보여 준다 (실패를 0건으로 보이지 않기)
-// [다음] = 월급 입력. 대출이 있으면 선택적으로 상환 정보 확인·등록 후 월급 입력으로 진행한다.
+// [다음] = 월급 입력. 대출 확인·직접 등록은 저축 확인 다음에 진행한다.
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -63,7 +63,6 @@ export default function ConnectDonePage() {
         ))}
         {sync.error && <p className="mc-error" role="alert">{sync.error}</p>}
       </div>
-      <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.loanCheck)}>대출 상환 정보 확인·등록</button>
       <p className="mc-note">거래 화면에서 불러온 거래를 확인할 수 있어요. 카드번호가 필요한 카드사(현대카드)는 연결 관리에서 다시 불러와 주세요.</p>
     </Layout>
   )
