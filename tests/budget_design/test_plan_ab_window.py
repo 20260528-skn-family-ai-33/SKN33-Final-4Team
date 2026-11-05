@@ -151,6 +151,7 @@ class WindowTests(unittest.TestCase):
             totals = app.table.item(app.table.get_children()[-3], 'values')
             self.assertEqual(totals[4:6], ('1,000,000', '1,000,000'))
             self.assertIn('A: 계산 완료', app.status.get())
+            self.assertIn('자동 선택: A — 거래 건수 확인 불가', app.status.get())
             self.assertIn('forecast', app.table['columns'])
             self.assertIn('예측 하향·상향 범위 입력 필요', app.status.get())
             self.assertNotIn('LLM 미실행', app.status.get())
@@ -257,5 +258,12 @@ class WindowTests(unittest.TestCase):
             self.assertFalse(row['excluded'])
             app.show_result(restored)
             self.assertTrue(app.reincluded[candidate['id']].get())
+            for i, amounts in enumerate(('100000,100000,100000,100000', '100000,100000,100000,100000', '133333,133333,133334')):
+                app.rows['FOOD'][f't{i}'].set(amounts)
+            with patch('compare_plans.predict_ml', side_effect=ml_response):
+                dense = gui.compare(gui.parse_form(app.form()))
+            app.show_result(dense)
+            self.assertIn('자동 선택: B — 카테고리별 최대 11건', app.status.get())
+            self.assertEqual(dense['selection']['plan'], 'b')
         finally:
             root.destroy()

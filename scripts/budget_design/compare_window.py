@@ -388,6 +388,14 @@ class ComparisonWindow:
                   'needs_policy': '정책 설정 필요', 'mixed': '소비 범위 확인 필요',
                   'needs_upper_allocation_review': '생활비 배분 재검토 필요', 'error': '실행 오류'}
         statuses, details = [], []
+        if 'selection' in result:
+            choice = result['selection']
+            why = {'history_not_ready': '최근 3개월 이력 부족·미확인',
+                   'transaction_counts_unavailable': '거래 건수 확인 불가',
+                   'sparse_transactions': f"카테고리별 최대 {choice['max_category_count']}건(10건 이하)",
+                   'sufficient_transactions': f"카테고리별 최대 {choice['max_category_count']}건(11건 이상)"}[choice['reason']]
+            statuses.append(f"자동 선택: {choice['plan'].upper()} — {why}")
+            details.append(f"자동 선택: {choice['plan'].upper()} / {why} / 실행 경로: {result['selected_variant']}")
         for name in ('a', 'b', *(['b_forecast'] if 'b_forecast' in result else [])):
             item = result[name]
             mode = item.get('selection_source', item.get('llm_status', ''))

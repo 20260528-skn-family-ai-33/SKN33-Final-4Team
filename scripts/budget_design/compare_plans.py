@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / 'backend'))
 
 from run_plan_b_test import synthetic_input
 from simulator import CATEGORIES, predict_ml
+from plan_selection import select_plan
 
 
 def test_input(case='shortfall'):
@@ -78,18 +79,47 @@ def run_b(case, use_llm):
         ml_reference=case.get('ml_reference'), available_spare=case.get('available_spare', 0))
 
 
+def _prepare_ml(case):
+    from budgets.design_candidates import ml_profile
+    case['_ml'] = predict_ml(ml_profile({**case['profile'], 'target': case['input']['target']}))
+    weights = {c: Fraction(str(case['_ml']['ratios'][label])) for c, label in CATEGORIES.items()}
+    case['ml_reference'] = {c: case['input']['target']*v/sum(weights.values()) for c,v in weights.items()}
+
+
+def recommend_budget(case, *, use_llm=False):
+    """Run only the selected plan. A B-calculation failure must not silently switch to A."""
+    from plan_b_history import summarize_history
+    case = deepcopy(case)
+    selection = select_plan(summarize_history(case['months'], as_of=case['as_of']))
+    key = ('b_forecast' if selection['plan'] == 'b' and case.get('include_forecast')
+           and case.get('forecast_enabled') else selection['plan'])
+    runner = {'a': run_a, 'b': run_b, 'b_forecast': run_forecast}[key]
+    start = perf_counter()
+    try:
+        _prepare_ml(case)
+    except Exception as error:
+        result = {'status': 'error' if selection['plan'] == 'a' else 'needs_data',
+                  'allocations': None, 'reason': type(error).__name__ if selection['plan'] == 'a'
+                  else 'ml_reference_unavailable'}
+    else:
+        try:
+            result = runner(case, use_llm)
+        except Exception as error:
+            result = {'status': 'error', 'allocations': None, 'reason': type(error).__name__}
+    return {'selection': selection, 'selected_variant': key,
+            'result': {**result, 'seconds': perf_counter() - start}}
+
+
 def compare(case, *, use_llm=False):
     from plan_b_history import summarize_history
     case = deepcopy(case)
     history = summarize_history(case['months'], as_of=case['as_of'])
     outputs = {'history': history, 'target': case['input']['target'], 'use_llm': use_llm,
+               'selection': select_plan(history),
                'available_spare': case.get('available_spare', 0),
                'priorities': case['input']['priorities']}
-    from budgets.design_candidates import ml_profile
     try:
-        case['_ml'] = predict_ml(ml_profile({**case['profile'], 'target': case['input']['target']}))
-        weights = {c: Fraction(str(case['_ml']['ratios'][label])) for c, label in CATEGORIES.items()}
-        case['ml_reference'] = {c: case['input']['target']*v/sum(weights.values()) for c,v in weights.items()}
+        _prepare_ml(case)
         outputs['ml_reference'] = deepcopy(case['ml_reference'])
     except Exception as error:
         outputs['ml_error'] = type(error).__name__
@@ -110,6 +140,9 @@ def compare(case, *, use_llm=False):
             result = {'status': 'error', 'reason': type(error).__name__, 'allocations': None}
         outputs[name] = {**result, 'seconds': perf_counter() - start}
     outputs['history'] = outputs['b'].get('history', history)
+    selected = outputs['selection']['plan']
+    key = 'b_forecast' if selected == 'b' and case.get('include_forecast') and case.get('forecast_enabled') else selected
+    outputs.update(selected_variant=key, selected_result=outputs[key])
     return outputs
 
 
@@ -127,6 +160,9 @@ def run_forecast(case, use_llm=False):
 
 def print_comparison(out):
     print('합성 데이터 비교 / 금액 원 단위 / 정책 수치는 테스트용 / 저장 없음')
+    if 'selection' in out:
+        choice = out['selection']
+        print(f"자동 선택: {choice['plan'].upper()} / {choice['reason']} / 최대 거래 건수: {choice['max_category_count']}")
     print(f"초기 배분 예산: {out['target']:,}원 (기타 제외) / 기존 여윳돈 {out.get('available_spare', 0):,}원")
     print('우선순위: ' + ', '.join(f"{r['rank']}위 {CATEGORIES[r['category']]}" for r in out['priorities']))
     for name in ('a', 'b'):
@@ -164,6 +200,7 @@ def print_comparison(out):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--llm', action='store_true', help='A·B 모두 실제 LLM 사용 (API 비용 발생)')
+    parser.add_argument('--auto', action='store_true', help='데이터 기준으로 A/B를 선택해 해당 안만 실행')
     parser.add_argument('--case', choices=('shortfall', 'surplus', 'medical'), default='shortfall',
                         help='생활비 부족 / 평소보다 여유 / 의료비 한 달 급증 합성 사례')
     args = parser.parse_args(argv)
@@ -173,6 +210,12 @@ def main(argv=None):
     if args.llm:
         from budgets.design_selection import MODEL
         print(f"LLM 모델: A={MODEL}, B={os.environ.get('LLM_MODEL') or '미설정'} (기존 설정 유지)")
+    if args.auto:
+        out = recommend_budget(test_input(args.case), use_llm=args.llm)
+        choice, result = out['selection'], out['result']
+        print(f"자동 선택: {choice['plan'].upper()} / {choice['reason']} / 최대 거래 건수: {choice['max_category_count']}")
+        print(f"계산 상태: {result['status']} / 실행 경로: {out['selected_variant']}")
+        return 0 if result['status'] == 'proposed' else 2
     out = compare(test_input(args.case), use_llm=args.llm)
     print_comparison(out)
     if any(out[p]['status'] != 'proposed' for p in ('a', 'b')):
