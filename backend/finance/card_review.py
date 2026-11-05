@@ -1,6 +1,6 @@
 """카드 식별 보완. 호출자는 회원 잠금을 잡는다. 확인 결과는 승인 한 건에만 적용한다."""
 import json
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, time
 
 from django.core.serializers.json import DjangoJSONEncoder
@@ -36,11 +36,18 @@ def save_transaction(user, card, identity, payload, existing=None):
     return tx, created
 
 
-def _saved_approvals(user, card, identity):
+def saved_approvals(user, card, identity):
     """재발급 전 카드가 보유 목록에 없어도 같은 카드사의 기존 승인을 찾는다."""
     owners = Card.objects.filter(user=user, issuer_code=card.issuer_code, source_card_key__isnull=False)
     keys = [approval_source_key(item.source_card_key, identity) for item in owners]
     return list(FinancialTransaction.objects.filter(user=user, card__in=owners, source_key__in=keys)[:2])
+
+
+def review_signature(identity):
+    """번호 표기·응답 순서와 무관한 승인 속성. 승인번호가 없으면 표기 간 자동 연결은 하지 않는다."""
+    if len(identity) != 9 or not identity[2]:
+        return None
+    return tuple(value.isoformat() if isinstance(value, date) else value for value in identity[:-1])
 
 
 def save_approvals(user, cards, card_rows, rows, run, fetched_at):
@@ -55,6 +62,14 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
             return []
         later = [card for card, data in zip(cards, card_rows) if row["occurred_on"] < data["issued_on"]]
         return later if len(later) == 1 and later[0].pk in used else []
+
+    # 같은 속성의 다른 카드 거래나 반복 전표를 합치지 않도록 이번 응답과 기존 요청 양쪽의 유일성을 확인한다.
+    counts = Counter(review_signature(row["identity"]) for row in rows)
+    previous = defaultdict(list)
+    for item in CardApprovalReview.objects.filter(
+        user=user, issuer_code=run.connection.organization_code,
+    ).select_related("transaction", "resolved_card"):
+        previous[review_signature(item.identity)].append(item)
 
     new_ids, existing_count, reviews, unknown = [], 0, [], False
     occurrences = Counter()
@@ -72,6 +87,16 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
         review = CardApprovalReview.objects.filter(
             user=user, issuer_code=run.connection.organization_code, source_key=key,
         ).select_related("transaction", "resolved_card").first()
+        signature = review_signature(identity)
+        if review is None and signature is not None and counts[signature] == 1:
+            candidates = previous[signature]
+            if len(candidates) > 1 or (candidates and cards and len(saved_approvals(user, cards[0], identity)) > 1):
+                unknown = True
+                continue
+            if candidates:
+                review = candidates[0]
+                # 요청 ID와 coverage 연결은 유지하고 표기별 조회 키만 최신으로 바꾼다.
+                review.source_key = key
         matched = by_number(shown)
         if invalid:
             unknown = True
@@ -79,7 +104,7 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
             if review:
                 review.data_valid = False
                 review.started_at = run.started_at
-                review.save(update_fields=["data_valid", "started_at"])
+                review.save(update_fields=["source_key", "data_valid", "started_at"])
                 reviews.append(review)
             continue
         saved = []
@@ -87,7 +112,7 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
         if review is None and not matched:
             matched = reissued_card(row)
             if matched:
-                saved = _saved_approvals(user, matched[0], identity)
+                saved = saved_approvals(user, matched[0], identity)
                 if len(saved) > 1:
                     # 기존 승인도 하나로 특정할 수 없으면 중복 생성과 조회 완료 승격을 모두 보류한다.
                     unknown = True
@@ -108,7 +133,15 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
                 continue
             # 재조회에서도 이 승인 한 건에 대한 사용자의 확인을 유지한다.
             card = review.resolved_card
-            tx, created = save_transaction(user, card, identity, row, review.transaction)
+            existing = review.transaction
+            if existing is None:
+                existing = FinancialTransaction.objects.filter(
+                    user=user, card=card, source_key=approval_source_key(card.source_card_key, identity),
+                ).first()
+                if existing and CardApprovalReview.objects.filter(transaction=existing).exclude(pk=review.pk).exists():
+                    unknown = True
+                    continue
+            tx, created = save_transaction(user, card, identity, row, existing)
             if review.transaction_id != tx.pk:
                 review.transaction = tx
                 review.save(update_fields=["transaction"])

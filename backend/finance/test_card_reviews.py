@@ -190,3 +190,133 @@ class CardReviewTest(TestCase):
         self.assertEqual(CardApprovalReview.objects.filter(user=self.user).count(), 2)
         self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)
         self.assertFalse(self.runs("card_approval_list"))
+
+    def test_manual_reissue_reuses_unique_saved_approval(self):
+        self.run_sync()
+        original = FinancialTransaction.objects.get(user=self.user)
+        FinancialTransaction.objects.filter(pk=original.pk).update(confirmation_state="confirmed")
+        self.cards = [fixtures.card("9490981234561111")]
+        self.approvals = [approval("123", resCancelYN="2", resCancelAmount="2000")]
+        self.run_sync()
+        self.client.force_login(self.user)
+        self.card = Card.objects.get(user=self.user, masked_number="****1111")
+        self.review = CardApprovalReview.objects.get(user=self.user)
+        response = self.resolve()
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["transactionId"], str(original.pk))
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)
+        original.refresh_from_db()
+        self.assertEqual((original.confirmation_state, original.canceled_amount), ("confirmed", 2000))
+        self.assertTrue(self.runs("card_approval_list"))
+        self.assertEqual(self.resolve().json()["transactionId"], str(original.pk))
+
+    def test_manual_reissue_with_two_saved_candidates_returns_conflict(self):
+        self.run_sync()
+        self.cards = [fixtures.card("9490981234561111")]
+        self.approvals = [approval("949098******1111")]
+        self.run_sync()
+        self.cards = [fixtures.card("9490981234562222")]
+        self.approvals = [approval("123")]
+        self.run_sync()
+        self.client.force_login(self.user)
+        self.card = Card.objects.get(user=self.user, masked_number="****2222")
+        self.review = CardApprovalReview.objects.get(user=self.user)
+        response = self.resolve()
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 2)
+        self.review.refresh_from_db()
+        self.assertIsNone(self.review.transaction_id)
+
+    def test_corrected_number_clears_invalid_resolved_review(self):
+        from .card_review import approval_blocker
+        self.prepare()
+        self.resolve()
+        self.approvals[0]["resCancelYN"] = "2"
+        self.run_sync()
+        self.review.refresh_from_db()
+        self.assertFalse(self.review.data_valid)
+        self.approvals[0].update(resCardNo="949098******0000", resCancelAmount="2000")
+        result = self.run_sync()
+        self.assertTrue(result["approvals_complete"])
+        self.review.refresh_from_db()
+        self.assertTrue(self.review.data_valid)
+        self.assertIsNone(approval_blocker(self.user, ORG))
+        self.assertEqual(FinancialTransaction.objects.get(user=self.user).canceled_amount, 2000)
+        self.assertEqual(self.client.get('/api/finance/card-reviews/').json()['items'], [])
+
+    def test_mask_change_reuses_review_and_keeps_confirmation(self):
+        self.prepare()
+        original_review_id = self.review.pk
+        original_tx_id = self.resolve().json()["transactionId"]
+        self.approvals[0]["resCardNo"] = "1111********999*"
+        result = self.run_sync()
+        self.assertTrue(result["approvals_complete"])
+        self.assertEqual(CardApprovalReview.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(CardApprovalReview.objects.get(user=self.user).pk, original_review_id)
+        self.assertEqual(self.resolve().json()["transactionId"], original_tx_id)
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)
+
+    def test_existing_duplicate_review_returns_conflict_instead_of_one_to_one_error(self):
+        self.prepare()
+        self.resolve()
+        self.review.refresh_from_db()
+        duplicate = CardApprovalReview.objects.create(
+            user=self.user, issuer_code=ORG, source_key="legacy-mask-alias",
+            identity=self.review.identity, payload={**self.review.payload, "canceled_amount": 2000},
+            started_at=timezone.now(), fetched_at=timezone.now(),
+        )
+        response = self.resolve(duplicate)
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertEqual(response.json()["error"]["code"], "card_review_conflict")
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)
+        duplicate.refresh_from_db()
+        self.assertIsNone(duplicate.transaction_id)
+        self.assertIsNone(FinancialTransaction.objects.get(user=self.user).canceled_amount)
+
+    def test_new_mask_with_invalid_amount_updates_old_review_then_recovers(self):
+        from .card_review import approval_blocker
+        self.prepare()
+        self.resolve()
+        self.approvals[0].update(resCardNo="1111********999*", resCancelYN="2")
+        self.run_sync()
+        self.review.refresh_from_db()
+        self.assertFalse(self.review.data_valid)
+        self.approvals[0].update(resCardNo="949098******0000", resCancelAmount="2000")
+        self.assertTrue(self.run_sync()["approvals_complete"])
+        self.assertIsNone(approval_blocker(self.user, ORG))
+        self.assertEqual(CardApprovalReview.objects.filter(user=self.user).count(), 1)
+
+    def test_ambiguous_previous_reviews_are_not_coalesced(self):
+        self.approvals = [approval("1111********9999"), approval("2222********8888")]
+        self.run_sync()
+        self.approvals = [approval("3333********7777")]
+        self.assertFalse(self.run_sync()["approvals_complete"])
+        self.assertEqual(CardApprovalReview.objects.filter(user=self.user).count(), 2)
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user).exists())
+
+    def test_sync_does_not_attach_legacy_review_to_occupied_transaction(self):
+        from .codef_cards import approval_source_key
+        self.prepare()
+        self.resolve()
+        self.review.refresh_from_db()
+        shown = "1111********999*"
+        duplicate = CardApprovalReview.objects.create(
+            user=self.user, issuer_code=ORG,
+            source_key=approval_source_key(f"{ORG}:{shown}", self.review.identity),
+            identity=self.review.identity, payload=self.review.payload, resolved_card=self.card,
+            started_at=timezone.now(), fetched_at=timezone.now(),
+        )
+        self.approvals[0].update(resCardNo=shown, resCancelYN="2", resCancelAmount="2000")
+        self.assertFalse(self.run_sync()["approvals_complete"])
+        duplicate.refresh_from_db()
+        self.assertIsNone(duplicate.transaction_id)
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)
+        self.assertIsNone(FinancialTransaction.objects.get(user=self.user).canceled_amount)
+
+    def test_number_change_without_approval_number_requires_confirmation(self):
+        self.approvals = [approval("1111********9999", resApprovalNo="")]
+        self.run_sync()
+        self.approvals[0]["resCardNo"] = "1111********999*"
+        self.assertFalse(self.run_sync()["approvals_complete"])
+        self.assertEqual(CardApprovalReview.objects.filter(user=self.user).count(), 2)
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user).exists())

@@ -6,16 +6,22 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .api_cards import candidate_cards, require_card_consent, local_iso
-from .card_review import save_transaction, promote_coverage
+from .card_review import saved_approvals, save_transaction, promote_coverage
 from .display import card_display, CARD_ISSUERS
 from .inputs import body_dict, reject_unknown_fields
 from .models import CardApprovalReview, Connection
 from .pipeline import process_new_transactions
+
+
+class CardReviewConflict(APIException):
+    status_code = 409
+    default_code = "card_review_conflict"
+    default_detail = "동일 승인으로 보이는 거래가 여러 개이거나 다른 확인 요청에 연결되어 있어요. 카드 내역을 다시 불러와 확인해 주세요."
 
 
 def available_cards(user, issuer):
@@ -78,7 +84,13 @@ def resolve_card_review(request, review_id):
         if not row.data_valid:
             raise ValidationError({"non_field_errors": ["금액이나 취소 정보를 확인할 수 없어요. 카드 내역을 다시 불러와 주세요."]})
         if row.transaction_id is None:
-            tx, created = save_transaction(request.user, card, row.identity, row.payload)
+            saved = saved_approvals(request.user, card, row.identity)
+            if len(saved) > 1:
+                raise CardReviewConflict()
+            tx, created = save_transaction(request.user, card, row.identity, row.payload, saved[0] if saved else None)
+            if CardApprovalReview.objects.filter(transaction=tx).exclude(pk=row.pk).exists():
+                # 예전 표기로 생성된 요청이 이미 같은 거래를 점유한 경우 OneToOne 오류 대신 전체 작업을 롤백한다.
+                raise CardReviewConflict()
             row.resolved_card, row.transaction, row.resolved_at = card, tx, timezone.now()
             row.save(update_fields=["resolved_card", "transaction", "resolved_at"])
             if created:
