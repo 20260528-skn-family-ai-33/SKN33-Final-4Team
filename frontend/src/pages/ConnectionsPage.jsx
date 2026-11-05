@@ -188,6 +188,7 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
       <div className="mc-card">
         <div className="mc-row"><h2>대출{loans.data && ` ${loans.data.items.length}건`}</h2><span className="mc-hint">상환 중 · 조회 전용</span></div>
         <ListStatus q={loans} what="대출" />
+        {loans.data?.hasInquiryConsent === false && <p className="mc-note">직접 등록한 대출만 표시하고 있어요. 기관 대출도 불러오려면 <button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>대출 조회에 동의해 주세요</button>.</p>}
         {items(loans).map((l) => (
           <button type="button" className="mc-listrow" key={l.loanId} onClick={() => navigate(PATHS.loanCheck, { state: { from: 'manage', loanId: l.loanId } })}>
             <span className="mc-tile"><Icon name="Landmark" /></span>
@@ -196,7 +197,7 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
           </button>
         ))}
         {(loans.data || loans.error?.code === 'consent_required') && <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup onSaved={(created) => { setRegisteredLoan(created.productName); loans.reload() }} />)}>+ 조회되지 않은 대출 직접 등록</button>}
-        {registeredLoan && <p className="mc-note" role="status">{registeredLoan} 대출을 등록했어요.{loans.error?.code === 'consent_required' && ' 등록한 대출의 목록 조회는 대출 조회 동의 후 이용할 수 있어요.'}</p>}
+        {registeredLoan && <p className="mc-note" role="status">{registeredLoan} 대출을 등록했어요.</p>}
       </div>
       <p className="mc-note">송금·결제는 실행하지 않아요. 연결을 해제해도 지금까지 불러온 거래는 남아요.</p>
     </Layout>

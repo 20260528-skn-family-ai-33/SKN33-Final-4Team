@@ -134,27 +134,29 @@ def owned_loans(user):
     )
 
 
+def has_loan_consent(user):
+    return Consent.objects.filter(
+        user=user,
+        purpose=PURPOSE,
+        product_scope=Consent.ProductScope.LOAN,
+        revoked_at__isnull=True,
+    ).exists()
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def loans(request):
     if request.method == "POST":
         return loan_create(request)
 
-    has_consent = Consent.objects.filter(
-        user=request.user,
-        purpose=PURPOSE,
-        product_scope=Consent.ProductScope.LOAN,
-        revoked_at__isnull=True,
-    ).exists()
-
-    if not has_consent:
-        raise ConsentRequired("대출 조회 동의가 필요해요.")
-
+    has_consent = has_loan_consent(request.user)
     rows = owned_loans(request.user).filter(
         status=Loan.Status.REPAYING,
     ).order_by("loan_id")
+    if not has_consent:
+        rows = rows.filter(origin=Origin.MANUAL)
 
-    return Response({"items": [loan_item(loan) for loan in rows]})
+    return Response({"items": [loan_item(loan) for loan in rows], "has_inquiry_consent": has_consent})
 
 
 @idempotent()
@@ -385,6 +387,8 @@ def loan_detail(request, loan_id):
             loan_id=loan_id,
             status=Loan.Status.REPAYING,
         )
+        if loan.origin != Origin.MANUAL and not has_loan_consent(request.user):
+            raise ConsentRequired("기관에서 조회한 대출을 수정하려면 대출 조회 동의가 필요해요.")
 
         serializer = LoanPatchSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)

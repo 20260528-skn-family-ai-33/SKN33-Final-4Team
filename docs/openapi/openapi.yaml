@@ -1833,7 +1833,8 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        저장된 본인의 상환 중(repaying) 대출만 읽습니다. repaid 대출과 쿼리 필터는 1차에 제공하지 않습니다. CODEF를 호출하지 않으며 조회 동의가 없으면 403 consent_required입니다.
+        저장된 본인의 상환 중(repaying) 대출만 읽습니다. repaid 대출과 쿼리 필터는 1차에 제공하지 않습니다. CODEF를 호출하지 않습니다. 유효한 대출 조회 동의가 없으면 직접
+        등록(origin=manual) 대출만 반환하고 hasInquiryConsent=false를 제공합니다. 동의가 있으면 기관 조회 대출도 포함하며 hasInquiryConsent=true입니다.
         relogin 상태에서도 마지막 저장 자료와 fetchedAt을 유지합니다. 미조회/조회 실패를 items: []로 바꾸지 않습니다.
 
 
@@ -1912,12 +1913,19 @@ paths:
                           confirmationStatus: unknown
                           confirmedAt: null
                       fetchedAt: '2026-10-21T09:30:00+09:00'
+                    hasInquiryConsent: true
                 empty:
                   summary: 상환 중 대출 없음
                   value:
                     items: []
+                    hasInquiryConsent: true
+                no_inquiry_consent:
+                  summary: 기관 조회 미동의 · 직접 등록 대출 없음
+                  value:
+                    items: []
+                    hasInquiryConsent: false
         '403':
-          description: not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
+          description: not_authenticated. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
             application/json:
               schema:
@@ -1929,12 +1937,6 @@ paths:
                     error:
                       code: not_authenticated
                       message: 로그인이 필요해요.
-                consent_required:
-                  summary: consent_required
-                  value:
-                    error:
-                      code: consent_required
-                      message: 금융 조회 동의가 필요해요.
         '405':
           description: method_not_allowed. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -2153,6 +2155,9 @@ paths:
         전환·부분 납부 처리, 여러 대출 순차 저장의 일부 실패 화면 안내는 구현 조율 대상입니다.
 
 
+        직접 등록 대출은 조회 동의 없이 수정할 수 있습니다. 기관 조회 대출은 유효한 대출 조회 동의가 없으면 403 consent_required이며 변경하지 않습니다.
+
+
         원본: `docs/api/loans.md`'
       x-source: docs/api/loans.md
       responses:
@@ -2226,7 +2231,7 @@ paths:
                       code: parse_error
                       message: JSON 형식을 확인해 주세요.
         '403':
-          description: not_authenticated / permission_denied. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
+          description: not_authenticated / permission_denied / consent_required. 기관 조회 대출의 수정에는 대출 조회 동의가 필요합니다.
           content:
             application/json:
               schema:
@@ -2244,6 +2249,12 @@ paths:
                     error:
                       code: permission_denied
                       message: 다시 시도해 주세요.
+                consent_required:
+                  summary: 기관 조회 대출 수정 동의 없음
+                  value:
+                    error:
+                      code: consent_required
+                      message: 기관에서 조회한 대출을 수정하려면 대출 조회 동의가 필요해요.
         '404':
           description: not_found. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -2989,12 +3000,14 @@ paths:
                     summary:
                       confirmedMonthlyTotal: 715000
                       suggestedCount: 1
+                    cardBills: []
                 empty:
                   value:
                     items: []
                     summary:
                       confirmedMonthlyTotal: 0
                       suggestedCount: 0
+                    cardBills: []
         '403':
           description: '로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를
             넣지 않는다.'
@@ -7636,8 +7649,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Loan'
+        hasInquiryConsent:
+          type: boolean
+          description: 유효한 대출 조회 동의 여부. false면 items에는 직접 등록 대출만 포함됩니다.
       required:
       - items
+      - hasInquiryConsent
     LoanUpdateRequest:
       type: object
       properties:
@@ -8413,9 +8430,15 @@ components:
           required:
           - confirmedMonthlyTotal
           - suggestedCount
+        cardBills:
+          type: array
+          items:
+            $ref: '#/components/schemas/FixedCardBillPreview'
+          description: 관리 대상 카드가 있는 카드사별 참고 청구금액. 유효한 카드 동의·연결·선택이 없으면 빈 배열. 별도 CODEF 조회 없이 저장 자료 사용.
       required:
       - items
       - summary
+      - cardBills
     FixedBatchResponse:
       type: object
       properties:
@@ -8554,6 +8577,51 @@ components:
       - paymentState
       - transactions
       description: 지난 주기·이번 주기 회차 하나와 연결된 출금 (10/27).
+    FixedCardBillPreview:
+      type: object
+      properties:
+        issuerCode:
+          type: string
+        issuerName:
+          type: string
+        confirmedFixedAmount:
+          type: integer
+          minimum: 0
+          description: 이 카드사에서 내는 확정 고정비 월 합계. 실제 결제 연결 카드 우선, 없으면 등록 카드. 후보 제외.
+        totalAmount:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: 이번 급여 주기에 낼 조회된 카드사 사용 명세서 합계. 미확보·판단 불가면 null.
+        amountAfterFixed:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: max(0, totalAmount - confirmedFixedAmount). 참고 표시용이며 실제 예산 선차감액이 아님.
+        isEstimated:
+          type: boolean
+          nullable: true
+          description: 확정 여부가 confirmed가 아닌 청구서를 포함하면 true. 금액을 알 수 없으면 null.
+        reason:
+          type: string
+          nullable: true
+          enum:
+          - null
+          - cycle_unavailable
+          - bill_scope_unknown
+          - bill_due_date_unknown
+          - bill_type_unknown
+          - first_bill_ambiguous
+          - bill_unavailable
+          - bill_amount_invalid
+      required:
+      - issuerCode
+      - issuerName
+      - confirmedFixedAmount
+      - totalAmount
+      - amountAfterFixed
+      - isEstimated
+      - reason
     RecurringSaving:
       type: object
       properties:
@@ -10189,13 +10257,13 @@ x-source-sha256:
   docs/api/README.md: 4b4d5f5215d09644f14eaa2bd8f68b5210633a89192e484cd0f387ec760716f2
   docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
-  docs/api/auth.md: 8bbbbde90dede70b16a100288cc33e5562495b1b23b6140354581b0dfecd70d1
+  docs/api/auth.md: 38524b8ee0a760c18a0aa84800b76368f53c1900bd0d5cad37d8923e5fdfb690
   docs/api/finance-connect.md: 4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4
   docs/api/cards.md: 0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34
-  docs/api/loans.md: 4ce00163f1f80a152113e5f2def5a0181c760241e0f5981c897d89948c1b09b8
+  docs/api/loans.md: 3b83de5ba2e7e9f5ea7cc9705de4ece7a1ef060339bc13aaed4651cca986e120
   docs/api/transactions.md: b7e0d1f1e9c540466442b9b451c4b201e2126144451407b1fbc41d4333869bc5
-  docs/api/fixed.md: 6eda341b01b9df157a3587305613d5b9f2b77a38e4e4686ca0d67787e566aff0
-  docs/api/savings.md: 8d101c55ad8314a93e6f1fa549d2f5603c3acd8b29bd0fa19c58ba99768d39ed
+  docs/api/fixed.md: 81e585f4c97dbd101525a130fce5d97e003aa788410cd3e6ec40e83fa7bb3d3b
+  docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
   docs/api/home.md: 1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf
   docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5
   docs/api/budgets.md: 59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29
