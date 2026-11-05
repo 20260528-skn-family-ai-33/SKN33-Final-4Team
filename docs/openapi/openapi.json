@@ -3657,7 +3657,7 @@
           "거래"
         ],
         "operationId": "updateTransactionCategory",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n요청은 필수 category 한 칸만 받습니다. 선택 가능한 10개 카테고리와 ETC만 허용하며 UNCLASSIFIED로 되돌릴 수 없습니다. 금액·날짜·가맹점명·classifyState·funding 등 허용 외 필드는 400 invalid입니다. 같은 확정 카테고리 재전송은 200이며 Idempotency-Key를 쓰지 않습니다. 저장하면 classifyState:confirmed, classifiedBy:user, suggestion:null입니다.\n\ntransfer에 카테고리를 보내면 spending으로 바뀌어 소비 합계·예산에 반영됩니다. category:null은 원래 이체였던 거래를 다시 transfer로 돌릴 때만 허용합니다. 원래 소비 거래의 null 또는 income에 대한 수정은 400입니다. 원래 이체 여부는 서버 field_states에 보존하고 응답에는 내보내지 않습니다. 이체 수취인은 기억하지 않아 같은 사람에게 다음에 보낸 이체는 다시 transfer입니다.\n\n고정지출 연결 거래는 카테고리를 바꿔도 funding:fixed와 연결을 유지합니다. 이체가 확정 고정지출에 금액·날짜 ±3일로 연결되면 spending·고정지출 카테고리·funding:fixed가 되고 소비 분석에는 포함되며 생활비 사용액에서는 빠집니다. 이런 거래에 category:null은 400이며 연결을 먼저 풀어야 합니다. 연결 해제 시 원래 transfer로 복원하고 category·funding을 비웁니다.\n\n사용자가 고른 카테고리는 같은 가맹점의 새 거래에 먼저 쓰되 기존 거래를 일괄 수정하지 않습니다. 편의점·슈퍼·대형마트·종합 온라인몰 등 다품목 가맹점은 기억하지 않아 다음 거래도 UNCLASSIFIED입니다. 다품목 사전/제외 구현과 분류 변경 후 예산 사용액 재계산 시점은 구현 조율 대상입니다. 분류 변경만으로 승인 전 예산 초안을 만료시키지 않습니다.\n\n원본: `docs/api/transactions.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n요청은 필수 category 한 칸만 받습니다. 선택 가능한 10개 카테고리와 ETC만 허용하며 UNCLASSIFIED로 되돌릴 수 없습니다. 금액·날짜·가맹점명·classifyState·funding 등 허용 외 필드는 400 invalid입니다. 같은 확정 카테고리 재전송은 200이며 Idempotency-Key를 쓰지 않습니다. 저장하면 classifyState:confirmed, classifiedBy:user, suggestion:null입니다.\n\ntransfer에 카테고리를 보내면 spending으로 바뀌어 소비 합계·예산에 반영됩니다. category:null은 원래 이체였던 거래를 다시 transfer로 돌릴 때만 허용합니다. 원래 소비 거래의 null 또는 income에 대한 수정은 400입니다. 원래 이체 여부는 서버 field_states에 보존하고 응답에는 내보내지 않습니다. 이체 수취인은 기억하지 않아 같은 사람에게 다음에 보낸 이체는 다시 transfer입니다.\n\n고정지출 연결 거래는 카테고리를 바꿔도 funding:fixed와 연결을 유지합니다. 이체가 확정 고정지출에 금액·날짜 ±3일로 연결되면 spending·고정지출 카테고리·funding:fixed가 되고 소비 분석에는 포함되며 생활비 사용액에서는 빠집니다. 이런 거래에 category:null은 400이며 연결을 먼저 풀어야 합니다. 연결 해제 시 원래 transfer로 복원하고 category·funding을 비웁니다.\n\n사용자가 고른 카테고리는 같은 가맹점의 새 거래에 먼저 쓰되 기존 거래를 일괄 수정하지 않습니다. 편의점·슈퍼·대형마트·종합 온라인몰 등 다품목 가맹점은 기억하지 않아 다음 거래도 UNCLASSIFIED입니다. 다품목 사전/제외 구현과 분류 변경 후 예산 사용액 재계산 시점은 구현 조율 대상입니다. 분류 변경만으로 승인 전 예산 초안을 만료시키지 않습니다.\n\n내 계좌 이체 확인(R11): {\"ownTransfer\": true|false}만 보낸다. 잠근 뒤 다시 읽은 현재 상태로 판단해 suggested·rejected인 transfer, auto·confirmed인 own_transfer·saving 은행 출금만 바꾼다. 판단 표시가 남아도 지금 소비 등이면 400(오래된 화면·동시 요청이 사용자 분류를 덮지 않음). 취소·납부 연결·고정비 충당도 400(fields.ownTransfer). saving 출금을 false로 정정하면 정기 저축 근거에서 빠지며, 고정지출 근거이기도 하면 400. 이미 원하는 상태면 200. own_transfer·saving 거래에 category를 보내면 400.\n\n원본: `docs/api/transactions.md`",
         "x-source": "docs/api/transactions.md",
         "responses": {
           "200": {
@@ -10412,6 +10412,22 @@
           "isSalary": {
             "type": "boolean",
             "description": "월급 입금이면 true (11/4). 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 salaryReceivedOn·nextSalaryEarlyOn의 입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 후보: 관리 대상 원화 입출금 계좌로 들어온 실수령액 80% 이상 입금(내 계좌끼리 옮긴 돈 제외), 구간은 급여일 7일 전부터. 급여일·실수령액 미등록이면 모두 false. 출금·이체는 항상 false."
+          },
+          "ownTransferReview": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "suggested",
+              "auto",
+              "confirmed",
+              "rejected",
+              null
+            ],
+            "description": "내 계좌 이체 판단 (R11, 11/5). transfer·own_transfer·saving 출금만, 그 밖은 null. suggested = 출금 적요가 가입 이름과 같아 추정(유형은 transfer 그대로) · auto = 규칙이 양쪽 거래를 묶어 자동 분류(own_transfer, 뒤에 저축 처리되면 saving. 같은 금액·5분 이내·양쪽 적요 모두 가입 이름·양쪽 후보 유일 — 확실한 식별 아님) · confirmed = 사용자가 [맞아요] · rejected = 사용자가 [아니에요]·확인 취소·연결 해제(transfer). auto·confirmed 출금은 저축이 된 뒤에도 목록에 남아 되돌릴 수 있다."
+          },
+          "ownTransferRecheck": {
+            "type": "boolean",
+            "description": "auto인데 나중에 들어온 거래로 상대 후보가 여럿이 됐지만 저축·납부·고정지출 근거라 자동으로 풀지 않은 연결이면 true. 거래 상세에서 ownTransfer로 정정 (R11)."
           }
         },
         "required": [
@@ -10835,12 +10851,25 @@
             "type": "boolean",
             "default": false,
             "description": "true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고 재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래."
+          },
+          "ownTransfer": {
+            "type": "boolean",
+            "description": "내 계좌 이체 확인 (R11). true = [맞아요]: 이 출금만 own_transfer(입금 거래로 넓히지 않음), auto면 유형·연결 그대로 confirmed. false = [아니에요]·확인 취소·연결 해제: transfer로, 규칙이 이은 입금은 income으로 되돌리고, saving이 된 출금은 정기 저축 근거에서 뺀다. 거절해도 소비로 바뀌지 않는다. 지금 유형이 소비 등이면 true·false 모두 400. 다른 칸과 같이 보내면 400."
           }
         },
-        "required": [
-          "category"
-        ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "category"
+            ]
+          },
+          {
+            "required": [
+              "ownTransfer"
+            ]
+          }
+        ]
       },
       "FixedEvidence": {
         "type": "object",
@@ -13669,7 +13698,7 @@
     "docs/api/finance-connect.md": "4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4",
     "docs/api/cards.md": "0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34",
     "docs/api/loans.md": "3b83de5ba2e7e9f5ea7cc9705de4ece7a1ef060339bc13aaed4651cca986e120",
-    "docs/api/transactions.md": "e1b863e74fe8bd77b0ba9996def70511edd609b6d36e59e2738ee68ecaf0c3be",
+    "docs/api/transactions.md": "9013a649b3e2ef6c165d598e080c1218998f815d9057a99eb9eb961f58cd0b80",
     "docs/api/fixed.md": "81e585f4c97dbd101525a130fce5d97e003aa788410cd3e6ec40e83fa7bb3d3b",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
     "docs/api/home.md": "1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf",

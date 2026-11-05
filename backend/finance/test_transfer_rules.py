@@ -9,7 +9,7 @@ from . import pipeline
 from .models import (BankAccount, Card, Connection, FinancialTransaction as Tx, Loan, PaymentDue, PaymentMatch,
                      RecurringExpense, TransactionLink)
 from .tests import URL
-from .transfer_rules import LOAN_CANDIDATE
+from .transfer_rules import LOAN_CANDIDATE, OWN_REVIEW
 
 
 class Fixture(TestCase):
@@ -41,51 +41,242 @@ class Fixture(TestCase):
             tx.refresh_from_db()
 
 
-class OwnTransferTest(Fixture):
-    def assert_pair(self, out, income):
-        self.assertEqual((out.transaction_type, income.transaction_type), ("own_transfer", "own_transfer"))
-        link = TransactionLink.objects.get(from_transaction=out, to_transaction=income)
-        self.assertEqual((link.relation_type, link.matched_amount), ("OWN_TRANSFER", out.amount))
+class OwnTransferSuggestionTest(Fixture):
+    """R11: 상대 거래가 없어도 출금 적요가 가입 이름과 통째로 같으면 '내 계좌 이체 추정'만 표시 (유형은 transfer 그대로)"""
 
-    def test_same_day_same_amount_between_my_accounts(self):
+    def setUp(self):
+        super().setUp()
+        get_user_model().objects.filter(pk=self.user.pk).update(nickname=" 김 나은 ")
+
+    def review(self, tx):
+        tx.refresh_from_db()
+        return tx.transaction_type, tx.field_states.get(OWN_REVIEW)
+
+    def test_name_match_without_counterpart_is_only_suggested(self):
+        out = self.bank(self.a, "out", desc="김나은")
+        self.run_on(out)
+        self.assertEqual(self.review(out), ("transfer", "suggested"))
+        self.assertFalse(TransactionLink.objects.exists())
+        self.assertEqual(Tx.objects.count(), 1)  # 상대 입금을 만들지 않음
+
+    def test_spacing_is_normalized(self):
+        out = self.bank(self.a, "out", desc="김나 은\t")
+        self.run_on(out)
+        self.assertEqual(self.review(out), ("transfer", "suggested"))
+
+    def test_partial_or_empty_name_is_not_suggested(self):
+        partial, other = self.bank(self.a, "out", desc="김나은상점"), self.bank(self.a, "out", desc="이하늘")
+        income = self.bank(self.a, "in", desc="김나은")  # 입금은 이름 탐지 대상 아님
+        self.run_on(partial, other, income)
+        self.assertEqual([self.review(t)[1] for t in (partial, other, income)], [None, None, None])
+        for empty in ("", None, "   "):
+            with self.subTest(nickname=empty):
+                get_user_model().objects.filter(pk=self.user.pk).update(nickname=empty)
+                blank = self.bank(self.a, "out", desc=empty)
+                self.run_on(blank)
+                self.assertEqual(self.review(blank), ("transfer", None))
+
+    def test_same_day_same_amount_alone_does_not_classify(self):
         out, income = self.bank(self.a, "out"), self.bank(self.b, "in")
         self.run_on(out, income)
-        self.assert_pair(out, income)
-        self.assertEqual(TransactionLink.objects.count(), 1)  # 쌍 하나에 연결 하나 (역방향 없음)
-
-    def test_finds_the_other_side_saved_by_an_earlier_sync(self):
-        old_in, new_out = self.bank(self.b, "in"), self.bank(self.a, "out")
-        self.run_on(new_out)
-        old_in.refresh_from_db()
-        self.assert_pair(new_out, old_in)
-
-    def test_each_transaction_pairs_once(self):
-        first, second = self.bank(self.a, "out", occurred_time=time(9)), self.bank(self.a, "out", occurred_time=time(10))
-        income = self.bank(self.b, "in")
-        self.run_on(first, second, income)
-        self.assert_pair(first, income)
-        self.assertEqual(second.transaction_type, "transfer")
-
-    def test_not_a_pair(self):
-        other_user = get_user_model().objects.create_user(email="rules-other@example.invalid")
-        other_bank = Connection.objects.create(user=other_user, business_type="bank", organization_code="0004", status="connected")
-        other_account = BankAccount.objects.create(user=other_user, connection=other_bank, source_account_key="x")
-        self.bank(self.a, "in")                                  # 같은 계좌
-        self.bank(self.b, "in", day=date(2026, 11, 4))           # 다른 날
-        self.bank(self.b, "in", amount=99_999)                   # 다른 금액
-        self.bank(self.b, "in", is_canceled=True)                # 취소된 입금
-        self.bank(other_account, "in", user=other_user)          # 남의 계좌
-        out = self.bank(self.a, "out")
-        self.run_on(out)
-        self.assertEqual(out.transaction_type, "transfer")
+        self.assertEqual((self.review(out), self.review(income)), (("transfer", None), ("income", None)))
         self.assertFalse(TransactionLink.objects.exists())
 
-    def test_user_converted_transfer_is_left_alone(self):
-        spent = self.bank(self.a, "out")
-        Tx.objects.filter(pk=spent.pk).update(transaction_type="spending")
-        income = self.bank(self.b, "in")
-        self.run_on(income)
-        self.assertEqual(income.transaction_type, "income")
+    def test_protected_withdrawals_are_not_suggested(self):
+        canceled = self.bank(self.a, "out", desc="김나은", is_canceled=True)
+        confirmed = self.bank(self.a, "out", desc="김나은")
+        Tx.objects.filter(pk=confirmed.pk).update(confirmation_state="confirmed")
+        paid = self.bank(self.a, "out", desc="김나은")
+        due = PaymentDue.objects.create(
+            user=self.user, obligation_type="manual", occurrence_key="k", due_date=date(2026, 11, 3),
+            confirmed_amount=100_000, source_type="manual", confirmation_state="confirmed",
+        )
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=paid, matched_amount=100_000)
+        self.run_on(canceled, confirmed, paid)
+        self.assertEqual([self.review(t)[1] for t in (canceled, confirmed, paid)], [None, None, None])
+
+    def test_user_decision_survives_rerun_and_name_change(self):
+        out = self.bank(self.a, "out", desc="김나은")
+        self.run_on(out)
+        Tx.objects.filter(pk=out.pk).update(field_states={OWN_REVIEW: "rejected"})
+        self.run_on(out)
+        get_user_model().objects.filter(pk=self.user.pk).update(nickname="다른이름")
+        self.run_on(out)
+        self.assertEqual(self.review(out), ("transfer", "rejected"))
+
+
+class OwnTransferAutoTest(Fixture):
+    """R11 (11/5 최종): 양쪽 거래가 다 있으면 같은 금액 · 5분 이내 · 양쪽 적요 모두 가입 이름 · 양쪽 유일 → auto"""
+
+    def setUp(self):
+        super().setUp()
+        get_user_model().objects.filter(pk=self.user.pk).update(nickname="김나은")
+
+    def pair(self, out_at=time(9), in_at=time(9, 1), out_desc="김나은", in_desc="김나은", in_day=date(2026, 11, 3), **fields):
+        out = self.bank(self.a, "out", desc=out_desc, occurred_time=out_at, **fields)
+        income = self.bank(self.b, "in", desc=in_desc, occurred_time=in_at, day=in_day, **fields)
+        return out, income
+
+    def kinds(self, *txs):
+        for tx in txs:
+            tx.refresh_from_db()
+        return [(tx.transaction_type, tx.field_states.get(OWN_REVIEW)) for tx in txs]
+
+    def test_both_sides_matched_are_auto_classified_once(self):
+        out, income = self.pair(out_desc=" 김 나은", in_desc="김나은 ")
+        self.run_on(out, income)
+        self.assertEqual(self.kinds(out, income), [("own_transfer", "auto")] * 2)
+        link = TransactionLink.objects.get()
+        self.assertEqual((link.from_transaction_id, link.to_transaction_id, link.relation_type), (out.pk, income.pk, "OWN_TRANSFER"))
+        self.run_on(out, income)
+        self.assertEqual(TransactionLink.objects.count(), 1)
+
+    def test_exactly_five_minutes_and_midnight(self):
+        edge = self.pair(in_at=time(9, 5))
+        late = self.pair(out_at=time(23, 58), in_at=time(0, 2), in_day=date(2026, 11, 4), amount=55_555)
+        self.run_on(*edge, *late)
+        self.assertEqual(self.kinds(*edge, *late), [("own_transfer", "auto")] * 4)
+
+    def test_not_classified_without_all_conditions(self):
+        cases = {
+            "5분 초과": dict(in_at=time(9, 5, 1)),
+            "시각 없음": dict(in_at=None),
+            "이름 다름": dict(in_desc="이하늘"),
+            "부분 일치": dict(in_desc="김나은상점"),
+            "흔한 적요가 서로 같음": dict(out_desc="이체", in_desc="이체"),
+            "한쪽만 이름": dict(out_desc="이체", in_desc="김나은"),
+        }
+        for label, fields in cases.items():
+            with self.subTest(label):
+                Tx.objects.all().delete()
+                out, income = self.pair(**fields)
+                self.run_on(out, income)
+                self.assertEqual(self.kinds(income), [("income", None)])
+                self.assertFalse(TransactionLink.objects.exists())
+                # 이름이 맞는 출금은 일반 이체 그대로 '추정'으로만 남는다
+                self.assertEqual(self.kinds(out)[0], ("transfer", "suggested" if fields.get("out_desc", "김나은") == "김나은" else None))
+
+    def test_empty_nickname_never_auto_classifies(self):
+        get_user_model().objects.filter(pk=self.user.pk).update(nickname="")
+        out, income = self.pair(out_desc="", in_desc="")
+        self.run_on(out, income)
+        self.assertEqual(self.kinds(out, income), [("transfer", None), ("income", None)])
+
+    def test_ambiguous_candidates_are_not_classified(self):
+        out, income = self.pair()
+        twin = self.bank(self.b, "in", desc="김나은", occurred_time=time(9, 2))  # 5분 안 입금 후보 둘
+        self.run_on(out, income, twin)
+        self.assertEqual(self.kinds(out)[0], ("transfer", "suggested"))  # 이름만 보고 추정으로 남음
+        Tx.objects.all().delete()
+        out, income = self.pair()
+        self.bank(self.a, "out", desc="김나은", occurred_time=time(9, 3))  # 출금 후보 둘 (상대 쪽 유일성)
+        self.run_on(out, income)
+        self.assertFalse(TransactionLink.objects.exists())
+
+    def test_same_account_or_other_user_is_not_a_pair(self):
+        out = self.bank(self.a, "out", desc="김나은", occurred_time=time(9))
+        same = self.bank(self.a, "in", desc="김나은", occurred_time=time(9))
+        other = get_user_model().objects.create_user(email="rules-x@example.invalid", nickname="김나은")
+        conn = Connection.objects.create(user=other, business_type="bank", organization_code="0004", status="connected")
+        theirs = self.bank(BankAccount.objects.create(user=other, connection=conn, source_account_key="x"), "in",
+                           desc="김나은", occurred_time=time(9), user=other)
+        self.run_on(out, same)
+        self.assertEqual(self.kinds(same, theirs), [("income", None)] * 2)
+        self.assertFalse(TransactionLink.objects.exists())
+
+    def test_late_counterpart_upgrades_suggestion_in_any_order(self):
+        for first in ("out", "in"):
+            with self.subTest(first=first):
+                Tx.objects.all().delete()
+                out, income = self.pair()
+                for group in ([out], [income]) if first == "out" else ([income], [out]):
+                    self.run_on(*group)
+                self.assertEqual(self.kinds(out, income), [("own_transfer", "auto")] * 2)
+
+    def collect_three(self, order):
+        """출금 1 · 입금 후보 2 를 순서대로 받은 최종 판단"""
+        Tx.objects.all().delete()
+        out, first = self.pair()
+        second = self.bank(self.b, "in", desc="김나은", occurred_time=time(9, 3))
+        for group in {"together": [[out, first, second]], "split": [[out, first], [second]],
+                      "late_out": [[first, second], [out]], "one_by_one": [[first], [out], [second]]}[order]:
+            self.run_on(*group)
+        return self.kinds(out, first, second), TransactionLink.objects.count()
+
+    def test_together_and_split_collection_end_the_same(self):
+        expected = ([("transfer", "suggested"), ("income", None), ("income", None)], 0)
+        for order in ("together", "split", "late_out", "one_by_one"):
+            with self.subTest(order=order):
+                self.assertEqual(self.collect_three(order), expected)
+
+    def test_recheck_keeps_unique_pairs_and_user_decisions(self):
+        out, income = self.pair()
+        self.run_on(out, income)
+        far = self.bank(self.b, "in", desc="김나은", occurred_time=time(9, 30))  # 5분 밖 — 영향 없음
+        self.run_on(far)
+        self.assertEqual(self.kinds(out, income), [("own_transfer", "auto")] * 2)
+        Tx.objects.filter(pk=out.pk).update(field_states={OWN_REVIEW: "confirmed"}, confirmation_state="confirmed")
+        twin = self.bank(self.b, "in", desc="김나은", occurred_time=time(9, 2))
+        self.run_on(twin)
+        self.assertEqual(self.kinds(out, income, twin), [("own_transfer", "confirmed"), ("own_transfer", "auto"), ("income", None)])
+        self.assertEqual(TransactionLink.objects.count(), 1)
+
+    def test_recheck_does_not_unlink_saving_or_payment_evidence(self):
+        from .models import RecurringSaving
+        from .transfer_rules import OWN_RECHECK
+        for protect in ("saving_type", "saving_evidence", "payment"):
+            with self.subTest(protect=protect):
+                Tx.objects.all().delete()
+                out, income = self.pair()
+                self.run_on(out, income)
+                if protect == "saving_type":
+                    Tx.objects.filter(pk=out.pk).update(transaction_type="saving")
+                elif protect == "saving_evidence":
+                    RecurringSaving.objects.create(user=self.user, name="적금", amount=100_000, status="suggested",
+                                                   source_type="detected", evidence=[str(out.pk)])
+                else:
+                    due = PaymentDue.objects.create(
+                        user=self.user, obligation_type="manual", occurrence_key="k", due_date=date(2026, 11, 3),
+                        confirmed_amount=100_000, source_type="manual", confirmation_state="confirmed",
+                    )
+                    PaymentMatch.objects.create(user=self.user, due=due, transaction=income, matched_amount=100_000)
+                self.run_on(self.bank(self.b, "in", desc="김나은", occurred_time=time(9, 2)))
+                out.refresh_from_db()
+                self.assertTrue(TransactionLink.objects.filter(from_transaction=out).exists())
+                self.assertIs(out.field_states.get(OWN_RECHECK), True)
+                self.assertEqual(out.field_states[OWN_REVIEW], "auto")
+                RecurringSaving.objects.all().delete()
+                PaymentMatch.objects.all().delete()
+
+    def test_user_decisions_and_protected_rows_are_left_alone(self):
+        out, income = self.pair()
+        Tx.objects.filter(pk=out.pk).update(field_states={OWN_REVIEW: "rejected"})
+        self.run_on(out, income)
+        self.assertEqual(self.kinds(out, income), [("transfer", "rejected"), ("income", None)])
+        Tx.objects.all().delete()
+        out, income = self.pair()
+        Tx.objects.filter(pk=income.pk).update(confirmation_state="confirmed")
+        self.run_on(out, income)
+        self.assertFalse(TransactionLink.objects.exists())
+        Tx.objects.all().delete()
+        out, income = self.pair()
+        due = PaymentDue.objects.create(
+            user=self.user, obligation_type="manual", occurrence_key="k", due_date=date(2026, 11, 3),
+            confirmed_amount=100_000, source_type="manual", confirmation_state="confirmed",
+        )
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=out, matched_amount=100_000)
+        self.run_on(out, income)
+        self.assertEqual(self.kinds(out, income), [("transfer", None), ("income", None)])
+
+    def test_unlinked_pair_is_not_linked_again(self):
+        out, income = self.pair()
+        self.run_on(out, income)
+        self.client.force_login(self.user)
+        res = self.client.patch(f"{URL}{out.pk}/", data='{"ownTransfer": false}', content_type="application/json")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.run_on(out, income)
+        self.assertEqual(self.kinds(out, income), [("transfer", "rejected"), ("income", "rejected")])
+        self.assertFalse(TransactionLink.objects.exists())
 
 
 class DescriptionRuleTest(Fixture):
@@ -121,10 +312,10 @@ class DescriptionRuleTest(Fixture):
         self.assertEqual(friend.transaction_type, "transfer")
         self.assertEqual(deposit.transaction_type, "income")
 
-    def test_pair_wins_over_description(self):
+    def test_same_amount_deposit_does_not_override_description(self):
         out, income = self.bank(self.a, "out", desc="신한카드"), self.bank(self.b, "in")
         self.run_on(out, income)
-        self.assertEqual(out.transaction_type, "own_transfer")
+        self.assertEqual((out.transaction_type, income.transaction_type), ("card_payment", "income"))
 
 
 class CollectionOrderTest(Fixture):
@@ -136,17 +327,16 @@ class CollectionOrderTest(Fixture):
             self.run_on(*group)
         out.refresh_from_db()
         income.refresh_from_db()
-        links = TransactionLink.objects.filter(from_transaction=out, to_transaction=income, relation_type="OWN_TRANSFER")
-        return out.transaction_type, income.transaction_type, links.count()
+        return out.transaction_type, income.transaction_type, TransactionLink.objects.count()
 
-    def test_pair_is_found_in_every_order(self):
+    def test_day_and_amount_pair_is_never_linked_in_any_order(self):
         Loan.objects.create(user=self.user, origin="manual", lender_name="한국장학재단")
         amount = 100_000
-        for desc in ("신한카드", "한국장학재단", "이체"):
+        for desc, kind in (("신한카드", "card_payment"), ("한국장학재단", "transfer"), ("이체", "transfer")):
             for order in ("together", "out_first", "in_first"):
                 with self.subTest(desc=desc, order=order):
                     amount += 1
-                    self.assertEqual(self.collect(desc, amount, order), ("own_transfer", "own_transfer", 1))
+                    self.assertEqual(self.collect(desc, amount, order), (kind, "income", 0))
 
     def test_late_deposit_does_not_touch_settled_withdrawals(self):
         paid = self.bank(self.a, "out", desc="신한카드")

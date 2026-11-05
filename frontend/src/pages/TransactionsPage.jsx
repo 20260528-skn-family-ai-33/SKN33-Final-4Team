@@ -30,6 +30,9 @@ function dayLabel(iso) {
   return `${m}월 ${d}일${isToday ? ' · 오늘' : ''}`
 }
 
+// 내 계좌 이체 판단(R11) → 목록 한 줄 문구. 거절(rejected)은 일반 이체로 보인다
+const OWN_ROW = { suggested: '내 계좌 이체 추정', auto: '내 계좌 이체 · 자동 분류', confirmed: '내 계좌 이체' }
+
 // 날짜별로 묶고, 날짜 합계는 소비만 (입금 · 이체 제외)
 function groupByDay(items) {
   const days = []
@@ -173,7 +176,7 @@ export default function TransactionsPage() {
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow">
                   <strong>{tx.name}{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>
-                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? '월급' : '입금') : tx.kind === 'transfer' ? '이체 · 소비 아님' : tx.cat}{tx.via && ` · ${tx.via}`}</span>
+                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? '월급' : '입금') : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')} · 소비 아님` : tx.cat}{tx.via && ` · ${tx.via}`}</span>
                 </span>
                 <span className="mc-right">
                   {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}

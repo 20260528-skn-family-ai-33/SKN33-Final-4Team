@@ -115,6 +115,8 @@ def plan(as_of=None):
                 r={**r,'transaction_type':'transfer' if r['direction']=='out' else 'income','confirmed_category':'UNCLASSIFIED'}
                 if r['role']=='card_payment':
                     r['source_description']='신한카드 청구 납부'  # 카드 E 와 같은 카드사 이름 (CARD_WORDS)
+                elif r['role'] in ('own_transfer','saving'):
+                    r['source_description']='김하린'  # 내 계좌끼리는 양쪽 적요에 가입 이름이 찍힘 (R11 자동 분류 기준, 위 User.nickname)
             meta={k:r[k] for k in ('store_id','branch_name','industry_large_code','industry_large','industry_medium_code',
                   'industry_medium','industry_small_code','industry_small','sigungu','dong','legal_dong','source_snapshot','metadata_source')}
             add('FinancialTransaction',tid,user_id=user,source_kind=r['source_kind'],
