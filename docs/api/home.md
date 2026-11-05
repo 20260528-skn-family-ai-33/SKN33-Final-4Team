@@ -88,7 +88,7 @@ GET /api/home/
 | `mustPay[].name` | 문자 | 표시 이름. 고정지출은 사용자가 붙인 이름 |
 | `mustPay[].dueDate` | 날짜 | 나갈 날 (그 달에 없는 날이면 말일) |
 | `mustPay[].amount` | 정수 | **아직 안 나간 금액** = 예정 금액 − 이미 낸 금액. 일부만 나갔으면 남은 금액 |
-| `mustPay[].paymentState` | 문자 | `unpaid`(미납 — 출금일이 지났으면 "출금 확인 중") · `partial`(일부 납부) · `needs_review`(**미납 확인 필요** — 출금일 +3일이 지나도 출금을 못 찾음) |
+| `mustPay[].paymentState` | 문자 | `unpaid`(미납 — 출금일이 지났으면 "출금 확인 중") · `partial`(일부 납부 — 연결된 금액 합계가 예정 금액의 90%(올림) 미만. 90% 이상이면 `paid`로 빠짐, 11/4) · `needs_review`(**미납 확인 필요** — 출금일 +3일이 지나도 출금을 못 찾음) |
 | `mustPay[].isEstimated` | 참/거짓 | 금액이 **예상**인지. `card_bill`이고 청구서가 아직 확정 전(`confirmationStatus` ≠ `confirmed`)이면 `true` → 화면 "예상" 표시. 고정지출 · 대출은 항상 `false` (10/22 결정 Z) |
 | `mustPay[].paymentAccount` | 객체 또는 `null` | 출금 계좌 `{ accountId, displayName, status }` ([계좌 · 카드 표시](../API_RULES.md#계좌--카드-표시)). 결제 수단 모름이면 `null` |
 | `budget` | 객체 / `null` | **이번 주기 승인(`approved`) 예산이 있으면 채움** (11/3, H-06). 승인 전 초안(`draft` · `validated`)은 넣지 않는다. 없으면 `null`. 값은 예산 화면(`GET /api/budgets/`)과 같은 계산 |

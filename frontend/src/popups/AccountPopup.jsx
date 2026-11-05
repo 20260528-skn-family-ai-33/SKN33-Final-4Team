@@ -30,9 +30,9 @@ export default function AccountPopup({ acct }) {
         <h2>이 은행에서 나가는 고정지출</h2>
         {acct.fixed.map((f) => <div className="mc-keyvalue" key={f.name}><span>{f.name}</span><strong>매월 {f.day}일 · {won(f.amount)}</strong></div>)}
       </div>
-      {/* 새로고침 · 선택 해제는 기능 연결 전. 연결 해제는 확인 창까지 (결정 F) */}
+      {/* 선택 해제는 기능 연결 전. 연결 해제는 확인 창까지 (결정 F) */}
       <div className="mc-card mc-acct-act">
-        <RefreshRow target={acct.bank} />
+        <RefreshRow connectionId={acct.connectionId} />
         <button type="button" className="mc-listrow"><Icon name="CircleMinus" /><span>이 계좌 선택 해제</span><small className="mc-muted">머니쿠션 관리 대상에서만 빠져요</small></button>
         <button type="button" className="mc-listrow mc-unlink" onClick={() => openPopup(<DisconnectPopup inst={acct.bank} kind="bank" related={related} />)}><Icon name="Unlink" /><span>{acct.bank} 연결 전체 해제</span></button>
       </div>

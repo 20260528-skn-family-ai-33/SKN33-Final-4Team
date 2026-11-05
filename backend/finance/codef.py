@@ -257,17 +257,22 @@ def normalize_transaction(row):
     - 설명 칸 1~4 는 은행마다 쓰임이 달라서 원문을 source_detail 에 다 남긴다
       (대표 설명은 3 → 2 → 1 순서로 처음 있는 것. 실제 응답 보고 조정)
     - CODEF 거래엔 고유 ID 가 없어서 일시·금액·잔액·설명으로 source_key(중복 방지 키)를 만든다
+    - 금액이 음수면 앞선 거래의 취소 줄이다 (선결제 환불·예약 취소가 음수 출금으로 오는 은행이 있다).
+      금액은 양수로 두고 취소로 표시한다. 원거래 연결은 transfer_rules.link_bank_cancellations
     """
     out_amt, in_amt = _to_int(row.get("resAccountOut")), _to_int(row.get("resAccountIn"))
     detail = {f"desc{i}": row.get(f"resAccountDesc{i}", "") for i in range(1, 5)}
     day, time = row.get("resAccountTrDate", ""), row.get("resAccountTrTime", "")
     balance = _to_int(row.get("resAfterTranBalance"))
-    key_src = "|".join([day, time, str(out_amt or in_amt), str(balance), *detail.values()])
+    signed = out_amt or in_amt
+    key_src = "|".join([day, time, str(signed), str(balance), *detail.values()])
     return {
         "occurred_on": datetime.strptime(day, "%Y%m%d").date() if day else None,
         "occurred_time": datetime.strptime(time, "%H%M%S").time() if len(time) == 6 else None,
-        "amount": out_amt or in_amt,
+        "amount": abs(signed),
         "direction": "out" if out_amt else "in",
+        "is_canceled": signed < 0,
+        "canceled_amount": abs(signed) if signed < 0 else None,
         "balance_after": balance,
         "source_description": detail["desc3"] or detail["desc2"] or detail["desc1"],
         "source_detail": detail,

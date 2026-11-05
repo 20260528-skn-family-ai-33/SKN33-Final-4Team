@@ -51,7 +51,9 @@ def plan(as_of=None):
         asset=lambda name:uid(persona,'asset',name)
         conn=lambda kind:uid(persona,'connection',kind)
         home=persona=='home'
-        add('User',user,email=email,nickname='하린_'+persona,password='!alpha-unusable',is_staff=False)
+        # 온보딩은 실제 카드사(신한카드 0306) — ① 이 카드값 적요의 카드사 이름으로 card_payment 를 판단하게 (11/4). 승인 계정은 그대로
+        issuer='FIXTURE_CARD' if home else '0306'
+        add('User',user,email=email,nickname='김하린',password='!alpha-unusable',is_staff=False)
         if home:
             add('FinancialProfile',user,birth_date=date(1998,4,12),gender='female',has_car=False,
                 housing_type='alone',monthly_take_home_income=3000000,payday=1,living_budget=1050000,
@@ -61,7 +63,7 @@ def plan(as_of=None):
         for kind in ('bank','bank_savings','card'):
             business='card' if kind=='card' else 'bank'
             add('Connection',conn(kind),user_id=user,business_type=business,
-                organization_code='FIXTURE_'+kind.upper(),alias='합성 금융 '+kind,status='connected')
+                organization_code=issuer if kind=='card' else 'FIXTURE_'+kind.upper(),alias='합성 금융 '+kind,status='connected')
             add('Consent',uid(persona,'consent',kind),user_id=user,connection_id=conn(kind),
                 purpose='finance_inquiry',product_scope=business,document_version='alpha-fixture',
                 document_hash='synthetic-consent-not-a-real-agreement',granted_at=seed.at('2026-07-01',0))
@@ -73,7 +75,7 @@ def plan(as_of=None):
                 withdrawable_amount=balances[name],is_selected=name!='C',fetched_at=fetched)
         for name,bank,kind in (('D','B','체크'),('E','A','신용')):
             add('Card',asset(name),user_id=user,connection_id=conn('card'),payment_account_id=asset(bank),
-                issuer_code='FIXTURE_CARD',name='합성 일상 '+kind,masked_number='****'+('3001' if name=='D' else '3002'),
+                issuer_code=issuer,name='합성 일상 '+kind,masked_number='****'+('3001' if name=='D' else '3002'),
                 source_card_key='alpha:'+name,card_type=kind,origin='provider',is_selected=True,
                 first_connected_at=seed.at('2026-06-01',0),fetched_at=fetched)
         cycles,budgets={},{}
@@ -108,6 +110,11 @@ def plan(as_of=None):
                 confirmed_at=seed.at('2026-07-01',0))
         for r in tx:
             tid=uid(persona,'tx',r['source_key'])
+            if not home and r['source_kind']=='bank':
+                # 온보딩: 은행은 실제 첫 연결처럼 출금 transfer · 입금 income 으로 넣고 파이프라인이 판단 (11/4, apply_plan)
+                r={**r,'transaction_type':'transfer' if r['direction']=='out' else 'income','confirmed_category':'UNCLASSIFIED'}
+                if r['role']=='card_payment':
+                    r['source_description']='신한카드 청구 납부'  # 카드 E 와 같은 카드사 이름 (CARD_WORDS)
             meta={k:r[k] for k in ('store_id','branch_name','industry_large_code','industry_large','industry_medium_code',
                   'industry_medium','industry_small_code','industry_small','sigungu','dong','legal_dong','source_snapshot','metadata_source')}
             add('FinancialTransaction',tid,user_id=user,source_kind=r['source_kind'],
@@ -120,12 +127,14 @@ def plan(as_of=None):
                 balance_after=r['balance_after'] if r['source_kind']=='bank' else None,
                 confirmed_category_id=r['confirmed_category'],canceled_amount=0,is_canceled=False,
                 classification_source='rule' if r['transaction_type']=='spending' else None,
-                confirmation_state='needs_review' if r['confirmed_category']=='UNCLASSIFIED' else 'suggested')
+                # 온보딩 카드 거래는 시드 카테고리로 확정 — 파이프라인 분류기가 다시 바꾸지 않게 (분류기 검증 대상 아님, 11/4)
+                confirmation_state='needs_review' if r['confirmed_category']=='UNCLASSIFIED'
+                    else 'confirmed' if not home and r['source_kind']=='card' else 'suggested')
             if r['is_duplicate']:
                 add('TransactionLink',uid(persona,'link',r['source_key']),user_id=user,
                     from_transaction_id=uid(persona,'tx',r['pair_key']),to_transaction_id=tid,
                     relation_type='SAME_PURCHASE',matched_amount=r['amount'],confirmation_state='confirmed',confirmed_at=fetched)
-            elif r['transaction_type'] in ('own_transfer','saving') and r['direction']=='in':
+            elif home and r['transaction_type'] in ('own_transfer','saving') and r['direction']=='in':  # 온보딩은 파이프라인 ①이 짝지음
                 origin=next(x for x in tx if x['pair_key']==r['pair_key'] and x['direction']=='out')
                 add('TransactionLink',uid(persona,'own-link',r['source_key']),user_id=user,
                     from_transaction_id=uid(persona,'tx',origin['source_key']),to_transaction_id=tid,
@@ -152,7 +161,7 @@ def plan(as_of=None):
         for month in range(7,12):
             bill=uid(persona,'bill',month)
             add('CardBill',bill,user_id=user,connection_id=conn('card'),card_id=None,payment_account_id=asset('A'),
-                issuer_code='FIXTURE_CARD',statement_key=f'alpha:bill:{month}',scope_type='issuer',billing_month=date(2026,month,1),
+                issuer_code=issuer,statement_key=f'alpha:bill:{month}',scope_type='issuer',billing_month=date(2026,month,1),
                 total_amount=140000,payment_due_date=date(2026,month,14),withdrawal_due_date=date(2026,month,14),
                 source_type='provider',confirmation_state='confirmed',items_state='complete',fetched_at=fetched)
             for role,amount,day in [('ott',12000,8),('music',8000,12),('hotel',120000,24)]:
@@ -213,7 +222,19 @@ def apply_plan(result):
             obj.full_clean(exclude=[f.name for f in obj._meta.fields if f.is_relation],
                            validate_unique=False,validate_constraints=False)
             obj.save(force_insert=True)
+        run_onboarding_pipeline(m, as_of)
     return Counter(name for name,_,_ in rows)
+
+
+def run_onboarding_pipeline(m, as_of):
+    """온보딩 계정은 실제 첫 연결처럼 거래 전체를 저장 뒤 처리에 한 번 넣는다 (① 유형 판단 → … → ⑦ 후보 감지, 11/4).
+    '오늘'은 시드 기준 시각의 날짜로 둔다 (나중에 적재해도 최근 거래 조건이 같게)"""
+    from unittest import mock
+    from finance.pipeline import process_new_transactions
+    user=m['User'].objects.get(pk=uid('onboarding','user'))
+    ids=list(m['FinancialTransaction'].objects.filter(user=user).order_by('pk').values_list('pk',flat=True))
+    with mock.patch('django.utils.timezone.localdate',return_value=as_of.date()):
+        process_new_transactions(user,ids)
 
 
 def main(args):

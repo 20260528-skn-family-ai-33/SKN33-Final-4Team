@@ -3,8 +3,9 @@
 // 카테고리 최소 금액(선택)은 팝업에서 받는다 — 우선순위와 상관없이 어느 카테고리든 (2026-10-21)
 // 자취 여부(필수)로 지킬 돈 비율이 정해진다 — 고르면 비율을 바로 보여 준다 (2026-10-27, utils/direction.js)
 // GET · PUT /api/profile/ (docs/api/profile.md). 서버 값이 기준 — 저장에 성공해야 다음 화면으로 간다 (11/03 S1)
+// 마이에서 들어오면(location.state.from === 'my') 단계 표시줄 없이 저장 뒤 마이로 돌아간다
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
@@ -53,6 +54,7 @@ export default function ProfilePage() {
 // 서버 값으로 처음 채운 뒤 고친다
 function ProfileForm({ saved }) {
   const navigate = useNavigate()
+  const manage = useLocation().state?.from === 'my'
   const [birth, setBirth] = useState(() => birthDigits(saved.birthDate))
   const [gender, setGender] = useState(saved.gender)  // 'male' | 'female' | null
   const [car, setCar] = useState(saved.hasCar)  // true | false | null
@@ -87,7 +89,8 @@ function ProfileForm({ saved }) {
         priorities: prio.list.map((name, i) => ({ category: CODE_BY_NAME[name], rank: i + 1 })),
         categoryMinimums: minList.map((name) => ({ category: CODE_BY_NAME[name], minAmount: mins[name] })),
       })
-      navigate(updated?.onboardingNextStep === 'salary' ? PATHS.salary : PATHS.connect)
+      if (manage) navigate(PATHS.my, { replace: true, state: { budgetNote: true } })
+      else navigate(updated?.onboardingNextStep === 'salary' ? PATHS.salary : PATHS.connect)
     } catch (err) {
       // 칸별 오류가 있으면 첫 문장을 보여 준다. 입력값은 그대로 둔다
       const first = Object.values(err.fields ?? {}).flat().find((m) => typeof m === 'string')
@@ -100,9 +103,9 @@ function ProfileForm({ saved }) {
     <Layout
       title="내 정보 입력"
       showBack
-      foot={<button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '저장 중…' : '저장하고 계속'}</button>}
+      foot={<button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '저장 중…' : manage ? '저장' : '저장하고 계속'}</button>}
     >
-      <StepBar step={1} />
+      {!manage && <StepBar step={1} />}
       <div className="mc-eyebrow">내 정보 입력</div>
       <h1>나에게 맞는 예산을<br />만들기 위해 알려주세요</h1>
       <p className="mc-muted">비슷한 연령대의 소비 통계와 비교해 예산을 추천해요.</p>

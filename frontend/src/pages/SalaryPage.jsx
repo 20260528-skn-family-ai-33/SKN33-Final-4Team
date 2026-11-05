@@ -1,8 +1,9 @@
 // 월급 설정 — 급여는 매달만 지원 (2026-10-19 결정, 주급은 MVP에서 제외)
 // GET · PUT /api/budgets/salary/ (docs/api/salary.md). 저장에 성공해야 다음 화면으로 간다 (11/03 S1)
+// 마이에서 들어오면(location.state.from === 'my') 단계 표시줄 없이 저장 뒤 마이로 돌아간다
 // 이미 등록한 급여일을 바꾸면 이번 주기부터 / 다음 주기부터 중 하나를 꼭 고른다 (paydayApplyFrom, 10/28 결정)
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
@@ -21,6 +22,7 @@ export default function SalaryPage() {
 
 function SalaryForm({ saved }) {
   const navigate = useNavigate()
+  const manage = useLocation().state?.from === 'my'
   const pending = saved.pendingPaydayChange  // { payday, effectiveOn } | null
   const [income, setIncome] = useState(saved.takeHomeIncome == null ? '' : String(saved.takeHomeIncome))
   const [payday, setPayday] = useState(pending?.payday ?? saved.payday ?? '')
@@ -45,7 +47,8 @@ function SalaryForm({ saved }) {
         payday: Number(payday),
         ...(changing ? { paydayApplyFrom: applyFrom } : {}),
       })
-      navigate(PATHS.fixed)
+      if (manage) navigate(PATHS.my, { replace: true, state: { budgetNote: true } })
+      else navigate(PATHS.fixed)
     } catch (err) {
       const first = Object.values(err.fields ?? {}).flat().find((m) => typeof m === 'string')
       setError(first ?? err.message)
@@ -54,8 +57,8 @@ function SalaryForm({ saved }) {
   }
 
   return (
-    <Layout title="월급 설정" showBack foot={<button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '저장 중…' : '저장하고 계속'}</button>}>
-      <StepBar step={3} />
+    <Layout title="월급 설정" showBack foot={<button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '저장 중…' : manage ? '저장' : '저장하고 계속'}</button>}>
+      {!manage && <StepBar step={3} />}
       <div className="mc-eyebrow">월급 설정</div>
       <h1>월급과 급여일을 알려주세요</h1>
       <p className="mc-muted">급여일부터 다음 급여일 전날까지가 한 예산 주기예요.</p>

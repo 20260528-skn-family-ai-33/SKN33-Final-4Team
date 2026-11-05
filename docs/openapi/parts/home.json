@@ -281,6 +281,7 @@
           },
           "paymentState": {
             "type": "string",
+            "description": "partial = 연결된 금액 합계가 예정 금액의 90%(올림) 미만. 90% 이상이면 paid라 목록에서 빠진다 (11/4).",
             "enum": [
               "unpaid",
               "partial",

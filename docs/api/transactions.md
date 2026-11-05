@@ -326,6 +326,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | ★14 | '이번 주기' = 설정한 월급날 기준 | 매칭 · 집계에서 '이번 주기'는 모두 H-01 주기(설정한 월급날 ~ 다음 월급날 전날) |
 
 - 감지 조건(결정기록 3번): 같은 받는 곳 · 한 달 1건 · 매달 같은 날 ±3일 · 같은 금액(변동 청구 ±10%) · 3달 연속. 등록된 대출과 맞는 출금은 대출 상환으로, 내 계좌끼리 정기 이체는 저축 후보로.
+  - **11/4 구현** (`budgets/candidates.py`): 같은 결제 수단끼리 묶는다. 은행 거래에는 받는 계좌 번호가 없어서 연결 안 한 계좌로 보낸 이체는 적요 이름 + 금액 + 날짜로 묶는다. 남에게 보낸 이체도 적요에 회원 이름 · [임시] 저축 단어가 있으면 저축 후보(savings.md S-05). [임시] 최근 거래가 이번 달 · 지난달이어야 한다. 자세한 규칙은 fixed.md '후보 감지'.
 
 **거래 저장 뒤 매칭 입구 (10/22 T, 구현: finance/pipeline.py (단계 함수는 각 담당자가 채움))**
 
@@ -343,7 +344,7 @@ AFTER_SAVE_STEPS = [
     ("classify_spending",     classify_spending),      # 2 혜리: spending 카테고리 분류 (규칙 → 사전 → ML → LLM)
     ("match_card_payments",   match_card_payments),    # 3 세진: 카드값 출금 ↔ 카드 청구서
     ("match_loan_repayments", match_loan_repayments),  # 4 세진: 대출 상환 출금 ↔ 대출
-    ("match_savings",         match_savings),          # 5 나은: 내 계좌끼리 이체 ↔ 확정 정기 저축 → saving
+    ("match_savings",         match_savings),          # 5 나은: 새 출금 ↔ 확정 정기 저축(보내는 계좌 · 금액 · 이체일 ±3일 · 받는 곳) → saving (11/4, savings.md S-13)
     ("match_payment_dues",    match_payment_dues),     # 6 나은: 계좌 출금 ↔ 고정지출 납부 예정(±3일), 카드 '맞나요?' 후보
     ("detect_candidates",     detect_candidates),      # 7 나은: 고정지출 · 저축 후보 찾기 (결정 T)
 ]
@@ -376,7 +377,7 @@ API 값과 DB 값을 같게 둔다(소문자 영어).
 | `classification_source` | `user` · `rule` · `ml` · `llm` (API `classifiedBy`와 같음, `merchant_rules.USER_SOURCE = "user"` 유지) | ✅ 확정 (10/22) |
 
 - 월급 찾기(H-01)는 `direction = in` + 관리 대상 입출금 계좌 + 내 계좌끼리 이체 제외.
-- **내 계좌끼리 이체**: 적금 · 청약으로 보낸 이체는 저축 확인 화면에서 **저축으로 확인되면 `saving`**, 그 밖의 내 계좌끼리 이체는 **`own_transfer`** 다. (10/22)
+- **내 계좌끼리 이체**: 적금 · 청약으로 보낸 이체는 저축 확인 화면에서 **저축으로 확인되면 `saving`**, 그 밖의 내 계좌끼리 이체는 **`own_transfer`** 다. (10/22) 확정한 뒤 다음 달부터 같은 저축 이체(연결 안 한 적금으로 보낸 같은 적요 `transfer` 포함)는 거래 저장 뒤 `match_savings`가 `saving`으로 바꿔 거래 목록에서 빠진다 (11/4, savings.md S-13).
 - **카테고리가 `UNCLASSIFIED`이면 `confirmation_state = needs_review`** 다. 둘은 항상 같이 움직인다(카테고리가 정해지면 `suggested` 또는 `confirmed`). (10/22)
 
 `connection.status`(`connected` · `relogin` · `disconnected`)와 `bank_account.account_type`(`demand` · `deposit` · `other`)은 `finance-connect.md`의 H-07을 본다.

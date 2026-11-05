@@ -7,7 +7,11 @@ const WAIT_MS = 1000
 const MAX_TRIES = 30
 
 export async function runFinanceSync(body = {}) {
-  const started = await apiSend('/api/finance/sync/', 'POST', body)
+  const started = await apiSend('/api/finance/sync/', 'POST', body).catch((err) => {
+    // 400 은 보여 줄 문장이 칸 오류에 있고("연결된 기관이 없어요…"), 서버에 못 닿으면 브라우저 영어 문장이 온다
+    err.message = Object.values(err.fields ?? {}).flat()[0] ?? (err.status ? err.message : '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.')
+    throw err
+  })
   for (let i = 0; i < MAX_TRIES; i++) {
     const res = await fetch(`/api/tasks/${started.taskId}/`, { headers: { Accept: 'application/json' } })
     const task = await res.json().catch(() => null)
