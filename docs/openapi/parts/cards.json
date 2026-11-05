@@ -894,7 +894,7 @@
             "type": "string",
             "format": "date",
             "nullable": true,
-            "description": "출금 예정일. 모르면 납부 예정 생성 안 함."
+            "description": "출금 예정일. 없으면 결제 예정일을 출금일로 보고, 둘 다 모르면 납부 예정 생성 안 함 (11/5)."
           },
           "paymentAccount": {
             "description": "결제 계좌를 모르면 객체 전체 null.",

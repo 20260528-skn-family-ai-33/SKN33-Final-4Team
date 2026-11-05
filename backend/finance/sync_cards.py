@@ -6,7 +6,7 @@
   · 승인내역: product_code=card_approval_list, 카드마다, 카드사가 실제로 조회해 준 기간
   · 카드만 특정 못 한 승인은 별도 보관하고 사용자 확인 후 실제 조회 범위를 승격한다.
   · 금액·취소 정보가 불확실한 조회는 카드 확인만으로 승격하지 않는다.
-- 카드값 출금 ↔ 청구서 매칭 · 납부 예정 생성은 별도 작업이다.
+- 저장 뒤 청구서의 납부 예정을 맞추고 카드값 출금을 다시 맞춘다 (card_payments.refresh_bill_dues, R04).
 """
 import re
 
@@ -17,7 +17,7 @@ from django.utils import timezone
 
 from users.models import Consent
 
-from . import codef
+from . import card_payments, codef
 from .codef_cards import MONTH, CardDataError, month_range
 from .models import Card, CardBill, CardBillItem, CardApprovalCoverage, Connection, FinancialTransaction, Origin, SyncRun
 from .card_review import save_approvals, promote_coverage
@@ -221,6 +221,8 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             )
             retry_failed_transactions(user, retry_ids)
             process_new_transactions(user, new_ids)
+            # 청구서 → 납부 예정 (R04). 승인 거래가 새로 없어도 돈다. 저장 트랜잭션 · 회원 잠금 안
+            card_payments.refresh_bill_dues(user, org)
 
             for card in cards:
                 for month in months:

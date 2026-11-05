@@ -264,8 +264,10 @@ def home_data(user, today):
         previous_cycle = ensure_previous_cycle(user, previous_start, start)
         prepare_dues(user, cycle, today, previous_start, previous_cycle)
         from .salary import prepare_salary_loans
+        from finance.card_payments import refresh_bill_dues
         from finance.pipeline import rematch_payments
         prepare_salary_loans(user)
+        refresh_bill_dues(user, today=today)  # 저장된 청구서의 납부 예정 (R04). 예전에 저장한 청구서도 홈을 열면 여기서 채워진다
         rematch_payments(user)
         period = period_json(user, profile, today, cycle, start, next_payday)
         must_pay = must_pay_json(user, next_payday, previous_start)

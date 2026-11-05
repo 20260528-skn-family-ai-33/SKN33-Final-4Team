@@ -7293,7 +7293,7 @@ components:
           type: string
           format: date
           nullable: true
-          description: 출금 예정일. 모르면 납부 예정 생성 안 함.
+          description: 출금 예정일. 없으면 결제 예정일을 출금일로 보고, 둘 다 모르면 납부 예정 생성 안 함 (11/5).
         paymentAccount:
           description: 결제 계좌를 모르면 객체 전체 null.
           oneOf:
@@ -10289,11 +10289,11 @@ x-source-sha256:
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: 38524b8ee0a760c18a0aa84800b76368f53c1900bd0d5cad37d8923e5fdfb690
   docs/api/finance-connect.md: 4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4
-  docs/api/cards.md: 0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34
+  docs/api/cards.md: 319b97713498b20126b63b291e8d7d6795428c67bb90baa1d74bdc7d15e6a67c
   docs/api/loans.md: 3b83de5ba2e7e9f5ea7cc9705de4ece7a1ef060339bc13aaed4651cca986e120
   docs/api/transactions.md: 9013a649b3e2ef6c165d598e080c1218998f815d9057a99eb9eb961f58cd0b80
   docs/api/fixed.md: 81e585f4c97dbd101525a130fce5d97e003aa788410cd3e6ec40e83fa7bb3d3b
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
-  docs/api/home.md: 1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf
+  docs/api/home.md: ce93a1d48ea33d4671dc6764277ff4e2184ddff656c4ff8c10f6c0987fa16b3a
   docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5
   docs/api/budgets.md: 59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29
