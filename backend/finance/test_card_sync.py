@@ -479,25 +479,28 @@ class CardSyncTest(TestCase):
                 run = SyncRun.objects.filter(user=self.user, product_code="card_sync").latest("started_at")
                 self.assertEqual((run.covered_from, run.covered_to), (None, None))
 
-    def test_reissued_card_rows_follow_the_same_card_name(self):
-        # 재발급 전 카드는 목록에 없고 승인내역 번호가 짧게 온다. 같은 승인 카드명이 맞은 카드에 붙인다
-        self.approvals = [approval(resCardName="내 카드"),
-                          approval("123", resCardName="내 카드", resApprovalNo="2", resUsedAmount="5000"),
-                          approval("123", resCardName="모르는 카드", resApprovalNo="3", resUsedAmount="7000")]
+    def test_rows_before_the_reissue_date_go_to_the_only_used_card(self):
+        # 재발급 전 카드는 목록에 없고 승인내역 번호가 짧게 온다. 발급일보다 앞선 거래만 재발급 전 거래로 본다
+        self.cards = [card(resIssueDate="20261001")]
+        self.approvals = [approval(),
+                          approval("123", resApprovalNo="2", resUsedAmount="5000", resUsedDate="20260912"),
+                          approval("123", resApprovalNo="3", resUsedAmount="7000", resUsedDate="20261015")]
         result = self.run_sync()
         self.assertEqual(sorted(FinancialTransaction.objects.filter(user=self.user).values_list("amount", flat=True)), [5000, 22000])
-        self.assertFalse(result["approvals_complete"])
-        before = FinancialTransaction.objects.filter(user=self.user).count()
+        self.assertFalse(result["approvals_complete"])  # 발급일 뒤인데 번호가 안 맞는 줄은 저장하지 않는다
         self.run_sync()
-        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), before)  # 다시 불러와도 그대로
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 2)  # 다시 불러와도 그대로
 
-    def test_same_card_name_on_two_cards_is_not_guessed(self):
-        self.cards = [card(), card("9490981234561111")]
-        self.approvals = [approval(resCardName="내 카드"),
-                          approval("949098******1111", resCardName="내 카드", resApprovalNo="2", resUsedAmount="5000"),
-                          approval("123", resCardName="내 카드", resApprovalNo="3", resUsedAmount="7000")]
+    def test_unknown_number_is_not_guessed_with_two_used_cards_or_no_issue_date(self):
+        self.cards = [card(resIssueDate="20261001"), card("9490981234561111", resCardName="다른 카드", resIssueDate="20261001")]
+        self.approvals = [approval(), approval("949098******1111", resApprovalNo="2", resUsedAmount="5000"),
+                          approval("123", resApprovalNo="3", resUsedAmount="7000", resUsedDate="20260912")]
         self.run_sync()
         self.assertFalse(FinancialTransaction.objects.filter(user=self.user, amount=7000).exists())
+        self.cards = [card()]  # 발급일을 안 주는 카드사
+        self.approvals = [approval(), approval("123", resApprovalNo="4", resUsedAmount="8000", resUsedDate="20260912")]
+        self.run_sync()
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user, amount=8000).exists())
 
     def test_approval_goes_to_matching_card(self):
         self.cards = [card(), card("9490981234561111", resCardName="다른 카드")]

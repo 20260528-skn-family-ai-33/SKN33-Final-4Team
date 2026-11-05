@@ -110,6 +110,7 @@ def normalize_cards(data):
             # 정규화 기준 미정 (cards.md cardType) → 기관 값 그대로
             "card_type": _code(row.get("resCardType")),
             "card_status": _code(row.get("resState")),
+            "issued_on": _date(row.get("resIssueDate")),   # 승인내역 대조용(저장 안 함). 재발급 전 거래를 가른다
         })
     return cards
 
@@ -252,7 +253,6 @@ def normalize_approvals(data, start, end):
         approval_no = _code(row.get("resApprovalNo"), 50)
         rows.append({
             "card_number": re.sub(r"[\s-]", "", shown),
-            "card_name": _short(row.get("resCardName"), 100),   # 카드 대조용(저장 안 함). 재발급 전 번호를 잇는 데 쓴다
             "unknown_reason": unknown,
             # 취소 상태 · 취소액은 나중에 바뀌므로 식별 키에 넣지 않는다
             "_identity": (used_on, row.get("resUsedTime"), approval_no, row.get("resUsedAmount"), merchant,

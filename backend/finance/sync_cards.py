@@ -156,27 +156,30 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
 
 def _save_approvals(user, cards, card_rows, rows):
     """→ (새 거래 ID 목록, 기존 거래 수, 다 저장했는지). 카드를 하나로 특정 못 하거나 금액을 모르는 줄은 저장하지 않는다.
-    재발급하면 예전 카드는 보유카드 목록에서 사라져 번호로 못 찾는다 (승인내역엔 숫자 3자리 등으로 옴).
-    같은 응답에서 번호가 맞은 줄의 승인 카드명으로 잇는다. 그 이름이 두 카드에 걸리면 고르지 않는다"""
+    재발급하면 예전 카드는 보유카드 목록에서 사라져 번호로 못 찾는다 (승인내역 번호가 숫자 3자리 등으로 옴, 카드명도 비어 있음).
+    이번 응답에서 번호가 맞은 카드가 한 장뿐이고 그 카드 발급일보다 앞선 거래면 재발급 전 거래로 보고 그 카드에 붙인다.
+    shortcut: 번호 없이 발급일로 추정한다. 카드를 두 장 이상 쓰면 고르지 않고 건너뛴다"""
     def by_number(shown):
-        return [card for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
+        return [(card, data) for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
 
-    by_name = {}
+    used = {}
     for row in rows:
         found = by_number(row["card_number"])
-        if len(found) == 1 and row["card_name"]:
-            by_name.setdefault(row["card_name"], {})[found[0].pk] = found[0]
+        if len(found) == 1:
+            used[found[0][0].pk] = found[0]
+    current = next(iter(used.values())) if len(used) == 1 else None
 
     new_ids, existing_count, complete = [], 0, True
     for row in rows:
         row = dict(row)
-        shown, name = row.pop("card_number"), row.pop("card_name")
-        unknown, identity = row.pop("unknown_reason"), row.pop("identity")
-        matched = by_number(shown) or list(by_name.get(name, {}).values())
+        shown, unknown, identity = row.pop("card_number"), row.pop("unknown_reason"), row.pop("identity")
+        matched = by_number(shown)
+        if not matched and current and current[1]["issued_on"] and row["occurred_on"] < current[1]["issued_on"]:
+            matched = [current]
         if len(matched) != 1 or unknown:
             complete = False
             continue
-        card = matched[0]
+        card = matched[0][0]
         defaults = {
             **row, "user": user, "source_kind": "card", "direction": "out", "transaction_type": "spending",
             "confirmation_state": "needs_review", "confirmed_category_id": "UNCLASSIFIED",
