@@ -20,12 +20,13 @@ from users.models import Consent
 from . import codef, connected_id
 from .models import BankAccount, Connection, SyncRun
 from .sync_ranges import bill_months, first_load_start
+from .test_bank_response import NoCodefNetwork
 
 URL = "/api/finance/sync/"
 CARD_NO, CARD_PW = "4111222233334444", "8642"
 
 
-class SyncBase(TestCase):
+class SyncBase(NoCodefNetwork, TestCase):
     @classmethod
     def setUpTestData(cls):
         User = get_user_model()
@@ -338,7 +339,7 @@ class AutoSyncCommandTest(SyncBase):
         self.assertNotIn("heri@example.com", out.getvalue())
 
 
-class RangeTest(TestCase):
+class RangeTest(NoCodefNetwork, TestCase):
     def test_bill_months_and_refresh_start(self):
         from .sync_ranges import refresh_start
 
@@ -351,7 +352,7 @@ class RangeTest(TestCase):
         self.assertEqual(refresh_start(date(2026, 10, 27), None), date(2026, 6, 1))
 
 
-class RealBankSaveTest(TestCase):
+class RealBankSaveTest(NoCodefNetwork, TestCase):
     """실제 저장 함수(sync.sync_bank)로 확인: 새로고침 중 해제 · 동의 철회 (PR #53 리뷰 P1 두 개)"""
 
     @classmethod

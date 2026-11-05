@@ -179,7 +179,8 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
         SyncRun.objects.filter(pk=run.pk).update(
             status="failed", completed_at=timezone.now(),
             business_code=exc.code if isinstance(exc, codef.CodefError) else None,
-            error_code="provider_error" if isinstance(exc, codef.CodefError) else "sync_error",
+            error_code="provider_error" if isinstance(exc, codef.CodefError)
+            else exc.code if isinstance(exc, codef.BankDataError) else "sync_error",
         )
         raise
 

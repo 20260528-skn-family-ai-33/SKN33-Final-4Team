@@ -15,10 +15,11 @@ from django.utils import timezone
 from . import codef, pipeline
 from .models import BankAccount, Connection, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, SyncRun
 from .sync import sync_bank
+from .test_bank_response import NoCodefNetwork
 
 
 @override_settings(CODEF={"CONNECTED_ID": "test-connected-id"})
-class BankSyncTest(TestCase):
+class BankSyncTest(NoCodefNetwork, TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.user = get_user_model().objects.create_user(email="sync@example.com")
@@ -427,7 +428,7 @@ class BankSyncTest(TestCase):
         self.assertFalse(SyncRun.objects.exists())
 
 
-class BankSyncTransactionTest(TransactionTestCase):
+class BankSyncTransactionTest(NoCodefNetwork, TransactionTestCase):
     # 테스트 전체를 트랜잭션으로 감싸지 않고 초기 카테고리는 복원한다.
     serialized_rollback = True
 

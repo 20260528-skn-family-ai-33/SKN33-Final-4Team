@@ -42,7 +42,7 @@ class Command(BaseCommand):
         # 2. 보유 계좌
         try:
             accounts = codef.list_accounts(cid, org)
-        except codef.CodefError as e:
+        except (codef.CodefError, codef.BankDataError) as e:  # BankDataError 메시지는 원문 · 계좌번호 없는 고정 문구
             raise CommandError(f"계좌 조회 실패 {e}")
         self.stdout.write(self.style.SUCCESS(f"2. 보유 계좌 {len(accounts)}개"))
         for a in accounts:
@@ -59,10 +59,11 @@ class Command(BaseCommand):
         start = end - timedelta(days=days)
         try:
             rows = codef.list_transactions(cid, org, found[0]["account_no"], start, end)
-        except codef.CodefError as e:
+        except (codef.CodefError, codef.BankDataError) as e:
             raise CommandError(f"거래내역 조회 실패 {e}")
         self.stdout.write(self.style.SUCCESS(f"3. {codef.mask(tx)} 거래 {len(rows)}건 ({start} ~ {end}) · 최근 {min(limit, len(rows))}건"))
         for r in rows[:limit]:
             sign = "-" if r["direction"] == "out" else "+"
-            self.stdout.write(f"   {r['occurred_on']} {r['occurred_time'] or ''}  {sign}{r['amount']:>10,}원  잔액 {r['balance_after']:>11,}원  {r['source_description']}")
+            balance = "미제공" if r["balance_after"] is None else f"{r['balance_after']:,}원"  # 0원은 그대로 0원
+            self.stdout.write(f"   {r['occurred_on']} {r['occurred_time'] or ''}  {sign}{r['amount']:>10,}원  잔액 {balance:>12}  {r['source_description']}")
             self.stdout.write(f"      설명칸 {r['source_detail']}")

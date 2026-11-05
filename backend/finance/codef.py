@@ -14,6 +14,7 @@ CODEF 연결 (은행 계좌 조회 전용)
 """
 import hashlib
 import json
+import re
 from datetime import datetime
 from functools import lru_cache
 
@@ -41,6 +42,14 @@ class CodefError(Exception):
     def __init__(self, code, message, extra=""):
         self.code, self.message, self.extra = code, message, extra
         super().__init__(f"[{code}] {message} {extra}".strip())
+
+
+class BankDataError(ValueError):
+    """은행 응답을 확인할 수 없음 (목록 누락 · 금액 누락/비정상 · 방향 불명). 원문 · 계좌번호를 메시지에 넣지 않는다"""
+
+    def __init__(self, code="invalid_bank_data"):
+        self.code = code
+        super().__init__("CODEF 은행 응답을 확인할 수 없어 저장하지 않았어요.")
 
 
 # ----- 기본 준비 -----
@@ -137,11 +146,11 @@ def list_accounts(connected_id, org):
         {
             "account_no": a.get("resAccount", ""),
             "name": a.get("resAccountNickName") or a.get("resAccountName", ""),
-            "balance": _to_int(a.get("resAccountBalance")),
+            "balance": _amount(a.get("resAccountBalance")),
             "kind_code": a.get("resAccountDeposit", ""),  # 11 = 입출금 (CODEF 예금 구분 코드)
             "org": org,
         }
-        for a in data.get("resDepositTrust", [])
+        for a in _rows(data, "resDepositTrust")
     ]
 
 
@@ -160,7 +169,7 @@ def list_transactions(connected_id, org, account_no, start, end):
         "orderBy": "0",       # 0 = 최신순
         "inquiryType": "1",
     })
-    return [normalize_transaction(row) for row in data.get("resTrHistoryList", [])]
+    return [normalize_transaction(row) for row in _rows(data, "resTrHistoryList")]
 
 
 def list_loan_accounts(connected_id, org):
@@ -243,29 +252,51 @@ def list_card_approvals(connected_id, org, start, end, card_no=None, card_passwo
 
 
 # ----- CODEF 칸 → 우리 칸 -----
-def _to_int(value):
-    try:
-        return int(str(value).replace(",", "") or 0)
-    except ValueError:
-        return 0
+_AMOUNT = re.compile(r"-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)")  # 정수 · 세 자리 쉼표. 음수는 취소 줄 · 마이너스 잔액
+
+
+def _amount(value, required=True):
+    """은행 금액 → int. 미제공(없음 · null · 빈 글자)은 None (required 면 BankDataError).
+    비정상 글자 · 소수 · bool · 다른 자료형은 0원으로 바꾸지 않고 BankDataError"""
+    if type(value) is int:
+        return value
+    if value is None or (isinstance(value, str) and not value.strip()):
+        if required:
+            raise BankDataError()
+        return None
+    if not isinstance(value, str) or not _AMOUNT.fullmatch(value.strip()):
+        raise BankDataError()
+    return int(value.strip().replace(",", ""))
+
+
+def _rows(data, key):
+    """은행 목록. [] 는 정상 빈 목록, 키 누락 · null · 목록 아님 · dict 아닌 행은 BankDataError (대출 resLoan 과 같은 기준)"""
+    rows = data.get(key) if isinstance(data, dict) else None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise BankDataError()
+    return rows
 
 
 def normalize_transaction(row):
     """
     CODEF 거래 한 줄 → financial_transaction 모양
-    - 출금(resAccountOut)과 입금(resAccountIn) 중 0 이 아닌 쪽이 금액·방향
+    - 출금(resAccountOut)과 입금(resAccountIn) 중 0 이 아닌 쪽이 금액·방향. 반대편은 0 · 빈 값 · 생략.
+      둘 다 0/없음이거나 둘 다 0 이 아니면 방향을 정할 수 없어 BankDataError (임의 금액 · 방향으로 만들지 않음)
     - 설명 칸 1~4 는 은행마다 쓰임이 달라서 원문을 source_detail 에 다 남긴다
       (대표 설명은 3 → 2 → 1 순서로 처음 있는 것. 실제 응답 보고 조정)
     - CODEF 거래엔 고유 ID 가 없어서 일시·금액·잔액·설명으로 source_key(중복 방지 키)를 만든다
     - 금액이 음수면 앞선 거래의 취소 줄이다 (선결제 환불·예약 취소가 음수 출금으로 오는 은행이 있다).
       금액은 양수로 두고 취소로 표시한다. 원거래 연결은 transfer_rules.link_bank_cancellations
     """
-    out_amt, in_amt = _to_int(row.get("resAccountOut")), _to_int(row.get("resAccountIn"))
+    out_amt, in_amt = _amount(row.get("resAccountOut"), False), _amount(row.get("resAccountIn"), False)
+    if bool(out_amt) == bool(in_amt):
+        raise BankDataError()
     detail = {f"desc{i}": row.get(f"resAccountDesc{i}", "") for i in range(1, 5)}
     day, time = row.get("resAccountTrDate", ""), row.get("resAccountTrTime", "")
-    balance = _to_int(row.get("resAfterTranBalance"))
+    balance = _amount(row.get("resAfterTranBalance"), False)  # 거래 후 잔액 미제공 = None (모델도 비어 있을 수 있음)
     signed = out_amt or in_amt
-    key_src = "|".join([day, time, str(signed), str(balance), *detail.values()])
+    # 미제공 잔액은 수정 전처럼 0 으로 키를 만든다 — 이미 저장된 거래와 중복되지 않게 (R08 키 방식 그대로)
+    key_src = "|".join([day, time, str(signed), str(balance or 0), *detail.values()])
     return {
         "occurred_on": datetime.strptime(day, "%Y%m%d").date() if day else None,
         "occurred_time": datetime.strptime(time, "%H%M%S").time() if len(time) == 6 else None,
