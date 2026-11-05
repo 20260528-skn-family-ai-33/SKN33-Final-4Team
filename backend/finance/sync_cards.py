@@ -154,24 +154,56 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
     return counts
 
 
+def _saved_approvals(user, card, identity):
+    """같은 카드사 카드에 이미 저장된 같은 승인 (최대 2건). source_key 가 카드별이라 카드마다 찾는다.
+    예전 카드는 보유 목록에서 사라지기도 하고 남아 있기도 해서 목록 여부로 거르지 않는다"""
+    owners = Card.objects.filter(user=user, issuer_code=card.issuer_code, source_card_key__isnull=False)
+    keys = [approval_source_key(item.source_card_key, identity) for item in owners]
+    return list(FinancialTransaction.objects.filter(user=user, card__in=owners, source_key__in=keys)[:2])
+
+
 def _save_approvals(user, cards, card_rows, rows):
-    """→ (새 거래 ID 목록, 기존 거래 수, 다 저장했는지). 카드를 하나로 특정 못 하거나 금액을 모르는 줄은 저장하지 않는다"""
+    """→ (새 거래 ID 목록, 기존 거래 수, 다 저장했는지). 카드를 하나로 특정 못 하거나 금액을 모르는 줄은 저장하지 않는다.
+    재발급하면 예전 카드는 보유카드 목록에서 사라져 번호로 못 찾는다 (승인내역 번호가 숫자 3자리 등으로 옴, 카드명도 비어 있음).
+    재발급 카드는 그 거래 뒤에 발급됐으니, 거래일 뒤에 발급된 카드가 한 장뿐이고 이번 응답에서 쓰인 카드면 그 카드에 붙인다.
+    거래일 전에 이미 있던 카드는 번호가 달라서 그 거래의 카드가 아니다.
+    shortcut: 번호 없이 발급일로 추정한다. 후보가 두 장 이상이거나 발급일을 모르는 카드가 있으면 고르지 않고 건너뛴다"""
+    def by_number(shown):
+        return [(card, data) for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
+
+    used = {found[0][0].pk for found in map(by_number, (row["card_number"] for row in rows)) if len(found) == 1}
+
+    def reissued_card(row):
+        if any(data["issued_on"] is None for data in card_rows):
+            return []
+        later = [(card, data) for card, data in zip(cards, card_rows) if row["occurred_on"] < data["issued_on"]]
+        return later if len(later) == 1 and later[0][0].pk in used else []
+
     new_ids, existing_count, complete = [], 0, True
     for row in rows:
         row = dict(row)
         shown, unknown, identity = row.pop("card_number"), row.pop("unknown_reason"), row.pop("identity")
-        matched = [card for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
+        matched = by_number(shown)
+        reissued = not matched
+        if reissued:
+            matched = reissued_card(row)
         if len(matched) != 1 or unknown:
             complete = False
             continue
-        card = matched[0]
+        card = matched[0][0]
         defaults = {
             **row, "user": user, "source_kind": "card", "direction": "out", "transaction_type": "spending",
             "confirmation_state": "needs_review", "confirmed_category_id": "UNCLASSIFIED",
         }
-        tx, created = FinancialTransaction.objects.get_or_create(
-            card=card, source_key=approval_source_key(card.source_card_key, identity), defaults=defaults,
-        )
+        saved = _saved_approvals(user, card, identity) if reissued else []
+        if len(saved) > 1:   # 어느 거래인지 모르면 고르지 않는다
+            complete = False
+            continue
+        tx, created = (saved[0] if saved else None), False
+        if tx is None:
+            tx, created = FinancialTransaction.objects.get_or_create(
+                card=card, source_key=approval_source_key(card.source_card_key, identity), defaults=defaults,
+            )
         if created:
             new_ids.append(tx.pk)
             continue
