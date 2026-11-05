@@ -491,12 +491,34 @@ class CardSyncTest(TestCase):
         self.run_sync()
         self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 2)  # 다시 불러와도 그대로
 
-    def test_unknown_number_is_not_guessed_with_two_used_cards_or_no_issue_date(self):
-        self.cards = [card(resIssueDate="20261001"), card("9490981234561111", resCardName="다른 카드", resIssueDate="20261001")]
-        self.approvals = [approval(), approval("949098******1111", resApprovalNo="2", resUsedAmount="5000"),
-                          approval("123", resApprovalNo="3", resUsedAmount="7000", resUsedDate="20260912")]
+    def test_card_issued_before_the_row_is_not_its_successor(self):
+        # 거래일 전에 이미 있던 카드는 번호가 다르니 그 거래의 카드가 아니다. 뒤에 발급된 카드에 붙인다
+        self.cards = [card(resIssueDate="20261001"), card("9490981234561111", resCardName="이전 카드", resIssueDate="20260101")]
+        self.approvals = [approval(), approval("123", resApprovalNo="2", resUsedAmount="5000", resUsedDate="20260912")]
         self.run_sync()
+        self.assertEqual(FinancialTransaction.objects.get(user=self.user, amount=5000).card.masked_number, "****0000")
+
+    def test_reissue_after_saving_does_not_duplicate_the_old_rows(self):
+        # PR #86 리뷰: 재발급 전 카드로 저장 → 재발급 → 다시 조회해도 같은 승인을 또 만들지 않는다
+        old_row = approval("949098******2222", resApprovalNo="2", resUsedAmount="5000", resUsedDate="20260912")
+        self.cards, self.approvals = [card("9490981234562222")], [old_row]
+        self.run_sync()
+        self.cards = [card(resIssueDate="20261001")]
+        self.approvals = [approval(), old_row]
+        self.run_sync()
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user, amount=5000).count(), 1)
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 2)
+        old_row["resCancelYN"] = "1"   # 재발급 전 거래의 취소도 그 거래에 반영된다
+        self.run_sync()
+        self.assertTrue(FinancialTransaction.objects.get(user=self.user, amount=5000).is_canceled)
+
+    def test_unknown_number_is_not_guessed_when_two_cards_could_be_the_successor(self):
+        # PR #86 리뷰: 같은 날 발급된 두 장이면 번호가 맞은 카드가 한 장뿐이어도 고르지 않는다
+        self.cards = [card(resIssueDate="20261001"), card("9490981234561111", resCardName="다른 카드", resIssueDate="20261001")]
+        self.approvals = [approval(), approval("123", resApprovalNo="3", resUsedAmount="7000", resUsedDate="20260912")]
+        result = self.run_sync()
         self.assertFalse(FinancialTransaction.objects.filter(user=self.user, amount=7000).exists())
+        self.assertFalse(result["approvals_complete"])
         self.cards = [card()]  # 발급일을 안 주는 카드사
         self.approvals = [approval(), approval("123", resApprovalNo="4", resUsedAmount="8000", resUsedDate="20260912")]
         self.run_sync()
