@@ -512,6 +512,37 @@ class CardSyncTest(TestCase):
         self.run_sync()
         self.assertTrue(FinancialTransaction.objects.get(user=self.user, amount=5000).is_canceled)
 
+    def test_old_card_still_listed_does_not_duplicate_the_saved_row(self):
+        # PR #86 재리뷰: 예전 카드가 보유 목록에 남아 있어도 같은 승인을 찾아 재사용하고, 취소도 그 거래에 반영한다
+        old_card = card("9490981234562222", resIssueDate="20260101")
+        old_row = approval("949098******2222", resApprovalNo="2", resUsedAmount="5000", resUsedDate="20260927")
+        self.cards, self.approvals = [old_card], [old_row]
+        self.run_sync()
+        self.cards = [old_card, card(resIssueDate="20261001")]
+        short_row = {**old_row, "resCardNo": "123"}
+        self.approvals = [approval(), short_row]
+        result = self.run_sync()
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user, amount=5000).count(), 1)
+        self.assertTrue(result["approvals_complete"])
+        short_row["resCancelYN"] = "1"
+        self.run_sync()
+        self.assertTrue(FinancialTransaction.objects.get(user=self.user, amount=5000).is_canceled)
+
+    def test_same_approval_saved_on_two_cards_is_left_alone(self):
+        # 같은 승인이 두 카드에 있으면 어느 거래인지 몰라 재사용도 새로 저장도 하지 않는다
+        first, second = card("9490981234562222", resIssueDate="20260101"), card("9490981234563333", resIssueDate="20260101")
+        rows = [approval(f"949098******{tail}", resApprovalNo="2", resUsedAmount="5000", resUsedDate="20260927") for tail in ("2222", "3333")]
+        self.cards, self.approvals = [first, second], [rows[0]]
+        self.run_sync()
+        self.approvals = [rows[1]]
+        self.run_sync()
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user, amount=5000).count(), 2)
+        self.cards = [first, second, card(resIssueDate="20261001")]
+        self.approvals = [approval(), {**rows[0], "resCardNo": "123"}]
+        result = self.run_sync()
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user, amount=5000).count(), 2)
+        self.assertFalse(result["approvals_complete"])
+
     def test_unknown_number_is_not_guessed_when_two_cards_could_be_the_successor(self):
         # PR #86 리뷰: 같은 날 발급된 두 장이면 번호가 맞은 카드가 한 장뿐이어도 고르지 않는다
         self.cards = [card(resIssueDate="20261001"), card("9490981234561111", resCardName="다른 카드", resIssueDate="20261001")]

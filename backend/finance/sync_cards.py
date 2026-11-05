@@ -154,13 +154,12 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
     return counts
 
 
-def _saved_on_old_card(user, card, cards, identity):
-    """재발급 전 카드로 이미 저장한 같은 승인. source_key 가 카드별이라 새 카드 기준으로는 못 찾는다"""
-    old = Card.objects.filter(user=user, issuer_code=card.issuer_code, source_card_key__isnull=False).exclude(
-        pk__in=[item.pk for item in cards],
-    )
-    keys = [approval_source_key(item.source_card_key, identity) for item in old]
-    return FinancialTransaction.objects.filter(user=user, card__in=old, source_key__in=keys).first()
+def _saved_approvals(user, card, identity):
+    """같은 카드사 카드에 이미 저장된 같은 승인 (최대 2건). source_key 가 카드별이라 카드마다 찾는다.
+    예전 카드는 보유 목록에서 사라지기도 하고 남아 있기도 해서 목록 여부로 거르지 않는다"""
+    owners = Card.objects.filter(user=user, issuer_code=card.issuer_code, source_card_key__isnull=False)
+    keys = [approval_source_key(item.source_card_key, identity) for item in owners]
+    return list(FinancialTransaction.objects.filter(user=user, card__in=owners, source_key__in=keys)[:2])
 
 
 def _save_approvals(user, cards, card_rows, rows):
@@ -196,8 +195,11 @@ def _save_approvals(user, cards, card_rows, rows):
             **row, "user": user, "source_kind": "card", "direction": "out", "transaction_type": "spending",
             "confirmation_state": "needs_review", "confirmed_category_id": "UNCLASSIFIED",
         }
-        tx = _saved_on_old_card(user, card, cards, identity) if reissued else None
-        created = False
+        saved = _saved_approvals(user, card, identity) if reissued else []
+        if len(saved) > 1:   # 어느 거래인지 모르면 고르지 않는다
+            complete = False
+            continue
+        tx, created = (saved[0] if saved else None), False
         if tx is None:
             tx, created = FinancialTransaction.objects.get_or_create(
                 card=card, source_key=approval_source_key(card.source_card_key, identity), defaults=defaults,
