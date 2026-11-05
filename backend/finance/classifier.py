@@ -27,7 +27,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item
+from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item_industry
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -74,22 +74,24 @@ PAY_ROUTES = ("네이버페이", "카카오페이", "토스페이", "페이코",
 ROUTE_TAIL = re.compile(r"(_구)?_(nice|인증|일반)(_\d+)?$|_\d+$", re.IGNORECASE)
 
 # ----- 1. 다품목 -----
-# 다품목(편의점·마트·종합몰)은 정책상 사용자 선택. 과거 선택은 후보로만 보여 주고 자동 적용하지 않는다 (분류 워크플로 10/26 단계 2)
-# 대상 = 분류 기준 10/20의 미분류: 편의점·슈퍼마켓·대형마트·백화점·다이소·중고·종합 온라인몰 (D1, D16)
+# 다품목 = 상호만으로 품목을 모르는 곳 (분류 기준 D1, D16). 대부분 사용자에게 묻고, 과거 선택은 후보로만 보여 준다 (분류 워크플로 10/26 단계 2)
+# 11/05 결정: 편의점·슈퍼·대형마트는 항상 식비, 다이소는 생활용품. 사용자가 고친 값은 그 거래에만 쓰므로 is_multi_item 은 참으로 둔다
 # 브랜드는 혜리 님 multi_category_brand_candidates.csv(10/30) 기준 (한글 표기 지에스25·씨유 포함)
 # shortcut: 상가 업종이 아니라 가맹점 이름으로 판별한다 (정리된 이름 기준). 5단계에서는 검색 업종으로도 판별
-MULTI_ITEM_PREFIXES = (
+FOOD_RETAIL_PREFIXES = (
     "gs25", "지에스25", "세븐일레븐", "이마트", "미니스톱", "홈플러스", "롯데마트", "롯데슈퍼", "노브랜드", "코스트코", "트레이더스",
-    "하나로마트", "농협하나로마트", "쿠팡", "11번가", "g마켓", "지마켓", "옥션", "ssg", "위메프", "티몬", "롯데온",
-    "카카오쇼핑", "갤러리아", "번개장터", "중고나라", "당근마켓",
+    "하나로마트", "농협하나로마트",
+)
+ASK_RETAIL_PREFIXES = (
+    "쿠팡", "11번가", "g마켓", "지마켓", "옥션", "ssg", "위메프", "티몬", "롯데온", "카카오쇼핑", "갤러리아", "번개장터", "중고나라", "당근마켓",
 )
 # CSV: cu·씨유·매점은 단순 접두어 금지 → 이름 그대로이거나 '지점명+점'일 때만. 나머지는 이름이 정확히 같을 때만
-MULTI_ITEM_PATTERNS = tuple(re.compile(p) for p in (
-    r"^cu(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유(?:$|[가-힣0-9]+(?:지점|점)$)", r"^매점(?:$|[가-힣0-9]+(?:지점|점)$)",
-    r"^씨유대전$", r"^신앙촌상회$", r"^중국식품$",
+FOOD_RETAIL_PATTERNS = tuple(re.compile(p) for p in (
+    r"^cu(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유(?:$|[가-힣0-9]+(?:지점|점)$)", r"^매점(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유대전$",
 ))
-MULTI_ITEM_KEYWORDS = ("다이소", "백화점", "b마트", "비마트", "배민스토어")  # 이름 어디에 있어도 (예: (주)아성다이소, 배민B마트 강남점)
-MULTI_ITEM_SUFFIXES = ("마트", "편의점", "슈퍼", "슈퍼마켓")
+ASK_RETAIL_PATTERNS = tuple(re.compile(p) for p in (r"^신앙촌상회$", r"^중국식품$"))
+FOOD_RETAIL_KEYWORDS = ("b마트", "비마트", "배민스토어")  # 이름 어디에 있어도 (예: 배민B마트 강남점)
+FOOD_RETAIL_SUFFIXES = ("마트", "편의점", "슈퍼", "슈퍼마켓")
 # 배달 = 식비, 전자제품 = 생활용품, 버거 = 식비, OTT = 문화·여가. CSV의 아이스크림 할인점류·올리브영은 분류 기준상 식비·뷰티라 넣지 않음
 NOT_MULTI_ITEM_PREFIXES = ("쿠팡이츠", "쿠팡플레이", "롯데하이마트", "하이마트", "노브랜드버거")
 
@@ -162,6 +164,7 @@ JEV_CRITERIA = {
 JEV_QUESTION = "이 가맹점에서 결제한 소비의 카테고리는? 가게 업종 기준으로 고르고, 정보가 부족하면 판단 보류를 고른다."
 # 검색 끝 칸 업종이 이런 곳이면 다품목 → Jev 를 부르지 않고 '확인 필요'
 MULTI_ITEM_INDUSTRIES = ("편의점", "슈퍼마켓", "대형마트", "백화점", "종합쇼핑몰", "마트")
+FOOD_RETAIL_INDUSTRIES = ("편의점", "슈퍼마켓")  # 이 둘과 '○○마트'는 묻지 않고 식비 (11/05 결정)
 # 가게가 아닌 업종(법인명 검색 시 본사가 나옴)은 근거로 넘기지 않는다
 NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은행", "증권", "기업", "회사", "사무소", "협회")
 
@@ -210,9 +213,28 @@ def is_multi_item(name):
     name = common.normalize_name(store_name(name) or "")
     if not name or name.startswith(NOT_MULTI_ITEM_PREFIXES):
         return False
-    return (name.startswith(MULTI_ITEM_PREFIXES) or name.endswith(MULTI_ITEM_SUFFIXES)
-            or any(keyword in name for keyword in MULTI_ITEM_KEYWORDS)
-            or any(pattern.match(name) for pattern in MULTI_ITEM_PATTERNS))
+    return (name.startswith(ASK_RETAIL_PREFIXES) or "백화점" in name or "다이소" in name
+            or any(pattern.match(name) for pattern in ASK_RETAIL_PATTERNS) or _food_retail(name))
+
+
+def _food_retail(name):
+    return (name.startswith(FOOD_RETAIL_PREFIXES) or name.endswith(FOOD_RETAIL_SUFFIXES)
+            or any(keyword in name for keyword in FOOD_RETAIL_KEYWORDS)
+            or any(pattern.match(name) for pattern in FOOD_RETAIL_PATTERNS))
+
+
+def retail_category(name):
+    """다품목 중 묻지 않고 정하는 곳의 카테고리 코드 (11/05 결정). 없으면 None"""
+    name = common.normalize_name(store_name(name) or "")
+    if not name or name.startswith(NOT_MULTI_ITEM_PREFIXES) or name.startswith(ASK_RETAIL_PREFIXES) or "백화점" in name:
+        return None
+    if "다이소" in name:
+        return "HOUSEHOLD"
+    return "FOOD" if _food_retail(name) else None
+
+
+def food_retail_industry(industry):
+    return industry in FOOD_RETAIL_INDUSTRIES or industry.endswith("마트")
 
 
 def is_unknown_store(name):
@@ -313,6 +335,8 @@ def judge(name):
             record["store_mismatch"] = True
         if industry and (industry in MULTI_ITEM_INDUSTRIES or industry.endswith("마트")):
             record[SEARCHED_MULTI_ITEM] = True  # '앞으로도 적용'을 막는 근거 (merchant_rules.searched_multi_item, PR #67 리뷰)
+            if food_retail_industry(industry):
+                return {"retail": "FOOD", "record": record}
             return {"review": ([], MULTI_ITEM_REASON), "record": record}
         if industry and any(word in industry for word in NON_STORE_INDUSTRIES):
             industry = None  # 본사·사무소가 검색된 경우. 근거로 쓰면 확신하며 틀림 (10/29 테스트)
@@ -351,7 +375,11 @@ def classify(user, txs):
         name = store_name(tx.merchant_name)
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
         code, future = last_user_choice(user, tx.merchant_name)
-        if is_multi_item(name) or seen_multi_item(user, tx.merchant_name):
+        seen = None if is_multi_item(name) else seen_multi_item_industry(user, tx.merchant_name)
+        if retail := retail_category(name) or ("FOOD" if seen and food_retail_industry(seen) else None):
+            # 사용자가 고친 값은 그 거래에만 쓴다: 지난 선택과 상관없이 정해진 카테고리
+            _apply(tx, retail, Tx.ClassificationSource.RULE, None)
+        elif is_multi_item(name) or seen:
             # 다품목(이름 사전 또는 같은 가게의 지난 검색 업종)은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
             _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
         elif is_pay_charge(name):
@@ -387,6 +415,10 @@ def classify(user, txs):
             result = judge(name)
             if result is None:
                 _review(tx, top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
+            elif "retail" in result and conflict:
+                _review(tx, [(result["retail"], None)], CONFLICT_REASON, Tx.ClassificationSource.RULE)
+            elif "retail" in result:
+                _apply(tx, result["retail"], Tx.ClassificationSource.RULE, None)
             elif "apply" in result and conflict:
                 # 동명 충돌: 검색 이름이 같아도 동명 가게 중 어느 곳의 거래인지 모른다 → Jev 답은 후보로만 (PR #68 리뷰)
                 # shortcut: 지금 입력(이름뿐)으로는 구별 근거가 없다. 카드 응답에 주소·업종 코드가 생기면 그걸로 풀기

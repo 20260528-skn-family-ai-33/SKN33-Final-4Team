@@ -359,7 +359,7 @@
                   "transactionId": "179a8e43-1e83-57b0-b1d2-121f2db28813",
                   "occurredOn": "2026-10-09",
                   "occurredTime": "08:02",
-                  "merchantName": "GS25 역삼점",
+                  "merchantName": "쿠팡",
                   "amount": 6800,
                   "cancel": {
                     "state": "none",
@@ -391,7 +391,7 @@
                         "categoryName": "생활용품"
                       }
                     ],
-                    "reason": "편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요."
+                    "reason": "여러 종류의 물건을 파는 곳이라 무엇을 샀는지 골라 주세요."
                   },
                   "classifiedBy": null,
                   "canApplyToFuture": false,
@@ -515,7 +515,7 @@
           "거래"
         ],
         "operationId": "updateTransactionCategory",
-        "description": "요청은 필수 category 한 칸만 받습니다. 선택 가능한 10개 카테고리와 ETC만 허용하며 UNCLASSIFIED로 되돌릴 수 없습니다. 금액·날짜·가맹점명·classifyState·funding 등 허용 외 필드는 400 invalid입니다. 같은 확정 카테고리 재전송은 200이며 Idempotency-Key를 쓰지 않습니다. 저장하면 classifyState:confirmed, classifiedBy:user, suggestion:null입니다.\n\ntransfer에 카테고리를 보내면 spending으로 바뀌어 소비 합계·예산에 반영됩니다. category:null은 원래 이체였던 거래를 다시 transfer로 돌릴 때만 허용합니다. 원래 소비 거래의 null 또는 income에 대한 수정은 400입니다. 원래 이체 여부는 서버 field_states에 보존하고 응답에는 내보내지 않습니다. 이체 수취인은 기억하지 않아 같은 사람에게 다음에 보낸 이체는 다시 transfer입니다.\n\n고정지출 연결 거래는 카테고리를 바꿔도 funding:fixed와 연결을 유지합니다. 이체가 확정 고정지출에 금액·날짜 ±3일로 연결되면 spending·고정지출 카테고리·funding:fixed가 되고 소비 분석에는 포함되며 생활비 사용액에서는 빠집니다. 이런 거래에 category:null은 400이며 연결을 먼저 풀어야 합니다. 연결 해제 시 원래 transfer로 복원하고 category·funding을 비웁니다.\n\n사용자가 고른 카테고리는 같은 가맹점의 새 거래에 먼저 쓰되 기존 거래를 일괄 수정하지 않습니다. 편의점·슈퍼·대형마트·종합 온라인몰 등 다품목 가맹점은 기억하지 않아 다음 거래도 UNCLASSIFIED입니다. 다품목 사전/제외 구현과 분류 변경 후 예산 사용액 재계산 시점은 구현 조율 대상입니다. 분류 변경만으로 승인 전 예산 초안을 만료시키지 않습니다.",
+        "description": "요청은 필수 category 한 칸만 받습니다. 선택 가능한 10개 카테고리와 ETC만 허용하며 UNCLASSIFIED로 되돌릴 수 없습니다. 금액·날짜·가맹점명·classifyState·funding 등 허용 외 필드는 400 invalid입니다. 같은 확정 카테고리 재전송은 200이며 Idempotency-Key를 쓰지 않습니다. 저장하면 classifyState:confirmed, classifiedBy:user, suggestion:null입니다.\n\ntransfer에 카테고리를 보내면 spending으로 바뀌어 소비 합계·예산에 반영됩니다. category:null은 원래 이체였던 거래를 다시 transfer로 돌릴 때만 허용합니다. 원래 소비 거래의 null 또는 income에 대한 수정은 400입니다. 원래 이체 여부는 서버 field_states에 보존하고 응답에는 내보내지 않습니다. 이체 수취인은 기억하지 않아 같은 사람에게 다음에 보낸 이체는 다시 transfer입니다.\n\n고정지출 연결 거래는 카테고리를 바꿔도 funding:fixed와 연결을 유지합니다. 이체가 확정 고정지출에 금액·날짜 ±3일로 연결되면 spending·고정지출 카테고리·funding:fixed가 되고 소비 분석에는 포함되며 생활비 사용액에서는 빠집니다. 이런 거래에 category:null은 400이며 연결을 먼저 풀어야 합니다. 연결 해제 시 원래 transfer로 복원하고 category·funding을 비웁니다.\n\n사용자가 고른 카테고리는 같은 가맹점의 새 거래에 먼저 쓰되 기존 거래를 일괄 수정하지 않습니다. 백화점·종합 온라인몰 등 다품목 가맹점은 기억하지 않아 다음 거래도 UNCLASSIFIED입니다. 편의점·슈퍼·대형마트는 식비, 다이소는 생활용품으로 자동 분류되고 고친 값은 그 거래에만 적용합니다. 다품목 사전/제외 구현과 분류 변경 후 예산 사용액 재계산 시점은 구현 조율 대상입니다. 분류 변경만으로 승인 전 예산 초안을 만료시키지 않습니다.",
         "x-source": "docs/api/transactions.md",
         "responses": {
           "200": {

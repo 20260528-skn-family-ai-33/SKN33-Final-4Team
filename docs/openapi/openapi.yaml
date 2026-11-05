@@ -2610,7 +2610,7 @@ paths:
                 transactionId: 179a8e43-1e83-57b0-b1d2-121f2db28813
                 occurredOn: '2026-10-09'
                 occurredTime: 08:02
-                merchantName: GS25 역삼점
+                merchantName: 쿠팡
                 amount: 6800
                 cancel:
                   state: none
@@ -2635,7 +2635,7 @@ paths:
                     categoryName: 식비
                   - category: HOUSEHOLD
                     categoryName: 생활용품
-                  reason: 편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요.
+                  reason: 여러 종류의 물건을 파는 곳이라 무엇을 샀는지 골라 주세요.
                 classifiedBy: null
                 canApplyToFuture: false
                 wasTransfer: false
@@ -2731,8 +2731,9 @@ paths:
         비웁니다.
 
 
-        사용자가 고른 카테고리는 같은 가맹점의 새 거래에 먼저 쓰되 기존 거래를 일괄 수정하지 않습니다. 편의점·슈퍼·대형마트·종합 온라인몰 등 다품목 가맹점은 기억하지 않아 다음 거래도 UNCLASSIFIED입니다.
-        다품목 사전/제외 구현과 분류 변경 후 예산 사용액 재계산 시점은 구현 조율 대상입니다. 분류 변경만으로 승인 전 예산 초안을 만료시키지 않습니다.
+        사용자가 고른 카테고리는 같은 가맹점의 새 거래에 먼저 쓰되 기존 거래를 일괄 수정하지 않습니다. 백화점·종합 온라인몰 등 다품목 가맹점은 기억하지 않아 다음 거래도 UNCLASSIFIED입니다.
+        편의점·슈퍼·대형마트는 식비, 다이소는 생활용품으로 자동 분류되고 고친 값은 그 거래에만 적용합니다. 다품목 사전/제외 구현과 분류 변경 후 예산 사용액 재계산 시점은 구현 조율 대상입니다.
+        분류 변경만으로 승인 전 예산 초안을 만료시키지 않습니다.
 
 
         원본: `docs/api/transactions.md`'
@@ -10190,9 +10191,9 @@ x-source-sha256:
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: 8bbbbde90dede70b16a100288cc33e5562495b1b23b6140354581b0dfecd70d1
   docs/api/finance-connect.md: 4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4
-  docs/api/cards.md: 55710df4bb6d1f896efa14a5adf895f6695695808099e292828e9301b6d37931
+  docs/api/cards.md: 0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34
   docs/api/loans.md: 4ce00163f1f80a152113e5f2def5a0181c760241e0f5981c897d89948c1b09b8
-  docs/api/transactions.md: e1b863e74fe8bd77b0ba9996def70511edd609b6d36e59e2738ee68ecaf0c3be
+  docs/api/transactions.md: b7e0d1f1e9c540466442b9b451c4b201e2126144451407b1fbc41d4333869bc5
   docs/api/fixed.md: 6eda341b01b9df157a3587305613d5b9f2b77a38e4e4686ca0d67787e566aff0
   docs/api/savings.md: 8d101c55ad8314a93e6f1fa549d2f5603c3acd8b29bd0fa19c58ba99768d39ed
   docs/api/home.md: 1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf

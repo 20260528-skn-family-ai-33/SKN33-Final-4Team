@@ -78,8 +78,8 @@ class ClassifyTest(TestCase):
         predict.assert_called_once_with(["청담"])
 
     def test_multi_item_never_reuses_memory_or_calls_ml(self, predict):
-        self.tx("GS25 역삼점", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
-        remembered, fresh = self.run_classify(self.tx("GS25 역삼점"), self.tx("웰빙마트"))
+        self.tx("쿠팡", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
+        remembered, fresh = self.run_classify(self.tx("쿠팡"), self.tx("현대백화점 판교점"))
         for tx in (remembered, fresh):
             self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
                              ("UNCLASSIFIED", "needs_review", None))
@@ -88,6 +88,26 @@ class ClassifyTest(TestCase):
         self.assertEqual((remembered.suggested_category_id, remembered.suggestion_candidates),
                          ("FOOD", [{"category": "FOOD", "confidence": None}]))
         self.assertEqual((fresh.suggested_category_id, fresh.suggestion_candidates), (None, None))
+        predict.assert_called_once_with([])
+
+    def test_decided_retail_ignores_user_choice(self, predict):
+        # 11/05: 편의점·마트는 항상 식비, 다이소는 생활용품. 사용자가 고친 값은 그 거래에만 쓴다
+        self.tx("GS25 역삼점", confirmed_category_id="HOUSEHOLD", confirmation_state="confirmed", classification_source="user")
+        store, mart, daiso = self.run_classify(self.tx("GS25 역삼점"), self.tx("웰빙마트"), self.tx("(주)아성다이소"))
+        self.assertEqual([(t.confirmed_category_id, t.confirmation_state, t.classification_source, t.suggestion_reason)
+                          for t in (store, mart, daiso)],
+                         [("FOOD", "suggested", "rule", None), ("FOOD", "suggested", "rule", None),
+                          ("HOUSEHOLD", "suggested", "rule", None)])
+        predict.assert_called_once_with([])
+
+    def test_searched_retail_is_food_for_later_transactions(self, predict):
+        # 검색으로 마트가 확인된 가게는 SVM 이 다른 답을 확신해도 식비. 백화점으로 확인된 가게는 계속 묻는다
+        predict.side_effect = lambda names: [[("BEAUTY", 0.99)] for _ in names]
+        self.tx("행복상회", field_states={"classifier": {"industry": "슈퍼마켓", "multi_item": True}})
+        self.tx("행복쇼핑", field_states={"classifier": {"industry": "백화점", "multi_item": True}})
+        mart, department = self.run_classify(self.tx("행복상회"), self.tx("행복쇼핑"))
+        self.assertEqual((mart.confirmed_category_id, mart.classification_source), ("FOOD", "rule"))
+        self.assertEqual((department.confirmed_category_id, department.suggestion_reason), ("UNCLASSIFIED", classifier.MULTI_ITEM_REASON))
         predict.assert_called_once_with([])
 
     def test_rules_classify_before_ml(self, predict):
@@ -112,8 +132,8 @@ class ClassifyTest(TestCase):
         # PR #63 리뷰: SVM 이 FOOD 0.99 를 줘도 다품목이면 SVM 을 부르지 않는다. 다품목이 아니면 접두어를 뗀 이름으로 SVM
         predict.side_effect = lambda names: [[("FOOD", 0.99)] for _ in names]
         coupang, gs25, musinsa = self.run_classify(self.tx("NICE*쿠팡"), self.tx("KCP*GS25 역삼점"), self.tx("KCP*무신사"))
-        for tx in (coupang, gs25):
-            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("UNCLASSIFIED", "needs_review"))
+        self.assertEqual((coupang.confirmed_category_id, coupang.confirmation_state), ("UNCLASSIFIED", "needs_review"))
+        self.assertEqual((gs25.confirmed_category_id, gs25.classification_source), ("FOOD", "rule"))
         self.assertEqual((musinsa.confirmed_category_id, musinsa.classification_source), ("FOOD", "ml"))
         predict.assert_called_once_with(["무신사"])
 
@@ -380,10 +400,17 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
 
     def test_multi_item_industry_skips_jev(self):
-        result, ask = self.run_judge(("naver", "새봄동물", "편의점"))
+        result, ask = self.run_judge(("naver", "새봄동물", "백화점"))
         self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
         self.assertTrue(result["record"]["multi_item"])
         ask.assert_not_called()
+
+    def test_food_retail_industry_skips_jev(self):
+        for industry in ("편의점", "슈퍼마켓", "대형마트", "식자재마트"):
+            result, ask = self.run_judge(("naver", "새봄동물", industry))
+            self.assertEqual(result["retail"], "FOOD", industry)
+            self.assertTrue(result["record"]["multi_item"])  # '앞으로도 적용'을 계속 막는다
+            ask.assert_not_called()
 
     def test_non_store_industry_is_not_evidence(self):
         result, ask = self.run_judge(("kakao", "비바리퍼블리카", "금융서비스"),
@@ -461,6 +488,12 @@ class ClassifyCommandTest(TestCase):
 
 
 class DeliveryAppTest(SimpleTestCase):
+    def test_retail_category(self):
+        for name, code in {"GS25 역삼점": "FOOD", "CU 역삼점": "FOOD", "이마트24 서초점": "FOOD", "웰빙마트": "FOOD", "배민B마트 강남점": "FOOD",
+                           "(주)아성다이소": "HOUSEHOLD", "쿠팡": None, "쿠팡마트": None, "현대백화점 판교점": None, "번개장터": None,
+                           "롯데하이마트 강남점": None, "신앙촌상회": None, "루덴치과의원": None, "": None, None: None}.items():
+            self.assertEqual(classifier.retail_category(name), code, name)
+
     def test_delivery_app_is_food_but_b_mart_is_multi_item(self):
         for name in ("배달의민족", "(주)우아한형제들", "요기요"):
             self.assertFalse(classifier.is_multi_item(name), name)
@@ -481,12 +514,13 @@ class ClassifyNamesCommandTest(TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             names = os.path.join(tmp, "names.txt")
             with open(names, "w", encoding="utf-8") as f:
-                f.write("루덴치과의원\nGS25 역삼점\n크린토피아세탁\n")
+                f.write("루덴치과의원\nGS25 역삼점\n쿠팡\n크린토피아세탁\n")
             out = StringIO()
             call_command("classify_names", names, stdout=out)
         text = out.getvalue()
         self.assertIn("루덴치과의원 | MEDICAL_HEALTH | 4 SVM", text)
-        self.assertIn("GS25 역삼점 | UNCLASSIFIED | 1 다품목", text)
+        self.assertIn("GS25 역삼점 | FOOD | 3 규칙", text)
+        self.assertIn("쿠팡 | UNCLASSIFIED | 1 다품목", text)
         self.assertIn("크린토피아세탁 | ETC | 3 규칙", text)
         self.assertFalse(Tx.objects.exists())
         self.assertFalse(get_user_model().objects.filter(email__startswith="classify-names-").exists())

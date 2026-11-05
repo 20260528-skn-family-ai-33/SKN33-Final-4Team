@@ -55,6 +55,14 @@ def seen_multi_item(user, merchant_name):
     ).exists()
 
 
+def seen_multi_item_industry(user, merchant_name):
+    """같은 회원·같은 가맹점의 거래 중 검색으로 다품목이 확인된 거래의 업종. 없으면 None"""
+    merchant = normalize_merchant(merchant_name)
+    return None if merchant is None else FinancialTransaction.objects.filter(
+        user=user, merchant_name=merchant, **{f"field_states__classifier__{SEARCHED_MULTI_ITEM}": True},
+    ).values_list("field_states__classifier__industry", flat=True).first()
+
+
 def remembered_category(user, merchant_name):
     """같은 가맹점의 새 거래에 자동으로 쓸 카테고리 코드. 마지막 선택이 "앞으로도 적용"일 때만, 아니면 None"""
     code, future = last_user_choice(user, merchant_name)

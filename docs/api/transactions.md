@@ -199,7 +199,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 
 ```json
 {
-  "transactionId": "9d3b…", "occurredOn": "2026-10-09", "occurredTime": "08:02", "merchantName": "GS25 역삼점", "amount": 6800,
+  "transactionId": "9d3b…", "occurredOn": "2026-10-09", "occurredTime": "08:02", "merchantName": "쿠팡", "amount": 6800,
   "cancel": { "state": "none", "amount": 0 }, "netAmount": 6800,
   "category": "UNCLASSIFIED", "categoryName": "확인 필요", "classifyState": "needs_review",
   "paymentCard": { "cardId": "1c90…", "displayName": "신한 Deep Dream · ****1234", "status": "connected" }, "paymentAccount": null,
@@ -207,7 +207,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
   "direction": "out", "transactionType": "spending", "installmentMonths": 0,
   "suggestion": {
     "candidates": [ { "category": "FOOD", "categoryName": "식비" }, { "category": "HOUSEHOLD", "categoryName": "생활용품" } ],
-    "reason": "편의점은 여러 물건을 팔아서 무엇을 샀는지 알 수 없어요."
+    "reason": "여러 종류의 물건을 파는 곳이라 무엇을 샀는지 골라 주세요."
   },
   "classifiedBy": null,
   "canApplyToFuture": false,
@@ -263,7 +263,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
     - 기준은 같은 가맹점에서 사용자가 고른 거래 중 **가장 최근 거래**(거래일 순, 같은 날이면 마지막 수정 순)다. 그 거래가 `applyToFuture: true`일 때만 재사용하고, 아니면 재사용하지 않는다. 사용자가 선택을 바꾸면 마지막 선택을 따른다.
     - 새 칸 없이 그 거래의 `field_states.apply_to_future = true`로 남긴다. API 응답에는 내보내지 않는다.
     - 10/30 이전에 확정한 거래는 이 표시가 없어서 재사용되지 않는다.
-- **단, 다품목 가맹점·페이 충전은 기억하지 않는다** (`applyToFuture`를 보내도 같음). 편의점·슈퍼마켓·대형마트·종합 온라인몰처럼 결정표 D1·D16에서 `UNCLASSIFIED`(사용자 선택)로 정한 가맹점(다품목 브랜드 사전에 있는 가맹점)은, 사용자가 이번 거래를 식비로 골라도 **다음 거래는 다시 `UNCLASSIFIED`** 로 들어온다. GS25 도시락을 식비로 고른 기록이 다음 생필품 구매까지 식비로 만들지 않게 하기 위해서다.
+- **단, 다품목 가맹점·페이 충전은 기억하지 않는다** (`applyToFuture`를 보내도 같음). 백화점·종합 온라인몰처럼 사용자가 고르는 가맹점은, 이번 거래를 식비로 골라도 **다음 거래는 다시 `UNCLASSIFIED`** 로 들어온다. 편의점·슈퍼마켓·대형마트(식비)와 다이소(생활용품)는 자동 분류되고, 사용자가 고친 값은 그 거래에만 적용된다 (11/05).
 - 고정지출로 연결된 거래(`funding: fixed`)도 카테고리는 바꿀 수 있다. 돈의 출처(고정비)는 그대로다.
 - **고정지출에 연결된 이체 (10/24 AA⑤)**: 월세를 집주인에게 계좌이체로 내는 경우처럼, 남에게 보낸 이체(`transfer`)가 확정된 고정지출의 납부 예정과 **금액 · 날짜(±3일)로 연결되면** 소비로 본다.
     - `transactionType` `transfer` → `spending`, 카테고리는 **그 고정지출의 카테고리**, `funding: fixed`('고정' 표시). 생활비 사용액엔 안 들어가고 소비 분석엔 `fixedAmount`로 들어간다(S).
@@ -302,7 +302,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 
 - 같은 가맹점의 이미 있는 거래를 **한꺼번에 바꾸지 않는다** (새 거래에만 반영, `sameMerchantUpdatedCount` 없음).
 - 확정한 분류를 '확인 필요'로 **되돌리는 기능은 없다.** (다른 카테고리로 다시 고르는 것은 됨)
-- 편의점 · 마트 등 다품목 가맹점은 이전 선택과 상관없이 **항상 사용자에게 물어본다.**
+- 백화점 · 종합 온라인몰 등 다품목 가맹점은 이전 선택과 상관없이 **항상 사용자에게 물어본다.** 편의점 · 마트는 **항상 식비**, 다이소는 **항상 생활용품**으로 자동 분류한다 (11/05).
 - (10/30 팀 결정) 같은 가맹점 재사용은 사용자가 "앞으로도 적용"(`applyToFuture`)을 고른 경우에만.
 
 **확인 필요**

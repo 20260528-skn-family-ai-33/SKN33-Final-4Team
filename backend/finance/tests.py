@@ -241,10 +241,27 @@ class TransactionDetailTest(FinanceData):
                 self.assertFalse(body["canApplyToFuture"])
                 self.assertIsNone(remembered_category(self.user, tx.merchant_name))
 
+    @mock.patch("finance.classifier.predict", return_value=[])
+    def test_user_fix_on_convenience_store_applies_to_that_transaction_only(self, predict):
+        # 11/05: 편의점은 항상 식비. 고쳐도 '앞으로도 적용'이 없고 다음 거래는 다시 식비
+        first = self.tx(source_kind="card", card=self.card, merchant_name="GS25 역삼점",
+                        confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        classifier.classify(self.user, FinancialTransaction.objects.filter(pk=first.pk))
+        first.refresh_from_db()
+        self.assertEqual((first.confirmed_category_id, first.confirmation_state), ("FOOD", "suggested"))
+        self.client.force_login(self.user)
+        body = self.patch(first, {"category": "HOUSEHOLD", "applyToFuture": True}).json()
+        self.assertEqual((body["category"], body["canApplyToFuture"]), ("HOUSEHOLD", False))
+        nxt = self.tx(source_kind="card", card=self.card, merchant_name="GS25 역삼점",
+                      confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        classifier.classify(self.user, FinancialTransaction.objects.filter(pk=nxt.pk))
+        nxt.refresh_from_db()
+        self.assertEqual(nxt.confirmed_category_id, "FOOD")
+
     @mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
     @mock.patch("finance.classifier.conflict_names", return_value=frozenset())  # 로컬 충돌 목록 파일과 무관하게
     @mock.patch("finance.classifier.ask_jev")
-    @mock.patch("finance.classifier.search_store", return_value=("naver", "행복상회", "슈퍼마켓"))
+    @mock.patch("finance.classifier.search_store", return_value=("naver", "행복상회", "백화점"))
     @mock.patch("finance.classifier.predict", return_value=[[("FOOD", 0.4)]])
     def test_searched_multi_item_cannot_apply_to_future(self, predict, search, ask, conflicts):
         # PR #67 리뷰: 이름 사전에 없어도 검색 업종이 다품목이면 '앞으로도 적용' 없음
