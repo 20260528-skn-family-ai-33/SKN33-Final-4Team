@@ -218,6 +218,27 @@ class SamePurchaseTest(Fixture):
         self.run_on(self.buy("분식집", 8_000), self.bank(self.a, "out", 8_000, "분식집"))
         self.assertEqual(self.links().filter(matched_amount=8_000).count(), 1)  # 카드 종류 칸의 '체크'도 본다
 
+    def test_late_same_withdrawal_unlinks_the_ambiguous_pair(self):
+        # PR #87 리뷰: 나눠서 들어와도 한 번에 받을 때와 결과가 같아야 한다. 어느 출금이 카드 결제인지 모르면 잇지 않는다
+        card, first = self.buy(), self.bank(self.a, "out", 9_000, "김밥집")
+        self.run_on(card, first)
+        self.assertEqual(self.links().count(), 1)
+        late = self.bank(self.b, "out", 9_000, "김밥집")
+        self.run_on(late)
+        self.assertFalse(self.links().exists())
+        self.client.force_login(self.user)
+        rows = self.client.get(URL + "?from=2026-11-01&to=2026-11-30").json()["items"]
+        self.assertEqual(sum(i["transactionType"] == "transfer" for i in rows), 2)  # 두 출금 모두 다시 보인다
+
+    def test_same_purchase_withdrawal_is_not_reused_as_own_transfer(self):
+        # PR #87 리뷰: 같은 날 · 같은 금액 입금이 다른 계좌에 있어도 한 출금에 두 관계가 붙지 않는다
+        card, out = self.buy(), self.bank(self.a, "out", 9_000, "김밥집")
+        income = self.bank(self.b, "in", 9_000, "입금")
+        self.run_on(card, out, income)
+        self.assertEqual(self.links().count(), 1)
+        self.assertFalse(TransactionLink.objects.filter(relation_type="OWN_TRANSFER").exists())
+        self.assertEqual((out.transaction_type, income.transaction_type), ("transfer", "income"))
+
     def test_withdrawal_the_user_confirmed_is_left_alone(self):
         bank = self.bank(self.a, "out", 7_000, "빵집")
         Tx.objects.filter(pk=bank.pk).update(confirmation_state="confirmed")

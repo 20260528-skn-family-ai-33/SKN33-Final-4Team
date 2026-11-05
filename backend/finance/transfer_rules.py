@@ -42,10 +42,12 @@ def link(user, source, target, relation, amount):
 
 def link_own_transfers(user, txs):
     """[임시] 같은 날 · 같은 금액이면 내 계좌 간 이체로 본다. 자정을 넘긴 이체는 놓치고, 같은 날 우연히 같은 금액을 주고받으면 잘못 묶는다.
-    입금이 늦게 와도 결과가 같도록 규칙이 정한 카드값도 다시 본다. 사용자가 확정했거나 납부에 붙은 거래는 바꾸지 않는다"""
+    입금이 늦게 와도 결과가 같도록 규칙이 정한 카드값도 다시 본다. 사용자가 확정했거나 납부에 붙은 거래, 같은 구매로 이은 출금은 바꾸지 않는다"""
     bank = Tx.objects.filter(user=user, source_kind="bank", is_canceled=False).exclude(
         confirmation_state=Tx.ConfirmationState.CONFIRMED,
-    ).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk"))))
+    ).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk")))).exclude(
+        Exists(TransactionLink.objects.filter(relation_type=Relation.SAME_PURCHASE, to_transaction=OuterRef("pk"))),
+    )
     paired = set()
     pending = bank.filter(pk__in=txs.values("pk"), transaction_type__in=[Type.TRANSFER, Type.INCOME])
     for tx in pending.order_by("occurred_on", "occurred_time", "pk"):
@@ -120,16 +122,15 @@ def link_same_purchases(user):
     소비는 카드 줄이 맡고 계좌 줄은 이체로 남아 있어서, 잇지 않으면 한 결제가 두 줄로 보인다.
     같은 날 · 같은 금액 · 같은 이름이 양쪽 다 한 건일 때만 잇는다. 금액 · 날짜만 같은 거래는 다른 결제일 수 있어서다.
     신용카드는 결제 때 출금이 없어 보지 않는다. CODEF 카드 종류는 카드사마다 달라(NH 는 '본인') 카드 이름의 '체크'도 본다.
-    양쪽 저장 순서가 달라도 되게 아직 안 이은 거래를 모두 본다. 사용자가 확정했거나 납부에 붙은 출금은 바꾸지 않는다"""
-    links = TransactionLink.objects.filter(relation_type=Relation.SAME_PURCHASE)
-    linked = Exists(links.filter(Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk"))))
+    양쪽 저장 순서가 달라도 되게 이미 이은 거래까지 모두 다시 본다. 뒤늦게 같은 출금이 들어와 모호해지면 규칙이 이은 연결을 푼다.
+    사용자가 확정했거나 납부에 붙은 출금은 바꾸지 않는다"""
     approvals = Tx.objects.filter(
         Q(card__name__contains="체크") | Q(card__card_type__contains="체크"),
         user=user, source_kind="card", transaction_type=Type.SPENDING, is_canceled=False,
-    ).exclude(linked)
+    )
     withdrawals = Tx.objects.filter(
         user=user, source_kind="bank", direction="out", transaction_type=Type.TRANSFER, is_canceled=False,
-    ).exclude(linked).exclude(confirmation_state=Tx.ConfirmationState.CONFIRMED).exclude(
+    ).exclude(confirmation_state=Tx.ConfirmationState.CONFIRMED).exclude(
         Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk"))),
     )
     cards, banks = defaultdict(list), defaultdict(list)
@@ -140,6 +141,11 @@ def link_same_purchases(user):
     for key, found in cards.items():
         if key[2] and len(found) == 1 and len(banks[key]) == 1:
             link(user, found[0], banks[key][0], Relation.SAME_PURCHASE, found[0].amount)
+        else:
+            TransactionLink.objects.filter(
+                relation_type=Relation.SAME_PURCHASE, confirmation_state=LINK_STATE,
+                from_transaction__in=found, to_transaction__in=banks[key],
+            ).delete()
 
 
 def apply(user, txs):
