@@ -1,5 +1,6 @@
 """개별 확정 → 합계·청구서 참고 금액 재조회. 실제 예산 계산은 기존 경로 유지."""
-from datetime import timedelta
+from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -126,6 +127,57 @@ class FixedBillsTest(FixedFixture, TestCase):
         self.assertEqual((preview["totalAmount"], preview["confirmedFixedAmount"], preview["amountAfterFixed"]),
                          (0, 33309, 0))
         self.assertFalse(self.user.budget_cycles.exists())
+
+    def test_payday_rollover_uses_current_bills_before_home_updates_active_cycle(self):
+        FinancialProfile.objects.create(user=self.user, payday=15)
+        self.cycle.starts_on = date(2026, 10, 15)
+        self.cycle.ends_before = date(2026, 11, 15)
+        self.cycle.save()
+        self.bill.withdrawal_due_date = date(2026, 10, 20)
+        self.bill.save()
+        self.make_bill(withdrawal_due_date=date(2026, 11, 20), total_amount=200000)
+
+        for today, expected in [(date(2026, 11, 14), 100000),
+                                (date(2026, 11, 15), 200000),
+                                (date(2026, 11, 16), 200000)]:
+            with self.subTest(today=today), patch("django.utils.timezone.localdate", return_value=today):
+                preview = self.preview()
+                self.assertIsNone(preview["reason"])
+                self.assertEqual(preview["totalAmount"], expected)
+                self.assertEqual(preview["amountAfterFixed"], expected)
+
+        # 표시 기간 보완이 기존 주기를 닫거나 새 주기·예산을 생성하지 않는다.
+        self.cycle.refresh_from_db()
+        self.assertEqual((self.cycle.status, self.cycle.starts_on, self.cycle.ends_before),
+                         ("active", date(2026, 10, 15), date(2026, 11, 15)))
+        self.assertEqual(self.user.budget_cycles.count(), 1)
+        self.assertFalse(self.user.budgets.exists())
+
+    def test_future_active_cycle_is_not_used_for_today(self):
+        FinancialProfile.objects.create(user=self.user, payday=15)
+        self.cycle.starts_on = date(2026, 12, 15)
+        self.cycle.ends_before = date(2027, 1, 15)
+        self.cycle.save()
+        self.bill.withdrawal_due_date = date(2026, 12, 20)
+        self.bill.save()
+        self.make_bill(withdrawal_due_date=date(2026, 11, 20), total_amount=200000)
+        with patch("django.utils.timezone.localdate", return_value=date(2026, 11, 15)):
+            self.assertEqual(self.preview()["totalAmount"], 200000)
+
+    def test_expired_cycle_without_payday_is_unknown_instead_of_previous_bill(self):
+        self.cycle.starts_on = self.today - timedelta(days=30)
+        self.cycle.ends_before = self.today
+        self.cycle.save()
+        self.bill.withdrawal_due_date = self.today - timedelta(days=1)
+        self.bill.save()
+        for has_profile in [False, True]:
+            with self.subTest(has_profile=has_profile):
+                if has_profile:
+                    FinancialProfile.objects.create(user=self.user, payday=None)
+                preview = self.preview()
+                self.assertEqual(preview["reason"], "cycle_unavailable")
+                self.assertIsNone(preview["totalAmount"])
+                self.assertIsNone(preview["amountAfterFixed"])
 
     def test_no_consent_no_selection_or_disconnected_hides_bills(self):
         self.card.is_selected = False

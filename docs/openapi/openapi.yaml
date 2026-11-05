@@ -10261,7 +10261,7 @@ x-source-sha256:
   docs/api/cards.md: 0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34
   docs/api/loans.md: 3b83de5ba2e7e9f5ea7cc9705de4ece7a1ef060339bc13aaed4651cca986e120
   docs/api/transactions.md: e1b863e74fe8bd77b0ba9996def70511edd609b6d36e59e2738ee68ecaf0c3be
-  docs/api/fixed.md: c086728a9fca28948bb66278a664c5a5e692e6aab3de93628b2c7f32ebe8b3bb
+  docs/api/fixed.md: 81e585f4c97dbd101525a130fce5d97e003aa788410cd3e6ec40e83fa7bb3d3b
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
   docs/api/home.md: 1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf
   docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5

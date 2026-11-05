@@ -16,9 +16,10 @@ def fixed_bill_preview(user, cycle, today):
     managed = selected_cards(user)
     if not managed:
         return []
-    if cycle is None:
-        # 첫 온보딩에서는 월급 정보를 저장해도 지킬 돈 조회 전까지 주기 행이 없을 수 있다.
+    if cycle is None or not cycle.starts_on <= today < cycle.ends_before:
+        # 온보딩에는 주기가 없거나, 홈 조회 전에는 종료된 주기가 active로 남을 수 있다.
         # 표시용 기간만 계산하고 예산·납부 예정은 생성하지 않는다.
+        cycle = None  # 급여 설정도 없으면 이전·미래 주기를 대신 표시하지 않는다.
         profile = FinancialProfile.objects.filter(user=user).first()
         if profile and profile.payday:
             start, end, _ = salary_cycle_dates(profile, today)
