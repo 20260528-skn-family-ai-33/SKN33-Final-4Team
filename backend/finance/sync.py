@@ -1,5 +1,6 @@
 """CODEF 은행 조회 결과를 저장한다. 금융 원문은 출력하지 않는다."""
 import hashlib
+from datetime import datetime
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
@@ -11,6 +12,11 @@ from users.models import Consent
 from . import codef
 from .models import BankAccount, Connection, FinancialTransaction, SyncRun
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
+
+
+# bank_account.field_states: 이 계좌 값(잔액 · 계좌명 · 종류)을 저장한 조회의 시작 시각 (sync_cards 청구서와 같은 방식)
+# shortcut: 기관 자료 기준 시각이 아니라 요청 시작 시각이다 — 기관이 기준 시각을 주면 그 값으로
+STARTED_AT = "codefStartedAt"
 
 
 class BankConsentRequired(PermissionError):
@@ -113,13 +119,20 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                 except BankAccount.DoesNotExist:
                     account = BankAccount.objects.create(user=user, connection=connection, source_account_key=key)
                 account.connection = connection
+                saved_at = account.field_states.get(STARTED_AT)
+                if saved_at and datetime.fromisoformat(saved_at) > run.started_at:
+                    # 더 늦게 시작한 조회가 이미 저장한 계좌 값은 덮지 않는다 (fetched_at 도 그대로). 거래는 아래에서 그대로 저장
+                    account.save(update_fields=["connection"])
+                    saved_accounts.append((account, rows))
+                    continue
                 account.source_account_ref_ciphertext = None
                 account.masked_number = codef.mask(number)
                 account.name = _mask_account_numbers(data["name"], account_numbers)
                 account.balance = data["balance"]
                 # 11 외의 예금 코드 매핑은 팀 확인 뒤 추가한다.
                 account.account_type = "demand" if data["kind_code"] == "11" else "other"
-                account.field_states = {**account.field_states, "codef_deposit_code": data["kind_code"]}
+                account.field_states = {**account.field_states, "codef_deposit_code": data["kind_code"],
+                                        STARTED_AT: run.started_at.isoformat()}
                 account.fetched_at = timezone.now()
                 account.save(update_fields=[
                     "connection",
