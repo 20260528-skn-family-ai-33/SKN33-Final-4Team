@@ -168,6 +168,84 @@ class CollectionOrderTest(Fixture):
         self.assertFalse(TransactionLink.objects.exists())
 
 
+class SamePurchaseTest(Fixture):
+    def setUp(self):
+        super().setUp()
+        Card.objects.filter(pk=self.card.pk).update(name="NH 체크")
+
+    def buy(self, name="김밥집", amount=9_000):
+        return Tx.objects.create(
+            user=self.user, source_kind="card", card=self.card, occurred_on=date(2026, 11, 3), amount=amount, direction="out",
+            merchant_name=name, transaction_type="spending", confirmed_category_id="FOOD", confirmation_state="suggested",
+        )
+
+    def links(self):
+        return TransactionLink.objects.filter(relation_type="SAME_PURCHASE")
+
+    def test_check_card_and_its_withdrawal_become_one_row(self):
+        card, bank = self.buy(), self.bank(self.a, "out", 9_000, "김밥 집")
+        friend = self.bank(self.a, "out", 9_000, "홍길동")
+        self.run_on(card, bank, friend)
+        link = self.links().get()
+        self.assertEqual((link.from_transaction, link.to_transaction, link.matched_amount), (card, bank, 9_000))
+        self.client.force_login(self.user)
+        items = self.client.get(URL + "?from=2026-11-01&to=2026-11-30").json()
+        self.assertEqual(sorted(i["transactionType"] for i in items["items"]), ["spending", "transfer"])  # 친구 송금은 남음
+        self.assertEqual(items["summary"]["spentTotal"], 9_000)
+
+    def test_links_whichever_side_is_saved_first(self):
+        bank = self.bank(self.a, "out", 9_000, "김밥집")
+        self.run_on(bank)
+        self.assertFalse(self.links().exists())
+        card = self.buy()
+        self.run_on(card)
+        self.run_on(card)
+        self.assertEqual(self.links().count(), 1)
+
+    def test_not_linked_when_only_amount_and_day_match_or_it_is_ambiguous(self):
+        self.run_on(self.buy("다른가게"), self.bank(self.a, "out", 9_000, "김밥집"))
+        self.assertFalse(self.links().exists())
+        self.bank(self.a, "out", 9_000, "다른가게", occurred_time=time(1, 0))
+        self.bank(self.a, "out", 9_000, "다른가게", occurred_time=time(2, 0))  # 출금 두 건이면 어느 쪽인지 모름
+        self.run_on(self.buy("다른가게", 9_000))
+        self.assertFalse(self.links().exists())
+
+    def test_credit_card_and_settled_withdrawals_stay_apart(self):
+        Card.objects.filter(pk=self.card.pk).update(name="NH 신용")
+        self.run_on(self.buy(), self.bank(self.a, "out", 9_000, "김밥집"))
+        self.assertFalse(self.links().exists())
+        Card.objects.filter(pk=self.card.pk).update(name=None, card_type="체크/본인")
+        self.run_on(self.buy("분식집", 8_000), self.bank(self.a, "out", 8_000, "분식집"))
+        self.assertEqual(self.links().filter(matched_amount=8_000).count(), 1)  # 카드 종류 칸의 '체크'도 본다
+
+    def test_late_same_withdrawal_unlinks_the_ambiguous_pair(self):
+        # PR #87 리뷰: 나눠서 들어와도 한 번에 받을 때와 결과가 같아야 한다. 어느 출금이 카드 결제인지 모르면 잇지 않는다
+        card, first = self.buy(), self.bank(self.a, "out", 9_000, "김밥집")
+        self.run_on(card, first)
+        self.assertEqual(self.links().count(), 1)
+        late = self.bank(self.b, "out", 9_000, "김밥집")
+        self.run_on(late)
+        self.assertFalse(self.links().exists())
+        self.client.force_login(self.user)
+        rows = self.client.get(URL + "?from=2026-11-01&to=2026-11-30").json()["items"]
+        self.assertEqual(sum(i["transactionType"] == "transfer" for i in rows), 2)  # 두 출금 모두 다시 보인다
+
+    def test_same_purchase_withdrawal_is_not_reused_as_own_transfer(self):
+        # PR #87 리뷰: 같은 날 · 같은 금액 입금이 다른 계좌에 있어도 한 출금에 두 관계가 붙지 않는다
+        card, out = self.buy(), self.bank(self.a, "out", 9_000, "김밥집")
+        income = self.bank(self.b, "in", 9_000, "입금")
+        self.run_on(card, out, income)
+        self.assertEqual(self.links().count(), 1)
+        self.assertFalse(TransactionLink.objects.filter(relation_type="OWN_TRANSFER").exists())
+        self.assertEqual((out.transaction_type, income.transaction_type), ("transfer", "income"))
+
+    def test_withdrawal_the_user_confirmed_is_left_alone(self):
+        bank = self.bank(self.a, "out", 7_000, "빵집")
+        Tx.objects.filter(pk=bank.pk).update(confirmation_state="confirmed")
+        self.run_on(self.buy("빵집", 7_000), bank)
+        self.assertFalse(self.links().exists())
+
+
 class CancellationTest(Fixture):
     def test_links_cancel_row_to_original_by_approval_number(self):
         original = self.approval("A1")

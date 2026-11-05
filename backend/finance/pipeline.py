@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 RETRY_STATE_KEY = "after_save_pending"
 
 
-# 세진: 취소 연결, 내 계좌 이체·카드값·대출 상환 후보 판단, finance/transfer_rules.py (SAME_PURCHASE 연결은 아직 없음)
+# 세진: 취소 연결, 체크카드 같은 구매 연결, 내 계좌 이체·카드값·대출 상환 후보 판단, finance/transfer_rules.py
 def link_basics(user, txs):
     transfer_rules.apply(user, txs)
 
