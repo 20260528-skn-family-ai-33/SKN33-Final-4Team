@@ -299,6 +299,44 @@ class RuleTest(SimpleTestCase):
             self.assertEqual(classifier.rule_category(name), "FOOD", name)
         self.assertIsNone(classifier.rule_category("홍단헤어 스타벅스점"))
 
+    def test_named_brands(self):
+        # 11/05: 검색 근거로 구별되지 않는 곳만 이름으로 정한다. 이름 뒤쪽에 들어간 다른 가게는 제외. 지점명은 예시
+        cases = {
+            "아트박스테스트홈플러스점": "FASHION_SHOPPING", "카카오프렌즈테스트점": "FASHION_SHOPPING",
+            "펀앤펀테스트점": "CULTURE_LEISURE", "토피코테스트점": "CULTURE_LEISURE", "테스트아트박스": None,
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+        self.assertFalse(classifier.is_multi_item("아트박스테스트홈플러스점"))
+
+    def test_transit_cards(self):
+        # 11/05: 교통카드는 어떤 표기든 교통. 충전은 규칙보다 먼저 사용자에게 묻는다
+        for name in ("모바일티머니선불형", "티머니731", "캐시비", "레일플러스"):
+            self.assertEqual(classifier.rule_category(name), "TRANSPORT_CAR", name)
+        self.assertTrue(classifier.is_pay_charge("모바일티머니충전"))
+
+    def test_store_after_pay_route(self):
+        # 11/05: 'A - B' 는 A 가 결제 경로면 B, 아니면 A 가 가맹점
+        cases = {
+            "네이버페이 - 봄툰": "봄툰", "카카오페이_3 - 리디": "리디", "한국정보통신 - 테스트파킹(주)": "테스트파킹(주)",
+            "PAYCO오더 - 테스트식당": "테스트식당", "쿠팡이츠 - 쿠팡페이 주식회사": "쿠팡이츠",
+            "트립닷컴_구_NICE - 나이스정보통신(대리점)": "트립닷컴", "메가MGC_인증_3 - 메가 MGC 커피": "메가MGC",
+            "쿠팡_쿠페이 - 쿠팡": "쿠팡_쿠페이", "테스트 - ": "테스트 -", "치킨 - 피자": "치킨",
+        }
+        for name, store in cases.items():
+            self.assertEqual(classifier.store_name(name), store, name)
+            self.assertEqual(classifier.store_name(store), store, name)  # is_multi_item 이 한 번 더 부른다
+        self.assertEqual(classifier.rule_category(classifier.store_name("네이버페이 - 봄툰")), "CULTURE_LEISURE")
+        self.assertEqual(classifier.rule_category(classifier.store_name("쿠팡이츠 - 쿠팡")), "FOOD")
+        self.assertEqual(classifier.rule_category(classifier.store_name("트립닷컴_구_NICE - 나이스정보통신(대리점)")), "TRAVEL_LODGING")
+        self.assertTrue(classifier.is_multi_item("쿠팡_쿠페이 - 쿠팡"))
+        self.assertFalse(classifier.is_multi_item("쿠팡이츠 - 쿠팡"))
+
+    def test_general_taxi_name(self):
+        for name in ("카카오T일반택시_0", "카카오T일반택시_법인_4"):
+            self.assertEqual(classifier.rule_category(name), "TRANSPORT_CAR", name)
+        self.assertIsNone(classifier.rule_category("서울일반택시조합"))
+
     def test_named_pg_prefix_is_removed(self):
         # 11/02 카드 명세: 결제대행 이름이 '-'·'_'로 붙는 표기
         self.assertEqual(classifier.store_name("이니시스(빌링)_3_레벨업 피시방 남부터미널점"), "레벨업 피시방 남부터미널점")

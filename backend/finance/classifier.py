@@ -2,7 +2,7 @@
 거래 분류 에이전트 (pipeline.classify_spending 에서 부른다). 메모: docs/agents/거래분류.md
 
 순서: 결제대행 접두어 떼기 → 1 다품목 → 2 사용자 기억 → 3 규칙·사전 → 4 SVM → 5 검색+Jev → 6 확인 필요
-- 분류 기준: docs/소비카테고리_분류기준_20261020.md
+- 분류 기준: docs/소비카테고리_분류기준_20261105.md
 - 모델 파일은 Git에 없다. 기본 위치: local_workspace/models/spending_classifier/artifacts/content_policy_svm/
   (docs/ML_MODELS.md). 다른 곳이면 .env 의 SPENDING_MODEL_PATH
 - 모델 파일이 없으면 예외 → 파이프라인이 실패로 기록하고 다음 동기화 때 다시 시도한다
@@ -68,6 +68,10 @@ PAY_SUFFIX = re.compile(r"_(카카오페이|네이버페이|토스페이|kcp)$",
 # 결제대행 이름이 '-'·'_'로 붙는 표기: 'KCP-쿠팡_쿠팡' → '쿠팡_쿠팡', '이니시스(빌링)_3_레벨업 피시방' → '레벨업 피시방' (11/02 카드 명세)
 # shortcut: 확인된 결제대행사만. 실거래에서 새 표기가 보이면 추가
 PG_NAMED_PREFIX = re.compile(r"^(kcp|kg이니시스|이니시스|nice|ksnet|토스페이먼츠)(\([^)]*\))?[-_](\d+_)?", re.IGNORECASE)
+# 'A - B' 표기 (11/05 실거래): A 가 결제 경로면 B 가 가맹점('네이버페이 - 봄툰'), 아니면 A 가 가맹점이고 B 는 결제대행사('메가MGC_인증_3 - 메가 MGC 커피')
+# shortcut: 확인된 결제 경로만. 실거래에서 새 경로가 보이면 추가
+PAY_ROUTES = ("네이버페이", "카카오페이", "토스페이", "페이코", "payco", "페이레터", "대표인증", "대표일반", "인터넷상거래", "다우데이타", "한국정보통신")
+ROUTE_TAIL = re.compile(r"(_구)?_(nice|인증|일반)(_\d+)?$|_\d+$", re.IGNORECASE)
 
 # ----- 1. 다품목 -----
 # 다품목(편의점·마트·종합몰)은 정책상 사용자 선택. 과거 선택은 후보로만 보여 주고 자동 적용하지 않는다 (분류 워크플로 10/26 단계 2)
@@ -102,7 +106,13 @@ SUBSCRIPTION_NAMES = {"티빙", "웨이브", "왓챠", "멜론", "벅스", "플�
 CONTENT_PLATFORMS = {"리디", "리디북스", "레진코믹스", "레진엔터테인먼트", "봄툰", "미스터블루"}
 # 배달 앱 서비스명·운영사 법인명 (검색하면 본사가 나와서 틀림). 이름이 정확히 같을 때만. B마트·배민스토어는 다품목(위)
 # shortcut: 이름이 그냥 "배달의민족"이면 B마트 장보기도 식비로 들어감. 카드 명세에서 구분되는 표기가 확인되면 다품목 키워드에 추가
-CORPORATE_NAMES = {"우아한형제들": "FOOD", "위대한상상": "FOOD", "배달의민족": "FOOD", "배민": "FOOD", "요기요": "FOOD"}
+CORPORATE_NAMES = {
+    "우아한형제들": "FOOD", "위대한상상": "FOOD", "배달의민족": "FOOD", "배민": "FOOD", "요기요": "FOOD", "쿠팡이츠": "FOOD",
+    "cj올리브네트웍스": "BEAUTY",  # 올리브영 운영사. 검색하면 '기업'으로 나옴
+    # 온라인 여행 예약: 지도 검색에 서비스가 아니라 같은 이름의 다른 장소가 나온다 (트립닷컴 → 에버랜드 편의시설)
+    "트립닷컴": "TRAVEL_LODGING", "아고다": "TRAVEL_LODGING", "야놀자": "TRAVEL_LODGING", "여기어때": "TRAVEL_LODGING",
+    "익스피디아": "TRAVEL_LODGING", "에어비앤비": "TRAVEL_LODGING", "호텔스닷컴": "TRAVEL_LODGING", "부킹닷컴": "TRAVEL_LODGING",
+}
 # '기타' = 10개 밖 소비 (분류 기준 2장). shortcut: 이름 끝·이름 안의 낱말로 판별. 5단계에서는 Jev 가 업종으로 판단
 ETC_SUFFIXES = (
     "세탁소", "세탁", "빨래방", "수선", "수선실", "담배", "복권", "로또", "예식장", "웨딩홀", "장례식장", "화장장", "납골당",
@@ -110,14 +120,23 @@ ETC_SUFFIXES = (
 )
 ETC_KEYWORDS = ("연회비", "보험")
 # 택시 (11/02): 이름에 '택시'만 들어 있으면 택시파스타·피자택시 같은 식당도 걸려서(카카오 장소 193곳 중 식당 6곳),
-# '개인택시'가 들어 있거나 '택시'가 띄어 쓴 한 낱말일 때만. 택시조합·조합 금고는 소비처가 아니라 뺀다
+# '개인택시'·'일반택시'가 들어 있거나 '택시'가 띄어 쓴 한 낱말일 때만. 택시조합·조합 금고는 소비처가 아니라 뺀다
+TAXI_NAMES = ("개인택시", "일반택시")
 TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
 NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
+# 교통카드 (11/05): 가게 이름이 아니라 SVM 이 엉뚱한 카테고리를 확신한다 (모바일티머니선불형 생활용품 0.94). 충전은 규칙보다 먼저 사용자에게 묻는다
+TRANSIT_CARDS = ("티머니", "캐시비", "레일플러스")
 # PC방 = 문화·여가 (분류 기준 2장). 표기가 피시방·PC방 둘 다
 CULTURE_KEYWORDS = ("피시방", "pc방")
 # 검증된 브랜드 = 식비 (11/02): SVM 확신이 낮고(0.81~0.84) 검색하면 다른 지점·본사가 자주 나와서(7건 중 5건) 이름으로 정한다
 # 앱 충전은 '스타벅스계좌'로 찍힘. '들어 있으면'이 아니라 '시작하면' (카카오 장소 256곳 중 '홍단헤어 스타벅스점' 같은 미용실 제외)
 FOOD_BRANDS = ("스타벅스", "starbucks")
+# 검색 근거로는 구별되지 않는 브랜드만 이름으로 정한다 (11/05 세진 결정). 이름이 이렇게 시작할 때만
+# 아트박스·카카오프렌즈·펀앤펀은 업종이 일반 문구점과 같고, 토피코는 네이버가 자동판매기로 알려 주고 지점명을 붙이면 카카오에 없다
+# shortcut: 일반 원인을 못 고친 예외만 둔다. 검색 개선(메모의 5단계 개선 계획) 뒤 없앨 수 있는지 다시 본다
+BRAND_CATEGORIES = {
+    "아트박스": "FASHION_SHOPPING", "카카오프렌즈": "FASHION_SHOPPING", "펀앤펀": "CULTURE_LEISURE", "토피코": "CULTURE_LEISURE",
+}
 # 한 이름으로 여러 서비스가 찍히는 곳 (애플: 음악·iCloud·앱·TV+). 무엇에 썼는지 몰라 '확인 필요' + 문화·여가 후보 (11/02 결정)
 # 다품목과 달리 사용자가 '앞으로도 적용'을 고르면 다음부터 그 카테고리로 자동 분류
 MIXED_SERVICE_NAMES = {"apple", "appleservices"}
@@ -130,14 +149,14 @@ JEV_CRITERIA = {
     "FOOD": "식비: 식사, 배달음식, 식재료, 카페·간식, 주점, 주류 구입",
     "HOUSING_TELECOM": "주거·통신: 월세, 관리비, 공과금, 통신요금, 부동산 중개, 인테리어·청소, 고시원",
     "TRANSPORT_CAR": "교통·차량: 대중교통, 택시, 주유, 주차, 차량 정비·세차·대여, 자전거",
-    "HOUSEHOLD": "생활용품: 생필품, 주방용품, 가구·가전, 전자기기·휴대폰, 기기 수리",
-    "FASHION_SHOPPING": "패션·쇼핑: 의류, 신발, 가방, 액세서리, 시계·귀금속",
+    "HOUSEHOLD": "생활용품: 생필품, 주방용품, 가구·가전, 전자기기·휴대폰, 기기 수리, 문구",
+    "FASHION_SHOPPING": "패션·쇼핑: 의류, 신발, 가방, 액세서리, 시계·귀금속, 팬시·캐릭터 상품",
     "MEDICAL_HEALTH": "의료·건강: 병의원 전체(피부과·성형외과 포함), 약국, 건강보조식품, 안경, 동물병원",
     "BEAUTY": "뷰티·미용: 화장품, 미용실, 네일, 피부관리실, 가발",
-    "EDUCATION": "교육: 학원(입시·외국어·음악·미술·운전 등), 독서실·스터디카페, 서점, 문구, 강의, 자격증",
-    "CULTURE_LEISURE": "문화·여가: 영화, 공연, 게임, 노래방·PC방, 운동시설·운동용품, 목욕탕·사우나, 마사지, 꽃·기념품·사진촬영, OTT·음악 구독",
+    "EDUCATION": "교육: 학원(입시·외국어·음악·미술·운전 등), 독서실·스터디카페, 서점, 강의, 자격증",
+    "CULTURE_LEISURE": "문화·여가: 영화, 공연, 게임, 노래방·PC방, 운동시설·운동용품, 목욕탕·사우나, 마사지, 꽃·기념품·사진촬영, 장난감·피규어·뽑기, OTT·음악 구독",
     "TRAVEL_LODGING": "여행·숙박: 여행상품, 호텔, 펜션, 모텔, 캠핑·글램핑",
-    "ETC": "기타(10개 밖 소비): 송금·경조사(예식장·장례식장), 담배·복권, 세탁·수선, 실·원단, 반려동물 용품, 보험료·카드 연회비",
+    "ETC": "기타(10개 밖 소비): 송금·경조사(예식장·장례식장), 담배·복권, 세탁·수선, 실·원단, 반려동물 분양·용품, 보험료·카드 연회비",
     UNKNOWN: "판단 보류: 이름과 업종만으로는 어느 카테고리인지 정할 수 없음",
 }
 JEV_QUESTION = "이 가맹점에서 결제한 소비의 카테고리는? 가게 업종 기준으로 고르고, 정보가 부족하면 판단 보류를 고른다."
@@ -149,6 +168,9 @@ NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은�
 
 def store_name(name):
     """결제대행 접두어·결제수단 꼬리표를 뗀 가맹점명. 없으면 None"""
+    left, dash, right = (name or "").partition(" - ")
+    if dash and left.strip() and right.strip():
+        name = right if left.lower().startswith(PAY_ROUTES) else ROUTE_TAIL.sub("", left)
     name = PG_NAMED_PREFIX.sub("", PG_PREFIX.sub("", name or "").strip())
     return PAY_SUFFIX.sub("", name).strip() or None
 
@@ -207,12 +229,16 @@ def rule_category(name):
     normalized = common.normalize_name(name)
     if transport_rule(name, "N"):  # 혜리 님 교통 적요 규칙. 'N' = 소비로 정해진 거래 (분류 대상은 이미 소비)
         return "TRANSPORT_CAR"
-    if ("개인택시" in normalized or TAXI_WORD.search(name)) and not any(w in normalized for w in NOT_TAXI_WORDS):
+    if (any(w in normalized for w in TAXI_NAMES) or TAXI_WORD.search(name)) and not any(w in normalized for w in NOT_TAXI_WORDS):
+        return "TRANSPORT_CAR"
+    if any(card in normalized for card in TRANSIT_CARDS):
         return "TRANSPORT_CAR"
     if any(keyword in normalized for keyword in CULTURE_KEYWORDS):
         return "CULTURE_LEISURE"
     if normalized.startswith(FOOD_BRANDS):
         return "FOOD"
+    if brand := next((code for prefix, code in BRAND_CATEGORIES.items() if normalized.startswith(prefix)), None):
+        return brand
     if normalized in CORPORATE_NAMES:
         return CORPORATE_NAMES[normalized]
     if normalized in CONTENT_PLATFORMS or normalized in SUBSCRIPTION_NAMES or normalized.startswith(SUBSCRIPTION_PREFIXES):
