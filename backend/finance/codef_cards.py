@@ -246,6 +246,8 @@ def normalize_approvals(data, start, end):
             unknown = "negative_amount"
         elif status == PARTIAL and cancel is None:
             unknown = "cancel_amount_unknown"
+        elif status not in ("0", CANCELED, PARTIAL, DECLINED):
+            unknown = "cancel_status_unknown"
         elif cancel is not None and not 0 <= cancel <= amount:
             raise CardDataError("invalid_approval")
         payment_type, months = _text(row.get("resPaymentType")), _count(row.get("resInstallmentMonth"))
@@ -253,6 +255,7 @@ def normalize_approvals(data, start, end):
         approval_no = _code(row.get("resApprovalNo"), 50)
         rows.append({
             "card_number": re.sub(r"[\s-]", "", shown),
+            "card_name": (_short(row.get("resCardName"), 100) or "").replace(shown, codef.mask(shown)) or None,
             "unknown_reason": unknown,
             # 취소 상태 · 취소액은 나중에 바뀌므로 식별 키에 넣지 않는다
             "_identity": (used_on, row.get("resUsedTime"), approval_no, row.get("resUsedAmount"), merchant,

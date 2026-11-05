@@ -21,6 +21,7 @@ import ConnectCardsPage from './pages/ConnectCardsPage.jsx'
 import ConnectDonePage from './pages/ConnectDonePage.jsx'
 import LoanCheckPage from './pages/LoanCheckPage.jsx'
 import ConnectionsPage from './pages/ConnectionsPage.jsx'
+import CardReviewsPage from './pages/CardReviewsPage.jsx'
 // 첫 예산 설정
 import SalaryPage from './pages/SalaryPage.jsx'
 import FixedPage from './pages/FixedPage.jsx'
@@ -36,7 +37,7 @@ const ROUTES = [
   [PATHS.profile, ProfilePage], [PATHS.my, MyPage],
   [PATHS.connect, ConnectPage], [PATHS.connectAuth, ConnectAuthPage], [PATHS.connectAccounts, ConnectAccountsPage],
   [PATHS.connectCards, ConnectCardsPage], [PATHS.connectDone, ConnectDonePage], [PATHS.loanCheck, LoanCheckPage],
-  [PATHS.connections, ConnectionsPage],
+  [PATHS.connections, ConnectionsPage], [PATHS.cardReviews, CardReviewsPage],
   [PATHS.salary, SalaryPage], [PATHS.fixed, FixedPage], [PATHS.savings, SavingsPage],
   [PATHS.protect, ProtectPage], [PATHS.recommend, RecommendPage],
 ]

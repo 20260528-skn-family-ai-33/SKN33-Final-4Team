@@ -48,7 +48,7 @@ class OpenAPIContractTests(SimpleTestCase):
         super().setUpClass()
         cls.contract = build_contract()
 
-    def test_contract_covers_the_43_operations_in_the_source_manifest(self):
+    def test_contract_covers_the_49_operations_in_the_source_manifest(self):
         manifest = (ROOT / "docs/api/README.md").read_text(encoding="utf-8")
         section = manifest.split("## 1. 한눈에 보기", 1)[1].split("## 2.", 1)[0]
         entries = re.findall(r"`(GET|POST|PUT|PATCH|DELETE)\s+(/api/[^`]+)`", section)
@@ -56,10 +56,10 @@ class OpenAPIContractTests(SimpleTestCase):
         operations = list(operation_items(self.contract))
         actual = {(method, normalized_path(path)) for path, method, _ in operations}
 
-        self.assertEqual(len(entries), 43)
-        self.assertEqual(len(operations), 43)
+        self.assertEqual(len(entries), 49)
+        self.assertEqual(len(operations), 49)
         self.assertSetEqual(actual, expected)
-        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 43)
+        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 49)
         self.assertEqual(len({tag for _, _, op in operations for tag in op["tags"]}), 10)
         for path, method, operation in operations:
             with self.subTest(path=path, method=method):
@@ -70,7 +70,7 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 42, "mock": 1})
+        self.assertEqual(Counter(states.values()), {"implemented": 48, "mock": 1})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("post", "/api/auth/login/")], "implemented")
         self.assertEqual(states[("put", "/api/finance/connect/accounts/")], "implemented")
@@ -137,7 +137,9 @@ class OpenAPIContractTests(SimpleTestCase):
                 self.assertCountEqual([p["name"] for p in path_parameters], names)
                 for parameter in path_parameters:
                     self.assertTrue(parameter["required"])
-                    if parameter["name"] == "code":
+                    if parameter["name"] == "scope":
+                        self.assertEqual(parameter["schema"]["enum"], ["bank", "card", "loan"])
+                    elif parameter["name"] == "code":
                         self.assertEqual(parameter["schema"]["type"], "string")
                         self.assertNotIn("UNCLASSIFIED", parameter["schema"]["enum"])
                     else:
@@ -171,7 +173,7 @@ class OpenAPIContractTests(SimpleTestCase):
         actual = {(method, path) for path, method, _ in operation_items(runtime)}
         # 새 연결·다시 불러오기·작업 확인을 포함한 구현된 API만 실행 화면에 둔다
         self.assertSetEqual(actual, implemented)
-        self.assertEqual(len(actual), 42)
+        self.assertEqual(len(actual), 48)
         self.assertEqual(runtime["security"], [])
         for path, method, operation in operation_items(runtime):
             with self.subTest(path=path, method=method):
@@ -219,7 +221,7 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 42개")
+                self.assertContains(response, "구현 48개")
                 self.assertContains(response, "목업 1개")
                 self.assertContains(response, "미구현 0개")
                 self.assertContains(response, "/api/docs/runtime/")
