@@ -146,7 +146,8 @@ def list_accounts(connected_id, org):
         {
             "account_no": a.get("resAccount", ""),
             "name": a.get("resAccountNickName") or a.get("resAccountName", ""),
-            "balance": _amount(a.get("resAccountBalance")),
+            # 잔액 미제공 = None (BankAccount.balance null · 홈 unknownCount · '잔액 확인 안 됨'). 비정상 값은 BankDataError
+            "balance": _amount(a.get("resAccountBalance"), False),
             "kind_code": a.get("resAccountDeposit", ""),  # 11 = 입출금 (CODEF 예금 구분 코드)
             "org": org,
         }

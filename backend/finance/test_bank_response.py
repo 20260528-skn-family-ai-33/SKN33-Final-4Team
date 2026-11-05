@@ -115,13 +115,15 @@ class ListShapeTest(NoCodefNetwork, SimpleTestCase):
         for value, expected in (("0", 0), ("1,234,567", 1234567), (90000, 90000), ("-5000", -5000)):
             with self.subTest(value=value), fake_request({"resDepositTrust": [account(resAccountBalance=value)]}):
                 self.assertEqual(codef.list_accounts("cid", "0088")[0]["balance"], expected)
-        for value in (None, "", "abc", "10.5", True):
+        for value in (None, "", "   "):  # 미제공 = None (0원 아님)
+            with self.subTest(value=value), fake_request({"resDepositTrust": [account(resAccountBalance=value)]}):
+                self.assertIsNone(codef.list_accounts("cid", "0088")[0]["balance"])
+        with fake_request({"resDepositTrust": [{k: v for k, v in account().items() if k != "resAccountBalance"}]}):
+            self.assertIsNone(codef.list_accounts("cid", "0088")[0]["balance"])
+        for value in ("abc", "10.5", "1000.00", "1,0,00", True, 10.0, []):
             with self.subTest(value=value), fake_request({"resDepositTrust": [account(resAccountBalance=value)]}):
                 with self.assertRaises(codef.BankDataError):
                     codef.list_accounts("cid", "0088")
-        with fake_request({"resDepositTrust": [{k: v for k, v in account().items() if k != "resAccountBalance"}]}):
-            with self.assertRaises(codef.BankDataError):
-                codef.list_accounts("cid", "0088")
 
     def test_empty_lists_are_normal(self):
         with fake_request({"resDepositTrust": []}):
@@ -192,8 +194,24 @@ class BankDataSyncTest(NoCodefNetwork, TestCase):
         good = SyncRun.objects.get(pk=good_run.pk)
         self.assertEqual((good.status, good.covered_from, good.covered_to), ("success", self.start, self.end))
 
-    def test_missing_balance_on_first_sync_creates_nothing(self):
+    def test_missing_balance_saves_unknown_and_transactions(self):
         self.data["accounts"]["resDepositTrust"][1].pop("resAccountBalance")
+        self.assertEqual(self.sync(), {"account_count": 2, "new_transaction_count": 2, "existing_transaction_count": 0})
+        self.assertEqual(BankAccount.objects.get(masked_number="****6789").balance, 90000)
+        unknown = BankAccount.objects.get(masked_number="****4321")
+        self.assertIsNone(unknown.balance)
+        self.assertEqual(FinancialTransaction.objects.filter(account=unknown).count(), 1)
+        run = SyncRun.objects.get()
+        self.assertEqual((run.status, run.covered_from, run.covered_to), ("success", self.start, self.end))
+
+    def test_newer_missing_balance_replaces_known_balance(self):
+        self.sync()
+        self.data["accounts"]["resDepositTrust"][0]["resAccountBalance"] = ""
+        self.sync()
+        self.assertIsNone(BankAccount.objects.get(masked_number="****6789").balance)  # 예전 잔액을 지금 값처럼 남기지 않는다
+
+    def test_bad_balance_on_first_sync_creates_nothing(self):
+        self.data["accounts"]["resDepositTrust"][1]["resAccountBalance"] = "abc"
         with self.assertRaises(codef.BankDataError):
             self.sync()
         self.assertFalse(BankAccount.objects.exists())
@@ -234,6 +252,15 @@ class CodefCheckCommandTest(NoCodefNetwork, SimpleTestCase):
         out = StringIO()
         call_command("codef_check", "--tx", "6789", stdout=out)
         return out.getvalue()
+
+    def test_account_list_missing_and_zero_balance(self):
+        self.data["accounts"] = {"resDepositTrust": [account(resAccountBalance=None),
+                                                     account(resAccount="220987654321", resAccountBalance="0")]}
+        lines = self.run_command().splitlines()
+        self.assertIn("미제공", next(line for line in lines if "****6789" in line))
+        zero = next(line for line in lines if "****4321" in line)
+        self.assertRegex(zero, r"\s0원")
+        self.assertNotIn("미제공", zero)
 
     def test_missing_and_zero_balance_after(self):
         lines = [line for line in self.run_command().splitlines() if "잔액" in line]

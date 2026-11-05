@@ -46,7 +46,8 @@ class Command(BaseCommand):
             raise CommandError(f"계좌 조회 실패 {e}")
         self.stdout.write(self.style.SUCCESS(f"2. 보유 계좌 {len(accounts)}개"))
         for a in accounts:
-            self.stdout.write(f"   {codef.mask(a['account_no'])}  {a['name']:<12} {a['balance']:>12,}원  (구분 {a['kind_code']})")
+            balance = "미제공" if a["balance"] is None else f"{a['balance']:,}원"  # 0원은 그대로 0원
+            self.stdout.write(f"   {codef.mask(a['account_no'])}  {a['name']:<12} {balance:>13}  (구분 {a['kind_code']})")
 
         if not tx:
             return
