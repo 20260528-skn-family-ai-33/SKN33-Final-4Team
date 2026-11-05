@@ -186,6 +186,22 @@ class PrivacyTests(TestCase):
         self.assertEqual(self.client.get('/api/auth/me/').status_code, 200)
         remove.assert_called_with('synthetic-id', None)
 
+    @patch('finance.codef._client')
+    def test_withdraw_completes_when_provider_accounts_are_already_absent(self, client):
+        import json
+        self.user.codef_connected_id_ciphertext = seal('synthetic-id')
+        self.user.save(update_fields=['codef_connected_id_ciphertext'])
+        client.return_value.get_account_list.return_value = json.dumps({
+            'result': {'code': 'CF-04014'}, 'data': {'accountList': []},
+        })
+        user_id = self.user.pk
+        response = self.client.delete('/api/auth/me/', {'password': 'Synthetic123!', 'confirm': True}, format='json')
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(get_user_model().objects.filter(pk=user_id).exists())
+        self.assertFalse(FinancialTransaction.objects.filter(user_id=user_id).exists())
+        self.assertTrue(get_user_model().objects.filter(pk=self.other.pk).exists())
+        client.return_value.delete_account.assert_not_called()
+
     def test_anonymous_cannot_read_revoke_or_delete(self):
         client = APIClient()
         for response in (client.get('/api/finance/consents/'), client.delete('/api/finance/consents/card/'), client.delete('/api/auth/me/')):
