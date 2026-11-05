@@ -51,7 +51,7 @@ class GuardTest(NoCodefNetwork, SimpleTestCase):
 
 class AmountTest(NoCodefNetwork, SimpleTestCase):
     def test_normal_values_and_keys_unchanged(self):
-        """수정 전 코드로 만든 정규화 결과 · source_key 와 같다 (R08 키 방식 그대로)"""
+        """키 외 정규화 결과는 수정 전과 같다. 키는 R08 신키 = 'bank:v2:<방향>:' + 수정 전 키(아래 고정값)"""
         cases = [
             (tx(resAccountOut="10000", resAccountIn="0"),
              (10000, "out", False, None, 90000, "362a8530846e0c7f1ff7998c55e2aa4ba6d0e6c0fad3f3ac739afccec7076a8c")),
@@ -70,8 +70,10 @@ class AmountTest(NoCodefNetwork, SimpleTestCase):
             with self.subTest(expected[-1][:8]):
                 row = {k: v for k, v in row.items() if v is not None}
                 r = codef.normalize_transaction(row)
-                self.assertEqual((r["amount"], r["direction"], r["is_canceled"], r["canceled_amount"], r["balance_after"],
-                                  r["source_key"]), expected)
+                legacy = expected[-1]
+                self.assertEqual((r["amount"], r["direction"], r["is_canceled"], r["canceled_amount"], r["balance_after"]),
+                                 expected[:-1])
+                self.assertEqual(r["source_key"], f"bank:v2:{r['direction']}:{legacy}")
 
     def test_integer_values_are_accepted(self):
         r = codef.normalize_transaction(tx(resAccountOut=0, resAccountIn=20000, resAfterTranBalance=110000))

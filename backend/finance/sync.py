@@ -159,6 +159,14 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                     }
                     for field in ("source_description", "source_detail"):
                         defaults[field] = _mask_account_numbers(row.get(field), account_numbers)
+                    key = row["source_key"]
+                    if not FinancialTransaction.objects.filter(account=account, source_key=key).exists():
+                        # R08: 방향 없는 예전 키(새 키의 끝)로 저장된 '같은 방향' 거래는 ID · 분류 · 연결을 두고 키만 옮긴다.
+                        # 예전 키가 같아도 반대 방향 거래는 다른 거래라 건드리지 않는다 (아래에서 새로 만든다)
+                        FinancialTransaction.objects.filter(
+                            account=account, source_kind="bank", source_key=key.rsplit(":", 1)[-1],
+                            direction=row["direction"],
+                        ).update(source_key=key)
                     tx, created = FinancialTransaction.objects.get_or_create(
                         account=account, source_key=row["source_key"], defaults=defaults,
                     )

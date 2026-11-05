@@ -18,6 +18,7 @@ from .sync import sync_bank
 DAY = date(2026, 10, 27)
 NUMBER = "110123456789"
 BALANCE = {"A": 100000, "B": 900000}
+LEGACY_KEY = "9227e173b6de592053c709643dd2bf89671a62b2bbf00659a918a29ee6ae1e29"  # R08 전 키: row("20261020", 10000)
 
 
 def row(day, amount, description="시험 거래"):
@@ -136,6 +137,27 @@ class BankSyncConcurrencyTest(TransactionTestCase):
         results, errors = self.race("B", between=lambda: seen.update(at=self.account().fetched_at))
         account = self.check_newest(results, errors)
         self.assertEqual(account.fetched_at, seen["at"])
+
+    def resync_legacy(self, first):
+        """R08: 구키로 저장된 거래를 두 조회가 동시에 다시 받아도 행 하나 · ID 유지 · 신규 0"""
+        self.seed_account()
+        old = FinancialTransaction.objects.create(
+            user=self.user, account=self.account(), source_kind="bank", source_key=LEGACY_KEY, occurred_on=date(2026, 10, 20),
+            amount=10000, direction="out", transaction_type="spending", confirmed_category_id="FOOD",
+            confirmation_state="confirmed")
+        results, errors = self.race(first)
+        self.assertEqual(errors, {})
+        txs = list(FinancialTransaction.objects.filter(user=self.user))
+        self.assertEqual([t.pk for t in txs], [old.pk])
+        self.assertEqual((txs[0].source_key, txs[0].confirmed_category_id), (f"bank:v2:out:{LEGACY_KEY}", "FOOD"))
+        self.assertEqual([(r["new_transaction_count"], r["existing_transaction_count"]) for r in results.values()],
+                         [(0, 1), (0, 1)])
+
+    def test_concurrent_resync_moves_legacy_key_once(self):
+        self.resync_legacy("A")
+
+    def test_concurrent_resync_moves_legacy_key_once_reversed(self):
+        self.resync_legacy("B")
 
     def test_new_account_older_response_saved_last_keeps_newest(self):
         self.check_newest(*self.race("B"))
