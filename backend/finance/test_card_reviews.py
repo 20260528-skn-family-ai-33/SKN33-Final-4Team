@@ -72,6 +72,27 @@ class CardReviewTest(TestCase):
         self.assertEqual(self.resolve(rows[1]).status_code, 200)
         self.assertTrue(self.runs("card_approval_list"))
 
+    def test_reissue_hint_preserves_pending_review_and_user_assignment(self):
+        self.prepare()
+        # 나중에 발급일이 들어와 다른 카드가 재발급 후보가 되어도 기존 확인 요청을 건너뛰지 않는다.
+        self.cards = [fixtures.card(resIssueDate="20260101"),
+                      fixtures.card("9490981234561111", resIssueDate="20261021")]
+        self.approvals.append(approval("949098******1111", resApprovalNo="new-card",
+                                       resUsedDate="20261025", resUsedAmount="5000"))
+        result = self.run_sync()
+        self.assertFalse(result["approvals_complete"])
+        self.assertEqual(result["card_review_count"], 1)
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user, amount=22000).exists())
+        self.assertEqual(self.resolve().status_code, 200)
+        self.review.refresh_from_db()
+        original_id = self.review.transaction_id
+        self.approvals[0].update(resCancelYN="2", resCancelAmount="2000")
+        self.assertTrue(self.run_sync()["approvals_complete"])
+        tx = FinancialTransaction.objects.get(user=self.user, amount=22000)
+        self.assertEqual((tx.pk, tx.card_id, tx.canceled_amount), (original_id, self.card.pk, 2000))
+        self.review.refresh_from_db()
+        self.assertEqual(self.review.resolved_card_id, self.card.pk)
+
     def test_unknown_amount_is_not_reviewable_or_promoted_by_other_resolution(self):
         self.prepare([approval(resCancelYN="2", resApprovalNo="unknown")])
         self.assertEqual(CardApprovalReview.objects.filter(user=self.user).count(), 1)

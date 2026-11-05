@@ -7,7 +7,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
 from .codef_cards import approval_source_key, card_matches
-from .models import CardApprovalCoverage, CardApprovalReview, FinancialTransaction, SyncRun
+from .models import Card, CardApprovalCoverage, CardApprovalReview, FinancialTransaction, SyncRun
 
 
 def transaction_defaults(user, payload):
@@ -36,7 +36,26 @@ def save_transaction(user, card, identity, payload, existing=None):
     return tx, created
 
 
+def _saved_approvals(user, card, identity):
+    """재발급 전 카드가 보유 목록에 없어도 같은 카드사의 기존 승인을 찾는다."""
+    owners = Card.objects.filter(user=user, issuer_code=card.issuer_code, source_card_key__isnull=False)
+    keys = [approval_source_key(item.source_card_key, identity) for item in owners]
+    return list(FinancialTransaction.objects.filter(user=user, card__in=owners, source_key__in=keys)[:2])
+
+
 def save_approvals(user, cards, card_rows, rows, run, fetched_at):
+    def by_number(shown):
+        return [card for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
+
+    used = {found[0].pk for found in map(by_number, (row["card_number"] for row in rows)) if len(found) == 1}
+
+    def reissued_card(row):
+        # main의 재발급 추정: 발급일을 모두 알고, 거래 이후 발급된 유일한 카드가 이번 응답에서 쓰였을 때만.
+        if any(data["issued_on"] is None for data in card_rows):
+            return []
+        later = [card for card, data in zip(cards, card_rows) if row["occurred_on"] < data["issued_on"]]
+        return later if len(later) == 1 and later[0].pk in used else []
+
     new_ids, existing_count, reviews, unknown = [], 0, [], False
     occurrences = Counter()
     for raw in rows:
@@ -53,7 +72,7 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
         review = CardApprovalReview.objects.filter(
             user=user, issuer_code=run.connection.organization_code, source_key=key,
         ).select_related("transaction", "resolved_card").first()
-        matched = [card for card, data in zip(cards, card_rows) if card_matches(data["number"], shown)]
+        matched = by_number(shown)
         if invalid:
             unknown = True
             # 이전 정상 값으로 확인하지 못하게 한다. 원문·불확실한 금액은 저장하지 않는다.
@@ -63,6 +82,16 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
                 review.save(update_fields=["data_valid", "started_at"])
                 reviews.append(review)
             continue
+        saved = []
+        # 이미 확인을 요청했거나 사용자가 고른 거래는 새 발급일 정보로 자동 변경하지 않는다.
+        if review is None and not matched:
+            matched = reissued_card(row)
+            if matched:
+                saved = _saved_approvals(user, matched[0], identity)
+                if len(saved) > 1:
+                    # 기존 승인도 하나로 특정할 수 없으면 중복 생성과 조회 완료 승격을 모두 보류한다.
+                    unknown = True
+                    continue
         if review is None and len(matched) != 1:
             review = CardApprovalReview(
                 user=user, issuer_code=run.connection.organization_code, source_key=key,
@@ -84,7 +113,7 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
                 review.transaction = tx
                 review.save(update_fields=["transaction"])
         else:
-            tx, created = save_transaction(user, matched[0], identity, row)
+            tx, created = save_transaction(user, matched[0], identity, row, saved[0] if saved else None)
         if created:
             new_ids.append(tx.pk)
         else:

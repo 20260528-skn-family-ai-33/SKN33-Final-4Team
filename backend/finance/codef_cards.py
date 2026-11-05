@@ -33,13 +33,13 @@ def _text(value):
 
 
 def _amount(value):
-    # 청구 총액 · 이용금액은 환불 · 취소로 음수가 올 수 있다.
+    # 청구 총액 · 이용금액은 환불 · 취소로 음수가 올 수 있다. 해외 가맹점 원화 결제는 12345.00 처럼 소수부 0 이 붙어 온다
     value = _text(value)
     if value is None:
         return None
-    if not re.fullmatch(r"-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)", value):
+    if not re.fullmatch(r"-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.0+)?", value):
         raise CardDataError()
-    number = int(value.replace(",", ""))
+    number = int(value.split(".")[0].replace(",", ""))
     if abs(number) > MAX_AMOUNT:
         raise CardDataError()
     return number
@@ -110,6 +110,7 @@ def normalize_cards(data):
             # 정규화 기준 미정 (cards.md cardType) → 기관 값 그대로
             "card_type": _code(row.get("resCardType")),
             "card_status": _code(row.get("resState")),
+            "issued_on": _date(row.get("resIssueDate")),   # 승인내역 대조용(저장 안 함). 재발급 전 거래를 가른다
         })
     return cards
 
