@@ -10256,7 +10256,7 @@ x-source-sha256:
   docs/api/README.md: 4b4d5f5215d09644f14eaa2bd8f68b5210633a89192e484cd0f387ec760716f2
   docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
-  docs/api/auth.md: 8bbbbde90dede70b16a100288cc33e5562495b1b23b6140354581b0dfecd70d1
+  docs/api/auth.md: 38524b8ee0a760c18a0aa84800b76368f53c1900bd0d5cad37d8923e5fdfb690
   docs/api/finance-connect.md: 4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4
   docs/api/cards.md: 0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34
   docs/api/loans.md: 3b83de5ba2e7e9f5ea7cc9705de4ece7a1ef060339bc13aaed4651cca986e120

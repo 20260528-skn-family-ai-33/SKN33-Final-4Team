@@ -13,6 +13,7 @@ import SignupPage from './pages/SignupPage.jsx'
 import OnboardPage from './pages/OnboardPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
 import MyPage from './pages/MyPage.jsx'
+import MyInfoPage from './pages/MyInfoPage.jsx'
 // 계좌 연결
 import ConnectPage from './pages/ConnectPage.jsx'
 import ConnectAuthPage from './pages/ConnectAuthPage.jsx'
@@ -34,7 +35,7 @@ const ROUTES = [
   [PATHS.home, HomePage], [PATHS.txs, TransactionsPage], [PATHS.budget, BudgetPage],
   [PATHS.fund, CushionPage], [PATHS.assistant, AssistantPage],
   [PATHS.login, LoginPage], [PATHS.signup, SignupPage], [PATHS.onboard, OnboardPage],
-  [PATHS.profile, ProfilePage], [PATHS.my, MyPage],
+  [PATHS.profile, ProfilePage], [PATHS.my, MyPage], [PATHS.myInfo, MyInfoPage],
   [PATHS.connect, ConnectPage], [PATHS.connectAuth, ConnectAuthPage], [PATHS.connectAccounts, ConnectAccountsPage],
   [PATHS.connectCards, ConnectCardsPage], [PATHS.connectDone, ConnectDonePage], [PATHS.loanCheck, LoanCheckPage],
   [PATHS.connections, ConnectionsPage], [PATHS.cardReviews, CardReviewsPage],

@@ -12,6 +12,7 @@ export const PATHS = {
   onboard: '/start',
   profile: '/profile',
   my: '/my',
+  myInfo: '/my/info',
   // 계좌 연결 흐름 (finance): 은행 선택 → 기관 인증 → 계좌 선택 → 카드 선택 → 연결 결과
   connect: '/finance/connect',
   connectAuth: '/finance/connect/auth',
