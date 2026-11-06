@@ -68,11 +68,12 @@ def listed_transactions(user):
         relation_type=TransactionLink.Relation.SAME_PURCHASE,
     )
     return (
-        with_card_fixed_id(Tx.objects.filter(
+        with_card_fixed_id(Tx.objects.annotate(legacy_own=Exists(legacy_own_links())).filter(
             Q(transaction_type__in=LIST_TYPES)
             # 내 계좌 이체는 출금 쪽 한 줄만 (규칙이 이은 입금은 출금에서 함께 되돌린다)
             | Q(transaction_type__in=OWN_TYPES, direction=Tx.Direction.OUT,
-                **{f"field_states__{OWN_REVIEW}__in": ["auto", "confirmed"]}),
+                **{f"field_states__{OWN_REVIEW}__in": ["auto", "confirmed"]})
+            | Q(LEGACY_OWN, legacy_own=True),
             user=user,
         ))
         .annotate(in_same_purchase=Exists(same_purchase))
@@ -149,12 +150,28 @@ def transaction_item(tx):
     }
 
 
+# 11/5(R11) 전 규칙이 판단 표시 없이 own_transfer 로 바꾸고 입금과 이은 은행 출금. DB 값은 그대로 두고 자동 분류(auto)로 읽어
+# 목록에 보이고 [맞아요] · [연결 해제]할 수 있게 한다 (11/06). 저축으로 바뀐 것 · 연결 없는 것은 여기 넣지 않는다 (own_transfer_legacy_check 로 점검)
+LEGACY_OWN = ~Q(field_states__has_key=OWN_REVIEW) & Q(
+    transaction_type=Tx.TransactionType.OWN_TRANSFER, direction=Tx.Direction.OUT, source_kind=SourceKind.BANK)
+
+
+def legacy_own_links():
+    return TransactionLink.objects.filter(from_transaction=OuterRef("pk"), relation_type=TransactionLink.Relation.OWN_TRANSFER)
+
+
+def is_legacy_own(tx):
+    return (OWN_REVIEW not in (tx.field_states or {}) and tx.transaction_type == Tx.TransactionType.OWN_TRANSFER
+            and tx.direction == Tx.Direction.OUT and tx.source_kind == SourceKind.BANK
+            and TransactionLink.objects.filter(from_transaction=tx, relation_type=TransactionLink.Relation.OWN_TRANSFER).exists())
+
+
 def own_transfer_review(tx):
     """내 계좌 이체 판단 suggested · auto · confirmed · rejected (이체 · 내 계좌 이체 · 저축 출금만, 없으면 None).
-    field_states 원값은 내보내지 않는다"""
+    예전 규칙의 표시 없는 자동 연결(is_legacy_own)은 auto. field_states 원값은 내보내지 않는다"""
     if tx.transaction_type not in (Tx.TransactionType.TRANSFER, *OWN_TYPES):
         return None
-    return (tx.field_states or {}).get(OWN_REVIEW)
+    return (tx.field_states or {}).get(OWN_REVIEW) or ("auto" if is_legacy_own(tx) else None)
 
 
 def own_transfer_fields(tx):
@@ -354,7 +371,7 @@ def _apply_own_transfer(tx, is_mine):
     회원 → 이 출금 행이 잠긴 상태에서 다시 읽은 값으로 판단한다. 상대 입금 · 저축 행은 여기서 잠근다"""
     T = Tx.TransactionType
     states = dict(tx.field_states or {})
-    review = states.get(OWN_REVIEW)
+    review = own_transfer_review(tx)  # 예전 규칙의 표시 없는 자동 연결도 auto 로 (DB 표시는 사용자가 고를 때 처음 남긴다)
     as_transfer = (tx.transaction_type == T.TRANSFER and review in ("suggested", "rejected")
                    and tx.confirmation_state != Tx.ConfirmationState.CONFIRMED)
     as_own = tx.transaction_type in OWN_TYPES and review in ("auto", "confirmed")
