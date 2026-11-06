@@ -252,3 +252,8 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 `salary_decision`에 nullable `snapshot_amount`(bigint), `snapshot_occurred_on`(date), `snapshot_description`(varchar 500), `snapshot_account_id`(UUID, 당시 계좌 값이므로 FK 아님)를 추가한다. 사용자 확인 시에만 원거래 값을 저장한다. 금액·거래일·적요 원문·계좌 UUID가 달라지거나 기준값이 없으면 `recheck`로 전환하고 `is_pattern`을 해제한다. 변경 없는 확정은 유지한다. 재확인 전까지 인정 합계에서 제외하며 과거 기준값과 `decided_at`은 보존한다.
 
 기존 확정 기록에는 기준값을 채우지 않는다. 데이터 마이그레이션은 기존 `confirmed`를 `recheck`로 바꾸고 자동 인식 기준과 영향 회차의 `confirmed_income` 캐시를 비운다. 개발/운영 DB 적용은 별도이며, 회귀 테스트는 전용 테스트 DB에서 수행한다. 상세 조회 계약은 [api/salary.md](api/salary.md)의 '사용자 확정 유효성' 참고.
+## 2026-11-06: 청년 정책 (policies/0001)
+
+- `policy`: 온통청년 정책 한 건. PK는 공식 정책번호(`policy_no`)라서 UUID 규칙의 예외다. 원본(`raw`, 담당자 이름 제외), 정리한 조건 칸, 텍스트 검색 문장, 임베딩 문장, `embedding`(vector 1536)을 둔다. 수집에서 사라진 정책은 삭제하지 않고 `is_active=False`로 둔다.
+- `policy_sync`: 수집 이력. 마지막 성공 건의 `data_date`가 데이터 기준일이다.
+- 회원과 연결되지 않는 공개 데이터라 FK가 없다. pg_trgm 확장을 켠다. 상세는 `docs/agents/청년정책.md`.
