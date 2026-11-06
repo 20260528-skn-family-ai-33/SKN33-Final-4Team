@@ -264,6 +264,7 @@ def normalize_approvals(data, start, end):
             "occurred_time": _time(row.get("resUsedTime")),
             "amount": amount,
             "merchant_name": merchant,
+            "merchant_category": _short(row.get("resMemberStoreType"), 100),
             "source_description": merchant,
             "installment_months": 0 if payment_type == "1" else months,   # 모델: 일시불 0, 모르면 null
             "approval_no": approval_no,

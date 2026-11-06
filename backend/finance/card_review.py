@@ -30,6 +30,9 @@ def save_transaction(user, card, identity, payload, existing=None):
         )
     else:
         tx, created = existing, False
+    if not created and not tx.merchant_category and payload.get("merchant_category"):
+        tx.merchant_category = payload["merchant_category"]  # 업종을 받기 전에 저장한 거래
+        tx.save(update_fields=["merchant_category", "updated_at"])
     if not created and (tx.is_canceled, tx.canceled_amount) != (payload["is_canceled"], payload["canceled_amount"]):
         tx.is_canceled, tx.canceled_amount = payload["is_canceled"], payload["canceled_amount"]
         tx.save(update_fields=["is_canceled", "canceled_amount", "updated_at"])

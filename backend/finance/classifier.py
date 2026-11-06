@@ -431,6 +431,33 @@ def judge(name):
     return {"review": (top, UNSURE_REASON if evidence else NOT_FOUND_REASON), "record": record}
 
 
+def card_type(tx):
+    """카드사가 준 구체적인 업종. 전자상거래는 실제 가게 업종이 아니라서 쓰지 않는다 (11/06 NH: 피시방·치킨집도 전자상거래PG)"""
+    industry = (tx.merchant_category or "").strip()
+    return None if not industry or industry.startswith("전자상거래") else industry
+
+
+def judge_card_type(industry):
+    """카드사 업종으로 판단. 카드사가 기록한 값이라 어느 가게인지 알 수 있어서 동명 충돌이어도 쓴다.
+    판단하지 못하면 None → SVM·검색으로 간다"""
+    record = {"step": "card_type", "industry": industry}
+    if food_retail_industry(industry):
+        return {"retail": "FOOD", "record": {**record, SEARCHED_MULTI_ITEM: True}}
+    if industry in MULTI_ITEM_INDUSTRIES:
+        return {"review": ([], MULTI_ITEM_REASON), "record": {**record, SEARCHED_MULTI_ITEM: True}}
+    if not (os.getenv("TYPESAFE_API_KEY") and os.getenv("JEV_MODEL")):
+        return None
+    try:
+        # '일반음식점 기타'의 끝말은 대분류 표시인데 Jev 가 기타 카테고리와 헷갈린다 (0.78~0.88 → 떼면 1.0)
+        choice, confidence, _, model = ask_jev(f"카드사 업종: {industry.removesuffix(' 기타')}")
+    except Exception as exc:
+        logger.warning("카드 업종 판단 실패: %s", type(exc).__name__)
+        return None
+    if choice == UNKNOWN or confidence < JEV_THRESHOLD:
+        return None
+    return {"apply": (choice, confidence), "record": {**record, "jev_model": model, "choice": choice, "confidence": round(confidence, 4)}}
+
+
 FIELDS = [
     "confirmed_category", "confirmation_state", "classification_source", "suggested_category",
     "suggestion_source", "suggestion_confidence", "suggestion_candidates", "suggestion_reason", "field_states",
@@ -443,7 +470,7 @@ def classify(user, txs):
         tx for tx in txs
         if tx.transaction_type == Tx.TransactionType.SPENDING and tx.confirmation_state != Tx.ConfirmationState.CONFIRMED
     ]
-    changed, for_ml, judged = [], [], {}
+    changed, for_ml, judged, card_answers = [], [], {}, {}
     for tx in todo:
         name = store_name(tx.merchant_name)
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
@@ -472,6 +499,15 @@ def classify(user, txs):
             _review(tx, [(c, None) for c in candidates], MIXED_SERVICE_REASON, Tx.ClassificationSource.RULE)
         elif name and (rule := rule_category(name)):
             _apply(tx, rule, Tx.ClassificationSource.RULE, None)
+        elif name and (answer := _card_answer(tx, card_answers)):
+            if "review" in answer:
+                _review(tx, *answer["review"], Tx.ClassificationSource.RULE)
+            elif "retail" in answer:
+                _apply(tx, answer["retail"], Tx.ClassificationSource.RULE, None)
+            else:
+                category, confidence = answer["apply"]
+                _apply_unless_user_differs(tx, category, Tx.ClassificationSource.LLM, confidence, code, [(category, confidence)])
+            tx.field_states = {**tx.field_states, "classifier": answer["record"]}
         elif name and is_unknown_store(name):
             _review(tx, [], UNKNOWN_STORE_REASON, None)
         else:
@@ -519,6 +555,16 @@ def classify(user, txs):
 
     if changed:
         Tx.objects.bulk_update(changed, FIELDS, batch_size=500)
+
+
+def _card_answer(tx, answers):
+    """같은 업종은 같은 답이라 한 번의 분류 실행에서 한 번만 판단한다"""
+    industry = card_type(tx)
+    if not industry:
+        return None
+    if industry not in answers:
+        answers[industry] = judge_card_type(industry)
+    return answers[industry]
 
 
 def _apply(tx, code, source, confidence):

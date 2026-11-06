@@ -164,6 +164,63 @@ class ClassifyTest(TestCase):
                 self.assertEqual(chosen.confirmed_category_id, "HOUSEHOLD")
         predict.assert_called_with([])
 
+    def card_tx(self, merchant, industry, **fields):
+        return self.tx(merchant, merchant_category=industry, **fields)
+
+    def test_card_type_decides_before_svm_and_search(self, predict):
+        # 11/06: 카드사가 기록한 업종이 가장 강한 근거. 같은 업종은 한 번만 묻는다
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        with patch("finance.classifier.ask_jev", return_value=answer) as ask, \
+                patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            first, second = self.run_classify(self.card_tx("새봄약국", "약국"), self.card_tx("행복약국", "약국"))
+        ask.assert_called_once_with("카드사 업종: 약국")
+        for tx in (first, second):
+            self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("MEDICAL_HEALTH", "llm"))
+            self.assertEqual(tx.field_states["classifier"]["step"], "card_type")
+        predict.assert_called_once_with([])
+        self.judge.assert_not_called()
+
+    def test_card_type_resolves_name_conflict(self, predict):
+        answer = ("FOOD", 0.97, {}, "jev-test")
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"우리집"})), \
+                patch("finance.classifier.ask_jev", return_value=answer) as ask, patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            (tx,) = self.run_classify(self.card_tx("우리집", "일반음식점 기타"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.merchant_category), ("FOOD", "suggested", "일반음식점 기타"))
+        ask.assert_called_once_with("카드사 업종: 일반음식점")
+
+    def test_card_type_retail_and_department_store(self, predict):
+        with patch("finance.classifier.ask_jev") as ask:
+            store, mart, department = self.run_classify(self.card_tx("새봄상회", "편의점"), self.card_tx("행복상회", "슈퍼마켓"), self.card_tx("좋은상회", "백화점"))
+        ask.assert_not_called()
+        self.assertEqual([t.confirmed_category_id for t in (store, mart)], ["FOOD", "FOOD"])
+        self.assertEqual((department.confirmed_category_id, department.suggestion_reason), ("UNCLASSIFIED", classifier.MULTI_ITEM_REASON))
+
+    def test_online_blank_or_unsure_card_type_falls_through(self, predict):
+        # 전자상거래·빈칸은 가게 업종이 아니고, 판단 보류·낮은 점수·장애·키 없음이면 지금 흐름으로 간다
+        keys = {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}
+        with patch("finance.classifier.ask_jev") as ask:
+            for name, industry in (("가게1", "전자상거래PG"), ("가게2", "전자상거래(안심클릭미적용)"), ("가게3", ""), ("가게4", None)):
+                self.run_classify(self.card_tx(name, industry))
+            ask.assert_not_called()
+        for reply in ({"return_value": ("UNKNOWN", 0.99, {}, "m")}, {"return_value": ("FOOD", 0.6, {}, "m")}, {"side_effect": OSError("down")}):
+            with patch("finance.classifier.ask_jev", **reply), patch.dict(os.environ, keys), self.assertNoLogs("finance.classifier", "ERROR"):
+                predict.reset_mock()
+                self.run_classify(self.card_tx("가게5", "기타업종"))
+                predict.assert_called_once_with(["가게5"])
+        with patch("finance.classifier.ask_jev") as ask, patch.dict(os.environ, {"TYPESAFE_API_KEY": ""}):
+            self.run_classify(self.card_tx("가게6", "기타업종"))
+            ask.assert_not_called()
+
+    def test_user_choice_beats_card_type(self, predict):
+        chosen = {"confirmed_category_id": "HOUSEHOLD", "confirmation_state": "confirmed", "classification_source": "user"}
+        self.tx("새봄상회", field_states={"apply_to_future": True}, **chosen)
+        self.tx("행복약국", **chosen)
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        with patch("finance.classifier.ask_jev", return_value=answer), patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            remembered, differs = self.run_classify(self.card_tx("새봄상회", "편의점"), self.card_tx("행복약국", "약국"))
+        self.assertEqual(remembered.confirmed_category_id, "HOUSEHOLD")  # '앞으로도 적용'
+        self.assertEqual((differs.confirmed_category_id, differs.suggestion_reason), ("UNCLASSIFIED", classifier.USER_DIFFERS_REASON))
+
     def test_transit_card_charge_is_transport(self, predict):
         # 11/06: 티머니 충전은 페이 충전이 아니라 교통비
         (tx,) = self.run_classify(self.tx("모바일티머니충전"))
