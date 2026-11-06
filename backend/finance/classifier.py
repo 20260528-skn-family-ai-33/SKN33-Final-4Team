@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from decimal import Decimal
@@ -167,6 +168,7 @@ FOOD_RETAIL_INDUSTRIES = ("편의점", "슈퍼마켓")  # 이 둘과 '○○마�
 # 가게가 아닌 업종(법인명 검색 시 본사가 나옴)은 근거로 넘기지 않는다
 NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은행", "증권", "기업", "회사", "사무소", "협회")
 SEARCH_LIMIT = 3  # 검색 한 곳당 결과 수
+JOSA = "(?:으로|에서|은|는|이|가|을|를|의|와|과|도|로|에)?"  # '리디는'·'봄툰의'처럼 이름 뒤의 조사는 같은 낱말로 본다
 WEB_TEXT_LIMIT = 150  # 웹 결과 한 건을 Jev 에 넘기는 글자 수
 
 
@@ -236,6 +238,10 @@ def retail_category(name):
 
 def food_retail_industry(industry):
     return industry in FOOD_RETAIL_INDUSTRIES or industry.endswith("마트")
+
+
+def all_food_retail(industries):
+    return all(food_retail_industry(industry) for industry in industries)
 
 
 def is_unknown_store(name):
@@ -334,6 +340,13 @@ def search_web(query):
     return [f"{_text(item['title'])} / {_text(item['description'])}"[:WEB_TEXT_LIMIT] for item in items]
 
 
+def names_store(text, query):
+    """웹 설명에 이 가맹점 이름이 한 낱말로 있는지. 다른 상호 안에 들어 있으면 아니다 (PR #94 리뷰: 리디 ↔ 팩토리디 · 리디앤폴)"""
+    name = common.normalize_name(query)
+    pattern = r"\s*".join(map(re.escape, name))  # 메가MGC ↔ 메가 MGC
+    return bool(name) and bool(re.search(rf"(?<![가-힣a-z0-9]){pattern}{JOSA}(?![가-힣a-z0-9])", unicodedata.normalize("NFKC", text).lower()))
+
+
 def web_evidence(query, record):
     """근거로 인정한 웹 설명. 실패하면 지도 근거만으로 간다. 원문은 record 에 남기지 않는다 (거래 내용이 섞일 수 있음)"""
     try:
@@ -342,8 +355,7 @@ def web_evidence(query, record):
         logger.warning("5단계 웹 검색 실패: %s", type(exc).__name__)
         record["web_error"] = type(exc).__name__
         return []
-    name = common.normalize_name(query)
-    accepted = [text for text in texts if name and name in common.normalize_name(text)]
+    accepted = [text for text in texts if names_store(text, query)]
     record["web_accepted"] = bool(accepted)
     return accepted
 
@@ -378,19 +390,24 @@ def judge(name):
         record.update(source=shown[0][0] if shown else None, industry=", ".join(dict.fromkeys(store[2] for store in shown)) or None)
         if found and not same:
             record["store_mismatch"] = True  # 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
-        multi = [i for i in industries if i in MULTI_ITEM_INDUSTRIES or i.endswith("마트")]
-        if multi:
-            record.update({"industry": multi[0], SEARCHED_MULTI_ITEM: True})  # 같은 가게의 다음 거래도 다품목으로 처리하는 근거 (PR #67 리뷰)
-            if all(food_retail_industry(industry) for industry in multi):
-                return {"retail": "FOOD", "record": record}
-            return {"review": ([], MULTI_ITEM_REASON), "record": record}
         kept = [i for i in industries if not any(word in i for word in NON_STORE_INDUSTRIES)]
         if len(kept) != len(industries):
             record["dropped_industry"] = True  # 본사·사무소가 검색된 경우. 근거로 쓰면 확신하며 틀림 (10/29 테스트)
         web = web_evidence(query, record)
         base = f"가맹점 이름: {query}"
+        web_state = web and f"{base}\n웹 검색 설명: {' | '.join(web)}"
+        if any(i in MULTI_ITEM_INDUSTRIES or i.endswith("마트") for i in kept):
+            # 업종을 모두 남긴다: 일부만 남기면 다음 분류가 묻기로 한 가게를 식비로 바꾼다 (PR #94 리뷰)
+            record.update({"industry": ", ".join(kept), SEARCHED_MULTI_ITEM: True})  # 같은 가게의 다음 거래도 다품목으로 처리하는 근거 (PR #67 리뷰)
+            if not all_food_retail(kept):
+                return {"review": ([], MULTI_ITEM_REASON), "record": record}
+            choice, confidence, *_ = ask_jev(web_state) if web else (UNKNOWN, 0)
+            if choice not in (UNKNOWN, "FOOD") and confidence >= JEV_THRESHOLD:
+                record["evidence_conflict"] = True
+                return {"review": ([("FOOD", None), (choice, confidence)], MULTI_ITEM_REASON), "record": record}
+            return {"retail": "FOOD", "record": record}
         answers = [ask_jev(state) for state in filter(None, (
-            kept and f"{base}\n검색 업종: {', '.join(kept)}", web and f"{base}\n웹 검색 설명: {' | '.join(web)}",
+            kept and f"{base}\n검색 업종: {', '.join(kept)}", web_state,
         ))] or [ask_jev(base)]
     except Exception as exc:  # 외부 API 장애는 '확인 필요'로 끝낸다. 거래 내용이 담길 수 있어 원문은 남기지 않음
         logger.warning("5단계 검색·Jev 실패: %s", type(exc).__name__)
@@ -432,7 +449,7 @@ def classify(user, txs):
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
         code, future = last_user_choice(user, tx.merchant_name)
         seen, saved_conflict = (None, False) if is_multi_item(name) else seen_multi_item(user, tx.merchant_name)
-        seen_food = bool(seen) and food_retail_industry(seen)
+        seen_food = bool(seen) and all_food_retail(seen.split(", "))
         # 동명 충돌이면 저장된 검색 업종이 이 가게의 근거가 아니다. 첫 분류처럼 묻는다 (PR #92 리뷰)
         # 충돌 목록 파일은 Git 에 없어서 환경마다 없을 수 있다. 거래에 저장된 판단도 본다
         seen_conflict = seen_food and (saved_conflict or common.normalize_name(name or "") in conflict_names())

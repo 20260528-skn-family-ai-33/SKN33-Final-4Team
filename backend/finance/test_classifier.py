@@ -148,6 +148,22 @@ class ClassifyTest(TestCase):
             (mart,) = self.run_classify(self.tx("행복상회"))
             self.assertEqual(mart.confirmed_category_id, "FOOD")
 
+    def test_mixed_searched_industries_keep_asking(self, predict):
+        # PR #94 리뷰: 복수 업종으로 보류한 판단은 재분류와 다음 거래에도 유지. '앞으로도 적용'을 고르면 그 카테고리
+        predict.side_effect = lambda names: [[("BEAUTY", 0.99)] for _ in names]
+        for industry, extra in (("슈퍼마켓, 백화점", {}), ("슈퍼마켓, 미용실", {}), ("슈퍼마켓", {"evidence_conflict": True})):
+            with self.subTest(industry):
+                Tx.objects.all().delete()
+                searched = {"classifier": {"industry": industry, "multi_item": True, **extra}}
+                again, fresh = self.run_classify(self.tx("행복상회", field_states=searched), self.tx("행복상회"))
+                for tx in (again, fresh):
+                    self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("UNCLASSIFIED", "needs_review"))
+                self.tx("행복상회", confirmed_category_id="HOUSEHOLD", confirmation_state="confirmed", classification_source="user",
+                        field_states={**searched, "apply_to_future": True})
+                (chosen,) = self.run_classify(self.tx("행복상회"))
+                self.assertEqual(chosen.confirmed_category_id, "HOUSEHOLD")
+        predict.assert_called_with([])
+
     def test_transit_card_charge_is_transport(self, predict):
         # 11/06: 티머니 충전은 페이 충전이 아니라 교통비
         (tx,) = self.run_classify(self.tx("모바일티머니충전"))
@@ -563,10 +579,38 @@ class JudgeTest(SimpleTestCase):
         ask.assert_called_once()
 
     def test_multi_item_among_results_wins(self):
-        result, ask = self.run_judge([("naver", "새봄동물", "카페"), ("kakao", "새봄동물", "백화점")])
-        self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
-        self.assertEqual(result["record"]["industry"], "백화점")
-        ask.assert_not_called()
+        # PR #94 리뷰: 함께 검색된 업종을 모두 보고 모두 남긴다. 식비 기본값은 전부 편의점·마트일 때만
+        for other in ("카페", "백화점", "미용실"):
+            with self.subTest(other):
+                result, ask = self.run_judge([("naver", "새봄동물", "슈퍼마켓"), ("kakao", "새봄동물", other)])
+                self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
+                self.assertEqual(result["record"]["industry"], f"슈퍼마켓, {other}")
+                self.assertTrue(result["record"]["multi_item"])
+                ask.assert_not_called()
+        result, _ = self.run_judge([("naver", "새봄동물", "슈퍼마켓"), ("kakao", "새봄동물", "대형마트")])
+        self.assertEqual(result["retail"], "FOOD")
+
+    def test_web_can_stop_the_food_default(self):
+        store = ("naver", "새봄동물", "슈퍼마켓")
+        web = ["새봄동물 미용 예약"]
+        result, _ = self.run_judge(store, ("BEAUTY", 0.95, {"BEAUTY": 0.95}, "jev-test"), web=web)
+        self.assertEqual(result["review"], ([("FOOD", None), ("BEAUTY", 0.95)], classifier.MULTI_ITEM_REASON))
+        self.assertTrue(result["record"]["evidence_conflict"])
+        for answer in (("FOOD", 0.95, {}, "jev-test"), ("UNKNOWN", 0.95, {}, "jev-test"), ("BEAUTY", 0.6, {}, "jev-test")):
+            result, _ = self.run_judge(store, answer, web=web)
+            self.assertEqual(result["retail"], "FOOD", answer)
+
+    def test_name_inside_another_store_is_not_web_evidence(self):
+        # PR #94 리뷰: 지도에서 뺀 다른 가게가 웹 근거로 다시 들어오면 안 된다
+        for text, expected in (("팩토리디 / 헤어 전문 미용실 예약 안내", False), ("리디앤폴 카페 메뉴", False), ("리디는 전자책 서비스", True),
+                               ("리디 - 나무위키", True), ("리디의 웹소설", True), ("[리디] 공지", True)):
+            self.assertEqual(classifier.names_store(text, "리디"), expected, text)
+        self.assertTrue(classifier.names_store("메가 MGC 커피 안내", "메가MGC"))
+        self.assertTrue(classifier.names_store("Trip.com 트립닷컴에서 예약", "트립닷컴"))
+        self.assertFalse(classifier.names_store("아무 글", ""))
+        result, ask = self.run_judge(None, ("BEAUTY", 0.97, {"BEAUTY": 0.97}, "jev-test"), name="리디", web=["팩토리디 / 헤어 전문 미용실"])
+        self.assertEqual(ask.call_args.args[0], "가맹점 이름: 리디")
+        self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
 
     def test_search_store_uses_both_maps(self):
         naver = {"items": [{"title": "<b>새봄</b> 동물&amp;병원", "category": "병원>동물병원"}]}
