@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import date, timedelta
 
 from django.db import transaction
 from django.db.models import Exists, F, OuterRef
@@ -56,15 +56,52 @@ def salary_cycle_dates(profile, today):
     return start, end, previous
 
 
-def prepare_salary_loans(user):
-    from .due_periods import uses_monthly_dues
-    from finance.api_loans import owned_loans, sync_loan_due
-    from finance.models import Loan
+FIRST_SEEN = "first_seen_on"  # loan.field_states: 서비스가 대출을 처음 확인한 날(한국 날짜, YYYY-MM-DD). 한 번 저장하면 바꾸지 않는다
 
-    if not uses_monthly_dues(user):
-        return
+
+def loan_first_seen_on(loan, today):
+    """처음 확인한 날. 없으면 남은 근거 중 가장 이른 날(첫 성공 기관 조회 시작 · 첫 납부 회차 생성, 둘 다 없으면 오늘)로 한 번 저장한다.
+    fetched_at 은 조회할 때마다 바뀌어서 쓰지 않는다. 호출 쪽에서 회원·대출 잠금"""
+    from django.db.models import Min
+    from django.utils import timezone
+
+    states = loan.field_states if isinstance(loan.field_states, dict) else {}
+    try:
+        return date.fromisoformat(states[FIRST_SEEN])
+    except (KeyError, TypeError, ValueError):
+        pass
+    found = [today]
+    for at in (loan.sync_runs.filter(status="success").aggregate(at=Min("started_at"))["at"],
+               loan.payment_dues.aggregate(at=Min("created_at"))["at"]):
+        if at is not None:
+            found.append(timezone.localtime(at).date())
+    first = min(found)
+    loan.field_states = {**states, FIRST_SEEN: first.isoformat()}
+    loan.save(update_fields=["field_states"])
+    return first
+
+
+def prepare_salary_loans(user):
+    """이번 주기 대출 납부 회차 준비 (급여일 변경 이력과 무관, R05). 주기 키·월별 키 선택은 sync_loan_due 가 한다"""
+    from django.utils import timezone
+    from .api import day_in_cycle
+    from .due_periods import uses_monthly_dues
+    from .models import BudgetCycle
+    from finance.api_loans import owned_loans, sync_loan_due
+    from finance.models import Loan, PaymentDue
+
+    today = timezone.localdate()
+    monthly = uses_monthly_dues(user)
+    cycle = BudgetCycle.objects.filter(user=user, status="active", starts_on__lte=today, ends_before__gt=today).first()
     loans = owned_loans(user).filter(status=Loan.Status.REPAYING).select_for_update(of=("self",)).order_by("pk")
     for loan in loans:
+        # 처음 확인한 날보다 앞선 납부일(등록 전 의무)은 새로 만들지 않는다. 실제 출금이 있으면 rematch 가 만든다
+        # 그 뒤 주기는 납부일이 지났어도 만든다 → 출금이 없으면 sync_loan_due 가 '확인 필요'로 남긴다
+        first_seen = loan_first_seen_on(loan, today)
+        due_date = day_in_cycle(cycle, loan.payment_day) if cycle and loan.payment_day else None
+        if (not monthly and due_date is not None and due_date < first_seen and not PaymentDue.objects.filter(
+                loan=loan, due_date__gte=cycle.starts_on, due_date__lt=cycle.ends_before).exists()):
+            continue
         sync_loan_due(loan)
 
 

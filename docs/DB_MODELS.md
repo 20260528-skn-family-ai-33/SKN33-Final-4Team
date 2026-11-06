@@ -80,7 +80,7 @@
 | `chat_message.role` (`user` · `bot`) · `content_type` (`text` · `card`), `async_task.status` (`queued` · `running` · `succeeded` · `failed` · `canceled`, 기본 `queued`) | 결정 E |
 | `consent.product_scope` choices + CHECK — `bank` · `card` · `loan` (회원가입 동의는 비움) | 결정 L |
 | `reserve_plan` 표 · `budget_item` · `spending_allocation` · `payment_due`의 `reserve` 칸 — **1차 미사용** | 10-24 결정 AB: 비정기지출 준비금은 2차. 표 · 칸은 지우지 않고 비워 둔다 (`bucket` · `funding_bucket` · `obligation_type`의 `reserve` 값도 1차엔 안 씀) |
-| JSON 칸에 넣기로 한 것 (DB 변경 없음) | 거래 `field_states.original_transaction_type`(원래 이체였다는 표시, AA⑥) · 대출 `field_states`의 값마다 `source` · `confirmationStatus` · `confirmedAt`(AA②) |
+| JSON 칸에 넣기로 한 것 (DB 변경 없음) | 거래 `field_states.original_transaction_type`(원래 이체였다는 표시, AA⑥) · 대출 `field_states`의 값마다 `source` · `confirmationStatus` · `confirmedAt`(AA②) · 대출 `field_states.first_seen_on`(서비스가 대출을 처음 확인한 날 `YYYY-MM-DD`. 홈에서 처음 볼 때 첫 성공 기관 조회 시작 · 첫 납부 회차 생성 · 오늘 중 가장 이른 날로 한 번 저장하고 바꾸지 않음. 이 날보다 앞선 납부일은 새로 만들지 않는다. 조회마다 바뀌는 `fetched_at`은 쓰지 않음, 11/06 R05) |
 | 아직 안 바꾼 것 | `app_user.nickname` 필수(결정 X) — 기존 빈 닉네임 회원 정리 방법이 정해지면(auth.md '확인 필요') NOT NULL로. `consent.purpose` — 금융 동의 목적 코드가 아직 '확인 필요'(finance-connect.md) |
 
 ## 2. 테이블 → 앱 배치
