@@ -181,7 +181,8 @@ class BudgetViewTest(TestCase):
         tx = self.tx(1_500_000, source_kind="bank", account=self.account, direction="in", transaction_type="income")
         self.assertFalse(self.get()["budget"]["salaryConfirmed"])  # R12: 후보만으로는 확인 아님
         from .models import SalaryDecision
-        SalaryDecision.objects.create(user=self.user, transaction=tx, state="confirmed", pay_cycle_on=self.cycle.starts_on)
+        from budgets.salary import confirmation_snapshot
+        SalaryDecision.objects.create(user=self.user, transaction=tx, state="confirmed", pay_cycle_on=self.cycle.starts_on, **confirmation_snapshot(tx))
         self.assertTrue(self.get()["budget"]["salaryConfirmed"])
 
     def test_nag_lock_counts_exclude_protected_categories(self):

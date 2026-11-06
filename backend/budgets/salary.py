@@ -153,6 +153,49 @@ def memo_key(text):
     return ("exact", memo), None
 
 
+def confirmation_snapshot(tx):
+    """사용자가 직접 확인하는 시점에만 저장. 적요는 패턴용 정규화를 하지 않고 원값을 비교한다."""
+    return {"snapshot_amount": tx.amount, "snapshot_occurred_on": tx.occurred_on,
+            "snapshot_description": tx.source_description, "snapshot_account_id": tx.account_id}
+
+
+def valid_confirmed_ids(user):
+    """읽기 전용: 사용자 확정이고 네 기준값이 현재 거래와 같은 거래 ID queryset.
+    상태 전환 전이라도 변경/기준 누락 거래를 인정하지 않는다. NULL 적요와 빈 문자열도 구분한다."""
+    from .models import SalaryDecision
+
+    return SalaryDecision.objects.filter(
+        Q(snapshot_description=F("transaction__source_description"))
+        | Q(snapshot_description__isnull=True, transaction__source_description__isnull=True),
+        user=user, transaction__user=user, state="confirmed",
+        snapshot_amount__isnull=False, snapshot_occurred_on__isnull=False, snapshot_account_id__isnull=False,
+        snapshot_amount=F("transaction__amount"), snapshot_occurred_on=F("transaction__occurred_on"),
+        snapshot_account_id=F("transaction__account_id"),
+    ).values("transaction_id")
+
+
+def refresh_confirmed(user):
+    """변경·기준 누락인 사용자 확정을 재확인으로. 회원→거래 순서로 잠근 뒤 다시 비교한다."""
+    from .api import lock_user
+    from .models import SalaryDecision
+
+    decisions = SalaryDecision.objects.filter(user=user, state="confirmed")
+    if not decisions.exclude(transaction_id__in=valid_confirmed_ids(user)).exists():
+        return
+    with transaction.atomic():
+        lock_user(user)
+        list(FinancialTransaction.objects.select_for_update().filter(
+            user=user, pk__in=decisions.values("transaction_id"),
+        ).order_by("pk").values_list("pk", flat=True))
+        stale = list(decisions.exclude(transaction_id__in=valid_confirmed_ids(user)).values_list("pk", "pay_cycle_on"))
+        if not stale:
+            return
+        SalaryDecision.objects.filter(pk__in=[pk for pk, _ in stale]).update(state="recheck", is_pattern=False)
+        # 확정 시각과 기준값은 이력으로 남긴다. 영향 받은 과거 회차도 저장 합계에서 즉시 제외한다.
+        for cycle_on in {cycle for _, cycle in stale}:
+            store_income(user, cycle_on)
+
+
 def deposit_pool(user):
     """원화 입출금 계좌 입금 (관리 대상 선택 무관). 취소 · 끊은 연결 · 내 계좌 이체(유형 또는 R11 연결) ·
     납부에 연결된 거래 · 저축 · 상환 · 카드값은 뺀다 (같은 날 같은 금액 출금만으로는 빼지 않음)"""
@@ -177,8 +220,10 @@ def eligible_deposits(user):
 
 
 def known_deposits(user):
-    """이미 판단을 볼 입금 — 관리 대상 계좌 + 선택 해제한 계좌라도 사용자가 확인한 입금 (선택 해제만으로 확인을 무효로 하지 않음)"""
-    return deposit_pool(user).filter(Q(account__is_selected=True) | Q(salary_decision__state="confirmed"))
+    """읽기 전용. 관리 계좌 + 이미 확인/재확인할 입금. 변경된 confirmed는 상태 갱신 전에도 제외한다."""
+    return deposit_pool(user).filter(
+        Q(account__is_selected=True) | Q(salary_decision__state__in=["confirmed", "recheck"]),
+    ).exclude(Q(salary_decision__state="confirmed") & ~Q(pk__in=valid_confirmed_ids(user)))
 
 
 def salary_windows(profile, today):
@@ -200,10 +245,10 @@ def recognized(user, pay_cycle_on):
 
 
 def salary_candidates(user, income, low, high):
-    """판단이 없거나 재확인 필요인 80% 이상 입금 (확인 필요)"""
-    return eligible_deposits(user).filter(
-        Q(salary_decision__isnull=True) | Q(salary_decision__state="recheck"),
-        occurred_on__range=(low, high), amount__gte=-(-income * 8 // 10),   # 80% (올림)
+    """새 후보는 80% 이상. 재확인 거래는 정정 금액이 작아져도 확인 대상으로 남긴다."""
+    return known_deposits(user).filter(
+        Q(salary_decision__isnull=True, amount__gte=-(-income * 8 // 10)) | Q(salary_decision__state="recheck"),
+        occurred_on__range=(low, high),
     )
 
 
@@ -214,6 +259,7 @@ def refresh_auto(user, windows):
     그 회차는 사용자가 확인(그 회차 판단을 바꿈)하거나 판단을 지울 때까지 자동 인정하지 않는다"""
     from .models import SalaryDecision
 
+    refresh_confirmed(user)  # 바뀐 원거래를 자동 인식 기준으로 사용하기 전에 해제한다.
     pool = eligible_deposits(user)
     base = SalaryDecision.objects.filter(user=user, is_pattern=True).select_related("transaction").first()
     base_tx = base.transaction if base and pool.filter(pk=base.transaction_id).exists() else None
@@ -247,5 +293,6 @@ def store_income(user, pay_cycle_on):
 
 def salary_reviews(user):
     """{거래 ID: 'confirmed' | 'auto'} — 거래 목록 · 상세 isSalary (홈과 같은 저장 근거). 기존 자동 추정은 저장된 판단이 아니라서 없다"""
+    refresh_confirmed(user)
     return dict(known_deposits(user).filter(salary_decision__state__in=["confirmed", "auto"])
                 .values_list("pk", "salary_decision__state"))

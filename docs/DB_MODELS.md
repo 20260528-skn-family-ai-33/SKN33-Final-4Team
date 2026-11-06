@@ -246,3 +246,9 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 - 도입 이유: 처음 찾은 큰 입금을 사용자 확인 없이 급여로 인정해 환급 · 송금을 오인했다. 후보와 인정을 나누고, 사람의 판단(확인 · 거절)을 재조회 · 재처리가 덮지 않게 저장해야 했다. 거래당 한 줄이라 한 거래가 여러 회차에 붙거나 동시 요청으로 두 번 더해지지 않는다. 회차는 `budget_cycle` FK 대신 날짜로 둔다 — 조기 급여의 다음 회차 주기는 아직 없고, 주기를 미리 만들면 예산 주기를 앞당기게 된다.
 - `budget_cycle.confirmed_income`은 이 표의 인정 합계로 채운다. 기존 값은 일괄 보정하지 않는다(상세: api/salary.md '기존 자료').
 - `finance/0013_syncrun_task`(작업 중 다른 변경)에 의존한다.
+
+### 사용자 확정 기준값 (budgets/0008, 2026-11-06)
+
+`salary_decision`에 nullable `snapshot_amount`(bigint), `snapshot_occurred_on`(date), `snapshot_description`(varchar 500), `snapshot_account_id`(UUID, 당시 계좌 값이므로 FK 아님)를 추가한다. 사용자 확인 시에만 원거래 값을 저장한다. 금액·거래일·적요 원문·계좌 UUID가 달라지거나 기준값이 없으면 `recheck`로 전환하고 `is_pattern`을 해제한다. 변경 없는 확정은 유지한다. 재확인 전까지 인정 합계에서 제외하며 과거 기준값과 `decided_at`은 보존한다.
+
+기존 확정 기록에는 기준값을 채우지 않는다. 데이터 마이그레이션은 기존 `confirmed`를 `recheck`로 바꾸고 자동 인식 기준과 영향 회차의 `confirmed_income` 캐시를 비운다. 개발/운영 DB 적용은 별도이며, 회귀 테스트는 전용 테스트 DB에서 수행한다. 상세 조회 계약은 [api/salary.md](api/salary.md)의 '사용자 확정 유효성' 참고.

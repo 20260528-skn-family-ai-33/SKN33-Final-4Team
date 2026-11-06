@@ -66,3 +66,22 @@ it('자동 인식 기준을 끈다', async () => {
   await click(button('자동 인식 끄기'))
   expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/pattern/', 'DELETE', undefined)
 })
+
+it('과거 회차 재확인은 정상 분할 급여를 함께 유지하고 사용자가 다시 확정한다', async () => {
+  useApi.mockReturnValue({ data: body({ windows: [
+    { payCycleOn: '2026-11-25', from: '2026-11-18', to: '2026-12-17', items: [] },
+    { payCycleOn: '2026-09-25', from: '2026-09-25', to: '2026-09-25', items: [
+      item('changed', { description: '변경된 입금', decision: 'recheck', amount: 50_000 }),
+      item('unchanged', { description: '정상 분할 급여', decision: 'confirmed' }),
+    ] },
+  ] }), reload })
+  await render()
+  expect(host.textContent).toContain('09.25 회차 월급')
+  expect(host.textContent).toContain('다시 확인 필요')
+  expect(button('월급이 맞아요')).toBeUndefined()
+  await click(button('변경된 입금'))
+  expect(host.querySelector('input[type=checkbox]')).toBeNull()
+  await click(button('월급이 맞아요'))
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/decisions/', 'POST',
+    { transactionIds: ['unchanged', 'changed'], decision: 'confirmed', usePattern: false })
+})

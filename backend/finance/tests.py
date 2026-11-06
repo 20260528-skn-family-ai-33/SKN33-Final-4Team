@@ -527,7 +527,8 @@ class TransactionIsSalaryTest(FinanceData):
                             confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
         self.spent = self.tx(amount=2_600_000)
         from budgets.models import SalaryDecision
-        SalaryDecision.objects.create(user=self.user, transaction=self.salary, state="confirmed", pay_cycle_on=self.salary.occurred_on)
+        from budgets.salary import confirmation_snapshot
+        SalaryDecision.objects.create(user=self.user, transaction=self.salary, state="confirmed", pay_cycle_on=self.salary.occurred_on, **confirmation_snapshot(self.salary))
 
     def flags(self):
         return {i["transactionId"]: i["isSalary"] for i in self.get().json()["items"]}

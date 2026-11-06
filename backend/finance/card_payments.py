@@ -348,22 +348,33 @@ def refresh_bill_dues(user, issuer_code=None, today=None):
         logger.error("카드 청구서 납부 예정 맞추기 실패")  # 원문 · traceback 에 금융 정보가 섞일 수 있어 남기지 않는다
 
 
+@transaction.atomic
 def match(user):
     """아직 안 붙은 카드값 출금을 모두 본다: 은행을 먼저 연결하면 청구서가 출금보다 늦게 들어오기 때문.
     한 청구서 묶음에 맞는 출금이 여럿이면(같은 금액 두 번 등) 하나를 고르지 않는다 → 사용자 확인"""
     today = timezone.localdate()
-    # 카드값(예전 규칙 · 사용자 분류) 또는 사용자가 확정하지 않은 카드값 후보 이체 (R11: 이름만으로는 card_payment 로 바꾸지 않음)
+    # 사용자가 확정하지 않은 카드값(예전 규칙) 또는 카드값 후보 이체 (R11: 이름만으로는 card_payment 로 바꾸지 않음)
     payments = Tx.objects.filter(
         Q(transaction_type=Tx.TransactionType.CARD_PAYMENT)
         | Q(transaction_type=Tx.TransactionType.TRANSFER, field_states__has_key=CARD_CANDIDATE,
             confirmation_state__in=["needs_review", "suggested"]),
         user=user, source_kind="bank", direction="out", is_canceled=False,
+        confirmation_state__in=["needs_review", "suggested"],
     ).exclude(pk__in=PaymentMatch.objects.filter(user=user).values("transaction")).select_related("account")
     pairs = [(tx, shares) for tx in payments.order_by("occurred_on", "pk") if (shares := find_statements(user, tx))]
     per_group = Counter(tuple(bill.pk for bill, _ in shares) for _, shares in pairs)
     for tx, shares in pairs:
         if per_group[tuple(bill.pk for bill, _ in shares)] != 1:
             continue
+        # 후보를 읽은 뒤 분류 PATCH가 먼저 성공했을 수 있다. 행 잠금 뒤 같은 조건으로
+        # 다시 읽고, 납부 연결·금액·계좌·적요·자동 연결 해제 표시까지 최신 값으로 판단한다.
+        tx = Tx.objects.select_for_update().filter(user=user, pk=tx.pk).first()
+        if tx is None or not payments.filter(pk=tx.pk).exists():
+            continue
+        current_shares = find_statements(user, tx)
+        if [(b.pk, amount) for b, amount in current_shares] != [(b.pk, amount) for b, amount in shares]:
+            continue
+        shares = current_shares
         for i, (bill, amount) in enumerate(shares):
             due = bill_due(bill, tx)
             if i == 0 and tx.transaction_type != Tx.TransactionType.CARD_PAYMENT:

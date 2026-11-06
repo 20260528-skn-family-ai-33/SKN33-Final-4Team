@@ -71,7 +71,8 @@ class HomeFixture(TestCase):
 
     def confirm(self, tx, cycle_on):
         from .models import SalaryDecision
-        return SalaryDecision.objects.create(user=self.user, transaction=tx, state="confirmed", pay_cycle_on=cycle_on)
+        from budgets.salary import confirmation_snapshot
+        return SalaryDecision.objects.create(user=self.user, transaction=tx, state="confirmed", pay_cycle_on=cycle_on, **confirmation_snapshot(tx))
 
 
 class CycleDatesTest(TestCase):

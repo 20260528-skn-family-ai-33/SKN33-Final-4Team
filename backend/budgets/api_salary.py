@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
@@ -12,8 +13,8 @@ from finance.models import FinancialTransaction
 from users.models import FinancialProfile
 from .api import account_json, lock_user
 from .models import SalaryDecision
-from .salary import (current_salary_profile, expire_salary_drafts, known_deposits, memo_key, next_payday_on,
-                     refresh_auto, salary_cycle_dates, salary_windows, store_income)
+from .salary import (confirmation_snapshot, current_salary_profile, expire_salary_drafts, known_deposits, memo_key, next_payday_on,
+                     refresh_auto, refresh_confirmed, salary_cycle_dates, salary_windows, store_income)
 from .salary_serializers import SalarySerializer
 
 
@@ -115,9 +116,20 @@ def deposit_json(tx, cycle_on, income):
         "account": account_json(tx.account),
         "decision": decision.state if decision else None,
         "is_pattern": bool(decision and decision.is_pattern),
-        "is_candidate": (decision is None or decision.state == "recheck") and bool(income) and tx.amount * 10 >= income * 8,
+        "is_candidate": bool(decision and decision.state == "recheck") or (
+            decision is None and bool(income) and tx.amount * 10 >= income * 8),
         "pattern_unusable_reason": memo_key(tx.source_description)[1],
     }
+
+
+def confirmation_cycle(tx, windows, today):
+    """재확인은 기존 귀속 회차를 유지한다. 날짜 정정으로 구간 밖이 되어도 다시 확인할 수 있다."""
+    if tx.occurred_on > today:
+        return None
+    decision = getattr(tx, "salary_decision", None)
+    if decision and decision.state in ["confirmed", "recheck"]:
+        return decision.pay_cycle_on
+    return next((c for c, low, high in windows if low <= tx.occurred_on <= high), None)
 
 
 def deposits_data(user, profile, today):
@@ -128,11 +140,24 @@ def deposits_data(user, profile, today):
     income = profile.monthly_take_home_income
     pool = known_deposits(user).select_related("account__connection", "salary_decision")
     base = SalaryDecision.objects.filter(user=user, is_pattern=True).select_related("transaction__account__connection").first()
+    groups = {c: {"pay_cycle_on": c.isoformat(), "from": low.isoformat(), "to": high.isoformat(), "items": []}
+              for c, low, high in windows if low <= high}
+    recheck_cycles = SalaryDecision.objects.filter(user=user, state="recheck").values("pay_cycle_on")
+    # 재확인 시 회차 전체를 다시 저장하므로, 같은 과거 회차의 정상 분할 급여도 함께 보여 준다.
+    visible = Q(salary_decision__pay_cycle_on__in=recheck_cycles)
+    for _, low, high in windows:
+        if low <= high:
+            visible |= Q(occurred_on__range=(low, high))
+    for tx in pool.filter(visible, occurred_on__lte=today):
+        cycle_on = confirmation_cycle(tx, windows, today)
+        if cycle_on is None:
+            continue
+        day = tx.occurred_on.isoformat()
+        group = groups.setdefault(cycle_on, {"pay_cycle_on": cycle_on.isoformat(), "from": day, "to": day, "items": []})
+        group["from"], group["to"] = min(group["from"], day), max(group["to"], day)
+        group["items"].append(deposit_json(tx, cycle_on, income))
     return {
-        "windows": [{
-            "pay_cycle_on": cycle_on.isoformat(), "from": low.isoformat(), "to": high.isoformat(),
-            "items": [deposit_json(tx, cycle_on, income) for tx in pool.filter(occurred_on__range=(low, high))],
-        } for cycle_on, low, high in windows if low <= high],
+        "windows": list(groups.values()),
         "pattern": deposit_json(base.transaction, base.pay_cycle_on, income) if base else None,
     }
 
@@ -167,6 +192,7 @@ def salary_decide(request):
     user, today = request.user, timezone.localdate()
     with transaction.atomic():
         profile = locked_profile(user, today)
+        refresh_confirmed(user)
         windows = salary_windows(profile, today)
         touched = set(SalaryDecision.objects.filter(user=user, transaction_id__in=ids)
                       .exclude(pay_cycle_on=None).values_list("pay_cycle_on", flat=True))
@@ -174,7 +200,7 @@ def salary_decide(request):
             # 행 잠금: R11 자동 연결(transfer_rules.link_own_transfers)과 같은 거래를 두고 겹치면 한쪽만 확정된다.
             # 선택 해제 계좌라도 이미 확인한 입금은 다시 고를 수 있다 (새 입금은 관리 대상 계좌만)
             txs = list(known_deposits(user).filter(pk__in=ids).select_for_update(of=("self",)))
-            cycles = {next((c for c, low, high in windows if low <= tx.occurred_on <= high), None) for tx in txs}
+            cycles = {confirmation_cycle(tx, windows, today) for tx in txs}
             if len(txs) != len(ids) or len(cycles) != 1 or None in cycles:
                 raise ValidationError({"transaction_ids": ["같은 급여 구간에서 고를 수 있는 입금만 함께 확인할 수 있어요."]})
             cycle_on = cycles.pop()
@@ -187,7 +213,8 @@ def salary_decide(request):
             SalaryDecision.objects.filter(user=user, pay_cycle_on=cycle_on).exclude(transaction_id__in=ids).delete()
             for tx in txs:
                 SalaryDecision.objects.update_or_create(transaction=tx, defaults={
-                    "user": user, "state": "confirmed", "pay_cycle_on": cycle_on, "is_pattern": data["use_pattern"]})
+                    "user": user, "state": "confirmed", "pay_cycle_on": cycle_on, "is_pattern": data["use_pattern"],
+                    **confirmation_snapshot(tx)})
             touched.add(cycle_on)
         else:
             owned = FinancialTransaction.objects.filter(user=user, source_kind="bank", direction="in", pk__in=ids)

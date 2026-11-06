@@ -9,7 +9,7 @@ import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import PaymentTxLine from '../components/PaymentTxLine.jsx'
 
-const TAG = { confirmed: '월급으로 확인함', auto: '자동 인식', rejected: '월급 아니라고 함', recheck: '자동 인식이 바뀌어서 다시 확인 필요' }
+const TAG = { confirmed: '월급으로 확인함', auto: '자동 인식', rejected: '월급 아니라고 함', recheck: '거래 또는 확인 근거가 바뀌어서 다시 확인 필요' }
 const mmdd = (iso) => `${iso.slice(5, 7)}.${iso.slice(8, 10)}`
 
 export default function SalaryCheckPopup({ onSaved }) {
@@ -54,9 +54,9 @@ export default function SalaryCheckPopup({ onSaved }) {
       <h1>어느 입금이 월급인가요?</h1>
       <p className="mc-note">고른 입금만 월급으로 봐요. 등록한 실수령액이나 승인한 예산은 바뀌지 않아요.</p>
 
-      {data.windows.map((w, n) => (
+      {data.windows.map((w) => (
         <section key={w.payCycleOn} aria-label={`${mmdd(w.payCycleOn)} 월급`}>
-          <h3 className="mc-loan-h">{n === 0 ? '이번 월급' : '다음 월급 (미리 들어온 입금)'} <small>{mmdd(w.from)} ~ {mmdd(w.to)}</small></h3>
+          <h3 className="mc-loan-h">{mmdd(w.payCycleOn)} 회차 월급 <small>{mmdd(w.from)} ~ {mmdd(w.to)}</small></h3>
           {w.items.length === 0 && <p className="mc-note">이 기간에 고를 수 있는 입금이 없어요.</p>}
           <div className="mc-lock-list">{w.items.map((t) => (
             <button type="button" key={t.transactionId} className="mc-lock-opt" style={{ flexWrap: 'wrap' }} disabled={busy}

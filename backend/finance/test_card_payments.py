@@ -171,3 +171,37 @@ class CardPaymentTest(TestCase):
         with patch.object(pipeline.card_payments, "match", side_effect=half_done), self.assertLogs("finance.pipeline", "ERROR"):
             pipeline.rematch_payments(self.user)
         self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_user_confirmed_card_payment_is_not_automatically_taken(self):
+        self.bill()
+        tx = self.payment()
+        Tx.objects.filter(pk=tx.pk).update(confirmation_state="confirmed")
+        self.run_step(tx)
+        self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_latest_amount_and_new_payment_link_are_checked_after_candidate_read(self):
+        from . import card_payments
+        bill, tx = self.bill(), self.payment()
+        original_find = card_payments.find_statements
+
+        def change_after_read(user, candidate):
+            shares = original_find(user, candidate)
+            Tx.objects.filter(pk=tx.pk).update(amount=400_000)
+            return shares
+
+        with patch.object(card_payments, "find_statements", side_effect=change_after_read):
+            self.run_step(tx)
+        self.assertFalse(PaymentMatch.objects.exists())
+        Tx.objects.filter(pk=tx.pk).update(amount=420_000)
+        other_bill = self.bill(amount=100_000, key="other", due=date(2026, 12, 5))
+        due = card_payments.bill_due(other_bill, tx)
+
+        def link_after_read(user, candidate):
+            shares = original_find(user, candidate)
+            PaymentMatch.objects.get_or_create(user=user, due=due, transaction=tx, defaults={"matched_amount": 100_000})
+            return shares
+
+        with patch.object(card_payments, "find_statements", side_effect=link_after_read):
+            self.run_step(tx)
+        self.assertEqual(list(PaymentMatch.objects.values_list("due_id", flat=True)), [due.pk])
+        self.assertFalse(PaymentDue.objects.filter(bill=bill).exists())
