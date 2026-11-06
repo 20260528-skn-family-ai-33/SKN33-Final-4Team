@@ -75,7 +75,7 @@ ROUTE_TAIL = re.compile(r"(_구)?_(nice|인증|일반)(_\d+)?$|_\d+$", re.IGNORE
 
 # ----- 1. 다품목 -----
 # 다품목 = 상호만으로 품목을 모르는 곳 (분류 기준 D1, D16). 대부분 사용자에게 묻고, 과거 선택은 후보로만 보여 준다 (분류 워크플로 10/26 단계 2)
-# 11/05 결정: 편의점·슈퍼·대형마트는 항상 식비, 다이소는 생활용품. 사용자가 고친 값은 그 거래에만 쓰므로 is_multi_item 은 참으로 둔다
+# 11/05 결정: 편의점·슈퍼·대형마트는 기본 식비, 다이소는 기본 생활용품. 11/06 결정: 사용자가 '앞으로도 적용'을 고르면 다품목도 그 선택이 먼저
 # 브랜드는 혜리 님 multi_category_brand_candidates.csv(10/30) 기준 (한글 표기 지에스25·씨유 포함)
 # shortcut: 상가 업종이 아니라 가맹점 이름으로 판별한다 (정리된 이름 기준). 5단계에서는 검색 업종으로도 판별
 FOOD_RETAIL_PREFIXES = (
@@ -126,7 +126,7 @@ ETC_KEYWORDS = ("연회비", "보험")
 TAXI_NAMES = ("개인택시", "일반택시")
 TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
 NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
-# 교통카드 (11/05): 가게 이름이 아니라 SVM 이 엉뚱한 카테고리를 확신한다 (모바일티머니선불형 생활용품 0.94). 충전은 규칙보다 먼저 사용자에게 묻는다
+# 교통카드 (11/05): 가게 이름이 아니라 SVM 이 엉뚱한 카테고리를 확신한다 (모바일티머니선불형 생활용품 0.94). 충전도 교통비라 페이 충전으로 묻지 않는다 (11/06)
 TRANSIT_CARDS = ("티머니", "캐시비", "레일플러스")
 # PC방 = 문화·여가 (분류 기준 2장). 표기가 피시방·PC방 둘 다
 CULTURE_KEYWORDS = ("피시방", "pc방")
@@ -243,7 +243,8 @@ def is_unknown_store(name):
 
 
 def is_pay_charge(name):
-    return bool(PAY_CHARGE.search(common.normalize_name(store_name(name) or "")))
+    normalized = common.normalize_name(store_name(name) or "")
+    return bool(PAY_CHARGE.search(normalized)) and not any(card in normalized for card in TRANSIT_CARDS)
 
 
 def rule_category(name):
@@ -334,7 +335,7 @@ def judge(name):
             industry = None  # 첫 결과가 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
             record["store_mismatch"] = True
         if industry and (industry in MULTI_ITEM_INDUSTRIES or industry.endswith("마트")):
-            record[SEARCHED_MULTI_ITEM] = True  # '앞으로도 적용'을 막는 근거 (merchant_rules.searched_multi_item, PR #67 리뷰)
+            record[SEARCHED_MULTI_ITEM] = True  # 같은 가게의 다음 거래도 다품목으로 처리하는 근거 (PR #67 리뷰)
             if food_retail_industry(industry):
                 return {"retail": "FOOD", "record": record}
             return {"review": ([], MULTI_ITEM_REASON), "record": record}
@@ -376,18 +377,22 @@ def classify(user, txs):
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
         code, future = last_user_choice(user, tx.merchant_name)
         seen = None if is_multi_item(name) else seen_multi_item_industry(user, tx.merchant_name)
-        if retail := retail_category(name) or ("FOOD" if seen and food_retail_industry(seen) else None):
-            # 사용자가 고친 값은 그 거래에만 쓴다: 지난 선택과 상관없이 정해진 카테고리
+        seen_food = bool(seen) and food_retail_industry(seen)
+        # 동명 충돌이면 저장된 검색 업종이 이 가게의 근거가 아니다. 첫 분류처럼 묻는다 (PR #92 리뷰)
+        seen_conflict = seen_food and common.normalize_name(name or "") in conflict_names()
+        if code and future and not is_pay_charge(name):
+            # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
+            _apply(tx, code, Tx.ClassificationSource.RULE, None)
+        elif retail := retail_category(name) or ("FOOD" if seen_food and not seen_conflict else None):
+            # '앞으로도 적용'이 없으면 지난 선택과 상관없이 정해진 카테고리
             _apply(tx, retail, Tx.ClassificationSource.RULE, None)
         elif is_multi_item(name) or seen:
             # 다품목(이름 사전 또는 같은 가게의 지난 검색 업종)은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
-            _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
+            _review(tx, [(code, None)] if code else [], CONFLICT_REASON if seen_conflict else MULTI_ITEM_REASON,
+                    Tx.ClassificationSource.RULE if code else None)
         elif is_pay_charge(name):
             # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
             _review(tx, [(code, None)] if code else [], PAY_CHARGE_REASON, Tx.ClassificationSource.RULE if code else None)
-        elif code and future:
-            # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
-            _apply(tx, code, Tx.ClassificationSource.RULE, None)
         elif common.normalize_name(name or "") in MIXED_SERVICE_NAMES:
             # 과거 선택(앞으로도 적용 아님)이 있으면 첫 후보로
             candidates = [c for c in dict.fromkeys((code, "CULTURE_LEISURE")) if c]

@@ -1,7 +1,7 @@
 // 팝업: 어떤 카테고리인가요? — "카테고리 확인 필요" 거래 고르기
 // 열면 거래 한 건 보기(GET /api/finance/transactions/<id>/)로 확인 필요 이유 · 후보 카테고리를 받아 위에 보여 준다 (10/30 A안)
 // 고르면 거래 분류 수정(PATCH { category, applyToFuture }) → 목록 새로고침 (docs/api/transactions.md)
-// '앞으로도 적용'은 서버가 canApplyToFuture 로 허락한 거래(다품목·페이 충전 아님)에만 보여 준다 (10/30)
+// '앞으로도 적용'은 서버가 canApplyToFuture 로 허락한 거래(페이 충전·이체 아님)에만 보여 준다 (10/30)
 import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'

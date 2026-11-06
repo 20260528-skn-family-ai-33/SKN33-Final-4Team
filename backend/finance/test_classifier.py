@@ -100,6 +100,43 @@ class ClassifyTest(TestCase):
                           ("HOUSEHOLD", "suggested", "rule", None)])
         predict.assert_called_once_with([])
 
+    def test_future_choice_beats_retail_and_multi_item(self, predict):
+        # 11/06: 사용자가 '앞으로도 적용'을 고르면 다품목도 그 선택. 페이 충전은 표시가 남아 있어도 묻는다
+        chosen = {"confirmed_category_id": "HOUSEHOLD", "confirmation_state": "confirmed", "classification_source": "user",
+                  "field_states": {"apply_to_future": True}}
+        for name in ("GS25 역삼점", "쿠팡", "네이버페이충전"):
+            self.tx(name, **chosen)
+        store, mall, charge = self.run_classify(self.tx("GS25 역삼점"), self.tx("쿠팡"), self.tx("네이버페이충전"))
+        for tx in (store, mall):
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source), ("HOUSEHOLD", "suggested", "rule"))
+        self.assertEqual((charge.confirmed_category_id, charge.suggestion_reason), ("UNCLASSIFIED", classifier.PAY_CHARGE_REASON))
+        predict.assert_called_once_with([])
+
+    def test_name_conflict_is_not_bypassed_by_searched_retail(self, predict):
+        # PR #92 리뷰: 동명 충돌 이름은 저장된 검색 업종이 마트여도 사용자가 고르기 전까지 확인 필요
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True, "name_conflict": True}}
+        chosen = {"confirmed_category_id": "HOUSEHOLD", "confirmation_state": "confirmed", "classification_source": "user"}
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"청담"})):
+            (again,) = self.run_classify(self.tx("청담", field_states=searched))  # 선택하지 않은 기존 거래 재분류
+            self.assertEqual((again.confirmed_category_id, again.confirmation_state, again.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+
+            self.tx("청담", field_states=searched, **chosen)  # '앞으로도 적용' 없이 고름 → 새 거래는 후보만
+            (fresh,) = self.run_classify(self.tx("청담"))
+            self.assertEqual((fresh.confirmed_category_id, fresh.suggestion_reason, fresh.suggested_category_id),
+                             ("UNCLASSIFIED", classifier.CONFLICT_REASON, "HOUSEHOLD"))
+
+            self.tx("청담", field_states={**searched, "apply_to_future": True}, **chosen)  # 체크함 → 고른 카테고리
+            (remembered,) = self.run_classify(self.tx("청담"))
+            self.assertEqual((remembered.confirmed_category_id, remembered.classification_source), ("HOUSEHOLD", "rule"))
+        predict.assert_called_with([])
+
+    def test_transit_card_charge_is_transport(self, predict):
+        # 11/06: 티머니 충전은 페이 충전이 아니라 교통비
+        (tx,) = self.run_classify(self.tx("모바일티머니충전"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source), ("TRANSPORT_CAR", "suggested", "rule"))
+        predict.assert_called_once_with([])
+
     def test_searched_retail_is_food_for_later_transactions(self, predict):
         # 검색으로 마트가 확인된 가게는 SVM 이 다른 답을 확신해도 식비. 백화점으로 확인된 가게는 계속 묻는다
         predict.side_effect = lambda names: [[("BEAUTY", 0.99)] for _ in names]
@@ -330,10 +367,11 @@ class RuleTest(SimpleTestCase):
         self.assertFalse(classifier.is_multi_item("아트박스테스트홈플러스점"))
 
     def test_transit_cards(self):
-        # 11/05: 교통카드는 어떤 표기든 교통. 충전은 규칙보다 먼저 사용자에게 묻는다
-        for name in ("모바일티머니선불형", "티머니731", "캐시비", "레일플러스"):
+        # 11/05: 교통카드는 어떤 표기든 교통. 11/06: 충전도 교통이고 다른 페이 충전은 계속 묻는다
+        for name in ("모바일티머니선불형", "티머니731", "캐시비", "레일플러스", "모바일티머니충전", "티머니 충전"):
             self.assertEqual(classifier.rule_category(name), "TRANSPORT_CAR", name)
-        self.assertTrue(classifier.is_pay_charge("모바일티머니충전"))
+            self.assertFalse(classifier.is_pay_charge(name), name)
+        self.assertTrue(classifier.is_pay_charge("네이버페이충전"))
 
     def test_store_after_pay_route(self):
         # 11/05: 'A - B' 는 A 가 결제 경로면 B, 아니면 A 가 가맹점
@@ -409,7 +447,7 @@ class JudgeTest(SimpleTestCase):
         for industry in ("편의점", "슈퍼마켓", "대형마트", "식자재마트"):
             result, ask = self.run_judge(("naver", "새봄동물", industry))
             self.assertEqual(result["retail"], "FOOD", industry)
-            self.assertTrue(result["record"]["multi_item"])  # '앞으로도 적용'을 계속 막는다
+            self.assertTrue(result["record"]["multi_item"])  # 같은 가게의 다음 거래도 다품목으로 처리
             ask.assert_not_called()
 
     def test_non_store_industry_is_not_evidence(self):
