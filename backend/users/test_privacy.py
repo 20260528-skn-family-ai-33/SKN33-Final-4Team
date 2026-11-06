@@ -116,7 +116,7 @@ class PrivacyTests(TestCase):
         self.assertEqual(self.revoke().status_code, 403)
         self.assertTrue(Card.objects.filter(pk=self.card.pk).exists())
 
-    @patch('users.api_privacy.codef_privacy.delete_registered_accounts')
+    @patch('finance.codef_privacy.delete_registered_accounts')
     def test_loan_revoke_preserves_manual_loan_bank_data_and_shared_auth(self, remove):
         self.user.codef_connected_id_ciphertext = seal('synthetic-id')
         self.user.save(update_fields=['codef_connected_id_ciphertext'])
@@ -146,18 +146,23 @@ class PrivacyTests(TestCase):
         self.assertEqual(self.revoke().status_code, 409)
         self.assertTrue(Card.objects.filter(pk=self.card.pk).exists())
 
-    @patch('users.api_privacy.codef_privacy.delete_registered_accounts')
+    @patch('finance.codef_privacy.delete_registered_accounts')
     def test_provider_failure_leaves_local_data_for_retry_without_exposing_provider_message(self, remove):
         self.user.codef_connected_id_ciphertext = seal('synthetic-id')
         self.user.save(update_fields=['codef_connected_id_ciphertext'])
         remove.side_effect = ValueError('secret-raw-provider-response')
         response = self.revoke()
-        self.assertEqual(response.status_code, 502)
+        # 접수는 커밋되고(동의 철회) 외부 삭제가 남음 → 완료로 표시하지 않고 재시도 필요로 안내
+        self.assertEqual(response.status_code, 202)
         self.assertNotIn('secret-raw', response.content.decode())
-        self.assertTrue(Card.objects.filter(pk=self.card.pk).exists())
-        self.assertTrue(Consent.objects.filter(user=self.user, product_scope='card', revoked_at=None).exists())
+        self.assertEqual(response.json()['items'][1]['deletionStatus'], 'retry_required')
+        self.assertFalse(Card.objects.filter(pk=self.card.pk).exists())  # 로컬 자료는 접수 때 정리, 외부 인증만 재시도
+        self.assertFalse(Consent.objects.filter(user=self.user, product_scope='card', revoked_at=None).exists())
         remove.side_effect = None
-        self.assertEqual(self.revoke().status_code, 200)
+        response = self.revoke()
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.json()['items'][1]['deletionStatus'])
+        self.assertFalse(Card.objects.filter(pk=self.card.pk).exists())
         remove.assert_called_with('synthetic-id', {'CD'})
 
     def test_withdraw_requires_app_password_and_deletes_full_graph_and_all_sessions(self):
@@ -175,15 +180,18 @@ class PrivacyTests(TestCase):
         self.assertEqual(other_client.get('/api/auth/me/').status_code, 200)
         self.assertFalse(any(row.get_decoded().get('_auth_user_id') == str(user_id) for row in Session.objects.all()))
 
-    @patch('users.api_privacy.codef_privacy.delete_registered_accounts')
-    def test_withdraw_provider_failure_preserves_account_and_sessions_for_retry(self, remove):
+    @patch('finance.codef_privacy.delete_registered_accounts')
+    def test_withdraw_provider_failure_keeps_data_for_retry_and_blocks_login(self, remove):
         self.user.codef_connected_id_ciphertext = seal('synthetic-id')
         self.user.save(update_fields=['codef_connected_id_ciphertext'])
         remove.side_effect = ValueError('failure')
         response = self.client.delete('/api/auth/me/', {'password': 'Synthetic123!', 'confirm': True}, format='json')
-        self.assertEqual(response.status_code, 502)
-        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk).exists())
-        self.assertEqual(self.client.get('/api/auth/me/').status_code, 200)
+        # 탈퇴는 접수됨(로그인 차단) · 외부 삭제가 남아 완료가 아님 → 회원 자료는 재처리 전까지 보존
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(response.json(), {'ok': False, 'status': 'retry_required'})
+        self.assertTrue(get_user_model().objects.filter(pk=self.user.pk, is_active=False).exists())
+        self.assertTrue(FinancialTransaction.objects.filter(pk=self.banktx.pk).exists())
+        self.assertEqual(self.client.get('/api/auth/me/').status_code, 403)
         remove.assert_called_with('synthetic-id', None)
 
     @patch('finance.codef._client')

@@ -101,6 +101,9 @@ def consents(request):
         # 회원 행을 잠가 같은 회원의 동의 저장을 한 번에 하나씩 처리한다.
         # 요청 번호가 다른 같은 동의가 동시에 와도, 뒤의 요청은 앞의 저장이 끝난 뒤 기존 기록을 찾아 재사용한다 (PR #41 리뷰)
         list(get_user_model().objects.select_for_update().filter(pk=request.user.pk).values_list("pk", flat=True))
+        from users.deletion import PrivacyDeleting, blocked_scopes
+        if blocked_scopes(request.user.pk).intersection(scope for scope, _, _ in picked):
+            raise PrivacyDeleting()  # 이전 철회의 삭제가 끝나기 전에 같은 인증수단을 다시 등록하지 않게 (R21)
         if not any(scope == Consent.ProductScope.BANK for scope, _, _ in picked) and not has_bank_consent(request.user):
             raise ValidationError({"consents": ["계좌 조회 동의는 꼭 필요해요."]})
         for scope, version, document_hash in picked:

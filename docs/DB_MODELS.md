@@ -87,7 +87,7 @@
 
 | 앱 | 테이블 (ERD 이름) | 모델 클래스 |
 |---|---|---|
-| `users` | app_user, financial_profile, category_priority, category_minimum, consent, idempotency_record | User, FinancialProfile, CategoryPriority, CategoryMinimum, Consent, IdempotencyRecord |
+| `users` | app_user, financial_profile, category_priority, category_minimum, consent, idempotency_record, privacy_deletion | User, FinancialProfile, CategoryPriority, CategoryMinimum, Consent, IdempotencyRecord, PrivacyDeletion |
 | `finance` | connection, bank_account, card, loan, sync_run | Connection, BankAccount, Card, Loan, SyncRun |
 | `finance` | financial_transaction, transaction_link | FinancialTransaction, TransactionLink |
 | `finance` | card_bill, card_bill_item, recurring_expense, recurring_saving, payment_due, payment_match | CardBill, CardBillItem, RecurringExpense, RecurringSaving, PaymentDue, PaymentMatch |
@@ -221,3 +221,13 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 - 상태는 새로 만들지 않고 기존 `loan.status = repaid` 를 쓴다.
 - 완납 근거 · 복구값은 새 칸 없이 `loan.field_states.payoff` 에 둔다 (`first_seen_on` 과 같은 방식): `source: "user_report"`(CODEF 확인 아님) · `reportedAt`(처리 시각) · `reportedOn`(처리일 = 오늘) · `previous`(`status` · `manualBalance` · 그 값의 `fieldStates.manualBalance`) · `canceledDueIds`(이 처리로 취소한 미래 회차). 되돌리면 지우지 않고 `undoneAt` 을 덧붙인다. 다시 완납하면 새 기록으로 바뀐다(되돌리기 요청은 `reportedAt` 이 같아야 한다).
 - 동작 상세: `backend/finance/api_loans.py` `loan_payoff` · `loan_payoff_cancel`, 명세 `docs/api/loans.md` 13번.
+
+## 2026-11-06 삭제 진행 기록 (R21) — `users/0011_privacy_deletion`
+
+- `privacy_deletion` 표 추가: 동의 철회 · 회원 탈퇴 한 건 = 한 줄. 외부(CODEF) 인증 삭제와 우리 DB 삭제를 한 트랜잭션으로 되돌릴 수 없어서, 단계(`status`: `provider_pending` 접수 · 외부 삭제 대기 → `local_pending` 외부 삭제 확인 → `completed`)와 실패 단계 · 안전한 오류 코드 · 실행 횟수 · 실행 권한 만료(`lease_expires_at`) · 실행 토큰(`lease_token`) · 처리 시각을 남기고 재시도한다. 토큰을 가진 실행만 상태 · 실패 · 해제를 기록한다.
+- **회원 FK 없음** (`user_id` UUID 만): `purge_scope`(AsyncTask 등 삭제) · `user.delete`(CASCADE) 뒤에도 기록이 남아야 완료 · 실패를 추적할 수 있다.
+- 조건부 UNIQUE `privacy_deletion_one_open` (회원 · 범위, `status <> completed`): 같은 범위의 미완료 삭제는 하나만 → 반복 요청은 기존 기록을 재사용. `scope` 는 bank · card · loan · all(탈퇴).
+- `provider_kinds`: 접수 시점 동의로 정한 CODEF 업권 (null=전체, `[]`=외부 삭제 없음 — 계좌 · 대출 공유 은행 인증 보존).
+- 넣지 않는 것: 계좌번호 · 비밀번호 · connectedId(회원 행의 기존 AES-GCM 암호문을 그대로 쓴다) · 외부 응답 원문 · 예외 메시지.
+- 보존 · 정리: 완료 기록은 30일 보관 후 `python manage.py privacy_deletion_retry` 가 지운다. 미완료 기록은 완료될 때까지 남는다. 모든 조회 동의가 철회되고 삭제가 끝나면 회원의 connectedId 암호문 · 발급 시각을 비운다. 탈퇴는 회원 행과 함께 사라진다.
+- 동작 상세: `backend/users/deletion.py` 머리말.

@@ -426,12 +426,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '502':
-          description: '외부 연결 삭제 실패: provider_unavailable'
+        '202':
+          description: 탈퇴 접수(로그인 차단 · 로그아웃) · 외부 인증 또는 자료 삭제 미완료. 운영자가 재처리 명령을 수동 실행해 이어 간다(자동 스케줄 없음, R21)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                required:
+                - ok
+                - status
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                    - false
+                  status:
+                    type: string
+                    enum:
+                    - processing
+                    - retry_required
       requestBody:
         required: true
         content:
@@ -615,7 +628,8 @@ paths:
                       code: not_authenticated
                       message: 로그인이 필요해요.
         '409':
-          description: '같은 회원의 같은 Idempotency-Key로 다른 내용을 전송: idempotency_conflict. 더는 동의받지 않는 지난 문서 버전: document_outdated.'
+          description: '같은 회원의 같은 Idempotency-Key로 다른 내용을 전송: idempotency_conflict. 더는 동의받지 않는 지난 문서 버전: document_outdated.
+            · 이전 철회의 삭제가 끝나지 않은 범위: privacy_deleting'
           content:
             application/json:
               schema:
@@ -1307,7 +1321,8 @@ paths:
 
 
         해당 범위 원천 데이터 및 자동 탐지 항목 삭제. 혼합 예산·쿠션·대화·작업 캐시는 초기화. 직접 등록 항목과 다른 범위 원천은 보존. 은행 인증은 계좌·대출 동의가 모두 없어질 때 삭제.
-        반복 요청은 현재 상태 반환.
+        반복 요청은 현재 상태 반환. 접수(동의 철회 · 연결 해제)를 먼저 커밋한 뒤 외부 인증 삭제 → 로컬 정리를 이어 하며, 끝나지 않으면 202와 deletionStatus로 안내하고
+        같은 요청으로 재시도한다(R21).
 
 
         원본: `docs/api/finance-connect.md`'
@@ -1342,12 +1357,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '502':
-          description: '외부 연결 삭제 실패: provider_unavailable'
+        '202':
+          description: '접수됨 · 삭제 미완료: 해당 항목 deletionStatus가 processing(다른 실행 진행 중) 또는 retry_required(실패 또는 실행 권한
+            만료 — 같은 요청으로 재시도)'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ConsentStates'
       parameters:
       - name: scope
         in: path
@@ -8994,6 +9010,7 @@ components:
             - documentVersion
             - grantedAt
             - revokedAt
+            - deletionStatus
             properties:
               productScope:
                 type: string
@@ -9020,6 +9037,14 @@ components:
                 type: string
                 nullable: true
                 format: date-time
+              deletionStatus:
+                type: string
+                nullable: true
+                enum:
+                - processing
+                - retry_required
+                - null
+                description: 철회 삭제 진행 상태. null=삭제 없음 또는 완료
             additionalProperties: false
       additionalProperties: false
     CardCandidate:
@@ -12944,8 +12969,8 @@ x-source-sha256:
   docs/api/README.md: 5a194581431badd4d9f3317495cecf3c33ffa988306710b6308c05362dd34706
   docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
-  docs/api/auth.md: d319e5346c850f0327eaaa8a3efc1177002bd1c50ab3f81b29b1a7b301f37797
-  docs/api/finance-connect.md: 834571c3866ad128bdf918097f96ee80eae7bbc096143f504a52067a0459b0bd
+  docs/api/auth.md: af5766f41b50bee196931bb830091e96c9b8f8e0734d90c6c8ab63849704247a
+  docs/api/finance-connect.md: 1e1a22f3b9b3ce05f6e37728f7aa3ded26ef65bae478d9e394d3bcec1a2b78f5
   docs/api/cards.md: a751b39b3fdc01899f431ebbf95b421acd8bdb0bd07828e561665ce0af1f0b9e
   docs/api/loans.md: 86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f
   docs/api/transactions.md: 9013a649b3e2ef6c165d598e080c1218998f815d9057a99eb9eb961f58cd0b80

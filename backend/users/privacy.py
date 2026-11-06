@@ -41,6 +41,8 @@ def delete_together(querysets):
 def consent_states(user):
     records = Consent.objects.filter(user=user, purpose="finance_inquiry").order_by("-granted_at", "-pk")
     rows = list(records)
+    from .deletion import open_deletions, state  # deletion 이 이 파일을 불러서 여기선 늦게 부른다
+    pending = {row.scope: state(row) for row in open_deletions(user.pk)}
     items = []
     for scope in ("bank", "card", "loan"):
         scoped = [row for row in rows if row.product_scope == scope]
@@ -52,6 +54,7 @@ def consent_states(user):
             "document_version": latest.document_version if latest else None,
             "granted_at": latest.granted_at if latest else None,
             "revoked_at": latest.revoked_at if latest else None,
+            "deletion_status": pending.get(scope),  # null=삭제 없음 · 완료, processing · retry_required (R21)
         })
     return {"items": items}
 
