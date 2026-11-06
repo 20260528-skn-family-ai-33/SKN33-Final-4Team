@@ -41,12 +41,13 @@ def last_user_choice(user, merchant_name):
     return row[0], bool((row[1] or {}).get(FUTURE_KEY))
 
 
-def seen_multi_item_industry(user, merchant_name):
-    """같은 회원·같은 가맹점의 거래 중 검색으로 다품목이 확인된 거래의 업종. 없으면 None"""
+def seen_multi_item(user, merchant_name):
+    """같은 회원·같은 가맹점의 거래 중 검색으로 다품목이 확인된 거래의 (업종, 동명 충돌로 저장됐는지). 없으면 (None, False)"""
     merchant = normalize_merchant(merchant_name)
-    return None if merchant is None else FinancialTransaction.objects.filter(
+    rows = [] if merchant is None else list(FinancialTransaction.objects.filter(
         user=user, merchant_name=merchant, **{f"field_states__classifier__{SEARCHED_MULTI_ITEM}": True},
-    ).values_list("field_states__classifier__industry", flat=True).first()
+    ).values_list("field_states__classifier__industry", "field_states__classifier__name_conflict"))
+    return (rows[0][0], any(conflict for _, conflict in rows)) if rows else (None, False)
 
 
 def remembered_category(user, merchant_name):

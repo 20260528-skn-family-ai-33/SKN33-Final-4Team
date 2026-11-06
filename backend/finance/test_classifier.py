@@ -131,6 +131,23 @@ class ClassifyTest(TestCase):
             self.assertEqual((remembered.confirmed_category_id, remembered.classification_source), ("HOUSEHOLD", "rule"))
         predict.assert_called_with([])
 
+    def test_saved_name_conflict_works_without_conflict_file(self, predict):
+        # PR #92 재리뷰: 충돌 목록 파일이 없는 환경에서도 거래에 저장된 판단으로 막는다
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True, "name_conflict": True}}
+        with patch("finance.classifier.conflict_names", return_value=frozenset()):
+            old, fresh = self.run_classify(self.tx("청담", field_states=searched), self.tx("청담"))
+            for tx in (old, fresh):
+                self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                                 ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+            self.tx("청담", confirmed_category_id="HOUSEHOLD", confirmation_state="confirmed", classification_source="user",
+                    field_states={**searched, "apply_to_future": True})
+            (chosen,) = self.run_classify(self.tx("청담"))
+            self.assertEqual((chosen.confirmed_category_id, chosen.classification_source), ("HOUSEHOLD", "rule"))
+            # 충돌 표시가 없는 마트는 파일이 없어도 그대로 식비
+            self.tx("행복상회", field_states={"classifier": {"industry": "슈퍼마켓", "multi_item": True}})
+            (mart,) = self.run_classify(self.tx("행복상회"))
+            self.assertEqual(mart.confirmed_category_id, "FOOD")
+
     def test_transit_card_charge_is_transport(self, predict):
         # 11/06: 티머니 충전은 페이 충전이 아니라 교통비
         (tx,) = self.run_classify(self.tx("모바일티머니충전"))

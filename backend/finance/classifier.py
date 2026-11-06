@@ -27,7 +27,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item_industry
+from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -376,10 +376,11 @@ def classify(user, txs):
         name = store_name(tx.merchant_name)
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
         code, future = last_user_choice(user, tx.merchant_name)
-        seen = None if is_multi_item(name) else seen_multi_item_industry(user, tx.merchant_name)
+        seen, saved_conflict = (None, False) if is_multi_item(name) else seen_multi_item(user, tx.merchant_name)
         seen_food = bool(seen) and food_retail_industry(seen)
         # 동명 충돌이면 저장된 검색 업종이 이 가게의 근거가 아니다. 첫 분류처럼 묻는다 (PR #92 리뷰)
-        seen_conflict = seen_food and common.normalize_name(name or "") in conflict_names()
+        # 충돌 목록 파일은 Git 에 없어서 환경마다 없을 수 있다. 거래에 저장된 판단도 본다
+        seen_conflict = seen_food and (saved_conflict or common.normalize_name(name or "") in conflict_names())
         if code and future and not is_pay_charge(name):
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
