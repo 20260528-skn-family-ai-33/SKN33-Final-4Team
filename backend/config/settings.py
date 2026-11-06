@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.postgres",
     # API (리액트에 JSON 데이터 주기)
     "rest_framework",
     "drf_spectacular",
@@ -64,6 +65,7 @@ INSTALLED_APPS = [
     "finance",
     "budgets",
     "chat",
+    "policies",
 ]
 
 # ===== 회원 모델 =====
