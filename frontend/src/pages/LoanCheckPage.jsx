@@ -11,6 +11,8 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import LoanAddPopup from '../popups/LoanAddPopup.jsx'
 import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
+import LoanEditPopup from '../popups/LoanEditPopup.jsx'
+import LoanPayoffPopup from '../popups/LoanPayoffPopup.jsx'
 
 const METHODS = [['equal_payment', '원리금균등'], ['equal_principal', '원금균등'], ['bullet', '만기일시'], ['unknown', '잘 모르겠어요']]
 const money = (value) => value == null ? '확인 필요' : won(value)
@@ -19,7 +21,7 @@ const when = (iso) => iso ? new Date(iso).toLocaleString('ko-KR', { timeZone: 'A
 const DUE_STATE = { unpaid: '아직 확인 안 됨', partial: '일부만 냈어요', paid: '이번 납부 완료', needs_review: '출금 확인 필요' }
 const draftOf = (loan) => ({ monthlyPayment: String(loan.monthlyPayment ?? ''), paymentDay: String(loan.paymentDay ?? ''), repaymentMethod: loan.repaymentMethod ?? '' })
 
-function LoanCard({ loan, onEditing, onPaymentSaved }) {
+function LoanCard({ loan, onEditing, onPaymentSaved, onPaidOff }) {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   const [saved, setSaved] = useState(loan)
@@ -137,6 +139,11 @@ function LoanCard({ loan, onEditing, onPaymentSaved }) {
         </fieldset>
       </form>
       {success && <p className="mc-note" role="status">상환 정보를 저장했어요.</p>}
+      {manual && <div className="mc-keyvalue">
+        <button type="button" className="mc-link" onClick={() => openPopup(<LoanEditPopup loan={saved} onSaved={setSaved} />)}>대출 정보 고치기</button>
+        <button type="button" className="mc-link" onClick={() => openPopup(<LoanPayoffPopup loan={{ ...saved, recentDues: loan.recentDues }} onDone={onPaidOff}
+          onCheckDue={(dueId) => openPopup(<LoanPaymentPopup key={dueId} dueId={dueId} onSaved={onPaymentSaved} />)} />)}>대출 전체 완납 처리</button>
+      </div>}
     </section>
   )
 }
@@ -146,6 +153,24 @@ export default function LoanCheckPage() {
   const { state } = useLocation()
   const { openPopup } = usePopup()
   const { data, error, reload } = useApi('/api/finance/loans/')
+  const repaid = useApi('/api/finance/loans/?status=repaid')  // 완납 되돌리기용 (직접 등록만)
+  const [notice, setNotice] = useState('')
+  const undoing = useRef(false)
+  const reloadAll = () => { reload(); repaid.reload() }
+  const undo = async (loan) => {
+    if (undoing.current) return
+    undoing.current = true
+    try {
+      await apiSend(`/api/finance/loans/${loan.loanId}/payoff/cancel/`, 'POST', { reportedAt: loan.payoff.reportedAt })
+      setNotice(`${loan.productName ?? '대출'} 완납 처리를 취소했어요. 다시 상환 중으로 보여요.`)
+    } catch (err) {
+      if (err.code === 'not_authenticated') navigate(PATHS.login, { replace: true })
+      setNotice(err.status ? err.message : '서버에 연결하지 못했어요. 다시 시도해 주세요.')
+    } finally {
+      undoing.current = false
+      reloadAll()
+    }
+  }
   const [editing, setEditing] = useState({})
   const [registered, setRegistered] = useState('')
   const manage = ['my', 'home', 'manage'].includes(state?.from)
@@ -168,8 +193,18 @@ export default function LoanCheckPage() {
           <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>기관 대출 조회에 동의하기</button>
         </div>}
         {rows.length === 0 && <p className="mc-note">{data.hasInquiryConsent === false ? '직접 등록한 상환 중 대출이 없어요. 대출을 직접 등록할 수 있어요.' : '저장된 상환 중 대출이 없어요. 조회되지 않는 대출은 직접 등록할 수 있어요.'}</p>}
-        {rows.map((loan) => <LoanCard key={loan.loanId} loan={loan} onEditing={onEditing} onPaymentSaved={reload} />)}
+        {rows.map((loan) => <LoanCard key={loan.loanId} loan={loan} onEditing={onEditing} onPaymentSaved={reload}
+          onPaidOff={(done) => { onEditing(loan.loanId, false); setNotice(`${done.productName ?? '대출'} 상환을 종료했어요. 잘못 눌렀다면 아래에서 완납을 취소할 수 있어요.`); reloadAll() }} />)}
       </>}
+      {notice && <p className="mc-note" role="status">{notice}</p>}
+      {repaid.data?.items?.length > 0 && <section className="mc-card" aria-label="상환 종료한 직접 등록 대출">
+        <h2 className="mc-loan-h">상환 종료한 직접 등록 대출</h2>
+        {repaid.data.items.map((loan) => (
+          <div className="mc-keyvalue" key={loan.loanId}>
+            <span>{loan.productName ?? '대출'} · {loan.lenderName ?? ''}{loan.payoff ? ` · ${when(loan.payoff.reportedAt)} 직접 완납` : ''}</span>
+            {loan.payoff && <button type="button" className="mc-link" onClick={() => undo(loan)}>완납 취소</button>}
+          </div>))}
+      </section>}
       {(data || error?.code === 'consent_required') && <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup onSaved={(created) => { setRegistered(created.productName); reload() }} />)}>+ 조회되지 않은 대출 직접 등록</button>}
       {registered && <p className="mc-note" role="status">{registered} 대출을 등록했어요.</p>}
       {unfinished && <p className="mc-note" role="status">수정한 대출의 상환 정보를 저장한 뒤 이동해 주세요.</p>}

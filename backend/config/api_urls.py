@@ -87,6 +87,8 @@ urlpatterns = [
 
     path("finance/loans/", finance_loans.loans, name="loan-list"),
     path("finance/loans/<uuid:loan_id>/", finance_loans.loan_detail, name="loan-detail",),
+    path("finance/loans/<uuid:loan_id>/payoff/", finance_loans.loan_payoff, name="loan-payoff"),
+    path("finance/loans/<uuid:loan_id>/payoff/cancel/", finance_loans.loan_payoff_cancel, name="loan-payoff-cancel"),
     path("finance/connect/cards/", finance_cards.connect_cards, name="card-candidates"),
     path("finance/card-bills/<uuid:bill_id>/", finance_cards.card_bill, name="card-bill"),
     path("finance/card-reviews/", finance_card_reviews.card_reviews, name="card-reviews"),

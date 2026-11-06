@@ -32,6 +32,8 @@ IMPLEMENTATION = {
     ("get", "/api/finance/loans/"): "implemented",
     ("post", "/api/finance/loans/"): "implemented",
     ("patch", "/api/finance/loans/{id}/"): "implemented",
+    ("post", "/api/finance/loans/{id}/payoff/"): "implemented",
+    ("post", "/api/finance/loans/{id}/payoff/cancel/"): "implemented",
     ("get", "/api/finance/loan-dues/{id}/payments/"): "implemented",
     ("post", "/api/finance/loan-dues/{id}/payments/"): "implemented",
     ("delete", "/api/finance/loan-dues/{id}/payments/{transactionId}/"): "implemented",

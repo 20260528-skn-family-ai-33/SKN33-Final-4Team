@@ -242,8 +242,9 @@ class Loan(models.Model):
                 name="loan_payment_day_1_31",
             ),
             models.CheckConstraint(
-                condition=Q(manual_balance__isnull=True) | Q(manual_balance__gte=1, manual_balance__lte=1_000_000_000),
-                name="loan_manual_balance_1_1b",
+                # 0원은 정정 입력 · 전체 완납 표시용 (R19). 직접 등록은 serializer 에서 1원부터 받는다
+                condition=Q(manual_balance__isnull=True) | Q(manual_balance__gte=0, manual_balance__lte=1_000_000_000),
+                name="loan_manual_balance_0_1b",
             ),
             models.CheckConstraint(
                 condition=Q(manual_rate__isnull=True) | Q(manual_rate__gte=0, manual_rate__lte=30),

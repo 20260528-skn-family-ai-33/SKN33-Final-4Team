@@ -368,13 +368,14 @@ class LoanCreateTest(TestCase):
             self.assertEqual(due.obligation_state, "active")
         self.assertEqual(self.counts(), (1, 1, 1))
 
-    def test_manual_loan_balance_remains_outside_patch_contract(self):
+    def test_manual_loan_balance_can_be_corrected_without_payoff(self):
+        # R19: 직접 등록 대출은 잔액을 정정할 수 있고, 0원으로 고쳐도 상환 종료로 바꾸지 않는다
         response = self.post(BASE)
         loan = Loan.objects.get(pk=response.json()["loanId"])
-        response = self.patch_loan(loan, {"manualBalance": 123})
-        self.assertEqual(response.status_code, 400)
+        response = self.patch_loan(loan, {"manualBalance": 0})
+        self.assertEqual(response.status_code, 200, response.content)
         loan.refresh_from_db()
-        self.assertEqual(loan.manual_balance, BASE["manualBalance"])
+        self.assertEqual((loan.manual_balance, loan.status), (0, "repaying"))
 
     def short_cycle(self):
         self.cycle.starts_on, self.cycle.ends_before = date(2027, 1, 31), date(2027, 2, 28)

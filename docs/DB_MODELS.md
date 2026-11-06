@@ -131,7 +131,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | connection | 같은 회원·업권·기관에서 '연결 중'이 2개 (해제 후 재연결은 OK), 업권 · 상태 오타, 해제인데 해제 시각 없음 / 연결 중인데 해제 시각 있음 — 10-24 |
 | bank_account | 계좌 종류가 demand·deposit·other 아님 (비우는 건 OK) — 10-24 |
 | card, loan | origin이 provider/manual 아님, 대출 status가 repaying/repaid 아님 |
-| loan | 상환 방식 코드 오타, 월 상환액 1원 미만 · 1억 초과, 납부일 1~31 밖, 직접 등록 잔액 1원 미만 · 10억 초과, 금리 0~30% 밖 (모두 비우는 건 OK) — 10-24 |
+| loan | 상환 방식 코드 오타, 월 상환액 1원 미만 · 1억 초과, 납부일 1~31 밖, 직접 등록 잔액 0원 미만 · 10억 초과(11/06 R19: 0원 허용으로 변경 — 등록은 serializer 에서 1원부터), 금리 0~30% 밖 (모두 비우는 건 OK) — 10-24 |
 | sync_run | 조회 대상(계좌·카드·대출) 2개 이상 |
 | financial_transaction | source_kind와 원천 FK 짝 안 맞음, 금액 음수, 취소액이 0~원거래 금액 밖, 신뢰도 0~1 밖, 방향 · 거래 유형 · 확인 상태 · 분류 출처 오타 — 10-24 |
 | transaction_link | 자기 자신과 연결, relation_type 오타 |
@@ -214,3 +214,10 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 ## 2026-11-05 동의 철회·탈퇴 삭제 처리
 
 스키마 변경 없이 `users/privacy.py`, `users/api_privacy.py`가 기존 모델의 삭제 범위를 관리한다. 동의 철회는 해당 범위의 조회 데이터와 자동 탐지 항목을 삭제하고 Consent의 revoked_at은 남긴다. 직접 등록 항목은 삭제 자료와의 FK·근거만 해제한다. 혼합 개인정보가 남는 예산·쿠션·주기·대화·작업·요청 응답 캐시는 초기화한다. 여러 모델을 함께 모아 RESTRICT 참조가 삭제 집합 안에 있는지 검증하며 범위 밖 참조가 있으면 트랜잭션을 중단한다. 탈퇴는 User CASCADE와 전체 세션 삭제를 사용한다. 상세 범위·실패·CODEF 인증 삭제는 api/auth.md와 api/finance-connect.md에 명시했다.
+
+## 2026-11-06 직접 등록 대출 정정 · 전체 완납 (R19) — `finance/0014_loan_manual_balance_zero`
+
+- CHECK `loan_manual_balance_1_1b` → `loan_manual_balance_0_1b` (0원 ~ 10억). 이유: 정정에서 잔액 0원(≠ 미입력 null)을 받아야 하고, 전체 완납 뒤 잔액을 0원으로 일관되게 표시한다. 직접 등록(POST)은 그대로 1원부터 받는다. 기존 행은 1원 이상이라 보정이 필요 없다.
+- 상태는 새로 만들지 않고 기존 `loan.status = repaid` 를 쓴다.
+- 완납 근거 · 복구값은 새 칸 없이 `loan.field_states.payoff` 에 둔다 (`first_seen_on` 과 같은 방식): `source: "user_report"`(CODEF 확인 아님) · `reportedAt`(처리 시각) · `reportedOn`(처리일 = 오늘) · `previous`(`status` · `manualBalance` · 그 값의 `fieldStates.manualBalance`) · `canceledDueIds`(이 처리로 취소한 미래 회차). 되돌리면 지우지 않고 `undoneAt` 을 덧붙인다. 다시 완납하면 새 기록으로 바뀐다(되돌리기 요청은 `reportedAt` 이 같아야 한다).
+- 동작 상세: `backend/finance/api_loans.py` `loan_payoff` · `loan_payoff_cancel`, 명세 `docs/api/loans.md` 13번.
