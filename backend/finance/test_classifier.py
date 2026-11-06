@@ -78,8 +78,8 @@ class ClassifyTest(TestCase):
         predict.assert_called_once_with(["청담"])
 
     def test_multi_item_never_reuses_memory_or_calls_ml(self, predict):
-        self.tx("GS25 역삼점", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
-        remembered, fresh = self.run_classify(self.tx("GS25 역삼점"), self.tx("웰빙마트"))
+        self.tx("쿠팡", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user")
+        remembered, fresh = self.run_classify(self.tx("쿠팡"), self.tx("현대백화점 판교점"))
         for tx in (remembered, fresh):
             self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
                              ("UNCLASSIFIED", "needs_review", None))
@@ -88,6 +88,80 @@ class ClassifyTest(TestCase):
         self.assertEqual((remembered.suggested_category_id, remembered.suggestion_candidates),
                          ("FOOD", [{"category": "FOOD", "confidence": None}]))
         self.assertEqual((fresh.suggested_category_id, fresh.suggestion_candidates), (None, None))
+        predict.assert_called_once_with([])
+
+    def test_decided_retail_ignores_user_choice(self, predict):
+        # 11/05: 편의점·마트는 항상 식비, 다이소는 생활용품. 사용자가 고친 값은 그 거래에만 쓴다
+        self.tx("GS25 역삼점", confirmed_category_id="HOUSEHOLD", confirmation_state="confirmed", classification_source="user")
+        store, mart, daiso = self.run_classify(self.tx("GS25 역삼점"), self.tx("웰빙마트"), self.tx("(주)아성다이소"))
+        self.assertEqual([(t.confirmed_category_id, t.confirmation_state, t.classification_source, t.suggestion_reason)
+                          for t in (store, mart, daiso)],
+                         [("FOOD", "suggested", "rule", None), ("FOOD", "suggested", "rule", None),
+                          ("HOUSEHOLD", "suggested", "rule", None)])
+        predict.assert_called_once_with([])
+
+    def test_future_choice_beats_retail_and_multi_item(self, predict):
+        # 11/06: 사용자가 '앞으로도 적용'을 고르면 다품목도 그 선택. 페이 충전은 표시가 남아 있어도 묻는다
+        chosen = {"confirmed_category_id": "HOUSEHOLD", "confirmation_state": "confirmed", "classification_source": "user",
+                  "field_states": {"apply_to_future": True}}
+        for name in ("GS25 역삼점", "쿠팡", "네이버페이충전"):
+            self.tx(name, **chosen)
+        store, mall, charge = self.run_classify(self.tx("GS25 역삼점"), self.tx("쿠팡"), self.tx("네이버페이충전"))
+        for tx in (store, mall):
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source), ("HOUSEHOLD", "suggested", "rule"))
+        self.assertEqual((charge.confirmed_category_id, charge.suggestion_reason), ("UNCLASSIFIED", classifier.PAY_CHARGE_REASON))
+        predict.assert_called_once_with([])
+
+    def test_name_conflict_is_not_bypassed_by_searched_retail(self, predict):
+        # PR #92 리뷰: 동명 충돌 이름은 저장된 검색 업종이 마트여도 사용자가 고르기 전까지 확인 필요
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True, "name_conflict": True}}
+        chosen = {"confirmed_category_id": "HOUSEHOLD", "confirmation_state": "confirmed", "classification_source": "user"}
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"청담"})):
+            (again,) = self.run_classify(self.tx("청담", field_states=searched))  # 선택하지 않은 기존 거래 재분류
+            self.assertEqual((again.confirmed_category_id, again.confirmation_state, again.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+
+            self.tx("청담", field_states=searched, **chosen)  # '앞으로도 적용' 없이 고름 → 새 거래는 후보만
+            (fresh,) = self.run_classify(self.tx("청담"))
+            self.assertEqual((fresh.confirmed_category_id, fresh.suggestion_reason, fresh.suggested_category_id),
+                             ("UNCLASSIFIED", classifier.CONFLICT_REASON, "HOUSEHOLD"))
+
+            self.tx("청담", field_states={**searched, "apply_to_future": True}, **chosen)  # 체크함 → 고른 카테고리
+            (remembered,) = self.run_classify(self.tx("청담"))
+            self.assertEqual((remembered.confirmed_category_id, remembered.classification_source), ("HOUSEHOLD", "rule"))
+        predict.assert_called_with([])
+
+    def test_saved_name_conflict_works_without_conflict_file(self, predict):
+        # PR #92 재리뷰: 충돌 목록 파일이 없는 환경에서도 거래에 저장된 판단으로 막는다
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True, "name_conflict": True}}
+        with patch("finance.classifier.conflict_names", return_value=frozenset()):
+            old, fresh = self.run_classify(self.tx("청담", field_states=searched), self.tx("청담"))
+            for tx in (old, fresh):
+                self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                                 ("UNCLASSIFIED", "needs_review", classifier.CONFLICT_REASON))
+            self.tx("청담", confirmed_category_id="HOUSEHOLD", confirmation_state="confirmed", classification_source="user",
+                    field_states={**searched, "apply_to_future": True})
+            (chosen,) = self.run_classify(self.tx("청담"))
+            self.assertEqual((chosen.confirmed_category_id, chosen.classification_source), ("HOUSEHOLD", "rule"))
+            # 충돌 표시가 없는 마트는 파일이 없어도 그대로 식비
+            self.tx("행복상회", field_states={"classifier": {"industry": "슈퍼마켓", "multi_item": True}})
+            (mart,) = self.run_classify(self.tx("행복상회"))
+            self.assertEqual(mart.confirmed_category_id, "FOOD")
+
+    def test_transit_card_charge_is_transport(self, predict):
+        # 11/06: 티머니 충전은 페이 충전이 아니라 교통비
+        (tx,) = self.run_classify(self.tx("모바일티머니충전"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source), ("TRANSPORT_CAR", "suggested", "rule"))
+        predict.assert_called_once_with([])
+
+    def test_searched_retail_is_food_for_later_transactions(self, predict):
+        # 검색으로 마트가 확인된 가게는 SVM 이 다른 답을 확신해도 식비. 백화점으로 확인된 가게는 계속 묻는다
+        predict.side_effect = lambda names: [[("BEAUTY", 0.99)] for _ in names]
+        self.tx("행복상회", field_states={"classifier": {"industry": "슈퍼마켓", "multi_item": True}})
+        self.tx("행복쇼핑", field_states={"classifier": {"industry": "백화점", "multi_item": True}})
+        mart, department = self.run_classify(self.tx("행복상회"), self.tx("행복쇼핑"))
+        self.assertEqual((mart.confirmed_category_id, mart.classification_source), ("FOOD", "rule"))
+        self.assertEqual((department.confirmed_category_id, department.suggestion_reason), ("UNCLASSIFIED", classifier.MULTI_ITEM_REASON))
         predict.assert_called_once_with([])
 
     def test_rules_classify_before_ml(self, predict):
@@ -112,8 +186,8 @@ class ClassifyTest(TestCase):
         # PR #63 리뷰: SVM 이 FOOD 0.99 를 줘도 다품목이면 SVM 을 부르지 않는다. 다품목이 아니면 접두어를 뗀 이름으로 SVM
         predict.side_effect = lambda names: [[("FOOD", 0.99)] for _ in names]
         coupang, gs25, musinsa = self.run_classify(self.tx("NICE*쿠팡"), self.tx("KCP*GS25 역삼점"), self.tx("KCP*무신사"))
-        for tx in (coupang, gs25):
-            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("UNCLASSIFIED", "needs_review"))
+        self.assertEqual((coupang.confirmed_category_id, coupang.confirmation_state), ("UNCLASSIFIED", "needs_review"))
+        self.assertEqual((gs25.confirmed_category_id, gs25.classification_source), ("FOOD", "rule"))
         self.assertEqual((musinsa.confirmed_category_id, musinsa.classification_source), ("FOOD", "ml"))
         predict.assert_called_once_with(["무신사"])
 
@@ -299,6 +373,45 @@ class RuleTest(SimpleTestCase):
             self.assertEqual(classifier.rule_category(name), "FOOD", name)
         self.assertIsNone(classifier.rule_category("홍단헤어 스타벅스점"))
 
+    def test_named_brands(self):
+        # 11/05: 검색 근거로 구별되지 않는 곳만 이름으로 정한다. 이름 뒤쪽에 들어간 다른 가게는 제외. 지점명은 예시
+        cases = {
+            "아트박스테스트홈플러스점": "FASHION_SHOPPING", "카카오프렌즈테스트점": "FASHION_SHOPPING",
+            "펀앤펀테스트점": "CULTURE_LEISURE", "토피코테스트점": "CULTURE_LEISURE", "테스트아트박스": None,
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+        self.assertFalse(classifier.is_multi_item("아트박스테스트홈플러스점"))
+
+    def test_transit_cards(self):
+        # 11/05: 교통카드는 어떤 표기든 교통. 11/06: 충전도 교통이고 다른 페이 충전은 계속 묻는다
+        for name in ("모바일티머니선불형", "티머니731", "캐시비", "레일플러스", "모바일티머니충전", "티머니 충전"):
+            self.assertEqual(classifier.rule_category(name), "TRANSPORT_CAR", name)
+            self.assertFalse(classifier.is_pay_charge(name), name)
+        self.assertTrue(classifier.is_pay_charge("네이버페이충전"))
+
+    def test_store_after_pay_route(self):
+        # 11/05: 'A - B' 는 A 가 결제 경로면 B, 아니면 A 가 가맹점
+        cases = {
+            "네이버페이 - 봄툰": "봄툰", "카카오페이_3 - 리디": "리디", "한국정보통신 - 테스트파킹(주)": "테스트파킹(주)",
+            "PAYCO오더 - 테스트식당": "테스트식당", "쿠팡이츠 - 쿠팡페이 주식회사": "쿠팡이츠",
+            "트립닷컴_구_NICE - 나이스정보통신(대리점)": "트립닷컴", "메가MGC_인증_3 - 메가 MGC 커피": "메가MGC",
+            "쿠팡_쿠페이 - 쿠팡": "쿠팡_쿠페이", "테스트 - ": "테스트 -", "치킨 - 피자": "치킨",
+        }
+        for name, store in cases.items():
+            self.assertEqual(classifier.store_name(name), store, name)
+            self.assertEqual(classifier.store_name(store), store, name)  # is_multi_item 이 한 번 더 부른다
+        self.assertEqual(classifier.rule_category(classifier.store_name("네이버페이 - 봄툰")), "CULTURE_LEISURE")
+        self.assertEqual(classifier.rule_category(classifier.store_name("쿠팡이츠 - 쿠팡")), "FOOD")
+        self.assertEqual(classifier.rule_category(classifier.store_name("트립닷컴_구_NICE - 나이스정보통신(대리점)")), "TRAVEL_LODGING")
+        self.assertTrue(classifier.is_multi_item("쿠팡_쿠페이 - 쿠팡"))
+        self.assertFalse(classifier.is_multi_item("쿠팡이츠 - 쿠팡"))
+
+    def test_general_taxi_name(self):
+        for name in ("카카오T일반택시_0", "카카오T일반택시_법인_4"):
+            self.assertEqual(classifier.rule_category(name), "TRANSPORT_CAR", name)
+        self.assertIsNone(classifier.rule_category("서울일반택시조합"))
+
     def test_named_pg_prefix_is_removed(self):
         # 11/02 카드 명세: 결제대행 이름이 '-'·'_'로 붙는 표기
         self.assertEqual(classifier.store_name("이니시스(빌링)_3_레벨업 피시방 남부터미널점"), "레벨업 피시방 남부터미널점")
@@ -342,10 +455,17 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
 
     def test_multi_item_industry_skips_jev(self):
-        result, ask = self.run_judge(("naver", "새봄동물", "편의점"))
+        result, ask = self.run_judge(("naver", "새봄동물", "백화점"))
         self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
         self.assertTrue(result["record"]["multi_item"])
         ask.assert_not_called()
+
+    def test_food_retail_industry_skips_jev(self):
+        for industry in ("편의점", "슈퍼마켓", "대형마트", "식자재마트"):
+            result, ask = self.run_judge(("naver", "새봄동물", industry))
+            self.assertEqual(result["retail"], "FOOD", industry)
+            self.assertTrue(result["record"]["multi_item"])  # 같은 가게의 다음 거래도 다품목으로 처리
+            ask.assert_not_called()
 
     def test_non_store_industry_is_not_evidence(self):
         result, ask = self.run_judge(("kakao", "비바리퍼블리카", "금융서비스"),
@@ -423,6 +543,12 @@ class ClassifyCommandTest(TestCase):
 
 
 class DeliveryAppTest(SimpleTestCase):
+    def test_retail_category(self):
+        for name, code in {"GS25 역삼점": "FOOD", "CU 역삼점": "FOOD", "이마트24 서초점": "FOOD", "웰빙마트": "FOOD", "배민B마트 강남점": "FOOD",
+                           "(주)아성다이소": "HOUSEHOLD", "쿠팡": None, "쿠팡마트": None, "현대백화점 판교점": None, "번개장터": None,
+                           "롯데하이마트 강남점": None, "신앙촌상회": None, "루덴치과의원": None, "": None, None: None}.items():
+            self.assertEqual(classifier.retail_category(name), code, name)
+
     def test_delivery_app_is_food_but_b_mart_is_multi_item(self):
         for name in ("배달의민족", "(주)우아한형제들", "요기요"):
             self.assertFalse(classifier.is_multi_item(name), name)
@@ -443,12 +569,13 @@ class ClassifyNamesCommandTest(TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             names = os.path.join(tmp, "names.txt")
             with open(names, "w", encoding="utf-8") as f:
-                f.write("루덴치과의원\nGS25 역삼점\n크린토피아세탁\n")
+                f.write("루덴치과의원\nGS25 역삼점\n쿠팡\n크린토피아세탁\n")
             out = StringIO()
             call_command("classify_names", names, stdout=out)
         text = out.getvalue()
         self.assertIn("루덴치과의원 | MEDICAL_HEALTH | 4 SVM", text)
-        self.assertIn("GS25 역삼점 | UNCLASSIFIED | 1 다품목", text)
+        self.assertIn("GS25 역삼점 | FOOD | 3 규칙", text)
+        self.assertIn("쿠팡 | UNCLASSIFIED | 1 다품목", text)
         self.assertIn("크린토피아세탁 | ETC | 3 규칙", text)
         self.assertFalse(Tx.objects.exists())
         self.assertFalse(get_user_model().objects.filter(email__startswith="classify-names-").exists())

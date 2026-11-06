@@ -20,7 +20,7 @@ export const SPEND_CATS = [
 // 기타: 10개 범위 밖이라고 판단된 지출 (송금·경조사·담배·세탁 등)
 //   budget: 예산 칸을 줄지. 빼기로 하면 false 로만 바꾸면 된다 (10/20 결정: 준다)
 export const ETC = { code: 'ETC', name: '기타', icon: 'Ellipsis', budget: true }
-// 미분류: 아직 판단 못 한 지출 (편의점·마트·종합몰). 화면에는 '확인 필요'로 보여 준다 (10/20 결정)
+// 미분류: 아직 판단 못 한 지출 (백화점·중고·종합몰). 화면에는 '확인 필요'로 보여 준다 (10/20 결정, 11/05 범위 변경)
 export const PENDING = { code: 'UNCLASSIFIED', name: '확인 필요', icon: 'CircleQuestionMark' }
 
 export const CAT_NAMES = SPEND_CATS.map((c) => c.name)                       // 10개 이름 전체 (우선순위는 PRIORITY_CATS)
