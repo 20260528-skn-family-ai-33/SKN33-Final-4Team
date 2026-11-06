@@ -1,0 +1,43 @@
+{
+  "verified_date": "2026-10-22",
+  "scenario_year": 2025,
+  "reference_microdata_year": 2023,
+  "income_factor": 1.060899,
+  "expense_factor": 1.044483,
+  "sources": [
+    {"id": "wage", "title": "고용노동부 사업체노동력조사: 전체근로자 연간 월평균 임금총액",
+     "url": "https://laborstat.moel.go.kr/",
+     "facts": {"wage_growth_2024_percent": 2.9, "wage_growth_2025_percent": 3.1},
+     "use": "2023 세후 정기 소득에 1.029 × 1.031을 곱하는 시나리오 가정의 참고 지표",
+     "limitation": "전체 사업체 근로자의 세전 임금 상승률이며 20~34세의 세후 정기 소득 상승률이 아니다."},
+    {"id": "cpi2024", "title": "2024년 12월 및 연간 소비자물가동향",
+     "url": "https://www.kostat.go.kr/board.es?act=view&bid=213&list_no=434615&mid=a10301040200",
+     "facts": {"annual_cpi_growth_percent": 2.3},
+     "use": "2023 지출을 2025 가격 시나리오로 옮기는 첫 번째 배율",
+     "limitation": "전체 CPI이며 서비스 11개 항목 각각의 가격 상승률이 아니다."},
+    {"id": "cpi2025", "title": "2025년 12월 및 연간 소비자물가동향",
+     "url": "https://www.korea.kr/briefing/policyBriefingView.do?newsId=156737667",
+     "facts": {"annual_cpi_growth_percent": 2.1},
+     "use": "지출과 고정비에 1.023 × 1.021을 곱하는 공통 가격 시나리오",
+     "limitation": "모든 개인의 지출이 이만큼 증가한다는 뜻은 아니다. 소비량·임대료·이자의 차이는 재현하지 못한다."},
+    {"id": "single_household", "title": "2025 통계로 보는 1인가구",
+     "url": "https://www.mods.go.kr/board.es?act=view&bid=10820&list_no=442130&mid=a10301010000",
+     "facts": {"income_2024_annual_won": 34230000, "consumption_2024_monthly_won": 1689000},
+     "use": "소득·지출 규모와 용어의 참고 자료. 생성값을 이 평균에 강제로 맞추지 않는다.",
+     "limitation": "전체 연령 1인가구의 소비지출로, 고정비 제외·이전지출 포함 생활비 정답과 정의가 다르다."}
+  ],
+  "design_assumptions": {
+    "seed": 42,
+    "rows": 500,
+    "selection": "2023년 상용·소득 이내·차량 관측 1170행에서 조사 가중치로 500행 비복원 선택",
+    "income_log_noise_sd": 0.04,
+    "fixed_log_noise_sd": 0.04,
+    "common_spending_log_noise_sd": 0.05,
+    "category_spending_log_noise_sd": 0.12,
+    "money_rounding_won": 1000,
+    "reject_if_fixed_plus_living_exceeds_income": true,
+    "model_outputs_used_in_generation": false,
+    "evaluation_records_used_in_generation": false,
+    "is_independent_accuracy_test": false
+  }
+}

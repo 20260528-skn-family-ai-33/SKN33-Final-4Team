@@ -1,0 +1,22 @@
+{
+  "version": "v13_share",
+  "status": "student_package_reproducible",
+  "base_fixed_source_columns": [
+    "가계지출_소비지출_주거수도광열_실제주거비구입비",
+    "가계지출_소비지출_주거수도광열_상하수도폐기물처리비",
+    "가계지출_소비지출_주거수도광열_기타주거관련서비스구입비",
+    "가계지출_소비지출_주거수도광열_연료비구입비",
+    "가계지출_소비지출_정보통신_통신서비스이용금액",
+    "가계지출_소비지출_기타상품서비스_보험료"
+  ],
+  "car_purchase_source_columns": [
+    "가계지출_소비지출_교통운송_자동차구입비"
+  ],
+  "removal": "full_source_amount",
+  "recurrence_observed": false,
+  "all_fixed_expenses_removed": false,
+  "meaning": "기본 고정비6와 별도 대출 이자1을 고정비 입력으로 사용한다. 콘텐츠·학원 혼합3은 분할 없이 생활비에 보존한다. 모든 정기 지출을 분리한 값은 아니다.",
+  "additional_fixed_source_columns": [
+    "가계지출_비소비지출_이자비용"
+  ]
+}

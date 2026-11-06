@@ -346,6 +346,70 @@ class BillWithoutWithdrawalTest(BillDueFixture):
         self.assertEqual(with_due[2], 420_000)
 
 
+class BillMissingDateCorrectionTest(BillDueFixture):
+    """날짜가 사라진 정정도 기존 예정에 반영한다. 취소하는 것은 예정이며 납부 기록은 보존한다."""
+
+    due = BillWithoutWithdrawalTest.due
+    payment = BillWithoutWithdrawalTest.payment
+
+    def check_correction(self, total, paid=0):
+        self.sync()
+        first = self.due()
+        if paid:
+            tx = self.payment(amount=paid, day=date(2026, 10, 1))
+            PaymentMatch.objects.create(user=self.user, due=first, transaction=tx, matched_amount=paid)
+            self.must_pay()  # 납부 상태도 계산한 뒤 정정한다
+        first.refresh_from_db()
+        previous = (first.due_date, first.confirmed_amount, first.paid_amount, first.payment_state, first.matched_at)
+        matches = list(first.matches.values())
+        self.bills["202611"] = bill(due="", resWithdrawalDueDate="", resTotalAmount=str(total), items=[])
+        with patch("finance.card_payments.logger") as log:
+            self.sync()
+            first.refresh_from_db()
+            corrected = CardBill.objects.get(user=self.user, payment_due_date=None, withdrawal_due_date=None)
+            self.assertEqual(first.bill_id, corrected.pk)
+            self.assertEqual(first.occurrence_key, f"card_bill:{corrected.pk}")
+            self.assertEqual(first.obligation_state, "canceled")
+            self.assertIsNotNone(first.canceled_at)
+            canceled_at = first.canceled_at
+            self.assertEqual(self.must_pay(), [])
+            self.sync()
+            self.assertEqual(self.must_pay(), [])
+            log.error.assert_not_called()
+        first.refresh_from_db()
+        self.assertEqual(first.canceled_at, canceled_at)
+        self.assertEqual(PaymentDue.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(list(first.matches.values()), matches)
+        self.assertEqual((first.due_date, first.confirmed_amount, first.paid_amount, first.payment_state, first.matched_at), previous)
+        self.assertEqual(corrected.total_amount, total)  # 최신 금액은 청구서에, 이전 예정은 이력으로만 남는다
+
+        # 날짜를 다시 받으면 같은 예정과 납부 기록으로 최신 금액을 표시한다.
+        self.bills["202611"] = bill(due="20261106", resTotalAmount="380000", items=[])
+        self.sync()
+        restored = self.due()
+        self.assertEqual((restored.pk, restored.obligation_state, restored.canceled_at), (first.pk, "active", None))
+        self.assertEqual(list(restored.matches.values()), matches)
+        self.assertEqual([(i["due_date"], i["amount"]) for i in self.must_pay()], [("2026-11-06", 380_000 - paid)])
+
+    def test_zero_correction_without_date(self):
+        self.check_correction(0)
+
+    def test_zero_correction_without_date_preserves_payment(self):
+        self.check_correction(0, paid=100_000)
+
+    def test_positive_correction_without_date(self):
+        self.check_correction(380_000)
+
+    def test_positive_correction_without_date_preserves_payment(self):
+        self.check_correction(380_000, paid=100_000)
+
+    def test_initial_bill_without_date_does_not_create_due(self):
+        self.bills["202611"] = bill(due="", resWithdrawalDueDate="")
+        self.sync()
+        self.assertEqual(self.must_pay(), [])
+        self.assertFalse(PaymentDue.objects.filter(user=self.user).exists())
+
+
 class BillDueConcurrencyTest(TransactionTestCase):
     serialized_rollback = True
 

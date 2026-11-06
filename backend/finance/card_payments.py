@@ -278,7 +278,8 @@ def sync_bill_dues(user, since, today, issuer_code=None):
     - 새로 만드는 건 납부일이 since(홈의 지난 주기 시작일) 이후인 것만. since 가 None(급여일 없음)이면 만들지 않고 고치기만 한다.
     - 이미 있는 예정은 ID · 납부 연결을 두고 금액 · 날짜 · 확인 상태만 저장된 청구서로 맞춘 뒤 납부 상태를 기존 규칙으로 다시 계산한다.
       더 늦게 시작한 조회의 값은 _save_bills 가 덮지 않으므로 오래된 응답이 예정을 되돌리지 않는다.
-    - 정정으로 낼 돈이 없어진(0원 이하) 청구서의 예정은 취소(obligation canceled)한다. 더는 채택되지 않는 청구서는 납부 기록이 없을 때만.
+    - 정정으로 낼 돈이 없거나(0원 이하) 납부일을 모르게 된 청구서의 예정은 취소(obligation canceled)한다.
+      날짜가 다시 제공되면 같은 예정을 최신 금액으로 되살린다. 더는 채택되지 않는 청구서는 납부 기록이 없을 때만.
       납부 기록은 지우지 않는다. 이번 응답에 없다는 이유만으로는 바꾸지 않는다 (결제일 정정은 follow_date_corrections)
     - 결제 계좌는 청구서 계좌, 없으면 그 카드사 카드의 결제 계좌가 하나로 정해질 때만. 모르면 비운다"""
     bills = CardBill.objects.filter(user=user, scope_type=CardBill.ScopeType.ISSUER)
@@ -290,14 +291,14 @@ def sync_bill_dues(user, since, today, issuer_code=None):
     replaced = replaced_bill_ids(bills, set(dues))  # 정정으로 대체된 예전 청구서 — 예정을 만들지 않고 같은 날 명세서 묶음에서도 뺀다
     groups = {}
     for bill in bills:
-        if bill_due_on(bill) is not None and bill.pk not in replaced:
+        if bill.pk not in replaced:
             groups.setdefault((bill.issuer_code, bill_due_on(bill)), []).append(bill)
     for (issuer, due_on), group in groups.items():
         statements, reason = usage_statements(group)
         adopted = set() if reason else {bill.pk for bill in statements}
         for bill in group:
             due = dues.get(bill.pk)
-            valid = bill.pk in adopted and bill.total_amount > 0
+            valid = due_on is not None and bill.pk in adopted and bill.total_amount > 0
             if due is None:
                 if valid and since is not None and due_on >= since:
                     accounts = paying_accounts(user, issuer, [bill])
@@ -316,10 +317,11 @@ def sync_bill_dues(user, since, today, issuer_code=None):
                 due.save(update_fields=["due_date", "confirmed_amount", "source_type", "confirmation_state",
                                         "obligation_state", "canceled_at"])
                 refresh_card_due(due, today)
-            # 낼 돈이 없어졌으면(0원 이하) 납부 기록이 있어도 취소 — 기록은 남기고 예전 청구액을 낼 돈으로 보이지 않는다.
+            # 0원 이하 · 납부일 미제공 정정은 납부 기록이 있어도 예정을 취소한다.
+            # 이전 금액 · 날짜는 취소된 예정의 이력으로만 남겨 홈에 표시하지 않고, 납부 기록은 보존한다.
             # 더는 채택되지 않는(판단 보류) 청구서는 납부 기록이 없을 때만 취소한다
             elif due.obligation_state == PaymentDue.ObligationState.ACTIVE and (
-                    bill.total_amount <= 0 or not due.matches.exists()):
+                    bill.total_amount <= 0 or due_on is None or not due.matches.exists()):
                 due.obligation_state, due.canceled_at = PaymentDue.ObligationState.CANCELED, timezone.now()
                 due.save(update_fields=["obligation_state", "canceled_at"])
 
