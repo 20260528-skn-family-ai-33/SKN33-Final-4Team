@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from config import tasks
 from users.models import Consent
 
 from . import codef
@@ -48,11 +49,12 @@ def _mask_account_numbers(value, account_numbers):
     return value
 
 
-def sync_bank(user, connected_id, org, start, end, *, connection_id=None, require_consent=False):
+def sync_bank(user, connected_id, org, start, end, *, connection_id=None, require_consent=False, task_id=None):
     """은행 계좌 · 거래 저장.
     - connection_id: 이 연결에만 저장한다. 해제됐으면 새 연결을 만들지 않고 BankConnectionGone (다시 불러오기 · 새 연결 API)
       없으면 기존처럼 활성 연결을 찾거나 만든다 (개발용 codef_sync 명령)
-    - require_consent: 외부 조회 전과 저장 트랜잭션 안에서 은행 조회 동의를 확인한다 (조회 중 철회되면 저장 안 함)"""
+    - require_consent: 외부 조회 전과 저장 트랜잭션 안에서 은행 조회 동의를 확인한다 (조회 중 철회되면 저장 안 함)
+    - task_id: 이 조회를 시킨 작업. 저장 직전에 작업이 아직 진행 중인지 본다 (만료된 작업의 늦은 결과는 버림, config/tasks.py)"""
     if not connected_id:
         raise ValueError("CODEF 연결 ID가 필요해요.")
     if start > end:
@@ -73,9 +75,9 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                 raise BankConnectionGone("연결이 해제되어 불러오지 않았어요.")
         if require_consent:
             _check_bank_consent(user, connection)
-        run = SyncRun.objects.create(
-            user=user, connection=connection, product_code="bank_sync",
-            requested_from=start, requested_to=end, status="running",
+        # 작업이 지금 유효할 때만 조회 기록을 만들고 작업을 연장한다 (config/tasks.py start_run)
+        run = tasks.start_run(
+            user, task_id, connection=connection, product_code="bank_sync", requested_from=start, requested_to=end,
         )
 
     try:
@@ -103,6 +105,7 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                 raise ValueError("조회 중 연결이 해제되어 저장하지 않았어요.")
             if require_consent:  # 조회 중 동의를 철회했으면 저장하지 않는다 (회원 행을 잠근 뒤라 동의 저장과 순서가 맞음)
                 _check_bank_consent(user, connection)
+            tasks.claim_run(run, task_id)  # 유효 기간 · 작업 상태 (철회 · 탈퇴 · 만료 뒤 늦은 응답은 여기서 막힘)
             new_ids = []
             existing_count = 0
             saved_accounts = []
@@ -184,11 +187,11 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
             run.save(update_fields=["status", "business_code", "covered_from", "covered_to", "completed_at"])
     except Exception as exc:
         # 금융 정보가 섞일 수 있는 메시지 대신 오류 코드만 남긴다.
-        SyncRun.objects.filter(pk=run.pk).update(
-            status="failed", completed_at=timezone.now(),
+        tasks.finish_run(
+            run.pk, status="failed",
             business_code=exc.code if isinstance(exc, codef.CodefError) else None,
             error_code="provider_error" if isinstance(exc, codef.CodefError)
-            else exc.code if isinstance(exc, codef.BankDataError) else "sync_error",
+            else exc.code if isinstance(exc, (codef.BankDataError, tasks.WorkExpired)) else "sync_error",
         )
         raise
 

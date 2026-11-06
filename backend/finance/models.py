@@ -267,6 +267,9 @@ class SyncRun(models.Model):
     )
     card = models.ForeignKey(Card, null=True, blank=True, on_delete=models.SET_NULL, related_name="sync_runs")
     loan = models.ForeignKey(Loan, null=True, blank=True, on_delete=models.SET_NULL, related_name="sync_runs")
+    # 이 조회를 시킨 작업 (R20). 작업의 실행 권한 연장 · 늦은 저장 차단에 쓴다. 비어 있으면 작업 없는 조회(새 연결 직후 등)이거나
+    # 필드 추가 전 기록 → 어떤 작업도 연장하지 않는다. 철회 때 작업 행이 지워져도 조회 기록(조회 범위 근거)은 남겨야 해서 SET_NULL
+    task = models.ForeignKey("chat.AsyncTask", null=True, blank=True, on_delete=models.SET_NULL, related_name="sync_runs")
     product_code = models.CharField("API 상품 코드", max_length=50)
     requested_from = models.DateField("요청 시작일", null=True, blank=True)
     requested_to = models.DateField("요청 종료일", null=True, blank=True)

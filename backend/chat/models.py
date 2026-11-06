@@ -68,6 +68,9 @@ class AsyncTask(models.Model):
     created_at = models.DateTimeField("생성 시각", auto_now_add=True)
     started_at = models.DateTimeField("실행 시작 시각", null=True, blank=True)
     completed_at = models.DateTimeField("완료 시각", null=True, blank=True)
+    # 이 시각까지만 실행 · 저장 권한이 있다. 작업이 자기 조회를 시작하거나 저장할 때 연장한다 (R20, config/tasks.py).
+    # 비어 있으면(필드 추가 전 기록) 시작 시각 + TASK_LEASE 로 보고 연장하지 않는다
+    lease_expires_at = models.DateTimeField("실행 권한 만료 시각", null=True, blank=True)
 
     class Meta:
         db_table = "async_task"

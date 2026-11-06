@@ -18,6 +18,7 @@ class PrivacyBusy(APIException):
 
 
 def check_idle(user):
+    # 유효 기간이 지난 기록의 만료 처리는 호출 전에 config.tasks.expire_stale 이 따로 커밋한다 (R20)
     if (AsyncTask.objects.filter(user=user, status__in=["queued", "running"]).exists()
             or SyncRun.objects.filter(user=user, status="running").exists()):
         raise PrivacyBusy()

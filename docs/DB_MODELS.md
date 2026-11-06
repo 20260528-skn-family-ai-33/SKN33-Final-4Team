@@ -231,3 +231,10 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 - 넣지 않는 것: 계좌번호 · 비밀번호 · connectedId(회원 행의 기존 AES-GCM 암호문을 그대로 쓴다) · 외부 응답 원문 · 예외 메시지.
 - 보존 · 정리: 완료 기록은 30일 보관 후 `python manage.py privacy_deletion_retry` 가 지운다. 미완료 기록은 완료될 때까지 남는다. 모든 조회 동의가 철회되고 삭제가 끝나면 회원의 connectedId 암호문 · 발급 시각을 비운다. 탈퇴는 회원 행과 함께 사라진다.
 - 동작 상세: `backend/users/deletion.py` 머리말.
+
+## 2026-11-06 작업 실행 권한 (R20) — `chat/0004_asynctask_lease_expires_at`, `finance/0013_syncrun_task`
+
+- `async_task.lease_expires_at` (null 허용): 이 시각까지만 작업이 새 조회를 시작하고 결과를 저장할 수 있다. 작업이 **자기** 조회를 시작하거나 저장할 때만 연장한다.
+- `sync_run.task_id` → `async_task` (null 허용, SET_NULL): 이 조회를 시킨 작업. 작업과 조회를 정확히 잇는 기존 칸이 없어 추가했다. 같은 회원이라는 이유만으로 다른 조회가 멈춘 작업을 연장하던 문제를 막는다. 철회 때 작업 행은 지워져도 조회 기록(조회 범위 근거)은 남아야 해서 CASCADE 가 아니라 SET_NULL.
+- 필드 추가 전 기록(보수적 기준): `lease_expires_at` 이 비면 시작 시각(없으면 생성 시각) + 10분까지만 유효하고 연장하지 않는다. `task_id` 가 빈 조회는 어떤 작업도 연장하지 않는다. 일괄 보정은 하지 않는다 — 다음 새 작업 시작 · 철회 · 탈퇴 때 회원별로 정리된다.
+- 동작 상세: `backend/config/tasks.py` 머리말.
