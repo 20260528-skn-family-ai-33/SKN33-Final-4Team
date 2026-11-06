@@ -100,7 +100,7 @@ export default function HomePage() {
   // 아직 못 받았으면 "불러오는 중…" (실패하면 안내)
   // 로그인이 풀렸으면 로그인 화면으로
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
-  if (!data) return <Layout title={LOGO} activeTab="home"><ApiStatus error={error} /></Layout>
+  if (!data) return <Layout title={LOGO} activeTab="home"><ApiStatus error={error} onRetry={reload} /></Layout>
   // 응답 모양: docs/api/home.md (budget = 이번 주기 승인 예산, 없으면 null)
   const { period, balance, pendingCount, needsPaydayCount, mustPay, budget } = data
   const b = budget ?? {}

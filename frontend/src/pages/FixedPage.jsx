@@ -23,12 +23,8 @@ import { apiSend, newRequestKey, useApi } from '../utils/api.js'
 import { pickEvidence, shortDate } from '../utils/fixed.js'
 import { PATHS } from '../routes.js'
 
-// 저장 뒤 같은 목록을 다시 받는다 — useApi 는 주소가 바뀔 때만 다시 받아서 서버가 무시하는 ?v= 를 바꾼다
-function useFixedList() {
-  const [version, setVersion] = useState(0)
-  const { data, error } = useApi(`/api/budgets/fixed/?v=${version}`)
-  return { data, error, reload: () => setVersion((v) => v + 1) }
-}
+// 저장 뒤 같은 목록을 다시 받는다 (같은 주소 reload — 받는 동안 지난 목록 유지, 실패하면 오류 카드)
+const useFixedList = () => useApi('/api/budgets/fixed/')
 
 // 목록 한 줄에 보일 결제 수단. 연결 해제면 다시 고르게 안내
 function payLabel(f) {
