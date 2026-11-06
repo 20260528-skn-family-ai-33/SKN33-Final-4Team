@@ -657,6 +657,16 @@ class JudgeTest(SimpleTestCase):
             result, _ = self.run_judge(store, answer, web=web)
             self.assertEqual(result["retail"], "FOOD", answer)
 
+    def test_service_name_for_search(self):
+        # 11/06: 해외 결제 표기는 검색에만 서비스 이름으로 줄인다
+        for raw, name in (("OPENAI *CHATGPT SUBSCR", "CHATGPT"), ("OPENAI*CHATGPTSUBSCR", "CHATGPT"), ("ANTHROPIC* CLAUDE SUB", "CLAUDE"),
+                          ("ANTHROPIC*CLAUDESUB", "CLAUDE"), ("RUNPOD.IO", "RUNPOD"), ("TYPESAFE AI, INC.", "TYPESAFE AI"), ("MIDJOURNEY INC.", "MIDJOURNEY"),
+                          ("CURSOR, AI POWERED IDE", "CURSOR"), ("GITHUB COPILOT", "GITHUB COPILOT"), ("새봄 서브", "새봄 서브"), ("SUB", "SUB")):
+            self.assertEqual(classifier.service_name(classifier.store_name(raw)), name, raw)
+        result, ask = self.run_judge(None, ("ETC", 0.98, {"ETC": 0.98}, "jev-test"), name="RUNPOD.IO", web=["Runpod GPU 클라우드"])
+        self.assertEqual(result["apply"], ("ETC", 0.98))
+        self.assertEqual(ask.call_args.args[0], "가맹점 이름: RUNPOD\n웹 검색 설명: Runpod GPU 클라우드")
+
     def test_name_inside_another_store_is_not_web_evidence(self):
         # PR #94 리뷰: 지도에서 뺀 다른 가게가 웹 근거로 다시 들어오면 안 된다
         for text, expected in (("팩토리디 / 헤어 전문 미용실 예약 안내", False), ("리디앤폴 카페 메뉴", False), ("리디는 전자책 서비스", True),

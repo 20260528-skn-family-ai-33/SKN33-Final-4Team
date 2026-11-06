@@ -30,12 +30,20 @@ def save_transaction(user, card, identity, payload, existing=None):
         )
     else:
         tx, created = existing, False
-    if not created and not tx.merchant_category and payload.get("merchant_category"):
-        tx.merchant_category = payload["merchant_category"]  # 업종을 받기 전에 저장한 거래
-        tx.save(update_fields=["merchant_category", "updated_at"])
-    if not created and (tx.is_canceled, tx.canceled_amount) != (payload["is_canceled"], payload["canceled_amount"]):
-        tx.is_canceled, tx.canceled_amount = payload["is_canceled"], payload["canceled_amount"]
-        tx.save(update_fields=["is_canceled", "canceled_amount", "updated_at"])
+    if not created:
+        # 순액 계산 필드와 기관 근거를 같은 UPDATE로 저장한다. 금액이 이미 갱신된
+        # 예전 데이터도 재조회 때 남아 있던 cancelStatus를 복구한다. 사용자 분류는 유지한다.
+        detail = tx.source_detail if isinstance(tx.source_detail, dict) else {}
+        latest = payload.get("source_detail") or {}
+        updates = {"is_canceled": payload["is_canceled"], "canceled_amount": payload["canceled_amount"],
+                   "source_detail": {**detail, **latest}}
+        if not tx.merchant_category and payload.get("merchant_category"):
+            updates["merchant_category"] = payload["merchant_category"]  # 업종을 받기 전에 저장한 거래
+        changed = [key for key, value in updates.items() if getattr(tx, key) != value]
+        if changed:
+            for key in changed:
+                setattr(tx, key, updates[key])
+            tx.save(update_fields=[*changed, "updated_at"])
     return tx, created
 
 

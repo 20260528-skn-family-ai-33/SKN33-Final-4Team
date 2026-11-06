@@ -63,7 +63,7 @@ UNKNOWN_STORE = re.compile(r"비식별|거래처\d+$|^\d*$")
 UNKNOWN_STORE_REASON = "가게 이름을 알 수 없어 카테고리를 정하지 못했어요."
 
 # 결제대행(PG) 접두어: 'NICE*쿠팡' → '쿠팡'
-PG_PREFIX = re.compile(r"^[^*\s]{1,20}\*\s*")
+PG_PREFIX = re.compile(r"^[^*\s]{1,20}\s*\*\s*")
 # 결제수단 꼬리표: '멜론_카카오페이' → '멜론', 'Apple_KCP' → 'Apple' (11/02 실거래 명세)
 # shortcut: 확인된 결제수단만. 실거래에서 새 꼬리표가 보이면 추가
 PAY_SUFFIX = re.compile(r"_(카카오페이|네이버페이|토스페이|kcp)$", re.IGNORECASE)
@@ -158,7 +158,7 @@ JEV_CRITERIA = {
     "EDUCATION": "교육: 학원(입시·외국어·음악·미술·운전 등), 독서실·스터디카페, 서점, 강의, 자격증",
     "CULTURE_LEISURE": "문화·여가: 영화, 공연, 게임, 노래방·PC방, 운동시설·운동용품, 목욕탕·사우나, 마사지, 꽃·기념품·사진촬영, 장난감·피규어·뽑기, OTT·음악 구독, 웹툰·웹소설·전자책 플랫폼",
     "TRAVEL_LODGING": "여행·숙박: 여행상품, 호텔, 펜션, 모텔, 캠핑·글램핑",
-    "ETC": "기타(10개 밖 소비): 송금·경조사(예식장·장례식장), 담배·복권, 세탁·수선, 실·원단, 반려동물 분양·용품, 보험료·카드 연회비",
+    "ETC": "기타(10개 밖 소비): 송금·경조사(예식장·장례식장), 담배·복권, 세탁·수선, 실·원단, 반려동물 분양·용품, 보험료·카드 연회비, AI 서비스·개발 도구·클라우드 구독",
     UNKNOWN: "판단 보류: 이름과 업종만으로는 어느 카테고리인지 정할 수 없음, 여러 종류의 물건을 파는 종합 온라인몰",
 }
 JEV_QUESTION = "이 가맹점에서 결제한 소비의 카테고리는? 가게 업종 기준으로 고르고, 정보가 부족하면 판단 보류를 고른다."
@@ -168,6 +168,8 @@ FOOD_RETAIL_INDUSTRIES = ("편의점", "슈퍼마켓")  # 이 둘과 '○○마�
 # 가게가 아닌 업종(법인명 검색 시 본사가 나옴)은 근거로 넘기지 않는다
 NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은행", "증권", "기업", "회사", "사무소", "협회")
 SEARCH_LIMIT = 3  # 검색 한 곳당 결과 수
+# 해외 결제 표기의 꼬리: 'CHATGPT SUBSCR', 'CLAUDESUB', 'RUNPOD.IO', 'MIDJOURNEY INC.'. 지도·웹에는 서비스 이름으로만 나온다
+SERVICE_TAIL = re.compile(r"(?:\s*(?:subscr\w*|subscription|sub)|\s+(?:inc|llc|ltd|corp)\.?|\.(?:io|ai|com|co|net))$", re.IGNORECASE)
 JOSA = "(?:으로|에서|은|는|이|가|을|를|의|와|과|도|로|에)?"  # '리디는'·'봄툰의'처럼 이름 뒤의 조사는 같은 낱말로 본다
 WEB_TEXT_LIMIT = 150  # 웹 결과 한 건을 Jev 에 넘기는 글자 수
 
@@ -291,6 +293,13 @@ def same_store(query, found_name):
     return bool(q) and q == f
 
 
+def service_name(name):
+    """검색어로 쓸 서비스 이름. 영문 표기만 쉼표 뒤 설명과 꼬리를 뗀다 ('TYPESAFE AI, INC.' → 'TYPESAFE AI'). 분류 이름은 그대로 둔다"""
+    if not name.isascii():
+        return name
+    return SERVICE_TAIL.sub("", name.split(",")[0]).strip() or name
+
+
 def _text(value):
     return html.unescape(re.sub(r"<[^>]+>", "", value or ""))
 
@@ -380,7 +389,7 @@ def judge(name):
     if not (os.getenv("TYPESAFE_API_KEY") and os.getenv("JEV_MODEL")):
         return None
     started = time.monotonic()
-    query = common.CORPORATE.sub("", name).strip()  # 법인 표기만 빼고 상호·지점명 그대로 검색
+    query = service_name(common.CORPORATE.sub("", name).strip())  # 법인 표기만 빼고 상호·지점명 그대로 검색
     record = {"step": "search_jev", "source": None, "industry": None}
     try:
         found = search_store(query)
