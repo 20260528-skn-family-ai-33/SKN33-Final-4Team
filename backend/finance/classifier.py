@@ -10,11 +10,13 @@
 """
 import csv
 import functools
+import html
 import json
 import logging
 import os
 import re
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 from decimal import Decimal
@@ -87,7 +89,7 @@ ASK_RETAIL_PREFIXES = (
 )
 # CSV: cu·씨유·매점은 단순 접두어 금지 → 이름 그대로이거나 '지점명+점'일 때만. 나머지는 이름이 정확히 같을 때만
 FOOD_RETAIL_PATTERNS = tuple(re.compile(p) for p in (
-    r"^cu(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유(?:$|[가-힣0-9]+(?:지점|점)$)", r"^매점(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유대전$",
+    r"^cu(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유(?:cu)?(?:$|[가-힣0-9]+(?:지점|점)$)", r"^매점(?:$|[가-힣0-9]+(?:지점|점)$)", r"^씨유대전$",
 ))
 ASK_RETAIL_PATTERNS = tuple(re.compile(p) for p in (r"^신앙촌상회$", r"^중국식품$"))
 FOOD_RETAIL_KEYWORDS = ("b마트", "비마트", "배민스토어")  # 이름 어디에 있어도 (예: 배민B마트 강남점)
@@ -104,8 +106,6 @@ SUBSCRIPTION_PREFIXES = (
 )
 # 짧은 이름은 일반 가게(웨이브헤어·멜론카페·플로렌스치과)와 겹쳐서 이름이 정확히 같을 때만 (PR #64 리뷰)
 SUBSCRIPTION_NAMES = {"티빙", "웨이브", "왓챠", "멜론", "벅스", "플로"}
-# 콘텐츠 플랫폼 = 문화·여가 (D11 예외). 동명 상호에 번지지 않게 이름이 정확히 같을 때만 (분류 기준 3장)
-CONTENT_PLATFORMS = {"리디", "리디북스", "레진코믹스", "레진엔터테인먼트", "봄툰", "미스터블루"}
 # 배달 앱 서비스명·운영사 법인명 (검색하면 본사가 나와서 틀림). 이름이 정확히 같을 때만. B마트·배민스토어는 다품목(위)
 # shortcut: 이름이 그냥 "배달의민족"이면 B마트 장보기도 식비로 들어감. 카드 명세에서 구분되는 표기가 확인되면 다품목 키워드에 추가
 CORPORATE_NAMES = {
@@ -156,10 +156,10 @@ JEV_CRITERIA = {
     "MEDICAL_HEALTH": "의료·건강: 병의원 전체(피부과·성형외과 포함), 약국, 건강보조식품, 안경, 동물병원",
     "BEAUTY": "뷰티·미용: 화장품, 미용실, 네일, 피부관리실, 가발",
     "EDUCATION": "교육: 학원(입시·외국어·음악·미술·운전 등), 독서실·스터디카페, 서점, 강의, 자격증",
-    "CULTURE_LEISURE": "문화·여가: 영화, 공연, 게임, 노래방·PC방, 운동시설·운동용품, 목욕탕·사우나, 마사지, 꽃·기념품·사진촬영, 장난감·피규어·뽑기, OTT·음악 구독",
+    "CULTURE_LEISURE": "문화·여가: 영화, 공연, 게임, 노래방·PC방, 운동시설·운동용품, 목욕탕·사우나, 마사지, 꽃·기념품·사진촬영, 장난감·피규어·뽑기, OTT·음악 구독, 웹툰·웹소설·전자책 플랫폼",
     "TRAVEL_LODGING": "여행·숙박: 여행상품, 호텔, 펜션, 모텔, 캠핑·글램핑",
     "ETC": "기타(10개 밖 소비): 송금·경조사(예식장·장례식장), 담배·복권, 세탁·수선, 실·원단, 반려동물 분양·용품, 보험료·카드 연회비",
-    UNKNOWN: "판단 보류: 이름과 업종만으로는 어느 카테고리인지 정할 수 없음",
+    UNKNOWN: "판단 보류: 이름과 업종만으로는 어느 카테고리인지 정할 수 없음, 여러 종류의 물건을 파는 종합 온라인몰",
 }
 JEV_QUESTION = "이 가맹점에서 결제한 소비의 카테고리는? 가게 업종 기준으로 고르고, 정보가 부족하면 판단 보류를 고른다."
 # 검색 끝 칸 업종이 이런 곳이면 다품목 → Jev 를 부르지 않고 '확인 필요'
@@ -167,6 +167,9 @@ MULTI_ITEM_INDUSTRIES = ("편의점", "슈퍼마켓", "대형마트", "백화점
 FOOD_RETAIL_INDUSTRIES = ("편의점", "슈퍼마켓")  # 이 둘과 '○○마트'는 묻지 않고 식비 (11/05 결정)
 # 가게가 아닌 업종(법인명 검색 시 본사가 나옴)은 근거로 넘기지 않는다
 NON_STORE_INDUSTRIES = ("소프트웨어", "애플리케이션", "금융", "은행", "증권", "기업", "회사", "사무소", "협회")
+SEARCH_LIMIT = 3  # 검색 한 곳당 결과 수
+JOSA = "(?:으로|에서|은|는|이|가|을|를|의|와|과|도|로|에)?"  # '리디는'·'봄툰의'처럼 이름 뒤의 조사는 같은 낱말로 본다
+WEB_TEXT_LIMIT = 150  # 웹 결과 한 건을 Jev 에 넘기는 글자 수
 
 
 def store_name(name):
@@ -237,6 +240,10 @@ def food_retail_industry(industry):
     return industry in FOOD_RETAIL_INDUSTRIES or industry.endswith("마트")
 
 
+def all_food_retail(industries):
+    return all(food_retail_industry(industry) for industry in industries)
+
+
 def is_unknown_store(name):
     normalized = common.normalize_name(store_name(name) or "")
     return len(normalized) < 2 or bool(UNKNOWN_STORE.search(normalized))
@@ -264,7 +271,7 @@ def rule_category(name):
         return brand
     if normalized in CORPORATE_NAMES:
         return CORPORATE_NAMES[normalized]
-    if normalized in CONTENT_PLATFORMS or normalized in SUBSCRIPTION_NAMES or normalized.startswith(SUBSCRIPTION_PREFIXES):
+    if normalized in SUBSCRIPTION_NAMES or normalized.startswith(SUBSCRIPTION_PREFIXES):
         return "CULTURE_LEISURE"
     if normalized.endswith(ETC_SUFFIXES) or any(keyword in normalized for keyword in ETC_KEYWORDS):
         return "ETC"
@@ -277,32 +284,80 @@ def _get_json(url, headers):
 
 
 def same_store(query, found_name):
-    """검색된 가게가 거래 가맹점과 같은 가게로 보이는지. 다른 가게면 그 업종을 근거로 쓰지 않는다 (PR #64 리뷰)
-    정리한 전체 이름이 한쪽에 다른 쪽이 들어 있을 때만 같은 가게. 첫 단어만 같으면 다른 가게일 수 있어 인정하지 않는다 (PR #64 재리뷰: 새봄 동물 ↔ 새봄식당)
-    shortcut: 이름만 비교. 프랜차이즈 다른 지점도 불일치('확인 필요')가 된다. 지점·주소 대조는 카드 응답에 주소가 생기면"""
+    """검색된 가게가 거래 가맹점과 같은 가게인지. 다른 가게면 그 업종을 근거로 쓰지 않는다 (PR #64 리뷰)
+    정리한 이름이 완전히 같을 때만 (11/05 결정). 포함만 보면 리디 ↔ 팩토리디, 스타벅스 ↔ 홍단헤어 스타벅스점이 같은 가게가 된다
+    shortcut: 이름만 비교. 지점명이 다르면 놓치고 웹 근거가 보완한다. 지점·주소 대조는 카드 응답에 주소가 생기면"""
     q, f = common.normalize_name(query), common.normalize_name(found_name or "")
-    return bool(q and f) and (q in f or f in q)
+    return bool(q) and q == f
+
+
+def _text(value):
+    return html.unescape(re.sub(r"<[^>]+>", "", value or ""))
+
+
+def _naver(path, q):
+    if not os.getenv("NAVER_CLIENT_ID"):
+        return []
+    return _get_json(f"https://naverapihub.apigw.ntruss.com/search/v1/{path}?query={q}&display={SEARCH_LIMIT}", {
+        "X-NCP-APIGW-API-KEY-ID": os.getenv("NAVER_CLIENT_ID", ""),
+        "X-NCP-APIGW-API-KEY": os.getenv("NAVER_CLIENT_SECRET", ""),
+    })["items"]
+
+
+def _naver_stores(q):
+    return [("naver", _text(item["title"]), item["category"].split(">")[-1]) for item in _naver("local", q)]
+
+
+def _kakao_stores(q):
+    if not os.getenv("KAKAO_REST_API_KEY"):
+        return []
+    docs = _get_json(f"https://dapi.kakao.com/v2/local/search/keyword.json?query={q}&size={SEARCH_LIMIT}",
+                     {"Authorization": f"KakaoAK {os.getenv('KAKAO_REST_API_KEY')}"})["documents"]
+    stores = []
+    for doc in docs:
+        parts = doc["category_name"].split(" > ")
+        # 프랜차이즈는 카카오 끝 칸이 업종이 아니라 브랜드명 (스타벅스 → '스타벅스') → 한 칸 앞
+        stores.append(("kakao", doc["place_name"], parts[-2] if len(parts) > 1 and parts[-1] in doc["place_name"] else parts[-1]))
+    return stores
 
 
 def search_store(query):
-    """(출처, 가게 이름, 끝 칸 업종) 또는 None. 네이버(NCP API HUB) 먼저, 0건이면 카카오. 보내는 건 상호뿐"""
-    q = urllib.parse.quote(query)
-    if os.getenv("NAVER_CLIENT_ID"):
-        items = _get_json(f"https://naverapihub.apigw.ntruss.com/search/v1/local?query={q}&display=1", {
-            "X-NCP-APIGW-API-KEY-ID": os.getenv("NAVER_CLIENT_ID", ""),
-            "X-NCP-APIGW-API-KEY": os.getenv("NAVER_CLIENT_SECRET", ""),
-        })["items"]
-        if items:
-            return "naver", re.sub(r"<[^>]+>", "", items[0]["title"]), items[0]["category"].split(">")[-1]
-    if os.getenv("KAKAO_REST_API_KEY"):
-        docs = _get_json(f"https://dapi.kakao.com/v2/local/search/keyword.json?query={q}&size=1",
-                         {"Authorization": f"KakaoAK {os.getenv('KAKAO_REST_API_KEY')}"})["documents"]
-        if docs:
-            parts = docs[0]["category_name"].split(" > ")
-            # 프랜차이즈는 카카오 끝 칸이 업종이 아니라 브랜드명 (스타벅스 → '스타벅스') → 한 칸 앞
-            leaf = parts[-2] if len(parts) > 1 and parts[-1] in docs[0]["place_name"] else parts[-1]
-            return "kakao", docs[0]["place_name"], leaf
-    return None
+    """지도 검색 결과 [(출처, 가게 이름, 끝 칸 업종), ...]. 네이버·카카오 모두 본다. 한쪽만 실패하면 다른 쪽으로 계속. 보내는 건 상호뿐"""
+    q, found, failed = urllib.parse.quote(query), [], None
+    for search in (_naver_stores, _kakao_stores):
+        try:
+            found += search(q)
+        except Exception as exc:
+            failed = exc
+    if failed and not found:
+        raise failed
+    return found
+
+
+def search_web(query):
+    """네이버 웹문서 '제목 / 설명' 목록. 지도에 없는 온라인 서비스의 근거 (11/05 비교: 카카오 웹보다 동명 가게에 강함). 보내는 건 상호뿐"""
+    items = _naver("webkr", urllib.parse.quote(query))
+    return [f"{_text(item['title'])} / {_text(item['description'])}"[:WEB_TEXT_LIMIT] for item in items]
+
+
+def names_store(text, query):
+    """웹 설명에 이 가맹점 이름이 한 낱말로 있는지. 다른 상호 안에 들어 있으면 아니다 (PR #94 리뷰: 리디 ↔ 팩토리디 · 리디앤폴)"""
+    name = common.normalize_name(query)
+    pattern = r"\s*".join(map(re.escape, name))  # 메가MGC ↔ 메가 MGC
+    return bool(name) and bool(re.search(rf"(?<![가-힣a-z0-9]){pattern}{JOSA}(?![가-힣a-z0-9])", unicodedata.normalize("NFKC", text).lower()))
+
+
+def web_evidence(query, record):
+    """근거로 인정한 웹 설명. 실패하면 지도 근거만으로 간다. 원문은 record 에 남기지 않는다 (거래 내용이 섞일 수 있음)"""
+    try:
+        texts = search_web(query)
+    except Exception as exc:
+        logger.warning("5단계 웹 검색 실패: %s", type(exc).__name__)
+        record["web_error"] = type(exc).__name__
+        return []
+    accepted = [text for text in texts if names_store(text, query)]
+    record["web_accepted"] = bool(accepted)
+    return accepted
 
 
 @functools.cache
@@ -320,8 +375,8 @@ def ask_jev(state):
 
 
 def judge(name):
-    """5단계: 검색 업종을 근거로 Jev 가 판단. 키가 없으면 None.
-    {"apply": (코드, 확신도)} 또는 {"review": ([(코드, 확률), ...], 이유)} + "record"(field_states 에 남길 근거)"""
+    """5단계: 지도 업종과 웹 설명을 각각 Jev 에 물어 판단한다. 키가 없으면 None.
+    {"apply": (코드, 확신도)} · {"retail": 코드} · {"review": ([(코드, 확률), ...], 이유)} + "record"(field_states 에 남길 근거)"""
     if not (os.getenv("TYPESAFE_API_KEY") and os.getenv("JEV_MODEL")):
         return None
     started = time.monotonic()
@@ -329,34 +384,51 @@ def judge(name):
     record = {"step": "search_jev", "source": None, "industry": None}
     try:
         found = search_store(query)
-        industry = found[2] if found else None
-        record.update(source=found and found[0], industry=industry)
-        if found and not same_store(query, found[1]):
-            industry = None  # 첫 결과가 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
-            record["store_mismatch"] = True
-        if industry and (industry in MULTI_ITEM_INDUSTRIES or industry.endswith("마트")):
-            record[SEARCHED_MULTI_ITEM] = True  # 같은 가게의 다음 거래도 다품목으로 처리하는 근거 (PR #67 리뷰)
-            if food_retail_industry(industry):
-                return {"retail": "FOOD", "record": record}
-            return {"review": ([], MULTI_ITEM_REASON), "record": record}
-        if industry and any(word in industry for word in NON_STORE_INDUSTRIES):
-            industry = None  # 본사·사무소가 검색된 경우. 근거로 쓰면 확신하며 틀림 (10/29 테스트)
-            record["dropped_industry"] = True
-        state = f"가맹점 이름: {query}" + (f"\n검색 업종: {industry}" if industry else "")
-        choice, confidence, probabilities, model = ask_jev(state)
+        same = [store for store in found if same_store(query, store[1])]
+        shown = same or found
+        industries = list(dict.fromkeys(store[2] for store in same))
+        record.update(source=shown[0][0] if shown else None, industry=", ".join(dict.fromkeys(store[2] for store in shown)) or None)
+        if found and not same:
+            record["store_mismatch"] = True  # 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
+        kept = [i for i in industries if not any(word in i for word in NON_STORE_INDUSTRIES)]
+        if len(kept) != len(industries):
+            record["dropped_industry"] = True  # 본사·사무소가 검색된 경우. 근거로 쓰면 확신하며 틀림 (10/29 테스트)
+        web = web_evidence(query, record)
+        base = f"가맹점 이름: {query}"
+        web_state = web and f"{base}\n웹 검색 설명: {' | '.join(web)}"
+        if any(i in MULTI_ITEM_INDUSTRIES or i.endswith("마트") for i in kept):
+            # 업종을 모두 남긴다: 일부만 남기면 다음 분류가 묻기로 한 가게를 식비로 바꾼다 (PR #94 리뷰)
+            record.update({"industry": ", ".join(kept), SEARCHED_MULTI_ITEM: True})  # 같은 가게의 다음 거래도 다품목으로 처리하는 근거 (PR #67 리뷰)
+            if not all_food_retail(kept):
+                return {"review": ([], MULTI_ITEM_REASON), "record": record}
+            choice, confidence, *_ = ask_jev(web_state) if web else (UNKNOWN, 0)
+            if choice not in (UNKNOWN, "FOOD") and confidence >= JEV_THRESHOLD:
+                record["evidence_conflict"] = True
+                return {"review": ([("FOOD", None), (choice, confidence)], MULTI_ITEM_REASON), "record": record}
+            return {"retail": "FOOD", "record": record}
+        answers = [ask_jev(state) for state in filter(None, (
+            kept and f"{base}\n검색 업종: {', '.join(kept)}", web_state,
+        ))] or [ask_jev(base)]
     except Exception as exc:  # 외부 API 장애는 '확인 필요'로 끝낸다. 거래 내용이 담길 수 있어 원문은 남기지 않음
         logger.warning("5단계 검색·Jev 실패: %s", type(exc).__name__)
         record["error"] = type(exc).__name__
         return {"review": ([], LOOKUP_FAILED_REASON), "record": record}
     finally:
         record["ms"] = round((time.monotonic() - started) * 1000)
+    # 한쪽의 판단 보류는 충돌이 아니다: 웹 정보가 적은 동네 가게도 지도 근거로 분류한다 (11/06)
+    decided = [answer for answer in answers if answer[0] != UNKNOWN]
+    choice, confidence, probabilities, model = max(decided or answers, key=lambda answer: answer[1])
     record.update(jev_model=model, choice=choice, confidence=round(confidence, 4),
                   probability=round(probabilities.get(choice, 0), 4))
-    # Jev 점수만으로는 확정하지 않는다: 같은 가게로 확인된 검색 업종이 있을 때만 자동 적용 (PR #64 리뷰)
-    if industry and choice != UNKNOWN and confidence >= JEV_THRESHOLD:
+    evidence = bool(kept or web)
+    if len({answer[0] for answer in decided}) > 1:
+        record["evidence_conflict"] = True  # 같은 이름의 가게와 서비스 (미스터블루: 미용실 ↔ 웹툰). 어느 쪽 거래인지 모른다
+        return {"review": ([(answer[0], answer[1]) for answer in decided], UNSURE_REASON), "record": record}
+    # Jev 점수만으로는 확정하지 않는다: 지도 업종이나 인정된 웹 설명이 있을 때만 자동 적용 (PR #64 리뷰)
+    if evidence and choice != UNKNOWN and confidence >= JEV_THRESHOLD:
         return {"apply": (choice, confidence), "record": record}
     top = sorted(((c, p) for c, p in probabilities.items() if c != UNKNOWN), key=lambda x: -x[1])[:3]
-    return {"review": (top, UNSURE_REASON if industry else NOT_FOUND_REASON), "record": record}
+    return {"review": (top, UNSURE_REASON if evidence else NOT_FOUND_REASON), "record": record}
 
 
 FIELDS = [
@@ -371,13 +443,13 @@ def classify(user, txs):
         tx for tx in txs
         if tx.transaction_type == Tx.TransactionType.SPENDING and tx.confirmation_state != Tx.ConfirmationState.CONFIRMED
     ]
-    changed, for_ml = [], []
+    changed, for_ml, judged = [], [], {}
     for tx in todo:
         name = store_name(tx.merchant_name)
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
         code, future = last_user_choice(user, tx.merchant_name)
         seen, saved_conflict = (None, False) if is_multi_item(name) else seen_multi_item(user, tx.merchant_name)
-        seen_food = bool(seen) and food_retail_industry(seen)
+        seen_food = bool(seen) and all_food_retail(seen.split(", "))
         # 동명 충돌이면 저장된 검색 업종이 이 가게의 근거가 아니다. 첫 분류처럼 묻는다 (PR #92 리뷰)
         # 충돌 목록 파일은 Git 에 없어서 환경마다 없을 수 있다. 거래에 저장된 판단도 본다
         seen_conflict = seen_food and (saved_conflict or common.normalize_name(name or "") in conflict_names())
@@ -418,7 +490,9 @@ def classify(user, txs):
             _apply_unless_user_differs(tx, code, Tx.ClassificationSource.ML, confidence, past, top)
         else:
             # shortcut: 거래 잠금 안에서 외부 API 를 부른다. record 의 ms 로 시간을 재고 길면 잠금 밖으로 옮길지 팀 회의 (메모 참고)
-            result = judge(name)
+            if name not in judged:  # 호출이 잠금 안에서 돌아서 같은 이름은 한 번만
+                judged[name] = judge(name)
+            result = judged[name]
             if result is None:
                 _review(tx, top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
             elif "retail" in result and conflict:
