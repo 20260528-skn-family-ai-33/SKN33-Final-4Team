@@ -264,7 +264,7 @@ class TransactionDetailTest(FinanceData):
     @mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
     @mock.patch("finance.classifier.conflict_names", return_value=frozenset())  # 로컬 충돌 목록 파일과 무관하게
     @mock.patch("finance.classifier.ask_jev")
-    @mock.patch("finance.classifier.search_store", return_value=("naver", "행복상회", "백화점"))
+    @mock.patch("finance.classifier.search_store", return_value=[("naver", "행복상회", "백화점")])
     @mock.patch("finance.classifier.predict", return_value=[[("FOOD", 0.4)]])
     def test_searched_multi_item_can_apply_to_future(self, predict, search, ask, conflicts):
         # 이름 사전에 없어도 검색 업종이 다품목이면 묻고, 체크 없이 고르면 다음 거래도 다시 묻는다 (PR #67 리뷰)

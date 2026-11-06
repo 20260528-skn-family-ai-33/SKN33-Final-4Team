@@ -191,6 +191,23 @@ class ClassifyTest(TestCase):
         self.assertEqual((musinsa.confirmed_category_id, musinsa.classification_source), ("FOOD", "ml"))
         predict.assert_called_once_with(["무신사"])
 
+    def test_same_name_is_judged_once_per_run(self, predict):
+        # 호출이 거래 잠금 안에서 돌아서 같은 이름의 검색·Jev 는 한 번만
+        predict.side_effect = lambda names: [[("FOOD", 0.4)] for _ in names]
+        self.judge.return_value = {"apply": ("FOOD", 0.95), "record": {"choice": "FOOD"}}
+        first, second, other = self.run_classify(self.tx("새봄분식"), self.tx("새봄분식"), self.tx("새봄상회"))
+        self.assertEqual([t.confirmed_category_id for t in (first, second, other)], ["FOOD", "FOOD", "FOOD"])
+        self.assertEqual(self.judge.call_count, 2)
+
+    def test_transfer_and_confirmed_never_reach_search(self, predict):
+        # 받는 사람 이름이 외부 검색으로 나가지 않는다: 이체도, 이체에서 바뀐 확정 소비도 분류 대상이 아니다
+        transfer = self.tx("이하늘", transaction_type="transfer")
+        converted = self.tx("이하늘", confirmed_category_id="FOOD", confirmation_state="confirmed", classification_source="user",
+                            field_states={"original_transaction_type": "transfer"})
+        self.run_classify(transfer, converted)
+        predict.assert_called_once_with([])
+        self.judge.assert_not_called()
+
     def test_name_conflict_skips_confident_svm(self, predict):
         # 분류 워크플로 10/26 4장: 같은 이름에 다른 업종이 있으면 SVM 0.99 여도 확정하지 않고 검색+Jev
         with patch("finance.classifier.conflict_names", return_value=frozenset({"루덴치과의원"})):
@@ -327,7 +344,7 @@ class RuleTest(SimpleTestCase):
     def test_rule_categories(self):
         cases = {
             "전국고속버스운송사업조합": "TRANSPORT_CAR", "카카오페이택시": "TRANSPORT_CAR", "카카오페이택시충전": None,
-            "쿠팡플레이": "CULTURE_LEISURE", "멜론": "CULTURE_LEISURE", "리디(주)": "CULTURE_LEISURE", "리디아울렛": None,
+            "쿠팡플레이": "CULTURE_LEISURE", "멜론": "CULTURE_LEISURE", "리디(주)": None, "리디아울렛": None,
             "강남장례식장": "ETC", "OO화재해상보험": "ETC", "옷수선": "ETC", "수선화꽃집": None, "루덴치과의원": None,
             # PR #64 리뷰: 짧은 구독 이름은 정확히 같을 때만
             "웨이브": "CULTURE_LEISURE", "티빙": "CULTURE_LEISURE", "넷플릭스서비시스코리아": "CULTURE_LEISURE",
@@ -401,7 +418,7 @@ class RuleTest(SimpleTestCase):
         for name, store in cases.items():
             self.assertEqual(classifier.store_name(name), store, name)
             self.assertEqual(classifier.store_name(store), store, name)  # is_multi_item 이 한 번 더 부른다
-        self.assertEqual(classifier.rule_category(classifier.store_name("네이버페이 - 봄툰")), "CULTURE_LEISURE")
+        self.assertEqual(classifier.rule_category(classifier.store_name("네이버페이 - 멜론")), "CULTURE_LEISURE")
         self.assertEqual(classifier.rule_category(classifier.store_name("쿠팡이츠 - 쿠팡")), "FOOD")
         self.assertEqual(classifier.rule_category(classifier.store_name("트립닷컴_구_NICE - 나이스정보통신(대리점)")), "TRAVEL_LODGING")
         self.assertTrue(classifier.is_multi_item("쿠팡_쿠페이 - 쿠팡"))
@@ -434,13 +451,16 @@ class RuleTest(SimpleTestCase):
 
 @patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
 class JudgeTest(SimpleTestCase):
-    def run_judge(self, found, answer=None, name="새봄동물"):
-        with patch("finance.classifier.search_store", **({"side_effect": found} if isinstance(found, Exception) else {"return_value": found})), \
-                patch("finance.classifier.ask_jev", return_value=answer) as ask:
+    def run_judge(self, found, answer=None, name="새봄동물", web=()):
+        stores = {"side_effect": found} if isinstance(found, Exception) else {"return_value": [found] if isinstance(found, tuple) else found or []}
+        texts = {"side_effect": web} if isinstance(web, Exception) else {"return_value": list(web)}
+        answers = {"side_effect": answer} if isinstance(answer, list) else {"return_value": answer}
+        with patch("finance.classifier.search_store", **stores), patch("finance.classifier.search_web", **texts), \
+                patch("finance.classifier.ask_jev", **answers) as ask:
             return classifier.judge(name), ask
 
     def test_confident_jev_applies(self):
-        result, ask = self.run_judge(("naver", "새봄동물병원", "동물병원"),
+        result, ask = self.run_judge(("naver", "새봄동물", "동물병원"),
                                      ("MEDICAL_HEALTH", 0.97, {"MEDICAL_HEALTH": 0.97, "HOUSEHOLD": 0.03}, "jev-test"))
         self.assertEqual(result["apply"], ("MEDICAL_HEALTH", 0.97))
         self.assertEqual(ask.call_args.args[0], "가맹점 이름: 새봄동물\n검색 업종: 동물병원")
@@ -448,7 +468,7 @@ class JudgeTest(SimpleTestCase):
         self.assertIn("ms", result["record"])
 
     def test_unknown_or_low_stays_unclassified(self):
-        result, _ = self.run_judge(("naver", "새봄", "음식점"),
+        result, _ = self.run_judge(("naver", "새봄동물", "음식점"),
                                    ("UNKNOWN", 0.8, {"UNKNOWN": 0.8, "FOOD": 0.15, "ETC": 0.05}, "jev-test"))
         self.assertEqual(result["review"], ([("FOOD", 0.15), ("ETC", 0.05)], classifier.UNSURE_REASON))
         result, _ = self.run_judge(None, ("FOOD", 0.6, {"FOOD": 0.6, "BEAUTY": 0.4}, "jev-test"))
@@ -496,17 +516,86 @@ class JudgeTest(SimpleTestCase):
         self.assertTrue(result["record"]["store_mismatch"])
 
     def test_same_store(self):
-        self.assertTrue(classifier.same_store("새봄동물", "새봄동물병원"))
+        # 11/05 결정: 공백·기호를 뺀 이름이 완전히 같을 때만
+        self.assertTrue(classifier.same_store("토피코테스트점", "토피코 테스트점"))
         self.assertTrue(classifier.same_store("스타벅스 강남역점", "스타벅스 강남역점"))
-        self.assertFalse(classifier.same_store("새봄동물", "새봄식당"))
-        # PR #64 재리뷰: 공백만 다른 이름도 같은 결과, 첫 단어만 같으면 다른 가게
-        self.assertFalse(classifier.same_store("새봄 동물", "새봄식당"))
-        self.assertFalse(classifier.same_store("스타벅스 강남역점", "스타벅스 강남구청역점"))
-        self.assertFalse(classifier.same_store("새봄동물", ""))
+        for query, found in (("새봄동물", "새봄동물병원"), ("새봄동물", "새봄식당"), ("리디", "팩토리디"), ("리디", "리디앤폴"),
+                             ("스타벅스", "홍단헤어 스타벅스점"), ("김밥나라", "김밥천국"), ("새봄동물", ""), ("", "")):
+            self.assertFalse(classifier.same_store(query, found), found)
 
-    def test_without_jev_key_returns_none(self):
-        with patch.dict(os.environ, {"TYPESAFE_API_KEY": ""}):
-            self.assertIsNone(classifier.judge("새봄동물"))
+    def test_web_only_applies_when_name_is_in_the_text(self):
+        travel = ("TRAVEL_LODGING", 0.99, {"TRAVEL_LODGING": 0.99, "ETC": 0.01}, "jev-test")
+        result, ask = self.run_judge(None, travel, name="여행앱", web=["여행앱 - 항공권 호텔 예약", "다른 글"])
+        self.assertEqual(result["apply"], ("TRAVEL_LODGING", 0.99))
+        self.assertEqual(ask.call_args.args[0], "가맹점 이름: 여행앱\n웹 검색 설명: 여행앱 - 항공권 호텔 예약")
+        self.assertTrue(result["record"]["web_accepted"])
+        self.assertNotIn("항공권", str(result["record"]))  # 웹 원문은 저장하지 않는다
+
+        result, ask = self.run_judge(None, travel, name="여행앱", web=["전혀 다른 글"])  # 이름이 없으면 근거 아님
+        self.assertEqual(ask.call_args.args[0], "가맹점 이름: 여행앱")
+        self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
+        self.assertFalse(result["record"]["web_accepted"])
+
+    def test_map_and_web_are_asked_separately(self):
+        store = ("naver", "새봄동물", "미용실")
+        beauty = ("BEAUTY", 0.97, {"BEAUTY": 0.97}, "jev-test")
+        culture = ("CULTURE_LEISURE", 0.97, {"CULTURE_LEISURE": 0.97}, "jev-test")
+        unknown = ("UNKNOWN", 0.6, {"UNKNOWN": 0.6, "ETC": 0.4}, "jev-test")
+        web = ["새봄동물 웹툰 서비스"]
+
+        result, ask = self.run_judge(store, [beauty, culture], web=web)  # 답이 다르면 묻는다
+        self.assertEqual(ask.call_count, 2)
+        self.assertEqual(result["review"], ([("BEAUTY", 0.97), ("CULTURE_LEISURE", 0.97)], classifier.UNSURE_REASON))
+        self.assertTrue(result["record"]["evidence_conflict"])
+
+        result, _ = self.run_judge(store, [beauty, beauty], web=web)  # 답이 같으면 적용
+        self.assertEqual(result["apply"], ("BEAUTY", 0.97))
+
+        result, _ = self.run_judge(store, [beauty, unknown], web=web)  # 한쪽 판단 보류는 충돌이 아니다
+        self.assertEqual(result["apply"], ("BEAUTY", 0.97))
+
+    def test_web_failure_falls_back_to_map(self):
+        answer = ("BEAUTY", 0.97, {"BEAUTY": 0.97}, "jev-test")
+        with self.assertLogs("finance.classifier", "WARNING"):
+            result, ask = self.run_judge(("naver", "새봄동물", "미용실"), answer, web=OSError("limit"))
+        self.assertEqual(result["apply"], ("BEAUTY", 0.97))
+        self.assertEqual(result["record"]["web_error"], "OSError")
+        ask.assert_called_once()
+
+    def test_multi_item_among_results_wins(self):
+        result, ask = self.run_judge([("naver", "새봄동물", "카페"), ("kakao", "새봄동물", "백화점")])
+        self.assertEqual(result["review"], ([], classifier.MULTI_ITEM_REASON))
+        self.assertEqual(result["record"]["industry"], "백화점")
+        ask.assert_not_called()
+
+    def test_search_store_uses_both_maps(self):
+        naver = {"items": [{"title": "<b>새봄</b> 동물&amp;병원", "category": "병원>동물병원"}]}
+        kakao = {"documents": [{"place_name": "새봄동물", "category_name": "가정,생활 > 반려동물 > 동물병원"}]}
+        keys = {"NAVER_CLIENT_ID": "id", "KAKAO_REST_API_KEY": "key"}
+
+        def reply(*failing):
+            def fake(url, headers):
+                if any(word in url for word in failing):
+                    raise OSError("down")
+                return naver if "naverapihub" in url else kakao
+            return fake
+
+        with patch.dict(os.environ, keys):
+            with patch("finance.classifier._get_json", side_effect=reply()):
+                self.assertEqual(classifier.search_store("새봄동물"),
+                                 [("naver", "새봄 동물&병원", "동물병원"), ("kakao", "새봄동물", "동물병원")])
+            with patch("finance.classifier._get_json", side_effect=reply("naverapihub")):
+                self.assertEqual(classifier.search_store("새봄동물"), [("kakao", "새봄동물", "동물병원")])
+            with patch("finance.classifier._get_json", side_effect=reply("naverapihub", "kakao")), self.assertRaises(OSError):
+                classifier.search_store("새봄동물")
+
+    def test_search_web_cuts_text(self):
+        with patch.dict(os.environ, {"NAVER_CLIENT_ID": "id"}), \
+                patch("finance.classifier._get_json", return_value={"items": [{"title": "<b>제목</b>", "description": "가" * 300}]}) as get:
+            (text,) = classifier.search_web("새봄동물")
+        self.assertTrue(text.startswith("제목 / 가"))
+        self.assertEqual(len(text), classifier.WEB_TEXT_LIMIT)
+        self.assertIn("/search/v1/webkr", get.call_args.args[0])
 
 
 @skipUnless(classifier.MODEL_PATH.exists(), "모델 파일이 없는 PC (docs/ML_MODELS.md)")
@@ -544,7 +633,7 @@ class ClassifyCommandTest(TestCase):
 
 class DeliveryAppTest(SimpleTestCase):
     def test_retail_category(self):
-        for name, code in {"GS25 역삼점": "FOOD", "CU 역삼점": "FOOD", "이마트24 서초점": "FOOD", "웰빙마트": "FOOD", "배민B마트 강남점": "FOOD",
+        for name, code in {"GS25 역삼점": "FOOD", "CU 역삼점": "FOOD", "씨유CU역삼점": "FOOD", "이마트24 서초점": "FOOD", "웰빙마트": "FOOD", "배민B마트 강남점": "FOOD",
                            "(주)아성다이소": "HOUSEHOLD", "쿠팡": None, "쿠팡마트": None, "현대백화점 판교점": None, "번개장터": None,
                            "롯데하이마트 강남점": None, "신앙촌상회": None, "루덴치과의원": None, "": None, None: None}.items():
             self.assertEqual(classifier.retail_category(name), code, name)
