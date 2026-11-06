@@ -522,7 +522,7 @@ class DisconnectTest(FinanceData):
 
 
 class TransactionIsSalaryTest(FinanceData):
-    """16 · 17. isSalary — 홈과 같은 salary_deposits() 기준 (11/4)"""
+    """16 · 17. isSalary — 홈과 같은 저장 판단(salary_decision, R12). 확인 · 자동 인정된 입금만 true"""
 
     def setUp(self):
         from users.models import FinancialProfile
@@ -538,6 +538,8 @@ class TransactionIsSalaryTest(FinanceData):
         self.sent = self.tx(merchant_name="홍길동", amount=2_600_000, transaction_type="transfer",
                             confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
         self.spent = self.tx(amount=2_600_000)
+        from budgets.models import SalaryDecision
+        SalaryDecision.objects.create(user=self.user, transaction=self.salary, state="confirmed", pay_cycle_on=self.salary.occurred_on)
 
     def flags(self):
         return {i["transactionId"]: i["isSalary"] for i in self.get().json()["items"]}
@@ -548,11 +550,19 @@ class TransactionIsSalaryTest(FinanceData):
             str(self.sent.pk): False, str(self.spent.pk): False,
         })
 
+    def test_unconfirmed_big_deposit_is_not_salary_and_review_is_shown(self):
+        from budgets.models import SalaryDecision
+        SalaryDecision.objects.filter(transaction=self.salary).update(state="auto")
+        body = self.get().json()["items"]
+        self.assertEqual({i["transactionId"]: i["salaryReview"] for i in body}[str(self.salary.pk)], "auto")
+        self.assertFalse({i["transactionId"]: i["isSalary"] for i in body}[str(self.moved.pk)])  # 판단 없는 큰 입금
+
     def test_detail_matches_list(self):
         flags = self.flags()
         for tx_id, flag in flags.items():
             self.assertIs(self.client.get(f"{URL}{tx_id}/").json()["isSalary"], flag)
 
-    def test_no_take_home_income_means_no_salary(self):
+    def test_confirmed_salary_does_not_depend_on_take_home_income(self):
+        """저장된 판단을 읽으므로 실수령액을 지워도 사용자가 확인한 급여 표시는 그대로"""
         self.user.financial_profile.delete()
-        self.assertFalse(any(self.flags().values()))
+        self.assertTrue(self.flags()[str(self.salary.pk)])

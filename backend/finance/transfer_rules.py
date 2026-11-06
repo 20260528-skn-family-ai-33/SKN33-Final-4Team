@@ -112,6 +112,8 @@ def link_own_transfers(user, txs):
             pair = list(Tx.objects.select_for_update().filter(pk__in=[tx.pk, found[0].pk]).filter(pk__in=open_ids).order_by("pk"))
             if len(pair) != 2 or not all(free(t) for t in pair):
                 continue  # 잠그는 사이 바뀜
+            if Tx.objects.filter(pk__in=[t.pk for t in pair], salary_decision__state="confirmed").exists():
+                continue  # 사용자가 급여로 확인한 입금 (R12) — 잠근 뒤 다시 봐서 급여 확인과 겹쳐도 한쪽만
             for t in pair:
                 Tx.objects.filter(pk=t.pk).update(
                     transaction_type=Type.OWN_TRANSFER, field_states={**t.field_states, OWN_REVIEW: "auto"},

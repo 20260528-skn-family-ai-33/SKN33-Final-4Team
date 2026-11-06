@@ -107,7 +107,8 @@
 | 고정지출 · 정기 저축 `status` | `suggested` · `confirmed` · `stopped` · `ignored` | 후보 / 확정 / 중지 / 무시. 목록엔 앞의 둘만 | fixed · savings |
 | 고정지출 · 정기 저축 `sourceType` | `detected` · `manual` | 자동 발견 / 직접 추가 | fixed · savings |
 | 납부 상태 `paymentState` | `unpaid` · `partial` · `paid` · `needs_review` | 미납 / 일부 / 냄 / 미납 확인 필요(+3일 지나도 출금 없음) | fixed · home |
-| 월급 상태 `salaryState` | `received` · `waiting` · `unknown` | 들어옴 / 아직 / 실수령액 몰라서 확인 불가 | home |
+| 월급 상태 `salaryState` | `received` · `needs_check` · `waiting` · `unknown` | 인정된 급여 있음 / 후보만 있음(확인 필요) / 아직 / 실수령액 몰라서 확인 불가 | home |
+| 급여 판단 `decision` · `salaryReview` | `confirmed` · `auto` · `rejected` | 사용자 확인 / 자동 인정 / 사용자 거절 (R12) | salary · transactions |
 | 급여 주기 `budget_cycle.status` | `active` · `closed` | (DB만) | 결정기록 3-1 |
 | 대출 `status` · `origin` | `repaying` · `repaid` / `provider` · `manual` | 상환 중 · 완료 / 기관 조회 · 직접 등록 | loans |
 | 챗봇 의도 `route.intent` | `spending` · `budget` · `big` · `out` · `unknown` | 소비 분석 / 예산 조정 / 큰 지출(3차) / 범위 밖 / 모름 | chat |

@@ -19,6 +19,7 @@ import MustPayPopup from '../popups/MustPayPopup.jsx'
 import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
 import CardBillPopup from '../popups/CardBillPopup.jsx'
 import NoticePopup from '../popups/NoticePopup.jsx'
+import SalaryCheckPopup from '../popups/SalaryCheckPopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
 import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 
@@ -120,8 +121,12 @@ export default function HomePage() {
   // 2. 알림 (11/3: 메인 카드 위 → 오른쪽 위 종 아이콘 팝업). 종에는 알림 개수
   //   월급 상태 (H-01): 늦게 오면 '아직', 다음 달 월급이 미리 오면 안내
   //   할 일: 확인할 거래 · 출금일을 모르는 고정지출 (H-05 — 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다)
+  //   R12: 후보만 있으면 '확인 필요'(받음 · 아직으로 단정하지 않음), 자동 인식이면 맞는지 바꿀 수 있게
+  const openSalary = () => openPopup(<SalaryCheckPopup onSaved={reload} />)
   const notices = [
+    period?.salaryCheckCount > 0 && { key: 'salary-check', count: period.salaryCheckCount, text: '월급으로 보이는 입금이 있어요. 맞는지 확인해 주세요', go: openSalary },
     period?.salaryState === 'waiting' && { key: 'salary-wait', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
+    period?.salarySource === 'auto' && { key: 'salary-auto', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 자동 인식했어요`, go: openSalary },
     period?.nextSalaryEarlyOn && { key: 'salary-early', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
     pendingCount > 0 && { key: 'pending', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
     needsPaydayCount > 0 && { key: 'payday', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
@@ -152,6 +157,7 @@ export default function HomePage() {
           <span className="mc-muted">
             {mmdd(period.startDate)} — {mmdd(period.endDate)} 급여 주기{balance.asOf ? ` · ${asOfText(balance.asOf)}` : ''}
           </span>
+          <button type="button" className="mc-link" onClick={openSalary}>{period.salaryState === 'received' ? `월급 ${won(period.salaryAmount)}` : '월급 확인'}</button>
           <span className="mc-badge">월급날 D−{period.dday}</span>
         </div>
       )}

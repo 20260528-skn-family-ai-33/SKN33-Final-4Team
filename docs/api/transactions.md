@@ -80,7 +80,8 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `items[].paymentAccount` | 객체 / null | 거래한 계좌 `{ accountId, displayName, status }` |
 | `items[].funding` | 문자 / null | `living` · `fixed` (위 공통 값). 입금 · 이체는 `null` |
 | `items[].fixedExpenseId` | UUID / null | 이 거래가 연결된 고정지출(★8·13). 없으면 `null` |
-| `items[].isSalary` | 불린 | 월급 입금인지 (11/4). 화면은 `true`인 거래에만 "월급" 표시를 한다. 판단 기준: 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 `salaryReceivedOn`·`nextSalaryEarlyOn`의 입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 월급 후보는 관리 대상 원화 입출금 계좌로 들어온 **실수령액 80% 이상** 입금(내 계좌끼리 옮긴 돈 제외)이고, 주기 구간은 급여일 7일 전부터(조기 지급). 급여일·실수령액을 등록하지 않았으면 모두 `false`. 출금·이체는 항상 `false`. 거래 한 건 보기에도 같은 값 |
+| `items[].isSalary` | 불린 | 인정된 월급 입금인지 (R12, 11/06). 사용자가 확인했거나 확인한 기준과 같은 패턴이라 자동 인정된 입금만 `true` — 홈과 같은 저장 근거(`salary_decision`). 판단 없는 후보 · 거절 · 취소 · 내 계좌 이체로 바뀐 거래는 `false`. R12 전 자동 추정은 저장된 판단이 아니라서 `false`로 보인다. 거래 한 건 보기에도 같은 값 |
+| `items[].salaryReview` | 문자 또는 `null` | `isSalary`의 근거. `confirmed` 사용자 확인 · `auto` 자동 인정 · 아니면 `null`. 화면 "월급 · 자동 인식" |
 
 > **`summary`는 필터가 걸린 목록의 소계일 뿐이다.** 홈의 '남은 생활비'·'이번 주기 사용액', 예산 화면의 카테고리 사용액과는 **다른 값**이다. 그 값들은 급여 주기 기준이고, 고정비(`funding: fixed`)를 빼는 등 예산 규칙이 들어간 계산이라 이 숫자를 가져다 쓰지 않는다. 이 소계에는 `funding: fixed` 거래도 들어 있다. '확인 필요' 칩과 홈 알림에 붙일 건수는 아래 H-03 기준(기간 없이 전체)이다.
 
@@ -127,6 +128,8 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 - 내 계좌끼리 이체(`own_transfer`) · 저축(`saving`) · 대출 상환(`loan_repayment`) · 카드값(`card_payment`)은 넣지 않는다.
   - **예외 (R11, 11/5)**: 이 기능이 자동 분류했거나(`ownTransferReview: auto`) 사용자가 확인한(`confirmed`) 내 계좌 이체는 **출금 쪽 한 줄만** 넣는다. 그 뒤 정기 저축으로 처리돼 `saving`이 된 출금도 넣는다. 되돌릴 수 있게 하려는 것이고 소비 합계에는 들어가지 않는다.
 - 각 줄에 `ownTransferReview`(아래 '거래 한 건 보기' 표)를 같이 준다.
+  - **예전 기록 (11/06)**: 11/5 전 규칙이 판단 표시 없이 `own_transfer`로 바꾸고 입금과 이은(`OWN_TRANSFER` 연결) 은행 출금은 DB를 고치지 않고 `ownTransferReview: auto`로 읽어 목록에 넣는다 → 사용자가 [맞아요] · [연결 해제]로 확인 · 정정한다(처음 고를 때 표시를 남김). 연결 없는 `own_transfer` · 표시 없는 `saving`은 넣지 않는다. 점검: `python manage.py own_transfer_legacy_check [--ids]` (읽기 전용).
+- 적요에 카드사 이름만 있는 출금은 `card_payment`가 아니라 `transfer`(카드값 후보)로 목록에 남는다. 청구서에 연결될 때 카드값이 된다 (cards.md '11/06 추가').
 - 고정지출로 연결된 거래(월세 출금, 넷플릭스 카드 결제 등)는 **목록에 넣고** `funding: fixed`로 표시한다(★8). 화면은 '고정' 배지 등으로 구분할 수 있다.
 
 **같은 구매가 두 번 들어올 때 (중복 집계 방지, 10/22 B 확정)**

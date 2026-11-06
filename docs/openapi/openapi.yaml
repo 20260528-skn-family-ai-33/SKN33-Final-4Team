@@ -4261,6 +4261,7 @@ paths:
                       direction: out
                       transactionType: spending
                       isSalary: false
+                      salaryReview: null
                     - transactionId: 62314f23-1694-584c-9b30-245f16e9b36a
                       occurredOn: '2026-10-11'
                       occurredTime: '12:10'
@@ -4283,6 +4284,7 @@ paths:
                       direction: out
                       transactionType: spending
                       isSalary: false
+                      salaryReview: null
                     - transactionId: 179a8e43-1e83-57b0-b1d2-121f2db28813
                       occurredOn: '2026-10-09'
                       occurredTime: 08:02
@@ -4305,6 +4307,7 @@ paths:
                       direction: out
                       transactionType: spending
                       isSalary: false
+                      salaryReview: null
                     - transactionId: d4a1be9f-f842-59d5-8c08-acd0080eab25
                       occurredOn: '2026-10-08'
                       occurredTime: '19:20'
@@ -4327,6 +4330,7 @@ paths:
                       direction: out
                       transactionType: transfer
                       isSalary: false
+                      salaryReview: null
                     - transactionId: 5bac6b57-6fdb-5eb8-a20b-fd1367e13f23
                       occurredOn: '2026-10-01'
                       occurredTime: null
@@ -4349,6 +4353,7 @@ paths:
                       direction: in
                       transactionType: income
                       isSalary: true
+                      salaryReview: confirmed
                 emptyReview:
                   summary: 전체 기간 확인 필요 거래 없음
                   value:
@@ -4527,6 +4532,7 @@ paths:
                 wasTransfer: false
                 updatedAt: '2026-10-09T08:05:00+09:00'
                 isSalary: false
+                salaryReview: null
         '403':
           description: not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -4665,6 +4671,7 @@ paths:
                 wasTransfer: false
                 updatedAt: '2026-10-22T09:12:00+09:00'
                 isSalary: false
+                salaryReview: null
         '400':
           description: invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -6606,6 +6613,9 @@ paths:
                       salaryState: received
                       salaryReceivedOn: '2026-09-25'
                       nextSalaryEarlyOn: null
+                      salarySource: user
+                      salaryAmount: 2500000
+                      salaryCheckCount: 0
                     balance:
                       total: 2800000
                       accountCount: 2
@@ -10447,9 +10457,8 @@ components:
           description: 연결된 고정지출. 없으면 null.
         isSalary:
           type: boolean
-          description: '월급 입금이면 true (11/4). 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 salaryReceivedOn·nextSalaryEarlyOn의
-            입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 후보: 관리 대상 원화 입출금 계좌로 들어온 실수령액 80% 이상 입금(내
-            계좌끼리 옮긴 돈 제외), 구간은 급여일 7일 전부터. 급여일·실수령액 미등록이면 모두 false. 출금·이체는 항상 false.'
+          description: 'R12: 인정된 급여 입금이면 true — 사용자가 확인했거나 확인한 기준과 같은 패턴이라 자동 인정된 입금만 (저장된 salary_decision, 홈과 같은
+            근거). 판단 없는 후보·거절·취소·내 계좌 이체는 false. 출금·이체는 항상 false.'
         ownTransferReview:
           type: string
           nullable: true
@@ -10467,6 +10476,14 @@ components:
           type: boolean
           description: auto인데 나중에 들어온 거래로 상대 후보가 여럿이 됐지만 저축·납부·고정지출 근거라 자동으로 풀지 않은 연결이면 true. 거래 상세에서 ownTransfer로
             정정 (R11).
+        salaryReview:
+          type: string
+          enum:
+          - confirmed
+          - auto
+          - null
+          nullable: true
+          description: isSalary 의 근거. confirmed 사용자 확인 · auto 자동 인정 · 아니면 null
       required:
       - transactionId
       - occurredOn
@@ -10480,6 +10497,7 @@ components:
       - paymentAccount
       - fixedExpenseId
       - isSalary
+      - salaryReview
     TransactionSpending:
       allOf:
       - $ref: '#/components/schemas/TransactionBase'
@@ -11637,16 +11655,37 @@ components:
               type: string
               enum:
               - received
+              - needs_check
               - waiting
               - unknown
+              description: 'R12: received 인정된 급여(사용자 확인·자동 인정) 있음 · needs_check 판단 없는 후보만 있음(받음·아직으로 단정하지 않음) ·
+                waiting 후보도 없음 · unknown 실수령액 미등록'
             salaryReceivedOn:
               type: string
               format: date
               nullable: true
+              description: 이번 회차에 인정된 급여 중 가장 이른 입금일
             nextSalaryEarlyOn:
               type: string
               format: date
               nullable: true
+              description: 다음 회차에 인정된 조기 급여의 입금일 (후보만 있으면 null)
+            salarySource:
+              type: string
+              enum:
+              - user
+              - auto
+              - null
+              nullable: true
+              description: user 사용자 확인이 하나라도 있음 · auto 자동 인정만 · 인정된 급여가 없으면 null
+            salaryAmount:
+              type: integer
+              nullable: true
+              description: 이번 회차 인정 급여 합계 (= budget_cycle.confirmed_income)
+            salaryCheckCount:
+              type: integer
+              minimum: 0
+              description: 인정된 급여가 없는 구간의 확인 필요 후보 수
           required:
           - startDate
           - endDate
@@ -11655,6 +11694,9 @@ components:
           - salaryState
           - salaryReceivedOn
           - nextSalaryEarlyOn
+          - salarySource
+          - salaryAmount
+          - salaryCheckCount
           nullable: true
           description: 설정한 급여일 기준. 없는 날짜는 말일. 급여일 미입력 시 null. 실제 입금 시각은 주기를 바꾸지 않는다.
         balance:
@@ -12966,16 +13008,16 @@ components:
       additionalProperties: false
 x-source-sha256:
   docs/API_RULES.md: ff9ec441fcefd21fe33213c36adeb1888084ea2acb22615ccab670bcdd5b15f0
-  docs/api/README.md: 5a194581431badd4d9f3317495cecf3c33ffa988306710b6308c05362dd34706
+  docs/api/README.md: 05f71047afdeb72a76ca7d1ac585f962558e4674eab052fd7614c4e6afa6b021
   docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: 473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1
   docs/api/finance-connect.md: 7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510
   docs/api/cards.md: a751b39b3fdc01899f431ebbf95b421acd8bdb0bd07828e561665ce0af1f0b9e
   docs/api/loans.md: 86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f
-  docs/api/transactions.md: 9013a649b3e2ef6c165d598e080c1218998f815d9057a99eb9eb961f58cd0b80
+  docs/api/transactions.md: e5bd68fba3afeb84422714dee2420509c3964a46dbde4b8c4ea3872354e29f6c
   docs/api/fixed.md: 11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
-  docs/api/home.md: 0a73453f51d65650cfe38dbd5acee9fdcd9090c531e5f6c427e1d15ef75b40df
+  docs/api/home.md: 1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5
   docs/api/chat.md: 05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd
   docs/api/budgets.md: 59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29

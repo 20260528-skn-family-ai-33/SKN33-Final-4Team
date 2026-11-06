@@ -93,7 +93,85 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 }
 ```
 
+## 급여 확인 · 자동 인정 (R12)
+
+처음엔 사용자가 급여를 확인하고, 이후 확인한 기준과 같은 패턴이면 자동 인정한다. 바뀌거나 애매하면 다시 확인받는다. LLM은 쓰지 않는다.
+
+**후보와 인정 분리**
+
+- 후보: 관리 대상 원화 입출금 계좌 입금 중 등록 실수령액 80% 이상, 급여 구간 안, 아직 판단 없음(또는 `recheck`) ([home.md ①](home.md)의 구간 · 제외 조건). 후보는 한 건이어도 자동 확정하지 않는다 → 홈 `salaryState = needs_check`.
+- 인정: `salary_decision.state`가 `confirmed`(사용자 확인) · `auto`(자동 인정)인 거래만. 홈 수령 상태 · `budget_cycle.confirmed_income` · 거래 `isSalary`가 같은 줄을 읽는다. 인정된 거래가 나중에 취소되거나 내 계좌 이체로 판정되면 인정에서 빠진다(판단 줄은 남음).
+- 계좌 선택 해제: 새 후보 · 새 자동 인정 · 새 확인은 관리 대상 계좌에서만. 이미 사용자 확인(`confirmed`)한 입금은 선택 해제해도 회차 · 금액 · 표시가 유지되고 팝업에서 취소할 수 있다(`budgets/salary.py known_deposits`).
+- R11 자동 분류와의 관계: 사용자가 급여로 확인한 입금은 R11 자동 규칙(`transfer_rules.link_own_transfers`)이 내 계좌 이체로 바꾸지 않고, 상대 출금도 그대로 둔다. 급여 확인은 입금 행을 잠그고, R11은 행을 잠근 뒤 확인 여부를 다시 봐서 동시에 일어나도 한쪽만 확정된다.
+- 급여 회차 = 급여 주기 시작일(`pay_cycle_on`). 거래일이 아니라 구간으로 정한다: 이번 회차 = 이번 월급날 7일 전 ~ 다음 월급날 8일 전, 다음 회차 = 다음 월급날 7일 전 ~ 오늘(조기 급여 — 주기는 앞당기지 않음). 급여일 변경 예약 중에는 `salary_cycle_dates`의 전환 주기 경계를 그대로 쓴다.
+
+**자동 인정 조건** — 사용자가 직접 확인하면서 기준으로 고른 단일 입금(`is_pattern`, 회원당 하나)과 비교해 모두 만족할 때만:
+
+1. 같은 회원 · 같은 계좌, 취소 아님, 지금도 급여로 고를 수 있는 입금(기준 거래 자신도 그래야 함)
+2. 같은 금액 (허용 오차 없음)
+3. 그 회차 구간 안
+4. 적요 규칙 일치 (아래)
+5. 조건에 맞는 입금이 그 회차에 **정확히 1건** — 다른 회차에 쓴 거래 · 거절한 거래 · 사용자 확인 거래는 제외
+6. 그 회차에 사용자 확인 급여가 없음 (있으면 자동으로 더하지 않음)
+
+이미 자동 인정한 거래가 무효(취소 · 이체 등)가 되거나 조건 맞는 입금이 여러 건이 되면, 다른 거래로 갈아 붙이지 않고 그 판단을 `recheck`(재확인 필요)로 바꾼다. 그 회차는 사용자가 확인하거나(그 회차 판단을 고른 목록으로 바꿈) `none`으로 판단을 지울 때까지 반복 조회해도 자동 인정하지 않는다. `recheck` 거래는 인정 합계에 넣지 않는다. 처음부터 0건 · 여러 건이면 자동 인정을 만들지 않는다. 자동 인정은 기준을 바꾸지 않는다. 분할 급여 자동 합산 · 출처 추론은 하지 않는다.
+
+**적요 규칙** (`budgets/salary.py memo_key`, 테스트 `budgets/test_salary_check.py MemoKeyTest`)
+
+| 적요 | 처리 |
+|---|---|
+| 회사명 · 사장님 이름 등 | 공백 제거 · 대소문자 무시 후 **전체 일치**. 부분 일치 · 숫자 지우기 없음 |
+| `N월 월급` · `N월 급여` · `YYYY년 N월 월급/급여` (N = 1~12) | 연 · 월 숫자만 달라도 같은 패턴. 낱말(월급/급여)과 연도 유무는 같아야 함 |
+| 빈 적요 · `입금` · `이체` · `급여` · `월급` · `11월` · `2026년 11월` | 직접 확인은 되지만 자동 인식 기준으로 못 씀 (`patternUnusableReason`) |
+
+회사명으로 받다가 `11월 월급`으로 바뀌면 같은 출처로 추론하지 않는다 → 그달은 확인 필요, 원하면 그 입금을 새 기준으로 고른다. 기준을 바꿔도 지난 확인 기록은 그대로다.
+
+### GET `/api/budgets/salary/deposits/`
+
+급여 구간마다 고를 수 있는 입금(금액 무관)과 지금 기준. 열 때 자동 인정을 다시 맞춘다. 급여일 미등록이면 400 `invalid`(`fields.payday`).
+
+```json
+{
+  "windows": [
+    {"payCycleOn": "2026-09-25", "from": "2026-09-18", "to": "2026-10-17", "items": [
+      {"transactionId": "…", "payCycleOn": "2026-09-25", "date": "2026-09-25", "amount": 2500000, "description": "(주)머니쿠션",
+       "account": {"accountId": "…", "displayName": "국민 급여통장 · ****5678", "status": "connected"},
+       "decision": null, "isPattern": false, "isCandidate": true, "patternUnusableReason": null}
+    ]},
+    {"payCycleOn": "2026-10-25", "from": "2026-10-18", "to": "2026-10-21", "items": []}
+  ],
+  "pattern": null
+}
+```
+
+`decision`: `null` · `confirmed` · `auto` · `rejected` · `recheck`(자동 인정했던 거래가 무효 · 모호해져 다시 확인 필요, `isCandidate` 대상). 다음 회차 구간이 아직 시작 전이면 그 구간은 빠진다.
+
+### POST `/api/budgets/salary/decisions/`
+
+`Idempotency-Key` 사용(선택). 응답은 위 GET과 같다. 회원 잠금 안에서 **저장 시점의 거래 상태를 다시 검증**한다.
+
+| 이름 | 타입 | 규칙 |
+|---|---|---|
+| `transactionIds` | UUID 목록 | 1~31개 |
+| `decision` | 문자 | `confirmed` 월급이 맞아요 · `rejected` 아니에요 · `none` 판단 지우기 |
+| `usePattern` | 불린 | `confirmed`에서만. 한 건이고 적요가 기준으로 쓸 수 있을 때만 `true` 가능, 아니면 400 `fields.usePattern`에 이유 |
+
+- `confirmed`: 고른 입금이 모두 지금 급여로 고를 수 있고(관리 대상 계좌 입금, 또는 이미 확인한 입금) **같은 구간**이어야 한다(아니면 400 `fields.transactionIds`). 그 회차의 판단을 이 목록으로 바꾼다 — 목록에 없는 그 회차의 확인 · 자동 인정은 판단 없음으로. 같은 요청 반복은 같은 결과. 사용자가 거절했던 거래도 다시 확인할 수 있다.
+- `rejected`: 본인 계좌 입금이면 날짜와 관계없이. 재조회 · 재처리로 다시 후보 · 자동 인정이 되지 않는다. 기준이었다면 기준도 풀린다.
+- `none`: 판단 줄을 지운다. 자동 인정을 `none`으로 지우면 다음 조회 때 다시 자동 인정될 수 있으니 아니면 `rejected`를 쓴다.
+- 없는 · 남의 · 출금 거래는 400 `invalid`(같은 문구). 영향 받은 회차의 `confirmed_income`을 다시 계산한다. 등록 실수령액 · 승인 예산은 바꾸지 않는다.
+
+### DELETE `/api/budgets/salary/pattern/`
+
+자동 인식 기준을 끈다(기준 거래의 확인은 그대로). 이번 · 다음 회차에서 사용자 확인 없는 자동 인정은 확인 대상으로 돌아간다. 지난 회차의 기록은 바꾸지 않는다. 응답은 GET과 같다.
+
+### 저장 (`salary_decision`, budgets/0006)
+
+거래당 한 줄(`transaction` 1:1)이라 한 거래가 두 회차에 붙지 않고, 동시 확인도 회원 잠금 + UNIQUE로 한 줄만 남는다. `confirmed` · `rejected`는 사람이 정한 값이라 서버가 바꾸지 않고, `auto`만 조회 때 다시 맞춘다(무효 · 모호해지면 `recheck`, budgets/0007). 상세는 [DB_MODELS.md](../DB_MODELS.md).
+
+**기존 자료**: R12 전 `confirmed_income` · `isSalary`는 자동 추정이라 확인 이력 · 학습 근거로 쓰지 않는다. 일괄 확정 · 삭제 · 보정하지 않는다. 이번 주기는 홈을 열면 판단 기준으로 다시 계산되어(후보면 `needs_check`, 금액 비움) 사용자가 한 번 확인하면 된다. 지난 주기 `confirmed_income`은 그대로 남고, 지난 거래의 `isSalary`는 `false`로 보인다.
+
 ## 자동 검사
 
-PostgreSQL 개발 환경에서 `python manage.py test budgets.test_salary budgets.test_home budgets.test_fixed finance.test_loans`를 실행한다.
+PostgreSQL 개발 환경에서 `python manage.py test budgets.test_salary budgets.test_salary_check budgets.test_home budgets.test_fixed finance.test_loans`를 실행한다.
 Django가 별도 테스트 DB를 생성·삭제한다. 개발 DB의 급여 정보는 변경하지 않는다.

@@ -19,7 +19,6 @@ from finance.models import BankAccount, PaymentDue, RecurringExpense
 
 from .api import account_json, day_in_month, lock_user
 from .models import BudgetCategorySetting, BudgetCycle
-from .salary import salary_deposits
 
 EARLY_DAYS = 7             # 월급날 7일 전부터 들어온 입금은 그 월급으로 본다 (명절 전 지급)
 REVIEW_AFTER_DAYS = 3      # 출금일 +3일이 지나도 출금을 못 찾으면 '미납 확인 필요'
@@ -93,29 +92,21 @@ def carry_over_locks(user, cycle):
     ])
 
 
-def first_deposit(deposits, start, end, today):
-    """start ~ end 사이 첫 입금. 오늘 이후 날짜의 거래는 보지 않는다"""
-    return deposits.filter(occurred_on__gte=start, occurred_on__lte=min(end, today)).first()
-
-
 def period_json(user, profile, today, cycle, start, next_payday):
-    """급여 주기 + 월급 상태. 월급 금액은 budget_cycle.confirmed_income 에 남긴다"""
-    received = early = None
-    income = profile.monthly_take_home_income if profile else None
-    if income and income > 0:
-        deposits = salary_deposits(user, income)
-        # 이번 주기 월급: 이번 월급날 7일 전 ~ 다음 월급날 8일 전
-        received = first_deposit(deposits, start - timedelta(days=EARLY_DAYS), next_payday - timedelta(days=EARLY_DAYS + 1), today)
-        # 다음 달 월급이 미리 옴: 다음 월급날 7일 전 ~ 오늘
-        early = first_deposit(deposits, next_payday - timedelta(days=EARLY_DAYS), today, today)
-        state = "received" if received else "waiting"
-    else:
-        state = "unknown"
+    """급여 주기 + 월급 상태 (R12). 인정된 급여(사용자 확인 · 자동 인정)만 받음으로 보고 합계를 budget_cycle.confirmed_income 에 남긴다.
+    인정된 급여가 없고 후보만 있으면 needs_check — 후보를 받음으로도, '아직 안 들어옴'으로도 단정하지 않는다"""
+    from .salary import recognized, refresh_auto, salary_candidates, salary_windows, store_income
 
-    confirmed_income = received.amount if received else None
-    if cycle.confirmed_income != confirmed_income:
-        cycle.confirmed_income = confirmed_income
-        cycle.save(update_fields=["confirmed_income"])
+    windows = salary_windows(profile, today)
+    refresh_auto(user, windows)
+    received, early = recognized(user, start), recognized(user, next_payday)
+    income = profile.monthly_take_home_income if profile else None
+    checks = 0
+    if income and income > 0:
+        checks = sum(salary_candidates(user, income, low, high).count()
+                     for (cycle_on, low, high), got in zip(windows, (received, early)) if not got)
+    state = "received" if received else "needs_check" if checks else "waiting" if income and income > 0 else "unknown"
+    store_income(user, cycle.starts_on)
 
     return {
         "start_date": start.isoformat(),
@@ -123,9 +114,19 @@ def period_json(user, profile, today, cycle, start, next_payday):
         "next_payday": next_payday.isoformat(),
         "dday": (next_payday - today).days,
         "salary_state": state,
-        "salary_received_on": received.occurred_on.isoformat() if received else None,
-        "next_salary_early_on": early.occurred_on.isoformat() if early else None,
+        "salary_source": source(received),
+        "salary_amount": sum(tx.amount for tx in received) or None,
+        "salary_received_on": received[0].occurred_on.isoformat() if received else None,
+        "next_salary_early_on": early[0].occurred_on.isoformat() if early else None,
+        "salary_check_count": checks,
     }
+
+
+def source(txs):
+    """user(사용자 확인이 하나라도) · auto(자동 인정만) · null"""
+    if not txs:
+        return None
+    return "user" if any(tx.salary_decision.state == "confirmed" for tx in txs) else "auto"
 
 
 # ---------------- ② 계좌 잔액 ----------------

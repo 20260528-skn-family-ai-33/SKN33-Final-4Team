@@ -19,7 +19,8 @@ export function toView(item) {
     cancelAmount: item.cancel.amount,
     via: (item.paymentCard ?? item.paymentAccount)?.displayName,
     funding: item.funding,
-    isSalary: item.isSalary === true,  // 서버가 월급으로 본 입금만 (11/4)
+    isSalary: item.isSalary === true,  // 사용자가 확인했거나 자동 인식된 월급만 (R12)
+    salaryAuto: item.salaryReview === 'auto',  // 확인한 월급과 같은 패턴이라 자동 인식
     isOwn: item.transactionType === 'own_transfer' || item.transactionType === 'saving',
     isSaving: item.transactionType === 'saving',  // 자동 판단 뒤 저축으로 처리된 출금 (R11)
     ownRecheck: item.ownTransferRecheck === true,  // 늦게 온 거래로 자동 판단이 모호해짐

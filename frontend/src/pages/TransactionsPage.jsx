@@ -181,7 +181,7 @@ export default function TransactionsPage() {
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow">
                   <strong>{tx.name}{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>
-                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? '월급' : '입금') : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')} · 소비 아님` : tx.cat}{tx.via && ` · ${tx.via}`}</span>
+                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? (tx.salaryAuto ? '월급 · 자동 인식' : '월급') : '입금') : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')} · 소비 아님` : tx.cat}{tx.via && ` · ${tx.via}`}</span>
                 </span>
                 <span className="mc-right">
                   {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}

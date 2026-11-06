@@ -75,7 +75,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
       {/* 월급: 카테고리를 고를 수 없다 */}
       {isIncome && (
         <div className="mc-card">
-          <p className="mc-muted" style={{ margin: 0 }}>{tx.isSalary ? '월급으로 찾은 입금이에요. ' : ''}거래 목록에는 보이지만 소비 합계 · 예산에는 들어가지 않아요. 입금은 카테고리를 고를 수 없어요.</p>
+          <p className="mc-muted" style={{ margin: 0 }}>{tx.isSalary ? (tx.salaryAuto ? '확인한 월급과 같은 패턴이라 월급으로 자동 인식했어요. 아니면 홈의 월급 확인에서 바꿀 수 있어요. ' : '월급으로 확인한 입금이에요. ') : ''}거래 목록에는 보이지만 소비 합계 · 예산에는 들어가지 않아요. 입금은 카테고리를 고를 수 없어요.</p>
         </div>
       )}
 

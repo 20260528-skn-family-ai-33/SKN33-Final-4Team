@@ -335,3 +335,39 @@ class CushionEntry(models.Model):
                 condition=~Q(reference_entry=models.F("entry_id")), name="cushion_ref_not_self",
             ),
         ]
+
+
+class SalaryDecision(models.Model):
+    """입금 1건의 급여 판단 (R12). 거래당 한 줄이라 한 거래가 두 급여 회차에 붙지 않는다.
+    confirmed(사용자 확인) · rejected(사용자 거절)는 재조회 · 재처리가 바꾸지 않고, auto(자동 인정)만 서버가 다시 맞춘다.
+    recheck: 자동 인정했던 거래가 무효 · 모호해짐 → 그 회차는 사용자가 확인할 때까지 다른 거래로 자동 인정하지 않는다"""
+
+    class State(models.TextChoices):
+        CONFIRMED = "confirmed", "사용자 확인"
+        AUTO = "auto", "자동 인정"
+        REJECTED = "rejected", "사용자 거절"
+        RECHECK = "recheck", "재확인 필요"
+
+    decision_id = uuid_pk()
+    user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="salary_decisions")
+    transaction = models.OneToOneField(
+        "finance.FinancialTransaction", on_delete=models.CASCADE, related_name="salary_decision",
+    )
+    pay_cycle_on = models.DateField("귀속 급여 회차(주기 시작일)", null=True, blank=True)  # 거절이면 null
+    state = models.CharField("판단", max_length=20, choices=State.choices)
+    is_pattern = models.BooleanField("자동 인식 기준", default=False)
+    decided_at = models.DateTimeField("판단 시각", auto_now=True)
+
+    class Meta:
+        db_table = "salary_decision"
+        verbose_name = verbose_name_plural = "급여 판단"
+        indexes = [models.Index(fields=["user", "pay_cycle_on"], name="sd_user_cycle_idx")]
+        constraints = [
+            models.CheckConstraint(condition=Q(state__in=["confirmed", "auto", "rejected", "recheck"]), name="sd_state_valid"),
+            models.CheckConstraint(
+                condition=Q(state="rejected", pay_cycle_on__isnull=True) | (~Q(state="rejected") & Q(pay_cycle_on__isnull=False)),
+                name="sd_cycle_matches_state",
+            ),
+            models.CheckConstraint(condition=Q(is_pattern=False) | Q(state="confirmed"), name="sd_pattern_is_confirmed"),
+            models.UniqueConstraint(fields=["user"], condition=Q(is_pattern=True), name="sd_one_pattern_per_user"),
+        ]

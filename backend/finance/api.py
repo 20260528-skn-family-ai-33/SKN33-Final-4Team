@@ -20,7 +20,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from budgets.models import Category
-from budgets.salary import salary_transaction_ids
+from budgets.salary import salary_reviews
 
 from . import classifier
 from .display import account_display, card_display
@@ -181,6 +181,11 @@ def own_transfer_fields(tx):
             "own_transfer_recheck": review == "auto" and bool((tx.field_states or {}).get(OWN_RECHECK))}
 
 
+def salary_fields(tx, reviews):
+    """isSalary = 인정된 급여 (R12) · salaryReview = confirmed(사용자 확인) | auto(자동 인정) | null"""
+    return {"is_salary": tx.pk in reviews, "salary_review": reviews.get(tx.pk)}
+
+
 # ---------- 16. 거래 목록 ----------
 
 def _parse_day(value):
@@ -247,8 +252,8 @@ def transactions(request):
         rows = rows.filter(Q(account_id__in=account_ids) | Q(card_id__in=card_ids))
     rows = rows.order_by("-occurred_on", F("occurred_time").desc(nulls_last=True), "-created_at")
 
-    salary = salary_transaction_ids(request.user, today)
-    items = [{**transaction_item(tx), "is_salary": tx.pk in salary, **own_transfer_fields(tx)} for tx in rows]
+    salary = salary_reviews(request.user)
+    items = [{**transaction_item(tx), **salary_fields(tx, salary), **own_transfer_fields(tx)} for tx in rows]
     summary = spending_summary(items)
     if start is None:
         # 전체 기간: 시작일 = 가장 오래된 거래일 (없으면 None)
@@ -306,7 +311,7 @@ def transaction_detail_body(tx):
     """거래 한 건 = 목록 한 줄 + 상세 칸"""
     return {
         **transaction_item(tx),
-        "is_salary": tx.pk in salary_transaction_ids(tx.user_id, timezone.localdate()),
+        **salary_fields(tx, salary_reviews(tx.user_id)),
         # 할부 개월: 카드 거래만 (일시불 0). 계좌 거래는 None
         "installment_months": tx.installment_months if tx.source_kind == SourceKind.CARD else None,
         "suggestion": suggestion_info(tx),
