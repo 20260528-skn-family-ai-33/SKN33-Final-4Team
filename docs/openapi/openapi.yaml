@@ -7,7 +7,7 @@ info:
   description: '확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**
 
 
-    현재 구현 48개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 0개입니다. 전체 명세는 읽기 전용이며,
+    현재 구현 59개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -11개입니다. 전체 명세는 읽기 전용이며,
     구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.
 
 
@@ -426,12 +426,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '502':
-          description: '외부 연결 삭제 실패: provider_unavailable'
+        '202':
+          description: 탈퇴 접수(로그인 차단 · 로그아웃) · 외부 인증 또는 자료 삭제 미완료. 운영자가 재처리 명령을 수동 실행해 이어 간다(자동 스케줄 없음, R21)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                type: object
+                required:
+                - ok
+                - status
+                properties:
+                  ok:
+                    type: boolean
+                    enum:
+                    - false
+                  status:
+                    type: string
+                    enum:
+                    - processing
+                    - retry_required
       requestBody:
         required: true
         content:
@@ -482,6 +495,59 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
       x-implementation-status: implemented
+  /api/consent-documents/:
+    get:
+      summary: '[구현] 동의 문서 원문 보기'
+      operationId: listConsentDocuments
+      tags:
+      - 공통 · 인증
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        회원가입·금융 조회에서 지금 동의받는 문서의 종류·범위·버전·원문을 준다. 로그인 없이 호출한다(회원가입 전 필요). 원문은 backend/users/consent_documents.py
+        한 곳에서 관리하며 동의 기록의 document_hash도 같은 원문으로 만든다. 외부 호출 없음.
+
+
+        원본: `docs/api/auth.md`'
+      security: []
+      x-source: docs/api/auth.md
+      responses:
+        '200':
+          description: 현재 문서 목록.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConsentDocumentList'
+              example:
+                items:
+                - purpose: finance_inquiry
+                  productScope: bank
+                  version: v2
+                  documentHash: 7461abd5f6c023d4c4fb3a4735937ce11bac4fe8360c8ebc00e90a7489beb0ab
+                  document:
+                    label: '[필수] 은행 계좌 정보 조회 동의'
+                    title: 은행 계좌 정보 조회 동의
+                    required: true
+                    version: v2
+                    date: 2026.10.20
+                    sections:
+                    - h: 1. 조회 목적
+                      list: true
+                      items:
+                      - 맞춤 예산 추천과 남은 생활비 계산
+        '405':
+          description: '지원하지 않는 HTTP 메서드: method_not_allowed.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: '서버 내부 오류: server_error. 화면은 동의를 받지 않고 다시 불러오기를 안내한다.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+      x-implementation-status: implemented
   /api/finance/consents/:
     post:
       summary: '[구현] 금융 조회 동의 저장'
@@ -495,7 +561,9 @@ paths:
         agreed·documentHash·grantedAt 등 서버 관리 항목이나 표에 없는 칸을 보내면 400 invalid다. 동의 원문 해시와 시각은 서버가 기록한다. 같은 범위·같은 문서
         버전의 유효한 동의가 이미 있으면 새 기록을 만들지 않고 기존 기록을 같은 응답 모양으로 반환한다. Idempotency-Key는 동의 버튼을 누를 때 생성하고 응답 전 재전송에는 같은
         키를 쓴다. 동의 철회 API는 1차 범위에 없다. 목적 코드의 확정 여부는 원문 요청 표에 확인 필요로 남아 있어 finance_inquiry를 예시로 보존하며 허용 코드 enum을 추정하지
-        않는다. 최종 동의 문구는 확인 필요 사항이다. 문서 전송 버전은 결정기록 3-3 L에서 v1로 확정되었다.
+        않는다. 최종 동의 문구는 확인 필요 사항이다. 문서 전송 버전은 결정기록 3-3 L에서 v1로 확정되었다. (11/06 R24) documentVersion은 GET /api/consent-documents/가
+        준 현재 버전(v2)이며, 해시는 보낸 버전의 서버 보관 원문으로 만든다. 지난 버전 v1(임시 문장 해시)을 새로 보내면 409 document_outdated, 없는 버전은 400 invalid.
+        과거 v1 기록은 그대로 유효하다.
 
 
         원본: `docs/api/finance-connect.md`'
@@ -514,12 +582,12 @@ paths:
                 - consentId: 7b1e0d29-5c74-45eb-a266-ccbb593fa010
                   purpose: finance_inquiry
                   productScope: bank
-                  documentVersion: v1
+                  documentVersion: v2
                   grantedAt: '2026-10-22T10:05:00+09:00'
                 - consentId: a40c3432-dc91-41b7-9f5a-cf68aed0496f
                   purpose: finance_inquiry
                   productScope: card
-                  documentVersion: v1
+                  documentVersion: v2
                   grantedAt: '2026-10-22T10:05:00+09:00'
         '400':
           description: '필수 bank 동의 누락·알 수 없는 목적/범위·지원하지 않는 버전·허용되지 않은 항목: invalid. JSON 파싱 오류: parse_error.'
@@ -560,7 +628,8 @@ paths:
                       code: not_authenticated
                       message: 로그인이 필요해요.
         '409':
-          description: '같은 회원의 같은 Idempotency-Key로 다른 내용을 전송: idempotency_conflict.'
+          description: '같은 회원의 같은 Idempotency-Key로 다른 내용을 전송: idempotency_conflict. 더는 동의받지 않는 지난 문서 버전: document_outdated.
+            · 이전 철회의 삭제가 끝나지 않은 범위: privacy_deleting'
           content:
             application/json:
               schema:
@@ -572,6 +641,12 @@ paths:
                     error:
                       code: idempotency_conflict
                       message: 같은 요청 번호로 다른 내용을 보낼 수 없어요.
+                outdated:
+                  summary: 지난 문서 버전
+                  value:
+                    error:
+                      code: document_outdated
+                      message: 약관이 새로 바뀌었어요. 바뀐 내용을 확인하고 다시 동의해 주세요.
       requestBody:
         required: true
         content:
@@ -582,10 +657,10 @@ paths:
               consents:
               - purpose: finance_inquiry
                 productScope: bank
-                documentVersion: v1
+                documentVersion: v2
               - purpose: finance_inquiry
                 productScope: card
-                documentVersion: v1
+                documentVersion: v2
       x-implementation-status: implemented
       parameters:
       - $ref: '#/components/parameters/CsrfToken'
@@ -1246,7 +1321,8 @@ paths:
 
 
         해당 범위 원천 데이터 및 자동 탐지 항목 삭제. 혼합 예산·쿠션·대화·작업 캐시는 초기화. 직접 등록 항목과 다른 범위 원천은 보존. 은행 인증은 계좌·대출 동의가 모두 없어질 때 삭제.
-        반복 요청은 현재 상태 반환.
+        반복 요청은 현재 상태 반환. 접수(동의 철회 · 연결 해제)를 먼저 커밋한 뒤 외부 인증 삭제 → 로컬 정리를 이어 하며, 끝나지 않으면 202와 deletionStatus로 안내하고
+        같은 요청으로 재시도한다(R21).
 
 
         원본: `docs/api/finance-connect.md`'
@@ -1281,12 +1357,13 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-        '502':
-          description: '외부 연결 삭제 실패: provider_unavailable'
+        '202':
+          description: '접수됨 · 삭제 미완료: 해당 항목 deletionStatus가 processing(다른 실행 진행 중) 또는 retry_required(실패 또는 실행 권한
+            만료 — 같은 요청으로 재시도)'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/ConsentStates'
       parameters:
       - name: scope
         in: path
@@ -1615,6 +1692,21 @@ paths:
                       installmentMonths: 3
                       installmentRound: 2
                       fetchedAt: '2026-10-21T09:30:00+09:00'
+                    paymentCheck:
+                      billId: 9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6
+                      issuerCode: '0302'
+                      billingMonth: 2026-11
+                      dueDate: '2026-11-05'
+                      totalAmount: 511515
+                      status: user_confirmed
+                      remainingAmount: 0
+                      transactionPaidAmount: 0
+                      recheckReason: null
+                      userCheck:
+                        answer: paid
+                        remainingAmount: null
+                        confirmedAt: '2026-11-06T11:30:00+09:00'
+                      needsCheck: false
                 totalOnly:
                   summary: 총액만 확보, 범위·상태·상세 미제공
                   value:
@@ -1636,6 +1728,7 @@ paths:
                     cards: null
                     itemsState: null
                     items: null
+                    paymentCheck: null
         '403':
           description: not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -1824,6 +1917,789 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
       x-implementation-status: implemented
+  /api/finance/card-bills/{id}/payments/:
+    get:
+      summary: '[구현] 카드 청구서 납부 거래 보기'
+      tags:
+      - 카드
+      operationId: getCardBillPayments
+      x-source: docs/api/cards.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        청구 총액 · 확인된 납부액 · 남은 납부액 · 상태, 연결한 출금, 고를 수 있는 내 계좌 출금 후보를 줍니다. 기본 기간은 결제일 35일 전 ~ 7일 뒤(오늘까지, 선결제 · 분할 납부),
+        from · to 로 최대 92일. 후보에서 빼는 거래는 대출 납부 확인과 같습니다(다른 회원 · 취소 · 내 계좌 이체 · 저축 · 입금 · 고정지출/정기 저축 근거 · 같은 구매로 묶인
+        출금 · 다른 납부에 이미 연결된 출금). 다른 카드사 적요도 빼지 않고 뒤로 보냅니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 납부 예정 → 거래 순으로
+        잠급니다.
+
+
+        원본: `docs/api/cards.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: 본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404
+      - name: from
+        in: query
+        required: false
+        description: 찾을 기간 시작 YYYY-MM-DD
+        schema:
+          type: string
+          format: date
+        example: '2026-10-20'
+      - name: to
+        in: query
+        required: false
+        description: 찾을 기간 끝 YYYY-MM-DD (오늘 이후 출금은 나오지 않음)
+        schema:
+          type: string
+          format: date
+        example: '2026-11-12'
+      responses:
+        '200':
+          description: 청구서 · 연결한 출금 · 후보.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardBillPaymentState'
+              example:
+                bill:
+                  billId: 9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6
+                  issuerCode: '0302'
+                  issuerName: 현대카드
+                  dueDate: '2026-11-05'
+                  totalAmount: 500000
+                  paidAmount: 300000
+                  remainingAmount: 200000
+                  paymentState: partial
+                  canLink: true
+                  reviewReason: null
+                linked:
+                - transactionId: 1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81
+                  date: '2026-11-03'
+                  amount: 300000
+                  account:
+                    accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                    displayName: 예시은행 급여통장 · ****1001
+                    status: connected
+                  description: 현대카드
+                  hints:
+                    issuerInDescription: true
+                    otherIssuer: false
+                    payingAccount: true
+                    nearDueDate: true
+                  reclassify: null
+                  matchedAmount: 300000
+                  source: user
+                  cancelEffect:
+                    kind: restore
+                    toType: transfer
+                    toCategory: null
+                searchFrom: '2026-10-01'
+                searchTo: '2026-11-12'
+                items:
+                - transactionId: 2c3d4e5f-6071-4829-8b3c-4d5e6f7a8b92
+                  date: '2026-11-05'
+                  amount: 200000
+                  account:
+                    accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                    displayName: 예시은행 급여통장 · ****1001
+                    status: connected
+                  description: 현대카드
+                  hints:
+                    issuerInDescription: true
+                    otherIssuer: false
+                    payingAccount: true
+                    nearDueDate: true
+                  reclassify:
+                    fromType: transfer
+                    fromCategory: null
+                    needsConfirm: false
+        '400':
+          description: invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid:
+                  summary: invalid
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        from:
+                        - YYYY-MM-DD 형식으로 보내 주세요.
+        '403':
+          description: not_authenticated / consent_required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                consent_required:
+                  summary: consent_required
+                  value:
+                    error:
+                      code: consent_required
+                      message: 카드 조회 동의가 필요해요.
+        '404':
+          description: not_found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+    post:
+      summary: '[구현] 카드 청구서 납부 거래 연결'
+      tags:
+      - 카드
+      operationId: linkCardBillPayments
+      x-source: docs/api/cards.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        고른 출금들을 이 청구서 납부로 연결합니다(분할 납부는 여러 건 한 번에, 일부 납부 뒤 추가 연결 가능). 청구 총액은 바꾸지 않고, 남은 납부액 = max(0, 청구액 − 확인된 납부액)입니다.
+        청구액보다 많아도 납부 기록을 자르지 않습니다. 연결한 거래는 card_payment(사용자 확인)가 되어 소비 합계에서 빠지고, 소비 · 사용자 확정 분류를 바꿀 때는 confirmReclassify
+        가 필요합니다(없으면 400, 아무것도 바꾸지 않음). 이미 이 청구서에 연결된 거래는 그대로 성공. 다른 납부에 연결된 거래는 409(옮기지 않음). 하나라도 고를 수 없으면 전부 저장하지
+        않습니다. 같은 거래를 두 청구서에 동시에 연결하면 한쪽만 성공합니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 납부 예정 → 거래 순으로 잠급니다.
+
+
+        원본: `docs/api/cards.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: 본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardPaymentLinkRequest'
+            examples:
+              split:
+                summary: 30만 + 20만 분할 납부
+                value:
+                  transactionIds:
+                  - 1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81
+                  - 2c3d4e5f-6071-4829-8b3c-4d5e6f7a8b92
+      responses:
+        '200':
+          description: 저장한 뒤 청구서 · 연결한 출금 (items · searchFrom · searchTo 없음).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardBillPaymentState'
+              example:
+                bill:
+                  billId: 9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6
+                  issuerCode: '0302'
+                  issuerName: 현대카드
+                  dueDate: '2026-11-05'
+                  totalAmount: 500000
+                  paidAmount: 500000
+                  remainingAmount: 0
+                  paymentState: paid
+                  canLink: true
+                  reviewReason: null
+                linked:
+                - transactionId: 1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81
+                  date: '2026-11-03'
+                  amount: 300000
+                  account:
+                    accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                    displayName: 예시은행 급여통장 · ****1001
+                    status: connected
+                  description: 현대카드
+                  hints:
+                    issuerInDescription: true
+                    otherIssuer: false
+                    payingAccount: true
+                    nearDueDate: true
+                  reclassify: null
+                  matchedAmount: 300000
+                  source: user
+                  cancelEffect:
+                    kind: restore
+                    toType: transfer
+                    toCategory: null
+                - transactionId: 2c3d4e5f-6071-4829-8b3c-4d5e6f7a8b92
+                  date: '2026-11-05'
+                  amount: 200000
+                  account:
+                    accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                    displayName: 예시은행 급여통장 · ****1001
+                    status: connected
+                  description: 현대카드
+                  hints:
+                    issuerInDescription: true
+                    otherIssuer: false
+                    payingAccount: true
+                    nearDueDate: true
+                  reclassify: null
+                  matchedAmount: 200000
+                  source: user
+                  cancelEffect:
+                    kind: restore
+                    toType: transfer
+                    toCategory: null
+        '400':
+          description: invalid / parse_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid:
+                  summary: invalid
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        transactionIds:
+                        - 고를 수 없는 거래가 있어요.
+                reclassify:
+                  summary: invalid
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        confirmReclassify:
+                        - 분류가 카드값으로 바뀌는 거래가 있어요. 바뀌는 내용을 확인해 주세요.
+        '403':
+          description: not_authenticated / consent_required. CSRF 실패 시 permission_denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                consent_required:
+                  summary: consent_required
+                  value:
+                    error:
+                      code: consent_required
+                      message: 카드 조회 동의가 필요해요.
+        '404':
+          description: not_found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '409':
+          description: not_ready / idempotency_conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_ready:
+                  summary: not_ready
+                  value:
+                    error:
+                      code: not_ready
+                      message: 이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요.
+                bill_closed:
+                  summary: not_ready
+                  value:
+                    error:
+                      code: not_ready
+                      message: 이 청구서에는 지금 납부를 연결할 수 없어요. 카드 관리에서 청구서를 다시 불러온 뒤 확인해 주세요.
+                idempotency_conflict:
+                  summary: idempotency_conflict
+                  value:
+                    error:
+                      code: idempotency_conflict
+                      message: 같은 요청 번호로 다른 내용을 보냈어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+  /api/finance/card-bills/{id}/payments/{transactionId}/:
+    delete:
+      summary: '[구현] 카드 청구서 납부 거래 연결 취소'
+      tags:
+      - 카드
+      operationId: releaseCardBillPayment
+      x-source: docs/api/cards.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        연결을 풀고 남은 금액 · 상태를 다시 계산합니다. 이 연결이 바꾼 분류는 그 뒤 바뀌지 않았을 때만 원래 값으로 되돌리고(restored, 예: 카드값 후보 이체 → 이체), 아니면 그대로
+        둡니다(kept). 이 청구서에는 그 출금이 자동으로 다시 붙지 않습니다(사용자가 다시 연결하면 해제). 정정 = 취소 뒤 다른 청구서에 연결. 이미 풀린 연결의 재전송은 200 + released:
+        null. 본문은 받지 않습니다(보내면 400). 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 납부 예정 → 거래 순으로 잠급니다.
+
+
+        원본: `docs/api/cards.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: 본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404
+      - name: transactionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: 연결을 풀 거래 ID. 남의 · 없는 거래는 404
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: 취소한 뒤 청구서 · 연결한 출금 + released.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardBillPaymentState'
+              example:
+                bill:
+                  billId: 9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6
+                  issuerCode: '0302'
+                  issuerName: 현대카드
+                  dueDate: '2026-11-05'
+                  totalAmount: 500000
+                  paidAmount: 0
+                  remainingAmount: 500000
+                  paymentState: needs_review
+                  canLink: true
+                  reviewReason: payment_not_found
+                linked: []
+                released:
+                  transactionId: 1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81
+                  classification: restored
+                  transactionType: transfer
+                  category: null
+        '400':
+          description: invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid:
+                  summary: invalid
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        restoreType:
+                        - 이 칸은 보낼 수 없어요.
+        '403':
+          description: not_authenticated / consent_required. CSRF 실패 시 permission_denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                consent_required:
+                  summary: consent_required
+                  value:
+                    error:
+                      code: consent_required
+                      message: 카드 조회 동의가 필요해요.
+        '404':
+          description: not_found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+  /api/finance/card-bills/{id}/payment-check/:
+    put:
+      summary: '[구현] 카드 청구서 납부 확인 저장'
+      tags:
+      - 카드
+      operationId: putCardBillCheck
+      x-source: docs/api/cards.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        거래를 고르지 않고 ''이 청구액 중 앞으로 얼마를 더 내야 하나''를 답합니다(사용자 확인). 가짜 출금 · 납부 기록을 만들지 않고 청구 총액도 바꾸지 않습니다. 답 · 그때 청구액
+        · 시각을 청구서에 남기며 재조회로 지워지지 않습니다. 청구액이 바뀌거나 출금 기록과 맞지 않으면 status: recheck 로 다시 묻습니다. 같은 답을 다시 보내면 그대로 성공. 승인된
+        예산은 바꾸지 않습니다. 저장된 자료만 사용하며 CODEF를 호출하지 않습니다.
+
+
+        원본: `docs/api/cards.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: 본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CardBillCheckRequest'
+            examples:
+              paid:
+                summary: 전부 냈어요
+                value:
+                  answer: paid
+              partial:
+                summary: 일부 냈어요 — 앞으로 200,000원
+                value:
+                  answer: partial
+                  remainingAmount: 200000
+      responses:
+        '200':
+          description: 저장한 뒤 확인 상태.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardBillCheckStatus'
+              example:
+                billId: 9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6
+                issuerCode: '0302'
+                billingMonth: 2026-11
+                dueDate: '2026-11-05'
+                totalAmount: 511515
+                status: user_confirmed
+                remainingAmount: 0
+                transactionPaidAmount: 0
+                recheckReason: null
+                userCheck:
+                  answer: paid
+                  remainingAmount: null
+                  confirmedAt: '2026-11-06T11:30:00+09:00'
+                needsCheck: false
+        '400':
+          description: invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid:
+                  summary: invalid
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        remainingAmount:
+                        - 앞으로 더 낼 금액을 입력해 주세요.
+        '409':
+          description: not_ready.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                no_charge:
+                  summary: not_ready
+                  value:
+                    error:
+                      code: not_ready
+                      message: 청구액이 0원이라 확인할 금액이 없어요.
+        '403':
+          description: not_authenticated / consent_required. CSRF 실패 시 permission_denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                consent_required:
+                  summary: consent_required
+                  value:
+                    error:
+                      code: consent_required
+                      message: 카드 조회 동의가 필요해요.
+        '404':
+          description: not_found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+    delete:
+      summary: '[구현] 카드 청구서 납부 확인 취소'
+      tags:
+      - 카드
+      operationId: deleteCardBillCheck
+      x-source: docs/api/cards.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        사용자 확인만 지웁니다(출금 근거는 그대로). 없으면 그대로 성공. 본문은 받지 않습니다.
+
+
+        원본: `docs/api/cards.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: 본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404
+      - $ref: '#/components/parameters/CsrfToken'
+      responses:
+        '200':
+          description: 취소한 뒤 확인 상태.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CardBillCheckStatus'
+              example:
+                billId: 9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6
+                issuerCode: '0302'
+                billingMonth: 2026-11
+                dueDate: '2026-11-05'
+                totalAmount: 511515
+                status: unchecked
+                remainingAmount: null
+                transactionPaidAmount: 0
+                recheckReason: null
+                userCheck: null
+                needsCheck: true
+        '403':
+          description: not_authenticated / consent_required. CSRF 실패 시 permission_denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                consent_required:
+                  summary: consent_required
+                  value:
+                    error:
+                      code: consent_required
+                      message: 카드 조회 동의가 필요해요.
+        '404':
+          description: not_found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+        '400':
+          description: invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid:
+                  summary: invalid
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        x:
+                        - 이 칸은 보낼 수 없어요.
+      x-implementation-status: implemented
   /api/finance/loans/:
     get:
       summary: '[구현] 대출 정보 보기'
@@ -1833,8 +2709,8 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        저장된 본인의 상환 중(repaying) 대출만 읽습니다. repaid 대출과 쿼리 필터는 1차에 제공하지 않습니다. CODEF를 호출하지 않습니다. 유효한 대출 조회 동의가 없으면 직접
-        등록(origin=manual) 대출만 반환하고 hasInquiryConsent=false를 제공합니다. 동의가 있으면 기관 조회 대출도 포함하며 hasInquiryConsent=true입니다.
+        저장된 본인의 상환 중(repaying) 대출만 읽습니다. ?status=repaid로 상환 종료한 직접 등록 대출을 읽을 수 있습니다(R19). CODEF를 호출하지 않습니다. 유효한
+        대출 조회 동의가 없으면 직접 등록(origin=manual) 대출만 반환하고 hasInquiryConsent=false를 제공합니다. 동의가 있으면 기관 조회 대출도 포함하며 hasInquiryConsent=true입니다.
         relogin 상태에서도 마지막 저장 자료와 fetchedAt을 유지합니다. 미조회/조회 실패를 items: []로 바꾸지 않습니다.
 
 
@@ -1913,6 +2789,8 @@ paths:
                           confirmationStatus: unknown
                           confirmedAt: null
                       fetchedAt: '2026-10-21T09:30:00+09:00'
+                      recentDues: []
+                      payoff: null
                     hasInquiryConsent: true
                 empty:
                   summary: 상환 중 대출 없음
@@ -1963,6 +2841,17 @@ paths:
                     error:
                       code: server_error
                       message: 잠시 후 다시 시도해 주세요.
+      parameters:
+      - name: status
+        in: query
+        required: false
+        description: repaying(기본) 또는 repaid. repaid는 직접 등록 대출 중 상환 종료한 것만(완납 되돌리기용). 그 밖의 값은 400 invalid.
+        schema:
+          type: string
+          enum:
+          - repaying
+          - repaid
+          default: repaying
       x-implementation-status: implemented
     post:
       summary: '[구현] 대출 직접 등록'
@@ -2034,6 +2923,13 @@ paths:
                     confirmationStatus: confirmed
                     confirmedAt: '2026-10-22T14:00:00+09:00'
                 fetchedAt: null
+                recentDues:
+                - dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                  dueDate: '2026-11-25'
+                  expectedAmount: 310500
+                  paidAmount: 0
+                  paymentState: unpaid
+                payoff: null
         '400':
           description: invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -2142,9 +3038,10 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        본인의 상환 중(repaying) 기관 조회/직접 등록 대출에서 monthlyPayment·paymentDay·repaymentMethod 세 칸만 수정합니다. 생략은 유지하고 null은
-        해당 값을 비웁니다. 빈 문자열·범위 밖·허용 외 필드는 400 invalid이며 전체 미저장입니다. manualBalance·manualRate·maturityDate·기관 원본·status·origin·소유자·연결
-        ID·fieldStates는 수정할 수 없습니다. 상환 완료(repaid) 대출은 없는/타인 대출과 같은 404입니다.
+        본인의 상환 중(repaying) 기관 조회/직접 등록 대출에서 monthlyPayment·paymentDay·repaymentMethod를 수정하고, 직접 등록 대출은 등록 때 입력한
+        lenderName·productName·manualBalance·manualRate·maturityDate도 정정합니다(R19). 정정은 지난 납부액·연결 거래·회차 ID를 바꾸지 않고
+        가짜 납부를 만들지 않으며, manualBalance 0원도 전체 완납으로 바꾸지 않습니다. 생략은 유지하고 null은 해당 값을 비웁니다. 빈 문자열·범위 밖·허용 외 필드는 400 invalid이며
+        전체 미저장입니다. 기관 원본·status·origin·소유자·연결 ID·fieldStates는 수정할 수 없습니다. 상환 완료(repaid) 대출은 없는/타인 대출과 같은 404입니다.
 
 
         같은 값을 재전송해도 같은 결과이며 Idempotency-Key를 쓰지 않습니다. 월 상환액과 납부일이 모두 있으면 이번 주기 납부 예정을 중복 없이 생성하고 둘 중 하나가 없으면 새 납부
@@ -2208,6 +3105,13 @@ paths:
                     confirmationStatus: confirmed
                     confirmedAt: '2026-10-22T11:00:00+09:00'
                 fetchedAt: '2026-10-21T09:30:00+09:00'
+                recentDues:
+                - dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                  dueDate: '2026-11-25'
+                  expectedAmount: 310500
+                  paidAmount: 0
+                  paymentState: unpaid
+                payoff: null
         '400':
           description: invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -2314,6 +3218,977 @@ paths:
               paymentDay: 25
               repaymentMethod: equal_principal
       x-implementation-status: implemented
+  /api/finance/loan-dues/{id}/payments/:
+    get:
+      summary: '[구현] 대출 납부 거래 후보 보기'
+      tags:
+      - 대출
+      operationId: getLoanDuePayments
+      x-source: docs/api/loans.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        회차 상태·연결한 출금·고를 수 있는 내 계좌 출금 후보를 줍니다. 금액이 다르거나 적요에 기관 이름이 없어도 후보에서 빼지 않습니다. 기본 기간은 납부일 ±7일(오늘까지), from·to로
+        최대 92일. 후보에서 빼는 거래: 다른 회원·취소·내 계좌 이체(R11 확인 중 포함)·저축·입금·고정지출/정기 저축 근거·내 계좌 이체 또는 카드 승인(SAME_PURCHASE)으로
+        묶인 출금·다른 회차에 이미 연결된 출금. 정렬은 연결 계좌·전에 확인한 계좌/적요 → 납부일 근처 → 날짜·금액 차이(참고만). 저장된 거래만 사용하며 CODEF를 호출하지 않습니다.
+        회원 잠금 → 대출 → 회차 → 거래 순으로 잠급니다.
+
+
+        원본: `docs/api/loans.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: 본인의 유효한(취소되지 않은) 대출 납부 회차 dueId (홈 mustPay[].dueId · 대출 recentDues[].dueId). 잘못된 UUID·없음·남의
+          것은 404.
+        schema:
+          type: string
+          format: uuid
+      - name: from
+        in: query
+        required: false
+        description: 찾을 기간 시작 YYYY-MM-DD
+        schema:
+          type: string
+          format: date
+        example: '2026-10-20'
+      - name: to
+        in: query
+        required: false
+        description: 찾을 기간 끝 YYYY-MM-DD (오늘 이후 출금은 나오지 않음)
+        schema:
+          type: string
+          format: date
+        example: '2026-11-12'
+      responses:
+        '200':
+          description: 회차 · 연결한 출금 · 후보.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanDuePaymentState'
+              examples:
+                candidates:
+                  summary: 후보 2건 (금액 다름·은행명 없음, 소비 분류 변경 확인 필요)
+                  value:
+                    due:
+                      dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                      loanId: 25cd2314-1886-45dc-998e-650eb012a742
+                      name: 예시은행 예시 신용대출
+                      dueDate: '2026-11-10'
+                      expectedAmount: 300000
+                      paidAmount: 0
+                      paymentState: needs_review
+                      linkedAccount:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                    linked: []
+                    searchFrom: '2026-11-03'
+                    searchTo: '2026-11-12'
+                    items:
+                    - transactionId: 0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40
+                      date: '2026-11-10'
+                      amount: 298000
+                      account:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                      description: 자동이체 출금
+                      amountDifference: -2000
+                      hints:
+                        linkedAccount: true
+                        nearDueDate: true
+                        lenderInDescription: false
+                        sameAsBefore: false
+                      reclassify:
+                        fromType: transfer
+                        fromCategory: null
+                        needsConfirm: false
+                      settlement: null
+                      source: null
+                    - transactionId: 6a1e2f3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b
+                      date: '2026-11-08'
+                      amount: 300000
+                      account:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                      description: 예시 식당
+                      amountDifference: 0
+                      hints:
+                        linkedAccount: true
+                        nearDueDate: true
+                        lenderInDescription: false
+                        sameAsBefore: false
+                      reclassify:
+                        fromType: spending
+                        fromCategory: FOOD
+                        needsConfirm: true
+                      settlement: null
+                      source: null
+                legacy:
+                  summary: 원래 분류 기록이 없는 예전 자동 연결
+                  value:
+                    due:
+                      dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                      loanId: 25cd2314-1886-45dc-998e-650eb012a742
+                      name: 예시은행 예시 신용대출
+                      dueDate: '2026-11-10'
+                      expectedAmount: 300000
+                      paidAmount: 300000
+                      paymentState: paid
+                      linkedAccount:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                    linked:
+                    - transactionId: 0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40
+                      date: '2026-11-10'
+                      amount: 300000
+                      account:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                      description: 예시은행 대출
+                      amountDifference: 0
+                      hints:
+                        linkedAccount: true
+                        nearDueDate: true
+                        lenderInDescription: true
+                        sameAsBefore: false
+                      reclassify: null
+                      settlement: null
+                      source: null
+                      cancelEffect:
+                        kind: choose
+                        toType: null
+                        toCategory: null
+                    searchFrom: '2026-11-03'
+                    searchTo: '2026-11-12'
+                    items: []
+        '400':
+          description: invalid. from·to 형식 오류, 시작일이 끝일보다 늦음, 92일 초과.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                invalid:
+                  summary: 기간 오류
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        to:
+                        - 한 번에 92일까지 찾을 수 있어요.
+        '403':
+          description: not_authenticated / consent_required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                consent_required:
+                  summary: 기관 조회 대출 동의 없음
+                  value:
+                    error:
+                      code: consent_required
+                      message: 기관에서 조회한 대출의 납부를 확인하려면 대출 조회 동의가 필요해요.
+        '404':
+          description: not_found. 없는·남의·취소된 회차, 주소 ID 형식 오류(연결 취소는 남의·없는 거래 ID 포함).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+    post:
+      summary: '[구현] 대출 납부 거래 연결 · 정정'
+      tags:
+      - 대출
+      operationId: linkLoanDuePayment
+      x-source: docs/api/loans.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        고른 출금을 이 회차에 연결하고 사용자가 고른 판단(full·partial)을 저장합니다. 같은 거래로 다시 보내면 판단만 정정하며 연결은 하나만 남습니다(바뀐 것이 없으면 아무것도 쓰지
+        않음). full은 회차에 하나만(다른 출금을 full로 고르면 앞의 것은 partial). 연결하면 거래 유형이 loan_repayment(사용자 확인)로 바뀌어 소비 합계에서 빠집니다.
+        대출 status·monthlyPayment·회차 예정액·승인 예산은 바꾸지 않습니다. 사용자 판단은 홈 재조회·재수집·상태 재계산 뒤에도 유지됩니다. 같은 거래를 두 회차에 동시에 연결하면
+        한쪽만 성공합니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 대출 → 회차 → 거래 순으로 잠급니다.
+
+
+        원본: `docs/api/loans.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: 본인의 유효한(취소되지 않은) 대출 납부 회차 dueId (홈 mustPay[].dueId · 대출 recentDues[].dueId). 잘못된 UUID·없음·남의
+          것은 404.
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoanPaymentLinkRequest'
+            examples:
+              full:
+                summary: 이번 납부를 전부 냈어요
+                value:
+                  transactionId: 0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40
+                  settlement: full
+              partial_confirm:
+                summary: 일부만 냈어요 + 소비 분류 변경 확인
+                value:
+                  transactionId: 6a1e2f3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b
+                  settlement: partial
+                  confirmReclassify: true
+      responses:
+        '200':
+          description: 저장한 뒤 회차 · 연결한 출금 (items·searchFrom·searchTo 없음).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanDuePaymentState'
+              example:
+                due:
+                  dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                  loanId: 25cd2314-1886-45dc-998e-650eb012a742
+                  name: 예시은행 예시 신용대출
+                  dueDate: '2026-11-10'
+                  expectedAmount: 300000
+                  paidAmount: 298000
+                  paymentState: paid
+                  linkedAccount:
+                    accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                    displayName: 예시은행 급여통장 · ****1001
+                    status: connected
+                linked:
+                - transactionId: 0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40
+                  date: '2026-11-10'
+                  amount: 298000
+                  account:
+                    accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                    displayName: 예시은행 급여통장 · ****1001
+                    status: connected
+                  description: 자동이체 출금
+                  amountDifference: -2000
+                  hints:
+                    linkedAccount: true
+                    nearDueDate: true
+                    lenderInDescription: false
+                    sameAsBefore: false
+                  reclassify: null
+                  settlement: full
+                  source: user
+                  cancelEffect:
+                    kind: restore
+                    toType: transfer
+                    toCategory: null
+        '400':
+          description: invalid / parse_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                transaction:
+                  summary: 고를 수 없는 거래 (없음·남의 것·취소·다른 기능 근거·SAME_PURCHASE 등)
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        transactionId:
+                        - 고를 수 없는 거래예요.
+                confirm:
+                  summary: 분류 변경 확인 없음
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        confirmReclassify:
+                        - 분류가 대출 상환으로 바뀌어요. 바뀌는 내용을 확인해 주세요.
+                unknown:
+                  summary: 표에 없는 칸
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        extra:
+                        - 이 칸은 보낼 수 없어요.
+                parse_error:
+                  summary: parse_error
+                  value:
+                    error:
+                      code: parse_error
+                      message: JSON 형식을 확인해 주세요.
+        '403':
+          description: not_authenticated / permission_denied / consent_required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                permission_denied:
+                  summary: permission_denied
+                  value:
+                    error:
+                      code: permission_denied
+                      message: 다시 시도해 주세요.
+                consent_required:
+                  summary: 기관 조회 대출 동의 없음
+                  value:
+                    error:
+                      code: consent_required
+                      message: 기관에서 조회한 대출의 납부를 확인하려면 대출 조회 동의가 필요해요.
+        '404':
+          description: not_found. 없는·남의·취소된 회차, 주소 ID 형식 오류(연결 취소는 남의·없는 거래 ID 포함).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '409':
+          description: not_ready / idempotency_conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_ready:
+                  summary: 다른 회차에 이미 연결된 거래 (옮기지 않음)
+                  value:
+                    error:
+                      code: not_ready
+                      message: 이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요.
+                idempotency_conflict:
+                  summary: 같은 요청 번호 · 다른 내용
+                  value:
+                    error:
+                      code: idempotency_conflict
+                      message: 같은 요청 번호로 다른 내용을 보냈어요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+  /api/finance/loan-dues/{id}/payments/{transactionId}/:
+    delete:
+      summary: '[구현] 대출 납부 거래 연결 취소'
+      tags:
+      - 대출
+      operationId: releaseLoanDuePayment
+      x-source: docs/api/loans.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        연결을 풀고 분류를 정합니다. 이 연결이 바꾼 분류는 그 뒤 바뀌지 않았을 때만 원래 값으로 되돌리고(restored), 그 뒤 사용자가 바꿨으면 그대로 둡니다(kept). 원래 분류 기록이
+        없는 거래(예전 자동 연결 등, cancelEffect.kind: choose)는 본문의 restoreType(·restoreCategory)이 없으면 400이며 연결·분류를 바꾸지 않습니다
+        — 받으면 연결 해제와 분류 변경을 함께 처리합니다(chosen). 원래 분류를 추측해 복원하지 않습니다. 그 회차에는 자동 연결이 다시 붙지 않습니다. 이미 풀린 연결의 재전송은 200
+        + released: null이며 아무것도 바꾸지 않습니다. 응답의 released로 실제 결과를 안내합니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 대출
+        → 회차 → 거래 순으로 잠급니다.
+
+
+        원본: `docs/api/loans.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: 본인의 유효한(취소되지 않은) 대출 납부 회차 dueId (홈 mustPay[].dueId · 대출 recentDues[].dueId). 잘못된 UUID·없음·남의
+          것은 404.
+        schema:
+          type: string
+          format: uuid
+      - name: transactionId
+        in: path
+        required: true
+        description: '연결을 풀 거래 ID. 남의·없는 거래는 404. 이 회차에 연결돼 있지 않으면(이미 풀림) 200 + released: null'
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoanPaymentReleaseRequest'
+            examples:
+              spending:
+                summary: 예전 자동 연결 → 소비 · 식비로
+                value:
+                  restoreType: spending
+                  restoreCategory: FOOD
+              transfer:
+                summary: 예전 자동 연결 → 이체로
+                value:
+                  restoreType: transfer
+      responses:
+        '200':
+          description: 취소한 뒤 회차 · 연결한 출금 + released.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoanDuePaymentState'
+              examples:
+                restored:
+                  summary: 원래 분류로 되돌림
+                  value:
+                    due:
+                      dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                      loanId: 25cd2314-1886-45dc-998e-650eb012a742
+                      name: 예시은행 예시 신용대출
+                      dueDate: '2026-11-10'
+                      expectedAmount: 300000
+                      paidAmount: 0
+                      paymentState: needs_review
+                      linkedAccount:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                    linked: []
+                    released:
+                      transactionId: 0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40
+                      classification: restored
+                      transactionType: transfer
+                      category: null
+                chosen:
+                  summary: 사용자가 고른 분류로
+                  value:
+                    due:
+                      dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                      loanId: 25cd2314-1886-45dc-998e-650eb012a742
+                      name: 예시은행 예시 신용대출
+                      dueDate: '2026-11-10'
+                      expectedAmount: 300000
+                      paidAmount: 0
+                      paymentState: needs_review
+                      linkedAccount:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                    linked: []
+                    released:
+                      transactionId: 0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40
+                      classification: chosen
+                      transactionType: spending
+                      category: FOOD
+                replay:
+                  summary: 이미 풀린 연결 재전송
+                  value:
+                    due:
+                      dueId: 7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90
+                      loanId: 25cd2314-1886-45dc-998e-650eb012a742
+                      name: 예시은행 예시 신용대출
+                      dueDate: '2026-11-10'
+                      expectedAmount: 300000
+                      paidAmount: 0
+                      paymentState: needs_review
+                      linkedAccount:
+                        accountId: 4e7f47ec-f94b-49a5-a828-a9fb67775ab1
+                        displayName: 예시은행 급여통장 · ****1001
+                        status: connected
+                    linked: []
+                    released: null
+        '400':
+          description: invalid / parse_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                choose_required:
+                  summary: 원래 분류를 모르는 거래인데 restoreType 없음
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        restoreType:
+                        - 원래 분류를 알 수 없어요. 이 거래를 이체 또는 소비 중 무엇으로 둘지 골라 주세요.
+                category:
+                  summary: 소비인데 카테고리 없음·잘못됨
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        restoreCategory:
+                        - 소비 카테고리를 골라 주세요.
+                parse_error:
+                  summary: parse_error
+                  value:
+                    error:
+                      code: parse_error
+                      message: JSON 형식을 확인해 주세요.
+        '403':
+          description: not_authenticated / permission_denied / consent_required.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                permission_denied:
+                  summary: permission_denied
+                  value:
+                    error:
+                      code: permission_denied
+                      message: 다시 시도해 주세요.
+                consent_required:
+                  summary: 기관 조회 대출 동의 없음
+                  value:
+                    error:
+                      code: consent_required
+                      message: 기관에서 조회한 대출의 납부를 확인하려면 대출 조회 동의가 필요해요.
+        '404':
+          description: not_found. 없는·남의·취소된 회차, 주소 ID 형식 오류(연결 취소는 남의·없는 거래 ID 포함).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+  /api/finance/loans/{id}/payoff/:
+    post:
+      summary: '[구현] 대출 전체 완납 처리 (직접 등록)'
+      tags:
+      - 대출
+      operationId: payoffManualLoan
+      x-source: docs/api/loans.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        ‘이 대출을 전부 갚았어요’. 이번 회차 납부와 다른 동작입니다. 직접 등록(manual) 대출을 사용자 신고로 상환 종료(repaid)하고 처리 시각·이전 잔액을 근거로 남깁니다. 처리일은
+        오늘이며 소급 날짜는 받지 않습니다(빈 본문 외 400). 잔액은 0으로 표시합니다. 납부 거래·납부액은 만들지 않고 대출 행을 지우지 않습니다.
+
+
+        오늘 이후 납부 회차 중 납부·연결 근거가 없는 것만 취소합니다. 오늘·지난 회차와 일부라도 낸 회차는 그대로 남아 홈 ‘꼭 나갈 돈’과 [납부 거래 확인]에서 계속 정리합니다. 이후 홈
+        조회·재매칭·다음 주기에도 새 회차를 만들지 않으며 지킬 돈의 대출 합계에서 빠집니다. 승인 전 예산 초안만 만료하고 승인된 예산·쿠션·생활비는 바꾸지 않습니다. 이미 완납이면 처음 기록을
+        그대로 200으로 돌려줍니다. 기관 조회 대출은 409 not_ready. CODEF를 호출하지 않습니다. 회원 → 대출 → 회차 순으로 잠급니다.
+
+
+        원본: `docs/api/loans.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: 본인의 대출 loanId. 잘못된 UUID·없음·남의 것은 404.
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+            example: {}
+      responses:
+        '200':
+          description: 처리한 뒤 대출 한 건(Loan).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Loan'
+        '400':
+          description: invalid / parse_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                transaction:
+                  summary: 고를 수 없는 거래 (없음·남의 것·취소·다른 기능 근거·SAME_PURCHASE 등)
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        transactionId:
+                        - 고를 수 없는 거래예요.
+                confirm:
+                  summary: 분류 변경 확인 없음
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        confirmReclassify:
+                        - 분류가 대출 상환으로 바뀌어요. 바뀌는 내용을 확인해 주세요.
+                unknown:
+                  summary: 표에 없는 칸
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        extra:
+                        - 이 칸은 보낼 수 없어요.
+                parse_error:
+                  summary: parse_error
+                  value:
+                    error:
+                      code: parse_error
+                      message: JSON 형식을 확인해 주세요.
+        '403':
+          description: not_authenticated / permission_denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                permission_denied:
+                  summary: permission_denied
+                  value:
+                    error:
+                      code: permission_denied
+                      message: 다시 시도해 주세요.
+        '404':
+          description: not_found. 없는·남의 대출, 주소 ID 형식 오류.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '409':
+          description: 'not_ready: 기관 조회 대출(직접 완납·되돌리기 불가) 또는 오래된 화면 / idempotency_conflict.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_ready:
+                  summary: 다른 회차에 이미 연결된 거래 (옮기지 않음)
+                  value:
+                    error:
+                      code: not_ready
+                      message: 이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요.
+                idempotency_conflict:
+                  summary: 같은 요청 번호 · 다른 내용
+                  value:
+                    error:
+                      code: idempotency_conflict
+                      message: 같은 요청 번호로 다른 내용을 보냈어요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
+  /api/finance/loans/{id}/payoff/cancel/:
+    post:
+      summary: '[구현] 대출 전체 완납 되돌리기'
+      tags:
+      - 대출
+      operationId: cancelManualLoanPayoff
+      x-source: docs/api/loans.md
+      description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
+
+
+        잘못 누른 전체 완납을 되돌립니다. reportedAt이 지금 저장된 완납 처리와 같아야 하며, 다르면(그 뒤 다시 완납됨) 409 not_ready로 최신 상태를 덮지 않습니다. 상환
+        중으로 바꾸고 잔액이 완납 때 넣은 0원이면 이전 잔액으로 복구합니다. 납부 기록·연결은 그대로 두고, 이번 주기 회차만 기존 규칙으로 다시 준비합니다(같은 회차를 다시 살리며 지난 주기
+        회차는 만들지 않음). 승인 전 예산 초안만 만료합니다. 이미 상환 중이면 그대로 200. 완납 근거 기록은 지우지 않고 되돌린 시각을 덧붙입니다.
+
+
+        원본: `docs/api/loans.md`'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        description: 본인의 대출 loanId. 잘못된 UUID·없음·남의 것은 404.
+        schema:
+          type: string
+          format: uuid
+      - $ref: '#/components/parameters/IdempotencyKey'
+      - $ref: '#/components/parameters/CsrfToken'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoanPayoffCancelRequest'
+            example:
+              reportedAt: '2026-11-12T10:00:00.123456+09:00'
+      responses:
+        '200':
+          description: 처리한 뒤 대출 한 건(Loan).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Loan'
+        '400':
+          description: invalid / parse_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                transaction:
+                  summary: 고를 수 없는 거래 (없음·남의 것·취소·다른 기능 근거·SAME_PURCHASE 등)
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        transactionId:
+                        - 고를 수 없는 거래예요.
+                confirm:
+                  summary: 분류 변경 확인 없음
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        confirmReclassify:
+                        - 분류가 대출 상환으로 바뀌어요. 바뀌는 내용을 확인해 주세요.
+                unknown:
+                  summary: 표에 없는 칸
+                  value:
+                    error:
+                      code: invalid
+                      message: 입력값을 확인해 주세요.
+                      fields:
+                        extra:
+                        - 이 칸은 보낼 수 없어요.
+                parse_error:
+                  summary: parse_error
+                  value:
+                    error:
+                      code: parse_error
+                      message: JSON 형식을 확인해 주세요.
+        '403':
+          description: not_authenticated / permission_denied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_authenticated:
+                  summary: not_authenticated
+                  value:
+                    error:
+                      code: not_authenticated
+                      message: 로그인이 필요해요.
+                permission_denied:
+                  summary: permission_denied
+                  value:
+                    error:
+                      code: permission_denied
+                      message: 다시 시도해 주세요.
+        '404':
+          description: not_found. 없는·남의 대출, 주소 ID 형식 오류.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_found:
+                  summary: not_found
+                  value:
+                    error:
+                      code: not_found
+                      message: 찾을 수 없어요.
+        '405':
+          description: method_not_allowed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                method_not_allowed:
+                  summary: method_not_allowed
+                  value:
+                    error:
+                      code: method_not_allowed
+                      message: 지원하지 않는 요청이에요.
+        '409':
+          description: 'not_ready: 기관 조회 대출(직접 완납·되돌리기 불가) 또는 오래된 화면 / idempotency_conflict.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                not_ready:
+                  summary: 다른 회차에 이미 연결된 거래 (옮기지 않음)
+                  value:
+                    error:
+                      code: not_ready
+                      message: 이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요.
+                idempotency_conflict:
+                  summary: 같은 요청 번호 · 다른 내용
+                  value:
+                    error:
+                      code: idempotency_conflict
+                      message: 같은 요청 번호로 다른 내용을 보냈어요.
+        '500':
+          description: server_error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                server_error:
+                  summary: server_error
+                  value:
+                    error:
+                      code: server_error
+                      message: 잠시 후 다시 시도해 주세요.
+      x-implementation-status: implemented
   /api/finance/transactions/:
     get:
       summary: '[구현] 거래 목록 보기'
@@ -2386,6 +4261,7 @@ paths:
                       direction: out
                       transactionType: spending
                       isSalary: false
+                      salaryReview: null
                     - transactionId: 62314f23-1694-584c-9b30-245f16e9b36a
                       occurredOn: '2026-10-11'
                       occurredTime: '12:10'
@@ -2408,6 +4284,7 @@ paths:
                       direction: out
                       transactionType: spending
                       isSalary: false
+                      salaryReview: null
                     - transactionId: 179a8e43-1e83-57b0-b1d2-121f2db28813
                       occurredOn: '2026-10-09'
                       occurredTime: 08:02
@@ -2430,6 +4307,7 @@ paths:
                       direction: out
                       transactionType: spending
                       isSalary: false
+                      salaryReview: null
                     - transactionId: d4a1be9f-f842-59d5-8c08-acd0080eab25
                       occurredOn: '2026-10-08'
                       occurredTime: '19:20'
@@ -2452,6 +4330,7 @@ paths:
                       direction: out
                       transactionType: transfer
                       isSalary: false
+                      salaryReview: null
                     - transactionId: 5bac6b57-6fdb-5eb8-a20b-fd1367e13f23
                       occurredOn: '2026-10-01'
                       occurredTime: null
@@ -2474,6 +4353,7 @@ paths:
                       direction: in
                       transactionType: income
                       isSalary: true
+                      salaryReview: confirmed
                 emptyReview:
                   summary: 전체 기간 확인 필요 거래 없음
                   value:
@@ -2652,6 +4532,7 @@ paths:
                 wasTransfer: false
                 updatedAt: '2026-10-09T08:05:00+09:00'
                 isSalary: false
+                salaryReview: null
         '403':
           description: not_authenticated / consent_required. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -2747,6 +4628,12 @@ paths:
         구현 조율 대상입니다. 분류 변경만으로 승인 전 예산 초안을 만료시키지 않습니다.
 
 
+        내 계좌 이체 확인(R11): {"ownTransfer": true|false}만 보낸다. 잠근 뒤 다시 읽은 현재 상태로 판단해 suggested·rejected인 transfer, auto·confirmed인
+        own_transfer·saving 은행 출금만 바꾼다. 판단 표시가 남아도 지금 소비 등이면 400(오래된 화면·동시 요청이 사용자 분류를 덮지 않음). 취소·납부 연결·고정비 충당도
+        400(fields.ownTransfer). saving 출금을 false로 정정하면 정기 저축 근거에서 빠지며, 고정지출 근거이기도 하면 400. 이미 원하는 상태면 200. own_transfer·saving
+        거래에 category를 보내면 400.
+
+
         원본: `docs/api/transactions.md`'
       x-source: docs/api/transactions.md
       responses:
@@ -2785,6 +4672,7 @@ paths:
                 wasTransfer: false
                 updatedAt: '2026-10-22T09:12:00+09:00'
                 isSalary: false
+                salaryReview: null
         '400':
           description: invalid / parse_error. 입력 칸과 무관한 오류에는 fields를 넣지 않습니다.
           content:
@@ -4726,6 +6614,9 @@ paths:
                       salaryState: received
                       salaryReceivedOn: '2026-09-25'
                       nextSalaryEarlyOn: null
+                      salarySource: user
+                      salaryAmount: 2500000
+                      salaryCheckCount: 0
                     balance:
                       total: 2800000
                       accountCount: 2
@@ -4747,6 +6638,7 @@ paths:
                         displayName: 국민 급여통장 · ****5678
                         status: connected
                       isEstimated: false
+                      userChecked: false
                     budget: null
                 empty:
                   summary: 급여일·계좌 없음
@@ -5190,6 +7082,7 @@ paths:
                       target: 8400000
                       balanceTotal: 2800000
                     cardPending: []
+                    cardNotes: []
                     locksReleased: []
                 missingIncome:
                   value:
@@ -5211,6 +7104,7 @@ paths:
                       target: null
                       balanceTotal: null
                     cardPending: []
+                    cardNotes: []
                     locksReleased: []
                 blocked:
                   value:
@@ -5236,6 +7130,7 @@ paths:
                       target: 2100000
                       balanceTotal: null
                     cardPending: []
+                    cardNotes: []
                     locksReleased: []
                 cardBillPending:
                   value:
@@ -5260,6 +7155,7 @@ paths:
                     cardPending:
                     - cardId: 7b1e2f40-1c2d-4e5f-8a9b-0c1d2e3f4a5b
                       reason: bill_history_incomplete
+                    cardNotes: []
                     locksReleased: []
                   summary: 카드 첫 청구서 확인 중
         '403':
@@ -5334,6 +7230,7 @@ paths:
                       target: 8400000
                       balanceTotal: 2800000
                     cardPending: []
+                    cardNotes: []
                     locksReleased: []
         '400':
           description: invalid
@@ -6237,9 +8134,9 @@ components:
           description: 필수 동의 구분.
         documentVersion:
           type: string
-          enum:
-          - v1
-          description: 사용자가 실제 확인한 문서 버전.
+          maxLength: 50
+          example: v1
+          description: 사용자가 실제 확인한 문서 버전(GET /api/consent-documents/의 version, 지금은 v1). 서버 보관 원문에 없는 버전이면 400 invalid(fields.consents).
       required:
       - purpose
       - documentVersion
@@ -6398,6 +8295,50 @@ components:
               minimum: 0
           additionalProperties: false
       additionalProperties: false
+    ConsentDocument:
+      type: object
+      properties:
+        purpose:
+          type: string
+          enum:
+          - terms
+          - privacy
+          - finance_inquiry
+        productScope:
+          type: string
+          enum:
+          - bank
+          - card
+          - loan
+          nullable: true
+          description: 금융 조회만 값이 있고 회원가입 문서는 null.
+        version:
+          type: string
+          description: 동의 요청 documentVersion에 그대로 보낼 값.
+        documentHash:
+          type: string
+          description: document를 키 정렬·공백 없는 UTF-8 JSON으로 만든 SHA-256. 확인용이며 동의 요청에 보내지 않는다.
+        document:
+          type: object
+          description: 화면이 그대로 그리는 원문 {label, title, required?, version, date, sections:[{h, items, list?}]}.
+          additionalProperties: true
+      required:
+      - purpose
+      - productScope
+      - version
+      - documentHash
+      - document
+      additionalProperties: false
+    ConsentDocumentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConsentDocument'
+      required:
+      - items
+      additionalProperties: false
     FinanceConsentInput:
       type: object
       properties:
@@ -6414,10 +8355,10 @@ components:
           description: 조회 범위 또는 금융 업권.
         documentVersion:
           type: string
-          example: v1
-          description: 화면에 실제로 보여 준 동의 문서 버전. 결정기록 3-3 L에 따라 1차 전송 버전은 v1이다. 최종 동의 문구·서버 원문 해시 관리는 별도 확인 대상이다.
+          example: v2
+          description: 화면에 실제로 보여 준 동의 문서 버전(GET /api/consent-documents/의 version). 서버가 그 버전의 보관 원문으로 해시를 만든다.
           enum:
-          - v1
+          - v2
       required:
       - purpose
       - productScope
@@ -6455,8 +8396,8 @@ components:
           description: 조회 범위 또는 금융 업권.
         documentVersion:
           type: string
-          example: v1
-          description: 동의 문서 버전.
+          example: v2
+          description: 동의 문서 버전. 과거 기록은 v1(임시 문장 해시)일 수 있다.
         grantedAt:
           type: string
           format: date-time
@@ -7080,6 +9021,7 @@ components:
             - documentVersion
             - grantedAt
             - revokedAt
+            - deletionStatus
             properties:
               productScope:
                 type: string
@@ -7106,6 +9048,14 @@ components:
                 type: string
                 nullable: true
                 format: date-time
+              deletionStatus:
+                type: string
+                nullable: true
+                enum:
+                - processing
+                - retry_required
+                - null
+                description: 철회 삭제 진행 상태. null=삭제 없음 또는 완료
             additionalProperties: false
       additionalProperties: false
     CardCandidate:
@@ -7288,7 +9238,7 @@ components:
           type: string
           format: date
           nullable: true
-          description: 출금 예정일. 모르면 납부 예정 생성 안 함.
+          description: 출금 예정일. 없으면 결제 예정일을 출금일로 보고, 둘 다 모르면 납부 예정 생성 안 함 (11/5).
         paymentAccount:
           description: 결제 계좌를 모르면 객체 전체 null.
           oneOf:
@@ -7326,6 +9276,14 @@ components:
             $ref: '#/components/schemas/CardBillItem'
           nullable: true
           description: 청구 상세. 미확보 null, 정상 확인된 0건 [], 일부면 확보분만.
+        paymentCheck:
+          description: 앞으로 낼 금액 확인 (11/06). 카드사 통합 청구서만, 그 밖은 null.
+          oneOf:
+          - $ref: '#/components/schemas/CardBillCheckStatus'
+          - type: object
+            nullable: true
+            enum:
+            - null
       required:
       - billId
       - issuerCode
@@ -7342,6 +9300,7 @@ components:
       - cards
       - itemsState
       - items
+      - paymentCheck
     CardReviewCandidate:
       type: object
       properties:
@@ -7453,6 +9412,324 @@ components:
       - transactionId
       - status
       additionalProperties: false
+    CardPaymentHints:
+      type: object
+      description: 참고 표시만 (자동 연결 판단에 쓰지 않음)
+      properties:
+        issuerInDescription:
+          type: boolean
+          description: 적요에 이 청구서 카드사 이름
+        otherIssuer:
+          type: boolean
+          description: 적요에 다른 카드사 이름
+        payingAccount:
+          type: boolean
+          description: 청구서 · 카드의 결제 계좌에서 나간 출금
+        nearDueDate:
+          type: boolean
+          description: 결제일 ±3일
+      required:
+      - issuerInDescription
+      - otherIssuer
+      - payingAccount
+      - nearDueDate
+    CardPaymentTransaction:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        amount:
+          type: integer
+          description: 출금 순액 (부분 취소 뺀 금액)
+        account:
+          description: 출금한 내 계좌
+          oneOf:
+          - $ref: '#/components/schemas/AccountDisplay'
+          - type: object
+            nullable: true
+            enum:
+            - null
+        description:
+          type: string
+          nullable: true
+        hints:
+          $ref: '#/components/schemas/CardPaymentHints'
+        reclassify:
+          description: 카드값(card_payment)으로 바꾸면 달라지는 분류. 이미 카드값이면 null. needsConfirm 이면 confirmReclassify 필요
+          oneOf:
+          - $ref: '#/components/schemas/LoanPaymentReclassify'
+          - type: object
+            nullable: true
+            enum:
+            - null
+        matchedAmount:
+          type: integer
+          description: 'linked 만: 이 청구서에 인정된 금액 기록 (자르지 않음)'
+        source:
+          type: string
+          enum:
+          - user
+          - rule
+          description: 'linked 만: 직접 연결 · 자동 연결'
+        cancelEffect:
+          type: object
+          description: 'linked 만: 연결 취소하면 분류 restore(원래 분류로) · keep(그대로). 같은 출금이 다른 청구서에도 연결돼 있으면 keep — 마지막 연결을
+            풀 때 restore'
+          properties:
+            kind:
+              type: string
+              enum:
+              - restore
+              - keep
+            toType:
+              type: string
+            toCategory:
+              type: string
+              nullable: true
+      required:
+      - transactionId
+      - date
+      - amount
+      - account
+      - description
+      - hints
+      - reclassify
+    CardBillPaymentSummary:
+      type: object
+      properties:
+        billId:
+          type: string
+          format: uuid
+        issuerCode:
+          type: string
+        issuerName:
+          type: string
+          nullable: true
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+          description: 출금 예정일, 없으면 결제 예정일
+        totalAmount:
+          type: integer
+          description: 조회된 청구 총액 (납부해도 줄이지 않음)
+        paidAmount:
+          type: integer
+          minimum: 0
+          description: 확인된 납부액 = 연결한 출금의 유효한 합 (취소된 출금 제외). 청구액보다 클 수 있음
+        remainingAmount:
+          type: integer
+          minimum: 0
+          description: max(0, totalAmount − paidAmount)
+        paymentState:
+          type: string
+          nullable: true
+          enum:
+          - unpaid
+          - partial
+          - paid
+          - needs_review
+          - null
+          description: paid=청구액 이상(90% 규칙 아님) · partial=일부 · unpaid=연결된 출금 없음, 결제일+3일 전(안 냈다는 뜻 아님) · needs_review=결제일+3일이
+            지나도 못 찾음 또는 연결한 출금이 취소됨. 청구액 0원 이하면 null
+        canLink:
+          type: boolean
+          description: 새 출금을 연결할 수 있는지 (정정으로 대체 · 0원 · 판단 보류 청구서는 false — 연결 취소는 가능)
+        reviewReason:
+          type: string
+          nullable: true
+          enum:
+          - null
+          - due_date_unknown
+          - payment_not_found
+          - payment_canceled
+          description: 'needs_review 이유: due_date_unknown(청구서에 출금·결제 예정일이 없음 — ''결제일 확인 필요'', 후보 · 새 연결 없음) · payment_not_found(결제일+3일이
+            지나도 연결된 출금 없음) · payment_canceled(연결한 출금이 취소됨). 그 밖은 null'
+      required:
+      - billId
+      - issuerCode
+      - issuerName
+      - dueDate
+      - totalAmount
+      - paidAmount
+      - remainingAmount
+      - paymentState
+      - reviewReason
+      - canLink
+    CardBillPaymentState:
+      type: object
+      properties:
+        bill:
+          $ref: '#/components/schemas/CardBillPaymentSummary'
+        linked:
+          type: array
+          items:
+            $ref: '#/components/schemas/CardPaymentTransaction'
+        searchFrom:
+          type: string
+          format: date
+          description: GET 만
+        searchTo:
+          type: string
+          format: date
+          description: GET 만
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CardPaymentTransaction'
+          description: 'GET 만: 고를 수 있는 출금 (최대 50건)'
+        released:
+          nullable: true
+          description: 'DELETE 만: 실제로 한 일. 이미 풀린 연결의 재전송은 null'
+          allOf:
+          - $ref: '#/components/schemas/CardPaymentReleased'
+      required:
+      - bill
+      - linked
+    CardPaymentReleased:
+      type: object
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        classification:
+          type: string
+          enum:
+          - restored
+          - kept
+        transactionType:
+          type: string
+        category:
+          type: string
+          nullable: true
+      required:
+      - transactionId
+      - classification
+      - transactionType
+      - category
+    CardPaymentLinkRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        transactionIds:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+            format: uuid
+          description: 이 청구서를 낸 내 계좌 출금들 (분할 납부면 여러 건). 같은 ID 중복은 한 번
+        confirmReclassify:
+          type: boolean
+          default: false
+          description: 소비 · 사용자 확정 분류를 카드값으로 바꾸는 데 동의
+      required:
+      - transactionIds
+    CardBillCheckStatus:
+      type: object
+      description: 이 청구액 중 앞으로 얼마를 더 내야 하나 (finance/card_payments.bill_status). 청구 총액 · 납부 기록은 바꾸지 않는다
+      properties:
+        billId:
+          type: string
+          format: uuid
+        issuerCode:
+          type: string
+        billingMonth:
+          type: string
+          nullable: true
+          example: 2026-11
+        dueDate:
+          type: string
+          format: date
+          nullable: true
+          description: 출금 예정일, 없으면 결제 예정일
+        totalAmount:
+          type: integer
+          description: 조회된 청구 총액
+        status:
+          type: string
+          enum:
+          - paid_by_transactions
+          - user_confirmed
+          - recheck
+          - unchecked
+          - no_charge
+          - total_mismatch
+          description: paid_by_transactions=연결된 계좌 출금이 청구액 이상 · user_confirmed=사용자 확인 · recheck=확인 뒤 청구액이 바뀌었거나
+            출금 기록과 다름(조용히 덮지 않음) · unchecked=확인 없음/나중에 확인 · no_charge=청구액 0원 이하 · total_mismatch=청구 총액이 상세 합계보다
+            작아 원래 청구액을 모름(총액 0원이라고 낼 금액 없음으로 보지 않음, 11/06)
+        remainingAmount:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: 앞으로 낼 금액. unchecked · recheck 는 null (0원도 확정 미납액도 아님). 사용자 확인값과 출금 연결액을 더하지 않는다
+        transactionPaidAmount:
+          type: integer
+          minimum: 0
+          description: 연결된 계좌 출금의 유효한 합 (근거, 참고)
+        recheckReason:
+          type: string
+          nullable: true
+          enum:
+          - null
+          - bill_changed
+          - transactions_conflict
+          - bill_total_mismatch
+        userCheck:
+          type: object
+          nullable: true
+          description: 사용자 확인 기록 (카드사 확인이 아님)
+          properties:
+            answer:
+              type: string
+              enum:
+              - unpaid
+              - paid
+              - partial
+              - later
+            remainingAmount:
+              type: integer
+              nullable: true
+            confirmedAt:
+              type: string
+              format: date-time
+              nullable: true
+        needsCheck:
+          type: boolean
+          description: 결제일이 지났는데 앞으로 낼 금액을 모름 또는 재확인. 첫 청구서면 지킬 돈 계산이 보류된다 (결제일 전 미확인은 청구액을 낼 예정으로 셈)
+      required:
+      - billId
+      - issuerCode
+      - billingMonth
+      - dueDate
+      - totalAmount
+      - status
+      - remainingAmount
+      - transactionPaidAmount
+      - recheckReason
+      - userCheck
+      - needsCheck
+    CardBillCheckRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        answer:
+          type: string
+          enum:
+          - unpaid
+          - paid
+          - partial
+          - later
+          description: 아직 안 냈어요 · 전부 냈어요 · 일부 냈어요 · 나중에 확인
+        remainingAmount:
+          type: integer
+          description: 'partial 만: 앞으로 더 낼 금액 (1원 이상 청구액 −1원 이하)'
+      required:
+      - answer
     LoanFieldState:
       type: object
       properties:
@@ -7542,7 +9819,9 @@ components:
           type: string
           enum:
           - repaying
-          description: 1차 목록·수정·등록 응답은 상환 중만. DB의 repaid는 1차 목록 제외, 수정 404.
+          - repaid
+          description: 기본 목록·수정·등록 응답은 repaying. repaid는 ?status=repaid 목록(직접 등록만)과 전체 완납·되돌리기 응답에만. repaid 대출 PATCH는
+            404.
         reportedPrincipal:
           type: integer
           nullable: true
@@ -7558,15 +9837,15 @@ components:
         manualBalance:
           type: integer
           nullable: true
-          minimum: 1
+          minimum: 0
           maximum: 1000000000
-          description: 직접 등록 잔액, 원. 1차 PATCH로 수정 불가.
+          description: 직접 등록 잔액, 원. 직접 등록 대출은 PATCH로 정정 가능(0원 허용, 0원 저장은 완납 처리가 아님). 전체 완납 뒤에는 0.
         manualRate:
           type: number
           nullable: true
           minimum: 0
           maximum: 30
-          description: 직접 등록 연 이율(%). 0% 유효. 1차 PATCH로 수정 불가.
+          description: 직접 등록 연 이율(%). 0% 유효. 직접 등록 대출은 PATCH로 정정·비우기 가능.
         maturityDate:
           type: string
           format: date
@@ -7621,6 +9900,35 @@ components:
           format: date-time
           nullable: true
           description: 기관 자료의 마지막 정상 조회 시각. 직접 등록은 null.
+        recentDues:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoanRecentDue'
+          description: 홈 ‘꼭 나갈 돈’과 같은 범위(지난 주기 시작 ~ 이번 주기 끝)의 유효한 납부 회차, 납부일 순. 다 낸 회차도 [납부 거래 확인]으로 다시 열 수 있게.
+            급여 주기가 없으면 [].
+        payoff:
+          type: object
+          required:
+          - source
+          - reportedAt
+          - previousBalance
+          properties:
+            source:
+              type: string
+              enum:
+              - user_report
+              description: CODEF 확인이 아니라 사용자 신고.
+            reportedAt:
+              type: string
+              format: date-time
+              description: 처리 시각(한국 시간). 되돌리기 요청에 그대로 보낸다.
+            previousBalance:
+              type: integer
+              nullable: true
+              description: 완납 처리 전 직접 입력 잔액, 원. 되돌리면 이 값으로 복구.
+          additionalProperties: false
+          nullable: true
+          description: 사용자가 신고한 전체 완납 근거. repaid이고 되돌리지 않았을 때만, 아니면 null.
       required:
       - loanId
       - lenderName
@@ -7642,6 +9950,8 @@ components:
       - overdue
       - fieldStates
       - fetchedAt
+      - recentDues
+      - payoff
     LoanList:
       type: object
       properties:
@@ -7680,7 +9990,34 @@ components:
           - null
           nullable: true
           description: 원리금균등/원금균등/만기일시/잘 모르겠어요. null은 미입력.
-      description: 생략은 유지, null은 비우기. 빈 문자열·허용 외 항목은 400. 최소 변경 칸 수 정책은 명세에 없음.
+        lenderName:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 직접 등록 대출만. null·빈 문자열 400.
+        productName:
+          type: string
+          minLength: 1
+          maxLength: 50
+          description: 직접 등록 대출만. null·빈 문자열 400.
+        manualBalance:
+          type: integer
+          minimum: 0
+          maximum: 1000000000
+          description: 직접 등록 대출만. 0원 허용(완납 처리 아님), null 400.
+        manualRate:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 30
+          description: 직접 등록 대출만. null은 비우기.
+        maturityDate:
+          type: string
+          format: date
+          nullable: true
+          description: 직접 등록 대출만. YYYY-MM-DD, null은 비우기.
+      description: 생략은 유지, null은 비우기. 빈 문자열·허용 외 항목은 400. lenderName·productName·manualBalance·manualRate·maturityDate는
+        직접 등록 대출만 — 기관 조회 대출에 보내면 400 invalid(fields).
       additionalProperties: false
     LoanCreateRequest:
       type: object
@@ -7734,6 +10071,320 @@ components:
       - lenderName
       - productName
       - manualBalance
+      additionalProperties: false
+    LoanRecentDue:
+      type: object
+      required:
+      - dueId
+      - dueDate
+      - expectedAmount
+      - paidAmount
+      - paymentState
+      properties:
+        dueId:
+          type: string
+          format: uuid
+        dueDate:
+          type: string
+          format: date
+        expectedAmount:
+          type: integer
+          description: 회차 예정액(월 상환액 기준), 원. 납부 확인으로 바꾸지 않음.
+        paidAmount:
+          type: integer
+          description: 연결한 출금 합계, 원.
+        paymentState:
+          type: string
+          enum:
+          - unpaid
+          - partial
+          - paid
+          - needs_review
+    LoanPaymentHints:
+      type: object
+      required:
+      - linkedAccount
+      - nearDueDate
+      - lenderInDescription
+      - sameAsBefore
+      description: 화면 표시·정렬용 참고 근거. 자동 확정에 쓰지 않음.
+      properties:
+        linkedAccount:
+          type: boolean
+          description: 대출의 연결 계좌에서 나간 출금
+        nearDueDate:
+          type: boolean
+          description: 납부일 ±3일 (앞뒤 달 말일 포함)
+        lenderInDescription:
+          type: boolean
+          description: 적요에 대출 기관 이름이 있음
+        sameAsBefore:
+          type: boolean
+          description: 전에 사용자가 이 대출 납부로 확인한 출금과 계좌 또는 적요가 같음
+    LoanPaymentReclassify:
+      type: object
+      required:
+      - fromType
+      - fromCategory
+      - needsConfirm
+      properties:
+        fromType:
+          type: string
+          enum:
+          - spending
+          - transfer
+          - card_payment
+          description: 지금 거래 유형
+        fromCategory:
+          type: string
+          nullable: true
+          description: 소비면 카테고리 코드, 아니면 null
+        needsConfirm:
+          type: boolean
+          description: 'true면 POST에 confirmReclassify: true가 필요 (소비·카드값 등 이체가 아닌 유형, 또는 사용자가 확정한 분류)'
+    LoanPaymentCancelEffect:
+      type: object
+      required:
+      - kind
+      - toType
+      - toCategory
+      description: 연결을 취소하면 분류가 어떻게 되는지. linked 항목에만.
+      properties:
+        kind:
+          type: string
+          enum:
+          - restore
+          - keep
+          - choose
+          description: 'restore: 이 연결 전 분류로 되돌림 / keep: 연결 뒤 사용자가 바꾼 분류라 그대로 / choose: 원래 분류 기록이 없음(예전 자동 연결 등)
+            → DELETE 본문에 restoreType 필수. 추측해서 되돌리지 않음'
+        toType:
+          type: string
+          nullable: true
+          description: 취소 뒤 유형 (choose면 null)
+        toCategory:
+          type: string
+          nullable: true
+          description: 취소 뒤 소비 카테고리 (소비가 아니거나 choose면 null)
+    LoanPaymentTransaction:
+      type: object
+      required:
+      - transactionId
+      - date
+      - amount
+      - account
+      - description
+      - amountDifference
+      - hints
+      - reclassify
+      - settlement
+      - source
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        amount:
+          type: integer
+          description: 실제 출금액(부분 취소 뺀 금액), 원
+        account:
+          description: 출금한 내 계좌
+          oneOf:
+          - $ref: '#/components/schemas/AccountDisplay'
+          - type: object
+            nullable: true
+            enum:
+            - null
+        description:
+          type: string
+          nullable: true
+          description: 적요 (기관 원문, 계좌번호는 가림)
+        amountDifference:
+          type: integer
+          description: 실제 − 예정, 원. 참고용
+        hints:
+          $ref: '#/components/schemas/LoanPaymentHints'
+        reclassify:
+          description: 대출 상환으로 바꾸면 달라지는 분류. 이미 대출 상환이면 null
+          oneOf:
+          - $ref: '#/components/schemas/LoanPaymentReclassify'
+          - type: object
+            nullable: true
+            enum:
+            - null
+        settlement:
+          type: string
+          enum:
+          - full
+          - partial
+          - null
+          nullable: true
+          description: 이 회차에 연결된 출금이면 full(다 냈어요)·partial(일부)·null(자동 연결). 후보는 null
+        source:
+          type: string
+          enum:
+          - user
+          - rule
+          - null
+          nullable: true
+          description: 연결한 쪽. 후보는 null
+        cancelEffect:
+          $ref: '#/components/schemas/LoanPaymentCancelEffect'
+    LoanDueSummary:
+      type: object
+      required:
+      - dueId
+      - loanId
+      - name
+      - dueDate
+      - expectedAmount
+      - paidAmount
+      - paymentState
+      - linkedAccount
+      properties:
+        dueId:
+          type: string
+          format: uuid
+        loanId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          description: '"{기관} {상품명}" (없으면 "대출 상환")'
+        dueDate:
+          type: string
+          format: date
+        expectedAmount:
+          type: integer
+          description: 예정액(월 상환액 기준), 원. 바꾸지 않음
+        paidAmount:
+          type: integer
+          description: 연결한 출금 합계, 원
+        paymentState:
+          type: string
+          enum:
+          - unpaid
+          - partial
+          - paid
+          - needs_review
+          description: 사용자 확인 full → paid, partial → partial(금액 비율 무관). 확인 없는 자동 연결은 예정액 이상일 때만 paid. 연결 없음은 납부일
+            전 unpaid·지남 needs_review. 공통 90% 규칙 안 씀
+        linkedAccount:
+          description: 대출의 연결 계좌
+          oneOf:
+          - $ref: '#/components/schemas/AccountDisplay'
+          - type: object
+            nullable: true
+            enum:
+            - null
+    LoanPaymentReleased:
+      type: object
+      required:
+      - transactionId
+      - classification
+      - transactionType
+      - category
+      description: 연결 취소에서 실제로 한 일.
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        classification:
+          type: string
+          enum:
+          - restored
+          - kept
+          - chosen
+          description: 'restored: 원래 분류로 되돌림 / kept: 지금 분류 그대로 / chosen: 사용자가 고른 분류로 바꿈'
+        transactionType:
+          type: string
+          description: 취소 뒤 거래 유형
+        category:
+          type: string
+          nullable: true
+          description: 소비면 카테고리 코드, 아니면 null
+    LoanDuePaymentState:
+      type: object
+      required:
+      - due
+      - linked
+      properties:
+        due:
+          $ref: '#/components/schemas/LoanDueSummary'
+        linked:
+          type: array
+          items:
+            $ref: '#/components/schemas/LoanPaymentTransaction'
+          description: 이 회차에 연결한 출금 (cancelEffect 포함)
+        searchFrom:
+          type: string
+          format: date
+          description: GET만. 후보를 찾은 기간 시작
+        searchTo:
+          type: string
+          format: date
+          description: GET만. 후보를 찾은 기간 끝
+        items:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/LoanPaymentTransaction'
+          description: GET만. 고를 수 있는 출금 후보 (금액이 달라도·기관 이름이 없어도 포함)
+        released:
+          description: DELETE만. 실제 처리 결과. 이미 풀린 연결의 재전송은 null(아무것도 바꾸지 않음)
+          oneOf:
+          - $ref: '#/components/schemas/LoanPaymentReleased'
+          - type: object
+            nullable: true
+            enum:
+            - null
+    LoanPaymentLinkRequest:
+      type: object
+      required:
+      - transactionId
+      - settlement
+      additionalProperties: false
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+          description: 고를 출금. 없음·남의 것·고를 수 없는 거래는 같은 400 문구
+        settlement:
+          type: string
+          enum:
+          - full
+          - partial
+          description: 'full: 이번 납부를 전부 냈어요(금액과 무관하게 이 회차 완료, 대출 전체 상환 아님) / partial: 일부만 냈어요'
+        confirmReclassify:
+          type: boolean
+          default: false
+          description: 후보의 reclassify.needsConfirm이 true면 true로 보내야 저장
+    LoanPaymentReleaseRequest:
+      type: object
+      additionalProperties: false
+      description: 선택 본문. cancelEffect.kind가 choose일 때만 필요(없으면 400, 아무것도 바꾸지 않음). restore·keep이면 보낸 값은 쓰지 않음.
+      properties:
+        restoreType:
+          type: string
+          enum:
+          - transfer
+          - spending
+          description: 취소 뒤 둘 유형. transfer는 카테고리 ‘확인 필요’(거래 목록 규칙), spending은 사용자 확정
+        restoreCategory:
+          allOf:
+          - $ref: '#/components/schemas/SelectableCategoryCode'
+          nullable: true
+          description: 'restoreType: spending일 때 필수, 그 밖에는 보내지 않음'
+    LoanPayoffCancelRequest:
+      type: object
+      required:
+      - reportedAt
+      properties:
+        reportedAt:
+          type: string
+          description: 화면에서 본 payoff.reportedAt. 다르면(그 뒤 다시 완납 처리됨) 409 not_ready.
       additionalProperties: false
     TransactionCancel:
       type: object
@@ -7807,9 +10458,33 @@ components:
           description: 연결된 고정지출. 없으면 null.
         isSalary:
           type: boolean
-          description: '월급 입금이면 true (11/4). 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 salaryReceivedOn·nextSalaryEarlyOn의
-            입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 후보: 관리 대상 원화 입출금 계좌로 들어온 실수령액 80% 이상 입금(내
-            계좌끼리 옮긴 돈 제외), 구간은 급여일 7일 전부터. 급여일·실수령액 미등록이면 모두 false. 출금·이체는 항상 false.'
+          description: 'R12: 인정된 급여 입금이면 true — 사용자가 확인했거나 확인한 기준과 같은 패턴이라 자동 인정된 입금만 (저장된 salary_decision, 홈과 같은
+            근거). 판단 없는 후보·거절·취소·내 계좌 이체는 false. 출금·이체는 항상 false.'
+        ownTransferReview:
+          type: string
+          nullable: true
+          enum:
+          - suggested
+          - auto
+          - confirmed
+          - rejected
+          - null
+          description: 내 계좌 이체 판단 (R11, 11/5). transfer·own_transfer·saving 출금만, 그 밖은 null. suggested = 출금 적요가 가입
+            이름과 같아 추정(유형은 transfer 그대로) · auto = 규칙이 양쪽 거래를 묶어 자동 분류(own_transfer, 뒤에 저축 처리되면 saving. 같은 금액·5분 이내·양쪽
+            적요 모두 가입 이름·양쪽 후보 유일 — 확실한 식별 아님) · confirmed = 사용자가 [맞아요] · rejected = 사용자가 [아니에요]·확인 취소·연결 해제(transfer).
+            auto·confirmed 출금은 저축이 된 뒤에도 목록에 남아 되돌릴 수 있다.
+        ownTransferRecheck:
+          type: boolean
+          description: auto인데 나중에 들어온 거래로 상대 후보가 여럿이 됐지만 저축·납부·고정지출 근거라 자동으로 풀지 않은 연결이면 true. 거래 상세에서 ownTransfer로
+            정정 (R11).
+        salaryReview:
+          type: string
+          enum:
+          - confirmed
+          - auto
+          - null
+          nullable: true
+          description: isSalary 의 근거. confirmed 사용자 확인 · auto 자동 인정 · 아니면 null
       required:
       - transactionId
       - occurredOn
@@ -7823,6 +10498,7 @@ components:
       - paymentAccount
       - fixedExpenseId
       - isSalary
+      - salaryReview
     TransactionSpending:
       allOf:
       - $ref: '#/components/schemas/TransactionBase'
@@ -8105,9 +10781,17 @@ components:
           default: false
           description: true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고
             재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래. 카드사 업종이 분명히 다르면 재사용하지 않는다.
-      required:
-      - category
+        ownTransfer:
+          type: boolean
+          description: '내 계좌 이체 확인 (R11). true = [맞아요]: 이 출금만 own_transfer(입금 거래로 넓히지 않음), auto면 유형·연결 그대로 confirmed.
+            false = [아니에요]·확인 취소·연결 해제: transfer로, 규칙이 이은 입금은 income으로 되돌리고, saving이 된 출금은 정기 저축 근거에서 뺀다. 거절해도 소비로
+            바뀌지 않는다. 지금 유형이 소비 등이면 true·false 모두 400. 다른 칸과 같이 보내면 400.'
       additionalProperties: false
+      oneOf:
+      - required:
+        - category
+      - required:
+        - ownTransfer
     FixedEvidence:
       type: object
       properties:
@@ -8598,11 +11282,13 @@ components:
           type: integer
           minimum: 0
           nullable: true
-          description: max(0, totalAmount - confirmedFixedAmount). 참고 표시용이며 실제 예산 선차감액이 아님.
+          description: max(0, totalAmount - confirmedFixedAmount). 예전 참고값 — 앞으로 낼 금액도 예산 선차감액도 아니며 온보딩 화면에 표시하지
+            않음
         isEstimated:
           type: boolean
           nullable: true
-          description: 확정 여부가 confirmed가 아닌 청구서를 포함하면 true. 금액을 알 수 없으면 null.
+          description: 카드사가 예상 청구(estimated)로 준 청구서가 있으면 true, 모두 확정이면 false, 확정 여부를 모르면(null · unknown) null. 금액을
+            알 수 없어도 null.
         reason:
           type: string
           nullable: true
@@ -8615,6 +11301,12 @@ components:
           - first_bill_ambiguous
           - bill_unavailable
           - bill_amount_invalid
+        bills:
+          type: array
+          items:
+            $ref: '#/components/schemas/CardBillCheckStatus'
+          description: 이번 주기 명세서별 '앞으로 낼 금액' 확인 (PUT /api/finance/card-bills/{id}/payment-check/). totalAmount 가
+            null 이면 []
       required:
       - issuerCode
       - issuerName
@@ -8623,6 +11315,7 @@ components:
       - amountAfterFixed
       - isEstimated
       - reason
+      - bills
     RecurringSaving:
       type: object
       properties:
@@ -8964,16 +11657,37 @@ components:
               type: string
               enum:
               - received
+              - needs_check
               - waiting
               - unknown
+              description: 'R12: received 인정된 급여(사용자 확인·자동 인정) 있음 · needs_check 판단 없는 후보만 있음(받음·아직으로 단정하지 않음) ·
+                waiting 후보도 없음 · unknown 실수령액 미등록'
             salaryReceivedOn:
               type: string
               format: date
               nullable: true
+              description: 이번 회차에 인정된 급여 중 가장 이른 입금일
             nextSalaryEarlyOn:
               type: string
               format: date
               nullable: true
+              description: 다음 회차에 인정된 조기 급여의 입금일 (후보만 있으면 null)
+            salarySource:
+              type: string
+              enum:
+              - user
+              - auto
+              - null
+              nullable: true
+              description: user 사용자 확인이 하나라도 있음 · auto 자동 인정만 · 인정된 급여가 없으면 null
+            salaryAmount:
+              type: integer
+              nullable: true
+              description: 이번 회차 인정 급여 합계 (= budget_cycle.confirmed_income)
+            salaryCheckCount:
+              type: integer
+              minimum: 0
+              description: 인정된 급여가 없는 구간의 확인 필요 후보 수
           required:
           - startDate
           - endDate
@@ -8982,6 +11696,9 @@ components:
           - salaryState
           - salaryReceivedOn
           - nextSalaryEarlyOn
+          - salarySource
+          - salaryAmount
+          - salaryCheckCount
           nullable: true
           description: 설정한 급여일 기준. 없는 날짜는 말일. 급여일 미입력 시 null. 실제 입금 시각은 주기를 바꾸지 않는다.
         balance:
@@ -9150,6 +11867,9 @@ components:
           - displayName
           - status
           nullable: true
+        userChecked:
+          type: boolean
+          description: card_bill 의 amount 가 사용자 확인 '앞으로 낼 금액'인지 (11/06). '전부 냈어요'로 확인한 청구서는 목록에서 빠진다
       required:
       - dueId
       - type
@@ -9160,6 +11880,7 @@ components:
       - paymentState
       - isEstimated
       - paymentAccount
+      - userChecked
     ChatPeriod:
       type: object
       properties:
@@ -9753,6 +12474,7 @@ components:
       - saved
       - cushion
       - cardPending
+      - cardNotes
       - locksReleased
       properties:
         missing:
@@ -9802,9 +12524,42 @@ components:
               reason:
                 type: string
                 description: '계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete
-                  · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous ·
-                  spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번 회차 할부 금액을 모름)
-                  · card_data_invalid(연결·금액 자료가 맞지 않음) · card_assignment_required(거래별 결제 카드 확인 필요)'
+                  · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable(이번 주기에 결제일인 청구서를 아직 찾지 못함
+                  — 조회 실패 아님) · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번
+                  회차 할부 금액을 모름) · card_data_invalid(연결·금액 자료가 맞지 않음) · card_assignment_required(거래별 결제 카드 확인 필요)
+                  · bill_total_mismatch(청구 총액이 상세 합계보다 작아 원래 청구액을 모름 — 0원 · 상세 합계로 정하지 않음, 11/06)'
+        cardNotes:
+          type: array
+          description: 보류는 아니고 알릴 카드 선차감 상태 (11/06). no_bill_in_cycle(이번 주기 마지막 날까지 조회했는데 결제일인 청구서 없음 → 0원) · first_budget_applied(앞선
+            주기 승인 예산에 이미 반영 → 0원) · before_first_connection(이 주기 뒤에 연결) · card_overlap_uncertain(청구서에 든 이번 주기 구매
+            중 생활비와 같은 지출인지 확인 못 한 amount 원 · count 건 — 빼지 않고 넉넉하게 잡음) · bill_items_incomplete(청구서 상세가 일부만 와서 빠진
+            항목은 모름 — amount · count 는 null)
+          items:
+            type: object
+            required:
+            - cardId
+            - reason
+            additionalProperties: false
+            properties:
+              cardId:
+                type: string
+                format: uuid
+              issuerCode:
+                type: string
+              reason:
+                type: string
+                enum:
+                - no_bill_in_cycle
+                - first_budget_applied
+                - before_first_connection
+                - card_overlap_uncertain
+                - bill_items_incomplete
+              amount:
+                type: integer
+                nullable: true
+              count:
+                type: integer
+                nullable: true
         locksReleased:
           type: array
           items:
@@ -10254,17 +13009,17 @@ components:
       properties: {}
       additionalProperties: false
 x-source-sha256:
-  docs/API_RULES.md: 5a862eacd4fddf7e0e26bc290b0fbc99995fbfa5f8b48c575b831a5ade53e952
-  docs/api/README.md: 4b4d5f5215d09644f14eaa2bd8f68b5210633a89192e484cd0f387ec760716f2
+  docs/API_RULES.md: ff9ec441fcefd21fe33213c36adeb1888084ea2acb22615ccab670bcdd5b15f0
+  docs/api/README.md: 05f71047afdeb72a76ca7d1ac585f962558e4674eab052fd7614c4e6afa6b021
   docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
-  docs/api/auth.md: 38524b8ee0a760c18a0aa84800b76368f53c1900bd0d5cad37d8923e5fdfb690
-  docs/api/finance-connect.md: 4fe0ec0c2fd65da4fc6b937dc114c586adf7020841b77e0808ea8c512bbc65b4
-  docs/api/cards.md: 0467a2e1c14bb67cbefab47f736561a2222a1dfaddd5a78cbc263e04ca7a1a34
-  docs/api/loans.md: 3b83de5ba2e7e9f5ea7cc9705de4ece7a1ef060339bc13aaed4651cca986e120
-  docs/api/transactions.md: d88f8257065a03727ec2a77c2e307b18a57bb1d7a87b93322e2c7f0911d72d6f
-  docs/api/fixed.md: 81e585f4c97dbd101525a130fce5d97e003aa788410cd3e6ec40e83fa7bb3d3b
+  docs/api/auth.md: 473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1
+  docs/api/finance-connect.md: 7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510
+  docs/api/cards.md: fe12a3c7ef7796eeafd784491ebd326ae1d1bcec2befd085760ef3663e6652e9
+  docs/api/loans.md: 86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f
+  docs/api/transactions.md: 29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b
+  docs/api/fixed.md: 11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
-  docs/api/home.md: 1bf7f4f6cfb820561913f0a3902e11464246462666222413f5cca81b246b2adf
-  docs/api/chat.md: 194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5
+  docs/api/home.md: 1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5
+  docs/api/chat.md: 05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd
   docs/api/budgets.md: 59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29

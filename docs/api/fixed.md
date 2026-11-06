@@ -596,8 +596,9 @@ GET /api/budgets/fixed/
 | `cardBills[].issuerCode` / `issuerName` | 문자 | 카드사 코드와 표시 이름 |
 | `cardBills[].confirmedFixedAmount` | 정수 | 해당 카드사에서 내는 확정 고정비 월 합계. 후보·중지·무시 항목 제외 |
 | `cardBills[].totalAmount` | 정수 또는 `null` | 이번 급여 주기에 낼 조회된 카드 사용 명세서 합계 |
-| `cardBills[].amountAfterFixed` | 정수 또는 `null` | `max(0, totalAmount - confirmedFixedAmount)`. 예산 선차감액과 다른 참고 금액 |
-| `cardBills[].isEstimated` | 참/거짓 또는 `null` | 예상·확정 여부 불명 청구서가 포함되면 `true`. 금액을 모르면 `null` |
+| `cardBills[].amountAfterFixed` | 정수 또는 `null` | `max(0, totalAmount - confirmedFixedAmount)`. 예전 참고 금액 — **앞으로 낼 금액도, 예산 선차감액도 아니다**. 온보딩 화면에는 표시하지 않는다 |
+| `cardBills[].isEstimated` | 참/거짓 또는 `null` | 11/06: 카드사가 예상 청구(`estimated`)로 준 청구서가 있으면 `true`, 모두 확정이면 `false`, 확정 여부를 모르면(`null` · `unknown`) `null` — 모른다고 예상 청구로 부르지 않는다. 금액을 모르면 `null` |
+| `cardBills[].bills[]` | 배열 | 11/06 단순화: 이번 주기 명세서별 '앞으로 낼 금액' 확인 상태(`CardBillCheckStatus`, cards.md '카드 청구서 납부 확인'). 화면은 카드사 · 청구 월 · 결제일 · 청구액과 [아직 안 냈어요] [전부 냈어요] [일부 냈어요] [나중에 확인]만 보여 준다. 확인하지 않아도 다음 단계로 갈 수 있다. `totalAmount`가 `null`이면 `[]` |
 | `cardBills[].reason` | 문자 또는 `null` | 정상은 `null`. `cycle_unavailable`, `bill_scope_unknown`, `bill_due_date_unknown`, `bill_type_unknown`, `first_bill_ambiguous`, `bill_unavailable`, `bill_amount_invalid` |
 
 - 11/5: 온보딩 후보에 **고정지출 맞아요** 버튼을 제공한다. 해당 1건만 확정한 뒤 목록을 재조회해 확정 합계와 카드 고정비 제외 청구금액을 함께 갱신한다. 저장·재조회 중 버튼을 잠그고, 저장 실패 시 합계를 올리지 않는다. 남은 후보를 일괄 확정하는 **확인하고 다음** 동작은 유지하며 화면에서 이를 알린다.

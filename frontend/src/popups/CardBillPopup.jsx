@@ -4,6 +4,7 @@ import Popup from './Popup.jsx'
 import { useApi } from '../utils/api.js'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
+import CardBillCheck from '../components/CardBillCheck.jsx'
 
 const STATUS = {
   estimated: ['예상', '청구 금액이 아직 확정되지 않았어요. 카드를 더 쓰거나 취소하면 바뀔 수 있어요.'],
@@ -14,7 +15,7 @@ const ITEM_TYPE = { one_time: '일시불', installment: '할부', fee: '수수�
 const money = (value) => value == null ? '금액 확인 필요' : won(value)
 const when = (iso) => iso ? new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '조회 기록 없음'
 
-export default function CardBillPopup({ billId }) {
+export default function CardBillPopup({ billId, onSaved }) {
   const navigate = useNavigate()
   const { data: b, error, reload } = useApi(`/api/finance/card-bills/${billId}/`)
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
@@ -45,6 +46,13 @@ export default function CardBillPopup({ billId }) {
         <div className="mc-keyvalue"><span>결제 계좌</span><strong>{b.paymentAccount?.displayName ?? '확인 필요'}</strong></div>
         <div className="mc-keyvalue"><span>조회 시각</span><strong>{when(b.fetchedAt)}</strong></div>
       </div>
+      {b.paymentCheck && b.paymentCheck.status !== 'no_charge' && (
+        <div className="mc-card">
+          <h2>납부 확인</h2>
+          {/* 계좌 출금으로 못 찾았을 때만 선택적으로 답한다. 못 찾았다고 미납 · 연체로 보지 않는다 */}
+          <CardBillCheck bill={b.paymentCheck} issuerName={b.issuerName ?? '카드'} onSaved={() => { reload(); onSaved?.() }} />
+        </div>
+      )}
       <div className="mc-card">
         <h2>구매 내역</h2>
         {b.itemsState === 'partial' && <p className="mc-note">구매 내역 일부만 조회됐어요. 총청구액은 카드사 청구서 기준이에요.</p>}

@@ -74,8 +74,19 @@
 | 47 | 금융 동의 | 동의 상태 조회 | `GET /api/finance/consents/` | finance-connect.md | 나은 | 11/05 구현 |
 | 48 | 금융 동의 | 범위별 철회·삭제 | `DELETE /api/finance/consents/<scope>/` | finance-connect.md | 나은 | 11/05 구현 |
 | 49 | 인증 | 탈퇴·전체 삭제 | `DELETE /api/auth/me/` | auth.md | 나은 | 11/05 구현 |
+| 50 | 인증 | 동의 문서 원문 보기 | `GET /api/consent-documents/` | auth.md | 나은 | 11/06 구현 |
+| 51 | 대출 | 납부 거래 후보 보기 | `GET /api/finance/loan-dues/<id>/payments/` | loans.md | 나은 | 11/06 구현 |
+| 52 | 대출 | 납부 거래 연결 · 정정 | `POST /api/finance/loan-dues/<id>/payments/` | loans.md | 나은 | 11/06 구현 |
+| 53 | 대출 | 납부 거래 연결 취소 | `DELETE /api/finance/loan-dues/<id>/payments/<transactionId>/` | loans.md | 나은 | 11/06 구현 |
+| 54 | 카드 | 청구서 납부 거래 보기 | `GET /api/finance/card-bills/<id>/payments/` | cards.md | 나은 | 11/06 구현 |
+| 55 | 카드 | 청구서 납부 거래 연결 (분할 납부) | `POST /api/finance/card-bills/<id>/payments/` | cards.md | 나은 | 11/06 구현 |
+| 56 | 카드 | 청구서 납부 거래 연결 취소 | `DELETE /api/finance/card-bills/<id>/payments/<transactionId>/` | cards.md | 나은 | 11/06 구현 |
+| 57 | 카드 | 청구서 납부 확인 저장 (앞으로 낼 금액) | `PUT /api/finance/card-bills/<id>/payment-check/` | cards.md | 나은 | 11/06 구현 |
+| 58 | 카드 | 청구서 납부 확인 취소 | `DELETE /api/finance/card-bills/<id>/payment-check/` | cards.md | 나은 | 11/06 구현 |
+| 59 | 대출 | 대출 전체 완납 처리 (직접 등록, R19) | `POST /api/finance/loans/<id>/payoff/` | loans.md | 나은 | 11/06 구현 |
+| 60 | 대출 | 대출 전체 완납 되돌리기 (R19) | `POST /api/finance/loans/<id>/payoff/cancel/` | loans.md | 나은 | 11/06 구현 |
 
-**요청 번호(`Idempotency-Key`)를 쓰는 API**: 6 동의 저장 · 35 대출 직접 등록 · 20 고정지출 추가 · 23 · 24 고정지출 확정 · 무시 · 26 저축 추가 · 29 · 30 저축 확정 · 무시 · 33 메시지 보내기 · **38 추천 예산 · 41 예산 승인(둘은 필수 헤더)**. 42 새 연결 · 43 다시 불러오기는 요청 번호 없이 기관 재로그인·진행 중 작업 재사용으로 중복을 처리한다. 나머지(선택 저장 `PUT`, 수정 `PATCH`, 중지 · 해제 `DELETE`)는 두 번 보내도 결과가 같아서 안 쓴다.
+**요청 번호(`Idempotency-Key`)를 쓰는 API**: 6 동의 저장 · 35 대출 직접 등록 · 52 대출 납부 거래 연결(선택) · 59 · 60 대출 전체 완납 · 되돌리기(선택) · 20 고정지출 추가 · 23 · 24 고정지출 확정 · 무시 · 26 저축 추가 · 29 · 30 저축 확정 · 무시 · 33 메시지 보내기 · **38 추천 예산 · 41 예산 승인(둘은 필수 헤더)**. 42 새 연결 · 43 다시 불러오기는 요청 번호 없이 기관 재로그인·진행 중 작업 재사용으로 중복을 처리한다. 나머지(선택 저장 `PUT`, 수정 `PATCH`, 중지 · 해제 `DELETE`)는 두 번 보내도 결과가 같아서 안 쓴다.
 **회원가입(2)**: 로그인 전이라 공통 요청 번호가 적용되지 않음 → 중복 가입 막는 방법은 5-3 '회원가입 · 로그인 기본값'.
 
 ---
@@ -96,7 +107,8 @@
 | 고정지출 · 정기 저축 `status` | `suggested` · `confirmed` · `stopped` · `ignored` | 후보 / 확정 / 중지 / 무시. 목록엔 앞의 둘만 | fixed · savings |
 | 고정지출 · 정기 저축 `sourceType` | `detected` · `manual` | 자동 발견 / 직접 추가 | fixed · savings |
 | 납부 상태 `paymentState` | `unpaid` · `partial` · `paid` · `needs_review` | 미납 / 일부 / 냄 / 미납 확인 필요(+3일 지나도 출금 없음) | fixed · home |
-| 월급 상태 `salaryState` | `received` · `waiting` · `unknown` | 들어옴 / 아직 / 실수령액 몰라서 확인 불가 | home |
+| 월급 상태 `salaryState` | `received` · `needs_check` · `waiting` · `unknown` | 인정된 급여 있음 / 후보만 있음(확인 필요) / 아직 / 실수령액 몰라서 확인 불가 | home |
+| 급여 판단 `decision` · `salaryReview` | `confirmed` · `auto` · `rejected` | 사용자 확인 / 자동 인정 / 사용자 거절 (R12) | salary · transactions |
 | 급여 주기 `budget_cycle.status` | `active` · `closed` | (DB만) | 결정기록 3-1 |
 | 대출 `status` · `origin` | `repaying` · `repaid` / `provider` · `manual` | 상환 중 · 완료 / 기관 조회 · 직접 등록 | loans |
 | 챗봇 의도 `route.intent` | `spending` · `budget` · `big` · `out` · `unknown` | 소비 분석 / 예산 조정 / 큰 지출(3차) / 범위 밖 / 모름 | chat |
@@ -181,7 +193,7 @@
 |---|---|---|---|
 | ① ✅ | cards 10 | 청구서 메타데이터 — `billingMonth` 표현 · 카드사 이름 · `cards` 목록 · 청구서 `fetchedAt` | `billingMonth`는 `"YYYY-MM"` 문자열, 카드사 이름 `issuerName` 함께 줌, `cards` · `fetchedAt`은 채택하되 모르면 `null` |
 | ② ✅ | loans 8 | `fieldStates`(값마다 출처 · 확인 여부) 채택 | **채택.** 대출 화면의 "조회됨 · 직접 입력 · 확인 필요" 표시에 필요. `source` · `confirmationStatus` · `confirmedAt` |
-| ③ ✅ | loans 8 | 상환 완료 대출도 목록에 보일까 | **1차는 상환 중만** 보임 |
+| ③ ✅ | loans 8 | 상환 완료 대출도 목록에 보일까 | **1차는 상환 중만** 보임 (11/06 R19: `?status=repaid`로 직접 등록 완납 대출만 따로 읽어 되돌리기) |
 | ④ ✅ | auth 2 | 회원가입 201 응답에 `onboardingCompleted` | **넣음** (`false`). 가입하면 자동 로그인이라 로그인 · `/me/`와 같은 모양 |
 | ⑤ ✅ | transactions | ⭐ 월세처럼 고정지출에 연결된 **이체** | **소비로 봄** — 연결되면 `spending`, 카테고리는 그 고정지출을 따르고 '고정' 표시. 연결을 풀면 다시 `transfer` (결정 AA) |
 | ⑥ ✅ | transactions | 원래 이체였다는 표시를 어디에 | 새 칸 없이 거래 `field_states.original_transaction_type` |

@@ -335,3 +335,44 @@ class CushionEntry(models.Model):
                 condition=~Q(reference_entry=models.F("entry_id")), name="cushion_ref_not_self",
             ),
         ]
+
+
+class SalaryDecision(models.Model):
+    """입금 1건의 급여 판단 (R12). 거래당 한 줄이라 한 거래가 두 급여 회차에 붙지 않는다.
+    confirmed는 확인 당시 금액·날짜·적요·계좌가 같을 때만 유효하다. 기준 누락/변경은 recheck로 바꾼다.
+    recheck: 사용자 확인 근거 변경 또는 자동 인정 무효·모호 → 사용자가 다시 확인해야 한다."""
+
+    class State(models.TextChoices):
+        CONFIRMED = "confirmed", "사용자 확인"
+        AUTO = "auto", "자동 인정"
+        REJECTED = "rejected", "사용자 거절"
+        RECHECK = "recheck", "재확인 필요"
+
+    decision_id = uuid_pk()
+    user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="salary_decisions")
+    transaction = models.OneToOneField(
+        "finance.FinancialTransaction", on_delete=models.CASCADE, related_name="salary_decision",
+    )
+    pay_cycle_on = models.DateField("귀속 급여 회차(주기 시작일)", null=True, blank=True)  # 거절이면 null
+    state = models.CharField("판단", max_length=20, choices=State.choices)
+    is_pattern = models.BooleanField("자동 인식 기준", default=False)
+    decided_at = models.DateTimeField("판단 시각", auto_now=True)
+    # nullable: 예전 확인값을 현재 거래로 추정해 채우지 않는다. 계좌 UUID는 당시 값이며 FK가 아니다.
+    snapshot_amount = models.BigIntegerField("확정 당시 금액", null=True, blank=True)
+    snapshot_occurred_on = models.DateField("확정 당시 거래일", null=True, blank=True)
+    snapshot_description = models.CharField("확정 당시 적요", max_length=500, null=True, blank=True)
+    snapshot_account_id = models.UUIDField("확정 당시 입금계좌 ID", null=True, blank=True)
+
+    class Meta:
+        db_table = "salary_decision"
+        verbose_name = verbose_name_plural = "급여 판단"
+        indexes = [models.Index(fields=["user", "pay_cycle_on"], name="sd_user_cycle_idx")]
+        constraints = [
+            models.CheckConstraint(condition=Q(state__in=["confirmed", "auto", "rejected", "recheck"]), name="sd_state_valid"),
+            models.CheckConstraint(
+                condition=Q(state="rejected", pay_cycle_on__isnull=True) | (~Q(state="rejected") & Q(pay_cycle_on__isnull=False)),
+                name="sd_cycle_matches_state",
+            ),
+            models.CheckConstraint(condition=Q(is_pattern=False) | Q(state="confirmed"), name="sd_pattern_is_confirmed"),
+            models.UniqueConstraint(fields=["user"], condition=Q(is_pattern=True), name="sd_one_pattern_per_user"),
+        ]

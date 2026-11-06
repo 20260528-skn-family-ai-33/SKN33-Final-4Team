@@ -286,3 +286,41 @@ class IdempotencyRecord(models.Model):
 
     def __str__(self):
         return f"{self.method} {self.path} ({self.key})"
+
+
+class PrivacyDeletion(models.Model):
+    """동의 철회 · 회원 탈퇴의 삭제 진행 기록 (R21, users/deletion.py)
+
+    - 외부(CODEF) 인증 삭제와 우리 DB 삭제는 한 트랜잭션으로 되돌릴 수 없어 단계를 따로 기록하고 재시도한다.
+    - 회원 FK 를 두지 않는다 → purge_scope · user.delete 뒤에도 남아 완료 · 실패를 추적한다.
+    - 계좌번호 · 비밀번호 · connectedId · 외부 응답 원문은 넣지 않는다 (connectedId 는 회원 행의 암호문을 그대로 쓴다).
+    """
+
+    class Status(models.TextChoices):
+        PROVIDER_PENDING = "provider_pending", "접수 · 외부 삭제 대기"
+        LOCAL_PENDING = "local_pending", "외부 삭제 확인 · 로컬 정리 대기"
+        COMPLETED = "completed", "완료"
+
+    deletion_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user_id = models.UUIDField("회원 ID", db_index=True)  # FK 아님: 회원 삭제 뒤에도 남긴다
+    scope = models.CharField("삭제 범위", max_length=10)  # bank · card · loan · all(탈퇴)
+    provider_kinds = models.JSONField("CODEF 삭제 업권", null=True, blank=True)  # null=전체, []=외부 삭제 없음(공유 인증 보존)
+    status = models.CharField("진행 상태", max_length=20, choices=Status.choices, default=Status.PROVIDER_PENDING)
+    attempts = models.PositiveIntegerField("실행 횟수", default=0)
+    failed_step = models.CharField("실패 단계", max_length=20, null=True, blank=True)  # provider · local
+    error_code = models.CharField("오류 코드", max_length=50, null=True, blank=True)
+    lease_expires_at = models.DateTimeField("실행 권한 만료", null=True, blank=True)
+    lease_token = models.UUIDField("실행 권한 토큰", null=True, blank=True)  # 권한을 가진 실행만 상태를 바꾼다
+    created_at = models.DateTimeField("접수 시각", auto_now_add=True)
+    attempted_at = models.DateTimeField("마지막 실행 시각", null=True, blank=True)
+    provider_deleted_at = models.DateTimeField("외부 삭제 확인 시각", null=True, blank=True)
+    completed_at = models.DateTimeField("완료 시각", null=True, blank=True)
+
+    class Meta:
+        db_table = "privacy_deletion"
+        verbose_name = verbose_name_plural = "삭제 진행 기록"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user_id", "scope"], condition=~Q(status="completed"), name="privacy_deletion_one_open",
+            ),
+        ]

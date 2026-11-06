@@ -142,7 +142,7 @@ export default function LoanAddPopup({ onSaved }) {
           {errors.method && <p className="mc-field-error">{errors.method}</p>}
           {errors.nonFieldErrors && <p className="mc-field-error">{errors.nonFieldErrors}</p>}
           {error && <p className="mc-error" role="alert">{error}</p>}
-          <p className="mc-note" style={{ padding: 0 }}>월 상환액과 납부일을 둘 다 적으면 홈 '꼭 나갈 돈'에 나와요. 잔액 · 금리는 등록한 뒤에 고칠 수 없어요.</p>
+          <p className="mc-note" style={{ padding: 0 }}>월 상환액과 납부일을 둘 다 적으면 홈 '꼭 나갈 돈'에 나와요. 잘못 적은 정보는 등록한 뒤 [대출 정보 고치기]에서 바꿀 수 있어요.</p>
           <div className="mc-foot"><button className="mc-primary" form="mc-pop-form" type="submit" disabled={saving}>{saving ? '등록 중…' : '등록하기'}</button></div>
         </fieldset>
       </form>

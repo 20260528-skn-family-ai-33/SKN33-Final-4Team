@@ -619,8 +619,10 @@ class CardSyncTest(TestCase):
         cycle = SimpleNamespace(user_id=self.user.pk, starts_on=date(2026, 10, 10), ends_before=date(2026, 11, 10))
         result = get_issuer_first_bill_deduction(self.user, ORG, cycle, card_ids=[saved.pk], as_of=END,
                                                  bill_history_complete=True, spending_history_complete=True)
-        # 첫 청구서 420,000 − 10/20 승인 22,000
-        self.assertEqual((result.amount, result.reason), (398_000, None))
+        # 11/06: 청구서 상세에는 9/12 구매(주기 전)만 있어 10/20 승인 22,000 은 이 청구서에 든 지출이라는 근거가 없음 → 빼지 않는다
+        # (예전: 420,000 − 22,000 = 398,000). 상세 합계가 총액보다 작아 빠진 항목은 모름으로 표시
+        self.assertEqual((result.amount, result.reason, result.cycle_card_spending, result.items_incomplete),
+                         (420_000, None, 0, True))
 
     def test_next_month_bill_is_saved_without_coverage_record(self):
         self.bills["202611"] = bill(due="20261105")

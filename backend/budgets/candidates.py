@@ -12,7 +12,7 @@ from django.db.models import Exists, OuterRef, Q
 from finance.merchant_rules import normalize_merchant
 from finance.models import (FinancialTransaction, PaymentMatch, RecurringExpense, RecurringSaving, SourceKind,
                             TransactionLink)
-from finance.transfer_rules import LOAN_CANDIDATE
+from finance.transfer_rules import LOAN_CANDIDATE, OWN_REVIEW
 
 from .api import FIXED_TX_TYPES, day_in_month, id_set
 
@@ -116,11 +116,13 @@ def monthly_run(txs, today, exact):
 
 
 def is_saving_transfer(tx, name):
-    """남에게 보낸 이체 중 저축으로 볼 것: 적요(띄어쓰기 무시)에 회원 이름 또는 저축 단어 (받는 계좌 종류로는 거르지 않음)"""
+    """남에게 보낸 이체 중 저축으로 볼 것: 적요(띄어쓰기 무시)에 회원 이름 또는 저축 단어 (받는 계좌 종류로는 거르지 않음)
+    사용자가 '내 계좌 이체가 아니에요'라고 한 이체는 이름을 근거로 쓰지 않는다 (R11). 저축 단어는 그대로 본다"""
     if tx.transaction_type != "transfer":
         return False
     text = compact(tx.source_description or tx.merchant_name)
-    return bool(name and name in text) or any(word in text for word in SAVING_WORDS)
+    mine = name and name in text and (tx.field_states or {}).get(OWN_REVIEW) != "rejected"
+    return bool(mine) or any(word in text for word in SAVING_WORDS)
 
 
 # ---------- 이미 있는 것 ----------

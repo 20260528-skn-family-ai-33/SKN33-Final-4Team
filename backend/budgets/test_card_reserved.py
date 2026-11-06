@@ -64,9 +64,12 @@ class CardReservedTest(TestCase):
         self.card = Card.objects.create(user=self.user, connection=self.connection, origin="provider", issuer_code="0306",
                                         first_connected_at=datetime(2026, 10, 19, 15, tzinfo=dt_timezone.utc), is_selected=True)
         # CODEF 청구서는 명세서 단위 카드사 통합 (finance/sync_cards.py)
-        CardBill.objects.create(user=self.user, connection=self.connection, card=None, issuer_code="0306",
-                                billing_month=date(2026, 11, 1), total_amount=300_000, source_type="provider",
-                                scope_type="issuer", withdrawal_due_date=date(2026, 11, 10))
+        self.bill = CardBill.objects.create(user=self.user, connection=self.connection, card=None, issuer_code="0306",
+                                            billing_month=date(2026, 11, 1), total_amount=300_000, source_type="provider",
+                                            scope_type="issuer", withdrawal_due_date=date(2026, 11, 10), items_state="complete")
+        # 11/06: 청구서 상세 = 주기 전(10/10) 구매 250,000 + 이번 주기(10/26) 구매 50,000 → 50,000만 이번 주기 소비와 같은 지출(근거 있음)
+        self.item(date(2026, 10, 10), 250_000)
+        self.item(date(2026, 10, 26), 50_000)
         FinancialTransaction.objects.create(user=self.user, card=self.card, source_kind="card", occurred_on=date(2026, 10, 26),
                                             amount=50_000, direction="out", transaction_type="spending",
                                             confirmed_category_id="FOOD", confirmation_state="confirmed")
@@ -83,6 +86,12 @@ class CardReservedTest(TestCase):
         if value is None:
             return TODAY
         return django_timezone.localtime(value, timezone).date()
+
+    def item(self, purchased_on, amount, billed=None, bill=None, **fields):
+        from finance.models import CardBillItem
+        return CardBillItem.objects.create(user=self.user, bill=bill or self.bill, item_type=fields.pop("item_type", "one_time"),
+                                           purchased_on=purchased_on, original_purchase_amount=amount,
+                                           billed_amount=amount if billed is None else billed, **fields)
 
     def run_(self, product, start, end, status="success"):
         SyncRun.objects.create(user=self.user, connection=self.connection, card=self.card, product_code=product,
@@ -109,7 +118,10 @@ class CardReservedTest(TestCase):
             user=self.user, name="넷플릭스", amount=12_000, category_id="CULTURE_LEISURE",
             status="confirmed", source_type="manual", payment_card=self.card, evidence=[str(old.pk)])
         self.collect_all()
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 238_000)
+        # 11/06: 청구서 상세에 이번 주기(10/28) 넷플릭스 12,000 이 있음. 아직 거래가 없으면 같은 지출인지 몰라 빼지 않는다
+        CardBill.objects.filter(pk=self.bill.pk).update(total_amount=312_000)
+        self.item(TODAY, 12_000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 262_000)   # 312,000 − 50,000 (확인된 중복만)
         tx = FinancialTransaction.objects.create(
             user=self.user, card=self.card, source_kind="card", occurred_on=TODAY,
             amount=12_000, direction="out", transaction_type="spending", merchant_name="넷플릭스",
@@ -126,7 +138,7 @@ class CardReservedTest(TestCase):
         from finance.api import listed_transactions, transaction_item, with_card_fixed_id
         expense, tx = self.auto_link_card_expense()
         self.assertEqual(fixed_linked_amount(self.user, [self.card], self.cycle.starts_on, TODAY), 12_000)
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 238_000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)   # 고정지출로 잡힌 결제와 같은 지출 → 한 번만
         item = transaction_item(listed_transactions(self.user).get(pk=tx.pk))
         self.assertEqual((item["funding"], item["fixed_expense_id"]), ("fixed", expense.pk))
         # 기억에서 뺀 기록·중지 항목·UUID 표현도 공통 판정 유지, 거래 수와 무관하게 한 쿼리.
@@ -229,9 +241,10 @@ class CardReservedTest(TestCase):
         FinancialTransaction.objects.create(user=self.user, card=self.card, source_kind="card", occurred_on=TODAY,
                                             amount=4_500, direction="out", transaction_type="spending",
                                             confirmed_category_id="FOOD", confirmation_state="confirmed")
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 245_500)  # 지금 값은 바뀌지만
+        # 11/06: 청구서에 없는 새 소비는 선차감을 바꾸지 않는다 (이번 주기 소비 전체를 빼지 않음) → 초안 그대로 승인
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)
         response = self.approve(client, draft)
-        self.assertEqual(response.status_code, 200, response.content)  # 초안은 만들 때 값으로 승인
+        self.assertEqual(response.status_code, 200, response.content)
 
     def test_changing_selected_cards_expires_draft(self):
         self.collect_all()
@@ -241,6 +254,32 @@ class CardReservedTest(TestCase):
         self.card.save()
         response = self.approve(client, draft)
         self.assertEqual((response.status_code, response.json()["error"]["code"]), (409, "expired"))
+
+    def test_payment_check_does_not_expire_draft_but_bill_change_does(self):
+        # 11/06: 납부 확인은 예산 반영액을 바꾸지 않는다(이미 낸 카드값도 이번 월급에서 쓴 돈) → 초안 유지.
+        # 청구액 정정처럼 선차감이 바뀌면 낡은 초안은 승인하지 않고 만료
+        from finance.card_payments import USER_CHECK
+        self.collect_all()
+        client = self.client_()
+        draft = self.recommend_draft(client)
+        CardBill.objects.filter(pk=self.bill.pk).update(field_states={USER_CHECK: {"answer": "paid", "remaining_amount": None, "bill_total": 300_000}})
+        self.assertEqual(self.approve(client, draft).status_code, 200)
+        Budget.objects.filter(pk=draft.pk).update(status="superseded")
+        draft = self.recommend_draft(client)
+        CardBill.objects.filter(pk=self.bill.pk).update(total_amount=320_000)
+        self.item(date(2026, 10, 11), 20_000)
+        response = self.approve(client, draft)
+        self.assertEqual((response.status_code, response.json()["error"]["code"]), (409, "expired"))
+
+    def test_approved_budget_is_not_recalculated_after_payment_check(self):
+        from finance.card_payments import USER_CHECK
+        self.collect_all()
+        client = self.client_()
+        draft = self.recommend_draft(client)
+        self.assertEqual(self.approve(client, draft).status_code, 200)
+        CardBill.objects.filter(user=self.user).update(field_states={USER_CHECK: {"answer": "paid", "remaining_amount": None, "bill_total": 300_000}})
+        draft.refresh_from_db()
+        self.assertEqual((draft.status, draft.items.get(category_detail="card_reserved").allocated_amount), ("approved", 250_000))
 
     def test_next_day_without_new_sync_uses_last_synced_day(self):
         self.collect_all()
@@ -263,10 +302,12 @@ class CardReservedTest(TestCase):
         self.collect_all()
         expense = RecurringExpense.objects.create(user=self.user, name="구독", amount=10_000, category_id="CULTURE_LEISURE",
                                                   status="confirmed", source_type="manual", payment_card=self.card)
-        # 고정비 100,000 + 구독 10,000 / 첫 청구서 300,000 − 그 카드로 쓴 돈 50,000 − 카드 고정지출 10,000
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 240_000)
-        self.assertEqual(fixed_total(self.user, self.cycle), 350_000)
-        # 이번 주기에 구독이 결제돼 고정지출에 연결돼도 같은 금액 (카드로 쓴 돈에서 다시 빼지 않음)
+        # 11/06: 카드 고정지출을 등록했다는 것만으로 청구서에서 빼지 않는다 (이 청구서에 이번 주기 결제분이 있다는 근거 없음)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)
+        self.assertEqual(fixed_total(self.user, self.cycle), 360_000)   # 고정비 100,000 + 구독 10,000 + 카드 250,000
+        # 이번 주기 구독 결제(10/28)가 청구서에 들어 있고 고정지출에 연결되면 그 금액만 한 번 뺀다
+        CardBill.objects.filter(pk=self.bill.pk).update(total_amount=310_000)
+        self.item(TODAY, 10_000)
         linked = FinancialTransaction.objects.create(user=self.user, card=self.card, source_kind="card", occurred_on=TODAY,
                                                      amount=10_000, direction="out", transaction_type="spending",
                                                      confirmed_category_id="CULTURE_LEISURE", confirmation_state="confirmed")
@@ -274,7 +315,7 @@ class CardReservedTest(TestCase):
                                         due_date=TODAY, confirmed_amount=10_000, paid_amount=10_000,
                                         payment_state="paid", obligation_state="active")
         PaymentMatch.objects.create(user=self.user, due=due, transaction=linked, matched_amount=10_000)
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 240_000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)   # 310,000 − 50,000 − 10,000
 
     def test_broken_card_data_is_pending_not_error(self):
         self.collect_all()
@@ -287,7 +328,7 @@ class CardReservedTest(TestCase):
     def test_connected_this_cycle_with_spending_behind_is_pending_not_zero(self):
         # 카드를 10/27에 연결했는데 카드 거래는 10/26까지만 불러옴 → '연결 전'으로 0원이 되면 안 됨
         Card.objects.filter(pk=self.card.pk).update(first_connected_at=datetime(2026, 10, 26, 15, tzinfo=dt_timezone.utc))
-        self.run_(CARD_BILL_SYNC, date(2026, 10, 27), TODAY)
+        self.run_(CARD_BILL_SYNC, date(2026, 10, 1), TODAY)  # 청구서는 달 단위(1일부터)로 기록된다 (sync_cards)
         self.run_(CARD_SPENDING_SYNC, date(2026, 10, 25), date(2026, 10, 26))
         self.assertEqual(card_reserved(self.user, self.cycle),
                          {"amount": None, "pending": [{"card_id": str(self.card.pk), "reason": "spending_history_incomplete"}]})
@@ -298,6 +339,8 @@ class CardReservedTest(TestCase):
         self.collect_all()
         expense = RecurringExpense.objects.create(user=self.user, name="넷플릭스", amount=17_000, category_id="CULTURE_LEISURE",
                                                   status="confirmed", source_type="manual")  # 결제 카드 안 적음
+        CardBill.objects.filter(pk=self.bill.pk).update(total_amount=317_000)
+        self.item(TODAY, 17_000)   # 이번 주기 결제분이 청구서에 있음
         linked = FinancialTransaction.objects.create(user=self.user, card=self.card, source_kind="card", occurred_on=TODAY,
                                                      amount=17_000, direction="out", transaction_type="spending",
                                                      confirmed_category_id="CULTURE_LEISURE", confirmation_state="confirmed")
@@ -305,8 +348,8 @@ class CardReservedTest(TestCase):
                                         due_date=TODAY, confirmed_amount=17_000, paid_amount=17_000,
                                         payment_state="paid", obligation_state="active")
         PaymentMatch.objects.create(user=self.user, due=due, transaction=linked, matched_amount=17_000)
-        # 300,000 − (67,000 − 17,000) − 17,000
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 233_000)
+        # 317,000 − 50,000(소비) − 17,000(고정지출로 잡힌 결제) — 같은 결제를 소비 · 고정비로 두 번 빼지 않음
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)
 
     def test_fixed_expense_is_subtracted_once_when_registered_and_paid_cards_differ(self):
         # 리뷰 10/28: 고정지출에 적은 카드(A)와 실제 결제 카드(B)가 다르면 두 카드에서 각각 빼면 안 됨
@@ -315,18 +358,20 @@ class CardReservedTest(TestCase):
         connection = Connection.objects.create(user=self.user, business_type="card", organization_code="0301", status="connected")
         other = Card.objects.create(user=self.user, connection=connection, origin="provider", issuer_code="0301",
                                     first_connected_at=datetime(2026, 10, 19, 15, tzinfo=dt_timezone.utc), is_selected=True)
-        CardBill.objects.create(user=self.user, connection=connection, card=None, issuer_code="0301",
-                                billing_month=date(2026, 11, 1), total_amount=100_000, source_type="provider",
-                                scope_type="issuer", withdrawal_due_date=date(2026, 11, 12))
+        b_bill = CardBill.objects.create(user=self.user, connection=connection, card=None, issuer_code="0301",
+                                         billing_month=date(2026, 11, 1), total_amount=117_000, source_type="provider",
+                                         scope_type="issuer", withdrawal_due_date=date(2026, 11, 12), items_state="complete")
+        self.item(date(2026, 10, 1), 100_000, bill=b_bill)
+        self.item(TODAY, 17_000, bill=b_bill)   # B 청구서에 이번 주기 구독 결제분
         SyncRun.objects.create(user=self.user, connection=connection, card=other, product_code=CARD_BILL_SYNC,
                                covered_from=date(2026, 10, 20), covered_to=TODAY, status="success")
         SyncRun.objects.create(user=self.user, connection=connection, card=other, product_code=CARD_SPENDING_SYNC,
                                covered_from=date(2026, 10, 25), covered_to=TODAY, status="success")
-        before = card_reserved(self.user, self.cycle)["amount"]  # 250,000 + 100,000
-        self.assertEqual(before, 350_000)
+        before = card_reserved(self.user, self.cycle)["amount"]  # 250,000 + 117,000 (B 의 17,000 은 아직 거래가 없어 확인 못 함)
+        self.assertEqual(before, 367_000)
         expense = RecurringExpense.objects.create(user=self.user, name="구독", amount=17_000, category_id="CULTURE_LEISURE",
                                                   status="confirmed", source_type="manual", payment_card=self.card)  # A로 등록
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], before - 17_000)  # 아직 결제 전: A에서 한 번
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], before)  # 등록 카드(A)라는 이유로 A 청구서에서 빼지 않음
         linked = FinancialTransaction.objects.create(user=self.user, card=other, source_kind="card", occurred_on=TODAY,
                                                      amount=17_000, direction="out", transaction_type="spending",
                                                      confirmed_category_id="CULTURE_LEISURE", confirmation_state="confirmed")
@@ -334,8 +379,8 @@ class CardReservedTest(TestCase):
                                         due_date=TODAY, confirmed_amount=17_000, paid_amount=17_000,
                                         payment_state="paid", obligation_state="active")
         PaymentMatch.objects.create(user=self.user, due=due, transaction=linked, matched_amount=17_000)
-        # 실제로는 B로 결제: B에서만 한 번 (A 250,000 그대로 + B 100,000 − 17,000)
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], before - 17_000)
+        # 실제로 B로 결제돼 B 청구서에 든 것만 B에서 한 번 (A 250,000 그대로 + B 117,000 − 17,000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 350_000)
 
     # ---------- 카드사 단위 (10/29 나은) ----------
 
@@ -350,14 +395,18 @@ class CardReservedTest(TestCase):
         FinancialTransaction.objects.create(user=self.user, card=other, source_kind="card", occurred_on=date(2026, 10, 27),
                                             amount=40_000, direction="out", transaction_type="spending",
                                             confirmed_category_id="FOOD", confirmation_state="confirmed")
-        self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 250_000, "pending": []})
-        # B로 내는 고정지출도 첫 청구서에 들어 있고 고정비에 이미 있으므로 뺀다 (그 카드사 카드 고정지출)
+        self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 250_000, "pending": []})  # 청구서에 없는 소비
+        # 11/06: B 소비(10/27 40,000)가 이 청구서에 들어 있으면 — B 가 관리 대상이 아니면 예산에 안 잡혀 중복 아님 → 그대로 떼어 둔다
+        CardBill.objects.filter(pk=self.bill.pk).update(total_amount=340_000)
+        self.item(date(2026, 10, 27), 40_000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 290_000)
+        # B 로 내는 고정지출 등록만으로는 빼지 않는다 (청구서에 그 결제분이 있다는 근거 없음)
         RecurringExpense.objects.create(user=self.user, name="구독", amount=20_000, category_id="CULTURE_LEISURE",
                                         status="confirmed", source_type="manual", payment_card=other)
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 230_000)
-        # B도 고르면 B로 쓴 돈도 빼고, 첫 청구서는 카드사에 한 번뿐 (300,000 − 50,000 − 40,000 − 20,000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 290_000)
+        # B 도 고르면 B 소비가 이번 주기 생활비에 잡히므로 그 40,000 을 중복으로 뺀다. 첫 청구서는 카드사에 한 번뿐
         Card.objects.filter(pk=other.pk).update(is_selected=True)
-        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 190_000)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)
 
     def test_pending_lists_every_managed_card_of_issuer(self):
         other = self.same_issuer_card(is_selected=True)
@@ -439,11 +488,12 @@ class SyncedCardReservedTest(TestCase):
                          [{"card_id": str(card.pk), "reason": "first_bill_unavailable"}])
 
         self.sync(TODAY, bill_months(TODAY))
-        # 10/5 청구서는 가입 전, 다음 달 11/5 청구서가 첫 청구서: 300,000 − 10/26에 쓴 50,000
-        self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 250_000, "pending": []})
+        # 이번 주기에 결제일인 11/5 청구서 300,000. 상세는 10/1 구매 1건뿐이라 10/26 소비(50,000)는 이 청구서에 없음 → 빼지 않는다
+        # (예전 계산은 이번 주기 카드 소비 전체를 빼서 250,000)
+        self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 300_000, "pending": []})
         data = client.get(URL).json()
         self.assertIsNone(data["blocked"])
-        self.assertEqual((data["base"]["fixedTotal"], data["cardPending"]), (250_000, []))
+        self.assertEqual((data["base"]["fixedTotal"], data["cardPending"]), (300_000, []))
 
     def test_refresh_after_two_skipped_months_is_not_pending(self):
         from finance.api_sync import last_bill_day
@@ -456,10 +506,181 @@ class SyncedCardReservedTest(TestCase):
         self.assertEqual(last_bill_day(self.connection), first_day)
         # 예전 범위(지난달 + 이번 달)로 불러오면 8/21 ~ 8/31이 비어 계속 보류
         self.sync(TODAY, ("202609", "202610"), start=date(2026, 8, 13))
+        # 11/06: 8월 빈 기간은 이번 주기(10/25~) 판단과 무관. 다만 11월 청구서를 아직 안 불러왔으니 보류 (0원으로 치지 않음)
         self.assertEqual(card_reserved(self.user, self.cycle)["pending"],
-                         [{"card_id": str(card.pk), "reason": "bill_history_incomplete"}])
-        # 마지막으로 성공한 달(8월)부터 불러오면 빈 달이 없다. 첫 청구서(9/5)는 이번 주기 밖이라 0원
+                         [{"card_id": str(card.pk), "reason": "first_bill_unavailable"}])
         months = bill_months(TODAY, last_bill_day(self.connection))
         self.assertEqual(months, ("202608", "202609", "202610", "202611"))
         self.sync(TODAY, months, start=date(2026, 8, 13))
-        self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 0, "pending": []})
+        # 승인 예산이 아직 없으므로 이번 주기가 최초 적용 주기: 11/5 청구서 300,000 (10/26 소비는 이 청구서에 없음)
+        self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 300_000, "pending": []})
+
+
+class BudgetReserveVsRemainingTest(TestCase):
+    """11/06 필수 예시 (다른 고정비 · 할부 없음). 주기 10/25 ~ 11/25, 오늘 11/12, 청구서 결제 11/10 · 청구액 500,000.
+    청구서 상세 = 주기 전 구매 400,000 + 이번 주기(10/26) 구매 100,000. 이번 주기 관리 카드 소비 = 100,000(청구서에 있음) + 200,000(없음)"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="reserve-remaining@example.invalid")
+        FinancialProfile.objects.create(user=self.user, housing_type="family", monthly_take_home_income=2_800_000, payday=25)
+        self.cycle = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 10, 25), ends_before=date(2026, 11, 25))
+        self.conn = Connection.objects.create(user=self.user, business_type="card", organization_code="0306", status="connected")
+        Consent.objects.create(user=self.user, purpose="finance_inquiry", product_scope="card", document_version="v1", document_hash="t")
+        bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0004", status="connected")
+        self.account = BankAccount.objects.create(user=self.user, connection=bank, source_account_key="rr", account_type="demand")
+        self.card = Card.objects.create(user=self.user, connection=self.conn, origin="provider", issuer_code="0306", is_selected=True,
+                                        first_connected_at=datetime(2026, 10, 19, 15, tzinfo=dt_timezone.utc))
+        for product in (CARD_BILL_SYNC, CARD_SPENDING_SYNC):
+            SyncRun.objects.create(user=self.user, connection=self.conn, card=self.card, product_code=product,
+                                   covered_from=date(2026, 10, 1), covered_to=date(2026, 11, 12), status="success")
+        self.bill = CardBill.objects.create(user=self.user, connection=self.conn, issuer_code="0306", statement_key="b",
+                                            scope_type="issuer", billing_month=date(2026, 11, 1), total_amount=500_000,
+                                            source_type="provider", withdrawal_due_date=date(2026, 11, 10), items_state="complete")
+        self.item(date(2026, 10, 20), 400_000)
+        self.in_bill = self.item(date(2026, 10, 26), 100_000)
+        self.spend(date(2026, 10, 26), 100_000)        # 청구서에 든 이번 주기 소비
+        self.spend(date(2026, 11, 3), 200_000)         # 다음 청구서로 갈 이번 주기 소비
+        clock = patch("django.utils.timezone.localdate", side_effect=lambda value=None, timezone=None:
+                      date(2026, 11, 12) if value is None else CardReservedTest.localdate(value, timezone))
+        clock.start()
+        self.addCleanup(clock.stop)
+        external = patch("finance.codef._request", side_effect=AssertionError("CODEF 호출 금지"))
+        external.start()
+        self.addCleanup(external.stop)
+
+    item = CardReservedTest.item
+
+    def spend(self, day, amount, **fields):
+        return FinancialTransaction.objects.create(**{**dict(
+            user=self.user, card=self.card, source_kind="card", occurred_on=day, amount=amount, direction="out",
+            transaction_type="spending", confirmed_category_id="FOOD", confirmation_state="confirmed"), **fields})
+
+    def reserved(self):
+        return card_reserved(self.user, self.cycle)
+
+    def remaining(self):
+        from finance.card_payments import bill_status
+        self.bill.refresh_from_db()
+        return bill_status(self.bill, PaymentDue.objects.filter(bill=self.bill).first(), date(2026, 11, 12))["remaining_amount"]
+
+    def answer(self, answer, remaining=None):
+        from finance.card_payments import USER_CHECK
+        CardBill.objects.filter(pk=self.bill.pk).update(field_states={USER_CHECK: {
+            "answer": answer, "remaining_amount": remaining, "bill_total": 500_000}})
+
+    def pay(self, day, amount):
+        out = FinancialTransaction.objects.create(user=self.user, source_kind="bank", account=self.account, occurred_on=day,
+                                                  amount=amount, direction="out", transaction_type="card_payment",
+                                                  confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        due, _ = PaymentDue.objects.get_or_create(bill=self.bill, defaults=dict(
+            user=self.user, obligation_type="card_bill", occurrence_key="b", due_date=date(2026, 11, 10),
+            confirmed_amount=500_000, source_type="provider", confirmation_state="unknown"))
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=out, matched_amount=amount)
+
+    def test_a_only_spending_inside_the_bill_is_subtracted(self):
+        # 예전: 500,000 − 이번 주기 소비 300,000 = 200,000 (다음 청구서로 갈 200,000 까지 빠짐). 이제 400,000
+        self.assertEqual(self.reserved(), {"amount": 400_000, "pending": []})
+
+    def test_b_paid_with_this_salary_keeps_reserve_and_home_shows_zero(self):
+        self.pay(date(2026, 11, 10), 500_000)          # 이번 월급(주기 안)으로 전액 납부
+        self.assertEqual((self.reserved()["amount"], self.remaining()), (400_000, 0))
+        self.answer("paid")                            # 사용자 확인도 반영액을 줄이지 않음
+        self.assertEqual((self.reserved()["amount"], self.remaining()), (400_000, 0))
+
+    def test_c_partial_payment_changes_only_remaining(self):
+        self.answer("partial", 200_000)
+        self.assertEqual((self.reserved()["amount"], self.remaining()), (400_000, 200_000))
+        self.answer("unpaid")
+        self.assertEqual((self.reserved()["amount"], self.remaining()), (400_000, 500_000))
+
+    def test_payment_before_cycle_start_was_previous_salary(self):
+        self.pay(date(2026, 10, 24), 150_000)          # 주기 시작(10/25) 전 선결제 = 지난 월급 → 이번 예산에서 다시 떼지 않음
+        self.assertEqual(self.reserved()["amount"], 250_000)
+
+    def test_d_ambiguous_candidates_are_not_linked_and_not_subtracted(self):
+        self.spend(date(2026, 10, 26), 100_000)        # 같은 날 · 같은 금액 거래가 둘 → 상세 1건과 짝을 정할 수 없음
+        result = self.reserved()
+        self.assertEqual(result["amount"], 500_000)     # 확인 못 한 100,000 은 빼지 않는다 (넉넉하게)
+        self.assertEqual(result["notes"], [{"card_id": str(self.card.pk), "issuer_code": "0306",
+                                            "reason": "card_overlap_uncertain", "amount": 100_000, "count": 1}])
+
+    def test_d_partial_details_do_not_invent_missing_items(self):
+        CardBill.objects.filter(pk=self.bill.pk).update(items_state="partial", total_amount=520_000)
+        result = self.reserved()
+        self.assertEqual(result["amount"], 420_000)     # 확인된 중복 100,000 만 빼고, 빠진 상세는 모름
+        self.assertEqual([(n["reason"], n["amount"], n["count"]) for n in result["notes"]], [("bill_items_incomplete", None, None)])
+
+    def test_d_cancel_installment_fee_and_unmanaged(self):
+        from finance.models import CardBillItem
+        # 취소: 이번 주기 구매가 전액 취소돼 생활비엔 0원 → 청구서에 남은 100,000 은 중복이 아니라 그대로 떼어 둔다
+        FinancialTransaction.objects.filter(amount=100_000).update(is_canceled=True, canceled_amount=100_000)
+        self.assertEqual(self.reserved()["amount"], 500_000)
+        FinancialTransaction.objects.filter(amount=100_000).update(is_canceled=False, canceled_amount=None)
+        # 할부: 이번 주기 300,000 3개월 할부 — 생활비엔 300,000, 청구서엔 1회차 100,000 만 → 그 회차만 중복
+        CardBillItem.objects.filter(pk=self.in_bill.pk).update(item_type="installment", original_purchase_amount=300_000,
+                                                                installment_months=3, installment_round=1)
+        FinancialTransaction.objects.filter(amount=100_000, occurred_on=date(2026, 10, 26)).update(amount=300_000)
+        self.assertEqual(self.reserved()["amount"], 400_000)
+        # 수수료 항목은 이번 주기 소비가 아니라 빼지 않는다
+        CardBill.objects.filter(pk=self.bill.pk).update(total_amount=503_000)
+        self.item(date(2026, 10, 28), 3_000, item_type="fee")
+        self.assertEqual(self.reserved()["amount"], 403_000)
+        # 관리 대상 아닌 카드의 소비는 예산에 안 잡혀 중복이 아님
+        Card.objects.filter(pk=self.card.pk).update(is_selected=False)
+        other = Card.objects.create(user=self.user, connection=self.conn, origin="provider", issuer_code="0306", is_selected=True,
+                                    first_connected_at=datetime(2026, 10, 19, 15, tzinfo=dt_timezone.utc))
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 503_000)
+        other.delete()
+
+    def test_total_lower_than_details_is_pending_not_zero_or_sum(self):
+        # 결제일 당일 조회 총액 0원 · 상세 합계 500,000 같은 불일치: 0원이나 상세 합계로 고르지 않고 보류
+        CardBill.objects.filter(pk=self.bill.pk).update(total_amount=0, items_state="partial")
+        self.assertEqual(self.reserved()["pending"], [{"card_id": str(self.card.pk), "reason": "bill_total_mismatch"}])
+        from finance.card_payments import bill_status
+        self.bill.refresh_from_db()
+        status = bill_status(self.bill, None, date(2026, 11, 12))
+        self.assertEqual((status["status"], status["remaining_amount"]), ("total_mismatch", None))   # '낼 금액 없음'이 아님
+
+
+class ReportedCaseTest(TestCase):
+    """실제 확인 사례 재현 (합성): 주기 10/10 ~ 11/10, 현대카드 청구서 결제 11/5, 최초 연결 11/6, 조회 · 카드 지정 완료"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="reported-case@example.invalid")
+        FinancialProfile.objects.create(user=self.user, housing_type="family", monthly_take_home_income=2_800_000, payday=10)
+        self.cycle = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 10, 10), ends_before=date(2026, 11, 10))
+        conn = Connection.objects.create(user=self.user, business_type="card", organization_code="0302", status="connected")
+        Consent.objects.create(user=self.user, purpose="finance_inquiry", product_scope="card", document_version="v1", document_hash="t")
+        self.card = Card.objects.create(user=self.user, connection=conn, origin="provider", issuer_code="0302", is_selected=True,
+                                        first_connected_at=datetime(2026, 11, 5, 15, tzinfo=dt_timezone.utc))
+        for product in (CARD_BILL_SYNC, CARD_SPENDING_SYNC):
+            SyncRun.objects.create(user=self.user, connection=conn, card=self.card, product_code=product,
+                                   covered_from=date(2026, 10, 1), covered_to=date(2026, 11, 6), status="success")
+        self.bill = CardBill.objects.create(user=self.user, connection=conn, issuer_code="0302", statement_key="h", scope_type="issuer",
+                                            billing_month=date(2026, 11, 1), total_amount=511_515, source_type="provider",
+                                            withdrawal_due_date=date(2026, 11, 5), field_states={"codefBillType": ""})
+        clock = patch("django.utils.timezone.localdate", side_effect=lambda value=None, timezone=None:
+                      date(2026, 11, 7) if value is None else CardReservedTest.localdate(value, timezone))
+        clock.start()
+        self.addCleanup(clock.stop)
+        external = patch("finance.codef._request", side_effect=AssertionError("CODEF 호출 금지"))
+        external.start()
+        self.addCleanup(external.stop)
+
+    def check(self, answer, remaining=None):
+        from finance.card_payments import USER_CHECK
+        CardBill.objects.filter(pk=self.bill.pk).update(field_states={"codefBillType": "", USER_CHECK: {
+            "answer": answer, "remaining_amount": remaining, "bill_total": 511_515}})
+
+    def test_bill_before_connection_is_used_without_resync_or_payment_block(self):
+        # 예전: 연결일(11/6) 전 청구서를 빼서 first_bill_unavailable → 재조회 · 카드번호 요구.
+        # 이제: 이번 주기 결제 청구서로 계산. 납부 확인 여부로 보류하지 않고, 답해도 예산 반영액은 그대로(이번 월급에서 쓴 돈)
+        for answer, remaining in ((None, None), ("paid", None), ("partial", 200_000), ("unpaid", None)):
+            with self.subTest(answer=answer):
+                if answer:
+                    self.check(answer, remaining)
+                result = card_reserved(self.user, self.cycle)
+                # 상세가 없어 중복을 확인할 근거가 없음 → 빼지 않고 안내 (빠진 항목 건수 · 금액은 모름)
+                self.assertEqual((result["amount"], result["pending"]), (511_515, []))
+                self.assertEqual([n["reason"] for n in result["notes"]], ["bill_items_incomplete"])
+

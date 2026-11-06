@@ -6,7 +6,7 @@
   · 승인내역: product_code=card_approval_list, 카드마다, 카드사가 실제로 조회해 준 기간
   · 카드만 특정 못 한 승인은 별도 보관하고 사용자 확인 후 실제 조회 범위를 승격한다.
   · 금액·취소 정보가 불확실한 조회는 카드 확인만으로 승격하지 않는다.
-- 카드값 출금 ↔ 청구서 매칭 · 납부 예정 생성은 별도 작업이다.
+- 저장 뒤 청구서의 납부 예정을 맞추고 카드값 출금을 다시 맞춘다 (card_payments.refresh_bill_dues, R04).
 """
 import re
 
@@ -15,9 +15,10 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from config import tasks
 from users.models import Consent
 
-from . import codef
+from . import card_payments, codef
 from .codef_cards import MONTH, CardDataError, month_range
 from .models import Card, CardBill, CardBillItem, CardApprovalCoverage, Connection, FinancialTransaction, Origin, SyncRun
 from .card_review import save_approvals, promote_coverage
@@ -156,7 +157,8 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
     return counts
 
 
-def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None, connection_id=None):
+def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None, connection_id=None,
+              task_id=None):
     """신뢰된 서버 호출 전용. 보유카드 · 청구서(bill_months 의 달마다) · 승인내역(start ~ end)을 조회한 뒤
     한 트랜잭션으로 저장한다.
 
@@ -164,6 +166,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
       없으면 이 카드사의 연결 중인 연결을 쓴다 (개발용).
     - 카드 조회 동의는 외부 조회 전 · 저장 트랜잭션 안에서 확인한다 (철회되면 CardConsentRequired = PermissionError)
     - card_no · card_password 는 CODEF 요청에만 싣는다 (저장 · 로그 · 예외 메시지 금지)
+    - task_id: 이 조회를 시킨 작업. 저장 직전 작업 · 조회 기록의 유효 기간을 본다 (config/tasks.py claim_run)
     - CODEF 실패는 codef.CodefError 를 그대로 올린다
     """
     months = list(bill_months or ())
@@ -183,10 +186,8 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
         if connection is None or connection.disconnected_at is not None:
             raise CardConnectionGone("연결이 해제되어 불러오지 않았어요.")
     _check_consent(user, connection)
-    run = SyncRun.objects.create(
-        user=user, connection=connection, product_code="card_sync", status="running",
-        requested_from=start, requested_to=end,
-    )
+    run = tasks.start_run(user, task_id, connection=connection, product_code="card_sync",
+                          requested_from=start, requested_to=end)
     try:
         # 외부 조회를 모두 마친 뒤 저장 트랜잭션을 연다.
         card_rows = codef.list_cards(connected_id, org, card_no, card_password)
@@ -203,6 +204,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             if connection.disconnected_at is not None or connection.status != "connected":
                 raise CardConnectionChanged("조회 중 연결 상태가 바뀌어 저장하지 않았어요.")
             _check_consent(user, connection)
+            tasks.claim_run(run, task_id)
             if SyncRun.objects.filter(
                 user=user, connection=connection, product_code="card_sync", status="success",
                 started_at__gt=run.started_at,
@@ -221,6 +223,8 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             )
             retry_failed_transactions(user, retry_ids)
             process_new_transactions(user, new_ids)
+            # 청구서 → 납부 예정 (R04). 승인 거래가 새로 없어도 돈다. 저장 트랜잭션 · 회원 잠금 안
+            card_payments.refresh_bill_dues(user, org)
 
             for card in cards:
                 for month in months:
@@ -256,13 +260,11 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
         business_code = None
         if isinstance(exc, codef.CodefError) and re.fullmatch(r"CF-[0-9]{5}", str(exc.code)):
             business_code = exc.code
-        if isinstance(exc, (CardDataError, CardConsentRequired, CardConnectionChanged)):
+        if isinstance(exc, (CardDataError, CardConsentRequired, CardConnectionChanged, tasks.WorkExpired)):
             error_code = exc.code
         elif isinstance(exc, codef.CodefError):
             error_code = "provider_error"
         else:
             error_code = "card_sync_failed"
-        SyncRun.objects.filter(pk=run.pk).update(
-            status="failed", business_code=business_code, error_code=error_code, completed_at=timezone.now(),
-        )
+        tasks.finish_run(run.pk, status="failed", business_code=business_code, error_code=error_code)
         raise

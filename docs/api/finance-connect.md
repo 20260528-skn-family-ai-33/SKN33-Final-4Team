@@ -32,18 +32,20 @@
 | `consents` | 목록 | O | 이번에 동의한 항목. 1개 이상 | |
 | `consents[].purpose` | 문자 | O | 동의 목적 코드. 확인 필요(아래) | `"finance_inquiry"` |
 | `consents[].productScope` | 문자 | O | 조회를 허용하는 범위: `bank` · `card` · `loan` | `"bank"` |
-| `consents[].documentVersion` | 문자 | O | 화면에 보여 준 동의 문서 버전 | `"v1"` |
+| `consents[].documentVersion` | 문자 | O | 화면에 보여 준 동의 문서 버전 (`GET /api/consent-documents/`의 `version`). 지금은 `v2` | `"v2"` |
 
 ```json
 {
   "consents": [
-    { "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1" },
-    { "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1" }
+    { "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2" },
+    { "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2" }
   ]
 }
 ```
 
 - 동의 원문 해시(`document_hash`)와 동의 시각은 서버가 채운다. 화면이 보내면 400 "이 칸은 보낼 수 없어요."(★2)
+- 해시는 **보낸 버전**의 보관 원문(`backend/users/consent_documents.py`)으로 만든다. 저장 시점의 최신 버전으로 바꿔 기록하지 않는다(11/06 R24).
+- `v1`은 화면 원문이 아니라 임시 문장 한 줄을 해시했던 지난 버전이다. 과거 `v1` 기록은 그대로 두며 유효하다. 새로 `v1`을 보내면 409 `document_outdated`.
 - 동의하지 않은 항목은 보내지 않는다(거절 기록은 저장하지 않음). 회원가입 동의와 같은 모양이며 `agreed` 칸은 없다(10/22 결정기록 L).
 - **같은 범위 · 같은 문서 버전의 유효한 동의가 이미 있으면 새로 만들지 않고 기존 기록을 돌려준다**(10/22 N⑥). 응답 모양은 같다.
 - 동의 항목: **은행 필수, 카드 · 대출 선택**(10/22 V). 동의 철회 API는 1차에 없다(V).
@@ -62,8 +64,8 @@
 ```json
 {
   "items": [
-    { "consentId": "7b1e…", "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1", "grantedAt": "2026-10-22T10:05:00+09:00" },
-    { "consentId": "a40c…", "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1", "grantedAt": "2026-10-22T10:05:00+09:00" }
+    { "consentId": "7b1e…", "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2", "grantedAt": "2026-10-22T10:05:00+09:00" },
+    { "consentId": "a40c…", "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2", "grantedAt": "2026-10-22T10:05:00+09:00" }
   ]
 }
 ```
@@ -73,6 +75,8 @@
 | 상황 | 상태 | `code` | 화면 안내 |
 |---|---|---|---|
 | 필수 동의(은행)가 없음 | 400 | `invalid` | "계좌 조회 동의는 꼭 필요해요." (`fields.consents`) |
+| 없는 문서 버전 · 목적/범위/버전 조합 틀림 | 400 | `invalid` | `fields.documentVersion` 등 |
+| 지난 문서 버전(화면을 연 사이 바뀜 포함) | 409 | `document_outdated` | 문서를 다시 받고 체크를 지운 뒤 새로 확인받기 |
 | 모르는 목적·범위 코드, 지원하지 않는 문서 버전 | 400 | `invalid` | `fields` 메시지 |
 | 표에 없는 칸을 보냄 (★2) | 400 | `invalid` | `fields.<그 칸>: ["이 칸은 보낼 수 없어요."]` |
 | 같은 요청 번호에 다른 내용 | 409 | `idempotency_conflict` | (개발 중 버그) |
@@ -588,6 +592,18 @@ API 값과 DB 값을 같게 둔다(소문자 영어).
 - 여러 범위의 자료를 담는 예산 스냅샷·배분·주기·쿠션·준비금·대화·분석 작업·요청 응답 캐시는 전체 초기화하며 지킬 돈 저장값을 비운다. 화면 확인 단계에서 이 범위와 예산 재설정 필요를 알린다. 사용자 프로필·급여·우선순위와 다른 범위 원천 거래는 보존한다.
 - 금융 동의 기록 자체는 `revokedAt`으로 철회 이력을 남기고, 탈퇴 시 함께 삭제한다. 계좌 동의를 철회한 상태에서는 지킬 돈 저장·추천·금액 고정·예산 승인을 403 `consent_required`로 차단한다.
 
-회원 잠금과 기존 CODEF 계정 관리 잠금으로 연결과 철회가 교차하지 않게 한다. 진행 중인 작업이 있으면 409 `privacy_busy`. CODEF 카드 인증은 카드 철회 시 삭제하고, 은행 인증은 계좌·대출 동의가 모두 없어졌을 때 삭제한다(같은 인증수단 공유). 외부 삭제 실패는 502이며 완료로 표시하지 않는다. 기존 일반 ‘연결 해제’는 과거 자료를 보존하는 별도 기능이며, 동의 철회와 구분한다.
+회원 잠금과 기존 CODEF 계정 관리 잠금으로 연결과 철회가 교차하지 않게 한다. 진행 중인 작업이 있으면 409 `privacy_busy`. 유효 기간이 지난(서버가 중간에 멈춘) 작업 · 조회 기록은 먼저 `failed / stale`로 닫고 따로 저장하므로 철회 · 탈퇴를 계속 막지 않는다(R20, chat.md '오래 걸리는 작업 진행 확인'). CODEF 카드 인증은 카드 철회 시 삭제하고, 은행 인증은 계좌·대출 동의가 모두 없어졌을 때 삭제한다(같은 인증수단 공유). 외부 삭제 · 로컬 정리가 끝나지 않으면 완료로 표시하지 않는다(아래 R21). 기존 일반 ‘연결 해제’는 과거 자료를 보존하는 별도 기능이며, 동의 철회와 구분한다.
+
+#### 삭제 실패 복구 (R21, 11/06) — `users/deletion.py`
+
+1. 검증(확인 · 범위 · 진행 중 작업 409)을 통과하면 짧은 트랜잭션에서 **접수**한다: 삭제 진행 기록(`privacy_deletion`) 생성 + 동의 `revokedAt` + **해당 범위 로컬 자료 정리(위 삭제 범위 그대로)** + 연결 해제를 함께 커밋. 그래서 외부 삭제가 남아 있어도 그 범위 자료는 조회 · 집계 · 분석에 쓰이지 않는다. 재시도에는 회원 행의 connectedId 암호문과 기록의 업권만 쓴다. 검증 · 로컬 정리 실패는 접수하지 않는다(외부 호출 전 전부 되돌림).
+2. DB 트랜잭션 · 행 잠금 없이 CODEF 인증을 삭제한다. 목록을 다시 읽어 남은 대상만 지우고 다시 읽어 확인한다 → 타임아웃(성공 여부 불명) · 상태 저장 실패 · 일부 기관 실패 뒤의 재시도도 이미 지운 것은 다시 지우지 않는다. 목록 불완전 · 일부 실패 · 확인 안 됨 · 일반 오류는 완료로 보지 않는다(‘연결된 계정 없음’은 목록 API의 빈 전체 목록에만 허용).
+3. 외부 삭제 확인을 기록하고, 4. 완료를 기록한다(모든 조회 동의가 끝났으면 connectedId 암호문도 비움). 탈퇴는 4에서 회원을 삭제한다(auth.md).
+
+- 응답: 이번 요청에서 끝나면 200(기존과 같음). 남으면 **202** + 같은 `ConsentStates` 본문, 해당 항목 `deletionStatus`가 `processing`(다른 실행 중) · `retry_required`(같은 DELETE로 재시도). GET 목록에도 `deletionStatus`(null=삭제 없음 · 완료)가 있다. 화면은 이때 ‘철회함’ 대신 ‘삭제 처리 중 / 삭제 재시도 필요’와 [삭제 다시 시도]를 보인다.
+- 실행 권한(두 겹): ① 회원별 advisory lock(기존 CODEF 계정 잠금, 재처리는 기다리지 않고 건너뜀) — 살아 있는 실행이 있으면 다른 요청 · 명령은 외부 삭제를 시작하지 않는다. 프로세스가 죽으면 DB가 잠금을 바로 푼다. ② 실행 토큰 + 5분 만료 — 권한을 가져간 실행만 단계 · 실패 · 해제를 기록하므로, 만료 뒤 다른 실행이 이어받으면 늦게 끝난 앞 실행은 아무것도 덮지 않는다.
+- 화면 상태: 권한이 살아 있으면 `processing`, 실패했거나 권한이 만료됐으면(오류 기록 없이 프로세스가 죽은 경우 포함) `retry_required`.
+- 삭제 중 보호: 접수 순간 동의가 철회되고 연결이 끊겨 해당 범위 조회 · 동기화 · 늦은 저장은 기존 동의 · 연결 확인으로 막힌다. 미완료 삭제가 있는 범위의 재동의(POST)는 409 `privacy_deleting` — 은행 인증을 지우는 중이면 bank · loan 둘 다, 카드 인증이면 card. 그래서 오래된 재시도가 나중에 새로 연결한 인증수단을 지우지 않는다. 다른 범위는 그대로 쓴다.
+- 운영 재처리: `python manage.py privacy_deletion_retry [--limit N]` — 미완료이고 실행 권한이 비었거나 만료된 기록만, 중복 · 동시 실행 안전. 탈퇴 뒤 로그아웃된 회원은 이 명령으로만 이어진다. **자동 실행 스케줄은 아직 없다(수동 운영)**: 운영자가 실행하고, 출력의 '미완료' 줄(기록 ID · 범위 · 단계 · 오류 코드)을 보고 원인을 해결한 뒤 다시 실행한다. 스케줄(cron 등)을 붙이기 전까지 화면은 '자동 재시도'를 안내하지 않는다.
 
 CODEF 계약 근거: [공식 Python 계정 관리 예제](https://github.com/codef-io/codef-python). 실제 외부 삭제는 기능을 실행할 때만 호출하며 자동 테스트에서는 모의 응답을 쓴다.

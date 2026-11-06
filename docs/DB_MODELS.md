@@ -80,14 +80,14 @@
 | `chat_message.role` (`user` · `bot`) · `content_type` (`text` · `card`), `async_task.status` (`queued` · `running` · `succeeded` · `failed` · `canceled`, 기본 `queued`) | 결정 E |
 | `consent.product_scope` choices + CHECK — `bank` · `card` · `loan` (회원가입 동의는 비움) | 결정 L |
 | `reserve_plan` 표 · `budget_item` · `spending_allocation` · `payment_due`의 `reserve` 칸 — **1차 미사용** | 10-24 결정 AB: 비정기지출 준비금은 2차. 표 · 칸은 지우지 않고 비워 둔다 (`bucket` · `funding_bucket` · `obligation_type`의 `reserve` 값도 1차엔 안 씀) |
-| JSON 칸에 넣기로 한 것 (DB 변경 없음) | 거래 `field_states.original_transaction_type`(원래 이체였다는 표시, AA⑥) · 대출 `field_states`의 값마다 `source` · `confirmationStatus` · `confirmedAt`(AA②) |
+| JSON 칸에 넣기로 한 것 (DB 변경 없음) | 거래 `field_states.original_transaction_type`(원래 이체였다는 표시, AA⑥) · 대출 `field_states`의 값마다 `source` · `confirmationStatus` · `confirmedAt`(AA②) · 대출 `field_states.first_seen_on`(서비스가 대출을 처음 확인한 날 `YYYY-MM-DD`. 홈에서 처음 볼 때 첫 성공 기관 조회 시작 · 첫 납부 회차 생성 · 오늘 중 가장 이른 날로 한 번 저장하고 바꾸지 않음. 이 날보다 앞선 납부일은 새로 만들지 않는다. 조회마다 바뀌는 `fetched_at`은 쓰지 않음, 11/06 R05) |
 | 아직 안 바꾼 것 | `app_user.nickname` 필수(결정 X) — 기존 빈 닉네임 회원 정리 방법이 정해지면(auth.md '확인 필요') NOT NULL로. `consent.purpose` — 금융 동의 목적 코드가 아직 '확인 필요'(finance-connect.md) |
 
 ## 2. 테이블 → 앱 배치
 
 | 앱 | 테이블 (ERD 이름) | 모델 클래스 |
 |---|---|---|
-| `users` | app_user, financial_profile, category_priority, category_minimum, consent, idempotency_record | User, FinancialProfile, CategoryPriority, CategoryMinimum, Consent, IdempotencyRecord |
+| `users` | app_user, financial_profile, category_priority, category_minimum, consent, idempotency_record, privacy_deletion | User, FinancialProfile, CategoryPriority, CategoryMinimum, Consent, IdempotencyRecord, PrivacyDeletion |
 | `finance` | connection, bank_account, card, loan, sync_run | Connection, BankAccount, Card, Loan, SyncRun |
 | `finance` | financial_transaction, transaction_link | FinancialTransaction, TransactionLink |
 | `finance` | card_bill, card_bill_item, recurring_expense, recurring_saving, payment_due, payment_match | CardBill, CardBillItem, RecurringExpense, RecurringSaving, PaymentDue, PaymentMatch |
@@ -131,7 +131,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | connection | 같은 회원·업권·기관에서 '연결 중'이 2개 (해제 후 재연결은 OK), 업권 · 상태 오타, 해제인데 해제 시각 없음 / 연결 중인데 해제 시각 있음 — 10-24 |
 | bank_account | 계좌 종류가 demand·deposit·other 아님 (비우는 건 OK) — 10-24 |
 | card, loan | origin이 provider/manual 아님, 대출 status가 repaying/repaid 아님 |
-| loan | 상환 방식 코드 오타, 월 상환액 1원 미만 · 1억 초과, 납부일 1~31 밖, 직접 등록 잔액 1원 미만 · 10억 초과, 금리 0~30% 밖 (모두 비우는 건 OK) — 10-24 |
+| loan | 상환 방식 코드 오타, 월 상환액 1원 미만 · 1억 초과, 납부일 1~31 밖, 직접 등록 잔액 0원 미만 · 10억 초과(11/06 R19: 0원 허용으로 변경 — 등록은 serializer 에서 1원부터), 금리 0~30% 밖 (모두 비우는 건 OK) — 10-24 |
 | sync_run | 조회 대상(계좌·카드·대출) 2개 이상 |
 | financial_transaction | source_kind와 원천 FK 짝 안 맞음, 금액 음수, 취소액이 0~원거래 금액 밖, 신뢰도 0~1 밖, 방향 · 거래 유형 · 확인 상태 · 분류 출처 오타 — 10-24 |
 | transaction_link | 자기 자신과 연결, relation_type 오타 |
@@ -214,3 +214,41 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 ## 2026-11-05 동의 철회·탈퇴 삭제 처리
 
 스키마 변경 없이 `users/privacy.py`, `users/api_privacy.py`가 기존 모델의 삭제 범위를 관리한다. 동의 철회는 해당 범위의 조회 데이터와 자동 탐지 항목을 삭제하고 Consent의 revoked_at은 남긴다. 직접 등록 항목은 삭제 자료와의 FK·근거만 해제한다. 혼합 개인정보가 남는 예산·쿠션·주기·대화·작업·요청 응답 캐시는 초기화한다. 여러 모델을 함께 모아 RESTRICT 참조가 삭제 집합 안에 있는지 검증하며 범위 밖 참조가 있으면 트랜잭션을 중단한다. 탈퇴는 User CASCADE와 전체 세션 삭제를 사용한다. 상세 범위·실패·CODEF 인증 삭제는 api/auth.md와 api/finance-connect.md에 명시했다.
+
+## 2026-11-06 직접 등록 대출 정정 · 전체 완납 (R19) — `finance/0014_loan_manual_balance_zero`
+
+- CHECK `loan_manual_balance_1_1b` → `loan_manual_balance_0_1b` (0원 ~ 10억). 이유: 정정에서 잔액 0원(≠ 미입력 null)을 받아야 하고, 전체 완납 뒤 잔액을 0원으로 일관되게 표시한다. 직접 등록(POST)은 그대로 1원부터 받는다. 기존 행은 1원 이상이라 보정이 필요 없다.
+- 상태는 새로 만들지 않고 기존 `loan.status = repaid` 를 쓴다.
+- 완납 근거 · 복구값은 새 칸 없이 `loan.field_states.payoff` 에 둔다 (`first_seen_on` 과 같은 방식): `source: "user_report"`(CODEF 확인 아님) · `reportedAt`(처리 시각) · `reportedOn`(처리일 = 오늘) · `previous`(`status` · `manualBalance` · 그 값의 `fieldStates.manualBalance`) · `canceledDueIds`(이 처리로 취소한 미래 회차). 되돌리면 지우지 않고 `undoneAt` 을 덧붙인다. 다시 완납하면 새 기록으로 바뀐다(되돌리기 요청은 `reportedAt` 이 같아야 한다).
+- 동작 상세: `backend/finance/api_loans.py` `loan_payoff` · `loan_payoff_cancel`, 명세 `docs/api/loans.md` 13번.
+
+## 2026-11-06 삭제 진행 기록 (R21) — `users/0011_privacy_deletion`
+
+- `privacy_deletion` 표 추가: 동의 철회 · 회원 탈퇴 한 건 = 한 줄. 외부(CODEF) 인증 삭제와 우리 DB 삭제를 한 트랜잭션으로 되돌릴 수 없어서, 단계(`status`: `provider_pending` 접수 · 외부 삭제 대기 → `local_pending` 외부 삭제 확인 → `completed`)와 실패 단계 · 안전한 오류 코드 · 실행 횟수 · 실행 권한 만료(`lease_expires_at`) · 실행 토큰(`lease_token`) · 처리 시각을 남기고 재시도한다. 토큰을 가진 실행만 상태 · 실패 · 해제를 기록한다.
+- **회원 FK 없음** (`user_id` UUID 만): `purge_scope`(AsyncTask 등 삭제) · `user.delete`(CASCADE) 뒤에도 기록이 남아야 완료 · 실패를 추적할 수 있다.
+- 조건부 UNIQUE `privacy_deletion_one_open` (회원 · 범위, `status <> completed`): 같은 범위의 미완료 삭제는 하나만 → 반복 요청은 기존 기록을 재사용. `scope` 는 bank · card · loan · all(탈퇴).
+- `provider_kinds`: 접수 시점 동의로 정한 CODEF 업권 (null=전체, `[]`=외부 삭제 없음 — 계좌 · 대출 공유 은행 인증 보존).
+- 넣지 않는 것: 계좌번호 · 비밀번호 · connectedId(회원 행의 기존 AES-GCM 암호문을 그대로 쓴다) · 외부 응답 원문 · 예외 메시지.
+- 보존 · 정리: 완료 기록은 30일 보관 후 `python manage.py privacy_deletion_retry` 가 지운다. 미완료 기록은 완료될 때까지 남는다. 모든 조회 동의가 철회되고 삭제가 끝나면 회원의 connectedId 암호문 · 발급 시각을 비운다. 탈퇴는 회원 행과 함께 사라진다.
+- 동작 상세: `backend/users/deletion.py` 머리말.
+
+## 2026-11-06 작업 실행 권한 (R20) — `chat/0004_asynctask_lease_expires_at`, `finance/0013_syncrun_task`
+
+- `async_task.lease_expires_at` (null 허용): 이 시각까지만 작업이 새 조회를 시작하고 결과를 저장할 수 있다. 작업이 **자기** 조회를 시작하거나 저장할 때만 연장한다.
+- `sync_run.task_id` → `async_task` (null 허용, SET_NULL): 이 조회를 시킨 작업. 작업과 조회를 정확히 잇는 기존 칸이 없어 추가했다. 같은 회원이라는 이유만으로 다른 조회가 멈춘 작업을 연장하던 문제를 막는다. 철회 때 작업 행은 지워져도 조회 기록(조회 범위 근거)은 남아야 해서 CASCADE 가 아니라 SET_NULL.
+- 필드 추가 전 기록(보수적 기준): `lease_expires_at` 이 비면 시작 시각(없으면 생성 시각) + 10분까지만 유효하고 연장하지 않는다. `task_id` 가 빈 조회는 어떤 작업도 연장하지 않는다. 일괄 보정은 하지 않는다 — 다음 새 작업 시작 · 철회 · 탈퇴 때 회원별로 정리된다.
+- 동작 상세: `backend/config/tasks.py` 머리말.
+
+## 2026-11-06 급여 판단 (R12, budgets/0006)
+
+- `salary_decision`: 입금 거래 1:1(CASCADE) · 회원 · `pay_cycle_on`(귀속 급여 회차 = 주기 시작일, 거절이면 null) · `state`(`confirmed` 사용자 확인 / `auto` 자동 인정 / `rejected` 사용자 거절 / `recheck` 재확인 필요 — 11/06 budgets/0007: 자동 인정 거래가 취소 · 모호해졌을 때 다른 거래로 몰래 갈아 붙이지 않고 그 회차를 사용자 확인 전까지 멈추려고 상태만 추가) · `is_pattern`(자동 인식 기준, 회원당 하나 — 조건부 UNIQUE) · `decided_at`.
+- CHECK: state 값 · 거절 ↔ 회차 비움 · 기준은 사용자 확인만. 인덱스 (회원, 회차).
+- 도입 이유: 처음 찾은 큰 입금을 사용자 확인 없이 급여로 인정해 환급 · 송금을 오인했다. 후보와 인정을 나누고, 사람의 판단(확인 · 거절)을 재조회 · 재처리가 덮지 않게 저장해야 했다. 거래당 한 줄이라 한 거래가 여러 회차에 붙거나 동시 요청으로 두 번 더해지지 않는다. 회차는 `budget_cycle` FK 대신 날짜로 둔다 — 조기 급여의 다음 회차 주기는 아직 없고, 주기를 미리 만들면 예산 주기를 앞당기게 된다.
+- `budget_cycle.confirmed_income`은 이 표의 인정 합계로 채운다. 기존 값은 일괄 보정하지 않는다(상세: api/salary.md '기존 자료').
+- `finance/0013_syncrun_task`(작업 중 다른 변경)에 의존한다.
+
+### 사용자 확정 기준값 (budgets/0008, 2026-11-06)
+
+`salary_decision`에 nullable `snapshot_amount`(bigint), `snapshot_occurred_on`(date), `snapshot_description`(varchar 500), `snapshot_account_id`(UUID, 당시 계좌 값이므로 FK 아님)를 추가한다. 사용자 확인 시에만 원거래 값을 저장한다. 금액·거래일·적요 원문·계좌 UUID가 달라지거나 기준값이 없으면 `recheck`로 전환하고 `is_pattern`을 해제한다. 변경 없는 확정은 유지한다. 재확인 전까지 인정 합계에서 제외하며 과거 기준값과 `decided_at`은 보존한다.
+
+기존 확정 기록에는 기준값을 채우지 않는다. 데이터 마이그레이션은 기존 `confirmed`를 `recheck`로 바꾸고 자동 인식 기준과 영향 회차의 `confirmed_income` 캐시를 비운다. 개발/운영 DB 적용은 별도이며, 회귀 테스트는 전용 테스트 DB에서 수행한다. 상세 조회 계약은 [api/salary.md](api/salary.md)의 '사용자 확정 유효성' 참고.

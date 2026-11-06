@@ -1,16 +1,23 @@
 """CODEF 은행 조회 결과를 저장한다. 금융 원문은 출력하지 않는다."""
 import hashlib
+from datetime import datetime
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from config import tasks
 from users.models import Consent
 
 from . import codef
 from .models import BankAccount, Connection, FinancialTransaction, SyncRun
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
+
+
+# bank_account.field_states: 이 계좌 값(잔액 · 계좌명 · 종류)을 저장한 조회의 시작 시각 (sync_cards 청구서와 같은 방식)
+# shortcut: 기관 자료 기준 시각이 아니라 요청 시작 시각이다 — 기관이 기준 시각을 주면 그 값으로
+STARTED_AT = "codefStartedAt"
 
 
 class BankConsentRequired(PermissionError):
@@ -42,11 +49,12 @@ def _mask_account_numbers(value, account_numbers):
     return value
 
 
-def sync_bank(user, connected_id, org, start, end, *, connection_id=None, require_consent=False):
+def sync_bank(user, connected_id, org, start, end, *, connection_id=None, require_consent=False, task_id=None):
     """은행 계좌 · 거래 저장.
     - connection_id: 이 연결에만 저장한다. 해제됐으면 새 연결을 만들지 않고 BankConnectionGone (다시 불러오기 · 새 연결 API)
       없으면 기존처럼 활성 연결을 찾거나 만든다 (개발용 codef_sync 명령)
-    - require_consent: 외부 조회 전과 저장 트랜잭션 안에서 은행 조회 동의를 확인한다 (조회 중 철회되면 저장 안 함)"""
+    - require_consent: 외부 조회 전과 저장 트랜잭션 안에서 은행 조회 동의를 확인한다 (조회 중 철회되면 저장 안 함)
+    - task_id: 이 조회를 시킨 작업. 저장 직전에 작업이 아직 진행 중인지 본다 (만료된 작업의 늦은 결과는 버림, config/tasks.py)"""
     if not connected_id:
         raise ValueError("CODEF 연결 ID가 필요해요.")
     if start > end:
@@ -67,9 +75,9 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                 raise BankConnectionGone("연결이 해제되어 불러오지 않았어요.")
         if require_consent:
             _check_bank_consent(user, connection)
-        run = SyncRun.objects.create(
-            user=user, connection=connection, product_code="bank_sync",
-            requested_from=start, requested_to=end, status="running",
+        # 작업이 지금 유효할 때만 조회 기록을 만들고 작업을 연장한다 (config/tasks.py start_run)
+        run = tasks.start_run(
+            user, task_id, connection=connection, product_code="bank_sync", requested_from=start, requested_to=end,
         )
 
     try:
@@ -97,6 +105,7 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                 raise ValueError("조회 중 연결이 해제되어 저장하지 않았어요.")
             if require_consent:  # 조회 중 동의를 철회했으면 저장하지 않는다 (회원 행을 잠근 뒤라 동의 저장과 순서가 맞음)
                 _check_bank_consent(user, connection)
+            tasks.claim_run(run, task_id)  # 유효 기간 · 작업 상태 (철회 · 탈퇴 · 만료 뒤 늦은 응답은 여기서 막힘)
             new_ids = []
             existing_count = 0
             saved_accounts = []
@@ -113,13 +122,20 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                 except BankAccount.DoesNotExist:
                     account = BankAccount.objects.create(user=user, connection=connection, source_account_key=key)
                 account.connection = connection
+                saved_at = account.field_states.get(STARTED_AT)
+                if saved_at and datetime.fromisoformat(saved_at) > run.started_at:
+                    # 더 늦게 시작한 조회가 이미 저장한 계좌 값은 덮지 않는다 (fetched_at 도 그대로). 거래는 아래에서 그대로 저장
+                    account.save(update_fields=["connection"])
+                    saved_accounts.append((account, rows))
+                    continue
                 account.source_account_ref_ciphertext = None
                 account.masked_number = codef.mask(number)
                 account.name = _mask_account_numbers(data["name"], account_numbers)
                 account.balance = data["balance"]
                 # 11 외의 예금 코드 매핑은 팀 확인 뒤 추가한다.
                 account.account_type = "demand" if data["kind_code"] == "11" else "other"
-                account.field_states = {**account.field_states, "codef_deposit_code": data["kind_code"]}
+                account.field_states = {**account.field_states, "codef_deposit_code": data["kind_code"],
+                                        STARTED_AT: run.started_at.isoformat()}
                 account.fetched_at = timezone.now()
                 account.save(update_fields=[
                     "connection",
@@ -146,6 +162,14 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                     }
                     for field in ("source_description", "source_detail"):
                         defaults[field] = _mask_account_numbers(row.get(field), account_numbers)
+                    key = row["source_key"]
+                    if not FinancialTransaction.objects.filter(account=account, source_key=key).exists():
+                        # R08: 방향 없는 예전 키(새 키의 끝)로 저장된 '같은 방향' 거래는 ID · 분류 · 연결을 두고 키만 옮긴다.
+                        # 예전 키가 같아도 반대 방향 거래는 다른 거래라 건드리지 않는다 (아래에서 새로 만든다)
+                        FinancialTransaction.objects.filter(
+                            account=account, source_kind="bank", source_key=key.rsplit(":", 1)[-1],
+                            direction=row["direction"],
+                        ).update(source_key=key)
                     tx, created = FinancialTransaction.objects.get_or_create(
                         account=account, source_key=row["source_key"], defaults=defaults,
                     )
@@ -163,10 +187,11 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
             run.save(update_fields=["status", "business_code", "covered_from", "covered_to", "completed_at"])
     except Exception as exc:
         # 금융 정보가 섞일 수 있는 메시지 대신 오류 코드만 남긴다.
-        SyncRun.objects.filter(pk=run.pk).update(
-            status="failed", completed_at=timezone.now(),
+        tasks.finish_run(
+            run.pk, status="failed",
             business_code=exc.code if isinstance(exc, codef.CodefError) else None,
-            error_code="provider_error" if isinstance(exc, codef.CodefError) else "sync_error",
+            error_code="provider_error" if isinstance(exc, codef.CodefError)
+            else exc.code if isinstance(exc, (codef.BankDataError, tasks.WorkExpired)) else "sync_error",
         )
         raise
 

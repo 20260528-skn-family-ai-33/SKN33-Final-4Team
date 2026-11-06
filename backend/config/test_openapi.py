@@ -48,7 +48,7 @@ class OpenAPIContractTests(SimpleTestCase):
         super().setUpClass()
         cls.contract = build_contract()
 
-    def test_contract_covers_the_49_operations_in_the_source_manifest(self):
+    def test_contract_covers_the_60_operations_in_the_source_manifest(self):
         manifest = (ROOT / "docs/api/README.md").read_text(encoding="utf-8")
         section = manifest.split("## 1. 한눈에 보기", 1)[1].split("## 2.", 1)[0]
         entries = re.findall(r"`(GET|POST|PUT|PATCH|DELETE)\s+(/api/[^`]+)`", section)
@@ -56,10 +56,10 @@ class OpenAPIContractTests(SimpleTestCase):
         operations = list(operation_items(self.contract))
         actual = {(method, normalized_path(path)) for path, method, _ in operations}
 
-        self.assertEqual(len(entries), 49)
-        self.assertEqual(len(operations), 49)
+        self.assertEqual(len(entries), 60)
+        self.assertEqual(len(operations), 60)
         self.assertSetEqual(actual, expected)
-        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 49)
+        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 60)
         self.assertEqual(len({tag for _, _, op in operations for tag in op["tags"]}), 10)
         for path, method, operation in operations:
             with self.subTest(path=path, method=method):
@@ -70,7 +70,7 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 48, "mock": 1})
+        self.assertEqual(Counter(states.values()), {"implemented": 59, "mock": 1})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("post", "/api/auth/login/")], "implemented")
         self.assertEqual(states[("put", "/api/finance/connect/accounts/")], "implemented")
@@ -89,6 +89,11 @@ class OpenAPIContractTests(SimpleTestCase):
             ("get", "/api/finance/connect/cards/"), ("put", "/api/finance/connect/cards/"),
             ("get", "/api/finance/card-bills/{id}/"), ("get", "/api/finance/loans/"),
             ("post", "/api/finance/loans/"), ("patch", "/api/finance/loans/{id}/"),
+            ("get", "/api/finance/loan-dues/{id}/payments/"), ("post", "/api/finance/loan-dues/{id}/payments/"),
+            ("delete", "/api/finance/loan-dues/{id}/payments/{transactionId}/"),
+            ("get", "/api/finance/card-bills/{id}/payments/"), ("post", "/api/finance/card-bills/{id}/payments/"),
+            ("delete", "/api/finance/card-bills/{id}/payments/{transactionId}/"),
+            ("put", "/api/finance/card-bills/{id}/payment-check/"), ("delete", "/api/finance/card-bills/{id}/payment-check/"),
         }:
             self.assertEqual(states[operation], "implemented")
         for (method, path), state in states.items():
@@ -97,13 +102,15 @@ class OpenAPIContractTests(SimpleTestCase):
                     self.assertEqual(state, "implemented")
 
     def test_session_csrf_and_request_number_contracts(self):
-        public = {"/api/csrf/", "/api/auth/signup/", "/api/auth/login/", "/api/auth/logout/"}
+        public = {"/api/csrf/", "/api/auth/signup/", "/api/auth/login/", "/api/auth/logout/", "/api/consent-documents/"}
         # README의 요청 번호 적용 목록. PUT/PATCH/DELETE와 로그인 전 가입은 포함하지 않는다.
         idempotent = {
             "/api/finance/consents/", "/api/finance/loans/", "/api/chat/messages/",
             "/api/budgets/recommend/", "/api/budgets/{id}/approve/",
             "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
             "/api/budgets/savings/", "/api/budgets/savings/confirm/", "/api/budgets/savings/ignore/",
+            "/api/finance/loan-dues/{id}/payments/", "/api/finance/card-bills/{id}/payments/",
+            "/api/finance/loans/{id}/payoff/", "/api/finance/loans/{id}/payoff/cancel/",
         }
         scheme = self.contract["components"]["securitySchemes"]["sessionAuth"]
         self.assertEqual((scheme["type"], scheme["in"], scheme["name"]), ("apiKey", "cookie", "sessionid"))
@@ -173,7 +180,7 @@ class OpenAPIContractTests(SimpleTestCase):
         actual = {(method, path) for path, method, _ in operation_items(runtime)}
         # 새 연결·다시 불러오기·작업 확인을 포함한 구현된 API만 실행 화면에 둔다
         self.assertSetEqual(actual, implemented)
-        self.assertEqual(len(actual), 48)
+        self.assertEqual(len(actual), 59)
         self.assertEqual(runtime["security"], [])
         for path, method, operation in operation_items(runtime):
             with self.subTest(path=path, method=method):
@@ -221,7 +228,7 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 48개")
+                self.assertContains(response, "구현 59개")
                 self.assertContains(response, "목업 1개")
                 self.assertContains(response, "미구현 0개")
                 self.assertContains(response, "/api/docs/runtime/")
