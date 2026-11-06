@@ -143,6 +143,19 @@ def _validate_items(items, month, seen):
                 raise ValueError('invalid_spending_funding')
 
 
+def transaction_identity(item, month, content_counts):
+    """Keep user reinclusion IDs stable when a shadow calculation assumes another category."""
+    if item.get('transaction_id') is not None:
+        return str(item['transaction_id'])
+    key = item.get('merchant_key')
+    key = key.strip().casefold() if key else None
+    content = json.dumps([month, item['category'], item['net_amount'], key,
+                          str(item['occurred_on'])], ensure_ascii=False)
+    occurrence = content_counts.get(content, 0)
+    content_counts[content] = occurrence + 1
+    return json.dumps([content, occurrence], ensure_ascii=False)
+
+
 def summarize_history(months, *, as_of, baseline='one_off_adjusted', user_reincluded_one_offs=(),
                       one_off_decisions=None):
     """Unknown coverage/normalization blocks comparison; missing finances only blocks index.
@@ -209,14 +222,7 @@ def summarize_history(months, *, as_of, baseline='one_off_adjusted', user_reincl
                     if key is not None and not isinstance(key, str):
                         raise ValueError('invalid_merchant_key')
                     key = key.strip().casefold() if key else None
-                    if item.get('transaction_id') is not None:
-                        identity = str(item['transaction_id'])
-                    else:
-                        content = json.dumps([month, item['category'], item['net_amount'], key,
-                                              str(item['occurred_on'])], ensure_ascii=False)
-                        occurrence = content_counts.get(content, 0)
-                        content_counts[content] = occurrence + 1
-                        identity = json.dumps([content, occurrence], ensure_ascii=False)
+                    identity = transaction_identity(item, month, content_counts)
                     transactions.append({'id': 'oneoff_' + sha256(identity.encode()).hexdigest(),
                         'month': month, 'category': item['category'], 'amount': item['net_amount'], 'merchant_key': key})
         if 'monthly_totals' in record:

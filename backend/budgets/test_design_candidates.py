@@ -52,7 +52,7 @@ class DesignTests(SimpleTestCase):
         plain = build_candidates(data, ratios)
         out = build_candidates(data, ratios, reality_profile={'has_vehicle': False})
         self.assertLess(plain['candidates'][0]['result']['allocations']['TRANSPORT_CAR'],55000)
-        self.assertEqual(out['candidates'][0]['result']['allocations']['TRANSPORT_CAR'],55000)
+        self.assertEqual(out['candidates'][0]['result']['allocations']['TRANSPORT_CAR'],60000)
         self.assertIn('TRANSPORT_CAR',out['floor_applied'])
         self.assertEqual(data,before)
         for candidate in out['candidates']:
@@ -71,14 +71,25 @@ class DesignTests(SimpleTestCase):
         out = build_candidates(data,self.ratios,reality_profile={'has_vehicle':False})
         self.assertEqual(out['status'],'needs_upper_allocation_review')
         self.assertEqual(out['reason'],'system_floor_unaffordable')
-        self.assertEqual(out['shortfall'],5000)
+        self.assertEqual(out['shortfall'],10000)
         self.assertIsNone(out['result'])
+
+    def test_vehicle_floor_respects_minimum_lock_and_input(self):
+        for minimums, locks, expected in (({}, {}, 100000), ({'TRANSPORT_CAR': 120000}, {}, 120000),
+                                           ({}, {'TRANSPORT_CAR': 20000}, 20000)):
+            with self.subTest(minimums=minimums, locks=locks):
+                data = inp(minimums=minimums, locks=locks)
+                before = deepcopy(data)
+                ratios = dict(self.ratios, TRANSPORT_CAR=0.001)
+                result = build_candidates(data, ratios, reality_profile={'has_vehicle': True})
+                self.assertEqual(result['candidates'][0]['result']['allocations']['TRANSPORT_CAR'], expected)
+                self.assertEqual(data, before)
 
     def test_floor_protects_donor_and_none_is_unchanged(self):
         data = inp(priorities=priorities('FOOD','EDUCATION','MEDICAL_HEALTH'))
         out = build_candidates(data,self.ratios,policy=limits(data,total=400000),reality_profile={'has_vehicle':False})
         for candidate in out['candidates']:
-            self.assertGreaterEqual(candidate['result']['allocations']['TRANSPORT_CAR'],55000)
+            self.assertGreaterEqual(candidate['result']['allocations']['TRANSPORT_CAR'],60000)
         self.assertEqual(build_candidates(data,self.ratios),build_candidates(data,self.ratios,reality_profile=None))
 
     def test_llm_replay_floor_protects_donor_and_input(self):
@@ -90,9 +101,9 @@ class DesignTests(SimpleTestCase):
         before = deepcopy((data, policy))
         result = apply_priority_decisions(data, self.ratios, policy=policy,
             decisions=[{'category': 'FOOD', 'action': 'increase'}], reality_profile={'has_vehicle': False})
-        self.assertEqual(result['allocations']['TRANSPORT_CAR'], 55000)
-        self.assertEqual(result['allocations']['FOOD'], 85000)
-        self.assertEqual(result['transfers'], [{'from': 'TRANSPORT_CAR', 'to': 'FOOD', 'amount': 5000}])
+        self.assertEqual(result['allocations']['TRANSPORT_CAR'], 60000)
+        self.assertEqual(result['allocations']['FOOD'], 80000)
+        self.assertEqual(result['transfers'], [])
         self.assertEqual(sum(result['allocations'].values()), 500000)
         self.assertEqual((data, policy), before)
 

@@ -3,6 +3,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from math import isfinite
 import os
+from pathlib import Path
 import queue
 import threading
 import tkinter as tk
@@ -152,7 +153,7 @@ class ComparisonWindow:
         frame.pack(fill='both', expand=True)
         ttk.Label(frame, text='같은 초기 생활비로 A · B 비교 — B는 부족 시 입력한 여윳돈에서 충당',
                   font=('맑은 고딕', 13, 'bold')).pack(anchor='w')
-        ttk.Label(frame, text='합성 조건만 입력하세요. 실제 예산에 저장하지 않습니다. 초기 한도·비율은 테스트 예시입니다.').pack(anchor='w', pady=(2, 8))
+        ttk.Label(frame, text='합성 입력 전용 · A 이동 한도는 생활비의 20%, A 항목별 입력은 미사용 · 만 원 우선·필요 시 5천 원, 잠금액 원액 유지').pack(anchor='w', pady=(2, 8))
         self.fields, self.rows = {}, {c: {} for c in CATEGORIES}
         for fields in ((('living', '총생활비(고정비 제외)'), ('etc', '기타 확보액'),
                         ('age', '나이(20~34세)'), ('sex', '성별'), ('car', '자차')),
@@ -381,13 +382,26 @@ class ComparisonWindow:
             self.table.insert('', 'end', values=('여윳돈 → 생활비', '—', '—', '—', '0',
                 f"{result['b'].get('spare_transfer', 0):,}", '—',
                 '—' if forecast is None else f"{forecast_result.get('spare_transfer', 0):,}"))
-            self.table.insert('', 'end', values=('남는 여윳돈', '—', '—', '—', '—',
+            self.table.insert('', 'end', values=('남는 여윳돈', '—', '—', '—',
+                '—' if a is None else f"{result.get('available_spare', 0) + result['a'].get('unallocated', 0):,}",
                 f"{result['b'].get('total_spare', result['b'].get('unallocated', 0)):,}", '—',
                 '—' if forecast is None else f"{forecast_result.get('total_spare', forecast_result['unallocated']):,}"))
         labels = {'proposed': '계산 완료', 'infeasible': '설정 충돌', 'needs_data': '이력 확인 필요',
                   'needs_policy': '정책 설정 필요', 'mixed': '소비 범위 확인 필요',
                   'needs_upper_allocation_review': '생활비 배분 재검토 필요', 'error': '실행 오류'}
         statuses, details = [], []
+        if a is not None and result['a'].get('engine', {}).get('candidates'):
+            base = result['a']['engine']['candidates'][0]['result']['allocations']
+            for code in CATEGORIES:
+                if a[code] != base[code]:
+                    details.append(f"A {CATEGORIES[code]}: 기본안 {base[code]:,}원 → 최종 {a[code]:,}원")
+            for transfer in result['a'].get('transfers', []):
+                details.append(f"A 이동(단위 조정 전): {CATEGORIES[transfer['from']]} → {CATEGORIES[transfer['to']]} {transfer['amount']:,}원")
+            for review in result['a'].get('reviews', []):
+                labels_zero = ', '.join(CATEGORIES[c] for c in review['reduced_categories'])
+                outcome = '이동 적용' if review['action'] == 'apply' else '기존 예산 유지'
+                zero = ' (0원 포함)' if review['zeroed_categories'] else ''
+                details.append(f"A 감액 재검토: {labels_zero}{zero} / {outcome}")
         if 'selection' in result:
             choice = result['selection']
             why = {'history_not_ready': '최근 3개월 이력 부족·미확인',
@@ -468,12 +482,37 @@ class ComparisonWindow:
         self.set_details('\n'.join(details))
 
 
+def prepare_environment():
+    # Read only the credentials and model locations needed by the local synthetic test.
+    from dotenv import dotenv_values
+    from django.conf import settings
+    from budgets.design_tracing import CONFIG_KEYS
+    allowed = set(CONFIG_KEYS) | {'OPENAI_API_KEY', 'LLM_MODEL', 'BUDGET_MODEL_PATH', 'BUDGET_INFERENCE_PYTHON'}
+    for path in (Path.cwd() / '.env', Path(__file__).resolve().parents[2] / '.env'):
+        if path.is_file():
+            for key, value in dotenv_values(path).items():
+                if key in allowed and value:
+                    os.environ.setdefault(key, value)
+    local = Path.cwd() / 'local_workspace'
+    python = local / ('.venv-budget-inference/Scripts/python.exe' if os.name == 'nt' else '.venv-budget-inference/bin/python')
+    model = local / 'models/living_expense_prediction/models/shallow/catboost_allocation/budget_allocation.joblib'
+    if python.is_file():
+        os.environ.setdefault('BUDGET_INFERENCE_PYTHON', str(python))
+    if model.is_file():
+        os.environ.setdefault('BUDGET_MODEL_PATH', str(model))
+    if not settings.configured:
+        settings.configure(SECRET_KEY='local-synthetic-simulator', AUTH_USER_MODEL='users.User',
+                           INSTALLED_APPS=['django.contrib.auth', 'django.contrib.contenttypes',
+                                           'users', 'budgets', 'finance', 'chat'],
+                           DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': ':memory:'}})
+    import django
+    django.setup()
+
+
 def main():
     root = tk.Tk()
     try:
-        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
-        import django
-        django.setup()
+        prepare_environment()
         ComparisonWindow(root)
     except Exception as error:
         messagebox.showerror('비교 창 실행 실패', f'실행 환경을 확인하세요: {type(error).__name__}', parent=root)

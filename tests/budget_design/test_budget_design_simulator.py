@@ -63,8 +63,8 @@ class SimulatorTests(unittest.TestCase):
         from budgets.test_design_explain import assert_ledger
         assert_ledger(self, result['selected']['explanations'], result['selected']['allocations'])
         self.assertTrue(all(not e['text'] or e['text'] in sim.describe(result) for e in result['selected']['explanations']))
-        self.assertEqual(result['selected']['allocations']['TRANSPORT_CAR'], 55000)
-        self.assertEqual(result['selected']['system_floors'], {'TRANSPORT_CAR': 55000})
+        self.assertEqual(result['selected']['allocations']['TRANSPORT_CAR'], 60000)
+        self.assertEqual(result['selected']['system_floors'], {'TRANSPORT_CAR': 60000})
         self.assertIsNone(result['selected']['fallback'])
 
     def test_system_floor_display_and_unaffordable(self):
@@ -72,7 +72,7 @@ class SimulatorTests(unittest.TestCase):
         form['rows']['TRANSPORT_CAR']['draft']='0'
         form['rows']['FOOD']['draft']='400000'
         out=sim.calculate(form)
-        self.assertEqual(out['engine']['system_floors'], {'TRANSPORT_CAR':55000})
+        self.assertEqual(out['engine']['system_floors'], {'TRANSPORT_CAR':60000})
         self.assertIn('TRANSPORT_CAR',out['engine']['floor_applied'])
         self.assertIn('시스템 하한',sim.describe(out))
         form['living']='100000'
@@ -81,7 +81,7 @@ class SimulatorTests(unittest.TestCase):
         form['rows']['FOOD']['draft']='50000'
         out=sim.calculate(form)
         self.assertEqual(out['engine']['reason'],'system_floor_unaffordable')
-        self.assertIn('5,000원',sim.describe(out))
+        self.assertIn('10,000원',sim.describe(out))
 
     def test_llm_skipped_on_conflict_and_disabled_by_default(self):
         sim.calculate(sim.example())
@@ -356,7 +356,8 @@ class SimulatorTests(unittest.TestCase):
         for row in form["rows"].values():
             row["draft"] = "0"
         out = sim.calculate(form)
-        self.assertEqual(sum(out["engine"]["candidates"][0]["result"]["allocations"].values()), 0)
+        self.assertEqual(out['engine']['reason'], 'system_floor_unaffordable')
+        self.assertEqual(out['engine']['shortfall'], 100000)
 
     def test_window_calculates_and_clears_stale_results_on_error(self):
         try:

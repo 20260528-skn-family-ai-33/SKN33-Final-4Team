@@ -3,6 +3,7 @@ from copy import deepcopy
 import os
 from pathlib import Path
 import queue
+import subprocess
 import sys
 import time
 import unittest
@@ -19,6 +20,17 @@ class FormTests(unittest.TestCase):
         os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'config.settings')
         import django
         django.setup()
+
+    def test_standalone_setup_works_without_project_env(self):
+        script_dir = str(Path(__file__).resolve().parents[2] / 'scripts/budget_design')
+        script = ('import sys; sys.path.insert(0, sys.argv[1]); '
+                  'import compare_window; compare_window.prepare_environment(); '
+                  'from budgets.design_service import initial_a_policy; print("ready")')
+        env = {k: v for k, v in os.environ.items() if k in ('PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP')}
+        result = subprocess.run([sys.executable, '-c', script, script_dir], cwd=script_dir,
+                                env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ready', result.stdout)
 
     def test_spare_is_explicit_nonnegative_and_not_inferred_from_income(self):
         form = gui.example_form()

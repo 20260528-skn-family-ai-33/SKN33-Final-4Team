@@ -137,7 +137,7 @@ def _surplus_budget(inp, response, values, active, floors):
     return {**response, 'status': 'proposed', 'result': result, 'allocations': start,
             'effective_input': deepcopy(inp), 'draft_amounts': values, 'draft_available': True,
             'surplus_policy': 'leave_as_free', 'unallocated': free, 'summary': summary,
-            'start_allocations': start, 'cuts': [], 'system_floors': floors,
+            'start_allocations': dict(start), 'cuts': [], 'system_floors': floors,
             'floor_ignored_locked': [c for c in floors if c in inp['locks']],
             'explanations': explanations, 'warnings': []}
 
@@ -208,6 +208,9 @@ def build_history_budget(inp, months, *, as_of, other_reserved=None,
     if history['status'] != 'ready':
         return {**response, 'reason': 'history_not_ready'}
 
+    if reality_profile is not None:
+        reality_profile = {**reality_profile, 'transport_history': history['categories']['TRANSPORT_CAR']['baseline_amount']}
+
     active = [c for c in CATEGORY_CODES if c not in ('TRAVEL_LODGING', 'HOUSING_TELECOM')]
     ml_floors = ml_cut_floors(history, ml_reference)
     response.update(ml_floors=ml_floors, ml_floor_status='applied' if ml_reference is not None else 'not_provided',
@@ -243,7 +246,8 @@ def build_history_budget(inp, months, *, as_of, other_reserved=None,
 
     locked_remainder_only = (engine is not None and engine['status'] == 'infeasible'
         and all(c['type'] == 'locks_mismatch_living' and c['difference'] < 0 for c in engine['result']['conflicts']))
-    if engine is not None and engine['status'] == 'infeasible' and not (gap > 0 and locked_remainder_only):
+    if engine is not None and engine['status'] == 'infeasible' and not (
+            inp['target'] > sum(values[c] for c in active) and locked_remainder_only):
         return {**response, 'status': 'infeasible', 'result': engine['result'],
                 'next_action': engine['next_action']}
 
@@ -254,14 +258,7 @@ def build_history_budget(inp, months, *, as_of, other_reserved=None,
                     allocation_gap_type=_gap_type(inp['target'] - allocation_history_total))
     scope_mixed = response['gap_type'] != response['allocation_gap_type']
     response['scope_state'] = 'mixed' if scope_mixed else 'aligned'
-    if unclassified and unclassified_share_limit is None:
-        return {**response, 'status': 'needs_policy', 'reason': 'unclassified_share_limit_required'}
-    if unclassified and share > Fraction(str(unclassified_share_limit)):
-        return {**response, 'status': 'needs_data', 'reason': 'unclassified_share_exceeds_limit',
-                'next_action': 'classify_transactions'}
-    if scope_mixed:
-        return {**response, 'status': 'mixed', 'reason': 'history_scope_mismatch',
-                'next_action': 'classify_transactions'}
+    # Unclassified spending remains in the audit; its share does not disable B.
     if ml_floors:
         guarded = deepcopy(inp)
         guarded['minimums'].update({c: max(inp['minimums'].get(c, 0), v)
@@ -271,7 +268,7 @@ def build_history_budget(inp, months, *, as_of, other_reserved=None,
             return {**response, 'status': 'needs_upper_allocation_review', 'reason': 'ml_floor_unaffordable',
                     'shortfall': required-inp['target'], 'allocations': None, 'result': None}
         engine = _base_engine(guarded, weights)
-    if gap > 0 and response['allocation_gap'] > 0:
+    if response['allocation_gap'] > 0:
         from budgets.design_reality import system_floors
         floors = system_floors(reality_profile) if reality_profile is not None else {}
         # The old capped-target output is opt-in comparison only, never the proposed budget.
@@ -390,6 +387,28 @@ def _spare_result(out, inp, available_spare, transfer):
 
 
 def build_priority_history_budget(inp, months, *, available_spare=0, **options):
+    """Recalculate candidate hypotheses, funding additions only from the existing remainder."""
+    from plan_b_candidates import adjust_from_candidates
+    out = _fund_priority_history_budget(inp, months, available_spare=available_spare, **options)
+    if out['status'] != 'proposed':
+        return out
+    funded = {**inp, 'target': out['funded_target']}
+
+    def recalculate(assumed):
+        trial_options = dict(options)
+        if trial_options.get('one_off_decisions') is not None:
+            history = summarize_history(assumed, as_of=options['as_of'],
+                baseline=options.get('baseline', 'one_off_adjusted'),
+                user_reincluded_one_offs=options.get('user_reincluded_one_offs', ()))
+            decisions = trial_options['one_off_decisions']
+            trial_options['one_off_decisions'] = {c['id']: decisions.get(c['id'], 'one_off')
+                                                for c in history['one_off_candidates']}
+        return _build_priority_history_budget(funded, assumed, **trial_options)
+
+    return adjust_from_candidates(funded, months, out, recalculate)
+
+
+def _fund_priority_history_budget(inp, months, *, available_spare=0, **options):
     """Try existing cuts first, then request only the shortage from explicit upstream spare."""
     if type(available_spare) is not int or available_spare < 0:
         raise ValueError('invalid_available_spare')
@@ -439,7 +458,25 @@ def _build_priority_history_budget(inp, months, *, as_of, shortfall_cut_rates,
         raise ValueError('invalid_user_protected')
     if baseline['status'] == 'proposed' and baseline.get('surplus_policy') == 'leave_as_free' and not baseline.get('settings_require_shortfall'):
         return {**baseline, 'variant': 'priority_order', 'split': 'proportional', 'user_protected': list(user_protected)}
-    if (baseline['status'] != 'proposed' or baseline['scope_state'] != 'aligned'
+    conflicts = (baseline.get('result') or {}).get('conflicts', [])
+    locked_remainder_only = (baseline['status'] == 'infeasible' and conflicts
+        and all(c['type'] == 'locks_mismatch_living' and c['difference'] < 0 for c in conflicts))
+    if inp['locks'] and (baseline['status'] == 'proposed' or locked_remainder_only):
+        # Initial B uses actual locked starting costs; legacy proportional tools keep their baseline.
+        from budgets.design_reality import system_floors
+        values = {c: row['baseline_amount'] for c, row in baseline['history']['categories'].items()}
+        if locked_remainder_only:
+            total = sum(values[c] for c in active)
+            baseline = {**baseline, 'allocation_history_total': total,
+                'allocation_gap': inp['target']-total, 'allocation_gap_type': _gap_type(inp['target']-total),
+                'scope_state': 'aligned' if baseline['gap_type'] == _gap_type(inp['target']-total) else 'mixed',
+                'next_action': None}
+        floors = system_floors({**reality_profile, 'transport_history': values['TRANSPORT_CAR']}) if reality_profile is not None else {}
+        surplus = _surplus_budget(inp, baseline, values, active, floors)
+        if surplus is not None:
+            return {**surplus, 'variant': 'priority_order', 'split': 'proportional',
+                    'user_protected': list(user_protected)}
+    if (baseline['status'] != 'proposed'
             or (baseline['allocation_gap_type'] not in ('shortfall', 'match')
                 and not baseline.get('settings_require_shortfall'))):
         return baseline
@@ -457,7 +494,7 @@ def _build_priority_history_budget(inp, months, *, as_of, shortfall_cut_rates,
     averages = {c: baseline['history']['categories'][c]['baseline_amount'] for c in CATEGORY_CODES}
     references = {c: baseline['history']['categories'][c]['average'] for c in CATEGORY_CODES}
     from budgets.design_reality import system_floors
-    floors = system_floors(reality_profile) if reality_profile is not None else {}
+    floors = system_floors({**reality_profile, 'transport_history': averages['TRANSPORT_CAR']}) if reality_profile is not None else {}
     starting_floors = floors if baseline.get('settings_require_shortfall') else {}
     ml_floors = baseline.get('ml_floors', {})
     raw_start, start = _starting_amounts(effective, averages, active, starting_floors, ml_floors)
@@ -468,7 +505,7 @@ def _build_priority_history_budget(inp, months, *, as_of, shortfall_cut_rates,
               'rounding_adjustments': [],
               'user_protected': list(user_protected), 'group_orders': deepcopy(group_orders),
               'reason_codes': deepcopy(reason_codes), 'order_source': source}
-    if sum(raw_start.values()) < effective['target']:
+    if sum(raw_start.values()) < effective['target'] and remaining <= 0:
         return {**output, 'status': 'needs_upper_allocation_review', 'reason': 'shortfall_start_below_target'}
     amounts = {c: int(v) for c, v in start.items()}
     cuts = []

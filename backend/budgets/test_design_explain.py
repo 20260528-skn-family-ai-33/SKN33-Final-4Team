@@ -180,9 +180,8 @@ class ExplainTests(SimpleTestCase):
         base = build_candidates(inp(target=500000), ratios, reality_profile={'has_vehicle': False})['candidates'][0]
         row = next(e for e in base['explanations'] if e['category'] == 'TRANSPORT_CAR')
         self.assertEqual(row['reference_amount'], 57500)
-        self.assertEqual(row['final_amount'], 55000)
-        self.assertIn(('rounding', -7500), [(c['code'], c['amount']) for c in row['causes']])
-        self.assertIn(('system_floor_raise', 5000), [(c['code'], c['amount']) for c in row['causes']])
+        self.assertEqual(row['final_amount'], 60000)
+        self.assertIn(('system_floor_raise', 2500), [(c['code'], c['amount']) for c in row['causes']])
         assert_ledger(self, base['explanations'], base['result']['allocations'])
 
     def test_minimum_consuming_budget_is_not_mislabeled_rounding(self):

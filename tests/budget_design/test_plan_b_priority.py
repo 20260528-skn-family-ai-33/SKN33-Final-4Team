@@ -100,7 +100,7 @@ class PriorityTests(unittest.TestCase):
                 for month,row in local.items():
                     row['items'].append(purchase(month,amount,'TRANSPORT_CAR'))
                 out = self.build(inp=data,months=local,rates=rates,reality_profile={'has_vehicle':False})
-                self.assertGreaterEqual(out['allocations']['TRANSPORT_CAR'],min(amount,55000))
+                self.assertGreaterEqual(out['allocations']['TRANSPORT_CAR'],min(amount,60000))
                 if amount == 30000:
                     self.assertEqual(out['allocations']['TRANSPORT_CAR'],30000)
 
@@ -271,13 +271,12 @@ class PriorityTests(unittest.TestCase):
         from budgets.test_design_explain import assert_ledger
         data,history,_,_,_ = scenario('surplus')
         out=self.build(inp=data,months=history,reality_profile={'has_vehicle':False})
-        self.assertEqual(out['allocations']['TRANSPORT_CAR'],55000)
-        self.assertEqual(out['unallocated'],145000)
+        self.assertEqual(out['allocations']['TRANSPORT_CAR'],0)
+        self.assertEqual(out['unallocated'],200000)
         assert_ledger(self,out['explanations'],out['allocations'])
         data['locks']={'TRANSPORT_CAR':12345}
         out=self.build(inp=data,months=history,reality_profile={'has_vehicle':False})
         self.assertEqual(out['allocations']['TRANSPORT_CAR'],12345)
-        self.assertIn('TRANSPORT_CAR',out['floor_ignored_locked'])
         self.assertEqual(out['unallocated'],187655)
 
     def test_surplus_floor_pushes_start_to_shortfall_without_breaking_floor(self):
@@ -285,11 +284,10 @@ class PriorityTests(unittest.TestCase):
         data['target']=1020000
         out=self.build(inp=data,months=history,reality_profile={'has_vehicle':False})
         self.assertEqual(out['status'],'proposed')
-        self.assertTrue(out['settings_require_shortfall'])
-        self.assertEqual(out['allocations']['TRANSPORT_CAR'],55000)
-        self.assertEqual(out['unallocated'],0)
-        self.assertEqual(sum(out['allocations'].values()),1020000)
-        self.assertEqual(sum(c['amount'] for c in out['cuts']),35000)
+        self.assertEqual(out['allocations']['TRANSPORT_CAR'],0)
+        self.assertEqual(out['unallocated'],20000)
+        self.assertEqual(sum(out['allocations'].values()),1000000)
+        self.assertEqual(out['cuts'],[])
 
     def test_surplus_all_locked_leaves_remainder(self):
         data,history,_,_,_=scenario('surplus')
@@ -299,10 +297,60 @@ class PriorityTests(unittest.TestCase):
         self.assertEqual(out['unallocated'],400000)
         self.assertEqual(sum(out['allocations'].values()),800000)
 
+    def test_lock_below_history_uses_actual_start_and_leaves_remainder(self):
+        months = fixture()
+        for month, row in months.items():
+            row['items'] = [purchase(month, 100000, 'FOOD'), purchase(month, 100000, 'EDUCATION')]
+        data = inputs(target=150000, locks={'EDUCATION': 10000})
+        before = deepcopy((data, months))
+        out = self.build(inp=data, months=months, available_spare=200000)
+        self.assertEqual(out['status'], 'proposed')
+        self.assertEqual(out['allocations']['FOOD'], 100000)
+        self.assertEqual(out['allocations']['EDUCATION'], 10000)
+        self.assertEqual(out['unallocated'], 40000)
+        self.assertEqual(out['spare_transfer'], 0)
+        self.assertEqual(out['gap_type'], 'shortfall')
+        self.assertEqual((data, months), before)
+        for target in (110000, 90000):
+            with self.subTest(target=target):
+                result = self.build(inp={**data, 'target': target}, months=months)
+                self.assertEqual(result['status'], 'proposed')
+                self.assertEqual(result['allocations']['EDUCATION'], 10000)
+                self.assertEqual(result['allocations']['FOOD'], target-10000)
+                self.assertEqual(result['unallocated'], 0)
+
+    def test_all_locked_below_history_keeps_remainder_even_with_historical_shortfall(self):
+        months = fixture()
+        active = [c for c in CATEGORY_CODES if c not in ('HOUSING_TELECOM', 'TRAVEL_LODGING')]
+        for month, row in months.items():
+            row['items'] = [purchase(month, 100000, c) for c in active]
+        data = inputs(target=500000, locks=dict.fromkeys(active, 50000))
+        out = self.build(inp=data, months=months)
+        self.assertEqual(out['status'], 'proposed')
+        self.assertEqual(out['unallocated'], 100000)
+        self.assertTrue(all(out['allocations'][c] == 50000 for c in active))
+        self.assertEqual(out['allocation_gap'], -300000)
+        self.assertEqual(out['scope_state'], 'aligned')
+        self.assertIsNone(out.get('next_action'))
+        self.assertEqual(out['result']['conflicts'], [])
+
+    def test_smaller_lock_and_rounding_excess_uses_existing_cut_path(self):
+        months = fixture()
+        for month, row in months.items():
+            row['items'] = [purchase(month, 100600, 'FOOD'), purchase(month, 100000, 'EDUCATION')]
+        data = inputs(target=110800, locks={'EDUCATION': 10000})
+        out = self.build(inp=data, months=months)
+        self.assertEqual(out['status'], 'proposed')
+        self.assertEqual(out['allocations']['EDUCATION'], 10000)
+        self.assertEqual(out['allocations']['FOOD'], 100800)
+        self.assertEqual(out['unallocated'], 0)
+
     def test_local_validator_rejects_bad_remainder_and_broken_protection(self):
         from plan_b_budget import check_result_with_unallocated
         from budgets.recommend import EngineCheckFailed
         data,history,_,_,_=scenario('surplus')
+        for month,row in history.items():
+            row['items'].append(purchase(month,60000,'TRANSPORT_CAR'))
         data['minimums']={'FOOD':400000}
         data['locks']={'EDUCATION':100000}
         out=self.build(inp=data,months=history,reality_profile={'has_vehicle':False})
@@ -310,13 +358,24 @@ class PriorityTests(unittest.TestCase):
         for free in (-1, True, 145001, 145000.0):
             with self.subTest(free=free),self.assertRaises(EngineCheckFailed):
                 check_result_with_unallocated(data,{**out['result'],'unallocated':free},floors=out['system_floors'])
-        for code,value in (('FOOD',399999),('EDUCATION',99999),('TRANSPORT_CAR',54999),('BEAUTY',-1)):
+        for code,value in (('FOOD',399999),('EDUCATION',99999),('TRANSPORT_CAR',59999),('BEAUTY',-1)):
             broken=deepcopy(out['result'])
             broken['unallocated']+=broken['allocations'][code]-value
             broken['allocations'][code]=value
             with self.subTest(code=code),self.assertRaises(EngineCheckFailed):
                 check_result_with_unallocated(data,broken,floors=out['system_floors'])
         self.assertEqual((data,out),before)
+
+    def test_transport_history_does_not_get_raised_and_car_floor_is_protected(self):
+        for vehicle, history_amount, expected in ((False, 30000, 30000), (True, 30000, 30000),
+                                                   (False, 80000, 60000), (True, 140000, 100000)):
+            with self.subTest(vehicle=vehicle, history=history_amount):
+                data, history, rates, _, _ = scenario()
+                for month, row in history.items():
+                    row['items'].append(purchase(month, history_amount, 'TRANSPORT_CAR'))
+                out = self.build(inp=data, months=history, rates=rates, reality_profile={'has_vehicle': vehicle})
+                self.assertEqual(out['system_floors']['TRANSPORT_CAR'], expected)
+                self.assertGreaterEqual(out['allocations']['TRANSPORT_CAR'], expected)
 
     def test_rule_order_growth_then_spike_then_code_and_null_last(self):
         data, history, _, _, _ = scenario()
@@ -407,7 +466,7 @@ class PriorityTests(unittest.TestCase):
             out = self.build(inp=data,months=history,rates=rates,user_protected=protected)
             if out['status'] != 'proposed':
                 continue
-            self.assertEqual(sum(out['allocations'].values()),data['target'])
+            self.assertEqual(sum(out['allocations'].values())+out['unallocated'],data['target'])
             from budgets.test_design_explain import assert_ledger
             assert_ledger(self, out['explanations'], out['allocations'])
             for code, amount in out['allocations'].items():

@@ -6,13 +6,14 @@ from .recommend import EngineCheckFailed
 
 # User decision: suppress small category adjustments, retaining the full ledger.
 ADJUSTMENT_NOTICE_THRESHOLD = 50_000
+PRIORITY_REDUCTION_NOTICE_PERCENT = 30
 
 CAUSE_CODES = frozenset((
     'shortfall_unranked_cut', 'shortfall_low_rank_cut', 'shortfall_top_rank_cut',
     'cut_limit_reached', 'priority_transfer_out', 'priority_transfer_in',
     'user_minimum_raise', 'system_floor_raise', 'system_floor_protected',
     'lock_fixed', 'user_protected', 'inactive_category', 'rounding', 'ml_base_ratio', 'constraint_redistribution',
-    'one_off_excluded', 'history_baseline',
+    'one_off_excluded', 'history_baseline', 'unclassified_candidate_adjustment',
 ))
 
 
@@ -20,6 +21,28 @@ def money(value):
     value = Fraction(value)
     rounded = int(abs(value) + Fraction(1, 2))
     return ('약 ' if value.denominator != 1 else '') + f'{rounded:,}'
+
+
+def priority_reduction_notices(explanations, allocations, priorities, locks, history, names):
+    """Compare the final displayed budget with a verified history baseline."""
+    if not isinstance(history, dict) or history.get('status') != 'ready':
+        return explanations
+    ranks = {r['category']: r['rank'] for r in priorities}
+    rows = history.get('categories', {})
+    for entry in explanations:
+        category = entry['category']
+        rank = ranks.get(category)
+        if rank not in (1, 2, 3) or category in locks or category not in rows:
+            continue
+        basis = Fraction(rows[category]['baseline_amount'])
+        final = allocations[category]
+        if basis <= 0 or final >= basis:
+            continue
+        if (basis - final) * 100 > basis * PRIORITY_REDUCTION_NOTICE_PERCENT:
+            entry['text'] = f"{names[category]}({rank}순위): 평소 기준보다 {money(basis - final)}원 줄었어요."
+        else:
+            entry['text'] = ''
+    return explanations
 
 
 def _conflict_text(category, final, causes, rank, stop_reason, names, reference_type, reference):

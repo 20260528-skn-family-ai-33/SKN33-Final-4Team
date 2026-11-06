@@ -12,13 +12,10 @@ from tkinter import ttk
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-CATEGORIES = {
-    "FOOD": "식비", "HOUSING_TELECOM": "주거·통신", "TRANSPORT_CAR": "교통·차량",
-    "HOUSEHOLD": "생활용품", "FASHION_SHOPPING": "패션·쇼핑", "MEDICAL_HEALTH": "의료·건강",
-    "BEAUTY": "뷰티·미용", "EDUCATION": "교육", "CULTURE_LEISURE": "문화·여가",
-    "TRAVEL_LODGING": "여행·숙박",
-}
+from inference import CATEGORIES, predict_ml
+
 FIELDS = {"rank": "순위", "draft": "입력 초안(원)", "minimum": "최소 금액",
           "lock": "잠금 금액", "rate": "증액률(%)", "increase": "증액 한도", "decrease": "감액 한도",
           "ceiling": "증액 중단 상한", "warning": "최소액 경고선"}
@@ -70,51 +67,6 @@ def example():
             } for code in CATEGORIES}}
 
 
-def predict_ml(profile):
-    """Keep CatBoost's pinned environment isolated; send amounts through stdin."""
-    default_python = ROOT / 'local_workspace/.venv-budget-inference' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
-    python = Path(os.environ.get('BUDGET_INFERENCE_PYTHON', str(default_python)))
-    worker = Path(__file__).with_name('predict_worker.py')
-    if not python.is_file():
-        raise ValueError(f"ML 실행 환경이 없습니다: {python}")
-    try:
-        process = subprocess.run(
-            [str(python), str(worker)], input=json.dumps(profile),
-            text=True, encoding='utf-8', capture_output=True, cwd=ROOT, timeout=30,
-            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
-        )
-    except subprocess.TimeoutExpired:
-        raise ValueError('ML 실행이 30초를 초과했습니다. 결과 없이 중단했습니다.') from None
-    except OSError:
-        raise ValueError('ML 실행 환경을 시작할 수 없습니다.') from None
-    if process.returncode:
-        raise ValueError('ML 실행에 실패했습니다. 모델 파일·체크섬·전용 환경을 확인하세요.')
-    try:
-        result = json.loads(process.stdout)
-        if (result['model_name'] != 'catboost_shallow'
-                or result['artifact_id'] != '20261026T074827Z_53769d64'
-                or result['living_budget_amount'] != profile['living_budget_amount']):
-            raise ValueError
-        for field in ('ratios', 'draft_amounts'):
-            values = result[field]
-            if (not isinstance(values, dict) or set(values) != set(CATEGORIES.values())
-                    or any(type(v) not in (int, float) or not math.isfinite(v) or v < 0
-                           for v in values.values())):
-                raise ValueError
-        if not math.isclose(sum(result['ratios'].values()), 1, rel_tol=0, abs_tol=1e-12):
-            raise ValueError
-        if not math.isclose(sum(result['draft_amounts'].values()), profile['living_budget_amount'],
-                            rel_tol=0, abs_tol=1e-6):
-            raise ValueError
-        for name in CATEGORIES.values():
-            if not math.isclose(result['draft_amounts'][name], result['ratios'][name] * profile['living_budget_amount'],
-                                rel_tol=0, abs_tol=1e-6):
-                raise ValueError
-        if any(type(result[key]) is not bool for key in ('used_fallback', 'negative_clipped')):
-            raise ValueError
-    except (ValueError, KeyError, TypeError, OverflowError):
-        raise ValueError('ML 응답의 모델·카테고리·금액 합계가 맞지 않습니다.') from None
-    return result
 
 
 def calculate(form, *, use_ml=False, use_llm=False):
@@ -225,7 +177,16 @@ def calculate(form, *, use_ml=False, use_llm=False):
             selected = {'candidate_id': chosen['candidate_id'], 'allocations': chosen['result']['allocations'],
                         'selection_source': 'rule', 'fallback': chosen['fallback'],
                         'explanations': chosen['explanations']}
-    return {"living": living, "etc": etc, "draft": draft, "engine": result,
+    display = None
+    if result['status'] == 'proposed':
+        from budgets.design_units import finalize_budget
+        def final(view):
+            return finalize_budget(data, {'status': 'proposed', 'engine': result,
+                'system_floors': result.get('system_floors', {}), **view}, policy=policy,
+                other_reserved=etc, other_locked=bool(form['etc_lock'].strip()))
+        candidates = [final({**c['result'], 'result': c['result'], 'explanations': c['explanations']}) for c in result['candidates']]
+        display = {'candidates': candidates, 'selected': final(selected)}
+    return {"living": living, "etc": etc, "draft": draft, "engine": result, 'display': display,
             "source": 'ml' if ml else 'ml_skipped' if use_ml else 'manual', "ml": ml,
             "selected": selected}
 
@@ -268,7 +229,7 @@ def describe(result):
         if warning["code"] in ("high_minimum", "minimum_above_ceiling"):
             label = "최소 요청액이 경고선을 초과" if warning["code"] == "high_minimum" else "최소 요청액이 증액 중단 상한을 초과"
             lines.append(f"안내: {CATEGORIES[warning['category']]} {label} ({warning['amount']:,}원 / 기준 {warning['reference']:,}원). 자동 감축하지 않습니다.")
-    selected = result.get('selected')
+    selected = (result.get('display') or {}).get('selected', result.get('selected'))
     if selected:
         lines.append(f"처리 결과: {selected['candidate_id']} / 방식: {selected['selection_source']}")
         lines.extend(e['text'] for e in selected.get('explanations', []) if e['text'])
@@ -287,7 +248,7 @@ class Simulator:
         frame = ttk.Frame(root, padding=14)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="ML 초안 → LLM 조정 판단 → 서버 도구 계산·검수 · 저장 없음", font=("맑은 고딕", 12, "bold")).pack(anchor="w")
-        ttk.Label(frame, text="초기 숫자는 테스트 예시입니다. 증액 목표 = 입력 초안 × 증액률(%), 천 원 단위 반올림. 금액 한도·재원이 부족하면 목표보다 적게 증액됩니다.").pack(anchor="w", pady=(4, 8))
+        ttk.Label(frame, text="초기 숫자는 테스트 예시입니다. 최종 예산은 만 원 우선·필요 시 5천 원 단위이며, 사용자 잠금액은 그대로 유지합니다.").pack(anchor="w", pady=(4, 8))
         top = ttk.Frame(frame)
         top.pack(fill="x")
         self.top = {}
@@ -447,13 +408,19 @@ class Simulator:
         self.clear()
         engine = result["engine"]
         report = describe(result)
+        display = result.get('display')
+        if display and (display['selected']['status'] != 'proposed' or any(c['status'] != 'proposed' for c in display['candidates'])):
+            self.show_error('금액 단위와 최소액·하한·조정 한도를 함께 지킬 수 없습니다. 생활비 또는 설정을 확인해 주세요.')
+            return
         if engine["status"] != "proposed":
             self.status.set("설정 충돌 — 결과를 생성하지 않았습니다.")
         else:
             self.status.set(("실제 ML · " if result["source"] == "ml" else "직접 입력 · " if result["source"] == "manual" else "ML 생략 · ") + "계산·검수 완료. 실제 예산에는 반영하지 않습니다.")
-            base = engine["candidates"][0]["result"]["allocations"]
-            adjusted = engine["candidates"][-1]["result"]["allocations"]
-            recommended = result['selected']['allocations']
+            base = display['candidates'][0]['allocations'] if display else engine["candidates"][0]["result"]["allocations"]
+            adjusted = display['candidates'][-1]['allocations'] if display else engine["candidates"][-1]["result"]["allocations"]
+            recommended = display['selected']['allocations'] if display else result['selected']['allocations']
+            if display:
+                report += f"\n최종 예산: 만 원 우선·필요 시 5천 원 / 배분 잔액: {display['selected']['unallocated']:,}원(여윳돈)"
             for code, name in CATEGORIES.items():
                 if code not in engine["active_categories"]:
                     name += " (제외)"
@@ -462,10 +429,12 @@ class Simulator:
                                                      f"{adjusted[code]:,}", f"{adjusted[code]-base[code]:+,}",
                                                      f"{recommended[code]:,}"))
             draft_total = '—' if result['source'] == 'ml_skipped' else f"{sum(result['draft'].values())+result['etc']:,.2f}"
+            base_total = sum(base.values()) + (display['candidates'][0]['other_reserved'] if display else result['etc'])
+            adjusted_total = sum(adjusted.values()) + (display['candidates'][-1]['other_reserved'] if display else result['etc'])
+            recommended_total = sum(recommended.values()) + (display['selected']['other_reserved'] if display else result['etc'])
             self.table.insert("", "end", values=("기타 포함 합계", draft_total,
-                                                 f"{sum(base.values())+result['etc']:,}",
-                                                 f"{sum(adjusted.values())+result['etc']:,}", "0",
-                                                 f"{sum(recommended.values())+result['etc']:,}"))
+                                                 f"{base_total:,}", f"{adjusted_total:,}",
+                                                 f"{adjusted_total-base_total:+,}", f"{recommended_total:,}"))
         self.details.configure(state="normal")
         self.details.insert("1.0", report)
         self.details.configure(state="disabled")

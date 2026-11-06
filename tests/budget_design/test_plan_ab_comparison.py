@@ -53,6 +53,28 @@ class ComparisonTests(unittest.TestCase):
         self.assertGreaterEqual(result['a']['allocations']['TRANSPORT_CAR'], 55_000)
         self.assertEqual(result['b']['allocations']['TRANSPORT_CAR'], 0)
 
+    def test_b_priority_cut_notice_uses_history_after_rounding(self):
+        from test_plan_b_history import purchase
+        case = runner.test_input()
+        case['input'].update(target=1000000, minimums={'TRANSPORT_CAR': 180000}, locks={},
+            priorities=[{'category': code, 'rank': rank} for rank, code in enumerate(
+                ('TRANSPORT_CAR', 'FASHION_SHOPPING', 'BEAUTY'), 1)])
+        amounts = {'FOOD': 555000, 'TRANSPORT_CAR': 181000, 'HOUSEHOLD': 23000,
+                   'FASHION_SHOPPING': 320000, 'MEDICAL_HEALTH': 10000,
+                   'BEAUTY': 65000, 'CULTURE_LEISURE': 23000}
+        for month, row in case['months'].items():
+            row['items'] = [purchase(month, amount, code) for code, amount in amounts.items()]
+        case['b_cut_rates'] = dict.fromkeys(runner.CATEGORIES, 50)
+        for code in ('FOOD', 'HOUSEHOLD', 'MEDICAL_HEALTH', 'CULTURE_LEISURE'):
+            case['b_cut_rates'][code] = 5
+        before = deepcopy(case)
+        result = runner.compare(case)['b']
+        self.assertEqual(result['status'], 'proposed')
+        self.assertLess(result['allocations']['BEAUTY'] * 100, 65000 * 70)
+        self.assertTrue(any('뷰티·미용(3순위): 평소 기준보다' in text for text in result['result']['reasons']))
+        self.assertEqual(sum(result['allocations'].values()) + result['unallocated'], 1000000)
+        self.assertEqual(case, before)
+
     def test_llm_flag_calls_both_and_keeps_protections(self):
         def finish(messages, category, key, timeout):
             return {'role': 'assistant', 'content': None, 'tool_calls': [{'id': 'synthetic',
@@ -70,6 +92,41 @@ class ComparisonTests(unittest.TestCase):
             self.assertEqual(out[name]['allocations']['EDUCATION'], 100_000)
             self.assertGreaterEqual(out[name]['allocations']['FOOD'], 350_000)
 
+    def test_llm_can_increase_all_three_priorities_without_using_full_limit_on_first(self):
+        case = runner.test_input()
+        case['input']['locks'].pop('EDUCATION', None)
+        def choose(messages, category, key, timeout):
+            action = 'apply' if 'review_adjustment_preview' in messages[-1]['content'] else 'increase_medium'
+            return {'role': 'assistant', 'content': None, 'tool_calls': [{'id': 'synthetic',
+                'type': 'function', 'function': {'name': 'adjust_budget',
+                'arguments': '{"category":"' + category + '","action":"' + action + '"}'}}]}
+        with patch('budgets.design_selection._request_action', side_effect=choose), \
+                patch('plan_b_llm._request_tool', return_value={'increased': []}):
+            out = runner.compare(case, use_llm=True)['a']
+        self.assertEqual(out['status'], 'proposed')
+        self.assertEqual(out['selection_source'], 'llm_tools')
+        base = out['engine']['candidates'][0]['result']['allocations']
+        for code in ('FOOD', 'EDUCATION', 'MEDICAL_HEALTH'):
+            self.assertGreater(out['allocations'][code], base[code])
+        total = sum(max(0, out['allocations'][c] - base[c]) for c in base)
+        self.assertLessEqual(total, case['input']['target'] * 20 // 100)
+
+    def test_synthetic_note_reaches_a_decision_context_only(self):
+        case = runner.test_input()
+        case['user_note'] = '합성: 다음 달 이사할 예정이에요'
+        seen = []
+        def finish(messages, category, key, timeout):
+            seen.append(messages[1]['content'])
+            return {'role': 'assistant', 'content': None, 'tool_calls': [{'id': 'synthetic',
+                'type': 'function', 'function': {'name': 'adjust_budget',
+                'arguments': '{"category":"' + category + '","action":"finish"}'}}]}
+        with patch('budgets.design_selection._request_action', side_effect=finish), \
+                patch('plan_b_llm._request_tool', return_value={'increased': []}):
+            out = runner.compare(case, use_llm=True)['a']
+        self.assertEqual(out['selection_source'], 'llm_tools')
+        self.assertIn(case['user_note'], seen[0])
+        self.assertNotIn(case['user_note'], str(out))
+
     def test_surplus_displays_budget_and_free_money(self):
         out = runner.compare(runner.test_input('surplus'))
         self.assertEqual(out['a']['status'], 'proposed')
@@ -80,6 +137,25 @@ class ComparisonTests(unittest.TestCase):
             runner.print_comparison(out)
         self.assertIn('B 여윳돈:', output.getvalue())
         self.assertIn('여윳돈으로 남겼어요', output.getvalue())
+
+    def test_final_a_b_amount_units_except_user_locks(self):
+        case = runner.test_input('surplus')
+        case['input']['locks']['EDUCATION'] = 12345
+        before = deepcopy(case)
+        out = runner.compare(case)
+        for name in ('a', 'b'):
+            result = out[name]
+            self.assertEqual(result['status'], 'proposed', result.get('reason'))
+            self.assertEqual(result['allocations']['EDUCATION'], 12345)
+            for code, amount in result['allocations'].items():
+                if code != 'EDUCATION':
+                    self.assertEqual(amount % 5000, 0)
+            self.assertEqual(sum(result['allocations'].values()) + result['other_reserved'] + result['total_spare'],
+                             case['input']['target'] + case['other_reserved'])
+            for e in result['explanations']:
+                self.assertEqual(e['final_amount'], result['allocations'][e['category']])
+                self.assertEqual(sum(c['amount'] for c in e['causes']), e['diff'])
+        self.assertEqual(case, before)
 
     def test_ml_failure_does_not_silently_disable_b_cut_floor(self):
         self.predict.side_effect = ValueError('private details')

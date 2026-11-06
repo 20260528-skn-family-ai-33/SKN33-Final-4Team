@@ -118,8 +118,8 @@ class BudgetTests(unittest.TestCase):
                              ('TRAVEL_LODGING', 'HOUSING_TELECOM', 'ETC', 'UNCLASSIFIED')]
             row['items'].append(purchase(month, 2_000_000, 'FOOD', 'fixed'))
         result = self.build(months=months, unclassified_share_limit=1)
-        self.assertEqual(result['status'], 'mixed')
-        self.assertIsNone(result['result'])
+        self.assertEqual(result['status'], 'proposed')
+        self.assertEqual(result['result']['allocations']['FOOD'], 600_000)
         self.assertNotIn('upper_allocation_proposal', result)
         self.assertEqual(result['history']['categories']['TRAVEL_LODGING']['average'], 1_000_000)
 
@@ -207,13 +207,9 @@ class BudgetTests(unittest.TestCase):
                 if category:
                     months['2026-10']['items'] = [purchase('2026-10', 500_000, category)]
                 result = self.build(months=months)
-                if category == 'UNCLASSIFIED':
-                    self.assertEqual(result['status'], 'needs_policy')
-                    self.assertIsNone(result['result'])
-                else:
-                    self.assertEqual(result['status'], 'proposed')
-                    self.assertEqual(sum(result['allocations'].values()), 0)
-                    self.assertEqual(result['unallocated'], 1_000_000)
+                self.assertEqual(result['status'], 'proposed')
+                self.assertEqual(sum(result['allocations'].values()), 0)
+                self.assertEqual(result['unallocated'], 1_000_000)
 
     def test_remaining_free_categories_without_history_are_not_guessed(self):
         months = fixture()
@@ -322,7 +318,7 @@ class BudgetTests(unittest.TestCase):
         result = self.build(inputs(minimums={'FOOD': 1}, minimum_reasons={'FOOD': '가' * 1000}))
         self.assertEqual(len(result['minimum_reasons']['FOOD']), 1000)
 
-    def test_review_reproduction_is_mixed_not_savings_surplus(self):
+    def test_scope_mismatch_remains_audit_only_not_a_b_blocker(self):
         data = fixture()
         for month, row in data.items():
             row['items'] = [purchase(month, 750_000), purchase(month, 200_000, 'UNCLASSIFIED'),
@@ -332,21 +328,20 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(out['gap'], -50_000)
         self.assertEqual(out['allocation_gap'], 150_000)
         self.assertEqual(out['unclassified_share'], Fraction(4, 19))
-        self.assertEqual(out['status'], 'mixed')
+        self.assertEqual(out['status'], 'proposed')
         self.assertEqual(out['scope_state'], 'mixed')
         self.assertNotIn('upper_allocation_proposal', out)
-        self.assertIsNone(out['experiment_capped_result'])
+        self.assertEqual(out['unallocated'], 150_000)
 
-    def test_unclassified_limit_is_explicit_and_boundary_is_inclusive(self):
+    def test_legacy_unclassified_limit_no_longer_disables_b(self):
         data = fixture()
         for month, row in data.items():
             row['items'] = [purchase(month, 800_000), purchase(month, 200_000, 'UNCLASSIFIED')]
         unconfigured = self.build(inputs(target=600_000), data)
-        self.assertEqual(unconfigured['status'], 'needs_policy')
-        self.assertEqual(unconfigured['reason'], 'unclassified_share_limit_required')
+        self.assertEqual(unconfigured['status'], 'proposed')
         blocked = self.build(inputs(target=600_000), data, unclassified_share_limit=0.19)
-        self.assertEqual(blocked['status'], 'needs_data')
-        self.assertEqual(blocked['next_action'], 'classify_transactions')
+        self.assertEqual(blocked['status'], 'proposed')
+        self.assertEqual(blocked['result']['allocations'], unconfigured['result']['allocations'])
         allowed = self.build(inputs(target=600_000), data, unclassified_share_limit=0.2)
         self.assertEqual(allowed['status'], 'proposed')
         self.assertEqual(allowed['unclassified_share'], Fraction(1, 5))
@@ -408,13 +403,13 @@ class BudgetTests(unittest.TestCase):
         self.assertEqual(trial['experiment_target'], 1_000_000)
         self.assertEqual(trial['rounding_remainder'], Fraction(1, 3))
 
-    def test_experiment_is_absent_when_unclassified_quality_gate_fails(self):
+    def test_legacy_unclassified_limit_does_not_block_opt_in_experiment(self):
         data = history_data()
         data['2026-10']['items'].append(purchase('2026-10', 300_000, 'UNCLASSIFIED'))
         out = self.build(inputs(target=1_500_000), data,
                          experiment_capped=True, unclassified_share_limit=0)
-        self.assertEqual(out['status'], 'needs_data')
-        self.assertIsNone(out['experiment_capped_result'])
+        self.assertEqual(out['status'], 'proposed')
+        self.assertIsNotNone(out['experiment_capped_result'])
 
     def test_invalid_scope_options_are_rejected(self):
         for options in ({'other_reserved': True}, {'other_reserved': -1},

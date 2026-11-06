@@ -1,6 +1,6 @@
 """Compare actual Plan A ML and Plan B history budgets on one synthetic user.
 
-Edit test_input(). --llm calls both agents (A up to three calls, B one).
+Edit test_input(). --llm calls both agents (A up to six calls including reviews, B one).
 No database writes, result files or production policy changes.
 """
 import argparse
@@ -13,6 +13,7 @@ import sys
 from time import perf_counter
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'backend'))
 
 from run_plan_b_test import synthetic_input
@@ -44,39 +45,50 @@ def test_input(case='shortfall'):
 
 
 def run_a(case, use_llm):
-    from budgets.design_candidates import build_candidates, ml_profile, select_candidate
+    from budgets.design_candidates import build_candidates, ml_profile
     from budgets.design_selection import choose_budget, MODEL
+    from budgets.design_units import finalize_budget
+    from budgets.design_service import initial_a_policy
     inp = case['input']
     ml = case.get('_ml')
     if ml is None:
         ml = predict_ml(ml_profile({**case['profile'], 'target': inp['target']}))
     ratios = {code: ml['ratios'][name] for code, name in CATEGORIES.items()}
     reality = {'has_vehicle': case['profile']['has_vehicle']}
-    engine = build_candidates(inp, ratios, policy=case['a_policy'], reality_profile=reality)
-    out = {'status': engine['status'], 'allocations': None, 'engine': engine,
+    from plan_b_history import summarize_history
+    history = summarize_history(case['months'], as_of=case['as_of'], baseline=case.get('baseline', 'one_off_adjusted'))
+    if history.get('status') == 'ready':
+        reality['transport_history'] = history['categories']['TRANSPORT_CAR']['baseline_amount']
+    policy = initial_a_policy(case['a_policy'], inp, case['other_reserved'])
+    engine = build_candidates(inp, ratios, policy=policy, reality_profile=reality)
+    out = {'status': engine['status'], 'allocations': None, 'engine': engine, 'history': history,
            'model': MODEL if use_llm else None, 'ml_artifact': ml['artifact_id']}
     if engine['status'] != 'proposed':
         return {**out, 'reason': engine.get('reason', engine['status'])}
     if use_llm:
         selected = choose_budget(inp, engine, ml_ratios=ratios, reality_profile=reality,
                                  living_budget=inp['target'] + case['other_reserved'],
-                                 other_reserved=case['other_reserved'])
+                                 other_reserved=case['other_reserved'], fallback_to_base=True,
+                                 user_note=case.get('user_note', ''), synthetic=True)
     else:
-        choice = select_candidate(inp, engine['candidates'])
+        choice = next(c for c in engine['candidates'] if c['id'] == 'base')
         selected = {'allocations': choice['result']['allocations'], 'selection_source': 'rule',
-                    'fallback': choice['fallback'], 'explanations': choice['explanations']}
-    return {**out, **selected}
+                    'fallback': None, 'explanations': choice['explanations']}
+    return finalize_budget(inp, {**out, **selected, 'system_floors': engine.get('system_floors', {})},
+                           policy=policy, other_reserved=case['other_reserved'])
 
 
 def run_b(case, use_llm):
     from plan_b_llm import design_history_budget
-    return design_history_budget(case['input'], case['months'], as_of=case['as_of'],
+    from budgets.design_units import finalize_budget
+    result = design_history_budget(case['input'], case['months'], as_of=case['as_of'],
         shortfall_cut_rates=case['b_cut_rates'], increase_threshold=case['increase_threshold'],
         other_reserved=case['other_reserved'], variant=case.get('b_variant', 'priority_increase_first'),
         baseline=case.get('baseline', 'one_off_adjusted'),
         user_reincluded_one_offs=case.get('user_reincluded_one_offs', ()),
         reality_profile={'has_vehicle': case['profile']['has_vehicle']}, allow_external=use_llm,
         ml_reference=case.get('ml_reference'), available_spare=case.get('available_spare', 0))
+    return finalize_budget(case['input'], result, b_cut_rates=case['b_cut_rates'], other_reserved=case['other_reserved'])
 
 
 def _prepare_ml(case):
@@ -148,7 +160,8 @@ def compare(case, *, use_llm=False):
 
 def run_forecast(case, use_llm=False):
     from plan_b_forecast import forecast_budget
-    return forecast_budget(case['input'], case['months'], as_of=case['as_of'],
+    from budgets.design_units import finalize_budget
+    result = forecast_budget(case['input'], case['months'], as_of=case['as_of'],
         target_month=case['target_month'], forecast_band=case.get('forecast_band'),
         user_note=case.get('user_note', ''), text_limit=case.get('forecast_text_limit', 120),
         shortfall_cut_rates=case['b_cut_rates'], other_reserved=case['other_reserved'],
@@ -156,6 +169,10 @@ def run_forecast(case, use_llm=False):
         reality_profile={'has_vehicle': case['profile']['has_vehicle']},
         allow_external=case.get('forecast_enabled', False), synthetic=True, ml_reference=case.get('ml_reference'),
         available_spare=case.get('available_spare', 0))
+    bounds = result.get('bounds', {}) if result.get('llm_status') == 'completed' else {}
+    return finalize_budget(case['input'], result, other_reserved=case['other_reserved'],
+        b_cut_rates=case['b_cut_rates'], lower_bounds={c: b['lower'] for c, b in bounds.items()},
+        upper_bounds={c: b['upper'] for c, b in bounds.items()})
 
 
 def print_comparison(out):

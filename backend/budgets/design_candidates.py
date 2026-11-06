@@ -124,7 +124,7 @@ def _policy(policy, receivers):
     rates = policy["increase_rates"]
     if (not isinstance(rates, dict) or set(rates) - set(CATEGORY_CODES)
             or set(receivers) - set(rates)
-            or any(type(v) not in (int, float) or not isfinite(v) or v < 0 for v in rates.values())):
+            or any(v is not None and (type(v) not in (int, float) or not isfinite(v) or v < 0) for v in rates.values())):
         raise ValueError("invalid_increase_rates")
     for name in ("increase_limits", "decrease_limits", "ceilings"):
         required = CATEGORY_CODES if name == "decrease_limits" else receivers
@@ -134,8 +134,6 @@ def _policy(policy, receivers):
 def _adjust(inp, base, order, active, policy, ml_amounts, *, enabled_receivers=None):
     receivers = [c for c in order[:3] if c in active and c not in inp["locks"]]
     _policy(policy, receivers)
-    if enabled_receivers is not None:
-        receivers = [c for c in receivers if c in enabled_receivers]
     amounts = base.copy()
     left = policy["total_limit"]
     donated = dict.fromkeys(CATEGORY_CODES, 0)
@@ -144,10 +142,24 @@ def _adjust(inp, base, order, active, policy, ml_amounts, *, enabled_receivers=N
     unranked = [c for c in CATEGORY_CODES if c not in ranks]
     low = list(reversed(order[3:]))
     # Within each tier, discretionary spending first; ties keep stable code/rank order.
-    ordinary = [c for group in (unranked, low) for discretionary in (True, False)
-                for c in group if (c in DISCRETIONARY) == discretionary]
-    for receiver in receivers:
-        raw = ml_amounts[receiver] * Fraction(str(policy["increase_rates"][receiver])) / 100
+    for index, receiver in enumerate(receivers):
+        if enabled_receivers is not None and receiver not in enabled_receivers:
+            continue
+        action = enabled_receivers.get(receiver, 'increase_large') if isinstance(enabled_receivers, dict) else 'increase_large'
+        balanced = action.endswith('_available')
+        ordinary = []
+        for group in (unranked, low):
+            for discretionary in (True, False):
+                eligible = [c for c in group if (c in DISCRETIONARY) == discretionary]
+                if balanced and group is unranked:
+                    eligible.sort(key=lambda c: max(0, min(base[c], amounts[c]) - inp['minimums'].get(c, 0)), reverse=True)
+                ordinary.extend(eligible)
+        rate = policy["increase_rates"][receiver]
+        if rate is None:
+            portions = {'increase_small': 1, 'increase_medium': 2, 'increase_large': 3}
+            raw = Fraction(left * portions[action.removesuffix('_available')], 3 * (len(receivers) - index))
+        else:
+            raw = ml_amounts[receiver] * Fraction(str(rate)) / 100
         # Round half up, not Python's ties-to-even; only the increase is rounded.
         targets[receiver] = int(raw / 1_000 + Fraction(1, 2)) * 1_000
         ceiling = max(policy["ceilings"][receiver], inp["minimums"].get(receiver, 0))
@@ -330,13 +342,16 @@ def apply_priority_decisions(inp, ratios, *, policy, decisions, reality_profile=
     receivers = [c for c in order[:3] if c in engine['active_categories'] and c not in inp['locks']]
     if not isinstance(decisions, list) or len(decisions) > len(receivers):
         raise ValueError('invalid_adjustment_decisions')
-    enabled = []
+    enabled = {}
     for code, decision in zip(receivers, decisions):
         if (not isinstance(decision, dict) or set(decision) != {'category', 'action'}
-                or decision['category'] != code or decision['action'] not in ('increase', 'keep')):
+                or decision['category'] != code or decision['action'] not in
+                (('increase_small', 'increase_medium', 'increase_large',
+                  'increase_small_available', 'increase_medium_available', 'increase_large_available', 'keep')
+                 if policy['increase_rates'][code] is None else ('increase', 'keep'))):
             raise ValueError('invalid_adjustment_decision')
-        if decision['action'] == 'increase':
-            enabled.append(code)
+        if decision['action'] != 'keep':
+            enabled[code] = decision['action']
     base = engine['candidates'][0]['result']
     weights = _weights(ratios)
     ml_amounts = {c: inp['target'] * weights[c] / sum(weights.values()) for c in CATEGORY_CODES}

@@ -391,7 +391,7 @@ class AdjustmentTests(unittest.TestCase):
         self.assertEqual(out['actions'][0]['reason'], 'index_unavailable')
         self.assertEqual(out['transfers'], [])
 
-    def test_preview_and_apply_forward_classification_gate_and_etc_reservation(self):
+    def test_preview_and_apply_keep_etc_without_legacy_classification_gate(self):
         data, history = inputs(target=600_000), months()
         for month, row in history.items():
             row['items'].append(purchase(month, 200_000, 'UNCLASSIFIED'))
@@ -404,8 +404,8 @@ class AdjustmentTests(unittest.TestCase):
         self.assertEqual(out['status'], 'proposed')
         self.assertEqual(out['etc_comparison']['reserved_amount'], 50_000)
         blocked = self.run_tools([action], data=data, history=history, unclassified_share_limit=0.1)
-        self.assertEqual(blocked['status'], 'needs_data')
-        self.assertEqual(blocked['actions'], [])
+        self.assertEqual(blocked['status'], 'proposed')
+        self.assertEqual(blocked['result']['allocations'], out['result']['allocations'])
 
 
 if __name__ == '__main__':

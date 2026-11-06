@@ -5,10 +5,18 @@ from .design_reality import system_floors, REALITY_FLOORS
 
 class RealityTests(SimpleTestCase):
     def test_profile_and_reference(self):
-        self.assertEqual(system_floors({'has_vehicle':False}), {'TRANSPORT_CAR':55000})
-        for value in (True,None,0):
+        self.assertEqual(system_floors({'has_vehicle':False}), {'TRANSPORT_CAR':60000})
+        self.assertEqual(system_floors({'has_vehicle':True}), {'TRANSPORT_CAR':100000})
+        for value in (None,0):
             self.assertEqual(system_floors({'has_vehicle':value}), {})
         self.assertIsNone(REALITY_FLOORS['FOOD']['amount'])
+
+    def test_history_protects_without_inflating(self):
+        for vehicle, limit in ((False, 60000), (True, 100000)):
+            for history in (0, 30000, 140000):
+                with self.subTest(vehicle=vehicle, history=history):
+                    floor = system_floors({'has_vehicle': vehicle, 'transport_history': history})
+                    self.assertEqual(floor.get('TRANSPORT_CAR', 0), min(history, limit))
 
     def test_reference_review_is_not_overdue(self):
         today = datetime.now(ZoneInfo('Asia/Seoul')).date()

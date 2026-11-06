@@ -70,6 +70,47 @@ class ForecastTests(unittest.TestCase):
         self.assertEqual(out['result']['reasons'], [e['text'] for e in out['explanations'] if e['text']])
         request.assert_called_once()
 
+    def test_context_carries_monthly_trend_priorities_and_missing_transaction_detail(self):
+        for month, value in zip(self.months, (250000, 300000, 350000)):
+            self.months[month]['monthly_totals']['FOOD'] = value
+        out, request = self.run_forecast(user_note='합성: 다음 달 모임이 있어요')
+        self.assertEqual(out['llm_status'], 'completed')
+        payload = request.call_args.args[2]
+        self.assertEqual(payload['categories']['FOOD']['monthly_amounts'], [250000, 300000, 350000])
+        self.assertEqual(payload['categories']['FOOD']['month_changes'], [50000, 50000])
+        self.assertEqual(payload['categories']['FOOD']['median'], 300000)
+        self.assertFalse(payload['transaction_detail_available'])
+        self.assertIsNone(payload['categories']['FOOD']['purchase_counts'])
+        self.assertEqual(payload['priorities'], self.inp['priorities'])
+        self.assertEqual(payload['untrusted_user_note']['text'], '합성: 다음 달 모임이 있어요')
+        self.assertNotIn('합성: 다음 달 모임이 있어요', str(out))
+
+    def test_priorities_and_minimum_reason_are_present_as_untrusted_context(self):
+        self.inp['minimum_reasons'] = {'FOOD': '합성: 업무상 외식이 필요해요'}
+        out, request = self.run_forecast()
+        self.assertEqual(out['llm_status'], 'completed')
+        payload = request.call_args.args[2]
+        self.assertEqual(payload['priorities'][0]['category'], 'FOOD')
+        self.assertEqual(payload['categories']['FOOD']['untrusted_minimum_reason'], '합성: 업무상 외식이 필요해요')
+        self.assertNotIn('합성: 업무상 외식이 필요해요', str(out))
+        self.assertGreaterEqual(out['allocations']['FOOD'], self.inp['minimums']['FOOD'])
+        self.assertEqual(out['allocations']['EDUCATION'], self.inp['locks']['EDUCATION'])
+
+    def test_valid_priority_proposal_can_differ_from_median(self):
+        def proposal(*args, **kwargs):
+            result = self.response(*args, **kwargs)
+            self.assertEqual(args[2]['priorities'][0]['category'], 'FOOD')
+            result['allocations']['FOOD'] = 340000
+            result['reasons']['FOOD']['code'] = 'priority_up'
+            return result
+        out, call = self.run_forecast(proposal)
+        self.assertEqual(out['llm_status'], 'completed')
+        self.assertEqual(out['allocations']['FOOD'], 340000)
+        self.assertNotEqual(out['allocations']['FOOD'], out['history']['categories']['FOOD']['median'])
+        self.assertEqual(out['allocations']['EDUCATION'], 50001)
+        self.assertEqual(sum(out['allocations'].values()) + out['unallocated'], self.inp['target'])
+        call.assert_called_once()
+
     def test_invalid_responses_retry_then_rule_fallback(self):
         mutations = {
             'outside_band': lambda p: p['allocations'].update(FOOD=900000),
