@@ -84,7 +84,7 @@ GET /api/home/
 | `mustPay` | 배열 | 이번 주기에 아직 안 나간 꼭 나갈 돈. 없으면 `[]` |
 | `mustPay[].dueId` | UUID | 납부 예정 ID |
 | `mustPay[].type` | 문자 | `recurring`(고정지출) · `card_bill`(카드 청구서) · `loan`(대출 상환) (10/22 결정 Q) |
-| `mustPay[].sourceId` | UUID | 원래 항목 ID. `recurring` = 고정지출 `recurringId`(누르면 고정지출 화면) · `card_bill` = 청구서 `billId`(누르면 카드 청구서 팝업, `GET /api/finance/card-bills/<id>/`) · `loan` = `loanId`(누르면 대출 확인 화면) |
+| `mustPay[].sourceId` | UUID | 원래 항목 ID. `recurring` = 고정지출 `recurringId`(누르면 고정지출 화면) · `card_bill` = 청구서 `billId`(누르면 카드 청구서 팝업, `GET /api/finance/card-bills/<id>/`) · `loan` = `loanId`(누르면 대출 확인 화면. 팝업의 [납부 거래 확인]은 `dueId`로 `GET /api/finance/loan-dues/<dueId>/payments/`, loans.md 12 · 11/06) |
 | `mustPay[].name` | 문자 | 표시 이름. 고정지출은 사용자가 붙인 이름 |
 | `mustPay[].dueDate` | 날짜 | 나갈 날 (그 달에 없는 날이면 말일) |
 | `mustPay[].amount` | 정수 | **아직 안 나간 금액** = 예정 금액 − 이미 낸 금액. 일부만 나갔으면 남은 금액 |

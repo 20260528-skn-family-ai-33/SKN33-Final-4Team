@@ -127,6 +127,7 @@
 | `paymentHistory[].principal` | 정수 또는 null | 해당 납부의 원금, 원. 대출 약정원금과 구분하며 미제공은 null |
 | `paymentHistory[].interest` | 정수 또는 null | 해당 납부의 이자, 원. 미제공은 null, 확인된 0원만 0 |
 | `estimatedMonthlyPayment` | 정수 또는 null | P: 확인된 지난 납부를 근거로 계산한 월 상환 추정액, 원. 자료가 없거나 산출할 수 없으면 null·화면 숨김. 사용자 저장값 `monthlyPayment`를 자동 덮어쓰지 않음 |
+| `recentDues` | 객체 배열 | 11/06: 홈 ‘꼭 나갈 돈’과 같은 범위(지난 주기 시작 ~ 이번 주기 끝)의 유효한 납부 회차, 납부일 순. `dueId`·`dueDate`·`expectedAmount`(예정액)·`paidAmount`(연결한 출금 합계)·`paymentState`. 다 낸 회차도 [납부 거래 확인]으로 다시 열어 정정할 수 있게. 급여 주기가 없으면 `[]` |
 | `overdue` | 불리언 또는 null | P: 연체 확인 true, 연체 없음 확인 false, 알 수 없으면 null·화면 숨김. `status: repaid`와 다른 뜻. DB `loan.overdue`(10/24 추가) |
 | `fieldStates` | 객체 | **AA 확정:** `manualBalance`·`manualRate`·`repaymentMethod`·`monthlyPayment`·`paymentDay` 각 보완값의 출처·사용자 확인 상태. DB JSON 전체를 그대로 노출하지 않고 아래 허용 항목만 구성 |
 | `fieldStates.<필드>.source` | 문자열 또는 null | `provider` 기관 조회 / `manual` 사용자 입력 / `estimated` 서버 추정. 값이 없거나 출처를 확인할 수 없으면 null |
@@ -409,6 +410,61 @@ ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `fiel
 | 비로그인 | 403 | `not_authenticated` | 로그인 화면으로 |
 | CSRF 실패 | 403 | `permission_denied` | 다시 시도 |
 | 서버 오류 | 500 | `server_error` | 등록 실패 안내 |
+
+## 12. 대출 납부 거래 확인 (11/06)
+
+홈 ‘꼭 나갈 돈’의 대출 항목 또는 대출 확인 화면의 회차에서 [납부 거래 확인]을 누르면, 저장된 내 계좌 출금 중 실제로 낸 거래를 골라 **이번 회차**를 확인한다. CODEF를 부르지 않고 저장된 거래만 본다.
+
+| 메서드 | 주소 | 하는 일 |
+|---|---|---|
+| GET | `/api/finance/loan-dues/<dueId>/payments/?from=&to=` | 회차 상태 · 연결한 출금(`linked`) · 고를 수 있는 출금 후보(`items`, 최대 50건) |
+| POST | 같은 주소 | 출금 연결 · 정정 `{ transactionId, settlement, confirmReclassify? }` (`Idempotency-Key` 선택) |
+| DELETE | `/api/finance/loan-dues/<dueId>/payments/<transactionId>/` | 연결 취소. 원래 분류를 모르는 거래는 본문 `{ restoreType: transfer\|spending, restoreCategory? }` 필수 |
+
+**판단 기준**
+
+- 후보: 내 계좌의 출금 · 오늘까지 · 취소 아님 · 남은 금액 > 0. **금액이 다르거나 적요에 기관 이름이 없어도 빼지 않는다.** 기본 기간은 납부일 ±7일(오늘까지), `from`·`to`로 최대 92일까지 넓힌다. 연결 계좌가 아닌 다른 내 계좌 출금도 나온다.
+- 후보에서 빼는 거래(고를 수도 없음, 400 `invalid`): 다른 회원 거래 · 취소 거래 · 내 계좌 이체(`own_transfer`, R11 확인 중 `own_transfer_review`·재확인 포함) · 저축 · 입금 · 고정지출/정기 저축의 근거 거래 · 내 계좌 이체 연결 거래 · 카드 승인과 같은 구매(`SAME_PURCHASE`)로 연결된 계좌 출금(11/06 보완. 그 연결·분류는 건드리지 않고, 풀어서 옮기지도 않음).
+- 이미 **다른** 납부 회차에 연결된 거래: 후보에 없음, POST하면 409 `not_ready` (조용히 옮기지 않음 — 그 회차에서 먼저 연결을 푼다).
+- 정렬(참고만): 연결 계좌 또는 전에 사용자가 이 대출로 확인한 계좌·적요 → 납부일 ±3일 → 날짜 차이 → 금액 차이. `hints`(`linkedAccount`·`nearDueDate`·`lenderInDescription`·`sameAsBefore`)와 `amountDifference`(실제 − 예정)는 화면 표시용이며 **자동 확정에 쓰지 않는다.**
+- `settlement: full` = “이번 납부를 전부 냈어요” → 금액과 관계없이 이 회차 `paid`. `partial` = “일부만 냈어요” → 금액 비율과 관계없이 `partial`. 한 회차에 여러 출금을 연결할 수 있고(분할 납부), `full`은 회차에 하나만(다른 출금을 `full`로 고르면 앞의 것은 `partial`로).
+- 대출의 `status`(repaid)·`monthlyPayment`·회차 예정액(`expectedAmount`)·승인 예산은 바꾸지 않는다.
+- 분류 변경: 연결하면 거래 유형이 `loan_repayment`(사용자 확인)로 바뀌어 소비 합계에서 빠진다(대출은 월 상환액으로 따로 확보). 후보의 `reclassify`가 `needsConfirm: true`(소비·카드값 등 이체가 아닌 유형, 또는 사용자가 확정한 분류)면 `confirmReclassify: true` 없이 400 `invalid` (`fields.confirmReclassify`).
+- 연결 취소: `linked[].cancelEffect.kind`로 미리 알려 준다.
+  - `restore`: 이 연결이 바꾼 분류를 **그 뒤 바뀌지 않았을 때만** 원래 값(`toType`·`toCategory`)으로 되돌린다.
+  - `keep`: 연결 뒤 사용자가 바꾼 분류라 지금 값 그대로 둔다(보낸 본문은 쓰지 않음).
+  - `choose`: 원래 분류 기록이 없음(이번 변경 전 자동 연결, 또는 그런 거래를 사용자가 확인한 경우). 원래 분류를 **추측하지 않는다.** 본문 `restoreType`(`transfer` = 이체·카테고리 ‘확인 필요’ / `spending` = 소비, `restoreCategory` 필수·사용자 확정)이 없으면 400이고 연결·분류를 바꾸지 않는다 — 대출 상환 유형인 채로 연결만 풀면 거래 목록에서 사라지기 때문. 받으면 연결 해제와 분류 변경을 한 트랜잭션에서 처리한다.
+  - 응답 `released.classification`(`restored`·`kept`·`chosen`)이 실제로 한 일이며, 화면 안내는 이 값대로(복원하지 않았으면 “되돌렸어요”라고 하지 않음). 그 회차에는 자동 연결이 다시 붙지 않게 표시한다(`skip_auto_match`). 이미 풀린 연결의 DELETE 재전송은 200 + `released: null`, 아무것도 바꾸지 않는다.
+  - 같은 판단을 다시 POST하면 아무것도 쓰지 않는다(`updatedAt`도 그대로).
+- 같은 요청 재전송은 연결이 하나만 남고, 같은 거래를 두 회차에 동시에 연결하면 한쪽만 성공(회원 잠금 → 대출 → 회차 → 거래 순).
+
+**응답** (GET · POST · DELETE 공통, POST·DELETE에는 `items`·`searchFrom`·`searchTo` 없음, DELETE만 `released`. 확정 계약: `docs/openapi/parts/loans.json` `LoanDuePaymentState`)
+
+```json
+{
+  "due": {"dueId": "…", "loanId": "…", "name": "합성은행 학자금", "dueDate": "2026-11-10",
+          "expectedAmount": 300000, "paidAmount": 298000, "paymentState": "paid", "linkedAccount": {"accountId": "…", "displayName": "합성은행 월급통장 · ****1001", "status": "connected"}},
+  "linked": [{"transactionId": "…", "date": "2026-11-10", "amount": 298000, "account": {…}, "description": "자동이체 출금",
+              "amountDifference": -2000, "hints": {"linkedAccount": true, "nearDueDate": true, "lenderInDescription": false, "sameAsBefore": false},
+              "reclassify": null, "settlement": "full", "source": "user"}],
+  "searchFrom": "2026-11-03", "searchTo": "2026-11-12", "items": []
+}
+```
+
+`settlement`: `full` · `partial` · null(자동 연결) / `source`: `user` · `rule`(자동 연결).
+
+**자동 연결(기존 `finance/loan_payments.py`) 점검**: 조건(월 상환액과 같은 금액 · 적요의 기관 이름 · 납부일 ±3일 · 연결 계좌)은 그대로 두되, 한 출금에 맞는 대출이 여럿이거나 한 회차에 맞는 출금이 여럿이면 연결하지 않고 사용자 확인으로 남긴다. 사용자가 연결을 푼 회차에는 다시 붙이지 않는다.
+
+**납부 상태 계산**: 대출 회차는 공통 90% 규칙을 쓰지 않는다. 사용자 확인 `full` → paid, `partial` → partial, 확인 없는 자동 연결은 예정액 이상일 때만 paid, 연결 없음은 출금일 전 unpaid · 지남 needs_review. 사용자 판단은 연결한 거래의 `field_states.loan_payment`에 저장돼 홈 재조회 · 재수집 · 상태 재계산 뒤에도 유지된다(재수집은 기존 거래를 덮어쓰지 않음).
+
+| 상황 | 상태 | `code` |
+|---|---|---|
+| 남의 회차 · 없는 회차 · 취소된 회차 · 주소 ID 형식 오류 | 404 | `not_found` |
+| 기관 조회 대출인데 대출 조회 동의 없음 | 403 | `consent_required` |
+| `transactionId` 없음 · 남의 것 · 고를 수 없는 거래, `settlement` 오류, 표에 없는 칸, `from`·`to` 형식·기간 오류 | 400 | `invalid` |
+| 분류 변경 확인 없음 | 400 | `invalid` (`fields.confirmReclassify`) |
+| 연결 취소: 원래 분류를 모르는데 `restoreType` 없음 · `restoreCategory` 오류 · 표에 없는 칸 | 400 | `invalid` (`fields.restoreType` · `fields.restoreCategory`) |
+| 다른 회차에 이미 연결된 거래 | 409 | `not_ready` |
 
 ## 구현 전 검토·검증 목록
 

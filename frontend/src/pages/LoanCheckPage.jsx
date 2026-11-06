@@ -10,15 +10,18 @@ import { apiSend, useApi } from '../utils/api.js'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import LoanAddPopup from '../popups/LoanAddPopup.jsx'
+import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
 
 const METHODS = [['equal_payment', '원리금균등'], ['equal_principal', '원금균등'], ['bullet', '만기일시'], ['unknown', '잘 모르겠어요']]
 const money = (value) => value == null ? '확인 필요' : won(value)
 const SOURCE = { provider: '기관 조회', manual: '직접 입력', estimated: '서버 추정' }
 const when = (iso) => iso ? new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '조회 기록 없음'
+const DUE_STATE = { unpaid: '아직 확인 안 됨', partial: '일부만 냈어요', paid: '이번 납부 완료', needs_review: '출금 확인 필요' }
 const draftOf = (loan) => ({ monthlyPayment: String(loan.monthlyPayment ?? ''), paymentDay: String(loan.paymentDay ?? ''), repaymentMethod: loan.repaymentMethod ?? '' })
 
-function LoanCard({ loan, onEditing }) {
+function LoanCard({ loan, onEditing, onPaymentSaved }) {
   const navigate = useNavigate()
+  const { openPopup } = usePopup()
   const [saved, setSaved] = useState(loan)
   const [draft, setDraft] = useState(() => draftOf(loan))
   const [busy, setBusy] = useState(false)
@@ -95,6 +98,14 @@ function LoanCard({ loan, onEditing }) {
           <tbody>{saved.paymentHistory.map((h, index) => <tr key={`${h.date}-${index}`}><td>{h.date}</td><td>{money(h.principal)}</td><td>{money(h.interest)}</td></tr>)}</tbody>
         </table>
       </>}
+      {loan.recentDues?.length > 0 && <>
+        <h3 className="mc-loan-h">이번 · 지난 주기 납부</h3>
+        {loan.recentDues.map((d) => (  /* 목록 새로고침 값 (입력 중인 상환 정보는 그대로 둠) */
+          <div className="mc-keyvalue" key={d.dueId}>
+            <span>{d.dueDate} · {won(d.expectedAmount)} · {DUE_STATE[d.paymentState] ?? '확인 필요'}</span>
+            <button type="button" className="mc-link" onClick={() => openPopup(<LoanPaymentPopup key={d.dueId} dueId={d.dueId} onSaved={onPaymentSaved} />)}>납부 거래 확인</button>
+          </div>))}
+      </>}
       <form onSubmit={save} noValidate>
         <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
           <legend className="mc-loan-h">앞으로 낼 돈 · 직접 확인</legend>
@@ -157,7 +168,7 @@ export default function LoanCheckPage() {
           <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>기관 대출 조회에 동의하기</button>
         </div>}
         {rows.length === 0 && <p className="mc-note">{data.hasInquiryConsent === false ? '직접 등록한 상환 중 대출이 없어요. 대출을 직접 등록할 수 있어요.' : '저장된 상환 중 대출이 없어요. 조회되지 않는 대출은 직접 등록할 수 있어요.'}</p>}
-        {rows.map((loan) => <LoanCard key={loan.loanId} loan={loan} onEditing={onEditing} />)}
+        {rows.map((loan) => <LoanCard key={loan.loanId} loan={loan} onEditing={onEditing} onPaymentSaved={reload} />)}
       </>}
       {(data || error?.code === 'consent_required') && <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup onSaved={(created) => { setRegistered(created.productName); reload() }} />)}>+ 조회되지 않은 대출 직접 등록</button>}
       {registered && <p className="mc-note" role="status">{registered} 대출을 등록했어요.</p>}

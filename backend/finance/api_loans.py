@@ -122,7 +122,22 @@ def loan_item(loan):
         "overdue": loan.overdue,
         "field_states": loan_field_states(loan),
         "fetched_at": local_iso(loan.fetched_at),
+        "recent_dues": recent_dues_json(loan),
     }
+
+
+def recent_dues_json(loan):
+    """홈 '꼭 나갈 돈'과 같은 범위(지난 주기 시작 ~ 이번 주기 끝)의 회차 — 다 낸 회차도 '납부 거래 확인'에서 다시 열 수 있게"""
+    from budgets.api import previous_start
+    cycle = BudgetCycle.objects.filter(user_id=loan.user_id, status=BudgetCycle.Status.ACTIVE).first()
+    if cycle is None:
+        return []
+    dues = PaymentDue.objects.filter(
+        loan=loan, obligation_state=PaymentDue.ObligationState.ACTIVE,
+        due_date__gte=previous_start(cycle) or cycle.starts_on, due_date__lt=cycle.ends_before,
+    ).order_by("due_date")
+    return [{"due_id": str(d.pk), "due_date": d.due_date.isoformat(), "expected_amount": d.confirmed_amount,
+             "paid_amount": d.paid_amount, "payment_state": d.payment_state} for d in dues]
 
 def owned_loans(user):
     """단일 FK는 관련 객체의 소유권까지 보장하지 않으므로 함께 검사한다."""

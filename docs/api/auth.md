@@ -142,7 +142,7 @@
 | `nickname` | 문자열 | O | 이름(**실명으로 받음, 11/4** — 화면 안내 "통장에 찍히는 이름과 같게 적어 주세요"), 앞뒤 공백 제거 후 1~100자. 누락·null·빈 문자열·공백만 있는 값은 거절 | `"세진"` |
 | `consents` | 객체 배열 | O | 동의한 항목만 보냄. 서비스 약관 `terms`와 개인정보 `privacy`가 모두 있어야 가입 가능(L). 전송 버전은 `v1`(L), 최종 약관 문구는 확인 필요 | 아래 예시 |
 | `consents[].purpose` | 문자열 | O | 동의 구분: `terms`, `privacy` | `"terms"` |
-| `consents[].documentVersion` | 문자열 | O | 사용자가 실제 읽은 문서 버전. 결정기록 3-3 L의 `v1` | `"v1"` |
+| `consents[].documentVersion` | 문자열 | O | 사용자가 실제 읽은 문서 버전(`GET /api/consent-documents/`의 `version`). 지금은 `v1`. 모르는 버전이면 400 `fields.consents` "최신 약관을 확인하고 다시 동의해 주세요." | `"v1"` |
 
 ```json
 {
@@ -391,3 +391,20 @@ CODEF 계정 목록과 삭제 API로 등록된 인증수단을 삭제하고 결�
 성공하면 사용자 및 소유 금융·예산·쿠션·동의·대화·작업·요청 캐시와 모든 로그인 세션을 삭제한다. 응답은 200 `{ "ok": true }`. 다른 회원과 공용 카테고리는 보존한다. 이후 요청은 비로그인 403이다. 프론트는 삭제 범위를 표시하고 로그인 비밀번호와 확인 체크를 받은 뒤 실행하며 성공 시 저장된 이메일을 지우고 로그인 화면으로 이동한다. 이 기능은 운영 DB 및 CODEF 등록 인증수단을 대상으로 하며 외부 기관 자체 거래기록이나 운영 백업 보존 정책을 변경하는 기능은 아니다.
 
 CODEF 계약 근거: [공식 Python 예제 — 계정 목록 및 삭제](https://github.com/codef-io/codef-python).
+
+## 11/06 동의 문서 원문 보기 — GET /api/consent-documents/
+
+로그인 없이 연다(회원가입 전 필요). 회원가입(`terms` · `privacy`)과 금융 조회(`finance_inquiry` × `bank`/`card`/`loan`)에서 **지금 동의받는 문서**만 준다. 원문은 서버 한 곳(`backend/users/consent_documents.py`, JSON 파일 `signup_terms_v1.json` · `finance_inquiry_v2.json`)에서만 관리한다. 외부 호출 없음.
+
+| 이름 | 타입 | 뜻 |
+|---|---|---|
+| `items[].purpose` | 문자 | `terms` · `privacy` · `finance_inquiry` |
+| `items[].productScope` | 문자 · null | 금융 조회만 `bank` · `card` · `loan`, 회원가입 문서는 null |
+| `items[].version` | 문자 | 동의 요청의 `documentVersion`에 그대로 보낼 값 |
+| `items[].documentHash` | 문자 | 원문 해시(확인용). 동의 요청에 보내지 않는다 |
+| `items[].document` | 객체 | 화면이 그대로 그리는 원문 `{label, title, required?, version, date, sections: [{h, items, list?}]}` |
+
+- 해시 = `document` 객체를 키 정렬 · 공백 없는 JSON(UTF-8, 한글 그대로)으로 만든 SHA-256. 동의 기록의 `document_hash`와 같은 값.
+- 팝업 아래 고정 안내 "시안 문구예요. 출시 전에 확정해요."는 화면 문구라 원문 · 해시에 들어가지 않는다.
+- 문서 내용을 고치면 새 버전 파일을 추가한다. 지난 버전을 보낸 동의 요청은 409 `document_outdated`.
+- 화면: 못 받으면 오류와 [다시 불러오기]를 보이고 동의를 보내지 않는다. 체크는 목적·범위·버전별로 기억해 새 버전에 넘기지 않는다.

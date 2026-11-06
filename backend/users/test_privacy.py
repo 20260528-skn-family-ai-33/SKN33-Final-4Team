@@ -89,7 +89,7 @@ class PrivacyTests(TestCase):
         self.assertEqual(self.bank.status, 'connected')
         self.assertEqual(self.revoke().status_code, 200)
         self.assertEqual(self.client.get('/api/finance/connect/cards/').status_code, 403)
-        self.assertEqual(self.client.post('/api/finance/consents/', {'consents': [{'purpose': 'finance_inquiry', 'productScope': 'card', 'documentVersion': 'v1'}]}, format='json').status_code, 201)
+        self.assertEqual(self.client.post('/api/finance/consents/', {'consents': [{'purpose': 'finance_inquiry', 'productScope': 'card', 'documentVersion': 'v2'}]}, format='json').status_code, 201)
         self.assertEqual(self.client.get('/api/finance/consents/').json()['items'][1]['status'], 'granted')
         self.assertFalse(Card.objects.filter(user=self.user).exists())
 

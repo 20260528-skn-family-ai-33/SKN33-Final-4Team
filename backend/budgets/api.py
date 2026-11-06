@@ -1202,6 +1202,9 @@ def tx_brief(t):
 # 납부 상태 다시 계산 — 짝 합계 ≥ 예정 금액의 90%(올림) paid, 그보다 적으면 partial, 없으면 출금일 전 unpaid · 지남 needs_review
 #   90%: 15,000원 등록에 14,900원 출금처럼 조금 다르게 나가도 '냄'으로 (11/4). 등록 금액 · 예산 금액은 그대로
 def refresh_due_state(due, today):
+    if due.obligation_type == "loan":  # 대출은 사용자 확인(다 냄 · 일부)을 따른다 — 90% 규칙 안 씀 (finance/loan_payments.py)
+        from finance.loan_payments import refresh_loan_due
+        return refresh_loan_due(due, today)
     summary = due.matches.aggregate(total=Sum("matched_amount"), last=Max("matched_at"))
     paid = summary["total"] or 0
     if paid >= (due.confirmed_amount * 9 + 9) // 10:  # [임시] 90% — 알파 뒤 "앞으로 이 금액으로 바꿀까요?"로 등록 금액을 고칠 예정

@@ -16,6 +16,7 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
 import MustPayPopup from '../popups/MustPayPopup.jsx'
+import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
 import CardBillPopup from '../popups/CardBillPopup.jsx'
 import NoticePopup from '../popups/NoticePopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
@@ -110,7 +111,8 @@ export default function HomePage() {
       : p.type === 'card_bill' && p.sourceId ? () => openPopup(<CardBillPopup key={p.sourceId} billId={p.sourceId} />)
       : p.type === 'loan' && p.sourceId ? () => navigate(PATHS.loanCheck, { state: { from: 'home', loanId: p.sourceId } })
       : undefined
-    openPopup(<MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={onManage} />)
+    const onCheckPayment = p.type === 'loan' && p.dueId ? () => openPopup(<LoanPaymentPopup key={p.dueId} dueId={p.dueId} onSaved={reload} />) : undefined
+    openPopup(<MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={onManage} onCheckPayment={onCheckPayment} />)
   }
 
   // 2. 알림 (11/3: 메인 카드 위 → 오른쪽 위 종 아이콘 팝업). 종에는 알림 개수

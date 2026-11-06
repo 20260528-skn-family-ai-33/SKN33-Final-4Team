@@ -32,18 +32,20 @@
 | `consents` | 목록 | O | 이번에 동의한 항목. 1개 이상 | |
 | `consents[].purpose` | 문자 | O | 동의 목적 코드. 확인 필요(아래) | `"finance_inquiry"` |
 | `consents[].productScope` | 문자 | O | 조회를 허용하는 범위: `bank` · `card` · `loan` | `"bank"` |
-| `consents[].documentVersion` | 문자 | O | 화면에 보여 준 동의 문서 버전 | `"v1"` |
+| `consents[].documentVersion` | 문자 | O | 화면에 보여 준 동의 문서 버전 (`GET /api/consent-documents/`의 `version`). 지금은 `v2` | `"v2"` |
 
 ```json
 {
   "consents": [
-    { "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1" },
-    { "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1" }
+    { "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2" },
+    { "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2" }
   ]
 }
 ```
 
 - 동의 원문 해시(`document_hash`)와 동의 시각은 서버가 채운다. 화면이 보내면 400 "이 칸은 보낼 수 없어요."(★2)
+- 해시는 **보낸 버전**의 보관 원문(`backend/users/consent_documents.py`)으로 만든다. 저장 시점의 최신 버전으로 바꿔 기록하지 않는다(11/06 R24).
+- `v1`은 화면 원문이 아니라 임시 문장 한 줄을 해시했던 지난 버전이다. 과거 `v1` 기록은 그대로 두며 유효하다. 새로 `v1`을 보내면 409 `document_outdated`.
 - 동의하지 않은 항목은 보내지 않는다(거절 기록은 저장하지 않음). 회원가입 동의와 같은 모양이며 `agreed` 칸은 없다(10/22 결정기록 L).
 - **같은 범위 · 같은 문서 버전의 유효한 동의가 이미 있으면 새로 만들지 않고 기존 기록을 돌려준다**(10/22 N⑥). 응답 모양은 같다.
 - 동의 항목: **은행 필수, 카드 · 대출 선택**(10/22 V). 동의 철회 API는 1차에 없다(V).
@@ -62,8 +64,8 @@
 ```json
 {
   "items": [
-    { "consentId": "7b1e…", "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1", "grantedAt": "2026-10-22T10:05:00+09:00" },
-    { "consentId": "a40c…", "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1", "grantedAt": "2026-10-22T10:05:00+09:00" }
+    { "consentId": "7b1e…", "purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2", "grantedAt": "2026-10-22T10:05:00+09:00" },
+    { "consentId": "a40c…", "purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2", "grantedAt": "2026-10-22T10:05:00+09:00" }
   ]
 }
 ```
@@ -73,6 +75,8 @@
 | 상황 | 상태 | `code` | 화면 안내 |
 |---|---|---|---|
 | 필수 동의(은행)가 없음 | 400 | `invalid` | "계좌 조회 동의는 꼭 필요해요." (`fields.consents`) |
+| 없는 문서 버전 · 목적/범위/버전 조합 틀림 | 400 | `invalid` | `fields.documentVersion` 등 |
+| 지난 문서 버전(화면을 연 사이 바뀜 포함) | 409 | `document_outdated` | 문서를 다시 받고 체크를 지운 뒤 새로 확인받기 |
 | 모르는 목적·범위 코드, 지원하지 않는 문서 버전 | 400 | `invalid` | `fields` 메시지 |
 | 표에 없는 칸을 보냄 (★2) | 400 | `invalid` | `fields.<그 칸>: ["이 칸은 보낼 수 없어요."]` |
 | 같은 요청 번호에 다른 내용 | 409 | `idempotency_conflict` | (개발 중 버그) |

@@ -386,8 +386,8 @@ class ConnectTest(FinanceData):
     def test_consent_save(self):
         self.login(consent=False)
         body = {"consents": [
-            {"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1"},
-            {"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1"},
+            {"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2"},
+            {"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2"},
         ]}
         first = self.send("post", "/api/finance/consents/", body)
         self.assertEqual(first.status_code, 201)
@@ -398,10 +398,10 @@ class ConnectTest(FinanceData):
 
     def test_consent_bad_requests(self):
         self.login(consent=False)
-        card_only = {"consents": [{"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1"}]}
+        card_only = {"consents": [{"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2"}]}
         res = self.send("post", "/api/finance/consents/", card_only)
         self.assertEqual(res.json()["error"]["fields"]["consents"], ["계좌 조회 동의는 꼭 필요해요."])
-        extra = {"consents": [{"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1", "documentHash": "x"}]}
+        extra = {"consents": [{"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2", "documentHash": "x"}]}
         res = self.send("post", "/api/finance/consents/", extra)
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.json()["error"]["fields"]["documentHash"], ["이 칸은 보낼 수 없어요."])
