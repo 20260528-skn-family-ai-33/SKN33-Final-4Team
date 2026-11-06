@@ -45,7 +45,10 @@ class CardReviewTest(TestCase):
         response = self.resolve()
         self.assertEqual(response.status_code, 200)
         tx_id = response.json()["transactionId"]
-        self.assertEqual(card_reserved(self.user, cycle, END), {"amount": 398000, "pending": []})
+        # 11/06: 결제 카드를 확인하면 보류가 풀린다. 납부 확인 여부로는 보류하지 않는다.
+        # 확인한 거래(10/20 · 22,000)는 이 청구서 상세에 없어 중복이 아님 → 청구액 420,000 그대로 (예전: 420,000 − 22,000 = 398,000)
+        result = card_reserved(self.user, cycle, END)
+        self.assertEqual((result["amount"], result["pending"]), (420000, []))
         self.assertEqual(self.runs("card_approval_list"), [(self.card.pk, date(2026, 7, 28), END)])
         self.assertEqual(self.resolve().json()["transactionId"], tx_id)
         self.approvals[0]["resCancelYN"] = "2"

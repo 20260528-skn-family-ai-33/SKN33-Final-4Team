@@ -266,7 +266,8 @@ class TransactionDetailTest(FinanceData):
     @mock.patch("finance.classifier.ask_jev")
     @mock.patch("finance.classifier.search_store", return_value=[("naver", "행복상회", "백화점")])
     @mock.patch("finance.classifier.predict", return_value=[[("FOOD", 0.4)]])
-    def test_searched_multi_item_can_apply_to_future(self, predict, search, ask, conflicts):
+    @mock.patch("finance.classifier.search_web", return_value=[])
+    def test_searched_multi_item_can_apply_to_future(self, web, predict, search, ask, conflicts):
         # 이름 사전에 없어도 검색 업종이 다품목이면 묻고, 체크 없이 고르면 다음 거래도 다시 묻는다 (PR #67 리뷰)
         def classified():
             tx = self.tx(merchant_name="행복상회", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
@@ -373,8 +374,8 @@ class ConnectTest(FinanceData):
     def test_consent_save(self):
         self.login(consent=False)
         body = {"consents": [
-            {"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1"},
-            {"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1"},
+            {"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2"},
+            {"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2"},
         ]}
         first = self.send("post", "/api/finance/consents/", body)
         self.assertEqual(first.status_code, 201)
@@ -385,10 +386,10 @@ class ConnectTest(FinanceData):
 
     def test_consent_bad_requests(self):
         self.login(consent=False)
-        card_only = {"consents": [{"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v1"}]}
+        card_only = {"consents": [{"purpose": "finance_inquiry", "productScope": "card", "documentVersion": "v2"}]}
         res = self.send("post", "/api/finance/consents/", card_only)
         self.assertEqual(res.json()["error"]["fields"]["consents"], ["계좌 조회 동의는 꼭 필요해요."])
-        extra = {"consents": [{"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1", "documentHash": "x"}]}
+        extra = {"consents": [{"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2", "documentHash": "x"}]}
         res = self.send("post", "/api/finance/consents/", extra)
         self.assertEqual(res.status_code, 400)
         self.assertEqual(res.json()["error"]["fields"]["documentHash"], ["이 칸은 보낼 수 없어요."])
@@ -509,7 +510,7 @@ class DisconnectTest(FinanceData):
 
 
 class TransactionIsSalaryTest(FinanceData):
-    """16 · 17. isSalary — 홈과 같은 salary_deposits() 기준 (11/4)"""
+    """16 · 17. isSalary — 홈과 같은 저장 판단(salary_decision, R12). 확인 · 자동 인정된 입금만 true"""
 
     def setUp(self):
         from users.models import FinancialProfile
@@ -525,6 +526,9 @@ class TransactionIsSalaryTest(FinanceData):
         self.sent = self.tx(merchant_name="홍길동", amount=2_600_000, transaction_type="transfer",
                             confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
         self.spent = self.tx(amount=2_600_000)
+        from budgets.models import SalaryDecision
+        from budgets.salary import confirmation_snapshot
+        SalaryDecision.objects.create(user=self.user, transaction=self.salary, state="confirmed", pay_cycle_on=self.salary.occurred_on, **confirmation_snapshot(self.salary))
 
     def flags(self):
         return {i["transactionId"]: i["isSalary"] for i in self.get().json()["items"]}
@@ -535,11 +539,19 @@ class TransactionIsSalaryTest(FinanceData):
             str(self.sent.pk): False, str(self.spent.pk): False,
         })
 
+    def test_unconfirmed_big_deposit_is_not_salary_and_review_is_shown(self):
+        from budgets.models import SalaryDecision
+        SalaryDecision.objects.filter(transaction=self.salary).update(state="auto")
+        body = self.get().json()["items"]
+        self.assertEqual({i["transactionId"]: i["salaryReview"] for i in body}[str(self.salary.pk)], "auto")
+        self.assertFalse({i["transactionId"]: i["isSalary"] for i in body}[str(self.moved.pk)])  # 판단 없는 큰 입금
+
     def test_detail_matches_list(self):
         flags = self.flags()
         for tx_id, flag in flags.items():
             self.assertIs(self.client.get(f"{URL}{tx_id}/").json()["isSalary"], flag)
 
-    def test_no_take_home_income_means_no_salary(self):
+    def test_confirmed_salary_does_not_depend_on_take_home_income(self):
+        """저장된 판단을 읽으므로 실수령액을 지워도 사용자가 확인한 급여 표시는 그대로"""
         self.user.financial_profile.delete()
-        self.assertFalse(any(self.flags().values()))
+        self.assertTrue(self.flags()[str(self.salary.pk)])

@@ -17,7 +17,7 @@ from users.models import Consent
 from .models import BankAccount, Connection, FinancialTransaction
 
 CONSENT_URL = "/api/finance/consents/"
-BANK_ONLY = {"consents": [{"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1"}]}
+BANK_ONLY = {"consents": [{"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2"}]}
 
 
 def run_together(*jobs):
@@ -149,7 +149,7 @@ class ConsentTypeTest(TestCase):
     def test_non_string_values_are_400(self):
         user = get_user_model().objects.create_user(email="sejin@example.com", password="Example123!")
         self.client.force_login(user)
-        base = {"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v1"}
+        base = {"purpose": "finance_inquiry", "productScope": "bank", "documentVersion": "v2"}
         for field in ("productScope", "documentVersion", "purpose"):
             for bad in ([], {}, 1, None):
                 with self.subTest(field=field, value=bad):

@@ -30,6 +30,9 @@ function dayLabel(iso) {
   return `${m}월 ${d}일${isToday ? ' · 오늘' : ''}`
 }
 
+// 내 계좌 이체 판단(R11) → 목록 한 줄 문구. 거절(rejected)은 일반 이체로 보인다
+const OWN_ROW = { suggested: '내 계좌 이체 추정', auto: '내 계좌 이체 · 자동 분류', confirmed: '내 계좌 이체' }
+
 // 날짜별로 묶고, 날짜 합계는 소비만 (입금 · 이체 제외)
 function groupByDay(items) {
   const days = []
@@ -93,16 +96,18 @@ export default function TransactionsPage() {
     !all && monthQuery(shown, thisMonth),
   ].filter(Boolean).join('&')
   const payCount = accountIds.length + cardIds.length
-  const { data, error, reload } = useApi(`/api/finance/transactions/?${query}`)
+  // 필터를 바꾸면 새 결과가 올 때까지 data = null — 이전 조건의 목록 · 합계를 새 조건 값처럼 보이지 않는다 (R29)
+  // keepData: 카테고리 저장 뒤 다시 받기가 실패해도 목록을 남기고 아래에서 실패 안내를 띄운다
+  const { data, error, reload, refreshing } = useApi(`/api/finance/transactions/?${query}`, { keepData: true })
   // '확인 필요' 건수 = 기간 없이 전체 (H-03). 칩 · 배너 숫자가 홈과 같아진다
   const { data: pending, reload: reloadPending } = useApi('/api/finance/transactions/?category=UNCLASSIFIED')
   // 카테고리를 저장하면 목록과 '확인 필요' 건수를 다시 받는다
   const refresh = () => { reload(); reloadPending() }
   const pendingCount = pending?.summary.needsReviewCount ?? 0
 
-  if (!data) return <Layout title="거래 내역" activeTab="txs"><ApiStatus error={error} /></Layout>
-  const { summary, items } = data
-  const days = groupByDay(items)
+  // 받는 동안에도 달 · 칩 · 필터는 그대로 두어 계속 바꿀 수 있게 한다
+  const summary = data?.summary
+  const days = data ? groupByDay(data.items) : []
 
   return (
     <Layout title="거래 내역" activeTab="txs">
@@ -116,7 +121,7 @@ export default function TransactionsPage() {
           <button type="button" className="mc-link" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간'}</button>
         )}
         {/* 이 목록의 소비 소계일 뿐 — 예산 · 남은 생활비는 홈 · 예산 화면 값 (급여 주기 기준이라 다름) */}
-        <span className="mc-sumbar-v"><b>{won(summary.spentTotal)}</b><span className="mc-muted"> 소비</span></span>
+        {data && <span className="mc-sumbar-v"><b>{won(summary.spentTotal)}</b><span className="mc-muted"> 소비</span></span>}
       </div>
 
       {pendingCount > 0 && (
@@ -141,14 +146,17 @@ export default function TransactionsPage() {
       </div>
 
       <div className="mc-row mc-tx-sum">
-        <span className="mc-muted">거래 {items.length}건 · 소비 <strong>{won(summary.spentTotal)}</strong></span>
+        <span className="mc-muted">{data ? <>거래 {data.items.length}건 · 소비 <strong>{won(summary.spentTotal)}</strong></> : '거래 불러오는 중'}</span>
         {/* 달력 보기는 기능이 생기면 여기에 [리스트 | 달력] (11/3: 누를 수 없는 버튼이라 뺌) */}
         <button type="button" className="mc-filter-btn" aria-pressed={payCount > 0} onClick={() => openPopup(
           <FilterPopup accountIds={accountIds} cardIds={cardIds} onApply={(acc, crd) => go(codes, month, acc, crd)} />,
         )}><Icon name="SlidersHorizontal" size={14} />{payCount > 0 ? `계좌 · 카드 ${payCount}` : '계좌 · 카드'}</button>
       </div>
 
-      {days.length === 0 && (
+      {/* 처음 받는 중 · 실패. 같은 주소 다시 받기가 실패하면 지난 목록 위에 안내를 띄운다. 다시 시도 중에는 '불러오는 중' */}
+      {(!data || (error && !refreshing)) && <ApiStatus error={refreshing ? null : error} onRetry={reload} />}
+      {data && refreshing && <p className="mc-muted" role="status">새로 불러오는 중…</p>}
+      {data && days.length === 0 && (
         <div className="mc-card"><p className="mc-muted" style={{ margin: 0 }}>이 기간에 거래가 없어요.</p></div>
       )}
       {days.map((day) => (
@@ -173,7 +181,7 @@ export default function TransactionsPage() {
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow">
                   <strong>{tx.name}{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>
-                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? '월급' : '입금') : tx.kind === 'transfer' ? '이체 · 소비 아님' : tx.cat}{tx.via && ` · ${tx.via}`}</span>
+                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? (tx.salaryAuto ? '월급 · 자동 인식' : '월급') : '입금') : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')} · 소비 아님` : tx.cat}{tx.via && ` · ${tx.via}`}</span>
                 </span>
                 <span className="mc-right">
                   {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}

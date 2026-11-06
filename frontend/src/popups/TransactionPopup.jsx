@@ -6,6 +6,7 @@
 //   이체(transfer)     처음엔 소비 아님. [소비로 분류하기]로 카테고리를 고르면 그때부터 소비 (W)
 //   원래 이체였던 소비  [이체로 되돌리기] = PATCH { category: null } (W · AA⑥). 받는 사람은 기억하지 않음
 //   고정지출 연결(funding: fixed)  '고정' — 생활비 사용액에서 빠짐. 월세 이체도 고정지출에 연결되면 여기에 해당 (AA⑤)
+//   내 계좌 이체 (R11)  추정 → [맞아요]/[아니에요] = PATCH { ownTransfer: true | false }. 자동 분류 · 확인한 것은 [연결 해제]/[확인 취소]
 // 분류 출처(classifiedBy)는 거래 한 건 보기에서 받는다. 저장 = PATCH { category } → onSaved(목록 새로고침)
 import { useState } from 'react'
 import Popup from './Popup.jsx'
@@ -26,15 +27,18 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
   const [step, setStep] = useState('idle')
   const isIncome = tx.kind === 'income'
   const isTransfer = tx.kind === 'transfer'
+  const isOwn = tx.isOwn  // 내 계좌 이체(own_transfer). 소비로 바꾸려면 확인을 먼저 취소
   const wasTransfer = Boolean(data?.wasTransfer)  // 원래 이체였던 소비 → [이체로 되돌리기] (거래 한 건 보기, 11/03)
   const isFixed = tx.funding === 'fixed'
 
   // category = 카테고리 코드. null = 원래 이체였던 거래를 이체로 되돌리기 (W)
-  async function save(category) {
+  const save = (category) => send({ category, applyToFuture: Boolean(data?.canApplyToFuture && applyToFuture) })
+  // 실패하면 팝업을 닫지 않고 오류를 보여 준다
+  async function send(body) {
     setSaving(true)
     setError(null)
     try {
-      await apiSend(`/api/finance/transactions/${tx.id}/`, 'PATCH', { category, applyToFuture: Boolean(data?.canApplyToFuture && applyToFuture) })
+      await apiSend(`/api/finance/transactions/${tx.id}/`, 'PATCH', body)
       onSaved?.()
       closePopup()
     } catch (err) {
@@ -45,7 +49,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
 
   return (
     <Popup label="거래 상세" sub>
-      <div className="mc-eyebrow">{isIncome ? (tx.isSalary ? '월급 입금' : '입금') : isTransfer ? '보낸 이체' : '거래 상세'}</div>
+      <div className="mc-eyebrow">{isIncome ? (tx.isSalary ? '월급 입금' : '입금') : tx.isSaving ? '저축 이체' : isOwn ? '내 계좌 이체' : isTransfer ? '보낸 이체' : '거래 상세'}</div>
       <h1>{tx.name}</h1>
       <div className="mc-card">
         <div className="mc-money">
@@ -71,19 +75,50 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
       {/* 월급: 카테고리를 고를 수 없다 */}
       {isIncome && (
         <div className="mc-card">
-          <p className="mc-muted" style={{ margin: 0 }}>{tx.isSalary ? '월급으로 찾은 입금이에요. ' : ''}거래 목록에는 보이지만 소비 합계 · 예산에는 들어가지 않아요. 입금은 카테고리를 고를 수 없어요.</p>
+          <p className="mc-muted" style={{ margin: 0 }}>{tx.isSalary ? (tx.salaryAuto ? '확인한 월급과 같은 패턴이라 월급으로 자동 인식했어요. 아니면 홈의 월급 확인에서 바꿀 수 있어요. ' : '월급으로 확인한 입금이에요. ') : ''}거래 목록에는 보이지만 소비 합계 · 예산에는 들어가지 않아요. 입금은 카테고리를 고를 수 없어요.</p>
         </div>
       )}
 
+      {/* 내 계좌 이체 (R11). 거절해도 소비가 아니라 일반 이체로 남는다 */}
+      {tx.ownTransfer === 'suggested' && !isOwn && (
+        <div className="mc-card">
+          <h2>내 계좌로 보낸 돈인가요?</h2>
+          <p className="mc-muted" style={{ marginTop: 4 }}>받는 분 이름이 가입할 때 쓴 이름과 같아서 내 계좌 이체로 추정했어요. 확인하기 전에는 일반 이체로 둬요.</p>
+          <div className="mc-pend-pick">
+            <button type="button" disabled={saving} onClick={() => send({ ownTransfer: true })}>맞아요</button>
+            <button type="button" disabled={saving} onClick={() => send({ ownTransfer: false })}>아니에요</button>
+          </div>
+        </div>
+      )}
+      {isOwn && (
+        <div className="mc-card">
+          <h2>{tx.ownTransfer === 'auto' ? '내 계좌 이체로 자동 분류했어요' : '내가 확인한 내 계좌 이체예요'}</h2>
+          <p className="mc-muted" style={{ marginTop: 4 }}>
+            {tx.ownTransfer === 'auto'
+              ? '양쪽 적요가 가입 이름이고 금액이 같은 입금이 5분 안에 내 다른 계좌에 하나뿐이라 규칙으로 묶었어요. 확실한 확인은 아니에요.'
+              : '소비로 세지 않아요. 잘못 골랐다면 취소해 주세요.'}
+            {tx.isSaving && ' 정기 저축으로도 처리됐어요. 아니라면 여기서 정정하면 그 저축의 근거 이체에서 빠지고 일반 이체로 돌아가요(저축 자체는 그대로).'}
+          </p>
+          {tx.ownRecheck && <p className="mc-note" role="note">같은 금액 · 시각의 다른 거래가 나중에 들어와서 자동 판단이 맞는지 다시 확인해 주세요.</p>}
+          <div className="mc-pend-pick">
+            {tx.ownTransfer === 'auto' && <button type="button" disabled={saving} onClick={() => send({ ownTransfer: true })}>맞아요</button>}
+            <button type="button" disabled={saving} onClick={() => send({ ownTransfer: false })}>{tx.ownTransfer === 'auto' ? '연결 해제' : '확인 취소'}</button>
+          </div>
+        </div>
+      )}
+      {tx.ownTransfer === 'rejected' && !isOwn && (
+        <p className="mc-note">내 계좌 이체가 아니라고 표시했어요. <button type="button" className="mc-link" disabled={saving} onClick={() => send({ ownTransfer: true })}>내 계좌 이체가 맞아요</button></p>
+      )}
+
       {/* 이체: 처음엔 소비가 아님 → [소비로 분류하기] */}
-      {isTransfer && step === 'idle' && (
+      {isTransfer && !isOwn && step === 'idle' && (
         <div className="mc-card">
           <h2>남에게 보낸 이체예요</h2>
           <p className="mc-muted" style={{ marginTop: 4 }}>처음에는 소비로 세지 않아요. 친구에게 밥값을 보냈다면 카테고리를 골라 소비로 넣어 주세요.</p>
           <button type="button" className="mc-primary" onClick={() => setStep('pick')}>소비로 분류하기</button>
         </div>
       )}
-      {isTransfer && step === 'pick' && (
+      {isTransfer && !isOwn && step === 'pick' && (
         <div className="mc-card">
           <h2>어디에 쓴 돈인가요?</h2>
           {/* 고르면 PATCH { category } → transactionType: spending, 소비 합계 · 예산에 들어감 */}

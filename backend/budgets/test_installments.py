@@ -34,6 +34,10 @@ class InstallmentTest(TestCase):
         clock = patch("django.utils.timezone.localdate", side_effect=self.localdate)
         clock.start()
         self.addCleanup(clock.stop)
+        # 11/06: 할부 회차는 첫 청구서를 이미 승인 예산에 반영한 뒤의 주기 규칙 → 그 상태를 명시한다 (최초 주기는 이번 주기 청구서 총액에 들어 있음)
+        applied = patch("budgets.protect.first_budget_cycle", return_value=False)
+        applied.start()
+        self.addCleanup(applied.stop)
 
     @staticmethod
     def localdate(value=None, timezone=None):
@@ -52,7 +56,9 @@ class InstallmentTest(TestCase):
                                            billed_amount=billed, purchased_on=bought)
 
     def reserved(self):
-        return card_reserved(self.user, self.cycle)
+        result = card_reserved(self.user, self.cycle)
+        result.pop("notes", None)  # 이미 반영한 카드사라는 안내(first_budget_applied)는 회차 계산과 별개
+        return result
 
     def assert_held(self):
         result = self.reserved()
@@ -122,9 +128,10 @@ class InstallmentTest(TestCase):
         self.bill("loan", date(2026, 11, 10), 1, bill_type="카드론", items_state="unavailable")
         self.assertEqual(self.reserved(), {"amount": 0, "pending": []})
 
-    def test_added_on_top_of_first_bill_in_this_cycle(self):
-        CardBill.objects.filter(pk=self.first.pk).delete()
-        self.item()                                   # 이 청구서가 첫 청구서가 됨 → 총액에 이미 있어 더하지 않음
-        self.assertEqual(self.reserved()["amount"], 300_000)
-        self.item(bill=self.bill("later", date(2026, 11, 20), 50_000))
-        self.assertEqual(self.reserved()["amount"], 360_000)
+    def test_first_cycle_reserves_bill_totals_without_adding_rounds_again(self):
+        # 최초 적용 주기: 이번 주기 청구서(11/10 · 11/20) 총액을 떼고, 그 안의 할부 회차는 다시 더하지 않는다
+        with patch("budgets.protect.first_budget_cycle", return_value=True):
+            self.item()
+            self.assertEqual(self.reserved()["amount"], 300_000)
+            self.item(bill=self.bill("later", date(2026, 11, 20), 60_000))   # 상세 60,000 = 총액 60,000
+            self.assertEqual(self.reserved()["amount"], 360_000)

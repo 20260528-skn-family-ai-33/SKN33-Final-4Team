@@ -20,6 +20,7 @@ IMPLEMENTATION = {
     ("post", "/api/auth/login/"): "implemented",
     ("post", "/api/auth/logout/"): "implemented",
     ("get", "/api/auth/me/"): "implemented",
+    ("get", "/api/consent-documents/"): "implemented",
     ("get", "/api/my/"): "implemented",
     ("get", "/api/finance/consents/"): "implemented",
     ("delete", "/api/finance/consents/{scope}/"): "implemented",
@@ -31,6 +32,16 @@ IMPLEMENTATION = {
     ("get", "/api/finance/loans/"): "implemented",
     ("post", "/api/finance/loans/"): "implemented",
     ("patch", "/api/finance/loans/{id}/"): "implemented",
+    ("post", "/api/finance/loans/{id}/payoff/"): "implemented",
+    ("post", "/api/finance/loans/{id}/payoff/cancel/"): "implemented",
+    ("get", "/api/finance/loan-dues/{id}/payments/"): "implemented",
+    ("post", "/api/finance/loan-dues/{id}/payments/"): "implemented",
+    ("delete", "/api/finance/loan-dues/{id}/payments/{transactionId}/"): "implemented",
+    ("get", "/api/finance/card-bills/{id}/payments/"): "implemented",
+    ("post", "/api/finance/card-bills/{id}/payments/"): "implemented",
+    ("delete", "/api/finance/card-bills/{id}/payments/{transactionId}/"): "implemented",
+    ("put", "/api/finance/card-bills/{id}/payment-check/"): "implemented",
+    ("delete", "/api/finance/card-bills/{id}/payment-check/"): "implemented",
     ("get", "/api/finance/card-reviews/"): "implemented",
     ("put", "/api/finance/card-reviews/{id}/"): "implemented",
     # 금융 동의 · 계좌 · 연결 6~10 (연결 해제도 DB 구현)
@@ -62,7 +73,7 @@ for _domain, _state in (("fixed", "implemented"), ("savings", "implemented")):
     for _method, _suffix in (("get", ""), ("post", ""), ("patch", "{id}/"), ("delete", "{id}/"), ("post", "confirm/"), ("post", "ignore/")):
         IMPLEMENTATION[(_method, f"/api/budgets/{_domain}/{_suffix}")] = _state
 IDEMPOTENT_PATHS = {
-    "/api/finance/consents/", "/api/finance/loans/", "/api/chat/messages/",
+    "/api/finance/consents/", "/api/finance/loans/", "/api/finance/loan-dues/{id}/payments/", "/api/finance/card-bills/{id}/payments/", "/api/chat/messages/",
     "/api/budgets/recommend/", "/api/budgets/{id}/approve/",
     "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
     "/api/budgets/savings/", "/api/budgets/savings/confirm/", "/api/budgets/savings/ignore/",

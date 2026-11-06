@@ -2,11 +2,12 @@
 finance 앱 API — 거래 (docs/api/transactions.md)
 - 16. GET   /api/finance/transactions/       거래 목록
 - 17. GET   /api/finance/transactions/<id>/  거래 한 건 보기
-- 18. PATCH /api/finance/transactions/<id>/  거래 분류 수정
+- 18. PATCH /api/finance/transactions/<id>/  거래 분류 수정 · 내 계좌 이체 확인
 """
 import uuid
 from datetime import date
 
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Exists, F, OuterRef, Q, UUIDField
 from django.db.models.expressions import RawSQL
@@ -19,19 +20,22 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from budgets.models import Category
-from budgets.salary import salary_transaction_ids
+from budgets.salary import salary_reviews
 
 from . import classifier
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
 from .merchant_rules import FUTURE_KEY
-from .models import BankAccount, Card, FinancialTransaction, RecurringExpense, SourceKind, TransactionLink
+from .models import BankAccount, Card, FinancialTransaction, RecurringExpense, RecurringSaving, SourceKind, TransactionLink
 from .spending import spending_summary
+from .transfer_rules import OWN_RECHECK, OWN_REVIEW
 
 Tx = FinancialTransaction
 UNCLASSIFIED = "UNCLASSIFIED"
 # 목록에 나오는 거래: 소비 · 입금(월급 등) · 남에게 보낸 이체 (10/22 V①)
-# 내 계좌끼리 이체 · 저축 · 대출 상환 · 카드값은 넣지 않는다
+# 내 계좌끼리 이체 · 저축 · 대출 상환 · 카드값은 넣지 않는다. 단 이 기능이 자동 분류하거나 사용자가 확인한 내 계좌 이체(출금 쪽)는
+# 그 뒤 저축으로 바뀌었어도 되돌릴 수 있게 남긴다 (R11)
+OWN_TYPES = (Tx.TransactionType.OWN_TRANSFER, Tx.TransactionType.SAVING)
 LIST_TYPES = (Tx.TransactionType.SPENDING, Tx.TransactionType.INCOME, Tx.TransactionType.TRANSFER)
 PERIOD_ERROR = "기간을 다시 골라 주세요."
 
@@ -64,7 +68,14 @@ def listed_transactions(user):
         relation_type=TransactionLink.Relation.SAME_PURCHASE,
     )
     return (
-        with_card_fixed_id(Tx.objects.filter(user=user, transaction_type__in=LIST_TYPES))
+        with_card_fixed_id(Tx.objects.annotate(legacy_own=Exists(legacy_own_links())).filter(
+            Q(transaction_type__in=LIST_TYPES)
+            # 내 계좌 이체는 출금 쪽 한 줄만 (규칙이 이은 입금은 출금에서 함께 되돌린다)
+            | Q(transaction_type__in=OWN_TYPES, direction=Tx.Direction.OUT,
+                **{f"field_states__{OWN_REVIEW}__in": ["auto", "confirmed"]})
+            | Q(LEGACY_OWN, legacy_own=True),
+            user=user,
+        ))
         .annotate(in_same_purchase=Exists(same_purchase))
         .exclude(source_kind=SourceKind.BANK, in_same_purchase=True)
         # 화면 한 줄에 필요한 계좌 · 카드 · 카테고리 · 고정지출 정보를 미리 같이 가져온다 (거래마다 DB를 또 부르지 않게)
@@ -139,6 +150,42 @@ def transaction_item(tx):
     }
 
 
+# 11/5(R11) 전 규칙이 판단 표시 없이 own_transfer 로 바꾸고 입금과 이은 은행 출금. DB 값은 그대로 두고 자동 분류(auto)로 읽어
+# 목록에 보이고 [맞아요] · [연결 해제]할 수 있게 한다 (11/06). 저축으로 바뀐 것 · 연결 없는 것은 여기 넣지 않는다 (own_transfer_legacy_check 로 점검)
+LEGACY_OWN = ~Q(field_states__has_key=OWN_REVIEW) & Q(
+    transaction_type=Tx.TransactionType.OWN_TRANSFER, direction=Tx.Direction.OUT, source_kind=SourceKind.BANK)
+
+
+def legacy_own_links():
+    return TransactionLink.objects.filter(from_transaction=OuterRef("pk"), relation_type=TransactionLink.Relation.OWN_TRANSFER)
+
+
+def is_legacy_own(tx):
+    return (OWN_REVIEW not in (tx.field_states or {}) and tx.transaction_type == Tx.TransactionType.OWN_TRANSFER
+            and tx.direction == Tx.Direction.OUT and tx.source_kind == SourceKind.BANK
+            and TransactionLink.objects.filter(from_transaction=tx, relation_type=TransactionLink.Relation.OWN_TRANSFER).exists())
+
+
+def own_transfer_review(tx):
+    """내 계좌 이체 판단 suggested · auto · confirmed · rejected (이체 · 내 계좌 이체 · 저축 출금만, 없으면 None).
+    예전 규칙의 표시 없는 자동 연결(is_legacy_own)은 auto. field_states 원값은 내보내지 않는다"""
+    if tx.transaction_type not in (Tx.TransactionType.TRANSFER, *OWN_TYPES):
+        return None
+    return (tx.field_states or {}).get(OWN_REVIEW) or ("auto" if is_legacy_own(tx) else None)
+
+
+def own_transfer_fields(tx):
+    """목록 · 상세에 붙이는 내 계좌 이체 칸 (R11). recheck = 늦게 온 거래로 자동 판단이 모호해져 다시 확인할 것"""
+    review = own_transfer_review(tx)
+    return {"own_transfer_review": review,
+            "own_transfer_recheck": review == "auto" and bool((tx.field_states or {}).get(OWN_RECHECK))}
+
+
+def salary_fields(tx, reviews):
+    """isSalary = 인정된 급여 (R12) · salaryReview = confirmed(사용자 확인) | auto(자동 인정) | null"""
+    return {"is_salary": tx.pk in reviews, "salary_review": reviews.get(tx.pk)}
+
+
 # ---------- 16. 거래 목록 ----------
 
 def _parse_day(value):
@@ -205,8 +252,8 @@ def transactions(request):
         rows = rows.filter(Q(account_id__in=account_ids) | Q(card_id__in=card_ids))
     rows = rows.order_by("-occurred_on", F("occurred_time").desc(nulls_last=True), "-created_at")
 
-    salary = salary_transaction_ids(request.user, today)
-    items = [{**transaction_item(tx), "is_salary": tx.pk in salary} for tx in rows]
+    salary = salary_reviews(request.user)
+    items = [{**transaction_item(tx), **salary_fields(tx, salary), **own_transfer_fields(tx)} for tx in rows]
     summary = spending_summary(items)
     if start is None:
         # 전체 기간: 시작일 = 가장 오래된 거래일 (없으면 None)
@@ -230,6 +277,10 @@ INCOME_ERROR = "이 거래는 카테고리를 고를 수 없어요."
 FIXED_TRANSFER_ERROR = "고정지출에 연결된 거래예요. 고정지출 연결을 먼저 풀어 주세요."
 ORIGINAL_TYPE = "original_transaction_type"  # field_states 에 남기는 '원래 이체였음' 표시 (10/24 AA⑥)
 APPLY_TO_FUTURE_ERROR = "true 또는 false 로 보내 주세요."
+OWN_TRANSFER_ERROR = "내 계좌 이체로 확인할 수 없는 거래예요."
+OWN_TRANSFER_ONLY_ERROR = "내 계좌 이체 확인은 다른 칸과 같이 보낼 수 없어요."
+OWN_TRANSFER_FIRST_ERROR = "내 계좌 이체 확인을 먼저 취소해 주세요."
+OWN_TRANSFER_FIXED_ERROR = "고정지출 근거로 쓰인 거래예요. 고정지출 화면에서 먼저 정리해 주세요."
 
 
 def suggestion_info(tx):
@@ -259,7 +310,7 @@ def transaction_detail_body(tx):
     """거래 한 건 = 목록 한 줄 + 상세 칸"""
     return {
         **transaction_item(tx),
-        "is_salary": tx.pk in salary_transaction_ids(tx.user_id, timezone.localdate()),
+        **salary_fields(tx, salary_reviews(tx.user_id)),
         # 할부 개월: 카드 거래만 (일시불 0). 계좌 거래는 None
         "installment_months": tx.installment_months if tx.source_kind == SourceKind.CARD else None,
         "suggestion": suggestion_info(tx),
@@ -267,6 +318,7 @@ def transaction_detail_body(tx):
         "can_apply_to_future": can_apply_to_future(tx),
         # 원래 이체였는지 (화면의 [이체로 되돌리기] 표시용, 11/03). field_states 원값은 내보내지 않는다 (AA⑥)
         "was_transfer": (tx.field_states or {}).get(ORIGINAL_TYPE) == Tx.TransactionType.TRANSFER,
+        **own_transfer_fields(tx),
         "updated_at": tx.updated_at,
     }
 
@@ -314,19 +366,87 @@ def _apply_category(tx, code):
     return changed
 
 
+def _apply_own_transfer(tx, is_mine):
+    """내 계좌 이체 확인 (R11). 이 기능이 판단한 은행 출금만 바꾼다. 고칠 칸 목록을 돌려준다 (틀리면 400)
+    - true  [맞아요]: 추정(suggested) · 거절(rejected)한 transfer → 이 출금만 own_transfer. 자동 분류(auto)는 연결 · 유형 그대로 확인만
+    - false [아니에요] · 확인 취소 · 연결 해제: → transfer. 규칙이 이은 입금이 있으면 연결을 지우고 입금으로 되돌린다.
+      저축으로 바뀐 거래면 그 저축의 근거 이체에서도 뺀다 (저축 자체 · 다른 근거는 그대로)
+    판단 표시가 남아 있어도 지금 유형이 소비 등이면(사용자가 분류함) true · false 모두 400 — 오래된 화면의 요청이 분류를 덮지 않게.
+    회원 → 이 출금 행이 잠긴 상태에서 다시 읽은 값으로 판단한다. 상대 입금 · 저축 행은 여기서 잠근다"""
+    T = Tx.TransactionType
+    states = dict(tx.field_states or {})
+    review = own_transfer_review(tx)  # 예전 규칙의 표시 없는 자동 연결도 auto 로 (DB 표시는 사용자가 고를 때 처음 남긴다)
+    as_transfer = (tx.transaction_type == T.TRANSFER and review in ("suggested", "rejected")
+                   and tx.confirmation_state != Tx.ConfirmationState.CONFIRMED)
+    as_own = tx.transaction_type in OWN_TYPES and review in ("auto", "confirmed")
+    if is_mine and as_own and review == "confirmed" or not is_mine and as_transfer and review == "rejected":
+        return []  # 이미 원하는 상태 — 같은 결과로 성공
+    allowed = (
+        tx.source_kind == SourceKind.BANK and tx.direction == Tx.Direction.OUT and not tx.is_canceled
+        and (as_transfer or as_own)
+        # 카드값 · 대출 · 고정지출 회차에 붙었거나 고정비로 충당된 출금은 그 연결이 먼저다
+        and not tx.payment_matches.all() and not tx.allocations.all()
+    )
+    if not allowed:
+        raise ValidationError({"own_transfer": [OWN_TRANSFER_ERROR]})
+    states.pop(OWN_RECHECK, None)
+    states[OWN_REVIEW] = "confirmed" if is_mine else "rejected"
+    if is_mine:
+        if tx.transaction_type == T.TRANSFER:
+            tx.transaction_type = T.OWN_TRANSFER
+    else:
+        if tx.transaction_type == T.SAVING:
+            _remove_saving_evidence(tx)
+        _unlink_own_transfer(tx)
+        tx.transaction_type = T.TRANSFER
+    tx.confirmation_state = Tx.ConfirmationState.CONFIRMED if is_mine else Tx.ConfirmationState.NEEDS_REVIEW
+    tx.field_states = states
+    return ["transaction_type", "confirmation_state", "field_states"]
+
+
+def _remove_saving_evidence(tx):
+    """저축으로 바뀐 출금을 정기 저축 근거에서 뺀다. 고정지출 근거이기도 하면 거기서 먼저 정리해야 한다 (400)"""
+    from budgets.api import id_set  # budgets.api 가 finance 를 읽어서 함수 안에서 부른다
+
+    pk = str(tx.pk)
+    if any(pk in id_set(ids) for ids in RecurringExpense.objects.filter(user=tx.user_id).values_list("evidence", flat=True)):
+        raise ValidationError({"own_transfer": [OWN_TRANSFER_FIXED_ERROR]})
+    for saving in RecurringSaving.objects.select_for_update().filter(user=tx.user_id).order_by("pk"):
+        kept = [v for v in (saving.evidence or []) if id_set([v]) != {pk}]
+        if len(kept) != len(saving.evidence or []):
+            saving.evidence = kept
+            saving.save(update_fields=["evidence"])
+
+
+def _unlink_own_transfer(out):
+    """규칙이 이은 내 계좌 이체 연결을 지우고 상대 입금을 income 으로 되돌린다. 입금에도 거절 표시를 남겨 규칙이 다시 잇지 않게 한다.
+    입금이 그사이 다른 유형(저축 등)이 됐으면 유형은 두고 연결 · 표시만 정리한다"""
+    links = TransactionLink.objects.filter(from_transaction=out, relation_type=TransactionLink.Relation.OWN_TRANSFER)
+    for income in Tx.objects.select_for_update().filter(pk__in=links.values("to_transaction"), user_id=out.user_id).order_by("pk"):
+        income.field_states = {**(income.field_states or {}), OWN_REVIEW: "rejected"}
+        if income.transaction_type == Tx.TransactionType.OWN_TRANSFER:
+            income.transaction_type = Tx.TransactionType.INCOME
+        income.save(update_fields=["transaction_type", "field_states", "updated_at"])
+    links.delete()
+
+
 @api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated])
 def transaction_detail(request, transaction_id):
     """17. GET  /api/finance/transactions/<id>/ — 거래 한 건 보기
     18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null, "applyToFuture": true}
+        또는 내 계좌 이체 확인 {"ownTransfer": true | false} (R11, 다른 칸과 같이 보낼 수 없음)
     없는 거래 · 남의 거래 · 목록에 안 나오는 거래(같은 구매로 빠진 계좌 출금, 카드값 등)는 모두 404 (★3)"""
     if request.method == "GET":
         tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
         return Response(transaction_detail_body(tx))
 
     data = body_dict(request)
-    reject_unknown_fields(data, {"category", "apply_to_future"})
-    if "category" not in data:
+    reject_unknown_fields(data, {"category", "apply_to_future", "own_transfer"})
+    own = "own_transfer" in data
+    if own and (len(data) != 1 or not isinstance(data["own_transfer"], bool)):
+        raise ValidationError({"own_transfer": [OWN_TRANSFER_ONLY_ERROR if len(data) != 1 else APPLY_TO_FUTURE_ERROR]})
+    if not own and "category" not in data:
         raise ValidationError({"category": [CATEGORY_ERROR]})
     apply_to_future = data.get("apply_to_future", False)
     if not isinstance(apply_to_future, bool):
@@ -336,24 +456,32 @@ def transaction_detail(request, transaction_id):
     # 같은 거래에 '카테고리 변경'과 '이체로 되돌리기'가 동시에 와도 하나씩 차례로 처리되어
     # transfer + 카테고리 확정 같은 섞인 상태가 남지 않는다 (PR #41 리뷰).
     with transaction.atomic():
+        if own:
+            # 잠금 순서: 회원 → 거래 (pipeline · budgets.api.lock_user 와 같음). 저장 뒤 처리와 차례로 돈다
+            get_user_model().objects.select_for_update(no_key=True).filter(pk=request.user.pk).first()
         # 1) 잠금: 조인 없이 거래 행만 잠근다 (outer join 쪽은 FOR UPDATE 불가)
         row = Tx.objects.select_for_update().filter(user=request.user, pk=transaction_id)
         if not list(row.values_list("pk", flat=True)):
             raise Http404  # 없는 거래 · 남의 거래
         # 2) 잠근 뒤 최신 상태를 다시 읽는다. 목록에 안 나오는 거래면 404
         tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
-        if tx.transaction_type == Tx.TransactionType.INCOME:
-            raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
-        changed = _apply_category(tx, data["category"])
-        # '앞으로도 적용': 고를 수 있는 거래만 남기고, 아니면 지운다 (merchant_rules.remembered_category 가 읽음)
-        states = dict(tx.field_states or {})
-        if data["category"] is not None and apply_to_future and can_apply_to_future(tx):
-            states[FUTURE_KEY] = True
+        if own:
+            changed = _apply_own_transfer(tx, data["own_transfer"])
         else:
-            states.pop(FUTURE_KEY, None)
-        if states != (tx.field_states or {}):
-            tx.field_states = states
-            changed = [*dict.fromkeys([*changed, "field_states"])]
+            if tx.transaction_type == Tx.TransactionType.INCOME:
+                raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
+            if tx.transaction_type in OWN_TYPES:
+                raise ValidationError({"category": [OWN_TRANSFER_FIRST_ERROR]})
+            changed = _apply_category(tx, data["category"])
+            # '앞으로도 적용': 고를 수 있는 거래만 남기고, 아니면 지운다 (merchant_rules.remembered_category 가 읽음)
+            states = dict(tx.field_states or {})
+            if data["category"] is not None and apply_to_future and can_apply_to_future(tx):
+                states[FUTURE_KEY] = True
+            else:
+                states.pop(FUTURE_KEY, None)
+            if states != (tx.field_states or {}):
+                tx.field_states = states
+                changed = [*dict.fromkeys([*changed, "field_states"])]
         if changed:
             tx.save(update_fields=[*changed, "updated_at"])
     # 바뀐 카테고리 이름 등을 새로 읽어서 17번과 같은 모양으로 돌려준다

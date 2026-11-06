@@ -133,11 +133,19 @@ class CardPaymentTest(TestCase):
 
     def test_rerun_and_second_withdrawal_do_not_pay_twice(self):
         bill = self.bill()
-        tx, again = self.payment(), self.payment(day=date(2026, 11, 6))
+        tx = self.payment()
+        self.run_step(tx)
+        again = self.payment(day=date(2026, 11, 6))
         self.run_step(tx, again)
         self.run_step(tx, again)
         self.assertEqual(PaymentMatch.objects.count(), 1)
         self.assertEqual(PaymentDue.objects.get(bill=bill).paid_amount, 420_000)
+
+    def test_same_amount_withdrawals_are_left_for_user(self):
+        # 11/06: 같은 청구서에 맞는 출금이 둘이면 먼저 온 쪽을 고르지 않는다 (사용자 확인)
+        self.bill()
+        self.run_step(self.payment(), self.payment(day=date(2026, 11, 6)))
+        self.assertFalse(PaymentMatch.objects.exists())
 
     def test_bill_saved_after_withdrawal_is_matched_by_later_run(self):
         tx = self.payment()
@@ -163,3 +171,37 @@ class CardPaymentTest(TestCase):
         with patch.object(pipeline.card_payments, "match", side_effect=half_done), self.assertLogs("finance.pipeline", "ERROR"):
             pipeline.rematch_payments(self.user)
         self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_user_confirmed_card_payment_is_not_automatically_taken(self):
+        self.bill()
+        tx = self.payment()
+        Tx.objects.filter(pk=tx.pk).update(confirmation_state="confirmed")
+        self.run_step(tx)
+        self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_latest_amount_and_new_payment_link_are_checked_after_candidate_read(self):
+        from . import card_payments
+        bill, tx = self.bill(), self.payment()
+        original_find = card_payments.find_statements
+
+        def change_after_read(user, candidate):
+            shares = original_find(user, candidate)
+            Tx.objects.filter(pk=tx.pk).update(amount=400_000)
+            return shares
+
+        with patch.object(card_payments, "find_statements", side_effect=change_after_read):
+            self.run_step(tx)
+        self.assertFalse(PaymentMatch.objects.exists())
+        Tx.objects.filter(pk=tx.pk).update(amount=420_000)
+        other_bill = self.bill(amount=100_000, key="other", due=date(2026, 12, 5))
+        due = card_payments.bill_due(other_bill, tx)
+
+        def link_after_read(user, candidate):
+            shares = original_find(user, candidate)
+            PaymentMatch.objects.get_or_create(user=user, due=due, transaction=tx, defaults={"matched_amount": 100_000})
+            return shares
+
+        with patch.object(card_payments, "find_statements", side_effect=link_after_read):
+            self.run_step(tx)
+        self.assertEqual(list(PaymentMatch.objects.values_list("due_id", flat=True)), [due.pk])
+        self.assertFalse(PaymentDue.objects.filter(bill=bill).exists())

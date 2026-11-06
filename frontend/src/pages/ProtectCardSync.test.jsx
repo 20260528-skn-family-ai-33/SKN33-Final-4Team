@@ -10,12 +10,13 @@ const connection = { connectionId: 'hyundai', businessType: 'card', organization
 const review = { reviewId: 'review-1', merchantName: '합성 해외상점', occurredOn: '2026-10-27', occurredTime: '10:27:00',
   amount: 6694, isCanceled: false, canceledAmount: null, canResolve: true,
   candidates: [{ cardId: 'card-1', displayName: '첫 카드', isSelected: true, nameMatches: true }] }
-let host, root, connections, reason, result, requests, protectReads, run, connectionError
+let host, root, connections, reason, result, requests, protectReads, run, connectionError, notes
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   connections = [structuredClone(connection), { ...connection, connectionId: 'unrelated', organizationName: '다른카드', cardIds: ['other-card'] },
     { connectionId: 'bank', businessType: 'bank', cardIds: [] }]
   reason = 'spending_history_incomplete'
+  notes = []
   result = { items: [{ connectionId: 'hyundai', organizationName: '현대카드', status: 'succeeded', cardReviewCount: 1, approvalsComplete: false }] }
   requests = []; protectReads = 0; connectionError = null
   run = async () => {
@@ -26,7 +27,7 @@ beforeEach(() => {
     if (options.method) requests.push({ url, body: JSON.parse(options.body) })
     if (url === '/api/budgets/protect/') {
       protectReads++
-      return reply({ missing: [], base: null, saved: null, recommended: null, cushion: { target: null },
+      return reply({ missing: [], base: null, saved: null, recommended: null, cushion: { target: null }, cardNotes: notes,
         blocked: reason ? { reason: 'card_bill_pending' } : null, cardPending: reason ? [{ cardId: 'card-1', reason }] : [] })
     }
     if (url === '/api/finance/connections/' && !options.method) return connectionError || reply({ items: connections })
@@ -38,6 +39,10 @@ beforeEach(() => {
     if (url === '/api/tasks/sync-1/') return reply({ status: 'succeeded', result })
     if (url === '/api/finance/card-reviews/') return reply({ items: [review] })
     if (url === '/api/finance/card-reviews/review-1/') { reason = null; return reply({ status: 'resolved' }) }
+    if (url.startsWith('/api/budgets/fixed/')) return reply({ items: [], summary: {}, cardBills: [{ issuerCode: '0302', issuerName: '현대카드', totalAmount: 511515,
+      bills: [{ billId: 'bill-1', issuerCode: '0302', billingMonth: '2026-11', dueDate: '2026-11-05', totalAmount: 511515, status: 'unchecked',
+        remainingAmount: null, transactionPaidAmount: 0, recheckReason: null, userCheck: null, needsCheck: true }] }] })
+    if (url === '/api/finance/card-bills/bill-1/payment-check/') { reason = null; return reply({ status: 'user_confirmed' }) }
     if (url === '/api/csrf/') return reply({ ok: true })
     throw new Error(`Unexpected URL: ${url}`)
   }))
@@ -163,3 +168,39 @@ it('재로그인이 필요한 연결도 지킬 돈에서 로그인 후 다시 �
   expect(button('현대카드 내역 다시 불러오기')).toBeDefined()
   expect(host.querySelector('[data-path]').textContent).toBe('/budgets/protect')
 })
+
+it('11/06: 중복을 확인 못 한 금액은 넉넉하게 잡았다고 안내하고, 상세 일부 누락은 건수 · 금액 없이 알린다', async () => {
+  reason = null
+  notes = [{ cardId: 'card-1', issuerCode: '0302', reason: 'card_overlap_uncertain', amount: 100000, count: 1 },
+    { cardId: 'card-1', issuerCode: '0302', reason: 'bill_items_incomplete', amount: null, count: null }]
+  await render()
+  expect(host.textContent).toContain('일부 카드 사용의 중복 여부를 확인하지 못해 카드값을 넉넉하게 잡았어요. 실제 사용 가능한 예산은 표시보다 많을 수 있어요.')
+  expect(host.textContent).toContain('확인하지 못한 이번 주기 사용 1건 · 100,000원')
+  expect(host.textContent).toContain('빠진 항목은 확인하지 못했어요')
+  expect(host.querySelector('input[name=cardNo]')).toBeNull()   // 짝을 못 찾았다고 재조회 · 인증을 요구하지 않음
+})
+
+it('11/06: 청구 총액 불일치는 0원이나 상세 합계로 넘기지 않고 원래 청구액 확인이 필요하다고 안내한다', async () => {
+  reason = 'bill_total_mismatch'
+  await render()
+  expect(host.textContent).toContain('카드 청구서의 원래 청구액을 확인해야 해요')
+  expect(host.querySelector('input[name=cardNo]')).toBeNull()
+})
+
+it('11/06: 이번 주기 청구서를 아직 못 찾음은 조회 실패와 다르게 안내하고 재조회는 고를 때만', async () => {
+  reason = 'first_bill_unavailable'
+  await render()
+  expect(host.textContent).toContain('이번 급여 주기 카드 청구서를 아직 찾지 못했어요')
+  expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
+  expect(host.querySelector('input[name=cardNo]')).toBeNull()
+  await click('카드 내역 다시 불러오기')
+  expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
+})
+
+it('11/06: 조회 기간 누락만 재조회 입력을 바로 보여 준다', async () => {
+  reason = 'bill_history_incomplete'
+  await render()
+  expect(host.textContent).toContain('카드 내역을 다시 불러와야 해요')
+  expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
+})
+

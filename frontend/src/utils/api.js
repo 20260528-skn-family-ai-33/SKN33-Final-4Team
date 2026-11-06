@@ -3,7 +3,8 @@
 // 1) 읽기 (화면 데이터)
 //    const { data, error } = useApi('/api/home/')
 //      data  = 받아온 데이터 (받기 전에는 null)
-//      error = 실패했을 때 (error.message = 화면에 보여 줄 문장)
+//      error = 실패했을 때 (error.status · error.code · error.message — 화면 안내는 <ApiStatus error onRetry />)
+//      loading = 이 주소의 결과를 기다리는 중 · refreshing = reload() 로 같은 주소를 다시 받는 중
 //
 // 2) 저장·수정·삭제 (POST · PATCH · PUT · DELETE)
 //    try {
@@ -13,7 +14,7 @@
 //      err.fields   → { livingBudget: ['...'] }  칸별 에러 (있을 때만)
 //      err.code     → 'invalid' · 'not_authenticated' · 'not_found' ...
 //    }
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 // 응답을 읽고, 실패면 장고가 보낸 {"error": {...}} 를 Error 로 바꿔서 던진다
 async function readJson(res) {
@@ -29,23 +30,45 @@ async function readJson(res) {
 }
 
 // reload() = 같은 주소를 다시 받아오기 (예: 거래 카테고리를 저장한 뒤 목록 새로고침)
-export function useApi(path) {
-  const [state, setState] = useState({ data: null, error: null })
+// 주소가 바뀌면(필터 이동) 그 순간 이전 조회 결과를 버린다 → 새 결과가 올 때까지 data = null (R29)
+//   A → B → A 로 돌아와도 예전 A 결과를 다시 쓰지 않고 새로 받는다
+// 같은 주소 reload 는 받는 동안 data 를 그대로 두고 refreshing = true. 실패하면:
+//   기본 = data 를 비우고 error (if (!data) 로 오류 카드를 띄우는 화면이 그대로 동작)
+//   options.keepData = true = 지난 data 를 남기고 error — 이걸 고른 화면은 data 가 있어도 error 를 꼭 보여 줘야 한다
+// 늦게 온 이전 요청의 응답 · 오류는 요청 번호로 버린다 (취소가 늦게 먹혀도). 취소는 오류로 안 보인다
+export function useApi(path, { keepData = false } = {}) {
+  const empty = { path, data: null, error: null, refreshing: false }
+  const [state, setState] = useState(empty)
   const [version, setVersion] = useState(0)
+  const latest = useRef(0)
+  // 필터 이동: 그리기 도중 바로 비운다 (React 가 이 결과를 화면에 내기 전에 다시 그린다)
+  if (state.path !== path) setState(empty)
 
   // path 가 바뀔 때마다(예: 카테고리 필터를 바꿀 때) 다시 받아온다
   useEffect(() => {
-    const ctrl = new AbortController()  // 화면을 떠나면 받던 걸 취소하는 리모컨
+    const id = ++latest.current
+    const ctrl = new AbortController()  // 화면을 떠나거나 주소가 바뀌면 받던 걸 취소하는 리모컨
+    const mine = () => id === latest.current && !ctrl.signal.aborted
     fetch(path, { signal: ctrl.signal, headers: { Accept: 'application/json' } })
       .then(readJson)
-      .then((data) => setState({ data, error: null }))
-      .catch((err) => {
-        if (err.name !== 'AbortError') setState({ data: null, error: err })
+      .then((data) => { if (mine()) setState({ path, data, error: null, refreshing: false }) })
+      .catch((error) => {
+        if (mine()) setState((s) => ({ path, data: keepData ? s.data : null, error, refreshing: false }))
       })
     return () => ctrl.abort()
-  }, [path, version])
+  }, [path, version, keepData])
 
-  return { ...state, reload: () => setVersion((v) => v + 1) }
+  const current = state.path === path ? state : empty
+  return {
+    data: current.data,
+    error: current.error,
+    loading: !current.data && !current.error,   // 이 주소의 결과(성공 · 실패)를 아직 못 받음
+    refreshing: current.refreshing,             // 같은 주소를 다시 받는 중
+    reload: () => {
+      setState((s) => ({ ...s, refreshing: true }))
+      setVersion((v) => v + 1)
+    },
+  }
 }
 
 // 장고가 준 csrftoken 쿠키 꺼내기 (없으면 /api/csrf/ 에서 받아 온다)

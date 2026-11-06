@@ -80,7 +80,8 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `items[].paymentAccount` | 객체 / null | 거래한 계좌 `{ accountId, displayName, status }` |
 | `items[].funding` | 문자 / null | `living` · `fixed` (위 공통 값). 입금 · 이체는 `null` |
 | `items[].fixedExpenseId` | UUID / null | 이 거래가 연결된 고정지출(★8·13). 없으면 `null` |
-| `items[].isSalary` | 불린 | 월급 입금인지 (11/4). 화면은 `true`인 거래에만 "월급" 표시를 한다. 판단 기준: 급여 주기마다 첫 월급 입금 1건. 이번 주기는 홈과 같은 판단(홈 `salaryReceivedOn`·`nextSalaryEarlyOn`의 입금), 지난 주기는 현재 급여일 기준으로 계산(급여일을 바꾼 회원은 실제 경계와 다를 수 있음, 임시). 월급 후보는 관리 대상 원화 입출금 계좌로 들어온 **실수령액 80% 이상** 입금(내 계좌끼리 옮긴 돈 제외)이고, 주기 구간은 급여일 7일 전부터(조기 지급). 급여일·실수령액을 등록하지 않았으면 모두 `false`. 출금·이체는 항상 `false`. 거래 한 건 보기에도 같은 값 |
+| `items[].isSalary` | 불린 | 인정된 월급 입금인지 (R12, 11/06). 사용자가 확인했거나 확인한 기준과 같은 패턴이라 자동 인정된 입금만 `true` — 홈과 같은 저장 근거(`salary_decision`). 판단 없는 후보 · 거절 · 취소 · 내 계좌 이체로 바뀐 거래는 `false`. R12 전 자동 추정은 저장된 판단이 아니라서 `false`로 보인다. 거래 한 건 보기에도 같은 값 |
+| `items[].salaryReview` | 문자 또는 `null` | `isSalary`의 근거. `confirmed` 사용자 확인 · `auto` 자동 인정 · 아니면 `null`. 화면 "월급 · 자동 인식" |
 
 > **`summary`는 필터가 걸린 목록의 소계일 뿐이다.** 홈의 '남은 생활비'·'이번 주기 사용액', 예산 화면의 카테고리 사용액과는 **다른 값**이다. 그 값들은 급여 주기 기준이고, 고정비(`funding: fixed`)를 빼는 등 예산 규칙이 들어간 계산이라 이 숫자를 가져다 쓰지 않는다. 이 소계에는 `funding: fixed` 거래도 들어 있다. '확인 필요' 칩과 홈 알림에 붙일 건수는 아래 H-03 기준(기간 없이 전체)이다.
 
@@ -125,6 +126,10 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 - **소비 거래**(`spending`)와 함께 **입금**(`income`, 월급 등)과 **남에게 보낸 이체**(`transfer`)도 보여 준다.
 - 입금 · 이체는 `category: null`이고 **소비 합계(`spentTotal`) · 카테고리 칩 · `needsReviewCount`에 들어가지 않는다.** 카테고리를 걸어 조회하면 나오지 않는다.
 - 내 계좌끼리 이체(`own_transfer`) · 저축(`saving`) · 대출 상환(`loan_repayment`) · 카드값(`card_payment`)은 넣지 않는다.
+  - **예외 (R11, 11/5)**: 이 기능이 자동 분류했거나(`ownTransferReview: auto`) 사용자가 확인한(`confirmed`) 내 계좌 이체는 **출금 쪽 한 줄만** 넣는다. 그 뒤 정기 저축으로 처리돼 `saving`이 된 출금도 넣는다. 되돌릴 수 있게 하려는 것이고 소비 합계에는 들어가지 않는다.
+- 각 줄에 `ownTransferReview`(아래 '거래 한 건 보기' 표)를 같이 준다.
+  - **예전 기록 (11/06)**: 11/5 전 규칙이 판단 표시 없이 `own_transfer`로 바꾸고 입금과 이은(`OWN_TRANSFER` 연결) 은행 출금은 DB를 고치지 않고 `ownTransferReview: auto`로 읽어 목록에 넣는다 → 사용자가 [맞아요] · [연결 해제]로 확인 · 정정한다(처음 고를 때 표시를 남김). 연결 없는 `own_transfer` · 표시 없는 `saving`은 넣지 않는다. 점검: `python manage.py own_transfer_legacy_check [--ids]` (읽기 전용).
+- 적요에 카드사 이름만 있는 출금은 `card_payment`가 아니라 `transfer`(카드값 후보)로 목록에 남는다. 청구서에 연결될 때 카드값이 된다 (cards.md '11/06 추가').
 - 고정지출로 연결된 거래(월세 출금, 넷플릭스 카드 결제 등)는 **목록에 넣고** `funding: fixed`로 표시한다(★8). 화면은 '고정' 배지 등으로 구분할 수 있다.
 
 **같은 구매가 두 번 들어올 때 (중복 집계 방지, 10/22 B 확정)**
@@ -194,6 +199,8 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `suggestion.reason` | 문자 / null | 확인 필요 이유(사용자에게 보여 줄 문장) |
 | `classifiedBy` | 문자 / null | 분류 출처: `user` · `rule` · `ml` · `llm`. DB `classification_source`와 같음(H-07 확정) |
 | `wasTransfer` | 불린 | 원래 이체였다가 소비로 바뀐 거래인지 (11/03). `true`면 화면이 [이체로 되돌리기](`category: null`)를 보여 준다. 고정지출에 연결된 거래는 `true`여도 되돌리기가 400(AA⑤) |
+| `ownTransferReview` | 문자 / null | 내 계좌 이체 판단 (R11, 11/5). `transfer` · `own_transfer` · `saving` 출금만, 그 밖은 `null`. `suggested` = 출금 적요가 가입 이름(`nickname`)과 같아 **추정**(유형은 `transfer` 그대로, 화면 [맞아요]/[아니에요]) · `auto` = 규칙이 내 다른 계좌의 입금과 묶어 **자동 분류**(`own_transfer`, 그 뒤 저축 처리되면 `saving`. 확실한 식별이 아니라 규칙 추정 — [맞아요]/[연결 해제]. 기준은 아래 '내 계좌 이체 자동 분류') · `confirmed` = 사용자가 [맞아요](`own_transfer`, [확인 취소]) · `rejected` = 사용자가 [아니에요] · 확인 취소 · 연결 해제(`transfer`). `field_states` 원값은 내보내지 않는다 |
+| `ownTransferRecheck` | 불린 | `auto`인데 나중에 들어온 거래로 상대 후보가 여럿이 됐지만, 저축 · 납부 · 고정지출 근거라 자동으로 풀지 않은 연결이면 `true`. 화면은 "다시 확인해 주세요"를 보여 주고 같은 상세에서 [맞아요]/[연결 해제]로 정정한다 (R11) |
 | `canApplyToFuture` | 불린 | 화면에 "앞으로 이 가게 거래도 이 카테고리로" 체크박스를 보여 줄지 (10/30). 소비 거래이고 페이 충전이 아니면 `true`. 다품목 가맹점도 `true`다(11/06). 이체는 `false`(받는 사람은 기억하지 않음, W) |
 | `updatedAt` | 시각 | 마지막 수정 시각 |
 
@@ -245,11 +252,12 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | 로그인 필요 | O |
 | 명세 상태 | 초안 |
 
-**보내는 값** — 보낼 수 있는 칸은 아래 두 개뿐이다.
+**보내는 값** — 보낼 수 있는 칸은 아래 세 개뿐이다. `category`(+ `applyToFuture`) 또는 `ownTransfer` 하나만 보낸다.
 
 | 이름 | 타입 | 필수 | 범위·설명 | 예시 |
 |---|---|---|---|---|
 | `category` | 문자 / null | O | 10개 카테고리 + `ETC`(기타) 중 하나. `UNCLASSIFIED`는 보낼 수 없음. `null`은 **원래 이체였던 거래를 다시 이체로 돌릴 때만**(W) | `"FOOD"` |
+| `ownTransfer` | 불린 | X | 내 계좌 이체 확인 (R11, 11/5). 다른 칸과 같이 보내면 400. 아래 '내 계좌 이체 확인' | `true` |
 | `applyToFuture` | 불린 | X (기본 `false`) | `true`면 **같은 가맹점의 다음 새 거래**도 이 카테고리로 자동 분류 (10/30). `canApplyToFuture: false`인 거래에 `true`를 보내도 400을 내지 않고 재사용하지 않는다 | `true` |
 
 ```json
@@ -275,6 +283,20 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
     - 이체의 **받는 사람은 기억하지 않는다.** 같은 사람에게 다음에 보낸 이체는 다시 `transfer`로 들어온다(`remembered_category()`를 쓰지 않음).
 - 입금(`income`) 거래는 카테고리를 고를 수 없다 → 400 (10/24 AA⑦ 확정, 아래 실패 표).
 - **'원래 이체였던 거래' 표시 (10/24 AA⑥)**: 새 칸 없이 거래의 `field_states.original_transaction_type = "transfer"`로 남긴다. W로 소비가 된 이체 · AA⑤로 소비가 된 이체 모두. `category: null`로 되돌릴 수 있는지, 연결을 풀 때 무엇으로 돌릴지 이 값으로 판단한다. 원값은 내보내지 않고, 거래 한 건 보기에 `wasTransfer`(불린)만 준다(11/03).
+- **내 계좌 이체 확인 (R11, 11/5)** — `{"ownTransfer": true | false}`
+    - `true` [맞아요]: `suggested` · `rejected`인 `transfer` → **이 출금만** `own_transfer`(`confirmed`). 같은 금액 입금 등 다른 거래로 넓히지 않는다. `auto`면 연결 · 유형(`own_transfer` · `saving`)은 그대로 두고 `confirmed`로만 바꾼다.
+    - `false` [아니에요] · 확인 취소 · 연결 해제: → `transfer`(`rejected`). 규칙이 이은 입금이 있으면 연결(`OWN_TRANSFER`)을 지우고 입금을 `income`으로 되돌린 뒤 입금에도 `rejected`를 남겨 다시 잇지 않는다. 거절해도 **소비로 바꾸지 않는다** — 소비로 넣으려면 [소비로 분류하기].
+    - **저축으로 처리된 출금(`saving`)** 에 `false`: 그 출금을 정기 저축의 근거 이체(`evidence`)에서 빼고 `transfer`로 되돌린다. 저축 자체(상태 · 금액 · 다른 근거)는 그대로이고, 저축 화면의 '근거 이체 수'가 하나 줄어든다. 이 출금은 이후 저축 자동 처리(`match_savings`)에서도 빠진다. 고정지출 근거이기도 하면 400 "고정지출 근거로 쓰인 거래예요. 고정지출 화면에서 먼저 정리해 주세요." 저축 화면에는 거래 한 건을 빼는 기능이 없어서 정정은 거래 상세에서만 한다.
+    - 바꿀 수 있는 거래 (잠근 뒤 다시 읽은 **지금 상태** 기준): `suggested` · `rejected`인 `transfer`(사용자 확정 아님), `auto` · `confirmed`인 `own_transfer` · `saving` 은행 출금. 판단 표시가 남아 있어도 지금 유형이 소비 등이면(사용자가 [소비로 분류하기]를 함) `true` · `false` 모두 400 — 오래된 화면의 요청이나 동시 요청이 사용자 분류를 덮지 않는다. 취소 거래 · 납부(카드값 · 대출 · 고정지출 회차)에 붙은 출금 · 고정비로 충당된 출금도 400. 이미 원하는 상태면 200.
+    - 사용자 판단은 재수집 · 저장 뒤 처리 · 이름 변경으로 덮어쓰지 않는다. 저장은 `field_states.own_transfer_review`.
+    - `own_transfer` · `saving` 거래에 `category`를 보내면 400 — 확인을 먼저 취소한다.
+    - 잠금: 회원 → 거래 (저장 뒤 처리와 같은 순서).
+- **내 계좌 이체 자동 분류 (R11, 11/5 최종 기준, `finance/transfer_rules.py`)** — 거래 저장 뒤 1단계 `link_basics`
+    - **양쪽 거래가 다 있으면 `auto`**: 같은 회원의 서로 다른 계좌 · 출금 ↔ 입금 · 같은 금액 · 시각 차이 **5분 이내**(5분 포함, 날짜와 시각을 합쳐 비교해 자정 넘김도 봄) · **양쪽 대표 적요가 모두 가입 이름**(공백 · 대소문자 정리 후 전체 일치) · 양쪽에서 맞는 상대가 **각각 하나뿐**(상대 거래의 유형과 상관없이 셈). 양쪽 거래와 연결(`OWN_TRANSFER`)을 한 트랜잭션에서 바꾼다.
+    - 하지 않는 경우: 시각 없음 · 가입 이름이 비었음 · 적요끼리만 같음("이체" 등) · 부분 일치 · 후보가 여럿 · 취소 · 사용자 확정 · 납부 · 같은 구매 · 이미 이은 거래 · 사용자 판단(`confirmed` · `rejected`)이 있는 거래.
+    - **상대 거래가 없거나 모호하면 `suggested`**: 출금 적요가 가입 이름이면 일반 이체(`transfer`) 그대로 추정만 남긴다. 상대 입금이 나중에 들어와 조건을 다 맞추면 `auto`로 올린다.
+    - **늦게 온 거래로 다시 보기**: 새 거래가 기존 `auto` 연결의 후보가 되면 그 연결을 다시 본다. 여전히 양쪽 유일이면 둔다. 모호해졌으면 연결을 지우고 출금은 `transfer`(이름이 같으면 `suggested`), 입금은 `income`으로 되돌린다 — 다른 후보에 갈아 붙이지 않는다. 그래서 한꺼번에 받든 나눠 받든 결과가 같다. 사용자가 확인한 연결(`confirmed`)은 그대로. 저축으로 바뀌었거나 저축 · 고정지출 근거 · 납부에 붙은 연결은 풀지 않고 `ownTransferRecheck: true`로 표시한다(정정은 거래 상세).
+    - CODEF 은행 거래에는 상대 계좌번호나 양쪽 송금을 잇는 식별값이 없어서(적요 1~4칸뿐) 이 규칙은 **추정**이다. `source_key`(R08)는 쓰지 않는다.
 - 이 요청은 같은 값을 두 번 보내도 결과가 같아서 요청 번호(`Idempotency-Key`)를 쓰지 않는다(★4: 새로 만들기 · 승인 요청만).
 
 **받는 값 (200)** — 바뀐 거래 한 건(`GET /api/finance/transactions/<id>/`와 같은 모양)
@@ -293,6 +315,9 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 |---|---|---|---|
 | `category`가 없음, 모르는 코드, `UNCLASSIFIED`, 원래 소비였던 거래에 `null` | 400 | `invalid` | "카테고리를 다시 골라 주세요." (`fields.category`) |
 | 입금(`income`) 거래에 카테고리를 보냄 (AA⑦) | 400 | `invalid` | "이 거래는 카테고리를 고를 수 없어요." (`fields.category`) |
+| 내 계좌 이체(`own_transfer`) · 저축(`saving`)에 카테고리를 보냄 (R11) | 400 | `invalid` | "내 계좌 이체 확인을 먼저 취소해 주세요." (`fields.category`) |
+| `ownTransfer`를 바꿀 수 없는 거래 (판단 없음 · 지금 소비 등 다른 유형 · 입금 · 취소 · 납부 연결 · 고정비 충당) | 400 | `invalid` | "내 계좌 이체로 확인할 수 없는 거래예요." (`fields.ownTransfer`) |
+| `ownTransfer`를 다른 칸과 같이 보냄 · 불린이 아님 | 400 | `invalid` | `fields.ownTransfer` |
 | 표에 없는 칸을 보냄 (★2) | 400 | `invalid` | `fields.<그 칸>: ["이 칸은 보낼 수 없어요."]` |
 | 없는 거래 · 남의 거래 · 목록에 안 나오는 거래 (★3) | 404 | `not_found` | "거래를 찾을 수 없어요." |
 | 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 |
@@ -326,7 +351,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | ★14 | '이번 주기' = 설정한 월급날 기준 | 매칭 · 집계에서 '이번 주기'는 모두 H-01 주기(설정한 월급날 ~ 다음 월급날 전날) |
 
 - 감지 조건(결정기록 3번): 같은 받는 곳 · 한 달 1건 · 매달 같은 날 ±3일 · 같은 금액(변동 청구 ±10%) · 3달 연속. 등록된 대출과 맞는 출금은 대출 상환으로, 내 계좌끼리 정기 이체는 저축 후보로.
-  - **11/4 구현** (`budgets/candidates.py`): 같은 결제 수단끼리 묶는다. 은행 거래에는 받는 계좌 번호가 없어서 연결 안 한 계좌로 보낸 이체는 적요 이름 + 금액 + 날짜로 묶는다. 남에게 보낸 이체도 적요에 회원 이름 · [임시] 저축 단어가 있으면 저축 후보(savings.md S-05). [임시] 최근 거래가 이번 달 · 지난달이어야 한다. 자세한 규칙은 fixed.md '후보 감지'.
+  - **11/4 구현** (`budgets/candidates.py`): 같은 결제 수단끼리 묶는다. 은행 거래에는 받는 계좌 번호가 없어서 연결 안 한 계좌로 보낸 이체는 적요 이름 + 금액 + 날짜로 묶는다. 남에게 보낸 이체도 적요에 회원 이름 · [임시] 저축 단어가 있으면 저축 후보(savings.md S-05). 단 사용자가 '내 계좌 이체가 아니에요'라고 한 이체는 회원 이름을 근거로 쓰지 않는다(R11, 저축 단어는 그대로). [임시] 최근 거래가 이번 달 · 지난달이어야 한다. 자세한 규칙은 fixed.md '후보 감지'.
 
 **거래 저장 뒤 매칭 입구 (10/22 T, 구현: finance/pipeline.py (단계 함수는 각 담당자가 채움))**
 
@@ -340,7 +365,7 @@ def process_new_transactions(user, transaction_ids):   # 입구: 거래 저장 �
         step(user, txs)
 
 AFTER_SAVE_STEPS = [
-    ("link_basics",           link_basics),            # 1 세진: 취소 연결 · 내 계좌끼리 이체(own_transfer) · 카드값(card_payment) · 대출 상환 후보(loan_repayment) 판단 (SAME_PURCHASE 연결은 아직 없음)
+    ("link_basics",           link_basics),            # 1 세진: 취소 연결 · 내 계좌 이체 판단(R11: 양쪽 가입 이름 · 같은 금액 · 5분 · 양쪽 유일 → auto, 이름만 맞는 출금 → suggested, 날짜·금액만으로는 잇지 않음) · 카드값(card_payment) · 대출 상환 후보(loan_repayment) 판단 (SAME_PURCHASE 연결은 아직 없음)
     ("classify_spending",     classify_spending),      # 2 혜리: spending 카테고리 분류 (규칙 → 사전 → ML → LLM)
     ("match_card_payments",   match_card_payments),    # 3 세진: 카드값 출금 ↔ 카드 청구서
     ("match_loan_repayments", match_loan_repayments),  # 4 세진: 대출 상환 출금 ↔ 대출

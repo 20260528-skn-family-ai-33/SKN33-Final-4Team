@@ -7,7 +7,7 @@
           "대출"
         ],
         "operationId": "listLoans",
-        "description": "저장된 본인의 상환 중(repaying) 대출만 읽습니다. repaid 대출과 쿼리 필터는 1차에 제공하지 않습니다. CODEF를 호출하지 않습니다. 유효한 대출 조회 동의가 없으면 직접 등록(origin=manual) 대출만 반환하고 hasInquiryConsent=false를 제공합니다. 동의가 있으면 기관 조회 대출도 포함하며 hasInquiryConsent=true입니다. relogin 상태에서도 마지막 저장 자료와 fetchedAt을 유지합니다. 미조회/조회 실패를 items: []로 바꾸지 않습니다.\n\n모르는 값은 null이고 확인된 0만 0입니다. 기관 원본 reported*와 직접 등록 manual*은 구분하며 잔액 우선순위를 임의로 정하지 않습니다. repaymentMethod의 unknown은 사용자가 “잘 모르겠어요”를 선택한 값, null은 미입력입니다. paymentHistory는 저장된 실제 납부 최근 3건(날짜 최신순)이며 없거나 미확보면 null입니다. 대출 실행 거래는 납부로 세지 않습니다. estimatedMonthlyPayment는 지난 납부 기반 추정이며 산출 불가 시 null; 사용자 저장 monthlyPayment를 덮어쓰지 않습니다. overdue:null은 확인 불가이고 repaid와 다른 뜻입니다.\n\nfieldStates는 manualBalance·manualRate·repaymentMethod·monthlyPayment·paymentDay의 출처/사용자 확인 정보만 구성하며 DB JSON 전체를 노출하지 않습니다. 기관 조회 대출의 일부를 보완해도 origin:provider를 유지합니다. 추정값을 그대로 확인하면 source:estimated를 유지하고 confirmationStatus만 confirmed로, 직접 바꾸면 source:manual로 구분합니다. confirmedAt은 confirmed일 때만 제공하며 기관 조회 시각이나 이전 값의 확인 시각을 재사용하지 않습니다. 확인 근거가 없는 기존 수동 값은 source:manual을 유지하되 확인 상태 unknown으로 표시합니다.\n\n저장한 월 상환액과 납부일이 모두 있을 때만 납부 예정을 만듭니다. 해당 월에 없는 납부일은 말일이고 주말·공휴일 보정은 하지 않습니다. 추정값만으로 납부액을 채우지 않습니다. 홈 mustPay의 type=loan, sourceId=loanId, 금액은 월 상환액−이미 낸 금액입니다. 납부 한 번으로 대출 전체를 repaid로 바꾸지 않고 고정지출 후보를 중복 생성하지 않습니다. GET 자체는 납부 생성·예산 승인·출금 매칭을 실행하지 않습니다.\n\n실제 은행별 원천 제공 여부·이율 단위/정밀도·납부일 의미·연체 코드, 추정 계산의 월별 묶음/기간/부분 수집/원 미만 처리, 기관 재조회와 보완값 충돌 및 DB 메타데이터 저장 방식은 구현 검증 대상입니다. CODEF 샌드박스 성공은 서비스 API 구현 완료나 실제 납부 이력 검증을 뜻하지 않습니다.",
+        "description": "저장된 본인의 상환 중(repaying) 대출만 읽습니다. ?status=repaid로 상환 종료한 직접 등록 대출을 읽을 수 있습니다(R19). CODEF를 호출하지 않습니다. 유효한 대출 조회 동의가 없으면 직접 등록(origin=manual) 대출만 반환하고 hasInquiryConsent=false를 제공합니다. 동의가 있으면 기관 조회 대출도 포함하며 hasInquiryConsent=true입니다. relogin 상태에서도 마지막 저장 자료와 fetchedAt을 유지합니다. 미조회/조회 실패를 items: []로 바꾸지 않습니다.\n\n모르는 값은 null이고 확인된 0만 0입니다. 기관 원본 reported*와 직접 등록 manual*은 구분하며 잔액 우선순위를 임의로 정하지 않습니다. repaymentMethod의 unknown은 사용자가 “잘 모르겠어요”를 선택한 값, null은 미입력입니다. paymentHistory는 저장된 실제 납부 최근 3건(날짜 최신순)이며 없거나 미확보면 null입니다. 대출 실행 거래는 납부로 세지 않습니다. estimatedMonthlyPayment는 지난 납부 기반 추정이며 산출 불가 시 null; 사용자 저장 monthlyPayment를 덮어쓰지 않습니다. overdue:null은 확인 불가이고 repaid와 다른 뜻입니다.\n\nfieldStates는 manualBalance·manualRate·repaymentMethod·monthlyPayment·paymentDay의 출처/사용자 확인 정보만 구성하며 DB JSON 전체를 노출하지 않습니다. 기관 조회 대출의 일부를 보완해도 origin:provider를 유지합니다. 추정값을 그대로 확인하면 source:estimated를 유지하고 confirmationStatus만 confirmed로, 직접 바꾸면 source:manual로 구분합니다. confirmedAt은 confirmed일 때만 제공하며 기관 조회 시각이나 이전 값의 확인 시각을 재사용하지 않습니다. 확인 근거가 없는 기존 수동 값은 source:manual을 유지하되 확인 상태 unknown으로 표시합니다.\n\n저장한 월 상환액과 납부일이 모두 있을 때만 납부 예정을 만듭니다. 해당 월에 없는 납부일은 말일이고 주말·공휴일 보정은 하지 않습니다. 추정값만으로 납부액을 채우지 않습니다. 홈 mustPay의 type=loan, sourceId=loanId, 금액은 월 상환액−이미 낸 금액입니다. 납부 한 번으로 대출 전체를 repaid로 바꾸지 않고 고정지출 후보를 중복 생성하지 않습니다. GET 자체는 납부 생성·예산 승인·출금 매칭을 실행하지 않습니다.\n\n실제 은행별 원천 제공 여부·이율 단위/정밀도·납부일 의미·연체 코드, 추정 계산의 월별 묶음/기간/부분 수집/원 미만 처리, 기관 재조회와 보완값 충돌 및 DB 메타데이터 저장 방식은 구현 검증 대상입니다. CODEF 샌드박스 성공은 서비스 API 구현 완료나 실제 납부 이력 검증을 뜻하지 않습니다.",
         "x-source": "docs/api/loans.md",
         "responses": {
           "200": {
@@ -68,7 +68,9 @@
                               "confirmedAt": null
                             }
                           },
-                          "fetchedAt": "2026-10-21T09:30:00+09:00"
+                          "fetchedAt": "2026-10-21T09:30:00+09:00",
+                          "recentDues": [],
+                          "payoff": null
                         }
                       ],
                       "hasInquiryConsent": true
@@ -155,7 +157,23 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "repaying(기본) 또는 repaid. repaid는 직접 등록 대출 중 상환 종료한 것만(완납 되돌리기용). 그 밖의 값은 400 invalid.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repaying",
+                "repaid"
+              ],
+              "default": "repaying"
+            }
+          }
+        ]
       },
       "post": {
         "summary": "대출 직접 등록",
@@ -219,7 +237,17 @@
                       "confirmedAt": "2026-10-22T14:00:00+09:00"
                     }
                   },
-                  "fetchedAt": null
+                  "fetchedAt": null,
+                  "recentDues": [
+                    {
+                      "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                      "dueDate": "2026-11-25",
+                      "expectedAmount": 310500,
+                      "paidAmount": 0,
+                      "paymentState": "unpaid"
+                    }
+                  ],
+                  "payoff": null
                 }
               }
             }
@@ -382,7 +410,7 @@
           "대출"
         ],
         "operationId": "updateLoanRepayment",
-        "description": "본인의 상환 중(repaying) 기관 조회/직접 등록 대출에서 monthlyPayment·paymentDay·repaymentMethod 세 칸만 수정합니다. 생략은 유지하고 null은 해당 값을 비웁니다. 빈 문자열·범위 밖·허용 외 필드는 400 invalid이며 전체 미저장입니다. manualBalance·manualRate·maturityDate·기관 원본·status·origin·소유자·연결 ID·fieldStates는 수정할 수 없습니다. 상환 완료(repaid) 대출은 없는/타인 대출과 같은 404입니다.\n\n같은 값을 재전송해도 같은 결과이며 Idempotency-Key를 쓰지 않습니다. 월 상환액과 납부일이 모두 있으면 이번 주기 납부 예정을 중복 없이 생성하고 둘 중 하나가 없으면 새 납부 예정을 만들지 않습니다. 승인된 예산을 사용자 승인 없이 바꾸지 않으며 보완 저장은 대출 전체 상환 완료 처리가 아닙니다.\n\n응답은 목록으로 감싸지 않은 대출 한 건입니다. 기관 조회 대출의 origin:provider는 유지하며 입력 확인 정보는 서버가 구성합니다. 이미 생성된 납부 예정의 금액/일자 변경·null 전환·부분 납부 처리, 여러 대출 순차 저장의 일부 실패 화면 안내는 구현 조율 대상입니다.\n\n직접 등록 대출은 조회 동의 없이 수정할 수 있습니다. 기관 조회 대출은 유효한 대출 조회 동의가 없으면 403 consent_required이며 변경하지 않습니다.",
+        "description": "본인의 상환 중(repaying) 기관 조회/직접 등록 대출에서 monthlyPayment·paymentDay·repaymentMethod를 수정하고, 직접 등록 대출은 등록 때 입력한 lenderName·productName·manualBalance·manualRate·maturityDate도 정정합니다(R19). 정정은 지난 납부액·연결 거래·회차 ID를 바꾸지 않고 가짜 납부를 만들지 않으며, manualBalance 0원도 전체 완납으로 바꾸지 않습니다. 생략은 유지하고 null은 해당 값을 비웁니다. 빈 문자열·범위 밖·허용 외 필드는 400 invalid이며 전체 미저장입니다. 기관 원본·status·origin·소유자·연결 ID·fieldStates는 수정할 수 없습니다. 상환 완료(repaid) 대출은 없는/타인 대출과 같은 404입니다.\n\n같은 값을 재전송해도 같은 결과이며 Idempotency-Key를 쓰지 않습니다. 월 상환액과 납부일이 모두 있으면 이번 주기 납부 예정을 중복 없이 생성하고 둘 중 하나가 없으면 새 납부 예정을 만들지 않습니다. 승인된 예산을 사용자 승인 없이 바꾸지 않으며 보완 저장은 대출 전체 상환 완료 처리가 아닙니다.\n\n응답은 목록으로 감싸지 않은 대출 한 건입니다. 기관 조회 대출의 origin:provider는 유지하며 입력 확인 정보는 서버가 구성합니다. 이미 생성된 납부 예정의 금액/일자 변경·null 전환·부분 납부 처리, 여러 대출 순차 저장의 일부 실패 화면 안내는 구현 조율 대상입니다.\n\n직접 등록 대출은 조회 동의 없이 수정할 수 있습니다. 기관 조회 대출은 유효한 대출 조회 동의가 없으면 403 consent_required이며 변경하지 않습니다.",
         "x-source": "docs/api/loans.md",
         "responses": {
           "200": {
@@ -438,7 +466,17 @@
                       "confirmedAt": "2026-10-22T11:00:00+09:00"
                     }
                   },
-                  "fetchedAt": "2026-10-21T09:30:00+09:00"
+                  "fetchedAt": "2026-10-21T09:30:00+09:00",
+                  "recentDues": [
+                    {
+                      "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                      "dueDate": "2026-11-25",
+                      "expectedAmount": 310500,
+                      "paidAmount": 0,
+                      "paymentState": "unpaid"
+                    }
+                  ],
+                  "payoff": null
                 }
               }
             }
@@ -609,6 +647,1379 @@
           }
         }
       }
+    },
+    "/api/finance/loan-dues/{id}/payments/": {
+      "get": {
+        "summary": "대출 납부 거래 후보 보기",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "getLoanDuePayments",
+        "x-source": "docs/api/loans.md",
+        "description": "회차 상태·연결한 출금·고를 수 있는 내 계좌 출금 후보를 줍니다. 금액이 다르거나 적요에 기관 이름이 없어도 후보에서 빼지 않습니다. 기본 기간은 납부일 ±7일(오늘까지), from·to로 최대 92일. 후보에서 빼는 거래: 다른 회원·취소·내 계좌 이체(R11 확인 중 포함)·저축·입금·고정지출/정기 저축 근거·내 계좌 이체 또는 카드 승인(SAME_PURCHASE)으로 묶인 출금·다른 회차에 이미 연결된 출금. 정렬은 연결 계좌·전에 확인한 계좌/적요 → 납부일 근처 → 날짜·금액 차이(참고만). 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 대출 → 회차 → 거래 순으로 잠급니다.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인의 유효한(취소되지 않은) 대출 납부 회차 dueId (홈 mustPay[].dueId · 대출 recentDues[].dueId). 잘못된 UUID·없음·남의 것은 404.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "찾을 기간 시작 YYYY-MM-DD",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-10-20"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "찾을 기간 끝 YYYY-MM-DD (오늘 이후 출금은 나오지 않음)",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-11-12"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "회차 · 연결한 출금 · 후보.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanDuePaymentState"
+                },
+                "examples": {
+                  "candidates": {
+                    "summary": "후보 2건 (금액 다름·은행명 없음, 소비 분류 변경 확인 필요)",
+                    "value": {
+                      "due": {
+                        "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                        "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                        "name": "예시은행 예시 신용대출",
+                        "dueDate": "2026-11-10",
+                        "expectedAmount": 300000,
+                        "paidAmount": 0,
+                        "paymentState": "needs_review",
+                        "linkedAccount": {
+                          "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                          "displayName": "예시은행 급여통장 · ****1001",
+                          "status": "connected"
+                        }
+                      },
+                      "linked": [],
+                      "searchFrom": "2026-11-03",
+                      "searchTo": "2026-11-12",
+                      "items": [
+                        {
+                          "transactionId": "0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40",
+                          "date": "2026-11-10",
+                          "amount": 298000,
+                          "account": {
+                            "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                            "displayName": "예시은행 급여통장 · ****1001",
+                            "status": "connected"
+                          },
+                          "description": "자동이체 출금",
+                          "amountDifference": -2000,
+                          "hints": {
+                            "linkedAccount": true,
+                            "nearDueDate": true,
+                            "lenderInDescription": false,
+                            "sameAsBefore": false
+                          },
+                          "reclassify": {
+                            "fromType": "transfer",
+                            "fromCategory": null,
+                            "needsConfirm": false
+                          },
+                          "settlement": null,
+                          "source": null
+                        },
+                        {
+                          "transactionId": "6a1e2f3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+                          "date": "2026-11-08",
+                          "amount": 300000,
+                          "account": {
+                            "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                            "displayName": "예시은행 급여통장 · ****1001",
+                            "status": "connected"
+                          },
+                          "description": "예시 식당",
+                          "amountDifference": 0,
+                          "hints": {
+                            "linkedAccount": true,
+                            "nearDueDate": true,
+                            "lenderInDescription": false,
+                            "sameAsBefore": false
+                          },
+                          "reclassify": {
+                            "fromType": "spending",
+                            "fromCategory": "FOOD",
+                            "needsConfirm": true
+                          },
+                          "settlement": null,
+                          "source": null
+                        }
+                      ]
+                    }
+                  },
+                  "legacy": {
+                    "summary": "원래 분류 기록이 없는 예전 자동 연결",
+                    "value": {
+                      "due": {
+                        "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                        "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                        "name": "예시은행 예시 신용대출",
+                        "dueDate": "2026-11-10",
+                        "expectedAmount": 300000,
+                        "paidAmount": 300000,
+                        "paymentState": "paid",
+                        "linkedAccount": {
+                          "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                          "displayName": "예시은행 급여통장 · ****1001",
+                          "status": "connected"
+                        }
+                      },
+                      "linked": [
+                        {
+                          "transactionId": "0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40",
+                          "date": "2026-11-10",
+                          "amount": 300000,
+                          "account": {
+                            "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                            "displayName": "예시은행 급여통장 · ****1001",
+                            "status": "connected"
+                          },
+                          "description": "예시은행 대출",
+                          "amountDifference": 0,
+                          "hints": {
+                            "linkedAccount": true,
+                            "nearDueDate": true,
+                            "lenderInDescription": true,
+                            "sameAsBefore": false
+                          },
+                          "reclassify": null,
+                          "settlement": null,
+                          "source": null,
+                          "cancelEffect": {
+                            "kind": "choose",
+                            "toType": null,
+                            "toCategory": null
+                          }
+                        }
+                      ],
+                      "searchFrom": "2026-11-03",
+                      "searchTo": "2026-11-12",
+                      "items": []
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid. from·to 형식 오류, 시작일이 끝일보다 늦음, 92일 초과.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "기간 오류",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "to": [
+                            "한 번에 92일까지 찾을 수 있어요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "기관 조회 대출 동의 없음",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "기관에서 조회한 대출의 납부를 확인하려면 대출 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found. 없는·남의·취소된 회차, 주소 ID 형식 오류(연결 취소는 남의·없는 거래 ID 포함).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "대출 납부 거래 연결 · 정정",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "linkLoanDuePayment",
+        "x-source": "docs/api/loans.md",
+        "description": "고른 출금을 이 회차에 연결하고 사용자가 고른 판단(full·partial)을 저장합니다. 같은 거래로 다시 보내면 판단만 정정하며 연결은 하나만 남습니다(바뀐 것이 없으면 아무것도 쓰지 않음). full은 회차에 하나만(다른 출금을 full로 고르면 앞의 것은 partial). 연결하면 거래 유형이 loan_repayment(사용자 확인)로 바뀌어 소비 합계에서 빠집니다. 대출 status·monthlyPayment·회차 예정액·승인 예산은 바꾸지 않습니다. 사용자 판단은 홈 재조회·재수집·상태 재계산 뒤에도 유지됩니다. 같은 거래를 두 회차에 동시에 연결하면 한쪽만 성공합니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 대출 → 회차 → 거래 순으로 잠급니다.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인의 유효한(취소되지 않은) 대출 납부 회차 dueId (홈 mustPay[].dueId · 대출 recentDues[].dueId). 잘못된 UUID·없음·남의 것은 404.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanPaymentLinkRequest"
+              },
+              "examples": {
+                "full": {
+                  "summary": "이번 납부를 전부 냈어요",
+                  "value": {
+                    "transactionId": "0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40",
+                    "settlement": "full"
+                  }
+                },
+                "partial_confirm": {
+                  "summary": "일부만 냈어요 + 소비 분류 변경 확인",
+                  "value": {
+                    "transactionId": "6a1e2f3b-4c5d-4e6f-8a7b-9c0d1e2f3a4b",
+                    "settlement": "partial",
+                    "confirmReclassify": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "저장한 뒤 회차 · 연결한 출금 (items·searchFrom·searchTo 없음).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanDuePaymentState"
+                },
+                "example": {
+                  "due": {
+                    "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                    "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                    "name": "예시은행 예시 신용대출",
+                    "dueDate": "2026-11-10",
+                    "expectedAmount": 300000,
+                    "paidAmount": 298000,
+                    "paymentState": "paid",
+                    "linkedAccount": {
+                      "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                      "displayName": "예시은행 급여통장 · ****1001",
+                      "status": "connected"
+                    }
+                  },
+                  "linked": [
+                    {
+                      "transactionId": "0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40",
+                      "date": "2026-11-10",
+                      "amount": 298000,
+                      "account": {
+                        "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                        "displayName": "예시은행 급여통장 · ****1001",
+                        "status": "connected"
+                      },
+                      "description": "자동이체 출금",
+                      "amountDifference": -2000,
+                      "hints": {
+                        "linkedAccount": true,
+                        "nearDueDate": true,
+                        "lenderInDescription": false,
+                        "sameAsBefore": false
+                      },
+                      "reclassify": null,
+                      "settlement": "full",
+                      "source": "user",
+                      "cancelEffect": {
+                        "kind": "restore",
+                        "toType": "transfer",
+                        "toCategory": null
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "transaction": {
+                    "summary": "고를 수 없는 거래 (없음·남의 것·취소·다른 기능 근거·SAME_PURCHASE 등)",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "transactionId": [
+                            "고를 수 없는 거래예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "confirm": {
+                    "summary": "분류 변경 확인 없음",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "confirmReclassify": [
+                            "분류가 대출 상환으로 바뀌어요. 바뀌는 내용을 확인해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unknown": {
+                    "summary": "표에 없는 칸",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "extra": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "parse_error": {
+                    "summary": "parse_error",
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "JSON 형식을 확인해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied / consent_required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permission_denied": {
+                    "summary": "permission_denied",
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "기관 조회 대출 동의 없음",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "기관에서 조회한 대출의 납부를 확인하려면 대출 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found. 없는·남의·취소된 회차, 주소 ID 형식 오류(연결 취소는 남의·없는 거래 ID 포함).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready / idempotency_conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "summary": "다른 회차에 이미 연결된 거래 (옮기지 않음)",
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요."
+                      }
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "summary": "같은 요청 번호 · 다른 내용",
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보냈어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finance/loan-dues/{id}/payments/{transactionId}/": {
+      "delete": {
+        "summary": "대출 납부 거래 연결 취소",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "releaseLoanDuePayment",
+        "x-source": "docs/api/loans.md",
+        "description": "연결을 풀고 분류를 정합니다. 이 연결이 바꾼 분류는 그 뒤 바뀌지 않았을 때만 원래 값으로 되돌리고(restored), 그 뒤 사용자가 바꿨으면 그대로 둡니다(kept). 원래 분류 기록이 없는 거래(예전 자동 연결 등, cancelEffect.kind: choose)는 본문의 restoreType(·restoreCategory)이 없으면 400이며 연결·분류를 바꾸지 않습니다 — 받으면 연결 해제와 분류 변경을 함께 처리합니다(chosen). 원래 분류를 추측해 복원하지 않습니다. 그 회차에는 자동 연결이 다시 붙지 않습니다. 이미 풀린 연결의 재전송은 200 + released: null이며 아무것도 바꾸지 않습니다. 응답의 released로 실제 결과를 안내합니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 대출 → 회차 → 거래 순으로 잠급니다.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인의 유효한(취소되지 않은) 대출 납부 회차 dueId (홈 mustPay[].dueId · 대출 recentDues[].dueId). 잘못된 UUID·없음·남의 것은 404.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "transactionId",
+            "in": "path",
+            "required": true,
+            "description": "연결을 풀 거래 ID. 남의·없는 거래는 404. 이 회차에 연결돼 있지 않으면(이미 풀림) 200 + released: null",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanPaymentReleaseRequest"
+              },
+              "examples": {
+                "spending": {
+                  "summary": "예전 자동 연결 → 소비 · 식비로",
+                  "value": {
+                    "restoreType": "spending",
+                    "restoreCategory": "FOOD"
+                  }
+                },
+                "transfer": {
+                  "summary": "예전 자동 연결 → 이체로",
+                  "value": {
+                    "restoreType": "transfer"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "취소한 뒤 회차 · 연결한 출금 + released.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoanDuePaymentState"
+                },
+                "examples": {
+                  "restored": {
+                    "summary": "원래 분류로 되돌림",
+                    "value": {
+                      "due": {
+                        "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                        "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                        "name": "예시은행 예시 신용대출",
+                        "dueDate": "2026-11-10",
+                        "expectedAmount": 300000,
+                        "paidAmount": 0,
+                        "paymentState": "needs_review",
+                        "linkedAccount": {
+                          "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                          "displayName": "예시은행 급여통장 · ****1001",
+                          "status": "connected"
+                        }
+                      },
+                      "linked": [],
+                      "released": {
+                        "transactionId": "0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40",
+                        "classification": "restored",
+                        "transactionType": "transfer",
+                        "category": null
+                      }
+                    }
+                  },
+                  "chosen": {
+                    "summary": "사용자가 고른 분류로",
+                    "value": {
+                      "due": {
+                        "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                        "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                        "name": "예시은행 예시 신용대출",
+                        "dueDate": "2026-11-10",
+                        "expectedAmount": 300000,
+                        "paidAmount": 0,
+                        "paymentState": "needs_review",
+                        "linkedAccount": {
+                          "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                          "displayName": "예시은행 급여통장 · ****1001",
+                          "status": "connected"
+                        }
+                      },
+                      "linked": [],
+                      "released": {
+                        "transactionId": "0b9d6c1e-3a4f-4d2b-8e7a-1c5f9e2d3b40",
+                        "classification": "chosen",
+                        "transactionType": "spending",
+                        "category": "FOOD"
+                      }
+                    }
+                  },
+                  "replay": {
+                    "summary": "이미 풀린 연결 재전송",
+                    "value": {
+                      "due": {
+                        "dueId": "7f3c2a10-5b7e-4f0e-9a51-2c1d4e6f8a90",
+                        "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
+                        "name": "예시은행 예시 신용대출",
+                        "dueDate": "2026-11-10",
+                        "expectedAmount": 300000,
+                        "paidAmount": 0,
+                        "paymentState": "needs_review",
+                        "linkedAccount": {
+                          "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                          "displayName": "예시은행 급여통장 · ****1001",
+                          "status": "connected"
+                        }
+                      },
+                      "linked": [],
+                      "released": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "choose_required": {
+                    "summary": "원래 분류를 모르는 거래인데 restoreType 없음",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "restoreType": [
+                            "원래 분류를 알 수 없어요. 이 거래를 이체 또는 소비 중 무엇으로 둘지 골라 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "category": {
+                    "summary": "소비인데 카테고리 없음·잘못됨",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "restoreCategory": [
+                            "소비 카테고리를 골라 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "parse_error": {
+                    "summary": "parse_error",
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "JSON 형식을 확인해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied / consent_required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permission_denied": {
+                    "summary": "permission_denied",
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "다시 시도해 주세요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "기관 조회 대출 동의 없음",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "기관에서 조회한 대출의 납부를 확인하려면 대출 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found. 없는·남의·취소된 회차, 주소 ID 형식 오류(연결 취소는 남의·없는 거래 ID 포함).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finance/loans/{id}/payoff/": {
+      "post": {
+        "summary": "대출 전체 완납 처리 (직접 등록)",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "payoffManualLoan",
+        "x-source": "docs/api/loans.md",
+        "description": "‘이 대출을 전부 갚았어요’. 이번 회차 납부와 다른 동작입니다. 직접 등록(manual) 대출을 사용자 신고로 상환 종료(repaid)하고 처리 시각·이전 잔액을 근거로 남깁니다. 처리일은 오늘이며 소급 날짜는 받지 않습니다(빈 본문 외 400). 잔액은 0으로 표시합니다. 납부 거래·납부액은 만들지 않고 대출 행을 지우지 않습니다.\n\n오늘 이후 납부 회차 중 납부·연결 근거가 없는 것만 취소합니다. 오늘·지난 회차와 일부라도 낸 회차는 그대로 남아 홈 ‘꼭 나갈 돈’과 [납부 거래 확인]에서 계속 정리합니다. 이후 홈 조회·재매칭·다음 주기에도 새 회차를 만들지 않으며 지킬 돈의 대출 합계에서 빠집니다. 승인 전 예산 초안만 만료하고 승인된 예산·쿠션·생활비는 바꾸지 않습니다. 이미 완납이면 처음 기록을 그대로 200으로 돌려줍니다. 기관 조회 대출은 409 not_ready. CODEF를 호출하지 않습니다. 회원 → 대출 → 회차 순으로 잠급니다.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인의 대출 loanId. 잘못된 UUID·없음·남의 것은 404.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              },
+              "example": {}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "처리한 뒤 대출 한 건(Loan).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "transaction": {
+                    "summary": "고를 수 없는 거래 (없음·남의 것·취소·다른 기능 근거·SAME_PURCHASE 등)",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "transactionId": [
+                            "고를 수 없는 거래예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "confirm": {
+                    "summary": "분류 변경 확인 없음",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "confirmReclassify": [
+                            "분류가 대출 상환으로 바뀌어요. 바뀌는 내용을 확인해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unknown": {
+                    "summary": "표에 없는 칸",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "extra": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "parse_error": {
+                    "summary": "parse_error",
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "JSON 형식을 확인해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permission_denied": {
+                    "summary": "permission_denied",
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found. 없는·남의 대출, 주소 ID 형식 오류.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready: 기관 조회 대출(직접 완납·되돌리기 불가) 또는 오래된 화면 / idempotency_conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "summary": "다른 회차에 이미 연결된 거래 (옮기지 않음)",
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요."
+                      }
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "summary": "같은 요청 번호 · 다른 내용",
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보냈어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/finance/loans/{id}/payoff/cancel/": {
+      "post": {
+        "summary": "대출 전체 완납 되돌리기",
+        "tags": [
+          "대출"
+        ],
+        "operationId": "cancelManualLoanPayoff",
+        "x-source": "docs/api/loans.md",
+        "description": "잘못 누른 전체 완납을 되돌립니다. reportedAt이 지금 저장된 완납 처리와 같아야 하며, 다르면(그 뒤 다시 완납됨) 409 not_ready로 최신 상태를 덮지 않습니다. 상환 중으로 바꾸고 잔액이 완납 때 넣은 0원이면 이전 잔액으로 복구합니다. 납부 기록·연결은 그대로 두고, 이번 주기 회차만 기존 규칙으로 다시 준비합니다(같은 회차를 다시 살리며 지난 주기 회차는 만들지 않음). 승인 전 예산 초안만 만료합니다. 이미 상환 중이면 그대로 200. 완납 근거 기록은 지우지 않고 되돌린 시각을 덧붙입니다.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "본인의 대출 loanId. 잘못된 UUID·없음·남의 것은 404.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoanPayoffCancelRequest"
+              },
+              "example": {
+                "reportedAt": "2026-11-12T10:00:00.123456+09:00"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "처리한 뒤 대출 한 건(Loan).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Loan"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "transaction": {
+                    "summary": "고를 수 없는 거래 (없음·남의 것·취소·다른 기능 근거·SAME_PURCHASE 등)",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "transactionId": [
+                            "고를 수 없는 거래예요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "confirm": {
+                    "summary": "분류 변경 확인 없음",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "confirmReclassify": [
+                            "분류가 대출 상환으로 바뀌어요. 바뀌는 내용을 확인해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "unknown": {
+                    "summary": "표에 없는 칸",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "extra": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "parse_error": {
+                    "summary": "parse_error",
+                    "value": {
+                      "error": {
+                        "code": "parse_error",
+                        "message": "JSON 형식을 확인해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "permission_denied": {
+                    "summary": "permission_denied",
+                    "value": {
+                      "error": {
+                        "code": "permission_denied",
+                        "message": "다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found. 없는·남의 대출, 주소 ID 형식 오류.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready: 기관 조회 대출(직접 완납·되돌리기 불가) 또는 오래된 화면 / idempotency_conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "summary": "다른 회차에 이미 연결된 거래 (옮기지 않음)",
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요."
+                      }
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "summary": "같은 요청 번호 · 다른 내용",
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보냈어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -728,9 +2139,10 @@
           "status": {
             "type": "string",
             "enum": [
-              "repaying"
+              "repaying",
+              "repaid"
             ],
-            "description": "1차 목록·수정·등록 응답은 상환 중만. DB의 repaid는 1차 목록 제외, 수정 404."
+            "description": "기본 목록·수정·등록 응답은 repaying. repaid는 ?status=repaid 목록(직접 등록만)과 전체 완납·되돌리기 응답에만. repaid 대출 PATCH는 404."
           },
           "reportedPrincipal": {
             "type": "integer",
@@ -750,16 +2162,16 @@
           "manualBalance": {
             "type": "integer",
             "nullable": true,
-            "minimum": 1,
+            "minimum": 0,
             "maximum": 1000000000,
-            "description": "직접 등록 잔액, 원. 1차 PATCH로 수정 불가."
+            "description": "직접 등록 잔액, 원. 직접 등록 대출은 PATCH로 정정 가능(0원 허용, 0원 저장은 완납 처리가 아님). 전체 완납 뒤에는 0."
           },
           "manualRate": {
             "type": "number",
             "nullable": true,
             "minimum": 0,
             "maximum": 30,
-            "description": "직접 등록 연 이율(%). 0% 유효. 1차 PATCH로 수정 불가."
+            "description": "직접 등록 연 이율(%). 0% 유효. 직접 등록 대출은 PATCH로 정정·비우기 가능."
           },
           "maturityDate": {
             "type": "string",
@@ -826,6 +2238,43 @@
             "format": "date-time",
             "nullable": true,
             "description": "기관 자료의 마지막 정상 조회 시각. 직접 등록은 null."
+          },
+          "recentDues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LoanRecentDue"
+            },
+            "description": "홈 ‘꼭 나갈 돈’과 같은 범위(지난 주기 시작 ~ 이번 주기 끝)의 유효한 납부 회차, 납부일 순. 다 낸 회차도 [납부 거래 확인]으로 다시 열 수 있게. 급여 주기가 없으면 []."
+          },
+          "payoff": {
+            "type": "object",
+            "required": [
+              "source",
+              "reportedAt",
+              "previousBalance"
+            ],
+            "properties": {
+              "source": {
+                "type": "string",
+                "enum": [
+                  "user_report"
+                ],
+                "description": "CODEF 확인이 아니라 사용자 신고."
+              },
+              "reportedAt": {
+                "type": "string",
+                "format": "date-time",
+                "description": "처리 시각(한국 시간). 되돌리기 요청에 그대로 보낸다."
+              },
+              "previousBalance": {
+                "type": "integer",
+                "nullable": true,
+                "description": "완납 처리 전 직접 입력 잔액, 원. 되돌리면 이 값으로 복구."
+              }
+            },
+            "additionalProperties": false,
+            "nullable": true,
+            "description": "사용자가 신고한 전체 완납 근거. repaid이고 되돌리지 않았을 때만, 아니면 null."
           }
         },
         "required": [
@@ -848,7 +2297,9 @@
           "estimatedMonthlyPayment",
           "overdue",
           "fieldStates",
-          "fetchedAt"
+          "fetchedAt",
+          "recentDues",
+          "payoff"
         ]
       },
       "LoanList": {
@@ -898,9 +2349,40 @@
             ],
             "nullable": true,
             "description": "원리금균등/원금균등/만기일시/잘 모르겠어요. null은 미입력."
+          },
+          "lenderName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "직접 등록 대출만. null·빈 문자열 400."
+          },
+          "productName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "직접 등록 대출만. null·빈 문자열 400."
+          },
+          "manualBalance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000,
+            "description": "직접 등록 대출만. 0원 허용(완납 처리 아님), null 400."
+          },
+          "manualRate": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 30,
+            "description": "직접 등록 대출만. null은 비우기."
+          },
+          "maturityDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "직접 등록 대출만. YYYY-MM-DD, null은 비우기."
           }
         },
-        "description": "생략은 유지, null은 비우기. 빈 문자열·허용 외 항목은 400. 최소 변경 칸 수 정책은 명세에 없음.",
+        "description": "생략은 유지, null은 비우기. 빈 문자열·허용 외 항목은 400. lenderName·productName·manualBalance·manualRate·maturityDate는 직접 등록 대출만 — 기관 조회 대출에 보내면 400 invalid(fields).",
         "additionalProperties": false
       },
       "LoanCreateRequest": {
@@ -966,6 +2448,438 @@
           "productName",
           "manualBalance"
         ],
+        "additionalProperties": false
+      },
+      "LoanRecentDue": {
+        "type": "object",
+        "required": [
+          "dueId",
+          "dueDate",
+          "expectedAmount",
+          "paidAmount",
+          "paymentState"
+        ],
+        "properties": {
+          "dueId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "expectedAmount": {
+            "type": "integer",
+            "description": "회차 예정액(월 상환액 기준), 원. 납부 확인으로 바꾸지 않음."
+          },
+          "paidAmount": {
+            "type": "integer",
+            "description": "연결한 출금 합계, 원."
+          },
+          "paymentState": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "partial",
+              "paid",
+              "needs_review"
+            ]
+          }
+        }
+      },
+      "LoanPaymentHints": {
+        "type": "object",
+        "required": [
+          "linkedAccount",
+          "nearDueDate",
+          "lenderInDescription",
+          "sameAsBefore"
+        ],
+        "description": "화면 표시·정렬용 참고 근거. 자동 확정에 쓰지 않음.",
+        "properties": {
+          "linkedAccount": {
+            "type": "boolean",
+            "description": "대출의 연결 계좌에서 나간 출금"
+          },
+          "nearDueDate": {
+            "type": "boolean",
+            "description": "납부일 ±3일 (앞뒤 달 말일 포함)"
+          },
+          "lenderInDescription": {
+            "type": "boolean",
+            "description": "적요에 대출 기관 이름이 있음"
+          },
+          "sameAsBefore": {
+            "type": "boolean",
+            "description": "전에 사용자가 이 대출 납부로 확인한 출금과 계좌 또는 적요가 같음"
+          }
+        }
+      },
+      "LoanPaymentReclassify": {
+        "type": "object",
+        "required": [
+          "fromType",
+          "fromCategory",
+          "needsConfirm"
+        ],
+        "properties": {
+          "fromType": {
+            "type": "string",
+            "enum": [
+              "spending",
+              "transfer",
+              "card_payment"
+            ],
+            "description": "지금 거래 유형"
+          },
+          "fromCategory": {
+            "type": "string",
+            "nullable": true,
+            "description": "소비면 카테고리 코드, 아니면 null"
+          },
+          "needsConfirm": {
+            "type": "boolean",
+            "description": "true면 POST에 confirmReclassify: true가 필요 (소비·카드값 등 이체가 아닌 유형, 또는 사용자가 확정한 분류)"
+          }
+        }
+      },
+      "LoanPaymentCancelEffect": {
+        "type": "object",
+        "required": [
+          "kind",
+          "toType",
+          "toCategory"
+        ],
+        "description": "연결을 취소하면 분류가 어떻게 되는지. linked 항목에만.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "restore",
+              "keep",
+              "choose"
+            ],
+            "description": "restore: 이 연결 전 분류로 되돌림 / keep: 연결 뒤 사용자가 바꾼 분류라 그대로 / choose: 원래 분류 기록이 없음(예전 자동 연결 등) → DELETE 본문에 restoreType 필수. 추측해서 되돌리지 않음"
+          },
+          "toType": {
+            "type": "string",
+            "nullable": true,
+            "description": "취소 뒤 유형 (choose면 null)"
+          },
+          "toCategory": {
+            "type": "string",
+            "nullable": true,
+            "description": "취소 뒤 소비 카테고리 (소비가 아니거나 choose면 null)"
+          }
+        }
+      },
+      "LoanPaymentTransaction": {
+        "type": "object",
+        "required": [
+          "transactionId",
+          "date",
+          "amount",
+          "account",
+          "description",
+          "amountDifference",
+          "hints",
+          "reclassify",
+          "settlement",
+          "source"
+        ],
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "amount": {
+            "type": "integer",
+            "description": "실제 출금액(부분 취소 뺀 금액), 원"
+          },
+          "account": {
+            "description": "출금한 내 계좌",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccountDisplay"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "description": {
+            "type": "string",
+            "nullable": true,
+            "description": "적요 (기관 원문, 계좌번호는 가림)"
+          },
+          "amountDifference": {
+            "type": "integer",
+            "description": "실제 − 예정, 원. 참고용"
+          },
+          "hints": {
+            "$ref": "#/components/schemas/LoanPaymentHints"
+          },
+          "reclassify": {
+            "description": "대출 상환으로 바꾸면 달라지는 분류. 이미 대출 상환이면 null",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LoanPaymentReclassify"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "settlement": {
+            "type": "string",
+            "enum": [
+              "full",
+              "partial",
+              null
+            ],
+            "nullable": true,
+            "description": "이 회차에 연결된 출금이면 full(다 냈어요)·partial(일부)·null(자동 연결). 후보는 null"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user",
+              "rule",
+              null
+            ],
+            "nullable": true,
+            "description": "연결한 쪽. 후보는 null"
+          },
+          "cancelEffect": {
+            "$ref": "#/components/schemas/LoanPaymentCancelEffect"
+          }
+        }
+      },
+      "LoanDueSummary": {
+        "type": "object",
+        "required": [
+          "dueId",
+          "loanId",
+          "name",
+          "dueDate",
+          "expectedAmount",
+          "paidAmount",
+          "paymentState",
+          "linkedAccount"
+        ],
+        "properties": {
+          "dueId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "loanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "description": "\"{기관} {상품명}\" (없으면 \"대출 상환\")"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "expectedAmount": {
+            "type": "integer",
+            "description": "예정액(월 상환액 기준), 원. 바꾸지 않음"
+          },
+          "paidAmount": {
+            "type": "integer",
+            "description": "연결한 출금 합계, 원"
+          },
+          "paymentState": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "partial",
+              "paid",
+              "needs_review"
+            ],
+            "description": "사용자 확인 full → paid, partial → partial(금액 비율 무관). 확인 없는 자동 연결은 예정액 이상일 때만 paid. 연결 없음은 납부일 전 unpaid·지남 needs_review. 공통 90% 규칙 안 씀"
+          },
+          "linkedAccount": {
+            "description": "대출의 연결 계좌",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccountDisplay"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "LoanPaymentReleased": {
+        "type": "object",
+        "required": [
+          "transactionId",
+          "classification",
+          "transactionType",
+          "category"
+        ],
+        "description": "연결 취소에서 실제로 한 일.",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "restored",
+              "kept",
+              "chosen"
+            ],
+            "description": "restored: 원래 분류로 되돌림 / kept: 지금 분류 그대로 / chosen: 사용자가 고른 분류로 바꿈"
+          },
+          "transactionType": {
+            "type": "string",
+            "description": "취소 뒤 거래 유형"
+          },
+          "category": {
+            "type": "string",
+            "nullable": true,
+            "description": "소비면 카테고리 코드, 아니면 null"
+          }
+        }
+      },
+      "LoanDuePaymentState": {
+        "type": "object",
+        "required": [
+          "due",
+          "linked"
+        ],
+        "properties": {
+          "due": {
+            "$ref": "#/components/schemas/LoanDueSummary"
+          },
+          "linked": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LoanPaymentTransaction"
+            },
+            "description": "이 회차에 연결한 출금 (cancelEffect 포함)"
+          },
+          "searchFrom": {
+            "type": "string",
+            "format": "date",
+            "description": "GET만. 후보를 찾은 기간 시작"
+          },
+          "searchTo": {
+            "type": "string",
+            "format": "date",
+            "description": "GET만. 후보를 찾은 기간 끝"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 50,
+            "items": {
+              "$ref": "#/components/schemas/LoanPaymentTransaction"
+            },
+            "description": "GET만. 고를 수 있는 출금 후보 (금액이 달라도·기관 이름이 없어도 포함)"
+          },
+          "released": {
+            "description": "DELETE만. 실제 처리 결과. 이미 풀린 연결의 재전송은 null(아무것도 바꾸지 않음)",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LoanPaymentReleased"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "LoanPaymentLinkRequest": {
+        "type": "object",
+        "required": [
+          "transactionId",
+          "settlement"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "고를 출금. 없음·남의 것·고를 수 없는 거래는 같은 400 문구"
+          },
+          "settlement": {
+            "type": "string",
+            "enum": [
+              "full",
+              "partial"
+            ],
+            "description": "full: 이번 납부를 전부 냈어요(금액과 무관하게 이 회차 완료, 대출 전체 상환 아님) / partial: 일부만 냈어요"
+          },
+          "confirmReclassify": {
+            "type": "boolean",
+            "default": false,
+            "description": "후보의 reclassify.needsConfirm이 true면 true로 보내야 저장"
+          }
+        }
+      },
+      "LoanPaymentReleaseRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "선택 본문. cancelEffect.kind가 choose일 때만 필요(없으면 400, 아무것도 바꾸지 않음). restore·keep이면 보낸 값은 쓰지 않음.",
+        "properties": {
+          "restoreType": {
+            "type": "string",
+            "enum": [
+              "transfer",
+              "spending"
+            ],
+            "description": "취소 뒤 둘 유형. transfer는 카테고리 ‘확인 필요’(거래 목록 규칙), spending은 사용자 확정"
+          },
+          "restoreCategory": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SelectableCategoryCode"
+              }
+            ],
+            "nullable": true,
+            "description": "restoreType: spending일 때 필수, 그 밖에는 보내지 않음"
+          }
+        }
+      },
+      "LoanPayoffCancelRequest": {
+        "type": "object",
+        "required": [
+          "reportedAt"
+        ],
+        "properties": {
+          "reportedAt": {
+            "type": "string",
+            "description": "화면에서 본 payoff.reportedAt. 다르면(그 뒤 다시 완납 처리됨) 409 not_ready."
+          }
+        },
         "additionalProperties": false
       }
     }

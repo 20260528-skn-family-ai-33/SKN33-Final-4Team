@@ -20,12 +20,8 @@ import { PATHS } from '../routes.js'
 
 const ANSWERS = [['yes', '저축이에요'], ['no', '아니에요']]
 
-// 저장 뒤 같은 목록을 다시 받는다 — useApi 는 주소가 바뀔 때만 다시 받아서 서버가 무시하는 ?v= 를 바꾼다
-function useSavingsList() {
-  const [version, setVersion] = useState(0)
-  const { data, error } = useApi(`/api/budgets/savings/?v=${version}`)
-  return { data, error, reload: () => setVersion((v) => v + 1) }
-}
+// 저장 뒤 같은 목록을 다시 받는다 (같은 주소 reload — 받는 동안 지난 목록 유지, 실패하면 오류 카드)
+const useSavingsList = () => useApi('/api/budgets/savings/')
 
 // "매월 25일 · 국민 급여통장 · ****5678 → 신한 자유적금 · ****9012"
 function savingLine(s) {

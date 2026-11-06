@@ -182,3 +182,34 @@ it('내 정보 조회 중 세션 만료 응답은 로그인으로 이동한다',
   await render(); await click('내 정보 보기 ›')
   expect(host.querySelector('[data-path]').textContent).toBe('/login')
 })
+
+it('철회가 접수됐지만 삭제가 남으면 완료로 표시하지 않고 재시도를 안내한다', async () => {
+  send = async () => {
+    consents.items[1] = { ...consents.items[1], status: 'revoked', revokedAt: '2026-11-05T10:00:00+09:00', deletionStatus: 'retry_required' }
+    return reply(consents, 202)
+  }
+  await open(); await click('카드 조회 철회'); await click('철회하고 데이터 삭제')
+  const dialog = () => host.querySelector('[role=dialog]').textContent
+  expect(dialog()).toContain('삭제를 마무리하지 못했어요')
+  expect(dialog()).toContain('삭제 재시도 필요')
+  expect(dialog()).not.toContain('데이터와 관련 예산·분석 기록을 삭제했어요')
+  expect(dialog()).not.toContain('철회함')
+  send = async () => { consents.items[1] = { ...consents.items[1], deletionStatus: null }; return reply(consents) }
+  await click('카드 조회 삭제 다시 시도'); await click('철회하고 데이터 삭제')
+  expect(requests).toHaveLength(2)
+  expect(dialog()).toContain('철회함')
+})
+
+it('탈퇴가 접수됐지만 삭제가 남으면 탈퇴 완료로 이동하지 않고 접수 상태를 안내한다', async () => {
+  send = async () => reply({ ok: false, status: 'retry_required' }, 202)
+  await render(); await click('회원 탈퇴　›')
+  await input('withdrawPassword', 'Synthetic123!')
+  await act(() => host.querySelector('[role=dialog] input[type=checkbox]').click())
+  await click('탈퇴하고 전체 데이터 삭제')
+  expect(host.querySelector('[role=dialog]').textContent).toContain('탈퇴를 접수하고 로그아웃했어요')
+  expect(host.querySelector('[role=dialog]').textContent).toContain('운영 담당자가 남은 삭제를 처리하면 완료돼요')
+  expect(host.querySelector('[role=dialog]').textContent).not.toContain('다시 시도할 예정')
+  expect(host.querySelector('[data-path]').textContent).toBe('/my')
+  await click('로그인 화면으로')
+  expect(host.querySelector('[data-path]').textContent).toBe('/login')
+})

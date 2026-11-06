@@ -376,45 +376,101 @@ class FixedEvidenceTest(FixedFixture, TestCase):
 class FixedConcurrencyTest(FixedFixture, TransactionTestCase):
     """리뷰 1. 같은 고정지출에 요청 두 개가 동시에 와도 상태가 덮어써지지 않는지
 
-    'slow' 스레드는 고정지출을 저장하기 직전에 잠깐 멈춘다 → 그 사이에 다른 요청이 끼어든다.
-    잠금이 없으면 끼어든 요청이 옛 상태를 보고 진행해서 결과가 꼬인다.
+    스레드를 먼저 시작했다고 DB 잠금을 먼저 잡는 것은 아니다 (R37). 그래서 sleep 으로 순서를 가정하지 않고
+    run_ordered 가 '먼저 잠근 요청'을 신호로 정한다. 확정 · 무시처럼 누가 이겨도 되는 테스트는 두 순서를 모두 돌리고
+    승자와 최종 상태가 맞는지 본다.
     """
     serialized_rollback = True   # 테스트마다 표를 비우므로 마이그레이션의 카테고리 초기 데이터를 되살림
+    WAIT = 10  # 초. 모든 신호 대기 · 잠금 대기 확인 · join 의 상한
 
     def setUp(self):
         self.make_world()
 
-    def run_together(self, first, second, gap=0.1, pause=0.5):
-        results = {}
+    def run_ordered(self, first, second):
+        """두 요청을 겹쳐 실행 → (first 응답 코드, second 응답 코드). 동기화 지점:
+        1) first 를 RecurringExpense.save 직전에 멈춘다. 네 API 모두 같은 트랜잭션에서 lock_user(회원 행) →
+           고정지출 select_for_update 다음에 save 하므로, 이 시점의 first 는 두 잠금을 이미 잡고 있다
+        2) second 를 시작하고, second 의 DB 연결이 실제로 잠금 대기(pg_stat_activity.wait_event_type = 'Lock')에
+           들어갈 때까지 기다린다 — 스레드 시작 신호가 아니라 DB 가 알려 주는 대기 상태로 확인한다
+        3) first 를 진행시킨다 → first 가 커밋한 뒤 second 가 잠금을 얻고 바뀐 상태를 다시 읽는다
+        2~3 동안 두 요청이 겹친다. 같은 잠금을 둘 다 잡은 채 만나게 하는 Barrier 는 교착이라 쓰지 않는다"""
+        reached, release, pid_ready = threading.Event(), threading.Event(), threading.Event()
+        results, errors, pids = {}, {}, {}
         original_save = RecurringExpense.save
 
-        def slow_save(obj, *args, **kwargs):
-            if threading.current_thread().name == "slow":
-                time.sleep(pause)
+        def paused_save(obj, *args, **kwargs):
+            if threading.current_thread().name == "first" and not reached.is_set():
+                reached.set()
+                if not release.wait(self.WAIT):
+                    raise TimeoutError("first 진행 신호 대기 시간 초과")
             return original_save(obj, *args, **kwargs)
 
         def worker(key, request):
             try:
+                with connection.cursor() as cursor:  # 이 스레드 연결에만: 잠금이 풀리지 않으면 무한 대기 대신 오류
+                    cursor.execute("SET lock_timeout = '8s'")
+                    cursor.execute("SET statement_timeout = '9s'")
+                    cursor.execute("SELECT pg_backend_pid()")
+                    pids[key] = cursor.fetchone()[0]
+                if key == "second":
+                    pid_ready.set()
                 client = APIClient()
                 client.force_authenticate(self.user)
                 results[key] = request(client).status_code
+            except BaseException as exc:  # 본 테스트에서 실패시키려고 모은다
+                errors[key] = repr(exc)
             finally:
                 connection.close()
 
-        with mock.patch.object(RecurringExpense, "save", slow_save):
-            t1 = threading.Thread(target=worker, args=("first", first), name="slow")
-            t2 = threading.Thread(target=worker, args=("second", second), name="fast")
-            t1.start()
-            time.sleep(gap)
-            t2.start()
-            t1.join(10)
-            t2.join(10)
+        threads = {key: threading.Thread(target=worker, args=(key, request), name=key)
+                   for key, request in (("first", first), ("second", second))}
+        started = []
+        with mock.patch.object(RecurringExpense, "save", paused_save):
+            try:
+                threads["first"].start()
+                started.append(threads["first"])
+                self.assertTrue(reached.wait(self.WAIT), f"first 가 저장 지점에 오지 않음: {errors}")
+                threads["second"].start()
+                started.append(threads["second"])
+                self.assertTrue(pid_ready.wait(self.WAIT), f"second 가 시작하지 못함: {errors}")
+                self.wait_for_lock(pids["second"], threads["second"], errors)
+                release.set()
+                for thread in started:
+                    thread.join(self.WAIT)
+                    self.assertFalse(thread.is_alive(), f"{thread.name} 가 제한 시간 안에 끝나지 않음")
+            finally:  # 실패 경로에서도 멈춘 스레드를 풀고 기다린다 (연결은 worker 의 finally 가 닫는다)
+                release.set()
+                for thread in started:
+                    thread.join(self.WAIT)
+        self.assertEqual(errors, {})
+        self.assertEqual(set(results), {"first", "second"})
         return results["first"], results["second"]
 
+    def wait_for_lock(self, pid, thread, errors):
+        """second 의 DB 연결이 잠금 대기에 들어갔는지 pg_stat_activity 로 확인 (제한 시간 안에)"""
+        deadline = time.monotonic() + self.WAIT
+        while time.monotonic() < deadline:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s", [pid])
+                row = cursor.fetchone()
+            if row and row[0] == "Lock":
+                return
+            self.assertTrue(thread.is_alive(), f"second 가 잠금을 기다리지 않고 끝남: {errors}")
+            time.sleep(0.01)  # 상태 확인 간격일 뿐, 순서를 가정하는 대기가 아니다
+        self.fail("second 가 제한 시간 안에 잠금 대기에 들어가지 않음")
+
+    def assert_one_winner(self, codes, targets):
+        """정확히 하나만 200 · 나머지 400, 대상 전부가 승자의 상태 (확정 · 무시가 섞인 부분 반영은 실패) → 승자"""
+        self.assertEqual(sorted(codes.values()), [200, 400], codes)
+        winner = next(action for action, code in codes.items() if code == 200)
+        expected = {"confirm": "confirmed", "ignore": "ignored"}[winner]
+        self.assertEqual([RecurringExpense.objects.get(pk=t.pk).status for t in targets], [expected] * len(targets))
+        return winner
+
     def test_patch_and_delete_do_not_revive_stopped(self):
-        """수정 중에 중지가 끼어들어도 → 최종 상태는 중지"""
+        """수정이 잠근 뒤 중지가 기다렸다가 → 수정 200 · 중지 204, 최종 상태는 중지 (수정한 금액 유지)"""
         e = self.make_expense()
-        codes = self.run_together(
+        codes = self.run_ordered(
             lambda c: send(c, "patch", f"{URL}{e.pk}/", {"amount": 800000}),
             lambda c: c.delete(f"{URL}{e.pk}/"),
         )
@@ -423,9 +479,9 @@ class FixedConcurrencyTest(FixedFixture, TransactionTestCase):
         self.assertEqual((e.status, e.amount), ("stopped", 800000))
 
     def test_delete_and_patch_patch_sees_stopped(self):
-        """중지 중에 수정이 끼어들면 → 수정은 404, 상태는 중지"""
+        """중지가 잠근 뒤 수정이 기다렸다가 → 수정은 중지된 걸 보고 404, 금액은 그대로"""
         e = self.make_expense()
-        codes = self.run_together(
+        codes = self.run_ordered(
             lambda c: c.delete(f"{URL}{e.pk}/"),
             lambda c: send(c, "patch", f"{URL}{e.pk}/", {"amount": 800000}),
         )
@@ -434,27 +490,28 @@ class FixedConcurrencyTest(FixedFixture, TransactionTestCase):
         self.assertEqual((e.status, e.amount), ("stopped", 700000))
 
     def test_confirm_and_ignore_only_one_wins(self):
-        """같은 후보에 확정 · 무시가 동시에 → 하나만 200, 나머지는 400"""
-        e = self.make_expense(status="suggested")
-        body = {"recurringIds": [str(e.pk)]}
-        codes = self.run_together(
-            lambda c: send(c, "post", f"{URL}confirm/", body),
-            lambda c: send(c, "post", f"{URL}ignore/", body),
-        )
-        self.assertEqual(codes, (200, 400))
-        e.refresh_from_db()
-        self.assertEqual(e.status, "confirmed")
+        """같은 후보에 확정 · 무시가 동시에 → 하나만 200, 나머지는 400, 상태는 승자 것. 확정 먼저 · 무시 먼저 둘 다"""
+        for first in ("confirm", "ignore"):
+            with self.subTest(first=first):
+                e = self.make_expense(status="suggested", name=f"후보-{first}")
+                body = {"recurringIds": [str(e.pk)]}
+                requests = {"confirm": lambda c: send(c, "post", f"{URL}confirm/", body),
+                            "ignore": lambda c: send(c, "post", f"{URL}ignore/", body)}
+                second = "ignore" if first == "confirm" else "confirm"
+                codes = dict(zip((first, second), self.run_ordered(requests[first], requests[second])))
+                self.assertEqual(self.assert_one_winner(codes, [e]), first)  # 먼저 잠근 쪽이 이긴다
 
     def test_batch_reverse_order_no_deadlock(self):
-        """[A, B] 확정과 [B, A] 무시가 동시에 → 잠금 순서가 같아서 멈추지 않고 하나만 성공"""
-        a = self.make_expense(status="suggested", name="A")
-        b = self.make_expense(status="suggested", name="B")
-        codes = self.run_together(
-            lambda c: send(c, "post", f"{URL}confirm/", {"recurringIds": [str(a.pk), str(b.pk)]}),
-            lambda c: send(c, "post", f"{URL}ignore/", {"recurringIds": [str(b.pk), str(a.pk)]}),
-        )
-        self.assertEqual(codes, (200, 400))
-        self.assertEqual(sorted(RecurringExpense.objects.values_list("status", flat=True)), ["confirmed", "confirmed"])
+        """[A, B] 확정과 [B, A] 무시가 동시에 → 잠금 순서가 같아서 멈추지 않고 하나만 성공, A · B 모두 승자 상태"""
+        for first in ("confirm", "ignore"):
+            with self.subTest(first=first):
+                a = self.make_expense(status="suggested", name=f"A-{first}")
+                b = self.make_expense(status="suggested", name=f"B-{first}")
+                requests = {"confirm": lambda c: send(c, "post", f"{URL}confirm/", {"recurringIds": [str(a.pk), str(b.pk)]}),
+                            "ignore": lambda c: send(c, "post", f"{URL}ignore/", {"recurringIds": [str(b.pk), str(a.pk)]})}
+                second = "ignore" if first == "confirm" else "confirm"
+                codes = dict(zip((first, second), self.run_ordered(requests[first], requests[second])))
+                self.assertEqual(self.assert_one_winner(codes, [a, b]), first)
 
 
 class FixedTransferConvertTest(FixedFixture, TestCase):

@@ -226,8 +226,6 @@ def check_query(item):
     group, top = q.get("group_by"), q.get("top_n")
     if group is not None and (group not in GROUPS or q["measure"] not in ("sum", "count")):
         raise ValueError(f"묶기는 합계 · 건수와만 (평균 · 최대는 묶지 않음): {q!r}")
-    if group == "month" and q["period"] != "recent":
-        raise ValueError(f"월별 묶기는 최근 N개월만: {q!r}")
     if top is not None and (type(top) is not int or not 1 <= top <= TOP_MAX or group is None):
         raise ValueError(f"top_n 은 1~{TOP_MAX}, 묶기와 함께: {q!r}")
 
@@ -248,7 +246,7 @@ def query_periods(item, today):
     return span(today, item["months_applied"])
 
 
-def _key(r, group, period):
+def _key(r, group):
     if group == "category":
         return r["category"]
     if group == "merchant":
@@ -257,7 +255,7 @@ def _key(r, group, period):
         return r["occurred_on"].weekday()
     if group == "time_slot":
         return scope.slot_of(r["occurred_time"])
-    return period.start.month
+    return r["occurred_on"].year, r["occurred_on"].month  # 기간이 여러 달이어도 거래가 난 연 · 월로
 
 
 def _group_name(group, key):
@@ -268,7 +266,7 @@ def _group_name(group, key):
     if group == "time_slot":
         return scope.SLOTS[key][0]
     if group == "month":
-        return f"{key}월"
+        return f"{key[1]}월"
     return key
 
 
@@ -276,17 +274,17 @@ def _groups(picked, q):
     """묶음별 합계 · 건수. 요일 · 시간대 · 월은 정해진 순서, 카테고리 · 가게는 큰 순서(건수를 물으면 건수 → 금액 → 이름).
     top_n 이 있으면 큰 순서로 그만큼 (정해진 순서 묶음도 큰 순서로)"""
     group, by_count = q["group_by"], q["measure"] == "count"
-    acc, order = {}, []
-    for period, r in picked:
-        key = _key(r, group, period)
+    acc = {}
+    for _, r in picked:
+        key = _key(r, group)
         if key is None:  # 가게 이름 없음 · 시각 없음은 묶음에서 뺀다
             continue
         if key not in acc:
-            acc[key] = {"key": key, "name": _group_name(group, key), "sum": 0, "count": 0}
-            order.append(key)
+            # 응답 key 는 기존처럼 월 숫자 — 볼 수 있는 범위(최근 3개월 + 이번 달)라 같은 월이 두 번 나오지 않는다
+            acc[key] = {"key": key[1] if group == "month" else key, "name": _group_name(group, key), "sum": 0, "count": 0}
         acc[key]["sum"] += r["net_amount"]
         acc[key]["count"] += r["net_amount"] > 0
-    fixed = {"weekday": range(7), "time_slot": list(scope.SLOTS), "month": order}.get(group)
+    fixed = {"weekday": range(7), "time_slot": list(scope.SLOTS), "month": sorted(acc) if group == "month" else None}.get(group)
     if fixed is not None and q.get("top_n") is None:
         return [acc[k] for k in fixed if k in acc]
     ranked = sorted(acc.values(), key=lambda g: ((-g["count"], -g["sum"]) if by_count else (-g["sum"], -g["count"]), str(g["name"])))

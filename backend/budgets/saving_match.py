@@ -9,6 +9,7 @@ from datetime import timedelta
 
 from finance.merchant_rules import normalize_merchant
 from finance.models import FinancialTransaction, PaymentMatch, RecurringExpense, RecurringSaving, TransactionLink
+from finance.transfer_rules import OWN_REVIEW
 
 from .api import day_in_month, id_set
 
@@ -49,6 +50,9 @@ def match_savings(user, tx_ids, today):
         ).exclude(pk__in=PaymentMatch.objects.values("transaction"))  # 청구서 · 대출 · 고정지출 회차에 연결된 출금
         by_month = defaultdict(list)
         for tx in rows:
+            # 사용자가 '내 계좌 이체 아님'(저축에서 뺌 포함)이라고 한 출금은 다시 저축으로 넣지 않는다 (R11)
+            if (tx.field_states or {}).get(OWN_REVIEW) == "rejected":
+                continue
             if str(tx.pk) in taken or not on_day(tx, s.transfer_day) or not same_receiver(tx, s, own_to, labels):
                 continue
             by_month[(tx.occurred_on.year, tx.occurred_on.month)].append(tx)

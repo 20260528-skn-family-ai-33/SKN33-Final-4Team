@@ -15,10 +15,11 @@ from django.utils import timezone
 from . import codef, pipeline
 from .models import BankAccount, Connection, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, SyncRun
 from .sync import sync_bank
+from .test_bank_response import NoCodefNetwork
 
 
 @override_settings(CODEF={"CONNECTED_ID": "test-connected-id"})
-class BankSyncTest(TestCase):
+class BankSyncTest(NoCodefNetwork, TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.user = get_user_model().objects.create_user(email="sync@example.com")
@@ -66,8 +67,10 @@ class BankSyncTest(TestCase):
         self.assertEqual(account.masked_number, codef.mask(self.accounts[0]["account_no"]))
         self.assertEqual(account.balance, 90000)
         self.assertGreaterEqual(account.fetched_at, before)
-        self.assertEqual(account.field_states, {"codef_deposit_code": "11"})
-        self.assertEqual(BankAccount.objects.get(account_type="other").field_states, {"codef_deposit_code": "12"})
+        started = SyncRun.objects.get(product_code="bank_sync").started_at.isoformat()  # 이 값을 저장한 조회의 시작 시각 (R06)
+        self.assertEqual(account.field_states, {"codef_deposit_code": "11", "codefStartedAt": started})
+        self.assertEqual(BankAccount.objects.get(account_type="other").field_states,
+                         {"codef_deposit_code": "12", "codefStartedAt": started})
         self.list_accounts.assert_called_once_with("test-connected-id", "0088")
         self.list_transactions.assert_called_once_with(
             "test-connected-id", "0088", self.accounts[0]["account_no"], self.start, self.end,
@@ -124,7 +127,8 @@ class BankSyncTest(TestCase):
         self.assertEqual(SyncRun.objects.filter(status="success").count(), 2)
         account.refresh_from_db()
         self.assertEqual((account.is_selected, account.budget_role, account.alias), (True, "savings", "내 별칭"))
-        self.assertEqual(account.field_states, {"other_state": "유지", "codef_deposit_code": "11"})
+        started = SyncRun.objects.filter(product_code="bank_sync").latest("started_at").started_at.isoformat()
+        self.assertEqual(account.field_states, {"other_state": "유지", "codef_deposit_code": "11", "codefStartedAt": started})
         self.assertEqual((account.balance, account.name), (80000, "바뀐 계좌명"))
         self.assertGreater(account.fetched_at, fetched_at)
         tx.refresh_from_db()
@@ -424,7 +428,7 @@ class BankSyncTest(TestCase):
         self.assertFalse(SyncRun.objects.exists())
 
 
-class BankSyncTransactionTest(TransactionTestCase):
+class BankSyncTransactionTest(NoCodefNetwork, TransactionTestCase):
     # 테스트 전체를 트랜잭션으로 감싸지 않고 초기 카테고리는 복원한다.
     serialized_rollback = True
 

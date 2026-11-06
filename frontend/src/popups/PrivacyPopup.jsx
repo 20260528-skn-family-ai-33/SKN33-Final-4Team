@@ -8,6 +8,8 @@ import { PATHS } from '../routes.js'
 
 const LABELS = { bank: '계좌 조회', card: '카드 조회', loan: '대출 조회' }
 const STATES = { granted: '동의함', revoked: '철회함', not_granted: '동의 안 함' }
+// 철회는 접수됐지만 외부 인증 · 데이터 삭제가 남은 상태 (R21) — '철회함'(삭제 완료)으로 보이지 않게
+const DELETING = { processing: '삭제 처리 중', retry_required: '삭제 재시도 필요' }
 const dateText = (value) => value ? new Date(value).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : ''
 
 export default function PrivacyPopup({ onChanged }) {
@@ -27,8 +29,11 @@ export default function PrivacyPopup({ onChanged }) {
     setBusy(true)
     setError('')
     try {
-      await apiSend(`/api/finance/consents/${step}/`, 'DELETE', { confirm: true })
-      setMessage(`${LABELS[step]} 동의를 철회하고 해당 데이터와 관련 예산·분석 기록을 삭제했어요.`)
+      const result = await apiSend(`/api/finance/consents/${step}/`, 'DELETE', { confirm: true })
+      const left = result?.items?.find((item) => item.productScope === step)?.deletionStatus
+      setMessage(left === 'retry_required' ? `${LABELS[step]} 동의 철회를 접수했지만 삭제를 마무리하지 못했어요. 잠시 후 [삭제 다시 시도]를 눌러 주세요.`
+        : left ? `${LABELS[step]} 동의 철회를 접수했고 삭제를 처리하는 중이에요. 잠시 후 다시 확인해 주세요.`
+          : `${LABELS[step]} 동의를 철회하고 해당 데이터와 관련 예산·분석 기록을 삭제했어요.`)
       setStep(null)
       query.reload()
       onChanged?.()
@@ -61,8 +66,9 @@ export default function PrivacyPopup({ onChanged }) {
         <div><b>{LABELS[item.productScope]} · {item.required ? '필수' : '선택'}</b>
           <small>{item.grantedAt ? `${dateText(item.grantedAt)} 동의 · ${item.documentVersion}` : '동의 기록 없음'}{item.revokedAt ? ` · ${dateText(item.revokedAt)} 철회` : ''}</small>
         </div>
-        <span className="mc-badge">{STATES[item.status]}</span>
-        {item.status === 'granted' && <button type="button" className="mc-link" onClick={() => choose(item.productScope)}>{LABELS[item.productScope]} 철회</button>}
+        <span className="mc-badge">{DELETING[item.deletionStatus] ?? STATES[item.status]}</span>
+        {item.status === 'granted' && !item.deletionStatus && <button type="button" className="mc-link" onClick={() => choose(item.productScope)}>{LABELS[item.productScope]} 철회</button>}
+        {item.deletionStatus === 'retry_required' && <button type="button" className="mc-link" onClick={() => choose(item.productScope)}>{LABELS[item.productScope]} 삭제 다시 시도</button>}
       </div>)}
       {query.data && <button type="button" className="mc-link" onClick={() => { closePopup(); navigate(PATHS.connect) }}>조회 동의·연결 관리하기</button>}
       {message && <p role="status">{message}</p>}

@@ -205,17 +205,20 @@ def read_sms_token(user, business_type, code, token):
 # ---------- CODEF 계정 등록 + 저장 ----------
 
 @contextmanager
-def codef_account_lock(user):
+def codef_account_lock(user, wait=True):
     """같은 회원의 CODEF 계정 등록을 한 번에 하나씩 (connectedId 가 두 개 생기지 않게).
-    외부 호출 동안 회원 행을 잡지 않도록 행 잠금 대신 회원별 advisory lock 을 쓴다"""
+    외부 호출 동안 회원 행을 잡지 않도록 행 잠금 대신 회원별 advisory lock 을 쓴다.
+    wait=False 면 기다리지 않고 잡았는지(bool)를 넘긴다 (삭제 재처리, users/deletion.py). 같은 연결 안에서는 다시 잡을 수 있다"""
     key = int.from_bytes(user.pk.bytes[:4], "big", signed=True)
     with db_connection.cursor() as cursor:
-        cursor.execute("SELECT pg_advisory_lock(%s, %s)", [LOCK_NAMESPACE, key])
+        cursor.execute(f"SELECT {'pg_advisory_lock' if wait else 'pg_try_advisory_lock'}(%s, %s)", [LOCK_NAMESPACE, key])
+        locked = True if wait else cursor.fetchone()[0]
     try:
-        yield
+        yield locked
     finally:
-        with db_connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, key])
+        if locked:
+            with db_connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, key])
 
 
 def pick_mode(user, business_type, code, current_id):

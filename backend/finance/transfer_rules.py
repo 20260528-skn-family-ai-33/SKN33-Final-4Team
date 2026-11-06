@@ -1,10 +1,13 @@
 """거래 유형 판단 (pipeline.link_basics).
 
-은행 거래는 출금 transfer · 입금 income 으로 저장되는데, 이 단계가 내 계좌 간 이체 · 카드값 · 대출 상환 후보를 나눈다.
-친구 송금은 그대로 transfer 다 (11/3 결정: 기본은 소비 아님). 반대쪽 거래는 전에 저장된 것까지 찾는다 (은행마다 조회 시점이 달라서).
+은행 거래는 출금 transfer · 입금 income 으로 저장되는데, 이 단계가 내 계좌 간 이체 추정 · 카드값 · 대출 상환 후보를 나눈다.
+친구 송금은 그대로 transfer 다 (11/3 결정: 기본은 소비 아님).
 """
 from collections import defaultdict
+from datetime import datetime, timedelta
 
+from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 
 from .institutions import CARDS
@@ -21,6 +24,12 @@ CARD_WORDS = {
 }
 LINK_STATE = "suggested"  # [임시] transaction_link 상태 코드가 미정이라 '규칙이 정함'과 같은 값을 쓴다
 LOAN_CANDIDATE = "loan_repayment_candidate"  # 거래 field_states: 대출 상환 후보. 유형은 실제 납부와 맞았을 때만 바꾼다
+CARD_CANDIDATE = "card_payment_candidate"    # 거래 field_states: 적요의 카드사 코드. 유형은 청구서에 연결될 때만 card_payment (R11, 11/06)
+# 거래 field_states: 내 계좌 이체 판단 — suggested(이름이 같아 추정) · confirmed(사용자가 맞다고 함) · rejected(아니라고 함)
+OWN_REVIEW = "own_transfer_review"
+OWN_GAP = timedelta(minutes=5)  # 내 계좌 이체 자동 분류: 출금 · 입금 시각 차이, 5분 포함 (11/5 결정, 자정 넘김 포함)
+# 거래 field_states: 늦게 온 거래로 자동 연결이 모호해졌지만 저축 · 납부 근거라 풀지 않은 연결 (출금 쪽, 거래 상세에서 정정)
+OWN_RECHECK = "own_transfer_recheck"
 
 
 def squeeze(text):
@@ -40,35 +49,141 @@ def link(user, source, target, relation, amount):
     )
 
 
-def link_own_transfers(user, txs):
-    """[임시] 같은 날 · 같은 금액이면 내 계좌 간 이체로 본다. 자정을 넘긴 이체는 놓치고, 같은 날 우연히 같은 금액을 주고받으면 잘못 묶는다.
-    입금이 늦게 와도 결과가 같도록 규칙이 정한 카드값도 다시 본다. 사용자가 확정했거나 납부에 붙은 거래, 같은 구매로 이은 출금은 바꾸지 않는다"""
-    bank = Tx.objects.filter(user=user, source_kind="bank", is_canceled=False).exclude(
+def same_name(text):
+    """앞뒤 · 가운데 공백(탭 · 전각 포함)을 지우고 대소문자를 맞춘 이름"""
+    return "".join((text or "").split()).upper()
+
+
+def nickname(user):
+    return same_name(get_user_model().objects.filter(pk=getattr(user, "pk", user)).values_list("nickname", flat=True).first())
+
+
+def open_bank_rows(user):
+    """규칙이 바꿔도 되는 은행 거래: 취소 · 사용자 확정 · 납부 · 같은 구매 · 이미 이은 내 계좌 이체가 아님"""
+    return Tx.objects.filter(user=user, source_kind="bank", is_canceled=False).exclude(
         confirmation_state=Tx.ConfirmationState.CONFIRMED,
-    ).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk")))).exclude(
-        Exists(TransactionLink.objects.filter(relation_type=Relation.SAME_PURCHASE, to_transaction=OuterRef("pk"))),
-    )
-    paired = set()
-    pending = bank.filter(pk__in=txs.values("pk"), transaction_type__in=[Type.TRANSFER, Type.INCOME])
-    for tx in pending.order_by("occurred_on", "occurred_time", "pk"):
-        if tx.pk in paired:
+    ).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk")))).exclude(Exists(TransactionLink.objects.filter(
+        Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")),
+        relation_type__in=[Relation.SAME_PURCHASE, Relation.OWN_TRANSFER],
+    )))
+
+
+def link_own_transfers(user, txs):
+    """[규칙 추정] 양쪽 계좌 거래가 다 수집된 내 계좌 이체를 자동 분류한다 (R11, 11/5). 확실한 식별이 아니라서 auto 로 따로 남기고
+    사용자가 거래 상세에서 [맞아요] · [연결 해제]할 수 있다 (api._apply_own_transfer).
+    조건: 같은 회원의 다른 계좌 · 출금 ↔ 입금 · 같은 금액 · 시각 차이 5분 이내(시각이 없으면 안 함) · 양쪽 적요가 모두 가입 이름 ·
+    양쪽에서 맞는 상대가 각각 하나뿐. 상대 거래의 유형과 상관없이 세어서 후보가 여럿이면 잇지 않는다.
+    관리 대상 선택과 상관없이 저장된(실제로 수집된) 거래끼리 본다. 상대가 아직 없으면 suggest_own_transfers 가 이름만 보고 추정한다.
+    이름만 추정된 출금(suggested)은 나중에 상대 입금이 들어오면 auto 로 올린다. 사용자 판단(confirmed · rejected)은 건드리지 않는다.
+    새 거래가 기존 자동 연결의 후보가 되면 그 연결부터 다시 본다 (recheck_own_transfers) — 한꺼번에 받든 나눠 받든 결과가 같게"""
+    name = nickname(user)
+    base = Tx.objects.filter(user=user, source_kind="bank", is_canceled=False, occurred_time__isnull=False)
+
+    def at(tx):
+        return datetime.combine(tx.occurred_on, tx.occurred_time)
+
+    def matches(tx):
+        rows = base.filter(
+            amount=tx.amount, direction="in" if tx.direction == "out" else "out",
+            occurred_on__range=(tx.occurred_on - timedelta(days=1), tx.occurred_on + timedelta(days=1)),
+        ).exclude(account_id=tx.account_id)
+        return [o for o in rows if abs(at(o) - at(tx)) <= OWN_GAP
+                and same_name(o.source_description) == name == same_name(tx.source_description)]
+
+    def free(tx):
+        review = (tx.field_states or {}).get(OWN_REVIEW)
+        if tx.direction == "out":
+            return tx.transaction_type == Type.TRANSFER and review in (None, "suggested")
+        return tx.transaction_type == Type.INCOME and review is None
+
+    if not name:
+        return
+    new = list(base.filter(pk__in=txs.values("pk")).order_by("occurred_on", "occurred_time", "pk"))
+    recheck_own_transfers(user, {tx.pk for tx in new} | {o.pk for tx in new for o in matches(tx)}, matches, name)
+    open_ids = open_bank_rows(user).values("pk")
+    for tx in new:
+        tx.refresh_from_db()
+        if not open_bank_rows(user).filter(pk=tx.pk).exists():
             continue
-        is_out = tx.transaction_type == Type.TRANSFER
-        other = bank.filter(
-            occurred_on=tx.occurred_on, amount=tx.amount,
-            transaction_type__in=[Type.INCOME] if is_out else [Type.TRANSFER, Type.CARD_PAYMENT],
-        ).exclude(account_id=tx.account_id).order_by("occurred_time", "pk").first()
-        if other is None:
+        found = matches(tx)
+        if not free(tx) or len(found) != 1 or len(matches(found[0])) != 1:
             continue
-        paired |= {tx.pk, other.pk}
-        Tx.objects.filter(pk__in=[tx.pk, other.pk]).update(transaction_type=Type.OWN_TRANSFER)
-        out, income = (tx, other) if is_out else (other, tx)
-        link(user, out, income, Relation.OWN_TRANSFER, tx.amount)
+        with transaction.atomic():
+            pair = list(Tx.objects.select_for_update().filter(pk__in=[tx.pk, found[0].pk]).filter(pk__in=open_ids).order_by("pk"))
+            if len(pair) != 2 or not all(free(t) for t in pair):
+                continue  # 잠그는 사이 바뀜
+            from budgets.salary import valid_confirmed_ids
+            if Tx.objects.filter(pk__in=[t.pk for t in pair]).filter(pk__in=valid_confirmed_ids(user)).exists():
+                continue  # 사용자가 급여로 확인한 입금 (R12) — 잠근 뒤 다시 봐서 급여 확인과 겹쳐도 한쪽만
+            for t in pair:
+                Tx.objects.filter(pk=t.pk).update(
+                    transaction_type=Type.OWN_TRANSFER, field_states={**t.field_states, OWN_REVIEW: "auto"},
+                )
+            out, income = sorted(pair, key=lambda t: t.direction != "out")
+            link(user, out, income, Relation.OWN_TRANSFER, out.amount)
+
+
+def recheck_own_transfers(user, touched_ids, matches, name):
+    """새 거래가 후보로 끼어든 기존 자동 연결(auto)을 다시 본다. 아직 양쪽 다 유일하면 둔다.
+    모호해졌으면 연결을 지우고 출금은 transfer(이름이 같으면 suggested), 입금은 income 으로 되돌린다 — 다른 후보에 갈아 붙이지 않는다.
+    사용자가 확인한 연결(confirmed)은 그대로. 저축 · 납부 · 고정지출 근거가 된 거래는 풀지 않고 출금에 OWN_RECHECK 를 남겨
+    거래 상세에서 다시 확인하게 한다 (저축으로 바뀐 거래도 상세의 [아니에요]로 저축 근거에서 뺄 수 있음)"""
+    from budgets.candidates import linked_evidence  # budgets.candidates 가 이 파일을 읽어서 함수 안에서 부른다
+
+    links = TransactionLink.objects.filter(
+        Q(from_transaction__in=touched_ids) | Q(to_transaction__in=touched_ids),
+        user=user, relation_type=Relation.OWN_TRANSFER, confirmation_state=LINK_STATE,
+    ).select_related("from_transaction", "to_transaction")
+    used = None
+    for row in links:
+        out, income = row.from_transaction, row.to_transaction
+        if (out.field_states or {}).get(OWN_REVIEW) != "auto":
+            continue  # 사용자 판단
+        if (not out.is_canceled and not income.is_canceled and out.occurred_time and income.occurred_time
+                and len(matches(out)) == 1 and len(matches(income)) == 1):
+            continue
+        used = linked_evidence(user) if used is None else used
+        with transaction.atomic():
+            pair = list(Tx.objects.select_for_update().filter(pk__in=[out.pk, income.pk]).order_by("pk"))
+            out, income = sorted(pair, key=lambda t: t.direction != "out")
+            protected = any(
+                t.transaction_type != Type.OWN_TRANSFER or str(t.pk) in used
+                or PaymentMatch.objects.filter(transaction=t).exists() for t in pair
+            )
+            if protected:
+                Tx.objects.filter(pk=out.pk).update(field_states={**out.field_states, OWN_RECHECK: True})
+                continue
+            out_states = {**out.field_states}
+            if same_name(out.source_description) == name:
+                out_states[OWN_REVIEW] = "suggested"
+            else:
+                out_states.pop(OWN_REVIEW, None)
+            in_states = {k: v for k, v in income.field_states.items() if k != OWN_REVIEW}
+            Tx.objects.filter(pk=out.pk).update(transaction_type=Type.TRANSFER, field_states=out_states)
+            Tx.objects.filter(pk=income.pk).update(transaction_type=Type.INCOME, field_states=in_states)
+            row.delete()
+
+
+def suggest_own_transfers(user, txs):
+    """은행 출금의 적요가 가입 이름(nickname)과 통째로 같으면 '내 계좌 이체 추정'으로 표시만 한다 (R11, 11/5).
+    유형은 transfer 그대로 두고 상대 계좌 · 입금 거래는 만들지 않는다. '김나은상점'처럼 일부만 같거나 이름이 비면 아니다.
+    CODEF 은행 거래에는 적요 1~4칸뿐이라 상대 계좌 · 송금 식별값이 없다. 양쪽 거래가 다 있으면 link_own_transfers 가 먼저 본다.
+    이미 판단이 있는 거래(추정 · 확인 · 거절)는 건드리지 않아서 재수집 · 재처리 · 이름 변경에도 사용자 판단이 남는다.
+    납부 · 같은 구매에 붙었거나 사용자가 확정한 출금은 보지 않는다"""
+    name = nickname(user)
+    if not name:
+        return
+    rows = open_bank_rows(user).filter(pk__in=txs.values("pk"), direction="out", transaction_type=Type.TRANSFER)
+    for tx in rows:
+        # 카드값 후보는 보지 않는다 (예전에 card_payment 로 바뀌어 여기 오지 않던 것과 같게)
+        if OWN_REVIEW not in tx.field_states and CARD_CANDIDATE not in tx.field_states and same_name(tx.source_description) == name:
+            Tx.objects.filter(pk=tx.pk).update(field_states={**tx.field_states, OWN_REVIEW: "suggested"})
 
 
 def mark_by_description(user, txs):
-    """남은 출금 중 적요에 카드사 이름 → card_payment, 상환 중인 내 대출의 기관 이름 → 대출 상환 후보 표시.
-    후보는 transfer 그대로라 목록에 남아 사용자가 고칠 수 있다 (적요 '국민은행 홍길동'처럼 사람에게 보낸 돈일 수 있어서).
+    """남은 출금 중 적요에 카드사 이름 → 카드값 후보, 상환 중인 내 대출의 기관 이름 → 대출 상환 후보 표시.
+    후보는 transfer 그대로라 목록에 남아 사용자가 고칠 수 있다 (적요 '국민은행 홍길동' · '신한카드 홍길동'처럼 사람에게 보낸 돈일 수 있어서).
+    카드값 후보는 청구서에 자동 연결되거나(card_payments.match) 사용자가 고르면 card_payment 가 된다 (R11, 11/06 — 예전엔 이름만으로 바로 바꿔 목록에서 숨김).
     [임시] 대출보다 거래를 먼저 불러오면 후보가 되지 않는다"""
     lenders = [squeeze(name) for name in Loan.objects.filter(
         user=user, status=Loan.Status.REPAYING, lender_name__isnull=False,
@@ -76,7 +191,7 @@ def mark_by_description(user, txs):
     for tx in txs.filter(source_kind="bank", transaction_type=Type.TRANSFER, is_canceled=False):
         text = squeeze(tx.source_description)
         if card_issuer(text):
-            Tx.objects.filter(pk=tx.pk).update(transaction_type=Type.CARD_PAYMENT)
+            Tx.objects.filter(pk=tx.pk).update(field_states={**tx.field_states, CARD_CANDIDATE: card_issuer(text)})
         elif any(lender and lender in text for lender in lenders):
             Tx.objects.filter(pk=tx.pk).update(field_states={**tx.field_states, LOAN_CANDIDATE: True})
 
@@ -154,3 +269,4 @@ def apply(user, txs):
     link_same_purchases(user)
     link_own_transfers(user, txs)
     mark_by_description(user, txs)
+    suggest_own_transfers(user, txs)  # 카드값 · 대출 후보로 바뀌지 않은 이체만

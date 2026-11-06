@@ -1,5 +1,5 @@
 """정합성 검증: 합성 거래만 사용하며 CODEF·ML·예산 서비스는 호출하지 않는다."""
-from datetime import date
+from datetime import date, time
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -396,7 +396,8 @@ class HistoryPipelineTest(HistoryFixture):
         self.assertEqual(self.result(), CLEAN)
 
     def test_salary_card_cancel_and_check_purchase_keep_dimension_states_separate(self):
-        from budgets.salary import salary_transaction_ids
+        from budgets.salary import salary_reviews
+        from rest_framework.test import APIClient
         from users.models import FinancialProfile
 
         self.card.name = "테스트 체크카드"
@@ -414,7 +415,15 @@ class HistoryPipelineTest(HistoryFixture):
         salary = self.bank(direction="in", transaction_type="income", amount=2000000,
                            source_description="급여", occurred_on=date(2026, 10, 25))
         apply(self.user, Tx.objects.filter(pk=salary.pk))
-        self.assertIn(salary.pk, salary_transaction_ids(self.user, date(2026, 11, 6)))
+        # R12: 큰 입금은 확인 전 급여가 아니다. 실제 확인 API를 거쳐도 환불 근거를 대신하지 않는다.
+        self.assertNotIn(salary.pk, salary_reviews(self.user))
+        client = APIClient()
+        client.force_authenticate(self.user)
+        response = client.post("/api/budgets/salary/decisions/", {
+            "transactionIds": [str(salary.pk)], "decision": "confirmed",
+        }, format="json")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(salary_reviews(self.user)[salary.pk], "confirmed")
         self.assertEqual(self.total(), 17000)
         report = verify_transaction_history(self.user, MONTHS)
         for state in report.values():
@@ -422,9 +431,13 @@ class HistoryPipelineTest(HistoryFixture):
         self.assertEqual(TransactionLink.objects.get(relation_type="SAME_PURCHASE").confirmation_state, "suggested")
 
     def test_auto_own_transfer_does_not_certify_non_refund_inflow(self):
+        self.user.nickname = "김나은"
+        self.user.save(update_fields=["nickname"])
         second = BankAccount.objects.create(user=self.user, connection=self.account.connection, source_account_key="second")
-        out = self.bank(transaction_type="transfer", source_description="내 계좌", amount=20000)
-        income = self.bank(account=second, direction="in", transaction_type="income", source_description="내 계좌", amount=20000)
+        # R11: 양쪽 적요가 가입 이름과 같고 시각 차이가 5분 이내인 유일한 쌍.
+        out = self.bank(transaction_type="transfer", source_description="김나은", amount=20000, occurred_time=time(9))
+        income = self.bank(account=second, direction="in", transaction_type="income", source_description="김나은",
+                           amount=20000, occurred_time=time(9, 1))
         apply(self.user, Tx.objects.filter(pk__in=[out.pk, income.pk]))
         link = TransactionLink.objects.get(relation_type="OWN_TRANSFER")
         self.assertEqual(link.confirmation_state, "suggested")

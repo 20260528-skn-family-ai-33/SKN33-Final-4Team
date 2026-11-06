@@ -8,7 +8,6 @@ finance 앱 API — 금융 동의 · 계좌 · 연결 (docs/api/finance-connect.
 - 새 연결 POST /api/finance/connections/ 금융기관 인증 · 새 연결 → api_new_connection.py (CODEF 를 부르는 유일한 API)
 새 연결 말고는 모두 저장된 값만 읽고 쓴다. CODEF 를 새로 부르지 않는다 (10/22 O)
 """
-import hashlib
 import uuid
 
 from django.contrib.auth import get_user_model
@@ -22,6 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from config.idempotency import idempotent
+from users.consent_documents import consent_hash
 from users.models import Consent
 
 from .display import account_display, masked_tail, organization_name
@@ -30,9 +30,7 @@ from .models import BankAccount, Connection
 
 PURPOSE = "finance_inquiry"  # 금융 조회 동의 목적 코드 (명세 '확인 필요': 최종 코드는 팀 확인)
 SCOPES = {choice.value for choice in Consent.ProductScope}  # bank · card · loan
-# 동의 문서 버전 → 원문. 해시는 서버가 원문으로 만든다 (★2: 화면이 보내지 않음)
-# 동의 문구 최종본이 정해지면(명세 '확인 필요') 아래 문장을 그 원문으로 바꾼다
-CONSENT_DOCUMENTS = {"v1": "머니쿠션 금융 정보 조회 동의 v1 (최종 문구 확정 전 임시 원문)"}
+# 동의 문서 원문 · 해시는 users/consent_documents.py 한 곳에서 (★2: 화면은 버전만 보내고 해시는 서버가 만든다)
 
 
 class ConsentRequired(PermissionDenied):
@@ -61,7 +59,7 @@ def consent_item(consent):
 
 
 def _check_consent_rows(rows):
-    """consents 목록 검사. 틀리면 400, 맞으면 (범위, 버전) 목록 (같은 줄이 두 번 오면 한 번만)"""
+    """consents 목록 검사. 틀리면 400(더는 받지 않는 문서 버전이면 409), 맞으면 (범위, 버전, 해시) 목록 (같은 줄이 두 번 오면 한 번만)"""
     if not isinstance(rows, list) or not rows:
         raise ValidationError({"consents": ["동의 항목을 하나 이상 보내 주세요."]})
     picked = []
@@ -77,9 +75,8 @@ def _check_consent_rows(rows):
             raise ValidationError({"purpose": ["알 수 없는 동의 목적이에요."]})
         if row.get("product_scope") not in SCOPES:
             raise ValidationError({"product_scope": ["알 수 없는 조회 범위예요."]})
-        if row.get("document_version") not in CONSENT_DOCUMENTS:
-            raise ValidationError({"document_version": ["지원하지 않는 동의 문서 버전이에요."]})
-        key = (row["product_scope"], row["document_version"])
+        key = (row["product_scope"], row["document_version"],
+               consent_hash(PURPOSE, row["product_scope"], row["document_version"]))
         if key not in picked:
             picked.append(key)
     return picked
@@ -104,17 +101,20 @@ def consents(request):
         # 회원 행을 잠가 같은 회원의 동의 저장을 한 번에 하나씩 처리한다.
         # 요청 번호가 다른 같은 동의가 동시에 와도, 뒤의 요청은 앞의 저장이 끝난 뒤 기존 기록을 찾아 재사용한다 (PR #41 리뷰)
         list(get_user_model().objects.select_for_update().filter(pk=request.user.pk).values_list("pk", flat=True))
-        if not any(scope == Consent.ProductScope.BANK for scope, _ in picked) and not has_bank_consent(request.user):
+        from users.deletion import PrivacyDeleting, blocked_scopes
+        if blocked_scopes(request.user.pk).intersection(scope for scope, _, _ in picked):
+            raise PrivacyDeleting()  # 이전 철회의 삭제가 끝나기 전에 같은 인증수단을 다시 등록하지 않게 (R21)
+        if not any(scope == Consent.ProductScope.BANK for scope, _, _ in picked) and not has_bank_consent(request.user):
             raise ValidationError({"consents": ["계좌 조회 동의는 꼭 필요해요."]})
-        for scope, version in picked:
+        for scope, version, document_hash in picked:
             found = Consent.objects.filter(
                 user=request.user, purpose=PURPOSE, product_scope=scope,
-                document_version=version, revoked_at__isnull=True,
+                document_version=version, document_hash=document_hash, revoked_at__isnull=True,
             ).order_by("granted_at").first()
             if found is None:
                 found = Consent.objects.create(
                     user=request.user, purpose=PURPOSE, product_scope=scope, document_version=version,
-                    document_hash=hashlib.sha256(CONSENT_DOCUMENTS[version].encode("utf-8")).hexdigest(),
+                    document_hash=document_hash,
                 )
             items.append(consent_item(found))
     return Response({"items": items}, status=status.HTTP_201_CREATED)

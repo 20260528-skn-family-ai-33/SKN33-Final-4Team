@@ -20,12 +20,13 @@ from users.models import Consent
 from . import codef, connected_id
 from .models import BankAccount, Connection, SyncRun
 from .sync_ranges import bill_months, first_load_start
+from .test_bank_response import NoCodefNetwork
 
 URL = "/api/finance/sync/"
 CARD_NO, CARD_PW = "4111222233334444", "8642"
 
 
-class SyncBase(TestCase):
+class SyncBase(NoCodefNetwork, TestCase):
     @classmethod
     def setUpTestData(cls):
         User = get_user_model()
@@ -103,7 +104,8 @@ class SyncTest(SyncBase):
         user, cid, org, start, end = self.bank.call_args.args
         self.assertEqual((user, cid, org, start, end), (self.user, "cid-1", "0088", first_load_start(self.today), self.today))
         # 이 연결에만 저장(새 연결 금지) + 동의 다시 확인 (PR #53 리뷰)
-        self.assertEqual(self.bank.call_args.kwargs, {"connection_id": self.shinhan.pk, "require_consent": True})
+        self.assertEqual(self.bank.call_args.kwargs, {"connection_id": self.shinhan.pk, "require_consent": True,
+                                                      "task_id": AsyncTask.objects.get().pk})
 
     def test_refresh_range_is_last_success_minus_7_days(self):
         last = self.today - timedelta(days=3)
@@ -143,11 +145,13 @@ class SyncTest(SyncBase):
         })
         items = self.items(task)
         self.assertEqual(items["0088"]["parts"][1], {"kind": "loans", "status": "succeeded"})
-        self.loans.assert_called_once_with(self.user, "cid-1", "0088", first_load_start(self.today), self.today)
+        task_id = AsyncTask.objects.get().pk
+        self.loans.assert_called_once_with(self.user, "cid-1", "0088", first_load_start(self.today), self.today, task_id=task_id)
         self.assertEqual(items["0302"]["status"], "succeeded")
         args, kwargs = self.cards.call_args
         self.assertEqual(args, (self.user, "cid-1", "0302", first_load_start(self.today), self.today, bill_months(self.today)))
-        self.assertEqual(kwargs, {"card_no": CARD_NO, "card_password": CARD_PW, "connection_id": self.hyundai.pk})
+        self.assertEqual(kwargs, {"card_no": CARD_NO, "card_password": CARD_PW, "connection_id": self.hyundai.pk,
+                                  "task_id": task_id})
 
     def test_card_values_are_not_stored_or_logged(self):
         self.card_syncer.return_value = self.cards
@@ -338,7 +342,7 @@ class AutoSyncCommandTest(SyncBase):
         self.assertNotIn("heri@example.com", out.getvalue())
 
 
-class RangeTest(TestCase):
+class RangeTest(NoCodefNetwork, TestCase):
     def test_bill_months_and_refresh_start(self):
         from .sync_ranges import refresh_start
 
@@ -351,7 +355,7 @@ class RangeTest(TestCase):
         self.assertEqual(refresh_start(date(2026, 10, 27), None), date(2026, 6, 1))
 
 
-class RealBankSaveTest(TestCase):
+class RealBankSaveTest(NoCodefNetwork, TestCase):
     """실제 저장 함수(sync.sync_bank)로 확인: 새로고침 중 해제 · 동의 철회 (PR #53 리뷰 P1 두 개)"""
 
     @classmethod

@@ -93,3 +93,12 @@ class LoanCreateSerializer(LoanPatchSerializer):
             if errors:
                 raise serializers.ValidationError(errors)
         return super().to_internal_value(data)
+
+
+class ManualLoanPatchSerializer(LoanCreateSerializer):
+    """직접 등록 대출 정정 (R19). partial=True로 쓰고, 등록 때 받은 칸만 고친다. 잔액은 0원도 받는다(0원 ≠ 완납 처리)"""
+
+    manual_balance = serializers.IntegerField(min_value=0, max_value=1_000_000_000)
+
+
+MANUAL_ONLY_FIELDS = ("lender_name", "product_name", "manual_balance", "manual_rate", "maturity_date")
