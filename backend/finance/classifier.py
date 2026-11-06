@@ -29,7 +29,7 @@ from django.conf import settings
 from scripts.spending_classifier import common
 from scripts.spending_classifier.transport_rules import transport_rule
 
-from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item
+from .merchant_rules import SEARCHED_MULTI_ITEM, last_user_choice, seen_multi_item, store_type
 from .models import FinancialTransaction as Tx
 
 logger = logging.getLogger(__name__)
@@ -440,20 +440,14 @@ def judge(name):
     return {"review": (top, UNSURE_REASON if evidence else NOT_FOUND_REASON), "record": record}
 
 
-def card_type(tx):
-    """카드사가 준 구체적인 업종. 전자상거래는 실제 가게 업종이 아니라서 쓰지 않는다 (11/06 NH: 피시방·치킨집도 전자상거래PG)"""
-    industry = (tx.merchant_category or "").strip()
-    return None if not industry or industry.startswith("전자상거래") else industry
-
-
 def judge_card_type(industry):
     """카드사 업종으로 판단. 카드사가 기록한 값이라 어느 가게인지 알 수 있어서 동명 충돌이어도 쓴다.
     판단하지 못하면 None → SVM·검색으로 간다"""
     record = {"step": "card_type", "industry": industry}
-    if food_retail_industry(industry):
-        return {"retail": "FOOD", "record": {**record, SEARCHED_MULTI_ITEM: True}}
+    if food_retail_industry(industry):  # 이 거래의 업종이라 같은 이름의 다른 거래에 넘기지 않는다 (PR #96 리뷰)
+        return {"retail": "FOOD", "record": record}
     if industry in MULTI_ITEM_INDUSTRIES:
-        return {"review": ([], MULTI_ITEM_REASON), "record": {**record, SEARCHED_MULTI_ITEM: True}}
+        return {"review": ([], MULTI_ITEM_REASON), "record": record}
     if not (os.getenv("TYPESAFE_API_KEY") and os.getenv("JEV_MODEL")):
         return None
     try:
@@ -483,22 +477,16 @@ def classify(user, txs):
     for tx in todo:
         name = store_name(tx.merchant_name)
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
-        code, future = last_user_choice(user, tx.merchant_name)
-        seen, saved_conflict = (None, False) if is_multi_item(name) else seen_multi_item(user, tx.merchant_name)
-        seen_food = bool(seen) and all_food_retail(seen.split(", "))
-        # 동명 충돌이면 저장된 검색 업종이 이 가게의 근거가 아니다. 첫 분류처럼 묻는다 (PR #92 리뷰)
-        # 충돌 목록 파일은 Git 에 없어서 환경마다 없을 수 있다. 거래에 저장된 판단도 본다
-        seen_conflict = seen_food and (saved_conflict or common.normalize_name(name or "") in conflict_names())
+        code, future = last_user_choice(user, tx.merchant_name, store_type(tx.merchant_category))
         if code and future and not is_pay_charge(name):
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
             _apply(tx, code, Tx.ClassificationSource.RULE, None)
-        elif retail := retail_category(name) or ("FOOD" if seen_food and not seen_conflict else None):
+        elif retail := retail_category(name):
             # '앞으로도 적용'이 없으면 지난 선택과 상관없이 정해진 카테고리
             _apply(tx, retail, Tx.ClassificationSource.RULE, None)
-        elif is_multi_item(name) or seen:
-            # 다품목(이름 사전 또는 같은 가게의 지난 검색 업종)은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
-            _review(tx, [(code, None)] if code else [], CONFLICT_REASON if seen_conflict else MULTI_ITEM_REASON,
-                    Tx.ClassificationSource.RULE if code else None)
+        elif is_multi_item(name):
+            # 다품목 이름 사전은 SVM 도 부르지 않는다. 과거 선택이 있으면 후보로만
+            _review(tx, [(code, None)] if code else [], MULTI_ITEM_REASON, Tx.ClassificationSource.RULE if code else None)
         elif is_pay_charge(name):
             # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
             _review(tx, [(code, None)] if code else [], PAY_CHARGE_REASON, Tx.ClassificationSource.RULE if code else None)
@@ -514,9 +502,20 @@ def classify(user, txs):
             elif "retail" in answer:
                 _apply(tx, answer["retail"], Tx.ClassificationSource.RULE, None)
             else:
+                # 지난 선택과 달라도 묻지 않는다: 이번 거래의 업종이 지난 선택보다 강한 근거다 (11/06 세진 결정)
                 category, confidence = answer["apply"]
-                _apply_unless_user_differs(tx, category, Tx.ClassificationSource.LLM, confidence, code, [(category, confidence)])
+                _apply(tx, category, Tx.ClassificationSource.LLM, confidence)
             tx.field_states = {**tx.field_states, "classifier": answer["record"]}
+        elif (seen := seen_multi_item(user, tx.merchant_name))[0]:
+            # 같은 가게의 지난 검색 업종. 이번 거래의 카드 업종이 없을 때만 쓴다 (PR #96 리뷰)
+            # 동명 충돌이면 이 가게의 근거가 아니라서 첫 분류처럼 묻는다 (PR #92 리뷰). 충돌 목록 파일은 환경마다 없을 수 있어 저장된 판단도 본다
+            food = all_food_retail(seen[0].split(", "))
+            conflict = food and (seen[1] or common.normalize_name(name or "") in conflict_names())
+            if food and not conflict:
+                _apply(tx, "FOOD", Tx.ClassificationSource.RULE, None)
+            else:
+                _review(tx, [(code, None)] if code else [], CONFLICT_REASON if conflict else MULTI_ITEM_REASON,
+                        Tx.ClassificationSource.RULE if code else None)
         elif name and is_unknown_store(name):
             _review(tx, [], UNKNOWN_STORE_REASON, None)
         else:
@@ -568,7 +567,7 @@ def classify(user, txs):
 
 def _card_answer(tx, answers):
     """같은 업종은 같은 답이라 한 번의 분류 실행에서 한 번만 판단한다"""
-    industry = card_type(tx)
+    industry = store_type(tx.merchant_category)
     if not industry:
         return None
     if industry not in answers:

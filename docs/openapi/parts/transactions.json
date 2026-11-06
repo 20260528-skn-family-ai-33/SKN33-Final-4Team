@@ -1244,7 +1244,7 @@
           "applyToFuture": {
             "type": "boolean",
             "default": false,
-            "description": "true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고 재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래."
+            "description": "true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고 재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래. 카드사 업종이 분명히 다르면 재사용하지 않는다."
           }
         },
         "required": [

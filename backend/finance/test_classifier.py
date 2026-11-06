@@ -188,6 +188,42 @@ class ClassifyTest(TestCase):
         self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.merchant_category), ("FOOD", "suggested", "일반음식점 기타"))
         ask.assert_called_once_with("카드사 업종: 일반음식점")
 
+    def test_each_card_type_decides_its_own_transaction(self, predict):
+        # PR #96 리뷰: 같은 이름이어도 이번 거래의 카드 업종으로 판단하고, 카드 업종은 다음 거래에 넘기지 않는다
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True}}
+        with patch("finance.classifier.ask_jev", return_value=answer) as ask, patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            (store,) = self.run_classify(self.card_tx("행복상회", "편의점"))
+            (pharmacy,) = self.run_classify(self.card_tx("행복상회", "약국"))
+            (store_again,) = self.run_classify(self.card_tx("행복상회", "편의점"))
+            self.tx("좋은상회", field_states=searched)  # 지난 검색 기록보다 이번 카드 업종이 먼저
+            (over_search,) = self.run_classify(self.card_tx("좋은상회", "약국"))
+        self.assertEqual([t.confirmed_category_id for t in (store, pharmacy, store_again, over_search)], ["FOOD", "MEDICAL_HEALTH", "FOOD", "MEDICAL_HEALTH"])
+        self.assertEqual(ask.call_count, 2)
+        self.assertNotIn("multi_item", store.field_states["classifier"])
+        (no_type,) = self.run_classify(self.tx("행복상회"))  # 업종 없는 거래에 카드 판단이 번지지 않는다
+        self.assertEqual(no_type.classification_source, None)
+        predict.assert_called_with(["행복상회"])
+
+    def test_card_type_beats_saved_name_conflict(self, predict):
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True, "name_conflict": True}}
+        self.tx("청담", field_states=searched)
+        with patch("finance.classifier.ask_jev", return_value=("BEAUTY", 0.97, {}, "m")), patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            (tx,) = self.run_classify(self.card_tx("청담", "미용실"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("BEAUTY", "suggested"))
+
+    def test_remembered_choice_needs_the_same_card_type(self, predict):
+        # 11/06: 이름이 같아도 업종이 분명히 다르면 다른 가게라서 이번 거래의 업종으로 분류한다
+        self.card_tx("행복상회", "편의점", confirmed_category_id="HOUSEHOLD", confirmation_state="confirmed", classification_source="user",
+                     field_states={"apply_to_future": True})
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        with patch("finance.classifier.ask_jev", return_value=answer), patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            same, online, blank, other = self.run_classify(self.card_tx("행복상회", "편의점"), self.card_tx("행복상회", "전자상거래PG"),
+                                                           self.tx("행복상회"), self.card_tx("행복상회", "약국"))
+        self.assertEqual([t.confirmed_category_id for t in (same, online, blank)], ["HOUSEHOLD", "HOUSEHOLD", "HOUSEHOLD"])
+        self.assertEqual((other.confirmed_category_id, other.confirmation_state, other.suggestion_reason),
+                         ("MEDICAL_HEALTH", "suggested", None))
+
     def test_card_type_retail_and_department_store(self, predict):
         with patch("finance.classifier.ask_jev") as ask:
             store, mart, department = self.run_classify(self.card_tx("새봄상회", "편의점"), self.card_tx("행복상회", "슈퍼마켓"), self.card_tx("좋은상회", "백화점"))
@@ -219,7 +255,7 @@ class ClassifyTest(TestCase):
         with patch("finance.classifier.ask_jev", return_value=answer), patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
             remembered, differs = self.run_classify(self.card_tx("새봄상회", "편의점"), self.card_tx("행복약국", "약국"))
         self.assertEqual(remembered.confirmed_category_id, "HOUSEHOLD")  # '앞으로도 적용'
-        self.assertEqual((differs.confirmed_category_id, differs.suggestion_reason), ("UNCLASSIFIED", classifier.USER_DIFFERS_REASON))
+        self.assertEqual((differs.confirmed_category_id, differs.confirmation_state), ("MEDICAL_HEALTH", "suggested"))  # 체크 없는 지난 선택보다 업종
 
     def test_transit_card_charge_is_transport(self, predict):
         # 11/06: 티머니 충전은 페이 충전이 아니라 교통비
