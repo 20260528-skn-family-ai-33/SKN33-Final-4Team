@@ -37,6 +37,8 @@ def save_transaction(user, card, identity, payload, existing=None):
         latest = payload.get("source_detail") or {}
         updates = {"is_canceled": payload["is_canceled"], "canceled_amount": payload["canceled_amount"],
                    "source_detail": {**detail, **latest}}
+        if not tx.merchant_category and payload.get("merchant_category"):
+            updates["merchant_category"] = payload["merchant_category"]  # 업종을 받기 전에 저장한 거래
         changed = [key for key, value in updates.items() if getattr(tx, key) != value]
         if changed:
             for key in changed:

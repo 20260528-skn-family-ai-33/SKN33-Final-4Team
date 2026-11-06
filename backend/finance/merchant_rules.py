@@ -24,7 +24,13 @@ def normalize_merchant(name):
     return " ".join(name.split()) or None
 
 
-def last_user_choice(user, merchant_name):
+def store_type(value):
+    """카드사가 준 구체적인 업종. 전자상거래는 실제 가게 업종이 아니라서 쓰지 않는다 (11/06 NH: 피시방·치킨집도 전자상거래PG)"""
+    industry = (value or "").strip()
+    return None if not industry or industry.startswith("전자상거래") else industry
+
+
+def last_user_choice(user, merchant_name, industry=None):
     """같은 가맹점에 사용자가 마지막으로 고른 (카테고리 코드, 앞으로도 적용 여부). 없으면 (None, False)"""
     merchant = normalize_merchant(merchant_name)
     if merchant is None:
@@ -33,12 +39,14 @@ def last_user_choice(user, merchant_name):
         FinancialTransaction.objects
         .filter(user=user, merchant_name=merchant, classification_source=USER_SOURCE)
         .order_by("-occurred_on", "-updated_at")
-        .values_list("confirmed_category_id", "field_states")
+        .values_list("confirmed_category_id", "field_states", "merchant_category")
         .first()
     )
     if row is None:
         return None, False
-    return row[0], bool((row[1] or {}).get(FUTURE_KEY))
+    # 이름이 같아도 카드사 업종이 분명히 다르면 다른 가게다. 이번 거래의 업종을 쓴다
+    past = store_type(row[2])
+    return row[0], bool((row[1] or {}).get(FUTURE_KEY)) and not (past and industry and past != industry)
 
 
 def seen_multi_item(user, merchant_name):

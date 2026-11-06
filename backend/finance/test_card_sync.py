@@ -224,6 +224,36 @@ class ApprovalNormalizationTest(SimpleTestCase):
 
 
 @override_settings(CODEF={"ENV": "demo", "CONNECTED_ID": "test-id", "PUBLIC_KEY": "test-key"})
+class ApprovalStoreTypeTest(SimpleTestCase):
+    def test_store_type_is_kept_out_of_identity(self):
+        with_type = normalize_approvals(approval(resMemberStoreType="약국", resMemberStoreAddr="주소"), START, END)[0][0]
+        without = normalize_approvals(approval(), START, END)[0][0]
+        self.assertEqual(with_type["merchant_category"], "약국")
+        self.assertIsNone(without["merchant_category"])
+        self.assertEqual(with_type["identity"], without["identity"])
+        self.assertNotIn("주소", str(with_type))  # 주소는 저장하지 않는다
+
+    def test_retry_without_store_info_only_for_other_errors(self):
+        calls = []
+
+        def fake(path, params):
+            calls.append(params["memberStoreInfoType"])
+            if params["memberStoreInfoType"] == "1":
+                raise codef.CodefError(code, "실패")
+            return approval()
+
+        for code, retried in (("CF-99999", True), ("CF-12100", False), ("CF-03002", False), ("CF-12401", False)):
+            calls.clear()
+            with self.subTest(code), patch("finance.codef._request", side_effect=fake):
+                if retried:
+                    self.assertEqual(len(codef.list_card_approvals("cid", "0304", START, END)[0]), 1)
+                    self.assertEqual(calls, ["1", "0"])
+                else:
+                    with self.assertRaises(codef.CodefError):
+                        codef.list_card_approvals("cid", "0304", START, END)
+                    self.assertEqual(calls, ["1"])
+
+
 class CardRequestTest(SimpleTestCase):
     def setUp(self):
         encrypt = patch("finance.codef.encrypt_rsa", side_effect=lambda value, key: f"enc({len(value)})")
@@ -302,6 +332,19 @@ class CardSyncTest(TestCase):
     def run_sync(self, **kwargs):
         kwargs.setdefault("connection_id", self.connection.pk)
         return sync_card(self.user, "cid", ORG, START, END, MONTHS, **kwargs)
+
+    def test_store_type_fills_saved_transaction_once(self):
+        self.run_sync()
+        tx = FinancialTransaction.objects.get(user=self.user)
+        self.assertIsNone(tx.merchant_category)
+        self.approvals = [approval(resMemberStoreType="약국")]
+        self.run_sync()
+        tx.refresh_from_db()
+        self.assertEqual(tx.merchant_category, "약국")
+        self.approvals = [approval(resMemberStoreType="편의점")]
+        self.run_sync()
+        tx.refresh_from_db()
+        self.assertEqual(tx.merchant_category, "약국")  # 있는 값은 바꾸지 않는다
 
     def test_saves_cards_bills_and_items(self):
         result = self.run_sync(card_no=CARD_NO, card_password=CARD_PW)
