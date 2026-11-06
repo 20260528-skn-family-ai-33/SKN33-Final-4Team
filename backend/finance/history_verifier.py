@@ -177,7 +177,8 @@ def transaction_history_report(user, month_ids):
         if any(l.confirmation_state != "confirmed" for l in group):
             for kind in ("cancellations", "refunds"):
                 mark(affected, kind, "unknown", "suggested_cancellation_link")
-            continue
+            # 추정 관계를 승인하지는 않지만, 그 관계와 소비액의 불일치는 검사한다.
+            # 미반영이면 unresolved를 우선하고, 차이가 0이어도 unknown은 유지한다.
         total = sum(l.matched_amount for l in group)
         if original.pk in hidden and total:
             # 숨긴 계좌 원거래의 환불은 대표 카드 소비에도 영향을 줄 수 있다.
