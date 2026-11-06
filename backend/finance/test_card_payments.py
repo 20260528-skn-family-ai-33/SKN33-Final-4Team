@@ -133,11 +133,19 @@ class CardPaymentTest(TestCase):
 
     def test_rerun_and_second_withdrawal_do_not_pay_twice(self):
         bill = self.bill()
-        tx, again = self.payment(), self.payment(day=date(2026, 11, 6))
+        tx = self.payment()
+        self.run_step(tx)
+        again = self.payment(day=date(2026, 11, 6))
         self.run_step(tx, again)
         self.run_step(tx, again)
         self.assertEqual(PaymentMatch.objects.count(), 1)
         self.assertEqual(PaymentDue.objects.get(bill=bill).paid_amount, 420_000)
+
+    def test_same_amount_withdrawals_are_left_for_user(self):
+        # 11/06: 같은 청구서에 맞는 출금이 둘이면 먼저 온 쪽을 고르지 않는다 (사용자 확인)
+        self.bill()
+        self.run_step(self.payment(), self.payment(day=date(2026, 11, 6)))
+        self.assertFalse(PaymentMatch.objects.exists())
 
     def test_bill_saved_after_withdrawal_is_matched_by_later_run(self):
         tx = self.payment()

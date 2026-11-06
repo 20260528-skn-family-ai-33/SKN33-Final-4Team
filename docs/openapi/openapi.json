@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 52개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -4개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 57개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -9개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -2284,7 +2284,24 @@
                           "installmentRound": 2,
                           "fetchedAt": "2026-10-21T09:30:00+09:00"
                         }
-                      ]
+                      ],
+                      "paymentCheck": {
+                        "billId": "9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6",
+                        "issuerCode": "0302",
+                        "billingMonth": "2026-11",
+                        "dueDate": "2026-11-05",
+                        "totalAmount": 511515,
+                        "status": "user_confirmed",
+                        "remainingAmount": 0,
+                        "transactionPaidAmount": 0,
+                        "recheckReason": null,
+                        "userCheck": {
+                          "answer": "paid",
+                          "remainingAmount": null,
+                          "confirmedAt": "2026-11-06T11:30:00+09:00"
+                        },
+                        "needsCheck": false
+                      }
                     }
                   },
                   "totalOnly": {
@@ -2308,7 +2325,8 @@
                       "card": null,
                       "cards": null,
                       "itemsState": null,
-                      "items": null
+                      "items": null,
+                      "paymentCheck": null
                     }
                   }
                 }
@@ -2588,6 +2606,1128 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/finance/card-bills/{id}/payments/": {
+      "get": {
+        "summary": "[구현] 카드 청구서 납부 거래 보기",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "getCardBillPayments",
+        "x-source": "docs/api/cards.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n청구 총액 · 확인된 납부액 · 남은 납부액 · 상태, 연결한 출금, 고를 수 있는 내 계좌 출금 후보를 줍니다. 기본 기간은 결제일 35일 전 ~ 7일 뒤(오늘까지, 선결제 · 분할 납부), from · to 로 최대 92일. 후보에서 빼는 거래는 대출 납부 확인과 같습니다(다른 회원 · 취소 · 내 계좌 이체 · 저축 · 입금 · 고정지출/정기 저축 근거 · 같은 구매로 묶인 출금 · 다른 납부에 이미 연결된 출금). 다른 카드사 적요도 빼지 않고 뒤로 보냅니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 납부 예정 → 거래 순으로 잠급니다.\n\n원본: `docs/api/cards.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "description": "찾을 기간 시작 YYYY-MM-DD",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-10-20"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "description": "찾을 기간 끝 YYYY-MM-DD (오늘 이후 출금은 나오지 않음)",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            },
+            "example": "2026-11-12"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "청구서 · 연결한 출금 · 후보.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardBillPaymentState"
+                },
+                "example": {
+                  "bill": {
+                    "billId": "9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6",
+                    "issuerCode": "0302",
+                    "issuerName": "현대카드",
+                    "dueDate": "2026-11-05",
+                    "totalAmount": 500000,
+                    "paidAmount": 300000,
+                    "remainingAmount": 200000,
+                    "paymentState": "partial",
+                    "canLink": true,
+                    "reviewReason": null
+                  },
+                  "linked": [
+                    {
+                      "transactionId": "1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81",
+                      "date": "2026-11-03",
+                      "amount": 300000,
+                      "account": {
+                        "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                        "displayName": "예시은행 급여통장 · ****1001",
+                        "status": "connected"
+                      },
+                      "description": "현대카드",
+                      "hints": {
+                        "issuerInDescription": true,
+                        "otherIssuer": false,
+                        "payingAccount": true,
+                        "nearDueDate": true
+                      },
+                      "reclassify": null,
+                      "matchedAmount": 300000,
+                      "source": "user",
+                      "cancelEffect": {
+                        "kind": "restore",
+                        "toType": "transfer",
+                        "toCategory": null
+                      }
+                    }
+                  ],
+                  "searchFrom": "2026-10-01",
+                  "searchTo": "2026-11-12",
+                  "items": [
+                    {
+                      "transactionId": "2c3d4e5f-6071-4829-8b3c-4d5e6f7a8b92",
+                      "date": "2026-11-05",
+                      "amount": 200000,
+                      "account": {
+                        "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                        "displayName": "예시은행 급여통장 · ****1001",
+                        "status": "connected"
+                      },
+                      "description": "현대카드",
+                      "hints": {
+                        "issuerInDescription": true,
+                        "otherIssuer": false,
+                        "payingAccount": true,
+                        "nearDueDate": true
+                      },
+                      "reclassify": {
+                        "fromType": "transfer",
+                        "fromCategory": null,
+                        "needsConfirm": false
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "from": [
+                            "YYYY-MM-DD 형식으로 보내 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "카드 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      },
+      "post": {
+        "summary": "[구현] 카드 청구서 납부 거래 연결",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "linkCardBillPayments",
+        "x-source": "docs/api/cards.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n고른 출금들을 이 청구서 납부로 연결합니다(분할 납부는 여러 건 한 번에, 일부 납부 뒤 추가 연결 가능). 청구 총액은 바꾸지 않고, 남은 납부액 = max(0, 청구액 − 확인된 납부액)입니다. 청구액보다 많아도 납부 기록을 자르지 않습니다. 연결한 거래는 card_payment(사용자 확인)가 되어 소비 합계에서 빠지고, 소비 · 사용자 확정 분류를 바꿀 때는 confirmReclassify 가 필요합니다(없으면 400, 아무것도 바꾸지 않음). 이미 이 청구서에 연결된 거래는 그대로 성공. 다른 납부에 연결된 거래는 409(옮기지 않음). 하나라도 고를 수 없으면 전부 저장하지 않습니다. 같은 거래를 두 청구서에 동시에 연결하면 한쪽만 성공합니다. 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 납부 예정 → 거래 순으로 잠급니다.\n\n원본: `docs/api/cards.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardPaymentLinkRequest"
+              },
+              "examples": {
+                "split": {
+                  "summary": "30만 + 20만 분할 납부",
+                  "value": {
+                    "transactionIds": [
+                      "1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81",
+                      "2c3d4e5f-6071-4829-8b3c-4d5e6f7a8b92"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "저장한 뒤 청구서 · 연결한 출금 (items · searchFrom · searchTo 없음).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardBillPaymentState"
+                },
+                "example": {
+                  "bill": {
+                    "billId": "9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6",
+                    "issuerCode": "0302",
+                    "issuerName": "현대카드",
+                    "dueDate": "2026-11-05",
+                    "totalAmount": 500000,
+                    "paidAmount": 500000,
+                    "remainingAmount": 0,
+                    "paymentState": "paid",
+                    "canLink": true,
+                    "reviewReason": null
+                  },
+                  "linked": [
+                    {
+                      "transactionId": "1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81",
+                      "date": "2026-11-03",
+                      "amount": 300000,
+                      "account": {
+                        "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                        "displayName": "예시은행 급여통장 · ****1001",
+                        "status": "connected"
+                      },
+                      "description": "현대카드",
+                      "hints": {
+                        "issuerInDescription": true,
+                        "otherIssuer": false,
+                        "payingAccount": true,
+                        "nearDueDate": true
+                      },
+                      "reclassify": null,
+                      "matchedAmount": 300000,
+                      "source": "user",
+                      "cancelEffect": {
+                        "kind": "restore",
+                        "toType": "transfer",
+                        "toCategory": null
+                      }
+                    },
+                    {
+                      "transactionId": "2c3d4e5f-6071-4829-8b3c-4d5e6f7a8b92",
+                      "date": "2026-11-05",
+                      "amount": 200000,
+                      "account": {
+                        "accountId": "4e7f47ec-f94b-49a5-a828-a9fb67775ab1",
+                        "displayName": "예시은행 급여통장 · ****1001",
+                        "status": "connected"
+                      },
+                      "description": "현대카드",
+                      "hints": {
+                        "issuerInDescription": true,
+                        "otherIssuer": false,
+                        "payingAccount": true,
+                        "nearDueDate": true
+                      },
+                      "reclassify": null,
+                      "matchedAmount": 200000,
+                      "source": "user",
+                      "cancelEffect": {
+                        "kind": "restore",
+                        "toType": "transfer",
+                        "toCategory": null
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid / parse_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "transactionIds": [
+                            "고를 수 없는 거래가 있어요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "reclassify": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "confirmReclassify": [
+                            "분류가 카드값으로 바뀌는 거래가 있어요. 바뀌는 내용을 확인해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required. CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "카드 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready / idempotency_conflict.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "summary": "not_ready",
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "이미 다른 납부에 연결된 거래예요. 그 납부에서 연결을 먼저 풀어 주세요."
+                      }
+                    }
+                  },
+                  "bill_closed": {
+                    "summary": "not_ready",
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "이 청구서에는 지금 납부를 연결할 수 없어요. 카드 관리에서 청구서를 다시 불러온 뒤 확인해 주세요."
+                      }
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "summary": "idempotency_conflict",
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보냈어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/finance/card-bills/{id}/payments/{transactionId}/": {
+      "delete": {
+        "summary": "[구현] 카드 청구서 납부 거래 연결 취소",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "releaseCardBillPayment",
+        "x-source": "docs/api/cards.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n연결을 풀고 남은 금액 · 상태를 다시 계산합니다. 이 연결이 바꾼 분류는 그 뒤 바뀌지 않았을 때만 원래 값으로 되돌리고(restored, 예: 카드값 후보 이체 → 이체), 아니면 그대로 둡니다(kept). 이 청구서에는 그 출금이 자동으로 다시 붙지 않습니다(사용자가 다시 연결하면 해제). 정정 = 취소 뒤 다른 청구서에 연결. 이미 풀린 연결의 재전송은 200 + released: null. 본문은 받지 않습니다(보내면 400). 저장된 거래만 사용하며 CODEF를 호출하지 않습니다. 회원 잠금 → 납부 예정 → 거래 순으로 잠급니다.\n\n원본: `docs/api/cards.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404"
+          },
+          {
+            "name": "transactionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "연결을 풀 거래 ID. 남의 · 없는 거래는 404"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "취소한 뒤 청구서 · 연결한 출금 + released.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardBillPaymentState"
+                },
+                "example": {
+                  "bill": {
+                    "billId": "9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6",
+                    "issuerCode": "0302",
+                    "issuerName": "현대카드",
+                    "dueDate": "2026-11-05",
+                    "totalAmount": 500000,
+                    "paidAmount": 0,
+                    "remainingAmount": 500000,
+                    "paymentState": "needs_review",
+                    "canLink": true,
+                    "reviewReason": "payment_not_found"
+                  },
+                  "linked": [],
+                  "released": {
+                    "transactionId": "1b2c3d4e-5f60-4718-9a2b-3c4d5e6f7a81",
+                    "classification": "restored",
+                    "transactionType": "transfer",
+                    "category": null
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "restoreType": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required. CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "카드 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/finance/card-bills/{id}/payment-check/": {
+      "put": {
+        "summary": "[구현] 카드 청구서 납부 확인 저장",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "putCardBillCheck",
+        "x-source": "docs/api/cards.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n거래를 고르지 않고 '이 청구액 중 앞으로 얼마를 더 내야 하나'를 답합니다(사용자 확인). 가짜 출금 · 납부 기록을 만들지 않고 청구 총액도 바꾸지 않습니다. 답 · 그때 청구액 · 시각을 청구서에 남기며 재조회로 지워지지 않습니다. 청구액이 바뀌거나 출금 기록과 맞지 않으면 status: recheck 로 다시 묻습니다. 같은 답을 다시 보내면 그대로 성공. 승인된 예산은 바꾸지 않습니다. 저장된 자료만 사용하며 CODEF를 호출하지 않습니다.\n\n원본: `docs/api/cards.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CardBillCheckRequest"
+              },
+              "examples": {
+                "paid": {
+                  "summary": "전부 냈어요",
+                  "value": {
+                    "answer": "paid"
+                  }
+                },
+                "partial": {
+                  "summary": "일부 냈어요 — 앞으로 200,000원",
+                  "value": {
+                    "answer": "partial",
+                    "remainingAmount": 200000
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "저장한 뒤 확인 상태.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardBillCheckStatus"
+                },
+                "example": {
+                  "billId": "9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6",
+                  "issuerCode": "0302",
+                  "billingMonth": "2026-11",
+                  "dueDate": "2026-11-05",
+                  "totalAmount": 511515,
+                  "status": "user_confirmed",
+                  "remainingAmount": 0,
+                  "transactionPaidAmount": 0,
+                  "recheckReason": null,
+                  "userCheck": {
+                    "answer": "paid",
+                    "remainingAmount": null,
+                    "confirmedAt": "2026-11-06T11:30:00+09:00"
+                  },
+                  "needsCheck": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "remainingAmount": [
+                            "앞으로 더 낼 금액을 입력해 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "no_charge": {
+                    "summary": "not_ready",
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "청구액이 0원이라 확인할 금액이 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required. CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "카드 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      },
+      "delete": {
+        "summary": "[구현] 카드 청구서 납부 확인 취소",
+        "tags": [
+          "카드"
+        ],
+        "operationId": "deleteCardBillCheck",
+        "x-source": "docs/api/cards.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n사용자 확인만 지웁니다(출금 근거는 그대로). 없으면 그대로 성공. 본문은 받지 않습니다.\n\n원본: `docs/api/cards.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "본인의 카드사 통합 청구서 billId (고정지출 cardBills[].bills[].billId). 잘못된 UUID · 없음 · 남의 것 · 카드별 명세서는 404"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "취소한 뒤 확인 상태.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardBillCheckStatus"
+                },
+                "example": {
+                  "billId": "9a0c1d2e-3f40-4a51-8b62-7c83d94ea5f6",
+                  "issuerCode": "0302",
+                  "billingMonth": "2026-11",
+                  "dueDate": "2026-11-05",
+                  "totalAmount": 511515,
+                  "status": "unchecked",
+                  "remainingAmount": null,
+                  "transactionPaidAmount": 0,
+                  "recheckReason": null,
+                  "userCheck": null,
+                  "needsCheck": true
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / consent_required. CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "summary": "not_authenticated",
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  },
+                  "consent_required": {
+                    "summary": "consent_required",
+                    "value": {
+                      "error": {
+                        "code": "consent_required",
+                        "message": "카드 조회 동의가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "summary": "not_found",
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "method_not_allowed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "method_not_allowed": {
+                    "summary": "method_not_allowed",
+                    "value": {
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "지원하지 않는 요청이에요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "server_error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "server_error": {
+                    "summary": "server_error",
+                    "value": {
+                      "error": {
+                        "code": "server_error",
+                        "message": "잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "summary": "invalid",
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "x": [
+                            "이 칸은 보낼 수 없어요."
+                          ]
+                        }
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -7344,7 +8484,8 @@
                             "displayName": "국민 급여통장 · ****5678",
                             "status": "connected"
                           },
-                          "isEstimated": false
+                          "isEstimated": false,
+                          "userChecked": false
                         }
                       ],
                       "budget": null
@@ -7909,6 +9050,7 @@
                         "balanceTotal": 2800000
                       },
                       "cardPending": [],
+                      "cardNotes": [],
                       "locksReleased": []
                     }
                   },
@@ -7935,6 +9077,7 @@
                         "balanceTotal": null
                       },
                       "cardPending": [],
+                      "cardNotes": [],
                       "locksReleased": []
                     }
                   },
@@ -7966,6 +9109,7 @@
                         "balanceTotal": null
                       },
                       "cardPending": [],
+                      "cardNotes": [],
                       "locksReleased": []
                     }
                   },
@@ -7998,6 +9142,7 @@
                           "reason": "bill_history_incomplete"
                         }
                       ],
+                      "cardNotes": [],
                       "locksReleased": []
                     },
                     "summary": "카드 첫 청구서 확인 중"
@@ -8085,6 +9230,7 @@
                         "balanceTotal": 2800000
                       },
                       "cardPending": [],
+                      "cardNotes": [],
                       "locksReleased": []
                     }
                   }
@@ -10851,6 +11997,21 @@
             },
             "nullable": true,
             "description": "청구 상세. 미확보 null, 정상 확인된 0건 [], 일부면 확보분만."
+          },
+          "paymentCheck": {
+            "description": "앞으로 낼 금액 확인 (11/06). 카드사 통합 청구서만, 그 밖은 null.",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CardBillCheckStatus"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
           }
         },
         "required": [
@@ -10868,7 +12029,8 @@
           "card",
           "cards",
           "itemsState",
-          "items"
+          "items",
+          "paymentCheck"
         ]
       },
       "CardReviewCandidate": {
@@ -11019,6 +12181,427 @@
           "status"
         ],
         "additionalProperties": false
+      },
+      "CardPaymentHints": {
+        "type": "object",
+        "description": "참고 표시만 (자동 연결 판단에 쓰지 않음)",
+        "properties": {
+          "issuerInDescription": {
+            "type": "boolean",
+            "description": "적요에 이 청구서 카드사 이름"
+          },
+          "otherIssuer": {
+            "type": "boolean",
+            "description": "적요에 다른 카드사 이름"
+          },
+          "payingAccount": {
+            "type": "boolean",
+            "description": "청구서 · 카드의 결제 계좌에서 나간 출금"
+          },
+          "nearDueDate": {
+            "type": "boolean",
+            "description": "결제일 ±3일"
+          }
+        },
+        "required": [
+          "issuerInDescription",
+          "otherIssuer",
+          "payingAccount",
+          "nearDueDate"
+        ]
+      },
+      "CardPaymentTransaction": {
+        "type": "object",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "amount": {
+            "type": "integer",
+            "description": "출금 순액 (부분 취소 뺀 금액)"
+          },
+          "account": {
+            "description": "출금한 내 계좌",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AccountDisplay"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "hints": {
+            "$ref": "#/components/schemas/CardPaymentHints"
+          },
+          "reclassify": {
+            "description": "카드값(card_payment)으로 바꾸면 달라지는 분류. 이미 카드값이면 null. needsConfirm 이면 confirmReclassify 필요",
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/LoanPaymentReclassify"
+              },
+              {
+                "type": "object",
+                "nullable": true,
+                "enum": [
+                  null
+                ]
+              }
+            ]
+          },
+          "matchedAmount": {
+            "type": "integer",
+            "description": "linked 만: 이 청구서에 인정된 금액 기록 (자르지 않음)"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "user",
+              "rule"
+            ],
+            "description": "linked 만: 직접 연결 · 자동 연결"
+          },
+          "cancelEffect": {
+            "type": "object",
+            "description": "linked 만: 연결 취소하면 분류 restore(원래 분류로) · keep(그대로). 같은 출금이 다른 청구서에도 연결돼 있으면 keep — 마지막 연결을 풀 때 restore",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "restore",
+                  "keep"
+                ]
+              },
+              "toType": {
+                "type": "string"
+              },
+              "toCategory": {
+                "type": "string",
+                "nullable": true
+              }
+            }
+          }
+        },
+        "required": [
+          "transactionId",
+          "date",
+          "amount",
+          "account",
+          "description",
+          "hints",
+          "reclassify"
+        ]
+      },
+      "CardBillPaymentSummary": {
+        "type": "object",
+        "properties": {
+          "billId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuerCode": {
+            "type": "string"
+          },
+          "issuerName": {
+            "type": "string",
+            "nullable": true
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "출금 예정일, 없으면 결제 예정일"
+          },
+          "totalAmount": {
+            "type": "integer",
+            "description": "조회된 청구 총액 (납부해도 줄이지 않음)"
+          },
+          "paidAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "확인된 납부액 = 연결한 출금의 유효한 합 (취소된 출금 제외). 청구액보다 클 수 있음"
+          },
+          "remainingAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "max(0, totalAmount − paidAmount)"
+          },
+          "paymentState": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "unpaid",
+              "partial",
+              "paid",
+              "needs_review",
+              null
+            ],
+            "description": "paid=청구액 이상(90% 규칙 아님) · partial=일부 · unpaid=연결된 출금 없음, 결제일+3일 전(안 냈다는 뜻 아님) · needs_review=결제일+3일이 지나도 못 찾음 또는 연결한 출금이 취소됨. 청구액 0원 이하면 null"
+          },
+          "canLink": {
+            "type": "boolean",
+            "description": "새 출금을 연결할 수 있는지 (정정으로 대체 · 0원 · 판단 보류 청구서는 false — 연결 취소는 가능)"
+          },
+          "reviewReason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              null,
+              "due_date_unknown",
+              "payment_not_found",
+              "payment_canceled"
+            ],
+            "description": "needs_review 이유: due_date_unknown(청구서에 출금·결제 예정일이 없음 — '결제일 확인 필요', 후보 · 새 연결 없음) · payment_not_found(결제일+3일이 지나도 연결된 출금 없음) · payment_canceled(연결한 출금이 취소됨). 그 밖은 null"
+          }
+        },
+        "required": [
+          "billId",
+          "issuerCode",
+          "issuerName",
+          "dueDate",
+          "totalAmount",
+          "paidAmount",
+          "remainingAmount",
+          "paymentState",
+          "reviewReason",
+          "canLink"
+        ]
+      },
+      "CardBillPaymentState": {
+        "type": "object",
+        "properties": {
+          "bill": {
+            "$ref": "#/components/schemas/CardBillPaymentSummary"
+          },
+          "linked": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardPaymentTransaction"
+            }
+          },
+          "searchFrom": {
+            "type": "string",
+            "format": "date",
+            "description": "GET 만"
+          },
+          "searchTo": {
+            "type": "string",
+            "format": "date",
+            "description": "GET 만"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardPaymentTransaction"
+            },
+            "description": "GET 만: 고를 수 있는 출금 (최대 50건)"
+          },
+          "released": {
+            "nullable": true,
+            "description": "DELETE 만: 실제로 한 일. 이미 풀린 연결의 재전송은 null",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CardPaymentReleased"
+              }
+            ]
+          }
+        },
+        "required": [
+          "bill",
+          "linked"
+        ]
+      },
+      "CardPaymentReleased": {
+        "type": "object",
+        "properties": {
+          "transactionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "restored",
+              "kept"
+            ]
+          },
+          "transactionType": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "transactionId",
+          "classification",
+          "transactionType",
+          "category"
+        ]
+      },
+      "CardPaymentLinkRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transactionIds": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "이 청구서를 낸 내 계좌 출금들 (분할 납부면 여러 건). 같은 ID 중복은 한 번"
+          },
+          "confirmReclassify": {
+            "type": "boolean",
+            "default": false,
+            "description": "소비 · 사용자 확정 분류를 카드값으로 바꾸는 데 동의"
+          }
+        },
+        "required": [
+          "transactionIds"
+        ]
+      },
+      "CardBillCheckStatus": {
+        "type": "object",
+        "description": "이 청구액 중 앞으로 얼마를 더 내야 하나 (finance/card_payments.bill_status). 청구 총액 · 납부 기록은 바꾸지 않는다",
+        "properties": {
+          "billId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "issuerCode": {
+            "type": "string"
+          },
+          "billingMonth": {
+            "type": "string",
+            "nullable": true,
+            "example": "2026-11"
+          },
+          "dueDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true,
+            "description": "출금 예정일, 없으면 결제 예정일"
+          },
+          "totalAmount": {
+            "type": "integer",
+            "description": "조회된 청구 총액"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "paid_by_transactions",
+              "user_confirmed",
+              "recheck",
+              "unchecked",
+              "no_charge",
+              "total_mismatch"
+            ],
+            "description": "paid_by_transactions=연결된 계좌 출금이 청구액 이상 · user_confirmed=사용자 확인 · recheck=확인 뒤 청구액이 바뀌었거나 출금 기록과 다름(조용히 덮지 않음) · unchecked=확인 없음/나중에 확인 · no_charge=청구액 0원 이하 · total_mismatch=청구 총액이 상세 합계보다 작아 원래 청구액을 모름(총액 0원이라고 낼 금액 없음으로 보지 않음, 11/06)"
+          },
+          "remainingAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "nullable": true,
+            "description": "앞으로 낼 금액. unchecked · recheck 는 null (0원도 확정 미납액도 아님). 사용자 확인값과 출금 연결액을 더하지 않는다"
+          },
+          "transactionPaidAmount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "연결된 계좌 출금의 유효한 합 (근거, 참고)"
+          },
+          "recheckReason": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              null,
+              "bill_changed",
+              "transactions_conflict",
+              "bill_total_mismatch"
+            ]
+          },
+          "userCheck": {
+            "type": "object",
+            "nullable": true,
+            "description": "사용자 확인 기록 (카드사 확인이 아님)",
+            "properties": {
+              "answer": {
+                "type": "string",
+                "enum": [
+                  "unpaid",
+                  "paid",
+                  "partial",
+                  "later"
+                ]
+              },
+              "remainingAmount": {
+                "type": "integer",
+                "nullable": true
+              },
+              "confirmedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
+          },
+          "needsCheck": {
+            "type": "boolean",
+            "description": "결제일이 지났는데 앞으로 낼 금액을 모름 또는 재확인. 첫 청구서면 지킬 돈 계산이 보류된다 (결제일 전 미확인은 청구액을 낼 예정으로 셈)"
+          }
+        },
+        "required": [
+          "billId",
+          "issuerCode",
+          "billingMonth",
+          "dueDate",
+          "totalAmount",
+          "status",
+          "remainingAmount",
+          "transactionPaidAmount",
+          "recheckReason",
+          "userCheck",
+          "needsCheck"
+        ]
+      },
+      "CardBillCheckRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "answer": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "paid",
+              "partial",
+              "later"
+            ],
+            "description": "아직 안 냈어요 · 전부 냈어요 · 일부 냈어요 · 나중에 확인"
+          },
+          "remainingAmount": {
+            "type": "integer",
+            "description": "partial 만: 앞으로 더 낼 금액 (1원 이상 청구액 −1원 이하)"
+          }
+        },
+        "required": [
+          "answer"
+        ]
       },
       "LoanFieldState": {
         "type": "object",
@@ -12996,12 +14579,12 @@
             "type": "integer",
             "minimum": 0,
             "nullable": true,
-            "description": "max(0, totalAmount - confirmedFixedAmount). 참고 표시용이며 실제 예산 선차감액이 아님."
+            "description": "max(0, totalAmount - confirmedFixedAmount). 예전 참고값 — 앞으로 낼 금액도 예산 선차감액도 아니며 온보딩 화면에 표시하지 않음"
           },
           "isEstimated": {
             "type": "boolean",
             "nullable": true,
-            "description": "확정 여부가 confirmed가 아닌 청구서를 포함하면 true. 금액을 알 수 없으면 null."
+            "description": "카드사가 예상 청구(estimated)로 준 청구서가 있으면 true, 모두 확정이면 false, 확정 여부를 모르면(null · unknown) null. 금액을 알 수 없어도 null."
           },
           "reason": {
             "type": "string",
@@ -13016,6 +14599,13 @@
               "bill_unavailable",
               "bill_amount_invalid"
             ]
+          },
+          "bills": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardBillCheckStatus"
+            },
+            "description": "이번 주기 명세서별 '앞으로 낼 금액' 확인 (PUT /api/finance/card-bills/{id}/payment-check/). totalAmount 가 null 이면 []"
           }
         },
         "required": [
@@ -13025,7 +14615,8 @@
           "totalAmount",
           "amountAfterFixed",
           "isEstimated",
-          "reason"
+          "reason",
+          "bills"
         ]
       },
       "RecurringSaving": {
@@ -13710,6 +15301,10 @@
               "status"
             ],
             "nullable": true
+          },
+          "userChecked": {
+            "type": "boolean",
+            "description": "card_bill 의 amount 가 사용자 확인 '앞으로 낼 금액'인지 (11/06). '전부 냈어요'로 확인한 청구서는 목록에서 빠진다"
           }
         },
         "required": [
@@ -13721,7 +15316,8 @@
           "amount",
           "paymentState",
           "isEstimated",
-          "paymentAccount"
+          "paymentAccount",
+          "userChecked"
         ]
       },
       "ChatPeriod": {
@@ -14519,6 +16115,7 @@
           "saved",
           "cushion",
           "cardPending",
+          "cardNotes",
           "locksReleased"
         ],
         "properties": {
@@ -14582,7 +16179,46 @@
                 },
                 "reason": {
                   "type": "string",
-                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번 회차 할부 금액을 모름) · card_data_invalid(연결·금액 자료가 맞지 않음) · card_assignment_required(거래별 결제 카드 확인 필요)"
+                  "description": "계산 보류 이유 (finance.card_deduction: first_connection_unknown · bill_history_incomplete · bill_scope_unknown · bill_due_date_unknown · first_bill_unavailable(이번 주기에 결제일인 청구서를 아직 찾지 못함 — 조회 실패 아님) · first_bill_ambiguous · spending_history_incomplete · bill_amount_invalid) · installment_amount_unknown(이번 회차 할부 금액을 모름) · card_data_invalid(연결·금액 자료가 맞지 않음) · card_assignment_required(거래별 결제 카드 확인 필요) · bill_total_mismatch(청구 총액이 상세 합계보다 작아 원래 청구액을 모름 — 0원 · 상세 합계로 정하지 않음, 11/06)"
+                }
+              }
+            }
+          },
+          "cardNotes": {
+            "type": "array",
+            "description": "보류는 아니고 알릴 카드 선차감 상태 (11/06). no_bill_in_cycle(이번 주기 마지막 날까지 조회했는데 결제일인 청구서 없음 → 0원) · first_budget_applied(앞선 주기 승인 예산에 이미 반영 → 0원) · before_first_connection(이 주기 뒤에 연결) · card_overlap_uncertain(청구서에 든 이번 주기 구매 중 생활비와 같은 지출인지 확인 못 한 amount 원 · count 건 — 빼지 않고 넉넉하게 잡음) · bill_items_incomplete(청구서 상세가 일부만 와서 빠진 항목은 모름 — amount · count 는 null)",
+            "items": {
+              "type": "object",
+              "required": [
+                "cardId",
+                "reason"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "cardId": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "issuerCode": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string",
+                  "enum": [
+                    "no_bill_in_cycle",
+                    "first_budget_applied",
+                    "before_first_connection",
+                    "card_overlap_uncertain",
+                    "bill_items_incomplete"
+                  ]
+                },
+                "amount": {
+                  "type": "integer",
+                  "nullable": true
+                },
+                "count": {
+                  "type": "integer",
+                  "nullable": true
                 }
               }
             }
@@ -15184,17 +16820,17 @@
   },
   "x-source-sha256": {
     "docs/API_RULES.md": "ff9ec441fcefd21fe33213c36adeb1888084ea2acb22615ccab670bcdd5b15f0",
-    "docs/api/README.md": "13e474e16b1951aba10978b282593f43cab0fcd346f6278235401fee87cc084c",
+    "docs/api/README.md": "a72df21d6385ed6bb25c1d12dda96ab046f5cf33c245e8755e730c5ed948f9ab",
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
     "docs/api/auth.md": "d319e5346c850f0327eaaa8a3efc1177002bd1c50ab3f81b29b1a7b301f37797",
     "docs/api/finance-connect.md": "834571c3866ad128bdf918097f96ee80eae7bbc096143f504a52067a0459b0bd",
-    "docs/api/cards.md": "a22fb9fbd726846c415f9c85e4ad955185470ad32a45d2d4ffaba39433eb5ef8",
+    "docs/api/cards.md": "a751b39b3fdc01899f431ebbf95b421acd8bdb0bd07828e561665ce0af1f0b9e",
     "docs/api/loans.md": "8f372b35b2e62e414ada1e0bb51801c6d2dde23c1379088545f115aa35bddeb2",
     "docs/api/transactions.md": "9013a649b3e2ef6c165d598e080c1218998f815d9057a99eb9eb961f58cd0b80",
-    "docs/api/fixed.md": "81e585f4c97dbd101525a130fce5d97e003aa788410cd3e6ec40e83fa7bb3d3b",
+    "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
-    "docs/api/home.md": "e8c2aa890786efe90603b51817b35208000672012fc995604350ce258030a43c",
+    "docs/api/home.md": "0a73453f51d65650cfe38dbd5acee9fdcd9090c531e5f6c427e1d15ef75b40df",
     "docs/api/chat.md": "194756f037310f2f883ed42ae96e59690dd277502dbc7d887abf99c1c9036ef5",
     "docs/api/budgets.md": "59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29"
   }

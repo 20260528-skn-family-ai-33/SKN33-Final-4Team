@@ -101,8 +101,8 @@ class BillWithoutWithdrawalTest(BillDueFixture):
         # 재현(R04 보완 ①): 결제일 11/5 → 11/6 정정이 42만 원 두 줄(84만 원)로 보이던 문제
         self.sync()
         first = self.due()
-        PaymentMatch.objects.create(user=self.user, due=first, transaction=self.payment(amount=1, day=date(2026, 10, 1)),
-                                    matched_amount=100_000)  # 기존 부분 납부 기록
+        PaymentMatch.objects.create(user=self.user, due=first, transaction=self.payment(amount=100_000, day=date(2026, 10, 1)),
+                                    matched_amount=100_000)  # 기존 부분 납부 기록 (출금액 = 인정 금액)
         self.bills["202611"] = bill(due="20261106")
         self.sync()
         self.assertEqual(CardBill.objects.filter(user=self.user).count(), 2)  # 청구서 행은 지우지 않음

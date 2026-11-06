@@ -16,6 +16,7 @@ import FixedPopup from '../popups/FixedPopup.jsx'
 import EvidencePopup from '../popups/EvidencePopup.jsx'
 import Popup from '../popups/Popup.jsx'
 import TransactionPopup from '../popups/TransactionPopup.jsx'
+import CardBillCheck from '../components/CardBillCheck.jsx'
 import { CHIPS, toView } from '../utils/transactions.js'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
@@ -155,6 +156,24 @@ function ManageView() {
   )
 }
 
+// 고정지출 확인 · 카드사 한 줄 (11/06 단순화): 청구서마다 '앞으로 얼마를 더 내야 하나요?'만 묻는다 (CardBillCheck)
+//   확인하지 않아도 다음으로 갈 수 있다. 첫 예산에 필요한데 모르면 지킬 돈 단계에서 다시 묻는다
+function CardBillRow({ bill, onSaved }) {
+  if (bill.totalAmount === null) {
+    return (
+      <div style={{ marginTop: 14 }}>
+        <strong>{bill.issuerName}</strong>
+        <p className="mc-muted">{bill.reason === 'cycle_unavailable' ? '월급 정보를 설정하면 이번 주기 청구서를 확인할 수 있어요.' : '청구서 확인 필요 · 카드 관리에서 이번 주기 청구서를 불러와 주세요.'}</p>
+      </div>
+    )
+  }
+  return (
+    <div style={{ marginTop: 14 }} aria-label={`${bill.issuerName} 청구서`}>
+      {bill.bills.map((b) => <CardBillCheck key={b.billId} bill={b} issuerName={bill.issuerName} onSaved={onSaved} />)}
+    </div>
+  )
+}
+
 // 첫 설정 흐름 · 고정지출 확인
 function OnboardingView() {
   const navigate = useNavigate()
@@ -238,20 +257,7 @@ function OnboardingView() {
         <div className="mc-row"><h2>카드 청구서</h2><button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>카드 관리</button></div>
         {(data.cardBills ?? []).length === 0
           ? <p className="mc-muted">관리할 카드를 연결하고 선택하면 청구금액을 확인할 수 있어요.</p>
-          : data.cardBills.map((bill) => (
-            <div key={bill.issuerCode} style={{ marginTop: 14 }}>
-              <strong>{bill.issuerName}</strong>
-              {bill.amountAfterFixed === null
-                ? <p className="mc-muted">{bill.reason === 'cycle_unavailable' ? '월급 정보를 설정하면 이번 주기 청구금액을 확인할 수 있어요.' : '청구서 확인 필요 · 카드 관리에서 이번 주기 청구서를 불러와 주세요.'}</p>
-                : <>
-                  <div className="mc-keyvalue"><span>조회된 청구금액{bill.isEstimated ? ' (예상·미확정 포함)' : ''}</span><span>{won(bill.totalAmount)}</span></div>
-                  <div className="mc-keyvalue"><span>이번 청구금액에서 제외</span><span>−{won(Math.min(bill.totalAmount, bill.confirmedFixedAmount))}</span></div>
-                  <div className="mc-keyvalue"><span>고정비 제외 청구금액</span><strong>{won(bill.amountAfterFixed)}</strong></div>
-                  {bill.totalAmount === 0 && <p className="mc-note">조회된 청구금액이 0원이어서 추가로 빼는 금액은 없어요. 월 고정지출은 위 확정 합계에 유지돼요.</p>}
-                </>}
-            </div>
-          ))}
-        <p className="mc-note" style={{ paddingBottom: 0 }}>이번 급여 주기에 낼 카드사 청구금액에서 위 합계에 포함된 카드 고정비를 뺀 참고 금액이에요(최소 0원). 실제 예산에서는 지킬 돈 단계에서 첫 청구서 여부와 이번 주기 사용액 등을 반영해 계산해요.</p>
+          : data.cardBills.map((bill) => <CardBillRow key={bill.issuerCode} bill={bill} onSaved={reload} />)}
       </div>
     </Layout>
   )

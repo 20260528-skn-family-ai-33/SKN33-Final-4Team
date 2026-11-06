@@ -375,13 +375,18 @@ class BudgetViewTest(TestCase):
             budget.refresh_from_db()
         self.assertEqual((past.status, draft.status), ("approved", "validated"))
 
-    def test_approval_uses_card_amount_saved_in_draft(self):
-        # 카드 선차감은 초안에 저장한 값을 쓴다: 지금 다시 계산하면 보류(None)여도 승인된다
-        chosen = self.make_budget(card_reserved=0)
-        pending = {"amount": None, "pending": [{"card_id": str(self.card.pk), "reason": "bill_history_incomplete"}]}
-        with patch("budgets.protect.card_reserved", return_value=pending) as reserved:
-            self.assertEqual(self.approve(chosen).status_code, 200)
-        reserved.assert_not_called()
+    def test_approval_rechecks_card_amount_saved_in_draft(self):
+        # 11/06: 카드 선차감은 이제 카드를 쓴다고 바뀌지 않으므로(청구서에 든 확인된 중복만 뺌) 승인 때 다시 계산해 초안 값과 비교한다.
+        # 같으면 승인, 다르거나 지금 보류면 낡은 값으로 승인하지 않고 만료 (이미 승인된 예산은 다시 계산하지 않음)
+        same = {"amount": 0, "pending": []}
+        with patch("budgets.protect.card_reserved", return_value=same):
+            self.assertEqual(self.approve(self.make_budget(card_reserved=0)).status_code, 200)
+
+    def test_approval_expires_when_card_amount_is_now_pending_or_different(self):
+        for now in ({"amount": None, "pending": [{"card_id": str(self.card.pk), "reason": "bill_history_incomplete"}]},
+                    {"amount": 50_000, "pending": []}):
+            with self.subTest(now=now["amount"]), patch("budgets.protect.card_reserved", return_value=now):
+                self.assert_expired(self.make_budget(card_reserved=0))
 
     def test_approval_expires_when_saved_card_amount_no_longer_fits(self):
         # 초안의 카드 선차감 때문에 지킬 돈 합계가 배분 기준을 넘으면 만료 (1,500,000 − 100,000 − 200,000 < 1,300,000)

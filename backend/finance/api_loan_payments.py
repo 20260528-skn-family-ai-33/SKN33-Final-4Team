@@ -39,7 +39,6 @@ DEFAULT_DAYS = 7        # 기본 후보: 납부일 ±7일
 MAX_DAYS = 92           # 직접 넓혀 찾을 수 있는 기간 (약 3달)
 LIMIT = 50
 OTHER_FEATURE_TYPES = ["own_transfer", "saving", "income"]   # 다른 기능의 거래라 고를 수 없음
-NO_CONFIRM_TYPES = ("transfer", "loan_repayment")             # 이 유형에서 대출 상환으로 바꿀 때는 따로 묻지 않음
 
 
 class AlreadyLinked(APIException):
@@ -138,14 +137,14 @@ def blocked(user, tx):
     return str(tx.pk) in other_feature_ids(user) or net_amount(tx) <= 0
 
 
-def reclassify_json(tx):
-    """대출 상환으로 바꾸면 달라지는 분류. 이미 대출 상환이면 null"""
-    if tx.transaction_type == "loan_repayment":
+def reclassify_json(tx, to_type="loan_repayment"):
+    """to_type(기본 대출 상환, 카드 청구서는 card_payment)으로 바꾸면 달라지는 분류. 이미 그 유형이면 null"""
+    if tx.transaction_type == to_type:
         return None
     return {
         "from_type": tx.transaction_type,
         "from_category": tx.confirmed_category_id if tx.transaction_type == "spending" else None,
-        "needs_confirm": tx.transaction_type not in NO_CONFIRM_TYPES or tx.confirmation_state == "confirmed",
+        "needs_confirm": tx.transaction_type not in ("transfer", to_type) or tx.confirmation_state == "confirmed",
     }
 
 
@@ -194,9 +193,10 @@ def cancel_effect(tx, due):
     return effect
 
 
-def search_range(request, due, today):
-    end_default = min(due.due_date + timedelta(days=DEFAULT_DAYS), today)
-    start_default = min(due.due_date - timedelta(days=DEFAULT_DAYS), end_default - timedelta(days=DEFAULT_DAYS))
+def search_range(request, due_date, today, before_days=DEFAULT_DAYS):
+    """기본 기간 = 납부일 −before_days ~ +7일(오늘까지). ?from=&to= 로 MAX_DAYS 안에서 바꾼다 (카드 청구서는 선결제 때문에 앞을 넓게)"""
+    end_default = min(due_date + timedelta(days=DEFAULT_DAYS), today)
+    start_default = min(due_date - timedelta(days=before_days), end_default - timedelta(days=DEFAULT_DAYS))
     errors, values = {}, {}
     for name, default in (("from", start_default), ("to", end_default)):
         raw = request.query_params.get(name)
@@ -252,7 +252,7 @@ def loan_due_payments(request, due_id):
     with transaction.atomic():
         lock_user(request.user)
         loan, due = locked_due(request.user, due_id)
-        start, end = search_range(request, due, today)
+        start, end = search_range(request, due.due_date, today)
         return Response(state_json(request.user, loan, due, today, start, end))
 
 

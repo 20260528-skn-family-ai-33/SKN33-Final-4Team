@@ -1,9 +1,12 @@
-"""고정지출 확인 화면의 청구서 참고 금액. 예산 선차감액과는 별개다."""
+"""고정지출 확인 화면의 카드 청구서. 청구서마다 '앞으로 낼 금액' 확인 상태(card_payments.bill_status)를 준다 (11/06).
+amountAfterFixed(청구액 − 카드 고정비)는 예전 참고값 그대로 — 남은 금액도 예산 선차감액도 아니다.
+"""
 from django.http import Http404
 
 from finance.card_deduction import bill_kind, usage_statements
+from finance.card_payments import bill_status
 from finance.display import CARD_ISSUERS
-from finance.models import CardBill
+from finance.models import CardBill, PaymentDue
 from users.models import FinancialProfile
 
 from .models import BudgetCycle
@@ -37,6 +40,7 @@ def fixed_bill_preview(user, cycle, today):
             "amount_after_fixed": None,
             "is_estimated": None,
             "reason": None,
+            "bills": [],  # 청구서별 납부 확인 상태 (totalAmount 를 알 때만)
         }
         rows.append(row)
         if cycle is None or not issuer:
@@ -78,9 +82,14 @@ def fixed_bill_preview(user, cycle, today):
             row["reason"] = "bill_amount_invalid"
             continue
         total = sum(bill.total_amount for bill in statements)
+        states = {bill.confirmation_state for bill in statements}
         row.update(
             total_amount=total,
             amount_after_fixed=max(0, total - row["confirmed_fixed_amount"]),
-            is_estimated=any(bill.confirmation_state != CardBill.ConfirmationStatus.CONFIRMED for bill in statements),
+            # 카드사가 예상 청구라고 준 것만 true. 확정 여부를 모르면(null · unknown) 예상이라고 하지 않고 null
+            is_estimated=True if CardBill.ConfirmationStatus.ESTIMATED in states
+            else False if states == {CardBill.ConfirmationStatus.CONFIRMED} else None,
         )
+        dues = {due.bill_id: due for due in PaymentDue.objects.filter(user=user, bill__in=statements)}
+        row["bills"] = [bill_status(bill, dues.get(bill.pk), today) for bill in statements]
     return rows

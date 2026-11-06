@@ -53,7 +53,8 @@
                             "displayName": "국민 급여통장 · ****5678",
                             "status": "connected"
                           },
-                          "isEstimated": false
+                          "isEstimated": false,
+                          "userChecked": false
                         }
                       ],
                       "budget": null
@@ -215,28 +216,90 @@
             "nullable": true,
             "description": "이번 주기 승인 예산 (없으면 null). docs/api/home.md ⑤",
             "properties": {
-              "budgetId": { "type": "string", "format": "uuid" },
-              "versionNo": { "type": "integer" },
-              "livingBudget": { "type": "integer", "description": "승인 생활비" },
-              "livingLeft": { "type": "integer", "description": "남은 생활비 (0 미만 없음)" },
-              "livingPct": { "type": "integer", "description": "사용률 % 반올림, 100 초과 가능" },
-              "spare": { "type": "integer", "description": "남은 여윳돈" },
-              "daily": { "type": "integer", "nullable": true, "description": "livingLeft ÷ daysLeft 버림. 마지막 날 null" },
-              "daysLeft": { "type": "integer", "description": "다음 월급날 − 오늘 − 1" },
-              "outOfBudgetAllocated": { "type": "integer", "description": "이전 기준 예산의 주거·통신·여행·숙박 배정 합계 (N-F1). 0보다 크면 재추천 안내" },
+              "budgetId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "versionNo": {
+                "type": "integer"
+              },
+              "livingBudget": {
+                "type": "integer",
+                "description": "승인 생활비"
+              },
+              "livingLeft": {
+                "type": "integer",
+                "description": "남은 생활비 (0 미만 없음)"
+              },
+              "livingPct": {
+                "type": "integer",
+                "description": "사용률 % 반올림, 100 초과 가능"
+              },
+              "spare": {
+                "type": "integer",
+                "description": "남은 여윳돈"
+              },
+              "daily": {
+                "type": "integer",
+                "nullable": true,
+                "description": "livingLeft ÷ daysLeft 버림. 마지막 날 null"
+              },
+              "daysLeft": {
+                "type": "integer",
+                "description": "다음 월급날 − 오늘 − 1"
+              },
+              "outOfBudgetAllocated": {
+                "type": "integer",
+                "description": "이전 기준 예산의 주거·통신·여행·숙박 배정 합계 (N-F1). 0보다 크면 재추천 안내"
+              },
               "outOfBudget": {
                 "type": "object",
                 "description": "예산 밖 지출 안내 (계산에 안 넣음)",
                 "properties": {
-                  "total": { "type": "integer" },
-                  "categories": { "type": "array", "items": { "type": "object", "properties": {
-                    "category": { "type": "string", "enum": ["HOUSING_TELECOM", "TRAVEL_LODGING"] },
-                    "spent": { "type": "integer" } }, "required": ["category", "spent"] } }
+                  "total": {
+                    "type": "integer"
+                  },
+                  "categories": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "category": {
+                          "type": "string",
+                          "enum": [
+                            "HOUSING_TELECOM",
+                            "TRAVEL_LODGING"
+                          ]
+                        },
+                        "spent": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "category",
+                        "spent"
+                      ]
+                    }
+                  }
                 },
-                "required": ["total", "categories"]
+                "required": [
+                  "total",
+                  "categories"
+                ]
               }
             },
-            "required": ["budgetId", "versionNo", "livingBudget", "livingLeft", "livingPct", "spare", "daily", "daysLeft", "outOfBudget", "outOfBudgetAllocated"]
+            "required": [
+              "budgetId",
+              "versionNo",
+              "livingBudget",
+              "livingLeft",
+              "livingPct",
+              "spare",
+              "daily",
+              "daysLeft",
+              "outOfBudget",
+              "outOfBudgetAllocated"
+            ]
           }
         },
         "required": [
@@ -317,6 +380,10 @@
               "status"
             ],
             "nullable": true
+          },
+          "userChecked": {
+            "type": "boolean",
+            "description": "card_bill 의 amount 가 사용자 확인 '앞으로 낼 금액'인지 (11/06). '전부 냈어요'로 확인한 청구서는 목록에서 빠진다"
           }
         },
         "required": [
@@ -328,7 +395,8 @@
           "amount",
           "paymentState",
           "isEstimated",
-          "paymentAccount"
+          "paymentAccount",
+          "userChecked"
         ]
       }
     }

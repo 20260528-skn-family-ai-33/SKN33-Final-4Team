@@ -11,30 +11,14 @@ import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
 import { ETC, SPEND_CATS, catName } from '../utils/categories.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { TYPE, effectText, releasedText } from '../utils/paymentText.js'
+import PaymentTxLine from '../components/PaymentTxLine.jsx'
 
 const STATE = { unpaid: '아직 확인 안 됨', partial: '일부만 냈어요', paid: '이번 납부 완료', needs_review: '출금 확인 필요' }
 const SETTLED = { full: '다 냈어요', partial: '일부', null: '자동 연결' }
-const TYPE = { spending: '소비', transfer: '이체', card_payment: '카드값' }
 const fromLabel = (r) => `${TYPE[r.fromType] ?? r.fromType}${r.fromCategory ? ` · ${catName(r.fromCategory)}` : ''}`
 const PICK = [...SPEND_CATS, ETC]
-const typeLabel = (type, category) => `${TYPE[type] ?? type}${category ? ` · ${catName(category)}` : ''}`
-// 연결 취소하면 분류가 어떻게 되는지 (서버 cancelEffect)
-const effectText = (e) => e?.kind === 'restore' ? `취소하면 분류가 ‘${typeLabel(e.toType, e.toCategory)}’로 돌아가요.`
-  : e?.kind === 'keep' ? `취소해도 지금 분류 ‘${typeLabel(e.toType, e.toCategory)}’는 그대로예요.`
-  : e?.kind === 'choose' ? '원래 분류 기록이 없어요. 취소할 때 이 거래를 무엇으로 둘지 골라 주세요.' : ''
-// 응답 released → 실제로 한 일 그대로 안내 (복원하지 않았는데 복원했다고 하지 않음)
-const releasedText = (r) => !r ? '납부 연결을 취소했어요.'
-  : r.classification === 'restored' ? `납부 연결을 취소하고 분류를 ‘${typeLabel(r.transactionType, r.category)}’로 되돌렸어요.`
-  : r.classification === 'chosen' ? `납부 연결을 취소하고 분류를 ‘${typeLabel(r.transactionType, r.category)}’로 바꿨어요.`
-  : '납부 연결을 취소했어요. 분류는 지금 값 그대로예요.'
 const diffText = (d) => d === 0 ? '예정액과 같아요' : `예정액보다 ${won(Math.abs(d))} ${d > 0 ? '많아요' : '적어요'}`
-
-function TxLine({ t }) {
-  return <>
-    <span className="mc-grow">{t.description || '적요 없음'}<br /><small className="mc-muted">{t.date} · {t.account?.displayName ?? '계좌 확인 필요'}</small></span>
-    <strong>{won(t.amount)}</strong>
-  </>
-}
 
 export default function LoanPaymentPopup({ dueId, onSaved }) {
   const { closePopup } = usePopup()
@@ -102,7 +86,7 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
         <h3 className="mc-loan-h">연결한 출금</h3>
         <div className="mc-lock-list">{linked.map((t) => (
           <div key={t.transactionId} className="mc-lock-opt" style={{ flexWrap: 'wrap' }} aria-label={`연결한 출금 ${t.description ?? ''}`}>
-            <TxLine t={t} />
+            <PaymentTxLine t={t} />
             <small>{SETTLED[t.settlement] ?? '일부'}</small>
             <button type="button" className="mc-link" disabled={busy} onClick={() => pick(t.transactionId)}>정정</button>
             <button type="button" className="mc-link" disabled={busy} onClick={() => unlink(t)}>연결 취소</button>
@@ -125,7 +109,7 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
       {items.length === 0 && <p className="mc-note">이 기간에 고를 수 있는 출금이 없어요. 기간을 넓혀 찾아보세요.</p>}
       <div className="mc-lock-list">{items.map((t) => (
         <button type="button" key={t.transactionId} className="mc-lock-opt" aria-pressed={picked === t.transactionId} disabled={busy} onClick={() => pick(t.transactionId)}>
-          <TxLine t={t} />
+          <PaymentTxLine t={t} />
         </button>))}
       </div>
       <form onSubmit={search} className="mc-loan-2" aria-label="찾을 기간">

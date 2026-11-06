@@ -24,6 +24,7 @@ CARD_WORDS = {
 }
 LINK_STATE = "suggested"  # [임시] transaction_link 상태 코드가 미정이라 '규칙이 정함'과 같은 값을 쓴다
 LOAN_CANDIDATE = "loan_repayment_candidate"  # 거래 field_states: 대출 상환 후보. 유형은 실제 납부와 맞았을 때만 바꾼다
+CARD_CANDIDATE = "card_payment_candidate"    # 거래 field_states: 적요의 카드사 코드. 유형은 청구서에 연결될 때만 card_payment (R11, 11/06)
 # 거래 field_states: 내 계좌 이체 판단 — suggested(이름이 같아 추정) · confirmed(사용자가 맞다고 함) · rejected(아니라고 함)
 OWN_REVIEW = "own_transfer_review"
 OWN_GAP = timedelta(minutes=5)  # 내 계좌 이체 자동 분류: 출금 · 입금 시각 차이, 5분 포함 (11/5 결정, 자정 넘김 포함)
@@ -171,13 +172,15 @@ def suggest_own_transfers(user, txs):
         return
     rows = open_bank_rows(user).filter(pk__in=txs.values("pk"), direction="out", transaction_type=Type.TRANSFER)
     for tx in rows:
-        if OWN_REVIEW not in tx.field_states and same_name(tx.source_description) == name:
+        # 카드값 후보는 보지 않는다 (예전에 card_payment 로 바뀌어 여기 오지 않던 것과 같게)
+        if OWN_REVIEW not in tx.field_states and CARD_CANDIDATE not in tx.field_states and same_name(tx.source_description) == name:
             Tx.objects.filter(pk=tx.pk).update(field_states={**tx.field_states, OWN_REVIEW: "suggested"})
 
 
 def mark_by_description(user, txs):
-    """남은 출금 중 적요에 카드사 이름 → card_payment, 상환 중인 내 대출의 기관 이름 → 대출 상환 후보 표시.
-    후보는 transfer 그대로라 목록에 남아 사용자가 고칠 수 있다 (적요 '국민은행 홍길동'처럼 사람에게 보낸 돈일 수 있어서).
+    """남은 출금 중 적요에 카드사 이름 → 카드값 후보, 상환 중인 내 대출의 기관 이름 → 대출 상환 후보 표시.
+    후보는 transfer 그대로라 목록에 남아 사용자가 고칠 수 있다 (적요 '국민은행 홍길동' · '신한카드 홍길동'처럼 사람에게 보낸 돈일 수 있어서).
+    카드값 후보는 청구서에 자동 연결되거나(card_payments.match) 사용자가 고르면 card_payment 가 된다 (R11, 11/06 — 예전엔 이름만으로 바로 바꿔 목록에서 숨김).
     [임시] 대출보다 거래를 먼저 불러오면 후보가 되지 않는다"""
     lenders = [squeeze(name) for name in Loan.objects.filter(
         user=user, status=Loan.Status.REPAYING, lender_name__isnull=False,
@@ -185,7 +188,7 @@ def mark_by_description(user, txs):
     for tx in txs.filter(source_kind="bank", transaction_type=Type.TRANSFER, is_canceled=False):
         text = squeeze(tx.source_description)
         if card_issuer(text):
-            Tx.objects.filter(pk=tx.pk).update(transaction_type=Type.CARD_PAYMENT)
+            Tx.objects.filter(pk=tx.pk).update(field_states={**tx.field_states, CARD_CANDIDATE: card_issuer(text)})
         elif any(lender and lender in text for lender in lenders):
             Tx.objects.filter(pk=tx.pk).update(field_states={**tx.field_states, LOAN_CANDIDATE: True})
 

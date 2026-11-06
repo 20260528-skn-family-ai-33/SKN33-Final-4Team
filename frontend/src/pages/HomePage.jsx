@@ -62,7 +62,9 @@ function paceNote(usedPct, pace) {
 //   unpaid 인데 출금일이 지남 = 실제 출금과 자동 연결(±3일)을 기다리는 중 → "출금 확인 중"
 //   지난 주기 미납은 다음 월급날이 되면 서버가 목록에서 뺀다 (화면은 받은 것만 그린다)
 function payBadge(p) {
-  if (p.paymentState === 'needs_review') return { tone: 'review', text: '미납 확인 필요' }
+  if (p.userChecked) return { tone: 'check', text: '사용자 확인' }   // 카드 청구서: 앞으로 낼 금액을 사용자가 알려 줌 (11/06)
+  // 카드 청구서는 출금을 못 찾았다고 미납으로 보지 않는다 (다른 경로로 냈을 수 있음)
+  if (p.paymentState === 'needs_review') return { tone: 'review', text: p.type === 'card_bill' ? '납부 확인 필요' : '미납 확인 필요' }
   const today = new Date().toLocaleDateString('sv-SE')   // 'YYYY-MM-DD' (내 컴퓨터 날짜 기준)
   if (p.paymentState === 'unpaid' && p.dueDate && p.dueDate < today) return { tone: 'check', text: '출금 확인 중' }
   return null
@@ -108,7 +110,7 @@ export default function HomePage() {
   // 카드 청구서 sourceId는 billId, 대출 sourceId는 loanId다.
   const openPay = (p, badges) => {
     const onManage = p.type === 'recurring' ? toFixed
-      : p.type === 'card_bill' && p.sourceId ? () => openPopup(<CardBillPopup key={p.sourceId} billId={p.sourceId} />)
+      : p.type === 'card_bill' && p.sourceId ? () => openPopup(<CardBillPopup key={p.sourceId} billId={p.sourceId} onSaved={reload} />)
       : p.type === 'loan' && p.sourceId ? () => navigate(PATHS.loanCheck, { state: { from: 'home', loanId: p.sourceId } })
       : undefined
     const onCheckPayment = p.type === 'loan' && p.dueId ? () => openPopup(<LoanPaymentPopup key={p.dueId} dueId={p.dueId} onSaved={reload} />) : undefined
@@ -226,7 +228,7 @@ export default function HomePage() {
                 <small>{Number(p.dueDate.slice(5, 7))}월</small><b>{Number(p.dueDate.slice(8, 10))}</b>
               </span>
               <span className="mc-grow">
-                <strong>{p.name}{review && <span className="mc-paydot" role="img" aria-label="미납 확인 필요"></span>}</strong>
+                <strong>{p.name}{review && <span className="mc-paydot" role="img" aria-label={p.type === 'card_bill' ? '납부 확인 필요' : '미납 확인 필요'}></span>}</strong>
               </span>
               <span className="mc-right">{won(p.amount)} <span className="mc-muted">›</span></span>
             </button>

@@ -235,7 +235,7 @@ class HomeMustPayTest(HomeFixture):
         self.assertEqual(data["must_pay"], [{
             "due_id": str(PaymentDue.objects.get().pk), "type": "recurring", "source_id": str(expense.pk),
             "name": "월세", "due_date": "2026-10-24", "amount": 700_000, "payment_state": "unpaid",
-            "is_estimated": False,
+            "user_checked": False, "is_estimated": False,
             "payment_account": {"account_id": str(self.account.pk), "display_name": "국민 급여통장 · ****5678",
                                 "status": "connected"},
         }])
@@ -362,7 +362,7 @@ class HomeApiTest(HomeFixture):
                                                "salaryReceivedOn", "nextSalaryEarlyOn"})
         self.assertEqual(set(body["balance"]), {"total", "accountCount", "unknownCount", "reloginCount", "asOf"})
         self.assertEqual(set(body["mustPay"][0]), {"dueId", "type", "sourceId", "name", "dueDate", "amount",
-                                                   "paymentState", "isEstimated", "paymentAccount"})
+                                                   "paymentState", "userChecked", "isEstimated", "paymentAccount"})
         self.assertIsNone(body["budget"])
 
 

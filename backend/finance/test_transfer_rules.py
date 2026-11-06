@@ -9,7 +9,7 @@ from . import pipeline
 from .models import (BankAccount, Card, Connection, FinancialTransaction as Tx, Loan, PaymentDue, PaymentMatch,
                      RecurringExpense, TransactionLink)
 from .tests import URL
-from .transfer_rules import LOAN_CANDIDATE, OWN_REVIEW
+from .transfer_rules import CARD_CANDIDATE, LOAN_CANDIDATE, OWN_REVIEW
 
 
 class Fixture(TestCase):
@@ -280,12 +280,13 @@ class OwnTransferAutoTest(Fixture):
 
 
 class DescriptionRuleTest(Fixture):
-    def test_card_issuer_name_is_card_payment(self):
-        for desc in ("신한카드", "KB카드출금", "현대 카드", "bc카드 대금", "비씨카드"):
+    def test_card_issuer_name_marks_candidate_only(self):
+        # R11 (11/06): 이름만으로는 card_payment 로 바꾸지 않는다 — 이체로 남아 목록에 보이고, 청구서에 연결될 때 바뀐다
+        for desc, code in (("신한카드", "0306"), ("KB카드출금", "0301"), ("현대 카드", "0302"), ("bc카드 대금", "0305"), ("비씨카드", "0305")):
             with self.subTest(desc=desc):
                 tx = self.bank(self.a, "out", desc=desc)
                 self.run_on(tx)
-                self.assertEqual(tx.transaction_type, "card_payment")
+                self.assertEqual((tx.transaction_type, tx.field_states.get(CARD_CANDIDATE)), ("transfer", code))
 
     def test_lender_name_marks_candidate_only_for_my_active_loans(self):
         Loan.objects.create(user=self.user, origin="manual", lender_name="한국장학재단")
@@ -315,7 +316,8 @@ class DescriptionRuleTest(Fixture):
     def test_same_amount_deposit_does_not_override_description(self):
         out, income = self.bank(self.a, "out", desc="신한카드"), self.bank(self.b, "in")
         self.run_on(out, income)
-        self.assertEqual((out.transaction_type, income.transaction_type), ("card_payment", "income"))
+        self.assertEqual((out.transaction_type, income.transaction_type), ("transfer", "income"))
+        self.assertIn(CARD_CANDIDATE, out.field_states)
 
 
 class CollectionOrderTest(Fixture):
@@ -332,7 +334,7 @@ class CollectionOrderTest(Fixture):
     def test_day_and_amount_pair_is_never_linked_in_any_order(self):
         Loan.objects.create(user=self.user, origin="manual", lender_name="한국장학재단")
         amount = 100_000
-        for desc, kind in (("신한카드", "card_payment"), ("한국장학재단", "transfer"), ("이체", "transfer")):
+        for desc, kind in (("신한카드", "transfer"), ("한국장학재단", "transfer"), ("이체", "transfer")):
             for order in ("together", "out_first", "in_first"):
                 with self.subTest(desc=desc, order=order):
                     amount += 1
@@ -354,7 +356,7 @@ class CollectionOrderTest(Fixture):
         paid.refresh_from_db()
         confirmed.refresh_from_db()
         self.assertEqual([tx.transaction_type for tx in (paid, confirmed, *late)],
-                         ["card_payment", "card_payment", "income", "income"])
+                         ["transfer", "transfer", "income", "income"])  # 카드값 후보 이체 그대로 (청구서 없음)
         self.assertFalse(TransactionLink.objects.exists())
 
 

@@ -203,16 +203,28 @@ def must_pay_json(user, next_payday, previous_start):
         obligation_type__in=["recurring", "card_bill", "loan"],
         due_date__gte=previous_start, due_date__lt=next_payday,
     ).select_related("recurring", "bill__card", "loan", "payment_account__connection")
+    from finance.card_payments import bill_status
+
+    today = timezone.localdate()
     items = []
     for due in dues:
+        amount, checked = max(due.confirmed_amount - due.paid_amount, 0), False
+        if due.obligation_type == "card_bill":
+            # 11/06: 사용자가 '전부 냈어요'로 확인한 청구서는 빼고, '일부'면 앞으로 낼 금액으로 (출금 연결액과 더하지 않음)
+            check = bill_status(due.bill, due, today)
+            if check["status"] == "user_confirmed":
+                if check["remaining_amount"] == 0:
+                    continue
+                amount, checked = check["remaining_amount"], True
         items.append({
             "due_id": str(due.pk),
             "type": due.obligation_type,
             "source_id": str(due_source_id(due)),
             "name": due_name(due),
             "due_date": due.due_date.isoformat(),
-            "amount": max(due.confirmed_amount - due.paid_amount, 0),
+            "amount": amount,
             "payment_state": due.payment_state,
+            "user_checked": checked,  # 앞으로 낼 금액이 사용자 확인 값 (카드 청구서만)
             "is_estimated": due.obligation_type == "card_bill" and due.bill.confirmation_state != "confirmed",
             "payment_account": account_json(due.payment_account),
         })

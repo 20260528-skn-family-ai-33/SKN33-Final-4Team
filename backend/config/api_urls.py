@@ -19,6 +19,7 @@ from finance import api_loans as finance_loans
 from finance import api_loan_payments as finance_loan_payments
 from finance import api_cards as finance_cards
 from finance import api_card_reviews as finance_card_reviews
+from finance import api_card_payments as finance_card_payments
 
 from users import api as users_api
 from users import api_profile as users_profile
@@ -94,6 +95,10 @@ urlpatterns = [
     path("finance/loan-dues/<uuid:due_id>/payments/<uuid:transaction_id>/", finance_loan_payments.loan_due_payment,
          name="loan-due-payment"),
     path("consent-documents/", users_api.consent_documents, name="consent-documents"),
+    path("finance/card-bills/<uuid:bill_id>/payments/", finance_card_payments.card_bill_payments, name="card-bill-payments"),
+    path("finance/card-bills/<uuid:bill_id>/payment-check/", finance_card_payments.card_bill_check, name="card-bill-check"),
+    path("finance/card-bills/<uuid:bill_id>/payments/<uuid:transaction_id>/", finance_card_payments.card_bill_payment,
+         name="card-bill-payment"),
     # ↑ 새 주소는 이 위에 추가
     # 맞는 주소가 없으면 JSON 404 (항상 맨 끝)
     re_path(r"^.*$", api_common.not_found, name="not_found"),

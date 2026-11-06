@@ -210,7 +210,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
     balance = balance_json(user)["total"]
     required = cushion_required(balance, income)
     base = recommendation = blocked_state = None
-    pending_cards = []
+    pending_cards, card_notes = [], []
     if not missing:
         start, next_payday, _ = salary_cycle_dates(profile, today)
         cycle = ensure_cycle(user, start, next_payday)
@@ -218,6 +218,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
         if card_reserved is not _COMPUTE:
             breakdown["card_reserved"] = card_reserved
         pending_cards = breakdown["card_pending"]
+        card_notes = breakdown.get("card_notes", [])
         fixed = fixed_sum(breakdown)
         if fixed is None:
             # 카드 첫 청구서 선차감을 아직 계산할 수 없음 → 고정지출 합계 · 배분 기준도 모른다 (0원으로 치지 않음)
@@ -239,6 +240,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
         "saved": protect_saved_json(profile, base),
         "cushion": {"required": required, "target": income * 3 if income is not None else None, "balance_total": balance},
         "card_pending": pending_cards,
+        "card_notes": card_notes,  # 보류는 아니고 알릴 것 (no_bill_in_cycle 등, 11/06)
         "locks_released": [],  # PUT으로 저장할 때만 채운다 (P-13)
     }
 
@@ -460,8 +462,12 @@ def budget_approve(request, budget_id):
         frozen = ((chosen.input_snapshot or {}).get("fixed") or {}).get("card_reserved")
         state = protect_json(request.user, profile, today, card_reserved=frozen) if this_cycle else None
         # 계산 규칙(policy_version)이 바뀐 초안도 입력이 바뀐 것과 같이 만료 → 다시 추천
+        # 11/06: 카드 선차감은 이번 주기 카드 소비 전체가 아니라 청구서에 든 확인된 중복만 빼므로, 카드를 쓴다고 바뀌지 않는다.
+        # 지금 계산이 초안 값과 다르면(청구서 정정 · 상세 보완 · 계산 규칙 변경 · 보류) 낡은 값으로 승인하지 않고 만료
+        from .protect import card_reserved as current_card_reserved
         if (not this_cycle or not protect_ready(state) or chosen.policy_version != POLICY_VERSION
-                or budget_input_hash(request.user, cycle) != chosen.input_hash):
+                or budget_input_hash(request.user, cycle) != chosen.input_hash
+                or current_card_reserved(request.user, cycle)["amount"] != frozen):
             chosen.status = "expired"
             chosen.save(update_fields=["status"])
             # raise하면 이 트랜잭션도 롤백된다. 공통 에러 모양으로 반환하고 위 옵션으로 만료만 보존한다.
@@ -1205,6 +1211,9 @@ def refresh_due_state(due, today):
     if due.obligation_type == "loan":  # 대출은 사용자 확인(다 냄 · 일부)을 따른다 — 90% 규칙 안 씀 (finance/loan_payments.py)
         from finance.loan_payments import refresh_loan_due
         return refresh_loan_due(due, today)
+    if due.obligation_type == "card_bill":  # 카드는 청구액 기준 남은 금액으로 — 90% 규칙 안 씀 (finance/card_payments.py)
+        from finance.card_payments import refresh_card_due
+        return refresh_card_due(due, today)
     summary = due.matches.aggregate(total=Sum("matched_amount"), last=Max("matched_at"))
     paid = summary["total"] or 0
     if paid >= (due.confirmed_amount * 9 + 9) // 10:  # [임시] 90% — 알파 뒤 "앞으로 이 금액으로 바꿀까요?"로 등록 금액을 고칠 예정

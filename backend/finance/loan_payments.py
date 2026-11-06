@@ -68,16 +68,18 @@ def snapshot(tx):
     return {name: getattr(tx, name) for name in CLASS_FIELDS}
 
 
-def record_link(tx, due, settlement, source, **changes):
-    """거래 분류를 바꾸고 연결 기록을 남긴다. 이미 이 회차 기록이 있으면 처음 before 를 유지한다 (자동 → 사용자 확인)"""
+def record_link(tx, due, settlement, source, record_key=LOAN_PAYMENT, skip_key=None, **changes):
+    """거래 분류를 바꾸고 연결 기록을 남긴다. 이미 이 회차 기록이 있으면 처음 before 를 유지한다 (자동 → 사용자 확인)
+    record_key · skip_key: 카드 청구서 연결(card_payments)이 다른 칸 · 다른 다시 붙지 않음 키로 쓴다. 기본값은 대출 그대로"""
     states = dict(tx.field_states or {})
-    previous = states.get(LOAN_PAYMENT) if isinstance(states.get(LOAN_PAYMENT), dict) else {}
+    skip_key = skip_key or due.occurrence_key
+    previous = states.get(record_key) if isinstance(states.get(record_key), dict) else {}
     before = previous.get("before") if previous.get("due_id") == str(due.pk) else snapshot(tx)
     for name, value in changes.items():
         setattr(tx, name, value)
-    states[LOAN_PAYMENT] = {"due_id": str(due.pk), "settlement": settlement, "source": source,
-                            "before": before, "after": snapshot(tx)}
-    skipped = [key for key in states.get(SKIP_AUTO, []) if key != due.occurrence_key]
+    states[record_key] = {"due_id": str(due.pk), "settlement": settlement, "source": source,
+                          "before": before, "after": snapshot(tx)}
+    skipped = [key for key in states.get(SKIP_AUTO, []) if key != skip_key]
     if skipped:
         states[SKIP_AUTO] = skipped
     else:
