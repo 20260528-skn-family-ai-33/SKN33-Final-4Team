@@ -151,8 +151,6 @@
 #mc-new-preview .mc-ai-tags span{font-size:11.5px;color:var(--mc-sub);border:1px solid var(--mc-line);border-radius:20px;padding:3px 9px}
 #mc-new-preview .mc-ai-foot{font-size:10.5px;color:var(--mc-sub);margin:12px 0 0}
 #mc-new-preview .mc-bar.is-hot span{background:var(--mc-alert)}
-#mc-new-preview .mc-cat-filter{flex-wrap:nowrap;overflow-x:auto;margin:0 0 10px;padding-bottom:2px;scrollbar-width:none}
-#mc-new-preview .mc-cat-filter button{flex:none}
 #mc-new-preview .mc-tx-sum{align-items:center;margin-bottom:10px;gap:10px}
 #mc-new-preview .mc-tx-sum .mc-tabs{margin:0;flex:none}
 #mc-new-preview .mc-tx-day{padding-top:14px;padding-bottom:6px}
@@ -297,9 +295,8 @@
 #mc-new-preview .mc-prio-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 8px 3px 4px;border-radius:12px;background:var(--mc-paper);border:1px solid var(--mc-line);font-size:11.5px;color:var(--mc-ink)}
 #mc-new-preview .mc-prio-pill.is-lock{padding-left:8px;color:var(--mc-sub)}
 #mc-new-preview .mc-chat-apply{display:block;width:100%;margin:8px 0 2px;min-height:34px;height:34px;padding:0;border:0;border-radius:9px;background:var(--mc-brand);color:var(--mc-on);font-size:12.5px;font-weight:700}
-#mc-new-preview .mc-pend-banner{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 10px;padding:10px 12px;min-height:0;border-radius:12px;border:1px solid color-mix(in srgb,var(--mc-alert) 35%,transparent);background:color-mix(in srgb,var(--mc-alert) 8%,var(--mc-paper));color:var(--mc-ink);text-align:left}
-#mc-new-preview .mc-pend-banner strong{display:block;font-size:13.5px}
-#mc-new-preview .mc-pend-banner small{display:block;font-size:11.5px;color:var(--mc-sub);margin-top:1px}
+#mc-new-preview .mc-pend-banner{display:flex;align-items:center;gap:10px;width:100%;margin:0 0 8px;padding:6px 12px;min-height:36px;border-radius:10px;border:1px solid color-mix(in srgb,var(--mc-alert) 35%,transparent);background:color-mix(in srgb,var(--mc-alert) 8%,var(--mc-paper));color:var(--mc-ink);text-align:left}
+#mc-new-preview .mc-pend-banner strong{font-size:13px;font-weight:600}
 #mc-new-preview .mc-pend-dot,#mc-new-preview .mc-tab-dot{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:10px;background:var(--mc-alert);color:#fff;font-size:11px;font-weight:700}
 #mc-new-preview .mc-tab-dot{min-width:17px;height:17px;font-size:10px;margin-left:5px;vertical-align:1px}
 #mc-new-preview .mc-chip-warn{border:1px solid color-mix(in srgb,var(--mc-alert) 45%,transparent)!important;color:var(--mc-alert)!important;font-weight:650}
@@ -1040,3 +1037,9 @@
 #mc-new-preview .mc-bill-st{font-size:11px;font-weight:700;padding:2px 8px;border-radius:7px;background:var(--mc-line);color:var(--mc-sub)}
 #mc-new-preview .mc-bill-st.is-confirmed{background:var(--mc-soft);color:var(--mc-brand)}
 #mc-new-preview .mc-bill-st.is-unknown{background:var(--mc-warm);color:var(--mc-alert)}
+/* 거래 목록: 긴 적요(예: 'PAYCO오더 - 엔에이치엔페이코 주식회사')는 한 줄 말줄임, 금액은 줄바꿈 · 줄어듦 없이 (11/9). 전체 이름은 상세 팝업 */
+#mc-new-preview .mc-tx-name{display:flex;align-items:center;min-width:0;max-width:100%}
+#mc-new-preview .mc-tx-name>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#mc-new-preview .mc-tx-name>em{flex:none}
+#mc-new-preview .mc-tx-amt{flex:none;white-space:nowrap}
+#mc-new-preview .mc-tx-pend .mc-grow{flex:1;min-width:0}

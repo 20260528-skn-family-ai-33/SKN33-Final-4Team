@@ -6126,6 +6126,16 @@
             "example": "38e76a37-6016-4291-87c2-58688f50542a"
           },
           {
+            "name": "transactionType",
+            "in": "query",
+            "required": false,
+            "description": "거래 유형만(11/9): spending 소비 · income 입금 · transfer 이체(남에게 보낸 이체 + 내 계좌 이체 줄). 쉼표로 여러 개. category와 같이 보내면 둘 다 만족. 모르는 값은 400.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "income,transfer"
+          },
+          {
             "name": "from",
             "in": "query",
             "required": false,
@@ -17481,11 +17491,11 @@
     "docs/api/finance-connect.md": "7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510",
     "docs/api/cards.md": "fe12a3c7ef7796eeafd784491ebd326ae1d1bcec2befd085760ef3663e6652e9",
     "docs/api/loans.md": "86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f",
-    "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
+    "docs/api/transactions.md": "a81c51403c2b8e451631bb3b06305dac734191958af891d0cf23c2d53b5776d7",
     "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
-    "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
+    "docs/api/home.md": "73188c0199cd2ca9a88af3a70ddb1075984d68218aa103a24e5e19c3761fb8ce",
     "docs/api/chat.md": "05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd",
-    "docs/api/budgets.md": "59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29"
+    "docs/api/budgets.md": "19effa0d018e8094ffa3379c2057896a79fbd0c0c7e33dc7337503f320fc4926"
   }
 }

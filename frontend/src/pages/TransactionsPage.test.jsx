@@ -24,21 +24,28 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(() => root.unmount()); host.remove(); vi.unstubAllGlobals() })
 const respond = (match, res) => act(async () => waiting.find((w) => w.url.includes(match) && !w.done && (w.done = true)).resolve(res))
-const chip = (name) => [...host.querySelectorAll('.mc-cat-filter button')].find((b) => b.textContent === name)
+const btn = (text) => [...host.querySelectorAll('button')].find((b) => b.textContent === text)
 
 it('카테고리를 바꾸면 새 결과가 올 때까지 이전 합계를 숨기고, 실패하면 다시 시도로 받는다', async () => {
   await act(async () => root.render(<MemoryRouter><PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
   await respond('transactions/?from', list([tx], 12_345))
   expect(host.textContent).toContain('12,345원')
 
-  await act(async () => chip('식비').click())
+  expect(btn('식비')).toBeUndefined()                       // 카테고리는 위에 늘 떠 있지 않고 [필터] 안에서 고른다
+  await act(async () => btn('필터').click())
+  await act(async () => btn('확인 필요 0').click())
+  await act(async () => btn('식비').click())
+  expect(btn('확인 필요 0').getAttribute('aria-pressed')).toBe('false')  // 확인 필요는 다른 카테고리와 섞지 않는다
+  await act(async () => btn('소비').click())
+  await act(async () => btn('적용').click())
+  expect(waiting.at(-1).url).toContain('transactionType=spending')
   expect(host.textContent).not.toContain('12,345원')       // 전체 목록 합계를 식비 결과처럼 보이지 않는다
   expect(host.textContent).toContain('불러오는 중')
-  expect(chip('식비').getAttribute('aria-pressed')).toBe('true')  // 칩은 그대로 — 계속 바꿀 수 있다
+  expect(btn('필터 2').getAttribute('aria-pressed')).toBe('true')  // 고른 조건 수(유형 1 + 카테고리 1)가 버튼에 남는다
 
-  await respond('category=FOOD', reply('<html>', 503))
+  await respond('transactions/?category=FOOD', reply('<html>', 503))
   expect(host.textContent).toContain('일시적인 문제일 수 있어요')
   await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent === '다시 시도').click())
-  await respond('category=FOOD', list([], 0))
+  await respond('transactions/?category=FOOD', list([], 0))
   expect(host.textContent).toContain('이 기간에 거래가 없어요')
 })
