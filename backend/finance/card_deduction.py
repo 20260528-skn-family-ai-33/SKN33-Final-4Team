@@ -159,7 +159,8 @@ def get_issuer_first_bill_deduction(
       이번 주기에 갚을 돈). 주기 밖 청구서는 가져오지 않는다. 정정으로 대체된 예전 청구서(R04)는 뺀다.
       날짜마다 카드론 명세서는 빼고, 같은 날 한 장이면 빈 값·모르는 값도 포함하며, 여러 장이면 사용 명세서만 합친다.
     - first_cycle=False(이 카드사가 이미 승인 예산에 반영된 뒤의 주기, budgets.protect.issuer_deduction 이 판단) → 0원.
-      이번 주기 대상 청구서가 없으면 first_bill_unavailable (보류). 주기 끝까지 조회됐으면 issuer_deduction 이 0원(no_bill_in_cycle)으로 바꾼다.
+      이번 주기 대상 청구서가 없으면 first_bill_unavailable. issuer_deduction이 조회 범위를 확인해
+      미반영 안내와 함께 선차감 없이 시작하도록 한다. 주기 끝까지 조회됐으면 no_bill_in_cycle이다.
     - 쓴 돈: card_ids(그 카드사 관리 대상 카드)로 이번 주기에 쓴 돈만 뺀다. 관리 대상 아닌 카드 몫은 같이 뗀다.
     서버가 청구 이력(주기 시작~기준일)과 거래·취소(주기 시작~기준일)의 수집 완료 여부를 전달한다.
     거래 범위는 주기 마지막 날까지만 포함한다. amount=None은 계산 보류이며 reason을 확인한다. DB·승인 예산은 변경하지 않는다.

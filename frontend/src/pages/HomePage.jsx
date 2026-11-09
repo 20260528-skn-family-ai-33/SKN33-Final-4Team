@@ -22,6 +22,7 @@ import NoticePopup from '../popups/NoticePopup.jsx'
 import SalaryCheckPopup from '../popups/SalaryCheckPopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
 import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
+import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 
 // 홈 왼쪽 위 로고 (11/3): cushion = 서비스 파란색, -ing = 서비스 라임색
 const LOGO = <span className="mc-logo">cushion<span className="mc-logo-ing">-ing</span></span>
@@ -161,6 +162,8 @@ export default function HomePage() {
           <span className="mc-badge">월급날 D−{period.dday}</span>
         </div>
       )}
+
+      <UnreflectedCardNote notes={b.cardNotes} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
       {/* 3. 예산이 아직 없으면 (budget: null, H-06) 파란 카드 자리에 안내 카드 */}
       {budget === null ? (

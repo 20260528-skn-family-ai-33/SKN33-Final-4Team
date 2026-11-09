@@ -9,6 +9,7 @@ import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import OutOfBudgetLine, { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
+import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 import { PATHS } from '../routes.js'
 import { catIcon, PENDING } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
@@ -85,6 +86,7 @@ export default function BudgetPage() {
         </div>
       )}
       {!budget.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}
+      <UnreflectedCardNote notes={data.cardNotes} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>

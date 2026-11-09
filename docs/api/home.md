@@ -102,6 +102,7 @@ GET /api/home/
 | `budget.livingPct` | 정수 | 쓴 돈 ÷ 생활비 × 100, 반올림. **100을 넘어도 그대로**(화면 막대만 100에서 멈춤). 생활비 0원이면 쓴 돈이 있을 때 100, 없으면 0 |
 | `budget.spare` | 정수 | 남은 여윳돈 (= `overspend.spareRemaining`) |
 | `budget.daily` | 정수 / `null` | 하루에 쓸 수 있는 돈 = `livingLeft ÷ daysLeft` (원 미만 버림). `daysLeft`가 0(주기 마지막 날)이면 `null` → 화면 "—" |
+| `budget.cardNotes` | 배열 | 승인 예산의 계산 당시 카드 안내. `first_bill_unavailable`이면 이전 주기 카드값이 미반영되어 생활비·하루 금액이 실제보다 클 수 있음을 표시한다. 청구서 조회만으로 지우지 않고, 같은 주기 재추천·승인 후 갱신한다. |
 | `budget.daysLeft` | 정수 | 오늘까지 쓴 돈을 뺀 뒤 나누는 날 수 = 다음 월급날 − 오늘 − 1 (채팅 소비 분석의 남은 일수와 같음) |
 | `budget.outOfBudgetAllocated` | 정수 | 이전 기준 예산의 주거·통신 · 여행·숙박 배정 (예산 화면 `budget.outOfBudgetAllocated`와 같음, N-F1). 0보다 크면 파란 카드 안에 재추천 안내. `livingBudget`은 이 금액을 포함한 저장값 그대로 |
 | `budget.outOfBudget` | 객체 | 예산 밖 지출 안내 — 예산 화면 `outOfBudget`과 같은 모양 · 금액 (budgets.md) |

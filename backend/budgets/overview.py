@@ -53,6 +53,7 @@ def budget_data(user, today, *, selected=None):
         "cycle": {"starts_on": cycle.starts_on.isoformat(), "ends_before": cycle.ends_before.isoformat()} if cycle else None,
         "budget": None, "split": None, "living": None, "overspend": None,
         "categories": [], "unclassified_count": summary["needs_review_count"], "nag": None, "out_of_budget": None,
+        "card_notes": [],
     }
     if cycle is None:
         return data
@@ -82,6 +83,8 @@ def budget_data(user, today, *, selected=None):
             "locked_amount": setting.locked_amount if setting else None, "reason": None,
         })
     data.update({
+        # 현재 조회 결과가 아니라 선택한 예산의 계산 당시 안내. 새 청구서 조회만으로 미반영 안내를 지우지 않는다.
+        "card_notes": ((selected.input_snapshot or {}).get("fixed") or {}).get("card_notes", []),
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,
                    "salary_confirmed": period["salary_state"] == "received", "engine_version": selected.engine_version,
                    # 이전 기준으로 승인한 예산의 주거·통신 · 여행·숙박 배정 (생활비 총액에는 들어 있고 카테고리 줄에는 없음, N-F1)

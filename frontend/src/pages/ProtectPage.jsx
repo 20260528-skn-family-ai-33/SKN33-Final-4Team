@@ -14,6 +14,7 @@ import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import CardSyncPanel from '../components/CardSyncPanel.jsx'
 import CardReviewList from '../components/CardReviewList.jsx'
+import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { HOUSING } from '../utils/direction.js'
@@ -58,6 +59,7 @@ export default function ProtectPage() {
   const [busy, setBusy] = useState(false)
   const [showReviews, setShowReviews] = useState(false)
   const [showCardSync, setShowCardSync] = useState(false)
+  const [showUnreflectedSync, setShowUnreflectedSync] = useState(false)
   const [reviewVersion, setReviewVersion] = useState(0)
 
 
@@ -72,7 +74,8 @@ export default function ProtectPage() {
   const uncertain = notes.filter((n) => n.reason === 'card_overlap_uncertain')
   const incomplete = notes.some((n) => n.reason === 'bill_items_incomplete')
   const mismatch = idsFor((r) => r === 'bill_total_mismatch').length > 0
-  const start = data.saved ?? rec  // 저장한 값이 있으면 그 값, 없으면 추천값
+  // 카드값을 반영해 다시 추천받는 경로에서는 새 가용 금액으로 나눈 추천값부터 보여 준다.
+  const start = navState?.refreshRecommendation ? rec : data.saved ?? rec
   const values = edits ?? (start ? Object.fromEntries(ROWS.map(([k]) => [k, String(start[k])])) : null)
   const housingName = HOUSING[data.housingType]?.name
   const rateLine = data.rates ? RATE_LABELS.map(([k, n]) => `${n} ${data.rates[k]}%`).join(' · ') : ''
@@ -94,7 +97,7 @@ export default function ProtectPage() {
     try {
       const saved = await apiSend('/api/budgets/protect/', 'PUT', Object.fromEntries(ROWS.map(([k]) => [k, num(k)])))
       // 저장 뒤 새 추천을 바로 만든다. 생활비가 바뀌어 풀린 자물쇠(P-13)는 다음 화면에서 알려 준다
-      navigate(PATHS.recommend, { state: { autoRecommend: true, locksReleased: saved.locksReleased } })
+      navigate(PATHS.recommend, { state: { autoRecommend: true, refreshRecommendation: Boolean(navState?.refreshRecommendation), locksReleased: saved.locksReleased } })
     } catch (err) {
       setError(err.fields?.nonFieldErrors?.[0] ?? err.message)
       setFieldErrors(err.fields ?? {})
@@ -169,16 +172,14 @@ export default function ProtectPage() {
           </div>
         )}
       </>}
-      {notes.some((n) => n.reason === 'no_bill_in_cycle') && !blocked && (
-        <p className="mc-note">이번 급여 주기에 결제일인 카드 청구서가 없어서 첫 카드값은 따로 떼지 않았어요.</p>
-      )}
-      {(uncertain.length > 0 || incomplete) && !blocked && (
-        <div className="mc-note" role="note">
-          <p style={{ margin: 0 }}>일부 카드 사용의 중복 여부를 확인하지 못해 카드값을 넉넉하게 잡았어요. 실제 사용 가능한 예산은 표시보다 많을 수 있어요.</p>
-          {uncertain.map((n) => <p key={n.cardId} style={{ margin: '4px 0 0' }}>확인하지 못한 이번 주기 사용 {n.count}건 · {won(n.amount)}</p>)}
-          {incomplete && <p style={{ margin: '4px 0 0' }}>카드사 청구서 상세가 일부만 와서, 빠진 항목은 확인하지 못했어요.</p>}
-        </div>
-      )}
+
+      {/* 청구서 없는 카드사 안내는 한 줄 띠로 위에 두고, 재조회도 같은 줄에서 연다 (재조회 입력칸은 자체 form이 있어서 금액 form 밖) */}
+      {!blocked && <UnreflectedCardNote notes={notes} compact action={notes.some((n) => NOT_YET(n.reason)) && (
+        <button type="button" className="mc-link" style={{ fontSize: 12, minHeight: 32, padding: 0, flexShrink: 0 }} onClick={() => setShowUnreflectedSync((shown) => !shown)} aria-expanded={showUnreflectedSync}>
+          {showUnreflectedSync ? '접기' : '다시 불러오기'}
+        </button>
+      )} />}
+      {!blocked && showUnreflectedSync && <CardSyncPanel cardIds={[...new Set(notes.filter((n) => NOT_YET(n.reason)).map((n) => n.cardId))]} onChanged={reload} />}
 
       {blocked && blocked.reason !== 'card_bill_pending' && (
         <div className="mc-card" role="alert">
@@ -259,6 +260,17 @@ export default function ProtectPage() {
         )}
         {error && <p className="mc-error" role="alert">{error}</p>}
       </form>
+      {/* 진행을 막지 않는 작은 카드 안내는 추천 금액을 먼저 보도록 맨 아래에 둔다 */}
+      {notes.some((n) => n.reason === 'no_bill_in_cycle') && !blocked && (
+        <p className="mc-note">이번 급여 주기에 결제일인 카드 청구서가 없어서 첫 카드값은 따로 떼지 않았어요.</p>
+      )}
+      {(uncertain.length > 0 || incomplete) && !blocked && (
+        <div className="mc-note" role="note">
+          <p style={{ margin: 0 }}>일부 카드 사용의 중복 여부를 확인하지 못해 카드값을 넉넉하게 잡았어요. 실제 사용 가능한 예산은 표시보다 많을 수 있어요.</p>
+          {uncertain.map((n) => <p key={n.cardId} style={{ margin: '4px 0 0' }}>확인하지 못한 이번 주기 사용 {n.count}건 · {won(n.amount)}</p>)}
+          {incomplete && <p style={{ margin: '4px 0 0' }}>카드사 청구서 상세가 일부만 와서, 빠진 항목은 확인하지 못했어요.</p>}
+        </div>
+      )}
     </Layout>
   )
 }

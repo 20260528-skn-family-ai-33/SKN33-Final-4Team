@@ -464,10 +464,13 @@ def budget_approve(request, budget_id):
         # 계산 규칙(policy_version)이 바뀐 초안도 입력이 바뀐 것과 같이 만료 → 다시 추천
         # 11/06: 카드 선차감은 이번 주기 카드 소비 전체가 아니라 청구서에 든 확인된 중복만 빼므로, 카드를 쓴다고 바뀌지 않는다.
         # 지금 계산이 초안 값과 다르면(청구서 정정 · 상세 보완 · 계산 규칙 변경 · 보류) 낡은 값으로 승인하지 않고 만료
-        from .protect import card_reserved as current_card_reserved
+        from .protect import card_reserved as current_card_reserved, unreflected_card_ids
+        current_cards = current_card_reserved(request.user, cycle) if this_cycle else {}
+        frozen_notes = ((chosen.input_snapshot or {}).get("fixed") or {}).get("card_notes", [])
         if (not this_cycle or not protect_ready(state) or chosen.policy_version != POLICY_VERSION
                 or budget_input_hash(request.user, cycle) != chosen.input_hash
-                or current_card_reserved(request.user, cycle)["amount"] != frozen):
+                or current_cards.get("amount") != frozen
+                or unreflected_card_ids(current_cards.get("notes", [])) != unreflected_card_ids(frozen_notes)):
             chosen.status = "expired"
             chosen.save(update_fields=["status"])
             # raise하면 이 트랜잭션도 롤백된다. 공통 에러 모양으로 반환하고 위 옵션으로 만료만 보존한다.

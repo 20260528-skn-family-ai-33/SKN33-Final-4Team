@@ -1027,7 +1027,8 @@ class HomeBudgetTest(TestCase):
             {"category": "HOUSING_TELECOM", "spent": 20_000}, {"category": "TRAVEL_LODGING", "spent": 200_000}]})
         self.assertEqual(home, {"budgetId": str(self.budget.pk), "versionNo": 1, "livingBudget": 1_000_000, "livingLeft": 680_000,
                                 "livingPct": 32, "spare": 400_000, "daily": 680_000 // 27, "daysLeft": 27,
-                                "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED})  # N-F1 칸 추가
+                                "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED,
+                                "cardNotes": []})
         self.assertEqual(page["budget"]["engineVersion"], "temp-fallback-1")
 
     def test_friend_transfer_to_food_and_back(self):

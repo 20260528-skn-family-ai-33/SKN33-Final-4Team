@@ -27,7 +27,7 @@ CATEGORY_CODES = tuple(FALLBACK_RATIOS)  # 기타 제외 소비 카테고리 전
 ALLOCATION_CODES = tuple(code for code in CATEGORY_CODES if code not in OUT_OF_BUDGET)
 SUMMARY = "임시 비율로 나눈 테스트 추천이에요. 최소 금액과 자물쇠는 그대로 지켰어요."  # 실제 분석처럼 보이지 않게 (11/3)
 ENGINE_VERSION = "temp-fallback-1"
-POLICY_VERSION = "2026-11-03"  # 11/3 주거·통신 · 여행·숙박 배분 제외. 다른 버전 초안은 승인 때 만료
+POLICY_VERSION = "2026-11-09"  # 청구서 미발행 시 미반영 안내와 함께 예산 시작 허용. 이전 규칙 초안은 만료
 INPUT_VERSION = 1
 # 카드 선차감(card_reserved)은 카드로 쓸 때마다 바뀌므로 해시에 넣지 않는다. 초안을 만들 때 값을 input_snapshot에 저장해 두고
 # 승인 때는 그 값을 쓴다. 대신 어떤 카드가 대상인지(card_ids)는 넣어서 카드를 고르거나 빼면 초안이 만료된다.

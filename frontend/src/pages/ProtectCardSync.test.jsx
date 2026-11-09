@@ -187,13 +187,18 @@ it('11/06: 청구 총액 불일치는 0원이나 상세 합계로 넘기지 않�
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
 })
 
-it('11/06: 이번 주기 청구서를 아직 못 찾음은 조회 실패와 다르게 안내하고 재조회는 고를 때만', async () => {
-  reason = 'first_bill_unavailable'
+it('청구서가 아직 없으면 미반영을 안내하고 재조회는 고를 때만', async () => {
+  reason = null
+  notes = [{ cardId: 'card-1', reason: 'first_bill_unavailable' }]
   await render()
-  expect(host.textContent).toContain('이번 급여 주기 카드 청구서를 아직 찾지 못했어요')
+  expect(host.textContent).toContain('지난 카드값이 아직 반영 안 됐어요')
+  await click('지난 카드값이 아직 반영 안 됐어요')
+  expect(host.textContent).toContain('이 예산으로 먼저 시작해도 돼요')
+  expect(button('청구서 확인하러 가기')).toBeUndefined()
+  await click('닫기 ×')
   expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
-  await click('카드 내역 다시 불러오기')
+  await click('다시 불러오기')
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
 
