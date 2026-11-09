@@ -10211,7 +10211,7 @@ components:
           description: 적요 (기관 원문, 계좌번호는 가림)
         amountDifference:
           type: integer
-          description: 실제 − 예정, 원. 참고용
+          description: 실제 − 남은 예정액, 원. 남은 예정액 = 예정 − 이 출금 말고 이 회차에 이미 연결한 출금 합계(0 아래 안 내림, 11/9). 참고용
         hints:
           $ref: '#/components/schemas/LoanPaymentHints'
         reclassify:
@@ -13024,7 +13024,7 @@ x-source-sha256:
   docs/api/auth.md: 473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1
   docs/api/finance-connect.md: 7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510
   docs/api/cards.md: fe12a3c7ef7796eeafd784491ebd326ae1d1bcec2befd085760ef3663e6652e9
-  docs/api/loans.md: 86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f
+  docs/api/loans.md: d92ad9a312f6e95a44aed9477537b3ae9d97628763066224dfa9ced507c6523e
   docs/api/transactions.md: a81c51403c2b8e451631bb3b06305dac734191958af891d0cf23c2d53b5776d7
   docs/api/fixed.md: 11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b

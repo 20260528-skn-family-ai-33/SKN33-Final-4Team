@@ -701,3 +701,34 @@ class FixedAutoLinkConcurrencyTest(FixedFixture, TransactionTestCase):
         self.assertEqual(PaymentDue.objects.filter(payment_state="paid").count(), 0)
         linked = [e.name for e in RecurringExpense.objects.all() if str(tx.pk) in (e.evidence or [])]
         self.assertEqual(len(linked), 0)
+
+
+class FixedFirstMonthNoPreviousDueTest(TestCase):
+    """11/9: 새로 등록한 고정지출은 지난 주기 비슷한 출금이 있어도 지난 주기 회차를 만들지 않는다
+    (이미 나간 돈이 홈 '꼭 나갈 돈'에 '출금 확인 필요'로 하나 더 보이던 문제). 출금일을 바꿔도 이번 회차 하나만"""
+
+    def test_only_current_due_after_create_and_day_change(self):
+        from datetime import date
+
+        from users.models import FinancialProfile
+
+        clock = mock.patch("django.utils.timezone.localdate", return_value=date(2026, 11, 9))
+        clock.start()
+        self.addCleanup(clock.stop)
+        user = get_user_model().objects.create_user(email="first-month@example.invalid")
+        FinancialProfile.objects.create(user=user, monthly_take_home_income=2_800_000, payday=3)
+        bank = Connection.objects.create(user=user, business_type="bank", organization_code="0004", status="connected")
+        account = BankAccount.objects.create(user=user, connection=bank, source_account_key="a", account_type="demand", is_selected=True)
+        FinancialTransaction.objects.create(  # 지난 주기 10/20 비슷한 출금 (등록 전)
+            user=user, source_kind="bank", account=account, occurred_on=date(2026, 10, 20), amount=68000, direction="out",
+            source_description="통신요금", transaction_type="transfer", confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        client = APIClient()
+        client.force_authenticate(user)
+        client.get("/api/home/")
+        rid = send(client, "post", URL, {"name": "휴대폰요금", "amount": 69000, "category": "HOUSING_TELECOM", "paymentDay": 21,
+                                         "paymentAccountId": str(account.pk), "paymentCardId": None}).json()["recurringId"]
+        must_pay = lambda: [(i["dueDate"], i["paymentState"]) for i in client.get("/api/home/").json()["mustPay"]]  # noqa: E731
+        self.assertEqual(must_pay(), [("2026-11-21", "unpaid")])
+        send(client, "patch", f"{URL}{rid}/", {"paymentDay": 20})
+        self.assertEqual(must_pay(), [("2026-11-20", "unpaid")])
+        self.assertEqual(PaymentDue.objects.filter(recurring_id=rid).count(), 1)

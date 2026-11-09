@@ -117,6 +117,16 @@ class LoanDuePaymentTests(Base, TestCase):
         row = next(i for i in home["mustPay"] if i["dueId"] == str(self.due.pk))
         self.assertEqual((row["paymentState"], row["amount"]), ("partial", 10_000))
 
+    def test_amount_difference_uses_remaining_after_partial(self):
+        """11/9: 일부만 낸 뒤 다른 출금을 고르면 남은 금액(예정 − 이미 연결한 출금)과 비교한다. 연결한 출금은 자기 금액을 빼고 본다"""
+        first = self.tx(amount=200_000)
+        self.assertEqual(self.link(self.due, first, "partial").status_code, 200)
+        second = self.tx(amount=100_000, day=date(2026, 11, 11))
+        body = self.client.get(url(self.due)).json()
+        item = next(i for i in body["items"] if i["transactionId"] == str(second.pk))
+        self.assertEqual(item["amountDifference"], 0)                  # 남은 100,000 과 같음 (예정 300,000 기준이면 −200,000)
+        self.assertEqual(body["linked"][0]["amountDifference"], -100_000)  # 연결한 출금은 예정 300,000 과 비교
+
     def test_split_payments_then_full_on_last(self):
         first, second, last = self.tx(100_000, date(2026, 11, 5)), self.tx(100_000, date(2026, 11, 8)), self.tx(95_000)
         self.link(self.due, first, "partial")

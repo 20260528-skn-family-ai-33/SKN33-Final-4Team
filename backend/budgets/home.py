@@ -218,7 +218,8 @@ def must_pay_json(user, next_payday, previous_start):
         user=user, obligation_state="active", payment_state__in=SHOW_STATES,
         obligation_type__in=["recurring", "card_bill", "loan"],
         due_date__gte=previous_start, due_date__lt=next_payday,
-    ).select_related("recurring", "bill__card", "loan", "payment_account__connection")
+    ).exclude(loan__status="repaid").select_related("recurring", "bill__card", "loan", "payment_account__connection")
+    # 11/9: 전부 갚았다고 한(완납) 대출의 남은 오늘 · 지난 회차는 숨긴다. 회차는 지우지 않아 [납부 거래 확인]은 그대로, 완납 취소하면 다시 보인다
     from finance.card_payments import bill_status
 
     today = timezone.localdate()

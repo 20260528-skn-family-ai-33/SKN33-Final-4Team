@@ -202,7 +202,12 @@ class PayoffTests(Base, TestCase):
         self.assertEqual(self.draft.status, "expired")
         self.assertEqual(Loan.objects.filter(pk__in=[self.loan.pk, past.pk, paid_ahead.pk]).count(), 3)  # 삭제 안 함
         names = [item["name"] for item in self.client.get("/api/home/").json()["mustPay"]]
-        self.assertEqual(sorted(names), ["다른은행 학자금", "한국장학재단 학자금", "한국장학재단 학자금"])  # 지난·일부 낸 회차만 남음
+        self.assertEqual(names, ["다른은행 학자금"])  # 11/9: 완납한 대출의 남은 회차(지난 · 일부 낸)는 꼭 나갈 돈에서 숨김 — 회차 자체는 위처럼 active 로 남음
+        reported = self.client.get("/api/finance/loans/?status=repaid").json()["items"]
+        reported = next(item["payoff"]["reportedAt"] for item in reported if item["loanId"] == str(past.pk))
+        self.assertEqual(self.cancel(reported, past).status_code, 200)
+        names = [item["name"] for item in self.client.get("/api/home/").json()["mustPay"]]
+        self.assertEqual(sorted(names), ["다른은행 학자금", "한국장학재단 학자금"])  # 완납 취소하면 다시 보임
 
     def test_no_new_dues_after_payoff(self):
         self.payoff()
