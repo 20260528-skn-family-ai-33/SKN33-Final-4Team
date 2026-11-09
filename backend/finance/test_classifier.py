@@ -486,6 +486,7 @@ class RuleTest(SimpleTestCase):
         # 11/02 카드 명세·카카오 장소 조사: '택시'가 낱말이거나 '개인택시'일 때만 교통. 이름 속 '택시' 식당은 제외
         cases = {
             "카카오_개인택시": "TRANSPORT_CAR", "카카오T 택시": "TRANSPORT_CAR", "개인택시 서울12가3456": "TRANSPORT_CAR",
+            "카카오_법인택시6": "TRANSPORT_CAR", "서울법인택시조합": None,
             "택시파스타 압구정로데오역점": None, "피자택시": None, "옐로우택시": None, "택시종사자쉼터": None,
             "서울개인택시조합새마을금고": None, "카카오페이택시충전": None,
             "레벨업 피시방 남부터미널점": "CULTURE_LEISURE", "탑PC방": "CULTURE_LEISURE",
