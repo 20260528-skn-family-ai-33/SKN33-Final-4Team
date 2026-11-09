@@ -31,6 +31,7 @@ export function syncLines(result) {
     if (it.cardReviewCount > 0) return { name: it.organizationName, ok: true, text: `내역을 불러왔어요. 결제 카드를 확인할 거래 ${it.cardReviewCount}건이 있어요.` }
     if (it.approvalsComplete === false) return { name: it.organizationName, ok: false, text: '일부 카드 사용 내역을 확인하지 못했어요. 조회 기간과 금액·취소 정보를 확인해 주세요.' }
     const n = it.newTransactionCount
-    return { name: it.organizationName, ok: true, text: n == null ? '불러왔어요' : `새 거래 ${n}건을 불러왔어요` }
+    const text = n == null ? '불러왔어요' : `새 거래 ${n}건을 불러왔어요`
+    return { name: it.organizationName, ok: true, text: it.foreignPendingCount > 0 ? `${text}. 해외 결제 ${it.foreignPendingCount}건은 원화 금액이 없어 빠졌어요.` : text }
   })
 }

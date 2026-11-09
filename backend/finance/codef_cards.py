@@ -16,6 +16,8 @@ ITEM_TYPES = {"1": "one_time", "2": "installment"}   # 3 그외 · 4 단기카�
 MONTH = re.compile(r"[0-9]{4}(?:0[1-9]|1[0-2])")
 MAX_AMOUNT = 9223372036854775807
 CANCELED, PARTIAL, DECLINED = "1", "2", "3"   # resCancelYN (0 정상)
+# 외화 승인인데 원화 금액(resKRWAmt)이 응답에 없는 줄. 11/07 NH: USD 줄은 4개월이 지나도 빈칸이라 다시 조회해도 채워지지 않는다
+FOREIGN_PENDING = "foreign_amount_pending"
 
 
 class CardDataError(ValueError):
@@ -222,7 +224,8 @@ def normalize_approvals(data, start, end):
     """승인내역 → (거래 목록, 실제 조회 기간 (시작, 끝)).
 
     거래 dict 의 card_number 는 카드 대조용(저장 안 함). 금액을 확정할 수 없는 줄은 unknown_reason 을 단다:
-    해외 원화금액 없음 · 부분취소 금액 없음 · 음수 이용금액(취소전표) — 저장하지 않고 이번 조회를 '거래 다 불러옴'으로 치지 않는다.
+    금액 없음 · 부분취소 금액 없음 · 음수 이용금액(취소전표) — 저장하지 않고 이번 조회를 '거래 다 불러옴'으로 치지 않는다.
+    외화 승인의 원화 금액 없음(FOREIGN_PENDING)도 저장하지 않지만, 다시 조회해도 풀리지 않아 조회 완료를 막지 않는다 (card_review).
     """
     rows, covered_from, covered_to = [], start, end
     for row in _rows(data):
@@ -241,7 +244,7 @@ def normalize_approvals(data, start, end):
         status, cancel = _text(row.get("resCancelYN")) or "0", _amount(row.get("resCancelAmount"))
         unknown = None
         if amount is None:
-            unknown = "amount_unknown"
+            unknown = "amount_unknown" if currency == "KRW" else FOREIGN_PENDING
         elif amount < 0:
             unknown = "negative_amount"
         elif status == PARTIAL and cancel is None:

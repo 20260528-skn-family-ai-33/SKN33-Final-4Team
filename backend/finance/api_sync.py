@@ -270,6 +270,7 @@ def sync_connection(user, connection, cid, cred, today, task_id=None):
                 if counts:
                     item["card_review_count"] = counts.get("card_review_count", 0)
                     item["approvals_complete"] = counts.get("approvals_complete")
+                    item["foreign_pending_count"] = counts.get("foreign_pending_count", 0)
     else:
         item["parts"].append({"kind": connection.business_type, "status": "skipped", "reason": "not_supported"})
 

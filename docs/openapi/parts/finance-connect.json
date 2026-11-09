@@ -1935,6 +1935,11 @@
             "type": "boolean",
             "nullable": true,
             "description": "카드 승인 내역 실제 조회 범위를 모두 반영했는지. 기관 status=succeeded와 별개."
+          },
+          "foreignPendingCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 원화 금액이 없어 저장하지 못한 외화 승인 건수 (11/07). approvalsComplete를 false로 만들지 않는다."
           }
         },
         "required": [

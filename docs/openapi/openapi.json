@@ -12055,6 +12055,11 @@
             "type": "boolean",
             "nullable": true,
             "description": "카드 승인 내역 실제 조회 범위를 모두 반영했는지. 기관 status=succeeded와 별개."
+          },
+          "foreignPendingCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 원화 금액이 없어 저장하지 못한 외화 승인 건수 (11/07). approvalsComplete를 false로 만들지 않는다."
           }
         },
         "required": [
@@ -16840,7 +16845,7 @@
           },
           "cardNotes": {
             "type": "array",
-            "description": "보류는 아니고 알릴 카드 선차감 상태 (11/06). no_bill_in_cycle(이번 주기 마지막 날까지 조회했는데 결제일인 청구서 없음 → 0원) · first_budget_applied(앞선 주기 승인 예산에 이미 반영 → 0원) · before_first_connection(이 주기 뒤에 연결) · card_overlap_uncertain(청구서에 든 이번 주기 구매 중 생활비와 같은 지출인지 확인 못 한 amount 원 · count 건 — 빼지 않고 넉넉하게 잡음) · bill_items_incomplete(청구서 상세가 일부만 와서 빠진 항목은 모름 — amount · count 는 null)",
+            "description": "보류는 아니고 알릴 카드 선차감 상태 (11/06). no_bill_in_cycle(이번 주기 마지막 날까지 조회했는데 결제일인 청구서 없음 → 0원) · first_budget_applied(앞선 주기 승인 예산에 이미 반영 → 0원) · before_first_connection(이 주기 뒤에 연결) · card_overlap_uncertain(청구서에 든 이번 주기 구매 중 생활비와 같은 지출인지 확인 못 한 amount 원 · count 건 — 빼지 않고 넉넉하게 잡음) · bill_items_incomplete(청구서 상세가 일부만 와서 빠진 항목은 모름 — amount · count 는 null) · foreign_amount_pending(이번 주기 외화 승인 중 원화 금액이 없어 쓴 돈에 넣지 못한 count 건 — amount 는 null, 11/07)",
             "items": {
               "type": "object",
               "required": [
@@ -16863,7 +16868,8 @@
                     "first_budget_applied",
                     "before_first_connection",
                     "card_overlap_uncertain",
-                    "bill_items_incomplete"
+                    "bill_items_incomplete",
+                    "foreign_amount_pending"
                   ]
                 },
                 "amount": {
@@ -17478,8 +17484,8 @@
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
     "docs/api/auth.md": "473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1",
-    "docs/api/finance-connect.md": "7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510",
-    "docs/api/cards.md": "fe12a3c7ef7796eeafd784491ebd326ae1d1bcec2befd085760ef3663e6652e9",
+    "docs/api/finance-connect.md": "d6e55091c622c0ee82748c1a97c4a86defe890a071cc4d998db87a9a0161eb7b",
+    "docs/api/cards.md": "05595c9d89756d7eb1324314301beb61322a11ab7470bbc829479fa22a37a43e",
     "docs/api/loans.md": "86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f",
     "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
     "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",

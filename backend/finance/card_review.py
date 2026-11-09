@@ -6,8 +6,12 @@ from datetime import date, time
 from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
-from .codef_cards import approval_source_key, card_matches
+from .codef_cards import FOREIGN_PENDING, approval_source_key, card_matches
 from .models import Card, CardApprovalCoverage, CardApprovalReview, FinancialTransaction, SyncRun
+
+# 금액을 몰라 저장하지 못한 외화 승인 표시. 승인 한 건당 한 줄이고 requested_from 이 사용일이다.
+# 조회 기록이 아니라서 status 를 success 로 두지 않는다 (조회 범위 계산에 들어가지 않게)
+FOREIGN_PENDING_RUN = "card_foreign_pending"
 
 
 def transaction_defaults(user, payload):
@@ -82,7 +86,7 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
     ).select_related("transaction", "resolved_card"):
         previous[review_signature(item.identity)].append(item)
 
-    new_ids, existing_count, reviews, unknown = [], 0, [], False
+    new_ids, existing_count, reviews, unknown, foreign = [], 0, [], False, []
     occurrences = Counter()
     for raw in rows:
         row = dict(raw)
@@ -109,6 +113,11 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
                 # 요청 ID와 coverage 연결은 유지하고 표기별 조회 키만 최신으로 바꾼다.
                 review.source_key = key
         matched = by_number(shown)
+        if invalid == FOREIGN_PENDING and review is None:
+            # 다시 조회해도 풀리지 않아 온보딩이 막히지 않게 조회 완료로 둔다. 금액을 만들지 않고 저장도 하지 않는다.
+            # 청구서에 든 이 결제는 짝 거래가 없어 선차감에서 빼지 않으므로 카드값이 적게 잡히지 않는다 (cycle_overlap)
+            foreign.append(row["occurred_on"])
+            continue
         if invalid:
             unknown = True
             # 이전 정상 값으로 확인하지 못하게 한다. 원문·불확실한 금액은 저장하지 않는다.
@@ -162,7 +171,27 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
             new_ids.append(tx.pk)
         else:
             existing_count += 1
-    return new_ids, existing_count, reviews, unknown
+    return new_ids, existing_count, reviews, unknown, foreign
+
+
+def record_foreign_pending(user, connection, run, covered, days, fetched_at):
+    """이번 조회 범위의 표시를 새 결과로 바꾼다. 범위가 겹치는 재조회로 같은 승인이 두 번 세이지 않고, 원화 금액이 오면 표시가 사라진다"""
+    SyncRun.objects.filter(
+        user=user, connection__organization_code=connection.organization_code, product_code=FOREIGN_PENDING_RUN,
+        requested_from__gte=covered[0], requested_from__lte=covered[1],
+    ).delete()
+    SyncRun.objects.bulk_create(SyncRun(
+        user=user, connection=connection, product_code=FOREIGN_PENDING_RUN, status="skipped",
+        requested_from=day, requested_to=day, started_at=run.started_at, completed_at=fetched_at,
+    ) for day in days)
+
+
+def foreign_pending_count(user, issuer_code, start, end):
+    """start ~ end 에 쓴 외화 승인 중 금액을 몰라 저장하지 못한 건수"""
+    return SyncRun.objects.filter(
+        user=user, connection__organization_code=issuer_code, product_code=FOREIGN_PENDING_RUN,
+        requested_from__gte=start, requested_from__lte=end,
+    ).count()
 
 
 def promote_coverage(user, issuer_code):

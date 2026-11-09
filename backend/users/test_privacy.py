@@ -72,11 +72,14 @@ class PrivacyTests(TestCase):
             fetched_at=timezone.now(), started_at=timezone.now(), resolved_card=self.card, transaction=self.cardtx)
         coverage = CardApprovalCoverage.objects.create(run=run, covered_from=date(2026, 10, 1), covered_to=date(2026, 11, 1))
         coverage.reviews.add(review); coverage.cards.add(self.card)
+        SyncRun.objects.create(user=self.user, connection=self.conn, product_code='card_foreign_pending', status='skipped',
+                               requested_from=date(2026, 10, 1), requested_to=date(2026, 10, 1))
         response = self.revoke()
         self.assertEqual(response.status_code, 200, response.content)
         for model in (Card, CardBill, CardApprovalReview, Budget, BudgetCycle, CushionEntry, ChatMessage, Conversation, IdempotencyRecord):
             self.assertFalse(model.objects.filter(user=self.user).exists(), model.__name__)
         self.assertFalse(CardApprovalCoverage.objects.exists())
+        self.assertFalse(SyncRun.objects.filter(user=self.user, product_code='card_foreign_pending').exists())
         self.assertTrue(FinancialTransaction.objects.filter(pk=self.banktx.pk).exists())
         self.assertFalse(FinancialTransaction.objects.filter(pk=self.cardtx.pk).exists())
         self.assertTrue(FinancialTransaction.objects.filter(pk=self.other_tx.pk).exists())

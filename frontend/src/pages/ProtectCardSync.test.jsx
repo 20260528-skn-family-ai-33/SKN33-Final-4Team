@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import PopupProvider from '../popups/PopupProvider.jsx'
+import { syncLines } from '../utils/financeSync.js'
 import ProtectPage from './ProtectPage.jsx'
 
 const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data })
@@ -197,10 +198,22 @@ it('11/06: 이번 주기 청구서를 아직 못 찾음은 조회 실패와 다�
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
 
+it('11/07: 원화 금액이 없는 해외 결제는 막지 않고 건수만 알린다', async () => {
+  reason = null
+  notes = [{ cardId: 'card-1', issuerCode: '0304', reason: 'foreign_amount_pending', amount: null, count: 3 }]
+  await render()
+  expect(host.textContent).toContain('해외 결제 3건은 카드사가 원화 금액을 주지 않아')
+  expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
+})
+
+it('11/07: 조회가 끝나면 빠진 해외 결제 건수를 조회 결과에 함께 알린다', () => {
+  const [line] = syncLines({ items: [{ organizationName: 'NH카드', status: 'succeeded', approvalsComplete: true, newTransactionCount: 2, foreignPendingCount: 7 }] })
+  expect(line).toEqual({ name: 'NH카드', ok: true, text: '새 거래 2건을 불러왔어요. 해외 결제 7건은 원화 금액이 없어 빠졌어요.' })
+})
+
 it('11/06: 조회 기간 누락만 재조회 입력을 바로 보여 준다', async () => {
   reason = 'bill_history_incomplete'
   await render()
   expect(host.textContent).toContain('카드 내역을 다시 불러와야 해요')
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
-

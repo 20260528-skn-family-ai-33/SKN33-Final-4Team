@@ -12,8 +12,10 @@ from django.utils import timezone
 from users.models import Consent
 
 from . import codef
+from .card_review import FOREIGN_PENDING_RUN, approval_blocker, foreign_pending_count
 from .codef_cards import CardDataError, card_matches, month_range, normalize_approvals, normalize_card_bills, normalize_cards
-from .models import Card, CardBill, CardBillItem, Connection, FinancialTransaction, SyncRun
+from .models import (Card, CardApprovalCoverage, CardApprovalReview, CardBill, CardBillItem, Connection,
+                     FinancialTransaction, SyncRun)
 from .sync_cards import CardConnectionGone, CardConsentRequired, sync_card
 
 CARD_NO = "9490981234560000"
@@ -200,7 +202,8 @@ class ApprovalNormalizationTest(SimpleTestCase):
         cases = [
             ({"resCancelYN": "2"}, "cancel_amount_unknown"),                 # 신한: 부분취소 금액 미제공
             ({"resUsedAmount": "-22000"}, "negative_amount"),                # KB 취소전표매입
-            ({"resAccountCurrency": "USD", "resUsedAmount": "15.00"}, "amount_unknown"),
+            ({"resUsedAmount": ""}, "amount_unknown"),
+            ({"resAccountCurrency": "USD", "resUsedAmount": "15.00"}, "foreign_amount_pending"),
         ]
         for change, reason in cases:
             with self.subTest(change=change):
@@ -345,6 +348,51 @@ class CardSyncTest(TestCase):
         self.run_sync()
         tx.refresh_from_db()
         self.assertEqual(tx.merchant_category, "약국")  # 있는 값은 바꾸지 않는다
+
+    def foreign_row(self, **change):
+        return approval(resApprovalNo="2", resAccountCurrency="USD", resUsedAmount="15.00", **change)
+
+    def test_foreign_row_without_won_amount_does_not_block_coverage(self):
+        # 11/07 NH: USD 줄은 원화 금액이 끝내 비어 있어 다시 불러와도 지킬 돈 화면을 벗어나지 못했다
+        self.approvals = [approval(), self.foreign_row()]
+        result = self.run_sync()
+        self.assertTrue(result["approvals_complete"])
+        self.assertEqual(result["foreign_pending_count"], 1)
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)  # 금액을 만들어 저장하지 않는다
+        self.assertIsNone(approval_blocker(self.user, ORG))
+        self.assertEqual(len(self.runs("card_approval_list")), 1)
+        self.assertEqual(self.runs(FOREIGN_PENDING_RUN), [])  # 조회 범위 계산에 들어가지 않는다
+        self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 1)
+
+    def test_repeat_sync_counts_a_foreign_row_once_and_clears_it_when_won_amount_arrives(self):
+        self.approvals = [approval(), self.foreign_row()]
+        self.run_sync()
+        self.run_sync()
+        self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 1)
+        self.approvals = [approval(), self.foreign_row(resKRWAmt="20,100")]
+        self.assertEqual(self.run_sync()["foreign_pending_count"], 0)
+        self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 0)
+        self.assertTrue(FinancialTransaction.objects.filter(user=self.user, amount=20100).exists())
+
+    def test_other_untrusted_amounts_still_block_coverage(self):
+        for change in ({"resUsedAmount": ""}, {"resUsedAmount": "-22000"}, {"resCancelYN": "2"}):
+            with self.subTest(change=change):
+                CardApprovalCoverage.objects.all().delete()
+                self.approvals = [approval(resApprovalNo="3", **change)]
+                result = self.run_sync()
+                self.assertFalse(result["approvals_complete"])
+                self.assertEqual(result["foreign_pending_count"], 0)
+                self.assertEqual(approval_blocker(self.user, ORG), "spending_history_incomplete")
+
+    def test_foreign_row_with_user_review_keeps_blocking_when_won_amount_disappears(self):
+        # 사용자가 확인할 승인의 금액이 사라지면 이전 금액으로 확인하지 못하게 그대로 막는다
+        self.approvals = [self.foreign_row(number="949098******9999", resKRWAmt="20,100")]
+        self.run_sync()
+        self.approvals = [self.foreign_row(number="949098******9999")]
+        result = self.run_sync()
+        self.assertFalse(result["approvals_complete"])
+        self.assertEqual(result["foreign_pending_count"], 0)
+        self.assertFalse(CardApprovalReview.objects.get(user=self.user).data_valid)
 
     def test_saves_cards_bills_and_items(self):
         result = self.run_sync(card_no=CARD_NO, card_password=CARD_PW)

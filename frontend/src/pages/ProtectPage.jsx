@@ -71,6 +71,7 @@ export default function ProtectPage() {
   const notes = data.cardNotes ?? []
   const uncertain = notes.filter((n) => n.reason === 'card_overlap_uncertain')
   const incomplete = notes.some((n) => n.reason === 'bill_items_incomplete')
+  const foreignCount = notes.filter((n) => n.reason === 'foreign_amount_pending').reduce((sum, n) => sum + n.count, 0)
   const mismatch = idsFor((r) => r === 'bill_total_mismatch').length > 0
   const start = data.saved ?? rec  // 저장한 값이 있으면 그 값, 없으면 추천값
   const values = edits ?? (start ? Object.fromEntries(ROWS.map(([k]) => [k, String(start[k])])) : null)
@@ -171,6 +172,9 @@ export default function ProtectPage() {
       </>}
       {notes.some((n) => n.reason === 'no_bill_in_cycle') && !blocked && (
         <p className="mc-note">이번 급여 주기에 결제일인 카드 청구서가 없어서 첫 카드값은 따로 떼지 않았어요.</p>
+      )}
+      {foreignCount > 0 && !blocked && (
+        <p className="mc-note" role="note">이번 급여 주기 해외 결제 {foreignCount}건은 카드사가 원화 금액을 주지 않아 쓴 돈에 넣지 못했어요. 실제로 쓴 돈은 표시보다 많을 수 있어요.</p>
       )}
       {(uncertain.length > 0 || incomplete) && !blocked && (
         <div className="mc-note" role="note">
