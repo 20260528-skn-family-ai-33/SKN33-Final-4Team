@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import APIException, ValidationError
+from config import tasks
 from config.idempotency import idempotent
 from .models import Budget, BudgetCycle, Category, SpendingAllocation
 from django.db import IntegrityError, transaction
@@ -78,6 +79,9 @@ def protect(request):
             values = clean_protect(request, data)
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
             data["saved"] = protect_saved_json(profile, data["base"])
+    # 11/09: 카드 내역을 뒤에서 불러오는 중이면 그 작업 ID. 화면은 재조회를 권하지 않고 '불러오는 중'을 보여 준 뒤 끝나면 다시 읽는다
+    loading = tasks.active_task(request.user, tasks.SYNC_TASK_TYPES)
+    data["card_load_task_id"] = loading.task_id if loading else None
     return Response(data)
 
 

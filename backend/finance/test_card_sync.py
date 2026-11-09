@@ -16,7 +16,7 @@ from .card_review import FOREIGN_PENDING_RUN, approval_blocker, foreign_pending_
 from .codef_cards import CardDataError, card_matches, month_range, normalize_approvals, normalize_card_bills, normalize_cards
 from .models import (BankAccount, Card, CardApprovalCoverage, CardApprovalReview, CardBill, CardBillItem, Connection,
                      FinancialTransaction, SyncRun, TransactionLink)
-from .sync_cards import CardConnectionGone, CardConsentRequired, sync_card
+from .sync_cards import CardConnectionGone, CardConsentRequired, sync_card, sync_card_list
 
 CARD_NO = "9490981234560000"
 CARD_PW = "4321"
@@ -619,6 +619,34 @@ class CardSyncTest(TestCase):
         self.withdrawal(description="NETFLIX")   # 같은 날 · 금액 · 적요 출금이 뒤늦게 들어옴
         transfer_rules.link_same_purchases(self.user)
         self.assertFalse(linked.exists())
+
+    def test_card_list_first_then_full_sync_in_the_background(self):
+        # 11/09 첫 연결: 카드 선택 화면용으로 보유카드만 먼저 받고, 청구서 · 승인내역은 뒤 작업(sync_card)이 받는다
+        result = sync_card_list(self.user, "cid", ORG, self.connection.pk, card_no=CARD_NO, card_password=CARD_PW)
+        self.assertEqual(result, {"card_count": 1, "created_card_count": 1})
+        self.assertEqual([call.args[0] for call in self.request.call_args_list], [codef.PATH_CARD_LIST])
+        self.assertEqual(Card.objects.filter(user=self.user).count(), 1)
+        self.assertFalse(CardBill.objects.filter(user=self.user).exists())
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user).exists())
+        self.assertEqual(SyncRun.objects.get(user=self.user, product_code="card_list_load").status, "success")
+        self.assertEqual(self.runs("card_approval_list"), [])   # 승인내역을 불러왔다고 남기지 않는다
+        self.run_sync()
+        self.assertEqual(Card.objects.filter(user=self.user).count(), 1)   # 같은 카드를 다시 만들지 않는다
+        self.assertTrue(FinancialTransaction.objects.filter(user=self.user).exists())
+
+    def test_card_list_failure_marks_its_run_failed(self):
+        self.consent.revoked_at = timezone.now()
+        self.consent.save(update_fields=["revoked_at"])
+        with self.assertRaises(CardConsentRequired):
+            sync_card_list(self.user, "cid", ORG, self.connection.pk)
+        self.request.assert_not_called()
+        self.consent.revoked_at = None
+        self.consent.save(update_fields=["revoked_at"])
+        self.request.side_effect = codef.CodefError("CF-12345", "실패")
+        with self.assertRaises(codef.CodefError):
+            sync_card_list(self.user, "cid", ORG, self.connection.pk)
+        self.assertEqual(SyncRun.objects.get(user=self.user, product_code="card_list_load").status, "failed")
+        self.assertFalse(Card.objects.filter(user=self.user).exists())
 
     def test_saves_cards_bills_and_items(self):
         result = self.run_sync(card_no=CARD_NO, card_password=CARD_PW)

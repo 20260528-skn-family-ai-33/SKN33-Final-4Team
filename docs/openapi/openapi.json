@@ -9580,7 +9580,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "missingIncome": {
@@ -9607,7 +9608,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "blocked": {
@@ -9639,7 +9641,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "cardBillPending": {
@@ -9672,7 +9675,8 @@
                         }
                       ],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     },
                     "summary": "카드 첫 청구서 확인 중"
                   }
@@ -9760,7 +9764,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   }
                 }
@@ -11757,13 +11762,20 @@
             "type": "string",
             "enum": [
               "done",
+              "loading",
               "failed"
-            ]
+            ],
+            "description": "연결 직후 불러오기. done 완료 · failed 연결은 됐지만 불러오기 실패. loading(11/09, 카드사): 보유카드는 받았고 청구서 · 승인내역은 syncTaskId 작업이 뒤에서 불러오는 중"
           },
           "accountCount": {
             "type": "integer",
             "minimum": 0,
             "nullable": true
+          },
+          "syncTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "syncStatus=loading 일 때만. 카드 청구서 · 승인내역 불러오기 작업 ID (taskType card_first_load, GET /api/tasks/<id>/)"
           }
         },
         "required": [
@@ -16780,7 +16792,8 @@
           "cushion",
           "cardPending",
           "cardNotes",
-          "locksReleased"
+          "locksReleased",
+          "cardLoadTaskId"
         ],
         "properties": {
           "missing": {
@@ -16894,6 +16907,12 @@
               "$ref": "#/components/schemas/SelectableCategoryCode"
             },
             "description": "P-13. 이번 저장(PUT)으로 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞아 풀린 카테고리 코드(화면 순서). GET과 그 밖의 PUT은 []"
+          },
+          "cardLoadTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "11/09. 카드 내역을 서버가 뒤에서 불러오는 중이면 그 작업 ID(GET /api/tasks/<id>/), 아니면 null. 화면은 재조회를 권하지 않고 '불러오는 중'을 보여 준 뒤 작업이 끝나면 다시 읽는다"
           }
         },
         "additionalProperties": false
@@ -17489,14 +17508,14 @@
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
     "docs/api/auth.md": "473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1",
-    "docs/api/finance-connect.md": "97b278948d48c5aa2c8fc4ee00c9ca9c69669e0c1b2dc8c5d08a05f6a50771a9",
+    "docs/api/finance-connect.md": "8b8a5c493f85c3084353a8706e4dd88e4a2da19dee88a5933e6c27608f34a416",
     "docs/api/cards.md": "12fe7834e5ea8d159a8125e9efa2c8f5c48e253de8d6d9372518d6ec36118bd6",
     "docs/api/loans.md": "86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f",
     "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
     "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
     "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
-    "docs/api/chat.md": "05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd",
-    "docs/api/budgets.md": "59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29"
+    "docs/api/chat.md": "4aef7e3db23be5d0e18155d1af01048c44c1ce9d273eb8e8e0c3138d2ab5ffa4",
+    "docs/api/budgets.md": "87eb2a9a669f8da3e45c32f9284bb02af4621d205b03543d7be390606b88375f"
   }
 }

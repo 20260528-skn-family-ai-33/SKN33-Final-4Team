@@ -11,7 +11,7 @@ const connection = { connectionId: 'hyundai', businessType: 'card', organization
 const review = { reviewId: 'review-1', merchantName: '합성 해외상점', occurredOn: '2026-10-27', occurredTime: '10:27:00',
   amount: 6694, isCanceled: false, canceledAmount: null, canResolve: true,
   candidates: [{ cardId: 'card-1', displayName: '첫 카드', isSelected: true, nameMatches: true }] }
-let host, root, connections, reason, result, requests, protectReads, run, connectionError, notes
+let host, root, connections, reason, result, requests, protectReads, run, connectionError, notes, loadTask, openTask
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   connections = [structuredClone(connection), { ...connection, connectionId: 'unrelated', organizationName: '다른카드', cardIds: ['other-card'] },
@@ -19,7 +19,7 @@ beforeEach(() => {
   reason = 'spending_history_incomplete'
   notes = []
   result = { items: [{ connectionId: 'hyundai', organizationName: '현대카드', status: 'succeeded', cardReviewCount: 1, approvalsComplete: false }] }
-  requests = []; protectReads = 0; connectionError = null
+  requests = []; protectReads = 0; connectionError = null; loadTask = null; openTask = null
   run = async () => {
     if (result.items[0].cardReviewCount > 0) reason = 'card_assignment_required'
     return reply({ taskId: 'sync-1', status: 'succeeded' })
@@ -28,7 +28,7 @@ beforeEach(() => {
     if (options.method) requests.push({ url, body: JSON.parse(options.body) })
     if (url === '/api/budgets/protect/') {
       protectReads++
-      return reply({ missing: [], base: null, saved: null, recommended: null, cushion: { target: null }, cardNotes: notes,
+      return reply({ missing: [], base: null, saved: null, recommended: null, cushion: { target: null }, cardNotes: notes, cardLoadTaskId: loadTask,
         blocked: reason ? { reason: 'card_bill_pending' } : null, cardPending: reason ? [{ cardId: 'card-1', reason }] : [] })
     }
     if (url === '/api/finance/connections/' && !options.method) return connectionError || reply({ items: connections })
@@ -38,6 +38,7 @@ beforeEach(() => {
     }
     if (url === '/api/finance/sync/') return run()
     if (url === '/api/tasks/sync-1/') return reply({ status: 'succeeded', result })
+    if (url === '/api/tasks/load-1/') return new Promise((resolve) => { openTask = resolve })
     if (url === '/api/finance/card-reviews/') return reply({ items: [review] })
     if (url === '/api/finance/card-reviews/review-1/') { reason = null; return reply({ status: 'resolved' }) }
     if (url.startsWith('/api/budgets/fixed/')) return reply({ items: [], summary: {}, cardBills: [{ issuerCode: '0302', issuerName: '현대카드', totalAmount: 511515,
@@ -221,4 +222,17 @@ it('11/06: 조회 기간 누락만 재조회 입력을 바로 보여 준다', as
   await render()
   expect(host.textContent).toContain('카드 내역을 다시 불러와야 해요')
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
+})
+
+it('11/09: 카드 내역을 뒤에서 불러오는 중이면 재조회 대신 기다렸다가 끝나면 다시 읽는다', async () => {
+  loadTask = 'load-1'
+  await render()
+  expect(host.textContent).toContain('카드 내역을 불러오는 중이에요')
+  expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
+  expect(host.querySelector('[aria-label="현대카드 내역 조회"]')).toBeNull()
+  const reads = protectReads
+  loadTask = null; reason = null   // 작업이 끝나 청구서 · 사용 내역이 다 들어옴
+  await act(async () => openTask(reply({ status: 'succeeded', result: {} })))
+  expect(protectReads).toBe(reads + 1)
+  expect(host.textContent).not.toContain('카드 내역을 불러오는 중이에요')
 })
