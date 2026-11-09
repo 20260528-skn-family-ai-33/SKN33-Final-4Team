@@ -33,6 +33,7 @@ PATH_CARD_BILLS = "/v1/kr/card/p/account/billing-list"
 PATH_CARD_APPROVALS = "/v1/kr/card/p/account/approval-list"
 
 SUCCESS = "CF-00000"
+NO_RETRY_CODES = ("CF-12100", "CF-03002", "CF-12401")  # 비밀번호 오류 · 추가 인증 · 로그인 값 누락. 다시 보내도 같고 비밀번호는 계정이 잠길 수 있다
 _SERVICE = {"sandbox": ServiceType.SANDBOX, "demo": ServiceType.DEMO, "product": ServiceType.PRODUCT}
 
 
@@ -243,12 +244,19 @@ def list_card_approvals(connected_id, org, start, end, card_no=None, card_passwo
     auth = _card_auth(card_no, card_password)
     if "cardNo" in auth:
         auth["loginCardNo"] = auth.pop("cardNo")
-    data = _request(PATH_CARD_APPROVALS, {
+    params = {
         "connectedId": connected_id, "organization": org,
         "startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d"),
         "orderBy": "0", "inquiryType": "1",   # 1 = 전체 카드 조회
-        "memberStoreInfoType": "0", **auth,
-    })
+        **auth,
+    }
+    try:
+        data = _request(PATH_CARD_APPROVALS, {**params, "memberStoreInfoType": "1"})   # 1 = 가맹점 업종 포함
+    except CodefError as exc:
+        if exc.code in NO_RETRY_CODES:
+            raise
+        # 미제공 카드사가 오류를 낼 수 있다. 업종 때문에 거래를 못 불러오면 안 된다
+        data = _request(PATH_CARD_APPROVALS, {**params, "memberStoreInfoType": "0"})
     return normalize_approvals(data, start, end)
 
 

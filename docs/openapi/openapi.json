@@ -14553,7 +14553,7 @@
           "applyToFuture": {
             "type": "boolean",
             "default": false,
-            "description": "true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고 재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래."
+            "description": "true면 같은 가맹점의 다음 새 거래도 이 카테고리로 자동 분류 (10/30). canApplyToFuture가 false인 거래에 보내도 400을 내지 않고 재사용하지 않는다. 기준은 같은 가맹점에서 사용자가 마지막으로 고른 거래. 카드사 업종이 분명히 다르면 재사용하지 않는다."
           },
           "ownTransfer": {
             "type": "boolean",
@@ -17481,7 +17481,7 @@
     "docs/api/finance-connect.md": "7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510",
     "docs/api/cards.md": "fe12a3c7ef7796eeafd784491ebd326ae1d1bcec2befd085760ef3663e6652e9",
     "docs/api/loans.md": "86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f",
-    "docs/api/transactions.md": "74cbc7630a7ab8e8e3ea29526d72957462df15a0572e677e6495cf11083b6ffc",
+    "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
     "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
     "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
