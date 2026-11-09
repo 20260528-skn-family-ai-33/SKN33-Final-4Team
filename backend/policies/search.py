@@ -1,0 +1,72 @@
+"""정책 검색: 지역 · 마감으로 거른 뒤 벡터 순위와 키워드 순위를 합친다. 자격 판단은 하지 않는다 (5단계 eligibility.py)"""
+from collections import defaultdict
+from dataclasses import dataclass
+
+from django.db.models import Q
+from pgvector.django import CosineDistance
+
+from .llm import embedder
+from .models import Policy
+from .regions import REGIONS
+
+LIMIT = 30  # 5단계가 자격으로 거르고도 3개가 남도록 넉넉히 넘긴다
+RRF_K = 60  # 순위 합치기 상수. 거리와 키워드는 단위가 달라 점수 대신 순위를 더한다
+NATIONWIDE_CODES = 200  # 지역 코드가 이만큼 넘으면 전국 정책으로 본다 (실제 데이터는 251 · 256개)
+
+
+@dataclass
+class Hit:
+    policy: Policy
+    score: float
+    distance: float | None  # 임베딩이 아직 없으면 None
+    keywords: list[str]  # 이 정책에서 찾은 키워드
+    apply_state: str  # open · always · upcoming · unknown
+    business_ended: bool  # 사업 종료일이 지났다. 후보에서 빼지 않고 표시만 한다
+    nationwide: bool
+
+
+def candidates(region_code, today):
+    """사용자 지역에 해당하고 신청이 끝나지 않은 활성 정책. 시도처럼 더 고를 수 있는 지역은 받지 않는다"""
+    region = REGIONS.get(region_code)
+    if not region or not region["final"]:
+        raise ValueError(f"시군구까지 고른 지역 코드가 아니에요: {region_code}")
+    not_over = Q(apply_type__in=("always", "unknown")) | Q(apply_type="specific", last_apply_end__gte=today)
+    return Policy.objects.filter(not_over, is_active=True, zip_codes__overlap=region["match"])
+
+
+def _apply_state(policy, today):
+    if policy.apply_type != "specific":
+        return policy.apply_type
+    day = today.isoformat()
+    return "open" if any(p["start"] <= day <= p["end"] for p in policy.periods) else "upcoming"
+
+
+def _business_ended(policy, today):
+    end = (policy.raw.get("bizPrdEndYmd") or "").strip()
+    return len(end) == 8 and end.isdigit() and end < today.strftime("%Y%m%d")
+
+
+def _keyword_ranks(pool, keyword):
+    """이름 · 키워드 칸 일치가 본문 일치보다 앞선다. 같은 칸끼리는 순서를 지어낼 근거가 없어 같은 순위다"""
+    head = set(pool.filter(Q(name__icontains=keyword) | Q(raw__plcyKywdNm__icontains=keyword)).values_list("pk", flat=True))
+    body = set(pool.filter(search_text__icontains=keyword).values_list("pk", flat=True)) - head
+    return {**dict.fromkeys(head, 1), **dict.fromkeys(body, len(head) + 1)}
+
+
+def search(query, region_code, today, *, keywords=(), limit=LIMIT, embed=None):
+    """점수 높은 순의 Hit 목록. 맞는 정책이 없으면 []. 임베딩 실패는 그대로 올린다(EmbedFailed, 추천 없음과 다르다)"""
+    pool = candidates(region_code, today)
+    vector = (embed or embedder()[1])([query])[0]
+    distances = dict(pool.filter(embedding__isnull=False).annotate(distance=CosineDistance("embedding", vector))
+                     .order_by("distance", "pk").values_list("pk", "distance"))
+    scores = {pk: 1 / (RRF_K + rank) for rank, pk in enumerate(distances, 1)}
+    matched = defaultdict(list)
+    for keyword in dict.fromkeys(word.strip() for word in keywords if word.strip()):
+        for pk, rank in _keyword_ranks(pool, keyword).items():
+            scores[pk] = scores.get(pk, 0) + 1 / (RRF_K + rank)
+            matched[pk].append(keyword)
+    top = sorted(scores, key=lambda pk: (-scores[pk], pk))[:limit]
+    policies = Policy.objects.in_bulk(top)
+    return [Hit(policy=policies[pk], score=scores[pk], distance=distances.get(pk), keywords=matched[pk],
+                apply_state=_apply_state(policies[pk], today), business_ended=_business_ended(policies[pk], today),
+                nationwide=len(policies[pk].zip_codes) > NATIONWIDE_CODES) for pk in top]
