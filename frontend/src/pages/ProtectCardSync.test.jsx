@@ -202,13 +202,18 @@ it('11/07: 원화 금액이 없는 해외 결제는 막지 않고 건수만 알�
   reason = null
   notes = [{ cardId: 'card-1', issuerCode: '0304', reason: 'foreign_amount_pending', amount: null, count: 3 }]
   await render()
-  expect(host.textContent).toContain('해외 결제 3건은 카드사가 원화 금액을 주지 않아')
+  expect(host.textContent).toContain('해외 결제 3건은 카드사가 원화 금액을 주지 않았고 청구서·계좌 출금에서도 찾지 못해')
   expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
 })
 
 it('11/07: 조회가 끝나면 빠진 해외 결제 건수를 조회 결과에 함께 알린다', () => {
   const [line] = syncLines({ items: [{ organizationName: 'NH카드', status: 'succeeded', approvalsComplete: true, newTransactionCount: 2, foreignPendingCount: 7 }] })
-  expect(line).toEqual({ name: 'NH카드', ok: true, text: '새 거래 2건을 불러왔어요. 해외 결제 7건은 원화 금액이 없어 빠졌어요.' })
+  expect(line).toEqual({ name: 'NH카드', ok: true, text: '새 거래 2건을 불러왔어요. 해외 결제 7건은 원화 금액을 찾지 못해 빠졌어요.' })
+})
+
+it('11/09: 청구서·계좌 출금으로 원화 금액을 채운 해외 결제 건수도 알린다', () => {
+  const [line] = syncLines({ items: [{ organizationName: 'NH카드', status: 'succeeded', approvalsComplete: true, newTransactionCount: 3, foreignFilledCount: 3, foreignPendingCount: 4 }] })
+  expect(line.text).toBe('새 거래 3건을 불러왔어요. 해외 결제 3건은 청구서·계좌 출금으로 원화 금액을 확인했어요. 해외 결제 4건은 원화 금액을 찾지 못해 빠졌어요.')
 })
 
 it('11/06: 조회 기간 누락만 재조회 입력을 바로 보여 준다', async () => {

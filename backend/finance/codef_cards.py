@@ -227,7 +227,8 @@ def normalize_approvals(data, start, end):
 
     거래 dict 의 card_number 는 카드 대조용(저장 안 함). 금액을 확정할 수 없는 줄은 unknown_reason 을 단다:
     금액 없음 · 부분취소 금액 없음 · 음수 이용금액(취소전표) · 모르는 통화 표기 — 저장하지 않고 이번 조회를 '거래 다 불러옴'으로 치지 않는다.
-    외화 승인의 원화 금액 없음(FOREIGN_PENDING)도 저장하지 않지만, 다시 조회해도 풀리지 않아 조회 완료를 막지 않는다 (card_review).
+    외화 승인의 원화 금액 없음(FOREIGN_PENDING)은 저장 단계에서 청구서 · 계좌 출금으로 채워 보고(card_foreign),
+    못 채우면 저장하지 않지만 다시 조회해도 풀리지 않아 조회 완료를 막지 않는다 (card_review).
     """
     rows, covered_from, covered_to = [], start, end
     for row in _rows(data):
@@ -251,6 +252,11 @@ def normalize_approvals(data, start, end):
             amount = _amount(row.get("resUsedAmount"))
         else:
             amount = _amount(row.get("resKRWAmt")) if currency else None
+            if amount is None and currency and re.fullmatch(r"0+(?:\.0+)?", _text(row.get("resUsedAmount")) or ""):
+                # 0달러 승인(카드 확인용으로 보임. 11/09 NH USD 7건 중 4건이 같은 날 같은 가게의 실제 결제와 짝) → 원화도 0원이 확실하다.
+                # 금액 없음으로 두면 같은 날 같은 이름의 실제 결제가 '후보 여럿'이 되어 원화 금액을 못 채운다 (card_foreign).
+                # 0원 승인은 저장하지 않는다 (card_review.save_approvals)
+                amount = 0
         status, cancel = _text(row.get("resCancelYN")) or "0", _amount(row.get("resCancelAmount"))
         unknown = None
         if currency is None:
@@ -287,7 +293,9 @@ def normalize_approvals(data, start, end):
             "is_canceled": status in (CANCELED, DECLINED),
             "canceled_amount": cancel if status in (CANCELED, PARTIAL) else (amount if status == DECLINED else None),
             "source_detail": {"cancelStatus": status, "currency": currency,
-                              "homeForeign": _code(row.get("resHomeForeignType"), 5)},
+                              "homeForeign": _code(row.get("resHomeForeignType"), 5),
+                              # 외화 승인의 외화 금액 원문 (같은 날 여러 건의 원화 금액 짝짓기 · card_foreign)
+                              **({"foreignAmount": _short(row.get("resUsedAmount"), 30)} if currency and currency != "KRW" else {})},
         })
     if covered_from > covered_to:
         raise CardDataError("invalid_approval")

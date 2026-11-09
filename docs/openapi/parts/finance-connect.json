@@ -1940,6 +1940,11 @@
             "type": "integer",
             "minimum": 0,
             "description": "카드 수집 실행 성공 시, 원화 금액이 없어 저장하지 못한 외화 승인 건수 (11/07). approvalsComplete를 false로 만들지 않는다."
+          },
+          "foreignFilledCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 원화 금액이 없던 외화 승인 중 청구서 · 체크카드 계좌 출금의 원화 금액으로 이번에 새로 저장한 건수 (11/09)."
           }
         },
         "required": [

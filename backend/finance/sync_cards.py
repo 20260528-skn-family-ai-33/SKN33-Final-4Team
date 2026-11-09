@@ -218,7 +218,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
                 user=user, source_kind="card", card__connection=connection,
                 field_states__has_key=RETRY_STATE_KEY,
             ).values_list("pk", flat=True))
-            new_ids, existing_count, reviews, unknown, foreign = save_approvals(
+            new_ids, existing_count, reviews, unknown, foreign, filled = save_approvals(
                 user, cards, card_rows, approvals, run, fetched_at,
             )
             record_foreign_pending(user, connection, run, covered, foreign, fetched_at)
@@ -253,7 +253,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             "bill_count": len(bills), "created_bill_count": bill_counts["created"],
             "updated_bill_count": bill_counts["updated"], "skipped_bill_count": bill_counts["skipped"],
             "new_transaction_count": len(new_ids), "existing_transaction_count": existing_count,
-            "approvals_complete": complete, "foreign_pending_count": len(foreign),
+            "approvals_complete": complete, "foreign_pending_count": len(foreign), "foreign_filled_count": filled,
             "card_review_count": sum(review.transaction_id is None and review.data_valid for review in reviews),
         }
     except Exception as exc:

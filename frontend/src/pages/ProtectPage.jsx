@@ -174,7 +174,7 @@ export default function ProtectPage() {
         <p className="mc-note">이번 급여 주기에 결제일인 카드 청구서가 없어서 첫 카드값은 따로 떼지 않았어요.</p>
       )}
       {foreignCount > 0 && !blocked && (
-        <p className="mc-note" role="note">이번 급여 주기 해외 결제 {foreignCount}건은 카드사가 원화 금액을 주지 않아 쓴 돈에 넣지 못했어요. 실제로 쓴 돈은 표시보다 많을 수 있어요.</p>
+        <p className="mc-note" role="note">이번 급여 주기 해외 결제 {foreignCount}건은 카드사가 원화 금액을 주지 않았고 청구서·계좌 출금에서도 찾지 못해 쓴 돈에 넣지 못했어요. 실제로 쓴 돈은 표시보다 많을 수 있어요.</p>
       )}
       {(uncertain.length > 0 || incomplete) && !blocked && (
         <div className="mc-note" role="note">
