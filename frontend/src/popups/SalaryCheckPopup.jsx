@@ -11,6 +11,8 @@ import PaymentTxLine from '../components/PaymentTxLine.jsx'
 
 const TAG = { confirmed: '월급으로 확인함', auto: '자동 인식', rejected: '월급 아니라고 함', recheck: '거래 또는 확인 근거가 바뀌어서 다시 확인 필요' }
 const mmdd = (iso) => `${iso.slice(5, 7)}.${iso.slice(8, 10)}`
+// 월급으로 감지된 입금: 서버 후보 · 이미 월급으로 본 것 · 다시 확인할 것 (월급 아니라고 한 것은 뺀다)
+const detected = (t) => t.isCandidate || ['confirmed', 'auto', 'recheck'].includes(t.decision)
 
 export default function SalaryCheckPopup({ onSaved }) {
   const { data, error, reload } = useApi('/api/budgets/salary/deposits/')
@@ -19,6 +21,8 @@ export default function SalaryCheckPopup({ onSaved }) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [showPattern, setShowPattern] = useState(false)  // 자동 인식 기준은 원할 때만 펼친다
+  const [showAll, setShowAll] = useState(false)  // 감지된 입금이 있으면 처음엔 그것만 보여 준다
 
   if (error && !data) return <Popup label="월급 확인"><p className="mc-error" role="alert">{error.status ? error.message : '입금 목록을 불러오지 못했어요.'}</p><button type="button" className="mc-secondary" onClick={reload}>다시 시도</button></Popup>
   if (!data) return <Popup label="월급 확인"><p role="status">불러오는 중…</p></Popup>
@@ -26,6 +30,10 @@ export default function SalaryCheckPopup({ onSaved }) {
   const all = data.windows.flatMap((w) => w.items)
   const picked = all.filter((t) => pick?.ids.includes(t.transactionId))
   const single = picked.length === 1 ? picked[0] : null
+  const onlyDetected = !showAll && all.some(detected)
+  const hiddenCount = onlyDetected ? all.filter((t) => !detected(t)).length : 0
+  const windows = data.windows.map((w) => ({ w, shown: onlyDetected ? w.items.filter(detected) : w.items }))
+    .filter(({ shown }) => !onlyDetected || shown.length > 0)
   const toggle = (w, t) => {
     // 다른 구간을 누르면 그 구간에서 지금 월급으로 인정된 입금부터 다시 고른다 (확인은 그 회차 목록 전체를 바꾼다)
     const base = pick?.cycle === w.payCycleOn ? pick.ids : w.items.filter((i) => i.decision === 'confirmed' || i.decision === 'auto').map((i) => i.transactionId)
@@ -54,11 +62,11 @@ export default function SalaryCheckPopup({ onSaved }) {
       <h1>어느 입금이 월급인가요?</h1>
       <p className="mc-note">고른 입금만 월급으로 봐요. 등록한 실수령액이나 승인한 예산은 바뀌지 않아요.</p>
 
-      {data.windows.map((w) => (
+      {windows.map(({ w, shown }) => (
         <section key={w.payCycleOn} aria-label={`${mmdd(w.payCycleOn)} 월급`}>
           <h3 className="mc-loan-h">{mmdd(w.payCycleOn)} 회차 월급 <small>{mmdd(w.from)} ~ {mmdd(w.to)}</small></h3>
-          {w.items.length === 0 && <p className="mc-note">이 기간에 고를 수 있는 입금이 없어요.</p>}
-          <div className="mc-lock-list">{w.items.map((t) => (
+          {shown.length === 0 && <p className="mc-note">이 기간에 고를 수 있는 입금이 없어요.</p>}
+          <div className="mc-lock-list">{shown.map((t) => (
             <button type="button" key={t.transactionId} className="mc-lock-opt" style={{ flexWrap: 'wrap' }} disabled={busy}
               aria-pressed={Boolean(pick?.ids.includes(t.transactionId))} onClick={() => toggle(w, t)}>
               <PaymentTxLine t={t} />
@@ -69,6 +77,7 @@ export default function SalaryCheckPopup({ onSaved }) {
           </div>
         </section>
       ))}
+      {hiddenCount > 0 && <button type="button" className="mc-link" onClick={() => setShowAll(true)}>다른 입금 {hiddenCount}건도 보기 ›</button>}
 
       {picked.length > 0 && <div className="mc-card">
         <div className="mc-keyvalue"><span>고른 입금 {picked.length}건</span><strong>{won(picked.reduce((s, t) => s + t.amount, 0))}</strong></div>
@@ -83,12 +92,14 @@ export default function SalaryCheckPopup({ onSaved }) {
           <button type="button" className="mc-link" disabled={busy} onClick={() => decide('none')}>판단 지우기</button>}
       </div>}
 
-      <h3 className="mc-loan-h">자동 인식 기준</h3>
-      {data.pattern ? <div className="mc-card">
+      <button type="button" className="mc-link" aria-expanded={showPattern} onClick={() => setShowPattern((v) => !v)}>
+        자동 인식 기준 {showPattern ? '접기' : '보기'}
+      </button>
+      {showPattern && (data.pattern ? <div className="mc-card">
         <div className="mc-lock-opt"><PaymentTxLine t={data.pattern} /></div>
-        <p className="mc-note">이 입금과 계좌 · 금액 · 적요가 같은 입금이 그 회차에 한 건만 있으면 자동으로 월급으로 봐요. 바뀌면 다시 물어볼게요.</p>
+        <p className="mc-note">같은 입금이 들어오면 월급으로 자동 인식해요.</p>
         <button type="button" className="mc-link" disabled={busy} onClick={() => send('DELETE', '/api/budgets/salary/pattern/', undefined, '자동 인식을 껐어요. 지난 확인 기록은 그대로예요.')}>자동 인식 끄기</button>
-      </div> : <p className="mc-note">아직 없어요. 월급 한 건을 확인할 때 자동 인식을 켤 수 있어요.</p>}
+      </div> : <p className="mc-note">아직 없어요. 월급 한 건을 확인할 때 자동 인식을 켤 수 있어요.</p>)}
 
       {message && <p className="mc-note" role="status">{message}</p>}
       {saveError && <p className="mc-error" role="alert">{saveError}</p>}

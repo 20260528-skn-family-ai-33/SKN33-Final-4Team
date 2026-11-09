@@ -827,8 +827,11 @@
 #mc-new-preview#mc-new-preview .mc-terms-foot .mc-primary{margin-top:8px}
 
 /* ===== 홈 개선안 (2026-10-20) 시작 — 되돌릴 때 이 블록을 통째로 지운다 ===== */
-#mc-new-preview#mc-new-preview .mc-home2-period{margin:0 0 12px;gap:8px}
+#mc-new-preview#mc-new-preview .mc-home2-period{margin:0 0 12px;display:grid;gap:2px}
+#mc-new-preview#mc-new-preview .mc-home2-period .mc-row{gap:8px}
 #mc-new-preview#mc-new-preview .mc-home2-period .mc-muted{font-size:12px;min-width:0}
+#mc-new-preview#mc-new-preview .mc-home2-period .mc-link{padding:0;min-height:32px;font-weight:600;white-space:nowrap}
+#mc-new-preview#mc-new-preview .mc-home2-asof{font-size:11px;white-space:nowrap}
 #mc-new-preview#mc-new-preview .mc-home2-period .mc-badge{flex:none;font-size:12px;padding:4px 9px}
 #mc-new-preview#mc-new-preview .mc-home2-todo{display:flex;align-items:center;gap:10px;width:100%;min-height:0;margin:0 0 4px;padding:10px 14px;border-radius:12px;text-align:left;font-size:13px;color:var(--mc-ink);background:light-dark(#FFF6E0,#3A2F14);border:1px solid light-dark(#F3D58A,#6B5520)}
 #mc-new-preview#mc-new-preview .mc-home2-todo .mc-grow{flex:1;min-width:0}

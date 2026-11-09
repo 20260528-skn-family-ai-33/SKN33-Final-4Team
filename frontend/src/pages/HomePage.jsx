@@ -152,14 +152,20 @@ export default function HomePage() {
       {sync.lines?.map((l) => <p key={l.name} className={l.ok ? 'mc-note' : 'mc-error'} role="status">{l.name} · {l.text}</p>)}
       {sync.lines?.some((l) => !l.ok) && <button type="button" className="mc-link" onClick={() => navigate(PATHS.connections)}>연결 관리에서 확인하기 ›</button>}
 
-      {/* 1. 급여 주기 · 기준 시각 한 줄 + 월급날 칩 (급여일을 아직 안 넣었으면 period 가 null) */}
+      {/* 1. 급여 주기 + 월급날 칩 / 월급 상태 + 기준 시각 — 한 줄에 넷을 넣으면 폰 폭에서 줄바꿈이 깨져 두 줄로 (급여일을 아직 안 넣었으면 period 가 null) */}
       {period && (
-        <div className="mc-row mc-home2-period">
-          <span className="mc-muted">
-            {mmdd(period.startDate)} — {mmdd(period.endDate)} 급여 주기{balance.asOf ? ` · ${asOfText(balance.asOf)}` : ''}
-          </span>
-          <button type="button" className="mc-link" onClick={openSalary}>{period.salaryState === 'received' ? `월급 ${won(period.salaryAmount)}` : '월급 확인'}</button>
-          <span className="mc-badge">월급날 D−{period.dday}</span>
+        <div className="mc-home2-period">
+          <div className="mc-row">
+            <span className="mc-muted">{mmdd(period.startDate)} — {mmdd(period.endDate)} 급여 주기</span>
+            <span className="mc-badge">다음 월급날 D−{period.dday}</span>
+          </div>
+          <div className="mc-row">
+            <button type="button" className="mc-link" onClick={openSalary}>
+              {period.salaryState === 'received' ? '월급 확인됨'
+                : period.salaryState === 'needs_check' ? '월급 확인이 필요해요' : '월급 확인'} ›
+            </button>
+            {balance.asOf && <span className="mc-muted mc-home2-asof">{asOfText(balance.asOf)}</span>}
+          </div>
         </div>
       )}
 
