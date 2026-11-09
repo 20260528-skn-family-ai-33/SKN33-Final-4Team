@@ -212,6 +212,20 @@ class ApprovalNormalizationTest(SimpleTestCase):
                                       START, END)[0][0]
         self.assertEqual((foreign["amount"], foreign["unknown_reason"]), (20100, None))
 
+    def test_won_currency_names_are_domestic(self):
+        # 11/08: 원화를 KRW 가 아닌 표기로 주는 카드사가 있으면 국내 결제가 '해외 결제'로 말없이 빠졌다
+        for name in ("WON", "won", "원", "₩"):
+            with self.subTest(name=name):
+                row = normalize_approvals(approval(resAccountCurrency=name), START, END)[0][0]
+                self.assertEqual((row["amount"], row["unknown_reason"], row["source_detail"]["currency"]),
+                                 (22000, None, "KRW"))
+        usd = normalize_approvals(approval(resAccountCurrency="usd", resUsedAmount="15.00"), START, END)[0][0]
+        self.assertEqual(usd["unknown_reason"], "foreign_amount_pending")
+        for name in ("달러", "US$", "KRWX"):
+            with self.subTest(name=name):
+                row = normalize_approvals(approval(resAccountCurrency=name), START, END)[0][0]
+                self.assertEqual((row["amount"], row["unknown_reason"]), (None, "currency_unknown"))
+
     def test_bad_rows_are_rejected(self):
         for change in [{"resUsedDate": ""}, {"resCardNo": ""}, {"resCancelYN": "2", "resCancelAmount": "30000"},
                        {"commStartDate": "20261101", "commEndDate": "20261028"}]:
