@@ -1,40 +1,42 @@
-// 팝업: 연결 상세 · 은행 계좌
-// props: acct = 연결 관리 화면에서 누른 계좌
+// 팝업: 연결 상세 — 연결 관리에서 계좌 · 카드 한 줄을 누르면 (11/9: 시안 목업 → 목록 API 값만 보여 주는 읽기 전용)
+// props: kind = 'account' | 'card', item = GET /api/finance/connect/accounts/ · cards/ 의 한 항목, orgName = 기관 이름
+//        related = 이 계좌 · 카드로 나가는 확정 고정지출 · 정기 저축 [{ id, type, name, amount, line }] (ConnectionsPage relatedTo), null = 못 불러옴
+// 선택 바꾸기 · 연결 해제는 연결 관리 화면 버튼에서 한다 (여기서 따로 만들지 않음)
 import Popup from './Popup.jsx'
-import RefreshRow from '../components/RefreshRow.jsx'
-import Icon from '../components/Icon.jsx'
 import { won } from '../utils/money.js'
-import { usePopup } from './context.js'
-import DisconnectPopup from './DisconnectPopup.jsx'
+import { splitName } from '../utils/transactions.js'
 
-export default function AccountPopup({ acct }) {
-  const { openPopup } = usePopup()
-  // 이 은행 계좌로 나가는 고정지출 · 정기 저축 → 해제 확인 창에서 같이 그만할지 묻는다 (결정 F)
-  const related = [
-    ...acct.fixed.map((f) => ({ id: f.name, type: 'fixed', name: f.name, line: `매월 ${f.day}일 · ${acct.short} ****${acct.no}`, amount: f.amount })),
-    ...(acct.savings ?? []).map((v) => ({ id: v.name, type: 'saving', name: v.name, line: `매월 ${v.day}일 · ${acct.short} ****${acct.no}에서 보냄`, amount: v.amount })),
-  ]
+const STATUS = { connected: '연결됨', relogin: '다시 연결 필요', disconnected: '연결 해제됨' }
+const when = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '조회 기록 없음')
+
+export default function AccountPopup({ kind, item, orgName, related }) {
+  const isCard = kind === 'card'
+  const [name, last4] = splitName(item.displayName)
+  const rows = [
+    [isCard ? '카드번호' : '계좌번호', last4],
+    !isCard && ['잔액', item.balance == null ? '잔액 모름' : won(item.balance)],
+    !isCard && item.name && item.name !== name && ['상품명', item.name],
+    isCard && item.cardStatus && ['카드 상태', item.cardStatus],
+    isCard && item.cardType && ['카드 브랜드', item.cardType],
+    ['관리', item.isSelected ? '관리 중' : '고르지 않음'],
+    ['연결', STATUS[item.status] ?? item.status],
+    ['마지막 조회', when(item.fetchedAt)],
+  ].filter((r) => r && r[1])
+
   return (
     <Popup label="연결 상세" sub>
-      <div className="mc-eyebrow">{acct.bank} · {acct.kind}</div>
-      <h1>{acct.nickname ?? acct.name}</h1>
+      <div className="mc-eyebrow">{orgName} · {isCard ? '카드' : '계좌'}</div>
+      <h1>{name}</h1>
       <div className="mc-card">
-        <div className="mc-keyvalue"><span>잔액</span><strong>{won(acct.balance)}</strong></div>
-        <div className="mc-keyvalue"><span>계좌번호</span><strong>****{acct.no}</strong></div>
-        <div className="mc-keyvalue"><span>용도</span><strong>{acct.use}</strong></div>
-        <div className="mc-keyvalue"><span>마지막 조회</span><strong>{acct.updated} · 거래 수집 중</strong></div>
-        <div className="mc-keyvalue"><span>상품명</span><strong>{acct.name}</strong></div>
-        <div className="mc-keyvalue mc-alias-kv"><span>별칭</span><strong>{acct.nickname ?? <em>없음</em>}<button type="button" className="mc-alias-btn">수정</button></strong></div>
+        {rows.map(([k, v]) => <div className="mc-keyvalue" key={k}><span>{k}</span><strong>{v}</strong></div>)}
       </div>
       <div className="mc-card">
-        <h2>이 은행에서 나가는 고정지출</h2>
-        {acct.fixed.map((f) => <div className="mc-keyvalue" key={f.name}><span>{f.name}</span><strong>매월 {f.day}일 · {won(f.amount)}</strong></div>)}
-      </div>
-      {/* 선택 해제는 기능 연결 전. 연결 해제는 확인 창까지 (결정 F) */}
-      <div className="mc-card mc-acct-act">
-        <RefreshRow connectionId={acct.connectionId} />
-        <button type="button" className="mc-listrow"><Icon name="CircleMinus" /><span>이 계좌 선택 해제</span><small className="mc-muted">머니쿠션 관리 대상에서만 빠져요</small></button>
-        <button type="button" className="mc-listrow mc-unlink" onClick={() => openPopup(<DisconnectPopup inst={acct.bank} kind="bank" related={related} />)}><Icon name="Unlink" /><span>{acct.bank} 연결 전체 해제</span></button>
+        <h2>이 {isCard ? '카드' : '계좌'}로 나가는 돈</h2>
+        {related == null && <p className="mc-muted">고정지출 · 저축을 불러오지 못했어요.</p>}
+        {related?.length === 0 && <p className="mc-muted">연결된 고정지출 · 저축이 없어요.</p>}
+        {related?.map((r) => (
+          <div className="mc-keyvalue" key={`${r.type}-${r.id}`}><span>{r.name}</span><strong className="mc-acct-due">{r.line.split(' · ')[0]}<br />{won(r.amount)}</strong></div>
+        ))}
       </div>
     </Popup>
   )

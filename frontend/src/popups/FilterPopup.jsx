@@ -8,15 +8,10 @@ import HelpPopup from './HelpPopup.jsx'
 import { usePopup } from './context.js'
 import { useApi } from '../utils/api.js'
 import { PENDING } from '../utils/categories.js'
+import { splitName } from '../utils/transactions.js'
 
-// '신한 주거래 우대통장 · ****0303' → ['신한 주거래 우대통장', '****0303'] (끝 4자리는 아래 줄 회색)
 // 거래 유형 (API transactionType). 이체 = 남에게 보낸 이체 + 내 계좌 이체
 const TYPES = [{ code: 'spending', name: '소비' }, { code: 'income', name: '입금' }, { code: 'transfer', name: '이체' }]
-
-const splitName = (name) => {
-  const at = name.lastIndexOf(' · ')
-  return at < 0 ? [name, null] : [name.slice(0, at), name.slice(at + 3)]
-}
 
 function Section({ title, q, idKey, picked, toggle }) {
   const items = q.data?.items ?? []

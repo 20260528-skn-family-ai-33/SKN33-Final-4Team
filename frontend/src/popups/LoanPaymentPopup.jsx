@@ -9,6 +9,7 @@ import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
+import { toast } from '../utils/toast.js'
 import { ETC, SPEND_CATS, catName } from '../utils/categories.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
 import { TYPE, effectText, releasedText } from '../utils/paymentText.js'
@@ -18,7 +19,8 @@ const STATE = { unpaid: '아직 확인 안 됨', partial: '일부만 냈어요',
 const SETTLED = { full: '다 냈어요', partial: '일부', null: '자동 연결' }
 const fromLabel = (r) => `${TYPE[r.fromType] ?? r.fromType}${r.fromCategory ? ` · ${catName(r.fromCategory)}` : ''}`
 const PICK = [...SPEND_CATS, ETC]
-const diffText = (d) => d === 0 ? '예정액과 같아요' : `예정액보다 ${won(Math.abs(d))} ${d > 0 ? '많아요' : '적어요'}`
+// base = '예정액' · '남은 금액' (일부만 낸 뒤 다른 출금을 고르면 서버가 남은 금액과 비교해 준다, 11/9)
+const diffText = (d, base = '예정액') => d === 0 ? `${base}과 같아요` : `${base}보다 ${won(Math.abs(d))} ${d > 0 ? '많아요' : '적어요'}`
 
 export default function LoanPaymentPopup({ dueId, onSaved }) {
   const { closePopup } = usePopup()
@@ -31,7 +33,6 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [requestKey, setRequestKey] = useState(newRequestKey)
-  const [done, setDone] = useState('')
   const [releasing, setReleasing] = useState(null)   // 분류를 고르는 중인 연결 { id, type, category }
 
   if (error && !data) return <Popup label="대출 납부 거래 확인"><p className="mc-error" role="alert">{error.status ? error.message : '납부 정보를 불러오지 못했어요.'}</p><button type="button" className="mc-secondary" onClick={() => (range ? setRange(null) : reload())}>{range ? '기본 기간으로 돌아가기' : '다시 시도'}</button></Popup>
@@ -39,16 +40,18 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
   const { due, linked, items = [] } = data
   const choice = [...linked, ...items].find((t) => t.transactionId === picked)
   const needsAgree = choice?.reclassify?.needsConfirm
+  // 이 출금을 고르기 전 남은 금액 = 실제 − 차이 (서버 amountDifference 가 이미 연결한 다른 출금을 뺀 기준)
+  const remaining = choice ? choice.amount - choice.amountDifference : null
 
   const pick = (id) => { setPicked(id); setAgree(false); setSaveError(''); setRequestKey(newRequestKey()) }
-  const after = (message) => { setDone(message); setPicked(null); setAgree(false); setRequestKey(newRequestKey()); reload(); onSaved?.() }
+  const after = (message) => { toast(message); setPicked(null); setAgree(false); setRequestKey(newRequestKey()); reload(); onSaved?.() }
   const send = async (settlement) => {
     if (busy || !choice) return
-    setBusy(true); setSaveError(''); setDone('')
+    setBusy(true); setSaveError('')
     try {
       await apiSend(`/api/finance/loan-dues/${dueId}/payments/`, 'POST',
         { transactionId: choice.transactionId, settlement, confirmReclassify: Boolean(needsAgree && agree) }, { requestKey })
-      after(settlement === 'full' ? '이번 납부를 완료로 저장했어요.' : '일부 납부로 저장했어요.')
+      after(settlement === 'full' ? '납부 완료로 저장했어요' : '일부 납부로 저장했어요')
     } catch (err) {
       setSaveError(err.fields ? Object.values(err.fields).flat().join(' ') : err.status ? err.message : '서버에 연결하지 못했어요. 고른 내용은 그대로예요. 다시 시도해 주세요.')
     } finally { setBusy(false) }
@@ -58,12 +61,12 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
     const choose = t.cancelEffect?.kind === 'choose'
     if (choose && releasing?.id !== t.transactionId) { setReleasing({ id: t.transactionId, type: '', category: '' }); setSaveError(''); return }
     if (choose && (!releasing.type || (releasing.type === 'spending' && !releasing.category))) { setSaveError('이 거래를 무엇으로 둘지 골라 주세요.'); return }
-    setBusy(true); setSaveError(''); setDone('')
+    setBusy(true); setSaveError('')
     try {
       const body = choose ? { restoreType: releasing.type, ...(releasing.type === 'spending' ? { restoreCategory: releasing.category } : {}) } : undefined
       const result = await apiSend(`/api/finance/loan-dues/${dueId}/payments/${t.transactionId}/`, 'DELETE', body)
       setReleasing(null)
-      after(releasedText(result?.released))
+      after(releasedText(result?.released))  // 분류를 되돌렸는지는 그대로 알린다 (실제 복원 결과대로)
     } catch (err) {
       setSaveError(err.fields ? Object.values(err.fields).flat().join(' ') : err.status ? err.message : '서버에 연결하지 못했어요. 연결과 분류는 그대로예요. 다시 시도해 주세요.')
     } finally { setBusy(false) }
@@ -85,13 +88,15 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
       {linked.length > 0 && <>
         <h3 className="mc-loan-h">연결한 출금</h3>
         <div className="mc-lock-list">{linked.map((t) => (
-          <div key={t.transactionId} className="mc-lock-opt" style={{ flexWrap: 'wrap' }} aria-label={`연결한 출금 ${t.description ?? ''}`}>
-            <PaymentTxLine t={t} />
-            <small>{SETTLED[t.settlement] ?? '일부'}</small>
-            <button type="button" className="mc-link" disabled={busy} onClick={() => pick(t.transactionId)}>정정</button>
-            <button type="button" className="mc-link" disabled={busy} onClick={() => unlink(t)}>연결 취소</button>
-            {effectText(t.cancelEffect) && <small className="mc-muted" style={{ flexBasis: '100%' }}>{effectText(t.cancelEffect)}</small>}
-            {releasing?.id === t.transactionId && <fieldset aria-label="취소한 뒤 분류" style={{ border: 0, padding: 0, margin: 0, minWidth: 0, flexBasis: '100%' }}>
+          <div key={t.transactionId} className="mc-lock-opt mc-linked" aria-label={`연결한 출금 ${t.description ?? ''}`}>
+            <div className="mc-linked-main"><PaymentTxLine t={t} /></div>
+            <div className="mc-linked-act">
+              <span className="mc-linked-tag">{SETTLED[t.settlement] ?? '일부'}</span>
+              <button type="button" className="mc-link" disabled={busy} onClick={() => pick(t.transactionId)}>정정</button>
+              <button type="button" className="mc-link" disabled={busy} onClick={() => unlink(t)}>연결 취소</button>
+            </div>
+            {effectText(t.cancelEffect) && <small className="mc-muted">{effectText(t.cancelEffect)}</small>}
+            {releasing?.id === t.transactionId && <fieldset aria-label="취소한 뒤 분류" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
               <label className="mc-field mc-check"><input type="radio" name="restore-type" checked={releasing.type === 'transfer'} onChange={() => setReleasing({ ...releasing, type: 'transfer', category: '' })} />남에게 보낸 이체</label>
               <label className="mc-field mc-check"><input type="radio" name="restore-type" checked={releasing.type === 'spending'} onChange={() => setReleasing({ ...releasing, type: 'spending' })} />소비</label>
               {releasing.type === 'spending' && <label className="mc-field">카테고리
@@ -112,7 +117,7 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
           <PaymentTxLine t={t} />
         </button>))}
       </div>
-      <form onSubmit={search} className="mc-loan-2" aria-label="찾을 기간">
+      <form onSubmit={search} className="mc-loan-2 mc-range" aria-label="찾을 기간">
         <label className="mc-field">시작일<input type="date" value={draft?.from ?? data.searchFrom} onChange={(e) => setDraft({ from: e.target.value, to: draft?.to ?? data.searchTo })} /></label>
         <label className="mc-field">끝일<input type="date" value={draft?.to ?? data.searchTo} onChange={(e) => setDraft({ from: draft?.from ?? data.searchFrom, to: e.target.value })} /></label>
         <button type="submit" className="mc-secondary" disabled={busy}>이 기간으로 찾기</button>
@@ -120,17 +125,20 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
 
       {choice && <div className="mc-card" aria-label="고른 출금">
         <div className="mc-keyvalue"><span>예정액</span><strong>{won(due.expectedAmount)}</strong></div>
-        <div className="mc-keyvalue"><span>실제 출금</span><strong>{won(choice.amount)}</strong></div>
-        <p className="mc-note" style={{ padding: 0 }}>{diffText(choice.amountDifference)}{choice.hints.linkedAccount ? ' · 연결 계좌' : ''}{choice.hints.lenderInDescription ? ' · 적요에 기관 이름' : ''}{choice.hints.sameAsBefore ? ' · 전에 확인한 계좌·적요' : ''}{choice.hints.nearDueDate ? '' : ' · 납부일과 날짜가 멀어요'}</p>
+        {remaining !== due.expectedAmount && <>
+          <div className="mc-keyvalue"><span>이미 연결한 출금</span><strong>{won(due.expectedAmount - remaining)}</strong></div>
+          <div className="mc-keyvalue"><span>남은 금액</span><strong>{won(remaining)}</strong></div>
+        </>}
+        <div className="mc-keyvalue"><span>{remaining !== due.expectedAmount ? '이번 출금' : '실제 출금'}</span><strong>{won(choice.amount)}</strong></div>
+        <p className="mc-note" style={{ padding: 0 }}>{diffText(choice.amountDifference, remaining !== due.expectedAmount ? '남은 금액' : '예정액')}{choice.hints.nearDueDate ? '' : ' · 납부일과 멀어요'}</p>{/* 11/9: 맞는 근거(연결 계좌 등)는 후보 순서에만 쓰고 문구에서 뺌 — 주의할 것만 */}
         {choice.reclassify && (needsAgree
           ? <label className="mc-field mc-check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-              이 거래의 분류가 ‘{fromLabel(choice.reclassify)}’에서 ‘대출 상환’으로 바뀌어요. 소비 합계에서 빠져요.</label>
-          : <p className="mc-note" style={{ padding: 0 }}>분류가 ‘{fromLabel(choice.reclassify)}’에서 ‘대출 상환’으로 바뀌어요. 연결을 취소하면 되돌려요.</p>)}
+              ‘{fromLabel(choice.reclassify)}’ → ‘대출 상환’으로 바꿔요 (소비 합계에서 빠져요)</label>
+          : <p className="mc-note" style={{ padding: 0 }}>‘{fromLabel(choice.reclassify)}’ → ‘대출 상환’으로 바꿔요</p>)}
         <button type="button" className="mc-primary" disabled={busy || (needsAgree && !agree)} onClick={() => send('full')}>이번 납부를 전부 냈어요</button>
         <button type="button" className="mc-secondary" disabled={busy || (needsAgree && !agree)} onClick={() => send('partial')}>일부만 냈어요</button>
       </div>}
       {saveError && <p className="mc-error" role="alert">{saveError}</p>}
-      {done && <p className="mc-note" role="status">{done}</p>}
       <button type="button" className="mc-link" onClick={closePopup}>닫기</button>
     </Popup>
   )

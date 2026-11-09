@@ -78,7 +78,6 @@ function AccountPick({ items }) {
           </div>
         )
       })}
-      <p className="mc-note">계좌 용도 지정은 아직 지원하지 않아요. 예적금 계좌는 후보에 나오지 않아요.</p>
       {error && <div className="mc-error" role="alert">{error}</div>}
     </Layout>
   )

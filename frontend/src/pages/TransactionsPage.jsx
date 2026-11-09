@@ -121,7 +121,7 @@ export default function TransactionsPage() {
           <button type="button" className="mc-icon" aria-label="다음 달" disabled={shown >= thisMonth} onClick={() => go(codes, shiftMonth(shown, 1))}>›</button>
         </>}
         {isPending && (
-          <button type="button" className="mc-link" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간'}</button>
+          <button type="button" className="mc-sumbar-toggle" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간 보기'}</button>
         )}
         {/* 이 목록의 소비 소계일 뿐 — 예산 · 남은 생활비는 홈 · 예산 화면 값 (급여 주기 기준이라 다름) */}
         {data && <span className="mc-sumbar-v"><b>{won(summary.spentTotal)}</b><span className="mc-muted"> 소비</span></span>}

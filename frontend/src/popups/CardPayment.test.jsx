@@ -4,8 +4,10 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import CardPaymentPopup from './CardPaymentPopup.jsx'
 import { apiSend, useApi } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 
 const { closePopup, openPopup, reload } = vi.hoisted(() => ({ closePopup: vi.fn(), openPopup: vi.fn(), reload: vi.fn() }))
+vi.mock('../utils/toast.js', () => ({ toast: vi.fn() }))  // 저장 · 취소 결과는 토스트로 (11/9)
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), useApi: vi.fn(), newRequestKey: () => 'card-key' }))
 vi.mock('./context.js', () => ({ usePopup: () => ({ closePopup, openPopup }) }))
 
@@ -82,5 +84,5 @@ it('납부 완료 뒤에도 연결 내역과 연결 취소가 보인다', async 
   expect(host.textContent).toContain('자동 연결')
   await click(button('연결 취소'))
   expect(apiSend).toHaveBeenCalledWith('/api/finance/card-bills/bill-1/payments/a/', 'DELETE')
-  expect(host.textContent).toContain('납부 연결을 취소하고 분류를 ‘이체’로 되돌렸어요.')
+  expect(toast).toHaveBeenCalledWith('납부 연결을 취소하고 분류를 ‘이체’로 되돌렸어요.')
 })

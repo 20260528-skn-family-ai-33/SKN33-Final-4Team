@@ -145,7 +145,7 @@ function ProfileForm({ saved }) {
             ))}
           </div>
           <p className="mc-picked" aria-live="polite" style={{ marginTop: 10 }}>
-            {housing ? <>{HOUSING[housing].name} 기준 · <b>{rateLine(housing)}</b></> : '자취 여부에 따라 생활비와 저축 비율이 달라져요.'}
+            {housing ? <>{HOUSING[housing].short} 기준 · <b>{rateLine(housing)}</b></> : '자취 여부에 따라 생활비와 저축 비율이 달라져요.'}
           </p>
         </div>
 

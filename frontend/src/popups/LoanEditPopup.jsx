@@ -8,6 +8,7 @@ import Popup from './Popup.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
 import { apiSend } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 
 const formOf = (loan) => ({
   lenderName: loan.lenderName ?? '', productName: loan.productName ?? '',
@@ -50,6 +51,7 @@ export default function LoanEditPopup({ loan, onSaved }) {
       const saved = await apiSend(`/api/finance/loans/${loan.loanId}/`, 'PATCH', body)
       onSaved?.(saved)
       closePopup()
+      toast('대출 정보를 수정했어요')
     } catch (err) {
       if (err.code === 'not_authenticated') navigate(PATHS.login, { replace: true })
       setErrors(Object.fromEntries(Object.entries(err.fields ?? {}).map(([key, messages]) => [key, [].concat(messages).join(' ')])))

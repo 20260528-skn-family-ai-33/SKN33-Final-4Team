@@ -34,3 +34,6 @@ export function syncLines(result) {
     return { name: it.organizationName, ok: true, text: n == null ? '불러왔어요' : `새 거래 ${n}건을 불러왔어요` }
   })
 }
+
+// 카드번호 · 카드 비밀번호가 있어야 불러올 수 있는 결과 (현대카드 등) → 홈에서 입력 팝업 (CardCredentialPopup)
+export const needsCardValues = (item) => item?.status === 'failed' && Boolean(item.error?.fields?.cardNo || item.error?.fields?.cardPassword)

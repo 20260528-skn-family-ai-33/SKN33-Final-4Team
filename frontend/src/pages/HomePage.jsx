@@ -10,7 +10,7 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { comma, won } from '../utils/money.js'
 import { useApi } from '../utils/api.js'
-import { runFinanceSync, syncLines } from '../utils/financeSync.js'
+import { needsCardValues, runFinanceSync, syncLines } from '../utils/financeSync.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
@@ -20,6 +20,7 @@ import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
 import CardBillPopup from '../popups/CardBillPopup.jsx'
 import NoticePopup from '../popups/NoticePopup.jsx'
 import SalaryCheckPopup from '../popups/SalaryCheckPopup.jsx'
+import CardCredentialPopup from '../popups/CardCredentialPopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
 import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
@@ -88,12 +89,25 @@ export default function HomePage() {
   const { data, error, reload } = useApi('/api/home/')  // 장고에게 홈 데이터 받아오기
   const [sync, setSync] = useState({ busy: false, lines: null, error: '' })
 
+  // 11/9: 카드번호 · 비밀번호가 필요한 카드사(현대카드 등)는 실패 줄 대신 입력 팝업을 띄워 그 자리에서 다시 불러온다
+  //   여러 곳이면 하나씩 차례로. 팝업을 닫으면 그 카드사는 이번에 안 불러온 채로 둔다
+  const askCard = (rows) => {
+    if (!rows.length) return
+    const [item, ...rest] = rows
+    openPopup(<CardCredentialPopup item={item} onDone={(result) => {
+      setSync((s) => ({ ...s, lines: [...(s.lines ?? []), ...syncLines(result)] }))
+      reload()
+      askCard(rest)
+    }} />)
+  }
   const refresh = async () => {
     setSync({ busy: true, lines: null, error: '' })
     try {
       const result = await runFinanceSync()
-      setSync({ busy: false, lines: syncLines(result), error: '' })
+      const needCard = (result.items ?? []).filter(needsCardValues)
+      setSync({ busy: false, lines: syncLines({ items: (result.items ?? []).filter((it) => !needsCardValues(it)) }), error: '' })
       reload()
+      askCard(needCard)
     } catch (err) {
       setSync({ busy: false, lines: null, error: err.message })
     }

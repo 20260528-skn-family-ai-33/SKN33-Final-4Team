@@ -14,6 +14,8 @@ import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import CardSyncPanel from '../components/CardSyncPanel.jsx'
 import CardReviewList from '../components/CardReviewList.jsx'
+import Popup from '../popups/Popup.jsx'
+import { usePopup } from '../popups/context.js'
 import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
@@ -57,8 +59,8 @@ export default function ProtectPage() {
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState({})
   const [busy, setBusy] = useState(false)
-  const [showReviews, setShowReviews] = useState(false)
   const [showCardSync, setShowCardSync] = useState(false)
+  const { openPopup } = usePopup()
   const [showUnreflectedSync, setShowUnreflectedSync] = useState(false)
   const [reviewVersion, setReviewVersion] = useState(0)
 
@@ -131,10 +133,13 @@ export default function ProtectPage() {
           <div className="mc-card" role="alert">
             <h2>결제 카드를 확인할 거래가 있어요</h2>
             <p className="mc-muted" style={{ margin: '6px 0 0' }}>어떤 카드로 결제했는지 확인하면 카드 내역을 반영해 지킬 돈을 다시 계산할 수 있어요.</p>
-            <button type="button" className="mc-secondary" onClick={() => setShowReviews((shown) => !shown)} aria-expanded={showReviews}>
-              {showReviews ? '확인할 거래 접기' : '결제 카드 확인하기'}
-            </button>
-            {showReviews && <CardReviewList key={reviewVersion} cardIds={idsFor(REVIEW)} onChanged={reload} />}
+            {/* 11/9: 아래로 펼치기 → 가운데 창(다이얼로그)으로 */}
+            <button type="button" className="mc-secondary" onClick={() => openPopup(
+              <Popup label="결제 카드 확인" dialog>
+                <h2>결제 카드 확인</h2>
+                <CardReviewList key={reviewVersion} cardIds={idsFor(REVIEW)} onChanged={reload} />
+              </Popup>,
+            )}>결제 카드 확인하기</button>
             {/* 재조회는 선택 (카드 지정만 필요하면 인증 입력 없이 끝난다) */}
             <button type="button" className="mc-link" onClick={() => setShowCardSync((shown) => !shown)} aria-expanded={showCardSync}>
               {showCardSync ? '카드 내역 재조회 접기' : '카드 내역도 다시 불러오기'}
