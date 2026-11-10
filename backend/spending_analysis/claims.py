@@ -16,6 +16,7 @@ import time
 
 from . import result as R
 from . import investigation as I
+from . import supplement
 from .answer import NAMES, josa, won
 from .clauses import validate as validate_clause
 from .explain import _changed, _per_day, _visits_line, regular_name
@@ -538,13 +539,15 @@ claims의 대상·지표로 이미 답할 수 있으면 queries=[]. 가설에 �
 queries 원소는 {by: category|merchant|time_slot|weekday, focus: null 또는 사용자가 말한 온라인 묶음/브랜드}.
 reason은 선택 이유 한 문장(금액·날짜·거래 가게 이름 제외).
 JSON: {queries, reason, hypothesis}."""
-ANSWER_PROMPT = """서버 문장 ID만 선택해 JSON으로 반환한다. 자연어 답변을 작성하지 않는다.
+ANSWER_PROMPT = """서버 문장 ID를 선택해 JSON으로 반환한다. sentences에는 자연어 답변을 작성하지 않는다.
 각 sentences 원소의 text에는 선택한 ID의 자리표시만 그대로 쓴다. 예를 들어 C7을 선택하면 text는 정확히 "{C7}"이고 claims는 ["C7"]이다.
 text에 주어·숫자·증감 설명·마침표를 작성하지 않는다. 서버가 자리표시 전체를 완성 문장으로 치환한다.
 선택한 ID 하나당 sentences 원소 하나를 만들며, 전체 1~4개다. 동일 ID는 한 번만 선택한다.
 must의 각 묶음에서 적어도 하나를 선택한다. support.claims가 있으면 그중 하나를 첫 원소에, 없으면 scope 주장을 첫 원소에 둔다.
 나머지는 질문에 필요한 근거만 선택한다. 같은 거래를 나눠 본 수치를 별개 원인처럼 합치지 않는다.
-출력 형식: {"sentences":[{"text":"{C7}","claims":["C7"]}]}"""
+""" + supplement.PROMPT_RULES + """
+support.limitation이 있으면 서버가 답 아래에 그 문장을 붙인다. 같은 내용을 extra에 다시 쓰지 않는다.
+출력 형식: {"sentences":[{"text":"{C7}","claims":["C7"]}],"extra":null,"extra_reason":null}"""
 clock = time.monotonic  # 테스트가 바꿔 끼운다
 
 
@@ -651,13 +654,23 @@ def run(ev, item, question, complete, hypothesis=None):
     trace["check"] = why
     if lines is None:
         return None, {**trace, "fallback": "rejected"}
-    trace["used"] = [i for s in json.loads(raw)["sentences"] for i in s["claims"]]
+    data = json.loads(raw)
+    trace["used"] = [i for s in data["sentences"] for i in s["claims"]]
     # 고른 추가 조회를 답에 하나도 쓰지 않았으면 표시만 (탈락 아님 — 호출만 늘었다)
     trace["unused_queries"] = [by for by, ids in (added if trace["stop"] is None else {}).items() if not ids & set(trace["used"])]
     public = {c["id"]: c for c in for_llm(claims)}
     trace["cited"] = [{k: public[i][k] for k in ("axis", "kind", "subject", "metric")} for i in dict.fromkeys(trace["used"])]
     trace["next_check"] = next_check(claims, trace["hypothesis"], contract, trace["used"])
-    return lines, trace
+    # 보충(11/10): 서버 문장으로 다 답하지 못할 때 LLM 이 쓴 숫자 없는 문장. 탈락하면 보충만 버린다.
+    # 서버가 다음 확인(next_check)을 붙이는 답에는 LLM 의 다음 질문 안내(next_step)를 겹쳐 붙이지 않는다
+    # 서버 한계 문장(limitation)이 붙는 답에는 '서버 문장이 다루지 못함(uncovered)' 보충을 붙이지 않는다 — 같은 말 반복 (11/10 실제 평가 B2)
+    extra, trace["extra_dropped"] = supplement.check(data.get("extra"), data.get("extra_reason"))
+    if extra and data.get("extra_reason") == "next_step" and trace["next_check"]:
+        extra, trace["extra_dropped"] = None, ["server_next_check"]
+    if extra and data.get("extra_reason") == "uncovered" and contract.get("limitation"):
+        extra, trace["extra_dropped"] = None, ["server_limitation"]
+    trace["extra_reason"] = data.get("extra_reason") if extra else None
+    return lines + ([extra] if extra else []), trace
 
 
 def _left(started):

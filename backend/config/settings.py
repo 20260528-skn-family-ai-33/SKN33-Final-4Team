@@ -216,3 +216,8 @@ if CHAT_LLM not in ("fake", "live"):
     raise ImproperlyConfigured("CHAT_LLM 은 fake 또는 live 예요")
 if CHAT_LLM == "live" and not (os.getenv("OPENAI_API_KEY") and os.getenv("LLM_MODEL")):
     raise ImproperlyConfigured("CHAT_LLM=live 에는 .env 의 OPENAI_API_KEY · LLM_MODEL 이 필요해요")
+# 소비 분석 LLM 확장 (값이 on 이 아니면 꺼짐 = 지금 템플릿 답 그대로)
+# CHAT_EXPLAIN_PLAN = on: "왜 늘었어?" 를 B(계획 · 답 LLM, MEMO 26)로 먼저 답한다 (가짜 해석은 정해 둔 계획 · 답)
+# CHAT_NARRATE = on: 지난달 비교(6 · 7번) 답 카드 아래에 LLM 이 서버 문장을 골라 잇고, 부족하면 숫자 없는 문장으로 보충한다 (실제 LLM 만)
+CHAT_EXPLAIN_PLAN = os.getenv("CHAT_EXPLAIN_PLAN", "").strip() == "on"
+CHAT_NARRATE = os.getenv("CHAT_NARRATE", "").strip() == "on"

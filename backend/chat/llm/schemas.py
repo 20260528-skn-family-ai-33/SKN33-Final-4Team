@@ -6,6 +6,8 @@ from chat.router_core import reading as router_reading
 from spending_analysis import claims as spending_claims
 from spending_analysis import investigation
 from spending_analysis import explain as spending_explain
+from spending_analysis import narrate as spending_narrate
+from spending_analysis import supplement as spending_supplement
 from spending_analysis import reading as spending_reading
 
 ROLES = {"router": (router_reading.PROMPT, router_reading.RouterReading, router_reading.parse),
@@ -49,7 +51,8 @@ def role_schema(role):
                  "amount_min": nullable("integer"), "amount_max": nullable("integer"), "measure": enum(r.MEASURES),
                  "group_by": enum(r.GROUPS), "top_n": nullable("integer"), "month": nullable("integer"),
                  "date_from": nullable("string"), "date_to": nullable("string"), "period_said": nullable("string"),
-                 "include_fixed": nullable("boolean"), "other_person": nullable("boolean")}
+                 "include_fixed": nullable("boolean"), "other_person": nullable("boolean"),
+                 "compare_month": nullable("integer")}
     assert set(props) == set(ROLES[role][1].__dataclass_fields__), f"{role} 스키마와 해석 칸이 다름"
     return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
 
@@ -67,9 +70,18 @@ PLAN_SCHEMA = {"type": "object", "properties": {
     "reason": {"type": "string"},
     "hypothesis": investigation.SCHEMA},
     "required": ["queries", "reason", "hypothesis"], "additionalProperties": False}
+# 보충(11/10): 숫자 없는 문장 1~2개 | null + 이유. 받은 뒤 supplement.check 가 다시 검사한다
+EXTRA = {"extra": {"type": ["string", "null"]},
+         "extra_reason": {"type": ["string", "null"], "enum": [*spending_supplement.REASONS, None]}}
 ANSWER_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array", "items": {"type": "object", "properties": {
     "text": {"type": "string"}, "claims": {"type": "array", "items": {"type": "string"}}},
-    "required": ["text", "claims"], "additionalProperties": False}}}, "required": ["sentences"], "additionalProperties": False}
+    "required": ["text", "claims"], "additionalProperties": False}}, **EXTRA},
+    "required": ["sentences", *EXTRA], "additionalProperties": False}
+# 지난달 비교 답 조합 (11/10) — 받은 뒤 narrate.check 로 다시 검사한다
+NARRATE_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array", "items": {"type": "object", "properties": {
+    "text": {"type": "string"}, "facts": {"type": "array", "items": {"type": "string"}}},
+    "required": ["text", "facts"], "additionalProperties": False}}, **EXTRA},
+    "required": ["sentences", *EXTRA], "additionalProperties": False}
 
 
 def schema_for(system):
@@ -79,5 +91,7 @@ def schema_for(system):
         return "explain_plan", PLAN_SCHEMA
     if system == spending_claims.ANSWER_PROMPT:
         return "explain_answer", ANSWER_SCHEMA
+    if system == spending_narrate.PROMPT:
+        return "spending_narrate", NARRATE_SCHEMA
     role = ROLE_OF[system]
     return f"{role}_reading", role_schema(role)

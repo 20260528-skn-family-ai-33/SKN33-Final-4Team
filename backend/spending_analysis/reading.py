@@ -13,7 +13,7 @@ from importlib import import_module
 CATEGORY_NAMES = {code: name for code, name, *_ in import_module("budgets.migrations.0003_seed_categories").CATEGORIES}
 TARGETS = ("spend", "budget_left", "overview")
 PERIODS = ("this_month", "last_month", "recent", "this_week", "last_week", "month", "range")
-COMPARES = ("prev_month", "category", "other_period")
+COMPARES = ("prev_month", "category", "other_period", "month")
 FOLLOWUPS = ("answer", "new", "cancel", "unclear")
 REFERS = ("previous", "none", "unclear")
 PAYMENTS = ("card", "bank")
@@ -62,6 +62,7 @@ class SpendingReading:
     period_said: str | None = None      # 사용자가 말한 기간 표현 원문 (코드가 해석이 기간을 놓쳤는지 안다)
     include_fixed: bool | None = None   # "고정지출 포함해서"
     hypothesis: dict | None = None      # 분석 가설: 지표·대상 코드는 조사 계약을 공유한다
+    compare_month: int | None = None    # compare="month" 일 때 견줄 달 (1~12) — "9월보다" · "11월과 9월 비교"
     other_person: bool | None = None    # 본인이 아닌 사람(가족 · 친구 · 연인 등)의 소비를 물음 — 볼 수 없다 (서버가 '내 것'을 제안)
 
 
@@ -170,6 +171,7 @@ def parse(data):
         measure=_one_of(data, "measure", MEASURES), group_by=_one_of(data, "group_by", GROUPS), top_n=_int(data, "top_n"),
         month=_int(data, "month"), date_from=_mmdd(data, "date_from"), date_to=_mmdd(data, "date_to"),
         period_said=_text(data, "period_said"), include_fixed=data.get("include_fixed"), other_person=data.get("other_person"),
+        compare_month=_int(data, "compare_month"),
     )
 
 
@@ -200,6 +202,9 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
    생활비 잔액 요청은 target=budget_left, categories=[]이며 unknown/detail로 만들지 않는다.
 4. 지난달보다/대비 또는 지난달과·이랑·하고 비교·분석하는 요청은 현재와 지난달의 비교다 → compare=prev_month, period=null.
    비교 기준만 말한 요청도 동일하다. 비교·증감 조회 자체는 이유 질문이 아니므로 explain=null, hypothesis=null이다.
+   금액이 많은지·적은지·괜찮은지 평가만 덧붙여 물어도 이유 질문이 아니다(explain=null).
+   지난달이 아닌 특정 달과 견주면 compare=month, 견줄 달을 compare_month에 적는다. 견주는 쪽이 특정 달이면 period=month와 month에, 이번 달이거나 말하지 않았으면 period=null.
+   두 달을 모두 말했으면 둘 다 보존한다: 견주는 쪽을 '지난달'로 말했으면 period=last_month이며 null로 바꾸지 않는다.
    지난달 자체의 합계·분석만 요청하고 현재와 견주지 않을 때만 period=last_month이다. 분석이라는 말이 비교 기준을 없애지 않는다.
 5. 품목·가게·세부 지출은 코드로 바꾸지 않고 categories에 {{"detail": "원문 대상", "category": 속한 코드 또는 null, "names": []}}.
    가게 이름의 다른 한글·영문·법인 표기만 names에 넣고, 품목·종류이면 비운다. 가게가 아닌 품목 범위가 여러 카테고리에 걸치거나 부모 분류를 정할 수 없으면 {{"unknown": "원문"}}로 둔다.
@@ -218,7 +223,8 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
   예산의 남은 기간·하루 허용액, 평균의 계산 단위, 앞서 본 기간을 가리키는 말은 조회 기간 지정이 아니므로 null이다.
 - include_fixed: "고정지출 포함해서 · 월세까지 넣어서"처럼 고정지출을 넣으라고 하면 true
 - other_person: 본인이 아닌 다른 사람의 소비 · 예산을 물으면 true (mine=true 로 두고 나머지 조건은 그대로 채운다)
-- compare: "prev_month"(지난달보다/대비) | "category"(카테고리끼리 비교) | "other_period"(지난주 · 작년 등 지난달이 아닌 기간과 비교)
+- compare: "prev_month"(지난달보다/대비) | "month"(특정 달과 비교, compare_month 에 1~12) | "category"(카테고리끼리 비교)
+  | "other_period"(지난주 · 작년 등 달이 아닌 기간과 비교)
 - months: 사용자가 말한 개월 수 정수 그대로 (6개월 → 6, 0개월 → 0)
 - include_current: 최근 몇 달에 진행 중인 이번 달까지 포함한다고 말하면 true ("이번 달 포함 최근 3개월", "이번 달까지 3개월").
   이때 "이번 달"은 포함 표현이라 period 에 this_month 를 넣지 않는다. 포함/까지라는 명시가 없으면 null.

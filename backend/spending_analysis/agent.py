@@ -6,7 +6,7 @@ from datetime import date, datetime
 
 from django.db import DatabaseError
 
-from . import adapter, dialog, explain, tools
+from . import adapter, dialog, explain, narrate, tools
 from .answer import compose
 
 START = {"lines": ["어떤 소비가 궁금하세요?"],
@@ -47,7 +47,8 @@ def _run(user, request):
     return lambda decision: adapter.run(user, decision, today=today, as_of=as_of)
 
 
-def handle(request, *, store, complete, user=None, execute=None, explain_complete=None, explain_plan=None):
+def handle(request, *, store, complete, user=None, execute=None, explain_complete=None, explain_plan=None,
+           narrate_complete=None):
     """request = 공통 입력 {agent: "spending", mode, entry, text, input_id, conversation_id, today, as_of, context}
     context = {selected_from?, budget_change?: {outcome, checked_at}, switched_from?, declined_by?}
     → {"status": replied | awaiting_input | unsupported | failed | not_mine, "reply", "detail", "reason", "error", ...}
@@ -56,7 +57,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_complet
     - execute(decision) → run_items 결과 (기본: 실제 분석). None 을 돌려주면 실행을 건너뛴다(평가 · 테스트 대역)
     - 설명 요청은 서버가 거래 근거를 계산해 템플릿 문장으로 답한다. explain_complete(설명 LLM)를 주면 검사를 통과한 문장만 쓴다
       user 가 없으면(라우터 · 평가 대역) 설명 근거를 만들지 않는다
-    - explain_plan(B 계획 · 답 LLM, MEMO 26)을 주면 증감 설명을 B 로 먼저 답하고 실패하면 위 템플릿 그대로"""
+    - explain_plan(B 계획 · 답 LLM, MEMO 26)을 주면 증감 설명을 B 로 먼저 답하고 실패하면 위 템플릿 그대로
+    - narrate_complete(답변 조합 LLM, 11/10)를 주면 6 · 7번 답 카드 아래에 서버 문장 조합 + 보충을 붙인다. 실패하면 지금 답 그대로"""
     cid, text, mode = request["conversation_id"], request["text"], request["mode"]
     context = request.get("context") or {}
     if mode == "cancel":
@@ -74,12 +76,14 @@ def handle(request, *, store, complete, user=None, execute=None, explain_complet
         return _result("failed", error=decision.reason, decision=decision)
     result = _outcome(decision, store, cid, execute or _run(user, request),
                       user and (lambda items, question=None, hypothesis=None: explain.answer(user, items, explain_complete, today=_today(request),
-                                                                            plan=explain_plan, question=question, hypothesis=hypothesis)))
+                                                                            plan=explain_plan, question=question, hypothesis=hypothesis)),
+                      narrator=None if narrate_complete is None else
+                      (lambda reply, results: narrate.attach(reply, results, text or "", narrate_complete)))
     dialog.publish(store, cid)
     return result
 
 
-def _outcome(decision, store, cid, execute, explainer=None):
+def _outcome(decision, store, cid, execute, explainer=None, narrator=None):
     if decision.status == "ready" and decision.items:
         results = execute(decision)
         if results is None:
@@ -88,6 +92,10 @@ def _outcome(decision, store, cid, execute, explainer=None):
         if not any(r["ok"] for r in results):
             return _result("failed", reply, decision, error="analysis_failed")
         adapter.record(store, cid, decision, results)
+        if narrator is not None:
+            reply, trace = narrator(reply, results)
+            if trace is not None:
+                reply = {**reply, "trace": {"narrate": trace}}  # 개발용 분석 과정 (CHAT_DEV_TRACE 일 때만 화면에)
         return _result("replied", reply, decision)
     if decision.status == "ready" and decision.explain:
         if explainer is None:

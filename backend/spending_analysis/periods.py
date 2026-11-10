@@ -102,6 +102,29 @@ def month_of(today, month):
     return Period(start, min(nxt, today + timedelta(days=1)))
 
 
+def month_pair(today, month, compare_month):
+    """달끼리 비교(11/10): 두 달(1~12, month 가 None 이면 이번 달) → (나중 달 기간, 앞선 달 기간, 같은 날짜까지 잘랐는지).
+    나중 달이 진행 중인 이번 달이면 앞선 달도 1일 ~ 같은 일자까지만 본다(지난달 비교와 같은 규칙), 둘 다 끝난 달이면 한 달 전체.
+    같은 달이거나 볼 수 있는 범위 밖이면 None"""
+    a = this_month(today) if month is None else month_of(today, month)
+    b = month_of(today, compare_month)
+    if a is None or b is None or a.start == b.start:
+        return None
+    current, previous = (a, b) if a.start > b.start else (b, a)
+    clipped = current.start == today.replace(day=1)
+    if clipped:
+        last = min(today.day, calendar.monthrange(previous.start.year, previous.start.month)[1])
+        previous = Period(previous.start, previous.start.replace(day=last) + timedelta(days=1))
+    return current, previous, clipped
+
+
+def month_labels(today, current, previous, clipped):
+    """달끼리 비교의 이름: {"current": "이번 달" | "9월", "previous": "8월", "previous_same": "8월 같은 기간" | "8월"}"""
+    name = f"{previous.start.month}월"
+    return {"current": "이번 달" if current.start == today.replace(day=1) else f"{current.start.month}월",
+            "previous": name, "previous_same": f"{name} 같은 기간" if clipped else name}
+
+
 def _day(today, said):
     """말한 날짜 'MM-DD' 또는 일만 'DD' → date. 생략한 월 · 연도는 기준일로 채운다 (해석은 말한 값만, 채우기는 여기).
     월을 말했는데 기준일보다 뒤인 다른 달이면 지난해(10월에 '12월 3일' = 작년 12월). 이번 달 · 일만 말한 날은 그대로(아직 안 온 날일 수 있다)"""

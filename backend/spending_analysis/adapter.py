@@ -96,6 +96,8 @@ def summarize(result):
            "period": period, "as_of": result["as_of"]}
     if compare_period:
         out["compare_period"] = compare_period
+    if result.get("labels"):  # 달끼리 비교의 이름 (설명이 '9월보다'로 말하게)
+        out["labels"] = result["labels"]
     if kind == 10 and many:
         out["periods"] = many
     if out["evidence"] == "confirmed":

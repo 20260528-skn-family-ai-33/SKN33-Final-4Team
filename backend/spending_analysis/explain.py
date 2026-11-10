@@ -78,7 +78,9 @@ def _basis(item):
     facts, code = item["facts"], item.get("category")
     if item["type"] in (6, 7):
         amount = (lambda fig: fig["category"]["amount"] if code else fig["total"])  # noqa: E731
-        return (_period(item["period"]), _period(item["compare_period"]), ("이번 달", "지난달 같은 기간"),
+        names = item.get("labels")  # 달끼리 비교면 그 달 이름 ('9월' · '8월 같은 기간')
+        return (_period(item["period"]), _period(item["compare_period"]),
+                (names["current"], names["previous_same"]) if names else ("이번 달", "지난달 같은 기간"),
                 (amount(facts["current"]), amount(facts["previous"])))
     if item["type"] in (8, 9):
         series = facts["series"]

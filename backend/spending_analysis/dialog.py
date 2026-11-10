@@ -18,7 +18,7 @@ from dataclasses import asdict, dataclass, replace
 from . import reading, scope
 from .budget import OUT_OF_BUDGET
 from .answer import span
-from .periods import month_before, month_of, resolve_range, window
+from .periods import last_month, month_before, month_of, month_pair, previous_month_same_days, resolve_range, this_month, window
 from .reading import CATEGORY_NAMES, ReadFailed, SpendingReading, find_category
 
 
@@ -323,6 +323,8 @@ def _mode(interp):
         return "category_compare"
     if interp.compare == "prev_month":
         return "prev_month"
+    if interp.compare == "month":
+        return "month_compare"
     # 개월 수 · 이번 달 포함만 말해도 최근 N개월로 본다
     if interp.period == "recent" or interp.months is not None or interp.include_current:
         return "recent"
@@ -342,7 +344,7 @@ def _budget_left(interp, mode):
         return _ready(interp, 3, 4, **({} if interp.categories else {"breakdown": True}))
     # 지난달 대비 · 최근 N개월 · 지난달 단독 → 미지원 안내(reason) + 현재 예산 기간 잔액으로 볼지 되묻기
     return Decision("ask", "spending", asking="budget_current", ask_about=interp.categories,
-                    options=(True, False), reason=mode)
+                    options=(True, False), reason="prev_month" if mode == "month_compare" else mode)
 
 
 def _months(interp):
@@ -359,7 +361,7 @@ def _months(interp):
 def _spend(interp, mode):
     """쓴 돈 · 전반 분석. 계산 · 묶기(건수 · 평균 · 최대 · 상위 · ~별)나 지난달 단독은 범용 조회 10번"""
     if _calc(interp) or mode in ("last_month", "custom"):
-        if mode == "prev_month":  # 지난달과 비교하면서 건수 · 묶기는 아직 없다 → 볼 수 있는 것을 안내
+        if mode in ("prev_month", "month_compare"):  # 달과 비교하면서 건수 · 묶기는 아직 없다 → 볼 수 있는 것을 안내
             return Decision("unsupported", "spending", reason="compare_query")
         if mode == "recent":
             months = _months(interp)
@@ -373,6 +375,9 @@ def _spend(interp, mode):
         return _ready(interp, 2, 5)
     if mode == "prev_month":
         return _ready(interp, 7, 6)
+    if mode == "month_compare":  # _month_compare 가 정리한 달: month(없으면 이번 달) vs compare_month
+        return _ready(interp, 7, 6, compare_month=interp.compare_month,
+                      **({"month": interp.month} if interp.period == "month" else {}))
     if mode == "recent":
         months = _months(interp)
         if months is None:
@@ -395,7 +400,7 @@ def category_options(budget):
 
 
 CONDITIONS = ("target", "period", "compare", "months", "include_current", "categories", "payment", *QUERY_FILTERS, *QUERY_CALC)
-PERIOD_GROUP = ("period", "compare", "months", "include_current", "month", "date_from", "date_to", "period_said")
+PERIOD_GROUP = ("period", "compare", "months", "include_current", "month", "date_from", "date_to", "period_said", "compare_month")
 
 
 def conditions(interp):
@@ -423,7 +428,7 @@ def overlay(top, base):
         fields.update({k: base.get(k) for k in PERIOD_GROUP})
         # 새 합계·건수 조회에 비교 연산까지 묻어오지 않게 한다. 범위만 바꾸는
         # "그럼 교통비는?"와 증감 설명은 비교를 유지한다. 명시한 기간은 위에서 우선한다.
-        if base.get("compare") == "prev_month" and not top.explain and (
+        if base.get("compare") in ("prev_month", "month") and not top.explain and (
                 top.target == "spend" or any(getattr(top, k) is not None for k in QUERY_CALC)):
             fields.update(dict.fromkeys(PERIOD_GROUP))
             fields["period"] = "this_month"
@@ -441,7 +446,7 @@ def overlay(top, base):
 CHOICE_ASKS = ("period_choice", "category_choice", "include_choice")
 LABELED = CHOICE_ASKS + ("fallback_scope", "self_instead", "spend_instead")  # 선택지 이름을 그대로 보내면 LLM 없이 답으로 본다
 _NONE = {"period": None, "compare": None, "months": None, "include_current": None, "month": None, "date_from": None,
-         "date_to": None, "period_said": None}
+         "date_to": None, "period_said": None, "compare_month": None}
 VIEWS = {  # 기간 묶음 하나를 고르면 그 묶음 칸만 바꾼다 (최근 N개월의 개월 수 · 이번 달 포함은 말한 값 그대로)
     "this_month": ("이번 달", {**_NONE, "period": "this_month"}),
     "last_month": ("지난달", {**_NONE, "period": "last_month"}),
@@ -455,6 +460,10 @@ def _views(interp):
     - 이번 달 + 지난달 비교 = 한 보기 (이번 달을 지난달과 비교)
     - 이번 달 포함(include_current) 최근 N개월의 '이번 달'은 포함 표현이라 이번 달 단독 보기가 아니다"""
     recent = interp.period == "recent" or interp.months is not None or bool(interp.include_current)
+    if interp.compare == "month":
+        # 달끼리 비교는 한 보기다 — 함께 말한 이번 달 · 지난달 · 특정 달은 견주는 쪽이지 단독 보기가 아니다
+        # (기간을 되묻는 중에 "이번달이랑 9월 비교해줘"라고 하면 '이번 달' 선택지를 고른 게 아니다, 11/10 화면 확인)
+        return ["month_compare"] + (["recent"] if recent else [])
     found = [v for v, on in (("this_month", interp.period == "this_month"), ("last_month", interp.period == "last_month"),
                              ("prev_month", interp.compare == "prev_month"), ("recent", recent)) if on]
     return [v for v in found if not (v == "this_month" and ("prev_month" in found or interp.include_current))]
@@ -511,7 +520,7 @@ def _explain_query(interp, text, last, merchant, today):
     # 변화 설명의 이번 달 조회만 같은 조건의 지난달 비교로 확장한다. 다른 기간은 조용히 바꾸지 않는다.
     kind = interp.explain_kind or ("change" if not any(getattr(request, k) is not None for k in PERIOD_GROUP) else None)
     items = [_as_kind(i, kind) for i in decision.items]
-    if items and all(i["type"] in (6, 7) for i in items):
+    if items and all(i["type"] in (6, 7) for i in items) and request.compare != "month":
         request = replace(request, target="spend", compare="prev_month", period=None)
     return replace(decision, items=(), explain={"question": text, "hypothesis": interp.hypothesis, "items": [{**i, "fresh": True} for i in items]},
                    request=request)
@@ -562,7 +571,7 @@ def _explain(interp, text, last, merchant=None, today=None):
                         options=tuple({"code": i["category"], "name": CATEGORY_NAMES[i["category"]]} for i in done))
     picked = [_as_kind(i, interp.explain_kind) for i in picked]
     request = overlay(interp, last["request"]) if last else interp
-    if picked and all(i["type"] in (6, 7) for i in picked):
+    if picked and all(i["type"] in (6, 7) for i in picked) and request.compare != "month":
         request = replace(request, target="spend", compare="prev_month", period=None)
     return Decision("ready", "spending", explain={"question": text, "hypothesis": interp.hypothesis, "items": picked}, request=request)
 
@@ -614,6 +623,8 @@ ITEM_PERIOD = {1: "this_month", 2: "this_month", 5: "this_month", 6: "prev_month
 
 def _period_differs(interp, items):
     """해석이 말한 기간 vs 항목이 실제로 볼 기간 (예산 3 · 4번은 예산 주기라 보지 않는다)"""
+    if interp.compare == "month":  # 달끼리 비교 → 비교 항목(6 · 7번)이면 맞다. 이번 달 vs 지난달은 compare_month 없이 지난달 비교로 간다
+        return not all(i["type"] in (6, 7) for i in items if i["type"] not in (3, 4))
     said = "prev_month" if interp.compare == "prev_month" else interp.period or \
         ("recent" if interp.months is not None or interp.include_current else None)
     if said is None:
@@ -642,6 +653,34 @@ def _future_ask(interp, today):
                     reason="period_future", options=tuple(options))
 
 
+def _month_compare(interp, today):
+    """달끼리 비교(compare=month) 정리 → 고친 해석 또는 Decision(볼 수 없음)
+    - 두 달을 날짜순으로 맞춘다: 나중 달 = 보는 쪽(period=month · month, 이번 달이면 비움), 앞선 달 = compare_month
+    - 이번 달 vs 지난달이면 기존 지난달 비교(prev_month)와 같은 것이라 그쪽으로 넘긴다
+    - 볼 수 있는 범위 밖 · 같은 달 · 달이 아닌 기간과 섞이면 다른 기간으로 바꾸지 않고 안내한다"""
+    if interp.compare_month is None or interp.period not in (None, "this_month", "last_month", "month") \
+            or interp.months is not None or interp.include_current:
+        return Decision("unsupported", "spending", reason="period_compare")
+    if today is None:  # 기준 날짜 없는 대역(평가 · 테스트): 말한 달 그대로
+        return interp
+    # 견주는 쪽: 특정 달 · 지난달 · 이번 달(말하지 않음). period=month 인데 달 번호가 없으면 이번 달로 본다
+    # (실제 해석이 "이번달이랑 9월달"을 period=month · month=null 로 읽음, 11/10 화면 확인)
+    month = interp.month if interp.period == "month" else last_month(today).start.month if interp.period == "last_month" else None
+    if not (type(interp.compare_month) is int and 1 <= interp.compare_month <= 12):
+        return _period_ask(interp.period_said or f"{interp.compare_month}월", today, "period_unavailable")
+    pair = month_pair(today, month, interp.compare_month)
+    if pair is None:
+        if month_of(today, interp.compare_month) is not None and (month is None or month_of(today, month) is not None):
+            return Decision("unsupported", "spending", reason="period_compare")  # 같은 달끼리
+        return _period_ask(interp.period_said or f"{interp.compare_month}월", today, "period_unavailable")
+    current, previous, _ = pair
+    if (current, previous) == (this_month(today), previous_month_same_days(today)):
+        return replace(interp, compare="prev_month", period=None, month=None, compare_month=None)
+    this = current.start == today.replace(day=1)
+    return replace(interp, period=None if this else "month", month=None if this else current.start.month,
+                   compare_month=previous.start.month)
+
+
 def _decide(interp, text, last=None, merchant=None, today=None):
     """소비 요청(mine=true 인 해석) → Decision. text = 원래 문장, last = 직전 조회 (없으면 None)
     merchant = 가게 이름 검색 가능 여부 함수 (step 참고). 복합 의도 · 예산 조정 · 범위 밖 판단은 라우터 몫"""
@@ -666,6 +705,10 @@ def _decide(interp, text, last=None, merchant=None, today=None):
         return Decision("ask", "spending", asking="self_instead", ask_about=(name,), reason="other_person",
                         options=({"value": True, "label": f"내 {name} 보기", "set": {"confirm": True}},
                                  {"value": False, "label": "취소", "set": {"confirm": False}}))
+    if interp.compare == "month":
+        interp = _month_compare(interp, today)
+        if isinstance(interp, Decision):
+            return interp
     if interp.compare == "other_period":  # 지난주 · 작년 대비 같은 기간끼리 비교는 아직 → 볼 수 있는 것을 안내
         return Decision("unsupported", "spending", reason="period_compare")
     if today is not None and interp.period == "range" \
@@ -825,7 +868,8 @@ def record_analysis(store, conversation_id, decision, results):
     for r in results:
         row = {**r["item"], "ok": r["ok"]}
         if r["ok"]:
-            row.update({k: r["result"][k] for k in ("limits", "period", "periods", "as_of", "compare_period", "facts") if k in r["result"]})
+            row.update({k: r["result"][k] for k in ("limits", "period", "periods", "as_of", "compare_period", "facts", "labels")
+                        if k in r["result"]})
             row["evidence"] = r["result"].get("evidence", "unknown")
         items.append(row)
     store.save_analysis(conversation_id, {"request": conditions(decision.request), "items": items})

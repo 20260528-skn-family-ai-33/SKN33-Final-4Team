@@ -113,6 +113,17 @@ SPENDING_SAID.update({
     "엄마 생일 선물로 얼마 썼어?": {"mine": True, "target": "spend", "categories": [{"unknown": "엄마 생일 선물"}]},
     "왜 늘었을까?": {"mine": True, "explain": True, "explain_kind": "change", "refers_to": "previous"},
     "식비 예산 초과했어?": {"mine": True, "target": "budget_left", "categories": ["FOOD"]},
+    # 달끼리 비교 (11/10) — 기준일 10/29: 8월과는 같은 날짜까지, 9월 vs 8월은 한 달 전체
+    "8월보다 식비 더 썼어?": {"mine": True, "target": "spend", "compare": "month", "compare_month": 8, "categories": ["FOOD"]},
+    "9월이랑 8월 식비 비교해줘": {"mine": True, "target": "spend", "period": "month", "month": 9, "compare": "month",
+                           "compare_month": 8, "categories": ["FOOD"]},
+    "10월이랑 9월 식비 비교해줘": {"mine": True, "target": "spend", "period": "month", "month": 10, "compare": "month",
+                            "compare_month": 9, "categories": ["FOOD"]},
+    "이번달이랑 9월달 식비 비교해줘": {"mine": True, "followup": "answer", "target": "spend", "period": "this_month",
+                                "period_said": "이번달이랑 9월달", "compare": "month", "compare_month": 9, "categories": ["FOOD"]},
+    "이번달이랑 8월달 식비 비교해줘": {"mine": True, "followup": "answer", "target": "spend", "period": "this_month",
+                                "period_said": "이번달이랑 8월달", "compare": "month", "compare_month": 8, "categories": ["FOOD"]},
+    "3월보다 식비 더 썼어?": {"mine": True, "target": "spend", "compare": "month", "compare_month": 3, "categories": ["FOOD"]},
     "카테고리별로 예산 얼마나 남았어?": {"mine": True, "target": "budget_left", "compare": "category"},
 })
 EXTRA_SAID["식비 예산 5만 원 줄여줘"] = {"intents": ["budget_adjust"], "categories": ["FOOD"], "direction": "down", "amount": 50000, "amount_mode": "by"}
