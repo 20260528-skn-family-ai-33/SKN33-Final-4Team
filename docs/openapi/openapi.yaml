@@ -12679,6 +12679,23 @@ components:
       - cardNotes
       - locksReleased
       properties:
+        approvedBudget:
+          type: object
+          description: GET에서 이번 주기 승인 예산에 여윳돈 충당이 있을 때만 제공. 설정 기준 saved.spare와 구별하며 실제 초과 소비 차감 전 예산 배분 금액이다. PUT은
+            생략.
+          required:
+          - spareTransfer
+          - spare
+          properties:
+            spareTransfer:
+              type: integer
+              format: int64
+              minimum: 0
+            spare:
+              type: integer
+              format: int64
+              minimum: 0
+          additionalProperties: false
         missing:
           type: array
           items:
@@ -13224,4 +13241,4 @@ x-source-sha256:
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
   docs/api/home.md: 1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5
   docs/api/chat.md: 05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd
-  docs/api/budgets.md: 4648a8c34173d343519ffbee8b8205d69b9e4d8306dbddd048abbdbbf2bb16b0
+  docs/api/budgets.md: 6c6c9f0996bdfe09477f0cf7941793e4477ce931a9ea5034fcee11762142f52b

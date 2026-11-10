@@ -490,6 +490,7 @@ class DesignAPITest(TestCase):
             self.assertEqual(data['split']['living'], 600000)
             self.assertEqual(data['split']['spare'], 620000)
             self.assertEqual(data['recommendation']['spareTransfer'], 100000)
+            self.assertNotIn('approvedBudget', self.client.get('/api/budgets/protect/').json())
             response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve')
         self.assertEqual(response.status_code, 200, response.content)
         self.profile.refresh_from_db()
@@ -498,6 +499,10 @@ class DesignAPITest(TestCase):
         self.assertEqual(response.json()['split']['spare'], 620000)
         home = self.client.get('/api/home/').json()['budget']
         self.assertEqual((home['livingBudget'], home['spare']), (600000, 620000))
+        protect = self.client.get('/api/budgets/protect/').json()
+        self.assertEqual(protect['saved']['livingBudget'], 500000)
+        self.assertEqual(protect['saved']['spare'], 720000)
+        self.assertEqual(protect['approvedBudget'], {'spareTransfer': 100000, 'spare': home['spare']})
 
         # Repeated approval may not transfer the money a second time.
         response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve-again')
@@ -512,6 +517,8 @@ class DesignAPITest(TestCase):
         next_input = budget_input_snapshot(self.user, next_cycle, profile=self.profile, today=date(2026, 11, 26), card=False)
         self.assertEqual(next_input['saved']['living_budget'], 500000)
         self.assertEqual(next_input['engine_input']['target'], 500000)
+        with patch('budgets.api.timezone.localdate', return_value=date(2026, 11, 26)):
+            self.assertNotIn('approvedBudget', self.client.get('/api/budgets/protect/').json())
 
     def test_b_shortfall_preserves_approved_budget_and_recovers_after_explicit_funding_change(self):
         self.profile.living_budget = 500000

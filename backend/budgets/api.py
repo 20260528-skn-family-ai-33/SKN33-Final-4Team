@@ -74,6 +74,13 @@ def protect(request):
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         data = protect_json(request.user, profile, today)
+        if request.method == "GET" and not data["missing"]:
+            start, _, _ = salary_cycle_dates(profile, today)
+            approved = Budget.objects.filter(user=request.user, cycle__starts_on=start, status="approved").first()
+            transfer = ((approved.validation_summary or {}).get("design") or {}).get("spare_transfer", 0) if approved else 0
+            if transfer > 0:
+                allocated = approved.items.aggregate(total=Sum("allocated_amount"))["total"] or 0
+                data["approved_budget"] = {"spare_transfer": transfer, "spare": approved.funding_amount - allocated}
         if request.method == "PUT":
             values = clean_protect(request, data)
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])

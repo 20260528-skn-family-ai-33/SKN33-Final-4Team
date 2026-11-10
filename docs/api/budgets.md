@@ -110,6 +110,7 @@
 | `cardPending` | 배열 | 카드 선차감을 계산하지 못한 카드 `[{ "cardId", "reason" }]` (P-12). 보통은 `[]` |
 | `locksReleased` | 배열 | 이번 저장(PUT)으로 풀린 이번 주기 자물쇠 카테고리 코드 (P-13). GET은 항상 `[]` |
 | `saved` | 객체 / null | 사용자가 저장한 값 `{ "livingBudget", "savingFloor", "cushionMonthly", "spare", "updatedAt" }`. 한 번도 저장 안 했으면 `null` → 화면은 `recommended`로 칸을 채운다 |
+| `approvedBudget` | 객체 / 생략 | GET에서 이번 급여 주기의 승인 예산에 여윳돈 충당이 있을 때만 `{ "spareTransfer", "spare" }`. 충당액과 **예산 배분 후** 여윳돈(`funding_amount − 항목 합계`)이며 실제 초과 소비 차감 전 금액이다. `saved.spare`는 기본 설정 기준으로 유지한다. 화면은 충당 안내와 두 기준을 함께 표시하며, 미승인 초안·지난 주기·다른 회원 예산은 포함하지 않는다. PUT에는 생략한다 |
 | `cushion.required` | 참/거짓 | P-08. `true`면 월 쿠션 적립금 0원 저장 불가 |
 | `cushion.target` | 정수 / null | 쿠션 목표 = 월 실수령액 × 3. 월 실수령액이 없으면 `null` |
 | `cushion.balanceTotal` | 정수 / null | 판단에 쓴 입출금 계좌 잔액 합계 |
