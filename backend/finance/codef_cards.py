@@ -33,13 +33,13 @@ def _text(value):
 
 
 def _amount(value):
-    # 청구 총액 · 이용금액은 환불 · 취소로 음수가 올 수 있다.
+    # 청구 총액 · 이용금액은 환불 · 취소로 음수가 올 수 있다. 해외 가맹점 원화 결제는 12345.00 처럼 소수부 0 이 붙어 온다
     value = _text(value)
     if value is None:
         return None
-    if not re.fullmatch(r"-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)", value):
+    if not re.fullmatch(r"-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)(?:\.0+)?", value):
         raise CardDataError()
-    number = int(value.replace(",", ""))
+    number = int(value.split(".")[0].replace(",", ""))
     if abs(number) > MAX_AMOUNT:
         raise CardDataError()
     return number
@@ -110,6 +110,7 @@ def normalize_cards(data):
             # 정규화 기준 미정 (cards.md cardType) → 기관 값 그대로
             "card_type": _code(row.get("resCardType")),
             "card_status": _code(row.get("resState")),
+            "issued_on": _date(row.get("resIssueDate")),   # 승인내역 대조용(저장 안 함). 재발급 전 거래를 가른다
         })
     return cards
 
@@ -245,6 +246,8 @@ def normalize_approvals(data, start, end):
             unknown = "negative_amount"
         elif status == PARTIAL and cancel is None:
             unknown = "cancel_amount_unknown"
+        elif status not in ("0", CANCELED, PARTIAL, DECLINED):
+            unknown = "cancel_status_unknown"
         elif cancel is not None and not 0 <= cancel <= amount:
             raise CardDataError("invalid_approval")
         payment_type, months = _text(row.get("resPaymentType")), _count(row.get("resInstallmentMonth"))
@@ -252,6 +255,7 @@ def normalize_approvals(data, start, end):
         approval_no = _code(row.get("resApprovalNo"), 50)
         rows.append({
             "card_number": re.sub(r"[\s-]", "", shown),
+            "card_name": (_short(row.get("resCardName"), 100) or "").replace(shown, codef.mask(shown)) or None,
             "unknown_reason": unknown,
             # 취소 상태 · 취소액은 나중에 바뀌므로 식별 키에 넣지 않는다
             "_identity": (used_on, row.get("resUsedTime"), approval_no, row.get("resUsedAmount"), merchant,
@@ -260,6 +264,7 @@ def normalize_approvals(data, start, end):
             "occurred_time": _time(row.get("resUsedTime")),
             "amount": amount,
             "merchant_name": merchant,
+            "merchant_category": _short(row.get("resMemberStoreType"), 100),
             "source_description": merchant,
             "installment_months": 0 if payment_type == "1" else months,   # 모델: 일시불 0, 모르면 null
             "approval_no": approval_no,

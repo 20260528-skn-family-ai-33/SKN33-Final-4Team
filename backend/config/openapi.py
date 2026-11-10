@@ -13,6 +13,9 @@ TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거�
 
 # 실제 API 구현 및 계약 검증이 끝났을 때 변경. URL 존재만으로 구현 완료가 되지 않는다.
 IMPLEMENTATION = {
+    ("get", "/api/budgets/ai-consent/"): "implemented",
+    ("put", "/api/budgets/ai-consent/"): "implemented",
+    ("delete", "/api/budgets/ai-consent/"): "implemented",
     ("get", "/api/csrf/"): "implemented",
     ("get", "/api/home/"): "implemented",
     # 인증 2~5 (세진, 10/26)
@@ -20,6 +23,11 @@ IMPLEMENTATION = {
     ("post", "/api/auth/login/"): "implemented",
     ("post", "/api/auth/logout/"): "implemented",
     ("get", "/api/auth/me/"): "implemented",
+    ("get", "/api/consent-documents/"): "implemented",
+    ("get", "/api/my/"): "implemented",
+    ("get", "/api/finance/consents/"): "implemented",
+    ("delete", "/api/finance/consents/{scope}/"): "implemented",
+    ("delete", "/api/auth/me/"): "implemented",
     # 카드 · 대출: 저장 자료 조회·선택·보완·직접 등록 (10/27)
     ("get", "/api/finance/connect/cards/"): "implemented",
     ("put", "/api/finance/connect/cards/"): "implemented",
@@ -27,6 +35,18 @@ IMPLEMENTATION = {
     ("get", "/api/finance/loans/"): "implemented",
     ("post", "/api/finance/loans/"): "implemented",
     ("patch", "/api/finance/loans/{id}/"): "implemented",
+    ("post", "/api/finance/loans/{id}/payoff/"): "implemented",
+    ("post", "/api/finance/loans/{id}/payoff/cancel/"): "implemented",
+    ("get", "/api/finance/loan-dues/{id}/payments/"): "implemented",
+    ("post", "/api/finance/loan-dues/{id}/payments/"): "implemented",
+    ("delete", "/api/finance/loan-dues/{id}/payments/{transactionId}/"): "implemented",
+    ("get", "/api/finance/card-bills/{id}/payments/"): "implemented",
+    ("post", "/api/finance/card-bills/{id}/payments/"): "implemented",
+    ("delete", "/api/finance/card-bills/{id}/payments/{transactionId}/"): "implemented",
+    ("put", "/api/finance/card-bills/{id}/payment-check/"): "implemented",
+    ("delete", "/api/finance/card-bills/{id}/payment-check/"): "implemented",
+    ("get", "/api/finance/card-reviews/"): "implemented",
+    ("put", "/api/finance/card-reviews/{id}/"): "implemented",
     # 금융 동의 · 계좌 · 연결 6~10 (연결 해제도 DB 구현)
     ("post", "/api/finance/consents/"): "implemented",
     ("get", "/api/finance/connect/accounts/"): "implemented",
@@ -56,7 +76,7 @@ for _domain, _state in (("fixed", "implemented"), ("savings", "implemented")):
     for _method, _suffix in (("get", ""), ("post", ""), ("patch", "{id}/"), ("delete", "{id}/"), ("post", "confirm/"), ("post", "ignore/")):
         IMPLEMENTATION[(_method, f"/api/budgets/{_domain}/{_suffix}")] = _state
 IDEMPOTENT_PATHS = {
-    "/api/finance/consents/", "/api/finance/loans/", "/api/chat/messages/",
+    "/api/finance/consents/", "/api/finance/loans/", "/api/finance/loan-dues/{id}/payments/", "/api/finance/card-bills/{id}/payments/", "/api/chat/messages/",
     "/api/budgets/recommend/", "/api/budgets/{id}/approve/",
     "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
     "/api/budgets/savings/", "/api/budgets/savings/confirm/", "/api/budgets/savings/ignore/",
@@ -89,9 +109,9 @@ def _base():
         "info": {
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
-                "확정 명세 43개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
+                "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
                 f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), "
-                f"목업 {counts['mock']}개(챗봇 메시지), 미구현 {43 - counts['implemented'] - counts['mock']}개입니다. "
+                f"목업 {counts['mock']}개(챗봇 메시지), 미구현 {49 - counts['implemented'] - counts['mock']}개입니다. "
                 "전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. "
                 "목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "

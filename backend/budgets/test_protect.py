@@ -157,7 +157,7 @@ class ProtectAPITest(TestCase):
                             "spare": 90_000, "rebalanced": True, "restAmount": 1_030_000, "ratioSavingFloor": 810_000},
             "blocked": None, "saved": None,
             "cushion": {"required": True, "target": 8_400_000, "balanceTotal": 2_800_000},
-            "cardPending": [], "locksReleased": [],
+            "cardPending": [], "cardNotes": [], "locksReleased": [],
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual((cycle.starts_on, cycle.ends_before), (date(2026, 10, 25), date(2026, 11, 25)))
@@ -397,7 +397,7 @@ class EmptyOnboardingFlowTest(TestCase):
 
     def test_no_fixed_no_savings_reaches_protect_save(self):
         self.assertEqual(self.client.get("/api/budgets/fixed/").json(),
-                         {"items": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
+                         {"items": [], "cardBills": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
         self.assertEqual(self.client.get("/api/budgets/savings/?v=1").json(),  # 화면이 다시 받을 때 붙이는 ?v= 는 무시
                          {"items": [], "summary": {"minimumMonthly": 0, "suggestedCount": 0}})
         data = self.client.get(URL).json()

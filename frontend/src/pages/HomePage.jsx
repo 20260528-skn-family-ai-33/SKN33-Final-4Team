@@ -16,7 +16,10 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
 import MustPayPopup from '../popups/MustPayPopup.jsx'
+import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
+import CardBillPopup from '../popups/CardBillPopup.jsx'
 import NoticePopup from '../popups/NoticePopup.jsx'
+import SalaryCheckPopup from '../popups/SalaryCheckPopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
 import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 
@@ -60,7 +63,9 @@ function paceNote(usedPct, pace) {
 //   unpaid 인데 출금일이 지남 = 실제 출금과 자동 연결(±3일)을 기다리는 중 → "출금 확인 중"
 //   지난 주기 미납은 다음 월급날이 되면 서버가 목록에서 뺀다 (화면은 받은 것만 그린다)
 function payBadge(p) {
-  if (p.paymentState === 'needs_review') return { tone: 'review', text: '미납 확인 필요' }
+  if (p.userChecked) return { tone: 'check', text: '사용자 확인' }   // 카드 청구서: 앞으로 낼 금액을 사용자가 알려 줌 (11/06)
+  // 카드 청구서는 출금을 못 찾았다고 미납으로 보지 않는다 (다른 경로로 냈을 수 있음)
+  if (p.paymentState === 'needs_review') return { tone: 'review', text: p.type === 'card_bill' ? '납부 확인 필요' : '미납 확인 필요' }
   const today = new Date().toLocaleDateString('sv-SE')   // 'YYYY-MM-DD' (내 컴퓨터 날짜 기준)
   if (p.paymentState === 'unpaid' && p.dueDate && p.dueDate < today) return { tone: 'check', text: '출금 확인 중' }
   return null
@@ -96,24 +101,32 @@ export default function HomePage() {
   // 아직 못 받았으면 "불러오는 중…" (실패하면 안내)
   // 로그인이 풀렸으면 로그인 화면으로
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
-  if (!data) return <Layout title={LOGO} activeTab="home"><ApiStatus error={error} /></Layout>
+  if (!data) return <Layout title={LOGO} activeTab="home"><ApiStatus error={error} onRetry={reload} /></Layout>
   // 응답 모양: docs/api/home.md (budget = 이번 주기 승인 예산, 없으면 null)
   const { period, balance, pendingCount, needsPaydayCount, mustPay, budget } = data
   const b = budget ?? {}
   const toFixed = () => navigate(PATHS.fixed, { state: { from: 'home' } })  // 고정지출 관리 화면으로
   const pace = pacePct(period)
   const note = paceNote(b.livingPct, pace)
-  // 꼭 나갈 돈을 누르면 자세히 팝업 → 고정지출이면 [관리하기]로 관리 화면
-  //   카드 청구서 · 대출 상세는 아직 실제 데이터와 연결 전이라 관리 버튼 없이 (연결되면 sourceId 로 열기)
-  const openPay = (p, badges) => openPopup(
-    <MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={p.type === 'recurring' ? toFixed : undefined} />,
-  )
+  // 카드 청구서 sourceId는 billId, 대출 sourceId는 loanId다.
+  const openPay = (p, badges) => {
+    const onManage = p.type === 'recurring' ? toFixed
+      : p.type === 'card_bill' && p.sourceId ? () => openPopup(<CardBillPopup key={p.sourceId} billId={p.sourceId} onSaved={reload} />)
+      : p.type === 'loan' && p.sourceId ? () => navigate(PATHS.loanCheck, { state: { from: 'home', loanId: p.sourceId } })
+      : undefined
+    const onCheckPayment = p.type === 'loan' && p.dueId ? () => openPopup(<LoanPaymentPopup key={p.dueId} dueId={p.dueId} onSaved={reload} />) : undefined
+    openPopup(<MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={onManage} onCheckPayment={onCheckPayment} />)
+  }
 
   // 2. 알림 (11/3: 메인 카드 위 → 오른쪽 위 종 아이콘 팝업). 종에는 알림 개수
   //   월급 상태 (H-01): 늦게 오면 '아직', 다음 달 월급이 미리 오면 안내
   //   할 일: 확인할 거래 · 출금일을 모르는 고정지출 (H-05 — 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다)
+  //   R12: 후보만 있으면 '확인 필요'(받음 · 아직으로 단정하지 않음), 자동 인식이면 맞는지 바꿀 수 있게
+  const openSalary = () => openPopup(<SalaryCheckPopup onSaved={reload} />)
   const notices = [
+    period?.salaryCheckCount > 0 && { key: 'salary-check', count: period.salaryCheckCount, text: '월급으로 보이는 입금이 있어요. 맞는지 확인해 주세요', go: openSalary },
     period?.salaryState === 'waiting' && { key: 'salary-wait', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
+    period?.salarySource === 'auto' && { key: 'salary-auto', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 자동 인식했어요`, go: openSalary },
     period?.nextSalaryEarlyOn && { key: 'salary-early', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
     pendingCount > 0 && { key: 'pending', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
     needsPaydayCount > 0 && { key: 'payday', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
@@ -144,6 +157,7 @@ export default function HomePage() {
           <span className="mc-muted">
             {mmdd(period.startDate)} — {mmdd(period.endDate)} 급여 주기{balance.asOf ? ` · ${asOfText(balance.asOf)}` : ''}
           </span>
+          <button type="button" className="mc-link" onClick={openSalary}>{period.salaryState === 'received' ? `월급 ${won(period.salaryAmount)}` : '월급 확인'}</button>
           <span className="mc-badge">월급날 D−{period.dday}</span>
         </div>
       )}
@@ -220,7 +234,7 @@ export default function HomePage() {
                 <small>{Number(p.dueDate.slice(5, 7))}월</small><b>{Number(p.dueDate.slice(8, 10))}</b>
               </span>
               <span className="mc-grow">
-                <strong>{p.name}{review && <span className="mc-paydot" role="img" aria-label="미납 확인 필요"></span>}</strong>
+                <strong>{p.name}{review && <span className="mc-paydot" role="img" aria-label={p.type === 'card_bill' ? '납부 확인 필요' : '미납 확인 필요'}></span>}</strong>
               </span>
               <span className="mc-right">{won(p.amount)} <span className="mc-muted">›</span></span>
             </button>

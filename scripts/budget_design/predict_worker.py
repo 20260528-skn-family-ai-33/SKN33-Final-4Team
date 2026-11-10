@@ -14,10 +14,12 @@ def main():
 
     default_model = ROOT / 'local_workspace/models/living_expense_prediction/models/shallow/catboost_allocation/budget_allocation.joblib'
     model = Path(os.environ.get('BUDGET_MODEL_PATH', str(default_model)))
-    if hashlib.sha256(model.read_bytes()).hexdigest() != '2fb8d5e15a5175a1d21830bacc51a44bf4b0bf5e90cceee6c2f7bfff6e7c74ce':
+    checksum = hashlib.sha256(model.read_bytes()).hexdigest()
+    if checksum != '2fb8d5e15a5175a1d21830bacc51a44bf4b0bf5e90cceee6c2f7bfff6e7c74ce':
         raise ValueError('model_checksum_mismatch')
     # Local one-shot tool; service integration must load once per worker instead.
     result = predict_profile(load_bundle(model), json.load(sys.stdin))
+    result.update(source='model', model_checksum=checksum)
     print(json.dumps(result, ensure_ascii=True, allow_nan=False))
 
 

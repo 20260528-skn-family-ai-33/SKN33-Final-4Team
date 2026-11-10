@@ -56,7 +56,7 @@ def _request_completion(name, schema, context, key, timeout, model, trace, *, sy
     # These configured model families require non-reasoning mode for Chat tool calls.
     if model.startswith(('gpt-6-luna', 'gpt-6-sol')):
         body['reasoning_effort'] = 'none'
-    connection = HTTPSConnection('api.openai.com', timeout=timeout)
+    connection = HTTPSConnection('us.api.openai.com', timeout=timeout)
     try:
         connection.request('POST', '/v1/chat/completions', body=json.dumps(body).encode('utf-8'),
                            headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})

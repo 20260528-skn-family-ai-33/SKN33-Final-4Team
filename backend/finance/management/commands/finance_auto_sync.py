@@ -40,7 +40,7 @@ class Command(BaseCommand):
             if not created:
                 busy += 1
                 continue
-            tasks.run(task, lambda user=user, targets=targets: sync_connections(user, targets))
+            tasks.run(task, lambda user=user, targets=targets, task=task: sync_connections(user, targets, task_id=task.pk))
             done += 1
         # 회원 정보 · 금융 정보는 출력하지 않는다. 숫자만
         self.stdout.write(f"자동 불러오기 {done}명 · 진행 중이라 건너뜀 {busy}명 · 대상 기관 없음 {empty}명")

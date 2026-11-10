@@ -5,18 +5,20 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from rest_framework import serializers
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from budgets.api import day_in_cycle, lock_user
-from budgets.models import BudgetCycle
+from budgets.models import Budget, BudgetCycle
 from config.idempotency import idempotent
 from users.models import Consent
 
 from .api_connect import PURPOSE, ConsentRequired
 from .models import FinancialTransaction, Loan, Origin, PaymentDue
-from .serializers import LoanCreateSerializer, LoanPatchSerializer
+from .serializers import MANUAL_ONLY_FIELDS, LoanCreateSerializer, LoanPatchSerializer, ManualLoanPatchSerializer
 
 FIELD_NAMES = {
     "manual_balance": "manualBalance",
@@ -25,6 +27,18 @@ FIELD_NAMES = {
     "monthly_payment": "monthlyPayment",
     "payment_day": "paymentDay",
 }
+PAYOFF = "payoff"  # loan.field_states: 사용자가 신고한 전체 완납 (R19) — 근거 · 처리 시각 · 되돌릴 때 쓸 이전 값
+
+
+class PayoffNotAllowed(APIException):
+    status_code = 409
+    default_code = "not_ready"
+    default_detail = "화면이 오래됐어요. 대출 목록을 새로 불러온 뒤 다시 확인해 주세요."
+
+
+def protected_due(due):
+    """실제 납부 · 사용자 확인 근거가 있는 회차 — 자동으로 취소 · 초기화하지 않는다"""
+    return due.paid_amount > 0 or due.payment_state in ("partial", "paid") or due.matches.exists()
 
 
 def local_iso(value):
@@ -122,7 +136,31 @@ def loan_item(loan):
         "overdue": loan.overdue,
         "field_states": loan_field_states(loan),
         "fetched_at": local_iso(loan.fetched_at),
+        "recent_dues": recent_dues_json(loan),
+        "payoff": payoff_json(loan),
     }
+
+
+def payoff_json(loan):
+    report = (loan.field_states or {}).get(PAYOFF) if isinstance(loan.field_states, dict) else None
+    if loan.status != Loan.Status.REPAID or not isinstance(report, dict) or report.get("undoneAt"):
+        return None
+    return {"source": "user_report", "reported_at": report.get("reportedAt"),
+            "previous_balance": report.get("previous", {}).get("manualBalance")}
+
+
+def recent_dues_json(loan):
+    """홈 '꼭 나갈 돈'과 같은 범위(지난 주기 시작 ~ 이번 주기 끝)의 회차 — 다 낸 회차도 '납부 거래 확인'에서 다시 열 수 있게"""
+    from budgets.api import previous_start
+    cycle = BudgetCycle.objects.filter(user_id=loan.user_id, status=BudgetCycle.Status.ACTIVE).first()
+    if cycle is None:
+        return []
+    dues = PaymentDue.objects.filter(
+        loan=loan, obligation_state=PaymentDue.ObligationState.ACTIVE,
+        due_date__gte=previous_start(cycle) or cycle.starts_on, due_date__lt=cycle.ends_before,
+    ).order_by("due_date")
+    return [{"due_id": str(d.pk), "due_date": d.due_date.isoformat(), "expected_amount": d.confirmed_amount,
+             "paid_amount": d.paid_amount, "payment_state": d.payment_state} for d in dues]
 
 def owned_loans(user):
     """단일 FK는 관련 객체의 소유권까지 보장하지 않으므로 함께 검사한다."""
@@ -134,27 +172,32 @@ def owned_loans(user):
     )
 
 
+def has_loan_consent(user):
+    return Consent.objects.filter(
+        user=user,
+        purpose=PURPOSE,
+        product_scope=Consent.ProductScope.LOAN,
+        revoked_at__isnull=True,
+    ).exists()
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def loans(request):
     if request.method == "POST":
         return loan_create(request)
 
-    has_consent = Consent.objects.filter(
-        user=request.user,
-        purpose=PURPOSE,
-        product_scope=Consent.ProductScope.LOAN,
-        revoked_at__isnull=True,
-    ).exists()
+    has_consent = has_loan_consent(request.user)
+    status_filter = request.query_params.get("status", Loan.Status.REPAYING)
+    if status_filter not in Loan.Status.values:
+        raise serializers.ValidationError({"status": ["repaying 또는 repaid 로 보내 주세요."]})
+    rows = owned_loans(request.user).filter(status=status_filter).order_by("loan_id")
+    if status_filter == Loan.Status.REPAID:
+        rows = rows.filter(origin=Origin.MANUAL)  # 완납 되돌리기는 직접 등록 대출만 (R19)
+    elif not has_consent:
+        rows = rows.filter(origin=Origin.MANUAL)
 
-    if not has_consent:
-        raise ConsentRequired("대출 조회 동의가 필요해요.")
-
-    rows = owned_loans(request.user).filter(
-        status=Loan.Status.REPAYING,
-    ).order_by("loan_id")
-
-    return Response({"items": [loan_item(loan) for loan in rows]})
+    return Response({"items": [loan_item(loan) for loan in rows], "has_inquiry_consent": has_consent})
 
 
 @idempotent()
@@ -187,8 +230,13 @@ def apply_loan_patch(loan, validated_data):
     fields_to_save = []
 
     for field, value in validated_data.items():
-        stored_key = FIELD_NAMES[field]
+        stored_key = FIELD_NAMES.get(field)
         old_value = getattr(loan, field)
+        if stored_key is None:  # 기관명 · 상품명 · 만기일: 출처 기록 없이 값만 고친다
+            if old_value != value:
+                setattr(loan, field, value)
+                fields_to_save.append(field)
+            continue
         previous = previous_states[field]
 
         if value is None:
@@ -232,6 +280,9 @@ def apply_loan_patch(loan, validated_data):
 
 
 def sync_loan_due(loan):
+    # 잠금 안에서 최신 상태를 다시 본다: 전체 완납한 대출에는 새 회차를 만들지 않는다 (R19)
+    if not Loan.objects.select_for_update().filter(pk=loan.pk, status=Loan.Status.REPAYING).exists():
+        return None
     today = timezone.localdate()
     from budgets.salary import activate_salary_if_due
     activate_salary_if_due(loan.user_id, today)
@@ -295,14 +346,7 @@ def sync_loan_due(loan):
         if due is None:
             return None
 
-    if (
-        due.payment_state in (
-            PaymentDue.PaymentState.PARTIAL,
-            PaymentDue.PaymentState.PAID,
-        )
-        or due.paid_amount > 0
-        or due.matches.exists()
-    ):
+    if protected_due(due):
         return due
 
     if not has_schedule:
@@ -330,8 +374,7 @@ def sync_monthly_loan_dues(loan, cycle, today):
     from budgets.due_periods import monthly_due, occurrence_cycles, occurrence_key
 
     locked = PaymentDue.objects.select_for_update().filter(user_id=loan.user_id, loan=loan)
-    def protected(due):
-        return due.paid_amount > 0 or due.payment_state in ("partial", "paid") or due.matches.exists()
+    protected = protected_due
     parts = occurrence_cycles(loan.user_id, cycle)
     dates = [day_in_cycle(part, loan.payment_day) for part in parts] if loan.payment_day else []
     dates = {value for value in dates if value is not None} if loan.monthly_payment is not None else set()
@@ -385,8 +428,16 @@ def loan_detail(request, loan_id):
             loan_id=loan_id,
             status=Loan.Status.REPAYING,
         )
+        manual = loan.origin == Origin.MANUAL
+        if not manual and not has_loan_consent(request.user):
+            raise ConsentRequired("기관에서 조회한 대출을 수정하려면 대출 조회 동의가 필요해요.")
+        if not manual and isinstance(request.data, dict):
+            blocked = [name for name in MANUAL_ONLY_FIELDS if name in request.data]
+            if blocked:
+                raise serializers.ValidationError(
+                    {name: ["기관에서 조회한 대출은 이 정보를 바꿀 수 없어요."] for name in blocked})
 
-        serializer = LoanPatchSerializer(data=request.data, partial=True)
+        serializer = (ManualLoanPatchSerializer if manual else LoanPatchSerializer)(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
         if serializer.validated_data:
@@ -396,3 +447,92 @@ def loan_detail(request, loan_id):
         body = loan_item(loan)
 
     return Response(body)
+
+
+def locked_manual_loan(user, loan_id):
+    """회원 → 대출 순으로 잠그고 잠금 안의 최신 상태를 돌려준다. 남의 것 · 없는 대출은 404, 기관 조회 대출은 409"""
+    lock_user(user)
+    loan = get_object_or_404(owned_loans(user).select_for_update(of=("self",)), loan_id=loan_id)
+    if loan.origin != Origin.MANUAL:
+        raise PayoffNotAllowed("기관에서 조회한 대출은 직접 완납 처리할 수 없어요. 기관 정보를 다시 불러와 확인해 주세요.")
+    return loan
+
+
+def expire_drafts(user):
+    """대출 합계가 바뀌므로 승인 전 초안만 만료한다. 승인된 예산 · 쿠션 · 생활비는 그대로 둔다"""
+    Budget.objects.filter(user=user, status__in=["draft", "validated"]).update(status="expired")
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@idempotent()
+@transaction.atomic
+def loan_payoff(request, loan_id):
+    """'이 대출을 전부 갚았어요' — 사용자 신고로 상환 종료. 납부 거래 · 납부액은 만들지 않는다"""
+    loan = locked_manual_loan(request.user, loan_id)
+    if request.data:
+        raise serializers.ValidationError({"non_field_errors": ["보낼 값이 없어요. 빈 본문으로 보내 주세요."]})
+    if loan.status == Loan.Status.REPAID:
+        return Response(loan_item(loan))  # 이미 완납 — 처리 시각 · 이전 값을 덮지 않는다
+
+    now, today = timezone.now(), timezone.localdate()
+    canceled = []
+    # 오늘 이후 회차 중 근거 없는 것만 취소. 오늘 · 지난 회차와 납부 근거가 있는 회차는 그대로 (회차별 확인으로 정리)
+    for due in PaymentDue.objects.select_for_update().filter(
+            loan=loan, obligation_state=PaymentDue.ObligationState.ACTIVE, due_date__gt=today).order_by("due_date", "pk"):
+        if not protected_due(due):
+            due.obligation_state, due.canceled_at = PaymentDue.ObligationState.CANCELED, now
+            due.save(update_fields=["obligation_state", "canceled_at"])
+            canceled.append(str(due.pk))
+
+    states = dict(loan.field_states) if isinstance(loan.field_states, dict) else {}
+    states[PAYOFF] = {
+        "source": "user_report", "reportedAt": local_iso(now), "reportedOn": today.isoformat(),
+        "previous": {"status": loan.status, "manualBalance": loan.manual_balance,
+                     "manualBalanceState": states.get(FIELD_NAMES["manual_balance"])},
+        "canceledDueIds": canceled,
+    }
+    states[FIELD_NAMES["manual_balance"]] = {"source": "manual", "confirmationStatus": "confirmed",
+                                             "confirmedAt": local_iso(now)}
+    loan.status, loan.manual_balance, loan.field_states = Loan.Status.REPAID, 0, states
+    loan.save(update_fields=["status", "manual_balance", "field_states"])
+    expire_drafts(request.user)
+    return Response(loan_item(loan))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@idempotent()
+@transaction.atomic
+def loan_payoff_cancel(request, loan_id):
+    """잘못 누른 전체 완납 되돌리기. reportedAt 으로 화면에서 본 완납 처리와 같은지 확인한다"""
+    loan = locked_manual_loan(request.user, loan_id)
+    data = request.data if isinstance(request.data, dict) else None
+    if data is None or set(data) != {"reported_at"} or not isinstance(data["reported_at"], str):
+        raise serializers.ValidationError({"reported_at": ["화면에서 본 완납 처리 시각(reportedAt)을 보내 주세요."]})
+    if loan.status == Loan.Status.REPAYING:
+        return Response(loan_item(loan))  # 이미 되돌림
+
+    states = dict(loan.field_states) if isinstance(loan.field_states, dict) else {}
+    report = states.get(PAYOFF)
+    if not isinstance(report, dict) or report.get("undoneAt") or report.get("reportedAt") != data["reported_at"]:
+        raise PayoffNotAllowed()
+
+    previous = report.get("previous") or {}
+    fields = ["status", "field_states"]
+    loan.status = Loan.Status.REPAYING
+    if loan.manual_balance == 0:  # 완납이 넣은 0원일 때만 이전 잔액으로 (그 뒤 바뀐 값은 덮지 않는다)
+        loan.manual_balance = previous.get("manualBalance")
+        key = FIELD_NAMES["manual_balance"]
+        if previous.get("manualBalanceState") is None:
+            states.pop(key, None)
+        else:
+            states[key] = previous["manualBalanceState"]
+        fields.append("manual_balance")
+    states[PAYOFF] = {**report, "undoneAt": local_iso(timezone.now())}
+    loan.field_states = states
+    loan.save(update_fields=fields)
+    # 이번 주기 회차만 기존 규칙으로 다시 준비 (같은 키 · 같은 달 회차를 다시 살린다, 지난 주기는 만들지 않음)
+    sync_loan_due(loan)
+    expire_drafts(request.user)
+    return Response(loan_item(loan))

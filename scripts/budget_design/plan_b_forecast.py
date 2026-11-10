@@ -1,4 +1,4 @@
-"""Synthetic-only LLM money proposals; server bands, validation and rule-B fallback."""
+"""LLM proposals for synthetic or server-consented inputs; validated bands and rule-B fallback."""
 from copy import deepcopy
 from fractions import Fraction
 from math import ceil, isfinite
@@ -18,7 +18,7 @@ REASON_CODES = ('keep', 'seasonal_up', 'seasonal_down', 'trend_up', 'trend_down'
 REASON_TEXT_MAX_LENGTH = 120  # Provisional technical limit; caller can explicitly override.
 TIMEOUT_SECONDS = 30
 FORECAST_AMOUNT_UNIT = 5000
-PROMPT = """합성 사용자 최근 완료 월 세 달의 패턴과 예산 대상 월을 분석해 다음 달 예산을 예측하세요.
+PROMPT = """사용자의 최근 완료 월 세 달의 패턴과 예산 대상 월을 분석해 다음 달 예산을 예측하세요.
 forecast_budget 도구로 활성 카테고리 전체의 원 단위 정수 allocations와 reasons만 반환하세요.
 각 금액은 서버 bounds 안이며 자물쇠 외에는 5,000원 배수입니다. 합계는 target 이하여야 합니다.
 사용자 최소 금액과 자물쇠는 반드시 지키세요. 우선순위를 재정렬하지 말고,
@@ -129,14 +129,14 @@ def validate_forecast(inp, proposal, bounds, floors, text_limit):
 def forecast_budget(inp, months, *, as_of, target_month, forecast_band=None, user_note='',
                     shortfall_cut_rates=None, reality_profile=None, other_reserved=None,
                     user_reincluded_one_offs=(), user_protected=(), unclassified_share_limit=None,
-                    allow_external=False, synthetic=False, api_key=None,
+                    allow_external=False, synthetic=False, consent_verified=False, api_key=None,
                     text_limit=REASON_TEXT_MAX_LENGTH, ml_reference=None, available_spare=0):
     start = monotonic()
     if type(target_month) is not int or not 1 <= target_month <= 12:
         raise ValueError('invalid_target_month')
     if not isinstance(user_note, str) or type(text_limit) is not int or text_limit <= 0:
         raise ValueError('invalid_forecast_text_settings')
-    if type(allow_external) is not bool or type(synthetic) is not bool:
+    if any(type(flag) is not bool for flag in (allow_external, synthetic, consent_verified)):
         raise ValueError('invalid_external_permission')
     if type(available_spare) is not int or available_spare < 0:
         raise ValueError('invalid_available_spare')
@@ -184,7 +184,8 @@ def forecast_budget(inp, months, *, as_of, target_month, forecast_band=None, use
                       forecast_required=required, forecast_shortfall=required-original['target'],
                       funding_shortfall=required-inp['target']-available_spare)
     key = api_key if api_key is not None else os.getenv('OPENAI_API_KEY', '')
-    blocked = ('forecast_disabled' if not allow_external else 'synthetic_only' if not synthetic
+    # consent_verified is server-only; the service verifies its own authenticated user's record.
+    blocked = ('forecast_disabled' if not allow_external else 'synthetic_only' if not (synthetic or consent_verified)
                else 'llm_model_missing' if not meta['model'] else 'openai_key_missing'
                if not isinstance(key, str) or not key.strip() else None)
     if blocked:

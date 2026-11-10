@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
+from config import tasks
 from users.models import Consent
 
 from . import codef
@@ -46,11 +47,12 @@ def _safe_name(value, accounts):
     return value
 
 
-def sync_bank_loans(user, connected_id, org, start, end):
+def sync_bank_loans(user, connected_id, org, start, end, task_id=None):
     """신뢰된 서버 호출 전용. connected_id는 호출자가 해당 회원의 연결에서 얻어야 한다.
 
     계좌별 조회를 모두 성공한 뒤 한 트랜잭션으로 저장한다. 같은 연결·계좌는
     갱신하며 수동 보완값/대출 ID/납부 연결은 보존한다. HTTP GET에서 호출하지 않는다.
+    task_id: 이 조회를 시킨 작업. 저장 직전 작업 · 조회 기록의 유효 기간을 본다 (config/tasks.py claim_run)
     """
     if not connected_id or start > end:
         raise ValueError("연결 ID와 조회 기간을 확인해 주세요.")
@@ -59,10 +61,8 @@ def sync_bank_loans(user, connected_id, org, start, end):
         disconnected_at=None, status="connected",
     )
     _check_consent(user, connection)
-    run = SyncRun.objects.create(
-        user=user, connection=connection, product_code="loan_sync", status="running",
-        requested_from=start, requested_to=end,
-    )
+    run = tasks.start_run(user, task_id, connection=connection, product_code="loan_sync",
+                          requested_from=start, requested_to=end)
     try:
         accounts = codef.list_loan_accounts(connected_id, org)
         snapshots = [
@@ -78,6 +78,7 @@ def sync_bank_loans(user, connected_id, org, start, end):
             if connection.disconnected_at is not None or connection.status != "connected":
                 raise LoanConnectionChanged("조회 중 연결 상태가 바뀌어 저장하지 않았어요.")
             _check_consent(user, connection)
+            tasks.claim_run(run, task_id)
             for account, data in snapshots:
                 key = hashlib.sha256(account["account_no"].encode()).hexdigest()
                 matches = Loan.objects.select_for_update(of=("self",)).filter(
@@ -152,13 +153,11 @@ def sync_bank_loans(user, connected_id, org, start, end):
         business_code = None
         if isinstance(exc, codef.CodefError) and re.fullmatch(r"CF-[0-9]{5}", str(exc.code)):
             business_code = exc.code
-        if isinstance(exc, (LoanDataError, LoanConsentRequired, LoanConnectionChanged)):
+        if isinstance(exc, (LoanDataError, LoanConsentRequired, LoanConnectionChanged, tasks.WorkExpired)):
             error_code = exc.code
         elif isinstance(exc, codef.CodefError):
             error_code = "provider_error"
         else:
             error_code = "loan_sync_failed"
-        SyncRun.objects.filter(pk=run.pk).update(
-            status="failed", business_code=business_code, error_code=error_code, completed_at=timezone.now(),
-        )
+        tasks.finish_run(run.pk, status="failed", business_code=business_code, error_code=error_code)
         raise

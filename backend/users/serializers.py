@@ -40,9 +40,8 @@ class SignupConsentSerializer(serializers.Serializer):
         choices=["terms", "privacy"],
     )
 
-    document_version = serializers.ChoiceField(
-        choices=["v1"],
-    )
+    # 허용 버전은 users/consent_documents.py 가 정한다 (여기서 따로 적지 않음)
+    document_version = serializers.CharField(max_length=50)
 
     def to_internal_value(self, data):
         if not isinstance(data, dict):

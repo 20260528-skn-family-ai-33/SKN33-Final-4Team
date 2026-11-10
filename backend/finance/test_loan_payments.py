@@ -113,7 +113,8 @@ class LoanPaymentTest(TestCase):
         self.assertEqual(PaymentDue.objects.get(loan=self.loan).payment_state, "paid")
         self.assertEqual(body["must_pay"], [])
 
-    def test_same_terms_loans_each_take_one_withdrawal(self):
+    def test_same_terms_loans_are_left_for_user(self):
+        """한 출금에 맞는 대출이 여럿이면 첫 번째를 고르지 않는다 → '납부 거래 확인'에서 사용자가 고른다 (11/06)"""
         twin = Loan.objects.create(
             user=self.user, origin="manual", lender_name="한국장학재단", linked_account=self.account,
             monthly_payment=150_000, payment_day=10,
@@ -123,7 +124,8 @@ class LoanPaymentTest(TestCase):
         self.repayment()
         self.repayment(day=date(2026, 11, 11))
         self.run_step()
-        self.assertEqual(set(PaymentDue.objects.values_list("payment_state", flat=True)), {"paid"})
+        self.assertFalse(PaymentMatch.objects.exists())
+        self.assertFalse(Tx.objects.filter(transaction_type="loan_repayment").exists())
 
     def test_card_company_loan_repayment_is_matched(self):
         Loan.objects.filter(pk=self.loan.pk).update(lender_name="현대카드")
@@ -175,9 +177,18 @@ class LoanPaymentTest(TestCase):
         due = PaymentDue.objects.get(loan=self.loan)
         self.assertEqual((due.due_date, due.payment_state), (date(2026, 11, 10), "paid"))
 
-    def test_second_withdrawal_does_not_pay_twice(self):
+    def test_two_withdrawals_for_one_due_are_left_for_user(self):
+        """한 회차에 맞는 출금이 여럿이면 자동 연결하지 않는다 (11/06)"""
         self.due()
         self.repayment(), self.repayment(day=date(2026, 11, 11))
         self.run_step()
+        self.run_step()
+        self.assertFalse(PaymentMatch.objects.exists())
+
+    def test_second_withdrawal_does_not_pay_twice(self):
+        self.due()
+        self.repayment()
+        self.run_step()
+        self.repayment(day=date(2026, 11, 11))  # 나중에 들어온 같은 금액 출금
         self.run_step()
         self.assertEqual(PaymentMatch.objects.count(), 1)

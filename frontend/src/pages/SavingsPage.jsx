@@ -1,5 +1,5 @@
 // 저축 확인 · 정기 저축 관리 — 한 화면을 두 곳에서 쓴다 (docs/api/savings.md)
-//   첫 설정 흐름: 고정지출 확인 다음, 지킬 돈 설정 전. 찾은 후보마다 "저축인가요?"를 묻는다
+//   첫 설정 흐름: 고정지출 확인 다음, 대출 확인 전. 찾은 후보마다 "저축인가요?"를 묻는다
 //   마이 > 정기 저축 (location.state.from === 'my'): 확정된 저축 목록 + [수정] (10/22 PR #29 리뷰)
 // 목록 = GET /api/budgets/savings/. 내 계좌끼리 매달 같은 금액을 보낸 이체를 찾은 후보가 있을 때만 "저축인가요?"를 묻는다 (TXN-005 · TXN-008)
 //   저축이에요 → 후보 확정(confirm). 확정된 것의 월 합계 = 저축 최소 금액 (서버가 계산, S-02)
@@ -20,12 +20,8 @@ import { PATHS } from '../routes.js'
 
 const ANSWERS = [['yes', '저축이에요'], ['no', '아니에요']]
 
-// 저장 뒤 같은 목록을 다시 받는다 — useApi 는 주소가 바뀔 때만 다시 받아서 서버가 무시하는 ?v= 를 바꾼다
-function useSavingsList() {
-  const [version, setVersion] = useState(0)
-  const { data, error } = useApi(`/api/budgets/savings/?v=${version}`)
-  return { data, error, reload: () => setVersion((v) => v + 1) }
-}
+// 저장 뒤 같은 목록을 다시 받는다 (같은 주소 reload — 받는 동안 지난 목록 유지, 실패하면 오류 카드)
+const useSavingsList = () => useApi('/api/budgets/savings/')
 
 // "매월 25일 · 국민 급여통장 · ****5678 → 신한 자유적금 · ****9012"
 function savingLine(s) {
@@ -101,7 +97,7 @@ function OnboardingView() {
         const ids = candidates.filter((c) => answers[c.savingId] === answer).map((c) => c.savingId)
         if (ids.length) await apiSend(`/api/budgets/savings/${path}/`, 'POST', { savingIds: ids }, { requestKey: newRequestKey() })
       }
-      navigate(PATHS.protect)  // 지킬 돈 화면은 서버의 savingsMin 을 다시 읽는다
+      navigate(PATHS.loanCheck)  // 대출 확인 후 지킬 돈 화면에서 서버의 savingsMin 을 다시 읽는다
     } catch (err) {
       setError(err.fields?.savingIds?.[0] ?? err.message)
       reload()  // 먼저 성공한 쪽은 저장돼 있으니 목록을 새로 받는다

@@ -1,7 +1,7 @@
 // 계좌 연결 5: 연결 결과
 // 연결 목록(GET /api/finance/connections/) · 고른 계좌(GET /api/finance/connect/accounts/)를 그대로 보여 준다 (11/03 S2)
 // [다시 불러오기] = POST /api/finance/sync/ → 작업 결과의 기관별 성공 · 실패를 그대로 보여 준다 (실패를 0건으로 보이지 않기)
-// [다음] = 월급 입력. 대출 확인 화면은 아직 예시 대출이라 알파에서는 건너뛴다 (11/03 S2 리뷰)
+// [다음] = 월급 입력. 대출 확인·직접 등록은 저축 확인 다음에 진행한다.
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'

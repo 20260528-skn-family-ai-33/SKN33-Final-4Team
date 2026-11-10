@@ -1,0 +1,80 @@
+{
+  "version": "v13_share",
+  "status": "student_package_reproducible",
+  "application_context": "review_snapshot_only",
+  "fit_years": [
+    2022,
+    2023,
+    2024
+  ],
+  "eligible_only": true,
+  "quantile": 0.95,
+  "positive_only": true,
+  "minimum_positive_rows": 30,
+  "comparison": "strictly_greater",
+  "removal": "full_source_amount",
+  "quantile_definition": "weighted empirical inverse CDF; first cumulative weight >= configured quantile",
+  "candidates": [
+    {
+      "source_column": "가계지출_소비지출_주거수도광열_주택유지수선구입비",
+      "label": "주택 유지·수선",
+      "category": "주거·통신",
+      "limitation": "작은 정기 수선과 큰 보수 공사가 섞일 수 있다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가구조명구입비",
+      "label": "가구·조명 구입",
+      "category": "생활용품",
+      "limitation": "필수 교체와 선택적 구입의 목적을 구별할 수 없다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가전가정용기기구입비",
+      "label": "가전·가정용 기기 구입",
+      "category": "생활용품",
+      "limitation": "기기 종류와 교체 주기를 관측하지 못한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_통신장비구입비",
+      "label": "통신 장비 구입",
+      "category": "생활용품",
+      "limitation": "휴대전화 등의 할부·교체와 구매 맥락을 구별하지 못한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_정보처리장치기록매체구입비",
+      "label": "정보처리 장치·기록매체 구입",
+      "category": "생활용품",
+      "limitation": "컴퓨터와 기록매체가 섞인 혼합 항목이다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_영상음향기기구입비",
+      "label": "영상·음향 기기 구입",
+      "category": "생활용품",
+      "limitation": "기기의 세부 종류와 구입 목적을 구별하지 못한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_기타운송기구구입비",
+      "label": "기타 운송기구 구입",
+      "category": "교통·차량",
+      "limitation": "자동차 구입과 별도이며 운송기구의 종류가 혼합되어 있다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_치과서비스이용금액",
+      "label": "치과 서비스",
+      "category": "의료·건강",
+      "limitation": "정기 진료와 큰 치료가 섞이며 진료 목적을 확정할 수 없다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_입원서비스이용금액",
+      "label": "입원 서비스",
+      "category": "의료·건강",
+      "limitation": "금액이 커도 반복 치료인지 일회성인지 확인할 수 없다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_단체여행경비",
+      "label": "단체 여행",
+      "category": "여행·숙박",
+      "limitation": "실제 여행 빈도나 정기성을 확인할 수 없다."
+    }
+  ],
+  "meaning": "숙박은 장기 거주와 여행을 분리할 수 없어 P95 후보에서 제외한다. 나머지10개 기존 정책을 검수용 재계산한다. 비정기성 확인 라벨이 아니며 향후 평가에는 훈련 fold 내 적합이 필요하다."
+}

@@ -60,3 +60,24 @@ def predict_ml(profile):
     except (ValueError, KeyError, TypeError, OverflowError):
         raise ValueError('ML 응답의 모델·카테고리·금액 합계가 맞지 않습니다.') from None
     return result
+
+
+def main():
+    """Deployment smoke check with a synthetic profile; no DB, LLM or user data."""
+    profile = {'age': 27, 'sex': 1, 'disposable_income': 3000000, 'has_vehicle': 0,
+               'fixed_expense_amount': 700000, 'living_budget_amount': 1000000}
+    try:
+        result = predict_ml(profile)
+    except (ValueError, TypeError, KeyError) as error:
+        print(json.dumps({'status': 'error', 'error_type': type(error).__name__,
+            'hint': 'Check BUDGET_INFERENCE_PYTHON, BUDGET_MODEL_PATH, checksum and pinned dependencies.'}))
+        return 2
+    print(json.dumps({'status': 'ready', 'model_name': result['model_name'],
+        'artifact_id': result['artifact_id'], 'used_fallback': result['used_fallback'],
+        'categories': len(result['ratios']), 'ratio_sum': sum(result['ratios'].values()),
+        'draft_sum': sum(result['draft_amounts'].values()), 'synthetic_only': True}))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

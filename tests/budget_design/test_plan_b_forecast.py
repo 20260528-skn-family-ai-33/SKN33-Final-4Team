@@ -221,6 +221,17 @@ class ForecastTests(unittest.TestCase):
         call.assert_not_called()
         self.assertEqual(out['reason'],'llm_model_missing')
 
+    def test_server_consent_flag_is_explicit_and_does_not_override_disabled_calls(self):
+        out, call = self.run_forecast(synthetic=False, consent_verified=True)
+        self.assertEqual(out['llm_status'], 'completed')
+        call.assert_called_once()
+        out, call = self.run_forecast(synthetic=False, consent_verified=True, allow_external=False)
+        self.assertEqual(out['reason'], 'forecast_disabled')
+        call.assert_not_called()
+        for value in (1, 'true', None):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'invalid_external_permission'):
+                self.run_forecast(consent_verified=value)
+
     def test_private_transaction_fields_never_sent(self):
         for m, data in self.months.items():
             values = data.pop('monthly_totals')

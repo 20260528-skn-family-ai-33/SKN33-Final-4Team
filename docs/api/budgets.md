@@ -1,16 +1,27 @@
 # 예산 API 명세 — 지킬 돈 · 추천 예산 · 카테고리 예산 · 금액 고정 · 승인
 
+## 예산 AI 외부 전송 동의 — 2026-11-10 연결 (실제 서비스 외부 호출은 계속 OFF)
+
+- `GET /api/budgets/ai-consent/`: 로그인한 회원 자신의 `status`, `purpose="budget_ai"`, `document`, `documentVersion`, `documentHash`, `grantedAt`, `revokedAt`를 반환한다. 상태는 `not_granted / granted / revoked / needs_renewal`이다. 현재 문서의 버전과 원문 해시가 일치하는 미철회 기록만 유효하다.
+- `PUT /api/budgets/ai-consent/`: `{agreed: true, documentVersion: "v2", documentHash: "화면에서 받은 해시", healthAgreed: true, healthDocumentVersion: "v1", healthDocumentHash: "별도 건강 요약 문서 해시"}`로 직접 동의한 경우만 저장한다. 중복 요청은 새 기록을 늘리지 않는다. 예전 문서·해시 불일치는 `409 document_outdated`, 알 수 없는 버전·불린이 아닌 동의값·추가 입력은 400이다. 새 문서에 동의하면 종전 활성 기록을 철회 처리하고 이력을 보존한다.
+- `DELETE /api/budgets/ai-consent/`: `{confirm: true}`로 budget_ai·budget_ai_health 두 목적의 활성 동의만 함께 철회한다. 금융 조회 동의·원거래·최소금액·잠금·승인 예산은 변경하거나 삭제하지 않는다. 다시 동의하면 새 동의 기록을 만든다. 성공 응답은 세 메서드 모두 200이며 PUT/DELETE는 세션과 CSRF가 필요하다. 회원 잠금을 사용해 추천 처리와 동의 변경 순서를 보존한다.
+- 기존 `users.Consent`의 목적 문자열과 null 범위를 사용하므로 모델 변경·마이그레이션이 없다. 공용 문서 목록에 `budget_ai`·`budget_ai_health` 문서가 추가되지만 회원가입은 `terms/privacy`, 금융 연결은 `finance_inquiry`만 선택한다. 예산 AI는 선택 동의이며 기본 체크 해제다.
+- 추천 화면과 마이의 동의·데이터 관리에서 동의·철회한다. 체크나 동의 저장만으로 추천·외부 전송을 자동 시작하지 않는다. 동의 조회 실패도 기본 예산 추천을 차단하지 않는다. 기존 금융 동의를 예산 AI 동의로 간주하지 않는다.
+- 서버 `recommend(..., allow_external=True)`는 실제 회원의 현재 동의를 다시 조회해야 A/B 외부 LLM 경로에 진입한다. 플래그는 HTTP 입력이 아니며, **현재 실제 추천 API는 이 인자를 켜지 않는다**. 합성 실험은 기존 명시적 synthetic 경로를 유지한다. B의 내부 `consent_verified` 인자는 서버만 전달한다. 실패 대체·최소액·잠금·한도·금액 단위 검수는 그대로이며 사용자 경로의 LangSmith는 끈다.
+- 현행 동의 원본은 `backend/users/budget_ai_v2.json`·`backend/users/budget_ai_health_v1.json`이며 이전 v1 원문은 보존한다. 두 목적의 최신 버전·해시와 미철회 기록이 모두 있어야 외부 호출을 허용한다. 예산 AI 요청본문은 미국 지역 `us.api.openai.com`으로만 보내고 Global 주소로 자동 대체하지 않는다. OpenAI 기본 보관 정책은 [공식 데이터 처리 문서](https://developers.openai.com/api/docs/guides/your-data)를 확인했으며 `store=false`를 무보관이라고 안내하지 않는다. OpenAI OpCo, LLC·미국·연락처·시점/방법·기본 최대 30일 로그 및 예외·철회/거부 영향을 명시했다. 운영자의 처리위탁 계약(건강 관련 요약 허용 여부 포함)·개인정보 처리방침과 실제 공유 설정은 출시 전 최종 확인 대상이다. 이 단계는 기능 연결·합성 검증이며 실제 사용자 외부 전송·서비스 활성화·배포 완료가 아니다.
+
 ## A/B 연결 준비 — 2026-11-05 (설정 확정 전 기본 비활성)
 
 기존 URL·빈 POST 요청·작업 조회·사용자 승인 흐름을 재사용한다. `budgets.design_service`에 계산 연결을 분리했으며, PM 브랜치 `fix/manual-loan-consent-copy`가 수정하는 고정지출 목록 구간은 수정하지 않는다.
 
 - `BUDGET_DESIGN_ENABLED`: Django 설정 bool 또는 같은 이름 환경변수 `true`로 새 연결을 켠다. **기본값은 false**이며 이때 기존 임시 엔진이 유지된다. 이번 작업에서 실행 환경을 켜거나 배포하지 않았다.
-- `BUDGET_DESIGN_POLICY`: Django 설정 dict 또는 같은 이름 환경변수의 JSON. 현재 A 경로에는 `a` 객체가 필요하며, 조정 목표율은 사용하지 않는다. B의 미분류 기준이 필요한 경우 `unclassified_share_limit`을 명시한다.
+- `BUDGET_DESIGN_POLICY`: Django 설정 dict 또는 같은 이름 환경변수의 JSON으로 덮어쓸 수 있다. 미지정 시 승인된 `2026-11-10-forecast-band` 정책을 사용한다(서버가 A의 전체 생활비 20% 한도와 보호 조건을 계산). A 경로에는 `a` 객체가 필요하며 조정 목표율은 사용하지 않는다. B는 미분류 비중만으로 중단하지 않는다.
+- 2026-11-10 사용자 승인: 서비스 초기 정책의 `b_forecast_band`는 `down_percent=20`, `up_percent=20`이다. B의 카테고리별 소비 기준에 대한 예측 허용 범위이며 A의 전체 이동 한도와 별개다. 사용자 최소금액·잠금·기존 하한이 우선하고 금액 단위 정산·범위 검수·규칙 B 대체 처리는 유지한다. 이 설정만으로 외부 호출이나 기능을 켜지 않는다. 별도 지정한 정책을 자동 병합/수정하지 않으며, 그 정책이 band를 생략하면 종전처럼 규칙 B와 `forecast_band_required`를 반환한다. 로컬 비교 창의 입력값·예측 함수 자체의 필수 인자 계약도 바꾸지 않는다.
 - 최초 설계 A의 이동 한도는 기타 포함 생활비의 20%다. 항목별 증액 목표율은 사용하지 않는다. 실제 서비스에서는 LLM을 호출하지 않으므로 기본안을 반환한다. 합성 비교에서는 서버가 만든 작은·중간·큰 미리보기 중 하나를 LLM이 선택하거나 유지하며, 호출 실패 시 기본안으로 돌아간다. B는 개별 감액률을 제한하지 않으며 기존 사용자 최소액·잠금·하한을 지킨다. 이 한도는 예산 조정 에이전트에 적용하지 않는다.
-- 활성화 후 설정이 없거나 유효하지 않으면 작업은 `succeeded`이고 `result.outcome=needs_policy`, `budgetId=null`로 반환하며 예산을 저장·만료시키지 않는다. `summary`는 추천 설정 준비 중 안내다. 기존 초안을 새 결과로 승인하면 안 된다.
+- 명시한 설정이 유효하지 않거나 JSON `null`로 정책을 비활성화하면 작업은 `succeeded`이고 `result.outcome=needs_policy`, `budgetId=null`로 반환하며 예산을 저장·만료시키지 않는다. 설정이 잘못되었을 때 초기 정책으로 숨겨 대체하지 않는다. 기존 초안을 새 결과로 승인하면 안 된다. 정책 준비와 기능 활성화/이력 검증은 독립적이다.
 - 그 밖의 미완료 상태는 `needs_data`(모델/입력·조회 검증 미준비), `needs_upper_allocation_review`(여윳돈으로도 부족)로 반환한다. `proposed`만 승인 가능한 새 초안이 생긴다. 기존 `infeasible` 충돌 검수는 유지한다. 작업 결과의 기존 다섯 필드 이름은 바꾸지 않는다.
 - 최근 완료 3개월의 수집 범위는 선택된 연결의 성공한 SyncRun 기록으로 확인한다. 은행은 `bank_sync`, 카드는 `card_approval_list`이며 요청 기간만으로 조회 완료를 추정하지 않는다. 중복·취소·환불은 별도의 `BUDGET_HISTORY_VERIFIER(user, month_ids)` 서버 콜백이 월별 checks를 제공해야 한다. 미구현이면 각 check를 `unknown`으로 유지해 B를 선택하지 않는다. 프론트 요청으로 verified·모델·건수를 지정할 수 없다.
-- 최근 3개월의 검증된 거래 건수 최댓값이 11건 이상이면 B, 부족하거나 10건 이하면 A다. 실제 금융정보 외부 전송 동의(D6)는 미확정이므로 **현재 API 연결은 외부 LLM을 호출하지 않는 규칙 경로**다. 기존 합성 입력 비교 창의 LLM 예측 실험은 그대로 유지한다.
+- 최근 3개월의 검증된 거래 건수 최댓값이 11건 이상이면 B, 부족하거나 10건 이하면 A다. 동의 게이트는 연결했지만 운영 처리위탁 조건 확인·활성화 전이므로 **현재 API 연결은 외부 LLM을 호출하지 않는 규칙 경로**다. 기존 합성 입력 비교 창의 LLM 예측 실험은 그대로 유지한다.
 - 새 초안은 기존 `validation_summary`에 서버 메타데이터(선택 결과·정책/이력 fingerprint·여윳돈 이동액·화면용 설명)를 저장한다. 모델 변경·마이그레이션은 없다. `GET /api/budgets/`의 기존 `categories[].reason`에 서버 문장을 넣고, 새 연결 초안에는 선택적 `recommendation: {spareTransfer: 원 단위 정수}`를 반환한다. `split.living`/`split.spare`는 항목 합계로 계산한 서버 최종값이다.
 - 여윳돈 충당 초안은 아직 프로필 생활비를 바꾸지 않는다. 승인 시 원래 설정·현재 정책·이력이 같음을 재검수한 후 프로필 생활비도 이동액만큼 늘린다. 동일 승인 재요청은 이동을 반복하지 않는다. 설정/이력 변경이면 409로 초안을 만료시킨다. 계산 엔진은 설정 원본과 DB를 직접 수정하지 않는다.
 - 저장 합계 조건: `실수령액 − 전체 항목 합계 = 기존 여윳돈 − spareTransfer + unallocated`. 공용 `recommend.check_result`는 그대로 두고 별도 연결부에서 증가한 생활비 target과 이동 한도를 추가 검수한다.
@@ -436,3 +447,27 @@
 
 - 평균 비율 10개(R-05): ML 담당에게 `fallback_ratios` 숫자만 받기 (모델 파일은 저장소에 없음). 받기 전까지 임시 함수는 화면 시안 비율(`recommend.py` `FALLBACK_RATIOS`)을 쓴다.
 - 잔소리 문구는 위 금액 고정 규칙의 문장으로 확정 (10/28).
+
+
+### 2026-11-06 A/B → 조정 참조 및 다음 주기 목표
+
+신규 A/B Budget.input_snapshot에는 원 ML 몫(활성 코드별 원 단위 올림 정수)과 ml_reference_meta(source/model_id/model_checksum/target/input_hash/raw_ratios/normalization)를 보존한다. target은 여윳돈 충당 전 최초 T₀다. transport_history_reference는 검증된 완료 3개월의 정확한 교통 기준액 분자/분모·월·지문·규칙 버전만 전달한다. 미검증은 unavailable이며 실제 거래/가맹점/개인 사유를 포함하지 않는다.
+
+프로필 budget_category_targets는 category_targets 입력·해시에 포함한다. 최소액/잠금과 별도 출발값이며 ETC는 기타 예약액으로 분리한다. 불가 시 task outcome=target_conflict, conflicts에 requestedAmount/possibleAmount/diff/reason을 반환한다. 성공 후 목표와 최종액 차이는 GET 예산 recommendation.targetConflicts에 같은 구조로 반환하며 승인 전에 표시한다. 목표 자체는 변경하지 않는다. 목표 설정·변경·해제는 이전 초안을 만료시킨다. 필드 0011은 실제 DB 적용 전이다.
+
+### 11/05 카드 확인 필요 안내
+
+`cardPending[].reason=card_assignment_required`는 금액은 확인됐지만 결제 카드 확인이 필요한 승인 거래가 있음을 뜻한다. 지킬 돈 화면 안에서 결제 카드 확인 목록을 펼쳐 확인한다. 확인이 끝나면 지킬 돈 API를 다시 조회한다. 사용자 확인 후에도 금액·취소 오류 또는 조회 기간 공백이 남으면 계속 보류한다.
+
+결제 카드 확인에는 카드번호·비밀번호 입력이나 CODEF 재조회가 필요 없다. 이 상태에서는 재조회 입력란을 숨기며, 사용자가 별도로 ‘카드 내역도 다시 불러오기’를 선택한 경우에만 표시한다.
+
+
+### 11/05 지킬 돈에서 카드 내역 재조회
+
+`cardPending[].cardId`와 연결 목록의 `cardIds`를 대조해 관련 카드사만 화면에 표시한다. 해당 기관의 다시 불러오기 버튼은 기존 `POST /api/finance/sync/`에 그 `connectionId`만 전달한다. 현대카드는 같은 화면에서 추가 인증 정보를 입력하고, 요청을 시작하면 입력칸을 비운다. 조회 결과에 따라 같은 화면에서 미매칭 거래 확인 또는 재로그인을 진행한다. `relogin`은 기관 로그인 팝업으로 다시 연결하며, 별도 문자 인증이 필요한 경우에만 금융 연결 화면으로 안내한다. 재조회·거래 확인 후에는 `GET /api/budgets/protect/`를 다시 호출한다.
+
+카드 인증 정보의 영구 저장·브라우저 저장소 캐시는 추가하지 않았다. 기존 connectedId 보관과 카드사별 추가 인증 요구는 그대로 유지한다.
+
+### 11/05 동의 철회 후 예산 처리
+
+금융 조회 동의를 철회하고 데이터를 삭제하면 기존 예산·쿠션·분석 결과와 지킬 돈 저장값도 초기화된다. 계좌 조회 동의를 철회한 채 다시 동의하지 않은 회원의 지킬 돈 PUT, 추천 POST, 카테고리 금액 고정 PATCH, 승인 POST는 `403 consent_required`다. 카드·대출 선택 동의만 철회했다면 남은 데이터로 예산을 다시 설정할 수 있다.

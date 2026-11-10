@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from django.db import DatabaseError, transaction
 from django.utils import timezone
 
-from budgets import due_match
+from budgets import candidates, due_match, saving_match
 
 from . import card_payments, classifier, loan_payments, transfer_rules
 from .models import FinancialTransaction
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 RETRY_STATE_KEY = "after_save_pending"
 
 
-# 세진: 취소 연결, 내 계좌 이체·카드값·대출 상환 후보 판단, finance/transfer_rules.py (SAME_PURCHASE 연결은 아직 없음)
+# 세진: 취소 연결, 체크카드 같은 구매 연결, 내 계좌 이체·카드값·대출 상환 후보 판단, finance/transfer_rules.py
 def link_basics(user, txs):
     transfer_rules.apply(user, txs)
 
@@ -33,9 +33,9 @@ def match_loan_repayments(user, txs):
     loan_payments.match(user)
 
 
-# 나은: 내 계좌 이체와 확정 정기 저축 매칭, saving 전환
+# 나은: 새 출금 ↔ 확정 정기 저축(보내는 계좌 · 금액 · 이체일 ±3일 · 받는 곳) → saving, 근거 이체에 더함 (budgets/saving_match.py)
 def match_savings(user, txs):
-    pass
+    saving_match.match_savings(user, [tx.pk for tx in txs], timezone.localdate())
 
 
 # 나은: 계좌 고정지출 납부 예정 연결(출금일 ±3일 · 기억한 출금) + 카드 고정지출 고정비 자동 연결(기억한 가맹점 · 같은 카드 · ±10%)
@@ -44,9 +44,10 @@ def match_payment_dues(user, txs):
     due_match.sync_payment_dues(user, timezone.localdate())
 
 
-# 나은: 고정지출·저축 후보 감지
+# 나은: 고정지출·저축 후보 감지 (같은 결제 수단·받는 곳 · 한 달 1건 · ±3일 · 같은 금액(고정지출 ±10%) · 3달 연속)
+#   받은 거래만이 아니라 회원 전체 출금을 본다 (첫 연결 때 4달치가 한 번에 들어옴) — budgets/candidates.py
 def detect_candidates(user, txs):
-    pass
+    candidates.detect_candidates(user, timezone.localdate())
 
 
 AFTER_SAVE_STEPS = [
@@ -105,6 +106,8 @@ def _process_transactions(user, transaction_ids, *, retry_only):
         # 잠금 순서: 회원 먼저 (budgets.api.lock_user 와 같음) → 거래(ID 순).
         # 홈 · 고정지출 수정과 한 회원에 하나씩 돌아서, 거래를 잠그는 순서가 달라도 서로 기다리다 멈추지 않는다
         get_user_model().objects.select_for_update(no_key=True).filter(pk=getattr(user, "pk", user)).first()
+        from budgets.salary import refresh_confirmed
+        refresh_confirmed(user)
         # 같은 거래의 처리·재시도 기록이 서로 덮어쓰이지 않게 잠근다.
         pending = {}
         for tx in txs.select_for_update().order_by("pk"):

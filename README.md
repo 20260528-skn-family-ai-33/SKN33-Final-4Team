@@ -119,7 +119,6 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 - CODEF 조회: `backend/finance/codef.py`, 확인 명령 `python manage.py codef_check` ([`docs/LOCAL_SETUP.md`](docs/LOCAL_SETUP.md) 맨 아래)
 - DB 모델: 27개 테이블 완료 (`users` · `finance` · `budgets` · `chat`), **[`docs/DB_MODELS.md`](docs/DB_MODELS.md)** (테이블 배치 · 작성 규칙 · 도커에서 확인하는 법)
 - `makemigrations`는 **DB 담당(김나은)만** 만들고, 나머지는 `git pull` 후 `python manage.py migrate`만 합니다.
-- API 값은 아직 각 앱의 `mock.py` 가짜 데이터입니다. API 설계 후 DB 값으로 바꿉니다.
 - 서비스 화면은 React가 그립니다. Django는 `/api/...`(데이터), `/api/docs/`(Swagger 문서), `/admin/`(관리자)를 제공합니다.
 
 ---
@@ -175,7 +174,7 @@ React (localhost:5173) ──/api──▶ Vite 프록시 ──▶ Django (127.
 │       └── styles/              # 디자인 CSS
 ├── backend/                     # Django 프로젝트 (API 서버)
 │   ├── config/                  # 설정 · 주소(urls · api_urls) · API 공통 도구
-│   └── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇 (api.py · mock.py · finance/codef.py)
+│   └── users/ finance/ budgets/ chat/   # 앱: 회원 · 계좌/거래 · 예산/쿠션 · 챗봇 (api.py · finance/codef.py)
 ├── docs/                        # 개발 환경 · 환경변수 · React · API 규칙 · DB 모델 가이드
 └── 산출물/
     ├── 01_기획/                  # 요구사항 정의서 · WBS · 프로젝트 기획서

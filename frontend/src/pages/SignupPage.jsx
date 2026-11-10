@@ -2,11 +2,12 @@
 // 비밀번호 조건과 확인 칸 일치 여부를 입력하는 즉시 보여 준다
 // 비밀번호 규칙 (10/22 결정기록 X): 8~25자, 영문 · 숫자 · 특수문자 중 2가지 이상. 확인 칸은 화면에서만 비교하고 서버엔 password 한 번만 보낸다
 // 약관 이름을 누르면 상세 팝업(TermsPopup)이 열리고, 필수 약관에 모두 동의해야 가입된다
+// 약관 원문은 서버(GET /api/consent-documents/)에서 받는다. 못 받으면 가입 버튼을 눌러도 보내지 않는다
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import TermsPopup from '../popups/TermsPopup.jsx'
-import { SIGNUP_TERMS, TERMS } from '../popups/termsText.js'
+import { useConsentDocs } from '../popups/consentDocs.js'
 import { usePopup } from '../popups/context.js'
 import { PATHS } from '../routes.js'
 import { apiSend } from '../utils/api.js'
@@ -26,25 +27,23 @@ export default function SignupPage() {
   const { openPopup } = usePopup()
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
-  // 약관 동의: { terms: true/false, privacy: true/false } — termsText.js 에 약관을 추가하면 저절로 늘어난다
-  const everyTerm = (on) => Object.fromEntries(SIGNUP_TERMS.map((k) => [k, on]))
-  const [agree, setAgree] = useState(() => everyTerm(false))
+  // 예산 AI 같은 선택 동의가 회원가입 필수 약관에 섞이지 않게 목적도 구분한다.
+  const terms = useConsentDocs((d) => d.productScope === null && ['terms', 'privacy'].includes(d.purpose))
   const [error, setError] = useState('')
   const [pwError, setPwError] = useState('')   // 비밀번호 칸 아래에 보이는 오류
   const termsCard = useRef(null)
-  const allAgreed = Object.values(agree).every(Boolean)
 
-  const setOne = (key, on) => {
-    setAgree((a) => ({ ...a, [key]: on }))
+  const setOne = (doc, on) => {
+    terms.setOne(doc, on)
     setTermsError('')
   }
 
   const setAll = (on) => {
-    setAgree(everyTerm(on))
+    terms.setAll(on)
     setTermsError('')
   }
   // 팝업 안 "동의하고 닫기"를 누르면 그 약관 체크박스가 켜진다
-  const openTerms = (key) => openPopup(<TermsPopup kind={key} onAgree={() => setOne(key, true)} />)
+  const openTerms = (doc) => openPopup(<TermsPopup doc={doc.document} onAgree={() => setOne(doc, true)} />)
 
   // 확인 칸: 비어 있으면 아무 말 안 함 / 같으면 ok / 다르면 bad
   const match = !pw2 ? '' : pw === pw2 ? 'ok' : 'bad'
@@ -65,7 +64,7 @@ export default function SignupPage() {
     const email = String(form.get('suEmail') ?? '').trim()
 
     if (!nickname) {
-      setFieldErrors({ nickname: ['이름(닉네임)을 입력해 주세요.'] })
+      setFieldErrors({ nickname: ['이름을 입력해 주세요.'] })
       return
     }
 
@@ -79,7 +78,12 @@ export default function SignupPage() {
       return
     }
 
-    if (!allAgreed) {
+    if (!terms.docs) {
+      setTermsError('약관을 불러온 뒤 동의해 주세요.')
+      return
+    }
+
+    if (!terms.allAgreed) {
       setTermsError('필수 약관에 모두 동의해 주세요.')
       termsCard.current?.scrollIntoView({
         behavior: 'smooth',
@@ -88,11 +92,12 @@ export default function SignupPage() {
       return
     }
 
-    const consents = SIGNUP_TERMS
-      .filter((key) => agree[key])
-      .map((key) => ({
-        purpose: key,
-        documentVersion: TERMS[key].version,
+    // 화면에 보여 준 버전 그대로 보낸다. 해시는 서버가 그 버전의 원문으로 만든다
+    const consents = terms.docs
+      .filter(terms.isAgreed)
+      .map((doc) => ({
+        purpose: doc.purpose,
+        documentVersion: doc.version,
       }))
 
     submittingRef.current = true
@@ -116,8 +121,10 @@ export default function SignupPage() {
       setFieldErrors(err.fields ?? {})
       setPwError(err.fields?.password?.join(' ') ?? '')
 
-      if (err.fields?.consents) {
-        setTermsError('필수 약관과 문서 버전을 확인해 주세요.')
+      if (err.fields?.consents || err.code === 'document_outdated') {
+        // 약관이 바뀌었을 수 있다 → 새로 받아 다시 확인받는다 (체크는 지워진다)
+        terms.reload()
+        setTermsError('약관이 바뀌었을 수 있어요. 새 약관을 확인하고 다시 동의해 주세요.')
       }
 
       setError(
@@ -165,7 +172,7 @@ export default function SignupPage() {
           style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
         >
           <label className="mc-field">
-            이름(닉네임)
+            이름
             <input
               name="suName"
               placeholder="홍길동"
@@ -174,9 +181,13 @@ export default function SignupPage() {
               maxLength={100}
               aria-invalid={Boolean(fieldErrors.nickname)}
               aria-describedby={
-                fieldErrors.nickname ? 'signup-nickname-error' : undefined
+                fieldErrors.nickname ? 'signup-nickname-hint signup-nickname-error' : 'signup-nickname-hint'
               }
             />
+            {/* 저축 후보 감지가 이체 적요의 이름과 비교한다 (11/4) */}
+            <span id="signup-nickname-hint" className="mc-muted" style={{ display: 'block', marginTop: 6 }}>
+              통장에 찍히는 이름과 같게 적어 주세요. 내 계좌끼리 옮긴 돈을 찾는 데 써요.
+            </span>
           </label>
 
           {fieldErrors.nickname && (
@@ -278,34 +289,45 @@ export default function SignupPage() {
           )}
 
           <div className="mc-card" ref={termsCard}>
-            <label className="mc-field mc-check mc-terms-all">
-              <input
-                type="checkbox"
-                checked={allAgreed}
-                onChange={(e) => setAll(e.target.checked)}
-              />
-              약관 전체 동의
-            </label>
-
-            {SIGNUP_TERMS.map((key) => [key, TERMS[key]]).map(([key, doc]) => (
-              <div className="mc-terms-row" key={key}>
-                <input
-                  aria-label={doc.label}
-                  checked={agree[key]}
-                  name={`agree_${key}`}
-                  type="checkbox"
-                  onChange={(e) => setOne(key, e.target.checked)}
-                />
-                <button
-                  type="button"
-                  className="mc-terms-open"
-                  aria-haspopup="dialog"
-                  onClick={() => openTerms(key)}
-                >
-                  {doc.label}<span>보기</span>
-                </button>
+            {terms.error ? (
+              <div role="alert">
+                <p className="mc-error">약관을 불러오지 못했어요. 약관을 확인해야 가입할 수 있어요.</p>
+                <button type="button" className="mc-link" onClick={terms.reload}>다시 불러오기</button>
               </div>
-            ))}
+            ) : !terms.docs ? (
+              <p className="mc-muted">약관을 불러오는 중…</p>
+            ) : (
+              <>
+                <label className="mc-field mc-check mc-terms-all">
+                  <input
+                    type="checkbox"
+                    checked={terms.allAgreed}
+                    onChange={(e) => setAll(e.target.checked)}
+                  />
+                  약관 전체 동의
+                </label>
+
+                {terms.docs.map((doc) => (
+                  <div className="mc-terms-row" key={doc.purpose}>
+                    <input
+                      aria-label={doc.document.label}
+                      checked={terms.isAgreed(doc)}
+                      name={`agree_${doc.purpose}`}
+                      type="checkbox"
+                      onChange={(e) => setOne(doc, e.target.checked)}
+                    />
+                    <button
+                      type="button"
+                      className="mc-terms-open"
+                      aria-haspopup="dialog"
+                      onClick={() => openTerms(doc)}
+                    >
+                      {doc.document.label}<span>보기</span>
+                    </button>
+                  </div>
+                ))}
+              </>
+            )}
 
             {termsError && (
               <p className="mc-error mc-terms-err" role="alert">

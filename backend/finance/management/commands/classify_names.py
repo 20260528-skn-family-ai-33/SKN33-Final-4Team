@@ -54,7 +54,7 @@ def classify_names(names):
                 "확신도": "" if tx.suggestion_confidence is None else f"{tx.suggestion_confidence:.2f}",
                 "후보": " ".join(candidates),
                 "검색": f"{record.get('source') or '0건'}:{record.get('industry') or '-'}" if record else "",
-                "메모": " ".join(k for k in ("dropped_industry", "store_mismatch", "error") if record.get(k)),
+                "메모": " ".join(k for k in ("dropped_industry", "store_mismatch", "error", "web_accepted", "web_error", "evidence_conflict") if record.get(k)),
                 "Jev": f"{record.get('choice')} {record.get('confidence')}" if record.get("choice") else "",
                 "ms": record.get("ms", ""),
                 "이유": tx.suggestion_reason or "",

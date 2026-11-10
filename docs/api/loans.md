@@ -19,6 +19,17 @@
 
 비밀번호 재설정·ML 입력 정보·추천 예산·쿠션 배분 규칙·후속 차수 기능은 이번에 정하지 않는다. 로그인·내 계정 응답의 `onboardingCompleted`는 첫 예산 승인 시 true이며, false면 저장된 값을 채운 온보딩 첫 단계로 이동한다(결정기록 3-3 R). 1차에는 단계 번호를 반환하지 않는다. 금융 동의·계좌·연결 해제·재조회·챗봇 전체 계약은 혜리 담당이며, `chat.md` 최종 편집도 혜리가 한다.
 
+## 화면 연결 (2026-11-05)
+
+- 연결 관리의 대출 항목 또는 홈 ‘꼭 나갈 돈 → 대출 상환 정보 확인’에서 대출 확인 화면을 연다. 선택한 대출을 먼저 표시한다.
+- 온보딩은 연결 완료 → 월급 입력 → 고정지출 확인 → 저축 확인 → 대출 확인·직접 등록 → 지킬 돈 순서로 진행한다. 조회된 대출이 없어도 대출 확인 화면을 거치며, 대출이 없으면 등록 없이 다음으로 넘어갈 수 있다.
+- 테스트 환경의 기존 연결 재사용 응답(`onboardingNextStep=salary`)은 프로필 저장 뒤 월급 입력으로 이동한다. 마이페이지에서 프로필만 수정할 때는 기존대로 마이페이지로 돌아간다.
+- 목록은 GET 응답을 표시하고 각 대출의 상환 방식·월 상환 예정액·매월 납부일을 PATCH로 저장한다. 각 항목의 저장 성공을 따로 확인하므로 여러 대출 중 일부 저장 실패가 전체 성공으로 보이지 않는다.
+- 직접 등록은 POST 성공 후 목록을 다시 읽는다. 같은 팝업에서 재시도할 때 요청 번호를 유지하고 저장 중 중복 제출을 막는다. 조회 동의가 없어도 직접 등록 대출의 등록·목록 조회·상환 정보 수정은 가능하다. `hasInquiryConsent=false`이면 기관 대출을 제외한 목록임을 안내하고 기관 조회 동의를 선택적으로 제공한다.
+- 빈 입력은 null, ‘잘 모르겠어요’ 선택은 unknown이다. 기관 납부 날짜를 매월 납부일로 자동 변환하지 않고, 추정액도 사용자가 고르기 전에는 채우지 않는다.
+- 로딩·빈 목록·동의 필요·오류를 구분한다. 저장 실패 시 입력을 유지하고 세션 만료 시 로그인으로 이동한다. 수정한 항목은 저장 후 하단 ‘다음/확인 마침’으로 이동한다.
+- 화면 통합 회귀 테스트: `frontend/src/pages/FinanceDetails.test.jsx`.
+
 ## 결정기록에서 반영한 확정 기준
 
 아래는 `결정기록_2026-10-21.md` 전체를 확인해 이 담당 범위에 적용한 팀 확정 사항이다. **팀 규칙이 확정됐다는 뜻이며, 아래 API의 초안 필드나 구현까지 완료됐다는 뜻은 아니다.**
@@ -76,7 +87,7 @@
 | 금융 GET에 필요한 조회 동의 없음 | 403 | `consent_required` | 동의 안내, `fields` 생략 |
 | 서버 내부 오류 | 500 | `server_error` | 잠시 후 다시 시도 안내 |
 
-**결정기록 3-3 O:** 카드 후보·청구서·대출 GET은 저장된 자료만 읽고 CODEF를 호출하지 않는다. 해당 금융 조회 동의가 없으면 403 `consent_required`이며 `fields`는 생략한다. `provider_unavailable`(502)·`relogin_required`(409)는 추후 연결·재조회 API의 오류이며 이 GET의 외부 호출 오류로 넣지 않는다. `relogin` 상태에서도 저장된 마지막 자료를 조회한다. 조회 시각은 원래의 `fetchedAt`을 유지한다.
+**결정기록 3-3 O 및 11/05 직접 등록 대출 예외:** 카드 후보·청구서·대출 GET은 저장된 자료만 읽고 CODEF를 호출하지 않는다. 카드 후보·청구서는 해당 금융 조회 동의가 없으면 403 `consent_required`이며 `fields`는 생략한다. **11/05 수정:** 대출 목록은 동의가 없어도 200으로 직접 등록(`origin=manual`) 대출만 반환한다. `hasInquiryConsent=false`로 기관 자료를 제외했음을 표시하며, 동의가 있으면 기관 대출도 포함하고 true를 반환한다. `provider_unavailable`(502)·`relogin_required`(409)는 추후 연결·재조회 API의 오류이며 이 GET의 외부 호출 오류로 넣지 않는다. `relogin` 상태에서도 저장된 마지막 자료를 조회한다. 조회 시각은 원래의 `fetchedAt`을 유지한다.
 
 첫 청구서 계산 C-17(Q)과 카드 연동은 [카드 명세 10번](./cards.md#10-카드-청구서-보기)을 참조한다.
 
@@ -116,6 +127,7 @@
 | `paymentHistory[].principal` | 정수 또는 null | 해당 납부의 원금, 원. 대출 약정원금과 구분하며 미제공은 null |
 | `paymentHistory[].interest` | 정수 또는 null | 해당 납부의 이자, 원. 미제공은 null, 확인된 0원만 0 |
 | `estimatedMonthlyPayment` | 정수 또는 null | P: 확인된 지난 납부를 근거로 계산한 월 상환 추정액, 원. 자료가 없거나 산출할 수 없으면 null·화면 숨김. 사용자 저장값 `monthlyPayment`를 자동 덮어쓰지 않음 |
+| `recentDues` | 객체 배열 | 11/06: 홈 ‘꼭 나갈 돈’과 같은 범위(지난 주기 시작 ~ 이번 주기 끝)의 유효한 납부 회차, 납부일 순. `dueId`·`dueDate`·`expectedAmount`(예정액)·`paidAmount`(연결한 출금 합계)·`paymentState`. 다 낸 회차도 [납부 거래 확인]으로 다시 열어 정정할 수 있게. 급여 주기가 없으면 `[]` |
 | `overdue` | 불리언 또는 null | P: 연체 확인 true, 연체 없음 확인 false, 알 수 없으면 null·화면 숨김. `status: repaid`와 다른 뜻. DB `loan.overdue`(10/24 추가) |
 | `fieldStates` | 객체 | **AA 확정:** `manualBalance`·`manualRate`·`repaymentMethod`·`monthlyPayment`·`paymentDay` 각 보완값의 출처·사용자 확인 상태. DB JSON 전체를 그대로 노출하지 않고 아래 허용 항목만 구성 |
 | `fieldStates.<필드>.source` | 문자열 또는 null | `provider` 기관 조회 / `manual` 사용자 입력 / `estimated` 서버 추정. 값이 없거나 출처를 확인할 수 없으면 null |
@@ -125,6 +137,7 @@
 
 ```json
 {
+  "hasInquiryConsent": true,
   "items": [
     {
       "loanId": "25cd2314-1886-45dc-998e-650eb012a742",
@@ -262,7 +275,7 @@ ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `fiel
 |---|---|---|---|
 | 비로그인 | 403 | `not_authenticated` | 로그인 필요 |
 | 서버 오류 | 500 | `server_error` | 대출 정보 조회 실패·재시도 |
-| 대출 조회 동의 없음 | 403 | `consent_required` | 동의 화면으로 이동. `fields` 없음(O) |
+| 대출 조회 동의 없음 | 200 | — | 직접 등록 대출만 표시하고 기관 조회 동의를 선택적으로 안내 (`hasInquiryConsent=false`) |
 
 ## 9. 대출 정보 보완
 
@@ -276,7 +289,7 @@ ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `fiel
 
 **보내는 값**
 
-주소의 `id`는 본인의 상환 중(`repaying`) 대출 UUID다. 기관 조회·직접 등록 대출 모두 아래 세 칸만 수정한다.
+주소의 `id`는 본인의 상환 중(`repaying`) 대출 UUID다. 기관 조회·직접 등록 대출 모두 아래 세 칸만 수정한다. 직접 등록 대출에는 조회 동의가 필요 없고, 기관 조회 대출은 유효한 대출 조회 동의가 없으면 403 `consent_required`로 거절한다.
 
 | 이름 | 타입 | 필수 | null | 범위·의미 |
 |---|---|---|---|---|
@@ -293,7 +306,7 @@ ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `fiel
 ```
 
 - 안 보낸 칸은 유지하고, 세 칸 모두 `null`을 보내면 비워서 모름으로 저장한다. 빈 문자열은 400이다. 예를 들어 `{"paymentDay": null}`은 납부일만 비운다.
-- `manualBalance`·`manualRate`·`maturityDate`·기관 원본·`status`·`origin`·소유자·연결 ID·`fieldStates`는 1차 수정 대상이 아니다. 보내면 공통 규칙에 따라 400 `invalid`다. 기관 대출의 잔액·금리 보완은 2차다(P).
+- 기관 원본·`status`·`origin`·소유자·연결 ID·`fieldStates`는 수정 대상이 아니다. 보내면 공통 규칙에 따라 400 `invalid`다. 직접 등록 대출의 기관명·상품명·잔액·금리·만기일 정정은 13번(R19). 기관 대출의 잔액·금리 보완은 2차다(P).
 - **상환 완료(`repaid`) 대출은 404**다. 없는 대출·남의 대출과 같은 문구를 사용한다.
 - 저장 결과 월 상환액·납부일이 모두 있으면 이번 주기 납부 예정을 만든다(P). 같은 PATCH를 반복해도 납부 예정을 중복 생성하지 않는다. 둘 중 하나가 없으면 새 납부 예정을 만들지 않는다. 이미 생성된 납부 예정의 값 변경·null 전환·부분 납부 처리는 마지막 구현 조율 항목에서 확인한다.
 - 승인된 예산을 사용자 승인 없이 바꾸지 않는다. 보완 저장은 대출 전체 상환 완료 처리가 아니다.
@@ -398,11 +411,99 @@ ACC-006의 값별 출처·확인 시각 요구와 `Loan.repayment_method`, `fiel
 | CSRF 실패 | 403 | `permission_denied` | 다시 시도 |
 | 서버 오류 | 500 | `server_error` | 등록 실패 안내 |
 
+## 12. 대출 납부 거래 확인 (11/06)
+
+홈 ‘꼭 나갈 돈’의 대출 항목 또는 대출 확인 화면의 회차에서 [납부 거래 확인]을 누르면, 저장된 내 계좌 출금 중 실제로 낸 거래를 골라 **이번 회차**를 확인한다. CODEF를 부르지 않고 저장된 거래만 본다.
+
+| 메서드 | 주소 | 하는 일 |
+|---|---|---|
+| GET | `/api/finance/loan-dues/<dueId>/payments/?from=&to=` | 회차 상태 · 연결한 출금(`linked`) · 고를 수 있는 출금 후보(`items`, 최대 50건) |
+| POST | 같은 주소 | 출금 연결 · 정정 `{ transactionId, settlement, confirmReclassify? }` (`Idempotency-Key` 선택) |
+| DELETE | `/api/finance/loan-dues/<dueId>/payments/<transactionId>/` | 연결 취소. 원래 분류를 모르는 거래는 본문 `{ restoreType: transfer\|spending, restoreCategory? }` 필수 |
+
+**판단 기준**
+
+- 후보: 내 계좌의 출금 · 오늘까지 · 취소 아님 · 남은 금액 > 0. **금액이 다르거나 적요에 기관 이름이 없어도 빼지 않는다.** 기본 기간은 납부일 ±7일(오늘까지), `from`·`to`로 최대 92일까지 넓힌다. 연결 계좌가 아닌 다른 내 계좌 출금도 나온다.
+- 후보에서 빼는 거래(고를 수도 없음, 400 `invalid`): 다른 회원 거래 · 취소 거래 · 내 계좌 이체(`own_transfer`, R11 확인 중 `own_transfer_review`·재확인 포함) · 저축 · 입금 · 고정지출/정기 저축의 근거 거래 · 내 계좌 이체 연결 거래 · 카드 승인과 같은 구매(`SAME_PURCHASE`)로 연결된 계좌 출금(11/06 보완. 그 연결·분류는 건드리지 않고, 풀어서 옮기지도 않음).
+- 이미 **다른** 납부 회차에 연결된 거래: 후보에 없음, POST하면 409 `not_ready` (조용히 옮기지 않음 — 그 회차에서 먼저 연결을 푼다).
+- 정렬(참고만): 연결 계좌 또는 전에 사용자가 이 대출로 확인한 계좌·적요 → 납부일 ±3일 → 날짜 차이 → 금액 차이. `hints`(`linkedAccount`·`nearDueDate`·`lenderInDescription`·`sameAsBefore`)와 `amountDifference`(실제 − 예정)는 화면 표시용이며 **자동 확정에 쓰지 않는다.**
+- `settlement: full` = “이번 납부를 전부 냈어요” → 금액과 관계없이 이 회차 `paid`. `partial` = “일부만 냈어요” → 금액 비율과 관계없이 `partial`. 한 회차에 여러 출금을 연결할 수 있고(분할 납부), `full`은 회차에 하나만(다른 출금을 `full`로 고르면 앞의 것은 `partial`로).
+- 대출의 `status`(repaid)·`monthlyPayment`·회차 예정액(`expectedAmount`)·승인 예산은 바꾸지 않는다.
+- 분류 변경: 연결하면 거래 유형이 `loan_repayment`(사용자 확인)로 바뀌어 소비 합계에서 빠진다(대출은 월 상환액으로 따로 확보). 후보의 `reclassify`가 `needsConfirm: true`(소비·카드값 등 이체가 아닌 유형, 또는 사용자가 확정한 분류)면 `confirmReclassify: true` 없이 400 `invalid` (`fields.confirmReclassify`).
+- 연결 취소: `linked[].cancelEffect.kind`로 미리 알려 준다.
+  - `restore`: 이 연결이 바꾼 분류를 **그 뒤 바뀌지 않았을 때만** 원래 값(`toType`·`toCategory`)으로 되돌린다.
+  - `keep`: 연결 뒤 사용자가 바꾼 분류라 지금 값 그대로 둔다(보낸 본문은 쓰지 않음).
+  - `choose`: 원래 분류 기록이 없음(이번 변경 전 자동 연결, 또는 그런 거래를 사용자가 확인한 경우). 원래 분류를 **추측하지 않는다.** 본문 `restoreType`(`transfer` = 이체·카테고리 ‘확인 필요’ / `spending` = 소비, `restoreCategory` 필수·사용자 확정)이 없으면 400이고 연결·분류를 바꾸지 않는다 — 대출 상환 유형인 채로 연결만 풀면 거래 목록에서 사라지기 때문. 받으면 연결 해제와 분류 변경을 한 트랜잭션에서 처리한다.
+  - 응답 `released.classification`(`restored`·`kept`·`chosen`)이 실제로 한 일이며, 화면 안내는 이 값대로(복원하지 않았으면 “되돌렸어요”라고 하지 않음). 그 회차에는 자동 연결이 다시 붙지 않게 표시한다(`skip_auto_match`). 이미 풀린 연결의 DELETE 재전송은 200 + `released: null`, 아무것도 바꾸지 않는다.
+  - 같은 판단을 다시 POST하면 아무것도 쓰지 않는다(`updatedAt`도 그대로).
+- 같은 요청 재전송은 연결이 하나만 남고, 같은 거래를 두 회차에 동시에 연결하면 한쪽만 성공(회원 잠금 → 대출 → 회차 → 거래 순).
+
+**응답** (GET · POST · DELETE 공통, POST·DELETE에는 `items`·`searchFrom`·`searchTo` 없음, DELETE만 `released`. 확정 계약: `docs/openapi/parts/loans.json` `LoanDuePaymentState`)
+
+```json
+{
+  "due": {"dueId": "…", "loanId": "…", "name": "합성은행 학자금", "dueDate": "2026-11-10",
+          "expectedAmount": 300000, "paidAmount": 298000, "paymentState": "paid", "linkedAccount": {"accountId": "…", "displayName": "합성은행 월급통장 · ****1001", "status": "connected"}},
+  "linked": [{"transactionId": "…", "date": "2026-11-10", "amount": 298000, "account": {…}, "description": "자동이체 출금",
+              "amountDifference": -2000, "hints": {"linkedAccount": true, "nearDueDate": true, "lenderInDescription": false, "sameAsBefore": false},
+              "reclassify": null, "settlement": "full", "source": "user"}],
+  "searchFrom": "2026-11-03", "searchTo": "2026-11-12", "items": []
+}
+```
+
+`settlement`: `full` · `partial` · null(자동 연결) / `source`: `user` · `rule`(자동 연결).
+
+**자동 연결(기존 `finance/loan_payments.py`) 점검**: 조건(월 상환액과 같은 금액 · 적요의 기관 이름 · 납부일 ±3일 · 연결 계좌)은 그대로 두되, 한 출금에 맞는 대출이 여럿이거나 한 회차에 맞는 출금이 여럿이면 연결하지 않고 사용자 확인으로 남긴다. 사용자가 연결을 푼 회차에는 다시 붙이지 않는다.
+
+**납부 상태 계산**: 대출 회차는 공통 90% 규칙을 쓰지 않는다. 사용자 확인 `full` → paid, `partial` → partial, 확인 없는 자동 연결은 예정액 이상일 때만 paid, 연결 없음은 출금일 전 unpaid · 지남 needs_review. 사용자 판단은 연결한 거래의 `field_states.loan_payment`에 저장돼 홈 재조회 · 재수집 · 상태 재계산 뒤에도 유지된다(재수집은 기존 거래를 덮어쓰지 않음).
+
+| 상황 | 상태 | `code` |
+|---|---|---|
+| 남의 회차 · 없는 회차 · 취소된 회차 · 주소 ID 형식 오류 | 404 | `not_found` |
+| 기관 조회 대출인데 대출 조회 동의 없음 | 403 | `consent_required` |
+| `transactionId` 없음 · 남의 것 · 고를 수 없는 거래, `settlement` 오류, 표에 없는 칸, `from`·`to` 형식·기간 오류 | 400 | `invalid` |
+| 분류 변경 확인 없음 | 400 | `invalid` (`fields.confirmReclassify`) |
+| 연결 취소: 원래 분류를 모르는데 `restoreType` 없음 · `restoreCategory` 오류 · 표에 없는 칸 | 400 | `invalid` (`fields.restoreType` · `fields.restoreCategory`) |
+| 다른 회차에 이미 연결된 거래 | 409 | `not_ready` |
+
+## 13. 직접 등록 대출 정정 · 전체 완납 · 되돌리기 (R19, 11/06)
+
+**정정** — `PATCH /api/finance/loans/<id>/` (9번)에 직접 등록(`origin=manual`) 대출만 아래 칸을 더 받는다. 새 입력 항목은 없고 등록 때 받은 칸을 고치는 것이다.
+
+| 이름 | 타입 | null | 범위 |
+|---|---|---|---|
+| `lenderName` · `productName` | 문자열 | 불가 | 1~50자, 빈 문자열 400 |
+| `manualBalance` | 정수 | 불가 | 0~1,000,000,000원. **0원은 정정값일 뿐 전체 완납이 아니다** |
+| `manualRate` | 숫자 | 가능(비우기) | 0~30 |
+| `maturityDate` | `YYYY-MM-DD` | 가능(비우기) | 없는 날짜 400 |
+
+- 기관 조회 대출에 위 칸을 보내면 400 `invalid`(`fields.<칸>`: "기관에서 조회한 대출은 이 정보를 바꿀 수 없어요."). 기존 세 칸(월 상환액 · 납부일 · 상환 방식)은 그대로 받는다.
+- 정정은 실제 상환이 아니다: 납부 거래 · 납부액을 만들지 않고, 지난 회차의 `paidAmount` · 연결 거래(`PaymentMatch`) · 사용자 납부 확인 · 회차 ID를 바꾸지 않는다. 월 상환액 · 납부일 변경은 기존 회차 규칙(9번)을 따른다 — 낸 · 일부 낸 회차는 그대로, 같은 의무의 회차를 새로 만들지 않는다.
+- 상환 종료(`repaid`) 대출 PATCH는 지금처럼 404 — 오래된 화면의 수정이 완납 상태를 덮지 않는다.
+
+**전체 완납** — `POST /api/finance/loans/<id>/payoff/` (본문 `{}`, 요청 번호 선택)
+
+- ‘이 대출을 전부 갚았어요’. [납부 거래 확인]의 ‘이번 회차 다 냈어요’와 다른 동작이며, 회차 납부 확인은 대출을 완납으로 바꾸지 않는다.
+- 사용자 신고로 `status=repaid`, `manualBalance=0`. 근거(사용자 신고 · 처리 시각)와 이전 상태 · 잔액을 `fieldStates`가 아닌 내부 기록(DB `field_states.payoff`)에 남기고 응답 `payoff`(`source: user_report` · `reportedAt` · `previousBalance`)로 보여 준다. 처리일은 오늘이며 날짜를 받지 않는다(본문에 칸이 있으면 400).
+- 회차: **오늘보다 뒤** 회차 중 납부 · 연결 근거가 없는 것만 취소(`obligationState=canceled`). **오늘 · 지난** 회차(미납 · 확인 필요 · 일부 · 완료)와 미리 일부라도 낸 미래 회차는 그대로 두어 홈 ‘꼭 나갈 돈’과 [납부 거래 확인]에서 정리한다. 가짜 ‘납부 완료’로 바꾸거나 지우지 않는다.
+- 이후 홈 조회 · 재매칭 · 다음 주기에도 새 회차를 만들지 않는다(회차 생성 전에 잠금 안에서 상태를 다시 본다). 지킬 돈의 대출 합계(`status=repaying`만)에서 빠진다.
+- 예산: 승인 전 초안(`draft` · `validated`)만 만료. 승인된 예산 · 쿠션 · 생활비는 바꾸지 않는다.
+- 이미 완납이면 처음 기록 그대로 200. 기관 조회 대출은 409 `not_ready`. 남의 · 없는 대출 404. 대출 행은 지우지 않는다.
+
+**되돌리기** — `POST /api/finance/loans/<id>/payoff/cancel/` 본문 `{"reportedAt": "<payoff.reportedAt>"}`
+
+- 화면에서 본 완납 처리와 지금 기록의 `reportedAt`이 다르면(그 뒤 다시 완납 처리됨) 409 `not_ready` — 최신 상태를 덮지 않는다. 이미 상환 중이면 그대로 200.
+- `status=repaying`, 잔액이 완납 때 넣은 0원이면 이전 잔액으로 복구. 완납 근거는 지우지 않고 되돌린 시각을 덧붙인다.
+- 남은 납부 기록 · 연결은 그대로. 이번 주기 회차만 기존 규칙으로 다시 준비한다(같은 회차를 다시 살리고, 지난 주기 회차는 만들지 않는다). 승인 전 초안만 만료.
+- 되돌릴 대출은 `GET /api/finance/loans/?status=repaid`(직접 등록만)로 다시 찾는다. 다른 값은 400.
+
+**화면** — 대출 확인 카드의 [대출 전체 완납 처리] → 확인 화면(남은 원금을 모두 갚아 상환을 종료하는 처리, 취소될 미래 회차 · 남는 오늘/지난 회차 안내와 [납부 거래 확인] 연결) → 처리. 처리 뒤와 ‘상환 종료한 직접 등록 대출’ 목록에서 [완납 취소].
+
 ## 구현 전 검토·검증 목록
 
 향후 구현 시 검증할 항목이며 현재 테스트 통과 기록이 아니다.
 
-- [ ] GET에서 CODEF를 호출하지 않고, 조회 동의가 없으면 403 `consent_required`다(O).
+- [ ] GET에서 CODEF를 호출하지 않는다. 동의 없음·철회 시 직접 등록 대출만 조회·수정할 수 있고 기관 대출은 노출·수정되지 않는다. `hasInquiryConsent`로 표시 범위를 안내한다.
 - [ ] PATCH의 금액 1~100,000,000원·납부일 1~31·상환 방식 네 코드와 각 null을 검증한다. 생략은 유지, 범위 밖·빈 문자열·허용 외 필드는 400, 상환 완료는 404다(P).
 - [ ] `paymentHistory` 최근 3건·`estimatedMonthlyPayment`·`overdue`를 원천과 구분하고, 미제공은 null로 반환한다(P).
 - [ ] POST의 이름 1~50자·잔액 1~1,000,000,000원·금리 0~30%와 선택 칸을 검증하며 `origin: manual`·`status: repaying`을 서버에서 설정한다(Y).

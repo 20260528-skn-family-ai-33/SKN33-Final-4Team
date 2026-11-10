@@ -1,126 +1,213 @@
-// 대출 확인
-// 대출 목록은 시안 예시값 — CODEF 대출 조회 API 가 생기면 바꾼다
-import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+// 대출 조회·상환 정보 보완. 각 대출을 저장한 뒤 다음 단계로 이동한다.
+import { useRef, useState } from 'react'
+import { Navigate, useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { MONTH_DAYS } from '../utils/days.js'
 import { won } from '../utils/money.js'
+import { apiSend, useApi } from '../utils/api.js'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import LoanAddPopup from '../popups/LoanAddPopup.jsx'
+import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
+import LoanEditPopup from '../popups/LoanEditPopup.jsx'
+import LoanPayoffPopup from '../popups/LoanPayoffPopup.jsx'
 
-const METHODS = ['원리금균등', '원금균등', '만기일시', '잘 모르겠어요']
-// tag: auto = CODEF 조회됨 / plan = 직접 입력 / warn = 확인 필요
-const LOANS = [
-  {
-    id: 'L1', name: '신용대출', org: 'KB국민은행', source: ['auto', 'CODEF 조회'], asOf: '오늘 09:30 기준',
-    info: [['약정금액', 'auto', '조회됨', '10,000,000원'], ['잔액', 'auto', '조회됨', '6,420,000원'], ['금리', 'auto', '조회됨', '연 5.8%'], ['만기일', 'auto', '조회됨', '2028.03.25']],
-    overdue: false,  // 연체 여부 (CODEF 대출 거래내역 resState)
-    // 지난 납부: 원금(resPrincipal) + 이자(resInterest) = 낸 돈(resTranAmount)
-    history: [
-      { date: '07.25', principal: 285_000, interest: 27_000 },
-      { date: '08.25', principal: 285_000, interest: 25_500 },
-      { date: '09.25', principal: 285_000, interest: 24_000 },
-    ],
-    estimate: 310_500, estimateNote: '추정 310,500원 · 확인된 납부 3건(07~09월) 평균',
-    day: '25', dayNote: '최근 납부일 09.25 · 기관에 따라 이자 납입일일 수 있어요',
-  },
-  {
-    id: 'L2', name: '학자금대출', org: '한국장학재단', source: ['plan', '직접 등록한 대출'],
-    info: [['약정금액', 'warn', '확인 필요', '-'], ['잔액', 'plan', '직접 입력', '3,150,000원'], ['금리', 'plan', '직접 입력', '연 1.7%'], ['만기일', 'warn', '확인 필요', '-']],
-    history: '불러온 납부 내역이 없어요.',
-    day: '', dayNote: '납부일을 직접 골라 주세요',
-  },
-]
+const METHODS = [['equal_payment', '원리금균등'], ['equal_principal', '원금균등'], ['bullet', '만기일시'], ['unknown', '잘 모르겠어요']]
+const money = (value) => value == null ? '확인 필요' : won(value)
+const SOURCE = { provider: '기관 조회', manual: '직접 입력', estimated: '서버 추정' }
+const when = (iso) => iso ? new Date(iso).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '조회 기록 없음'
+const DUE_STATE = { unpaid: '아직 확인 안 됨', partial: '일부만 냈어요', paid: '이번 납부 완료', needs_review: '출금 확인 필요' }
+const draftOf = (loan) => ({ monthlyPayment: String(loan.monthlyPayment ?? ''), paymentDay: String(loan.paymentDay ?? ''), repaymentMethod: loan.repaymentMethod ?? '' })
 
-function LoanCard({ loan }) {
-  const [method, setMethod] = useState(null)
-  const [amount, setAmount] = useState('')
-
+function LoanCard({ loan, onEditing, onPaymentSaved, onPaidOff }) {
+  const navigate = useNavigate()
+  const { openPopup } = usePopup()
+  const [saved, setSaved] = useState(loan)
+  const [draft, setDraft] = useState(() => draftOf(loan))
+  const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
+  const [error, setError] = useState('')
+  const [fields, setFields] = useState({})
+  const [success, setSuccess] = useState(false)
+  const change = (field, value) => {
+    const next = { ...draft, [field]: value }
+    setDraft(next)
+    setSuccess(false)
+    const original = draftOf(saved)
+    onEditing(loan.loanId, Object.keys(next).some((key) => next[key] !== original[key]))
+  }
+  const save = async (e) => {
+    e.preventDefault()
+    if (pending.current) return
+    setError('')
+    setFields({})
+    setSuccess(false)
+    const amount = draft.monthlyPayment === '' ? null : Number(draft.monthlyPayment)
+    if (amount !== null && (!Number.isInteger(amount) || amount < 1 || amount > 100_000_000)) {
+      setFields({ monthlyPayment: ['월 상환액은 1원부터 1억 원까지 입력해 주세요.'] })
+      return
+    }
+    pending.current = true
+    setBusy(true)
+    onEditing(loan.loanId, true)
+    try {
+      const result = await apiSend(`/api/finance/loans/${loan.loanId}/`, 'PATCH', {
+        monthlyPayment: amount,
+        paymentDay: draft.paymentDay === '' ? null : Number(draft.paymentDay),
+        repaymentMethod: draft.repaymentMethod || null,
+      })
+      setSaved(result)
+      setDraft(draftOf(result))
+      setSuccess(true)
+      onEditing(loan.loanId, false)
+    } catch (err) {
+      if (err.code === 'not_authenticated') navigate(PATHS.login, { replace: true })
+      setFields(err.fields ?? {})
+      setError(err.status ? err.message : '서버에 연결하지 못했어요. 입력한 내용은 유지돼요. 다시 시도해 주세요.')
+    } finally {
+      pending.current = false
+      setBusy(false)
+    }
+  }
+  const fieldError = (key) => fields[key] && <p className="mc-field-error" role="alert">{fields[key].join(' ')}</p>
+  const stateNote = (key) => {
+    const state = saved.fieldStates?.[key]
+    if (!state?.source) return null
+    return <small className="mc-loan-sub">저장된 값: {SOURCE[state.source] ?? '출처 확인 필요'} · {state.confirmationStatus === 'confirmed' ? '확인 완료' : '확인 필요'}{state.confirmedAt ? ` · ${when(state.confirmedAt)}` : ''}</small>
+  }
+  const manual = saved.origin === 'manual'
   return (
-    <div className="mc-card mc-loan">
+    <section className="mc-card mc-loan" aria-label={`${saved.productName ?? '대출'} 상환 정보`}>
       <div className="mc-row">
-        <h2>{loan.name} <span className="mc-hint">{loan.org}</span></h2>
-        <span className={`mc-loan-tag ${loan.source[0]}`}>{loan.source[1]}</span>
+        <h2>{saved.productName ?? '대출'} <span className="mc-hint">{saved.lenderName ?? '기관 확인 필요'}</span></h2>
+        <span className={`mc-loan-tag ${manual ? 'plan' : 'auto'}`}>{manual ? '직접 등록' : '기관 조회'}</span>
       </div>
-      {loan.overdue === true && <p className="mc-loan-overdue" role="note">연체 중인 대출이에요. 연체가 길어지면 신용점수가 떨어질 수 있어요. 은행에 먼저 확인해 주세요.</p>}
-      {loan.overdue === false && <p className="mc-loan-ok">연체 없음 · 조회됨</p>}
-      <h3 className="mc-loan-h">조회된 대출 정보 {loan.asOf && <small>{loan.asOf}</small>}</h3>
+      {saved.overdue === true && <p className="mc-loan-overdue">연체 중으로 조회됐어요. 기관에서 확인해 주세요.</p>}
+      {saved.overdue === false && <p className="mc-loan-ok">연체 없음 · 조회됨</p>}
+      <h3 className="mc-loan-h">대출 정보 <small>{when(saved.fetchedAt)}</small></h3>
       <div className="mc-loan-grid">
-        {loan.info.map(([label, tag, tagText, value]) => (
-          <div key={label}><span>{label} <em className={`mc-loan-tag ${tag}`}>{tagText}</em></span><strong>{value}</strong></div>
-        ))}
+        <div><span>약정금액 · 기관 조회</span><strong>{money(saved.reportedPrincipal)}</strong></div>
+        <div><span>잔액 · {manual ? '직접 입력' : '기관 조회'}</span><strong>{money(manual ? saved.manualBalance : saved.reportedBalance)}</strong></div>
+        <div><span>금리 · {manual ? '직접 입력' : '기관 조회'}</span><strong>{(manual ? saved.manualRate : saved.reportedRate) == null ? '확인 필요' : `연 ${manual ? saved.manualRate : saved.reportedRate}%`}</strong></div>
+        <div><span>만기일</span><strong>{saved.maturityDate ?? '확인 필요'}</strong></div>
       </div>
-      <h3 className="mc-loan-h">지난 납부 내역</h3>
-      {Array.isArray(loan.history) ? (
+      {saved.paymentHistory?.length > 0 && <>
+        <h3 className="mc-loan-h">지난 납부 내역</h3>
         <table className="mc-loan-table">
-          <thead><tr><th>납부일</th><th>원금</th><th>이자</th><th>낸 돈</th></tr></thead>
-          <tbody>
-            {loan.history.map((h) => (
-              <tr key={h.date}><td>{h.date}</td><td>{won(h.principal)}</td><td>{won(h.interest)}</td><td><b>{won(h.principal + h.interest)}</b></td></tr>
-            ))}
-          </tbody>
+          <thead><tr><th>납부일</th><th>원금</th><th>이자</th></tr></thead>
+          <tbody>{saved.paymentHistory.map((h, index) => <tr key={`${h.date}-${index}`}><td>{h.date}</td><td>{money(h.principal)}</td><td>{money(h.interest)}</td></tr>)}</tbody>
         </table>
-      ) : (
-        <p className="mc-loan-hist">{loan.history}</p>
-      )}
-      <div className="mc-loan-in">
-        <h3>앞으로 낼 돈 <span className="mc-hint">직접 확인</span></h3>
-        <p className="mc-loan-lab">상환 방식</p>
-        <div className="mc-chipbar">
-          {METHODS.map((m) => <button key={m} type="button" aria-pressed={method === m} onClick={() => setMethod(m)}>{m}</button>)}
-        </div>
-        <div className="mc-loan-2">
-          <label className="mc-field">
-            <span className="mc-loan-lab">월 상환 예정액 {loan.estimate && (
-              // 지난 납부 평균을 칸에 채워 넣기
-              <button type="button" className="mc-loan-link" onClick={() => setAmount(String(loan.estimate))}>추정액 쓰기</button>
-            )}</span>
-            <MoneyInput placeholder={loan.estimate ? won(loan.estimate).replace('원', '') : '금액 입력'}
-              value={amount} onChange={(digits) => setAmount(digits)} />
-            {loan.estimateNote && <small className="mc-loan-sub">{loan.estimateNote}</small>}
-          </label>
-          <label className="mc-field">
-            <span className="mc-loan-lab">다음 납부 예정일</span>
-            <select defaultValue={loan.day}>
-              <option value="">선택</option>
-              {MONTH_DAYS.map((d) => <option key={d} value={String(d)}>매월 {d}일</option>)}
+      </>}
+      {loan.recentDues?.length > 0 && <>
+        <h3 className="mc-loan-h">이번 · 지난 주기 납부</h3>
+        {loan.recentDues.map((d) => (  /* 목록 새로고침 값 (입력 중인 상환 정보는 그대로 둠) */
+          <div className="mc-keyvalue" key={d.dueId}>
+            <span>{d.dueDate} · {won(d.expectedAmount)} · {DUE_STATE[d.paymentState] ?? '확인 필요'}</span>
+            <button type="button" className="mc-link" onClick={() => openPopup(<LoanPaymentPopup key={d.dueId} dueId={d.dueId} onSaved={onPaymentSaved} />)}>납부 거래 확인</button>
+          </div>))}
+      </>}
+      <form onSubmit={save} noValidate>
+        <fieldset disabled={busy} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+          <legend className="mc-loan-h">앞으로 낼 돈 · 직접 확인</legend>
+          <label className="mc-field">상환 방식
+            <select value={draft.repaymentMethod} onChange={(e) => change('repaymentMethod', e.target.value)}>
+              <option value="">미입력</option>{METHODS.map(([code, name]) => <option key={code} value={code}>{name}</option>)}
             </select>
-            <small className="mc-loan-sub">{loan.dayNote}</small>
+            {stateNote('repaymentMethod')}
           </label>
-        </div>
-      </div>
-    </div>
+          {fieldError('repaymentMethod')}
+          <div className="mc-loan-2">
+            <label className="mc-field">월 상환 예정액
+              <MoneyInput value={draft.monthlyPayment} onChange={(value) => change('monthlyPayment', value)} aria-invalid={!!fields.monthlyPayment} placeholder="모르면 비워 두세요" />
+              {stateNote('monthlyPayment')}
+            </label>
+            <label className="mc-field">매월 납부일
+              <select value={draft.paymentDay} onChange={(e) => change('paymentDay', e.target.value)}>
+                <option value="">모름</option>{MONTH_DAYS.map((day) => <option key={day} value={String(day)}>매월 {day}일</option>)}
+              </select>
+              {stateNote('paymentDay')}
+            </label>
+          </div>
+          {fieldError('monthlyPayment')}{fieldError('paymentDay')}
+          {saved.estimatedMonthlyPayment != null && <button type="button" className="mc-link" onClick={() => change('monthlyPayment', String(saved.estimatedMonthlyPayment))}>추정액 {won(saved.estimatedMonthlyPayment)} 쓰기</button>}
+          {saved.reportedPaymentDate && <p className="mc-note">기관 제공 납부일: {saved.reportedPaymentDate}. 매월 납부일은 직접 확인해 주세요.</p>}
+          <p className="mc-note">빈 칸으로 저장하면 해당 값을 비워요. 월 상환액과 납부일을 모두 저장하면 홈 ‘꼭 나갈 돈’에 반영돼요.</p>
+          {error && <p className="mc-error" role="alert">{error}</p>}{fieldError('nonFieldErrors')}
+          <button type="submit" className="mc-primary">{busy ? '저장 중…' : '상환 예정액 저장'}</button>
+        </fieldset>
+      </form>
+      {success && <p className="mc-note" role="status">상환 정보를 저장했어요.</p>}
+      {manual && <div className="mc-keyvalue">
+        <button type="button" className="mc-link" onClick={() => openPopup(<LoanEditPopup loan={saved} onSaved={setSaved} />)}>대출 정보 고치기</button>
+        <button type="button" className="mc-link" onClick={() => openPopup(<LoanPayoffPopup loan={{ ...saved, recentDues: loan.recentDues }} onDone={onPaidOff}
+          onCheckDue={(dueId) => openPopup(<LoanPaymentPopup key={dueId} dueId={dueId} onSaved={onPaymentSaved} />)} />)}>대출 전체 완납 처리</button>
+      </div>}
+    </section>
   )
 }
 
 export default function LoanCheckPage() {
   const navigate = useNavigate()
+  const { state } = useLocation()
   const { openPopup } = usePopup()
-  // 마이 > 연결 관리 · 홈 '꼭 나갈 돈'에서 열면 첫 설정 흐름이 아니라 확인 · 수정만 하고 돌아간다
-  const manage = ['my', 'home'].includes(useLocation().state?.from)
-  const next = () => (manage ? navigate(-1) : navigate(PATHS.salary))  // 저장은 API 연결 후 (PATCH /api/finance/loans/<id>/)
-
+  const { data, error, reload } = useApi('/api/finance/loans/')
+  const repaid = useApi('/api/finance/loans/?status=repaid')  // 완납 되돌리기용 (직접 등록만)
+  const [notice, setNotice] = useState('')
+  const undoing = useRef(false)
+  const reloadAll = () => { reload(); repaid.reload() }
+  const undo = async (loan) => {
+    if (undoing.current) return
+    undoing.current = true
+    try {
+      await apiSend(`/api/finance/loans/${loan.loanId}/payoff/cancel/`, 'POST', { reportedAt: loan.payoff.reportedAt })
+      setNotice(`${loan.productName ?? '대출'} 완납 처리를 취소했어요. 다시 상환 중으로 보여요.`)
+    } catch (err) {
+      if (err.code === 'not_authenticated') navigate(PATHS.login, { replace: true })
+      setNotice(err.status ? err.message : '서버에 연결하지 못했어요. 다시 시도해 주세요.')
+    } finally {
+      undoing.current = false
+      reloadAll()
+    }
+  }
+  const [editing, setEditing] = useState({})
+  const [registered, setRegistered] = useState('')
+  const manage = ['my', 'home', 'manage'].includes(state?.from)
+  const unfinished = Object.values(editing).some(Boolean)
+  const onEditing = (id, value) => setEditing((old) => ({ ...old, [id]: value }))
+  if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
+  const done = () => navigate(manage ? (state?.from === 'home' ? PATHS.home : PATHS.connections) : PATHS.protect)
+  const rows = [...(data?.items ?? [])].sort((a, b) => Number(b.loanId === state?.loanId) - Number(a.loanId === state?.loanId))
   return (
-    <Layout
-      title="대출 확인"
-      showBack
-      foot={<>
-        {!manage && <button type="button" onClick={next}>나중에 입력</button>}
-        <button type="button" className="mc-primary" onClick={next}>상환 예정액 저장</button>
+    <Layout title="대출 확인" showBack foot={<button type="button" className="mc-primary" disabled={unfinished} onClick={done}>{manage ? '확인 마침' : '다음'}</button>}>
+      {!manage && <StepBar step={4} />}
+      <h1>상환 중인 대출</h1>
+      <p className="mc-muted">대출별로 상환 정보를 확인하고 저장해 주세요.</p>
+      {error ? <div className="mc-card">
+        <p className="mc-error" role="alert">{error.code === 'consent_required' ? '기관 대출을 보려면 대출 조회 동의가 필요해요.' : error.status ? error.message : '대출 목록을 불러오지 못했어요.'}</p>
+        {error.code === 'consent_required' ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>연결 화면에서 동의하기</button> : <button type="button" className="mc-secondary" onClick={reload}>다시 시도</button>}
+      </div> : !data ? <p role="status">대출을 불러오는 중…</p> : <>
+        {data.hasInquiryConsent === false && <div className="mc-card">
+          <p className="mc-note">직접 등록한 대출은 조회 동의 없이 확인하고 수정할 수 있어요. 금융기관에서 대출을 불러오려면 대출 조회에 동의해 주세요.</p>
+          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>기관 대출 조회에 동의하기</button>
+        </div>}
+        {rows.length === 0 && <p className="mc-note">{data.hasInquiryConsent === false ? '직접 등록한 상환 중 대출이 없어요. 대출을 직접 등록할 수 있어요.' : '저장된 상환 중 대출이 없어요. 조회되지 않는 대출은 직접 등록할 수 있어요.'}</p>}
+        {rows.map((loan) => <LoanCard key={loan.loanId} loan={loan} onEditing={onEditing} onPaymentSaved={reload}
+          onPaidOff={(done) => { onEditing(loan.loanId, false); setNotice(`${done.productName ?? '대출'} 상환을 종료했어요. 잘못 눌렀다면 아래에서 완납을 취소할 수 있어요.`); reloadAll() }} />)}
       </>}
-    >
-      {!manage && <StepBar step={2} />}
-      <div className="mc-eyebrow">대출 확인</div>
-      <h1>{manage ? '상환 중인 대출' : '불러온 대출을 확인해 주세요'}</h1>
-      <p className="mc-muted">불러온 대출을 확인하고, 앞으로 낼 금액을 알려 주세요.</p>
-      {LOANS.map((loan) => <LoanCard key={loan.id} loan={loan} />)}
-      {/* 직접 등록 (API 35, 결정 Y) — 학자금 · 캐피탈처럼 은행 연결로 안 잡히는 대출 */}
-      <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup />)}>+ 조회되지 않은 대출 직접 등록</button>
-      <p className="mc-note">여기서는 상환 예정액만 저장해요. 예산에 넣을 때는 금액과 출처를 보여 드리고 승인 후 반영해요.</p>
-      <div className="mc-error" role="alert"></div>
+      {notice && <p className="mc-note" role="status">{notice}</p>}
+      {repaid.data?.items?.length > 0 && <section className="mc-card" aria-label="상환 종료한 직접 등록 대출">
+        <h2 className="mc-loan-h">상환 종료한 직접 등록 대출</h2>
+        {repaid.data.items.map((loan) => (
+          <div className="mc-keyvalue" key={loan.loanId}>
+            <span>{loan.productName ?? '대출'} · {loan.lenderName ?? ''}{loan.payoff ? ` · ${when(loan.payoff.reportedAt)} 직접 완납` : ''}</span>
+            {loan.payoff && <button type="button" className="mc-link" onClick={() => undo(loan)}>완납 취소</button>}
+          </div>))}
+      </section>}
+      {(data || error?.code === 'consent_required') && <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup onSaved={(created) => { setRegistered(created.productName); reload() }} />)}>+ 조회되지 않은 대출 직접 등록</button>}
+      {registered && <p className="mc-note" role="status">{registered} 대출을 등록했어요.</p>}
+      {unfinished && <p className="mc-note" role="status">수정한 대출의 상환 정보를 저장한 뒤 이동해 주세요.</p>}
     </Layout>
   )
 }

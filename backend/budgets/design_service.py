@@ -1,4 +1,4 @@
-"""Opt-in API adapter. Unset policies block recommendation; unverified history never enables B."""
+"""Opt-in API adapter. Approved initial policy; unverified history never enables B."""
 from copy import deepcopy
 from datetime import date
 from fractions import Fraction
@@ -11,8 +11,13 @@ import sys
 from django.conf import settings
 
 from .design_candidates import build_candidates, ml_profile, CATEGORY_NAMES
+from .design_selection import choose_budget
 from .recommend import EngineCheckFailed, check_result
 from .design_units import finalize_budget
+from .design_references import model_reference, transport_reference
+from .design_targets import target_conflicts, final_target_changes
+from .design_history import history_checks, verify_budget_history
+from .design_consent import has_current_consent
 from scripts.budget_design.inference import predict_ml
 
 # shortcut: B helpers live in scripts; move them into budgets when the service data contract is finalized.
@@ -21,11 +26,14 @@ if DESIGN_SCRIPTS not in sys.path:
     sys.path.insert(0, DESIGN_SCRIPTS)
 from plan_b_history import CHECKS, completed_months, summarize_history
 from plan_b_budget import build_priority_history_budget
+from plan_b_forecast import forecast_budget
 from plan_selection import select_plan
 
-ENGINE_VERSION = 'design-ab-20261106-lock-aware-surplus'
+ENGINE_VERSION = 'design-ab-20261107-history-proof'
 # Initial recommendation only; later budget adjustments use their own rules.
 INITIAL_TRANSFER_PERCENT = 20
+INITIAL_POLICY = {'version': '2026-11-10-forecast-band', 'a': {},
+                  'b_forecast_band': {'down_percent': 20, 'up_percent': 20}}
 
 
 def initial_a_policy(config, inp, other_reserved):
@@ -51,12 +59,10 @@ def history_for_user(user, today):
     from spending_analysis.periods import Period
 
     months = completed_months(today)
-    verifier = getattr(settings, 'BUDGET_HISTORY_VERIFIER', None)
+    verifier = getattr(settings, 'BUDGET_HISTORY_VERIFIER', verify_budget_history)
     if verifier is not None and not callable(verifier):
         raise ValueError('invalid_history_verifier')
-    proofs = verifier(user, months) if verifier else {}
-    if not isinstance(proofs, dict) or any(not isinstance(v, dict) for v in proofs.values()):
-        raise ValueError('invalid_history_proofs')
+    proofs = history_checks(months, verifier(user, months) if verifier else {})
     result = {}
     for month in months:
         start = date.fromisoformat(month+'-01')
@@ -86,8 +92,10 @@ def history_for_user(user, today):
 def _blocked(status, reason, selection=None):
     messages = {'needs_policy': '추천 설정을 준비 중이에요. 설정이 완료된 뒤 다시 시도해 주세요.',
                 'needs_data': '추천에 필요한 정보를 확인하지 못했어요. 연결 상태와 입력 정보를 확인해 주세요.',
-                'needs_upper_allocation_review': '여윳돈으로도 생활비가 부족해요. 지킬 돈 배분을 다시 확인해 주세요.'}
-    return {'status': status, 'reason': reason, 'summary': messages.get(status, '추천 예산을 만들지 못했어요.'),
+                'needs_upper_allocation_review': '현재 생활비로는 보호 조건을 모두 지키기 어려워요. 지킬 돈 배분을 다시 확인해 주세요.'}
+    summary = ('추천 계산을 잠시 사용할 수 없어요. 잠시 후 다시 시도해 주세요.'
+               if reason == 'ml_unavailable' else messages.get(status, '추천 예산을 만들지 못했어요.'))
+    return {'status': status, 'reason': reason, 'summary': summary,
             'conflicts': [], '_design': {'selection': selection}}
 
 
@@ -95,7 +103,8 @@ def configured_policy():
     policy = getattr(settings, 'BUDGET_DESIGN_POLICY', None)
     if policy is None:
         try:
-            policy = json.loads(os.getenv('BUDGET_DESIGN_POLICY', 'null'))
+            raw = os.getenv('BUDGET_DESIGN_POLICY')
+            policy = deepcopy(INITIAL_POLICY) if raw is None else json.loads(raw)
         except json.JSONDecodeError:
             return None
     return policy
@@ -105,8 +114,15 @@ def fingerprint(value):
     return sha256(json.dumps(value, sort_keys=True, default=str, allow_nan=False).encode()).hexdigest()
 
 
-def recommend(user, snapshot, available_spare, today):
-    """No external LLM calls: actual-user transmission consent remains unresolved."""
+def reference_from_initial_input(inp):
+    """Compatibility provider: callers supply the stored initial input, never the adjusted target."""
+    return model_reference(inp, predict_ml(ml_profile(inp)))
+
+
+def recommend(user, snapshot, available_spare, today, *, allow_external=False, synthetic=False):
+    """External calls require an explicit server flag and synthetic data or current user consent."""
+    if type(allow_external) is not bool or type(synthetic) is not bool:
+        raise ValueError('invalid_external_permission')
     policy = configured_policy()
     if not isinstance(policy, dict):
         return _blocked('needs_policy', 'design_policy_required')
@@ -129,8 +145,20 @@ def recommend(user, snapshot, available_spare, today):
     reality = {'has_vehicle': inp['has_vehicle']}
     if history.get('status') == 'ready':
         reality['transport_history'] = history['categories']['TRANSPORT_CAR']['baseline_amount']
+    from .design_reality import system_floors
+    conflicts = target_conflicts(inp, system_floors(reality))
+    if conflicts:
+        blocked = _blocked('target_conflict', 'category_target_conflict', selection)
+        blocked.update(conflicts=conflicts, summary='저장한 유지 목표를 현재 보호 조건·금액 단위·생활비와 함께 맞출 수 없어요.')
+        return blocked
+    references = model_reference(inp, ml)
+    references['transport_history_reference'] = transport_reference(history, fingerprint(months))
     a_policy = None
     b_cut_rates = dict.fromkeys(CATEGORY_NAMES, 100)
+    consent_verified = allow_external and not synthetic and has_current_consent(user)
+    llm_allowed = allow_external and (synthetic or consent_verified)
+    llm = {'status': 'not_run', 'reason': 'consent_required' if allow_external else 'external_disabled'}
+    forecast_limits = {}
     try:
         if selection['plan'] == 'a':
             a_policy = initial_a_policy(policy['a'], inp, snapshot['etc'])
@@ -140,17 +168,43 @@ def recommend(user, snapshot, available_spare, today):
                         '_design': {'selection': selection}}
             chosen = next(c for c in engine['candidates'] if c['id'] == 'base')
             out, explanations = chosen['result'], chosen['explanations']
+            if llm_allowed:
+                selected = choose_budget(inp, engine, ml_ratios=ratios, reality_profile=reality,
+                    living_budget=inp['target'] + snapshot['etc'], other_reserved=snapshot['etc'],
+                    fallback_to_base=True, synthetic=synthetic, trace_config={'LANGSMITH_TRACING': 'false'})
+                out = {**out, 'allocations': selected['allocations']}
+                check_result(inp, out)
+                explanations = selected['explanations']
+                source, reason = selected['selection_source'], selected.get('fallback')
+                llm = {'status': 'completed' if source == 'llm_tools' else
+                       'not_run' if source == 'single_candidate' or reason == 'missing_api_key' else 'fallback',
+                       'source': source, 'reason': reason}
             transfer = 0
             view = {**out, 'result': out, 'explanations': explanations, 'engine': engine, 'history': history,
                     'system_floors': engine.get('system_floors', {})}
         else:
             weights = {code: Fraction(str(v)) for code, v in ratios.items()}
             reference = {code: inp['target'] * v / sum(weights.values()) for code, v in weights.items()}
-            result = build_priority_history_budget(inp, months, as_of=today, shortfall_cut_rates=b_cut_rates,
-                other_reserved=snapshot['etc'], reality_profile=reality, ml_reference=reference,
-                available_spare=available_spare)
+            options = dict(as_of=today, shortfall_cut_rates=b_cut_rates, other_reserved=snapshot['etc'],
+                           reality_profile=reality, ml_reference=reference, available_spare=available_spare)
+            if llm_allowed and policy.get('b_forecast_band') is not None:
+                result = forecast_budget(inp, months, **options, target_month=today.month,
+                    forecast_band=policy['b_forecast_band'], allow_external=True, synthetic=synthetic,
+                    consent_verified=consent_verified)
+                llm = {key: result.get(key) for key in ('attempts', 'retries', 'validation_failures', 'violation_types')}
+                llm.update(status=result['llm_status'], reason=result.get('fallback') or result.get('reason'),
+                           variant='b_forecast')
+                if result['llm_status'] == 'completed':
+                    forecast_limits = result['bounds']
+            else:
+                result = build_priority_history_budget(inp, months, **options)
+                if llm_allowed:
+                    llm['reason'] = 'forecast_band_required'
             if result['status'] != 'proposed':
                 blocked = _blocked(result['status'], result.get('reason'), selection)
+                shortfall = result.get('funding_shortfall')
+                if result['status'] == 'needs_upper_allocation_review' and type(shortfall) is int and shortfall > 0:
+                    blocked['summary'] = f'여윳돈을 보태도 생활비가 {shortfall:,}원 부족해요. 지킬 돈 배분을 다시 확인해 주세요.'
                 if result['status'] == 'infeasible':
                     blocked.update(result['result'])
                 return blocked
@@ -163,6 +217,8 @@ def recommend(user, snapshot, available_spare, today):
         return _blocked('needs_policy', 'invalid_design_policy', selection)
     final = finalize_budget(inp, view, policy=a_policy,
         b_cut_rates=b_cut_rates if selection['plan'] == 'b' else None,
+        lower_bounds={c: b['lower'] for c, b in forecast_limits.items()},
+        upper_bounds={c: b['upper'] for c, b in forecast_limits.items()},
         other_reserved=snapshot['etc'], other_minimum=snapshot.get('minimums', {}).get('ETC', 0),
         other_locked='ETC' in snapshot.get('locks', {}))
     if final['status'] != 'proposed':
@@ -170,11 +226,16 @@ def recommend(user, snapshot, available_spare, today):
     out, explanations, transfer = final['result'], final['explanations'], final['spare_transfer']
     checked = {**inp, 'target': final['funded_target']}
     check_result(checked, out)
+    target_changes = final_target_changes(snapshot.get('category_targets', inp.get('category_targets', {})),
+                                        {**out['allocations'], 'ETC': final['other_reserved']},
+                                        {**view['allocations'], 'ETC': snapshot['etc']})
     return {**out, '_design': {'selection': selection, 'engine_version': ENGINE_VERSION,
         'policy_fingerprint': fingerprint(policy), 'history_fingerprint': fingerprint(months),
         'spare_transfer': transfer, 'available_spare': available_spare, 'funded_target': checked['target'],
         'other_reserved': final['other_reserved'], 'rounding': final['rounding'],
         'candidate_adjustment': final.get('candidate_adjustment'),
+        'llm': llm,
+        'references': references, 'target_conflicts': target_changes,
         'explanations': [{'category': e['category'], 'text': e['text']} for e in explanations]}}
 
 

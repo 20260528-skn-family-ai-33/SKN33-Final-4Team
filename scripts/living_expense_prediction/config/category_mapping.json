@@ -1,0 +1,638 @@
+{
+  "version": "v13_share",
+  "categories": [
+    "식비",
+    "주거·통신",
+    "교통·차량",
+    "생활용품",
+    "패션·쇼핑",
+    "의료·건강",
+    "뷰티·미용",
+    "교육",
+    "문화·여가",
+    "여행·숙박",
+    "기타",
+    "미분류"
+  ],
+  "description": "소비지출98+가구간이전1+이자1의 단일 원천 매핑. 고정비 처리는 별도 정책이 결정한다.",
+  "excluded_aggregate_columns": [
+    "가계지출_소비지출_식료품비주류음료구입비",
+    "가계지출_소비지출_주류담배구입비",
+    "가계지출_소비지출_의류신발구입비",
+    "가계지출_소비지출_주거수도광열비",
+    "가계지출_소비지출_가정용품가사서비스이용금액",
+    "가계지출_소비지출_보건제품구입비",
+    "가계지출_소비지출_교통운송비",
+    "가계지출_소비지출_정보통신비",
+    "가계지출_소비지출_오락문화비",
+    "가계지출_소비지출_교육비",
+    "가계지출_소비지출_음식숙박비",
+    "가계지출_소비지출_기타상품서비스이용금액",
+    "가계지출_소비지출_교육_정규교육비",
+    "가계지출_소비지출_교육_학원보습교육비"
+  ],
+  "source_criteria_sha256": "e27d745a6e9671dda415ba2c4d942ee5536cd7fecea81d0519ee1e8d8513c4ff",
+  "entries": [
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_곡물구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_곡물가공품구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_빵떡류구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_육류구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_육류가공품구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_신선수산동물구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_염건수산동물구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_기타수산동물가공구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_유제품및알구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_유지류구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_과일가공품구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_채소가공품구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_해조가공품구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_당류과자류구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_조미식품구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_기타식품구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_커피차구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_주스기타음료구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_식품가공서비스이용금액",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_주류담배_주류구입비",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_음식숙박_식대",
+      "target_category": "식비",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 식비에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_주거수도광열_실제주거비구입비",
+      "target_category": "주거·통신",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 주거·통신에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_주거수도광열_주택유지수선구입비",
+      "target_category": "주거·통신",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 주거·통신에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_주거수도광열_상하수도폐기물처리비",
+      "target_category": "주거·통신",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 주거·통신에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_주거수도광열_기타주거관련서비스구입비",
+      "target_category": "주거·통신",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 주거·통신에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_주거수도광열_연료비구입비",
+      "target_category": "주거·통신",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 주거·통신에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_실내장식구입비",
+      "target_category": "생활용품",
+      "mapping_status": "policy",
+      "reason": "v2 연결기준표의 가정용품 합계에서 가사서비스만 제외하므로 실내장식은 생활용품에 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가구조명장식서비스이용금액",
+      "target_category": "생활용품",
+      "mapping_status": "approximate",
+      "reason": "v2 연결기준표에 따라 생활용품에 배정한다. 가구 수선과 인테리어 서비스를 분리할 수 없다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가사서비스금액",
+      "target_category": "주거·통신",
+      "mapping_status": "approximate",
+      "reason": "주거 청소와 가사 관리를 대표로 삼는다. 취사·세탁·재봉도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_통신서비스이용금액",
+      "target_category": "주거·통신",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 주거·통신에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_자동차구입비",
+      "target_category": "자동차구입(별도)",
+      "mapping_status": "policy",
+      "reason": "자동차구입은 별도 금액으로 보존하고 생활비 구성비의 분자·분모에서 제외한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_기타운송기구구입비",
+      "target_category": "교통·차량",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교통·차량에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_운송기구유지수리비",
+      "target_category": "교통·차량",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교통·차량에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_운송기구연료비",
+      "target_category": "교통·차량",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교통·차량에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_기타개인교통서비스이용금액",
+      "target_category": "교통·차량",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교통·차량에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_철도운송이용금액",
+      "target_category": "교통·차량",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교통·차량에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_육상운송이용금액",
+      "target_category": "교통·차량",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교통·차량에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_기타운송이용금액",
+      "target_category": "교통·차량",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교통·차량에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가구조명구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가정용섬유구입비",
+      "target_category": "생활용품",
+      "mapping_status": "approximate",
+      "reason": "침구·수건·커튼을 대표로 삼는다. 관련 세탁·수선도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가전가정용기기구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가전관련서비스이용금액",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가사용품구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가정용공구기타구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_가정용품가사서비스_가사소모품구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_통신장비구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_영상음향기기구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_정보처리장치기록매체구입비",
+      "target_category": "생활용품",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 생활용품에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_기타영상정보관련서비스비용",
+      "target_category": "생활용품",
+      "mapping_status": "approximate",
+      "reason": "디지털 기기 서비스를 대표로 삼는다. 일반 소프트웨어와 기타 정보서비스도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_의류신발_직물및외의구입비",
+      "target_category": "패션·쇼핑",
+      "mapping_status": "approximate",
+      "reason": "의류를 대표로 삼는다. 사용자 정의의 기타에 해당하는 원단도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_의류신발_내의구입비",
+      "target_category": "패션·쇼핑",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 패션·쇼핑에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_의류신발_기타의복구입비",
+      "target_category": "패션·쇼핑",
+      "mapping_status": "approximate",
+      "reason": "양말·모자 등 의복을 대표로 삼는다. 실류도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_의류신발_신발구입비",
+      "target_category": "패션·쇼핑",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 패션·쇼핑에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_시계장신구구입비",
+      "target_category": "패션·쇼핑",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 패션·쇼핑에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_기타개인용품구입비",
+      "target_category": "패션·쇼핑",
+      "mapping_status": "approximate",
+      "reason": "가방·장신용품을 대표로 삼는다. 종교·혼례장제례 용품 등도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_식료품비주류음료_건강보조식품구입비",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_의약품구입비",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_의료용소모품구입비",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_보건의료용품기구구입비",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_외래의료서비스이용금액",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_치과서비스이용금액",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_기타의료서비스이용금액",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_보건_입원서비스이용금액",
+      "target_category": "의료·건강",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 의료·건강에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_이미용서비스이용금액",
+      "target_category": "뷰티·미용",
+      "mapping_status": "approximate",
+      "reason": "미용·개인정비를 대표로 삼는다. 목욕료도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_이미용기기구입비",
+      "target_category": "뷰티·미용",
+      "mapping_status": "policy",
+      "reason": "전자기기 형태보다 개인정비 목적을 우선하여 뷰티·미용에 둔다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_위생이미용용품구입비",
+      "target_category": "뷰티·미용",
+      "mapping_status": "approximate",
+      "reason": "개인 위생·미용을 대표로 삼는다. 칫솔·치약·화장지 등 생필품도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_서적구입비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_문구구입비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교육_초등교육비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교육_중등교육비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교육_고등교육비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교육_학생학원교육비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교육_성인학원비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교육_기타교육비",
+      "target_category": "교육",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 교육에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_정보통신_방송시청각콘텐츠이용금액",
+      "target_category": "문화·여가",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 문화·여가에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_내구재구입비",
+      "target_category": "문화·여가",
+      "mapping_status": "approximate",
+      "reason": "취미·오락 목적을 대표로 삼는다. 사진·광학장비도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_악기음반비디오물구입비",
+      "target_category": "문화·여가",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 문화·여가에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_오락문화내구재유지수리비용",
+      "target_category": "문화·여가",
+      "mapping_status": "approximate",
+      "reason": "취미·오락 장비의 유지·대여를 대표로 삼는다. 기기 수리도 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_게임장난감취미용품구입비",
+      "target_category": "문화·여가",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 문화·여가에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_캠핑운동관련용품구입비",
+      "target_category": "문화·여가",
+      "mapping_status": "policy",
+      "reason": "캠핑 장비는 숙박·캠핑장 이용료와 구별하여 문화·여가에 둔다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_화훼원예용품구입비",
+      "target_category": "문화·여가",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 문화·여가에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_운동오락서비스이용금액",
+      "target_category": "문화·여가",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 문화·여가에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_문화서비스이용금액",
+      "target_category": "문화·여가",
+      "mapping_status": "approximate",
+      "reason": "공연·관람을 대표로 삼는다. 독서실·문화강습이 포함되어 교육과 경계가 다르다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_기타인쇄물구입비",
+      "target_category": "문화·여가",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 문화·여가에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_단체여행경비",
+      "target_category": "여행·숙박",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 여행·숙박에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_음식숙박_숙박비",
+      "target_category": "여행·숙박",
+      "mapping_status": "approximate",
+      "reason": "숙박시설 이용을 대표로 삼는다. 고시원·기숙사·하숙집도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_주류담배_담배구입비",
+      "target_category": "기타",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 기타에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_의류신발_의복관련서비스구입비",
+      "target_category": "기타",
+      "mapping_status": "approximate",
+      "reason": "세탁·수선을 기타에 두는 사용자 정의를 우선한다. 맞춤·리모델링도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_의류신발_신발서비스구입비",
+      "target_category": "기타",
+      "mapping_status": "approximate",
+      "reason": "신발 세탁·수선을 기타에 둔다. 맞춤·리모델링도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_기타운송관련서비스이용금액",
+      "target_category": "교통·차량",
+      "mapping_status": "policy",
+      "reason": "v2 연결기준표의 교통 합계에서 자동차구입과 우편만 제외하므로 화물·이사운송도 교통·차량에 남긴다."
+    },
+    {
+      "source_column": "가계지출_소비지출_교통운송_우편서비스이용금액",
+      "target_category": "기타",
+      "mapping_status": "policy",
+      "reason": "우편서비스는 사용자 예시의 개인 교통비 범위 밖이므로 기타에 둔다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_반려동물및관련용품비용",
+      "target_category": "기타",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 기타에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_화훼반려동물서비스이용금액",
+      "target_category": "의료·건강",
+      "mapping_status": "approximate",
+      "reason": "v2 연결기준표의 가정에 따라 동물병원을 대표로 의료·건강에 배정한다. 실제 구성 비중은 확인되지 않으며 반려동물 미용·위탁·화훼 서비스도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_소비지출_오락문화_복권구입비",
+      "target_category": "기타",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 기타에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_보험료",
+      "target_category": "기타",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 기타에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_기타금융구입비",
+      "target_category": "기타",
+      "mapping_status": "exact",
+      "reason": "제공 항목의 의미에 따라 기타에 원금액 전체를 배정한다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_복지시설비용금액",
+      "target_category": "기타",
+      "mapping_status": "policy",
+      "reason": "복지시설 서비스를 의료기관 진료와 구별하여 기타에 둔다."
+    },
+    {
+      "source_column": "가계지출_소비지출_기타상품서비스_기타서비스금액구입비",
+      "target_category": "기타",
+      "mapping_status": "approximate",
+      "reason": "잔여 서비스를 기타에 둔다. 부동산수수료·시험응시료도 함께 포함된다."
+    },
+    {
+      "source_column": "가계지출_비소비지출_가구간이전지출금액",
+      "target_category": "기타",
+      "mapping_status": "policy",
+      "reason": "연결기준표에는 없으나 확정된 v2 정책에 따라 가구간이전지출을 변동비 기타에 한 번 포함한다."
+    },
+    {
+      "source_column": "가계지출_비소비지출_이자비용",
+      "target_category": "기타",
+      "mapping_status": "policy",
+      "reason": "비소비지출 대출 이자를 기타 원지출에 추가하고 고정비로 전액 분리한다. 대출 원금은 포함하지 않는다."
+    }
+  ],
+  "status": "student_package_reproducible"
+}

@@ -14,6 +14,7 @@ CODEF 연결 (은행 계좌 조회 전용)
 """
 import hashlib
 import json
+import re
 from datetime import datetime
 from functools import lru_cache
 
@@ -32,6 +33,7 @@ PATH_CARD_BILLS = "/v1/kr/card/p/account/billing-list"
 PATH_CARD_APPROVALS = "/v1/kr/card/p/account/approval-list"
 
 SUCCESS = "CF-00000"
+NO_RETRY_CODES = ("CF-12100", "CF-03002", "CF-12401")  # 비밀번호 오류 · 추가 인증 · 로그인 값 누락. 다시 보내도 같고 비밀번호는 계정이 잠길 수 있다
 _SERVICE = {"sandbox": ServiceType.SANDBOX, "demo": ServiceType.DEMO, "product": ServiceType.PRODUCT}
 
 
@@ -41,6 +43,14 @@ class CodefError(Exception):
     def __init__(self, code, message, extra=""):
         self.code, self.message, self.extra = code, message, extra
         super().__init__(f"[{code}] {message} {extra}".strip())
+
+
+class BankDataError(ValueError):
+    """은행 응답을 확인할 수 없음 (목록 누락 · 금액 누락/비정상 · 방향 불명). 원문 · 계좌번호를 메시지에 넣지 않는다"""
+
+    def __init__(self, code="invalid_bank_data"):
+        self.code = code
+        super().__init__("CODEF 은행 응답을 확인할 수 없어 저장하지 않았어요.")
 
 
 # ----- 기본 준비 -----
@@ -137,11 +147,12 @@ def list_accounts(connected_id, org):
         {
             "account_no": a.get("resAccount", ""),
             "name": a.get("resAccountNickName") or a.get("resAccountName", ""),
-            "balance": _to_int(a.get("resAccountBalance")),
+            # 잔액 미제공 = None (BankAccount.balance null · 홈 unknownCount · '잔액 확인 안 됨'). 비정상 값은 BankDataError
+            "balance": _amount(a.get("resAccountBalance"), False),
             "kind_code": a.get("resAccountDeposit", ""),  # 11 = 입출금 (CODEF 예금 구분 코드)
             "org": org,
         }
-        for a in data.get("resDepositTrust", [])
+        for a in _rows(data, "resDepositTrust")
     ]
 
 
@@ -160,7 +171,7 @@ def list_transactions(connected_id, org, account_no, start, end):
         "orderBy": "0",       # 0 = 최신순
         "inquiryType": "1",
     })
-    return [normalize_transaction(row) for row in data.get("resTrHistoryList", [])]
+    return [normalize_transaction(row) for row in _rows(data, "resTrHistoryList")]
 
 
 def list_loan_accounts(connected_id, org):
@@ -233,49 +244,80 @@ def list_card_approvals(connected_id, org, start, end, card_no=None, card_passwo
     auth = _card_auth(card_no, card_password)
     if "cardNo" in auth:
         auth["loginCardNo"] = auth.pop("cardNo")
-    data = _request(PATH_CARD_APPROVALS, {
+    params = {
         "connectedId": connected_id, "organization": org,
         "startDate": start.strftime("%Y%m%d"), "endDate": end.strftime("%Y%m%d"),
         "orderBy": "0", "inquiryType": "1",   # 1 = 전체 카드 조회
-        "memberStoreInfoType": "0", **auth,
-    })
+        **auth,
+    }
+    try:
+        data = _request(PATH_CARD_APPROVALS, {**params, "memberStoreInfoType": "1"})   # 1 = 가맹점 업종 포함
+    except CodefError as exc:
+        if exc.code in NO_RETRY_CODES:
+            raise
+        # 미제공 카드사가 오류를 낼 수 있다. 업종 때문에 거래를 못 불러오면 안 된다
+        data = _request(PATH_CARD_APPROVALS, {**params, "memberStoreInfoType": "0"})
     return normalize_approvals(data, start, end)
 
 
 # ----- CODEF 칸 → 우리 칸 -----
-def _to_int(value):
-    try:
-        return int(str(value).replace(",", "") or 0)
-    except ValueError:
-        return 0
+_AMOUNT = re.compile(r"-?(?:[0-9]+|[0-9]{1,3}(?:,[0-9]{3})+)")  # 정수 · 세 자리 쉼표. 음수는 취소 줄 · 마이너스 잔액
+
+
+def _amount(value, required=True):
+    """은행 금액 → int. 미제공(없음 · null · 빈 글자)은 None (required 면 BankDataError).
+    비정상 글자 · 소수 · bool · 다른 자료형은 0원으로 바꾸지 않고 BankDataError"""
+    if type(value) is int:
+        return value
+    if value is None or (isinstance(value, str) and not value.strip()):
+        if required:
+            raise BankDataError()
+        return None
+    if not isinstance(value, str) or not _AMOUNT.fullmatch(value.strip()):
+        raise BankDataError()
+    return int(value.strip().replace(",", ""))
+
+
+def _rows(data, key):
+    """은행 목록. [] 는 정상 빈 목록, 키 누락 · null · 목록 아님 · dict 아닌 행은 BankDataError (대출 resLoan 과 같은 기준)"""
+    rows = data.get(key) if isinstance(data, dict) else None
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise BankDataError()
+    return rows
 
 
 def normalize_transaction(row):
     """
     CODEF 거래 한 줄 → financial_transaction 모양
-    - 출금(resAccountOut)과 입금(resAccountIn) 중 0 이 아닌 쪽이 금액·방향
+    - 출금(resAccountOut)과 입금(resAccountIn) 중 0 이 아닌 쪽이 금액·방향. 반대편은 0 · 빈 값 · 생략.
+      둘 다 0/없음이거나 둘 다 0 이 아니면 방향을 정할 수 없어 BankDataError (임의 금액 · 방향으로 만들지 않음)
     - 설명 칸 1~4 는 은행마다 쓰임이 달라서 원문을 source_detail 에 다 남긴다
       (대표 설명은 3 → 2 → 1 순서로 처음 있는 것. 실제 응답 보고 조정)
-    - CODEF 거래엔 고유 ID 가 없어서 일시·금액·잔액·설명으로 source_key(중복 방지 키)를 만든다
+    - CODEF 거래엔 고유 ID 가 없어서 일시·금액·잔액·설명으로 source_key(중복 방지 키)를 만든다.
+      R08: 'bank:v2:<방향>:<수정 전 키>' — 방향만 다른 거래가 같은 키가 되지 않게. 끝은 예전 키라 sync 가 예전 거래를 찾는다
     - 금액이 음수면 앞선 거래의 취소 줄이다 (선결제 환불·예약 취소가 음수 출금으로 오는 은행이 있다).
       금액은 양수로 두고 취소로 표시한다. 원거래 연결은 transfer_rules.link_bank_cancellations
     """
-    out_amt, in_amt = _to_int(row.get("resAccountOut")), _to_int(row.get("resAccountIn"))
+    out_amt, in_amt = _amount(row.get("resAccountOut"), False), _amount(row.get("resAccountIn"), False)
+    if bool(out_amt) == bool(in_amt):
+        raise BankDataError()
     detail = {f"desc{i}": row.get(f"resAccountDesc{i}", "") for i in range(1, 5)}
     day, time = row.get("resAccountTrDate", ""), row.get("resAccountTrTime", "")
-    balance = _to_int(row.get("resAfterTranBalance"))
+    balance = _amount(row.get("resAfterTranBalance"), False)  # 거래 후 잔액 미제공 = None (모델도 비어 있을 수 있음)
     signed = out_amt or in_amt
-    key_src = "|".join([day, time, str(signed), str(balance), *detail.values()])
+    direction = "out" if out_amt else "in"
+    # 미제공 잔액은 수정 전처럼 0 으로 키를 만든다 — 이미 저장된 거래와 중복되지 않게 (R08 키 방식 그대로)
+    key_src = "|".join([day, time, str(signed), str(balance or 0), *detail.values()])
     return {
         "occurred_on": datetime.strptime(day, "%Y%m%d").date() if day else None,
         "occurred_time": datetime.strptime(time, "%H%M%S").time() if len(time) == 6 else None,
         "amount": abs(signed),
-        "direction": "out" if out_amt else "in",
+        "direction": direction,
         "is_canceled": signed < 0,
         "canceled_amount": abs(signed) if signed < 0 else None,
         "balance_after": balance,
         "source_description": detail["desc3"] or detail["desc2"] or detail["desc1"],
         "source_detail": detail,
-        "source_key": hashlib.sha256(key_src.encode()).hexdigest(),
+        "source_key": f"bank:v2:{direction}:{hashlib.sha256(key_src.encode()).hexdigest()}",
     }
 

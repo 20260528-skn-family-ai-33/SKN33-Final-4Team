@@ -17,7 +17,8 @@ from users.models import Consent
 from .api_connect import PURPOSE, ConsentRequired
 from .display import CARD_ISSUERS, account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
-from .models import Card, CardBill, Connection
+from .card_payments import bill_status
+from .models import Card, CardBill, Connection, PaymentDue
 
 
 def require_card_consent(user):
@@ -169,4 +170,7 @@ def card_bill(request, bill_id):
         "cards": included_cards(bill, shown_card, items),
         "items_state": bill.items_state,
         "items": details,
+        # 앞으로 낼 금액 확인 (11/06, card_payments.bill_status). 카드사 통합 청구서만, 그 밖은 null
+        "payment_check": bill_status(bill, PaymentDue.objects.filter(user=request.user, bill=bill).first(), timezone.localdate())
+        if bill.scope_type == CardBill.ScopeType.ISSUER else None,
     })

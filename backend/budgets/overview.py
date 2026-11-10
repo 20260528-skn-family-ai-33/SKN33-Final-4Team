@@ -84,7 +84,8 @@ def budget_data(user, today, *, selected=None):
             "locked_amount": setting.locked_amount if setting else None, "reason": reasons.get(category.pk) or None,
         })
     data.update({
-        "recommendation": {'spare_transfer': design.get('spare_transfer', 0)} if design else None,
+        "recommendation": {'spare_transfer': design.get('spare_transfer', 0),
+                           'target_conflicts': design.get('target_conflicts', [])} if design else None,
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,
                    "salary_confirmed": period["salary_state"] == "received", "engine_version": selected.engine_version,
                    # 이전 기준으로 승인한 예산의 주거·통신 · 여행·숙박 배정 (생활비 총액에는 들어 있고 카테고리 줄에는 없음, N-F1)

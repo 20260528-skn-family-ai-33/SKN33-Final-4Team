@@ -54,6 +54,7 @@ export default function DisconnectPopup({ inst, kind = 'bank', connectionId, onD
         <li>지금까지 불러온 거래는 남고, 소비 분석에도 그대로 들어가요.</li>
         <li>다시 연결하면 이어서 불러와요.</li>
       </ul>
+      <p className="mc-note">기존 데이터까지 삭제하려면 마이 &gt; 동의·데이터 관리에서 해당 범위의 조회 동의를 철회해 주세요. 같은 범위의 다른 기관에서 불러온 데이터도 함께 삭제돼요.</p>
 
       {related.length > 0 && (
         <div className="mc-disc-rel">

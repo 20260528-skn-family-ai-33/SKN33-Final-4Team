@@ -7,7 +7,7 @@
         "tags": [
           "금융 동의 · 연결"
         ],
-        "description": "현재 미구현이며 원문에 남은 확인 필요 사항을 유지한 API 계약이다. 은행 조회 동의는 필수이고 카드·대출은 선택이다. 동의하지 않은 항목은 보내지 않으며 거절 기록은 저장하지 않는다. agreed·documentHash·grantedAt 등 서버 관리 항목이나 표에 없는 칸을 보내면 400 invalid다. 동의 원문 해시와 시각은 서버가 기록한다. 같은 범위·같은 문서 버전의 유효한 동의가 이미 있으면 새 기록을 만들지 않고 기존 기록을 같은 응답 모양으로 반환한다. Idempotency-Key는 동의 버튼을 누를 때 생성하고 응답 전 재전송에는 같은 키를 쓴다. 동의 철회 API는 1차 범위에 없다. 목적 코드의 확정 여부는 원문 요청 표에 확인 필요로 남아 있어 finance_inquiry를 예시로 보존하며 허용 코드 enum을 추정하지 않는다. 최종 동의 문구는 확인 필요 사항이다. 문서 전송 버전은 결정기록 3-3 L에서 v1로 확정되었다.",
+        "description": "현재 미구현이며 원문에 남은 확인 필요 사항을 유지한 API 계약이다. 은행 조회 동의는 필수이고 카드·대출은 선택이다. 동의하지 않은 항목은 보내지 않으며 거절 기록은 저장하지 않는다. agreed·documentHash·grantedAt 등 서버 관리 항목이나 표에 없는 칸을 보내면 400 invalid다. 동의 원문 해시와 시각은 서버가 기록한다. 같은 범위·같은 문서 버전의 유효한 동의가 이미 있으면 새 기록을 만들지 않고 기존 기록을 같은 응답 모양으로 반환한다. Idempotency-Key는 동의 버튼을 누를 때 생성하고 응답 전 재전송에는 같은 키를 쓴다. 동의 철회 API는 1차 범위에 없다. 목적 코드의 확정 여부는 원문 요청 표에 확인 필요로 남아 있어 finance_inquiry를 예시로 보존하며 허용 코드 enum을 추정하지 않는다. 최종 동의 문구는 확인 필요 사항이다. 문서 전송 버전은 결정기록 3-3 L에서 v1로 확정되었다. (11/06 R24) documentVersion은 GET /api/consent-documents/가 준 현재 버전(v2)이며, 해시는 보낸 버전의 서버 보관 원문으로 만든다. 지난 버전 v1(임시 문장 해시)을 새로 보내면 409 document_outdated, 없는 버전은 400 invalid. 과거 v1 기록은 그대로 유효하다.",
         "security": [
           {
             "sessionAuth": []
@@ -28,14 +28,14 @@
                       "consentId": "7b1e0d29-5c74-45eb-a266-ccbb593fa010",
                       "purpose": "finance_inquiry",
                       "productScope": "bank",
-                      "documentVersion": "v1",
+                      "documentVersion": "v2",
                       "grantedAt": "2026-10-22T10:05:00+09:00"
                     },
                     {
                       "consentId": "a40c3432-dc91-41b7-9f5a-cf68aed0496f",
                       "purpose": "finance_inquiry",
                       "productScope": "card",
-                      "documentVersion": "v1",
+                      "documentVersion": "v2",
                       "grantedAt": "2026-10-22T10:05:00+09:00"
                     }
                   ]
@@ -105,7 +105,7 @@
             }
           },
           "409": {
-            "description": "같은 회원의 같은 Idempotency-Key로 다른 내용을 전송: idempotency_conflict.",
+            "description": "같은 회원의 같은 Idempotency-Key로 다른 내용을 전송: idempotency_conflict. 더는 동의받지 않는 지난 문서 버전: document_outdated. · 이전 철회의 삭제가 끝나지 않은 범위: privacy_deleting",
             "content": {
               "application/json": {
                 "schema": {
@@ -118,6 +118,15 @@
                       "error": {
                         "code": "idempotency_conflict",
                         "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  },
+                  "outdated": {
+                    "summary": "지난 문서 버전",
+                    "value": {
+                      "error": {
+                        "code": "document_outdated",
+                        "message": "약관이 새로 바뀌었어요. 바뀐 내용을 확인하고 다시 동의해 주세요."
                       }
                     }
                   }
@@ -138,14 +147,45 @@
                   {
                     "purpose": "finance_inquiry",
                     "productScope": "bank",
-                    "documentVersion": "v1"
+                    "documentVersion": "v2"
                   },
                   {
                     "purpose": "finance_inquiry",
                     "productScope": "card",
-                    "documentVersion": "v1"
+                    "documentVersion": "v2"
                   }
                 ]
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "금융 조회 동의 상태",
+        "operationId": "getConsentStates",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "은행·카드·대출 동의의 실제 상태와 버전·시각. 미동의는 날짜와 버전 null. 외부 호출 없음.",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStates"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           }
@@ -997,6 +1037,116 @@
           }
         }
       }
+    },
+    "/api/finance/consents/{scope}/": {
+      "delete": {
+        "summary": "동의 철회와 해당 범위 데이터 삭제",
+        "operationId": "revokeFinanceConsent",
+        "tags": [
+          "금융 동의 · 연결"
+        ],
+        "x-source": "docs/api/finance-connect.md",
+        "description": "해당 범위 원천 데이터 및 자동 탐지 항목 삭제. 혼합 예산·쿠션·대화·작업 캐시는 초기화. 직접 등록 항목과 다른 범위 원천은 보존. 은행 인증은 계좌·대출 동의가 모두 없어질 때 삭제. 반복 요청은 현재 상태 반환. 접수(동의 철회 · 연결 해제)를 먼저 커밋한 뒤 외부 인증 삭제 → 로컬 정리를 이어 하며, 끝나지 않으면 202와 deletionStatus로 안내하고 같은 요청으로 재시도한다(R21).",
+        "responses": {
+          "200": {
+            "description": "처리 성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStates"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 필요: not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "확인 누락·잘못된 본문: invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "알 수 없는 scope: not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "진행 중 작업: privacy_busy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "접수됨 · 삭제 미완료: 해당 항목 deletionStatus가 processing(다른 실행 진행 중) 또는 retry_required(실패 또는 실행 권한 만료 — 같은 요청으로 재시도)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConsentStates"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "scope",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "bank",
+                "card",
+                "loan"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1020,10 +1170,10 @@
           },
           "documentVersion": {
             "type": "string",
-            "example": "v1",
-            "description": "화면에 실제로 보여 준 동의 문서 버전. 결정기록 3-3 L에 따라 1차 전송 버전은 v1이다. 최종 동의 문구·서버 원문 해시 관리는 별도 확인 대상이다.",
+            "example": "v2",
+            "description": "화면에 실제로 보여 준 동의 문서 버전(GET /api/consent-documents/의 version). 서버가 그 버전의 보관 원문으로 해시를 만든다.",
             "enum": [
-              "v1"
+              "v2"
             ]
           }
         },
@@ -1075,8 +1225,8 @@
           },
           "documentVersion": {
             "type": "string",
-            "example": "v1",
-            "description": "동의 문서 버전."
+            "example": "v2",
+            "description": "동의 문서 버전. 과거 기록은 v1(임시 문장 해시)일 수 있다."
           },
           "grantedAt": {
             "type": "string",
@@ -1775,6 +1925,16 @@
               "message"
             ],
             "nullable": true
+          },
+          "cardReviewCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 이번 조회의 결제 카드 확인 필요 건수"
+          },
+          "approvalsComplete": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "카드 승인 내역 실제 조회 범위를 모두 반영했는지. 기관 status=succeeded와 별개."
           }
         },
         "required": [
@@ -1896,6 +2056,76 @@
             }
           ]
         }
+      },
+      "ConsentStates": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "productScope",
+                "required",
+                "status",
+                "documentVersion",
+                "grantedAt",
+                "revokedAt",
+                "deletionStatus"
+              ],
+              "properties": {
+                "productScope": {
+                  "type": "string",
+                  "enum": [
+                    "bank",
+                    "card",
+                    "loan"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "granted",
+                    "revoked",
+                    "not_granted"
+                  ]
+                },
+                "documentVersion": {
+                  "type": "string",
+                  "nullable": true
+                },
+                "grantedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time"
+                },
+                "revokedAt": {
+                  "type": "string",
+                  "nullable": true,
+                  "format": "date-time"
+                },
+                "deletionStatus": {
+                  "type": "string",
+                  "nullable": true,
+                  "enum": [
+                    "processing",
+                    "retry_required",
+                    null
+                  ],
+                  "description": "철회 삭제 진행 상태. null=삭제 없음 또는 완료"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "additionalProperties": false
       }
     }
   }

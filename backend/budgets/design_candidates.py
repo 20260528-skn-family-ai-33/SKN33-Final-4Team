@@ -54,8 +54,12 @@ def _allocate(inp, weights, active, *, audit=None):
     # R-05 with supplied ML weights; shared recommend/check_result stay unchanged.
     allocations = {c: 0 for c in CATEGORY_CODES if c not in active}
     allocations.update(inp["locks"])
+    goals = inp.get('category_targets', {})
+    allocations.update({c: max(v, inp['minimums'].get(c, 0)) for c, v in goals.items()
+                        if c in active and c not in inp['locks']})
     free = [c for c in CATEGORY_CODES if c not in allocations]
-    fixed_since = {c: 'lock' if c in active else 'inactive' for c in allocations}
+    fixed_since = {c: ('inactive' if c not in active else 'lock' if c in inp['locks'] else 'category_target')
+                   for c in allocations}
     while free:
         remaining = inp["target"] - sum(allocations.values())
         if remaining == sum(inp["minimums"].get(c, 0) for c in free):
@@ -86,6 +90,8 @@ def _allocate(inp, weights, active, *, audit=None):
         for code in fixed:
             allocations[code] = inp["minimums"][code]
             free.remove(code)
+    if goals and not free and audit is not None and not audit:
+        audit.append((dict(allocations), fixed_since))
     return {c: allocations[c] for c in CATEGORY_CODES}
 
 
@@ -289,6 +295,8 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None, reali
                                reference_unavailable=not any(reference_amounts.values()) and inp['target'] > 0)
     base = {"status": "proposed", "allocations": amounts, "reasons": [],
             "summary": "입력 비율에 최소 금액과 자물쇠를 반영한 기본 후보입니다.", "conflicts": []}
+    if original_inp.get('category_targets'):
+        base['unallocated'] = inp['target'] - sum(amounts.values())
     check_result(original_inp, base)
     floor_applied = []
     if floors and inp['target'] and len(inp['locks']) != len(CATEGORY_CODES):

@@ -56,7 +56,7 @@ def ml_cut_floors(history, ml_reference):
             and history['categories'][c]['baseline_amount'] > Fraction(str(v))}
 
 
-def _baseline_ledger(history, active):
+def _baseline_ledger(history, active, targets=None):
     ledger = {c: [] for c in history['categories'] if c not in ('ETC', 'UNCLASSIFIED')}
     for c in ledger:
         row = history['categories'][c]
@@ -70,6 +70,9 @@ def _baseline_ledger(history, active):
         elif row['baseline_amount'] != row['average']:
             ledger[c].append({'code': 'history_baseline', 'amount': row['baseline_amount'] - row['average'],
                               'detail': {'baseline': history['baseline']}})
+    for c, amount in (targets or {}).items():
+        ledger[c].append({'code': 'category_target_start', 'amount': amount-history['categories'][c]['baseline_amount'],
+                          'detail': {'requested': amount}})
     return ledger
 
 
@@ -87,6 +90,7 @@ def check_result_with_unallocated(inp, out, *, floors=None):
 
 
 def _starting_amounts(inp, values, active, floors, rounding_floors=None):
+    values = {**values, **inp.get('category_targets', {})}
     raw = {c: (Fraction(inp['locks'][c]) if c in inp['locks'] else
                max(values[c], inp['minimums'].get(c, 0), floors.get(c, 0)))
            if c in active else Fraction(0) for c in values}
@@ -106,7 +110,8 @@ def _surplus_budget(inp, response, values, active, floors):
         return None
     free = inp['target'] - sum(start.values())
     history = response['history']
-    ledger = _baseline_ledger(history, active)
+    ledger = _baseline_ledger(history, active, inp.get('category_targets'))
+    values = {**values, **inp.get('category_targets', {})}
     for c in active:
         if c in inp['locks']:
             ledger[c].append({'code': 'lock_fixed', 'amount': raw[c] - values[c], 'detail': {'locked': start[c]}})
@@ -242,7 +247,9 @@ def build_history_budget(inp, months, *, as_of, other_reserved=None,
     response['baseline_explanations'] = explain_allocations(references, {c: values[c] if c in active else 0 for c in CATEGORY_CODES},
         ledger, reference_type='history_average', priorities=inp['priorities'], names=CATEGORY_NAMES)
     weights = {c: int(values[c] * 3) for c in CATEGORY_CODES}
-    engine = _base_engine(inp, weights)
+    # Goals are soft starting values in the priority path, not locks in the comparison baseline.
+    baseline_input = {**inp, 'category_targets': {}} if inp.get('category_targets') else inp
+    engine = _base_engine(baseline_input, weights)
 
     locked_remainder_only = (engine is not None and engine['status'] == 'infeasible'
         and all(c['type'] == 'locks_mismatch_living' and c['difference'] < 0 for c in engine['result']['conflicts']))
@@ -267,7 +274,7 @@ def build_history_budget(inp, months, *, as_of, other_reserved=None,
         if required > inp['target']:
             return {**response, 'status': 'needs_upper_allocation_review', 'reason': 'ml_floor_unaffordable',
                     'shortfall': required-inp['target'], 'allocations': None, 'result': None}
-        engine = _base_engine(guarded, weights)
+        engine = _base_engine({**guarded, 'category_targets': {}}, weights)
     if response['allocation_gap'] > 0:
         from budgets.design_reality import system_floors
         floors = system_floors(reality_profile) if reality_profile is not None else {}
@@ -461,7 +468,7 @@ def _build_priority_history_budget(inp, months, *, as_of, shortfall_cut_rates,
     conflicts = (baseline.get('result') or {}).get('conflicts', [])
     locked_remainder_only = (baseline['status'] == 'infeasible' and conflicts
         and all(c['type'] == 'locks_mismatch_living' and c['difference'] < 0 for c in conflicts))
-    if inp['locks'] and (baseline['status'] == 'proposed' or locked_remainder_only):
+    if (inp['locks'] or inp.get('category_targets')) and (baseline['status'] == 'proposed' or locked_remainder_only):
         # Initial B uses actual locked starting costs; legacy proportional tools keep their baseline.
         from budgets.design_reality import system_floors
         values = {c: row['baseline_amount'] for c, row in baseline['history']['categories'].items()}
@@ -631,7 +638,8 @@ def _build_priority_history_budget(inp, months, *, as_of, shortfall_cut_rates,
     if any(amounts[c] != start[c] for c in user_protected):
         raise ValueError('user_protection_violated')
     from budgets.design_explain import explain_allocations
-    ledger = _baseline_ledger(baseline['history'], active)
+    ledger = _baseline_ledger(baseline['history'], active, effective.get('category_targets'))
+    averages = {**averages, **effective.get('category_targets', {})}
     def record(c, code, amount, **detail):
         ledger[c].append({'code': code, 'amount': amount, 'detail': detail})
     for c in CATEGORY_CODES:

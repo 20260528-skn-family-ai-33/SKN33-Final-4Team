@@ -1,7 +1,3 @@
-import hashlib
-import json
-from pathlib import Path
-
 from django.contrib.auth import authenticate, login as django_login, logout as django_logout
 from django.db import IntegrityError, transaction
 
@@ -13,6 +9,7 @@ from rest_framework.response import Response
 
 from budgets.models import Budget
 
+from .consent_documents import consent_hash, current_items
 from .models import Consent, User
 from .serializers import LoginSerializer, SignupSerializer
 
@@ -54,9 +51,12 @@ def login(request):
     })
 
 # login
-@api_view(["GET"])
+@api_view(["GET", "DELETE"])
 @permission_classes([IsAuthenticated])
 def me(request):
+    if request.method == "DELETE":
+        from .api_privacy import withdraw
+        return withdraw(request)
     user = request.user
 
     onboarding_completed = Budget.objects.filter(
@@ -110,32 +110,22 @@ def signup(request):
     serializer.is_valid(raise_exception=True)
     data = serializer.validated_data
 
-    document_path = Path(__file__).with_name("signup_terms_v1.json")
-    documents = json.loads(document_path.read_text(encoding="utf-8"))
-
     consent_records = {}
 
     for consent in data["consents"]:
         purpose = consent["purpose"]
         version = consent["document_version"]
-        document = documents[purpose]
-
-        if document["version"] != version:
+        try:
+            document_hash = consent_hash(purpose, None, version)
+        except ValidationError:
             raise ValidationError({
                 "consents": ["최신 약관을 확인하고 다시 동의해 주세요."]
             })
 
-        document_bytes = json.dumps(
-            document,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-
         consent_records[purpose] = {
             "purpose": purpose,
             "document_version": version,
-            "document_hash": hashlib.sha256(document_bytes).hexdigest(),
+            "document_hash": document_hash,
         }
 
     with transaction.atomic():
@@ -166,3 +156,10 @@ def signup(request):
         "nickname": user.nickname,
         "onboarding_completed": False,
     }, status=201)
+
+
+# 동의 문서 — 회원가입 전에도 읽어야 해서 로그인 없이 연다. 화면은 받은 document 를 그대로 그리고 version 만 돌려보낸다
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def consent_documents(request):
+    return Response({"items": current_items()})

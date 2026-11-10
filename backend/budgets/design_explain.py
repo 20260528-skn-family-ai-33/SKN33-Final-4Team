@@ -13,7 +13,7 @@ CAUSE_CODES = frozenset((
     'cut_limit_reached', 'priority_transfer_out', 'priority_transfer_in',
     'user_minimum_raise', 'system_floor_raise', 'system_floor_protected',
     'lock_fixed', 'user_protected', 'inactive_category', 'rounding', 'ml_base_ratio', 'constraint_redistribution',
-    'one_off_excluded', 'history_baseline', 'unclassified_candidate_adjustment',
+    'one_off_excluded', 'history_baseline', 'unclassified_candidate_adjustment', 'category_target_start',
 ))
 
 
@@ -145,6 +145,7 @@ def allocation_ledger(references, audit, inp, floors, *, reference_unavailable=F
     ledger = {c: [] for c in references}
     previous = dict(references)
     labels = {'inactive': '월 예산 제외', 'lock': '자물쇠', 'minimum': '최소금액·시스템 하한', 'minimum_rounding': '금액 단위 내림 후 최소금액·시스템 하한'}
+    labels['category_target'] = '다음 달 유지 목표'
     for snapshot, fixed in audit:
         constraints = []
         for c, kind in fixed.items():
@@ -168,6 +169,8 @@ def allocation_ledger(references, audit, inp, floors, *, reference_unavailable=F
                 entries = [('inactive_category', delta, {'reference_amount': references[category]})]
             elif kind == 'lock':
                 entries = [('lock_fixed', delta, {'locked': snapshot[category]})]
+            elif kind == 'category_target':
+                entries = [('category_target_start', delta, {'requested': inp['category_targets'][category]})]
             elif kind in ('minimum', 'minimum_rounding') and (delta >= 0 or kind == 'minimum_rounding'):
                 basis = previous[category]
                 if kind == 'minimum_rounding':

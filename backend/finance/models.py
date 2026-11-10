@@ -14,6 +14,7 @@
 import uuid
 
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -241,8 +242,9 @@ class Loan(models.Model):
                 name="loan_payment_day_1_31",
             ),
             models.CheckConstraint(
-                condition=Q(manual_balance__isnull=True) | Q(manual_balance__gte=1, manual_balance__lte=1_000_000_000),
-                name="loan_manual_balance_1_1b",
+                # 0원은 정정 입력 · 전체 완납 표시용 (R19). 직접 등록은 serializer 에서 1원부터 받는다
+                condition=Q(manual_balance__isnull=True) | Q(manual_balance__gte=0, manual_balance__lte=1_000_000_000),
+                name="loan_manual_balance_0_1b",
             ),
             models.CheckConstraint(
                 condition=Q(manual_rate__isnull=True) | Q(manual_rate__gte=0, manual_rate__lte=30),
@@ -265,6 +267,9 @@ class SyncRun(models.Model):
     )
     card = models.ForeignKey(Card, null=True, blank=True, on_delete=models.SET_NULL, related_name="sync_runs")
     loan = models.ForeignKey(Loan, null=True, blank=True, on_delete=models.SET_NULL, related_name="sync_runs")
+    # 이 조회를 시킨 작업 (R20). 작업의 실행 권한 연장 · 늦은 저장 차단에 쓴다. 비어 있으면 작업 없는 조회(새 연결 직후 등)이거나
+    # 필드 추가 전 기록 → 어떤 작업도 연장하지 않는다. 철회 때 작업 행이 지워져도 조회 기록(조회 범위 근거)은 남겨야 해서 SET_NULL
+    task = models.ForeignKey("chat.AsyncTask", null=True, blank=True, on_delete=models.SET_NULL, related_name="sync_runs")
     product_code = models.CharField("API 상품 코드", max_length=50)
     requested_from = models.DateField("요청 시작일", null=True, blank=True)
     requested_to = models.DateField("요청 종료일", null=True, blank=True)
@@ -293,6 +298,45 @@ class SyncRun(models.Model):
 
 
 # ===================== 거래 =====================
+
+class CardApprovalReview(models.Model):
+    """카드만 특정하지 못한 승인. 카드번호 원문 없이 거래별 확인을 보존한다."""
+
+    review_id = uuid_pk()
+    user = models.ForeignKey(USER, on_delete=models.CASCADE)
+    issuer_code = models.CharField(max_length=50)
+    source_key = models.CharField(max_length=128)
+    identity = models.JSONField(encoder=DjangoJSONEncoder)
+    payload = models.JSONField(encoder=DjangoJSONEncoder)
+    card_name = models.CharField(max_length=100, null=True, blank=True)
+    data_valid = models.BooleanField(default=True)
+    fetched_at = models.DateTimeField()
+    started_at = models.DateTimeField()
+    resolved_card = models.ForeignKey(Card, null=True, on_delete=models.RESTRICT)
+    resolved_at = models.DateTimeField(null=True)
+    transaction = models.OneToOneField("FinancialTransaction", null=True, on_delete=models.SET_NULL)
+
+    class Meta:
+        db_table = "card_approval_review"
+        constraints = [models.UniqueConstraint(
+            fields=["user", "issuer_code", "source_key"], name="car_user_issuer_source_unique",
+        )]
+
+
+class CardApprovalCoverage(models.Model):
+    """조회 당시 범위·차단 원인. 모든 거래 확인 후에만 성공 조회 기록으로 승격한다."""
+
+    run = models.OneToOneField(SyncRun, primary_key=True, on_delete=models.CASCADE)
+    covered_from = models.DateField()
+    covered_to = models.DateField()
+    has_unknown_amount = models.BooleanField(default=False)
+    reviews = models.ManyToManyField(CardApprovalReview)
+    cards = models.ManyToManyField(Card)
+    promoted_at = models.DateTimeField(null=True)
+
+    class Meta:
+        db_table = "card_approval_coverage"
+
 
 class SourceKind(models.TextChoices):
     BANK = "bank", "계좌"

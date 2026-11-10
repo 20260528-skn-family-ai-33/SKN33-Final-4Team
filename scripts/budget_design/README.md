@@ -19,6 +19,67 @@
 
 ## 실행
 
+### 서비스 정책과 배포 전 ML 점검
+
+새 서비스는 `BUDGET_DESIGN_ENABLED=false`가 기본이다. 미지정 정책은 승인된 `2026-11-10-forecast-band`를 사용하며 A의 전체 이동 한도는 기존 코드의 생활비 20%다. 사용자 승인(2026-11-10)에 따라 서비스 B의 예측 허용 범위는 하향 20%·상향 20%로 설정했다. `BUDGET_DESIGN_POLICY` JSON 또는 Django 설정으로 덮어쓸 수 있다. 명시한 JSON이 잘못됐거나 `null`이면 기본값으로 숨겨 대체하지 않고 추천을 차단한다. 이력 verifier와 기능 활성화는 별도이며 이 설정만으로 외부 LLM을 호출하지 않는다.
+
+### 서비스 LLM 연결 — 합성 검증 전용 (2026-11-07)
+
+`backend/budgets/design_service.py`의 `recommend`가 기존 A `choose_budget`와 B `forecast_budget`를 호출한다. A/B 자동 선택 기준은 유지한다. 새 패키지·DB 필드·사용자 입력은 추가하지 않는다.
+
+- 서버 내부 호출의 `allow_external=True`와 함께 합성 입력(`synthetic=True`)이거나 로그인 회원의 최신 국외이전·건강 관련 요약 별도 동의 두 건이 모두 확인돼야 LLM 경로가 실행된다. 불리언 이외 값은 거절한다. 사용자 API 본문에 이 플래그를 추가하지 않았으며 기존 `run_recommend`는 기본값으로 호출하므로 일반 사용자의 외부 전송은 계속 차단된다. 기능 스위치도 자동으로 켜지지 않는다. 동의 저장/철회 게이트는 연결했다. 예산 요청은 미국 지역 API만 사용하며 서비스 LangSmith는 OFF다. 운영 처리위탁 계약·개인정보 처리방침 확인과 활성화는 후속 작업이다.
+- A는 기존 서버 미리보기를 비교해 유지·부분 증액·종료를 선택한다. 전체 생활비 이동 한도 20%, 최소금액·잠금·시스템 하한을 유지하며, 호출 실패 시 부분 조정을 폐기하고 검수된 기본안으로 돌아간다. 모델·호출 제한은 기존 `design_selection.py` 설정을 사용한다.
+- B는 `BUDGET_DESIGN_POLICY`의 `b_forecast_band`에 `down_percent`, `up_percent`가 명시된 경우 기존 예측기를 사용한다. 서비스 초기 정책은 승인된 20/20을 전달한다. 별도 정책에서 band를 생략하면 규칙 B를 반환하고 `forecast_band_required`를 남긴다. 예측 함수 자체나 로컬 비교 창에 숨은 기본값을 추가하지 않는다. 예산 대상 월은 완료된 이력 다음의 현재 추천 월(`today.month`)이다. 모델은 기존 `LLM_MODEL`, 설명 길이는 기존 예측기 제한을 사용한다.
+- B의 잘못된 응답은 기존과 같이 한 번 재시도하고, 재검수에도 실패하면 규칙 B로 돌아간다. 성공한 예측의 lower/upper는 최종 만 원 우선·5천 원 보조 정산에도 전달한다. 원 단위 잠금은 그대로 보존한다.
+- 결과 `_design.llm`에 `completed`/`fallback`/`not_run`과 사유를 기록한다. B는 시도·재시도·검수 실패 횟수와 위반 종류도 기록한다. 키·프롬프트·원본 거래·가맹점은 이 메타데이터에 넣지 않는다. 서비스 A 호출은 LangSmith 환경 설정과 무관하게 추적을 끄며, B 예측도 LangSmith 추적을 시작하지 않는다. 기존 로컬 계산 창의 추적 설정은 변경하지 않는다.
+- DB 없이 새 연결만 검증: backend에서 `python manage.py test budgets.test_design_service_llm --noinput`. 모든 입력은 합성이며 HTTP 응답을 모의 처리한다. 실제 LLM 품질·속도·비용과 저장·승인 통합은 이 테스트의 검증 범위 밖이다.
+
+### B 이력 검증 연결 준비 (2026-11-07)
+
+서비스는 이번 달을 제외한 완료 달력월 3개를 대상으로 수집 범위와 거래 정합성을 따로 확인한다. `BUDGET_HISTORY_VERIFIER` Django 설정이 없으면 `budgets.design_history.verify_budget_history`를 기본 사용한다. 명시적으로 `None`이면 정합성은 unknown으로 유지하고, 기존 사용자 정의 callable도 계속 사용할 수 있다. 잘못되거나 누락된 근거 값은 verified로 바꾸지 않는다. 이 연결이 `BUDGET_DESIGN_ENABLED`나 외부 LLM 호출을 켜지는 않는다.
+
+- 공용 `finance.history_verifier`의 기본 호출은 그대로다. 예산용 연결에서만 `use_confirmed_salary=True`를 넘겨 현재 유효한 사용자 급여 확인을 사용한다. `known_deposits(user)`의 적격 원화 입출금계좌 입금 중 `state='confirmed'`, 유형 `income`인 거래만 해당하며, 확정 당시 금액·날짜·적요·계좌가 현재 값과 같아야 한다. 검증기가 먼저 읽은 거래와도 다시 비교한다.
+- 이 근거는 해당 입금의 `unattributed_inflow` 판정만 제외한다. 다른 중복·취소·환불 문제를 지우지 않는다. `auto`·재확인·거절·스냅샷 누락·변경된 확정, 일반 입금과 불명확한 취소는 기존 검사를 유지한다. SalaryDecision 상태를 갱신하거나 소비 금액을 다시 차감하지 않는 읽기 전용 연결이다.
+- 수집 완료와 정합성 검증을 모두 통과한 최근 3개월에서 분류된 카테고리 최대 거래 건수가 11건 이상이면 B, 10건 이하면 A다. 미분류 건수로 B 자격을 만들지 않고 미분류 금액도 이력에서 지우지 않는다. 미분류·환불 허용 비율 등의 새 정책 숫자는 추가하지 않았다.
+- 2026-11-07 v2 소스에 main의 SalaryDecision과 users 연결용 마이그레이션을 통합했고, 2026-11-10에는 `.env`가 지정한 로컬 서비스 DB에 대기 15개를 적용했다. 백업 실제 복원·기존 행 보존·합성 회귀 58개·대기 0개를 확인했다. 서비스 기능 스위치는 OFF이며 활성화는 별도다. 배포/알파 fixture DB는 이관하지 않았다. 필요한 코드가 없는 다른 실행 환경에서는 모든 검수값을 unknown으로 유지한다.
+- DB 없는 연결 검증: backend에서 `python manage.py test budgets.test_design_history.HistoryProofTest --noinput`.
+- main과 DB 변경 기록을 정리한 뒤의 합성 DB 검증: `python manage.py test budgets.test_design_history budgets.test_design_service.DesignHistoryTest finance.test_history_verifier --noinput`. 이번에는 실제 작업 DB 대신 main 기반 별도 복사본과 자동 생성·삭제한 PostgreSQL 테스트 DB에서 실행했다.
+
+배포 대상 OS의 Python 3.12로 전용 가상환경을 만들고 `scripts/budget_allocation/requirements-inference.txt`의 고정 버전을 설치한다. Windows 가상환경 폴더를 Linux/macOS에 복사하지 않는다. 신뢰할 수 있는 별도 저장 위치의 모델을 공급하고 아래 두 환경변수에 절대 경로를 지정한다. 모델은 Git에 넣지 않는다.
+
+```powershell
+# Windows 예시 경로. 실제 배포 위치로 바꾼다.
+$env:BUDGET_INFERENCE_PYTHON='C:/budget-runtime/Scripts/python.exe'
+$env:BUDGET_MODEL_PATH='C:/budget-model/budget_allocation.joblib'
+python -m scripts.budget_design.inference
+```
+
+```sh
+# Linux/macOS 예시 경로. 저장소 루트에서 실행한다.
+export BUDGET_INFERENCE_PYTHON=/opt/budget-runtime/bin/python
+export BUDGET_MODEL_PATH=/opt/budget-model/budget_allocation.joblib
+python -m scripts.budget_design.inference
+```
+
+이 명령은 DB·외부 LLM 없이 고정 합성 프로필로 실제 모델을 실행한다. 성공 시 `status=ready`, 모델명/버전·카테고리 수·합계를 출력하고 종료 코드 0을 반환한다. 실패 시 종료 코드 2와 오류 종류만 출력한다. 내부적으로 기존 모델 체크섬·버전·10개 카테고리·비율 합·금액 합을 검수한다. 통과했다고 기능 스위치나 이력 검증이 자동 활성화되는 것은 아니다. 실제 배포 서버에서도 동일 명령을 통과한 뒤 연결을 검토한다.
+
+2026-11-07 로컬 확인에서는 기존 전용 환경(Python 3.12.14, numpy 2.5.4, pandas 3.1.0, catboost 1.2.10, joblib 1.6.0)과 체크섬을 확인하고 실제 모델 실행에 성공했다. 단일 합성 100만 원 예측은 약 2.29초, 카테고리 10개·비율 합 1·초안 합 100만 원·평균 비율 대체 없음이었다. 이는 추천 품질이나 서버 평균 응답 시간 검증이 아니다.
+
+혜리 PC의 기존 실제 경로는 아래와 같다. **2026-11-10 등록 완료:** 원본 `C:/FINAL_PRJ/SKN33-Final-4Team/.env`와 서비스 작업 폴더 `C:/FINAL_PRJ/SKN33-Final-4Team/.worktrees/budget-design-v2/.env`에 두 변수를 등록했다. 기존 원본 설정은 보존했으며 v2 파일에는 ML 경로 2개만 둔다. 공통 Django 환경변수는 기존 원본 설정 등 실행 환경에서 별도로 공급해야 한다. 비밀값 복사·DB 적용·서비스 활성화·서버 재시작은 하지 않았다. 이미 실행 중인 서버는 재시작해야 새 값을 읽는다. 이 Windows 경로를 배포 서버의 경로로 사용하지 않는다.
+
+- `BUDGET_INFERENCE_PYTHON`: `C:/FINAL_PRJ/SKN33-Final-4Team/local_workspace/.venv-budget-inference/Scripts/python.exe`
+- `BUDGET_MODEL_PATH`: `C:/FINAL_PRJ/SKN33-Final-4Team/local_workspace/models/living_expense_prediction/models/shallow/catboost_allocation/budget_allocation.joblib`
+
+프로젝트 실행 환경을 준비하고 `.env`를 읽은 프로세스에서 저장소 루트의 `python -m unittest discover -s tests/budget_design -p 'test_budget_inference.py'`로 재현한다. 실제 ML 검사 3개와 모의 CLI 검사 2개가 있으며, 등록한 파일을 읽는 새 프로세스에서 **5개 모두 통과**했다(2026-11-10, 실패·건너뜀 없음). 실제 검사는 합성 프로필 3개·반복 예측·잘못된 입력과, 실제 모델을 사용하는 A/B 함수의 최소금액·원 단위 잠금·합계·단위를 확인한다. DB·LLM 호출은 차단한다. 모델 또는 실행 경로가 없으면 실제 검사 3개는 skip된다.
+
+로컬 DB 적용(2026-11-10)은 별도 단계에서 완료했다. 적용 전 백업은 `C:/FINAL_PRJ/SKN33-Final-4Team/local_workspace/data/db_backups/budget_design/before_budget_design_migrations_20261110.dump`다. 현재 로컬 DB에는 회원 2명만 있고 기존 최소금액·잠금·거래는 0건이었으며, 설정값이 있는 경우의 보존은 임시 PostgreSQL 테스트 DB에서 검증했다. 기존 행 보존·대기 0개·시스템 검사를 확인했고, 실제 DB에 합성 시험 데이터를 추가하지 않았다. 세부 결과는 `docs/agents/budget_design.md`의 해당 날짜 절을 따른다. 기능 활성화·외부 전송 동의 연결은 진행하지 않았다.
+
+Django는 기동할 때 기존 설정 로더로 `.env`를 읽는다. Django 없이 ML CLI만 확인할 때는 서비스 작업 폴더 루트(`C:/FINAL_PRJ/SKN33-Final-4Team/.worktrees/budget-design-v2`)에서 아래처럼 등록 파일을 먼저 읽는다. 여기서는 경로를 임시로 다시 지정하지 않으며 DB·LLM을 호출하지 않는다.
+
+```powershell
+python -c "from dotenv import load_dotenv; load_dotenv('.env'); from scripts.budget_design.inference import main; raise SystemExit(main())"
+```
+
 저장소 루트의 Python 환경에 `requirements.txt`를 설치한 뒤 실행한다.
 
 ```sh

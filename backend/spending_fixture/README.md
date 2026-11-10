@@ -40,6 +40,7 @@ python manage.py test spending_fixture --settings=spending_fixture.settings
 `alpha.home@example.test`와 온보딩 계정 `alpha.onboarding@example.test`를 만든다.
 개인 데이터와 코드는 `local_workspace/data/alpha_test/`, `local_workspace/scripts/alpha_test/`에 있다. local_workspace는 기본적으로 Git 제외 대상이지만, 이 알파 기능에 필요한 코드·합성 자료·검증 파일만 명시적으로 추적한다. 해당 파일은 저장소를 받으면 함께 포함된다. 원자료·모델·개인 환경은 포함하지 않는다.
 `generate.py`로 CSV와 독립 정답을 만들고 `seed.py --alpha`가 CSV를 검증해 모델에 넣는다.
+**온보딩 계정은 실제 첫 연결처럼 파이프라인을 거친다(11/4).** 은행 거래는 출금 `transfer` · 입금 `income`으로 넣고(적금 · 생활통장 이체 포함, 카드는 그대로), 적재 뒤 그 회원의 거래 전체로 `process_new_transactions`를 한 번 불러 ① 내 계좌 이체 · 카드값 판단 → … → ⑦ 고정지출 · 저축 후보 감지가 돈다. 같은 구매(SAME_PURCHASE) 연결은 아직 파이프라인에 없어서 시드가 넣는다. **온보딩 계정 카드 거래는 시드 카테고리로 확정해서 넣는다(분류기 검증 대상 아님, 11/4).** 온보딩 계정의 카드 · 청구서 · 카드 연결 기관 코드는 신한카드(`0306`)이고 카드값 출금 적요는 "신한카드 청구 납부"다 — ①이 적요의 카드사 이름으로 카드값을 판단하므로(승인 계정은 `FIXTURE_CARD` 그대로). 승인 계정은 그대로(유형 · 연결을 시드가 넣음).
 
 ```powershell
 # 저장소 루트에서 데이터 생성·재현 검사

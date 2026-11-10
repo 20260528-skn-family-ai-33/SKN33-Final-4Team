@@ -68,6 +68,9 @@ class ProtectNotReady(APIException):
 def protect(request):
     with transaction.atomic():
         lock_user(request.user)  # 홈 · 고정지출 · 정기 저축과 같은 잠금 순서
+        from users.privacy import require_bank_not_revoked
+        if request.method == "PUT":
+            require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         data = protect_json(request.user, profile, today)
@@ -207,7 +210,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
     balance = balance_json(user)["total"]
     required = cushion_required(balance, income)
     base = recommendation = blocked_state = None
-    pending_cards = []
+    pending_cards, card_notes = [], []
     if not missing:
         start, next_payday, _ = salary_cycle_dates(profile, today)
         cycle = ensure_cycle(user, start, next_payday)
@@ -215,6 +218,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
         if card_reserved is not _COMPUTE:
             breakdown["card_reserved"] = card_reserved
         pending_cards = breakdown["card_pending"]
+        card_notes = breakdown.get("card_notes", [])
         fixed = fixed_sum(breakdown)
         if fixed is None:
             # 카드 첫 청구서 선차감을 아직 계산할 수 없음 → 고정지출 합계 · 배분 기준도 모른다 (0원으로 치지 않음)
@@ -236,6 +240,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
         "saved": protect_saved_json(profile, base),
         "cushion": {"required": required, "target": income * 3 if income is not None else None, "balance_total": balance},
         "card_pending": pending_cards,
+        "card_notes": card_notes,  # 보류는 아니고 알릴 것 (no_bill_in_cycle 등, 11/06)
         "locks_released": [],  # PUT으로 저장할 때만 채운다 (P-13)
     }
 
@@ -273,6 +278,8 @@ def recommend(request):
 
     with transaction.atomic():
         lock_user(request.user)
+        from users.privacy import require_bank_not_revoked
+        require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         state = protect_json(request.user, profile, today)  # home.ensure_cycle도 같은 잠금 안에서 재사용
@@ -374,9 +381,11 @@ def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
             or snapshot["take_home_income"] - sum(line["allocated_amount"] for line in lines) != expected_spare - transfer + unallocated):
         raise EngineCheckFailed("예산 항목 합계가 지킬 돈의 여윳돈과 맞지 않아요.")
     version = (Budget.objects.filter(user=task.user, cycle=cycle).aggregate(last=Max("version_no"))["last"] or 0) + 1
+    stored_snapshot = copy.deepcopy(snapshot)
+    stored_snapshot.update(copy.deepcopy(out.get('_design', {}).get('references', {})))
     budget = Budget.objects.create(
         user=task.user, cycle=cycle, task=task, version_no=version, status="validated",
-        funding_amount=snapshot["take_home_income"], input_hash=task.input_hash, input_snapshot=snapshot,
+        funding_amount=snapshot["take_home_income"], input_hash=task.input_hash, input_snapshot=stored_snapshot,
         engine_version=out.get('_design', {}).get('engine_version', ENGINE_VERSION),
         validation_summary={'design': out['_design']} if out.get('_design') else None,
         policy_version=POLICY_VERSION, validated_at=timezone.now(),
@@ -404,6 +413,8 @@ def budget_category(request, budget_id, code):
 
     with transaction.atomic():
         lock_user(request.user)
+        from users.privacy import require_bank_not_revoked
+        require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
@@ -444,6 +455,8 @@ def budget_approve(request, budget_id):
 
     with transaction.atomic():
         lock_user(request.user)
+        from users.privacy import require_bank_not_revoked
+        require_bank_not_revoked(request.user)
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
@@ -465,9 +478,13 @@ def budget_approve(request, budget_id):
         frozen = ((chosen.input_snapshot or {}).get("fixed") or {}).get("card_reserved")
         state = protect_json(request.user, profile, today, card_reserved=frozen) if this_cycle else None
         # 계산 규칙(policy_version)이 바뀐 초안도 입력이 바뀐 것과 같이 만료 → 다시 추천
+        # 11/06: 카드 선차감은 이번 주기 카드 소비 전체가 아니라 청구서에 든 확인된 중복만 빼므로, 카드를 쓴다고 바뀌지 않는다.
+        # 지금 계산이 초안 값과 다르면(청구서 정정 · 상세 보완 · 계산 규칙 변경 · 보류) 낡은 값으로 승인하지 않고 만료
+        from .protect import card_reserved as current_card_reserved
         if (not this_cycle or not protect_ready(state) or chosen.policy_version != POLICY_VERSION
                 or budget_input_hash(request.user, cycle) != chosen.input_hash
-                or not approval_ready(request.user, chosen, today)):
+                or not approval_ready(request.user, chosen, today)
+                or current_card_reserved(request.user, cycle)["amount"] != frozen):
             chosen.status = "expired"
             chosen.save(update_fields=["status"])
             # raise하면 이 트랜잭션도 롤백된다. 공통 에러 모양으로 반환하고 위 옵션으로 만료만 보존한다.
@@ -503,6 +520,8 @@ def budget_approve(request, budget_id):
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def fixed_list(request):
+    from .fixed_bills import fixed_bill_preview
+
     if request.method == "POST":
         return fixed_create(request)
 
@@ -523,6 +542,7 @@ def fixed_list(request):
 
     return Response({
         "items" : items,
+        "card_bills": fixed_bill_preview(request.user, cycle, today),
         "summary" : {
             "confirmed_monthly_total" : confirmed.aggregate(total = Sum("amount"))["total"] or 0, # 확정 합계
             "suggested_count" : suggested.count()
@@ -1094,7 +1114,11 @@ def matching_payments(expense, due_date, start, end):
         found = found.filter(account_id=expense.payment_account_id)
     else:
         return []  # 결제 수단 모름 → 찾을 곳이 없음
-    taken = evidence_of_others(expense.user_id, expense) | id_set(expense.evidence)
+    # 자기 근거 거래: 카드는 근거 = 이미 고정비로 연결된 결제라 뺀다. 계좌는 납부로 연결된 출금이 위 PaymentMatch 로 빠지므로
+    #   남은 근거(감지 후보의 근거 출금 등 아직 회차와 짝이 없는 것)는 후보로 둔다 (PR #80 리뷰)
+    taken = evidence_of_others(expense.user_id, expense)
+    if expense.payment_card_id is not None:
+        taken |= id_set(expense.evidence)
     found = [t for t in found if str(t.pk) not in taken]
     found.sort(key=lambda t: (abs((t.occurred_on - due_date).days), abs(t.amount - expense.amount), str(t.pk)))
     return found
@@ -1205,6 +1229,12 @@ def tx_brief(t):
 # 납부 상태 다시 계산 — 짝 합계 ≥ 예정 금액의 90%(올림) paid, 그보다 적으면 partial, 없으면 출금일 전 unpaid · 지남 needs_review
 #   90%: 15,000원 등록에 14,900원 출금처럼 조금 다르게 나가도 '냄'으로 (11/4). 등록 금액 · 예산 금액은 그대로
 def refresh_due_state(due, today):
+    if due.obligation_type == "loan":  # 대출은 사용자 확인(다 냄 · 일부)을 따른다 — 90% 규칙 안 씀 (finance/loan_payments.py)
+        from finance.loan_payments import refresh_loan_due
+        return refresh_loan_due(due, today)
+    if due.obligation_type == "card_bill":  # 카드는 청구액 기준 남은 금액으로 — 90% 규칙 안 씀 (finance/card_payments.py)
+        from finance.card_payments import refresh_card_due
+        return refresh_card_due(due, today)
     summary = due.matches.aggregate(total=Sum("matched_amount"), last=Max("matched_at"))
     paid = summary["total"] or 0
     if paid >= (due.confirmed_amount * 9 + 9) // 10:  # [임시] 90% — 알파 뒤 "앞으로 이 금액으로 바꿀까요?"로 등록 금액을 고칠 예정
@@ -1351,7 +1381,9 @@ def match_current_due(expense, cycle, today):
 def remembered_withdrawal(expense, found):
     if len(found) != 1:
         return False
-    picked = [t for t in remembered_evidence(expense) if t.account_id is not None and t.classification_source == "user"]
+    # 기억한 출금 = 사용자가 직접 고른 출금, 또는 사용자가 확정한 감지 후보의 근거 출금 (확정 = 그 출금들이 맞다고 확인, PR #80 리뷰)
+    picked = [t for t in remembered_evidence(expense) if t.account_id is not None
+              and (t.classification_source == "user" or expense.source_type == "detected")]
     label = normalize_merchant(found[0].merchant_name or found[0].source_description)
     return label is not None and any(normalize_merchant(t.merchant_name or t.source_description) == label for t in picked)
 
@@ -1890,15 +1922,17 @@ def savings_list(request):
         return savings_create(request)
 
     # 목록 : 후보 먼저 -> 확정 (이체일 빠른 순, 모르면 제일 아래)
+    #   후보는 받는 계좌가 예적금(deposit)인 것 먼저, 그다음 최근에 찾은 순 (11/4 — 감지 후보는 남에게 보낸 이체일 수도 있어서)
     mine = RecurringSaving.objects.filter(user = request.user) # user가 요청한 user와 동일한 객체
-    suggested = mine.filter(status = "suggested").order_by("-created_at")
+    suggested = sorted(mine.filter(status = "suggested").select_related("to_account").order_by("-created_at"),
+                       key = lambda s: not (s.to_account and s.to_account.account_type == "deposit"))
     confirmed = mine.filter(status = "confirmed").order_by(F("transfer_day").asc(nulls_last=True))
 
     return Response({
         "items" : [saving_json(s) for s in suggested] + [saving_json(s) for s in confirmed],
         "summary" : {
             "minimum_monthly" : confirmed.aggregate(total=Sum("amount"))["total"] or 0, # 확정 금액 합계
-            "suggested_count" : suggested.count()
+            "suggested_count" : len(suggested)
         }
     })
 
@@ -1996,8 +2030,7 @@ def savings_ignore(request):
             if s.status == "suggested":
                 s.status = "ignored"
                 s.save(update_fields=["status"])
-                # 근거 이체 -> '내 계좌끼리 옮긴 돈'
-                if s.evidence:
-                    FinancialTransaction.objects.filter(pk__in=s.evidence).update(transaction_type="own_transfer")
+                # 근거 이체의 유형은 바꾸지 않는다 — 내 계좌 이체는 이미 own_transfer, 남에게 보낸 이체(transfer)와
+                #   후보가 생긴 뒤 사용자가 바꾼 분류(소비 등)는 그대로 (PR #80 리뷰)
 
     return Response({"items" : [saving_json(s) for s in found]})

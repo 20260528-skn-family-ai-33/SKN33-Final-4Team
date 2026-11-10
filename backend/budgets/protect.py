@@ -224,17 +224,35 @@ def installment_rounds(user, issuer_code, cycle, connected_on, first_bill_ids):
     return None if None in amounts else sum(amounts)
 
 
-def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today, issuer_fixed=0):
-    """카드사 한 곳의 첫 청구서 선차감 + 이번 회차 할부금 (10/29 나은: 카드사 단위). (금액, 보류 이유) — 금액이 None이면 보류
+def first_budget_cycle(user, connected_at, cycle):
+    """이 카드사의 최초 예산 적용 주기인지 (11/06). 카드사 첫 연결(connected_at) 뒤에 승인된 예산이 이번 주기보다 앞선 주기에
+    있으면 그 주기에 이미 선차감을 반영했으므로 아니다 — 저장된 승인 기록(approved_at · 주기)으로만 판단해 조회할 때마다 바뀌지 않는다.
+    승인 예산이 없던 동안은 계속 '최초'이고, 나중에 연결한 카드사는 그 연결 뒤 첫 승인 예산 주기가 최초가 된다"""
+    from .models import Budget
+
+    return not Budget.objects.filter(
+        user=user, approved_at__isnull=False, approved_at__gte=connected_at, cycle__starts_on__lt=cycle.starts_on,
+    ).exists()
+
+
+def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today):
+    """카드사 한 곳의 첫 청구서 선차감 + 이번 회차 할부금 (10/29 나은: 카드사 단위). (금액, 이유) — 금액이 None이면 보류(이유 문자열),
+    금액이 있으면 이유는 안내 — 문자열(no_bill_in_cycle 등) 또는 안내 목록(중복 확인 못 함 · 상세 일부)
 
     managed: 그 카드사 관리 대상 카드 (쓴 돈을 뺄 카드) · issuer_cards: 그 카드사 카드 전체 (첫 연결일 · 조회 기록)
     """
     from django.http import Http404
     from finance.card_deduction import get_issuer_first_bill_deduction
 
+    from finance.card_review import approval_blocker
+
+    blocker = approval_blocker(user, issuer_code)
+    if blocker:
+        return None, blocker
     connected = [card.first_connected_at for card in issuer_cards]
     connected_on = timezone.localdate(min(connected)) if connected and None not in connected else None
-    bill_until = history_until(issuer_cards, CARD_BILL_SYNC, connected_on)
+    # 11/06: 대상 청구서 = 이번 주기에 결제일이 든 청구서라 조회 기록도 연결일이 아니라 주기 시작일부터 이어져야 한다
+    bill_until = history_until(issuer_cards, CARD_BILL_SYNC, cycle.starts_on)
     spend_until = history_until(issuer_cards, CARD_SPENDING_SYNC, cycle.starts_on)
     # 기준일 = 청구서 · 거래를 마지막으로 다 불러온 날 (오늘 조회가 없다고 매일 막지 않는다).
     # 그 뒤에 쓴 돈은 빼지 않으므로 선차감이 조금 클 수는 있어도 작아지지는 않는다.
@@ -252,26 +270,32 @@ def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today, iss
         result = get_issuer_first_bill_deduction(
             user, issuer_code, cycle, card_ids=[card.pk for card in managed], as_of=as_of,
             bill_history_complete=bill_complete, spending_history_complete=spend_until is not None,
+            first_cycle=connected_on is None or first_budget_cycle(user, min(connected), cycle),
         )
         if result.amount is None:
-            return None, result.reason
+            if result.reason == "first_bill_unavailable" and bill_until is not None and bill_until >= cycle.ends_before - timedelta(days=1):
+                return 0, "no_bill_in_cycle"  # 주기 마지막 날까지 청구서를 조회했는데 없음 = 정상 빈 조회 (낼 카드값 없음)
+            return None, result.reason  # 아직 조회하지 않은 기간에 청구서가 나올 수 있으면 보류 (0원으로 치지 않음)
         rounds = installment_rounds(user, issuer_code, cycle, connected_on, result.bill_ids)
         if rounds is None:
             return None, "installment_amount_unknown"
         if result.cycle_card_spending is None:
-            return result.amount + rounds, None  # 첫 청구서가 이번 주기 밖 · 연결 전 → 할부금만
+            # 연결 전 주기 · 이미 반영한 카드사 · 이번 주기 청구서 없음 → 할부금만. 이유는 보류가 아니라 안내(card_notes)로
+            return result.amount + rounds, result.reason
     except (Http404, ValueError, TypeError) as error:
         # 남의 연결이 섞이거나 금액이 음수인 이상한 자료 → 화면 전체를 에러로 만들지 않고 이 카드사만 보류.
         # 코드 버그도 여기로 올 수 있어 로그는 남긴다 (예외 원문 · 금액은 남기지 않음)
         logger.warning("카드 선차감 계산 보류 issuer=%s error=%s", issuer_code, type(error).__name__)
         return None, "card_data_invalid"
-    # P-04: 확정 고정지출은 결제 수단과 상관없이 고정비에 이미 들어 있으므로, 이 카드사 카드에 배정된 고정지출(card_fixed_by_card)은 선차감에서 뺀다.
-    # 이번 주기에 이미 결제돼 고정지출에 연결된 관리 대상 카드 거래는 '그 카드로 쓴 돈'에서 되돌려 두 번 빼지 않는다.
-    end = min(as_of, cycle.ends_before - timedelta(days=1))
-    other_spending = result.cycle_card_spending - fixed_linked_amount(user, managed, cycle.starts_on, end)
-    # 카드사별로 0원 아래로는 안 내리므로, 남은 금액보다 고정지출이 크면 그 차이는 다른 카드사에서 빼지 않는다
-    # (선차감이 조금 커지는 쪽 = 예산이 모자라지 않는 쪽).
-    return max(0, result.total_amount - other_spending - issuer_fixed) + rounds, None
+    # 11/06: 중복 차감은 같은 지출이라는 근거가 있는 금액만 (card_deduction.cycle_overlap — 이번 주기 소비 전체 · 카드 고정비 합계를
+    # 일괄로 빼지 않음). 예산 반영액은 '앞으로 낼 금액'으로 줄이지 않는다 (이번 월급으로 이미 낸 카드값도 이번 예산에서 쓴 돈).
+    # 이번 주기 전에 낸 금액(연결된 출금 근거)만 이미 빠져 있다. 확인 못 한 중복은 빼지 않고 안내로 남긴다
+    notes = []
+    if result.uncertain_count:
+        notes.append({"reason": "card_overlap_uncertain", "amount": result.uncertain_amount, "count": result.uncertain_count})
+    if result.items_incomplete:
+        notes.append({"reason": "bill_items_incomplete", "amount": None, "count": None})  # 빠진 항목의 건수 · 금액은 모른다
+    return result.amount + rounds, notes or None
 
 
 def card_reserved(user, cycle, as_of=None):
@@ -281,16 +305,11 @@ def card_reserved(user, cycle, as_of=None):
     한 곳이라도 계산 보류면 amount=None (0원으로 치지 않음) 이고 pending에 그 카드사의 관리 대상 카드와 이유를 담는다.
     """
     today = as_of or timezone.localdate()
-    total, pending = 0, []
+    total, pending, notes = 0, [], []
     managed = selected_cards(user)
     if not managed:
         return {"amount": 0, "pending": []}
     cards = provider_cards(user)
-    issuer_of = {card.pk: card.issuer_code for card in cards}
-    # 고정지출은 그 카드사 카드 전체(관리 대상 아닌 카드 포함)로 묶는다: 그 몫도 첫 청구서에 같이 들어 있어서
-    issuer_fixed = {}
-    for card_id, amount in card_fixed_by_card(user, cards, cycle, today).items():
-        issuer_fixed[issuer_of[card_id]] = issuer_fixed.get(issuer_of[card_id], 0) + amount
     by_issuer = {}
     for card in managed:
         by_issuer.setdefault(card.issuer_code, []).append(card)
@@ -300,14 +319,18 @@ def card_reserved(user, cycle, as_of=None):
             amount, reason = None, "card_data_invalid"  # 카드사를 모르는 카드
         else:
             amount, reason = issuer_deduction(
-                user, issuer_code, group, [card for card in cards if card.issuer_code == issuer_code],
-                cycle, today, issuer_fixed.get(issuer_code, 0),
+                user, issuer_code, group, [card for card in cards if card.issuer_code == issuer_code], cycle, today,
             )
         if amount is None:
             pending.extend({"card_id": str(card.pk), "reason": reason} for card in group)
         else:
             total += amount
-    return {"amount": None if pending else total, "pending": pending}
+            if isinstance(reason, list):  # 카드사 하나에 한 번 (금액을 카드마다 겹쳐 보이지 않게)
+                notes.extend({"card_id": str(group[0].pk), "issuer_code": issuer_code, **note} for note in reason)
+            elif reason:  # 금액은 정해졌고 알릴 것만 있음 (no_bill_in_cycle · first_budget_applied · before_first_connection)
+                notes.extend({"card_id": str(card.pk), "reason": reason} for card in group)
+    result = {"amount": None if pending else total, "pending": pending}
+    return {**result, "notes": notes} if notes else result  # 안내가 있을 때만 (내부 값)
 
 
 def fixed_breakdown(user, cycle, *, card=True):
@@ -321,7 +344,7 @@ def fixed_breakdown(user, cycle, *, card=True):
     return {
         "categories": categories, "loan": loans,
         "card_ids": sorted(str(c.pk) for c in selected_cards(user)),
-        "card_reserved": reserved["amount"], "card_pending": reserved["pending"],
+        "card_reserved": reserved["amount"], "card_pending": reserved["pending"], "card_notes": reserved.get("notes", []),
     }
 
 

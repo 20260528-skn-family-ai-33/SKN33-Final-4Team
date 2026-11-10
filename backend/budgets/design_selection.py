@@ -76,7 +76,7 @@ def _call_openai(messages, category, api_key, timeout, trace):
             'name': 'adjust_budget', 'description': '현재 우선순위 항목을 서버 규칙 안에서 조정합니다.',
             'strict': True, 'parameters': parameters}}],
     }
-    connection = HTTPSConnection('api.openai.com', timeout=timeout)
+    connection = HTTPSConnection('us.api.openai.com', timeout=timeout)
     try:
         connection.request('POST', '/v1/chat/completions',
                            body=json.dumps(body).encode('utf-8'), headers={

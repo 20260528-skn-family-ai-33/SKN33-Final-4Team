@@ -1,6 +1,7 @@
 """Synthetic service policies only; no external model/LLM calls."""
 from copy import deepcopy
 from datetime import date
+import os
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 
@@ -39,7 +40,7 @@ def policy():
 class DesignServiceTest(SimpleTestCase):
     def setUp(self):
         self.snapshot = {'engine_input': inp(priorities=priorities('FOOD', 'EDUCATION', 'MEDICAL_HEALTH')), 'etc': 0}
-        self.enterContext(override_settings(BUDGET_DESIGN_POLICY=policy()))
+        self.enterContext(override_settings(BUDGET_DESIGN_POLICY=policy(), BUDGET_HISTORY_VERIFIER=None))
         self.predict = self.enterContext(patch.object(service, 'predict_ml', return_value={'ratios': dict.fromkeys(CATEGORY_NAMES.values(), .1)}))
         self.enterContext(patch('socket.socket', side_effect=AssertionError('No network')))
 
@@ -49,6 +50,41 @@ class DesignServiceTest(SimpleTestCase):
         self.assertEqual(out['status'], 'needs_policy')
         self.predict.assert_not_called()
 
+    def test_approved_initial_policy_is_available_without_environment_override(self):
+        before = deepcopy(self.snapshot)
+        with override_settings(BUDGET_DESIGN_POLICY=None), patch.dict(os.environ):
+            os.environ.pop('BUDGET_DESIGN_POLICY', None)
+            configured = service.configured_policy()
+            self.assertEqual(configured, {'version': '2026-11-10-forecast-band', 'a': {},
+                                         'b_forecast_band': {'down_percent': 20, 'up_percent': 20}})
+            configured['a']['test_mutation'] = True
+            self.assertNotIn('test_mutation', service.configured_policy()['a'])
+            configured['b_forecast_band']['down_percent'] = 99  # Copy isolation test only.
+            self.assertEqual(service.configured_policy()['b_forecast_band']['down_percent'], 20)
+            with patch.object(service, 'history_for_user', return_value={}), \
+                    patch.object(service, 'build_candidates', wraps=service.build_candidates) as build:
+                out = service.recommend(None, self.snapshot, 0, date(2026, 11, 6))
+            self.assertEqual(out['status'], 'proposed')
+            self.assertEqual(build.call_args.kwargs['policy']['total_limit'], self.snapshot['engine_input']['target']*20//100)
+            self.assertEqual(self.snapshot, before)
+
+    def test_invalid_or_explicitly_disabled_policy_does_not_use_initial_default(self):
+        for raw in ('', '{invalid', 'null', '[]'):
+            with self.subTest(raw=raw), override_settings(BUDGET_DESIGN_POLICY=None), \
+                    patch.dict(os.environ, {'BUDGET_DESIGN_POLICY': raw}):
+                out = service.recommend(None, self.snapshot, 0, date(2026, 11, 6))
+                self.assertEqual(out['status'], 'needs_policy')
+        self.predict.assert_not_called()
+
+    def test_policy_override_is_kept_and_default_does_not_enable_feature(self):
+        custom = {'version': 'synthetic-custom', 'a': {}}
+        with override_settings(BUDGET_DESIGN_POLICY=None, BUDGET_DESIGN_ENABLED=False), \
+                patch.dict(os.environ, {'BUDGET_DESIGN_POLICY': '{"version":"synthetic-custom","a":{}}'}):
+            self.assertEqual(service.configured_policy(), custom)
+            self.assertFalse(service.enabled())
+        with override_settings(BUDGET_DESIGN_POLICY=custom):
+            self.assertEqual(service.configured_policy(), custom)
+
     def test_missing_history_uses_a_and_preserves_original_settings(self):
         before = deepcopy(self.snapshot)
         with patch.object(service, 'history_for_user', return_value={}):
@@ -56,6 +92,16 @@ class DesignServiceTest(SimpleTestCase):
         self.assertEqual(out['status'], 'proposed')
         self.assertEqual(out['_design']['selection']['plan'], 'a')
         self.assertEqual(service.validate_funding(self.snapshot, out, 0), 0)
+        self.assertEqual(self.snapshot, before)
+
+    def test_a_floor_shortfall_does_not_claim_available_spare_is_insufficient(self):
+        self.snapshot['engine_input'].update(target=40000, has_vehicle=False)
+        before = deepcopy(self.snapshot)
+        with patch.object(service, 'history_for_user', return_value={}):
+            out = service.recommend(None, self.snapshot, 100000, date(2026, 11, 6))
+        self.assertEqual(out['status'], 'needs_upper_allocation_review')
+        self.assertEqual(out['reason'], 'system_floor_unaffordable')
+        self.assertIn('현재 생활비로는 보호 조건을 모두 지키기 어려워요', out['summary'])
         self.assertEqual(self.snapshot, before)
 
     def test_transport_floor_uses_history_even_when_a_is_selected(self):
@@ -194,6 +240,7 @@ class DesignServiceTest(SimpleTestCase):
         self.assertEqual(records, before)
 
 
+@override_settings(BUDGET_HISTORY_VERIFIER=None)
 class DesignHistoryTest(TestCase):
     def test_collection_coverage_does_not_implicitly_verify_refunds(self):
         user = get_user_model().objects.create_user(email='synthetic-history@example.com')
@@ -250,12 +297,101 @@ class DesignAPITest(TestCase):
         self.enterContext(override_settings(BUDGET_DESIGN_POLICY=policy()))
         self.enterContext(patch.object(service, 'predict_ml', return_value={'ratios': dict.fromkeys(CATEGORY_NAMES.values(), .1)}))
 
+    def test_ml_failure_preserves_approved_budget_and_can_be_retried(self):
+        CategoryMinimum.objects.create(user=self.user, category_id='FOOD', min_amount=150000)
+        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
+            category_id='EDUCATION', locked=True, locked_amount=12345)
+        for records in ({}, history()):
+            with self.subTest(plan='b' if records else 'a'), \
+                    patch.object(service, 'history_for_user', return_value=records):
+                draft = self.task(self.post())
+                budget = Budget.objects.get(pk=draft.result['budget_id'])
+                response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json',
+                    HTTP_IDEMPOTENCY_KEY=str(budget.pk))
+                self.assertEqual(response.status_code, 200, response.content)
+                before = self.client.get('/api/budgets/').json()
+                self.profile.refresh_from_db()
+                profile_before = (self.profile.living_budget, self.profile.savings_floor, self.profile.cushion_monthly)
+                count = Budget.objects.count()
+
+                with patch.object(service, 'predict_ml', side_effect=ValueError('private path or credential')):
+                    failed = self.task(self.post())
+                self.assertEqual(failed.result['outcome'], 'needs_data')
+                self.assertIsNone(failed.result['budget_id'])
+                self.assertNotIn('private', str(failed.result))
+                self.assertEqual(Budget.objects.count(), count)
+                self.assertEqual(self.client.get('/api/budgets/').json(), before)
+                self.profile.refresh_from_db()
+                self.assertEqual((self.profile.living_budget, self.profile.savings_floor,
+                                  self.profile.cushion_monthly), profile_before)
+                self.assertEqual(CategoryMinimum.objects.get(user=self.user, category_id='FOOD').min_amount, 150000)
+                self.assertEqual(BudgetCategorySetting.objects.get(user=self.user, cycle=self.cycle,
+                    category_id='EDUCATION').locked_amount, 12345)
+
+                retry = self.task(self.post())
+                self.assertEqual(retry.result['outcome'], 'proposed')
+                self.assertNotEqual(retry.result['budget_id'], str(budget.pk))
+                self.assertEqual(Budget.objects.get(pk=retry.result['budget_id']).status, 'validated')
+                budget.refresh_from_db()
+                self.assertEqual(budget.status, 'approved')
+                self.assertEqual(failed.result['summary'],
+                    '추천 계산을 잠시 사용할 수 없어요. 잠시 후 다시 시도해 주세요.')
+
     def test_missing_policy_returns_prepare_status_without_saving_budget(self):
         with override_settings(BUDGET_DESIGN_POLICY=None), patch.dict('os.environ', {'BUDGET_DESIGN_POLICY': ''}):
             task = self.task(self.post())
         self.assertEqual(task.result['outcome'], 'needs_policy')
         self.assertIsNone(task.result['budget_id'])
         self.assertFalse(Budget.objects.filter(user=self.user).exists())
+
+    def test_minimum_lock_conflicts_preserve_budgets_and_settings_until_user_changes_them(self):
+        from .recommend import ALLOCATION_CODES
+
+        for records in ({}, history()):
+            with self.subTest(plan='b' if records else 'a'), \
+                    patch.object(service, 'history_for_user', return_value=records):
+                CategoryMinimum.objects.filter(user=self.user).delete()
+                BudgetCategorySetting.objects.filter(user=self.user, cycle=self.cycle).delete()
+                draft = self.task(self.post())
+                approved = Budget.objects.get(pk=draft.result['budget_id'])
+                response = self.client.post(f'/api/budgets/{approved.pk}/approve/', {}, format='json',
+                    HTTP_IDEMPOTENCY_KEY=str(approved.pk))
+                self.assertEqual(response.status_code, 200, response.content)
+                for minimums, locks, kind in (
+                    ({'FOOD': 150000}, {'FOOD': 100000}, 'lock_below_minimum'),
+                    ({'FOOD': 1100000}, {'MEDICAL_HEALTH': 250000}, 'minimums_over_living'),
+                    ({}, dict.fromkeys(ALLOCATION_CODES, 200000), 'locks_mismatch_living'),
+                ):
+                    with self.subTest(conflict=kind):
+                        CategoryMinimum.objects.filter(user=self.user).delete()
+                        BudgetCategorySetting.objects.filter(user=self.user, cycle=self.cycle).delete()
+                        for code, amount in minimums.items():
+                            CategoryMinimum.objects.create(user=self.user, category_id=code, min_amount=amount)
+                        for code, amount in locks.items():
+                            BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
+                                category_id=code, locked=True, locked_amount=amount)
+                        before = self.client.get('/api/budgets/').json()
+                        count = Budget.objects.count()
+                        failed = self.task(self.post())
+                        self.assertEqual((failed.status, failed.result['outcome']), ('succeeded', 'infeasible'))
+                        self.assertEqual(failed.result['conflicts'][0]['type'], kind)
+                        self.assertIsNone(failed.result['budget_id'])
+                        self.assertEqual(Budget.objects.count(), count)
+                        self.assertEqual(self.client.get('/api/budgets/').json(), before)
+                        self.assertEqual(dict(CategoryMinimum.objects.filter(user=self.user)
+                            .values_list('category_id', 'min_amount')), minimums)
+                        self.assertEqual(dict(BudgetCategorySetting.objects.filter(user=self.user,
+                            cycle=self.cycle, locked=True).values_list('category_id', 'locked_amount')), locks)
+                        approved.refresh_from_db()
+                        self.assertEqual(approved.status, 'approved')
+                        # Simulate an explicit settings correction, then request a fresh proposal.
+                        CategoryMinimum.objects.filter(user=self.user).delete()
+                        BudgetCategorySetting.objects.filter(user=self.user, cycle=self.cycle).delete()
+                        retry = self.task(self.post())
+                        self.assertEqual(retry.result['outcome'], 'proposed')
+                        self.assertEqual(Budget.objects.get(pk=retry.result['budget_id']).status, 'validated')
+                        approved.refresh_from_db()
+                        self.assertEqual(approved.status, 'approved')
 
     def test_a_api_saves_metadata_and_approval_is_explicit(self):
         with patch.object(service, 'history_for_user', return_value={}):
@@ -319,12 +455,56 @@ class DesignAPITest(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.living_budget, 600000)
+
         # Repeated approval may not transfer the money a second time.
         response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve-again')
         self.assertEqual(response.status_code, 200)
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.living_budget, 600000)
 
+    def test_b_shortfall_preserves_approved_budget_and_recovers_after_explicit_funding_change(self):
+        self.profile.living_budget = 500000
+        self.profile.cushion_monthly = 920000  # Synthetic allocation leaves no upstream spare.
+        self.profile.save(update_fields=['living_budget', 'cushion_monthly'])
+        for code in ('FOOD', 'TRANSPORT_CAR', 'HOUSEHOLD', 'FASHION_SHOPPING'):
+            CategoryMinimum.objects.create(user=self.user, category_id=code, min_amount=100000)
+        with patch.object(service, 'history_for_user', return_value={}):
+            initial = self.task(self.post())
+            approved = Budget.objects.get(pk=initial.result['budget_id'])
+            response = self.client.post(f'/api/budgets/{approved.pk}/approve/', {}, format='json',
+                HTTP_IDEMPOTENCY_KEY=str(approved.pk))
+        self.assertEqual(response.status_code, 200, response.content)
+        before = self.client.get('/api/budgets/').json()
+        count = Budget.objects.count()
+        with patch.object(service, 'history_for_user', return_value=history()):
+            blocked = self.task(self.post())
+            self.assertEqual(blocked.result['outcome'], 'needs_upper_allocation_review')
+            self.assertIsNone(blocked.result['budget_id'])
+            self.assertEqual(Budget.objects.count(), count)
+            self.assertEqual(self.client.get('/api/budgets/').json(), before)
+            self.profile.refresh_from_db()
+            self.assertEqual((self.profile.living_budget, self.profile.cushion_monthly), (500000, 920000))
+            self.assertIn('100,000원 부족해요', blocked.result['summary'])
+
+            # The user explicitly frees spare; recommendation must not change the saved living amount.
+            self.profile.cushion_monthly = 820000
+            self.profile.save(update_fields=['cushion_monthly'])
+            recovered = self.task(self.post())
+            self.assertEqual(recovered.result['outcome'], 'proposed')
+            draft = Budget.objects.get(pk=recovered.result['budget_id'])
+            self.assertEqual(draft.validation_summary['design']['spare_transfer'], 100000)
+            self.profile.refresh_from_db()
+            self.assertEqual(self.profile.living_budget, 500000)
+            approved.refresh_from_db()
+            self.assertEqual(approved.status, 'approved')
+            response = self.client.post(f'/api/budgets/{draft.pk}/approve/', {}, format='json',
+                HTTP_IDEMPOTENCY_KEY=str(draft.pk))
+        self.assertEqual(response.status_code, 200, response.content)
+        self.profile.refresh_from_db()
+        self.assertEqual((self.profile.living_budget, self.profile.cushion_monthly), (600000, 820000))
+        self.assertEqual(dict(CategoryMinimum.objects.filter(user=self.user)
+            .values_list('category_id', 'min_amount')), dict.fromkeys(
+                ('FOOD', 'TRANSPORT_CAR', 'HOUSEHOLD', 'FASHION_SHOPPING'), 100000))
     def test_changed_history_expires_draft_instead_of_saving_stale_result(self):
         with patch.object(service, 'history_for_user', return_value={}):
             task = self.task(self.post())

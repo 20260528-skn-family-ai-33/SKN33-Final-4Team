@@ -196,7 +196,7 @@ def current_scopes(user):
 MAIN_KIND = {institutions.BANK: "accounts", institutions.CARD: "cards"}
 
 
-def sync_connection(user, connection, cid, cred, today):
+def sync_connection(user, connection, cid, cred, today, task_id=None):
     """기관 하나 → 기관별 결과 dict (JSON 그대로 저장되는 값만)
     - 앞 기관을 불러오는 사이 이 연결이 해제됐을 수 있어서, 시작 전에 연결 ID 로 다시 읽는다 (해제됐으면 건너뜀)
     - 저장 함수에는 이 연결 ID 를 넘겨 새 연결을 만들지 않게 하고, 동의는 외부 조회 전 · 저장 직전에 다시 확인한다"""
@@ -231,7 +231,7 @@ def sync_connection(user, connection, cid, cred, today):
         else:
             counts = {}
             part, reason = run_part("accounts", connection, lambda: counts.update(sync_bank(
-                user, cid, org, start, today, connection_id=connection.pk, require_consent=True,
+                user, cid, org, start, today, connection_id=connection.pk, require_consent=True, task_id=task_id,
             )))
             item["parts"].append(part)
             item["new_transaction_count"] = counts.get("new_transaction_count")
@@ -243,7 +243,7 @@ def sync_connection(user, connection, cid, cred, today):
         elif reason is not None:
             item["parts"].append({"kind": "loans", "status": "skipped", "reason": "not_run"})
         else:
-            part, reason = run_part("loans", connection, lambda: loans(user, cid, org, start, today))
+            part, reason = run_part("loans", connection, lambda: loans(user, cid, org, start, today, task_id=task_id))
             item["parts"].append(part)
     elif connection.business_type == institutions.CARD:
         if institutions.CARD not in current_scopes(user):
@@ -260,11 +260,16 @@ def sync_connection(user, connection, cid, cred, today):
             else:
                 start = refresh_start(today, last_success_day(connection, "card_sync"))
                 cred = cred or {}
-                part, reason = run_part("cards", connection, lambda: cards(
+                counts = {}
+                part, reason = run_part("cards", connection, lambda: counts.update(cards(
                     user, cid, org, start, today, bill_months(today, last_bill_day(connection)),
                     card_no=cred.get("card_no"), card_password=cred.get("card_password"), connection_id=connection.pk,
-                ))
+                    task_id=task_id,
+                ) or {}))
                 item["parts"].append(part)
+                if counts:
+                    item["card_review_count"] = counts.get("card_review_count", 0)
+                    item["approvals_complete"] = counts.get("approvals_complete")
     else:
         item["parts"].append({"kind": connection.business_type, "status": "skipped", "reason": "not_supported"})
 
@@ -275,15 +280,20 @@ def sync_connection(user, connection, cid, cred, today):
     return item
 
 
-def sync_connections(user, connections, creds=None, today=None):
-    """연결 여러 개를 차례로 불러오고 작업 결과(result)를 만든다. 성공한 기관만 저장된다 (기관마다 따로 저장)"""
+def sync_connections(user, connections, creds=None, today=None, task_id=None):
+    """연결 여러 개를 차례로 불러오고 작업 결과(result)를 만든다. 성공한 기관만 저장된다 (기관마다 따로 저장)
+    task_id: 이 실행을 맡은 작업. 기관마다 저장 직전에 작업이 아직 유효한지 보고, 만료되면 남은 기관은 부르지 않는다"""
     creds, today = creds or {}, today or timezone.localdate()
     try:
         cid = connected_id.load(user)
     except connected_id.ConnectedIdUnreadable:
         logger.error("저장된 connectedId 를 풀 수 없어요 user=%s", user.pk)
         cid = None
-    items = [sync_connection(user, row, cid, creds.get(row.connection_id), today) for row in connections]
+    items = []
+    for row in connections:
+        if task_id is not None and not tasks.task_valid(task_id):
+            break  # 만료 · 취소된 작업 — 결과도 저장되지 않으므로 외부 조회를 더 하지 않는다
+        items.append(sync_connection(user, row, cid, creds.get(row.connection_id), today, task_id))
     summary = {"total": len(items)}
     for key in ("succeeded", "failed", "skipped"):
         summary[key] = sum(1 for item in items if item["status"] == key)
@@ -307,5 +317,5 @@ def sync(request):
     )
     if created:
         user = request.user
-        tasks.run(task, lambda: sync_connections(user, targets, creds))
+        tasks.run(task, lambda: sync_connections(user, targets, creds, task_id=task.pk))
     return Response({"task_id": task.task_id, "status": task.status}, status=status.HTTP_202_ACCEPTED)
