@@ -111,6 +111,34 @@ class FixedCandidateTest(CandidateFixture):
         self.assertEqual((e.name, e.payment_account_id, e.category_id), ("홍길동", self.account.pk, "ETC"))
         self.assertEqual(self.savings(), [])
 
+    # 받는 곳 이름은 숫자를 빼고 비교 (11/10). 후보 이름은 가장 최근 적요 그대로
+    def test_year_month_prefix_is_same_group(self):
+        for m in MONTHS:
+            self.tx(date(2026, m, 10), 22_600, kind="transfer", label=f"26{m - 1:02d}국민건강")
+        self.detect()
+        [e] = self.expenses()
+        self.assertEqual((e.name, e.amount), ("2609국민건강", 22_600))
+
+    def test_month_suffix_is_same_group(self):
+        for m in MONTHS:
+            self.tx(date(2026, m, 5), 150_000, kind="transfer", label=f"관리비 {m}월")
+        self.detect()
+        [e] = self.expenses()
+        self.assertEqual(e.name, "관리비 10월")
+
+    def test_digits_only_same_number_is_same_group(self):
+        self.monthly(day=21, amount=69_000, kind="transfer", label="01012345678")
+        self.detect()
+        [e] = self.expenses()
+        self.assertEqual(e.name, "01012345678")
+
+    def test_digits_only_different_numbers_are_not_grouped(self):
+        # [한계] 적요가 숫자뿐인데 달마다 다르면 묶지 않는다 — 사용자가 직접 등록
+        for m in MONTHS:
+            self.tx(date(2026, m, 21), 69_000, kind="transfer", label=f"2026{m:02d}0001")
+        self.detect()
+        self.assertEqual(self.expenses(), [])
+
 
 class SavingCandidateTest(CandidateFixture):
     def own_transfer(self, m):
