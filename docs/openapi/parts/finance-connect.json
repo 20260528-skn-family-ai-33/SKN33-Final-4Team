@@ -1637,13 +1637,20 @@
             "type": "string",
             "enum": [
               "done",
+              "loading",
               "failed"
-            ]
+            ],
+            "description": "연결 직후 불러오기. done 완료 · failed 연결은 됐지만 불러오기 실패. loading(11/09, 카드사): 보유카드는 받았고 청구서 · 승인내역은 syncTaskId 작업이 뒤에서 불러오는 중"
           },
           "accountCount": {
             "type": "integer",
             "minimum": 0,
             "nullable": true
+          },
+          "syncTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "syncStatus=loading 일 때만. 카드 청구서 · 승인내역 불러오기 작업 ID (taskType card_first_load, GET /api/tasks/<id>/)"
           }
         },
         "required": [
@@ -1935,6 +1942,16 @@
             "type": "boolean",
             "nullable": true,
             "description": "카드 승인 내역 실제 조회 범위를 모두 반영했는지. 기관 status=succeeded와 별개."
+          },
+          "foreignPendingCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 원화 금액이 없어 저장하지 못한 외화 승인 건수 (11/07). approvalsComplete를 false로 만들지 않는다."
+          },
+          "foreignFilledCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 원화 금액이 없던 외화 승인 중 청구서 · 체크카드 계좌 출금의 원화 금액으로 이번에 새로 저장한 건수 (11/09)."
           }
         },
         "required": [

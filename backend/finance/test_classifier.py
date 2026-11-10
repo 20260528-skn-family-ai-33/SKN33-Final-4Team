@@ -164,6 +164,99 @@ class ClassifyTest(TestCase):
                 self.assertEqual(chosen.confirmed_category_id, "HOUSEHOLD")
         predict.assert_called_with([])
 
+    def card_tx(self, merchant, industry, **fields):
+        return self.tx(merchant, merchant_category=industry, **fields)
+
+    def test_card_type_decides_before_svm_and_search(self, predict):
+        # 11/06: 카드사가 기록한 업종이 가장 강한 근거. 같은 업종은 한 번만 묻는다
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        with patch("finance.classifier.ask_jev", return_value=answer) as ask, \
+                patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            first, second = self.run_classify(self.card_tx("새봄약국", "약국"), self.card_tx("행복약국", "약국"))
+        ask.assert_called_once_with("카드사 업종: 약국")
+        for tx in (first, second):
+            self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("MEDICAL_HEALTH", "llm"))
+            self.assertEqual(tx.field_states["classifier"]["step"], "card_type")
+        predict.assert_called_once_with([])
+        self.judge.assert_not_called()
+
+    def test_card_type_resolves_name_conflict(self, predict):
+        answer = ("FOOD", 0.97, {}, "jev-test")
+        with patch("finance.classifier.conflict_names", return_value=frozenset({"우리집"})), \
+                patch("finance.classifier.ask_jev", return_value=answer) as ask, patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            (tx,) = self.run_classify(self.card_tx("우리집", "일반음식점 기타"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.merchant_category), ("FOOD", "suggested", "일반음식점 기타"))
+        ask.assert_called_once_with("카드사 업종: 일반음식점")
+
+    def test_each_card_type_decides_its_own_transaction(self, predict):
+        # PR #96 리뷰: 같은 이름이어도 이번 거래의 카드 업종으로 판단하고, 카드 업종은 다음 거래에 넘기지 않는다
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True}}
+        with patch("finance.classifier.ask_jev", return_value=answer) as ask, patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            (store,) = self.run_classify(self.card_tx("행복상회", "편의점"))
+            (pharmacy,) = self.run_classify(self.card_tx("행복상회", "약국"))
+            (store_again,) = self.run_classify(self.card_tx("행복상회", "편의점"))
+            self.tx("좋은상회", field_states=searched)  # 지난 검색 기록보다 이번 카드 업종이 먼저
+            (over_search,) = self.run_classify(self.card_tx("좋은상회", "약국"))
+        self.assertEqual([t.confirmed_category_id for t in (store, pharmacy, store_again, over_search)], ["FOOD", "MEDICAL_HEALTH", "FOOD", "MEDICAL_HEALTH"])
+        self.assertEqual(ask.call_count, 2)
+        self.assertNotIn("multi_item", store.field_states["classifier"])
+        (no_type,) = self.run_classify(self.tx("행복상회"))  # 업종 없는 거래에 카드 판단이 번지지 않는다
+        self.assertEqual(no_type.classification_source, None)
+        predict.assert_called_with(["행복상회"])
+
+    def test_card_type_beats_saved_name_conflict(self, predict):
+        searched = {"classifier": {"industry": "슈퍼마켓", "multi_item": True, "name_conflict": True}}
+        self.tx("청담", field_states=searched)
+        with patch("finance.classifier.ask_jev", return_value=("BEAUTY", 0.97, {}, "m")), patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            (tx,) = self.run_classify(self.card_tx("청담", "미용실"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state), ("BEAUTY", "suggested"))
+
+    def test_remembered_choice_needs_the_same_card_type(self, predict):
+        # 11/06: 이름이 같아도 업종이 분명히 다르면 다른 가게라서 이번 거래의 업종으로 분류한다
+        self.card_tx("행복상회", "편의점", confirmed_category_id="HOUSEHOLD", confirmation_state="confirmed", classification_source="user",
+                     field_states={"apply_to_future": True})
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        with patch("finance.classifier.ask_jev", return_value=answer), patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            same, online, blank, other = self.run_classify(self.card_tx("행복상회", "편의점"), self.card_tx("행복상회", "전자상거래PG"),
+                                                           self.tx("행복상회"), self.card_tx("행복상회", "약국"))
+        self.assertEqual([t.confirmed_category_id for t in (same, online, blank)], ["HOUSEHOLD", "HOUSEHOLD", "HOUSEHOLD"])
+        self.assertEqual((other.confirmed_category_id, other.confirmation_state, other.suggestion_reason),
+                         ("MEDICAL_HEALTH", "suggested", None))
+
+    def test_card_type_retail_and_department_store(self, predict):
+        with patch("finance.classifier.ask_jev") as ask:
+            store, mart, department = self.run_classify(self.card_tx("새봄상회", "편의점"), self.card_tx("행복상회", "슈퍼마켓"), self.card_tx("좋은상회", "백화점"))
+        ask.assert_not_called()
+        self.assertEqual([t.confirmed_category_id for t in (store, mart)], ["FOOD", "FOOD"])
+        self.assertEqual((department.confirmed_category_id, department.suggestion_reason), ("UNCLASSIFIED", classifier.MULTI_ITEM_REASON))
+
+    def test_online_blank_or_unsure_card_type_falls_through(self, predict):
+        # 전자상거래·빈칸은 가게 업종이 아니고, 판단 보류·낮은 점수·장애·키 없음이면 지금 흐름으로 간다
+        keys = {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}
+        with patch("finance.classifier.ask_jev") as ask:
+            for name, industry in (("가게1", "전자상거래PG"), ("가게2", "전자상거래(안심클릭미적용)"), ("가게3", ""), ("가게4", None)):
+                self.run_classify(self.card_tx(name, industry))
+            ask.assert_not_called()
+        for reply in ({"return_value": ("UNKNOWN", 0.99, {}, "m")}, {"return_value": ("FOOD", 0.6, {}, "m")}, {"side_effect": OSError("down")}):
+            with patch("finance.classifier.ask_jev", **reply), patch.dict(os.environ, keys), self.assertNoLogs("finance.classifier", "ERROR"):
+                predict.reset_mock()
+                self.run_classify(self.card_tx("가게5", "기타업종"))
+                predict.assert_called_once_with(["가게5"])
+        with patch("finance.classifier.ask_jev") as ask, patch.dict(os.environ, {"TYPESAFE_API_KEY": ""}):
+            self.run_classify(self.card_tx("가게6", "기타업종"))
+            ask.assert_not_called()
+
+    def test_user_choice_beats_card_type(self, predict):
+        chosen = {"confirmed_category_id": "HOUSEHOLD", "confirmation_state": "confirmed", "classification_source": "user"}
+        self.tx("새봄상회", field_states={"apply_to_future": True}, **chosen)
+        self.tx("행복약국", **chosen)
+        answer = ("MEDICAL_HEALTH", 0.97, {}, "jev-test")
+        with patch("finance.classifier.ask_jev", return_value=answer), patch.dict(os.environ, {"TYPESAFE_API_KEY": "k", "JEV_MODEL": "m"}):
+            remembered, differs = self.run_classify(self.card_tx("새봄상회", "편의점"), self.card_tx("행복약국", "약국"))
+        self.assertEqual(remembered.confirmed_category_id, "HOUSEHOLD")  # '앞으로도 적용'
+        self.assertEqual((differs.confirmed_category_id, differs.confirmation_state), ("MEDICAL_HEALTH", "suggested"))  # 체크 없는 지난 선택보다 업종
+
     def test_transit_card_charge_is_transport(self, predict):
         # 11/06: 티머니 충전은 페이 충전이 아니라 교통비
         (tx,) = self.run_classify(self.tx("모바일티머니충전"))
@@ -393,6 +486,7 @@ class RuleTest(SimpleTestCase):
         # 11/02 카드 명세·카카오 장소 조사: '택시'가 낱말이거나 '개인택시'일 때만 교통. 이름 속 '택시' 식당은 제외
         cases = {
             "카카오_개인택시": "TRANSPORT_CAR", "카카오T 택시": "TRANSPORT_CAR", "개인택시 서울12가3456": "TRANSPORT_CAR",
+            "카카오_법인택시6": "TRANSPORT_CAR", "서울법인택시조합": None,
             "택시파스타 압구정로데오역점": None, "피자택시": None, "옐로우택시": None, "택시종사자쉼터": None,
             "서울개인택시조합새마을금고": None, "카카오페이택시충전": None,
             "레벨업 피시방 남부터미널점": "CULTURE_LEISURE", "탑PC방": "CULTURE_LEISURE",
@@ -430,6 +524,9 @@ class RuleTest(SimpleTestCase):
             "PAYCO오더 - 테스트식당": "테스트식당", "쿠팡이츠 - 쿠팡페이 주식회사": "쿠팡이츠",
             "트립닷컴_구_NICE - 나이스정보통신(대리점)": "트립닷컴", "메가MGC_인증_3 - 메가 MGC 커피": "메가MGC",
             "쿠팡_쿠페이 - 쿠팡": "쿠팡_쿠페이", "테스트 - ": "테스트 -", "치킨 - 피자": "치킨",
+            # 11/09 실거래: 결제 경로가 A 의 꼬리에 붙은 표기
+            "대표_3_카카오페이 - 파파존스 청라점": "파파존스 청라점", "대표_3_네이버페이 - 테스트식당": "테스트식당",
+            "카카오스타일 - 카카오스타일": "카카오스타일",
         }
         for name, store in cases.items():
             self.assertEqual(classifier.store_name(name), store, name)
@@ -600,6 +697,16 @@ class JudgeTest(SimpleTestCase):
             result, _ = self.run_judge(store, answer, web=web)
             self.assertEqual(result["retail"], "FOOD", answer)
 
+    def test_service_name_for_search(self):
+        # 11/06: 해외 결제 표기는 검색에만 서비스 이름으로 줄인다
+        for raw, name in (("OPENAI *CHATGPT SUBSCR", "CHATGPT"), ("OPENAI*CHATGPTSUBSCR", "CHATGPT"), ("ANTHROPIC* CLAUDE SUB", "CLAUDE"),
+                          ("ANTHROPIC*CLAUDESUB", "CLAUDE"), ("RUNPOD.IO", "RUNPOD"), ("TYPESAFE AI, INC.", "TYPESAFE AI"), ("MIDJOURNEY INC.", "MIDJOURNEY"),
+                          ("CURSOR, AI POWERED IDE", "CURSOR"), ("GITHUB COPILOT", "GITHUB COPILOT"), ("새봄 서브", "새봄 서브"), ("SUB", "SUB")):
+            self.assertEqual(classifier.service_name(classifier.store_name(raw)), name, raw)
+        result, ask = self.run_judge(None, ("ETC", 0.98, {"ETC": 0.98}, "jev-test"), name="RUNPOD.IO", web=["Runpod GPU 클라우드"])
+        self.assertEqual(result["apply"], ("ETC", 0.98))
+        self.assertEqual(ask.call_args.args[0], "가맹점 이름: RUNPOD\n웹 검색 설명: Runpod GPU 클라우드")
+
     def test_name_inside_another_store_is_not_web_evidence(self):
         # PR #94 리뷰: 지도에서 뺀 다른 가게가 웹 근거로 다시 들어오면 안 된다
         for text, expected in (("팩토리디 / 헤어 전문 미용실 예약 안내", False), ("리디앤폴 카페 메뉴", False), ("리디는 전자책 서비스", True),
@@ -681,6 +788,11 @@ class DeliveryAppTest(SimpleTestCase):
                            "(주)아성다이소": "HOUSEHOLD", "쿠팡": None, "쿠팡마트": None, "현대백화점 판교점": None, "번개장터": None,
                            "롯데하이마트 강남점": None, "신앙촌상회": None, "루덴치과의원": None, "": None, None: None}.items():
             self.assertEqual(classifier.retail_category(name), code, name)
+
+    def test_zigzag_operator_is_fashion(self):
+        # 11/09: 지도(회사 사무실)와 웹(패션)이 엇갈려 묻던 지그재그 운영사
+        self.assertEqual(classifier.rule_category(classifier.store_name("카카오스타일 - 카카오스타일")), "FASHION_SHOPPING")
+        self.assertFalse(classifier.is_multi_item("카카오스타일"))
 
     def test_delivery_app_is_food_but_b_mart_is_multi_item(self):
         for name in ("배달의민족", "(주)우아한형제들", "요기요"):

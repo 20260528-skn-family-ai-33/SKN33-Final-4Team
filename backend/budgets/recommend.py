@@ -32,7 +32,7 @@ INPUT_VERSION = 1
 # 카드 선차감(card_reserved)은 카드로 쓸 때마다 바뀌므로 해시에 넣지 않는다. 초안을 만들 때 값을 input_snapshot에 저장해 두고
 # 승인 때는 그 값을 쓴다. 대신 어떤 카드가 대상인지(card_ids)는 넣어서 카드를 고르거나 빼면 초안이 만료된다.
 # profile_inputs: 추천 엔진(ML) 입력인 내 정보(생년월일 · 성별 · 자차 · 소비 우선순위). 바뀌면 추천 결과가 달라지므로 초안 만료 (리뷰 10/28)
-HASH_FIELDS = ("cycle", "take_home_income", "fixed_base", "card_ids", "savings_min", "saved", "minimums", "profile_inputs")
+HASH_FIELDS = ("cycle", "take_home_income", "fixed_base", "card_ids", "savings_min", "saved", "minimums", "profile_inputs", "category_targets")
 
 
 # ---------------- 순수 계산 · 엔진 결과 검사 (DB를 읽지 않음) ----------------
@@ -151,7 +151,7 @@ def check_result(inp, out):
 
 def hash_snapshot(snapshot):
     """승인 단계도 같은 필드 · 정렬 · 직렬화를 사용한다."""
-    payload = {key: snapshot[key] for key in HASH_FIELDS}
+    payload = {key: snapshot.get(key, {}) if key == 'category_targets' else snapshot[key] for key in HASH_FIELDS}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
 
 
@@ -174,7 +174,9 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
     saved = {"living_budget": profile.living_budget, "saving_floor": profile.savings_floor, "cushion_monthly": profile.cushion_monthly}
     birth = profile.birth_date
     age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
-    etc = locks.get("ETC", minimums.get("ETC", 0))
+    from .design_targets import targeted_etc
+    category_targets = getattr(profile, 'budget_category_targets', {})
+    etc, active_targets, target_conflicts = targeted_etc(category_targets, minimums, locks, profile.living_budget)
     # 예산 밖 카테고리는 순위에서 빼고 1부터 다시 매긴다 (예전에 고른 순위는 DB에 그대로)
     ranked = CategoryPriority.objects.filter(user=user).exclude(category_id__in=OUT_OF_BUDGET).order_by("rank")
     priorities = [{"category": code, "rank": rank} for rank, code in enumerate(ranked.values_list("category_id", flat=True), 1)]
@@ -186,7 +188,7 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
         "card_ids": fixed["card_ids"],
         "fixed": fixed,
         "savings_min": savings_min(user),
-        "saved": saved, "minimums": minimums, "locks": locks, "etc": etc,
+        "saved": saved, "minimums": minimums, "locks": locks, "etc": etc, 'category_targets': category_targets,
         "profile_inputs": {"birth_date": birth.isoformat() if birth else None, "sex": profile.gender,
                            "has_vehicle": profile.has_car, "priorities": priorities},
         "engine_input": {
@@ -198,6 +200,7 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
             "minimums": {code: amount for code, amount in minimums.items() if code != "ETC"},
             "locks": {code: amount for code, amount in locks.items() if code != "ETC"},
             "input_version": INPUT_VERSION,
+            'category_targets': active_targets, 'category_target_conflicts': target_conflicts,
         },
     }
 

@@ -11,6 +11,7 @@ from django.urls import path, re_path
 
 from budgets import api as budgets_api
 from budgets import api_salary as budgets_salary
+from budgets import design_consent as budgets_design_consent
 from chat import api as chat_api
 from finance import api as finance_api
 from finance import api_connect as finance_connect
@@ -32,6 +33,7 @@ from . import api_common, api_docs, tasks
 app_name = "api"
 
 urlpatterns = [
+    path("budgets/ai-consent/", budgets_design_consent.ai_consent, name="budget-ai-consent"),
     # Swagger: 확정 계약 조회와 현재 서버 GET 확인을 분리한다.
     path("schema/", api_docs.contract_schema, name="schema"),
     path("schema/runtime/", api_docs.runtime_schema, name="schema-runtime"),

@@ -8,7 +8,7 @@ POST /api/finance/sync/ — 금융 정보 다시 불러오기 (docs/api/finance-
 2. 기간: 거래 = 마지막 성공 조회일 7일 전 ~ 오늘 / 카드 청구서 = 마지막으로 다 불러온 달 ~ 다음 달 (10/29) / 잔액 · 카드 · 대출 = 지금 상태 통째로
 3. 일부 실패: 성공한 기관만 저장, 실패는 기관별 결과에 이유 (새 연결 실패 안내 표와 같은 문구). 로그인 오류면 relogin
 4. 카드번호 · 카드 비밀번호가 필요한 곳(현대카드)은 요청으로 받아 보내고 버림. 없으면 그 기관만 실패
-5. 작업 방식: 202 {taskId, status} → GET /api/tasks/<id>/ 로 결과. 1차는 요청 안에서 끝까지 처리 (config/tasks.py)
+5. 작업 방식: 202 {taskId, status} → GET /api/tasks/<id>/ 로 결과. 11/09 부터 뒤(스레드)에서 돌고 바로 답한다 (config/tasks.run_later)
 6. 중복: 진행 중이면 그 taskId, 끝난 지 1분 안이면 마지막 결과 (Idempotency-Key 안 씀)
 """
 import logging
@@ -270,6 +270,8 @@ def sync_connection(user, connection, cid, cred, today, task_id=None):
                 if counts:
                     item["card_review_count"] = counts.get("card_review_count", 0)
                     item["approvals_complete"] = counts.get("approvals_complete")
+                    item["foreign_pending_count"] = counts.get("foreign_pending_count", 0)
+                    item["foreign_filled_count"] = counts.get("foreign_filled_count", 0)
     else:
         item["parts"].append({"kind": connection.business_type, "status": "skipped", "reason": "not_supported"})
 
@@ -317,5 +319,5 @@ def sync(request):
     )
     if created:
         user = request.user
-        tasks.run(task, lambda: sync_connections(user, targets, creds, task_id=task.pk))
+        tasks.run_later(task, lambda: sync_connections(user, targets, creds, task_id=task.pk))
     return Response({"task_id": task.task_id, "status": task.status}, status=status.HTTP_202_ACCEPTED)

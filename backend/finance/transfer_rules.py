@@ -36,6 +36,18 @@ def squeeze(text):
     return (text or "").replace(" ", "").upper()
 
 
+MIN_PREFIX = 6   # 잘린 이름을 같은 가게로 볼 최소 글자 수 (공백 뺀 길이)
+
+
+def same_store(a, b):
+    """같은 가게 이름인지: 공백 · 대소문자 무시. 한쪽이 잘렸으면 짧은 쪽이 6자 이상일 때 앞부분 일치 (외화 승인 원화 채우기, card_foreign)"""
+    a, b = squeeze(a), squeeze(b)
+    if not a or not b:
+        return False
+    short, long_ = sorted((a, b), key=len)
+    return short == long_ or (len(short) >= MIN_PREFIX and long_.startswith(short))
+
+
 def card_issuer(description):
     """적요 → 카드사 코드 (없으면 None)"""
     text = squeeze(description)
@@ -261,6 +273,26 @@ def link_same_purchases(user):
                 relation_type=Relation.SAME_PURCHASE, confirmation_state=LINK_STATE,
                 from_transaction__in=found, to_transaction__in=banks[key],
             ).delete()
+    # 11/10 PR #98 검수: 이름이 잘려 달라도 이은 연결(외화 승인 원화 채우기, card_foreign)은 위 묶음에 들지 않아 다시 보지 않았다.
+    # 같은 날 · 같은 금액 · 같은 가게(앞부분 일치) 후보가 양쪽 다 한 건일 때만 남긴다. 확정 · 납부에 붙은 출금은 위와 같이 그대로 둔다
+    cards_by, banks_by = defaultdict(list), defaultdict(list)
+    for tx in approvals:
+        cards_by[tx.occurred_on, tx.amount].append(tx)
+    for tx in withdrawals:
+        banks_by[tx.occurred_on, tx.amount].append(tx)
+    loose = TransactionLink.objects.filter(
+        user=user, relation_type=Relation.SAME_PURCHASE, confirmation_state=LINK_STATE,
+        from_transaction__in=approvals, to_transaction__in=withdrawals,
+    ).select_related("from_transaction", "to_transaction")
+    for row in loose:
+        card, bank = row.from_transaction, row.to_transaction
+        if squeeze(card.merchant_name) == squeeze(bank.source_description):
+            continue   # 이름이 같은 연결은 위에서 봤다
+        key = (bank.occurred_on, bank.amount)
+        same_cards = [tx for tx in cards_by[key] if same_store(tx.merchant_name, bank.source_description)]
+        same_banks = [tx for tx in banks_by[key] if same_store(tx.source_description, card.merchant_name)]
+        if (card.occurred_on, card.amount) != key or same_cards != [card] or same_banks != [bank]:
+            row.delete()
 
 
 def apply(user, txs):

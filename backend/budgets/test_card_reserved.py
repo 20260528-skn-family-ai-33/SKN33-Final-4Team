@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 
 from django.http import Http404
 
+from finance.card_review import FOREIGN_PENDING_RUN
 from finance.models import (BankAccount, Card, CardBill, Connection, FinancialTransaction, PaymentDue, PaymentMatch,
                             RecurringExpense, SyncRun)
 from users.models import Consent, FinancialProfile
@@ -101,6 +102,25 @@ class CardReservedTest(TestCase):
         self.run_(CARD_BILL_SYNC, date(2026, 10, 20), TODAY)
         self.run_(CARD_SPENDING_SYNC, date(2026, 10, 20), date(2026, 10, 26))
         self.run_(CARD_SPENDING_SYNC, date(2026, 10, 25), TODAY)  # 다시 불러오기로 이어진 기간
+
+    def foreign_mark(self, day):
+        SyncRun.objects.create(user=self.user, connection=self.connection, product_code=FOREIGN_PENDING_RUN,
+                               requested_from=day, requested_to=day, status="skipped")
+
+    def test_foreign_payment_without_won_amount_is_a_note_and_keeps_the_bill_reserved(self):
+        # 11/07: 금액을 몰라 거래가 없는 외화 결제가 청구서에 들어와도 중복으로 빼지 않아 카드값이 적게 잡히지 않는다
+        self.collect_all()
+        self.bill.total_amount = 320_000
+        self.bill.save()
+        self.item(date(2026, 10, 27), 20_000)
+        self.foreign_mark(date(2026, 10, 27))
+        self.foreign_mark(date(2026, 10, 1))  # 이번 주기 전 결제는 이번 예산 안내에 넣지 않는다
+        result = card_reserved(self.user, self.cycle)
+        self.assertEqual((result["amount"], result["pending"]), (270_000, []))
+        self.assertIn({"card_id": str(self.card.pk), "issuer_code": "0306", "reason": "foreign_amount_pending",
+                       "amount": None, "count": 1}, result["notes"])
+        self.assertIn({"card_id": str(self.card.pk), "issuer_code": "0306", "reason": "card_overlap_uncertain",
+                       "amount": 20_000, "count": 1}, result["notes"])
 
     def test_first_bill_minus_cycle_card_spending_goes_into_fixed_total(self):
         self.collect_all()

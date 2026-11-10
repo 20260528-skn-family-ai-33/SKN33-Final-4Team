@@ -21,13 +21,14 @@ from users.models import Consent
 from . import card_payments, codef
 from .codef_cards import MONTH, CardDataError, month_range
 from .models import Card, CardBill, CardBillItem, CardApprovalCoverage, Connection, FinancialTransaction, Origin, SyncRun
-from .card_review import save_approvals, promote_coverage
+from .card_review import promote_coverage, record_foreign_pending, save_approvals
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
 
 CARD_RUN = "card_list"                     # 카드별 성공 기록 (sync_loans 의 loan_transaction_list 와 같은 쓰임)
 BILL_RUN = "card_bill_list"                # budgets.protect.CARD_BILL_SYNC
 APPROVAL_RUN = "card_approval_list"        # budgets.protect.CARD_SPENDING_SYNC
 BILL_STARTED_AT = "codefStartedAt"         # card_bill.field_states: 이 값을 저장한 조회의 시작 시각
+LIST_LOAD_RUN = "card_list_load"           # 첫 연결 때 보유카드만 먼저 받은 조회 (11/09, sync_card_list)
 
 
 class CardConsentRequired(PermissionError):
@@ -157,6 +158,42 @@ def _save_bills(user, connection, org, bills, run, fetched_at):
     return counts
 
 
+def sync_card_list(user, connected_id, org, connection_id, card_no=None, card_password=None):
+    """보유카드만 먼저 저장한다 (11/09 첫 연결). 카드 선택 화면이 저장된 카드만 읽어서 연결 응답 전에 받아 둔다.
+    청구서 · 승인내역은 뒤 작업(sync_card)이 받는다 — 업종까지 받으면 1분을 넘겨 온보딩이 멈춰 보였다.
+    저장 순서 · 확인은 sync_card 와 같다 (외부 조회는 트랜잭션 밖, 저장 직전 연결 상태 · 동의 · 조회 권한 확인)"""
+    connection = Connection.objects.filter(
+        pk=connection_id, user=user, business_type="card", organization_code=org,
+    ).first()
+    if connection is None or connection.disconnected_at is not None:
+        raise CardConnectionGone("연결이 해제되어 불러오지 않았어요.")
+    _check_consent(user, connection)
+    run = tasks.start_run(user, None, connection=connection, product_code=LIST_LOAD_RUN)
+    try:
+        card_rows = codef.list_cards(connected_id, org, card_no, card_password)
+        fetched_at = timezone.now()
+        with transaction.atomic():
+            get_user_model().objects.select_for_update(no_key=True).get(pk=user.pk)
+            connection = Connection.objects.select_for_update().get(pk=connection.pk, user=user)
+            if connection.disconnected_at is not None or connection.status != "connected":
+                raise CardConnectionChanged("조회 중 연결 상태가 바뀌어 저장하지 않았어요.")
+            _check_consent(user, connection)
+            tasks.claim_run(run, None)
+            _cards, counts = _save_cards(user, connection, org, card_rows, run, fetched_at)
+            run.status, run.business_code, run.completed_at = "success", codef.SUCCESS, timezone.now()
+            run.save(update_fields=["status", "business_code", "completed_at"])
+        return {"card_count": len(card_rows), "created_card_count": counts["created"]}
+    except Exception as exc:
+        business_code = None
+        if isinstance(exc, codef.CodefError) and re.fullmatch(r"CF-[0-9]{5}", str(exc.code)):
+            business_code = exc.code
+        error_code = getattr(exc, "code", None) if isinstance(
+            exc, (CardDataError, CardConsentRequired, CardConnectionChanged, tasks.WorkExpired)) else None
+        tasks.finish_run(run.pk, status="failed", business_code=business_code,
+                         error_code=error_code or ("provider_error" if isinstance(exc, codef.CodefError) else "card_sync_failed"))
+        raise
+
+
 def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, card_password=None, connection_id=None,
               task_id=None):
     """신뢰된 서버 호출 전용. 보유카드 · 청구서(bill_months 의 달마다) · 승인내역(start ~ end)을 조회한 뒤
@@ -218,9 +255,10 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
                 user=user, source_kind="card", card__connection=connection,
                 field_states__has_key=RETRY_STATE_KEY,
             ).values_list("pk", flat=True))
-            new_ids, existing_count, reviews, unknown = save_approvals(
+            new_ids, existing_count, reviews, unknown, foreign, filled = save_approvals(
                 user, cards, card_rows, approvals, run, fetched_at,
             )
+            record_foreign_pending(user, connection, run, covered, foreign, fetched_at)
             retry_failed_transactions(user, retry_ids)
             process_new_transactions(user, new_ids)
             # 청구서 → 납부 예정 (R04). 승인 거래가 새로 없어도 돈다. 저장 트랜잭션 · 회원 잠금 안
@@ -252,7 +290,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             "bill_count": len(bills), "created_bill_count": bill_counts["created"],
             "updated_bill_count": bill_counts["updated"], "skipped_bill_count": bill_counts["skipped"],
             "new_transaction_count": len(new_ids), "existing_transaction_count": existing_count,
-            "approvals_complete": complete,
+            "approvals_complete": complete, "foreign_pending_count": len(foreign), "foreign_filled_count": filled,
             "card_review_count": sum(review.transaction_id is None and review.data_valid for review in reviews),
         }
     except Exception as exc:

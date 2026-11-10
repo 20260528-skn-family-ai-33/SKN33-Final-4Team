@@ -33,21 +33,24 @@ def _months(month_ids):
     return ids
 
 
-def verify_transaction_history(user, month_ids):
+def verify_transaction_history(user, month_ids, *, use_confirmed_salary=False):
     """BUDGET_HISTORY_VERIFIER용: {월: {duplicates/cancellations/refunds: 상태}}.
 
-    잘못된 월 입력은 ValueError. DB 조회 실패는 전 항목 unknown. DB/정책을 변경하지 않는다.
+    use_confirmed_salary는 유효한 사용자 급여 확인만 환불 미확인 입금에서 제외한다. 기본 호출은 기존 동작.
+    잘못된 월 입력은 ValueError. DB 조회 실패는 전 항목 unknown. DB를 변경하지 않는다.
     """
     return {month: {key: item["status"] for key, item in result.items()}
-            for month, result in transaction_history_report(user, month_ids).items()}
+            for month, result in transaction_history_report(user, month_ids, use_confirmed_salary=use_confirmed_salary).items()}
 
 
-def transaction_history_report(user, month_ids):
+def transaction_history_report(user, month_ids, *, use_confirmed_salary=False):
     """상태와 사유별 영향 상한(원). None은 상한을 입증하지 못함; 상쇄·허용률 적용 없음.
 
     원거래월 밖의 취소/입금을 놓치지 않도록 회원의 저장된 전체 이력과 연결을 읽는다.
     원문·거래 ID를 결과나 로그에 노출하지 않는다.
     """
+    if type(use_confirmed_salary) is not bool:
+        raise ValueError("invalid_confirmed_salary_option")
     months = _months(month_ids)
     report = {m: {k: {"status": "verified", "impact_upper_bound": 0, "reasons": []}
                   for k in DIMENSIONS} for m in months}
@@ -69,6 +72,15 @@ def transaction_history_report(user, month_ids):
             Q(from_transaction__user=user) | Q(to_transaction__user=user),
             relation_type__in=["SAME_PURCHASE", "CANCELLATION"],
         ).order_by("pk"))
+        confirmed_salary = {}
+        if use_confirmed_salary:
+            from budgets.salary import known_deposits
+            confirmed_salary = {
+                pk: (amount, on, description, account_id)
+                for pk, amount, on, description, account_id in known_deposits(user).filter(
+                    salary_decision__state="confirmed", transaction_type="income",
+                ).values_list("pk", "amount", "occurred_on", "source_description", "account_id")
+            }
     except DatabaseError:
         for kind in DIMENSIONS:
             mark(months, kind, "unknown", "db_error")
@@ -224,6 +236,10 @@ def transaction_history_report(user, month_ids):
                 for kind in ("cancellations", "refunds"):
                     mark(preceding(tx), kind, "unknown", "unlinked_card_cancellation", tx.amount)
         if tx.direction == "in" and tx.amount:
+            # Compare the rows already inspected too; a changed row must not inherit another snapshot's proof.
+            if (tx.source_kind == "bank" and tx.transaction_type == "income"
+                    and confirmed_salary.get(tx.pk) == (tx.amount, tx.occurred_on, tx.source_description, tx.account_id)):
+                continue
             # income은 은행 입금의 기본 유형이며 '환불 아님'의 증거가 아니다. 미분류 비율과 무관하다.
             mark(preceding(tx), "refunds", "unknown", "unattributed_inflow", tx.amount + spent(tx))
     return report

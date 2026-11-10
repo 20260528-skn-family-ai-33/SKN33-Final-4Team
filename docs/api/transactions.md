@@ -268,6 +268,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 - 이미 같은 카테고리로 확정된 거래에 같은 값을 다시 보내면 **성공(200)** 으로 같은 결과를 돌려준다(결정기록 0번 '같은 요청 두 번').
 - 저장하면 이 거래는 사용자 확정(`classifyState: confirmed`, `classifiedBy: user`)이 된다.
 - **같은 가맹점의 다음 거래에 쓰기 (10/30 변경)**: `applyToFuture: true`로 저장했을 때만, 이후 같은 가맹점의 새 거래가 이 카테고리를 먼저 쓴다(`finance/merchant_rules.py`의 `remembered_category()`, 출처 `rule`).
+    - 이름이 같아도 카드사 업종이 분명히 다르면 다른 가게로 보고 재사용하지 않는다 (11/06).
     - 기준은 같은 가맹점에서 사용자가 고른 거래 중 **가장 최근 거래**(거래일 순, 같은 날이면 마지막 수정 순)다. 그 거래가 `applyToFuture: true`일 때만 재사용하고, 아니면 재사용하지 않는다. 사용자가 선택을 바꾸면 마지막 선택을 따른다.
     - 새 칸 없이 그 거래의 `field_states.apply_to_future = true`로 남긴다. API 응답에는 내보내지 않는다.
     - 10/30 이전에 확정한 거래는 이 표시가 없어서 재사용되지 않는다.

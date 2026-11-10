@@ -89,6 +89,39 @@ class Base(NoCodefNetwork, TestCase):
                              connection_id=self.bank.pk, require_consent=True, task_id=task_id)
 
 
+class BackgroundRunTest(Base):
+    """11/09: 다시 불러오기 · 카드 첫 연결 내역은 뒤(스레드)에서 돌고 바로 답한다 (config/tasks.run_later)"""
+
+    def test_run_later_answers_before_the_work_and_the_thread_finishes_it(self):
+        task, done = self.task(), []
+        with override_settings(TASKS_INLINE=False), patch("config.tasks.threading.Thread") as thread,                 patch("config.tasks.connections") as db:
+            returned = tasks.run_later(task, lambda: done.append(1) or {"ok": True})
+            self.assertEqual((returned.status, done), ("running", []))   # 아직 안 돌았다
+            target = thread.call_args.kwargs["target"]
+            self.assertTrue(thread.call_args.kwargs["daemon"])
+            target()
+            db.close_all.assert_called_once()   # 스레드가 쓴 DB 연결을 남기지 않는다
+        task.refresh_from_db()
+        self.assertEqual((task.status, task.result, done), ("succeeded", {"ok": True}, [1]))
+
+    def test_card_first_load_is_a_sync_task_per_connection(self):
+        first = tasks.start(self.user, tasks.CARD_FIRST_LOAD, "a")
+        second = tasks.start(self.user, tasks.CARD_FIRST_LOAD, "b")   # 카드사마다 따로 돈다 (같은 회원 · 종류라도 재사용 안 함)
+        self.assertNotEqual(first.pk, second.pk)
+        run = tasks.start_run(self.user, first.pk, connection=self.cardco, product_code="card_sync")
+        self.assertEqual(run.task_id, first.pk)   # 조회 기록을 만들 수 있는 작업
+        self.assertEqual(self.withdraw().status_code, 409)   # 불러오는 중에는 탈퇴 · 철회를 막는다
+
+    def test_protect_tells_the_screen_which_task_is_loading(self):
+        self.assertIsNone(self.client.get("/api/budgets/protect/").json()["cardLoadTaskId"])
+        task = tasks.start(self.user, tasks.CARD_FIRST_LOAD, "a")
+        self.assertEqual(self.client.get("/api/budgets/protect/").json()["cardLoadTaskId"], str(task.pk))
+        AsyncTask.objects.filter(pk=task.pk).update(status="succeeded")
+        self.assertIsNone(self.client.get("/api/budgets/protect/").json()["cardLoadTaskId"])
+        self.task(ago=tasks.TASK_LEASE * 2)   # 기한이 지난 작업은 불러오는 중이 아니다
+        self.assertIsNone(self.client.get("/api/budgets/protect/").json()["cardLoadTaskId"])
+
+
 class StaleRecordsDoNotBlockPrivacyTest(Base):
     def test_only_stale_task(self):
         stale = self.task(OLD)
