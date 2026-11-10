@@ -15,7 +15,7 @@ from users.models import Consent
 
 from . import codef
 from .codef_loans import LoanDataError, normalize_loan_accounts, normalize_loan_details
-from .identifiers import identifier_key
+from .identifiers import LegacyIdentifierKey, identifier_key, legacy_identifier_key
 from .models import Connection, FinancialTransaction, Loan, PaymentDue, SyncRun
 from .sync_loans import sync_bank_loans
 
@@ -238,6 +238,15 @@ class LoanSyncTest(TestCase):
         loan.refresh_from_db()
         self.assertEqual(loan.connection_id, new.pk)
         self.assertEqual(Loan.objects.filter(user=self.user).count(), 1)
+
+    def test_legacy_key_loan_stops_without_duplicate(self):
+        # PR #102 리뷰: 전환 전 키 대출이 남아 있으면 새 대출을 만들지 않고 멈춘다
+        Loan.objects.create(user=self.user, connection=self.connection, origin="provider",
+                            source_loan_key=legacy_identifier_key(NUMBER))
+        with self.assertRaises(LegacyIdentifierKey):
+            self.sync()
+        self.assertEqual(Loan.objects.filter(user=self.user).count(), 1)
+        self.assertEqual(SyncRun.objects.get(user=self.user, product_code="loan_sync").error_code, "legacy_identifier")
 
     def test_manual_identity_collision_does_not_overwrite(self):
         Loan.objects.create(user=self.user, connection=self.connection, origin="manual",

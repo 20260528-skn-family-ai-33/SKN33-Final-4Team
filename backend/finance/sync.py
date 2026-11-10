@@ -10,7 +10,7 @@ from config import tasks
 from users.models import Consent
 
 from . import codef
-from .identifiers import identifier_key
+from .identifiers import LegacyIdentifierKey, identifier_key, legacy_identifier_key
 from .models import BankAccount, Connection, FinancialTransaction, SyncRun
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
 
@@ -120,6 +120,8 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                         connection__business_type="bank", connection__organization_code=org,
                     ).get()
                 except BankAccount.DoesNotExist:
+                    if BankAccount.objects.filter(user=user, source_account_key=legacy_identifier_key(number)).exists():
+                        raise LegacyIdentifierKey() from None   # 같은 계좌 · 거래가 두 번 저장되지 않게 (PR #102 리뷰)
                     account = BankAccount.objects.create(user=user, connection=connection, source_account_key=key)
                 account.connection = connection
                 saved_at = account.field_states.get(STARTED_AT)
@@ -191,7 +193,7 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
             run.pk, status="failed",
             business_code=exc.code if isinstance(exc, codef.CodefError) else None,
             error_code="provider_error" if isinstance(exc, codef.CodefError)
-            else exc.code if isinstance(exc, (codef.BankDataError, tasks.WorkExpired)) else "sync_error",
+            else exc.code if isinstance(exc, (codef.BankDataError, tasks.WorkExpired, LegacyIdentifierKey)) else "sync_error",
         )
         raise
 

@@ -16,6 +16,7 @@ from .card_review import FOREIGN_PENDING_RUN, approval_blocker, foreign_pending_
 from .codef_cards import CardDataError, card_matches, month_range, normalize_approvals, normalize_card_bills, normalize_cards
 from .models import (BankAccount, Card, CardApprovalCoverage, CardApprovalReview, CardBill, CardBillItem, Connection,
                      FinancialTransaction, SyncRun, TransactionLink)
+from .identifiers import LegacyIdentifierKey, legacy_identifier_key
 from .sync_cards import CardConnectionGone, CardConsentRequired, sync_card, sync_card_list
 
 CARD_NO = "9490981234560000"
@@ -739,6 +740,20 @@ class CardSyncTest(TestCase):
         self.run_sync()
         self.assertEqual(Card.objects.filter(user=self.user, connection=self.connection).count(), 1)
         self.assertEqual(Card.objects.filter(connection__disconnected_at__isnull=False).count(), 2)
+
+    def test_legacy_key_card_stops_without_duplicate(self):
+        # PR #102 리뷰: 승인 거래 키가 카드 키에 묶여 있어 전환 전 키 카드가 있으면 저장하지 않고 멈춘다
+        Card.objects.create(user=self.user, connection=self.connection, origin="provider",
+                            source_card_key=legacy_identifier_key(CARD_NO))
+        with self.assertRaises(LegacyIdentifierKey):
+            self.run_sync()
+        self.assertEqual(Card.objects.filter(user=self.user).count(), 1)
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user).exists())
+        self.assertEqual(SyncRun.objects.get(user=self.user, product_code="card_sync").error_code, "legacy_identifier")
+        # 첫 연결의 보유카드 먼저 불러오기(#99)도 같은 저장 함수를 지나 멈춘다
+        with self.assertRaises(LegacyIdentifierKey):
+            sync_card_list(self.user, "cid", ORG, self.connection.pk)
+        self.assertEqual(Card.objects.filter(user=self.user).count(), 1)
 
     def test_disconnected_connection_is_not_recreated(self):
         Connection.objects.filter(pk=self.connection.pk).update(status="disconnected", disconnected_at=timezone.now())

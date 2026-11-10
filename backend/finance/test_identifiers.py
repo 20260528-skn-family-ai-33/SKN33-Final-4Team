@@ -1,9 +1,10 @@
 """계좌 · 대출 · 카드 중복 확인 키 (finance/identifiers.py)"""
 import hashlib
+from types import SimpleNamespace
 
 from django.test import SimpleTestCase, override_settings
 
-from .identifiers import identifier_key
+from .identifiers import LEGACY_MESSAGE, LegacyIdentifierKey, identifier_key, legacy_identifier_key
 
 NUMBER = "1002123456789"
 
@@ -25,3 +26,20 @@ class IdentifierKeyTests(SimpleTestCase):
         before = identifier_key("card", NUMBER)
         with override_settings(IDENTIFIER_HMAC_KEY=b"x" * 32):
             self.assertNotEqual(identifier_key("card", NUMBER), before)
+
+
+class LegacyKeyTests(SimpleTestCase):
+    def test_legacy_key_is_plain_sha256(self):
+        # HMAC 전환 전 저장 방식 그대로여야 남은 행을 찾을 수 있다
+        self.assertEqual(legacy_identifier_key(NUMBER), hashlib.sha256(NUMBER.encode()).hexdigest())
+
+    def test_refresh_guides_reconnect_instead_of_retry(self):
+        # API 모듈은 테스트 안에서 불러온다 (파일 맨 위에서 부르면 config.api 와 순환 import)
+        from .api_new_connection import failure
+        from .api_sync import run_part
+
+        def work():
+            raise LegacyIdentifierKey()
+        part, reason = run_part("accounts", SimpleNamespace(pk="c1"), work)
+        self.assertEqual((part["status"], reason), ("failed", ("legacy_identifier", ())))
+        self.assertEqual(failure("legacy_identifier", "은행")[:3], (409, "not_ready", LEGACY_MESSAGE))
