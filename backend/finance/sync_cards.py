@@ -21,7 +21,7 @@ from users.models import Consent
 from . import card_payments, codef
 from .codef_cards import MONTH, CardDataError, month_range
 from .models import Card, CardBill, CardBillItem, CardApprovalCoverage, Connection, FinancialTransaction, Origin, SyncRun
-from .card_review import save_approvals, promote_coverage
+from .card_review import promote_coverage, record_foreign_pending, save_approvals
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
 
 CARD_RUN = "card_list"                     # 카드별 성공 기록 (sync_loans 의 loan_transaction_list 와 같은 쓰임)
@@ -218,9 +218,10 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
                 user=user, source_kind="card", card__connection=connection,
                 field_states__has_key=RETRY_STATE_KEY,
             ).values_list("pk", flat=True))
-            new_ids, existing_count, reviews, unknown = save_approvals(
+            new_ids, existing_count, reviews, unknown, foreign, filled = save_approvals(
                 user, cards, card_rows, approvals, run, fetched_at,
             )
+            record_foreign_pending(user, connection, run, covered, foreign, fetched_at)
             retry_failed_transactions(user, retry_ids)
             process_new_transactions(user, new_ids)
             # 청구서 → 납부 예정 (R04). 승인 거래가 새로 없어도 돈다. 저장 트랜잭션 · 회원 잠금 안
@@ -252,7 +253,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
             "bill_count": len(bills), "created_bill_count": bill_counts["created"],
             "updated_bill_count": bill_counts["updated"], "skipped_bill_count": bill_counts["skipped"],
             "new_transaction_count": len(new_ids), "existing_transaction_count": existing_count,
-            "approvals_complete": complete,
+            "approvals_complete": complete, "foreign_pending_count": len(foreign), "foreign_filled_count": filled,
             "card_review_count": sum(review.transaction_id is None and review.data_valid for review in reviews),
         }
     except Exception as exc:

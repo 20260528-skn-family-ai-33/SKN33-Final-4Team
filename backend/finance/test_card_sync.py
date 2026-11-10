@@ -11,9 +11,11 @@ from django.utils import timezone
 
 from users.models import Consent
 
-from . import codef
+from . import codef, transfer_rules
+from .card_review import FOREIGN_PENDING_RUN, approval_blocker, foreign_pending_count
 from .codef_cards import CardDataError, card_matches, month_range, normalize_approvals, normalize_card_bills, normalize_cards
-from .models import Card, CardBill, CardBillItem, Connection, FinancialTransaction, SyncRun
+from .models import (BankAccount, Card, CardApprovalCoverage, CardApprovalReview, CardBill, CardBillItem, Connection,
+                     FinancialTransaction, SyncRun, TransactionLink)
 from .sync_cards import CardConnectionGone, CardConsentRequired, sync_card
 
 CARD_NO = "9490981234560000"
@@ -200,7 +202,8 @@ class ApprovalNormalizationTest(SimpleTestCase):
         cases = [
             ({"resCancelYN": "2"}, "cancel_amount_unknown"),                 # 신한: 부분취소 금액 미제공
             ({"resUsedAmount": "-22000"}, "negative_amount"),                # KB 취소전표매입
-            ({"resAccountCurrency": "USD", "resUsedAmount": "15.00"}, "amount_unknown"),
+            ({"resUsedAmount": ""}, "amount_unknown"),
+            ({"resAccountCurrency": "USD", "resUsedAmount": "15.00"}, "foreign_amount_pending"),
         ]
         for change, reason in cases:
             with self.subTest(change=change):
@@ -208,6 +211,30 @@ class ApprovalNormalizationTest(SimpleTestCase):
         foreign = normalize_approvals(approval(resAccountCurrency="USD", resUsedAmount="15.00", resKRWAmt="20,100"),
                                       START, END)[0][0]
         self.assertEqual((foreign["amount"], foreign["unknown_reason"]), (20100, None))
+
+    def test_won_currency_names_are_domestic(self):
+        # 11/08: 원화를 KRW 가 아닌 표기로 주는 카드사가 있으면 국내 결제가 '해외 결제'로 말없이 빠졌다
+        for name in ("WON", "won", "원", "₩"):
+            with self.subTest(name=name):
+                row = normalize_approvals(approval(resAccountCurrency=name), START, END)[0][0]
+                self.assertEqual((row["amount"], row["unknown_reason"], row["source_detail"]["currency"]),
+                                 (22000, None, "KRW"))
+        usd = normalize_approvals(approval(resAccountCurrency="usd", resUsedAmount="15.00"), START, END)[0][0]
+        self.assertEqual(usd["unknown_reason"], "foreign_amount_pending")
+        self.assertEqual(usd["source_detail"]["foreignAmount"], "15.00")
+        for name in ("달러", "US$", "KRWX"):
+            with self.subTest(name=name):
+                row = normalize_approvals(approval(resAccountCurrency=name), START, END)[0][0]
+                self.assertEqual((row["amount"], row["unknown_reason"]), (None, "currency_unknown"))
+
+    def test_zero_dollar_approval_is_zero_won(self):
+        # 11/09 NH: USD 7건 중 4건은 0.00달러 승인 (같은 날 같은 가게의 실제 결제와 짝). 0달러는 원화도 0원이다
+        for text in ("0.00", "0"):
+            with self.subTest(text=text):
+                row = normalize_approvals(approval(resAccountCurrency="USD", resUsedAmount=text), START, END)[0][0]
+                self.assertEqual((row["amount"], row["unknown_reason"]), (0, None))
+        row = normalize_approvals(approval(resAccountCurrency="USD", resUsedAmount="0.01"), START, END)[0][0]
+        self.assertEqual(row["unknown_reason"], "foreign_amount_pending")
 
     def test_bad_rows_are_rejected(self):
         for change in [{"resUsedDate": ""}, {"resCardNo": ""}, {"resCancelYN": "2", "resCancelAmount": "30000"},
@@ -345,6 +372,265 @@ class CardSyncTest(TestCase):
         self.run_sync()
         tx.refresh_from_db()
         self.assertEqual(tx.merchant_category, "약국")  # 있는 값은 바꾸지 않는다
+
+    def foreign_row(self, **change):
+        return approval(resApprovalNo="2", resAccountCurrency="USD", resUsedAmount="15.00", **change)
+
+    def test_foreign_row_without_won_amount_does_not_block_coverage(self):
+        # 11/07 NH: USD 줄은 원화 금액이 끝내 비어 있어 다시 불러와도 지킬 돈 화면을 벗어나지 못했다
+        self.approvals = [approval(), self.foreign_row()]
+        result = self.run_sync()
+        self.assertTrue(result["approvals_complete"])
+        self.assertEqual(result["foreign_pending_count"], 1)
+        self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)  # 금액을 만들어 저장하지 않는다
+        self.assertIsNone(approval_blocker(self.user, ORG))
+        self.assertEqual(len(self.runs("card_approval_list")), 1)
+        self.assertEqual(self.runs(FOREIGN_PENDING_RUN), [])  # 조회 범위 계산에 들어가지 않는다
+        self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 1)
+
+    def test_canceled_or_declined_foreign_row_without_won_amount_is_not_pending(self):
+        # PR #98 리뷰: 취소 · 거절된 외화 승인은 쓴 돈이 없어 '쓴 돈에 넣지 못했어요' 건수에 넣지 않는다
+        for status in ("1", "3"):
+            with self.subTest(status=status):
+                self.approvals = [approval(), self.foreign_row(resCancelYN=status)]
+                result = self.run_sync()
+                self.assertTrue(result["approvals_complete"])
+                self.assertEqual(result["foreign_pending_count"], 0)
+                self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 0)
+                self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)
+
+    def test_repeat_sync_counts_a_foreign_row_once_and_clears_it_when_won_amount_arrives(self):
+        self.approvals = [approval(), self.foreign_row()]
+        self.run_sync()
+        self.run_sync()
+        self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 1)
+        self.approvals = [approval(), self.foreign_row(resKRWAmt="20,100")]
+        self.assertEqual(self.run_sync()["foreign_pending_count"], 0)
+        self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 0)
+        self.assertTrue(FinancialTransaction.objects.filter(user=self.user, amount=20100).exists())
+
+    def test_other_untrusted_amounts_still_block_coverage(self):
+        for change in ({"resUsedAmount": ""}, {"resUsedAmount": "-22000"}, {"resCancelYN": "2"}):
+            with self.subTest(change=change):
+                CardApprovalCoverage.objects.all().delete()
+                self.approvals = [approval(resApprovalNo="3", **change)]
+                result = self.run_sync()
+                self.assertFalse(result["approvals_complete"])
+                self.assertEqual(result["foreign_pending_count"], 0)
+                self.assertEqual(approval_blocker(self.user, ORG), "spending_history_incomplete")
+
+    def test_foreign_row_with_user_review_keeps_blocking_when_won_amount_disappears(self):
+        # 사용자가 확인할 승인의 금액이 사라지면 이전 금액으로 확인하지 못하게 그대로 막는다
+        self.approvals = [self.foreign_row(number="949098******9999", resKRWAmt="20,100")]
+        self.run_sync()
+        self.approvals = [self.foreign_row(number="949098******9999")]
+        result = self.run_sync()
+        self.assertFalse(result["approvals_complete"])
+        self.assertEqual(result["foreign_pending_count"], 0)
+        self.assertFalse(CardApprovalReview.objects.get(user=self.user).data_valid)
+
+    # 11/09: 원화 금액이 없는 외화 승인은 같은 결제의 청구서 항목 · 체크카드 계좌 출금 원화 금액으로 채운다 (card_foreign)
+    STORE = "NETFLIX.COM"
+
+    def usd(self, **change):
+        return approval(**{"resApprovalNo": "2", "resAccountCurrency": "USD", "resUsedAmount": "15.00",
+                           "resMemberStoreName": self.STORE, **change})
+
+    def bill_with(self, *items):
+        self.bills["202610"] = bill(items=[charge(), *items])
+
+    def store_charge(self, amount="20,100", **change):
+        data = {"resMemberStoreName": self.STORE, "resUsedAmount": amount,
+                "resPaymentPrincipal": amount.replace(",", ""), "resUsedDate": "20261020", **change}
+        return charge(**data)
+
+    def withdrawal(self, amount=20100, description=STORE):
+        account = BankAccount.objects.filter(user=self.user).first()
+        if account is None:
+            bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0011",
+                                             status="connected")
+            account = BankAccount.objects.create(user=self.user, connection=bank, source_account_key="bank-key")
+        return FinancialTransaction.objects.create(
+            user=self.user, source_kind="bank", account=account, occurred_on=date(2026, 10, 20), amount=amount,
+            direction="out", transaction_type="transfer", source_description=description,
+            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
+        )
+
+    def foreign_tx(self):
+        return FinancialTransaction.objects.filter(user=self.user, source_kind="card", merchant_name=self.STORE)
+
+    def test_foreign_won_amount_from_card_bill(self):
+        self.bill_with(self.store_charge())
+        self.approvals = [approval(), self.usd()]
+        result = self.run_sync()
+        self.assertEqual((result["foreign_pending_count"], result["foreign_filled_count"]), (0, 1))
+        self.assertTrue(result["approvals_complete"])
+        tx = self.foreign_tx().get()
+        self.assertEqual((tx.amount, tx.field_states["amount"], tx.is_canceled),
+                         (20100, {"source": ["card_bill"]}, False))
+        self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 0)
+        again = self.run_sync()   # 다시 불러와도 한 건 · 같은 금액
+        self.assertEqual((again["foreign_pending_count"], again["foreign_filled_count"]), (0, 0))
+        self.assertEqual(list(self.foreign_tx().values_list("amount", flat=True)), [20100])
+
+    def test_check_card_foreign_won_amount_from_withdrawal_is_linked(self):
+        self.cards = [card(resCardName="NH체크카드")]
+        bank_tx = self.withdrawal()
+        self.approvals = [approval(), self.usd()]
+        result = self.run_sync()
+        self.assertEqual((result["foreign_pending_count"], result["foreign_filled_count"]), (0, 1))
+        tx = self.foreign_tx().get()
+        self.assertEqual((tx.amount, tx.field_states["amount"]), (20100, {"source": ["bank_withdrawal"]}))
+        # 소비는 카드 줄이 맡고 계좌 줄은 같은 구매로 이어 두 번 세지 않는다
+        self.assertTrue(TransactionLink.objects.filter(from_transaction=tx, to_transaction=bank_tx,
+                                                       relation_type="SAME_PURCHASE").exists())
+        again = self.run_sync()   # 출금이 이미 이 거래의 짝이어도 저장된 거래로 이어 간다
+        self.assertEqual((again["foreign_pending_count"], self.foreign_tx().count()), (0, 1))
+
+    def test_check_card_bill_and_withdrawal_must_agree(self):
+        self.cards = [card(resCardName="NH체크카드")]
+        self.bill_with(self.store_charge())
+        bank_tx = self.withdrawal()
+        self.approvals = [self.usd()]
+        self.assertEqual(self.run_sync()["foreign_filled_count"], 1)
+        self.assertEqual(self.foreign_tx().get().field_states["amount"]["source"], ["card_bill", "bank_withdrawal"])
+        FinancialTransaction.objects.filter(source_kind="card").delete()
+        bank_tx.amount = 20500
+        bank_tx.save(update_fields=["amount"])
+        result = self.run_sync()
+        self.assertEqual((result["foreign_pending_count"], result["foreign_filled_count"]), (1, 0))
+        self.assertFalse(self.foreign_tx().exists())
+
+    def test_credit_card_does_not_use_withdrawals(self):
+        self.withdrawal()   # 신용카드는 결제 때 출금이 없다 → 같은 이름 출금은 다른 돈
+        self.approvals = [self.usd()]
+        self.assertEqual(self.run_sync()["foreign_pending_count"], 1)
+        self.assertFalse(self.foreign_tx().exists())
+
+    def test_foreign_won_amount_needs_one_clear_match(self):
+        krw_pair = approval(resMemberStoreName=self.STORE, resUsedAmount="20,100", resApprovalNo="5")
+        cases = {
+            "같은 날 같은 가게 항목 둘": ([self.store_charge(), self.store_charge("9,900")], [self.usd()]),
+            "같은 날 같은 가게 외화 승인 둘": ([self.store_charge()], [self.usd(), self.usd(resApprovalNo="4")]),
+            "다른 날": ([self.store_charge(resUsedDate="20261019")], [self.usd()]),
+            "다른 가게": ([self.store_charge(resMemberStoreName="SPOTIFY")], [self.usd()]),
+            "잘린 이름이 너무 짧음": ([self.store_charge(resMemberStoreName="NET")], [self.usd()]),
+            "원화 승인의 짝": ([self.store_charge()], [krw_pair, self.usd()]),
+            "취소된 외화 승인": ([self.store_charge()], [self.usd(resCancelYN="1", resCancelAmount="15.00")]),
+        }
+        for name, (items, approvals) in cases.items():
+            with self.subTest(name):
+                FinancialTransaction.objects.filter(user=self.user).delete()
+                self.bill_with(*items)
+                self.approvals = approvals
+                result = self.run_sync()
+                self.assertEqual(result["foreign_filled_count"], 0)
+                # 취소된 승인은 쓴 돈이 없어 보류로도 세지 않는다 (PR #98 리뷰)
+                self.assertEqual(result["foreign_pending_count"] > 0, name != "취소된 외화 승인")
+                self.assertFalse(self.foreign_tx().filter(source_detail__currency="USD").exists())
+
+    def test_other_store_name_is_not_used(self):
+        # 이름이 다른 청구 항목 · 출금은 같은 날 · 같은 수라도 다른 결제일 수 있어 쓰지 않는다 (체크카드여도)
+        self.cards = [card(resCardName="NH체크카드")]
+        self.bill_with(self.store_charge(resMemberStoreName="PAYPAL *SOMETHING"))
+        self.withdrawal(description="PAYPAL *SOMETHING")
+        self.approvals = [self.usd()]
+        self.assertEqual(self.run_sync()["foreign_pending_count"], 1)
+        self.assertFalse(self.foreign_tx().exists())
+
+    def test_foreign_row_of_a_reissued_card_is_filled(self):
+        # 11/09 NH 실데이터: 7월 달러 승인은 재발급 전 카드 번호라 카드 번호로는 안 맞았다 → 원화 승인과 같은 재발급 추정을 쓴다
+        self.cards = [card(resIssueDate="20261001")]
+        self.bill_with(self.store_charge(resUsedDate="20260912"))
+        self.approvals = [approval(), self.usd(number="123", resUsedDate="20260912")]
+        result = self.run_sync()
+        self.assertEqual((result["foreign_pending_count"], result["foreign_filled_count"]), (0, 1))
+        self.assertEqual(self.foreign_tx().get().card.masked_number, "****0000")
+
+    def test_zero_dollar_approval_does_not_hide_the_real_payment(self):
+        # 11/09 NH 실데이터 모양: 같은 날 같은 가게 0달러 승인 + 실제 결제, 통장에는 실제 결제 출금 하나
+        self.cards = [card(resCardName="NH체크카드")]
+        bank_tx = self.withdrawal()
+        self.approvals = [approval(), self.usd(resUsedAmount="0.00"), self.usd(resApprovalNo="4")]
+        result = self.run_sync()
+        self.assertEqual((result["foreign_pending_count"], result["foreign_filled_count"]), (0, 1))
+        self.assertEqual(sorted(self.foreign_tx().values_list("amount", flat=True)), [20100])   # 0원 승인은 저장하지 않는다
+        real = self.foreign_tx().get(amount=20100)
+        self.assertTrue(TransactionLink.objects.filter(from_transaction=real, to_transaction=bank_tx).exists())
+
+    def test_zero_won_approval_is_not_saved(self):
+        # 11/09: 0원 승인은 쓴 돈이 없어 거래 · 카드 확인 · 분류 대상이 아니다 (실데이터에서 실제 결제 옆에 0원 줄이 따로 보였다)
+        self.approvals = [approval(), approval(resApprovalNo="7", resUsedAmount="0"),
+                          approval("949098******9999", resApprovalNo="8", resUsedAmount="0")]   # 카드를 못 정한 0원 줄도 확인을 묻지 않는다
+        result = self.run_sync()
+        self.assertEqual(list(FinancialTransaction.objects.filter(user=self.user).values_list("amount", flat=True)), [22000])
+        self.assertEqual((result["card_review_count"], result["foreign_pending_count"]), (0, 0))
+        self.assertTrue(result["approvals_complete"])
+        self.assertFalse(CardApprovalReview.objects.filter(user=self.user).exists())
+
+    def test_truncated_store_name_still_matches(self):
+        self.bill_with(self.store_charge(resMemberStoreName="NETFLIX"))   # 청구서에는 앞부분만
+        self.approvals = [self.usd()]
+        self.assertEqual(self.run_sync()["foreign_filled_count"], 1)
+
+    def test_one_source_matching_two_approvals_fills_neither(self):
+        # 11/10 PR #98 검수: 잘린 'NETFLIX' 항목 · 출금이 이름이 서로 다른 두 승인 모두와 맞으면 응답 순서로 주인이 바뀌었다
+        com, net = self.usd(), self.usd(resApprovalNo="4", resMemberStoreName="NETFLIX.NET")
+        for source in ("bill", "withdrawal"):
+            for approvals in ([com, net], [net, com]):
+                with self.subTest(source=source, first=approvals[0]["resMemberStoreName"]):
+                    FinancialTransaction.objects.filter(user=self.user).delete()
+                    if source == "bill":
+                        self.cards = [card()]
+                        self.bill_with(self.store_charge(resMemberStoreName="NETFLIX"))
+                    else:
+                        self.cards = [card(resCardName="NH체크카드")]
+                        self.bill_with()
+                        self.withdrawal(description="NETFLIX")
+                    self.approvals = approvals
+                    result = self.run_sync()
+                    self.assertEqual((result["foreign_filled_count"], result["foreign_pending_count"]), (0, 2))
+                    self.assertFalse(FinancialTransaction.objects.filter(user=self.user, source_kind="card").exists())
+
+    def test_card_won_amount_replaces_a_filled_amount(self):
+        # 11/10 PR #98 검수: 청구서로 채운 뒤 카드사가 원화 금액을 주면 그 금액으로 바꾼다 (다른 카드 거래와 같은 기준)
+        self.bill_with(self.store_charge())
+        self.approvals = [self.usd()]
+        self.run_sync()
+        self.approvals = [self.usd(resKRWAmt="20,500")]
+        self.assertEqual(self.run_sync()["foreign_filled_count"], 0)
+        tx = self.foreign_tx().get()
+        self.assertEqual(tx.amount, 20500)
+        self.assertNotIn("amount", tx.field_states)   # 이제 카드사 금액이라 채운 근거 표시를 지운다
+
+    def test_card_won_amount_keeps_the_withdrawal_link_only_when_amounts_agree(self):
+        self.cards = [card(resCardName="NH체크카드")]
+        bank_tx = self.withdrawal()
+        linked = TransactionLink.objects.filter(to_transaction=bank_tx, relation_type="SAME_PURCHASE")
+        # 금액이 다르면 같은 구매라는 근거가 없어 출금을 다시 보인다
+        for won, amount, kept in (("20,100", 20100, True), ("20,500", 20500, False)):
+            with self.subTest(won=won):
+                FinancialTransaction.objects.filter(user=self.user, source_kind="card").delete()
+                self.approvals = [self.usd()]
+                self.assertEqual(self.run_sync()["foreign_filled_count"], 1)
+                self.approvals = [self.usd(resKRWAmt=won)]
+                self.run_sync()
+                tx = self.foreign_tx().get()
+                self.assertEqual((tx.amount, "amount" in tx.field_states), (amount, False))
+                self.assertEqual(linked.exists(), kept)
+
+    def test_prefix_withdrawal_link_is_undone_when_another_withdrawal_arrives(self):
+        # 11/10 PR #98 검수: 'NETFLIX.COM' 승인 ↔ 'NETFLIX' 출금 연결은 이름이 달라 link_same_purchases 가 다시 보지 않았다
+        self.cards = [card(resCardName="NH체크카드")]
+        bank_tx = self.withdrawal(description="NETFLIX")
+        self.approvals = [self.usd()]
+        self.assertEqual(self.run_sync()["foreign_filled_count"], 1)
+        linked = TransactionLink.objects.filter(to_transaction=bank_tx, relation_type="SAME_PURCHASE")
+        transfer_rules.link_same_purchases(self.user)
+        self.assertTrue(linked.exists())   # 후보가 한 건이면 그대로
+        self.withdrawal(description="NETFLIX")   # 같은 날 · 금액 · 적요 출금이 뒤늦게 들어옴
+        transfer_rules.link_same_purchases(self.user)
+        self.assertFalse(linked.exists())
 
     def test_saves_cards_bills_and_items(self):
         result = self.run_sync(card_no=CARD_NO, card_password=CARD_PW)
