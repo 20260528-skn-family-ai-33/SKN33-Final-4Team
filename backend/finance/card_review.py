@@ -152,6 +152,8 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
             if row["source_detail"].get("cancelStatus") == PARTIAL:
                 won = None   # 부분취소 금액이 외화일 수 있어 원화 순액을 모른다 → 저장된 거래를 바꾸지 않는다
             if won is None:
+                if row["is_canceled"]:
+                    continue   # 취소 · 거절이고 저장된 거래도 없으면 쓴 돈이 없어 알릴 것이 없다 (PR #98 리뷰)
                 # 다시 조회해도 풀리지 않아 온보딩이 막히지 않게 조회 완료로 둔다. 금액을 만들지 않고 저장도 하지 않는다.
                 # 청구서에 든 이 결제는 짝 거래가 없어 선차감에서 빼지 않으므로 카드값이 적게 잡히지 않는다 (cycle_overlap)
                 foreign.append(row["occurred_on"])

@@ -154,7 +154,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 
 | 테이블.칸 | ERD 설명 |
 |---|---|
-| sync_run.status | 성공 · 부분완료 · 실패 |
+| sync_run.status | 성공 · 부분완료 · 실패. 11/10: `product_code = card_foreign_pending`(원화 금액을 못 채운 외화 승인 표시, 승인 한 건당 한 줄 · `requested_from` = 사용일)은 `skipped`. 다른 조회 기록 쿼리는 `product_code` · `status`로 걸러 영향 없음 (`docs/api/cards.md`) |
 | transaction_link · payment_due · reserve_plan `.confirmation_state` | 확인 상태 |
 | card_bill.source_type | 조회 · 직접 입력 |
 | payment_due.source_type | 조회 · 직접 입력 · 추정 |
