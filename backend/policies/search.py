@@ -1,11 +1,11 @@
 """정책 검색: 지역 · 마감으로 거른 뒤 벡터 순위와 키워드 순위를 합친다. 자격 판단은 하지 않는다 (5단계 eligibility.py)"""
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from django.db.models import Q
 from pgvector.django import CosineDistance
 
-from .llm import embedder
+from .llm import cached, embedder
 from .models import Policy
 from .regions import REGIONS
 
@@ -70,3 +70,26 @@ def search(query, region_code, today, *, keywords=(), limit=LIMIT, embed=None):
     return [Hit(policy=policies[pk], score=scores[pk], distance=distances.get(pk), keywords=matched[pk],
                 apply_state=_apply_state(policies[pk], today), business_ended=_business_ended(policies[pk], today),
                 nationwide=len(policies[pk].zip_codes) > NATIONWIDE_CODES) for pk in top]
+
+
+def search_needs(needs, region_code, today, *, limit=LIMIT, embed=None):
+    """필요(query · keywords)마다 따로 검색해 순위를 RRF 로 합친다 (4단계).
+    두 고민을 한 문장으로 임베딩하면 벡터가 둘 사이 어딘가를 가리켜 한쪽이 묻히기 때문이다. 필요 하나면 search() 와 같다"""
+    if len(needs) == 1:
+        return search(needs[0].query, region_code, today, keywords=needs[0].keywords, limit=limit, embed=embed)
+    embed = cached(embed or embedder()[1])
+    embed([need.query for need in needs])  # 한 번에 미리 부른다
+    scores, best = {}, {}
+    for need in needs:
+        for rank, hit in enumerate(search(need.query, region_code, today, keywords=need.keywords, limit=limit,
+                                          embed=embed), 1):
+            pk = hit.policy.pk
+            scores[pk] = scores.get(pk, 0) + 1 / (RRF_K + rank)
+            if pk in best:  # 여러 필요에서 나오면 가장 가까운 거리와 찾은 키워드를 모두 남긴다
+                old = best[pk]
+                distance = min((d for d in (old.distance, hit.distance) if d is not None), default=None)
+                best[pk] = replace(old, distance=distance, keywords=list(dict.fromkeys(old.keywords + hit.keywords)))
+            else:
+                best[pk] = hit
+    top = sorted(scores, key=lambda pk: (-scores[pk], pk))[:limit]
+    return [replace(best[pk], score=scores[pk]) for pk in top]

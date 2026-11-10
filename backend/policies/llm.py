@@ -38,6 +38,18 @@ def live_embed(texts):
     return [item["embedding"] for item in sorted(data, key=lambda item: item["index"])]
 
 
+def cached(embed):
+    """같은 문장을 두 번 임베딩하지 않는다 (채점의 두 방식, 필요 여러 개를 한 번에 미리 부를 때)"""
+    memo = {}
+
+    def run(texts):
+        missing = [text for text in dict.fromkeys(texts) if text not in memo]
+        if missing:
+            memo.update(zip(missing, embed(missing)))
+        return [memo[text] for text in texts]
+    return run
+
+
 def embedder(live=None):
     if live is None:
         live = getattr(settings, "CHAT_LLM", "fake") == "live"

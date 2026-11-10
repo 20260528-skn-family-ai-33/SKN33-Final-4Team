@@ -53,7 +53,10 @@ python manage.py policy_eval --check
 ```bash
 python manage.py policy_eval
 python manage.py policy_eval --only q01 q02
+python manage.py policy_eval --auto   # 4단계 질문 읽기(LLM, 질문마다 1회)로 '자동' 칸도 채점
 ```
+
+`자동` 은 LLM 이 뽑은 검색 문장 · 키워드로 찾은 순위다. 목표는 사람이 뽑은 `키워드` 점수에 가까워지는 것. 표 아래 "질문 읽기"에 사람 키워드와 LLM 이 읽은 결과가 나란히 나온다. LLM 답은 실행마다 조금씩 달라서, 프롬프트를 비교할 때는 여러 번 돌려 본다.
 
 ## 점수 읽기
 

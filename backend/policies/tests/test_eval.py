@@ -128,6 +128,23 @@ class RunTest(TestCase):
         embed.assert_called_once_with(["같은 질문"])
         self.assertEqual({r.question.id for r in results}, {"q01", "q02"})
 
+    def test_자동은_읽은_키워드로_찾는다(self):
+        complete = mock.Mock(return_value=json.dumps(
+            {"needs": [{"query": "면접 정장", "keywords": ["면접"]}], "place": None, "vague": False}))
+        today, questions = evaluate.load(file(item(answers=[["WORD"]])))
+        results = evaluate.run(questions, today, question, complete=complete)
+        auto = [r for r in results if r.mode == evaluate.AUTO][0]
+        self.assertEqual((auto.ranks, auto.reading.needs[0].keywords, evaluate.modes(results)),
+                         ([1], ["면접"], ["벡터만", "키워드", "자동"]))
+
+    def test_읽기가_실패하면_원래_문장으로_찾고_남긴다(self):
+        error = Exception()
+        error.kind = "network"
+        today, questions = evaluate.load(file(item(answers=[["P1"]])))
+        results = evaluate.run(questions, today, question, complete=mock.Mock(side_effect=error))
+        auto = [r for r in results if r.mode == evaluate.AUTO][0]
+        self.assertEqual((auto.ranks, auto.reading, auto.read_error), ([1], None, "network"))
+
     def test_점수_계산(self):
         results = self.run_file(item(id="q01", answers=[["P1"]]), item(id="q02", answers=[["P4"], ["WORD"]]),
                                 item(id="q03", kind="없음", answers=[]))
@@ -161,6 +178,14 @@ class CommandTest(TestCase):
         self.assertIn("q01   구체   2", output)
         self.assertIn("벡터만", output)
         self.assertIn("1위 거리", output)
+
+    def test_auto_는_자동_칸과_읽은_결과를_보여_준다(self):
+        complete = mock.Mock(return_value=json.dumps(
+            {"needs": [{"query": "월세", "keywords": ["월세"]}], "place": "부산", "vague": False}))
+        with mock.patch("policies.reading.reader", return_value=("test", complete)):
+            output = self.eval_command([item(id="q01", keywords=["주거"], answers=[["P2"]])], "--auto")
+        self.assertIn("자동", output)
+        self.assertIn("q01   주거 | 월세 [월세] · 지명 부산 → 부산광역시", output)
 
     def test_check_는_임베딩을_부르지_않는다(self):
         with mock.patch("policies.evaluate.run") as run:

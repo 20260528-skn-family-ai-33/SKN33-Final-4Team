@@ -6,14 +6,18 @@ import json
 from dataclasses import dataclass
 from datetime import date
 
+from . import reading as reading_module
 from . import search
+from .llm import cached
 from .models import Policy
+from .reading import Need, ReadFailed, Reading
 from .regions import REGIONS, find_region
 
 # 없음 = 맞는 정책이 없는 질문 (정답 묶음 []). 이사 = 문장 속 지역이 사는 곳과 다른 질문 (region 은 최종 검색 지역)
 KINDS = ("구체", "막연", "두고민", "없음", "지역", "이사")
 FIELDS = {"id", "kind", "query", "region", "keywords", "answers", "note"}
 MODES = (("벡터만", False), ("키워드", True))
+AUTO = "자동"  # 4단계 질문 읽기(LLM)가 뽑은 검색 문장 · 키워드. 목표는 '키워드'(사람이 뽑음) 점수에 가까워지는 것
 
 
 class EvalFileError(ValueError):
@@ -43,6 +47,8 @@ class Result:
     mode: str
     ranks: list[int | None]  # 묶음마다 처음 나온 순위 (못 찾으면 None)
     top_distance: float | None  # 1위 거리 ('맞는 정책 없음' 기준을 정할 재료)
+    reading: Reading | None = None  # 자동 방식에서 읽은 결과
+    read_error: str | None = None  # 자동 방식에서 읽기가 실패했으면 그 종류 (원래 문장으로 벡터만 검색했다)
 
     @property
     def first(self):
@@ -129,32 +135,47 @@ def load(text):
     return today, questions
 
 
-def cached(embed):
-    """같은 질문을 두 번(벡터만 · 키워드) 임베딩하지 않는다"""
-    memo = {}
-
-    def run(texts):
-        missing = [text for text in dict.fromkeys(texts) if text not in memo]
-        if missing:
-            memo.update(zip(missing, embed(missing)))
-        return [memo[text] for text in texts]
-    return run
+def _result(question, mode, hits, **extra):
+    order = {hit.policy.pk: rank for rank, hit in enumerate(hits, 1)}
+    ranks = [min((order[n] for n in group if n in order), default=None) for group in question.answers]
+    return Result(question, mode, ranks, hits[0].distance if hits else None, **extra)
 
 
-def run(questions, today, embed, limit=search.LIMIT):
-    """질문 × 두 방식의 Result 목록. 정답 미정 질문은 뺀다. 임베딩 실패(EmbedFailed)는 그대로 올린다"""
+def run(questions, today, embed, limit=search.LIMIT, complete=None):
+    """질문 × 방식의 Result 목록. complete(LLM 호출기)를 주면 '자동' 방식도 본다. 정답 미정 질문은 뺀다.
+    임베딩 실패(EmbedFailed)는 그대로 올린다. 읽기 실패는 그 질문만 원래 문장으로 검색하고 read_error 에 남긴다"""
     questions = [q for q in questions if not q.draft]
     embed = cached(embed)
-    embed([q.query for q in questions])  # 한 번에 미리 부른다
+    readings = {}
+    if complete:
+        for question in questions:
+            try:
+                readings[question.id] = reading_module.read(question.query, complete)
+            except ReadFailed as error:
+                readings[question.id] = error
+    needs = {}
+    for question in questions:
+        got = readings.get(question.id)
+        needs[question.id] = reading_module.needs_for(got, question.query) if isinstance(got, Reading) \
+            else [Need(question.query)]
+    embed([q.query for q in questions] + [n.query for q in questions for n in needs[q.id]])  # 한 번에 미리 부른다
     results = []
     for question in questions:
         for mode, use_keywords in MODES:
             hits = search.search(question.query, question.region, today, embed=embed, limit=limit,
                                  keywords=question.keywords if use_keywords else ())
-            order = {hit.policy.pk: rank for rank, hit in enumerate(hits, 1)}
-            ranks = [min((order[n] for n in group if n in order), default=None) for group in question.answers]
-            results.append(Result(question, mode, ranks, hits[0].distance if hits else None))
+            results.append(_result(question, mode, hits))
+        if complete:
+            hits = search.search_needs(needs[question.id], question.region, today, embed=embed, limit=limit)
+            got = readings[question.id]
+            results.append(_result(question, AUTO, hits, reading=got if isinstance(got, Reading) else None,
+                                   read_error=None if isinstance(got, Reading) else str(got)))
     return results
+
+
+def modes(results):
+    """결과에 들어 있는 방식 이름 (벡터만 · 키워드 · 자동 순서)"""
+    return [mode for mode in [m for m, _ in MODES] + [AUTO] if any(r.mode == mode for r in results)]
 
 
 def summary(results, mode):
