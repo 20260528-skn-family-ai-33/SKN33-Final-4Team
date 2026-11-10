@@ -1,9 +1,10 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import PopupProvider from '../popups/PopupProvider.jsx'
 import ProtectPage from './ProtectPage.jsx'
+import { PATHS } from '../routes.js'
 
 let host, root, data
 beforeEach(() => {
@@ -15,21 +16,24 @@ beforeEach(() => {
     saved: { livingBudget: 500000, savingFloor: 380000, cushionMonthly: 320000, spare: 720000 },
     cushion: { required: true, target: 9000000, balanceTotal: 0 },
   }
-  vi.stubGlobal('fetch', vi.fn(async (url) => {
+  vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
     if (url !== '/api/budgets/protect/') throw new Error(`Unexpected URL: ${url}`)
-    return { ok: true, json: async () => data }
+    return { ok: true, json: async () => options.method === 'PUT' ? { locksReleased: [] } : data }
   }))
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
 afterEach(async () => { await act(() => root.unmount()); host.remove(); vi.unstubAllGlobals() })
-const render = () => act(async () => root.render(<MemoryRouter><PopupProvider><ProtectPage /></PopupProvider></MemoryRouter>))
+const render = () => act(async () => root.render(<MemoryRouter initialEntries={[PATHS.protect]}><PopupProvider><Routes>
+  <Route path={PATHS.protect} element={<ProtectPage />} />
+  <Route path={PATHS.recommend} element={<p>추천 화면</p>} />
+</Routes></PopupProvider></MemoryRouter>))
 
 it('승인 예산 충당액과 배분 후 여윳돈을 기본 설정과 구분해서 표시한다', async () => {
   data.approvedBudget = { spareTransfer: 100000, spare: 620000 }
   await render()
   const notice = host.querySelector('[aria-label="이번 승인 예산 여윳돈"]')
   expect(notice.textContent).toContain('이번 승인 예산에는 여윳돈 100,000원을 생활비로 포함')
-  expect(notice.textContent).toContain('배분 후 여윳돈은 620,000원')
+  expect(notice.textContent).toContain('이번 예산 배분 기준 여윳돈은 620,000원')
   expect(notice.textContent).toContain('지킬 돈 설정은 그대로')
   expect(host.querySelector('input[name="livingBudget"]').value.replace(/,/g, '')).toBe('500000')
   expect(host.querySelector('#mc-protectsum').textContent).toContain('720,000원')
@@ -46,4 +50,18 @@ it('충당액이 0원이면 충당 안내를 표시하지 않는다', async () =
   data.approvedBudget = { spareTransfer: 0, spare: 720000 }
   await render()
   expect(host.querySelector('[aria-label="이번 승인 예산 여윳돈"]')).toBeNull()
+})
+
+it('PUT 응답에 충당 안내가 없어도 지킬 돈 화면을 교체하지 않고 추천 화면으로 이동한다', async () => {
+  data.approvedBudget = { spareTransfer: 100000, spare: 620000 }
+  document.cookie = 'csrftoken=test; path=/'
+  try {
+    await render()
+    await act(async () => host.querySelector('#mc-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(host.textContent).toContain('추천 화면')
+    const put = fetch.mock.calls.find(([, options]) => options?.method === 'PUT')
+    expect(JSON.parse(put[1].body)).toEqual({ livingBudget: 500000, savingFloor: 380000, cushionMonthly: 320000 })
+  } finally {
+    document.cookie = 'csrftoken=; max-age=0; path=/'
+  }
 })

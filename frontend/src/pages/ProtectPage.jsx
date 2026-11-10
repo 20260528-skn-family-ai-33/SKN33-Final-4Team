@@ -113,7 +113,7 @@ export default function ProtectPage() {
       {ready && <p className="mc-muted">{housingName} 비율로 나눈 추천 금액이에요. 바꾸고 싶은 칸만 고치세요.</p>}
       {data.approvedBudget?.spareTransfer > 0 && <p className="mc-note" role="status" aria-label="이번 승인 예산 여윳돈">
         이번 승인 예산에는 여윳돈 {won(data.approvedBudget.spareTransfer)}을 생활비로 포함했어요.
-        {' '}배분 후 여윳돈은 {won(data.approvedBudget.spare)}이고, 아래 지킬 돈 설정은 그대로예요.
+        {' '}이번 예산 배분 기준 여윳돈은 {won(data.approvedBudget.spare)}이고, 아래 지킬 돈 설정은 그대로예요.
       </p>}
 
       {data.missing.length > 0 && (
