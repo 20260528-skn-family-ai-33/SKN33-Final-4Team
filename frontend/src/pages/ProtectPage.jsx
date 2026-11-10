@@ -20,6 +20,8 @@ import { waitTask } from '../utils/financeSync.js'
 import { HOUSING } from '../utils/direction.js'
 import { PATHS } from '../routes.js'
 
+const RETRY_MS = 3000   // 카드 작업 상태 조회가 실패했을 때 다시 읽기까지 쉬는 시간
+
 const ROWS = [['livingBudget', '생활비'], ['savingFloor', '저축 목표액'], ['cushionMonthly', '월 쿠션 적립금']]
 const RATE_LABELS = [['living', '생활비'], ['saving', '저축'], ['spare', '여윳돈'], ['cushion', '쿠션']]
 // 빠진 값 → 어디서 채우는지
@@ -61,13 +63,17 @@ export default function ProtectPage() {
   const [showCardSync, setShowCardSync] = useState(false)
   const [reviewVersion, setReviewVersion] = useState(0)
   // 11/09: 카드 내역을 서버가 뒤에서 불러오는 중이면 재조회를 권하지 않고 기다렸다가 끝나면(성공 · 실패 모두) 다시 읽는다
+  // 11/10: 상태 조회가 끊기거나 5분을 넘기면 잠깐 쉬고 다시 읽는다. 다시 읽을 때마다(data 가 바뀔 때마다) 조회를 새로 시작해서,
+  //   서버가 아직 같은 작업 ID 를 줘도 멈추지 않는다. 작업이 끝나거나 기한이 지나면 ID 가 빠져 조회도 멈춘다
   const loadingTask = data?.cardLoadTaskId ?? null
   useEffect(() => {
     if (!loadingTask) return undefined
     const ctrl = new AbortController()
-    waitTask(loadingTask, { signal: ctrl.signal }).catch(() => null).then(() => { if (!ctrl.signal.aborted) reload() })
+    waitTask(loadingTask, { signal: ctrl.signal })
+      .then(() => null, () => new Promise((r) => setTimeout(r, RETRY_MS)))
+      .then(() => { if (!ctrl.signal.aborted) reload() })
     return () => ctrl.abort()
-  }, [loadingTask]) // eslint-disable-line react-hooks/exhaustive-deps -- reload 는 렌더마다 새로 만들어져 넣으면 계속 다시 돈다
+  }, [loadingTask, data]) // eslint-disable-line react-hooks/exhaustive-deps -- reload 는 렌더마다 새로 만들어져 넣으면 계속 다시 돈다
 
 
   if (!data) return <Layout title="지킬 돈 설정" showBack><ApiStatus error={loadError} /></Layout>
