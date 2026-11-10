@@ -2477,3 +2477,38 @@ LLM 에 보낼지(가게 이름은 안 보냄). ④ 응답 시간 목표 · 시�
 - (확인 · 지시문 보완) 실제 해석이 "지난달이랑 8월달 식비 비교해줘"에서 '지난달'을 버리고 compare_month=8 만 남겨(period · period_said 모두 null)
   이번 달 vs 8월로 답했다. 서버는 버려진 말을 알 수 없어(period_said 도 없음) 지시문에 '두 달을 모두 말했으면 둘 다 보존, 지난달은 period=last_month' 한 줄 추가.
   실제 LLM 재확인 필요. 단어 규칙으로 서버가 덮는 방식은 쓰지 않았다(26-22 원칙).
+
+## 29. 소비 분석 에이전트 루프 1일차 (2026-11-10 — 실제 LLM 호출 없음, 가짜 계획 LLM 으로 검사. 아직 아무 데서도 부르지 않음)
+
+LLM 이 도구를 고름 → 서버 실행 → 관찰 결과(금액 · 날짜 · 가게 이름 없음)를 돌려줌 → 다음 도구 또는 끝. 파일: `spending_analysis/agent_tools.py` · `agent_loop.py`.
+
+**도구 4개 (agent_tools)** — `(인자, 문맥) → 관찰 결과`. 문맥 = user · today · as_of · complete(B 에 넘김) · question · 이번 루프 결과
+- `spend_lookup`(소비 해석 칸 19개, target 은 spend · overview) · `budget_lookup`(categories · breakdown → compare=category):
+  일반 질문과 같은 `reading.parse({"mine": True, ...})` → `dialog.decide` → `adapter.run` → `answer.compose`. tools.py 를 직접 부르지 않는다.
+- `explain_change`(ref · hypothesis = investigation 계약): ref 의 기록 항목으로 `explain.answer(..., plan=complete)` (B, 실패하면 템플릿).
+- `where_changed`(ref · by = claims.AXES): `explain.evidence` → `claims.compare_group`. 카드 = 같은 방향 상위 3줄 text 블록.
+- 두 설명 도구는 ref 가 확정(confirmed)된 6~9번 비교일 때만 — 아니면 unsupported/no_comparison. where_changed 는 비교 하나만(여럿이면 many_comparisons).
+- 기록 항목은 `dialog.analysis_row`(record_analysis 에서 뗌, 동작 같음) + `adapter.summarize` 로 만든다 → `server.records`.
+
+**관찰 결과 모양** — `{"id": "R1", "tool", "status", "reason"?, "facts"?, "server"?}`. status = ok · invalid · ask · unsupported · failed · duplicate.
+- facts: 6 · 7번(비교 가능) = narrate.facts(방향) / 그 밖 = compose lines 한 줄씩 kind=line, 숫자 □ · 가게 이름(범용 조회 가게별 · 가장 큰 1건) '가게 N'
+  / explain_change = claims.first_claims → for_llm / where_changed = compare_group → for_llm. 모두 `id = R1.F1`, state = confirmed · limited · not_comparable.
+- server(LLM 에 안 보냄): reply · results · records · decision. `agent_tools.for_llm` 이 server 를 뺀 사본을 만든다.
+
+**안전장치 (agent_loop.run)** — MAX_STEPS=3(넘으면 LLM 을 더 부르지 않고 answer) · 같은 도구+인자 = duplicate(실행 안 함, 단계로 셈) ·
+TIMEOUT=15초 → fallback/timeout(호출마다 남은 시간을 timeout 으로) · LLM 오류 call_failed · 형식 invalid_json · 모르는 도구 unknown_tool(재시도 없음) ·
+도구 ask → 즉시 status=ask + Decision · 성공 결과 없이 answer → fallback/no_result. 답(reply)은 `_stack`: 성공 결과의 view 를 순서대로, lines · notices · lead 는 중복 없이.
+store 에는 쓰지 않는다.
+
+**스키마** — `schemas.agent_loop_schema()`: args = anyOf 도구별 가지 4개 + null (소비 칸은 소비 해석 스키마 그대로 재사용). strict 라 모든 칸이 null 로 와서
+루프가 null 칸을 빼고 검사 · 중복 비교한다. 문자열 JSON 대신 anyOf 를 고른 이유: 칸 이름 · enum 을 생성 단계에서 막고, 소비 칸 정의를 한 곳(role_schema)에 둔다.
+가지와 tool 이 맞는지는 스키마로 묶지 않았다(서버가 모르는 칸 → invalid).
+
+**테스트** — `spending_fixture/test_agent_loop.py` 12건(사례 1~11 + 스키마, 12번 숫자 검사는 모든 사례의 LLM 입력에 적용 — id · 순위 · 가게 순번만 숫자 허용).
+
+**알려진 한계**
+- explain_change 는 explain.answer 와 주장(facts) 만들기에서 근거를 두 번 읽는다 (shortcut 주석).
+- B 자체 상한 12초는 루프 15초와 따로 — B 가 오래 걸리면 루프가 timeout 으로 끝날 수 있다.
+- reply 의 suggest(예산 조정 · 고정지출 포함 제안) · trace 는 아직 잇지 않는다.
+
+**내일 할 것** — ① 소비 해석(reading)에 '어려운 질문인가' 칸 ② agent.py · chat/engine.py 연결 + store 기록 ③ LLM 답 조합(_stack 자리) ④ 실제 LLM 평가.

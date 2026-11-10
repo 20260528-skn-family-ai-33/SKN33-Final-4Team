@@ -864,15 +864,17 @@ def record_analysis(store, conversation_id, decision, results):
     - ok 는 '조회가 끝났다'는 뜻일 뿐이다. 설명 근거는 evidence == "confirmed" 만 (없으면 "unknown" — 근거 아님)"""
     if not any(r["ok"] for r in results):
         return
-    items = []
-    for r in results:
-        row = {**r["item"], "ok": r["ok"]}
-        if r["ok"]:
-            row.update({k: r["result"][k] for k in ("limits", "period", "periods", "as_of", "compare_period", "facts", "labels")
-                        if k in r["result"]})
-            row["evidence"] = r["result"].get("evidence", "unknown")
-        items.append(row)
-    store.save_analysis(conversation_id, {"request": conditions(decision.request), "items": items})
+    store.save_analysis(conversation_id, {"request": conditions(decision.request), "items": [analysis_row(r) for r in results]})
+
+
+def analysis_row(r):
+    """결과 하나(result = adapter.summarize 요약) → 기록 항목 (설명 근거 · 에이전트 루프가 같은 모양을 쓴다)"""
+    row = {**r["item"], "ok": r["ok"]}
+    if r["ok"]:
+        row.update({k: r["result"][k] for k in ("limits", "period", "periods", "as_of", "compare_period", "facts", "labels")
+                    if k in r["result"]})
+        row["evidence"] = r["result"].get("evidence", "unknown")
+    return row
 
 
 def run_items(items, fetch):

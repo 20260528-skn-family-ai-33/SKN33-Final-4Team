@@ -3,6 +3,8 @@
 """
 from chat.interpretation.schema import CATEGORY_NAMES
 from chat.router_core import reading as router_reading
+from spending_analysis import agent_loop as spending_agent_loop
+from spending_analysis import agent_tools as spending_agent_tools
 from spending_analysis import claims as spending_claims
 from spending_analysis import investigation
 from spending_analysis import explain as spending_explain
@@ -84,7 +86,28 @@ NARRATE_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array"
     "required": ["sentences", *EXTRA], "additionalProperties": False}
 
 
+
+
+def agent_loop_schema():
+    """에이전트 루프 계획 (MEMO 29) — 도구마다 args 칸이 달라 anyOf 로 도구별 가지 4개 + null.
+    소비 · 예산 칸은 소비 해석 스키마를 그대로 쓴다. 어느 가지가 어느 도구인지는 서버가 agent_tools 에서 다시 검사한다"""
+    spend = role_schema("spending")["properties"]
+    branch = lambda props: {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}  # noqa: E731
+    args = {"anyOf": [
+        branch({**{k: spend[k] for k in spending_agent_tools.SPEND_ARGS},
+                "target": {"type": ["string", "null"], "enum": [*spending_agent_tools.SPEND_TARGETS, None]}}),
+        branch({"categories": spend["categories"], "breakdown": {"type": ["boolean", "null"]}}),
+        branch({"ref": {"type": "string"}, "hypothesis": investigation.SCHEMA}),
+        branch({"ref": {"type": "string"}, "by": {"type": "string", "enum": list(spending_claims.AXES)}}),
+        {"type": "null"}]}
+    return branch({"action": {"type": "string", "enum": ["tool", "answer"]},
+                   "tool": {"type": ["string", "null"], "enum": [*spending_agent_tools.TOOLS, None]},
+                   "args": args, "reason": {"type": "string"}})
+
+
 def schema_for(system):
+    if system == spending_agent_loop.PROMPT:
+        return "spending_agent_step", agent_loop_schema()
     if system == spending_explain.PROMPT:
         return "spending_explanation", EXPLAIN_SCHEMA
     if system == spending_claims.PLAN_PROMPT:
