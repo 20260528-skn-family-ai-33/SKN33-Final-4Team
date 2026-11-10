@@ -57,9 +57,19 @@ class AgeTest(SimpleTestCase):
         self.assertEqual(normalize.age_range(row(sprtTrgtAgeLmtYn="N")), (19, 34))
         self.assertEqual(normalize.age_range(row(sprtTrgtMinAge="0", sprtTrgtMaxAge="0")), (None, None))
 
-    def test_원문과_어긋나면_모름(self):
-        self.assertEqual(normalize.age_range(row(addAplyQlfcCndCn="대상: 만 18~39세")), (None, None))
+    def test_원문과_어긋나면_둘을_감싸는_가장_넓은_범위(self):
+        self.assertEqual(normalize.age_range(row(addAplyQlfcCndCn="대상: 만 18~39세")), (18, 39))
         self.assertEqual(normalize.age_range(row(addAplyQlfcCndCn="대상: 만 19~34세")), (19, 34))
+        # 세부 조건별 범위가 여러 개 (청년도전지원사업 모양)
+        text = "만 18세~34세 청년 … 거주자 35~39세 참여 가능"
+        self.assertEqual(normalize.age_range(row(sprtTrgtMinAge="18", sprtTrgtMaxAge="39", addAplyQlfcCndCn=text)), (18, 39))
+        # '15세~69세' 모양도 읽는다 (국민취업지원제도: 원본 15~69, 본문에 15~34세 청년 우대 조건도 있다)
+        text = "15세~69세 구직자 중 … (15~34세 청년은 재산 5억원 이하)"
+        self.assertEqual(normalize.age_range(row(sprtTrgtMinAge="15", sprtTrgtMaxAge="69", addAplyQlfcCndCn=text)), (15, 69))
+
+    def test_자녀_나이_범위와_빈_칸은_넓히지_않는다(self):
+        self.assertEqual(normalize.age_range(row(addAplyQlfcCndCn="자녀 1~3세 가정")), (19, 34))
+        self.assertEqual(normalize.age_range(row(sprtTrgtMinAge="0", addAplyQlfcCndCn="만 18~39세")), (None, 39))
 
 
 class FieldsTest(SimpleTestCase):

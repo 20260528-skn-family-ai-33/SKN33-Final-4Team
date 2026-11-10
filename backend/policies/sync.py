@@ -63,6 +63,30 @@ def load(rows, *, source, data_date):
     return sync
 
 
+def renormalize(*, save=True):
+    """저장된 원본(raw)으로 정리 칸을 다시 만든다. 정리 규칙(normalize.py)을 고쳤을 때 쓴다.
+    load() 는 원본이 바뀐 정책만 다시 정리하므로, 규칙만 바뀌면 이 함수가 필요하다. 활성 여부 · 임베딩은 건드리지 않는다
+    (임베딩 문장이 바뀐 정책은 embedded_hash 가 맞지 않게 되어 다음 embed_changed 가 다시 만든다).
+    → {칸 이름: 바뀐 정책 수}, 바뀐 정책 [(정책, {칸: (전, 후)})]"""
+    changed, counts = [], {}
+    now = timezone.now()
+    for policy in Policy.objects.order_by("pk"):
+        fresh = policy_fields(policy.raw)
+        diff = {name: (getattr(policy, name), value) for name, value in fresh.items()
+                if name != "policy_no" and getattr(policy, name) != value}
+        if diff:
+            for name, (_, value) in diff.items():
+                setattr(policy, name, value)
+                counts[name] = counts.get(name, 0) + 1
+            policy.updated_at = now  # bulk_update 는 auto_now 를 채우지 않는다
+            changed.append((policy, diff))
+    if save and changed:
+        names = sorted({name for _, diff in changed for name in diff})
+        with transaction.atomic():
+            Policy.objects.bulk_update([policy for policy, _ in changed], names + ["updated_at"], batch_size=500)
+    return counts, changed
+
+
 def embed_key(model, text):
     return hashlib.sha256(f"{model}\n{text}".encode()).hexdigest()
 

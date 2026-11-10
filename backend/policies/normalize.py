@@ -10,7 +10,9 @@ from . import codes
 PERSONAL_FIELDS = ("sprvsnInstPicNm", "operInstPicNm")  # 담당자 이름: 서비스에 쓰지 않아 저장하지 않는다
 VOLATILE_FIELDS = ("inqCnt",)  # 조회수: 바뀌어도 정책이 바뀐 게 아니다
 PERIOD = re.compile(r"^(\d{8})\s*~\s*(\d{8})$")
-AGE_RANGE = re.compile(r"(\d{2})\s*[~∼～-]\s*(\d{2})\s*세")
+# '19~34세' · '15세~69세' · '18세 ~ 만 39세'
+AGE_RANGE = re.compile(r"(\d{1,2})\s*세?\s*[~∼～-]\s*(?:만\s*)?(\d{1,2})\s*세")
+CHILD_AGE = 15  # 상한이 이보다 낮은 나이 범위는 신청자가 아니라 자녀 나이다 (부모급여 만 ~1세 등)
 TAG = re.compile(r"</?[a-zA-Z][^>]*>")
 
 
@@ -47,13 +49,17 @@ def periods(text):
 
 
 def age_range(row):
-    """(최소, 최대). 나이 제한 플래그는 믿을 수 없어 숫자만 본다. 숫자가 없거나 원문과 어긋나면 (None, None)"""
+    """(최소, 최대). 나이 제한 플래그는 믿을 수 없어 숫자만 본다. 숫자가 없으면 (None, None).
+    추가 자격 원문의 'NN~NN세'가 숫자와 다르면 둘을 모두 감싸는 가장 넓은 범위를 쓴다. 세부 조건마다 범위를 적은 정책이 많아서다
+    ("18~34세 … 35~39세도 참여 가능"). 좁게 잡으면 받을 수 있는 사람을 떨어뜨린다. 자녀 나이 범위(상한 15세 미만)는 보지 않는다"""
     low, high = (int((row.get(key) or "0").strip() or 0) for key in ("sprtTrgtMinAge", "sprtTrgtMaxAge"))
     if not low and not high:
         return None, None
-    stated = {(int(a), int(b)) for a, b in AGE_RANGE.findall(row.get("addAplyQlfcCndCn") or "")}
+    stated = [(int(a), int(b)) for a, b in AGE_RANGE.findall(row.get("addAplyQlfcCndCn") or "")
+              if int(a) <= int(b) and int(b) >= CHILD_AGE]
     if stated and (low, high) not in stated:
-        return None, None
+        low = min([low] + [a for a, _ in stated]) if low else 0
+        high = max([high] + [b for _, b in stated]) if high else 0
     return low or None, high or None
 
 

@@ -93,3 +93,24 @@ class EmbedTest(TestCase):
             self.assertEqual(len(calls), 2)
             self.assertEqual(sync.embed_changed("fake", fake_embed), (2, 0))
         self.assertEqual(Policy.objects.filter(embedding__isnull=True).count(), 0)
+
+
+class RenormalizeTest(TestCase):
+    def test_규칙이_바뀌면_원본으로_다시_정리하고_임베딩은_그대로(self):
+        sync.load(rows(2, sprtTrgtMinAge="15", sprtTrgtMaxAge="69", addAplyQlfcCndCn="15세~69세 구직자"),
+                  source="file", data_date=DAY)
+        sync.embed_changed("fake", fake_embed)
+        Policy.objects.filter(pk="T0").update(min_age=None, max_age=None)  # 옛 규칙으로 저장된 상태
+        Policy.objects.filter(pk="T1").update(is_active=False)
+        before = Policy.objects.get(pk="T0")
+
+        counts, changed = sync.renormalize(save=False)
+        self.assertEqual((counts, [p.pk for p, _ in changed]), ({"min_age": 1, "max_age": 1}, ["T0"]))
+        self.assertIsNone(Policy.objects.get(pk="T0").min_age)  # 미리보기는 저장하지 않는다
+
+        sync.renormalize()
+        after = Policy.objects.get(pk="T0")
+        self.assertEqual((after.min_age, after.max_age, after.embedded_hash), (15, 69, before.embedded_hash))
+        self.assertGreater(after.updated_at, before.updated_at)
+        self.assertFalse(Policy.objects.get(pk="T1").is_active)
+        self.assertEqual(sync.renormalize()[1], [])  # 다시 돌리면 바뀔 게 없다

@@ -16,13 +16,13 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from . import codes
+from .normalize import CHILD_AGE  # 나이 상한이 이보다 낮으면 신청자 나이가 아니라 자녀 나이다
 
 MET, CHECK, UNMET = "met", "check", "unmet"
 LABEL = {MET: "충족", CHECK: "확인 필요", UNMET: "불충족"}
 _ORDER = {MET: 0, CHECK: 1, UNMET: 2}
 FEMALE = "0014002"  # 특화 대상 '여성' — 성별(온보딩 값)로 판단한다
 SOON_DAYS = 90  # 나이 상한에 이만큼 안에 닿으면 표시한다 ("다음 달이면 만 35세")
-CHILD_AGE = 15  # 나이 상한이 이보다 낮으면 신청자 나이가 아니라 자녀 나이다 (청년 정책 신청자는 15세 이상)
 
 
 @dataclass(frozen=True)
