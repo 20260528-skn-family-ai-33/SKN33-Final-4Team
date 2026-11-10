@@ -486,6 +486,7 @@ class RuleTest(SimpleTestCase):
         # 11/02 카드 명세·카카오 장소 조사: '택시'가 낱말이거나 '개인택시'일 때만 교통. 이름 속 '택시' 식당은 제외
         cases = {
             "카카오_개인택시": "TRANSPORT_CAR", "카카오T 택시": "TRANSPORT_CAR", "개인택시 서울12가3456": "TRANSPORT_CAR",
+            "카카오_법인택시6": "TRANSPORT_CAR", "서울법인택시조합": None,
             "택시파스타 압구정로데오역점": None, "피자택시": None, "옐로우택시": None, "택시종사자쉼터": None,
             "서울개인택시조합새마을금고": None, "카카오페이택시충전": None,
             "레벨업 피시방 남부터미널점": "CULTURE_LEISURE", "탑PC방": "CULTURE_LEISURE",
@@ -523,6 +524,9 @@ class RuleTest(SimpleTestCase):
             "PAYCO오더 - 테스트식당": "테스트식당", "쿠팡이츠 - 쿠팡페이 주식회사": "쿠팡이츠",
             "트립닷컴_구_NICE - 나이스정보통신(대리점)": "트립닷컴", "메가MGC_인증_3 - 메가 MGC 커피": "메가MGC",
             "쿠팡_쿠페이 - 쿠팡": "쿠팡_쿠페이", "테스트 - ": "테스트 -", "치킨 - 피자": "치킨",
+            # 11/09 실거래: 결제 경로가 A 의 꼬리에 붙은 표기
+            "대표_3_카카오페이 - 파파존스 청라점": "파파존스 청라점", "대표_3_네이버페이 - 테스트식당": "테스트식당",
+            "카카오스타일 - 카카오스타일": "카카오스타일",
         }
         for name, store in cases.items():
             self.assertEqual(classifier.store_name(name), store, name)
@@ -784,6 +788,11 @@ class DeliveryAppTest(SimpleTestCase):
                            "(주)아성다이소": "HOUSEHOLD", "쿠팡": None, "쿠팡마트": None, "현대백화점 판교점": None, "번개장터": None,
                            "롯데하이마트 강남점": None, "신앙촌상회": None, "루덴치과의원": None, "": None, None: None}.items():
             self.assertEqual(classifier.retail_category(name), code, name)
+
+    def test_zigzag_operator_is_fashion(self):
+        # 11/09: 지도(회사 사무실)와 웹(패션)이 엇갈려 묻던 지그재그 운영사
+        self.assertEqual(classifier.rule_category(classifier.store_name("카카오스타일 - 카카오스타일")), "FASHION_SHOPPING")
+        self.assertFalse(classifier.is_multi_item("카카오스타일"))
 
     def test_delivery_app_is_food_but_b_mart_is_multi_item(self):
         for name in ("배달의민족", "(주)우아한형제들", "요기요"):

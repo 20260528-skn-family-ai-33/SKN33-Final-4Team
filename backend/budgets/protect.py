@@ -310,6 +310,8 @@ def card_reserved(user, cycle, as_of=None):
     관리 대상 카드가 있는 카드사마다 세진의 get_issuer_first_bill_deduction으로 계산한다 (10/29 나은: 카드사 단위).
     한 곳이라도 계산 보류면 amount=None (0원으로 치지 않음) 이고 pending에 그 카드사의 관리 대상 카드와 이유를 담는다.
     """
+    from finance.card_review import foreign_pending_count
+
     today = as_of or timezone.localdate()
     total, pending, notes = 0, [], []
     managed = selected_cards(user)
@@ -335,6 +337,11 @@ def card_reserved(user, cycle, as_of=None):
                 notes.extend({"card_id": str(group[0].pk), "issuer_code": issuer_code, **note} for note in reason)
             elif reason:  # 금액은 정해졌고 알릴 것만 있음 (no_bill_in_cycle · first_budget_applied · before_first_connection)
                 notes.extend({"card_id": str(card.pk), "reason": reason} for card in group)
+            # 금액을 몰라 소비에 넣지 못한 이번 주기 외화 결제. 금액을 만들지 않고 건수만 알린다
+            foreign = foreign_pending_count(user, issuer_code, cycle.starts_on, min(today, cycle.ends_before - timedelta(days=1)))
+            if foreign:
+                notes.append({"card_id": str(group[0].pk), "issuer_code": issuer_code,
+                              "reason": "foreign_amount_pending", "amount": None, "count": foreign})
     result = {"amount": None if pending else total, "pending": pending}
     return {**result, "notes": notes} if notes else result  # 안내가 있을 때만 (내부 값)
 

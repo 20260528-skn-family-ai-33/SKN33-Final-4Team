@@ -4,6 +4,11 @@
 - 작업 하나 = chat.AsyncTask 한 줄. 다시 불러오기(finance_sync)가 처음 쓰고, 챗봇 예산 조정 · 추천 예산도 같이 쓴다.
 - 1차는 작업을 요청 안에서 끝까지 처리하고 응답만 작업 모양(taskId · status)으로 준다 (10/27 나은 결정).
   나중에 느려지면 run() 부분만 뒤에서 돌리게 바꾸면 되고, API · 화면은 그대로다.
+- 11/09: 카드 업종 조회로 카드 불러오기가 1분을 넘겨 온보딩이 멈춰 보였다 (멘토 추천: 상태값을 비동기로).
+  다시 불러오기 · 카드 첫 연결의 내역 불러오기는 run_later 로 뒤(스레드)에서 돌리고 바로 답한다. 화면은 taskId 로 진행을 본다.
+  · 별도 작업 서버(큐)가 없어서 웹 서버 프로세스의 스레드로 돈다. 서버가 재시작되면 그 작업은 기한(TASK_LEASE) 뒤 stale 로 끝난다
+    (아래 R20 만료 처리). 카드번호 · 카드 비밀번호는 이 스레드의 메모리에만 있고 저장하지 않는다.
+  · 테스트(settings.TASKS_INLINE)는 지금처럼 요청 안에서 끝까지 돈다 (테스트 트랜잭션 밖 스레드는 자료를 못 본다).
 - 같은 회원 · 같은 종류의 작업이 이미 진행 중이면 새로 시작하지 않고 그 작업을 돌려준다 (start_or_reuse).
 
 실행 권한 (R20, 11/06 · 보완) — 서버가 중간에 죽으면 running 기록이 남아 철회 · 탈퇴(check_idle)를 계속 막던 문제
@@ -23,11 +28,13 @@
 import hashlib
 import json
 import logging
+import threading
 import uuid
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import connections, transaction
 from django.db.models import Q
 from django.http import Http404
 from django.utils import timezone
@@ -45,7 +52,8 @@ ACTIVE = (AsyncTask.Status.QUEUED, AsyncTask.Status.RUNNING)
 # 기관 하나의 정상 조회는 수십 초~몇 분이라 10분(기존 STALE_AFTER 와 같은 값)이면 넉넉하다. 넘기면 결과를 버리고 다시 불러오기로 받는다
 SYNC_LEASE = timedelta(minutes=10)   # 조회 기록 하나가 결과를 저장할 수 있는 시간 (시작부터)
 TASK_LEASE = timedelta(minutes=10)   # 작업이 자기 조회를 시작 · 저장한 뒤 이어서 일할 수 있는 시간
-SYNC_TASK_TYPES = {"finance_sync"}  # 조회 기록을 만들 수 있는 작업 종류
+CARD_FIRST_LOAD = "card_first_load"   # 카드사 첫 연결 뒤 청구서 · 승인내역 불러오기 (연결마다 하나, 11/09)
+SYNC_TASK_TYPES = {"finance_sync", CARD_FIRST_LOAD}  # 조회 기록을 만들 수 있는 작업 종류
 
 # error_code → 화면 문구 (작업 종류마다 늘려 간다)
 ERROR_MESSAGES = {
@@ -198,6 +206,22 @@ def start_or_reuse(user, task_type, hash_value, reuse_within=None, conversation=
     return task, True
 
 
+def start(user, task_type, hash_value):
+    """새 작업을 항상 만든다 (running). 기관마다 따로 도는 작업용 — start_or_reuse 는 회원 · 종류마다 하나만 돌린다"""
+    with transaction.atomic():
+        get_user_model().objects.select_for_update(no_key=True).filter(pk=user.pk).first()
+        now = _expire_stale(user)
+        return AsyncTask.objects.create(
+            user=user, task_type=task_type, input_hash=hash_value, request_key=f"{task_type}:{uuid.uuid4()}",
+            status=AsyncTask.Status.RUNNING, started_at=now, lease_expires_at=now + TASK_LEASE,
+        )
+
+
+def active_task(user, task_types):
+    """지금 진행 중인(유효한) 작업 중 가장 최근 것. 화면이 '불러오는 중'을 보여 줄 때만 쓴다 (권한 판단에 쓰지 않음)"""
+    return AsyncTask.objects.filter(_valid_q(timezone.now()), user=user, task_type__in=task_types).order_by("-created_at").first()
+
+
 def _start_allowed(task):
     """작업 행을 잠근 뒤의 시각으로 시작해도 되는지. 진행 중인데 기한이 지났으면 그 자리에서 failed(stale)"""
     with transaction.atomic():
@@ -236,6 +260,24 @@ def run(task, work):
         task.refresh_from_db()
     except AsyncTask.DoesNotExist:  # 철회 · 탈퇴로 지워짐
         task.status, task.error_code, task.result = AsyncTask.Status.FAILED, "stale", None
+    return task
+
+
+def run_later(task, work):
+    """작업을 뒤(스레드)에서 run 하고 바로 돌아온다 (11/09). 결과 · 실패는 run 이 작업 행에 남기고 화면은 GET /api/tasks/<id>/ 로 본다.
+    settings.TASKS_INLINE(테스트)이면 지금 이 요청 안에서 끝까지 돈다"""
+    if getattr(settings, "TASKS_INLINE", False):
+        return run(task, work)
+
+    def target():
+        try:
+            run(task, work)
+        except Exception:   # run 이 work 예외를 받아 두므로 여기는 작업 행 기록 자체가 실패한 경우뿐
+            logger.exception("작업 스레드 실패 task=%s type=%s", task.task_id, task.task_type)
+        finally:
+            connections.close_all()   # 스레드마다 생긴 DB 연결을 남기지 않는다
+
+    threading.Thread(target=target, name=f"task-{task.task_id}", daemon=True).start()
     return task
 
 
