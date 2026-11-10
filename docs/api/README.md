@@ -85,6 +85,9 @@
 | 58 | 카드 | 청구서 납부 확인 취소 | `DELETE /api/finance/card-bills/<id>/payment-check/` | cards.md | 나은 | 11/06 구현 |
 | 59 | 대출 | 대출 전체 완납 처리 (직접 등록, R19) | `POST /api/finance/loans/<id>/payoff/` | loans.md | 나은 | 11/06 구현 |
 | 60 | 대출 | 대출 전체 완납 되돌리기 (R19) | `POST /api/finance/loans/<id>/payoff/cancel/` | loans.md | 나은 | 11/06 구현 |
+| 61 | 예산 | 예산 AI 전송 동의 보기 | `GET /api/budgets/ai-consent/` | budgets.md | 혜리 | 11/10 연결 · 실제 전송 비활성 |
+| 62 | 예산 | 예산 AI 전송 동의 저장 | `PUT /api/budgets/ai-consent/` | budgets.md | 혜리 | 11/10 연결 · 실제 전송 비활성 |
+| 63 | 예산 | 예산 AI 전송 동의 철회 | `DELETE /api/budgets/ai-consent/` | budgets.md | 혜리 | 11/10 연결 · 실제 전송 비활성 |
 
 **요청 번호(`Idempotency-Key`)를 쓰는 API**: 6 동의 저장 · 35 대출 직접 등록 · 52 대출 납부 거래 연결(선택) · 59 · 60 대출 전체 완납 · 되돌리기(선택) · 20 고정지출 추가 · 23 · 24 고정지출 확정 · 무시 · 26 저축 추가 · 29 · 30 저축 확정 · 무시 · 33 메시지 보내기 · **38 추천 예산 · 41 예산 승인(둘은 필수 헤더)**. 42 새 연결 · 43 다시 불러오기는 요청 번호 없이 기관 재로그인·진행 중 작업 재사용으로 중복을 처리한다. 나머지(선택 저장 `PUT`, 수정 `PATCH`, 중지 · 해제 `DELETE`)는 두 번 보내도 결과가 같아서 안 쓴다.
 **회원가입(2)**: 로그인 전이라 공통 요청 번호가 적용되지 않음 → 중복 가입 막는 방법은 5-3 '회원가입 · 로그인 기본값'.

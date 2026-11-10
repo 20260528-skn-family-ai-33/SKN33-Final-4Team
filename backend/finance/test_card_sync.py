@@ -388,6 +388,17 @@ class CardSyncTest(TestCase):
         self.assertEqual(self.runs(FOREIGN_PENDING_RUN), [])  # 조회 범위 계산에 들어가지 않는다
         self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 1)
 
+    def test_canceled_or_declined_foreign_row_without_won_amount_is_not_pending(self):
+        # PR #98 리뷰: 취소 · 거절된 외화 승인은 쓴 돈이 없어 '쓴 돈에 넣지 못했어요' 건수에 넣지 않는다
+        for status in ("1", "3"):
+            with self.subTest(status=status):
+                self.approvals = [approval(), self.foreign_row(resCancelYN=status)]
+                result = self.run_sync()
+                self.assertTrue(result["approvals_complete"])
+                self.assertEqual(result["foreign_pending_count"], 0)
+                self.assertEqual(foreign_pending_count(self.user, ORG, START, END), 0)
+                self.assertEqual(FinancialTransaction.objects.filter(user=self.user).count(), 1)
+
     def test_repeat_sync_counts_a_foreign_row_once_and_clears_it_when_won_amount_arrives(self):
         self.approvals = [approval(), self.foreign_row()]
         self.run_sync()
@@ -514,7 +525,8 @@ class CardSyncTest(TestCase):
                 self.approvals = approvals
                 result = self.run_sync()
                 self.assertEqual(result["foreign_filled_count"], 0)
-                self.assertGreater(result["foreign_pending_count"], 0)
+                # 취소된 승인은 쓴 돈이 없어 보류로도 세지 않는다 (PR #98 리뷰)
+                self.assertEqual(result["foreign_pending_count"] > 0, name != "취소된 외화 승인")
                 self.assertFalse(self.foreign_tx().filter(source_detail__currency="USD").exists())
 
     def test_other_store_name_is_not_used(self):

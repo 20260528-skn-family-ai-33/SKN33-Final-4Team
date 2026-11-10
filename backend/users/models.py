@@ -122,6 +122,7 @@ class FinancialProfile(models.Model):
     # 지킬 돈 (지킬 돈 설정 화면 · 2026-10-21 A안): 생활비 · 저축 · 월 쿠션 적립금 세 칸 모두 사용자 설정값
     # 이 값으로 매 주기 예산(budget_item)을 나눈다. 실제 배정 결과는 budget_item 에 있다
     living_budget = models.BigIntegerField("월 생활비", null=True, blank=True)  # NULL=미설정. 카테고리 예산 합계의 기준
+    budget_category_targets = models.JSONField('유지할 카테고리 예산 목표', default=dict, blank=True)
     savings_floor = models.BigIntegerField("월 저축 보호액", null=True, blank=True)
     cushion_enabled = models.BooleanField("쿠션 설정 여부", null=True, blank=True)
     cushion_target = models.BigIntegerField("쿠션 목표액", null=True, blank=True)

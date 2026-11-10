@@ -1,5 +1,197 @@
 {
   "paths": {
+    "/api/budgets/ai-consent/": {
+      "get": {
+        "summary": "예산 AI 외부 전송 동의 보기",
+        "operationId": "budgetAIConsentGet",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "로그인 회원 자신의 선택 동의 상태와 현재 원문·버전·해시를 반환한다. 금융 조회 동의와 별개다. available=false이면 새 동의 UI를 숨긴다. 기존 활성 동의가 있으면 철회 UI만 유지한다.",
+        "responses": {
+          "200": {
+            "description": "현재 동의 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "예산 AI 외부 전송 동의 저장",
+        "operationId": "budgetAIConsentPut",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "사용자가 직접 체크한 현재 문서 버전·해시를 저장한다. 기본 체크는 해제이며 저장만으로 외부 전송을 시작하지 않는다. 서버 기능이 비활성이면 409 budget_ai_unavailable이며 기록을 생성하지 않는다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agreed",
+                  "documentVersion",
+                  "documentHash",
+                  "healthAgreed",
+                  "healthDocumentVersion",
+                  "healthDocumentHash"
+                ],
+                "properties": {
+                  "agreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "documentVersion": {
+                    "type": "string"
+                  },
+                  "documentHash": {
+                    "type": "string"
+                  },
+                  "healthAgreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "healthDocumentVersion": {
+                    "type": "string"
+                  },
+                  "healthDocumentHash": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "동의 저장 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "document_outdated / budget_ai_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "예산 AI 외부 전송 동의 철회",
+        "operationId": "budgetAIConsentDelete",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "예산 AI 동의만 철회한다. 금융자료·최소금액·잠금·승인 예산은 삭제하거나 변경하지 않는다.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "철회 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/budgets/protect/": {
       "get": {
         "summary": "지킬 돈 보기",
@@ -1226,6 +1418,73 @@
   },
   "components": {
     "schemas": {
+      "BudgetAIConsentState": {
+        "type": "object",
+        "required": [
+          "purpose",
+          "status",
+          "document",
+          "documentVersion",
+          "documentHash",
+          "grantedAt",
+          "revokedAt",
+          "healthDocument",
+          "healthDocumentVersion",
+          "healthDocumentHash",
+          "available"
+        ],
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "budget_ai"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_granted",
+              "granted",
+              "revoked",
+              "needs_renewal"
+            ]
+          },
+          "document": {
+            "type": "object",
+            "description": "서버에 보관된 동의 원문. title·label·required·version·date·sections를 화면에서 그대로 표시한다."
+          },
+          "documentVersion": {
+            "type": "string"
+          },
+          "documentHash": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "healthDocument": {
+            "type": "object",
+            "description": "외부 AI 분석용 건강 관련 요약의 별도 동의 원문"
+          },
+          "healthDocumentVersion": {
+            "type": "string"
+          },
+          "healthDocumentHash": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "예산 설계 및 외부 AI 서버 설정이 모두 켜져 실제 외부 추천 경로를 사용할 수 있는지. false이면 새 동의를 받지 않으며 기존 동의 철회만 허용."
+          }
+        }
+      },
       "ProtectRates": {
         "type": "object",
         "required": [
@@ -1443,6 +1702,16 @@
           "cardLoadTaskId"
         ],
         "properties": {
+          "approvedBudget": {
+            "type": "object",
+            "description": "GET에서 이번 주기 승인 예산에 여윳돈 충당이 있을 때만 제공. 설정 기준 saved.spare와 구별하며 실제 초과 소비 차감 전 예산 배분 금액이다. PUT은 생략.",
+            "required": ["spareTransfer", "spare"],
+            "properties": {
+              "spareTransfer": {"type": "integer", "format": "int64", "minimum": 0},
+              "spare": {"type": "integer", "format": "int64", "minimum": 0}
+            },
+            "additionalProperties": false
+          },
           "missing": {
             "type": "array",
             "items": {

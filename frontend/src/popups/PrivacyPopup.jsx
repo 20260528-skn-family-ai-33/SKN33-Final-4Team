@@ -5,6 +5,7 @@ import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { PATHS } from '../routes.js'
+import BudgetAIConsent from '../components/BudgetAIConsent.jsx'
 
 const LABELS = { bank: '계좌 조회', card: '카드 조회', loan: '대출 조회' }
 const STATES = { granted: '동의함', revoked: '철회함', not_granted: '동의 안 함' }
@@ -71,6 +72,7 @@ export default function PrivacyPopup({ onChanged }) {
         {item.deletionStatus === 'retry_required' && <button type="button" className="mc-link" onClick={() => choose(item.productScope)}>{LABELS[item.productScope]} 삭제 다시 시도</button>}
       </div>)}
       {query.data && <button type="button" className="mc-link" onClick={() => { closePopup(); navigate(PATHS.connect) }}>조회 동의·연결 관리하기</button>}
+      {query.data && <BudgetAIConsent />}
       {message && <p role="status">{message}</p>}
     </>}
     {error && <p className="mc-error" role="alert">{error}</p>}

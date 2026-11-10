@@ -26,15 +26,18 @@ class DocumentListTest(TestCase):
         keys = [(i["purpose"], i["productScope"], i["version"]) for i in items]
         self.assertEqual(keys, [("terms", None, "v1"), ("privacy", None, "v1"),
                                 ("finance_inquiry", "bank", "v2"), ("finance_inquiry", "card", "v2"),
-                                ("finance_inquiry", "loan", "v2")])
+                                ("finance_inquiry", "loan", "v2"), ("budget_ai", None, "v3"),
+                                ("budget_ai_health", None, "v1")])
         signup = json.loads((HERE / "signup_terms_v1.json").read_text(encoding="utf-8"))
         finance = json.loads((HERE / "finance_inquiry_v2.json").read_text(encoding="utf-8"))
-        files = [signup["terms"], signup["privacy"], finance["bank"], finance["card"], finance["loan"]]
+        budget_ai = json.loads((HERE / "budget_ai_v3.json").read_text(encoding="utf-8"))
+        health = json.loads((HERE / "budget_ai_health_v1.json").read_text(encoding="utf-8"))
+        files = [signup["terms"], signup["privacy"], finance["bank"], finance["card"], finance["loan"], budget_ai, health]
         for item, original in zip(items, files):
             self.assertEqual(item["document"], original)  # 화면이 받는 원문 = 서버가 해시하는 원문
             self.assertEqual(item["documentHash"], docs.canonical_hash(original))
             self.assertEqual(item["document"]["version"], item["version"])
-        self.assertEqual(len({i["documentHash"] for i in items}), 5)
+        self.assertEqual(len({i["documentHash"] for i in items}), 7)
 
     def test_v1_finance_hash_is_still_the_old_placeholder(self):
         old = hashlib.sha256("머니쿠션 금융 정보 조회 동의 v1 (최종 문구 확정 전 임시 원문)".encode("utf-8")).hexdigest()

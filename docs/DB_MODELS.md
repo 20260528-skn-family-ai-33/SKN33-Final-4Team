@@ -2,6 +2,14 @@
 
 작성일: 2026-10-19 (10-20 · 10-21 · 10-22 · 10-24 추가) · 기준: ERD v2 (`ERDCloud_가져오기_v2.sql`), `FK_삭제규칙.md`, `ERD_v2_수정필요사항` 10번
 
+## 예산 설계 v2 추가 필드 — DB 담당 최종 검토 필요 (2026-11-10)
+
+- `FinancialProfile.budget_category_targets`: 유지할 카테고리별 예산 목표를 담는 JSON, 기본값 `{}`. 사용자 최소액·주기별 자물쇠와 별개로 다음 추천에서 참고할 목표를 보존한다. 목표 변경 시 과거 초안을 그대로 승인하지 않도록 입력 해시에 포함한다. JSON 값의 검증은 서버 계산·요청 경계에서 수행한다.
+- 기존 작업 파일 `backend/users/migrations/0011_financialprofile_budget_category_targets.py`가 필드를 추가한다. `0012_merge_budget_targets_privacy.py`는 목표 필드 분기와 main의 개인정보 삭제 분기를 연결하는 빈 merge migration이며 추가 스키마 조작은 없다.
+- 사용자의 DB 정리 대행·실제 로컬 적용 요청에 따라 기존 분기를 통합·검증했으나, 이것을 DB 담당 나은님의 필드 설계 최종 승인으로 간주하지 않는다. 필드 용도와 기존 두 파일의 유지/명칭은 나은님 PR 리뷰로 확인해야 한다.
+- 로컬 DB에는 이미 적용한 기록이 있어 이 검토에서 파일을 삭제·번호 재작성하거나 새 `makemigrations`를 실행하지 않는다. main에 다른 후속 migration이 추가되면 DB 담당이 최종 그래프와 새 병합 필요 여부를 정한다.
+- 예산 승인만으로 `profile.living_budget`을 높이지 않는다. 여윳돈 충당은 해당 예산 버전의 항목과 메타데이터에만 반영한다. 부족 원인 분석·일회성/지속 조정·기본 생활비 설정 변경은 예산 조정 에이전트의 별도 사용자 승인 범위다.
+
 ## 1. 현재 상태 — 30개 테이블 모델 완료 ✅
 
 | 항목 | 결과 |
@@ -154,7 +162,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 
 | 테이블.칸 | ERD 설명 |
 |---|---|
-| sync_run.status | 성공 · 부분완료 · 실패 |
+| sync_run.status | 성공 · 부분완료 · 실패. 11/10: `product_code = card_foreign_pending`(원화 금액을 못 채운 외화 승인 표시, 승인 한 건당 한 줄 · `requested_from` = 사용일)은 `skipped`. 다른 조회 기록 쿼리는 `product_code` · `status`로 걸러 영향 없음 (`docs/api/cards.md`) |
 | transaction_link · payment_due · reserve_plan `.confirmation_state` | 확인 상태 |
 | card_bill.source_type | 조회 · 직접 입력 |
 | payment_due.source_type | 조회 · 직접 입력 · 추정 |

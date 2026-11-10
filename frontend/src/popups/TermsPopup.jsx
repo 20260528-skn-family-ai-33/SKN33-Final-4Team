@@ -27,7 +27,7 @@ export default function TermsPopup({ doc, onAgree }) {
       </div>
       <p className="mc-note">시안 문구예요. 출시 전에 확정해요.</p>
       <div className="mc-terms-foot">
-        <button type="button" className="mc-primary" onClick={agree}>동의하고 닫기</button>
+        <button type="button" className="mc-primary" onClick={agree}>{onAgree ? '동의하고 닫기' : '닫기'}</button>
       </div>
     </Popup>
   )
