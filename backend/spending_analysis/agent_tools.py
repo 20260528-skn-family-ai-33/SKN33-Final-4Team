@@ -5,7 +5,8 @@
   · where_changed: 첫 비교 결과를 by 로만 나눈다. 기간 · 비교 기간 · 카테고리 · 필터는 첫 결과 기록에서 서버가 상속 (LLM 은 by 만)
   · budget_lookup: 남은 예산. 인자 없음 — 카테고리는 첫 요청 그대로, 기간은 기존 예산 주기 규칙 (dialog.decide)
 - 관찰 결과 = {"id", "tool", "status", "reason"?, "facts"?, "server"?}. server 는 서버만 본다(문장 · 카드 · 기록 · Decision).
-  LLM 에는 for_llm() 사본만 — 금액 · 날짜 · 가게 이름 없이 방향 · 순위 · 상태 · 숫자를 □로 가린 문장
+  LLM 에는 for_llm() 사본만 — 거래 기록의 금액 · 날짜 · 가게 이름 없이 방향 · 순위 · 상태 · 숫자를 □로 가린 문장
+  (사용자가 질문에 쓴 말은 그대로: 가게 비교면 질문의 가게 이름이 subject · preview 에 남는다)
 - status: ok · invalid(인자 틀림) · unsupported · failed(조회 실패)
 """
 import re
@@ -42,7 +43,7 @@ def _mask(text, shops=()):
 
 
 def _shops(result):
-    """문장에 들어가는 가게 이름 (범용 조회의 가게별 묶음 · 가장 큰 1건) — LLM 에는 순번으로"""
+    """거래 기록에서 나온 가게 이름 (범용 조회의 가게별 묶음 · 가장 큰 1건) — LLM 에는 순번으로. 질문에 쓴 가게 이름은 가리지 않는다"""
     fig = result.get("confirmed") or result.get("observed") or {}
     if result["type"] != 10 or not isinstance(fig, dict):
         return []

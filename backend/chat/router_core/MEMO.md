@@ -2575,7 +2575,8 @@ LLM 입력 숫자 검사는 모든 사례 tearDown). `test_agent_loop.py` 12건 
   group_by · measure 를 뺀 같은 요청으로 다시 decide → 6 · 7번이면 비교 실행, by 는 남은 요구(needs)로. 다른 계산이 섞이면 기존 미지원 안내 그대로. 기록은 나누기 뺀 요청.
 - 허용 도구(서버가 정함): where_changed = 확정된 비교가 하나일 때(인자 by 만, 기간 · 카테고리 · 필터는 첫 결과 기록에서 상속) ·
   budget_lookup = 질문에 '예산'이 있고 첫 결과에 예산이 없을 때(인자 없음, 카테고리는 첫 요청 코드, 기간은 기존 예산 주기). 허용 도구가 없으면 판단을 부르지 않는다.
-- 판단 입력: 질문 · follow_up · 확정 조건(숫자 칸 뺌) · 첫 결과(숫자 □) · needs · allowed. 금액 · 날짜 · 가게 이름 없음.
+- 판단 입력: 질문 · follow_up · 확정 조건(숫자 칸 뺌) · 첫 결과(숫자 □) · needs · allowed. 거래 기록의 금액 · 날짜 · 가게 이름 없음
+  (질문에 쓴 말은 그대로 — 가게 비교면 질문의 가게 이름이 subject · preview 에 남는다).
 - 실패(호출 오류 · 시간 초과 · 형식 · 허용 밖 · needs 와 다른 by · 도구 실패): 재시도 없이 첫 결과 그대로 + 못 확인한 요구 안내(notices).
   answer 를 골라도 needs 가 남았으면 안내. 요구를 특정 못 한 multi_step 이 실패하면 '질문의 나머지 부분은 확인하지 못했어요'.
 - 비교가 확정되지 않았으면(자료 부족) 판단 없이 첫 결과 + 남은 요구 안내. 추가 예산 조회는 기록하지 않는다(후속 질문은 비교를 이어받는다).
@@ -2627,3 +2628,10 @@ LLM 입력 숫자 검사는 모든 사례 tearDown). `test_agent_loop.py` 12건 
   서버가 conflicting_conditions 로 기간을 되물었다. 서버 판단은 그대로(하나를 짐작하지 않는다). 원인은 지시문 4번의 '견주는 쪽을 지난달로 말했으면
   period=last_month' — 이번 달과 지난달을 함께 말해도 보는 쪽은 이번 달(period=null), last_month + prev_month 를 함께 쓰지 않는다,
   지난달을 특정 달과 견줄 때만 last_month + month 로 고쳤다. verify_agent S5 · test_agent_wiring 회귀. 실제 LLM 재평가 필요.
+
+### 31-4. PR 리뷰 반영 (2026-11-10 — 설명 · 주석만, 동작 그대로)
+- LLM 전송 범위 표현: '금액 · 날짜 · 가게 이름 없이' → '거래 기록의 금액 · 날짜 · 가게 이름 없이 (질문에 쓴 말은 그대로)'(agent_tools · 31절).
+  6번 가게 비교는 narrate.facts 의 subject · preview 에 사용자가 질문에 쓴 가게 이름이 들어간다. 판단 프롬프트(agent_loop.PROMPT)의
+  '금액·날짜·가게 이름은 □' 문장은 바꾸면 실제 LLM 재평가가 필요해 그대로 둔다 [확인 필요: 다음 프롬프트 수정 때 같이 고치기].
+- 삭제한 파일 언급: ChatReply.jsx 첫 줄 주석을 '옛 local_chat.html(11/10 삭제)'로. design.json 의 rename_merchants.py · retime_transactions.py
+  언급은 해시 고정이라 그대로 두고 spending_fixture/README.md 에 삭제 사실을 한 줄 남겼다.

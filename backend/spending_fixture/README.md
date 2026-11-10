@@ -6,6 +6,7 @@
 
 - `data/design.json` — 설계 명세(Django fixture 아님, loaddata 금지). `data/expected.json` — 서비스 코드 없이 계산한 정답.
   두 파일은 첨부 자료 사본이며 `seed.py` 가 해시로 확인한다. 고치지 말 것.
+  design.json 설명에 나오는 `rename_merchants.py` · `retime_transactions.py` · `local_chat.*` 은 한 번 돌린 도구라 11/10 삭제했다 (해시가 고정이라 설명은 그대로 둔다).
 - seed 가 만든 approved 예산은 **테스트 스냅샷**이다. 실제 사용자 승인 · 엔진 검수 · ML 예측이 아니다.
 
 ## 대상 DB

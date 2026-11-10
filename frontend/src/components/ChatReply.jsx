@@ -1,4 +1,4 @@
-// 챗봇 답변 한 개 (pages/AssistantPage.jsx). backend/spending_fixture/local_chat.html 의 bot() · chart() 를 옮겼다 (MEMO 25절 2단계)
+// 챗봇 답변 한 개 (pages/AssistantPage.jsx). 옛 개발용 로컬 채팅(local_chat.html, 11/10 삭제)의 bot() · chart() 를 옮겼다 (MEMO 25절 2단계)
 // content = 서버 봇 메시지 content: { text, lead, lines, sections, notices, choices, chart?, view?, turn, agent, inputs, result } (MEMO 22-3 · 22-12 · 22-13)
 // 디자인은 기존 클래스만: 분석 결과(result) = 소비 분석 카드(mc-spend*), 그 밖의 답 = 채팅 말풍선(mc-bubble)
 // - 핵심 안내(lead)는 서버가 나눈 칸 그대로 맨 위에. '안내:' 글자 + 굵게 (색만으로 구분하지 않음)
