@@ -86,6 +86,17 @@ def agent_judge_schema():
 def schema_for(system):
     if system == spending_agent_loop.PROMPT:
         return "spending_agent_judge", agent_judge_schema()
+    from budgets.adjustment_core import financial_conversation as conversation, financial_planner as planner
+    extra = {planner.PROMPT: ("budget_adjust_plan", planner.SCHEMA),
+             conversation.DIALOGUE_PROMPT: ("budget_adjust_dialogue", conversation.DIALOGUE_SCHEMA),
+             conversation.FEEDBACK_PROMPT: ("budget_adjust_feedback", conversation.FEEDBACK_SCHEMA),
+             conversation.ANSWER_PROMPT: ("budget_adjust_answer", conversation.ANSWER_SCHEMA),
+             conversation.ONE_OFF_PROMPT: ("budget_adjust_one_off", conversation.ONE_OFF_SCHEMA)}
+    if system in extra:
+        return extra[system]
+    from budgets.adjustment_core import interpretation as budget_reading
+    if system == budget_reading.PROMPT:
+        return "budget_adjustment_reading", budget_reading.SCHEMA
     if system == spending_claims.PLAN_PROMPT:
         return "explain_plan", PLAN_SCHEMA
     if system == spending_claims.ANSWER_PROMPT:

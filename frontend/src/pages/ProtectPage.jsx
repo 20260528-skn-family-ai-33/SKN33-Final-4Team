@@ -132,6 +132,22 @@ export default function ProtectPage() {
         {' '}이번 예산 배분 기준 여윳돈은 {won(data.approvedBudget.spare)}이고, 아래 지킬 돈 설정은 그대로예요.
       </p>}
 
+      {data.approvedBudget && <section className="mc-card" aria-label="이번 주기 승인 예산">
+        <h2>이번 주기 승인 예산</h2>
+        <p className="mc-muted">이번 주기에 승인한 금액이에요. 아래 입력칸은 저장한 지킬 돈 설정이에요.</p>
+        {data.approvedBudget.spareTransfer > 0 && <p className="mc-note" role="status">
+          여윳돈 {won(data.approvedBudget.spareTransfer)}을 생활비에 포함했어요. 이번 예산 배분 기준 여윳돈은 {won(data.approvedBudget.spare)}이에요.
+        </p>}
+        {[
+          ['저축', data.approvedBudget.savingFloor, data.approvedBudget.savingTransfer, data.saved?.savingFloor],
+          ['월 쿠션 적립금', data.approvedBudget.cushionMonthly, data.approvedBudget.cushionTransfer, data.saved?.cushionMonthly],
+        ].map(([label, amount, transfer, savedAmount]) => <div className="mc-keyvalue" key={label}>
+          <span>{label}{transfer > 0 && <small> · 생활비로 {won(transfer)} 이동</small>}
+            {savedAmount != null && savedAmount !== amount && <small> · 저장한 설정과 달라요</small>}</span>
+          <strong>{won(amount)}</strong>
+        </div>)}
+      </section>}
+
       {data.missing.length > 0 && (
         <div className="mc-card" role="alert">
           <h2>먼저 입력해야 할 정보가 있어요</h2>

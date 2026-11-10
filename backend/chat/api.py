@@ -6,6 +6,7 @@
 - GET /api/chat/messages/ — 첫 화면용 엔진 종류 · 기능 버튼 목록 (11/2, MEMO 25-9 ①). 메시지 응답 · 대화 조회에도 같은 칸
 """
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.db import transaction
@@ -21,13 +22,41 @@ from finance.inputs import body_dict, reject_unknown_fields
 from . import replies, router
 from .models import ChatMessage, Conversation
 
-def message_item(message):
+
+def save_turn(talk, text, content, *, content_type):
+    """대화 행 잠금 안에서 저장한다. 시계가 멈추거나 역행해도 메시지 시각은 증가시킨다."""
+    previous = talk.messages.order_by("-created_at").values_list("created_at", flat=True).first()
+    saved = []
+    for role, kind, body in (
+        (ChatMessage.Role.USER, ChatMessage.ContentType.TEXT, {"text": text, "choices": []}),
+        (ChatMessage.Role.BOT, content_type, content),
+    ):
+        message = ChatMessage.objects.create(user_id=talk.user_id, conversation=talk, role=role,
+                                             content_type=kind, content=body)
+        if previous is not None and message.created_at <= previous:
+            message.created_at = previous + timedelta(microseconds=1)
+            ChatMessage.objects.filter(pk=message.pk).update(created_at=message.created_at)
+        previous = message.created_at
+        saved.append(message)
+    return saved
+
+
+def message_item(message, *, refresh_proposal=True):
     """메시지 한 줄 {messageId, role, contentType, content, taskId, createdAt}"""
+    content = message.content
+    adjustment = content.get("budget_adjustment")
+    if message.role == ChatMessage.Role.BOT and adjustment and adjustment.get("proposal"):
+        if refresh_proposal:
+            from .budget_adjustment import refreshed_content
+            content = refreshed_content(message)
+        else:
+            proposal = {**adjustment["proposal"], "can_approve": False}
+            content = {**content, "budget_adjustment": {**adjustment, "proposal": proposal, "can_approve": False}}
     return {
         "message_id": message.message_id,
         "role": message.role,
         "content_type": message.content_type,
-        "content": message.content,
+        "content": content,
         "task_id": message.task_id,
         "created_at": message.created_at,
     }
@@ -52,12 +81,14 @@ def conversation(request, conversation_id):
     없는 대화 · 남의 대화는 404 → 화면은 새 대화로 시작 (10/22 N⑤)
     서버만 쓰는 대화 상태(active_agent · slots)는 보내지 않는다"""
     talk = get_object_or_404(Conversation, pk=conversation_id, user=request.user)
-    rows = talk.messages.order_by("created_at", "message_id")
+    rows = list(talk.messages.order_by("created_at", "message_id"))
+    latest_card = next((row.pk for row in reversed(rows) if row.role == ChatMessage.Role.BOT
+                        and (row.content.get("budget_adjustment") or {}).get("proposal")), None)
     return Response({
         "conversation_id": talk.conversation_id,
         "status": talk.status,
         "created_at": talk.created_at,
-        "messages": [message_item(message) for message in rows],
+        "messages": [message_item(message, refresh_proposal=message.pk == latest_card) for message in rows],
         **engine_info(),
     })
 
@@ -67,10 +98,10 @@ TEXT_ERROR = "500자 이내로 입력해 주세요."
 CONVERSATION_ERROR = "대화를 찾을 수 없어요."
 
 
-def _check_message_body(request):
+def _check_message_body(request, *, extra_fields=()):
     """보내는 값 검사 → (conversation_id 또는 None, text 또는 None, choice 또는 None). 틀리면 400"""
     data = body_dict(request)
-    reject_unknown_fields(data, {"conversation_id", "text", "choice"})
+    reject_unknown_fields(data, {"conversation_id", "text", "choice", *extra_fields})
     if "conversation_id" not in data:
         raise ValidationError({"conversation_id": ["대화 번호를 보내 주세요. 새 대화면 null 이에요."]})
     text, choice = data.get("text"), data.get("choice")
@@ -94,9 +125,15 @@ def _active_conversations(user):
     return Conversation.objects.filter(user=user, status=Conversation.Status.ACTIVE)
 
 
+def _prepare_message(request):
+    if request.method == "POST" and getattr(settings, "CHAT_ENGINE", "legacy") == "router":
+        from . import engine
+        request._prepared_chat_turn = engine.prepare(request)
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
-@idempotent()
+@idempotent(prepare=_prepare_message)
 def messages(request):
     """33. POST /api/chat/messages/ {"conversationId": null | "<id>", "text": "…" | "choice": "spending"}
     - conversationId 가 null 이면 새 대화. 본문 속 ID 라서 없는/남의/끝난 대화는 404 가 아니라 400 (API_RULES 예외)
@@ -134,16 +171,8 @@ def messages(request):
             talk = _active_conversations(request.user).select_for_update().filter(pk=talk.pk).first()
             if talk is None:
                 raise ValidationError({"conversation_id": [CONVERSATION_ERROR]})
-        said = ChatMessage.objects.create(
-            user=request.user, conversation=talk, role=ChatMessage.Role.USER,
-            content_type=ChatMessage.ContentType.TEXT,
-            # 선택지는 화면에 보인 이름으로 남긴다 (예: "소비 분석")
-            content={"text": text if text is not None else router.CHOICE_LABELS[choice], "choices": []},
-        )
-        answer = ChatMessage.objects.create(
-            user=request.user, conversation=talk, role=ChatMessage.Role.BOT,
-            content_type=content_type, content=content,
-        )
+        said, answer = save_turn(talk, text if text is not None else router.CHOICE_LABELS[choice],
+                                 content, content_type=content_type)
     return Response({
         "conversation_id": talk.conversation_id,
         "route": {"intent": intent, "slots": slots, "fallback": fallback},

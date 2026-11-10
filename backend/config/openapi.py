@@ -16,6 +16,10 @@ IMPLEMENTATION = {
     ("get", "/api/budgets/ai-consent/"): "implemented",
     ("put", "/api/budgets/ai-consent/"): "implemented",
     ("delete", "/api/budgets/ai-consent/"): "implemented",
+    ("get", "/api/budgets/adjustment-ai-consent/"): "implemented",
+    ("put", "/api/budgets/adjustment-ai-consent/"): "implemented",
+    ("delete", "/api/budgets/adjustment-ai-consent/"): "implemented",
+
     ("get", "/api/csrf/"): "implemented",
     ("get", "/api/home/"): "implemented",
     # 인증 2~5 (세진, 10/26)
@@ -66,9 +70,12 @@ IMPLEMENTATION = {
     ("get", "/api/budgets/"): "implemented",
     ("patch", "/api/budgets/{id}/categories/{code}/"): "implemented",
     ("post", "/api/budgets/{id}/approve/"): "implemented",
-    # 이전 대화 · 공용 작업 확인은 구현, 챗봇 메시지는 목업 표시 유지
+    ("get", "/api/budgets/proposals/{id}/"): "implemented",
+    ("post", "/api/budgets/proposals/{id}/approve/"): "implemented",
+    # 저장·선택지·라우터 조정 연결까지 구현. 실제 자유 대화는 router/live 설정을 쓴다.
     ("get", "/api/chat/conversations/{id}/"): "implemented",
-    ("post", "/api/chat/messages/"): "mock",
+    ("get", "/api/chat/messages/"): "implemented",
+    ("post", "/api/chat/messages/"): "implemented",
     ("get", "/api/tasks/{id}/"): "implemented",
 }
 # 고정지출(10/26) · 정기 저축(10/24): 입력 검증·로그인·DB 저장까지 구현
@@ -77,7 +84,7 @@ for _domain, _state in (("fixed", "implemented"), ("savings", "implemented")):
         IMPLEMENTATION[(_method, f"/api/budgets/{_domain}/{_suffix}")] = _state
 IDEMPOTENT_PATHS = {
     "/api/finance/consents/", "/api/finance/loans/", "/api/finance/loan-dues/{id}/payments/", "/api/finance/card-bills/{id}/payments/", "/api/chat/messages/",
-    "/api/budgets/recommend/", "/api/budgets/{id}/approve/",
+    "/api/budgets/recommend/", "/api/budgets/{id}/approve/", "/api/budgets/proposals/{id}/approve/",
     "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
     "/api/budgets/savings/", "/api/budgets/savings/confirm/", "/api/budgets/savings/ignore/",
 }
@@ -104,16 +111,17 @@ def _state_counts():
 
 def _base():
     counts = _state_counts()
+    total = sum(counts.values())
     return {
         "openapi": "3.0.3",
         "info": {
             "title": "머니쿠션 API 명세서", "version": "2026-10-24",
             "description": (
-                "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
+                f"현재 계약 {total}개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n"
                 f"현재 구현 {counts['implemented']}개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), "
-                f"목업 {counts['mock']}개(챗봇 메시지), 미구현 {49 - counts['implemented'] - counts['mock']}개입니다. "
+                f"목업 {counts['mock']}개입니다. "
                 "전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. "
-                "목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n"
+                "예산 조정 자유 대화는 router/live와 실제 ML·재원·감액 정책 연결 상태를 확인하세요.\n\n"
                 "기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. "
                 "요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. "
                 "빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n"
@@ -273,7 +281,7 @@ def build_runtime_schema():
         "순서: ① GET /api/csrf/ → ② POST /api/auth/signup/ 또는 /api/auth/login/ → ③ 나머지 API. "
         "로그인하면 세션 쿠키가 저장되어 이후 요청에 자동으로 붙고, 저장 요청의 X-CSRFToken은 이 화면이 csrftoken 쿠키에서 자동으로 넣습니다. "
         "실제 DB가 바뀌므로 연습용 계정으로 확인하세요. 계좌 후보·거래·이전 대화는 DB에 저장된 데이터가 있어야 결과가 나옵니다(CODEF를 새로 부르지 않음). "
-        "새 연결·다시 불러오기는 CODEF를 호출하고, 작업 확인에서 결과를 봅니다. 껍데기(챗봇 메시지)는 전체 명세 화면에서만 봅니다."
+        "새 연결·다시 불러오기는 CODEF를 호출하고, 작업 확인에서 결과를 봅니다. 예산 조정은 router/live 설정과 실제 자료·정책이 필요합니다."
     )
     samples = {"/api/csrf/": {"ok": True}}
     for path, sample in samples.items():

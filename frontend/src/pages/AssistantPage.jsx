@@ -6,13 +6,19 @@
 // - 담당 표시 · 예산 폼은 서버가 준 content.agent · content.inputs 로만 정한다 (문장으로 추측하지 않음)
 // - 새로고침하면 이 대화를 다시 불러온다 (11/3, GET /api/chat/conversations/<id>/). 대화 번호는 sessionStorage 에 두고
 //   채팅 화면을 떠나면 지운다 → 다른 화면에 갔다 오면 지금처럼 빈 대화 (10/30 · 11/2 결정 유지). 404(다른 계정 · 없는 대화)면 새 대화
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
 import ChatReply, { Choices } from '../components/ChatReply.jsx'
-import { adjustSentence } from '../utils/adjust.js'
+import BudgetApprovalPopup from '../popups/BudgetApprovalPopup.jsx'
+import BudgetAdjustConsent from '../components/BudgetAdjustConsent.jsx'
+import { usePopup } from '../popups/context.js'
+import { PATHS } from '../routes.js'
+import { adjustmentChoices, adjustSentence } from '../utils/adjust.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { approvalPath, forgetPendingApproval, readPendingApproval, rememberPendingApproval } from '../utils/budgetApproval.js'
 import '../styles/chat.css'
 
 const AGENTS = { spending: '소비 분석', budget: '예산 조정', policy: '청년 정책' }
@@ -76,18 +82,36 @@ function saveId(id) {
 }
 
 export default function AssistantPage() {
+  const { state: navState } = useLocation()
+  const navigate = useNavigate()
+  const { openPopup, popup } = usePopup()
+  const [storedApproval] = useState(readPendingApproval)
+  const recovery = navState?.designRecovery
+  const [budgetEntry] = useState(() => storedApproval ? null : navState?.budgetContext ?? null)
+  const [entryWaiting, setEntryWaiting] = useState(Boolean(budgetEntry))
+  const entryStarted = useRef(false)
   const first = useApi('/api/chat/messages/')  // 첫 화면의 엔진 · 기능 버튼 (저장 없음)
   const [engine, setEngine] = useState(null)   // 응답마다 서버가 다시 알려 준 값 { engine, features, testMode, today }
-  const [restoreId] = useState(savedId)        // 화면을 열 때 남아 있던 번호 = 새로고침 전 대화
+  const [restoreId] = useState(() => storedApproval?.conversationId ?? recovery?.conversationId ?? (budgetEntry ? null : savedId()))
+  const [restoreVersion, setRestoreVersion] = useState(0)
   const [conversationId, setConversationId] = useState(restoreId)
   const [messages, setMessages] = useState([])
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(() => Boolean(restoreId))  // 복원 중에는 전송하지 않는다
   const [pending, setPending] = useState(null)  // 실패한 요청은 같은 키로 재시도
+  const [approvalPending, setApprovalPending] = useState(null)
+  const [approvalRecovery, setApprovalRecovery] = useState(Boolean(storedApproval))
 
   const [error, setError] = useState(null)
+  const [recoveryExpired, setRecoveryExpired] = useState(false)
   const inFlight = useRef(false)  // React가 다시 그리기 전의 연속 클릭도 한 번만 보낸다
+  const mounted = useRef(false)
   const end = useRef(null)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -99,39 +123,83 @@ export default function AssistantPage() {
     return () => saveId(null)
   }, [conversationId])
 
+  useEffect(() => {
+    if (storedApproval && navState?.budgetContext) navigate(PATHS.assistant, { replace: true, state: null })
+  }, [storedApproval, navState, navigate])
+
   // 새로고침 전 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
   useEffect(() => {
     if (!restoreId) return
     let live = true
-    apiSend(`/api/chat/conversations/${restoreId}/`, 'GET')
-      .then((talk) => { if (live) setMessages(talk.messages) })
+    apiSend(`/api/chat/conversations/${encodeURIComponent(restoreId)}/`, 'GET')
+      .then((talk) => {
+        if (!live) return
+        if (!Array.isArray(talk.messages) || talk.conversationId !== restoreId) throw new Error('대화를 정상적으로 받지 못했어요.')
+        setMessages(talk.messages)
+        if (!storedApproval) return
+        const proposal = talk.messages.map((m) => m.content.budgetAdjustment?.proposal)
+          .filter((item) => item?.proposalId === storedApproval.proposalId).at(-1)
+        if (!proposal || storedApproval.path !== approvalPath(proposal)) {
+          forgetPendingApproval(storedApproval.conversationId, storedApproval.proposalId)
+          setApprovalRecovery(false)
+        } else if (proposal.state === 'awaiting_approval') {
+          setApprovalPending({ ...storedApproval, proposal })
+          setApprovalRecovery(false)
+        } else if (['saved', 'expired', 'canceled', 'rejected', 'failed'].includes(proposal.state)) {
+          forgetPendingApproval(storedApproval.conversationId, storedApproval.proposalId)
+          setApprovalRecovery(false)
+        } else {
+          setError('확정 상태를 아직 확인하지 못했어요. 다시 불러와 주세요.')
+        }
+      })
       .catch((err) => {
         if (!live) return
-        if (err.status === 404) setConversationId(null)
+        if (err.status === 404) {
+          setConversationId(null)
+          if (recovery?.conversationId) { setRecoveryExpired(true); setError('예산 조정 대화를 찾지 못했어요. 다시 추천받아 주세요.') }
+          if (storedApproval) forgetPendingApproval(storedApproval.conversationId, storedApproval.proposalId)
+          setApprovalRecovery(false)
+        }
         else setError(err.status === 403 ? '로그인해 주세요.' : err.message)
       })
       .finally(() => { if (live) setBusy(false) })
     return () => { live = false }
-  }, [restoreId])
+  }, [restoreId, restoreVersion, storedApproval, recovery?.conversationId])
 
   const info = engine ?? first.data
-  const blocked = busy || pending !== null
-  const send = async (body, said) => {
-    if (busy || inFlight.current || (pending && body)) return
+  const entryUnavailable = Boolean(budgetEntry && (info ? info.engine !== 'router' : first.error))
+  const blocked = busy || pending !== null || approvalPending !== null || approvalRecovery
+    || (entryWaiting && !entryUnavailable) || Boolean(recovery && !conversationId)
+  const returnToRecommendation = useCallback(({ canceled = false, expired = false } = {}) => {
+    navigate(PATHS.recommend, { replace: true, state: { recoveryReturn: { sourceTaskId: recovery?.sourceTaskId, canceled, expired } } })
+  }, [navigate, recovery?.sourceTaskId])
+  const send = useCallback(async (body, said) => {
+    if (busy || inFlight.current || approvalPending || approvalRecovery || (pending && body)) return
     const request = pending ?? {
-      body: { conversationId, ...body }, said: said ?? null, key: newRequestKey(),
+      body: { conversationId, ...body }, said: said ?? null,
+      key: body?.budgetContext?.mode === 'DESIGN_RECOVERY' && recovery?.requestKey ? recovery.requestKey : newRequestKey(),
     }
     inFlight.current = true
+    setEntryWaiting(false)
     setPending(request)
     setBusy(true)
     setError(null)
     try {
       const out = await apiSend('/api/chat/messages/', 'POST', request.body, { requestKey: request.key })
       if (!out?.conversationId || !Array.isArray(out.messages)) throw new Error('답변을 정상적으로 받지 못했어요.')
+      if (!mounted.current) return
       setConversationId(out.conversationId)
       setMessages((m) => [...m, ...out.messages])
       setEngine({ engine: out.engine, features: out.features, testMode: out.testMode, today: out.today })
       setPending(null)
+      const adjustment = out.messages.at(-1)?.content?.budgetAdjustment
+      if (recovery && adjustment?.sourceTaskId === recovery.sourceTaskId && adjustment.status === 'ended') {
+        returnToRecommendation({ canceled: true })
+      } else if (recovery && request.body.budgetContext?.mode === 'DESIGN_RECOVERY') {
+        navigate(PATHS.assistant, { replace: true, state: { designRecovery: {
+          sourceTaskId: recovery.sourceTaskId, conversationId: out.conversationId,
+        } } })
+      }
     } catch (err) {
       // 서버가 명시적으로 거절한 요청은 수정할 수 있게 돌려준다. 타임아웃 · 통신/서버 오류는 성공 여부가 불명확하다.
       if (err.status >= 400 && err.status < 500 && err.status !== 408) {
@@ -139,12 +207,15 @@ export default function AssistantPage() {
         if (request.body.text) setText(request.body.text)
         if (err.fields?.conversationId) setConversationId(null)  // 끝났거나 남의 대화 → 다음 문장부터 새 대화
       }
-      setError(err.status === 403 ? '로그인해 주세요.' : err.message)
+      const expired = recovery && (err.code === 'expired' || err.status === 404)
+      if (expired) setRecoveryExpired(true)
+      setError(expired ? '예산 조건이 바뀌었거나 조정 대화가 만료됐어요. 추천 화면에서 다시 추천받아 주세요.'
+        : err.code === 'budget_adjust_consent_required' ? '예산 조정 AI 동의 관리에서 동의한 뒤 다시 보내 주세요.' : err.status === 403 ? '로그인해 주세요.' : err.message)
     } finally {
       inFlight.current = false
       setBusy(false)
     }
-  }
+  }, [busy, pending, conversationId, approvalPending, approvalRecovery, recovery, navigate, returnToRecommendation])
 
   const submit = (e) => {
     e.preventDefault()
@@ -191,6 +262,44 @@ export default function AssistantPage() {
   // 답변 선택지: 켜짐 엔진은 어느 질문의 선택지인지(turn)도 보낸다. 꺼짐(옛 답)은 turn 이 없어 value 문자열만
   const pick = (c, p) => send({ choice: c.turn == null ? p.value : { value: p.value, turn: c.turn } }, p.label)
 
+  const updateProposal = (proposal, status) => setMessages((items) => items.map((message) => {
+    const adjustment = message.content.budgetAdjustment
+    if (adjustment?.proposal?.proposalId !== proposal.proposalId) return message
+    return { ...message, content: { ...message.content, choices: [], budgetAdjustment: {
+      ...adjustment, proposal, status, canApprove: false,
+    } } }
+  }))
+
+  const openApproval = (proposal, request = null) => {
+    if (!request && (blocked || inFlight.current)) return
+    openPopup(<BudgetApprovalPopup proposal={proposal} request={request}
+      onPending={(request) => { rememberPendingApproval(conversationId, request); setApprovalPending(request) }}
+      onApproved={(saved) => {
+        forgetPendingApproval(conversationId, saved.proposalId)
+        setApprovalPending(null)
+        updateProposal(saved, 'saved')
+        setError(null)
+      }}
+      onRejected={(chosen, err, ended) => {
+        forgetPendingApproval(conversationId, chosen.proposalId)
+        setApprovalPending(null)
+        if (ended) updateProposal({ ...chosen, canApprove: false, ...(err.code === 'expired' ? { state: 'expired' } : {}) }, err.code === 'expired' ? 'expired' : 'needs_confirmation')
+        setError(err.message)
+      }} />)
+  }
+
+  useEffect(() => {
+    if (!budgetEntry || entryStarted.current) return
+    if (!info && !first.error) return
+    entryStarted.current = true
+    // oxlint-disable-next-line react/set-state-in-effect -- 화면 진입 시 서버 대화를 한 번 시작하며 전송 함수가 진행 상태를 함께 관리한다.
+    if (info?.engine === 'router') send({ conversationId: null, choice: 'budget', budgetContext: budgetEntry }, '예산을 조정하고 싶어요')
+    if (!recovery) navigate(PATHS.assistant, { replace: true, state: null })
+  }, [budgetEntry, first.error, info, navigate, recovery, send])
+
+  const recoveryStatus = last?.content.budgetAdjustment
+  const recoverySaved = recoveryStatus?.proposal?.sourceTaskId === recovery?.sourceTaskId && recoveryStatus?.proposal?.state === 'saved'
+
   return (
     <Layout
       title="통합 챗봇"
@@ -204,6 +313,17 @@ export default function AssistantPage() {
       }
     >
       <div className="mc-bc mc-asst">
+        <BudgetAdjustConsent onChange={() => setError(null)} />
+        {recovery && <div className="mc-chipbar" aria-label="분배 실패 조정">
+          {recoverySaved
+            ? <button type="button" className="mc-btn" onClick={() => navigate(PATHS.budget, { replace: true })}>반영된 예산 보기</button>
+            : <>
+              {recoveryStatus?.phase === 'design_recovery' && !recoveryExpired && recoveryStatus?.proposal?.state !== 'expired'
+                && <button type="button" className="mc-btn" disabled={blocked} onClick={() => send({ text: '취소' }, '취소')}>조정 취소하고 돌아가기</button>}
+              <button type="button" className="mc-link" disabled={busy || approvalPending !== null || approvalRecovery}
+                onClick={() => returnToRecommendation({ expired: recoveryExpired || recoveryStatus?.proposal?.state === 'expired' })}>추천 화면으로 돌아가기</button>
+            </>}
+        </div>}
         {info?.testMode && <p className="mc-fx-band" role="note">테스트 환경 · 기준일 {info.today}</p>}
         <div className="mc-bc-ctx mc-asst-ctx">
           <span className="mc-cat-ic mc-big-ic"><Icon name="Sparkles" /></span>
@@ -218,7 +338,8 @@ export default function AssistantPage() {
             <div className="mc-bubble">안녕하세요! 무엇을 도와드릴까요?<br /><small>아래에서 고르거나 하고 싶은 말을 바로 적어 주세요.</small></div>
           </div>
           {features}
-          {first.error && !info && (
+          {entryUnavailable && !messages.length && <div className="mc-msg bot"><div className="mc-bubble" role="alert">예산 조정 서비스를 아직 사용할 수 없어요. 잠시 후 다시 열어 주세요.</div></div>}
+          {first.error && !info && !entryUnavailable && (
             <div className="mc-msg bot"><div className="mc-bubble" role="alert">{first.error.status === 403 ? '로그인해 주세요.' : first.error.message}</div></div>
           )}
 
@@ -231,12 +352,15 @@ export default function AssistantPage() {
             return (
               <div key={m.messageId} className="mc-asst-turn">
                 {switched.has(m.messageId) && <div className="mc-asst-route"><Icon name="Link" /> {AGENTS[c.agent]} 도우미에 연결했어요</div>}
-                <div className={`mc-msg bot${c.result ? ' mc-asst-card' : ''}`}>
-                  <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} />
+                <div className={`mc-msg bot${c.result || c.budgetAdjustment ? ' mc-asst-card' : ''}`}>
+                  <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} active={isLast && !blocked}
+                    navigation={{ choices: last?.content.budgetAdjustment ? last.content.choices : [], active: !blocked,
+                      onPick: (p) => pick(last.content, p) }}
+                    onPick={(p) => pick(c, p)} onApprove={(proposal) => openApproval(proposal)} />
                 </div>
                 {import.meta.env.DEV && c.devTrace && <Trace trace={c.devTrace} />}
-                <Choices choices={c.choices} active={isLast && !blocked} onPick={(p) => pick(c, p)} />
-                {(c.inputs ?? []).includes('budget_form') && (
+                <Choices choices={adjustmentChoices(c)} active={isLast && !blocked} onPick={(p) => pick(c, p)} />
+                {!c.budgetAdjustment && (c.inputs ?? []).includes('budget_form') && (
                   <div className="mc-msg bot mc-asst-form">
                     <AdjustForm done={!isLast || blocked} onSubmit={(slots) => send({ text: adjustSentence(slots) }, adjustSentence(slots))} />
                   </div>
@@ -246,12 +370,22 @@ export default function AssistantPage() {
           })}
           {pending?.said && <div className="mc-asst-turn"><div className="mc-msg me"><div className="mc-bubble">{pending.said}</div></div></div>}
           {busy && <div className="mc-asst-route is-busy" role="status"><Icon name="Loader" /> 답을 준비하고 있어요…</div>}
+          {approvalRecovery && !busy && <div className="mc-msg bot"><div className="mc-bubble" role="alert">
+            <p>이전 예산 확정 상태를 먼저 확인해 주세요.</p>
+            <button type="button" className="mc-btn" onClick={() => { setBusy(true); setError(null); setRestoreVersion((v) => v + 1) }}>확정 상태 다시 불러오기</button>
+          </div></div>}
+          {approvalPending && !popup && <div className="mc-msg bot"><div className="mc-bubble" role="alert">
+            <p>예산 확정 결과를 아직 확인하지 못했어요. 같은 요청으로 다시 확인해 주세요.</p>
+            <button type="button" className="mc-btn" onClick={() => openApproval(approvalPending.proposal, approvalPending)}>확정 결과 다시 확인</button>
+          </div></div>}
           {error && <div className="mc-msg bot"><div className="mc-bubble" role="alert">
             <p>{error}</p>
             {pending && !busy && <>
               <p>답변을 받았는지 확인하지 못했어요. 같은 메시지를 다시 보내 주세요.</p>
               <button type="button" className="mc-btn" onClick={() => send()}>다시 보내기</button>
             </>}
+            {recovery?.conversationId && !pending && !busy && !recoveryExpired && !approvalRecovery && !messages.length &&
+              <button type="button" className="mc-btn" onClick={() => { setBusy(true); setError(null); setRestoreVersion((v) => v + 1) }}>조정 대화 다시 불러오기</button>}
           </div></div>}
           <div ref={end} />
         </div>
@@ -262,7 +396,7 @@ export default function AssistantPage() {
             <p>더미 A(윤서)에서 확인: 새 대화 → 지난달보다 식비 더 썼어? → 점심값이 비싸진 거야? / 커피를 자주 사 먹어서 그래?</p>
             <p>점심은 대상의 평균과 가격 판단의 한계를, 커피는 품목 식별 불가를 안내해야 합니다. 기간 확인은 새 대화 → 지난달 식비는 왜 많이 나왔어? → 그럼 교통비는?</p>
             <div className="mc-chipbar">
-              <button type="button" disabled={blocked} onClick={startOver}>새 대화</button>
+              {!recovery && <button type="button" disabled={blocked} onClick={startOver}>새 대화</button>}
               {EXAMPLES.map((q) => <button key={q} type="button" disabled={blocked} onClick={() => send({ text: q }, q)}>{q}</button>)}
             </div>
           </details>

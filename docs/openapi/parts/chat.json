@@ -124,7 +124,7 @@
           "통합 챗봇"
         ],
         "x-source": "docs/api/chat.md",
-        "description": "text와 choice 중 정확히 하나를 보냅니다. conversationId=null은 새 대화입니다. 응답 messages에는 사용자 메시지와 봇 답변 모두 포함됩니다.\n\nLLM은 문장을 해석하고 소비 숫자는 서버가 집계하며 문장은 템플릿으로 만듭니다. 라우터 실패는 200 + intent=unknown, fallback=true로 안내합니다. 선택지 요청은 fallback=false. 실패 시 기존 active_agent·slots는 유지합니다.\n\n소비는 달력월 기준이고 비교는 지난달 같은 일자까지(없는 날짜는 말일). 고정지출을 포함하고 fixedAmount로 따로 표시하며 카드값·저축·대출상환은 소비에 넣지 않습니다. 같은 구매는 한 번만 셉니다.\n\nbudget 의도는 현재 안내 글 + task=null인 기본 계약이며 실제 조정 작업 연결은 결정 후입니다. big은 3차 안내, out은 범위 안내 + 선택지입니다. 본문의 없는·남의·끝난 conversationId는 400이며 404가 아닙니다.",
+        "description": "text와 choice 중 하나를 보낸다. 선택지 객체는 최신 {value,turn}을 검수한다. router의 budgetContext는 choice=\"budget\"과 함께 본인 기준 예산·모드를 전달한다. 예산 조정의 계산·검수·저장은 서버가 수행하고 content.budgetAdjustment로 질문·비교·변경안을 반환한다. 비교와 미리보기 선택만으로 승인하지 않는다. LLM은 대화 잠금 밖에서 호출하고, rev 검수 뒤 제안·작업·메시지를 원자 저장한다. legacy 응답 계약은 유지한다. 실제 자유 대화는 CHAT_ENGINE=router / CHAT_LLM=live 및 정책·자료 연결이 필요하다.",
         "requestBody": {
           "required": true,
           "content": {
@@ -143,6 +143,16 @@
                   "value": {
                     "conversationId": "3f2c0000-0000-4000-8000-000000000001",
                     "choice": "spending"
+                  }
+                },
+                "budgetDraftEntry": {
+                  "value": {
+                    "conversationId": null,
+                    "choice": "budget",
+                    "budgetContext": {
+                      "baseBudgetId": "3f2c0000-0000-4000-8000-000000000001",
+                      "mode": "INITIAL_ADJUSTMENT"
+                    }
                   }
                 }
               }
@@ -249,7 +259,7 @@
             }
           },
           "409": {
-            "description": "같은 요청 번호로 다른 내용(idempotency_conflict).",
+            "description": "idempotency_conflict · conversation_busy · stale_choice · not_ready · expired. 충돌한 턴의 제안만 별도로 남기지 않는다.",
             "content": {
               "application/json": {
                 "schema": {
@@ -260,6 +270,54 @@
           },
           "500": {
             "description": "서버 오류(server_error).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "operationId": "getChatEngine",
+        "summary": "챗봇 기능 버튼 보기",
+        "tags": [
+          "통합 챗봇"
+        ],
+        "x-source": "docs/api/chat.md",
+        "description": "저장 없이 현재 엔진과 서버가 제공하는 기능 버튼을 반환한다. router에서 예산 조정 카드를 연결하며 legacy는 이전 안내 흐름이다.",
+        "responses": {
+          "200": {
+            "description": "엔진과 기능 버튼",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatEngineInfo"
+                },
+                "example": {
+                  "engine": "router",
+                  "features": [
+                    {
+                      "value": "spending",
+                      "label": "소비 분석"
+                    },
+                    {
+                      "value": "budget",
+                      "label": "예산 조정"
+                    },
+                    {
+                      "value": "policy",
+                      "label": "청년 정책"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 안 됨(not_authenticated) 또는 CSRF 실패(permission_denied).",
             "content": {
               "application/json": {
                 "schema": {
@@ -685,6 +743,26 @@
                 "label"
               ]
             }
+          },
+          "turn": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "agent": {
+            "type": "string",
+            "nullable": true
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {
+            "type": "boolean"
+          },
+          "budgetAdjustment": {
+            "$ref": "#/components/schemas/BudgetAdjustmentContent"
           }
         },
         "required": [
@@ -827,8 +905,39 @@
             "maxLength": 500
           },
           "choice": {
-            "type": "string",
-            "description": "서버가 제공한 choices[].value. 모르는 값은 400. 예: spending, budget."
+            "description": "기능 문자열 또는 최신 답변 선택지 객체. 객체 선택은 conversationId가 필요하며 turn을 검수한다.",
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "spending",
+                  "budget",
+                  "policy"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "turn": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "value",
+                  "turn"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "budgetContext": {
+            "$ref": "#/components/schemas/BudgetAdjustmentEntry"
           }
         },
         "required": [
@@ -856,7 +965,8 @@
               ]
             }
           }
-        ]
+        ],
+        "description": "text와 choice 중 하나. router에서 budgetContext는 choice=\"budget\"인 시작 요청과 함께만 보낸다. 직접 금액·슬롯은 보내지 않는다."
       },
       "ChatSendResponse": {
         "type": "object",
@@ -875,7 +985,8 @@
                   "budget",
                   "big",
                   "out",
-                  "unknown"
+                  "unknown",
+                  "policy"
                 ]
               },
               "slots": {
@@ -920,6 +1031,41 @@
               "status"
             ],
             "nullable": true
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "router"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          },
+          "agent": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "spending",
+              "budget",
+              "policy",
+              null
+            ]
           }
         },
         "required": [
@@ -948,6 +1094,31 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ChatMessage"
+            }
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "router"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
             }
           }
         },
@@ -1037,6 +1208,104 @@
           "result",
           "error"
         ]
+      },
+      "ChatEngineInfo": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "router"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          }
+        },
+        "required": [
+          "engine",
+          "features"
+        ]
+      },
+      "BudgetAdjustmentEntry": {
+        "type": "object",
+        "properties": {
+          "baseBudgetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "INITIAL_ADJUSTMENT",
+              "NORMAL_ADJUSTMENT",
+              "DESIGN_RECOVERY"
+            ]
+          },
+          "sourceTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "분배 실패 작업 ID. DESIGN_RECOVERY에서만 사용하며 금액·설정은 서버에서 다시 조회한다."
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "baseBudgetId"
+            ],
+            "not": {
+              "required": [
+                "sourceTaskId"
+              ]
+            },
+            "properties": {
+              "mode": {
+                "enum": [
+                  "INITIAL_ADJUSTMENT",
+                  "NORMAL_ADJUSTMENT"
+                ]
+              }
+            }
+          },
+          {
+            "required": [
+              "sourceTaskId"
+            ],
+            "not": {
+              "required": [
+                "baseBudgetId"
+              ]
+            },
+            "properties": {
+              "mode": {
+                "enum": [
+                  "DESIGN_RECOVERY"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "기존 예산 조정은 baseBudgetId, 분배 실패 조정 진입은 sourceTaskId를 보낸다. 두 ID를 동시에 보내거나 금액·최소금액·잠금·우선순위를 직접 주입할 수 없다."
       }
     }
   }
