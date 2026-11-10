@@ -335,7 +335,8 @@ class PersonaAnswerTest(TestCase):
         self.assertEqual((d.status, d.reason, d.explain, out), ("unsupported", "evidence_incomplete", None, None))
 
     def test_explain_builds_transaction_evidence(self):
-        """'왜 늘었어?' = 서버가 다시 조회한 근거. 05 기대값의 식비 합계 = 건수 × 1건 금액 (9월 29 × 12,000 · 10월 26 × 15,000)"""
+        """'왜 늘었어?' = 서버가 다시 조회한 근거. 05 기대값의 식비 합계 = 건수 × 1건 금액 (9월 29 × 12,000 · 10월 26 × 15,000)
+        기본 답은 짧게(MEMO 31): 증감 + 결제 건수 · 건당 평균 비교(어떻게 늘었는지) + 단정 불가. 나머지 근거는 질문이 그 지표를 말할 때만"""
         food = EXPECTED["personas"]["A"]
         self.assertEqual((food["previous_same_dates_known"]["by_category"]["FOOD"], food["current_month_known"]["by_category"]["FOOD"]),
                          (29 * 12_000, 26 * 15_000))
@@ -344,22 +345,30 @@ class PersonaAnswerTest(TestCase):
         _, out = a.say("왜 늘었어?")
         self.assertEqual(out["lines"], [
             "식비 지출은 지난달 같은 기간보다 42,000원 늘었어요. ↑ 12.07%",
-            "아래는 거래 내역에서 확인한 변화예요. 이것만으로 이유를 단정할 수는 없어요.",
+            "결제는 줄었지만 한 번에 쓰는 금액이 커졌어요.",  # 건수 ↓ · 평균 ↑ 를 엮은 한 줄 (계산 방향만)
             "결제 건수는 지난달 같은 기간 29건, 이번 달 26건이에요.",
-            "건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요.",
-            # 10/30 사용자 결정: 늘어난 곳 · 줄어든 곳을 나눠 지난달 → 이번 달 금액과 함께, 전체 증감과 잇는 한 문장
-            # 11/2 보완: 큰 결제 · 몰린 때(고정지출 제외) → 새로 간 곳 · 지난달에도 간 곳으로 전체와 잇기 → (두 달 모두 간 가게가 있어) 가게별 보조
-            # → 줄이는 방법 한 줄 (가장 크게 늘어난 요인의 건당 평균 × 2번, 서버 계산)
-            "이번 달 큰 결제(고정지출 제외)는 목삼화로 15,000원(10월 1일), 과자서원 15,000원(10월 2일), 범카츠건대역점 15,000원(10월 3일)이에요.",
-            # 11/2: 요일은 하루 평균(요일 합계 ÷ 그 달의 그 요일 수)으로 비교, 한 묶음에서만 나온 증가는 숫자를 되풀이하지 않는다
-            # 요일은 화 · 목 · 금 · 일이 모두 하루 평균 +3,000원(뚜렷한 한 요일 없음) → 요일 문장을 쓰지 않는다 (MEMO 23-18)
-            "고정지출을 빼고 보면 늘어난 금액은 점심 시간대(+48,000원)에 가장 많이 몰렸어요.",
-            "늘어난 금액은 모두 지난달에도 간 곳에서 나왔어요.",
-            "많이 늘어난 곳은 범카츠건대역점(12,000원 → 60,000원), 명일탄(24,000원 → 45,000원), 삼촌네가마솥순대국(12,000원 → 30,000원)이에요.",
-            "줄어든 곳은 난곡반점(60,000원 → 15,000원), 상아김밥문정 직영점(48,000원 → 15,000원), 옐로우피자(60,000원 → 30,000원)이에요.",
-            "점심 시간대 식비 결제는 12번, 건당 평균 15,000원이에요. 한 달에 2번 줄이면 약 30,000원 덜 쓰게 돼요."])
-        self.assertEqual(out["suggest"], ["budget_adjust"])  # 줄이는 방법을 보이면 [예산 조정하기]
-        self.assertEqual(out["explain"], {"llm": False, "rejected": False, "failed": False})
+            "건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요."])
+        self.assertEqual(out["notices"], ["위 변화는 거래 내역에서 확인한 것이라, 이것만으로 이유를 단정할 수는 없어요."])  # 작은 글씨로
+        self.assertNotIn("suggest", out)  # 줄이는 방법을 묻지 않았으면 [예산 조정하기]도 없다
+        # 지표별 근거 (질문이 그 지표를 말하면 이 문장이 주요 변화 자리에 온다) — 계산 값은 그대로
+        ev = explain.evidence(user("A"), a.store.get_analysis("talk-1")["items"][0], TODAY)
+        self.assertEqual(explain._template(ev), ["결제 건수는 지난달 같은 기간 29건, 이번 달 26건이에요.",
+                                                 "건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요."])
+        self.assertEqual(explain._big_line(ev), "이번 달 큰 결제(고정지출 제외)는 목삼화로 15,000원(10월 1일), 과자서원 15,000원(10월 2일), "
+                                                "범카츠건대역점 15,000원(10월 3일)이에요.")
+        # 11/2: 요일은 하루 평균으로 비교 — 화 · 목 · 금 · 일이 모두 +3,000원(뚜렷한 한 요일 없음) → 요일 문장 없음 (MEMO 23-18)
+        self.assertEqual(explain._shift_line(ev), "고정지출을 빼고 보면 늘어난 금액은 점심 시간대(+48,000원)에 가장 많이 몰렸어요.")
+        self.assertEqual(explain._visits_line(ev), "늘어난 금액은 모두 지난달에도 간 곳에서 나왔어요.")
+        self.assertEqual(explain._reduce_line(ev, "식비"), "점심 시간대 식비 결제는 12번, 건당 평균 15,000원이에요. 한 달에 2번 줄이면 약 30,000원 덜 쓰게 돼요.")
+        self.assertEqual([r["name"] for r in ev["moves"]["up"]], ["범카츠건대역점", "명일탄", "삼촌네가마솥순대국"])
+        self.assertEqual([r["name"] for r in ev["moves"]["down"]], ["난곡반점", "상아김밥문정 직영점", "옐로우피자"])
+        for question, line in (("왜 늘었어? 자주 가서야?", "결제 건수는 지난달 같은 기간 29건, 이번 달 26건이에요."),
+                               ("언제 늘었어?", explain._shift_line(ev))):
+            with self.subTest(question=question):
+                said = explain.answer(user("A"), [a.store.get_analysis("talk-1")["items"][0]], today=TODAY, question=question)
+                self.assertEqual(said["lines"][1], line)  # 질문이 말한 지표가 주요 변화보다 먼저
+        said = explain.answer(user("A"), [a.store.get_analysis("talk-1")["items"][0]], today=TODAY, question="어떻게 줄이지?")
+        self.assertEqual((said["lines"][1], said["suggest"]), (explain._reduce_line(ev, "식비"), ["budget_adjust"]))
 
     def test_category_query_notes_unclassified_in_same_period(self):
         """11/2 2차 검수: 카테고리로 좁힌 범용 조회도 같은 기간 확인 필요가 있으면 안내. design.json: 지우(C) 10/21 확인 필요 25,000원"""
@@ -381,6 +390,7 @@ class PersonaAnswerTest(TestCase):
         self.assertIsNone(explain._reduce({**now, "counts": {("reducible", "lunch"): 1}}, before, moves, 30_000))
 
     def test_explain_total_lists_categories_in_the_same_direction(self):
+        """전체 범위 '왜 늘었어?' — 기본 답은 건수 · 건당 평균 비교. 카테고리별 증감 · 새로 간 곳 잇기는 근거 값으로 확인"""
         a = Chat(user("A"))
         a.say("지난달보다 많이 썼어?")
         lines = a.say("왜 늘었어?")[1]["lines"]
@@ -388,14 +398,20 @@ class PersonaAnswerTest(TestCase):
         up = sorted(((c, now.get(c, 0) - before.get(c, 0)) for c in set(now) | set(before) if now.get(c, 0) > before.get(c, 0)),
                     key=lambda cd: -cd[1])
         self.assertEqual(up, [("FOOD", 42_000), ("CULTURE_LEISURE", 20_000), ("FASHION_SHOPPING", 10_000)])
-        self.assertIn("많이 늘어난 카테고리는 식비(348,000원 → 390,000원), 문화·여가(70,000원 → 90,000원), "
-                      "패션·쇼핑(60,000원 → 70,000원)이에요.", lines)
-        self.assertIn("줄어든 카테고리는 의료·건강(30,000원 → 0원)이에요.", lines)  # 줄어든 쪽도 따로 (이전엔 빠졌다)
+        self.assertEqual(lines[1], "결제는 줄었지만 한 번에 쓰는 금액이 커졌어요.")
+        self.assertEqual(lines[2], "결제 건수는 지난달 같은 기간 48건, 이번 달 44건이에요.")
+        self.assertTrue(lines[3].startswith("건당 평균 결제액은 지난달 같은 기간 "))
+        self.assertEqual(len(lines), 4)
+        self.assertFalse(any("카테고리는" in line for line in lines))  # 어디서 늘었는지(카테고리 순위)는 기본 답에 없다
+        ev = explain.evidence(user("A"), a.store.get_analysis("talk-1")["items"][0], TODAY)
+        self.assertEqual([(r["name"], r["before"], r["after"]) for r in ev["moves"]["up"]],
+                         [("식비", 348_000, 390_000), ("문화·여가", 70_000, 90_000), ("패션·쇼핑", 60_000, 70_000)])
+        self.assertEqual([(r["name"], r["before"], r["after"]) for r in ev["moves"]["down"]], [("의료·건강", 30_000, 0)])
         # 새로 간 곳 + 지난달에도 간 곳 − 안 간 곳 = 전체 증감 (이름 없는 결제까지 넣어 합이 맞는다)
-        self.assertIn("새로 간 곳(4곳)에서 150,000원 늘고, 지난달에도 간 곳에서 77,000원 늘고, 이번엔 안 간 곳(5곳)에서 185,000원 줄어, "
-                      "전체로는 42,000원 늘었어요.", lines)
+        self.assertEqual(explain._visits_line(ev), "새로 간 곳(4곳)에서 150,000원 늘고, 지난달에도 간 곳에서 77,000원 늘고, "
+                                                   "이번엔 안 간 곳(5곳)에서 185,000원 줄어, 전체로는 42,000원 늘었어요.")
         self.assertEqual(150_000 + 77_000 - 185_000, 42_000)
-        self.assertFalse(any("월세" in line for line in lines[4:]))  # 큰 결제 · 몰린 때 · 줄이는 방법은 고정지출 제외
+        self.assertNotIn("월세", explain._big_line(ev) + explain._shift_line(ev))  # 큰 결제 · 몰린 때는 고정지출 제외
 
     def test_explain_trend_uses_latest_neighbouring_months(self):
         a = Chat(user("A"))
@@ -415,41 +431,6 @@ class PersonaAnswerTest(TestCase):
             confirmed_category_id="FOOD", confirmation_state="confirmed")
         self.assertEqual(a.say("왜 늘었어?")[1]["lines"],
                          ["그 사이 내역이 바뀌어 앞의 결과로는 설명할 수 없어요. 다시 조회한 뒤 물어봐 주세요."])
-
-    def test_explain_llm_gets_labels_only_and_numbers_come_from_server(self):
-        a = Chat(user("A"))
-        a.say("지난달보다 식비 더 썼어?")
-        item = a.store.get_analysis("talk-1")["items"][0]
-        seen = []
-
-        def good(system, payload):
-            seen.append(payload)
-            return json.dumps({"sentences": ["{F2}"]}, ensure_ascii=False)
-        out = explain.answer(user("A"), [item], good)
-        self.assertEqual((out["lines"][2], out["explain"]),
-                         ("건당 평균 결제액은 지난달 같은 기간 12,000원, 이번 달 15,000원이에요.",
-                          {"llm": True, "rejected": False, "failed": False}))
-        # 옛 설명 경로도 완성 절만 허용한다. 숫자 자리표시 뒤의 방향을 뒤집거나 조사를 덧붙일 수 없다.
-        for bad_text in ("결제는 {F1}에서 {F2}로 늘었어요.", "{F1}했어요.", "네, {F2}"):
-            raw = json.dumps({"sentences": [bad_text]}, ensure_ascii=False)
-            out = explain.answer(user("A"), [item], lambda system, payload: raw)
-            self.assertTrue(out["explain"]["rejected"])
-
-        def down(system, payload):
-            raise TimeoutError("응답 없음")
-        out = explain.answer(user("A"), [item], down)  # 호출 실패는 검사 탈락과 구분해 표시, 재시도 없이 템플릿
-        self.assertEqual((out["lines"][2], out["explain"]), ("결제 건수는 지난달 같은 기간 29건, 이번 달 26건이에요.",
-                                                             {"llm": True, "rejected": False, "failed": True}))
-        for value in ("42,000", "42000", "12,000", "15,000", "29", "26", "12.07"):  # 금액 · 건수 · 비율은 넘기지 않는다
-            self.assertNotIn(value, seen[0])
-        for bad in ({"sentences": ["4만 2천 원보다 큰 {F1} 증가예요. 12% 늘었어요."]},  # 숫자 직접
-                    {"sentences": ["외식 습관이 늘어난 {F1} 때문이에요."]},             # 습관 추측
-                    {"sentences": ["{F99} 증가예요."]},                              # 없는 근거
-                    {"sentences": ["근거 없이 쓴 문장"]}, "JSON 아님"):
-            with self.subTest(bad=bad):
-                raw = bad if isinstance(bad, str) else json.dumps(bad, ensure_ascii=False)
-                out = explain.answer(user("A"), [item], lambda system, payload: raw)
-                self.assertEqual((out["lines"][2], out["explain"]["rejected"]), ("결제 건수는 지난달 같은 기간 29건, 이번 달 26건이에요.", True))
 
     def test_multi_category_partial_failure_and_single_notice(self):
         c = Chat(user("C"))
@@ -668,10 +649,6 @@ class UserTestAnswerTest(TestCase):
         lines = a.say("왜 늘었어?")[1]["lines"]
         self.assertEqual((lines[0], lines[-1]), ("식비 전체 지출은 지난달 같은 기간보다 42,000원 늘었어요. ↑ 12.07%",
                                                  "식비 전체 기준이라 커피만의 변화는 알 수 없어요."))
-        seen = []
-        item = a.store.get_analysis("talk-1")["items"][0]
-        explain.answer(user("A"), [item], lambda system, payload: seen.append(json.loads(payload)) or "JSON 아님")
-        self.assertEqual((seen[0]["scope"], seen[0]["requested"]), ("식비 전체", "커피"))
 
     def test_incomplete_comparison_is_the_lead(self):
         _, out = Chat(user("C")).say("지난달보다 식비 더 썼어?")
@@ -719,22 +696,21 @@ class CardViewTest(TestCase):
         self.assertNotIn("meter", [v["kind"] for v in self.view("A", "식비 얼마 썼어?")])
 
     def test_explain_card(self):
-        """'왜 늘었어?' 한 항목: 큰 금액 = 증감, 줄 = 건수 · 평균 · 가맹점 (글자 값), 단정 불가 안내는 맨 아래"""
+        """'왜 늘었어?' 한 항목 카드(MEMO 31): 큰 금액 = 증감, 비교 줄 = 건수 · 건당 평균(전 → 후 · 증감 글자 + 색),
+        문장 = 둘을 엮은 한 줄. 기간은 제목에 한 번, 단정 불가 안내는 아래 작은 글씨(notices)"""
         a = Chat(user("A"))
         a.say("지난달보다 식비 더 썼어?")
-        head, total, rows, big, when, visits, up, down, text = a.say("왜 늘었어?")[1]["view"]
+        out = a.say("왜 늘었어?")[1]
+        head, total, rows, text = out["view"]
         self.assertEqual(head["title"], "식비 · 지난달 같은 기간과 비교")
         self.assertEqual((total["caption"], total["amount"], total["note"]), ("지난달 같은 기간보다 늘어난 금액", 42_000, "12.07% 늘었어요"))
-        self.assertEqual(rows["title"], "거래에서 확인한 변화 (지난달 같은 기간 → 이번 달)")
-        self.assertEqual(rows["rows"][0], {"name": "결제 건수", "value": "29건 → 26건"})
-        self.assertEqual((up["title"], up["rows"][0]), ("많이 늘어난 곳", {"name": "범카츠건대역점", "value": "12,000원 → 60,000원",
-                                                                     "note": "+48,000원", "direction": "up"}))
-        self.assertEqual((down["title"], down["rows"][0]["note"], down["rows"][0]["direction"]), ("줄어든 곳", "−45,000원", "down"))
-        self.assertEqual((big["title"], when["title"], visits["title"]),
-                         ("이번 달 큰 결제 (고정지출 제외)", "늘어난 금액이 몰린 때", "새로 간 곳 · 지난달에도 간 곳"))
-        self.assertEqual(text["lines"], ["늘어난 금액은 모두 지난달에도 간 곳에서 나왔어요.",
-                                         "점심 시간대 식비 결제는 12번, 건당 평균 15,000원이에요. 한 달에 2번 줄이면 약 30,000원 덜 쓰게 돼요.",
-                                         "위 변화는 거래 내역에서 확인한 것이라, 이것만으로 이유를 단정할 수는 없어요."])
+        self.assertEqual(rows["rows"], [
+            {"name": "결제 건수", "value": "29건 → 26건", "note": "−3건", "direction": "down"},
+            {"name": "건당 평균", "value": "12,000원 → 15,000원", "note": "+3,000원", "direction": "up"}])
+        self.assertEqual(text["lines"], ["결제는 줄었지만 한 번에 쓰는 금액이 커졌어요."])
+        self.assertNotIn("42,000원", json.dumps([rows, text], ensure_ascii=False))  # 증감은 큰 금액에만
+        self.assertNotIn("지난달 같은 기간", json.dumps([rows, text], ensure_ascii=False))  # 기간은 제목에만
+        self.assertEqual(out["notices"], ["위 변화는 거래 내역에서 확인한 것이라, 이것만으로 이유를 단정할 수는 없어요."])
 
     def test_compare_rows_have_words_not_only_colour(self):
         head, rows = self.view("A", "지난달보다 식비랑 주거비 더 썼어?")

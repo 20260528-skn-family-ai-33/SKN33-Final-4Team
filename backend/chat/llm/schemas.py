@@ -1,4 +1,4 @@
-"""역할별 해석 · 설명 문장의 Structured Outputs 스키마 (strict: 모든 칸 필수 · null 허용). 받은 뒤 역할별 parse · explain.checked 검사는 그대로.
+"""역할별 해석 · 설명 문장의 Structured Outputs 스키마 (strict: 모든 칸 필수 · null 허용). 받은 뒤 역할별 parse · 서버 검사는 그대로.
 평가 도구(stage_b)에서 옮김 (MEMO 25-12) — 실제 해석기(live) · 평가 도구가 같은 스키마를 쓴다
 """
 from chat.interpretation.schema import CATEGORY_NAMES
@@ -7,8 +7,6 @@ from spending_analysis import agent_loop as spending_agent_loop
 from spending_analysis import agent_tools as spending_agent_tools
 from spending_analysis import claims as spending_claims
 from spending_analysis import investigation
-from spending_analysis import explain as spending_explain
-from spending_analysis import narrate as spending_narrate
 from spending_analysis import supplement as spending_supplement
 from spending_analysis import reading as spending_reading
 
@@ -54,14 +52,9 @@ def role_schema(role):
                  "group_by": enum(r.GROUPS), "top_n": nullable("integer"), "month": nullable("integer"),
                  "date_from": nullable("string"), "date_to": nullable("string"), "period_said": nullable("string"),
                  "include_fixed": nullable("boolean"), "other_person": nullable("boolean"),
-                 "compare_month": nullable("integer")}
+                 "compare_month": nullable("integer"), "multi_step": nullable("boolean")}
     assert set(props) == set(ROLES[role][1].__dataclass_fields__), f"{role} 스키마와 해석 칸이 다름"
     return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
-
-
-# 소비 설명 문장 (채점 역할 아님 — 로컬 채팅의 실제 호출용). 문장 수 1~3 · 숫자 금지 등은 받은 뒤 explain.checked 가 검사
-EXPLAIN_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array", "items": {"type": "string"}}},
-                  "required": ["sentences"], "additionalProperties": False}
 
 
 # B 계획 · 답 (MEMO 26) — 받은 뒤 서버가 claims._plan · claims.check 로 다시 검사한다
@@ -72,49 +65,30 @@ PLAN_SCHEMA = {"type": "object", "properties": {
     "reason": {"type": "string"},
     "hypothesis": investigation.SCHEMA},
     "required": ["queries", "reason", "hypothesis"], "additionalProperties": False}
-# 보충(11/10): 숫자 없는 문장 1~2개 | null + 이유. 받은 뒤 supplement.check 가 다시 검사한다
+# B 답의 보충(11/10): 숫자 없는 문장 1~2개 | null + 이유. 받은 뒤 supplement.check 가 다시 검사한다
 EXTRA = {"extra": {"type": ["string", "null"]},
          "extra_reason": {"type": ["string", "null"], "enum": [*spending_supplement.REASONS, None]}}
 ANSWER_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array", "items": {"type": "object", "properties": {
     "text": {"type": "string"}, "claims": {"type": "array", "items": {"type": "string"}}},
     "required": ["text", "claims"], "additionalProperties": False}}, **EXTRA},
     "required": ["sentences", *EXTRA], "additionalProperties": False}
-# 지난달 비교 답 조합 (11/10) — 받은 뒤 narrate.check 로 다시 검사한다
-NARRATE_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array", "items": {"type": "object", "properties": {
-    "text": {"type": "string"}, "facts": {"type": "array", "items": {"type": "string"}}},
-    "required": ["text", "facts"], "additionalProperties": False}}, **EXTRA},
-    "required": ["sentences", *EXTRA], "additionalProperties": False}
 
 
-
-
-def agent_loop_schema():
-    """에이전트 루프 계획 (MEMO 29) — 도구마다 args 칸이 달라 anyOf 로 도구별 가지 4개 + null.
-    소비 · 예산 칸은 소비 해석 스키마를 그대로 쓴다. 어느 가지가 어느 도구인지는 서버가 agent_tools 에서 다시 검사한다"""
-    spend = role_schema("spending")["properties"]
-    branch = lambda props: {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}  # noqa: E731
-    args = {"anyOf": [
-        branch({**{k: spend[k] for k in spending_agent_tools.SPEND_ARGS},
-                "target": {"type": ["string", "null"], "enum": [*spending_agent_tools.SPEND_TARGETS, None]}}),
-        branch({"categories": spend["categories"], "breakdown": {"type": ["boolean", "null"]}}),
-        branch({"ref": {"type": "string"}, "hypothesis": investigation.SCHEMA}),
-        branch({"ref": {"type": "string"}, "by": {"type": "string", "enum": list(spending_claims.AXES)}}),
-        {"type": "null"}]}
-    return branch({"action": {"type": "string", "enum": ["tool", "answer"]},
-                   "tool": {"type": ["string", "null"], "enum": [*spending_agent_tools.TOOLS, None]},
-                   "args": args, "reason": {"type": "string"}})
+def agent_judge_schema():
+    """추가 판단 1회 (MEMO 31) — 도구는 서버가 허용한 것 중 하나, 인자는 나누기 기준(by)뿐. 받은 뒤 agent_loop._choice 가 다시 검사"""
+    obj = lambda props: {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}  # noqa: E731
+    return obj({"action": {"type": "string", "enum": ["tool", "answer"]},
+                "tool": {"type": ["string", "null"], "enum": [*spending_agent_tools.TOOLS, None]},
+                "args": {"anyOf": [obj({"by": {"type": "string", "enum": list(spending_claims.AXES)}}), {"type": "null"}]},
+                "reason": {"type": "string"}})
 
 
 def schema_for(system):
     if system == spending_agent_loop.PROMPT:
-        return "spending_agent_step", agent_loop_schema()
-    if system == spending_explain.PROMPT:
-        return "spending_explanation", EXPLAIN_SCHEMA
+        return "spending_agent_judge", agent_judge_schema()
     if system == spending_claims.PLAN_PROMPT:
         return "explain_plan", PLAN_SCHEMA
     if system == spending_claims.ANSWER_PROMPT:
         return "explain_answer", ANSWER_SCHEMA
-    if system == spending_narrate.PROMPT:
-        return "spending_narrate", NARRATE_SCHEMA
     role = ROLE_OF[system]
     return f"{role}_reading", role_schema(role)

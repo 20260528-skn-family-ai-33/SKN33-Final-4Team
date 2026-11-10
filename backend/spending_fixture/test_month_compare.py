@@ -5,13 +5,14 @@
 import json
 from datetime import date
 from functools import partial
+from unittest import mock
 
 from django.test import SimpleTestCase, TestCase
 
 from chat.llm.fake import FakeReading
 from chat.router_core import MemoryStateStore, run_turn
+from spending_analysis import adapter, dialog, narrate
 from spending_analysis import agent as spending_agent
-from spending_analysis import dialog
 from spending_analysis.periods import Period, month_labels, month_pair
 from spending_analysis.reading import SpendingReading
 
@@ -23,12 +24,12 @@ FOOD = ("FOOD",)
 
 
 class Talk:
-    def __init__(self, persona, narrator=None):
-        self.store, self.user, self.narrator = MemoryStateStore(), user(persona), narrator
+    def __init__(self, persona):
+        self.store, self.user = MemoryStateStore(), user(persona)
 
     def say(self, text):
         llm = FakeReading()
-        agent = partial(spending_agent.handle, store=self.store, complete=llm, user=self.user, narrate_complete=self.narrator)
+        agent = partial(spending_agent.handle, store=self.store, complete=llm, user=self.user)
         turn = run_turn("talk-1", self.store, llm, text=text, today=TODAY, as_of=AS_OF, agents={"spending": agent})
         return turn["result"]
 
@@ -160,15 +161,12 @@ class MonthCompareAnswerTest(TestCase):
         self.assertIn("식비 지출은 8월보다 10,000원 늘었어요.", said)
         self.assertNotIn("지난달", said)
 
-    def test_narrate_sentences_use_month_names(self):
-        seen = []
-
-        def narrator(system, user_, timeout=None):
-            seen.extend(json.loads(user_)["facts"])
-            return json.dumps({"sentences": [{"text": "{F1}", "facts": ["F1"]}, {"text": "{F3}", "facts": ["F3"]}],
-                               "extra": "두 달 모두 한 달 전체를 비교했어요.", "extra_reason": "uncovered"}, ensure_ascii=False)
-        reply = Talk("A", narrator).say("9월이랑 8월 식비 비교해줘")["reply"]
-        self.assertEqual(reply["view"][-1]["lines"], ["식비 지출은 8월보다 10,000원 증가했어요.",
-                                                      "8월(8월 1일~31일)에는 식비에 350,000원 썼어요.",
-                                                      "두 달 모두 한 달 전체를 비교했어요."])
-        self.assertEqual(seen[1]["preview"], "□월(□월 □일~□일) 식비에 □원 썼어요.")
+    def test_fact_sentences_use_month_names(self):
+        """추가 판단에 보낼 사실 문장(narrate.facts)도 '지난달' 대신 그 달 이름 — LLM 에는 숫자를 가린 것만"""
+        got, run = [], adapter.run
+        with mock.patch.object(adapter, "run", side_effect=lambda *a, **k: got.append(run(*a, **k)) or got[-1]):
+            Talk("A").say("9월이랑 8월 식비 비교해줘")
+        table = narrate.facts(got[-1])
+        self.assertEqual([table[0]["text"], table[2]["text"]], ["식비 지출은 8월보다 10,000원 증가했어요.",
+                                                               "8월(8월 1일~31일)에는 식비에 350,000원 썼어요."])
+        self.assertEqual(narrate.for_llm(table)[1]["preview"], "□월(□월 □일~□일) 식비에 □원 썼어요.")

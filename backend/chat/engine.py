@@ -143,11 +143,10 @@ def answer(user, store, text=None, button=None):
     """한 입력 → (render 결과, route). DB 를 잠그지 않는다 (가짜 · 실제 LLM 호출과 분석은 여기서)"""
     llm = reading()
     agents = {"spending": partial(spending_agent.handle, store=store, complete=llm, user=user,
-                                  explain_complete=llm if llm.explains else None,
-                                  # B 증감 설명(MEMO 26) — CHAT_EXPLAIN_PLAN 이 켜졌을 때만, 해석과 같은 LLM(장부 · 상한 공유)
+                                  # B 가설 확인(MEMO 26) — CHAT_EXPLAIN_PLAN 이 켜졌을 때 가설을 말한 설명 질문에만, 해석과 같은 LLM(장부 · 상한 공유)
                                   explain_plan=llm if getattr(settings, "CHAT_EXPLAIN_PLAN", False) else None,
-                                  # 지난달 비교 답 조합 + 보충(11/10) — CHAT_NARRATE 가 켜졌고 실제 LLM 일 때만 (가짜 해석은 지금 답 그대로)
-                                  narrate_complete=llm if llm.explains and getattr(settings, "CHAT_NARRATE", False) else None),
+                                  # 첫 조회 뒤 추가 판단 1회(MEMO 31) — CHAT_AGENT 가 켜졌을 때만. 가짜 해석도 정해 둔 판단으로 돈다
+                                  agent_complete=llm if getattr(settings, "CHAT_AGENT", False) else None),
               "budget": not_ready("budget"), "policy": not_ready("policy")}
     today, as_of = today_and_as_of()
     turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, today=today, as_of=as_of)

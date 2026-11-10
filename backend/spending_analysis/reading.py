@@ -64,6 +64,7 @@ class SpendingReading:
     hypothesis: dict | None = None      # 분석 가설: 지표·대상 코드는 조사 계약을 공유한다
     compare_month: int | None = None    # compare="month" 일 때 견줄 달 (1~12) — "9월보다" · "11월과 9월 비교"
     other_person: bool | None = None    # 본인이 아닌 사람(가족 · 친구 · 연인 등)의 소비를 물음 — 볼 수 없다 (서버가 '내 것'을 제안)
+    multi_step: bool | None = None      # 비교 뒤 한 번 더 확인할 새 질문 (CHAT_AGENT 가 켜졌을 때 추가 판단 1회, MEMO 31)
 
 
 def _one_of(data, key, allowed):
@@ -148,7 +149,7 @@ def parse(data):
         raise ReadFailed("shape")
     if not isinstance(data.get("mine"), bool):
         raise ReadFailed("mine")
-    for key in ("confirm", "explain", "all_categories", "after_budget_change", "include_current", "include_fixed", "other_person"):
+    for key in ("confirm", "explain", "all_categories", "after_budget_change", "include_current", "include_fixed", "other_person", "multi_step"):
         if data.get(key) is not None and not isinstance(data[key], bool):
             raise ReadFailed(key)
     from .investigation import parse as parse_hypothesis
@@ -171,7 +172,7 @@ def parse(data):
         measure=_one_of(data, "measure", MEASURES), group_by=_one_of(data, "group_by", GROUPS), top_n=_int(data, "top_n"),
         month=_int(data, "month"), date_from=_mmdd(data, "date_from"), date_to=_mmdd(data, "date_to"),
         period_said=_text(data, "period_said"), include_fixed=data.get("include_fixed"), other_person=data.get("other_person"),
-        compare_month=_int(data, "compare_month"),
+        compare_month=_int(data, "compare_month"), multi_step=data.get("multi_step"),
     )
 
 
@@ -204,7 +205,8 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
    비교 기준만 말한 요청도 동일하다. 비교·증감 조회 자체는 이유 질문이 아니므로 explain=null, hypothesis=null이다.
    금액이 많은지·적은지·괜찮은지 평가만 덧붙여 물어도 이유 질문이 아니다(explain=null).
    지난달이 아닌 특정 달과 견주면 compare=month, 견줄 달을 compare_month에 적는다. 견주는 쪽이 특정 달이면 period=month와 month에, 이번 달이거나 말하지 않았으면 period=null.
-   두 달을 모두 말했으면 둘 다 보존한다: 견주는 쪽을 '지난달'로 말했으면 period=last_month이며 null로 바꾸지 않는다.
+   이번 달과 지난달을 함께 말해도("이번달 식비를 지난달과 비교") 보는 쪽은 이번 달이다 → period=null, compare=prev_month.
+   period=last_month와 compare=prev_month를 함께 쓰지 않는다. 지난달을 다른 특정 달과 견줄 때만("지난달이랑 8월 비교") period=last_month, compare=month.
    지난달 자체의 합계·분석만 요청하고 현재와 견주지 않을 때만 period=last_month이다. 분석이라는 말이 비교 기준을 없애지 않는다.
 5. 품목·가게·세부 지출은 코드로 바꾸지 않고 categories에 {{"detail": "원문 대상", "category": 속한 코드 또는 null, "names": []}}.
    가게 이름의 다른 한글·영문·법인 표기만 names에 넣고, 품목·종류이면 비운다. 가게가 아닌 품목 범위가 여러 카테고리에 걸치거나 부모 분류를 정할 수 없으면 {{"unknown": "원문"}}로 둔다.
@@ -259,6 +261,8 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
     (단 계산 없이 카테고리별 목록만 물으면 위 compare="category" 규칙)
   top_n: "상위 3곳" · "자주 간 가게 3곳" 같은 개수. 자주 = 횟수라 measure="count"
 - after_budget_change: "바뀐 예산으로 분석해줘"처럼 예산 변경 뒤의 분석을 뜻하면 true (분석 종류 · 카테고리는 문장에 있는 것만)
+- multi_step: 비교 결과를 보고 한 번 더 확인해야 하는 새 질문이면 true — 늘었다면 어디서(시간대·요일·가게) 늘었는지까지,
+  예산과 소비를 함께 물을 때. 이유만 묻는 질문(explain) · 조회 하나로 끝나는 질문 · 이어서 묻는 질문 · pending 의 답은 null.
 입력에 pending 이 있으면 내가 asking 항목을 되묻는 중이다. followup 을 채운다:
 "answer"(질문에 대한 답) | "new"(새 요청) | "cancel"(그만두기) | "unclear"(답인지 모름, 예: "응").
 asking 이 months 면 months 에, category 면 categories 에 (묻는 말이 여러 개면 그 순서대로),

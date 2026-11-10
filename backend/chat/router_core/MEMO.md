@@ -2512,3 +2512,118 @@ store 에는 쓰지 않는다.
 - reply 의 suggest(예산 조정 · 고정지출 포함 제안) · trace 는 아직 잇지 않는다.
 
 **내일 할 것** — ① 소비 해석(reading)에 '어려운 질문인가' 칸 ② agent.py · chat/engine.py 연결 + store 기록 ③ LLM 답 조합(_stack 자리) ④ 실제 LLM 평가.
+
+## 30. 소비 분석 에이전트 2일차: 연결 (2026-11-10 — 실제 LLM 호출 없음, 가짜 해석 · 계획으로 검사)
+
+**스위치** — `CHAT_AGENT=on`(config/settings.py · spending_fixture/service_settings.py · .env.example). 꺼져 있으면 engine 이 agent_complete 를 넘기지 않아 새 코드가 돌지 않는다.
+가짜 해석에서도 돈다: engine 은 `llm.explains` 를 보지 않고(B 의 CHAT_EXPLAIN_PLAN 과 같이) 같은 LLM 을 넘기고, `FakeReading` 이 루프 지시문 · 답 조합 지시문을
+`chat/llm/fake.py` 의 `AGENT_SAID`(질문 → 해석 + 행동 순서, 관찰 결과 수로 다음 행동) · `fake_agent_answer`(결과마다 첫 사실)로 답한다.
+
+**어려운 질문 칸** — `SpendingReading.multi_step`(bool | null) + 지시문 2줄(194자, 줄바꿈 포함) + 스키마 칸.
+뜻: 조회 한 번으로 답할 수 없는 새 질문 — 앞 결과를 보고 다음 확인을 정함 · 여러 결과를 견줘 고름 · 예산과 소비를 함께. 조회 하나 · 이어서 묻는 질문 · pending 의 답은 null.
+
+**연결 조건 (agent.handle)** — 모두 참일 때만 `agent_loop.run`: agent_complete 있음 · user 있음 · 취소/시작 버튼 아님 · 이 입력 전에 소비 되묻기 대기가 없음(또는 mode=start)
+· `dialog.step` 결과 ready · 해석 multi_step=true · refers_to 가 previous/unclear 아님(이어서 묻는 질문은 지금 경로 — 지시문이 잘못 true 를 줘도 서버가 막음).
+- answered → 루프 reply. 성공한 조회(spend · budget_lookup) 중 **마지막** 것의 decision · results 로 `adapter.record`(후속 '그럼 교통비는?'이 이어받음).
+  도구의 decision 에는 request(해석)를 붙인다(step 과 같이 — record 가 조건을 남기게).
+- ask · fallback → 루프 결과를 버리고 지금 경로(`_outcome`). 루프가 고른 기간 되묻기도 쓰지 않는다(지금 경로가 같은 질문을 스스로 판단).
+- `reply.trace.agent = {status, fallback, steps, summary}` (CHAT_DEV_TRACE 일 때만 화면). steps = 도구 · LLM 이 고른 인자 · 상태 · 이유(금액 없음).
+- 첫 해석이 이미 되묻기(예: 3월보다 … 이유도)면 ready 가 아니라 루프에 들어가지 않는다 → 지금 경로의 기간 선택지.
+
+**B 시간 · 근거** — explain_change: 루프 남은 시간이 `claims.TIMEOUT + 1` 초보다 적으면 B 없이 템플릿(plan=None). 근거는 `explain.answer(..., seen=[])` 가
+읽은 것을 그대로 받아 주장을 만든다(1일차 두 번 읽기 해결 — seen 기본값 None 이면 지금과 같음).
+
+**답 조합 (agent_loop._summary)** — 카드는 결과 순서대로(_stack, suggest 도 중복 없이 합침), 맨 아래에 LLM 요약 text 블록만.
+사실 표 = 성공한 결과의 사실을 평평한 F1… 로(원래 결과 id = result, 서버 문장 text — 6 · 7번은 narrate.facts, 그 밖 compose lines, 설명 · 나눠 보기는 주장 text).
+LLM 에는 id · result · 종류 · 축 · 대상 · 방향 · 순위 · preview(숫자 □)만. 검사 = `narrate.check` 그대로(연결 말 · 자리표시 · 보충) + 성공한 결과마다 하나 이상(missing_result).
+탈락 · 호출 실패 · 시간 없음 → 요약 없이 카드만. 스키마 = NARRATE_SCHEMA 재사용(`spending_agent_answer`).
+보충에 숫자가 있으면 narrate 와 같이 **보충만** 버리고 고른 문장은 쓴다(지시문의 '카드만'과 다름 — 같은 규칙을 따름).
+
+**테스트** — `spending_fixture/test_agent_wiring.py` 7건(스위치 꺼짐 · 쉬운 질문 · 어려운 4개 카드 숫자 · ask/fallback → 지금 답 · 되묻기 답/후속 질문 · 이어받기 · 요약 검사,
+LLM 입력 숫자 검사는 모든 사례 tearDown). `test_agent_loop.py` 12건 그대로(B · 요약 대역 호출 2번으로 고침).
+오프라인 배선 `scripts/router_eval/verify_agent.py` 10/10 (A1~A4 · S1~S4 · F1 · F2).
+관련 전체(spending_fixture · spending_analysis · chat) 527건 통과(예상 실패 1), 평가 도구 39건 통과(프롬프트 해시 · 누출 검사 그대로 — 해시는 legacy 지시문만 본다).
+
+**실제 LLM 평가** (사용자가 키 있는 맥에서):
+`.venv/bin/python scripts/router_eval/verify_agent.py --live --max-calls 60 --ledger /tmp/agent-ledger.json --output-dir /tmp/agent-live`
+예상 호출: 오프라인 집계 기준 A1 7 · A2 5 · A3 6 · A4 6 · S 각 2 · F1 2 · F2 8 ≈ 44 (B 답 호출이 성공하면 A1 · F2 각 +1) → 상한 60.
+
+**남은 한계**
+- multi_step 지시문은 실제 LLM 으로 평가하지 않았다. 너무 자주 true 면 쉬운 질문도 루프(호출 +3 안팎)를 탄다.
+- 루프의 spend_lookup 인자는 계획 LLM 이 해석 칸을 직접 채운다 — reading 지시문의 세부 규칙(period_said · detail 등)이 없다. 실제 평가에서 인자 품질 확인 필요.
+- 루프 안 조회는 대화 별칭(aliases)을 쓰지 않는다. 루프 답에는 narrate(지난달 비교 조합)를 따로 붙이지 않는다(요약이 대신).
+- 한 질문 최대 LLM 호출 = 해석 2 + 계획 3 + B 2 + 요약 1 = 8.
+
+### 30-1. 화면 확인 보완 (2026-11-10)
+- 이어 설명하는 카드(explain_change · where_changed)가 앞 비교 카드 뒤에 붙을 때, 그 카드의 맨 앞 제목(head) · 큰 금액(total)은 앞 카드와 같은 말이라 뺀다
+  (`agent_loop._stack`, FOLLOW_UPS). 화면에서 '지난달 같은 기간보다 늘어난 금액 42,000원'이 두 번 보였다. 테스트: test_agent_loop 1번 · test_agent_wiring 3번.
+- 루프 입구 넓힘(화면 확인): ① 해석이 '비교 + 시간대별/요일별'(compare + group_by)로 읽어 지금 경로가 compare_query 로 막는 어려운 질문도 루프로 —
+  spend_lookup 이 묶기를 빼고 비교만 한 뒤 관찰 결과에 hint {tool: where_changed, by} 를 붙이고, 계획 지시문 한 줄("hint 가 있으면 이어 부른다").
+  ② refers_to=previous 여도 대상(target) · 비교(compare)를 직접 말한 새 질문이면 루프로 (같은 대화라 해석이 previous 를 붙인 경우). unclear 는 그대로 막음.
+  루프가 못 끝내면 지금 경로(compare_query 안내)로 답한다. 테스트: test_agent_wiring 5b.
+- 실제 LLM 이 "지난달보다 식비 늘었는데 어느 시간대에서 많이 늘었어?"를 compare + group_by 로 읽고 multi_step 은 빠뜨렸다 → '비교 + 묶기'(compare_query)는
+  해석 칸과 상관없이 루프로 보낸다(구조 신호, 단어 규칙 아님). 미지원 안내로 끝난 답에도 에이전트 기록(agent_trace)을 개발용 분석 과정에 싣는다.
+
+## 31. 소비 분석 단순화: 첫 조회 + 추가 판단 1회 (2026-11-10 — 실제 LLM 호출 없음, 가짜 해석 · 판단 · B 로 검사)
+
+27절(답변 조합 narrate) · 29 · 30절(여러 단계 에이전트 루프 · 루프 요약)을 이 구조로 바꿨다. 그 절의 함수 · 프롬프트 · 스키마 · 가짜 응답 · 설정(CHAT_NARRATE)은 지웠다.
+
+**흐름** — 질문 → 라우터 · 소비 해석 · 대화 맥락 → dialog 검증 → **기존 경로로 첫 조회**(adapter.run, 기록도 기존대로) →
+(CHAT_AGENT=on 이고 필요할 때만) 판단 LLM 1회(`agent_loop.PROMPT`) → answer 또는 추가 도구 1회 → 서버 카드 · 문장으로 답. 추가 실행 뒤 LLM 을 다시 부르지 않는다.
+- 판단 진입(`agent._judged`): 첫 조회 성공 + (해석 multi_step=true 이거나 서버가 나눈 '비교 + 나누기'). 되묻기의 답이면 원래 요청 · 원래 질문으로 판단(조건 확정 뒤).
+- '비교 + 나누기'(`agent._split`): 지금 compare_query 미지원인 질문 중 compare=prev_month|month · group_by ∈ claims.AXES · 합계(measure 없음|sum) · top_n 없음만
+  group_by · measure 를 뺀 같은 요청으로 다시 decide → 6 · 7번이면 비교 실행, by 는 남은 요구(needs)로. 다른 계산이 섞이면 기존 미지원 안내 그대로. 기록은 나누기 뺀 요청.
+- 허용 도구(서버가 정함): where_changed = 확정된 비교가 하나일 때(인자 by 만, 기간 · 카테고리 · 필터는 첫 결과 기록에서 상속) ·
+  budget_lookup = 질문에 '예산'이 있고 첫 결과에 예산이 없을 때(인자 없음, 카테고리는 첫 요청 코드, 기간은 기존 예산 주기). 허용 도구가 없으면 판단을 부르지 않는다.
+- 판단 입력: 질문 · follow_up · 확정 조건(숫자 칸 뺌) · 첫 결과(숫자 □) · needs · allowed. 금액 · 날짜 · 가게 이름 없음.
+- 실패(호출 오류 · 시간 초과 · 형식 · 허용 밖 · needs 와 다른 by · 도구 실패): 재시도 없이 첫 결과 그대로 + 못 확인한 요구 안내(notices).
+  answer 를 골라도 needs 가 남았으면 안내. 요구를 특정 못 한 multi_step 이 실패하면 '질문의 나머지 부분은 확인하지 못했어요'.
+- 비교가 확정되지 않았으면(자료 부족) 판단 없이 첫 결과 + 남은 요구 안내. 추가 예산 조회는 기록하지 않는다(후속 질문은 비교를 이어받는다).
+
+**B · 설명** — B(claims.run)는 가설(hypothesis)이 있는 설명 질문에만(CHAT_EXPLAIN_PLAN). 판단 경로와 같은 요청에서 함께 돌지 않는다(설명 결정엔 items 가 없다).
+일반 '왜 늘었어?'는 짧은 서버 설명: 증감(큰 금액 카드) + 결제 건수 · 건당 평균 비교 + 단정 불가 + (세부 대신 · 미분류 안내).
+특정 가게 · 카테고리 증감은 '어디서'의 답이라 '왜'의 기본 답으로 쓰지 않는다(11/10 사용자 결정 — 증감 = 건수 × 건당 금액). '어디서'는 판단 단계의 where_changed.
+질문이 건수 · 평균 · 시간대 · 요일 · 큰 결제 · 새로 간 곳 · 줄이기를 말하면 그 근거 문장을 대신 넣는다(explain.METRICS, 낱말 목록 — shortcut). 줄이기를 물었을 때만 [예산 조정하기].
+옛 설명 LLM(explain.PROMPT · facts · checked · explain_complete · LLM.explains)과 카드의 건수 · 큰 결제 · 몰린 때 · 방문 · 가게별 블록은 지웠다(문장 근거 함수는 지표 질문용으로 남김).
+
+**호출 수**(가짜 해석 + 실제 배선처럼 explains 주입, 11개 대표 질문 합): 전 45회 · 추정 입력 토큰 약 89,400 → 후 24회 · 약 69,300.
+비교 + 나누기 · 예산 + 비교: 6회 → 3회(라우터 · 소비 해석 · 판단). 일반 '왜': B 2회 포함 3회 → 1회. 프롬프트 9종 → 6종(루프 계획 · 루프 요약 · narrate · 옛 설명 삭제, 판단 신규).
+
+**테스트** — test_agent_wiring 11건 · test_agent_loop 8건(판단 실패 처리) 새로 씀. 관련 전체(spending_fixture · spending_analysis · chat) 516건 통과(예상 실패 1), 평가 도구 39건 통과.
+오프라인 배선 `scripts/router_eval/verify_agent.py` 12/12. verify_narrate.py 는 지웠다(narrate 경로 전용).
+실제 LLM: `.venv/bin/python scripts/router_eval/verify_agent.py --live --max-calls 40 --ledger /tmp/agent-ledger.json --output-dir /tmp/agent-live` (예상 약 30회).
+
+**남은 한계** — 예산 · 지표 질문 판별은 원문 낱말. 첫 조회가 예산(3 · 4번)이면 비교가 없어 판단을 하지 않는다(예산 먼저 읽힌 '예산 + 소비' 질문은 소비 쪽이 빠짐).
+비교 둘 이상이면 나누기 대상을 고르지 않는다. multi_step · 판단 지시문은 실제 LLM 으로 평가하지 않았다.
+
+### 31-1. 실제 LLM 평가 보완 (2026-11-10 — verify_agent --live 29회: A1 · A3 · A4 · F2 실패 → 고침)
+실제 해석값은 `chat.llm.fake.AGENT_SAID` 에 그대로 옮기고 `test_agent_wiring.LiveReadingRegressionTest` 로 고정했다 (기대값은 평가 기준 그대로).
+- A1 · F2: '어느 시간대에서 많이 늘었어?'를 explain=true(가설 없음) + 비교 + group_by 로 읽었다 → `_split` 이 explain 을 남겨 설명 경로로 빠졌다.
+  가설 없는 explain · explain_kind 도 떼고 비교 먼저 + 나누기 요구로. 가설이 있으면 나누지 않는다(B 경로). F2 후속 질문은 첫 질문이 비교를 기록해 이어받는다.
+- A3: '식비 예산 얼마 남았고 지난달보다 많이 쓰고 있어?'를 budget_left + compare=prev_month + multi_step 으로 읽어 기존 경로가 '현재 예산 기간으로 볼까요?'로 되물었다.
+  → 같은 범위 소비 비교(target=spend)를 먼저 실행 · 기록하고, 남은 예산은 판단 단계의 budget_lookup(지금 예산 주기). 저장된 예산 되묻기는 지운다.
+  multi_step 없는 '지난달보다 예산 많이 남았어?' · '지난달 예산'은 기존 되묻기 그대로.
+- A4: '지난달보다 어느 요일에 더 썼어?'를 measure=daily_avg + group_by=weekday 로 읽었다 → 합계만 받던 `_split` 이 나누지 않았다.
+  요일 나누기는 원래 하루 평균(claims.compare_group)이라 daily_avg 를 지킨다 — need 에 measure 를 남긴다. 다른 기준의 하루 평균은 지킬 수 없어 나누지 않는다(미지원 안내 그대로).
+- 판단 1회 · 추가 도구 1회 상한 그대로.
+
+### 31-2. 답 가독성 (2026-11-10 — 화면 모양만, 숫자 · 경로 그대로)
+원칙: 숫자는 비교 줄(rows: 전 → 후 · 증감 글자 + 색), 결론은 한 줄(text), 기간은 카드 제목에 한 번, 단정 불가 · 확인 범위 안내는 아래 작은 글씨(notices).
+- '왜 늘었어?': 큰 금액(증감) + 비교 줄(결제 건수 · 건당 평균) + 둘을 엮은 한 줄(explain.MIX — 건수 · 평균 부호 조합, 원인 추측 아님) + notices(단정 불가).
+  lines(글자만 보는 화면)는 증감 · 한 줄 · 건수 · 평균 문장 그대로, 단정 불가는 notices 로만(겹치지 않게).
+- 나눠 보기(where_changed): 순위 줄(제목에 '고정지출 제외') + '저녁 시간대가 가장 많이 늘었어요.' 한 줄. claims 그룹 주장에 before · after 를 더했다(for_llm 은 보내지 않는다).
+- B 답: 확인 범위 한계 · 다음 확인 안내를 카드 문장에서 notices 로. 답에 쓴 주장 중 전 · 후 값이 있는 것은 비교 줄('확인한 변화', 모두 고정지출 제외면 제목에 표시)로,
+  범위 증감 문장(큰 금액과 같음) · 줄로 옮긴 주장 하나뿐인 문장은 카드 문장에서 뺀다(두 주장을 이은 문장은 그대로). 주장에 before · after 를 더했고
+  claims.run 이 trace 의 _rows · _shown 으로 넘기면 explain._planned 가 꺼내 지운다(분석 과정에 금액 없음). lines 는 문장 그대로.
+- 화면(ChatReply): 한 답에 카드가 여럿일 때(지난달 비교 + 남은 예산) 두 번째부터의 head 를 그리지 않던 문제 → 구분선 + 소제목(mc-fx-subhead).
+
+### 31-3. 리뷰 보완 (2026-11-10)
+- 요일 합계: measure=sum + 요일 나누기를 하루 평균으로 답하던 문제 → need 에 measure(sum · daily_avg)를 남기고 where_changed 가 ctx["measure"] 로
+  `claims.compare_group(per_day=False)`(요일별 합계) 를 쓴다. 말하지 않으면(None) 하루 평균 그대로. 카드 제목 '요일별 변화' / '요일별 하루 평균 변화'.
+- 가설 + 나누기(hypothesis + group_by → compare_query)가 B 로 가지 않던 문제 → `_split` ②: B 가 켜져 있으면 group_by 만 빼고 가설 · 설명 그대로 다시 정해 B 로.
+  판단 단계와 섞지 않는다. 뺀 나누기를 가설 대상이 다루지 않으면(배달앱 = 가게 ↔ 시간대) '시간대별로 나눠 보는 건 확인하지 못했어요' 안내.
+  테스트는 B 계획 · 답이 실제로 불렸는지(PLAN_PROMPT → ANSWER_PROMPT)까지 본다.
+- 이번 달 + 지난달 비교(11/10 화면): "이번달 식비를 지난달과 비교"를 실제 해석이 period=last_month + compare=prev_month(지난달을 지난달과)로 읽어
+  서버가 conflicting_conditions 로 기간을 되물었다. 서버 판단은 그대로(하나를 짐작하지 않는다). 원인은 지시문 4번의 '견주는 쪽을 지난달로 말했으면
+  period=last_month' — 이번 달과 지난달을 함께 말해도 보는 쪽은 이번 달(period=null), last_month + prev_month 를 함께 쓰지 않는다,
+  지난달을 특정 달과 견줄 때만 last_month + month 로 고쳤다. verify_agent S5 · test_agent_wiring 회귀. 실제 LLM 재평가 필요.

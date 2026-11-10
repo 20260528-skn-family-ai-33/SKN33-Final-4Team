@@ -1,14 +1,14 @@
-"""답변 조합 + 보충(11/10) — narrate(6 · 7번 지난달 비교) · supplement(보충 검사) · B 답 보충. 실제 LLM 호출 없음 (정해 둔 응답)
+"""지난달 비교 사실 표(narrate — 추가 판단 LLM 에 보낼 관찰 결과, MEMO 31) · supplement(B 답 보충 검사) · B 답 보충. 실제 LLM 호출 없음
 실행: python manage.py test spending_fixture.test_narrate --settings=spending_fixture.settings
 """
 import json
-import re
 from functools import partial
 from unittest import mock
 
 from django.test import SimpleTestCase, TestCase
 
 from chat.router_core import MemoryStateStore, run_turn
+from spending_analysis import adapter
 from spending_analysis import agent as spending_agent
 from spending_analysis import claims as C
 from spending_analysis import narrate, supplement
@@ -23,30 +23,13 @@ TOTAL = "지난달보다 많이 썼어?"
 NEXT = "어디에서 늘었는지 궁금하면 '왜 늘었어?'라고 물어봐 주세요."
 
 
-def _said(*sentences, extra=None, reason=None):
-    return json.dumps({"sentences": [{"text": t, "facts": re.findall(r"\{(F\d+)\}", t)} for t in sentences],
-                       "extra": extra, "extra_reason": reason}, ensure_ascii=False)
-
-
-class Narrator:
-    """정해 둔 응답을 돌려주는 조합 LLM 대역 — 받은 입력을 남긴다. raise_ = 호출 오류"""
-
-    def __init__(self, raw=None, raise_=False):
-        self.raw, self.raise_, self.calls = raw, raise_, []
-
-    def __call__(self, system, user, timeout=None):
-        self.calls.append({"system": system, "user": json.loads(user), "timeout": timeout})
-        if self.raise_:
-            raise TimeoutError("대기 한도")
-        return self.raw
-
-
-def ask(persona, text, narrator=None):
-    """한 질문 → reply (라우터 → 소비 분석 에이전트, 해석은 가짜)"""
-    store, llm = MemoryStateStore(), FakeLLM()
-    agent = partial(spending_agent.handle, store=store, complete=llm, user=user(persona), narrate_complete=narrator)
-    turn = run_turn("talk-1", store, llm, text=text, today=TODAY, as_of=AS_OF, agents={"spending": agent})
-    return turn["result"]["reply"]
+def results_of(persona, text):
+    """한 질문(라우터 → 소비 분석, 해석은 가짜)의 조회 결과 (adapter.run 이 돌려준 것 그대로)"""
+    store, llm, got, run = MemoryStateStore(), FakeLLM(), [], adapter.run
+    agent = partial(spending_agent.handle, store=store, complete=llm, user=user(persona))
+    with mock.patch.object(adapter, "run", side_effect=lambda *a, **k: got.append(run(*a, **k)) or got[-1]):
+        run_turn("talk-1", store, llm, text=text, today=TODAY, as_of=AS_OF, agents={"spending": agent})
+    return got[-1] if got else []
 
 
 class SupplementCheckTest(SimpleTestCase):
@@ -80,7 +63,7 @@ class SupplementCheckTest(SimpleTestCase):
 
 
 @fixture_db_only
-class NarrateTest(TestCase):
+class NarrateFactsTest(TestCase):
     """윤서(A) 식비: 이번 달 390,000원 · 지난달 같은 기간 348,000원 · +42,000원 (05 기대값, PersonaAnswerTest 와 같은 숫자)"""
 
     @classmethod
@@ -88,115 +71,35 @@ class NarrateTest(TestCase):
         seed.apply(DESIGN)
 
     def test_facts_are_server_sentences_and_llm_gets_no_numbers(self):
-        narrator = Narrator(_said("{F1}"))
-        ask("A", FOOD, narrator)
-        sent = narrator.calls[0]["user"]
-        self.assertEqual(sent["question"], FOOD)
-        self.assertEqual(sent["facts"], [
+        table = narrate.facts(results_of("A", FOOD))
+        self.assertEqual(table[0]["text"], "식비 지출은 지난달보다 42,000원 증가했어요.")
+        sent = narrate.for_llm(table)
+        self.assertEqual(sent, [
             {"id": "F1", "kind": "change", "subject": "식비", "direction": "up", "must": True,
              "preview": "식비 지출은 지난달보다 □원 증가했어요."},
             {"id": "F2", "kind": "this_month", "subject": "식비", "direction": None, "must": False,
              "preview": "이번 달(□월 □일~□일) 식비에 □원 썼어요."},
             {"id": "F3", "kind": "last_month", "subject": "식비", "direction": None, "must": False,
              "preview": "지난달 같은 기간(□월 □일~□일)에는 식비에 □원 썼어요."}])
-        no_ids = [{k: v for k, v in f.items() if k != "id"} for f in sent["facts"]]
+        no_ids = [{k: v for k, v in f.items() if k != "id"} for f in sent]
         self.assertNotRegex(json.dumps(no_ids, ensure_ascii=False), r"[0-9]")  # 금액 · 날짜를 보내지 않는다
-        self.assertEqual(narrator.calls[0]["timeout"], narrate.TIMEOUT)
-
-    def test_composed_answer_and_supplement_go_under_the_card(self):
-        plain = ask("A", FOOD)
-        reply = ask("A", FOOD, Narrator(_said("{F1}", "그리고 {F2}", extra=NEXT, reason="next_step")))
-        self.assertEqual(reply["view"][:-1], plain["view"])  # 카드 숫자는 그대로
-        self.assertEqual(reply["view"][-1], {"kind": "text", "lines": [
-            "식비 지출은 지난달보다 42,000원 증가했어요.",
-            "그리고 이번 달(10월 1일~29일) 식비에 390,000원 썼어요.", NEXT]})
-        self.assertEqual((reply["lines"], reply["notices"]), (plain["lines"], plain["notices"]))  # 템플릿 답도 그대로
-        trace = dict(reply["trace"]["narrate"])
-        self.assertIsInstance(trace.pop("ms"), int)  # 조합 호출 시간 (개발용)
-        self.assertEqual(trace, {"used": ["F1", "F2"], "rejected": [], "extra_reason": "next_step",
-                                 "extra_dropped": [], "fallback": None})
 
     def test_total_compare_uses_total_sentences(self):
-        reply = ask("A", TOTAL, Narrator(_said("{F1} {F3}", extra=NEXT, reason="next_step")))
-        self.assertEqual(reply["view"][-1]["lines"], [
-            "전체 소비는 지난달보다 42,000원 증가했어요. 지난달 같은 기간(9월 1일~29일) 소비는 1,468,000원이었어요.", NEXT])
+        table = narrate.facts(results_of("A", TOTAL))
+        self.assertEqual([f["text"] for f in table][::2], ["전체 소비는 지난달보다 42,000원 증가했어요.",
+                                                           "지난달 같은 기간(9월 1일~29일) 소비는 1,468,000원이었어요."])
 
-    def test_bad_compositions_keep_the_current_card(self):
-        plain = ask("A", FOOD)
-        cases = {
-            "missing_must": _said("{F2}"),  # 증감 문장(must)을 빼면 안 된다
-            "free_text": _said("네, 많이 늘었어요 {F1}"),  # 연결 말 밖의 말
-            "repeated": _said("{F1}", "그리고 {F1}"),
-            "format": "{}",
-        }
-        for why, raw in cases.items():
-            with self.subTest(why=why):
-                reply = ask("A", FOOD, Narrator(raw))
-                self.assertEqual(reply["view"], plain["view"])
-                trace = reply["trace"]["narrate"]
-                self.assertEqual(trace["fallback"], "rejected")
-                self.assertTrue(any(why in r for r in trace["rejected"]), trace)
-
-    def test_bad_supplement_is_dropped_alone(self):
-        """여러 항목 카드엔 지난달 금액이 없다 — 지난달 금액 문장을 골랐으면 보충이 탈락해도 문장 칸은 붙는다"""
-        reply = ask("A", "지난달보다 식비랑 주거비 더 썼어?", Narrator(_said("{F1}", "{F3}", "{F4}", extra="지난달보다 4만 원 넘게 더 썼어요.", reason="uncovered")))
-        self.assertEqual(reply["view"][-1]["lines"], ["식비 지출은 지난달보다 42,000원 증가했어요.",
-                                                      "지난달 같은 기간(9월 1일~29일)에는 식비에 348,000원 썼어요.",
-                                                      "주거·통신 지출은 지난달과 같아요."])
-        self.assertEqual(reply["trace"]["narrate"]["extra_dropped"], ["number"])
-
-    def test_only_must_sentences_without_supplement_are_not_repeated(self):
-        """증감 문장만 고르고 보충이 없으면(또는 보충이 탈락하면) 카드와 같은 말 — 문장 칸을 붙이지 않는다"""
-        plain = ask("A", FOOD)
-        # 항목 하나짜리 카드는 이번 달 · 지난달 금액도 보여 준다 — 그 문장을 같이 골라도 반복
-        for raw in (_said("{F1}"), _said("{F2}", "그리고 {F1}"), _said("{F1}", "{F3}"),
-                    _said("{F1}", extra="지난달보다 4만 원 넘게 더 썼어요.", reason="uncovered")):
-            reply = ask("A", FOOD, Narrator(raw))
-            self.assertEqual((reply["view"], reply["trace"]["narrate"]["fallback"]), (plain["view"], "same_as_card"))
-        reply = ask("A", FOOD, Narrator(_said("{F1}", extra=NEXT, reason="next_step")))  # 보충이 있으면 붙인다
-        self.assertEqual(reply["view"][-1]["lines"], ["식비 지출은 지난달보다 42,000원 증가했어요.", NEXT])
-        multi = ask("A", "지난달보다 식비랑 주거비 더 썼어?")  # 여러 항목: 증감 문장만이면 반복, 지난달 금액을 골랐으면 새 정보
-        reply = ask("A", "지난달보다 식비랑 주거비 더 썼어?", Narrator(_said("{F1}", "그리고 {F4}")))
-        self.assertEqual((reply["view"], reply["trace"]["narrate"]["fallback"]), (multi["view"], "same_as_card"))
+    def test_only_comparable_compares_make_a_table(self):
+        """6 · 7번이 아니거나 비교할 수 없으면(지우: 지난달 자료 부족) 표를 만들지 않는다 — 답 문장 한 줄씩으로"""
+        self.assertTrue(narrate.applies(results_of("A", FOOD)))
+        self.assertFalse(narrate.applies(results_of("A", "식비 얼마 썼어?")))
+        self.assertFalse(narrate.applies(results_of("C", TOTAL)))
 
     def test_sentence_name_puts_the_filter_first(self):
         self.assertEqual(narrate.said_name({"type": 7, "category": "FOOD", "time_slots": ["evening"]}), "저녁 식비")
         self.assertEqual(narrate.said_name({"type": 7, "category": "FOOD", "weekdays": [5, 6], "time_slots": ["evening"]}), "주말 저녁 식비")
         self.assertEqual(narrate.said_name({"type": 6, "weekdays": [5, 6]}), "주말")
         self.assertEqual(narrate.said_name({"type": 7, "category": "FOOD"}), "식비")
-
-    def test_call_failure_and_timeout_keep_the_current_card(self):
-        plain = ask("A", FOOD)
-        reply = ask("A", FOOD, Narrator(raise_=True))
-        self.assertEqual((reply["view"], reply["trace"]["narrate"]), (plain["view"], {"fallback": "call_failed"}))
-        ticks = iter([0.0, narrate.TIMEOUT + 1])
-        results = [{"ok": True, "item": {}, "result": {"type": 7}}]
-        with mock.patch.object(narrate, "facts", return_value=[]), mock.patch.object(narrate, "applies", return_value=True):
-            same, trace = narrate.attach(plain, results, FOOD, Narrator(_said("{F1}")), clock=lambda: next(ticks))
-        self.assertEqual((same, trace), (plain, {"fallback": "timeout"}))
-
-    def test_other_analyses_and_no_llm_are_untouched(self):
-        narrator = Narrator(_said("{F1}"))
-        plain = ask("A", "식비 얼마 썼어?")
-        self.assertEqual(ask("A", "식비 얼마 썼어?", narrator), plain)  # 6 · 7번이 아니면 부르지 않는다
-        self.assertEqual(narrator.calls, [])
-        self.assertNotIn("trace", ask("A", FOOD))  # 조합 LLM 이 없으면 지금 답 그대로
-
-    def test_not_comparable_is_left_to_the_card(self):
-        """지우(C)는 지난달 자료가 다 모이지 않았다 — 카드 맨 위 안내(lead)로 충분해 조합하지 않는다 (같은 안내가 두 번 보이지 않게)"""
-        narrator = Narrator(_said("{F1}"))
-        plain = ask("C", TOTAL)
-        self.assertEqual(ask("C", TOTAL, narrator), plain)
-        self.assertEqual(narrator.calls, [])
-        self.assertTrue(plain["lead"][0].startswith("지난달 같은 기간의 내역이 충분하지 않아"))
-
-    def test_label_before_placeholder_is_rejected(self):
-        """두 카테고리 질문에서 '식비는 {F1}'처럼 이름을 붙이면 탈락 (11/10 실제 평가 N6) — 문장에 이름이 이미 있다"""
-        reply = ask("A", "지난달보다 식비랑 주거비 더 썼어?", Narrator(_said("식비는 {F1}", "주거·통신은 {F4}")))
-        self.assertEqual(reply["trace"]["narrate"]["rejected"], ["1:free_text", "2:free_text", "missing_must:F1,F4"])
-        reply = ask("A", "지난달보다 식비랑 주거비 더 썼어?", Narrator(_said("{F1}", "그리고 {F4}", extra=NEXT, reason="next_step")))
-        self.assertEqual(reply["view"][-1]["lines"], ["식비 지출은 지난달보다 42,000원 증가했어요.",
-                                                      "그리고 주거·통신 지출은 지난달과 같아요.", NEXT])
 
 
 @fixture_db_only

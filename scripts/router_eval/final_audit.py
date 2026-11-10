@@ -20,7 +20,7 @@ import check_reading
 import explain_eval
 from chat import engine
 from chat.llm.live import LiveReading
-from spending_analysis import reading, claims, explain, investigation
+from spending_analysis import reading, claims, investigation
 from chat.router_core import reading as router_reading
 
 
@@ -31,7 +31,7 @@ def sha(value):
 def contracts():
     return {'router': router_reading.PROMPT, 'spending': reading.PROMPT,
             'hypothesis_instruction': investigation.INSTRUCTION, 'hypothesis_targets': investigation.catalog(),
-            'plan': claims.PLAN_PROMPT, 'answer': claims.ANSWER_PROMPT, 'explain': explain.PROMPT}
+            'plan': claims.PLAN_PROMPT, 'answer': claims.ANSWER_PROMPT}
 
 
 def frozen_check(root, revision):
@@ -55,7 +55,7 @@ class AuditReading(LiveReading):
 
     def __call__(self, system, user, timeout=None):
         roles = {router_reading.PROMPT: 'router', reading.PROMPT: 'spending', claims.PLAN_PROMPT: 'plan',
-                 claims.ANSWER_PROMPT: 'answer', explain.PROMPT: 'legacy_explain'}
+                 claims.ANSWER_PROMPT: 'answer'}
         row = {'unit': self.unit, 'role': roles.get(system, 'unknown'), 'prompt_sha256': sha(system),
                'request': json.loads(user), 'raw': None, 'error': None}
         started = time.monotonic()
@@ -185,7 +185,6 @@ def main():
         try:
             if args.mode=='b': rows=b_cases(root,args.tag,live,args.ids)
             else:
-                live.explains=False
                 cases=[c for c in checklist.CASES if not args.ids or c['id'] in args.ids]
                 rows=checklist.run(live,cases)
         finally: service.connection.creation.destroy_test_db(old,verbosity=0)
