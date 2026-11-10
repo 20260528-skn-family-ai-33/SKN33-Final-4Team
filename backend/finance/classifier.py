@@ -111,6 +111,8 @@ SUBSCRIPTION_NAMES = {"티빙", "웨이브", "왓챠", "멜론", "벅스", "플�
 CORPORATE_NAMES = {
     "우아한형제들": "FOOD", "위대한상상": "FOOD", "배달의민족": "FOOD", "배민": "FOOD", "요기요": "FOOD", "쿠팡이츠": "FOOD",
     "cj올리브네트웍스": "BEAUTY",  # 올리브영 운영사. 검색하면 '기업'으로 나옴
+    # 지그재그 운영사 (11/09 팀장님 실거래 '카카오스타일 - 카카오스타일'). 지도는 회사 사무실(주거·통신 0.62), 웹은 패션 0.99 로 엇갈렸다
+    "카카오스타일": "FASHION_SHOPPING",
     # 온라인 여행 예약: 지도 검색에 서비스가 아니라 같은 이름의 다른 장소가 나온다 (트립닷컴 → 에버랜드 편의시설)
     "트립닷컴": "TRAVEL_LODGING", "아고다": "TRAVEL_LODGING", "야놀자": "TRAVEL_LODGING", "여기어때": "TRAVEL_LODGING",
     "익스피디아": "TRAVEL_LODGING", "에어비앤비": "TRAVEL_LODGING", "호텔스닷컴": "TRAVEL_LODGING", "부킹닷컴": "TRAVEL_LODGING",
@@ -122,8 +124,9 @@ ETC_SUFFIXES = (
 )
 ETC_KEYWORDS = ("연회비", "보험")
 # 택시 (11/02): 이름에 '택시'만 들어 있으면 택시파스타·피자택시 같은 식당도 걸려서(카카오 장소 193곳 중 식당 6곳),
-# '개인택시'·'일반택시'가 들어 있거나 '택시'가 띄어 쓴 한 낱말일 때만. 택시조합·조합 금고는 소비처가 아니라 뺀다
-TAXI_NAMES = ("개인택시", "일반택시")
+# '개인택시'·'일반택시'·'법인택시'가 들어 있거나 '택시'가 띄어 쓴 한 낱말일 때만. 택시조합·조합 금고는 소비처가 아니라 뺀다
+# 11/09 실제 카드 명세: '카카오_법인택시6' (법인택시 뒤에 번호가 붙어 낱말 규칙에도 안 걸렸다)
+TAXI_NAMES = ("개인택시", "일반택시", "법인택시")
 TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
 NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
 # 교통카드 (11/05): 가게 이름이 아니라 SVM 이 엉뚱한 카테고리를 확신한다 (모바일티머니선불형 생활용품 0.94). 충전도 교통비라 페이 충전으로 묻지 않는다 (11/06)
@@ -178,7 +181,10 @@ def store_name(name):
     """결제대행 접두어·결제수단 꼬리표를 뗀 가맹점명. 없으면 None"""
     left, dash, right = (name or "").partition(" - ")
     if dash and left.strip() and right.strip():
-        name = right if left.lower().startswith(PAY_ROUTES) else ROUTE_TAIL.sub("", left)
+        # 11/09 실거래 '대표_3_카카오페이 - 파파존스 청라점': 경로가 앞이 아니라 꼬리에 붙은 A 도 결제 경로다
+        # (예전에는 A 를 가맹점으로 보고 꼬리를 떼 '대표_3' 만 남았다)
+        route = left.lower().startswith(PAY_ROUTES) or PAY_SUFFIX.search(left.strip())
+        name = right if route else ROUTE_TAIL.sub("", left)
     name = PG_NAMED_PREFIX.sub("", PG_PREFIX.sub("", name or "").strip())
     return PAY_SUFFIX.sub("", name).strip() or None
 
