@@ -48,6 +48,7 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `DJANGO_DEBUG` | ✅ | `True` | 로컬 `True`, 배포 `False` |
 | `DJANGO_ALLOWED_HOSTS` | ✅ | `localhost,127.0.0.1` | 접속 허용 호스트. 쉼표로 구분 |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | 배포 시 | `https://도메인` | HTTPS 배포 주소. 로컬은 비워둠 (DEBUG면 React 개발 서버 `localhost:5173`은 자동 허용) |
+| `DJANGO_ADMIN_URL` | 배포 시 | (비워둠 → `admin/`) | 관리자 화면 주소. 배포 때는 추측하기 어려운 값(예: `python -c "import secrets; print(secrets.token_urlsafe(12))"` 출력)으로 바꾸고 Git·채팅에 올리지 않음. `api`로 시작하면 서버가 안 켜짐 |
 | `POSTGRES_DB` | ✅ | `money_cushion` | DB 이름 |
 | `POSTGRES_USER` | ✅ | `money_cushion` | DB 사용자 |
 | `POSTGRES_PASSWORD` | ✅ | (각자 설정) | DB 비밀번호 |

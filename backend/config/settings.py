@@ -42,6 +42,10 @@ SECRET_KEY = required("DJANGO_SECRET_KEY")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+# 관리자 화면 주소. 운영에서는 추측하기 어려운 값으로 바꾼다 (코드에 적으면 GitHub에 공개되므로 환경변수로)
+ADMIN_URL = (os.getenv("DJANGO_ADMIN_URL", "").strip().strip("/") or "admin") + "/"
+if ADMIN_URL.split("/")[0] == "api":
+    raise ImproperlyConfigured("DJANGO_ADMIN_URL은 api/ 로 시작할 수 없어요. API 주소를 가립니다.")
 if DEBUG:
     # 로컬: React 개발 서버(Vite 5173)에서 프록시로 오는 저장 요청 허용
     CSRF_TRUSTED_ORIGINS += ["http://localhost:5173", "http://127.0.0.1:5173"]
