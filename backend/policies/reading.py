@@ -31,23 +31,28 @@ needs: 사용자가 찾는 지원 하나마다 하나 (최대 3개). 서로 다�
   사용자가 정책 이름을 말했으면 그 이름을 그대로 넣는다. 확실하지 않은 정책 이름을 지어내지 않는다.
 place: 사용자가 정책을 찾으려는 곳으로 말한 지명을 문장에 나온 대로 ("부산", "해운대구", "수원 영통구"). 이사처럼 두 곳이 나오면 정책을 찾으려는 곳(이사 갈 곳). 지명이 없으면 null.
 vague: 어떤 분야(주거 · 취업 · 생활비 · 저축 · 창업 · 심리 · 교육 …)의 지원인지 전혀 알 수 없으면 true, 분야가 하나라도 드러나면 false. true 면 needs 는 [].
+mine: 청년 정책 · 지원 제도를 찾거나 묻는 문장이면 true. 사용자 자신의 지출 · 예산 · 거래 내역을 보거나 바꾸려는 문장("이번 달 얼마 썼어?", "식비 예산 줄여줘")이면 false.
+  돈이 모자라 도움을 찾는 고민("카드값이 밀렸어", "월세가 부담돼")은 true. false 면 needs 는 [].
 
 예
 "면접 볼 때 교통비랑 정장 빌리는 거 도움 받을 수 있어?"
-→ {"needs":[{"query":"면접 교통비 지원","keywords":["면접수당","면접비"]},{"query":"면접 정장 무료 대여","keywords":["면접정장","정장"]}],"place":null,"vague":false}
+→ {"needs":[{"query":"면접 교통비 지원","keywords":["면접수당","면접비"]},{"query":"면접 정장 무료 대여","keywords":["면접정장","정장"]}],"place":null,"vague":false,"mine":true}
 "대구 사는데 자격증 시험비 너무 비싸"
-→ {"needs":[{"query":"자격증 시험 응시료 지원","keywords":["응시료","자격증"]}],"place":"대구","vague":false}
+→ {"needs":[{"query":"자격증 시험 응시료 지원","keywords":["응시료","자격증"]}],"place":"대구","vague":false,"mine":true}
 "청년인데 뭐 받을 거 없나"
-→ {"needs":[],"place":null,"vague":true}"""
+→ {"needs":[],"place":null,"vague":true,"mine":true}
+"지난주에 배달비 얼마 나왔지?"
+→ {"needs":[],"place":null,"vague":false,"mine":false}"""
 
 SCHEMA = {
-    "type": "object", "additionalProperties": False, "required": ["needs", "place", "vague"],
+    "type": "object", "additionalProperties": False, "required": ["needs", "place", "vague", "mine"],
     "properties": {
         "needs": {"type": "array", "items": {
             "type": "object", "additionalProperties": False, "required": ["query", "keywords"],
             "properties": {"query": {"type": "string"}, "keywords": {"type": "array", "items": {"type": "string"}}}}},
         "place": {"type": ["string", "null"]},
         "vague": {"type": "boolean"},
+        "mine": {"type": "boolean"},
     },
 }
 
@@ -67,6 +72,7 @@ class Reading:
     needs: list[Need]  # 막연하면 [] — 그래도 검색해야 하면 needs_for() 가 원래 문장을 쓴다
     place: str | None  # 문장에 나온 지명 그대로
     vague: bool
+    mine: bool = True  # 정책 담당의 문장인가. False 면 지출 · 예산 질문 → 핸들러가 not_mine
 
     @property
     def place_codes(self):
@@ -92,13 +98,15 @@ def parse(text):
     try:
         data = json.loads(text)
         items, place, vague = data["needs"], data["place"], data["vague"]
-        if not isinstance(items, list) or not isinstance(vague, bool) or not isinstance(place, (str, type(None))):
+        mine = data.get("mine", True)  # 4단계 1차 답(칸 없음)도 읽는다
+        if not isinstance(items, list) or not isinstance(vague, bool) or not isinstance(place, (str, type(None))) \
+                or not isinstance(mine, bool):
             raise TypeError
         needs = [Need(item["query"].strip(), _keywords(item["keywords"])) for item in items
                  if isinstance(item.get("query"), str) and item["query"].strip() and isinstance(item.get("keywords"), list)]
     except (ValueError, KeyError, TypeError, AttributeError):
         raise ReadFailed("읽기 답의 모양이 달라요") from None
-    return Reading(needs=needs[:MAX_NEEDS], place=(place or "").strip() or None, vague=vague and not needs)
+    return Reading(needs=needs[:MAX_NEEDS], place=(place or "").strip() or None, vague=vague and not needs, mine=mine)
 
 
 def read(text, complete):
@@ -118,7 +126,8 @@ def needs_for(reading, text):
 
 def fake_complete(system, user):
     """네트워크 없는 읽기: 문장 그대로 한 가지 필요, 키워드 없음 (= 2단계 벡터만 검색과 같다)"""
-    return json.dumps({"needs": [{"query": user, "keywords": []}], "place": None, "vague": False}, ensure_ascii=False)
+    return json.dumps({"needs": [{"query": user, "keywords": []}], "place": None, "vague": False, "mine": True},
+                      ensure_ascii=False)
 
 
 def reader(live=None, max_calls=None):
