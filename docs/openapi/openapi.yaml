@@ -13230,8 +13230,8 @@ components:
 x-source-sha256:
   docs/API_RULES.md: ff9ec441fcefd21fe33213c36adeb1888084ea2acb22615ccab670bcdd5b15f0
   docs/api/README.md: 054901c95fb21d87b5d0eabbe2b24e98417c0e0edd000ce9e1c82efa37475f33
-  docs/api/spending-analysis.md: e03c5e35ce0e8085229dd53f9734a8280f2bb39688ada92b93b4f295f81dec05
-  docs/결정기록_2026-10-21.md: c926734ba5e9b436c7ae4b980415bf90ff45027e8ec7c4f34d333e7d54296594
+  docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
+  docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: 473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1
   docs/api/finance-connect.md: 7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510
   docs/api/cards.md: fe12a3c7ef7796eeafd784491ebd326ae1d1bcec2befd085760ef3663e6652e9
@@ -13241,4 +13241,4 @@ x-source-sha256:
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
   docs/api/home.md: 1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5
   docs/api/chat.md: 05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd
-  docs/api/budgets.md: 6c6c9f0996bdfe09477f0cf7941793e4477ce931a9ea5034fcee11762142f52b
+  docs/api/budgets.md: e0882dceb67e5e0204d5d447e76dc5e881eebe1458bd9c6c3c3c8d6ef427e090
