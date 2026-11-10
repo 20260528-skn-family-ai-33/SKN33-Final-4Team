@@ -13,6 +13,9 @@ TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거�
 
 # 실제 API 구현 및 계약 검증이 끝났을 때 변경. URL 존재만으로 구현 완료가 되지 않는다.
 IMPLEMENTATION = {
+    ("get", "/api/budgets/ai-consent/"): "implemented",
+    ("put", "/api/budgets/ai-consent/"): "implemented",
+    ("delete", "/api/budgets/ai-consent/"): "implemented",
     ("get", "/api/csrf/"): "implemented",
     ("get", "/api/home/"): "implemented",
     # 인증 2~5 (세진, 10/26)

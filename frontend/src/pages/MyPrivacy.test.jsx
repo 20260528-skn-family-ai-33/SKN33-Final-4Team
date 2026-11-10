@@ -31,6 +31,7 @@ beforeEach(() => {
     if (url === '/api/profile/') return profileError || reply(profile)
     if (url === '/api/budgets/salary/') return reply(summary.salary)
     if (url === '/api/finance/consents/') return consentError || reply(consents)
+    if (url === '/api/budgets/ai-consent/') return reply({ status: 'not_granted' })
     if (url === '/api/csrf/') return reply({ ok: true })
     throw new Error(`Unexpected URL ${url}`)
   }))

@@ -72,6 +72,8 @@ def budget_data(user, today, *, selected=None):
     allocated = dict(selected.items.filter(bucket="living").values("category_id").annotate(total=Sum("allocated_amount")).values_list("category_id", "total"))
     minimums = dict(CategoryMinimum.objects.filter(user=user).values_list("category_id", "min_amount"))
     settings = {s.category_id: s for s in BudgetCategorySetting.objects.filter(user=user, cycle=cycle)}
+    design = (selected.validation_summary or {}).get('design', {})
+    reasons = {e['category']: e['text'] for e in design.get('explanations', [])}
     categories = []
     for category in Category.objects.filter(pk__in=LIVING_CODES).order_by("display_order", "pk"):
         setting = settings.get(category.pk)
@@ -79,9 +81,11 @@ def budget_data(user, today, *, selected=None):
             "category": category.pk, "category_name": category.display_name,
             "allocated": allocated.get(category.pk, 0), "spent": summary["by_category"].get(category.pk, 0),
             "min_amount": minimums.get(category.pk), "locked": setting.locked if setting else False,
-            "locked_amount": setting.locked_amount if setting else None, "reason": None,
+            "locked_amount": setting.locked_amount if setting else None, "reason": reasons.get(category.pk) or None,
         })
     data.update({
+        "recommendation": {'spare_transfer': design.get('spare_transfer', 0),
+                           'target_conflicts': design.get('target_conflicts', [])} if design else None,
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,
                    "salary_confirmed": period["salary_state"] == "received", "engine_version": selected.engine_version,
                    # 이전 기준으로 승인한 예산의 주거·통신 · 여행·숙박 배정 (생활비 총액에는 들어 있고 카테고리 줄에는 없음, N-F1)

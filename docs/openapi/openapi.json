@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 59개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -11개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 62개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -14개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -9528,6 +9528,211 @@
         "x-implementation-status": "implemented"
       }
     },
+    "/api/budgets/ai-consent/": {
+      "get": {
+        "summary": "[구현] 예산 AI 외부 전송 동의 보기",
+        "operationId": "budgetAIConsentGet",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n로그인 회원 자신의 선택 동의 상태와 현재 원문·버전·해시를 반환한다. 금융 조회 동의와 별개다. available=false이면 새 동의 UI를 숨긴다. 기존 활성 동의가 있으면 철회 UI만 유지한다.\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "현재 동의 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      },
+      "put": {
+        "summary": "[구현] 예산 AI 외부 전송 동의 저장",
+        "operationId": "budgetAIConsentPut",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n사용자가 직접 체크한 현재 문서 버전·해시를 저장한다. 기본 체크는 해제이며 저장만으로 외부 전송을 시작하지 않는다. 서버 기능이 비활성이면 409 budget_ai_unavailable이며 기록을 생성하지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agreed",
+                  "documentVersion",
+                  "documentHash",
+                  "healthAgreed",
+                  "healthDocumentVersion",
+                  "healthDocumentHash"
+                ],
+                "properties": {
+                  "agreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "documentVersion": {
+                    "type": "string"
+                  },
+                  "documentHash": {
+                    "type": "string"
+                  },
+                  "healthAgreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "healthDocumentVersion": {
+                    "type": "string"
+                  },
+                  "healthDocumentHash": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "동의 저장 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "document_outdated / budget_ai_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "[구현] 예산 AI 외부 전송 동의 철회",
+        "operationId": "budgetAIConsentDelete",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n예산 AI 동의만 철회한다. 금융자료·최소금액·잠금·승인 예산은 삭제하거나 변경하지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "철회 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
+      }
+    },
     "/api/budgets/protect/": {
       "get": {
         "summary": "[구현] 지킬 돈 보기",
@@ -16557,6 +16762,73 @@
           "error"
         ]
       },
+      "BudgetAIConsentState": {
+        "type": "object",
+        "required": [
+          "purpose",
+          "status",
+          "document",
+          "documentVersion",
+          "documentHash",
+          "grantedAt",
+          "revokedAt",
+          "healthDocument",
+          "healthDocumentVersion",
+          "healthDocumentHash",
+          "available"
+        ],
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "budget_ai"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_granted",
+              "granted",
+              "revoked",
+              "needs_renewal"
+            ]
+          },
+          "document": {
+            "type": "object",
+            "description": "서버에 보관된 동의 원문. title·label·required·version·date·sections를 화면에서 그대로 표시한다."
+          },
+          "documentVersion": {
+            "type": "string"
+          },
+          "documentHash": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "healthDocument": {
+            "type": "object",
+            "description": "외부 AI 분석용 건강 관련 요약의 별도 동의 원문"
+          },
+          "healthDocumentVersion": {
+            "type": "string"
+          },
+          "healthDocumentHash": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "예산 설계 및 외부 AI 서버 설정이 모두 켜져 실제 외부 추천 경로를 사용할 수 있는지. false이면 새 동의를 받지 않으며 기존 동의 철회만 허용."
+          }
+        }
+      },
       "ProtectRates": {
         "type": "object",
         "required": [
@@ -16773,6 +17045,27 @@
           "locksReleased"
         ],
         "properties": {
+          "approvedBudget": {
+            "type": "object",
+            "description": "GET에서 이번 주기 승인 예산에 여윳돈 충당이 있을 때만 제공. 설정 기준 saved.spare와 구별하며 실제 초과 소비 차감 전 예산 배분 금액이다. PUT은 생략.",
+            "required": [
+              "spareTransfer",
+              "spare"
+            ],
+            "properties": {
+              "spareTransfer": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "spare": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
           "missing": {
             "type": "array",
             "items": {
@@ -17474,7 +17767,7 @@
   },
   "x-source-sha256": {
     "docs/API_RULES.md": "ff9ec441fcefd21fe33213c36adeb1888084ea2acb22615ccab670bcdd5b15f0",
-    "docs/api/README.md": "05f71047afdeb72a76ca7d1ac585f962558e4674eab052fd7614c4e6afa6b021",
+    "docs/api/README.md": "054901c95fb21d87b5d0eabbe2b24e98417c0e0edd000ce9e1c82efa37475f33",
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
     "docs/api/auth.md": "473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1",
@@ -17486,6 +17779,6 @@
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
     "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
     "docs/api/chat.md": "05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd",
-    "docs/api/budgets.md": "59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29"
+    "docs/api/budgets.md": "e0882dceb67e5e0204d5d447e76dc5e881eebe1458bd9c6c3c3c8d6ef427e090"
   }
 }
