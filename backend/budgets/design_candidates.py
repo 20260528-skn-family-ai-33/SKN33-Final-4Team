@@ -50,32 +50,48 @@ def _weights(ratios):
     return weights
 
 
-def _allocate(inp, weights, active):
+def _allocate(inp, weights, active, *, audit=None):
     # R-05 with supplied ML weights; shared recommend/check_result stay unchanged.
     allocations = {c: 0 for c in CATEGORY_CODES if c not in active}
     allocations.update(inp["locks"])
+    goals = inp.get('category_targets', {})
+    allocations.update({c: max(v, inp['minimums'].get(c, 0)) for c, v in goals.items()
+                        if c in active and c not in inp['locks']})
     free = [c for c in CATEGORY_CODES if c not in allocations]
+    fixed_since = {c: ('inactive' if c not in active else 'lock' if c in inp['locks'] else 'category_target')
+                   for c in allocations}
     while free:
         remaining = inp["target"] - sum(allocations.values())
         if remaining == sum(inp["minimums"].get(c, 0) for c in free):
             allocations.update({c: inp["minimums"].get(c, 0) for c in free})
+            if audit is not None:
+                audit.append((dict(allocations), {**fixed_since, **{c: 'minimum' for c in free}}))
             break
         weight = sum(weights[c] for c in free)
         if not weight:
             raise ValueError("zero_free_weights_requires_policy")
         shares = {c: remaining * weights[c] / weight for c in free}
+        if audit is not None:
+            audit.append(({**allocations, **shares}, fixed_since))
+        rounding_fixed = False
         fixed = [c for c in free if shares[c] < inp["minimums"].get(c, 0)]
         if not fixed:
             receiver = max(free, key=weights.get)
             rounded = {c: int(shares[c] // 10_000) * 10_000 for c in free}
             fixed = [c for c in free if c != receiver and rounded[c] < inp["minimums"].get(c, 0)]
+            rounding_fixed = bool(fixed)
             if not fixed:
                 allocations.update(rounded)
                 allocations[receiver] += inp["target"] - sum(allocations.values())
+                if audit is not None:
+                    audit.append((dict(allocations), {c: 'rounding' for c in free}))
                 break
+        fixed_since = {c: 'minimum_rounding' if rounding_fixed else 'minimum' for c in fixed}
         for code in fixed:
             allocations[code] = inp["minimums"][code]
             free.remove(code)
+    if goals and not free and audit is not None and not audit:
+        audit.append((dict(allocations), fixed_since))
     return {c: allocations[c] for c in CATEGORY_CODES}
 
 
@@ -114,14 +130,14 @@ def _policy(policy, receivers):
     rates = policy["increase_rates"]
     if (not isinstance(rates, dict) or set(rates) - set(CATEGORY_CODES)
             or set(receivers) - set(rates)
-            or any(type(v) not in (int, float) or not isfinite(v) or v < 0 for v in rates.values())):
+            or any(v is not None and (type(v) not in (int, float) or not isfinite(v) or v < 0) for v in rates.values())):
         raise ValueError("invalid_increase_rates")
     for name in ("increase_limits", "decrease_limits", "ceilings"):
         required = CATEGORY_CODES if name == "decrease_limits" else receivers
         _money_map(policy[name], CATEGORY_CODES, name, required=required)
 
 
-def _adjust(inp, base, order, active, policy, ml_amounts):
+def _adjust(inp, base, order, active, policy, ml_amounts, *, enabled_receivers=None):
     receivers = [c for c in order[:3] if c in active and c not in inp["locks"]]
     _policy(policy, receivers)
     amounts = base.copy()
@@ -132,10 +148,24 @@ def _adjust(inp, base, order, active, policy, ml_amounts):
     unranked = [c for c in CATEGORY_CODES if c not in ranks]
     low = list(reversed(order[3:]))
     # Within each tier, discretionary spending first; ties keep stable code/rank order.
-    ordinary = [c for group in (unranked, low) for discretionary in (True, False)
-                for c in group if (c in DISCRETIONARY) == discretionary]
-    for receiver in receivers:
-        raw = ml_amounts[receiver] * Fraction(str(policy["increase_rates"][receiver])) / 100
+    for index, receiver in enumerate(receivers):
+        if enabled_receivers is not None and receiver not in enabled_receivers:
+            continue
+        action = enabled_receivers.get(receiver, 'increase_large') if isinstance(enabled_receivers, dict) else 'increase_large'
+        balanced = action.endswith('_available')
+        ordinary = []
+        for group in (unranked, low):
+            for discretionary in (True, False):
+                eligible = [c for c in group if (c in DISCRETIONARY) == discretionary]
+                if balanced and group is unranked:
+                    eligible.sort(key=lambda c: max(0, min(base[c], amounts[c]) - inp['minimums'].get(c, 0)), reverse=True)
+                ordinary.extend(eligible)
+        rate = policy["increase_rates"][receiver]
+        if rate is None:
+            portions = {'increase_small': 1, 'increase_medium': 2, 'increase_large': 3}
+            raw = Fraction(left * portions[action.removesuffix('_available')], 3 * (len(receivers) - index))
+        else:
+            raw = ml_amounts[receiver] * Fraction(str(rate)) / 100
         # Round half up, not Python's ties-to-even; only the increase is rounded.
         targets[receiver] = int(raw / 1_000 + Fraction(1, 2)) * 1_000
         ceiling = max(policy["ceilings"][receiver], inp["minimums"].get(receiver, 0))
@@ -170,11 +200,24 @@ def _adjust(inp, base, order, active, policy, ml_amounts):
     return amounts, transfers, stops, targets
 
 
-def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
+def _with_system_floors(inp, floors):
+    calculation = deepcopy(inp)
+    for code, amount in floors.items():
+        if code not in calculation['locks']:
+            calculation['minimums'][code] = max(calculation['minimums'].get(code, 0), amount)
+    return calculation
+
+
+def _check_system_floors(inp, allocations, floors):
+    if any(allocations[c] < amount for c, amount in floors.items() if c not in inp['locks']):
+        raise EngineCheckFailed('system_floor_violated')
+
+
+def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None, reality_profile=None):
     """ETC reserved upstream. Explicit limits enable adjustment; no DB/LLM calls.
 
     Travel is excluded by monthly-budget policy and cannot be ranked.
-    Travel minimums/locks are not accepted; only housing can activate explicitly.
+    Housing and travel minimums/locks are not accepted.
     Keep zero entries for the existing ten-code validator; UI needs review.
     """
     inp = deepcopy(inp)
@@ -186,6 +229,10 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
         raise ValueError('travel_minimum_not_allowed')
     if 'TRAVEL_LODGING' in inp['locks']:
         raise ValueError('travel_lock_not_allowed')
+    if inp['minimums'].get('HOUSING_TELECOM', 0) > 0:
+        raise ValueError('housing_minimum_not_allowed')
+    if 'HOUSING_TELECOM' in inp['locks']:
+        raise ValueError('housing_lock_not_allowed')
     policy = deepcopy(policy)
     warning_thresholds = _money_map(
         {} if warning_thresholds is None else warning_thresholds,
@@ -194,20 +241,37 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
                  "amount": inp["minimums"][c], "reference": threshold}
                 for c, threshold in warning_thresholds.items()
                 if inp["minimums"].get(c, 0) > threshold]
-    active = [c for c in CATEGORY_CODES if c != 'TRAVEL_LODGING'
-              and (c != 'HOUSING_TELECOM' or inp["minimums"].get(c, 0) > 0 or c in inp["locks"])]
+    active = [c for c in CATEGORY_CODES if c not in ('TRAVEL_LODGING', 'HOUSING_TELECOM')]
     # Inactive categories are fixed at zero for both feasibility and validation.
     inp["locks"].update({c: 0 for c in CATEGORY_CODES if c not in active})
     conflicts = allocation_conflicts(inp)
     if conflicts:
         out = infeasible(conflicts)
         if any(c["type"] == "locks_mismatch_living" for c in conflicts):
-            out["summary"] = "모든 배분 가능 카테고리가 잠겨 있어요. 잠금을 해제하거나 잠금 금액·생활비를 수정해 주세요."
+            out["summary"] = "모든 항목에 잠금이 걸려 생활비와 배분액을 맞출 수 없어요."
+        elif conflicts[0]['type'] == 'minimums_over_living':
+            condition = '최소금액과 잠금액' if any(inp['locks'].values()) else '최소금액'
+            out['summary'] = f"{condition}을 모두 지키려면 생활비가 {conflicts[0]['shortfall']:,}원 부족해요."
         check_result(inp, out)
         return {"status": "infeasible", "result": out, "candidates": [],
                 "warnings": warnings + [{"code": "constraints_conflict"}],
                 "next_action": "review_settings_or_budget_chat"}
+    original_inp = deepcopy(inp)
+    floors, ignored_floors = {}, []
+    if reality_profile is not None:
+        from .design_reality import system_floors
+        floors = system_floors(reality_profile)
+        ignored_floors = [c for c in floors if c in inp['locks']]
+        inp = _with_system_floors(inp, floors)
+        shortfall = sum(inp['locks'].get(c, inp['minimums'].get(c, 0)) for c in CATEGORY_CODES) - inp['target']
+        if shortfall > 0:
+            return {'status': 'needs_upper_allocation_review', 'result': None,
+                    'reason': 'system_floor_unaffordable', 'shortfall': shortfall,
+                    'categories': [c for c in floors if c not in inp['locks']],
+                    'system_floors': floors, 'floor_ignored_locked': ignored_floors,
+                    'candidates': [], 'warnings': warnings}
     ml_amounts = dict.fromkeys(CATEGORY_CODES, Fraction(0))
+    audit = []
     if inp["target"] == 0:
         amounts = dict.fromkeys(CATEGORY_CODES, 0)
     elif len(inp["locks"]) == len(CATEGORY_CODES):
@@ -215,10 +279,33 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
     else:
         weights = _weights(ratios)
         ml_amounts = {c: inp["target"] * weights[c] / sum(weights.values()) for c in CATEGORY_CODES}
-        amounts = _allocate(inp, weights, active)
+        amounts = _allocate(inp, weights, active, audit=audit)
+    from .design_explain import allocation_ledger, explain_allocations, transfer_ledger
+    reference_amounts = ml_amounts
+    if not audit:
+        # ML is deliberately skipped for zero budgets / fully locked allocations.
+        if ratios is not None:
+            try:
+                reference_weights = _weights(ratios)
+                reference_amounts = {c: inp['target'] * reference_weights[c] / sum(reference_weights.values()) for c in CATEGORY_CODES}
+            except ValueError:
+                pass
+        audit = [(amounts, {c: 'lock' if c in active else 'inactive' for c in CATEGORY_CODES})]
+    ledger = allocation_ledger(reference_amounts, audit, original_inp, floors,
+                               reference_unavailable=not any(reference_amounts.values()) and inp['target'] > 0)
     base = {"status": "proposed", "allocations": amounts, "reasons": [],
             "summary": "입력 비율에 최소 금액과 자물쇠를 반영한 기본 후보입니다.", "conflicts": []}
-    check_result(inp, base)
+    if original_inp.get('category_targets'):
+        base['unallocated'] = inp['target'] - sum(amounts.values())
+    check_result(original_inp, base)
+    floor_applied = []
+    if floors and inp['target'] and len(inp['locks']) != len(CATEGORY_CODES):
+        original_amounts = _allocate(original_inp, weights, active)
+        floor_applied = [c for c in floors if c not in inp['locks']
+                         and original_amounts[c] < floors[c] and amounts[c] > original_amounts[c]]
+        from .design_reality import REALITY_FLOORS
+        base['reasons'].extend(f"{CATEGORY_NAMES[c]} 예산을 {REALITY_FLOORS[c]['label']}({floors[c]:,}원)에 맞췄어요"
+                               for c in floor_applied)
     candidates = [{"id": "base", "reason_code": "baseline", "result": base}]
     stops, transfers, targets = {}, [], {}
     if policy is not None:
@@ -226,22 +313,75 @@ def build_candidates(inp, ratios, *, policy=None, warning_thresholds=None):
         adjusted["allocations"], transfers, stops, targets = _adjust(inp, amounts, order, active, policy, ml_amounts)
         warnings.extend({"code": "minimum_above_ceiling", "category": c,
                          "amount": minimum, "reference": policy["ceilings"][c]}
-                        for c, minimum in inp["minimums"].items()
+                        for c, minimum in original_inp["minimums"].items()
                         if c in policy["ceilings"] and minimum > policy["ceilings"][c])
         if adjusted["allocations"] != amounts:
             ranks = {c: rank for rank, c in enumerate(order, 1)}
-            adjusted["reasons"] = [
+            adjusted["reasons"] = base["reasons"] + [
                 f"{CATEGORY_NAMES[t['from']]}에서 {t['amount']:,}원을 "
                 f"{CATEGORY_NAMES[t['to']]} 예산으로 옮겼어요"
                 f"({CATEGORY_NAMES[t['to']]} {ranks[t['to']]}순위)"
                 for t in transfers
             ]
             adjusted["summary"] = "최소 금액과 잠금을 지키며 미입력·후순위부터 재원을 마련해 상위 순위를 조정한 후보입니다."
-            check_result(inp, adjusted)
+            check_result(original_inp, adjusted)
             candidates.append({"id": "priority", "reason_code": "priority_transfer", "result": adjusted})
-    return {"status": "proposed", "policy": policy, "candidates": candidates,
+    for candidate in candidates:
+        candidate_ledger = transfer_ledger(ledger, transfers if candidate['id'] == 'priority' else [], original_inp['priorities'])
+        candidate['explanations'] = explain_allocations(reference_amounts, candidate['result']['allocations'], candidate_ledger,
+            reference_type='ml_share', priorities=original_inp['priorities'], names=CATEGORY_NAMES,
+            stop_reasons=stops if candidate['id'] == 'priority' or len(candidates) == 1 else None)
+        _check_system_floors(original_inp, candidate['result']['allocations'], floors)
+    extra = {'system_floors': floors, 'floor_applied': floor_applied,
+             'floor_ignored_locked': ignored_floors} if reality_profile is not None else {}
+    return {**extra, "status": "proposed", "policy": policy, "candidates": candidates,
             "active_categories": active, "warnings": warnings,
             "transfers": transfers, "stop_reasons": stops, "increase_targets": targets}
+
+
+def apply_priority_decisions(inp, ratios, *, policy, decisions, reality_profile=None):
+    """Replay a prefix of LLM decisions using the original server limits/ledger."""
+    engine = build_candidates(inp, ratios, policy=policy, reality_profile=reality_profile)
+    if engine.get('reason') == 'system_floor_unaffordable':
+        return engine
+    if engine['status'] != 'proposed' or policy is None:
+        raise ValueError('adjustment_requires_feasible_policy')
+    order = _priority_order(inp['priorities'])
+    receivers = [c for c in order[:3] if c in engine['active_categories'] and c not in inp['locks']]
+    if not isinstance(decisions, list) or len(decisions) > len(receivers):
+        raise ValueError('invalid_adjustment_decisions')
+    enabled = {}
+    for code, decision in zip(receivers, decisions):
+        if (not isinstance(decision, dict) or set(decision) != {'category', 'action'}
+                or decision['category'] != code or decision['action'] not in
+                (('increase_small', 'increase_medium', 'increase_large',
+                  'increase_small_available', 'increase_medium_available', 'increase_large_available', 'keep')
+                 if policy['increase_rates'][code] is None else ('increase', 'keep'))):
+            raise ValueError('invalid_adjustment_decision')
+        if decision['action'] != 'keep':
+            enabled[code] = decision['action']
+    base = engine['candidates'][0]['result']
+    weights = _weights(ratios)
+    ml_amounts = {c: inp['target'] * weights[c] / sum(weights.values()) for c in CATEGORY_CODES}
+    floors = engine.get('system_floors', {})
+    calculation = _with_system_floors(inp, floors)
+    amounts, transfers, stops, targets = _adjust(
+        calculation, base['allocations'], order, engine['active_categories'], policy, ml_amounts,
+        enabled_receivers=enabled)
+    checked = {**base, 'allocations': amounts}
+    check_result(inp, checked)
+    _check_system_floors(inp, amounts, floors)
+    extra = {key: engine[key] for key in ('system_floors', 'floor_applied', 'floor_ignored_locked', 'warnings')} if reality_profile is not None else {}
+    from .design_explain import explain_allocations, transfer_ledger
+    base_explanations = engine['candidates'][0]['explanations']
+    references = {e['category']: e['reference_amount'] for e in base_explanations}
+    ledger = transfer_ledger({e['category']: e['causes'] for e in base_explanations}, transfers, inp['priorities'])
+    explanations = explain_allocations(references, amounts, ledger, reference_type='ml_share',
+                                       priorities=inp['priorities'], names=CATEGORY_NAMES, stop_reasons=stops)
+    return {**extra, 'explanations': explanations, 'allocations': amounts, 'transfers': transfers, 'stop_reasons': stops,
+            'increase_targets': targets, 'remaining_transfer_limit':
+                policy['total_limit'] - sum(t['amount'] for t in transfers),
+            'pending_categories': receivers[len(decisions):]}
 
 
 def select_candidate(inp, candidates, choose=None):
@@ -283,4 +423,5 @@ def select_candidate(inp, candidates, choose=None):
             fallback = f"selector_failed:{type(exc).__name__}"
     result = deepcopy(by_id[chosen]["result"])
     check_result(inp, result)
-    return {"candidate_id": chosen, "result": result, "fallback": fallback}
+    return {"candidate_id": chosen, "result": result, "fallback": fallback,
+            "explanations": deepcopy(by_id[chosen].get("explanations", []))}

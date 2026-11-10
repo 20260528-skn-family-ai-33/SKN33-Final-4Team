@@ -27,8 +27,8 @@ export default function SignupPage() {
   const { openPopup } = usePopup()
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
-  // 회원가입 약관 = 범위(productScope)가 없는 문서 (terms · privacy). 서버가 주는 만큼 저절로 늘어난다
-  const terms = useConsentDocs((d) => d.productScope === null)
+  // 예산 AI 같은 선택 동의가 회원가입 필수 약관에 섞이지 않게 목적도 구분한다.
+  const terms = useConsentDocs((d) => d.productScope === null && ['terms', 'privacy'].includes(d.purpose))
   const [error, setError] = useState('')
   const [pwError, setPwError] = useState('')   // 비밀번호 칸 아래에 보이는 오류
   const termsCard = useRef(null)

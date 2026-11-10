@@ -25,6 +25,10 @@ def _load(name):
 
 _SIGNUP_V1 = _load("signup_terms_v1.json")
 _FINANCE_V2 = _load("finance_inquiry_v2.json")
+_BUDGET_AI_V1 = _load("budget_ai_v1.json")
+_BUDGET_AI_V2 = _load("budget_ai_v2.json")
+_BUDGET_AI_V3 = _load("budget_ai_v3.json")
+_BUDGET_AI_HEALTH_V1 = _load("budget_ai_health_v1.json")
 
 # 금융 조회 v1: 화면 원문이 아니라 임시 문장 한 줄을 그대로 UTF-8 SHA-256 한 문서 (11/06 전 기록).
 # 그 기록의 해시를 다시 확인할 수 있게 문장과 방식을 그대로 남긴다. 새 동의는 받지 않는다
@@ -33,6 +37,10 @@ FINANCE_V1_HASH = hashlib.sha256(FINANCE_V1_PLACEHOLDER.encode("utf-8")).hexdige
 
 # 지금까지 내보낸 모든 문서 (목적, 범위, 버전) → 원문 해시. 새 버전을 만들어도 옛 줄은 지우지 않는다
 ARCHIVE = {
+    ("budget_ai", None, "v1"): canonical_hash(_BUDGET_AI_V1),
+    ("budget_ai", None, "v2"): canonical_hash(_BUDGET_AI_V2),
+    ("budget_ai", None, "v3"): canonical_hash(_BUDGET_AI_V3),
+    ("budget_ai_health", None, "v1"): canonical_hash(_BUDGET_AI_HEALTH_V1),
     ("terms", None, "v1"): canonical_hash(_SIGNUP_V1["terms"]),
     ("privacy", None, "v1"): canonical_hash(_SIGNUP_V1["privacy"]),
     **{("finance_inquiry", scope, "v1"): FINANCE_V1_HASH for scope in ("bank", "card", "loan")},
@@ -46,6 +54,8 @@ CURRENT = {
     ("finance_inquiry", "bank"): _FINANCE_V2["bank"],
     ("finance_inquiry", "card"): _FINANCE_V2["card"],
     ("finance_inquiry", "loan"): _FINANCE_V2["loan"],
+    ("budget_ai", None): _BUDGET_AI_V3,
+    ("budget_ai_health", None): _BUDGET_AI_HEALTH_V1,
 }
 for (_purpose, _scope), _doc in CURRENT.items():
     assert ARCHIVE[(_purpose, _scope, _doc["version"])] == canonical_hash(_doc), "현재 문서는 ARCHIVE 원문과 같아야 해요"

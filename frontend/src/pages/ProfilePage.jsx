@@ -108,7 +108,7 @@ function ProfileForm({ saved }) {
       {!manage && <StepBar step={1} />}
       <div className="mc-eyebrow">내 정보 입력</div>
       <h1>나에게 맞는 예산을<br />만들기 위해 알려주세요</h1>
-      <p className="mc-muted">비슷한 연령대의 소비 통계와 비교해 예산을 추천해요.</p>
+      <p className="mc-muted">입력한 정보와 소비 우선순위를 바탕으로 예산을 추천해요.</p>
       <form className="mc-form" id="mc-form" onSubmit={onSubmit}>
         <div className="mc-card mc-two">
           <div>
