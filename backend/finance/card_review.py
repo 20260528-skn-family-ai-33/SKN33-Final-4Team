@@ -7,6 +7,7 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.utils import timezone
 
 from .codef_cards import approval_source_key, card_matches
+from .identifiers import identifier_key
 from .models import Card, CardApprovalCoverage, CardApprovalReview, FinancialTransaction, SyncRun
 
 
@@ -93,7 +94,8 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
         occurrence_key = (shown, *identity[:-1])
         occurrences[occurrence_key] += 1
         key = approval_source_key(
-            f"{run.connection.organization_code}:{shown}", (*identity[:-1], occurrences[occurrence_key]),
+            identifier_key("card_shown", f"{run.connection.organization_code}:{shown}"),
+            (*identity[:-1], occurrences[occurrence_key]),
         )
         review = CardApprovalReview.objects.filter(
             user=user, issuer_code=run.connection.organization_code, source_key=key,

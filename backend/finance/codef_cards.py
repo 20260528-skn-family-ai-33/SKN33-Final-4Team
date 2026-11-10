@@ -11,6 +11,7 @@ import re
 from datetime import date, datetime
 
 from . import codef
+from .identifiers import identifier_key
 
 ITEM_TYPES = {"1": "one_time", "2": "installment"}   # 3 그외 · 4 단기카드대출 · 5 장기카드대출 → unknown
 MONTH = re.compile(r"[0-9]{4}(?:0[1-9]|1[0-2])")
@@ -104,7 +105,7 @@ def normalize_cards(data):
         cards.append({
             # 카드번호 원문은 키 · 마스킹 · 승인내역 대조에만 쓰고 저장하지 않는다
             "number": number,
-            "source_card_key": _key(number),
+            "source_card_key": identifier_key("card", number),
             "masked_number": codef.mask(number),
             "name": name.replace(number, codef.mask(number)) if name else None,
             # 정규화 기준 미정 (cards.md cardType) → 기관 값 그대로

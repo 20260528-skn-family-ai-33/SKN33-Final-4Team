@@ -1,5 +1,4 @@
 """조회 시작 순서와 저장 완료 순서가 다른 실제 PostgreSQL 회귀 검사."""
-import hashlib
 import threading
 import uuid
 from datetime import timedelta
@@ -14,6 +13,7 @@ from django.utils import timezone
 from users.models import Consent
 
 from . import codef
+from .identifiers import identifier_key
 from .models import Connection, Loan, SyncRun
 from .sync_loans import sync_bank_loans
 from .test_loan_sync import END, NUMBER, START, account, detail
@@ -35,7 +35,7 @@ class LoanSyncConcurrencyTest(TransactionTestCase):
     def seed_loan(self):
         loan = Loan.objects.create(
             user=self.user, connection=self.bank, origin="provider", reported_balance=50000,
-            source_loan_key=hashlib.sha256(NUMBER.encode()).hexdigest(),
+            source_loan_key=identifier_key("loan", NUMBER),
             fetched_at=timezone.now() - timedelta(days=1),
         )
         SyncRun.objects.create(

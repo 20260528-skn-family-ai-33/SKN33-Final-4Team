@@ -1,4 +1,3 @@
-import hashlib
 from copy import deepcopy
 from datetime import date, timedelta
 from io import StringIO
@@ -13,6 +12,7 @@ from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from . import codef, pipeline
+from .identifiers import identifier_key
 from .models import BankAccount, Connection, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, SyncRun
 from .sync import sync_bank
 from .test_bank_response import NoCodefNetwork
@@ -63,7 +63,7 @@ class BankSyncTest(NoCodefNetwork, TestCase):
         account = BankAccount.objects.get(account_type="demand")
         self.assertEqual(account.user, self.user)
         self.assertEqual(account.connection, connection)
-        self.assertEqual(account.source_account_key, hashlib.sha256(self.accounts[0]["account_no"].encode()).hexdigest())
+        self.assertEqual(account.source_account_key, identifier_key("account", self.accounts[0]["account_no"]))
         self.assertEqual(account.masked_number, codef.mask(self.accounts[0]["account_no"]))
         self.assertEqual(account.balance, 90000)
         self.assertGreaterEqual(account.fetched_at, before)

@@ -1,5 +1,4 @@
 """은행의 대출 스냅샷을 저장한다. 상환 거래 매칭·납부 생성은 별도 작업이다."""
-import hashlib
 import re
 
 from django.contrib.auth import get_user_model
@@ -12,6 +11,7 @@ from users.models import Consent
 
 from . import codef
 from .codef_loans import LoanDataError
+from .identifiers import identifier_key
 from .models import Connection, Loan, Origin, SyncRun
 
 
@@ -80,7 +80,7 @@ def sync_bank_loans(user, connected_id, org, start, end, task_id=None):
             _check_consent(user, connection)
             tasks.claim_run(run, task_id)
             for account, data in snapshots:
-                key = hashlib.sha256(account["account_no"].encode()).hexdigest()
+                key = identifier_key("loan", account["account_no"])
                 matches = Loan.objects.select_for_update(of=("self",)).filter(
                     Q(connection=connection) | Q(connection__disconnected_at__isnull=False),
                     user=user, connection__user=user, connection__business_type="bank",

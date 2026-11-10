@@ -215,6 +215,12 @@ def encryption_key(name):
 
 CONNECTED_ID_ENCRYPTION_KEY = encryption_key("CONNECTED_ID_ENCRYPTION_KEY")
 
+# 계좌 · 대출 · 카드 번호로 만드는 중복 확인 키의 HMAC 키 (finance/identifiers.py). 32바이트 urlsafe base64
+# 한 키가 새도 다른 쪽은 안전하게 연결 ID 암호화 키와 다른 값을 쓴다
+IDENTIFIER_HMAC_KEY = encryption_key("IDENTIFIER_HMAC_KEY")
+if IDENTIFIER_HMAC_KEY == CONNECTED_ID_ENCRYPTION_KEY:
+    raise ImproperlyConfigured(".env의 IDENTIFIER_HMAC_KEY는 CONNECTED_ID_ENCRYPTION_KEY와 다른 값이어야 해요.")
+
 
 # ===== 챗봇 엔진 (chat/api.py · chat/engine.py) =====
 # CHAT_ENGINE = legacy(기본, 기존 선택지 챗봇) | router(새 엔진: 라우터 + 소비 분석 + 예산 · 정책 '준비 중')

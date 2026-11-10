@@ -54,6 +54,8 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `POSTGRES_PASSWORD` | ✅ | (각자 설정) | DB 비밀번호 |
 | `POSTGRES_HOST` | ✅ | `localhost` | 배포 시 RDS 엔드포인트 |
 | `POSTGRES_PORT` | ✅ | `5432` | DB 포트 |
+| `CONNECTED_ID_ENCRYPTION_KEY` | ✅ | (`.env.example`의 명령으로 생성) | 회원별 CODEF 연결 ID 암호화 키 (32바이트). 바꾸면 저장된 연결을 못 읽음 |
+| `IDENTIFIER_HMAC_KEY` | ✅ | (같은 명령으로 한 번 더 생성) | 계좌 · 대출 · 카드 번호 중복 확인 키용 HMAC 키 (32바이트). 위 키와 다른 값. 바꾸면 금융 데이터를 지우고 다시 연결해야 함 |
 
 ### 외부 API (발급 후 입력)
 

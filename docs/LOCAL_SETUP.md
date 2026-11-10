@@ -73,9 +73,11 @@ python -m django --version   # 5.2.x 확인
 ```powershell
 copy .env.example .env
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+python -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+python -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
 ```
 
-출력된 값을 `.env`의 `DJANGO_SECRET_KEY=` 뒤에 붙여넣고, `POSTGRES_PASSWORD`에 **내가 정한 로컬 DB 비밀번호**를 적는다. 나머지는 예시값 그대로 둔다.
+첫 번째 출력값을 `.env`의 `DJANGO_SECRET_KEY=` 뒤에 붙여넣고, 두 번째 · 세 번째 출력값을 `CONNECTED_ID_ENCRYPTION_KEY=` · `IDENTIFIER_HMAC_KEY=` 뒤에 하나씩 넣는다 (두 값은 서로 달라야 함). `POSTGRES_PASSWORD`에 **내가 정한 로컬 DB 비밀번호**를 적는다. 나머지는 예시값 그대로 둔다.
 
 ### 4. PostgreSQL 컨테이너 실행
 
@@ -161,9 +163,11 @@ python -m django --version   # 5.2.x 확인
 ```bash
 cp .env.example .env
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+python -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
+python -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"
 ```
 
-출력값을 `DJANGO_SECRET_KEY=` 뒤에, 로컬 DB 비밀번호를 `POSTGRES_PASSWORD=` 뒤에 적는다.
+첫 번째 출력값을 `DJANGO_SECRET_KEY=` 뒤에, 두 번째 · 세 번째 출력값을 `CONNECTED_ID_ENCRYPTION_KEY=` · `IDENTIFIER_HMAC_KEY=` 뒤에 하나씩 (두 값은 서로 달라야 함), 로컬 DB 비밀번호를 `POSTGRES_PASSWORD=` 뒤에 적는다.
 
 ### 4. PostgreSQL 컨테이너 실행
 

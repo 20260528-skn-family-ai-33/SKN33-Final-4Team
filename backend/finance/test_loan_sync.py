@@ -1,4 +1,3 @@
-import hashlib
 import uuid
 from copy import deepcopy
 from datetime import date, timedelta
@@ -16,6 +15,7 @@ from users.models import Consent
 
 from . import codef
 from .codef_loans import LoanDataError, normalize_loan_accounts, normalize_loan_details
+from .identifiers import identifier_key
 from .models import Connection, FinancialTransaction, Loan, PaymentDue, SyncRun
 from .sync_loans import sync_bank_loans
 
@@ -142,7 +142,7 @@ class LoanSyncTest(TestCase):
         self.assertEqual(loan.maturity_date, date(2021, 6, 28))
         self.assertEqual(loan.product_name, "테스트 대출")
         self.assertEqual(loan.origin, "provider")
-        self.assertEqual(loan.source_loan_key, hashlib.sha256(NUMBER.encode()).hexdigest())
+        self.assertEqual(loan.source_loan_key, identifier_key("loan", NUMBER))
         for field in ["monthly_payment", "payment_day", "repayment_method", "overdue", "linked_account_id",
                       "source_loan_ref_ciphertext", "manual_balance", "manual_rate"]:
             self.assertIsNone(getattr(loan, field))
@@ -212,7 +212,7 @@ class LoanSyncTest(TestCase):
         self.details[second] = detail(second)
         original = Loan.save
         def save(instance, *args, **kwargs):
-            if instance.source_loan_key == hashlib.sha256(second.encode()).hexdigest():
+            if instance.source_loan_key == identifier_key("loan", second):
                 raise RuntimeError("simulated DB error")
             return original(instance, *args, **kwargs)
         with patch.object(Loan, "save", save), self.assertRaises(RuntimeError):
@@ -226,7 +226,7 @@ class LoanSyncTest(TestCase):
         Connection.objects.create(user=other, business_type="bank", organization_code="0004", status="connected")
         Consent.objects.create(user=other, purpose="finance_inquiry", product_scope="loan", document_version="test", document_hash="test")
         self.sync(other)
-        self.assertEqual(Loan.objects.filter(source_loan_key=hashlib.sha256(NUMBER.encode()).hexdigest()).count(), 2)
+        self.assertEqual(Loan.objects.filter(source_loan_key=identifier_key("loan", NUMBER)).count(), 2)
 
     def test_reconnect_reuses_original_id(self):
         self.sync()
@@ -241,7 +241,7 @@ class LoanSyncTest(TestCase):
 
     def test_manual_identity_collision_does_not_overwrite(self):
         Loan.objects.create(user=self.user, connection=self.connection, origin="manual",
-                            source_loan_key=hashlib.sha256(NUMBER.encode()).hexdigest())
+                            source_loan_key=identifier_key("loan", NUMBER))
         with self.assertRaises(LoanDataError):
             self.sync()
         self.assertIsNone(Loan.objects.get(user=self.user).reported_balance)
@@ -326,7 +326,7 @@ class LoanSyncTest(TestCase):
     def test_legacy_loan_without_success_run_can_be_refreshed(self):
         loan = Loan.objects.create(
             user=self.user, connection=self.connection, origin="provider",
-            source_loan_key=hashlib.sha256(NUMBER.encode()).hexdigest(),
+            source_loan_key=identifier_key("loan", NUMBER),
             fetched_at=timezone.now() + timedelta(minutes=1),
         )
         self.assertEqual(self.sync()["updated_count"], 1)
