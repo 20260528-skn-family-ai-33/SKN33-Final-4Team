@@ -162,7 +162,15 @@ REST_FRAMEWORK = {
     "DATETIME_FORMAT": "iso-8601",
     "DATE_FORMAT": "iso-8601",
     "TIME_FORMAT": "iso-8601",
+    # 비밀번호 대입 막기 (users/api.py 의 *Throttle). 넘으면 429 throttled
+    "DEFAULT_THROTTLE_RATES": {"login": "5/min", "signup": "10/hour", "withdraw": "5/hour"},
 }
+
+# 횟수 제한 기록이 남는 곳. 기본(LocMem)은 프로세스마다 따로 센다
+# shortcut: gunicorn 워커가 여럿이면 워커 수만큼 느슨해짐, 배포 때 settings_production 에서 DB 캐시로 바꾼다
+if sys.argv[1:2] == ["test"]:
+    # 테스트끼리 같은 IP(127.0.0.1)로 로그인 횟수가 쌓이지 않게. 횟수 제한 테스트는 override_settings 로 켠다
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
 
 # 세션·CSRF 쿠키 (배포에서는 https 에서만 보내기)
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14   # 로그인 유지 2주
