@@ -49,9 +49,13 @@ def transaction_history_report(user, month_ids, *, use_confirmed_salary=False):
     원거래월 밖의 취소/입금을 놓치지 않도록 회원의 저장된 전체 이력과 연결을 읽는다.
     원문·거래 ID를 결과나 로그에 노출하지 않는다.
     """
+    return _report_for_months(user, _months(month_ids), use_confirmed_salary=use_confirmed_salary)
+
+
+def _report_for_months(user, months, *, use_confirmed_salary):
+    """Apply shared transaction checks to months already selected by the caller."""
     if type(use_confirmed_salary) is not bool:
         raise ValueError("invalid_confirmed_salary_option")
-    months = _months(month_ids)
     report = {m: {k: {"status": "verified", "impact_upper_bound": 0, "reasons": []}
                   for k in DIMENSIONS} for m in months}
 

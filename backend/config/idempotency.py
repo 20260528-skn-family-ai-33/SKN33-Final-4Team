@@ -50,8 +50,8 @@ def _recorded_response(record, request_hash):
     return _replay(record)
 
 
-def idempotent(required=False, *, commit_error_codes=()):
-    """commit_error_codes는 승인 시 발견한 expired 상태 보존용. 실패 응답은 번호 기록에 남기지 않는다."""
+def idempotent(required=False, *, commit_error_codes=(), prepare=None):
+    """prepare는 재전송 확인 후 저장 atomic 전에 실행한다. commit_error_codes는 expired 보존용."""
     def decorator(view):
         @functools.wraps(view)
         def wrapper(request, *args, **kwargs):
@@ -73,6 +73,8 @@ def idempotent(required=False, *, commit_error_codes=()):
             if found:
                 return _recorded_response(found, request_hash)
 
+            if prepare is not None:
+                prepare(request, *args, **kwargs)
             try:
                 with transaction.atomic():
                     response = view(request, *args, **kwargs)

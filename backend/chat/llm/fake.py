@@ -90,6 +90,15 @@ SPENDING_SAID = {
     "카테고리별로 몇 번 썼어?": {"mine": True, "measure": "count", "group_by": "category"},
 }
 
+# 네트워크 없는 서비스 연결 검증용 고정 문장. 일반 자유 대화는 live 설정을 사용한다.
+BUDGET_SAID = {
+    "식비 예산 줄여줘": [{"category": "FOOD", "amount": None, "amount_mode": None, "direction": "down"}],
+    "식비를 5만원 늘리고 싶어요": [{"category": "FOOD", "amount": 50000, "amount_mode": "by", "direction": "up"}],
+    "식비가 부족해": [{"category": "FOOD", "amount": None, "amount_mode": None, "direction": "up"}],
+    "식비를 5만 원 늘려줘": [{"category": "FOOD", "amount": 50000, "amount_mode": "by", "direction": "up"}],
+    "식비를 1만 5천 원 늘려줘": [{"category": "FOOD", "amount": 15000, "amount_mode": "by", "direction": "up"}],
+}
+
 
 # 2026-11-02 사용자 확인 목록. 실제 해석기 규칙이 아니라 오프라인 재현용 정답 입력이다.
 SPENDING_SAID.update({
@@ -241,6 +250,22 @@ class FakeReading(RoleFakeLLM):
         if system == spending_agent_loop.PROMPT:
             self.calls.append({"role": "fake_judge"})
             return fake_judge(user)
+        from budgets.adjustment_core import interpretation as budget_reading
+        from budgets.adjustment_core.financial_conversation import DIALOGUE_PROMPT
+        if system in (budget_reading.PROMPT, DIALOGUE_PROMPT):
+            text = json.loads(user)["text"]
+            intents = self.said.get(text, {}).get("intents", [])
+            other = text in SPENDING_SAID or bool(intents) and "budget_adjust" not in intents
+            if text not in BUDGET_SAID and not other:
+                self.missed += 1
+                raise TimeoutError("가짜 예산 해석: 모르는 문장")
+            self.calls.append({"role": "budget"})
+            reading = {"mine": not other, "requests": BUDGET_SAID.get(text, []), "scope": None,
+                       "clear_targets": [], "unlock": None, "approval": None, "cancel": False,
+                       "reason": None, "unclear": []}
+            if system == DIALOGUE_PROMPT:
+                reading = {"reading": reading, "reply": "조정할 때 꼭 유지하고 싶은 예산이나 원하는 방법이 있나요?"}
+            return json.dumps(reading, ensure_ascii=False)
         if system in (spending_claims.PLAN_PROMPT, spending_claims.ANSWER_PROMPT):
             self.calls.append({"role": "fake_plan" if system == spending_claims.PLAN_PROMPT else "fake_answer"})
             return fake_plan_answer(system, user)

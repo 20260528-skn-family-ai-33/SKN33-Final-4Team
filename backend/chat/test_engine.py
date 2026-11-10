@@ -129,21 +129,23 @@ class ServiceChatTest(ServiceChatBase):
         self.assertEqual(self.client_for("B").get(f"/api/chat/conversations/{cid}/").status_code, 404)
         self.assertEqual(ChatMessage.objects.filter(conversation_id=cid).count(), 2)  # B 의 메시지는 남지 않는다
 
-    def test_budget_and_policy_are_not_ready_and_end(self):
+    def test_budget_starts_real_dialog_and_policy_remains_not_ready(self):
         out = self.send("A", text="식비 예산 줄여줘")
         cid = out.json()["conversationId"]
-        self.assertEqual(self.bot(out)["lines"], [engine.NOT_READY["budget"]])
+        self.assertEqual(self.bot(out)["budgetAdjustment"]["phase"], "funding_scope")
         store = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
-        self.assertIsNone(store.get_task(engine.KEY))  # 보류 작업이 남지 않는다
+        self.assertIsNone((store.get_task(engine.KEY) or {}).get("task_ref"))  # 질문만으로 저장 작업을 만들지 않는다
         after = self.bot(self.send("A", cid, text="이번 달 얼마 썼어?"))
-        self.assertEqual(after["notices"], [])  # '예산 조정은 잠시 멈춰 뒀어요' 같은 안내가 없다
+        self.assertEqual(after["agent"], "spending")
+        self.assertEqual(after["notices"], ["진행 중이던 예산 조정은 잠시 멈춰 뒀어요. 다시 이어갈 때 상태를 확인할게요."])
         self.assertEqual(self.bot(self.send("A", cid, text="청년 정책 추천해줘"))["lines"], [engine.NOT_READY["policy"]])
         self.assertEqual(self.bot(self.send("A", choice="spending"))["lines"], ["어떤 소비가 궁금하세요?"])
 
-    def test_extended_content_and_hidden_budget_suggestion(self):
+    def test_extended_content_and_actionable_budget_suggestion(self):
         content = self.bot(self.send("B", text="식비 예산 얼마 남았어?"))  # 민재: 초과
         self.assertIn("초과했어요", " ".join(content["lines"]))
-        self.assertEqual((content["choices"], content["notices"]), ([], []))  # [예산 조정하기] 는 1차에서 숨김
+        self.assertEqual(content["choices"], [{"value": "budget", "label": "예산 조정하기"}])
+        self.assertIn("필요하면 예산 조정을 요청할 수 있어요.", content["notices"])
         overview = self.bot(self.send("A", text="소비 분석해줘"))
         self.assertEqual(overview["view"][0], {"kind": "head", "title": "10월 1일~29일 · 소비"})  # 카드 보기도 함께
         chart = overview["chart"]
@@ -222,15 +224,16 @@ class ServiceChoiceTest(ServiceChatBase):
         asked = self.bot(self.send("A", cid, text="커피 얼마나 썼어?"))
         self.assertEqual(self.bot(self.pick("A", cid, asked, "취소"))["lines"], ["방금 질문은 취소했어요."])
 
-    def test_feature_buttons_switch_agent_and_budget_form_turn(self):
+    def test_feature_buttons_switch_agent_and_budget_free_text_turn(self):
         out = self.send("A", choice="budget")
         cid, budget = out.json()["conversationId"], self.bot(out)
         self.assertEqual((out.json()["agent"], budget["agent"], budget["inputs"], budget["lines"]),
-                         ("budget", "budget", ["budget_form"], [engine.BUDGET_ASK]))
+                         ("budget", "budget", [], ["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."]))
         self.calls.reset_mock()
         sent = self.bot(self.send("A", cid, text="식비를 5만원 늘리고 싶어요"))  # 화면 adjustSentence 문장 그대로
-        self.assertEqual((sent["lines"], sent["agent"], sent["inputs"]), ([engine.NOT_READY["budget"]], "budget", []))
-        self.assertEqual(self.calls.call_count, 0)  # 담당(예산)에게 원문 그대로 — 라우터 해석 · 금액 해석 없음
+        self.assertEqual((sent["agent"], sent["inputs"], sent["budgetAdjustment"]["phase"]), ("budget", [], "funding_scope"))
+        self.assertEqual(self.calls.call_count, 1)  # 담당 예산 해석만 호출하고 라우터 재해석은 하지 않는다
+        self.calls.reset_mock()
         spending = self.bot(self.send("A", cid, choice="spending"))
         self.assertEqual((spending["agent"], spending["lines"]), ("spending", ["어떤 소비가 궁금하세요?"]))
         policy = self.send("A", cid, choice="policy")
@@ -246,7 +249,8 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual([c["label"] for c in asked["choices"]], ["이어서 하기", "취소하고 새로 시작"])
         self.calls.reset_mock()
         resumed = self.bot(self.pick("A", cid, asked, "이어서 하기"))
-        self.assertEqual((resumed["lines"], resumed["inputs"], self.calls.call_count), ([engine.BUDGET_ASK], ["budget_form"], 0))
+        self.assertEqual((resumed["lines"], resumed["inputs"], self.calls.call_count),
+                         (["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."], [], 0))
 
     def test_yes_no_choice_without_llm(self):
         out = self.send("A", text="최근 3개월 식비 예산 얼마나 남았어?")
@@ -311,10 +315,20 @@ class ServiceLiveTest(ServiceChatBase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.live = live
+        # 자유 입력의 외부 라우팅 전 동의도 실제 API 경로로 준비한다. 합성 회원 A만 대상이다.
+        client = self.client_for("A")
+        path = "/api/budgets/adjustment-ai-consent/"
+        state = client.get(path).json()
+        response = client.put(path, json.dumps({"agreed": True, "healthAgreed": True,
+            **{key: state[key] for key in ("documentVersion", "documentHash", "healthDocumentVersion", "healthDocumentHash")}}),
+            content_type="application/json", HTTP_X_CSRFTOKEN=client.cookies["mc_fixture_csrftoken"].value)
+        self.assertEqual(response.status_code, 200, response.content)
 
     def test_live_reading_and_explain_without_cap(self):
         self.assertIs(engine.reading(), self.live)
-        cid = self.send("A", text="지난달보다 식비 더 썼어?").json()["conversationId"]
+        first = self.send("A", text="지난달보다 식비 더 썼어?")
+        self.assertEqual(first.status_code, 200, first.content)
+        cid = first.json()["conversationId"]
         out = self.bot(self.send("A", cid, text="왜 식비가 늘었어?"))
         self.assertNotIn("spending_explanation", self.sent)  # 일반 '왜 늘었어?'에 설명 문장용 LLM 없음 (MEMO 31)
         self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 42,000원 늘었어요. ↑ 12.07%")
@@ -330,7 +344,9 @@ class ServiceLiveTest(ServiceChatBase):
                 mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-not-real", "LLM_MODEL": "test-model"}):
             live = engine.reading()
             live.client.opener = self.opener
-            cid = self.send("A", text="이번 달 얼마 썼어?").json()["conversationId"]  # 라우터 1 + 소비 1 = 상한 2
+            first = self.send("A", text="이번 달 얼마 썼어?")
+            self.assertEqual(first.status_code, 200, first.content)
+            cid = first.json()["conversationId"]  # 라우터 1 + 소비 1 = 상한 2
             before = Conversation.objects.get(pk=cid)
             out = self.send("A", cid, text="그럼 교통비는?").json()
         bot, after = out["messages"][1]["content"], Conversation.objects.get(pk=cid)

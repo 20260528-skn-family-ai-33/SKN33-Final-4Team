@@ -12,7 +12,7 @@ from rest_framework.test import APIClient
 from finance.models import BankAccount, Card, Connection, Loan, RecurringExpense, RecurringSaving
 from users.models import FinancialProfile
 
-from .models import Budget, BudgetCycle
+from .models import Budget, BudgetCycle, BudgetItem
 from .protect import blocked, cushion_required, fill_cushion, fixed_total, recommend, savings_min
 
 
@@ -161,6 +161,50 @@ class ProtectAPITest(TestCase):
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual((cycle.starts_on, cycle.ends_before), (date(2026, 10, 25), date(2026, 11, 25)))
+
+    def test_approved_breakdown_compares_any_budget_and_keeps_design_spare(self):
+        self.assertEqual(self.put().status_code, 200)
+        approved = self.make_budget(status="approved")
+        approved.funding_amount = 2_800_000
+        approved.save(update_fields=["funding_amount"])
+        BudgetItem.objects.bulk_create([
+            BudgetItem(user=self.user, budget=approved, bucket=bucket, allocated_amount=amount)
+            for bucket, amount in (("savings", 990_000), ("cushion", 150_000), ("fixed", 770_000), ("living", 830_000))
+        ])
+        expected = {"spareTransfer": 0, "spare": 60_000, "savingFloor": 990_000, "cushionMonthly": 150_000,
+                    "savingTransfer": 0, "cushionTransfer": 0}
+        self.assertEqual(self.client.get(URL).json()["approvedBudget"], expected)
+        changed = self.put({"livingBudget": 720_000, "savingFloor": 1_050_000, "cushionMonthly": 170_000})
+        self.assertEqual(changed.status_code, 200, changed.content)
+        self.assertEqual(changed.json()["saved"]["savingFloor"], 1_050_000)
+        self.assertEqual(changed.json()["approvedBudget"], expected)
+        approved.validation_summary = {"design": {"spare_transfer": 30_000}}
+        approved.save(update_fields=["validation_summary"])
+        expected["spareTransfer"] = 30_000
+        response = self.put()
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["approvedBudget"], expected)
+
+    def test_normal_adjustment_spare_is_reported_with_no_savings_or_cushion_difference(self):
+        self.assertEqual(self.put().status_code, 200)
+        approved = self.make_budget(status="approved")
+        approved.funding_amount = 2_800_000
+        approved.validation_summary = {"adjustment": {"result": {"transfers": [
+            {"from": "SPARE", "to": "FOOD", "amount": 40_000},
+            {"from": "SPARE", "to": "ETC", "amount": 10_000},
+            {"from": "SAVINGS", "to": "CUSHION_MONTHLY", "amount": 5_000},
+        ]}}}
+        approved.save(update_fields=["funding_amount", "validation_summary"])
+        BudgetItem.objects.bulk_create([
+            BudgetItem(user=self.user, budget=approved, bucket=bucket, allocated_amount=amount)
+            for bucket, amount in (("savings", 1_000_000), ("cushion", 170_000), ("fixed", 770_000), ("living", 820_000))
+        ])
+        response = self.client.get(URL)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["approvedBudget"], {
+            "spareTransfer": 50_000, "spare": 40_000, "savingFloor": 1_000_000, "cushionMonthly": 170_000,
+            "savingTransfer": 0, "cushionTransfer": 0,
+        })
 
     def test_each_missing_value_skips_fixed_calculation(self):
         for field, name in (("housing_type", "housingType"), ("monthly_take_home_income", "takeHomeIncome"), ("payday", "payday")):
