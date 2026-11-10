@@ -4,6 +4,7 @@
 - 목록은 지금 정책 값을 읽고, 마감 · 수집 종료(비활성)도 지우지 않고 상태로 보여 준다
 """
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 
 from . import search
 from .models import Policy, SavedPolicy
@@ -53,7 +54,7 @@ def item(saved, today):
         "apply_end": policy.last_apply_end,
         "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
         "active": policy.is_active,
-        "saved_at": saved.created_at,
+        "saved_at": timezone.localtime(saved.created_at).isoformat(timespec="seconds"),  # 한국 시간 (+09:00)
     }
 
 

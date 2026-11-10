@@ -70,6 +70,7 @@ class ApiTest(TestCase):
         self.assertEqual([i["name"] for i in items], ["청년 월세 지원"])
         self.assertEqual(set(items[0]), {"savedPolicyId", "policyNo", "name", "applyState", "applyEnd", "link",
                                          "active", "savedAt"})
+        self.assertTrue(items[0]["savedAt"].endswith("+09:00"))  # 한국 시간 (API 규칙)
         self.assertEqual(self.client.delete(self.url()).status_code, 204)
         self.assertEqual(self.client.delete(self.url()).status_code, 204)  # 이미 취소해도 성공
         self.assertEqual(self.client.get("/api/policies/saved/").json(), {"items": []})

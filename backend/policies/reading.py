@@ -5,6 +5,7 @@ LLM 은 읽기만 한다. 정책을 고르거나 자격 · 금액을 판단하�
 """
 import json
 import os
+import re
 from dataclasses import dataclass, field
 
 from django.conf import settings
@@ -124,10 +125,15 @@ def needs_for(reading, text):
     return reading.needs or [Need(text)]
 
 
+FAKE_NOT_MINE = re.compile(r"썼|지출|소비|예산|얼마\s*남")  # 가짜 읽기도 소비 · 예산 질문은 다른 담당으로 보낸다
+
+
 def fake_complete(system, user):
-    """네트워크 없는 읽기: 문장 그대로 한 가지 필요, 키워드 없음 (= 2단계 벡터만 검색과 같다)"""
-    return json.dumps({"needs": [{"query": user, "keywords": []}], "place": None, "vague": False, "mine": True},
-                      ensure_ascii=False)
+    """네트워크 없는 읽기: 문장 그대로 한 가지 필요, 키워드 없음 (= 2단계 벡터만 검색과 같다).
+    가짜 해석으로 띄운 더미 서비스에서 정책 담당에 갇히지 않게 소비 · 예산 말투만 not_mine 으로 본다"""
+    mine = not FAKE_NOT_MINE.search(user)
+    return json.dumps({"needs": [{"query": user, "keywords": []}] if mine else [], "place": None, "vague": False,
+                       "mine": mine}, ensure_ascii=False)
 
 
 def reader(live=None, max_calls=None):

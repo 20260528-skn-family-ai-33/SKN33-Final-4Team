@@ -15,6 +15,8 @@ from spending_fixture import seed
 from spending_fixture.test_fixture import DESIGN, EXPECTED, fixture_db_only
 from spending_fixture.test_service import NO_NETWORK, PASSWORD, SERVICE, login
 
+from policies import agent as policy_agent
+
 from . import engine
 
 URL = "/api/chat/messages/"
@@ -129,7 +131,7 @@ class ServiceChatTest(ServiceChatBase):
         self.assertEqual(self.client_for("B").get(f"/api/chat/conversations/{cid}/").status_code, 404)
         self.assertEqual(ChatMessage.objects.filter(conversation_id=cid).count(), 2)  # B 의 메시지는 남지 않는다
 
-    def test_budget_and_policy_are_not_ready_and_end(self):
+    def test_budget_is_not_ready_and_policy_asks_region(self):
         out = self.send("A", text="식비 예산 줄여줘")
         cid = out.json()["conversationId"]
         self.assertEqual(self.bot(out)["lines"], [engine.NOT_READY["budget"]])
@@ -137,7 +139,7 @@ class ServiceChatTest(ServiceChatBase):
         self.assertIsNone(store.get_task(engine.KEY))  # 보류 작업이 남지 않는다
         after = self.bot(self.send("A", cid, text="이번 달 얼마 썼어?"))
         self.assertEqual(after["notices"], [])  # '예산 조정은 잠시 멈춰 뒀어요' 같은 안내가 없다
-        self.assertEqual(self.bot(self.send("A", cid, text="청년 정책 추천해줘"))["lines"], [engine.NOT_READY["policy"]])
+        self.assertEqual(self.bot(self.send("A", cid, text="청년 정책 추천해줘"))["lines"], [policy_agent.ASK_REGION])
         self.assertEqual(self.bot(self.send("A", choice="spending"))["lines"], ["어떤 소비가 궁금하세요?"])
 
     def test_extended_content_and_hidden_budget_suggestion(self):
@@ -234,9 +236,54 @@ class ServiceChoiceTest(ServiceChatBase):
         spending = self.bot(self.send("A", cid, choice="spending"))
         self.assertEqual((spending["agent"], spending["lines"]), ("spending", ["어떤 소비가 궁금하세요?"]))
         policy = self.send("A", cid, choice="policy")
-        self.assertEqual((policy.json()["agent"], self.bot(policy)["lines"]), ("policy", [engine.NOT_READY["policy"]]))
+        self.assertEqual((policy.json()["agent"], self.bot(policy)["lines"]), ("policy", [policy_agent.ASK_REGION]))
         self.assertEqual(policy.json()["messages"][0]["content"]["text"], "청년 정책")
         self.assertEqual(self.calls.call_count, 0)  # 기능 버튼은 라우터 해석 없이
+
+    def test_policy_region_buttons_answer_save_and_spending_goes_back(self):
+        """청년 정책 (7단계 연결): 지역 버튼 → 문장 → 추천 → [1번 저장]은 대화 저장과 함께 DB 에 → 소비 질문은 소비 담당으로"""
+        from policies.models import SavedPolicy
+        from policies.tests.test_search import add
+        from spending_fixture.test_fixture import user
+        add("20260000000000000001", plcyNm="청년 월세 지원")  # 화성시 정책 (가짜 임베딩이라 순위는 상관없다)
+        out = self.send("A", choice="policy")
+        cid, content = out.json()["conversationId"], self.bot(out)
+        for label in ("경기도", "화성시", "동탄구"):
+            content = self.bot(self.pick("A", cid, content, label))
+        self.assertEqual(content["lines"], [policy_agent.ASK_FIELD])
+        content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
+        self.assertIn("1. 청년 월세 지원 — 상시", content["lines"])
+        self.assertEqual((content["agent"], content["notices"][0]), ("policy", policy_agent.NOTICE))
+        content = self.bot(self.pick("A", cid, content, "1번 저장"))
+        self.assertEqual(content["lines"], ["‘청년 월세 지원’ 정책을 저장했어요."])
+        self.assertNotIn("saves", content)
+        self.assertEqual(list(SavedPolicy.objects.filter(user=user("A")).values_list("policy_id", flat=True)),
+                         ["20260000000000000001"])
+        self.assertFalse(SavedPolicy.objects.exclude(user=user("A")).exists())
+        spending = self.send("A", cid, text="이번 달 얼마 썼어?")  # 정책 담당이 not_mine → 라우터가 다시 고른다
+        self.assertEqual(spending.json()["agent"], "spending")
+
+    def test_policy_save_is_not_kept_when_conversation_changed_meanwhile(self):
+        from policies.models import SavedPolicy
+        from policies.tests.test_search import add
+        add("20260000000000000001", plcyNm="청년 월세 지원")
+        out = self.send("A", choice="policy")
+        cid, content = out.json()["conversationId"], self.bot(out)
+        for label in ("경기도", "화성시", "동탄구"):
+            content = self.bot(self.pick("A", cid, content, label))
+        content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
+        real = engine.answer
+
+        def answer_then_someone_else_saves(*args, **kwargs):  # 처리하는 사이 같은 대화의 다른 메시지가 먼저 저장됨
+            result = real(*args, **kwargs)
+            talk = Conversation.objects.get(pk=cid)
+            talk.slots = {**talk.slots, "rev": talk.slots["rev"] + 1}
+            talk.save(update_fields=["slots"])
+            return result
+        with mock.patch.object(engine, "answer", side_effect=answer_then_someone_else_saves):
+            busy = self.pick("A", cid, content, "1번 저장")
+        self.assertEqual(busy.status_code, 409)
+        self.assertFalse(SavedPolicy.objects.exists())  # 409 면 저장도 안 됨
 
     def test_suspended_budget_resume_choice_without_llm(self):
         cid = self.send("A", choice="budget").json()["conversationId"]
