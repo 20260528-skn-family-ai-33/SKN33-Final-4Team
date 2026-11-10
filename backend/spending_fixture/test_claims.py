@@ -28,6 +28,21 @@ def _answer(*sentences):
     return json.dumps({"sentences": [{"text": t, "claims": ids} for t, ids in sentences]}, ensure_ascii=False)
 
 
+
+def _server_numbers(ev):
+    """근거 안의 모든 정수(금액 · 건수 · 증감)를 문장 모양('12,000원' · '26건')으로"""
+    out, stack = [], [ev]
+    while stack:
+        v = stack.pop()
+        if isinstance(v, dict):
+            stack += list(v.values())
+        elif isinstance(v, (list, tuple)):
+            stack += list(v)
+        elif isinstance(v, int) and not isinstance(v, bool):
+            out += [f"{abs(v):,}원", f"{abs(v)}건"]
+    return out
+
+
 @fixture_db_only
 class ClaimValueTest(TestCase):
     """주장 값 = 지금 템플릿 설명 숫자 (같은 evidence). 3명 × 전체 · 카테고리 12개, 늘어난 경우 전부"""
@@ -36,14 +51,15 @@ class ClaimValueTest(TestCase):
     def setUpTestData(cls):
         seed.apply(DESIGN)
 
-    def test_every_claim_number_is_in_the_template_answer(self):
+    def test_every_claim_number_is_a_server_number(self):
+        """주장의 금액 · 건수는 모두 서버 근거(evidence)가 계산한 값이다 (짧은 기본 답에 없는 값도 근거에는 있다, MEMO 31)"""
         checked = 0
         for persona in ("A", "B", "C"):
             for code in (None, *[c for c in NAMES if c != "UNCLASSIFIED"]):
                 item, ev = _ev(persona, code)
                 if ev["state"] != "ok" or ev["delta"] <= 0:
                     continue
-                said = json.dumps(explain.answer(user(persona), [item], today=TODAY), ensure_ascii=False)  # 문장 + 카드(전 → 후 값)
+                said = json.dumps(explain.answer(user(persona), [item], today=TODAY), ensure_ascii=False) + " ".join(_server_numbers(ev))
                 for c in C.first_claims(ev, item):
                     for number in re.findall(r"[\d,]+[원건]", c["text"]):
                         self.assertIn(number, said, (persona, code, c))

@@ -9,9 +9,8 @@ from .schemas import schema_for
 
 
 class LiveReading:
-    """설명 LLM 도 같은 클라이언트 · 상한 · 장부를 쓴다 ("왜 늘었어?" 한 번에 1회 더).
+    """B 가설 확인 · 추가 판단도 같은 클라이언트 · 상한 · 장부를 쓴다.
     상한은 call_limit으로 안내하고, 그 밖의 호출 실패는 해석 실패로 답한다 (대화 상태 그대로)"""
-    explains = True
 
     def __init__(self, max_calls, ledger_path, model=None):
         """max_calls = 이 해석기의 호출 상한(None = 상한 없음), ledger_path = 저장소 밖 장부(None = 장부 없이 메모리 수만).

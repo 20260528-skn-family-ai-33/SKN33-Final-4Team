@@ -4,6 +4,7 @@ DB · 네트워크 · 설정 변경 없음. 실제 LLM 은 chat.llm.live.LiveRea
 import json
 
 from chat.interpretation.legacy import SAID, RoleFakeLLM
+from spending_analysis import agent_loop as spending_agent_loop
 from spending_analysis import claims as spending_claims
 from spending_analysis import reading as spending_reading
 
@@ -113,8 +114,63 @@ SPENDING_SAID.update({
     "엄마 생일 선물로 얼마 썼어?": {"mine": True, "target": "spend", "categories": [{"unknown": "엄마 생일 선물"}]},
     "왜 늘었을까?": {"mine": True, "explain": True, "explain_kind": "change", "refers_to": "previous"},
     "식비 예산 초과했어?": {"mine": True, "target": "budget_left", "categories": ["FOOD"]},
+    # 달끼리 비교 (11/10) — 기준일 10/29: 8월과는 같은 날짜까지, 9월 vs 8월은 한 달 전체
+    "8월보다 식비 더 썼어?": {"mine": True, "target": "spend", "compare": "month", "compare_month": 8, "categories": ["FOOD"]},
+    "9월이랑 8월 식비 비교해줘": {"mine": True, "target": "spend", "period": "month", "month": 9, "compare": "month",
+                           "compare_month": 8, "categories": ["FOOD"]},
+    "10월이랑 9월 식비 비교해줘": {"mine": True, "target": "spend", "period": "month", "month": 10, "compare": "month",
+                            "compare_month": 9, "categories": ["FOOD"]},
+    "이번달이랑 9월달 식비 비교해줘": {"mine": True, "followup": "answer", "target": "spend", "period": "this_month",
+                                "period_said": "이번달이랑 9월달", "compare": "month", "compare_month": 9, "categories": ["FOOD"]},
+    "이번달이랑 8월달 식비 비교해줘": {"mine": True, "followup": "answer", "target": "spend", "period": "this_month",
+                                "period_said": "이번달이랑 8월달", "compare": "month", "compare_month": 8, "categories": ["FOOD"]},
+    "3월보다 식비 더 썼어?": {"mine": True, "target": "spend", "compare": "month", "compare_month": 3, "categories": ["FOOD"]},
     "카테고리별로 예산 얼마나 남았어?": {"mine": True, "target": "budget_left", "compare": "category"},
 })
+# 첫 조회 뒤 추가 판단 (MEMO 31) — 판단이 필요한 질문의 해석. 첫 조회는 기존 경로가 이 해석 그대로 한다
+FOOD_PREV = {"target": "spend", "compare": "prev_month", "categories": ["FOOD"]}
+AGENT_SAID = {
+    # 11/10 실제 LLM 평가(verify_agent --live)의 해석값 그대로 — 회귀 기준
+    # 비교 + 나누기 + 가설 없는 explain (A1 · F2 첫 질문)
+    "지난달보다 식비 늘었는데 어느 시간대에서 많이 늘었어?": {
+        **FOOD_PREV, "refers_to": "none", "explain": True, "explain_kind": "change", "group_by": "time_slot", "multi_step": True},
+    # 요일별 하루 평균 + 비교, multi_step 없음 (A4)
+    "지난달보다 어느 요일에 더 썼어?": {"target": "spend", "compare": "prev_month", "refers_to": "none", "measure": "daily_avg",
+                                "group_by": "weekday"},
+    # 비교 + 나누기 + multi_step (A2)
+    "지난달보다 식비 늘었는데 어느 시간대에서 늘었어?": {**FOOD_PREV, "refers_to": "none", "group_by": "time_slot", "multi_step": True},
+    # 남은 예산 + 지난달 소비 비교 (A3) — budget_left + compare 로 읽혔다
+    "식비 예산 얼마 남았고 지난달보다 많이 쓰고 있어?": {"target": "budget_left", "compare": "prev_month", "categories": ["FOOD"],
+                                       "refers_to": "none", "multi_step": True},
+    # 볼 수 없는 달 (F1) — 기존 경로가 기간을 먼저 되묻는다 (판단은 조건이 확정된 뒤)
+    "3월보다 식비 늘었으면 어느 시간대인지도 알려줘": {"target": "spend", "compare": "month", "categories": ["FOOD"], "refers_to": "none",
+                                         "group_by": "time_slot", "compare_month": 3, "multi_step": True},
+    # 일반 이유 질문 (W1) — 기존 증감 근거 + 짧은 서버 설명 (판단 · B 없음)
+    "지난달보다 식비 늘었으면 왜 늘었는지도 알려줘": {**FOOD_PREV, "refers_to": "none", "explain": True, "explain_kind": "change"},
+    # 이번 달과 지난달을 함께 말한 비교 — 보는 쪽은 이번 달 (11/10 화면: 실제 해석이 period=last_month + compare=prev_month 로 읽어 되물었다)
+    "이번달 식비를 지난달과 비교": {**FOOD_PREV, "refers_to": "none", "period_said": "이번달 식비를 지난달과 비교"},
+    # 판단이 고르는 multi_step (가짜만) — 나누기 기준을 말하지 않아 서버 요구가 없다
+    "지난달보다 식비 늘었으면 어디서 늘었는지도 봐줘": {**FOOD_PREV, "multi_step": True},
+    "식비랑 교통비 중에 지난달보다 뭐가 더 늘었어?": {**FOOD_PREV, "categories": ["FOOD", "TRANSPORT_CAR"], "multi_step": True},
+}
+for _text, _reading in AGENT_SAID.items():
+    SPENDING_SAID[_text] = {"mine": True, **_reading}
+JUDGE_SAID = {"지난달보다 식비 늘었으면 어디서 늘었는지도 봐줘": ("where_changed", {"by": "time_slot"})}  # needs 가 없는 질문의 정해 둔 선택
+
+
+def fake_judge(user):
+    """추가 판단 가짜 응답: 서버가 본 요구(needs)가 있으면 그 첫 요구, 없으면 정해 둔 선택. 모르는 질문은 호출 실패처럼"""
+    data = json.loads(user)
+    if data["needs"]:
+        need = data["needs"][0]
+        tool, args = need["tool"], ({"by": need["by"]} if need.get("by") else None)
+    elif data["question"] in JUDGE_SAID:
+        tool, args = JUDGE_SAID[data["question"]]
+    else:
+        raise TimeoutError("가짜 판단: 모르는 질문")
+    return json.dumps({"action": "tool", "tool": tool, "args": args, "reason": "질문에 남은 확인"}, ensure_ascii=False)
+
+
 EXTRA_SAID["식비 예산 5만 원 줄여줘"] = {"intents": ["budget_adjust"], "categories": ["FOOD"], "direction": "down", "amount": 50000, "amount_mode": "by"}
 
 
@@ -177,13 +233,14 @@ def fake_plan_answer(system, user):
 
 class FakeReading(RoleFakeLLM):
     """가짜 해석: 정해 둔 문장만 이해한다(SAID). 모르는 문장은 해석 실패 → 라우터 실패 문구. 설명 LLM 은 없다(템플릿)"""
-    explains = False
-
     def __init__(self):
         super().__init__({**SAID, **EXTRA_SAID})
         self.missed = 0
 
     def __call__(self, system, user, timeout=None):  # timeout: 실제 해석기와 같은 모양 (가짜는 기다리지 않음)
+        if system == spending_agent_loop.PROMPT:
+            self.calls.append({"role": "fake_judge"})
+            return fake_judge(user)
         if system in (spending_claims.PLAN_PROMPT, spending_claims.ANSWER_PROMPT):
             self.calls.append({"role": "fake_plan" if system == spending_claims.PLAN_PROMPT else "fake_answer"})
             return fake_plan_answer(system, user)

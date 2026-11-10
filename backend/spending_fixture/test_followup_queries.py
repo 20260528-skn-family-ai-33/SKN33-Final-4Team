@@ -44,7 +44,6 @@ class FollowupQueryTest(ServiceChatBase):
 
     def test_limit_on_first_router_call_is_not_misunderstanding(self):
         class Limited:
-            explains = False
             def __call__(self, *args, **kwargs):
                 raise CapReached()
         with patch.object(engine, "reading", return_value=Limited()):

@@ -48,6 +48,8 @@ function Trace({ trace }) {
         {entry && <li>해석: {JSON.stringify(entry.reading)}</li>}
         {entry && <li>dialog: {entry.decision.status}{entry.decision.reason ? ` · ${entry.decision.reason}` : ''}{entry.decision.asking ? ` · 묻기 ${entry.decision.asking}` : ''}{entry.items.length > 0 && ` · 조회 ${entry.items.map((i) => `${i.type}${i.category ? `/${i.category}` : ''}`).join(', ')}`}</li>}
         {entry && <li>설명 요청: {entry.explain ? '예 — B 로' : '아니요'}</li>}
+        {entry && <li>추가 판단: {trace.agent ? `${trace.agent.status}${trace.agent.fallback ? ` · 멈춘 이유 ${trace.agent.fallback}` : ''}` : '안 함'}</li>}
+        {trace.agent && <li>선택: {trace.agent.choice ? `${trace.agent.choice.tool ?? 'answer'}${trace.agent.choice.args?.by ? `(${trace.agent.choice.args.by})` : ''}${trace.agent.toolStatus ? ` · ${trace.agent.toolStatus}` : ''}` : '판단 호출 없음'}{trace.agent.unmet.length ? ` · 못 확인 ${trace.agent.unmet.map((n) => n?.by ?? n?.tool ?? '나머지').join(', ')}` : ''}</li>}
         {planned && <li>멈춤: {trace.stop ? STOP[trace.stop] : '없음 — 계획 LLM 이 정함'}</li>}
         {trace.plan && <li>계획: {trace.plan.queries.length ? trace.plan.queries.map(query).join(', ') : '추가 조회 없음'} · {trace.plan.reason}</li>}
         {planned && trace.plan === null && <li>계획: 응답 없음 · 서버 설명으로 대체</li>}

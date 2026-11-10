@@ -236,3 +236,8 @@ if CHAT_LLM not in ("fake", "live"):
     raise ImproperlyConfigured("CHAT_LLM 은 fake 또는 live 예요")
 if CHAT_LLM == "live" and not (os.getenv("OPENAI_API_KEY") and os.getenv("LLM_MODEL")):
     raise ImproperlyConfigured("CHAT_LLM=live 에는 .env 의 OPENAI_API_KEY · LLM_MODEL 이 필요해요")
+# 소비 분석 LLM 확장 (값이 on 이 아니면 꺼짐 = 지금 템플릿 답 그대로)
+# CHAT_EXPLAIN_PLAN = on: 원인 가설을 말한 설명 질문("배달 때문이야?")을 B(계획 · 답 LLM, MEMO 26)로 확인한다 (가짜 해석은 정해 둔 계획 · 답)
+# CHAT_AGENT = on: 첫 조회 뒤 필요할 때만 판단 LLM 1회 → 추가 도구 최대 1회(MEMO 31). 못 끝내면 첫 결과 + 못 확인한 요구 안내
+CHAT_EXPLAIN_PLAN = os.getenv("CHAT_EXPLAIN_PLAN", "").strip() == "on"
+CHAT_AGENT = os.getenv("CHAT_AGENT", "").strip() == "on"

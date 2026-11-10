@@ -16,6 +16,7 @@ import time
 
 from . import result as R
 from . import investigation as I
+from . import supplement
 from .answer import NAMES, josa, won
 from .clauses import validate as validate_clause
 from .explain import _changed, _per_day, _visits_line, regular_name
@@ -113,12 +114,14 @@ def first_claims(ev, item):
     b, a = ev["previous"], ev["current"]
     out.append({"id": nid(), "kind": "change", "axis": "count", "subject": "결제 건수", "metric": "count",
                 "direction": _dir(a["count"] - b["count"]), "rank": None, "share": None, "conditions": base,
-                "text": _moved("결제 건수", b["count"], a["count"], lambda n: f"{n}건", _dir(a["count"] - b["count"]), "count", False)})
+                "text": _moved("결제 건수", b["count"], a["count"], lambda n: f"{n}건", _dir(a["count"] - b["count"]), "count", False),
+                "before": b["count"], "after": a["count"]})
     if b["average"] and a["average"]:
         way = _dir(a["average"]["value"] - b["average"]["value"])
         out.append({"id": nid(), "kind": "change", "axis": "average", "subject": "건당 평균", "metric": "average",
                     "direction": way, "rank": None, "share": None, "conditions": base,
-                    "text": _moved("건당 평균", b["average"]["value"], a["average"]["value"], won, way, "average", False)})
+                    "text": _moved("건당 평균", b["average"]["value"], a["average"]["value"], won, way, "average", False),
+                    "before": b["average"]["value"], "after": a["average"]["value"]})
     fixed = _conditions(ev, item, fixed_excluded=True)
     shift = ev["shift"] or {}
     for axis, key, noun in (("time_slot", "slots", lambda r: f"{r['name']} 시간대"), ("weekday", "weekdays", lambda r: f"{r['name']} 하루 평균")):
@@ -129,7 +132,8 @@ def first_claims(ev, item):
                         "metric": "amount" if axis == "time_slot" else "day_average", "direction": _dir(r["delta"]), "rank": 1,
                         "share": share, "conditions": fixed, "size": abs(r["delta"]),
                         "text": FIXED + _moved(noun(r), r["before"], r["after"], won, _dir(r["delta"]), "amount",
-                                                          top=AXIS_WORD[axis]) + _share_tail(share, total)})
+                                                          top=AXIS_WORD[axis]) + _share_tail(share, total),
+                        "before": r["before"], "after": r["after"]})
     v = ev["visits"]
     for key, place in VISITS:
         place = place or regular_name(ev)
@@ -176,20 +180,23 @@ def _ranked(rows):
 def _group_claim(cid, axis, r, rank, total, conditions, metric="amount", alone=True):
     """묶음 한 줄 → 주장. 가게 이름은 subject 에 두되 for_llm 이 순번으로 바꾼다 (이름은 서버가 끼우는 문장에만).
     alone = 1위가 혼자인지 (동률 1위면 '가장'을 쓰지 않는다)"""
-    noun = {"time_slot": f"{r['name']} 시간대", "weekday": f"{r['name']} 하루 평균"}.get(axis, r["name"] or "이름 없는 곳")
+    noun = {"time_slot": f"{r['name']} 시간대", "weekday": f"{r['name']} 하루 평균" if metric == "day_average" else r["name"]}.get(
+        axis, r["name"] or "이름 없는 곳")
     way, share = _dir(r["delta"]), _share(r["delta"], total)
     text = _moved(noun, r["before"], r["after"], won, way, "amount", top=AXIS_WORD.get(axis) if rank == 1 and alone else None) \
         + _share_tail(share, _dir(total) if total else way)
     if axis in ("time_slot", "weekday"):
         text = FIXED + text
     return {"id": cid, "kind": "change", "axis": axis, "subject": r["name"], "metric": metric, "direction": way,
-            "rank": rank, "share": share, "text": text, "conditions": conditions, "size": abs(r["delta"])}
+            "rank": rank, "share": share, "text": text, "conditions": conditions, "size": abs(r["delta"]),
+            "before": r["before"], "after": r["after"]}  # 카드 줄(전 → 후)용 — for_llm 은 보내지 않는다
 
 
-def compare_group(ev, item, by, focus=None, start=1):
+def compare_group(ev, item, by, focus=None, start=1, per_day=True):
     """비교하며 묶기: 두 기간 집계를 by 묶음으로 나눠 증감 순위 주장. 인자 검사는 여기서(서버) — by 는 AXES, focus 는 by="merchant" 의
     별칭 표 묶음(예: 배달) 하나만. 같은 방향(전체 증감 쪽) 변화만 순위(1 = 가장 큼), 반대 방향은 rank None.
-    focus 로 찾은 결제가 없으면 absent 주장 하나 — 조건에 검색 범위(별칭 표 브랜드 이름)를 붙인다"""
+    focus 로 찾은 결제가 없으면 absent 주장 하나 — 조건에 검색 범위(별칭 표 브랜드 이름)를 붙인다
+    per_day = 요일을 하루 평균으로(기본 — 두 기간의 요일 수가 달라서). False 면 요일별 합계 (사용자가 합계를 물었을 때)"""
     if by not in AXES:
         raise ValueError(f"묶을 수 없는 기준: {by!r}")
     if by == "category" and item.get("category"):
@@ -198,8 +205,9 @@ def compare_group(ev, item, by, focus=None, start=1):
         raise ValueError(f"좁힐 수 없는 묶음: {focus!r}")
     now, before = ev["sides"]
     nid, delta, base = _Ids(start), ev["delta"], _conditions(ev, item, fixed_excluded=by in ("time_slot", "weekday"))
-    if by == "weekday":  # 요일은 두 기간의 요일 수가 달라 하루 평균으로 (지금 설명과 같은 규칙)
-        rows = [{"key": d, "name": f"{DAY_NAMES[d]}요일", "before": _per_day(before, d), "after": _per_day(now, d)} for d in range(7)]
+    if by == "weekday":  # 요일은 두 기간의 요일 수가 달라 기본은 하루 평균 (지금 설명과 같은 규칙). 합계를 물었으면 합계
+        value = _per_day if per_day else (lambda side, d: side["weekdays"].get(d, 0))
+        rows = [{"key": d, "name": f"{DAY_NAMES[d]}요일", "before": value(before, d), "after": value(now, d)} for d in range(7)]
     else:
         field = {"category": "categories", "merchant": "merchants", "time_slot": "slots"}[by]
         keys = [k for k in set(now[field]) | set(before[field]) if k is not None]
@@ -220,8 +228,8 @@ def compare_group(ev, item, by, focus=None, start=1):
     sign = (delta > 0) - (delta < 0)
     same = sorted((r for r in rows if r["delta"] * sign > 0), key=lambda r: (-abs(r["delta"]), str(r["key"])))
     other = sorted((r for r in rows if r["delta"] * sign < 0), key=lambda r: (-abs(r["delta"]), str(r["key"])))
-    metric = "day_average" if by == "weekday" else "amount"
-    out = [_group_claim(nid(), by, r, rank, delta if by != "weekday" else 0, base, metric, alone)
+    metric = "day_average" if by == "weekday" and per_day else "amount"
+    out = [_group_claim(nid(), by, r, rank, delta if metric == "amount" else 0, base, metric, alone)
            for r, rank, alone in _ranked(same)]
     out += [_group_claim(nid(), by, r, None, 0, base, metric) for r in other]
     if focus is not None:
@@ -538,13 +546,15 @@ claims의 대상·지표로 이미 답할 수 있으면 queries=[]. 가설에 �
 queries 원소는 {by: category|merchant|time_slot|weekday, focus: null 또는 사용자가 말한 온라인 묶음/브랜드}.
 reason은 선택 이유 한 문장(금액·날짜·거래 가게 이름 제외).
 JSON: {queries, reason, hypothesis}."""
-ANSWER_PROMPT = """서버 문장 ID만 선택해 JSON으로 반환한다. 자연어 답변을 작성하지 않는다.
+ANSWER_PROMPT = """서버 문장 ID를 선택해 JSON으로 반환한다. sentences에는 자연어 답변을 작성하지 않는다.
 각 sentences 원소의 text에는 선택한 ID의 자리표시만 그대로 쓴다. 예를 들어 C7을 선택하면 text는 정확히 "{C7}"이고 claims는 ["C7"]이다.
 text에 주어·숫자·증감 설명·마침표를 작성하지 않는다. 서버가 자리표시 전체를 완성 문장으로 치환한다.
 선택한 ID 하나당 sentences 원소 하나를 만들며, 전체 1~4개다. 동일 ID는 한 번만 선택한다.
 must의 각 묶음에서 적어도 하나를 선택한다. support.claims가 있으면 그중 하나를 첫 원소에, 없으면 scope 주장을 첫 원소에 둔다.
 나머지는 질문에 필요한 근거만 선택한다. 같은 거래를 나눠 본 수치를 별개 원인처럼 합치지 않는다.
-출력 형식: {"sentences":[{"text":"{C7}","claims":["C7"]}]}"""
+""" + supplement.PROMPT_RULES + """
+support.limitation이 있으면 서버가 답 아래에 그 문장을 붙인다. 같은 내용을 extra에 다시 쓰지 않는다.
+출력 형식: {"sentences":[{"text":"{C7}","claims":["C7"]}],"extra":null,"extra_reason":null}"""
 clock = time.monotonic  # 테스트가 바꿔 끼운다
 
 
@@ -651,13 +661,50 @@ def run(ev, item, question, complete, hypothesis=None):
     trace["check"] = why
     if lines is None:
         return None, {**trace, "fallback": "rejected"}
-    trace["used"] = [i for s in json.loads(raw)["sentences"] for i in s["claims"]]
+    data = json.loads(raw)
+    trace["used"] = [i for s in data["sentences"] for i in s["claims"]]
     # 고른 추가 조회를 답에 하나도 쓰지 않았으면 표시만 (탈락 아님 — 호출만 늘었다)
     trace["unused_queries"] = [by for by, ids in (added if trace["stop"] is None else {}).items() if not ids & set(trace["used"])]
     public = {c["id"]: c for c in for_llm(claims)}
     trace["cited"] = [{k: public[i][k] for k in ("axis", "kind", "subject", "metric")} for i in dict.fromkeys(trace["used"])]
     trace["next_check"] = next_check(claims, trace["hypothesis"], contract, trace["used"])
-    return lines, trace
+    # 보충(11/10): 서버 문장으로 다 답하지 못할 때 LLM 이 쓴 숫자 없는 문장. 탈락하면 보충만 버린다.
+    # 서버가 다음 확인(next_check)을 붙이는 답에는 LLM 의 다음 질문 안내(next_step)를 겹쳐 붙이지 않는다
+    # 서버 한계 문장(limitation)이 붙는 답에는 '서버 문장이 다루지 못함(uncovered)' 보충을 붙이지 않는다 — 같은 말 반복 (11/10 실제 평가 B2)
+    extra, trace["extra_dropped"] = supplement.check(data.get("extra"), data.get("extra_reason"))
+    if extra and data.get("extra_reason") == "next_step" and trace["next_check"]:
+        extra, trace["extra_dropped"] = None, ["server_next_check"]
+    if extra and data.get("extra_reason") == "uncovered" and contract.get("limitation"):
+        extra, trace["extra_dropped"] = None, ["server_limitation"]
+    trace["extra_reason"] = data.get("extra_reason") if extra else None
+    # 카드 줄(전 → 후): 답에 쓴 주장 중 두 값이 있는 것만. 금액이 들어 있어 explain._planned 가 꺼내 쓰고 분석 과정에서는 지운다
+    byid, shown = {c["id"]: c for c in claims}, []
+    for i in dict.fromkeys(trace["used"]):
+        c = byid.get(i)
+        if c and c.get("before") is not None and c["kind"] != "absent":
+            shown.append(c)
+    trace["_rows"] = [_row(c) for c in shown]
+    trace["_shown"] = [c["text"] for c in shown] + ([claims[0]["text"]] if claims[0]["axis"] == "scope" else [])
+    return lines + ([extra] if extra else []), trace
+
+
+ROW_SUFFIX = {"amount": " 지출", "count": " 결제 건수", "average": " 건당 평균", "day_average": " 하루 평균"}  # 대상 지표 주장 문장과 같은 이름
+
+
+def _row(c):
+    """주장 → 카드 비교 줄 {name, value(전 → 후), note(증감), direction}. 건수는 '건', 그 밖은 원"""
+    unit = (lambda n: f"{n}건") if c["metric"] == "count" else won
+    if c.get("target"):  # 가설 대상 지표 (axis 에 가설 지표가 들어 있어 먼저 본다)
+        suffix = ROW_SUFFIX[c["metric"]]
+        name = c["subject"] if c["subject"].endswith(suffix.strip()) else c["subject"] + suffix  # 범위 대상('건당 평균')은 이름 그대로
+    elif c["axis"] in ("count", "average"):
+        name = c["subject"]
+    else:
+        name = {"time_slot": f"{c['subject']} 시간대",
+                "weekday": f"{c['subject']} 하루 평균" if c["metric"] == "day_average" else c["subject"]}.get(c["axis"], c["subject"] or "이름 없는 곳")
+    diff = c["after"] - c["before"]
+    return {"name": name, "value": f"{unit(c['before'])} → {unit(c['after'])}", "note": ("+" if diff >= 0 else "−") + unit(abs(diff)),
+            "direction": {"up": "up", "down": "down"}.get(c["direction"]), "fixed": bool(c["conditions"].get("fixed_excluded"))}
 
 
 def _left(started):
