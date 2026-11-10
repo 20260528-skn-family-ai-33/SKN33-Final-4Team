@@ -32,6 +32,9 @@ FIELDS = {
     "마음 건강": Need("청년 심리상담 마음건강 지원", ["심리", "상담"]),
 }
 MORE, OTHER_FIELD, CHANGE_REGION = "다른 정책 더 보기", "다른 분야 찾기", "지역 바꾸기"
+SAVE = "save:"  # 저장 버튼 값 = "save:" + 정책번호 (번호는 서버 상태에서만 나온다)
+SAVE_LABEL = "{number}번 저장"
+SAVED = "‘{name}’ 정책을 저장했어요."
 ASK_REGION = "어느 지역에 사세요? 사는 곳 기준으로 정책을 찾아요."
 ASK_AREA = "{name}의 어디인가요?"
 ASK_FIELD = "어떤 지원을 찾으세요? 버튼을 고르거나 고민을 문장으로 써 주세요."
@@ -133,6 +136,8 @@ def _answer(ask, value, home):
         options = codes if len(codes) > 1 else _children(codes[0])
         return Action("ask_region", codes=options, text=pending, needs=needs, home=False)
     if kind == "after":
+        if value.startswith(SAVE):
+            return Action("save", text=value[len(SAVE):])
         if value == "more":
             return Action("more")
         if value == "field":
@@ -184,7 +189,10 @@ def _ask_place(store, cid, state, action):
 def _show(store, cid, state, found, region, today, start):
     """추천 3칸 (start 번째부터). 사실은 tools.facts, 이유는 찾은 키워드로"""
     page = found[start:start + SHOW]
-    after = [("more", MORE)] if len(found) > start + SHOW else []
+    saved = state.get("saved") or []  # 예전 상태(칸 없음)도 읽는다
+    after = [(SAVE + f.policy.pk, SAVE_LABEL.format(number=number))
+             for number, f in enumerate(page, start + 1) if f.policy.pk not in saved]
+    after += [("more", MORE)] if len(found) > start + SHOW else []
     after += [("field", OTHER_FIELD), ("region", CHANGE_REGION)]
     state.update(results=[f.policy.pk for f in found], shown=start + len(page), region_used=region,
                  last=[f.policy.pk for f in page])
@@ -263,6 +271,8 @@ def _act(action, store, cid, state, user, today, embed):
     if kind == "reask":
         ask = state["ask"]
         return _reply("awaiting_input", [PICK_BUTTON], [{"value": v, "label": k} for k, v in ask["options"].items()])
+    if kind == "save":
+        return _save(store, cid, state, action.text)
     profile = tools.profile_for(user, action.text)
     if kind == "more":
         found = tools.again(state.get("results") or [], profile, today)
@@ -274,6 +284,18 @@ def _act(action, store, cid, state, user, today, embed):
             return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
         return _show(store, cid, state, found, action.region, today, 0)
     raise ValueError(f"처리하지 못한 행동: {kind}")
+
+
+def _save(store, cid, state, policy_no):
+    """[N번 저장]: 핸들러는 DB 에 쓰지 않는다 → save_policies 로 돌려주면 엔진이 대화 저장과 같은 트랜잭션에서
+    policies.saved.save_all 로 저장한다 (7단계). 같은 질문의 나머지 버튼은 그대로 다시 보인다"""
+    name = tools.policy_name(policy_no)
+    state["saved"] = [*(state.get("saved") or []), policy_no]
+    options = [(value, label) for label, value in state["ask"]["options"].items() if value != SAVE + policy_no]
+    result = _ask(store, cid, state, "after", [SAVED.format(name=name)], options)
+    result["status"] = "replied"
+    result["save_policies"] = [policy_no]
+    return result
 
 
 def _end(store, cid, line=ENDED):

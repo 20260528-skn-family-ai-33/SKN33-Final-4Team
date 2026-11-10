@@ -36,7 +36,9 @@ class Command(BaseCommand):
             except Exception as error:  # 확인 명령이라 어디서 멈췄는지 보여 준다
                 raise CommandError(f"{number}번째 입력에서 멈췄어요: {type(error).__name__}: {error}")
             self.stdout.write(f"\n나 > {said}")
-            self.stdout.write(f"[{result['status']}]" + (f" {result['error']}" if result.get("error") else ""))
+            self.stdout.write(f"[{result['status']}]" + (f" {result['error']}" if result.get("error") else "")
+                              + (f" 저장 요청 {result['save_policies']} (엔진이 저장 — 이 명령은 저장하지 않음)"
+                                 if result.get("save_policies") else ""))
             reply = result.get("reply") or {}
             for line in reply.get("lines", []):
                 self.stdout.write(f"봇 | {line}")

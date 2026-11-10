@@ -84,6 +84,11 @@ def facts(found, today):
     }
 
 
+def policy_name(policy_no):
+    """정책번호 → 정책명 (DB 값). 없으면 번호 그대로"""
+    return Policy.objects.filter(pk=policy_no).values_list("name", flat=True).first() or policy_no
+
+
 def data_date():
     """정책 데이터 기준일 (마지막 성공 수집). 없으면 None"""
     last = PolicySync.objects.filter(status=PolicySync.Status.OK).order_by("-finished_at").first()

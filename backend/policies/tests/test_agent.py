@@ -102,7 +102,7 @@ class AnswerTest(TestCase):
             self.assertIn(line, lines)
         self.assertEqual(result["reply"]["notices"][0], agent.NOTICE)
         self.assertEqual(talk.state["last"], ["RENT"])
-        self.assertEqual(talk.labels, [agent.OTHER_FIELD, agent.CHANGE_REGION])
+        self.assertEqual(talk.labels, ["1번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
 
     def test_자격_불충족과_같은_이름_재등록은_뺀다(self):
         add("OLD", vector=near(1), plcyNm="청년 월세 지원")
@@ -120,11 +120,13 @@ class AnswerTest(TestCase):
         talk = Talk()
         talk.lives_in_dongtan()
         talk.send("월세 지원 있어?")
-        self.assertEqual((talk.state["last"], talk.labels[0]), (["P1", "P2", "P3"], agent.MORE))
+        self.assertEqual(talk.state["last"], ["P1", "P2", "P3"])
+        self.assertEqual(talk.labels[:4], ["1번 저장", "2번 저장", "3번 저장", agent.MORE])
         result = talk.send(agent.MORE)
         self.assertEqual((result["status"], talk.state["last"]), ("replied", ["P4", "P5"]))
         self.assertIn("4. 정책 4 — 상시", result["reply"]["lines"])
         self.assertNotIn(agent.MORE, talk.labels)
+        self.assertEqual(talk.labels[:2], ["4번 저장", "5번 저장"])  # 번호는 이어서
 
     def test_찾지_못하면_replied_로_안내(self):
         add("BUSAN", vector=near(1), zipCd="26350")
@@ -218,3 +220,33 @@ class FailTest(TestCase):
         result = talk.send("음")
         self.assertEqual((result["status"], result["reply"]["lines"]), ("awaiting_input", [agent.PICK_BUTTON]))
         self.assertEqual(talk.labels, ["경기도"])
+
+
+class SaveTest(TestCase):
+    def setUp(self):
+        for rank in range(1, 4):
+            add(f"P{rank}", vector=near(rank), plcyNm=f"정책 {rank}")
+        self.talk = Talk()
+        self.talk.lives_in_dongtan()
+        self.talk.send("월세 지원 있어?")
+
+    def test_저장_버튼은_저장할_번호를_돌려주고_나머지_버튼은_그대로(self):
+        result = self.talk.send("2번 저장")
+        self.assertEqual((result["status"], result["save_policies"]), ("replied", ["P2"]))
+        self.assertEqual(result["reply"]["lines"], ["‘정책 2’ 정책을 저장했어요."])
+        self.assertEqual(self.talk.labels, ["1번 저장", "3번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
+        self.assertEqual(self.talk.state["saved"], ["P2"])
+        self.talk.send("1번 저장")
+        self.assertEqual(self.talk.labels, ["3번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
+
+    def test_저장한_칸이_없는_예전_상태도_읽는다(self):
+        old = {k: v for k, v in self.talk.state.items() if k != "saved"}  # 저장 기능 전에 시작한 대화
+        self.talk.store.save_agent_state(CID, "policy", old)
+        self.assertEqual(self.talk.send("1번 저장")["save_policies"], ["P1"])
+        self.talk.send("월세 지원 있어?")  # 다시 찾으면 이미 저장한 정책은 저장 버튼을 빼고 보인다
+        self.assertEqual(self.talk.labels[:2], ["2번 저장", "3번 저장"])
+
+    def test_저장은_DB_에_쓰지_않는다(self):
+        from policies.models import SavedPolicy
+        self.talk.send("1번 저장")
+        self.assertFalse(SavedPolicy.objects.exists())  # 엔진이 save_policies 를 보고 저장한다 (7단계)

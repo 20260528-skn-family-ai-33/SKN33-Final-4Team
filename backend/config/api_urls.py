@@ -20,6 +20,7 @@ from finance import api_loan_payments as finance_loan_payments
 from finance import api_cards as finance_cards
 from finance import api_card_reviews as finance_card_reviews
 from finance import api_card_payments as finance_card_payments
+from policies import api as policies_api
 
 from users import api as users_api
 from users import api_profile as users_profile
@@ -104,6 +105,9 @@ urlpatterns = [
     path("finance/card-bills/<uuid:bill_id>/payment-check/", finance_card_payments.card_bill_check, name="card-bill-check"),
     path("finance/card-bills/<uuid:bill_id>/payments/<uuid:transaction_id>/", finance_card_payments.card_bill_payment,
          name="card-bill-payment"),
+    path("policies/saved/", policies_api.saved_list, name="policy-saved-list"),
+    # 정책번호(공식 번호, UUID 아님 — policy 표의 예외)
+    path("policies/<str:policy_no>/saved/", policies_api.saved_detail, name="policy-saved"),
     # ↑ 새 주소는 이 위에 추가
     # 맞는 주소가 없으면 JSON 404 (항상 맨 끝)
     re_path(r"^.*$", api_common.not_found, name="not_found"),

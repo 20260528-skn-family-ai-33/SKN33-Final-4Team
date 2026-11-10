@@ -1,5 +1,6 @@
 import uuid
 
+from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from pgvector.django import VectorField
@@ -66,3 +67,20 @@ class PolicySync(models.Model):
     class Meta:
         db_table = "policy_sync"
         verbose_name = verbose_name_plural = "청년 정책 수집 이력"
+
+
+class SavedPolicy(models.Model):
+    """회원이 저장한 정책 (북마크). 채팅 추천의 [저장] 버튼 · 저장 API 가 만든다. 마이페이지 표시 방식은 아직 정하지 않았다"""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, db_column="user_id",
+                             related_name="saved_policies")
+    # 정책은 지우지 않고 is_active=False 로만 둔다 → 저장해 둔 정책이 사라지지 않게 PROTECT
+    policy = models.ForeignKey(Policy, on_delete=models.PROTECT, db_column="policy_no", related_name="saved_by")
+    created_at = models.DateTimeField("저장 시각", auto_now_add=True)
+
+    class Meta:
+        db_table = "saved_policy"
+        verbose_name = verbose_name_plural = "저장한 청년 정책"
+        constraints = [models.UniqueConstraint(fields=["user", "policy"], name="saved_policy_once")]
+        indexes = [models.Index(fields=["user", "-created_at"], name="saved_policy_user_recent")]
