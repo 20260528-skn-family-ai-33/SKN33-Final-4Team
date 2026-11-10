@@ -13,6 +13,7 @@ from django.core import serializers
 from django.test import Client, TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
+from chat.models import AsyncTask
 from users.models import Consent
 
 from . import connected_id
@@ -91,9 +92,12 @@ class ConnectBase(TestCase):
         sync = patch("finance.api_new_connection.sync_bank", side_effect=self.fake_sync)
         self.sync = sync.start()
         self.addCleanup(sync.stop)
-        card_sync = patch("finance.api_new_connection.sync_card", return_value={})
+        card_sync = patch("finance.api_new_connection.sync_card", return_value={"approvals_complete": True})
         self.card_sync = card_sync.start()
         self.addCleanup(card_sync.stop)
+        card_list = patch("finance.api_new_connection.sync_card_list", return_value={"card_count": 1})
+        self.card_list = card_list.start()
+        self.addCleanup(card_list.stop)
 
     def fake_sync(self, user, cid, org, start, end, connection_id=None, require_consent=False):
         conn = Connection.objects.get(user=user, organization_code=org, disconnected_at=None)
@@ -229,22 +233,42 @@ class NewConnectionTest(ConnectBase):
         self.assertEqual(self.post(bank("0088"), bank("0004")).status_code, 502)
 
     def test_card_connection_loads_cards_with_request_card_values(self):
-        # 11/03 S2: 카드 후보 GET 이 저장된 카드만 읽으므로 연결 직후 sync_card 로 카드 · 승인 · 청구서를 받는다
+        # 11/03 S2: 카드 후보 GET 이 저장된 카드만 읽으므로 연결 직후 보유카드를 받는다.
+        # 11/09: 청구서 · 승인내역(업종 포함, 1분 넘게 걸림)은 뒤 작업으로 → syncStatus=loading + syncTaskId 로 바로 답한다
         self.fake.responses = [ok("cid-3")]
         item = self.post(card("0302", cardNo="4111222233334444", cardPassword="1234")).json()["results"][0]
         conn = Connection.objects.get(user=self.user)
-        self.assertEqual((item["status"], item["syncStatus"], item["accountCount"]), ("connected", "done", None))
+        self.assertEqual((item["status"], item["syncStatus"], item["accountCount"]), ("connected", "loading", None))
+        args, kwargs = self.card_list.call_args
+        self.assertEqual((args[1], args[2], args[3]), ("cid-3", "0302", conn.pk))
+        self.assertEqual((kwargs["card_no"], kwargs["card_password"]), ("4111222233334444", "1234"))
+        task = AsyncTask.objects.get(pk=item["syncTaskId"])
+        # 테스트는 작업을 요청 안에서 끝까지 돌린다 (settings.TASKS_INLINE)
+        self.assertEqual((task.task_type, task.status, task.result), ("card_first_load", "succeeded", {"approvals_complete": True}))
         args, kwargs = self.card_sync.call_args
         self.assertEqual((args[1], args[2]), ("cid-3", "0302"))
-        self.assertEqual((kwargs["card_no"], kwargs["card_password"], kwargs["connection_id"]), ("4111222233334444", "1234", conn.pk))
+        self.assertEqual((kwargs["card_no"], kwargs["card_password"], kwargs["connection_id"], kwargs["task_id"]),
+                         ("4111222233334444", "1234", conn.pk, task.pk))
         self.sync.assert_not_called()
+        self.assert_no_secret(json.dumps(task.result))
+        res = self.client.get(f"/api/tasks/{task.pk}/")
+        self.assertEqual((res.status_code, res.json()["status"]), (200, "succeeded"))
 
-        self.card_sync.side_effect = RuntimeError("조회 실패")
+        self.card_sync.side_effect = RuntimeError("조회 실패")   # 뒤 작업 실패 → 작업이 failed, 연결은 그대로
         Connection.objects.all().delete()
         self.fake.responses = [ok("cid-3")]
         item = self.post(card("0302", cardNo="4111222233334444", cardPassword="1234")).json()["results"][0]
-        self.assertEqual((item["status"], item["syncStatus"]), ("connected", "failed"))  # 불러오기 실패해도 연결은 남김
+        self.assertEqual((item["status"], item["syncStatus"]), ("connected", "loading"))
+        self.assertEqual(AsyncTask.objects.get(pk=item["syncTaskId"]).status, "failed")
         self.assertEqual(Connection.objects.get().status, "connected")
+
+        self.card_list.side_effect = RuntimeError("목록 실패")   # 보유카드부터 못 받으면 작업을 만들지 않고 failed
+        Connection.objects.all().delete()
+        self.fake.responses = [ok("cid-3")]
+        before = AsyncTask.objects.count()
+        item = self.post(card("0302", cardNo="4111222233334444", cardPassword="1234")).json()["results"][0]
+        self.assertEqual((item["status"], item["syncStatus"], AsyncTask.objects.count()), ("connected", "failed", before))
+        self.assertNotIn("syncTaskId", item)
 
     def test_sync_failure_keeps_connection(self):
         self.fake.responses = [ok("cid-1")]
@@ -272,7 +296,7 @@ class SmsAuthTest(ConnectBase):
         res = self.post(card(smsAuth={"authToken": first["smsAuth"]["authToken"], "code": "123456"}))
         item = res.json()["results"][0]
         # 11/03: 카드사도 연결 직후 카드 · 승인 · 청구서를 불러온다 (sync_card)
-        self.assertEqual((item["status"], item["organizationName"], item["syncStatus"]), ("connected", "롯데카드", "done"))
+        self.assertEqual((item["status"], item["organizationName"], item["syncStatus"]), ("connected", "롯데카드", "loading"))
         kind, path, params = self.fake.calls[-1]
         self.assertEqual((kind, path), ("certification", "/v1/account/create"))
         self.assertEqual((params["smsAuthNo"], params["is2Way"]), ("123456", True))

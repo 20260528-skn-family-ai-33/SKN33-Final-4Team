@@ -17,6 +17,10 @@ ITEM_TYPES = {"1": "one_time", "2": "installment"}   # 3 그외 · 4 단기카�
 MONTH = re.compile(r"[0-9]{4}(?:0[1-9]|1[0-2])")
 MAX_AMOUNT = 9223372036854775807
 CANCELED, PARTIAL, DECLINED = "1", "2", "3"   # resCancelYN (0 정상)
+# 외화 승인인데 원화 금액(resKRWAmt)이 응답에 없는 줄. 11/07 NH: USD 줄은 4개월이 지나도 빈칸이라 다시 조회해도 채워지지 않는다
+FOREIGN_PENDING = "foreign_amount_pending"
+# 통화 칸의 원화 표기. 카드사마다 다를 수 있어 원화로 읽는다. 영문 3자리가 아닌 그 밖의 표기는 통화를 몰라 금액을 믿지 않는다
+KRW_NAMES = {"KRW", "WON", "원", "₩", "￦"}
 
 
 class CardDataError(ValueError):
@@ -223,7 +227,9 @@ def normalize_approvals(data, start, end):
     """승인내역 → (거래 목록, 실제 조회 기간 (시작, 끝)).
 
     거래 dict 의 card_number 는 카드 대조용(저장 안 함). 금액을 확정할 수 없는 줄은 unknown_reason 을 단다:
-    해외 원화금액 없음 · 부분취소 금액 없음 · 음수 이용금액(취소전표) — 저장하지 않고 이번 조회를 '거래 다 불러옴'으로 치지 않는다.
+    금액 없음 · 부분취소 금액 없음 · 음수 이용금액(취소전표) · 모르는 통화 표기 — 저장하지 않고 이번 조회를 '거래 다 불러옴'으로 치지 않는다.
+    외화 승인의 원화 금액 없음(FOREIGN_PENDING)은 저장 단계에서 청구서 · 계좌 출금으로 채워 보고(card_foreign),
+    못 채우면 저장하지 않지만 다시 조회해도 풀리지 않아 조회 완료를 막지 않는다 (card_review).
     """
     rows, covered_from, covered_to = [], start, end
     for row in _rows(data):
@@ -237,12 +243,27 @@ def normalize_approvals(data, start, end):
         used_on = _date(row.get("resUsedDate"))
         if not shown or used_on is None:
             raise CardDataError("invalid_approval")
-        currency = _text(row.get("resAccountCurrency")) or "KRW"
-        amount = _amount(row.get("resUsedAmount")) if currency == "KRW" else _amount(row.get("resKRWAmt"))
+        shown_currency = _text(row.get("resAccountCurrency")) or "KRW"   # 식별 키에는 받은 표기 그대로
+        currency = shown_currency.upper()
+        if currency in KRW_NAMES:
+            currency = "KRW"
+        elif not re.fullmatch(r"[A-Z]{3}", currency):
+            currency = None
+        if currency == "KRW":
+            amount = _amount(row.get("resUsedAmount"))
+        else:
+            amount = _amount(row.get("resKRWAmt")) if currency else None
+            if amount is None and currency and re.fullmatch(r"0+(?:\.0+)?", _text(row.get("resUsedAmount")) or ""):
+                # 0달러 승인(카드 확인용으로 보임. 11/09 NH USD 7건 중 4건이 같은 날 같은 가게의 실제 결제와 짝) → 원화도 0원이 확실하다.
+                # 금액 없음으로 두면 같은 날 같은 이름의 실제 결제가 '후보 여럿'이 되어 원화 금액을 못 채운다 (card_foreign).
+                # 0원 승인은 저장하지 않는다 (card_review.save_approvals)
+                amount = 0
         status, cancel = _text(row.get("resCancelYN")) or "0", _amount(row.get("resCancelAmount"))
         unknown = None
-        if amount is None:
-            unknown = "amount_unknown"
+        if currency is None:
+            unknown = "currency_unknown"   # 원화인지 모르는 표기 → 외화로 보고 빼지 않고 막는다 (국내 결제가 말없이 빠지지 않게)
+        elif amount is None:
+            unknown = "amount_unknown" if currency == "KRW" else FOREIGN_PENDING
         elif amount < 0:
             unknown = "negative_amount"
         elif status == PARTIAL and cancel is None:
@@ -260,7 +281,7 @@ def normalize_approvals(data, start, end):
             "unknown_reason": unknown,
             # 취소 상태 · 취소액은 나중에 바뀌므로 식별 키에 넣지 않는다
             "_identity": (used_on, row.get("resUsedTime"), approval_no, row.get("resUsedAmount"), merchant,
-                          payment_type, row.get("resInstallmentMonth"), currency),
+                          payment_type, row.get("resInstallmentMonth"), shown_currency),
             "occurred_on": used_on,
             "occurred_time": _time(row.get("resUsedTime")),
             "amount": amount,
@@ -273,7 +294,9 @@ def normalize_approvals(data, start, end):
             "is_canceled": status in (CANCELED, DECLINED),
             "canceled_amount": cancel if status in (CANCELED, PARTIAL) else (amount if status == DECLINED else None),
             "source_detail": {"cancelStatus": status, "currency": currency,
-                              "homeForeign": _code(row.get("resHomeForeignType"), 5)},
+                              "homeForeign": _code(row.get("resHomeForeignType"), 5),
+                              # 외화 승인의 외화 금액 원문 (같은 날 여러 건의 원화 금액 짝짓기 · card_foreign)
+                              **({"foreignAmount": _short(row.get("resUsedAmount"), 30)} if currency and currency != "KRW" else {})},
         })
     if covered_from > covered_to:
         raise CardDataError("invalid_approval")

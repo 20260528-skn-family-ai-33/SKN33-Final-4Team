@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 59개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -11개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 62개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -14개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -9528,6 +9528,211 @@
         "x-implementation-status": "implemented"
       }
     },
+    "/api/budgets/ai-consent/": {
+      "get": {
+        "summary": "[구현] 예산 AI 외부 전송 동의 보기",
+        "operationId": "budgetAIConsentGet",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n로그인 회원 자신의 선택 동의 상태와 현재 원문·버전·해시를 반환한다. 금융 조회 동의와 별개다. available=false이면 새 동의 UI를 숨긴다. 기존 활성 동의가 있으면 철회 UI만 유지한다.\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "현재 동의 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      },
+      "put": {
+        "summary": "[구현] 예산 AI 외부 전송 동의 저장",
+        "operationId": "budgetAIConsentPut",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n사용자가 직접 체크한 현재 문서 버전·해시를 저장한다. 기본 체크는 해제이며 저장만으로 외부 전송을 시작하지 않는다. 서버 기능이 비활성이면 409 budget_ai_unavailable이며 기록을 생성하지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agreed",
+                  "documentVersion",
+                  "documentHash",
+                  "healthAgreed",
+                  "healthDocumentVersion",
+                  "healthDocumentHash"
+                ],
+                "properties": {
+                  "agreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "documentVersion": {
+                    "type": "string"
+                  },
+                  "documentHash": {
+                    "type": "string"
+                  },
+                  "healthAgreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "healthDocumentVersion": {
+                    "type": "string"
+                  },
+                  "healthDocumentHash": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "동의 저장 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "document_outdated / budget_ai_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "[구현] 예산 AI 외부 전송 동의 철회",
+        "operationId": "budgetAIConsentDelete",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n예산 AI 동의만 철회한다. 금융자료·최소금액·잠금·승인 예산은 삭제하거나 변경하지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "confirm"
+                ],
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "철회 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
+      }
+    },
     "/api/budgets/protect/": {
       "get": {
         "summary": "[구현] 지킬 돈 보기",
@@ -9580,7 +9785,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "missingIncome": {
@@ -9607,7 +9813,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "blocked": {
@@ -9639,7 +9846,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "cardBillPending": {
@@ -9672,7 +9880,8 @@
                         }
                       ],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     },
                     "summary": "카드 첫 청구서 확인 중"
                   }
@@ -9760,7 +9969,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   }
                 }
@@ -11757,13 +11967,20 @@
             "type": "string",
             "enum": [
               "done",
+              "loading",
               "failed"
-            ]
+            ],
+            "description": "연결 직후 불러오기. done 완료 · failed 연결은 됐지만 불러오기 실패. loading(11/09, 카드사): 보유카드는 받았고 청구서 · 승인내역은 syncTaskId 작업이 뒤에서 불러오는 중"
           },
           "accountCount": {
             "type": "integer",
             "minimum": 0,
             "nullable": true
+          },
+          "syncTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "syncStatus=loading 일 때만. 카드 청구서 · 승인내역 불러오기 작업 ID (taskType card_first_load, GET /api/tasks/<id>/)"
           }
         },
         "required": [
@@ -12055,6 +12272,16 @@
             "type": "boolean",
             "nullable": true,
             "description": "카드 승인 내역 실제 조회 범위를 모두 반영했는지. 기관 status=succeeded와 별개."
+          },
+          "foreignPendingCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 원화 금액이 없어 저장하지 못한 외화 승인 건수 (11/07). approvalsComplete를 false로 만들지 않는다."
+          },
+          "foreignFilledCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "카드 수집 실행 성공 시, 원화 금액이 없던 외화 승인 중 청구서 · 체크카드 계좌 출금의 원화 금액으로 이번에 새로 저장한 건수 (11/09)."
           }
         },
         "required": [
@@ -16557,6 +16784,73 @@
           "error"
         ]
       },
+      "BudgetAIConsentState": {
+        "type": "object",
+        "required": [
+          "purpose",
+          "status",
+          "document",
+          "documentVersion",
+          "documentHash",
+          "grantedAt",
+          "revokedAt",
+          "healthDocument",
+          "healthDocumentVersion",
+          "healthDocumentHash",
+          "available"
+        ],
+        "properties": {
+          "purpose": {
+            "type": "string",
+            "enum": [
+              "budget_ai"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_granted",
+              "granted",
+              "revoked",
+              "needs_renewal"
+            ]
+          },
+          "document": {
+            "type": "object",
+            "description": "서버에 보관된 동의 원문. title·label·required·version·date·sections를 화면에서 그대로 표시한다."
+          },
+          "documentVersion": {
+            "type": "string"
+          },
+          "documentHash": {
+            "type": "string"
+          },
+          "grantedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "healthDocument": {
+            "type": "object",
+            "description": "외부 AI 분석용 건강 관련 요약의 별도 동의 원문"
+          },
+          "healthDocumentVersion": {
+            "type": "string"
+          },
+          "healthDocumentHash": {
+            "type": "string"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "예산 설계 및 외부 AI 서버 설정이 모두 켜져 실제 외부 추천 경로를 사용할 수 있는지. false이면 새 동의를 받지 않으며 기존 동의 철회만 허용."
+          }
+        }
+      },
       "ProtectRates": {
         "type": "object",
         "required": [
@@ -16770,9 +17064,31 @@
           "cushion",
           "cardPending",
           "cardNotes",
-          "locksReleased"
+          "locksReleased",
+          "cardLoadTaskId"
         ],
         "properties": {
+          "approvedBudget": {
+            "type": "object",
+            "description": "GET에서 이번 주기 승인 예산에 여윳돈 충당이 있을 때만 제공. 설정 기준 saved.spare와 구별하며 실제 초과 소비 차감 전 예산 배분 금액이다. PUT은 생략.",
+            "required": [
+              "spareTransfer",
+              "spare"
+            ],
+            "properties": {
+              "spareTransfer": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "spare": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
           "missing": {
             "type": "array",
             "items": {
@@ -16840,7 +17156,7 @@
           },
           "cardNotes": {
             "type": "array",
-            "description": "보류는 아니고 알릴 카드 선차감 상태 (11/06). no_bill_in_cycle(이번 주기 마지막 날까지 조회했는데 결제일인 청구서 없음 → 0원) · first_budget_applied(앞선 주기 승인 예산에 이미 반영 → 0원) · before_first_connection(이 주기 뒤에 연결) · card_overlap_uncertain(청구서에 든 이번 주기 구매 중 생활비와 같은 지출인지 확인 못 한 amount 원 · count 건 — 빼지 않고 넉넉하게 잡음) · bill_items_incomplete(청구서 상세가 일부만 와서 빠진 항목은 모름 — amount · count 는 null)",
+            "description": "보류는 아니고 알릴 카드 선차감 상태 (11/06). no_bill_in_cycle(이번 주기 마지막 날까지 조회했는데 결제일인 청구서 없음 → 0원) · first_budget_applied(앞선 주기 승인 예산에 이미 반영 → 0원) · before_first_connection(이 주기 뒤에 연결) · card_overlap_uncertain(청구서에 든 이번 주기 구매 중 생활비와 같은 지출인지 확인 못 한 amount 원 · count 건 — 빼지 않고 넉넉하게 잡음) · bill_items_incomplete(청구서 상세가 일부만 와서 빠진 항목은 모름 — amount · count 는 null) · foreign_amount_pending(이번 주기 외화 승인 중 원화 금액이 없어 쓴 돈에 넣지 못한 count 건 — amount 는 null, 11/07)",
             "items": {
               "type": "object",
               "required": [
@@ -16863,7 +17179,8 @@
                     "first_budget_applied",
                     "before_first_connection",
                     "card_overlap_uncertain",
-                    "bill_items_incomplete"
+                    "bill_items_incomplete",
+                    "foreign_amount_pending"
                   ]
                 },
                 "amount": {
@@ -16883,6 +17200,12 @@
               "$ref": "#/components/schemas/SelectableCategoryCode"
             },
             "description": "P-13. 이번 저장(PUT)으로 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞아 풀린 카테고리 코드(화면 순서). GET과 그 밖의 PUT은 []"
+          },
+          "cardLoadTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "11/09. 카드 내역을 서버가 뒤에서 불러오는 중이면 그 작업 ID(GET /api/tasks/<id>/), 아니면 null. 화면은 재조회를 권하지 않고 '불러오는 중'을 보여 준 뒤 작업이 끝나면 다시 읽는다"
           }
         },
         "additionalProperties": false
@@ -17474,18 +17797,18 @@
   },
   "x-source-sha256": {
     "docs/API_RULES.md": "ff9ec441fcefd21fe33213c36adeb1888084ea2acb22615ccab670bcdd5b15f0",
-    "docs/api/README.md": "05f71047afdeb72a76ca7d1ac585f962558e4674eab052fd7614c4e6afa6b021",
+    "docs/api/README.md": "054901c95fb21d87b5d0eabbe2b24e98417c0e0edd000ce9e1c82efa37475f33",
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
     "docs/api/auth.md": "473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1",
-    "docs/api/finance-connect.md": "7d18294a62273de79665ef3ddad431f7416073a1111dd72fdb2dd80a4a327510",
-    "docs/api/cards.md": "fe12a3c7ef7796eeafd784491ebd326ae1d1bcec2befd085760ef3663e6652e9",
+    "docs/api/finance-connect.md": "8b8a5c493f85c3084353a8706e4dd88e4a2da19dee88a5933e6c27608f34a416",
+    "docs/api/cards.md": "9b03a770b42b5152316f86175f53882febc7eb2d9a24e6608e46fb8e574f4343",
     "docs/api/loans.md": "86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f",
     "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
     "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
     "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
-    "docs/api/chat.md": "05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd",
-    "docs/api/budgets.md": "59bf9ec8dda94a92b3caa461bfcf4a8acad3556794a6984ce7674e0ceba39a29"
+    "docs/api/chat.md": "4aef7e3db23be5d0e18155d1af01048c44c1ce9d273eb8e8e0c3138d2ab5ffa4",
+    "docs/api/budgets.md": "3f769b9546453a49f1f42f31ec471fdef537e4f8340a6bd2a1d65b9cedf7df9b"
   }
 }

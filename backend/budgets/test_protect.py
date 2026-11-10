@@ -157,7 +157,7 @@ class ProtectAPITest(TestCase):
                             "spare": 90_000, "rebalanced": True, "restAmount": 1_030_000, "ratioSavingFloor": 810_000},
             "blocked": None, "saved": None,
             "cushion": {"required": True, "target": 8_400_000, "balanceTotal": 2_800_000},
-            "cardPending": [], "cardNotes": [], "locksReleased": [],
+            "cardPending": [], "cardNotes": [], "locksReleased": [], "cardLoadTaskId": None,
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual((cycle.starts_on, cycle.ends_before), (date(2026, 10, 25), date(2026, 11, 25)))

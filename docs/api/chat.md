@@ -371,7 +371,7 @@
 | 이름 | 타입 | 뜻 |
 |---|---|---|
 | `taskId` | UUID | 작업 번호 |
-| `taskType` | 문자 | 작업 종류: `finance_sync`(금융 정보 다시 불러오기, finance-connect.md) · `budget_adjust`(예산 조정, 10/22 E) 등 |
+| `taskType` | 문자 | 작업 종류: `finance_sync`(금융 정보 다시 불러오기, finance-connect.md) · `card_first_load`(카드사 첫 연결 뒤 청구서 · 승인내역 불러오기, 11/09, 연결마다 하나) · `budget_adjust`(예산 조정, 10/22 E) 등 |
 | `status` | 문자 | `queued`(대기) · `running`(실행) · `succeeded`(완료) · `failed`(실패) · `canceled`(취소) (10/22 E 확정) |
 | `conversationId` | UUID / null | 챗봇에서 시작한 작업이면 그 대화 |
 | `createdAt` · `startedAt` · `completedAt` | 시각 / null | 만든 · 시작 · 끝난 시각 |
@@ -394,6 +394,7 @@
 - 작업을 시작하는 API는 `202 {taskId, status}`로 답하고, 화면은 이 API로 결과를 본다.
 - **같은 회원 · 같은 종류의 작업이 진행 중이면 새로 만들지 않고 그 작업을 돌려준다**(`start_or_reuse`). 작업마다 "끝난 지 N분 안이면 마지막 결과" 규칙을 더 둘 수 있다(다시 불러오기는 1분).
 - **1차는 작업을 요청 안에서 끝까지 처리**하고 응답만 작업 모양으로 준다(그래서 시작 응답이 바로 `succeeded`일 수 있다). 느려지면 서버 안에서만 뒤로 돌리고 API · 화면은 그대로 둔다(10/27 나은).
+- **11/09: 금융 불러오기(`finance_sync` · `card_first_load`)는 뒤(웹 서버 스레드)에서 돈다** (`config/tasks.run_later`). 시작 응답은 `running`이고 화면이 진행을 본다. 별도 작업 서버가 없어서 서버가 재시작되면 그 작업은 기한(10분) 뒤 `failed(stale)`. 테스트는 `settings.TASKS_INLINE`으로 요청 안에서 돈다. 예산 작업은 그대로 요청 안에서 처리한다.
 - 작업은 실행 권한 만료 시각(`async_task.lease_expires_at`)까지만 새 조회를 시작하고 결과를 저장 · 기록할 수 있다. 연장은 그 작업이 **자기** 기관 조회를 시작하거나 저장할 때, 그 순간 아직 유효할 때만 10분씩 한다(다른 작업 · 작업 없는 조회 · 다른 회원은 연장 못 함). 기간이 지난 작업은 상태가 아직 `running`이어도 새 조회 · 저장 · 성공 기록이 거절되고, 새 작업 시작 · 동의 철회 · 탈퇴 때 `failed / stale`로 닫힌다. 기관 조회 기록 하나는 시작 후 10분 안에만 저장할 수 있다. 이미 끝났거나 지워진 작업의 늦은 결과는 상태를 바꾸지 않는다(R20, 11/06).
 
 **조회 규칙 (화면)**

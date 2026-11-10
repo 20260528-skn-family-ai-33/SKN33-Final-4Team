@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, useLocation } from 'react-router'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import PopupProvider from '../popups/PopupProvider.jsx'
+import { syncLines } from '../utils/financeSync.js'
 import ProtectPage from './ProtectPage.jsx'
 
 const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data })
@@ -10,7 +11,7 @@ const connection = { connectionId: 'hyundai', businessType: 'card', organization
 const review = { reviewId: 'review-1', merchantName: '합성 해외상점', occurredOn: '2026-10-27', occurredTime: '10:27:00',
   amount: 6694, isCanceled: false, canceledAmount: null, canResolve: true,
   candidates: [{ cardId: 'card-1', displayName: '첫 카드', isSelected: true, nameMatches: true }] }
-let host, root, connections, reason, result, requests, protectReads, run, connectionError, notes
+let host, root, connections, reason, result, requests, protectReads, run, connectionError, notes, loadTask, openTask, loadFails
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   connections = [structuredClone(connection), { ...connection, connectionId: 'unrelated', organizationName: '다른카드', cardIds: ['other-card'] },
@@ -18,7 +19,7 @@ beforeEach(() => {
   reason = 'spending_history_incomplete'
   notes = []
   result = { items: [{ connectionId: 'hyundai', organizationName: '현대카드', status: 'succeeded', cardReviewCount: 1, approvalsComplete: false }] }
-  requests = []; protectReads = 0; connectionError = null
+  requests = []; protectReads = 0; connectionError = null; loadTask = null; openTask = null; loadFails = 0
   run = async () => {
     if (result.items[0].cardReviewCount > 0) reason = 'card_assignment_required'
     return reply({ taskId: 'sync-1', status: 'succeeded' })
@@ -27,7 +28,7 @@ beforeEach(() => {
     if (options.method) requests.push({ url, body: JSON.parse(options.body) })
     if (url === '/api/budgets/protect/') {
       protectReads++
-      return reply({ missing: [], base: null, saved: null, recommended: null, cushion: { target: null }, cardNotes: notes,
+      return reply({ missing: [], base: null, saved: null, recommended: null, cushion: { target: null }, cardNotes: notes, cardLoadTaskId: loadTask,
         blocked: reason ? { reason: 'card_bill_pending' } : null, cardPending: reason ? [{ cardId: 'card-1', reason }] : [] })
     }
     if (url === '/api/finance/connections/' && !options.method) return connectionError || reply({ items: connections })
@@ -37,6 +38,10 @@ beforeEach(() => {
     }
     if (url === '/api/finance/sync/') return run()
     if (url === '/api/tasks/sync-1/') return reply({ status: 'succeeded', result })
+    if (url === '/api/tasks/load-1/') {
+      if (loadFails > 0) { loadFails--; throw new TypeError('Failed to fetch') }   // 통신이 잠깐 끊김
+      return new Promise((resolve) => { openTask = resolve })
+    }
     if (url === '/api/finance/card-reviews/') return reply({ items: [review] })
     if (url === '/api/finance/card-reviews/review-1/') { reason = null; return reply({ status: 'resolved' }) }
     if (url.startsWith('/api/budgets/fixed/')) return reply({ items: [], summary: {}, cardBills: [{ issuerCode: '0302', issuerName: '현대카드', totalAmount: 511515,
@@ -49,7 +54,7 @@ beforeEach(() => {
   document.cookie = 'csrftoken=test; path=/'
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
-afterEach(async () => { await act(() => root.unmount()); host.remove(); vi.unstubAllGlobals() })
+afterEach(async () => { await act(() => root.unmount()); host.remove(); vi.unstubAllGlobals(); vi.useRealTimers() })
 function Location() { return <output data-path>{useLocation().pathname}</output> }
 const render = () => act(async () => root.render(<MemoryRouter initialEntries={['/budgets/protect']}><PopupProvider><ProtectPage /><Location /></PopupProvider></MemoryRouter>))
 const button = (label) => [...host.querySelectorAll('button')].find((element) => element.textContent.includes(label))
@@ -197,6 +202,24 @@ it('11/06: 이번 주기 청구서를 아직 못 찾음은 조회 실패와 다�
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
 
+it('11/07: 원화 금액이 없는 해외 결제는 막지 않고 건수만 알린다', async () => {
+  reason = null
+  notes = [{ cardId: 'card-1', issuerCode: '0304', reason: 'foreign_amount_pending', amount: null, count: 3 }]
+  await render()
+  expect(host.textContent).toContain('해외 결제 3건은 카드사가 원화 금액을 주지 않았고 청구서·계좌 출금에서도 찾지 못해')
+  expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
+})
+
+it('11/07: 조회가 끝나면 빠진 해외 결제 건수를 조회 결과에 함께 알린다', () => {
+  const [line] = syncLines({ items: [{ organizationName: 'NH카드', status: 'succeeded', approvalsComplete: true, newTransactionCount: 2, foreignPendingCount: 7 }] })
+  expect(line).toEqual({ name: 'NH카드', ok: true, text: '새 거래 2건을 불러왔어요. 해외 결제 7건은 원화 금액을 찾지 못해 빠졌어요.' })
+})
+
+it('11/09: 청구서·계좌 출금으로 원화 금액을 채운 해외 결제 건수도 알린다', () => {
+  const [line] = syncLines({ items: [{ organizationName: 'NH카드', status: 'succeeded', approvalsComplete: true, newTransactionCount: 3, foreignFilledCount: 3, foreignPendingCount: 4 }] })
+  expect(line.text).toBe('새 거래 3건을 불러왔어요. 해외 결제 3건은 청구서·계좌 출금으로 원화 금액을 확인했어요. 해외 결제 4건은 원화 금액을 찾지 못해 빠졌어요.')
+})
+
 it('11/06: 조회 기간 누락만 재조회 입력을 바로 보여 준다', async () => {
   reason = 'bill_history_incomplete'
   await render()
@@ -204,3 +227,28 @@ it('11/06: 조회 기간 누락만 재조회 입력을 바로 보여 준다', as
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
 
+it('11/09: 카드 내역을 뒤에서 불러오는 중이면 재조회 대신 기다렸다가 끝나면 다시 읽는다', async () => {
+  loadTask = 'load-1'
+  await render()
+  expect(host.textContent).toContain('카드 내역을 불러오는 중이에요')
+  expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
+  expect(host.querySelector('[aria-label="현대카드 내역 조회"]')).toBeNull()
+  const reads = protectReads
+  loadTask = null; reason = null   // 작업이 끝나 청구서 · 사용 내역이 다 들어옴
+  await act(async () => openTask(reply({ status: 'succeeded', result: {} })))
+  expect(protectReads).toBe(reads + 1)
+  expect(host.textContent).not.toContain('카드 내역을 불러오는 중이에요')
+})
+
+it('11/10: 상태 조회가 끊겨도 같은 작업을 다시 조회해서 끝나면 로딩 안내를 걷는다', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout'] })
+  loadTask = 'load-1'; loadFails = 1
+  await render()
+  await act(async () => vi.advanceTimersByTimeAsync(3000))   // 조회 실패 → 잠깐 쉬고 다시 읽음. 서버는 아직 같은 작업을 준다
+  expect(protectReads).toBe(2)
+  expect(openTask).not.toBeNull()   // 같은 작업 ID 라도 상태 조회를 다시 시작했다
+  expect(host.textContent).toContain('카드 내역을 불러오는 중이에요')
+  loadTask = null; reason = null   // 작업이 끝남
+  await act(async () => openTask(reply({ status: 'succeeded', result: {} })))
+  expect(host.textContent).not.toContain('카드 내역을 불러오는 중이에요')
+})

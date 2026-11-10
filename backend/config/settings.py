@@ -40,6 +40,8 @@ def env_list(name, default=""):
 # ===== 보안 =====
 SECRET_KEY = required("DJANGO_SECRET_KEY")
 DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
+# 오래 걸리는 작업(config/tasks.run_later)을 요청 안에서 끝까지 돌릴지. 테스트는 늘 요청 안에서 (테스트 트랜잭션 밖 스레드는 자료를 못 본다)
+TASKS_INLINE = (len(sys.argv) > 1 and sys.argv[1] == "test") or os.getenv("TASKS_INLINE", "False").lower() == "true"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
 # 관리자 화면 주소. 운영에서는 추측하기 어려운 값으로 바꾼다 (코드에 적으면 GitHub에 공개되므로 환경변수로)

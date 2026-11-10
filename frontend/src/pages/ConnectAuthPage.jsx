@@ -1,7 +1,9 @@
 // 계좌 연결 2: 기관 로그인 · 연결 상태
 // 앞 화면에서 고른 기관마다 로그인 → (필요하면 문자 인증) → 연결 완료 / 실패 · 다시 시도
 // POST /api/finance/connections/ (docs/api/finance-connect.md '금융기관 인증 · 새 연결', 11/03 S2)
-//   - 기관 하나씩 보낸다. 은행은 연결 직후 계좌 · 거래를, 카드사는 카드 · 승인 · 청구서를 서버가 불러온다
+//   - 기관 하나씩 보낸다. 은행은 연결 직후 계좌 · 거래를, 카드사는 보유카드를 서버가 불러온다
+//   - 11/09: 카드 청구서 · 승인내역은 서버가 뒤에서 불러온다(syncStatus 'loading'). 기다리지 않고 다음 단계로 가도 되고,
+//     지킬 돈 화면이 끝날 때까지 '불러오는 중'을 보여 준다 (업종 조회로 1분 넘게 걸려 온보딩이 멈춰 보였다)
 //   - 연결(인증) 성공과 불러오기 성공은 다르다: syncStatus 'failed' 면 연결은 됐지만 불러오기 실패로 보여 준다
 //   - 문자 인증: 같은 기관 값 + smsAuth { authToken, code } 를 한 번 더 보낸다. 로그인 값은 팝업이 닫힐 때까지 메모리에만
 import { useState } from 'react'
@@ -22,6 +24,7 @@ const SUB = {
   busy: ['연결하는 중…', ''],
   sms: ['문자 인증이 필요해요', 'warn-t'],
   ok: ['연결 완료 · 내역을 불러왔어요', 'ok'],
+  loading: ['연결 완료 · 카드 내역은 뒤에서 불러오고 있어요. 다음 단계로 넘어가도 돼요.', 'ok'],
   okNoSync: ['연결은 됐지만 내역을 불러오지 못했어요. 연결 결과 화면에서 다시 불러오기를 눌러 주세요.', 'warn-t'],
 }
 
@@ -43,7 +46,7 @@ function AuthList({ picked }) {
   const navigate = useNavigate()
   const { openPopup } = usePopup()
   const codeOf = Object.fromEntries([...BANKS, ...CARDS].map((x) => [x.name, x.code]))
-  // [{ name, kind: 'bank' | 'card', code, status: todo·busy·sms·recheck·ok·okNoSync·fail, error?, recheck? }]
+  // [{ name, kind: 'bank' | 'card', code, status: todo·busy·sms·recheck·ok·loading·okNoSync·fail, error?, recheck? }]
   const [insts, setInsts] = useState(() => [
     ...picked.banks.map((name) => ({ name, kind: 'bank', code: codeOf[name], status: 'todo' })),
     ...picked.cards.map((name) => ({ name, kind: 'card', code: codeOf[name], status: 'todo' })),
@@ -55,7 +58,7 @@ function AuthList({ picked }) {
   // 서버 결과 한 기관 → 화면 상태. row = 보낸 값(문자 인증 때 다시 보내려고 메모리에만 둔다)
   const apply = (inst, row, result) => {
     if (result.status === 'connected') {
-      update(inst.name, { status: result.syncStatus === 'failed' ? 'okNoSync' : 'ok', error: null })
+      update(inst.name, { status: { failed: 'okNoSync', loading: 'loading' }[result.syncStatus] ?? 'ok', error: null })
     } else if (result.status === 'sms_required') {
       update(inst.name, { status: 'sms', error: result.error?.message ?? null })
       askSms(inst, row, result.smsAuth)
@@ -98,15 +101,16 @@ function AuthList({ picked }) {
     <ConnectLoginPopup inst={inst.name} recheck={recheck} onSubmit={(form) => send(inst, entry(inst, form))} />,
   )
 
-  const okBanks = insts.filter((i) => i.kind === 'bank' && (i.status === 'ok' || i.status === 'okNoSync')).length
-  const okCards = insts.filter((i) => i.kind === 'card' && (i.status === 'ok' || i.status === 'okNoSync')).length
+  const connected = (i) => ['ok', 'loading', 'okNoSync'].includes(i.status)
+  const okBanks = insts.filter((i) => i.kind === 'bank' && connected(i)).length
+  const okCards = insts.filter((i) => i.kind === 'card' && connected(i)).length
   const next = () => {
     if (okBanks === 0) { setPageError('은행을 1곳 이상 연결해야 계좌를 불러올 수 있어요.'); return }
     navigate(PATHS.connectAccounts, { state: { cards: okCards > 0 } })
   }
 
   const right = (i) => {
-    if (i.status === 'ok' || i.status === 'okNoSync') return <Icon name="CircleCheck" />
+    if (connected(i)) return <Icon name="CircleCheck" />
     if (i.status === 'busy') return <span className="mc-conn-busy"><Icon name="Loader" /></span>
     const label = { todo: '로그인', sms: '다시 로그인', recheck: i.recheck?.label, fail: '다시 시도' }[i.status]
     const go = i.status === 'recheck' ? () => login(i, i.recheck) : () => login(i)

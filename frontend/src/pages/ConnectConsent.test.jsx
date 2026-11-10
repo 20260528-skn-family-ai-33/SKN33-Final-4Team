@@ -3,6 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import ConnectPage from './ConnectPage.jsx'
+import SignupPage from './SignupPage.jsx'
 import { apiSend, useApi } from '../utils/api.js'
 import { BANKS } from '../utils/institutions.js'
 
@@ -18,6 +19,7 @@ const doc = (scope, label, version = 'v2') => ({
 })
 const DOCS = { items: [
   { purpose: 'terms', productScope: null, version: 'v1', documentHash: 'h', document: { label: '이용약관', sections: [] } },
+  { purpose: 'budget_ai', productScope: null, version: 'v1', documentHash: 'ai', document: { label: '예산 AI 선택 동의', required: false, sections: [] } },
   doc('bank', '[필수] 은행'), doc('card', '[선택] 카드'), doc('loan', '[선택] 대출'),
 ] }
 
@@ -39,6 +41,13 @@ const box = (label) => host.querySelector(`input[aria-label="${label}"]`)
 const click = (el) => act(async () => el.click())
 const render = () => act(() => root.render(<ConnectPage />))
 const pickBank = () => click(button(BANKS.find((b) => b.popular).label))
+
+it('예산 AI 선택 문서가 회원가입 필수 동의에 섞이지 않는다', async () => {
+  useApi.mockReturnValue({ data: DOCS, error: null, reload })
+  await act(() => root.render(<SignupPage />))
+  expect(host.textContent).toContain('이용약관')
+  expect(host.textContent).not.toContain('예산 AI 선택 동의')
+})
 
 it('문서를 못 불러오면 동의 칸이 없고 제출해도 저장하지 않는다 · 다시 불러오기', async () => {
   useApi.mockReturnValue({ data: null, error: new Error('x'), reload })
