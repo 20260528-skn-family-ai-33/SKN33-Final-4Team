@@ -7,6 +7,8 @@ services:
         format: raw
     environment:
       RELEASE_TAG: ${IMAGE_TAG}
+      # config.env 의 한 값을 Django 와 Caddy(web) 가 같이 쓴다 → 두 곳의 관리자 주소가 어긋나지 않음
+      DJANGO_ADMIN_URL: ${DJANGO_ADMIN_URL:?DJANGO_ADMIN_URL required}
     volumes:
       - /opt/moneycushion/models:/models:ro
     healthcheck:
@@ -30,6 +32,7 @@ services:
     restart: unless-stopped
     environment:
       SITE_DOMAIN: ${SITE_DOMAIN:?SITE_DOMAIN required}
+      DJANGO_ADMIN_PATH: ${DJANGO_ADMIN_URL:?DJANGO_ADMIN_URL required}
     ports:
       - "80:80"
       - "443:443"

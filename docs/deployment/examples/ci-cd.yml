@@ -66,7 +66,10 @@ jobs:
           python manage.py check
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
-          python manage.py test users finance budgets chat --noinput
+          # Django 앱 테스트 전체. budgets.test_design_candidates 의 예전 실패 11개는 #89 에서 해결됐다 (11/10 main 확인)
+          python manage.py test users finance budgets chat config spending_analysis --noinput
+          # 소비 분석 fixture · 새 챗봇 엔진 테스트는 전용 설정(로컬 DB 전용 fixture DB)에서만 돈다. 기본 설정에선 모두 건너뜀
+          python manage.py test spending_fixture chat.test_engine --settings=spending_fixture.settings --noinput
       - name: Frontend checks and build
         working-directory: frontend
         run: |

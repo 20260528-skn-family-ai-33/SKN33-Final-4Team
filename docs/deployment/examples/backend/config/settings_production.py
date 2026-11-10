@@ -25,4 +25,7 @@ DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 # 기본 메모리 캐시는 gunicorn 워커마다 따로 세서 제한이 워커 수만큼 느슨해진다 → 모든 워커가 같이 보는 DB 캐시
 # 캐시 표는 deploy.sh 가 migrate 다음에 createcachetable 로 만든다
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.db.DatabaseCache", "LOCATION": "django_cache"}}
+# 횟수 제한은 IP 로 센다. 앞단 프록시는 Caddy 하나 → X-Forwarded-For 의 마지막 값(Caddy 가 넣은 실제 접속 IP)을 쓴다.
+# Caddy 는 신뢰하지 않는 클라이언트가 보낸 X-Forwarded-For 를 덮어써서 지금도 같은 결과지만, 값이 이어 붙는 경우까지 명시해 둔다
+REST_FRAMEWORK = {**REST_FRAMEWORK, "NUM_PROXIES": 1}  # noqa: F405
 ROOT_URLCONF = "config.urls_production"

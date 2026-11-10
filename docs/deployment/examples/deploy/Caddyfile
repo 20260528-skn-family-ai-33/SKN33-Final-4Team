@@ -1,6 +1,7 @@
 {$SITE_DOMAIN} {
     encode zstd gzip
-    @django path /api /api/* /admin /admin/* /static /static/*
+    # 관리자 주소는 compose 가 Django 의 DJANGO_ADMIN_URL 과 같은 값을 넣어 준다 (어긋나면 React 화면이 열림)
+    @django path /api /api/* /{$DJANGO_ADMIN_PATH} /{$DJANGO_ADMIN_PATH}/* /static /static/*
     handle @django {
         reverse_proxy backend:8000 {
             header_up X-Forwarded-Proto https

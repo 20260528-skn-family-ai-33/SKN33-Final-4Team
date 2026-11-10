@@ -300,15 +300,24 @@ SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
 sudo nano /opt/moneycushion/config.env
 ```
 
-아래 내용을 넣고 `ACCOUNT_ID`, `app.203-0-113-10.sslip.io`를 바꿉니다. 주소에는 `https://`나 경로를 붙이지 않습니다.
+관리자 화면 주소로 쓸 값을 먼저 만듭니다.
+
+```bash
+python3 -c 'import secrets; print("manage-" + secrets.token_hex(8))'
+```
+
+아래 내용을 넣고 `ACCOUNT_ID`, `app.203-0-113-10.sslip.io`, `manage-0123456789abcdef`를 바꿉니다. 주소에는 `https://`나 경로를 붙이지 않습니다.
 
 ```dotenv
 AWS_REGION=ap-northeast-2
 ECR_REGISTRY=ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com
 SITE_DOMAIN=app.203-0-113-10.sslip.io
+DJANGO_ADMIN_URL=manage-0123456789abcdef
 ```
 
-Nano 저장은 `Ctrl+O → Enter`, 종료는 `Ctrl+X`입니다. 이 파일은 셸에서 읽으므로 공백이나 임의 명령을 추가하지 말고 위 세 항목만 사용합니다.
+Nano 저장은 `Ctrl+O → Enter`, 종료는 `Ctrl+X`입니다. 이 파일은 셸에서 읽으므로 공백이나 임의 명령을 추가하지 말고 위 네 항목만 사용합니다.
+
+`DJANGO_ADMIN_URL`은 Django 관리자 화면 주소입니다. `compose.yml`이 이 한 값을 Django(`DJANGO_ADMIN_URL`)와 Caddy(`DJANGO_ADMIN_PATH`)에 같이 넣습니다. 두 값이 다르면 관리자 주소 요청이 Django로 가지 않고 React 화면이 열리므로, **`app.env`에는 넣지 않고 여기에만 둡니다.** 영문 소문자·숫자·`-`만 쓰고 `api`로 시작하지 않습니다(Django가 시작을 거부함). 값이 비어 있으면 배포가 멈춥니다. 관리자 화면은 `https://서비스주소/manage-0123456789abcdef/`로 엽니다.
 
 ### 9.2 비밀 설정 파일
 
@@ -471,22 +480,22 @@ cp docs/deployment/examples/ci-cd.yml .github/workflows/ci-cd.yml
 |---|---|
 | `requirements-production.txt` | 기존 의존성에 Gunicorn과 WhiteNoise 추가 |
 | `.dockerignore` | 이미지 빌드에 필요한 코드·문서만 포함하고 로컬 환경·비밀·모델 제외 |
-| `backend/config/settings_production.py` | HTTPS·RDS TLS·정적 파일 설정, 횟수 제한용 DB 캐시 |
+| `backend/config/settings_production.py` | HTTPS·RDS TLS·정적 파일 설정, 횟수 제한용 DB 캐시와 접속 IP 기준(`NUM_PROXIES = 1`) |
 | `backend/config/urls_production.py` | 앱과 DB 상태를 확인하는 `/api/health/` 추가 |
 | `deploy/backend.Dockerfile` | Django 운영 이미지 |
 | `deploy/frontend.Dockerfile` | React를 빌드해 Caddy 이미지에 포함 |
-| `deploy/Caddyfile` | 같은 주소에서 React와 `/api/`, `/admin/`, `/static/` 연결 |
+| `deploy/Caddyfile` | 같은 주소에서 React와 `/api/`, 관리자 주소(`DJANGO_ADMIN_URL`), `/static/` 연결 |
 | `deploy/compose.yml` | EC2에서 백엔드와 웹 컨테이너 실행 |
 | `deploy/deploy.sh` | 이미지 다운로드, 마이그레이션, 캐시 표 만들기, 실행, HTTPS 상태 검사 |
 | `.github/workflows/ci-cd.yml` | CI와 main 자동 배포 |
 
-운영에서 `npm run dev`, `vite preview`, `manage.py runserver`는 사용하지 않습니다. 프런트는 정적 빌드 결과, 백엔드는 Gunicorn으로 실행합니다. Vite 개발 프록시 역할은 Caddy가 맡아 프런트의 `/api/...` 호출 구조를 유지합니다. Django 관리자·Swagger 정적 파일은 `collectstatic`과 WhiteNoise로 제공합니다.
+운영에서 `npm run dev`, `vite preview`, `manage.py runserver`는 사용하지 않습니다. 프런트는 정적 빌드 결과, 백엔드는 Gunicorn으로 실행합니다. Vite 개발 프록시 역할은 Caddy가 맡아 프런트의 `/api/...` 호출 구조를 유지합니다. Django 관리자 정적 파일은 `collectstatic`과 WhiteNoise로 제공합니다. Swagger(`/api/docs/`)는 개발 모드에서만 열리므로 운영에서는 404가 정상입니다.
 
 추가 운영 패키지는 작성 시 공개된 [Gunicorn 26.2.0](https://pypi.org/project/gunicorn/26.2.0/)과 [WhiteNoise 6.12.0](https://pypi.org/project/whitenoise/6.12.0/)으로 고정했습니다. 추후 갱신 시 CI와 시연 기능을 함께 확인합니다.
 
 백엔드 이미지에 `scripts/`와 `docs/`도 포함합니다. 현재 거래 분류 코드와 OpenAPI 생성 코드가 이 경로를 참조하기 때문입니다. `COPY . .`로 로컬 폴더 전체를 이미지에 넣지 않습니다. `VITE_*` 환경변수는 브라우저에 공개되므로 API 비밀키를 넣지 마세요.
 
-CI는 임시 PostgreSQL 17+pgvector로 migration과 Django 앱 테스트를 수행하며, 프런트 lint·test·build를 실행합니다. 기존 코드의 실패나 패키지 설치 문제가 있으면 먼저 해결합니다. 이 가이드에서는 현재 저장소의 의존성 버전을 유지합니다. 패키지를 찾을 수 없다는 오류가 나면 팀의 실제 설치 버전과 저장소 고정 버전을 대조하세요.
+CI는 임시 PostgreSQL 17+pgvector로 migration과 Django 앱 테스트를 수행하며, 프런트 lint·test·build를 실행합니다. 백엔드 테스트 대상은 `users`·`finance`·`budgets`·`chat`·`config`(OpenAPI 계약, 운영 Swagger 비공개)·`spending_analysis`이고, 소비 분석 fixture와 새 챗봇 엔진 테스트(`spending_fixture`, `chat.test_engine`)는 전용 설정 `--settings=spending_fixture.settings`로 따로 실행합니다(기본 설정에서는 모두 건너뜀). 2026-11-10 main(`edf77dd`) 기준으로 이 범위 전체가 통과하는 것을 확인했습니다. `budgets.test_design_candidates`의 예전 실패 11개는 #89에서 해결되어 지금은 없습니다. 기존 코드의 실패나 패키지 설치 문제가 있으면 먼저 해결합니다. 이 가이드에서는 현재 저장소의 의존성 버전을 유지합니다. 패키지를 찾을 수 없다는 오류가 나면 팀의 실제 설치 버전과 저장소 고정 버전을 대조하세요.
 
 현재 기본 권한은 `AllowAny`이고 API별로 권한을 지정하므로 실제 공개 전에 로그인·소유자 검사도 기능 점검합니다. HTTPS 설정을 추가하는 것만으로 전체 API의 접근 통제가 완성되지는 않습니다. [Django 배포 점검](https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/)
 
@@ -539,7 +548,7 @@ curl --fail https://app.203-0-113-10.sslip.io/api/health/
 {"status":"ok","release":"40자리커밋SHA-실행ID-재실행번호"}
 ```
 
-브라우저에서 `https://app.203-0-113-10.sslip.io`를 열고 React 화면과 인증서가 정상인지 확인합니다. `/api/docs/`와 `/admin/login/`의 CSS도 확인합니다.
+브라우저에서 `https://app.203-0-113-10.sslip.io`를 열고 React 화면과 인증서가 정상인지 확인합니다. 관리자 화면(`/manage-0123456789abcdef/login/`, 9.1에서 정한 값)이 Django 로그인으로 열리고 CSS가 보이는지도 확인합니다. React 화면이 열리면 `config.env`의 `DJANGO_ADMIN_URL`과 컨테이너 재생성 여부를 확인합니다. `/api/docs/`는 운영에서 404가 정상입니다.
 
 **최초 DB에는 개발 데이터가 없습니다.** 필요한 테스트 사용자는 회원가입 화면으로 만들고, 팀이 승인한 합성 데이터 준비 절차를 따릅니다. 로컬 실계좌 DB나 개인정보를 그대로 복제하지 않습니다.
 
@@ -632,7 +641,8 @@ exit
 | 로그인 CSRF 403 또는 로그인 유지 안 됨 | HTTPS 접속, trusted origins의 `https://`, 프록시 헤더, Secure 쿠키 |
 | 502 또는 backend unhealthy | Django 시작 오류, DB 연결, 필수 env, 모델/의존성, 컨테이너 로그 |
 | 프런트 화면은 정상인데 API가 HTML 반환 | Caddy API 경로 분기와 요청 주소. 프런트 fallback으로 API가 가지 않는지 |
-| 관리자·Swagger CSS 없음 | `collectstatic` 로그, `/static/` 프록시, WhiteNoise |
+| 관리자 주소에서 React 화면이 열림 | `config.env`의 `DJANGO_ADMIN_URL`, `app.env`에 다른 값이 남아 있지 않은지, 컨테이너 재생성 |
+| 관리자 CSS 없음 | `collectstatic` 로그, `/static/` 프록시, WhiteNoise |
 | 모델 파일 오류·분류 실패 | `/models` 마운트, 파일명/권한, 해시, 학습 당시 라이브러리 버전 |
 | `No space left on device` | `df -h`, `docker system df`, EBS 용량과 오래된 이미지 |
 | 메모리 부족/OOM | EC2 메모리, 모델 크기, worker 수. 작은 인스턴스에 무리하게 worker 늘리지 않기 |
