@@ -13,6 +13,7 @@ POST /api/finance/connections/ — 금융기관 인증 · 새 연결 (docs/api/f
 순서 (기관마다 차례로)
   입력 검사 · 동의 확인 (CODEF 부르기 전) → [회원별 연결 잠금] CODEF 계정 등록 · 추가 · 갱신 → connectedId 암호화 저장
   · 연결 행 저장 → [잠금 풀고] 은행이면 계좌 · 거래 불러오기(sync_bank, PR #44 · #45 흐름)
+  · 카드사면 보유카드만 바로 받고, 청구서 · 승인내역은 뒤 작업으로 (11/09, syncStatus=loading + syncTaskId)
 """
 import logging
 import re
@@ -28,6 +29,7 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from config import tasks
 from config.api import _camel_key as camel_key
 from users.models import Consent
 
@@ -35,7 +37,7 @@ from . import codef_accounts, connected_id, institutions
 from .inputs import NOT_ALLOWED, body_dict, reject_unknown_fields
 from .models import BankAccount, Connection
 from .sync import sync_bank
-from .sync_cards import sync_card
+from .sync_cards import sync_card, sync_card_list
 from .sync_ranges import bill_months, first_load_start
 
 logger = logging.getLogger(__name__)
@@ -348,20 +350,32 @@ def load_bank(user, cid, code, row):
 
 
 def load_card(user, cid, code, row, entry):
-    """연결 직후 보유카드 · 승인내역 · 청구서 불러오기 (다시 불러오기와 같은 sync_card, 11/03).
-    카드 후보 GET 은 저장된 카드만 읽으므로 연결과 함께 받아 둔다. 카드번호 · 카드 비밀번호는 이 요청의 값만 쓰고 버린다"""
+    """연결 직후 카드 불러오기 (11/03 → 11/09 나눔)
+    1. 보유카드만 바로 받는다 (sync_card_list) — 카드 후보 GET 은 저장된 카드만 읽으므로 응답 전에 받아 둔다.
+       실패하면 sync_status=failed (연결은 그대로, 다시 불러오기로 받는다)
+    2. 청구서 · 승인내역 · 분류는 뒤 작업(card_first_load)으로 돌리고 sync_status=loading + sync_task_id 로 바로 답한다.
+       업종까지 받는 승인내역 조회가 1분을 넘겨 온보딩이 멈춰 보였다 (멘토 추천: 상태값을 비동기로). 화면은 다음 단계로 넘어가고
+       지킬 돈 화면이 진행 중인 작업을 보고 '불러오는 중'을 보여 준다 (budgets protect cardLoadTaskId).
+    카드번호 · 카드 비밀번호는 이 요청 · 그 작업 스레드의 메모리에서만 쓰고 저장하지 않는다"""
     end = timezone.localdate()
+    card_no, card_password = entry.get("card_no"), entry.get("card_password")
     try:
-        sync_card(user, cid, code, first_load_start(end), end, bill_months(end),
-                  card_no=entry.get("card_no"), card_password=entry.get("card_password"), connection_id=row.pk)
-        sync_status = "done"
+        sync_card_list(user, cid, code, row.pk, card_no=card_no, card_password=card_password)
     except Exception as exc:
         logger.warning(
-            "연결 직후 카드 불러오기 실패 user=%s organization=%s codef_code=%s",
+            "연결 직후 카드 목록 불러오기 실패 user=%s organization=%s codef_code=%s",
             user.pk, code, getattr(exc, "code", None),
         )
-        sync_status = "failed"
-    return {"sync_status": sync_status, "account_count": None}
+        return {"sync_status": "failed", "account_count": None}
+    task = tasks.start(user, tasks.CARD_FIRST_LOAD, tasks.input_hash({"connection": str(row.pk)}))
+    start = first_load_start(end)
+
+    def work():
+        return sync_card(user, cid, code, start, end, bill_months(end), card_no=card_no, card_password=card_password,
+                         connection_id=row.pk, task_id=task.pk)
+
+    tasks.run_later(task, work)
+    return {"sync_status": "loading", "sync_task_id": task.task_id, "account_count": None}
 
 
 # ---------- view 본체 ----------

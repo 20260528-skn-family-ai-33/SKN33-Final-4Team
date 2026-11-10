@@ -109,6 +109,7 @@
 | `blocked` | 객체 / null | 예산을 못 만드는 경우만 (P-06 · P-12). `{ "reason", "shortfall" }` · `reason`: `fixed_over_income`(고정비만으로 월급 초과) · `savings_over_available`(정기 저축까지 빼면 남는 돈 없음) · `card_bill_pending`(카드 첫 청구서를 아직 확인 못 함) · `shortfall`: 모자란 금액, `card_bill_pending`이면 `null` |
 | `cardPending` | 배열 | 카드 선차감을 계산하지 못한 카드 `[{ "cardId", "reason" }]` (P-12). 보통은 `[]` |
 | `locksReleased` | 배열 | 이번 저장(PUT)으로 풀린 이번 주기 자물쇠 카테고리 코드 (P-13). GET은 항상 `[]` |
+| `cardLoadTaskId` | UUID / null | 11/09. 카드 내역을 서버가 뒤에서 불러오는 중이면 그 작업 ID(`finance_sync` · `card_first_load`), 아니면 null. 화면은 카드 보류(`card_bill_pending`)여도 재조회를 권하지 않고 '불러오는 중'을 보여 주고, 작업이 끝나면(성공 · 실패 모두) 다시 읽는다. 상태 조회가 끊기거나 5분을 넘기면 3초 뒤 다시 읽고, 같은 ID가 오면 조회를 다시 시작한다(11/10) |
 | `saved` | 객체 / null | 사용자가 저장한 값 `{ "livingBudget", "savingFloor", "cushionMonthly", "spare", "updatedAt" }`. 한 번도 저장 안 했으면 `null` → 화면은 `recommended`로 칸을 채운다 |
 | `approvedBudget` | 객체 / 생략 | GET에서 이번 급여 주기의 승인 예산에 여윳돈 충당이 있을 때만 `{ "spareTransfer", "spare" }`. 충당액과 **예산 배분 후** 여윳돈(`funding_amount − 항목 합계`)이며 실제 초과 소비 차감 전 금액이다. `saved.spare`는 기본 설정 기준으로 유지한다. 화면은 충당 안내와 두 기준을 함께 표시하며, 미승인 초안·지난 주기·다른 회원 예산은 포함하지 않는다. PUT에는 생략한다 |
 | `cushion.required` | 참/거짓 | P-08. `true`면 월 쿠션 적립금 0원 저장 불가 |

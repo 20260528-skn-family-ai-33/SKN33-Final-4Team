@@ -244,7 +244,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "missingIncome": {
@@ -271,7 +272,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "blocked": {
@@ -303,7 +305,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   },
                   "cardBillPending": {
@@ -336,7 +339,8 @@
                         }
                       ],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     },
                     "summary": "카드 첫 청구서 확인 중"
                   }
@@ -423,7 +427,8 @@
                       },
                       "cardPending": [],
                       "cardNotes": [],
-                      "locksReleased": []
+                      "locksReleased": [],
+                      "cardLoadTaskId": null
                     }
                   }
                 }
@@ -1693,7 +1698,8 @@
           "cushion",
           "cardPending",
           "cardNotes",
-          "locksReleased"
+          "locksReleased",
+          "cardLoadTaskId"
         ],
         "properties": {
           "approvedBudget": {
@@ -1817,6 +1823,12 @@
               "$ref": "#/components/schemas/SelectableCategoryCode"
             },
             "description": "P-13. 이번 저장(PUT)으로 생활비가 바뀌어 이번 주기 자물쇠가 새 생활비와 안 맞아 풀린 카테고리 코드(화면 순서). GET과 그 밖의 PUT은 []"
+          },
+          "cardLoadTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "11/09. 카드 내역을 서버가 뒤에서 불러오는 중이면 그 작업 ID(GET /api/tasks/<id>/), 아니면 null. 화면은 재조회를 권하지 않고 '불러오는 중'을 보여 준 뒤 작업이 끝나면 다시 읽는다"
           }
         },
         "additionalProperties": false

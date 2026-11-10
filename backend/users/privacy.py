@@ -100,7 +100,7 @@ def purge_scope(user, scope):
     retained_due_ids = list(matches.exclude(due__in=dues).values_list("due_id", flat=True).distinct())
     sync_products = {
         "bank": ["bank_sync", "account_list", "transaction_list"],
-        "card": ["card_sync", "card_bill_list", "card_approval_list", "card_foreign_pending"],
+        "card": ["card_sync", "card_list_load", "card_bill_list", "card_approval_list", "card_foreign_pending"],
         "loan": ["loan_sync", "loan_transaction_list"],
     }[scope]
     runs = SyncRun.objects.filter(user=user).filter(

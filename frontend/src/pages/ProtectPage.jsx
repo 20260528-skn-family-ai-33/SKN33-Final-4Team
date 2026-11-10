@@ -6,7 +6,7 @@
 // 남는 돈은 여윳돈. 저축이에요 합계 > 추천 저축이면 서버가 저축을 먼저 떼고 다시 나눈 추천을 준다 (recommended.rebalanced)
 // [추천 예산 보기] = 저장(PUT) 후 추천 예산 확인으로 가서 새 추천을 바로 만든다
 // 마이에서 들어오면(location.state.from === 'my') 단계 표시줄 없이 버튼만 [저장]. 저장 뒤는 같다 (생활비가 바뀌면 카테고리를 다시 나눠야 해서)
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
@@ -16,8 +16,11 @@ import CardSyncPanel from '../components/CardSyncPanel.jsx'
 import CardReviewList from '../components/CardReviewList.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
+import { waitTask } from '../utils/financeSync.js'
 import { HOUSING } from '../utils/direction.js'
 import { PATHS } from '../routes.js'
+
+const RETRY_MS = 3000   // 카드 작업 상태 조회가 실패했을 때 다시 읽기까지 쉬는 시간
 
 const ROWS = [['livingBudget', '생활비'], ['savingFloor', '저축 목표액'], ['cushionMonthly', '월 쿠션 적립금']]
 const RATE_LABELS = [['living', '생활비'], ['saving', '저축'], ['spare', '여윳돈'], ['cushion', '쿠션']]
@@ -59,6 +62,18 @@ export default function ProtectPage() {
   const [showReviews, setShowReviews] = useState(false)
   const [showCardSync, setShowCardSync] = useState(false)
   const [reviewVersion, setReviewVersion] = useState(0)
+  // 11/09: 카드 내역을 서버가 뒤에서 불러오는 중이면 재조회를 권하지 않고 기다렸다가 끝나면(성공 · 실패 모두) 다시 읽는다
+  // 11/10: 상태 조회가 끊기거나 5분을 넘기면 잠깐 쉬고 다시 읽는다. 다시 읽을 때마다(data 가 바뀔 때마다) 조회를 새로 시작해서,
+  //   서버가 아직 같은 작업 ID 를 줘도 멈추지 않는다. 작업이 끝나거나 기한이 지나면 ID 가 빠져 조회도 멈춘다
+  const loadingTask = data?.cardLoadTaskId ?? null
+  useEffect(() => {
+    if (!loadingTask) return undefined
+    const ctrl = new AbortController()
+    waitTask(loadingTask, { signal: ctrl.signal })
+      .then(() => null, () => new Promise((r) => setTimeout(r, RETRY_MS)))
+      .then(() => { if (!ctrl.signal.aborted) reload() })
+    return () => ctrl.abort()
+  }, [loadingTask, data]) // eslint-disable-line react-hooks/exhaustive-deps -- reload 는 렌더마다 새로 만들어져 넣으면 계속 다시 돈다
 
 
   if (!data) return <Layout title="지킬 돈 설정" showBack><ApiStatus error={loadError} /></Layout>
@@ -127,7 +142,13 @@ export default function ProtectPage() {
         </div>
       )}
 
-      {blocked?.reason === 'card_bill_pending' && <>
+      {blocked?.reason === 'card_bill_pending' && loadingTask && (
+        <div className="mc-card" role="status">
+          <h2>카드 내역을 불러오는 중이에요</h2>
+          <p className="mc-muted" style={{ margin: '6px 0 0' }}>카드사 청구서와 사용 내역을 뒤에서 불러오고 있어요. 1~2분쯤 걸리고, 끝나면 이 화면이 저절로 새로 고쳐져요.</p>
+        </div>
+      )}
+      {blocked?.reason === 'card_bill_pending' && !loadingTask && <>
         {/* 보류 이유별로 필요한 것만 (11/06): 카드 지정 → 결제 카드 선택 · 납부 미확인 → 앞으로 낼 금액 · 조회 기간 누락 → 재조회 · 자료 이상 → 안내 (+ 원하면 재조회) */}
         {needsCardReview && (
           <div className="mc-card" role="alert">

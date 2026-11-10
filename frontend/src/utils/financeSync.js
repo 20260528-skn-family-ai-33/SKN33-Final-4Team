@@ -1,19 +1,16 @@
 // 금융 정보 다시 불러오기 — POST /api/finance/sync/ → 202 { taskId } → GET /api/tasks/<taskId>/ (docs/api/finance-connect.md)
-// 1차 서버는 요청 안에서 끝까지 처리해서 보통 바로 succeeded 다. 진행 중이면 1초씩 다시 본다
+// 11/09: 서버가 작업을 뒤에서 돌리고 바로 답한다 (카드 업종 조회로 1분 넘게 걸림). 진행 중이면 1초씩 다시 본다 (최대 5분)
 // 작업이 succeeded 여도 기관별로 실패할 수 있다 → result.items[].status · error 를 화면에 보여 준다 (실패를 0건으로 보이지 않기)
 import { apiSend } from './api.js'
 
 const WAIT_MS = 1000
-const MAX_TRIES = 30
+const MAX_TRIES = 300
 
-export async function runFinanceSync(body = {}) {
-  const started = await apiSend('/api/finance/sync/', 'POST', body).catch((err) => {
-    // 400 은 보여 줄 문장이 칸 오류에 있고("연결된 기관이 없어요…"), 서버에 못 닿으면 브라우저 영어 문장이 온다
-    err.message = Object.values(err.fields ?? {}).flat()[0] ?? (err.status ? err.message : '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.')
-    throw err
-  })
+// 작업 끝날 때까지 GET /api/tasks/<id>/ → 성공이면 result. 실패 · 시간 초과면 오류. signal 로 화면을 떠나면 멈춘다
+export async function waitTask(taskId, { signal } = {}) {
   for (let i = 0; i < MAX_TRIES; i++) {
-    const res = await fetch(`/api/tasks/${started.taskId}/`, { headers: { Accept: 'application/json' } })
+    if (signal?.aborted) throw new DOMException('aborted', 'AbortError')
+    const res = await fetch(`/api/tasks/${taskId}/`, { headers: { Accept: 'application/json' }, signal })
     const task = await res.json().catch(() => null)
     if (!res.ok) throw new Error(task?.error?.message ?? `서버 응답 ${res.status}`)
     if (task.status === 'succeeded') return task.result
@@ -21,6 +18,15 @@ export async function runFinanceSync(body = {}) {
     await new Promise((r) => setTimeout(r, WAIT_MS))
   }
   throw new Error('불러오기가 아직 끝나지 않았어요. 잠시 후 다시 확인해 주세요.')
+}
+
+export async function runFinanceSync(body = {}) {
+  const started = await apiSend('/api/finance/sync/', 'POST', body).catch((err) => {
+    // 400 은 보여 줄 문장이 칸 오류에 있고("연결된 기관이 없어요…"), 서버에 못 닿으면 브라우저 영어 문장이 온다
+    err.message = Object.values(err.fields ?? {}).flat()[0] ?? (err.status ? err.message : '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.')
+    throw err
+  })
+  return waitTask(started.taskId)
 }
 
 // 기관별 결과 한 줄 — { name, ok, text }
