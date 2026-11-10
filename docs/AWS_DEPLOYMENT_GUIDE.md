@@ -4,7 +4,7 @@
 
 목표는 **처음 한 번 EC2와 RDS를 설정한 뒤, GitHub의 `main`에 코드가 올라오면 검사에 통과한 버전이 사이트에 자동 반영되게 만드는 것**입니다. GitHub 배포를 처음 하는 팀원을 기준으로 클릭할 메뉴, 실행할 위치, 입력값, 성공 확인 방법을 순서대로 설명합니다.
 
-현재 저장소의 React·Vite, Django 5.2, Python 3.12, PostgreSQL 17에 맞춘 구성입니다. 도메인이 없는 상태에서 시작합니다. 예제 파일은 [deployment/examples](deployment/examples)에 있으며 **현재는 문서용 예제이므로 자동 실행되지 않습니다.** 아래 복사 단계를 진행해야 실제 배포 설정이 생깁니다.
+현재 저장소의 React·Vite, Django 5.2, Python 3.12, PostgreSQL 17에 맞춘 구성입니다. 도메인을 사지 않고, 고정 IP로 만드는 무료 주소(sslip.io)를 씁니다. 예제 파일은 [deployment/examples](deployment/examples)에 있으며 **현재는 문서용 예제이므로 자동 실행되지 않습니다.** 아래 복사 단계를 진행해야 실제 배포 설정이 생깁니다.
 
 EC2 한 대와 단일 AZ RDS를 사용하는 소규모 시연 구성입니다. 배포 중 짧은 중단이 생길 수 있습니다. 웹·DB 연결 성공과 전체 금융 기능 검증은 별도이므로 마지막 기능 점검까지 진행하세요.
 
@@ -49,7 +49,7 @@ GitHub Pages는 사용하지 않습니다. GitHub Actions가 AWS 배포를 실�
 - GitHub 저장소의 코드 수정 및 Actions Variables 설정 권한. 조직에서 제한하면 저장소 관리자에게 요청합니다.
 - 내 컴퓨터에 Git과 코드 편집기. 로컬 개발 환경은 [LOCAL_SETUP.md](LOCAL_SETUP.md)를 참고합니다.
 - 모델 담당자가 공유한 `spending_category_svm.joblib`, `label_conflicts.csv`와 확인용 SHA256 값.
-- 도메인 등록 및 AWS 사용 예산. 가격은 생성 화면의 추정 비용으로 확인합니다.
+- AWS 사용 예산. 가격은 생성 화면의 추정 비용으로 확인합니다.
 
 저장소에는 두 Git 원격이 등록되어 있습니다. **이 가이드는 `origin`을 기준**으로 합니다.
 
@@ -76,21 +76,21 @@ GitHub Pages는 사용하지 않습니다. GitHub Actions가 AWS 배포를 실�
 | RDS 엔드포인트 | 생성 후 `...ap-northeast-2.rds.amazonaws.com` 기록 |
 | ECR 저장소 | `moneycushion-backend`, `moneycushion-frontend` |
 | GitHub 배포 역할 | `moneycushion-github-deploy` |
-| 서비스 도메인 | 구매한 도메인의 `app.내도메인` 형태 |
+| 서비스 주소 | 탄력적 IP로 만든 `app.IP대시.sslip.io` 형태 (7.2) |
 | 모델용 S3 버킷 | 전 세계에서 중복되지 않는 이름, 예: `moneycushion-models-계정ID` |
 
-`ACCOUNT_ID`, `INSTANCE_ID`, `BUCKET_NAME`, `app.example.com`은 **본인 값으로 바꿀 자리**입니다. `example.com`을 실제 서비스 도메인으로 입력하면 안 됩니다.
+`ACCOUNT_ID`, `INSTANCE_ID`, `BUCKET_NAME`, `app.203-0-113-10.sslip.io`는 **본인 값으로 바꿀 자리**입니다. `203-0-113-10`은 설명용 IP이므로 그대로 입력하면 안 됩니다.
 
 ## 3 비용 알림부터 설정하기
 
 **작업 위치: AWS 콘솔**
 
-1. 콘솔 언어를 한국어로, 리전을 **아시아 태평양 서울**로 선택합니다. IAM·Route 53처럼 전역 서비스는 리전 선택이 없을 수 있습니다.
+1. 콘솔 언어를 한국어로, 리전을 **아시아 태평양 서울**로 선택합니다. IAM처럼 전역 서비스는 리전 선택이 없을 수 있습니다.
 2. 검색창에서 **결제 및 비용 관리 → Budgets 또는 예산 → 예산 생성**으로 들어갑니다.
 3. 월별 비용 예산을 만들고 팀 예산에 맞는 금액과 알림 이메일을 입력합니다. 예를 들어 월 예산의 50%, 80%, 100%에 알림을 설정합니다.
 4. 계정의 프리 티어·크레딧 적용 조건을 직접 확인합니다. 이 구성 전체가 무료라고 가정하지 마세요.
 
-EC2·RDS 외에도 EBS, 공인 IPv4/탄력적 IP, ECR 이미지 저장, S3, DNS 호스팅, 도메인 등록, 백업, 트래픽 비용이 있습니다. 예산 알림은 자동 과금 차단 기능이 아닙니다. 이 가이드는 NAT 게이트웨이를 생성하지 않습니다. 공인 IPv4도 과금 대상입니다. [AWS VPC 요금](https://aws.amazon.com/ko/vpc/pricing/)
+EC2·RDS 외에도 EBS, 공인 IPv4/탄력적 IP, ECR 이미지 저장, S3, 백업, 트래픽 비용이 있습니다. 예산 알림은 자동 과금 차단 기능이 아닙니다. 이 가이드는 NAT 게이트웨이를 생성하지 않습니다. 공인 IPv4도 과금 대상입니다. [AWS VPC 요금](https://aws.amazon.com/ko/vpc/pricing/)
 
 **완료 기준:** 예산과 알림 수신 이메일이 저장되어 있습니다. [AWS 예산 생성 안내](https://docs.aws.amazon.com/ko_kr/cost-management/latest/userguide/budgets-create.html)
 
@@ -199,7 +199,7 @@ sudo tail -n 100 /var/log/cloud-init-output.log
 
 Session Manager에 연결 자체가 안 되면 IAM 역할 연결, 퍼블릭 서브넷의 `0.0.0.0/0 → igw-...` 경로, 공인 IP, 아웃바운드 443, SSM Agent 상태를 확인합니다. **EC2 → 작업 → 모니터링 및 문제 해결 → 시스템 로그 가져오기**로 초기 설치 로그도 볼 수 있습니다. Agent 복구에 SSH가 필요하면 관리자와 EC2 Instance Connect 조건을 확인하고, 22번 포트를 임시로 **내 IP만** 허용한 뒤 복구 후 닫습니다.
 
-## 7 고정 IP와 도메인 준비하기
+## 7 고정 IP와 서비스 주소 준비하기
 
 ### 7.1 탄력적 IP 연결
 
@@ -212,38 +212,31 @@ Session Manager에 연결 자체가 안 되면 IAM 역할 연결, 퍼블릭 서�
 
 EC2를 중지했다 다시 켜도 이 주소를 유지합니다. 사용 여부와 관계없이 비용 조건을 확인하세요.
 
-### 7.2 도메인이 없을 때
+### 7.2 서비스 주소 만들기 (sslip.io)
 
-이 프로젝트는 `DEBUG=False`에서 세션·CSRF 쿠키를 HTTPS에만 전송합니다. 따라서 **IP로 HTTP 페이지가 보이는 것만으로 로그인 배포가 끝난 것이 아닙니다.** 이 가이드는 도메인과 HTTPS까지 설정합니다.
+이 프로젝트는 `DEBUG=False`에서 세션·CSRF 쿠키를 HTTPS에만 전송합니다. 따라서 **IP로 HTTP 페이지가 보이는 것만으로 로그인 배포가 끝난 것이 아닙니다.** HTTPS 인증서는 IP가 아니라 주소(이름)에 발급되므로, 도메인을 사지 않고 [sslip.io](https://sslip.io)의 무료 주소를 씁니다. sslip.io는 주소 안에 적힌 IP를 그대로 돌려주는 DNS 서비스라서 따로 등록하거나 설정할 것이 없습니다.
 
-1. AWS에서 구매하려면 **Route 53 → 등록된 도메인 → 도메인 등록**으로 이동합니다. 다른 등록 업체에서 구매해도 됩니다.
-2. 원하는 이름을 검색하고 연간 비용·자동 갱신·연락처를 확인한 후 등록합니다. 등록 확인 이메일이 오면 인증을 완료합니다.
-3. 등록이 완료되고 DNS를 관리할 수 있을 때 다음 단계로 진행합니다. `example.com`은 설명용 이름입니다.
+1. 7.1에서 연결한 탄력적 IP의 점(`.`)을 대시(`-`)로 바꿉니다. 예: `203.0.113.10` → `203-0-113-10`
+2. 앞에 `app.`, 뒤에 `.sslip.io`를 붙입니다. 예: `app.203-0-113-10.sslip.io`
+3. 이 주소를 2장 값 기록표의 **서비스 주소** 칸에 적습니다. 이후 가이드의 `app.203-0-113-10.sslip.io`는 모두 이 값으로 바꿉니다.
 
-도메인 등록비는 EC2 이용료와 별개이며 이름과 확장자에 따라 다릅니다. 구매한 이름은 수정할 수 없으므로 결제 전에 철자를 확인합니다. [Route 53 도메인 등록](https://docs.aws.amazon.com/ko_kr/Route53/latest/DeveloperGuide/domain-register.html)
-
-### 7.3 DNS 연결
-
-Route 53을 쓴다면 **호스팅 영역 → 구매한 도메인 → 레코드 생성**에서 아래 값을 저장합니다.
-
-| 설정 | 값 |
+| 확인할 것 | 이유 |
 |---|---|
-| 레코드 이름 | `app` |
-| 레코드 유형 | `A` |
-| 별칭 | 끔 |
-| 값 | EC2 탄력적 IP |
-| TTL | `300` |
-| 라우팅 정책 | 단순 라우팅 |
+| 탄력적 IP를 꼭 연결 | IP가 바뀌면 주소도 바뀌어 인증서와 설정값(`SITE_DOMAIN`, `app.env`)을 다시 맞춰야 합니다 |
+| IP는 대시 형태로 | 점 형태(`app.203.0.113.10.sslip.io`)보다 대시 형태가 인증서 발급이 단순합니다 |
+| 발표 대비 | 무료 외부 DNS 서비스라서 장애가 나면 접속이 안 됩니다. 발표용 시연 녹화를 따로 준비합니다 |
 
-이후 서비스 주소는 `https://app.구매한도메인`입니다. 다른 업체 DNS를 쓰면 그 업체 관리 화면에서 같은 A 레코드를 만듭니다. Route 53 호스팅 영역만 따로 생성했다면 도메인 등록 업체의 네임서버를 그 영역의 NS 값으로 바꿔야 실제 적용됩니다. IPv6를 구성하지 않았으므로 잘못된 AAAA 레코드는 두지 않습니다.
+### 7.3 주소 확인
 
 **작업 위치: 내 컴퓨터 터미널**
 
 ```bash
-dig +short app.구매한도메인 A
+dig +short app.203-0-113-10.sslip.io A
 ```
 
-Windows PowerShell은 `nslookup app.구매한도메인`을 사용합니다. 탄력적 IP가 나오면 준비된 것입니다. 아직 웹 컨테이너가 없어서 사이트는 열리지 않아도 정상입니다. 첫 배포 때 Caddy가 인증서를 발급하고 HTTP를 HTTPS로 전환합니다. 80·443 포트와 DNS가 연결돼 있어야 합니다. [Caddy HTTPS 안내](https://caddyserver.com/docs/quick-starts/reverse-proxy)
+Windows PowerShell은 `nslookup app.203-0-113-10.sslip.io`를 사용합니다. 탄력적 IP가 나오면 준비된 것입니다. 아직 웹 컨테이너가 없어서 사이트는 열리지 않아도 정상입니다.
+
+첫 배포 때 Caddy가 Let's Encrypt 인증서를 발급하고 HTTP를 HTTPS로 전환합니다. 발급 확인을 위해 보안 그룹의 80·443 포트가 열려 있어야 합니다. 발급에 실패하면 웹 컨테이너 로그를 확인하고 잠시 뒤 다시 배포합니다. 짧은 시간에 여러 번 실패하면 발급 횟수 제한에 걸릴 수 있습니다. [Caddy HTTPS 안내](https://caddyserver.com/docs/quick-starts/reverse-proxy)
 
 ## 8 RDS PostgreSQL 만들기
 
@@ -307,12 +300,12 @@ SELECT extname, extversion FROM pg_extension WHERE extname = 'vector';
 sudo nano /opt/moneycushion/config.env
 ```
 
-아래 내용을 넣고 `ACCOUNT_ID`, `app.example.com`을 바꿉니다. 도메인에는 `https://`나 경로를 붙이지 않습니다.
+아래 내용을 넣고 `ACCOUNT_ID`, `app.203-0-113-10.sslip.io`를 바꿉니다. 주소에는 `https://`나 경로를 붙이지 않습니다.
 
 ```dotenv
 AWS_REGION=ap-northeast-2
 ECR_REGISTRY=ACCOUNT_ID.dkr.ecr.ap-northeast-2.amazonaws.com
-SITE_DOMAIN=app.example.com
+SITE_DOMAIN=app.203-0-113-10.sslip.io
 ```
 
 Nano 저장은 `Ctrl+O → Enter`, 종료는 `Ctrl+X`입니다. 이 파일은 셸에서 읽으므로 공백이나 임의 명령을 추가하지 말고 위 세 항목만 사용합니다.
@@ -334,8 +327,8 @@ sudo nano /opt/moneycushion/app.env
 DJANGO_SETTINGS_MODULE=config.settings_production
 DJANGO_SECRET_KEY=첫_번째_명령으로_생성한_값
 DJANGO_DEBUG=False
-DJANGO_ALLOWED_HOSTS=app.example.com,localhost,127.0.0.1
-DJANGO_CSRF_TRUSTED_ORIGINS=https://app.example.com
+DJANGO_ALLOWED_HOSTS=app.203-0-113-10.sslip.io,localhost,127.0.0.1
+DJANGO_CSRF_TRUSTED_ORIGINS=https://app.203-0-113-10.sslip.io
 POSTGRES_DB=money_cushion
 POSTGRES_USER=money_cushion
 POSTGRES_PASSWORD=앱용_DB_비밀번호
@@ -446,7 +439,7 @@ sudo sha256sum /opt/moneycushion/models/spending_category_svm.joblib /opt/moneyc
 | `AWS_ACCOUNT_ID` | 12자리 AWS 계정 ID |
 | `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::계정ID:role/moneycushion-github-deploy` |
 | `EC2_INSTANCE_ID` | `i-...` |
-| `SITE_DOMAIN` | `app.구매한도메인` |
+| `SITE_DOMAIN` | `app.203-0-113-10.sslip.io` |
 
 **Variables와 Secrets는 다른 탭**입니다. 예제는 비밀이 아닌 이 네 값을 `vars.*`에서 읽습니다. 장기 AWS 액세스 키, SSH 키, DB 비밀번호를 GitHub Secrets에 추가할 필요가 없습니다. 운영 비밀값은 EC2의 `app.env`에 있습니다.
 
@@ -482,7 +475,7 @@ cp docs/deployment/examples/ci-cd.yml .github/workflows/ci-cd.yml
 | `backend/config/urls_production.py` | 앱과 DB 상태를 확인하는 `/api/health/` 추가 |
 | `deploy/backend.Dockerfile` | Django 운영 이미지 |
 | `deploy/frontend.Dockerfile` | React를 빌드해 Caddy 이미지에 포함 |
-| `deploy/Caddyfile` | 같은 도메인에서 React와 `/api/`, `/admin/`, `/static/` 연결 |
+| `deploy/Caddyfile` | 같은 주소에서 React와 `/api/`, `/admin/`, `/static/` 연결 |
 | `deploy/compose.yml` | EC2에서 백엔드와 웹 컨테이너 실행 |
 | `deploy/deploy.sh` | 이미지 다운로드, 마이그레이션, 캐시 표 만들기, 실행, HTTPS 상태 검사 |
 | `.github/workflows/ci-cd.yml` | CI와 main 자동 배포 |
@@ -537,7 +530,7 @@ SSM은 명령을 접수한 것만으로 성공 처리하면 안 됩니다. 예�
 첫 배포가 끝나면 내 컴퓨터에서 확인합니다.
 
 ```bash
-curl --fail https://app.구매한도메인/api/health/
+curl --fail https://app.203-0-113-10.sslip.io/api/health/
 ```
 
 예상 응답:
@@ -546,7 +539,7 @@ curl --fail https://app.구매한도메인/api/health/
 {"status":"ok","release":"40자리커밋SHA-실행ID-재실행번호"}
 ```
 
-브라우저에서 `https://app.구매한도메인`을 열고 React 화면과 인증서가 정상인지 확인합니다. `/api/docs/`와 `/admin/login/`의 CSS도 확인합니다.
+브라우저에서 `https://app.203-0-113-10.sslip.io`를 열고 React 화면과 인증서가 정상인지 확인합니다. `/api/docs/`와 `/admin/login/`의 CSS도 확인합니다.
 
 **최초 DB에는 개발 데이터가 없습니다.** 필요한 테스트 사용자는 회원가입 화면으로 만들고, 팀이 승인한 합성 데이터 준비 절차를 따릅니다. 로컬 실계좌 DB나 개인정보를 그대로 복제하지 않습니다.
 
@@ -573,7 +566,7 @@ exit
 | DB 모델 | DB 담당자가 로컬에서 migration 파일 생성·검토·커밋 후 main 반영 |
 | EC2의 `app.env` | 서버에서 수정 후 아래 재생성 명령 |
 | ML 가중치·충돌 CSV | 별도 버전·해시 확인 후 EC2 파일 교체 및 백엔드 재시작 |
-| RDS 크기·보안 그룹·도메인 DNS | AWS 또는 도메인 콘솔에서 별도 변경 |
+| RDS 크기·보안 그룹·탄력적 IP | AWS 콘솔에서 별도 변경. IP가 바뀌면 서비스 주소, `SITE_DOMAIN`, `app.env`도 함께 변경 |
 
 `app.env`를 바꾼 뒤에는 `restart`만으로 새 환경변수가 반영되지 않습니다. **EC2 터미널**에서 컨테이너를 재생성합니다.
 
@@ -635,7 +628,7 @@ exit
 | `permission denied for schema public` | 앱 사용자에게 `USAGE, CREATE` 부여했는지 |
 | TLS 인증서 검증 오류 | RDS 엔드포인트를 IP로 바꾸지 않았는지, CA 번들 존재·유효성 |
 | HTTPS 인증서 발급 실패 | DNS A/AAAA, 공인 IP, 80·443 인바운드, Caddy 로그 |
-| `DisallowedHost` 400 | ALLOWED_HOSTS에 실제 도메인. 스킴과 경로를 넣지 않기 |
+| `DisallowedHost` 400 | ALLOWED_HOSTS에 실제 서비스 주소. 스킴과 경로를 넣지 않기 |
 | 로그인 CSRF 403 또는 로그인 유지 안 됨 | HTTPS 접속, trusted origins의 `https://`, 프록시 헤더, Secure 쿠키 |
 | 502 또는 backend unhealthy | Django 시작 오류, DB 연결, 필수 env, 모델/의존성, 컨테이너 로그 |
 | 프런트 화면은 정상인데 API가 HTML 반환 | Caddy API 경로 분기와 요청 주소. 프런트 fallback으로 API가 가지 않는지 |
@@ -647,7 +640,7 @@ exit
 
 `docker compose config`는 환경변수의 비밀값까지 출력할 수 있으므로 결과 전체를 채팅이나 이슈에 붙이지 않습니다. 구문 검사만 필요하면 `config --quiet`를 사용합니다. 로그를 공유할 때도 키·연결 정보·개인정보를 제거합니다.
 
-배포 점검의 `check --deploy`는 ERROR를 차단하고 경고를 출력합니다. 예제의 HSTS는 1시간이며 하위 도메인 포함·preload는 꺼져 있어 관련 경고가 날 수 있습니다. HTTPS 운영이 안정화된 뒤 도메인 전체 영향 범위를 확인하고 강화합니다. 다른 보안 경고는 원인을 검토하세요.
+배포 점검의 `check --deploy`는 ERROR를 차단하고 경고를 출력합니다. 예제의 HSTS는 1시간이며 하위 도메인 포함·preload는 꺼져 있어 관련 경고가 날 수 있습니다. sslip.io 주소는 팀이 소유한 도메인이 아니므로 하위 도메인 포함·preload는 켜지 않습니다. 다른 보안 경고는 원인을 검토하세요.
 
 ## 17 이전 버전으로 되돌리기와 DB 복구
 
@@ -693,10 +686,9 @@ ECR과 EC2의 오래된 이미지가 쌓이므로 정상 복구 버전은 남기
 3. RDS 삭제 방지를 해제한 뒤 최종 스냅샷 필요 여부를 확인하며 삭제합니다.
 4. EC2를 종료하고 남은 EBS 볼륨·스냅샷을 확인합니다.
 5. 탄력적 IP를 연결 해제한 뒤 **릴리스**합니다.
-6. ECR 이미지·저장소, 모델 S3 버킷과 버전, 불필요한 DNS 호스팅 영역을 정리합니다.
-7. 도메인을 더 쓰지 않으면 자동 갱신을 해제합니다. 호스팅 영역 삭제와 도메인 등록 취소는 다릅니다.
-8. 전용 IAM 역할·정책과 VPC 리소스를 정리합니다. 다른 저장소가 쓰는 OIDC 공급자는 삭제하지 않습니다.
-9. 이후 청구 화면에서 남은 리소스 비용을 확인합니다.
+6. ECR 이미지·저장소, 모델 S3 버킷과 버전을 정리합니다.
+7. 전용 IAM 역할·정책과 VPC 리소스를 정리합니다. 다른 저장소가 쓰는 OIDC 공급자는 삭제하지 않습니다.
+8. 이후 청구 화면에서 남은 리소스 비용을 확인합니다.
 
 EC2를 중지해도 스토리지와 IP 등의 비용은 남을 수 있습니다. RDS 중지는 영구 비용 종료 수단이 아니므로 완전히 끝낼 때는 백업 계획에 맞춰 리소스를 삭제합니다.
 
