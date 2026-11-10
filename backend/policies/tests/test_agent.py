@@ -21,6 +21,14 @@ def said(needs=(("월세 지원", ["월세"]),), place=None, vague=False, mine=T
                        "mine": mine}, ensure_ascii=False)
 
 
+def titles(result):
+    return [s["title"] for s in result["reply"].get("sections", [])]
+
+
+def rows(result, number=0):
+    return result["reply"]["sections"][number]["lines"]
+
+
 class Talk:
     """한 대화: 같은 store 로 여러 번 부른다. 버튼은 이름(label)을 문장으로 보낸다 (라우터 어댑터와 같다)"""
 
@@ -85,7 +93,7 @@ class RegionTest(TestCase):
             talk.send(label)
         result = talk.send("동탄구")
         self.assertEqual(result["status"], "replied")
-        self.assertIn("1. 청년 월세 지원 — 상시", result["reply"]["lines"])
+        self.assertEqual(titles(result), ["1. 청년 월세 지원"])
         talk.complete.assert_called_once_with(agent.reading.PROMPT, "월세 지원 있어?")
 
 
@@ -96,10 +104,10 @@ class AnswerTest(TestCase):
         talk = Talk()
         talk.lives_in_dongtan()
         result = talk.send("월세 지원 있어?")
-        lines = result["reply"]["lines"]
-        for line in ("1. 청년 월세 지원 — 상시", "   찾은 말: 월세", "   지원 내용: 월 20만 원",
-                     "   확인할 것: 소득(중위소득 150% 이하)", "   링크: https://example.org/rent"):
-            self.assertIn(line, lines)
+        self.assertEqual(result["reply"]["lines"], ["경기도 화성시 동탄구 기준으로 찾은 청년 정책이에요."])
+        self.assertEqual(titles(result), ["1. 청년 월세 지원"])
+        self.assertEqual(rows(result), ["신청: 상시", "지원: 월 20만 원", "확인할 것: 소득(중위소득 150% 이하)",
+                                        "관련: 월세", "링크: https://example.org/rent"])
         self.assertEqual(result["reply"]["notices"][0], agent.NOTICE)
         self.assertEqual(talk.state["last"], ["RENT"])
         self.assertEqual(talk.labels, ["1번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
@@ -124,7 +132,7 @@ class AnswerTest(TestCase):
         self.assertEqual(talk.labels[:4], ["1번 저장", "2번 저장", "3번 저장", agent.MORE])
         result = talk.send(agent.MORE)
         self.assertEqual((result["status"], talk.state["last"]), ("replied", ["P4", "P5"]))
-        self.assertIn("4. 정책 4 — 상시", result["reply"]["lines"])
+        self.assertEqual(titles(result), ["4. 정책 4", "5. 정책 5"])
         self.assertNotIn(agent.MORE, talk.labels)
         self.assertEqual(talk.labels[:2], ["4번 저장", "5번 저장"])  # 번호는 이어서
 
@@ -146,7 +154,7 @@ class FlowTest(TestCase):
         self.assertEqual((result["status"], result["reply"]["lines"]), ("awaiting_input", [agent.ASK_FIELD]))
         result = talk.send("월세 · 주거")
         self.assertEqual(result["status"], "replied")
-        self.assertIn("   찾은 말: 월세", result["reply"]["lines"])
+        self.assertIn("관련: 월세", rows(result))
 
     def test_다른_지역을_말하면_확인하고_그_지역은_이번만_쓴다(self):
         add("BUSAN", vector=near(1), plcyNm="해운대 월세", zipCd="26350")
@@ -158,7 +166,7 @@ class FlowTest(TestCase):
         talk.send("부산 기준으로 보기")
         self.assertEqual(talk.last["reply"]["lines"], ["부산광역시의 어디인가요?"])
         result = talk.send("해운대구")
-        self.assertIn("1. 해운대 월세 — 상시", result["reply"]["lines"])
+        self.assertEqual(titles(result), ["1. 해운대 월세"])
         self.assertEqual(talk.state["region"], DONGTAN)  # 사는 곳은 그대로
         talk.complete.assert_called_once()  # 읽은 결과를 남겨 두고 다시 읽지 않는다
 
@@ -168,7 +176,7 @@ class FlowTest(TestCase):
         talk.lives_in_dongtan()
         talk.send("부산 월세 지원 있어?")
         result = talk.send("사는 곳(동탄구) 기준으로 보기")
-        self.assertIn("1. 동탄 월세 — 상시", result["reply"]["lines"])
+        self.assertEqual(titles(result), ["1. 동탄 월세"])
 
     def test_사는_곳을_품는_지명은_묻지_않는다(self):
         add("HOME", vector=near(1))
@@ -233,7 +241,7 @@ class SaveTest(TestCase):
     def test_저장_버튼은_저장할_번호를_돌려주고_나머지_버튼은_그대로(self):
         result = self.talk.send("2번 저장")
         self.assertEqual((result["status"], result["save_policies"]), ("replied", ["P2"]))
-        self.assertEqual(result["reply"]["lines"], ["‘정책 2’ 정책을 저장했어요."])
+        self.assertEqual(result["reply"]["lines"], [agent.SAVED.format(name="정책 2")])
         self.assertEqual(self.talk.labels, ["1번 저장", "3번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
         self.assertEqual(self.talk.state["saved"], ["P2"])
         self.talk.send("1번 저장")
@@ -250,3 +258,74 @@ class SaveTest(TestCase):
         from policies.models import SavedPolicy
         self.talk.send("1번 저장")
         self.assertFalse(SavedPolicy.objects.exists())  # 엔진이 save_policies 를 보고 저장한다 (7단계)
+
+
+class TidyTest(TestCase):
+    def test_원문_글머리_기호를_나누고_길면_자른다(self):
+        from policies.tools import tidy
+        self.assertEqual(tidy("ㅁ대상: 만 19~34세 ㅇ (전세) 보증금 이하 □ 한도"), "대상: 만 19~34세 · (전세) 보증금 이하 · 한도")
+        self.assertEqual(tidy("-스마트 구인·구직 -상담·취업알선"), "스마트 구인·구직 · 상담·취업알선")
+        self.assertEqual(tidy("월 20만 원"), "월 20만 원")
+        long = tidy("가나다 " * 40)
+        self.assertTrue(long.endswith("…") and len(long) <= 81)
+
+
+class MemberTest(TestCase):
+    """회원(로그인한 진짜 회원)만: [저장한 정책 보기] · [다음에도 …로 찾기]"""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        from users.models import FinancialProfile
+        self.user = get_user_model().objects.create_user(email="member@example.com")
+        FinancialProfile.objects.create(user=self.user, birth_date=date(1999, 3, 1), gender="male")
+        for rank in range(1, 3):
+            add(f"P{rank}", vector=near(rank), plcyNm=f"정책 {rank}")
+
+    def talk(self):
+        return Talk(user=self.user)
+
+    def test_추천_뒤에_저장_목록과_지역_기억_버튼(self):
+        talk = self.talk()
+        talk.lives_in_dongtan()
+        talk.send("월세 지원 있어?")
+        self.assertEqual(talk.labels, ["1번 저장", "2번 저장", agent.SAVED_LIST, "다음에도 동탄구로 찾기",
+                                       agent.OTHER_FIELD, agent.CHANGE_REGION])
+
+    def test_지역_기억은_save_profile_로_돌려주고_다음_대화는_지역을_묻지_않는다(self):
+        from policies import profiles
+        from policies.models import PolicyProfile
+        talk = self.talk()
+        talk.lives_in_dongtan()
+        talk.send("월세 지원 있어?")
+        result = talk.send("다음에도 동탄구로 찾기")
+        self.assertEqual((result["status"], result["save_profile"]), ("replied", {"region_code": DONGTAN}))
+        self.assertNotIn("다음에도 동탄구로 찾기", talk.labels)
+        self.assertFalse(PolicyProfile.objects.exists())  # 핸들러는 쓰지 않는다 — 엔진이 저장
+        profiles.remember(self.user, DONGTAN)  # 엔진이 한 것처럼
+        fresh = self.talk()
+        result = fresh.send(None, mode="start")
+        self.assertEqual(result["reply"]["lines"], [agent.ASK_FIELD])  # 지역을 묻지 않는다
+        result = fresh.send("월세 지원 있어?")
+        self.assertIn(agent.REMEMBERED_NOTE.format(name="동탄구"), result["reply"]["lines"])
+        self.assertNotIn("다음에도 동탄구로 찾기", fresh.labels)  # 이미 저장한 지역
+        fresh.send(agent.CHANGE_REGION)
+        self.assertEqual(fresh.last["reply"]["lines"], [agent.ASK_REGION])  # 바꿀 수 있다
+
+    def test_저장한_정책_보기_버튼과_문장(self):
+        from policies import saved
+        talk = self.talk()
+        talk.lives_in_dongtan()
+        result = talk.send("저장한 정책 보여 줘")
+        self.assertEqual(result["reply"]["lines"], [agent.NO_SAVED])
+        saved.save(self.user, "P2")
+        talk.send("월세 지원 있어?")
+        result = talk.send(agent.SAVED_LIST)
+        self.assertEqual((result["status"], result["reply"]["lines"], titles(result)),
+                         ("replied", [agent.SAVED_HEAD], ["정책 2"]))
+        self.assertEqual(rows(result)[0], "신청: 상시")
+        self.assertNotIn(agent.SAVED_LIST, talk.labels)
+
+    def test_회원이_아니면_저장_목록을_못_본다(self):
+        talk = Talk()
+        talk.lives_in_dongtan()
+        self.assertEqual(talk.send("저장한 정책")["reply"]["lines"], [agent.SAVED_NEED_LOGIN])

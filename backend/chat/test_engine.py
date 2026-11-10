@@ -252,14 +252,21 @@ class ServiceChoiceTest(ServiceChatBase):
             content = self.bot(self.pick("A", cid, content, label))
         self.assertEqual(content["lines"], [policy_agent.ASK_FIELD])
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
-        self.assertIn("1. 청년 월세 지원 — 상시", content["lines"])
-        self.assertEqual((content["agent"], content["notices"][0]), ("policy", policy_agent.NOTICE))
+        self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])  # 결과 카드 (제목 + 점 목록)
+        self.assertEqual((content["agent"], content["result"], content["notices"][0]), ("policy", True, policy_agent.NOTICE))
         content = self.bot(self.pick("A", cid, content, "1번 저장"))
-        self.assertEqual(content["lines"], ["‘청년 월세 지원’ 정책을 저장했어요."])
+        self.assertEqual(content["lines"], [policy_agent.SAVED.format(name="청년 월세 지원")])
         self.assertNotIn("saves", content)
         self.assertEqual(list(SavedPolicy.objects.filter(user=user("A")).values_list("policy_id", flat=True)),
                          ["20260000000000000001"])
         self.assertFalse(SavedPolicy.objects.exclude(user=user("A")).exists())
+        content = self.bot(self.pick("A", cid, content, "다음에도 동탄구로 찾기"))  # 지역 기억 → 엔진이 저장
+        from policies.models import PolicyProfile
+        self.assertEqual(PolicyProfile.objects.get(user=user("A")).region_code, "41597")
+        content = self.bot(self.pick("A", cid, content, policy_agent.SAVED_LIST))
+        self.assertEqual([s["title"] for s in content["sections"]], ["청년 월세 지원"])
+        again = self.bot(self.send("A", choice="policy"))  # 새 대화 — 지역을 묻지 않는다
+        self.assertEqual(again["lines"], [policy_agent.ASK_FIELD])
         spending = self.send("A", cid, text="이번 달 얼마 썼어?")  # 정책 담당이 not_mine → 라우터가 다시 고른다
         self.assertEqual(spending.json()["agent"], "spending")
 

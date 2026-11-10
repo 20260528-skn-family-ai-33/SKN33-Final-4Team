@@ -17,7 +17,9 @@ EMPLOYED, JOBLESS = "0013001", "0013003"
 # "취업 준비 중"처럼 말하면 그 말을 따른다 (메모: 조건 입력). 월급 정보보다 앞선다
 JOBLESS_WORDS = re.compile(r"취준|취업\s*준비|구직\s*중|무직|백수|일자리를?\s*찾|실직|퇴사")
 STATE = {"open": "신청 중", "always": "상시", "upcoming": "신청 예정", "unknown": "기간 확인 필요"}
-SUPPORT_CHARS = 90  # 지원 내용은 DB 문장 앞부분만 (자르기만 하고 바꿔 쓰지 않는다)
+SUPPORT_CHARS = 80  # 지원 내용은 DB 문장 앞부분만 (자르기만 하고 바꿔 쓰지 않는다)
+# 원문 글머리 기호 (ㅁ · □ · ㅇ · ○ · ※ · ① · ➊ · - …). 낱자 자모(ㅁ · ㅇ)는 낱말 안에 오지 않아 지워도 뜻이 바뀌지 않는다
+BULLETS = re.compile(r"(?:(?<=\s)|^)(?:[ㅁㅇ□■○●◦▪▫◆◇※•►▶❍]|[①-⑳]|[➊-➓]|-(?=\s|[가-힣]))\s*")
 
 
 def profile_for(user, text=None):
@@ -67,6 +69,18 @@ def _period(policy, today):
     return STATE[state]
 
 
+def tidy(text, limit=SUPPORT_CHARS):
+    """원문 앞부분을 읽기 쉽게: 글머리 기호는 ' · ' 로 (맨 앞은 지움), 따옴표 · 겹친 빈칸을 정리하고
+    limit 글자에서 낱말 단위로 자른다 (내용은 바꾸지 않는다)"""
+    text = BULLETS.sub(" · ", (text or "").strip().strip('"'))
+    text = re.sub(r"\s+", " ", text).strip()
+    text = re.sub(r"^(?:· )+|(?: ·)+$", "", re.sub(r"(?:· )+", "· ", text)).strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    return (cut[:cut.rfind(" ")] if " " in cut[limit // 2:] else cut).rstrip(" ,·/") + "…"
+
+
 def facts(found, today):
     """답변 한 칸의 사실 (모두 DB 값 · 코드 계산). 링크가 없으면 None — 지어내지 않는다"""
     policy, verdict = found.policy, found.verdict
@@ -76,7 +90,7 @@ def facts(found, today):
         "policy_no": policy.pk,
         "name": policy.name,
         "period": _period(policy, today),
-        "support": support[:SUPPORT_CHARS] + ("…" if len(support) > SUPPORT_CHARS else ""),
+        "support": tidy(support),
         "check": checks,
         "soon_over": verdict.soon_over,
         "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),

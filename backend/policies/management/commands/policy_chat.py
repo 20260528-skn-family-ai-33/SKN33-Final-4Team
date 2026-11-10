@@ -42,6 +42,12 @@ class Command(BaseCommand):
             reply = result.get("reply") or {}
             for line in reply.get("lines", []):
                 self.stdout.write(f"봇 | {line}")
+            for section in reply.get("sections", []):  # 화면에서는 결과 카드 (굵은 제목 + 점 목록)
+                self.stdout.write(f"봇 | ■ {section['title']}")
+                for line in section["lines"]:
+                    self.stdout.write(f"봇 |   · {line}")
+            if result.get("save_profile"):
+                self.stdout.write(f"(지역 저장 요청 {result['save_profile']} — 엔진이 저장, 이 명령은 저장하지 않음)")
             for notice in reply.get("notices", []):
                 self.stdout.write(f"안내 | {notice}")
             choices = [c["label"] for c in reply.get("choices", [])]

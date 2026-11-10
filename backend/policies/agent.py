@@ -3,15 +3,18 @@
 다음에 무엇을 할지는 decide() 한 곳에서 코드 규칙으로 정한다. 8단계에서 decide() 만 LLM 행동 고르기로 바꾸고,
 handle() 의 반복문 · 도구(tools.py) · 답변 모양은 그대로 쓴다.
 
-흐름: (생년월일 확인) → 사는 지역 버튼 → 문장 읽기(LLM 1회) → 다른 지역이면 확인 버튼 → 막연하면 분야 버튼 → 검색 · 자격 → 추천 3개
+흐름: (생년월일 확인) → 사는 지역 버튼(저장해 둔 지역이 있으면 건너뜀) → 문장 읽기(LLM 1회) → 다른 지역이면 확인 버튼 →
+막연하면 분야 버튼 → 검색 · 자격 → 추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] …
+- 저장 · 지역 기억은 핸들러가 DB 에 쓰지 않고 save_policies · save_profile 로 돌려준다 (엔진이 대화 저장 트랜잭션에서 쓴다)
 - 사실(정책명 · 기간 · 지원 내용 · 링크 · 자격)은 모두 DB 값 · 코드 계산이다. 1차 추천 이유는 찾은 키워드로 코드가 쓴다 (LLM 이유는 다음)
 - 버튼은 이름이 다음 문장으로 들어온다. 질문할 때 {이름: 값}을 상태에 남겨 두고 같은 이름이면 그 값을 쓴다
 - 핸들러는 DB 에 쓰지 않는다. 상태는 store.save_agent_state 로만 남긴다. not_mine · failed 는 상태를 바꾸지 않는다
 """
+import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from . import reading, tools
+from . import profiles, reading, saved, tools
 from .llm import EmbedFailed
 from .reading import Need, ReadFailed
 from .regions import REGIONS
@@ -34,7 +37,16 @@ FIELDS = {
 MORE, OTHER_FIELD, CHANGE_REGION = "다른 정책 더 보기", "다른 분야 찾기", "지역 바꾸기"
 SAVE = "save:"  # 저장 버튼 값 = "save:" + 정책번호 (번호는 서버 상태에서만 나온다)
 SAVE_LABEL = "{number}번 저장"
-SAVED = "‘{name}’ 정책을 저장했어요."
+SAVED = "‘{name}’ 정책을 저장했어요. [저장한 정책 보기]에서 모아 볼 수 있어요."
+SAVED_LIST = "저장한 정책 보기"
+SAVED_WORDS = re.compile(r"저장한\s*(?:정책|거|것|목록)|저장\s*목록|북마크")  # 문장으로 물어도 저장 목록을 보인다
+SAVED_HEAD = "저장한 청년 정책이에요. (최근 저장 순)"
+NO_SAVED = "아직 저장한 정책이 없어요. 추천 결과에서 [N번 저장]을 누르면 여기에 모여요."
+SAVED_NEED_LOGIN = "저장한 정책은 로그인한 뒤 볼 수 있어요."
+APPLY_LABEL = {**tools.STATE, "closed": "마감"}
+REMEMBER_LABEL = "다음에도 {name}로 찾기"  # 시군구 이름은 모두 구 · 시 · 군(받침 없음)으로 끝나 '로'가 맞다
+REMEMBERED = "다음부터 {name} 기준으로 찾을게요. 바꾸려면 [지역 바꾸기]를 누르세요."
+REMEMBERED_NOTE = "저장해 둔 지역({name}) 기준으로 찾아요."
 ASK_REGION = "어느 지역에 사세요? 사는 곳 기준으로 정책을 찾아요."
 ASK_AREA = "{name}의 어디인가요?"
 ASK_FIELD = "어떤 지원을 찾으세요? 버튼을 고르거나 고민을 문장으로 써 주세요."
@@ -49,7 +61,7 @@ ENDED = "청년 정책 찾기를 마칠게요."
 @dataclass
 class Action:
     """decide() 가 고른 다음 행동. kind 마다 쓰는 칸이 다르다"""
-    kind: str  # read · use_region · ask_region · ask_field · ask_place · search · more · not_mine · end · reask
+    kind: str  # read · use_region · ask_region · ask_field · ask_place · search · more · save · show_saved · remember · not_mine · end · reask
     text: str | None = None  # 읽거나 검색할 문장 (지역을 고른 뒤 이어서 할 문장)
     region: str | None = None
     codes: list[str] = field(default_factory=list)  # 고를 지역 후보
@@ -95,6 +107,8 @@ def decide(state, text, read=None):
         return Action("end")
     if ask and said in ask["options"]:
         return _answer(ask, ask["options"][said], home)
+    if SAVED_WORDS.search(said):  # 버튼 이름을 먼저 본다 ('저장한 정책 보기' 버튼도 이름으로 들어온다)
+        return Action("show_saved")
     if ask and ask["kind"] == "region":
         code = _picked_region(ask, said)
         if code:
@@ -138,6 +152,10 @@ def _answer(ask, value, home):
     if kind == "after":
         if value.startswith(SAVE):
             return Action("save", text=value[len(SAVE):])
+        if value == "saved":
+            return Action("show_saved")
+        if value == "remember":
+            return Action("remember", region=home)
         if value == "more":
             return Action("more")
         if value == "field":
@@ -186,38 +204,88 @@ def _ask_place(store, cid, state, action):
                 text=action.text, needs=[[n.query, n.keywords] for n in action.needs] if action.needs else None)
 
 
-def _show(store, cid, state, found, region, today, start):
+def _common_after(state, region, member):
+    """추천 · 저장 목록 뒤에 늘 붙는 버튼: [저장한 정책 보기] · [다음에도 …로 찾기] · [다른 분야 찾기] · [지역 바꾸기]"""
+    after = [("saved", SAVED_LIST)] if member else []
+    if member and region and region == state.get("region") and state.get("remembered") != region:
+        after.append(("remember", REMEMBER_LABEL.format(name=_label(region))))  # 사는 곳으로 찾았을 때만
+    return after + [("field", OTHER_FIELD), ("region", CHANGE_REGION)]
+
+
+def _card(result, sections):
+    """카드 모양 답변: 정책마다 굵은 제목 + 점 목록 (채팅 화면의 결과 카드, chat/engine.py 가 result 로 표시)"""
+    result["status"] = "replied"  # 추천 뒤에도 담당을 유지하고 후속 질문을 받는다
+    result["reply"]["sections"] = sections
+    return result
+
+
+def _show(store, cid, state, found, region, today, start, member=False):
     """추천 3칸 (start 번째부터). 사실은 tools.facts, 이유는 찾은 키워드로"""
     page = found[start:start + SHOW]
-    saved = state.get("saved") or []  # 예전 상태(칸 없음)도 읽는다
+    done = state.get("saved") or []  # 예전 상태(칸 없음)도 읽는다
     after = [(SAVE + f.policy.pk, SAVE_LABEL.format(number=number))
-             for number, f in enumerate(page, start + 1) if f.policy.pk not in saved]
+             for number, f in enumerate(page, start + 1) if f.policy.pk not in done]
     after += [("more", MORE)] if len(found) > start + SHOW else []
-    after += [("field", OTHER_FIELD), ("region", CHANGE_REGION)]
+    after += _common_after(state, region, member)
     state.update(results=[f.policy.pk for f in found], shown=start + len(page), region_used=region,
                  last=[f.policy.pk for f in page])
     name = REGIONS[region]["name"]
     if not page:  # 추천 없음은 정상 결과 → failed 가 아니라 replied (계약 3절)
         lines = [NONE_FOUND.format(region=name) if start == 0 else NO_MORE]
-        result = _ask(store, cid, state, "after", lines, after[-2:])  # 더 보기 없이 분야 · 지역만
+        result = _ask(store, cid, state, "after", lines, [a for a in after if not a[0].startswith(SAVE)])
         result["status"] = "replied"
         return result
     lines = [f"{name} 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
+    if start == 0 and state.get("remembered") == region:
+        lines.append(REMEMBERED_NOTE.format(name=_label(region)))
+    sections = []
     for number, item in enumerate((tools.facts(f, today) for f in page), start + 1):
-        lines.append(f"{number}. {item['name']} — {item['period']}")
-        if item["keywords"]:
-            lines.append(f"   찾은 말: {', '.join(item['keywords'])}")
-        lines.append(f"   지원 내용: {item['support'] or '정보 없음'}")
+        rows = [f"신청: {item['period']}", f"지원: {item['support'] or '정보 없음'}"]
         if item["check"]:
-            lines.append(f"   확인할 것: {', '.join(item['check'])}")
+            rows.append(f"확인할 것: {', '.join(item['check'])}")
         if item["soon_over"]:
-            lines.append("   곧 나이 상한을 넘어요. 신청 기간을 서둘러 확인해 보세요.")
-        lines.append(f"   링크: {item['link']}" if item["link"] else "   링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
+            rows.append("곧 나이 상한을 넘어요. 신청 기간을 서둘러 확인해 보세요.")
+        if item["keywords"]:
+            rows.append(f"관련: {', '.join(item['keywords'])}")
+        rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
+        sections.append({"title": f"{number}. {item['name']}", "lines": rows})
     day = tools.data_date()
-    notices = [NOTICE] + ([f"정책 정보는 {day} 기준이에요."] if day else [])
-    result = _ask(store, cid, state, "after", lines, after)
-    result["status"] = "replied"  # 추천 뒤에도 담당을 유지하고 후속 질문을 받는다
-    result["reply"]["notices"] = notices
+    result = _card(_ask(store, cid, state, "after", lines, after), sections)
+    result["reply"]["notices"] = [NOTICE] + ([f"정책 정보는 {day} 기준이에요."] if day else [])
+    return result
+
+
+def _show_saved(store, cid, state, user, today):
+    """저장한 정책 목록 (DB 읽기만). 마감 · 수집 종료도 상태와 함께 보인다"""
+    member = profiles.is_member(user)
+    after = _common_after(state, None, member)[1 if member else 0:]  # 지금 보고 있는 목록이라 [저장한 정책 보기]는 뺀다
+    if not member:
+        result = _ask(store, cid, state, "after", [SAVED_NEED_LOGIN], after)
+        result["status"] = "replied"
+        return result
+    items = saved.items(user, today)
+    if not items:
+        result = _ask(store, cid, state, "after", [NO_SAVED], after)
+        result["status"] = "replied"
+        return result
+    sections = []
+    for item in items:
+        state_text = APPLY_LABEL[item["apply_state"]] + (f" (마감 {item['apply_end']})" if item["apply_end"] else "")
+        rows = [f"신청: {state_text}", f"저장: {item['saved_at'][:10]}"]
+        if not item["active"]:
+            rows.append("정책 목록에서 빠진 정책이에요. 공고가 내려갔을 수 있어요.")
+        rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
+        sections.append({"title": item["name"], "lines": rows})
+    return _card(_ask(store, cid, state, "after", [SAVED_HEAD], after), sections)
+
+
+def _remember(store, cid, state, region):
+    """[다음에도 …로 찾기]: 핸들러는 DB 에 쓰지 않는다 → save_profile 로 돌려주면 엔진이 대화 저장 트랜잭션에서 저장한다"""
+    state["remembered"] = region
+    options = [(value, label) for label, value in state["ask"]["options"].items() if value != "remember"]
+    result = _ask(store, cid, state, "after", [REMEMBERED.format(name=_label(region))], options)
+    result["status"] = "replied"
+    result["save_profile"] = {"region_code": region}
     return result
 
 
@@ -231,6 +299,10 @@ def handle(request, *, store, user=None, complete=None, embed=None):
     profile = tools.profile_for(user, text)
     if user is not None and profile.birth_date is None:  # 온보딩 값을 다시 묻지 않는다 — 내 정보로 안내하고 끝낸다
         return _end(store, cid, NO_BIRTH)
+    if not state.get("region"):  # 저장해 둔 사는 지역이 있으면 다시 묻지 않는다 ([지역 바꾸기]로 바꿀 수 있다)
+        remembered = profiles.remembered_region(user)
+        if remembered:
+            state.update(region=remembered, remembered=remembered)
     read = None
     action = decide(state, text)
     for _ in range(MAX_STEPS):
@@ -273,16 +345,21 @@ def _act(action, store, cid, state, user, today, embed):
         return _reply("awaiting_input", [PICK_BUTTON], [{"value": v, "label": k} for k, v in ask["options"].items()])
     if kind == "save":
         return _save(store, cid, state, action.text)
-    profile = tools.profile_for(user, action.text)
+    if kind == "show_saved":
+        return _show_saved(store, cid, state, user, today)
+    if kind == "remember":
+        return _remember(store, cid, state, action.region)
+    profile, member = tools.profile_for(user, action.text), profiles.is_member(user)
     if kind == "more":
         found = tools.again(state.get("results") or [], profile, today)
-        return _show(store, cid, state, found, state.get("region_used") or state["region"], today, state.get("shown", 0))
+        return _show(store, cid, state, found, state.get("region_used") or state["region"], today,
+                     state.get("shown", 0), member)
     if kind == "search":
         try:
             found, _ = tools.find(action.needs or [Need(action.text)], action.region, profile, today, embed=embed)
         except EmbedFailed as error:
             return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
-        return _show(store, cid, state, found, action.region, today, 0)
+        return _show(store, cid, state, found, action.region, today, 0, member)
     raise ValueError(f"처리하지 못한 행동: {kind}")
 
 

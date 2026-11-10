@@ -8,7 +8,8 @@
 - 기능 버튼(choice "spending" · "budget" · "policy") = 라우터 해석 없이 담당 에이전트로 / 답변 선택지 = choice {value, turn},
   마지막 봇 메시지의 선택지가 아니면 409 stale_choice. 기능 선택지면 버튼으로, 아니면 그 이름을 문장으로
 - 봇 content(text) = 기존 {text, choices} + lead · lines · sections · notices · view · chart? · examples? · turn · agent · inputs · result
-- 청년 정책: 핸들러는 DB 에 쓰지 않는다. 결과의 save_policies(채팅 [N번 저장])는 대화 저장과 같은 트랜잭션에서 저장한다
+- 청년 정책: 핸들러는 DB 에 쓰지 않는다. 결과의 save_policies(채팅 [N번 저장]) · save_profile([다음에도 …로 찾기])은
+  대화 저장과 같은 트랜잭션에서 저장한다
   (409 면 저장도 안 됨). 읽기 LLM · 임베딩은 policies 쪽 설정(CHAT_LLM)을 따른다 (docs/agents/청년정책.md)
 - 기준 날짜 = settings.CHAT_TODAY(고정) 또는 오늘, 해석 = settings.CHAT_LLM(fake · live) · CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER (chat/llm)
 """
@@ -27,6 +28,7 @@ from rest_framework.response import Response
 from chat.router_core import CANCEL_WORDS, MemoryStateStore, current_agent, messages as router_messages, run_turn
 from finance.inputs import body_dict, reject_unknown_fields
 from policies import agent as policy_agent
+from policies import profiles as policy_profiles
 from policies import saved as policy_saved
 from spending_analysis import agent as spending_agent
 
@@ -159,14 +161,18 @@ def answer(user, store, text=None, button=None):
     bot = router_messages.render(turn) or {"lines": [], "choices": [], "notices": [], "review": []}
     # 청년 정책 [N번 저장] — respond 가 대화 저장 트랜잭션에서 저장한다 (content 에는 넣지 않는다)
     by_policy = bool(turn["delivered"]) and turn["delivered"][-1] == "policy" and result.get("status") == "replied"
-    bot["saves"] = list(result.get("save_policies") or []) if by_policy else []
+    # 청년 정책 [다음에도 …로 찾기] (save_profile) 도 같은 트랜잭션에서 저장한다
+    bot["saves"] = {"policies": list(result.get("save_policies") or []),
+                    "profile": result.get("save_profile")} if by_policy else {}
     bot.pop("review", None)  # 미정 정책 코드는 화면에 보내지 않는다
     bot["choices"] = [{"value": _value(c["value"]), "label": c["label"]} for c in bot["choices"]]
     # 담당 표시: 진행 중인 담당, 없으면 이번에 답한 에이전트 (문장으로 추측하지 않는다)
     answered = turn["delivered"][-1] if turn["delivered"] and result.get("status") not in (None, "failed", "not_mine") else None
     now = current_agent(store, KEY)
     bot.update(agent=now or answered, inputs=["budget_form"] if now == "budget" else [],
-               result=answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
+               result=(answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
+               # 청년 정책 추천 · 저장 목록은 정책마다 제목 + 점 목록(sections)인 결과 카드로 그린다
+               or (answered == "policy" and bool((result.get("reply") or {}).get("sections"))))
     if getattr(settings, "CHAT_DEV_TRACE", False):
         bot["entry"] = _entry(result.get("decision"))
     return bot, _route(turn)
@@ -241,7 +247,7 @@ def respond(request):
         text = None if feature else said
     store = ConversationStore.load(talk and talk.slots)
     bot, route = answer(request.user, store, text=text, button=feature)
-    saves = bot.pop("saves", [])
+    saves = bot.pop("saves", {})
 
     with transaction.atomic():
         if talk is None:
@@ -258,8 +264,10 @@ def respond(request):
         reply = ChatMessage.objects.create(
             user=request.user, conversation=talk, role=ChatMessage.Role.BOT, content_type=ChatMessage.ContentType.TEXT,
             content=_content(bot, store.rev + 1))
-        if saves:
-            policy_saved.save_all(request.user, saves)
+        if saves.get("policies"):
+            policy_saved.save_all(request.user, saves["policies"])
+        if saves.get("profile"):
+            policy_profiles.remember(request.user, saves["profile"]["region_code"])
         talk.slots, talk.active_agent = store.dump(), store.get_active(KEY)
         talk.save(update_fields=["slots", "active_agent"])
     return Response({"conversation_id": talk.conversation_id, "route": route, "agent": bot["agent"],
