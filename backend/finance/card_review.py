@@ -4,12 +4,13 @@ from collections import Counter, defaultdict
 from datetime import date, time
 
 from django.core.serializers.json import DjangoJSONEncoder
+from django.db.models import Q
 from django.utils import timezone
 
 from .card_foreign import WonFinder
 from .codef_cards import FOREIGN_PENDING, PARTIAL, approval_source_key, card_matches
 from .models import Card, CardApprovalCoverage, CardApprovalReview, FinancialTransaction, SyncRun, TransactionLink
-from .transfer_rules import link
+from .transfer_rules import LINK_STATE, link
 
 # 금액을 몰라 저장하지 못한 외화 승인 표시. 승인 한 건당 한 줄이고 requested_from 이 사용일이다.
 # 조회 기록이 아니라서 status 를 success 로 두지 않는다 (조회 범위 계산에 들어가지 않게)
@@ -28,7 +29,8 @@ def transaction_defaults(user, payload):
     }
 
 
-def save_transaction(user, card, identity, payload, existing=None):
+def save_transaction(user, card, identity, payload, existing=None, card_amount=True):
+    """card_amount: payload 금액이 카드사가 준 원화 금액인지 (False 면 card_foreign 이 청구서 · 출금에서 찾은 금액이거나 저장된 금액)"""
     if existing is None:
         tx, created = FinancialTransaction.objects.get_or_create(
             card=card, source_key=approval_source_key(card.source_card_key, identity),
@@ -45,11 +47,26 @@ def save_transaction(user, card, identity, payload, existing=None):
                    "source_detail": {**detail, **latest}}
         if not tx.merchant_category and payload.get("merchant_category"):
             updates["merchant_category"] = payload["merchant_category"]  # 업종을 받기 전에 저장한 거래
+        states = tx.field_states if isinstance(tx.field_states, dict) else {}
+        if card_amount and "amount" in states and payload["amount"] is not None:
+            # 11/10 PR #98 검수: 청구서 · 출금으로 채운 외화 승인에 카드사 원화 금액이 오면 그 금액으로 바꾼다.
+            # 다른 카드 거래와 같은 기준(카드사 금액)이고, 채운 근거 표시는 지운다
+            updates["amount"] = payload["amount"]
+            updates["field_states"] = {key: value for key, value in states.items() if key != "amount"}
         changed = [key for key, value in updates.items() if getattr(tx, key) != value]
         if changed:
             for key in changed:
                 setattr(tx, key, updates[key])
             tx.save(update_fields=[*changed, "updated_at"])
+        if "amount" in changed:
+            # 금액이 달라진 출금과는 같은 구매라는 근거가 없다 → 규칙이 이은 연결을 풀어 출금을 다시 보인다
+            for row in TransactionLink.objects.filter(
+                Q(from_transaction=tx) | Q(to_transaction=tx),
+                relation_type=TransactionLink.Relation.SAME_PURCHASE, confirmation_state=LINK_STATE,
+            ).select_related("from_transaction", "to_transaction"):
+                other = row.to_transaction if row.from_transaction_id == tx.pk else row.from_transaction
+                if other.amount != tx.amount:
+                    row.delete()
     return tx, created
 
 
@@ -187,12 +204,13 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
                 if existing and CardApprovalReview.objects.filter(transaction=existing).exclude(pk=review.pk).exists():
                     unknown = True
                     continue
-            tx, created = save_transaction(user, card, identity, row, existing)
+            tx, created = save_transaction(user, card, identity, row, existing, card_amount=won is None)
             if review.transaction_id != tx.pk:
                 review.transaction = tx
                 review.save(update_fields=["transaction"])
         else:
-            tx, created = save_transaction(user, matched[0], identity, row, saved[0] if saved else None)
+            tx, created = save_transaction(user, matched[0], identity, row, saved[0] if saved else None,
+                                           card_amount=won is None)
         if created and won is not None and not isinstance(won, FinancialTransaction):
             filled += 1
             if won.withdrawal is not None:

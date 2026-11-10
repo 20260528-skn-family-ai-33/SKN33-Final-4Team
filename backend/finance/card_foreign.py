@@ -6,6 +6,8 @@
 같은 결제라는 근거가 확실할 때만 이 두 곳의 원화 금액을 쓴다. 금액을 짐작하거나 환율로 만들지 않는다.
 - 근거: 같은 날 · 가맹점 이름이 같고(공백 · 대소문자 무시. 한쪽이 잘렸으면 짧은 쪽 6자 이상일 때 앞부분 일치) 후보가 한 건.
   같은 날 같은 이름의 외화 승인이 여럿이면 어느 것의 금액인지 몰라 쓰지 않는다. 청구서와 출금이 둘 다 있으면 금액이 같아야 한다.
+  양쪽 다 한 건이어야 한다(11/10 PR #98 검수): 잘린 'NETFLIX' 항목은 'NETFLIX.COM' · 'NETFLIX.NET' 승인 모두와 맞을 수 있다.
+  항목 · 출금 하나가 같은 날 외화 승인 여럿의 후보면 어느 승인에도 쓰지 않는다 (먼저 본 승인이 가져가면 응답 순서로 주인이 바뀐다).
 - 다른 거래의 짝은 후보에서 뺀다: 금액을 아는 승인(이번 응답 · 저장된 거래)과 날짜 · 금액 · 이름이 맞는 항목 · 출금,
   이미 같은 구매 · 내 계좌 이체로 이은 출금, 납부에 붙은 출금, 사용자가 확정한 출금, 다른 외화 승인에 이미 쓴 항목 · 출금.
 - 계좌 출금은 체크카드(transfer_rules.link_same_purchases 와 같은 판단)만 본다. 신용카드는 결제 때 출금이 없다.
@@ -19,9 +21,8 @@ from django.db.models import Exists, OuterRef, Q
 
 from .codef_cards import FOREIGN_PENDING
 from .models import CardBillItem, FinancialTransaction as Tx, PaymentMatch, TransactionLink
-from .transfer_rules import squeeze
+from .transfer_rules import same_store, squeeze
 
-MIN_PREFIX = 6                                # 잘린 이름을 같은 가게로 볼 최소 글자 수 (공백 뺀 길이)
 BILL, BANK = "card_bill", "bank_withdrawal"   # 거래 field_states.amount.source 값
 COUNTED_ITEMS = ("one_time", "installment")
 
@@ -31,14 +32,6 @@ class Won:
     amount: int
     sources: list
     withdrawal: Tx | None = None
-
-
-def same_store(a, b):
-    a, b = squeeze(a), squeeze(b)
-    if not a or not b:
-        return False
-    short, long_ = sorted((a, b), key=len)
-    return short == long_ or (len(short) >= MIN_PREFIX and long_.startswith(short))
 
 
 def is_check_card(card):
@@ -54,6 +47,7 @@ class WonFinder:
     def __init__(self, user, issuer_code, rows, resolve):
         self.user, self.issuer_code, self.result, self.taken = user, issuer_code, {}, set()
         pending = [row for row in rows if row["unknown_reason"] == FOREIGN_PENDING]
+        self.pending = pending
         if not pending:
             return
         self.known = [(row["occurred_on"], row["amount"], row["merchant_name"]) for row in rows if row["amount"] is not None]
@@ -82,7 +76,12 @@ class WonFinder:
             user=self.user, source_kind="card", card__issuer_code=self.issuer_code, occurred_on=day, amount=amount,
         ))
 
+    def _shared(self, day, name):
+        """이 이름의 항목 · 출금이 같은 날 외화 승인 여럿의 후보인지 (카드를 못 정했거나 취소된 승인도 센다)"""
+        return sum(1 for row in self.pending if row["occurred_on"] == day and same_store(row["merchant_name"], name)) > 1
+
     def _items(self, day, name):
+        """이 승인의 청구 항목들. 다른 외화 승인의 후보이기도 하거나 한 결제로 볼 수 없으면 None"""
         items = [
             item for item in CardBillItem.objects.filter(
                 user=self.user, bill__issuer_code=self.issuer_code, purchased_on=day,
@@ -94,10 +93,13 @@ class WonFinder:
         # 할부는 달마다 청구서에 다시 나온다 → 청구서마다 한 건 · 전체 구매 금액이 모두 같을 때만 한 결제로 본다
         bills = [item.bill_id for item in items]
         if len(bills) != len(set(bills)) or len({item.original_purchase_amount for item in items}) > 1:
-            return []
+            return None
+        if any(self._shared(day, item.merchant_name) for item in items):
+            return None
         return items
 
     def _withdrawal(self, day, name):
+        """이 승인의 계좌 출금 (없으면 []). 여러 건이거나 다른 외화 승인의 후보이기도 하면 None"""
         links = TransactionLink.objects.filter(
             Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")),
             relation_type__in=[TransactionLink.Relation.SAME_PURCHASE, TransactionLink.Relation.OWN_TRANSFER],
@@ -112,7 +114,9 @@ class WonFinder:
             if same_store(tx.source_description, name) and ("bank", tx.pk) not in self.taken
             and not self._paired(day, tx.amount, tx.source_description)
         ]
-        return found[0] if len(found) == 1 else None
+        if len(found) > 1 or any(self._shared(day, tx.source_description) for tx in found):
+            return None
+        return found
 
     def _find(self, row, card, pending):
         day, name = row["occurred_on"], row["merchant_name"]
@@ -121,7 +125,10 @@ class WonFinder:
         if sum(1 for other in pending if other["occurred_on"] == day and same_store(other["merchant_name"], name)) != 1:
             return None
         items = self._items(day, name)
-        withdrawal = self._withdrawal(day, name) if is_check_card(card) else None
+        found = self._withdrawal(day, name) if is_check_card(card) else []
+        if items is None or found is None:
+            return None   # 어느 승인의 금액인지 모른다
+        withdrawal = found[0] if found else None
         amounts = {items[0].original_purchase_amount if items else None, withdrawal.amount if withdrawal else None} - {None}
         if len(amounts) != 1:
             return None

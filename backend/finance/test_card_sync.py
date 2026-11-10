@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from users.models import Consent
 
-from . import codef
+from . import codef, transfer_rules
 from .card_review import FOREIGN_PENDING_RUN, approval_blocker, foreign_pending_count
 from .codef_cards import CardDataError, card_matches, month_range, normalize_approvals, normalize_card_bills, normalize_cards
 from .models import (BankAccount, Card, CardApprovalCoverage, CardApprovalReview, CardBill, CardBillItem, Connection,
@@ -560,6 +560,65 @@ class CardSyncTest(TestCase):
         self.bill_with(self.store_charge(resMemberStoreName="NETFLIX"))   # 청구서에는 앞부분만
         self.approvals = [self.usd()]
         self.assertEqual(self.run_sync()["foreign_filled_count"], 1)
+
+    def test_one_source_matching_two_approvals_fills_neither(self):
+        # 11/10 PR #98 검수: 잘린 'NETFLIX' 항목 · 출금이 이름이 서로 다른 두 승인 모두와 맞으면 응답 순서로 주인이 바뀌었다
+        com, net = self.usd(), self.usd(resApprovalNo="4", resMemberStoreName="NETFLIX.NET")
+        for source in ("bill", "withdrawal"):
+            for approvals in ([com, net], [net, com]):
+                with self.subTest(source=source, first=approvals[0]["resMemberStoreName"]):
+                    FinancialTransaction.objects.filter(user=self.user).delete()
+                    if source == "bill":
+                        self.cards = [card()]
+                        self.bill_with(self.store_charge(resMemberStoreName="NETFLIX"))
+                    else:
+                        self.cards = [card(resCardName="NH체크카드")]
+                        self.bill_with()
+                        self.withdrawal(description="NETFLIX")
+                    self.approvals = approvals
+                    result = self.run_sync()
+                    self.assertEqual((result["foreign_filled_count"], result["foreign_pending_count"]), (0, 2))
+                    self.assertFalse(FinancialTransaction.objects.filter(user=self.user, source_kind="card").exists())
+
+    def test_card_won_amount_replaces_a_filled_amount(self):
+        # 11/10 PR #98 검수: 청구서로 채운 뒤 카드사가 원화 금액을 주면 그 금액으로 바꾼다 (다른 카드 거래와 같은 기준)
+        self.bill_with(self.store_charge())
+        self.approvals = [self.usd()]
+        self.run_sync()
+        self.approvals = [self.usd(resKRWAmt="20,500")]
+        self.assertEqual(self.run_sync()["foreign_filled_count"], 0)
+        tx = self.foreign_tx().get()
+        self.assertEqual(tx.amount, 20500)
+        self.assertNotIn("amount", tx.field_states)   # 이제 카드사 금액이라 채운 근거 표시를 지운다
+
+    def test_card_won_amount_keeps_the_withdrawal_link_only_when_amounts_agree(self):
+        self.cards = [card(resCardName="NH체크카드")]
+        bank_tx = self.withdrawal()
+        linked = TransactionLink.objects.filter(to_transaction=bank_tx, relation_type="SAME_PURCHASE")
+        # 금액이 다르면 같은 구매라는 근거가 없어 출금을 다시 보인다
+        for won, amount, kept in (("20,100", 20100, True), ("20,500", 20500, False)):
+            with self.subTest(won=won):
+                FinancialTransaction.objects.filter(user=self.user, source_kind="card").delete()
+                self.approvals = [self.usd()]
+                self.assertEqual(self.run_sync()["foreign_filled_count"], 1)
+                self.approvals = [self.usd(resKRWAmt=won)]
+                self.run_sync()
+                tx = self.foreign_tx().get()
+                self.assertEqual((tx.amount, "amount" in tx.field_states), (amount, False))
+                self.assertEqual(linked.exists(), kept)
+
+    def test_prefix_withdrawal_link_is_undone_when_another_withdrawal_arrives(self):
+        # 11/10 PR #98 검수: 'NETFLIX.COM' 승인 ↔ 'NETFLIX' 출금 연결은 이름이 달라 link_same_purchases 가 다시 보지 않았다
+        self.cards = [card(resCardName="NH체크카드")]
+        bank_tx = self.withdrawal(description="NETFLIX")
+        self.approvals = [self.usd()]
+        self.assertEqual(self.run_sync()["foreign_filled_count"], 1)
+        linked = TransactionLink.objects.filter(to_transaction=bank_tx, relation_type="SAME_PURCHASE")
+        transfer_rules.link_same_purchases(self.user)
+        self.assertTrue(linked.exists())   # 후보가 한 건이면 그대로
+        self.withdrawal(description="NETFLIX")   # 같은 날 · 금액 · 적요 출금이 뒤늦게 들어옴
+        transfer_rules.link_same_purchases(self.user)
+        self.assertFalse(linked.exists())
 
     def test_saves_cards_bills_and_items(self):
         result = self.run_sync(card_no=CARD_NO, card_password=CARD_PW)
