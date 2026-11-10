@@ -70,4 +70,4 @@ API를 만들거나 고칠 때는 해당 `docs/api/<묶음>.md` 명세를 먼저
 - 작업 중에는 바꾼 파일과 관련된 테스트 모듈만 돌린다. 빠르게 하려면 --keepdb를 쓴다.
 - --keepdb 실행에서 FK 오류나 Category.DoesNotExist가 나면, test_fixed 등의 TransactionTestCase가 시드를 지운 것이다. 그때는 --keepdb 없이 한 번 돌린다.
 - 전체 테스트(python manage.py test)는 내가 요청할 때만 돌린다.
-- budgets.test_design_candidates의 실패 11개는 원래 있던 실패다. 새로 실패한 테스트만 보고한다.
+- budgets.test_design_candidates의 예전 실패 11개는 #89에서 해결됐다(2026-11-10 main 확인). 이제 실패가 나면 새로 생긴 실패로 보고한다.
