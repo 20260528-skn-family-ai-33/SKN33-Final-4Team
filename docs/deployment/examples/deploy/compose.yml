@@ -1,0 +1,50 @@
+services:
+  backend:
+    image: ${ECR_REGISTRY}/moneycushion-backend:${IMAGE_TAG:?IMAGE_TAG required}
+    restart: unless-stopped
+    env_file:
+      - path: /opt/moneycushion/app.env
+        format: raw
+    environment:
+      RELEASE_TAG: ${IMAGE_TAG}
+    volumes:
+      - /opt/moneycushion/models:/models:ro
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/api/health/', headers={'Host':'localhost','X-Forwarded-Proto':'https'}); urllib.request.urlopen(r, timeout=5)"
+      interval: 10s
+      timeout: 6s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 130s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+  web:
+    image: ${ECR_REGISTRY}/moneycushion-frontend:${IMAGE_TAG:?IMAGE_TAG required}
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?SITE_DOMAIN required}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  caddy_data:
+  caddy_config:

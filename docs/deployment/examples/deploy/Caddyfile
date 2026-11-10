@@ -1,0 +1,14 @@
+{$SITE_DOMAIN} {
+    encode zstd gzip
+    @django path /api /api/* /admin /admin/* /static /static/*
+    handle @django {
+        reverse_proxy backend:8000 {
+            header_up X-Forwarded-Proto https
+        }
+    }
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}
