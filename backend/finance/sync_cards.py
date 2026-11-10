@@ -20,6 +20,7 @@ from users.models import Consent
 
 from . import card_payments, codef
 from .codef_cards import MONTH, CardDataError, month_range
+from .identifiers import LegacyIdentifierKey, legacy_identifier_key
 from .models import Card, CardBill, CardBillItem, CardApprovalCoverage, Connection, FinancialTransaction, Origin, SyncRun
 from .card_review import promote_coverage, record_foreign_pending, save_approvals
 from .pipeline import RETRY_STATE_KEY, process_new_transactions, retry_failed_transactions
@@ -70,6 +71,9 @@ def _save_cards(user, connection, org, cards, run, fetched_at):
         try:
             card = _reusable(Card, user, connection, org).get(source_card_key=data["source_card_key"])
         except Card.DoesNotExist:
+            if Card.objects.filter(user=user, source_card_key=legacy_identifier_key(data["number"])).exists():
+                # 승인 거래 키가 카드 키에 묶여 있어 키만 바꾸면 거래가 두 번 저장된다 → 멈추고 동의 철회 후 다시 연결 (PR #102 리뷰)
+                raise LegacyIdentifierKey() from None
             card = Card(user=user, connection=connection, source_card_key=data["source_card_key"],
                         origin=Origin.PROVIDER)
         except Card.MultipleObjectsReturned:
@@ -188,7 +192,7 @@ def sync_card_list(user, connected_id, org, connection_id, card_no=None, card_pa
         if isinstance(exc, codef.CodefError) and re.fullmatch(r"CF-[0-9]{5}", str(exc.code)):
             business_code = exc.code
         error_code = getattr(exc, "code", None) if isinstance(
-            exc, (CardDataError, CardConsentRequired, CardConnectionChanged, tasks.WorkExpired)) else None
+            exc, (CardDataError, CardConsentRequired, CardConnectionChanged, tasks.WorkExpired, LegacyIdentifierKey)) else None
         tasks.finish_run(run.pk, status="failed", business_code=business_code,
                          error_code=error_code or ("provider_error" if isinstance(exc, codef.CodefError) else "card_sync_failed"))
         raise
@@ -298,7 +302,7 @@ def sync_card(user, connected_id, org, start, end, bill_months, card_no=None, ca
         business_code = None
         if isinstance(exc, codef.CodefError) and re.fullmatch(r"CF-[0-9]{5}", str(exc.code)):
             business_code = exc.code
-        if isinstance(exc, (CardDataError, CardConsentRequired, CardConnectionChanged, tasks.WorkExpired)):
+        if isinstance(exc, (CardDataError, CardConsentRequired, CardConnectionChanged, tasks.WorkExpired, LegacyIdentifierKey)):
             error_code = exc.code
         elif isinstance(exc, codef.CodefError):
             error_code = "provider_error"

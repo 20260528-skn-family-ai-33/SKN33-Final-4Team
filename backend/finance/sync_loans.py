@@ -1,5 +1,4 @@
 """은행의 대출 스냅샷을 저장한다. 상환 거래 매칭·납부 생성은 별도 작업이다."""
-import hashlib
 import re
 
 from django.contrib.auth import get_user_model
@@ -12,6 +11,7 @@ from users.models import Consent
 
 from . import codef
 from .codef_loans import LoanDataError
+from .identifiers import LegacyIdentifierKey, identifier_key, legacy_identifier_key
 from .models import Connection, Loan, Origin, SyncRun
 
 
@@ -80,7 +80,7 @@ def sync_bank_loans(user, connected_id, org, start, end, task_id=None):
             _check_consent(user, connection)
             tasks.claim_run(run, task_id)
             for account, data in snapshots:
-                key = hashlib.sha256(account["account_no"].encode()).hexdigest()
+                key = identifier_key("loan", account["account_no"])
                 matches = Loan.objects.select_for_update(of=("self",)).filter(
                     Q(connection=connection) | Q(connection__disconnected_at__isnull=False),
                     user=user, connection__user=user, connection__business_type="bank",
@@ -100,6 +100,8 @@ def sync_bank_loans(user, connected_id, org, start, end, task_id=None):
                         continue
                     updated_count += 1
                 except Loan.DoesNotExist:
+                    if Loan.objects.filter(user=user, source_loan_key=legacy_identifier_key(account["account_no"])).exists():
+                        raise LegacyIdentifierKey() from None   # 같은 대출이 두 번 저장되지 않게 (PR #102 리뷰)
                     loan = Loan(user=user, connection=connection, source_loan_key=key, origin=Origin.PROVIDER)
                     created_count += 1
                 loan.connection = connection
@@ -153,7 +155,7 @@ def sync_bank_loans(user, connected_id, org, start, end, task_id=None):
         business_code = None
         if isinstance(exc, codef.CodefError) and re.fullmatch(r"CF-[0-9]{5}", str(exc.code)):
             business_code = exc.code
-        if isinstance(exc, (LoanDataError, LoanConsentRequired, LoanConnectionChanged, tasks.WorkExpired)):
+        if isinstance(exc, (LoanDataError, LoanConsentRequired, LoanConnectionChanged, tasks.WorkExpired, LegacyIdentifierKey)):
             error_code = exc.code
         elif isinstance(exc, codef.CodefError):
             error_code = "provider_error"

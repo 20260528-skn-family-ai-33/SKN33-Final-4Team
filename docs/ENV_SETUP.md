@@ -48,11 +48,14 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `DJANGO_DEBUG` | ✅ | `True` | 로컬 `True`, 배포 `False` |
 | `DJANGO_ALLOWED_HOSTS` | ✅ | `localhost,127.0.0.1` | 접속 허용 호스트. 쉼표로 구분 |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | 배포 시 | `https://도메인` | HTTPS 배포 주소. 로컬은 비워둠 (DEBUG면 React 개발 서버 `localhost:5173`은 자동 허용) |
+| `DJANGO_ADMIN_URL` | 배포 시 | (비워둠 → `admin/`) | 관리자 화면 주소. 배포 때는 추측하기 어려운 값(예: `python -c "import secrets; print(secrets.token_urlsafe(12))"` 출력)으로 바꾸고 Git·채팅에 올리지 않음. `api`로 시작하면 서버가 안 켜짐 |
 | `POSTGRES_DB` | ✅ | `money_cushion` | DB 이름 |
 | `POSTGRES_USER` | ✅ | `money_cushion` | DB 사용자 |
 | `POSTGRES_PASSWORD` | ✅ | (각자 설정) | DB 비밀번호 |
 | `POSTGRES_HOST` | ✅ | `localhost` | 배포 시 RDS 엔드포인트 |
 | `POSTGRES_PORT` | ✅ | `5432` | DB 포트 |
+| `CONNECTED_ID_ENCRYPTION_KEY` | ✅ | (`.env.example`의 명령으로 생성) | 회원별 CODEF 연결 ID 암호화 키 (32바이트). 바꾸면 저장된 연결을 못 읽음 |
+| `IDENTIFIER_HMAC_KEY` | ✅ | (같은 명령으로 한 번 더 생성) | 계좌 · 대출 · 카드 번호 중복 확인 키용 HMAC 키 (32바이트). 위 키와 다른 값. 바꾸면 금융 데이터를 지우고 다시 연결해야 함 |
 
 ### 외부 API (발급 후 입력)
 

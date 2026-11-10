@@ -20,6 +20,8 @@ python backend/manage.py runserver
 
 Swagger UI 자산은 `drf-spectacular-sidecar` 패키지에서 제공한다. 실행 중 외부 CDN에 접근하지 않는다. 개발 서버는 `DJANGO_DEBUG=True`일 때 정적 파일을 제공하며, 배포에서는 일반 Django 정적 파일 배포 설정을 적용한다.
 
+위 네 주소는 **`DJANGO_DEBUG=True`일 때만** 열린다(11/10 보안 점검). 운영(`False`)에서는 API 목록과 실행 화면을 공개하지 않도록 JSON 404 `not_found`로 답한다.
+
 ## 현재 범위
 
 전체 명세에는 인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·챗봇·예산 API 43개가 있다. 각 API 제목과 설명에서 구현 상태를 확인한다.

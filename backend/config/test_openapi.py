@@ -38,7 +38,7 @@ def resolve_parameter(schema, parameter):
     return value
 
 
-@override_settings(ALLOWED_HOSTS=["testserver"], DEBUG=False)
+@override_settings(ALLOWED_HOSTS=["testserver"], DEBUG=True)
 class OpenAPIContractTests(SimpleTestCase):
     # SimpleTestCase는 DB 접근 자체를 실패시킨다. 회원·금융자료가 없어도 문서를 볼 수 있어야 한다.
     databases = set()
@@ -263,6 +263,14 @@ class OpenAPIContractTests(SimpleTestCase):
                     response = self.client.generic(method, path)
                     self.assertEqual(response.status_code, 405)
                     self.assertEqual(response.data["error"]["code"], "method_not_allowed")
+
+    @override_settings(DEBUG=False)
+    def test_docs_and_schemas_are_hidden_in_production(self):
+        for path in SCHEMA_URLS + DOCS_URLS:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json()["error"]["code"], "not_found")
 
     def test_unknown_schema_docs_and_original_api_routes_keep_json_404(self):
         for path in (

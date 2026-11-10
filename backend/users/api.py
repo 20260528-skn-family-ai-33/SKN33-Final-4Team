@@ -2,10 +2,11 @@ from django.contrib.auth import authenticate, login as django_login, logout as d
 from django.db import IntegrityError, transaction
 
 from rest_framework.authentication import SessionAuthentication
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import UserRateThrottle
 
 from budgets.models import Budget
 
@@ -13,8 +14,27 @@ from .consent_documents import consent_hash, current_items
 from .models import Consent, User
 from .serializers import LoginSerializer, SignupSerializer
 
+
+# 로그인 전에는 IP별, 로그인 후에는 회원별로 센다. 횟수는 settings 의 DEFAULT_THROTTLE_RATES
+class LoginThrottle(UserRateThrottle):
+    scope = "login"
+
+
+class SignupThrottle(UserRateThrottle):
+    scope = "signup"
+
+
+class WithdrawThrottle(UserRateThrottle):
+    scope = "withdraw"
+
+    def allow_request(self, request, view):
+        # /me/ 는 GET(내 계정 확인)도 같은 함수라, 비밀번호를 받는 DELETE(탈퇴)만 센다
+        return request.method != "DELETE" or super().allow_request(request, view)
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([LoginThrottle])
 def login(request):
     SessionAuthentication().enforce_csrf(request)
 
@@ -53,6 +73,7 @@ def login(request):
 # login
 @api_view(["GET", "DELETE"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([WithdrawThrottle])
 def me(request):
     if request.method == "DELETE":
         from .api_privacy import withdraw
@@ -98,6 +119,7 @@ def logout(request):
 # signup
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([SignupThrottle])
 def signup(request):
     SessionAuthentication().enforce_csrf(request)
 
