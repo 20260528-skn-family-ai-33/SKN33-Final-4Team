@@ -4,10 +4,12 @@
 """
 import json
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
+from . import codes, eligibility
 from . import reading as reading_module
 from . import search
+from .eligibility import Profile
 from .llm import cached
 from .models import Policy
 from .reading import Need, ReadFailed, Reading
@@ -15,7 +17,8 @@ from .regions import REGIONS, find_region
 
 # 없음 = 맞는 정책이 없는 질문 (정답 묶음 []). 이사 = 문장 속 지역이 사는 곳과 다른 질문 (region 은 최종 검색 지역)
 KINDS = ("구체", "막연", "두고민", "없음", "지역", "이사")
-FIELDS = {"id", "kind", "query", "region", "keywords", "answers", "note"}
+FIELDS = {"id", "kind", "query", "region", "keywords", "answers", "profile", "note"}
+PROFILE_FIELDS = {"age", "job", "gender", "specials"}
 MODES = (("벡터만", False), ("키워드", True))
 AUTO = "자동"  # 4단계 질문 읽기(LLM)가 뽑은 검색 문장 · 키워드. 목표는 '키워드'(사람이 뽑음) 점수에 가까워지는 것
 
@@ -34,6 +37,7 @@ class Question:
     region: str  # 지역 코드
     keywords: list[str]
     answers: list[set[str]]  # 정답 묶음
+    profile: Profile | None = None  # 문장에 드러난 사용자 조건. 있으면 자격 거른 뒤 순위도 본다
 
     @property
     def draft(self):
@@ -49,18 +53,61 @@ class Result:
     top_distance: float | None  # 1위 거리 ('맞는 정책 없음' 기준을 정할 재료)
     reading: Reading | None = None  # 자동 방식에서 읽은 결과
     read_error: str | None = None  # 자동 방식에서 읽기가 실패했으면 그 종류 (원래 문장으로 벡터만 검색했다)
+    kept_ranks: list[int | None] | None = None  # 자격 불충족을 뺀 뒤 순위 (profile 이 있을 때만)
 
     @property
     def first(self):
-        found = [rank for rank in self.ranks if rank]
-        return min(found) if found else None
+        return _first(self.ranks)
+
+    @property
+    def kept_first(self):
+        return _first(self.kept_ranks if self.kept_ranks is not None else self.ranks)
+
+
+def _first(ranks):
+    found = [rank for rank in ranks if rank]
+    return min(found) if found else None
+
+
+def _birth_for(age, today):
+    """만 age 세가 되는 생년월일. 다음 생일이 반년쯤 뒤라 '곧 나이 초과' 표시에 걸리지 않는다"""
+    try:
+        base = today.replace(year=today.year - age)
+    except ValueError:
+        base = today.replace(year=today.year - age, day=28)
+    return base - timedelta(days=180)
+
+
+def _profile(value, label, today, problems):
+    """{"age": 26, "job": "미취업자", "gender": "female", "specials": ["중소기업"]} → Profile (모든 칸 선택)"""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - PROFILE_FIELDS:
+        problems.append(f"{label}: profile 은 {sorted(PROFILE_FIELDS)} 칸만 쓰는 {{...}}")
+        return None
+    before = len(problems)
+    age, job, gender, specials = (value.get(key) for key in ("age", "job", "gender", "specials"))
+    jobs = {name: code for code, name in codes.JOB.items()}
+    special_codes = {name: code for code, name in codes.SPECIAL.items()}
+    if age is not None and not (isinstance(age, int) and 0 < age < 120):
+        problems.append(f"{label}: profile.age 는 만 나이 숫자")
+    if job is not None and job not in jobs:
+        problems.append(f"{label}: profile.job 은 {' · '.join(jobs)} 중 하나")
+    if gender not in (None, "male", "female"):
+        problems.append(f"{label}: profile.gender 는 male · female")
+    if specials is not None and not (isinstance(specials, list) and all(name in special_codes for name in specials)):
+        problems.append(f"{label}: profile.specials 는 [{' · '.join(special_codes)}] 중에서 (해당 없음은 [])")
+    if len(problems) > before:
+        return None
+    return Profile(birth_date=_birth_for(age, today) if age else None, gender=gender, job=jobs.get(job),
+                   specials=None if specials is None else frozenset(special_codes[name] for name in specials))
 
 
 def _strings(value):
     return isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value)
 
 
-def _question(item, problems):
+def _question(item, problems, today):
     """한 질문의 형식 검사. 문제가 있으면 problems 에 적고 None"""
     label = item.get("id") if isinstance(item, dict) else None
     label = label if isinstance(label, str) and label else "(id 없음)"
@@ -89,11 +136,12 @@ def _question(item, problems):
         problems.append(f"{label}: answers 는 [[\"정책번호\", ...], ...] 모양 (재등록 번호는 같은 [] 안에)")
     elif item.get("kind") == "없음" and answers:
         problems.append(f"{label}: kind 가 없음이면 answers 는 []")
+    profile = _profile(item.get("profile"), label, today, problems)
     if len(problems) > before:
         return None
     return Question(id=label, kind=item["kind"], query=item["query"].strip(), region=region,
                     keywords=[word.strip() for word in keywords if word.strip()],
-                    answers=[{number.strip() for number in group} for group in answers])
+                    answers=[{number.strip() for number in group} for group in answers], profile=profile)
 
 
 def _check_answers(question, today, problems):
@@ -122,7 +170,7 @@ def load(text):
         raise EvalFileError(["questions 칸에 질문 목록을 적어 주세요"])
     questions, seen = [], set()
     for item in items:
-        question = _question(item, problems)
+        question = _question(item, problems, today)
         if question is None:
             continue
         if question.id in seen:
@@ -135,10 +183,23 @@ def load(text):
     return today, questions
 
 
-def _result(question, mode, hits, **extra):
+def _ranks(question, hits):
     order = {hit.policy.pk: rank for rank, hit in enumerate(hits, 1)}
-    ranks = [min((order[n] for n in group if n in order), default=None) for group in question.answers]
-    return Result(question, mode, ranks, hits[0].distance if hits else None, **extra)
+    return [min((order[n] for n in group if n in order), default=None) for group in question.answers]
+
+
+def _result(question, mode, hits, today, **extra):
+    kept = None
+    if question.profile is not None:  # 후보 30개 안에서 불충족만 빼고 다시 센다 (빈자리를 31위 이하로 채우지 않는다)
+        kept = _ranks(question, [hit for hit, _ in eligibility.keep(hits, question.profile, today)[0]])
+    return Result(question, mode, _ranks(question, hits), hits[0].distance if hits else None, kept_ranks=kept, **extra)
+
+
+def answer_verdicts(question, today):
+    """정답 묶음마다 [(정책번호, Verdict)] — 자격 거르기가 정답을 떨어뜨리는지 본다 (profile 이 있을 때만)"""
+    policies = Policy.objects.in_bulk(set().union(*question.answers)) if question.answers else {}
+    return [[(number, eligibility.judge(policies[number], question.profile, today)) for number in sorted(group)]
+            for group in question.answers]
 
 
 def run(questions, today, embed, limit=search.LIMIT, complete=None):
@@ -164,11 +225,11 @@ def run(questions, today, embed, limit=search.LIMIT, complete=None):
         for mode, use_keywords in MODES:
             hits = search.search(question.query, question.region, today, embed=embed, limit=limit,
                                  keywords=question.keywords if use_keywords else ())
-            results.append(_result(question, mode, hits))
+            results.append(_result(question, mode, hits, today))
         if complete:
             hits = search.search_needs(needs[question.id], question.region, today, embed=embed, limit=limit)
             got = readings[question.id]
-            results.append(_result(question, AUTO, hits, reading=got if isinstance(got, Reading) else None,
+            results.append(_result(question, AUTO, hits, today, reading=got if isinstance(got, Reading) else None,
                                    read_error=None if isinstance(got, Reading) else str(got)))
     return results
 
@@ -178,18 +239,25 @@ def modes(results):
     return [mode for mode in [m for m, _ in MODES] + [AUTO] if any(r.mode == mode for r in results)]
 
 
-def summary(results, mode):
-    """정답 있는 질문만 센다. hit3 · hit10 · found(후보 안) · mrr 은 비율, groups 는 찾은 묶음 비율"""
+def summary(results, mode, kept=False):
+    """정답 있는 질문만 센다. hit3 · hit10 · found(후보 안) · mrr 은 비율, groups 는 찾은 묶음 비율.
+    kept=True 면 profile 있는 질문은 자격 불충족을 뺀 뒤 순위로 센다 (사용자가 실제로 보는 순위)"""
     rows = [r for r in results if r.mode == mode and r.question.answers]
     if not rows:
         return None
     count = len(rows)
-    groups = sum(len(r.ranks) for r in rows)
+
+    def ranks(r):
+        return r.kept_ranks if kept and r.kept_ranks is not None else r.ranks
+
+    def first(r):
+        return _first(ranks(r))
+
     return {
         "count": count,
-        "hit3": sum(bool(r.first and r.first <= 3) for r in rows) / count,
-        "hit10": sum(bool(r.first and r.first <= 10) for r in rows) / count,
-        "found": sum(r.first is not None for r in rows) / count,
-        "mrr": sum(1 / r.first for r in rows if r.first) / count,
-        "groups": sum(rank is not None for r in rows for rank in r.ranks) / groups,
+        "hit3": sum(bool(first(r) and first(r) <= 3) for r in rows) / count,
+        "hit10": sum(bool(first(r) and first(r) <= 10) for r in rows) / count,
+        "found": sum(first(r) is not None for r in rows) / count,
+        "mrr": sum(1 / first(r) for r in rows if first(r)) / count,
+        "groups": sum(rank is not None for r in rows for rank in ranks(r)) / sum(len(r.ranks) for r in rows),
     }

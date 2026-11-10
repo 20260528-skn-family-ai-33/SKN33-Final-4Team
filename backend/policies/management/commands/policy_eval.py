@@ -2,7 +2,7 @@ from pathlib import Path
 
 from django.core.management.base import BaseCommand, CommandError
 
-from policies import evaluate, reading, search
+from policies import eligibility, evaluate, reading, search
 from policies.llm import EmbedFailed, embedder
 from policies.regions import REGIONS
 
@@ -58,6 +58,7 @@ class Command(BaseCommand):
             raise CommandError(f"채점하지 못했어요: {error}")
         self._table(questions, results, limit)
         self._summary(results, limit)
+        self._eligibility(questions, today)
         self._readings(results)
         self._distances(results)
 
@@ -74,14 +75,36 @@ class Command(BaseCommand):
 
     def _summary(self, results, limit):
         self.stdout.write(f"\n{'':<8}{'Hit@3':>8}{'Hit@10':>8}{f'{limit}위 안':>8}{'MRR':>7}{'묶음':>8}")
+        with_profile = any(r.kept_ranks is not None for r in results)
         for mode in evaluate.modes(results):
-            s = evaluate.summary(results, mode)
-            if s is None:
-                self.stdout.write("정답 있는 질문이 없어요")
-                return
-            self.stdout.write(f"{mode:<8}{_percent(s['hit3']):>8}{_percent(s['hit10']):>8}{_percent(s['found']):>8}"
-                              f"{s['mrr']:>7.3f}{_percent(s['groups']):>8}")
+            for kept in (False, True) if with_profile else (False,):
+                s = evaluate.summary(results, mode, kept=kept)
+                if s is None:
+                    self.stdout.write("정답 있는 질문이 없어요")
+                    return
+                name = f"{mode}·자격" if kept else mode
+                self.stdout.write(f"{name:<8}{_percent(s['hit3']):>8}{_percent(s['hit10']):>8}{_percent(s['found']):>8}"
+                                  f"{s['mrr']:>7.3f}{_percent(s['groups']):>8}")
         self.stdout.write(f"(정답 있는 질문 {s['count']}개 기준. 묶음 = 정답 묶음 중 {limit}위 안에 든 비율)")
+        if with_profile:
+            self.stdout.write("(·자격 = profile 있는 질문은 자격 불충족을 뺀 뒤 순위. 사용자가 실제로 보는 순위)")
+
+    def _eligibility(self, questions, today):
+        """정답이 자격 거르기에서 떨어지는지: 불충족이면 규칙 · 데이터 · 정답 중 하나가 틀렸다"""
+        rows = [q for q in questions if q.profile is not None and q.answers]
+        if not rows:
+            return
+        self.stdout.write("\n자격 거르기 — 정답 정책 판단 (불충족이면 이유)")
+        for q in rows:
+            parts = []
+            for group in evaluate.answer_verdicts(q, today):
+                best = min(group, key=lambda pair: ["met", "check", "unmet"].index(pair[1].status))
+                number, verdict = best
+                text = eligibility.LABEL[verdict.status]
+                if verdict.status == eligibility.UNMET:
+                    text += "(" + ", ".join(f"{c.item} {c.detail}" for c in verdict.unmet) + ")"
+                parts.append(text)
+            self.stdout.write(f"  {q.id:<5} " + " / ".join(parts))
 
     def _readings(self, results):
         """자동 방식이 문장을 어떻게 읽었는지: 사람이 뽑은 키워드와 나란히 본다"""

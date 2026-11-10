@@ -9,6 +9,7 @@ from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase
 
 from policies import evaluate
+from policies.eligibility import age_on
 from policies.models import Policy
 from policies.regions import find_region
 from policies.tests.test_search import DONGTAN, TODAY, add, near, question
@@ -85,6 +86,19 @@ class LoadTest(TestCase):
         _, [q] = evaluate.load(file(item(kind="이사", query="부산으로 이사 가는데", region="동탄구")))
         self.assertEqual((q.kind, q.region), ("이사", DONGTAN))
 
+    def test_profile_은_나이를_생년월일로_바꾼다(self):
+        add("A")
+        _, [q] = evaluate.load(file(item(profile={"age": 26, "job": "미취업자", "gender": "female", "specials": []})))
+        self.assertEqual(age_on(q.profile.birth_date, TODAY), 26)
+        self.assertEqual((q.profile.job, q.profile.gender, q.profile.specials), ("0013003", "female", frozenset()))
+
+    def test_profile_형식_문제(self):
+        add("A")
+        found = problems(file(item(id="q01", profile={"age": "26", "job": "학생", "gender": "f", "x": 1}),
+                              item(id="q02", profile={"specials": ["외계인"]})))
+        self.assertEqual(len([p for p in found if p.startswith("q01: profile")]), 1)  # 모르는 칸이 있으면 그것만
+        self.assertTrue(any(p.startswith("q02: profile.specials") for p in found))
+
     def test_정답을_비워_둔_질문은_정답_미정(self):
         _, [draft, nothing] = evaluate.load(file(item(id="q01", answers=[]), item(id="q02", kind="없음", answers=[])))
         self.assertEqual((draft.draft, nothing.draft), (True, False))
@@ -144,6 +158,16 @@ class RunTest(TestCase):
         results = evaluate.run(questions, today, question, complete=mock.Mock(side_effect=error))
         auto = [r for r in results if r.mode == evaluate.AUTO][0]
         self.assertEqual((auto.ranks, auto.reading, auto.read_error), ([1], None, "network"))
+
+    def test_자격_불충족을_빼고_다시_센다(self):
+        Policy.objects.filter(pk="P1").update(job_codes=["0013001"])  # 1위가 재직자 전용
+        today, questions = evaluate.load(file(item(answers=[["P2"]], profile={"age": 27, "job": "미취업자"})))
+        [vector_only, _] = evaluate.run(questions, today, question)
+        self.assertEqual((vector_only.ranks, vector_only.kept_ranks), ([2], [1]))
+        self.assertEqual(evaluate.summary([vector_only], "벡터만")["mrr"], 0.5)
+        self.assertEqual(evaluate.summary([vector_only], "벡터만", kept=True)["mrr"], 1.0)
+        [[(number, verdict)]] = evaluate.answer_verdicts(questions[0], today)
+        self.assertEqual((number, verdict.status), ("P2", "met"))
 
     def test_점수_계산(self):
         results = self.run_file(item(id="q01", answers=[["P1"]]), item(id="q02", answers=[["P4"], ["WORD"]]),
