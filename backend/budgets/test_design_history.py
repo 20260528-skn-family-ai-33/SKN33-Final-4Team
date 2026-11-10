@@ -40,18 +40,19 @@ class HistoryProofTest(SimpleTestCase):
             self.assertEqual(design_history.verify_budget_history(None, MONTHS), raw)
         verify.assert_called_once_with(None, MONTHS, use_confirmed_salary=True)
 
-    def test_unavailable_dependency_or_db_leaves_all_checks_unknown(self):
-        for error in (ImportError('private module details'), DatabaseError('private database details')):
-            with self.subTest(error=type(error).__name__), patch(
-                    'finance.history_verifier.verify_transaction_history', side_effect=error):
-                out = design_history.verify_budget_history(None, MONTHS)
-                self.assertTrue(all(v == 'unknown' for row in out.values() for v in row.values()))
-                self.assertNotIn('private', str(out))
+    def test_db_failure_leaves_all_checks_unknown(self):
+        with patch('finance.history_verifier.verify_transaction_history',
+                   side_effect=DatabaseError('private database details')):
+            out = design_history.verify_budget_history(None, MONTHS)
+        self.assertTrue(all(v == 'unknown' for row in out.values() for v in row.values()))
+        self.assertNotIn('private', str(out))
 
     def test_programming_or_invalid_month_errors_are_not_swallowed(self):
-        with patch('finance.history_verifier.verify_transaction_history', side_effect=ValueError('invalid months')):
-            with self.assertRaises(ValueError):
-                design_history.verify_budget_history(None, MONTHS)
+        for error in (ValueError('invalid months'), ImportError('broken import')):
+            with self.subTest(error=type(error).__name__), patch(
+                    'finance.history_verifier.verify_transaction_history', side_effect=error):
+                with self.assertRaises(type(error)):
+                    design_history.verify_budget_history(None, MONTHS)
 
     def test_service_default_wires_adapter_but_explicit_none_disables_it(self):
         rows = Mock()

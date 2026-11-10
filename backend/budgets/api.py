@@ -331,7 +331,8 @@ def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
             else:
                 inp = snapshot["engine_input"]
                 if design_service.enabled():
-                    out = design_service.recommend(task.user, snapshot, expected_spare, timezone.localdate())
+                    out = design_service.recommend(task.user, snapshot, expected_spare, timezone.localdate(),
+                                                   allow_external=design_service.external_enabled())
                     if out['status'] == 'proposed':
                         design_service.validate_funding(snapshot, out, expected_spare)
                     elif out['status'] == 'infeasible':
@@ -488,11 +489,9 @@ def budget_approve(request, budget_id):
             chosen.status = "expired"
             chosen.save(update_fields=["status"])
             # raise하면 이 트랜잭션도 롤백된다. 공통 에러 모양으로 반환하고 위 옵션으로 만료만 보존한다.
-            return exception_handler(BudgetExpired(), {"request": request})
-        transfer = ((chosen.validation_summary or {}).get('design') or {}).get('spare_transfer', 0)
-        if transfer:
-            profile.living_budget = chosen.input_snapshot['saved']['living_budget'] + transfer
-            profile.save(update_fields=['living_budget', 'updated_at'])
+            error = (BudgetExpired('예산 조건이나 최근 소비·분류 정보가 바뀌었어요. 다시 추천받아 주세요.')
+                     if (chosen.validation_summary or {}).get('design') else BudgetExpired())
+            return exception_handler(error, {"request": request})
         Budget.objects.filter(user=request.user, cycle=cycle, status="approved").update(status="superseded")
         chosen.status = "approved"
         chosen.approved_at = timezone.now()

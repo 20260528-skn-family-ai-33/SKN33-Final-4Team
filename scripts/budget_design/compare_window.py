@@ -6,8 +6,13 @@ import os
 from pathlib import Path
 import queue
 import threading
-import tkinter as tk
-from tkinter import messagebox, ttk
+try:
+    import tkinter as tk
+    from tkinter import messagebox, ttk
+except ModuleNotFoundError as error:
+    if error.name not in ('tkinter', '_tkinter'):
+        raise
+    tk = messagebox = ttk = None
 
 from compare_plans import CATEGORIES, compare, test_input
 from simulator import money, transaction_list
@@ -510,6 +515,8 @@ def prepare_environment():
 
 
 def main():
+    if tk is None:
+        raise SystemExit('비교 창에는 tkinter가 필요합니다. GUI 지원 Python으로 실행해 주세요.')
     root = tk.Tk()
     try:
         prepare_environment()

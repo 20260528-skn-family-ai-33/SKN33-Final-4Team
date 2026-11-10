@@ -8,7 +8,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "로그인 회원 자신의 선택 동의 상태와 현재 원문·버전·해시를 반환한다. 금융 조회 동의와 별개다.",
+        "description": "로그인 회원 자신의 선택 동의 상태와 현재 원문·버전·해시를 반환한다. 금융 조회 동의와 별개다. available=false이면 새 동의 UI를 숨긴다. 기존 활성 동의가 있으면 철회 UI만 유지한다.",
         "responses": {
           "200": {
             "description": "현재 동의 상태",
@@ -39,7 +39,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "사용자가 직접 체크한 현재 문서 버전·해시를 저장한다. 기본 체크는 해제이며 저장만으로 외부 전송을 시작하지 않는다.",
+        "description": "사용자가 직접 체크한 현재 문서 버전·해시를 저장한다. 기본 체크는 해제이며 저장만으로 외부 전송을 시작하지 않는다. 서버 기능이 비활성이면 409 budget_ai_unavailable이며 기록을 생성하지 않는다.",
         "requestBody": {
           "required": true,
           "content": {
@@ -117,7 +117,7 @@
             }
           },
           "409": {
-            "description": "document_outdated",
+            "description": "document_outdated / budget_ai_unavailable",
             "content": {
               "application/json": {
                 "schema": {
@@ -1425,7 +1425,8 @@
           "revokedAt",
           "healthDocument",
           "healthDocumentVersion",
-          "healthDocumentHash"
+          "healthDocumentHash",
+          "available"
         ],
         "properties": {
           "purpose": {
@@ -1472,6 +1473,10 @@
           },
           "healthDocumentHash": {
             "type": "string"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "예산 설계 및 외부 AI 서버 설정이 모두 켜져 실제 외부 추천 경로를 사용할 수 있는지. false이면 새 동의를 받지 않으며 기존 동의 철회만 허용."
           }
         }
       },

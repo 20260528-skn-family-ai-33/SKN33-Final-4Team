@@ -7033,7 +7033,8 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        로그인 회원 자신의 선택 동의 상태와 현재 원문·버전·해시를 반환한다. 금융 조회 동의와 별개다.
+        로그인 회원 자신의 선택 동의 상태와 현재 원문·버전·해시를 반환한다. 금융 조회 동의와 별개다. available=false이면 새 동의 UI를 숨긴다. 기존 활성 동의가 있으면 철회
+        UI만 유지한다.
 
 
         원본: `docs/api/budgets.md`'
@@ -7060,7 +7061,8 @@ paths:
       description: '**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.
 
 
-        사용자가 직접 체크한 현재 문서 버전·해시를 저장한다. 기본 체크는 해제이며 저장만으로 외부 전송을 시작하지 않는다.
+        사용자가 직접 체크한 현재 문서 버전·해시를 저장한다. 기본 체크는 해제이며 저장만으로 외부 전송을 시작하지 않는다. 서버 기능이 비활성이면 409 budget_ai_unavailable이며
+        기록을 생성하지 않는다.
 
 
         원본: `docs/api/budgets.md`'
@@ -7115,7 +7117,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: document_outdated
+          description: document_outdated / budget_ai_unavailable
           content:
             application/json:
               schema:
@@ -12466,6 +12468,7 @@ components:
       - healthDocument
       - healthDocumentVersion
       - healthDocumentHash
+      - available
       properties:
         purpose:
           type: string
@@ -12500,6 +12503,9 @@ components:
           type: string
         healthDocumentHash:
           type: string
+        available:
+          type: boolean
+          description: 예산 설계 및 외부 AI 서버 설정이 모두 켜져 실제 외부 추천 경로를 사용할 수 있는지. false이면 새 동의를 받지 않으며 기존 동의 철회만 허용.
     ProtectRates:
       type: object
       required:
@@ -13218,4 +13224,4 @@ x-source-sha256:
   docs/api/savings.md: a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b
   docs/api/home.md: 1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5
   docs/api/chat.md: 05e539308423c6e75e75f839a90e300d20ee0dff3eaa7a08f8c44277d25381cd
-  docs/api/budgets.md: 0bc76a32e9c2d91dbf2ad4e900c965be25f5d0397a6ab2f96e60b95e46268fe0
+  docs/api/budgets.md: 4648a8c34173d343519ffbee8b8205d69b9e4d8306dbddd048abbdbbf2bb16b0

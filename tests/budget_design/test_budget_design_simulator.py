@@ -93,6 +93,7 @@ class SimulatorTests(unittest.TestCase):
             self.assertIsNone(sim.calculate(form, use_llm=True)['selected'])
         request.assert_not_called()
 
+    @unittest.skipUnless(sim.tk is not None, 'tkinter is required only for GUI checks')
     def test_window_llm_checkbox_runs_in_background_and_shows_fallback(self):
         try:
             root = sim.tk.Tk()
@@ -214,6 +215,7 @@ class SimulatorTests(unittest.TestCase):
                     sim.calculate(form, use_ml=True)
             predict.assert_not_called()
 
+    @unittest.skipUnless(sim.tk is not None, 'tkinter is required only for GUI checks')
     def test_window_runs_real_ml_and_rejects_stale_results(self):
         import os
         python = Path(os.getenv('BUDGET_INFERENCE_PYTHON', str(sim.ROOT / 'local_workspace/.venv-budget-inference/Scripts/python.exe')))
@@ -359,6 +361,7 @@ class SimulatorTests(unittest.TestCase):
         self.assertEqual(out['engine']['reason'], 'system_floor_unaffordable')
         self.assertEqual(out['engine']['shortfall'], 100000)
 
+    @unittest.skipUnless(sim.tk is not None, 'tkinter is required only for GUI checks')
     def test_window_calculates_and_clears_stale_results_on_error(self):
         try:
             root = sim.tk.Tk()

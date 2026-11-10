@@ -8,8 +8,8 @@ const { openPopup } = vi.hoisted(() => ({ openPopup: vi.fn() }))
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn() }))
 vi.mock('../popups/context.js', () => ({ usePopup: () => ({ openPopup }) }))
 const URL = '/api/budgets/ai-consent/'
-const state = (status = 'not_granted') => ({ status, documentVersion: 'v2', documentHash: 'synthetic-hash',
-  document: { title: '예산 AI 전송 안내', required: false, version: 'v2', date: '2026.11.10', sections: [] },
+const state = (status = 'not_granted') => ({ available: true, status, documentVersion: 'v3', documentHash: 'synthetic-hash',
+  document: { title: '예산 AI 전송 안내', required: false, version: 'v3', date: '2026.11.10', sections: [] },
   healthDocumentVersion: 'v1', healthDocumentHash: 'synthetic-health-hash',
   healthDocument: { title: '의료·건강 별도 동의', required: false, version: 'v1', sections: [] } })
 let host, root
@@ -25,6 +25,34 @@ const button = (text) => [...host.querySelectorAll('button')].find(b => b.textCo
 const click = (text) => act(() => button(text).click())
 const check = () => act(() => { for (const input of host.querySelectorAll('input')) input.click() })
 
+it.each([false, undefined])('available=%s이면 새 동의 UI를 숨긴다', async (available) => {
+  apiSend.mockResolvedValueOnce({ ...state(), available })
+  await render()
+  expect(host.textContent).toBe('')
+  expect(apiSend.mock.calls).toEqual([[URL, 'GET']])
+})
+
+it('화면을 연 뒤 기능이 꺼져 저장이 거부되면 새 상태를 읽고 동의 UI를 숨긴다', async () => {
+  await render(); await check()
+  apiSend.mockRejectedValueOnce({ code: 'budget_ai_unavailable' })
+    .mockResolvedValueOnce({ ...state(), available: false })
+  await click('동의 저장')
+  expect(host.textContent).toBe('')
+  expect(apiSend.mock.calls.filter(([, method]) => method === 'PUT')).toHaveLength(1)
+})
+
+it('비활성 상태에서도 기존 동의의 철회는 제공하고 새 동의는 받지 않는다', async () => {
+  apiSend.mockResolvedValueOnce({ ...state('needs_renewal'), available: false })
+  await render()
+  expect(host.querySelectorAll('input')).toHaveLength(0)
+  expect(host.textContent).toContain('현재 중단')
+  expect(button('동의 저장')).toBeUndefined()
+  apiSend.mockResolvedValueOnce({ ...state('revoked'), available: false })
+  await click('예산 AI 전송 동의 철회')
+  expect(apiSend).toHaveBeenLastCalledWith(URL, 'DELETE', { confirm: true })
+  expect(host.textContent).toBe('')
+})
+
 it('선택 동의는 기본 해제이고 조회만 하며 기본 추천 이용 가능을 안내한다', async () => {
   await render()
   expect(host.querySelector('input').checked).toBe(false)
@@ -38,7 +66,7 @@ it('체크 후 저장해야 화면의 정확한 문서 버전·해시를 서버�
   expect(apiSend).toHaveBeenCalledTimes(1)
   apiSend.mockResolvedValueOnce(state('granted'))
   await click('동의 저장')
-  expect(apiSend).toHaveBeenLastCalledWith(URL, 'PUT', { agreed: true, documentVersion: 'v2', documentHash: 'synthetic-hash',
+  expect(apiSend).toHaveBeenLastCalledWith(URL, 'PUT', { agreed: true, documentVersion: 'v3', documentHash: 'synthetic-hash',
     healthAgreed: true, healthDocumentVersion: 'v1', healthDocumentHash: 'synthetic-health-hash' })
   expect(host.textContent).toContain('동의했어요')
   expect(apiSend.mock.calls.some(([url]) => url.includes('/recommend/'))).toBe(false)

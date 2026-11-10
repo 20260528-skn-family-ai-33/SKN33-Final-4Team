@@ -1,5 +1,29 @@
 # 예산 설계 에이전트 통합 검수 메모
 
+## PR #89 후속 리뷰 반영 (2026-11-10) — 기존 Draft PR 반영 대상
+
+- 동의 GET에 `available`을 추가했다. `BUDGET_DESIGN_ENABLED`와 `BUDGET_DESIGN_EXTERNAL_ENABLED`가 둘 다 true여야 신규 외부 AI 동의·호출을 제공한다. 둘 다 기본 OFF이며 실제 환경은 바꾸지 않는다. API와 동의 화면은 같은 서버 함수를 사용한다. 비활성일 때 신규 PUT은 `409 budget_ai_unavailable`이고 문서·동의 체크 UI를 숨긴다. 이미 활성 동의가 있는 회원에게는 철회 전용 UI를 제공하고 DELETE는 허용한다. 상태 조회 실패는 신규 동의 완료로 취급하지 않는다.
+- 국외이전 문서 v3에서 “외부 AI 기능은 국외이전+건강 요약 별도 동의가 모두 필요하며, 기능 자체는 선택”임을 명확히 했다. v1·v2는 원문/해시를 보존한다. 시안 문구와 개인정보 처리방침·운영 계약 최종 확인은 여전히 활성화 전 사항이다.
+- `design_history`는 DatabaseError만 unknown으로 대체한다. 이미 main에 있는 SalaryDecision을 기다린다는 과거 주석과 ImportError 묵살을 제거했다. 코드·의존성 오류를 이력 부족으로 숨기지 않는다. 서비스용 scripts 경로는 `sys.path.append`로 기존 import 우선순위를 보존한다.
+- **사용자 재확인에 따른 역할 경계:** 최초 설계 승인은 해당 예산 버전의 여윳돈 충당만 반영한다. `profile.living_budget` 자동 증액은 제거했다. 부족 원인 분석, 일회성/지속성 판단, 향후 지킬 돈 생활비 설정 변경은 예산 조정 에이전트의 별도 승인 범위다. 화면에 이번 예산에만 반영하고 기존 설정은 유지한다고 표시한다. 기존 카테고리 계산값·사용자 최소액·잠금·하한은 바꾸지 않는다.
+- 재추천/승인 시 소비·분류 후보 fingerprint 재검수는 유지한다. 후보도 B 보정 금액을 바꿀 수 있으므로 임의로 제외하지 않는다. 변경 시 새 설계 예산은 “예산 조건이나 최근 소비·분류 정보가 바뀌었어요. 다시 추천받아 주세요.”로 409 만료를 안내한다. 기존 엔진 초안의 오류 문구는 보존한다.
+- CLI 비교는 GUI simulator가 아니라 inference를 직접 import한다. tkinter가 없는 환경에서도 계산·파서·CLI 검사는 실행하고, GUI 검사만 skip한다. GUI 직접 실행 시에는 tkinter가 필요하다고 안내한다. 실제 Linux 실행 여부는 별도로 구분해 보고한다.
+
+- 검증 결과: 별도 임시 PostgreSQL DB에서 요청된 `budgets users finance.test_history_verifier config.test_openapi` 전체 **864개 통과, 실패·skip 0**. 실제 DB 보존을 위해 고유 이름의 임시 DB를 만들고 종료 후 자동 정리했다(`--keepdb` 미사용). 추가 핵심 회귀 3개(동의/철회 API 게이트·이번 주기 충당·후보 변경 만료), 홈/다음 주기 입력까지 강화한 충당 검사 1개도 통과했다. 이 중 전체 검사와 중복되는 항목은 합산하지 않는다. 전체 실행 시작 뒤 추가한 API 게이트 검사 1개까지 별도로 확인했다.
+- scripts 예산 검사 **298개 전부 통과**. tkinter 미설치를 import 차단으로 재현한 별도 실행은 **293개 통과·GUI 5개 skip**, import 실패 0이었다. 실제 Linux 호스트에서 실행한 결과는 아니다. GUI 종료 시 기존 Tk 테마 알림은 출력됐으나 실패는 없었다.
+- 프론트 **Node 9 + Vitest 177 = 186개 통과**, build/lint 성공. 기존 MoneyInput Fast Refresh 경고와 500kB 묶음 안내는 남아 있다. OpenAPI 63개 API·142개 모델·예시 424개 검증/최신 검사와 Django check·migration dry-run(변경 없음)도 통과했다.
+- 실제 DB 45개 테이블의 행 수·내용 지문과 기능 OFF가 이전 기준과 동일했다. 실제 외부 LLM·CODEF는 이 보강에서 호출하지 않았고 새 동의/이력·금액 검수 경로는 합성 모의 응답으로 검사했다. 기존 사용자 최소액·잠금과 이미 적용한 migration 파일, 공용 verifier·openapi.py는 이번 수정에서 바꾸지 않았다. 기존 local_workspace 변경 두 파일은 보존한다. 후속 사용자 요청으로 관련 29개 파일만 커밋·푸시하고 기존 PR #89의 본문을 갱신하는 범위가 승인됐다. Draft 유지이며 병합·배포·기능 활성화는 범위 밖이다.
+
+### 팀 합의·배포 전 확인
+
+- **나은님 DB 검토:** 사용자의 DB 정리 대행·실제 적용 요청은 있었지만 필드 설계 자체의 DB 담당 최종 승인과 구별한다. `FinancialProfile.budget_category_targets` 추가 이유와 기존 `users/0011_financialprofile_budget_category_targets.py`·빈 병합 `0012_merge_budget_targets_privacy.py` 상태를 `docs/DB_MODELS.md`에 보완했다. 이미 적용한 파일을 삭제·번호 재작성하거나 새 migration을 생성하지 않는다. main 후속 migration과 최종 그래프는 DB 담당 검토 필요다.
+- **나은님 verifier 리뷰:** `finance/history_verifier.py`의 선택적 `use_confirmed_salary`와 네 값 재비교를 PR 설명에 유지하고 리뷰어로 요청해야 한다. 기본 호출은 변경하지 않는다. 사용자 confirmed 급여만 예외이며 auto 급여·일반 입금·이자·미확정 내 계좌 이체는 여전히 unknown일 수 있다. 이 경우 B가 아니라 A를 사용한다. 실제 B 이용 가능 비율을 높였다고 주장하지 않는다.
+- **예산 조정 전달:** 이번 주기 여윳돈은 승인 예산의 `funding_amount - BudgetItem 합계` 기준이다. 원래 프로필의 생활비 설정으로 계산한 여윳돈과 다를 수 있다. 이 값을 혼동해 두 번 충당하지 않도록 연동 계약 확인이 필요하다.
+- **긴 트랜잭션:** 현재 ML subprocess·3개월 조회는 추천의 회원 잠금/atomic 안에서 실행된다. 외부 AI 설정을 실제로 켜기 전, 외부 I/O를 트랜잭션 밖으로 옮기고 저장 전 입력·동의 버전 재검수를 하는 통합 작업이 필요하다. 이번 수정에서는 기본 OFF를 유지하며 해당 구조를 임의로 대규모 변경하지 않는다.
+- **배포 ML:** 모델/추론 Python이 없는 상태로 기능을 켜면 `ml_unavailable / needs_data`로 차단된다. 기존 엔진으로 몰래 대체하지 않는다. 배포 OS용 실행 환경·모델 체크섬·경로·합성 smoke 확인이 필수다.
+- **기존 초안:** category_targets가 HASH_FIELDS에 추가돼 종전 해시 초안은 승인 시 409로 만료될 수 있다. 배포 후 새로 추천받게 안내하며 승인 예산을 자동 변경하지 않는다.
+- **공용 OpenAPI/PR 구성:** 이번 보강에서 `backend/config/openapi.py`는 수정하지 않는다. PR에 이미 있는 세 동의 API 구현 등록 변경은 나은님 확인 대상으로 남긴다. 이번 사용자 요청은 기존 Draft PR #89 갱신이며 PR 분할·병합·배포는 진행하지 않는다. 나은님 확인 요청은 사용자가 전달할 수 있게 채팅으로 정리한다.
+
 ## 2026-11-10 동의 안내 보강·실제 합성 LLM 검증 — 실사용자 전송 OFF 유지
 
 - 국외이전 안내를 `backend/users/budget_ai_v2.json`으로 버전 갱신했다. 이전 v1 원문·해시는 보존한다. 수신자는 OpenAI OpCo, LLC, 연락처는 privacy@openai.com이며 미국 지역 API의 요청본문 처리를 명시했다. 항목·목적·시기/방법·보관 한계·거부/철회 효과를 구체화했다. `store=false`는 무보관이 아니고 기본 남용 방지 로그 최대 30일 및 법적 예외를 설명한다.

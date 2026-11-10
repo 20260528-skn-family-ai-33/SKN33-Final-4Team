@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -14,6 +14,12 @@ from users.models import Consent
 PURPOSE = 'budget_ai'
 HEALTH_PURPOSE = 'budget_ai_health'
 PURPOSES = (PURPOSE, HEALTH_PURPOSE)
+
+
+class ConsentUnavailable(APIException):
+    status_code = 409
+    default_code = 'budget_ai_unavailable'
+    default_detail = '외부 AI 예산 추천이 비활성 상태라 새 동의를 받을 수 없어요.'
 
 
 def current_document(purpose=PURPOSE):
@@ -33,6 +39,8 @@ def has_current_consent(user):
 
 
 def consent_state(user):
+    from .design_service import external_enabled
+
     doc = current_document()
     health = current_document(HEALTH_PURPOSE)
     rows = Consent.objects.filter(user=user, purpose__in=PURPOSES, product_scope__isnull=True)
@@ -40,7 +48,7 @@ def consent_state(user):
     granted = has_current_consent(user)
     status = ('granted' if granted else 'not_granted' if latest is None else
               'revoked' if not rows.filter(revoked_at__isnull=True).exists() else 'needs_renewal')
-    return {'purpose': PURPOSE, 'status': status, 'document': doc,
+    return {'purpose': PURPOSE, 'available': external_enabled(), 'status': status, 'document': doc,
             'document_version': doc['version'], 'document_hash': documents.canonical_hash(doc),
             'health_document': health, 'health_document_version': health['version'],
             'health_document_hash': documents.canonical_hash(health),
@@ -65,6 +73,9 @@ def ai_consent(request):
                 raise ValidationError({'confirm': ['예산 AI 전송 동의 철회를 확인해 주세요.']})
             rows.update(revoked_at=timezone.now())
         else:
+            from .design_service import external_enabled
+            if not external_enabled():
+                raise ConsentUnavailable()
             reject_unknown_fields(data, {'agreed', 'document_version', 'document_hash',
                 'health_agreed', 'health_document_version', 'health_document_hash'})
             checked = []

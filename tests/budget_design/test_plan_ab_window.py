@@ -141,6 +141,7 @@ class FormTests(unittest.TestCase):
         self.assertNotIn('병원A',str(out))
 
 
+@unittest.skipUnless(gui.tk is not None, 'tkinter is required only for GUI checks')
 class WindowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -148,7 +149,10 @@ class WindowTests(unittest.TestCase):
 
     # Run this test in its own process: Tk objects must be finalized on the main thread.
     def test_window_comparison_stale_and_failure_states(self):
-        root = gui.tk.Tk()
+        try:
+            root = gui.tk.Tk()
+        except gui.tk.TclError as error:
+            self.skipTest(str(error))
         root.withdraw()
         try:
             app = gui.ComparisonWindow(root)
@@ -247,7 +251,11 @@ class WindowTests(unittest.TestCase):
             root.destroy()
 
     def test_transaction_totals_candidates_and_reinclude(self):
-        root=gui.tk.Tk(); root.withdraw()
+        try:
+            root = gui.tk.Tk()
+        except gui.tk.TclError as error:
+            self.skipTest(str(error))
+        root.withdraw()
         try:
             app=gui.ComparisonWindow(root)
             app.input_mode.set('transactions')

@@ -58,7 +58,8 @@ it('여윳돈 충당 제안을 승인 전 표시하고 서버 금액을 다시 �
   response.recommendation = { spareTransfer: 50000 }
   response.split = { ...response.split, living: 850000, spare: 150000 }
   await render(response)
-  expect(host.textContent).toContain('여윳돈 50,000원을 생활비에 포함한 추천안')
+  expect(host.textContent).toContain('여윳돈 50,000원을 이번 예산 생활비에만 포함')
+  expect(host.textContent).toContain('기존 생활비 설정은 유지')
   expect(host.textContent).toContain('150,000원')
   expect(host.textContent).toContain('850,000원')
   expect(apiSend).toHaveBeenCalledTimes(1)

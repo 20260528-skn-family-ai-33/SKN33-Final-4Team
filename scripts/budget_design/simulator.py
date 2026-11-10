@@ -7,8 +7,13 @@ import subprocess
 import threading
 import os
 from pathlib import Path
-import tkinter as tk
-from tkinter import ttk
+try:
+    import tkinter as tk
+    from tkinter import ttk
+except ModuleNotFoundError as error:
+    if error.name not in ('tkinter', '_tkinter'):
+        raise
+    tk = ttk = None
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "backend"))
@@ -441,6 +446,8 @@ class Simulator:
 
 
 if __name__ == "__main__":
+    if tk is None:
+        raise SystemExit('계산 창에는 tkinter가 필요합니다. GUI 지원 Python으로 실행해 주세요.')
     window = tk.Tk()
     Simulator(window)
     window.mainloop()

@@ -23,7 +23,7 @@ from scripts.budget_design.inference import predict_ml
 # shortcut: B helpers live in scripts; move them into budgets when the service data contract is finalized.
 DESIGN_SCRIPTS = str(Path(__file__).resolve().parents[2] / 'scripts/budget_design')
 if DESIGN_SCRIPTS not in sys.path:
-    sys.path.insert(0, DESIGN_SCRIPTS)
+    sys.path.append(DESIGN_SCRIPTS)
 from plan_b_history import CHECKS, completed_months, summarize_history
 from plan_b_budget import build_priority_history_budget
 from plan_b_forecast import forecast_budget
@@ -49,6 +49,11 @@ def initial_a_policy(config, inp, other_reserved):
 
 def enabled():
     return getattr(settings, 'BUDGET_DESIGN_ENABLED', os.getenv('BUDGET_DESIGN_ENABLED', '').lower() == 'true') is True
+
+
+def external_enabled():
+    return enabled() and getattr(settings, 'BUDGET_DESIGN_EXTERNAL_ENABLED',
+        os.getenv('BUDGET_DESIGN_EXTERNAL_ENABLED', '').lower() == 'true') is True
 
 
 def history_for_user(user, today):

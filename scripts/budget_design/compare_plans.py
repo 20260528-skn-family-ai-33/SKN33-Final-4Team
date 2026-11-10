@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'backend'))
 
 from run_plan_b_test import synthetic_input
-from simulator import CATEGORIES, predict_ml
+from inference import CATEGORIES, predict_ml
 from plan_selection import select_plan
 
 

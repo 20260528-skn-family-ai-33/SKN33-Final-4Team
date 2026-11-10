@@ -3,6 +3,7 @@ from copy import deepcopy
 import contextlib
 import io
 import os
+import subprocess
 from pathlib import Path
 import sys
 import unittest
@@ -29,6 +30,26 @@ class ComparisonTests(unittest.TestCase):
         self.predict = self.enterContext(patch.object(runner, 'predict_ml', side_effect=ml_response))
         self.enterContext(patch('socket.socket', side_effect=AssertionError('No network')))
         self.enterContext(patch('django.db.backends.base.base.BaseDatabaseWrapper.connect', side_effect=AssertionError('No DB')))
+
+    def test_cli_comparison_imports_without_tkinter(self):
+        script = '''import builtins, sys
+original = builtins.__import__
+def without_tk(name, *args, **kwargs):
+    if name == 'tkinter' or name.startswith('tkinter.'):
+        raise ModuleNotFoundError('tkinter unavailable', name='tkinter')
+    return original(name, *args, **kwargs)
+builtins.__import__ = without_tk
+sys.path.append(sys.argv[1])
+import compare_plans, run_agent_test, simulator
+assert simulator.tk is None
+assert len(compare_plans.test_input()['months']) == 3
+print('headless_cli_ready')
+'''
+        result = subprocess.run([sys.executable, '-c', script,
+            str(Path(__file__).resolve().parents[2] / 'scripts/budget_design')],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('headless_cli_ready', result.stdout)
 
     def test_same_input_and_protections_no_mutation(self):
         case = runner.test_input()

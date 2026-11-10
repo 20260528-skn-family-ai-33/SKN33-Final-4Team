@@ -14,6 +14,7 @@ export default function BudgetAIConsent() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const working = useRef(false)
+  const revokeOnly = data?.available !== true && ['granted', 'needs_renewal'].includes(data?.status)
   const load = useCallback(() => apiSend(URL, 'GET').then(next => {
       setData(next)
       setError('')
@@ -23,7 +24,7 @@ export default function BudgetAIConsent() {
   useEffect(() => { load() }, [load])
   const save = async () => {
     if (working.current || !data) return
-    const revoke = data.status === 'granted'
+    const revoke = data.status === 'granted' || revokeOnly
     if (!revoke && (!checked || !healthChecked)) return
     working.current = true
     setBusy(true)
@@ -37,7 +38,7 @@ export default function BudgetAIConsent() {
       setChecked(false)
       setHealthChecked(false)
     } catch (err) {
-      if (err.code === 'document_outdated') {
+      if (['document_outdated', 'budget_ai_unavailable'].includes(err.code)) {
         setChecked(false)
         setHealthChecked(false)
         await load()
@@ -49,16 +50,21 @@ export default function BudgetAIConsent() {
       setBusy(false)
     }
   }
+  const errorNotice = error && <div role="alert"><p>{error}</p><button type="button" className="mc-link" disabled={busy}
+    onClick={() => { setChecked(false); setHealthChecked(false); load() }}>동의 상태 다시 확인</button></div>
+  if (!data) return errorNotice
+  if (data?.available !== true && data && !revokeOnly) return null
   return <section className="mc-note" aria-label="예산 AI 전송 동의">
     <h3>예산 AI 전송 동의 · 선택</h3>
-    <p>동의하면 카테고리별 소비 요약과 예산 설정을 OpenAI로 보낼 수 있어요. 거절하거나 철회해도 기본 예산 추천을 이용할 수 있어요.</p>
+    <p>{revokeOnly ? '외부 AI 추천은 현재 중단되어 있어요. 기존 전송 동의는 철회할 수 있어요.'
+      : '동의하면 카테고리별 소비 요약과 예산 설정을 OpenAI로 보낼 수 있어요. 거절하거나 철회해도 기본 예산 추천을 이용할 수 있어요.'}</p>
     {data && <>
       <button type="button" className="mc-link" onClick={() => openPopup(<TermsPopup doc={data.document}
-        onAgree={() => setChecked(true)} />)}>전송 항목·보관 안내 보기</button>
+        onAgree={revokeOnly ? undefined : () => setChecked(true)} />)}>전송 항목·보관 안내 보기</button>
       <button type="button" className="mc-link" onClick={() => openPopup(<TermsPopup doc={data.healthDocument}
-        onAgree={() => setHealthChecked(true)} />)}>건강 관련 요약 처리 안내 보기</button>
-      {data.status === 'granted' ? <>
-        <p role="status">예산 AI 전송에 동의했어요.</p>
+        onAgree={revokeOnly ? undefined : () => setHealthChecked(true)} />)}>건강 관련 요약 처리 안내 보기</button>
+      {data.status === 'granted' || revokeOnly ? <>
+        {!revokeOnly && <p role="status">예산 AI 전송에 동의했어요.</p>}
         <button type="button" className="mc-link" disabled={busy} onClick={save}>예산 AI 전송 동의 철회</button>
         <p>철회해도 승인한 예산과 금융자료는 그대로 유지해요.</p>
       </> : <>
@@ -72,7 +78,6 @@ export default function BudgetAIConsent() {
         <button type="button" className="mc-link" disabled={busy || !checked || !healthChecked} onClick={save}>동의 저장</button>
       </>}
     </>}
-    {error && <div role="alert"><p>{error}</p><button type="button" className="mc-link" disabled={busy}
-      onClick={() => { setChecked(false); setHealthChecked(false); load() }}>동의 상태 다시 확인</button></div>}
+    {errorNotice}
   </section>
 }

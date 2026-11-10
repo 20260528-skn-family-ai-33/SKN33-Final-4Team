@@ -5,7 +5,7 @@ import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from users import consent_documents as documents
 from users.models import CategoryMinimum, Consent, FinancialProfile
@@ -25,6 +25,7 @@ def agreement():
             'healthDocumentHash': documents.canonical_hash(health)}
 
 
+@override_settings(BUDGET_DESIGN_ENABLED=True, BUDGET_DESIGN_EXTERNAL_ENABLED=True)
 class DesignConsentTest(TestCase):
     def setUp(self):
         self.user = get_user_model().objects.create_user(email='synthetic-consent@example.test')
@@ -42,16 +43,35 @@ class DesignConsentTest(TestCase):
         self.assertEqual(response.status_code, 200)
         shown = response.json()
         self.assertEqual(shown['status'], 'not_granted')
+        self.assertTrue(shown['available'])
         self.assertIs(shown['document']['required'], False)
         self.assertEqual(shown['documentHash'], documents.canonical_hash(consent.current_document()))
         self.assertFalse(Consent.objects.exists())
+
+    def test_disabled_service_rejects_new_consents_without_writing(self):
+        for changes in ({'BUDGET_DESIGN_ENABLED': False}, {'BUDGET_DESIGN_EXTERNAL_ENABLED': False},
+                        {'BUDGET_DESIGN_EXTERNAL_ENABLED': 'true'}):
+            with self.subTest(changes=changes), override_settings(**changes):
+                self.assertFalse(self.client.get(URL).json()['available'])
+                response = self.put()
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.json()['error']['code'], 'budget_ai_unavailable')
+                self.assertFalse(Consent.objects.exists())
+
+    def test_existing_consent_can_be_revoked_while_disabled(self):
+        self.put()
+        with override_settings(BUDGET_DESIGN_EXTERNAL_ENABLED=False):
+            state = self.client.get(URL).json()
+            self.assertEqual((state['available'], state['status']), (False, 'granted'))
+            self.assertEqual(self.revoke().json()['status'], 'revoked')
+            self.assertFalse(consent.has_current_consent(self.user))
 
     def test_explicit_grant_stores_shown_version_and_hash_once(self):
         for _ in range(2):
             self.assertEqual(self.put().json()['status'], 'granted')
         row = Consent.objects.get(user=self.user, purpose='budget_ai')
         self.assertEqual((row.purpose, row.product_scope, row.document_version, row.document_hash),
-                         ('budget_ai', None, 'v2', agreement()['documentHash']))
+                         ('budget_ai', None, 'v3', agreement()['documentHash']))
         self.assertEqual(Consent.objects.filter(user=self.user).count(), 2)
         self.assertTrue(consent.has_current_consent(self.user))
         self.assertFalse(consent.has_current_consent(self.other))
@@ -111,7 +131,7 @@ class DesignConsentTest(TestCase):
             self.assertEqual(self.put(old).status_code, 409)
             self.assertEqual(self.put().json()['status'], 'granted')
         self.assertEqual(Consent.objects.filter(user=self.user).count(), 4)
-        self.assertIsNotNone(Consent.objects.get(user=self.user, purpose='budget_ai', document_version='v2').revoked_at)
+        self.assertIsNotNone(Consent.objects.get(user=self.user, purpose='budget_ai', document_version='v3').revoked_at)
 
     def test_revoke_and_regrant_keep_history_and_financial_settings(self):
         profile = FinancialProfile.objects.create(user=self.user, living_budget=1000000)
@@ -156,6 +176,7 @@ class DesignConsentTest(TestCase):
 class ConsentedServiceLLMTest(ServiceLLMFixture, TestCase):
     def setUp(self):
         super().setUp()
+        self.enterContext(override_settings(BUDGET_DESIGN_ENABLED=True, BUDGET_DESIGN_EXTERNAL_ENABLED=True))
         self.user = get_user_model().objects.create_user(email='synthetic-llm-consent@example.test')
         self.client.force_login(self.user)
 
@@ -193,7 +214,7 @@ class ConsentedServiceLLMTest(ServiceLLMFixture, TestCase):
         record.document_hash = 'synthetic-invalid'
         record.save(update_fields=['document_hash'])
         other = get_user_model().objects.create_user(email='synthetic-granted@example.test')
-        Consent.objects.create(user=other, purpose='budget_ai', document_version='v2', document_hash=agreement()['documentHash'])
+        Consent.objects.create(user=other, purpose='budget_ai', document_version='v3', document_hash=agreement()['documentHash'])
         for plan in ('a', 'b'):
             result = self.run_plan(plan, user=self.user, allow_external=True)
             self.assertEqual(result['_design']['llm']['reason'], 'consent_required')

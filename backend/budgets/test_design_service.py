@@ -297,6 +297,45 @@ class DesignAPITest(TestCase):
         self.enterContext(override_settings(BUDGET_DESIGN_POLICY=policy()))
         self.enterContext(patch.object(service, 'predict_ml', return_value={'ratios': dict.fromkeys(CATEGORY_NAMES.values(), .1)}))
 
+    def test_api_and_consent_share_the_external_feature_flag(self):
+        original = service.recommend
+        for active in (False, True):
+            with self.subTest(active=active), override_settings(BUDGET_DESIGN_EXTERNAL_ENABLED=active), \
+                    patch.object(service, 'history_for_user', return_value={}), \
+                    patch.object(service, 'recommend', wraps=original) as recommend, \
+                    patch.object(service, 'choose_budget', side_effect=AssertionError('No unconsented external call')):
+                self.assertEqual(self.client.get('/api/budgets/ai-consent/').json()['available'], active)
+                task = self.task(self.post())
+                self.assertEqual(task.result['outcome'], 'proposed')
+                self.assertIs(recommend.call_args.kwargs['allow_external'], active)
+
+    def test_api_external_calls_require_current_consents_and_stop_after_revocation(self):
+        from .test_design_consent import agreement
+
+        def selected_base(inp, engine, **kwargs):
+            base = next(c for c in engine['candidates'] if c['id'] == 'base')
+            return {'allocations': base['result']['allocations'], 'explanations': base['explanations'],
+                    'selection_source': 'llm_tools'}
+
+        with override_settings(BUDGET_DESIGN_EXTERNAL_ENABLED=True), \
+                patch.object(service, 'history_for_user', return_value={}), \
+                patch.object(service, 'choose_budget', side_effect=selected_base) as choose:
+            self.task(self.post())
+            choose.assert_not_called()
+            response = self.client.put('/api/budgets/ai-consent/', agreement(), format='json')
+            self.assertEqual(response.status_code, 200, response.content)
+            task = self.task(self.post())
+            self.assertEqual(task.result['outcome'], 'proposed')
+            self.assertEqual(choose.call_count, 1)
+            saved = Budget.objects.get(pk=task.result['budget_id'])
+            self.assertEqual(saved.validation_summary['design']['llm']['status'], 'completed')
+            self.assertEqual(self.client.delete('/api/budgets/ai-consent/', {'confirm': True}, format='json').status_code, 200)
+            task = self.task(self.post())
+            self.assertEqual(task.result['outcome'], 'proposed')
+            self.assertEqual(choose.call_count, 1)
+            saved = Budget.objects.get(pk=task.result['budget_id'])
+            self.assertEqual(saved.validation_summary['design']['llm']['reason'], 'consent_required')
+
     def test_ml_failure_preserves_approved_budget_and_can_be_retried(self):
         CategoryMinimum.objects.create(user=self.user, category_id='FOOD', min_amount=150000)
         BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
@@ -437,7 +476,7 @@ class DesignAPITest(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(budget.items.get(bucket=Bucket.LIVING, category_id='EDUCATION').allocated_amount, 12345)
 
-    def test_b_funding_updates_profile_only_on_approval_and_preserves_total(self):
+    def test_b_funding_is_cycle_only_and_preserves_profile_on_approval(self):
         self.profile.living_budget = 500000
         self.profile.save(update_fields=['living_budget'])
         for code in ('FOOD', 'TRANSPORT_CAR', 'HOUSEHOLD', 'FASHION_SHOPPING'):
@@ -454,13 +493,25 @@ class DesignAPITest(TestCase):
             response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve')
         self.assertEqual(response.status_code, 200, response.content)
         self.profile.refresh_from_db()
-        self.assertEqual(self.profile.living_budget, 600000)
+        self.assertEqual(self.profile.living_budget, 500000)
+        self.assertEqual(response.json()['split']['living'], 600000)
+        self.assertEqual(response.json()['split']['spare'], 620000)
+        home = self.client.get('/api/home/').json()['budget']
+        self.assertEqual((home['livingBudget'], home['spare']), (600000, 620000))
 
         # Repeated approval may not transfer the money a second time.
         response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve-again')
         self.assertEqual(response.status_code, 200)
         self.profile.refresh_from_db()
-        self.assertEqual(self.profile.living_budget, 600000)
+        self.assertEqual(self.profile.living_budget, 500000)
+        self.assertEqual(response.json()['split']['living'], 600000)
+
+        from .models import BudgetCycle
+        from .recommend import budget_input_snapshot
+        next_cycle = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 11, 25), ends_before=date(2026, 12, 25))
+        next_input = budget_input_snapshot(self.user, next_cycle, profile=self.profile, today=date(2026, 11, 26), card=False)
+        self.assertEqual(next_input['saved']['living_budget'], 500000)
+        self.assertEqual(next_input['engine_input']['target'], 500000)
 
     def test_b_shortfall_preserves_approved_budget_and_recovers_after_explicit_funding_change(self):
         self.profile.living_budget = 500000
@@ -501,7 +552,8 @@ class DesignAPITest(TestCase):
                 HTTP_IDEMPOTENCY_KEY=str(draft.pk))
         self.assertEqual(response.status_code, 200, response.content)
         self.profile.refresh_from_db()
-        self.assertEqual((self.profile.living_budget, self.profile.cushion_monthly), (600000, 820000))
+        self.assertEqual((self.profile.living_budget, self.profile.cushion_monthly), (500000, 820000))
+        self.assertEqual(response.json()['split']['living'], 600000)
         self.assertEqual(dict(CategoryMinimum.objects.filter(user=self.user)
             .values_list('category_id', 'min_amount')), dict.fromkeys(
                 ('FOOD', 'TRANSPORT_CAR', 'HOUSEHOLD', 'FASHION_SHOPPING'), 100000))
@@ -514,6 +566,29 @@ class DesignAPITest(TestCase):
         self.assertEqual(response.status_code, 409, response.content)
         budget.refresh_from_db()
         self.assertEqual(budget.status, 'expired')
+        self.assertIn('최근 소비·분류 정보', response.json()['error']['message'])
+
+    def test_changed_unclassified_candidates_expire_draft_and_keep_settings(self):
+        records = history()
+        records['2026-08']['items'].append({'occurred_on': '2026-08-15', 'transaction_id': 'synthetic-review',
+            'transaction_type': 'spending', 'funding': 'living', 'net_amount': 30000, 'category': 'UNCLASSIFIED',
+            'suggestion_source': 'ml', 'suggestion_candidates': [{'category': 'FOOD', 'confidence': .8}]})
+        with patch.object(service, 'history_for_user', return_value=records):
+            task = self.task(self.post())
+        budget = Budget.objects.get(pk=task.result['budget_id'])
+        self.profile.refresh_from_db()
+        original_living = self.profile.living_budget
+        changed = deepcopy(records)
+        changed['2026-08']['items'][-1]['suggestion_candidates'] = [{'category': 'BEAUTY', 'confidence': .8}]
+        with patch.object(service, 'history_for_user', return_value=changed):
+            response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json',
+                                        HTTP_IDEMPOTENCY_KEY='synthetic-candidate-expired')
+        self.assertEqual(response.status_code, 409, response.content)
+        self.assertIn('최근 소비·분류 정보', response.json()['error']['message'])
+        budget.refresh_from_db()
+        self.assertEqual(budget.status, 'expired')
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.living_budget, original_living)
 
     def test_changed_policy_expires_draft_without_changing_profile(self):
         with patch.object(service, 'history_for_user', return_value={}):

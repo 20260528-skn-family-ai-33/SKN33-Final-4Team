@@ -21,7 +21,7 @@ def verify_budget_history(user, months):
     try:
         from finance.history_verifier import verify_transaction_history
         proofs = verify_transaction_history(user, months, use_confirmed_salary=True)
-    except (ImportError, DatabaseError):
-        # shortcut: this worktree awaits main's SalaryDecision dependency; keep B closed until it is merged.
+    except DatabaseError:
+        # A database outage cannot establish verification; import/programming errors must surface.
         proofs = {}
     return history_checks(months, proofs)

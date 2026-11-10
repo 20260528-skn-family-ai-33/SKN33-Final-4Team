@@ -26,11 +26,11 @@ class DocumentListTest(TestCase):
         keys = [(i["purpose"], i["productScope"], i["version"]) for i in items]
         self.assertEqual(keys, [("terms", None, "v1"), ("privacy", None, "v1"),
                                 ("finance_inquiry", "bank", "v2"), ("finance_inquiry", "card", "v2"),
-                                ("finance_inquiry", "loan", "v2"), ("budget_ai", None, "v2"),
+                                ("finance_inquiry", "loan", "v2"), ("budget_ai", None, "v3"),
                                 ("budget_ai_health", None, "v1")])
         signup = json.loads((HERE / "signup_terms_v1.json").read_text(encoding="utf-8"))
         finance = json.loads((HERE / "finance_inquiry_v2.json").read_text(encoding="utf-8"))
-        budget_ai = json.loads((HERE / "budget_ai_v2.json").read_text(encoding="utf-8"))
+        budget_ai = json.loads((HERE / "budget_ai_v3.json").read_text(encoding="utf-8"))
         health = json.loads((HERE / "budget_ai_health_v1.json").read_text(encoding="utf-8"))
         files = [signup["terms"], signup["privacy"], finance["bank"], finance["card"], finance["loan"], budget_ai, health]
         for item, original in zip(items, files):
