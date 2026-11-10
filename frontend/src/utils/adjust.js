@@ -1,6 +1,7 @@
 // 예산 조정 도우미 공통 값·문장 만들기 (AdjustForm · 통합 챗봇이 같이 쓴다)
 
 import { comma, won } from './money.js'
+import { catName } from './categories.js'
 
 // 예산을 조정할 수 있는 카테고리 (10개 + 기타) — utils/categories.js
 export { BUDGET_CATS as CATS } from './categories.js'
@@ -18,3 +19,17 @@ export const manwon = (amount) => (amount % 10_000 === 0 ? `${comma(amount / 10_
 // 고른 값을 문장으로: { 식비, 50000, up } → "식비를 5만원 늘리고 싶어요" (amount 단위: 원)
 export const adjustSentence = ({ cat, amount, dir }) =>
   `${cat}${josa(cat)} ${manwon(amount)} ${dir === 'up' ? '늘리고' : '줄이고'} 싶어요`
+
+const ALLOCATION_NAMES = { LIVING: '생활비', SAVINGS: '저축', CUSHION_MONTHLY: '월 머니쿠션', SPARE: '여윳돈' }
+export const allocationName = (code) => ALLOCATION_NAMES[code] ?? catName(code)
+
+export const ENDED_ADJUSTMENTS = new Set(['saved', 'expired', 'canceled', 'rejected', 'failed'])
+export function adjustmentChoices(content) {
+  const adjustment = content.budgetAdjustment
+  if (!adjustment) return content.choices
+  if (ENDED_ADJUSTMENTS.has(adjustment.proposal?.state ?? adjustment.status)) return []
+  return (content.choices ?? []).filter((choice) => !['recommend', 'compare'].includes(choice.value)
+    && adjustment.phase !== 'funding_scope'
+    && !(adjustment.comparison && choice.value.startsWith('plan_'))
+    && !(adjustment.proposal && choice.value === 'apply'))
+}

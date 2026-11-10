@@ -5,6 +5,7 @@
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
 import { won } from '../utils/money.js'
+import BudgetAdjustment from './BudgetAdjustment.jsx'
 
 const Lead = ({ items }) => items.map((l, i) => (
   // span 을 쓰지 않는다: mc-spend-unc 의 마지막 span 은 금액 칸용 줄바꿈 금지라 긴 문장이 카드 밖으로 나간다
@@ -170,7 +171,8 @@ function Bubble({ content }) {
   )
 }
 
-export default function ChatReply({ content, title }) {
+export default function ChatReply({ content, title, active, onPick, onApprove, navigation }) {
+  if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} navigation={navigation} />
   return content.result ? <ResultCard content={content} title={title} /> : <Bubble content={content} />
 }
 

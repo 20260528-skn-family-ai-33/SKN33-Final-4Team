@@ -105,6 +105,16 @@ class BudgetHistoryEvidenceTest(TestCase):
         data.update(changes)
         return self.Tx.objects.create(**data)
 
+    def test_current_month_normalization_is_specific_to_adjustment(self):
+        from finance.history_verifier import transaction_history_report
+        from .adjustment_diagnostics import _recent_normalization_checks
+
+        with self.assertRaises(ValueError):
+            transaction_history_report(self.user, [*MONTHS[1:], '2026-11'])
+        self.assertEqual(_recent_normalization_checks(self.user, TODAY), CLEAN)
+        self.tx(occurred_on=TODAY.replace(day=6), direction='in', transaction_type='income')
+        self.assertEqual(_recent_normalization_checks(self.user, TODAY), {**CLEAN, 'refunds': 'unknown'})
+
     def salary(self, state='confirmed', *, snapshot=True, month=8):
         from .models import SalaryDecision
         from .salary import confirmation_snapshot

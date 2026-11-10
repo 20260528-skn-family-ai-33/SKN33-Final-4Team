@@ -19,3 +19,29 @@
 /* 테스트 환경 띠 (서버가 testMode 를 줄 때만) — 색만이 아니라 글자로 알린다 */
 #mc-new-preview .mc-fx-band { margin: 0 0 8px; padding: 4px 8px; border: 1px solid var(--mc-line); border-radius: 8px;
   background: var(--mc-lime-soft); color: var(--mc-olive); font-size: 12px; font-weight: 650; text-align: center; }
+
+#mc-new-preview .mc-budget-adjustment { width: 100%; font-size: 13px; }
+#mc-new-preview .mc-budget-adjustment h2 { font-size: 16px; margin: 0 0 8px; }
+#mc-new-preview .mc-budget-adjustment h3 { font-size: 14px; margin: 0; }
+#mc-new-preview .mc-budget-plan, #mc-new-preview .mc-budget-proposal { padding: 14px; margin: 10px 0; border: 1px solid var(--mc-line); border-radius: 14px; background: var(--mc-paper); }
+#mc-new-preview .mc-budget-plan.is-recommended { border: 2px solid var(--mc-brand); }
+#mc-new-preview .mc-budget-plan-head { display: flex; gap: 8px; align-items: start; justify-content: space-between; }
+#mc-new-preview .mc-budget-plan-head > span { flex: none; color: var(--mc-brand); font-size: 12px; font-weight: 650; }
+#mc-new-preview .mc-budget-outcome, #mc-new-preview .mc-budget-reason, #mc-new-preview .mc-budget-shortfall, #mc-new-preview .mc-budget-warning { margin: 6px 0; line-height: 1.55; }
+#mc-new-preview .mc-budget-reason { color: var(--mc-sub); }
+#mc-new-preview .mc-budget-warning, #mc-new-preview .mc-budget-shortfall strong { color: var(--mc-alert); }
+#mc-new-preview .mc-budget-changes { margin: 8px 0; }
+#mc-new-preview .mc-budget-changes > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 6px 0; border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-budget-changes dt { font-weight: 550; }
+#mc-new-preview .mc-budget-changes dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-changes small { display: block; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-details { margin: 8px 0; }
+#mc-new-preview .mc-budget-details > summary { color: var(--mc-brand); font-weight: 650; cursor: pointer; padding: 8px 0; min-height: 36px; }
+#mc-new-preview .mc-budget-details p { font-size: 12px; line-height: 1.55; }
+#mc-new-preview .mc-budget-select { margin-top: 6px; width: 100%; }
+#mc-new-preview .mc-budget-keep { padding: 12px; margin: 12px 0; border-radius: 12px; background: var(--mc-soft); }
+#mc-new-preview .mc-budget-keep label { display: flex; align-items: center; gap: 8px; font-weight: 650; }
+#mc-new-preview .mc-budget-keep input { width: 20px; height: 20px; flex: none; }
+#mc-new-preview .mc-budget-keep p { margin: 8px 0; font-size: 12px; color: var(--mc-sub); }
+.mc-budget-navigation { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 10px; }
+.mc-budget-navigation .mc-link { min-height: 32px; padding: 4px 2px; font-size: .78rem; font-weight: 500; }

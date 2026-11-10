@@ -73,6 +73,17 @@ ANSWER_SCHEMA = {"type": "object", "properties": {"sentences": {"type": "array",
 
 
 def schema_for(system):
+    from budgets.adjustment_core import financial_conversation as conversation, financial_planner as planner
+    extra = {planner.PROMPT: ("budget_adjust_plan", planner.SCHEMA),
+             conversation.DIALOGUE_PROMPT: ("budget_adjust_dialogue", conversation.DIALOGUE_SCHEMA),
+             conversation.FEEDBACK_PROMPT: ("budget_adjust_feedback", conversation.FEEDBACK_SCHEMA),
+             conversation.ANSWER_PROMPT: ("budget_adjust_answer", conversation.ANSWER_SCHEMA),
+             conversation.ONE_OFF_PROMPT: ("budget_adjust_one_off", conversation.ONE_OFF_SCHEMA)}
+    if system in extra:
+        return extra[system]
+    from budgets.adjustment_core import interpretation as budget_reading
+    if system == budget_reading.PROMPT:
+        return "budget_adjustment_reading", budget_reading.SCHEMA
     if system == spending_explain.PROMPT:
         return "spending_explanation", EXPLAIN_SCHEMA
     if system == spending_claims.PLAN_PROMPT:

@@ -19,15 +19,22 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
 logger = logging.getLogger(__name__)
+CODE_KEYS = frozenset({"FOOD", "HOUSING_TELECOM", "TRANSPORT_CAR", "HOUSEHOLD", "FASHION_SHOPPING",
+                      "MEDICAL_HEALTH", "BEAUTY", "EDUCATION", "CULTURE_LEISURE", "TRAVEL_LODGING",
+                      "ETC", "UNCLASSIFIED", "LIVING", "SAVINGS", "CUSHION_MONTHLY", "SPARE"})
 
 
 # ----- 이름 바꾸기 -----
 def _camel_key(key):
+    if key in CODE_KEYS:
+        return key
     head, *rest = key.split("_")
     return head + "".join(word.title() for word in rest)
 
 
 def _snake_key(key):
+    if key in CODE_KEYS:
+        return key
     return re.sub(r"(?<!^)(?=[A-Z])", "_", key).lower()
 
 

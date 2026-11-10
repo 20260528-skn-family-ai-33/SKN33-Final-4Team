@@ -64,6 +64,51 @@ class PortableLedgerTest(TestCase):
         self.assertEqual(sorted(claimed), [False, True])
         self.assertEqual(json.loads(self.path.read_text())["units"], ["same-unit"])
 
+    @skipUnless(sys.platform == "win32", "Windows 파일 교체 공유 제약")
+    def test_reader_temporarily_blocks_replace_without_losing_or_double_counting_call(self):
+        ledger = Ledger(self.path, 7)
+        reader = self.path.open("rb")
+        sleep = time.sleep
+        def release_reader(delay):
+            reader.close()
+            sleep(delay)
+        try:
+            with mock.patch("chat.llm.ledger.time.sleep", side_effect=release_reader) as pause:
+                ledger.spend()
+            self.assertGreaterEqual(pause.call_count, 1)
+        finally:
+            reader.close()
+        self.assertEqual(json.loads(self.path.read_text())["used"], 1)
+
+    def test_persistent_windows_replace_denial_preserves_disk_and_sends_nothing(self):
+        ledger = Ledger(self.path, 7)
+        error = PermissionError(errno.EACCES, "file in use")
+        error.winerror = 5
+        opener = mock.Mock()
+        client = ResponsesClient("test-model", "not-a-real-key", None, opener=opener, on_attempt=ledger.spend)
+        crt = SimpleNamespace(LK_LOCK=1, LK_UNLCK=0, locking=lambda *args: None)
+        with mock.patch("chat.llm.ledger.sys.platform", "win32"), \
+                mock.patch.dict(sys.modules, msvcrt=crt), \
+                mock.patch.object(Path, "replace", side_effect=error) as replace, \
+                mock.patch("chat.llm.ledger.time.sleep") as pause:
+            with self.assertRaises(PermissionError):
+                client.complete("system", "user")
+        self.assertEqual(replace.call_count, 6)
+        self.assertEqual(pause.call_count, 5)
+        self.assertEqual(json.loads(self.path.read_text())["used"], 0)
+        opener.assert_not_called()
+        self.assertEqual(client.attempts, [])
+
+    def test_other_replace_errors_are_not_retried(self):
+        ledger = Ledger(self.path, 7)
+        with mock.patch.object(Path, "replace", side_effect=OSError(errno.ENOSPC, "disk full")) as replace, \
+                mock.patch("chat.llm.ledger.time.sleep") as pause:
+            with self.assertRaises(OSError):
+                ledger.spend()
+        self.assertEqual(replace.call_count, 1)
+        pause.assert_not_called()
+        self.assertEqual(json.loads(self.path.read_text())["used"], 0)
+
     def windows_threads(self, limit):
         # Windows CRT처럼 같은 프로세스 내 경합을 오류로 돌려주는 대역.
         # 실제 OS 파일 잠금은 아래 프로세스 검사에서 따로 확인한다.

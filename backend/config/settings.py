@@ -205,7 +205,7 @@ CONNECTED_ID_ENCRYPTION_KEY = encryption_key("CONNECTED_ID_ENCRYPTION_KEY")
 
 
 # ===== 챗봇 엔진 (chat/api.py · chat/engine.py) =====
-# CHAT_ENGINE = legacy(기본, 기존 선택지 챗봇) | router(새 엔진: 라우터 + 소비 분석 + 예산 · 정책 '준비 중')
+# CHAT_ENGINE = legacy(기본, 기존 선택지 챗봇) | router(라우터 + 소비 분석 + 예산 조정)
 # CHAT_LLM = fake(기본, 가짜 해석 — 네트워크 없음) | live(실제 LLM, OPENAI_API_KEY · LLM_MODEL 필요)
 # 기준 날짜(CHAT_TODAY)는 두지 않는다: 일반 서버는 오늘 날짜로 실제 거래를 읽는다 (고정 날짜는 spending_fixture.service_settings 만)
 CHAT_ENGINE = os.getenv("CHAT_ENGINE", "").strip() or "legacy"
@@ -216,3 +216,11 @@ if CHAT_LLM not in ("fake", "live"):
     raise ImproperlyConfigured("CHAT_LLM 은 fake 또는 live 예요")
 if CHAT_LLM == "live" and not (os.getenv("OPENAI_API_KEY") and os.getenv("LLM_MODEL")):
     raise ImproperlyConfigured("CHAT_LLM=live 에는 .env 의 OPENAI_API_KEY · LLM_MODEL 이 필요해요")
+# 같은 그룹은 감액 가능액 비례 배분. 실제 ML 참조는 별도 공급한다.
+BUDGET_ADJUST_ALLOCATOR = (os.getenv("BUDGET_ADJUST_ALLOCATOR", "").strip()
+                           or "budgets.adjustment_core.calculation.proportional_group_reduction")
+BUDGET_ADJUST_REFERENCE_PROVIDER = os.getenv("BUDGET_ADJUST_REFERENCE_PROVIDER", "").strip() or None
+BUDGET_DESIGN_ENABLED = os.getenv("BUDGET_DESIGN_ENABLED", "false").lower() == "true"
+BUDGET_DESIGN_EXTERNAL_ENABLED = os.getenv("BUDGET_DESIGN_EXTERNAL_ENABLED", "false").lower() == "true"
+if BUDGET_ADJUST_REFERENCE_PROVIDER is None and BUDGET_DESIGN_ENABLED:
+    BUDGET_ADJUST_REFERENCE_PROVIDER = "budgets.design_service.reference_from_initial_input"

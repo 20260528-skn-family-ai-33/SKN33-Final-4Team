@@ -5,7 +5,12 @@ spending_fixture/live_reading.py 에서 옮김 (MEMO 25-12)
 import os
 
 from .openai_rest import SERVICE_STOP, ResponsesClient
-from .schemas import schema_for
+
+
+def schema_for(system):
+    # Loading an idle client must not import the finance/ML pipeline or OS-specific libraries.
+    from .schemas import schema_for as resolve
+    return resolve(system)
 
 
 class LiveReading:
