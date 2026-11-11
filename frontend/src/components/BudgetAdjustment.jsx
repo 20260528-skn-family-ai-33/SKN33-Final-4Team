@@ -1,4 +1,5 @@
 // 금액·추천 근거는 서버 검수 결과 그대로 표시한다. 펼침은 조회·선택·저장을 호출하지 않는다.
+// 답변 전체를 다른 답변과 같은 말풍선(mc-bubble) 안에 그린다 (11/11). 모양은 styles/chat.css
 import { allocationName, ENDED_ADJUSTMENTS as TERMINAL } from '../utils/adjust.js'
 import { won } from '../utils/money.js'
 
@@ -98,7 +99,7 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, n
   // 어디서 빠졌는지도 펼치지 않고 보이게: 직접 바꾼 항목 · 저축/쿠션/여윳돈 + 줄어드는 항목 (11/11)
   const visible = (proposal?.changes ?? []).filter((row) => row.direct || row.diff < 0 || ['SAVINGS', 'CUSHION_MONTHLY', 'SPARE'].includes(row.category))
   const options = (navigation?.choices ?? content.choices ?? []).filter((choice) => ['recommend', 'compare'].includes(choice.value))
-  return <div className="mc-budget-adjustment">
+  return <div className="mc-bubble mc-budget-adjustment">
     {!proposal && !adjustment.comparison && (content.lines ?? (content.text ? [content.text] : [])).map((line, i) => <p key={i}>{line}</p>)}
     {adjustment.comparison && <Comparison comparison={adjustment.comparison} choices={content.choices} active={active} onPick={onPick} detail={adjustment.detail} />}
     {proposal && <section className="mc-budget-proposal" aria-label="예산 변경안">

@@ -13,7 +13,7 @@ import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
 import ChatReply, { Choices } from '../components/ChatReply.jsx'
 import BudgetApprovalPopup from '../popups/BudgetApprovalPopup.jsx'
-import BudgetAdjustConsent from '../components/BudgetAdjustConsent.jsx'
+import BudgetAdjustConsentPopup from '../popups/BudgetAdjustConsentPopup.jsx'
 import { usePopup } from '../popups/context.js'
 import { PATHS } from '../routes.js'
 import { adjustmentChoices, adjustSentence } from '../utils/adjust.js'
@@ -75,6 +75,7 @@ function Trace({ trace }) {
 
 // 새로고침 복원용 대화 번호 — 저장소를 못 쓰는 브라우저(사생활 보호 모드 등)는 그냥 새 대화
 const SAVED = 'mc-chat-conversation'
+const wideAdjustment = (a) => Boolean(a && (a.proposal || a.comparison || a.alternatives))
 function savedId() {
   try { return sessionStorage.getItem(SAVED) } catch { return null }
 }
@@ -107,6 +108,7 @@ export default function AssistantPage() {
   const [recoveryExpired, setRecoveryExpired] = useState(false)
   const inFlight = useRef(false)  // React가 다시 그리기 전의 연속 클릭도 한 번만 보낸다
   const mounted = useRef(false)
+  const latest = useRef({})  // 가장 최근에 그린 send · openPopup (동의 창이 닫힌 뒤 거절됐던 요청을 다시 보낼 때 쓴다)
   const end = useRef(null)
 
   useEffect(() => {
@@ -210,13 +212,25 @@ export default function AssistantPage() {
       }
       const expired = recovery && (err.code === 'expired' || err.status === 404)
       if (expired) setRecoveryExpired(true)
+      // 예산 조정 AI 전송 동의 이력이 없다 → 동의 창. 동의하면 거절됐던 요청을 그대로 다시 보낸다 (11/11).
+      // 창을 닫으면 아래 안내만 남고 아무것도 보내지 않는다 (입력한 문장은 입력 칸에 그대로 있다)
+      const needsConsent = !expired && err.code === 'budget_adjust_consent_required'
+      if (needsConsent) {
+        latest.current.openPopup(<BudgetAdjustConsentPopup onAgreed={() => {
+          setError(null)
+          if (request.body.text) setText('')
+          latest.current.send(request.body, request.said)
+        }} />)
+      }
       setError(expired ? '예산 조건이 바뀌었거나 조정 대화가 만료됐어요. 추천 화면에서 다시 추천받아 주세요.'
-        : err.code === 'budget_adjust_consent_required' ? '예산 조정 AI 동의 관리에서 동의한 뒤 다시 보내 주세요.' : err.status === 403 ? '로그인해 주세요.' : err.message)
+        : needsConsent ? '예산 조정을 이용하려면 AI 전송 동의가 필요해요. 예산 조정을 다시 요청하면 동의 창이 열려요.' : err.status === 403 ? '로그인해 주세요.' : err.message)
     } finally {
       inFlight.current = false
       setBusy(false)
     }
   }, [busy, pending, conversationId, approvalPending, approvalRecovery, recovery, navigate, returnToRecommendation])
+
+  useEffect(() => { latest.current = { send, openPopup } })
 
   const submit = (e) => {
     e.preventDefault()
@@ -317,7 +331,6 @@ export default function AssistantPage() {
       }
     >
       <div className="mc-bc mc-asst">
-        <BudgetAdjustConsent onChange={() => setError(null)} />
         {recovery && <div className="mc-chipbar" aria-label="분배 실패 조정">
           {recoverySaved
             ? <button type="button" className="mc-btn" onClick={() => navigate(PATHS.budget, { replace: true })}>반영된 예산 보기</button>
@@ -356,7 +369,8 @@ export default function AssistantPage() {
             return (
               <div key={m.messageId} className="mc-asst-turn">
                 {switched.has(m.messageId) && <div className="mc-asst-route"><Icon name="Link" /> {AGENTS[c.agent]} 도우미에 연결했어요</div>}
-                <div className={`mc-msg bot${c.result || c.budgetAdjustment ? ' mc-asst-card' : ''}`}>
+                {/* 표가 있는 답(소비 분석 카드 · 예산 변경안 · 비교안)만 화면 폭을 다 쓴다. 글만 있는 예산 조정 답은 보통 말풍선 폭 */}
+                <div className={`mc-msg bot${c.result || wideAdjustment(c.budgetAdjustment) ? ' mc-asst-card' : ''}`}>
                   <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} active={isLast && !blocked}
                     navigation={{ choices: last?.content.budgetAdjustment ? last.content.choices : [], active: !blocked,
                       onPick: (p) => pick(last.content, p) }}

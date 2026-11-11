@@ -1,10 +1,13 @@
 // 예산 AI 동의만 관리한다. 체크하거나 저장해도 추천·외부 호출을 자동 실행하지 않는다.
+// 동의 · 철회 결과는 화면 위에 잠깐 떴다 사라지는 안내(토스트)로 알린다. 철회는 안내를 본 뒤 [철회하기]를 한 번 더 눌러야 한다 (11/11)
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiSend } from '../utils/api.js'
 import { usePopup } from '../popups/context.js'
+import { toast } from '../utils/toast.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
 
 const URL = '/api/budgets/ai-consent/'
+const BADGES = { granted: '동의함', revoked: '철회함', needs_renewal: '다시 동의 필요' }
 
 export default function BudgetAIConsent() {
   const { openPopup } = usePopup()
@@ -12,6 +15,7 @@ export default function BudgetAIConsent() {
   const [checked, setChecked] = useState(false)
   const [healthChecked, setHealthChecked] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState(false)  // 철회 확인 단계
   const [error, setError] = useState('')
   const working = useRef(false)
   const revokeOnly = data?.available !== true && ['granted', 'needs_renewal'].includes(data?.status)
@@ -37,6 +41,8 @@ export default function BudgetAIConsent() {
       setData(await apiSend(URL, revoke ? 'DELETE' : 'PUT', body))
       setChecked(false)
       setHealthChecked(false)
+      setAsking(false)
+      toast(revoke ? '예산 AI 전송 동의를 철회했어요' : 'AI 전송에 동의했어요')
     } catch (err) {
       if (['document_outdated', 'budget_ai_unavailable'].includes(err.code)) {
         setChecked(false)
@@ -50,33 +56,50 @@ export default function BudgetAIConsent() {
       setBusy(false)
     }
   }
-  const errorNotice = error && <div role="alert"><p>{error}</p><button type="button" className="mc-link" disabled={busy}
+  const errorNotice = error && <div role="alert"><p className="mc-error">{error}</p><button type="button" className="mc-link" disabled={busy}
     onClick={() => { setChecked(false); setHealthChecked(false); load() }}>동의 상태 다시 확인</button></div>
   if (!data) return errorNotice
   if (data?.available !== true && data && !revokeOnly) return null
-  return <section className="mc-note" aria-label="예산 AI 전송 동의">
-    <h3>예산 AI 전송 동의 · 선택</h3>
-    <p>{revokeOnly ? '외부 AI 추천은 현재 중단되어 있어요. 기존 전송 동의는 철회할 수 있어요.'
+  // 모양은 계좌 연결 · 회원가입 동의와 같다 (11/11): 카드 + 상태 배지 + [체크박스 · 동의 이름 · 보기] 줄. 문구와 동작은 그대로
+  const granted = data.status === 'granted'
+  const badge = revokeOnly ? null : BADGES[data.status]
+  // 동의 이름 앞에 [필수] · [선택] — 서버 문서의 required 값 그대로 (회원가입 · 계좌 연결 동의 이름과 같은 표기)
+  const kind = (doc) => doc.required === false ? '[선택]' : '[필수]'
+  const openDoc = (doc, onAgree) => openPopup(<TermsPopup doc={doc} onAgree={granted || revokeOnly ? undefined : onAgree} />)
+  const rows = [
+    ['전송 항목·보관 안내 보기', '예산 AI 외부 전송에 동의해요', data.document, checked, setChecked],
+    ['건강 관련 요약 처리 안내 보기', '의료·건강 요약의 AI 처리에 별도로 동의해요', data.healthDocument, healthChecked, setHealthChecked],
+  ]
+  return <section className="mc-card mc-consent-card mc-ai-consent" aria-label="예산 AI 전송 동의">
+    <div className="mc-row">
+      <h2>예산 AI 전송 동의 · 선택</h2>
+      {badge && <span className="mc-badge">{badge}</span>}
+    </div>
+    <p className="mc-muted">{revokeOnly ? '외부 AI 추천은 현재 중단되어 있어요. 기존 전송 동의는 철회할 수 있어요.'
       : '동의하면 카테고리별 소비 요약과 예산 설정을 OpenAI로 보낼 수 있어요. 거절하거나 철회해도 기본 예산 추천을 이용할 수 있어요.'}</p>
-    {data && <>
-      <button type="button" className="mc-link" onClick={() => openPopup(<TermsPopup doc={data.document}
-        onAgree={revokeOnly ? undefined : () => setChecked(true)} />)}>전송 항목·보관 안내 보기</button>
-      <button type="button" className="mc-link" onClick={() => openPopup(<TermsPopup doc={data.healthDocument}
-        onAgree={revokeOnly ? undefined : () => setHealthChecked(true)} />)}>건강 관련 요약 처리 안내 보기</button>
-      {data.status === 'granted' || revokeOnly ? <>
-        {!revokeOnly && <p role="status">예산 AI 전송에 동의했어요.</p>}
-        <button type="button" className="mc-link" disabled={busy} onClick={save}>예산 AI 전송 동의 철회</button>
-        <p>철회해도 승인한 예산과 금융자료는 그대로 유지해요.</p>
-      </> : <>
-        {data.status === 'needs_renewal' && <p>동의 내용이 바뀌어 다시 확인이 필요해요.</p>}
-        {data.status === 'revoked' && <p role="status">예산 AI 전송 동의를 철회했어요.</p>}
-        <label><input type="checkbox" checked={checked} disabled={busy}
-          onChange={event => setChecked(event.target.checked)} />예산 AI 외부 전송에 동의해요</label>
-        <label><input type="checkbox" checked={healthChecked} disabled={busy}
-          onChange={event => setHealthChecked(event.target.checked)} />의료·건강 요약의 AI 처리에 별도로 동의해요</label>
-        <p>두 항목에 동의하면 외부 AI 추천을 사용할 수 있어요. 동의하지 않아도 기본 추천은 그대로 이용해요.</p>
-        <button type="button" className="mc-link" disabled={busy || !checked || !healthChecked} onClick={save}>동의 저장</button>
-      </>}
+    {granted || revokeOnly ? <>
+      <div className="mc-ai-consent-docs">
+        {rows.map(([open, , doc]) => <div className="mc-terms-row" key={open}>
+          <button type="button" className="mc-terms-open" aria-haspopup="dialog" aria-label={open} onClick={() => openDoc(doc)}>
+            {open.replace(/ 보기$/, '')}<span>보기</span>
+          </button>
+        </div>)}
+      </div>
+      {asking ? <>
+        <p className="mc-note">철회해도 승인한 예산과 금융자료는 그대로 유지해요.</p>
+        <button type="button" className="mc-secondary" disabled={busy} onClick={save}>{busy ? '처리 중…' : '철회하기'}</button>
+        <button type="button" className="mc-link" disabled={busy} onClick={() => setAsking(false)}>취소</button>
+      </> : <button type="button" className="mc-link" disabled={busy} onClick={() => setAsking(true)}>예산 AI 전송 동의 철회</button>}
+    </> : <>
+      {data.status === 'needs_renewal' && <p className="mc-note">동의 내용이 바뀌어 다시 확인이 필요해요.</p>}
+      {rows.map(([open, label, doc, value, set]) => <div className="mc-terms-row" key={open}>
+        <input type="checkbox" aria-label={`${kind(doc)} ${label}`} checked={value} disabled={busy} onChange={event => set(event.target.checked)} />
+        <button type="button" className="mc-terms-open" aria-haspopup="dialog" aria-label={open} onClick={() => openDoc(doc, () => set(true))}>
+          {kind(doc)} {label}<span>보기</span>
+        </button>
+      </div>)}
+      <p className="mc-note">두 항목에 동의하면 외부 AI 추천을 사용할 수 있어요. 동의하지 않아도 기본 추천은 그대로 이용해요.</p>
+      <button type="button" className="mc-secondary" disabled={busy || !checked || !healthChecked} onClick={save}>동의 저장</button>
     </>}
     {errorNotice}
   </section>

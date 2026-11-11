@@ -891,6 +891,23 @@
 #mc-new-preview#mc-new-preview .mc-consent-card{padding:12px 16px;margin-bottom:0}
 #mc-new-preview#mc-new-preview .mc-consent-card .mc-terms-open{font-size:13.5px}
 #mc-new-preview#mc-new-preview .mc-consent-card .mc-terms-row{margin:6px 0}
+#mc-new-preview#mc-new-preview .mc-ai-consent{margin:0 0 14px;padding:16px}
+#mc-new-preview#mc-new-preview .mc-ai-consent h2{font-size:15px}
+#mc-new-preview#mc-new-preview .mc-ai-consent>.mc-muted{margin:6px 0 10px}
+#mc-new-preview#mc-new-preview .mc-ai-consent .mc-terms-row{margin:10px 0}
+#mc-new-preview#mc-new-preview .mc-ai-consent .mc-terms-open{word-break:keep-all}
+#mc-new-preview#mc-new-preview .mc-ai-consent .mc-note{padding:4px 0 0}
+#mc-new-preview#mc-new-preview .mc-ai-consent .mc-secondary{margin-top:12px}
+#mc-new-preview#mc-new-preview .mc-ai-consent>.mc-link{padding:0;margin-top:2px;min-height:32px}
+/* 동의한 뒤 문서 보기 두 줄 (11/11): 설명 글 아래에 얇은 구분선, 줄 사이는 좁게 */
+#mc-new-preview#mc-new-preview .mc-ai-consent-docs{margin-top:14px;border-top:1px solid var(--mc-line)}
+#mc-new-preview#mc-new-preview .mc-ai-consent-docs .mc-terms-row{margin:0}
+#mc-new-preview#mc-new-preview .mc-ai-consent-docs .mc-terms-open{min-height:38px}
+#mc-new-preview#mc-new-preview .mc-sheet .mc-ai-consent{margin:14px 0 0;background:var(--mc-bg)}
+#mc-new-preview#mc-new-preview .mc-consent-ask{margin:14px 0 4px;padding:6px 0;border-top:1px solid var(--mc-line);border-bottom:1px solid var(--mc-line)}
+#mc-new-preview#mc-new-preview .mc-consent-ask .mc-terms-row{margin:10px 0}
+#mc-new-preview#mc-new-preview .mc-consent-ask .mc-terms-open{font-size:13.5px}
+#mc-new-preview#mc-new-preview .mc-consent-doc{margin:0 0 10px 28px;padding:2px 12px 10px;border-radius:12px;background:var(--mc-bg)}
 #mc-new-preview#mc-new-preview .mc-consent-note{margin:8px 0 0}
 #mc-new-preview#mc-new-preview .mc-login-note.is-warn{background:light-dark(#FFF6E0,#3A2F14)}
 #mc-new-preview#mc-new-preview .mc-inst-notes h2{font-size:14px;margin-bottom:6px}

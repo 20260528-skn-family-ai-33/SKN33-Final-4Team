@@ -544,6 +544,57 @@ it.each([
   expect(apiSend.mock.calls.filter(([url]) => url === '/api/chat/messages/')).toHaveLength(1)
 })
 
+const consentState = { available: true, canRevoke: false, status: 'not_granted', documentVersion: 'v1', documentHash: 'hash',
+  document: { title: '외부 전송 동의', label: '[선택] 외부 전송 동의', sections: [] },
+  healthDocumentVersion: 'v1', healthDocumentHash: 'health-hash',
+  healthDocument: { title: '건강 요약 처리 동의', label: '[선택] 건강 요약 처리 동의', sections: [] } }
+const needConsent = () => Object.assign(new Error('예산 조정 AI 전송 동의를 먼저 확인해 주세요.'), { status: 403, code: 'budget_adjust_consent_required' })
+const consentCalls = () => apiSend.mock.calls.filter(([url]) => url === '/api/budgets/adjustment-ai-consent/')
+
+it('예산 조정 AI 동의 이력이 없으면 동의 창을 띄우고, 동의하면 거절됐던 요청을 그대로 다시 보낸다', async () => {
+  let agreed = false
+  apiSend.mockImplementation(async (url, method) => {
+    if (url === '/api/budgets/adjustment-ai-consent/') {
+      if (method === 'PUT') agreed = true
+      return { ...consentState, status: agreed ? 'granted' : 'not_granted' }
+    }
+    if (!agreed) throw needConsent()
+    return talk({ status: 'awaiting_input', canApprove: false })
+  })
+  await mount()
+  expect(host.textContent).not.toContain('AI 동의 관리')  // 화면 위의 동의 카드는 없다
+  await submit('식비를 5만 원 늘려줘')
+  const dialog = () => host.querySelector('[role="dialog"]')
+  expect(dialog().getAttribute('aria-label')).toBe('예산 조정 AI 전송 동의')
+  expect(consentCalls().map(([, method]) => method)).toEqual(['GET'])
+  expect(sentChat()).toHaveLength(1)
+  for (const box of dialog().querySelectorAll('input[type="checkbox"]')) await click(box)
+  await click(button('동의하고 계속', dialog()))
+  expect(dialog()).toBeNull()
+  expect(consentCalls().map(([, method]) => method)).toEqual(['GET', 'PUT'])
+  expect(sentChat()).toHaveLength(2)
+  expect(sentChat()[1][2]).toEqual(sentChat()[0][2])  // 같은 요청을 다시
+  expect(sentChat()[1][2]).toEqual({ conversationId: null, text: '식비를 5만 원 늘려줘' })
+  expect(host.textContent).toContain('변경안을 확인해 주세요.')
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(input().value).toBe('')
+})
+
+it('동의 창을 닫으면 다시 보내지 않고 안내만 남기며 입력한 문장은 그대로 둔다', async () => {
+  apiSend.mockImplementation(async (url) => {
+    if (url === '/api/budgets/adjustment-ai-consent/') return consentState
+    throw needConsent()
+  })
+  await mount()
+  await submit('식비를 5만 원 늘려줘')
+  await click(button('취소', host.querySelector('[role="dialog"]')))
+  expect(host.querySelector('[role="dialog"]')).toBeNull()
+  expect(sentChat()).toHaveLength(1)
+  expect(consentCalls().map(([, method]) => method)).toEqual(['GET'])
+  expect(host.querySelector('[role="alert"]').textContent).toContain('AI 전송 동의가 필요해요')
+  expect(input().value).toBe('식비를 5만 원 늘려줘')
+})
+
 it('초과한 카테고리의 [예산 조정하기]는 그 카테고리와 초과액을 담아 새 대화를 시작한다', async () => {
   const data = { ...budgetData('approved'), categories: [
     { category: 'FOOD', categoryName: '식비', allocated: 300000, spent: 312000, minAmount: null, locked: false, lockedAmount: null },
