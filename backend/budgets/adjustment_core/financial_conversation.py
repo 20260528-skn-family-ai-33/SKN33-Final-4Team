@@ -8,6 +8,7 @@ from .funding import available_adjustment
 from .conversation import (_envelope, _pending_reply, _route_question as original_route, _show_comparison as original_comparison,
                            handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES)
 from . import interpretation
+from . import over_budget
 from .explanations import NAMES
 from .financial_planner import recommend, diagnose, reserve_after, QUESTIONS
 from .diagnostics import with_overrides
@@ -238,20 +239,24 @@ def selected_preview(store, cid, state, index, ports):
 def handle(request, **ports):
     cid, store = request["conversation_id"], ports["store"]
     before = deepcopy(store.get_agent_state(cid, "budget"))
-    result = _handle(request, **ports)
+    canceling = request.get("mode") == "cancel" or (request.get("text") or "").strip() in CANCEL
+    result = None if canceling else over_budget.handle(request, before or {}, ports)
+    over_handled = result is not None
+    if result is None:
+        result = _handle(request, **ports)
     if result["status"] == "not_mine":
         # '내 일'로 확인되기 전에 지운 비교 카드(financial_offer · pending) 등을 되돌린다 → 소비 분석에 다녀와도 이어서 고른다
         store.save_agent_state(cid, "budget", before)
         return result
     state = store.get_agent_state(cid, "budget") or {}
-    if state.get("requested_view") == "recommendation" and state.get("pending", {}).get("kind") == "financial_selection":
+    if not over_handled and state.get("requested_view") == "recommendation" and state.get("pending", {}).get("kind") == "financial_selection":
         index = state["financial_offer"]["answer"]["recommended_index"]
         if index is not None:
             result = selected_preview(store, cid, state, index, ports)
         else:
             result = _ask(store, cid, state, "discussion", "조건을 모두 지키는 추천안을 정하지 못했어요. 원하는 금액이나 조정 방향을 더 알려 주세요.")
     reply = result.get("reply", {})
-    if state and result["status"] not in {"failed", "ended", "not_mine", "unsupported"}:
+    if state and not state.get("over_entry") and result["status"] not in {"failed", "ended", "not_mine", "unsupported"}:
         values = {c["value"] for c in reply.get("choices", [])}
         reply.setdefault("choices", []).extend({"value": value, "label": label} for value, label in NAVIGATION if value not in values)
     return result
@@ -422,7 +427,7 @@ def _handle(request, **ports):
             state.pop("reason", None)
         if data.get("reason"):
             state["reason"] = data["reason"]
-        if (data.get("action") or state.get("clear_targets") or data.get("unlock") is not None
+        if (data.get("action") or state.get("clear_targets") or state.get("over_budget") or data.get("unlock") is not None
                 or state.get("proposal") or state.get("requested_view")):
             return None
         items = state.get("requests", [])
