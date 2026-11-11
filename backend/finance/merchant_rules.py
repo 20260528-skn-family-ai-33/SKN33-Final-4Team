@@ -90,3 +90,21 @@ def remembered_category(user, merchant_name):
     """같은 가맹점의 새 거래에 자동으로 쓸 카테고리 코드. 마지막 선택이 "앞으로도 적용"일 때만, 아니면 None"""
     code, future = last_user_choice(user, merchant_name)
     return code if future else None
+
+
+def same_store_pending(tx):
+    """'앞으로도 적용'을 고른 거래와 같은 가게의 다른 '확인 필요' 소비 거래 (11/11)
+    카드사 업종이 분명히 다르면 다른 가게로 보고 뺀다 (last_user_choice 와 같은 기준)"""
+    merchant = normalize_merchant(tx.merchant_name)
+    if merchant is None:
+        return []
+    rows = (
+        FinancialTransaction.objects.select_for_update()
+        .filter(user_id=tx.user_id, merchant_name=merchant,
+                transaction_type=FinancialTransaction.TransactionType.SPENDING,
+                confirmation_state=FinancialTransaction.ConfirmationState.NEEDS_REVIEW)
+        .exclude(pk=tx.pk)
+    )
+    mine = store_type(tx.merchant_category)
+    return [row for row in rows
+            if not (mine and store_type(row.merchant_category) and store_type(row.merchant_category) != mine)]
