@@ -121,7 +121,7 @@ payment_due 30 · financial_transaction 414 · payment_match 30 · transaction_l
 
 - 확인: fixture 관계(건수 · 사용자 간 FK · 고정비 연결 · 수집 기록 · 반복 실행 · 초기화 범위) /
   `listed_transactions` · `transaction_item` · `spending_summary` · `cycle_dates` · `budget_data`(계산식) 결과와 05 정답 / 작은 손계산 자료.
-- 기존 동작 기록: `budget_data` 는 validated 를 먼저 고른다 → expectedFailure 1건(고치지 않음). 소비 분석은 `spending_analysis.budget.approved_budget` 을 쓴다.
+- `budget_data`가 같은 주기의 검수 통과 초안보다 승인 예산을 먼저 고르는지 확인한다. 소비 분석은 `spending_analysis.budget.approved_budget`을 쓴다.
 - `test_analysis.py`: `spending_analysis` 의 승인 예산 읽기 전용 조회(`approved_budget`)와 분석 기간 순수 함수.
   변형은 테스트 안에서만 만든다 — B 승인 예산 교체(`seed.variant_b_approved_v2`), 날짜 경계용 별도 사용자. 기본 414건은 그대로.
 - `test_coverage.py`: 수집 완전성 판정(`spending_analysis.coverage`). 변형은 별도 사용자로 테스트 안에서만 만든다.
