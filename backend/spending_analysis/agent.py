@@ -50,7 +50,8 @@ def _run(user, request):
 
 def handle(request, *, store, complete, user=None, execute=None, explain_plan=None, agent_complete=None):
     """request = 공통 입력 {agent: "spending", mode, entry, text, input_id, conversation_id, today, as_of, context}
-    context = {selected_from?, budget_change?: {outcome, checked_at}, switched_from?, declined_by?}
+    context = {selected_from?, budget_change?: {outcome, checked_at}, switched_from?, declined_by?,
+               suggested_category?: 예산 조정이 넘기며 알려 준 카테고리, budget_return?: 넘겨 둔 예산 조정이 있음}
     → {"status": replied | awaiting_input | unsupported | failed | not_mine, "reply", "detail", "reason", "error", ...}
     - not_mine · 해석 실패는 상태를 바꾸지 않는다. 분석 한 번이 끝나도 ended 가 아니다(직전 분석은 남는다)
     - 모든 항목 조회 실패면 failed (라우터가 이번 입력 전 상태로 되돌린다). 일부 실패는 replied + 항목별 안내
@@ -71,7 +72,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         asked = mode != "start" and dialog.pending(store, cid)  # 되묻기의 답이면 판단에는 원래 질문을 넘긴다 (step 이 대기를 지우기 전에)
         decision = dialog.step(store, cid, text, complete, mode="start" if mode == "start" else "continue",
                                chosen=bool(context.get("selected_from")), budget_change=context.get("budget_change"),
-                               merchant=user and _merchant(user, request), today=_today(request))
+                               merchant=user and _merchant(user, request), today=_today(request),
+                               suggested_category=context.get("suggested_category"))
     if decision.status == "not_mine":
         return _result("not_mine", reason=decision.reason, decision=decision)
     if decision.status == "failed":
@@ -102,11 +104,23 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         result = _judged(result, decision, ran[-1], question, need, user, request, agent_complete)
     if note and result.get("reply"):  # 가설 경로로 나누며 뺀 나누기 — 확인하지 못했다고 밝힌다
         result["reply"] = {**result["reply"], "notices": [*result["reply"].get("notices", []), note]}
+    if context.get("budget_return") and result["status"] == "replied" and result.get("reply"):
+        source = _take_from(decision)
+        if source:  # 넘겨 둔 예산 조정이 있고 카테고리 하나의 남은 예산을 답했다 → [○○에서 가져오기] (문구 · 버튼은 라우터 안내가 붙인다)
+            result["reply"] = {**result["reply"], "suggest": [*result["reply"].get("suggest", []), {"take_from": source}]}
     dialog.publish(store, cid)
     return result
 
 
 LOOKUP_TYPES = {"budget_lookup": (3, 4)}
+
+
+def _take_from(decision):
+    """카테고리 하나의 남은 예산 조회(3번)만 한 답이면 그 카테고리 코드. 그 밖(전체 · 여러 개 · 소비 조회)은 None"""
+    items = decision.items
+    if len(items) == 1 and items[0]["type"] == 3 and isinstance(items[0].get("category"), str):
+        return items[0]["category"]
+    return None
 
 
 def _multi_step(decision):

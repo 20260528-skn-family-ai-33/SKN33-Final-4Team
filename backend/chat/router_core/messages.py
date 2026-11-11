@@ -83,6 +83,8 @@ FAILED = {
 NOTICE = {
     "budget_task_suspended": "진행 중이던 예산 조정은 잠시 멈춰 뒀어요. 다시 이어갈 때 상태를 확인할게요.",
     "budget_task_saving": "예산 조정은 저장이 진행 중이에요. 결과는 확인한 뒤 알려드릴게요.",
+    # 예산 조정이 조회 질문을 소비 분석으로 넘겼을 때 (11/11) — 조정안은 그대로, 조정 얘기를 하면 묻지 않고 이어간다
+    "budget_task_kept": "보고 있던 예산 조정은 그대로 뒀어요. 조정할 내용을 말하면 바로 이어갈게요.",
     "policy_work_suspended": "진행 중이던 청년 정책 추천은 잠시 멈춰 뒀어요.",
     "budget_change_not_saved": "예산 변경이 저장되지 않았어요.",
     "no_budget_change_record": "이 대화에서 바뀐 예산 기록을 찾지 못했어요.",
@@ -102,6 +104,8 @@ OUTCOME = {
 UNDECIDED = {"policy_resume_undecided": "보류된 청년 정책 추천이 있을 때 다시 정책을 고르면 이어서 할지 새로 할지",
              "policy_cancel_undecided": "청년 정책 추천 중 '취소'가 질문만 취소인지 추천 대화 종료인지"}
 # 소비 답변이 제안하는 다음 행동 → 안내 + 기능 선택지 (선택만으로 승인 · 저장하지 않는다. 기존 버튼 전환 경로 그대로)
+# 넘겨 둔 예산 조정이 있을 때 카테고리 남은 예산 답에 붙는 안내 + [○○에서 가져오기] (이름은 라우터 규칙과 같은 곳에서)
+BUDGET_RETURN = "지금 예산 기준이에요. 얼마까지 뺄 수 있는지는 예산 조정에서 확인할 수 있어요."
 SUGGEST = {"budget_adjust": ("필요하면 예산 조정을 요청할 수 있어요.", {"value": "budget", "label": "예산 조정하기"}),
            # 요일 · 시간대 · 묶기 조회는 고정지출을 기본으로 뺀다 → 이름 그대로 보내면 "고정지출 포함해서" 후속 질문
            "include_fixed": ("고정지출까지 넣어 볼 수도 있어요.", {"value": "include_fixed", "label": "고정지출 포함해서 보기"})}
@@ -230,6 +234,11 @@ def render(turn, budget_outcome=None):
         out.setdefault("choices", [])
         notices += list(r["reply"].get("notices") or [])
         for key in r["reply"].get("suggest", []):
+            if isinstance(key, dict):  # {"take_from": 코드} — 넘겨 둔 예산 조정으로 돌아가는 버튼
+                from . import take_from_label
+                notices = [n for n in notices if n != NOTICE["budget_task_kept"]] + [BUDGET_RETURN]  # 같은 뜻의 안내는 한 번만
+                out["choices"] = [*out["choices"], {"value": "take_from", "label": take_from_label(key["take_from"])}]
+                continue
             notices.append(SUGGEST[key][0])
             out["choices"] = [*out["choices"], dict(SUGGEST[key][1])]
     elif r["status"] == "failed" and r.get("error") == "call_limit":

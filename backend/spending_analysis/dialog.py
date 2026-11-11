@@ -140,14 +140,15 @@ def _reask(asked):
 
 
 def step(store, conversation_id, text, complete, *, mode="continue", chosen=False, budget_change=None, merchant=None,
-         today=None):
+         today=None, suggested_category=None):
     """소비 입력(원문) 하나 → Decision. 해석은 소비 전용 프롬프트로 직접 한다 (complete 주입)
     - mode=continue: 소비가 담당일 때 입력을 먼저 받는다. 되묻기 답 · 새 소비 요청 · 다른 분야(not_mine) 를 가린다
     - mode=start: 라우터가 소비로 보낸 새 요청. 보류된 되묻기 없이 해석한다
       [임시 · 미정] 새 소비 요청이 보류된 되묻기를 대신한다 (기존 '새 요청이면 질문을 바꾼다' 규칙을 그대로 씀)
     - chosen: 사용자가 라우터 질문에서 소비 분석을 골랐다 (복합 문장 중 소비 부분만 해석)
     - not_mine · 해석 실패(failed)면 아무 상태도 바꾸지 않는다
-    - merchant(말) → 그 말이 이름에 들어간 가게 결제가 있는지 (DB 조회는 부르는 쪽). 없으면 가게 이름 검색을 하지 않는다"""
+    - merchant(말) → 그 말이 이름에 들어간 가게 결제가 있는지 (DB 조회는 부르는 쪽). 없으면 가게 이름 검색을 하지 않는다
+    - suggested_category: 예산 조정이 넘기며 알려 준 카테고리. "이건 얼마 남았어?"처럼 카테고리 없이 가리키기만 한 새 질문에만 쓴다"""
     last, state = store.get_analysis(conversation_id), _state(store, conversation_id)
     asked = pending(store, conversation_id) if mode == "continue" else None
     repick = state.get("repick")
@@ -171,6 +172,9 @@ def step(store, conversation_id, text, complete, *, mode="continue", chosen=Fals
     if not interp.mine:
         # 다른 분야 · 복합 의도 · 범위 밖 · 불분명 → 라우터가 다시 분류 (목적지는 정하지 않는다)
         return Decision("not_mine", reason="other_domain", interpretation=interp, agent=AGENT)
+    if (suggested_category and not asked and interp.target is not None and not interp.categories
+            and not interp.all_categories and interp.refers_to in ("previous", "unclear")):
+        interp = replace(interp, categories=(suggested_category,), refers_to=None)  # 가리킨 대상 = 조정 중이던 카테고리
     request, source, fresh = interp, text, ()
     if interp.alias:
         # "데이트비는 식비로 볼게": 이 대화의 조회 기준을 정하는(바꾸는) 말 — 사용자가 명시했으므로 바로 기억한다
