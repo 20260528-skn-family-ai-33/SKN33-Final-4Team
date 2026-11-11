@@ -282,6 +282,12 @@ class TransactionDetailTest(FinanceData):
         same.refresh_from_db()
         self.assertEqual((same.confirmed_category_id, same.confirmation_state), ("FOOD", "suggested"))
         self.assertEqual(same.merchant_name, "Cafe  Seoul")
+        # 새로 들어오는 거래도 공백 수와 상관없이 같은 가게로 기억을 쓴다 (last_user_choice)
+        for name in ("Cafe Seoul", " Cafe   Seoul ", "Cafe  Seoul"):
+            with self.subTest(name=name):
+                self.assertEqual(remembered_category(self.user, name), "FOOD")
+        self.assertIsNone(remembered_category(self.user, "Cafe Seoul 2호점"))  # 이름이 다르면 다른 가게
+        self.assertIsNone(remembered_category(self.user, "Cafe.Seoul"))      # 점(.)은 정규식 아무 글자로 보지 않는다
 
     def test_apply_to_future_is_ignored_for_pay_charge_and_transfer(self):
         charge = self.tx(source_kind="card", card=self.card, merchant_name="네이버페이충전",
