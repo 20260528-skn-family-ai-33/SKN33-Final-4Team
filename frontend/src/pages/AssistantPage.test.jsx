@@ -1,7 +1,9 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AssistantPage from './AssistantPage.jsx'
+import PopupProvider from '../popups/PopupProvider.jsx'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
 
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), newRequestKey: vi.fn(), useApi: vi.fn() }))
@@ -34,7 +36,7 @@ afterEach(async () => {
   await act(() => root.unmount())
   host.remove()
 })
-const mount = async () => act(() => root.render(<AssistantPage />))
+const mount = async () => act(() => root.render(<MemoryRouter><PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
 const button = (label) => [...host.querySelectorAll('button')].find((b) => b.textContent === label)
 const click = async (element) => act(() => element.click())
 const input = () => host.querySelector('input[aria-label="챗봇에게 보낼 메시지"]')

@@ -185,26 +185,46 @@ def _plain(rate):
     return str(rate["value"]).lstrip("-")
 
 
+def relabel(text, result):
+    """달끼리 비교(11/10) 결과면 문장 · 카드 글자의 '이번 달' · '지난달'을 그 달 이름으로 바꾼다 (템플릿은 그대로 한 벌).
+    result["labels"] = periods.month_labels — 없으면(지난달 비교 등) 글자 그대로"""
+    names = result.get("labels") if isinstance(result, dict) else None
+    if not names or not isinstance(text, str):
+        return text
+    return text.replace("지난달 같은 기간", names["previous_same"]).replace("지난달", names["previous"]) \
+        .replace("이번 달", names["current"])
+
+
+def _relabel_blocks(value, result):
+    """카드 블록 안의 글자 전부 (금액 · 비율 숫자는 그대로)"""
+    if isinstance(value, dict):
+        return {k: _relabel_blocks(v, result) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_relabel_blocks(v, result) for v in value]
+    return relabel(value, result)
+
+
 class _Out:
     def __init__(self):
         self.lines, self.notices, self.sections, self.lead = [], [], [], []
         self.classified = {}  # 확인 필요 금액 → 카테고리 이름들 (여러 카테고리 조회도 안내 한 줄)
+        self.result = None  # 지금 쓰고 있는 결과 (달끼리 비교면 그 달 이름으로 — relabel)
 
     def line(self, key, **values):
-        self.lines.append(TEXT[key].format(**values))
+        self.lines.append(relabel(TEXT[key].format(**values), self.result))
 
     def head(self, key, **values):
         """여러 항목에 공통인 기간 · 기준 문장은 한 번만"""
-        text = TEXT[key].format(**values)
+        text = relabel(TEXT[key].format(**values), self.result)
         if text not in self.lines:
             self.lines.append(text)
 
     def section(self, title, *lines):
-        self.sections.append({"title": title, "lines": list(lines)})
+        self.sections.append({"title": relabel(title, self.result), "lines": [relabel(l, self.result) for l in lines]})
 
     def notice(self, key, **values):
         """공통 안내는 한 번만. 핵심 안내(LEAD)는 lead 칸 — 화면이 문자열을 찾아 옮기지 않게 구조로 나눈다"""
-        text, box = NOTICE[key].format(**values), self.lead if key in LEAD else self.notices
+        text, box = relabel(NOTICE[key].format(**values), self.result), self.lead if key in LEAD else self.notices
         if text not in box:
             box.append(text)
 
@@ -346,6 +366,15 @@ def _rest(c):
 
 
 def _compare(out, result):
+    """6 · 7번 문장. 달끼리 비교면 같은 템플릿에 달 이름만 바꿔 쓴다 (relabel)"""
+    out.result = result
+    try:
+        _compare_lines(out, result)
+    finally:
+        out.result = None
+
+
+def _compare_lines(out, result):
     """공통 기간은 맨 앞에 한 번, 카테고리(전체)마다 '이름 · 금액' + 증감 문장 묶음. 증감은 화살표만이 아니라 문장으로"""
     item, cur, prev = result["item"], result["current"], result["previous"]
     name = scope(item)
@@ -365,21 +394,26 @@ def _compare(out, result):
         out.section(title)
         out.notice("previous_incomplete" if c["previous_incomplete"] else "current_incomplete")
         return
-    tail = "_classified" if any(pair) else ""
-    if c["rate"] is None:  # 이전 0원: 서버의 금액 차이만
-        change = TEXT["compare_from_zero" + tail].format(delta=won(c["delta"]))
-    elif c["delta"] > 0:
-        change = TEXT["compare_up" + tail].format(delta=won(c["delta"]), rate=_plain(c["rate"]))
-    elif c["delta"] < 0:
-        change = TEXT["compare_down" + tail].format(delta=won(-c["delta"]), rate=_plain(c["rate"]))
-    else:
-        change = TEXT["compare_same" + tail]
+    change = change_sentence(result)
     if any(pair):
         name_ = NAMES[item["category"]]
         out.notice("classified_compare", name=name_, particle=josa(name_, ("으로", "로")), current=won(pair[0]), previous=won(pair[1]))
     out.head("compare_head", current=span(cur["period"]))
     out.head("compare_basis", previous=span(prev["period"]))
     out.section(TEXT["compare_title"].format(name=name, amount=won(seen)), change)
+
+
+def change_sentence(result):
+    """비교 가능한 6 · 7번 결과 → 증감 문장 (서버 값 그대로). 답변 조합(narrate)도 같은 문장을 쓴다"""
+    c = result["comparison"]["category" if result["item"].get("category") else "total"]
+    tail = "_classified" if any(_compare_unclassified(result)) else ""
+    if c["rate"] is None:  # 이전 0원: 서버의 금액 차이만
+        return TEXT["compare_from_zero" + tail].format(delta=won(c["delta"]))
+    if c["delta"] > 0:
+        return TEXT["compare_up" + tail].format(delta=won(c["delta"]), rate=_plain(c["rate"]))
+    if c["delta"] < 0:
+        return TEXT["compare_down" + tail].format(delta=won(-c["delta"]), rate=_plain(c["rate"]))
+    return TEXT["compare_same" + tail]
 
 
 def _compare_unclassified(result):
@@ -681,9 +715,10 @@ def _view_one_compare(r):
              "ratio": str(percent(amount, top)["value"]) if top > 0 else "0"}
             for name, key, amount in (("이번 달", "current", now), ("지난달", "previous", before))]
     caption = VIEW["more" if c["delta"] > 0 else "less" if c["delta"] < 0 else "even"]
-    return [_head(f"{_name(item)} · 지난달 같은 기간과 비교"),
-            {"kind": "total", "caption": caption, "amount": abs(c["delta"]), "note": note,
-             "direction": "up" if c["delta"] > 0 else "down" if c["delta"] < 0 else "same"}, {"kind": "rows", "rows": rows}]
+    return _relabel_blocks([
+        _head(f"{_name(item)} · 지난달 같은 기간과 비교"),
+        {"kind": "total", "caption": caption, "amount": abs(c["delta"]), "note": note,
+         "direction": "up" if c["delta"] > 0 else "down" if c["delta"] < 0 else "same"}, {"kind": "rows", "rows": rows}], r)
 
 
 def _view_compare(results, many):
@@ -700,7 +735,7 @@ def _view_compare(results, many):
         if c["available"]:
             row["badge"] = _badge(c, any(_compare_unclassified(r)))
         rows.append(row)
-    return [head, {"kind": "rows", "rows": rows}]
+    return _relabel_blocks([head, {"kind": "rows", "rows": rows}], results[0])
 
 
 def _view_trend(results, many):

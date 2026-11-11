@@ -19,15 +19,22 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 
 logger = logging.getLogger(__name__)
+CODE_KEYS = frozenset({"FOOD", "HOUSING_TELECOM", "TRANSPORT_CAR", "HOUSEHOLD", "FASHION_SHOPPING",
+                      "MEDICAL_HEALTH", "BEAUTY", "EDUCATION", "CULTURE_LEISURE", "TRAVEL_LODGING",
+                      "ETC", "UNCLASSIFIED", "LIVING", "SAVINGS", "CUSHION_MONTHLY", "SPARE"})
 
 
 # ----- 이름 바꾸기 -----
 def _camel_key(key):
+    if key in CODE_KEYS:
+        return key
     head, *rest = key.split("_")
     return head + "".join(word.title() for word in rest)
 
 
 def _snake_key(key):
+    if key in CODE_KEYS:
+        return key
     return re.sub(r"(?<!^)(?=[A-Z])", "_", key).lower()
 
 
@@ -96,6 +103,9 @@ def exception_handler(exc, context):
         if error["code"] == "not_found":
             # get_object_or_404 · NotFound 도 /api/ 맨 끝 줄(api_common.not_found)과 같은 문구로 (10-21 C-11)
             error["message"] = "찾을 수 없어요."
+        elif error["code"] == "throttled":
+            # DRF 기본 문구는 "요청이 지연(throttled)..." 라서 화면에 맞게. 기다릴 초는 Retry-After 헤더
+            error["message"] = "시도가 너무 많아요. 잠시 후 다시 시도해 주세요."
     else:
         # 입력값 검사 에러: {"email": ["필수 항목입니다."]} 같은 칸별 목록
         error["message"] = "입력값을 확인해 주세요."

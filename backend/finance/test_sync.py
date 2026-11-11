@@ -1,4 +1,3 @@
-import hashlib
 from copy import deepcopy
 from datetime import date, timedelta
 from io import StringIO
@@ -13,6 +12,7 @@ from django.test import TestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from . import codef, pipeline
+from .identifiers import LegacyIdentifierKey, identifier_key, legacy_identifier_key
 from .models import BankAccount, Connection, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, SyncRun
 from .sync import sync_bank
 from .test_bank_response import NoCodefNetwork
@@ -52,6 +52,18 @@ class BankSyncTest(NoCodefNetwork, TestCase):
     def sync(self, user=None):
         return sync_bank(user or self.user, "test-connected-id", "0088", self.start, self.end)
 
+    def test_legacy_key_account_stops_without_duplicate(self):
+        # PR #102 리뷰: 동의 철회 없이 다시 불러와도 같은 계좌 · 거래가 새 행으로 한 번 더 저장되지 않는다
+        old = Connection.objects.create(user=self.user, business_type="bank", organization_code="0088",
+                                        status="disconnected", disconnected_at=timezone.now())
+        BankAccount.objects.create(user=self.user, connection=old,
+                                   source_account_key=legacy_identifier_key(self.accounts[0]["account_no"]))
+        with self.assertRaises(LegacyIdentifierKey):
+            self.sync()
+        self.assertEqual(BankAccount.objects.filter(user=self.user).count(), 1)
+        self.assertFalse(FinancialTransaction.objects.filter(user=self.user).exists())
+        self.assertEqual(SyncRun.objects.get(user=self.user, product_code="bank_sync").error_code, "legacy_identifier")
+
     def test_saves_accounts_transactions_and_success_run(self):
         before = timezone.now()
         result = self.sync()
@@ -63,7 +75,7 @@ class BankSyncTest(NoCodefNetwork, TestCase):
         account = BankAccount.objects.get(account_type="demand")
         self.assertEqual(account.user, self.user)
         self.assertEqual(account.connection, connection)
-        self.assertEqual(account.source_account_key, hashlib.sha256(self.accounts[0]["account_no"].encode()).hexdigest())
+        self.assertEqual(account.source_account_key, identifier_key("account", self.accounts[0]["account_no"]))
         self.assertEqual(account.masked_number, codef.mask(self.accounts[0]["account_no"]))
         self.assertEqual(account.balance, 90000)
         self.assertGreaterEqual(account.fetched_at, before)

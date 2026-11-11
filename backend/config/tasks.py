@@ -72,6 +72,9 @@ def task_item(task):
     if task.status == AsyncTask.Status.FAILED:
         code = task.error_code or "server_error"
         error = {"code": code, "message": ERROR_MESSAGES.get(code, ERROR_MESSAGES["server_error"])}
+    result = task.result if task.status == AsyncTask.Status.SUCCEEDED else None
+    if task.task_type == 'budget_recommend' and isinstance(result, dict):
+        result = {k: v for k, v in result.items() if k != '_design_handoff'}
     return {
         "task_id": task.task_id,
         "task_type": task.task_type,
@@ -80,7 +83,7 @@ def task_item(task):
         "created_at": task.created_at,
         "started_at": task.started_at,
         "completed_at": task.completed_at,
-        "result": task.result if task.status == AsyncTask.Status.SUCCEEDED else None,
+        "result": result,
         "error": error,
     }
 

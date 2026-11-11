@@ -57,9 +57,14 @@ def budget_data(user, today, *, selected=None):
     }
     if cycle is None:
         return data
+    if (selected is not None and selected.status != "approved"
+            and (selected.base_budget_id is not None
+                 or selected.task_id is not None and selected.task.task_type == "budget_adjust")):
+        selected = None
     if selected is None or selected.cycle_id != cycle.pk:
         mine = Budget.objects.filter(user=user, cycle=cycle)
-        selected = (mine.filter(status="validated").order_by("-version_no").first()
+        selected = (mine.filter(status="validated", base_budget__isnull=True)
+                    .exclude(task__task_type="budget_adjust").order_by("-version_no").first()
                     or mine.filter(status="approved").first())
     if selected is None:
         return data

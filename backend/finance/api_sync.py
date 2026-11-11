@@ -30,6 +30,7 @@ from users.models import Consent
 from . import codef, connected_id, institutions
 from .api_new_connection import CARD_NO, CARD_PASSWORD, failure
 from .codef_accounts import classify, missing_fields
+from .identifiers import LegacyIdentifierKey
 from .inputs import body_dict, reject_unknown_fields
 from .models import Connection, SyncRun
 from .sync import sync_bank
@@ -177,6 +178,10 @@ def run_part(kind, connection, work):
         logger.warning("다시 불러오기 실패 connection=%s kind=%s reason=%s codef_code=%s",
                        connection.pk, kind, reason, exc.code)
         return {"kind": kind, "status": "failed"}, (reason, missing)
+    except LegacyIdentifierKey:
+        # 전환 전 키 행이 남아 있음 → '잠시 후 다시'가 아니라 동의 철회 후 다시 연결을 안내한다 (PR #102 리뷰)
+        logger.warning("다시 불러오기 실패 connection=%s kind=%s reason=legacy_identifier", connection.pk, kind)
+        return {"kind": kind, "status": "failed"}, ("legacy_identifier", ())
     except Exception as exc:
         connection.refresh_from_db(fields=["disconnected_at"])
         if connection.disconnected_at is not None:  # 조회 중 해제 → 저장하지 않고 버림 (#51)

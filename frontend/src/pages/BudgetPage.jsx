@@ -147,7 +147,9 @@ export default function BudgetPage() {
         )}
       </div>
 
-      <button type="button" className="mc-primary" onClick={() => navigate(PATHS.assistant)}>
+      <button type="button" className="mc-primary" onClick={() => navigate(PATHS.assistant, {
+        state: { budgetContext: { baseBudgetId: budget.budgetId, mode: budget.status === 'approved' ? 'NORMAL_ADJUSTMENT' : 'INITIAL_ADJUSTMENT' } },
+      })}>
         <Icon name="MessageCircle" /> 챗봇으로 예산 조정
       </button>
     </Layout>

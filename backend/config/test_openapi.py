@@ -38,7 +38,7 @@ def resolve_parameter(schema, parameter):
     return value
 
 
-@override_settings(ALLOWED_HOSTS=["testserver"], DEBUG=False)
+@override_settings(ALLOWED_HOSTS=["testserver"], DEBUG=True)
 class OpenAPIContractTests(SimpleTestCase):
     # SimpleTestCase는 DB 접근 자체를 실패시킨다. 회원·금융자료가 없어도 문서를 볼 수 있어야 한다.
     databases = set()
@@ -48,7 +48,7 @@ class OpenAPIContractTests(SimpleTestCase):
         super().setUpClass()
         cls.contract = build_contract()
 
-    def test_contract_covers_the_63_operations_in_the_source_manifest(self):
+    def test_contract_covers_the_69_operations_in_the_source_manifest(self):
         manifest = (ROOT / "docs/api/README.md").read_text(encoding="utf-8")
         section = manifest.split("## 1. 한눈에 보기", 1)[1].split("## 2.", 1)[0]
         entries = re.findall(r"`(GET|POST|PUT|PATCH|DELETE)\s+(/api/[^`]+)`", section)
@@ -56,10 +56,10 @@ class OpenAPIContractTests(SimpleTestCase):
         operations = list(operation_items(self.contract))
         actual = {(method, normalized_path(path)) for path, method, _ in operations}
 
-        self.assertEqual(len(entries), 63)
-        self.assertEqual(len(operations), 63)
+        self.assertEqual(len(entries), 69)
+        self.assertEqual(len(operations), 69)
         self.assertSetEqual(actual, expected)
-        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 63)
+        self.assertEqual(len({op["operationId"] for _, _, op in operations}), 69)
         self.assertEqual(len({tag for _, _, op in operations for tag in op["tags"]}), 10)
         for path, method, operation in operations:
             with self.subTest(path=path, method=method):
@@ -70,15 +70,16 @@ class OpenAPIContractTests(SimpleTestCase):
             (method, path): operation["x-implementation-status"]
             for path, method, operation in operation_items(self.contract)
         }
-        self.assertEqual(Counter(states.values()), {"implemented": 62, "mock": 1})
+        self.assertEqual(Counter(states.values()), {"implemented": 69})
         self.assertEqual(states[("get", "/api/csrf/")], "implemented")
         self.assertEqual(states[("post", "/api/auth/login/")], "implemented")
         self.assertEqual(states[("put", "/api/finance/connect/accounts/")], "implemented")
         self.assertEqual(states[("patch", "/api/finance/transactions/{id}/")], "implemented")
         self.assertEqual(states[("get", "/api/chat/conversations/{id}/")], "implemented")
         self.assertEqual(states[("get", "/api/home/")], "implemented")
-        for mock_operation in (("post", "/api/chat/messages/"),):
-            self.assertEqual(states[mock_operation], "mock")
+        for operation in (("post", "/api/chat/messages/"), ("get", "/api/chat/messages/"),
+                          ("get", "/api/budgets/proposals/{id}/"), ("post", "/api/budgets/proposals/{id}/approve/")):
+            self.assertEqual(states[operation], "implemented")
         for operation in {
             ("post", "/api/finance/connections/"), ("post", "/api/finance/sync/"),
             ("get", "/api/tasks/{id}/"),
@@ -106,7 +107,7 @@ class OpenAPIContractTests(SimpleTestCase):
         # README의 요청 번호 적용 목록. PUT/PATCH/DELETE와 로그인 전 가입은 포함하지 않는다.
         idempotent = {
             "/api/finance/consents/", "/api/finance/loans/", "/api/chat/messages/",
-            "/api/budgets/recommend/", "/api/budgets/{id}/approve/",
+            "/api/budgets/recommend/", "/api/budgets/{id}/approve/", "/api/budgets/proposals/{id}/approve/",
             "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
             "/api/budgets/savings/", "/api/budgets/savings/confirm/", "/api/budgets/savings/ignore/",
             "/api/finance/loan-dues/{id}/payments/", "/api/finance/card-bills/{id}/payments/",
@@ -129,10 +130,57 @@ class OpenAPIContractTests(SimpleTestCase):
                     if path.startswith(("/api/budgets/fixed/", "/api/budgets/savings/")):
                         # fixed/savings 원문은 선택 헤더다. 적용 대상과 필수 여부는 별개다.
                         self.assertFalse(headers["idempotency-key"]["required"])
-                    if path in {"/api/budgets/recommend/", "/api/budgets/{id}/approve/"}:
+                    if path in {"/api/budgets/recommend/", "/api/budgets/{id}/approve/", "/api/budgets/proposals/{id}/approve/"}:
                         self.assertTrue(headers["idempotency-key"]["required"])
                     request_number_operations.add(path)
         self.assertSetEqual(request_number_operations, idempotent)
+
+    def test_budget_adjustment_entry_and_approval_do_not_accept_client_financial_values(self):
+        schemas = self.contract["components"]["schemas"]
+        entry = schemas["BudgetAdjustmentEntry"]
+        self.assertFalse(entry["additionalProperties"])
+        self.assertEqual(set(entry["required"]), {"mode"})
+        self.assertEqual(set(entry["properties"]), {"baseBudgetId", "sourceTaskId", "mode"})
+        self.assertEqual([branch['required'] for branch in entry['oneOf']], [['baseBudgetId'], ['sourceTaskId']])
+        approval = schemas["BudgetAdjustmentApproveRequest"]
+        self.assertFalse(approval["additionalProperties"])
+        self.assertEqual(set(approval["properties"]), {"keepForNextCycle"})
+        card = schemas["BudgetAdjustmentCard"]["properties"]
+        for name in ("persistenceItems", "targetItems"):
+            self.assertEqual(card[name]["type"], "array")
+        self.assertIn("savedRef", card)
+        payload = schemas["ChatTextContent"]["properties"]["budgetAdjustment"]
+        self.assertEqual(payload["$ref"], "#/components/schemas/BudgetAdjustmentContent")
+        response = self.contract["paths"]["/api/budgets/proposals/{id}/approve/"]["post"]["responses"]["200"]
+        self.assertEqual(response["content"]["application/json"]["schema"]["$ref"],
+                         "#/components/schemas/BudgetAdjustmentApproveResponse")
+
+    def test_recovery_entry_accepts_only_the_appropriate_id_and_no_money(self):
+        from openapi_schema_validator import OAS30Validator
+
+        validator = OAS30Validator(self.contract['components']['schemas']['BudgetAdjustmentEntry'])
+        source = {'mode': 'DESIGN_RECOVERY', 'sourceTaskId': '00000000-0000-4000-8000-000000000001'}
+        validator.validate(source)
+        for mode in ('INITIAL_ADJUSTMENT', 'NORMAL_ADJUSTMENT'):
+            validator.validate({'mode': mode, 'baseBudgetId': source['sourceTaskId']})
+        for invalid in (
+            {**source, 'baseBudgetId': source['sourceTaskId']}, {'mode': 'DESIGN_RECOVERY'},
+            {'mode': 'INITIAL_ADJUSTMENT', 'sourceTaskId': source['sourceTaskId']},
+            {**source, 'minimums': {'FOOD': 0}}, {**source, 'locks': {}}, {**source, 'priorities': []},
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertTrue(list(validator.iter_errors(invalid)))
+
+    def test_recommendation_goal_conflicts_are_a_separate_review_result(self):
+        schemas = self.contract["components"]["schemas"]
+        conflict = schemas["BudgetTargetConflict"]
+        self.assertEqual(conflict["properties"]["type"]["enum"], ["target_conflict"])
+        self.assertEqual(set(conflict["properties"]["reason"]["enum"]),
+                         {"locked_amount", "minimum_amount", "amount_unit", "living_budget", "invalid_target"})
+        self.assertTrue(conflict["properties"]["requestedAmount"]["nullable"])
+        self.assertTrue(conflict["properties"]["possibleAmount"]["nullable"])
+        variants = schemas["BudgetRecommendationResult"]["properties"]["conflicts"]["items"]["oneOf"]
+        self.assertIn({"$ref": "#/components/schemas/BudgetTargetConflict"}, variants)
 
     def test_path_variables_have_matching_required_uuid_parameters(self):
         for path, method, operation in operation_items(self.contract):
@@ -180,7 +228,7 @@ class OpenAPIContractTests(SimpleTestCase):
         actual = {(method, path) for path, method, _ in operation_items(runtime)}
         # 새 연결·다시 불러오기·작업 확인을 포함한 구현된 API만 실행 화면에 둔다
         self.assertSetEqual(actual, implemented)
-        self.assertEqual(len(actual), 62)
+        self.assertEqual(len(actual), 69)
         self.assertEqual(runtime["security"], [])
         for path, method, operation in operation_items(runtime):
             with self.subTest(path=path, method=method):
@@ -191,7 +239,7 @@ class OpenAPIContractTests(SimpleTestCase):
         self.assertIn("/api/budgets/", runtime["paths"])
         self.assertIn("/api/finance/loans/", runtime["paths"])
         self.assertIn("/api/finance/connect/cards/", runtime["paths"])
-        self.assertNotIn("/api/chat/messages/", runtime["paths"])
+        self.assertIn("/api/chat/messages/", runtime["paths"])
         self.assertIn("/api/budgets/fixed/{id}/", runtime["paths"])
         self.assertIn("put", runtime["paths"]["/api/finance/connect/accounts/"])
 
@@ -228,8 +276,8 @@ class OpenAPIContractTests(SimpleTestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, schema_url)
-                self.assertContains(response, "구현 62개")
-                self.assertContains(response, "목업 1개")
+                self.assertContains(response, "구현 69개")
+                self.assertContains(response, "목업 0개")
                 self.assertContains(response, "미구현 0개")
                 self.assertContains(response, "/api/docs/runtime/")
                 options = json.loads(response.data["settings"])
@@ -263,6 +311,14 @@ class OpenAPIContractTests(SimpleTestCase):
                     response = self.client.generic(method, path)
                     self.assertEqual(response.status_code, 405)
                     self.assertEqual(response.data["error"]["code"], "method_not_allowed")
+
+    @override_settings(DEBUG=False)
+    def test_docs_and_schemas_are_hidden_in_production(self):
+        for path in SCHEMA_URLS + DOCS_URLS:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response.json()["error"]["code"], "not_found")
 
     def test_unknown_schema_docs_and_original_api_routes_keep_json_404(self):
         for path in (

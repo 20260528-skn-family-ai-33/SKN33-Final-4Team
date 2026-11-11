@@ -34,6 +34,7 @@ from config.api import _camel_key as camel_key
 from users.models import Consent
 
 from . import codef_accounts, connected_id, institutions
+from .identifiers import LEGACY_MESSAGE
 from .inputs import NOT_ALLOWED, body_dict, reject_unknown_fields
 from .models import BankAccount, Connection
 from .sync import sync_bank
@@ -176,6 +177,9 @@ def failure(reason, name, missing=()):
         return 400, "invalid", "문자 인증 정보가 맞지 않아요. 처음부터 다시 연결해 주세요.", None
     if reason == "unsupported_auth":
         return 400, "invalid", f"{name}에서 요구한 추가 인증은 아직 지원하지 않아요.", None
+    if reason == "legacy_identifier":
+        # HMAC 전환 전 키로 저장된 금융 정보가 남아 있음 (finance/identifiers.py, PR #102 리뷰)
+        return 409, "not_ready", LEGACY_MESSAGE, None
     # 기관 점검 · 응답 없음 · 알 수 없는 CODEF 오류 (API_RULES 10-22 O: 502 provider_unavailable)
     return 502, "provider_unavailable", f"{name} 연결이 잠시 어려워요. 잠시 후 다시 시도해 주세요.", None
 

@@ -42,6 +42,7 @@ if os.environ.get("CHAT_LLM") not in (None, "", "fake", "live"):
 CHAT_LLM_MAX_CALLS = os.environ.get("CHAT_LLM_MAX_CALLS") or None
 # B 증감 설명(MEMO 26): CHAT_EXPLAIN_PLAN=on 일 때만 (기본 꺼짐 = 지금 템플릿 설명 그대로). 분석 과정(dev_trace)은 더미 실행에서만 응답에 싣는다
 CHAT_EXPLAIN_PLAN = os.environ.get("CHAT_EXPLAIN_PLAN") == "on"
+CHAT_AGENT = os.environ.get("CHAT_AGENT", "").strip() == "on"  # 첫 조회 뒤 추가 판단 1회 (가짜 해석은 정해 둔 판단, MEMO 31)
 CHAT_DEV_TRACE = True
 CHAT_LLM_LEDGER = os.environ.get("CHAT_LLM_LEDGER") or None
 

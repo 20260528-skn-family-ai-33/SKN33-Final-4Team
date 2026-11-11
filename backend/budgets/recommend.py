@@ -1,6 +1,7 @@
 """추천 예산 입력 · 임시 카테고리 배분. 에이전트 연결 시 recommend_category_budgets만 교체한다."""
 import hashlib
 import json
+from copy import deepcopy
 from fractions import Fraction
 
 from django.utils import timezone
@@ -26,8 +27,10 @@ CATEGORY_CODES = tuple(FALLBACK_RATIOS)  # 기타 제외 소비 카테고리 전
 # 생활비 배분 대상 = 전체 − 예산 밖(scope.OUT_OF_BUDGET). 비율은 이 안에서 다시 나눈다
 ALLOCATION_CODES = tuple(code for code in CATEGORY_CODES if code not in OUT_OF_BUDGET)
 SUMMARY = "임시 비율로 나눈 테스트 추천이에요. 최소 금액과 자물쇠는 그대로 지켰어요."  # 실제 분석처럼 보이지 않게 (11/3)
-ENGINE_VERSION = "temp-fallback-1"
-POLICY_VERSION = "2026-11-09"  # 청구서 미발행 시 미반영 안내와 함께 예산 시작 허용. 이전 규칙 초안은 만료
+ENGINE_VERSION = "temp-fallback-targets-2"
+# 목표·금액 단위 변경(11/5) + 청구서 미발행 시 미반영 안내와 함께 예산 시작 허용(11/9). 이전 규칙 초안은 만료
+POLICY_VERSION = "2026-11-09-targets-units"
+UNIT_POLICY = "10000-5000-v1"
 INPUT_VERSION = 1
 # 카드 선차감(card_reserved)은 카드로 쓸 때마다 바뀌므로 해시에 넣지 않는다. 초안을 만들 때 값을 input_snapshot에 저장해 두고
 # 승인 때는 그 값을 쓴다. 대신 어떤 카드가 대상인지(card_ids)는 넣어서 카드를 고르거나 빼면 초안이 만료된다.
@@ -79,14 +82,59 @@ def required_total(inp):
     return sum(inp["locks"].get(code, inp["minimums"].get(code, 0)) for code in ALLOCATION_CODES)
 
 
-def recommend_category_budgets(inp):
-    """R-05: 자물쇠 → 최소 금액 고정 반복 → 비율 몫만 내림 → 가장 큰 비율에 자투리."""
-    check_inputs(inp)
-    target, minimums = inp["target"], inp["minimums"]
-    conflicts = allocation_conflicts(inp)
+def _unit_input(inp):
+    calculation = deepcopy(inp)
+    calculation["minimums"] = {code: amount if code in inp["locks"] else (amount + 4999) // 5000 * 5000
+                               for code, amount in inp["minimums"].items()}
+    return calculation
+
+
+def _target_conflict(reason, requested=None, possible=None, *, categories=(), targets=None):
+    return {"type": "target_conflict", "reason": reason, "categories": list(categories), "targets": targets or {},
+            "requested_amount": requested, "possible_amount": possible,
+            "diff": None if requested is None or possible is None else possible - requested}
+
+
+def _target_conflicts(inp):
+    targets = inp.get("category_targets", {})
+    if (not isinstance(targets, dict) or set(targets) - set(ALLOCATION_CODES)
+            or any(type(amount) is not int or amount < 0 for amount in targets.values())):
+        return [_target_conflict("invalid_target")]
+    conflicts = deepcopy(inp.get("category_target_conflicts", []))
+    for code, requested in targets.items():
+        minimum = (inp["minimums"].get(code, 0) + 4999) // 5000 * 5000
+        if code in inp["locks"]:
+            if requested != inp["locks"][code]:
+                conflicts.append(_target_conflict("locked_amount", requested, inp["locks"][code], categories=[code], targets={code: requested}))
+        elif requested < minimum:
+            conflicts.append(_target_conflict("minimum_amount", requested, minimum, categories=[code], targets={code: requested}))
+        elif requested % 5000:
+            possible = max(requested // 5000 * 5000, minimum)
+            conflicts.append(_target_conflict("amount_unit", requested, possible, categories=[code], targets={code: requested}))
     if conflicts:
-        return infeasible(conflicts)
+        return conflicts
+    requested = sum(amount for code, amount in targets.items() if code not in inp["locks"])
+    available = inp["target"] - sum(inp["locks"].values()) - sum(
+        (inp["minimums"].get(code, 0) + 4999) // 5000 * 5000
+        for code in ALLOCATION_CODES if code not in inp["locks"] and code not in targets)
+    if requested > available:
+        return [_target_conflict("living_budget", requested, max(available, 0) // 5000 * 5000, categories=targets, targets=targets)]
+    return []
+
+
+def recommend_category_budgets(inp):
+    """Temporary R-05: real locks, soft target starts, then existing ratios for the remaining categories."""
+    check_inputs(inp)
+    inp = _unit_input(inp)
+    target, minimums = inp["target"], inp["minimums"]
+    conflicts = allocation_conflicts(inp) or _target_conflicts(inp)
+    if conflicts:
+        out = infeasible(conflicts)
+        if any(row["type"] == "target_conflict" for row in conflicts):
+            out["summary"] = "저장한 유지 목표를 현재 생활비·최소 금액·잠금과 함께 맞출 수 없어요. 목표나 생활비를 확인해 주세요."
+        return {**out, "unit_policy": UNIT_POLICY}
     allocations = {code: amount for code, amount in inp["locks"].items() if code in ALLOCATION_CODES}
+    allocations.update(inp.get("category_targets", {}))
     free = [code for code in ALLOCATION_CODES if code not in allocations]
     while free:
         remaining = target - sum(allocations.values())
@@ -94,7 +142,7 @@ def recommend_category_budgets(inp):
         shares = {code: remaining * FALLBACK_RATIOS[code] / weight for code in free}
         at_minimum = [code for code in free if shares[code] < minimums.get(code, 0)]
         if not at_minimum:
-            # 자투리를 받는 곳은 최종 금액이 원래 비율 몫 이상이므로 최소 금액도 지킨다.
+            # 최소액을 5천 원 단위로 올렸으므로 받는 항목의 비율 몫을 5천 원 내림해도 최소액은 지킨다.
             receiver = max(free, key=FALLBACK_RATIOS.get)
             rounded = {code: int(shares[code] // 10_000) * 10_000 for code in free}
             # 비율 몫은 최소 이상이어도 내림하면 15.5만 → 15만이 될 수 있다.
@@ -102,14 +150,17 @@ def recommend_category_budgets(inp):
             at_minimum = [code for code in free if code != receiver and rounded[code] < minimums.get(code, 0)]
             if not at_minimum:
                 allocations.update(rounded)
-                allocations[receiver] += target - sum(allocations.values())
+                allocations[receiver] += (target - sum(allocations.values())) // 5000 * 5000
                 break
         for code in at_minimum:
             allocations[code] = minimums[code]
             free.remove(code)
-    if sum(allocations.values()) != target:
-        raise EngineCheckFailed("모든 카테고리가 잠겨 있어 남은 금액을 배분할 수 없어요.")
-    return {"status": "proposed", "allocations": allocations, "reasons": [], "summary": SUMMARY, "conflicts": []}
+    remaining = target - sum(allocations.values())
+    if remaining < 0:
+        raise EngineCheckFailed("목표와 보호 금액의 합계가 생활비를 넘어요.")
+    summary = "저장한 유지 목표를 출발 금액으로 반영한 임시 비율 추천이에요. 최소 금액과 실제 자물쇠를 지켰어요." if inp.get("category_targets") else SUMMARY
+    return {"status": "proposed", "allocations": allocations, "unallocated": remaining,
+            "reasons": [], "summary": summary, "conflicts": [], "unit_policy": UNIT_POLICY}
 
 
 def check_result(inp, out):
@@ -124,7 +175,8 @@ def check_result(inp, out):
     if out.get("status") == "infeasible":
         if "unallocated" in out:
             raise EngineCheckFailed("조건 충돌 결과에는 남는 여윳돈을 넣을 수 없어요.")
-        expected = allocation_conflicts(inp)
+        checked = _unit_input(inp) if out.get("unit_policy") == UNIT_POLICY else inp
+        expected = allocation_conflicts(checked) or (_target_conflicts(checked) if out.get("unit_policy") == UNIT_POLICY else [])
         if not expected or out.get("conflicts") != expected or out.get("allocations") != {}:
             raise EngineCheckFailed("부족액이 입력 조건과 맞지 않아요.")
         return
@@ -145,6 +197,11 @@ def check_result(inp, out):
         raise EngineCheckFailed("최소 금액보다 작게 배분했어요.")
     if any(values.get(code, 0) != amount for code, amount in inp["locks"].items()):
         raise EngineCheckFailed("잠긴 금액을 바꿨어요.")
+    if out.get("unit_policy") == UNIT_POLICY:
+        if any(amount % 5000 for code, amount in values.items() if code not in inp["locks"]):
+            raise EngineCheckFailed("잠기지 않은 예산은 5천 원 단위여야 해요.")
+        if _target_conflicts(_unit_input(inp)) or any(values[code] != amount for code, amount in inp.get("category_targets", {}).items()):
+            raise EngineCheckFailed("저장한 유지 목표와 검수된 출발 금액이 다릅니다.")
     if out.get("conflicts") != []:
         raise EngineCheckFailed("성공 결과에 충돌이 있어요.")
 
@@ -199,6 +256,7 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
             "priorities": priorities,
             "minimums": {code: amount for code, amount in minimums.items() if code != "ETC"},
             "locks": {code: amount for code, amount in locks.items() if code != "ETC"},
+            "category_targets": active_targets, "category_target_conflicts": target_conflicts,
             "input_version": INPUT_VERSION,
             'category_targets': active_targets, 'category_target_conflicts': target_conflicts,
         },

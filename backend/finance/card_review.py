@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from .card_foreign import WonFinder
 from .codef_cards import FOREIGN_PENDING, PARTIAL, approval_source_key, card_matches
+from .identifiers import identifier_key
 from .models import Card, CardApprovalCoverage, CardApprovalReview, FinancialTransaction, SyncRun, TransactionLink
 from .transfer_rules import LINK_STATE, link
 
@@ -125,7 +126,8 @@ def save_approvals(user, cards, card_rows, rows, run, fetched_at):
         occurrence_key = (shown, *identity[:-1])
         occurrences[occurrence_key] += 1
         key = approval_source_key(
-            f"{run.connection.organization_code}:{shown}", (*identity[:-1], occurrences[occurrence_key]),
+            identifier_key("card_shown", f"{run.connection.organization_code}:{shown}"),
+            (*identity[:-1], occurrences[occurrence_key]),
         )
         if invalid is None and row["amount"] == 0:
             # 11/09: 0원 승인(카드 확인용 0달러 승인 등)은 쓴 돈이 없어 저장 · 카드 확인 · 분류하지 않는다.

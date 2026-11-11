@@ -502,7 +502,10 @@ class DesignAPITest(TestCase):
         protect = self.client.get('/api/budgets/protect/').json()
         self.assertEqual(protect['saved']['livingBudget'], 500000)
         self.assertEqual(protect['saved']['spare'], 720000)
-        self.assertEqual(protect['approvedBudget'], {'spareTransfer': 100000, 'spare': home['spare']})
+        self.assertEqual(protect['approvedBudget'], {'spareTransfer': 100000, 'spare': home['spare'],
+                                                     'savingFloor': protect['saved']['savingFloor'],
+                                                     'cushionMonthly': protect['saved']['cushionMonthly'],
+                                                     'savingTransfer': 0, 'cushionTransfer': 0})
 
         # Repeated approval may not transfer the money a second time.
         response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve-again')
@@ -564,6 +567,28 @@ class DesignAPITest(TestCase):
         self.assertEqual(dict(CategoryMinimum.objects.filter(user=self.user)
             .values_list('category_id', 'min_amount')), dict.fromkeys(
                 ('FOOD', 'TRANSPORT_CAR', 'HOUSEHOLD', 'FASHION_SHOPPING'), 100000))
+    def test_changed_candidates_block_initial_adjustment_and_expire_design_approval(self):
+        from .adjustment_context import AdjustmentContextError, get_adjustment_context
+        records = history()
+        row = records['2026-10']['items'][0]
+        row.update(category='UNCLASSIFIED', suggestion_candidates=[{'category': 'FOOD', 'confidence': .8}],
+                   suggestion_source='ml')
+        with patch.object(service, 'history_for_user', return_value=records):
+            task = self.task(self.post())
+            budget = Budget.objects.get(pk=task.result['budget_id'])
+            original = get_adjustment_context(self.user, today=date(2026, 11, 5), base_budget_id=budget.pk,
+                mode='INITIAL_ADJUSTMENT', allow_reference_backfill=False)
+            self.assertEqual(original['base_budget_id'], str(budget.pk))
+            row['suggestion_candidates'][0]['confidence'] = .9
+            with self.assertRaisesRegex(AdjustmentContextError, 'expired'):
+                get_adjustment_context(self.user, today=date(2026, 11, 5), base_budget_id=budget.pk,
+                    mode='INITIAL_ADJUSTMENT', allow_reference_backfill=False)
+            response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json',
+                HTTP_IDEMPOTENCY_KEY='synthetic-candidate-expired')
+        self.assertEqual(response.status_code, 409, response.content)
+        budget.refresh_from_db()
+        self.assertEqual(budget.status, 'expired')
+
     def test_changed_history_expires_draft_instead_of_saving_stale_result(self):
         with patch.object(service, 'history_for_user', return_value={}):
             task = self.task(self.post())

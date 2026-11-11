@@ -516,7 +516,7 @@
 ```
 
 - **작업 상태와 기관 결과는 다르다**: 작업이 끝까지 돌았으면 기관이 전부 실패해도 작업은 `succeeded`이고, 실패는 `items[].error`로 본다. 작업 `failed`는 서버 오류로 중간에 멈춘 경우뿐이다(`error.code`: `server_error`, 10분 넘게 멈춘 작업은 `stale`).
-- **기관별 실패 코드**: '금융기관 인증 · 새 연결' 실패 안내 표의 문구를 그대로 쓰되, 로그인 오류 · 잠김은 `code: relogin_required`로 보낸다(그 연결은 `relogin`이 되고 화면은 [다시 연결]). 이미 `relogin`인 연결이나 저장된 `connectedId`가 없는 회원은 CODEF를 부르지 않고 "○○ 다시 연결이 필요해요. 연결 관리에서 다시 연결해 주세요."(`relogin_required`). 기관 점검 · 응답 없음은 `provider_unavailable`.
+- **기관별 실패 코드**: '금융기관 인증 · 새 연결' 실패 안내 표의 문구를 그대로 쓰되, 로그인 오류 · 잠김은 `code: relogin_required`로 보낸다(그 연결은 `relogin`이 되고 화면은 [다시 연결]). 이미 `relogin`인 연결이나 저장된 `connectedId`가 없는 회원은 CODEF를 부르지 않고 "○○ 다시 연결이 필요해요. 연결 관리에서 다시 연결해 주세요."(`relogin_required`). 기관 점검 · 응답 없음은 `provider_unavailable`. HMAC 키 전환(11/10) 전 키로 저장된 계좌 · 대출 · 카드가 남아 있으면 새 행을 만들지 않고 `not_ready` "예전 방식으로 저장된 금융 정보가 남아 있어요. 금융 정보 조회 동의를 철회한 뒤 다시 연결해 주세요."(같은 계좌 · 거래가 두 번 저장되는 것을 막음, PR #102 리뷰).
 - **카드 값이 필요해요**를 받으면 화면은 그 기관의 카드번호 · 카드 비밀번호를 받아 `connectionIds`(그 기관) + `cardCredentials`로 다시 보낸다. 카드 값을 보낸 요청은 1분 안이어도 새로 부른다.
 - 은행 거래 저장은 나은의 `sync_bank`(PR #44 · #45), 대출은 권세진의 `sync_bank_loans`(PR #50)를 부른다. 카드 · 승인 · 청구서는 권세진의 `sync_card`(위 11번, 10/28 구현)를 부른다.
 - 진행 중 판단과 결과 보관은 공용 작업 표(`async_task`, `taskType = finance_sync`)로 한다. 기관 조회 한 번 한 번의 기록은 기존대로 `sync_run`에 남는다.

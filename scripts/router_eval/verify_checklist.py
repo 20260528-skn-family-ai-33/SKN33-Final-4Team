@@ -174,8 +174,6 @@ def main():
         if not args.max_calls or not args.ledger: raise SystemExit("승인받은 --max-calls와 --ledger가 필요해요")
         from chat.llm.live import LiveReading
         live = LiveReading(args.max_calls, args.ledger)
-        # 목록의 'B 꺼짐' 조건: 해석은 실제 LLM, 설명은 서버 템플릿만.
-        live.explains = False
     old = connection.creation.create_test_db(verbosity=0, autoclobber=True, keepdb=False)
     try: rows = run(live, selected)
     finally: connection.creation.destroy_test_db(old, verbosity=0)
