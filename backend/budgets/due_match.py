@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from django.db.models import F, Q
 
-from finance.merchant_rules import normalize_merchant
+from finance.merchant_rules import compare_label
 from finance.models import FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense
 
 from .api import (card_linked_in, claimable, day_in_cycle, ensure_current_due, link_evidence, match_current_due,
@@ -88,7 +88,7 @@ def match_account_dues(user, expense, cycle, today, previous_cycle):
 
 
 def merchant_label(tx):
-    return normalize_merchant(tx.merchant_name or tx.source_description)
+    return compare_label(tx.merchant_name or tx.source_description)  # 후보 감지와 같은 비교 (11/11 PR #106 리뷰)
 
 
 def match_card_fixed(expense, cycles, today):

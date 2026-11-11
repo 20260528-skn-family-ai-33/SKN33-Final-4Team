@@ -8,8 +8,9 @@ from zoneinfo import ZoneInfo
 
 from django.apps import apps
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 
+from finance.merchant_rules import compare_label
 from finance.models import (BankAccount, Card, Connection, FinancialTransaction, PaymentDue, PaymentMatch,
                             RecurringExpense, RecurringSaving, TransactionLink)
 from finance.pipeline import process_new_transactions
@@ -111,7 +112,7 @@ class FixedCandidateTest(CandidateFixture):
         self.assertEqual((e.name, e.payment_account_id, e.category_id), ("홍길동", self.account.pk, "ETC"))
         self.assertEqual(self.savings(), [])
 
-    # 받는 곳 이름은 숫자를 빼고 비교 (11/10). 후보 이름은 가장 최근 적요 그대로
+    # 받는 곳 이름은 연월 표시를 빼고 비교 (11/10, 11/11 PR #106 리뷰). 후보 이름은 가장 최근 적요 그대로
     def test_year_month_prefix_is_same_group(self):
         for m in MONTHS:
             self.tx(date(2026, m, 10), 22_600, kind="transfer", label=f"26{m - 1:02d}국민건강")
@@ -138,6 +139,25 @@ class FixedCandidateTest(CandidateFixture):
             self.tx(date(2026, m, 21), 69_000, kind="transfer", label=f"2026{m:02d}0001")
         self.detect()
         self.assertEqual(self.expenses(), [])
+
+    # 번호만 다른 받는 곳(휴대폰 두 회선 · 계약 번호)은 따로 본다 (PR #106 리뷰 1)
+    def two_lines(self):
+        for m in MONTHS:
+            self.tx(date(2026, m, 15), 55_000, kind="transfer", label="01011112222SKT")
+            self.tx(date(2026, m, 15), 33_000, kind="transfer", label="01033334444SKT")
+
+    def test_two_phone_lines_are_two_candidates(self):
+        self.two_lines()
+        self.detect()
+        self.assertEqual(sorted((e.name, e.amount) for e in self.expenses()),
+                         [("01011112222SKT", 55_000), ("01033334444SKT", 33_000)])
+
+    def test_registered_line_does_not_block_other_line(self):
+        RecurringExpense.objects.create(user=self.user, status="confirmed", source_type="manual", name="01011112222SKT",
+                                        amount=55_000, payment_day=15, category_id="ETC", payment_account=self.account)
+        self.two_lines()
+        self.detect()
+        self.assertEqual([e.name for e in self.expenses()], ["01033334444SKT"])
 
 
 class SavingCandidateTest(CandidateFixture):
@@ -345,3 +365,19 @@ class ReviewFlowTest(CandidateFixture):
         self.assertTrue(listed_transactions(self.user).filter(pk=mine.pk).exists())
         self.assertEqual(set(FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs[1:]]).values_list("transaction_type", flat=True)),
                          {"transfer"})
+
+
+class CompareLabelTest(SimpleTestCase):
+    """받는 곳 비교 이름 (finance/merchant_rules.compare_label): 연월 표시만 빼고 다른 숫자는 남긴다"""
+
+    def test_year_month_removed_other_numbers_kept(self):
+        cases = {
+            "2606국민건강": "국민건강", "202606국민건강": "국민건강", "국민건강 2606": "국민건강",
+            "관리비 10월": "관리비", "2026년 11월 관리비": "관리비",
+            "01011112222SKT": "01011112222SKT", "KT인터넷 12345678": "KT인터넷 12345678",
+            "카페 1204": "카페 1204", "2580마트": "2580마트", "2606": "2606", "넷플릭스": "넷플릭스",
+            "  ": None, None: None,
+        }
+        for name, expected in cases.items():
+            with self.subTest(name):
+                self.assertEqual(compare_label(name), expected)
