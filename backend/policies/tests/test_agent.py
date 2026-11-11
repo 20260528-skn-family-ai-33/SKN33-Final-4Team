@@ -32,16 +32,18 @@ def rows(result, number=0):
 class Talk:
     """한 대화: 같은 store 로 여러 번 부른다. 버튼은 이름(label)을 문장으로 보낸다 (라우터 어댑터와 같다)"""
 
-    def __init__(self, user=PERSON, answer=None):
+    def __init__(self, user=PERSON, answer=None, plan=False):
         self.store, self.user = MemoryStateStore(), user
         self.complete = mock.Mock(return_value=answer or said())
+        self.plan = plan  # False = 행동 고르기 LLM 없이 규칙 (6단계 고정 흐름)
         self.last = None
 
     def send(self, text=None, mode="continue"):
         request = {"agent": "policy", "mode": mode, "entry": "button" if text is None else "text", "text": text,
                    "work_ref": None, "input_id": "x", "conversation_id": CID, "today": TODAY, "as_of": None,
                    "context": {}}
-        self.last = agent.handle(request, store=self.store, user=self.user, complete=self.complete, embed=question)
+        self.last = agent.handle(request, store=self.store, user=self.user, complete=self.complete, embed=question,
+                                 plan=self.plan)
         return self.last
 
     @property
@@ -329,3 +331,87 @@ class MemberTest(TestCase):
         talk = Talk()
         talk.lives_in_dongtan()
         self.assertEqual(talk.send("저장한 정책")["reply"]["lines"], [agent.SAVED_NEED_LOGIN])
+
+
+def chose(action, number=None, topics=()):
+    return json.dumps({"action": action, "number": number, "topics": list(topics)})
+
+
+class PlannerTest(TestCase):
+    """8단계 행동 고르기: 읽은 문장의 행동만 LLM 이 고르고, 번호 확인 · 상세 값은 코드가 한다"""
+
+    def setUp(self):
+        add("P1", vector=near(1), plcyNm="청년 월세 지원", plcySprtCn="월 20만 원", sbmsnDcmntCn="임대차계약서",
+            operInstCdNm="서울시")
+        add("P2", vector=near(2), plcyNm="청년 전월세 대출보증", aplyUrlAddr="https://example.org/loan")
+        self.plan = mock.Mock(return_value=chose("search"))
+        self.talk = Talk(plan=self.plan)
+        self.talk.lives_in_dongtan()
+        self.talk.send("월세 지원 있어?")
+
+    def test_검색은_LLM_이_골라도_같은_추천(self):
+        self.assertEqual(titles(self.talk.last), ["1. 청년 월세 지원", "2. 청년 전월세 대출보증"])
+        message = json.loads(self.plan.call_args[0][1])
+        self.assertEqual((message["문장"], message["직전 추천"]), ("월세 지원 있어?", "없음"))
+
+    def test_번호로_물으면_그_정책의_원문_항목을_보인다(self):
+        self.plan.return_value = chose("detail", 1, ["documents", "support", "apply"])
+        result = self.talk.send("1번 서류랑 얼마 주는지 알려줘")
+        self.assertEqual(json.loads(self.plan.call_args[0][1])["직전 추천"], ["1. 청년 월세 지원", "2. 청년 전월세 대출보증"])
+        self.assertEqual((result["status"], result["reply"]["lines"], titles(result)),
+                         ("replied", [agent.DETAIL_HEAD], ["청년 월세 지원"]))
+        self.assertEqual(rows(result), ["지원 내용: 월 20만 원", "신청 방법: 공고 원문에 없어요. 서울시에 확인해 주세요.",
+                                        "제출 서류: 임대차계약서", "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)",
+                                        "운영 기관: 서울시"])
+        self.assertIn("1번 저장", self.talk.labels)  # 추천 뒤 버튼은 그대로
+
+    def test_어느_정책인지_모르면_직전_추천을_버튼으로_묻는다(self):
+        self.plan.return_value = chose("detail", None, ["apply"])
+        result = self.talk.send("그거 어떻게 신청해?")
+        self.assertEqual((result["reply"]["lines"], self.talk.labels),
+                         ([agent.WHICH], ["1. 청년 월세 지원", "2. 청년 전월세 대출보증"]))
+        result = self.talk.send("2. 청년 전월세 대출보증")
+        self.assertEqual(titles(result), ["청년 전월세 대출보증"])
+        self.assertEqual(rows(result)[-1], "링크: https://example.org/loan")
+        self.assertIn("1번 저장", self.talk.labels)  # 고른 뒤에도 추천 버튼이 돌아온다
+        result = self.talk.send("그거 얼마 줘?")  # 방금 본 정책을 LLM 에게 알려 주고, 번호를 못 정하면 그 정책
+        self.assertEqual(json.loads(self.plan.call_args[0][1])["방금 본 정책"], "2. 청년 전월세 대출보증")
+        self.assertEqual(titles(result), ["청년 전월세 대출보증"])
+        self.plan.return_value = chose("search")
+        self.talk.send("월세 지원 있어?")  # 새로 찾으면 잊는다
+        self.assertIsNone(self.talk.state["focus"])
+
+    def test_추천_밖_번호는_쓰지_않는다(self):
+        self.plan.return_value = chose("detail", 7, ["support"])
+        self.assertEqual(self.talk.send("7번 알려줘")["reply"]["lines"], [agent.WHICH])
+
+    def test_추천이_없으면_무엇을_찾을지_묻는다(self):
+        talk = Talk(plan=mock.Mock(return_value=chose("detail", None, ["support"])))
+        talk.lives_in_dongtan()
+        result = talk.send("그거 얼마 줘?")
+        self.assertEqual((result["reply"]["lines"], talk.labels), ([agent.NO_TARGET, agent.ASK_FIELD], list(agent.FIELDS)))
+
+    def test_LLM_이_실패하거나_모양이_틀리면_규칙으로(self):
+        for broken in (RuntimeError("network"), None):
+            self.plan.side_effect, self.plan.return_value = broken, '{"action": "fly"}'
+            self.assertEqual(titles(self.talk.send("월세 지원 있어?"))[0], "1. 청년 월세 지원")
+
+    def test_끝내기와_다른_담당(self):
+        self.plan.return_value = chose("not_mine")
+        self.assertEqual(self.talk.send("이번 달 얼마 썼어?")["status"], "not_mine")
+        self.plan.return_value = chose("end")
+        self.assertEqual(self.talk.send("이제 됐어 고마워")["status"], "ended")
+
+    def test_파서가_모양이_틀린_답을_거절한다(self):
+        from policies import planner
+        from policies.reading import Reading
+        read, shown = Reading(needs=[], place=None, vague=False), [(1, "청년 월세 지원")]
+        for wrong in ('{"action": "detail", "number": "1", "topics": []}',  # 번호 자리에 글자
+                      '{"action": "detail", "number": true, "topics": []}',  # 참/거짓
+                      '{"action": "detail", "number": 1, "topics": ["money"]}',  # 모르는 항목
+                      '{"action": "detail", "number": 1, "topics": [], "extra": 1}',  # 모르는 칸
+                      '{"action": "detail", "number": 1}',  # 빠진 칸
+                      '번호는 1번이에요'):  # JSON 이 아님
+            self.assertIsNone(planner.ask("1번 알려줘", read, shown, lambda system, user, w=wrong: w), wrong)
+        good = planner.ask("1번 알려줘", read, shown, lambda system, user: chose("detail", 1, ["support"]))
+        self.assertEqual(good, ("detail", 1, ["support"]))

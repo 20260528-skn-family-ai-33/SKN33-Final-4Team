@@ -98,6 +98,38 @@ def facts(found, today):
     }
 
 
+DETAIL_CHARS = 300  # 상세는 추천 카드(80자)보다 길게, 그래도 원문 앞부분만
+DETAIL_LABEL = {"support": "지원 내용", "period": "신청", "eligibility": "자격", "apply": "신청 방법",
+                "documents": "제출 서류", "other": "그 밖"}
+DETAIL_KEYS = {"support": ("plcySprtCn", "plcyExplnCn"), "apply": ("plcyAplyMthdCn",), "documents": ("sbmsnDcmntCn",),
+               "other": ("etcMttrCn",)}
+
+
+def detail(policy_no, topics, profile, today):
+    """정책 하나의 원문 항목 (8단계 정책 상세). → {name, link, agency, rows: [(이름, 값 또는 None)]} 또는 None(없는 정책).
+    원문이 비어 있는 항목은 None — 지어내지 않고 부르는 쪽이 '원문에 없음'으로 안내한다"""
+    found = again([policy_no], profile, today)
+    if not found:
+        return None
+    policy, verdict = found[0].policy, found[0].verdict
+    rows = []
+    for topic in DETAIL_LABEL:  # 항목 순서는 고정 (LLM 이 고른 순서와 상관없이)
+        if topic not in topics:
+            continue
+        if topic == "period":
+            value = _period(policy, today)
+        elif topic == "eligibility":
+            parts = [f"{c.item}({c.detail})" for c in verdict.conditions]  # 맞는 조건도 보인다 ("일해도 돼?" → 취업 상태)
+            extra = _clean(policy.raw, "addAplyQlfcCndCn")
+            value = tidy(" · ".join(parts + ([extra] if extra else [])), DETAIL_CHARS) or None
+        else:
+            value = tidy(next((v for v in (_clean(policy.raw, k) for k in DETAIL_KEYS[topic]) if v), ""), DETAIL_CHARS) or None
+        rows.append((DETAIL_LABEL[topic], value))
+    agency = _clean(policy.raw, "operInstCdNm") or _clean(policy.raw, "sprvsnInstCdNm") or None
+    return {"name": policy.name, "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
+            "agency": agency, "rows": rows}
+
+
 def policy_name(policy_no):
     """정책번호 → 정책명 (DB 값). 없으면 번호 그대로"""
     return Policy.objects.filter(pk=policy_no).values_list("name", flat=True).first() or policy_no

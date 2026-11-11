@@ -54,3 +54,17 @@ def embedder(live=None):
     if live is None:
         live = getattr(settings, "CHAT_LLM", "fake") == "live"
     return (os.environ["EMBEDDING_MODEL"], live_embed) if live else ("fake", fake_embed)
+
+
+def chain(system, complete, parser=None):
+    """LangChain 체인: 프롬프트(system + 사용자 입력 {text}) | LLM | 출력 파서. 읽기 · 행동 고르기가 쓴다.
+    LLM 자리는 라우터와 같은 호출기 complete(system, user) -> str 를 Runnable 로 감싼다 (팀 메모: langchain-core 만, ChatOpenAI 없음).
+    system 은 템플릿으로 읽지 않는다 — 프롬프트 속 JSON 예시의 { } 를 변수로 오해하지 않게"""
+    from langchain_core.messages import SystemMessage
+    from langchain_core.output_parsers import StrOutputParser
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.runnables import RunnableLambda
+
+    prompt = ChatPromptTemplate.from_messages([SystemMessage(content=system), ("human", "{text}")])
+    model = RunnableLambda(lambda value: complete(*(message.content for message in value.to_messages())))
+    return prompt | model | (parser or StrOutputParser())

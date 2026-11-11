@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 
 from django.conf import settings
 
+from .llm import chain
 from .regions import place_regions
 
 MAX_NEEDS = 3
@@ -112,7 +113,7 @@ def parse(text):
 
 def read(text, complete):
     try:
-        answer = complete(PROMPT, text)
+        answer = chain(PROMPT, complete).invoke({"text": text})  # LangChain 체인 (프롬프트 | LLM | 문자열)
     except ReadFailed:
         raise
     except Exception as error:  # 호출기 오류(상한 · 네트워크 · 거절)는 종류만 남긴다

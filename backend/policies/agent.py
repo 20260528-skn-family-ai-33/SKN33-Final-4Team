@@ -1,7 +1,7 @@
-"""6단계 최소 고정 흐름 챗봇. 라우터 계약은 handler(request) → dict (docs/policy-agent-router-handoff.md).
+"""청년 정책 챗봇 (6단계 고정 흐름 + 8단계 행동 고르기). 라우터 계약은 handler(request) → dict (docs/policy-agent-router-handoff.md).
 
-다음에 무엇을 할지는 decide() 한 곳에서 코드 규칙으로 정한다. 8단계에서 decide() 만 LLM 행동 고르기로 바꾸고,
-handle() 의 반복문 · 도구(tools.py) · 답변 모양은 그대로 쓴다.
+다음에 무엇을 할지는 decide() 한 곳에서 정한다. 버튼 · 취소 · 지역은 규칙, 직접 쓴 문장은 planner(LLM)가 고른 행동을 따르고
+LLM 이 실패하면 규칙으로 돌아간다. handle() 의 반복문 · 도구(tools.py) · 답변 모양은 같이 쓴다.
 
 흐름: (생년월일 확인) → 사는 지역 버튼(저장해 둔 지역이 있으면 건너뜀) → 문장 읽기(LLM 1회) → 다른 지역이면 확인 버튼 →
 막연하면 분야 버튼 → 검색 · 자격 → 추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] …
@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from . import profiles, reading, saved, tools
+from . import planner, profiles, reading, saved, tools
 from .llm import EmbedFailed
 from .reading import Need, ReadFailed
 from .regions import REGIONS
@@ -56,6 +56,10 @@ NO_BIRTH = "청년 정책은 나이 조건이 있어서 생년월일이 필요�
 NONE_FOUND = "{region} 기준으로 지금 신청할 수 있는 정책을 찾지 못했어요. 다른 분야나 지역으로 찾아볼까요?"
 NO_MORE = "더 보여 드릴 정책이 없어요."
 ENDED = "청년 정책 찾기를 마칠게요."
+WHICH = "어느 정책을 말씀하시는 건가요?"
+NO_TARGET = "어느 정책을 말씀하시는지 몰라요. 먼저 정책을 찾아 볼게요."
+DETAIL_HEAD = "공고 원문에 적힌 내용이에요."
+GONE = "그 정책은 지금 정책 목록에 없어요. 공고가 내려갔을 수 있어요."
 
 
 @dataclass
@@ -68,6 +72,7 @@ class Action:
     needs: list[Need] | None = None  # 이미 읽은 필요 (다시 읽지 않는다)
     home: bool = True  # 고른 지역이 사는 곳인가 (아니면 이번 검색에만 쓴다)
     place: str | None = None
+    topics: list[str] = field(default_factory=list)  # detail: 궁금한 항목 (planner.TOPICS)
 
 
 def _children(code):
@@ -97,8 +102,9 @@ def _picked_region(ask, said):
     return found[0] if len(found) == 1 else None
 
 
-def decide(state, text, read=None):
-    """상태 · 이번 입력(· 읽은 결과) → 다음 행동. 부작용 없음. 이 함수만 바꾸면 흐름이 바뀐다"""
+def decide(state, text, read=None, choice=None):
+    """상태 · 이번 입력(· 읽은 결과 · LLM 이 고른 행동) → 다음 행동. 부작용 없음.
+    버튼 · 취소 · 지역은 규칙으로 정하고, 읽은 문장의 행동은 choice(planner.ask)가 있으면 그것을, 없으면 규칙을 따른다"""
     ask, home = state.get("ask"), state.get("region")
     if text is None:  # 기능 버튼으로 들어옴
         return Action("ask_region", codes=TOP) if not home else Action("ask_field")
@@ -120,9 +126,15 @@ def decide(state, text, read=None):
         return Action("ask_region", codes=TOP, text=said)
     if read is None:
         return Action("read", text=said)
-    if not read.mine:
+    picked = choice[0] if choice else None
+    if picked == "end":
+        return Action("end")
+    if picked == "detail":
+        number, results = choice[1], state.get("results") or []
+        return Action("detail", text=results[number - 1] if number else None, topics=choice[2])
+    if picked == "not_mine" or (picked is None and not read.mine):
         return Action("not_mine")
-    if read.vague:
+    if picked == "ask_field" or (picked is None and read.vague):
         return Action("ask_field")
     codes = read.place_codes
     if codes and not _within(codes, home):
@@ -149,6 +161,8 @@ def _answer(ask, value, home):
             return Action("search", text=pending, region=final[0], needs=needs)
         options = codes if len(codes) > 1 else _children(codes[0])
         return Action("ask_region", codes=options, text=pending, needs=needs, home=False)
+    if kind == "which":
+        return Action("detail", text=value, topics=ask["topics"])
     if kind == "after":
         if value.startswith(SAVE):
             return Action("save", text=value[len(SAVE):])
@@ -228,7 +242,7 @@ def _show(store, cid, state, found, region, today, start, member=False):
     after += [("more", MORE)] if len(found) > start + SHOW else []
     after += _common_after(state, region, member)
     state.update(results=[f.policy.pk for f in found], shown=start + len(page), region_used=region,
-                 last=[f.policy.pk for f in page])
+                 last=[f.policy.pk for f in page], focus=None)
     name = REGIONS[region]["name"]
     if not page:  # 추천 없음은 정상 결과 → failed 가 아니라 replied (계약 3절)
         lines = [NONE_FOUND.format(region=name) if start == 0 else NO_MORE]
@@ -289,9 +303,16 @@ def _remember(store, cid, state, region):
     return result
 
 
-def handle(request, *, store, user=None, complete=None, embed=None):
+def _shown(state):
+    """직전 추천 [(화면 번호, 정책명)] — 지금까지 보여 준 것 전부 (더 보기 포함). LLM 은 이 번호 안에서만 고른다"""
+    numbers = (state.get("results") or [])[:state.get("shown", 0)]
+    return [(number, tools.policy_name(policy_no)) for number, policy_no in enumerate(numbers, 1)]
+
+
+def handle(request, *, store, user=None, complete=None, embed=None, plan=None):
     """request = 라우터 공통 입력 {agent, mode, entry, text, work_ref, conversation_id, today, as_of, context}
-    complete = 읽기 LLM (기본 reading.reader()), embed = 임베딩 (기본 llm.embedder()). 둘 다 테스트 대역을 넣을 수 있다"""
+    complete = 읽기 LLM (기본 reading.reader()), embed = 임베딩 (기본 llm.embedder()),
+    plan = 행동 고르기 LLM (기본 planner.chooser(), 가짜 모드면 None → 규칙). 모두 테스트 대역을 넣을 수 있다"""
     cid, text, today = request["conversation_id"], request.get("text"), _today(request)
     state = dict(store.get_agent_state(cid, AGENT) or {})
     if request.get("mode") == "cancel":
@@ -311,7 +332,11 @@ def handle(request, *, store, user=None, complete=None, embed=None):
                 read = reading.read(action.text, complete or reading.reader()[1])
             except ReadFailed as error:
                 return {"status": "failed", "work_ref": None, "error": f"read:{error}"}
-            action = decide(state, text, read)
+            plan = plan if plan is not None else planner.chooser()
+            results = state.get("results") or []
+            focus = results.index(state["focus"]) + 1 if state.get("focus") in results else None
+            choice = planner.ask(action.text, read, _shown(state), plan, focus) if plan else None
+            action = decide(state, text, read, choice)
         elif action.kind == "use_region":
             if action.home:
                 state["region"] = action.region
@@ -349,6 +374,8 @@ def _act(action, store, cid, state, user, today, embed):
         return _show_saved(store, cid, state, user, today)
     if kind == "remember":
         return _remember(store, cid, state, action.region)
+    if kind == "detail":
+        return _detail(store, cid, state, user, today, action)
     profile, member = tools.profile_for(user, action.text), profiles.is_member(user)
     if kind == "more":
         found = tools.again(state.get("results") or [], profile, today)
@@ -361,6 +388,39 @@ def _act(action, store, cid, state, user, today, embed):
             return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
         return _show(store, cid, state, found, action.region, today, 0, member)
     raise ValueError(f"처리하지 못한 행동: {kind}")
+
+
+def _detail(store, cid, state, user, today, action):
+    """정책 상세 (8단계). 어느 정책인지 모르면 직전 추천을 버튼으로 묻고, 추천이 없으면 무엇을 찾을지 묻는다.
+    값은 모두 tools.detail(DB 원문)이고, 원문에 없는 항목은 없다고 말한다 (서류 · 중복 수혜 등을 지어내지 않는다)"""
+    ask = state.get("ask") or {}
+    after = [(v, k) for k, v in ask["options"].items()] if ask.get("kind") == "after" else \
+        [tuple(a) for a in ask["after"]] if ask.get("after") else \
+        _common_after(state, state.get("region_used"), profiles.is_member(user))
+    if not action.text:
+        shown = _shown(state)
+        if not shown:
+            result = _ask(store, cid, state, "field", [NO_TARGET, ASK_FIELD], [(label, label) for label in FIELDS])
+            result["status"] = "replied"
+            return result
+        last = shown[-len(state.get("last") or shown):]  # 방금 보인 칸만 버튼으로
+        return _ask(store, cid, state, "which", [WHICH], [(state["results"][n - 1], f"{n}. {name}") for n, name in last],
+                    topics=action.topics, after=after)  # 고른 뒤 추천 버튼을 되살린다
+    info = tools.detail(action.text, action.topics, tools.profile_for(user), today)
+    state["focus"] = action.text  # 다음 "그거"는 이 정책
+    if info is None:
+        result = _ask(store, cid, state, "after", [GONE], after)
+        result["status"] = "replied"
+        return result
+    missing = f"공고 원문에 없어요. {info['agency'] or '운영 기관'}에 확인해 주세요."
+    rows = [f"{label}: {value or missing}" for label, value in info["rows"]]
+    rows.append(f"링크: {info['link']}" if info["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
+    if info["agency"]:
+        rows.append(f"운영 기관: {info['agency']}")
+    result = _card(_ask(store, cid, state, "after", [DETAIL_HEAD], after), [{"title": info["name"], "lines": rows}])
+    day = tools.data_date()
+    result["reply"]["notices"] = [NOTICE] + ([f"정책 정보는 {day} 기준이에요."] if day else [])
+    return result
 
 
 def _save(store, cid, state, policy_no):
