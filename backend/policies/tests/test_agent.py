@@ -514,7 +514,17 @@ class ReviewTest(TestCase):
         self.assertEqual(self.talk.state["results"], ["FEE", "FEE2"])
         message = json.loads(self.check.call_args[0][1])
         self.assertEqual(message["문장"], "자격증 시험비가 너무 비싸")
-        self.assertEqual(message["후보"][1], "2. 건설기술인 진입장벽 완화 — 건설 재직자 교육")
+        self.assertEqual(message["검색 지역"], "경기도 화성시 동탄구")
+        self.assertEqual(message["후보"][1]["정책명"], "건설기술인 진입장벽 완화")
+        self.assertEqual(message["후보"][1]["지원 내용"], "건설 재직자 교육")
+
+    def test_가입_지역이_아닌_이번_검색_지역을_검토에_넘긴다(self):
+        self.talk.complete.return_value = said(place="부산 해운대구")
+        found = agent.tools.again(["FEE"], agent.tools.profile_for(PERSON), date.fromisoformat(TODAY))
+        with mock.patch("policies.tools.find", return_value=(found, 0)):
+            self.talk.send("부산 해운대구 자격증 지원")
+        self.assertEqual(json.loads(self.check.call_args[0][1])["검색 지역"], "부산광역시 해운대구")
+        self.assertEqual(self.talk.state["region"], DONGTAN)
 
     def test_맞는_게_없으면_찾지_못했다고_답한다(self):
         self.check.return_value = kept()
@@ -522,12 +532,46 @@ class ReviewTest(TestCase):
         self.assertEqual((result["status"], titles(result)), ("replied", []))
         self.assertEqual(result["reply"]["lines"], [agent.NONE_FOUND.format(region="경기도 화성시 동탄구")])
 
-    def test_후보_밖_번호는_무시하고_실패하면_거르지_않는다(self):
+    def test_후보_밖_번호는_무시하고_한_개만_맞으면_한_개만_보인다(self):
         self.check.return_value = kept(1, 99)
         self.assertEqual(titles(self.talk.send("자격증 시험비")), ["1. 청년 국가기술자격 응시료 지원"])
+
+    def test_검토_답_모양이_틀리면_후보를_보이지_않고_재시도를_안내한다(self):
         for broken in ('{"keep": ["1"]}', "1번만요"):
-            self.check.return_value = broken
-            self.assertEqual(len(titles(self.talk.send("자격증 시험비"))), 3)  # 걸러지지 않은 검색 결과 그대로
+            with self.subTest(broken=broken):
+                self.check.return_value = broken
+                result = self.talk.send("자격증 시험비")
+                self.assertEqual(result["reply"]["lines"], [agent.REVIEW_FAILED])
+                self.assertEqual(titles(result), [])
+                self.assertEqual(result["reply"]["choices"], [])
+                self.assertFalse(self.talk.state.get("results"))
+
+    def test_검토_호출_실패_뒤_같은_질문으로_다시_추천받는다(self):
+        self.check.side_effect = TimeoutError
+        failed = self.talk.send("자격증 시험비")
+        self.assertEqual(failed["reply"]["lines"], [agent.REVIEW_FAILED])
+        self.assertEqual(titles(failed), [])
+        self.assertEqual(self.talk.state["region"], DONGTAN)
+        self.check.side_effect = None
+        self.check.return_value = kept(1)
+        self.assertEqual(titles(self.talk.send("자격증 시험비")), ["1. 청년 국가기술자격 응시료 지원"])
+
+    def test_검토_실패가_이전_검토된_추천을_새_후보로_덮어쓰지_않는다(self):
+        self.check.return_value = kept(1)
+        self.talk.send("자격증 시험비")
+        previous = list(self.talk.state["results"])
+        self.check.side_effect = TimeoutError
+        result = self.talk.send("다른 자격증 지원도 있어?")
+        self.assertEqual(titles(result), [])
+        self.assertEqual(self.talk.state["results"], previous)
+        self.assertIsNone(self.talk.state["ask"])
+
+    def test_live_검토_호출기가_없어도_미검토_후보를_보이지_않는다(self):
+        self.talk.check = None
+        with self.settings(CHAT_LLM="live"), mock.patch("policies.review.reviewer", return_value=None):
+            result = self.talk.send("자격증 시험비")
+        self.assertEqual(result["reply"]["lines"], [agent.REVIEW_FAILED])
+        self.assertEqual(titles(result), [])
 
     def test_맞춤_추천은_원문과_고른_분야를_함께_본다(self):
         self.talk.complete.return_value = said(needs=(), vague=True)

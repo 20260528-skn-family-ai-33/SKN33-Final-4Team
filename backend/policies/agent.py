@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
+from django.conf import settings
+
 from . import planner, profiles, reading, review, saved, tools
 from .llm import EmbedFailed
 from .reading import Need, ReadFailed
@@ -64,6 +66,7 @@ OTHER_TOPIC = "다른 고민도 문장으로 말해 주세요."
 PICK_BUTTON = "아래 버튼에서 골라 주세요."
 NO_BIRTH = "청년 정책은 나이 조건이 있어서 생년월일이 필요해요. 내 정보에서 생년월일을 입력한 뒤 다시 찾아 주세요."
 NONE_FOUND = "{region} 기준으로 지금 신청할 수 있는 정책을 찾지 못했어요. 다른 고민을 말해 주시거나 지역을 바꿔 볼까요?"
+REVIEW_FAILED = "추천할 정책을 확인하지 못했어요. 잠시 후 같은 질문으로 다시 시도해 주세요."
 NO_MORE = "더 보여 드릴 정책이 없어요."
 ENDED = "청년 정책 찾기를 마칠게요."
 WHICH = "어느 정책을 말씀하시는 건가요?"
@@ -459,9 +462,14 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         except EmbedFailed as error:
             return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
         judge = check if check is not None else review.reviewer()
-        if judge and found:  # 돌아보기: 질문과 맞는 것만 남긴다 (실패하면 그대로)
-            kept = review.keep(said or " / ".join(n.query for n in needs), found, judge)
-            found = found if kept is None else kept
+        if found and judge is None and check is not False and getattr(settings, "CHAT_LLM", "fake") == "live":
+            return _ask_topic(store, cid, state, [REVIEW_FAILED])  # 키·모델 설정 누락도 미검토 추천으로 우회하지 않는다
+        if judge and found:  # 돌아보기: 질문과 맞는 것만 남긴다. 실패와 검색 결과 없음은 별개다
+            kept = review.keep(said or " / ".join(n.query for n in needs), found, judge,
+                               region=REGIONS[action.region]["name"])
+            if kept is None:
+                return _ask_topic(store, cid, state, [REVIEW_FAILED])
+            found = kept
         return _show(store, cid, state, found, action.region, today, 0, member, lead)
     raise ValueError(f"처리하지 못한 행동: {kind}")
 

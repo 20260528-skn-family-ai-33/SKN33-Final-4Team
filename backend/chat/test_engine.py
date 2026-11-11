@@ -294,6 +294,17 @@ class ServiceChoiceTest(ServiceChatBase):
         store = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
         self.assertEqual(store.get_agent_state(engine.KEY, "policy")["saved"], [])
 
+    def test_policy_review_failure_is_a_retry_message_without_result_cards(self):
+        cid, _ = self._policy_results()
+        with mock.patch("policies.review.reviewer", return_value=mock.Mock(side_effect=TimeoutError)):
+            response = self.send("A", cid, text="월세 지원 찾아줘")
+        content = self.bot(response)
+        self.assertEqual(content["lines"], [policy_agent.REVIEW_FAILED])
+        self.assertEqual(content["sections"], [])
+        self.assertEqual(content["choices"], [])
+        self.assertFalse(content["result"])
+        self.assertEqual(content["agent"], "policy")
+
     def test_review_policy_resumes_after_visiting_spending(self):
         """PR 97 리뷰 1: 청년 정책 → 소비 분석 → 청년 정책 순서로 고르면 보류된 정책 상담을 이어서 한다 (빈 답 없음)"""
         cid, content = self._policy_results()
