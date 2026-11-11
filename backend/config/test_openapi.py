@@ -140,7 +140,14 @@ class OpenAPIContractTests(SimpleTestCase):
         entry = schemas["BudgetAdjustmentEntry"]
         self.assertFalse(entry["additionalProperties"])
         self.assertEqual(set(entry["required"]), {"mode"})
-        self.assertEqual(set(entry["properties"]), {"baseBudgetId", "sourceTaskId", "mode"})
+        self.assertEqual(set(entry["properties"]), {"baseBudgetId", "sourceTaskId", "mode", "hints"})
+        # hints = 예산 화면의 초과 카테고리에서 시작할 때만 (11/11). 칸은 셋으로 닫혀 있고 overAmount 는 참고값이다 —
+        # 서버가 최신 초과액을 다시 확인하며 증액 금액 · 예산 금액으로 쓰지 않는다 (chat.engine._entry_hints, docs/api/chat.md)
+        hints = entry["properties"]["hints"]
+        self.assertFalse(hints["additionalProperties"])
+        self.assertEqual(set(hints["properties"]), {"reason", "categories", "overAmount"})
+        self.assertEqual(hints["properties"]["reason"]["enum"], ["over"])
+        self.assertIn("참고값", hints["properties"]["overAmount"]["description"])
         self.assertEqual([branch['required'] for branch in entry['oneOf']], [['baseBudgetId'], ['sourceTaskId']])
         approval = schemas["BudgetAdjustmentApproveRequest"]
         self.assertFalse(approval["additionalProperties"])

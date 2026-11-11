@@ -173,13 +173,28 @@ class AgentCollabTest(CollabFixture, TestCase):
         self.assertEqual((data["agent"], self.roles()), ("budget", []))
         self.assertIn("교통·차량 예산을 30,000원 넘었어요", started["text"])
         self.assertEqual(started["budgetAdjustment"]["phase"], "funding_scope")
+        # 새 상담은 서버 작업이 아직 없어도 예산 조정이 계속 맡는다 — 이전 조정안은 취소로 기록 (PR #111 리뷰)
+        store = engine.ConversationStore.load(Conversation.objects.get(pk=self.cid).slots)
+        self.assertEqual(store.get_task(engine.KEY), {"task_ref": None, "phase": "started", "suspended": False})
+        self.assertEqual((store.get_budget_result(engine.KEY) or {}).get("outcome"), "canceled")
+        self.assertNotEqual(Budget.objects.get(pk=proposal_id).status, "validated")  # 이전 조정안은 더 이상 승인 대기가 아니다
+        # 재원 선택 클릭이 라우터 해석(LLM)으로 빠지지 않고 예산 조정의 다음 질문으로 이어진다
+        source = next(choice["value"] for choice in started["choices"] if "여윳돈" in choice["label"])
+        data, asked = self.pick(started, source)
+        self.assertEqual((data["agent"], self.roles()), ("budget", []))
+        self.assertEqual(asked["budgetAdjustment"]["status"], "awaiting_input")
+        self.assertIn("얼마", asked["text"])
 
     def test_pointing_question_uses_the_category_under_adjustment(self):
         self.proposal()
         data, answer = self.say("이건 얼마 남았어?")  # "이거" = 늘리려던 식비
         self.assertEqual(data["agent"], "spending")
         self.assertIn("식비", answer["text"])
-        self.assertIn({"value": "take_from", "label": "식비에서 가져오기"}, answer["choices"])
+        self.assertIn("식비 예산은 400,000원", answer["text"])  # 조회는 그대로 답한다
+        # 늘리려는 항목 자체는 재원이 될 수 없다 — [식비에서 가져오기]를 제안하지 않는다 (누르면 예산 조정이 거절하던 버튼, PR #111 리뷰)
+        self.assertNotIn("take_from", [choice["value"] for choice in answer["choices"]])
+        data, other = self.say("교통은 얼마 남았어?")  # 다른 항목은 그대로 재원으로 제안한다
+        self.assertIn({"value": "take_from", "label": "교통·차량에서 가져오기"}, other["choices"])
 
     # ---- 카드가 없을 때 · 비교 카드 ----
 
@@ -422,3 +437,36 @@ class OverSuggestRoutingTest(SimpleTestCase):
         self.assertIsNone(self.store.get_task("talk"))
         del self.budget.replies[None]
         self.assertEqual(self.turn(button="budget", suggested=True)["decision"].handoff["hints"], self.HINTS)
+
+
+class NewConsultationTaskTest(SimpleTestCase):
+    """예산 조정이 이전 작업을 끝내고 서버 작업이 없는 새 상담을 시작한 결과(new_work)의 라우터 기록 (PR #111 리뷰)"""
+    OLD = {"task_ref": "T1", "phase": "awaiting_approval", "suspended": False}
+    NEW = {"status": "awaiting_input", "work_ref": None, "new_work": True}
+
+    def record(self, state, result=None):
+        from chat.router_core import _budget_result
+        store = MemoryStateStore()
+        store.save_task("talk", dict(self.OLD))
+        server = FakeServer({"T1": state} if state else {})
+        return _budget_result(store, "talk", result or self.NEW, server), store
+
+    def test_keeps_a_task_without_reference_once_the_old_one_is_confirmed_ended(self):
+        outcome, store = self.record({"state": "canceled"})
+        self.assertEqual(outcome, "in_progress")
+        self.assertEqual(store.get_task("talk"), {"task_ref": None, "phase": "started", "suspended": False})
+        self.assertEqual(current_agent(store, "talk"), "budget")
+        self.assertEqual(store.get_budget_result("talk")["outcome"], "canceled")
+
+    def test_changes_nothing_while_the_old_task_is_active_or_unconfirmed(self):
+        for state, expected in (({"state": "awaiting_approval"}, "previous_task_active"), (None, "unknown")):
+            with self.subTest(state=state):
+                outcome, store = self.record(state)
+                self.assertEqual(outcome, expected)
+                self.assertEqual(store.get_task("talk"), self.OLD)
+                self.assertIsNone(store.get_budget_result("talk"))
+
+    def test_ordinary_results_still_go_through_the_server_check(self):
+        outcome, store = self.record({"state": "canceled"}, {"status": "awaiting_input", "work_ref": None})
+        self.assertEqual(outcome, "canceled")  # new_work 가 아니면 기존 규칙 그대로 — 끝난 작업을 해제한다
+        self.assertIsNone(store.get_task("talk"))

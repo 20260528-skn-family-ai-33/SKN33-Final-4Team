@@ -227,13 +227,23 @@ def _input(agent, mode, text, cid, *, entry="text", work_ref=None, declined=(), 
                         **context}}
 
 
+def _raise_targets(store, cid):
+    """예산 조정이 지금 늘리려는 카테고리 코드 목록 (예산 조정 상태의 요청 중 direction=up). 없으면 빈 목록"""
+    requests = (store.get_agent_state(cid, "budget") or {}).get("requests") or []
+    return [r["category"] for r in requests
+            if isinstance(r, dict) and r.get("direction") == "up" and isinstance(r.get("category"), str)]
+
+
 def _spending(mode, text, cid, store, *, entry="text", declined=(), selected_from=None, notices=(), classified=False,
               suggested_category=None):
     """소비 분석 에이전트 전달. 예산 작업 결과는 '바뀐 예산으로' 안내에 필요한 결과 · 시각만 (서버 확인값)
-    예산 조정이 넘겨 둔 작업이 있으면 budget_return(돌아갈 조정이 있음)을, 예산 조정이 알려 준 카테고리가 있으면 suggested_category 를 붙인다"""
+    예산 조정이 넘겨 둔 작업이 있으면 budget_return(돌아갈 조정이 있음)을, 예산 조정이 알려 준 카테고리가 있으면 suggested_category 를 붙인다.
+    budget_targets = 넘겨 둔 조정이 늘리려는 카테고리 — 소비 분석이 그 항목을 [○○에서 가져오기]로 제안하지 않게 (PR #111 리뷰)"""
     result = store.get_budget_result(cid)
     change = result and {"outcome": result["outcome"], "checked_at": result["checked_at"]}
-    extra = {k: v for k, v in (("budget_return", _lent(store, cid) is not None), ("suggested_category", suggested_category)) if v}
+    lent = _lent(store, cid) is not None
+    extra = {k: v for k, v in (("budget_return", lent), ("suggested_category", suggested_category),
+                               ("budget_targets", lent and _raise_targets(store, cid))) if v}
     handoff = _input("spending", mode, text, cid, entry=entry, declined=declined, selected_from=selected_from,
                      budget_change=change, **extra)
     return Decision("ready", "spending", agent="spending", handoff=handoff, notices=notices,
@@ -592,6 +602,20 @@ def _record_policy(store, cid, result):
 
 
 def _budget_result(store, cid, result, server):
+    """예산 조정 결과 → 라우터의 예산 작업 기록.
+    새 상담(new_work, PR #111 리뷰): 예산 조정이 이전 작업을 끝내고 서버 작업이 아직 없는 새 상담을 시작했다 (초과 항목으로 새 조정).
+    참조가 없다고 이전 작업 번호로 확인하면 끝난 이전 작업과 함께 지금 상담까지 지워진다 — 이전 작업이 끝났다는 서버 확인을 먼저 하고
+    그 결과만 기록한 뒤, 참조 없는 새 작업을 진행 중으로 남긴다 (담당 = 예산 조정 유지). 확인 실패 · 아직 진행 중이면 상태를 바꾸지 않는다"""
+    task = store.get_task(cid)
+    if result.get("new_work") and not result.get("work_ref") and result["status"] != "ended" and task and task["task_ref"]:
+        old = _check(server, task["task_ref"])
+        if old is None:
+            return "unknown"
+        if old["state"] in ACTIVE:
+            return "previous_task_active"
+        _finish(store, cid, old, {})
+        store.save_task(cid, dict(NEW_TASK))
+        return "in_progress"
     return record_budget_task(store, cid, {"task_ref": result.get("work_ref"), "ended": result["status"] == "ended"},
                               server)
 
