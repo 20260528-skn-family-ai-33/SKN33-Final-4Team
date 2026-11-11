@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from django.core.management.base import BaseCommand, CommandError
 
 from chat.router_core import MemoryStateStore
-from policies import agent, planner, reading
+from policies import agent, planner, reading, review
 from policies.llm import embedder
 
 BUTTON = "[버튼]"
@@ -26,6 +26,7 @@ class Command(BaseCommand):
                                                                  monthly_take_home_income=salary))
         store, complete, embed = MemoryStateStore(), reading.reader(True, max_calls=len(inputs))[1], embedder(True)[1]
         plan = planner.chooser(True)  # 8단계 행동 고르기 (문장마다 1회)
+        check = review.reviewer(True)  # 8단계 돌아보기 (검색마다 1회)
         for number, said in enumerate(inputs, 1):
             text = None if said == BUTTON else said
             request = {"agent": "policy", "mode": "start" if number == 1 else "continue",
@@ -33,7 +34,7 @@ class Command(BaseCommand):
                        "input_id": str(number), "conversation_id": "conversation", "today": date.isoformat(),
                        "as_of": None, "context": {}}
             try:
-                result = agent.handle(request, store=store, user=user, complete=complete, embed=embed, plan=plan)
+                result = agent.handle(request, store=store, user=user, complete=complete, embed=embed, plan=plan, check=check)
             except Exception as error:  # 확인 명령이라 어디서 멈췄는지 보여 준다
                 raise CommandError(f"{number}번째 입력에서 멈췄어요: {type(error).__name__}: {error}")
             self.stdout.write(f"\n나 > {said}")

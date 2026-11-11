@@ -5,14 +5,12 @@ LLM 은 행동 이름 · 직전 추천 번호 · 궁금한 항목만 고른다. 
 LangChain 체인(llm.chain: 프롬프트 | LLM | PydanticOutputParser)으로 부른다. 답의 모양 검사는 Pydantic 모델 Plan 이 한다. LLM 자리는 reading 과 같은 complete(system, user) -> str.
 """
 import json
-import os
 from typing import Literal
 
-from django.conf import settings
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, ConfigDict
 
-from .llm import chain
+from .llm import chain, responses
 
 ACTIONS = ("search", "ask_field", "detail", "not_mine", "end")
 TOPICS = ("support", "apply", "documents", "period", "eligibility", "other")
@@ -75,14 +73,4 @@ def ask(said, read, shown, complete, focus=None):
 
 def chooser(live=None):
     """complete 또는 None. 가짜 모드(CHAT_LLM=fake)는 None — 고정 흐름 규칙 그대로 (네트워크 없음)"""
-    if live is None:
-        live = getattr(settings, "CHAT_LLM", "fake") == "live"
-    if not live:
-        return None
-    from chat.llm.openai_rest import SERVICE_STOP, ResponsesClient
-
-    key, model = os.environ.get("OPENAI_API_KEY"), os.environ.get("LLM_MODEL")
-    if not key or not model:
-        return None
-    return ResponsesClient(model, key, None, max_output_tokens=300, schema=lambda system: ("policy_plan", SCHEMA),
-                           stop_on=SERVICE_STOP).complete
+    return responses("policy_plan", SCHEMA, 1000, live)

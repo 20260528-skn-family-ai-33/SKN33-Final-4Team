@@ -32,10 +32,11 @@ def rows(result, number=0):
 class Talk:
     """한 대화: 같은 store 로 여러 번 부른다. 버튼은 이름(label)을 문장으로 보낸다 (라우터 어댑터와 같다)"""
 
-    def __init__(self, user=PERSON, answer=None, plan=False):
+    def __init__(self, user=PERSON, answer=None, plan=False, check=False):
         self.store, self.user = MemoryStateStore(), user
         self.complete = mock.Mock(return_value=answer or said())
         self.plan = plan  # False = 행동 고르기 LLM 없이 규칙 (6단계 고정 흐름)
+        self.check = check  # False = 돌아보기 없이 검색 결과 그대로
         self.last = None
 
     def send(self, text=None, mode="continue"):
@@ -43,7 +44,7 @@ class Talk:
                    "work_ref": None, "input_id": "x", "conversation_id": CID, "today": TODAY, "as_of": None,
                    "context": {}}
         self.last = agent.handle(request, store=self.store, user=self.user, complete=self.complete, embed=question,
-                                 plan=self.plan)
+                                 plan=self.plan, check=self.check)
         return self.last
 
     @property
@@ -415,3 +416,45 @@ class PlannerTest(TestCase):
             self.assertIsNone(planner.ask("1번 알려줘", read, shown, lambda system, user, w=wrong: w), wrong)
         good = planner.ask("1번 알려줘", read, shown, lambda system, user: chose("detail", 1, ["support"]))
         self.assertEqual(good, ("detail", 1, ["support"]))
+
+
+def kept(*numbers):
+    return json.dumps({"keep": list(numbers)})
+
+
+class ReviewTest(TestCase):
+    """8단계 돌아보기: 검색 뒤 LLM 이 질문과 맞는 후보만 남긴다. 3개를 억지로 채우지 않는다"""
+
+    def setUp(self):
+        add("FEE", vector=near(1), plcyNm="청년 국가기술자격 응시료 지원", plcySprtCn="국가기술자격 응시료 지원")
+        add("BUILD", vector=near(2), plcyNm="건설기술인 진입장벽 완화", plcySprtCn="건설 재직자 교육")
+        add("ARMY", vector=near(3), plcyNm="장병 자격증 응시료", plcySprtCn="현역 장병 응시료")
+        add("FEE2", vector=near(4), plcyNm="자격증 취득 지원", plcySprtCn="자격증 시험 응시료")
+        self.check = mock.Mock(return_value=kept(1, 4))
+        self.talk = Talk(check=self.check)
+        self.talk.lives_in_dongtan()
+
+    def test_맞는_것만_검색_순서대로_보인다(self):
+        result = self.talk.send("자격증 시험비가 너무 비싸")
+        self.assertEqual(titles(result), ["1. 청년 국가기술자격 응시료 지원", "2. 자격증 취득 지원"])
+        self.assertEqual(self.talk.state["results"], ["FEE", "FEE2"])
+        message = json.loads(self.check.call_args[0][1])
+        self.assertEqual(message["문장"], "자격증 시험비가 너무 비싸")
+        self.assertEqual(message["후보"][1], "2. 건설기술인 진입장벽 완화 — 건설 재직자 교육")
+
+    def test_맞는_게_없으면_찾지_못했다고_답한다(self):
+        self.check.return_value = kept()
+        result = self.talk.send("자격증 시험비가 너무 비싸")
+        self.assertEqual((result["status"], titles(result)), ("replied", []))
+        self.assertTrue(result["reply"]["lines"][0].endswith("찾지 못했어요. 다른 분야나 지역으로 찾아볼까요?"))
+
+    def test_후보_밖_번호는_무시하고_실패하면_거르지_않는다(self):
+        self.check.return_value = kept(1, 99)
+        self.assertEqual(titles(self.talk.send("자격증 시험비")), ["1. 청년 국가기술자격 응시료 지원"])
+        for broken in ('{"keep": ["1"]}', "1번만요"):
+            self.check.return_value = broken
+            self.assertEqual(len(titles(self.talk.send("자격증 시험비"))), 3)  # 걸러지지 않은 검색 결과 그대로
+
+    def test_분야_버튼으로_찾을_때는_분야_문장으로_본다(self):
+        self.talk.send("교육 · 직업훈련")  # 지역을 고른 뒤 분야 버튼이 떠 있다
+        self.assertEqual(json.loads(self.check.call_args[0][1])["문장"], agent.FIELDS["교육 · 직업훈련"].query)

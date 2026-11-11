@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from . import planner, profiles, reading, saved, tools
+from . import planner, profiles, reading, review, saved, tools
 from .llm import EmbedFailed
 from .reading import Need, ReadFailed
 from .regions import REGIONS
@@ -309,10 +309,11 @@ def _shown(state):
     return [(number, tools.policy_name(policy_no)) for number, policy_no in enumerate(numbers, 1)]
 
 
-def handle(request, *, store, user=None, complete=None, embed=None, plan=None):
+def handle(request, *, store, user=None, complete=None, embed=None, plan=None, check=None):
     """request = 라우터 공통 입력 {agent, mode, entry, text, work_ref, conversation_id, today, as_of, context}
     complete = 읽기 LLM (기본 reading.reader()), embed = 임베딩 (기본 llm.embedder()),
-    plan = 행동 고르기 LLM (기본 planner.chooser(), 가짜 모드면 None → 규칙). 모두 테스트 대역을 넣을 수 있다"""
+    plan = 행동 고르기 LLM (기본 planner.chooser()), check = 돌아보기 LLM (기본 review.reviewer()).
+    plan · check 는 가짜 모드면 None → 규칙 · 거르지 않음, False 면 끈다. 모두 테스트 대역을 넣을 수 있다"""
     cid, text, today = request["conversation_id"], request.get("text"), _today(request)
     state = dict(store.get_agent_state(cid, AGENT) or {})
     if request.get("mode") == "cancel":
@@ -350,10 +351,10 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None):
                 action = Action("ask_field")
         else:
             break
-    return _act(action, store, cid, state, user, today, embed)
+    return _act(action, store, cid, state, user, today, embed, check)
 
 
-def _act(action, store, cid, state, user, today, embed):
+def _act(action, store, cid, state, user, today, embed, check=None):
     kind = action.kind
     if kind == "not_mine":
         return {"status": "not_mine", "work_ref": None}
@@ -386,6 +387,11 @@ def _act(action, store, cid, state, user, today, embed):
             found, _ = tools.find(action.needs or [Need(action.text)], action.region, profile, today, embed=embed)
         except EmbedFailed as error:
             return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
+        judge = check if check is not None else review.reviewer()
+        if judge and found:  # 돌아보기: 질문과 맞는 것만 남긴다 (실패하면 그대로)
+            said = action.text or " / ".join(n.query for n in action.needs or [])
+            kept = review.keep(said, found, judge)
+            found = found if kept is None else kept
         return _show(store, cid, state, found, action.region, today, 0, member)
     raise ValueError(f"처리하지 못한 행동: {kind}")
 

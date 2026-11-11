@@ -68,3 +68,17 @@ def chain(system, complete, parser=None):
     prompt = ChatPromptTemplate.from_messages([SystemMessage(content=system), ("human", "{text}")])
     model = RunnableLambda(lambda value: complete(*(message.content for message in value.to_messages())))
     return prompt | model | (parser or StrOutputParser())
+
+
+def responses(name, schema, max_output_tokens, live=None):
+    """체인의 LLM 자리에 넣을 complete(system, user) 또는 None. 가짜 모드(CHAT_LLM=fake) · 키 없음은 None → 부르는 쪽이 규칙으로.
+    schema = 답 모양(Pydantic 모델의 JSON 스키마). OpenAI 가 처음부터 이 모양으로 쓰게 한다"""
+    if live is None:
+        live = getattr(settings, "CHAT_LLM", "fake") == "live"
+    key, model = os.environ.get("OPENAI_API_KEY"), os.environ.get("LLM_MODEL")
+    if not live or not key or not model:
+        return None
+    from chat.llm.openai_rest import SERVICE_STOP, ResponsesClient
+
+    return ResponsesClient(model, key, None, max_output_tokens=max_output_tokens, schema=lambda system: (name, schema),
+                           stop_on=SERVICE_STOP).complete
