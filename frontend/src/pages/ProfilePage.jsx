@@ -145,18 +145,20 @@ function ProfileForm({ saved }) {
 
         <div className="mc-card">
           <h2>사는 지역</h2>
-          <label className="mc-field">시도
-            <select aria-label="시도" value={sido} onChange={(e) => { setSido(e.target.value); setRegion(''); setError('') }}>
-              <option value="">고르기</option>
-              {regions.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
-            </select>
-          </label>
-          <label className="mc-field">시군구
-            <select aria-label="시군구" value={region} disabled={!sido} onChange={(e) => { setRegion(e.target.value); setError('') }}>
-              <option value="">고르기</option>
-              {areas.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
-            </select>
-          </label>
+          <div className="mc-pair" style={{ marginBottom: 0 }}>
+            <label className="mc-field">시도
+              <select aria-label="시도" value={sido} onChange={(e) => { setSido(e.target.value); setRegion(''); setError('') }}>
+                <option value="">고르기</option>
+                {regions.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+              </select>
+            </label>
+            <label className="mc-field">시군구
+              <select aria-label="시군구" value={region} disabled={!sido} onChange={(e) => { setRegion(e.target.value); setError('') }}>
+                <option value="">고르기</option>
+                {areas.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
+              </select>
+            </label>
+          </div>
           <p className="mc-picked" style={{ marginTop: 10 }}>청년 정책을 찾을 때 이 지역을 기본으로 써요.</p>
         </div>
 
