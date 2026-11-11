@@ -9,7 +9,7 @@ APPLY = {"적용", "승인", "이 안으로 적용", "그대로 적용"}
 ENDED = {"saved", "failed", "canceled", "expired", "rejected"}
 
 
-def _result(status, lines=(), *, work_ref=None, choices=(), proposal=None,
+def _result(status, lines=(), *, work_ref=None, choices=(), proposal=None, comparison=None, detail=False,
             explanation=None, choice_descriptions=None, **extra):
     descriptions = describe_choices(None, choices) if choice_descriptions is None else choice_descriptions
     reply = {"lines": list(lines), "notices": [],
@@ -18,6 +18,10 @@ def _result(status, lines=(), *, work_ref=None, choices=(), proposal=None,
                                      status_explanation(status, proposal=proposal, error=extra.get("error")))}
     if proposal is not None:
         reply["proposal"] = deepcopy(proposal)
+    if comparison is not None:
+        reply["comparison"] = deepcopy(comparison)
+    if detail:
+        reply["detail"] = True
     return {"status": status, "work_ref": work_ref, "reply": reply, **extra}
 
 

@@ -378,13 +378,15 @@ def _handle(request, **ports):
             inquiry = _inquiry(request, state, ports)
             if inquiry:
                 return inquiry
-            return _result("replied", offer["answer"].get("reasons", []), comparison=offer["comparison"], detail=True)
+            return _result("replied", offer["answer"].get("reasons", []), choices=pending["choices"],
+                           comparison=offer["comparison"], detail=True)
         selected = next((i for i, (_, label) in enumerate(pending["choices"][:len(offer["answer"]["plans"])]) if text in (label, f"financial_{i}", f"{i + 1}안", str(i + 1))), None)
         accepting = "추천" in compact and any(w in compact for w in ("대로", "해줘", "선택")) or "아무거나" in compact
         if selected is None and accepting:
             selected = offer["answer"]["recommended_index"]
             if selected is None:
-                return _result("awaiting_input", ["전액 반영 가능한 추천안을 정하지 못했어요. 부족액과 제한을 확인한 뒤 안이나 금액을 직접 골라 주세요."], comparison=offer["comparison"])
+                return _result("awaiting_input", ["전액 반영 가능한 추천안을 정하지 못했어요. 부족액과 제한을 확인한 뒤 안이나 금액을 직접 골라 주세요."],
+                               choices=pending["choices"], comparison=offer["comparison"])
         if selected is not None:
             return selected_preview(store, cid, state, selected, ports)
         state.pop("financial_offer", None); state.pop("pending", None)
