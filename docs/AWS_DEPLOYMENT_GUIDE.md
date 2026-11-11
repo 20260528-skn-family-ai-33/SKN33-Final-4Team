@@ -409,7 +409,7 @@ sudo chmod 644 /opt/moneycushion/models/spending_category_svm.joblib /opt/moneyc
 sudo sha256sum /opt/moneycushion/models/spending_category_svm.joblib /opt/moneycushion/models/label_conflicts.csv
 ```
 
-출력 해시를 모델 담당자가 전달한 값과 대조합니다. `joblib`은 신뢰한 파일만 읽습니다. 모델 파일을 바꾸는 일은 코드 배포와 별도이며, 나중에 모델과 코드 버전도 함께 기록합니다. 예산 배분 등 추가 모델을 실제 API에 연결하면 해당 파일·추론 패키지도 추가해야 합니다. [현재 모델 공유 규칙](ML_MODELS.md)
+출력 해시를 모델 담당자가 전달한 값과 대조합니다. `joblib`은 신뢰한 파일만 읽습니다. 모델 파일을 바꾸는 일은 코드 배포와 별도이며, 나중에 모델과 코드 버전도 함께 기록합니다. 예산 배분 모델은 아래 '예산 분배 모델' 소절을 따릅니다. [현재 모델 공유 규칙](ML_MODELS.md)
 
 #### 예산 분배 모델 (예산 분배·조정 에이전트를 켤 때)
 
@@ -434,9 +434,23 @@ CHAT_ENGINE=router
 CHAT_LLM=live
 ```
 
+- `BUDGET_DESIGN_ENABLED=true`는 예산 추천(분배)과 예산 조정의 ML 참고값에 필요합니다.
+- `CHAT_ENGINE=router`는 챗봇에서 소비 분석·예산 조정 에이전트를 사용하도록 설정합니다.
+- `CHAT_LLM=live`는 예산 조정 AI 동의 제공과 LLM 호출에 필요합니다.
+- 예산 추천에서 외부 LLM까지 쓰려면 `BUDGET_DESIGN_EXTERNAL_ENABLED=true`가 따로 필요합니다. 동의 문구 최종 확인 전에는 `false`를 유지합니다.
+
 `BUDGET_INFERENCE_PYTHON`·`BUDGET_MODEL_PATH`는 빈 값(`KEY=`)으로 두지 않습니다. 예제 `deploy.sh`는 `BUDGET_DESIGN_ENABLED=true`일 때 모델 파일이 있는지 확인합니다.
 
-**완료 기준:** 공개 설정·비밀 설정·모델 두 파일이 EC2에 있으며 모델 해시가 일치합니다. 예산 분배를 켜면 `budget_allocation.joblib`까지 있어야 합니다.
+4. 컨테이너를 재생성한 뒤 EC2 터미널에서 추론 환경을 확인합니다. 이 명령은 합성 데이터만 사용합니다.
+
+```bash
+cd /opt/moneycushion
+sudo docker compose --project-name moneycushion --env-file config.env -f deploy/compose.yml exec backend python /app/scripts/budget_design/inference.py
+```
+
+출력에 `"status": "ready"`와 `"model_name": "catboost_shallow"`가 있어야 합니다. `"status": "error"`이면 `BUDGET_INFERENCE_PYTHON`·`BUDGET_MODEL_PATH`·모델 해시를 다시 확인합니다.
+
+**완료 기준:** 공개 설정·비밀 설정·모델 두 파일이 EC2에 있으며 모델 해시가 일치합니다. 예산 분배를 켜면 `budget_allocation.joblib`도 준비하고, 합성 추론 출력의 `status`가 `ready`이고 `model_name`이 `catboost_shallow`인지 확인합니다.
 
 ## 10 GitHub Actions에 AWS 권한 연결하기
 
