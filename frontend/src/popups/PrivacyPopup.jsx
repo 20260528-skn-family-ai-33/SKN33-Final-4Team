@@ -12,9 +12,19 @@ const STATES = { granted: '동의함', revoked: '철회함', not_granted: '동�
 // 철회는 접수됐지만 외부 인증 · 데이터 삭제가 남은 상태 (R21) — '철회함'(삭제 완료)으로 보이지 않게
 const DELETING = { processing: '삭제 처리 중', retry_required: '삭제 재시도 필요' }
 const dateText = (value) => value ? new Date(value).toLocaleDateString('ko-KR', { timeZone: 'Asia/Seoul' }) : ''
+// 예산 조정 AI 전송 동의 (11/11): 동의는 챗봇에서 예산 조정을 요청할 때 창으로 받고, 이력 확인 · 철회는 여기서 한다
+const ADJUST_AI = 'adjust_ai'
+const ADJUST_AI_URL = '/api/budgets/adjustment-ai-consent/'
+const ADJUST_AI_NAME = '예산 조정 AI 전송'
+const AI_STATES = { granted: '동의함', revoked: '철회함', not_granted: '동의 안 함', needs_renewal: '다시 동의 필요' }
+const aiHistory = (ai) => ai.status === 'granted' ? `${dateText(ai.grantedAt)} 동의 · ${ai.documentVersion}`
+  : ai.status === 'revoked' ? `${dateText(ai.grantedAt)} 동의 · ${dateText(ai.revokedAt)} 철회`
+    : ai.status === 'needs_renewal' ? `${dateText(ai.grantedAt)} 동의 · 문서가 바뀌었어요`
+      : '동의 기록 없음 · 챗봇에서 예산 조정을 요청할 때 받아요'
 
 export default function PrivacyPopup({ onChanged }) {
   const query = useApi('/api/finance/consents/')
+  const ai = useApi(ADJUST_AI_URL)
   const navigate = useNavigate()
   const { closePopup } = usePopup()
   const [step, setStep] = useState(null)
@@ -30,6 +40,13 @@ export default function PrivacyPopup({ onChanged }) {
     setBusy(true)
     setError('')
     try {
+      if (step === ADJUST_AI) {
+        await apiSend(ADJUST_AI_URL, 'DELETE', { confirm: true })
+        setMessage(`${ADJUST_AI_NAME} 동의를 철회했어요. 승인한 예산과 금융자료는 그대로예요.`)
+        setStep(null)
+        ai.reload()
+        return
+      }
       const result = await apiSend(`/api/finance/consents/${step}/`, 'DELETE', { confirm: true })
       const left = result?.items?.find((item) => item.productScope === step)?.deletionStatus
       setMessage(left === 'retry_required' ? `${LABELS[step]} 동의 철회를 접수했지만 삭제를 마무리하지 못했어요. 잠시 후 [삭제 다시 시도]를 눌러 주세요.`
@@ -49,7 +66,15 @@ export default function PrivacyPopup({ onChanged }) {
   if (query.error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
   return <Popup label="동의·데이터 관리">
     <h2>동의·데이터 관리</h2>
-    {step ? <form className="mc-form" onSubmit={submit}>
+    {step === ADJUST_AI ? <form className="mc-form" onSubmit={submit}>
+      <h3>{ADJUST_AI_NAME} 동의 철회</h3>
+      <p>철회하면 다음 요청부터 예산 조정 챗봇이 예산 자료를 외부 AI로 보내지 않아요. 다시 이용하려면 챗봇에서 예산 조정을 요청할 때 동의하면 돼요.</p>
+      <p className="mc-note">승인한 예산과 금융자료, 최소 금액·자물쇠는 그대로 유지해요. 이미 보낸 내용은 되돌릴 수 없어요.</p>
+      <button type="submit" className="mc-primary" disabled={busy}>
+        {busy ? '처리 중…' : '동의 철회'}
+      </button>
+      <button type="button" className="mc-link" disabled={busy} onClick={() => choose(null)}>취소</button>
+    </form> : step ? <form className="mc-form" onSubmit={submit}>
       <h3>{LABELS[step]} 동의 철회</h3>
       <p>해당 범위에서 조회한 금융 데이터와 이를 바탕으로 자동 탐지한 고정지출·저축 항목을 삭제합니다. 삭제한 데이터는 되돌릴 수 없어요.</p>
       <p className="mc-note">데이터가 섞여 있는 예산·쿠션 기록과 대화·분석 기록도 초기화되어 예산을 다시 설정해야 해요. 직접 등록한 항목은 남기고 삭제된 데이터와의 연결을 해제해요.</p>
@@ -72,6 +97,15 @@ export default function PrivacyPopup({ onChanged }) {
         {item.deletionStatus === 'retry_required' && <button type="button" className="mc-link" onClick={() => choose(item.productScope)}>{LABELS[item.productScope]} 삭제 다시 시도</button>}
       </div>)}
       {query.data && <button type="button" className="mc-link" onClick={() => { closePopup(); navigate(PATHS.connect) }}>조회 동의·연결 관리하기</button>}
+      {query.data && ai.data && <div className="mc-priv-row">
+        <div><b>{ADJUST_AI_NAME} · 선택</b>
+          <small>{aiHistory(ai.data)}</small>
+        </div>
+        <span className="mc-badge">{AI_STATES[ai.data.status] ?? AI_STATES.not_granted}</span>
+        {ai.data.canRevoke && <button type="button" className="mc-link" onClick={() => choose(ADJUST_AI)}>{ADJUST_AI_NAME} 철회</button>}
+      </div>}
+      {query.data && ai.error && <p className="mc-muted">{ADJUST_AI_NAME} 동의 상태를 불러오지 못했어요.{' '}
+        <button type="button" className="mc-link" onClick={ai.reload}>다시 불러오기</button></p>}
       {query.data && <BudgetAIConsent />}
       {message && <p role="status">{message}</p>}
     </>}

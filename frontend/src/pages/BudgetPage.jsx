@@ -11,7 +11,7 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import OutOfBudgetLine, { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 import { PATHS } from '../routes.js'
-import { catIcon, PENDING } from '../utils/categories.js'
+import { catIcon, ETC, PENDING } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
 import HelpTip from '../components/HelpTip.jsx'
 
@@ -120,6 +120,8 @@ export default function BudgetPage() {
         )}
         {categories.map((c) => {
           const lock = lockOf(c)
+          // 예산을 넘긴 금액 (홈 알림과 같은 기준: 예산 0원 칸은 넘겼다고 보지 않는다). 넘기면 막대 색이 바뀐다
+          const over = c.allocated > 0 && c.spent > c.allocated ? c.spent - c.allocated : 0
           return (
             <div className="mc-catuse" key={c.category}>
               <div className="mc-row">
@@ -128,11 +130,23 @@ export default function BudgetPage() {
                   <LockIcon />
                 </button>
               </div>
-              <div className="mc-bar"><span style={{ width: `${pct(c.spent, c.allocated)}%` }}></span></div>
+              <div className={`mc-bar${over ? ' is-over' : ''}`}><span style={{ width: `${pct(c.spent, c.allocated)}%` }}></span></div>
               <div className="mc-row mc-catuse-n">
                 <span className="mc-muted">{won(c.spent)} / {won(c.allocated)} · {pct(c.spent, c.allocated)}%</span>
-                <strong>남은 {won(Math.max(c.allocated - c.spent, 0))}</strong>
+                {over ? <strong className="is-over">{won(over)} 초과</strong> : <strong>남은 {won(Math.max(c.allocated - c.spent, 0))}</strong>}
               </div>
+              {/* 초과한 카테고리 → 그 카테고리를 담아 챗봇 예산 조정으로 (11/11, docs/api/chat.md budgetContext.hints).
+                  overAmount 는 참고값이고 서버가 최신 초과액을 다시 확인한다.
+                  승인된 예산에서만, 기타는 빼고 보여 준다 (예산 조정이 초과 항목 조정을 시작하는 조건과 같게) */}
+              {over > 0 && budget.status === 'approved' && c.category !== ETC.code && (
+                <button type="button" className="mc-link mc-catuse-adjust" aria-label={`${c.categoryName} 예산 조정하기`}
+                  onClick={() => navigate(PATHS.assistant, { state: { budgetContext: {
+                    baseBudgetId: budget.budgetId, mode: 'NORMAL_ADJUSTMENT',
+                    hints: { reason: 'over', categories: [c.category], overAmount: over },
+                  } } })}>
+                  예산 조정하기 ›
+                </button>
+              )}
             </div>
           )
         })}

@@ -6,7 +6,13 @@
 - 담당이 not_mine 이면 라우터가 원문 + 최소 맥락으로 다시 분류한다(라우터 LLM 1회). 라우터가 직접 분류해 보낸 에이전트가
   거절했거나, 같은 입력이 이미 2번 전달됐거나, 거절한 에이전트를 다시 가리키면 목적지 확인 질문으로 바꾼다
   (이 제한은 한 입력 안의 재전달만 막는다 — 서버 저장 · 외부 작업 전체의 중복 방지가 아니다)
+- 담당이 not_mine 과 함께 갈 곳(suggest = {"to": 에이전트, "category": 코드 | None})을 알려 주면 라우터 LLM 없이 그쪽으로 넘긴다.
+  예산 조정이 조회 질문을 소비 분석으로 넘긴 경우 조정 작업은 '잠깐 넘겨 둠'(task["lent"])으로 보류하고, 조정 얘기가 다시 오면
+  이어서/새로 질문 없이 재개한다. 재개할 때 소비 분석이 방금 본 카테고리를 hints = {"from": "spending", "category"} 로 넘긴다
 - 기능 버튼은 목적지가 정해져 있어 라우터 분류 LLM 없이 전환 규칙만 적용한다
+- 초과 항목 진입 (11/11): 예산 화면의 초과 카테고리, 또는 소비 분석 초과 답변의 [예산 조정하기]를 누르면 예산 조정에
+  hints = {"reason": "over", "categories": [코드], "over_amount": 원} 을 넘긴다. 소비 분석이 결과의 "over" 로 알려 준 카테고리는
+  다음 한 턴만 기억한다 (get_over/save_over). 기존 조정이 있어도 라우터는 묻지 않고 넘기고, 이어갈지 새로 할지는 예산 조정이 묻는다
 - 전환 때 다른 에이전트의 미완료 질문 · 작업은 보류만 한다 (삭제 · 완료 처리 없음)
 
 공개 함수
@@ -101,6 +107,13 @@ class MemoryStateStore:
     def save_analysis(self, cid, analysis):
         self._put(("analysis", cid), analysis)
 
+    def get_over(self, cid):
+        """직전 턴의 소비 분석 초과 답변이 알려 준 카테고리 {"category", "over_amount"} (라우터 칸, 한 턴만 유효)"""
+        return self.data.get(("over", cid))
+
+    def save_over(self, cid, over):
+        self._put(("over", cid), over)
+
     def get_budget_result(self, cid):
         return self.data.get(("budget_result", cid))
 
@@ -130,6 +143,17 @@ def _active(store, cid):
 
 def _spending_summary(store, cid):
     return store.get_shared(cid, "spending") or {}
+
+
+def _lent(store, cid):
+    """예산 조정이 조회 질문 때문에 소비 분석에 잠깐 넘겨 둔 작업의 기록 {"category": 소비가 방금 본 카테고리 | None}. 아니면 None"""
+    task = store.get_task(cid)
+    return task.get("lent") if task and task["suspended"] else None
+
+
+def take_from_label(code):
+    """소비 분석 답에 붙는 [○○에서 가져오기] 버튼 이름. 이 이름 그대로 오면 LLM 없이 예산 조정으로 돌아간다"""
+    return f"{reading.CATEGORY_NAMES[code]}에서 가져오기"
 
 
 def current_agent(store, cid):
@@ -203,12 +227,25 @@ def _input(agent, mode, text, cid, *, entry="text", work_ref=None, declined=(), 
                         **context}}
 
 
-def _spending(mode, text, cid, store, *, entry="text", declined=(), selected_from=None, notices=(), classified=False):
-    """소비 분석 에이전트 전달. 예산 작업 결과는 '바뀐 예산으로' 안내에 필요한 결과 · 시각만 (서버 확인값)"""
+def _raise_targets(store, cid):
+    """예산 조정이 지금 늘리려는 카테고리 코드 목록 (예산 조정 상태의 요청 중 direction=up). 없으면 빈 목록"""
+    requests = (store.get_agent_state(cid, "budget") or {}).get("requests") or []
+    return [r["category"] for r in requests
+            if isinstance(r, dict) and r.get("direction") == "up" and isinstance(r.get("category"), str)]
+
+
+def _spending(mode, text, cid, store, *, entry="text", declined=(), selected_from=None, notices=(), classified=False,
+              suggested_category=None):
+    """소비 분석 에이전트 전달. 예산 작업 결과는 '바뀐 예산으로' 안내에 필요한 결과 · 시각만 (서버 확인값)
+    예산 조정이 넘겨 둔 작업이 있으면 budget_return(돌아갈 조정이 있음)을, 예산 조정이 알려 준 카테고리가 있으면 suggested_category 를 붙인다.
+    budget_targets = 넘겨 둔 조정이 늘리려는 카테고리 — 소비 분석이 그 항목을 [○○에서 가져오기]로 제안하지 않게 (PR #111 리뷰)"""
     result = store.get_budget_result(cid)
     change = result and {"outcome": result["outcome"], "checked_at": result["checked_at"]}
+    lent = _lent(store, cid) is not None
+    extra = {k: v for k, v in (("budget_return", lent), ("suggested_category", suggested_category),
+                               ("budget_targets", lent and _raise_targets(store, cid))) if v}
     handoff = _input("spending", mode, text, cid, entry=entry, declined=declined, selected_from=selected_from,
-                     budget_change=change)
+                     budget_change=change, **extra)
     return Decision("ready", "spending", agent="spending", handoff=handoff, notices=notices,
                     declined=tuple(declined), classified=classified)
 
@@ -262,9 +299,10 @@ def _handoff(decision, mode, cid, store, task, *, entry="text", declined=(), cla
                    handoff={**decision.handoff, **{k: v for k, v in base.items() if k != "text"}})
 
 
-def _forward(text, cid, store, task, entry="text"):
-    """진행 중 조정 작업에 대한 입력 → 원문 그대로 예산 조정 에이전트에. 같은 분야 판단 · 승인 · 취소는 에이전트가 정한다"""
-    decision = Decision("ready", "budget_adjust", handoff={"task": "budget_adjust", "text": text, "hints": {}})
+def _forward(text, cid, store, task, entry="text", hints=None):
+    """진행 중 조정 작업에 대한 입력 → 원문 그대로 예산 조정 에이전트에. 같은 분야 판단 · 승인 · 취소는 에이전트가 정한다
+    hints = 초과 항목으로 들어온 버튼의 시작 정보 (_over_hints 모양). 기존 조정을 이어갈지 새로 할지는 에이전트가 묻는다"""
+    decision = Decision("ready", "budget_adjust", handoff={"task": "budget_adjust", "text": text, "hints": dict(hints or {})})
     return _handoff(decision, "continue", cid, store, task, entry=entry)
 
 
@@ -280,22 +318,31 @@ def _resume(decision, cid, store, server, task):
         else:
             task = {**task, "phase": status["state"]}
     if status is None or status["state"] in ACTIVE:
-        store.save_task(cid, {**task, "suspended": False})
+        store.save_task(cid, {**{k: v for k, v in task.items() if k != "lent"}, "suspended": False})
     return _handoff(decision, "resume", cid, store, task, classified=True, task_state=status and status["state"])
 
 
 def _budget(decision, request, cid, store, server, *, chosen=None, declined=(), entry="text"):
     """라우터가 예산 조정으로 정한 요청. 대화당 조정 작업 하나 (기존 규칙)"""
     task = store.get_task(cid)
+    over = (decision.handoff.get("hints") or {}).get("reason") == "over"  # 초과 항목으로 들어온 요청 (예산 화면 · 소비 분석의 [예산 조정하기])
     if task is None:
         notices = _switch(store, cid, "budget")
         store.save_task(cid, dict(NEW_TASK))
         decision = _handoff(decision, "start", cid, store, None, entry=entry, declined=declined, classified=True,
                             selected_from=chosen)
-    elif request.resume:
+    elif request.resume or _lent(store, cid) is not None or over:
+        # 조회 질문 때문에 소비 분석에 잠깐 넘겨 둔 조정은 이어서/새로 묻지 않고 바로 이어간다 (11/11)
+        # 초과 항목으로 들어온 요청도 라우터가 묻지 않고 잇는다 — 기존 조정을 이어갈지 초과 항목으로 새로 할지는
+        # 예산 조정 에이전트가 묻는다 (over_keep · over_restart). 라우터 질문과 겹치지 않게 한 곳에서만 묻는다
+        lent = _lent(store, cid)
         decision = _resume(decision, cid, store, server, task)
         if decision.status == "failed":  # 서버 확인 실패 → 대기 질문 등 어떤 상태도 바꾸지 않는다
             return replace(decision, declined=tuple(declined))
+        if lent is not None and not over:  # 소비 분석이 방금 본 카테고리 → "거기서 빼줘"의 "거기". 초과 hints 와는 섞지 않는다
+            hints = {**decision.handoff["hints"], "from": "spending",
+                     **({"category": lent["category"]} if lent.get("category") else {})}
+            decision = replace(decision, handoff={**decision.handoff, "hints": hints})
         notices = _switch(store, cid, "budget")
     else:
         # 기존 작업을 덮어쓰거나 새로 만들지 않고 어떻게 할지 묻는다 (담당 전환은 답을 받은 뒤)
@@ -308,8 +355,9 @@ def _budget(decision, request, cid, store, server, *, chosen=None, declined=(), 
 
 # ---------- 분류 · 전달 ----------
 
-def _classify(request, text, cid, store, server, *, declined=(), chosen=None):
-    """라우터 분류 → 목적지 에이전트로 시작. 거절한 에이전트 재지정 · 전달 한도 초과면 목적지 확인 질문"""
+def _classify(request, text, cid, store, server, *, declined=(), chosen=None, suggest=None):
+    """라우터 분류 → 목적지 에이전트로 시작. 거절한 에이전트 재지정 · 전달 한도 초과면 목적지 확인 질문
+    suggest = 거절한 에이전트가 알려 준 갈 곳 (이때 request 는 LLM 해석이 아니라 suggest 로 만든 것)"""
     targets = rules.destinations(request)
     if len(targets) > 1:
         ask = Decision("ask", asking="intent", options=tuple(rules.INTENT_OF[a] for a in targets),
@@ -334,8 +382,12 @@ def _classify(request, text, cid, store, server, *, declined=(), chosen=None):
         store.save_work(cid, "policy", {"work_ref": None, "suspended": False})
         return replace(_policy(store, cid, "start", text, declined=declined, notices=notices, classified=True),
                        reading=request)
+    if suggest is not None and "budget_task_suspended" in notices:
+        # 예산 조정이 조회 질문을 넘겼다: 조정 작업은 잠깐 넘겨 둔 것으로 표시 (돌아오면 묻지 않고 이어간다)
+        store.save_task(cid, {**store.get_task(cid), "lent": {"category": None}})
+        notices = tuple("budget_task_kept" if n == "budget_task_suspended" else n for n in notices)
     return replace(_spending("start", text, cid, store, declined=declined, selected_from=chosen, notices=notices,
-                             classified=True), reading=request)
+                             classified=True, suggested_category=suggest and suggest.get("category")), reading=request)
 
 
 def _cancel_word(text, cid, store, asked, active, task):
@@ -424,6 +476,11 @@ def route(text, conversation_id, store, complete, server=None):
         if asked:
             return _router_answer(text, cid, store, server, asked, task, complete)
         if active == "spending":
+            lent = _lent(store, cid)
+            if lent and lent.get("category") and " ".join(text.split()) == take_from_label(lent["category"]):
+                # [○○에서 가져오기] 버튼: 라우터 · 소비 해석 LLM 없이 넘겨 둔 조정으로 돌아간다
+                request = RouterReading(("budget_adjust",))
+                return _budget(rules.budget_request(request, text), request, cid, store, server)
             return _spending("continue", text, cid, store)
         if active == "budget":
             return _forward(text, cid, store, task)  # 원문 그대로. 같은 분야인지는 예산 조정 에이전트가 정한다
@@ -443,8 +500,13 @@ def reroute(text, conversation_id, store, complete, server=None, *, declined):
         return Decision("failed", reason=str(error), declined=tuple(declined))
 
 
-def route_button(agent, conversation_id, store, server=None):
-    """기능 버튼 → Decision. 목적지가 정해져 있어 라우터 분류 LLM 을 부르지 않는다. 선택만으로 조건 확정 · 예산 변경을 하지 않는다"""
+def route_button(agent, conversation_id, store, server=None, hints=None):
+    """기능 버튼 → Decision. 목적지가 정해져 있어 라우터 분류 LLM 을 부르지 않는다. 선택만으로 조건 확정 · 예산 변경을 하지 않는다
+    hints = 초과 항목으로 들어온 시작 정보 {"reason": "over", "categories": [코드], "over_amount": 원}
+    (예산 화면의 초과 카테고리, 또는 소비 분석 초과 답변의 [예산 조정하기] — run_turn 이 만든다). handoff["hints"] 로 그대로 넘긴다.
+    - 조정 작업이 없으면 새로 시작(start), 진행 중이면 그 작업에(continue), 보류 · 넘겨 둔 작업이 있으면 묻지 않고 재개(resume)한다.
+      기존 조정이 있을 때 이어갈지 초과 항목으로 새로 할지는 예산 조정 에이전트가 묻는다 (라우터는 이어서/새로를 묻지 않는다)
+    - 라우터 질문에 답하는 중이면 쓰지 않는다 (같은 질문을 다시 한다)"""
     if agent not in rules.AGENTS:
         raise ValueError(f"알 수 없는 기능: {agent!r}")
     cid = conversation_id
@@ -460,9 +522,12 @@ def route_button(agent, conversation_id, store, server=None):
         return _spending("start", None, cid, store, entry="button", notices=_switch(store, cid, "spending"))
     if agent == "budget":
         if active == "budget":
-            return _forward(None, cid, store, store.get_task(cid), entry="button")
+            return _forward(None, cid, store, store.get_task(cid), entry="button", hints=hints)
         request = RouterReading(("budget_adjust",))
-        return _budget(rules.budget_request(request, None), request, cid, store, server, entry="button")
+        decision = rules.budget_request(request, None)
+        if hints:
+            decision = replace(decision, handoff={**decision.handoff, "hints": dict(hints)})
+        return _budget(decision, request, cid, store, server, entry="button")
     if active == "policy":
         return _policy(store, cid, "continue", None, entry="button")
     if store.get_work(cid, "policy"):
@@ -488,6 +553,45 @@ def _call(handler, request):
     return result
 
 
+def _suggestion(result, agent):
+    """not_mine 결과의 suggest → {"to", "category"} (형식이 맞을 때만). 자기 자신 · 모르는 에이전트 · 모르는 코드는 버린다"""
+    suggest = result.get("suggest")
+    if not isinstance(suggest, dict) or suggest.get("to") not in rules.AGENTS or suggest["to"] == agent:
+        return None
+    category = suggest.get("category")
+    return {"to": suggest["to"], "category": category if category in reading.CATEGORY_NAMES else None}
+
+
+def _follow(text, cid, store, server, suggest, delivered):
+    """거절한 에이전트가 알려 준 곳으로 라우터 LLM 없이 넘긴다 (전환 규칙 · 전달 한도는 분류했을 때와 같다)"""
+    request = RouterReading((rules.INTENT_OF[suggest["to"]],))
+    return _classify(request, text, cid, store, server, declined=tuple(delivered), suggest=suggest)
+
+
+def _record_seen(store, cid, result):
+    """넘겨 둔 조정이 있을 때 소비 분석이 이번에 본 카테고리 하나를 기록한다 (돌아갈 때 hints 로). 여러 개 · 전체면 비운다"""
+    task = store.get_task(cid)
+    items = (result.get("detail") or {}).get("items") or []
+    if not task or not task.get("lent") or result["status"] != "replied" or not items:
+        return
+    codes = list(dict.fromkeys(i.get("category") for i in items))
+    seen = codes[0] if len(codes) == 1 and codes[0] in reading.CATEGORY_NAMES else None
+    store.save_task(cid, {**task, "lent": {"category": seen}})
+
+
+def _over_hints(over):
+    """초과 카테고리 하나 → 예산 조정 에이전트의 hints (세 칸만 — {"from": "spending"} 모양과 섞지 않는다)"""
+    return {"reason": "over", "categories": [over["category"]], "over_amount": over["over_amount"]}
+
+
+def _record_over(store, cid, result):
+    """소비 분석의 초과 답변이 알려 준 카테고리를 다음 한 턴 동안 기억한다 ([예산 조정하기]를 누르면 hints 로). 모양이 다르면 버린다"""
+    over = result.get("over") if result["status"] == "replied" else None
+    ok = (isinstance(over, dict) and over.get("category") in reading.CATEGORY_NAMES
+          and type(over.get("over_amount")) is int and over["over_amount"] > 0)
+    store.save_over(cid, {"category": over["category"], "over_amount": over["over_amount"]} if ok else None)
+
+
 def _record_policy(store, cid, result):
     """정책 결과 → 라우터의 정책 작업 기록 (재개 참조만 보관, 내용은 해석하지 않음)"""
     if result["status"] == "ended":
@@ -498,22 +602,44 @@ def _record_policy(store, cid, result):
 
 
 def _budget_result(store, cid, result, server):
+    """예산 조정 결과 → 라우터의 예산 작업 기록.
+    새 상담(new_work, PR #111 리뷰): 예산 조정이 이전 작업을 끝내고 서버 작업이 아직 없는 새 상담을 시작했다 (초과 항목으로 새 조정).
+    참조가 없다고 이전 작업 번호로 확인하면 끝난 이전 작업과 함께 지금 상담까지 지워진다 — 이전 작업이 끝났다는 서버 확인을 먼저 하고
+    그 결과만 기록한 뒤, 참조 없는 새 작업을 진행 중으로 남긴다 (담당 = 예산 조정 유지). 확인 실패 · 아직 진행 중이면 상태를 바꾸지 않는다"""
+    task = store.get_task(cid)
+    if result.get("new_work") and not result.get("work_ref") and result["status"] != "ended" and task and task["task_ref"]:
+        old = _check(server, task["task_ref"])
+        if old is None:
+            return "unknown"
+        if old["state"] in ACTIVE:
+            return "previous_task_active"
+        _finish(store, cid, old, {})
+        store.save_task(cid, dict(NEW_TASK))
+        return "in_progress"
     return record_budget_task(store, cid, {"task_ref": result.get("work_ref"), "ended": result["status"] == "ended"},
                               server)
 
 
 def run_turn(conversation_id, store, complete, *, agents, text=None, button=None, server=None,
-             today=None, as_of=None, input_id=None):
+             today=None, as_of=None, input_id=None, hints=None, suggested=False):
     """입력 1건(text 또는 button) → 라우터 결정 → 담당 에이전트 호출 → {"input_id", "decision", "result", "delivered"}
     - agents = {"spending" · "budget" · "policy": handler(공통 입력 dict) → 결과 | None(연결 없는 대역: 전달까지만)}
     - input_id: 진입점이 주거나 여기서 만든다 (chat API 계약에는 없는 내부 값)
+    - hints: 예산 조정 버튼(button="budget")에만 쓰는 초과 항목 시작 정보 (route_button). 문장 입력에서는 쓰지 않는다
+    - suggested: 이번 버튼이 직전 답변에 붙은 선택지를 누른 것인지. button="budget" 이고 직전 턴이 소비 분석의 초과 답변이었으면
+      그 카테고리를 hints 로 만든다 (hints 를 직접 주면 그 값이 우선). 초과 기억은 한 턴만 유효하다 — 매 턴 시작할 때 지운다
     - 에이전트가 failed 면 이번 입력 전 상태로 되돌린다: 이전 작업이 사라지거나 새 작업이 시작된 것으로 남지 않는다
     - 예산 작업 성공 · 취소는 기존처럼 서버 확인(record_budget_task)으로만 기록한다"""
     if (text is None) == (button is None):
         raise ValueError("text 와 button 중 하나만")
     cid, input_id = conversation_id, input_id or uuid.uuid4().hex
     before = store.export(cid)
-    decision = route_button(button, cid, store, server) if button else route(text, cid, store, complete, server)
+    over = store.get_over(cid)
+    store.save_over(cid, None)  # 실패하면 아래 restore 가 되살린다 (같은 버튼을 다시 누를 수 있게)
+    if button == "budget" and hints is None and suggested and over:
+        hints = _over_hints(over)
+    decision = (route_button(button, cid, store, server, hints=hints if button == "budget" else None) if button
+                else route(text, cid, store, complete, server))
     delivered, result = list(decision.declined), None
     while decision.handoff and decision.agent:
         agent = decision.agent
@@ -526,8 +652,16 @@ def run_turn(conversation_id, store, complete, *, agents, text=None, button=None
         if result["status"] == "failed":
             store.restore(cid, before)
         elif result["status"] == "not_mine":
+            suggest = _suggestion(result, agent)
+            if suggest and text is not None and len(delivered) < MAX_DELIVERIES and suggest["to"] not in delivered:
+                if decision.classified:
+                    store.restore(cid, before)  # 라우터가 잘못 보낸 시작(새 작업 · 담당 전환)을 남기지 않는다
+                    store.save_over(cid, None)
+                decision, result = _follow(text, cid, store, server, suggest, delivered), None
+                continue
             if decision.classified or text is None or len(delivered) >= MAX_DELIVERIES:
                 store.restore(cid, before)  # 전환이 정해지기 전 상태로 — 그 위에 목적지 확인 질문만
+                store.save_over(cid, None)
                 decision, result = _ask_destination(store, cid, decision.reading, text, delivered), None
                 break
             decision, result = reroute(text, cid, store, complete, server, declined=delivered), None
@@ -541,6 +675,9 @@ def run_turn(conversation_id, store, complete, *, agents, text=None, button=None
                     _budget_result(store, cid, started, server)
         elif agent == "policy":
             _record_policy(store, cid, result)
+        elif agent == "spending":
+            _record_seen(store, cid, result)
+            _record_over(store, cid, result)
         break
     return {"input_id": input_id, "decision": decision, "result": result, "delivered": delivered}
 

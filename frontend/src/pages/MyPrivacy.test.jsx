@@ -8,7 +8,7 @@ import MyInfoPage from './MyInfoPage.jsx'
 import LoginPage from './LoginPage.jsx'
 
 const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data })
-let host, root, summary, consents, requests, send, summaryError, consentError, profile, profileError
+let host, root, summary, consents, requests, send, summaryError, consentError, profile, profileError, adjustConsent
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   summary = { salary: { takeHomeIncome: 3120000, payday: 15, pendingPaydayChange: { payday: 20, effectiveOn: '2026-12-20' } },
@@ -17,6 +17,7 @@ beforeEach(() => {
   consents = { items: ['bank', 'card', 'loan'].map((productScope) => ({ productScope, required: productScope === 'bank',
     status: productScope === 'loan' ? 'not_granted' : 'granted', documentVersion: 'v2', grantedAt: '2026-11-04T10:00:00+09:00', revokedAt: null })) }
   requests = []; summaryError = consentError = profileError = null
+  adjustConsent = { status: 'not_granted', canRevoke: false, grantedAt: null, revokedAt: null, documentVersion: 'v1' }
   profile = { birthDate: '1998-04-12', gender: 'female', housingType: 'family', hasCar: false,
     priorities: [{ category: 'FOOD', rank: 1 }], categoryMinimums: [{ category: 'FOOD', minAmount: 300000 }] }
   send = async (url) => {
@@ -32,6 +33,7 @@ beforeEach(() => {
     if (url === '/api/budgets/salary/') return reply(summary.salary)
     if (url === '/api/finance/consents/') return consentError || reply(consents)
     if (url === '/api/budgets/ai-consent/') return reply({ status: 'not_granted' })
+    if (url === '/api/budgets/adjustment-ai-consent/') return reply(adjustConsent)
     if (url === '/api/csrf/') return reply({ ok: true })
     throw new Error(`Unexpected URL ${url}`)
   }))
@@ -214,4 +216,34 @@ it('탈퇴가 접수됐지만 삭제가 남으면 탈퇴 완료로 이동하지 
   expect(host.querySelector('[data-path]').textContent).toBe('/my')
   await click('로그인 화면으로')
   expect(host.querySelector('[data-path]').textContent).toBe('/login')
+})
+
+it('예산 조정 AI 전송 동의 이력을 보여 주고, 동의가 없으면 철회 버튼 없이 받는 곳을 안내한다', async () => {
+  await open()
+  const dialog = host.querySelector('[role=dialog]')
+  expect(dialog.textContent).toContain('예산 조정 AI 전송 · 선택')
+  expect(dialog.textContent).toContain('동의 기록 없음 · 챗봇에서 예산 조정을 요청할 때 받아요')
+  expect([...dialog.querySelectorAll('button')].some((button) => button.textContent.trim() === '예산 조정 AI 전송 철회')).toBe(false)
+})
+
+it('예산 조정 AI 전송 동의는 확인을 거쳐 그 동의만 철회한다', async () => {
+  adjustConsent = { status: 'granted', canRevoke: true, grantedAt: '2026-11-11T12:40:00+09:00', revokedAt: null, documentVersion: 'v1' }
+  send = async (url) => {
+    adjustConsent = { ...adjustConsent, status: 'revoked', canRevoke: false, revokedAt: '2026-11-11T13:00:00+09:00' }
+    return reply(url === '/api/budgets/adjustment-ai-consent/' ? adjustConsent : consents)
+  }
+  await open()
+  const dialog = () => host.querySelector('[role=dialog]')
+  expect(dialog().textContent).toContain('2026. 11. 11. 동의 · v1')
+  await click('예산 조정 AI 전송 철회')
+  expect(dialog().textContent).toContain('승인한 예산과 금융자료, 최소 금액·자물쇠는 그대로 유지해요')
+  expect(requests).toHaveLength(0)  // 확인 전에는 보내지 않는다
+  await click('취소')
+  expect(requests).toHaveLength(0)
+  await click('예산 조정 AI 전송 철회')
+  await act(async () => dialog().querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(requests).toEqual([{ url: '/api/budgets/adjustment-ai-consent/', method: 'DELETE', body: { confirm: true } }])
+  expect(dialog().textContent).toContain('예산 조정 AI 전송 동의를 철회했어요')
+  expect(dialog().textContent).toContain('2026. 11. 11. 동의 · 2026. 11. 11. 철회')
+  expect([...dialog().querySelectorAll('button')].some((button) => button.textContent.trim() === '예산 조정 AI 전송 철회')).toBe(false)
 })

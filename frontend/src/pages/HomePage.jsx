@@ -13,6 +13,7 @@ import { useApi } from '../utils/api.js'
 import { needsCardValues, runFinanceSync, syncLines } from '../utils/financeSync.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
+import { catIcon } from '../utils/categories.js'
 import { usePopup } from '../popups/context.js'
 import CalcPopup from '../popups/CalcPopup.jsx'
 import MustPayPopup from '../popups/MustPayPopup.jsx'
@@ -137,12 +138,20 @@ export default function HomePage() {
   //   월급 상태 (H-01): 늦게 오면 '아직', 다음 달 월급이 미리 오면 안내
   //   할 일: 확인할 거래 · 출금일을 모르는 고정지출 (H-05 — 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다)
   //   R12: 후보만 있으면 '확인 필요'(받음 · 아직으로 단정하지 않음), 자동 인식이면 맞는지 바꿀 수 있게
+  //   예산 초과 (11/11): 예산을 넘긴 카테고리마다 한 줄 (budget.overCategories, 많이 넘긴 순). 누르면 예산 화면
+  //   큰 지출 (11/11, 돌발 지출 감지 1단계): 한 건이 생활비 예산의 10% 이상인 소비 · 이체마다 한 줄 (budget.bigSpendings). 누르면 거래 내역
   const openSalary = () => openPopup(<SalaryCheckPopup onSaved={reload} />)
   const notices = [
     period?.salaryCheckCount > 0 && { key: 'salary-check', count: period.salaryCheckCount, text: '월급으로 보이는 입금이 있어요. 맞는지 확인해 주세요', go: openSalary },
     period?.salaryState === 'waiting' && { key: 'salary-wait', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
     period?.salarySource === 'auto' && { key: 'salary-auto', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 자동 인식했어요`, go: openSalary },
     period?.nextSalaryEarlyOn && { key: 'salary-early', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
+    ...(b.overCategories ?? []).map((c) => ({ key: `over-${c.category}`, icon: catIcon(c.categoryName), text: `${c.categoryName} 예산을 ${won(c.over)} 넘었어요`, go: () => navigate(PATHS.budget) })),
+    ...(b.bigSpendings ?? []).map((s) => ({
+      key: `big-${s.transactionId}`, icon: s.kind === 'transfer' ? 'Send' : catIcon(s.categoryName),
+      text: `${mmdd(s.occurredOn)} ${s.merchantName ? `${s.merchantName} ` : ''}${won(s.amount)} · 큰 ${s.kind === 'transfer' ? '이체가' : '지출이'} 있었어요`,
+      go: () => navigate(PATHS.txs),
+    })),
     pendingCount > 0 && { key: 'pending', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
     needsPaydayCount > 0 && { key: 'payday', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
   ].filter(Boolean)

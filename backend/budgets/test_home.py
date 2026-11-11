@@ -1027,7 +1027,9 @@ class HomeBudgetTest(TestCase):
             {"category": "HOUSING_TELECOM", "spent": 20_000}, {"category": "TRAVEL_LODGING", "spent": 200_000}]})
         self.assertEqual(home, {"budgetId": str(self.budget.pk), "versionNo": 1, "livingBudget": 1_000_000, "livingLeft": 680_000,
                                 "livingPct": 32, "spare": 400_000, "daily": 680_000 // 27, "daysLeft": 27,
-                                "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED,
+                                "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED,  # N-F1 칸 추가
+                                "overCategories": [],  # 넘긴 카테고리 없음
+                                "bigSpendings": home["bigSpendings"],  # 내용은 test_big_spendings_* 에서 확인
                                 "cardNotes": []})
         self.assertEqual(page["budget"]["engineVersion"], "temp-fallback-1")
 
@@ -1063,6 +1065,38 @@ class HomeBudgetTest(TestCase):
         self.tx(900_000, "FOOD", account=self.account)
         home = self.client.get("/api/home/").json()["budget"]
         self.assertEqual((home["livingPct"], home["livingLeft"]), (122, 0))
+
+    def test_big_spendings_lists_living_spending_and_transfers_over_ten_percent(self):
+        """생활비 1,000,000원 → 한 건 100,000원 이상. 고정지출 · 예산 밖(주거·통신, 여행·숙박) · 내 계좌 이체 · 카드값은 빠진다"""
+        def big():
+            return [(b["kind"], b["category"], b["amount"]) for b in self.client.get("/api/home/").json()["budget"]["bigSpendings"]]
+        self.assertEqual(big(), [("spending", "FOOD", 200_000), ("spending", "FOOD", 120_000)])
+        sent = self.tx(300_000, "UNCLASSIFIED", account=self.account, transaction_type="transfer")   # 남에게 보낸 큰 이체
+        self.tx(99_999, "FOOD", account=self.account)                                                 # 기준 1원 아래
+        self.tx(150_000, "FOOD", account=self.account, canceled_amount=100_000)                       # 취소 뒤 50,000원
+        self.assertEqual(big(), [("transfer", None, 300_000), ("spending", "FOOD", 200_000), ("spending", "FOOD", 120_000)])
+        first = self.client.get("/api/home/").json()["budget"]["bigSpendings"][0]
+        self.assertEqual(first, {"transactionId": str(sent.pk), "occurredOn": "2026-11-03", "merchantName": "", "amount": 300_000,
+                                 "kind": "transfer", "category": None, "categoryName": None})
+
+    def test_big_spendings_skips_transfer_matched_to_payment(self):
+        paid = self.tx(400_000, "UNCLASSIFIED", account=self.account, transaction_type="transfer")
+        expense = RecurringExpense.objects.create(user=self.user, name="학원비", amount=400_000, payment_day=3,
+            category_id="EDUCATION", status="confirmed", source_type="manual", payment_account=self.account)
+        due = PaymentDue.objects.create(user=self.user, recurring=expense, obligation_type="recurring", occurrence_key="big-academy",
+            due_date=self.TODAY, confirmed_amount=400_000, paid_amount=400_000, payment_state="paid", obligation_state="active")
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=paid, matched_amount=400_000)
+        kinds = [b["kind"] for b in self.client.get("/api/home/").json()["budget"]["bigSpendings"]]
+        self.assertNotIn("transfer", kinds)
+
+    def test_over_categories_lists_budgeted_categories_past_budget(self):
+        from .models import BudgetItem
+        food = BudgetItem.objects.get(budget=self.budget, bucket="living", category_id="FOOD").allocated_amount
+        self.tx(900_000, "FOOD", account=self.account)   # 식비 사용 1,220,000원
+        self.tx(50_000, "BEAUTY", account=self.account)   # 예산 0원 칸은 알리지 않는다
+        home = self.client.get("/api/home/").json()["budget"]
+        self.assertEqual(home["overCategories"], [
+            {"category": "FOOD", "categoryName": "식비", "allocated": food, "spent": 1_220_000, "over": 1_220_000 - food}])
 
 
 class OldPolicyBudgetTest(HomeBudgetTest):

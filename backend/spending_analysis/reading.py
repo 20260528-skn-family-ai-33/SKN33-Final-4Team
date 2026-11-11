@@ -201,6 +201,8 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
 2. previous는 refers_to 판단에만 쓴다. 후속 질문도 이번에 바꾼 조건만 적고 이전 조건을 복사하지 않는다.
 3. 기간·비교·개월·전체·카테고리처럼 실제로 따로 말한 조건은 모두 보존한다. 전체/생활비는 카테고리가 아니라 전체 범위다.
    생활비 잔액 요청은 target=budget_left, categories=[]이며 unknown/detail로 만들지 않는다.
+   예산을 넘은(초과한) 카테고리가 무엇인지 · 있는지 묻는 말도 예산 조회다(예산을 바꾸는 요청이 아니다)
+   → mine=true, target=budget_left, compare="category", categories=[] ("초과한 카테고리 뭐야?", "예산 넘은 항목 있어?").
 4. 지난달보다/대비 또는 지난달과·이랑·하고 비교·분석하는 요청은 현재와 지난달의 비교다 → compare=prev_month, period=null.
    비교 기준만 말한 요청도 동일하다. 비교·증감 조회 자체는 이유 질문이 아니므로 explain=null, hypothesis=null이다.
    금액이 많은지·적은지·괜찮은지 평가만 덧붙여 물어도 이유 질문이 아니다(explain=null).

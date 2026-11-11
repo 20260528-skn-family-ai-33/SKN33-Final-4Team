@@ -13,10 +13,11 @@ import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
 import ChatReply, { Choices } from '../components/ChatReply.jsx'
 import BudgetApprovalPopup from '../popups/BudgetApprovalPopup.jsx'
-import BudgetAdjustConsent from '../components/BudgetAdjustConsent.jsx'
+import BudgetAdjustConsentPopup from '../popups/BudgetAdjustConsentPopup.jsx'
 import { usePopup } from '../popups/context.js'
 import { PATHS } from '../routes.js'
 import { adjustmentChoices, adjustSentence } from '../utils/adjust.js'
+import { catName } from '../utils/categories.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
 import { approvalPath, forgetPendingApproval, readPendingApproval, rememberPendingApproval } from '../utils/budgetApproval.js'
 import '../styles/chat.css'
@@ -28,13 +29,6 @@ const LOOK = {
   budget: { icon: 'SlidersHorizontal', text: '예산을 조정하고 싶어요' },
   policy: { icon: 'Landmark', text: '청년 정책을 추천받고 싶어요' },
 }
-// 개발 모드 · 켜짐 엔진에서만: 가짜 해석이 아는 문장 (backend/chat/llm/fake.py · legacy.SAID)
-const EXAMPLES = ['이번 달 얼마 썼어?', '그럼 교통비는?', '이번 달 3개월 식비', '커피 얼마나 썼어?', '지난달보다 식비 더 썼어?',
-  '왜 식비가 늘었어?', '최근 6개월 식비 어때?', '소비 분석해줘', '최근 3개월 식비 예산 얼마나 남았어?', '식비 예산 줄여줘', '날씨 어때?',
-  '이번 달 카드 얼마 긁었지?', '과자서원에서 얼마 썼어?', '식비는 왜 늘었을까?', '제일 많이 쓴 데는 왜 많이 나왔을까?',
-  '지난달 식비는 왜 많이 나왔어?', '지난주 식비는 왜 많이 나왔어?', '이번 달 주말 식비 왜 늘었어?',
-  '커피를 자주 사 먹어서 그래?', '점심값이 비싸진 거야?', '점심을 더 자주 먹어서 그래?', '건당 금액이 올라서야?', '배달 때문이야?']
-
 // 개발 모드 전용: B 증감 설명의 분석 과정 (서버가 더미 설정에서만 devTrace 를 준다 — 서비스 응답 칸 아님, MEMO 26)
 const STOP = { insufficient: '근거 부족 — 서버가 멈춤', nothing_more: '더 볼 묶음 없음 · 상한 — 서버가 멈춤' }
 const FALLBACK = { plan_failed: '계획 호출 실패 → 서버 설명', invalid_plan: '계획 형식 오류 → 서버 설명', template: '근거 부족이라 지금 설명(거절 · 안내)', rejected: '검사 탈락 → 지금 템플릿 설명', timeout: '시간 초과 → 지금 템플릿 설명',
@@ -74,6 +68,7 @@ function Trace({ trace }) {
 
 // 새로고침 복원용 대화 번호 — 저장소를 못 쓰는 브라우저(사생활 보호 모드 등)는 그냥 새 대화
 const SAVED = 'mc-chat-conversation'
+const wideAdjustment = (a) => Boolean(a && (a.proposal || a.comparison || a.alternatives))
 function savedId() {
   try { return sessionStorage.getItem(SAVED) } catch { return null }
 }
@@ -106,6 +101,7 @@ export default function AssistantPage() {
   const [recoveryExpired, setRecoveryExpired] = useState(false)
   const inFlight = useRef(false)  // React가 다시 그리기 전의 연속 클릭도 한 번만 보낸다
   const mounted = useRef(false)
+  const latest = useRef({})  // 가장 최근에 그린 send · openPopup (동의 창이 닫힌 뒤 거절됐던 요청을 다시 보낼 때 쓴다)
   const end = useRef(null)
 
   useEffect(() => {
@@ -209,13 +205,25 @@ export default function AssistantPage() {
       }
       const expired = recovery && (err.code === 'expired' || err.status === 404)
       if (expired) setRecoveryExpired(true)
+      // 예산 조정 AI 전송 동의 이력이 없다 → 동의 창. 동의하면 거절됐던 요청을 그대로 다시 보낸다 (11/11).
+      // 창을 닫으면 아래 안내만 남고 아무것도 보내지 않는다 (입력한 문장은 입력 칸에 그대로 있다)
+      const needsConsent = !expired && err.code === 'budget_adjust_consent_required'
+      if (needsConsent) {
+        latest.current.openPopup(<BudgetAdjustConsentPopup onAgreed={() => {
+          setError(null)
+          if (request.body.text) setText('')
+          latest.current.send(request.body, request.said)
+        }} />)
+      }
       setError(expired ? '예산 조건이 바뀌었거나 조정 대화가 만료됐어요. 추천 화면에서 다시 추천받아 주세요.'
-        : err.code === 'budget_adjust_consent_required' ? '예산 조정 AI 동의 관리에서 동의한 뒤 다시 보내 주세요.' : err.status === 403 ? '로그인해 주세요.' : err.message)
+        : needsConsent ? '예산 조정을 이용하려면 AI 전송 동의가 필요해요. 예산 조정을 다시 요청하면 동의 창이 열려요.' : err.status === 403 ? '로그인해 주세요.' : err.message)
     } finally {
       inFlight.current = false
       setBusy(false)
     }
   }, [busy, pending, conversationId, approvalPending, approvalRecovery, recovery, navigate, returnToRecommendation])
+
+  useEffect(() => { latest.current = { send, openPopup } })
 
   const submit = (e) => {
     e.preventDefault()
@@ -292,8 +300,11 @@ export default function AssistantPage() {
     if (!budgetEntry || entryStarted.current) return
     if (!info && !first.error) return
     entryStarted.current = true
+    // 예산 화면의 초과 카테고리에서 왔으면(budgetContext.hints) 보내는 중 말풍선에 그 카테고리 이름을 넣는다
+    const overCode = budgetEntry.hints?.reason === 'over' ? budgetEntry.hints.categories?.[0] : null
     // oxlint-disable-next-line react/set-state-in-effect -- 화면 진입 시 서버 대화를 한 번 시작하며 전송 함수가 진행 상태를 함께 관리한다.
-    if (info?.engine === 'router') send({ conversationId: null, choice: 'budget', budgetContext: budgetEntry }, '예산을 조정하고 싶어요')
+    if (info?.engine === 'router') send({ conversationId: null, choice: 'budget', budgetContext: budgetEntry },
+      overCode ? `${catName(overCode)} 예산을 조정하고 싶어요` : '예산을 조정하고 싶어요')
     if (!recovery) navigate(PATHS.assistant, { replace: true, state: null })
   }, [budgetEntry, first.error, info, navigate, recovery, send])
 
@@ -304,16 +315,20 @@ export default function AssistantPage() {
     <Layout
       title="통합 챗봇"
       activeTab="assistant"
-      foot={
+      foot={<>
+        {/* 새 대화 (11/11): 대화가 있을 때만 입력란 왼쪽 위에 — 입력란과 함께 화면 아래에 붙어 있어 대화가 길어도 바로 누를 수 있다.
+            지금 대화를 화면에서 비우고 다음 문장부터 새 대화로 보낸다 */}
+        {!recovery && messages.length > 0 && (
+          <button type="button" className="mc-asst-new" disabled={blocked} onClick={startOver}><Icon name="RefreshCw" />새 대화</button>
+        )}
         <form className="mc-chat-in mc-asst-in" onSubmit={submit}>
           <input aria-label="챗봇에게 보낼 메시지" autoComplete="off" placeholder="예: 이번 달 얼마 썼어?" type="text" maxLength={500}
             value={text} disabled={blocked} onChange={(e) => setText(e.target.value)} />
           <button type="submit" className="mc-chat-send" aria-label="보내기" disabled={blocked}><Icon name="Send" /></button>
         </form>
-      }
+      </>}
     >
       <div className="mc-bc mc-asst">
-        <BudgetAdjustConsent onChange={() => setError(null)} />
         {recovery && <div className="mc-chipbar" aria-label="분배 실패 조정">
           {recoverySaved
             ? <button type="button" className="mc-btn" onClick={() => navigate(PATHS.budget, { replace: true })}>반영된 예산 보기</button>
@@ -352,7 +367,8 @@ export default function AssistantPage() {
             return (
               <div key={m.messageId} className="mc-asst-turn">
                 {switched.has(m.messageId) && <div className="mc-asst-route"><Icon name="Link" /> {AGENTS[c.agent]} 도우미에 연결했어요</div>}
-                <div className={`mc-msg bot${c.result || c.budgetAdjustment ? ' mc-asst-card' : ''}`}>
+                {/* 표가 있는 답(소비 분석 카드 · 예산 변경안 · 비교안)만 화면 폭을 다 쓴다. 글만 있는 예산 조정 답은 보통 말풍선 폭 */}
+                <div className={`mc-msg bot${c.result || wideAdjustment(c.budgetAdjustment) ? ' mc-asst-card' : ''}`}>
                   <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} active={isLast && !blocked}
                     navigation={{ choices: last?.content.budgetAdjustment ? last.content.choices : [], active: !blocked,
                       onPick: (p) => pick(last.content, p) }}
@@ -389,18 +405,6 @@ export default function AssistantPage() {
           </div></div>}
           <div ref={end} />
         </div>
-
-        {import.meta.env.DEV && info?.engine === 'router' && (
-          <details className="mc-fx-dev">
-            <summary>개발용 · 가짜 해석 예시 문장</summary>
-            <p>더미 A(윤서)에서 확인: 새 대화 → 지난달보다 식비 더 썼어? → 점심값이 비싸진 거야? / 커피를 자주 사 먹어서 그래?</p>
-            <p>점심은 대상의 평균과 가격 판단의 한계를, 커피는 품목 식별 불가를 안내해야 합니다. 기간 확인은 새 대화 → 지난달 식비는 왜 많이 나왔어? → 그럼 교통비는?</p>
-            <div className="mc-chipbar">
-              {!recovery && <button type="button" disabled={blocked} onClick={startOver}>새 대화</button>}
-              {EXAMPLES.map((q) => <button key={q} type="button" disabled={blocked} onClick={() => send({ text: q }, q)}>{q}</button>)}
-            </div>
-          </details>
-        )}
       </div>
     </Layout>
   )
