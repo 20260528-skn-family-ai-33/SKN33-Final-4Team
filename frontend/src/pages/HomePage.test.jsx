@@ -54,6 +54,38 @@ it('불러오기를 못 하면 이유를 보여 주고 다시 받지 않는다',
   expect(host.querySelector('[aria-label="새로고침"]').disabled).toBe(false)
 })
 
+it('예산을 넘긴 카테고리마다 종 알림에 한 줄이 생기고 누르면 예산 화면으로 간다', async () => {
+  const budget = { livingBudget: 300000, livingLeft: 0, livingPct: 104, spare: 0, daily: 0, daysLeft: 10, outOfBudgetAllocated: 0,
+    outOfBudget: { total: 0, categories: [] },
+    overCategories: [{ category: 'FOOD', categoryName: '식비', allocated: 300000, spent: 312000, over: 12000 }] }
+  useApi.mockReturnValue({ reload, data: { period: null, balance: { accountCount: 0, total: null }, pendingCount: 0, needsPaydayCount: 0, mustPay: [], budget } })
+  await act(() => root.render(<HomePage />))
+  await act(async () => host.querySelector('[aria-label="알림 1개"]').click())
+  const [item] = openPopup.mock.calls.at(-1)[0].props.items
+  expect(item).toMatchObject({ key: 'over-FOOD', icon: 'Utensils', text: '식비 예산을 12,000원 넘었어요' })
+  item.go()
+  expect(navigate).toHaveBeenCalledWith(PATHS.budget)
+})
+
+it('생활비 예산 대비 큰 지출 · 이체마다 종 알림에 한 줄이 생기고 누르면 거래 내역으로 간다', async () => {
+  const budget = { livingBudget: 1000000, livingLeft: 500000, livingPct: 50, spare: 0, daily: 0, daysLeft: 10, outOfBudgetAllocated: 0,
+    outOfBudget: { total: 0, categories: [] }, overCategories: [],
+    bigSpendings: [
+      { transactionId: 't1', occurredOn: '2026-11-10', merchantName: '홍길동', amount: 300000, kind: 'transfer', category: null, categoryName: null },
+      { transactionId: 't2', occurredOn: '2026-11-08', merchantName: '', amount: 150000, kind: 'spending', category: 'FOOD', categoryName: '식비' },
+    ] }
+  useApi.mockReturnValue({ reload, data: { period: null, balance: { accountCount: 0, total: null }, pendingCount: 0, needsPaydayCount: 0, mustPay: [], budget } })
+  await act(() => root.render(<HomePage />))
+  await act(async () => host.querySelector('[aria-label="알림 2개"]').click())
+  const items = openPopup.mock.calls.at(-1)[0].props.items
+  expect(items.map((n) => [n.key, n.icon, n.text])).toEqual([
+    ['big-t1', 'Send', '11.10 홍길동 300,000원 · 큰 이체가 있었어요'],
+    ['big-t2', 'Utensils', '11.08 150,000원 · 큰 지출이 있었어요'],
+  ])
+  items[0].go()
+  expect(navigate).toHaveBeenCalledWith(PATHS.txs)
+})
+
 it('시작한 예산의 카드값 미반영 안내와 같은 주기 재추천 경로를 보여 준다', async () => {
   const initial = useApi.mock.results[0].value.data
   useApi.mockReturnValue({ reload, data: { ...initial, budget: {

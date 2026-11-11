@@ -1,0 +1,169 @@
+name: Money Cushion CI and Deploy
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep an active deployment running. Newer queued commits can replace older queued ones.
+concurrency:
+  group: moneycushion-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: money_cushion
+          POSTGRES_USER: money_cushion
+          POSTGRES_PASSWORD: ci-only-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U money_cushion -d money_cushion"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    env:
+      # Disposable CI values, never production secrets.
+      DJANGO_SECRET_KEY: ci-only-not-a-production-key-0123456789-abcdefghijklmnopqrstuvwxyz
+      DJANGO_DEBUG: "True"
+      POSTGRES_DB: money_cushion
+      POSTGRES_USER: money_cushion
+      POSTGRES_PASSWORD: ci-only-password
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      CHAT_ENGINE: legacy
+      CHAT_LLM: fake
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Create disposable encryption key
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import base64, secrets
+          print('CONNECTED_ID_ENCRYPTION_KEY=' + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())
+          print('IDENTIFIER_HMAC_KEY=' + base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())
+          PY
+      - name: Backend checks and tests
+        working-directory: backend
+        run: |
+          # 계약 테스트용 openapi-schema-validator 는 requirements-docs.txt 에만 있다 (운영 이미지에는 넣지 않음)
+          python -m pip install -r ../requirements-production.txt -r ../requirements-docs.txt
+          python manage.py check
+          python manage.py makemigrations --check --dry-run
+          python manage.py migrate --noinput
+          # Django 앱 테스트 전체. budgets.test_design_candidates 의 예전 실패 11개는 #89 에서 해결됐다 (11/10 main 확인)
+          python manage.py test users finance budgets chat config spending_analysis --noinput
+          # 소비 분석 fixture · 새 챗봇 엔진 테스트는 전용 설정(로컬 DB 전용 fixture DB)에서만 돈다. 기본 설정에선 모두 건너뜀
+          python manage.py test spending_fixture chat.test_engine --settings=spending_fixture.settings --noinput
+      - name: Frontend checks and build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+
+  deploy:
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ap-northeast-2
+      ECR_REGISTRY: ${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
+      INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      SITE_DOMAIN: ${{ vars.SITE_DOMAIN }}
+      IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      AWS_PAGER: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+      - name: Build images and deploy the current main commit
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # A rerun of an older commit must not overwrite the current main deployment.
+          current_main=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [[ "$current_main" != "$GITHUB_SHA" ]]; then
+            echo 'A newer main commit exists; skipping this deployment.'
+            exit 0
+          fi
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$ECR_REGISTRY"
+          docker build --platform linux/amd64 -f deploy/backend.Dockerfile \
+            -t "$ECR_REGISTRY/moneycushion-backend:$IMAGE_TAG" .
+          docker build --platform linux/amd64 -f deploy/frontend.Dockerfile \
+            -t "$ECR_REGISTRY/moneycushion-frontend:$IMAGE_TAG" .
+          docker push "$ECR_REGISTRY/moneycushion-backend:$IMAGE_TAG"
+          docker push "$ECR_REGISTRY/moneycushion-frontend:$IMAGE_TAG"
+          # Only these two non-secret deployment files are sent to the server.
+          tar -czf /tmp/deploy-bundle.tgz deploy/compose.yml deploy/deploy.sh
+          python - <<'PY'
+          import base64, json, os, pathlib, re
+          tag = os.environ['IMAGE_TAG']
+          assert re.fullmatch(r'[0-9a-f]{40}-[0-9]+-[0-9]+', tag)
+          bundle = base64.b64encode(pathlib.Path('/tmp/deploy-bundle.tgz').read_bytes()).decode()
+          command = (
+              "set -eu; umask 077; install -d -m 700 /opt/moneycushion; "
+              f"printf '%s' '{bundle}' | base64 -d | tar -xzf - -C /opt/moneycushion; "
+              f"bash /opt/moneycushion/deploy/deploy.sh '{tag}'"
+          )
+          pathlib.Path('/tmp/ssm-parameters.json').write_text(json.dumps({
+              'commands': [command], 'executionTimeout': ['1800']
+          }))
+          PY
+          command_id=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --timeout-seconds 120 \
+            --parameters file:///tmp/ssm-parameters.json \
+            --query Command.CommandId --output text)
+          echo "SSM command: $command_id"
+          status=Pending
+          for attempt in $(seq 1 190); do
+            # Invocation records can take a few seconds to appear.
+            if ! aws ssm get-command-invocation --command-id "$command_id" \
+                --instance-id "$INSTANCE_ID" > /tmp/invocation.json 2>/tmp/ssm-error; then
+              if grep -q InvocationDoesNotExist /tmp/ssm-error; then
+                sleep 10
+                continue
+              fi
+              cat /tmp/ssm-error >&2
+              exit 1
+            fi
+            status=$(jq -r .Status /tmp/invocation.json)
+            case "$status" in
+              Success) break ;;
+              Failed|TimedOut|Cancelled|Cancelling)
+                jq '{Status,StandardOutputContent,StandardErrorContent}' /tmp/invocation.json
+                exit 1 ;;
+            esac
+            sleep 10
+          done
+          [[ "$status" == Success ]] || { echo 'SSM polling timed out; inspect AWS before retrying.'; exit 1; }
+          curl --fail --silent --show-error --retry 6 --retry-all-errors --retry-delay 5 \
+            --max-time 15 "https://$SITE_DOMAIN/api/health/" > /tmp/health.json
+          jq -e --arg tag "$IMAGE_TAG" '.status == "ok" and .release == $tag' /tmp/health.json
+          echo "Deployed release: $IMAGE_TAG" >> "$GITHUB_STEP_SUMMARY"

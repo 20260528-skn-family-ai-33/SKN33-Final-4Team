@@ -544,6 +544,90 @@ it.each([
   expect(apiSend.mock.calls.filter(([url]) => url === '/api/chat/messages/')).toHaveLength(1)
 })
 
+const consentState = { available: true, canRevoke: false, status: 'not_granted', documentVersion: 'v1', documentHash: 'hash',
+  document: { title: '외부 전송 동의', label: '[선택] 외부 전송 동의', sections: [] },
+  healthDocumentVersion: 'v1', healthDocumentHash: 'health-hash',
+  healthDocument: { title: '건강 요약 처리 동의', label: '[선택] 건강 요약 처리 동의', sections: [] } }
+const needConsent = () => Object.assign(new Error('예산 조정 AI 전송 동의를 먼저 확인해 주세요.'), { status: 403, code: 'budget_adjust_consent_required' })
+const consentCalls = () => apiSend.mock.calls.filter(([url]) => url === '/api/budgets/adjustment-ai-consent/')
+
+it('예산 조정 AI 동의 이력이 없으면 동의 창을 띄우고, 동의하면 거절됐던 요청을 그대로 다시 보낸다', async () => {
+  let agreed = false
+  apiSend.mockImplementation(async (url, method) => {
+    if (url === '/api/budgets/adjustment-ai-consent/') {
+      if (method === 'PUT') agreed = true
+      return { ...consentState, status: agreed ? 'granted' : 'not_granted' }
+    }
+    if (!agreed) throw needConsent()
+    return talk({ status: 'awaiting_input', canApprove: false })
+  })
+  await mount()
+  expect(host.textContent).not.toContain('AI 동의 관리')  // 화면 위의 동의 카드는 없다
+  await submit('식비를 5만 원 늘려줘')
+  const dialog = () => host.querySelector('[role="dialog"]')
+  expect(dialog().getAttribute('aria-label')).toBe('예산 조정 AI 전송 동의')
+  expect(consentCalls().map(([, method]) => method)).toEqual(['GET'])
+  expect(sentChat()).toHaveLength(1)
+  for (const box of dialog().querySelectorAll('input[type="checkbox"]')) await click(box)
+  await click(button('동의하고 계속', dialog()))
+  expect(dialog()).toBeNull()
+  expect(consentCalls().map(([, method]) => method)).toEqual(['GET', 'PUT'])
+  expect(sentChat()).toHaveLength(2)
+  expect(sentChat()[1][2]).toEqual(sentChat()[0][2])  // 같은 요청을 다시
+  expect(sentChat()[1][2]).toEqual({ conversationId: null, text: '식비를 5만 원 늘려줘' })
+  expect(host.textContent).toContain('변경안을 확인해 주세요.')
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(input().value).toBe('')
+})
+
+it('동의 창을 닫으면 다시 보내지 않고 안내만 남기며 입력한 문장은 그대로 둔다', async () => {
+  apiSend.mockImplementation(async (url) => {
+    if (url === '/api/budgets/adjustment-ai-consent/') return consentState
+    throw needConsent()
+  })
+  await mount()
+  await submit('식비를 5만 원 늘려줘')
+  await click(button('취소', host.querySelector('[role="dialog"]')))
+  expect(host.querySelector('[role="dialog"]')).toBeNull()
+  expect(sentChat()).toHaveLength(1)
+  expect(consentCalls().map(([, method]) => method)).toEqual(['GET'])
+  expect(host.querySelector('[role="alert"]').textContent).toContain('AI 전송 동의가 필요해요')
+  expect(input().value).toBe('식비를 5만 원 늘려줘')
+})
+
+it('초과한 카테고리의 [예산 조정하기]는 그 카테고리와 초과액을 담아 새 대화를 시작한다', async () => {
+  const data = { ...budgetData('approved'), categories: [
+    { category: 'FOOD', categoryName: '식비', allocated: 300000, spent: 312000, minAmount: null, locked: false, lockedAmount: null },
+    { category: 'BEAUTY', categoryName: '뷰티·미용', allocated: 50000, spent: 20000, minAmount: null, locked: false, lockedAmount: null },
+    { category: 'CULTURE_LEISURE', categoryName: '문화·여가', allocated: 0, spent: 7000, minAmount: null, locked: false, lockedAmount: null },
+    { category: 'ETC', categoryName: '기타', allocated: 10000, spent: 30000, minAmount: null, locked: false, lockedAmount: null },
+  ] }
+  useApi.mockImplementation((url) => ({ data: url === '/api/budgets/' ? data : info, error: null }))
+  apiSend.mockImplementation(async () => talk({ status: 'awaiting_input', canApprove: false }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/budgets']}><PopupProvider><Routes>
+    <Route path="/budgets" element={<BudgetPage />} /><Route path="/chat" element={<AssistantPage />} />
+  </Routes></PopupProvider></MemoryRouter>))
+  // 초과한 카테고리(식비)에만 버튼이 있다. 예산 0원 칸(문화·여가)은 초과로 보지 않고, 기타는 초과여도 조정으로 넘기지 않는다
+  expect([...host.querySelectorAll('button')].filter((b) => b.textContent.trim() === '예산 조정하기 ›')).toHaveLength(1)
+  await click(host.querySelector('[aria-label="식비 예산 조정하기"]'))
+  expect(sentChat()).toHaveLength(1)
+  expect(sentChat()[0][2]).toEqual({ conversationId: null, choice: 'budget', budgetContext: {
+    baseBudgetId: 'basis-1', mode: 'NORMAL_ADJUSTMENT', hints: { reason: 'over', categories: ['FOOD'], overAmount: 12000 },
+  } })
+})
+
+it('승인 전 초안 예산에서는 초과한 카테고리에 [예산 조정하기]를 보이지 않는다', async () => {
+  const data = { ...budgetData('validated'), categories: [
+    { category: 'FOOD', categoryName: '식비', allocated: 300000, spent: 312000, minAmount: null, locked: false, lockedAmount: null },
+  ] }
+  useApi.mockImplementation((url) => ({ data: url === '/api/budgets/' ? data : info, error: null }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/budgets']}><PopupProvider><Routes>
+    <Route path="/budgets" element={<BudgetPage />} /><Route path="/chat" element={<AssistantPage />} />
+  </Routes></PopupProvider></MemoryRouter>))
+  expect(host.textContent).toContain('12,000원 초과')
+  expect(host.querySelector('[aria-label="식비 예산 조정하기"]')).toBeNull()
+})
+
 it.each([
   ['locked_amount', 400000, 350000, -50000, '잠금액과 유지 목표가 달라요.'],
   ['minimum_amount', 300000, 350000, 50000, '유지 목표가 최소 보장액보다 작아요.'],

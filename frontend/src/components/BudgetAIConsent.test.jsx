@@ -12,16 +12,17 @@ const state = (status = 'not_granted') => ({ available: true, status, documentVe
   document: { title: '예산 AI 전송 안내', required: false, version: 'v3', date: '2026.11.10', sections: [] },
   healthDocumentVersion: 'v1', healthDocumentHash: 'synthetic-health-hash',
   healthDocument: { title: '의료·건강 별도 동의', required: false, version: 'v1', sections: [] } })
-let host, root
+let host, root, toastBox
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   vi.clearAllMocks()
   apiSend.mockResolvedValue(state())
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
+  toastBox = document.createElement('div'); toastBox.id = 'mc-toast'; document.body.append(toastBox)  // 실제 화면에서는 Layout 이 갖고 있다
 })
-afterEach(async () => { await act(() => root.unmount()); host.remove() })
+afterEach(async () => { await act(() => root.unmount()); host.remove(); toastBox.remove() })
 const render = () => act(() => root.render(<BudgetAIConsent />))
-const button = (text) => [...host.querySelectorAll('button')].find(b => b.textContent === text)
+const button = (text) => [...host.querySelectorAll('button')].find(b => b.textContent === text || b.getAttribute('aria-label') === text)
 const click = (text) => act(() => button(text).click())
 const check = () => act(() => { for (const input of host.querySelectorAll('input')) input.click() })
 
@@ -48,7 +49,7 @@ it('비활성 상태에서도 기존 동의의 철회는 제공하고 새 동의
   expect(host.textContent).toContain('현재 중단')
   expect(button('동의 저장')).toBeUndefined()
   apiSend.mockResolvedValueOnce({ ...state('revoked'), available: false })
-  await click('예산 AI 전송 동의 철회')
+  await click('예산 AI 전송 동의 철회'); await click('철회하기')
   expect(apiSend).toHaveBeenLastCalledWith(URL, 'DELETE', { confirm: true })
   expect(host.textContent).toBe('')
 })
@@ -68,7 +69,9 @@ it('체크 후 저장해야 화면의 정확한 문서 버전·해시를 서버�
   await click('동의 저장')
   expect(apiSend).toHaveBeenLastCalledWith(URL, 'PUT', { agreed: true, documentVersion: 'v3', documentHash: 'synthetic-hash',
     healthAgreed: true, healthDocumentVersion: 'v1', healthDocumentHash: 'synthetic-health-hash' })
-  expect(host.textContent).toContain('동의했어요')
+  expect(toastBox.textContent).toBe('AI 전송에 동의했어요')  // 잠깐 떴다 사라지는 안내
+  expect(host.textContent).toContain('동의함')
+  expect(host.textContent).not.toContain('동의했어요')
   expect(apiSend.mock.calls.some(([url]) => url.includes('/recommend/'))).toBe(false)
 })
 
@@ -94,13 +97,21 @@ it('국외이전과 건강 요약에 각각 체크해야 저장할 수 있다', 
   expect(apiSend).toHaveBeenCalledTimes(1)
 })
 
-it('철회는 명시적으로 요청하고 기존 예산·금융자료를 삭제한다고 안내하지 않는다', async () => {
+it('철회는 안내를 본 뒤 [철회하기]를 한 번 더 눌러야 하고 기존 예산·금융자료를 삭제한다고 안내하지 않는다', async () => {
   apiSend.mockResolvedValueOnce(state('granted'))
   await render()
-  apiSend.mockResolvedValueOnce(state('revoked'))
+  expect(host.textContent).not.toContain('그대로 유지해요')
   await click('예산 AI 전송 동의 철회')
+  expect(host.textContent).toContain('철회해도 승인한 예산과 금융자료는 그대로 유지해요')
+  expect(apiSend.mock.calls).toEqual([[URL, 'GET']])  // 첫 번째 누름은 안내만
+  await click('취소')
+  expect(button('철회하기')).toBeUndefined()
+  expect(apiSend.mock.calls).toEqual([[URL, 'GET']])
+  apiSend.mockResolvedValueOnce(state('revoked'))
+  await click('예산 AI 전송 동의 철회'); await click('철회하기')
   expect(apiSend).toHaveBeenLastCalledWith(URL, 'DELETE', { confirm: true })
-  expect(host.textContent).toContain('철회했어요')
+  expect(toastBox.textContent).toBe('예산 AI 전송 동의를 철회했어요')
+  expect(host.textContent).toContain('철회함')
   expect(host.querySelector('input').checked).toBe(false)
 })
 

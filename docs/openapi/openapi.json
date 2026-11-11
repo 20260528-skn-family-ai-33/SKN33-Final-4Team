@@ -17089,6 +17089,92 @@
                 "type": "integer",
                 "description": "이전 기준 예산의 주거·통신·여행·숙박 배정 합계 (N-F1). 0보다 크면 재추천 안내"
               },
+              "bigSpendings": {
+                "type": "array",
+                "description": "생활비 예산 대비 큰 지출 (홈 알림 줄, 돌발 지출 감지 1단계). 이번 주기에 한 건이 livingBudget의 10% 이상인 생활비 쪽 소비 · 남에게 보낸 이체. 최신순",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "transactionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "occurredOn": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "merchantName": {
+                      "type": "string",
+                      "description": "카드 = 가맹점명, 계좌 = 적요. 없으면 빈 문자"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "취소분을 뺀 금액"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "spending",
+                        "transfer"
+                      ]
+                    },
+                    "category": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "소비의 카테고리 코드. 이체는 null"
+                    },
+                    "categoryName": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "transactionId",
+                    "occurredOn",
+                    "merchantName",
+                    "amount",
+                    "kind",
+                    "category",
+                    "categoryName"
+                  ]
+                }
+              },
+              "overCategories": {
+                "type": "array",
+                "description": "예산을 넘긴 카테고리 (홈 알림 줄). 쓴 돈이 배정을 넘은 카테고리만, 배정 0원은 제외. 많이 넘긴 순",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "category": {
+                      "type": "string"
+                    },
+                    "categoryName": {
+                      "type": "string"
+                    },
+                    "allocated": {
+                      "type": "integer",
+                      "description": "배정 금액"
+                    },
+                    "spent": {
+                      "type": "integer",
+                      "description": "이번 주기에 쓴 돈"
+                    },
+                    "over": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "spent − allocated"
+                    }
+                  },
+                  "required": [
+                    "category",
+                    "categoryName",
+                    "allocated",
+                    "spent",
+                    "over"
+                  ]
+                }
+              },
               "outOfBudget": {
                 "type": "object",
                 "description": "예산 밖 지출 안내 (계산에 안 넣음)",
@@ -17135,7 +17221,9 @@
               "daily",
               "daysLeft",
               "outOfBudget",
-              "outOfBudgetAllocated"
+              "outOfBudgetAllocated",
+              "overCategories",
+              "bigSpendings"
             ]
           }
         },
@@ -17985,6 +18073,38 @@
             "type": "string",
             "format": "uuid",
             "description": "분배 실패 작업 ID. DESIGN_RECOVERY에서만 사용하며 금액·설정은 서버에서 다시 조회한다."
+          },
+          "hints": {
+            "type": "object",
+            "description": "예산 화면의 초과한 카테고리에서 시작할 때만 (docs/api/chat.md). 승인 예산의 NORMAL_ADJUSTMENT에서만 보낸다. 서버는 저장하지 않고 예산 조정 에이전트에 그대로 넘긴다.",
+            "properties": {
+              "reason": {
+                "type": "string",
+                "enum": [
+                  "over"
+                ]
+              },
+              "categories": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "type": "string"
+                },
+                "description": "생활비 배분 대상 카테고리 코드 1개 (주거·통신 · 여행·숙박 · 기타 제외)"
+              },
+              "overAmount": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "화면이 본 초과액. 참고값 — 서버가 최신 초과액을 다시 확인한다"
+              }
+            },
+            "required": [
+              "reason",
+              "categories",
+              "overAmount"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -18015,8 +18135,17 @@
               "sourceTaskId"
             ],
             "not": {
-              "required": [
-                "baseBudgetId"
+              "anyOf": [
+                {
+                  "required": [
+                    "baseBudgetId"
+                  ]
+                },
+                {
+                  "required": [
+                    "hints"
+                  ]
+                }
               ]
             },
             "properties": {
@@ -18028,7 +18157,7 @@
             }
           }
         ],
-        "description": "기존 예산 조정은 baseBudgetId, 분배 실패 조정 진입은 sourceTaskId를 보낸다. 두 ID를 동시에 보내거나 금액·최소금액·잠금·우선순위를 직접 주입할 수 없다."
+        "description": "기존 예산 조정은 baseBudgetId, 분배 실패 조정 진입은 sourceTaskId를 보낸다. 두 ID를 동시에 보내거나 금액·최소금액·잠금·우선순위를 직접 주입할 수 없다. hints는 NORMAL_ADJUSTMENT에서만 보낸다."
       },
       "BudgetAIConsentState": {
         "type": "object",
@@ -19686,8 +19815,8 @@
     "docs/api/transactions.md": "a81c51403c2b8e451631bb3b06305dac734191958af891d0cf23c2d53b5776d7",
     "docs/api/fixed.md": "416ec78f256332ccc5af61eedd75883c7effdfa1539114597a2db98d659cc1a5",
     "docs/api/savings.md": "93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223",
-    "docs/api/home.md": "5bbe090b75877d9e28c961510cc709b78f1a74d33773959c784dacea73654f71",
-    "docs/api/chat.md": "aa40a2d60748b00e3e1e89c334bc4ce227cc617416247e6574a661e720b92079",
+    "docs/api/home.md": "c01be433fc189a9db5d24b31e2a0a53c7098533eb07fc8d7ad02b7f909596149",
+    "docs/api/chat.md": "f64443d8cc226c9ab83e49867ffa5b9f447977e668e4b56153d4e8ddbeef84db",
     "docs/api/budgets.md": "eafbf19fdfeea2dc915ee5c9ea219b73c05a0d9fa676b2677499d092a078c466"
   }
 }
