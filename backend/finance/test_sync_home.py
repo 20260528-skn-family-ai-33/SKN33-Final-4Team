@@ -1,5 +1,4 @@
 """은행 동기화 저장과 홈 자동 납부 연결의 실제 PostgreSQL 잠금 경합 회귀 테스트."""
-import hashlib
 import threading
 import time
 from datetime import date, datetime
@@ -17,6 +16,7 @@ from budgets.test_home import remember
 from users.models import FinancialProfile
 
 from . import codef
+from .identifiers import identifier_key
 from .models import BankAccount, Connection, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, SyncRun
 from .pipeline import RETRY_STATE_KEY
 from .sync import sync_bank
@@ -38,7 +38,7 @@ class BankSyncHomeConcurrencyTest(TransactionTestCase):
         }
         self.account = BankAccount.objects.create(
             user=self.user, connection=self.bank, account_type="demand", is_selected=True, balance=100000,
-            source_account_key=hashlib.sha256(self.account_data["account_no"].encode()).hexdigest(),
+            source_account_key=identifier_key("account", self.account_data["account_no"]),
         )
         self.expense = RecurringExpense.objects.create(
             user=self.user, name="월세", amount=700000, payment_day=20, category_id="HOUSING_TELECOM",

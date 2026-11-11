@@ -3,8 +3,10 @@ budgets 앱 API: React 화면에 필요한 데이터를 JSON으로 준다.
 - 홈 · 고정지출 · 정기 저축 · 예산: DB에 저장하고 읽는 실제 기능
 - 예산 추천은 임시 비율 엔진을 사용한다
 """
+from django.conf import settings
 import calendar
 import copy
+import logging
 import uuid
 from datetime import date, timedelta
 from rest_framework.response import Response
@@ -16,15 +18,17 @@ from config import tasks
 from config.idempotency import idempotent
 from .models import Budget, BudgetCycle, Category, SpendingAllocation
 from django.db import IntegrityError, transaction
-from django.db.models import F, Max, Sum
+from django.db.models import F, Max, Q, Sum
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from finance.codef import BANKS
-from finance.merchant_rules import normalize_merchant
+from finance.merchant_rules import compare_label
 from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, RecurringSaving
 from users.models import FinancialProfile
 
 from .salary import current_salary_profile, salary_cycle_dates
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(["GET"])
@@ -75,21 +79,50 @@ def protect(request):
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
         data = protect_json(request.user, profile, today)
-        if request.method == "GET" and not data["missing"]:
-            start, _, _ = salary_cycle_dates(profile, today)
-            approved = Budget.objects.filter(user=request.user, cycle__starts_on=start, status="approved").first()
-            transfer = ((approved.validation_summary or {}).get("design") or {}).get("spare_transfer", 0) if approved else 0
-            if transfer > 0:
-                allocated = approved.items.aggregate(total=Sum("allocated_amount"))["total"] or 0
-                data["approved_budget"] = {"spare_transfer": transfer, "spare": approved.funding_amount - allocated}
         if request.method == "PUT":
             values = clean_protect(request, data)
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
             data["saved"] = protect_saved_json(profile, data["base"])
+        if not data["missing"]:
+            approved = approved_protect_budget(request.user, profile, today)
+            if approved is not None:
+                data["approved_budget"] = approved
     # 11/09: 카드 내역을 뒤에서 불러오는 중이면 그 작업 ID. 화면은 재조회를 권하지 않고 '불러오는 중'을 보여 준 뒤 끝나면 다시 읽는다
     loading = tasks.active_task(request.user, tasks.SYNC_TASK_TYPES)
     data["card_load_task_id"] = loading.task_id if loading else None
     return Response(data)
+
+
+def approved_protect_budget(user, profile, today):
+    budget = Budget.objects.filter(user=user, status="approved", cycle__status="active",
+                                   cycle__starts_on__lte=today, cycle__ends_before__gt=today).order_by("-approved_at", "-pk").first()
+    if budget is None:
+        return None
+    amounts = budget.items.aggregate(total=Sum("allocated_amount"),
+                                    saving=Sum("allocated_amount", filter=Q(bucket="savings")),
+                                    cushion=Sum("allocated_amount", filter=Q(bucket="cushion")))
+    saving, cushion = amounts["saving"], amounts["cushion"]
+    if saving is None or cushion is None:
+        return None
+    summary = budget.validation_summary or {}
+    transfers = dict.fromkeys(("SPARE", "SAVINGS", "CUSHION_MONTHLY"), 0)
+    if summary.get("design_recovery"):
+        transfers.update(summary["design_recovery"].get("transfers", {}))
+    elif summary.get("adjustment"):
+        from .overview import LIVING_CODES
+        for row in summary["adjustment"].get("result", {}).get("transfers", []):
+            donor = row["from"]
+            if donor in transfers and row["to"] in (*LIVING_CODES, "LIVING"):
+                transfers[donor] += row["amount"]
+    else:
+        transfers["SPARE"] = (summary.get("design") or {}).get("spare_transfer", 0)
+    settings_differ = any(value is not None and value != amount for value, amount in
+                          ((profile.savings_floor, saving), (profile.cushion_monthly, cushion)))
+    if not any(transfers.values()) and not settings_differ:
+        return None
+    return {"spare_transfer": transfers["SPARE"], "spare": budget.funding_amount - amounts["total"],
+            "saving_floor": saving, "cushion_monthly": cushion,
+            "saving_transfer": transfers["SAVINGS"], "cushion_transfer": transfers["CUSHION_MONTHLY"]}
 
 
 def clean_protect(request, state):
@@ -166,7 +199,7 @@ def release_locks(user, cycle):
     # 예산 밖 카테고리 자물쇠는 계산에 안 쓰므로 풀지도 알리지도 않는다 (DB 값 유지)
     locked = BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True).exclude(category_id__in=OUT_OF_BUDGET)
     codes = list(locked.order_by("category__display_order", "category_id").values_list("category_id", flat=True))
-    locked.update(locked=False, locked_amount=None, updated_at=timezone.now())
+    locked.update(locked=False, locked_amount=None, revision_no=F("revision_no") + 1, updated_at=timezone.now())
     return codes
 
 
@@ -302,7 +335,8 @@ def recommend(request):
             return Response(recommend_task_json(pending), status=202)
 
         cycle = active_cycle(request.user)
-        released = release_locks_without_budget(request.user, cycle, profile.living_budget)
+        from . import design_service
+        released = [] if design_service.enabled() else release_locks_without_budget(request.user, cycle, profile.living_budget)
         snapshot = budget_input_snapshot(request.user, cycle, profile=profile, today=today)
         task = AsyncTask.objects.create(
             user=request.user, task_type="budget_recommend", request_key=request.headers["Idempotency-Key"],
@@ -325,7 +359,8 @@ def clean_recommend(request, state):
 
 
 def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
-    from .recommend import EngineCheckFailed, check_result, infeasible, recommend_category_budgets
+    from .recommend import EngineCheckFailed, allocation_conflicts, check_result, infeasible, recommend_category_budgets
+    from .design_handoff import build_design_handoff
     from . import design_service
 
     try:
@@ -341,9 +376,12 @@ def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
                 out = infeasible([{"type": "minimums_over_living", "shortfall": etc - snapshot["saved"]["living_budget"]}])
             else:
                 inp = snapshot["engine_input"]
-                if design_service.enabled():
-                    out = design_service.recommend(task.user, snapshot, expected_spare, timezone.localdate(),
-                                                   allow_external=design_service.external_enabled())
+                conflicts = allocation_conflicts(inp) if design_service.enabled() else []
+                if conflicts:
+                    out = infeasible(conflicts)
+                    check_result(inp, out)
+                elif design_service.enabled():
+                    out = design_service.recommend(task.user, snapshot, expected_spare, timezone.localdate(), allow_external=design_service.external_enabled())
                     if out['status'] == 'proposed':
                         design_service.validate_funding(snapshot, out, expected_spare)
                     elif out['status'] == 'infeasible':
@@ -359,6 +397,16 @@ def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
                 "summary": out["summary"], "conflicts": out["conflicts"],
                 "locks_released": list(locks_released),  # P-13 ②: 예산이 없어 막혀서 이번에 푼 자물쇠
             }
+            if design_service.enabled():
+                try:
+                    handoff = build_design_handoff(task, cycle, snapshot, out, available_spare=expected_spare)
+                except ValueError as error:
+                    logger.warning('Budget design handoff skipped: %s', error)
+                else:
+                    if handoff is not None:
+                        handoff['versions']['policy_fingerprint'] = design_service.fingerprint(design_service.configured_policy())
+                        task.result['_design_handoff'] = handoff
+                        task.result['handoff'] = {'mode': 'DESIGN_RECOVERY', 'source_task_id': str(task.pk)}
         task.status = "succeeded"  # infeasible도 조건을 확인한 정상 작업 결과
     except EngineCheckFailed:
         task.status = "failed"
@@ -368,13 +416,9 @@ def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
     task.save(update_fields=["status", "result", "error_code", "completed_at"])
 
 
-def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
-    from .models import BudgetItem, Bucket
-    from .recommend import ALLOCATION_CODES, ENGINE_VERSION, POLICY_VERSION, EngineCheckFailed
-    from .design_service import validate_funding
-
-    transfer = validate_funding(snapshot, out, expected_spare)
-
+def recommended_budget_lines(snapshot, out):
+    from .models import Bucket
+    from .recommend import ALLOCATION_CODES
     fixed, saved = snapshot["fixed"], snapshot["saved"]
     lines = [{"bucket": Bucket.FIXED, "category_id": code, "allocated_amount": amount}
              for code, amount in sorted(fixed["categories"].items()) if amount]
@@ -387,6 +431,16 @@ def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
     lines += [{"bucket": Bucket.LIVING, "category_id": code, "allocated_amount": out["allocations"][code]}
               for code in ALLOCATION_CODES]
     lines.append({"bucket": Bucket.LIVING, "category_id": "ETC", "allocated_amount": out.get('_design', {}).get('other_reserved', snapshot["etc"])})
+    return lines
+
+
+def save_recommended_budget(task, cycle, snapshot, out, expected_spare, *, expire_previous=True):
+    from .models import BudgetItem
+    from .recommend import ENGINE_VERSION, POLICY_VERSION, EngineCheckFailed
+    from .design_service import validate_funding
+
+    transfer = validate_funding(snapshot, out, expected_spare)
+    lines = recommended_budget_lines(snapshot, out)
     unallocated = out.get("unallocated", 0)
     if (type(unallocated) is not int or unallocated < 0
             or any(type(line["allocated_amount"]) is not int or line["allocated_amount"] < 0 for line in lines)
@@ -403,7 +457,8 @@ def save_recommended_budget(task, cycle, snapshot, out, expected_spare):
         policy_version=POLICY_VERSION, validated_at=timezone.now(),
     )
     BudgetItem.objects.bulk_create([BudgetItem(user=task.user, budget=budget, **line) for line in lines])
-    Budget.objects.filter(user=task.user, cycle=cycle, status__in=["draft", "validated"]).exclude(pk=budget.pk).update(status="expired")
+    if expire_previous:
+        Budget.objects.filter(user=task.user, cycle=cycle, status__in=["draft", "validated"]).exclude(pk=budget.pk).update(status="expired")
     return budget
 
 
@@ -434,6 +489,9 @@ def budget_category(request, budget_id, code):
         cycle = current_cycle(request.user, profile, today)
         if cycle is None or chosen.cycle_id != cycle.pk or chosen.status not in ("validated", "approved"):
             raise ProtectNotReady("지난 예산은 바꿀 수 없어요.")
+        if chosen.status != "approved" and (chosen.base_budget_id is not None
+                or chosen.task_id is not None and chosen.task.task_type == "budget_adjust"):
+            raise ProtectNotReady("조정안을 승인한 뒤 자물쇠를 바꿔 주세요.")
         data = body_dict(request)
         errors = {key: ["이 칸은 보낼 수 없어요."] for key in data if key != "locked"}
         if type(data.get("locked")) is not bool:
@@ -448,7 +506,8 @@ def budget_category(request, budget_id, code):
             setting.change_count += setting.locked != data["locked"]
             setting.locked = data["locked"]
             setting.locked_amount = amount
-            setting.save(update_fields=["locked", "locked_amount", "change_count", "updated_at"])
+            setting.revision_no = F("revision_no") + 1
+            setting.save(update_fields=["locked", "locked_amount", "change_count", "revision_no", "updated_at"])
         return Response({
             "category": category.pk, "category_name": category.display_name, "locked": setting.locked,
             "locked_amount": setting.locked_amount, "change_count": setting.change_count,
@@ -469,9 +528,12 @@ def budget_approve(request, budget_id):
         lock_user(request.user)
         from users.privacy import require_bank_not_revoked
         require_bank_not_revoked(request.user)
+        chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
+        from .api_adjustment import approve_response, is_adjustment
+        if is_adjustment(chosen):
+            return approve_response(request, budget_id, expected_mode="INITIAL_ADJUSTMENT")
         today = timezone.localdate()
         profile = current_salary_profile(request.user, today)
-        chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
         data = body_dict(request)
         if data:
             raise ValidationError({key: ["이 칸은 보낼 수 없어요."] for key in data})
@@ -492,11 +554,14 @@ def budget_approve(request, budget_id):
         # 계산 규칙(policy_version)이 바뀐 초안도 입력이 바뀐 것과 같이 만료 → 다시 추천
         # 11/06: 카드 선차감은 이번 주기 카드 소비 전체가 아니라 청구서에 든 확인된 중복만 빼므로, 카드를 쓴다고 바뀌지 않는다.
         # 지금 계산이 초안 값과 다르면(청구서 정정 · 상세 보완 · 계산 규칙 변경 · 보류) 낡은 값으로 승인하지 않고 만료
-        from .protect import card_reserved as current_card_reserved
+        from .protect import card_reserved as current_card_reserved, unreflected_card_ids
+        current_cards = current_card_reserved(request.user, cycle) if this_cycle else {}
+        frozen_notes = ((chosen.input_snapshot or {}).get("fixed") or {}).get("card_notes", [])
         if (not this_cycle or not protect_ready(state) or chosen.policy_version != POLICY_VERSION
                 or budget_input_hash(request.user, cycle) != chosen.input_hash
                 or not approval_ready(request.user, chosen, today)
-                or current_card_reserved(request.user, cycle)["amount"] != frozen):
+                or current_cards.get("amount") != frozen
+                or unreflected_card_ids(current_cards.get("notes", [])) != unreflected_card_ids(frozen_notes)):
             chosen.status = "expired"
             chosen.save(update_fields=["status"])
             # raise하면 이 트랜잭션도 롤백된다. 공통 에러 모양으로 반환하고 위 옵션으로 만료만 보존한다.
@@ -1394,8 +1459,9 @@ def remembered_withdrawal(expense, found):
     # 기억한 출금 = 사용자가 직접 고른 출금, 또는 사용자가 확정한 감지 후보의 근거 출금 (확정 = 그 출금들이 맞다고 확인, PR #80 리뷰)
     picked = [t for t in remembered_evidence(expense) if t.account_id is not None
               and (t.classification_source == "user" or expense.source_type == "detected")]
-    label = normalize_merchant(found[0].merchant_name or found[0].source_description)
-    return label is not None and any(normalize_merchant(t.merchant_name or t.source_description) == label for t in picked)
+    # 적요 비교는 후보 감지와 같은 compare_label — '2610국민건강'을 기억했으면 '2611국민건강'에도 붙는다 (11/11 PR #106 리뷰)
+    label = compare_label(found[0].merchant_name or found[0].source_description)
+    return label is not None and any(compare_label(t.merchant_name or t.source_description) == label for t in picked)
 
 # 근거 거래 중 가맹점 기억으로 쓰는 것 — 비우기 · 결제 수단 변경으로 뺀 지난 기록(MEMORY_OFF)은 제외 (11/4)
 #   evidence 에는 남아 있어서 고정비로는 계속 보임 (finance/api.py listed_transactions)

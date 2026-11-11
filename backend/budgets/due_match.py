@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from django.db.models import F, Q
 
-from finance.merchant_rules import normalize_merchant
+from finance.merchant_rules import compare_label
 from finance.models import FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense
 
 from .api import (card_linked_in, claimable, day_in_cycle, ensure_current_due, link_evidence, match_current_due,
@@ -60,7 +60,8 @@ def match_account_dues(user, expense, cycle, today, previous_cycle):
     """지난 · 이번 주기 회차 만들기 + 맞는 출금 연결 (홈 prepare_dues 에서 옮김, 동작 같음)
 
     출금일이 이미 지난 회차는
-      - 등록하기 전 출금일(등록한 첫 달)이면 fixed.md 규칙: 맞는 출금이 있을 때만 "냄"으로 만든다
+      - 등록하기 전 출금일이 지난 주기면 만들지 않는다 (11/9, home.md)
+      - 등록하기 전 출금일이 이번 주기면 fixed.md 규칙: 맞는 출금이 있을 때만 "냄"으로 만든다
       - 등록한 뒤 출금일이면 home.md 규칙: 출금이 없어도 만들어 미납을 알린다 (앱을 한동안 안 연 경우)
     지난 주기 회차는 한 달을 건너뛰고 접속해서 아직 없을 때만 새로 만든다 (취소 · 납부 기록이 있으면 그대로 둠)
     """
@@ -82,13 +83,15 @@ def match_account_dues(user, expense, cycle, today, previous_cycle):
         if is_previous and existing is not None:
             match_current_due(expense, c, today)  # 이미 있는 지난 회차는 늦게 들어온 출금(±3일)만 맞춰 봄
             continue
+        if is_previous and due_date < registered_on(expense):
+            continue  # 11/9: 등록 전 지난 주기 출금일은 회차를 만들지 않음 — 이미 나간 돈이 '꼭 나갈 돈 · 출금 확인 필요'로 하나 더 보이던 문제
         create_past = registered_on(expense) <= due_date
         ensure_current_due(expense, c, today, create_past=create_past)
         match_current_due(expense, c, today)  # 회차를 만든 뒤 들어온 출금도 맞춰 봄 (±3일, 기억한 출금 1건이면 자동 연결)
 
 
 def merchant_label(tx):
-    return normalize_merchant(tx.merchant_name or tx.source_description)
+    return compare_label(tx.merchant_name or tx.source_description)  # 후보 감지와 같은 비교 (11/11 PR #106 리뷰)
 
 
 def match_card_fixed(expense, cycles, today):

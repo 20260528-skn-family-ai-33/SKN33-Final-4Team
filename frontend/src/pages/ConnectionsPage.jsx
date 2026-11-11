@@ -12,15 +12,35 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 import DisconnectPopup from '../popups/DisconnectPopup.jsx'
+import AccountPopup from '../popups/AccountPopup.jsx'
 import LoanAddPopup from '../popups/LoanAddPopup.jsx'
 import { apiSend, useApi } from '../utils/api.js'
 import { runFinanceSync, syncLines } from '../utils/financeSync.js'
 import { SERVER_FIELDS } from '../utils/institutions.js'
+import CardNoInput from '../components/CardNoInput.jsx'
 import { won } from '../utils/money.js'
+import { splitName } from '../utils/transactions.js'
 import { PATHS } from '../routes.js'
 
 const when = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '조회 기록 없음')
 const items = (q) => q.data?.items ?? []
+// 계좌 · 카드 한 줄: 이름은 한 줄 말줄임, 끝 4자리는 아래 줄 앞에 (11/9: 긴 이름이 줄바꿈되며 모양이 깨져서)
+//   누르면 상세 팝업 (AccountPopup)
+//   아래 줄: '****0303 · 관리 중' 다음 줄에 마지막 조회 시각
+function AssetRow({ icon, displayName, sub, fetchedAt, right, onOpen }) {
+  const [name, last4] = splitName(displayName)
+  return (
+    <button type="button" className="mc-listrow" onClick={onOpen}>
+      <span className="mc-tile"><Icon name={icon} /></span>
+      <span className="mc-grow">
+        <strong className="mc-tx-name"><span>{name}</span></strong>
+        <span className="mc-muted mc-asset-sub">{[last4, sub].filter(Boolean).join(' · ')}</span>
+        <span className="mc-muted mc-asset-sub">{when(fetchedAt)}{fetchedAt ? ' 조회' : ''}</span>
+      </span>
+      <span className="mc-right mc-tx-amt">{right != null && <>{right} </>}<span className="mc-muted">›</span></span>
+    </button>
+  )
+}
 
 export default function ConnectionsPage() {
   const conns = useApi('/api/finance/connections/')
@@ -64,7 +84,6 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
   const { openPopup } = usePopup()
   // 연결별 진행 상태 { [connectionId]: { busy, lines, error, needCard } }
   const [work, setWork] = useState({})
-  const [registeredLoan, setRegisteredLoan] = useState('')
   const [cardForm, setCardForm] = useState({ cardNo: '', cardPassword: '' })
   const setOne = (id, patch) => setWork((w) => ({ ...w, [id]: { ...w[id], ...patch } }))
   const banks = conns.filter((c) => c.businessType === 'bank')
@@ -106,6 +125,12 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
     }} />,
   )
 
+  // 계좌 · 카드 상세: 그 하나로 나가는 고정지출 · 저축만 (relatedTo 를 한 장짜리로)
+  const openAsset = (kind, item, orgName) => openPopup(
+    <AccountPopup kind={kind} item={item} orgName={orgName}
+      related={!fixed.data || !savings.data ? null : relatedTo(kind === 'card' ? { cardIds: [item.cardId] } : { accountIds: [item.accountId] }, fixed, savings)} />,
+  )
+
   const disconnect = (c) => openPopup(
     <DisconnectPopup inst={c.organizationName} kind={c.businessType === 'card' ? 'card' : 'bank'} connectionId={c.connectionId} onDone={reload}
       related={relatedTo(c, fixed, savings)} relatedMissing={!fixed.data || !savings.data} />,
@@ -115,21 +140,25 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
     const w = work[c.connectionId] ?? {}
     return (
       <>
-        <p className="mc-inst-st">{c.organizationName} · {c.status === 'relogin'
-          ? <span className="mc-conn-fail">다시 연결이 필요해요</span>
-          : <span className="ok">연결됨</span>} · 마지막 인증 {when(c.lastAuthenticatedAt)}</p>
-        <div className="mc-inline">
+        {/* 기관 한 줄: 이름 · 상태 · 마지막 인증 | 작은 [다시 불러오기] (11/9: 큰 버튼 두 개가 계좌 목록보다 눈에 띄어서) */}
+        <div className="mc-conn-head">
+          <span className="mc-grow">
+            <strong>{c.organizationName}</strong>{' '}
+            {c.status === 'relogin' ? <span className="mc-conn-fail">다시 연결 필요</span> : <span className="ok">연결됨</span>}
+            <small>마지막 인증 {when(c.lastAuthenticatedAt)}</small>
+          </span>
           {c.status === 'relogin'
-            ? <button type="button" className="mc-conn-btn" disabled={w.busy} onClick={() => relogin(c)}>다시 연결</button>
-            : <button type="button" className="mc-conn-btn" disabled={w.busy} onClick={() => refresh(c)}>{w.busy ? '불러오는 중…' : '다시 불러오기'}</button>}
-          <button type="button" className="mc-link" onClick={() => disconnect(c)}>연결 해제</button>
+            ? <button type="button" className="mc-conn-act is-alert" disabled={w.busy} onClick={() => relogin(c)}>다시 연결</button>
+            : <button type="button" className="mc-conn-act" disabled={w.busy} aria-busy={w.busy} onClick={() => refresh(c)}>
+              <span className={w.busy ? 'mc-conn-busy' : undefined}><Icon name="RefreshCw" size={13} /></span>{w.busy ? '불러오는 중' : '다시 불러오기'}
+            </button>}
         </div>
         {w.lines?.map((l) => <p key={l.name} className={l.ok ? 'mc-note' : 'mc-error'}>{l.text}</p>)}
         {w.error && <p className="mc-error" role="alert">{w.error}</p>}
         {w.needCard && (
           <form className="mc-form" onSubmit={(e) => { e.preventDefault(); refresh(c, cardForm); setCardForm({ cardNo: '', cardPassword: '' }) }}>
-            <label className="mc-field">카드번호<input autoComplete="off" inputMode="numeric" maxLength={19} value={cardForm.cardNo}
-              onChange={(e) => setCardForm((f) => ({ ...f, cardNo: e.target.value.replace(/\D/g, '') }))} /></label>
+            <label className="mc-field">카드번호<CardNoInput value={cardForm.cardNo}
+              onChange={(cardNo) => setCardForm((f) => ({ ...f, cardNo }))} /></label>
             <label className="mc-field">카드 비밀번호<input autoComplete="off" type="password" inputMode="numeric" maxLength={4} value={cardForm.cardPassword}
               onChange={(e) => setCardForm((f) => ({ ...f, cardPassword: e.target.value.replace(/\D/g, '') }))} /></label>
             <button type="submit" className="mc-secondary">카드 값 넣고 다시 불러오기</button>
@@ -151,16 +180,18 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
           <div key={c.connectionId}>
             {head(c)}
             {items(accts).filter((a) => a.connectionId === c.connectionId).map((a) => (
-              <div className="mc-listrow" key={a.accountId}>
-                <span className="mc-tile"><Icon name="Landmark" /></span>
-                <span className="mc-grow"><strong>{a.displayName}</strong><span className="mc-muted">{a.isSelected ? '관리 중' : '고르지 않음'} · 조회 {when(a.fetchedAt)}</span></span>
-                <span className="mc-right">{a.balance == null ? '잔액 확인 안 됨' : won(a.balance)}</span>
-              </div>
+              <AssetRow key={a.accountId} icon="Landmark" displayName={a.displayName}
+                sub={a.isSelected ? '관리 중' : '고르지 않음'} fetchedAt={a.fetchedAt}
+                right={a.balance == null ? '잔액 모름' : won(a.balance)} onOpen={() => openAsset('account', a, c.organizationName)} />
             ))}
+            {/* 11/9: [해제]는 기관 줄 [다시 불러오기] 옆에서 빼 그 기관 목록 맨 아래 오른쪽으로 (실수로 누르기 어렵게, 눈에 덜 띄게) */}
+            <div className="mc-conn-unlink"><button type="button" onClick={() => disconnect(c)}>{c.organizationName} 연결 해제</button></div>
           </div>
         ))}
-        <button type="button" className="mc-link" onClick={() => navigate(PATHS.connectAccounts, { state: { from: 'manage' } })}>계좌 선택 바꾸기</button>
-        <button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>+ 다른 은행 연결</button>
+        <div className="mc-inline mc-conn-foot">
+          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectAccounts, { state: { from: 'manage' } })}>계좌 선택 바꾸기</button>
+          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>+ 은행 추가</button>
+        </div>
       </div>
 
       <div className="mc-card">
@@ -174,15 +205,17 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
           <div key={c.connectionId}>
             {head(c)}
             {items(cards).filter((k) => c.cardIds.includes(k.cardId)).map((k) => (
-              <div className="mc-listrow" key={k.cardId}>
-                <span className="mc-tile"><Icon name="CreditCard" /></span>
-                <span className="mc-grow"><strong>{k.displayName}</strong><span className="mc-muted">{k.isSelected ? '관리 중' : '고르지 않음'}{k.cardType ? ` · ${k.cardType}` : ''}</span></span>
-              </div>
+              <AssetRow key={k.cardId} icon="CreditCard" displayName={k.displayName}
+                sub={`${k.isSelected ? '관리 중' : '고르지 않음'}${k.cardType ? ` · ${k.cardType}` : ''}`} fetchedAt={k.fetchedAt} onOpen={() => openAsset('card', k, c.organizationName)} />
             ))}
+            {/* 11/9: [해제]는 기관 줄 [다시 불러오기] 옆에서 빼 그 기관 목록 맨 아래 오른쪽으로 (실수로 누르기 어렵게, 눈에 덜 띄게) */}
+            <div className="mc-conn-unlink"><button type="button" onClick={() => disconnect(c)}>{c.organizationName} 연결 해제</button></div>
           </div>
         ))}
-        {cards.data && <button type="button" className="mc-link" onClick={() => navigate(PATHS.connectCards)}>카드 선택 바꾸기</button>}
-        <button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>+ 카드사 연결</button>
+        <div className="mc-inline mc-conn-foot">
+          {cards.data && <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectCards)}>카드 선택 바꾸기</button>}
+          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>+ 카드사 추가</button>
+        </div>
       </div>
 
       <div className="mc-card">
@@ -196,8 +229,10 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
             <span className="mc-right">{(l.origin === 'manual' ? l.manualBalance : l.reportedBalance) == null ? '잔액 확인 필요' : won(l.origin === 'manual' ? l.manualBalance : l.reportedBalance)} ›</span>
           </button>
         ))}
-        {(loans.data || loans.error?.code === 'consent_required') && <button type="button" className="mc-link" onClick={() => openPopup(<LoanAddPopup onSaved={(created) => { setRegisteredLoan(created.productName); loans.reload() }} />)}>+ 조회되지 않은 대출 직접 등록</button>}
-        {registeredLoan && <p className="mc-note" role="status">{registeredLoan} 대출을 등록했어요.</p>}
+        {/* 11/9: 은행 · 카드사 칸과 같은 아래 버튼. 등록 뒤엔 목록에 새 줄이 생기므로 따로 안내하지 않는다 */}
+        {(loans.data || loans.error?.code === 'consent_required') && <div className="mc-conn-foot">
+          <button type="button" className="mc-secondary" onClick={() => openPopup(<LoanAddPopup onSaved={() => loans.reload()} />)}>+ 대출 직접 등록</button>
+        </div>}
       </div>
       <p className="mc-note">송금·결제는 실행하지 않아요. 연결을 해제해도 지금까지 불러온 거래는 남아요.</p>
     </Layout>

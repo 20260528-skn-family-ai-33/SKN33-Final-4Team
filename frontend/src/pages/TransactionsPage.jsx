@@ -1,6 +1,7 @@
 // 거래 내역 — GET /api/finance/transactions/ (docs/api/transactions.md '거래 목록 보기')
-// 주소 ?category=FOOD,CULTURE_LEISURE 처럼 카테고리 코드로 골라 본다 (11/3: 칩을 눌러 여러 개 켜고 끔). 고르는 일 · 합계는 장고 API 가 해서 보내 준다
-// 계좌 · 카드는 [필터]에서 고른다 → 주소 ?account=…&card=… (API 의 accountId · cardId, 둘 다 고르면 둘 중 하나)
+// 주소 ?category=FOOD,CULTURE_LEISURE 처럼 카테고리 코드로 골라 본다 (여러 개). 고르는 일 · 합계는 장고 API 가 해서 보내 준다
+// 거래 유형 · 카테고리 · 계좌 · 카드는 모두 [필터] 팝업에서 고른다 (11/9: 위에 늘 떠 있던 카테고리 칩 줄이 두꺼워서 팝업으로)
+//   → 주소 ?type=…&category=…&account=…&card=… (API 의 transactionType · accountId · cardId, 계좌 · 카드를 둘 다 고르면 둘 중 하나)
 // '전체'에는 소비 + 입금(월급은 isSalary) + 남에게 보낸 이체가 보인다 (10/22 결정 V①). 입금 · 이체는 카테고리가 없고 합계에 안 들어간다
 //   이체를 누르면 [소비로 분류하기] (결정 W) · 고정지출로 연결된 거래(funding: fixed)는 '고정' 표시 (★8 · AA⑤)
 // 기간은 달력월. ‹ › 로 달을 옮긴다 (주소 ?month=2026-10, 없으면 이번 달)
@@ -68,6 +69,7 @@ export default function TransactionsPage() {
   const codes = list('category').map((c) => CODE_BY_NAME[c] ?? c)
   const accountIds = list('account')
   const cardIds = list('card')
+  const types = list('type')  // spending · income · transfer
   const isPending = codes.length === 1 && codes[0] === PENDING.code  // 확인 필요는 다른 카테고리와 섞지 않는다
   const [thisMonth] = useState(() => ym(new Date()))  // 화면을 연 날 기준
   // ?month= 값: 'YYYY-MM' 또는 'all'(확인 필요만). 없으면 확인 필요는 전체 기간, 그 밖은 이번 달
@@ -75,17 +77,17 @@ export default function TransactionsPage() {
   const all = isPending && month === 'all'
   const shown = month === 'all' ? thisMonth : month
   // 기본값과 같은 달은 주소에 안 남긴다
-  const go = (cats, m, acc = accountIds, crd = cardIds) => setParams({
+  const go = (cats, m, acc = accountIds, crd = cardIds, typ = types) => setParams({
     ...(cats.length && { category: cats.join(',') }),
     ...(m !== (cats.length === 1 && cats[0] === PENDING.code ? 'all' : thisMonth) && { month: m }),
     ...(acc.length && { account: acc.join(',') }),
     ...(crd.length && { card: crd.join(',') }),
+    ...(typ.length && { type: typ.join(',') }),
   })
-  // 확인 필요 칩 · 배너는 그것만 · 전체 기간(숫자와 같게). 다른 칩은 눌러서 켜고 끄고(여러 개), 보던 달 그대로. [전체] = 모두 끄기
-  const pick = (code) => {
-    if (code === PENDING.code) return go([PENDING.code], 'all')
-    const base = isPending ? [] : codes
-    go(!code ? [] : base.includes(code) ? base.filter((c) => c !== code) : [...base, code], shown)
+  // 확인 필요는 그것만 · 전체 기간(숫자와 같게). 다른 카테고리로 바꾸면 보던 달, 그대로면 지금 달 그대로
+  const applyFilter = (cats, acc, crd, typ) => {
+    const toPending = cats[0] === PENDING.code
+    go(cats, toPending === isPending ? month : toPending ? 'all' : shown, acc, crd, typ)
   }
   const { openPopup } = usePopup()
   // 카테고리 · 달을 바꾸면 주소가 바뀌고 → 장고에게 다시 받아온다
@@ -93,9 +95,10 @@ export default function TransactionsPage() {
     codes.length && `category=${codes.map(encodeURIComponent).join(',')}`,
     accountIds.length && `accountId=${accountIds.join(',')}`,
     cardIds.length && `cardId=${cardIds.join(',')}`,
+    types.length && `transactionType=${types.map(encodeURIComponent).join(',')}`,
     !all && monthQuery(shown, thisMonth),
   ].filter(Boolean).join('&')
-  const payCount = accountIds.length + cardIds.length
+  const filterCount = types.length + codes.length + accountIds.length + cardIds.length
   // 필터를 바꾸면 새 결과가 올 때까지 data = null — 이전 조건의 목록 · 합계를 새 조건 값처럼 보이지 않는다 (R29)
   // keepData: 카테고리 저장 뒤 다시 받기가 실패해도 목록을 남기고 아래에서 실패 안내를 띄운다
   const { data, error, reload, refreshing } = useApi(`/api/finance/transactions/?${query}`, { keepData: true })
@@ -118,39 +121,28 @@ export default function TransactionsPage() {
           <button type="button" className="mc-icon" aria-label="다음 달" disabled={shown >= thisMonth} onClick={() => go(codes, shiftMonth(shown, 1))}>›</button>
         </>}
         {isPending && (
-          <button type="button" className="mc-link" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간'}</button>
+          <button type="button" className="mc-sumbar-toggle" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간 보기'}</button>
         )}
         {/* 이 목록의 소비 소계일 뿐 — 예산 · 남은 생활비는 홈 · 예산 화면 값 (급여 주기 기준이라 다름) */}
         {data && <span className="mc-sumbar-v"><b>{won(summary.spentTotal)}</b><span className="mc-muted"> 소비</span></span>}
       </div>
 
       {pendingCount > 0 && (
-        <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => pick(PENDING.code)}>
+        // 배너 숫자는 다른 조건 없이 센 전체 건수 → 누르면 거래 유형 · 계좌 · 카드 조건을 풀고 그 건수 그대로 보여 준다
+        //   (입금 · 이체만 골라 둔 채 누르면 '확인 필요(소비)'와 겹치는 거래가 없어 늘 비던 문제, PR #101 리뷰)
+        <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => go([PENDING.code], 'all', [], [], [])}>
           <span className="mc-pend-dot">{pendingCount}</span>
-          <span className="mc-grow">
-            <strong>카테고리를 확인해 주세요</strong>
-            <small>AI가 확신하지 못한 거래 {pendingCount}건 · 확인하면 소비 분석에 반영돼요</small>
-          </span>
+          <strong className="mc-grow">카테고리 확인이 필요한 거래</strong>
           <span className="mc-muted">›</span>
         </button>
       )}
 
-      <div className="mc-chipbar mc-cat-filter" aria-label="카테고리 필터">
-        <button type="button" className="mc-chip-warn" aria-pressed={isPending} onClick={() => pick(PENDING.code)}>
-          {PENDING.name} {pendingCount}
-        </button>
-        <button type="button" aria-pressed={codes.length === 0} onClick={() => pick('')}>전체</button>
-        {CHIPS.map((cat) => (
-          <button type="button" key={cat.code} aria-pressed={!isPending && codes.includes(cat.code)} onClick={() => pick(cat.code)}>{cat.name}</button>
-        ))}
-      </div>
-
       <div className="mc-row mc-tx-sum">
         <span className="mc-muted">{data ? <>거래 {data.items.length}건 · 소비 <strong>{won(summary.spentTotal)}</strong></> : '거래 불러오는 중'}</span>
         {/* 달력 보기는 기능이 생기면 여기에 [리스트 | 달력] (11/3: 누를 수 없는 버튼이라 뺌) */}
-        <button type="button" className="mc-filter-btn" aria-pressed={payCount > 0} onClick={() => openPopup(
-          <FilterPopup accountIds={accountIds} cardIds={cardIds} onApply={(acc, crd) => go(codes, month, acc, crd)} />,
-        )}><Icon name="SlidersHorizontal" size={14} />{payCount > 0 ? `계좌 · 카드 ${payCount}` : '계좌 · 카드'}</button>
+        <button type="button" className="mc-filter-btn" aria-pressed={filterCount > 0} onClick={() => openPopup(
+          <FilterPopup categories={CHIPS} pendingCount={pendingCount} categoryCodes={codes} types={types} accountIds={accountIds} cardIds={cardIds} onApply={applyFilter} />,
+        )}><Icon name="SlidersHorizontal" size={14} />{filterCount > 0 ? `필터 ${filterCount}` : '필터'}</button>
       </div>
 
       {/* 처음 받는 중 · 실패. 같은 주소 다시 받기가 실패하면 지난 목록 위에 안내를 띄운다. 다시 시도 중에는 '불러오는 중' */}
@@ -166,8 +158,8 @@ export default function TransactionsPage() {
             tx.kind === 'pending' ? (
               <div className="mc-tx-pend" key={tx.id}>
                 <div className="mc-row">
-                  <span className="mc-grow"><strong>{tx.name}</strong><span className="mc-pend-badge">카테고리 확인 필요</span></span>
-                  <strong>{won(tx.net)}</strong>
+                  <span className="mc-grow"><strong className="mc-tx-name"><span>{tx.name}</span></strong><span className="mc-pend-badge">카테고리 확인 필요</span></span>
+                  <strong className="mc-tx-amt">{won(tx.net)}</strong>
                 </div>
                 {/* 확인 필요 이유 · 후보 카테고리는 [카테고리 고르기] 팝업이 거래 한 건 보기(17번 suggestion)로 받아 보여 준다 (10/30 A안) */}
                 <p className="mc-pend-why">어디에 쓴 돈인가요?</p>
@@ -180,10 +172,10 @@ export default function TransactionsPage() {
                 onClick={() => openPopup(<TransactionPopup tx={tx} date={dayLabel(day.date)} categories={CHIPS} onSaved={refresh} />)}>
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow">
-                  <strong>{tx.name}{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>
-                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? (tx.salaryAuto ? '월급 · 자동 인식' : '월급') : '입금') : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')} · 소비 아님` : tx.cat}{tx.via && ` · ${tx.via}`}</span>
+                  <strong className="mc-tx-name"><span>{tx.name}</span>{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>
+                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? (tx.salaryAuto ? '월급 · 자동 인식' : '월급') : '입금') : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')}` : tx.cat}{tx.viaShort && ` · ${tx.viaShort}`}</span>
                 </span>
-                <span className="mc-right">
+                <span className="mc-right mc-tx-amt">
                   {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}
                   {tx.cancel === 'full' && <><s>{won(tx.amount)}</s> <em className="mc-cancel-tag">취소</em></>}
                   {tx.cancel === 'partial' && <>{won(tx.net)}<small className="mc-cancel-sub">부분취소 −{won(tx.cancelAmount)}</small></>}

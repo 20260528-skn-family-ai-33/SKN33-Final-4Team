@@ -121,6 +121,3 @@ class HypothesisEvidenceTest(TestCase):
         self.assertEqual(trace["fallback"], "invalid_plan")
         self.assertEqual(calls, [C.PLAN_PROMPT])
 
-    def test_old_explanation_cannot_reverse_the_direction(self):
-        raw = json.dumps({"sentences": ["결제 건수는 {F1}에서 {F2}로 늘었어요."]})
-        self.assertIsNone(explain.checked(raw, {"F1": "10건", "F2": "5건"}))

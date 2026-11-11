@@ -1,10 +1,11 @@
-// 챗봇 답변 한 개 (pages/AssistantPage.jsx). backend/spending_fixture/local_chat.html 의 bot() · chart() 를 옮겼다 (MEMO 25절 2단계)
+// 챗봇 답변 한 개 (pages/AssistantPage.jsx). 옛 개발용 로컬 채팅(local_chat.html, 11/10 삭제)의 bot() · chart() 를 옮겼다 (MEMO 25절 2단계)
 // content = 서버 봇 메시지 content: { text, lead, lines, sections, notices, choices, chart?, view?, turn, agent, inputs, result } (MEMO 22-3 · 22-12 · 22-13)
 // 디자인은 기존 클래스만: 분석 결과(result) = 소비 분석 카드(mc-spend*), 그 밖의 답 = 채팅 말풍선(mc-bubble)
 // - 핵심 안내(lead)는 서버가 나눈 칸 그대로 맨 위에. '안내:' 글자 + 굵게 (색만으로 구분하지 않음)
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
 import { won } from '../utils/money.js'
+import BudgetAdjustment from './BudgetAdjustment.jsx'
 
 const Lead = ({ items }) => items.map((l, i) => (
   // span 을 쓰지 않는다: mc-spend-unc 의 마지막 span 은 금액 칸용 줄바꿈 금지라 긴 문장이 카드 밖으로 나간다
@@ -48,7 +49,7 @@ function Chart({ chart }) {
 }
 
 // 카드 보기(content.view) 블록 — 서버가 준 금액 · 비율 · 글자 그대로. SpendingCard 와 같은 클래스
-//   head = 머리줄(기간 · 범위) / total = 큰 금액(건수처럼 돈이 아니면 value 글자) / rows = 이름 · 막대 · 금액(또는 value 글자) 줄 (badge = 증감 글자 + 색) / text = 짧은 문장 / meter = 생활비 예산 막대
+//   head = 머리줄(기간 · 범위, 둘째부터는 소제목) / total = 큰 금액(건수처럼 돈이 아니면 value 글자) / rows = 이름 · 막대 · 금액(또는 value 글자) 줄 (badge = 증감 글자 + 색) / text = 짧은 문장 / meter = 생활비 예산 막대
 const BADGE = { up: ' is-up', down: ' is-down', same: '' }
 const WAY = { up: ' mc-fx-up', down: ' mc-fx-down' }  // 늘었어요 = 붉은 글자 · 줄었어요 = 파란 글자 (배지와 같은 색, 글자로도 적혀 있음)
 
@@ -82,6 +83,8 @@ function Block({ block }) {
     )
   }
   if (block.kind === 'rows') return <Rows block={block} />
+  // 한 답에 카드가 여럿이면(예: 지난달 비교 + 남은 예산) 두 번째부터의 머리줄은 구분선 + 소제목 — 빠지면 어느 기간 · 무엇의 금액인지 모른다
+  if (block.kind === 'head') return <div className="mc-spend-head mc-fx-subhead"><span>{block.title}</span></div>
   if (block.kind === 'text') return <ul className="mc-spend-lines">{block.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
   if (block.kind === 'meter') {  // 생활비 예산 사용률 (홈 화면과 같은 mc-bar). 기간은 title, 초과는 글자(lines)로도 · 줄마다 한 줄
     const lines = block.lines ?? [block.text]  // 줄 나누기 전에 저장된 옛 메시지는 text 한 줄
@@ -170,7 +173,8 @@ function Bubble({ content }) {
   )
 }
 
-export default function ChatReply({ content, title }) {
+export default function ChatReply({ content, title, active, onPick, onApprove, navigation }) {
+  if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} navigation={navigation} />
   return content.result ? <ResultCard content={content} title={title} /> : <Bubble content={content} />
 }
 

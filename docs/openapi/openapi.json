@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "확정 명세 49개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 62개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 1개(챗봇 메시지), 미구현 -14개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 목업의 입력 검증·DB 연동은 완료되지 않았습니다.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "현재 계약 69개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 69개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 예산 조정 자유 대화는 router/live와 실제 ML·재원·감액 정책 연결 상태를 확인하세요.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -218,6 +218,36 @@
               }
             }
           },
+          "429": {
+            "description": "시도 횟수 초과: throttled. 가입 IP당 1시간 10번 (성공·실패 모두 셈). 기다릴 초는 Retry-After 헤더.",
+            "headers": {
+              "Retry-After": {
+                "description": "다시 시도할 수 있을 때까지 남은 초",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "throttled": {
+                    "summary": "시도 횟수 초과",
+                    "value": {
+                      "error": {
+                        "code": "throttled",
+                        "message": "시도가 너무 많아요. 잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
           "500": {
             "description": "서버 내부 오류: server_error. 성공으로 처리하지 않고 다시 시도한다.",
             "content": {
@@ -351,6 +381,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "시도 횟수 초과: throttled. 로그인 IP당 1분 5번 (성공·실패 모두 셈). 기다릴 초는 Retry-After 헤더.",
+            "headers": {
+              "Retry-After": {
+                "description": "다시 시도할 수 있을 때까지 남은 초",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "throttled": {
+                    "summary": "시도 횟수 초과",
+                    "value": {
+                      "error": {
+                        "code": "throttled",
+                        "message": "시도가 너무 많아요. 잠시 후 다시 시도해 주세요."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -609,6 +669,36 @@
                         "processing",
                         "retry_required"
                       ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "시도 횟수 초과: throttled. 탈퇴 회원당 1시간 5번 (성공·실패 모두 셈). 기다릴 초는 Retry-After 헤더.",
+            "headers": {
+              "Retry-After": {
+                "description": "다시 시도할 수 있을 때까지 남은 초",
+                "schema": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "throttled": {
+                    "summary": "시도 횟수 초과",
+                    "value": {
+                      "error": {
+                        "code": "throttled",
+                        "message": "시도가 너무 많아요. 잠시 후 다시 시도해 주세요."
+                      }
                     }
                   }
                 }
@@ -1685,7 +1775,7 @@
           "금융 동의 · 연결"
         ],
         "x-source": "docs/api/finance-connect.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n본문 없음 또는 {}는 해제되지 않은 연결 전부에서 동의한 범위를 조회한다. Idempotency-Key는 쓰지 않는다. 수동·자동 작업이 진행 중이면 그 작업, 같은 대상이 끝난 지 1분 안이면 마지막 성공 작업을 반환한다. 대상이 다르거나 카드 값을 보내면 새로 조회한다. 10분 넘게 멈춘 작업은 failed/stale로 닫고 새 작업을 만든다. 1차는 요청 안에서 실행을 끝내므로 202 status=succeeded일 수 있다. 거래는 마지막 성공 조회일 7일 전~오늘, 성공 이력이 없으면 4달 전 1일~오늘. 청구서는 빈틈없이 불러온 마지막 날의 달~다음 달(처음이면 지난달부터), 잔액·카드·대출은 현재 상태다. 동의가 없거나 조회 중 철회·해제되면 해당 범위를 건너뛴다. 카드 저장 함수는 아직 없어 cards: skipped/not_supported다. 기관별 실패는 GET /api/tasks/{id}/ result.items[].error에서 확인한다. 로그인 오류·잠김은 relogin_required이고 연결 상태를 relogin으로 바꾼다. 작업 자체가 끝까지 돌면 모든 기관이 실패해도 succeeded, 서버 오류로 중단될 때만 failed다. 현대카드 인증값은 저장·로그에 남기지 않으며 없으면 해당 기관만 실패한다.\n\n원본: `docs/api/finance-connect.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n본문 없음 또는 {}는 해제되지 않은 연결 전부에서 동의한 범위를 조회한다. Idempotency-Key는 쓰지 않는다. 수동·자동 작업이 진행 중이면 그 작업, 같은 대상이 끝난 지 1분 안이면 마지막 성공 작업을 반환한다. 대상이 다르거나 카드 값을 보내면 새로 조회한다. 10분 넘게 멈춘 작업은 failed/stale로 닫고 새 작업을 만든다. 1차는 요청 안에서 실행을 끝내므로 202 status=succeeded일 수 있다. 거래는 마지막 성공 조회일 7일 전~오늘, 성공 이력이 없으면 4달 전 1일~오늘. 청구서는 빈틈없이 불러온 마지막 날의 달~다음 달(처음이면 지난달부터), 잔액·카드·대출은 현재 상태다. 동의가 없거나 조회 중 철회·해제되면 해당 범위를 건너뛴다. 카드 저장 함수는 아직 없어 cards: skipped/not_supported다. 기관별 실패는 GET /api/tasks/{id}/ result.items[].error에서 확인한다. 로그인 오류·잠김은 relogin_required이고 연결 상태를 relogin으로 바꾼다. HMAC 전환 전 키로 저장된 계좌·대출·카드가 남아 있으면 저장하지 않고 not_ready(동의 철회 후 다시 연결 안내)다. 작업 자체가 끝까지 돌면 모든 기관이 실패해도 succeeded, 서버 오류로 중단될 때만 failed다. 현대카드 인증값은 저장·로그에 남기지 않으며 없으면 해당 기관만 실패한다.\n\n원본: `docs/api/finance-connect.md`",
         "requestBody": {
           "required": false,
           "content": {
@@ -6126,6 +6216,16 @@
             "example": "38e76a37-6016-4291-87c2-58688f50542a"
           },
           {
+            "name": "transactionType",
+            "in": "query",
+            "required": false,
+            "description": "거래 유형만(11/9): spending 소비 · income 입금 · transfer 이체(남에게 보낸 이체 + 내 계좌 이체 줄). 쉼표로 여러 개. category와 같이 보내면 둘 다 만족. 모르는 값은 400.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "income,transfer"
+          },
+          {
             "name": "from",
             "in": "query",
             "required": false,
@@ -9185,12 +9285,12 @@
     "/api/chat/messages/": {
       "post": {
         "operationId": "sendChatMessage",
-        "summary": "[목업] 챗봇에 메시지 보내기",
+        "summary": "[구현] 챗봇에 메시지 보내기",
         "tags": [
           "통합 챗봇"
         ],
         "x-source": "docs/api/chat.md",
-        "description": "**개발 상태: 목업** — 현재 서버는 예시 응답을 반환하는 껍데기입니다. 입력 검증·DB 저장·실제 처리는 아직 구현되지 않았습니다.\n\ntext와 choice 중 정확히 하나를 보냅니다. conversationId=null은 새 대화입니다. 응답 messages에는 사용자 메시지와 봇 답변 모두 포함됩니다.\n\nLLM은 문장을 해석하고 소비 숫자는 서버가 집계하며 문장은 템플릿으로 만듭니다. 라우터 실패는 200 + intent=unknown, fallback=true로 안내합니다. 선택지 요청은 fallback=false. 실패 시 기존 active_agent·slots는 유지합니다.\n\n소비는 달력월 기준이고 비교는 지난달 같은 일자까지(없는 날짜는 말일). 고정지출을 포함하고 fixedAmount로 따로 표시하며 카드값·저축·대출상환은 소비에 넣지 않습니다. 같은 구매는 한 번만 셉니다.\n\nbudget 의도는 현재 안내 글 + task=null인 기본 계약이며 실제 조정 작업 연결은 결정 후입니다. big은 3차 안내, out은 범위 안내 + 선택지입니다. 본문의 없는·남의·끝난 conversationId는 400이며 404가 아닙니다.\n\n원본: `docs/api/chat.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\ntext와 choice 중 하나를 보낸다. 선택지 객체는 최신 {value,turn}을 검수한다. router의 budgetContext는 choice=\"budget\"과 함께 본인 기준 예산·모드를 전달한다. 예산 조정의 계산·검수·저장은 서버가 수행하고 content.budgetAdjustment로 질문·비교·변경안을 반환한다. 비교와 미리보기 선택만으로 승인하지 않는다. LLM은 대화 잠금 밖에서 호출하고, rev 검수 뒤 제안·작업·메시지를 원자 저장한다. legacy 응답 계약은 유지한다. 실제 자유 대화는 CHAT_ENGINE=router / CHAT_LLM=live 및 정책·자료 연결이 필요하다.\n\n원본: `docs/api/chat.md`",
         "requestBody": {
           "required": true,
           "content": {
@@ -9209,6 +9309,16 @@
                   "value": {
                     "conversationId": "3f2c0000-0000-4000-8000-000000000001",
                     "choice": "spending"
+                  }
+                },
+                "budgetDraftEntry": {
+                  "value": {
+                    "conversationId": null,
+                    "choice": "budget",
+                    "budgetContext": {
+                      "baseBudgetId": "3f2c0000-0000-4000-8000-000000000001",
+                      "mode": "INITIAL_ADJUSTMENT"
+                    }
                   }
                 }
               }
@@ -9315,7 +9425,7 @@
             }
           },
           "409": {
-            "description": "같은 요청 번호로 다른 내용(idempotency_conflict).",
+            "description": "idempotency_conflict · conversation_busy · stale_choice · not_ready · expired. 충돌한 턴의 제안만 별도로 남기지 않는다.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9335,7 +9445,7 @@
             }
           }
         },
-        "x-implementation-status": "mock",
+        "x-implementation-status": "implemented",
         "parameters": [
           {
             "$ref": "#/components/parameters/CsrfToken"
@@ -9344,6 +9454,55 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ]
+      },
+      "get": {
+        "operationId": "getChatEngine",
+        "summary": "[구현] 챗봇 기능 버튼 보기",
+        "tags": [
+          "통합 챗봇"
+        ],
+        "x-source": "docs/api/chat.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n저장 없이 현재 엔진과 서버가 제공하는 기능 버튼을 반환한다. router에서 예산 조정 카드를 연결하며 legacy는 이전 안내 흐름이다.\n\n원본: `docs/api/chat.md`",
+        "responses": {
+          "200": {
+            "description": "엔진과 기능 버튼",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatEngineInfo"
+                },
+                "example": {
+                  "engine": "router",
+                  "features": [
+                    {
+                      "value": "spending",
+                      "label": "소비 분석"
+                    },
+                    {
+                      "value": "budget",
+                      "label": "예산 조정"
+                    },
+                    {
+                      "value": "policy",
+                      "label": "청년 정책"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "로그인 안 됨(not_authenticated) 또는 CSRF 실패(permission_denied).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
       }
     },
     "/api/tasks/{id}/": {
@@ -9543,7 +9702,58 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                  "$ref": "#/components/schemas/BudgetAIConsentState",
+                  "type": "object",
+                  "properties": {
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "granted",
+                        "not_granted"
+                      ]
+                    },
+                    "document": {
+                      "type": "object"
+                    },
+                    "documentVersion": {
+                      "type": "string"
+                    },
+                    "documentHash": {
+                      "type": "string"
+                    },
+                    "healthDocument": {
+                      "type": "object"
+                    },
+                    "healthDocumentVersion": {
+                      "type": "string"
+                    },
+                    "healthDocumentHash": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "외부 AI 기능 활성화 여부. false이면 신규 동의 불가."
+                    },
+                    "canRevoke": {
+                      "type": "boolean",
+                      "description": "과거 문서를 포함한 철회 가능한 동의 존재 여부."
+                    }
+                  },
+                  "required": [
+                    "purpose",
+                    "status",
+                    "document",
+                    "documentVersion",
+                    "documentHash",
+                    "healthDocument",
+                    "healthDocumentVersion",
+                    "healthDocumentHash",
+                    "available",
+                    "canRevoke"
+                  ]
                 }
               }
             }
@@ -9554,6 +9764,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -9620,7 +9840,58 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                  "$ref": "#/components/schemas/BudgetAIConsentState",
+                  "type": "object",
+                  "properties": {
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "granted",
+                        "not_granted"
+                      ]
+                    },
+                    "document": {
+                      "type": "object"
+                    },
+                    "documentVersion": {
+                      "type": "string"
+                    },
+                    "documentHash": {
+                      "type": "string"
+                    },
+                    "healthDocument": {
+                      "type": "object"
+                    },
+                    "healthDocumentVersion": {
+                      "type": "string"
+                    },
+                    "healthDocumentHash": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "외부 AI 기능 활성화 여부. false이면 신규 동의 불가."
+                    },
+                    "canRevoke": {
+                      "type": "boolean",
+                      "description": "과거 문서를 포함한 철회 가능한 동의 존재 여부."
+                    }
+                  },
+                  "required": [
+                    "purpose",
+                    "status",
+                    "document",
+                    "documentVersion",
+                    "documentHash",
+                    "healthDocument",
+                    "healthDocumentVersion",
+                    "healthDocumentHash",
+                    "available",
+                    "canRevoke"
+                  ]
                 }
               }
             }
@@ -9641,6 +9912,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -9678,9 +9959,6 @@
               "schema": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "confirm"
-                ],
                 "properties": {
                   "confirm": {
                     "type": "boolean",
@@ -9688,7 +9966,10 @@
                       true
                     ]
                   }
-                }
+                },
+                "required": [
+                  "confirm"
+                ]
               }
             }
           }
@@ -9699,7 +9980,58 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BudgetAIConsentState"
+                  "$ref": "#/components/schemas/BudgetAIConsentState",
+                  "type": "object",
+                  "properties": {
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "granted",
+                        "not_granted"
+                      ]
+                    },
+                    "document": {
+                      "type": "object"
+                    },
+                    "documentVersion": {
+                      "type": "string"
+                    },
+                    "documentHash": {
+                      "type": "string"
+                    },
+                    "healthDocument": {
+                      "type": "object"
+                    },
+                    "healthDocumentVersion": {
+                      "type": "string"
+                    },
+                    "healthDocumentHash": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "외부 AI 기능 활성화 여부. false이면 신규 동의 불가."
+                    },
+                    "canRevoke": {
+                      "type": "boolean",
+                      "description": "과거 문서를 포함한 철회 가능한 동의 존재 여부."
+                    }
+                  },
+                  "required": [
+                    "purpose",
+                    "status",
+                    "document",
+                    "documentVersion",
+                    "documentHash",
+                    "healthDocument",
+                    "healthDocumentVersion",
+                    "healthDocumentHash",
+                    "available",
+                    "canRevoke"
+                  ]
                 }
               }
             }
@@ -9720,6 +10052,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -10108,7 +10450,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n지킬 돈 missing·blocked(카드 청구서 미확인 포함)·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 배분 대상 카테고리(주거·통신·여행·숙박 제외, R-13)에 배분한다. 예전에 걸어 둔 두 카테고리의 최소 금액·자물쇠는 DB에 두되 계산에서 뺀다. 자물쇠·최소 금액을 지키며 1만원 내림 후 자투리를 배분한다. proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living으로 안내한다. 서버 결과 검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다. 이번 주기에 예산(validated·approved)이 하나도 없고 자물쇠 때문에 추천이 막히면(자물쇠를 빼면 막히지 않을 때) 추천 전에 이번 주기 자물쇠를 풀고 result.locksReleased에 담는다 — 자물쇠는 예산 화면에서만 풀 수 있어 막다른 길이 되기 때문 (P-13 ②). 바꾼 횟수는 늘리지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n지킬 돈 missing·blocked(카드 청구서 미확인 포함)·미저장·현재 조건과 안 맞는 저장 값은 작업 생성 전 409 not_ready. 이 회원의 budget_recommend queued·running 작업이 있으면 재사용한다. 기타는 잠긴 금액, 없으면 최소 금액, 없으면 0을 떼고 배분 대상 카테고리(주거·통신·여행·숙박 제외, R-13)에 배분한다. 예전에 걸어 둔 두 카테고리의 최소 금액·자물쇠는 DB에 두되 계산에서 뺀다. 실제 자물쇠는 입력액을 유지하고 잠기지 않은 최소액은 5천 원 단위로 올림한다. 저장한 category_targets는 최소액·잠금과 별도인 출발 금액으로 반영한다. 기본 1만원, 필요 시 5천 원 단위로 계산·저장하며 남은 잔액은 unallocated로 여윳돈에 남긴다. 여윳돈은 별도 BudgetItem이 아니다. proposed이면 validated 예산 및 항목을 만들고 같은 주기 이전 draft·validated를 만료시킨다. 승인 예산은 유지한다. task.result는 BudgetRecommendationResult: infeasible은 작업 succeeded이며 minimums_over_living, lock_below_minimum, locks_mismatch_living, target_conflict로 안내한다. target_conflict는 잠금·최소액·단위·생활비·잘못된 목표를 명시하고 목표 자동 감액·프로필 수정 없이 재확인한다. 서버 결과 검증 실패만 failed / engine_check_failed. 입력 해시에 자물쇠는 포함하지 않고 input_snapshot에 기록한다. 이번 주기에 예산(validated·approved)이 하나도 없고 자물쇠 때문에 추천이 막히면(자물쇠를 빼면 막히지 않을 때) 추천 전에 이번 주기 자물쇠를 풀고 result.locksReleased에 담는다 — 자물쇠는 예산 화면에서만 풀 수 있어 막다른 길이 되기 때문 (P-13 ②). 바꾼 횟수는 늘리지 않는다. 현재 임시 엔진은 temp-fallback-targets-2, 정책은 2026-11-05-targets-units이며 실제 ML/A·B 정책 연결을 뜻하지 않는다.\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "202": {
             "description": "작업 번호. 1차는 요청 안에서 실행되어 succeeded 또는 failed일 수 있다.",
@@ -10262,7 +10604,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n급여일이 없으면 cycle=null이고 unclassifiedCount는 오늘까지 전체 기간을 센다. 예산이 없으면 budget·split·living·overspend·nag=null, categories=[], unclassifiedCount는 계산한다. 쓴 돈은 거래 목록의 같은 구매 제외·취소 차감 기준을 재사용하고 소비 중 funding=fixed는 쓴 돈에서 뺀다. unclassifiedCount는 고정비 소비도 포함한다. 쓴 돈 기간은 주기 시작일~오늘(홈·채팅과 같음). 미분류·기타도 living.spent에 포함하고 예산 밖 카테고리(주거·통신·여행·숙박) 지출은 living.spent에서 뺀다(R-13). outOfBudget은 그 빼낸 지출을 안내용으로 준다(예산이 없으면 null). budget.engineVersion이 temp-로 시작하면 화면에 테스트 추천 표시. categories는 배분 대상 카테고리 + 기타만 display_order 순서로 표시한다. 초과액은 여윳돈으로만 충당한다. salaryConfirmed는 홈 salaryState=received. nag는 보호 카테고리(주거·통신, 교통·차량) 외 자물쇠 changeCount≥3 또는 이번 주기 approved_at이 있는 예산≥3일 때 표시한다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n급여일이 없으면 cycle=null이고 unclassifiedCount는 오늘까지 전체 기간을 센다. 예산이 없으면 budget·split·living·overspend·nag=null, categories=[], unclassifiedCount는 계산한다. 쓴 돈은 거래 목록의 같은 구매 제외·취소 차감 기준을 재사용하고 소비 중 funding=fixed는 쓴 돈에서 뺀다. unclassifiedCount는 고정비 소비도 포함한다. 쓴 돈 기간은 주기 시작일~오늘(홈·채팅과 같음). 미분류·기타도 living.spent에 포함하고 예산 밖 카테고리(주거·통신·여행·숙박) 지출은 living.spent에서 뺀다(R-13). outOfBudget은 그 빼낸 지출을 안내용으로 준다(예산이 없으면 null). budget.engineVersion이 temp-로 시작하면 화면에 테스트 추천 표시. categories는 배분 대상 카테고리 + 기타만 display_order 순서로 표시한다. 초과액은 여윳돈으로만 충당한다. salaryConfirmed는 홈 salaryState=received. nag는 보호 카테고리(주거·통신, 교통·차량) 외 자물쇠 changeCount≥3 또는 이번 주기 approved_at이 있는 예산≥3일 때 표시한다. 일반 validated 조회에서는 미승인 파생 조정안(base_budget 또는 budget_adjust 작업)을 제외한다. task=NULL인 일반 추천 초안은 유지하고, 승인된 파생 예산은 정상 표시한다.\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "200": {
             "description": "이번 주기 validated 초안 우선, 없으면 approved",
@@ -10283,7 +10625,7 @@
                         "versionNo": 1,
                         "status": "validated",
                         "salaryConfirmed": false,
-                        "engineVersion": "temp-fallback-1",
+                        "engineVersion": "temp-fallback-targets-2",
                         "outOfBudgetAllocated": 0
                       },
                       "split": {
@@ -10490,7 +10832,7 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기의 validated·approved만 가능하다. 지난 예산은 409 not_ready: 지난 예산은 바꿀 수 없어요. 없는·남의 예산 또는 예산 카테고리 코드(배분 대상 + 기타, 주거·통신·여행·숙박 제외)가 아니면 404. true는 주소의 예산 생활비 금액을 저장, false는 lockedAmount=null. 잠금 여부가 바뀔 때만 changeCount+1. 이미 true인데 다른 예산에서 다시 걸면 금액만 바뀌며 횟수는 유지한다. 자물쇠 변경은 초안을 만료시키지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기의 validated·approved만 가능하다. 지난 예산은 409 not_ready: 지난 예산은 바꿀 수 없어요. 없는·남의 예산 또는 예산 카테고리 코드(배분 대상 + 기타, 주거·통신·여행·숙박 제외)가 아니면 404. true는 주소의 예산 생활비 금액을 저장, false는 lockedAmount=null. 잠금 여부가 바뀔 때만 changeCount+1. 이미 true인데 다른 예산에서 다시 걸면 금액만 바뀌며 횟수는 유지한다. 자물쇠 변경은 초안을 만료시키지 않는다. 미승인 조정안 ID의 잠금 설정·해제는 거절하며 승인 전 금액으로 잠금액을 저장하지 않는다. 실제 잠금 변경과 두 자동 해제 경로의 revisionNo는 DB F표현식으로 증가시킨다.\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "200": {
             "description": "현재 자물쇠",
@@ -10659,14 +11001,21 @@
           "예산"
         ],
         "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기에 이미 approved이면 성공으로 현재 상태를 반환한다. 지난 주기 approved·superseded·rejected·draft는 409 not_ready(지난 예산은 승인할 수 없어요). 카드 첫 청구서 선차감은 다시 계산하지 않고 초안 input_snapshot에 저장한 값으로 검사한다(입력 해시에는 선차감 금액 대신 대상 카드 목록만 포함). expired, validated의 주기가 지났거나, 지금의 지킬 돈이 쓸 수 없는 상태(필수 쿠션인데 쿠션 0원 · 저축 최소 미달 · 합계 초과 · missing · blocked)이거나, 입력 해시가 다르거나, 초안의 계산 규칙 버전(policy_version)이 지금과 다르면 409 expired: 조건이 바뀌어서 다시 추천받아야 해요. 발견한 만료 상태는 409에도 저장하고 실패 요청 번호는 기록하지 않는다. 승인 시 같은 주기 approved를 superseded로 바꾸고 이 예산의 approved_at·approval_key를 저장한다. auth.onboardingCompleted는 approved_at이 있는 예산 존재 여부로 계산된다. 자물쇠는 만료 해시에서 제외한다.\n\n원본: `docs/api/budgets.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기에 이미 approved이면 성공으로 현재 상태를 반환한다. 지난 주기 approved·superseded·rejected·draft는 409 not_ready(지난 예산은 승인할 수 없어요). 카드 첫 청구서 선차감은 다시 계산하지 않고 초안 input_snapshot에 저장한 값으로 검사한다(입력 해시에는 선차감 금액 대신 대상 카드 목록만 포함). expired, validated의 주기가 지났거나, 지금의 지킬 돈이 쓸 수 없는 상태(필수 쿠션인데 쿠션 0원 · 저축 최소 미달 · 합계 초과 · missing · blocked)이거나, 입력 해시가 다르거나, 초안의 계산 규칙 버전(policy_version)이 지금과 다르면 409 expired: 조건이 바뀌어서 다시 추천받아야 해요. 발견한 만료 상태는 409에도 저장하고 실패 요청 번호는 기록하지 않는다. 승인 시 같은 주기 approved를 superseded로 바꾸고 이 예산의 approved_at·approval_key를 저장한다. auth.onboardingCompleted는 approved_at이 있는 예산 존재 여부로 계산된다. 자물쇠는 만료 해시에서 제외한다. INITIAL_ADJUSTMENT 파생 조정안은 공통 조정 승인 검수로 분기하며 keepForNextCycle을 받는다. 그 경우 응답은 {adjustment,budget}. NORMAL_ADJUSTMENT는 proposals 승인 경로만 허용한다. 일반 추천은 기존 빈 본문·예산 화면 응답을 유지한다.\n\n원본: `docs/api/budgets.md`",
         "responses": {
           "200": {
             "description": "승인된 예산의 현재 화면 데이터",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BudgetResponse"
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/BudgetResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BudgetAdjustmentApproveResponse"
+                    }
+                  ]
                 },
                 "examples": {
                   "approved": {
@@ -10680,7 +11029,7 @@
                         "versionNo": 1,
                         "status": "approved",
                         "salaryConfirmed": false,
-                        "engineVersion": "temp-fallback-1",
+                        "engineVersion": "temp-fallback-targets-2",
                         "outOfBudgetAllocated": 0
                       },
                       "split": {
@@ -10967,13 +11316,699 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/BudgetEmptyRequest"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/BudgetEmptyRequest"
+                  },
+                  {
+                    "$ref": "#/components/schemas/BudgetAdjustmentApproveRequest"
+                  }
+                ]
               },
               "example": {}
             }
           }
         },
         "x-implementation-status": "implemented"
+      }
+    },
+    "/api/budgets/proposals/{id}/": {
+      "get": {
+        "operationId": "getBudgetAdjustment",
+        "summary": "[구현] 예산 조정안 현재 카드 보기",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n본인 파생 Budget과 budget_adjust 작업의 연결·실제 승인 근거를 확인한다. GET은 저장하지 않는다. savedRef는 승인된 Budget.task/approved_at으로만 확인하고 이후 superseded여도 저장 사실을 유지한다. 미승인 제안은 일반 예산 조회에 적용하지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "현재 카드. 만료된 경우에도 카드 state=expired이며 승인 불가.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAdjustmentCard"
+                },
+                "example": {
+                  "kind": "funding",
+                  "proposalId": "b1000000-0000-4000-8000-000000000001",
+                  "taskRef": "a1000000-0000-4000-8000-000000000001",
+                  "baseBudgetId": "3f2c0000-0000-4000-8000-000000000001",
+                  "mode": "NORMAL_ADJUSTMENT",
+                  "scope": "cycle",
+                  "state": "awaiting_approval",
+                  "canApprove": true,
+                  "changes": [
+                    {
+                      "category": "FOOD",
+                      "before": 400000,
+                      "after": 415000,
+                      "diff": 15000,
+                      "direct": true
+                    },
+                    {
+                      "category": "SPARE",
+                      "before": 400000,
+                      "after": 385000,
+                      "diff": -15000,
+                      "direct": false
+                    }
+                  ],
+                  "shortfalls": [],
+                  "transfers": [
+                    {
+                      "from": "SPARE",
+                      "to": "FOOD",
+                      "amount": 15000,
+                      "direct": false
+                    }
+                  ],
+                  "persistenceItems": [
+                    {
+                      "category": "FOOD",
+                      "amount": 415000
+                    }
+                  ],
+                  "targetItems": [],
+                  "unlockCategories": [],
+                  "keepForNextCycle": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/budgets/proposals/{id}/approve/": {
+      "post": {
+        "operationId": "approveBudgetAdjustment",
+        "summary": "[구현] 월중 예산 조정안 승인",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nNORMAL_ADJUSTMENT만. 본인·주기·모드·최신 지출·잠금·최소액·정책·가용액·금액 단위·저장된 이동 원장을 재검수한다. 카드 금액을 바꿔 저장하지 않으며 바뀐 조건은 만료를 보존하고409 expired. 부분 반영은 대화에서 명시적으로 선택한 뒤 승인한다. keepForNextCycle은 직접 요청한 항목의 실제 최종액만 유지하고 자동 재원은 고정하지 않는다. 같은 키·본문은 중복 반영하지 않고 이미 확정한 유지 선택을 바꾸면 새 키여도409 idempotency_conflict. 응답 불명확 시 동일 키·본문으로 재시도한다.\n\n원본: `docs/api/budgets.md`",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "필수 요청 번호. 같은 번호·본문은 처음 응답, 다른 본문은 409 idempotency_conflict. 실패 응답은 기록하지 않는다.",
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9_-]{8,64}$"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetAdjustmentApproveRequest"
+              },
+              "example": {
+                "keepForNextCycle": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "실제 저장된 카드와 현재 예산 화면",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAdjustmentApproveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "invalid": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "입력값을 확인해 주세요.",
+                        "fields": {
+                          "nonFieldErrors": [
+                            "요청 본문은 JSON 객체로 보내 주세요."
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  "missingRequestKey": {
+                    "value": {
+                      "error": {
+                        "code": "invalid",
+                        "message": "요청 번호(Idempotency-Key)가 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated CSRF 실패 시 permission_denied.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_found": {
+                    "value": {
+                      "error": {
+                        "code": "not_found",
+                        "message": "찾을 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_ready · expired · idempotency_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_ready": {
+                    "value": {
+                      "error": {
+                        "code": "not_ready",
+                        "message": "지난 예산은 승인할 수 없어요."
+                      }
+                    }
+                  },
+                  "expired": {
+                    "value": {
+                      "error": {
+                        "code": "expired",
+                        "message": "조건이 바뀌어서 다시 추천받아야 해요."
+                      }
+                    }
+                  },
+                  "idempotency_conflict": {
+                    "value": {
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "같은 요청 번호로 다른 내용을 보낼 수 없어요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      }
+    },
+    "/api/budgets/adjustment-ai-consent/": {
+      "get": {
+        "summary": "[구현] 예산 조정 AI 외부 전송 동의 보기",
+        "operationId": "budgetAdjustmentConsentGet",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n로그인 회원 자신의 예산 조정 AI 동의 상태(purpose=budget_adjust_ai)와 조정 동의 문서·건강 요약 동의 문서를 반환한다. 예산 설계 동의(budget_ai)와 별개다. 응답 모양은 GET /api/budgets/ai-consent/와 같다.\n\n원본: `docs/api/budgets.md`",
+        "responses": {
+          "200": {
+            "description": "현재 동의 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState",
+                  "type": "object",
+                  "properties": {
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "granted",
+                        "not_granted"
+                      ]
+                    },
+                    "document": {
+                      "type": "object"
+                    },
+                    "documentVersion": {
+                      "type": "string"
+                    },
+                    "documentHash": {
+                      "type": "string"
+                    },
+                    "healthDocument": {
+                      "type": "object"
+                    },
+                    "healthDocumentVersion": {
+                      "type": "string"
+                    },
+                    "healthDocumentHash": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "외부 AI 기능 활성화 여부. false이면 신규 동의 불가."
+                    },
+                    "canRevoke": {
+                      "type": "boolean",
+                      "description": "과거 문서를 포함한 철회 가능한 동의 존재 여부."
+                    }
+                  },
+                  "required": [
+                    "purpose",
+                    "status",
+                    "document",
+                    "documentVersion",
+                    "documentHash",
+                    "healthDocument",
+                    "healthDocumentVersion",
+                    "healthDocumentHash",
+                    "available",
+                    "canRevoke"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented"
+      },
+      "put": {
+        "summary": "[구현] 예산 조정 AI 외부 전송 동의 저장",
+        "operationId": "budgetAdjustmentConsentPut",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\nbudget_adjust_ai·budget_adjust_ai_health 두 문서를 각각 직접 동의한 경우만 저장한다. 문서 버전·해시가 현재 문서와 다르면 409 document_outdated. 실제 LLM 채팅이 꺼져 있으면(available=false) 409 budget_ai_unavailable. 설계 동의를 바꾸지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "agreed",
+                  "documentVersion",
+                  "documentHash",
+                  "healthAgreed",
+                  "healthDocumentVersion",
+                  "healthDocumentHash"
+                ],
+                "properties": {
+                  "agreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "documentVersion": {
+                    "type": "string"
+                  },
+                  "documentHash": {
+                    "type": "string"
+                  },
+                  "healthAgreed": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  },
+                  "healthDocumentVersion": {
+                    "type": "string"
+                  },
+                  "healthDocumentHash": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "동의 저장 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState",
+                  "type": "object",
+                  "properties": {
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "granted",
+                        "not_granted"
+                      ]
+                    },
+                    "document": {
+                      "type": "object"
+                    },
+                    "documentVersion": {
+                      "type": "string"
+                    },
+                    "documentHash": {
+                      "type": "string"
+                    },
+                    "healthDocument": {
+                      "type": "object"
+                    },
+                    "healthDocumentVersion": {
+                      "type": "string"
+                    },
+                    "healthDocumentHash": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "외부 AI 기능 활성화 여부. false이면 신규 동의 불가."
+                    },
+                    "canRevoke": {
+                      "type": "boolean",
+                      "description": "과거 문서를 포함한 철회 가능한 동의 존재 여부."
+                    }
+                  },
+                  "required": [
+                    "purpose",
+                    "status",
+                    "document",
+                    "documentVersion",
+                    "documentHash",
+                    "healthDocument",
+                    "healthDocumentVersion",
+                    "healthDocumentHash",
+                    "available",
+                    "canRevoke"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "document_outdated / budget_ai_unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
+      },
+      "delete": {
+        "summary": "[구현] 예산 조정 AI 외부 전송 동의 철회",
+        "operationId": "budgetAdjustmentConsentDelete",
+        "tags": [
+          "예산"
+        ],
+        "x-source": "docs/api/budgets.md",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n{confirm: true}로 budget_adjust_ai·budget_adjust_ai_health 활성 동의를 함께 철회한다. 다음 외부 조정 호출부터 막고(403 budget_adjust_consent_required), 승인 예산·설정·설계 동의는 바꾸지 않는다.\n\n원본: `docs/api/budgets.md`",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "confirm": {
+                    "type": "boolean",
+                    "enum": [
+                      true
+                    ]
+                  }
+                },
+                "required": [
+                  "confirm"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "철회 상태",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetAIConsentState",
+                  "type": "object",
+                  "properties": {
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "granted",
+                        "not_granted"
+                      ]
+                    },
+                    "document": {
+                      "type": "object"
+                    },
+                    "documentVersion": {
+                      "type": "string"
+                    },
+                    "documentHash": {
+                      "type": "string"
+                    },
+                    "healthDocument": {
+                      "type": "object"
+                    },
+                    "healthDocumentVersion": {
+                      "type": "string"
+                    },
+                    "healthDocumentHash": {
+                      "type": "string"
+                    },
+                    "available": {
+                      "type": "boolean",
+                      "description": "외부 AI 기능 활성화 여부. false이면 신규 동의 불가."
+                    },
+                    "canRevoke": {
+                      "type": "boolean",
+                      "description": "과거 문서를 포함한 철회 가능한 동의 존재 여부."
+                    }
+                  },
+                  "required": [
+                    "purpose",
+                    "status",
+                    "document",
+                    "documentVersion",
+                    "documentHash",
+                    "healthDocument",
+                    "healthDocumentVersion",
+                    "healthDocumentHash",
+                    "available",
+                    "canRevoke"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "not_authenticated / permission_denied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "examples": {
+                  "not_authenticated": {
+                    "value": {
+                      "error": {
+                        "code": "not_authenticated",
+                        "message": "로그인이 필요해요."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "implemented",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CsrfToken"
+          }
+        ]
       }
     }
   },
@@ -13968,7 +15003,7 @@
           },
           "amountDifference": {
             "type": "integer",
-            "description": "실제 − 예정, 원. 참고용"
+            "description": "실제 − 남은 예정액, 원. 남은 예정액 = 예정 − 이 출금 말고 이 회차에 이미 연결한 출금 합계(0 아래 안 내림, 11/9). 참고용"
           },
           "hints": {
             "$ref": "#/components/schemas/LoanPaymentHints"
@@ -16431,6 +17466,26 @@
                 "label"
               ]
             }
+          },
+          "turn": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "agent": {
+            "type": "string",
+            "nullable": true
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "result": {
+            "type": "boolean"
+          },
+          "budgetAdjustment": {
+            "$ref": "#/components/schemas/BudgetAdjustmentContent"
           }
         },
         "required": [
@@ -16573,8 +17628,39 @@
             "maxLength": 500
           },
           "choice": {
-            "type": "string",
-            "description": "서버가 제공한 choices[].value. 모르는 값은 400. 예: spending, budget."
+            "description": "기능 문자열 또는 최신 답변 선택지 객체. 객체 선택은 conversationId가 필요하며 turn을 검수한다.",
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "spending",
+                  "budget",
+                  "policy"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "turn": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "value",
+                  "turn"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "budgetContext": {
+            "$ref": "#/components/schemas/BudgetAdjustmentEntry"
           }
         },
         "required": [
@@ -16602,7 +17688,8 @@
               ]
             }
           }
-        ]
+        ],
+        "description": "text와 choice 중 하나. router에서 budgetContext는 choice=\"budget\"인 시작 요청과 함께만 보낸다. 직접 금액·슬롯은 보내지 않는다."
       },
       "ChatSendResponse": {
         "type": "object",
@@ -16621,7 +17708,8 @@
                   "budget",
                   "big",
                   "out",
-                  "unknown"
+                  "unknown",
+                  "policy"
                 ]
               },
               "slots": {
@@ -16666,6 +17754,41 @@
               "status"
             ],
             "nullable": true
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "router"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          },
+          "agent": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "spending",
+              "budget",
+              "policy",
+              null
+            ]
           }
         },
         "required": [
@@ -16694,6 +17817,31 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ChatMessage"
+            }
+          },
+          "engine": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "router"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
             }
           }
         },
@@ -16784,6 +17932,104 @@
           "error"
         ]
       },
+      "ChatEngineInfo": {
+        "type": "object",
+        "properties": {
+          "engine": {
+            "type": "string",
+            "enum": [
+              "legacy",
+              "router"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "value",
+                "label"
+              ]
+            }
+          }
+        },
+        "required": [
+          "engine",
+          "features"
+        ]
+      },
+      "BudgetAdjustmentEntry": {
+        "type": "object",
+        "properties": {
+          "baseBudgetId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "INITIAL_ADJUSTMENT",
+              "NORMAL_ADJUSTMENT",
+              "DESIGN_RECOVERY"
+            ]
+          },
+          "sourceTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "분배 실패 작업 ID. DESIGN_RECOVERY에서만 사용하며 금액·설정은 서버에서 다시 조회한다."
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "baseBudgetId"
+            ],
+            "not": {
+              "required": [
+                "sourceTaskId"
+              ]
+            },
+            "properties": {
+              "mode": {
+                "enum": [
+                  "INITIAL_ADJUSTMENT",
+                  "NORMAL_ADJUSTMENT"
+                ]
+              }
+            }
+          },
+          {
+            "required": [
+              "sourceTaskId"
+            ],
+            "not": {
+              "required": [
+                "baseBudgetId"
+              ]
+            },
+            "properties": {
+              "mode": {
+                "enum": [
+                  "DESIGN_RECOVERY"
+                ]
+              }
+            }
+          }
+        ],
+        "description": "기존 예산 조정은 baseBudgetId, 분배 실패 조정 진입은 sourceTaskId를 보낸다. 두 ID를 동시에 보내거나 금액·최소금액·잠금·우선순위를 직접 주입할 수 없다."
+      },
       "BudgetAIConsentState": {
         "type": "object",
         "required": [
@@ -16797,13 +18043,15 @@
           "healthDocument",
           "healthDocumentVersion",
           "healthDocumentHash",
-          "available"
+          "available",
+          "canRevoke"
         ],
         "properties": {
           "purpose": {
             "type": "string",
             "enum": [
-              "budget_ai"
+              "budget_ai",
+              "budget_adjust_ai"
             ]
           },
           "status": {
@@ -16847,7 +18095,11 @@
           },
           "available": {
             "type": "boolean",
-            "description": "예산 설계 및 외부 AI 서버 설정이 모두 켜져 실제 외부 추천 경로를 사용할 수 있는지. false이면 새 동의를 받지 않으며 기존 동의 철회만 허용."
+            "description": "설계(budget_ai)는 예산 설계와 외부 AI 서버 설정이 모두 켜졌을 때, 조정(budget_adjust_ai)은 실제 LLM 채팅(CHAT_LLM=live)일 때 true. false이면 새 동의를 받지 않으며 기존 동의 철회만 허용."
+          },
+          "canRevoke": {
+            "type": "boolean",
+            "description": "철회할 수 있는 활성 동의 기록이 있는지. available=false여도 기존 동의 철회는 허용한다."
           }
         }
       },
@@ -17070,21 +18322,49 @@
         "properties": {
           "approvedBudget": {
             "type": "object",
-            "description": "GET에서 이번 주기 승인 예산에 여윳돈 충당이 있을 때만 제공. 설정 기준 saved.spare와 구별하며 실제 초과 소비 차감 전 예산 배분 금액이다. PUT은 생략.",
+            "description": "현재 승인 예산에 생활비 충당 기록이 있거나 저축·월 쿠션 승인액과 저장한 설정이 다르면 GET·PUT에 반환한다. 이동액은 승인 기록에서 읽으며 저장한 설정과의 차이는 별도로 표시한다.",
             "required": [
               "spareTransfer",
-              "spare"
+              "spare",
+              "savingFloor",
+              "cushionMonthly",
+              "savingTransfer",
+              "cushionTransfer"
             ],
             "properties": {
               "spareTransfer": {
                 "type": "integer",
                 "format": "int64",
-                "minimum": 0
+                "minimum": 0,
+                "description": "생활비로 충당한 기록의 여윳돈"
               },
               "spare": {
                 "type": "integer",
                 "format": "int64",
+                "minimum": 0,
+                "description": "승인 예산 배분 기준 여윳돈. 실제 초과 소비 차감 전"
+              },
+              "savingFloor": {
+                "type": "integer",
+                "format": "int64",
                 "minimum": 0
+              },
+              "cushionMonthly": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "savingTransfer": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "저축에서 생활비로 옮긴 승인 기록의 금액"
+              },
+              "cushionTransfer": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0,
+                "description": "월 쿠션에서 생활비로 옮긴 승인 기록의 금액"
               }
             },
             "additionalProperties": false
@@ -17719,7 +18999,11 @@
             "type": "string",
             "enum": [
               "proposed",
-              "infeasible"
+              "infeasible",
+              "target_conflict",
+              "needs_upper_allocation_review",
+              "needs_data",
+              "needs_policy"
             ]
           },
           "budgetId": {
@@ -17742,6 +19026,9 @@
                 },
                 {
                   "$ref": "#/components/schemas/BudgetLocksMismatchConflict"
+                },
+                {
+                  "$ref": "#/components/schemas/BudgetTargetConflict"
                 }
               ]
             }
@@ -17751,7 +19038,28 @@
             "items": {
               "$ref": "#/components/schemas/SelectableCategoryCode"
             },
-            "description": "P-13 ②. 이번 주기에 예산(초안·승인)이 없는데 자물쇠 때문에 추천이 막혀서 이번 추천 전에 푼 자물쇠 카테고리. 보통은 []"
+            "description": "P-13 ②. 이번 주기에 예산(초안·승인)이 없는데 자물쇠 때문에 추천이 막혀서 이번 추천 전에 푼 자물쇠 카테고리. 보통은 [] 새 A/B 분배 경로(BUDGET_DESIGN_ENABLED=true)는 충돌 시 잠금을 풀지 않고 조정 진입 정보를 반환한다."
+          },
+          "handoff": {
+            "type": "object",
+            "required": [
+              "mode",
+              "sourceTaskId"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "DESIGN_RECOVERY"
+                ]
+              },
+              "sourceTaskId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "additionalProperties": false,
+            "description": "조정으로 넘길 수 있는 분배 실패에만 제공. 서버 내부 스냅샷은 공개하지 않는다."
           }
         },
         "additionalProperties": false
@@ -17792,23 +19100,594 @@
         "type": "object",
         "properties": {},
         "additionalProperties": false
+      },
+      "BudgetAdjustmentChange": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "카테고리 또는 상위 배분 코드. 대문자 코드는 사전 키가 아닌 이 값으로 읽는다."
+          },
+          "before": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "after": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "diff": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "direct": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "category",
+          "before",
+          "after",
+          "diff",
+          "direct"
+        ]
+      },
+      "BudgetAdjustmentTarget": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "카테고리 또는 상위 배분 코드. 대문자 코드는 사전 키가 아닌 이 값으로 읽는다."
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          }
+        },
+        "required": [
+          "category",
+          "amount"
+        ]
+      },
+      "BudgetAdjustmentShortfall": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "카테고리 또는 상위 배분 코드. 대문자 코드는 사전 키가 아닌 이 값으로 읽는다."
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "up",
+              "down"
+            ]
+          },
+          "requestedAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "appliedAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "missingAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "category",
+          "requestedAmount",
+          "appliedAmount",
+          "missingAmount"
+        ]
+      },
+      "BudgetAdjustmentTransfer": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "카테고리 또는 상위 배분 코드. 대문자 코드는 사전 키가 아닌 이 값으로 읽는다."
+          },
+          "to": {
+            "type": "string",
+            "description": "카테고리 또는 상위 배분 코드. 대문자 코드는 사전 키가 아닌 이 값으로 읽는다."
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "direct": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "amount",
+          "direct"
+        ]
+      },
+      "BudgetAdjustmentExplanation": {
+        "type": "object",
+        "properties": {
+          "why": {
+            "type": "string"
+          },
+          "effect": {
+            "type": "string"
+          },
+          "next": {
+            "type": "string"
+          },
+          "brief": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "why",
+          "effect",
+          "next"
+        ]
+      },
+      "BudgetAdjustmentCard": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "funding"
+            ]
+          },
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "taskRef": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "baseBudgetId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true,
+            "description": "분배 실패 해결안은 기준 예산이 없어 null이다."
+          },
+          "sourceTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "분배 실패 해결안의 추천 작업 ID. 이 카드는 INITIAL_ADJUSTMENT 승인 경로를 사용한다."
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "INITIAL_ADJUSTMENT",
+              "NORMAL_ADJUSTMENT"
+            ]
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "cycle",
+              "ongoing"
+            ]
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "proposing",
+              "awaiting_approval",
+              "saving",
+              "saved",
+              "failed",
+              "canceled",
+              "expired",
+              "rejected"
+            ]
+          },
+          "canApprove": {
+            "type": "boolean"
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetAdjustmentChange"
+            }
+          },
+          "shortfalls": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetAdjustmentShortfall"
+            }
+          },
+          "transfers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetAdjustmentTransfer"
+            }
+          },
+          "persistenceItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetAdjustmentTarget"
+            }
+          },
+          "targetItems": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetAdjustmentTarget"
+            }
+          },
+          "unlockCategories": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "카테고리 또는 상위 배분 코드. 대문자 코드는 사전 키가 아닌 이 값으로 읽는다."
+            }
+          },
+          "keepForNextCycle": {
+            "type": "boolean"
+          },
+          "savedRef": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "allocations": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          "buckets": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "proposalId",
+          "taskRef",
+          "baseBudgetId",
+          "mode",
+          "state",
+          "canApprove",
+          "changes",
+          "shortfalls",
+          "persistenceItems",
+          "targetItems",
+          "unlockCategories",
+          "keepForNextCycle"
+        ],
+        "description": "검수한 실제 예산 카드. canApprove는 표시용이며 승인 API가 최신 상태를 다시 검사한다. 잠금액 이외 배정액은 1만원 우선·필요 시5천원. SPARE 잔액은 미배정금이므로 원 단위 보존. 코드 값은 changes/persistenceItems/targetItems 목록을 사용한다."
+      },
+      "BudgetAdjustmentPlan": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "living",
+              "spare",
+              "extended"
+            ]
+          },
+          "scope": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "description": "ready/partial/needs_destination/needs_data/needs_policy/needs_confirmation/infeasible 등. 확인 불가는 성공안이 아니다."
+          },
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "maximum": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "recommended": {
+            "type": "boolean"
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "assessment": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cautions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "facts": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {},
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "result": {
+            "type": "object",
+            "properties": {
+              "changes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BudgetAdjustmentChange"
+                }
+              },
+              "shortfalls": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/BudgetAdjustmentShortfall"
+                }
+              }
+            },
+            "nullable": true,
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "id",
+          "label",
+          "status",
+          "amount",
+          "recommended"
+        ]
+      },
+      "BudgetAdjustmentComparison": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "basisAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "amountWasGiven": {
+            "type": "boolean"
+          },
+          "plans": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BudgetAdjustmentPlan"
+            }
+          },
+          "message": {
+            "type": "string"
+          },
+          "recommendation": {
+            "type": "object",
+            "properties": {
+              "planId": {
+                "type": "string",
+                "nullable": true
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cautions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "policy": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "basisAmount",
+          "amountWasGiven",
+          "plans"
+        ],
+        "description": "같은 요청액 또는 명시한 공통 비교액. 금액 미지정 공통액은 필요한 소비액의 추천이 아니다. 펼침은 조회 동작이며 선택·승인이 아니다."
+      },
+      "BudgetAdjustmentContent": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string",
+            "nullable": true
+          },
+          "workRef": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "canApprove": {
+            "type": "boolean"
+          },
+          "explanation": {
+            "$ref": "#/components/schemas/BudgetAdjustmentExplanation"
+          },
+          "comparison": {
+            "$ref": "#/components/schemas/BudgetAdjustmentComparison"
+          },
+          "alternatives": {
+            "$ref": "#/components/schemas/BudgetAdjustmentComparison"
+          },
+          "proposal": {
+            "$ref": "#/components/schemas/BudgetAdjustmentCard"
+          },
+          "detail": {
+            "type": "boolean"
+          },
+          "alternativesNotice": {
+            "type": "string"
+          },
+          "sourceTaskId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "design_recovery 단계에서 시작한 원 추천 작업 ID. 제안/승인을 뜻하지 않는다."
+          }
+        },
+        "required": [
+          "status",
+          "canApprove"
+        ],
+        "description": "router 봇 메시지의 content.budgetAdjustment. 상태에 필요한 칸만 제공하며 부분 반영 선택 전에는 canApprove=false다."
+      },
+      "BudgetAdjustmentApproveRequest": {
+        "type": "object",
+        "properties": {
+          "keepForNextCycle": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "BudgetAdjustmentApproveResponse": {
+        "type": "object",
+        "properties": {
+          "adjustment": {
+            "$ref": "#/components/schemas/BudgetAdjustmentCard"
+          },
+          "budget": {
+            "$ref": "#/components/schemas/BudgetResponse"
+          }
+        },
+        "required": [
+          "adjustment",
+          "budget"
+        ]
+      },
+      "BudgetTargetConflict": {
+        "type": "object",
+        "required": [
+          "type",
+          "reason",
+          "categories",
+          "targets",
+          "requestedAmount",
+          "possibleAmount",
+          "diff"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "target_conflict"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "locked_amount",
+              "minimum_amount",
+              "amount_unit",
+              "living_budget",
+              "invalid_target"
+            ]
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SelectableCategoryCode"
+            },
+            "description": "표시·식별에는 이 코드 값을 사용한다. 현재 생활비 카테고리와 ETC 대상."
+          },
+          "targets": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            },
+            "description": "유지 목표 참고값. 사전 키도 camelCase 변환되므로 코드 식별에는 categories 값 사용."
+          },
+          "requestedAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "possibleAmount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "nullable": true
+          },
+          "diff": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "description": "possibleAmount - requestedAmount. 둘 중 하나를 확인할 수 없으면 null."
+          }
+        },
+        "additionalProperties": false,
+        "description": "목표를 자동 감액하거나 프로필을 수정하지 않고 재확인한다. 유지 목표는 실제 잠금·최소액과 별도 입력이다."
       }
     }
   },
   "x-source-sha256": {
-    "docs/API_RULES.md": "ff9ec441fcefd21fe33213c36adeb1888084ea2acb22615ccab670bcdd5b15f0",
-    "docs/api/README.md": "054901c95fb21d87b5d0eabbe2b24e98417c0e0edd000ce9e1c82efa37475f33",
+    "docs/API_RULES.md": "1920a1e06660e6e0ef4c089d56b3dcf4fb84c35b43195c91cbbc9e3008854aab",
+    "docs/api/README.md": "e95aeeba918a04bd266da34f4c311cb6d95f1c33ed5892b750e313240edce37a",
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
-    "docs/api/auth.md": "473acf4b1ab2ccb1c3ed4d5ed73d366f55d4cd429e564a12e3cb40c731e56ff1",
-    "docs/api/finance-connect.md": "8b8a5c493f85c3084353a8706e4dd88e4a2da19dee88a5933e6c27608f34a416",
+    "docs/api/auth.md": "fb25c9473822ae1e3e83e50f85cb138484c1b58b54301ab9b62860b5439cfe92",
+    "docs/api/finance-connect.md": "d974a2f74f353a1d656c0cc4e2b37f07aa6d2538d43371d1f600c61bb0e82af5",
     "docs/api/cards.md": "9b03a770b42b5152316f86175f53882febc7eb2d9a24e6608e46fb8e574f4343",
-    "docs/api/loans.md": "86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f",
-    "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
-    "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
-    "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
-    "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
-    "docs/api/chat.md": "4aef7e3db23be5d0e18155d1af01048c44c1ce9d273eb8e8e0c3138d2ab5ffa4",
-    "docs/api/budgets.md": "3f769b9546453a49f1f42f31ec471fdef537e4f8340a6bd2a1d65b9cedf7df9b"
+    "docs/api/loans.md": "fc16dd8767564035b5afb0e66c90ed27099b5eba510f13a2d497cc5b265c9c7b",
+    "docs/api/transactions.md": "a81c51403c2b8e451631bb3b06305dac734191958af891d0cf23c2d53b5776d7",
+    "docs/api/fixed.md": "416ec78f256332ccc5af61eedd75883c7effdfa1539114597a2db98d659cc1a5",
+    "docs/api/savings.md": "93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223",
+    "docs/api/home.md": "5bbe090b75877d9e28c961510cc709b78f1a74d33773959c784dacea73654f71",
+    "docs/api/chat.md": "aa40a2d60748b00e3e1e89c334bc4ce227cc617416247e6574a661e720b92079",
+    "docs/api/budgets.md": "eafbf19fdfeea2dc915ee5c9ea219b73c05a0d9fa676b2677499d092a078c466"
   }
 }

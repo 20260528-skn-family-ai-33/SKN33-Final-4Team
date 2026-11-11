@@ -2,6 +2,8 @@
 
 감지 조건 (transactions.md 결정기록 3번 · savings.md S-05): 같은 결제 수단 + 같은 받는 곳 · 한 달 1건 · 매달 같은 날 ±3일 ·
 같은 금액(고정지출은 ±10%) · 3달 연속. 회원 전체 출금을 본다 (첫 연결 때 4달치가 한 번에 들어옴).
+받는 곳 이름은 연월 표시를 빼고 비교한다 (finance/merchant_rules.compare_label — '2606국민건강' · '2607국민건강'은 같은 곳,
+'01011112222SKT' · '01033334444SKT'는 다른 곳. 11/10, 11/11 PR #106 리뷰).
 내 계좌 이체 · 카드값 · 대출 판단(finance/transfer_rules.py)은 결과만 읽고, 판단은 이 파일 안에서만 한다.
 """
 import re
@@ -9,7 +11,7 @@ from collections import defaultdict
 
 from django.db.models import Exists, OuterRef, Q
 
-from finance.merchant_rules import normalize_merchant
+from finance.merchant_rules import compare_label
 from finance.models import (FinancialTransaction, PaymentMatch, RecurringExpense, RecurringSaving, SourceKind,
                             TransactionLink)
 from finance.transfer_rules import LOAN_CANDIDATE, OWN_REVIEW
@@ -46,7 +48,7 @@ def detect_candidates(user, today):
 # ---------- 반복 묶음 ----------
 
 def label_of(tx):
-    return normalize_merchant(tx.merchant_name or tx.source_description)
+    return compare_label(tx.merchant_name or tx.source_description)
 
 
 def compact(text):
@@ -142,11 +144,11 @@ def existing_keys(user):
     evidence_ids = []
     for e in RecurringExpense.objects.filter(user=user):
         method = ("card", e.payment_card_id) if e.payment_card_id else ("account", e.payment_account_id)
-        keys.add((method, "label", normalize_merchant(e.name)))
+        keys.add((method, "label", compare_label(e.name)))
         evidence_ids += list(id_set(e.evidence))
     for s in RecurringSaving.objects.filter(user=user):
         method = ("account", s.from_account_id)
-        label = normalize_merchant(s.name)
+        label = compare_label(s.name)
         keys |= {(method, "label", label), (method, "own", label)}
         if s.to_account_id:
             keys.add((method, "to", s.to_account_id))

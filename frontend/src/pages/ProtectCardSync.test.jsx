@@ -11,7 +11,7 @@ const connection = { connectionId: 'hyundai', businessType: 'card', organization
 const review = { reviewId: 'review-1', merchantName: '합성 해외상점', occurredOn: '2026-10-27', occurredTime: '10:27:00',
   amount: 6694, isCanceled: false, canceledAmount: null, canResolve: true,
   candidates: [{ cardId: 'card-1', displayName: '첫 카드', isSelected: true, nameMatches: true }] }
-let host, root, connections, reason, result, requests, protectReads, run, connectionError, notes, loadTask, openTask, loadFails
+let host, root, connections, reason, result, requests, protectReads, run, connectionError, notes, loadTask, openTask, loadFails, approvedBudget, savedBudget
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   connections = [structuredClone(connection), { ...connection, connectionId: 'unrelated', organizationName: '다른카드', cardIds: ['other-card'] },
@@ -19,7 +19,7 @@ beforeEach(() => {
   reason = 'spending_history_incomplete'
   notes = []
   result = { items: [{ connectionId: 'hyundai', organizationName: '현대카드', status: 'succeeded', cardReviewCount: 1, approvalsComplete: false }] }
-  requests = []; protectReads = 0; connectionError = null; loadTask = null; openTask = null; loadFails = 0
+  requests = []; protectReads = 0; connectionError = null; loadTask = null; openTask = null; loadFails = 0; approvedBudget = undefined; savedBudget = null
   run = async () => {
     if (result.items[0].cardReviewCount > 0) reason = 'card_assignment_required'
     return reply({ taskId: 'sync-1', status: 'succeeded' })
@@ -28,7 +28,7 @@ beforeEach(() => {
     if (options.method) requests.push({ url, body: JSON.parse(options.body) })
     if (url === '/api/budgets/protect/') {
       protectReads++
-      return reply({ missing: [], base: null, saved: null, recommended: null, cushion: { target: null }, cardNotes: notes, cardLoadTaskId: loadTask,
+      return reply({ missing: [], base: null, saved: savedBudget, recommended: null, cushion: { target: null }, cardNotes: notes, cardLoadTaskId: loadTask, approvedBudget,
         blocked: reason ? { reason: 'card_bill_pending' } : null, cardPending: reason ? [{ cardId: 'card-1', reason }] : [] })
     }
     if (url === '/api/finance/connections/' && !options.method) return connectionError || reply({ items: connections })
@@ -67,6 +67,29 @@ const fill = (name, value) => act(() => {
 const submitSync = () => act(async () => host.querySelector('[aria-label="현대카드 내역 조회"] form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 const credentials = async () => { await fill('cardNo', '1234567890123456'); await fill('cardPassword', '1234') }
 
+it('이번 주기 승인 예산에 반영된 저축과 월 쿠션 충당을 별도로 표시한다', async () => {
+  reason = null
+  approvedBudget = { savingFloor: 550000, cushionMonthly: 180000, savingTransfer: 60000, cushionTransfer: 20000,
+    spareTransfer: 30000, spare: 60000 }
+  await render()
+  const summary = host.querySelector('[aria-label="이번 주기 승인 예산"]')
+  expect(summary.textContent).toContain('저축 · 생활비로 60,000원 이동550,000원')
+  expect(summary.textContent).toContain('월 쿠션 적립금 · 생활비로 20,000원 이동180,000원')
+  expect(summary.textContent).toContain('여윳돈 30,000원을 생활비에 포함했어요.')
+  expect(summary.textContent).toContain('이번 예산 배분 기준 여윳돈은 60,000원이에요.')
+})
+
+it('승인 뒤 바꾼 설정은 생활비 이동으로 표시하지 않는다', async () => {
+  reason = null
+  savedBudget = { savingFloor: 350000, cushionMonthly: 180000, livingBudget: 800000, spare: 50000 }
+  approvedBudget = { savingFloor: 300000, cushionMonthly: 180000, savingTransfer: 0, cushionTransfer: 0,
+    spareTransfer: 0, spare: 100000 }
+  await render()
+  const summary = host.querySelector('[aria-label="이번 주기 승인 예산"]')
+  expect(summary.textContent).toContain('저축 · 저장한 설정과 달라요300,000원')
+  expect(summary.textContent).not.toContain('이동')
+})
+
 it('차단된 카드사만 조회하고 같은 화면에서 카드 확인 후 예산을 다시 불러온다', async () => {
   await render()
   expect(host.textContent).not.toContain('다른카드')
@@ -92,16 +115,19 @@ it('추가 인증이 필요 없는 카드사는 번호·비밀번호 입력 없�
   expect(requests[0].body).toEqual({ connectionIds: ['hyundai'] })
 })
 
-it('카드 확인 목록을 펼친 채로 재조회해도 목록을 새로 불러온다', async () => {
+it('결제 카드 확인은 창으로 열고, 재조회 뒤 다시 열면 목록을 새로 불러온다', async () => {
   reason = 'card_assignment_required'
   await render()
   await click('결제 카드 확인하기')
   const reads = () => fetch.mock.calls.filter(([url]) => url === '/api/finance/card-reviews/').length
   expect(reads()).toBe(1)
+  expect(host.querySelector('[role=dialog][aria-label="결제 카드 확인"]')).not.toBeNull()  // 11/9: 펼치기 대신 가운데 창
   expect(host.querySelector('input[name=cardPassword]')).toBeNull()
+  await click('닫기 ×')
   await click('카드 내역도 다시 불러오기')
   await credentials()
   await submitSync()
+  await click('결제 카드 확인하기')
   expect(reads()).toBe(2)
   expect(host.querySelector('[aria-label="결제 카드 확인 거래"]')).not.toBeNull()
 })
@@ -192,13 +218,18 @@ it('11/06: 청구 총액 불일치는 0원이나 상세 합계로 넘기지 않�
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
 })
 
-it('11/06: 이번 주기 청구서를 아직 못 찾음은 조회 실패와 다르게 안내하고 재조회는 고를 때만', async () => {
-  reason = 'first_bill_unavailable'
+it('청구서가 아직 없으면 미반영을 안내하고 재조회는 고를 때만', async () => {
+  reason = null
+  notes = [{ cardId: 'card-1', reason: 'first_bill_unavailable' }]
   await render()
-  expect(host.textContent).toContain('이번 급여 주기 카드 청구서를 아직 찾지 못했어요')
+  expect(host.textContent).toContain('지난 카드값이 아직 반영 안 됐어요')
+  await click('지난 카드값이 아직 반영 안 됐어요')
+  expect(host.textContent).toContain('이 예산으로 먼저 시작해도 돼요')
+  expect(button('청구서 확인하러 가기')).toBeUndefined()
+  await click('닫기 ×')
   expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
-  await click('카드 내역 다시 불러오기')
+  await click('다시 불러오기')
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
 

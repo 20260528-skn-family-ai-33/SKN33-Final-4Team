@@ -44,6 +44,10 @@ DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() == "true"
 TASKS_INLINE = (len(sys.argv) > 1 and sys.argv[1] == "test") or os.getenv("TASKS_INLINE", "False").lower() == "true"
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS")
+# 관리자 화면 주소. 운영에서는 추측하기 어려운 값으로 바꾼다 (코드에 적으면 GitHub에 공개되므로 환경변수로)
+ADMIN_URL = (os.getenv("DJANGO_ADMIN_URL", "").strip().strip("/") or "admin") + "/"
+if ADMIN_URL.split("/")[0] == "api":
+    raise ImproperlyConfigured("DJANGO_ADMIN_URL은 api/ 로 시작할 수 없어요. API 주소를 가립니다.")
 if DEBUG:
     # 로컬: React 개발 서버(Vite 5173)에서 프록시로 오는 저장 요청 허용
     CSRF_TRUSTED_ORIGINS += ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -162,7 +166,15 @@ REST_FRAMEWORK = {
     "DATETIME_FORMAT": "iso-8601",
     "DATE_FORMAT": "iso-8601",
     "TIME_FORMAT": "iso-8601",
+    # 비밀번호 대입 막기 (users/api.py 의 *Throttle). 넘으면 429 throttled
+    "DEFAULT_THROTTLE_RATES": {"login": "5/min", "signup": "10/hour", "withdraw": "5/hour"},
 }
+
+# 횟수 제한 기록이 남는 곳. 기본(LocMem)은 프로세스마다 따로 센다
+# shortcut: gunicorn 워커가 여럿이면 워커 수만큼 느슨해짐, 배포 때 settings_production 에서 DB 캐시로 바꾼다
+if sys.argv[1:2] == ["test"]:
+    # 테스트끼리 같은 IP(127.0.0.1)로 로그인 횟수가 쌓이지 않게. 횟수 제한 테스트는 override_settings 로 켠다
+    CACHES = {"default": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}}
 
 # 세션·CSRF 쿠키 (배포에서는 https 에서만 보내기)
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14   # 로그인 유지 2주
@@ -207,9 +219,15 @@ def encryption_key(name):
 
 CONNECTED_ID_ENCRYPTION_KEY = encryption_key("CONNECTED_ID_ENCRYPTION_KEY")
 
+# 계좌 · 대출 · 카드 번호로 만드는 중복 확인 키의 HMAC 키 (finance/identifiers.py). 32바이트 urlsafe base64
+# 한 키가 새도 다른 쪽은 안전하게 연결 ID 암호화 키와 다른 값을 쓴다
+IDENTIFIER_HMAC_KEY = encryption_key("IDENTIFIER_HMAC_KEY")
+if IDENTIFIER_HMAC_KEY == CONNECTED_ID_ENCRYPTION_KEY:
+    raise ImproperlyConfigured(".env의 IDENTIFIER_HMAC_KEY는 CONNECTED_ID_ENCRYPTION_KEY와 다른 값이어야 해요.")
+
 
 # ===== 챗봇 엔진 (chat/api.py · chat/engine.py) =====
-# CHAT_ENGINE = legacy(기본, 기존 선택지 챗봇) | router(새 엔진: 라우터 + 소비 분석 + 예산 · 정책 '준비 중')
+# CHAT_ENGINE = legacy(기본, 기존 선택지 챗봇) | router(라우터 + 소비 분석 + 예산 조정)
 # CHAT_LLM = fake(기본, 가짜 해석 — 네트워크 없음) | live(실제 LLM, OPENAI_API_KEY · LLM_MODEL 필요)
 # 기준 날짜(CHAT_TODAY)는 두지 않는다: 일반 서버는 오늘 날짜로 실제 거래를 읽는다 (고정 날짜는 spending_fixture.service_settings 만)
 CHAT_ENGINE = os.getenv("CHAT_ENGINE", "").strip() or "legacy"
@@ -220,3 +238,16 @@ if CHAT_LLM not in ("fake", "live"):
     raise ImproperlyConfigured("CHAT_LLM 은 fake 또는 live 예요")
 if CHAT_LLM == "live" and not (os.getenv("OPENAI_API_KEY") and os.getenv("LLM_MODEL")):
     raise ImproperlyConfigured("CHAT_LLM=live 에는 .env 의 OPENAI_API_KEY · LLM_MODEL 이 필요해요")
+# 소비 분석 LLM 확장 (값이 on 이 아니면 꺼짐 = 지금 템플릿 답 그대로)
+# CHAT_EXPLAIN_PLAN = on: 원인 가설을 말한 설명 질문("배달 때문이야?")을 B(계획 · 답 LLM, MEMO 26)로 확인한다 (가짜 해석은 정해 둔 계획 · 답)
+# CHAT_AGENT = on: 첫 조회 뒤 필요할 때만 판단 LLM 1회 → 추가 도구 최대 1회(MEMO 31). 못 끝내면 첫 결과 + 못 확인한 요구 안내
+CHAT_EXPLAIN_PLAN = os.getenv("CHAT_EXPLAIN_PLAN", "").strip() == "on"
+CHAT_AGENT = os.getenv("CHAT_AGENT", "").strip() == "on"
+# 같은 그룹은 감액 가능액 비례 배분. 실제 ML 참조는 별도 공급한다.
+BUDGET_ADJUST_ALLOCATOR = (os.getenv("BUDGET_ADJUST_ALLOCATOR", "").strip()
+                           or "budgets.adjustment_core.calculation.proportional_group_reduction")
+BUDGET_ADJUST_REFERENCE_PROVIDER = os.getenv("BUDGET_ADJUST_REFERENCE_PROVIDER", "").strip() or None
+BUDGET_DESIGN_ENABLED = os.getenv("BUDGET_DESIGN_ENABLED", "false").lower() == "true"
+BUDGET_DESIGN_EXTERNAL_ENABLED = os.getenv("BUDGET_DESIGN_EXTERNAL_ENABLED", "false").lower() == "true"
+if BUDGET_ADJUST_REFERENCE_PROVIDER is None and BUDGET_DESIGN_ENABLED:
+    BUDGET_ADJUST_REFERENCE_PROVIDER = "budgets.design_service.reference_from_initial_input"

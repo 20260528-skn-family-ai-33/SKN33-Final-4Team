@@ -12,6 +12,7 @@ import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
 import { MONTH_DAYS } from '../utils/days.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 
 // 상환 방식 코드 (결정 P) — 화면 이름
 const METHODS = [['equal_payment', '원리금균등'], ['equal_principal', '원금균등'], ['bullet', '만기일시'], ['unknown', '잘 모르겠어요']]
@@ -70,6 +71,7 @@ export default function LoanAddPopup({ onSaved }) {
       }, { requestKey })
       onSaved?.(created)
       if (mounted.current) closePopup()
+      toast('대출을 등록했어요')
     } catch (err) {
       if (!mounted.current) return
       if (err.code === 'not_authenticated') navigate(PATHS.login, { replace: true })

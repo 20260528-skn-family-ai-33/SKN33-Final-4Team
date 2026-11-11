@@ -11,8 +11,6 @@ import Icon from '../components/Icon.jsx'
 import LockIcon from '../components/LockIcon.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import BudgetAIConsent from '../components/BudgetAIConsent.jsx'
-import { usePopup } from '../popups/context.js'
-import AdjustChatPopup from '../popups/AdjustChatPopup.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
 import { PATHS } from '../routes.js'
@@ -44,12 +42,20 @@ function conflictText(c) {
   if (c.type === 'minimums_over_living') return `최소금액과 고정 금액을 모두 지키려면 생활비가 ${won(c.shortfall)} 부족해요. 설정 금액이나 생활비 배분을 확인해 주세요.`
   if (c.type === 'lock_below_minimum') return `${catName(c.category)}의 고정 금액(${won(c.lockedAmount)})이 최소 금액(${won(c.minAmount)})보다 작아요.`
   if (c.type === 'locks_mismatch_living') return `모든 카테고리를 고정했는데 합계가 생활비와 ${won(Math.abs(c.difference))} 달라요. 자물쇠를 하나 풀어 주세요.`
+  if (c.type === 'target_conflict') {
+    const reasons = { locked_amount: '잠금액과 유지 목표가 달라요.', minimum_amount: '유지 목표가 최소 보장액보다 작아요.',
+      amount_unit: '유지 목표를 5천 원 단위로 확인해 주세요.', living_budget: '유지 목표를 현재 생활비 안에 모두 반영할 수 없어요.', invalid_target: '저장된 유지 목표를 확인해 주세요.' }
+    const basis = { locked_amount: '잠금액', minimum_amount: '최소액', amount_unit: '기준금액', living_budget: '반영 가능액' }
+    const names = (c.categories ?? []).map(catName).join(' · ')
+    const amounts = Number.isSafeInteger(c.requestedAmount) && Number.isSafeInteger(c.possibleAmount)
+      ? ` 목표 ${won(c.requestedAmount)} · ${basis[c.reason] ?? '기준금액'} ${won(c.possibleAmount)}${Number.isSafeInteger(c.diff) ? ` · 차이 ${won(Math.abs(c.diff))}` : ''}` : ''
+    return `${names ? `${names}: ` : ''}${reasons[c.reason] ?? '유지 목표와 현재 예산 조건을 확인해 주세요.'}${amounts}`
+  }
   return '카테고리 최소 금액과 자물쇠 금액을 확인해 주세요.'
 }
 
 export default function RecommendPage() {
   const navigate = useNavigate()
-  const { openPopup } = usePopup()
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -57,8 +63,16 @@ export default function RecommendPage() {
   const [draftBlocked, setDraftBlocked] = useState(false)
   // 서버가 푼 자물쇠 (P-13): 지킬 돈에서 생활비를 바꿔 풀렸거나(이전 화면에서 넘겨받음), 추천할 때 막혀서 풀린 것
   const { state: navState } = useLocation()
+  const returnedRecovery = navState?.recoveryReturn
+  const [resumeRecovery, setResumeRecovery] = useState(() => returnedRecovery ?? null)
   const [released, setReleased] = useState(() => navState?.locksReleased ?? [])
   const approveKeys = useRef(new Map())  // 초안 하나에 요청 번호 하나 (같은 초안을 다시 눌러도 한 번만 승인)
+  const mounted = useRef(false)
+
+  const openRecovery = useCallback((sourceTaskId) => navigate(PATHS.assistant, { replace: true, state: {
+    budgetContext: { mode: 'DESIGN_RECOVERY', sourceTaskId },
+    designRecovery: { sourceTaskId, requestKey: newRequestKey() },
+  } }), [navigate])
 
   const load = useCallback(async () => {
     try {
@@ -86,6 +100,7 @@ export default function RecommendPage() {
     creating.current = true
     setBusy(true)
     setProblem(null)
+    setResumeRecovery(null)
     setDraftBlocked(true)
     try {
       const { task } = await apiSend('/api/budgets/recommend/', 'POST', {}, { requestKey: newRequestKey() })
@@ -100,6 +115,12 @@ export default function RecommendPage() {
       } else if (now.status !== 'succeeded') {
         setProblem({ message: now.error?.message ?? '추천을 만들지 못했어요. 잠시 후 다시 시도해 주세요.' })
       } else {
+        const handoff = now.result?.handoff
+        if (['infeasible', 'target_conflict', 'needs_upper_allocation_review'].includes(now.result?.outcome) && handoff?.mode === 'DESIGN_RECOVERY'
+            && handoff.sourceTaskId === task.taskId && !now.result.budgetId) {
+          if (mounted.current) openRecovery(handoff.sourceTaskId)
+          return
+        }
         if (now.result?.locksReleased?.length) setReleased(now.result.locksReleased)  // 막혀서 풀린 자물쇠 (P-13 ②)
         if (now.result?.outcome === 'proposed' && now.result.budgetId) {
           const next = await load()
@@ -118,7 +139,7 @@ export default function RecommendPage() {
       creating.current = false
       setBusy(false)
     }
-  }, [load])
+  }, [load, openRecovery])
 
   const toggleLock = async (c) => {
     if (!draft || busy || OUT_OF_BUDGET.includes(c.category)) return
@@ -160,21 +181,23 @@ export default function RecommendPage() {
   // 처음 불러오기. 지킬 돈을 저장하고 넘어왔으면(state.autoRecommend) 처음 불러온 데이터에 초안이 없을 때만 새 추천을 한 번 만든다.
   // 표시는 들어오자마자 지워서, 승인 뒤 뒤로 가기로 다시 와도 새 초안을 만들지 않는다
   const autoRecommend = useRef(Boolean(navState?.autoRecommend))
+  const refreshRecommendation = useRef(Boolean(navState?.refreshRecommendation))
   useEffect(() => {
     if (navState?.autoRecommend) navigate(PATHS.recommend, { replace: true, state: null })
   }, [navState, navigate])
   useEffect(() => {
     let alive = true  // 화면을 떠나면 늦게 온 응답은 버린다
+    mounted.current = true
     apiSend('/api/budgets/', 'GET')
       .then((first) => {
         if (!alive) return
         setData(first)
         if (!autoRecommend.current) return
         autoRecommend.current = false  // 첫 데이터로만 판단
-        if (first.budget?.status !== 'validated') makeDraft()
+        if (refreshRecommendation.current || first.budget?.status !== 'validated') makeDraft()
       })
       .catch((err) => { if (alive) setLoadError(err) })
-    return () => { alive = false }
+    return () => { alive = false; mounted.current = false }
   }, [makeDraft])  // makeDraft는 useCallback이라 화면을 열 때 한 번만 돈다
 
   if (!data) return <Layout title="추천 예산 확인" showBack><ApiStatus error={loadError} /></Layout>
@@ -201,6 +224,12 @@ export default function RecommendPage() {
       )}
     </div>
   )
+  const recoveryBox = resumeRecovery && <div className="mc-note">
+    <p>{resumeRecovery.expired ? '예산 조건이 바뀌었거나 조정 대화가 만료됐어요. 다시 추천받아 주세요.'
+      : resumeRecovery.canceled ? '예산 조정을 취소했어요. 다시 추천받거나 조정을 다시 열 수 있어요.' : '추천을 다시 시도하거나 조정을 다시 열 수 있어요.'}</p>
+    {!resumeRecovery.expired && resumeRecovery.sourceTaskId && <button type="button" className="mc-link" disabled={busy}
+      onClick={() => openRecovery(resumeRecovery.sourceTaskId)}>예산 조정 다시 열기</button>}
+  </div>
 
   // 승인 전 초안이 없을 때: 새로 만들기 (이미 승인한 예산이 있으면 다시 추천받기)
   if (!draft) {
@@ -212,6 +241,7 @@ export default function RecommendPage() {
         <p className="mc-muted">추천안을 확인하고 승인해야 예산에 반영돼요. 새 추천을 만드는 동안에는 승인한 예산을 계속 사용해요.</p>
         {released.length > 0 && <p className="mc-min-warn" role="status">생활비가 바뀌어서 이번 달 자물쇠({released.map(catName).join(' · ')})를 풀었어요. 필요하면 다시 걸어 주세요.</p>}
         {problemBox}
+        {recoveryBox}
         <BudgetAIConsent />
         <button type="button" className="mc-primary" onClick={makeDraft} disabled={busy || !data.cycle}>
           {busy ? '추천 만드는 중…' : data.budget ? '다시 추천받기' : '추천 예산 만들기'}
@@ -232,7 +262,6 @@ export default function RecommendPage() {
       <div className="mc-eyebrow">추천 예산 확인 · 예산 {draft.versionNo}{draft.engineVersion?.startsWith('temp-') && ' · 테스트 추천'}</div>
       <h1>카테고리별 예산을<br />확인하고 고쳐 주세요</h1>
       <p className="mc-muted">지킬 돈에서 정한 생활비를 카테고리별로 나눴어요.</p>
-      {!draft.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}
       {data.recommendation?.spareTransfer > 0 && <p className="mc-note" role="status">여윳돈 {won(data.recommendation.spareTransfer)}을 이번 예산 생활비에만 포함해요. 기존 생활비 설정은 유지돼요.</p>}
       {data.recommendation?.targetConflicts?.map((c) => <p key={c.category} className="mc-note" role="status">{catName(c.category)} 유지 목표 {won(c.requestedAmount)} → 이번 예산 {won(c.possibleAmount)} (차이 {won(c.diff)}). {c.reason === 'amount_unit' ? '최종 금액 단위를 맞췄어요.' : '생활비와 보호 조건을 함께 반영했어요.'} 저장된 유지 목표는 그대로예요.</p>)}
       {released.length > 0 && <p className="mc-min-warn" role="status">생활비가 바뀌어서 이번 달 자물쇠({released.map(catName).join(' · ')})를 풀었어요. 필요하면 다시 걸어 주세요.</p>}
@@ -272,10 +301,13 @@ export default function RecommendPage() {
           {data.nag && <p className="mc-note" style={{ padding: '10px 0 0' }}>{data.nag}</p>}
           <div className="mc-chat-alt">
             <span>꼭 바꾸고 싶은 부분이 있나요?</span>
-            <button type="button" className="mc-link" onClick={() => openPopup(<AdjustChatPopup />)}>챗봇과 조정하기 ›</button>
+            <button type="button" className="mc-link" disabled={busy} onClick={() => navigate(PATHS.assistant, {
+              state: { budgetContext: { baseBudgetId: draft.budgetId, mode: 'INITIAL_ADJUSTMENT' } },
+            })}>챗봇과 조정하기 ›</button>
           </div>
         </div>
         {problemBox}
+        {recoveryBox}
         <p className="mc-note">최소 표시는 내 정보에서 정한 카테고리 최소 금액이에요. 그 밑으로는 줄지 않고, 자물쇠를 걸면 다음에 다시 추천받을 때 그 금액 그대로 고정돼요.</p>
       </form>
       <BudgetAIConsent />

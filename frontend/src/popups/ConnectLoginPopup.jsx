@@ -6,6 +6,7 @@ import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { EXTRA, FIELD, SERVER_FIELDS, instInfo } from '../utils/institutions.js'
+import CardNoInput from '../components/CardNoInput.jsx'
 import { josa } from '../utils/adjust.js'
 
 const METHODS = [['id', '아이디 로그인'], ['cert', '공동인증서']]
@@ -74,7 +75,7 @@ export default function ConnectLoginPopup({ inst, onSubmit, recheck }) {
                     <option value="">선택</option>
                     {f.options.map((o) => <option key={o}>{o}</option>)}
                   </select>
-                ) : (
+                ) : k === 'cardNo' ? <CardNoInput value={form[k]} onChange={(v) => set(k, v)} /> : (
                   <input autoComplete="off" inputMode={f.inputMode} maxLength={f.maxLength} placeholder={f.placeholder} type={f.type ?? 'text'}
                     value={form[k]} onChange={(e) => set(k, f.inputMode === 'numeric' ? e.target.value.replace(/\D/g, '') : e.target.value)} />
                 )}

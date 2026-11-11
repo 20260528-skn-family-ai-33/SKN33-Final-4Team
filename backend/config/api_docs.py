@@ -2,12 +2,14 @@
 
 import json
 
+from django.conf import settings
 from django.http import JsonResponse
 from django.urls import reverse
 from drf_spectacular.utils import extend_schema
 from drf_spectacular.views import SpectacularSwaggerView
 from rest_framework.permissions import AllowAny
 
+from .api_common import not_found
 from .openapi import build_contract, build_runtime_schema
 
 
@@ -15,6 +17,9 @@ HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "tra
 
 
 def _schema_response(request, schema_builder, filename):
+    # 운영(DEBUG=False)에서는 API 지도를 공개하지 않는다. 주소 목록이 아니라 여기서 막아야 테스트가 DEBUG를 바꿔 확인할 수 있다
+    if not settings.DEBUG:
+        return not_found(request)
     if request.method != "GET":
         response = JsonResponse(
             {"error": {"code": "method_not_allowed", "message": "GET 요청만 사용할 수 있어요."}},
@@ -45,6 +50,11 @@ class MoneyCushionSwaggerView(SpectacularSwaggerView):
     authentication_classes = []
     permission_classes = [AllowAny]
     runtime = False
+
+    def dispatch(self, request, *args, **kwargs):
+        if not settings.DEBUG:  # _schema_response 와 같은 이유
+            return not_found(request)
+        return super().dispatch(request, *args, **kwargs)
 
     @extend_schema(exclude=True)
     def get(self, request, *args, **kwargs):

@@ -11,6 +11,8 @@ from django.urls import path, re_path
 
 from budgets import api as budgets_api
 from budgets import api_salary as budgets_salary
+from budgets import api_adjustment as budgets_adjustment
+from budgets import ai_consent as budget_ai
 from budgets import design_consent as budgets_design_consent
 from chat import api as chat_api
 from finance import api as finance_api
@@ -34,6 +36,7 @@ app_name = "api"
 
 urlpatterns = [
     path("budgets/ai-consent/", budgets_design_consent.ai_consent, name="budget-ai-consent"),
+    path("budgets/adjustment-ai-consent/", budget_ai.adjustment_consent, name="budget-adjust-ai-consent"),
     # Swagger: 확정 계약 조회와 현재 서버 GET 확인을 분리한다.
     path("schema/", api_docs.contract_schema, name="schema"),
     path("schema/runtime/", api_docs.runtime_schema, name="schema-runtime"),
@@ -60,6 +63,8 @@ urlpatterns = [
     path("budgets/recommend/", budgets_api.recommend, name="recommend"),
     path("budgets/<uuid:budget_id>/categories/<str:code>/", budgets_api.budget_category, name="budget-category"),
     path("budgets/<uuid:budget_id>/approve/", budgets_api.budget_approve, name="budget-approve"),
+    path("budgets/proposals/<uuid:proposal_id>/", budgets_adjustment.proposal_detail, name="budget-proposal"),
+    path("budgets/proposals/<uuid:proposal_id>/approve/", budgets_adjustment.proposal_approve, name="budget-proposal-approve"),
     path("budgets/", budgets_api.budget, name="budget"),
     path("budgets/cushion/", budgets_api.cushion, name="cushion"),
     path("budgets/salary/", budgets_salary.salary, name="salary"),

@@ -5,6 +5,7 @@ import { useApi } from '../utils/api.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import CushionPopup from '../popups/CushionPopup.jsx'
+import HelpTip from '../components/HelpTip.jsx'
 
 export default function CushionPage() {
   const { openPopup } = usePopup()
@@ -19,7 +20,13 @@ export default function CushionPage() {
       <h1>내 돈의 안전장치</h1>
 
       <div className="mc-card">
-        <span className="mc-muted">현재 확보한 쿠션</span>
+        <span className="mc-muted">현재 확보한 쿠션
+          {/* 11/9: 맨 아래 안내문을 [?] 창으로 */}
+          <HelpTip label="쿠션 금액 안내" title="쿠션 금액은 계획이에요">
+            <li>앱에서 계획한 배정액이에요.</li>
+            <li>은행 계좌의 돈이 이동하지는 않아요.</li>
+          </HelpTip>
+        </span>
         <div className="mc-money">{comma(c.now)}<span style={{ fontSize: 18 }}>원</span></div>
         <div className="mc-bar"><span style={{ width: `${c.bar ?? 0}%` }}></span></div>
         {/* null(미설정)은 0원·0%로 보이지 않게 안내 문구로 바꾼다 (cushion.md 누락·경계 처리) */}
@@ -38,7 +45,6 @@ export default function CushionPage() {
         <div className="mc-keyvalue"><span>예상 기간</span><strong>{c.eta}</strong></div>
         <p className="mc-note" style={{ paddingBottom: 0 }}>지킬 돈 설정에서 정한 월 쿠션 적립금 기준이에요.</p>
       </div>
-      <p className="mc-note">앱에서 계획한 배정액이에요. 은행 계좌의 돈이 이동하지는 않아요.</p>
     </Layout>
   )
 }

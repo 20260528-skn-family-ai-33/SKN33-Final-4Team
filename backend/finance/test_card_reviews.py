@@ -299,13 +299,14 @@ class CardReviewTest(TestCase):
 
     def test_sync_does_not_attach_legacy_review_to_occupied_transaction(self):
         from .codef_cards import approval_source_key
+        from .identifiers import identifier_key
         self.prepare()
         self.resolve()
         self.review.refresh_from_db()
         shown = "1111********999*"
         duplicate = CardApprovalReview.objects.create(
             user=self.user, issuer_code=ORG,
-            source_key=approval_source_key(f"{ORG}:{shown}", self.review.identity),
+            source_key=approval_source_key(identifier_key("card_shown", f"{ORG}:{shown}"), self.review.identity),
             identity=self.review.identity, payload=self.review.payload, resolved_card=self.card,
             started_at=timezone.now(), fetched_at=timezone.now(),
         )

@@ -6,6 +6,7 @@
 
 - `data/design.json` — 설계 명세(Django fixture 아님, loaddata 금지). `data/expected.json` — 서비스 코드 없이 계산한 정답.
   두 파일은 첨부 자료 사본이며 `seed.py` 가 해시로 확인한다. 고치지 말 것.
+  design.json 설명에 나오는 `rename_merchants.py` · `retime_transactions.py` · `local_chat.*` 은 한 번 돌린 도구라 11/10 삭제했다 (해시가 고정이라 설명은 그대로 둔다).
 - seed 가 만든 approved 예산은 **테스트 스냅샷**이다. 실제 사용자 승인 · 엔진 검수 · ML 예측이 아니다.
 
 ## 대상 DB
@@ -120,7 +121,7 @@ payment_due 30 · financial_transaction 414 · payment_match 30 · transaction_l
 
 - 확인: fixture 관계(건수 · 사용자 간 FK · 고정비 연결 · 수집 기록 · 반복 실행 · 초기화 범위) /
   `listed_transactions` · `transaction_item` · `spending_summary` · `cycle_dates` · `budget_data`(계산식) 결과와 05 정답 / 작은 손계산 자료.
-- 기존 동작 기록: `budget_data` 는 validated 를 먼저 고른다 → expectedFailure 1건(고치지 않음). 소비 분석은 `spending_analysis.budget.approved_budget` 을 쓴다.
+- `budget_data`가 같은 주기의 검수 통과 초안보다 승인 예산을 먼저 고르는지 확인한다. 소비 분석은 `spending_analysis.budget.approved_budget`을 쓴다.
 - `test_analysis.py`: `spending_analysis` 의 승인 예산 읽기 전용 조회(`approved_budget`)와 분석 기간 순수 함수.
   변형은 테스트 안에서만 만든다 — B 승인 예산 교체(`seed.variant_b_approved_v2`), 날짜 경계용 별도 사용자. 기본 414건은 그대로.
 - `test_coverage.py`: 수집 완전성 판정(`spending_analysis.coverage`). 변형은 별도 사용자로 테스트 안에서만 만든다.
@@ -128,23 +129,6 @@ payment_due 30 · financial_transaction 414 · payment_match 30 · transaction_l
 - `test_conversation.py`: 가짜 LLM 추출 → router_core.route → adapter.run(실제 analyze) → answer.compose · adapter.record 흐름.
 - 없음: chat API · replies.py · 대화 상태 DB 연결, 비율 반올림 · 음수 잔액 표시 · 부분 수집 안내 계약, 나머지 변형 시나리오(C 승인 추가 · 0원 비교 · 동률 1위).
   계약 · 남은 정책은 `chat/router_core/MEMO.md` 6~10번.
-
-## 개발용 로컬 채팅 (`local_chat.py`)
-
-실제 서비스와 분리된 확인용 화면. fixture DB 만 읽고(시작 때 로컬 fixture DB · 회원 적재 검사), 대화는 페르소나별 메모리 저장소(서버 재시작 · 새 대화면 초기화).
-예산 조정 · 청년 정책은 대역. "왜 늘었어?"는 서버가 계산한 거래 근거로 답한다 — 가짜 해석 모드는 템플릿 문장,
-실제 LLM 모드는 설명 LLM 문장(검사 통과분만, 숫자는 서버 값, 같은 상한 · 장부에서 1회 더).
-지난달 비교는 카테고리별 묶음, 전반 분석 아래 "카테고리별 소비 보기"(서버 금액 · 비율 막대), 예산 초과 뒤 [예산 조정하기](기능 버튼과 같은 경로).
-chat API · replies.py · config · 모델 변경 없음, 추가 의존성 없음.
-
-```bash
-python -m spending_fixture.local_chat            # 가짜 해석(정해 둔 문장만) → http://127.0.0.1:8765
-LOCAL_CHAT_LIVE=1 python -m spending_fixture.local_chat --live --max-calls 30 --ledger <저장소 밖>/local-chat-ledger.json
-python manage.py test spending_fixture.test_local_chat --settings=spending_fixture.settings
-```
-
-실제 LLM 은 세 가지(환경변수 · --live · 상한 + 장부)가 모두 있을 때만 켜진다. 평가 도구의 역할별 호출 어댑터 · 장부를 그대로 쓰고 재시도 없음.
-키 · 요청 · 응답 원문은 화면 · 콘솔에 내보내지 않는다.
 
 ## B 보완 1~3단계 확인 (2026-11-02)
 
@@ -402,7 +386,7 @@ B에서는 `밥값이 올라서야?`를 평균 금액 대신 시간대 증가로
 - 건너뜀: 모델 파일 없는 실제 분류 모델 검사, 명시 실행이 필요한 외부 CODEF 샌드박스.
 - 예상 실패: 기존 budget_data의 validated/approved 예산 선택. 이번 범위에서 수정하지 않음.
 
-검증 도구: `scripts/router_eval/final_audit.py`, 보고서 생성: `scripts/router_eval/report_final_audit.py`.
+검증 도구: `scripts/router_eval/final_audit.py` (보고서 생성 도구는 일회성이라 지웠다 — Git 기록에 있음).
 원본·고정 스냅샷·장부: `/private/tmp/spending-final-audit500/`.
 R0 계약 SHA-256: `1af92e4534683fd494592402ed840b9935fca76d70a6362db7d29c1c3ccc95e1`.
 R1 계약 SHA-256: `beccd613349a16418130b6f3d702059ab0a39e7c9f4b077346b7225b4de901e3`.

@@ -30,9 +30,8 @@ from chat.interpretation.legacy import view
 from chat.router_core import reading as router_reading
 from chat.router_core import run_turn as router_run_turn
 from chat.llm.openai_rest import ResponsesClient
-from chat.llm.schemas import EXPLAIN_SCHEMA, ROLE_OF, ROLES, role_schema, schema_for  # noqa: F401  (옮김 — 평가 도구 · 테스트가 stage_b.* 로도 쓴다)
+from chat.llm.schemas import ROLE_OF, ROLES, role_schema, schema_for  # noqa: F401  (옮김 — 평가 도구 · 테스트가 stage_b.* 로도 쓴다)
 from spending_analysis import agent as spending_agent
-from spending_analysis import explain as spending_explain
 from spending_analysis import reading as spending_reading
 
 CASES_B = Path(__file__).resolve().parent / "cases_b.json"

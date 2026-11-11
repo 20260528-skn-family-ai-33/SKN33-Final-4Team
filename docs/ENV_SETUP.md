@@ -48,11 +48,14 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 | `DJANGO_DEBUG` | ✅ | `True` | 로컬 `True`, 배포 `False` |
 | `DJANGO_ALLOWED_HOSTS` | ✅ | `localhost,127.0.0.1` | 접속 허용 호스트. 쉼표로 구분 |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | 배포 시 | `https://도메인` | HTTPS 배포 주소. 로컬은 비워둠 (DEBUG면 React 개발 서버 `localhost:5173`은 자동 허용) |
+| `DJANGO_ADMIN_URL` | 배포 시 | (비워둠 → `admin/`) | 관리자 화면 주소. 배포 때는 추측하기 어려운 값(예: `python -c "import secrets; print(secrets.token_urlsafe(12))"` 출력)으로 바꾸고 Git·채팅에 올리지 않음. `api`로 시작하면 서버가 안 켜짐 |
 | `POSTGRES_DB` | ✅ | `money_cushion` | DB 이름 |
 | `POSTGRES_USER` | ✅ | `money_cushion` | DB 사용자 |
 | `POSTGRES_PASSWORD` | ✅ | (각자 설정) | DB 비밀번호 |
 | `POSTGRES_HOST` | ✅ | `localhost` | 배포 시 RDS 엔드포인트 |
 | `POSTGRES_PORT` | ✅ | `5432` | DB 포트 |
+| `CONNECTED_ID_ENCRYPTION_KEY` | ✅ | (`.env.example`의 명령으로 생성) | 회원별 CODEF 연결 ID 암호화 키 (32바이트). 바꾸면 저장된 연결을 못 읽음 |
+| `IDENTIFIER_HMAC_KEY` | ✅ | (같은 명령으로 한 번 더 생성) | 계좌 · 대출 · 카드 번호 중복 확인 키용 HMAC 키 (32바이트). 위 키와 다른 값. 바꾸면 금융 데이터를 지우고 다시 연결해야 함 |
 
 ### 외부 API (발급 후 입력)
 
@@ -69,11 +72,30 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 
 | 변수 | 설명 |
 |---|---|
-| `OPENAI_API_KEY` | LLM 에이전트 호출용 (LLM 제공자 확정 후) |
 | `KAKAO_REST_API_KEY` | 검색/지도 API (카카오 기준. 네이버로 정하면 `NAVER_CLIENT_ID` · `NAVER_CLIENT_SECRET`) |
 | AWS 관련 (S3 · SQS 등) | 배포 구조 확정 후 추가 |
 
 > 새 환경변수를 추가하면 **`.env.example`과 이 문서를 함께 갱신**한다. 값은 비워서 올린다.
+
+### 예산 조정 챗봇 연결
+
+| 변수 | 값·역할 |
+|---|---|
+| `CHAT_ENGINE` | `router`에서 실제 조정 대화·카드를 연결한다. `legacy`는 이전 안내 흐름이다. |
+| `CHAT_LLM` | 일반 자유 입력은 `live`. `fake`는 명시한 합성 테스트 문장용이다. |
+| `OPENAI_API_KEY`, `LLM_MODEL` | 서버의 실제 해석기 설정. 키·원본 프롬프트는 로그와 프론트에 보내지 않는다. |
+| `BUDGET_ADJUST_ALLOCATOR` | 선택 사항. 같은 그룹의 감액 함수(callable 또는 dotted path). 기본은 `budgets.adjustment_core.calculation.proportional_group_reduction`이며, 감액 가능액에 비례한 몫을 1만 원 우선·5천 원 보완으로 나눈다. `(group, required, capacities)`를 받아 `{reductions, remaining}`을 반환한다. 그룹 순서·순위 자격·보호 하한은 별도로 검수하며 최초 설계 A/B를 재선택하지 않는다. |
+| `BUDGET_ADJUST_REFERENCE_PROVIDER` | 선택 사항. 최초 예산에 ML 참조가 없을 때 1회 보완하는 함수(callable 또는 dotted path). 미설정이면 통합된 `design_service.reference_from_initial_input`이 있을 때 사용한다. 최초 저장 `engine_input`으로 실제 ML 금액/비율과 모델 ID·체크섬을 반환한다. 성공·실패 시도는 최초 스냅샷 메타에 기록하며, 원 입력·예산액·프로필은 바꾸지 않는다. 합성·임시 비율은 ML 참조로 인정하지 않는다. |
+
+실제 ML 참조가 필요한 자동 감액은 참조를 확인할 수 없으면 확인 필요로 안내한다. 확인된 재원과 사용자가 항목·금액까지 지정한 조정은 보호 조건을 검사하는 기존 경로를 사용한다. 지출 수집이 불완전하거나 저축 실행·쿠션 적립 상태를 확인할 수 없으면 가용액을 임의로 0원이나 미실행으로 판단하지 않는다.
+
+교통 참고 하한은 자차 없음 6만 원·있음 10만 원이며 미응답이면 적용하지 않는다. 잠금 원액이 시스템 하한보다 우선하고, 잠금액이 사용자 최소액보다 낮으면 충돌이다. 설계 스냅샷의 `transport_history_reference`에서 검증된 완료 3개월·기준액 분자/분모·이력 지문·버전을 읽고 낮은 소비 기준액을 적용한다. 누락·잘못된 자료는 `transport_history_status="unavailable"`이며 현재 지출로 추정하지 않는다. 실제 금융정보의 외부 LLM 전송 동의는 별도 확인 전이며, 외부 호출 시험은 합성 데이터로 제한한다.
+
+라우터 채팅의 입력 검사·조회·LLM 준비는 멱등 응답 저장 트랜잭션 밖에서 수행한다. 최초 ML 참조 보완은 짧은 트랜잭션으로 1회 시도를 확보하고, 모델 추론 중에는 예산 행을 잠그지 않는다. 저장은 회원 → 대화·예산 순서로 잠그며, 승인 직전 재검사에서는 새 참조 추론이나 보완 기록을 시작하지 않는다. 같은 성공 요청 키의 재전송은 준비·LLM을 다시 실행하지 않는다.
+
+로컬 LLM 호출 장부는 Windows 파일 교체의 일시적인 접근·공유 거부만 잠금 안에서 최대 6회(총 대기 310ms) 재시도한다. 같은 기록의 파일 교체만 반복하며 호출 수를 다시 더하거나 LLM 요청을 재전송하지 않는다. 계속 실패하거나 디스크 오류가 나면 외부 호출을 보내지 않고 오류를 반환한다.
+
+실제 서비스 DB에는 DB 담당 절차로 `users`의 유지 목표 필드 마이그레이션을 적용해야 한다. 코드·파일 준비와 DB 적용은 별개이며 이 작업에서 운영 DB에 자동 적용하지 않는다. 기존 `.env` 비밀값이나 배포 설정은 문서 갱신만으로 변경되지 않는다.
 
 ---
 
@@ -201,3 +223,5 @@ DATABASES = {
 - 실제 키를 README · 이슈 · PR · 단톡방에 그대로 붙여넣지 않는다. 팀원에게는 개인 메시지로만 전달한다.
 - 키가 커밋·노출되면 파일만 지우지 말고 **발급처에서 키를 즉시 재발급**한다.
 - 개발·시연에는 합성·모의 데이터와 CODEF **데모 버전**(`CODEF_ENV=demo`)을 사용한다. 데모 키는 팀이 일일 호출 한도를 같이 쓰므로, 응답은 JSON으로 저장해두고 저장본으로 개발한다. (`sandbox`는 라이브러리 공용 키로 도는 연습용, `product`는 실서비스용)
+
+예산 A/B 연결은 `BUDGET_DESIGN_ENABLED=true`로 설정한다. 외부 추천을 허용할 때는 `BUDGET_DESIGN_EXTERNAL_ENABLED=true`를 추가한다. `CHAT_ENGINE=router`, `CHAT_LLM=live`에서 일반 라우터는 목적지를 분류하며, 예산 조정 에이전트로 전달하기 전에 조정 전용 동의 두 개를 확인한다. 분배용 동의는 재사용하지 않는다. 외부 기능 OFF에서는 기존 동의 철회만 허용한다. ML 실행 파일과 모델 위치는 `BUDGET_INFERENCE_PYTHON`, `BUDGET_MODEL_PATH`로 설정할 수 있다.

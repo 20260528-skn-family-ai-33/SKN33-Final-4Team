@@ -7,7 +7,7 @@ import { PATHS } from '../routes.js'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
-import { won } from '../utils/money.js'
+import LoanDueRow from '../components/LoanDueRow.jsx'
 
 const todayKst = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Seoul' })  // YYYY-MM-DD
 
@@ -45,24 +45,23 @@ export default function LoanPayoffPopup({ loan, onDone, onCheckDue }) {
     <Popup label="대출 전체 완납 처리" sub>
       <div className="mc-eyebrow">{loan.productName ?? '대출'} · {loan.lenderName ?? '기관 확인 필요'}</div>
       <h1>이 대출을 전부 갚았나요?</h1>
-      <p className="mc-muted">이 대출의 남은 원금을 모두 갚아 <strong>상환을 끝내는 처리</strong>예요. 이번 달 한 번 낸 것을 확인하려면 [납부 거래 확인]을 써 주세요.</p>
-      <ul className="mc-note" style={{ paddingLeft: 18 }}>
-        <li>금융기관에서 확인한 내용이 아니라 직접 알려 주신 완납으로 오늘 날짜에 저장돼요. 납부 기록은 새로 만들지 않아요.</li>
-        <li>남은 금액은 0원으로 보여요. 잘못 눌렀다면 바로 [완납 취소]로 되돌릴 수 있어요.</li>
-        <li>지킬 돈 계산에서 이 대출의 월 상환액이 빠져요. 이미 승인한 예산은 바뀌지 않고, 승인 전 예산 초안은 다시 만들어야 해요.</li>
-      </ul>
+      {/* 11/9: 긴 설명 목록 → 완납하면 바뀌는 것 표 + 회차 카드 */}
+      <p className="mc-muted">남은 원금을 모두 갚아 <strong>상환을 끝내는 처리</strong>예요. 이번 달 한 번 낸 건 [납부 거래 확인]에서 확인해요.</p>
+      <div className="mc-card">
+        <div className="mc-keyvalue"><span>남은 금액</span><strong>0원으로 표시</strong></div>
+        <div className="mc-keyvalue"><span>지킬 돈</span><strong>월 상환액이 빠져요</strong></div>
+        <div className="mc-keyvalue"><span>되돌리기</span><strong>[완납 취소]로 바로</strong></div>
+        <p className="mc-note" style={{ paddingBottom: 0 }}>직접 알려 주신 완납으로 오늘 날짜에 저장돼요. 승인한 예산은 그대로이고, 예산 초안은 다시 만들어야 해요.</p>
+      </div>
       {canceled.length > 0 && <>
         <h3 className="mc-loan-h">취소되는 앞으로의 납부</h3>
-        {canceled.map((d) => <p className="mc-keyvalue" key={d.dueId}><span>{d.dueDate} · {won(d.expectedAmount)}</span></p>)}
+        <div className="mc-card mc-loan-dues">{canceled.map((d) => <LoanDueRow key={d.dueId} d={d} tag="취소돼요" />)}</div>
       </>}
       {remaining.length > 0 && <>
-        <h3 className="mc-loan-h">그대로 남는 납부</h3>
-        <p className="mc-note">오늘 · 지난 회차와 일부라도 낸 회차는 지우거나 ‘납부 완료’로 바꾸지 않아요. 실제로 냈다면 출금을 연결해 주세요.</p>
-        {remaining.map((d) => (
-          <div className="mc-keyvalue" key={d.dueId}>
-            <span>{d.dueDate} · {won(d.expectedAmount)} 중 {won(d.paidAmount)} 확인</span>
-            {onCheckDue && <button type="button" className="mc-link" onClick={() => onCheckDue(d.dueId)}>납부 거래 확인</button>}
-          </div>))}
+        <h3 className="mc-loan-h">그대로 남는 납부 <small>실제로 냈다면 출금을 연결해 주세요</small></h3>
+        <div className="mc-card mc-loan-dues">{remaining.map((d) => (
+          <LoanDueRow key={d.dueId} d={d} onOpen={onCheckDue && (() => onCheckDue(d.dueId))} />))}
+        </div>
       </>}
       {error && <p className="mc-error" role="alert">{error}</p>}
       <div className="mc-foot">

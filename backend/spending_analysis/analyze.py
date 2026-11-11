@@ -8,7 +8,7 @@
 - 수집 판정 · 승인 예산 조회 · 거래 조회의 DB 실패는 state="error" (0원 · 거래 없음으로 바꾸지 않음)
 조회는 tools(거래 읽기 rows + 도구 spend_query · period_compare · budget_left, MEMO 23절)가 하고 여기는 1~9번을 그 호출로 바꾼다.
 10 = 범용 조회(tools.query): 기간(이번 달 · 지난달 전체 · 최근 N개월) + 조건(scope 칸) + 계산(합계 · 건수 · 평균 · 하루 평균 · 최대 1건) + 묶기 · 상위 N
-1 · 2 · 5 = 이번 달 (1 · 5 는 카드 아래 막대용 living_budget = 4번 결과를 함께 — 기간이 달라 본문과 섞지 않음), 3 · 4 = 승인 예산 주기의 시작일 ~ 기준일 생활비, 6 · 7 = 이번 달 vs 지난달 같은 날짜, 8 · 9 = 완료된 N개월 (include_current 면 이번 달 포함 N개월, 달마다 1일 ~ 기준일과 같은 일자)
+1 · 2 · 5 = 이번 달 (1 · 5 는 카드 아래 막대용 living_budget = 4번 결과를 함께 — 기간이 달라 본문과 섞지 않음), 3 · 4 = 승인 예산 주기의 시작일 ~ 기준일 생활비, 6 · 7 = 이번 달 vs 지난달 같은 날짜 (compare_month 가 있으면 달끼리 비교 — periods.month_pair), 8 · 9 = 완료된 N개월 (include_current 면 이번 달 포함 N개월, 달마다 1일 ~ 기준일과 같은 일자)
 """
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -16,12 +16,12 @@ from zoneinfo import ZoneInfo
 from django.db import DatabaseError
 
 from . import result as R, scope, tools
-from .periods import previous_month_same_days, recent_months, recent_months_to_date, this_month
+from .periods import month_labels, month_pair, previous_month_same_days, recent_months, recent_months_to_date, this_month
 from .tools import DbError
 
 KST = ZoneInfo("Asia/Seoul")
 ITEM_KEYS = {"type", "category", "months_requested", "months_applied", "include_current", "instead_of", "breakdown", "query",
-             "month", "date_from", "date_to", "include_fixed", *scope.FILTERS}
+             "month", "date_from", "date_to", "include_fixed", "compare_month", *scope.FILTERS}
 CATEGORY_TYPES, MONTH_TYPES = {2, 3, 7, 9}, {8, 9}
 
 
@@ -47,8 +47,12 @@ def validate(item, today, as_of):
         if (item["query"]["period"] == "month") != (item.get("month") is not None) \
                 or (item["query"]["period"] == "range") != (item.get("date_from") is not None):
             raise ValueError(f"10번 특정 달 · 날짜 범위 칸: {item!r}")
-    elif any(item.get(k) is not None for k in ("month", "date_from", "date_to")):
-        raise ValueError(f"특정 달 · 날짜 범위는 10번에만: {item!r}")
+    elif kind in (6, 7) and item.get("compare_month") is not None:  # 달끼리 비교: month(없으면 이번 달) vs compare_month
+        if item.get("date_from") is not None or item.get("date_to") is not None \
+                or month_pair(today, item.get("month"), item["compare_month"]) is None:
+            raise ValueError(f"달끼리 비교할 수 없는 달: {item!r}")
+    elif any(item.get(k) is not None for k in ("month", "date_from", "date_to", "compare_month")):
+        raise ValueError(f"특정 달 · 날짜 범위는 10번에만, 비교할 달은 6 · 7번에만: {item!r}")
     if item.get("include_fixed") not in (None, True):
         raise ValueError(f"include_fixed 는 true 만: {item!r}")
     if kind in CATEGORY_TYPES:
@@ -91,6 +95,10 @@ def _run(user, kind, category, item, today):
         return tools.query(user, item, today)
     if kind in (3, 4):
         return tools.budget_left(user, category, today, breakdown=bool(item.get("breakdown")))
+    if kind in (6, 7) and item.get("compare_month") is not None:
+        current, previous, clipped = month_pair(today, item.get("month"), item["compare_month"])
+        return {**tools.period_compare(user, current, previous, category, where=item),
+                "labels": month_labels(today, current, previous, clipped)}
     if kind in (6, 7):
         return tools.period_compare(user, this_month(today), previous_month_same_days(today), category, where=item)
     span = recent_months_to_date if item.get("include_current") else recent_months  # 포함이면 달마다 같은 날짜까지

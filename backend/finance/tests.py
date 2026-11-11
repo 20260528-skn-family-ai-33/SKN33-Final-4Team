@@ -119,6 +119,19 @@ class TransactionListTest(FinanceData):
         self.assertEqual(names(f"?accountId={self.account.pk}&cardId={self.card.pk}"), ["계좌 소비", "카드 소비"])
         self.assertEqual(names(f"?cardId={self.card.pk}&category=TRANSPORT_CAR"), [])
 
+    def test_transaction_type_filter(self):
+        """11/9: 소비 · 입금 · 이체(남에게 + 내 계좌 이체 줄)로 거르기. 쉼표로 여러 개, 카테고리와는 둘 다 만족"""
+        self.tx(source_description="스타벅스", occurred_time=time(9, 0))
+        self.tx(source_description="급여", direction="in", transaction_type="income", occurred_time=time(8, 0))
+        self.tx(source_description="친구 송금", transaction_type="transfer", confirmed_category_id="UNCLASSIFIED", occurred_time=time(7, 0))
+        names = lambda q: [i["merchantName"] for i in self.get(q).json()["items"]]  # noqa: E731
+        self.assertEqual(names("?transactionType=spending"), ["스타벅스"])
+        self.assertEqual(names("?transactionType=income,transfer"), ["급여", "친구 송금"])
+        self.assertEqual(names("?transactionType=income&category=FOOD"), [])
+        res = self.get("?transactionType=saving")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["error"]["fields"]["transactionType"], ["모르는 거래 유형이에요."])
+
     def test_account_card_filter_rejects_unknown_or_others(self):
         other_card = Card.objects.create(user=self.other, name="남의 카드", masked_number="****9999", origin="manual")
         for query, field in ((f"?cardId={other_card.pk}", "cardId"), ("?accountId=not-a-uuid", "accountId"),

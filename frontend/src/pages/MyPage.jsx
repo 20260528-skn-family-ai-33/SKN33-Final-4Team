@@ -29,7 +29,8 @@ function summaryText(key, data) {
     return current + (item.pendingPaydayChange ? ` · ${item.pendingPaydayChange.effectiveOn}부터 ${item.pendingPaydayChange.payday}일` : '')
   }
   if (key === 'fixed' || key === 'savings') return `${item.count}건 · ${won(item.monthlyTotal)}`
-  if (key === 'protect') return [['livingBudget', '생활비'], ['savingsFloor', '저축'], ['cushionMonthly', '쿠션']]
+  // 11/9: 한 줄이 길어 쿠션은 빼고 생활비 · 저축만 (쿠션은 지킬 돈 화면에서)
+  if (key === 'protect') return [['livingBudget', '생활비'], ['savingsFloor', '저축']]
     .map(([field, label]) => `${label} ${item[field] == null ? '미설정' : won(item[field])}`).join(' · ')
   return `은행 ${item.bankCount}곳 · 계좌 ${item.accountCount}개 · 카드 ${item.cardCount}장`
 }

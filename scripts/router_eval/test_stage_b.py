@@ -98,9 +98,6 @@ class DryRunTest(unittest.TestCase):
             schema = stage_b.role_schema(role)
             self.assertEqual(set(schema["required"]), set(stage_b.ROLES[role][1].__dataclass_fields__))
         self.assertEqual(stage_b.role_schema("spending")["properties"]["mine"], {"type": "boolean"})
-        name, schema = stage_b.schema_for(stage_b.spending_explain.PROMPT)  # 설명 문장은 채점 역할이 아니라 스키마만
-        self.assertEqual((name, schema["required"]), ("spending_explanation", ["sentences"]))
-        self.assertNotIn(stage_b.spending_explain.PROMPT, stage_b.ROLE_OF)
 
     def test_followup_is_scored_only_while_that_role_asks(self):
         """[B-2026-10-29.2] 질문이 없는 역할에 통합 형식의 followup 기대를 옮기지 않는다 (관찰만)"""
