@@ -42,6 +42,8 @@ def handler(user, store, adapter, complete, conversation_key):
             get_context=adapter.get_context, simulate=adapter.simulate, propose=adapter.propose,
             task_status=adapter.task_status, cancel=adapter.cancel, allocator=adapter.allocator,
         )
+        if result["status"] == "not_mine":
+            return result
         state = store.get_agent_state(conversation_key, "budget") or {}
         adapter.llm_call_count = used + called
         if state or result["status"] == "failed":

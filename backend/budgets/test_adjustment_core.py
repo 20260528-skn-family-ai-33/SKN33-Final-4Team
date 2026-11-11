@@ -8,6 +8,7 @@ from budgets.adjustment_core.calculation import AdjustmentError
 from budgets.adjustment_core.comparison import compare_adjustments
 from budgets.adjustment_core.conversation import handle_expanded, _merge
 from budgets.adjustment_core.funding import available_adjustment, simulate_funding, validate_funding
+from budgets.adjustment_core.explanations import CATEGORY_NAMES
 from budgets.adjustment_core.interpretation import InterpretationFailed, parse, read
 
 
@@ -21,7 +22,8 @@ def context():
         "base_budget_id": "base", "cycle_id": "cycle", "mode": "NORMAL_ADJUSTMENT",
         "source_status": "approved", "policy_version": "test-mixed-unit",
         "automatic_unit": 10000, "fallback_unit": 5000,
-        "allocations": amounts, "spent": {"FOOD": 120000, "FASHION_SHOPPING": 10000},
+        "allocations": amounts, "category_names": {code: CATEGORY_NAMES[code] for code in amounts},
+        "spent": {"FOOD": 120000, "FASHION_SHOPPING": 10000},
         "minimums": {"FOOD": 200000}, "system_floors": {"TRANSPORT_CAR": 55000},
         "locks": {}, "lock_revisions": {}, "category_targets": {},
         "priorities": {"FOOD": 1, "TRANSPORT_CAR": 2, "EDUCATION": 3, "FASHION_SHOPPING": 5},
