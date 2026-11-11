@@ -49,3 +49,24 @@ it('카테고리를 바꾸면 새 결과가 올 때까지 이전 합계를 숨�
   await respond('transactions/?category=FOOD', list([], 0))
   expect(host.textContent).toContain('이 기간에 거래가 없어요')
 })
+
+// PR #101 리뷰: 입금 · 이체만 골라 둔 채 '확인 필요' 배너를 누르면 유형 조건이 남아 늘 비던 문제
+it('확인 필요 배너는 거래 유형 · 계좌 · 카드 조건을 풀고 배너 숫자 그대로의 목록을 연다', async () => {
+  const pendingTx = { ...tx, transactionId: 'tx-p', category: 'UNCLASSIFIED', categoryName: '미분류', classifyState: 'needs_review' }
+  fetch.mockImplementation((url) => {
+    if (url.includes('category=UNCLASSIFIED')) return Promise.resolve(reply({ items: [pendingTx], summary: { spentTotal: 12_345, needsReviewCount: 1 } }))
+    return new Promise((resolve) => waiting.push({ url, resolve }))
+  })
+  await act(async () => root.render(<MemoryRouter initialEntries={['/txs?type=income&account=acc-1']}><PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
+  expect(waiting.at(-1).url).toContain('transactionType=income')
+  const banner = host.querySelector('.mc-pend-banner')
+  expect(banner.textContent).toContain('1')
+  const before = fetch.mock.calls.length
+  await act(async () => banner.click())
+  const urls = fetch.mock.calls.slice(before).map(([url]) => url)
+  const listUrl = urls.find((url) => url.includes('category=UNCLASSIFIED'))
+  expect(listUrl).toBe('/api/finance/transactions/?category=UNCLASSIFIED')  // 유형 · 계좌 조건 없이, 기간 없이(전체 기간)
+  expect(host.querySelector('.mc-pend-banner').getAttribute('aria-pressed')).toBe('true')
+  expect(btn('필터 1')).toBeDefined()  // 남은 조건은 '확인 필요' 하나
+  expect(host.textContent).toContain('카테고리 확인 필요')  // 배너 숫자 1건이 목록에 보인다
+})

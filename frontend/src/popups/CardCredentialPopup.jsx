@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
-import { needsCardValues, runFinanceSync } from '../utils/financeSync.js'
+import { needsCardValues, runFinanceSync, syncLines } from '../utils/financeSync.js'
 import { toast } from '../utils/toast.js'
 import CardNoInput from '../components/CardNoInput.jsx'
 
@@ -29,7 +29,10 @@ export default function CardCredentialPopup({ item, onDone }) {
     try {
       const result = await runFinanceSync({ connectionIds: [item.connectionId], cardCredentials: [credential] })
       const row = result.items?.find((r) => r.connectionId === item.connectionId)
+      // 작업이 성공해도 기관별로는 실패 · 건너뜀일 수 있다 → 이 카드사가 succeeded 일 때만 닫고 성공 안내 (PR #101 리뷰, CardSyncPanel 과 같게)
+      if (!row) { setError('해당 카드사의 조회 결과를 확인하지 못했어요. 다시 시도해 주세요.'); return }
       if (needsCardValues(row)) { setError(Object.values(row.error.fields).flat()[0] ?? '카드번호와 카드 비밀번호를 확인해 주세요.'); return }
+      if (row.status !== 'succeeded') { setError(syncLines({ items: [row] })[0]?.text ?? '카드 내역을 불러오지 못했어요.'); return }
       closePopup()
       toast('카드 내역을 불러왔어요')
       onDone?.(result)  // 닫은 뒤에 불러야 onDone 이 다음 카드사 팝업을 열 수 있다

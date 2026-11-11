@@ -128,7 +128,9 @@ export default function TransactionsPage() {
       </div>
 
       {pendingCount > 0 && (
-        <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => go([PENDING.code], 'all')}>
+        // 배너 숫자는 다른 조건 없이 센 전체 건수 → 누르면 거래 유형 · 계좌 · 카드 조건을 풀고 그 건수 그대로 보여 준다
+        //   (입금 · 이체만 골라 둔 채 누르면 '확인 필요(소비)'와 겹치는 거래가 없어 늘 비던 문제, PR #101 리뷰)
+        <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => go([PENDING.code], 'all', [], [], [])}>
           <span className="mc-pend-dot">{pendingCount}</span>
           <strong className="mc-grow">카테고리 확인이 필요한 거래</strong>
           <span className="mc-muted">›</span>
