@@ -14,15 +14,17 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
-from finance.api import UNCLASSIFIED, listed_transactions
+from finance.api import UNCLASSIFIED, listed_transactions, transaction_item
 from finance.models import BankAccount, PaymentDue, RecurringExpense
 
 from .api import account_json, day_in_month, lock_user
 from .models import BudgetCategorySetting, BudgetCycle
+from .scope import OUT_OF_BUDGET
 
 EARLY_DAYS = 7             # 월급날 7일 전부터 들어온 입금은 그 월급으로 본다 (명절 전 지급)
 REVIEW_AFTER_DAYS = 3      # 출금일 +3일이 지나도 출금을 못 찾으면 '미납 확인 필요'
 SHOW_STATES = ["unpaid", "partial", "needs_review"]
+BIG_SPENDING_PCT = 10      # 한 건이 생활비 예산의 이 비율(%) 이상이면 '큰 지출'로 알린다 (돌발 지출 감지 1단계, 11/11 — 팀 확정 전 시작값)
 
 
 # ---------------- ① 급여 주기 ----------------
@@ -244,6 +246,35 @@ def over_categories(categories):
     return sorted(over, key=lambda c: -c["over"])
 
 
+def big_spendings(user, cycle, today, living_budget):
+    """이번 주기에 한 건이 생활비 예산의 BIG_SPENDING_PCT% 이상인 지출 (홈 알림 줄, 돌발 지출 감지 1단계). 최신순.
+    대상: 생활비 쪽 소비(고정지출 연결 · 예산 밖 카테고리 제외) + 남에게 보낸 이체(납부로 연결된 이체 제외).
+    내 계좌 간 이체 · 저축 · 카드값 · 대출 상환은 거래 유형이 달라 들어오지 않는다. 알리기만 하고 어떤 숫자도 바꾸지 않는다"""
+    threshold = -(-living_budget * BIG_SPENDING_PCT // 100)  # 원 미만 올림
+    if threshold <= 0:
+        return []
+    rows = listed_transactions(user).filter(
+        direction="out", transaction_type__in=("spending", "transfer"), amount__gte=threshold,
+        occurred_on__gte=cycle.starts_on, occurred_on__lt=cycle.ends_before, occurred_on__lte=today,
+    ).order_by("-occurred_on", "-amount")
+    found = []
+    for tx in rows:
+        item = transaction_item(tx)
+        is_spending = item["transaction_type"] == "spending"
+        if item["net_amount"] < threshold:  # 취소분을 뺀 금액으로 본다
+            continue
+        if is_spending and (item["funding"] == "fixed" or item["category"] in OUT_OF_BUDGET):
+            continue
+        if not is_spending and tx.payment_matches.all():
+            continue
+        found.append({
+            "transaction_id": item["transaction_id"], "occurred_on": item["occurred_on"], "merchant_name": item["merchant_name"],
+            "amount": item["net_amount"], "kind": item["transaction_type"],
+            "category": item["category"], "category_name": item["category_name"],
+        })
+    return found
+
+
 def home_budget(user, today, cycle):
     """이번 주기 approved 예산만 (초안은 홈에 안 보임). 하루 금액 일수는 채팅 budget_left 의 days_left 와 같다"""
     from .models import Budget
@@ -266,6 +297,7 @@ def home_budget(user, today, cycle):
         "out_of_budget": data["out_of_budget"],
         "out_of_budget_allocated": data["budget"]["out_of_budget_allocated"],
         "over_categories": over_categories(data["categories"]),  # 예산을 넘긴 카테고리 → 홈 알림 줄
+        "big_spendings": big_spendings(user, cycle, today, budget),  # 생활비 예산 대비 큰 지출 → 홈 알림 줄
     }
 
 

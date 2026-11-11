@@ -282,6 +282,57 @@
                 "type": "integer",
                 "description": "이전 기준 예산의 주거·통신·여행·숙박 배정 합계 (N-F1). 0보다 크면 재추천 안내"
               },
+              "bigSpendings": {
+                "type": "array",
+                "description": "생활비 예산 대비 큰 지출 (홈 알림 줄, 돌발 지출 감지 1단계). 이번 주기에 한 건이 livingBudget의 10% 이상인 생활비 쪽 소비 · 남에게 보낸 이체. 최신순",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "transactionId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "occurredOn": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "merchantName": {
+                      "type": "string",
+                      "description": "카드 = 가맹점명, 계좌 = 적요. 없으면 빈 문자"
+                    },
+                    "amount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "취소분을 뺀 금액"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "spending",
+                        "transfer"
+                      ]
+                    },
+                    "category": {
+                      "type": "string",
+                      "nullable": true,
+                      "description": "소비의 카테고리 코드. 이체는 null"
+                    },
+                    "categoryName": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "transactionId",
+                    "occurredOn",
+                    "merchantName",
+                    "amount",
+                    "kind",
+                    "category",
+                    "categoryName"
+                  ]
+                }
+              },
               "overCategories": {
                 "type": "array",
                 "description": "예산을 넘긴 카테고리 (홈 알림 줄). 쓴 돈이 배정을 넘은 카테고리만, 배정 0원은 제외. 많이 넘긴 순",
@@ -364,7 +415,8 @@
               "daysLeft",
               "outOfBudget",
               "outOfBudgetAllocated",
-              "overCategories"
+              "overCategories",
+              "bigSpendings"
             ]
           }
         },
