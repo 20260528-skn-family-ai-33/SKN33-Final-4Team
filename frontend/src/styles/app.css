@@ -151,6 +151,13 @@
 #mc-new-preview .mc-ai-tags span{font-size:11.5px;color:var(--mc-sub);border:1px solid var(--mc-line);border-radius:20px;padding:3px 9px}
 #mc-new-preview .mc-ai-foot{font-size:10.5px;color:var(--mc-sub);margin:12px 0 0}
 #mc-new-preview .mc-bar.is-hot span{background:var(--mc-alert)}
+#mc-new-preview .mc-tx-search{display:flex;align-items:center;gap:8px;height:40px;margin:0 0 10px;padding:0 4px 0 16px;border:1px solid var(--mc-line);border-radius:20px;background:var(--mc-paper);color:var(--mc-sub)}
+#mc-new-preview .mc-tx-search-btn{flex:none;display:grid;place-items:center;width:34px;height:34px;min-height:0;padding:0;border:0;border-radius:50%;background:none;color:inherit}
+#mc-new-preview .mc-tx-search:focus-within{border-color:var(--mc-brand);color:var(--mc-brand)}
+#mc-new-preview .mc-tx-search input{flex:1;min-width:0;height:100%;padding:0;border:0;outline:none;background:transparent;color:var(--mc-ink);font-size:14px}
+#mc-new-preview .mc-tx-search input::placeholder{color:var(--mc-sub)}
+/* 앱 전체 입력칸 포커스 테두리(3px 바깥 선) 대신, 검색칸은 둥근 테두리가 파랗게 바뀌는 것으로 표시 */
+#mc-new-preview .mc-tx-search input:focus,#mc-new-preview .mc-tx-search input:focus-visible{outline:none}
 #mc-new-preview .mc-tx-sum{align-items:center;margin-bottom:10px;gap:10px}
 #mc-new-preview .mc-tx-sum .mc-tabs{margin:0;flex:none}
 #mc-new-preview .mc-tx-day{padding-top:14px;padding-bottom:6px}
