@@ -62,7 +62,8 @@ jobs:
       - name: Backend checks and tests
         working-directory: backend
         run: |
-          python -m pip install -r ../requirements-production.txt
+          # 계약 테스트용 openapi-schema-validator 는 requirements-docs.txt 에만 있다 (운영 이미지에는 넣지 않음)
+          python -m pip install -r ../requirements-production.txt -r ../requirements-docs.txt
           python manage.py check
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
