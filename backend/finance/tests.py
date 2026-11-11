@@ -272,6 +272,17 @@ class TransactionDetailTest(FinanceData):
         self.assertEqual(elsewhere.confirmation_state, "needs_review")      # 업종이 다른 같은 이름 가게
         self.assertEqual((mine.confirmed_category_id, mine.confirmation_state), ("BEAUTY", "confirmed"))  # 사용자 선택은 그대로
 
+    def test_apply_to_future_fills_same_store_with_extra_spaces(self):
+        # PR #114 리뷰: 카드사가 준 이름의 가운데 공백이 두 칸이어도 같은 가게로 찾는다 (저장된 이름은 그대로)
+        def pending(name):
+            return self.tx(source_kind="card", card=self.card, merchant_name=name,
+                           confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        picked, same = pending("Cafe  Seoul"), pending("Cafe  Seoul")
+        self.patch(picked, {"category": "FOOD", "applyToFuture": True})
+        same.refresh_from_db()
+        self.assertEqual((same.confirmed_category_id, same.confirmation_state), ("FOOD", "suggested"))
+        self.assertEqual(same.merchant_name, "Cafe  Seoul")
+
     def test_apply_to_future_is_ignored_for_pay_charge_and_transfer(self):
         charge = self.tx(source_kind="card", card=self.card, merchant_name="네이버페이충전",
                          confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")

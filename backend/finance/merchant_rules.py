@@ -94,17 +94,20 @@ def remembered_category(user, merchant_name):
 
 def same_store_pending(tx):
     """'앞으로도 적용'을 고른 거래와 같은 가게의 다른 '확인 필요' 소비 거래 (11/11)
-    카드사 업종이 분명히 다르면 다른 가게로 보고 뺀다 (last_user_choice 와 같은 기준)"""
+    카드사 업종이 분명히 다르면 다른 가게로 보고 뺀다 (last_user_choice 와 같은 기준)
+    가게 이름은 양쪽 다 normalize_merchant 로 비교한다 (PR #114 리뷰): 카드사가 준 이름은 가운데 공백이 그대로 저장돼
+    ('Cafe  Seoul') DB 칸과 정리한 이름을 바로 비교하면 못 찾는다. 회원의 '확인 필요' 소비 거래만 가져와 비교해서
+    이미 저장된 거래도 그대로 처리된다 (확인 필요 거래는 많지 않음)"""
     merchant = normalize_merchant(tx.merchant_name)
     if merchant is None:
         return []
     rows = (
         FinancialTransaction.objects.select_for_update()
-        .filter(user_id=tx.user_id, merchant_name=merchant,
-                transaction_type=FinancialTransaction.TransactionType.SPENDING,
+        .filter(user_id=tx.user_id, transaction_type=FinancialTransaction.TransactionType.SPENDING,
                 confirmation_state=FinancialTransaction.ConfirmationState.NEEDS_REVIEW)
         .exclude(pk=tx.pk)
     )
     mine = store_type(tx.merchant_category)
     return [row for row in rows
-            if not (mine and store_type(row.merchant_category) and store_type(row.merchant_category) != mine)]
+            if normalize_merchant(row.merchant_name) == merchant
+            and not (mine and store_type(row.merchant_category) and store_type(row.merchant_category) != mine)]
