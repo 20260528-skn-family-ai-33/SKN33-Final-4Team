@@ -25,6 +25,7 @@ beforeEach(() => {
     return reply({ taskId: 'sync-1', status: 'succeeded' })
   }
   vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
+    if (options.method === 'GET') options = {}  // apiSend 로 읽는 GET (청구서 확인 창) 은 그냥 읽기와 같게
     if (options.method) requests.push({ url, body: JSON.parse(options.body) })
     if (url === '/api/budgets/protect/') {
       protectReads++
@@ -42,6 +43,7 @@ beforeEach(() => {
       if (loadFails > 0) { loadFails--; throw new TypeError('Failed to fetch') }   // 통신이 잠깐 끊김
       return new Promise((resolve) => { openTask = resolve })
     }
+    if (url === '/api/finance/connect/cards/') return reply({ items: [{ cardId: 'card-1', displayName: '현대 M포인트 · ****1001' }, { cardId: 'card-2', displayName: '현대 ZERO · ****1002' }] })
     if (url === '/api/finance/card-reviews/') return reply({ items: [review] })
     if (url === '/api/finance/card-reviews/review-1/') { reason = null; return reply({ status: 'resolved' }) }
     if (url.startsWith('/api/budgets/fixed/')) return reply({ items: [], summary: {}, cardBills: [{ issuerCode: '0302', issuerName: '현대카드', totalAmount: 511515,
@@ -218,18 +220,23 @@ it('11/06: 청구 총액 불일치는 0원이나 상세 합계로 넘기지 않�
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
 })
 
-it('청구서가 아직 없으면 미반영을 안내하고 재조회는 고를 때만', async () => {
+// 11/11: 띠 줄의 [다시 불러오기 · 접기] 대신 홈과 같은 흐름 (띠 → 안내 시트 → 청구서 확인 창)
+it('청구서가 아직 없으면 미반영을 안내하고, 청구서 확인은 가운데 창에서 한다', async () => {
   reason = null
   notes = [{ cardId: 'card-1', reason: 'first_bill_unavailable' }]
   await render()
   expect(host.textContent).toContain('지난 카드값이 아직 반영 안 됐어요')
-  await click('지난 카드값이 아직 반영 안 됐어요')
-  expect(host.textContent).toContain('이 예산으로 먼저 시작해도 돼요')
-  expect(button('청구서 확인하러 가기')).toBeUndefined()
-  await click('닫기 ×')
-  expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
+  expect(button('다시 불러오기')).toBeUndefined()
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
-  await click('다시 불러오기')
+  await click('지난 카드값이 아직 반영 안 됐어요')
+  expect(host.textContent).toContain('이 예산으로 먼저 시작해도 돼요')  // 첫 설정(마이에서 온 게 아님)
+  // 11/12: 어느 카드사인지 목록으로 (이 카드를 가진 연결만 — 관계없는 '다른카드'는 빠진다)
+  expect([...host.querySelectorAll('.mc-bill-issuers strong')].map((el) => el.textContent)).toEqual(['현대카드'])
+  expect(host.querySelector('.mc-bill-issuers small').textContent).toBe('현대 M포인트 · ****1001')  // 청구서 없는 카드만 (card-2 는 아님)
+  expect(host.textContent).toContain('위 카드로 지난 주기에 쓴 돈은')
+  await click('청구서 확인하러 가기')
+  // 현대카드는 카드번호를 매번 물어서 창 안에 조회 칸이 뜬다
+  expect(host.textContent).toContain('카드사 확인이 필요해요')
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
 

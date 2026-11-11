@@ -46,7 +46,7 @@ function CardConnection({ connection, onChanged }) {
       setLines(syncLines({ items: [item] }))
       if (item.error?.fields?.cardNo || item.error?.fields?.cardPassword) setNeedCredentials(true)
       if (item.error?.code === 'relogin_required') setNeedLogin(true)
-      onChanged()
+      onChanged({ ok: item.status !== 'failed' })  // 11/11: 청구서 확인 창이 성공했을 때만 바로 확인하러 넘어간다
     } catch (err) {
       if (mounted.current) setError(err.message)
     } finally {
@@ -76,7 +76,7 @@ function CardConnection({ connection, onChanged }) {
         setNeedsAdditionalAuth(true)
         setError('카드사 추가 인증이 필요해요. 금융 연결 화면에서 인증을 마쳐 주세요.')
       } else setError(item?.error?.message || '카드사에 다시 연결하지 못했어요.')
-      onChanged()
+      onChanged({ ok: item?.status === 'connected' && item.syncStatus !== 'failed' })
     } catch (err) {
       if (mounted.current) setError(Object.values(err.fields ?? {}).flat()[0] || err.message)
     } finally {
@@ -123,8 +123,8 @@ export default function CardSyncPanel({ cardIds, onChanged }) {
     && ['connected', 'relogin'].includes(connection.status)
     && connection.cardIds?.some((id) => cardIds.includes(id)))
   if (!connections.length) return <p role="alert">조회할 카드사 연결을 찾지 못했어요. 카드 연결 상태를 확인해 주세요.</p>
-  return <div>{connections.map((connection) => <CardConnection key={connection.connectionId} connection={connection} onChanged={() => {
+  return <div>{connections.map((connection) => <CardConnection key={connection.connectionId} connection={connection} onChanged={(result) => {
     query.reload()
-    onChanged()
+    onChanged(result)
   }} />)}</div>
 }

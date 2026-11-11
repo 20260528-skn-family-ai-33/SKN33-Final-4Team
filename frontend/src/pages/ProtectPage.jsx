@@ -64,7 +64,6 @@ export default function ProtectPage() {
   const [busy, setBusy] = useState(false)
   const [showCardSync, setShowCardSync] = useState(false)
   const { openPopup } = usePopup()
-  const [showUnreflectedSync, setShowUnreflectedSync] = useState(false)
   const [reviewVersion, setReviewVersion] = useState(0)
   // 11/09: 카드 내역을 서버가 뒤에서 불러오는 중이면 재조회를 권하지 않고 기다렸다가 끝나면(성공 · 실패 모두) 다시 읽는다
   // 11/10: 상태 조회가 끊기거나 5분을 넘기면 잠깐 쉬고 다시 읽는다. 다시 읽을 때마다(data 가 바뀔 때마다) 조회를 새로 시작해서,
@@ -220,13 +219,13 @@ export default function ProtectPage() {
         )}
       </>}
 
-      {/* 청구서 없는 카드사 안내는 한 줄 띠로 위에 두고, 재조회도 같은 줄에서 연다 (재조회 입력칸은 자체 form이 있어서 금액 form 밖) */}
-      {!blocked && <UnreflectedCardNote notes={notes} compact action={notes.some((n) => NOT_YET(n.reason)) && (
-        <button type="button" className="mc-link" style={{ fontSize: 12, minHeight: 32, padding: 0, flexShrink: 0 }} onClick={() => setShowUnreflectedSync((shown) => !shown)} aria-expanded={showUnreflectedSync}>
-          {showUnreflectedSync ? '접기' : '다시 불러오기'}
-        </button>
-      )} />}
-      {!blocked && showUnreflectedSync && <CardSyncPanel cardIds={[...new Set(notes.filter((n) => NOT_YET(n.reason)).map((n) => n.cardId))]} onChanged={reload} />}
+      {/* 청구서 없는 카드사 안내는 한 줄 띠로 위에 둔다. 11/11: 줄 안의 [다시 불러오기 · 접기] 대신 홈과 같은 흐름
+          (띠 → 안내 시트 → 청구서 확인 창). 새 청구서가 나오면 이 화면에서 바로 새 추천값으로 다시 보여 준다 */}
+      {!blocked && <UnreflectedCardNote notes={notes} compact budgetStarted={manage} onRecalculate={() => {
+        setValues(null)
+        reload()
+        navigate(PATHS.protect, { replace: true, state: { ...navState, refreshRecommendation: true } })
+      }} />}
 
       {blocked && blocked.reason !== 'card_bill_pending' && (
         <div className="mc-card" role="alert">

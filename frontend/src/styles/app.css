@@ -1135,6 +1135,7 @@
 #mc-new-preview .mc-dialog h2{padding-right:64px}
 #mc-new-preview .mc-help-list,#mc-new-preview .mc-dialog h2{word-break:keep-all;overflow-wrap:anywhere}  /* 한글이 낱말 중간에서 끊기지 않게 (11/9) */
 #mc-new-preview#mc-new-preview .mc-dialog{left:16px;right:16px}
+#mc-new-preview#mc-new-preview .mc-dialog{clip-path:inset(0 round 20px);scrollbar-width:thin;scrollbar-color:var(--mc-line) transparent}  /* 스크롤 막대가 오른쪽 모서리를 각지게 만들지 않게 (11/11) */
 /* 도움말 (11/9): 쓰는 순서 번호 목록 · 용어 풀이 */
 #mc-new-preview .mc-help-steps{margin:0 0 4px;padding-left:22px;font-size:13px;line-height:1.55;word-break:keep-all}
 #mc-new-preview .mc-help-steps li{margin:0 0 10px}
@@ -1150,8 +1151,15 @@
 #mc-new-preview#mc-new-preview .mc-salary-auto{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;line-height:1.5}
 #mc-new-preview#mc-new-preview .mc-salary-auto input[type=checkbox]{flex:none;width:14px;height:14px;margin:3px 0 0}  /* 월급 확인 '다음 달부터 자동' 체크 문구 = 입금 줄 '월급일 수 있어요'보다 살짝 크게, 체크박스도 글자 크기에 맞춤 (11/9) */
 /* 토스트 (11/9, utils/toast.js): 헤더 아래 가운데 알약 모양으로 떴다가 2초 뒤 사라짐. 팝업 위에도 보이게 z-index 8, 누르기는 통과 */
-#mc-new-preview#mc-new-preview #mc-toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:8;max-width:calc(100% - 48px);padding:9px 16px;border-radius:20px;background:var(--mc-ink);color:var(--mc-paper);font-size:13px;font-weight:600;box-shadow:0 6px 20px light-dark(#17224230,#0006);pointer-events:none;animation:mc-toast-in .2s ease-out}
+#mc-new-preview#mc-new-preview #mc-toast{position:absolute;top:64px;left:50%;transform:translateX(-50%);z-index:8;max-width:calc(100% - 48px);padding:9px 16px;border-radius:20px;background:var(--mc-ink);color:var(--mc-paper);font-size:13px;font-weight:600;box-shadow:0 6px 20px light-dark(#17224230,#0006);pointer-events:none;animation:mc-toast-in .2s ease-out;white-space:pre-line;text-align:center;line-height:1.5;width:max-content;word-break:keep-all}  /* 여러 줄 토스트(새로고침 결과, 11/12)는 줄마다. 가운데 정렬(left 50%) 때문에 폭이 절반으로 줄어 글자 중간에서 꺾이지 않게 내용 폭으로 */
 @keyframes mc-toast-in{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
 @media (prefers-reduced-motion:reduce){#mc-new-preview#mc-new-preview #mc-toast{animation:none}}
 /* 확인 필요 거래: [전체 기간 ↔ 달별로 보기] 작은 알약 버튼, 제목과 띄움 (11/9) */
 #mc-new-preview .mc-sumbar-toggle{flex:none;margin-left:10px;min-height:28px;padding:0 10px;border-radius:14px;background:var(--mc-soft);color:var(--mc-brand);font-size:12px;font-weight:600;white-space:nowrap}
+/* 청구서 확인 창: 불러오는 중 아이콘 (11/11) */
+#mc-new-preview .mc-bill-busy{display:flex;align-items:center;gap:6px;margin:8px 0 0}
+#mc-new-preview .mc-bill-busy svg{flex:none;color:var(--mc-brand);animation:mc-spin 1s linear infinite}
+#mc-new-preview .mc-bill-manual .mc-card{margin:12px 0 0;padding:14px 0 0;border:0;border-top:1px solid var(--mc-line);border-radius:0;background:none;box-shadow:none}  /* 카드사마다 위에 구분선 */
+#mc-new-preview .mc-bill-manual .mc-card h3{margin:0}
+/* 카드값 미반영 안내 시트: 청구서를 기다리는 카드사 줄(InstRow)을 연한 상자 안에 (11/12) */
+#mc-new-preview .mc-bill-issuers{margin:14px 0;padding:2px 16px;border-radius:16px;background:var(--mc-bg)}
