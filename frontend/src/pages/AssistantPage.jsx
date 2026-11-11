@@ -29,13 +29,6 @@ const LOOK = {
   budget: { icon: 'SlidersHorizontal', text: '예산을 조정하고 싶어요' },
   policy: { icon: 'Landmark', text: '청년 정책을 추천받고 싶어요' },
 }
-// 개발 모드 · 켜짐 엔진에서만: 가짜 해석이 아는 문장 (backend/chat/llm/fake.py · legacy.SAID)
-const EXAMPLES = ['이번 달 얼마 썼어?', '그럼 교통비는?', '이번 달 3개월 식비', '커피 얼마나 썼어?', '지난달보다 식비 더 썼어?',
-  '왜 식비가 늘었어?', '최근 6개월 식비 어때?', '소비 분석해줘', '최근 3개월 식비 예산 얼마나 남았어?', '식비 예산 줄여줘', '날씨 어때?',
-  '이번 달 카드 얼마 긁었지?', '과자서원에서 얼마 썼어?', '식비는 왜 늘었을까?', '제일 많이 쓴 데는 왜 많이 나왔을까?',
-  '지난달 식비는 왜 많이 나왔어?', '지난주 식비는 왜 많이 나왔어?', '이번 달 주말 식비 왜 늘었어?',
-  '커피를 자주 사 먹어서 그래?', '점심값이 비싸진 거야?', '점심을 더 자주 먹어서 그래?', '건당 금액이 올라서야?', '배달 때문이야?']
-
 // 개발 모드 전용: B 증감 설명의 분석 과정 (서버가 더미 설정에서만 devTrace 를 준다 — 서비스 응답 칸 아님, MEMO 26)
 const STOP = { insufficient: '근거 부족 — 서버가 멈춤', nothing_more: '더 볼 묶음 없음 · 상한 — 서버가 멈춤' }
 const FALLBACK = { plan_failed: '계획 호출 실패 → 서버 설명', invalid_plan: '계획 형식 오류 → 서버 설명', template: '근거 부족이라 지금 설명(거절 · 안내)', rejected: '검사 탈락 → 지금 템플릿 설명', timeout: '시간 초과 → 지금 템플릿 설명',
@@ -322,13 +315,18 @@ export default function AssistantPage() {
     <Layout
       title="통합 챗봇"
       activeTab="assistant"
-      foot={
+      foot={<>
+        {/* 새 대화 (11/11): 대화가 있을 때만 입력란 왼쪽 위에 — 입력란과 함께 화면 아래에 붙어 있어 대화가 길어도 바로 누를 수 있다.
+            지금 대화를 화면에서 비우고 다음 문장부터 새 대화로 보낸다 */}
+        {!recovery && messages.length > 0 && (
+          <button type="button" className="mc-asst-new" disabled={blocked} onClick={startOver}><Icon name="RefreshCw" />새 대화</button>
+        )}
         <form className="mc-chat-in mc-asst-in" onSubmit={submit}>
           <input aria-label="챗봇에게 보낼 메시지" autoComplete="off" placeholder="예: 이번 달 얼마 썼어?" type="text" maxLength={500}
             value={text} disabled={blocked} onChange={(e) => setText(e.target.value)} />
           <button type="submit" className="mc-chat-send" aria-label="보내기" disabled={blocked}><Icon name="Send" /></button>
         </form>
-      }
+      </>}
     >
       <div className="mc-bc mc-asst">
         {recovery && <div className="mc-chipbar" aria-label="분배 실패 조정">
@@ -407,18 +405,6 @@ export default function AssistantPage() {
           </div></div>}
           <div ref={end} />
         </div>
-
-        {import.meta.env.DEV && info?.engine === 'router' && (
-          <details className="mc-fx-dev">
-            <summary>개발용 · 가짜 해석 예시 문장</summary>
-            <p>더미 A(윤서)에서 확인: 새 대화 → 지난달보다 식비 더 썼어? → 점심값이 비싸진 거야? / 커피를 자주 사 먹어서 그래?</p>
-            <p>점심은 대상의 평균과 가격 판단의 한계를, 커피는 품목 식별 불가를 안내해야 합니다. 기간 확인은 새 대화 → 지난달 식비는 왜 많이 나왔어? → 그럼 교통비는?</p>
-            <div className="mc-chipbar">
-              {!recovery && <button type="button" disabled={blocked} onClick={startOver}>새 대화</button>}
-              {EXAMPLES.map((q) => <button key={q} type="button" disabled={blocked} onClick={() => send({ text: q }, q)}>{q}</button>)}
-            </div>
-          </details>
-        )}
       </div>
     </Layout>
   )

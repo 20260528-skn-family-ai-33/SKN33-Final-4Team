@@ -270,5 +270,9 @@ def render(turn, budget_outcome=None):
         else:
             notices = lines + notices
         out = {**out, "choices": [*out.get("choices", []), *extra]}
+    if out.get("alt"):  # 예산 주기 판(소비 분석 answer.compose)에도 라우터가 붙인 안내(예산 조정 제안 등)를 같이 싣는다
+        own = list((r.get("reply") or {}).get("notices") or [])
+        out = {**out, "alt": {**out["alt"], "notices": list(dict.fromkeys(
+            [*out["alt"].get("notices", []), *(n for n in notices if n not in own)]))}}
     return {"choices": [], **out, "notices": list(dict.fromkeys(notices)),
             "review": [*out.get("review", []), *([review] if review else [])]}

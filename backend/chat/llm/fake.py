@@ -188,6 +188,7 @@ SPENDING_SAID.update({
                                 "period_said": "이번달이랑 8월달", "compare": "month", "compare_month": 8, "categories": ["FOOD"]},
     "3월보다 식비 더 썼어?": {"mine": True, "target": "spend", "compare": "month", "compare_month": 3, "categories": ["FOOD"]},
     "카테고리별로 예산 얼마나 남았어?": {"mine": True, "target": "budget_left", "compare": "category"},
+    "초과한 카테고리 뭐야?": {"mine": True, "target": "budget_left", "compare": "category"},  # 예산을 넘은 카테고리 (11/11)
 })
 # 첫 조회 뒤 추가 판단 (MEMO 31) — 판단이 필요한 질문의 해석. 첫 조회는 기존 경로가 이 해석 그대로 한다
 FOOD_PREV = {"target": "spend", "compare": "prev_month", "categories": ["FOOD"]}

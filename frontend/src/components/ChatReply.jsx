@@ -4,6 +4,7 @@
 // - 핵심 안내(lead)는 서버가 나눈 칸 그대로 맨 위에. '안내:' 글자 + 굵게 (색만으로 구분하지 않음)
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
+import { useState } from 'react'
 import { won } from '../utils/money.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
 
@@ -106,14 +107,25 @@ function Block({ block }) {
 const FOLD_ROWS = 3
 
 function ViewCard({ content, title }) {
-  const [head, ...blocks] = content.view[0].kind === 'head' ? content.view : [null, ...content.view]
+  // 기간 전환 (11/11): 이번 달 조회에 예산 주기 판(content.alt)이 함께 오면 [이번 달 | 예산 주기]로 바꿔 본다.
+  // 두 판 모두 서버가 계산해 준 것 그대로 — 화면은 어느 판을 그릴지만 고른다. alt.first = 예산 조정 중에 물은 답이라 예산 주기를 먼저
+  const alt = content.alt?.view?.length ? content.alt : null
+  const [cycle, setCycle] = useState(Boolean(alt?.first))
+  const shown = alt && cycle ? { ...content, view: alt.view, chart: alt.chart, lead: alt.lead ?? [], notices: alt.notices ?? [] } : content
+  const [head, ...blocks] = shown.view[0].kind === 'head' ? shown.view : [null, ...shown.view]
   const rows = blocks.filter((b) => b.kind === 'rows')
   const fold = rows.length >= FOLD_ROWS
   const first = blocks.indexOf(rows[0])
   return (
     <div className="mc-spend" aria-label={`${title} 결과`}>
       <div className="mc-spend-head"><span>{head ? head.title : title}</span>{head && <small>{title}</small>}</div>
-      <Lead items={content.lead ?? []} />
+      {alt && (
+        <div className="mc-tabs mc-fx-period" role="group" aria-label="기간 기준">
+          <button type="button" aria-pressed={!cycle} onClick={() => setCycle(false)}>{alt.baseLabel}</button>
+          <button type="button" aria-pressed={cycle} onClick={() => setCycle(true)}>{alt.label}</button>
+        </div>
+      )}
+      <Lead items={shown.lead ?? []} />
       {blocks.map((b, i) => {
         if (!fold || b.kind !== 'rows') return <Block key={i} block={b} />
         if (i !== first) return null
@@ -124,8 +136,8 @@ function ViewCard({ content, title }) {
           </details>
         )
       })}
-      {content.chart && <Chart chart={content.chart} />}
-      {(content.notices ?? []).map((n, i) => <p key={`notice-${i}`} className="mc-note" style={{ padding: 0 }}>{n}</p>)}
+      {shown.chart && <Chart chart={shown.chart} />}
+      {(shown.notices ?? []).map((n, i) => <p key={`notice-${i}`} className="mc-note" style={{ padding: 0 }}>{n}</p>)}
     </div>
   )
 }

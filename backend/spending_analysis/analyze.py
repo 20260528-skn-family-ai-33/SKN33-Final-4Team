@@ -16,7 +16,9 @@ from zoneinfo import ZoneInfo
 from django.db import DatabaseError
 
 from . import result as R, scope, tools
-from .periods import month_labels, month_pair, previous_month_same_days, recent_months, recent_months_to_date, this_month
+from .budget import approved_budget
+from .periods import (budget_period, month_labels, month_pair, previous_month_same_days, recent_months, recent_months_to_date,
+                      this_month)
 from .tools import DbError
 
 KST = ZoneInfo("Asia/Seoul")
@@ -85,9 +87,28 @@ def _living_budget(user, today):
         return None
 
 
+def _cycle_block(user, kind, category, item, today):
+    """1 · 2 · 5번의 '예산 주기' 보기 (11/11): 같은 조회를 이번 예산 주기 시작일 ~ 기준일로 한 번 더 — 화면의 [이번 달 | 예산 주기] 전환용.
+    예산 조정은 예산 주기로 계산하는데 '이번 달 얼마 썼어?'는 달력 한 달이라 두 금액이 달라 보이는 것을 풀기 위해서다.
+    주기가 없거나 · 이번 달과 같은 기간이거나 · 못 읽으면 None (본문 답은 그대로 둔다)"""
+    try:
+        found = approved_budget(user, today)
+        if found["state"] not in ("approved", "no_approved"):
+            return None
+        spent = budget_period(found["cycle"]["starts_on"], found["cycle"]["ends_before"], today)["spent"]
+        if spent == this_month(today):
+            return None
+        return tools.spend_query(user, spent, category, where=item, overview=kind == 5)
+    except (DatabaseError, DbError, ValueError):
+        return None
+
+
 def _run(user, kind, category, item, today):
     if kind in (1, 2, 5):
         out = {"current": tools.spend_query(user, this_month(today), category, where=item, overview=kind == 5)}
+        cycle = _cycle_block(user, kind, category, item, today)
+        if cycle is not None:
+            out["cycle"] = cycle
         if kind != 2 and not scope.filters(item):  # 거른 조회엔 생활비 막대를 붙이지 않는다
             out["living_budget"] = _living_budget(user, today)
         return out

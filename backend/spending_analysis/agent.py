@@ -109,6 +109,9 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         source = _take_from(decision)
         if source:  # 넘겨 둔 예산 조정이 있고 카테고리 하나의 남은 예산을 답했다 → [○○에서 가져오기] (문구 · 버튼은 라우터 안내가 붙인다)
             result["reply"] = {**result["reply"], "suggest": [*result["reply"].get("suggest", []), {"take_from": source}]}
+    if context.get("budget_return") and (result.get("reply") or {}).get("alt"):
+        # 넘겨 둔 예산 조정이 있는 대화 — 예산 조정과 같은 기준인 예산 주기를 먼저 보여 준다 (화면 전환은 그대로 가능)
+        result["reply"] = {**result["reply"], "alt": {**result["reply"]["alt"], "first": True}}
     if result["status"] == "replied" and "budget_adjust" in (result.get("reply") or {}).get("suggest", []):
         # 초과 답변에 [예산 조정하기]가 붙었다 → 어느 카테고리가 얼마 넘었는지 라우터에 알린다 (화면 응답에는 넣지 않는다, 11/11)
         target = over_target([r for results in ran if results for r in results])

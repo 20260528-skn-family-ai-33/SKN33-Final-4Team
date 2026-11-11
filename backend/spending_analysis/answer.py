@@ -213,6 +213,9 @@ class _Out:
     def line(self, key, **values):
         self.lines.append(relabel(TEXT[key].format(**values), self.result))
 
+    def line_text(self, text):
+        self.lines.append(text)
+
     def head(self, key, **values):
         """여러 항목에 공통인 기간 · 기준 문장은 한 번만"""
         text = relabel(TEXT[key].format(**values), self.result)
@@ -259,7 +262,7 @@ def _classified_only(out, item, amount):
 
 def _current(out, result):
     item, block = result["item"], result["current"]
-    label = f"이번 달({span(block['period'])})"
+    label = f"{result.get('period_label', '이번 달')}({span(block['period'])})"
     _unclassified(out, block["observed"], item)
     if not _period_block(out, block, item, label):
         return
@@ -284,7 +287,8 @@ def chart(result):
     block = result["current"]
     fig, limited = block["confirmed"] or block["observed"], block["confirmed"] is None
     out = {"title": CHART["title"], "rows": [], "limited": CHART["limited"] if limited else None, "empty": None,
-           "basis": CHART["basis"].format(period=f"이번 달({span(block['period'])})", total=won(fig["total"]))}
+           "basis": CHART["basis"].format(period=f"{result.get('period_label', '이번 달')}({span(block['period'])})",
+                                          total=won(fig["total"]))}
     if not fig["total"]:
         out["empty"] = CHART["none"] if block["coverage"]["state"] == "none" else CHART["zero"]
         return out
@@ -330,6 +334,7 @@ def _budget(out, result):
     rows = [TEXT["budget_category"].format(name=NAMES[c["category"]], allocated=won(c["allocated"]), spent=won(c["spent"]),
                                            rest=_rest(c)) for c in result.get("categories", [])]
     if rows:
+        out.line_text(_over_line(result["categories"]))
         out.section("카테고리별 남은 예산", *rows)
     _classified_budget(out, result, bool(rows))
 
@@ -677,6 +682,8 @@ def _view_budget(results, many):
     if rows:
         blocks.append({"kind": "rows", "rows": rows})
     cats = [c for r in results for c in r.get("categories", [])]
+    if cats:  # 예산을 넘은 카테고리를 먼저 한 줄로 ('초과한 카테고리 뭐야?'의 답, 11/11)
+        blocks += _text([_over_line(cats)])
     if cats:  # 카테고리별 남은 예산: 막대 = 쓴 비율(100% 넘으면 가득), 초과는 붉은 글자 + '초과' 글자
         blocks.append({"kind": "rows", "title": "카테고리별 남은 예산", "rows": [
             {"name": NAMES[c["category"]], "amount": c["over"] or c["remaining"],
@@ -865,8 +872,30 @@ def view(results):
     return blocks + _text(failed)
 
 
-def compose(results, notices=()):
-    """adapter.run 결과(+ 라우터 Decision.notices) → {"lines": 본문, "notices": 공통 안내(중복 없음)}"""
+ALT = {"month": "이번 달", "cycle": "예산 주기", "cycle_period": "이번 예산 기간"}
+
+
+def _over_line(cats):
+    """카테고리별 남은 예산 목록 → '예산을 넘은 카테고리' 한 줄 (많이 넘은 순서)"""
+    over = sorted((c for c in cats if c["over"]), key=lambda c: -c["over"])
+    if not over:
+        return "예산을 넘은 카테고리는 없어요."
+    return "예산을 넘은 카테고리: " + ", ".join(f"{NAMES[c['category']]} {won(c['over'])} 초과" for c in over)
+
+
+def _cycle_results(results):
+    """이번 달 조회(1 · 2 · 5번) 결과 → 같은 조회의 예산 주기 판. 성공한 항목이 모두 주기 결과(cycle)를 갖고 있을 때만, 아니면 None"""
+    done = [r["result"] for r in results if r["ok"]]
+    if not done or not all(r["type"] in (1, 2, 5) and r.get("cycle") for r in done):
+        return None
+    return [{**r, "result": {**{k: v for k, v in r["result"].items() if k != "cycle"}, "current": r["result"]["cycle"],
+                              "period_label": ALT["cycle_period"]}} if r["ok"] else r for r in results]
+
+
+def compose(results, notices=(), _alt=True):
+    """adapter.run 결과(+ 라우터 Decision.notices) → {"lines": 본문, "notices": 공통 안내(중복 없음)}
+    이번 달 조회에 예산 주기 결과가 함께 있으면 "alt": {label, base_label, lines, notices, view?, chart?, lead?, sections?} —
+    같은 답을 이번 예산 주기(시작일 ~ 기준일)로 본 것. 화면이 [이번 달 | 예산 주기]로 바꿔 보여 준다 (11/11)"""
     out = _Out()
     for r in results:
         if r["item"].get("instead_of"):
@@ -921,10 +950,15 @@ def compose(results, notices=()):
     done = [r["result"] for r in results if r["ok"]]
     if any(r["type"] == 5 for r in done):
         reply["chart"] = chart(next(r for r in done if r["type"] == 5))
-    if any((r.get("confirmed") or {}).get("over") for r in done if r["type"] in (3, 4)):
+    if any((r.get("confirmed") or {}).get("over") for r in done if r["type"] in (3, 4)) or over_target(results):
         reply["suggest"] = ["budget_adjust"]  # 초과 뒤 예산 조정 제안 (문구 · 선택지는 라우터 안내가 붙인다)
     if excluded:
         reply["suggest"] = [*reply.get("suggest", []), "include_fixed"]
+    cycle = _alt and _cycle_results(results)
+    if cycle:
+        other = compose(cycle, notices, _alt=False)
+        reply["alt"] = {"label": ALT["cycle"], "base_label": ALT["month"],
+                        **{k: other[k] for k in ("lines", "notices", "view", "chart", "lead", "sections") if k in other}}
     return reply
 
 
