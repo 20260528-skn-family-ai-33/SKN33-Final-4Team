@@ -235,6 +235,15 @@ def must_pay_json(user, next_payday, previous_start):
 
 # ---------------- ⑤ 예산 ----------------
 
+def over_categories(categories):
+    """쓴 돈이 배정 예산을 넘긴 카테고리 (홈 알림 줄 · 예산 화면 막대 색과 같은 기준). 많이 넘긴 순.
+    예산이 0원인 칸은 넘겼다고 보지 않는다 — 예산을 잡지 않은 칸이라"""
+    over = [{"category": c["category"], "category_name": c["category_name"], "allocated": c["allocated"],
+             "spent": c["spent"], "over": c["spent"] - c["allocated"]}
+            for c in categories if 0 < c["allocated"] < c["spent"]]
+    return sorted(over, key=lambda c: -c["over"])
+
+
 def home_budget(user, today, cycle):
     """이번 주기 approved 예산만 (초안은 홈에 안 보임). 하루 금액 일수는 채팅 budget_left 의 days_left 와 같다"""
     from .models import Budget
@@ -256,6 +265,7 @@ def home_budget(user, today, cycle):
         "days_left": days_left,
         "out_of_budget": data["out_of_budget"],
         "out_of_budget_allocated": data["budget"]["out_of_budget_allocated"],
+        "over_categories": over_categories(data["categories"]),  # 예산을 넘긴 카테고리 → 홈 알림 줄
     }
 
 

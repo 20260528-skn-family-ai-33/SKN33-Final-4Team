@@ -1027,7 +1027,8 @@ class HomeBudgetTest(TestCase):
             {"category": "HOUSING_TELECOM", "spent": 20_000}, {"category": "TRAVEL_LODGING", "spent": 200_000}]})
         self.assertEqual(home, {"budgetId": str(self.budget.pk), "versionNo": 1, "livingBudget": 1_000_000, "livingLeft": 680_000,
                                 "livingPct": 32, "spare": 400_000, "daily": 680_000 // 27, "daysLeft": 27,
-                                "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED})  # N-F1 칸 추가
+                                "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED,  # N-F1 칸 추가
+                                "overCategories": []})  # 넘긴 카테고리 없음
         self.assertEqual(page["budget"]["engineVersion"], "temp-fallback-1")
 
     def test_friend_transfer_to_food_and_back(self):
@@ -1062,6 +1063,15 @@ class HomeBudgetTest(TestCase):
         self.tx(900_000, "FOOD", account=self.account)
         home = self.client.get("/api/home/").json()["budget"]
         self.assertEqual((home["livingPct"], home["livingLeft"]), (122, 0))
+
+    def test_over_categories_lists_budgeted_categories_past_budget(self):
+        from .models import BudgetItem
+        food = BudgetItem.objects.get(budget=self.budget, bucket="living", category_id="FOOD").allocated_amount
+        self.tx(900_000, "FOOD", account=self.account)   # 식비 사용 1,220,000원
+        self.tx(50_000, "BEAUTY", account=self.account)   # 예산 0원 칸은 알리지 않는다
+        home = self.client.get("/api/home/").json()["budget"]
+        self.assertEqual(home["overCategories"], [
+            {"category": "FOOD", "categoryName": "식비", "allocated": food, "spent": 1_220_000, "over": 1_220_000 - food}])
 
 
 class OldPolicyBudgetTest(HomeBudgetTest):

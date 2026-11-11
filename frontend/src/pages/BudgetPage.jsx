@@ -104,6 +104,8 @@ export default function BudgetPage() {
         )}
         {categories.map((c) => {
           const lock = lockOf(c)
+          // 예산을 넘긴 금액 (홈 알림과 같은 기준: 예산 0원 칸은 넘겼다고 보지 않는다). 넘기면 막대 색이 바뀐다
+          const over = c.allocated > 0 && c.spent > c.allocated ? c.spent - c.allocated : 0
           return (
             <div className="mc-catuse" key={c.category}>
               <div className="mc-row">
@@ -112,10 +114,10 @@ export default function BudgetPage() {
                   <LockIcon />
                 </button>
               </div>
-              <div className="mc-bar"><span style={{ width: `${pct(c.spent, c.allocated)}%` }}></span></div>
+              <div className={`mc-bar${over ? ' is-over' : ''}`}><span style={{ width: `${pct(c.spent, c.allocated)}%` }}></span></div>
               <div className="mc-row mc-catuse-n">
                 <span className="mc-muted">{won(c.spent)} / {won(c.allocated)} · {pct(c.spent, c.allocated)}%</span>
-                <strong>남은 {won(Math.max(c.allocated - c.spent, 0))}</strong>
+                {over ? <strong className="is-over">{won(over)} 초과</strong> : <strong>남은 {won(Math.max(c.allocated - c.spent, 0))}</strong>}
               </div>
             </div>
           )

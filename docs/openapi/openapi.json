@@ -17079,6 +17079,41 @@
                 "type": "integer",
                 "description": "이전 기준 예산의 주거·통신·여행·숙박 배정 합계 (N-F1). 0보다 크면 재추천 안내"
               },
+              "overCategories": {
+                "type": "array",
+                "description": "예산을 넘긴 카테고리 (홈 알림 줄). 쓴 돈이 배정을 넘은 카테고리만, 배정 0원은 제외. 많이 넘긴 순",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "category": {
+                      "type": "string"
+                    },
+                    "categoryName": {
+                      "type": "string"
+                    },
+                    "allocated": {
+                      "type": "integer",
+                      "description": "배정 금액"
+                    },
+                    "spent": {
+                      "type": "integer",
+                      "description": "이번 주기에 쓴 돈"
+                    },
+                    "over": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "description": "spent − allocated"
+                    }
+                  },
+                  "required": [
+                    "category",
+                    "categoryName",
+                    "allocated",
+                    "spent",
+                    "over"
+                  ]
+                }
+              },
               "outOfBudget": {
                 "type": "object",
                 "description": "예산 밖 지출 안내 (계산에 안 넣음)",
@@ -17125,7 +17160,8 @@
               "daily",
               "daysLeft",
               "outOfBudget",
-              "outOfBudgetAllocated"
+              "outOfBudgetAllocated",
+              "overCategories"
             ]
           }
         },
@@ -19676,7 +19712,7 @@
     "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
     "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
-    "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
+    "docs/api/home.md": "9b7d9f4b76acb1ef2551f743be019cc61cfca55be1d5e3e65a55d73bddd44f31",
     "docs/api/chat.md": "48c8e6326946c2279d50c1d7e98f5d2f2f72c3b841ec10d35259c1b11d5c7a9a",
     "docs/api/budgets.md": "c4b114b1a6d9d00a433efc0ff1034da994be7249a645fa7018ae746036cdfd28"
   }
