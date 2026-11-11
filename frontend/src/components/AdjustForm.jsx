@@ -13,19 +13,20 @@ export default function AdjustForm({ initial = {}, onSubmit, done = false }) {
   const initMan = initial.amount ? initial.amount / 10_000 : null                    // 원 → 만원
   const preset = AMOUNTS.includes(initMan) ? initMan : null
   const [amount, setAmount] = useState(preset)                                       // 버튼으로 고른 금액
-  const [custom, setCustom] = useState(preset == null && Number.isInteger(initMan) ? String(initMan) : '')  // 직접 입력
+  const [custom, setCustom] = useState(preset == null && Number.isSafeInteger(initial.amount) ? String(initial.amount) : '')  // 원 단위 직접 입력
   const [dir, setDir] = useState(initial.dir ?? null)
   const [error, setError] = useState('')
 
-  const picked = amount ?? (Number(custom) > 0 ? Number(custom) : null)
+  const picked = amount !== null ? amount * 10_000 : Number(custom)
 
   const submit = (e) => {
     e.preventDefault()
     if (!cat) return setError('카테고리를 골라 주세요.')
     if (!picked) return setError('금액을 골라 주세요.')
+    if (!Number.isSafeInteger(picked) || picked <= 0 || picked % 5_000 !== 0) return setError('금액은 5,000원 단위로 입력해 주세요.')
     if (!dir) return setError('늘릴지 줄일지 골라 주세요.')
     setError('')
-    onSubmit?.({ cat, amount: picked * 10_000, dir })  // 만원 → 원
+    onSubmit?.({ cat, amount: picked, dir })
   }
 
   return (
@@ -44,11 +45,12 @@ export default function AdjustForm({ initial = {}, onSubmit, done = false }) {
               onClick={() => { setAmount(a); setCustom(''); setError('') }}>{a}만원</button>
           ))}
           <label className="mc-cf-custom">
-            <input aria-label="직접 입력 (만원)" inputMode="numeric" placeholder="직접" type="text" value={custom}
+            <input aria-label="직접 입력 (원)" inputMode="numeric" placeholder="직접" type="text" value={custom}
               onChange={(e) => { setCustom(e.target.value.replace(/\D/g, '')); setAmount(null); setError('') }} />
-            <span>만원</span>
+            <span>원</span>
           </label>
         </div>
+        <p className="mc-note">기본 1만 원, 필요하면 5천 원 단위로 입력해 주세요.</p>
         <div className="mc-cf-line">
           <span>만큼</span>
           <div className="mc-cf-dir">

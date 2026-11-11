@@ -131,7 +131,9 @@ export default function BudgetPage() {
         )}
       </div>
 
-      <button type="button" className="mc-primary" onClick={() => navigate(PATHS.assistant)}>
+      <button type="button" className="mc-primary" onClick={() => navigate(PATHS.assistant, {
+        state: { budgetContext: { baseBudgetId: budget.budgetId, mode: budget.status === 'approved' ? 'NORMAL_ADJUSTMENT' : 'INITIAL_ADJUSTMENT' } },
+      })}>
         <Icon name="MessageCircle" /> 챗봇으로 예산 조정
       </button>
       <p className="mc-note">자물쇠를 건 카테고리는 조정할 때 그대로 두고, 최소 표시가 있는 카테고리는 그 금액 밑으로 줄이지 않아요. 예산 변경은 챗봇이 만든 조정안을 확인하고 승인해야 반영돼요.</p>

@@ -2,6 +2,7 @@
 from datetime import datetime, timezone
 import json
 import uuid
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -80,6 +81,32 @@ class MessageTest(TestCase):
         self.assertEqual(talk.user, self.user)
         again = self.client.get(f"/api/chat/conversations/{talk.pk}/").json()
         self.assertEqual([m["messageId"] for m in again["messages"]], [user_msg["messageId"], bot_msg["messageId"]])
+
+    def test_reloaded_turns_keep_order_when_clock_stops_or_moves_backwards(self):
+        from django.utils import timezone as clock
+        from datetime import timedelta
+
+        frozen = clock.now()
+        for engine in ("legacy", "router"):
+            for backwards in (False, True):
+                with self.subTest(engine=engine, backwards=backwards), override_settings(CHAT_ENGINE=engine, CHAT_LLM="fake"):
+                    cid, expected = None, []
+                    offset = (10 if engine == "router" else 0) + (5 if backwards else 0)
+                    ids = [uuid.UUID(int=offset + n) for n in (4, 3, 2, 1)]
+                    with mock.patch.object(ChatMessage._meta.get_field("message_id"), "_get_default", side_effect=ids):
+                        for turn in range(2):
+                            now = frozen - timedelta(seconds=turn if backwards else 0)
+                            with mock.patch("django.utils.timezone.now", return_value=now):
+                                response = self.send({"conversationId": cid, "choice": "budget"})
+                            self.assertEqual(response.status_code, 200, response.content)
+                            body = response.json()
+                            cid = body["conversationId"]
+                            expected.extend(m["messageId"] for m in body["messages"])
+                    restored = self.client.get(f"/api/chat/conversations/{cid}/").json()["messages"]
+                    self.assertEqual([m["messageId"] for m in restored], expected)
+                    stamps = list(ChatMessage.objects.filter(conversation_id=cid).order_by("created_at")
+                                  .values_list("created_at", flat=True))
+                    self.assertTrue(all(a < b for a, b in zip(stamps, stamps[1:])))
 
     def test_text_without_router_is_fallback_unknown_and_keeps_state(self):
         talk = Conversation.objects.create(user=self.user, active_agent="spending", slots={"category": "FOOD"})

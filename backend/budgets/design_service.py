@@ -94,13 +94,16 @@ def history_for_user(user, today):
     return result
 
 
-def _blocked(status, reason, selection=None):
+def _blocked(status, reason, selection=None, *, details=None):
     messages = {'needs_policy': '추천 설정을 준비 중이에요. 설정이 완료된 뒤 다시 시도해 주세요.',
                 'needs_data': '추천에 필요한 정보를 확인하지 못했어요. 연결 상태와 입력 정보를 확인해 주세요.',
                 'needs_upper_allocation_review': '현재 생활비로는 보호 조건을 모두 지키기 어려워요. 지킬 돈 배분을 다시 확인해 주세요.'}
     summary = ('추천 계산을 잠시 사용할 수 없어요. 잠시 후 다시 시도해 주세요.'
                if reason == 'ml_unavailable' else messages.get(status, '추천 예산을 만들지 못했어요.'))
-    return {'status': status, 'reason': reason, 'summary': summary,
+    evidence = {k: deepcopy(details[k]) for k in ('shortfall', 'funding_shortfall', 'funding_required',
+        'remaining_shortfall', 'spare_transfer', 'category', 'categories', 'system_floors', 'floor_ignored_locked')
+        if details is not None and k in details}
+    return {**evidence, 'status': status, 'reason': reason, 'summary': summary,
             'conflicts': [], '_design': {'selection': selection}}
 
 
@@ -169,7 +172,7 @@ def recommend(user, snapshot, available_spare, today, *, allow_external=False, s
             a_policy = initial_a_policy(policy['a'], inp, snapshot['etc'])
             engine = build_candidates(inp, ratios, policy=a_policy, reality_profile=reality)
             if engine['status'] != 'proposed':
-                return {**(engine.get('result') or _blocked(engine['status'], engine.get('reason'), selection)),
+                return {**(engine.get('result') or _blocked(engine['status'], engine.get('reason'), selection, details=engine)),
                         '_design': {'selection': selection}}
             chosen = next(c for c in engine['candidates'] if c['id'] == 'base')
             out, explanations = chosen['result'], chosen['explanations']
@@ -206,7 +209,7 @@ def recommend(user, snapshot, available_spare, today, *, allow_external=False, s
                 if llm_allowed:
                     llm['reason'] = 'forecast_band_required'
             if result['status'] != 'proposed':
-                blocked = _blocked(result['status'], result.get('reason'), selection)
+                blocked = _blocked(result['status'], result.get('reason'), selection, details=result)
                 shortfall = result.get('funding_shortfall')
                 if result['status'] == 'needs_upper_allocation_review' and type(shortfall) is int and shortfall > 0:
                     blocked['summary'] = f'여윳돈을 보태도 생활비가 {shortfall:,}원 부족해요. 지킬 돈 배분을 다시 확인해 주세요.'
@@ -227,7 +230,7 @@ def recommend(user, snapshot, available_spare, today, *, allow_external=False, s
         other_reserved=snapshot['etc'], other_minimum=snapshot.get('minimums', {}).get('ETC', 0),
         other_locked='ETC' in snapshot.get('locks', {}))
     if final['status'] != 'proposed':
-        return _blocked(final['status'], final['reason'], selection)
+        return _blocked(final['status'], final['reason'], selection, details=final)
     out, explanations, transfer = final['result'], final['explanations'], final['spare_transfer']
     checked = {**inp, 'target': final['funded_target']}
     check_result(checked, out)

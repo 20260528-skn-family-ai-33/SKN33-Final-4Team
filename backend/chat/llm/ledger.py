@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import threading
+import time
 from weakref import WeakValueDictionary
 from contextlib import contextmanager
 from pathlib import Path
@@ -86,7 +87,15 @@ class Ledger:
     def _write(self):
         temp = self.path.with_name(self.path.name + ".tmp")  # 다 쓴 뒤 바꿔 끼운다 (쓰다 멈춰도 장부가 깨지지 않게)
         temp.write_text(json.dumps(self.data), encoding="utf-8")
-        temp.replace(self.path)
+        # Windows 읽기 핸들이 교체를 잠시 막을 수 있다. 잠금을 유지하고 같은 내용을 게시한다.
+        for attempt in range(6):
+            try:
+                temp.replace(self.path)
+                return
+            except PermissionError as error:
+                if sys.platform != "win32" or getattr(error, "winerror", None) not in (5, 32, 33) or attempt == 5:
+                    raise
+                time.sleep(0.01 * 2 ** attempt)
 
     @contextmanager
     def _locked(self):

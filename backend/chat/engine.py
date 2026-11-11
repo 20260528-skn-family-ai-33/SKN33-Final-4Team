@@ -1,4 +1,4 @@
-"""새 챗봇 엔진 (MEMO 22 · 25절) — 라우터(run_turn) + 소비 분석 에이전트 + 예산 · 정책 '준비 중'. chat.api.messages 가 settings.CHAT_ENGINE
+"""새 챗봇 엔진 — 라우터(run_turn) + 소비 분석·예산 조정 에이전트. 정책은 준비 중. chat.api.messages 가 settings.CHAT_ENGINE
 = "router" 일 때만 쓴다 (기본 "legacy" = 기존 router.py · replies.py 그대로). 더미 실행(spending_fixture.service_settings)에서 켠다.
 
 기존 chat/api.py 와 같은 계약 · 같은 도구: 로그인 · @idempotent(뷰) · 본문 검사(_check_message_body) · 본인의 진행 중 대화만(_active_conversations) ·
@@ -11,6 +11,7 @@
 - 기준 날짜 = settings.CHAT_TODAY(고정) 또는 오늘, 해석 = settings.CHAT_LLM(fake · live) · CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER (chat/llm)
 """
 import json
+from copy import deepcopy
 from dataclasses import asdict
 import uuid
 from datetime import date, datetime, time
@@ -95,7 +96,7 @@ def _content(bot, turn):
     content = {"text": "\n".join(lead + lines), "choices": bot.get("choices", []), "lead": lead, "lines": lines,
                "sections": bot.get("sections", []), "notices": bot.get("notices", []), "turn": turn,
                "agent": bot["agent"], "inputs": bot["inputs"], "result": bot["result"]}
-    content.update({k: bot[k] for k in ("chart", "examples", "view") if bot.get(k)})
+    content.update({k: bot[k] for k in ("chart", "examples", "view", "budget_adjustment") if bot.get(k)})
     if getattr(settings, "CHAT_DEV_TRACE", False) and (bot.get("trace") or bot.get("entry")):
         # 개발용 분석 과정 — 더미 설정에서만 (chat.md 계약 칸 아님). entry = B 전 단계, 그 밖 = B 흐름
         content["dev_trace"] = {**(bot.get("trace") or {}), "entry": bot.get("entry")}
@@ -105,7 +106,7 @@ def _content(bot, turn):
 def _route(turn):
     """기존 응답의 route 칸: 실제로 답한 에이전트 · 범위 밖 · 불명확. fallback = 라우터 해석 실패"""
     d, r = turn["decision"], turn["result"] or {}
-    if r.get("status") == "failed" and r.get("error") in ("call", "call_limit"):  # 에이전트 해석 LLM 실패 · 상한 — 라우터 실패와 같이 (MEMO 25-12)
+    if r.get("status") == "failed" and r.get("error") in ("call", "call_failed", "call_limit"):  # 에이전트 해석 LLM 실패 · 상한 — 라우터 실패와 같이 (MEMO 25-12)
         return {"intent": "unknown", "slots": {}, "fallback": True}
     if turn["delivered"]:
         return {"intent": turn["delivered"][-1], "slots": {}, "fallback": False}
@@ -139,29 +140,38 @@ def today_and_as_of():
     return now.date(), now
 
 
-def answer(user, store, text=None, button=None):
+def answer(user, store, text=None, button=None, *, budget_adapter=None):
     """한 입력 → (render 결과, route). DB 를 잠그지 않는다 (가짜 · 실제 LLM 호출과 분석은 여기서)"""
     llm = reading()
+    from budgets.adjustment_service import AdjustmentAdapter
+    from .budget_adjustment import handler as budget_handler
+    today, as_of = today_and_as_of()
+    budget_adapter = budget_adapter or AdjustmentAdapter(user, today=today)
     agents = {"spending": partial(spending_agent.handle, store=store, complete=llm, user=user,
                                   # B 가설 확인(MEMO 26) — CHAT_EXPLAIN_PLAN 이 켜졌을 때 가설을 말한 설명 질문에만, 해석과 같은 LLM(장부 · 상한 공유)
                                   explain_plan=llm if getattr(settings, "CHAT_EXPLAIN_PLAN", False) else None,
                                   # 첫 조회 뒤 추가 판단 1회(MEMO 31) — CHAT_AGENT 가 켜졌을 때만. 가짜 해석도 정해 둔 판단으로 돈다
                                   agent_complete=llm if getattr(settings, "CHAT_AGENT", False) else None),
-              "budget": not_ready("budget"), "policy": not_ready("policy")}
-    today, as_of = today_and_as_of()
-    turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, today=today, as_of=as_of)
+              "budget": budget_handler(user, store, budget_adapter, llm, KEY), "policy": not_ready("policy")}
+    turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, server=budget_adapter, today=today, as_of=as_of)
     result = turn["result"] or {}
-    if "budget_adjust" in (result.get("reply") or {}).get("suggest", []):
-        # [예산 조정하기] 제안은 1차에서 숨긴다 (예산은 '준비 중'이라 눌러도 진행되지 않음, 22-7). 다른 제안은 그대로
-        kept = [k for k in result["reply"]["suggest"] if k != "budget_adjust"]
-        result["reply"] = {**{k: v for k, v in result["reply"].items() if k != "suggest"}, **({"suggest": kept} if kept else {})}
+    if result.get("error") == "budget_adjust_consent_required":
+        from budgets.ai_consent import ConsentRequired
+        raise ConsentRequired()
+    # 실패 시에도 소모한 호출 수와 한 번 조회한 ML 참조는 되돌리지 않는다.
+    budget_state = store.get_agent_state(KEY, "budget") or {}
+    if budget_adapter.llm_call_count and (budget_state or result.get("status") == "failed"):
+        budget_state["llm_call_count"] = budget_adapter.llm_call_count
+        if budget_adapter.reference_context is not None:
+            budget_state["reference_context"] = deepcopy(budget_adapter.reference_context)
+        store.save_agent_state(KEY, "budget", budget_state)
     bot = router_messages.render(turn) or {"lines": [], "choices": [], "notices": [], "review": []}
     bot.pop("review", None)  # 미정 정책 코드는 화면에 보내지 않는다
     bot["choices"] = [{"value": _value(c["value"]), "label": c["label"]} for c in bot["choices"]]
     # 담당 표시: 진행 중인 담당, 없으면 이번에 답한 에이전트 (문장으로 추측하지 않는다)
     answered = turn["delivered"][-1] if turn["delivered"] and result.get("status") not in (None, "failed", "not_mine") else None
     now = current_agent(store, KEY)
-    bot.update(agent=now or answered, inputs=["budget_form"] if now == "budget" else [],
+    bot.update(agent=now or answered, inputs=[],
                result=answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
     if getattr(settings, "CHAT_DEV_TRACE", False):
         bot["entry"] = _entry(result.get("decision"))
@@ -185,9 +195,9 @@ def _check_body(request):
     data = body_dict(request)
     choice = data.get("choice")
     if not (isinstance(choice, dict) or choice == "policy"):
-        conversation_id, text, feature = chat_api._check_message_body(request)
+        conversation_id, text, feature = chat_api._check_message_body(request, extra_fields=("budget_context",))
         return conversation_id, text, feature, None
-    reject_unknown_fields(data, {"conversation_id", "choice"})
+    reject_unknown_fields(data, {"conversation_id", "choice", "budget_context"})
     raw_id = data.get("conversation_id")
     if choice == "policy":
         return _conversation_id(raw_id, required=False), None, "policy", None
@@ -218,16 +228,43 @@ def _picked(talk, choice):
     return next((c["label"] for c in content.get("choices", []) if c["value"] == choice["value"]), None)
 
 
-def respond(request):
-    """chat.api.messages 가 CHAT_ENGINE = "router" 일 때 부른다 (인증 · @idempotent 는 그 뷰에 그대로).
-    {"conversationId": null | "<id>", "text": "…" | "choice": "spending" | "budget" | "policy" | {"value", "turn"}}
-    응답은 기존 봉투 + agent(지금 담당). 지난 선택지 409 stale_choice · 처리 중 상태가 바뀌면 409 conversation_busy (둘 다 저장 없음)"""
+def prepare(request):
+    """입력 검사·조회·LLM은 응답 기록 트랜잭션 밖에서 준비한다."""
     conversation_id, text, feature, choice = _check_body(request)
+    data = body_dict(request)
+    entry = data.get("budget_context")
+    if "budget_context" in data:
+        recovery = isinstance(entry, dict) and entry.get('mode') == 'DESIGN_RECOVERY'
+        id_field = 'source_task_id' if recovery else 'base_budget_id'
+        if (not isinstance(entry, dict) or set(entry) != {id_field, "mode"}
+                or entry.get("mode") not in {"INITIAL_ADJUSTMENT", "NORMAL_ADJUSTMENT", 'DESIGN_RECOVERY'} or feature != "budget"):
+            raise ValidationError({"budget_context": ["예산 조정 시작 시 기준 예산과 모드를 보내 주세요."]})
+        try:
+            entry = {**entry, id_field: str(uuid.UUID(str(entry[id_field])))}
+        except (ValueError, TypeError, AttributeError):
+            raise ValidationError({"budget_context": ["기준 예산 번호가 올바르지 않아요."]})
+        from django.shortcuts import get_object_or_404
+        from budgets.models import Budget
+        if not recovery:
+            get_object_or_404(Budget, pk=entry["base_budget_id"], user=request.user)
     talk = None
     if conversation_id is not None:
         talk = chat_api._active_conversations(request.user).filter(pk=conversation_id).first()
         if talk is None:
             raise ValidationError({"conversation_id": [chat_api.CONVERSATION_ERROR]})
+    today, _ = today_and_as_of()
+    recovery_adapter = None
+    if entry and entry['mode'] == 'DESIGN_RECOVERY':
+        from budgets.design_recovery import DesignRecoveryAdapter
+        recovery_adapter = DesignRecoveryAdapter(request.user, entry['source_task_id'], today)
+        bound = recovery_adapter.task.conversation_id
+        if bound is not None:
+            if talk is not None and talk.pk != bound:
+                raise ValidationError({'budget_context': ['이미 연결된 조정 대화를 열어 주세요.']})
+            talk = chat_api._active_conversations(request.user).filter(pk=bound).first()
+            if talk is None:
+                from budgets.design_recovery import RecoveryExpired
+                raise RecoveryExpired()
     said = text if text is not None else FEATURES.get(feature)
     if choice is not None:
         said = _picked(talk, choice)
@@ -236,9 +273,38 @@ def respond(request):
         feature = choice["value"] if choice["value"] in FEATURES else None  # 의도 선택 · 범위 밖 답변의 기능 선택지
         text = None if feature else said
     store = ConversationStore.load(talk and talk.slots)
-    bot, route = answer(request.user, store, text=text, button=feature)
+    state = store.get_agent_state(KEY, "budget") or {}
+    if entry:
+        if state.get("entry_context") != entry and any(state.get(k) for k in ("requests", "proposal", "pending")):
+            return Response({"error": {"code": "not_ready", "message": "진행 중인 조정을 취소한 뒤 새 예산을 선택해 주세요."}}, status=409)
+        state["entry_context"] = entry
+        store.save_agent_state(KEY, "budget", state)
+    from budgets.adjustment_service import AdjustmentAdapter
+    if state.get('entry_context', {}).get('mode') == 'DESIGN_RECOVERY' and feature in (None, 'budget'):
+        from budgets.design_recovery import DesignRecoveryAdapter
+        adapter = recovery_adapter or DesignRecoveryAdapter(request.user, state['entry_context']['source_task_id'], today)
+        bot, route = adapter.reply(store, KEY, text)
+        return talk, store, adapter, bot, route, said
+    if state.get('entry_context', {}).get('mode') == 'DESIGN_RECOVERY':
+        store.save_agent_state(KEY, 'budget', {})
+        store.set_active(KEY, None)
+        state = {}
+    adapter = AdjustmentAdapter(request.user, conversation=talk, today=today, **(state.get("entry_context") or {}))
+    bot, route = answer(request.user, store, text=text, button=feature, budget_adapter=adapter)
+    return talk, store, adapter, bot, route, said
 
+
+def respond(request):
+    """준비한 답을 회원 잠금·대화 rev 검수 후 저장한다. 헤더 없는 요청도 같은 준비 경로를 쓴다."""
+    prepared = getattr(request, "_prepared_chat_turn", None)
+    if prepared is None:
+        prepared = prepare(request)
+    if isinstance(prepared, Response):
+        return prepared
+    talk, store, adapter, bot, route, said = prepared
     with transaction.atomic():
+        from budgets.api import lock_user
+        lock_user(request.user)
         if talk is None:
             talk = Conversation.objects.create(user=request.user)
         else:
@@ -247,12 +313,9 @@ def respond(request):
                 raise ValidationError({"conversation_id": [chat_api.CONVERSATION_ERROR]})
             if (talk.slots or {}).get("rev", 0) != store.rev:  # 같은 대화의 다른 메시지가 먼저 저장됨
                 return Response(BUSY, status=409)
-        mine = ChatMessage.objects.create(
-            user=request.user, conversation=talk, role=ChatMessage.Role.USER, content_type=ChatMessage.ContentType.TEXT,
-            content={"text": said, "choices": []})  # 선택지는 화면에 보인 이름으로 남긴다 (기존과 같음)
-        reply = ChatMessage.objects.create(
-            user=request.user, conversation=talk, role=ChatMessage.Role.BOT, content_type=ChatMessage.ContentType.TEXT,
-            content=_content(bot, store.rev + 1))
+        adapter.flush(talk)
+        mine, reply = chat_api.save_turn(talk, said, _content(bot, store.rev + 1),
+                                         content_type=ChatMessage.ContentType.TEXT)
         talk.slots, talk.active_agent = store.dump(), store.get_active(KEY)
         talk.save(update_fields=["slots", "active_agent"])
     return Response({"conversation_id": talk.conversation_id, "route": route, "agent": bot["agent"],

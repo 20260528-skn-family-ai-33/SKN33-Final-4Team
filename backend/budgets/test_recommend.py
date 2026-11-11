@@ -17,7 +17,7 @@ from users.models import CategoryMinimum, CategoryPriority, FinancialProfile, Id
 
 from .models import Budget, BudgetCategorySetting, BudgetCycle, Category
 from .recommend import (
-    ALLOCATION_CODES, CATEGORY_CODES, FALLBACK_RATIOS, POLICY_VERSION, SUMMARY, EngineCheckFailed,
+    ALLOCATION_CODES, CATEGORY_CODES, ENGINE_VERSION, FALLBACK_RATIOS, POLICY_VERSION, SUMMARY, EngineCheckFailed,
     budget_input_hash, check_result, hash_snapshot, recommend_category_budgets,
 )
 
@@ -38,8 +38,9 @@ class CategoryRecommendationTest(SimpleTestCase):
         inp = engine_input()
         original = copy.deepcopy(inp)
         out = recommend_category_budgets(inp)
-        self.assertNotIn("unallocated", out)
+        self.assertEqual(out["unallocated"], 0)
         check_result(inp, out)
+        check_result(inp, {key: value for key, value in out.items() if key != "unallocated"})
         check_result(inp, {**out, "unallocated": 0})
         out["allocations"]["FOOD"] -= 100_000
         with self.assertRaises(EngineCheckFailed):
@@ -122,7 +123,9 @@ class CategoryRecommendationTest(SimpleTestCase):
         inp = engine_input(1_060_007, locks={"FOOD": 333_333})
         out = recommend_category_budgets(inp)
         self.assertEqual(out["allocations"]["FOOD"], 333_333)
-        self.assertEqual(out["allocations"]["CULTURE_LEISURE"] % 10_000, 6_674)
+        self.assertEqual(out["allocations"]["CULTURE_LEISURE"] % 10_000, 5_000)
+        self.assertEqual(out["unallocated"], 1_674)
+        self.assertTrue(all(amount % 5_000 == 0 for code, amount in out["allocations"].items() if code != "FOOD"))
         check_result(inp, out)
 
     def test_minimums_and_locks_over_target_are_infeasible(self):
@@ -156,7 +159,7 @@ class CategoryRecommendationTest(SimpleTestCase):
         for index in range(300):
             minimums = {code: rng.randrange(0, 200_000) for code in ALLOCATION_CODES}  # 11/3: 배분 대상만
             locks = {code: minimums[code] + rng.randrange(0, 100_000) for code in ALLOCATION_CODES[:index % len(ALLOCATION_CODES)]}
-            needed = sum(locks.get(code, minimums[code]) for code in ALLOCATION_CODES)
+            needed = sum(locks.get(code, (minimums[code] + 4_999) // 5_000 * 5_000) for code in ALLOCATION_CODES)
             inp = engine_input(needed + rng.randrange(0, 1_000_000), minimums=minimums, locks=locks)
             original = copy.deepcopy(inp)
             out = recommend_category_budgets(inp)
@@ -306,7 +309,7 @@ class RecommendAPITest(TestCase):
         self.assertIsNone(task.error_code)
         budget = Budget.objects.get(task=task)
         self.assertEqual((budget.status, budget.version_no, budget.funding_amount), ("validated", 5, 2_800_000))
-        self.assertEqual((budget.engine_version, budget.policy_version), ("temp-fallback-1", POLICY_VERSION))
+        self.assertEqual((budget.engine_version, budget.policy_version), (ENGINE_VERSION, POLICY_VERSION))
         self.assertIsNotNone(budget.validated_at)
         self.assertEqual(task.input_hash, budget.input_hash)
         self.assertEqual(task.input_hash, budget_input_hash(self.user, self.cycle))
@@ -314,8 +317,9 @@ class RecommendAPITest(TestCase):
                                        "locks_released": []})
         living = dict(budget.items.filter(bucket="living").values_list("category_id", "allocated_amount"))
         self.assertEqual(set(living), set(ALLOCATION_CODES) | {"ETC"})  # 11/3: 예산 밖 카테고리 줄은 만들지 않는다
-        self.assertEqual(sum(living.values()), 1_120_000)
+        self.assertEqual(sum(living.values()), 1_118_333)
         self.assertEqual(living["FOOD"], 333_333)
+        self.assertTrue(all(amount % 5_000 == 0 for code, amount in living.items() if code != "FOOD"))
         self.assertGreaterEqual(living["BEAUTY"], 155_000)
         self.assertEqual(living["ETC"], 0)
         fixed = budget.items.filter(bucket="fixed")
@@ -325,7 +329,7 @@ class RecommendAPITest(TestCase):
         self.assertFalse(fixed.filter(category_detail="card_reserved").exists())
         self.assertEqual(budget.items.get(bucket="savings").allocated_amount, 610_000)
         self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 200_000)
-        self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 100_000)
+        self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 101_667)
         self.assertEqual(budget.items.exclude(user=self.user).count(), 0)
         for obj in previous + [old, other]:
             obj.refresh_from_db()
@@ -559,7 +563,7 @@ class RecommendAPITest(TestCase):
         self.minimum("FOOD", 1_120_001)
         task = self.task(self.post())
         self.assertEqual(task.result["outcome"], "infeasible")
-        self.assertEqual(task.result["conflicts"], [{"type": "minimums_over_living", "shortfall": 1}])
+        self.assertEqual(task.result["conflicts"], [{"type": "minimums_over_living", "shortfall": 5_000}])
         self.assertEqual(task.status, "succeeded")
         self.assertFalse(Budget.objects.exists())
 
