@@ -253,7 +253,7 @@ class ServiceChoiceTest(ServiceChatBase):
         cid, content = out.json()["conversationId"], self.bot(out)
         for label in ("경기도", "화성시", "동탄구"):
             content = self.bot(self.pick("A", cid, content, label))
-        self.assertEqual(content["lines"], [policy_agent.ASK_FIELD])
+        self.assertEqual(content["lines"], [policy_agent.ASK_TOPIC])
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])  # 결과 카드 (제목 + 점 목록)
         self.assertEqual((content["agent"], content["result"], content["notices"][0]), ("policy", True, policy_agent.NOTICE))
@@ -269,7 +269,7 @@ class ServiceChoiceTest(ServiceChatBase):
         content = self.bot(self.pick("A", cid, content, policy_agent.SAVED_LIST))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])
         again = self.bot(self.send("A", choice="policy"))  # 새 대화 — 지역을 묻지 않는다
-        self.assertEqual(again["lines"], [policy_agent.ASK_FIELD])
+        self.assertEqual(again["lines"], [policy_agent.ASK_TOPIC])
         spending = self.send("A", cid, text="이번 달 얼마 썼어?")  # 정책 담당이 not_mine → 라우터가 다시 고른다
         self.assertEqual(spending.json()["agent"], "spending")
 
@@ -300,7 +300,7 @@ class ServiceChoiceTest(ServiceChatBase):
         spending = self.send("A", cid, text="이번 달 얼마 썼어?")
         self.assertEqual(spending.json()["agent"], "spending")
         back = self.send("A", cid, choice="policy")
-        self.assertEqual((back.json()["agent"], self.bot(back)["lines"]), ("policy", [policy_agent.ASK_FIELD]))
+        self.assertEqual((back.json()["agent"], self.bot(back)["lines"]), ("policy", [policy_agent.ASK_TOPIC]))
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])
 

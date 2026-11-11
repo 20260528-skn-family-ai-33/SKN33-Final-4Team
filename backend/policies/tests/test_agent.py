@@ -69,7 +69,7 @@ class RegionTest(TestCase):
         self.assertEqual(len(talk.labels), 16)
         self.assertIn("전남광주통합특별시", talk.labels)
 
-    def test_시도_시_구_순서로_좁히고_분야를_묻는다(self):
+    def test_시도_시_구_순서로_좁히고_무엇을_찾을지_말로_묻는다(self):
         talk = Talk()
         talk.send(None, mode="start")
         talk.send("경기도")
@@ -78,8 +78,9 @@ class RegionTest(TestCase):
         talk.send("화성시")
         self.assertIn("동탄구", talk.labels)
         result = talk.send("동탄구")
-        self.assertEqual((result["reply"]["lines"], talk.state["region"]), ([agent.ASK_FIELD], DONGTAN))
-        self.assertEqual(talk.labels, list(agent.FIELDS))
+        self.assertEqual((result["status"], result["reply"]["lines"], talk.state["region"]),
+                         ("awaiting_input", [agent.ASK_TOPIC], DONGTAN))
+        self.assertEqual(talk.labels, [])  # 분야 버튼 없음 (멘토 요청 ④)
 
     def test_버튼_대신_지명을_써도_고른다(self):
         talk = Talk()
@@ -107,13 +108,13 @@ class AnswerTest(TestCase):
         talk = Talk()
         talk.lives_in_dongtan()
         result = talk.send("월세 지원 있어?")
-        self.assertEqual(result["reply"]["lines"], ["경기도 화성시 동탄구 기준으로 찾은 청년 정책이에요."])
+        self.assertEqual(result["reply"]["lines"], ["경기도 화성시 동탄구 기준으로 찾은 청년 정책이에요.", agent.OTHER_TOPIC])
         self.assertEqual(titles(result), ["1. 청년 월세 지원"])
         self.assertEqual(rows(result), ["신청: 상시", "지원: 월 20만 원", "확인할 것: 소득(중위소득 150% 이하)",
                                         "관련: 월세", "링크: https://example.org/rent"])
         self.assertEqual(result["reply"]["notices"][0], agent.NOTICE)
         self.assertEqual(talk.state["last"], ["RENT"])
-        self.assertEqual(talk.labels, ["1번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
+        self.assertEqual(talk.labels, ["1번 저장", agent.CHANGE_REGION])
 
     def test_자격_불충족과_같은_이름_재등록은_뺀다(self):
         add("OLD", vector=near(1), plcyNm="청년 월세 지원")
@@ -149,15 +150,33 @@ class AnswerTest(TestCase):
 
 
 class FlowTest(TestCase):
-    def test_막연하면_분야를_묻고_고른_분야로_찾는다(self):
+    def test_막연하면_묻지_않고_취업_상태로_고른_분야로_맞춤_추천(self):
+        """멘토 요청 ④: 분야 버튼 없이. LLM 이 분야를 못 짐작(가짜 모드)하면 코드가 취업 상태로 고른다 (PERSON = 월급 → 재직)"""
         add("RENT", vector=near(1), plcyNm="청년 월세 지원")
         talk = Talk(answer=said(needs=(), vague=True))
         talk.lives_in_dongtan()
         result = talk.send("받을 수 있는 돈 없어?")
-        self.assertEqual((result["status"], result["reply"]["lines"]), ("awaiting_input", [agent.ASK_FIELD]))
-        result = talk.send("월세 · 주거")
         self.assertEqual(result["status"], "replied")
-        self.assertIn("관련: 월세", rows(result))
+        self.assertEqual(result["reply"]["lines"][0], agent.AUTO_LEAD.format(fields="월세 · 주거, 저축 · 자산, 생활비"))
+        self.assertEqual(titles(result), ["1. 청년 월세 지원"])
+        self.assertNotIn(agent.OTHER_FIELD, talk.labels)
+
+    def test_LLM_이_짐작한_분야로_맞춤_추천(self):
+        add("LIVING", vector=near(1), plcyNm="청년 생활 지원금", plcyKywdNm="생활비")
+        talk = Talk(answer=said(needs=(), vague=True), plan=mock.Mock(return_value=chose("search", fields=["living"])))
+        talk.lives_in_dongtan()
+        result = talk.send("나도 청년인데 받을 수 있는 돈 없어?")
+        self.assertEqual(result["reply"]["lines"][0], agent.AUTO_LEAD.format(fields="생활비"))
+        self.assertIn("관련: 생활비", rows(result))
+
+    def test_예전_대화의_분야_버튼도_찾는다(self):
+        """11-12 전에 시작한 대화 상태에 분야 질문이 남아 있어도 그 버튼 이름으로 찾는다"""
+        add("RENT", vector=near(1), plcyNm="청년 월세 지원")
+        talk = Talk()
+        talk.lives_in_dongtan()
+        talk.store.save_agent_state(CID, "policy", {**talk.state, "ask": {
+            "kind": "field", "options": {"월세 · 주거": "월세 · 주거"}}})
+        self.assertEqual(titles(talk.send("월세 · 주거")), ["1. 청년 월세 지원"])
 
     def test_문장_속_시군구는_묻지_않고_그_지역으로_찾고_사는_곳은_그대로(self):
         """멘토 요청: 질문에 지역이 있으면 그 지역으로 바로 찾는다. 사는 곳과 달라도 확인 버튼 없음 · 이번 검색에만"""
@@ -243,8 +262,8 @@ class FailTest(TestCase):
     def test_지역_질문에_엉뚱한_답이면_버튼을_다시_보인다(self):
         talk = Talk()
         talk.lives_in_dongtan()
-        talk.send(None)  # 분야 질문 중 기능 버튼 → 사는 곳은 알아서 분야를 묻는다
-        self.assertEqual(talk.last["reply"]["lines"], [agent.ASK_FIELD])
+        talk.send(None)  # 기능 버튼 → 사는 곳은 알아서 무엇을 찾을지 말로 묻는다
+        self.assertEqual(talk.last["reply"]["lines"], [agent.ASK_TOPIC])
         talk.send("경기도")  # 분야 질문에 지명을 쓰면 새 문장으로 읽는다 → 이번엔 지역 질문을 직접 만든다
         talk.store.save_agent_state(CID, "policy", {**talk.state, "ask": {
             "kind": "region", "options": {"경기도": "41000"}, "codes": ["41000"], "text": None, "needs": None, "home": True}})
@@ -265,10 +284,10 @@ class SaveTest(TestCase):
         result = self.talk.send("2번 저장")
         self.assertEqual((result["status"], result["save_policies"]), ("replied", ["P2"]))
         self.assertEqual(result["reply"]["lines"], [agent.SAVED.format(name="정책 2")])
-        self.assertEqual(self.talk.labels, ["1번 저장", "3번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
+        self.assertEqual(self.talk.labels, ["1번 저장", "3번 저장", agent.CHANGE_REGION])
         self.assertEqual(self.talk.state["saved"], ["P2"])
         self.talk.send("1번 저장")
-        self.assertEqual(self.talk.labels, ["3번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
+        self.assertEqual(self.talk.labels, ["3번 저장", agent.CHANGE_REGION])
 
     def test_저장한_칸이_없는_예전_상태도_읽는다(self):
         old = {k: v for k, v in self.talk.state.items() if k != "saved"}  # 저장 기능 전에 시작한 대화
@@ -312,14 +331,14 @@ class MemberTest(TestCase):
         talk.lives_in_dongtan()
         talk.send("월세 지원 있어?")
         self.assertEqual(talk.labels, ["1번 저장", "2번 저장", agent.SAVED_LIST, "다음에도 동탄구로 찾기",
-                                       agent.OTHER_FIELD, agent.CHANGE_REGION])
+                                       agent.CHANGE_REGION])
 
     def test_가입_지역은_대화에서_처음_한_번_확인하고_예면_그_지역으로(self):
         """멘토 요청 ②: 지역 없이 물으면 "가입 지역(…)으로 찾으시는 거 맞나요?" — 이 대화에서 처음 한 번만"""
         from policies import profiles
         profiles.remember(self.user, DONGTAN)  # 온보딩에서 고른 지역
         talk = self.talk()
-        self.assertEqual(talk.send(None, mode="start")["reply"]["lines"], [agent.ASK_FIELD])  # 지역을 묻지 않는다
+        self.assertEqual(talk.send(None, mode="start")["reply"]["lines"], [agent.ASK_TOPIC])  # 지역을 묻지 않는다
         result = talk.send("월세 지원 있어?")
         self.assertEqual((result["reply"]["lines"], talk.labels),
                          ([agent.CONFIRM_HOME.format(name="경기도 화성시 동탄구")], [agent.YES, agent.NO]))
@@ -385,8 +404,8 @@ class MemberTest(TestCase):
         self.assertEqual(talk.send("저장한 정책")["reply"]["lines"], [agent.SAVED_NEED_LOGIN])
 
 
-def chose(action, number=None, topics=()):
-    return json.dumps({"action": action, "number": number, "topics": list(topics)})
+def chose(action, number=None, topics=(), fields=()):
+    return json.dumps({"action": action, "number": number, "topics": list(topics), "fields": list(fields)})
 
 
 class PlannerTest(TestCase):
@@ -441,7 +460,7 @@ class PlannerTest(TestCase):
         talk = Talk(plan=mock.Mock(return_value=chose("detail", None, ["support"])))
         talk.lives_in_dongtan()
         result = talk.send("그거 얼마 줘?")
-        self.assertEqual((result["reply"]["lines"], talk.labels), ([agent.NO_TARGET, agent.ASK_FIELD], list(agent.FIELDS)))
+        self.assertEqual((result["reply"]["lines"], talk.labels), ([agent.NO_TARGET, agent.ASK_TOPIC], []))
 
     def test_LLM_이_실패하거나_모양이_틀리면_규칙으로(self):
         for broken in (RuntimeError("network"), None):
@@ -458,15 +477,19 @@ class PlannerTest(TestCase):
         from policies import planner
         from policies.reading import Reading
         read, shown = Reading(needs=[], place=None, vague=False), [(1, "청년 월세 지원")]
-        for wrong in ('{"action": "detail", "number": "1", "topics": []}',  # 번호 자리에 글자
-                      '{"action": "detail", "number": true, "topics": []}',  # 참/거짓
-                      '{"action": "detail", "number": 1, "topics": ["money"]}',  # 모르는 항목
-                      '{"action": "detail", "number": 1, "topics": [], "extra": 1}',  # 모르는 칸
-                      '{"action": "detail", "number": 1}',  # 빠진 칸
+        for wrong in ('{"action": "detail", "number": "1", "topics": [], "fields": []}',  # 번호 자리에 글자
+                      '{"action": "detail", "number": true, "topics": [], "fields": []}',  # 참/거짓
+                      '{"action": "detail", "number": 1, "topics": ["money"], "fields": []}',  # 모르는 항목
+                      '{"action": "search", "number": null, "topics": [], "fields": ["money"]}',  # 모르는 분야
+                      '{"action": "ask_field", "number": null, "topics": [], "fields": []}',  # 없앤 행동 (11-12)
+                      '{"action": "detail", "number": 1, "topics": [], "fields": [], "extra": 1}',  # 모르는 칸
+                      '{"action": "detail", "number": 1, "topics": []}',  # 빠진 칸
                       '번호는 1번이에요'):  # JSON 이 아님
             self.assertIsNone(planner.ask("1번 알려줘", read, shown, lambda system, user, w=wrong: w), wrong)
         good = planner.ask("1번 알려줘", read, shown, lambda system, user: chose("detail", 1, ["support"]))
-        self.assertEqual(good, ("detail", 1, ["support"]))
+        self.assertEqual(good, ("detail", 1, ["support"], []))
+        auto = planner.ask("돈 없어?", read, shown, lambda system, user: chose("search", fields=["living", "living", "job", "mind", "saving"]))
+        self.assertEqual(auto, ("search", None, list(planner.DEFAULT_TOPICS), ["living", "job", "mind"]))  # 겹침 빼고 3개까지
 
 
 def kept(*numbers):
@@ -497,7 +520,7 @@ class ReviewTest(TestCase):
         self.check.return_value = kept()
         result = self.talk.send("자격증 시험비가 너무 비싸")
         self.assertEqual((result["status"], titles(result)), ("replied", []))
-        self.assertTrue(result["reply"]["lines"][0].endswith("찾지 못했어요. 다른 분야나 지역으로 찾아볼까요?"))
+        self.assertEqual(result["reply"]["lines"], [agent.NONE_FOUND.format(region="경기도 화성시 동탄구")])
 
     def test_후보_밖_번호는_무시하고_실패하면_거르지_않는다(self):
         self.check.return_value = kept(1, 99)
@@ -506,9 +529,11 @@ class ReviewTest(TestCase):
             self.check.return_value = broken
             self.assertEqual(len(titles(self.talk.send("자격증 시험비"))), 3)  # 걸러지지 않은 검색 결과 그대로
 
-    def test_분야_버튼으로_찾을_때는_분야_문장으로_본다(self):
-        self.talk.send("교육 · 직업훈련")  # 지역을 고른 뒤 분야 버튼이 떠 있다
-        self.assertEqual(json.loads(self.check.call_args[0][1])["문장"], agent.FIELDS["교육 · 직업훈련"].query)
+    def test_맞춤_추천은_원문과_고른_분야를_함께_본다(self):
+        self.talk.complete.return_value = said(needs=(), vague=True)
+        self.talk.send("받을 수 있는 거 없나")
+        self.assertEqual(json.loads(self.check.call_args[0][1])["문장"],
+                         "받을 수 있는 거 없나 (고른 분야: 월세 · 주거, 저축 · 자산, 생활비)")
 
 
 class ButtonOrderTest(TestCase):
@@ -525,13 +550,13 @@ class ButtonOrderTest(TestCase):
         talk.store.save_agent_state = like_jsonb
         talk.lives_in_dongtan()
         talk.send("월세 지원 있어?")
-        order = ["1번 저장", "2번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION]
+        order = ["1번 저장", "2번 저장", agent.CHANGE_REGION]
         self.assertEqual(talk.labels, order)
         talk.plan.return_value = chose("detail", 1, ["support"])
         talk.send("1번 얼마 줘?")
         self.assertEqual(talk.labels, order)
         talk.send("2번 저장")
-        self.assertEqual(talk.labels, ["1번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
+        self.assertEqual(talk.labels, ["1번 저장", agent.CHANGE_REGION])
 
 
 class ReviewTest97(TestCase):
@@ -572,12 +597,29 @@ class ReviewTest97(TestCase):
         self.assertEqual(titles(result), ["청년 취업 지원"])  # 하나뿐이라 그 정책 (예전 월세 정책이 아니다)
         self.assertNotIn("1번 저장", talk.labels)  # 이미 저장한 정책
 
-    def test_5_대화에서_말한_취업_준비는_분야_버튼_뒤에도_쓴다(self):
+    def test_5_대화에서_말한_취업_준비는_뒤의_질문에도_쓴다(self):
         add("JOBLESS", vector=near(1), plcyNm="미취업 청년 구직 지원", jobCd="0013003")
         talk = Talk(answer=said(needs=(), vague=True))  # PERSON 은 월급 정보가 있다 → 그냥 두면 재직자
         talk.lives_in_dongtan()
-        self.assertEqual(talk.send("취업 준비 중인데 뭐 받을 거 없어?")["reply"]["lines"], [agent.ASK_FIELD])
-        self.assertEqual(titles(talk.send("취업 · 일자리")), ["1. 미취업 청년 구직 지원"])
+        result = talk.send("취업 준비 중인데 뭐 받을 거 없어?")  # 맞춤 추천 분야도 미취업 기본값
+        self.assertEqual(result["reply"]["lines"][0], agent.AUTO_LEAD.format(fields="취업 · 일자리, 생활비, 교육 · 직업훈련"))
+        self.assertEqual(titles(result), ["1. 미취업 청년 구직 지원"])
+        talk.complete.return_value = said()
+        self.assertEqual(titles(talk.send("월세 지원도 있어?")), ["1. 미취업 청년 구직 지원"])  # 문장에 없어도 미취업
+
+    def test_7_취업_상태를_고쳐_말하면_바꾼다(self):
+        """나은 님 재리뷰 (931579a): '무직' 뒤에 '회사 다녀'로 정정하면 재직자로 다시 판단"""
+        add("JOBLESS", vector=near(1), plcyNm="미취업 청년 지원", jobCd="0013003")
+        add("WORKER", vector=near(2), plcyNm="재직 청년 지원", jobCd="0013001")
+        talk = Talk(user=SimpleNamespace(financial_profile=SimpleNamespace(
+            birth_date=date(1999, 3, 1), gender="male", monthly_take_home_income=None)))  # 월급 정보 없음
+        talk.lives_in_dongtan()
+        self.assertEqual(titles(talk.send("지금 무직인데 지원 있어?")), ["1. 미취업 청년 지원"])
+        result = talk.send("아까 잘못 말했어. 지금 회사 다니고 월급 받고 있어. 재직자 지원 찾아줘")
+        self.assertEqual(titles(result), ["1. 재직 청년 지원"])
+        self.assertEqual(talk.state["job"], "employed")
+        talk.store.save_agent_state(CID, "policy", {**{k: v for k, v in talk.state.items() if k != "job"}, "jobless": True})
+        self.assertEqual(titles(talk.send("월세 지원 있어?")), ["1. 미취업 청년 지원"])  # 예전 상태(jobless: True)도 읽는다
 
     def test_6_지역을_묻는_중에도_소비_질문은_다른_담당으로(self):
         talk = Talk()

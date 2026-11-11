@@ -4,7 +4,8 @@
 LLM 이 실패하면 규칙으로 돌아간다. handle() 의 반복문 · 도구(tools.py) · 답변 모양은 같이 쓴다.
 
 흐름: (생년월일 확인) → 문장 읽기(LLM 1회) → 찾을 지역: 문장 속 지역(이번 검색에만) > 사는 지역(저장해 둔 지역) > 지역 버튼 →
-막연하면 분야 버튼 → 검색 · 자격 → 추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] …
+막연하면 맞춤 추천(분야는 LLM 이 짐작, 못 하면 취업 상태로 코드가 고름 — 멘토 요청 ④) → 검색 · 자격 → 돌아보기 →
+추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] [지역 바꾸기]. 분야 버튼은 없다 (기능 버튼으로 오면 말로 묻는다)
 - 저장 · 지역 기억은 핸들러가 DB 에 쓰지 않고 save_policies · save_profile 로 돌려준다 (엔진이 대화 저장 트랜잭션에서 쓴다)
 - 사실(정책명 · 기간 · 지원 내용 · 링크 · 자격)은 모두 DB 값 · 코드 계산이다. 1차 추천 이유는 찾은 키워드로 코드가 쓴다 (LLM 이유는 다음)
 - 버튼은 이름이 다음 문장으로 들어온다. 질문할 때 {이름: 값}을 상태에 남겨 두고 같은 이름이면 그 값을 쓴다
@@ -24,16 +25,20 @@ CANCEL_WORDS = {"취소", "됐어", "그만"}  # 라우터(chat.router_core.CANC
 MAX_STEPS = 4  # 한 입력에서 decide() 를 부르는 최대 횟수 (읽기 → 지역 고르기 → 다시 정하기 …)
 SHOW = 3
 NOTICE = "자격 확정이 아니에요. 공고 원문으로 확인해 주세요."
-# 막연할 때 묻는 분야 (코드가 정한 검색 문장 · 키워드). 8단계에서는 LLM 이 되묻기를 고른다
+# 맞춤 추천 분야 (코드 → 이름, 검색 문장 · 키워드). 막연한 문장이면 LLM(planner)이 코드를 고르고 검색은 이 값으로 한다
 FIELDS = {
-    "월세 · 주거": Need("청년 월세 주거비 지원", ["월세", "주거"]),
-    "취업 · 일자리": Need("청년 취업 구직 지원", ["취업", "구직"]),
-    "교육 · 직업훈련": Need("청년 직업훈련 교육 지원", ["직업훈련", "교육"]),
-    "생활비": Need("청년 생활비 생계 지원", ["생활비", "생계"]),
-    "저축 · 자산": Need("청년 저축 자산형성 지원", ["저축", "자산형성"]),
-    "창업": Need("청년 창업 지원", ["창업"]),
-    "마음 건강": Need("청년 심리상담 마음건강 지원", ["심리", "상담"]),
+    "housing": ("월세 · 주거", Need("청년 월세 주거비 지원", ["월세", "주거"])),
+    "job": ("취업 · 일자리", Need("청년 취업 구직 지원", ["취업", "구직"])),
+    "training": ("교육 · 직업훈련", Need("청년 직업훈련 교육 지원", ["직업훈련", "교육"])),
+    "living": ("생활비", Need("청년 생활비 생계 지원", ["생활비", "생계"])),
+    "saving": ("저축 · 자산", Need("청년 저축 자산형성 지원", ["저축", "자산형성"])),
+    "startup": ("창업", Need("청년 창업 지원", ["창업"])),
+    "mind": ("마음 건강", Need("청년 심리상담 마음건강 지원", ["심리", "상담"])),
 }
+FIELD_BY_LABEL = {label: code for code, (label, _) in FIELDS.items()}  # 예전 대화 상태의 분야 버튼 이름 (11-12 전)
+# LLM 이 분야를 못 짐작했거나 가짜 모드일 때: 이 대화 · 회원 정보의 취업 상태로 코드가 고른다
+DEFAULT_FIELDS = {"jobless": ["job", "living", "training"], "employed": ["housing", "saving", "living"],
+                  None: ["living", "housing", "job"]}
 MORE, OTHER_FIELD, CHANGE_REGION = "다른 정책 더 보기", "다른 분야 찾기", "지역 바꾸기"
 SAVE = "save:"  # 저장 버튼 값 = "save:" + 정책번호 (번호는 서버 상태에서만 나온다)
 SAVE_LABEL = "{number}번 저장"
@@ -53,10 +58,12 @@ ASK_REGION = "어느 지역에 사세요? 사는 곳 기준으로 정책을 찾�
 ASK_AREA = "{name}의 어디인가요?"
 ASK_WHICH_PLACE = "말씀하신 곳이 여러 곳이에요. 어느 지역인가요?"
 ASK_OTHER_REGION = "어느 지역으로 찾을까요?"
-ASK_FIELD = "어떤 지원을 찾으세요? 버튼을 고르거나 고민을 문장으로 써 주세요."
+ASK_TOPIC = "어떤 고민이 있으세요? 편하게 말해 주세요. (예: 월세가 부담돼요 · 취업 준비 중이에요 · 돈을 모으고 싶어요)"
+AUTO_LEAD = "어떤 지원인지 말씀이 없어서 {fields} 쪽으로 찾아봤어요. 고민을 말해 주시면 더 맞게 찾아 드려요."
+OTHER_TOPIC = "다른 고민도 문장으로 말해 주세요."
 PICK_BUTTON = "아래 버튼에서 골라 주세요."
 NO_BIRTH = "청년 정책은 나이 조건이 있어서 생년월일이 필요해요. 내 정보에서 생년월일을 입력한 뒤 다시 찾아 주세요."
-NONE_FOUND = "{region} 기준으로 지금 신청할 수 있는 정책을 찾지 못했어요. 다른 분야나 지역으로 찾아볼까요?"
+NONE_FOUND = "{region} 기준으로 지금 신청할 수 있는 정책을 찾지 못했어요. 다른 고민을 말해 주시거나 지역을 바꿔 볼까요?"
 NO_MORE = "더 보여 드릴 정책이 없어요."
 ENDED = "청년 정책 찾기를 마칠게요."
 WHICH = "어느 정책을 말씀하시는 건가요?"
@@ -68,13 +75,14 @@ GONE = "그 정책은 지금 정책 목록에 없어요. 공고가 내려갔을 
 @dataclass
 class Action:
     """decide() 가 고른 다음 행동. kind 마다 쓰는 칸이 다르다"""
-    kind: str  # read · use_region · ask_region · ask_field · confirm · confirm_yes · search · more · save · show_saved · remember · not_mine · end · reask
+    kind: str  # read · use_region · ask_region · ask_topic · confirm · confirm_yes · search · more · save · show_saved · remember · not_mine · end · reask
     text: str | None = None  # 읽거나 검색할 문장 (지역을 고른 뒤 이어서 할 문장)
     region: str | None = None
     codes: list[str] = field(default_factory=list)  # 고를 지역 후보
     needs: list[Need] | None = None  # 이미 읽은 필요 (다시 읽지 않는다)
     home: bool = True  # 고른 지역이 사는 곳인가 (아니면 이번 검색에만 쓴다)
     topics: list[str] = field(default_factory=list)  # detail: 궁금한 항목 (planner.TOPICS)
+    fields: list[str] | None = None  # 맞춤 추천이면 분야 코드 목록 (빈 목록 = 코드가 기본값으로 고름), 아니면 None
 
 
 def _children(code):
@@ -119,7 +127,7 @@ def _decide(state, text, read=None, choice=None):
     버튼 · 취소 · 지역은 규칙으로 정하고, 읽은 문장의 행동은 choice(planner.ask)가 있으면 그것을, 없으면 규칙을 따른다"""
     ask, home = state.get("ask"), state.get("region")
     if text is None:  # 기능 버튼으로 들어옴
-        return Action("ask_region", codes=TOP) if not home else Action("ask_field")
+        return Action("ask_region", codes=TOP) if not home else Action("ask_topic")
     said = text.strip()
     if said.strip(" .!~") in CANCEL_WORDS:
         return Action("end")
@@ -148,44 +156,46 @@ def _decide(state, text, read=None, choice=None):
         return Action("detail", text=results[number - 1] if number else None, topics=choice[2])
     if picked == "not_mine" or (picked is None and not read.mine):
         return Action("not_mine")
-    if picked == "ask_field" or (picked is None and read.vague):
-        return Action("ask_field")
+    fields = choice[3] if choice and len(choice) > 3 else []
+    if read.vague or (fields and not read.needs):  # 막연한 문장 → 분야를 묻지 않고 맞춤 추천 (멘토 요청 ④)
+        return _place_action(read, said, home, fields=list(fields))
     return _place_action(read, said, home)
 
 
-def _place_action(read, said, home):
+def _place_action(read, said, home, fields=None):
     """찾을 지역 정하기. 문장 속 지역이 우선이고 이번 검색에만 쓴다 (사는 곳으로 기억하지 않는다).
     시군구 하나로 정해지면 바로 검색, 넓거나 여러 곳이면 그 안에서만 고르게 한다. 지명이 없으면 사는 곳, 그것도 모르면 묻는다.
-    고르게 할 때도 읽은 필요를 질문에 남겨 고른 뒤 다시 읽지 않는다"""
-    needs, codes = reading.needs_for(read, said), read.place_codes
+    고르게 할 때도 읽은 필요를 질문에 남겨 고른 뒤 다시 읽지 않는다. fields 가 있으면(맞춤 추천) 그대로 넘긴다"""
+    needs, codes = (None if fields is not None else reading.needs_for(read, said)), read.place_codes
     if codes and home and _within(codes, home):  # '서울' 이라고 했고 사는 곳이 관악구 → 관악구로
         codes = []
     if len(codes) == 1 and REGIONS[codes[0]]["final"]:
-        return Action("search", text=said, region=codes[0], needs=needs)
+        return Action("search", text=said, region=codes[0], needs=needs, fields=fields)
     if codes:
         options = codes if len(codes) > 1 else _children(codes[0])
-        return Action("ask_region", codes=options, text=said, needs=needs, home=False)
+        return Action("ask_region", codes=options, text=said, needs=needs, home=False, fields=fields)
     if home:
-        return Action("search", text=said, region=home, needs=needs)
-    return Action("ask_region", codes=TOP, text=said, needs=needs)
+        return Action("search", text=said, region=home, needs=needs, fields=fields)
+    return Action("ask_region", codes=TOP, text=said, needs=needs, fields=fields)
 
 
 def _answer(ask, value, home):
     """질문의 답(버튼 값) → 행동"""
-    kind, pending = ask["kind"], ask.get("text")
+    kind, pending, fields = ask["kind"], ask.get("text"), ask.get("fields")
     needs = [Need(q, k) for q, k in ask["needs"]] if ask.get("needs") is not None else None
     if kind == "region":
         if REGIONS[value]["final"]:
-            return Action("use_region", region=value, text=pending, needs=needs, home=ask.get("home", True))
-        return Action("ask_region", codes=_children(value), text=pending, needs=needs, home=ask.get("home", True))
-    if kind == "field":
-        return Action("search", region=home, needs=[FIELDS[value]])
+            return Action("use_region", region=value, text=pending, needs=needs, home=ask.get("home", True), fields=fields)
+        return Action("ask_region", codes=_children(value), text=pending, needs=needs, home=ask.get("home", True),
+                      fields=fields)
+    if kind == "field":  # 11-12 전에 시작한 대화의 분야 버튼 (지금은 분야 버튼을 보이지 않는다)
+        return Action("search", region=home, needs=[FIELDS[FIELD_BY_LABEL[value]][1]])
     if kind == "which":
         return Action("detail", text=value, topics=ask["topics"])
     if kind == "confirm":
         if value == "yes":
-            return Action("confirm_yes", text=pending, region=home, needs=needs)
-        return Action("ask_region", codes=TOP, text=pending, needs=needs, home=False)  # 이번 검색 지역만 고른다
+            return Action("confirm_yes", text=pending, region=home, needs=needs, fields=fields)
+        return Action("ask_region", codes=TOP, text=pending, needs=needs, home=False, fields=fields)  # 이번 검색 지역만
     if kind == "after":
         if value.startswith(SAVE):
             return Action("save", text=value[len(SAVE):])
@@ -195,8 +205,8 @@ def _answer(ask, value, home):
             return Action("remember")  # 이번에 찾은 지역 (state["region_used"]) — 사는 곳이 아니다
         if value == "more":
             return Action("more")
-        if value == "field":
-            return Action("ask_field")
+        if value == "field":  # 11-12 전 대화의 [다른 분야 찾기]
+            return Action("ask_topic")
         return Action("ask_region", codes=TOP)
     raise ValueError(f"모르는 질문 종류: {kind}")
 
@@ -224,17 +234,21 @@ def _ask_region(store, cid, state, action):
         ASK_OTHER_REGION if action.codes == TOP else ASK_WHICH_PLACE  # 가입 지역 [아니요] · '중구' 처럼 여러 시도
     options = [(code, _label(code) if area else REGIONS[code]["name"]) for code in action.codes]
     return _ask(store, cid, state, "region", [line], options, codes=action.codes, text=action.text,
-                needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], home=action.home)
+                needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], home=action.home,
+                fields=action.fields)
 
 
 def _ask_confirm(store, cid, state, action):
     return _ask(store, cid, state, "confirm", [CONFIRM_HOME.format(name=REGIONS[action.region]["name"])],
                 [("yes", YES), ("no", NO)], text=action.text,
-                needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs])
+                needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], fields=action.fields)
 
 
-def _ask_field(store, cid, state):
-    return _ask(store, cid, state, "field", [ASK_FIELD], [(label, label) for label in FIELDS])
+def _ask_topic(store, cid, state, lines=(ASK_TOPIC,)):
+    """무엇을 찾을지 말로 묻는다 (버튼 없음, 멘토 요청 ④). 다음 문장은 새 질문으로 읽는다"""
+    state["ask"] = None
+    store.save_agent_state(cid, AGENT, state)
+    return _reply("awaiting_input", lines)
 
 
 def _common_after(state, region, member):
@@ -242,7 +256,7 @@ def _common_after(state, region, member):
     after = [("saved", SAVED_LIST)] if member else []
     if member and region and state.get("remembered") != region:  # 저장된 지역과 다른 곳으로 찾았을 때 (말한 지역 · 고른 지역)
         after.append(("remember", REMEMBER_LABEL.format(name=_label(region))))
-    return after + [("field", OTHER_FIELD), ("region", CHANGE_REGION)]
+    return after + [("region", CHANGE_REGION)]  # [다른 분야 찾기]는 없다 — 다른 고민은 문장으로 (멘토 요청 ④)
 
 
 def _after_buttons(state, member):
@@ -263,8 +277,8 @@ def _card(result, sections):
     return result
 
 
-def _show(store, cid, state, found, region, today, start, member=False):
-    """추천 3칸 (start 번째부터). 사실은 tools.facts, 이유는 찾은 키워드로"""
+def _show(store, cid, state, found, region, today, start, member=False, lead=None):
+    """추천 3칸 (start 번째부터). 사실은 tools.facts, 이유는 찾은 키워드로. lead = 맞춤 추천 안내 줄 (첫 결과에만)"""
     page = found[start:start + SHOW]
     done = state.get("saved") or []  # 예전 상태(칸 없음)도 읽는다
     after = [(SAVE + f.policy.pk, SAVE_LABEL.format(number=number))
@@ -275,11 +289,11 @@ def _show(store, cid, state, found, region, today, start, member=False):
                  last=[f.policy.pk for f in page], focus=None)
     name = REGIONS[region]["name"]
     if not page:  # 추천 없음은 정상 결과 → failed 가 아니라 replied (계약 3절)
-        lines = [NONE_FOUND.format(region=name) if start == 0 else NO_MORE]
+        lines = ([lead] if lead else []) + [NONE_FOUND.format(region=name) if start == 0 else NO_MORE]
         result = _ask(store, cid, state, "after", lines, [a for a in after if not a[0].startswith(SAVE)])
         result["status"] = "replied"
         return result
-    lines = [f"{name} 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
+    lines = ([lead] if lead else []) + [f"{name} 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
     sections = []
     for number, item in enumerate((tools.facts(f, today) for f in page), start + 1):
         rows = [f"신청: {item['period']}", f"지원: {item['support'] or '정보 없음'}"]
@@ -291,6 +305,8 @@ def _show(store, cid, state, found, region, today, start, member=False):
             rows.append(f"관련: {', '.join(item['keywords'])}")
         rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
         sections.append({"title": f"{number}. {item['name']}", "lines": rows})
+    if start == 0 and not lead:
+        lines.append(OTHER_TOPIC)
     day = tools.data_date()
     result = _card(_ask(store, cid, state, "after", lines, after), sections)
     result["reply"]["notices"] = [NOTICE] + ([f"정책 정보는 {day} 기준이에요."] if day else [])
@@ -335,6 +351,16 @@ def _remember(store, cid, state, region):
     return result
 
 
+def _profile_job(profile):
+    """Profile 의 취업 상태 코드 → DEFAULT_FIELDS 키"""
+    return {tools.JOBLESS: "jobless", tools.EMPLOYED: "employed"}.get(profile.job)
+
+
+def _job(state):
+    """이 대화에서 마지막으로 말한 취업 상태 ("jobless" · "employed" · None). 예전 상태의 jobless: True 도 읽는다"""
+    return state.get("job") or ("jobless" if state.get("jobless") else None)
+
+
 def _shown(state):
     """직전 추천 [(화면 번호, 정책명)] — 지금까지 보여 준 것 전부 (더 보기 포함). LLM 은 이 번호 안에서만 고른다"""
     numbers = (state.get("results") or [])[:state.get("shown", 0)]
@@ -353,8 +379,10 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
     profile = tools.profile_for(user, text)
     if user is not None and profile.birth_date is None:  # 온보딩 값을 다시 묻지 않는다 — 내 정보로 안내하고 끝낸다
         return _end(store, cid, NO_BIRTH)
-    if tools.says_jobless(text):  # 대화에서 말한 취업 상태는 뒤의 버튼 · 상세에서도 쓴다
-        state["jobless"] = True
+    said = tools.said_job(text)
+    if said:  # 대화에서 말한 취업 상태는 뒤의 버튼 · 상세에서도 쓰고, 고쳐 말하면 바꾼다 (PR 97 재리뷰)
+        state["job"] = said
+        state.pop("jobless", None)
     if not state.get("region"):  # 저장해 둔 사는 지역이 있으면 다시 묻지 않는다 ([지역 바꾸기]로 바꿀 수 있다)
         remembered = profiles.remembered_region(user)
         if remembered:
@@ -374,18 +402,18 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
             action = decide(state, text, read, choice)
         elif action.kind == "confirm_yes":  # 이 대화에서는 다시 묻지 않는다
             state.update(confirmed=True, ask=None)
-            action = Action("search", text=action.text, region=action.region, needs=action.needs)
+            action = Action("search", text=action.text, region=action.region, needs=action.needs, fields=action.fields)
         elif action.kind == "use_region":
             if action.home:
                 state["region"] = action.region
             state["ask"] = None
-            if action.needs is not None:  # 이미 읽은 문장 (다른 지역 확인 뒤) → 바로 검색
-                action = Action("search", text=action.text, region=action.region, needs=action.needs)
+            if action.needs is not None or action.fields is not None:  # 이미 읽은 문장 (다른 지역 확인 뒤) → 바로 검색
+                action = Action("search", text=action.text, region=action.region, needs=action.needs, fields=action.fields)
             elif action.text:  # 지역을 묻기 전에 받아 둔 문장 → 이제 읽는다
                 text, read = action.text, None
                 action = decide(state, text)
             else:
-                action = Action("ask_field")
+                action = Action("ask_topic")
         else:
             break
     return _act(action, store, cid, state, user, today, embed, check)
@@ -399,8 +427,8 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         return _end(store, cid)
     if kind == "ask_region":
         return _ask_region(store, cid, state, action)
-    if kind == "ask_field":
-        return _ask_field(store, cid, state)
+    if kind == "ask_topic":
+        return _ask_topic(store, cid, state)
     if kind == "reask":
         ask = state["ask"]
         return _reply("awaiting_input", [PICK_BUTTON], [{"value": v, "label": k} for k, v in ask["options"].items()])
@@ -414,22 +442,27 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         return _remember(store, cid, state, state.get("region_used") or state["region"])
     if kind == "detail":
         return _detail(store, cid, state, user, today, action)
-    profile, member = tools.profile_for(user, action.text, state.get("jobless")), profiles.is_member(user)
+    profile, member = tools.profile_for(user, action.text, _job(state)), profiles.is_member(user)
     if kind == "more":
         found = tools.again(state.get("results") or [], profile, today)
         return _show(store, cid, state, found, state.get("region_used") or state["region"], today,
                      state.get("shown", 0), member)
     if kind == "search":
+        needs, lead, said = action.needs or [Need(action.text)], None, action.text
+        if action.fields is not None:  # 맞춤 추천: LLM 이 짐작한 분야, 없으면 취업 상태로 코드가 고른 분야
+            codes = [code for code in action.fields if code in FIELDS] or DEFAULT_FIELDS[_profile_job(profile)]
+            names = [FIELDS[code][0] for code in codes]
+            needs, lead = [FIELDS[code][1] for code in codes], AUTO_LEAD.format(fields=", ".join(names))
+            said = f"{action.text or ''} (고른 분야: {', '.join(names)})".strip()  # 막연한 원문만 주면 돌아보기가 다 뺄 수 있다
         try:
-            found, _ = tools.find(action.needs or [Need(action.text)], action.region, profile, today, embed=embed)
+            found, _ = tools.find(needs, action.region, profile, today, embed=embed)
         except EmbedFailed as error:
             return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
         judge = check if check is not None else review.reviewer()
         if judge and found:  # 돌아보기: 질문과 맞는 것만 남긴다 (실패하면 그대로)
-            said = action.text or " / ".join(n.query for n in action.needs or [])
-            kept = review.keep(said, found, judge)
+            kept = review.keep(said or " / ".join(n.query for n in needs), found, judge)
             found = found if kept is None else kept
-        return _show(store, cid, state, found, action.region, today, 0, member)
+        return _show(store, cid, state, found, action.region, today, 0, member, lead)
     raise ValueError(f"처리하지 못한 행동: {kind}")
 
 
@@ -440,13 +473,13 @@ def _detail(store, cid, state, user, today, action):
     if not action.text:
         shown = _shown(state)
         if not shown:
-            result = _ask(store, cid, state, "field", [NO_TARGET, ASK_FIELD], [(label, label) for label in FIELDS])
+            result = _ask_topic(store, cid, state, (NO_TARGET, ASK_TOPIC))
             result["status"] = "replied"
             return result
         last = shown[-len(state.get("last") or shown):]  # 방금 보인 칸만 버튼으로
         return _ask(store, cid, state, "which", [WHICH], [(state["results"][n - 1], f"{n}. {name}") for n, name in last],
                     topics=action.topics)
-    info = tools.detail(action.text, action.topics, tools.profile_for(user, jobless=state.get("jobless")), today)
+    info = tools.detail(action.text, action.topics, tools.profile_for(user, job=_job(state)), today)
     state["focus"] = action.text  # 다음 "그거"는 이 정책
     if info is None:
         result = _ask(store, cid, state, "after", [GONE], after)

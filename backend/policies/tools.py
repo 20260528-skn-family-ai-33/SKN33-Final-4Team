@@ -1,7 +1,7 @@
 """6단계 도구: 고정 흐름(agent.py)과 8단계 에이전트가 같이 쓴다. 입력 · 출력이 분명한 함수이고, 사실(정책명 · 기간 · 링크 · 자격)은
 모두 DB 값과 코드 계산이다. LLM 은 여기 없다.
 
-- profile_for(user, text): 사용자 조건 (온보딩 값 · 월급 정보 · 문장 속 "취업 준비")
+- profile_for(user, text, job): 사용자 조건 (온보딩 값 · 월급 정보 · 문장 속 "취업 준비" · "회사 다녀", 대화에서 마지막으로 말한 취업 상태)
 - find(needs, region, profile, today): 검색 → 자격 불충족 빼기 → 재등록 겹침 빼기 → 추천 후보 순서
 - facts(policy, verdict, today): 답변 한 칸에 들어갈 사실 (DB 값 그대로)
 """
@@ -14,23 +14,34 @@ from .models import Policy, PolicySync
 from .normalize import _clean
 
 EMPLOYED, JOBLESS = "0013001", "0013003"
-# "취업 준비 중"처럼 말하면 그 말을 따른다 (메모: 조건 입력). 월급 정보보다 앞선다
+# "취업 준비 중" · "회사 다녀"처럼 말하면 그 말을 따른다 (메모: 조건 입력). 월급 정보보다 앞서고, 대화 중에 고쳐 말하면 바뀐다
 JOBLESS_WORDS = re.compile(r"취준|취업\s*준비|구직\s*중|무직|백수|일자리를?\s*찾|실직|퇴사")
+EMPLOYED_WORDS = re.compile(r"재직|(?:회사|직장)(?:에|를|을)?\s*다니|월급(?:을|이)?\s*받|취직했|취업했|직장인|근무\s*중|출근")
+SAID_JOB = {"jobless": JOBLESS, "employed": EMPLOYED}
 STATE = {"open": "신청 중", "always": "상시", "upcoming": "신청 예정", "unknown": "기간 확인 필요", "closed": "마감"}
 SUPPORT_CHARS = 80  # 지원 내용은 DB 문장 앞부분만 (자르기만 하고 바꿔 쓰지 않는다)
 # 원문 글머리 기호 (ㅁ · □ · ㅇ · ○ · ※ · ① · ➊ · - …). 낱자 자모(ㅁ · ㅇ)는 낱말 안에 오지 않아 지워도 뜻이 바뀌지 않는다
 BULLETS = re.compile(r"(?:(?<=\s)|^)(?:[ㅁㅇ□■○●◦▪▫◆◇※•►▶❍]|[①-⑳]|[➊-➓]|-(?=\s|[가-힣]))\s*")
 
 
-def says_jobless(text):
-    return bool(text and JOBLESS_WORDS.search(text))
+def said_job(text):
+    """문장에서 말한 취업 상태 → "jobless" · "employed" · None.
+    둘 다 있으면 뒤에 나온 말을 따른다 ("무직이었는데 이제 회사 다녀" → employed, "회사 다니다 퇴사했어" → jobless)"""
+    last = {}
+    for kind, words in (("jobless", JOBLESS_WORDS), ("employed", EMPLOYED_WORDS)):
+        spots = [match.start() for match in words.finditer(text or "")]
+        if spots:
+            last[kind] = spots[-1]
+    return max(last, key=last.get) if last else None
 
 
-def profile_for(user, text=None, jobless=False):
+def profile_for(user, text=None, job=None):
     """회원 → Profile. 회원이 없으면(로컬 확인 · 평가) 빈 Profile. 생년월일이 없으면 birth_date=None — 부르는 쪽이 안내한다
-    jobless = 이 대화에서 이미 "취업 준비 중"이라고 말했다 (분야 버튼처럼 문장 없이 이어질 때도 월급 정보보다 앞선다)"""
+    취업 상태 우선순위: 이 문장에서 말한 것 > 이 대화에서 마지막으로 말한 것(job, "jobless" · "employed") > 월급 정보.
+    말한 재직은 월급 정보가 없어도 재직자다"""
     info = getattr(user, "financial_profile", None) if user is not None else None
-    job = JOBLESS if jobless or says_jobless(text) else \
+    said = said_job(text) or job
+    job = SAID_JOB[said] if said in SAID_JOB else \
         EMPLOYED if info is not None and info.monthly_take_home_income else None
     if info is None:
         return Profile(job=job)
