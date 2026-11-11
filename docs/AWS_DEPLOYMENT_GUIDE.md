@@ -49,6 +49,7 @@ GitHub Pages는 사용하지 않습니다. GitHub Actions가 AWS 배포를 실�
 - GitHub 저장소의 코드 수정 및 Actions Variables 설정 권한. 조직에서 제한하면 저장소 관리자에게 요청합니다.
 - 내 컴퓨터에 Git과 코드 편집기. 로컬 개발 환경은 [LOCAL_SETUP.md](LOCAL_SETUP.md)를 참고합니다.
 - 모델 담당자가 공유한 `spending_category_svm.joblib`, `label_conflicts.csv`와 확인용 SHA256 값.
+- 예산 분배 에이전트를 켤 경우 `budget_allocation.joblib`(CatBoost 예산 배분 모델). SHA256은 9.3에 적은 값과 같아야 합니다.
 - AWS 사용 예산. 가격은 생성 화면의 추정 비용으로 확인합니다.
 
 저장소에는 두 Git 원격이 등록되어 있습니다. **이 가이드는 `origin`을 기준**으로 합니다.
@@ -347,6 +348,10 @@ CONNECTED_ID_ENCRYPTION_KEY=두_번째_명령으로_생성한_값
 IDENTIFIER_HMAC_KEY=세_번째_명령으로_생성한_값
 SPENDING_MODEL_PATH=/models/spending_category_svm.joblib
 SPENDING_CONFLICTS_PATH=/models/label_conflicts.csv
+BUDGET_INFERENCE_PYTHON=/opt/budget-inference/bin/python
+BUDGET_MODEL_PATH=/models/budget_allocation.joblib
+BUDGET_DESIGN_ENABLED=false
+BUDGET_DESIGN_EXTERNAL_ENABLED=false
 CHAT_ENGINE=legacy
 CHAT_LLM=fake
 CODEF_ENV=demo
@@ -363,7 +368,7 @@ NAVER_CLIENT_SECRET=
 DATA_GO_KR_SERVICE_KEY=
 ```
 
-여기서는 인프라 연결을 먼저 확인하기 위해 기존 엔진과 fake 모드를 사용합니다. 실제 은행 연결·LLM·검색 검증 전에 필요한 키를 채우고 팀이 검증한 엔진/모델 설정으로 변경합니다. 자세한 항목은 [ENV_SETUP.md](ENV_SETUP.md)와 루트 `.env.example`을 참고합니다.
+여기서는 인프라 연결을 먼저 확인하기 위해 기존 엔진과 fake 모드를 사용하고 예산 분배·조정 에이전트도 끕니다. 실제 은행 연결·LLM·검색 검증 전에 필요한 키를 채우고 팀이 검증한 엔진/모델 설정으로 변경합니다. 자세한 항목은 [ENV_SETUP.md](ENV_SETUP.md)와 루트 `.env.example`을 참고합니다.
 
 이 파일은 Compose의 **raw** 형식입니다. 한 줄에 `KEY=값`을 쓰고, 값에 따옴표를 씌우거나 줄 끝 주석을 붙이지 않습니다. `.env.example`의 따옴표도 그대로 복사하지 않습니다. 특히 CODEF 공개키는 전체를 한 줄로 넣습니다. 이 파일을 `source`로 실행하지 않습니다.
 
@@ -406,7 +411,32 @@ sudo sha256sum /opt/moneycushion/models/spending_category_svm.joblib /opt/moneyc
 
 출력 해시를 모델 담당자가 전달한 값과 대조합니다. `joblib`은 신뢰한 파일만 읽습니다. 모델 파일을 바꾸는 일은 코드 배포와 별도이며, 나중에 모델과 코드 버전도 함께 기록합니다. 예산 배분 등 추가 모델을 실제 API에 연결하면 해당 파일·추론 패키지도 추가해야 합니다. [현재 모델 공유 규칙](ML_MODELS.md)
 
-**완료 기준:** 공개 설정·비밀 설정·모델 두 파일이 EC2에 있으며 모델 해시가 일치합니다.
+#### 예산 분배 모델 (예산 분배·조정 에이전트를 켤 때)
+
+예산 분배 에이전트(`BUDGET_DESIGN_ENABLED=true`)는 CatBoost 모델을 별도 Python으로 실행합니다. 추론 패키지는 백엔드 이미지의 `/opt/budget-inference`에 들어 있고(`backend.Dockerfile`), 모델 파일만 아래처럼 전달합니다. 모델이 없거나 해시가 다르면 서버는 모든 예산 추천을 `needs_data`로 막습니다.
+
+1. 모델 담당자에게 받은 `budget_allocation.joblib`를 같은 버킷의 `models/`에 업로드합니다.
+2. EC2 터미널에서 내려받고 해시를 확인합니다.
+
+```bash
+sudo aws s3 cp s3://BUCKET_NAME/models/budget_allocation.joblib /opt/moneycushion/models/budget_allocation.joblib
+sudo chmod 644 /opt/moneycushion/models/budget_allocation.joblib
+sudo sha256sum /opt/moneycushion/models/budget_allocation.joblib
+```
+
+출력이 `2fb8d5e15a5175a1d21830bacc51a44bf4b0bf5e90cceee6c2f7bfff6e7c74ce`(모델 `catboost_shallow`, 버전 `20261026T074827Z_53769d64`)이어야 합니다. 코드가 같은 값을 검사하므로 다른 파일은 쓰이지 않습니다.
+
+3. 에이전트를 켤 때 `app.env`를 아래처럼 바꾼 뒤 컨테이너를 재생성합니다. `CHAT_LLM=live`이면 `OPENAI_API_KEY`·`LLM_MODEL`이 필요합니다. 실제 사용자 금융 데이터를 외부 LLM으로 보내기 전에는 동의 문구 최종 확인이 필요합니다.
+
+```dotenv
+BUDGET_DESIGN_ENABLED=true
+CHAT_ENGINE=router
+CHAT_LLM=live
+```
+
+`BUDGET_INFERENCE_PYTHON`·`BUDGET_MODEL_PATH`는 빈 값(`KEY=`)으로 두지 않습니다. 예제 `deploy.sh`는 `BUDGET_DESIGN_ENABLED=true`일 때 모델 파일이 있는지 확인합니다.
+
+**완료 기준:** 공개 설정·비밀 설정·모델 두 파일이 EC2에 있으며 모델 해시가 일치합니다. 예산 분배를 켜면 `budget_allocation.joblib`까지 있어야 합니다.
 
 ## 10 GitHub Actions에 AWS 권한 연결하기
 
