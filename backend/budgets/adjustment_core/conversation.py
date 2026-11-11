@@ -39,6 +39,8 @@ def _pending_reply(state, ref=None, context=None):
                        explanation=pending.get("explanation"), choice_descriptions=pending.get("choice_descriptions"))
     if pending["kind"] == "comparison" and state.get("comparison"):
         response["reply"]["comparison"] = deepcopy(state["comparison"]["comparison"])
+    if pending["kind"] == "financial_selection" and state.get("financial_offer"):
+        response["reply"]["comparison"] = deepcopy(state["financial_offer"]["comparison"])
     if pending["kind"] == "partial" and state.get("proposal"):
         response["reply"]["proposal"] = deepcopy(state["proposal"])
         for key in ("alternatives", "alternatives_notice"):
@@ -281,13 +283,13 @@ def _merge(state, data, pending):
 
 
 def handle_expanded(request, *, store, complete, get_context, simulate, propose, task_status, cancel, allocator=None,
-                    comparison_handler=None, route_handler=None, discussion_handler=None):
+                    comparison_handler=None, route_handler=None, discussion_handler=None, initial_data=None):
     """기존 라우터 응답 계약. 버튼 선택과 대기 상태도 서버 메모리에 보관한다."""
     cid = request["conversation_id"]
     state = deepcopy(store.get_agent_state(cid, "budget") or {})
     text, mode = (request.get("text") or "").strip(), request.get("mode", "continue")
     ref = request.get("work_ref") or state.get("work_ref")
-    resumed = None
+    resumed = deepcopy(initial_data)
     try:
         checked = _check(ref, task_status) if ref else None
     except Exception:
