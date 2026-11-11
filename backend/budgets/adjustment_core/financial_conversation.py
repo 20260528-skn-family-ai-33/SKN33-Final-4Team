@@ -327,7 +327,7 @@ def handle(request, **ports):
             if state.get(field):
                 summary.append(label + ': ' + ', '.join(NAMES.get(code, code) for code in state[field]))
         reply['request_summary'] = ' / '.join(summary)
-        if request.get('text'):
+        if request.get('text') and not over_handled:
             history = state.get('dialogue_history', [])
             state['dialogue_history'] = [*history, {'user': request['text'][:1000],
                 'assistant': reply.get('lines', [])[:3],
