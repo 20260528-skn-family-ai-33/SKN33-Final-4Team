@@ -38,6 +38,12 @@ UNCLASSIFIED = "UNCLASSIFIED"
 OWN_TYPES = (Tx.TransactionType.OWN_TRANSFER, Tx.TransactionType.SAVING)
 LIST_TYPES = (Tx.TransactionType.SPENDING, Tx.TransactionType.INCOME, Tx.TransactionType.TRANSFER)
 PERIOD_ERROR = "기간을 다시 골라 주세요."
+# 목록 거래 유형 필터 (11/9). transfer = 남에게 보낸 이체 + 목록에 나오는 내 계좌 이체 줄(OWN_TYPES)
+TYPE_FILTERS = {
+    "spending": Q(transaction_type=Tx.TransactionType.SPENDING),
+    "income": Q(transaction_type=Tx.TransactionType.INCOME),
+    "transfer": Q(transaction_type__in=(Tx.TransactionType.TRANSFER, *OWN_TYPES)),
+}
 
 
 # ---------- 목록에 나오는 거래 고르기 (17번 '한 건 보기'도 같은 기준을 쓴다) ----------
@@ -219,10 +225,10 @@ def _owned_ids(user, model, ids, field):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])  # 로그인 안 하면 403 not_authenticated
 def transactions(request):
-    """16. GET /api/finance/transactions/?category=FOOD,CULTURE_LEISURE&accountId=…&cardId=…&from=2026-10-01&to=2026-10-31
+    """16. GET /api/finance/transactions/?category=FOOD,CULTURE_LEISURE&accountId=…&cardId=…&transactionType=income&from=2026-10-01&to=2026-10-31
     - 기간: 달력월 기준. from 없으면 이번 달 1일, to 없으면 오늘
       단 category=UNCLASSIFIED 하나만 보내고 기간을 안 보내면 전체 기간 (H-03, 홈 '확인할 거래 수'와 같은 숫자)
-    - category · accountId · cardId 는 쉼표로 여러 개 (11/3). 카테고리는 그중 하나, 결제 수단은 고른 계좌 또는 카드
+    - category · accountId · cardId · transactionType 은 쉼표로 여러 개 (11/3 · 11/9). 한 조건 안에서는 그중 하나, 조건끼리는 모두 만족
     - 정렬: 최신순 (거래일 → 거래 시각, 시각이 없으면 같은 날의 맨 뒤)"""
     params = request.query_params
     codes = _list_param(params, "category")
@@ -231,6 +237,9 @@ def transactions(request):
     category = UNCLASSIFIED if codes == [UNCLASSIFIED] else None  # 전체 기간 규칙은 확인 필요만 골랐을 때만
     account_ids = _owned_ids(request.user, BankAccount, _list_param(params, "accountId"), "account_id")
     card_ids = _owned_ids(request.user, Card, _list_param(params, "cardId"), "card_id")
+    types = _list_param(params, "transactionType")
+    if any(t not in TYPE_FILTERS for t in types):
+        raise ValidationError({"transaction_type": ["모르는 거래 유형이에요."]})
 
     period_sent = bool(params.get("from") or params.get("to"))
     start, end = _parse_day(params.get("from")), _parse_day(params.get("to"))
@@ -250,6 +259,8 @@ def transactions(request):
         rows = rows.filter(transaction_type=Tx.TransactionType.SPENDING, confirmed_category_id__in=codes)
     if account_ids or card_ids:
         rows = rows.filter(Q(account_id__in=account_ids) | Q(card_id__in=card_ids))
+    if types:
+        rows = rows.filter(Q(*(TYPE_FILTERS[t] for t in types), _connector=Q.OR))
     rows = rows.order_by("-occurred_on", F("occurred_time").desc(nulls_last=True), "-created_at")
 
     salary = salary_reviews(request.user)

@@ -6216,6 +6216,16 @@
             "example": "38e76a37-6016-4291-87c2-58688f50542a"
           },
           {
+            "name": "transactionType",
+            "in": "query",
+            "required": false,
+            "description": "거래 유형만(11/9): spending 소비 · income 입금 · transfer 이체(남에게 보낸 이체 + 내 계좌 이체 줄). 쉼표로 여러 개. category와 같이 보내면 둘 다 만족. 모르는 값은 400.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "income,transfer"
+          },
+          {
             "name": "from",
             "in": "query",
             "required": false,
@@ -14993,7 +15003,7 @@
           },
           "amountDifference": {
             "type": "integer",
-            "description": "실제 − 예정, 원. 참고용"
+            "description": "실제 − 남은 예정액, 원. 남은 예정액 = 예정 − 이 출금 말고 이 회차에 이미 연결한 출금 합계(0 아래 안 내림, 11/9). 참고용"
           },
           "hints": {
             "$ref": "#/components/schemas/LoanPaymentHints"
@@ -19672,12 +19682,12 @@
     "docs/api/auth.md": "fb25c9473822ae1e3e83e50f85cb138484c1b58b54301ab9b62860b5439cfe92",
     "docs/api/finance-connect.md": "d974a2f74f353a1d656c0cc4e2b37f07aa6d2538d43371d1f600c61bb0e82af5",
     "docs/api/cards.md": "9b03a770b42b5152316f86175f53882febc7eb2d9a24e6608e46fb8e574f4343",
-    "docs/api/loans.md": "86a313a8beb7ea34d4ff59118246f61ecb20467dbd64831aa967c157fcdce52f",
-    "docs/api/transactions.md": "29b9e5eac95419f41da5517a4cbc6c0abafd91598ff54d05ebeba2a02a767a1b",
+    "docs/api/loans.md": "fc16dd8767564035b5afb0e66c90ed27099b5eba510f13a2d497cc5b265c9c7b",
+    "docs/api/transactions.md": "a81c51403c2b8e451631bb3b06305dac734191958af891d0cf23c2d53b5776d7",
     "docs/api/fixed.md": "11da9dfb28c4f54547e1a95c60e9b6b3626dcd57db7d4cdddf70dc6f24d6366d",
     "docs/api/savings.md": "a729cbe30a3016d8dd7cc3f8ea1f0d5fb7248477f7610e6bff5ffdc0bb701a4b",
-    "docs/api/home.md": "1d136fb5ef7ed05883108c7afae96d2eb1e56c366b7e552f6567e8b4dfbc0ca5",
+    "docs/api/home.md": "5bbe090b75877d9e28c961510cc709b78f1a74d33773959c784dacea73654f71",
     "docs/api/chat.md": "48c8e6326946c2279d50c1d7e98f5d2f2f72c3b841ec10d35259c1b11d5c7a9a",
-    "docs/api/budgets.md": "c4b114b1a6d9d00a433efc0ff1034da994be7249a645fa7018ae746036cdfd28"
+    "docs/api/budgets.md": "eafbf19fdfeea2dc915ee5c9ea219b73c05a0d9fa676b2677499d092a078c466"
   }
 }

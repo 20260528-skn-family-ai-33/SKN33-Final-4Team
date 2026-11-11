@@ -28,7 +28,8 @@ CATEGORY_CODES = tuple(FALLBACK_RATIOS)  # 기타 제외 소비 카테고리 전
 ALLOCATION_CODES = tuple(code for code in CATEGORY_CODES if code not in OUT_OF_BUDGET)
 SUMMARY = "임시 비율로 나눈 테스트 추천이에요. 최소 금액과 자물쇠는 그대로 지켰어요."  # 실제 분석처럼 보이지 않게 (11/3)
 ENGINE_VERSION = "temp-fallback-targets-2"
-POLICY_VERSION = "2026-11-05-targets-units"  # 목표·금액 단위 변경 전의 추천 초안은 다시 검수한다.
+# 목표·금액 단위 변경(11/5) + 청구서 미발행 시 미반영 안내와 함께 예산 시작 허용(11/9). 이전 규칙 초안은 만료
+POLICY_VERSION = "2026-11-09-targets-units"
 UNIT_POLICY = "10000-5000-v1"
 INPUT_VERSION = 1
 # 카드 선차감(card_reserved)은 카드로 쓸 때마다 바뀌므로 해시에 넣지 않는다. 초안을 만들 때 값을 input_snapshot에 저장해 두고

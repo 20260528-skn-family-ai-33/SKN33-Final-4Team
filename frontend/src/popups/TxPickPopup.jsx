@@ -7,6 +7,7 @@ import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 
 // props: tx = 고를 거래, categories = 고를 수 있는 카테고리 [{ code, name }], onSaved = 저장한 뒤 부를 함수(목록 새로고침)
 export default function TxPickPopup({ tx, categories, onSaved }) {
@@ -25,6 +26,7 @@ export default function TxPickPopup({ tx, categories, onSaved }) {
       await apiSend(`/api/finance/transactions/${tx.id}/`, 'PATCH', { category: code, applyToFuture: Boolean(data?.canApplyToFuture && applyToFuture) })
       onSaved?.()
       closePopup()
+      toast('카테고리를 저장했어요')
     } catch (err) {
       setError(err.message)
       setSaving(false)

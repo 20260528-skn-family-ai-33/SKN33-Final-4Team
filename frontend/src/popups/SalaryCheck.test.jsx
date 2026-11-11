@@ -49,8 +49,18 @@ it('후보 한 건을 골라 월급으로 확인하고 자동 인식을 명시�
   expect(onSaved).toHaveBeenCalled()
 })
 
+it('감지된 입금만 먼저 보이고, 나머지는 펼쳐서 고른다', async () => {
+  await render()
+  expect(button('합성회사')).toBeDefined()
+  expect(host.querySelectorAll('.mc-lock-opt')).toHaveLength(1)
+  await click(button('다른 입금 1건도 보기'))
+  expect(host.querySelectorAll('.mc-lock-opt')).toHaveLength(2)
+  expect(button('다른 입금')).toBeUndefined()
+})
+
 it('여러 건은 합계로 확인하고 자동 인식 칸이 없다 · 일반 문구는 이유를 보여 준다', async () => {
   await render()
+  await click(button('다른 입금 1건도 보기'))
   await click(button('입금'))
   expect(host.textContent).toContain('일반 문구라 자동 인식 기준으로 쓸 수 없어요')
   await click(button('합성회사'))
@@ -63,6 +73,8 @@ it('여러 건은 합계로 확인하고 자동 인식 칸이 없다 · 일반 �
 it('자동 인식 기준을 끈다', async () => {
   useApi.mockReturnValue({ data: body({ pattern: item('tx-0', { decision: 'confirmed', isPattern: true }) }), reload })
   await render()
+  expect(button('자동 인식 끄기')).toBeUndefined()  // 처음엔 접혀 있다
+  await click(button('자동 인식 기준 보기'))
   await click(button('자동 인식 끄기'))
   expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/pattern/', 'DELETE', undefined)
 })

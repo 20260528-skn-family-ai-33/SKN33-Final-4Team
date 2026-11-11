@@ -2622,7 +2622,7 @@
           },
           "amountDifference": {
             "type": "integer",
-            "description": "실제 − 예정, 원. 참고용"
+            "description": "실제 − 남은 예정액, 원. 남은 예정액 = 예정 − 이 출금 말고 이 회차에 이미 연결한 출금 합계(0 아래 안 내림, 11/9). 참고용"
           },
           "hints": {
             "$ref": "#/components/schemas/LoanPaymentHints"

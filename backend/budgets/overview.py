@@ -53,6 +53,7 @@ def budget_data(user, today, *, selected=None):
         "cycle": {"starts_on": cycle.starts_on.isoformat(), "ends_before": cycle.ends_before.isoformat()} if cycle else None,
         "budget": None, "split": None, "living": None, "overspend": None,
         "categories": [], "unclassified_count": summary["needs_review_count"], "nag": None, "out_of_budget": None,
+        "card_notes": [],
     }
     if cycle is None:
         return data
@@ -89,6 +90,8 @@ def budget_data(user, today, *, selected=None):
             "locked_amount": setting.locked_amount if setting else None, "reason": reasons.get(category.pk) or None,
         })
     data.update({
+        # 현재 조회 결과가 아니라 선택한 예산의 계산 당시 안내. 새 청구서 조회만으로 미반영 안내를 지우지 않는다.
+        "card_notes": ((selected.input_snapshot or {}).get("fixed") or {}).get("card_notes", []),
         "recommendation": {'spare_transfer': design.get('spare_transfer', 0),
                            'target_conflicts': design.get('target_conflicts', [])} if design else None,
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,

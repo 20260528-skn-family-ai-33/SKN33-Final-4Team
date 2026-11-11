@@ -24,21 +24,49 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(() => root.unmount()); host.remove(); vi.unstubAllGlobals() })
 const respond = (match, res) => act(async () => waiting.find((w) => w.url.includes(match) && !w.done && (w.done = true)).resolve(res))
-const chip = (name) => [...host.querySelectorAll('.mc-cat-filter button')].find((b) => b.textContent === name)
+const btn = (text) => [...host.querySelectorAll('button')].find((b) => b.textContent === text)
 
 it('카테고리를 바꾸면 새 결과가 올 때까지 이전 합계를 숨기고, 실패하면 다시 시도로 받는다', async () => {
   await act(async () => root.render(<MemoryRouter><PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
   await respond('transactions/?from', list([tx], 12_345))
   expect(host.textContent).toContain('12,345원')
 
-  await act(async () => chip('식비').click())
+  expect(btn('식비')).toBeUndefined()                       // 카테고리는 위에 늘 떠 있지 않고 [필터] 안에서 고른다
+  await act(async () => btn('필터').click())
+  await act(async () => btn('확인 필요 0').click())
+  await act(async () => btn('식비').click())
+  expect(btn('확인 필요 0').getAttribute('aria-pressed')).toBe('false')  // 확인 필요는 다른 카테고리와 섞지 않는다
+  await act(async () => btn('소비').click())
+  await act(async () => btn('적용').click())
+  expect(waiting.at(-1).url).toContain('transactionType=spending')
   expect(host.textContent).not.toContain('12,345원')       // 전체 목록 합계를 식비 결과처럼 보이지 않는다
   expect(host.textContent).toContain('불러오는 중')
-  expect(chip('식비').getAttribute('aria-pressed')).toBe('true')  // 칩은 그대로 — 계속 바꿀 수 있다
+  expect(btn('필터 2').getAttribute('aria-pressed')).toBe('true')  // 고른 조건 수(유형 1 + 카테고리 1)가 버튼에 남는다
 
-  await respond('category=FOOD', reply('<html>', 503))
+  await respond('transactions/?category=FOOD', reply('<html>', 503))
   expect(host.textContent).toContain('일시적인 문제일 수 있어요')
   await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent === '다시 시도').click())
-  await respond('category=FOOD', list([], 0))
+  await respond('transactions/?category=FOOD', list([], 0))
   expect(host.textContent).toContain('이 기간에 거래가 없어요')
+})
+
+// PR #101 리뷰: 입금 · 이체만 골라 둔 채 '확인 필요' 배너를 누르면 유형 조건이 남아 늘 비던 문제
+it('확인 필요 배너는 거래 유형 · 계좌 · 카드 조건을 풀고 배너 숫자 그대로의 목록을 연다', async () => {
+  const pendingTx = { ...tx, transactionId: 'tx-p', category: 'UNCLASSIFIED', categoryName: '미분류', classifyState: 'needs_review' }
+  fetch.mockImplementation((url) => {
+    if (url.includes('category=UNCLASSIFIED')) return Promise.resolve(reply({ items: [pendingTx], summary: { spentTotal: 12_345, needsReviewCount: 1 } }))
+    return new Promise((resolve) => waiting.push({ url, resolve }))
+  })
+  await act(async () => root.render(<MemoryRouter initialEntries={['/txs?type=income&account=acc-1']}><PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
+  expect(waiting.at(-1).url).toContain('transactionType=income')
+  const banner = host.querySelector('.mc-pend-banner')
+  expect(banner.textContent).toContain('1')
+  const before = fetch.mock.calls.length
+  await act(async () => banner.click())
+  const urls = fetch.mock.calls.slice(before).map(([url]) => url)
+  const listUrl = urls.find((url) => url.includes('category=UNCLASSIFIED'))
+  expect(listUrl).toBe('/api/finance/transactions/?category=UNCLASSIFIED')  // 유형 · 계좌 조건 없이, 기간 없이(전체 기간)
+  expect(host.querySelector('.mc-pend-banner').getAttribute('aria-pressed')).toBe('true')
+  expect(btn('필터 1')).toBeDefined()  // 남은 조건은 '확인 필요' 하나
+  expect(host.textContent).toContain('카테고리 확인 필요')  // 배너 숫자 1건이 목록에 보인다
 })

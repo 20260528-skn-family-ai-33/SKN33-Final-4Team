@@ -197,16 +197,33 @@ def due_source_id(due):
     return {"recurring": due.recurring_id, "card_bill": due.bill_id, "loan": due.loan_id}[due.obligation_type]
 
 
+def issuer_connected_on(user):
+    """카드사별 첫 연결일 = 그 카드사 카드 중 가장 이른 first_connected_at (첫 청구서 선차감과 같은 기준).
+    그 카드사 카드 중 하나라도 연결 시각을 모르면 그 카드사는 넣지 않는다 (모르면 숨기지 않음)"""
+    from .protect import provider_cards
+
+    days, unknown = {}, set()
+    for card in provider_cards(user):
+        if card.first_connected_at is None:
+            unknown.add(card.issuer_code)
+            continue
+        day = timezone.localdate(card.first_connected_at)
+        days[card.issuer_code] = min(day, days.get(card.issuer_code, day))
+    return {code: day for code, day in days.items() if code not in unknown}
+
+
 def must_pay_json(user, next_payday, previous_start):
     """이번 주기 회차 + 지난 주기에 아직 다 안 낸 회차. 나갈 날 빠른 순 → 남은 금액 큰 순"""
     dues = PaymentDue.objects.filter(
         user=user, obligation_state="active", payment_state__in=SHOW_STATES,
         obligation_type__in=["recurring", "card_bill", "loan"],
         due_date__gte=previous_start, due_date__lt=next_payday,
-    ).select_related("recurring", "bill__card", "loan", "payment_account__connection")
+    ).exclude(loan__status="repaid").select_related("recurring", "bill__card", "loan", "payment_account__connection")
+    # 11/9: 전부 갚았다고 한(완납) 대출의 남은 오늘 · 지난 회차는 숨긴다. 회차는 지우지 않아 [납부 거래 확인]은 그대로, 완납 취소하면 다시 보인다
     from finance.card_payments import bill_status
 
     today = timezone.localdate()
+    connected_on = issuer_connected_on(user)
     items = []
     for due in dues:
         amount, checked = max(due.confirmed_amount - due.paid_amount, 0), False
@@ -217,6 +234,10 @@ def must_pay_json(user, next_payday, previous_start):
                 if check["remaining_amount"] == 0:
                     continue
                 amount, checked = check["remaining_amount"], True
+            elif due.payment_state != "partial" and due.due_date < connected_on.get(due.bill.issuer_code, due.due_date):
+                # 11/09: 카드사를 처음 연결하기 전에 결제일이 지난 청구서는 서비스 밖에서 이미 냈을 수 있어 '납부 확인 필요'로 묻지 않는다.
+                #   사용자가 직접 답했거나(위) 출금이 일부 연결된 청구서는 그대로 보여 준다. 납부 예정 행은 지우지 않는다
+                continue
         items.append({
             "due_id": str(due.pk),
             "type": due.obligation_type,
@@ -256,6 +277,7 @@ def home_budget(user, today, cycle):
         "days_left": days_left,
         "out_of_budget": data["out_of_budget"],
         "out_of_budget_allocated": data["budget"]["out_of_budget_allocated"],
+        "card_notes": data["card_notes"],
     }
 
 

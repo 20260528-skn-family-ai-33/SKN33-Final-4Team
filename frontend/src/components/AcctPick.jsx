@@ -6,8 +6,9 @@ export default function AcctPick({ on, onToggle, name, sub, amount, negative = f
     <div className={['mc-acctpick', on && 'on', dim && 'is-dim'].filter(Boolean).join(' ')}>
       <button type="button" className="mc-acctpick-row" aria-pressed={on} onClick={onToggle}>
         <span className="mc-acctpick-box">{on ? '✓' : ''}</span>
-        <span className="mc-grow"><strong>{name}</strong><small>{sub}</small></span>
-        {amount !== undefined && <strong className={negative ? 'mc-neg' : ''}>{amount}</strong>}
+        {/* 11/9: 긴 이름 · 상품명은 한 줄 말줄임, 금액은 줄바꿈 · 줄어듦 없이 오른쪽 */}
+        <span className="mc-grow"><strong className="mc-tx-name"><span>{name}</span></strong><small className="mc-acctpick-sub">{sub}</small></span>
+        {amount !== undefined && <strong className={`mc-tx-amt${negative ? ' mc-neg' : ''}`}>{amount}</strong>}
       </button>
       {children}
     </div>

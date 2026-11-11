@@ -25,6 +25,7 @@ import { usePopup } from './context.js'
 import { MONTH_DAYS } from '../utils/days.js'
 import { PICK_CATS, catCode, guessCat } from '../utils/categories.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 import { payOptionsNote, usePayOptions } from '../utils/fixed.js'
 
 const PAYS = [['account', '계좌'], ['card', '카드'], ['none', '모름']]
@@ -70,13 +71,14 @@ export default function FixedPopup({ item, onSaved }) {
 
   const choosePay = (value) => { setPay(value); setPayPick(''); setError('') }
 
-  const send = async (path, verb, body, options) => {
+  const send = async (path, verb, body, options, done) => {
     setSaving(true)
     setError('')
     try {
       await apiSend(path, verb, body, options)
       onSaved?.()
       closePopup()
+      toast(done)
     } catch (err) {
       setError(errText(err))
       setSaving(false)
@@ -99,7 +101,7 @@ export default function FixedPopup({ item, onSaved }) {
       name, amount, paymentDay: day, category: catCode(cat),
       paymentAccountId: pay === 'account' ? payPick : null, paymentCardId: pay === 'card' ? payPick : null,
     }
-    if (!editing) { send('/api/budgets/fixed/', 'POST', full, { requestKey }); return }
+    if (!editing) { send('/api/budgets/fixed/', 'POST', full, { requestKey }, '고정지출을 저장했어요'); return }
     // 수정은 바꾼 칸만 (안 보낸 칸 = 그대로). 결제 수단은 둘 중 하나라도 바뀌면 두 칸을 같이 보낸다
     const before = { name: item.name, amount: item.amount, paymentDay: item.paymentDay, category: item.category }
     const body = Object.fromEntries(Object.entries(before).filter(([k, v]) => full[k] !== v).map(([k]) => [k, full[k]]))
@@ -107,7 +109,7 @@ export default function FixedPopup({ item, onSaved }) {
       Object.assign(body, { paymentAccountId: full.paymentAccountId, paymentCardId: full.paymentCardId })
     }
     if (Object.keys(body).length === 0) { closePopup(); return }
-    send(`/api/budgets/fixed/${item.recurringId}/`, 'PATCH', body)
+    send(`/api/budgets/fixed/${item.recurringId}/`, 'PATCH', body, undefined, '고정지출을 수정했어요')
   }
 
   // 지금 저장된 계좌·카드가 후보 목록에 없어도(관리 대상에서 뺐어도) 이름은 보이게 둔다
@@ -175,7 +177,7 @@ export default function FixedPopup({ item, onSaved }) {
           <p><b>{item.name} 고정지출을 그만할까요?</b><br />다음 달 예산부터 빠지고, 이번 주기에 아직 안 낸 회차도 '꼭 나갈 돈'에서 빠져요. 앱의 고정지출 관리만 중지돼요. 자동이체 · 구독 해지는 그 서비스에서 해 주세요.</p>
           <div className="mc-inline">
             <button type="button" className="mc-secondary mc-danger" disabled={saving}
-              onClick={() => send(`/api/budgets/fixed/${item.recurringId}/`, 'DELETE')}>{saving ? '처리 중…' : '그만하기'}</button>
+              onClick={() => send(`/api/budgets/fixed/${item.recurringId}/`, 'DELETE', undefined, undefined, '고정지출을 삭제했어요')}>{saving ? '처리 중…' : '그만하기'}</button>
             <button type="button" className="mc-secondary" onClick={() => setStopAsk(false)}>취소</button>
           </div>
         </div>

@@ -186,7 +186,8 @@ export default function SignupPage() {
             />
             {/* 저축 후보 감지가 이체 적요의 이름과 비교한다 (11/4) */}
             <span id="signup-nickname-hint" className="mc-muted" style={{ display: 'block', marginTop: 6 }}>
-              통장에 찍히는 이름과 같게 적어 주세요. 내 계좌끼리 옮긴 돈을 찾는 데 써요.
+              은행 거래내역에 나오는 실명으로 적어 주세요.<br />
+              내 계좌끼리 옮긴 돈을 소비로 잘못 세지 않도록 확인할 때 써요.
             </span>
           </label>
 
