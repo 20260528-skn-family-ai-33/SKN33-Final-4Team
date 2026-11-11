@@ -84,18 +84,3 @@ class SavedPolicy(models.Model):
         verbose_name = verbose_name_plural = "저장한 청년 정책"
         constraints = [models.UniqueConstraint(fields=["user", "policy"], name="saved_policy_once")]
         indexes = [models.Index(fields=["user", "-created_at"], name="saved_policy_user_recent")]
-
-
-class PolicyProfile(models.Model):
-    """청년 정책 추천 조건 (회원당 1개). 사용자가 채팅에서 [다음에도 …로 찾기]를 눌렀을 때만 만든다 (메모: 동의한 경우만 저장).
-    지금은 사는 지역만 둔다. 다음 대화에서 지역을 다시 묻지 않는 데 쓴다"""
-
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, primary_key=True, on_delete=models.CASCADE,
-                                db_column="user_id", related_name="policy_profile")
-    region_code = models.CharField("사는 지역 코드", max_length=10)  # regions.py 의 시군구 코드 (final)
-    created_at = models.DateTimeField("만든 시각", auto_now_add=True)
-    updated_at = models.DateTimeField("수정 시각", auto_now=True)
-
-    class Meta:
-        db_table = "policy_profile"
-        verbose_name = verbose_name_plural = "청년 정책 추천 조건"

@@ -21,7 +21,9 @@ class BudgetMigrationGraphTest(SimpleTestCase):
     def test_merge_is_the_only_users_leaf_and_has_no_schema_operations(self):
         loader = MigrationLoader(None)
         self.assertNotIn('users', loader.detect_conflicts())
-        self.assertEqual(loader.graph.leaf_nodes('users'), [('users', MERGE)])
+        # 0012 뒤에 users 마이그레이션이 더 생겨도(11-11 0013 사는 지역) 갈래 없이 0012 를 지나는 한 줄이면 된다
+        [leaf] = loader.graph.leaf_nodes('users')
+        self.assertIn(('users', MERGE), loader.graph.forwards_plan(leaf))
         merge = loader.disk_migrations['users', MERGE]
         self.assertEqual(set(merge.dependencies), {('users', GOALS), ('users', PRIVACY)})
         self.assertEqual(merge.operations, [])
@@ -65,9 +67,11 @@ class BudgetMigrationDataTest(TransactionTestCase):
 
     def assert_settings(self, seeded):
         user_id, setting_id, goals = seeded
-        profile = FinancialProfile.objects.get(user_id=user_id)
-        self.assertEqual((profile.monthly_take_home_income, profile.living_budget), (2500000, 700000))
-        self.assertEqual(profile.budget_category_targets, goals)
+        # 0012 시점 표에는 뒤에 생긴 칸(region_code 등)이 없다 → 보는 칸만 읽는다
+        profile = FinancialProfile.objects.filter(user_id=user_id).values(
+            'monthly_take_home_income', 'living_budget', 'budget_category_targets').get()
+        self.assertEqual((profile['monthly_take_home_income'], profile['living_budget']), (2500000, 700000))
+        self.assertEqual(profile['budget_category_targets'], goals)
         self.assertEqual(CategoryMinimum.objects.get(user_id=user_id, category_id='FOOD').min_amount, 77777)
         setting = BudgetCategorySetting.objects.get(pk=setting_id)
         self.assertEqual((setting.locked, setting.locked_amount, setting.change_count), (True, 12345, 2))

@@ -46,11 +46,13 @@ NO_SAVED = "아직 저장한 정책이 없어요. 추천 결과에서 [N번 저�
 SAVED_NEED_LOGIN = "저장한 정책은 로그인한 뒤 볼 수 있어요."
 APPLY_LABEL = tools.STATE
 REMEMBER_LABEL = "다음에도 {name}로 찾기"  # 시군구 이름은 모두 구 · 시 · 군(받침 없음)으로 끝나 '로'가 맞다
-REMEMBERED = "다음부터 {name} 기준으로 찾을게요. 바꾸려면 [지역 바꾸기]를 누르세요."
-REMEMBERED_NOTE = "저장해 둔 지역({name}) 기준으로 찾아요."
+REMEMBERED = "다음부터 {name} 기준으로 찾을게요. 내 정보의 사는 지역도 {name}로 바꿨어요."
+CONFIRM_HOME = "가입 지역({name})으로 찾으시는 거 맞나요?"
+YES, NO = "예", "아니요"
 ASK_REGION = "어느 지역에 사세요? 사는 곳 기준으로 정책을 찾아요."
 ASK_AREA = "{name}의 어디인가요?"
 ASK_WHICH_PLACE = "말씀하신 곳이 여러 곳이에요. 어느 지역인가요?"
+ASK_OTHER_REGION = "어느 지역으로 찾을까요?"
 ASK_FIELD = "어떤 지원을 찾으세요? 버튼을 고르거나 고민을 문장으로 써 주세요."
 PICK_BUTTON = "아래 버튼에서 골라 주세요."
 NO_BIRTH = "청년 정책은 나이 조건이 있어서 생년월일이 필요해요. 내 정보에서 생년월일을 입력한 뒤 다시 찾아 주세요."
@@ -66,7 +68,7 @@ GONE = "그 정책은 지금 정책 목록에 없어요. 공고가 내려갔을 
 @dataclass
 class Action:
     """decide() 가 고른 다음 행동. kind 마다 쓰는 칸이 다르다"""
-    kind: str  # read · use_region · ask_region · ask_field · search · more · save · show_saved · remember · not_mine · end · reask
+    kind: str  # read · use_region · ask_region · ask_field · confirm · confirm_yes · search · more · save · show_saved · remember · not_mine · end · reask
     text: str | None = None  # 읽거나 검색할 문장 (지역을 고른 뒤 이어서 할 문장)
     region: str | None = None
     codes: list[str] = field(default_factory=list)  # 고를 지역 후보
@@ -103,6 +105,16 @@ def _picked_region(ask, said):
 
 
 def decide(state, text, read=None, choice=None):
+    """다음 행동. 가입 지역(내 정보)으로 찾게 되면 이 대화에서 처음 한 번은 맞는지 묻는다 (멘토 요청 ②, 11-11).
+    문장에서 지역을 말했거나 이 대화에서 고른 지역이면 묻지 않는다"""
+    action = _decide(state, text, read, choice)
+    saved = state.get("remembered")
+    if action.kind == "search" and saved and action.region == saved and not state.get("confirmed"):
+        return Action("confirm", text=action.text, region=saved, needs=action.needs)
+    return action
+
+
+def _decide(state, text, read=None, choice=None):
     """상태 · 이번 입력(· 읽은 결과 · LLM 이 고른 행동) → 다음 행동. 부작용 없음.
     버튼 · 취소 · 지역은 규칙으로 정하고, 읽은 문장의 행동은 choice(planner.ask)가 있으면 그것을, 없으면 규칙을 따른다"""
     ask, home = state.get("ask"), state.get("region")
@@ -170,13 +182,17 @@ def _answer(ask, value, home):
         return Action("search", region=home, needs=[FIELDS[value]])
     if kind == "which":
         return Action("detail", text=value, topics=ask["topics"])
+    if kind == "confirm":
+        if value == "yes":
+            return Action("confirm_yes", text=pending, region=home, needs=needs)
+        return Action("ask_region", codes=TOP, text=pending, needs=needs, home=False)  # 이번 검색 지역만 고른다
     if kind == "after":
         if value.startswith(SAVE):
             return Action("save", text=value[len(SAVE):])
         if value == "saved":
             return Action("show_saved")
         if value == "remember":
-            return Action("remember", region=home)
+            return Action("remember")  # 이번에 찾은 지역 (state["region_used"]) — 사는 곳이 아니다
         if value == "more":
             return Action("more")
         if value == "field":
@@ -204,10 +220,17 @@ def _ask(store, cid, state, kind, lines, options, **saved):
 def _ask_region(store, cid, state, action):
     parent = REGIONS[action.codes[0]]["name"].rsplit(" ", 1)[0]
     area = action.codes != TOP and all(REGIONS[c]["name"].startswith(parent + " ") for c in action.codes)  # 한 시도 안
-    line = ASK_AREA.format(name=parent) if area else ASK_REGION if action.home else ASK_WHICH_PLACE  # '중구' 처럼 여러 시도
+    line = ASK_AREA.format(name=parent) if area else ASK_REGION if action.home else \
+        ASK_OTHER_REGION if action.codes == TOP else ASK_WHICH_PLACE  # 가입 지역 [아니요] · '중구' 처럼 여러 시도
     options = [(code, _label(code) if area else REGIONS[code]["name"]) for code in action.codes]
     return _ask(store, cid, state, "region", [line], options, codes=action.codes, text=action.text,
                 needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], home=action.home)
+
+
+def _ask_confirm(store, cid, state, action):
+    return _ask(store, cid, state, "confirm", [CONFIRM_HOME.format(name=REGIONS[action.region]["name"])],
+                [("yes", YES), ("no", NO)], text=action.text,
+                needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs])
 
 
 def _ask_field(store, cid, state):
@@ -217,8 +240,8 @@ def _ask_field(store, cid, state):
 def _common_after(state, region, member):
     """추천 · 저장 목록 뒤에 늘 붙는 버튼: [저장한 정책 보기] · [다음에도 …로 찾기] · [다른 분야 찾기] · [지역 바꾸기]"""
     after = [("saved", SAVED_LIST)] if member else []
-    if member and region and region == state.get("region") and state.get("remembered") != region:
-        after.append(("remember", REMEMBER_LABEL.format(name=_label(region))))  # 사는 곳으로 찾았을 때만
+    if member and region and state.get("remembered") != region:  # 저장된 지역과 다른 곳으로 찾았을 때 (말한 지역 · 고른 지역)
+        after.append(("remember", REMEMBER_LABEL.format(name=_label(region))))
     return after + [("field", OTHER_FIELD), ("region", CHANGE_REGION)]
 
 
@@ -257,8 +280,6 @@ def _show(store, cid, state, found, region, today, start, member=False):
         result["status"] = "replied"
         return result
     lines = [f"{name} 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
-    if start == 0 and state.get("remembered") == region:
-        lines.append(REMEMBERED_NOTE.format(name=_label(region)))
     sections = []
     for number, item in enumerate((tools.facts(f, today) for f in page), start + 1):
         rows = [f"신청: {item['period']}", f"지원: {item['support'] or '정보 없음'}"]
@@ -306,7 +327,7 @@ def _show_saved(store, cid, state, user, today):
 
 def _remember(store, cid, state, region):
     """[다음에도 …로 찾기]: 핸들러는 DB 에 쓰지 않는다 → save_profile 로 돌려주면 엔진이 대화 저장 트랜잭션에서 저장한다"""
-    state["remembered"] = region
+    state.update(remembered=region, region=region, confirmed=True)
     options = _after_buttons(state, True)  # 지역 기억은 회원만 (remembered 를 먼저 바꿔 [다음에도 …] 가 빠진다)
     result = _ask(store, cid, state, "after", [REMEMBERED.format(name=_label(region))], options)
     result["status"] = "replied"
@@ -351,6 +372,9 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
             focus = results.index(state["focus"]) + 1 if state.get("focus") in results else None
             choice = planner.ask(action.text, read, _shown(state), plan, focus) if plan else None
             action = decide(state, text, read, choice)
+        elif action.kind == "confirm_yes":  # 이 대화에서는 다시 묻지 않는다
+            state.update(confirmed=True, ask=None)
+            action = Action("search", text=action.text, region=action.region, needs=action.needs)
         elif action.kind == "use_region":
             if action.home:
                 state["region"] = action.region
@@ -384,8 +408,10 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         return _save(store, cid, state, action.text, user)
     if kind == "show_saved":
         return _show_saved(store, cid, state, user, today)
+    if kind == "confirm":
+        return _ask_confirm(store, cid, state, action)
     if kind == "remember":
-        return _remember(store, cid, state, action.region)
+        return _remember(store, cid, state, state.get("region_used") or state["region"])
     if kind == "detail":
         return _detail(store, cid, state, user, today, action)
     profile, member = tools.profile_for(user, action.text, state.get("jobless")), profiles.is_member(user)

@@ -91,3 +91,21 @@ class ApiTest(TestCase):
     def test_로그인이_필요하다(self):
         response = APIClient().get("/api/policies/saved/")
         self.assertEqual((response.status_code, response.json()["error"]["code"]), (403, "not_authenticated"))
+
+
+class RegionsApiTest(TestCase):
+    """GET /api/policies/regions/ — 온보딩 · 내 정보의 사는 지역 드롭다운 (11-11)"""
+
+    def test_시도_아래_시군구만_돌려준다(self):
+        client = APIClient()
+        self.assertEqual(client.get("/api/policies/regions/").status_code, 403)  # 로그인 필요
+        client.force_login(user("regions@example.com"))
+        items = client.get("/api/policies/regions/").json()["items"]
+        self.assertEqual(len(items), 16)
+        seoul = next(item for item in items if item["code"] == "11000")
+        self.assertIn({"code": "11620", "name": "관악구"}, seoul["regions"])
+        gyeonggi = next(item for item in items if item["name"] == "경기도")
+        self.assertIn({"code": "41597", "name": "화성시 동탄구"}, gyeonggi["regions"])  # 구가 있는 시는 구까지
+        self.assertNotIn("41590", [r["code"] for r in gyeonggi["regions"]])  # 화성시 자체는 고르지 않는다
+        sejong = next(item for item in items if item["code"] == "36110")
+        self.assertEqual(sejong["regions"], [{"code": "36110", "name": "세종특별자치시"}])

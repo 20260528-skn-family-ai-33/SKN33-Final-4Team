@@ -314,25 +314,56 @@ class MemberTest(TestCase):
         self.assertEqual(talk.labels, ["1번 저장", "2번 저장", agent.SAVED_LIST, "다음에도 동탄구로 찾기",
                                        agent.OTHER_FIELD, agent.CHANGE_REGION])
 
-    def test_지역_기억은_save_profile_로_돌려주고_다음_대화는_지역을_묻지_않는다(self):
+    def test_가입_지역은_대화에서_처음_한_번_확인하고_예면_그_지역으로(self):
+        """멘토 요청 ②: 지역 없이 물으면 "가입 지역(…)으로 찾으시는 거 맞나요?" — 이 대화에서 처음 한 번만"""
         from policies import profiles
-        from policies.models import PolicyProfile
+        profiles.remember(self.user, DONGTAN)  # 온보딩에서 고른 지역
+        talk = self.talk()
+        self.assertEqual(talk.send(None, mode="start")["reply"]["lines"], [agent.ASK_FIELD])  # 지역을 묻지 않는다
+        result = talk.send("월세 지원 있어?")
+        self.assertEqual((result["reply"]["lines"], talk.labels),
+                         ([agent.CONFIRM_HOME.format(name="경기도 화성시 동탄구")], [agent.YES, agent.NO]))
+        result = talk.send(agent.YES)
+        self.assertEqual(titles(result), ["1. 정책 1", "2. 정책 2"])
+        talk.complete.assert_called_once()  # 확인 뒤 다시 읽지 않는다
+        self.assertNotIn("다음에도 동탄구로 찾기", talk.labels)  # 이미 저장된 지역
+        self.assertEqual(titles(talk.send("월세 지원 있어?"))[0], "1. 정책 1")  # 같은 대화 두 번째는 묻지 않는다
+        self.assertEqual(self.talk().send("월세 지원 있어?")["reply"]["lines"][0],
+                         agent.CONFIRM_HOME.format(name="경기도 화성시 동탄구"))  # 새 대화는 다시
+
+    def test_아니요면_이번_검색_지역을_고르고_다음에도_버튼으로_가입_지역을_바꾼다(self):
+        from policies import profiles
+        from users.models import FinancialProfile
+        profiles.remember(self.user, DONGTAN)
+        add("JONGNO", vector=near(1), plcyNm="종로 월세", zipCd="11110")
+        talk = self.talk()
+        talk.send("월세 지원 있어?")
+        self.assertEqual(talk.send(agent.NO)["reply"]["lines"], [agent.ASK_OTHER_REGION])
+        talk.send("서울특별시")
+        result = talk.send("종로구")
+        self.assertEqual(titles(result), ["1. 종로 월세"])
+        self.assertIn("다음에도 종로구로 찾기", talk.labels)
+        result = talk.send("다음에도 종로구로 찾기")
+        self.assertEqual((result["status"], result["save_profile"]), ("replied", {"region_code": "11110"}))
+        self.assertEqual(FinancialProfile.objects.get(user=self.user).region_code, DONGTAN)  # 핸들러는 쓰지 않는다 — 엔진이
+        profiles.remember(self.user, "11110")  # 엔진이 한 것처럼
+        self.assertEqual(self.talk().send("월세 지원 있어?")["reply"]["lines"][0],
+                         agent.CONFIRM_HOME.format(name="서울특별시 종로구"))
+
+    def test_지역을_말하면_확인_없이_찾고_다음에도_버튼(self):
+        from policies import profiles
+        profiles.remember(self.user, DONGTAN)
+        add("JONGNO", vector=near(1), plcyNm="종로 월세", zipCd="11110")
+        talk = Talk(user=self.user, answer=said(place="서울특별시 종로구"))
+        result = talk.send("서울특별시 종로구 월세 지원 있어?", mode="start")
+        self.assertEqual(titles(result), ["1. 종로 월세"])
+        self.assertIn("다음에도 종로구로 찾기", talk.labels)
+
+    def test_가입_지역이_없는_회원은_지역을_고르고_다음에도_버튼(self):
         talk = self.talk()
         talk.lives_in_dongtan()
         talk.send("월세 지원 있어?")
-        result = talk.send("다음에도 동탄구로 찾기")
-        self.assertEqual((result["status"], result["save_profile"]), ("replied", {"region_code": DONGTAN}))
-        self.assertNotIn("다음에도 동탄구로 찾기", talk.labels)
-        self.assertFalse(PolicyProfile.objects.exists())  # 핸들러는 쓰지 않는다 — 엔진이 저장
-        profiles.remember(self.user, DONGTAN)  # 엔진이 한 것처럼
-        fresh = self.talk()
-        result = fresh.send(None, mode="start")
-        self.assertEqual(result["reply"]["lines"], [agent.ASK_FIELD])  # 지역을 묻지 않는다
-        result = fresh.send("월세 지원 있어?")
-        self.assertIn(agent.REMEMBERED_NOTE.format(name="동탄구"), result["reply"]["lines"])
-        self.assertNotIn("다음에도 동탄구로 찾기", fresh.labels)  # 이미 저장한 지역
-        fresh.send(agent.CHANGE_REGION)
-        self.assertEqual(fresh.last["reply"]["lines"], [agent.ASK_REGION])  # 바꿀 수 있다
+        self.assertIn("다음에도 동탄구로 찾기", talk.labels)  # 저장된 지역이 없으니 저장을 권한다
 
     def test_저장한_정책_보기_버튼과_문장(self):
         from policies import saved

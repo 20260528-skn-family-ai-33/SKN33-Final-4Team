@@ -4,6 +4,7 @@
 // 자취 여부(필수)로 지킬 돈 비율이 정해진다 — 고르면 비율을 바로 보여 준다 (2026-10-27, utils/direction.js)
 // GET · PUT /api/profile/ (docs/api/profile.md). 서버 값이 기준 — 저장에 성공해야 다음 화면으로 간다 (11/03 S1)
 // 마이에서 들어오면(location.state.from === 'my') 단계 표시줄 없이 저장 뒤 마이로 돌아간다
+// 사는 지역(필수, 2026-11-11 멘토 요청): 시도 → 시군구 드롭다운. 목록은 GET /api/policies/regions/, 청년 정책 찾기의 기본 지역
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -59,6 +60,11 @@ function ProfileForm({ saved }) {
   const [gender, setGender] = useState(saved.gender)  // 'male' | 'female' | null
   const [car, setCar] = useState(saved.hasCar)  // true | false | null
   const [housing, setHousing] = useState(saved.housingType)  // 'alone' | 'family' | null
+  const regions = useApi('/api/policies/regions/').data?.items ?? []  // [{ code, name, regions: [{ code, name }] }]
+  const [region, setRegion] = useState(saved.regionCode ?? '')  // 시군구 코드
+  const [pickedSido, setSido] = useState('')
+  const sido = pickedSido || (regions.find((t) => t.regions.some((r) => r.code === region))?.code ?? '')
+  const areas = regions.find((t) => t.code === sido)?.regions ?? []
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   // 누른 순서 = 우선순위 (응답은 순위순). 예산에서 뺀 카테고리의 예전 순위는 빼고, 저장할 때 남은 순서대로 1위부터 다시 매긴다
@@ -74,6 +80,7 @@ function ProfileForm({ saved }) {
     if (busy) return
     const missing = !a || a.bad ? '생년월일 6자리를 확인해 주세요.'
       : !gender ? '성별을 골라 주세요.'
+      : !region ? '사는 지역을 골라 주세요.'
       : !housing ? '자취 여부를 골라 주세요. 지킬 돈을 나누는 기준이에요.'
       : car === null ? '자차 보유 여부를 골라 주세요.'
       : prio.list.length < 3 ? '소비 우선순위를 3개 이상 골라 주세요.' : ''
@@ -86,6 +93,7 @@ function ProfileForm({ saved }) {
         gender,
         housingType: housing,
         hasCar: car,
+        regionCode: region,
         priorities: prio.list.map((name, i) => ({ category: CODE_BY_NAME[name], rank: i + 1 })),
         categoryMinimums: minList.map((name) => ({ category: CODE_BY_NAME[name], minAmount: mins[name] })),
       })
@@ -133,6 +141,23 @@ function ProfileForm({ saved }) {
             </div>
             <p className="mc-mini-note">본인 성별</p>
           </div>
+        </div>
+
+        <div className="mc-card">
+          <h2>사는 지역</h2>
+          <label className="mc-field">시도
+            <select aria-label="시도" value={sido} onChange={(e) => { setSido(e.target.value); setRegion(''); setError('') }}>
+              <option value="">고르기</option>
+              {regions.map((t) => <option key={t.code} value={t.code}>{t.name}</option>)}
+            </select>
+          </label>
+          <label className="mc-field">시군구
+            <select aria-label="시군구" value={region} disabled={!sido} onChange={(e) => { setRegion(e.target.value); setError('') }}>
+              <option value="">고르기</option>
+              {areas.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
+            </select>
+          </label>
+          <p className="mc-picked" style={{ marginTop: 10 }}>청년 정책을 찾을 때 이 지역을 기본으로 써요.</p>
         </div>
 
         <div className="mc-card">

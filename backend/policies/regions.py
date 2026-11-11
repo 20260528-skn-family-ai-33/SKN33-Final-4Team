@@ -50,3 +50,14 @@ def place_regions(text):
     # '수원'이면 수원시 아래 구까지 다 맞는다 → 이름 끝 단위가 말한 이름인 곳만 ('수원' → 경기도 수원시)
     found = [r for r in found if _bare(r["name"].split()[-1]) == _bare(last)] or found
     return [r["code"] for r in sorted(found, key=lambda r: (len(r["name"].split()), r["code"]))]
+
+
+def tree():
+    """온보딩 드롭다운용: 시도 16개 → 그 아래 시군구(final). 이름은 시도를 뺀 나머지 ('관악구', '화성시 동탄구'), 세종은 자기 자신"""
+    items = []
+    for top in sorted(c for c, r in REGIONS.items() if " " not in r["name"]):
+        name = REGIONS[top]["name"]
+        finals = sorted(c for c, r in REGIONS.items() if r["final"] and (c == top or r["name"].startswith(name + " ")))
+        items.append({"code": top, "name": name,
+                      "regions": [{"code": c, "name": REGIONS[c]["name"][len(name) + 1:] or name} for c in finals]})
+    return items

@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from finance.inputs import body_dict, reject_unknown_fields
 
-from . import saved
+from . import regions as region_table, saved
 from .models import Policy
 
 
@@ -34,3 +34,10 @@ def saved_detail(request, policy_no):
     if row is None:  # 없는 정책 · 수집이 끝난(비활성) 정책
         raise NotFound()
     return Response(saved.item(row, timezone.localdate()))
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def regions(request):
+    """사는 지역 드롭다운 (온보딩 · 내 정보). 시도 → 시군구. 명세 docs/api/policies.md"""
+    return Response({"items": region_table.tree()})

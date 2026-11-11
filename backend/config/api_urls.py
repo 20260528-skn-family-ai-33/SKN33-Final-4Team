@@ -112,6 +112,7 @@ urlpatterns = [
     path("finance/card-bills/<uuid:bill_id>/payment-check/", finance_card_payments.card_bill_check, name="card-bill-check"),
     path("finance/card-bills/<uuid:bill_id>/payments/<uuid:transaction_id>/", finance_card_payments.card_bill_payment,
          name="card-bill-payment"),
+    path("policies/regions/", policies_api.regions, name="policy-regions"),
     path("policies/saved/", policies_api.saved_list, name="policy-saved-list"),
     # 정책번호(공식 번호, UUID 아님 — policy 표의 예외)
     path("policies/<str:policy_no>/saved/", policies_api.saved_detail, name="policy-saved"),

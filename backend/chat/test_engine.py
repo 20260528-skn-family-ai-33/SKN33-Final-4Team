@@ -263,9 +263,9 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(list(SavedPolicy.objects.filter(user=user("A")).values_list("policy_id", flat=True)),
                          ["20260000000000000001"])
         self.assertFalse(SavedPolicy.objects.exclude(user=user("A")).exists())
-        content = self.bot(self.pick("A", cid, content, "다음에도 동탄구로 찾기"))  # 지역 기억 → 엔진이 저장
-        from policies.models import PolicyProfile
-        self.assertEqual(PolicyProfile.objects.get(user=user("A")).region_code, "41597")
+        content = self.bot(self.pick("A", cid, content, "다음에도 동탄구로 찾기"))  # 지역 기억 → 엔진이 내 정보 지역에 저장
+        from users.models import FinancialProfile
+        self.assertEqual(FinancialProfile.objects.get(user=user("A")).region_code, "41597")
         content = self.bot(self.pick("A", cid, content, policy_agent.SAVED_LIST))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])
         again = self.bot(self.send("A", choice="policy"))  # 새 대화 — 지역을 묻지 않는다
