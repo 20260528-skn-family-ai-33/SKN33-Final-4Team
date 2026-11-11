@@ -367,11 +367,14 @@ def respond(request):
             if (talk.slots or {}).get("rev", 0) != store.rev:  # 같은 대화의 다른 메시지가 먼저 저장됨
                 return Response(BUSY, status=409)
         adapter.flush(talk)
+        # 청년 정책 [N번 저장] · [다음에도 …로 찾기] — 대화 저장과 같은 트랜잭션 (409 면 저장도 안 됨).
+        # 저장을 먼저 해 보고, 못 한 정책(그사이 비활성 등)이 있으면 "저장했어요" 대신 실패 안내 · 저장 표시를 지운 상태로 남긴다
+        failed = policy_saved.save_all(request.user, saves["policies"]) if saves.get("policies") else []
+        if failed:
+            bot["lines"], state = policy_agent.unsaved(store.get_agent_state(KEY, "policy") or {}, failed)
+            store.save_agent_state(KEY, "policy", state)
         mine, reply = chat_api.save_turn(talk, said, _content(bot, store.rev + 1),
                                          content_type=ChatMessage.ContentType.TEXT)
-        # 청년 정책 [N번 저장] · [다음에도 …로 찾기] — 대화 저장과 같은 트랜잭션 (409 면 저장도 안 됨)
-        if saves.get("policies"):
-            policy_saved.save_all(request.user, saves["policies"])
         if saves.get("profile"):
             policy_profiles.remember(request.user, saves["profile"]["region_code"])
         talk.slots, talk.active_agent = store.dump(), store.get_active(KEY)

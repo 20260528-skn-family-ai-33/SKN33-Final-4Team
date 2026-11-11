@@ -26,7 +26,7 @@ class SaveTest(TestCase):
         first, created = saved.save(self.user, NUMBER)
         again, created_again = saved.save(self.user, NUMBER)
         self.assertEqual((created, created_again, first.pk), (True, False, again.pk))
-        self.assertEqual(saved.save_all(self.user, [NUMBER, NUMBER]), 0)
+        self.assertEqual(saved.save_all(self.user, [NUMBER, NUMBER, "NONE"]), ["NONE"])
         self.assertEqual(SavedPolicy.objects.count(), 1)
 
     def test_없거나_비활성인_정책은_저장하지_않는다(self):

@@ -267,11 +267,42 @@ class ServiceChoiceTest(ServiceChatBase):
         from policies.models import PolicyProfile
         self.assertEqual(PolicyProfile.objects.get(user=user("A")).region_code, "41597")
         content = self.bot(self.pick("A", cid, content, policy_agent.SAVED_LIST))
-        self.assertEqual([s["title"] for s in content["sections"]], ["청년 월세 지원"])
+        self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])
         again = self.bot(self.send("A", choice="policy"))  # 새 대화 — 지역을 묻지 않는다
         self.assertEqual(again["lines"], [policy_agent.ASK_FIELD])
         spending = self.send("A", cid, text="이번 달 얼마 썼어?")  # 정책 담당이 not_mine → 라우터가 다시 고른다
         self.assertEqual(spending.json()["agent"], "spending")
+
+    def _policy_results(self):
+        """화성시 동탄구로 '월세 지원 있어?' 추천까지 → (대화 번호, 마지막 봇 content)"""
+        from policies.tests.test_search import add
+        add("20260000000000000001", plcyNm="청년 월세 지원")
+        out = self.send("A", choice="policy")
+        cid, content = out.json()["conversationId"], self.bot(out)
+        for label in ("경기도", "화성시", "동탄구"):
+            content = self.bot(self.pick("A", cid, content, label))
+        return cid, self.bot(self.send("A", cid, text="월세 지원 있어?"))
+
+    def test_review_saving_a_policy_that_became_inactive_says_it_failed(self):
+        """PR 97 리뷰 4: 추천 뒤 정책이 비활성이 되면 저장되지 않으므로 '저장했어요'가 아니라 실패를 안내하고 저장 표시도 남기지 않는다"""
+        from policies.models import Policy, SavedPolicy
+        cid, content = self._policy_results()
+        Policy.objects.filter(pk="20260000000000000001").update(is_active=False)
+        content = self.bot(self.pick("A", cid, content, "1번 저장"))
+        self.assertEqual(content["lines"], [policy_agent.SAVE_FAILED.format(name="청년 월세 지원")])
+        self.assertFalse(SavedPolicy.objects.exists())
+        store = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
+        self.assertEqual(store.get_agent_state(engine.KEY, "policy")["saved"], [])
+
+    def test_review_policy_resumes_after_visiting_spending(self):
+        """PR 97 리뷰 1: 청년 정책 → 소비 분석 → 청년 정책 순서로 고르면 보류된 정책 상담을 이어서 한다 (빈 답 없음)"""
+        cid, content = self._policy_results()
+        spending = self.send("A", cid, text="이번 달 얼마 썼어?")
+        self.assertEqual(spending.json()["agent"], "spending")
+        back = self.send("A", cid, choice="policy")
+        self.assertEqual((back.json()["agent"], self.bot(back)["lines"]), ("policy", [policy_agent.ASK_FIELD]))
+        content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
+        self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])
 
     def test_policy_save_is_not_kept_when_conversation_changed_meanwhile(self):
         from policies.models import SavedPolicy

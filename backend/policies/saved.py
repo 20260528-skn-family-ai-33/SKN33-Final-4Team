@@ -26,8 +26,9 @@ def save(user, policy_no):
 
 
 def save_all(user, numbers):
-    """채팅에서 고른 정책들 → 새로 저장한 수. 엔진이 대화 저장과 같은 트랜잭션에서 부른다 (7단계)"""
-    return sum(save(user, number)[1] for number in dict.fromkeys(numbers))
+    """채팅에서 고른 정책들 → 저장하지 못한 정책번호 목록 (없는 · 비활성). 이미 저장돼 있던 것은 저장된 것으로 본다.
+    엔진이 대화 저장과 같은 트랜잭션에서 부르고, 못 한 것이 있으면 답변 · 상태를 고친다"""
+    return [number for number in dict.fromkeys(numbers) if save(user, number)[0] is None]
 
 
 def unsave(user, policy_no):

@@ -38,12 +38,13 @@ MORE, OTHER_FIELD, CHANGE_REGION = "다른 정책 더 보기", "다른 분야 �
 SAVE = "save:"  # 저장 버튼 값 = "save:" + 정책번호 (번호는 서버 상태에서만 나온다)
 SAVE_LABEL = "{number}번 저장"
 SAVED = "‘{name}’ 정책을 저장했어요. [저장한 정책 보기]에서 모아 볼 수 있어요."
+SAVE_FAILED = "‘{name}’ 정책은 지금 저장할 수 없어요. 정책 목록에서 빠졌을 수 있어요."
 SAVED_LIST = "저장한 정책 보기"
 SAVED_WORDS = re.compile(r"저장한\s*(?:정책|거|것|목록)|저장\s*목록|북마크")  # 문장으로 물어도 저장 목록을 보인다
 SAVED_HEAD = "저장한 청년 정책이에요. (최근 저장 순)"
 NO_SAVED = "아직 저장한 정책이 없어요. 추천 결과에서 [N번 저장]을 누르면 여기에 모여요."
 SAVED_NEED_LOGIN = "저장한 정책은 로그인한 뒤 볼 수 있어요."
-APPLY_LABEL = {**tools.STATE, "closed": "마감"}
+APPLY_LABEL = tools.STATE
 REMEMBER_LABEL = "다음에도 {name}로 찾기"  # 시군구 이름은 모두 구 · 시 · 군(받침 없음)으로 끝나 '로'가 맞다
 REMEMBERED = "다음부터 {name} 기준으로 찾을게요. 바꾸려면 [지역 바꾸기]를 누르세요."
 REMEMBERED_NOTE = "저장해 둔 지역({name}) 기준으로 찾아요."
@@ -119,6 +120,10 @@ def decide(state, text, read=None, choice=None):
         code = _picked_region(ask, said)
         if code:
             return _answer(ask, code, home)
+        if read is None:  # 지역 이름이 아니면 먼저 읽는다 — 소비 · 예산 질문은 지역을 다시 묻지 않고 다른 담당으로
+            return Action("read", text=said)
+        if (choice[0] == "not_mine") if choice else not read.mine:
+            return Action("not_mine")
         if not home:  # 사는 곳을 아직 모른다 → 새 문장이면 기억해 두고 다시 묻는다
             return Action("ask_region", codes=ask["codes"], text=ask.get("text") or said)
         return Action("reask")
@@ -293,14 +298,18 @@ def _show_saved(store, cid, state, user, today):
         result = _ask(store, cid, state, "after", [NO_SAVED], after)
         result["status"] = "replied"
         return result
+    # 지금 보고 있는 목록이 다음 "그거" · "2번"의 대상이다 (지난 추천을 가리키지 않게). 모두 저장된 정책이라 저장 버튼은 없다
+    numbers = [item["policy_no"] for item in items]
+    state.update(results=numbers, shown=len(numbers), last=numbers, focus=None,
+                 saved=list(dict.fromkeys([*(state.get("saved") or []), *numbers])))
     sections = []
-    for item in items:
+    for number, item in enumerate(items, 1):
         state_text = APPLY_LABEL[item["apply_state"]] + (f" (마감 {item['apply_end']})" if item["apply_end"] else "")
         rows = [f"신청: {state_text}", f"저장: {item['saved_at'][:10]}"]
         if not item["active"]:
             rows.append("정책 목록에서 빠진 정책이에요. 공고가 내려갔을 수 있어요.")
         rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
-        sections.append({"title": item["name"], "lines": rows})
+        sections.append({"title": f"{number}. {item['name']}", "lines": rows})
     return _card(_ask(store, cid, state, "after", [SAVED_HEAD], after), sections)
 
 
@@ -332,6 +341,8 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
     profile = tools.profile_for(user, text)
     if user is not None and profile.birth_date is None:  # 온보딩 값을 다시 묻지 않는다 — 내 정보로 안내하고 끝낸다
         return _end(store, cid, NO_BIRTH)
+    if tools.says_jobless(text):  # 대화에서 말한 취업 상태는 뒤의 버튼 · 상세에서도 쓴다
+        state["jobless"] = True
     if not state.get("region"):  # 저장해 둔 사는 지역이 있으면 다시 묻지 않는다 ([지역 바꾸기]로 바꿀 수 있다)
         remembered = profiles.remembered_region(user)
         if remembered:
@@ -388,7 +399,7 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         return _remember(store, cid, state, action.region)
     if kind == "detail":
         return _detail(store, cid, state, user, today, action)
-    profile, member = tools.profile_for(user, action.text), profiles.is_member(user)
+    profile, member = tools.profile_for(user, action.text, state.get("jobless")), profiles.is_member(user)
     if kind == "more":
         found = tools.again(state.get("results") or [], profile, today)
         return _show(store, cid, state, found, state.get("region_used") or state["region"], today,
@@ -420,7 +431,7 @@ def _detail(store, cid, state, user, today, action):
         last = shown[-len(state.get("last") or shown):]  # 방금 보인 칸만 버튼으로
         return _ask(store, cid, state, "which", [WHICH], [(state["results"][n - 1], f"{n}. {name}") for n, name in last],
                     topics=action.topics)
-    info = tools.detail(action.text, action.topics, tools.profile_for(user), today)
+    info = tools.detail(action.text, action.topics, tools.profile_for(user, jobless=state.get("jobless")), today)
     state["focus"] = action.text  # 다음 "그거"는 이 정책
     if info is None:
         result = _ask(store, cid, state, "after", [GONE], after)
@@ -447,6 +458,12 @@ def _save(store, cid, state, policy_no, user=None):
     result["status"] = "replied"
     result["save_policies"] = [policy_no]
     return result
+
+
+def unsaved(state, policy_nos):
+    """엔진이 저장하지 못한 정책 (save_all 결과) → 저장 성공 안내를 실패 안내로 바꿀 줄과 고친 상태. 상태는 부르는 쪽이 저장한다"""
+    state = {**state, "saved": [n for n in state.get("saved") or [] if n not in policy_nos]}
+    return [SAVE_FAILED.format(name=tools.policy_name(n)) for n in policy_nos], state
 
 
 def _end(store, cid, line=ENDED):

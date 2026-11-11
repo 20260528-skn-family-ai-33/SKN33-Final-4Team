@@ -8,7 +8,7 @@
 import re
 from dataclasses import dataclass
 
-from . import eligibility, search
+from . import eligibility, saved, search
 from .eligibility import Profile
 from .models import Policy, PolicySync
 from .normalize import _clean
@@ -16,16 +16,21 @@ from .normalize import _clean
 EMPLOYED, JOBLESS = "0013001", "0013003"
 # "취업 준비 중"처럼 말하면 그 말을 따른다 (메모: 조건 입력). 월급 정보보다 앞선다
 JOBLESS_WORDS = re.compile(r"취준|취업\s*준비|구직\s*중|무직|백수|일자리를?\s*찾|실직|퇴사")
-STATE = {"open": "신청 중", "always": "상시", "upcoming": "신청 예정", "unknown": "기간 확인 필요"}
+STATE = {"open": "신청 중", "always": "상시", "upcoming": "신청 예정", "unknown": "기간 확인 필요", "closed": "마감"}
 SUPPORT_CHARS = 80  # 지원 내용은 DB 문장 앞부분만 (자르기만 하고 바꿔 쓰지 않는다)
 # 원문 글머리 기호 (ㅁ · □ · ㅇ · ○ · ※ · ① · ➊ · - …). 낱자 자모(ㅁ · ㅇ)는 낱말 안에 오지 않아 지워도 뜻이 바뀌지 않는다
 BULLETS = re.compile(r"(?:(?<=\s)|^)(?:[ㅁㅇ□■○●◦▪▫◆◇※•►▶❍]|[①-⑳]|[➊-➓]|-(?=\s|[가-힣]))\s*")
 
 
-def profile_for(user, text=None):
-    """회원 → Profile. 회원이 없으면(로컬 확인 · 평가) 빈 Profile. 생년월일이 없으면 birth_date=None — 부르는 쪽이 안내한다"""
+def says_jobless(text):
+    return bool(text and JOBLESS_WORDS.search(text))
+
+
+def profile_for(user, text=None, jobless=False):
+    """회원 → Profile. 회원이 없으면(로컬 확인 · 평가) 빈 Profile. 생년월일이 없으면 birth_date=None — 부르는 쪽이 안내한다
+    jobless = 이 대화에서 이미 "취업 준비 중"이라고 말했다 (분야 버튼처럼 문장 없이 이어질 때도 월급 정보보다 앞선다)"""
     info = getattr(user, "financial_profile", None) if user is not None else None
-    job = JOBLESS if text and JOBLESS_WORDS.search(text) else \
+    job = JOBLESS if jobless or says_jobless(text) else \
         EMPLOYED if info is not None and info.monthly_take_home_income else None
     if info is None:
         return Profile(job=job)
@@ -61,7 +66,10 @@ def again(numbers, profile, today):
 
 
 def _period(policy, today):
-    state = search._apply_state(policy, today)
+    """신청 상태 문구. 상세 · 더 보기는 지난 추천을 다시 읽으므로 그사이 마감된 정책도 온다 (saved.apply_state 가 closed 를 가린다)"""
+    state = saved.apply_state(policy, today)
+    if state == "closed":
+        return STATE["closed"] + (f" ({policy.last_apply_end})" if policy.last_apply_end else "")
     if state in ("open", "upcoming") and policy.periods:
         day = today.isoformat()
         now = next((p for p in policy.periods if p["end"] >= day), policy.periods[-1])

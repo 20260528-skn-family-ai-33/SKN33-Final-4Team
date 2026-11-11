@@ -314,21 +314,22 @@ class AgentRoutingTest(SimpleTestCase):
         self.turn(button="policy")
         self.assertEqual(self.policy.calls[-1]["entry"], "button")
 
-    def test_policy_switch_keeps_work_and_undecided_restart_changes_nothing(self):
-        self.turn(button="policy")
-        self.policy.replies["식비 얼마 썼어?"] = {"status": "not_mine"}
-        turn = self.turn("식비 얼마 썼어?")
-        self.assertEqual((turn["delivered"], turn["decision"].notices), (["policy", "spending"], ("policy_work_suspended",)))
-        self.assertEqual(self.store.get_work("talk-1", "policy"), {"work_ref": "P1", "suspended": True})
-        before = self.state()
-        for entry in ({"button": "policy"}, {"text": "청년 정책 추천해줘"}):
+    def test_policy_switch_keeps_work_and_returning_resumes_it(self):
+        """정책 → 소비 → 정책: 보류된 정책 작업을 묻지 않고 이어서(resume) 정책 에이전트에 전달한다 (예산 조정 재개와 같은 규칙)"""
+        for entry, said in (({"button": "policy"}, None), ({"text": "청년 정책 추천해줘"}, "청년 정책 추천해줘")):
             with self.subTest(entry=entry):
-                turn = self.turn(**entry)  # [미정] 보류된 정책 작업이 있을 때 다시 시작 — 정하지 않고 그대로
-                self.assertEqual((turn["decision"].reason, self.policy.calls[-1]["text"]),
-                                 ("policy_resume_undecided", "식비 얼마 썼어?"))
-                after = self.state()
-                after.pop(("active", "talk-1"), None), before.pop(("active", "talk-1"), None)
-                self.assertEqual(after, before)
+                self.turn(button="policy")
+                self.policy.replies["식비 얼마 썼어?"] = {"status": "not_mine"}
+                turn = self.turn("식비 얼마 썼어?")
+                self.assertEqual((turn["delivered"], turn["decision"].notices),
+                                 (["policy", "spending"], ("policy_work_suspended",)))
+                self.assertEqual(self.store.get_work("talk-1", "policy"), {"work_ref": "P1", "suspended": True})
+                turn = self.turn(**entry)
+                call = self.policy.calls[-1]
+                self.assertEqual((turn["delivered"][-1], call["mode"], call["text"], call["work_ref"]),
+                                 ("policy", "resume", said, "P1"))
+                self.assertEqual(self.store.get_work("talk-1", "policy")["suspended"], False)
+                self.assertEqual(self.store.get_active("talk-1"), "policy")
 
     # ---- input_id · 대화 분리 ----
 

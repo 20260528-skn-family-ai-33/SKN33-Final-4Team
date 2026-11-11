@@ -250,6 +250,15 @@ def _spending(mode, text, cid, store, *, entry="text", declined=(), selected_fro
                     declined=tuple(declined), classified=classified)
 
 
+def _policy_entry(store, cid, text, entry, notices, declined=(), classified=False):
+    """정책으로 들어온다 (버튼 · 분류). 보류된 정책 작업이 있으면 묻지 않고 이어서(resume) — 예산 조정 재개와 같은 규칙.
+    지난 추천 · 지역은 정책 에이전트 상태에 남아 있고, 새로 찾기는 에이전트의 [다른 분야 찾기] · [지역 바꾸기]로 한다"""
+    work = store.get_work(cid, "policy")
+    store.save_work(cid, "policy", {"work_ref": work and work["work_ref"], "suspended": False})
+    return _policy(store, cid, "resume" if work else "start", text, entry=entry, declined=declined, notices=notices,
+                   classified=classified)
+
+
 def _policy(store, cid, mode, text, entry="text", declined=(), notices=(), classified=False):
     """청년 정책 추천 에이전트 입력 (연결 계약만 — 내부 동작 · 판별은 담당자 몫)"""
     work = store.get_work(cid, "policy")
@@ -373,14 +382,10 @@ def _classify(request, text, cid, store, server, *, declined=(), chosen=None, su
         return replace(decision, declined=tuple(declined), reading=request)
     if agent == "budget":
         return _budget(rules.budget_request(request, text), request, cid, store, server, chosen=chosen, declined=declined)
-    if agent == "policy" and store.get_work(cid, "policy"):
-        # [미정] 보류된 정책 작업이 있을 때 새 정책 요청 — 이어서 · 새로 정하지 않고 상태를 그대로 둔다 (버튼과 같음)
-        return Decision("unsupported", "policy", reason="policy_resume_undecided", declined=tuple(declined), reading=request)
     notices = _switch(store, cid, agent)
     store.clear(cid)
     if agent == "policy":
-        store.save_work(cid, "policy", {"work_ref": None, "suspended": False})
-        return replace(_policy(store, cid, "start", text, declined=declined, notices=notices, classified=True),
+        return replace(_policy_entry(store, cid, text, "text", notices, declined=declined, classified=True),
                        reading=request)
     if suggest is not None and "budget_task_suspended" in notices:
         # 예산 조정이 조회 질문을 넘겼다: 조정 작업은 잠깐 넘겨 둔 것으로 표시 (돌아오면 묻지 않고 이어간다)
@@ -530,12 +535,7 @@ def route_button(agent, conversation_id, store, server=None, hints=None):
         return _budget(decision, request, cid, store, server, entry="button")
     if active == "policy":
         return _policy(store, cid, "continue", None, entry="button")
-    if store.get_work(cid, "policy"):
-        # [미정] 보류된 정책 작업이 있을 때 새로 시작할지 · 이어서 할지 — 정하지 않고 상태를 그대로 둔다
-        return Decision("unsupported", "policy", reason="policy_resume_undecided")
-    notices = _switch(store, cid, "policy")
-    store.save_work(cid, "policy", {"work_ref": None, "suspended": False})
-    return _policy(store, cid, "start", None, entry="button", notices=notices)
+    return _policy_entry(store, cid, None, "button", _switch(store, cid, "policy"))
 
 
 # ---------- 독립 실행 진입점 ----------

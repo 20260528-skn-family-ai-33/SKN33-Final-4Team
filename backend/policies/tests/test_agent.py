@@ -324,7 +324,7 @@ class MemberTest(TestCase):
         talk.send("월세 지원 있어?")
         result = talk.send(agent.SAVED_LIST)
         self.assertEqual((result["status"], result["reply"]["lines"], titles(result)),
-                         ("replied", [agent.SAVED_HEAD], ["정책 2"]))
+                         ("replied", [agent.SAVED_HEAD], ["1. 정책 2"]))
         self.assertEqual(rows(result)[0], "신청: 상시")
         self.assertNotIn(agent.SAVED_LIST, talk.labels)
 
@@ -481,3 +481,59 @@ class ButtonOrderTest(TestCase):
         self.assertEqual(talk.labels, order)
         talk.send("2번 저장")
         self.assertEqual(talk.labels, ["1번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
+
+
+class ReviewTest97(TestCase):
+    """PR 97 리뷰 (나은 님) 재현: 2 마감 정책 상세 · 3 저장 목록 뒤 후속 질문 · 5 취업 상태 유지 · 6 지역 질문 중 다른 담당"""
+
+    def test_2_마감된_정책_상세와_더_보기는_마감으로(self):
+        add("OLD", vector=near(1), plcyNm="지난 월세 지원", aplyPrdSeCd="0057001", aplyYmd="20261101 ~ 20261130")
+        talk = Talk(plan=mock.Mock(return_value=chose("search")))
+        talk.lives_in_dongtan()
+        talk.send("월세 지원 있어?")  # 11-07 기준 신청 예정
+        talk.plan.return_value = chose("detail", 1, ["period"])
+        request_day = "2026-12-05"  # 마감 뒤에 같은 대화에서 다시 묻는다
+        with mock.patch.object(agent, "_today", return_value=date.fromisoformat(request_day)):
+            result = talk.send("1번 아직 신청돼?")
+            self.assertEqual(rows(result)[0], "신청: 마감 (2026-11-30)")
+            from policies.models import Policy
+            Policy.objects.filter(pk="OLD").update(apply_type="closed")  # 데이터 갱신으로 마감 처리된 경우 (KeyError 였다)
+            self.assertEqual(rows(talk.send("1번 아직 신청돼?"))[0], "신청: 마감 (2026-11-30)")
+
+    def test_3_저장_목록을_본_뒤의_그거는_저장_목록의_정책(self):
+        from django.contrib.auth import get_user_model
+        from policies import saved
+        from users.models import FinancialProfile
+        member = get_user_model().objects.create_user(email="review3@example.com")
+        FinancialProfile.objects.create(user=member, birth_date=date(1999, 3, 1))
+        add("RENT", vector=near(1), plcyNm="청년 월세 지원")
+        add("JOB", vector=near(9), plcyNm="청년 취업 지원")
+        saved.save(member, "JOB")
+        talk = Talk(user=member, plan=mock.Mock(return_value=chose("search")))
+        talk.lives_in_dongtan()
+        talk.send("월세 지원 있어?")
+        talk.plan.return_value = chose("detail", 1, ["support"])
+        self.assertEqual(titles(talk.send("1번 얼마 줘?")), ["청년 월세 지원"])
+        self.assertEqual(titles(talk.send(agent.SAVED_LIST)), ["1. 청년 취업 지원"])
+        talk.plan.return_value = chose("detail", None, ["support"])
+        result = talk.send("그거 얼마 줘?")
+        self.assertEqual(json.loads(talk.plan.call_args[0][1])["직전 추천"], ["1. 청년 취업 지원"])
+        self.assertEqual(titles(result), ["청년 취업 지원"])  # 하나뿐이라 그 정책 (예전 월세 정책이 아니다)
+        self.assertNotIn("1번 저장", talk.labels)  # 이미 저장한 정책
+
+    def test_5_대화에서_말한_취업_준비는_분야_버튼_뒤에도_쓴다(self):
+        add("JOBLESS", vector=near(1), plcyNm="미취업 청년 구직 지원", jobCd="0013003")
+        talk = Talk(answer=said(needs=(), vague=True))  # PERSON 은 월급 정보가 있다 → 그냥 두면 재직자
+        talk.lives_in_dongtan()
+        self.assertEqual(talk.send("취업 준비 중인데 뭐 받을 거 없어?")["reply"]["lines"], [agent.ASK_FIELD])
+        self.assertEqual(titles(talk.send("취업 · 일자리")), ["1. 미취업 청년 구직 지원"])
+
+    def test_6_지역을_묻는_중에도_소비_질문은_다른_담당으로(self):
+        talk = Talk()
+        talk.send(None, mode="start")
+        self.assertEqual(talk.last["reply"]["lines"], [agent.ASK_REGION])
+        talk.complete.return_value = said(needs=(), mine=False)
+        self.assertEqual(talk.send("이번 달 얼마 썼어?")["status"], "not_mine")
+        talk.complete.return_value = said()
+        result = talk.send("월세 지원 있어?")  # 정책 문장이면 그대로 지역을 다시 묻는다 (문장은 기억)
+        self.assertEqual((result["reply"]["lines"], talk.state["ask"]["text"]), ([agent.ASK_REGION], "월세 지원 있어?"))

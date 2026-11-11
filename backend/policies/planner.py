@@ -68,6 +68,8 @@ def ask(said, read, shown, complete, focus=None):
         number = None
     if action == "detail" and number is None and focus in names:  # 작은 모델이 "그거"를 이어 주지 못할 때가 있다
         number = focus
+    if action == "detail" and number is None and len(names) == 1:  # 보이는 정책이 하나뿐이면 그 정책 (프롬프트 규칙을 코드로도)
+        number = next(iter(names))
     return action, number, list(dict.fromkeys(topics)) or list(DEFAULT_TOPICS)
 
 
