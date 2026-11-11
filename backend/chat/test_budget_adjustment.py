@@ -139,25 +139,29 @@ class BudgetAdjustmentApiTest(TestCase):
     def over_entry(self, **hints):
         return {"baseBudgetId": str(self.base.pk), "mode": "NORMAL_ADJUSTMENT", "hints": {**self.OVER_HINTS, **hints}}
 
-    def test_over_hints_from_budget_screen_reach_the_agent_only_on_a_fresh_start(self):
-        """예산 화면의 초과 카테고리 → 예산 조정 에이전트 요청의 hints (11/11). 기준 예산(entry_context)에는 저장하지 않는다"""
+    def test_over_hints_from_budget_screen_start_the_over_adjustment(self):
+        """예산 화면의 초과 카테고리 → 예산 조정이 질문 없이 재원 선택으로 (11/11). 화면이 보낸 금액은 참고값이고 저장하지 않는다"""
         from chat import budget_adjustment
+        self.ctx["spent"].update(FOOD=412000, BEAUTY=60000)  # 식비 400,000원 → 12,000원 초과 · 뷰티 50,000원 → 10,000원 초과
         seen = []
         real = budget_adjustment.handle_expanded
         with patch("chat.budget_adjustment.handle_expanded", side_effect=lambda request, **ports: seen.append(request) or real(request, **ports)):
-            start = self.say(choice="budget", budgetContext=self.over_entry())
-            cid = start["conversationId"]
-            self.assertEqual(seen[0]["hints"], {"reason": "over", "categories": ["FOOD"], "over_amount": 12000})
+            start = self.say(choice="budget", budgetContext=self.over_entry(overAmount=999999))
+            cid, content = start["conversationId"], start["messages"][-1]["content"]
+            self.assertEqual(seen[0]["hints"], {"reason": "over", "categories": ["FOOD"], "over_amount": 999999})
             self.assertEqual((seen[0]["mode"], seen[0]["entry"], seen[0]["text"]), ("start", "button", None))
             self.assertEqual(start["messages"][0]["content"]["text"], "식비 예산 조정")
-            slots = json.dumps(Conversation.objects.get(pk=cid).slots, ensure_ascii=False)
-            self.assertNotIn("over_amount", slots)  # hints 는 대화 상태에 남기지 않는다
-            # 조정이 진행 중일 때 같은 기준으로 다른 초과 카테고리를 눌러도 409 가 아니고, 진행 중인 조정을 그대로 잇는다
-            asked = self.say(cid, text="식비를 1만 5천 원 늘려줘")
-            again = self.say(cid, choice="budget", budgetContext=self.over_entry(categories=["BEAUTY"]))
-            self.assertEqual((seen[-1]["mode"], seen[-1]["hints"]), ("continue", {}))
-        self.assertEqual(asked["agent"], "budget")
-        self.assertEqual(again["agent"], "budget")
+            self.assertIn("식비 예산을 12,000원 넘었어요", content["text"])  # 화면 금액(999,999)이 아니라 서버가 다시 계산한 초과액
+            self.assertEqual((start["agent"], content["budgetAdjustment"]["phase"]), ("budget", "funding_scope"))
+            self.assertNotIn("999999", json.dumps(Conversation.objects.get(pk=cid).slots, ensure_ascii=False))
+        # 조정 중에 다른 초과 항목으로 들어오는 경우(이어가기 / 새 조정 질문)는 같은 대화 안에서 일어난다 —
+        # 소비 분석 초과 답변의 [예산 조정하기]: chat.test_agent_collab.test_over_answer_suggestion_returns_with_the_over_category
+
+    def test_over_hints_for_a_category_that_is_no_longer_over_do_not_start(self):
+        """화면이 본 뒤 상태가 바뀌어 더는 초과가 아니면 조정을 시작하지 않는다 (서버가 다시 확인)"""
+        start = self.say(choice="budget", budgetContext=self.over_entry())  # 고정 맥락의 식비는 120,000 / 400,000원
+        content = start["messages"][-1]["content"]
+        self.assertIn("현재 확인된 초과 항목이 아니에요", content["text"])
 
     def test_plain_budget_entry_sends_no_hints(self):
         from chat import budget_adjustment
@@ -175,6 +179,7 @@ class BudgetAdjustmentApiTest(TestCase):
             {**self.OVER_HINTS, "categories": []},
             {**self.OVER_HINTS, "categories": ["FOOD", "BEAUTY"]},
             {**self.OVER_HINTS, "categories": ["HOUSING_TELECOM"]},   # 예산 밖 카테고리
+            {**self.OVER_HINTS, "categories": ["ETC"]},               # 기타는 초과 항목 조정을 시작하지 않는다
             {**self.OVER_HINTS, "categories": ["NOPE"]},
             {**self.OVER_HINTS, "categories": "FOOD"},
             {**self.OVER_HINTS, "categories": [{"code": "FOOD"}]},
@@ -198,6 +203,7 @@ class BudgetAdjustmentApiTest(TestCase):
         entry = self.over_entry()
         cases = [{"conversationId": None, "text": "식비 조정", "budgetContext": entry},                      # 문장과 함께는 안 됨
                  {"conversationId": None, "choice": "spending", "budgetContext": entry},                    # 다른 기능 버튼
+                 {"conversationId": None, "choice": "budget", "budgetContext": {**entry, "mode": "INITIAL_ADJUSTMENT"}},  # 승인 전 초안
                  {"conversationId": None, "choice": "budget", "budgetContext": {                            # 분배 실패 복구에는 hints 없음
                      "mode": "DESIGN_RECOVERY", "sourceTaskId": str(uuid4()), "hints": entry["hints"]}}]
         for body in cases:

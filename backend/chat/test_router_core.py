@@ -86,16 +86,19 @@ class RouterCoreTest(Talk, SimpleTestCase):
         decision = self.say("날씨 어때?")
         self.assertEqual((decision.status, decision.intent, decision.reason), ("unsupported", "unsupported", "out_of_scope"))
 
-    def test_budget_button_passes_screen_hints_only_on_a_fresh_start(self):
-        """예산 화면의 초과 카테고리 (11/11): 새로 시작할 때만 handoff["hints"] 로. 진행 중인 조정을 잇는 버튼에는 넘기지 않는다"""
+    def test_budget_button_passes_over_hints_on_start_and_to_the_active_task(self):
+        """초과 항목 진입 (11/11): 새로 시작할 때도, 진행 중인 조정에도 handoff["hints"] 로 넘긴다 (이어갈지 새로 할지는 에이전트가 묻는다)"""
         hints = {"reason": "over", "categories": ["FOOD"], "over_amount": 12000}
         start = route_button("budget", "talk-1", self.store, hints=hints)
         self.assertEqual((start.status, start.agent, start.handoff["mode"], start.handoff["entry"], start.handoff["text"]),
                          ("ready", "budget", "start", "button", None))
         self.assertEqual(start.handoff["hints"], hints)
         self.assertIsNot(start.handoff["hints"], hints)  # 넘긴 값을 그대로 물고 있지 않는다
-        again = route_button("budget", "talk-1", self.store, hints={**hints, "categories": ["BEAUTY"]})
-        self.assertEqual((again.handoff["mode"], again.handoff["hints"]), ("continue", {}))
+        other = {**hints, "categories": ["BEAUTY"]}
+        again = route_button("budget", "talk-1", self.store, hints=other)
+        self.assertEqual((again.handoff["mode"], again.handoff["hints"]), ("continue", other))
+        plain_again = route_button("budget", "talk-1", self.store)
+        self.assertEqual((plain_again.handoff["mode"], plain_again.handoff["hints"]), ("continue", {}))
         plain = route_button("budget", "talk-2", self.store)
         self.assertEqual((plain.handoff["mode"], plain.handoff["hints"]), ("start", {}))
 

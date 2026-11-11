@@ -548,20 +548,33 @@ it('초과한 카테고리의 [예산 조정하기]는 그 카테고리와 초�
   const data = { ...budgetData('approved'), categories: [
     { category: 'FOOD', categoryName: '식비', allocated: 300000, spent: 312000, minAmount: null, locked: false, lockedAmount: null },
     { category: 'BEAUTY', categoryName: '뷰티·미용', allocated: 50000, spent: 20000, minAmount: null, locked: false, lockedAmount: null },
-    { category: 'ETC', categoryName: '기타', allocated: 0, spent: 7000, minAmount: null, locked: false, lockedAmount: null },
+    { category: 'CULTURE_LEISURE', categoryName: '문화·여가', allocated: 0, spent: 7000, minAmount: null, locked: false, lockedAmount: null },
+    { category: 'ETC', categoryName: '기타', allocated: 10000, spent: 30000, minAmount: null, locked: false, lockedAmount: null },
   ] }
   useApi.mockImplementation((url) => ({ data: url === '/api/budgets/' ? data : info, error: null }))
   apiSend.mockImplementation(async () => talk({ status: 'awaiting_input', canApprove: false }))
   await act(() => root.render(<MemoryRouter initialEntries={['/budgets']}><PopupProvider><Routes>
     <Route path="/budgets" element={<BudgetPage />} /><Route path="/chat" element={<AssistantPage />} />
   </Routes></PopupProvider></MemoryRouter>))
-  // 초과한 카테고리(식비)에만 버튼이 있다. 예산 0원 칸(기타)은 초과로 보지 않는다
+  // 초과한 카테고리(식비)에만 버튼이 있다. 예산 0원 칸(문화·여가)은 초과로 보지 않고, 기타는 초과여도 조정으로 넘기지 않는다
   expect([...host.querySelectorAll('button')].filter((b) => b.textContent.trim() === '예산 조정하기 ›')).toHaveLength(1)
   await click(host.querySelector('[aria-label="식비 예산 조정하기"]'))
   expect(sentChat()).toHaveLength(1)
   expect(sentChat()[0][2]).toEqual({ conversationId: null, choice: 'budget', budgetContext: {
     baseBudgetId: 'basis-1', mode: 'NORMAL_ADJUSTMENT', hints: { reason: 'over', categories: ['FOOD'], overAmount: 12000 },
   } })
+})
+
+it('승인 전 초안 예산에서는 초과한 카테고리에 [예산 조정하기]를 보이지 않는다', async () => {
+  const data = { ...budgetData('validated'), categories: [
+    { category: 'FOOD', categoryName: '식비', allocated: 300000, spent: 312000, minAmount: null, locked: false, lockedAmount: null },
+  ] }
+  useApi.mockImplementation((url) => ({ data: url === '/api/budgets/' ? data : info, error: null }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/budgets']}><PopupProvider><Routes>
+    <Route path="/budgets" element={<BudgetPage />} /><Route path="/chat" element={<AssistantPage />} />
+  </Routes></PopupProvider></MemoryRouter>))
+  expect(host.textContent).toContain('12,000원 초과')
+  expect(host.querySelector('[aria-label="식비 예산 조정하기"]')).toBeNull()
 })
 
 it.each([

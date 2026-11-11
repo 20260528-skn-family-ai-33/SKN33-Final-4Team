@@ -829,6 +829,32 @@ VIEWS = {10: _view_query, 1: _view_current, 2: _view_current, 5: _view_current, 
          6: _view_compare, 7: _view_compare, 8: _view_trend, 9: _view_trend}
 
 
+NOT_ADJUSTABLE = ("ETC", "UNCLASSIFIED", "HOUSING_TELECOM", "TRAVEL_LODGING")  # 초과 항목 조정이 시작하지 않는 칸 (기타 · 확인 필요 · 예산 밖)
+
+
+def over_target(results):
+    """초과 답변에서 예산 조정으로 넘길 카테고리 하나 (11/11): {"category": 코드, "over_amount": 원} — 가장 많이 넘긴 것. 없으면 None
+    results = run_items 결과 [{item, ok, result}]. 3번(카테고리 남은 예산)의 확정 초과와 4번(생활비 전체)의 카테고리별 초과에서 고른다.
+    예산 0원 칸 · NOT_ADJUSTABLE 은 뺀다. over_amount 는 참고값이다 (예산 조정이 서버에서 다시 확인한다)"""
+    found = {}
+    for r in results:
+        if not r.get("ok") or r["result"].get("type") not in (3, 4):
+            continue
+        rows = list(r["result"].get("categories") or [])
+        code, done = (r.get("item") or {}).get("category"), r["result"].get("confirmed")
+        if r["result"]["type"] == 3 and done and isinstance(code, str):
+            rows.append({"category": code, **done})
+        for row in rows:
+            code, over, allocated = row.get("category"), row.get("over"), row.get("allocated")
+            if (isinstance(code, str) and code not in NOT_ADJUSTABLE and type(over) is int and over > 0
+                    and type(allocated) is int and allocated > 0):
+                found[code] = max(found.get(code, 0), over)
+    if not found:
+        return None
+    code = max(found, key=found.get)  # 같은 금액이면 먼저 나온 카테고리
+    return {"category": code, "over_amount": found[code]}
+
+
 def view(results):
     """조회 결과 → 카드 블록 목록 (성공 항목이 없으면 None). 실패 항목은 문장으로 덧붙인다"""
     done = [r["result"] for r in results if r["ok"]]

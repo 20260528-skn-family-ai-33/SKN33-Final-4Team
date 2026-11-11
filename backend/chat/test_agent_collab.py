@@ -141,6 +141,39 @@ class AgentCollabTest(CollabFixture, TestCase):
         self.assertEqual(shown["budgetAdjustment"]["proposal"]["proposalId"], card["budgetAdjustment"]["proposal"]["proposalId"])
         self.assertTrue(shown["budgetAdjustment"]["canApprove"])
 
+    def test_over_answer_suggestion_returns_with_the_over_category(self):
+        """조정 중 조회 → 소비 분석의 초과 답변 → [예산 조정하기] → 예산 조정이 기존 조정안을 보존하고 초과 항목으로 새로 할지 묻는다 (11/11)"""
+        from finance.models import Card, Connection, FinancialTransaction, SyncRun
+        today = timezone.localdate()
+        link = Connection.objects.create(user=self.user, business_type="card", organization_code="FIXTURE_CARD", status="connected")
+        plastic = Card.objects.create(user=self.user, connection=link, origin="provider", source_card_key="collab-over")
+        # 이번 주기 승인내역을 다 받았다는 기록이 있어야 소비 분석이 초과를 '확정'으로 답한다 (spending_analysis.coverage)
+        SyncRun.objects.create(user=self.user, connection=link, card=plastic, product_code="card_approval_list", status="success",
+                               covered_from=today.replace(day=1), covered_to=today)
+        FinancialTransaction.objects.create(
+            user=self.user, occurred_on=today, amount=130000, direction="out", transaction_type="spending",
+            confirmed_category_id="TRANSPORT_CAR", confirmation_state="confirmed", source_kind="card", card=plastic)
+        self.ctx["spent"]["TRANSPORT_CAR"] = 130000  # 교통 예산 100,000원 → 30,000원 초과 (예산 조정이 다시 확인하는 값)
+        card = self.proposal()
+        proposal_id = card["budgetAdjustment"]["proposal"]["proposalId"]
+        data, answer = self.say("교통은 얼마 남았어?")
+        self.assertEqual(data["agent"], "spending")
+        self.assertIn("30,000원 초과했어요", answer["text"])
+        self.assertIn({"value": "budget", "label": "예산 조정하기"}, answer["choices"])
+        self.assertNotIn("over", answer)  # 라우터에만 알리고 화면 응답에는 넣지 않는다
+
+        data, asked = self.pick(answer, "budget")
+        self.assertEqual((data["agent"], self.roles()), ("budget", []))  # LLM 없이 넘어온다
+        self.assertEqual(asked["budgetAdjustment"]["phase"], "over_entry")
+        self.assertIn("교통·차량 초과 항목으로 새로 시작할까요?", asked["text"])
+        self.assertEqual([c["label"] for c in asked["choices"]][:2], ["기존 조정 이어가기", "초과 항목으로 새 조정"])
+        self.assertEqual(Budget.objects.get(pk=proposal_id).status, "validated")  # 기존 조정안은 그대로
+
+        data, started = self.pick(asked, "over_restart")
+        self.assertEqual((data["agent"], self.roles()), ("budget", []))
+        self.assertIn("교통·차량 예산을 30,000원 넘었어요", started["text"])
+        self.assertEqual(started["budgetAdjustment"]["phase"], "funding_scope")
+
     def test_pointing_question_uses_the_category_under_adjustment(self):
         self.proposal()
         data, answer = self.say("이건 얼마 남았어?")  # "이거" = 늘리려던 식비
@@ -282,3 +315,110 @@ class SuggestRoutingTest(SimpleTestCase):
         self.assertEqual((turn["decision"].status, turn["decision"].asking), ("ask", "intent"))
         task = self.store.get_task("talk")
         self.assertEqual((task["suspended"], task.get("lent")), (False, None))
+
+
+class OverSuggestRoutingTest(SimpleTestCase):
+    """라우터 규칙만 (11/11): 소비 분석 초과 답변의 [예산 조정하기] → 예산 조정에 초과 hints. 두 에이전트 모두 정해 둔 결과만 주는 대역"""
+    OVER = {"category": "FOOD", "over_amount": 12000}
+    HINTS = {"reason": "over", "categories": ["FOOD"], "over_amount": 12000}
+    OVER_ANSWER = {"status": "replied", "over": OVER, "reply": {"lines": ["식비 예산을 넘었어요."], "suggest": ["budget_adjust"]}}
+    PLAIN_ANSWER = {"status": "replied", "reply": {"lines": ["이번 달 소비예요."]}}
+
+    def setUp(self):
+        self.store, self.llm = MemoryStateStore(), RoleFakeLLM(PHASE_B_SAID)
+        self.spending = FakeAgent({None: self.OVER_ANSWER})  # 소비 분석 버튼 → 초과 답변
+        self.budget = FakeAgent(work_ref="T1")
+        self.server = FakeServer({"T1": {"state": "awaiting_approval"}})
+
+    def turn(self, text=None, button=None, **options):
+        return run_turn("talk", self.store, self.llm, text=text, button=button, server=self.server,
+                        agents={"spending": self.spending, "budget": self.budget, "policy": None}, **options)
+
+    def lend(self):
+        """조정 중 조회 질문 → 예산 조정이 소비 분석으로 넘김(넘겨 둔 조정) → 소비 분석의 초과 답변"""
+        self.turn("식비 예산 줄여줘")
+        self.assertEqual(current_agent(self.store, "talk"), "budget")
+        question = "식비 예산 얼마 남았어?"
+        self.budget.replies[question] = {"status": "not_mine", "suggest": {"to": "spending", "category": "FOOD"}}
+        self.spending.replies[question] = self.OVER_ANSWER
+        self.turn(question)
+        self.assertEqual(self.store.get_task("talk")["lent"], {"category": None})  # 대역 답에는 조회 항목이 없어 본 카테고리는 비어 있다
+
+    def test_suggestion_starts_budget_with_the_over_category(self):
+        self.turn(button="spending")
+        self.assertEqual(self.store.get_over("talk"), self.OVER)
+        turn = self.turn(button="budget", suggested=True)
+        handoff = turn["decision"].handoff
+        self.assertEqual((turn["decision"].status, handoff["mode"], handoff["entry"], handoff["text"]), ("ready", "start", "button", None))
+        self.assertEqual(handoff["hints"], self.HINTS)
+        self.assertEqual(self.budget.calls[-1]["hints"], self.HINTS)  # 예산 조정 에이전트가 받은 요청
+        self.assertIsNone(self.store.get_over("talk"))
+        self.assertEqual(self.llm.calls, [])  # 라우터 · 에이전트 LLM 을 부르지 않는다
+
+    def test_feature_button_without_a_suggestion_sends_no_hints(self):
+        self.turn(button="spending")
+        turn = self.turn(button="budget")  # 위쪽 [예산 조정] 기능 버튼
+        self.assertEqual(turn["decision"].handoff["hints"], {})
+
+    def test_over_is_remembered_for_one_turn_only(self):
+        self.turn(button="spending")
+        self.spending.replies[None] = self.PLAIN_ANSWER
+        self.turn(button="spending")  # 초과가 아닌 답
+        self.assertIsNone(self.store.get_over("talk"))
+        self.assertEqual(self.turn(button="budget", suggested=True)["decision"].handoff["hints"], {})
+
+    def test_any_other_turn_forgets_the_over(self):
+        self.turn(button="spending")
+        self.turn(button="policy")
+        self.assertIsNone(self.store.get_over("talk"))
+        self.assertEqual(self.turn(button="budget", suggested=True)["decision"].handoff["hints"], {})
+
+    def test_malformed_over_from_the_agent_is_dropped(self):
+        for over in ({"category": "NOPE", "over_amount": 1}, {"category": "FOOD", "over_amount": 0},
+                     {"category": "FOOD", "over_amount": "12000"}, {"category": "FOOD"}, "FOOD", None):
+            with self.subTest(over=over):
+                self.spending.replies[None] = {**self.OVER_ANSWER, "over": over}
+                self.turn(button="spending")
+                self.assertIsNone(self.store.get_over("talk"))
+
+    def test_explicit_screen_hints_win_over_the_remembered_answer(self):
+        self.turn(button="spending")
+        screen = {"reason": "over", "categories": ["BEAUTY"], "over_amount": 5000}
+        self.assertEqual(self.turn(button="budget", hints=screen, suggested=True)["decision"].handoff["hints"], screen)
+
+    def test_lent_task_resumes_with_over_hints_only(self):
+        """넘겨 둔 조정이 있어도 묻지 않고 재개하되, 조회 복귀용 {"from": "spending"} 모양과 섞지 않는다"""
+        self.lend()
+        turn = self.turn(button="budget", suggested=True)
+        handoff = turn["decision"].handoff
+        self.assertEqual((turn["decision"].status, handoff["mode"], handoff["hints"]), ("ready", "resume", self.HINTS))
+        task = self.store.get_task("talk")
+        self.assertEqual((task["suspended"], task.get("lent")), (False, None))
+        self.assertEqual(current_agent(self.store, "talk"), "budget")
+
+    def test_lent_task_without_the_suggestion_keeps_the_seen_category_hint(self):
+        self.lend()
+        handoff = self.turn(button="budget")["decision"].handoff  # 기능 버튼: 기존 규칙 그대로
+        self.assertEqual((handoff["mode"], handoff["hints"]), ("resume", {"from": "spending"}))
+
+    def test_suspended_task_resumes_instead_of_the_router_question(self):
+        """보류한 조정이 있을 때도 라우터는 이어서/새로를 묻지 않는다 — 예산 조정 에이전트가 한 번만 묻는다"""
+        self.turn("식비 예산 줄여줘")
+        question = "식비 얼마 썼어?"
+        self.budget.replies[question] = {"status": "not_mine"}
+        self.spending.replies[question] = self.OVER_ANSWER
+        self.turn(question)
+        task = self.store.get_task("talk")
+        self.assertEqual((task["suspended"], task.get("lent")), (True, None))
+        turn = self.turn(button="budget", suggested=True)
+        self.assertEqual((turn["decision"].status, turn["decision"].handoff["mode"], turn["decision"].handoff["hints"]),
+                         ("ready", "resume", self.HINTS))
+
+    def test_failed_budget_start_keeps_the_over_for_a_retry(self):
+        self.turn(button="spending")
+        self.budget.replies[None] = {"status": "failed", "error": "call_failed"}
+        self.turn(button="budget", suggested=True)
+        self.assertEqual(self.store.get_over("talk"), self.OVER)
+        self.assertIsNone(self.store.get_task("talk"))
+        del self.budget.replies[None]
+        self.assertEqual(self.turn(button="budget", suggested=True)["decision"].handoff["hints"], self.HINTS)

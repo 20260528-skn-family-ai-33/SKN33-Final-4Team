@@ -8,7 +8,7 @@ from datetime import date, datetime
 from django.db import DatabaseError
 
 from . import adapter, agent_loop, agent_tools, claims, dialog, explain, investigation, tools
-from .answer import compose
+from .answer import compose, over_target
 
 START = {"lines": ["어떤 소비가 궁금하세요?"],
          "examples": ["이번 달 얼마 썼어?", "지난달보다 식비 더 썼어?", "식비 예산 얼마 남았어?", "최근 3개월 소비 어때?"]}
@@ -53,6 +53,7 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
     context = {selected_from?, budget_change?: {outcome, checked_at}, switched_from?, declined_by?,
                suggested_category?: 예산 조정이 넘기며 알려 준 카테고리, budget_return?: 넘겨 둔 예산 조정이 있음}
     → {"status": replied | awaiting_input | unsupported | failed | not_mine, "reply", "detail", "reason", "error", ...}
+      초과 답변(reply.suggest 에 "budget_adjust")이면 "over": {"category", "over_amount"} 를 더한다 — 라우터가 [예산 조정하기]에 싣는다
     - not_mine · 해석 실패는 상태를 바꾸지 않는다. 분석 한 번이 끝나도 ended 가 아니다(직전 분석은 남는다)
     - 모든 항목 조회 실패면 failed (라우터가 이번 입력 전 상태로 되돌린다). 일부 실패는 replied + 항목별 안내
     - execute(decision) → run_items 결과 (기본: 실제 분석). None 을 돌려주면 실행을 건너뛴다(평가 · 테스트 대역)
@@ -108,6 +109,11 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         source = _take_from(decision)
         if source:  # 넘겨 둔 예산 조정이 있고 카테고리 하나의 남은 예산을 답했다 → [○○에서 가져오기] (문구 · 버튼은 라우터 안내가 붙인다)
             result["reply"] = {**result["reply"], "suggest": [*result["reply"].get("suggest", []), {"take_from": source}]}
+    if result["status"] == "replied" and "budget_adjust" in (result.get("reply") or {}).get("suggest", []):
+        # 초과 답변에 [예산 조정하기]가 붙었다 → 어느 카테고리가 얼마 넘었는지 라우터에 알린다 (화면 응답에는 넣지 않는다, 11/11)
+        target = over_target([r for results in ran if results for r in results])
+        if target:
+            result["over"] = target
     dialog.publish(store, cid)
     return result
 
