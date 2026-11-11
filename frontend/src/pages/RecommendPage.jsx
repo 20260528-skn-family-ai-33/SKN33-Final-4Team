@@ -181,6 +181,7 @@ export default function RecommendPage() {
   // 처음 불러오기. 지킬 돈을 저장하고 넘어왔으면(state.autoRecommend) 처음 불러온 데이터에 초안이 없을 때만 새 추천을 한 번 만든다.
   // 표시는 들어오자마자 지워서, 승인 뒤 뒤로 가기로 다시 와도 새 초안을 만들지 않는다
   const autoRecommend = useRef(Boolean(navState?.autoRecommend))
+  const refreshRecommendation = useRef(Boolean(navState?.refreshRecommendation))
   useEffect(() => {
     if (navState?.autoRecommend) navigate(PATHS.recommend, { replace: true, state: null })
   }, [navState, navigate])
@@ -193,7 +194,7 @@ export default function RecommendPage() {
         setData(first)
         if (!autoRecommend.current) return
         autoRecommend.current = false  // 첫 데이터로만 판단
-        if (first.budget?.status !== 'validated') makeDraft()
+        if (refreshRecommendation.current || first.budget?.status !== 'validated') makeDraft()
       })
       .catch((err) => { if (alive) setLoadError(err) })
     return () => { alive = false; mounted.current = false }
@@ -261,7 +262,6 @@ export default function RecommendPage() {
       <div className="mc-eyebrow">추천 예산 확인 · 예산 {draft.versionNo}{draft.engineVersion?.startsWith('temp-') && ' · 테스트 추천'}</div>
       <h1>카테고리별 예산을<br />확인하고 고쳐 주세요</h1>
       <p className="mc-muted">지킬 돈에서 정한 생활비를 카테고리별로 나눴어요.</p>
-      {!draft.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}
       {data.recommendation?.spareTransfer > 0 && <p className="mc-note" role="status">여윳돈 {won(data.recommendation.spareTransfer)}을 이번 예산 생활비에만 포함해요. 기존 생활비 설정은 유지돼요.</p>}
       {data.recommendation?.targetConflicts?.map((c) => <p key={c.category} className="mc-note" role="status">{catName(c.category)} 유지 목표 {won(c.requestedAmount)} → 이번 예산 {won(c.possibleAmount)} (차이 {won(c.diff)}). {c.reason === 'amount_unit' ? '최종 금액 단위를 맞췄어요.' : '생활비와 보호 조건을 함께 반영했어요.'} 저장된 유지 목표는 그대로예요.</p>)}
       {released.length > 0 && <p className="mc-min-warn" role="status">생활비가 바뀌어서 이번 달 자물쇠({released.map(catName).join(' · ')})를 풀었어요. 필요하면 다시 걸어 주세요.</p>}

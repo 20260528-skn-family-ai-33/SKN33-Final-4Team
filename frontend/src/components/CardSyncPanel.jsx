@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router'
 import { apiSend, useApi } from '../utils/api.js'
 import { runFinanceSync, syncLines } from '../utils/financeSync.js'
 import { SERVER_FIELDS } from '../utils/institutions.js'
+import CardNoInput from './CardNoInput.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
@@ -93,8 +94,8 @@ function CardConnection({ connection, onChanged }) {
       {needCredentials && <>
         <p className="mc-note">{name}에서 조회할 때 카드번호와 카드 비밀번호를 요청해요.</p>
         <label className="mc-field">카드번호
-          <input name="cardNo" autoComplete="off" inputMode="numeric" maxLength={19} value={credentials.cardNo} disabled={busy}
-            onChange={(event) => setCredentials((previous) => ({ ...previous, cardNo: event.target.value.replace(/\D/g, '') }))} />
+          <CardNoInput name="cardNo" value={credentials.cardNo} disabled={busy}
+            onChange={(cardNo) => setCredentials((previous) => ({ ...previous, cardNo }))} />
         </label>
         <label className="mc-field">카드 비밀번호{connection.organizationCode === '0302' ? ' 4자리' : ' (2자리 또는 4자리)'}
           <input name="cardPassword" type="password" autoComplete="off" inputMode="numeric" maxLength={4} value={credentials.cardPassword} disabled={busy}

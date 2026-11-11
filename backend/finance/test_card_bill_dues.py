@@ -85,8 +85,18 @@ class BillWithoutWithdrawalTest(BillDueFixture):
         sync_card(self.user, "cid", ORG, date(2026, 7, 1), TODAY, ("202609", "202610", "202611"),
                   connection_id=self.connection.pk)
         self.assertEqual(sorted(PaymentDue.objects.values_list("due_date", flat=True)), [date(2026, 10, 5), date(2026, 11, 5)])
-        items = {i["due_date"]: i["payment_state"] for i in self.must_pay()}
+        # 카드사를 7/1에 처음 연결했다면 지난 주기(10/5) 청구서도 출금을 못 찾았을 때 묻는다
+        early = lambda user: {c.issuer_code: date(2026, 7, 1) for c in Card.objects.filter(user=user)}
+        with patch("budgets.home.issuer_connected_on", early):
+            items = {i["due_date"]: i["payment_state"] for i in self.must_pay()}
         self.assertEqual(items, {"2026-10-05": "needs_review", "2026-11-05": "unpaid"})
+
+    def test_bill_due_before_first_connection_is_not_asked_in_home(self):
+        # 11/09: 10/28에 카드사를 처음 연결 → 그 전에 결제일이 지난 10/5 청구서는 '납부 확인 필요'로 띄우지 않는다
+        self.bills["202610"] = bill(due="20261005")
+        self.sync()
+        self.assertEqual([i["due_date"] for i in self.must_pay()], ["2026-11-05"])
+        self.assertEqual(self.due(due_date=date(2026, 10, 5)).payment_state, "needs_review")  # 예정 행은 그대로 남는다
 
     def test_repeat_sync_keeps_one_due_and_applies_amount_correction(self):
         self.sync()

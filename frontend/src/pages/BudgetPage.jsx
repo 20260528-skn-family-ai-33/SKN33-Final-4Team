@@ -9,9 +9,11 @@ import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import OutOfBudgetLine, { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
+import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 import { PATHS } from '../routes.js'
 import { catIcon, PENDING } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
+import HelpTip from '../components/HelpTip.jsx'
 
 // 한 달 나눠보기 줄 (split 칸 이름 → 화면 이름)
 const SPLIT_ROWS = [['fixed', '고정비'], ['saving', '저축'], ['cushion', '쿠션 적립'], ['living', '생활비'], ['spare', '여윳돈']]
@@ -31,6 +33,7 @@ export default function BudgetPage() {
   // 자물쇠를 누른 결과 (서버 응답). 카테고리 코드 → { locked, lockedAmount }
   const [locks, setLocks] = useState({})
   const [nag, setNag] = useState(undefined)
+  const [overOpen, setOverOpen] = useState(false)  // 생활비 초과 안내 펼침
   const [lockError, setLockError] = useState(null)
 
   if (!data) return <Layout title="카테고리 예산" activeTab="budget"><ApiStatus error={error} /></Layout>
@@ -85,6 +88,7 @@ export default function BudgetPage() {
         </div>
       )}
       {!budget.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}
+      <UnreflectedCardNote notes={data.cardNotes} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>
@@ -93,14 +97,26 @@ export default function BudgetPage() {
 
       <div className="mc-card">
         <div className="mc-row">
-          <h2>생활비 카테고리</h2>
+          <h2>생활비 카테고리
+            {/* 11/9: 맨 아래 있던 조정 규칙 안내를 제목 옆 [?] 창으로 */}
+            <HelpTip label="예산 조정 규칙" title="예산은 이렇게 조정돼요">
+              <li><span className="mc-inline-ic"><LockIcon /></span> 자물쇠를 건 카테고리는 조정할 때 그대로 둬요.</li>
+              <li>‘최소’ 표시가 있는 카테고리는 그 금액 밑으로 줄이지 않아요.</li>
+              <li>예산 변경은 챗봇이 만든 조정안을 확인하고 승인해야 반영돼요.</li>
+            </HelpTip>
+          </h2>
           <span className="mc-muted">{won(living.spent)} / {won(living.budget)}</span>
         </div>
         {overspend.over > 0 && (
-          <p className="mc-note" style={{ padding: 0 }}>
-            생활비를 {won(overspend.over)} 넘게 썼어요. 여윳돈에서 {won(overspend.coveredBySpare)} 채웠어요
-            {overspend.shortfall > 0 ? ` · 그래도 ${won(overspend.shortfall)} 모자라요.` : '.'}
-          </p>
+          /* 11/9: 예산 초과 안내 — 빨간 ! + 첫 줄만, [›]를 눌러 펼치면 여윳돈 · 모자란 돈 */
+          <button type="button" className="mc-over" aria-expanded={overOpen} onClick={() => setOverOpen((v) => !v)}>
+            <span className="mc-over-ic"><Icon name="CircleAlert" size={16} /></span>
+            <span className="mc-grow">
+              <strong>생활비를 <b>{won(overspend.over)}</b> 넘게 썼어요</strong>
+              {overOpen && <small>여윳돈에서 <b>{won(overspend.coveredBySpare)}</b> 채웠어요{overspend.shortfall > 0 && <><br />그래도 <b>{won(overspend.shortfall)}</b> 모자라요</>}</small>}
+            </span>
+            <span className="mc-over-go"><Icon name="ChevronRight" size={16} /></span>
+          </button>
         )}
         {categories.map((c) => {
           const lock = lockOf(c)
@@ -138,7 +154,6 @@ export default function BudgetPage() {
       })}>
         <Icon name="MessageCircle" /> 챗봇으로 예산 조정
       </button>
-      <p className="mc-note">자물쇠를 건 카테고리는 조정할 때 그대로 두고, 최소 표시가 있는 카테고리는 그 금액 밑으로 줄이지 않아요. 예산 변경은 챗봇이 만든 조정안을 확인하고 승인해야 반영돼요.</p>
     </Layout>
   )
 }

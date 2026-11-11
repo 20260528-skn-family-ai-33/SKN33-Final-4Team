@@ -13,6 +13,26 @@ COMPARE = {"비교하고정하기", "잘모르겠어요", "잘모르겠어", "�
            "어떤게제일나아", "어떤게나아", "세가지안비교", "세가지안비교해줘", "세가지안을비교해줘", "비교해줘", "추천해줘"}
 
 
+def hint_category(request, names):
+    """소비 분석에서 돌아올 때 라우터가 넘긴 카테고리 (request["hints"] = {"from": "spending", "category": 코드}). 모르는 코드는 버린다"""
+    hints = request.get("hints") or {}
+    code = hints.get("category") if hints.get("from") == "spending" else None
+    return code if isinstance(code, str) and code in names and code not in SPECIAL_NAMES else None
+
+
+def take_from_label(code, names):
+    """소비 분석 답의 [○○에서 가져오기] 버튼 이름 (라우터 문구와 같은 모양). 이 이름 그대로 오면 LLM 없이 재원으로 본다"""
+    return f"{names[code]}에서 가져오기"
+
+
+def not_mine(ref=None, to=None, category=None, names=()):
+    """'내 일 아님' 결과. 조회 질문이면 어디로 갈지(suggest)를 같이 알려 라우터가 LLM 없이 넘긴다. 저장된 상태는 바꾸지 않는다"""
+    if to != "spending":
+        return _result("not_mine", work_ref=ref)
+    known = category if category in names and category not in SPECIAL_NAMES else None
+    return _result("not_mine", work_ref=ref, suggest={"to": "spending", "category": known})
+
+
 def _pending_reply(state, ref=None, context=None):
     pending = state["pending"]
     response = _result("awaiting_input", [pending["line"]], work_ref=ref, choices=pending["choices"],
@@ -381,15 +401,19 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                  or re.fullmatch(r"(?:\d+안)?(?:예산|예산변화|변경내역)(?:보기|보여줘|알려줘)", compact)
                  or re.fullmatch(r"(?:왜)?\d+안(?:을|이|은|는)?(?:왜)?(?:추천|비추천)(?:해|해요|했어|했어요|이야|인가요)?", compact))):
         data = {"action": "explain"}
+    hinted = hint_category(request, names)
+    if data is None and hinted and compact == take_from_label(hinted, names).translate(str.maketrans("", "", " ?!.,？")):
+        data = {"sources": [hinted], "reference": "previous"}  # [○○에서 가져오기] 버튼: 방금 본 카테고리를 재원으로
     if data is None:
         try:
             data = read(text, complete, categories=names,
                         pending={key: pending[key] for key in ("kind", "choices", "line") if key in pending},
-                        previous={key: state.get(key) for key in ("requests", "scope", "reason", *LIST_FIELDS)})
+                        previous={key: state.get(key) for key in ("requests", "scope", "reason", *LIST_FIELDS)},
+                        hints={"from": "spending", "category": hinted} if hinted else None)
         except InterpretationFailed as error:
             return _result("failed", ["요청을 이해하지 못했어요. 다시 알려 주세요."], work_ref=ref, error=str(error))
         if not data["mine"]:
-            return _result("not_mine", work_ref=ref)
+            return not_mine(ref, data.get("handoff"), data.get("handoff_category"), names)
         if data["cancel"]:
             return handle_expanded({**request, "mode": "cancel"}, store=store, complete=complete,
                                    get_context=get_context, simulate=simulate, propose=propose,

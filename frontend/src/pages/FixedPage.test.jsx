@@ -83,7 +83,8 @@ it('확인하지 못한 청구서 · 0원 청구서 · 묻는 청구서를 구�
   serverData.cardBills.push({ issuerCode: '0306', issuerName: '현대카드', totalAmount: 511515, confirmedFixedAmount: 33309,
     amountAfterFixed: 478206, isEstimated: null, reason: null, bills: [bill({ billId: 'h', totalAmount: 511515 })] })
   await act(() => root.render(<FixedPage />))
-  expect(host.textContent).toContain('청구서 확인 필요')
+  expect(host.textContent).toContain('이번 급여 주기에 낼 청구서가 아직 안 나왔어요')
+  expect(host.textContent).not.toContain('청구서 확인 필요')
   expect(host.textContent).toContain('다른카드 · 11월 청구액 0원')
   expect(host.textContent).toContain('낼 금액이 없어요')
   expect(host.textContent).toContain('현대카드 · 11월 청구액 511,515원')
