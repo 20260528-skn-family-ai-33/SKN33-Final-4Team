@@ -159,33 +159,53 @@ class FlowTest(TestCase):
         self.assertEqual(result["status"], "replied")
         self.assertIn("관련: 월세", rows(result))
 
-    def test_다른_지역을_말하면_확인하고_그_지역은_이번만_쓴다(self):
+    def test_문장_속_시군구는_묻지_않고_그_지역으로_찾고_사는_곳은_그대로(self):
+        """멘토 요청: 질문에 지역이 있으면 그 지역으로 바로 찾는다. 사는 곳과 달라도 확인 버튼 없음 · 이번 검색에만"""
+        add("BUSAN", vector=near(1), plcyNm="해운대 월세", zipCd="26350")
+        talk = Talk(answer=said(place="부산 해운대구"))
+        talk.lives_in_dongtan()
+        result = talk.send("부산 해운대구로 이사 가는데 월세 지원 있어?")
+        self.assertEqual((result["reply"]["lines"][0], titles(result)),
+                         ("부산광역시 해운대구 기준으로 찾은 청년 정책이에요.", ["1. 해운대 월세"]))
+        self.assertEqual(talk.state["region"], DONGTAN)  # 사는 곳은 그대로
+        self.assertNotIn("다음에도 해운대구로 찾기", talk.labels)
+
+    def test_넓은_지명은_그_안에서만_고르고_다시_읽지_않는다(self):
         add("BUSAN", vector=near(1), plcyNm="해운대 월세", zipCd="26350")
         talk = Talk(answer=said(place="부산"))
         talk.lives_in_dongtan()
-        result = talk.send("부산으로 이사 가는데 월세 지원 있어?")
-        self.assertIn("부산광역시", result["reply"]["lines"][0])
-        self.assertEqual(talk.labels, ["부산 기준으로 보기", "사는 곳(동탄구) 기준으로 보기"])
-        talk.send("부산 기준으로 보기")
+        talk.send("부산 월세 지원 있어?")
         self.assertEqual(talk.last["reply"]["lines"], ["부산광역시의 어디인가요?"])
+        self.assertIn("해운대구", talk.labels)
         result = talk.send("해운대구")
         self.assertEqual(titles(result), ["1. 해운대 월세"])
-        self.assertEqual(talk.state["region"], DONGTAN)  # 사는 곳은 그대로
+        self.assertEqual(talk.state["region"], DONGTAN)
         talk.complete.assert_called_once()  # 읽은 결과를 남겨 두고 다시 읽지 않는다
 
-    def test_사는_곳_기준을_고르면_사는_곳으로_찾는다(self):
-        add("HOME", vector=near(1), plcyNm="동탄 월세")
-        talk = Talk(answer=said(place="부산"))
+    def test_여러_곳인_지명은_후보만_묻는다(self):
+        talk = Talk(answer=said(place="중구"))
         talk.lives_in_dongtan()
-        talk.send("부산 월세 지원 있어?")
-        result = talk.send("사는 곳(동탄구) 기준으로 보기")
-        self.assertEqual(titles(result), ["1. 동탄 월세"])
+        talk.send("중구 월세 지원 있어?")
+        self.assertEqual((talk.last["reply"]["lines"], len(talk.labels)), ([agent.ASK_WHICH_PLACE], 5))
+        self.assertIn("서울특별시 중구", talk.labels)
 
     def test_사는_곳을_품는_지명은_묻지_않는다(self):
         add("HOME", vector=near(1))
         talk = Talk(answer=said(place="경기도"))
         talk.lives_in_dongtan()
         self.assertEqual(talk.send("경기도 월세 지원")["status"], "replied")
+        self.assertEqual(talk.state["region_used"], DONGTAN)
+
+    def test_사는_곳을_몰라도_문장_속_지역으로_바로_찾는다(self):
+        """스크린샷 사례: 처음 문장에 '서울특별시 종로구' → 지역 질문 없이 종로구"""
+        add("JONGNO", vector=near(1), plcyNm="종로 월세", zipCd="11110")
+        talk = Talk(answer=said(place="서울특별시 종로구"))
+        result = talk.send("서울특별시 종로구에서 월세 지원받을 수 있는지 찾아줘", mode="start")
+        self.assertEqual((result["status"], result["reply"]["lines"][0], titles(result)),
+                         ("replied", "서울특별시 종로구 기준으로 찾은 청년 정책이에요.", ["1. 종로 월세"]))
+        self.assertIsNone(talk.state.get("region"))  # 사는 곳으로 기억하지 않는다
+        talk.complete.return_value = said()  # 다음 문장에 지역이 없으면 그때 묻는다
+        self.assertEqual(talk.send("면접 정장도 있어?")["reply"]["lines"], [agent.ASK_REGION])
 
     def test_다른_담당_문장은_not_mine_이고_상태를_바꾸지_않는다(self):
         talk = Talk(answer=said(needs=(), mine=False))

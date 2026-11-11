@@ -3,7 +3,7 @@
 다음에 무엇을 할지는 decide() 한 곳에서 정한다. 버튼 · 취소 · 지역은 규칙, 직접 쓴 문장은 planner(LLM)가 고른 행동을 따르고
 LLM 이 실패하면 규칙으로 돌아간다. handle() 의 반복문 · 도구(tools.py) · 답변 모양은 같이 쓴다.
 
-흐름: (생년월일 확인) → 사는 지역 버튼(저장해 둔 지역이 있으면 건너뜀) → 문장 읽기(LLM 1회) → 다른 지역이면 확인 버튼 →
+흐름: (생년월일 확인) → 문장 읽기(LLM 1회) → 찾을 지역: 문장 속 지역(이번 검색에만) > 사는 지역(저장해 둔 지역) > 지역 버튼 →
 막연하면 분야 버튼 → 검색 · 자격 → 추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] …
 - 저장 · 지역 기억은 핸들러가 DB 에 쓰지 않고 save_policies · save_profile 로 돌려준다 (엔진이 대화 저장 트랜잭션에서 쓴다)
 - 사실(정책명 · 기간 · 지원 내용 · 링크 · 자격)은 모두 DB 값 · 코드 계산이다. 1차 추천 이유는 찾은 키워드로 코드가 쓴다 (LLM 이유는 다음)
@@ -50,8 +50,8 @@ REMEMBERED = "다음부터 {name} 기준으로 찾을게요. 바꾸려면 [지�
 REMEMBERED_NOTE = "저장해 둔 지역({name}) 기준으로 찾아요."
 ASK_REGION = "어느 지역에 사세요? 사는 곳 기준으로 정책을 찾아요."
 ASK_AREA = "{name}의 어디인가요?"
+ASK_WHICH_PLACE = "말씀하신 곳이 여러 곳이에요. 어느 지역인가요?"
 ASK_FIELD = "어떤 지원을 찾으세요? 버튼을 고르거나 고민을 문장으로 써 주세요."
-ASK_PLACE = "말씀하신 곳({there})이 사는 곳({home})과 달라요. 어느 지역 기준으로 찾을까요?"
 PICK_BUTTON = "아래 버튼에서 골라 주세요."
 NO_BIRTH = "청년 정책은 나이 조건이 있어서 생년월일이 필요해요. 내 정보에서 생년월일을 입력한 뒤 다시 찾아 주세요."
 NONE_FOUND = "{region} 기준으로 지금 신청할 수 있는 정책을 찾지 못했어요. 다른 분야나 지역으로 찾아볼까요?"
@@ -66,13 +66,12 @@ GONE = "그 정책은 지금 정책 목록에 없어요. 공고가 내려갔을 
 @dataclass
 class Action:
     """decide() 가 고른 다음 행동. kind 마다 쓰는 칸이 다르다"""
-    kind: str  # read · use_region · ask_region · ask_field · ask_place · search · more · save · show_saved · remember · not_mine · end · reask
+    kind: str  # read · use_region · ask_region · ask_field · search · more · save · show_saved · remember · not_mine · end · reask
     text: str | None = None  # 읽거나 검색할 문장 (지역을 고른 뒤 이어서 할 문장)
     region: str | None = None
     codes: list[str] = field(default_factory=list)  # 고를 지역 후보
     needs: list[Need] | None = None  # 이미 읽은 필요 (다시 읽지 않는다)
     home: bool = True  # 고른 지역이 사는 곳인가 (아니면 이번 검색에만 쓴다)
-    place: str | None = None
     topics: list[str] = field(default_factory=list)  # detail: 궁금한 항목 (planner.TOPICS)
 
 
@@ -127,9 +126,7 @@ def decide(state, text, read=None, choice=None):
         if not home:  # 사는 곳을 아직 모른다 → 새 문장이면 기억해 두고 다시 묻는다
             return Action("ask_region", codes=ask["codes"], text=ask.get("text") or said)
         return Action("reask")
-    if not home:
-        return Action("ask_region", codes=TOP, text=said)
-    if read is None:
+    if read is None:  # 사는 곳을 몰라도 먼저 읽는다 — 문장 속 지역으로 바로 찾을 수 있다
         return Action("read", text=said)
     picked = choice[0] if choice else None
     if picked == "end":
@@ -141,10 +138,24 @@ def decide(state, text, read=None, choice=None):
         return Action("not_mine")
     if picked == "ask_field" or (picked is None and read.vague):
         return Action("ask_field")
-    codes = read.place_codes
-    if codes and not _within(codes, home):
-        return Action("ask_place", text=said, codes=codes, needs=read.needs, place=read.place)
-    return Action("search", text=said, region=home, needs=reading.needs_for(read, said))
+    return _place_action(read, said, home)
+
+
+def _place_action(read, said, home):
+    """찾을 지역 정하기. 문장 속 지역이 우선이고 이번 검색에만 쓴다 (사는 곳으로 기억하지 않는다).
+    시군구 하나로 정해지면 바로 검색, 넓거나 여러 곳이면 그 안에서만 고르게 한다. 지명이 없으면 사는 곳, 그것도 모르면 묻는다.
+    고르게 할 때도 읽은 필요를 질문에 남겨 고른 뒤 다시 읽지 않는다"""
+    needs, codes = reading.needs_for(read, said), read.place_codes
+    if codes and home and _within(codes, home):  # '서울' 이라고 했고 사는 곳이 관악구 → 관악구로
+        codes = []
+    if len(codes) == 1 and REGIONS[codes[0]]["final"]:
+        return Action("search", text=said, region=codes[0], needs=needs)
+    if codes:
+        options = codes if len(codes) > 1 else _children(codes[0])
+        return Action("ask_region", codes=options, text=said, needs=needs, home=False)
+    if home:
+        return Action("search", text=said, region=home, needs=needs)
+    return Action("ask_region", codes=TOP, text=said, needs=needs)
 
 
 def _answer(ask, value, home):
@@ -157,15 +168,6 @@ def _answer(ask, value, home):
         return Action("ask_region", codes=_children(value), text=pending, needs=needs, home=ask.get("home", True))
     if kind == "field":
         return Action("search", region=home, needs=[FIELDS[value]])
-    if kind == "place":
-        if value == "home":
-            return Action("search", text=pending, region=home, needs=needs)
-        codes = ask["codes"]
-        final = [c for c in codes if REGIONS[c]["final"]]
-        if len(codes) == 1 and final:
-            return Action("search", text=pending, region=final[0], needs=needs)
-        options = codes if len(codes) > 1 else _children(codes[0])
-        return Action("ask_region", codes=options, text=pending, needs=needs, home=False)
     if kind == "which":
         return Action("detail", text=value, topics=ask["topics"])
     if kind == "after":
@@ -200,27 +202,16 @@ def _ask(store, cid, state, kind, lines, options, **saved):
 
 
 def _ask_region(store, cid, state, action):
-    if action.codes == TOP:
-        line = ASK_REGION
-    else:
-        parent = REGIONS[action.codes[0]]["name"].rsplit(" ", 1)[0]
-        line = ASK_AREA.format(name=parent) if all(REGIONS[c]["name"].startswith(parent + " ") for c in action.codes) \
-            else ASK_REGION
-    options = [(code, REGIONS[code]["name"] if code in TOP or line == ASK_REGION else _label(code)) for code in action.codes]
+    parent = REGIONS[action.codes[0]]["name"].rsplit(" ", 1)[0]
+    area = action.codes != TOP and all(REGIONS[c]["name"].startswith(parent + " ") for c in action.codes)  # 한 시도 안
+    line = ASK_AREA.format(name=parent) if area else ASK_REGION if action.home else ASK_WHICH_PLACE  # '중구' 처럼 여러 시도
+    options = [(code, _label(code) if area else REGIONS[code]["name"]) for code in action.codes]
     return _ask(store, cid, state, "region", [line], options, codes=action.codes, text=action.text,
                 needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], home=action.home)
 
 
 def _ask_field(store, cid, state):
     return _ask(store, cid, state, "field", [ASK_FIELD], [(label, label) for label in FIELDS])
-
-
-def _ask_place(store, cid, state, action):
-    there = ", ".join(REGIONS[c]["name"] for c in action.codes[:3])
-    home = REGIONS[state["region"]]["name"]
-    options = [("there", f"{action.place} 기준으로 보기"), ("home", f"사는 곳({_label(state['region'])}) 기준으로 보기")]
-    return _ask(store, cid, state, "place", [ASK_PLACE.format(there=there, home=home)], options, codes=action.codes,
-                text=action.text, needs=[[n.query, n.keywords] for n in action.needs] if action.needs else None)
 
 
 def _common_after(state, region, member):
@@ -386,8 +377,6 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         return _ask_region(store, cid, state, action)
     if kind == "ask_field":
         return _ask_field(store, cid, state)
-    if kind == "ask_place":
-        return _ask_place(store, cid, state, action)
     if kind == "reask":
         ask = state["ask"]
         return _reply("awaiting_input", [PICK_BUTTON], [{"value": v, "label": k} for k, v in ask["options"].items()])
