@@ -9,6 +9,8 @@
 
 이 방법이 느리거나(거래가 아주 많아질 때) 규칙을 따로 관리해야 하면 merchant_rule 테이블을 추가한다.
 """
+import re
+
 from .models import FinancialTransaction
 
 # classification_source 코드는 아직 미정 (docs/DB_MODELS.md 5번). 정해지면 이 값만 맞춘다
@@ -22,6 +24,29 @@ def normalize_merchant(name):
     if not name:
         return None
     return " ".join(name.split()) or None
+
+
+# 매달 바뀌는 연월 표시 (11/11 PR #106 리뷰). 전화번호 · 계약 번호처럼 받는 곳을 가르는 숫자는 남긴다
+# 숫자 연월은 적요 맨 앞 · 맨 끝에 따로 떨어진 4자리 YYMM · 6자리 YYYYMM만. [임시] 4자리는 20~29년(2x)만 — '카페 1204' 같은 번호는 남긴다
+_MM = r"(?:0[1-9]|1[0-2])"
+_YM = rf"(?:20\d{{2}}|2\d){_MM}"
+YEAR_MONTH = re.compile(
+    rf"^{_YM}(?!\d)"                                  # 맨 앞 — 2606국민건강, 202606국민건강
+    rf"|(?<!\d){_YM}$"                                # 맨 끝 — 국민건강 2606
+    r"|(?<!\d)(?:\d{4}|\d{2})년\s*(?:0?[1-9]|1[0-2])월"  # 2026년 11월
+    r"|(?<!\d)(?:0?[1-9]|1[0-2])월"                    # 관리비 11월
+)
+
+
+def compare_label(name):
+    """반복 출금의 받는 곳 비교용 이름: 연월 표시를 빼고 공백 정리. 빈 값이면 None
+    고정지출 · 저축 후보 감지(budgets/candidates.py)와 확정 뒤 다음 달 출금 연결(budgets/api.py remembered_withdrawal ·
+    due_match · saving_match)이 같은 함수를 써야 감지된 묶음이 다음 달에도 이어진다.
+    연월을 빼고 남는 글자가 없으면(적요가 '2606'뿐) 원래 이름을 쓴다"""
+    text = normalize_merchant(name)
+    if text is None:
+        return None
+    return normalize_merchant(YEAR_MONTH.sub(" ", text)) or text
 
 
 def store_type(value):

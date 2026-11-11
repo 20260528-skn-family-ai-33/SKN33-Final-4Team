@@ -44,6 +44,8 @@ def handler(user, store, adapter, complete, conversation_key):
         )
         if result["status"] == "not_mine":
             return result
+        if result.get("new_work"):
+            used = 0
         state = store.get_agent_state(conversation_key, "budget") or {}
         adapter.llm_call_count = used + called
         if state or result["status"] == "failed":
@@ -60,7 +62,7 @@ def handler(user, store, adapter, complete, conversation_key):
         payload.update(status=result["status"], work_ref=result.get("work_ref"),
                        can_approve=bool(reply.get("proposal") and not state.get("pending")
                                         and result["status"] == "replied"),
-                       phase=(state.get("pending") or {}).get("kind"))
+                       phase="over_entry" if state.get("over_entry") else (state.get("pending") or {}).get("kind"))
         for choice in reply.get("choices", []):
             if choice["value"] == "compare":
                 choice["label"] = "비교하기"

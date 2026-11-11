@@ -22,7 +22,7 @@ from django.db.models import F, Max, Q, Sum
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from finance.codef import BANKS
-from finance.merchant_rules import normalize_merchant
+from finance.merchant_rules import compare_label
 from finance.models import BankAccount, Card, FinancialTransaction, PaymentDue, PaymentMatch, RecurringExpense, RecurringSaving
 from users.models import FinancialProfile
 
@@ -1459,8 +1459,9 @@ def remembered_withdrawal(expense, found):
     # 기억한 출금 = 사용자가 직접 고른 출금, 또는 사용자가 확정한 감지 후보의 근거 출금 (확정 = 그 출금들이 맞다고 확인, PR #80 리뷰)
     picked = [t for t in remembered_evidence(expense) if t.account_id is not None
               and (t.classification_source == "user" or expense.source_type == "detected")]
-    label = normalize_merchant(found[0].merchant_name or found[0].source_description)
-    return label is not None and any(normalize_merchant(t.merchant_name or t.source_description) == label for t in picked)
+    # 적요 비교는 후보 감지와 같은 compare_label — '2610국민건강'을 기억했으면 '2611국민건강'에도 붙는다 (11/11 PR #106 리뷰)
+    label = compare_label(found[0].merchant_name or found[0].source_description)
+    return label is not None and any(compare_label(t.merchant_name or t.source_description) == label for t in picked)
 
 # 근거 거래 중 가맹점 기억으로 쓰는 것 — 비우기 · 결제 수단 변경으로 뺀 지난 기록(MEMORY_OFF)은 제외 (11/4)
 #   evidence 에는 남아 있어서 고정비로는 계속 보임 (finance/api.py listed_transactions)
