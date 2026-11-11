@@ -226,6 +226,17 @@ def _common_after(state, region, member):
     return after + [("field", OTHER_FIELD), ("region", CHANGE_REGION)]
 
 
+def _after_buttons(state, member):
+    """추천 뒤 버튼을 상태에서 다시 만든다. 저장해 둔 질문의 버튼을 꺼내 쓰지 않는다 —
+    대화 상태는 DB jsonb 에 저장되는데 jsonb 는 객체 키 순서를 바꿔서 버튼 순서가 뒤섞인다"""
+    results, last, shown = state.get("results") or [], state.get("last") or [], state.get("shown", 0)
+    done = state.get("saved") or []
+    after = [(SAVE + no, SAVE_LABEL.format(number=number))
+             for number, no in enumerate(last, shown - len(last) + 1) if no not in done]
+    after += [("more", MORE)] if len(results) > shown else []
+    return after + _common_after(state, state.get("region_used"), member)
+
+
 def _card(result, sections):
     """카드 모양 답변: 정책마다 굵은 제목 + 점 목록 (채팅 화면의 결과 카드, chat/engine.py 가 result 로 표시)"""
     result["status"] = "replied"  # 추천 뒤에도 담당을 유지하고 후속 질문을 받는다
@@ -296,7 +307,7 @@ def _show_saved(store, cid, state, user, today):
 def _remember(store, cid, state, region):
     """[다음에도 …로 찾기]: 핸들러는 DB 에 쓰지 않는다 → save_profile 로 돌려주면 엔진이 대화 저장 트랜잭션에서 저장한다"""
     state["remembered"] = region
-    options = [(value, label) for label, value in state["ask"]["options"].items() if value != "remember"]
+    options = _after_buttons(state, True)  # 지역 기억은 회원만 (remembered 를 먼저 바꿔 [다음에도 …] 가 빠진다)
     result = _ask(store, cid, state, "after", [REMEMBERED.format(name=_label(region))], options)
     result["status"] = "replied"
     result["save_profile"] = {"region_code": region}
@@ -370,7 +381,7 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         ask = state["ask"]
         return _reply("awaiting_input", [PICK_BUTTON], [{"value": v, "label": k} for k, v in ask["options"].items()])
     if kind == "save":
-        return _save(store, cid, state, action.text)
+        return _save(store, cid, state, action.text, user)
     if kind == "show_saved":
         return _show_saved(store, cid, state, user, today)
     if kind == "remember":
@@ -399,10 +410,7 @@ def _act(action, store, cid, state, user, today, embed, check=None):
 def _detail(store, cid, state, user, today, action):
     """정책 상세 (8단계). 어느 정책인지 모르면 직전 추천을 버튼으로 묻고, 추천이 없으면 무엇을 찾을지 묻는다.
     값은 모두 tools.detail(DB 원문)이고, 원문에 없는 항목은 없다고 말한다 (서류 · 중복 수혜 등을 지어내지 않는다)"""
-    ask = state.get("ask") or {}
-    after = [(v, k) for k, v in ask["options"].items()] if ask.get("kind") == "after" else \
-        [tuple(a) for a in ask["after"]] if ask.get("after") else \
-        _common_after(state, state.get("region_used"), profiles.is_member(user))
+    after = _after_buttons(state, profiles.is_member(user))
     if not action.text:
         shown = _shown(state)
         if not shown:
@@ -411,7 +419,7 @@ def _detail(store, cid, state, user, today, action):
             return result
         last = shown[-len(state.get("last") or shown):]  # 방금 보인 칸만 버튼으로
         return _ask(store, cid, state, "which", [WHICH], [(state["results"][n - 1], f"{n}. {name}") for n, name in last],
-                    topics=action.topics, after=after)  # 고른 뒤 추천 버튼을 되살린다
+                    topics=action.topics)
     info = tools.detail(action.text, action.topics, tools.profile_for(user), today)
     state["focus"] = action.text  # 다음 "그거"는 이 정책
     if info is None:
@@ -429,12 +437,12 @@ def _detail(store, cid, state, user, today, action):
     return result
 
 
-def _save(store, cid, state, policy_no):
+def _save(store, cid, state, policy_no, user=None):
     """[N번 저장]: 핸들러는 DB 에 쓰지 않는다 → save_policies 로 돌려주면 엔진이 대화 저장과 같은 트랜잭션에서
     policies.saved.save_all 로 저장한다 (7단계). 같은 질문의 나머지 버튼은 그대로 다시 보인다"""
     name = tools.policy_name(policy_no)
     state["saved"] = [*(state.get("saved") or []), policy_no]
-    options = [(value, label) for label, value in state["ask"]["options"].items() if value != SAVE + policy_no]
+    options = _after_buttons(state, profiles.is_member(user))
     result = _ask(store, cid, state, "after", [SAVED.format(name=name)], options)
     result["status"] = "replied"
     result["save_policies"] = [policy_no]

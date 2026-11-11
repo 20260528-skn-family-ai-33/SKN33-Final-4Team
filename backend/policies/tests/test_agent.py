@@ -458,3 +458,26 @@ class ReviewTest(TestCase):
     def test_분야_버튼으로_찾을_때는_분야_문장으로_본다(self):
         self.talk.send("교육 · 직업훈련")  # 지역을 고른 뒤 분야 버튼이 떠 있다
         self.assertEqual(json.loads(self.check.call_args[0][1])["문장"], agent.FIELDS["교육 · 직업훈련"].query)
+
+
+class ButtonOrderTest(TestCase):
+    """대화 상태는 DB jsonb 에 저장되고 jsonb 는 객체 키 순서를 바꾼다 → 버튼 순서는 상태에서 다시 만든다"""
+
+    def test_상세_저장_뒤에도_버튼_순서가_그대로(self):
+        for rank in range(1, 3):
+            add(f"P{rank}", vector=near(rank), plcyNm=f"정책 {rank}")
+        talk = Talk(plan=mock.Mock(return_value=chose("search")))
+        keep = talk.store.save_agent_state
+
+        def like_jsonb(cid, agent_name, state):  # 키를 정렬해 저장 (jsonb 처럼 순서가 바뀐다)
+            keep(cid, agent_name, None if state is None else json.loads(json.dumps(state, sort_keys=True)))
+        talk.store.save_agent_state = like_jsonb
+        talk.lives_in_dongtan()
+        talk.send("월세 지원 있어?")
+        order = ["1번 저장", "2번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION]
+        self.assertEqual(talk.labels, order)
+        talk.plan.return_value = chose("detail", 1, ["support"])
+        talk.send("1번 얼마 줘?")
+        self.assertEqual(talk.labels, order)
+        talk.send("2번 저장")
+        self.assertEqual(talk.labels, ["1번 저장", agent.OTHER_FIELD, agent.CHANGE_REGION])
