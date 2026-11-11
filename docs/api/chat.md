@@ -386,6 +386,30 @@
 }
 ```
 
+**초과한 카테고리에서 시작 (11/11)** — 예산 화면의 초과한 카테고리 줄 [예산 조정하기]는 `budgetContext`에 `hints`를 더해 보낸다. `baseBudgetId` 기반 모드(INITIAL/NORMAL_ADJUSTMENT)에서만 쓸 수 있다.
+
+```json
+{
+  "conversationId": null,
+  "choice": "budget",
+  "budgetContext": {
+    "baseBudgetId": "3f2c0000-0000-4000-8000-000000000001",
+    "mode": "NORMAL_ADJUSTMENT",
+    "hints": { "reason": "over", "categories": ["FOOD"], "overAmount": 12000 }
+  }
+}
+```
+
+| 칸 | 값 | 규칙 |
+|---|---|---|
+| `hints.reason` | `"over"` | 지금은 이 값만 |
+| `hints.categories` | 카테고리 코드 배열 | **정확히 1개**, 생활비 예산 대상 카테고리(주거·통신 · 여행·숙박 제외, 기타 포함) |
+| `hints.overAmount` | 정수 | 1 이상. **참고값** — 증액 금액으로 확정하지 않고 예산 조정이 서버에서 최신 초과액을 다시 확인한다 |
+
+- 세 칸이 모두 있어야 하고 다른 칸은 받지 않는다(금액 · 슬롯 직접 주입 금지). `hints: null`을 포함해 모양이 다르면 `400 invalid`(`fields.budgetContext`). 남의 기준 예산이면 `404`가 먼저다.
+- 서버는 `hints`를 **저장하지 않는다.** 예산 조정을 새로 시작하는 요청에서만 예산 조정 에이전트 입력의 `hints`(`{"reason", "categories", "over_amount"}`)로 그대로 넘긴다. 진행 중인 조정을 잇는 요청 · 라우터 질문(이어서/새로 등)에 답하는 중에는 쓰지 않고 기존 흐름대로 처리한다. 그래서 `hints`만 다른 같은 기준 요청은 `409 not_ready`가 아니다.
+- 이때 사용자 말풍선은 "예산 조정" 대신 "식비 예산 조정"처럼 카테고리 이름을 붙인다.
+
 월중 조정은 `mode: "NORMAL_ADJUSTMENT"`와 승인 예산 ID를 사용한다. 기준을 생략한 일반 채팅 진입은 서버가 현재 예산을 고른다. 진행 중인 조정에서 다른 기준을 지정하면 `409 not_ready`이며, 먼저 취소한 뒤 새로 시작한다.
 
 봇 `content.budgetAdjustment`의 공개 필드는 다음과 같다. 내부 대화 슬롯·개인별 조회 근거는 보내지 않는다.

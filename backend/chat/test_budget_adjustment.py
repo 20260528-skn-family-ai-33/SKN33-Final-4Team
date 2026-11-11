@@ -134,6 +134,81 @@ class BudgetAdjustmentApiTest(TestCase):
         self.assertEqual(response.status_code, 404)
         self.assertEqual(Conversation.objects.count(), 0)
 
+    OVER_HINTS = {"reason": "over", "categories": ["FOOD"], "overAmount": 12000}
+
+    def over_entry(self, **hints):
+        return {"baseBudgetId": str(self.base.pk), "mode": "NORMAL_ADJUSTMENT", "hints": {**self.OVER_HINTS, **hints}}
+
+    def test_over_hints_from_budget_screen_reach_the_agent_only_on_a_fresh_start(self):
+        """예산 화면의 초과 카테고리 → 예산 조정 에이전트 요청의 hints (11/11). 기준 예산(entry_context)에는 저장하지 않는다"""
+        from chat import budget_adjustment
+        seen = []
+        real = budget_adjustment.handle_expanded
+        with patch("chat.budget_adjustment.handle_expanded", side_effect=lambda request, **ports: seen.append(request) or real(request, **ports)):
+            start = self.say(choice="budget", budgetContext=self.over_entry())
+            cid = start["conversationId"]
+            self.assertEqual(seen[0]["hints"], {"reason": "over", "categories": ["FOOD"], "over_amount": 12000})
+            self.assertEqual((seen[0]["mode"], seen[0]["entry"], seen[0]["text"]), ("start", "button", None))
+            self.assertEqual(start["messages"][0]["content"]["text"], "식비 예산 조정")
+            slots = json.dumps(Conversation.objects.get(pk=cid).slots, ensure_ascii=False)
+            self.assertNotIn("over_amount", slots)  # hints 는 대화 상태에 남기지 않는다
+            # 조정이 진행 중일 때 같은 기준으로 다른 초과 카테고리를 눌러도 409 가 아니고, 진행 중인 조정을 그대로 잇는다
+            asked = self.say(cid, text="식비를 1만 5천 원 늘려줘")
+            again = self.say(cid, choice="budget", budgetContext=self.over_entry(categories=["BEAUTY"]))
+            self.assertEqual((seen[-1]["mode"], seen[-1]["hints"]), ("continue", {}))
+        self.assertEqual(asked["agent"], "budget")
+        self.assertEqual(again["agent"], "budget")
+
+    def test_plain_budget_entry_sends_no_hints(self):
+        from chat import budget_adjustment
+        seen = []
+        real = budget_adjustment.handle_expanded
+        with patch("chat.budget_adjustment.handle_expanded", side_effect=lambda request, **ports: seen.append(request) or real(request, **ports)):
+            start = self.say(choice="budget", budgetContext={"baseBudgetId": str(self.base.pk), "mode": "NORMAL_ADJUSTMENT"})
+        self.assertEqual(seen[0]["hints"], {})
+        self.assertEqual(start["messages"][0]["content"]["text"], "예산 조정")
+
+    def test_bad_over_hints_are_rejected_before_anything_is_saved(self):
+        bad = [
+            None, [], "over", {},
+            {**self.OVER_HINTS, "reason": "one_off"},
+            {**self.OVER_HINTS, "categories": []},
+            {**self.OVER_HINTS, "categories": ["FOOD", "BEAUTY"]},
+            {**self.OVER_HINTS, "categories": ["HOUSING_TELECOM"]},   # 예산 밖 카테고리
+            {**self.OVER_HINTS, "categories": ["NOPE"]},
+            {**self.OVER_HINTS, "categories": "FOOD"},
+            {**self.OVER_HINTS, "categories": [{"code": "FOOD"}]},
+            {**self.OVER_HINTS, "overAmount": 0},
+            {**self.OVER_HINTS, "overAmount": -1},
+            {**self.OVER_HINTS, "overAmount": "12000"},
+            {**self.OVER_HINTS, "overAmount": True},
+            {**self.OVER_HINTS, "overAmount": 1.5},
+            {**self.OVER_HINTS, "amount": 50000},                      # 금액 · 슬롯 직접 주입 금지
+            {"reason": "over", "categories": ["FOOD"]},
+        ]
+        for hints in bad:
+            with self.subTest(hints=hints):
+                response = self.post("/api/chat/messages/", {"conversationId": None, "choice": "budget", "budgetContext": {
+                    "baseBudgetId": str(self.base.pk), "mode": "NORMAL_ADJUSTMENT", "hints": hints}})
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn("budgetContext", response.json()["error"]["fields"])
+        self.assertEqual(Conversation.objects.count(), 0)
+
+    def test_over_hints_need_the_budget_button_and_a_normal_basis(self):
+        entry = self.over_entry()
+        cases = [{"conversationId": None, "text": "식비 조정", "budgetContext": entry},                      # 문장과 함께는 안 됨
+                 {"conversationId": None, "choice": "spending", "budgetContext": entry},                    # 다른 기능 버튼
+                 {"conversationId": None, "choice": "budget", "budgetContext": {                            # 분배 실패 복구에는 hints 없음
+                     "mode": "DESIGN_RECOVERY", "sourceTaskId": str(uuid4()), "hints": entry["hints"]}}]
+        for body in cases:
+            with self.subTest(body=body):
+                self.assertEqual(self.post("/api/chat/messages/", body).status_code, 400)
+        other = get_user_model().objects.create_user(email="over-other@example.test", password="test-password")
+        self.client.force_authenticate(other)  # 남의 기준 예산이면 hints 검사보다 404 가 먼저
+        response = self.post("/api/chat/messages/", {"conversationId": None, "choice": "budget", "budgetContext": entry})
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(Conversation.objects.count(), 0)
+
     def test_expiry_is_persisted_without_applying_a_different_result(self):
         _, content = self.ready()
         proposal_id = content["budgetAdjustment"]["proposal"]["proposalId"]

@@ -135,6 +135,17 @@ export default function BudgetPage() {
                 <span className="mc-muted">{won(c.spent)} / {won(c.allocated)} · {pct(c.spent, c.allocated)}%</span>
                 {over ? <strong className="is-over">{won(over)} 초과</strong> : <strong>남은 {won(Math.max(c.allocated - c.spent, 0))}</strong>}
               </div>
+              {/* 초과한 카테고리 → 그 카테고리를 담아 챗봇 예산 조정으로 (11/11, docs/api/chat.md budgetContext.hints).
+                  overAmount 는 참고값이고 서버가 최신 초과액을 다시 확인한다 */}
+              {over > 0 && (
+                <button type="button" className="mc-link mc-catuse-adjust" aria-label={`${c.categoryName} 예산 조정하기`}
+                  onClick={() => navigate(PATHS.assistant, { state: { budgetContext: {
+                    baseBudgetId: budget.budgetId, mode: budget.status === 'approved' ? 'NORMAL_ADJUSTMENT' : 'INITIAL_ADJUSTMENT',
+                    hints: { reason: 'over', categories: [c.category], overAmount: over },
+                  } } })}>
+                  예산 조정하기 ›
+                </button>
+              )}
             </div>
           )
         })}

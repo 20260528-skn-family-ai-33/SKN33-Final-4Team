@@ -762,6 +762,7 @@
 #mc-new-preview#mc-new-preview .mc-catuse .mc-bar.is-over span{background:var(--mc-lime-accent,#C7E948)}
 #mc-new-preview#mc-new-preview .mc-catuse-n{font-size:12.5px}
 #mc-new-preview#mc-new-preview .mc-catuse-n strong.is-over{color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-catuse-adjust{display:block;margin:2px 0 0 auto;padding:4px 0;font-size:12.5px;font-weight:600}
 #mc-new-preview#mc-new-preview .mc-catuse-pend{display:flex;justify-content:space-between;font-size:13px;color:var(--mc-alert)}
 #mc-new-preview#mc-new-preview .mc-neg{color:var(--mc-alert)}
 #mc-new-preview#mc-new-preview .mc-kv-btn{display:flex;justify-content:space-between;width:100%;background:none;border:0;border-radius:0;margin:0;min-height:0;color:var(--mc-ink);text-align:left;font:inherit}

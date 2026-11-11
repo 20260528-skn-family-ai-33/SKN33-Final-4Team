@@ -18,7 +18,7 @@ from spending_analysis import agent as spending_agent
 from spending_analysis import dialog
 from spending_analysis.dialog import record_analysis, run_items
 
-from .router_core import MemoryStateStore, current_question, pop_queued_start, record_budget_task, run_turn
+from .router_core import MemoryStateStore, current_question, pop_queued_start, record_budget_task, route_button, run_turn
 
 PERIOD = {"from": "2026-10-01", "to": "2026-10-29"}
 LEGACY_HANDOFF = ("task", "text", "hints", "mode", "context")
@@ -85,6 +85,27 @@ class RouterCoreTest(Talk, SimpleTestCase):
     def test_out_of_scope(self):
         decision = self.say("날씨 어때?")
         self.assertEqual((decision.status, decision.intent, decision.reason), ("unsupported", "unsupported", "out_of_scope"))
+
+    def test_budget_button_passes_screen_hints_only_on_a_fresh_start(self):
+        """예산 화면의 초과 카테고리 (11/11): 새로 시작할 때만 handoff["hints"] 로. 진행 중인 조정을 잇는 버튼에는 넘기지 않는다"""
+        hints = {"reason": "over", "categories": ["FOOD"], "over_amount": 12000}
+        start = route_button("budget", "talk-1", self.store, hints=hints)
+        self.assertEqual((start.status, start.agent, start.handoff["mode"], start.handoff["entry"], start.handoff["text"]),
+                         ("ready", "budget", "start", "button", None))
+        self.assertEqual(start.handoff["hints"], hints)
+        self.assertIsNot(start.handoff["hints"], hints)  # 넘긴 값을 그대로 물고 있지 않는다
+        again = route_button("budget", "talk-1", self.store, hints={**hints, "categories": ["BEAUTY"]})
+        self.assertEqual((again.handoff["mode"], again.handoff["hints"]), ("continue", {}))
+        plain = route_button("budget", "talk-2", self.store)
+        self.assertEqual((plain.handoff["mode"], plain.handoff["hints"]), ("start", {}))
+
+    def test_run_turn_ignores_hints_outside_the_budget_button(self):
+        hints = {"reason": "over", "categories": ["FOOD"], "over_amount": 12000}
+        agents = {"spending": None, "budget": None, "policy": None}
+        text = run_turn("talk-1", self.store, self.llm, text="식비 예산 줄여줘", agents=agents, hints=hints)["decision"]
+        self.assertNotIn("reason", text.handoff["hints"])
+        button = run_turn("talk-2", self.store, self.llm, button="budget", agents=agents, hints=hints)["decision"]
+        self.assertEqual(button.handoff["hints"], hints)
 
     def test_budget_adjust_handoff(self):
         decision = self.say("식비 예산 줄여줘")

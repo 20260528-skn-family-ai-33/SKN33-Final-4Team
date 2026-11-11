@@ -443,8 +443,11 @@ def reroute(text, conversation_id, store, complete, server=None, *, declined):
         return Decision("failed", reason=str(error), declined=tuple(declined))
 
 
-def route_button(agent, conversation_id, store, server=None):
-    """기능 버튼 → Decision. 목적지가 정해져 있어 라우터 분류 LLM 을 부르지 않는다. 선택만으로 조건 확정 · 예산 변경을 하지 않는다"""
+def route_button(agent, conversation_id, store, server=None, hints=None):
+    """기능 버튼 → Decision. 목적지가 정해져 있어 라우터 분류 LLM 을 부르지 않는다. 선택만으로 조건 확정 · 예산 변경을 하지 않는다
+    hints = 화면이 넘긴 예산 조정 시작 정보 (예: 예산 화면의 초과 카테고리 {"reason": "over", "categories": [코드], "over_amount": 원}).
+    예산 조정을 새로 시작할 때만 handoff["hints"] 로 그대로 넘긴다. 라우터 질문에 답하는 중 · 진행 중인 조정을 잇는 중 ·
+    보류한 조정이 있어 이어서/새로를 묻는 중에는 쓰지 않는다 (기존 흐름을 바꾸지 않는다)"""
     if agent not in rules.AGENTS:
         raise ValueError(f"알 수 없는 기능: {agent!r}")
     cid = conversation_id
@@ -462,7 +465,10 @@ def route_button(agent, conversation_id, store, server=None):
         if active == "budget":
             return _forward(None, cid, store, store.get_task(cid), entry="button")
         request = RouterReading(("budget_adjust",))
-        return _budget(rules.budget_request(request, None), request, cid, store, server, entry="button")
+        decision = rules.budget_request(request, None)
+        if hints:
+            decision = replace(decision, handoff={**decision.handoff, "hints": dict(hints)})
+        return _budget(decision, request, cid, store, server, entry="button")
     if active == "policy":
         return _policy(store, cid, "continue", None, entry="button")
     if store.get_work(cid, "policy"):
@@ -503,17 +509,19 @@ def _budget_result(store, cid, result, server):
 
 
 def run_turn(conversation_id, store, complete, *, agents, text=None, button=None, server=None,
-             today=None, as_of=None, input_id=None):
+             today=None, as_of=None, input_id=None, hints=None):
     """입력 1건(text 또는 button) → 라우터 결정 → 담당 에이전트 호출 → {"input_id", "decision", "result", "delivered"}
     - agents = {"spending" · "budget" · "policy": handler(공통 입력 dict) → 결과 | None(연결 없는 대역: 전달까지만)}
     - input_id: 진입점이 주거나 여기서 만든다 (chat API 계약에는 없는 내부 값)
+    - hints: 예산 조정 버튼(button="budget")으로 새로 시작할 때만 쓰는 화면 시작 정보 (route_button). 문장 입력에서는 쓰지 않는다
     - 에이전트가 failed 면 이번 입력 전 상태로 되돌린다: 이전 작업이 사라지거나 새 작업이 시작된 것으로 남지 않는다
     - 예산 작업 성공 · 취소는 기존처럼 서버 확인(record_budget_task)으로만 기록한다"""
     if (text is None) == (button is None):
         raise ValueError("text 와 button 중 하나만")
     cid, input_id = conversation_id, input_id or uuid.uuid4().hex
     before = store.export(cid)
-    decision = route_button(button, cid, store, server) if button else route(text, cid, store, complete, server)
+    decision = (route_button(button, cid, store, server, hints=hints if button == "budget" else None) if button
+                else route(text, cid, store, complete, server))
     delivered, result = list(decision.declined), None
     while decision.handoff and decision.agent:
         agent = decision.agent

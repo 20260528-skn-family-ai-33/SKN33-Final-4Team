@@ -17,6 +17,7 @@ import BudgetAdjustConsent from '../components/BudgetAdjustConsent.jsx'
 import { usePopup } from '../popups/context.js'
 import { PATHS } from '../routes.js'
 import { adjustmentChoices, adjustSentence } from '../utils/adjust.js'
+import { catName } from '../utils/categories.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
 import { approvalPath, forgetPendingApproval, readPendingApproval, rememberPendingApproval } from '../utils/budgetApproval.js'
 import '../styles/chat.css'
@@ -292,8 +293,11 @@ export default function AssistantPage() {
     if (!budgetEntry || entryStarted.current) return
     if (!info && !first.error) return
     entryStarted.current = true
+    // 예산 화면의 초과 카테고리에서 왔으면(budgetContext.hints) 보내는 중 말풍선에 그 카테고리 이름을 넣는다
+    const overCode = budgetEntry.hints?.reason === 'over' ? budgetEntry.hints.categories?.[0] : null
     // oxlint-disable-next-line react/set-state-in-effect -- 화면 진입 시 서버 대화를 한 번 시작하며 전송 함수가 진행 상태를 함께 관리한다.
-    if (info?.engine === 'router') send({ conversationId: null, choice: 'budget', budgetContext: budgetEntry }, '예산을 조정하고 싶어요')
+    if (info?.engine === 'router') send({ conversationId: null, choice: 'budget', budgetContext: budgetEntry },
+      overCode ? `${catName(overCode)} 예산을 조정하고 싶어요` : '예산을 조정하고 싶어요')
     if (!recovery) navigate(PATHS.assistant, { replace: true, state: null })
   }, [budgetEntry, first.error, info, navigate, recovery, send])
 
