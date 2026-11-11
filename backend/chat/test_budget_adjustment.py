@@ -149,6 +149,23 @@ class BudgetAdjustmentApiTest(TestCase):
         from chat.llm.schemas import schema_for
         self.assertEqual(schema_for(PROMPT), ("budget_adjustment_reading", SCHEMA))
 
+    def test_declined_query_preserves_every_budget_state_field(self):
+        from chat import engine
+        for preview in (False, True):
+            with self.subTest(preview=preview):
+                if preview:
+                    cid, _ = self.ready()
+                else:
+                    cid = self.say(choice="budget")["conversationId"]
+                    self.say(cid, text="식비 5만 원 늘려줘")
+                before = deepcopy(engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
+                                  .get_agent_state(engine.KEY, "budget"))
+                proposals = Budget.objects.count()
+                self.say(cid, text="교통은 얼마 남았어?")
+                after = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
+                self.assertEqual(after.get_agent_state(engine.KEY, "budget"), before)
+                self.assertEqual(Budget.objects.count(), proposals)
+
     def test_failed_interpretations_cannot_reset_the_per_task_llm_limit(self):
         from chat import engine
         reader = FakeReading()

@@ -95,7 +95,8 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, n
   const proposal = adjustment.proposal
   const state = proposal?.state ?? adjustment.status
   const canApprove = active && adjustment.canApprove && proposal?.state === 'awaiting_approval'
-  const visible = (proposal?.changes ?? []).filter((row) => row.direct || ['SAVINGS', 'CUSHION_MONTHLY', 'SPARE'].includes(row.category))
+  // 어디서 빠졌는지도 펼치지 않고 보이게: 직접 바꾼 항목 · 저축/쿠션/여윳돈 + 줄어드는 항목 (11/11)
+  const visible = (proposal?.changes ?? []).filter((row) => row.direct || row.diff < 0 || ['SAVINGS', 'CUSHION_MONTHLY', 'SPARE'].includes(row.category))
   const options = (navigation?.choices ?? content.choices ?? []).filter((choice) => ['recommend', 'compare'].includes(choice.value))
   return <div className="mc-budget-adjustment">
     {!proposal && !adjustment.comparison && (content.lines ?? (content.text ? [content.text] : [])).map((line, i) => <p key={i}>{line}</p>)}
