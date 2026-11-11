@@ -17,7 +17,7 @@ test -s app.env
 test -s models/spending_category_svm.joblib
 test -s models/label_conflicts.csv
 # 예산 분배를 켠 경우에만 CatBoost 모델을 요구한다 (없으면 모든 추천이 needs_data로 막힘)
-if grep -qx 'BUDGET_DESIGN_ENABLED=true' app.env; then
+if grep -qx 'BUDGET_DESIGN_ENABLED=[Tt][Rr][Uu][Ee]' app.env; then
     test -s models/budget_allocation.joblib
 fi
 compose_file=/opt/moneycushion/deploy/compose.yml
