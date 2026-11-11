@@ -56,6 +56,33 @@ class FinancialAdjustmentApiTest(TestCase):
         reply = self.chat(self.cid, choice={"value": "financial_0", "turn": content["turn"]})
         return reply["messages"][-1]["content"]["budgetAdjustment"]["proposal"]
 
+    def test_comparison_explanation_keeps_the_card_and_opens_details_in_web_response(self):
+        from chat.engine import ConversationStore, KEY
+        offered = self.offer()["budgetAdjustment"]["comparison"]
+        before = ConversationStore.load(Conversation.objects.get(pk=self.cid).slots).get_agent_state(KEY, "budget")
+        budgets = Budget.objects.count()
+        response = self.chat(self.cid, text="왜 추천해?", answers=[reading(action="explain")])
+        adjustment = response["messages"][-1]["content"]["budgetAdjustment"]
+        self.assertEqual(adjustment["comparison"], offered)
+        self.assertTrue(adjustment["detail"])
+        self.assertFalse(adjustment["canApprove"])
+        self.assertIn("financial_0", {choice["value"] for choice in response["messages"][-1]["content"]["choices"]})
+        self.assertEqual(Budget.objects.count(), budgets)
+        after = ConversationStore.load(Conversation.objects.get(pk=self.cid).slots).get_agent_state(KEY, "budget")
+        for key in ("requests", "pending", "financial_offer"):
+            self.assertEqual(after[key], before[key])
+
+    def test_preview_explanation_keeps_the_card_and_opens_details_in_web_response(self):
+        first = self.select(self.offer())
+        budgets = Budget.objects.count()
+        response = self.chat(self.cid, text="왜 이렇게 바꿨어?", answers=[{
+            "action": "explain", "category": None, "amount": None, "amount_mode": None, "suggested_target": None}])
+        adjustment = response["messages"][-1]["content"]["budgetAdjustment"]
+        self.assertEqual(adjustment["proposal"]["proposalId"], first["proposalId"])
+        self.assertTrue(adjustment["detail"])
+        self.assertTrue(adjustment["canApprove"])
+        self.assertEqual(Budget.objects.count(), budgets)
+
     def test_explicit_amount_ignores_empty_placeholder_in_new_and_persisted_state(self):
         from chat.engine import ConversationStore, KEY
         blank = dict.fromkeys(("category", "amount", "amount_mode", "direction"))
