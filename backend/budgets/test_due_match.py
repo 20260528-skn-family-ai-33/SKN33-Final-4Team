@@ -45,6 +45,24 @@ class AccountDueTest(HomeFixture):
         self.assertFalse(self.due().matches.exists())
         self.assertNotEqual(self.due().payment_state, "paid")
 
+    def test_remembered_withdrawal_with_next_year_month_links(self):
+        # 확정한 '2609국민건강'의 다음 달 출금 '2610국민건강'도 기억한 출금 (PR #106 리뷰 2)
+        health = self.make_expense(name="2609국민건강", amount=22_600, payment_day=12, category_id="ETC")
+        remember(health, label="2609국민건강")
+        tx = self.withdraw(amount=22_600, label="2610국민건강", on=date(2026, 10, 12))
+        self.home()
+        due = PaymentDue.objects.get(recurring=health, due_date=date(2026, 10, 12))
+        self.assertEqual((due.payment_state, list(due.matches.values_list("transaction_id", flat=True))), ("paid", [tx.pk]))
+
+    def test_remembered_number_differs_is_not_linked(self):
+        # 번호가 다른 회선 출금은 기억한 출금이 아님
+        phone = self.make_expense(name="01011112222SKT", amount=55_000, payment_day=12, category_id="HOUSING_TELECOM")
+        remember(phone, label="01011112222SKT")
+        self.withdraw(amount=55_000, label="01033334444SKT", on=date(2026, 10, 12))
+        self.home()
+        due = PaymentDue.objects.get(recurring=phone, due_date=date(2026, 10, 12))
+        self.assertFalse(due.matches.exists())
+
     def test_pipeline_links_without_opening_home(self):
         remember(self.rent)
         tx = self.withdraw()

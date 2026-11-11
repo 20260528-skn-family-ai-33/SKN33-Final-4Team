@@ -7,7 +7,7 @@
 from collections import defaultdict
 from datetime import timedelta
 
-from finance.merchant_rules import normalize_merchant
+from finance.merchant_rules import compare_label
 from finance.models import FinancialTransaction, PaymentMatch, RecurringExpense, RecurringSaving, TransactionLink
 from finance.transfer_rules import OWN_REVIEW
 
@@ -39,7 +39,7 @@ def match_savings(user, tx_ids, today):
 
     for s in savings:
         mine = list(FinancialTransaction.objects.filter(user=user, pk__in=list(evidence[s.pk])))
-        labels = {normalize_merchant(t.source_description or t.merchant_name) for t in mine} - {None}
+        labels = {compare_label(t.source_description or t.merchant_name) for t in mine} - {None}  # 후보 감지와 같은 비교
         # 그 달 저축 완료 = 취소되지 않은 근거 이체가 있음 (취소 후 다시 보낸 이체는 맞춘다, PR #85 리뷰)
         saved_months = {(t.occurred_on.year, t.occurred_on.month) for t in mine if not t.is_canceled}
         # 근거 이체가 취소된 달 = 다시 열린 달 — 취소 내역이 늦게 와도 이미 저장된 재이체를 다시 본다 (PR #85 재검토)
@@ -80,4 +80,4 @@ def same_receiver(tx, saving, own_to, labels):
     if saving.to_account_id is not None:
         return tx.transaction_type == "own_transfer" and own_to.get(tx.pk) == saving.to_account_id
     # 받는 계좌 모름(연결 안 한 계좌): 근거 이체와 같은 적요. 남에게 보낸 이체(transfer)는 이 경우만 대상
-    return normalize_merchant(tx.source_description or tx.merchant_name) in labels
+    return compare_label(tx.source_description or tx.merchant_name) in labels

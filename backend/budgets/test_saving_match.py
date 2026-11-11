@@ -67,6 +67,19 @@ class SavingMatchTest(TestCase):
         self.assertEqual(self.kind(tx), "saving")
         self.assertFalse(listed_transactions(self.user).filter(pk=tx.pk).exists())  # 거래 목록에서 빠짐
 
+    def test_unlinked_memo_with_year_month_becomes_saving(self):
+        # 적요의 연월만 바뀐 이체도 같은 받는 곳 (후보 감지와 같은 compare_label, PR #106 리뷰 2)
+        self.saving(self.out(date(2026, 8, 2), kind="transfer", label="2608청년적금"))
+        tx = self.out(date(2026, 9, 2), kind="transfer", label="2609청년적금")
+        self.match(tx)
+        self.assertEqual(self.kind(tx), "saving")
+
+    def test_unlinked_memo_with_other_account_number_stays(self):
+        self.saving(self.out(date(2026, 8, 2), kind="transfer", label="적금 110123456789"))
+        tx = self.out(date(2026, 9, 2), kind="transfer", label="적금 110987654321")
+        self.match(tx)
+        self.assertEqual(self.kind(tx), "transfer")
+
     def test_next_month_uses_newly_added_evidence(self):
         self.saving(self.out(date(2026, 8, 2), kind="transfer", label="청년적금 납입"))
         sep, oct_ = (self.out(date(2026, m, 2), kind="transfer", label="청년적금 납입") for m in (9, 10))
