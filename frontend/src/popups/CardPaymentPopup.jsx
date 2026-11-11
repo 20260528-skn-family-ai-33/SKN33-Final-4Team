@@ -11,6 +11,7 @@ import PaymentTxLine from '../components/PaymentTxLine.jsx'
 import { won } from '../utils/money.js'
 import { catName } from '../utils/categories.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 import { CARD_PAY_STATE, TYPE, effectText, releasedText } from '../utils/paymentText.js'
 
 const fromLabel = (r) => `${TYPE[r.fromType] ?? r.fromType}${r.fromCategory ? ` · ${catName(r.fromCategory)}` : ''}`
@@ -28,7 +29,6 @@ export default function CardPaymentPopup({ billId, onSaved }) {
   const [busy, setBusy] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [requestKey, setRequestKey] = useState(newRequestKey)
-  const [done, setDone] = useState('')
 
   if (error && !data) return <Popup label="카드값 납부 확인"><p className="mc-error" role="alert">{error.status ? error.message : '납부 정보를 불러오지 못했어요.'}</p><button type="button" className="mc-secondary" onClick={() => (range ? setRange(null) : reload())}>{range ? '기본 기간으로 돌아가기' : '다시 시도'}</button></Popup>
   if (!data) return <Popup label="카드값 납부 확인"><p role="status">불러오는 중…</p></Popup>
@@ -42,24 +42,24 @@ export default function CardPaymentPopup({ billId, onSaved }) {
     setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
     setAgree(false); setSaveError(''); setRequestKey(newRequestKey())
   }
-  const after = (message) => { setDone(message); setPicked([]); setAgree(false); setRequestKey(newRequestKey()); reload(); onSaved?.() }
+  const after = (message) => { toast(message); setPicked([]); setAgree(false); setRequestKey(newRequestKey()); reload(); onSaved?.() }
   const send = async () => {
     if (busy || chosen.length === 0) return
-    setBusy(true); setSaveError(''); setDone('')
+    setBusy(true); setSaveError('')
     try {
       await apiSend(`/api/finance/card-bills/${billId}/payments/`, 'POST',
         { transactionIds: chosen.map((t) => t.transactionId), confirmReclassify: Boolean(needsAgree && agree) }, { requestKey })
-      after(`출금 ${chosen.length}건을 이 청구서에 연결했어요.`)
+      after('출금을 연결했어요')
     } catch (err) {
       setSaveError(errorText(err, '고른 출금은 그대로예요.'))
     } finally { setBusy(false) }
   }
   const unlink = async (t) => {
     if (busy) return
-    setBusy(true); setSaveError(''); setDone('')
+    setBusy(true); setSaveError('')
     try {
       const result = await apiSend(`/api/finance/card-bills/${billId}/payments/${t.transactionId}/`, 'DELETE')
-      after(releasedText(result?.released))
+      after(releasedText(result?.released))  // 분류를 되돌렸는지는 그대로 알린다 (실제 복원 결과대로)
     } catch (err) {
       setSaveError(errorText(err, '연결과 분류는 그대로예요.'))
     } finally { setBusy(false) }
@@ -84,11 +84,13 @@ export default function CardPaymentPopup({ billId, onSaved }) {
       {linked.length > 0 && <>
         <h3 className="mc-loan-h">연결한 출금</h3>
         <div className="mc-lock-list">{linked.map((t) => (
-          <div key={t.transactionId} className="mc-lock-opt" style={{ flexWrap: 'wrap' }} aria-label={`연결한 출금 ${t.description ?? ''}`}>
-            <PaymentTxLine t={t} />
-            <small>{t.source === 'user' ? '직접 연결' : '자동 연결'}</small>
-            <button type="button" className="mc-link" disabled={busy} onClick={() => unlink(t)}>연결 취소</button>
-            {effectText(t.cancelEffect) && <small className="mc-muted" style={{ flexBasis: '100%' }}>{effectText(t.cancelEffect)} 다시 연결하기 전까지 자동으로 붙지 않아요.</small>}
+          <div key={t.transactionId} className="mc-lock-opt mc-linked" aria-label={`연결한 출금 ${t.description ?? ''}`}>
+            <div className="mc-linked-main"><PaymentTxLine t={t} /></div>
+            <div className="mc-linked-act">
+              <span className="mc-linked-tag">{t.source === 'user' ? '직접 연결' : '자동 연결'}</span>
+              <button type="button" className="mc-link" disabled={busy} onClick={() => unlink(t)}>연결 취소</button>
+            </div>
+            {effectText(t.cancelEffect) && <small className="mc-muted">{effectText(t.cancelEffect)} 다시 연결하기 전까지 자동으로 붙지 않아요.</small>}
           </div>))}
         </div>
       </>}
@@ -106,7 +108,7 @@ export default function CardPaymentPopup({ billId, onSaved }) {
               {t.hints.otherIssuer && <small className="mc-muted" style={{ flexBasis: '100%' }}>적요에 다른 카드사 이름이 있어요</small>}
             </button>))}
           </div>
-          <form onSubmit={search} className="mc-loan-2" aria-label="찾을 기간">
+          <form onSubmit={search} className="mc-loan-2 mc-range" aria-label="찾을 기간">
             <label className="mc-field">시작일<input type="date" value={draft?.from ?? data.searchFrom ?? ''} onChange={(e) => setDraft({ from: e.target.value, to: draft?.to ?? data.searchTo })} /></label>
             <label className="mc-field">끝일<input type="date" value={draft?.to ?? data.searchTo ?? ''} onChange={(e) => setDraft({ from: draft?.from ?? data.searchFrom, to: e.target.value })} /></label>
             <button type="submit" className="mc-secondary" disabled={busy}>이 기간으로 찾기</button>
@@ -123,7 +125,6 @@ export default function CardPaymentPopup({ billId, onSaved }) {
         <button type="button" className="mc-primary" disabled={busy || (needsAgree && !agree)} onClick={send}>{busy ? '저장 중…' : '이 청구서에 연결'}</button>
       </div>}
       {saveError && <p className="mc-error" role="alert">{saveError}</p>}
-      {done && <p className="mc-note" role="status">{done}</p>}
       <button type="button" className="mc-link" onClick={closePopup}>닫기</button>
     </Popup>
   )

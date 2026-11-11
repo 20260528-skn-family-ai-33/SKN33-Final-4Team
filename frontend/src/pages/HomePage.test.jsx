@@ -6,12 +6,12 @@ import { useApi } from '../utils/api.js'
 import { runFinanceSync } from '../utils/financeSync.js'
 import { PATHS } from '../routes.js'
 
-const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }))
+const { navigate, openPopup } = vi.hoisted(() => ({ navigate: vi.fn(), openPopup: vi.fn() }))
 vi.mock('react-router', () => ({ useNavigate: () => navigate, Navigate: () => null }))
 vi.mock('../utils/api.js', () => ({ useApi: vi.fn() }))
 vi.mock('../utils/financeSync.js', async (original) => ({ ...await original(), runFinanceSync: vi.fn() }))
 vi.mock('../components/Layout.jsx', () => ({ default: ({ children, headAction }) => <main>{headAction}{children}</main> }))
-vi.mock('../popups/context.js', () => ({ usePopup: () => ({ openPopup: vi.fn() }) }))
+vi.mock('../popups/context.js', () => ({ usePopup: () => ({ openPopup, closePopup: vi.fn() }) }))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host, root
@@ -52,4 +52,18 @@ it('불러오기를 못 하면 이유를 보여 주고 다시 받지 않는다',
   expect(reload).not.toHaveBeenCalled()
   expect(host.querySelector('[role="alert"]').textContent).toContain('테스트 환경에서는')
   expect(host.querySelector('[aria-label="새로고침"]').disabled).toBe(false)
+})
+
+it('시작한 예산의 카드값 미반영 안내와 같은 주기 재추천 경로를 보여 준다', async () => {
+  const initial = useApi.mock.results[0].value.data
+  useApi.mockReturnValue({ reload, data: { ...initial, budget: {
+    daily: 20000, livingBudget: 800000, livingLeft: 700000, livingPct: 12, spare: 100000,
+    cardNotes: [{ cardId: 'card-1', reason: 'first_bill_unavailable' }],
+  } } })
+  await act(() => root.render(<HomePage />))
+  expect(host.textContent).toContain('지난 카드값이 아직 반영 안 됐어요')
+  await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent.includes('지난 카드값이 아직 반영 안 됐어요')).click())
+  await act(() => root.render(openPopup.mock.calls.at(-1)[0]))
+  await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent.includes('청구서 확인하러 가기')).click())
+  expect(navigate).toHaveBeenCalledWith(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })
 })

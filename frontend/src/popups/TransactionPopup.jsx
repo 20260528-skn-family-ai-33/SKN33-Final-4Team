@@ -13,6 +13,7 @@ import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 
 // 분류 출처 → 화면 문구 (DB classification_source, H-07)
 const CLASSIFIED_BY = { user: '내가 고름', rule: '규칙으로 자동 분류', ml: 'AI 자동 분류', llm: 'AI 자동 분류 (가게 정보 확인)' }
@@ -34,13 +35,14 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
   // category = 카테고리 코드. null = 원래 이체였던 거래를 이체로 되돌리기 (W)
   const save = (category) => send({ category, applyToFuture: Boolean(data?.canApplyToFuture && applyToFuture) })
   // 실패하면 팝업을 닫지 않고 오류를 보여 준다
-  async function send(body) {
+  async function send(body, done = '분류를 수정했어요') {
     setSaving(true)
     setError(null)
     try {
       await apiSend(`/api/finance/transactions/${tx.id}/`, 'PATCH', body)
       onSaved?.()
       closePopup()
+      toast(done)
     } catch (err) {
       setError(err.message)
       setSaving(false)

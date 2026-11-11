@@ -118,6 +118,20 @@ it('비교안 여러 개를 펼쳐도 요청하지 않고 선택할 때만 최�
   expect(button('이 안 선택', panels[0]).disabled).toBe(true)
 })
 
+it('조정안의 자동 감액 항목도 상세를 펼치기 전에 보여 준다', async () => {
+  apiSend.mockResolvedValueOnce(proposalTalk(card({ changes: [
+    change('FOOD', 400000, 425000, true), change('TRANSPORT_CAR', 100000, 75000),
+  ] })))
+  await mount()
+  await submit('식비 5만 원 늘려줘')
+  const proposal = host.querySelector('.mc-budget-proposal')
+  const visible = proposal.querySelector(':scope > .mc-budget-changes')
+  expect(visible.textContent).toContain('교통·차량')
+  expect(visible.textContent).toContain('75,000원')
+  expect(proposal.querySelector('details').open).toBe(false)
+  expect(apiSend).toHaveBeenCalledTimes(1)
+})
+
 it('대화 답변의 작은 보기 옵션은 과거 답변에서도 현재 조건과 최신 turn으로 요청한다', async () => {
   const navigation = [{ value: 'recommend', label: '추천안 보기' }, { value: 'compare', label: '비교하기' }]
   apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'funding_scope', canApprove: false }, [

@@ -319,6 +319,16 @@
             "example": "38e76a37-6016-4291-87c2-58688f50542a"
           },
           {
+            "name": "transactionType",
+            "in": "query",
+            "required": false,
+            "description": "거래 유형만(11/9): spending 소비 · income 입금 · transfer 이체(남에게 보낸 이체 + 내 계좌 이체 줄). 쉼표로 여러 개. category와 같이 보내면 둘 다 만족. 모르는 값은 400.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "income,transfer"
+          },
+          {
             "name": "from",
             "in": "query",
             "required": false,

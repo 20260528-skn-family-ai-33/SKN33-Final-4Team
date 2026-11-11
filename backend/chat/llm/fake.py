@@ -100,6 +100,59 @@ BUDGET_SAID = {
 }
 
 
+# 예산 조정 ↔ 소비 분석 협업 (11/11) — 목표 대화: "식비 5만 원 늘려줘" → (조정안) → "교통은 얼마 남았어?" → "그럼 거기서 빼줘"
+BUDGET_SAID["식비 5만 원 늘려줘"] = BUDGET_SAID["식비를 5만 원 늘려줘"]
+for _text in ("식비 5만 원 늘려줘", "식비를 5만 원 늘려줘"):  # 라우터에도 예산 조정 요청으로 (기능 버튼 없이 문장으로 시작)
+    EXTRA_SAID[_text] = {"intents": ["budget_adjust"], "categories": ["FOOD"], "direction": "up", "amount": 50000, "amount_mode": "by"}
+# 조정 중에 끼어드는 조회 질문 — 예산 조정은 not_mine(+ 갈 곳), 소비 분석은 그대로 답한다
+SPENDING_SAID.update({
+    "교통은 얼마 남았어?": {"mine": True, "target": "budget_left", "categories": ["TRANSPORT_CAR"]},
+    "쇼핑은 얼마 남았어?": {"mine": True, "target": "budget_left", "categories": ["FASHION_SHOPPING"]},
+    "교통비 얼마 썼어?": {"mine": True, "target": "spend", "categories": ["TRANSPORT_CAR"]},
+    "이건 얼마 남았어?": {"mine": True, "target": "budget_left", "refers_to": "unclear"},  # 가리키는 대상은 조정안에서 푼다
+})
+# 소비 분석에서 본 카테고리를 가리키는 말 — 라우터 · 소비에는 예산 조정 요청, 예산 조정에는 hints.category 를 재원으로
+BUDGET_POINTING = ("그럼 거기서 빼줘", "거기서 빼줘", "거기서 가져와", "그거 줄여줘")
+for _text in BUDGET_POINTING:
+    EXTRA_SAID[_text] = {"intents": ["budget_adjust"]}
+# 조정안 카드가 떠 있을 때의 말 (FEEDBACK_PROMPT 가짜 응답: action, category, amount, amount_mode, suggested_target)
+FEEDBACK_SAID = {
+    "쇼핑 더 줄여도 돼": ("refine_more", "FASHION_SHOPPING", None, None, None),
+    "쇼핑 너무 많이 줄였어": ("refine_less", "FASHION_SHOPPING", None, None, None),
+    "쇼핑 1만 원 더 줄여줘": ("refine_more", "FASHION_SHOPPING", 10000, "by", None),
+    "교통에서 빼줘": ("use_source", "TRANSPORT_CAR", None, None, None),
+    "아니 식비 3만 원만 늘릴래": ("change_goal", "FOOD", 30000, "by", None),
+    "이대로 해줘": ("accept", None, None, None, None),
+    "왜 이렇게 바꿨어?": ("explain", None, None, None, None),
+    "뭐가 제일 나아?": ("recommend", None, None, None, None),
+}
+
+
+def _asked_category(text, fallback):
+    """조회 질문이 물어본 카테고리 코드 하나 (여러 개 · 전체면 None). 가리키는 말("이건")이면 조정 대상(fallback)"""
+    said = SPENDING_SAID[text]
+    codes = [c for c in said.get("categories", []) if isinstance(c, str)]
+    if len(codes) == 1:
+        return codes[0]
+    return fallback if not codes and said.get("refers_to") == "unclear" else None
+
+
+def fake_feedback(user):
+    """조정안 카드가 떠 있을 때의 가짜 해석. 정해 두지 않은 말은 호출 실패처럼 (조정안 · 기존 예산 그대로)"""
+    data = json.loads(user)
+    text, hinted = data["text"], (data.get("hints") or {}).get("category")
+    if text in SPENDING_SAID:  # 조회 질문 → 소비 분석으로
+        goal = (data.get("primary_request") or {}).get("items") or [{}]
+        answer = ("not_mine", _asked_category(text, goal[0].get("category")), None, None, None)
+    elif text in BUDGET_POINTING:  # "거기서 빼줘" → 방금 본 카테고리를 재원으로 (없으면 서버가 대상을 되묻는다)
+        answer = ("use_source", hinted, None, None, None)
+    elif text in FEEDBACK_SAID:
+        answer = FEEDBACK_SAID[text]
+    else:
+        raise TimeoutError("가짜 조정안 해석: 모르는 문장")
+    return json.dumps(dict(zip(("action", "category", "amount", "amount_mode", "suggested_target"), answer)), ensure_ascii=False)
+
+
 # 2026-11-02 사용자 확인 목록. 실제 해석기 규칙이 아니라 오프라인 재현용 정답 입력이다.
 SPENDING_SAID.update({
     "배달에 얼마나 썼지?": {"mine": True, "target": "spend", "categories": [{"detail": "배달", "category": "FOOD"}], "refers_to": "previous"},
@@ -251,18 +304,30 @@ class FakeReading(RoleFakeLLM):
             self.calls.append({"role": "fake_judge"})
             return fake_judge(user)
         from budgets.adjustment_core import interpretation as budget_reading
-        from budgets.adjustment_core.financial_conversation import DIALOGUE_PROMPT
+        from budgets.adjustment_core.financial_conversation import DIALOGUE_PROMPT, FEEDBACK_PROMPT
+        if system == FEEDBACK_PROMPT:
+            self.calls.append({"role": "budget_feedback"})
+            return fake_feedback(user)
         if system in (budget_reading.PROMPT, DIALOGUE_PROMPT):
-            text = json.loads(user)["text"]
+            payload = json.loads(user)
+            text, hinted = payload["text"], (payload.get("hints") or {}).get("category")
             intents = self.said.get(text, {}).get("intents", [])
             other = text in SPENDING_SAID or bool(intents) and "budget_adjust" not in intents
-            if text not in BUDGET_SAID and not other:
+            pointing = text in BUDGET_POINTING
+            if text not in BUDGET_SAID and not other and not pointing:
                 self.missed += 1
                 raise TimeoutError("가짜 예산 해석: 모르는 문장")
             self.calls.append({"role": "budget"})
             reading = {"mine": not other, "requests": BUDGET_SAID.get(text, []), "scope": None,
                        "clear_targets": [], "unlock": None, "approval": None, "cancel": False,
-                       "reason": None, "unclear": []}
+                       "reason": None, "unclear": [], "handoff": None, "handoff_category": None}
+            if text in SPENDING_SAID:  # 조회 질문 → 소비 분석 + 물어본 카테고리 (가리키는 말이면 조정 중인 항목)
+                goal = (payload.get("previous") or {}).get("requests") or [{}]
+                reading.update(handoff="spending", handoff_category=_asked_category(text, goal[0].get("category")))
+            if pointing:  # "거기서 빼줘": 방금 본 카테고리(hints)를 재원으로. 본 게 없으면 대상을 되묻게 한다
+                reading.update(sources=[hinted] if hinted else [], destinations=[], excluded=[], funding_scope=None,
+                               action=None, use_available=None, reference="previous",
+                               unclear=[] if hinted else ["어느 항목에서 가져올지 알려 주세요."])
             if system == DIALOGUE_PROMPT:
                 reading = {"reading": reading, "reply": "조정할 때 꼭 유지하고 싶은 예산이나 원하는 방법이 있나요?"}
             return json.dumps(reading, ensure_ascii=False)

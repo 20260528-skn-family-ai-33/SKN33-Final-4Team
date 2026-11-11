@@ -15,9 +15,10 @@ export const FIXED = 770_000       // 고정지출 합계
 export const CUSHION_GOAL = MONTHLY * 3   // 머니 쿠션 목표 = 월급×3
 
 // 거주 형태별 이름 · 버튼 글자 · 비율
+// short = 내 정보 입력의 비율 줄 앞 ('본가 기준 · …', 11/9: '본가 거주 기준'이 길어서). 다른 화면은 name
 export const HOUSING = {
-  alone: { name: '자취', label: '혼자 살아요', sub: '자취 · 독립', rates: { living: 0.55, saving: 0.30, spare: 0.05, cushion: 0.10 } },
-  family: { name: '본가 거주', label: '가족과 살아요', sub: '본가 거주', rates: { living: 0.45, saving: 0.40, spare: 0.05, cushion: 0.10 } },
+  alone: { name: '자취', short: '자취', label: '혼자 살아요', sub: '자취 · 독립', rates: { living: 0.55, saving: 0.30, spare: 0.05, cushion: 0.10 } },
+  family: { name: '본가 거주', short: '본가', label: '가족과 살아요', sub: '본가 거주', rates: { living: 0.45, saving: 0.40, spare: 0.05, cushion: 0.10 } },
 }
 export const HOUSING_KEYS = Object.keys(HOUSING)
 const DEFAULT_HOUSING = 'alone'

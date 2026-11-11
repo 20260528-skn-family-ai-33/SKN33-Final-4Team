@@ -10,6 +10,7 @@ import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
 import { pickEvidence, shortDate } from '../utils/fixed.js'
+import { toast } from '../utils/toast.js'
 
 export default function EvidencePopup({ item, late = false, onSaved }) {
   const { closePopup } = usePopup()
@@ -25,6 +26,7 @@ export default function EvidencePopup({ item, late = false, onSaved }) {
       await pickEvidence(item, id)
       onSaved?.()
       closePopup()
+      toast('거래를 연결했어요')
     } catch (err) {
       setError(err.fields?.evidenceTransactionId?.[0] ?? err.message)
       setSaving(false)

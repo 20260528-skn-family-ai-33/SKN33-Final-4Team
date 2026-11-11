@@ -5,7 +5,7 @@
   cycle_dates · budget_data) 결과를 data/expected.json(설계 행을 따로 산술한 고정 정답)과 비교
 - MicroFixtureTest: 손으로 검산한 작은 자료
 정답은 서비스 함수로 다시 만들지 않는다. 기간 자르기(날짜 필터)만 테스트가 하고, 합산은 전부 서비스 함수가 한다.
-아직 없는 소비 분석 1~9번 · 승인 예산 읽기 · 수집 완전성 판정은 여기서 흉내 내지 않는다 (README 부족 목록).
+소비 분석과 수집 완전성은 별도 테스트에서 검증한다.
 """
 import copy
 import unittest
@@ -264,7 +264,6 @@ class ExistingCalculationTest(TestCase):
         self.assertEqual(data["living"], {"budget": want["living_budget"], "spent": want["living_spent"],
                                           "remaining": want["living_remaining"]})  # v1 · v2 생활비 총액이 같아서 성립
 
-    @unittest.expectedFailure  # 미구현: 승인 예산 읽기 전용 경로. budget_data 는 validated v2(식비 450,000)를 먼저 고른다
     def test_a_category_budget_uses_approved_v1(self):
         data = budget_data(user("A"), TODAY)
         food = next(c for c in data["categories"] if c["category"] == "FOOD")

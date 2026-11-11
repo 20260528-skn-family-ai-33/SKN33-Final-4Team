@@ -239,6 +239,79 @@ class CardReservedTest(TestCase):
         return client.post(f"/api/budgets/{budget.pk}/approve/", "{}", content_type="application/json",
                            HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
 
+    def test_missing_bill_can_start_and_rerecommend_in_same_cycle(self):
+        self.collect_all()
+        # 지난 주기 청구서만 있음. 이번 주기 청구서는 나중에 들어온다.
+        CardBill.objects.filter(pk=self.bill.pk).update(withdrawal_due_date=date(2026, 10, 5))
+        client = self.client_()
+        notes = [{"cardId": str(self.card.pk), "reason": "first_bill_unavailable"}]
+        state = client.get(URL).json()
+        self.assertIsNone(state["blocked"])
+        self.assertEqual((state["base"]["fixedTotal"], state["cardPending"], state["cardNotes"]), (100_000, [], notes))
+        first = self.recommend_draft(client)
+        self.assertEqual(first.input_snapshot["fixed"]["card_reserved"], 0)
+        self.assertEqual(client.get("/api/budgets/").json()["cardNotes"], notes)
+        response = self.approve(client, first)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["cardNotes"], notes)
+        self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], notes)
+
+        # 청구서를 불러온 것만으로 승인 예산의 금액·안내가 바뀌지 않는다.
+        CardBill.objects.filter(pk=self.bill.pk).update(withdrawal_due_date=date(2026, 11, 10))
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)
+        self.assertEqual(client.get("/api/budgets/").json()["cardNotes"], notes)
+        self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], notes)
+        first.refresh_from_db()
+        self.assertEqual(first.input_snapshot["fixed"]["card_reserved"], 0)
+
+        second = self.recommend_draft(client)
+        self.assertEqual(second.cycle_id, first.cycle_id)
+        self.assertEqual(second.items.get(category_detail="card_reserved").allocated_amount, 250_000)
+        self.assertEqual(client.get("/api/budgets/").json()["cardNotes"], [])
+        # 새 초안만으로는 사용 중인 홈 예산이 바뀌지 않는다.
+        self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], notes)
+        response = self.approve(client, second)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual((response.json()["split"]["fixed"], response.json()["cardNotes"]), (350_000, []))
+        self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], [])
+        first.refresh_from_db()
+        self.assertEqual(first.status, "superseded")
+
+    def test_missing_bill_does_not_bypass_missing_or_failed_spending_history(self):
+        self.bill.delete()
+        self.run_(CARD_BILL_SYNC, date(2026, 10, 20), TODAY)
+        self.run_(CARD_SPENDING_SYNC, date(2026, 10, 20), TODAY, status="failed")
+        self.assertEqual(card_reserved(self.user, self.cycle), {
+            "amount": None, "pending": [{"card_id": str(self.card.pk), "reason": "spending_history_incomplete"}],
+        })
+        client = self.client_()
+        response = client.put(URL, json.dumps({"livingBudget": 500_000, "savingFloor": 100_000, "cushionMonthly": 100_000}),
+                              content_type="application/json")
+        self.assertEqual(response.status_code, 409)
+
+    def test_bill_arrival_expires_unapproved_omission_even_when_reserved_stays_zero(self):
+        self.collect_all()
+        CardBill.objects.filter(pk=self.bill.pk).update(withdrawal_due_date=date(2026, 10, 5))
+        client = self.client_()
+        draft = self.recommend_draft(client)
+        self.bill.items.all().delete()
+        CardBill.objects.filter(pk=self.bill.pk).update(withdrawal_due_date=date(2026, 11, 10), total_amount=0)
+        self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 0)
+        response = self.approve(client, draft)
+        self.assertEqual((response.status_code, response.json()["error"]["code"]), (409, "expired"))
+
+    def test_one_missing_issuer_does_not_omit_other_issuer_bill(self):
+        self.collect_all()
+        connection = Connection.objects.create(user=self.user, business_type="card", organization_code="0302", status="connected")
+        other = Card.objects.create(user=self.user, connection=connection, origin="provider", issuer_code="0302",
+                                    first_connected_at=self.card.first_connected_at, is_selected=True)
+        for product in (CARD_BILL_SYNC, CARD_SPENDING_SYNC):
+            SyncRun.objects.create(user=self.user, connection=connection, card=other, product_code=product,
+                                   covered_from=self.cycle.starts_on, covered_to=TODAY, status="success")
+        result = card_reserved(self.user, self.cycle)
+        self.assertEqual(result, {"amount": 250_000, "pending": [],
+                                  "notes": [{"card_id": str(other.pk), "reason": "first_bill_unavailable"}]})
+
     def test_single_numeric_statement_allows_protect_and_recommend(self):
         self.collect_all()
         client = self.client_()
@@ -504,7 +577,7 @@ class SyncedCardReservedTest(TestCase):
         response = client.put("/api/finance/connect/cards/", json.dumps({"selectedCardIds": [str(card.pk)]}),
                               content_type="application/json")
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(card_reserved(self.user, self.cycle)["pending"],
+        self.assertEqual(card_reserved(self.user, self.cycle)["notes"],
                          [{"card_id": str(card.pk), "reason": "first_bill_unavailable"}])
 
         self.sync(TODAY, bill_months(TODAY))
@@ -526,14 +599,68 @@ class SyncedCardReservedTest(TestCase):
         self.assertEqual(last_bill_day(self.connection), first_day)
         # 예전 범위(지난달 + 이번 달)로 불러오면 8/21 ~ 8/31이 비어 계속 보류
         self.sync(TODAY, ("202609", "202610"), start=date(2026, 8, 13))
-        # 11/06: 8월 빈 기간은 이번 주기(10/25~) 판단과 무관. 다만 11월 청구서를 아직 안 불러왔으니 보류 (0원으로 치지 않음)
-        self.assertEqual(card_reserved(self.user, self.cycle)["pending"],
+        # 8월 빈 기간은 이번 주기 판단과 무관. 11월 청구서는 아직 없어 미반영 안내와 함께 시작 가능.
+        self.assertEqual(card_reserved(self.user, self.cycle)["notes"],
                          [{"card_id": str(card.pk), "reason": "first_bill_unavailable"}])
         months = bill_months(TODAY, last_bill_day(self.connection))
         self.assertEqual(months, ("202608", "202609", "202610", "202611"))
         self.sync(TODAY, months, start=date(2026, 8, 13))
         # 승인 예산이 아직 없으므로 이번 주기가 최초 적용 주기: 11/5 청구서 300,000 (10/26 소비는 이 청구서에 없음)
         self.assertEqual(card_reserved(self.user, self.cycle), {"amount": 300_000, "pending": []})
+
+    def test_payday_sixth_start_without_december_bill_then_reflect_on_november_24(self):
+        from finance.test_card_sync import approval, bill
+        from finance.sync_ranges import bill_months
+
+        FinancialProfile.objects.filter(user=self.user).update(payday=6)
+        self.cycle.delete()
+        self.cycle = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 11, 6), ends_before=date(2026, 12, 6))
+        self.approvals = []
+        today = date(2026, 11, 9)
+        client = APIClient()
+        client.force_authenticate(self.user)
+
+        def recommend_and_approve():
+            state = client.get(URL).json()
+            self.assertIsNone(state["blocked"])
+            values = {key: state["recommended"][key] for key in ("livingBudget", "savingFloor", "cushionMonthly")}
+            response = client.put(URL, values, format="json")
+            self.assertEqual(response.status_code, 200, response.content)
+            response = client.post("/api/budgets/recommend/", {}, format="json", HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+            self.assertEqual(response.status_code, 202, response.content)
+            draft = Budget.objects.get(user=self.user, status="validated")
+            response = client.post(f"/api/budgets/{draft.pk}/approve/", {}, format="json", HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+            self.assertEqual(response.status_code, 200, response.content)
+            return draft
+
+        # 모델 필드의 default는 import 때 바인딩되므로 조회 시작 시각도 테스트 날짜로 맞춘다.
+        now = lambda: datetime(today.year, today.month, today.day, 3, tzinfo=dt_timezone.utc)
+        with patch("django.utils.timezone.now", side_effect=now), \
+                patch.object(SyncRun._meta.get_field("started_at"), "get_default", side_effect=now), \
+                patch("django.utils.timezone.localdate", side_effect=lambda value=None, timezone=None:
+                      today if value is None else CardReservedTest.localdate(value, timezone)):
+            # 11/5 청구서는 이전 주기. 12/5 청구서는 요청해도 아직 응답에 없음.
+            self.sync(today, bill_months(today))
+            Card.objects.filter(user=self.user).update(is_selected=True)
+            first = recommend_and_approve()
+            self.assertEqual(first.input_snapshot["fixed"]["card_reserved"], 0)
+            self.assertEqual(first.input_snapshot["fixed"]["card_notes"][0]["reason"], "first_bill_unavailable")
+
+            today = date(2026, 11, 24)
+            self.approvals = [approval(resUsedDate="20261110", resUsedAmount="50,000", resMemberStoreName="스타벅스",
+                                       commStartDate="20260601", commEndDate="20261124")]
+            self.bills["202612"] = bill(due="20261205", resBillType="", resTotalAmount="350,000", resChargeHistoryList=[
+                {"resPaymentType": "1", "resPaymentAmt": "300,000", "resUsedDate": "20261102"},
+                {"resPaymentType": "1", "resPaymentAmt": "50,000", "resUsedDate": "20261110"},
+            ])
+            self.sync(today, bill_months(today))
+            # 같은 주기에서 새 청구서의 이번 주기 거래(5만 원)는 중복 제외하고 이전 사용분 30만 원만 반영.
+            self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 300_000)
+            self.assertTrue(client.get("/api/home/").json()["budget"]["cardNotes"])
+            second = recommend_and_approve()
+            self.assertEqual(second.cycle_id, first.cycle_id)
+            self.assertEqual(second.input_snapshot["fixed"]["card_reserved"], 300_000)
+            self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], [])
 
 
 class BudgetReserveVsRemainingTest(TestCase):

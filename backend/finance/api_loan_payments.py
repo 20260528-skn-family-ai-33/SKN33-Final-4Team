@@ -155,7 +155,8 @@ def remembered(user, loan):
     return {t.account_id for t in picked}, {squeeze(t.source_description) for t in picked if t.source_description}
 
 
-def tx_json(tx, due, loan, memory=None):
+def tx_json(tx, due, loan, memory=None, other_paid=0):
+    """other_paid = 이 출금 말고 이 회차에 이미 연결한 출금 합계. 일부만 낸 뒤 다른 출금을 고를 때 남은 금액과 비교한다 (11/9)"""
     accounts, labels = memory or (set(), set())
     lender = squeeze(name_of(BANK, loan.lender_name)) if loan.lender_name else ""
     amount = net_amount(tx)
@@ -166,7 +167,7 @@ def tx_json(tx, due, loan, memory=None):
         "amount": amount,
         "account": account_json(tx.account),
         "description": tx.source_description,
-        "amount_difference": amount - due.confirmed_amount,   # 실제 − 예정 (참고)
+        "amount_difference": amount - max(due.confirmed_amount - other_paid, 0),   # 실제 − 남은 예정액 (참고)
         "hints": {
             "linked_account": loan.linked_account_id is not None and tx.account_id == loan.linked_account_id,
             "near_due_date": abs((tx.occurred_on - due.due_date).days) <= 3
@@ -216,6 +217,7 @@ def search_range(request, due_date, today, before_days=DEFAULT_DAYS):
 def state_json(user, loan, due, today, start=None, end=None):
     memory = remembered(user, loan)
     linked = [m.transaction for m in due.matches.select_related("transaction__account__connection").order_by("matched_at", "pk")]
+    linked_total = sum(net_amount(tx) for tx in linked)
     body = {
         "due": {
             "due_id": str(due.pk), "loan_id": str(loan.pk),
@@ -226,14 +228,14 @@ def state_json(user, loan, due, today, start=None, end=None):
             "payment_state": due.payment_state,
             "linked_account": account_json(loan.linked_account),
         },
-        "linked": [{**tx_json(tx, due, loan, memory), "cancel_effect": cancel_effect(tx, due)} for tx in linked],
+        "linked": [{**tx_json(tx, due, loan, memory, linked_total - net_amount(tx)), "cancel_effect": cancel_effect(tx, due)} for tx in linked],
     }
     if start is not None:
         excluded = other_feature_ids(user)
         rows = (selectable(user, today).filter(occurred_on__range=(start, end))
                 .exclude(pk__in=PaymentMatch.objects.filter(user=user).values("transaction"))
                 .select_related("account__connection"))
-        items = [tx_json(tx, due, loan, memory) for tx in rows if str(tx.pk) not in excluded and net_amount(tx) > 0]
+        items = [tx_json(tx, due, loan, memory, linked_total) for tx in rows if str(tx.pk) not in excluded and net_amount(tx) > 0]
         # 연결 계좌 · 전에 확인한 계좌/적요 → 납부일 근처 → 날짜 차이 → 금액 차이 순 (금액이 달라도 빼지 않음)
         items.sort(key=lambda i: (
             not (i["hints"]["linked_account"] or i["hints"]["same_as_before"]), not i["hints"]["near_due_date"],

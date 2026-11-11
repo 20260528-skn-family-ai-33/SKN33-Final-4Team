@@ -291,7 +291,7 @@ it('조회 동의 없이 직접 등록한 대출을 목록에서 확인하고 �
   await fillCreate()
   await submit(dialogForm())
   expect(sent('POST')).toHaveLength(1)
-  expect(host.textContent).toContain('새 학자금 대출을 등록했어요')
+  expect(loanForm()).toBeTruthy()  // 등록 안내 문구 대신 목록에 새 대출 카드가 생긴다
   expect(host.textContent).toContain('직접 등록한 대출은 조회 동의 없이 확인하고 수정할 수 있어요')
   expect(host.textContent).not.toContain('목록 조회는 대출 조회 동의 후')
   expect(loanForm()).toBeTruthy()

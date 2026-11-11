@@ -115,16 +115,19 @@ it('추가 인증이 필요 없는 카드사는 번호·비밀번호 입력 없�
   expect(requests[0].body).toEqual({ connectionIds: ['hyundai'] })
 })
 
-it('카드 확인 목록을 펼친 채로 재조회해도 목록을 새로 불러온다', async () => {
+it('결제 카드 확인은 창으로 열고, 재조회 뒤 다시 열면 목록을 새로 불러온다', async () => {
   reason = 'card_assignment_required'
   await render()
   await click('결제 카드 확인하기')
   const reads = () => fetch.mock.calls.filter(([url]) => url === '/api/finance/card-reviews/').length
   expect(reads()).toBe(1)
+  expect(host.querySelector('[role=dialog][aria-label="결제 카드 확인"]')).not.toBeNull()  // 11/9: 펼치기 대신 가운데 창
   expect(host.querySelector('input[name=cardPassword]')).toBeNull()
+  await click('닫기 ×')
   await click('카드 내역도 다시 불러오기')
   await credentials()
   await submitSync()
+  await click('결제 카드 확인하기')
   expect(reads()).toBe(2)
   expect(host.querySelector('[aria-label="결제 카드 확인 거래"]')).not.toBeNull()
 })
@@ -215,13 +218,18 @@ it('11/06: 청구 총액 불일치는 0원이나 상세 합계로 넘기지 않�
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
 })
 
-it('11/06: 이번 주기 청구서를 아직 못 찾음은 조회 실패와 다르게 안내하고 재조회는 고를 때만', async () => {
-  reason = 'first_bill_unavailable'
+it('청구서가 아직 없으면 미반영을 안내하고 재조회는 고를 때만', async () => {
+  reason = null
+  notes = [{ cardId: 'card-1', reason: 'first_bill_unavailable' }]
   await render()
-  expect(host.textContent).toContain('이번 급여 주기 카드 청구서를 아직 찾지 못했어요')
+  expect(host.textContent).toContain('지난 카드값이 아직 반영 안 됐어요')
+  await click('지난 카드값이 아직 반영 안 됐어요')
+  expect(host.textContent).toContain('이 예산으로 먼저 시작해도 돼요')
+  expect(button('청구서 확인하러 가기')).toBeUndefined()
+  await click('닫기 ×')
   expect(host.textContent).not.toContain('카드 내역을 다시 불러와야 해요')
   expect(host.querySelector('input[name=cardNo]')).toBeNull()
-  await click('카드 내역 다시 불러오기')
+  await click('다시 불러오기')
   expect(host.querySelector('input[name=cardNo]')).not.toBeNull()
 })
 

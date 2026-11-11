@@ -5,8 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import LoanPaymentPopup from './LoanPaymentPopup.jsx'
 import MustPayPopup from './MustPayPopup.jsx'
 import { apiSend, useApi } from '../utils/api.js'
+import { toast } from '../utils/toast.js'
 
 const { closePopup, reload } = vi.hoisted(() => ({ closePopup: vi.fn(), reload: vi.fn() }))
+vi.mock('../utils/toast.js', () => ({ toast: vi.fn() }))  // 저장 · 취소 결과는 토스트로 (11/9)
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), useApi: vi.fn(), newRequestKey: () => 'pay-key' }))
 vi.mock('./context.js', () => ({ usePopup: () => ({ closePopup }) }))
 
@@ -45,13 +47,24 @@ it('금액이 다르고 적요에 기관 이름이 없어도 후보를 보여 �
   expect(button('이번 납부를 전부 냈어요')).toBeUndefined()   // 고르기 전에는 확인 버튼 없음
   await click(button('자동이체 출금'))
   expect(host.textContent).toContain('예정액보다 2,000원 적어요')
-  expect(host.textContent).toContain('분류가 ‘이체’에서 ‘대출 상환’으로 바뀌어요')
+  expect(host.textContent).toContain('‘이체’ → ‘대출 상환’으로 바꿔요')
   await click(button('이번 납부를 전부 냈어요'))
   expect(apiSend).toHaveBeenCalledWith('/api/finance/loan-dues/due-1/payments/', 'POST',
     { transactionId: 'tx-1', settlement: 'full', confirmReclassify: false }, { requestKey: 'pay-key' })
   expect(reload).toHaveBeenCalled()
   expect(onSaved).toHaveBeenCalled()
-  expect(host.textContent).toContain('이번 납부를 완료로 저장했어요.')
+  expect(toast).toHaveBeenCalledWith('납부 완료로 저장했어요')
+})
+
+it('일부만 낸 뒤 다른 출금을 고르면 이미 연결한 금액 · 남은 금액과 비교해 보여 준다', async () => {
+  useApi.mockReturnValue({ data: body({ due: { ...due, paidAmount: 200_000, paymentState: 'partial' },
+    items: [candidate('tx-2', { amount: 100_000, amountDifference: 0, description: '두 번째 출금' })] }), reload })
+  await render()
+  await click(button('두 번째 출금'))
+  const card = host.querySelector('[aria-label="고른 출금"]').textContent
+  expect(card).toContain('이미 연결한 출금200,000원')
+  expect(card).toContain('남은 금액100,000원')
+  expect(card).toContain('남은 금액과 같아요')
 })
 
 it('일부만 냈어요는 partial 로 보낸다', async () => {
@@ -64,7 +77,7 @@ it('일부만 냈어요는 partial 로 보낸다', async () => {
 it('소비 분류를 바꾸는 거래는 변경 내용을 보여 주고 확인해야 저장할 수 있다', async () => {
   await render()
   await click(button('합성 식당'))
-  expect(host.textContent).toContain('‘소비 · 식비’에서 ‘대출 상환’으로 바뀌어요')
+  expect(host.textContent).toContain('‘소비 · 식비’ → ‘대출 상환’으로 바꿔요')
   expect(button('이번 납부를 전부 냈어요').disabled).toBe(true)
   await click(host.querySelector('input[type=checkbox]'))
   await click(button('이번 납부를 전부 냈어요'))
@@ -96,7 +109,7 @@ it('연결한 출금은 연결 취소 · 정정할 수 있다 (안내는 실제 
   expect(host.textContent).toContain('취소하면 분류가 ‘소비 · 식비’로 돌아가요.')
   await click(button('연결 취소'))
   expect(apiSend).toHaveBeenCalledWith('/api/finance/loan-dues/due-1/payments/tx-1/', 'DELETE', undefined)
-  expect(host.textContent).toContain('납부 연결을 취소하고 분류를 ‘소비 · 식비’로 되돌렸어요.')
+  expect(toast).toHaveBeenCalledWith('납부 연결을 취소하고 분류를 ‘소비 · 식비’로 되돌렸어요.')
   await click(button('정정'))
   await click(button('일부만 냈어요'))
   expect(apiSend.mock.calls[1]).toEqual(['/api/finance/loan-dues/due-1/payments/', 'POST',
@@ -133,8 +146,8 @@ it.each([
   await render()
   expect(host.textContent).toContain('취소해도 지금 분류 ‘소비 · 생활용품’는 그대로예요.')
   await click(button('연결 취소'))
-  expect(host.querySelector('[role=status]').textContent).toBe(text)
-  expect(host.textContent).not.toContain('되돌렸어요')
+  expect(toast).toHaveBeenCalledWith(text)
+  expect(toast).not.toHaveBeenCalledWith(expect.stringContaining('되돌렸어요'))
 })
 
 it('원래 분류를 모르는 예전 자동 연결은 분류를 고른 뒤 연결 해제와 함께 보낸다', async () => {
@@ -159,7 +172,7 @@ it('원래 분류를 모르는 예전 자동 연결은 분류를 고른 뒤 연�
   apiSend.mockResolvedValueOnce({ released: { transactionId: 'tx-1', classification: 'chosen', transactionType: 'spending', category: 'FOOD' } })
   await click(button('연결 취소하고 이 분류로 두기'))
   expect(apiSend).toHaveBeenLastCalledWith('/api/finance/loan-dues/due-1/payments/tx-1/', 'DELETE', { restoreType: 'spending', restoreCategory: 'FOOD' })
-  expect(host.textContent).toContain('납부 연결을 취소하고 분류를 ‘소비 · 식비’로 바꿨어요.')
+  expect(toast).toHaveBeenCalledWith('납부 연결을 취소하고 분류를 ‘소비 · 식비’로 바꿨어요.')
   expect(onSaved).toHaveBeenCalled()
 })
 
@@ -171,5 +184,5 @@ it('예전 자동 연결을 이체로 두고 취소한다', async () => {
   await click(host.querySelectorAll('input[type=radio]')[0])
   await click(button('연결 취소하고 이 분류로 두기'))
   expect(apiSend).toHaveBeenCalledWith('/api/finance/loan-dues/due-1/payments/tx-1/', 'DELETE', { restoreType: 'transfer' })
-  expect(host.textContent).toContain('분류를 ‘이체’로 바꿨어요.')
+  expect(toast).toHaveBeenCalledWith(expect.stringContaining('분류를 ‘이체’로 바꿨어요.'))
 })

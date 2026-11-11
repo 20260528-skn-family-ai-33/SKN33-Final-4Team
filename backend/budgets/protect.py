@@ -273,9 +273,15 @@ def issuer_deduction(user, issuer_code, managed, issuer_cards, cycle, today):
             first_cycle=connected_on is None or first_budget_cycle(user, min(connected), cycle),
         )
         if result.amount is None:
-            if result.reason == "first_bill_unavailable" and bill_until is not None and bill_until >= cycle.ends_before - timedelta(days=1):
-                return 0, "no_bill_in_cycle"  # 주기 마지막 날까지 청구서를 조회했는데 없음 = 정상 빈 조회 (낼 카드값 없음)
-            return None, result.reason  # 아직 조회하지 않은 기간에 청구서가 나올 수 있으면 보류 (0원으로 치지 않음)
+            if result.reason == "first_bill_unavailable":
+                if spend_until is None:
+                    return None, "spending_history_incomplete"
+                if bill_until is not None and bill_until >= cycle.ends_before - timedelta(days=1):
+                    return 0, "no_bill_in_cycle"
+                # 정상 조회했지만 아직 청구서가 없음: 선차감 없이 시작하되 미반영 사유를 예산 snapshot에 남긴다.
+                # 같은 주기 재추천에서는 first_budget_cycle이 계속 True이므로 새 청구서를 기존 방식으로 반영한다.
+                return 0, "first_bill_unavailable"
+            return None, result.reason
         rounds = installment_rounds(user, issuer_code, cycle, connected_on, result.bill_ids)
         if rounds is None:
             return None, "installment_amount_unknown"
@@ -338,6 +344,11 @@ def card_reserved(user, cycle, as_of=None):
                               "reason": "foreign_amount_pending", "amount": None, "count": foreign})
     result = {"amount": None if pending else total, "pending": pending}
     return {**result, "notes": notes} if notes else result  # 안내가 있을 때만 (내부 값)
+
+
+def unreflected_card_ids(notes):
+    """금액이 같아도 청구서 미반영 대상이 바뀌면 승인 전 추천을 갱신해야 한다."""
+    return {note["card_id"] for note in notes if note.get("reason") == "first_bill_unavailable"}
 
 
 def fixed_breakdown(user, cycle, *, card=True):

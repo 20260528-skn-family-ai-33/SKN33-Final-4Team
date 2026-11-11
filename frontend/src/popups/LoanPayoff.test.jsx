@@ -46,11 +46,11 @@ it('완납 확인은 이번 회차 납부와 구분해 안내하고, 취소될 �
   const text = host.textContent
   expect(text).toContain('상환을 끝내는 처리')
   expect(text).toContain('[납부 거래 확인]')
-  expect(text.split('그대로 남는 납부')[0]).toContain('2026-11-20')     // 미래 · 안 낸 회차만 취소
+  expect(text.split('그대로 남는 납부')[0]).toContain('11월 20일')     // 미래 · 안 낸 회차만 취소
   const kept = text.split('그대로 남는 납부')[1]
-  expect(kept).toContain('2026-11-10')   // 지난 미납
-  expect(kept).toContain('2026-11-22')   // 미리 일부 낸 회차
-  expect(kept).not.toContain('2026-10-10')
+  expect(kept).toContain('11월 10일')   // 지난 미납
+  expect(kept).toContain('11월 22일')   // 미리 일부 낸 회차
+  expect(kept).not.toContain('10월 10일')
   await act(async () => button('납부 거래 확인').click())
   expect(onCheckDue).toHaveBeenCalledWith('past')
   expect(apiSend).not.toHaveBeenCalled()
