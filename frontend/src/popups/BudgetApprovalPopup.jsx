@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
-import { BudgetChanges, BudgetSettings, RecoveryAllocations } from '../components/BudgetAdjustment.jsx'
+import { BudgetChanges, BudgetTransfers, BudgetSettings, RecoveryAllocations } from '../components/BudgetAdjustment.jsx'
 import { allocationName } from '../utils/adjust.js'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
@@ -53,6 +53,7 @@ export default function BudgetApprovalPopup({ proposal, request: previous, onPen
   return <Popup label="예산 확정 확인" sub>
     <h1>이 예산으로 바꿀까요?</h1>
     <p className="mc-muted">확정하면 아래 금액과 설정을 반영해요.</p>
+    <BudgetTransfers transfers={proposal.transfers} />
     <BudgetChanges changes={proposal.changes} />
     {(proposal.shortfalls ?? []).map((row) => <p key={row.category} className="mc-budget-shortfall">{allocationName(row.category)}은 {won(row.appliedAmount)}만 반영하며 {won(row.missingAmount)}은 부족한 채로 남아요.</p>)}
     <BudgetSettings proposal={proposal} />

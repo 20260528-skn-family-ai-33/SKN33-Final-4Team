@@ -540,6 +540,16 @@ def _explain(interp, text, last, merchant=None, today=None):
       지난달 비교에 '왜 이렇게 많아?' → 그 비교의 이번 달 구성
     - 말한 카테고리가 직전 결과에 없으면(다른 걸 봤거나 직전 분석이 없음) 그 카테고리를 새로 본다 (종류 없으면 증감)
     - 가설은 해석 단계에서 조회 조건과 분리한다. categories에 들어온 세부 대상은 버리지 않고 일반 조회처럼 확인한다."""
+    if interp.explain_kind == 'allocation':
+        if not interp.categories and not interp.other_person:
+            return Decision('ask', 'spending', asking='explain_target',
+                            options=tuple({'code': code, 'name': name} for code, name in CATEGORY_NAMES.items()
+                                          if code not in NO_BUDGET))
+        query = replace(interp, explain=None, explain_kind=None, refers_to=None, target='budget_left')
+        decision = _decide(query, text, None, merchant, today)
+        if decision.status != 'ready':
+            return replace(decision, request=interp)
+        return replace(decision, explain={'kind': 'allocation', 'question': text}, request=interp)
     # 명시한 조건은 기존 결과보다 우선한다. 일반 조회 경로에서 검증하고 설명 전용 예외를 만들지 않는다.
     changed = any(getattr(interp, k) not in (None, (), False) for k in
                   (*PERIOD_GROUP, "payment", *QUERY_FILTERS, *QUERY_CALC, "all_categories", "other_person"))

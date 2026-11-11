@@ -66,6 +66,24 @@ def reading(**changes):
 
 
 class AdjustmentCalculationTest(unittest.TestCase):
+    def test_released_living_budget_uses_priority_and_preserves_locks_and_exclusions(self):
+        for locked, excluded, recipient in ((False, [], 'FOOD'), (True, [], 'TRANSPORT_CAR'),
+                                             (False, ['FOOD'], 'TRANSPORT_CAR')):
+            with self.subTest(locked=locked, excluded=excluded):
+                inp = context()
+                if locked:
+                    inp['locks'] = {'FOOD': inp['allocations']['FOOD']}
+                before = deepcopy(inp)
+                request = envelope(item('MEDICAL_HEALTH', 10000, 'down', 'to'),
+                                   destinations=['LIVING'], excluded=excluded)
+                result = simulate_funding(inp, request)
+                self.assertEqual(result['status'], 'proposed')
+                self.assertEqual(result['allocations']['MEDICAL_HEALTH'], 10000)
+                self.assertEqual(result['allocations'][recipient], before['allocations'][recipient] + 40000)
+                self.assertEqual(sum(result['allocations'].values()), sum(inp['allocations'].values()))
+                self.assertEqual(inp, before)
+                validate_funding(inp, request, result)
+
     def simulate(self, inp, request):
         before = deepcopy((inp, request))
         result = simulate_funding(inp, request, allocate_group_reduction=allocation)

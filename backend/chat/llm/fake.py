@@ -92,6 +92,9 @@ SPENDING_SAID = {
 
 # 네트워크 없는 서비스 연결 검증용 고정 문장. 일반 자유 대화는 live 설정을 사용한다.
 BUDGET_SAID = {
+    "의료비를 1만 원으로 줄여줘": [{"category": "MEDICAL_HEALTH", "amount": 10000, "amount_mode": "to", "direction": "down"}],
+    "의료비 줄이고싶어": [{"category": "MEDICAL_HEALTH", "amount": None, "amount_mode": None, "direction": "down"}],
+    "의료비 줄이고 싶다고": [{"category": "MEDICAL_HEALTH", "amount": None, "amount_mode": None, "direction": "down"}],
     "식비 예산 줄여줘": [{"category": "FOOD", "amount": None, "amount_mode": None, "direction": "down"}],
     "식비를 5만원 늘리고 싶어요": [{"category": "FOOD", "amount": 50000, "amount_mode": "by", "direction": "up"}],
     "식비가 부족해": [{"category": "FOOD", "amount": None, "amount_mode": None, "direction": "up"}],
@@ -99,6 +102,15 @@ BUDGET_SAID = {
     "식비를 1만 5천 원 늘려줘": [{"category": "FOOD", "amount": 15000, "amount_mode": "by", "direction": "up"}],
 }
 
+
+for _text in ("의료비 줄이고싶어", "의료비 줄이고 싶다고"):
+    EXTRA_SAID[_text] = {"intents": ["budget_adjust"], "categories": ["MEDICAL_HEALTH"], "direction": "down"}
+EXTRA_SAID['의료비를 1만 원으로 줄여줘'] = {'intents': ['budget_adjust'], 'categories': ['MEDICAL_HEALTH'],
+                                              'direction': 'down', 'amount': 10000, 'amount_mode': 'to'}
+for _text in ("의료비 예산 왜이렇게 크게 잡았어", "의료비 예산 책정 근거 알려줘"):
+    EXTRA_SAID[_text] = {"intents": ["spending"]}
+    SPENDING_SAID[_text] = {"mine": True, "target": "budget_left", "categories": ["MEDICAL_HEALTH"],
+                            "explain": True, "explain_kind": "allocation"}
 
 # 예산 조정 ↔ 소비 분석 협업 (11/11) — 목표 대화: "식비 5만 원 늘려줘" → (조정안) → "교통은 얼마 남았어?" → "그럼 거기서 빼줘"
 BUDGET_SAID["식비 5만 원 늘려줘"] = BUDGET_SAID["식비를 5만 원 늘려줘"]
@@ -117,6 +129,7 @@ for _text in BUDGET_POINTING:
     EXTRA_SAID[_text] = {"intents": ["budget_adjust"]}
 # 조정안 카드가 떠 있을 때의 말 (FEEDBACK_PROMPT 가짜 응답: action, category, amount, amount_mode, suggested_target)
 FEEDBACK_SAID = {
+    "식비 얼마까지 늘릴 수 있어?": ("maxima", "FOOD", None, None, None),
     "쇼핑 더 줄여도 돼": ("refine_more", "FASHION_SHOPPING", None, None, None),
     "쇼핑 너무 많이 줄였어": ("refine_less", "FASHION_SHOPPING", None, None, None),
     "쇼핑 1만 원 더 줄여줘": ("refine_more", "FASHION_SHOPPING", 10000, "by", None),

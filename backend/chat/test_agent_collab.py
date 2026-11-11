@@ -233,7 +233,7 @@ class AgentCollabTest(CollabFixture, TestCase):
         data, answer = self.say("식비 얼마까지 늘릴 수 있어?")
         self.assertEqual(data["agent"], "budget")
         self.assertIn("최대", answer["text"])
-        self.assertEqual(self.roles(), [])  # 서버 규칙으로 바로 답한다
+        self.assertEqual(self.roles(), ['budget_feedback'])  # 표현을 해석한 뒤 서버가 가능액을 계산한다
 
     def test_spending_follow_ups_stay_with_spending_until_adjustment_talk(self):
         self.proposal()

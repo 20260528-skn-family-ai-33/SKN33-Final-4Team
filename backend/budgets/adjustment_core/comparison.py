@@ -112,7 +112,7 @@ def _assess_and_recommend(context, comparison, primary):
         if plan["status"] == "ready" and plan["amount"] == comparison["basis_amount"] and plan["amount"] > 0:
             scores[plan["id"]] = (rank_damage, goal_damage, exhausted, upper_change, category_change)
             assessment["label"] = "대안"
-            assessment["reasons"].append(f"비교 금액 {plan['amount']:,}원을 전액 반영할 수 있어요.")
+            assessment["reasons"].append(f"이 방법으로 {plan['amount']:,}원을 옮길 수 있어요.")
         else:
             assessment["reasons"].append(f"요청 {comparison['basis_amount']:,}원 중 {plan['amount']:,}원만 반영 가능해 "
                                           f"{comparison['basis_amount'] - plan['amount']:,}원이 부족해요.")
@@ -135,11 +135,11 @@ def _assess_and_recommend(context, comparison, primary):
     winner = winners[0]
     reasons = list(winner["assessment"]["reasons"])
     if len(scores) == 1:
-        reasons.append("비교한 안 중 요청 금액을 전액 반영할 수 있는 유일한 검수 완료안이에요.")
+        reasons.append("보여 드린 방법 중 원하는 금액을 모두 옮길 수 있는 방법은 이 안뿐이에요.")
     if rank_order and not any(best[0]):
-        reasons.append("이번에 직접 변경을 요청한 항목 외의 우선순위 카테고리 예산을 추가로 줄이지 않아요.")
+        reasons.append("중요하게 고른 다른 항목의 예산은 줄이지 않아도 돼요.")
     if goals and not best[1]:
-        reasons.append("이번에 직접 바꾸려는 항목 외의 저장된 목표 미달을 늘리지 않아요.")
+        reasons.append("다른 항목에 남겨 두기로 한 돈도 더 부족해지지 않아요.")
     unchanged = [f"{names[code]} {before[code]:,}원" for code in ("SAVINGS", "CUSHION_MONTHLY")
                  if code != primary and winner["result"]["buckets"][code] == before[code]]
     if unchanged:
@@ -195,7 +195,7 @@ def _profiles(category, direction):
     return edges
 
 
-def compare_adjustments(context, envelope, *, allocate_group_reduction=None):
+def compare_adjustments(context, envelope, *, allocate_group_reduction=None, respect_selected=False):
     """Compare the same amount in three separate copies of one budget context.
 
     Without a requested amount, the common basis is the smallest positive verified
@@ -223,11 +223,22 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None):
     response["amount_was_given"] = known
     excluded = list(envelope.get("excluded", []))
     plans = []
-    for plan_id, label, edges in _profiles(category, direction):
+    profiles = _profiles(category, direction)
+    selected = envelope.get('sources' if direction == 'up' else 'destinations', [])
+    if respect_selected and selected and any(code in context['allocations'] for code in selected):
+        names = {**context.get('category_names', {}), **NAMES}
+        profiles = [('living', ' + '.join(names.get(code, code) for code in selected), list(selected))]
+    for plan_id, label, edges in profiles:
         candidate = {"items": [{"category": category, "amount_mode": "by", "amount": amount,
                                 "direction": direction, "automatic": item.get("automatic", False) if known else True}],
                      "sources": edges if direction == "up" else [],
                      "destinations": edges if direction == "down" else [], "excluded": list(excluded)}
+        if respect_selected:
+            field = 'sources' if direction == 'up' else 'destinations'
+            if envelope.get(field):
+                candidate[field] = [code for code in candidate[field] if code in envelope[field]]
+                if not candidate[field]:
+                    continue
         if category == LIVING and direction == "up":
             candidate["destinations"] = list(envelope.get("destinations", []))
         # Unknown or disabled sources are never counted as spendable. Show their
@@ -242,7 +253,7 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None):
                 else:
                     usable.append(code)
             candidate["sources"] = usable
-        pending_destination = direction == "down" and (LIVING in edges or len(edges) != 1)
+        pending_destination = direction == "down" and len(candidate['destinations']) != 1
         scope = "living" if LIVING in edges else "spare" if edges == ["SPARE"] else "extended"
         plan = {"id": plan_id, "scope": scope, "label": label, "status": "needs_destination",
                 "maximum": None, "amount": 0, "result": None, "envelope": None,
@@ -298,11 +309,27 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None):
             plan["lines"].append("저축·월 쿠션의 배정 계획이 달라져요. 이미 납입한 돈은 회수하지 않아요.")
         elif direction == "up":
             plan["lines"].append("저축·월 쿠션·여윳돈을 유지하는 대신 다른 생활비 항목의 여유가 줄어요.")
-    selectable = any(plan["envelope"] for plan in plans)
+    selectable = any(plan['status'] in ('ready', 'partial') and plan.get('envelope')
+                     and plan['amount'] > 0 and (plan.get('result') or {}).get('changes') for plan in plans)
     response["status"] = "ready" if selectable else "unavailable"
     response["message"] = (f"같은 {amount:,}원을 기준으로 비교했어요." if known else
                            f"금액 미지정으로 비교 가능한 안의 공통 가능액 {amount:,}원을 기준으로 삼았어요. 필요한 금액의 권고는 아니에요.")
     if not selectable:
-        response["message"] = "지금은 이동 가능한 비교안을 확정할 수 없어요. 아래 제한 사유를 확인해 주세요."
+        name = (context.get('category_names') or {}).get(category, category)
+        current = context['allocations'].get(category)
+        if context.get('spending_status', 'complete') != 'complete':
+            response['message'] = '지금까지 쓴 돈을 모두 확인하지 못해 계산하지 못했어요. 계좌·카드 내역을 다시 불러온 뒤 확인해 주세요.'
+        elif category in context.get('locks', {}):
+            response['message'] = f'{name} 예산을 {context["locks"][category]:,}원으로 고정해 두셨어요. 이 금액을 바꾸려면 먼저 고정을 풀어도 되는지 알려 주세요.'
+        elif direction == 'down' and not known and current is not None:
+            keep = max(context.get('minimums', {}).get(category, 0), context.get('system_floors', {}).get(category, 0),
+                       context.get('spent', {}).get(category, 0), min(current, context.get('ml_reference', {}).get(category, 0)))
+            if current <= keep:
+                response['message'] = (f'자동으로 줄일 때는 {name}에 {keep:,}원을 남기도록 계산해요. 지금 예산은 {current:,}원이어서 '
+                                       '자동으로 줄일 수 있는 금액이 없어요. 그보다 적게 잡고 싶다면 원하는 금액을 알려 주세요.')
+            else:
+                response['message'] = f'{name} 예산을 줄일 금액을 자동으로 정하지 못했어요. 줄인 뒤 얼마를 남기고 싶은지 알려 주세요.'
+        else:
+            response['message'] = '지금 선택한 범위에서는 옮길 수 있는 돈을 찾지 못했어요. 다른 곳에서 가져오거나 바꾸려는 금액을 다시 정해 주세요.'
     _assess_and_recommend(context, response, category)
     return response

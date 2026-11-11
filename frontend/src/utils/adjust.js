@@ -28,8 +28,9 @@ export function adjustmentChoices(content) {
   const adjustment = content.budgetAdjustment
   if (!adjustment) return content.choices
   if (ENDED_ADJUSTMENTS.has(adjustment.proposal?.state ?? adjustment.status)) return []
-  return (content.choices ?? []).filter((choice) => !['recommend', 'compare'].includes(choice.value)
-    && adjustment.phase !== 'funding_scope'
+  const choosingMoney = ['funding_scope', 'sources', 'destinations'].includes(adjustment.phase)
+  return (content.choices ?? []).filter((choice) => choice.value !== 'recommend' && (choice.value !== 'compare' || choosingMoney)
+    && !(adjustment.amountInput && choice.value === 'manual')
     && !(adjustment.comparison && choice.value.startsWith('plan_'))
     && !(adjustment.proposal && choice.value === 'apply'))
 }
