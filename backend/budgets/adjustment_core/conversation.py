@@ -579,6 +579,11 @@ def _route_question(store, cid, state, names, item, direction, *, context=None, 
             checked = compare_adjustments(_calculation(context, state), _envelope(state), allocate_group_reduction=allocator)
             available = {p['id'] for p in checked['plans'] if p.get('status') in {'ready', 'partial'} and p.get('amount', 0) > 0 and (p.get('result') or {}).get('changes')}
             choices = [(v, label) for v, label in choices if v in available or v == 'compare' and available]
+            if (direction == 'up' and context.get('spending_status') == 'complete'
+                    and 'spare' not in available and 'SPARE' not in state.get('excluded', [])
+                    and context.get('bucket_status', {}).get('SPARE') == 'ready'
+                    and context.get('bucket_available', {}).get('SPARE', 0) > 0):
+                choices.append(('spare', '여윳돈에서 직접 정하기'))
             choices.append(('manual_living', '생활비 직접 조정'))
             explanation = unavailable_explanation(_calculation(context, state), checked)
             if not available:

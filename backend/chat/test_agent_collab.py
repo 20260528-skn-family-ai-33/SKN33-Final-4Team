@@ -41,6 +41,8 @@ class CollabFixture:
         self.base = Budget.objects.create(user=self.user, cycle=cycle, version_no=1, status="approved",
                                           funding_amount=3000000, approved_at=timezone.now())
         self.ctx = context()
+        # Keep this handoff scenario fully funded using an unranked category under priority protection.
+        self.ctx['ml_reference']['BEAUTY'] = 20000
         self.ctx.update(base_budget_id=str(self.base.pk), cycle_id=str(cycle.pk), spending_status="complete")
         BudgetItem.objects.bulk_create([
             BudgetItem(user=self.user, budget=self.base, bucket="living", category_id=code, allocated_amount=amount)

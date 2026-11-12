@@ -101,5 +101,7 @@ def activate_due_settings(user, profile, today):
 
 def cycle_settings(user, cycle):
     """One-off allocations affect only the selected cycle, never recurring profile ratios."""
+    if cycle is None:
+        return {}
     row = BudgetAdjustmentSchedule.objects.filter(user=user, status='applied', effective_on=cycle.starts_on).first()
     return row.settings if row and row.settings.get('one_off') else {}
