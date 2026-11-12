@@ -591,6 +591,21 @@ def budget_approve(request, budget_id):
 
 # ---------------- 고정지출: 주소 입구 · 중지 · 후보 확정/무시 ----------------
 
+def card_loading_json(user):
+    """카드 내역을 뒤에서 불러오는 중이면 { task_id, institutions: [카드사 이름] }, 아니면 None (11/12)
+    카드사 첫 연결 작업(card_first_load)은 입력 해시가 연결 ID 라서 어느 카드사인지 알 수 있다.
+    다시 불러오기(finance_sync)는 기관을 특정하지 않으니 이름 없이 '불러오는 중'만 알린다 (institutions 가 빌 수 있음)"""
+    rows = tasks.active_tasks(user, tasks.SYNC_TASK_TYPES)
+    if not rows:
+        return None
+    from finance.display import organization_name
+    from finance.models import Connection
+    cards = Connection.objects.filter(user=user, business_type=Connection.BusinessType.CARD, disconnected_at__isnull=True)
+    names = {tasks.input_hash({"connection": str(c.pk)}): organization_name(c) for c in cards}
+    loading = [names[t.input_hash] for t in rows if t.task_type == tasks.CARD_FIRST_LOAD and t.input_hash in names]
+    return {"task_id": rows[0].task_id, "institutions": list(dict.fromkeys(loading))}
+
+
 # 고정지출 /fixed/ — GET 목록(후보 → 확정, 확정 합계) · POST 직접 추가
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
@@ -618,6 +633,8 @@ def fixed_list(request):
     return Response({
         "items" : items,
         "card_bills": fixed_bill_preview(request.user, cycle, today),
+        # 11/12: 카드 내역을 불러오는 중이면 카드 결제 고정지출을 아직 못 찾았을 수 있다 → 화면이 안내하고 [다음]을 막는다
+        "card_loading": card_loading_json(request.user),
         "summary" : {
             "confirmed_monthly_total" : confirmed.aggregate(total = Sum("amount"))["total"] or 0, # 확정 합계
             "suggested_count" : suggested.count()

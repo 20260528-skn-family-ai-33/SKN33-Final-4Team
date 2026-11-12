@@ -102,3 +102,25 @@ it('카드값을 확인하지 않아도 다음 단계로 갈 수 있다', async 
   expect(host.textContent).toContain('이 카드값은 얼마나 납부하셨나요?')
   expect(button('계속하기').disabled).toBe(false)
 })
+
+it('카드 내역을 불러오는 중이면 카드사를 알리고 다음을 막았다가, 다 불러오면 다시 읽고 풀어 준다 (11/12)', async () => {
+  serverData.cardLoading = { taskId: 'task-1', institutions: ['국민카드'] }
+  let finish
+  const done = new Promise((r) => { finish = r })
+  vi.stubGlobal('fetch', vi.fn(async (url) => {
+    if (String(url).startsWith('/api/tasks/')) {
+      await done
+      serverData.cardLoading = null
+      return { ok: true, json: async () => ({ status: 'succeeded', result: {} }) }
+    }
+    return response()
+  }))
+  await act(() => root.render(<FixedPage />))
+  expect(host.querySelector('[role=status]').textContent).toContain('국민카드 내역 불러오는 중')
+  const next = button('카드 내역 불러오는 중…')
+  expect(next.disabled).toBe(true)
+  expect(host.textContent).not.toContain('자동으로 찾은 고정지출이 없어요')
+  await act(async () => { finish(); await new Promise((r) => setTimeout(r, 0)) })
+  expect(host.querySelector('[role=status]')).toBeNull()
+  expect(button('확인하고 다음').disabled).toBe(false)
+})

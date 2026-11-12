@@ -589,6 +589,9 @@ GET /api/budgets/fixed/
 | `items[].recentDues[].paymentState` | 문자 | `unpaid` · `partial` · `paid` · `needs_review` |
 | `items[].recentDues[].transactions` | 배열 | 이 회차에 연결된 출금 `{ transactionId, merchantName, date, amount }`. 없으면 `[]` |
 | `items[].paidThisCycle` | 객체 또는 `null` | 이번 급여 주기에 이미 낸 거래 `{ transactionId, merchantName, date, amount }` (11/4). **계좌**는 이번 주기 회차가 `paid`일 때 그 출금, **카드**는 이번 주기에 연결된 결제. 확정 항목만, 없으면 `null`. 화면은 "이번 달 납부 완료"와 함께 보여 준다 |
+| `cardLoading` | 객체 또는 `null` | 11/12. 카드 내역을 서버가 뒤에서 불러오는 중(`card_first_load` · `finance_sync` 작업)이면 `{ taskId, institutions }`, 아니면 `null`. 불러오는 동안은 카드로 나간 고정지출을 아직 못 찾았을 수 있어 첫 설정 화면은 안내를 띄우고 [다음]을 막는다. 작업이 끝나면(성공 · 실패 모두) 다시 읽는다 — 지킬 돈의 `cardLoadTaskId`와 같은 방식 |
+| `cardLoading.taskId` | UUID | 가장 최근에 시작한 불러오기 작업 ID. `GET /api/tasks/<taskId>/`로 끝났는지 본다 |
+| `cardLoading.institutions` | 문자 배열 | 첫 연결 뒤 불러오는 중인 카드사 이름(예: `["국민카드"]`). 다시 불러오기 작업만 있으면 빈 배열 |
 | `summary` | 객체 | 확정 항목의 월 금액 합계와 후보 수 |
 | `summary.confirmedMonthlyTotal` | 정수 | 확정 항목의 `amount` 합계, 원 단위. 후보 제외. “매달 고정지출 합계” 표시용이며 예산에서 뺄 금액이 아님 |
 | `summary.suggestedCount` | 정수 | 후보(`suggested`) 항목 수 |

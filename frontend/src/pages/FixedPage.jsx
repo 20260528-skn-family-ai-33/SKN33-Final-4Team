@@ -6,10 +6,11 @@
 // 결제 확인 (10/21 결정, C-14 · C-16): 서버가 찾은 비슷한 결제를 evidenceSuggestion 으로 준다 (있을 때만 묻는다)
 //   1건 = "이 결제가 맞나요? [맞아요] [아니에요]" / 여러 건 = "비슷한 결제가 N건 있어요 [고르기]" → EvidencePopup
 //   [맞아요] · 고른 결제 = PATCH /api/budgets/fixed/<id>/ { evidenceTransactionId }. [아니에요] = 요청 없음 (다음 달 다시 물어봄)
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
+import Icon from '../components/Icon.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import FixedPopup from '../popups/FixedPopup.jsx'
@@ -20,8 +21,13 @@ import CardBillCheck from '../components/CardBillCheck.jsx'
 import { CHIPS, toView } from '../utils/transactions.js'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { waitTask } from '../utils/financeSync.js'
 import { pickEvidence, shortDate } from '../utils/fixed.js'
 import { PATHS } from '../routes.js'
+
+// 11/12: 카드 내역을 뒤에서 불러오는 중(cardLoading)이면 카드로 나간 고정지출을 아직 못 찾았을 수 있다
+//   → 첫 설정 화면은 어느 카드사를 불러오는지 알리고 [다음]을 막는다. 작업이 끝나면(성공 · 실패 모두) 목록을 다시 읽는다 (지킬 돈 화면과 같은 방식)
+const RETRY_MS = 3000
 
 // 저장 뒤 같은 목록을 다시 받는다 (같은 주소 reload — 받는 동안 지난 목록 유지, 실패하면 오류 카드)
 const useFixedList = () => useApi('/api/budgets/fixed/')
@@ -184,6 +190,15 @@ function OnboardingView() {
   const [refreshingData, setRefreshingData] = useState(null)
   const busy = saving || (refreshingData !== null && data === refreshingData)
   const [actionError, setActionError] = useState('')
+  const loading = data?.cardLoading ?? null
+  useEffect(() => {
+    if (!loading) return undefined
+    const ctrl = new AbortController()
+    waitTask(loading.taskId, { signal: ctrl.signal })
+      .then(() => null, () => new Promise((r) => setTimeout(r, RETRY_MS)))
+      .then(() => { if (!ctrl.signal.aborted) reload() })
+    return () => ctrl.abort()
+  }, [loading?.taskId, data]) // eslint-disable-line react-hooks/exhaustive-deps -- reload 는 렌더마다 새로 만들어져 넣으면 계속 다시 돈다
 
   // 후보 확정 · 무시. 누를 때 요청 번호를 새로 만든다 (버튼을 잠가서 응답 전 재전송은 없다)
   const decide = async (path, ids, refresh = false) => {
@@ -208,23 +223,33 @@ function OnboardingView() {
   const suggested = data.items.filter((f) => f.status === 'suggested')
 
   const onNext = async () => {
-    if (busy) return
+    if (busy || loading) return
     if (suggested.length && !(await decide('/api/budgets/fixed/confirm/', suggested.map((f) => f.recurringId)))) return
     navigate(PATHS.savings)
   }
   const confirm = (f) => { if (!busy) return decide('/api/budgets/fixed/confirm/', [f.recurringId], true) }
   const ignore = (f) => { if (!busy) return decide('/api/budgets/fixed/ignore/', [f.recurringId], true) }
 
-  const foot = <button type="button" className="mc-primary" disabled={busy} onClick={onNext}>{busy ? '저장 중…' : suggested.length ? '확인하고 다음' : '계속하기'}</button>
+  const foot = <button type="button" className="mc-primary" disabled={busy || Boolean(loading)} onClick={onNext}>
+    {loading ? '카드 내역 불러오는 중…' : busy ? '저장 중…' : suggested.length ? '확인하고 다음' : '계속하기'}
+  </button>
   return (
     <Layout title="고정지출 확인" showBack foot={foot}>
       <StepBar step={4} />
       <div className="mc-eyebrow">고정지출 확인</div>
       <h1>매달 이 돈이 나가나요?</h1>
-      {suggested.length > 0
+      {loading && (
+        <div className="mc-card mc-loading-card" role="status">
+          <span className="mc-conn-busy"><Icon name="Loader" /></span>
+          <span>
+            <strong>{loading.institutions.length ? loading.institutions.join(' · ') : '카드'} 내역 불러오는 중</strong>
+            <small className="mc-muted">끝나면 카드 고정지출도 찾아 드려요</small>
+          </span>
+        </div>
+      )}
+      {loading ? null : suggested.length > 0
         ? <p className="mc-muted">매달 비슷한 날, 같은 금액으로 3달 연속 나간 항목을 찾았어요. '고정지출 맞아요'를 누르면 아래 확정 합계에 바로 반영돼요. 다르면 수정하거나 '고정지출 아니에요'를 눌러 주세요.</p>
         : <p className="mc-muted">{data.items.length ? '고정지출을 모두 확인했어요. 빠진 항목이 있으면 직접 추가해 주세요.' : '자동으로 찾은 고정지출이 없어요. 월세 · 통신비처럼 매달 나가는 돈이 있으면 직접 추가하고, 없으면 계속하기를 눌러 주세요.'}</p>}
-      <p className="mc-note" style={{ paddingTop: 0 }}>대출 상환은 대출 확인에서, 내 계좌로 보내는 저축은 다음 화면에서 따로 챙겨요.</p>
 
       {data.items.map((f) => (
         <div className="mc-card" key={f.recurringId}>

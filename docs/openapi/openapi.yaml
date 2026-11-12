@@ -4955,6 +4955,7 @@ paths:
                       confirmedMonthlyTotal: 715000
                       suggestedCount: 1
                     cardBills: []
+                    cardLoading: null
                 empty:
                   value:
                     items: []
@@ -4962,6 +4963,7 @@ paths:
                       confirmedMonthlyTotal: 0
                       suggestedCount: 0
                     cardBills: []
+                    cardLoading: null
         '403':
           description: '로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를
             넣지 않는다.'
@@ -12018,10 +12020,29 @@ components:
           items:
             $ref: '#/components/schemas/FixedCardBillPreview'
           description: 관리 대상 카드가 있는 카드사별 참고 청구금액. 유효한 카드 동의·연결·선택이 없으면 빈 배열. 별도 CODEF 조회 없이 저장 자료 사용.
+        cardLoading:
+          type: object
+          nullable: true
+          description: 11/12. 카드 내역을 서버가 뒤에서 불러오는 중이면 { taskId, institutions }, 아니면 null. 첫 설정 화면은 안내를 띄우고 [다음]을
+            막은 뒤 작업이 끝나면 다시 읽는다
+          required:
+          - taskId
+          - institutions
+          properties:
+            taskId:
+              type: string
+              format: uuid
+              description: 가장 최근에 시작한 불러오기 작업 ID (GET /api/tasks/<taskId>/)
+            institutions:
+              type: array
+              items:
+                type: string
+              description: 첫 연결 뒤 불러오는 중인 카드사 이름. 다시 불러오기 작업만 있으면 빈 배열
       required:
       - items
       - summary
       - cardBills
+      - cardLoading
     FixedBatchResponse:
       type: object
       properties:
@@ -14702,9 +14723,9 @@ x-source-sha256:
   docs/api/finance-connect.md: d974a2f74f353a1d656c0cc4e2b37f07aa6d2538d43371d1f600c61bb0e82af5
   docs/api/cards.md: 9b03a770b42b5152316f86175f53882febc7eb2d9a24e6608e46fb8e574f4343
   docs/api/loans.md: fc16dd8767564035b5afb0e66c90ed27099b5eba510f13a2d497cc5b265c9c7b
-  docs/api/transactions.md: a81c51403c2b8e451631bb3b06305dac734191958af891d0cf23c2d53b5776d7
-  docs/api/fixed.md: 416ec78f256332ccc5af61eedd75883c7effdfa1539114597a2db98d659cc1a5
+  docs/api/transactions.md: c5a98e1c1893a18dfbfef8a5c430e476e45a391ab56511e9c1203c629ac43c95
+  docs/api/fixed.md: 4761f8ff5a9444e033ea0aa980144f342db126e1732bb1f34452df46de08fae3
   docs/api/savings.md: 93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223
-  docs/api/home.md: c01be433fc189a9db5d24b31e2a0a53c7098533eb07fc8d7ad02b7f909596149
-  docs/api/chat.md: f64443d8cc226c9ab83e49867ffa5b9f447977e668e4b56153d4e8ddbeef84db
-  docs/api/budgets.md: eafbf19fdfeea2dc915ee5c9ea219b73c05a0d9fa676b2677499d092a078c466
+  docs/api/home.md: a9645dbe952aa3ea2ebb713b00c13ed36ddb5492d7883aa7c78b6d43b6873334
+  docs/api/chat.md: e2f285d35fbda895d51533778d80eb31453061e213a3813cef6a94136053ff8e
+  docs/api/budgets.md: 46dedb2f69ba4a9957a5f17d038b065f340fa25f533a6744ed6b5d35f98bfa56
