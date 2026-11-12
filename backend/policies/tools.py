@@ -94,7 +94,7 @@ def tidy(text, limit=SUPPORT_CHARS):
     text = BULLETS.sub(" · ", (text or "").strip().strip('"'))
     text = re.sub(r"\s+", " ", text).strip()
     text = re.sub(r"^(?:· )+|(?: ·)+$", "", re.sub(r"(?:· )+", "· ", text)).strip()
-    if len(text) <= limit:
+    if limit is None or len(text) <= limit:
         return text
     cut = text[:limit]
     return (cut[:cut.rfind(" ")] if " " in cut[limit // 2:] else cut).rstrip(" ,·/") + "…"
@@ -114,14 +114,39 @@ def facts(found, today):
         "soon_over": verdict.soon_over,
         "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
         "keywords": found.keywords,
+        "support_type": support_type(policy),
     }
 
 
-DETAIL_CHARS = 300  # 상세는 추천 카드(80자)보다 길게, 그래도 원문 앞부분만
+def support_type(policy):
+    """이름에 명시된 대출·보증만 표시한다. 이자 지원을 대출로 오인하지 않는다."""
+    name = re.sub(r"\s+", "", policy.name)
+    if "대출보증" in name:
+        return "대출 보증 (지원금 지급이 아니에요)"
+    if "대출" in name and not any(word in name for word in ("이자", "이차보전")):
+        return "대출 (상환이 필요해요)"
+    return None
+
+
 DETAIL_LABEL = {"support": "지원 내용", "period": "신청", "eligibility": "자격", "apply": "신청 방법",
-                "documents": "제출 서류", "other": "그 밖"}
+                "documents": "제출 서류", "selection": "심사·선정 절차", "other": "그 밖"}
 DETAIL_KEYS = {"support": ("plcySprtCn", "plcyExplnCn"), "apply": ("plcyAplyMthdCn",), "documents": ("sbmsnDcmntCn",),
-               "other": ("etcMttrCn",)}
+               "selection": ("srngMthdCn",), "other": ("etcMttrCn",)}
+DOCUMENT_WORDS = re.compile(r"서류|통장\s*사본|증명서|확인서|동의서|신청서|계약서")
+
+
+def _documents(policy):
+    dedicated = _clean(policy.raw, "sbmsnDcmntCn")
+    references = [(label, _clean(policy.raw, key)) for label, key in (
+        ("신청 방법", "plcyAplyMthdCn"), ("추가 자격 조건", "addAplyQlfcCndCn"), ("기타 안내", "etcMttrCn"))]
+    references = [(label, value) for label, value in references if DOCUMENT_WORDS.search(value)]
+    parts = [tidy(dedicated, None)] if dedicated else []
+    parts += [f"{label}에 기재된 내용: {tidy(value, None)}" for label, value in references if value != dedicated]
+    if not parts:
+        return None
+    if not dedicated:
+        parts.append("별도 제출 서류 항목은 비어 있어요. 전체 서류 목록과 제출 여부는 운영 기관에 확인해 주세요.")
+    return " · ".join(parts)
 
 
 def detail(policy_no, topics, profile, today):
@@ -138,15 +163,20 @@ def detail(policy_no, topics, profile, today):
         if topic == "period":
             value = _period(policy, today)
         elif topic == "eligibility":
-            parts = [f"{c.item}({c.detail})" for c in verdict.conditions]  # 맞는 조건도 보인다 ("일해도 돼?" → 취업 상태)
+            parts = [f"{c.item}({policy.income_note if c.item == '소득' and policy.income_note else c.detail})"
+                     for c in verdict.conditions]
             extra = _clean(policy.raw, "addAplyQlfcCndCn")
-            value = tidy(" · ".join(parts + ([extra] if extra else [])), DETAIL_CHARS) or None
+            excluded = _clean(policy.raw, "ptcpPrpTrgtCn")
+            value = tidy(" · ".join(parts + ([extra] if extra else [])
+                                   + ([f"참여 제한: {excluded}"] if excluded else [])), None) or None
+        elif topic == "documents":
+            value = _documents(policy)
         else:
-            value = tidy(next((v for v in (_clean(policy.raw, k) for k in DETAIL_KEYS[topic]) if v), ""), DETAIL_CHARS) or None
+            value = tidy(next((v for v in (_clean(policy.raw, k) for k in DETAIL_KEYS[topic]) if v), ""), None) or None
         rows.append((DETAIL_LABEL[topic], value))
     agency = _clean(policy.raw, "operInstCdNm") or _clean(policy.raw, "sprvsnInstCdNm") or None
     return {"name": policy.name, "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
-            "agency": agency, "rows": rows}
+            "agency": agency, "rows": rows, "support_type": support_type(policy)}
 
 
 def policy_name(policy_no):

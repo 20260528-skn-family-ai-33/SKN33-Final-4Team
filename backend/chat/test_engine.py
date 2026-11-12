@@ -260,6 +260,7 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(content["lines"], [policy_agent.ASK_TOPIC])
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])  # 결과 카드 (제목 + 점 목록)
+        self.assertEqual(content["sections"][0]["policyNo"], "20260000000000000001")
         self.assertEqual((content["agent"], content["result"], content["notices"][0]), ("policy", True, policy_agent.NOTICE))
         content = self.bot(self.pick("A", cid, content, "1번 저장"))
         self.assertEqual(content["lines"], [policy_agent.SAVED.format(name="청년 월세 지원")])

@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter } from 'react-router'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AssistantPage from './AssistantPage.jsx'
 import PopupProvider from '../popups/PopupProvider.jsx'
@@ -178,7 +178,7 @@ describe.each(['legacy', 'router'])('%s 엔진 새로고침 복원과 재전송 
     expect(host.querySelectorAll('.mc-msg.me')).toHaveLength(2)
     expect(sessionStorage.getItem('mc-chat-conversation')).toBe('conversation-1')
     await act(() => root.render(null))
-    expect(sessionStorage.getItem('mc-chat-conversation')).toBeNull()
+    expect(sessionStorage.getItem('mc-chat-conversation')).toBe('conversation-1')
   })
 
   it('복원 대상이 없으면 저장된 번호를 버리고 새 대화로 보낸다', async () => {
@@ -191,6 +191,27 @@ describe.each(['legacy', 'router'])('%s 엔진 새로고침 복원과 재전송 
     await submit('새 질문')
     expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: null, text: '새 질문' })
   })
+})
+
+it('메뉴로 이동했다 뒤로 돌아와도 서버에서 같은 대화와 답변을 복원한다', async () => {
+  const previous = reply('router', 1, '추천 정책 알려줘')
+  apiSend.mockResolvedValueOnce(previous).mockResolvedValueOnce(previous)
+  function Navigation() {
+    const navigate = useNavigate()
+    return <><button onClick={() => navigate('/my')}>메뉴로 이동</button><button onClick={() => navigate(-1)}>뒤로 돌아가기</button></>
+  }
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat']}><PopupProvider>
+    <Navigation /><Routes><Route path="/chat" element={<AssistantPage />} /><Route path="/my" element={<p>마이페이지</p>} /></Routes>
+  </PopupProvider></MemoryRouter>))
+  await submit('추천 정책 알려줘')
+  await click(button('메뉴로 이동'))
+  expect(host.textContent).not.toContain('답변 1')
+  expect(sessionStorage.getItem('mc-chat-conversation')).toBe('conversation-1')
+  await click(button('뒤로 돌아가기'))
+  expect(apiSend.mock.calls[1]).toEqual(['/api/chat/conversations/conversation-1/', 'GET'])
+  expect(host.textContent).toContain('추천 정책 알려줘')
+  expect(host.textContent).toContain('답변 1')
+  expect(host.querySelectorAll('.mc-msg.me')).toHaveLength(1)
 })
 
 it('[새 대화]는 대화가 있을 때만 보이고, 누르면 화면을 비우고 다음 문장을 새 대화로 보낸다', async () => {

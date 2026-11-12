@@ -5,13 +5,14 @@
 // - 답 모양: 켜짐 = 카드 · 그래프 · 선택지(ChatReply), 꺼짐 = 옛 답 {text, choices} 말풍선. 둘 다 ChatReply 가 그린다
 // - 담당 표시 · 예산 폼은 서버가 준 content.agent · content.inputs 로만 정한다 (문장으로 추측하지 않음)
 // - 새로고침하면 이 대화를 다시 불러온다 (11/3, GET /api/chat/conversations/<id>/). 대화 번호는 sessionStorage 에 두고
-//   채팅 화면을 떠나면 지운다 → 다른 화면에 갔다 오면 지금처럼 빈 대화 (10/30 · 11/2 결정 유지). 404(다른 계정 · 없는 대화)면 새 대화
+//   다른 화면을 다녀와도 유지한다. 새 대화·로그아웃·404(다른 계정·없는 대화)에서 초기화한다.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
 import ChatReply, { Choices } from '../components/ChatReply.jsx'
+import { policyChoices } from '../utils/policyCards.js'
 import BudgetApprovalPopup from '../popups/BudgetApprovalPopup.jsx'
 import BudgetAdjustConsentPopup from '../popups/BudgetAdjustConsentPopup.jsx'
 import { usePopup } from '../popups/context.js'
@@ -19,6 +20,7 @@ import { PATHS } from '../routes.js'
 import { adjustmentChoices, adjustSentence } from '../utils/adjust.js'
 import { catName } from '../utils/categories.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { savedId, saveId } from '../utils/chatConversation.js'
 import { approvalPath, forgetPendingApproval, readPendingApproval, rememberPendingApproval } from '../utils/budgetApproval.js'
 import '../styles/chat.css'
 
@@ -66,15 +68,7 @@ function Trace({ trace }) {
   )
 }
 
-// 새로고침 복원용 대화 번호 — 저장소를 못 쓰는 브라우저(사생활 보호 모드 등)는 그냥 새 대화
-const SAVED = 'mc-chat-conversation'
 const wideAdjustment = (a) => Boolean(a && (a.proposal || a.comparison || a.alternatives))
-function savedId() {
-  try { return sessionStorage.getItem(SAVED) } catch { return null }
-}
-function saveId(id) {
-  try { if (id) sessionStorage.setItem(SAVED, id); else sessionStorage.removeItem(SAVED) } catch { /* 저장 못 해도 대화는 계속 */ }
-}
 
 export default function AssistantPage() {
   const { state: navState } = useLocation()
@@ -113,10 +107,9 @@ export default function AssistantPage() {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
-  // 번호를 저장해 두고, 화면을 떠나면(언마운트) 지운다. 새로고침은 언마운트 없이 페이지가 바뀌어 번호가 남는다
+  // 메뉴·다른 탭을 다녀와도 같은 대화를 복원한다. 본문은 저장하지 않고 서버에서 다시 읽는다.
   useEffect(() => {
     saveId(conversationId)
-    return () => saveId(null)
   }, [conversationId])
 
   useEffect(() => {
@@ -376,7 +369,7 @@ export default function AssistantPage() {
                     onSend={(text) => { if (isLast && !blocked) send({ text }, text) }} />
                 </div>
                 {import.meta.env.DEV && c.devTrace && <Trace trace={c.devTrace} />}
-                <Choices choices={adjustmentChoices(c)} active={isLast && !blocked} onPick={(p) => pick(c, p)} />
+                <Choices choices={policyChoices(c, adjustmentChoices(c))} active={isLast && !blocked} onPick={(p) => pick(c, p)} />
                 {!c.budgetAdjustment && (c.inputs ?? []).includes('budget_form') && (
                   <div className="mc-msg bot mc-asst-form">
                     <AdjustForm done={!isLast || blocked} onSubmit={(slots) => send({ text: adjustSentence(slots) }, adjustSentence(slots))} />

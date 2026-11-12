@@ -75,6 +75,8 @@ ENDED = "청년 정책 찾기를 마칠게요."
 WHICH = "어느 정책을 말씀하시는 건가요?"
 NO_TARGET = "어느 정책을 말씀하시는지 몰라요. 먼저 정책을 찾아 볼게요."
 DETAIL_HEAD = "공고 원문에 적힌 내용이에요."
+NOT_GUARANTEED = "아니요. 신청만으로 지원이 확정되지는 않아요. 해당 정책의 자격 조건과 심사·선정 절차를 확인해야 해요."
+GUARANTEE_WORDS = re.compile(r"무조건|반드시\s*(?:받|지원)|100\s*%.{0,12}(?:받|확정|보장|선정)|(?:지원|수령|선정).{0,12}(?:확정|보장)|확실히.{0,8}받")
 GONE = "그 정책은 지금 정책 목록에 없어요. 공고가 내려갔을 수 있어요."
 
 
@@ -321,7 +323,9 @@ def _show(store, cid, state, found, region, today, start, member=False, lead=Non
         if item["keywords"]:
             rows.append(f"관련: {', '.join(item['keywords'])}")
         rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
-        sections.append({"title": f"{number}. {item['name']}", "lines": rows})
+        if item["support_type"]:
+            rows.insert(0, f"지원 형태: {item['support_type']}")
+        sections.append({"title": f"{number}. {item['name']}", "lines": rows, "policy_no": item["policy_no"]})
     if start == 0 and not lead:
         lines.append(OTHER_TOPIC)
     day = tools.data_date()
@@ -354,7 +358,7 @@ def _show_saved(store, cid, state, user, today):
         if not item["active"]:
             rows.append("정책 목록에서 빠진 정책이에요. 공고가 내려갔을 수 있어요.")
         rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
-        sections.append({"title": f"{number}. {item['name']}", "lines": rows})
+        sections.append({"title": f"{number}. {item['name']}", "lines": rows, "policy_no": item["policy_no"]})
     return _card(_ask(store, cid, state, "after", [SAVED_HEAD], after), sections)
 
 
@@ -416,6 +420,19 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
             results = state.get("results") or []
             focus = results.index(state["focus"]) + 1 if state.get("focus") in results else None
             choice = planner.ask(action.text, read, _shown(state), plan, focus) if plan else None
+            if (GUARANTEE_WORDS.search(action.text) and not re.search(r"찾아|추천\s*해", action.text)
+                    and (read.mine or (choice and choice[0] == "detail"))):
+                # 정책 선택을 되물어도 확답 요구를 topics에 남긴다. LLM이 자격만 고르거나 실패해도 유지한다.
+                shown = _shown(state)
+                explicit = next((n for n, name in shown if name in action.text), None)
+                numeric = re.search(r"(\d+)\s*번", action.text)
+                if numeric and int(numeric[1]) in dict(shown):
+                    explicit = int(numeric[1])
+                number = explicit or (choice[1] if choice and choice[0] == "detail" else None) or focus
+                if number is None and len(shown) == 1:
+                    number = shown[0][0]
+                topics = choice[2] if choice and choice[0] == "detail" else []
+                choice = ("detail", number, list(dict.fromkeys([*topics, "guarantee", "eligibility", "selection"])), [])
             action = decide(state, text, read, choice)
         elif action.kind == "confirm_yes":  # 이 대화에서는 다시 묻지 않는다
             state.update(confirmed=True, ask=None)
@@ -503,18 +520,23 @@ def _detail(store, cid, state, user, today, action):
         last = shown[-len(state.get("last") or shown):]  # 방금 보인 칸만 버튼으로
         return _ask(store, cid, state, "which", [WHICH], [(state["results"][n - 1], f"{n}. {name}") for n, name in last],
                     topics=action.topics)
-    info = tools.detail(action.text, action.topics, tools.profile_for(user, job=_job(state)), today)
+    topics = list(dict.fromkeys([*action.topics, "eligibility", "selection"])) if "guarantee" in action.topics else action.topics
+    info = tools.detail(action.text, topics, tools.profile_for(user, job=_job(state)), today)
     state["focus"] = action.text  # 다음 "그거"는 이 정책
     if info is None:
         result = _ask(store, cid, state, "after", [GONE], after)
         result["status"] = "replied"
         return result
-    missing = f"공고 원문에 없어요. {info['agency'] or '운영 기관'}에 확인해 주세요."
+    missing = f"수집한 공고의 해당 항목에서 확인되지 않아요. {info['agency'] or '운영 기관'}에 확인해 주세요."
     rows = [f"{label}: {value or missing}" for label, value in info["rows"]]
     rows.append(f"링크: {info['link']}" if info["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
     if info["agency"]:
         rows.append(f"운영 기관: {info['agency']}")
-    result = _card(_ask(store, cid, state, "after", [DETAIL_HEAD], after), [{"title": info["name"], "lines": rows}])
+    if info["support_type"]:
+        rows.insert(0, f"지원 형태: {info['support_type']}")
+    lines = [NOT_GUARANTEED, DETAIL_HEAD] if "guarantee" in action.topics else [DETAIL_HEAD]
+    result = _card(_ask(store, cid, state, "after", lines, after),
+                   [{"title": info["name"], "lines": rows, "policy_no": action.text}])
     day = tools.data_date()
     result["reply"]["notices"] = [NOTICE] + ([f"정책 정보는 {day} 기준이에요."] if day else [])
     return result
