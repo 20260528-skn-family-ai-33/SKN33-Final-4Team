@@ -95,6 +95,45 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(found["allocations"], AMOUNTS)
         self.assertEqual(found["buckets"], {"SAVINGS": 600000, "CUSHION_MONTHLY": 200000, "SPARE": 400000})
 
+    def test_policy_region_save_preserves_context_and_pending_approval(self):
+        """정책의 지역 기억은 예산 제안의 금융 기준을 바꾸지 않는다."""
+        from django.db import transaction
+        from chat.models import Conversation
+        from policies.profiles import remember
+        from .adjustment_service import AdjustmentAdapter, approve_adjustment
+        from .api import lock_user
+        from .test_adjustment_core import envelope, item
+
+        self.make_budget()
+        talk = Conversation.objects.create(user=self.user)
+        adapter = AdjustmentAdapter(self.user, conversation=talk, today=TODAY)
+        before = adapter.get_context()
+        result = adapter.simulate(before, envelope(item(amount=15000), sources=["SPARE"]))
+        card = adapter.propose(before, result, scope="cycle")
+        with transaction.atomic():
+            lock_user(self.user)
+            adapter.flush(talk)
+            remember(self.user, "11110")
+        self.assertEqual(context_fingerprint(self.context()), context_fingerprint(before))
+        with transaction.atomic():
+            lock_user(self.user)
+            saved = approve_adjustment(self.user, card["proposal_id"], keep_for_next_cycle=False,
+                key="policy-region-approval", expected_mode=before["mode"], today=TODAY)
+        self.assertEqual(saved["state"], "saved")
+
+    def test_policy_region_save_does_not_hide_financial_changes(self):
+        from policies.profiles import remember
+        from .adjustment_service import AdjustmentAdapter, AdjustmentExpired
+
+        self.make_budget()
+        adapter = AdjustmentAdapter(self.user, today=TODAY)
+        before = adapter.get_context()
+        remember(self.user, "11110")
+        self.profile.living_budget += 10000
+        self.profile.save()
+        with self.assertRaises(AdjustmentExpired):
+            adapter._fresh(before)
+
     def test_selects_taskless_initial_draft_and_rejects_derived_draft(self):
         draft = self.make_budget(status="validated")
         task = AsyncTask.objects.create(user=self.user, request_key="context-task", task_type="budget_adjust", input_hash="hash")

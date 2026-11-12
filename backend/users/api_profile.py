@@ -9,12 +9,20 @@ from .models import CategoryMinimum, CategoryPriority, FinancialProfile
 from .profile_serializers import ProfileSerializer
 
 
-PROFILE_FIELDS = ("birth_date", "gender", "housing_type", "has_car")
+PROFILE_FIELDS = ("birth_date", "gender", "housing_type", "has_car", "region_code")
+
+
+def region_name(code):
+    """'서울특별시 관악구' (응답 전용). 지역 표에 없으면 None"""
+    from policies.regions import REGIONS  # 지역 표는 정책 앱에 있다
+
+    return (REGIONS.get(code) or {}).get("name") if code else None
 
 
 def profile_data(user):
     saved = FinancialProfile.objects.filter(user=user).first()
     data = {name: getattr(saved, name, None) for name in PROFILE_FIELDS}
+    data["region_name"] = region_name(data["region_code"])
     data["priorities"] = [
         {"category": row.category_id, "category_name": row.category.display_name, "rank": row.rank}
         for row in CategoryPriority.objects.filter(user=user).select_related("category").order_by("rank")

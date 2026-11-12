@@ -1,4 +1,4 @@
-"""새 챗봇 엔진 — 라우터(run_turn) + 소비 분석·예산 조정 에이전트. 정책은 준비 중. chat.api.messages 가 settings.CHAT_ENGINE
+"""새 챗봇 엔진 — 라우터(run_turn) + 소비 분석·예산 조정 에이전트 + 청년 정책 에이전트(policies.agent). chat.api.messages 가 settings.CHAT_ENGINE
 = "router" 일 때만 쓴다 (기본 "legacy" = 기존 router.py · replies.py 그대로). 더미 실행(spending_fixture.service_settings)에서 켠다.
 
 기존 chat/api.py 와 같은 계약 · 같은 도구: 로그인 · @idempotent(뷰) · 본문 검사(_check_message_body) · 본인의 진행 중 대화만(_active_conversations) ·
@@ -8,6 +8,9 @@
 - 기능 버튼(choice "spending" · "budget" · "policy") = 라우터 해석 없이 담당 에이전트로 / 답변 선택지 = choice {value, turn},
   마지막 봇 메시지의 선택지가 아니면 409 stale_choice. 기능 선택지면 버튼으로, 아니면 그 이름을 문장으로
 - 봇 content(text) = 기존 {text, choices} + lead · lines · sections · notices · view · chart? · examples? · turn · agent · inputs · result
+- 청년 정책: 핸들러는 DB 에 쓰지 않는다. 결과의 save_policies(채팅 [N번 저장]) · save_profile([다음에도 …로 찾기])은
+  대화 저장과 같은 트랜잭션에서 저장한다
+  (409 면 저장도 안 됨). 읽기 LLM · 임베딩은 policies 쪽 설정(CHAT_LLM)을 따른다 (docs/agents/청년정책.md)
 - 기준 날짜 = settings.CHAT_TODAY(고정) 또는 오늘, 해석 = settings.CHAT_LLM(fake · live) · CHAT_LLM_MAX_CALLS · CHAT_LLM_LEDGER (chat/llm)
 """
 import json
@@ -25,6 +28,9 @@ from rest_framework.response import Response
 
 from chat.router_core import CANCEL_WORDS, MemoryStateStore, current_agent, messages as router_messages, run_turn
 from finance.inputs import body_dict, reject_unknown_fields
+from policies import agent as policy_agent
+from policies import profiles as policy_profiles
+from policies import saved as policy_saved
 from spending_analysis import agent as spending_agent
 
 from . import api as chat_api
@@ -41,7 +47,6 @@ FEATURES = {"spending": "소비 분석", "budget": "예산 조정", "policy": "�
 NOT_READY = {
     # 예산 설계(새로 짜기)는 추천 화면에서 한다 — 채팅은 금액을 바꾸지 않는다 (11/3)
     "budget": "예산 조정 챗봇은 준비 중이에요. 예산을 새로 짜려면 예산 화면에서 추천을 다시 받을 수 있어요.",
-    "policy": "청년 정책 추천은 준비 중이에요.",
 }
 BUDGET_ASK = "어느 카테고리를 얼마나 조정할까요? 아래에서 골라 보내 주세요."
 OVER_HINT_KEYS = {"reason", "categories", "over_amount"}
@@ -68,10 +73,9 @@ class ConversationStore(MemoryStateStore):
 
 
 def not_ready(agent):
-    """예산 · 정책 '준비 중' 에이전트 (작업 번호 없음 → 라우터가 서버 작업을 남기지 않는다)
+    """예산 '준비 중' 에이전트 (작업 번호 없음 → 라우터가 서버 작업을 남기지 않는다)
     - 예산: 문장 없이 시작(기능 버튼 · 재개)하면 고르기 폼을 기다린다(awaiting_input → 담당 유지, 다음 문장이 바로 온다).
-      문장이 오면(폼 문장 · 직접 입력) 금액을 해석하지 않고 '준비 중'으로 끝낸다. 취소면 그만뒀다고 끝낸다
-    - 정책: 바로 '준비 중'으로 끝낸다"""
+      문장이 오면(폼 문장 · 직접 입력) 금액을 해석하지 않고 '준비 중'으로 끝낸다. 취소면 그만뒀다고 끝낸다"""
     def handle(request):
         text = request["text"]
         if request["mode"] == "cancel" or (text or "").strip(" .!~") in CANCEL_WORDS:
@@ -155,7 +159,8 @@ def answer(user, store, text=None, button=None, *, budget_adapter=None, budget_h
                                   explain_plan=llm if getattr(settings, "CHAT_EXPLAIN_PLAN", False) else None,
                                   # 첫 조회 뒤 추가 판단 1회(MEMO 31) — CHAT_AGENT 가 켜졌을 때만. 가짜 해석도 정해 둔 판단으로 돈다
                                   agent_complete=llm if getattr(settings, "CHAT_AGENT", False) else None),
-              "budget": budget_handler(user, store, budget_adapter, llm, KEY), "policy": not_ready("policy")}
+              "budget": budget_handler(user, store, budget_adapter, llm, KEY),
+              "policy": partial(policy_agent.handle, store=store, user=user)}
     turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, server=budget_adapter, today=today, as_of=as_of,
                     hints=budget_hints, suggested=suggested)
     result = turn["result"] or {}
@@ -170,13 +175,20 @@ def answer(user, store, text=None, button=None, *, budget_adapter=None, budget_h
             budget_state["reference_context"] = deepcopy(budget_adapter.reference_context)
         store.save_agent_state(KEY, "budget", budget_state)
     bot = router_messages.render(turn) or {"lines": [], "choices": [], "notices": [], "review": []}
+    # 청년 정책 [N번 저장] — respond 가 대화 저장 트랜잭션에서 저장한다 (content 에는 넣지 않는다)
+    by_policy = bool(turn["delivered"]) and turn["delivered"][-1] == "policy" and result.get("status") == "replied"
+    # 청년 정책 [다음에도 …로 찾기] (save_profile) 도 같은 트랜잭션에서 저장한다
+    bot["saves"] = {"policies": list(result.get("save_policies") or []),
+                    "profile": result.get("save_profile")} if by_policy else {}
     bot.pop("review", None)  # 미정 정책 코드는 화면에 보내지 않는다
     bot["choices"] = [{"value": _value(c["value"]), "label": c["label"]} for c in bot["choices"]]
     # 담당 표시: 진행 중인 담당, 없으면 이번에 답한 에이전트 (문장으로 추측하지 않는다)
     answered = turn["delivered"][-1] if turn["delivered"] and result.get("status") not in (None, "failed", "not_mine") else None
     now = current_agent(store, KEY)
     bot.update(agent=now or answered, inputs=[],
-               result=answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
+               result=(answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
+               # 청년 정책 추천 · 저장 목록은 정책마다 제목 + 점 목록(sections)인 결과 카드로 그린다
+               or (answered == "policy" and bool((result.get("reply") or {}).get("sections"))))
     if getattr(settings, "CHAT_DEV_TRACE", False):
         bot["entry"] = _entry(result.get("decision"))
     return bot, _route(turn)
@@ -342,6 +354,7 @@ def respond(request):
     if isinstance(prepared, Response):
         return prepared
     talk, store, adapter, bot, route, said = prepared
+    saves = bot.pop("saves", {})  # 청년 정책 저장 요청 (content 에는 넣지 않는다)
     with transaction.atomic():
         from budgets.api import lock_user
         lock_user(request.user)
@@ -354,8 +367,16 @@ def respond(request):
             if (talk.slots or {}).get("rev", 0) != store.rev:  # 같은 대화의 다른 메시지가 먼저 저장됨
                 return Response(BUSY, status=409)
         adapter.flush(talk)
+        # 청년 정책 [N번 저장] · [다음에도 …로 찾기] — 대화 저장과 같은 트랜잭션 (409 면 저장도 안 됨).
+        # 저장을 먼저 해 보고, 못 한 정책(그사이 비활성 등)이 있으면 "저장했어요" 대신 실패 안내 · 저장 표시를 지운 상태로 남긴다
+        failed = policy_saved.save_all(request.user, saves["policies"]) if saves.get("policies") else []
+        if failed:
+            bot["lines"], state = policy_agent.unsaved(store.get_agent_state(KEY, "policy") or {}, failed)
+            store.save_agent_state(KEY, "policy", state)
         mine, reply = chat_api.save_turn(talk, said, _content(bot, store.rev + 1),
                                          content_type=ChatMessage.ContentType.TEXT)
+        if saves.get("profile"):
+            policy_profiles.remember(request.user, saves["profile"]["region_code"])
         talk.slots, talk.active_agent = store.dump(), store.get_active(KEY)
         talk.save(update_fields=["slots", "active_agent"])
     return Response({"conversation_id": talk.conversation_id, "route": route, "agent": bot["agent"],

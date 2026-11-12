@@ -22,6 +22,10 @@ psycopg[binary]==3.3.6
 # 벡터 검색 (가맹점 이름 유사도, finance.MerchantEmbedding)
 pgvector==0.5.1
 
+# ===== LLM =====
+# 청년 정책 에이전트의 LLM 체인 (프롬프트 | LLM | 출력 파서, backend/policies/llm.py). langchain-openai · LangGraph 는 쓰지 않는다
+langchain-core==1.7.0
+
 # ===== ML =====
 # 거래 분류 · 카테고리 비율 예측 · 또래 비교 회귀
 numpy==2.5.4

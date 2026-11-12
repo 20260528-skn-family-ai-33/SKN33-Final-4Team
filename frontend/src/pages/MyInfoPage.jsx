@@ -44,6 +44,7 @@ export default function MyInfoPage() {
       <div className="mc-row"><h2>내 정보</h2><button type="button" className="mc-link" onClick={() => edit(PATHS.profile)}>내 정보 수정</button></div>
       <InfoRow label="생년월일">{info.birthDate?.replaceAll('-', '.') || unset}</InfoRow>
       <InfoRow label="성별">{{ male: '남성', female: '여성' }[info.gender] ?? unset}</InfoRow>
+      <InfoRow label="사는 지역">{info.regionName ?? unset}</InfoRow>
       <InfoRow label="자취 여부">{HOUSING[info.housingType]?.name ?? unset}</InfoRow>
       <InfoRow label="자차 보유">{info.hasCar === true ? '보유' : info.hasCar === false ? '미보유' : unset}</InfoRow>
       <h3>소비 우선순위</h3>

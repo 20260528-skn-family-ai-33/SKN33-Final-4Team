@@ -302,7 +302,7 @@
 
 | 환경 변수 | 값 | 뜻 |
 |---|---|---|
-| `CHAT_ENGINE` | `legacy`(기본) · `router` | 기존 선택지 챗봇 / 라우터 + 소비 분석 + 예산 조정. 청년 정책은 준비 중 |
+| `CHAT_ENGINE` | `legacy`(기본) · `router` | 기존 선택지 챗봇 / 라우터 + 소비 분석 + 예산 조정 + 청년 정책 (`docs/agents/청년정책.md`) |
 | `CHAT_LLM` | `fake`(기본) · `live` | 가짜 해석(네트워크 없음) / 실제 LLM — `live`는 `OPENAI_API_KEY` · `LLM_MODEL`이 있어야 시작된다 |
 
 - 일반 서버에는 기준 날짜(`CHAT_TODAY`)가 없다 → 오늘 날짜로 실제 거래를 읽고 `testMode: false`. 고정 기준일 · 분석 과정(`CHAT_DEV_TRACE`)은 더미 서비스 실행(`spending_fixture.service_settings`, 기준일 2026-10-29)에서만 켠다. 그 환경의 금융 연결 503은 일부러 막은 것이라 실제 연동 오류가 아니다.
