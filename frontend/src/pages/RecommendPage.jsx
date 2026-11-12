@@ -11,6 +11,7 @@ import Icon from '../components/Icon.jsx'
 import LockIcon from '../components/LockIcon.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import BudgetAIConsent from '../components/BudgetAIConsent.jsx'
+import CardReservedHelp from '../components/CardReservedHelp.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
 import { PATHS } from '../routes.js'
@@ -22,10 +23,40 @@ const SPLIT_ROWS = [
   ['fix', '고정지출', 'fixed'], ['save', '저축', 'saving'], ['live', '생활비', 'living'],
   ['cushion', '머니 쿠션 적립', 'cushion'], ['left', '여윳돈', 'spare'],   // 비정기 준비금은 10/24 결정 AB로 2차
 ]
+// 고정지출 중 '지난 카드값'(가입 전에 쓴 카드값 · 할부 회차)은 따로 칸 (11/12). 0원이면 칸 없음. [CSS, 이름, 금액]
+const splitParts = (split) => {
+  const card = split.cardReserved ?? 0
+  return SPLIT_ROWS.flatMap(([css, name, key]) => key !== 'fixed' ? [[css, name, split[key]]]
+    : [[css, name, split.fixed - card], ...(card > 0 ? [['card', '지난 카드값', card]] : [])])
+}
 // 카테고리 막대 색 진하기: 첫 칸 100% → 마지막 칸 18%
 const shade = (i, n) => `color-mix(in srgb,var(--mc-brand) ${Math.round(100 - (82 * i) / Math.max(n - 1, 1))}%,var(--mc-paper))`
 const pct = (part, whole) => (whole > 0 ? (part / whole) * 100 : 0)
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const WAIT_TRIES = 90  // 추천 작업을 기다리는 최대 횟수 (1초씩). AI 를 쓰면 30초를 넘길 때가 있어 11/12 에 30 → 90
+
+// 추천을 만드는 동안 보여 줄 화면 (11/12): 오래 걸릴 수 있어 버튼 글자만 바뀌던 것을 화면 전체 안내로.
+// 단계 문구는 실제 진행률이 아니라 기다리는 동안의 안내라서, 몇 초마다 다음 문구로 넘어가고 마지막 문구에서 멈춘다 (몇 % 같은 숫자는 보여 주지 않음)
+const MAKING_STEPS = ['지난 소비를 살펴보고 있어요', '꼭 나갈 돈과 지킬 돈을 맞춰 보고 있어요', '카테고리별로 예산을 나누고 있어요', '마지막으로 금액을 검사하고 있어요']
+function MakingView() {
+  const [step, setStep] = useState(0)
+  useEffect(() => {
+    if (step >= MAKING_STEPS.length - 1) return undefined
+    const timer = setTimeout(() => setStep((s) => s + 1), 3000)
+    return () => clearTimeout(timer)
+  }, [step])
+  return (
+    <Layout title="추천 예산 확인">
+      <StepBar step={6} />
+      <div className="mc-making" role="status" aria-live="polite">
+        <span className="mc-conn-busy"><Icon name="Loader" /></span>
+        <h1>예산을 짜고 있어요</h1>
+        <p className="mc-muted">{MAKING_STEPS[step]}</p>
+        <p className="mc-note">조금 걸릴 수 있어요. 다 되면 이 화면에서 바로 보여 드려요.</p>
+      </div>
+    </Layout>
+  )
+}
 
 // 추천을 못 만든 이유 (작업 결과 conflicts) → 화면 문장
 function conflictText(c) {
@@ -59,6 +90,7 @@ export default function RecommendPage() {
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [making, setMaking] = useState(false)  // 새 추천을 만드는 중 (11/12: 이때는 화면 전체를 기다림 안내로)
   const [problem, setProblem] = useState(null)  // { message, conflicts?, code? }
   const [draftBlocked, setDraftBlocked] = useState(false)
   // 서버가 푼 자물쇠 (P-13): 지킬 돈에서 생활비를 바꿔 풀렸거나(이전 화면에서 넘겨받음), 추천할 때 막혀서 풀린 것
@@ -99,13 +131,14 @@ export default function RecommendPage() {
     if (creating.current) return
     creating.current = true
     setBusy(true)
+    setMaking(true)
     setProblem(null)
     setResumeRecovery(null)
     setDraftBlocked(true)
     try {
       const { task } = await apiSend('/api/budgets/recommend/', 'POST', {}, { requestKey: newRequestKey() })
       let now = await apiSend(`/api/tasks/${task.taskId}/`, 'GET')
-      for (let i = 0; ['queued', 'running'].includes(now.status) && i < 30; i += 1) {
+      for (let i = 0; ['queued', 'running'].includes(now.status) && i < WAIT_TRIES; i += 1) {
         await wait(1000)
         now = await apiSend(`/api/tasks/${task.taskId}/`, 'GET')
       }
@@ -138,6 +171,7 @@ export default function RecommendPage() {
     } finally {
       creating.current = false
       setBusy(false)
+      setMaking(false)
     }
   }, [load, openRecovery])
 
@@ -200,6 +234,7 @@ export default function RecommendPage() {
     return () => { alive = false; mounted.current = false }
   }, [makeDraft])  // makeDraft는 useCallback이라 화면을 열 때 한 번만 돈다
 
+  if (making) return <MakingView />
   if (!data) return <Layout title="추천 예산 확인" showBack><ApiStatus error={loadError} /></Layout>
 
   const foot = draft
@@ -259,7 +294,7 @@ export default function RecommendPage() {
     <Layout title="추천 예산 확인" showBack foot={foot}>
       <StepBar step={6} />
       {/* 임시 엔진(temp-…)일 때만 — ML 엔진으로 바뀌면 서버 값이 바뀌어 저절로 사라진다 */}
-      <div className="mc-eyebrow">추천 예산 확인 · 예산 {draft.versionNo}{draft.engineVersion?.startsWith('temp-') && ' · 테스트 추천'}</div>
+      <div className="mc-eyebrow">추천 예산 확인{draft.engineVersion?.startsWith('temp-') && ' · 테스트 추천'}</div>
       <h1>카테고리별 예산을<br />확인하고 고쳐 주세요</h1>
       <p className="mc-muted">지킬 돈에서 정한 생활비를 카테고리별로 나눴어요.</p>
       {data.recommendation?.spareTransfer > 0 && <p className="mc-note" role="status">여윳돈 {won(data.recommendation.spareTransfer)}을 이번 예산 생활비에만 포함해요. 기존 생활비 설정은 유지돼요.</p>}
@@ -268,11 +303,11 @@ export default function RecommendPage() {
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>
-        <div className="mc-split" role="img" aria-label={SPLIT_ROWS.map(([, n, k]) => `${n} ${won(split[k])}`).join(', ')}>
-          {SPLIT_ROWS.map(([css, n, k]) => <span key={n} className={`mc-split-${css}`} style={{ width: `${pct(split[k], split.funding)}%` }}></span>)}
+        <div className="mc-split" role="img" aria-label={splitParts(split).map(([, n, v]) => `${n} ${won(v)}`).join(', ')}>
+          {splitParts(split).map(([css, n, v]) => <span key={n} className={`mc-split-${css}`} style={{ width: `${pct(v, split.funding)}%` }}></span>)}
         </div>
         <div className="mc-split-legend">
-          {SPLIT_ROWS.map(([css, n, k]) => <div key={n}><i className={`mc-split-${css}`}></i><span>{n}</span><strong>{won(split[k])}</strong></div>)}
+          {splitParts(split).map(([css, n, v]) => <div key={n}><i className={`mc-split-${css}`}></i><span>{n}{css === 'card' && <CardReservedHelp />}</span><strong>{won(v)}</strong></div>)}
         </div>
       </div>
 

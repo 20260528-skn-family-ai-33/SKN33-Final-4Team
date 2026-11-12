@@ -14,9 +14,16 @@ import { PATHS } from '../routes.js'
 import { catIcon, ETC, PENDING } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
 import HelpTip from '../components/HelpTip.jsx'
+import CardReservedHelp from '../components/CardReservedHelp.jsx'
 
 // 한 달 나눠보기 줄 (split 칸 이름 → 화면 이름)
 const SPLIT_ROWS = [['fixed', '고정비'], ['saving', '저축'], ['cushion', '쿠션 적립'], ['living', '생활비'], ['spare', '여윳돈']]
+// 고정비 중 '지난 카드값'(가입 전에 쓴 카드값 · 할부 회차)은 따로 한 줄 (11/12). 0원이면 줄 없음
+const splitRows = (split) => {
+  const card = split.cardReserved ?? 0
+  return SPLIT_ROWS.flatMap(([key, name]) => key !== 'fixed' ? [[key, name, split[key]]]
+    : [[key, name, split.fixed - card], ...(card > 0 ? [['cardReserved', '지난 카드값', card]] : [])])
+}
 
 // '2026-10-25' ~ 끝 경계 '2026-11-25' → '10.25 ~ 11.24' (끝 경계 전날까지가 이번 주기)
 const shortDay = (iso, minusDays = 0) => {
@@ -77,7 +84,7 @@ export default function BudgetPage() {
 
   return (
     <Layout title="카테고리 예산" activeTab="budget">
-      <div className="mc-eyebrow">{shortDay(data.cycle.startsOn)} ~ {shortDay(data.cycle.endsBefore, 1)} · 예산 {budget.versionNo}</div>
+      <div className="mc-eyebrow">{shortDay(data.cycle.startsOn)} ~ {shortDay(data.cycle.endsBefore, 1)}</div>
       <h1>카테고리 예산</h1>
 
       {budget.status === 'validated' && (
@@ -87,12 +94,11 @@ export default function BudgetPage() {
           <button type="button" className="mc-primary" onClick={() => navigate(PATHS.recommend)}>추천 예산 확인하러 가기</button>
         </div>
       )}
-      {!budget.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}
       <UnreflectedCardNote notes={data.cardNotes} readyIds={data.cardBillsReady} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>
-        {SPLIT_ROWS.map(([key, name]) => <div className="mc-keyvalue" key={key}><span>{name}</span><strong>{won(split[key])}</strong></div>)}
+        {splitRows(split).map(([key, name, amount]) => <div className="mc-keyvalue" key={key}><span>{name}{key === 'cardReserved' && <CardReservedHelp />}</span><strong>{won(amount)}</strong></div>)}
       </div>
 
       <div className="mc-card">

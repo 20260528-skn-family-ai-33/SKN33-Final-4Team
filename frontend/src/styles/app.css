@@ -66,6 +66,8 @@
 #mc-new-preview .mc-split{display:flex;height:12px;border-radius:7px;overflow:hidden;gap:2px;margin:14px 0 12px;background:var(--mc-line)}
 #mc-new-preview .mc-split span{display:block;height:100%}
 #mc-new-preview .mc-split-fix{background:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-split-legend .mc-help-btn,#mc-new-preview#mc-new-preview .mc-keyvalue .mc-help-btn{width:22px;height:16px;min-height:0;vertical-align:-3px}  /* 한 줄 높이를 늘리지 않는 작은 [?] (11/12, 지난 카드값) */
+#mc-new-preview .mc-split-card{background:color-mix(in srgb,var(--mc-sub) 55%,var(--mc-paper))}  /* 지난 카드값 (11/12): 고정지출과 같은 계열의 연한 회색 */
 #mc-new-preview .mc-split-save{background:var(--mc-brand)}
 #mc-new-preview .mc-split-live{background:color-mix(in srgb,var(--mc-brand) 45%,var(--mc-paper))}
 #mc-new-preview .mc-split-left{background:color-mix(in srgb,var(--mc-sub) 30%,var(--mc-paper))}
@@ -1182,12 +1184,21 @@
 #mc-new-preview .mc-loading-card strong{display:block;font-size:14px}
 #mc-new-preview .mc-loading-card small{display:block;margin-top:2px;font-size:12.5px}
 #mc-new-preview#mc-new-preview .mc-loading-card .mc-conn-busy svg{animation-duration:2s}  /* 오래 기다리는 안내라 천천히 (11/12: 1초 한 바퀴는 너무 빨랐다) */
+/* 추천 예산 만드는 중 (11/12): 가운데 도는 아이콘 + 제목 + 바뀌는 한 줄 */
+#mc-new-preview .mc-making{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;padding:56px 8px 0}
+#mc-new-preview#mc-new-preview .mc-making .mc-conn-busy{color:var(--mc-brand);margin-bottom:14px}
+#mc-new-preview#mc-new-preview .mc-making .mc-conn-busy svg{width:36px;height:36px;animation-duration:2s}
+#mc-new-preview#mc-new-preview .mc-making h1{margin:0}
+#mc-new-preview#mc-new-preview .mc-making .mc-muted{font-size:15px;min-height:1.5em}
+#mc-new-preview#mc-new-preview .mc-making .mc-note{padding-top:18px}
 /* 제목 옆 [?] 도움말 (11/9, 생활비 카테고리) */
 #mc-new-preview .mc-help-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:2px;vertical-align:middle;color:var(--mc-sub)}
 #mc-new-preview .mc-inline-ic svg{width:14px;height:14px;vertical-align:-2px}  /* 문장 안 아이콘은 글자 크기만 (11/9, 예산 조정 규칙 팝업) */
-#mc-new-preview .mc-help-list{margin:10px 0 0;padding-left:18px;color:var(--mc-sub);font-size:13px;line-height:1.6}
-#mc-new-preview .mc-help-list li{margin:4px 0}
-#mc-new-preview .mc-help-list li::marker{content:'- '}
+#mc-new-preview .mc-help-list{margin:20px 0 0;padding:0;list-style:none;display:grid;gap:6px;color:var(--mc-ink);font-size:14px;line-height:1.6;word-break:keep-all}  /* [?] 창 설명 (11/12): 제목과 시작 위치를 맞추고, 줄 사이를 띄워 읽기 쉽게 */
+#mc-new-preview .mc-help-list li{margin:0;padding:0 0 0 14px;position:relative}
+#mc-new-preview .mc-help-list li::before{content:'';position:absolute;left:3px;top:.72em;width:4px;height:4px;border-radius:50%;background:var(--mc-sub)}  /* 목록 점 (11/12): 점은 제목 '왜'와 같은 위치에서 시작 */
+#mc-new-preview .mc-help-list li::marker{content:none}
+#mc-new-preview .mc-help-list,#mc-new-preview .mc-dialog h2{word-break:keep-all;overflow-wrap:anywhere}  /* 한글이 낱말 중간에서 끊기지 않게 (11/9) */
 /* 생활비 초과 안내 (11/9, 카테고리 예산) */
 #mc-new-preview .mc-over{width:100%;text-align:left;display:flex;gap:8px;align-items:flex-start;margin:10px 0 4px;padding:10px 12px;border-radius:12px;background:var(--mc-warm);border:1px solid var(--mc-alert-line)}
 #mc-new-preview .mc-over-ic{flex:none;display:inline-flex;color:var(--mc-alert);margin-top:1px}
@@ -1205,7 +1216,6 @@
 #mc-new-preview .mc-dialog>.mc-row:first-child{position:absolute;top:16px;right:12px}  /* [닫기 ×]를 제목 줄 오른쪽에 띄워 위 빈 줄을 없앰 (11/9) */
 #mc-new-preview .mc-dialog>.mc-row:first-child .mc-link{min-height:28px}
 #mc-new-preview .mc-dialog h2{padding-right:64px}
-#mc-new-preview .mc-help-list,#mc-new-preview .mc-dialog h2{word-break:keep-all;overflow-wrap:anywhere}  /* 한글이 낱말 중간에서 끊기지 않게 (11/9) */
 #mc-new-preview#mc-new-preview .mc-dialog{left:16px;right:16px}
 #mc-new-preview#mc-new-preview .mc-dialog{clip-path:inset(0 round 20px);scrollbar-width:thin;scrollbar-color:var(--mc-line) transparent}  /* 스크롤 막대가 오른쪽 모서리를 각지게 만들지 않게 (11/11) */
 /* 도움말 (11/9): 쓰는 순서 번호 목록 · 용어 풀이 */

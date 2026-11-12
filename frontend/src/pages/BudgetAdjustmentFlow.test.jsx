@@ -515,7 +515,8 @@ it('추천 실패에서 자동 연결하고 승인 후 반영된 예산을 볼 �
   await click(button('예산 확정', host.querySelector('aside')))
   await click(button('반영된 예산 보기'))
   expect(location().pathname).toBe('/budgets')
-  expect(host.textContent).toContain('예산 2')
+  expect(host.textContent).toContain('한 달 나눠보기')  // 반영된 예산 화면 (11/12: 예산 버전 번호는 화면에 안 보임)
+  expect(host.textContent).not.toContain('예산 2')
 })
 
 it('조정 대화에서 재원이나 보호 조건을 맞추지 못하면 승인할 수 없다', async () => {
