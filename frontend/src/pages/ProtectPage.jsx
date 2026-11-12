@@ -181,11 +181,7 @@ export default function ProtectPage() {
                 <CardReviewList key={reviewVersion} cardIds={idsFor(REVIEW)} onChanged={reload} />
               </Popup>,
             )}>결제 카드 확인하기</button>
-            {/* 재조회는 선택 (카드 지정만 필요하면 인증 입력 없이 끝난다) */}
-            <button type="button" className="mc-link" onClick={() => setShowCardSync((shown) => !shown)} aria-expanded={showCardSync}>
-              {showCardSync ? '카드 내역 재조회 접기' : '카드 내역도 다시 불러오기'}
-            </button>
-            {showCardSync && idsFor(SYNC).length === 0 && <CardSyncPanel cardIds={idsFor(REVIEW)} onChanged={() => { reload(); setReviewVersion((version) => version + 1) }} />}
+            {/* 11/12: '카드 내역도 다시 불러오기'는 뺐다 — 결제 카드만 고르면 끝나는 일이라 재조회가 필요 없다 (불러오기가 필요하면 아래 카드가 따로 뜬다) */}
           </div>
         )}
         {idsFor(SYNC).length > 0 && (

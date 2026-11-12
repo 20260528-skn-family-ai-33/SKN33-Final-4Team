@@ -117,18 +117,16 @@ it('추가 인증이 필요 없는 카드사는 번호·비밀번호 입력 없�
   expect(requests[0].body).toEqual({ connectionIds: ['hyundai'] })
 })
 
-it('결제 카드 확인은 창으로 열고, 재조회 뒤 다시 열면 목록을 새로 불러온다', async () => {
+it('결제 카드 확인은 창으로 열고, 다시 열면 목록을 새로 불러온다 · 카드 내역 재조회 링크는 없다 (11/12)', async () => {
   reason = 'card_assignment_required'
   await render()
+  expect([...host.querySelectorAll('button')].some((b) => b.textContent.includes('다시 불러오기'))).toBe(false)
   await click('결제 카드 확인하기')
   const reads = () => fetch.mock.calls.filter(([url]) => url === '/api/finance/card-reviews/').length
   expect(reads()).toBe(1)
   expect(host.querySelector('[role=dialog][aria-label="결제 카드 확인"]')).not.toBeNull()  // 11/9: 펼치기 대신 가운데 창
   expect(host.querySelector('input[name=cardPassword]')).toBeNull()
   await click('닫기 ×')
-  await click('카드 내역도 다시 불러오기')
-  await credentials()
-  await submitSync()
   await click('결제 카드 확인하기')
   expect(reads()).toBe(2)
   expect(host.querySelector('[aria-label="결제 카드 확인 거래"]')).not.toBeNull()
