@@ -255,12 +255,16 @@ class CardReservedTest(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["cardNotes"], notes)
         self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], notes)
+        self.assertEqual(client.get("/api/home/").json()["budget"]["cardBillsReady"], [])  # 아직 청구서 없음
 
         # 청구서를 불러온 것만으로 승인 예산의 금액·안내가 바뀌지 않는다.
         CardBill.objects.filter(pk=self.bill.pk).update(withdrawal_due_date=date(2026, 11, 10))
         self.assertEqual(card_reserved(self.user, self.cycle)["amount"], 250_000)
         self.assertEqual(client.get("/api/budgets/").json()["cardNotes"], notes)
         self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], notes)
+        # 11/12: 대신 '지금은 청구서가 나온 카드'로 알려서 화면이 바로 다시 추천으로 보낸다
+        self.assertEqual(client.get("/api/home/").json()["budget"]["cardBillsReady"], [str(self.card.pk)])
+        self.assertEqual(client.get("/api/budgets/").json()["cardBillsReady"], [str(self.card.pk)])
         first.refresh_from_db()
         self.assertEqual(first.input_snapshot["fixed"]["card_reserved"], 0)
 
@@ -274,6 +278,7 @@ class CardReservedTest(TestCase):
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual((response.json()["split"]["fixed"], response.json()["cardNotes"]), (350_000, []))
         self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], [])
+        self.assertEqual(client.get("/api/home/").json()["budget"]["cardBillsReady"], [])  # 반영한 뒤에는 없음
         first.refresh_from_db()
         self.assertEqual(first.status, "superseded")
 

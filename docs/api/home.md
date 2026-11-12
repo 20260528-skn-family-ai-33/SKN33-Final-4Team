@@ -103,6 +103,7 @@ GET /api/home/
 | `budget.spare` | 정수 | 남은 여윳돈 (= `overspend.spareRemaining`) |
 | `budget.daily` | 정수 / `null` | 하루에 쓸 수 있는 돈 = `livingLeft ÷ daysLeft` (원 미만 버림). `daysLeft`가 0(주기 마지막 날)이면 `null` → 화면 "—" |
 | `budget.cardNotes` | 배열 | 승인 예산의 계산 당시 카드 안내. `first_bill_unavailable`이면 이전 주기 카드값이 미반영되어 생활비·하루 금액이 실제보다 클 수 있음을 표시한다. 청구서 조회만으로 지우지 않고, 같은 주기 재추천·승인 후 갱신한다. |
+| `budget.cardBillsReady` | 배열 | 11/12. `cardNotes`의 `first_bill_unavailable` 카드 중 **지금은 청구서가 나온** 카드 ID. 있으면 화면 띠가 '새 카드 청구서가 나왔어요'로 바뀌고 바로 재추천으로 이동한다. 계산 기준은 [budgets.md](budgets.md) 11/09 절. 없으면 `[]` |
 | `budget.daysLeft` | 정수 | 오늘까지 쓴 돈을 뺀 뒤 나누는 날 수 = 다음 월급날 − 오늘 − 1 (채팅 소비 분석의 남은 일수와 같음) |
 | `budget.outOfBudgetAllocated` | 정수 | 이전 기준 예산의 주거·통신 · 여행·숙박 배정 (예산 화면 `budget.outOfBudgetAllocated`와 같음, N-F1). 0보다 크면 파란 카드 안에 재추천 안내. `livingBudget`은 이 금액을 포함한 저장값 그대로 |
 | `budget.overCategories[]` | 배열 | 예산을 넘긴 카테고리 (11/11). 칸: `category` · `categoryName` · `allocated`(배정) · `spent`(쓴 돈) · `over`(= `spent − allocated`). **쓴 돈이 배정을 1원이라도 넘으면** 넣고, 배정이 0원인 카테고리는 넣지 않는다. 많이 넘긴 순. 없으면 `[]`. 값은 예산 화면 `categories[]`와 같은 계산 |
