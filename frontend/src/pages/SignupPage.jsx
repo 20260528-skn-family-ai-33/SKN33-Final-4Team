@@ -7,6 +7,7 @@ import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import PasswordInput from '../components/PasswordInput.jsx'
+import { useLoggedInRedirect } from '../utils/useLoggedInRedirect.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
 import { useConsentDocs } from '../popups/consentDocs.js'
 import { usePopup } from '../popups/context.js'
@@ -25,6 +26,7 @@ const pwOk = (p) => PW_RULES.every(([, test]) => test(p))
 
 export default function SignupPage() {
   const navigate = useNavigate()
+  useLoggedInRedirect()  // 이미 로그인했으면 시작하기 · 홈으로 (가입 직후 뒤로 가기 등)
   const { openPopup } = usePopup()
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
