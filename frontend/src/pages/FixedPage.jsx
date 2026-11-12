@@ -169,7 +169,7 @@ function CardBillRow({ bill, onSaved }) {
           ? '월급 정보를 설정하면 청구서를 확인할 수 있어요'
           : bill.reason === 'bill_unavailable'
             ? '이번 주기 청구서가 아직 안 나왔어요'
-            : '카드 관리에서 청구서를 불러와 주세요'} />
+            : '지킬 돈 단계에서 다시 불러올 수 있어요'} />
       </div></div>
     )
   }
@@ -278,12 +278,13 @@ function OnboardingView() {
         {suggested.length > 0 && <p className="mc-muted" style={{ margin: '4px 0 0', fontSize: 12 }}>아직 확인하지 않은 {suggested.length}건은 합계에서 제외했어요. '확인하고 다음'을 누르면 남은 항목을 모두 확정해요.</p>}
       </div>
       {actionError && <p className="mc-error" role="alert">{actionError}</p>}
-      <div className="mc-card">
-        <div className="mc-row"><h2>카드 청구서</h2><button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>카드 관리</button></div>
-        {(data.cardBills ?? []).length === 0
-          ? <p className="mc-muted">관리할 카드를 연결하고 선택하면 청구금액을 확인할 수 있어요.</p>
-          : data.cardBills.map((bill) => <CardBillRow key={bill.issuerCode} bill={bill} onSaved={reload} />)}
-      </div>
+      {/* 카드 청구서 (11/12): 연결한 카드가 없으면 카드째 숨긴다. [카드 관리]는 뺐다 — 누르면 온보딩 2단계(계좌 연결)로 되돌아가 흐름이 꼬였다 */}
+      {(data.cardBills ?? []).length > 0 && (
+        <div className="mc-card">
+          <h2>카드 청구서</h2>
+          {data.cardBills.map((bill) => <CardBillRow key={bill.issuerCode} bill={bill} onSaved={reload} />)}
+        </div>
+      )}
     </Layout>
   )
 }

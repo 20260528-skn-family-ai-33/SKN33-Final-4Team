@@ -1012,9 +1012,11 @@
 #mc-new-preview .mc-bill-head .mc-grow small{display:block;margin-top:2px;font-size:12px;color:var(--mc-sub);word-break:keep-all}
 #mc-new-preview .mc-bill-amt{font-size:15px;white-space:nowrap;font-variant-numeric:tabular-nums}
 #mc-new-preview#mc-new-preview .mc-bill-q{margin:0;font-size:13px;color:var(--mc-sub);word-break:keep-all}
-#mc-new-preview .mc-bill-answers{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-#mc-new-preview#mc-new-preview .mc-bill-answers button{min-height:40px;margin:0;padding:0 4px;border-radius:11px;border:1px solid var(--mc-line);background:var(--mc-paper);color:var(--mc-ink);font-size:13px;font-weight:600}
-#mc-new-preview#mc-new-preview .mc-bill-answers button[aria-expanded=true]{border-color:var(--mc-brand);background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview#mc-new-preview .mc-bill-head+.mc-bill-q{margin-top:8px}  /* 카드사 줄과 질문 사이를 띄운다 (11/12) */
+#mc-new-preview .mc-bill-answers{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:4px;border-radius:13px;background:var(--mc-bg)}  /* 답 3개를 한 덩어리로 (11/12, [만원|원] 전환과 같은 모양) */
+#mc-new-preview#mc-new-preview .mc-bill-answers button{min-height:38px;margin:0;padding:0 4px;border-radius:10px;border:0;background:none;color:var(--mc-ink);font-size:13px;font-weight:600}
+#mc-new-preview#mc-new-preview .mc-bill-answers button:not(:disabled):hover{background:var(--mc-paper)}
+#mc-new-preview#mc-new-preview .mc-bill-answers button[aria-expanded=true]{background:var(--mc-paper);color:var(--mc-brand);box-shadow:0 1px 3px light-dark(#26365a14,#0003)}
 #mc-new-preview .mc-bill-links{display:flex;justify-content:space-between;margin-top:-4px}
 #mc-new-preview .mc-bill-partial{display:flex;align-items:flex-end;gap:8px}
 #mc-new-preview#mc-new-preview .mc-bill-partial .mc-field{flex:1;min-width:0;margin:0;font-size:12.5px}
@@ -1179,6 +1181,7 @@
 #mc-new-preview .mc-loading-card{display:flex;align-items:center;gap:12px;padding:14px 16px}
 #mc-new-preview .mc-loading-card strong{display:block;font-size:14px}
 #mc-new-preview .mc-loading-card small{display:block;margin-top:2px;font-size:12.5px}
+#mc-new-preview#mc-new-preview .mc-loading-card .mc-conn-busy svg{animation-duration:2s}  /* 오래 기다리는 안내라 천천히 (11/12: 1초 한 바퀴는 너무 빨랐다) */
 /* 제목 옆 [?] 도움말 (11/9, 생활비 카테고리) */
 #mc-new-preview .mc-help-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:2px;vertical-align:middle;color:var(--mc-sub)}
 #mc-new-preview .mc-inline-ic svg{width:14px;height:14px;vertical-align:-2px}  /* 문장 안 아이콘은 글자 크기만 (11/9, 예산 조정 규칙 팝업) */

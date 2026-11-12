@@ -126,3 +126,14 @@ it('카드 내역을 불러오는 중이면 카드사를 알리고 다음을 막
   expect(host.querySelector('[role=status]')).toBeNull()
   expect(button('확인하고 다음').disabled).toBe(false)
 })
+
+it('연결한 카드가 없으면 카드 청구서 카드를 숨기고, [카드 관리] 링크는 없다 (11/12)', async () => {
+  await act(() => root.render(<FixedPage />))
+  expect(host.textContent).toContain('카드 청구서')
+  expect(button('카드 관리')).toBeUndefined()
+  await act(() => root.unmount())
+  root = createRoot(host)
+  serverData.cardBills = []
+  await act(() => root.render(<FixedPage />))
+  expect(host.textContent).not.toContain('카드 청구서')
+})
