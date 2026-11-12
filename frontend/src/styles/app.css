@@ -1253,3 +1253,12 @@
 #mc-new-preview#mc-new-preview .mc-adjust-consent-title{margin-top:10px}  /* 예산 조정 동의 창 제목을 [닫기 ×] 아래로 조금 내린다 (11/12) */
 #mc-new-preview .mc-sumbar-cycle{white-space:nowrap}
 #mc-new-preview .mc-sumbar-range{margin-left:6px;font-size:12px;font-weight:500;color:var(--mc-sub);font-variant-numeric:tabular-nums}  /* 예산 주기 보기 날짜 (11/12) */
+/* 거래 카테고리 고르기 격자 (11/12): 아이콘 + 이름, 4칸. 지금 카테고리는 파란 테두리 */
+#mc-new-preview .mc-catgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+#mc-new-preview#mc-new-preview .mc-catgrid button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:68px;margin:0;padding:10px 2px;border-radius:14px;border:1px solid transparent;background:var(--mc-bg);color:var(--mc-ink);font-size:12px;font-weight:500;line-height:1.25;word-break:keep-all;text-align:center}
+#mc-new-preview .mc-catgrid svg{color:var(--mc-brand)}
+#mc-new-preview#mc-new-preview .mc-catgrid button[aria-pressed=true]{border-color:var(--mc-brand);background:var(--mc-soft);color:var(--mc-brand);font-weight:650}
+#mc-new-preview#mc-new-preview .mc-catgrid+.mc-check{margin:14px 0 0}  /* 격자 바로 아래 '앞으로도 적용' 체크박스 (11/12) */
+#mc-new-preview .mc-pick-actions{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:14px}  /* 카테고리 격자 아래 [취소] [확인] (11/12) */
+#mc-new-preview#mc-new-preview .mc-pick-actions button{margin:0}
+#mc-new-preview#mc-new-preview h2+.mc-catgrid{margin-top:18px}  /* '카테고리 수정' 제목과 격자 사이 (11/12) */
