@@ -6,6 +6,8 @@
 // 카드번호를 매번 묻는 카드사(현대카드 0302) · 다시 로그인이 필요한 연결은 자동으로 못 불러와서, 기존 카드사 조회 칸(CardSyncPanel)을 창 안에 보여 준다.
 //   거기서 불러오기에 성공하면 바로 청구서를 확인한다 (입력 칸은 사라지고 결과로 넘어감). 실패하면 조회 칸에 이유가 남는다
 //   카드사가 여러 곳이면 자동으로 되는 곳을 먼저 불러와 확인하고, 그래도 새 청구서가 없을 때만 남은 카드사를 조회 칸으로 보여 준다
+//   직접 조회할 카드사가 여럿이면 끝낸 카드사(connectionId)를 세어, 새 청구서가 없어도 남은 카드사의 조회 칸은 그대로 둔다.
+//   모든 카드사를 끝냈을 때만 '아직 없음' (PR #116 2차 리뷰). 다시 로그인으로 새 창을 열 때도 끝낸 카드사(done)를 넘겨 다시 묻지 않는다
 // 다시 로그인(PR #116 리뷰): 로그인 팝업이 뜨면 팝업은 하나만 열려서 이 창은 닫힌다. 그래서 로그인 결과는 창 밖 함수(reconnectCard)가 받고,
 //   새 확인 창이 그 결과(resume)를 이어받아 성공이면 다시 불러오기부터, 실패면 이유를 보여 준다
 import { useEffect, useRef, useState } from 'react'
@@ -42,7 +44,8 @@ async function reconnectCard(connection, form) {
 
 // props: cardIds = 청구서가 아직 안 보이는 카드, onFound = 새 청구서가 있을 때 (창은 닫고 부른다)
 //        resume = 다시 로그인 결과 Promise ({ ok, name, text, needsAuth }) — 로그인 팝업 뒤에 새로 연 창만 받는다
-export default function BillCheckDialog({ cardIds = [], onFound, resume = null }) {
+//        done = 이 흐름에서 이미 직접 조회를 끝낸 연결 ID (다시 로그인 뒤 새 창이 다시 묻지 않게)
+export default function BillCheckDialog({ cardIds = [], onFound, resume = null, done = [] }) {
   const { openPopup, closePopup } = usePopup()
   const navigate = useNavigate()
   // reconnecting 다시 연결 중 · syncing 불러오는 중 · checking 청구서 확인 중 · manual 카드사 확인 필요 · none 아직 없음 · error 실패
@@ -51,7 +54,9 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null }
   const [failedLines, setFailedLines] = useState([])  // 불러오지 못한 카드사 [{ name, text }] — 다음 단계까지 남긴다
   const failedRef = useRef([])
   const [needsAuth, setNeedsAuth] = useState(false)
-  const [manualCardIds, setManualCardIds] = useState([])  // 직접 조회할 카드사의 카드
+  const [manualCardIds, setManualCardIds] = useState([])  // 직접 조회할 카드사의 카드 (아직 안 끝낸 카드사만)
+  const manualRef = useRef([])  // 직접 조회할 연결 목록
+  const doneRef = useRef(new Set(done))  // 직접 조회를 끝낸 연결 ID
   const started = useRef(false)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
@@ -123,7 +128,7 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null }
       // 카드사가 여러 곳이면 자동으로 되는 곳은 먼저 불러오고, 카드번호 · 다시 로그인이 필요한 곳만 조회 칸으로 남긴다
       const asks = (c) => c.status === 'relogin' || c.organizationCode === ASK_CARD_VALUES
       const auto = targets.filter((c) => !asks(c))
-      const manual = targets.filter(asks)
+      const manual = targets.filter((c) => asks(c) && !doneRef.current.has(c.connectionId))
       if (auto.length) {
         const { ok, failed } = await syncConnections(auto)
         if (!mounted.current) return
@@ -137,18 +142,34 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null }
       if (!mounted.current) return
       if (await check({ stay: manual.length > 0 })) return
       if (manual.length && mounted.current) {
-        setManualCardIds(manual.flatMap((c) => c.cardIds ?? []).filter((id) => cardIds.includes(id)))
-        setPhase('manual')
+        manualRef.current = manual
+        showManual()
       }
     } catch (err) {
       fail(err)
     }
   }
 
+  // 아직 끝내지 않은 카드사의 조회 칸만 보여 준다
+  const manualLeft = () => manualRef.current.filter((c) => !doneRef.current.has(c.connectionId))
+  const showManual = () => {
+    setManualCardIds(manualLeft().flatMap((c) => c.cardIds ?? []).filter((id) => cardIds.includes(id)))
+    setPhase('manual')
+  }
+  // 조회 칸에서 한 카드사를 불러오면: 끝낸 카드사로 세고 청구서 확인. 새 청구서가 없고 남은 카드사가 있으면 그 조회 칸으로 돌아간다
+  const manualDone = async (result) => {
+    if (!result?.ok) return  // 실패는 조회 칸에 이유가 남는다
+    doneRef.current.add(result.connectionId)
+    const left = manualLeft().length
+    if (await check({ stay: left > 0 })) return
+    if (left > 0 && mounted.current) showManual()
+  }
+
   // 다시 로그인: 로그인 팝업이 이 창을 대신하므로, 결과는 reconnectCard 가 받아 두고 로그인 팝업이 닫힌 뒤 새 확인 창에 넘긴다
   const relogin = (connection) => openPopup(<ConnectLoginPopup inst={connection.organizationName} onSubmit={(form) => {
     const pending = reconnectCard(connection, form)
-    setTimeout(() => openPopup(<BillCheckDialog cardIds={cardIds} onFound={onFound} resume={pending} />))  // 로그인 팝업은 onSubmit 뒤에 스스로 닫힌다
+    // 로그인 팝업은 onSubmit 뒤에 스스로 닫힌다. 이미 직접 조회한 카드사는 새 창에 넘겨 다시 묻지 않는다
+    setTimeout(() => openPopup(<BillCheckDialog cardIds={cardIds} onFound={onFound} resume={pending} done={[...doneRef.current]} />))
   }} />)
 
   useEffect(() => {
@@ -192,7 +213,7 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null }
           <p className="mc-muted">카드 내역을 불러오면 바로 청구서를 확인할게요.</p>
           {failedList}
           <div className="mc-bill-manual">
-            <CardSyncPanel cardIds={manualCardIds} onRelogin={relogin} onChanged={(result) => { if (result?.ok) check().catch(fail) }} />
+            <CardSyncPanel cardIds={manualCardIds} onRelogin={relogin} onChanged={(result) => { manualDone(result).catch(fail) }} />
           </div>
         </>}
 

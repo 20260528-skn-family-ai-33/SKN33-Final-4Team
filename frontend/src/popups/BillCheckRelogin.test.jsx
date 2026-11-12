@@ -9,20 +9,21 @@ import { usePopup } from './context.js'
 import BillCheckDialog from './BillCheckDialog.jsx'
 
 const reply = (data, status = 200) => ({ ok: status < 400, status, json: async () => data })
-let host, root, connStatus, synced, loginResult, posted
+let host, root, connStatus, synced, loginResult, posted, org, syncStatus
 const onFound = vi.fn()
 
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   vi.clearAllMocks()
   connStatus = 'relogin'; synced = false; posted = null
+  org = { organizationCode: '0306', organizationName: '신한카드' }; syncStatus = 'succeeded'
   loginResult = { status: 'connected', syncStatus: 'done' }
   vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
     const method = options.method ?? 'GET'
     if (url === '/api/csrf/') return reply({ ok: true })
     if (url === '/api/budgets/protect/') return reply({ cardNotes: synced ? [] : [{ cardId: 'card-1', reason: 'first_bill_unavailable' }] })
     if (url === '/api/finance/connections/' && method === 'GET') return reply({ items: [{ connectionId: 'conn-1', businessType: 'card',
-      organizationCode: '0306', organizationName: '신한카드', status: connStatus, cardIds: ['card-1'] }] })
+      ...org, status: connStatus, cardIds: ['card-1'] }] })
     if (url === '/api/finance/connections/' && method === 'POST') {
       posted = JSON.parse(options.body)
       if (loginResult.status === 'connected') connStatus = 'connected'
@@ -30,8 +31,8 @@ beforeEach(() => {
     }
     if (url === '/api/finance/sync/') return reply({ taskId: 'sync-1', status: 'running' }, 202)
     if (url === '/api/tasks/sync-1/') {
-      synced = true
-      return reply({ status: 'succeeded', result: { items: [{ connectionId: 'conn-1', organizationName: '신한카드', status: 'succeeded' }] } })
+      synced = syncStatus === 'succeeded'  // 건너뜀이면 청구서도 그대로
+      return reply({ status: 'succeeded', result: { items: [{ connectionId: 'conn-1', organizationName: org.organizationName, status: syncStatus }] } })
     }
     throw new Error(`Unexpected URL: ${method} ${url}`)
   }))
@@ -83,4 +84,19 @@ it('추가 인증이 필요하면 금융 연결 화면으로 안내한다', asyn
   await login()
   expect(host.textContent).toContain('카드사 추가 인증이 필요해요')
   expect(button('추가 인증하러 가기')).toBeDefined()
+})
+
+// PR #116 2차 리뷰: 실제 조회 칸에서 건너뜀(skipped)은 불러온 게 아니라서 청구서 확인으로 넘어가지 않는다
+it('현대카드 직접 조회가 건너뜀이면 아직 없음으로 끝내지 않는다', async () => {
+  connStatus = 'connected'
+  org = { organizationCode: '0302', organizationName: '현대카드' }
+  syncStatus = 'skipped'
+  await act(async () => root.render(<MemoryRouter><PopupProvider><Host /></PopupProvider></MemoryRouter>))
+  for (let i = 0; i < 5 && !host.querySelector('input[name="cardNo"]'); i++) await settle()
+  await act(async () => { type('cardNo', '4111222233334444'); type('cardPassword', '1234') })
+  await act(async () => host.querySelector('.mc-bill-manual form').requestSubmit())
+  for (let i = 0; i < 5; i++) await settle()
+  expect(host.textContent).not.toContain('아직 청구서가 조회되지 않았어요')
+  expect(host.textContent).toContain('카드사 확인이 필요해요')
+  expect(onFound).not.toHaveBeenCalled()
 })

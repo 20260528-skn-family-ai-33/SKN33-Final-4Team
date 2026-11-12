@@ -6,14 +6,17 @@ import BillCheckDialog from './BillCheckDialog.jsx'
 import { apiSend } from '../utils/api.js'
 import { runFinanceSync } from '../utils/financeSync.js'
 
-const { closePopup, navigate } = vi.hoisted(() => ({ closePopup: vi.fn(), navigate: vi.fn() }))
+// cardConn: 카드 → 연결 ID (가짜 조회 칸이 어느 카드사를 끝냈는지 알려 주려고)
+const { closePopup, navigate, cardConn } = vi.hoisted(() => ({ closePopup: vi.fn(), navigate: vi.fn(),
+  cardConn: { 'card-1': 'conn-1', 'card-2': 'conn-h', 'card-3': 'conn-s' } }))
 vi.mock('react-router', () => ({ useNavigate: () => navigate }))
 vi.mock('./context.js', () => ({ usePopup: () => ({ closePopup, openPopup: vi.fn() }) }))
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn() }))
 vi.mock('../utils/financeSync.js', async (original) => ({ ...await original(), runFinanceSync: vi.fn() }))
-vi.mock('../components/CardSyncPanel.jsx', () => ({ default: ({ onChanged }) => <>
-  <button type="button" onClick={() => onChanged({ ok: false })}>조회 실패</button>
-  <button type="button" onClick={() => onChanged({ ok: true })}>조회 성공</button>
+// 가짜 조회 칸: 보여 줄 카드마다 '<카드> 조회 성공' 버튼 (실제처럼 그 카드사의 connectionId 를 넘긴다)
+vi.mock('../components/CardSyncPanel.jsx', () => ({ default: ({ cardIds, onChanged }) => <>
+  <button type="button" onClick={() => onChanged({ ok: false, connectionId: cardConn[cardIds[0]] })}>조회 실패</button>
+  {cardIds.map((id) => <button type="button" key={id} onClick={() => onChanged({ ok: true, connectionId: cardConn[id] })}>{id} 조회 성공</button>)}
 </> }))
 
 const connection = (extra = {}) => ({ connectionId: 'conn-1', businessType: 'card', organizationCode: '0306', organizationName: '합성카드',
@@ -83,8 +86,8 @@ it('카드번호를 묻는 카드사 · 다시 로그인이 필요한 연결은 
   protect = notes()                                         // 직접 불러온 뒤에는 청구서가 보인다
   await act(async () => button('조회 실패').click())        // 실패면 조회 칸이 그대로 남는다
   expect(onFound).not.toHaveBeenCalled()
-  expect(button('조회 성공')).toBeDefined()
-  await act(async () => button('조회 성공').click())        // 성공하면 바로 청구서 확인
+  expect(button('card-1 조회 성공')).toBeDefined()
+  await act(async () => button('card-1 조회 성공').click())        // 성공하면 바로 청구서 확인
   expect(onFound).toHaveBeenCalledOnce()
 })
 
@@ -173,8 +176,37 @@ it('자동 조회 실패 뒤 직접 조회할 카드사가 있어도 실패 이�
   await act(async () => root.render(<BillCheckDialog cardIds={['card-1', 'card-2']} onFound={onFound} />))
   expect(host.textContent).toContain('카드사 확인이 필요해요')
   expect(host.textContent).toContain('합성카드 · 카드사 점검 중이에요.')   // 직접 조회 칸과 함께 남는다
-  await act(async () => button('조회 성공').click())               // 현대카드는 불러왔지만 청구서는 아직
+  await act(async () => button('card-2 조회 성공').click())          // 현대카드는 불러왔지만 청구서는 아직
   expect(host.textContent).not.toContain('아직 청구서가 조회되지 않았어요')
   expect(host.textContent).toContain('합성카드 · 카드사 점검 중이에요.')
   expect(button('다시 시도')).toBeDefined()
+})
+
+// PR #116 2차 리뷰: 직접 조회할 카드사가 여럿이면 하나만 끝내도 '아직 없음'으로 끝내지 않고 남은 카드사 조회 칸을 남긴다
+it('직접 조회할 카드사가 여럿이면 모두 끝낸 뒤에만 아직 없음으로 끝낸다', async () => {
+  const hyundai = connection({ connectionId: 'conn-h', organizationCode: '0302', organizationName: '현대카드', cardIds: ['card-2'] })
+  const shinhan = connection({ connectionId: 'conn-s', organizationName: '신한카드', status: 'relogin', cardIds: ['card-3'] })
+  server([hyundai, shinhan], notes('card-2', 'card-3'), notes('card-2', 'card-3'))
+  await act(async () => root.render(<BillCheckDialog cardIds={['card-2', 'card-3']} onFound={onFound} />))
+  expect(button('card-2 조회 성공')).toBeDefined()
+  expect(button('card-3 조회 성공')).toBeDefined()
+
+  await act(async () => button('card-2 조회 성공').click())        // 현대카드만 끝냄 · 청구서 아직
+  expect(host.textContent).not.toContain('아직 청구서가 조회되지 않았어요')
+  expect(host.textContent).toContain('카드사 확인이 필요해요')
+  expect(button('card-2 조회 성공')).toBeUndefined()               // 끝낸 현대카드는 빠지고
+  expect(button('card-3 조회 성공')).toBeDefined()                 // 신한카드 조회 칸은 남는다
+
+  await act(async () => button('card-3 조회 성공').click())        // 신한카드까지 끝냄
+  expect(host.textContent).toContain('아직 청구서가 조회되지 않았어요')
+  expect(onFound).not.toHaveBeenCalled()
+})
+
+it('이미 직접 조회를 끝낸 카드사(done)는 다시 묻지 않는다', async () => {
+  const hyundai = connection({ connectionId: 'conn-h', organizationCode: '0302', organizationName: '현대카드', cardIds: ['card-2'] })
+  server([connection(), hyundai], notes('card-1', 'card-2'), notes('card-1', 'card-2'))
+  await act(async () => root.render(<BillCheckDialog cardIds={['card-1', 'card-2']} onFound={onFound} done={['conn-h']} />))
+  expect(runFinanceSync).toHaveBeenCalledExactlyOnceWith({ connectionIds: ['conn-1'] })
+  expect(button('card-2 조회 성공')).toBeUndefined()
+  expect(host.textContent).toContain('아직 청구서가 조회되지 않았어요')
 })

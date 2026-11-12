@@ -46,7 +46,9 @@ function CardConnection({ connection, onChanged, onRelogin }) {
       setLines(syncLines({ items: [item] }))
       if (item.error?.fields?.cardNo || item.error?.fields?.cardPassword) setNeedCredentials(true)
       if (item.error?.code === 'relogin_required') setNeedLogin(true)
-      onChanged({ ok: item.status !== 'failed' })  // 11/11: 청구서 확인 창이 성공했을 때만 바로 확인하러 넘어간다
+      // 11/11: 청구서 확인 창이 성공했을 때만 바로 확인하러 넘어간다. 건너뜀(skipped)은 불러온 게 아니라서 성공이 아님 (PR #116 리뷰)
+      //   connectionId: 확인 창이 어느 카드사를 끝냈는지 센다
+      onChanged({ ok: item.status === 'succeeded', connectionId: connection.connectionId })
     } catch (err) {
       if (mounted.current) setError(err.message)
     } finally {
@@ -77,7 +79,7 @@ function CardConnection({ connection, onChanged, onRelogin }) {
         setNeedsAdditionalAuth(true)
         setError('카드사 추가 인증이 필요해요. 금융 연결 화면에서 인증을 마쳐 주세요.')
       } else setError(item?.error?.message || '카드사에 다시 연결하지 못했어요.')
-      onChanged({ ok: item?.status === 'connected' && item.syncStatus !== 'failed' })
+      onChanged({ ok: item?.status === 'connected' && item.syncStatus !== 'failed', connectionId: connection.connectionId })
     } catch (err) {
       if (mounted.current) setError(Object.values(err.fields ?? {}).flat()[0] || err.message)
     } finally {
