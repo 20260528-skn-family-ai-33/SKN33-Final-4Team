@@ -17,7 +17,7 @@ import FixedPopup from '../popups/FixedPopup.jsx'
 import EvidencePopup from '../popups/EvidencePopup.jsx'
 import Popup from '../popups/Popup.jsx'
 import TransactionPopup from '../popups/TransactionPopup.jsx'
-import CardBillCheck from '../components/CardBillCheck.jsx'
+import CardBillCheck, { BillHead } from '../components/CardBillCheck.jsx'
 import { CHIPS, toView } from '../utils/transactions.js'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
@@ -164,18 +164,17 @@ function ManageView() {
 function CardBillRow({ bill, onSaved }) {
   if (bill.totalAmount === null) {
     return (
-      <div style={{ marginTop: 14 }}>
-        <strong>{bill.issuerName}</strong>
-        <p className="mc-muted" style={{ wordBreak: 'keep-all' }}>{bill.reason === 'cycle_unavailable'
-          ? '월급 정보를 설정하면 이번 주기 청구서를 확인할 수 있어요.'
+      <div className="mc-bill-issuer"><div className="mc-bill-check">
+        <BillHead issuerName={bill.issuerName} sub={bill.reason === 'cycle_unavailable'
+          ? '월급 정보를 설정하면 청구서를 확인할 수 있어요'
           : bill.reason === 'bill_unavailable'
-            ? <>이번 급여 주기에 낼 청구서가 아직 안 나왔어요.<br />청구서 없이도 예산을 시작할 수 있어요.</>
-            : '청구서 확인 필요 · 카드 관리에서 이번 주기 청구서를 불러와 주세요.'}</p>
-      </div>
+            ? '이번 주기 청구서가 아직 안 나왔어요'
+            : '카드 관리에서 청구서를 불러와 주세요'} />
+      </div></div>
     )
   }
   return (
-    <div style={{ marginTop: 14 }} aria-label={`${bill.issuerName} 청구서`}>
+    <div className="mc-bill-issuer" aria-label={`${bill.issuerName} 청구서`}>
       {bill.bills.map((b) => <CardBillCheck key={b.billId} bill={b} issuerName={bill.issuerName} onSaved={onSaved} />)}
     </div>
   )

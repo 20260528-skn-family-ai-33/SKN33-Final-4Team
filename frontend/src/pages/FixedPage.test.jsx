@@ -15,6 +15,8 @@ const bill = (extra = {}) => ({ billId: 'bill-1', issuerCode: '0301', billingMon
 let host, root, serverData
 const response = () => ({ ok: true, json: async () => structuredClone(serverData) })
 const button = (text) => [...host.querySelectorAll('button')].find((b) => b.textContent === text)
+// 카드사 머리 줄 글자 (이름 · 청구월/결제일 · 청구액, 11/12 모양)
+const head = (name) => [...host.querySelectorAll('.mc-bill-head')].find((h) => h.querySelector('strong').textContent === name)?.textContent
 const amountRow = (text) => [...host.querySelectorAll('.mc-keyvalue')].find((row) => row.textContent.includes(text))?.textContent
 
 beforeEach(() => {
@@ -83,12 +85,12 @@ it('확인하지 못한 청구서 · 0원 청구서 · 묻는 청구서를 구�
   serverData.cardBills.push({ issuerCode: '0306', issuerName: '현대카드', totalAmount: 511515, confirmedFixedAmount: 33309,
     amountAfterFixed: 478206, isEstimated: null, reason: null, bills: [bill({ billId: 'h', totalAmount: 511515 })] })
   await act(() => root.render(<FixedPage />))
-  expect(host.textContent).toContain('이번 급여 주기에 낼 청구서가 아직 안 나왔어요')
+  expect(host.textContent).toContain('이번 주기 청구서가 아직 안 나왔어요')
   expect(host.textContent).not.toContain('청구서 확인 필요')
-  expect(host.textContent).toContain('다른카드 · 11월 청구액 0원')
+  expect(head('다른카드')).toBe('다른카드11월 청구 · 결제일 11.050원')
   expect(host.textContent).toContain('낼 금액이 없어요')
-  expect(host.textContent).toContain('현대카드 · 11월 청구액 511,515원')
-  expect(host.textContent).toContain('이 카드값은 얼마나 납부하셨나요?')
+  expect(head('현대카드')).toBe('현대카드11월 청구 · 결제일 11.05511,515원')
+  expect(host.textContent).toContain('이 카드값, 얼마나 냈나요?')
   expect(host.textContent).not.toContain('478,206원')          // 고정비 제외 참고 금액 안 보임
   expect(host.textContent).not.toContain('확인된 납부액')
   expect(host.textContent).not.toContain('실제 예산에서는')
@@ -99,7 +101,7 @@ it('카드값을 확인하지 않아도 다음 단계로 갈 수 있다', async 
   serverData.items = []
   serverData.summary = { confirmedMonthlyTotal: 0, suggestedCount: 0 }
   await act(() => root.render(<FixedPage />))
-  expect(host.textContent).toContain('이 카드값은 얼마나 납부하셨나요?')
+  expect(host.textContent).toContain('이 카드값, 얼마나 냈나요?')
   expect(button('계속하기').disabled).toBe(false)
 })
 

@@ -1001,7 +1001,29 @@
 #mc-new-preview .mc-fixed-late,#mc-new-preview .mc-fixed-stop{display:flex;flex-direction:column;gap:8px;margin-top:10px;padding:10px 12px;border-radius:12px;background:var(--mc-warm);color:var(--mc-ink);font-size:13px}
 #mc-new-preview .mc-fixed-late p,#mc-new-preview .mc-fixed-stop p{margin:0;line-height:1.5}
 #mc-new-preview .mc-fixed-late b,#mc-new-preview .mc-fixed-stop b{color:var(--mc-alert)}
-#mc-new-preview .mc-bill-check{display:flex;flex-direction:column;gap:6px;padding:12px 0;border-top:1px solid var(--mc-line);font-size:14px}
+#mc-new-preview .mc-bill-check{display:flex;flex-direction:column;gap:10px;padding:14px 0;border-top:1px solid var(--mc-line);font-size:14px}
+/* 카드 청구서 한 장 (11/12): 머리 줄 → 질문 → 답 3개 → 작은 링크 */
+#mc-new-preview#mc-new-preview .mc-bill-issuer+.mc-bill-issuer>.mc-bill-check:first-child{border-top:1px solid var(--mc-line)}  /* 카드사 사이 구분선 */
+#mc-new-preview .mc-bill-head{display:flex;align-items:center;gap:12px}
+#mc-new-preview .mc-bill-head .mc-tile{width:36px;height:36px;border-radius:12px}
+#mc-new-preview .mc-bill-head .mc-tile svg{width:17px;height:17px}
+#mc-new-preview .mc-bill-head .mc-grow{flex:1;min-width:0}
+#mc-new-preview .mc-bill-head .mc-grow strong{display:block;font-size:14.5px}
+#mc-new-preview .mc-bill-head .mc-grow small{display:block;margin-top:2px;font-size:12px;color:var(--mc-sub);word-break:keep-all}
+#mc-new-preview .mc-bill-amt{font-size:15px;white-space:nowrap;font-variant-numeric:tabular-nums}
+#mc-new-preview#mc-new-preview .mc-bill-q{margin:0;font-size:13px;color:var(--mc-sub);word-break:keep-all}
+#mc-new-preview .mc-bill-answers{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+#mc-new-preview#mc-new-preview .mc-bill-answers button{min-height:40px;margin:0;padding:0 4px;border-radius:11px;border:1px solid var(--mc-line);background:var(--mc-paper);color:var(--mc-ink);font-size:13px;font-weight:600}
+#mc-new-preview#mc-new-preview .mc-bill-answers button[aria-expanded=true]{border-color:var(--mc-brand);background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview .mc-bill-links{display:flex;justify-content:space-between;margin-top:-4px}
+#mc-new-preview .mc-bill-partial{display:flex;align-items:flex-end;gap:8px}
+#mc-new-preview#mc-new-preview .mc-bill-partial .mc-field{flex:1;min-width:0;margin:0;font-size:12.5px}
+#mc-new-preview#mc-new-preview .mc-bill-partial input{margin-top:6px;padding:10px 12px;font-size:15px}
+#mc-new-preview#mc-new-preview .mc-bill-partial .mc-primary{flex:none;width:auto;margin:0;min-height:44px;padding:0 20px}
+#mc-new-preview#mc-new-preview .mc-bill-links .mc-link{min-height:28px;padding:0;font-size:12.5px}
+#mc-new-preview .mc-bill-links .mc-link+.mc-link{color:var(--mc-sub)}
+#mc-new-preview .mc-bill-result{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:var(--mc-bg);font-size:13.5px}
+#mc-new-preview#mc-new-preview .mc-bill-result .mc-link{margin-left:auto;min-height:28px;padding:0}
 #mc-new-preview .mc-bill-check:first-child{border-top:0}
 #mc-new-preview .mc-fixed-late .mc-secondary{margin:0;align-self:flex-start;padding:7px 16px}
 #mc-new-preview .mc-fixed-stop .mc-inline{margin-top:0}
@@ -1106,6 +1128,19 @@
 #mc-new-preview .mc-linked>small{font-size:11.5px;line-height:1.5}
 #mc-new-preview .mc-range{margin-bottom:18px}  /* 납부 거래 확인 기간 찾기 (11/9): 버튼은 두 칸 전체 폭, 아래 고른 출금 카드와 간격 */
 #mc-new-preview .mc-range>button{grid-column:1/-1;margin-top:10px}
+/* 카드값 납부 확인 (11/12): 출금 목록은 카드 안. 기간 찾기는 목록 위 한 줄, 목록은 5건씩 넘김 */
+#mc-new-preview .mc-pay-list{padding:14px}
+#mc-new-preview#mc-new-preview .mc-pay-list .mc-loan-h{margin:0 0 4px}
+#mc-new-preview#mc-new-preview .mc-pay-help{margin:0;font-size:12.5px}
+#mc-new-preview .mc-pager{display:flex;align-items:center;justify-content:space-between;margin-top:10px}
+#mc-new-preview .mc-pager>span{font-size:13px;color:var(--mc-sub);font-variant-numeric:tabular-nums}
+#mc-new-preview#mc-new-preview .mc-pager button{min-height:34px;margin:0;padding:0 12px;border-radius:10px;border:1px solid var(--mc-line);background:var(--mc-paper);color:var(--mc-brand);font-size:13px;font-weight:600}
+#mc-new-preview#mc-new-preview .mc-pager button:disabled{color:var(--mc-line);cursor:default}
+#mc-new-preview .mc-pay-range{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto;align-items:center;gap:4px;margin:14px 0 10px}
+#mc-new-preview#mc-new-preview .mc-pay-range input{min-width:0;width:100%;margin:0;padding:8px 4px 8px 8px;border:1px solid var(--mc-line);border-radius:10px;background:var(--mc-paper);color:var(--mc-ink);font-size:13px;letter-spacing:-.3px}
+#mc-new-preview .mc-pay-range>span{color:var(--mc-sub);font-size:13px}
+#mc-new-preview#mc-new-preview .mc-pay-range .mc-conn-btn{min-height:36px;padding:0 12px}
+
 /* 대출 확인 화면 안내 (11/9): 문장 사이 넓은 여백 줄이고, 처리 결과는 연한 상자 한 개로 */
 #mc-new-preview .mc-loan-msg{margin:0 0 12px}
 #mc-new-preview .mc-loan-notice{margin:0 0 12px;padding:10px 12px;border-radius:12px;background:var(--mc-soft);color:var(--mc-deep);font-size:13px;line-height:1.5}
