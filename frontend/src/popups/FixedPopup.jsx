@@ -1,7 +1,6 @@
 // 팝업: 고정지출 추가 / 수정
 // props: item = 고칠 고정지출 (GET /api/budgets/fixed/ 의 한 건, 없으면 "추가"),
-//        onSaved(affectsBudget) = 저장 · 중지 성공 뒤 목록 다시 받기. affectsBudget = 예산 금액이 바뀌는 변경인지 (11/12)
-//          추가 · 그만두기 · 금액 · 결제 수단(카드로 내면 고정비로 따로 빼지 않음)만 true. 이름 · 출금일 · 카테고리만 바꾸면 false
+//        onSaved = 저장 · 중지 성공 뒤 목록 다시 받기
 // 추가 POST · 수정 PATCH(바꾼 칸만) · 중지 DELETE (docs/api/fixed.md). 실패하면 팝업을 닫지 않고 입력을 그대로 둔다
 // 중지 (fixed.md 3. 고정지출 중지): 확정된 항목만. 행은 지우지 않고 stopped, 이번 주기 미납 납부 예정도 취소. 지난 기록은 남는다
 // 카테고리 (10/21 결정, 요구사항 TXN-008): 10개 + 기타 중 필수. 항목 이름을 보고 미리 골라 둔다(사용자가 직접 고르면 그대로 둠)
@@ -72,12 +71,12 @@ export default function FixedPopup({ item, onSaved }) {
 
   const choosePay = (value) => { setPay(value); setPayPick(''); setError('') }
 
-  const send = async (path, verb, body, options, done, affectsBudget = true) => {
+  const send = async (path, verb, body, options, done) => {
     setSaving(true)
     setError('')
     try {
       await apiSend(path, verb, body, options)
-      onSaved?.(affectsBudget)
+      onSaved?.()
       closePopup()
       toast(done)
     } catch (err) {
@@ -110,8 +109,7 @@ export default function FixedPopup({ item, onSaved }) {
       Object.assign(body, { paymentAccountId: full.paymentAccountId, paymentCardId: full.paymentCardId })
     }
     if (Object.keys(body).length === 0) { closePopup(); return }
-    send(`/api/budgets/fixed/${item.recurringId}/`, 'PATCH', body, undefined, '고정지출을 수정했어요',
-      'amount' in body || 'paymentAccountId' in body)
+    send(`/api/budgets/fixed/${item.recurringId}/`, 'PATCH', body, undefined, '고정지출을 수정했어요')
   }
 
   // 지금 저장된 계좌·카드가 후보 목록에 없어도(관리 대상에서 뺐어도) 이름은 보이게 둔다

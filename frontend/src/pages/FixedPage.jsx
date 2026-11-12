@@ -16,8 +16,7 @@ import { usePopup } from '../popups/context.js'
 import FixedPopup from '../popups/FixedPopup.jsx'
 import EvidencePopup from '../popups/EvidencePopup.jsx'
 import Popup from '../popups/Popup.jsx'
-import ApplyTimingPopup from '../popups/ApplyTimingPopup.jsx'
-import { toast } from '../utils/toast.js'
+import { useApplyTiming } from '../utils/useApplyTiming.js'
 import TransactionPopup from '../popups/TransactionPopup.jsx'
 import CardBillCheck, { BillHead } from '../components/CardBillCheck.jsx'
 import { CHIPS, toView } from '../utils/transactions.js'
@@ -107,31 +106,16 @@ function PaidTxPopup({ id, onSaved }) {
 
 // 마이 > 고정지출 · 홈 '꼭 나갈 돈'에서 열기
 function ManageView({ from }) {
-  const navigate = useNavigate()
-  const { openPopup, closePopup } = usePopup()
+  const { openPopup } = usePopup()
   const { data, error, reload } = useFixedList()
-  // 11/12: 무엇이든 바꿨으면 아래 [저장]이 생긴다 (안 바꿨으면 뒤로 가기만).
-  //   고정지출 자체는 팝업에서 이미 저장됐다. [저장]에서 고르는 건 '이번 예산을 지금 다시 짤지'다
-  //   추가 · 그만두기 · 금액/결제 수단 수정이 있었으면 이번 주기부터 / 다음 주기부터를 묻는다.
-  //   이름 · 출금일 · 카테고리만 바꿨거나 첫 예산 승인 전이면 예산과 상관없어서 묻지 않고 바로 돌아간다
-  const [changed, setChanged] = useState(false)
-  const [affects, setAffects] = useState(false)
-  const started = useApi('/api/auth/me/').data?.onboardingCompleted === true
-  const onSaved = (affectsBudget) => { setChanged(true); if (affectsBudget) setAffects(true); reload() }
-  const back = () => navigate(from === 'home' ? PATHS.home : PATHS.my, { replace: true })
-  const save = () => {
-    if (!(affects && started)) { toast('저장했어요'); back(); return }
-    openPopup(<ApplyTimingPopup onPick={(k) => {
-      closePopup()
-      if (k === 'current_cycle') {
-        toast('이번 예산을 다시 정해요')
-        navigate(PATHS.protect, { replace: true, state: { from: 'my', refreshRecommendation: true } })
-      } else {
-        toast('다음 주기부터 반영돼요')
-        back()
-      }
-    }} />)
-  }
+  // 11/12: 무엇이든 바꿨으면 아래 [저장] (utils/useApplyTiming.js).
+  //   묻는 건 화면을 열 때와 비교해 고정지출 합계가 달라졌을 때만 — 생활비로 쓸 돈이 달라져서 이번 예산을 다시 짤 수 있다.
+  //   이름 · 출금일 · 카테고리만 바꿨거나, 올렸다 되돌려 합계가 같으면 묻지 않는다
+  const timing = useApplyTiming(from === 'home' ? PATHS.home : PATHS.my)
+  const [startTotal, setStartTotal] = useState(null)
+  useEffect(() => { if (data && startTotal === null) setStartTotal(data.summary.confirmedMonthlyTotal) }, [data, startTotal])
+  const onSaved = () => { timing.mark(); reload() }
+  const save = () => timing.save(data.summary.confirmedMonthlyTotal !== startTotal)
   if (!data) return <Layout title="고정지출" showBack><ApiStatus error={error} /></Layout>
 
   const confirmed = data.items.filter((f) => f.status === 'confirmed')
@@ -141,10 +125,10 @@ function ManageView({ from }) {
   const rows = [...late, ...noDay.filter((f) => !late.includes(f)), ...confirmed.filter((f) => !late.includes(f) && !noDay.includes(f))]
 
   return (
-    <Layout title="고정지출" showBack foot={changed ? <button type="button" className="mc-primary" onClick={save}>저장</button> : null}>
+    <Layout title="고정지출" showBack foot={timing.changed ? <button type="button" className="mc-primary" onClick={save}>저장</button> : null}>
       <div className="mc-eyebrow">고정지출</div>
       <h1>매달 나가는 돈</h1>
-      <p className="mc-muted">여기 있는 돈은 예산에서 먼저 떼어 둬요.{started && <><br />바꾼 뒤 [저장]을 누르면 언제부터 예산에 반영할지 고를 수 있어요.</>}</p>
+      <p className="mc-muted">여기 있는 돈은 예산에서 먼저 떼어 둬요.{timing.started && <><br />바꾼 뒤 [저장]을 누르면 언제부터 예산에 반영할지 고를 수 있어요.</>}</p>
       {(late.length > 0 || noDay.length > 0) && (
         <p className="mc-note" style={{ paddingTop: 0 }}>
           확인할 것 {late.length + noDay.length}건{late.length > 0 && ` · 미납 확인 ${late.length}건`}{noDay.length > 0 && ` · 출금일 모름 ${noDay.length}건`}

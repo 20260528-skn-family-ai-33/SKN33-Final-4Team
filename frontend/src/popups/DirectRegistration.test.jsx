@@ -76,19 +76,3 @@ it('목록의 월급통장에서 미선택 적금계좌로 저축을 등록한�
   }), { requestKey: 'popup-key' })
   expect(closePopup).toHaveBeenCalledOnce()
 })
-
-it('수정 저장 뒤 예산 금액이 바뀌는 변경인지 알려 준다: 이름만 → false · 금액 → true (11/12)', async () => {
-  const item = { recurringId: 'r1', name: '월세', amount: 500000, paymentDay: 25, category: 'HOUSING_TELECOM', categoryName: '주거·통신', paymentAccount: null, paymentCard: null, status: 'confirmed' }
-  const submit = () => act(() => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-  const onSaved = vi.fn()
-  await act(() => root.render(<FixedPopup item={item} onSaved={onSaved} />))
-  host.querySelector('[name=fxName]').value = '집 월세'
-  await submit()
-  expect(apiSend).toHaveBeenLastCalledWith('/api/budgets/fixed/r1/', 'PATCH', { name: '집 월세' }, undefined)
-  expect(onSaved).toHaveBeenLastCalledWith(false)
-  await act(() => root.render(<FixedPopup key="again" item={item} onSaved={onSaved} />))
-  host.querySelector('[name=fxAmount]').value = '550000'
-  await submit()
-  expect(apiSend).toHaveBeenLastCalledWith('/api/budgets/fixed/r1/', 'PATCH', { amount: 550000 }, undefined)
-  expect(onSaved).toHaveBeenLastCalledWith(true)
-})

@@ -237,23 +237,17 @@ export default function ProtectPage() {
         </div>
       )}
 
-      {rec?.rebalanced && !blocked && (
-        <div className="mc-card" aria-live="polite">
-          <div className="mc-row"><h2>저축을 먼저 뗐어요</h2><span className="mc-badge">다시 나눔</span></div>
-          <p className="mc-muted" style={{ margin: '6px 0 0' }}>
-            꼭 할 저축 <b>{won(data.savingsMin)}</b>이 추천 저축 {won(rec.ratioSavingFloor)}보다 커요.
-            저축을 먼저 떼고 남은 <b>{won(rec.restAmount)}</b>을 생활비 : 여윳돈 : 쿠션 = {data.rates.living} : {data.rates.spare} : {data.rates.cushion}로 다시 나눴어요.
-          </p>
-        </div>
-      )}
-
       <form className="mc-form" id="mc-form" onSubmit={onSubmit}>
         {ready && <>
         <div className="mc-card" style={{ marginBottom: 0 }}>
           <div className="mc-row">
-            <h2>추천안 · {housingName} 기준{rec.rebalanced ? ' · 저축 먼저' : ''}</h2>
+            <h2>추천안 · {housingName} 기준</h2>
             <button type="button" className="mc-link" onClick={() => { setValues(Object.fromEntries(ROWS.map(([k]) => [k, String(rec[k])]))); setError(''); setFieldErrors({}) }}>추천값으로</button>
           </div>
+          {/* 11/12: '저축을 먼저 뗐어요' 카드는 위에 따로 있어 잘 안 보이고 글이 길어서, 추천안 안에 짧은 한 줄로 */}
+          {rec.rebalanced && <p className="mc-protect-rebalanced" role="status">
+            꼭 할 저축 {won(data.savingsMin)}이 추천보다 커서<br />저축을 먼저 떼고 나머지를 나눴어요.
+          </p>}
           <div className="mc-protected-values">
             {ROWS.map(([k, label]) => {
               const edited = num(k) !== rec[k]  // 추천값과 다르면 "추천 ○원" 을 보여 준다
