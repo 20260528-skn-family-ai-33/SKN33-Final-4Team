@@ -247,8 +247,8 @@ function OnboardingView() {
         </div>
       )}
       {loading ? null : suggested.length > 0
-        ? <p className="mc-muted">매달 비슷한 날, 같은 금액으로 3달 연속 나간 항목을 찾았어요. '고정지출 맞아요'를 누르면 아래 확정 합계에 바로 반영돼요. 다르면 수정하거나 '고정지출 아니에요'를 눌러 주세요.</p>
-        : <p className="mc-muted">{data.items.length ? '고정지출을 모두 확인했어요. 빠진 항목이 있으면 직접 추가해 주세요.' : '자동으로 찾은 고정지출이 없어요. 월세 · 통신비처럼 매달 나가는 돈이 있으면 직접 추가하고, 없으면 계속하기를 눌러 주세요.'}</p>}
+        ? <p className="mc-muted">3달 연속 비슷하게 나간 돈을 찾았어요. 고정지출이 맞는지 확인해 주세요.</p>
+        : <p className="mc-muted">{data.items.length ? <>고정지출을 모두 확인했어요.<br />빠진 항목이 있으면 직접 추가해 주세요.</> : '자동으로 찾은 고정지출이 없어요. 월세 · 통신비처럼 매달 나가는 돈이 있으면 직접 추가하고, 없으면 계속하기를 눌러 주세요.'}</p>}
 
       {data.items.map((f) => (
         <div className="mc-card" key={f.recurringId}>

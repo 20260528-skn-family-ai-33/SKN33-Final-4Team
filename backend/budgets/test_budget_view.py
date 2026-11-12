@@ -111,7 +111,7 @@ class BudgetViewTest(TestCase):
         CategoryMinimum.objects.create(user=self.user, category_id="FOOD", min_amount=155_000)
         self.lock(budget, {"locked": True})
         data = self.get()
-        self.assertEqual(data["split"], {"funding": 1_500_000, "fixed": 100_000, "saving": 200_000,
+        self.assertEqual(data["split"], {"funding": 1_500_000, "fixed": 100_000, "cardReserved": 0, "saving": 200_000,
                                          "cushion": 100_000, "living": 1_000_000, "spare": 100_000})
         self.assertEqual([item["category"] for item in data["categories"]], list(LIVING_CODES))
         food = data["categories"][0]

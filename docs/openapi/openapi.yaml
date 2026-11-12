@@ -7851,6 +7851,7 @@ paths:
                     split:
                       funding: 2800000
                       fixed: 770000
+                      cardReserved: 0
                       saving: 610000
                       cushion: 200000
                       living: 1120000
@@ -8158,6 +8159,7 @@ paths:
                     split:
                       funding: 2800000
                       fixed: 770000
+                      cardReserved: 0
                       saving: 610000
                       cushion: 200000
                       living: 1120000
@@ -13904,6 +13906,7 @@ components:
       required:
       - funding
       - fixed
+      - cardReserved
       - saving
       - cushion
       - living
@@ -13917,6 +13920,11 @@ components:
           type: integer
           format: int64
           minimum: 0
+        cardReserved:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 11/12. fixed 중 '지난 카드값'(카드사 첫 청구서 선차감 + 가입 전 할부의 이번 회차). 없으면 0. 화면은 0보다 크면 고정비 줄과 나눠 보여 준다
         saving:
           type: integer
           format: int64
@@ -14728,4 +14736,4 @@ x-source-sha256:
   docs/api/savings.md: 93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223
   docs/api/home.md: a9645dbe952aa3ea2ebb713b00c13ed36ddb5492d7883aa7c78b6d43b6873334
   docs/api/chat.md: e2f285d35fbda895d51533778d80eb31453061e213a3813cef6a94136053ff8e
-  docs/api/budgets.md: 46dedb2f69ba4a9957a5f17d038b065f340fa25f533a6744ed6b5d35f98bfa56
+  docs/api/budgets.md: 36f7fdec4befb31783ce29399662045cde3c5e31afa4fa83a58d9fc2a84b0beb

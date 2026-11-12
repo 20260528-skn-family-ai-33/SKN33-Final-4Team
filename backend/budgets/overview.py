@@ -16,6 +16,18 @@ LIVING_CODES = (*ALLOCATION_CODES, "ETC")  # 예산 화면 · 자물쇠 대상. 
 NAG = "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?"
 
 
+def design_basis(design):
+    """이 예산을 어떤 방식으로 짰는지 (11/12, 화면 '이렇게 만들었어요'). 예산 설계 에이전트가 만든 초안에만 있다
+    plan: 'b' = 지난 3개월 내 소비 기반, 'a' = 거래가 적어 통계 모델(비슷한 사람들의 소비 비율) 기반
+    reason: plan_selection.select_plan 의 이유 (history_not_ready · transaction_counts_unavailable · sparse_transactions · sufficient_transactions)
+    ai: 동의한 외부 AI 가 실제로 금액을 다듬었는지 (llm.status == completed)"""
+    selection = design.get('selection') or {}
+    if selection.get('plan') not in ('a', 'b'):
+        return None
+    return {"plan": selection['plan'], "reason": selection.get('reason'),
+            "ai": (design.get('llm') or {}).get('status') == 'completed'}
+
+
 def current_cycle(user, profile, today):
     if profile is None or profile.payday is None:
         return None
@@ -107,18 +119,24 @@ def budget_data(user, today, *, selected=None):
             "locked_amount": setting.locked_amount if setting else None, "reason": reasons.get(category.pk) or None,
         })
     card_notes = ((selected.input_snapshot or {}).get("fixed") or {}).get("card_notes", [])
+    # 고정비 중 '지난 카드값' (11/12): 예산을 만들 때 저장한 카드 선차감 = 그 카드사 첫 청구서(가입 전 사용분) + 가입 전 할부의 이번 회차.
+    # 계산은 그대로 두고 화면이 고정비 줄을 나눠 보여 주도록 금액만 알려 준다 (fixed 에 이미 들어 있음, 그보다 클 수 없음)
+    card_reserved = ((selected.input_snapshot or {}).get("fixed") or {}).get("card_reserved")
+    card_reserved = min(card_reserved, totals.get("fixed", 0)) if type(card_reserved) is int and card_reserved > 0 else 0
     data.update({
         # 현재 조회 결과가 아니라 선택한 예산의 계산 당시 안내. 새 청구서 조회만으로 미반영 안내를 지우지 않는다.
         "card_notes": card_notes,
         # 그 안내 중 지금은 청구서가 나온 카드 (다시 추천받으면 반영됨, 11/12)
         "card_bills_ready": card_bills_ready(user, cycle, today, card_notes),
         "recommendation": {'spare_transfer': design.get('spare_transfer', 0),
-                           'target_conflicts': design.get('target_conflicts', [])} if design else None,
+                           'target_conflicts': design.get('target_conflicts', []),
+                           'basis': design_basis(design)} if design else None,
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,
                    "salary_confirmed": period["salary_state"] == "received", "engine_version": selected.engine_version,
                    # 이전 기준으로 승인한 예산의 주거·통신 · 여행·숙박 배정 (생활비 총액에는 들어 있고 카테고리 줄에는 없음, N-F1)
                    "out_of_budget_allocated": sum(v for c, v in allocated.items() if c in OUT_OF_BUDGET)},
-        "split": {"funding": selected.funding_amount, "fixed": totals.get("fixed", 0), "saving": totals.get("savings", 0),
+        "split": {"funding": selected.funding_amount, "fixed": totals.get("fixed", 0), "card_reserved": card_reserved,
+                  "saving": totals.get("savings", 0),
                   "cushion": totals.get("cushion", 0), "living": living, "spare": spare},
         "living": {"budget": living, "spent": spent, "remaining": max(living - spent, 0)},
         "overspend": {"over": over, "covered_by_spare": covered, "spare_remaining": spare - covered, "shortfall": over - covered},

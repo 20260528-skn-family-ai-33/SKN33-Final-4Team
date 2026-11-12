@@ -1191,6 +1191,7 @@
 #mc-new-preview#mc-new-preview .mc-making h1{margin:0}
 #mc-new-preview#mc-new-preview .mc-making .mc-muted{font-size:15px;min-height:1.5em}
 #mc-new-preview#mc-new-preview .mc-making .mc-note{padding-top:18px}
+/* 이 예산을 짠 방법 (11/12, 추천 예산 확인) */
 /* 제목 옆 [?] 도움말 (11/9, 생활비 카테고리) */
 #mc-new-preview .mc-help-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:2px;vertical-align:middle;color:var(--mc-sub)}
 #mc-new-preview .mc-inline-ic svg{width:14px;height:14px;vertical-align:-2px}  /* 문장 안 아이콘은 글자 크기만 (11/9, 예산 조정 규칙 팝업) */
@@ -1249,3 +1250,4 @@
 #mc-new-preview .mc-bill-failed{margin:20px 0 0;padding:12px 14px;border-radius:14px;border:1px solid color-mix(in srgb,var(--mc-alert) 35%,transparent);background:color-mix(in srgb,var(--mc-alert) 8%,var(--mc-paper));color:var(--mc-alert);font-size:13px;line-height:1.55;word-break:keep-all}
 #mc-new-preview .mc-bill-failed p{margin:0}
 #mc-new-preview .mc-bill-failed p+p{margin-top:6px}
+#mc-new-preview#mc-new-preview .mc-adjust-consent-title{margin-top:10px}  /* 예산 조정 동의 창 제목을 [닫기 ×] 아래로 조금 내린다 (11/12) */

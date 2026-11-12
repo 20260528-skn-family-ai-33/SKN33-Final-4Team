@@ -344,6 +344,8 @@
 | `budget.outOfBudgetAllocated` | 정수 | **이전 기준 예산 표시** (N-F1). 이 예산의 생활비 줄 중 주거·통신 · 여행·숙박 배정 합계. 11/3 전에 승인한 예산만 0보다 크다. 생활비 총액(`living.budget` · `split.living`)은 승인 때 저장한 그대로 이 금액을 포함하고, `categories`에는 두 카테고리가 없어 카테고리 합계 = 생활비 − 이 금액. 0보다 크면 화면이 "이전 기준으로 승인한 예산이에요 … 새 기준으로 추천을 다시 받아 주세요"를 보여 준다. 조회만으로 DB 금액 · 상태를 바꾸지 않는다 |
 | `budget.engineVersion` | 문자 / null | 이 예산을 만든 계산 엔진 버전. `temp-`로 시작하면 임시 비율 추천 → 추천 화면에 "테스트 추천" 표시 (11/3) |
 | `split` | 객체 / null | 한 달 나눠보기: `{ "funding", "fixed", "saving", "cushion", "living", "spare" }` (원). `funding = fixed + saving + cushion + living + spare` |
+| `recommendation.basis` | 객체 / null | 11/12. 예산 설계 에이전트가 만든 예산이면 어떻게 짰는지: `{ plan: "a" \| "b", reason, ai }`. `plan=b` 지난 3개월 내 소비 기반, `plan=a` 거래가 적어 통계 모델(비슷한 사람들의 소비 비율) 기반. `reason`은 `history_not_ready` · `transaction_counts_unavailable` · `sparse_transactions` · `sufficient_transactions`. `ai`는 동의한 외부 AI가 실제로 금액을 다듬었으면 true. 예전 계산 엔진으로 만든 예산은 `recommendation` 자체가 null |
+| `split.cardReserved` | 정수 | 11/12. `fixed` 안에 든 **지난 카드값** — 예산을 만들 때 저장한 카드 선차감(그 카드사로 처음 예산을 만드는 주기의 첫 청구서 + 가입 전에 산 할부의 이번 회차). 없으면 0. `fixed`를 넘지 않으며 합계 식은 그대로(`fixed`에 이미 포함). 화면은 0보다 클 때만 고정비 줄과 나눠 보여 준다 |
 | `living` | 객체 / null | `{ "budget", "spent", "remaining" }` 이번 주기 생활비 · 쓴 돈 · 남은 돈(0 아래 안 내림). 쓴 돈은 **주기 시작일 ~ 오늘**(홈 · 채팅과 같은 기간, 11/3) 거래이며 예산 밖 카테고리(R-13) 지출은 뺀다 |
 | `overspend` | 객체 / null | 생활비를 넘게 썼을 때 여윳돈 충당 (플로우 4.7): `{ "over", "coveredBySpare", "spareRemaining", "shortfall" }` = 생활비 초과액 · 여윳돈으로 충당한 금액 · 남은 여윳돈 · 그래도 모자란 금액. 안 넘었으면 `over`·`coveredBySpare`·`shortfall` = 0, `spareRemaining` = 여윳돈 전체. 저축 · 쿠션에서는 가져오지 않는다 |
 | `categories` | 배열 | 배분 대상 카테고리 + 기타(R-13, 주거·통신 · 여행·숙박 없음), 화면 순서(`display_order`). 예산이 없으면 `[]`. 옛 정책 승인 예산에 두 카테고리 줄이 있어도 목록에 넣지 않는다 |
@@ -361,7 +363,7 @@
 {
   "cycle": { "startsOn": "2026-10-25", "endsBefore": "2026-11-25" },
   "budget": { "budgetId": "5c2a…", "versionNo": 1, "status": "validated", "salaryConfirmed": true, "engineVersion": "temp-fallback-targets-2" },
-  "split": { "funding": 2800000, "fixed": 770000, "saving": 610000, "cushion": 200000, "living": 1120000, "spare": 100000 },
+  "split": { "funding": 2800000, "fixed": 770000, "cardReserved": 0, "saving": 610000, "cushion": 200000, "living": 1120000, "spare": 100000 },
   "living": { "budget": 1120000, "spent": 0, "remaining": 1120000 },
   "overspend": { "over": 0, "coveredBySpare": 0, "spareRemaining": 100000, "shortfall": 0 },
   "categories": [

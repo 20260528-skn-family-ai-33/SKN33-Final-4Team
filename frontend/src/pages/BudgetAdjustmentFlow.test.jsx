@@ -607,9 +607,9 @@ it.each([
 })
 
 const consentState = { available: true, canRevoke: false, status: 'not_granted', documentVersion: 'v1', documentHash: 'hash',
-  document: { title: '외부 전송 동의', label: '[선택] 외부 전송 동의', sections: [] },
+  document: { title: '외부 전송 동의', label: '[필수] 외부 전송 동의', sections: [] },
   healthDocumentVersion: 'v1', healthDocumentHash: 'health-hash',
-  healthDocument: { title: '건강 요약 처리 동의', label: '[선택] 건강 요약 처리 동의', sections: [] } }
+  healthDocument: { title: '건강 요약 처리 동의', label: '[필수] 건강 요약 처리 동의', sections: [] } }
 const needConsent = () => Object.assign(new Error('예산 조정 AI 전송 동의를 먼저 확인해 주세요.'), { status: 403, code: 'budget_adjust_consent_required' })
 const consentCalls = () => apiSend.mock.calls.filter(([url]) => url === '/api/budgets/adjustment-ai-consent/')
 
@@ -649,7 +649,7 @@ it('동의 창을 닫으면 다시 보내지 않고 안내만 남기며 입력�
   })
   await mount()
   await submit('식비를 5만 원 늘려줘')
-  await click(button('취소', host.querySelector('[role="dialog"]')))
+  await click(button('닫기 ×', host.querySelector('[role="dialog"]')))
   expect(host.querySelector('[role="dialog"]')).toBeNull()
   expect(sentChat()).toHaveLength(1)
   expect(consentCalls().map(([, method]) => method)).toEqual(['GET'])

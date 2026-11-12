@@ -920,6 +920,7 @@
                       "split": {
                         "funding": 2800000,
                         "fixed": 770000,
+                        "cardReserved": 0,
                         "saving": 610000,
                         "cushion": 200000,
                         "living": 1120000,
@@ -1319,6 +1320,7 @@
                       "split": {
                         "funding": 2800000,
                         "fixed": 770000,
+                        "cardReserved": 0,
                         "saving": 610000,
                         "cushion": 200000,
                         "living": 1120000,
@@ -2831,6 +2833,7 @@
         "required": [
           "funding",
           "fixed",
+          "cardReserved",
           "saving",
           "cushion",
           "living",
@@ -2846,6 +2849,12 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "cardReserved": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "11/12. fixed 중 '지난 카드값'(카드사 첫 청구서 선차감 + 가입 전 할부의 이번 회차). 없으면 0. 화면은 0보다 크면 고정비 줄과 나눠 보여 준다"
           },
           "saving": {
             "type": "integer",

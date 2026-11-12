@@ -490,6 +490,8 @@ class DesignAPITest(TestCase):
             self.assertEqual(data['split']['living'], 600000)
             self.assertEqual(data['split']['spare'], 620000)
             self.assertEqual(data['recommendation']['spareTransfer'], 100000)
+            self.assertEqual(data['recommendation']['basis']['plan'], 'b')  # 11/12: 지난 3개월 소비로 짰다고 화면에 알린다
+            self.assertEqual(data['recommendation']['basis']['reason'], 'sufficient_transactions')
             self.assertNotIn('approvedBudget', self.client.get('/api/budgets/protect/').json())
             response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve')
         self.assertEqual(response.status_code, 200, response.content)

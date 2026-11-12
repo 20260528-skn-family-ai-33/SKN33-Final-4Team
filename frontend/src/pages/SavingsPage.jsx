@@ -112,8 +112,8 @@ function OnboardingView() {
       <div className="mc-eyebrow">저축 확인</div>
       <h1>{candidates.length ? '이 돈, 저축인가요?' : '매달 하는 저축이 있나요?'}</h1>
       {candidates.length > 0
-        ? <p className="mc-muted">최근 3개월 동안 내 다른 계좌로 매달 같은 금액을 보낸 기록을 찾았어요. 저축이면 그 금액만큼은 꼭 저축하도록 예산을 짜요.</p>
-        : <p className="mc-muted">매달 반복되는 내 계좌끼리 이체를 찾지 못했어요. 따로 하는 저축이 있으면 직접 추가하고, 없으면 계속하기를 눌러 주세요. 저축 금액은 지킬 돈 설정에서 정할 수 있어요.</p>}
+        ? <p className="mc-muted">매달 내 다른 계좌로 같은 금액을 보냈어요.<br />저축이 맞으면 이 금액은 꼭 떼어 둘게요.</p>
+        : <p className="mc-muted">매달 내 다른 계좌로 보낸 돈을 찾지 못했어요.<br />따로 하는 저축이 있으면 직접 추가해 주세요.</p>}
 
       {candidates.map((c) => (
         <div className="mc-card" key={c.savingId}>
