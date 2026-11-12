@@ -1262,3 +1262,9 @@
 #mc-new-preview .mc-pick-actions{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:14px}  /* 카테고리 격자 아래 [취소] [확인] (11/12) */
 #mc-new-preview#mc-new-preview .mc-pick-actions button{margin:0}
 #mc-new-preview#mc-new-preview h2+.mc-catgrid{margin-top:18px}  /* '카테고리 수정' 제목과 격자 사이 (11/12) */
+/* 월급 · 급여일 적용 시점 고르기 창 (11/12) */
+#mc-new-preview .mc-apply-choices{display:grid;gap:8px;margin-top:16px}
+#mc-new-preview#mc-new-preview .mc-apply-choices .mc-choice{margin:0;padding:14px 16px;background:var(--mc-bg);border:1px solid transparent}
+#mc-new-preview .mc-apply-choices .mc-choice strong{margin-bottom:3px;font-size:15px;color:var(--mc-ink)}
+#mc-new-preview .mc-apply-choices .mc-choice .mc-muted{display:block;font-size:12.5px;line-height:1.5;word-break:keep-all}
+#mc-new-preview .mc-my-pending{display:block;margin-top:2px;color:var(--mc-brand)}  /* 마이 월급 요약: 다음 주기부터 바뀔 값은 다음 줄 (11/12) */

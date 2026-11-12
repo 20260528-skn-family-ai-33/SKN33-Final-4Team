@@ -22,13 +22,20 @@ def current_salary_profile(user, today):
         profile.save(update_fields=["payday", "updated_at"])
         expire_salary_drafts(user)
         sync_salary_cycle(profile.user, profile, today)
+    # 11/12: 다음 주기부터 바꾸기로 한 실수령액. 주기 경계와 상관없어서 옮기고 예약 칸을 비운다
+    if profile and profile.income_changes_on and today >= profile.income_changes_on:
+        profile.monthly_take_home_income = profile.scheduled_take_home_income
+        profile.scheduled_take_home_income = profile.income_changes_on = None
+        profile.save(update_fields=["monthly_take_home_income", "scheduled_take_home_income", "income_changes_on", "updated_at"])
+        expire_salary_drafts(user)
     return profile
 
 
 def activate_salary_if_due(user, today):
     from .api import lock_user
 
-    pending = FinancialProfile.objects.filter(user=user, payday_changes_on__lte=today).exclude(payday=F("scheduled_payday"))
+    payday_due = Q(payday_changes_on__lte=today) & ~Q(payday=F("scheduled_payday"))
+    pending = FinancialProfile.objects.filter(user=user).filter(payday_due | Q(income_changes_on__lte=today))
     if pending.exists():
         with transaction.atomic():
             lock_user(user)

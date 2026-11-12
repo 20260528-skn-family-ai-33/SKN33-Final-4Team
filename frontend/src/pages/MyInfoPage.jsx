@@ -58,6 +58,7 @@ export default function MyInfoPage() {
       <InfoRow label="월 실수령액">{pay.takeHomeIncome == null ? unset : won(pay.takeHomeIncome)}</InfoRow>
       <InfoRow label="급여일">{pay.payday == null ? unset : `매월 ${paydayText(pay.payday)}`}</InfoRow>
       {pay.pendingPaydayChange && <InfoRow label="급여일 변경 예정">{pay.pendingPaydayChange.effectiveOn}부터 매월 {paydayText(pay.pendingPaydayChange.payday)}</InfoRow>}
+      {pay.pendingIncomeChange && <InfoRow label="실수령액 변경 예정">{pay.pendingIncomeChange.effectiveOn}부터 {won(pay.pendingIncomeChange.takeHomeIncome)}</InfoRow>}
     </section>
   </Layout>
 }

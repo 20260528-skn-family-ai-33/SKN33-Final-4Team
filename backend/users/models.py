@@ -119,6 +119,9 @@ class FinancialProfile(models.Model):
     payday_revision = models.PositiveIntegerField("급여일 변경 횟수", default=0)
     payday_changes_on = models.DateField("급여일 전환일", null=True, blank=True)
     payday_previous_start = models.DateField("전환 전 주기 시작일", null=True, blank=True)
+    # 2026-11-12: 월 실수령액도 '다음 주기부터' 적용할 수 있다. 전환일이 되면 monthly_take_home_income 으로 옮기고 둘 다 비운다
+    scheduled_take_home_income = models.BigIntegerField("다음 주기 실수령액", null=True, blank=True)
+    income_changes_on = models.DateField("실수령액 전환일", null=True, blank=True)
     payday_rule = models.CharField("급여일 보정 규칙", max_length=30, null=True, blank=True)
     budget_direction = models.CharField("예산 산정 방향", max_length=30, null=True, blank=True)
     # 지킬 돈 (지킬 돈 설정 화면 · 2026-10-21 A안): 생활비 · 저축 · 월 쿠션 적립금 세 칸 모두 사용자 설정값
@@ -148,6 +151,13 @@ class FinancialProfile(models.Model):
                         payday_previous_start__lt=models.F("payday_changes_on"))
                 ),
                 name="fp_payday_change_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(scheduled_take_home_income__isnull=True, income_changes_on__isnull=True)
+                    | Q(scheduled_take_home_income__gte=1, income_changes_on__isnull=False)
+                ),
+                name="fp_income_change_valid",
             ),
             models.CheckConstraint(
                 condition=Q(living_budget__isnull=True) | Q(living_budget__gte=0), name="fp_living_budget_gte_0",

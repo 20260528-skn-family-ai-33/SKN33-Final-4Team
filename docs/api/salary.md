@@ -13,7 +13,8 @@
 |---|---|---|
 | `takeHomeIncome` | 정수 | 필수, 1~9,999,999,999,999원. MoneyInput의 13자리 상한과 동일 |
 | `payday` | 정수 | 필수, 매월 1~31일 |
-| `paydayApplyFrom` | 문자열 | 첫 예산 승인 뒤 기존 급여일 변경 시 필수. `current_cycle` 이번 주기 / `next_cycle` 다음 주기. 승인 전(온보딩)에 생략하면 `current_cycle`로 처리 (11/12) |
+| `applyFrom` | 문자열 | 첫 예산 승인 뒤 기존 급여일 **또는 월 실수령액**을 바꿀 때 필수. `current_cycle` 이번 주기 / `next_cycle` 다음 주기. 한 번 고르면 이번 저장의 두 값에 함께 적용. 승인 전(온보딩)에 생략하면 `current_cycle`로 처리 (11/12) |
+| `paydayApplyFrom` | 문자열 | `applyFrom`의 예전 이름(같은 뜻). 둘 다 보내고 값이 다르면 400 `applyFrom` |
 
 숫자 문자열·소수·boolean·null은 받지 않는다. 미정의 필드도 400이다.
 주급·격주 지급, 휴일 보정, 세전 금액은 지원하지 않는다. 없는 날짜는 그 달 말일로 계산한다.
@@ -28,7 +29,7 @@ PUT은 두 필수 값을 모두 받는다. 같은 값으로 반복 요청해도 
 급여일 변경:
 
 ```json
-{"takeHomeIncome": 2800000, "payday": 10, "paydayApplyFrom": "next_cycle"}
+{"takeHomeIncome": 2800000, "payday": 10, "applyFrom": "next_cycle"}
 ```
 
 ## 적용 시점 (2026-10-28 결정)
@@ -39,9 +40,13 @@ PUT은 두 필수 값을 모두 받는다. 같은 값으로 반복 요청해도 
 - `current_cycle`: 새 급여일 기준으로 오늘이 속한 주기를 즉시 다시 계산한다.
 - `next_cycle`: **오늘보다 뒤에 오는 가장 가까운 새 급여일**에 전환한다. 현재 주기 시작일은 유지하고, 종료일을 전환일 전날로 바꾼다. 오늘이 새 급여일이면 다음 달 해당일에 전환한다.
 - 예: 10/28에 현재 10/25~11/24 주기의 급여일을 10일로 수정할 때, 이번 주기 선택은 10/10~11/9, 다음 주기 선택은 10/25~11/9를 거쳐 11/10부터 새 주기가 된다.
-- 월 실수령액은 저장 즉시 적용한다. 선택은 급여일에만 적용되며 미래 월급 금액 예약은 이번 범위에 없다.
+- **월 실수령액 (2026-11-12 변경)**: 급여일과 같은 선택을 따른다. 예전에는 저장 즉시 적용했다.
+  - `current_cycle`: 바로 바꾸고, 있던 실수령액 예약은 지운다.
+  - `next_cycle`: **다음 주기 시작일**(지금 주기 끝 다음 날 = 급여일 예약이 있으면 그 전환일)에 바꾼다. 그 전까지 `takeHomeIncome`은 지금 금액이고 `pendingIncomeChange`로 예약을 알려 준다. 같은 금액으로 다시 보내면 예약만 다시 맞춘다.
+  - 예약 중 지금 금액을 보내고 선택도 보내면 예약을 취소한다. 선택 없이 보내면(예전 화면) 예약을 유지한다.
+  - 전환일이 되면 `current_salary_profile`이 실수령액을 옮기고 예약 칸을 비운다(`scheduled_take_home_income` · `income_changes_on`). 급여일과 달리 지난 주기 계산에 필요 없어 기록을 남기지 않는다.
 - 예약 중 같은 새 급여일과 `next_cycle`을 재전송해도 전환일을 뒤로 미루지 않는다.
-- 예약 중 현재 급여일을 보내고 선택을 생략하면 예약을 유지한다(금액만 수정 가능). 현재 급여일과 `current_cycle`을 보내면 예약을 취소한다. 다른 날을 선택하면 예약을 교체한다.
+- 예약 중 현재 급여일을 보내고 선택을 생략하면 예약을 유지한다. 현재 급여일과 선택(`current_cycle` · `next_cycle`)을 보내면 예약을 취소한다(11/12: 예전에는 `current_cycle`만). 다른 날을 선택하면 예약을 교체한다.
 - 전환일 이후 급여 GET·PUT, 홈, 활성 주기를 읽는 고정지출·저축 API, 대출 납부 예정 저장에서 예약을 반영한다. 별도 스케줄러는 필요 없다. 첫 전환 주기의 이전 주기를 알 수 있도록 전환 정보는 DB에 보존한다.
 - 지킬 돈·추천·카테고리 잠금·승인·예산 조회는 회원 잠금 뒤 `current_salary_profile(user, today)`로 예약을 반영한 프로필을 읽고, 주기 날짜는 `salary_cycle_dates(profile, today)`로 계산한다. 별도 호출부에서 예약 적용만 필요하면 `activate_salary_if_due(user, today)`를 사용한다. 일반 `cycle_dates`만 쓰면 전환 중인 주기의 경계를 놓칠 수 있다.
 
@@ -53,12 +58,13 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 {
   "takeHomeIncome": 2800000,
   "payday": 25,
-  "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"}
+  "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"},
+  "pendingIncomeChange": {"takeHomeIncome": 3000000, "effectiveOn": "2026-11-10"}
 }
 ```
 
-전환 이후에는 `payday: 10`, `pendingPaydayChange: null`이다.
-미등록 GET은 `{"takeHomeIncome": null, "payday": null, "pendingPaydayChange": null}`이며 프로필을 만들지 않는다.
+전환 이후에는 `payday: 10`, `pendingPaydayChange: null`이다. 실수령액도 전환일 이후 `takeHomeIncome: 3000000`, `pendingIncomeChange: null`이다.
+미등록 GET은 `{"takeHomeIncome": null, "payday": null, "pendingPaydayChange": null, "pendingIncomeChange": null}`이며 프로필을 만들지 않는다.
 
 ## 저장과 연동
 

@@ -55,7 +55,7 @@ const input = (name, value) => act(() => {
 
 it('실제 요약·급여일 예약을 표시하고 미설정과 0원을 구분한다', async () => {
   await render()
-  for (const value of ['3,120,000원', '매월 15일', '2026-12-20부터 20일', '3건 · 714,000원', '0건 · 0원', '저축 미설정', '은행 1곳 · 계좌 4개 · 카드 2장']) expect(host.textContent).toContain(value)
+  for (const value of ['3,120,000원', '매월 15일', '12월 20일부터 매월 20일', '3건 · 714,000원', '0건 · 0원', '저축 미설정', '은행 1곳 · 계좌 4개 · 카드 2장']) expect(host.textContent).toContain(value)
   expect(host.textContent).not.toContain('쿠션 0원')  // 11/9: 지킬 돈 요약은 생활비 · 저축만
   expect(host.textContent).not.toContain('962,000원')
 })

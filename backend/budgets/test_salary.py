@@ -152,7 +152,8 @@ class SalaryTests(TestCase):
         self.put(payload())
         budget = self.make_budget(status="approved")  # 첫 예산을 승인한 뒤에만 적용 시점을 묻는다 (11/12)
         Budget.objects.filter(pk=budget.pk).update(approved_at=datetime(2026, 10, 25, tzinfo=dt_timezone.utc))
-        self.assert_invalid(payload(takeHomeIncome=3_000_000, payday=10), "paydayApplyFrom")
+        self.assert_invalid(payload(takeHomeIncome=3_000_000, payday=10), "applyFrom")
+        self.assert_invalid(payload(takeHomeIncome=3_000_000), "applyFrom")  # 실수령액만 바꿔도 묻는다 (11/12)
         saved = FinancialProfile.objects.get(user=self.user)
         self.assertEqual((saved.monthly_take_home_income, saved.payday), (2_800_000, 25))
 
@@ -162,7 +163,8 @@ class SalaryTests(TestCase):
         self.make_budget(status="draft")
         response = self.put(payload(takeHomeIncome=3_000_000, payday=10))
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(response.json(), {"takeHomeIncome": 3_000_000, "payday": 10, "pendingPaydayChange": None})
+        self.assertEqual(response.json(), {"takeHomeIncome": 3_000_000, "payday": 10, "pendingPaydayChange": None,
+                                           "pendingIncomeChange": None})
 
     def test_first_registration_cannot_be_delayed(self):
         self.assert_invalid(payload(paydayApplyFrom="next_cycle"), "paydayApplyFrom")
@@ -190,7 +192,7 @@ class SalaryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {
             "takeHomeIncome": 2_800_000, "payday": 25,
-            "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"},
+            "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"}, "pendingIncomeChange": None,
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual(cycle.ends_before, date(2026, 11, 10))
@@ -372,6 +374,58 @@ class SalaryTests(TestCase):
         response = self.put(payload(paydayApplyFrom="current_cycle"))
         self.assertIsNone(response.json()["pendingPaydayChange"])
         self.assertEqual(self.home_period()["endDate"], "2026-11-24")
+
+    # ---- 11/12: 월 실수령액도 이번 주기부터 / 다음 주기부터 ----
+    def approve_first_budget(self):
+        budget = self.make_budget(status="approved")
+        Budget.objects.filter(pk=budget.pk).update(approved_at=datetime(2026, 10, 25, tzinfo=dt_timezone.utc))
+
+    def test_income_next_cycle_waits_until_next_cycle_start(self):
+        self.put(payload())
+        self.approve_first_budget()
+        response = self.put(payload(takeHomeIncome=3_000_000, applyFrom="next_cycle"))
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {"takeHomeIncome": 2_800_000, "payday": 25, "pendingPaydayChange": None,
+                                           "pendingIncomeChange": {"takeHomeIncome": 3_000_000, "effectiveOn": "2026-11-25"}})
+        self.today.return_value = date(2026, 11, 24)
+        self.assertEqual(self.client.get(URL).json()["takeHomeIncome"], 2_800_000)
+        self.today.return_value = date(2026, 11, 25)
+        body = self.client.get(URL).json()
+        self.assertEqual((body["takeHomeIncome"], body["pendingIncomeChange"]), (3_000_000, None))
+        saved = FinancialProfile.objects.get(user=self.user)
+        self.assertEqual((saved.scheduled_take_home_income, saved.income_changes_on), (None, None))
+
+    def test_income_current_cycle_applies_now_and_cancels_schedule(self):
+        self.put(payload())
+        self.approve_first_budget()
+        self.put(payload(takeHomeIncome=3_000_000, applyFrom="next_cycle"))
+        response = self.put(payload(takeHomeIncome=3_200_000, applyFrom="current_cycle"))
+        self.assertEqual((response.json()["takeHomeIncome"], response.json()["pendingIncomeChange"]), (3_200_000, None))
+
+    def test_income_back_to_current_amount_cancels_schedule(self):
+        self.put(payload())
+        self.approve_first_budget()
+        self.put(payload(takeHomeIncome=3_000_000, applyFrom="next_cycle"))
+        response = self.put(payload(applyFrom="next_cycle"))  # 지금 금액(2,800,000)으로 되돌림
+        self.assertIsNone(response.json()["pendingIncomeChange"])
+        # 시점 없이 같은 값을 보내는 예전 화면은 예약을 지우지 않는다
+        self.put(payload(takeHomeIncome=3_000_000, applyFrom="next_cycle"))
+        self.assertIsNotNone(self.put(payload()).json()["pendingIncomeChange"])
+
+    def test_income_follows_scheduled_payday_transition(self):
+        # 급여일도 다음 주기부터 바꾸면 실수령액도 그 전환일(새 주기 시작일)에 바뀐다
+        self.put(payload())
+        self.approve_first_budget()
+        response = self.put(payload(takeHomeIncome=3_000_000, payday=10, applyFrom="next_cycle"))
+        self.assertEqual(response.json()["pendingPaydayChange"]["effectiveOn"], "2026-11-10")
+        self.assertEqual(response.json()["pendingIncomeChange"]["effectiveOn"], "2026-11-10")
+
+    def test_old_and_new_choice_names_must_agree(self):
+        self.put(payload())
+        self.approve_first_budget()
+        self.assert_invalid(payload(payday=10, applyFrom="next_cycle", paydayApplyFrom="current_cycle"), "applyFrom")
+        response = self.put(payload(payday=10, paydayApplyFrom="next_cycle"))  # 예전 이름도 그대로 받는다
+        self.assertEqual(response.json()["pendingPaydayChange"]["payday"], 10)
 
     def make_budget(self, user=None, status="draft", version=1):
         user = user or self.user

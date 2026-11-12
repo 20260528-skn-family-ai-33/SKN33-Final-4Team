@@ -1,7 +1,8 @@
 // 월급 설정 — 급여는 매달만 지원 (2026-10-19 결정, 주급은 MVP에서 제외)
 // GET · PUT /api/budgets/salary/ (docs/api/salary.md). 저장에 성공해야 다음 화면으로 간다 (11/03 S1)
 // 마이에서 들어오면(location.state.from === 'my') 단계 표시줄 없이 저장 뒤 마이로 돌아간다
-// 이미 등록한 급여일을 바꾸면 이번 주기부터 / 다음 주기부터 중 하나를 꼭 고른다 (paydayApplyFrom, 10/28 결정)
+// 이미 등록한 급여일 · 월 실수령액을 바꾸고 [저장]을 누르면 가운데 창에서 이번 주기부터 / 다음 주기부터를 고른다 (applyFrom, 11/12)
+//   이번 주기부터 → 지킬 돈 화면으로 (바뀐 월급으로 이번 예산을 다시 정한다) · 다음 주기부터 → 마이(또는 홈)로 + 토스트
 //   단 첫 예산 승인 전(온보딩)에는 묻지 않고 바로 적용한다 — 서버도 생략하면 current_cycle 로 처리 (11/12 피드백)
 // 11/12 피드백: 월 실수령액은 기본 만원 단위로 받고(285 → 2,850,000원), 칸 안 [만원|원] 전환으로 원 단위로도 정확히 받는다
 //   상태(income)는 늘 원 단위 숫자 문자열 — 서버에 보내는 값은 그대로. 저장된 금액이 만원으로 안 떨어지면 원 단위로 연다
@@ -15,11 +16,31 @@ import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
+import Popup from '../popups/Popup.jsx'
+import { usePopup } from '../popups/context.js'
+import { toast } from '../utils/toast.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { LAST_DAY, paydayText } from '../utils/days.js'
+import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
-const APPLY = [['current_cycle', '이번 주기부터'], ['next_cycle', '다음 주기부터']]
+// 적용 시점 고르기 (가운데 창). 고르면 바로 저장한다
+const APPLY = [
+  ['current_cycle', '이번 주기부터', '지킬 돈과 이번 예산을 바로 다시 정해요'],
+  ['next_cycle', '다음 주기부터', '지금 예산은 그대로 두고 다음 급여일부터 바뀌어요'],
+]
+function ApplyPopup({ onPick }) {
+  return (
+    <Popup label="적용 시점 고르기" dialog>
+      <h2>언제부터 적용할까요?</h2>
+      <div className="mc-apply-choices">
+        {APPLY.map(([k, label, sub]) => (
+          <button key={k} type="button" className="mc-choice" onClick={() => onPick(k)}><strong>{label}</strong><span className="mc-muted">{sub}</span></button>
+        ))}
+      </div>
+    </Popup>
+  )
+}
 const MAN = 10000
 const MAN_DIGITS = 9  // 만원 칸은 9자리(9,999억 원)까지
 const dayDigits = (s) => s.replace(/\D/g, '').replace(/^0+/, '').slice(0, 2)  // 숫자만, 앞 0 빼고 2자리까지
@@ -35,9 +56,12 @@ export default function SalaryPage() {
 function SalaryForm({ saved }) {
   const navigate = useNavigate()
   const manage = useLocation().state?.from === 'my'
+  const { openPopup, closePopup } = usePopup()
   const pending = saved.pendingPaydayChange  // { payday, effectiveOn } | null
-  const [income, setIncome] = useState(saved.takeHomeIncome == null ? '' : String(saved.takeHomeIncome))  // 원 단위
-  const [unit, setUnit] = useState(saved.takeHomeIncome % MAN ? 'won' : 'man')  // 'man' = 만원 · 'won' = 원 (null % MAN 은 0)
+  const pendingIncome = saved.pendingIncomeChange  // { takeHomeIncome, effectiveOn } | null (11/12)
+  const shownIncome = pendingIncome?.takeHomeIncome ?? saved.takeHomeIncome  // 예약이 있으면 바뀔 값을 보여 준다
+  const [income, setIncome] = useState(shownIncome == null ? '' : String(shownIncome))  // 원 단위
+  const [unit, setUnit] = useState(shownIncome % MAN ? 'won' : 'man')  // 'man' = 만원 · 'won' = 원 (null % MAN 은 0)
   const man = unit === 'man'
   const onMan = (d) => { const v = d.slice(0, MAN_DIGITS); setIncome(v === '' ? '' : String(Number(v) * MAN)) }
   const switchUnit = () => setUnit(man ? 'won' : 'man')  // 금액(원)은 그대로, 보여 주는 단위만 바꾼다
@@ -47,11 +71,36 @@ function SalaryForm({ saved }) {
   const dayBad = payday !== '' && !dayOk(payday)  // 입력했는데 1~31 이 아님 → 칸 아래에 바로 안내
   // [말일] = 급여일 31 로 보내고 칸은 잠근다. 저장된 31 은 말일로 연다 (직접 31 을 치면 숫자 그대로 두고 아래 안내만)
   const [lastDay, setLastDay] = useState(() => (pending?.payday ?? saved.payday) === LAST_DAY)
-  const [applyFrom, setApplyFrom] = useState(pending ? 'next_cycle' : null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  // 처음 등록이면 바로 적용. 이미 등록한 급여일과 다르면 적용 시점을 묻는다
-  const changing = budgetStarted && saved.payday != null && dayOk(payday) && Number(payday) !== saved.payday
+  // 처음 등록이면 바로 적용. 첫 예산을 승인한 뒤 화면을 열 때 값(예약이 있으면 예약 값)에서 바꿨으면 적용 시점을 묻는다
+  const edited = Number(income) !== shownIncome || Number(payday) !== (pending?.payday ?? saved.payday)
+  const asks = budgetStarted && saved.payday != null && edited
+
+  // applyFrom: 창에서 고른 값. 안 물었는데 예약이 있으면 next_cycle 로 보내 예약을 그대로 둔다
+  const save = async (applyFrom) => {
+    setBusy(true)
+    setError('')
+    try {
+      await apiSend('/api/budgets/salary/', 'PUT', {
+        takeHomeIncome: Number(income),
+        payday: Number(payday),
+        ...(applyFrom ? { applyFrom } : {}),
+      })
+      if (asks && applyFrom === 'current_cycle') {
+        toast('이번 주기부터 바꿨어요')
+        navigate(PATHS.protect, { replace: true, state: { from: 'my', refreshRecommendation: true } })
+      } else if (asks) {
+        toast('다음 주기부터 바뀌어요')
+        navigate(manage ? PATHS.my : PATHS.home, { replace: true })
+      } else if (manage) navigate(PATHS.my, { replace: true, state: { budgetNote: true } })
+      else navigate(PATHS.fixed)
+    } catch (err) {
+      const first = Object.values(err.fields ?? {}).flat().find((m) => typeof m === 'string')
+      setError(first ?? err.message)
+      setBusy(false)
+    }
+  }
 
   const onSubmit = async (e) => {
     e.preventDefault()
@@ -60,22 +109,8 @@ function SalaryForm({ saved }) {
     if (!income || amount < 1) { setError('월 실수령액을 입력해 주세요.'); return }
     if (payday === '') { setError('급여일을 입력해 주세요.'); return }
     if (dayBad) { setError('급여일은 1~31 중에서 입력해 주세요.'); return }
-    if (changing && !applyFrom) { setError('이번 주기부터인지 다음 주기부터인지 골라 주세요.'); return }
-    setBusy(true)
-    setError('')
-    try {
-      await apiSend('/api/budgets/salary/', 'PUT', {
-        takeHomeIncome: amount,
-        payday: Number(payday),
-        ...(changing ? { paydayApplyFrom: applyFrom } : {}),
-      })
-      if (manage) navigate(PATHS.my, { replace: true, state: { budgetNote: true } })
-      else navigate(PATHS.fixed)
-    } catch (err) {
-      const first = Object.values(err.fields ?? {}).flat().find((m) => typeof m === 'string')
-      setError(first ?? err.message)
-      setBusy(false)
-    }
+    if (asks) openPopup(<ApplyPopup onPick={(k) => { closePopup(); save(k) }} />)
+    else save(pending || pendingIncome ? 'next_cycle' : undefined)
   }
 
   return (
@@ -123,15 +158,10 @@ function SalaryForm({ saved }) {
             {pending.effectiveOn.slice(5).replace('-', '월 ')}일부터 급여일이 매월 {paydayText(pending.payday)}로 바뀌어요. 지금은 매월 {paydayText(saved.payday)} 기준이에요.
           </p>
         )}
-        {changing && (
-          <div className="mc-card">
-            <h2>바뀐 급여일은 언제부터 적용할까요?</h2>
-            <div className="mc-seg">
-              {APPLY.map(([k, label]) => (
-                <button key={k} type="button" aria-pressed={applyFrom === k} onClick={() => setApplyFrom(k)}>{label}</button>
-              ))}
-            </div>
-          </div>
+        {pendingIncome && (
+          <p className="mc-note">
+            {pendingIncome.effectiveOn.slice(5).replace('-', '월 ')}일부터 월 실수령액이 {won(pendingIncome.takeHomeIncome)}으로 바뀌어요. 지금은 {won(saved.takeHomeIncome)} 기준이에요.
+          </p>
         )}
         <div className="mc-error" role="alert">{error}</div>
       </form>

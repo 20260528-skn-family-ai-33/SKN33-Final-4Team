@@ -260,6 +260,12 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 `salary_decision`에 nullable `snapshot_amount`(bigint), `snapshot_occurred_on`(date), `snapshot_description`(varchar 500), `snapshot_account_id`(UUID, 당시 계좌 값이므로 FK 아님)를 추가한다. 사용자 확인 시에만 원거래 값을 저장한다. 금액·거래일·적요 원문·계좌 UUID가 달라지거나 기준값이 없으면 `recheck`로 전환하고 `is_pattern`을 해제한다. 변경 없는 확정은 유지한다. 재확인 전까지 인정 합계에서 제외하며 과거 기준값과 `decided_at`은 보존한다.
 
 기존 확정 기록에는 기준값을 채우지 않는다. 데이터 마이그레이션은 기존 `confirmed`를 `recheck`로 바꾸고 자동 인식 기준과 영향 회차의 `confirmed_income` 캐시를 비운다. 개발/운영 DB 적용은 별도이며, 회귀 테스트는 전용 테스트 DB에서 수행한다. 상세 조회 계약은 [api/salary.md](api/salary.md)의 '사용자 확정 유효성' 참고.
+## 2026-11-12: 월 실수령액 '다음 주기부터' 적용 (users/0014)
+
+- `financial_profile.scheduled_take_home_income`(다음 주기 실수령액) · `income_changes_on`(실수령액 전환일) 추가. 둘 다 비었거나 둘 다 있어야 한다(`fp_income_change_valid`, 금액 ≥ 1).
+- 이유: 베타 피드백 — 급여일은 이번/다음 주기를 고를 수 있는데 실수령액은 저장 즉시 바뀌었다. 이제 저장할 때 둘을 함께 이번 주기부터 / 다음 주기부터 중에 고른다.
+- 전환일(다음 주기 시작일)이 되면 `budgets.salary.current_salary_profile` 이 `monthly_take_home_income` 으로 옮기고 두 칸을 비운다. 급여일 예약(`scheduled_payday` …)과 달리 기록을 남기지 않는다 — 금액은 주기 경계를 바꾸지 않아서 지난 주기 계산에 필요 없다.
+
 ## 2026-11-11: 사는 지역을 회원 정보로 (users/0013_financialprofile_region_code · policies/0004_move_policy_profile_region)
 
 - `financial_profile.region_code` (varchar 10, NULL=미응답): 사는 지역 시군구 코드(`policies/data/regions.json` 의 final). 온보딩 내 정보에서 필수로 받고(`PUT /api/profile/`), 청년 정책을 찾는 기본 지역으로 쓴다 (멘토 요청).

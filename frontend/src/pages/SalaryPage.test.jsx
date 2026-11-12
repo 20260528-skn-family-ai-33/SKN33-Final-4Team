@@ -5,11 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import SalaryPage from './SalaryPage.jsx'
 import { apiSend, useApi } from '../utils/api.js'
 
-const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }))
+const { navigate, openPopup, closePopup, toast } = vi.hoisted(() => ({ navigate: vi.fn(), openPopup: vi.fn(), closePopup: vi.fn(), toast: vi.fn() }))
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), useApi: vi.fn() }))
 vi.mock('react-router', () => ({ useNavigate: () => navigate, useLocation: () => ({ state: null }) }))
 vi.mock('../components/Layout.jsx', () => ({ default: ({ children, foot }) => <div>{children}{foot}</div> }))
 vi.mock('../components/StepBar.jsx', () => ({ default: () => null }))
+vi.mock('../popups/context.js', () => ({ usePopup: () => ({ openPopup, closePopup }) }))
+vi.mock('../utils/toast.js', () => ({ toast }))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host, root
@@ -26,7 +28,7 @@ afterEach(async () => {
 })
 
 const render = (saved, me = { userId: 'u1', onboardingCompleted: false }) => {
-  const salary = { takeHomeIncome: null, payday: null, pendingPaydayChange: null, ...saved }
+  const salary = { takeHomeIncome: null, payday: null, pendingPaydayChange: null, pendingIncomeChange: null, ...saved }
   useApi.mockImplementation((path) => ({ data: path === '/api/auth/me/' ? me : salary, error: null }))
   return act(() => root.render(<SalaryPage />))
 }
@@ -90,12 +92,58 @@ it('급여일은 숫자로 입력 · 1~31 이 아니면 칸 아래에 알려 주
   expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 2500000, payday: 31 })
 })
 
-it('첫 예산 승인 뒤 저장된 급여일을 바꾸면 적용 시점을 묻는다', async () => {
-  await render({ takeHomeIncome: 2500000, payday: 25 }, { userId: 'u1', onboardingCompleted: true })
+// 가운데 창(openPopup 에 넘긴 것)을 따로 그려서 버튼을 누른다
+let popupHost, popupRoot
+const openedPopup = async () => {
+  popupHost = document.createElement('div'); document.body.append(popupHost); popupRoot = createRoot(popupHost)
+  await act(() => popupRoot.render(openPopup.mock.calls.at(-1)[0]))
+  return popupHost
+}
+const pickApply = async (label) => {
+  const box = await openedPopup()
+  await act(async () => [...box.querySelectorAll('button')].find((b) => b.textContent.startsWith(label)).click())
+  await act(() => popupRoot.unmount()); popupHost.remove()
+}
+const STARTED = { userId: 'u1', onboardingCompleted: true }
+
+it('첫 예산 승인 뒤 급여일을 바꾸고 저장하면 가운데 창으로 적용 시점을 묻는다 (11/12)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25 }, STARTED)
   expect(day().value).toBe('25')
-  expect(host.textContent).not.toContain('언제부터 적용할까요')
   await pickDay('10')
-  expect(host.textContent).toContain('언제부터 적용할까요')
+  expect(host.textContent).not.toContain('언제부터 적용할까요')  // 화면에는 묻는 칸이 없다
+  await submit()
+  expect(apiSend).not.toHaveBeenCalled()
+  expect((await openedPopup()).textContent).toContain('언제부터 적용할까요?')
+  await act(() => popupRoot.unmount()); popupHost.remove()
+})
+
+it('실수령액만 바꿔도 묻고, 다음 주기부터를 고르면 저장 뒤 토스트와 함께 돌아간다 (11/12)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25 }, STARTED)
+  await type('300')
+  await submit()
+  await pickApply('다음 주기부터')
+  expect(closePopup).toHaveBeenCalled()
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, applyFrom: 'next_cycle' })
+  expect(toast).toHaveBeenCalledWith('다음 주기부터 바뀌어요')
+  expect(navigate).toHaveBeenCalledWith('/', { replace: true })
+})
+
+it('이번 주기부터를 고르면 지킬 돈 화면으로 간다 (11/12)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25 }, STARTED)
+  await type('300')
+  await submit()
+  await pickApply('이번 주기부터')
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, applyFrom: 'current_cycle' })
+  expect(navigate).toHaveBeenCalledWith('/budgets/protect', { replace: true, state: { from: 'my', refreshRecommendation: true } })
+})
+
+it('바꾼 게 없으면 묻지 않고, 예약이 있으면 예약 값을 보여 주고 그대로 둔다 (11/12)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25, pendingIncomeChange: { takeHomeIncome: 3000000, effectiveOn: '2026-11-25' } }, STARTED)
+  expect(field().value).toBe('300')
+  expect(host.textContent).toContain('11월 25일부터 월 실수령액이 3,000,000원으로 바뀌어요')
+  await submit()
+  expect(openPopup).not.toHaveBeenCalled()
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, applyFrom: 'next_cycle' })
 })
 
 it('온보딩(첫 예산 승인 전)에는 급여일을 바꿔도 적용 시점을 묻지 않고 그대로 보낸다', async () => {

@@ -9092,6 +9092,7 @@ components:
           - takeHomeIncome
           - payday
           - pendingPaydayChange
+          - pendingIncomeChange
           properties:
             takeHomeIncome:
               type: integer
@@ -9117,6 +9118,21 @@ components:
                   format: date
               additionalProperties: false
               nullable: true
+            pendingIncomeChange:
+              type: object
+              required:
+              - takeHomeIncome
+              - effectiveOn
+              properties:
+                takeHomeIncome:
+                  type: integer
+                  minimum: 1
+                effectiveOn:
+                  type: string
+                  format: date
+              nullable: true
+              description: 다음 주기부터 바뀔 월 실수령액 예약 (11/12). 없으면 null
+              additionalProperties: false
           additionalProperties: false
         fixed:
           type: object
@@ -14736,4 +14752,4 @@ x-source-sha256:
   docs/api/savings.md: 93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223
   docs/api/home.md: a9645dbe952aa3ea2ebb713b00c13ed36ddb5492d7883aa7c78b6d43b6873334
   docs/api/chat.md: e2f285d35fbda895d51533778d80eb31453061e213a3813cef6a94136053ff8e
-  docs/api/budgets.md: 36f7fdec4befb31783ce29399662045cde3c5e31afa4fa83a58d9fc2a84b0beb
+  docs/api/budgets.md: 8e364947e97fefa631778a3bc51fa70f3af56be4e28473d3b81f13a1420e1477

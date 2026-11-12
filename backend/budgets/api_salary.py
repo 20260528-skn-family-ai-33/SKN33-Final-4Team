@@ -19,13 +19,16 @@ from .salary_serializers import SalarySerializer
 
 
 def salary_data(profile, today):
-    pending = None
+    pending = income_pending = None
     if profile and profile.payday_changes_on and today < profile.payday_changes_on:
         pending = {"payday": profile.scheduled_payday, "effective_on": profile.payday_changes_on}
+    if profile and profile.income_changes_on and today < profile.income_changes_on:
+        income_pending = {"take_home_income": profile.scheduled_take_home_income, "effective_on": profile.income_changes_on}
     return {
         "take_home_income": profile.monthly_take_home_income if profile else None,
         "payday": profile.payday if profile else None,
         "pending_payday_change": pending,
+        "pending_income_change": income_pending,  # 11/12: 다음 주기부터 바뀔 실수령액
     }
 
 
@@ -49,20 +52,29 @@ def salary(request):
 def save_salary(user, profile, data, today):
     profile = profile or FinancialProfile(user=user)
     original = {field.name: getattr(profile, field.name) for field in profile._meta.fields}
-    payday = data["payday"]
-    apply_from = data.get("payday_apply_from")
+    payday, income = data["payday"], data["take_home_income"]
+    apply_from, key = data.get("apply_from"), data.get("apply_key", "apply_from")
     pending = profile.payday_changes_on is not None and today < profile.payday_changes_on
+    income_pending = profile.income_changes_on is not None  # 전환일이 지난 예약은 current_salary_profile 이 이미 옮겼다
+    started = None  # 첫 예산을 승인했는지 — 필요할 때만 한 번 센다
+
+    def choice():
+        """바뀐 값의 적용 시점. 첫 예산 승인 전(온보딩)에는 지키는 예산 주기가 없으니 묻지 않고 바로 바꾼다 (11/12 피드백)"""
+        nonlocal started
+        if apply_from is not None:
+            return apply_from
+        if started is None:
+            started = Budget.objects.filter(user=user, approved_at__isnull=False).exists()
+        if started:
+            raise ValidationError({key: ["이번 주기부터인지 다음 주기부터인지 선택해 주세요."]})
+        return "current_cycle"
+
     if profile.payday is None:
         if apply_from == "next_cycle":
-            raise ValidationError({"payday_apply_from": ["첫 급여일은 바로 적용해 주세요."]})
+            raise ValidationError({key: ["첫 급여일은 바로 적용해 주세요."]})
         profile.payday = payday
     elif payday != profile.payday:
-        if apply_from is None and not Budget.objects.filter(user=user, approved_at__isnull=False).exists():
-            # 첫 예산 승인 전(온보딩)에는 지키는 예산 주기가 없으니 묻지 않고 바로 바꾼다 (11/12 피드백)
-            apply_from = "current_cycle"
-        if apply_from is None:
-            raise ValidationError({"payday_apply_from": ["이번 주기부터인지 다음 주기부터인지 선택해 주세요."]})
-        if apply_from == "next_cycle":
+        if choice() == "next_cycle":
             if not (pending and profile.scheduled_payday == payday):
                 start = salary_cycle_dates(profile, today)[0]
                 profile.scheduled_payday = payday
@@ -71,10 +83,24 @@ def save_salary(user, profile, data, today):
         else:
             profile.payday = payday
             profile.scheduled_payday = profile.payday_changes_on = profile.payday_previous_start = None
-    elif pending and apply_from == "current_cycle":
+    elif pending and apply_from is not None:
+        # 지금 급여일로 되돌리고 시점을 골랐다 → 예약 취소 (시점 없이 보낸 예전 화면은 예약을 그대로 둔다)
         profile.scheduled_payday = profile.payday_changes_on = profile.payday_previous_start = None
 
-    profile.monthly_take_home_income = data["take_home_income"]
+    # 월 실수령액 (11/12): 급여일과 같은 선택으로 이번 주기부터 / 다음 주기부터
+    if profile.monthly_take_home_income is None:
+        profile.monthly_take_home_income = income  # 처음 등록은 바로
+    elif income != profile.monthly_take_home_income:
+        if choice() == "next_cycle":
+            # 다음 주기 시작일 = 지금 주기 끝(급여일 예약이 있으면 그 전환일). 위에서 급여일을 바꾼 뒤에 센다
+            profile.scheduled_take_home_income = income
+            profile.income_changes_on = salary_cycle_dates(profile, today)[1]
+        else:
+            profile.monthly_take_home_income = income
+            profile.scheduled_take_home_income = profile.income_changes_on = None
+    elif income_pending and apply_from is not None:
+        # 지금 금액으로 되돌리고 시점을 골랐다 → 예약 취소
+        profile.scheduled_take_home_income = profile.income_changes_on = None
     changed = [name for name, value in original.items() if getattr(profile, name) != value]
     if original["payday"] is not None and any(name in changed for name in (
         "payday", "scheduled_payday", "payday_changes_on", "payday_previous_start",

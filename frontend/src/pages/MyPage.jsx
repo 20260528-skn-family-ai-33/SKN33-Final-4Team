@@ -24,11 +24,21 @@ const MENU = [
   { icon: 'Link', name: '연결 관리', summary: 'connections', to: PATHS.connections },
 ]
 
+// '2026-11-25' → '11월 25일'
+const monthDay = (iso) => `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일`
+
 function summaryText(key, data) {
   const item = data[key]
   if (key === 'salary') {
     const current = `${item.takeHomeIncome == null ? '월급 미설정' : `월 ${won(item.takeHomeIncome)}`} · ${item.payday == null ? '급여일 미설정' : `매월 ${paydayText(item.payday)}`}`
-    return current + (item.pendingPaydayChange ? ` · ${item.pendingPaydayChange.effectiveOn}부터 ${paydayText(item.pendingPaydayChange.payday)}` : '')
+    // 다음 주기부터 바뀔 값은 줄을 바꿔 따로 (11/12). 날짜가 같으면 한 줄로: '11월 10일부터 매월 10일 · 월 3,000,000원'
+    const pay = item.pendingPaydayChange, income = item.pendingIncomeChange
+    const changes = {}
+    if (pay) (changes[pay.effectiveOn] ??= []).push(`매월 ${paydayText(pay.payday)}`)
+    if (income) (changes[income.effectiveOn] ??= []).push(`월 ${won(income.takeHomeIncome)}`)
+    const dates = Object.keys(changes).sort()
+    if (!dates.length) return current
+    return <>{current}{dates.map((d) => <span key={d} className="mc-my-pending">{monthDay(d)}부터 {changes[d].join(' · ')}</span>)}</>
   }
   if (key === 'fixed' || key === 'savings') return `${item.count}건 · ${won(item.monthlyTotal)}`
   // 11/9: 한 줄이 길어 쿠션은 빼고 생활비 · 저축만 (쿠션은 지킬 돈 화면에서)

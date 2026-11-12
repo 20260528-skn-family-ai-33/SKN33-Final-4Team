@@ -28,7 +28,7 @@ export default function BudgetAIConsent({ onChange }) {
     }), [])
   useEffect(() => { load() }, [load])
   const changed = useRef(onChange)
-  changed.current = onChange
+  useEffect(() => { changed.current = onChange })
   useEffect(() => { if (data) changed.current?.(data) }, [data])
   const save = async () => {
     if (working.current || !data) return
