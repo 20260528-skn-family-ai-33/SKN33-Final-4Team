@@ -5,17 +5,21 @@
 - 여기서는 시작 · 되묻기 · 미지원 · 전환 · 보류 · 취소 · 실패 문구만 [사유] + [질문 줄기] + [선택지] 로 조합한다 (MEMO 4번 원칙).
   카테고리 이름 · 선택지는 자리에 넣고, 카테고리 · 문장마다 따로 만들지 않는다.
 - 확정 문구 출처: 범위 밖 · 불명확 · 라우터 실패 = chat.md 의도 표, 현재 예산 기간 질문 = MEMO 3번, 시작 인사 = 채팅 화면(AssistantPage),
-  기능 선택지 이름 = chat/router.py CHOICES. 나머지는 [임시] 문구 (MEMO 18번).
+  기능 선택지 이름 = 아래 CHOICES (서비스 엔진과 공유). 나머지는 [임시] 문구 (MEMO 18번).
 - 미정 정책에 걸린 코드는 문구를 만들지 않고 undecided 로 돌려준다 (MEMO 18번 목록).
 """
-from chat.router import CHOICES
 from spending_analysis.answer import NAMES, josa
 from spending_analysis.dialog import REPICK, YES_NO
 
 from . import CANCEL_WORDS, rules
 
-# 의도 선택지: 기존 API 선택값(spending · budget)과 이름. 정책은 API 합의 전이라 [임시] 값 · 이름
-CHOICE = {"spending": CHOICES[0], "budget_adjust": CHOICES[1], "policy": {"value": "policy", "label": "청년 정책"}}
+# 서비스 라우터의 공통 기능 선택지. 특정 의도를 되물을 때는 해당 후보만 보여 준다.
+CHOICES = (
+    {"value": "spending", "label": "소비 분석"},
+    {"value": "budget", "label": "예산 조정"},
+    {"value": "policy", "label": "청년 정책"},
+)
+CHOICE = {"spending": CHOICES[0], "budget_adjust": CHOICES[1], "policy": CHOICES[2]}
 
 OPENING = {"lines": ["안녕하세요! 무엇을 도와드릴까요?"], "hint": "아래에서 고르거나 하고 싶은 말을 바로 적어 주세요."}
 
@@ -56,7 +60,7 @@ REASON = {
 }
 OPTION = {**rules.OPTION_LABELS, **YES_NO}  # 이름은 규칙 쪽 한 곳에서 (이름 그대로 보내면 LLM 없이 처리)
 UNSUPPORTED = {
-    "out_of_scope": "머니쿠션은 소비 분석과 예산 조정을 도와드려요.",
+    "out_of_scope": "머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요.",
     "last_month_only": "지난달 소비만 따로 보는 건 아직 지원하지 않아요.",
     "category_compare": "카테고리끼리 비교하는 건 아직 지원하지 않아요.",
     "no_budget_category": "확인 필요 거래는 예산 카테고리가 없어 남은 예산을 알려드릴 수 없어요.",
