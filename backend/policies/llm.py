@@ -24,10 +24,18 @@ def fake_embed(texts):
     return [vector(text) for text in texts]
 
 
+def _embedding_env(name):
+    """설정 누락도 임베딩 실패로 처리한다. 실제 값은 오류에 담지 않는다."""
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise EmbedFailed(f"{name} 설정이 필요해요")
+    return value
+
+
 def live_embed(texts):
-    body = {"model": os.environ["EMBEDDING_MODEL"], "input": texts}
+    body = {"model": _embedding_env("EMBEDDING_MODEL"), "input": texts}
     request = urllib.request.Request(URL, data=json.dumps(body).encode(), headers={
-        "Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}", "Content-Type": "application/json"})
+        "Authorization": f"Bearer {_embedding_env('OPENAI_API_KEY')}", "Content-Type": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             data = json.load(response)["data"]
@@ -53,7 +61,7 @@ def cached(embed):
 def embedder(live=None):
     if live is None:
         live = getattr(settings, "CHAT_LLM", "fake") == "live"
-    return (os.environ["EMBEDDING_MODEL"], live_embed) if live else ("fake", fake_embed)
+    return (_embedding_env("EMBEDDING_MODEL"), live_embed) if live else ("fake", fake_embed)
 
 
 def chain(system, complete, parser=None):

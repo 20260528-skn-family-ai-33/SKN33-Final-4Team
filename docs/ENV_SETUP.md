@@ -79,6 +79,11 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 
 ### 예산 조정 챗봇 연결
 
+청년 정책 추천도 `CHAT_ENGINE=router`, `CHAT_LLM=live`에서 사용한다. `OPENAI_API_KEY`, `LLM_MODEL`에 더해
+`EMBEDDING_MODEL`이 필요하며, 공유 정책 덤프의 임베딩 모델과 같은 값(`text-embedding-3-small`)을 설정한다.
+정책 데이터는 `docs/agents/청년정책.md`의 복원 절차에 따라 DB에 한 번 적재한다. 모델 설정이 없거나 비어 있으면
+정책 검색은 기존 실패 안내로 응답한다. 서버가 켜지는 것만으로 정책 검색 설정까지 확인되는 것은 아니다.
+
 | 변수 | 값·역할 |
 |---|---|
 | `CHAT_ENGINE` | `router`에서 실제 조정 대화·카드를 연결한다. `legacy`는 이전 안내 흐름이다. |

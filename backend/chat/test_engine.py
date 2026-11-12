@@ -305,6 +305,41 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertFalse(content["result"])
         self.assertEqual(content["agent"], "policy")
 
+    def test_policy_home_confirmation_accepts_typed_yes_through_chat_api(self):
+        from policies import profiles
+        from policies.tests.test_search import DONGTAN, add
+        from spending_fixture.test_fixture import user
+
+        profiles.remember(user("A"), DONGTAN)
+        add("20260000000000000001", plcyNm="청년 월세 지원")
+        cid = self.send("A", choice="policy").json()["conversationId"]
+        content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
+        self.assertEqual([c["label"] for c in content["choices"]], ["예", "아니요"])
+        with mock.patch("policies.reading.read", side_effect=AssertionError("확인 답변은 다시 읽지 않는다")):
+            content = self.bot(self.send("A", cid, text="네"))
+        self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])
+
+    def test_policy_missing_embedding_model_is_not_http_500_and_can_retry(self):
+        import os
+        from chat.llm.fake import FakeReading
+        from policies import reading
+
+        cid, _ = self._policy_results()
+        before = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots).get_agent_state(engine.KEY, "policy")
+        with self.settings(CHAT_LLM="live"), mock.patch.dict(os.environ), \
+                mock.patch.object(engine, "reading", return_value=FakeReading()), \
+                mock.patch("policies.reading.reader", return_value=("fake", reading.fake_complete)), \
+                mock.patch("policies.planner.chooser", return_value=None):
+            os.environ.pop("EMBEDDING_MODEL", None)
+            content = self.bot(self.send("A", cid, text="월세 지원 찾아줘"))
+        self.assertFalse(content["result"])
+        self.assertFalse(content["sections"])
+        self.assertTrue(content["lines"])
+        after = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots).get_agent_state(engine.KEY, "policy")
+        self.assertEqual(after, before)
+        retried = self.bot(self.send("A", cid, text="월세 지원 찾아줘"))
+        self.assertEqual([s["title"] for s in retried["sections"]], ["1. 청년 월세 지원"])
+
     def test_review_policy_resumes_after_visiting_spending(self):
         """PR 97 리뷰 1: 청년 정책 → 소비 분석 → 청년 정책 순서로 고르면 보류된 정책 상담을 이어서 한다 (빈 답 없음)"""
         cid, content = self._policy_results()

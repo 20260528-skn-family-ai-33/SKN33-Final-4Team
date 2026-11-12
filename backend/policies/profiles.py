@@ -29,4 +29,7 @@ def remember(user, region_code):
     """회원 정보의 사는 지역을 바꾼다 (회원 정보가 없으면 만든다). 시군구까지 고른 지역만"""
     if not is_final(region_code):
         raise ValueError(f"시군구까지 고른 지역 코드가 아니에요: {region_code}")
-    FinancialProfile.objects.update_or_create(user=user, defaults={"region_code": region_code})
+    # updated_at은 예산 조정의 profile_revision이다. 지역만 바꿔 대기 중인 조정안을 만료시키지 않는다.
+    # 채팅 엔진이 회원 잠금과 대화 저장 트랜잭션 안에서 호출한다.
+    if not FinancialProfile.objects.filter(user=user).update(region_code=region_code):
+        FinancialProfile.objects.create(user=user, region_code=region_code)

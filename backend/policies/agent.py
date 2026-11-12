@@ -56,6 +56,9 @@ REMEMBER_LABEL = "다음에도 {name}로 찾기"  # 시군구 이름은 모두 �
 REMEMBERED = "다음부터 {name} 기준으로 찾을게요. 내 정보의 사는 지역도 {name}로 바꿨어요."
 CONFIRM_HOME = "가입 지역({name})으로 찾으시는 거 맞나요?"
 YES, NO = "예", "아니요"
+CONFIRM_YES = {YES, "네", "넵", "응", "맞아", "맞아요"}
+CONFIRM_NO = {NO, "아니오", "아니", "아뇨"}
+HESITATIONS = {"", "음", "흠", "글쎄", "글쎄요", "잠깐", "잠시만"}
 ASK_REGION = "어느 지역에 사세요? 사는 곳 기준으로 정책을 찾아요."
 ASK_AREA = "{name}의 어디인가요?"
 ASK_WHICH_PLACE = "말씀하신 곳이 여러 곳이에요. 어느 지역인가요?"
@@ -121,7 +124,7 @@ def decide(state, text, read=None, choice=None):
     action = _decide(state, text, read, choice)
     saved = state.get("remembered")
     if action.kind == "search" and saved and action.region == saved and not state.get("confirmed"):
-        return Action("confirm", text=action.text, region=saved, needs=action.needs)
+        return Action("confirm", text=action.text, region=saved, needs=action.needs, fields=action.fields)
     return action
 
 
@@ -136,6 +139,16 @@ def _decide(state, text, read=None, choice=None):
         return Action("end")
     if ask and said in ask["options"]:
         return _answer(ask, ask["options"][said], home)
+    if ask and ask["kind"] in {"confirm", "region"}:
+        # 짧은 답 전체가 일치할 때만 처리한다. "아니, 취업 지원 찾아줘"는 새 질문으로 읽는다.
+        short = said.strip(" \t\r\n.!?~…。！？")
+        if ask["kind"] == "confirm":
+            if short in CONFIRM_YES:
+                return _answer(ask, "yes", home)
+            if short in CONFIRM_NO:
+                return _answer(ask, "no", home)
+        if short in HESITATIONS | CONFIRM_YES | CONFIRM_NO:
+            return Action("reask")
     if SAVED_WORDS.search(said):  # 버튼 이름을 먼저 본다 ('저장한 정책 보기' 버튼도 이름으로 들어온다)
         return Action("show_saved")
     if ask and ask["kind"] == "region":
@@ -144,11 +157,7 @@ def _decide(state, text, read=None, choice=None):
             return _answer(ask, code, home)
         if read is None:  # 지역 이름이 아니면 먼저 읽는다 — 소비 · 예산 질문은 지역을 다시 묻지 않고 다른 담당으로
             return Action("read", text=said)
-        if (choice[0] == "not_mine") if choice else not read.mine:
-            return Action("not_mine")
-        if not home:  # 사는 곳을 아직 모른다 → 새 문장이면 기억해 두고 다시 묻는다
-            return Action("ask_region", codes=ask["codes"], text=ask.get("text") or said)
-        return Action("reask")
+        # 지역 대신 새 정책 문장을 보냈으면 아래의 공통 해석으로 질문과 검색 조건을 함께 바꾼다.
     if read is None:  # 사는 곳을 몰라도 먼저 읽는다 — 문장 속 지역으로 바로 찾을 수 있다
         return Action("read", text=said)
     picked = choice[0] if choice else None
@@ -160,9 +169,14 @@ def _decide(state, text, read=None, choice=None):
     if picked == "not_mine" or (picked is None and not read.mine):
         return Action("not_mine")
     fields = choice[3] if choice and len(choice) > 3 else []
-    if read.vague or (fields and not read.needs):  # 막연한 문장 → 분야를 묻지 않고 맞춤 추천 (멘토 요청 ④)
-        return _place_action(read, said, home, fields=list(fields))
-    return _place_action(read, said, home)
+    if ask and ask["kind"] in {"confirm", "region"} and not (read.needs or read.vague or fields):
+        return Action("reask")
+    # 막연한 문장 → 분야를 묻지 않고 맞춤 추천 (멘토 요청 ④)
+    action = _place_action(read, said, home, fields=list(fields) if read.vague or (fields and not read.needs) else None)
+    if ask and ask["kind"] == "region" and not home and not read.place_codes:
+        # 가입지역도 새 지명도 없으면 고르던 지역 단계는 유지한다. 이전 질문의 키워드·분야는 버린다.
+        action.codes, action.home = ask["codes"], ask.get("home", True)
+    return action
 
 
 def _place_action(read, said, home, fields=None):
@@ -409,6 +423,8 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
         elif action.kind == "use_region":
             if action.home:
                 state["region"] = action.region
+            if action.region == state.get("remembered"):
+                state["confirmed"] = True  # 직접 고른 가입지역을 다음 질문에서 또 확인하지 않는다
             state["ask"] = None
             if action.needs is not None or action.fields is not None:  # 이미 읽은 문장 (다른 지역 확인 뒤) → 바로 검색
                 action = Action("search", text=action.text, region=action.region, needs=action.needs, fields=action.fields)
