@@ -20,14 +20,13 @@ import ApplyTimingPopup from '../popups/ApplyTimingPopup.jsx'
 import { usePopup } from '../popups/context.js'
 import { toast } from '../utils/toast.js'
 import { apiSend, useApi } from '../utils/api.js'
-import { LAST_DAY, paydayText } from '../utils/days.js'
+import { dayBad, paydayText } from '../utils/days.js'
+import DayInput from '../components/DayInput.jsx'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
 const MAN = 10000
 const MAN_DIGITS = 9  // 만원 칸은 9자리(9,999억 원)까지
-const dayDigits = (s) => s.replace(/\D/g, '').replace(/^0+/, '').slice(0, 2)  // 숫자만, 앞 0 빼고 2자리까지
-const dayOk = (d) => d !== '' && Number(d) >= 1 && Number(d) <= 31
 const toMan = (won) => (won === '' ? '' : String(Math.floor(Number(won) / MAN)))  // 원 숫자 → 만원 숫자 (만원 아래 버림)
 
 export default function SalaryPage() {
@@ -51,9 +50,6 @@ function SalaryForm({ saved }) {
   // 첫 예산을 승인했는지 (GET /api/auth/me/ onboardingCompleted). 승인 전이면 급여일을 바꿔도 적용 시점을 묻지 않는다
   const budgetStarted = useApi('/api/auth/me/').data?.onboardingCompleted === true
   const [payday, setPayday] = useState(String(pending?.payday ?? saved.payday ?? ''))  // 입력 글자 그대로 (숫자만)
-  const dayBad = payday !== '' && !dayOk(payday)  // 입력했는데 1~31 이 아님 → 칸 아래에 바로 안내
-  // [말일] = 급여일 31 로 보내고 칸은 잠근다. 저장된 31 은 말일로 연다 (직접 31 을 치면 숫자 그대로 두고 아래 안내만)
-  const [lastDay, setLastDay] = useState(() => (pending?.payday ?? saved.payday) === LAST_DAY)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   // 처음 등록이면 바로 적용. 첫 예산을 승인한 뒤 화면을 열 때 값(예약이 있으면 예약 값)에서 바꿨으면 적용 시점을 묻는다
@@ -91,7 +87,7 @@ function SalaryForm({ saved }) {
     const amount = Number(income)
     if (!income || amount < 1) { setError('월 실수령액을 입력해 주세요.'); return }
     if (payday === '') { setError('급여일을 입력해 주세요.'); return }
-    if (dayBad) { setError('급여일은 1~31 중에서 입력해 주세요.'); return }
+    if (dayBad(payday)) { setError('급여일은 1~31 중에서 입력해 주세요.'); return }
     if (asks) openPopup(<ApplyTimingPopup onPick={(k) => { closePopup(); save(k) }} />)
     else save(pending || pendingIncome ? 'next_cycle' : undefined)
   }
@@ -116,26 +112,11 @@ function SalaryForm({ saved }) {
               </span>
             </span>
           </label>
-          {/* 급여일: 칸 안 [직접 입력|말일] 전환 (11/12, 월급 [만원|원] 과 같은 모양) */}
+          {/* 급여일: 칸 안 [직접 입력|말일] 전환 (11/12, 공용 DayInput — 고정지출 · 저축 · 대출 날짜 칸과 같은 모양) */}
           <label className="mc-field">급여일
-            <span className="mc-unitinput mc-unit-toggle mc-day-toggle">
-              <input id="mc-payday" className={dayBad ? 'mc-bad' : undefined} type="text" inputMode="numeric" autoComplete="off"
-                placeholder="25" value={lastDay ? '말일' : payday} disabled={lastDay} aria-invalid={dayBad}
-                aria-describedby={dayBad ? 'mc-payday-error' : undefined}
-                onChange={(e) => { setPayday(dayDigits(e.target.value)); setError('') }} />
-              {/* '일'은 입력한 숫자 바로 뒤에 붙는다: 같은 글자를 안 보이게 깔고 그 뒤에 '일' (빈 칸이면 예시 25 뒤) */}
-              {!lastDay && <span className="mc-day-suffix" aria-hidden="true"><span>{payday || '25'}</span>일</span>}
-              <span className="mc-unit-switch" role="group" aria-label="급여일 입력 방식">
-                {[[false, '직접 입력'], [true, '말일']].map(([last, label]) => (
-                  <button key={label} type="button" aria-pressed={lastDay === last}
-                    onClick={() => { if (lastDay !== last) { setLastDay(last); setPayday(last ? String(LAST_DAY) : ''); setError('') } }}>{label}</button>
-                ))}
-              </span>
-            </span>
+            <DayInput id="mc-payday" what="급여일" value={payday} onChange={(d) => { setPayday(d); setError('') }} />
           </label>
         </div>
-        {dayBad && <p className="mc-field-error" id="mc-payday-error" role="alert">급여일은 1~31 중에서 입력해 주세요.</p>}
-        {dayOk(payday) && Number(payday) >= 29 && !lastDay && <p className="mc-note">{payday}일이 없는 달은 말일을 급여일로 계산해요.</p>}
         {pending && (
           <p className="mc-note">
             {pending.effectiveOn.slice(5).replace('-', '월 ')}일부터 급여일이 매월 {paydayText(pending.payday)}로 바뀌어요. 지금은 매월 {paydayText(saved.payday)} 기준이에요.
