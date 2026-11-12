@@ -158,7 +158,7 @@ export default function TransactionsPage() {
         <span className="mc-muted">{data ? <>거래 {items.length}건 · 소비 <strong>{won(spentTotal)}</strong></> : '거래 불러오는 중'}</span>
         {/* 달력 보기는 기능이 생기면 여기에 [리스트 | 달력] (11/3: 누를 수 없는 버튼이라 뺌) */}
         <button type="button" className="mc-filter-btn" aria-pressed={filterCount > 0} onClick={() => openPopup(
-          <FilterPopup categories={CHIPS} pendingCount={pendingCount} categoryCodes={codes} types={types} accountIds={accountIds} cardIds={cardIds} onApply={applyFilter} />,
+          <FilterPopup categories={CHIPS} categoryCodes={codes} types={types} accountIds={accountIds} cardIds={cardIds} onApply={applyFilter} />,
         )}><Icon name="SlidersHorizontal" size={14} />{filterCount > 0 ? `필터 ${filterCount}` : '필터'}</button>
       </div>
 

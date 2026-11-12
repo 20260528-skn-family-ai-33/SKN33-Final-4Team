@@ -33,9 +33,9 @@ it('카테고리를 바꾸면 새 결과가 올 때까지 이전 합계를 숨�
 
   expect(btn('식비')).toBeUndefined()                       // 카테고리는 위에 늘 떠 있지 않고 [필터] 안에서 고른다
   await act(async () => btn('필터').click())
-  await act(async () => btn('확인 필요 0').click())
+  await act(async () => btn('확인 필요').click())
   await act(async () => btn('식비').click())
-  expect(btn('확인 필요 0').getAttribute('aria-pressed')).toBe('false')  // 확인 필요는 다른 카테고리와 섞지 않는다
+  expect(btn('확인 필요').getAttribute('aria-pressed')).toBe('false')  // 확인 필요는 다른 카테고리와 섞지 않는다
   await act(async () => btn('소비').click())
   await act(async () => btn('적용').click())
   expect(waiting.at(-1).url).toContain('transactionType=spending')
