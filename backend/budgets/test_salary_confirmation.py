@@ -150,7 +150,6 @@ class LegacyConfirmationMigrationTest(TransactionTestCase):
 
     def test_upgrade_requires_recheck_without_fabricating_snapshots(self):
         old = [("budgets", "0007_salarydecision_recheck")]
-        new = [("budgets", "0008_salarydecision_confirmation_snapshot")]
         executor = MigrationExecutor(connection)
         executor.migrate(old)
         try:
@@ -169,7 +168,7 @@ class LegacyConfirmationMigrationTest(TransactionTestCase):
             original = Decision.objects.create(user=user, transaction=tx, state="confirmed", pay_cycle_on=SEPT, is_pattern=True)
             Cycle.objects.create(user=user, starts_on=SEPT, ends_before=OCT, confirmed_income=2500000)
         finally:
-            MigrationExecutor(connection).migrate(new)
+            MigrationExecutor(connection).migrate(MigrationExecutor(connection).loader.graph.leaf_nodes())
         upgraded = SalaryDecision.objects.get(pk=original.pk)
         self.assertEqual((upgraded.state, upgraded.is_pattern, upgraded.decided_at), ("recheck", False, original.decided_at))
         self.assertIsNone(BudgetCycle.objects.get(user_id=user.pk).confirmed_income)
