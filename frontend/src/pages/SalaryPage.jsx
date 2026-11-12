@@ -16,7 +16,7 @@ import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
-import Popup from '../popups/Popup.jsx'
+import ApplyTimingPopup from '../popups/ApplyTimingPopup.jsx'
 import { usePopup } from '../popups/context.js'
 import { toast } from '../utils/toast.js'
 import { apiSend, useApi } from '../utils/api.js'
@@ -24,23 +24,6 @@ import { LAST_DAY, paydayText } from '../utils/days.js'
 import { won } from '../utils/money.js'
 import { PATHS } from '../routes.js'
 
-// 적용 시점 고르기 (가운데 창). 고르면 바로 저장한다
-const APPLY = [
-  ['current_cycle', '이번 주기부터', '지킬 돈과 이번 예산을 바로 다시 정해요'],
-  ['next_cycle', '다음 주기부터', '지금 예산은 그대로 두고 다음 급여일부터 바뀌어요'],
-]
-function ApplyPopup({ onPick }) {
-  return (
-    <Popup label="적용 시점 고르기" dialog>
-      <h2>언제부터 적용할까요?</h2>
-      <div className="mc-apply-choices">
-        {APPLY.map(([k, label, sub]) => (
-          <button key={k} type="button" className="mc-choice" onClick={() => onPick(k)}><strong>{label}</strong><span className="mc-muted">{sub}</span></button>
-        ))}
-      </div>
-    </Popup>
-  )
-}
 const MAN = 10000
 const MAN_DIGITS = 9  // 만원 칸은 9자리(9,999억 원)까지
 const dayDigits = (s) => s.replace(/\D/g, '').replace(/^0+/, '').slice(0, 2)  // 숫자만, 앞 0 빼고 2자리까지
@@ -109,7 +92,7 @@ function SalaryForm({ saved }) {
     if (!income || amount < 1) { setError('월 실수령액을 입력해 주세요.'); return }
     if (payday === '') { setError('급여일을 입력해 주세요.'); return }
     if (dayBad) { setError('급여일은 1~31 중에서 입력해 주세요.'); return }
-    if (asks) openPopup(<ApplyPopup onPick={(k) => { closePopup(); save(k) }} />)
+    if (asks) openPopup(<ApplyTimingPopup onPick={(k) => { closePopup(); save(k) }} />)
     else save(pending || pendingIncome ? 'next_cycle' : undefined)
   }
 

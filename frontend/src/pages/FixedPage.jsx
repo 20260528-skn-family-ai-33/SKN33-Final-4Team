@@ -16,6 +16,8 @@ import { usePopup } from '../popups/context.js'
 import FixedPopup from '../popups/FixedPopup.jsx'
 import EvidencePopup from '../popups/EvidencePopup.jsx'
 import Popup from '../popups/Popup.jsx'
+import ApplyTimingPopup from '../popups/ApplyTimingPopup.jsx'
+import { toast } from '../utils/toast.js'
 import TransactionPopup from '../popups/TransactionPopup.jsx'
 import CardBillCheck, { BillHead } from '../components/CardBillCheck.jsx'
 import { CHIPS, toView } from '../utils/transactions.js'
@@ -40,7 +42,9 @@ function payLabel(f) {
 }
 
 // 카테고리는 이름 옆에 작게 — 아래 줄(출금일 · 결제 수단)이 길어지지 않게
-const CatTag = ({ f }) => <span className="mc-muted" style={{ fontSize: 12, marginLeft: 6 }}>{f.categoryName}</span>
+// 이름 옆 카테고리 (11/12): 작은 회색 칸으로 감싸 이름과 붙어 보이지 않게, 카테고리 안에서는 줄을 안 바꾼다.
+//   이름 줄은 금액 자리를 비워 두지 않고 카드 폭을 다 써서, 긴 영문 이름이어도 공간이 있으면 옆에 붙는다
+const CatTag = ({ f }) => (f.categoryName ? <span className="mc-fx-cat">{f.categoryName}</span> : null)
 const dayLabel = (f, unknown) => (f.paymentDay ? `매월 ${f.paymentDay}일` : unknown)
 const lateDue = (f) => f.recentDues?.find((d) => d.paymentState === 'needs_review')
 
@@ -102,9 +106,32 @@ function PaidTxPopup({ id, onSaved }) {
 }
 
 // 마이 > 고정지출 · 홈 '꼭 나갈 돈'에서 열기
-function ManageView() {
-  const { openPopup } = usePopup()
+function ManageView({ from }) {
+  const navigate = useNavigate()
+  const { openPopup, closePopup } = usePopup()
   const { data, error, reload } = useFixedList()
+  // 11/12: 무엇이든 바꿨으면 아래 [저장]이 생긴다 (안 바꿨으면 뒤로 가기만).
+  //   고정지출 자체는 팝업에서 이미 저장됐다. [저장]에서 고르는 건 '이번 예산을 지금 다시 짤지'다
+  //   추가 · 그만두기 · 금액/결제 수단 수정이 있었으면 이번 주기부터 / 다음 주기부터를 묻는다.
+  //   이름 · 출금일 · 카테고리만 바꿨거나 첫 예산 승인 전이면 예산과 상관없어서 묻지 않고 바로 돌아간다
+  const [changed, setChanged] = useState(false)
+  const [affects, setAffects] = useState(false)
+  const started = useApi('/api/auth/me/').data?.onboardingCompleted === true
+  const onSaved = (affectsBudget) => { setChanged(true); if (affectsBudget) setAffects(true); reload() }
+  const back = () => navigate(from === 'home' ? PATHS.home : PATHS.my, { replace: true })
+  const save = () => {
+    if (!(affects && started)) { toast('저장했어요'); back(); return }
+    openPopup(<ApplyTimingPopup onPick={(k) => {
+      closePopup()
+      if (k === 'current_cycle') {
+        toast('이번 예산을 다시 정해요')
+        navigate(PATHS.protect, { replace: true, state: { from: 'my', refreshRecommendation: true } })
+      } else {
+        toast('다음 주기부터 반영돼요')
+        back()
+      }
+    }} />)
+  }
   if (!data) return <Layout title="고정지출" showBack><ApiStatus error={error} /></Layout>
 
   const confirmed = data.items.filter((f) => f.status === 'confirmed')
@@ -114,10 +141,10 @@ function ManageView() {
   const rows = [...late, ...noDay.filter((f) => !late.includes(f)), ...confirmed.filter((f) => !late.includes(f) && !noDay.includes(f))]
 
   return (
-    <Layout title="고정지출" showBack>
+    <Layout title="고정지출" showBack foot={changed ? <button type="button" className="mc-primary" onClick={save}>저장</button> : null}>
       <div className="mc-eyebrow">고정지출</div>
       <h1>매달 나가는 돈</h1>
-      <p className="mc-muted">여기 있는 돈은 예산에서 먼저 떼어 둬요. 금액을 바꾸거나 그만두면 다음 달 예산부터 반영돼요.</p>
+      <p className="mc-muted">여기 있는 돈은 예산에서 먼저 떼어 둬요.{started && <><br />바꾼 뒤 [저장]을 누르면 언제부터 예산에 반영할지 고를 수 있어요.</>}</p>
       {(late.length > 0 || noDay.length > 0) && (
         <p className="mc-note" style={{ paddingTop: 0 }}>
           확인할 것 {late.length + noDay.length}건{late.length > 0 && ` · 미납 확인 ${late.length}건`}{noDay.length > 0 && ` · 출금일 모름 ${noDay.length}건`}
@@ -129,13 +156,15 @@ function ManageView() {
 
       {rows.map((f) => (
         <div className="mc-card" key={f.recurringId}>
-          <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><CatTag f={f} /><span className="mc-muted" style={{ display: 'block', marginTop: 4 }}>{dayLabel(f, '출금일 모름')} · {payLabel(f)}</span></span>
+          {/* 이름 줄은 카드 폭을 다 쓴다(카테고리가 이름 옆에 들어갈 자리). 금액은 아래 줄 오른쪽 (11/12) */}
+          <div className="mc-fx-name"><strong style={{ fontSize: 15 }}>{f.name}</strong><CatTag f={f} /></div>
+          <div className="mc-row" style={{ marginTop: 4, alignItems: 'flex-start' }}>
+            <span className="mc-muted">{dayLabel(f, '출금일 모름')} · {payLabel(f)}</span>
             <strong style={{ whiteSpace: 'nowrap' }}>{won(f.amount)}</strong>
           </div>
           <div className="mc-row" style={{ marginTop: 8 }}>
             <span className="mc-badge">{f.sourceType === 'manual' ? '직접 추가' : '자동으로 찾음'}</span>
-            <button type="button" className="mc-link" onClick={() => openPopup(<FixedPopup item={f} onSaved={reload} />)}>{f.paymentDay ? '수정' : '출금일 정하기'}</button>
+            <button type="button" className="mc-link" onClick={() => openPopup(<FixedPopup item={f} onSaved={onSaved} />)}>{f.paymentDay ? '수정' : '출금일 정하기'}</button>
           </div>
           {lateDue(f) && <LateDue f={f} due={lateDue(f)} onSaved={reload} />}
           {!lateDue(f) && f.paidThisCycle && (
@@ -149,7 +178,7 @@ function ManageView() {
           {!f.paymentDay && <p className="mc-note" style={{ paddingBottom: 0 }}>출금일을 정하면 홈 '꼭 나갈 돈'에 나오고, 출금됐는지 확인해 드려요.</p>}
         </div>
       ))}
-      <button type="button" className="mc-secondary" onClick={() => openPopup(<FixedPopup onSaved={reload} />)}>+ 고정지출 직접 추가</button>
+      <button type="button" className="mc-secondary" onClick={() => openPopup(<FixedPopup onSaved={onSaved} />)}>+ 고정지출 직접 추가</button>
 
       <div className="mc-card" style={{ marginTop: 14 }}>
         <div className="mc-keyvalue"><span>매달 나가는 고정지출</span><strong>{won(data.summary.confirmedMonthlyTotal)}</strong></div>
@@ -252,8 +281,10 @@ function OnboardingView() {
 
       {data.items.map((f) => (
         <div className="mc-card" key={f.recurringId}>
-          <div className="mc-row">
-            <span><strong style={{ fontSize: 15 }}>{f.name}</strong><CatTag f={f} /><span className="mc-muted" style={{ display: 'block', marginTop: 4 }}>{dayLabel(f, '출금일 확인 필요')} · {payLabel(f)}</span></span>
+          {/* 이름 줄은 카드 폭을 다 쓴다(카테고리가 이름 옆에 들어갈 자리). 금액은 아래 줄 오른쪽 (11/12) */}
+          <div className="mc-fx-name"><strong style={{ fontSize: 15 }}>{f.name}</strong><CatTag f={f} /></div>
+          <div className="mc-row" style={{ marginTop: 4, alignItems: 'flex-start' }}>
+            <span className="mc-muted">{dayLabel(f, '출금일 확인 필요')} · {payLabel(f)}</span>
             <strong style={{ whiteSpace: 'nowrap' }}>{won(f.amount)}</strong>
           </div>
           {/* 배지 왼쪽 · [수정] 오른쪽 — 저축 확인 화면과 같은 모양 */}
@@ -292,5 +323,5 @@ function OnboardingView() {
 export default function FixedPage() {
   const location = useLocation()
   const from = location.state?.from
-  return from === 'my' || from === 'home' ? <ManageView /> : <OnboardingView />
+  return from === 'my' || from === 'home' ? <ManageView from={from} /> : <OnboardingView />
 }
