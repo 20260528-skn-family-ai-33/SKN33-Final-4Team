@@ -141,4 +141,5 @@ class AdjustmentCollabTest(unittest.TestCase):
         response = self.turn("왜 추천해?", reading(action="explain"))
         self.assertEqual(response["status"], "replied")
         self.assertEqual(response["reply"]["lines"], ["추천 근거"])
-        self.assertEqual(self.store.state, before)
+        self.assertEqual({k: v for k, v in self.store.state.items() if k != 'dialogue_history'}, before)
+        self.assertEqual(self.store.state['dialogue_history'][-1]['user'], '왜 추천해?')

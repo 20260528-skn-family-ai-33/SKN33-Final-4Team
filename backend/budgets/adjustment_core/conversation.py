@@ -9,7 +9,7 @@ from .explanations import step_explanation
 
 SPECIAL_NAMES = {"LIVING": "생활비", "SAVINGS": "저축", "CUSHION_MONTHLY": "월 머니쿠션", "SPARE": "여윳돈"}
 LIST_FIELDS = ("sources", "destinations", "excluded")
-COMPARE = {"비교하고정하기", "잘모르겠어요", "잘모르겠어", "모르겠어요", "모르겠어", "뭐가제일나아", "뭐가제일나아요",
+COMPARE = {"비교하고정하기", "잘모르겠어요", "잘모르겠어", "잘모르겠는데", "잘모르겠는데요", "모르겠어요", "모르겠어", "뭐가제일나아", "뭐가제일나아요",
            "어떤게제일나아", "어떤게나아", "세가지안비교", "세가지안비교해줘", "세가지안을비교해줘", "비교해줘", "추천해줘"}
 
 
@@ -41,6 +41,8 @@ def _pending_reply(state, ref=None, context=None):
         response["reply"]["comparison"] = deepcopy(state["comparison"]["comparison"])
     if pending["kind"] == "financial_selection" and state.get("financial_offer"):
         response["reply"]["comparison"] = deepcopy(state["financial_offer"]["comparison"])
+    if pending['kind'] == 'distribution':
+        response['reply']['distribution_input'] = deepcopy(pending['distribution_input'])
     if pending["kind"] == "partial" and state.get("proposal"):
         response["reply"]["proposal"] = deepcopy(state["proposal"])
         for key in ("alternatives", "alternatives_notice"):
@@ -79,6 +81,32 @@ def _explanation_only(data):
             and not any(data.get(field) for field in LIST_FIELDS) and not data.get("funding_scope")
             and not data.get("scope") and data.get("unlock") is None and data.get("use_available") is None
             and data.get("reference") != "new")
+
+
+def recommendation_reply(state, context, ref=None):
+    stored = state.get('comparison') if state.get('pending', {}).get('kind') == 'comparison' else state.get('financial_offer')
+    if not stored or stored.get('context') != context:
+        return _result('awaiting_input', ['예산 조건이 바뀌었어요. 최신 금액으로 다시 비교해 주세요.'])
+    comparison = deepcopy(stored['comparison'])
+    recommendation = comparison.get('recommendation') or {}
+    winner = next((p for p in comparison.get('plans', []) if p['id'] == recommendation.get('plan_id')
+                   and p.get('status') == 'ready' and (p.get('result') or {}).get('changes')), None)
+    response = _pending_reply(state, ref, context)
+    if winner is None:
+        title = '지금은 한 가지 방법을 추천하기 어려워요.'
+        reasons = recommendation.get('reasons') or ['조건을 똑같이 만족하거나 요청한 금액을 모두 옮길 수 없어, 금액이나 유지할 항목을 먼저 정해야 해요.']
+    else:
+        title = f"‘{winner['label']}’을 추천해요."
+        reasons = recommendation.get('reasons') or winner.get('assessment', {}).get('reasons') or []
+        comparison['plans'] = [winner]
+        response['reply']['comparison'] = comparison
+        prefix = 'plan_' if state['pending']['kind'] == 'comparison' else 'financial_'
+        response['reply']['choices'] = [c for c in response['reply']['choices']
+                                       if not c['value'].startswith(prefix) or c['value'] == prefix + winner['id']]
+    response['reply']['recommendation_advice'] = {'title': title, 'reasons': list(dict.fromkeys(reasons))[:3]}
+    response['reply']['lines'] = [title, *response['reply']['recommendation_advice']['reasons']]
+    response['reply']['explanation'] = None
+    return response
 
 
 def _explain_comparison(state, context, text, ref=None):
@@ -150,24 +178,137 @@ def _explain_comparison(state, context, text, ref=None):
     return response
 
 
-def _show_comparison(store, cid, state, context, calculation, allocator):
-    from .comparison import compare_adjustments
-    envelope = _envelope(state)
+def distribution_fields(context, donors, excluded=()):
+    from .funding import _data
+    checked = _data(context, {'items': donors, 'sources': [], 'destinations': [], 'excluded': list(excluded)})
+    sources = [{'category': item['category'], 'amount': checked['before'][item['category']] - checked['targets'][item['category']]}
+               for item in donors]
+    if not sources or any(row['amount'] <= 0 or row['amount'] % 5000 for row in sources):
+        raise ValueError('invalid_distribution_amount')
+    source_codes = {row['category'] for row in sources}
+    categories = [code for code in context['allocations'] if code not in source_codes and code not in excluded
+                  and 'LIVING' not in excluded and code not in context.get('locks', {})]
+    categories.extend(code for code in context['buckets'] if code not in source_codes and code not in excluded
+                      and context.get('bucket_status', {}).get(code) == 'ready')
+    return {'source': sources[0]['category'], 'sources': sources,
+            'amount': sum(row['amount'] for row in sources), 'categories': categories}
+
+
+def _calculation(context, state):
+    codes = state.get("unlock_categories", [])
+    consents = state.get("unlock_consents", {})
+    if (set(codes) != set(consents) or any(code not in context.get("locks", {}) for code in codes)
+            or _lock_snapshot(context, codes) != consents):
+        raise ValueError("stale_unlock_consent")
+    result = deepcopy(context)
+    result["locks"] = {code: amount for code, amount in context.get("locks", {}).items() if code not in codes}
+    return result
+
+
+def _target_changes(context, result, scope, requests, clear):
+    targets = {code: None for code in clear if code in context.get("category_targets", {})}
+    if scope == "ongoing":
+        targets.update({code: amount for code, amount in result.get("persistence_candidates", {}).items()
+                        if code != "SPARE" and code not in clear})
+        targets.update({item["category"]: result["allocations"][item["category"]] for item in requests
+                        if item["category"] in result["allocations"] and item["category"] not in clear})
+    return targets
+
+
+def distribute(request, state, data, *, store, get_context, simulate, propose, **ports):
+    context = get_context()
+    cid = request['conversation_id']
+    pending = state.get('pending', {})
+    if pending.get('kind') in {'unlock', 'partial', 'financial_risk', 'financial_partial'}:
+        return _pending_reply(state, state.get('work_ref'), context)
     try:
-        comparison = compare_adjustments(calculation, envelope, allocate_group_reduction=allocator)
+        calculation = _calculation(context, state)
+    except ValueError:
+        for key in ('unlock_categories', 'unlock_consents'):
+            state.pop(key, None)
+        return _ask(store, cid, state, 'request', '잠금 조건이 바뀌었어요. 잠금 해제를 다시 확인해 주세요.')
+    names = {**context.get('category_names', {}), **SPECIAL_NAMES}
+    excluded = set(state.get('excluded', [])) | set(data.get('excluded', []))
+    specified = data.get('requests', [])
+    receiving = [item for item in specified if item.get('direction') == 'up']
+    donors = [item for item in (specified or state.get('requests', [])) if item.get('direction') == 'down']
+    if not donors:
+        donors = [item for item in state.get('requests', []) if item.get('direction') == 'down']
+    if not donors and state.get('proposal'):
+        donors = [{'category': row['category'], 'amount': -row['diff'], 'amount_mode': 'by', 'direction': 'down'}
+                  for row in state['proposal']['changes'] if row['diff'] < 0]
+    if not donors or any(item.get('amount') is None for item in donors):
+        return _ask(store, cid, state, 'request', '어느 항목에서 얼마를 줄여 나눌까요?')
+    try:
+        fields = distribution_fields(calculation, donors, excluded)
+    except (ValueError, KeyError):
+        return _ask(store, cid, state, 'request', '나눌 금액을 확인해 주세요. 5,000원 단위로 정할 수 있어요.')
+    categories, total = fields['categories'], fields['amount']
+    if not categories:
+        return _ask(store, cid, state, 'request', '현재 받을 수 있는 항목이 없어요. 유지할 항목이나 옮길 곳을 다시 정해 주세요.')
+    if data.get('scope'):
+        state['scope'] = data['scope']
+    if not receiving or any(item.get('amount') is None for item in receiving):
+        state['requests'] = deepcopy(donors)
+        state['excluded'] = sorted(excluded)
+        source_names = '·'.join(names.get(row['category'], row['category']) for row in fields['sources'])
+        response = _ask(store, cid, state, 'distribution', f"{source_names}에서 줄일 {total:,}원을 어디에 나눌까요?",
+                        distribution_input=fields, context=deepcopy(context),
+                        explanation={'brief': '받을 항목과 금액을 직접 정해 주세요.'})
+        response['reply']['distribution_input'] = fields
+        return response
+    codes = [item.get('category') for item in receiving]
+    valid = (len(codes) == len(set(codes)) and all(code in categories for code in codes)
+             and all(type(item.get('amount')) is int and item['amount'] > 0 and item['amount'] % 5000 == 0
+                     and item.get('amount_mode') == 'by' for item in receiving)
+             and sum(item['amount'] for item in receiving) == total)
+    if not valid or pending.get('kind') == 'distribution' and pending.get('context') != context:
+        response = distribute(request, state, {**data, 'requests': donors}, store=store, get_context=get_context,
+                              simulate=simulate, propose=propose, **ports)
+        response['reply']['lines'] = ['항목과 금액을 다시 확인해 주세요. 나눈 금액의 합계가 줄일 금액과 같아야 해요.']
+        return response
+    envelope = {'items': [*deepcopy(donors), *deepcopy(receiving)], 'sources': [], 'destinations': [], 'excluded': sorted(excluded)}
+    scope, clear = state.get('scope', 'cycle'), state.get('clear_targets', [])
+    try:
+        result = simulate(calculation, envelope)
+        if result['status'] != 'proposed':
+            raise ValueError('distribution_unavailable')
+        card = propose(context, result, scope=scope, unlock_categories=state.get('unlock_categories', []),
+                       target_changes=_target_changes(context, result, scope, envelope['items'], clear))
+    except ValueError:
+        response = distribute(request, state, {**data, 'requests': donors}, store=store, get_context=get_context,
+                              simulate=simulate, propose=propose, **ports)
+        response['reply']['lines'] = ['이미 쓴 돈과 남겨 둘 돈을 확인해 보니 이 배분은 적용할 수 없어요. 항목이나 금액을 바꿔 주세요.']
+        return response
+    state.update(requests=envelope['items'], sources=[], destinations=[], excluded=sorted(excluded),
+                 proposal=card, proposal_request=envelope, work_ref=card['task_ref'])
+    for key in ('pending', 'comparison', 'financial_offer', 'primary_request', 'refinement', 'requested_view'):
+        state.pop(key, None)
+    _save(store, cid, state)
+    return _result('replied', ['직접 나눈 금액으로 만든 변경안이에요. 아직 예산은 바뀌지 않았어요.'], proposal=card)
+
+
+def _show_comparison(store, cid, state, context, calculation, allocator, *, envelope=None, respect_selected=False):
+    from .comparison import compare_adjustments
+    envelope = _envelope(state) if envelope is None else envelope
+    try:
+        comparison = compare_adjustments(calculation, envelope, allocate_group_reduction=allocator, respect_selected=respect_selected)
     except ValueError:
         return _ask(store, cid, state, "request", "이 요청은 아직 방법별 비교를 할 수 없어요. 조정할 항목과 범위를 직접 선택해 주세요.")
     if not isinstance(comparison, dict) or not isinstance(comparison.get("plans"), list):
         return _result("failed", ["비교 결과를 확인하지 못했어요."], error="invalid_comparison_result")
     choices = [("plan_" + plan["id"], plan["label"]) for plan in comparison["plans"]
-               if plan.get("id") in {"living", "spare", "extended"} and plan.get("status") in {"ready", "partial", "needs_destination"}
+               if plan.get("id") in {"living", "spare", "extended"} and plan.get("status") in {"ready", "partial"}
                and plan.get("envelope") is not None
-               and (plan["status"] == "needs_destination" and type(comparison.get("basis_amount")) is int
-                    and comparison["basis_amount"] > 0 or type(plan.get("amount")) is int and plan["amount"] > 0)]
+               and type(plan.get('amount')) is int and plan['amount'] > 0
+               and (plan.get('result') or {}).get('changes')]
     state["comparison"] = {"context": deepcopy(context), "request": envelope, "comparison": deepcopy(comparison)}
+    direct = [('distribute', '여러 항목에 직접 나누기')] if len(envelope.get('items', [])) == 1 and envelope['items'][0].get('direction') == 'down' and envelope['items'][0].get('amount') is not None else []
     response = _ask(store, cid, state, "comparison", "조정 방법을 같은 기준으로 비교했어요. 변경안을 볼 방법을 골라 주세요."
                     if choices else comparison.get("message") or "현재 검수된 조건에서 선택할 수 있는 비교안이 없어요. 제한 사유를 확인하고 조건을 바꿔 주세요.",
-                    [*choices, ("manual", "금액 직접 입력"), ("back", "재원 다시 선택")], index=0)
+                    [*choices, *direct, ("manual", "금액 직접 입력"), ("back", "재원 다시 선택")], index=0,
+                    explanation=None if choices else {'why': comparison.get('message'), 'effect': '기존 예산은 그대로예요.',
+                        'next': '원하는 금액을 알려 주거나 돈을 옮길 곳을 다시 골라 주세요.'})
     response["reply"]["comparison"] = deepcopy(comparison)
     return response
 
@@ -180,7 +321,7 @@ def _envelope(state):
 def _remember(state):
     history = state.setdefault("history", [])
     history.append(deepcopy({key: value for key, value in state.items()
-                             if key not in {"history", "proposal", "work_ref", "pending_edit"}}))
+                             if key not in {"history", "dialogue_history", "proposal", "work_ref", "pending_edit"}}))
     del history[:-12]
 
 
@@ -350,6 +491,8 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
         data = {}
         if picked == "compare":
             data["action"] = "compare"
+        elif picked == 'distribute':
+            data['action'] = 'distribute'
         elif kind == "partial":
             data["partial_action"] = picked
         elif kind == "comparison":
@@ -388,7 +531,7 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                 state.pop("destinations", None)
     if data is None and text == "뒤로":
         data = {"action": "back"}
-    if (data is None and state.get("requests") and pending.get("kind") in {"funding_scope", "sources", "destinations", "comparison"}
+    if (data is None and state.get("requests") and pending.get("kind") in {"funding_scope", "sources", "destinations"}
             and text.translate(str.maketrans("", "", " ?!.,？")) in COMPARE):
         data = {"action": "compare"}
     compact = text.translate(str.maketrans("", "", " ?!.,？"))
@@ -408,8 +551,12 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
         data = {"sources": [hinted], "reference": "previous"}  # [○○에서 가져오기] 버튼: 방금 본 카테고리를 재원으로
     if data is None:
         try:
+            pending_context = {key: pending[key] for key in ('kind', 'choices', 'line') if key in pending}
+            recommendation = state.get('comparison', {}).get('comparison', {}).get('recommendation', {}).get('plan_id')
+            if recommendation is not None:
+                pending_context['recommended_choice'] = 'plan_' + recommendation
             data = read(text, complete, categories=names,
-                        pending={key: pending[key] for key in ("kind", "choices", "line") if key in pending},
+                        pending=pending_context,
                         previous={key: state.get(key) for key in ("requests", "scope", "reason", *LIST_FIELDS)},
                         hints={"from": "spending", "category": hinted} if hinted else None)
         except InterpretationFailed as error:
@@ -420,6 +567,8 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
             return handle_expanded({**request, "mode": "cancel"}, store=store, complete=complete,
                                    get_context=get_context, simulate=simulate, propose=propose,
                                    task_status=task_status, cancel=cancel, allocator=allocator)
+        if data.get('action') == 'distribute':
+            return distribute(request, state, data, store=store, get_context=get_context, simulate=simulate, propose=propose)
         if (data["unclear"] or data.get("reference") == "unclear") and not _explanation_only(data):
             if not state.get("requests") and len(data.get("requests", [])) == 1:
                 candidate = data["requests"][0]
@@ -428,6 +577,20 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                     state["requests"] = deepcopy(data["requests"])
             return _ask(store, cid, state, "clarification", "확인할 내용이 있어요: " +
                         (data["unclear"][0] if data["unclear"] else "앞선 요청을 바꾸는 말씀이신가요, 새 조정인가요?"))
+    if data.get('action') == 'distribute':
+        return distribute(request, state, data, store=store, get_context=get_context, simulate=simulate, propose=propose)
+    if data.get('selected_choice') and not data.get('requests') and not any(data.get(field) for field in LIST_FIELDS):
+        selected = data['selected_choice']
+        if selected not in dict(pending.get('choices', [])):
+            if not pending:
+                return _ask(store, cid, state, 'request', '아직 고를 수 있는 조정안이 없어요. 어느 예산을 바꾸고 싶은지 알려 주세요.')
+            return _pending_reply(state, ref, context)
+        if pending.get('kind') == 'comparison' and selected.startswith('plan_'):
+            data['comparison_plan'] = selected.removeprefix('plan_')
+    if data.get('action') == 'recommend':
+        if _explanation_only({**data, 'action': 'explain'}) and state.get('comparison'):
+            return recommendation_reply(state, context, ref)
+        data['action'] = 'compare'
     if _explanation_only(data):
         return _explain_current(state, context, text, ref)
     if pending.get("kind") == "partial":
@@ -609,7 +772,7 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
     calculation = deepcopy(context)
     calculation["locks"] = {code: amount for code, amount in context.get("locks", {}).items()
                              if code not in state.get("unlock_categories", [])}
-    if data.get("action") == "compare":
+    if data.get("action") == "compare" and not (len(requests) > 1 and all(item.get('amount') is not None for item in requests)):
         return (comparison_handler or _show_comparison)(store, cid, state, context, calculation, allocator)
     for index, item in enumerate(requests):
         state["focus"] = index
@@ -625,7 +788,9 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
         if (direction and not state.get(field) and not paired and (code not in SPECIAL_NAMES or not missing_amount)
                 and not (missing_amount and state.get("use_available") is False)):
             return (route_handler or _route_question)(store, cid, state, names, item, direction)
-        if state.get("destinations") == ["LIVING"]:
+        from .funding import priority_destination
+        if state.get("destinations") == ["LIVING"] and priority_destination(calculation,
+                excluded=state.get('excluded', []), requested=[r.get('category') for r in requests]) is None:
             return _ask(store, cid, state, "destinations", "어느 생활비 항목에 배분할까요?",
                         _edge_choices(names, code, categories_only=True), index=index)
         if code == "LIVING" and direction == "up" and not state.get("destinations"):
@@ -700,12 +865,7 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                     "infeasible": "보호 조건 때문에 반영할 수 없어요. 금액이나 재원을 바꿔 주세요."}
         return _ask(store, cid, state, "request", messages.get(result.get("status"), "변경안을 검수하지 못했어요. 요청을 확인해 주세요."),
                     explanation=result_explanation(context, result))
-    targets = {code: None for code in clear if code in context.get("category_targets", {})}
-    if scope == "ongoing":
-        targets.update({code: amount for code, amount in result.get("persistence_candidates", {}).items()
-                        if code != "SPARE" and code not in clear})
-        targets.update({item["category"]: result["allocations"][item["category"]] for item in requests
-                        if item["category"] in result["allocations"] and item["category"] not in clear})
+    targets = _target_changes(context, result, scope, requests, clear)
     if result["status"] == "unchanged" and not targets:
         _save(store, cid, None)
         return _result("ended", ["현재 예산과 같고 변경할 목표도 없어요."], explanation=step_explanation("unchanged"))

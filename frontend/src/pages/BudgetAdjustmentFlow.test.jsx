@@ -78,6 +78,63 @@ async function submit(text) {
   await act(() => input().form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 }
 
+it('여러 항목으로 나눈 금액을 채팅으로 보내고 확정 없이 새 미리보기를 표시한다', async () => {
+  apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'distribution', distributionInput: {
+    source: 'EDUCATION', amount: 50000, categories: ['FOOD', 'TRANSPORT_CAR', 'SPARE'] } }))
+    .mockResolvedValueOnce(proposalTalk(card(), 8))
+  await mount()
+  await submit('식비 말고 다른 데도 분배하고 싶은데')
+  await click(button('식비', host.querySelector('.mc-budget-category-picks')))
+  await click(button('교통·차량', host.querySelector('.mc-budget-category-picks')))
+  for (let i = 0; i < 2; i++) await click(host.querySelector('[aria-label="1번 금액 10,000원 늘리기"]'))
+  for (let i = 0; i < 3; i++) await click(host.querySelector('[aria-label="2번 금액 10,000원 늘리기"]'))
+  await click(button('나눈 예산 미리보기'))
+  expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', text: '기존 배분 대신 교육 예산을 50000원 줄여 식비에 20000원, 교통·차량에 30000원 나눠줘.' })
+  expect(host.querySelector('.mc-budget-amount fieldset').disabled).toBe(true)
+  expect(apiSend.mock.calls.some(([path]) => path.includes('/approve/'))).toBe(false)
+})
+
+it('금액 입력 미리보기는 채팅으로 보내고 기존 입력과 중복 버튼을 비활성화한다', async () => {
+  apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'comparison',
+    amountInput: { category: 'MEDICAL_HEALTH', direction: 'down', maxAmount: 50000 } }, [{ value: 'manual', label: '금액 직접 입력' }]))
+    .mockResolvedValueOnce(proposalTalk(card(), 8))
+  await mount()
+  await submit('의료비 좀 줄이고 싶어')
+  expect(button('금액 직접 입력')).toBeUndefined()
+  await click(button('+10,000원'))
+  expect(apiSend).toHaveBeenCalledTimes(1)
+  await click(button('미리보기'))
+  expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', text: '의료·건강을 1만원 줄이고 싶어요' })
+  expect(host.querySelector('.mc-budget-amount fieldset').disabled).toBe(true)
+  expect(apiSend.mock.calls.some(([path]) => path.includes('/approve/'))).toBe(false)
+})
+
+it('변경안의 배분 수정은 기존 총액을 다시 나누고 새 안만 표시한다', async () => {
+  const first = card({ allocations: { FOOD: 450000, EDUCATION: 0, TRANSPORT_CAR: 100000 },
+    changes: [change('EDUCATION', 50000, 0, true), change('FOOD', 400000, 450000)] })
+  const next = card({ proposalId: 'proposal-2', allocations: { FOOD: 440000, EDUCATION: 0, TRANSPORT_CAR: 110000 },
+    changes: [change('EDUCATION', 50000, 0, true), change('FOOD', 400000, 440000), change('TRANSPORT_CAR', 100000, 110000)] })
+  apiSend.mockResolvedValueOnce(talk({ status: 'replied', canApprove: true, proposal: first,
+    distributionEdit: { source: 'EDUCATION', amount: 50000, categories: ['FOOD', 'TRANSPORT_CAR', 'SPARE'],
+      values: [{ category: 'FOOD', amount: 50000 }] } })).mockResolvedValueOnce(proposalTalk(next, 8))
+  await mount()
+  await submit('교육 5만원 줄여줘')
+  expect(host.querySelector('.mc-budget-distribution')).toBeNull()
+  await click(button('배분 수정'))
+  expect(apiSend).toHaveBeenCalledTimes(1)
+  expect(host.querySelector('select')).toBeNull()
+  await click(button('교통·차량', host.querySelector('.mc-budget-category-picks')))
+  await click(host.querySelector('[aria-label="1번 금액 10,000원 줄이기"]'))
+  await click(host.querySelector('[aria-label="2번 금액 10,000원 늘리기"]'))
+  expect(button('예산 확정하기')).toBeUndefined()
+  await click(button('나눈 예산 미리보기'))
+  expect(apiSend.mock.calls[1][2].text).toBe('기존 배분 대신 교육 예산을 50000원 줄여 식비에 40000원, 교통·차량에 10000원 나눠줘.')
+  const cards = host.querySelectorAll('.mc-budget-proposal')
+  expect(button('예산 확정하기', cards[1]).disabled).toBe(false)
+  expect(cards[1].textContent).toContain('110,000원')
+  expect(apiSend.mock.calls.some(([path]) => path.includes('/approve/'))).toBe(false)
+})
+
 it('분배 실패 해결안의 카테고리 배정액을 확인한 뒤 최초 예산으로 승인한다', async () => {
   const proposal = card({ mode: 'INITIAL_ADJUSTMENT', baseBudgetId: null, sourceTaskId: 'failed-design',
     allocations: { FOOD: 1115000, EDUCATION: 12345 }, changes: [change('LIVING', 1120000, 1217345, true)],
@@ -128,29 +185,33 @@ it('조정안의 자동 감액 항목도 상세를 펼치기 전에 보여 준�
   const visible = proposal.querySelector(':scope > .mc-budget-changes')
   expect(visible.textContent).toContain('교통·차량')
   expect(visible.textContent).toContain('75,000원')
-  expect(proposal.querySelector('details').open).toBe(false)
+  expect(proposal.querySelector('details')).toBeNull()
   expect(apiSend).toHaveBeenCalledTimes(1)
 })
 
-it('대화 답변의 작은 보기 옵션은 과거 답변에서도 현재 조건과 최신 turn으로 요청한다', async () => {
-  const navigation = [{ value: 'recommend', label: '추천안 보기' }, { value: 'compare', label: '비교하기' }]
+it('질문 단계에서는 필요한 선택지만 보이고 검수한 조정안 이후에 비교 옵션을 보여 준다', async () => {
+  const navigation = [{ value: 'recommend', label: '추천한 조정안 미리보기' }, { value: 'compare', label: '다른 조정안 비교' }]
   apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'funding_scope', canApprove: false }, [
     { value: 'living', label: '생활비 내에서' }, ...navigation,
   ], 7)).mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'discussion', canApprove: false }, navigation, 8))
     .mockResolvedValueOnce({ ...proposalTalk(card(), 9), messages: proposalTalk(card(), 9).messages.map((m) =>
       m.role === 'bot' ? { ...m, content: { ...m.content, choices: navigation } } : m) })
+    .mockResolvedValueOnce(talk({ status: 'awaiting_input', canApprove: false, comparison: comparison() }, [], 10))
   await mount()
   await submit('식비가 부족해')
-  expect(button('생활비 내에서')).toBeUndefined()
-  expect(host.querySelectorAll('.mc-budget-navigation')).toHaveLength(1)
+  expect(button('생활비 내에서')).toBeDefined()
+  expect(host.querySelectorAll('.mc-budget-navigation')).toHaveLength(0)
   expect(host.querySelector('.mc-budget-comparison')).toBeNull()
   await submit('저축은 그대로 두고 싶어')
-  const options = [...host.querySelectorAll('.mc-budget-navigation')]
-  expect(options).toHaveLength(2)
-  await click(button('추천안 보기', options[0]))
-  expect(apiSend.mock.calls[2][2].choice).toEqual({ value: 'recommend', turn: 8 })
+  expect(host.querySelectorAll('.mc-budget-navigation')).toHaveLength(0)
+  await submit('추천안 보여줘')
   expect(host.querySelector('.mc-budget-proposal')).not.toBeNull()
   expect(host.querySelector('.mc-budget-comparison')).toBeNull()
+  const options = [...host.querySelectorAll('.mc-budget-navigation')]
+  expect(options).toHaveLength(1)
+  await click(button('다른 조정안 비교', options[0]))
+  expect(apiSend.mock.calls[3][2].choice).toEqual({ value: 'compare', turn: 9 })
+  expect(host.querySelector('.mc-budget-comparison')).not.toBeNull()
   expect(apiSend.mock.calls.every(([path]) => path === '/api/chat/messages/')).toBe(true)
 })
 
@@ -176,7 +237,7 @@ it('자세히 요청한 답변은 변경안·비교안·설명 상세를 펼친 
   await mount()
   await submit('자세히')
   const details = [...host.querySelectorAll('.mc-budget-details')]
-  expect(details.length).toBe(5)
+  expect(details.length).toBe(4)
   expect(details.every((element) => element.open)).toBe(true)
   expect(host.textContent).toContain('하한과 금액 단위를 함께 확인했어요.')
   expect(apiSend).toHaveBeenCalledTimes(1)

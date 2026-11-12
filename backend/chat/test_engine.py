@@ -134,7 +134,11 @@ class ServiceChatTest(ServiceChatBase):
     def test_budget_starts_real_dialog_and_policy_asks_region(self):
         out = self.send("A", text="식비 예산 줄여줘")
         cid = out.json()["conversationId"]
-        self.assertEqual(self.bot(out)["budgetAdjustment"]["phase"], "funding_scope")
+        adjustment = self.bot(out)["budgetAdjustment"]
+        self.assertEqual(adjustment["phase"], "comparison")
+        self.assertIn("comparison", adjustment)
+        self.assertFalse(adjustment["canApprove"])
+        self.assertNotIn("proposal", adjustment)
         store = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
         self.assertIsNone((store.get_task(engine.KEY) or {}).get("task_ref"))  # 질문만으로 저장 작업을 만들지 않는다
         after = self.bot(self.send("A", cid, text="이번 달 얼마 썼어?"))

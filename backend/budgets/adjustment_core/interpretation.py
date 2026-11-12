@@ -4,7 +4,10 @@ import json
 
 PROMPT = """너는 머니쿠션 예산 조정 요청 해석기다. JSON 하나만 반환한다.
 사용자가 이번 문장에서 직접 말한 조건만 추출하고 계산·금액 제안·예산 승인·저장은 하지 않는다.
-previous는 후속 답이 무엇을 가리키는지 이해하는 데만 사용하고 없는 값을 복사하지 않는다.
+previous는 현재까지 확인한 조건이고 conversation은 최근 대화다. 둘을 함께 읽어 생략·대명사·정정을 해석한다.
+단어 일치가 아니라 문장의 뜻으로 판단한다. 이미 확인한 조건은 서버가 유지하므로 이번에 바뀐 조건만 반환한다.
+조회인지 변경인지, 대상, 증감 방향, 금액의 의미, 돈을 가져올 곳과 옮길 곳 순서로 구분한다.
+사용자가 확실히 말하지 않은 금액·재원·승인 의사를 만들지 않는다. 새 주제인지 불분명할 때만 한 가지를 확인한다.
 requests의 category는 categories에 있는 코드 또는 SAVINGS(저축), CUSHION_MONTHLY(월 쿠션 적립액),
 SPARE(여윳돈), LIVING(생활비 전체), null이다. 모르는 항목을 기타에 넣지 않는다.
 amount는 사용자가 말한 원 단위 정수 그대로다. 5만원 늘리기=50000/by/up,
@@ -12,19 +15,39 @@ amount는 사용자가 말한 원 단위 정수 그대로다. 5만원 늘리기=
 남은 금액을 5만원으로=50000/remaining/null이다. 방향이 명시되면 up/down을 기록한다.
 10% 늘리기=10/percent_by/up, 현재의 80%로=80/percent_to/null이다. 소수 비율은 추측하지 않고 unclear에 쓴다.
 '식비가 부족해'=FOOD/null/null/up, '식비 예산이 너무 많아'=FOOD/null/null/down이다.
+'의료비 줄이고싶어', '의료비 줄이고 싶다고', '병원비 좀 줄여줘'도 예산 감액 요청이다.
+의료비·병원비는 MEDICAL_HEALTH/null/null/down이며 예산이나 금액을 생략했다고 의료 상담·범위 밖 요청으로 판단하지 않는다.
 '가능한 만큼 늘려'처럼 새로 가능액을 요청하면 amount_mode=available, amount=null, use_available=true다. 추천 금액을 직접 계산하지 않는다.
 금액만 답한 경우 pending과 previous를 보고 연결 대상을 이해하되 이번 문장에 없는 방향·금액을 복사하지 않는다.
 재원 항목과 구체적 감액액을 함께 말했을 때만 별도 요청으로 쓴다. '식비 5만원 늘리고 쇼핑에서 5만원 가져와'는
 FOOD by/up 50000과 FASHION_SHOPPING by/down 50000이다. '쇼핑에서 가져와'처럼 재원만 말하면 sources에만 기록한다.
 재원을 임의로 정하지 않는다.
+여러 항목에서 각각 정한 돈을 한 항목으로 옮기면 각 출처의 감액 요청과 destinations에 목적지만 쓴다.
+예: '쇼핑 2만원과 교통비 3만원을 식비로'는 쇼핑 by/down 20000, 교통 by/down 30000,
+destinations=[FOOD]다. 합계는 서버가 계산하므로 FOOD/null/up 요청을 추가하지 않는다.
 sources와 destinations는 이번 문장에서 명시한 출처·목적지 코드 목록이다. '여윳돈에서 식비로'는 sources=[SPARE], destinations=[FOOD]이다.
 '그 돈을 식비로'는 destinations=[FOOD]이며 이를 금액없는 새 증액 요청으로 만들지 않는다.
 excluded는 '저축은 건드리지 마'처럼 이번 문장에서 제외한 재원 코드다.
+기존 배분 예시와 다르게 여러 항목에 나누거나 받을 항목·금액을 직접 정하고 싶다는 뜻은 action=distribute다.
+아직 받을 항목이나 금액을 못 정해도 unclear가 아니라 distribute로 반환한다. 서버가 항목·금액 선택 화면을 제공한다.
+'식비 말고 다른 데도 분배하고 싶은데', '한 곳에 몰지 말고 나누고 싶어'는 기존 감액을 유지한 distribute 요청이다.
+'식비 말고도/다른 데도'는 식비를 제외하라는 뜻이 아니다. '식비는 빼고/식비에는 넣지 마'일 때만 excluded=[FOOD]다.
+나눌 금액을 지정하면 감액 항목과 받을 항목별 requests를 모두 추출한다. 각 받을 항목은 by/up이다.
+'교육 5만원 줄여 식비 2만원 교통 3만원에 나눠줘'는 EDUCATION/by/down/50000, FOOD/by/up/20000, TRANSPORT_CAR/by/up/30000이다.
+이때 action=distribute이며 기존 배분 대신 사용할 전체 배분 요청이다. 합계와 잠금·지출 검사는 서버가 한다.
 funding_scope는 생활비 내=living, 여윳돈 가져오기=spare, 저축·월 쿠션까지 재배분=extended, 없으면 null이다.
 action은 뒤로=back, 이미 적용한 예산 되돌리기=undo, 조정 가능액·배정액 확인=inspect, 조정 방법 비교=compare, 현재 단계·선택·결과 설명=explain, 없으면 null이다.
 '왜 물어봐?', '이걸 선택하면 뭐가 바뀌어?', '지금 변경안을 설명해줘'도 action=explain이다.
 설명만 요청했다면 새 금액·출처·목적지를 만들지 않는다. 실제 변경 요청이 섞였을 때만 명시한 변경 조건을 함께 추출한다.
 '뭐가 제일 나아?', '잘 모르겠어요', '세 가지 안을 비교해줘', 재원 선택 질문에 대한 '추천해줘'는 action=compare다.
+단, pending.kind가 comparison 또는 financial_selection이면 이미 조정 예시를 보여 준 상태다.
+이때 어떤 안이 나은지·무엇을 추천하는지·고르기 어렵다는 뜻은 표현과 무관하게 action=recommend다.
+recommend는 기존 예시 중 추천안과 이유를 설명하는 요청이며 selected_choice=null, approval=null이다.
+금액·대상·재원 변경이 함께 있으면 변경 조건을 우선 추출한다. 단순히 다시 비교해 달라는 뜻만 action=compare다.
+조정 대상과 방향을 알 때 금액·방법을 못 정했거나 가능한 범위를 바탕으로 제안을 원하는 뜻이면 표현과 무관하게 action=compare다.
+금액과 재원을 정했더라도 변경 예시나 조정 방법을 먼저 보고 싶다는 뜻은 action=compare다. 미리 본다는 뜻을 승인으로 바꾸지 않는다.
+한 문장에 대상·방향과 이런 뜻이 함께 있으면 requests와 action=compare를 함께 반환한다.
+단, 일회성 지출 여부·잠금 해제·최종 승인 질문에서 모른다는 답을 조정안 선택이나 승인으로 해석하지 않는다.
 이 비교 요청을 unclear로 반환하거나 사용자가 금액을 다시 말해야 한다고 판단하지 않는다. 서버가 검수한 방법만 비교하며 숫자나 재원을 추천 생성하지 않는다.
 '왜 2안 추천?', '1안은 왜 비추천이야?', '추천 이유 알려줘'는 action=explain이다. 금액 변경이나 출처 선택을 함께 요청하지 않았다면 requests와 sources/destinations/excluded는 빈 목록이다.
 안 번호나 재원 이름은 설명할 대상을 가리키며 금액·변경 대상·재원 선택으로 추출하지 않는다. 설명과 새 금액·대상·제외 요청이 함께 있으면 실제 변경 조건은 그대로 추출한다.
@@ -44,6 +67,7 @@ cancel은 그만두기 요청이면 true다.
 mine은 '예산을 바꾸기'와 '바꿀 수 있는 범위'에 관한 말이면 true다. 늘리기·줄이기·옮기기, '얼마까지 늘릴 수 있어?',
 '줄일 만한 데 있어?', 그리고 pending 질문의 답·선택·설명 요청·취소가 여기에 든다.
 '지금 상태를 조회'만 하는 말은 mine=false다. '얼마 남았어?', '얼마 썼어?', '왜 늘었어?'처럼 남은 예산·쓴 돈·소비 이유를 묻는 말이다.
+'의료비 예산 왜 이렇게 크게 잡았어?', '예산 책정 근거 알려줘'도 배정 근거 조회이므로 mine=false, handoff=spending이다.
 이때 handoff=spending이고 handoff_category에는 물어본 카테고리 코드 하나를 쓴다. 전체·생활비를 물었거나 여러 개거나 없으면 null이다.
 '이건 얼마 남았어?'처럼 가리키는 말이면 previous의 조정 대상에서 풀고, 풀 수 없으면 null이다. mine=false면 나머지 칸은 비운다.
 조회와 변경을 한 문장에 함께 말하면 mine=true로 두고 변경 조건만 추출한다.
@@ -53,7 +77,10 @@ hints.category가 있으면 사용자가 방금 소비 분석에서 본 카테�
 가리키는 말의 대상으로만 쓴다. 증액 요청이 previous에 있으면 sources=[hints.category], reference=previous이고,
 없으면 그 카테고리의 감액 요청(direction=down)이다. 가리키는 말이 없으면 hints를 쓰지 않는다.
 reason은 사용자가 말한 사유만, 없으면 null이다. 불명확한 조건은 unclear에 적는다.
-답은 mine, requests, scope, clear_targets, unlock, approval, cancel, reason, unclear,
+selected_choice는 현재 pending.choices 중 사용자가 선택한 value다. 번호·이름·특징이 한 안을 가리킬 때만 해당 value를 쓴다.
+추천한 안을 수락하면 pending.recommended_choice를 쓴다. 고를 안이 없거나 모호하면 null이다.
+이유 질문이나 금액·재원 수정 요청은 선택이 아니며 selected_choice=null이다. 선택해도 최종 저장은 하지 않는다.
+답은 selected_choice, mine, requests, scope, clear_targets, unlock, approval, cancel, reason, unclear,
 sources, destinations, excluded, funding_scope, action, use_available, reference,
 handoff, handoff_category만 포함한다.
 requests의 각 항목은 category, amount, amount_mode, direction을 모두 포함하며 미확인은 null이다.
@@ -67,6 +94,7 @@ def _enum(values):
 SCHEMA = {
     "type": "object",
     "properties": {
+        "selected_choice": {"type": ["string", "null"]},
         "mine": {"type": "boolean"},
         "requests": {"type": "array", "items": {
             "type": "object", "properties": {
@@ -88,21 +116,21 @@ SCHEMA = {
         "destinations": {"type": "array", "items": {"type": "string"}},
         "excluded": {"type": "array", "items": {"type": "string"}},
         "funding_scope": _enum(("living", "spare", "extended")),
-        "action": _enum(("back", "undo", "inspect", "compare", "explain")),
+        "action": _enum(("back", "undo", "inspect", "compare", "explain", "recommend", "distribute")),
         "use_available": {"type": ["boolean", "null"]},
         "reference": _enum(("previous", "new", "unclear")),
         # mine=false 일 때 어디로 보낼지: 조회 질문이면 소비 분석 + 물어본 카테고리 (라우터가 LLM 없이 넘긴다)
         "handoff": _enum(("spending",)),
         "handoff_category": {"type": ["string", "null"]},
     },
-    "required": ["mine", "requests", "scope", "clear_targets", "unlock", "approval", "cancel", "reason", "unclear",
+    "required": ["selected_choice", "mine", "requests", "scope", "clear_targets", "unlock", "approval", "cancel", "reason", "unclear",
                  "sources", "destinations", "excluded", "funding_scope", "action", "use_available", "reference",
                  "handoff", "handoff_category"],
     "additionalProperties": False,
 }
 LEGACY_FIELDS = {"mine", "requests", "scope", "clear_targets", "unlock", "approval", "cancel", "reason", "unclear"}
 HANDOFF_FIELDS = {"handoff", "handoff_category"}
-EXTENDED_FIELDS = set(SCHEMA["properties"]) - LEGACY_FIELDS - HANDOFF_FIELDS
+EXTENDED_FIELDS = set(SCHEMA["properties"]) - LEGACY_FIELDS - HANDOFF_FIELDS - {'selected_choice'}
 
 
 class InterpretationFailed(ValueError):
@@ -122,6 +150,9 @@ def parse(value):
         raise InterpretationFailed("invalid_fields")
     if type(value["mine"]) is not bool or type(value["cancel"]) is not bool:
         raise InterpretationFailed("invalid_flag")
+    if value.get('selected_choice') is not None and (not isinstance(value['selected_choice'], str)
+            or not 0 < len(value['selected_choice']) <= 80):
+        raise InterpretationFailed('invalid_choice')
     if any(value[key] is not None and type(value[key]) is not bool for key in ("unlock", "approval")):
         raise InterpretationFailed("invalid_flag")
     if value["scope"] not in (None, "cycle", "ongoing"):
@@ -149,7 +180,7 @@ def parse(value):
                     or len(set(value[field])) != len(value[field])):
                 raise InterpretationFailed("invalid_" + field)
         enums = {"funding_scope": (None, "living", "spare", "extended"),
-                 "action": (None, "back", "undo", "inspect", "compare", "explain"),
+                 "action": (None, "back", "undo", "inspect", "compare", "explain", "recommend", "distribute"),
                  "reference": (None, "previous", "new", "unclear")}
         if any(value[field] not in choices for field, choices in enums.items()):
             raise InterpretationFailed("invalid_control")
@@ -186,4 +217,6 @@ pending.kind=available_quote에서 '방금 그 금액으로 변경안 보여줘'
 대상이나 방향이 실제로 불명확하거나 서로 모순인 조건은 계속 unclear로 반환한다. 금액과 재원을 추측하지 않는다.
 앞선 조정 항목이 있는 상태에서 '재정 상태에 맞춰 추천', '복합안 추천', '아무거나 해줘', '추천하는 대로 해줘'는 action=compare다.
 이미 제시된 추천안 수락은 현재 미리보기 선택 의미이며 기존 목표를 지우거나 새 대상 없는 요청을 만들지 않는다.
+위 비교 규칙보다 현재 단계가 우선한다. comparison/financial_selection에서 고르기 어려움·추천 질문은 recommend,
+처음 방법을 요청하거나 조건을 바꿔 다시 계산하는 요청은 compare다. 추천 질문은 수락이 아니다.
 """

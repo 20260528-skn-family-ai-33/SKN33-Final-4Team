@@ -187,7 +187,17 @@ def _groups(data, sources, recipient, forbidden):
     return groups
 
 
+def priority_destination(context, *, excluded=(), requested=()):
+    candidates = [code for code in context['priorities'] if code in context['allocations']
+                  and code not in requested and code not in context.get('locks', {}) and code not in excluded]
+    return min(candidates, key=lambda code: context['priorities'][code]) if candidates else None
+
+
 def _single_destination(data, *, living=False):
+    if not living and data['request']['destinations'] == [LIVING]:
+        recipient = priority_destination(data, excluded=data['excluded'], requested=data['targets'])
+        if recipient:
+            return recipient
     choices = [c for c in data["request"]["destinations"] if c != LIVING and c not in data["excluded"]]
     if living:
         choices = [c for c in choices if c in data["allocations"]]

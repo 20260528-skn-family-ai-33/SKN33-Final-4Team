@@ -70,5 +70,36 @@
 #mc-new-preview .mc-fx-period button { min-height: 32px; padding: 4px 6px; font-size: 12.5px; color: var(--mc-sub); }
 #mc-new-preview .mc-fx-period button[aria-pressed=true] { color: var(--mc-ink); }
 
+#mc-new-preview .mc-budget-adjustment form.mc-budget-amount { display: block; width: 100%; margin: 12px 0; }
+#mc-new-preview .mc-budget-amount fieldset { border: 0; padding: 0; margin: 0; min-width: 0; width: 100%; box-sizing: border-box; }
+#mc-new-preview .mc-budget-amount legend { margin-bottom: 12px; font-weight: 650; }
+#mc-new-preview .mc-budget-amount-input { display: flex; align-items: center; gap: 8px; }
+#mc-new-preview .mc-budget-amount-input input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--mc-line); border-radius: 10px; font-size: 18px; }
+#mc-new-preview .mc-budget-amount-steps { display: flex; gap: 8px; margin: 10px 0 14px; }
+#mc-new-preview .mc-budget-amount-steps button { flex: 1; min-height: 44px; }
+#mc-new-preview .mc-budget-amount .mc-primary { width: 100%; min-height: 44px; }
+#mc-new-preview .mc-budget-adjustment form.mc-budget-distribution { max-width: 360px; margin-inline: auto; }
+#mc-new-preview .mc-budget-distribution legend { width: 100%; text-align: center; }
+#mc-new-preview .mc-budget-distribution .mc-note { text-align: center; }
+#mc-new-preview .mc-budget-distribution-total { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px; border-radius: 12px; background: #f3f6ff; }
+#mc-new-preview .mc-budget-distribution-total div > span { display: block; color: var(--mc-sub); font-size: 12px; }
+#mc-new-preview .mc-budget-distribution-total strong { display: block; margin-top: 3px; font-size: 22px; letter-spacing: -.6px; }
+#mc-new-preview .mc-budget-distribution-total > span { color: #2655db; font-size: 12px; font-weight: 600; white-space: nowrap; }
+#mc-new-preview .mc-budget-distribution-total > .is-complete { color: #157346; }
+#mc-new-preview .mc-budget-category-picks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 14px 0; }
+#mc-new-preview .mc-budget-category-picks button { min-width: 0; box-sizing: border-box; min-height: 40px; padding: 6px 3px; border: 1px solid var(--mc-line); border-radius: 9px; background: var(--mc-paper); color: var(--mc-sub); font: inherit; font-size: 12px; text-align: center; }
+#mc-new-preview .mc-budget-category-picks button[aria-pressed=true] { border-color: #2655db; background: #f3f6ff; color: #2655db; font-weight: 650; }
+#mc-new-preview .mc-budget-distribution-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; }
+#mc-new-preview .mc-budget-distribution-row > strong { font-size: 13px; }
+#mc-new-preview .mc-budget-distribution-stepper { display: flex; align-items: center; width: 210px; max-width: 100%; border: 1px solid var(--mc-line); border-radius: 10px; overflow: hidden; }
+#mc-new-preview .mc-budget-distribution-stepper button { flex: 0 0 44px; min-height: 44px; padding: 0; border: 0; background: #f7f9fd; color: #2655db; font: inherit; font-size: 12px; }
+#mc-new-preview .mc-budget-distribution-stepper label { display: flex; align-items: center; flex: 1; min-width: 0; gap: 2px; padding: 0 6px; font-size: 12px; }
+#mc-new-preview .mc-budget-distribution-stepper input { width: 100%; min-width: 0; padding: 8px 0; border: 0; outline-offset: -2px; background: transparent; text-align: right; font: inherit; font-size: 15px; font-weight: 650; }
+#mc-new-preview .mc-budget-distribution .mc-primary { margin-top: 12px; }
+#mc-new-preview .mc-budget-distribution button:disabled { opacity: .45; cursor: default; }
+#mc-new-preview .mc-budget-distribution button:focus-visible { outline: 2px solid #2655db; outline-offset: 2px; }
+#mc-new-preview .mc-budget-edit-toggle,
+#mc-new-preview .mc-budget-edit-cancel { display: block; width: 100%; min-height: 44px; margin-top: 6px; text-align: center; }
+#mc-new-preview .mc-budget-advice ul { margin: 8px 0 14px; padding-left: 20px; }
 /* 정책 공고 주소: 긴 경로도 카드 안에서 줄바꿈, 밑줄로 링크를 구분 */
 #mc-new-preview .mc-fx-policy-link { color: var(--mc-ink); text-decoration: underline; overflow-wrap: anywhere; }

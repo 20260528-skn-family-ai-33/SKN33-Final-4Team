@@ -200,8 +200,8 @@ function Bubble({ content }) {
   )
 }
 
-export default function ChatReply({ content, title, active, onPick, onApprove, navigation }) {
-  if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} navigation={navigation} />
+export default function ChatReply({ content, title, active, onPick, onApprove, onSend, navigation }) {
+  if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} onSend={onSend} navigation={navigation} />
   return content.result ? <ResultCard content={content} title={title} /> : <Bubble content={content} />
 }
 

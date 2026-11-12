@@ -372,7 +372,8 @@ export default function AssistantPage() {
                   <ChatReply content={c} title={AGENTS[c.agent] ?? '머니쿠션'} active={isLast && !blocked}
                     navigation={{ choices: last?.content.budgetAdjustment ? last.content.choices : [], active: !blocked,
                       onPick: (p) => pick(last.content, p) }}
-                    onPick={(p) => pick(c, p)} onApprove={(proposal) => openApproval(proposal)} />
+                    onPick={(p) => pick(c, p)} onApprove={(proposal) => openApproval(proposal)}
+                    onSend={(text) => { if (isLast && !blocked) send({ text }, text) }} />
                 </div>
                 {import.meta.env.DEV && c.devTrace && <Trace trace={c.devTrace} />}
                 <Choices choices={adjustmentChoices(c)} active={isLast && !blocked} onPick={(p) => pick(c, p)} />

@@ -57,17 +57,53 @@ def handler(user, store, adapter, complete, conversation_key):
         if result.get("work_ref") is None:
             result["work_ref"] = state.get("work_ref") or (reply.get("proposal") or {}).get("task_ref")
         payload = {key: deepcopy(reply[key]) for key in
-                   ("proposal", "comparison", "alternatives", "alternatives_notice", "explanation", "detail")
+                   ("proposal", "comparison", "alternatives", "alternatives_notice", "explanation", "detail", "recommendation_advice", "distribution_input")
                    if key in reply}
         payload.update(status=result["status"], work_ref=result.get("work_ref"),
+                       request_summary=reply.get('request_summary', ''),
                        can_approve=bool(reply.get("proposal") and not state.get("pending")
                                         and result["status"] == "replied"),
                        phase="over_entry" if state.get("over_entry") else (state.get("pending") or {}).get("kind"))
-        for choice in reply.get("choices", []):
-            if choice["value"] == "compare":
-                choice["label"] = "비교하기"
+        items = state.get('requests', [])
+        proposal = reply.get('proposal')
+        if proposal and payload['can_approve'] and proposal.get('state') == 'awaiting_approval':
+            from budgets.adjustment_core.conversation import distribution_fields
+            donors = [{'category': row['category'], 'amount': -row['diff'], 'amount_mode': 'by', 'direction': 'down'}
+                      for row in proposal.get('changes', []) if row['diff'] < 0]
+            try:
+                fields = distribution_fields(adapter.get_context(), donors, state.get('excluded', []))
+                fields['values'] = [{'category': row['category'], 'amount': row['diff']}
+                                    for row in proposal['changes'] if row['diff'] > 0]
+                if (fields['categories'] and sum(row['amount'] for row in fields['values']) == fields['amount']
+                        and all(row['category'] in fields['categories'] for row in fields['values'])):
+                    payload['distribution_edit'] = fields
+            except (ValueError, KeyError):
+                pass  # 편집할 수 없는 기존 안은 확정·자연어 대화 경로를 유지한다.
+        if (result['status'] == 'awaiting_input' and not reply.get('proposal') and len(items) == 1
+                and items[0].get('category') and items[0].get('direction') in {'up', 'down'}
+                and items[0].get('amount') is None and payload['phase'] in {'amount', 'comparison'}):
+            context = (state.get('comparison') or {}).get('context', {})
+            has_plan = any(choice['value'].startswith('plan_') for choice in reply.get('choices', []))
+            if payload['phase'] == 'amount' or (not has_plan and context.get('spending_status') == 'complete'
+                                               and items[0]['category'] not in context.get('locks', {})):
+                from budgets.adjustment_core.explanations import NAMES
+                code, direction = items[0]['category'], items[0]['direction']
+                payload['amount_input'] = {'category': code, 'direction': direction}
+                if direction == 'down':
+                    current = adapter.get_context()
+                    if code in current.get('allocations', {}):
+                        floor = max(current.get(field, {}).get(code, 0) for field in ('spent', 'minimums', 'system_floors'))
+                        maximum = max(current['allocations'][code] - floor, 0)
+                        if code in current.get('locks', {}) and code not in state.get('unlock_categories', []):
+                            maximum = 0
+                    else:
+                        maximum = max(min(current.get('buckets', {}).get(code, 0) - current.get('bucket_floors', {}).get(code, 0),
+                                          current.get('bucket_available', {}).get(code, 0)), 0)
+                    payload['amount_input']['max_amount'] = maximum // 5000 * 5000
+                payload['request_summary'] = ''
+                reply['lines'] = [f"{NAMES.get(code, code)} 예산을 얼마 {'늘릴까요' if direction == 'up' else '줄일까요'}?"]
         reply["budget_adjustment"] = payload
-        if (reply.get("proposal") or reply.get("comparison")) and not reply.get("detail"):
+        if (reply.get("proposal") or reply.get("comparison")) and not reply.get("detail") and not reply.get('recommendation_advice'):
             reply["lines"] = reply.get("lines", [])[:1]
         return result
     return handle

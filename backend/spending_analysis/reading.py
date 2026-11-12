@@ -17,7 +17,7 @@ COMPARES = ("prev_month", "category", "other_period", "month")
 FOLLOWUPS = ("answer", "new", "cancel", "unclear")
 REFERS = ("previous", "none", "unclear")
 PAYMENTS = ("card", "bank")
-EXPLAIN_KINDS = ("change", "composition")
+EXPLAIN_KINDS = ("change", "composition", "allocation")
 WEEKDAYS = ("weekday", "weekend", "mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TIME_SLOTS = ("dawn", "morning", "lunch", "afternoon", "evening", "night", "late_night", "after_work")
 MEASURES = ("sum", "count", "avg", "daily_avg", "max")
@@ -193,10 +193,14 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
 - mine=true: 내 소비 · 남은 예산의 조회 · 분석 · 비교 · 추이 · 설명 요청, pending(내가 물은 질문)의 답 · 취소,
   또는 이 대화에서 어떤 말을 어느 카테고리로 조회할지 정하는 말("데이트비는 식비로 볼게" → alias).
 - mine=false: 예산을 늘리기/줄이기/바꾸기(예산을 보거나 나눠 보는 조회는 mine=true), 청년 정책 추천, 그 밖의 주제, 소비 분석과 다른 일을 함께 요청한 문장, 뜻을 알 수 없는 말.
+  '의료비 줄이고싶어', '의료비 줄이고 싶다고', '병원비 좀 줄여줘'는 예산 감액 의사이므로 mine=false다. '예산'을 생략해도 소비 조회로 해석하지 않는다.
   mine=false 면 다른 칸은 비운다 (어디로 보낼지는 정하지 않는다).
 - 내 소비 · 지출을 묻는데 무엇을 가리키는지만 불분명하면 '뜻을 알 수 없는 말'이 아니다 → mine=true, refers_to="unclear" (범위는 내가 되묻는다).
 - 입력의 chosen 이 true 면 사용자가 이 문장에서 소비 분석을 고른 것이다 → 소비 분석 부분만 해석하고 mine=true.
 추출 원칙:
+0. 예산을 왜 그 금액으로 책정·배정했는지 묻는 말('의료비 예산 왜 이렇게 크게 잡았어?', '식비 예산 책정 근거 알려줘')은
+   mine=true, target=budget_left, explain=true, explain_kind=allocation이다. 의료비·병원비는 MEDICAL_HEALTH다.
+   이것은 지출 증감·지출 구성의 원인 질문이 아니다. 별도로 말하지 않은 지난달 비교나 소비 조회 조건을 만들지 않는다.
 1. 이번 문장에서 말한 조건만 채운다. 기본값·지원 여부·조건 충돌·날짜 계산은 서버가 처리한다. 말하지 않은 칸은 null/빈 목록.
 2. previous는 refers_to 판단에만 쓴다. 후속 질문도 이번에 바꾼 조건만 적고 이전 조건을 복사하지 않는다.
 3. 기간·비교·개월·전체·카테고리처럼 실제로 따로 말한 조건은 모두 보존한다. 전체/생활비는 카테고리가 아니라 전체 범위다.

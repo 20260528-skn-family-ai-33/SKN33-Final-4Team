@@ -79,6 +79,14 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         return _result("not_mine", reason=decision.reason, decision=decision)
     if decision.status == "failed":
         return _result("failed", error=decision.reason, decision=decision)
+    if decision.status == 'ready' and (decision.explain or {}).get('kind') == 'allocation' and user is not None:
+        from budgets.budget_explanation import explain_current_budget
+        try:
+            lines = explain_current_budget(user, [item['category'] for item in decision.items if item.get('category')], _today(request))
+        except DatabaseError:
+            return _result('failed', error='analysis_failed', decision=decision)
+        dialog.publish(store, cid)
+        return _result('replied', {'lines': lines, 'notices': []}, decision)
     judging = agent_complete is not None and user is not None and mode != "cancel" and text is not None
     need = note = None
     question = text
