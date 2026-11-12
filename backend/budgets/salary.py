@@ -16,6 +16,8 @@ def expire_salary_drafts(user):
 def current_salary_profile(user, today):
     """회원 잠금 안에서 예약된 급여일을 적용한다."""
     profile = FinancialProfile.objects.select_for_update().filter(user=user).first()
+    from .adjustment_schedule import activate_due_settings
+    activate_due_settings(user, profile, today)
     if (profile and profile.payday_changes_on and today >= profile.payday_changes_on
             and profile.payday != profile.scheduled_payday):
         profile.payday = profile.scheduled_payday
@@ -29,7 +31,8 @@ def activate_salary_if_due(user, today):
     from .api import lock_user
 
     pending = FinancialProfile.objects.filter(user=user, payday_changes_on__lte=today).exclude(payday=F("scheduled_payday"))
-    if pending.exists():
+    from .models import BudgetAdjustmentSchedule
+    if pending.exists() or BudgetAdjustmentSchedule.objects.filter(user=user, status='scheduled', effective_on__lte=today).exists():
         with transaction.atomic():
             lock_user(user)
             current_salary_profile(user, today)

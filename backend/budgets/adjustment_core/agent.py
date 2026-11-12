@@ -30,6 +30,11 @@ def _save(store, cid, state):
 
 
 def _ask(store, cid, state, kind, line, choices=(), *, explanation=None, choice_descriptions=None, **details):
+    if explanation is None:
+        from .responses import question
+        line = question(kind, state, line, details.get('index'))
+    if explanation is None and kind == 'clarification':
+        explanation = {'title': '다시 확인할 내용', 'why': line, 'effect': '', 'next': ''}
     explanation = step_explanation(kind, state) if explanation is None else explanation
     descriptions = describe_choices(kind, choices) if choice_descriptions is None else choice_descriptions
     state["pending"] = {"kind": kind, "line": line, "choices": list(choices),

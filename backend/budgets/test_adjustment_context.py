@@ -197,7 +197,7 @@ class AdjustmentContextTest(TestCase):
                 FinancialProfile.objects.filter(user=self.user).update(has_car=vehicle)
                 found = self.context()
                 self.assertEqual(found["system_floors"], expected)
-                self.assertEqual(found["policy_version"], "budget-adjust-20261106-transport-v2")
+                self.assertEqual(found["policy_version"], "budget-adjust-20261112-planned-savings-v4")
                 self.assertEqual(found["transport_history_status"], "unavailable")
                 fingerprints.append(found["context_hash"])
         self.assertEqual(len(set(fingerprints)), 3)
@@ -264,8 +264,8 @@ class AdjustmentContextTest(TestCase):
         self.coverage.return_value = {"state": "partial", "targets": [], "undetermined": []}
         found = self.context()
         self.assertEqual(found["spending_status"], "partial")
-        self.assertEqual(set(found["bucket_status"].values()), {"unknown"})
-        self.assertEqual(found["bucket_available"], {})
+        self.assertEqual(found['bucket_status'], {'SAVINGS': 'ready', 'SPARE': 'unknown', 'CUSHION_MONTHLY': 'unknown'})
+        self.assertEqual(found['bucket_available'], {'SAVINGS': 600000})
 
     def test_spare_uses_living_overrun_and_free_ledger_without_double_counting(self):
         budget = self.make_budget()
@@ -294,25 +294,34 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(found["buckets"]["SPARE"], 300000)
         self.assertEqual(found["bucket_available"]["SPARE"], 230000)
 
-    def test_savings_protects_already_executed_amount_and_ambiguous_transfers(self):
+    def test_savings_budget_is_independent_of_executed_savings_and_transfers(self):
         self.make_budget()
         self.tx(150000, "ETC", transaction_type="saving")
         found = self.context()
-        self.assertEqual(found["bucket_available"]["SAVINGS"], 450000)
-        self.assertEqual(found["bucket_floors"]["SAVINGS"], 150000)
+        self.assertEqual(found["bucket_available"]["SAVINGS"], 600000)
+        self.assertEqual(found["bucket_floors"]["SAVINGS"], 0)
+        revision = found['bucket_revisions']['SAVINGS']
         self.tx(10000, "ETC", transaction_type="transfer")
+        self.tx(20000, "ETC", transaction_type="own_transfer")
         found = self.context()
-        self.assertEqual(found["bucket_status"]["SAVINGS"], "unknown")
-        self.assertNotIn("SAVINGS", found["bucket_available"])
+        self.assertEqual(found["bucket_status"]["SAVINGS"], "ready")
+        self.assertEqual(found["bucket_available"]["SAVINGS"], 600000)
+        self.assertEqual(found['bucket_revisions']['SAVINGS'], revision)
+        from .adjustment_core.funding import simulate_funding
+        from .test_adjustment_core import envelope, item
+        result = simulate_funding(found, envelope(item('FOOD', 550000), sources=['SAVINGS']))
+        self.assertEqual(result['status'], 'proposed', result)
+        self.assertEqual(result['buckets']['SAVINGS'], 50000)
 
-    def test_registered_savings_schedule_unknown_is_not_assumed_unexecuted(self):
+    def test_registered_savings_minimum_does_not_require_transfer_schedule(self):
         self.make_budget()
         RecurringSaving.objects.create(user=self.user, name="정기 저축", amount=200000, status="confirmed", source_type="manual")
         found = self.context()
         self.assertEqual(found["bucket_floors"]["SAVINGS"], 200000)
-        self.assertEqual(found["bucket_status"]["SAVINGS"], "unknown")
+        self.assertEqual(found["bucket_status"]["SAVINGS"], "ready")
+        self.assertEqual(found['bucket_available']['SAVINGS'], 400000)
 
-    def test_registered_remaining_obligations_are_added_to_unrelated_executed_savings(self):
+    def test_registered_minimum_is_not_increased_by_executed_savings(self):
         self.make_budget()
         bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0004", status="connected")
         account = BankAccount.objects.create(user=self.user, connection=bank, source_account_key="context-saving", account_type="demand")
@@ -320,8 +329,8 @@ class AdjustmentContextTest(TestCase):
             from_account=account, status="confirmed", source_type="manual")
         self.tx(150000, "ETC", transaction_type="saving")
         found = self.context()
-        self.assertEqual(found["bucket_floors"]["SAVINGS"], 350000)
-        self.assertEqual(found["bucket_available"]["SAVINGS"], 250000)
+        self.assertEqual(found["bucket_floors"]["SAVINGS"], 200000)
+        self.assertEqual(found["bucket_available"]["SAVINGS"], 400000)
 
     def test_monthly_cushion_protects_cycle_allocations_and_does_not_read_accumulated_use_as_funds(self):
         budget = self.make_budget()

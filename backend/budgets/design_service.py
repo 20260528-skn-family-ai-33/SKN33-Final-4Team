@@ -29,10 +29,10 @@ from plan_b_budget import build_priority_history_budget
 from plan_b_forecast import forecast_budget
 from plan_selection import select_plan
 
-ENGINE_VERSION = 'design-ab-20261107-history-proof'
+ENGINE_VERSION = 'design-ab-20261112-a-ranked-protection'
 # Initial recommendation only; later budget adjustments use their own rules.
 INITIAL_TRANSFER_PERCENT = 20
-INITIAL_POLICY = {'version': '2026-11-10-forecast-band', 'a': {},
+INITIAL_POLICY = {'version': '2026-11-12-a-ranked-protection', 'a': {},
                   'b_forecast_band': {'down_percent': 20, 'up_percent': 20}}
 
 
@@ -44,6 +44,8 @@ def initial_a_policy(config, inp, other_reserved):
     policy['increase_rates'] = dict.fromkeys(CATEGORY_NAMES, None)
     for key in ('increase_limits', 'decrease_limits', 'ceilings'):
         policy[key] = dict.fromkeys(CATEGORY_NAMES, living)
+    for row in inp['priorities']:
+        policy['decrease_limits'][row['category']] = 0
     return policy
 
 

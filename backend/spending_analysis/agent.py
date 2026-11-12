@@ -79,6 +79,15 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         return _result("not_mine", reason=decision.reason, decision=decision)
     if decision.status == "failed":
         return _result("failed", error=decision.reason, decision=decision)
+    if user is not None and decision.interpretation and decision.interpretation.funds_overview and not decision.interpretation.other_person:
+        if decision.interpretation.period not in (None, 'this_month'):
+            return _result('awaiting_input', {'lines': ['돈 종류별 잔액은 현재 급여 주기 기준으로 확인할 수 있어요. 현재 금액을 볼까요?']})
+        from budgets.funds_overview import funds_overview
+        try:
+            lines = funds_overview(user, _today(request))
+        except DatabaseError:
+            return _result('failed', error='analysis_failed', decision=decision)
+        return _result('replied', {'lines': ['이번 급여 주기 기준으로 돈의 종류를 나눠 보여드릴게요.', *lines], 'notices': []})
     if decision.status == 'ready' and (decision.explain or {}).get('kind') == 'allocation' and user is not None:
         from budgets.budget_explanation import explain_current_budget
         try:

@@ -17,11 +17,11 @@ REASONS = {
 }
 
 RECOMMENDATION_POLICY = [
-    "요청 금액을 전액 반영한 검수 완료안끼리 비교",
-    "사용자가 정한 높은 순위부터 카테고리 감액을 적게 하는 안",
-    "기존 유지 목표와 기본 배분 목표의 미달을 덜 늘리는 안",
-    "가용 재원이나 다른 카테고리의 남은 예산을 새로 0원으로 만들지 않는 안",
-    "저축·월 쿠션 계획과 다른 생활비 항목의 변경 비율이 작은 안",
+    "원하는 금액을 모두 옮길 수 있는 방법을 먼저 비교",
+    "중요하게 고른 항목의 예산을 덜 줄이는 방법",
+    "남겨 두기로 한 금액을 더 잘 지키는 방법",
+    "다른 항목의 남은 돈을 0원으로 만들지 않는 방법",
+    "저축·월 쿠션과 다른 생활비를 덜 바꾸는 방법",
 ]
 
 
@@ -70,7 +70,7 @@ def _assess_and_recommend(context, comparison, primary):
                 assessment["facts"].append(fact)
                 assessment["cautions"].append(f"{rank_text}{names.get(code, code)} 예산이 "
                     f"{change['before']:,}원에서 {change['after']:,}원으로 {amount:,}원 줄어요. "
-                    f"기지출을 제외한 남은 예산은 {remaining:,}원이에요.")
+                    f"이미 쓴 돈을 뺀 남은 예산은 {remaining:,}원이에요.")
                 if remaining == 0:
                     exhausted += 1
                 floor = max(context.get("minimums", {}).get(code, 0),
@@ -78,7 +78,7 @@ def _assess_and_recommend(context, comparison, primary):
                 if code not in context.get("ml_not_applicable", ("ETC",)) and code in context.get("ml_reference", {}):
                     floor = max(floor, min(change["before"], context["ml_reference"][code]))
                 if change["after"] == floor:
-                    assessment["cautions"].append(f"{names.get(code, code)} 항목은 자동 감액 하한 {floor:,}원까지 내려가 추가 자동 감액 여지가 없어요.")
+                    assessment["cautions"].append(f"{names.get(code, code)} 예산을 {floor:,}원까지 줄이는 안이에요. 이보다 더 줄이려면 직접 금액을 정해 주세요.")
             else:
                 available_before = context.get("bucket_available", {}).get(code, 0)
                 available_after = max(available_before - amount, 0)
@@ -88,7 +88,7 @@ def _assess_and_recommend(context, comparison, primary):
                     "available_before": available_before, "available_after": available_after})
                 assessment["cautions"].append(f"{names[code]} 배정액이 {change['before']:,}원에서 {change['after']:,}원으로 "
                     f"{amount:,}원(기존 금액의 약 {percentage:.1f}%) 줄고, "
-                    f"이번 주기에 다시 옮길 수 있는 가용액은 {available_after:,}원 남아요.")
+                    f"이번 주기에 추가로 옮길 수 있는 돈은 {available_after:,}원 남아요.")
                 if available_before > 0 and available_after == 0:
                     exhausted += 1
         gaps = {}
@@ -102,7 +102,7 @@ def _assess_and_recommend(context, comparison, primary):
                 assessment["facts"].append({"kind": "goal_shortfall_increase", "category": code,
                     "target": goal, "before_shortfall": old_gap, "after_shortfall": new_gap, "increase": increase})
                 assessment["cautions"].append(f"{names.get(code, code)}의 저장된 목표 {goal:,}원과 비교하면 "
-                    f"미달 배정액이 {old_gap:,}원에서 {new_gap:,}원으로 {increase:,}원 늘어요. 목표는 잠금이나 필수 하한과 달라요.")
+                    f"목표보다 {new_gap:,}원 적게 남아요. 원래보다 부족한 돈이 {increase:,}원 늘어나요.")
         category_gaps = sum(amount for code, amount in gaps.items() if code in context["allocations"])
         goal_damage = max(category_gaps, gaps.get(LIVING, 0)) + sum(gaps.get(code, 0) for code in ("SAVINGS", "CUSHION_MONTHLY"))
         upper_change = sum((Fraction(-change["diff"], change["before"]) for change in collateral
@@ -125,12 +125,12 @@ def _assess_and_recommend(context, comparison, primary):
             plan["assessment"]["label"] = "확인 필요"
         return
     if not scores:
-        recommendation["reasons"].append("현재 금액을 전액 반영한 검수 완료안이 없어 한 안을 추천하지 않았어요. 금액이나 재원을 먼저 조정해 주세요.")
+        recommendation["reasons"].append("원하는 금액을 모두 옮길 수 있는 방법이 없어요. 금액을 줄이거나 가져올 곳을 바꿔 주세요.")
         return
     best = min(scores.values())
     winners = [plan for plan in comparison["plans"] if scores.get(plan["id"]) == best]
     if len(winners) != 1:
-        recommendation["reasons"].append("확인된 우선순위·목표·남은 가용액 기준으로 우열이 같은 안들이 있어요. 어떤 계획을 더 유지하고 싶은지 선택해 주세요.")
+        recommendation["reasons"].append("중요하게 고른 항목과 남길 돈을 비교했을 때 비슷한 방법들이에요. 어느 쪽을 더 유지할지 골라 주세요.")
         return
     winner = winners[0]
     reasons = list(winner["assessment"]["reasons"])
@@ -162,19 +162,19 @@ def _assess_and_recommend(context, comparison, primary):
         if score[:3] > best[:3]:
             plan["assessment"]["label"] = "비추천"
         if score[0] > best[0]:
-            plan["assessment"]["reasons"].append("추천안보다 사용자가 높게 정한 순위의 카테고리를 더 줄여 우선순위 보존 기준에서 추천 순서가 낮아요.")
+            plan["assessment"]["reasons"].append("추천안보다 중요하게 고른 항목의 예산을 더 줄여야 해요.")
         elif score[1] > best[1]:
-            plan["assessment"]["reasons"].append("추천안보다 기존 목표의 미달 배정액을 더 늘려요.")
+            plan["assessment"]["reasons"].append("추천안보다 남겨 두기로 한 금액에 더 못 미쳐요.")
         elif score[2] > best[2]:
-            plan["assessment"]["reasons"].append("추천안과 달리 일부 재원의 가용액이나 다른 항목의 남은 예산이 0원이 돼요.")
+            plan["assessment"]["reasons"].append("이 방법은 다른 항목에 남은 돈이 0원이 될 수 있어요.")
         elif score[3] > best[3]:
-            plan["assessment"]["reasons"].append("각 재원의 기존 배정액 대비 감액 비율을 비교하면 추천안보다 저축·월 쿠션 계획의 변화가 커요.")
+            plan["assessment"]["reasons"].append("추천안보다 저축·월 쿠션 예산을 더 큰 비율로 줄여야 해요.")
         else:
-            plan["assessment"]["reasons"].append("각 항목의 기존 배정액 대비 감액 비율을 비교하면 추천안보다 다른 생활비 계획의 변화가 커요.")
+            plan["assessment"]["reasons"].append("추천안보다 다른 생활비를 더 큰 비율로 줄여야 해요.")
 
 
 def _profiles(category, direction):
-    """Three ways of funding the same request, or three destinations for its release."""
+    """Single sources plus their combination, or destinations for a reduction."""
     if category == LIVING:
         edges = [("living", "저축 배분 조정", ["SAVINGS"]),
                  ("spare", "여윳돈 활용" if direction == "up" else "여윳돈으로 남기기", ["SPARE"]),
@@ -192,11 +192,14 @@ def _profiles(category, direction):
         edges = [("living", "생활비 내 재배분" if direction == "up" else "다른 생활비에 배분", [LIVING]),
                  ("spare", "여윳돈 활용" if direction == "up" else "여윳돈으로 남기기", ["SPARE"]),
                  ("extended", "저축·월 쿠션 배분 조정", ["SAVINGS", "CUSHION_MONTHLY"])]
+    if direction == 'up':
+        sources = list(dict.fromkeys(code for _, _, codes in edges for code in codes if code != category))
+        edges.append(('combined', '여러 곳에서 나눠 가져오기', sources))
     return edges
 
 
 def compare_adjustments(context, envelope, *, allocate_group_reduction=None, respect_selected=False):
-    """Compare the same amount in three separate copies of one budget context.
+    """Compare the same amount in separate copies of one budget context.
 
     Without a requested amount, the common basis is the smallest positive verified
     maximum. It is a comparison amount, never a forecast of the user's needs.
@@ -220,6 +223,10 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
         data = _data(context, checked)
     if direction not in ("up", "down"):
         return response
+    if category == LIVING and direction == 'up' and not envelope.get('destinations'):
+        response.update(status='needs_destination', basis_amount=amount, amount_was_given=known,
+                        message='추천안을 만들려면 어느 생활비를 늘릴지 먼저 정해야 해요.')
+        return response
     response["amount_was_given"] = known
     excluded = list(envelope.get("excluded", []))
     plans = []
@@ -233,6 +240,8 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
                                 "direction": direction, "automatic": item.get("automatic", False) if known else True}],
                      "sources": edges if direction == "up" else [],
                      "destinations": edges if direction == "down" else [], "excluded": list(excluded)}
+        if envelope.get('spare_minimum') is not None:
+            candidate['spare_minimum'] = envelope['spare_minimum']
         if respect_selected:
             field = 'sources' if direction == 'up' else 'destinations'
             if envelope.get(field):
@@ -241,6 +250,11 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
                     continue
         if category == LIVING and direction == "up":
             candidate["destinations"] = list(envelope.get("destinations", []))
+        missing_spare_minimum = envelope.get('spare_minimum') is None and (
+            'SPARE' in candidate['sources'] or category == 'SPARE' and direction == 'down')
+        if plan_id == 'combined':
+            candidate['sources'] = [code for code in candidate['sources'] if code not in excluded
+                                    and (code != 'SPARE' or not missing_spare_minimum)]
         # Unknown or disabled sources are never counted as spendable. Show their
         # limitation even when a different source in the combined option is ready.
         unavailable = []
@@ -258,6 +272,9 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
         plan = {"id": plan_id, "scope": scope, "label": label, "status": "needs_destination",
                 "maximum": None, "amount": 0, "result": None, "envelope": None,
                 "lines": unavailable, "recommended": False, "candidate": candidate}
+        if plan_id == 'combined' and missing_spare_minimum:
+            plan['needs_spare_minimum'] = True
+            plan['lines'].append('여윳돈은 남길 금액을 정하기 전이라 빼고 계산했어요.')
         if pending_destination:
             candidate["destinations"] = [LIVING] if LIVING in edges else []
             plan["lines"].append(REASONS["needs_destination"])
@@ -265,13 +282,16 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
             needs_data = any(context.get("bucket_status", {}).get(code) != "disabled" for code in edges)
             plan.update(status="needs_data" if needs_data else "infeasible")
             plan["lines"].append(REASONS[plan["status"]])
+        elif missing_spare_minimum and plan_id != 'combined':
+            plan.update(status='needs_data', needs_spare_minimum=True)
+            plan['lines'].append('여윳돈에서 얼마나 남길지 정하지 않아 이 방법의 자동 예시는 제외했어요.')
         elif known:
             result = simulate_funding(context, candidate, allocate_group_reduction=allocate_group_reduction)
             plan.update(status=result["status"], result=result)
         else:
             quote = available_adjustment(context, category, direction,
                 sources=candidate["sources"], destinations=candidate["destinations"], excluded=excluded,
-                allocate_group_reduction=allocate_group_reduction)
+                allocate_group_reduction=allocate_group_reduction, spare_minimum=envelope.get('spare_minimum'))
             plan.update(status=quote["status"], maximum=quote["maximum"])
             if quote["status"] != "ready":
                 plan["lines"].append(REASONS.get(quote["status"], "이 안은 추가 확인이 필요해요."))
@@ -309,6 +329,11 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
             plan["lines"].append("저축·월 쿠션의 배정 계획이 달라져요. 이미 납입한 돈은 회수하지 않아요.")
         elif direction == "up":
             plan["lines"].append("저축·월 쿠션·여윳돈을 유지하는 대신 다른 생활비 항목의 여유가 줄어요.")
+    # A combination that actually uses only one source repeats a single-source card.
+    singles = [plan.get('result', {}).get('transfers') for plan in plans if plan['id'] != 'combined' and plan.get('result')]
+    plans[:] = [plan for plan in plans if plan['id'] != 'combined' or (
+        plan.get('result') and plan['result'].get('transfers') not in singles
+        and len({LIVING if t['from'] in context['allocations'] else t['from'] for t in plan['result'].get('transfers', [])}) > 1)]
     selectable = any(plan['status'] in ('ready', 'partial') and plan.get('envelope')
                      and plan['amount'] > 0 and (plan.get('result') or {}).get('changes') for plan in plans)
     response["status"] = "ready" if selectable else "unavailable"

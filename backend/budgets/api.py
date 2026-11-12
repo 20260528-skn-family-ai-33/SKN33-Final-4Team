@@ -424,6 +424,8 @@ def recommended_budget_lines(snapshot, out):
              for code, amount in sorted(fixed["categories"].items()) if amount]
     lines += [{"bucket": Bucket.FIXED, "category_detail": detail, "allocated_amount": fixed[detail]}
               for detail in ("loan", "card_reserved") if fixed[detail]]
+    if fixed.get('planned_reserve'):
+        lines.append({'bucket': Bucket.RESERVE, 'category_id': 'TRAVEL_LODGING', 'reserve_id': fixed['planned_reserve_id'], 'allocated_amount': fixed['planned_reserve']})
     lines += [
         {"bucket": Bucket.SAVINGS, "allocated_amount": saved["saving_floor"]},
         {"bucket": Bucket.CUSHION, "allocated_amount": saved["cushion_monthly"]},

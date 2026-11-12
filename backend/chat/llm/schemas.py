@@ -42,6 +42,7 @@ def role_schema(role):
         props = {"mine": {"type": "boolean"}, "target": enum(r.TARGETS), "period": enum(r.PERIODS),
                  "compare": enum(r.COMPARES), "months": nullable("integer"), "categories": spending_categories,
                  "followup": enum(r.FOLLOWUPS), "confirm": nullable("boolean"), "unclear": strings,
+                 "funds_overview": nullable("boolean"),
                  "refers_to": enum(r.REFERS), "explain": nullable("boolean"),
                  "after_budget_change": nullable("boolean"), "all_categories": nullable("boolean"),
                  "include_current": nullable("boolean"), "alias": alias, "payment": enum(r.PAYMENTS),

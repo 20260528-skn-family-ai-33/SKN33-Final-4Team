@@ -32,6 +32,7 @@ def review(index=0, ids=None):
 class FinancialPlannerTest(unittest.TestCase):
     def setUp(self):
         self.inp = financial_context()
+        self.inp['priorities'].pop('FASHION_SHOPPING')
         self.request = envelope(item(amount=200000))
         self.diag = diagnose(self.inp, self.request)
 
@@ -65,7 +66,7 @@ class FinancialPlannerTest(unittest.TestCase):
 
     def test_valid_hybrid_conserves_money_and_preserves_reserve(self):
         before = deepcopy(self.inp)
-        plan = simulate_plan(self.inp, self.diag, funding(LIVING=130000, SPARE=70000))
+        plan = simulate_plan(self.inp, self.diag, funding(LIVING=80000, SPARE=70000, SAVINGS=50000))
         self.assertEqual(plan["result"]["allocations"]["FOOD"], 600000)
         self.assertEqual(plan["result"]["buckets"]["SPARE"], 330000)
         self.assertEqual(plan["spare_available_after"], plan["reserve_after"])
@@ -103,14 +104,15 @@ class FinancialPlannerTest(unittest.TestCase):
     def test_priority_lock_and_user_minimum_are_still_enforced(self):
         self.inp["locks"] = {"FASHION_SHOPPING": 200000}
         self.inp["minimums"]["HOUSEHOLD"] = 50000
-        plan = simulate_plan(self.inp, self.diag, funding(LIVING=100000, SAVINGS=100000))
+        plan = simulate_plan(self.inp, self.diag, funding(LIVING=75000, SAVINGS=125000))
         self.assertEqual(plan["result"]["allocations"]["FASHION_SHOPPING"], 200000)
         self.assertEqual(plan["result"]["allocations"]["HOUSEHOLD"], 50000)
+        self.assertEqual(plan["result"]["allocations"]["EDUCATION"], 50000)
         self.inp["locks"]["FOOD"] = 400000
         self.assertEqual(diagnose(self.inp, self.request)["status"], "unsupported")
 
     def test_llm_drafts_then_selects_only_verified_plan_and_facts(self):
-        complete = Mock(side_effect=[draft(funding(LIVING=130000, SPARE=70000)), review()])
+        complete = Mock(side_effect=[draft(funding(LIVING=80000, SPARE=70000, SAVINGS=50000)), review()])
         answer = recommend(self.inp, self.request, complete)
         self.assertEqual(answer["recommended_index"], 0)
         second = json.loads(complete.call_args_list[1].args[1])
@@ -118,9 +120,21 @@ class FinancialPlannerTest(unittest.TestCase):
         self.assertEqual(second["verified_plans"][0]["status"], "proposed")
         self.assertEqual(len(answer["reasons"]), 2)
 
+    def test_single_source_draft_also_gets_a_verified_combined_alternative(self):
+        self.inp['bucket_available']['SAVINGS'] = 250000
+        complete = Mock(side_effect=[draft(funding(SAVINGS=200000)), review(index=1)])
+        answer = recommend(self.inp, self.request, complete)
+        self.assertEqual(answer['recommended_index'], 1, answer)
+        combined = answer['plans'][1]
+        self.assertGreater(len(combined['funding']), 1)
+        self.assertEqual(sum(row['amount'] for row in combined['funding']), 200000)
+        self.assertGreaterEqual(combined['spare_available_after'], combined['reserve_after'])
+        reviewed = json.loads(complete.call_args_list[1].args[1])['verified_plans']
+        self.assertEqual(len(reviewed), 2)
+
     def test_failed_draft_can_be_replanned_without_applying_anything(self):
         before = deepcopy(self.inp)
-        complete = Mock(side_effect=[draft(funding(SPARE=200000)), draft(funding(LIVING=130000, SPARE=70000)), review()])
+        complete = Mock(side_effect=[draft(funding(SPARE=200000)), draft(funding(LIVING=80000, SPARE=70000, SAVINGS=50000)), review()])
         answer = recommend(self.inp, self.request, complete)
         self.assertEqual(answer["recommended_index"], 0)
         self.assertEqual(self.inp, before)
@@ -129,14 +143,14 @@ class FinancialPlannerTest(unittest.TestCase):
     def test_invented_fact_or_plan_cannot_be_recommended(self):
         for bad in (review(999), review(ids=["invented_fact"]), review(ids=["reserve"])):
             with self.subTest(answer=bad):
-                complete = Mock(side_effect=[draft(funding(LIVING=130000, SPARE=70000)), bad, bad])
+                complete = Mock(side_effect=[draft(funding(LIVING=80000, SPARE=70000, SAVINGS=50000)), bad, bad])
                 answer = recommend(self.inp, self.request, complete)
                 self.assertEqual(answer["error"], "planner_not_validated")
                 self.assertFalse(answer["plans"])
 
     def test_payload_contains_aggregates_not_personal_inputs(self):
         self.inp.update(api_key="do-not-send", account_number="do-not-send", raw_transactions=[{"secret": 1}])
-        complete = Mock(side_effect=[draft(funding(LIVING=130000, SPARE=70000)), review()])
+        complete = Mock(side_effect=[draft(funding(LIVING=80000, SPARE=70000, SAVINGS=50000)), review()])
         recommend(self.inp, self.request, complete)
         for call in complete.call_args_list:
             self.assertNotIn("do-not-send", call.args[1])

@@ -4,8 +4,7 @@
 // - 기능 버튼 목록은 서버가 준다 (첫 화면 = GET /api/chat/messages/, 그 뒤 응답마다 features). 꺼짐(legacy) 2개 · 켜짐(router) 3개
 // - 답 모양: 켜짐 = 카드 · 그래프 · 선택지(ChatReply), 꺼짐 = 옛 답 {text, choices} 말풍선. 둘 다 ChatReply 가 그린다
 // - 담당 표시 · 예산 폼은 서버가 준 content.agent · content.inputs 로만 정한다 (문장으로 추측하지 않음)
-// - 새로고침하면 이 대화를 다시 불러온다 (11/3, GET /api/chat/conversations/<id>/). 대화 번호는 sessionStorage 에 두고
-//   채팅 화면을 떠나면 지운다 → 다른 화면에 갔다 오면 지금처럼 빈 대화 (10/30 · 11/2 결정 유지). 404(다른 계정 · 없는 대화)면 새 대화
+// - 새로고침·페이지 이동 후에도 sessionStorage의 대화 번호로 다시 불러온다. 새 대화 선택·404일 때 번호를 지운다.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -66,7 +65,7 @@ function Trace({ trace }) {
   )
 }
 
-// 새로고침 복원용 대화 번호 — 저장소를 못 쓰는 브라우저(사생활 보호 모드 등)는 그냥 새 대화
+// 같은 탭에서 대화를 이어가기 위한 번호 — 저장소를 못 쓰는 브라우저는 새 대화
 const SAVED = 'mc-chat-conversation'
 const wideAdjustment = (a) => Boolean(a && (a.proposal || a.comparison || a.alternatives))
 function savedId() {
@@ -113,17 +112,16 @@ export default function AssistantPage() {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [messages, busy])
 
-  // 번호를 저장해 두고, 화면을 떠나면(언마운트) 지운다. 새로고침은 언마운트 없이 페이지가 바뀌어 번호가 남는다
+  // 화면을 떠나도 번호를 유지한다. 새 대화·404 처리는 conversationId를 null로 바꾼다.
   useEffect(() => {
     saveId(conversationId)
-    return () => saveId(null)
   }, [conversationId])
 
   useEffect(() => {
     if (storedApproval && navState?.budgetContext) navigate(PATHS.assistant, { replace: true, state: null })
   }, [storedApproval, navState, navigate])
 
-  // 새로고침 전 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
+  // 저장된 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
   useEffect(() => {
     if (!restoreId) return
     let live = true

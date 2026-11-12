@@ -13,7 +13,7 @@ SOURCES = ("LIVING", "SPARE", "SAVINGS", "CUSHION_MONTHLY")
 PROMPT = """머니쿠션 재정 상태 기반 조정 계획기. 제공된 집계·서버 계산만 근거로 JSON을 반환한다.
 draft 단계: 1~3개 계획을 만들고 recommendation_index=null, reason_fact_ids=[]로 반환한다.
 funding은 허용된 source와 이동 amount(원 정수) 목록이다. 합계는 planning_amount와 같아야 한다.
-한 재원을 여러 번 쓰지 않는다. 가능한 경우 서로 다른 재원 조합을 비교한다. 꼭 복합일 필요는 없다.
+한 재원을 여러 번 쓰지 않는다. 단일 재원만으로 부족하면 허용 재원을 함께 쓰는 복합안을 반드시 검토한다.
 최근 지출·남은 기간·예정 지출·목표·가용액을 보고 불필요한 카테고리 감액과 저축/월 쿠션 변경을 피한다.
 여윳돈도 예정 지출과 추정 보유액이 있어 전부 가용하다고 단정하지 않는다.
 저축은 금액이나 비율만 보고 과다하다고 판단하지 않는다. 실행·납입 예정·하한이 보호된 이동 가능액만 검토한다.
@@ -59,7 +59,7 @@ def ceil_unit(value, unit=5000):
 def diagnose(context, request):
     items = request.get("items", [])
     if len(items) != 1 or items[0].get("category") not in context["allocations"]:
-        return {"status": "unsupported", "message": "재정 진단 추천은 현재 생활비 항목 하나의 증액부터 지원해요."}
+        return {"status": "unsupported", "message": "식비나 교통비처럼, 더 필요한 항목을 먼저 정하면 얼마를 늘릴지 추천할 수 있어요."}
     item, info = items[0], context.get("diagnostic_inputs", {})
     target = item["category"]
     if target in context.get("locks", {}):
@@ -114,11 +114,13 @@ def diagnose(context, request):
             "forecast": forecast, "reserve_forecast": reserve_forecast, "expected_other": expected_other,
             "planned_spare": planned["amount"], "allowed": allowed, "excluded": list(request.get("excluded", [])),
             "reserve_is_estimate": True, "allow_reserve_risk": request.get("allow_reserve_risk") is True}
+    if request.get('spare_minimum') is not None:
+        base['spare_minimum'] = request['spare_minimum']
     reserve = reserve_after(context, base, context["allocations"])
     capacities = {}
     for source in allowed:
         quote = available_adjustment(context, target, "up", sources=[source], excluded=base["excluded"],
-                                     allocate_group_reduction=proportional_group_reduction)
+                                     allocate_group_reduction=proportional_group_reduction, spare_minimum=base.get('spare_minimum'))
         capacities[source] = quote["maximum"] if quote["status"] == "ready" else 0
         if source == "SPARE":
             if not base["allow_reserve_risk"]:
@@ -127,7 +129,7 @@ def diagnose(context, request):
     base["facts"] = {
         "period": f"다음 급여일까지 {days}일, 확인된 최근 관측일은 {len(samples)}일이에요.",
         "need": f"{NAMES.get(target, target)}의 남은 예산은 {remaining:,}원, 최근 추세로 추정한 남은 기간 지출은 {forecast[target]:,}원이에요.",
-        "reserve": f"별도 예정 지출 {planned['amount']:,}원과 다른 항목의 예상 부족분을 합쳐 여윳돈 {reserve:,}원을 남기길 권해요. 추가 안전비율을 붙이지 않은 추정이며 최소액·잠금은 아니에요.",
+        "reserve": f"예정된 지출과 다른 항목에서 부족해질 돈을 대비해 여윳돈 {reserve:,}원을 남기길 권해요. 예상 금액이라 직접 바꿀 수 있어요.",
         "savings": f"저축 배정액 {context['buckets']['SAVINGS']:,}원 중 확인된 이동 가능액은 {context.get('bucket_available', {}).get('SAVINGS', 0):,}원이에요. 금액만으로 저축 과다를 판단하지 않아요.",
     }
     return base
@@ -160,6 +162,8 @@ def simulate_plan(context, diagnosis, funding):
                  for s, n in limits.items() if s != "LIVING")
     request = {"items": items, "sources": ["LIVING"] if limits.get("LIVING") else [],
                "destinations": [], "excluded": list(diagnosis["excluded"])}
+    if diagnosis.get('spare_minimum') is not None:
+        request['spare_minimum'] = diagnosis['spare_minimum']
     result = simulate_funding(context, request, allocate_group_reduction=proportional_group_reduction)
     validate_funding(context, request, result)
     if result["status"] not in {"proposed", "partial"}:
@@ -180,7 +184,7 @@ def simulate_plan(context, diagnosis, funding):
     if (max(reserve - spare_after, 0) > max(diagnosis["reserve_before"] - (available or 0), 0)
             and not diagnosis.get("allow_reserve_risk")):
         raise ValueError("spare_reserve_shortfall")
-    facts = {"reserve_after": f"조정 후 확인된 여윳돈 가용액 {spare_after:,}원, 지출 추정에 따른 보유 추천액 {reserve:,}원이에요."}
+    facts = {"reserve_after": f"조정 후 쓸 수 있는 여윳돈은 {spare_after:,}원이에요. 앞으로의 지출을 고려하면 {reserve:,}원을 남기길 권해요."}
     structured = []
     for change in result["changes"]:
         code = change["category"]
@@ -197,7 +201,7 @@ def simulate_plan(context, diagnosis, funding):
         goal = context.get("bucket_targets", {}).get(code, context.get("category_targets", {}).get(code))
         if money(goal) and change["after"] < min(change["before"], goal):
             increase = max(goal - change["after"], 0) - max(goal - change["before"], 0)
-            facts["goal_" + code] = f"{NAMES.get(code, code)}의 저장된 목표 미달액이 {increase:,}원 늘어요."
+            facts["goal_" + code] = f"{NAMES.get(code, code)}에 남겨 두기로 한 돈보다 부족한 금액이 {increase:,}원 더 커져요."
             structured.append({"kind": "goal_shortfall_increase", "category": code, "increase": increase})
     if spare_after < reserve:
         facts["reserve_gap"] = f"여윳돈 보유 추천액보다 {reserve - spare_after:,}원 부족한 상태는 남아요."
@@ -245,6 +249,21 @@ def recommend(context, request, complete):
                     plan = simulate_plan(context, diagnosis, draft["funding"])
                     if plan["funding"] not in [p["funding"] for p in proposed]:
                         proposed.append(plan)
+                if not any(len(p['funding']) > 1 for p in proposed):
+                    remaining, combined = diagnosis['planning_amount'], []
+                    for source in ('SPARE', 'LIVING', 'CUSHION_MONTHLY', 'SAVINGS'):
+                        amount = min(remaining, diagnosis['capacities'].get(source, 0) // 5000 * 5000)
+                        if amount:
+                            combined.append({'source': source, 'amount': amount})
+                            remaining -= amount
+                    if not remaining and len(combined) > 1:
+                        try:
+                            verified = simulate_plan(context, diagnosis, combined)
+                        except ValueError:
+                            # Combining sources can increase the reserve needed for reduced living budgets.
+                            verified = None
+                        if verified is not None and len(verified['funding']) > 1 and verified['funding'] not in [p['funding'] for p in proposed]:
+                            proposed = proposed[:2] + [verified]
                 plans = proposed
                 evidence = dict(diagnosis["facts"])
                 review = []

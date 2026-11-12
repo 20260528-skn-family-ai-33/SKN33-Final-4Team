@@ -1,5 +1,4 @@
 """Owner-scoped adjustment inputs; legacy ML references may be frozen once."""
-import calendar
 from copy import copy, deepcopy
 from datetime import date, datetime, timedelta
 from fractions import Fraction
@@ -14,7 +13,6 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from finance.api import cancel_info, listed_transactions, transaction_item
-from finance.models import FinancialTransaction, RecurringSaving
 from finance.spending import spending_summary
 from spending_analysis.coverage import coverage
 from spending_analysis.periods import Period
@@ -29,7 +27,7 @@ from .salary import salary_cycle_dates
 from .scope import OUT_OF_BUDGET, living_spent
 
 
-POLICY_VERSION = "budget-adjust-20261106-transport-v2"
+POLICY_VERSION = "budget-adjust-20261112-planned-savings-v4"
 MODES = {"INITIAL_ADJUSTMENT": "validated", "NORMAL_ADJUSTMENT": "approved"}
 ML_CATEGORIES = set(LIVING_CODES) - {"ETC"}
 
@@ -127,6 +125,8 @@ def _budget_amounts(user, chosen):
                 allocations[item.category_id] += item.allocated_amount
             elif item.allocated_amount:
                 raise AdjustmentContextError("unsupported_budget_scope")
+        elif item.bucket == 'reserve' and item.category_id == 'TRAVEL_LODGING':
+            totals['fixed'] += item.allocated_amount  # Earmarked money is outside the ordinary adjustment pool.
         elif item.bucket in totals:
             totals[item.bucket] += item.allocated_amount
         elif item.allocated_amount:
@@ -159,45 +159,6 @@ def _free_used(user, cycle, today):
         else:
             inside += amount
     return inside, outside, _hash(grouped)
-
-
-def _due_count(saving, cycle):
-    if saving.transfer_day is None or saving.from_account_id is None:
-        return None
-    year, month = cycle.starts_on.year, cycle.starts_on.month
-    count = 0
-    while date(year, month, 1) < cycle.ends_before:
-        due = date(year, month, min(saving.transfer_day, calendar.monthrange(year, month)[1]))
-        count += cycle.starts_on <= due < cycle.ends_before
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    return count
-
-
-def _savings(user, cycle, today, amount, complete):
-    registered = list(RecurringSaving.objects.filter(user=user, status="confirmed").order_by("pk"))
-    minimum = sum(row.amount for row in registered)
-    proof = {"registered": [{"id": str(row.pk), "amount": row.amount, "day": row.transfer_day,
-                             "from": str(row.from_account_id), "evidence": row.evidence} for row in registered]}
-    if not complete:
-        return minimum, None, "spending_unverified", _hash(proof)
-    period = FinancialTransaction.objects.filter(user=user, direction="out", occurred_on__gte=cycle.starts_on,
-                                                 occurred_on__lt=cycle.ends_before, occurred_on__lte=today)
-    if period.filter(transaction_type__in=["transfer", "own_transfer"], is_canceled=False).exists():
-        return minimum, None, "savings_execution_unverified", _hash(proof)
-    executed = {str(tx.pk): tx.amount - cancel_info(tx)["amount"] for tx in period.filter(transaction_type="saving")}
-    proof["executed"] = executed
-    remaining, taken = 0, set()
-    for saving in registered:
-        count = _due_count(saving, cycle)
-        if count is None or not isinstance(saving.evidence, list):
-            return minimum, None, "savings_schedule_unverified", _hash(proof)
-        matched = set(map(str, saving.evidence)) & set(executed)
-        if taken & matched:
-            return minimum, None, "savings_execution_unverified", _hash(proof)
-        taken |= matched
-        remaining += max(saving.amount * count - sum(executed[key] for key in matched), 0)
-    floor = max(minimum, sum(executed.values()) + remaining)
-    return floor, max(amount - floor, 0), None, _hash(proof)
 
 
 def _initial_budget(chosen):
@@ -365,24 +326,24 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
     spent["UNCLASSIFIED"] = summary["by_category"].get("UNCLASSIFIED", 0)
     complete = collected["state"] == "complete"
     inside_free, outside_free, free_revision = _free_used(user, cycle, today)
-    spare_used = outside_free + max(inside_free, max(living_spent(summary) - sum(allocations.values()), 0))
-    savings_floor, savings_available, savings_reason, saving_revision = _savings(user, cycle, today, totals["savings"], complete)
+    living_total = sum(amount for code, amount in allocations.items() if code not in OUT_OF_BUDGET)
+    spare_used = outside_free + max(inside_free, max(living_spent(summary) - living_total, 0))
+    # Reallocate the savings budget, not money already transferred into a savings account.
+    savings_floor = protection['savings_min']
+    savings_available = max(totals['savings'] - savings_floor, 0)
     balance = balance_json(user)
     required = cushion_required(balance["total"], profile.monthly_take_home_income)
     accrued = CushionEntry.objects.filter(user=user, cycle=cycle, entry_type="allocation").aggregate(total=Sum("amount"))["total"] or 0
     cushion_floor = max(1 if required else 0, accrued)
     cushion_known = complete and balance["total"] is not None and not balance["unknown_count"]
-    available = {}
+    available = {'SAVINGS': savings_available}
     status = {code: "unknown" for code in ("SPARE", "SAVINGS", "CUSHION_MONTHLY")}
+    status['SAVINGS'] = 'ready'
     reasons = {}
     if complete:
         available["SPARE"], status["SPARE"] = max(spare - spare_used, 0), "ready"
     else:
         reasons["SPARE"] = "spending_unverified"
-    if savings_available is not None:
-        available["SAVINGS"], status["SAVINGS"] = savings_available, "ready"
-    else:
-        reasons["SAVINGS"] = savings_reason
     if cushion_known:
         available["CUSHION_MONTHLY"], status["CUSHION_MONTHLY"] = max(totals["cushion"] - cushion_floor, 0), "ready"
     else:
@@ -398,6 +359,7 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
     context = {
         "base_budget_id": str(chosen.pk), "cycle_id": str(cycle.pk), "mode": mode, "source_status": chosen.status,
         "policy_version": POLICY_VERSION, "automatic_unit": 10000, "fallback_unit": 5000,
+        "reserved_budget_amount": sum(line['amount'] for line in items if line['bucket'] == 'reserve'),
         "allocations": allocations, "spent": spent, "spending_status": collected["state"],
         "spending_coverage": _json(collected), "minimums": dict(CategoryMinimum.objects.filter(user=user,
             category_id__in=LIVING_CODES).values_list("category_id", "min_amount")),
@@ -413,10 +375,12 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
         "category_names": dict(Category.objects.filter(pk__in=LIVING_CODES).values_list("pk", "display_name")),
         "category_targets": _money_map(getattr(profile, "budget_category_targets", {}) or {}, allocations),
         "funding_amount": chosen.funding_amount, "fixed_amount": totals["fixed"],
+        "monthly_income": profile.monthly_take_home_income,
+        "next_cycle_starts_on": cycle.ends_before.isoformat(),
         "buckets": {"SAVINGS": totals["savings"], "CUSHION_MONTHLY": totals["cushion"], "SPARE": spare},
         "bucket_floors": {"SAVINGS": savings_floor, "CUSHION_MONTHLY": cushion_floor},
         "bucket_available": available, "bucket_status": status, "bucket_reasons": reasons,
-        "bucket_revisions": {"SPARE": free_revision, "SAVINGS": saving_revision,
+        "bucket_revisions": {"SPARE": free_revision, "SAVINGS": _hash({'amount': totals['savings'], 'minimum': savings_floor}),
             "CUSHION_MONTHLY": _hash({"accrued": accrued, "required": required, "balance": balance})},
         "bucket_targets": {key: value for key, value in {"LIVING": profile.living_budget,
             "SAVINGS": profile.savings_floor, "CUSHION_MONTHLY": profile.cushion_monthly}.items() if _money(value)},

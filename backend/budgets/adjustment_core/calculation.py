@@ -5,9 +5,10 @@ from fractions import Fraction
 
 CATEGORY_CODES = (
     "FOOD", "TRANSPORT_CAR", "HOUSEHOLD", "FASHION_SHOPPING", "MEDICAL_HEALTH",
-    "BEAUTY", "EDUCATION", "CULTURE_LEISURE", "ETC",
+    "BEAUTY", "EDUCATION", "CULTURE_LEISURE", "ETC", "TRAVEL_LODGING",
 )
 ALL_CODES = set(CATEGORY_CODES) | {"HOUSING_TELECOM", "TRAVEL_LODGING", "UNCLASSIFIED"}
+NON_BUDGET_CODES = {"ETC"}
 BLOCKED = {"needs_policy", "needs_data", "needs_destination", "infeasible"}
 
 
@@ -58,7 +59,7 @@ def _prepare(context, requests):
         if not isinstance(request, dict):
             raise AdjustmentError("invalid_request")
         c, mode, direction = request.get("category"), request.get("amount_mode"), request.get("direction")
-        if not isinstance(c, str) or c not in amounts:
+        if not isinstance(c, str) or c not in amounts or c in NON_BUDGET_CODES:
             raise AdjustmentError("unsupported_category")
         if c in targets:
             raise AdjustmentError("duplicate_request")
@@ -99,10 +100,12 @@ def _floor(data, category):
     return max(floor, min(data["allocations"][category], data["ml_reference"][category]))
 
 
-def _eligible(data, donor, recipient):
+def _eligible(data, donor, recipient, *, allow_ranked=False):
+    if donor in NON_BUDGET_CODES or recipient in NON_BUDGET_CODES:
+        return False
     donor_rank = data["priorities"].get(donor)
     receiver_rank = data["priorities"].get(recipient)
-    return donor_rank is None or receiver_rank is not None and donor_rank > receiver_rank
+    return donor_rank is None or allow_ranked and receiver_rank is not None and donor_rank > receiver_rank
 
 
 def _groups(data, recipient):

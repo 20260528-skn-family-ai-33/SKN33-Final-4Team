@@ -144,14 +144,15 @@ class AdjustmentServiceTest(TestCase):
     def test_only_requested_category_persists_when_living_donors_are_automatically_reduced(self):
         path = "budgets.adjustment_core.calculation.proportional_group_reduction"
         with self.settings(BUDGET_ADJUST_ALLOCATOR=path):
-            adapter, card = self.stage(envelope(item(amount=100000), sources=["LIVING"]))
+            adapter, card = self.stage(envelope(item(amount=40000), sources=["LIVING"]))
             self.assertTrue(any(row["diff"] < 0 and not row["direct"] for row in card["changes"]))
             self.flush(adapter)
             self.approve(card["proposal_id"], keep=True)
         self.profile.refresh_from_db()
-        self.assertEqual(self.profile.budget_category_targets, {"FOOD": 500000})
+        self.assertEqual(self.profile.budget_category_targets, {"FOOD": 440000})
         proposal = Budget.objects.get(pk=card["proposal_id"])
-        self.assertLess(proposal.items.get(category_id="FASHION_SHOPPING").allocated_amount, 200000)
+        self.assertEqual(proposal.items.get(category_id="FASHION_SHOPPING").allocated_amount, 200000)
+        self.assertLess(proposal.items.get(category_id="HOUSEHOLD").allocated_amount, 50000)
 
     def test_approval_reuses_frozen_ml_without_calling_provider_under_user_lock(self):
         prediction = {"ml_reference": deepcopy(self.snapshot["ml_reference"]),
