@@ -92,3 +92,19 @@ it('이름 검색은 입력하는 대로 목록 · 합계를 거르고, 비우�
   expect(host.textContent).toContain('거래 2건 · 소비 17,345원')
   expect(fetch.mock.calls.length).toBe(calls)              // 글자마다 서버에 다시 묻지 않는다
 })
+
+it('예산 화면에서 오면 그 예산 주기의 확인 필요 거래만 받고, 제목에 주기를 보여 준다 (11/12)', async () => {
+  await act(async () => root.render(<MemoryRouter initialEntries={['/txs?category=UNCLASSIFIED&month=cycle&from=2026-10-25&to=2026-11-24']}>
+    <PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
+  const urls = fetch.mock.calls.map(([url]) => url)
+  expect(urls).toContain('/api/finance/transactions/?category=UNCLASSIFIED&from=2026-10-25&to=2026-11-24')
+  expect(host.querySelector('.mc-sumbar-m').textContent).toBe('이번 주기10.25~11.24')
+  await act(async () => btn('전체 기간 보기').click())  // 전체 기간으로 넓혀 볼 수 있다
+  expect(host.querySelector('.mc-sumbar-m').textContent).toBe('전체 기간')
+})
+
+it('주기 날짜가 없거나 이상하면 확인 필요 기본(전체 기간)으로 본다 (11/12)', async () => {
+  await act(async () => root.render(<MemoryRouter initialEntries={['/txs?category=UNCLASSIFIED&month=cycle&from=oops']}>
+    <PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
+  expect(host.querySelector('.mc-sumbar-m').textContent).toBe('전체 기간')
+})

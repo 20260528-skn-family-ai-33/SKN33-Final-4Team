@@ -1251,3 +1251,5 @@
 #mc-new-preview .mc-bill-failed p{margin:0}
 #mc-new-preview .mc-bill-failed p+p{margin-top:6px}
 #mc-new-preview#mc-new-preview .mc-adjust-consent-title{margin-top:10px}  /* 예산 조정 동의 창 제목을 [닫기 ×] 아래로 조금 내린다 (11/12) */
+#mc-new-preview .mc-sumbar-cycle{white-space:nowrap}
+#mc-new-preview .mc-sumbar-range{margin-left:6px;font-size:12px;font-weight:500;color:var(--mc-sub);font-variant-numeric:tabular-nums}  /* 예산 주기 보기 날짜 (11/12) */

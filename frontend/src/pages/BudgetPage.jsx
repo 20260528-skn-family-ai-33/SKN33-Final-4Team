@@ -32,6 +32,13 @@ const shortDay = (iso, minusDays = 0) => {
   return `${d.getMonth() + 1}.${d.getDate()}`
 }
 
+// 'YYYY-MM-DD' 에서 며칠 뺀 날짜 (주기 끝 = endsBefore 하루 전)
+const isoDay = (iso, minusDays = 0) => {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() - minusDays)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 const pct = (used, budget) => (budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : used > 0 ? 100 : 0)
 
 export default function BudgetPage() {
@@ -45,7 +52,9 @@ export default function BudgetPage() {
 
   if (!data) return <Layout title="카테고리 예산" activeTab="budget"><ApiStatus error={error} /></Layout>
   const { budget, split, living, overspend, categories, unclassifiedCount } = data
-  const goPending = () => navigate(`${PATHS.txs}?category=${PENDING.code}`)
+  // '확인 필요 N건'은 이번 예산 주기 거래만 센 숫자라, 거래 화면도 그 주기만 연다 (11/12). 주기가 없으면 전체 기간
+  const goPending = () => navigate(`${PATHS.txs}?category=${PENDING.code}${data.cycle
+    ? `&month=cycle&from=${data.cycle.startsOn}&to=${isoDay(data.cycle.endsBefore, 1)}` : ''}`)
 
   // 예산이 아직 없을 때 (첫 가입 · 급여일 없음)
   if (!budget) {

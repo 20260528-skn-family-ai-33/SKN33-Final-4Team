@@ -6,6 +6,7 @@
 //   이체를 누르면 [소비로 분류하기] (결정 W) · 고정지출로 연결된 거래(funding: fixed)는 '고정' 표시 (★8 · AA⑤)
 // 기간은 달력월. ‹ › 로 달을 옮긴다 (주소 ?month=2026-10, 없으면 이번 달)
 // '확인 필요'는 기본이 전체 기간(H-03 — 홈 숫자와 같게), [달별로 보기]로 달마다도 본다. 칩 · 배너 숫자는 늘 전체 기간
+// 예산 화면의 '확인 필요 N건'에서 오면 그 예산 주기만 (11/12): ?month=cycle&from=시작일&to=끝날. 예산 화면 숫자와 같은 거래가 보인다
 // 날짜별 묶음 · 날짜 합계는 화면에서 만든다 (API 는 평평한 목록)
 // 이름 검색(11/11): 입력하는 대로 바로 거른다. 보고 있는 달 · 필터로 이미 받은 목록 안에서 화면이 거르고, 소비 합계도 걸러진 거래로 다시 센다
 //   (서버에 다시 묻지 않아서 글자마다 목록이 깜빡이지 않는다). 달 · 필터를 바꿔도 검색어는 남고, '확인 필요' 배너를 누르면 풀린다
@@ -58,6 +59,9 @@ function monthQuery(month, thisMonth) {
   return `from=${month}-01${month === thisMonth ? '' : `&to=${month}-${lastDay(month)}`}`
 }
 
+// '2026-10-25' → '10.25' (예산 주기 보기 제목)
+const dotDay = (iso) => `${Number(iso.slice(5, 7))}.${Number(iso.slice(8, 10))}`
+
 // 화면 위 제목: '10월', 다른 해면 '2025년 12월'
 function monthLabel(month, thisMonth) {
   const m = `${Number(month.slice(5, 7))}월`
@@ -75,13 +79,19 @@ export default function TransactionsPage() {
   const isPending = codes.length === 1 && codes[0] === PENDING.code  // 확인 필요는 다른 카테고리와 섞지 않는다
   const [thisMonth] = useState(() => ym(new Date()))  // 화면을 연 날 기준
   // ?month= 값: 'YYYY-MM' 또는 'all'(확인 필요만). 없으면 확인 필요는 전체 기간, 그 밖은 이번 달
-  const month = params.get('month') ?? (isPending ? 'all' : thisMonth)
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v ?? '') ? v : null)
+  const range = { from: day(params.get('from')), to: day(params.get('to')) }
+  const rawMonth = params.get('month') ?? (isPending ? 'all' : thisMonth)
+  // 주기 보기는 확인 필요 · 날짜 두 개가 다 있을 때만. 아니면 확인 필요 기본(전체 기간)으로
+  const month = rawMonth === 'cycle' && !(isPending && range.from && range.to) ? (isPending ? 'all' : thisMonth) : rawMonth
   const all = isPending && month === 'all'
-  const shown = month === 'all' ? thisMonth : month
+  const cycle = month === 'cycle'
+  const shown = all || cycle ? thisMonth : month
   // 기본값과 같은 달은 주소에 안 남긴다
   const go = (cats, m, acc = accountIds, crd = cardIds, typ = types) => setParams({
     ...(cats.length && { category: cats.join(',') }),
     ...(m !== (cats.length === 1 && cats[0] === PENDING.code ? 'all' : thisMonth) && { month: m }),
+    ...(m === 'cycle' && range),
     ...(acc.length && { account: acc.join(',') }),
     ...(crd.length && { card: crd.join(',') }),
     ...(typ.length && { type: typ.join(',') }),
@@ -98,7 +108,7 @@ export default function TransactionsPage() {
     accountIds.length && `accountId=${accountIds.join(',')}`,
     cardIds.length && `cardId=${cardIds.join(',')}`,
     types.length && `transactionType=${types.map(encodeURIComponent).join(',')}`,
-    !all && monthQuery(shown, thisMonth),
+    cycle ? `from=${range.from}&to=${range.to}` : !all && monthQuery(shown, thisMonth),
   ].filter(Boolean).join('&')
   const filterCount = types.length + codes.length + accountIds.length + cardIds.length
   // 필터를 바꾸면 새 결과가 올 때까지 data = null — 이전 조건의 목록 · 합계를 새 조건 값처럼 보이지 않는다 (R29)
@@ -125,7 +135,8 @@ export default function TransactionsPage() {
   return (
     <Layout title="거래 내역" activeTab="txs">
       <div className="mc-sumbar">
-        {all ? <strong className="mc-sumbar-m">전체 기간</strong> : <>
+        {cycle ? <strong className="mc-sumbar-m mc-sumbar-cycle">이번 주기<span className="mc-sumbar-range">{dotDay(range.from)}~{dotDay(range.to)}</span></strong>
+          : all ? <strong className="mc-sumbar-m">전체 기간</strong> : <>
           <button type="button" className="mc-icon" aria-label="이전 달" onClick={() => go(codes, shiftMonth(shown, -1))}>‹</button>
           <strong className="mc-sumbar-m">{monthLabel(shown, thisMonth)}</strong>
           <button type="button" className="mc-icon" aria-label="다음 달" disabled={shown >= thisMonth} onClick={() => go(codes, shiftMonth(shown, 1))}>›</button>
