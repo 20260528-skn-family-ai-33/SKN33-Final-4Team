@@ -11,6 +11,7 @@ import HelpPopup from '../popups/HelpPopup.jsx'
 import { PATHS } from '../routes.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { won } from '../utils/money.js'
+import { paydayText } from '../utils/days.js'
 
 const MENU = [
   { icon: 'IdCard', name: '내 정보', sub: '나이·자취 여부·우선순위 등', to: PATHS.profile, state: { from: 'my' } },
@@ -25,8 +26,8 @@ const MENU = [
 function summaryText(key, data) {
   const item = data[key]
   if (key === 'salary') {
-    const current = `${item.takeHomeIncome == null ? '월급 미설정' : `월 ${won(item.takeHomeIncome)}`} · ${item.payday == null ? '급여일 미설정' : `매월 ${item.payday}일`}`
-    return current + (item.pendingPaydayChange ? ` · ${item.pendingPaydayChange.effectiveOn}부터 ${item.pendingPaydayChange.payday}일` : '')
+    const current = `${item.takeHomeIncome == null ? '월급 미설정' : `월 ${won(item.takeHomeIncome)}`} · ${item.payday == null ? '급여일 미설정' : `매월 ${paydayText(item.payday)}`}`
+    return current + (item.pendingPaydayChange ? ` · ${item.pendingPaydayChange.effectiveOn}부터 ${paydayText(item.pendingPaydayChange.payday)}` : '')
   }
   if (key === 'fixed' || key === 'savings') return `${item.count}건 · ${won(item.monthlyTotal)}`
   // 11/9: 한 줄이 길어 쿠션은 빼고 생활비 · 저축만 (쿠션은 지킬 돈 화면에서)

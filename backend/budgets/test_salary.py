@@ -150,9 +150,19 @@ class SalaryTests(TestCase):
 
     def test_change_requires_explicit_choice_and_saves_nothing(self):
         self.put(payload())
+        budget = self.make_budget(status="approved")  # 첫 예산을 승인한 뒤에만 적용 시점을 묻는다 (11/12)
+        Budget.objects.filter(pk=budget.pk).update(approved_at=datetime(2026, 10, 25, tzinfo=dt_timezone.utc))
         self.assert_invalid(payload(takeHomeIncome=3_000_000, payday=10), "paydayApplyFrom")
         saved = FinancialProfile.objects.get(user=self.user)
         self.assertEqual((saved.monthly_take_home_income, saved.payday), (2_800_000, 25))
+
+    def test_change_before_first_approval_applies_without_choice(self):
+        # 온보딩(첫 예산 승인 전)에는 적용 시점을 묻지 않고 바로 바꾼다 (11/12). 승인 안 된 초안만 있어도 같다
+        self.put(payload())
+        self.make_budget(status="draft")
+        response = self.put(payload(takeHomeIncome=3_000_000, payday=10))
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), {"takeHomeIncome": 3_000_000, "payday": 10, "pendingPaydayChange": None})
 
     def test_first_registration_cannot_be_delayed(self):
         self.assert_invalid(payload(paydayApplyFrom="next_cycle"), "paydayApplyFrom")

@@ -1121,6 +1121,25 @@
 #mc-new-preview .mc-pwinput{position:relative;display:block;margin-top:8px}
 #mc-new-preview#mc-new-preview .mc-pwinput input{margin-top:0;padding-right:64px}
 #mc-new-preview#mc-new-preview .mc-pwinput .mc-link{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:32px;padding:0 8px;font-size:12.5px}
+/* 단위가 붙는 칸 (11/12, 월급 설정): 단위 글자는 입력란 안 오른쪽 끝. 월급 단위는 칸 안 [만원|원] 전환, 급여일은 그 아래 짧은 칸 */
+#mc-new-preview .mc-unitinput{position:relative;display:block;margin-top:8px}
+#mc-new-preview#mc-new-preview .mc-unitinput input{margin-top:0;padding-right:56px}
+#mc-new-preview .mc-unitinput>span{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--mc-sub);font-size:15px;pointer-events:none}
+#mc-new-preview#mc-new-preview .mc-salary-row .mc-unit-toggle.mc-day-toggle input{padding-right:150px}
+#mc-new-preview#mc-new-preview .mc-salary-row .mc-day-toggle input:disabled{background:var(--mc-paper);color:var(--mc-ink);-webkit-text-fill-color:var(--mc-ink);opacity:1}  /* 말일: 잠갔지만 고른 값이라 보통 글씨로 */
+#mc-new-preview#mc-new-preview .mc-day-toggle .mc-day-suffix{left:13px;right:auto;font-size:16px;white-space:pre}
+#mc-new-preview .mc-day-suffix>span{visibility:hidden;margin-right:3px}
+#mc-new-preview .mc-salary-row .mc-field{min-width:0}
+#mc-new-preview#mc-new-preview .mc-salary-row{margin-top:18px;padding-top:26px}  /* 카드 (11/12): 위 안내 문장과 띄우고, 카드 안 위쪽 여백을 조금 더 */
+#mc-new-preview#mc-new-preview .mc-salary-row .mc-field{margin:0}  /* 카드 안 (11/12): 카드 여백만 쓰고 두 칸 사이만 띄운다 */
+#mc-new-preview#mc-new-preview .mc-salary-row .mc-field+.mc-field{margin-top:26px}
+#mc-new-preview#mc-new-preview .mc-salary-row .mc-field{color:var(--mc-ink);font-size:14px;font-weight:600}  /* 칸 이름을 진하게 (11/12: 회색이라 잘 안 보였다) */
+#mc-new-preview#mc-new-preview .mc-salary-row input,#mc-new-preview#mc-new-preview .mc-salary-row .mc-unitinput span,#mc-new-preview#mc-new-preview .mc-salary-row .mc-unit-switch button:not([aria-pressed=true]){font-weight:400}  /* 칸 안 글자는 굵기 그대로 */
+#mc-new-preview#mc-new-preview .mc-salary-row .mc-unitinput input{padding-left:10px;padding-right:26px}
+#mc-new-preview#mc-new-preview .mc-salary-row .mc-unit-toggle input{padding-left:12px;padding-right:86px}
+#mc-new-preview#mc-new-preview .mc-unit-switch{pointer-events:auto;position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--mc-bg)}
+#mc-new-preview#mc-new-preview .mc-unit-switch button{min-height:28px;padding:0 8px;border-radius:7px;font-size:12.5px;color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-unit-switch button[aria-pressed=true]{background:var(--mc-paper);color:var(--mc-brand);font-weight:650;box-shadow:0 1px 3px light-dark(#26365a14,#0003)}
 /* 제목 옆 [?] 도움말 (11/9, 생활비 카테고리) */
 #mc-new-preview .mc-help-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:2px;vertical-align:middle;color:var(--mc-sub)}
 #mc-new-preview .mc-inline-ic svg{width:14px;height:14px;vertical-align:-2px}  /* 문장 안 아이콘은 글자 크기만 (11/9, 예산 조정 규칙 팝업) */

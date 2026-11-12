@@ -12,7 +12,7 @@ from finance.inputs import body_dict, reject_unknown_fields
 from finance.models import FinancialTransaction
 from users.models import FinancialProfile
 from .api import account_json, lock_user
-from .models import SalaryDecision
+from .models import Budget, SalaryDecision
 from .salary import (confirmation_snapshot, current_salary_profile, expire_salary_drafts, known_deposits, memo_key, next_payday_on,
                      refresh_auto, refresh_confirmed, salary_cycle_dates, salary_windows, store_income)
 from .salary_serializers import SalarySerializer
@@ -57,6 +57,9 @@ def save_salary(user, profile, data, today):
             raise ValidationError({"payday_apply_from": ["첫 급여일은 바로 적용해 주세요."]})
         profile.payday = payday
     elif payday != profile.payday:
+        if apply_from is None and not Budget.objects.filter(user=user, approved_at__isnull=False).exists():
+            # 첫 예산 승인 전(온보딩)에는 지키는 예산 주기가 없으니 묻지 않고 바로 바꾼다 (11/12 피드백)
+            apply_from = "current_cycle"
         if apply_from is None:
             raise ValidationError({"payday_apply_from": ["이번 주기부터인지 다음 주기부터인지 선택해 주세요."]})
         if apply_from == "next_cycle":
