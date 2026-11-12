@@ -194,12 +194,39 @@ def distribution_fields(context, donors, excluded=()):
             'amount': sum(row['amount'] for row in sources), 'categories': categories}
 
 
+def _calculation(context, state):
+    codes = state.get("unlock_categories", [])
+    consents = state.get("unlock_consents", {})
+    if (set(codes) != set(consents) or any(code not in context.get("locks", {}) for code in codes)
+            or _lock_snapshot(context, codes) != consents):
+        raise ValueError("stale_unlock_consent")
+    result = deepcopy(context)
+    result["locks"] = {code: amount for code, amount in context.get("locks", {}).items() if code not in codes}
+    return result
+
+
+def _target_changes(context, result, scope, requests, clear):
+    targets = {code: None for code in clear if code in context.get("category_targets", {})}
+    if scope == "ongoing":
+        targets.update({code: amount for code, amount in result.get("persistence_candidates", {}).items()
+                        if code != "SPARE" and code not in clear})
+        targets.update({item["category"]: result["allocations"][item["category"]] for item in requests
+                        if item["category"] in result["allocations"] and item["category"] not in clear})
+    return targets
+
+
 def distribute(request, state, data, *, store, get_context, simulate, propose, **ports):
     context = get_context()
     cid = request['conversation_id']
     pending = state.get('pending', {})
     if pending.get('kind') in {'unlock', 'partial', 'financial_risk', 'financial_partial'}:
         return _pending_reply(state, state.get('work_ref'), context)
+    try:
+        calculation = _calculation(context, state)
+    except ValueError:
+        for key in ('unlock_categories', 'unlock_consents'):
+            state.pop(key, None)
+        return _ask(store, cid, state, 'request', '잠금 조건이 바뀌었어요. 잠금 해제를 다시 확인해 주세요.')
     names = {**context.get('category_names', {}), **SPECIAL_NAMES}
     excluded = set(state.get('excluded', [])) | set(data.get('excluded', []))
     specified = data.get('requests', [])
@@ -213,7 +240,7 @@ def distribute(request, state, data, *, store, get_context, simulate, propose, *
     if not donors or any(item.get('amount') is None for item in donors):
         return _ask(store, cid, state, 'request', '어느 항목에서 얼마를 줄여 나눌까요?')
     try:
-        fields = distribution_fields(context, donors, excluded)
+        fields = distribution_fields(calculation, donors, excluded)
     except (ValueError, KeyError):
         return _ask(store, cid, state, 'request', '나눌 금액을 확인해 주세요. 5,000원 단위로 정할 수 있어요.')
     categories, total = fields['categories'], fields['amount']
@@ -241,12 +268,13 @@ def distribute(request, state, data, *, store, get_context, simulate, propose, *
         response['reply']['lines'] = ['항목과 금액을 다시 확인해 주세요. 나눈 금액의 합계가 줄일 금액과 같아야 해요.']
         return response
     envelope = {'items': [*deepcopy(donors), *deepcopy(receiving)], 'sources': [], 'destinations': [], 'excluded': sorted(excluded)}
+    scope, clear = state.get('scope', 'cycle'), state.get('clear_targets', [])
     try:
-        # 기존 잠금은 여기서 풀지 않는다. 현재 조건으로 전체 배분을 다시 검증한다.
-        result = simulate(context, envelope)
+        result = simulate(calculation, envelope)
         if result['status'] != 'proposed':
             raise ValueError('distribution_unavailable')
-        card = propose(context, result, scope=state.get('scope', 'cycle'))
+        card = propose(context, result, scope=scope, unlock_categories=state.get('unlock_categories', []),
+                       target_changes=_target_changes(context, result, scope, envelope['items'], clear))
     except ValueError:
         response = distribute(request, state, {**data, 'requests': donors}, store=store, get_context=get_context,
                               simulate=simulate, propose=propose, **ports)
@@ -837,12 +865,7 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                     "infeasible": "보호 조건 때문에 반영할 수 없어요. 금액이나 재원을 바꿔 주세요."}
         return _ask(store, cid, state, "request", messages.get(result.get("status"), "변경안을 검수하지 못했어요. 요청을 확인해 주세요."),
                     explanation=result_explanation(context, result))
-    targets = {code: None for code in clear if code in context.get("category_targets", {})}
-    if scope == "ongoing":
-        targets.update({code: amount for code, amount in result.get("persistence_candidates", {}).items()
-                        if code != "SPARE" and code not in clear})
-        targets.update({item["category"]: result["allocations"][item["category"]] for item in requests
-                        if item["category"] in result["allocations"] and item["category"] not in clear})
+    targets = _target_changes(context, result, scope, requests, clear)
     if result["status"] == "unchanged" and not targets:
         _save(store, cid, None)
         return _result("ended", ["현재 예산과 같고 변경할 목표도 없어요."], explanation=step_explanation("unchanged"))

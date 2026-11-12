@@ -56,6 +56,82 @@ class FinancialAdjustmentApiTest(TestCase):
         reply = self.chat(self.cid, choice={"value": "financial_0", "turn": content["turn"]})
         return reply["messages"][-1]["content"]["budgetAdjustment"]["proposal"]
 
+    def test_distribution_preserves_unlock_consent_until_approval(self):
+        setting = BudgetCategorySetting.objects.create(user=self.user, cycle=self.base.cycle,
+            category_id='EDUCATION', locked=True, locked_amount=50000, revision_no=2)
+        self.ctx.update(locks={'EDUCATION': 50000}, lock_revisions={'EDUCATION': 2})
+        cid = self.chat(choice='budget')['conversationId']
+        self.chat(cid, text='교육 5만원을 식비로 옮겨줘', answers=[reading(
+            requests=[item('EDUCATION', 50000, 'down')], destinations=['FOOD'])])
+        first = self.chat(cid, text='잠금 풀어줘', answers=[reading(unlock=True)])
+        old = first['messages'][-1]['content']['budgetAdjustment']['proposal']
+        response = self.chat(cid, text='식비 3만원 교통 2만원으로 나눠줘', answers=[
+            {'action': 'distribute', 'category': None, 'destination': None, 'amount': None,
+             'amount_mode': None, 'suggested_target': None},
+            reading(action='distribute', requests=[item('FOOD', 30000), item('TRANSPORT_CAR', 20000)])])
+        card = response['messages'][-1]['content']['budgetAdjustment']['proposal']
+        self.assertEqual(card['unlockCategories'], ['EDUCATION'])
+        self.assertEqual(card['allocations']['EDUCATION'], 0)
+        self.assertEqual(card['allocations']['FOOD'], 430000)
+        self.assertEqual(card['allocations']['TRANSPORT_CAR'], 120000)
+        self.assertEqual(Budget.objects.get(pk=old['proposalId']).status, 'expired')
+        setting.refresh_from_db()
+        self.assertTrue(setting.locked)
+        result = self.post(f"/api/budgets/proposals/{card['proposalId']}/approve/", {})
+        self.assertEqual(result.status_code, 200, result.content)
+        setting.refresh_from_db()
+        self.assertFalse(setting.locked)
+
+    def test_distribution_rejects_changed_unlock_consent(self):
+        self.ctx.update(locks={'EDUCATION': 50000}, lock_revisions={'EDUCATION': 2})
+        cid = self.chat(choice='budget')['conversationId']
+        self.chat(cid, text='교육 5만원을 식비로 옮겨줘', answers=[reading(
+            requests=[item('EDUCATION', 50000, 'down')], destinations=['FOOD'])])
+        self.chat(cid, text='잠금 풀어줘', answers=[reading(unlock=True)])
+        self.chat(cid, text='다시 나눌래', answers=[
+            {'action': 'distribute', 'category': None, 'destination': None, 'amount': None,
+             'amount_mode': None, 'suggested_target': None}, reading(action='distribute')])
+        count = Budget.objects.count()
+        self.ctx['lock_revisions']['EDUCATION'] = 3
+        response = self.chat(cid, text='식비 3만원 교통 2만원으로 나눠줘', answers=[reading(
+            action='distribute', requests=[item('FOOD', 30000), item('TRANSPORT_CAR', 20000)])])
+        self.assertIn('잠금 조건이 바뀌었어요', str(response))
+        self.assertEqual(Budget.objects.count(), count)
+
+    def test_distribution_preserves_cleared_target_until_approval(self):
+        self.profile.budget_category_targets = {'EDUCATION': 50000}
+        self.profile.save(update_fields=['budget_category_targets'])
+        self.ctx['category_targets'] = {'EDUCATION': 50000}
+        cid = self.chat(choice='budget')['conversationId']
+        first = self.chat(cid, text='교육 5만원을 식비로 옮기고 교육 유지 목표도 해제해줘', answers=[reading(
+            requests=[item('EDUCATION', 50000, 'down')], destinations=['FOOD'], clear_targets=['EDUCATION'])])
+        old = first['messages'][-1]['content']['budgetAdjustment']['proposal']
+        self.assertIn({'category': 'EDUCATION', 'amount': None}, old['targetItems'])
+        response = self.chat(cid, text='식비 3만원 교통 2만원으로 나눠줘', answers=[
+            {'action': 'distribute', 'category': None, 'destination': None, 'amount': None,
+             'amount_mode': None, 'suggested_target': None},
+            reading(action='distribute', requests=[item('FOOD', 30000), item('TRANSPORT_CAR', 20000)])])
+        card = response['messages'][-1]['content']['budgetAdjustment']['proposal']
+        self.assertIn({'category': 'EDUCATION', 'amount': None}, card['targetItems'])
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.budget_category_targets, {'EDUCATION': 50000})
+        result = self.post(f"/api/budgets/proposals/{card['proposalId']}/approve/", {})
+        self.assertEqual(result.status_code, 200, result.content)
+        self.profile.refresh_from_db()
+        self.assertNotIn('EDUCATION', self.profile.budget_category_targets)
+
+    def test_financial_selection_back_returns_to_previous_step(self):
+        from chat.engine import ConversationStore, KEY
+        self.offer()
+        before = ConversationStore.load(Conversation.objects.get(pk=self.cid).slots).get_agent_state(KEY, 'budget')
+        self.assertEqual(before['pending']['kind'], 'financial_selection')
+        response = self.chat(self.cid, text='뒤로', answers=[reading(action='back')])
+        after = ConversationStore.load(Conversation.objects.get(pk=self.cid).slots).get_agent_state(KEY, 'budget')
+        self.assertEqual(len(after['history']), len(before['history']) - 1)
+        self.assertNotEqual(after['pending']['kind'], 'financial_selection')
+        self.assertFalse(response['messages'][-1]['content']['budgetAdjustment']['canApprove'])
+        self.assertEqual(Budget.objects.count(), 1)
+
     def test_distribution_request_opens_picker_and_splits_without_saving(self):
         cid = self.chat(choice='budget')['conversationId']
         first = self.chat(cid, text='교육 예산을 5만원 줄여줘', answers=[reading(requests=[item('EDUCATION', 50000, 'down')])])

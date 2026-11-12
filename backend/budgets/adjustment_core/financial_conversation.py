@@ -2,11 +2,11 @@
 from copy import deepcopy
 import json
 import re
-from .agent import _ask as core_ask, _result, _save, _lock_snapshot, CANCEL
+from .agent import _ask as core_ask, _result, _save, CANCEL
 from .calculation import _prepare, _floor, _hard_floor, _eligible, proportional_group_reduction
 from .funding import available_adjustment
 from .conversation import (_envelope, _pending_reply, _route_question as original_route, _show_comparison as original_comparison,
-                           handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute)
+                           handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute, _calculation)
 from . import interpretation
 from . import over_budget
 from .explanations import NAMES
@@ -89,17 +89,6 @@ ONE_OFF_SCHEMA = {"type": "object", "properties": {"decisions": {"type": "array"
 def starts_new_request(text):
     compact = re.sub(r"[\s?!.,]", "", text or "")
     return compact.startswith(("새요청이야", "새조정이야", "새요청할게", "새조정할게", "그건말고새조정", "그건말고새요청"))
-
-
-def _calculation(context, state):
-    codes = state.get("unlock_categories", [])
-    consents = state.get("unlock_consents", {})
-    if (set(codes) != set(consents) or any(code not in context.get("locks", {}) for code in codes)
-            or _lock_snapshot(context, codes) != consents):
-        raise ValueError("stale_unlock_consent")
-    result = deepcopy(context)
-    result["locks"] = {code: amount for code, amount in context.get("locks", {}).items() if code not in codes}
-    return result
 
 
 def _ask(store, cid, state, kind, line, choices=(), **details):
@@ -476,7 +465,8 @@ def _handle(request, **ports):
                         else '어느 방법을 말씀하시는지 확인이 필요해요. 보여 드린 방법 중 하나를 골라 주세요.')
                 return _result("awaiting_input", [line],
                                choices=pending["choices"], comparison=offer["comparison"])
-            if selected is None and not modifying and not interpreted.get('cancel') and interpreted.get('reference') != 'new':
+            if (selected is None and not modifying and not interpreted.get('cancel')
+                    and interpreted.get('reference') != 'new' and interpreted.get('action') != 'back'):
                 if interpreted.get('reason'):
                     state['reason'] = interpreted['reason']
                     _save(store, cid, state)
