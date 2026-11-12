@@ -48,14 +48,25 @@ const dayLabel = (f, unknown) => (f.paymentDay ? `매월 ${f.paymentDay}일` : u
 const lateDue = (f) => f.recentDues?.find((d) => d.paymentState === 'needs_review')
 
 // 결제 확인 한 줄: 1건이면 맞아요/아니에요, 여러 건이면 고르기
+// [아니에요]로 넘긴 결제 기억 (11/12): 서버에 저장하지 않는 답이라(fixed.md C-12 — 다음 달 새 결제 때 다시 묻기) 화면을 나갔다 오면
+//   같은 결제를 또 물었다. 이 기기에 '고정지출:거래' 짝만 남겨 같은 결제는 다시 묻지 않고, 새 결제가 오면 다시 묻는다
+const DISMISS_KEY = 'mc-fixed-dismissed'
+const readDismissed = () => {
+  try { return JSON.parse(localStorage.getItem(DISMISS_KEY) ?? '[]') } catch { return [] }
+}
+const rememberDismissed = (pair) => {
+  try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...readDismissed().filter((p) => p !== pair), pair].slice(-200))) } catch { /* 저장소가 막혀도 이번 화면에서는 숨긴다 */ }
+}
+
 function Suggestion({ f, onSaved }) {
   const { openPopup } = usePopup()
-  const [state, setState] = useState({ busy: false, error: '', dismissed: false })
   const { count, candidates } = f.evidenceSuggestion
+  const pair = count === 1 && candidates[0] ? `${f.recurringId}:${candidates[0].transactionId}` : null
+  const [state, setState] = useState(() => ({ busy: false, error: '', dismissed: pair !== null && readDismissed().includes(pair) }))
   if (state.dismissed) return null
   if (count > 1) {
     return (
-      <div className="mc-row mc-note" style={{ paddingBottom: 0 }}>
+      <div className="mc-row mc-note mc-fx-split" style={{ paddingBottom: 0 }}>
         <span>비슷한 결제가 {count}건 있어요</span>
         <button type="button" className="mc-link" onClick={() => openPopup(<EvidencePopup item={f} onSaved={onSaved} />)}>고르기</button>
       </div>
@@ -73,12 +84,13 @@ function Suggestion({ f, onSaved }) {
     }
   }
   return (
-    <div className="mc-note" style={{ paddingBottom: 0 }}>
-      <p style={{ margin: 0 }}>이 결제가 {f.name} 맞나요? {shortDate(t.date)} {t.merchantName} {won(t.amount)}</p>
-      {/* 아니에요 = 요청 없음 (다음 달 다시 물어봄) */}
+    <div className="mc-note mc-fx-split" style={{ paddingBottom: 0 }}>
+      {/* '이번 달 납부 완료' 줄과 같은 모양 (11/12): 위 구분선 + 묻는 말 / 거래 정보 두 줄 */}
+      <p style={{ margin: 0 }}>이 결제가 {f.name} 맞나요?<span style={{ display: 'block', marginTop: 2 }}>{shortDate(t.date)} {t.merchantName} {won(t.amount)}</span></p>
+      {/* 아니에요 = 서버 요청 없음. 이 결제는 이 기기에서 다시 묻지 않고, 다음 달 새 결제 때 다시 물어봄 */}
       <div className="mc-inline">
         <button type="button" className="mc-secondary" disabled={state.busy} onClick={yes}>{state.busy ? '저장 중…' : '맞아요'}</button>
-        <button type="button" className="mc-secondary" disabled={state.busy} onClick={() => setState({ ...state, dismissed: true })}>아니에요</button>
+        <button type="button" className="mc-secondary" disabled={state.busy} onClick={() => { rememberDismissed(pair); setState({ ...state, dismissed: true }) }}>아니에요</button>
       </div>
       {state.error && <p className="mc-error" role="alert">{state.error}</p>}
     </div>

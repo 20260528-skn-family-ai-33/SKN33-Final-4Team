@@ -95,3 +95,19 @@ it('첫 예산 승인 전이면 합계가 바뀌어도 묻지 않고 돌아간�
   expect(openPopup.mock.calls.length).toBe(asked)
   expect(navigate).toHaveBeenCalledWith('/my', { replace: true })
 })
+
+it('[아니에요]로 넘긴 결제는 화면을 나갔다 와도 다시 묻지 않고, 새 결제면 다시 묻는다 (11/12)', async () => {
+  localStorage.clear()
+  fixed.items[0].evidenceSuggestion = { count: 1, dueId: null, candidates: [{ transactionId: 'tx-1', date: '2026-10-28', merchantName: '현대카드', amount: 511515 }] }
+  await open()
+  expect(host.textContent).toContain('이 결제가 월세 맞나요?')
+  await act(async () => button('아니에요').click())
+  expect(host.textContent).not.toContain('이 결제가 월세 맞나요?')
+  await act(() => root.unmount()); root = createRoot(host)
+  await open()  // 나갔다 다시 들어옴
+  expect(host.textContent).not.toContain('이 결제가 월세 맞나요?')
+  fixed.items[0].evidenceSuggestion.candidates[0].transactionId = 'tx-2'  // 다음 달 새 결제
+  await act(() => root.unmount()); root = createRoot(host)
+  await open()
+  expect(host.textContent).toContain('이 결제가 월세 맞나요?')
+})
