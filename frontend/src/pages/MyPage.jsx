@@ -12,6 +12,7 @@ import { PATHS } from '../routes.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { won } from '../utils/money.js'
 import { paydayText } from '../utils/days.js'
+import { clearConnectDraft } from '../utils/connectDraft.js'
 
 const MENU = [
   { icon: 'IdCard', name: '내 정보', sub: '나이·자취 여부·우선순위 등', to: PATHS.profile, state: { from: 'my' } },
@@ -62,6 +63,7 @@ export default function MyPage() {
         return
       }
 
+      clearConnectDraft()  // 계좌 연결에서 고르던 기관을 다음 사람이 보지 않게 (11/12)
       navigate(PATHS.login, { replace: true })
     } catch (err) {
       setLogoutError(

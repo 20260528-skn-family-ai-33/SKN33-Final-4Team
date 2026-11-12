@@ -1,9 +1,9 @@
 // 계좌 연결 1: 은행·카드사 고르기
 // [선택한 기관 연결하기] = 금융 조회 동의 저장(POST /api/finance/consents/) 성공 후 기관 로그인 화면으로 (11/03 S2)
-// 11/12 피드백: 다음 화면으로 가기 전에 고른 것(대출 답 · 은행 · 카드사 · 동의 체크)을 이 화면의 방문 기록(location.state.draft)에 남긴다
-//   → 뒤로 가기로 돌아오면 그대로 채워져 있다. 서버에 저장하지 않는 값이라 새로 들어오면 빈 화면부터
-import { useState } from 'react'
-import { useLocation, useNavigate } from 'react-router'
+// 11/12 피드백: 고를 때마다 고른 것(대출 답 · 은행 · 카드사 · 동의 체크)을 이 탭에 남긴다 (utils/connectDraft.js, 30분 · 로그아웃 시 지움)
+//   → 기관 로그인에서 뒤로 와도, 버튼을 누르기 전에 내 정보로 갔다가 [저장하고 계속]으로 다시 들어와도 그대로 채워져 있다
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
 import { usePicked } from '../utils/usePicked.js'
@@ -13,6 +13,7 @@ import { usePopup } from '../popups/context.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
 import { useConsentDocs } from '../popups/consentDocs.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
+import { readConnectDraft, saveConnectDraft } from '../utils/connectDraft.js'
 
 const LOAN_ANSWERS = ['있어요', '없어요', '나중에 확인']
 
@@ -47,8 +48,7 @@ function PickCard({ title, hint, items, picked, moreLabel, notSupported = [] }) 
 
 export default function ConnectPage() {
   const navigate = useNavigate()
-  const location = useLocation()
-  const draft = location.state?.draft  // 뒤로 와서 다시 그릴 때만 있다
+  const [draft] = useState(readConnectDraft)  // 처음 그릴 때 한 번만 읽는다 (없으면 null)
   const [hasLoan, setHasLoan] = useState(draft?.hasLoan ?? null)
   const banks = usePicked(draft?.banks)
   const cards = usePicked(draft?.cards)
@@ -56,6 +56,10 @@ export default function ConnectPage() {
   const { openPopup } = usePopup()
   // 동의 3개(서버 문서): 계좌 필수 · 카드 선택 · 대출 선택 — docs/api/finance-connect.md '금융 조회 동의 저장'
   const consent = useConsentDocs((d) => d.purpose === 'finance_inquiry', draft?.agreed)
+  // 바뀔 때마다 이 탭에 남긴다 (agreedKeys 는 매번 새 배열이라 글자로 바꿔 비교)
+  const agreed = consent.agreedKeys()
+  const snapshot = JSON.stringify({ hasLoan, banks: banks.list, cards: cards.list, agreed })
+  useEffect(() => { saveConnectDraft(JSON.parse(snapshot)) }, [snapshot])
   const [error, setError] = useState('')
   const agreedTo = (scope) => consent.docs?.some((d) => d.productScope === scope && consent.isAgreed(d))
   const setOne = (d, on) => { consent.setOne(d, on); setError('') }
@@ -86,10 +90,6 @@ export default function ConnectPage() {
       if (err.code === 'document_outdated') consent.reload()
       return setError(err.message)
     }
-    // 뒤로 왔을 때 다시 채울 수 있게 지금 고른 것을 이 화면 기록에 남긴다 (주소는 그대로, 기록만 바꿈)
-    navigate(location.pathname, { replace: true, state: { ...location.state, draft: {
-      hasLoan, banks: banks.list, cards: cards.list, agreed: consent.agreedKeys(),
-    } } })
     // 고른 기관을 다음 화면(기관 로그인)으로 넘긴다. 화면 순서대로
     navigate(PATHS.connectAuth, {
       state: {
