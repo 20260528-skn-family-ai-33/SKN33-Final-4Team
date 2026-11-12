@@ -3,6 +3,7 @@
 // 로그인할 때는 비밀번호 길이 · 조합을 검사하지 않는다 (규칙이 바뀌어도 기존 회원이 로그인, 결정기록 X ⑨)
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import PasswordInput from '../components/PasswordInput.jsx'
 import { PATHS } from '../routes.js'
 
 import { useRef, useState } from 'react'
@@ -117,10 +118,9 @@ export default function LoginPage() {
 
         <label className="mc-field">
           비밀번호
-          <input
+          <PasswordInput
             autoComplete="current-password"
             name="loginPw"
-            type="password"
             required
             disabled={isSubmitting}
             aria-invalid={Boolean(fieldErrors.password)}

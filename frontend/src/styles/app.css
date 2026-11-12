@@ -1117,6 +1117,10 @@
 #mc-new-preview .mc-cardno{position:relative;display:block;margin-top:8px}
 #mc-new-preview#mc-new-preview .mc-cardno input{margin-top:0;padding-right:64px;letter-spacing:.5px;font-variant-numeric:tabular-nums}
 #mc-new-preview#mc-new-preview .mc-cardno .mc-link{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:32px;padding:0 8px;font-size:12.5px}
+/* 비밀번호 칸 (11/12): 카드번호 칸과 같은 [보기] — 입력란 안 오른쪽 끝 */
+#mc-new-preview .mc-pwinput{position:relative;display:block;margin-top:8px}
+#mc-new-preview#mc-new-preview .mc-pwinput input{margin-top:0;padding-right:64px}
+#mc-new-preview#mc-new-preview .mc-pwinput .mc-link{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:32px;padding:0 8px;font-size:12.5px}
 /* 제목 옆 [?] 도움말 (11/9, 생활비 카테고리) */
 #mc-new-preview .mc-help-btn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;margin-left:2px;vertical-align:middle;color:var(--mc-sub)}
 #mc-new-preview .mc-inline-ic svg{width:14px;height:14px;vertical-align:-2px}  /* 문장 안 아이콘은 글자 크기만 (11/9, 예산 조정 규칙 팝업) */
