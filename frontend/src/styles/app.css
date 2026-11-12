@@ -1163,3 +1163,7 @@
 #mc-new-preview .mc-bill-manual .mc-card h3{margin:0}
 /* 카드값 미반영 안내 시트: 청구서를 기다리는 카드사 줄(InstRow)을 연한 상자 안에 (11/12) */
 #mc-new-preview .mc-bill-issuers{margin:14px 0;padding:2px 16px;border-radius:16px;background:var(--mc-bg)}
+/* 청구서 확인 창: 불러오지 못한 카드사 안내를 빨간 카드 안에 (홈 '확인 필요' 띠 .mc-pend-banner 와 같은 색, 11/12) */
+#mc-new-preview .mc-bill-failed{margin:20px 0 0;padding:12px 14px;border-radius:14px;border:1px solid color-mix(in srgb,var(--mc-alert) 35%,transparent);background:color-mix(in srgb,var(--mc-alert) 8%,var(--mc-paper));color:var(--mc-alert);font-size:13px;line-height:1.55;word-break:keep-all}
+#mc-new-preview .mc-bill-failed p{margin:0}
+#mc-new-preview .mc-bill-failed p+p{margin-top:6px}

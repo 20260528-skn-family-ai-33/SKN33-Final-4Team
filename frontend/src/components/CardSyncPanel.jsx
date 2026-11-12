@@ -8,7 +8,7 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 
-function CardConnection({ connection, onChanged }) {
+function CardConnection({ connection, onChanged, onRelogin }) {
   const { openPopup } = usePopup()
   const navigate = useNavigate()
   const [credentials, setCredentials] = useState({ cardNo: '', cardPassword: '' })
@@ -55,7 +55,8 @@ function CardConnection({ connection, onChanged }) {
     }
   }
 
-  const reconnect = () => openPopup(<ConnectLoginPopup inst={name} onSubmit={async (form) => {
+  // onRelogin 이 있으면 다시 로그인을 부른 쪽에 맡긴다 (청구서 확인 창: 로그인 팝업이 창을 대신해서 여기서는 결과를 못 받음, PR #116 리뷰)
+  const reconnect = onRelogin ? () => onRelogin(connection) : () => openPopup(<ConnectLoginPopup inst={name} onSubmit={async (form) => {
     if (working.current) return
     working.current = true
     setBusy(true)
@@ -111,7 +112,7 @@ function CardConnection({ connection, onChanged }) {
   </section>
 }
 
-export default function CardSyncPanel({ cardIds, onChanged }) {
+export default function CardSyncPanel({ cardIds, onChanged, onRelogin }) {
   const query = useApi('/api/finance/connections/')
   if (query.error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
   if (query.error) return <div>
@@ -123,7 +124,7 @@ export default function CardSyncPanel({ cardIds, onChanged }) {
     && ['connected', 'relogin'].includes(connection.status)
     && connection.cardIds?.some((id) => cardIds.includes(id)))
   if (!connections.length) return <p role="alert">조회할 카드사 연결을 찾지 못했어요. 카드 연결 상태를 확인해 주세요.</p>
-  return <div>{connections.map((connection) => <CardConnection key={connection.connectionId} connection={connection} onChanged={(result) => {
+  return <div>{connections.map((connection) => <CardConnection key={connection.connectionId} connection={connection} onRelogin={onRelogin} onChanged={(result) => {
     query.reload()
     onChanged(result)
   }} />)}</div>
