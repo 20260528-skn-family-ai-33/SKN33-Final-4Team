@@ -142,6 +142,21 @@ function ViewCard({ content, title }) {
   )
 }
 
+// 정책 카드의 DB 링크 줄만 연결한다. 일반 문장·HTML은 해석하지 않는다.
+function PolicyLine({ text }) {
+  const prefix = '링크: '
+  if (!text.startsWith(prefix)) return text
+  const href = text.slice(prefix.length)
+  if (!/^https?:\/\/[^\s<>]+$/i.test(href)) return text
+  try {
+    const url = new URL(href)
+    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) return text
+  } catch {
+    return text
+  }
+  return <>{prefix}<a className="mc-fx-policy-link" href={href} target="_blank" rel="noopener noreferrer" aria-label={`${href} (새 탭에서 열기)`}>{href}</a></>
+}
+
 // 분석 결과 카드 (SpendingCard 와 같은 틀 · 클래스). 카드 보기가 있으면 그것으로, 없으면(설명 답변 등) 문장 목록
 function ResultCard({ content, title }) {
   if (content.view?.length) return <ViewCard content={content} title={title} />
@@ -156,7 +171,7 @@ function ResultCard({ content, title }) {
           {content.sections.map((s, i) => (
             <div key={`sec-${i}`}>
               <strong>{s.title}</strong>
-              {s.lines.length > 0 && <ul className="mc-spend-lines">{s.lines.map((l, j) => <li key={j}>{l}</li>)}</ul>}
+              {s.lines.length > 0 && <ul className="mc-spend-lines">{s.lines.map((l, j) => <li key={j}>{content.agent === 'policy' ? <PolicyLine text={l} /> : l}</li>)}</ul>}
             </div>
           ))}
         </div>

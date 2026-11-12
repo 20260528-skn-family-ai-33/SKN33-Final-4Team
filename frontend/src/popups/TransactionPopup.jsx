@@ -147,7 +147,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
             </label>
           )}
           <p className="mc-note" style={{ paddingBottom: 0 }}>
-            {wasTransfer ? '이 거래만 바뀌어요. 받는 사람은 기억하지 않아요.' : data?.canApplyToFuture ? '체크하지 않으면 이 거래만 바뀌어요.' : '여러 종류를 파는 곳이라 이 거래만 바뀌어요.'}
+            {wasTransfer ? '이 거래만 바뀌어요. 받는 사람은 기억하지 않아요.' : data?.canApplyToFuture ? (applyToFuture ? '지금 확인이 필요한 같은 가게 거래도 함께 바뀌어요.' : '체크하지 않으면 이 거래만 바뀌어요.') : '여러 종류를 파는 곳이라 이 거래만 바뀌어요.'}
             {isFixed && ' 고정지출 연결은 그대로예요.'}
           </p>
         </div>

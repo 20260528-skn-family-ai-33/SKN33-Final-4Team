@@ -50,6 +50,8 @@ export default function TxPickPopup({ tx, categories, onSaved }) {
           앞으로 이 가게 거래도 이 카테고리로 분류
         </label>
       )}
+      {/* PR #114 리뷰: 앞으로 들어올 거래뿐 아니라 지금 '확인 필요'인 같은 가게 거래도 바뀐다는 걸 알려 준다 */}
+      {data?.canApplyToFuture && applyToFuture && <p className="mc-note" style={{ padding: '0 0 8px', marginTop: -8 }}>지금 확인이 필요한 같은 가게 거래도 함께 바뀌어요.</p>}
       {suggested.length > 0 && (
         <>
           <p className="mc-muted">추천</p>

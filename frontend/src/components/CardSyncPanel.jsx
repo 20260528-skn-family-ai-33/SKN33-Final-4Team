@@ -8,7 +8,7 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 
-function CardConnection({ connection, onChanged }) {
+function CardConnection({ connection, onChanged, onRelogin }) {
   const { openPopup } = usePopup()
   const navigate = useNavigate()
   const [credentials, setCredentials] = useState({ cardNo: '', cardPassword: '' })
@@ -46,7 +46,9 @@ function CardConnection({ connection, onChanged }) {
       setLines(syncLines({ items: [item] }))
       if (item.error?.fields?.cardNo || item.error?.fields?.cardPassword) setNeedCredentials(true)
       if (item.error?.code === 'relogin_required') setNeedLogin(true)
-      onChanged()
+      // 11/11: 청구서 확인 창이 성공했을 때만 바로 확인하러 넘어간다. 건너뜀(skipped)은 불러온 게 아니라서 성공이 아님 (PR #116 리뷰)
+      //   connectionId: 확인 창이 어느 카드사를 끝냈는지 센다
+      onChanged({ ok: item.status === 'succeeded', connectionId: connection.connectionId })
     } catch (err) {
       if (mounted.current) setError(err.message)
     } finally {
@@ -55,7 +57,8 @@ function CardConnection({ connection, onChanged }) {
     }
   }
 
-  const reconnect = () => openPopup(<ConnectLoginPopup inst={name} onSubmit={async (form) => {
+  // onRelogin 이 있으면 다시 로그인을 부른 쪽에 맡긴다 (청구서 확인 창: 로그인 팝업이 창을 대신해서 여기서는 결과를 못 받음, PR #116 리뷰)
+  const reconnect = onRelogin ? () => onRelogin(connection) : () => openPopup(<ConnectLoginPopup inst={name} onSubmit={async (form) => {
     if (working.current) return
     working.current = true
     setBusy(true)
@@ -76,7 +79,7 @@ function CardConnection({ connection, onChanged }) {
         setNeedsAdditionalAuth(true)
         setError('카드사 추가 인증이 필요해요. 금융 연결 화면에서 인증을 마쳐 주세요.')
       } else setError(item?.error?.message || '카드사에 다시 연결하지 못했어요.')
-      onChanged()
+      onChanged({ ok: item?.status === 'connected' && item.syncStatus !== 'failed', connectionId: connection.connectionId })
     } catch (err) {
       if (mounted.current) setError(Object.values(err.fields ?? {}).flat()[0] || err.message)
     } finally {
@@ -111,7 +114,7 @@ function CardConnection({ connection, onChanged }) {
   </section>
 }
 
-export default function CardSyncPanel({ cardIds, onChanged }) {
+export default function CardSyncPanel({ cardIds, onChanged, onRelogin }) {
   const query = useApi('/api/finance/connections/')
   if (query.error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
   if (query.error) return <div>
@@ -123,8 +126,8 @@ export default function CardSyncPanel({ cardIds, onChanged }) {
     && ['connected', 'relogin'].includes(connection.status)
     && connection.cardIds?.some((id) => cardIds.includes(id)))
   if (!connections.length) return <p role="alert">조회할 카드사 연결을 찾지 못했어요. 카드 연결 상태를 확인해 주세요.</p>
-  return <div>{connections.map((connection) => <CardConnection key={connection.connectionId} connection={connection} onChanged={() => {
+  return <div>{connections.map((connection) => <CardConnection key={connection.connectionId} connection={connection} onRelogin={onRelogin} onChanged={(result) => {
     query.reload()
-    onChanged()
+    onChanged(result)
   }} />)}</div>
 }

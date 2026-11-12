@@ -42,6 +42,23 @@ class BirthDateField(serializers.DateField):
         return value
 
 
+class RegionCodeField(serializers.CharField):
+    """사는 지역: 청년 정책 지역 표(policies/data/regions.json)의 시군구 코드만 (11-11 온보딩)"""
+
+    def __init__(self, **kwargs):
+        super().__init__(trim_whitespace=False, max_length=10, **kwargs)
+
+    def to_internal_value(self, data):
+        from policies.profiles import is_final  # 지역 표는 정책 앱에 있다
+
+        if not isinstance(data, str):
+            self.fail("invalid")
+        code = super().to_internal_value(data)
+        if not is_final(code):
+            raise serializers.ValidationError("시군구까지 골라 주세요.")
+        return code
+
+
 class CategoryCodeField(serializers.CharField):
     def __init__(self, *, priority=False, **kwargs):
         self.priority = priority
@@ -75,6 +92,7 @@ class ProfileSerializer(StrictSerializer):
     gender = serializers.ChoiceField(choices=["male", "female"])
     housing_type = serializers.ChoiceField(choices=FinancialProfile.HousingType.choices)
     has_car = StrictBooleanField()
+    region_code = RegionCodeField()
     priorities = PrioritySerializer(many=True, min_length=3, max_length=8, allow_empty=False)
     category_minimums = MinimumSerializer(many=True, max_length=9)
 

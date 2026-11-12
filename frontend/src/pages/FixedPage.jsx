@@ -133,9 +133,10 @@ function ManageView() {
           </div>
           {lateDue(f) && <LateDue f={f} due={lateDue(f)} onSaved={reload} />}
           {!lateDue(f) && f.paidThisCycle && (
-            <div className="mc-row mc-note" style={{ paddingBottom: 0 }}>
-              <span>이번 달 납부 완료 · {shortDate(f.paidThisCycle.date)} {f.paidThisCycle.merchantName} {won(f.paidThisCycle.amount)}</span>
-              <button type="button" className="mc-link" onClick={() => openPopup(<PaidTxPopup id={f.paidThisCycle.transactionId} onSaved={reload} />)}>거래 보기</button>
+            <div className="mc-row mc-note" style={{ paddingBottom: 0, marginTop: 12, borderTop: '1px solid var(--mc-line)' }}>
+              {/* 거래 이름이 길면 줄이 어색하게 꺾여서, 상태와 거래 정보를 두 줄로 나눈다 (11/11) */}
+              <span style={{ minWidth: 0 }}>이번 달 납부 완료<span style={{ display: 'block', marginTop: 2 }}>{shortDate(f.paidThisCycle.date)} {f.paidThisCycle.merchantName} {won(f.paidThisCycle.amount)}</span></span>
+              <button type="button" className="mc-link" style={{ whiteSpace: 'nowrap', flexShrink: 0 }} onClick={() => openPopup(<PaidTxPopup id={f.paidThisCycle.transactionId} onSaved={reload} />)}>거래 보기</button>
             </div>
           )}
           {!lateDue(f) && f.evidenceSuggestion && <Suggestion f={f} onSaved={reload} />}

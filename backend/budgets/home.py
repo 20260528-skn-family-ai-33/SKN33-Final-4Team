@@ -320,6 +320,7 @@ def home_budget(user, today, cycle):
         "over_categories": over_categories(data["categories"]),  # 예산을 넘긴 카테고리 → 홈 알림 줄
         "big_spendings": big_spendings(user, cycle, today, budget),  # 생활비 예산 대비 큰 지출 → 홈 알림 줄
         "card_notes": data["card_notes"],
+        "card_bills_ready": data["card_bills_ready"],  # 그중 지금은 청구서가 나온 카드 (11/12)
     }
 
 

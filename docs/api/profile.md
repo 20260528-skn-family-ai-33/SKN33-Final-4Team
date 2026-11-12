@@ -4,19 +4,19 @@
 
 ## GET · PUT `/api/profile/`
 
-로그인한 본인의 기본 정보·소비 우선순위·카테고리 최소 금액을 조회하고 저장한다.
+로그인한 본인의 기본 정보·사는 지역·소비 우선순위·카테고리 최소 금액을 조회하고 저장한다.
 다른 회원의 ID를 받지 않으며, 금융기관 조회 동의나 CODEF 호출은 필요 없다.
 
 | 항목 | GET | PUT |
 |---|---|---|
 | 인증 | 세션 로그인 필수 | 세션 로그인·CSRF 필수 |
-| 요청 | 본문 없음 | 아래 여섯 필드 전체 |
+| 요청 | 본문 없음 | 아래 일곱 필드 전체 |
 | 성공 | 200, 아래 응답 | 최초 저장·수정 모두 200, 저장한 응답 |
 | 미등록 | 기본 값 null, 목록 [] | 처음 저장할 때 프로필 생성 |
 
 ## 보내는 값
 
-PUT은 이 API가 관리하는 여섯 항목의 전체 교체다. 누락·null은 400이며 최소 금액을 설정하지 않으면 `categoryMinimums: []`를 보낸다.
+PUT은 이 API가 관리하는 일곱 항목의 전체 교체다. 누락·null은 400이며 최소 금액을 설정하지 않으면 `categoryMinimums: []`를 보낸다.
 
 | 필드 | 타입 | 규칙 |
 |---|---|---|
@@ -24,6 +24,7 @@ PUT은 이 API가 관리하는 여섯 항목의 전체 교체다. 누락·null�
 | `gender` | 문자열 | `male` 남성 / `female` 여성 |
 | `housingType` | 문자열 | `alone` 자취 / `family` 본가 거주 |
 | `hasCar` | boolean | true 보유 / false 미보유. 0·1·문자열 불가 |
+| `regionCode` | 문자열 | 사는 지역 시군구 코드 (2026-11-11). `GET /api/policies/regions/`(`docs/api/policies.md`)의 `regions[].code` 만. 시도 코드·없는 코드는 400 |
 | `priorities` | 배열 | 3~8개, `category`와 정수 `rank` |
 | `categoryMinimums` | 배열 | 0~9개, `category`와 정수 `minAmount` |
 
@@ -39,6 +40,7 @@ PUT은 이 API가 관리하는 여섯 항목의 전체 교체다. 누락·null�
   "gender": "female",
   "housingType": "alone",
   "hasCar": false,
+  "regionCode": "11620",
   "priorities": [
     {"category": "FOOD", "rank": 1},
     {"category": "CULTURE_LEISURE", "rank": 2},
@@ -53,7 +55,7 @@ PUT은 이 API가 관리하는 여섯 항목의 전체 교체다. 누락·null�
 
 ## 받는 값
 
-GET과 PUT 모두 위 예시와 같은 여섯 필드를 반환한다. 두 목록의 각 항목에는 `categoryName`도 함께 담는다. DB의 nullable 값은 그대로 null이다. GET은 행을 생성하지 않는다.
+GET과 PUT 모두 위 예시와 같은 일곱 필드와 `regionName`("서울특별시 관악구", 응답 전용)을 반환한다. 두 목록의 각 항목에는 `categoryName`도 함께 담는다. DB의 nullable 값은 그대로 null이다. GET은 행을 생성하지 않는다.
 
 예: `priorities: [{"category": "FOOD", "categoryName": "식비", "rank": 1}, ...]`, `categoryMinimums: [{"category": "FOOD", "categoryName": "식비", "minAmount": 300000}]`.
 `categoryName`은 응답 전용이며 PUT에는 보내지 않는다.
@@ -66,6 +68,8 @@ GET과 PUT 모두 위 예시와 같은 여섯 필드를 반환한다. 두 목록
   "gender": null,
   "housingType": null,
   "hasCar": null,
+  "regionCode": null,
+  "regionName": null,
   "priorities": [],
   "categoryMinimums": []
 }
@@ -73,7 +77,7 @@ GET과 PUT 모두 위 예시와 같은 여섯 필드를 반환한다. 두 목록
 
 ## 저장 규칙
 
-- `financial_profile`의 `birth_date`·`gender`·`housing_type`·`has_car`만 변경한다. 급여·급여일·쿠션·지킬 돈·대출 보유 응답은 보존한다.
+- `financial_profile`의 `birth_date`·`gender`·`housing_type`·`has_car`·`region_code`만 변경한다. 사는 지역은 청년 정책 채팅의 [다음에도 ○○구로 찾기]로도 바뀐다(`docs/api/policies.md`). 급여·급여일·쿠션·지킬 돈·대출 보유 응답은 보존한다.
 - `category_priority`·`category_minimum`은 본인 목록만 전체 교체한다. 빠진 항목은 삭제하며 빈 최소 금액 배열은 전체 해제다.
 - 회원 행을 먼저 잠그고 프로필·두 목록을 한 트랜잭션으로 저장한다. 일부 실패 시 모두 롤백하며 동시 저장의 목록이 섞이지 않는다.
 - 동일한 PUT 반복은 같은 설정을 만든다. 별도의 `Idempotency-Key`는 요구하지 않는다.

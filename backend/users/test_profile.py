@@ -21,7 +21,7 @@ URL = "/api/profile/"
 
 def payload():
     return {
-        "birthDate": "1999-03-15", "gender": "female", "housingType": "alone", "hasCar": False,
+        "birthDate": "1999-03-15", "gender": "female", "housingType": "alone", "hasCar": False, "regionCode": "11620",
         "priorities": [
             {"category": "FOOD", "rank": 1},
             {"category": "CULTURE_LEISURE", "rank": 2},
@@ -31,8 +31,12 @@ def payload():
     }
 
 
+REGION_NAMES = {"11620": "서울특별시 관악구", "41597": "경기도 화성시 동탄구"}
+
+
 def expected_response(data):
     result = deepcopy(data)
+    result["regionName"] = REGION_NAMES.get(result.get("regionCode"))  # 응답 전용
     names = dict(Category.objects.values_list("pk", "display_name"))
     for field in ("priorities", "categoryMinimums"):
         for row in result[field]:
@@ -66,8 +70,8 @@ class ProfileTests(TestCase):
         response = self.client.get(URL)
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {
-            "birthDate": None, "gender": None, "housingType": None, "hasCar": None,
-            "priorities": [], "categoryMinimums": [],
+            "birthDate": None, "gender": None, "housingType": None, "hasCar": None, "regionCode": None,
+            "regionName": None, "priorities": [], "categoryMinimums": [],
         })
         self.assertFalse(FinancialProfile.objects.filter(user=self.user).exists())
 
@@ -266,7 +270,7 @@ class ProfileTests(TestCase):
         before = FinancialProfile.objects.filter(pk=saved.pk).values().get()
         self.assertEqual(self.put().status_code, 200)
         after = FinancialProfile.objects.filter(pk=saved.pk).values().get()
-        for field in ("birth_date", "gender", "housing_type", "has_car", "updated_at"):
+        for field in ("birth_date", "gender", "housing_type", "has_car", "region_code", "updated_at"):
             before.pop(field)
             after.pop(field)
         self.assertEqual(after, before)
@@ -383,3 +387,25 @@ class ProfileConcurrencyTests(TransactionTestCase):
                 self.wait_for_locks(pids)
             expected = {**payload(), "housingType": "family", "categoryMinimums": []}
             self.assertEqual(future.result(timeout=10), expected_response(expected))
+
+
+class ProfileRegionTests(TestCase):
+    """11-11 온보딩: 사는 지역 (청년 정책 기본 지역). 시군구 코드만, 필수"""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(email="region@example.com", password="Example123!")
+        self.client = APIClient()
+        self.client.force_login(self.user)
+
+    def test_시군구_코드만_받고_이름을_함께_돌려준다(self):
+        for wrong in ("11000", "99999", "", 11620, None):  # 시도 · 없는 코드 · 빈 값 · 숫자 · null
+            with self.subTest(wrong=wrong):
+                response = self.client.put(URL, {**payload(), "regionCode": wrong}, format="json")
+                self.assertEqual(response.status_code, 400, response.content)
+                self.assertIn("regionCode", response.json()["error"]["fields"])
+        missing = payload()
+        del missing["regionCode"]
+        self.assertEqual(self.client.put(URL, missing, format="json").status_code, 400)
+        response = self.client.put(URL, {**payload(), "regionCode": "41597"}, format="json")
+        self.assertEqual((response.json()["regionCode"], response.json()["regionName"]), ("41597", "경기도 화성시 동탄구"))
+        self.assertEqual(FinancialProfile.objects.get(user=self.user).region_code, "41597")

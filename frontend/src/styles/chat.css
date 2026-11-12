@@ -101,3 +101,5 @@
 #mc-new-preview .mc-budget-edit-toggle,
 #mc-new-preview .mc-budget-edit-cancel { display: block; width: 100%; min-height: 44px; margin-top: 6px; text-align: center; }
 #mc-new-preview .mc-budget-advice ul { margin: 8px 0 14px; padding-left: 20px; }
+/* 정책 공고 주소: 긴 경로도 카드 안에서 줄바꿈, 밑줄로 링크를 구분 */
+#mc-new-preview .mc-fx-policy-link { color: var(--mc-ink); text-decoration: underline; overflow-wrap: anywhere; }

@@ -4,7 +4,7 @@
 // 머니 쿠션은 쿠션 탭에서 따로 본다
 // 오른쪽 위 [새로고침] = 연결 전부 다시 불러오기 (docs/api/finance-connect.md) → 끝나면 홈 데이터를 다시 받는다
 // 되돌리기: 이 파일을 git 의 이전 버전으로 돌리고, app.css 맨 아래 "홈 개선안" 블록을 지우면 원래 화면으로 돌아간다
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
@@ -25,6 +25,8 @@ import CardCredentialPopup from '../popups/CardCredentialPopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
 import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
+import SyncResultPopup from '../popups/SyncResultPopup.jsx'
+import { toast } from '../utils/toast.js'
 
 // 홈 왼쪽 위 로고 (11/3): cushion = 서비스 파란색, -ing = 서비스 라임색
 const LOGO = <span className="mc-logo">cushion<span className="mc-logo-ing">-ing</span></span>
@@ -85,32 +87,56 @@ function payBadges(p) {
 
 export default function HomePage() {
   const navigate = useNavigate()
-  const { openPopup } = usePopup()
+  const { popup, openPopup } = usePopup()
   const pendingUrl = `${PATHS.txs}?category=확인 필요`
   const { data, error, reload } = useApi('/api/home/')  // 장고에게 홈 데이터 받아오기
-  const [sync, setSync] = useState({ busy: false, lines: null, error: '' })
+  const [sync, setSync] = useState({ busy: false })
 
   // 11/9: 카드번호 · 비밀번호가 필요한 카드사(현대카드 등)는 실패 줄 대신 입력 팝업을 띄워 그 자리에서 다시 불러온다
   //   여러 곳이면 하나씩 차례로. 팝업을 닫으면 그 카드사는 이번에 안 불러온 채로 둔다
-  const askCard = (rows) => {
-    if (!rows.length) return
+  // 새로고침 결과 (11/12): 불러온 기관은 토스트로 잠깐, 실패한 기관은 모아서 가운데 창으로 (홈 위에 줄로 남기지 않는다)
+  const showFailed = (failed) => {
+    if (failed.length) openPopup(<SyncResultPopup lines={failed} onManage={() => navigate(PATHS.connections)} />)
+  }
+  // 성공 줄은 토스트로 보여 주고, 실패 줄은 돌려준다 (줄이 많으면 조금 더 오래)
+  const report = (result) => {
+    const lines = syncLines(result)
+    const done = lines.filter((l) => l.ok)
+    if (done.length) toast(done.map((l) => `${l.name} · ${l.text}`).join('\n'), 2000 + (done.length - 1) * 800)
+    return lines.filter((l) => !l.ok)
+  }
+  // 카드번호가 필요한 카드사는 하나씩 입력 팝업 → 다 끝나면 실패한 곳을 한 번에 (팝업은 한 번에 하나라서)
+  // 입력 팝업을 그냥 닫으면(× · 바깥 · Esc) 남은 카드사는 묻지 않고, 모아 둔 실패만 보여 준다 (아래 효과)
+  const waitingFailed = useRef(null)
+  const askCard = (rows, failed) => {
+    if (!rows.length) return showFailed(failed)
     const [item, ...rest] = rows
+    waitingFailed.current = failed
     openPopup(<CardCredentialPopup item={item} onDone={(result) => {
-      setSync((s) => ({ ...s, lines: [...(s.lines ?? []), ...syncLines(result)] }))
+      waitingFailed.current = null
+      const more = report(result)
       reload()
-      askCard(rest)
+      askCard(rest, [...failed, ...more])
     }} />)
   }
+  useEffect(() => {
+    if (popup || !waitingFailed.current) return
+    const failed = waitingFailed.current
+    waitingFailed.current = null
+    showFailed(failed)
+  }, [popup]) // eslint-disable-line react-hooks/exhaustive-deps -- 팝업이 닫힐 때만
   const refresh = async () => {
-    setSync({ busy: true, lines: null, error: '' })
+    setSync({ busy: true })
     try {
       const result = await runFinanceSync()
       const needCard = (result.items ?? []).filter(needsCardValues)
-      setSync({ busy: false, lines: syncLines({ items: (result.items ?? []).filter((it) => !needsCardValues(it)) }), error: '' })
+      const failed = report({ items: (result.items ?? []).filter((it) => !needsCardValues(it)) })
+      setSync({ busy: false })
       reload()
-      askCard(needCard)
+      askCard(needCard, failed)
     } catch (err) {
-      setSync({ busy: false, lines: null, error: err.message })
+      setSync({ busy: false })
+      openPopup(<SyncResultPopup error={err.message} />)
     }
   }
 
@@ -170,11 +196,6 @@ export default function HomePage() {
 
   return (
     <Layout title={LOGO} activeTab="home" headAction={headAction}>
-      {/* 새로고침 결과: 기관별로 실패할 수 있어서 한 줄씩. 다시 연결 · 카드 값 입력은 연결 관리에서 한다 */}
-      {sync.error && <p className="mc-error" role="alert">{sync.error}</p>}
-      {sync.lines?.map((l) => <p key={l.name} className={l.ok ? 'mc-note' : 'mc-error'} role="status">{l.name} · {l.text}</p>)}
-      {sync.lines?.some((l) => !l.ok) && <button type="button" className="mc-link" onClick={() => navigate(PATHS.connections)}>연결 관리에서 확인하기 ›</button>}
-
       {/* 1. 급여 주기 + 월급날 칩 / 월급 상태 + 기준 시각 — 한 줄에 넷을 넣으면 폰 폭에서 줄바꿈이 깨져 두 줄로 (급여일을 아직 안 넣었으면 period 가 null) */}
       {period && (
         <div className="mc-home2-period">
@@ -192,7 +213,7 @@ export default function HomePage() {
         </div>
       )}
 
-      <UnreflectedCardNote notes={b.cardNotes} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
+      <UnreflectedCardNote notes={b.cardNotes} readyIds={b.cardBillsReady} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
       {/* 3. 예산이 아직 없으면 (budget: null, H-06) 파란 카드 자리에 안내 카드 */}
       {budget === null ? (

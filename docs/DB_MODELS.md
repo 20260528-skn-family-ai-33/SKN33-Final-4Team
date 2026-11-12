@@ -260,3 +260,31 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 `salary_decision`에 nullable `snapshot_amount`(bigint), `snapshot_occurred_on`(date), `snapshot_description`(varchar 500), `snapshot_account_id`(UUID, 당시 계좌 값이므로 FK 아님)를 추가한다. 사용자 확인 시에만 원거래 값을 저장한다. 금액·거래일·적요 원문·계좌 UUID가 달라지거나 기준값이 없으면 `recheck`로 전환하고 `is_pattern`을 해제한다. 변경 없는 확정은 유지한다. 재확인 전까지 인정 합계에서 제외하며 과거 기준값과 `decided_at`은 보존한다.
 
 기존 확정 기록에는 기준값을 채우지 않는다. 데이터 마이그레이션은 기존 `confirmed`를 `recheck`로 바꾸고 자동 인식 기준과 영향 회차의 `confirmed_income` 캐시를 비운다. 개발/운영 DB 적용은 별도이며, 회귀 테스트는 전용 테스트 DB에서 수행한다. 상세 조회 계약은 [api/salary.md](api/salary.md)의 '사용자 확정 유효성' 참고.
+## 2026-11-11: 사는 지역을 회원 정보로 (users/0013_financialprofile_region_code · policies/0004_move_policy_profile_region)
+
+- `financial_profile.region_code` (varchar 10, NULL=미응답): 사는 지역 시군구 코드(`policies/data/regions.json` 의 final). 온보딩 내 정보에서 필수로 받고(`PUT /api/profile/`), 청년 정책을 찾는 기본 지역으로 쓴다 (멘토 요청).
+- 청년 정책 채팅 [다음에도 ○○구로 찾기]도 이 칸을 바꾼다. 지역을 두 곳에 두지 않으려고 11-10 에 만든 `policy_profile` 표는 지운다 — `policies/0004` 가 그 지역을 비어 있는 `financial_profile.region_code` 로 옮긴 뒤 삭제.
+- 만든 사람: 권세진 (DB 담당 김나은에게 전달).
+
+## 2026-11-10: 청년 정책 추천 조건 (policies/0003_policy_profile) — 11-11 삭제, 위 항목
+
+- `policy_profile`: 회원당 1행 (PK = `user_id`, 회원 FK **CASCADE** — 탈퇴하면 함께 삭제). 지금은 사는 지역 코드(`region_code`, `policies/data/regions.json` 의 시군구 코드)만 둔다.
+- 채팅에서 사용자가 [다음에도 ○○구로 찾기]를 **눌렀을 때만** 만든다 (메모의 '동의한 경우만 회원별 저장'). 다음 대화에서 지역을 다시 묻지 않는 데 쓴다. [지역 바꾸기] 뒤 다시 누르면 바뀐다.
+- 쓰기는 채팅 엔진이 대화 저장과 같은 트랜잭션에서 한다 (409 면 저장 안 됨). 지역 표에서 사라진 코드는 없는 것으로 읽는다.
+- 넣지 않는 것: 생년월일 · 성별(온보딩 `financial_profile` 값을 그대로 읽는다), 특화 대상(아직 묻지 않음).
+- 만든 사람: 권세진 (DB 담당 김나은에게 따로 전달).
+
+## 2026-11-10: 저장한 청년 정책 (policies/0002_saved_policy)
+
+- `saved_policy`: 회원이 저장한(북마크) 정책 한 건 = 한 줄. 채팅 추천의 [N번 저장] 버튼과 저장 API(`docs/api/policies.md`)가 만든다. 마이페이지 표시 방식은 아직 정하지 않았다.
+- PK 는 UUID. `user_id` → 회원 FK **CASCADE** (탈퇴하면 함께 지운다). `policy_no` → `policy` FK **PROTECT** (정책은 지우지 않고 `is_active=False` 로만 두므로, 저장한 정책이 마감 · 수집 종료돼도 기록이 남는다).
+- 조건 UNIQUE `saved_policy_once` (회원 · 정책): 같은 정책을 두 번 저장하지 않는다 → 저장 요청을 여러 번 보내도 한 줄 (API 는 이미 저장돼 있어도 성공).
+- 인덱스 `saved_policy_user_recent` (회원 · 저장 시각 내림차순): 저장 목록을 최신순으로 읽는다.
+- 넣지 않는 것: 저장 당시 정책 내용 복사본. 목록은 지금 `policy` 값을 읽고, 마감 · 수집 종료 여부를 함께 보여 준다.
+- 만든 사람: 권세진 (DB 담당 김나은에게 따로 전달).
+
+## 2026-11-06: 청년 정책 (policies/0001)
+
+- `policy`: 온통청년 정책 한 건. PK는 공식 정책번호(`policy_no`)라서 UUID 규칙의 예외다. 원본(`raw`, 담당자 이름 제외), 정리한 조건 칸, 텍스트 검색 문장, 임베딩 문장, `embedding`(vector 1536)을 둔다. 수집에서 사라진 정책은 삭제하지 않고 `is_active=False`로 둔다.
+- `policy_sync`: 수집 이력. 마지막 성공 건의 `data_date`가 데이터 기준일이다.
+- 회원과 연결되지 않는 공개 데이터라 FK가 없다. pg_trgm 확장을 켠다. 상세는 `docs/agents/청년정책.md`.

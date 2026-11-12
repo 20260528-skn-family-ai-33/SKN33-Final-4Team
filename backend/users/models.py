@@ -109,6 +109,8 @@ class FinancialProfile(models.Model):
     housing_type = models.CharField(
         "거주 형태", max_length=10, choices=HousingType.choices, null=True, blank=True,
     )  # NULL=미응답. 자취 55·30·5·10 / 본가 45·40·5·10 (docs/api/budgets.md P-02)
+    # 2026-11-11 온보딩: 사는 지역 (청년 정책 찾기 기본 지역). policies/data/regions.json 의 시군구 코드(final). NULL=미응답
+    region_code = models.CharField("사는 지역 코드", max_length=10, null=True, blank=True)
     monthly_take_home_income = models.BigIntegerField("월 실수령액", null=True, blank=True)
     monthly_disposable_income = models.BigIntegerField("모델용 처분가능소득", null=True, blank=True)
     disposable_income_basis = models.CharField("처분가능소득 근거", max_length=30, null=True, blank=True)

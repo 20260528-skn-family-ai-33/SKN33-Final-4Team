@@ -244,6 +244,51 @@ class TransactionDetailTest(FinanceData):
         self.patch(tx, {"category": "BEAUTY"})  # 마지막 선택이 '앞으로도 적용'이 아니면 재사용 멈춤
         self.assertIsNone(remembered_category(self.user, "김밥천국"))
 
+    def test_apply_to_future_fills_same_store_pending(self):
+        # 11/11: '앞으로도 적용'이면 같은 가게의 다른 '확인 필요' 거래도 같은 카테고리로. 다른 가게는 그대로
+        def pending(name):
+            return self.tx(source_kind="card", card=self.card, merchant_name=name,
+                           confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        name = "대표인증_3 - 발트페이먼츠"
+        picked, same, other = pending(name), pending(name), pending("김밥천국")
+        mine = self.tx(source_kind="card", card=self.card, merchant_name=name, confirmed_category_id="BEAUTY",
+                       confirmation_state="confirmed", classification_source="user")  # 사용자가 이미 고른 거래
+        elsewhere = pending(name)  # 이름은 같지만 카드사 업종이 다른 가게
+        elsewhere.merchant_category = "미용실"
+        elsewhere.save(update_fields=["merchant_category"])
+        picked.merchant_category = "PG"
+        picked.save(update_fields=["merchant_category"])
+
+        self.patch(picked, {"category": "FOOD"})  # 체크 안 하면 그 거래만
+        same.refresh_from_db()
+        self.assertEqual(same.confirmation_state, "needs_review")
+
+        self.patch(picked, {"category": "FOOD", "applyToFuture": True})
+        for tx in (same, other, mine, elsewhere):
+            tx.refresh_from_db()
+        self.assertEqual((same.confirmed_category_id, same.confirmation_state, same.classification_source),
+                         ("FOOD", "suggested", "rule"))  # 새 거래가 기억으로 분류될 때와 같은 상태
+        self.assertEqual(other.confirmation_state, "needs_review")          # 다른 가게
+        self.assertEqual(elsewhere.confirmation_state, "needs_review")      # 업종이 다른 같은 이름 가게
+        self.assertEqual((mine.confirmed_category_id, mine.confirmation_state), ("BEAUTY", "confirmed"))  # 사용자 선택은 그대로
+
+    def test_apply_to_future_fills_same_store_with_extra_spaces(self):
+        # PR #114 리뷰: 카드사가 준 이름의 가운데 공백이 두 칸이어도 같은 가게로 찾는다 (저장된 이름은 그대로)
+        def pending(name):
+            return self.tx(source_kind="card", card=self.card, merchant_name=name,
+                           confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        picked, same = pending("Cafe  Seoul"), pending("Cafe  Seoul")
+        self.patch(picked, {"category": "FOOD", "applyToFuture": True})
+        same.refresh_from_db()
+        self.assertEqual((same.confirmed_category_id, same.confirmation_state), ("FOOD", "suggested"))
+        self.assertEqual(same.merchant_name, "Cafe  Seoul")
+        # 새로 들어오는 거래도 공백 수와 상관없이 같은 가게로 기억을 쓴다 (last_user_choice)
+        for name in ("Cafe Seoul", " Cafe   Seoul ", "Cafe  Seoul"):
+            with self.subTest(name=name):
+                self.assertEqual(remembered_category(self.user, name), "FOOD")
+        self.assertIsNone(remembered_category(self.user, "Cafe Seoul 2호점"))  # 이름이 다르면 다른 가게
+        self.assertIsNone(remembered_category(self.user, "Cafe.Seoul"))      # 점(.)은 정규식 아무 글자로 보지 않는다
+
     def test_apply_to_future_is_ignored_for_pay_charge_and_transfer(self):
         charge = self.tx(source_kind="card", card=self.card, merchant_name="네이버페이충전",
                          confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")

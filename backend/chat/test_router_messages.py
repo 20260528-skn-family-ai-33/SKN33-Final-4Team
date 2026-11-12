@@ -122,12 +122,11 @@ class MessagesTest(SimpleTestCase):
         out = self.say("이번 달 얼마 썼어?")
         self.assertEqual(out["notices"], ["예산 조정은 저장이 진행 중이에요. 결과는 확인한 뒤 알려드릴게요."])
 
-    def test_undecided_policy_code_gets_no_text(self):
+    def test_policy_work_suspends_and_button_resumes(self):
         self.say("청년 정책 추천해줘")
         out = self.say("이번 달 얼마 썼어?")
         self.assertEqual(out["notices"], ["진행 중이던 청년 정책 추천은 잠시 멈춰 뒀어요."])
-        self.assertEqual(self.say(button="policy"), {"lines": [], "choices": [], "review": ["policy_resume_undecided"],
-                                                     "notices": []})
+        self.assertEqual(self.say(button="policy")["review"], [])  # 보류된 정책 작업은 묻지 않고 이어서 (미정 코드 없음)
 
     def test_every_decision_code_has_text_or_is_listed_undecided(self):
         """router_core · 소비 결정이 내는 질문 · 사유 코드 (코드 검색으로 모은 목록) — 새 코드가 생기면 여기서 걸린다"""
@@ -144,4 +143,4 @@ class MessagesTest(SimpleTestCase):
         self.assertLessEqual(question_reasons, set(messages.REASON))
         self.assertLessEqual(notices, set(messages.NOTICE))
         self.assertEqual(set(messages.CANCELLED), {"cancel", "declined"})
-        self.assertEqual(set(messages.UNDECIDED), {"policy_resume_undecided", "policy_cancel_undecided"})
+        self.assertEqual(set(messages.UNDECIDED), {"policy_cancel_undecided"})

@@ -14706,5 +14706,5 @@ x-source-sha256:
   docs/api/fixed.md: 416ec78f256332ccc5af61eedd75883c7effdfa1539114597a2db98d659cc1a5
   docs/api/savings.md: 93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223
   docs/api/home.md: c01be433fc189a9db5d24b31e2a0a53c7098533eb07fc8d7ad02b7f909596149
-  docs/api/chat.md: d98eb4152bc5c50e93a46b6c605a69b5b4ae1563617d8faa54807553d67f6f04
+  docs/api/chat.md: f64443d8cc226c9ab83e49867ffa5b9f447977e668e4b56153d4e8ddbeef84db
   docs/api/budgets.md: eafbf19fdfeea2dc915ee5c9ea219b73c05a0d9fa676b2677499d092a078c466

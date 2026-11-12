@@ -38,6 +38,23 @@ def out_of_budget_json(summary):
     return {"total": sum(outside.values()), "categories": [{"category": c, "spent": v} for c, v in outside.items()]}
 
 
+def card_bills_ready(user, cycle, today, notes):
+    """계산 당시 '첫 청구서 없음'(first_bill_unavailable)이던 카드 중 지금은 청구서가 반영되는 카드 ID (11/12).
+    홈 · 예산 화면 띠가 '새 청구서가 나왔어요 · 다시 추천받기'로 바뀌고 확인 창 없이 바로 재추천으로 간다.
+    - 그때 안내가 없으면 계산하지 않는다 (대부분의 회원은 홈이 무거워지지 않게)
+    - 지금 계산은 지킬 돈 설정과 같은 card_reserved. 아직 안내가 남았거나 · 계산 보류(재조회 · 결제 카드 확인 등)거나 ·
+      관리 대상에서 빠진 카드는 넣지 않는다 (그런 카드는 기존 흐름: 확인 창에서 불러온 뒤 판단)"""
+    from .protect import card_reserved, selected_cards, unreflected_card_ids
+
+    before = unreflected_card_ids(notes)
+    if not before:
+        return []
+    live = card_reserved(user, cycle, as_of=today)
+    still = unreflected_card_ids(live.get("notes", [])) | {row["card_id"] for row in live["pending"]}
+    managed = {str(card.pk) for card in selected_cards(user)}
+    return sorted((before & managed) - still)
+
+
 def budget_data(user, today, *, selected=None):
     profile = current_salary_profile(user, today)
     cycle = current_cycle(user, profile, today)
@@ -53,7 +70,7 @@ def budget_data(user, today, *, selected=None):
         "cycle": {"starts_on": cycle.starts_on.isoformat(), "ends_before": cycle.ends_before.isoformat()} if cycle else None,
         "budget": None, "split": None, "living": None, "overspend": None,
         "categories": [], "unclassified_count": summary["needs_review_count"], "nag": None, "out_of_budget": None,
-        "card_notes": [],
+        "card_notes": [], "card_bills_ready": [],
     }
     if cycle is None:
         return data
@@ -89,9 +106,12 @@ def budget_data(user, today, *, selected=None):
             "min_amount": minimums.get(category.pk), "locked": setting.locked if setting else False,
             "locked_amount": setting.locked_amount if setting else None, "reason": reasons.get(category.pk) or None,
         })
+    card_notes = ((selected.input_snapshot or {}).get("fixed") or {}).get("card_notes", [])
     data.update({
         # 현재 조회 결과가 아니라 선택한 예산의 계산 당시 안내. 새 청구서 조회만으로 미반영 안내를 지우지 않는다.
-        "card_notes": ((selected.input_snapshot or {}).get("fixed") or {}).get("card_notes", []),
+        "card_notes": card_notes,
+        # 그 안내 중 지금은 청구서가 나온 카드 (다시 추천받으면 반영됨, 11/12)
+        "card_bills_ready": card_bills_ready(user, cycle, today, card_notes),
         "recommendation": {'spare_transfer': design.get('spare_transfer', 0),
                            'target_conflicts': design.get('target_conflicts', [])} if design else None,
         "budget": {"budget_id": str(selected.pk), "version_no": selected.version_no, "status": selected.status,

@@ -25,7 +25,7 @@ from budgets.salary import salary_reviews
 from . import classifier
 from .display import account_display, card_display
 from .inputs import body_dict, reject_unknown_fields
-from .merchant_rules import FUTURE_KEY
+from .merchant_rules import FUTURE_KEY, same_store_pending
 from .models import BankAccount, Card, FinancialTransaction, RecurringExpense, RecurringSaving, SourceKind, TransactionLink
 from .spending import spending_summary
 from .transfer_rules import OWN_RECHECK, OWN_REVIEW
@@ -467,7 +467,7 @@ def transaction_detail(request, transaction_id):
     # 같은 거래에 '카테고리 변경'과 '이체로 되돌리기'가 동시에 와도 하나씩 차례로 처리되어
     # transfer + 카테고리 확정 같은 섞인 상태가 남지 않는다 (PR #41 리뷰).
     with transaction.atomic():
-        if own:
+        if own or apply_to_future:
             # 잠금 순서: 회원 → 거래 (pipeline · budgets.api.lock_user 와 같음). 저장 뒤 처리와 차례로 돈다
             get_user_model().objects.select_for_update(no_key=True).filter(pk=request.user.pk).first()
         # 1) 잠금: 조인 없이 거래 행만 잠근다 (outer join 쪽은 FOR UPDATE 불가)
@@ -495,6 +495,11 @@ def transaction_detail(request, transaction_id):
                 changed = [*dict.fromkeys([*changed, "field_states"])]
         if changed:
             tx.save(update_fields=[*changed, "updated_at"])
+        # '앞으로도 적용'이면 같은 가게의 다른 '확인 필요' 거래도 같은 카테고리로 (11/11)
+        if not own and FUTURE_KEY in (tx.field_states or {}):
+            for other in same_store_pending(tx):
+                classifier.apply_remembered(other, data["category"])
+                other.save(update_fields=[*classifier.FIELDS, "updated_at"])
     # 바뀐 카테고리 이름 등을 새로 읽어서 17번과 같은 모양으로 돌려준다
     tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
     return Response(transaction_detail_body(tx))
