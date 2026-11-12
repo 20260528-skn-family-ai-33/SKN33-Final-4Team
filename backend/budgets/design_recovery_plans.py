@@ -25,6 +25,7 @@ from .home import balance_json
 from .models import Budget, BudgetCycle, CushionEntry
 from .protect import cushion_required, fixed_base
 from .recommend import ALLOCATION_CODES, EngineCheckFailed, budget_input_snapshot
+from .salary import due_income
 from .scope import living_spent
 
 
@@ -42,7 +43,7 @@ def _digest(plan):
 def finances(user, handoff, today):
     from .api import protect_json
     cycle = get_object_or_404(BudgetCycle, pk=handoff['cycle_id'], user=user)
-    profile = get_object_or_404(FinancialProfile, user=user)
+    profile = due_income(get_object_or_404(FinancialProfile, user=user), today)
     state = protect_json(user, profile, today)
     if state['blocked'] or state['base'] is None or state['saved'] is None:
         raise AdjustmentExpired()

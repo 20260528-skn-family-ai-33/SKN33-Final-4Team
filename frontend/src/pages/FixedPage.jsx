@@ -6,7 +6,7 @@
 // 결제 확인 (10/21 결정, C-14 · C-16): 서버가 찾은 비슷한 결제를 evidenceSuggestion 으로 준다 (있을 때만 묻는다)
 //   1건 = "이 결제가 맞나요? [맞아요] [아니에요]" / 여러 건 = "비슷한 결제가 N건 있어요 [고르기]" → EvidencePopup
 //   [맞아요] · 고른 결제 = PATCH /api/budgets/fixed/<id>/ { evidenceTransactionId }. [아니에요] = 요청 없음 (다음 달 다시 물어봄)
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
@@ -119,15 +119,19 @@ function PaidTxPopup({ id, onSaved }) {
 // 마이 > 고정지출 · 홈 '꼭 나갈 돈'에서 열기
 function ManageView({ from }) {
   const { openPopup } = usePopup()
-  const { data, error, reload } = useFixedList()
+  const { data, error, reload, refreshing } = useFixedList()
   // 11/12: 무엇이든 바꿨으면 아래 [저장] (utils/useApplyTiming.js).
   //   묻는 건 화면을 열 때와 비교해 고정지출 합계가 달라졌을 때만 — 생활비로 쓸 돈이 달라져서 이번 예산을 다시 짤 수 있다.
   //   이름 · 출금일 · 카테고리만 바꿨거나, 올렸다 되돌려 합계가 같으면 묻지 않는다
   const timing = useApplyTiming(from === 'home' ? PATHS.home : PATHS.my)
-  const [startTotal, setStartTotal] = useState(null)
-  useEffect(() => { if (data && startTotal === null) setStartTotal(data.summary.confirmedMonthlyTotal) }, [data, startTotal])
-  const onSaved = () => { timing.mark(); reload() }
-  const save = () => timing.save(data.summary.confirmedMonthlyTotal !== startTotal)
+  // 처음 합계는 첫 변경 때 기억한다 (팝업을 연 순간의 목록 = 바꾸기 전). 다시 받는 중엔 [저장]을 잠가 옛 합계로 비교하지 않게
+  const startTotal = useRef(null)
+  const onSaved = () => {
+    if (startTotal.current === null) startTotal.current = data.summary.confirmedMonthlyTotal
+    timing.mark()
+    reload()
+  }
+  const save = () => timing.save(data.summary.confirmedMonthlyTotal !== startTotal.current)
   if (!data) return <Layout title="고정지출" showBack><ApiStatus error={error} /></Layout>
 
   const confirmed = data.items.filter((f) => f.status === 'confirmed')
@@ -137,7 +141,7 @@ function ManageView({ from }) {
   const rows = [...late, ...noDay.filter((f) => !late.includes(f)), ...confirmed.filter((f) => !late.includes(f) && !noDay.includes(f))]
 
   return (
-    <Layout title="고정지출" showBack foot={timing.changed ? <button type="button" className="mc-primary" onClick={save}>저장</button> : null}>
+    <Layout title="고정지출" showBack foot={timing.changed ? <button type="button" className="mc-primary" disabled={refreshing || !timing.ready} onClick={save}>저장</button> : null}>
       <div className="mc-eyebrow">고정지출</div>
       <h1>매달 나가는 돈</h1>
       <p className="mc-muted">여기 있는 돈은 예산에서 먼저 떼어 둬요.{timing.started && <><br />바꾼 뒤 [저장]을 누르면 언제부터 예산에 반영할지 고를 수 있어요.</>}</p>

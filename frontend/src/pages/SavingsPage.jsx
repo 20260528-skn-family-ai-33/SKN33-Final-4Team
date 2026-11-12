@@ -7,7 +7,7 @@
 // 저축은 사용자 확인 없이 자동으로 확정하지 않는다 (TXN-005). 자동 감지는 아직 없어 후보가 없으면 직접 추가 · 계속하기만 보여 준다
 // [+ 저축 직접 추가] = 자동으로 못 찾는 저축(다른 은행 적금 등). 바로 확정 (S-03)
 // 찾은 후보의 [수정]은 이름 · 금액 · 이체일만 (계좌는 못 바꿈, S-11) → SavingPopup
-import { useEffect, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
@@ -38,28 +38,33 @@ function savingLine(s) {
 // 마이 > 정기 저축
 function ManageView() {
   const { openPopup } = usePopup()
-  const { data, error, reload } = useSavingsList()
+  const { data, error, reload, refreshing } = useSavingsList()
   // 11/12: 무엇이든 바꿨으면 아래 [저장] (utils/useApplyTiming.js, 고정지출과 같음).
   //   묻는 건 '매달 꼭 저축할 돈'(저축 최소 금액)이 화면을 열 때와 달라졌고, 지킬 돈에 정해 둔 저축보다 커졌을 때만.
   //   예: 지킬 돈 저축 74만 원인데 3만 원 적금을 추가 → 최소 3만 원이라 이번 예산은 그대로 → 묻지 않는다(다시 추천 · AI 호출 안 함)
   //   최소 금액이 줄었을 때는, 지킬 돈 저축이 처음 최소 금액과 딱 같았을 때만 묻는다 — 최소액에 끌려 올라간 저축이라
   //   줄어든 만큼 생활비로 돌릴 수 있다. 사용자가 저축을 더 크게 정해 둔 경우(74만 원 · 최소 30만 원)는 그대로 둔다
   const timing = useApplyTiming(PATHS.my)
-  const floor = useApi('/api/my/').data?.protect?.savingsFloor  // 지킬 돈에 정해 둔 월 저축 (모르면 null)
-  const [startMin, setStartMin] = useState(null)
-  useEffect(() => { if (data && startMin === null) setStartMin(data.summary.minimumMonthly) }, [data, startMin])
-  const onSaved = () => { timing.mark(); reload() }
+  const my = useApi('/api/my/')
+  const floor = my.data?.protect?.savingsFloor  // 지킬 돈에 정해 둔 월 저축 (못 받았거나 미설정이면 null → 바뀌면 묻는다)
+  // 처음 최소 금액은 첫 변경 때 기억한다 (팝업을 연 순간의 목록 = 바꾸기 전). 다시 받는 중엔 [저장]을 잠근다
+  const startMin = useRef(null)
+  const onSaved = () => {
+    if (startMin.current === null) startMin.current = data.summary.minimumMonthly
+    timing.mark()
+    reload()
+  }
   const save = () => {
-    const min = data.summary.minimumMonthly
+    const min = data.summary.minimumMonthly, start = startMin.current
     const raised = floor == null || min > floor            // 늘어서 지킬 돈 저축으로 모자람
-    const freed = min < startMin && floor === startMin     // 줄었고, 저축이 최소액 때문에 정해진 금액이었음
-    timing.save(min !== startMin && (raised || freed))
+    const freed = min < start && floor === start           // 줄었고, 저축이 최소액 때문에 정해진 금액이었음
+    timing.save(min !== start && (raised || freed))
   }
   if (!data) return <Layout title="정기 저축" showBack><ApiStatus error={error} /></Layout>
   const confirmed = data.items.filter((s) => s.status === 'confirmed')
 
   return (
-    <Layout title="정기 저축" showBack foot={timing.changed ? <button type="button" className="mc-primary" onClick={save}>저장</button> : null}>
+    <Layout title="정기 저축" showBack foot={timing.changed ? <button type="button" className="mc-primary" disabled={refreshing || !timing.ready || my.loading} onClick={save}>저장</button> : null}>
       <div className="mc-eyebrow">정기 저축</div>
       <h1>매달 하는 저축</h1>
       <p className="mc-muted">여기 있는 저축은 예산에서 먼저 떼어 둬요.{timing.started && <><br />바꾼 뒤 [저장]을 누르면 언제부터 예산에 반영할지 고를 수 있어요.</>}</p>

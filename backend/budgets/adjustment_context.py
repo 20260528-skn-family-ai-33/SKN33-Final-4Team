@@ -25,7 +25,7 @@ from .models import Budget, BudgetCategorySetting, BudgetCycle, Category, Cushio
 from .overview import LIVING_CODES
 from .protect import cushion_required
 from .recommend import budget_input_snapshot, hash_snapshot
-from .salary import salary_cycle_dates
+from .salary import due_income, salary_cycle_dates
 from .scope import OUT_OF_BUDGET, living_spent
 
 
@@ -77,7 +77,7 @@ def _money_map(value, allowed):
 
 
 def _select_basis(user, today, base_budget_id, mode):
-    profile = FinancialProfile.objects.filter(user=user).first()
+    profile = due_income(FinancialProfile.objects.filter(user=user).first(), today)
     if profile is None or profile.payday is None:
         raise AdjustmentContextError("profile_not_ready")
     effective = copy(profile)

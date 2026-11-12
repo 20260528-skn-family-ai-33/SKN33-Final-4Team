@@ -15,7 +15,9 @@ import { PATHS } from '../routes.js'
 export function useApplyTiming(backTo) {
   const navigate = useNavigate()
   const { openPopup, closePopup } = usePopup()
-  const started = useApi('/api/auth/me/').data?.onboardingCompleted === true
+  const me = useApi('/api/auth/me/')
+  const started = me.data?.onboardingCompleted === true
+  const ready = !me.loading  // 첫 예산 승인 여부를 아직 모르면 [저장]을 잠근다 (모르고 누르면 묻지 않고 지나감)
   const [changed, setChanged] = useState(false)
   const mark = () => setChanged(true)
   const back = () => navigate(backTo, { replace: true })
@@ -32,5 +34,5 @@ export function useApplyTiming(backTo) {
       }
     } }))
   }
-  return { started, changed, mark, save }
+  return { started, ready, changed, mark, save }
 }

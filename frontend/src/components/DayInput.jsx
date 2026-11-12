@@ -7,7 +7,9 @@ import { useState } from 'react'
 import { LAST_DAY, dayBad, dayDigits, dayOk } from '../utils/days.js'
 
 export default function DayInput({ id, name, value, onChange, what = '날짜', optional = false }) {
-  const [last, setLast] = useState(value === String(LAST_DAY))
+  const [lastMode, setLast] = useState(value === String(LAST_DAY))
+  // 부르는 쪽이 값을 바꿔 31 이 아니게 되면(저장 뒤 서버 값으로 되돌림 등) '말일' 잠금도 풀린 것으로 본다
+  const last = lastMode && value === String(LAST_DAY)
   const bad = dayBad(value)
   const errorId = `${id}-error`
   return (

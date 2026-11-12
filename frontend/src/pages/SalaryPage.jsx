@@ -48,7 +48,10 @@ function SalaryForm({ saved }) {
   const onMan = (d) => { const v = d.slice(0, MAN_DIGITS); setIncome(v === '' ? '' : String(Number(v) * MAN)) }
   const switchUnit = () => setUnit(man ? 'won' : 'man')  // 금액(원)은 그대로, 보여 주는 단위만 바꾼다
   // 첫 예산을 승인했는지 (GET /api/auth/me/ onboardingCompleted). 승인 전이면 급여일을 바꿔도 적용 시점을 묻지 않는다
-  const budgetStarted = useApi('/api/auth/me/').data?.onboardingCompleted === true
+  const me = useApi('/api/auth/me/')
+  const budgetStarted = me.data?.onboardingCompleted === true
+  // 이미 등록한 월급을 고치는데 첫 예산 승인 여부를 아직 모르면 저장을 잠근다 (모르고 보내면 묻지 않고 보내져 서버가 applyFrom 400)
+  const waitMe = saved.payday != null && me.loading
   const [payday, setPayday] = useState(String(pending?.payday ?? saved.payday ?? ''))  // 입력 글자 그대로 (숫자만)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -72,7 +75,7 @@ function SalaryForm({ saved }) {
       } else if (asks) {
         toast('다음 주기부터 바뀌어요')
         navigate(manage ? PATHS.my : PATHS.home, { replace: true })
-      } else if (manage) navigate(PATHS.my, { replace: true, state: { budgetNote: true } })
+      } else if (manage) navigate(PATHS.my, { replace: true })  // 안 물은 경우 = 바꾼 게 없거나 첫 예산 승인 전이라 '승인한 예산은 그대로' 안내가 맞지 않다
       else navigate(PATHS.fixed)
     } catch (err) {
       const first = Object.values(err.fields ?? {}).flat().find((m) => typeof m === 'string')
@@ -93,7 +96,7 @@ function SalaryForm({ saved }) {
   }
 
   return (
-    <Layout title="월급 설정" showBack foot={<button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '저장 중…' : manage ? '저장' : '저장하고 계속'}</button>}>
+    <Layout title="월급 설정" showBack foot={<button className="mc-primary" form="mc-form" type="submit" disabled={busy || waitMe}>{busy ? '저장 중…' : manage ? '저장' : '저장하고 계속'}</button>}>
       {!manage && <StepBar step={3} />}
       <div className="mc-eyebrow">월급 설정</div>
       <h1>월급과 급여일을 알려주세요</h1>

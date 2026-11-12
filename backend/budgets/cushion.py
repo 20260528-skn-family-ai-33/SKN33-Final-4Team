@@ -2,13 +2,15 @@
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Sum
+from django.utils import timezone
 
 from users.models import FinancialProfile
 from .models import CushionEntry
+from .salary import due_income
 
 
 def cushion_data(user):
-    profile = FinancialProfile.objects.filter(user=user).first()
+    profile = due_income(FinancialProfile.objects.filter(user=user).first(), timezone.localdate())  # 다음 주기 실수령액 전환일이 지났으면 새 금액 (11/12)
     income = profile.monthly_take_home_income if profile else None
     monthly = profile.cushion_monthly if profile else None
     if income is not None and income <= 0:

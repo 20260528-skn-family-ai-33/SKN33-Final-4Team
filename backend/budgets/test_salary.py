@@ -420,6 +420,16 @@ class SalaryTests(TestCase):
         self.assertEqual(response.json()["pendingPaydayChange"]["effectiveOn"], "2026-11-10")
         self.assertEqual(response.json()["pendingIncomeChange"]["effectiveOn"], "2026-11-10")
 
+    def test_due_income_is_used_even_if_cushion_screen_opens_first(self):
+        # 전환일 당일 다른 화면보다 쿠션 화면을 먼저 열어도 새 실수령액(× 3)으로 목표를 계산한다 (budgets.salary.due_income)
+        self.put(payload())
+        self.approve_first_budget()
+        self.put(payload(takeHomeIncome=3_000_000, applyFrom="next_cycle"))
+        self.today.return_value = date(2026, 11, 26)
+        with patch("budgets.cushion.timezone.localdate", return_value=date(2026, 11, 26)):
+            body = self.client.get("/api/budgets/cushion/").json()
+        self.assertEqual(body["cushion"]["goal"], 9_000_000)
+
     def test_old_and_new_choice_names_must_agree(self):
         self.put(payload())
         self.approve_first_budget()

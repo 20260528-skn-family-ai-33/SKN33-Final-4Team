@@ -31,6 +31,14 @@ def current_salary_profile(user, today):
     return profile
 
 
+def due_income(profile, today):
+    """전환일이 지난 '다음 주기 실수령액'을 메모리에서만 반영한다 (11/12). 저장 · 예약 정리는 current_salary_profile 이 한다.
+    프로필을 직접 읽는 곳(예산 조정 · 설계 복구 · 쿠션)이 전환일 당일 다른 화면보다 먼저 열려도 새 금액으로 계산하게"""
+    if profile is not None and profile.income_changes_on and today >= profile.income_changes_on:
+        profile.monthly_take_home_income = profile.scheduled_take_home_income
+    return profile
+
+
 def activate_salary_if_due(user, today):
     from .api import lock_user
 
