@@ -7,6 +7,8 @@
 // 기간은 달력월. ‹ › 로 달을 옮긴다 (주소 ?month=2026-10, 없으면 이번 달)
 // '확인 필요'는 기본이 전체 기간(H-03 — 홈 숫자와 같게), [달별로 보기]로 달마다도 본다. 칩 · 배너 숫자는 늘 전체 기간
 // 날짜별 묶음 · 날짜 합계는 화면에서 만든다 (API 는 평평한 목록)
+// 이름 검색(11/11): 입력하는 대로 바로 거른다. 보고 있는 달 · 필터로 이미 받은 목록 안에서 화면이 거르고, 소비 합계도 걸러진 거래로 다시 센다
+//   (서버에 다시 묻지 않아서 글자마다 목록이 깜빡이지 않는다). 달 · 필터를 바꿔도 검색어는 남고, '확인 필요' 배너를 누르면 풀린다
 import { useState } from 'react'
 import { useSearchParams } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -108,9 +110,17 @@ export default function TransactionsPage() {
   const refresh = () => { reload(); reloadPending() }
   const pendingCount = pending?.summary.needsReviewCount ?? 0
 
+  // 이름 검색: 목록 이름(카드 = 가맹점명, 계좌 = 적요)에 그 글자가 있는 거래만. 영어는 대소문자 무시
+  const [search, setSearch] = useState('')
+  const needle = search.trim().toLowerCase()
+  const items = !data ? [] : needle ? data.items.filter((item) => (item.merchantName ?? '').toLowerCase().includes(needle)) : data.items
+  // 소비 합계: 검색 중이면 걸러진 소비 거래의 netAmount 합 (서버 spentTotal 과 같은 계산)
+  const spentTotal = !data ? 0 : needle
+    ? items.reduce((sum, item) => sum + (item.transactionType === 'spending' ? item.netAmount : 0), 0)
+    : data.summary.spentTotal
+
   // 받는 동안에도 달 · 칩 · 필터는 그대로 두어 계속 바꿀 수 있게 한다
-  const summary = data?.summary
-  const days = data ? groupByDay(data.items) : []
+  const days = groupByDay(items)
 
   return (
     <Layout title="거래 내역" activeTab="txs">
@@ -124,21 +134,28 @@ export default function TransactionsPage() {
           <button type="button" className="mc-sumbar-toggle" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간 보기'}</button>
         )}
         {/* 이 목록의 소비 소계일 뿐 — 예산 · 남은 생활비는 홈 · 예산 화면 값 (급여 주기 기준이라 다름) */}
-        {data && <span className="mc-sumbar-v"><b>{won(summary.spentTotal)}</b><span className="mc-muted"> 소비</span></span>}
+        {data && <span className="mc-sumbar-v"><b>{won(spentTotal)}</b><span className="mc-muted"> 소비</span></span>}
       </div>
 
       {pendingCount > 0 && (
         // 배너 숫자는 다른 조건 없이 센 전체 건수 → 누르면 거래 유형 · 계좌 · 카드 조건을 풀고 그 건수 그대로 보여 준다
         //   (입금 · 이체만 골라 둔 채 누르면 '확인 필요(소비)'와 겹치는 거래가 없어 늘 비던 문제, PR #101 리뷰)
-        <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => go([PENDING.code], 'all', [], [], [])}>
+        <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => { setSearch(''); go([PENDING.code], 'all', [], [], []) }}>
           <span className="mc-pend-dot">{pendingCount}</span>
           <strong className="mc-grow">카테고리 확인이 필요한 거래</strong>
           <span className="mc-muted">›</span>
         </button>
       )}
 
+      {/* 입력하는 대로 바로 걸러진다. 돋보기 · 엔터는 키보드를 닫는다(이미 걸러진 상태) */}
+      <form className="mc-tx-search" role="search" onSubmit={(e) => { e.preventDefault(); e.currentTarget.querySelector('input')?.blur() }}>
+        <input type="search" name="q" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름으로 검색"
+          aria-label="거래 이름 검색" enterKeyHint="search" maxLength={50} autoComplete="off" />
+        <button type="submit" className="mc-tx-search-btn" aria-label="검색"><Icon name="Search" size={16} /></button>
+      </form>
+
       <div className="mc-row mc-tx-sum">
-        <span className="mc-muted">{data ? <>거래 {data.items.length}건 · 소비 <strong>{won(summary.spentTotal)}</strong></> : '거래 불러오는 중'}</span>
+        <span className="mc-muted">{data ? <>거래 {items.length}건 · 소비 <strong>{won(spentTotal)}</strong></> : '거래 불러오는 중'}</span>
         {/* 달력 보기는 기능이 생기면 여기에 [리스트 | 달력] (11/3: 누를 수 없는 버튼이라 뺌) */}
         <button type="button" className="mc-filter-btn" aria-pressed={filterCount > 0} onClick={() => openPopup(
           <FilterPopup categories={CHIPS} pendingCount={pendingCount} categoryCodes={codes} types={types} accountIds={accountIds} cardIds={cardIds} onApply={applyFilter} />,
@@ -149,7 +166,7 @@ export default function TransactionsPage() {
       {(!data || (error && !refreshing)) && <ApiStatus error={refreshing ? null : error} onRetry={reload} />}
       {data && refreshing && <p className="mc-muted" role="status">새로 불러오는 중…</p>}
       {data && days.length === 0 && (
-        <div className="mc-card"><p className="mc-muted" style={{ margin: 0 }}>이 기간에 거래가 없어요.</p></div>
+        <div className="mc-card"><p className="mc-muted" style={{ margin: 0 }}>{needle ? `'${search.trim()}' 이름의 거래가 이 기간에 없어요.` : '이 기간에 거래가 없어요.'}</p></div>
       )}
       {days.map((day) => (
         <div className="mc-card mc-tx-day" key={day.date}>

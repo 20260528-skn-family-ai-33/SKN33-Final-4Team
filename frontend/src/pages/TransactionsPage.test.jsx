@@ -70,3 +70,25 @@ it('확인 필요 배너는 거래 유형 · 계좌 · 카드 조건을 풀고 �
   expect(btn('필터 1')).toBeDefined()  // 남은 조건은 '확인 필요' 하나
   expect(host.textContent).toContain('카테고리 확인 필요')  // 배너 숫자 1건이 목록에 보인다
 })
+
+// 11/11: 이름 검색 — 입력하는 대로 받은 목록 안에서 바로 거르고(서버에 다시 묻지 않음), 소비 합계도 걸러진 거래로 센다
+it('이름 검색은 입력하는 대로 목록 · 합계를 거르고, 비우면 원래대로 돌아온다', async () => {
+  const other = { ...tx, transactionId: 'tx-2', merchantName: 'Starbucks 역삼', netAmount: 5_000, amount: 5_000 }
+  await act(async () => root.render(<MemoryRouter><PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
+  await respond('transactions/?from', list([tx, other], 17_345))
+  const calls = fetch.mock.calls.length
+  const input = host.querySelector('input[name="q"]')
+  const type = (v) => act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, v)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+
+  await type('star')                                       // 영어는 대소문자 무시
+  expect(host.textContent).toContain('거래 1건 · 소비 5,000원')
+  expect(host.textContent).not.toContain('합성 식당')
+  await type('없는 가게')
+  expect(host.textContent).toContain("'없는 가게' 이름의 거래가 이 기간에 없어요.")
+  await type('')
+  expect(host.textContent).toContain('거래 2건 · 소비 17,345원')
+  expect(fetch.mock.calls.length).toBe(calls)              // 글자마다 서버에 다시 묻지 않는다
+})

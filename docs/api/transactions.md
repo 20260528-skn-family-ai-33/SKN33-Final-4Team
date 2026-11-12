@@ -259,7 +259,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 |---|---|---|---|---|
 | `category` | 문자 / null | O | 10개 카테고리 + `ETC`(기타) 중 하나. `UNCLASSIFIED`는 보낼 수 없음. `null`은 **원래 이체였던 거래를 다시 이체로 돌릴 때만**(W) | `"FOOD"` |
 | `ownTransfer` | 불린 | X | 내 계좌 이체 확인 (R11, 11/5). 다른 칸과 같이 보내면 400. 아래 '내 계좌 이체 확인' | `true` |
-| `applyToFuture` | 불린 | X (기본 `false`) | `true`면 **같은 가맹점의 다음 새 거래**도 이 카테고리로 자동 분류 (10/30). `canApplyToFuture: false`인 거래에 `true`를 보내도 400을 내지 않고 재사용하지 않는다 | `true` |
+| `applyToFuture` | 불린 | X (기본 `false`) | `true`면 **같은 가맹점의 다음 새 거래**와 **이미 '확인 필요'로 남아 있는 같은 가맹점 거래**도 이 카테고리로 자동 분류 (10/30, 11/11). `canApplyToFuture: false`인 거래에 `true`를 보내도 400을 내지 않고 재사용하지 않는다 | `true` |
 
 ```json
 { "category": "FOOD", "applyToFuture": true }
@@ -270,6 +270,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 - 저장하면 이 거래는 사용자 확정(`classifyState: confirmed`, `classifiedBy: user`)이 된다.
 - **같은 가맹점의 다음 거래에 쓰기 (10/30 변경)**: `applyToFuture: true`로 저장했을 때만, 이후 같은 가맹점의 새 거래가 이 카테고리를 먼저 쓴다(`finance/merchant_rules.py`의 `remembered_category()`, 출처 `rule`).
     - 이름이 같아도 카드사 업종이 분명히 다르면 다른 가게로 보고 재사용하지 않는다 (11/06).
+    - **이미 '확인 필요'로 남아 있는 같은 가맹점 거래도 저장할 때 함께 분류한다 (11/11).** 새 거래가 기억으로 분류될 때와 같게 출처 `rule`, 상태 `suggested`. 사용자가 이미 고른 거래 · 자동 분류된 거래 · 업종이 다른 같은 이름 가게는 그대로 둔다 (`merchant_rules.same_store_pending()`).
     - 기준은 같은 가맹점에서 사용자가 고른 거래 중 **가장 최근 거래**(거래일 순, 같은 날이면 마지막 수정 순)다. 그 거래가 `applyToFuture: true`일 때만 재사용하고, 아니면 재사용하지 않는다. 사용자가 선택을 바꾸면 마지막 선택을 따른다.
     - 새 칸 없이 그 거래의 `field_states.apply_to_future = true`로 남긴다. API 응답에는 내보내지 않는다.
     - 10/30 이전에 확정한 거래는 이 표시가 없어서 재사용되지 않는다.

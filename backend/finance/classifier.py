@@ -581,6 +581,11 @@ def _card_answer(tx, answers):
     return answers[industry]
 
 
+def apply_remembered(tx, code):
+    """'앞으로도 적용'으로 정해진 카테고리를 쓴다. 새 거래(classify)와 같은 방식: 규칙(rule)이 정함"""
+    _apply(tx, code, Tx.ClassificationSource.RULE, None)
+
+
 def _apply(tx, code, source, confidence):
     tx.confirmed_category_id = tx.suggested_category_id = code
     tx.confirmation_state, tx.classification_source, tx.suggestion_source = Tx.ConfirmationState.SUGGESTED, source, source
