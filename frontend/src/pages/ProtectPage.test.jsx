@@ -105,3 +105,35 @@ it('나눈 기준은 맨 아래 글 대신 제목 옆 [?] 가운데 창으로 �
   expect(document.body.textContent).toContain('자취 여부는 내 정보에서 바꿀 수 있어요')
   expect(document.querySelector('.mc-help-box')?.textContent).toBe('생활비 45% · 저축 40% · 여윳돈 5% · 쿠션 10%')  // 비율은 목록 말고 제목 밑 칸에
 })
+
+it('마이에서 들어와 저장하면 가운데 창으로 다시 추천을 알리고, [예산 확인하러 가기]를 눌러야 저장한다 (11/13)', async () => {
+  document.cookie = 'csrftoken=test; path=/'
+  try {
+    await act(async () => root.render(<MemoryRouter initialEntries={[{ pathname: PATHS.protect, state: { from: 'my' } }]}><PopupProvider><Routes>
+      <Route path={PATHS.protect} element={<ProtectPage />} />
+      <Route path={PATHS.recommend} element={<p>추천 화면</p>} />
+    </Routes></PopupProvider></MemoryRouter>))
+    const submit = () => act(async () => host.querySelector('#mc-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    await submit()
+    const dialog = () => document.querySelector('[role=dialog][aria-label="예산 다시 추천"]')
+    expect(dialog().textContent).toContain('새 추천을 승인해야 지금 예산이 바뀌어요.')
+    expect(fetch.mock.calls.some(([, o]) => o?.method === 'PUT')).toBe(false)  // 창만 띄우고 아직 저장 안 함
+    await act(async () => [...dialog().querySelectorAll('button')].find((b) => b.textContent === '예산 확인하러 가기').click())
+    expect(fetch.mock.calls.some(([, o]) => o?.method === 'PUT')).toBe(true)
+    expect(host.textContent).toContain('추천 화면')
+  } finally {
+    document.cookie = 'csrftoken=; max-age=0; path=/'
+  }
+})
+
+it('온보딩에서는 창 없이 바로 저장하고 추천으로 간다 (11/13)', async () => {
+  document.cookie = 'csrftoken=test; path=/'
+  try {
+    await render()
+    await act(async () => host.querySelector('#mc-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(document.querySelector('[aria-label="예산 다시 추천"]')).toBeNull()
+    expect(host.textContent).toContain('추천 화면')
+  } finally {
+    document.cookie = 'csrftoken=; max-age=0; path=/'
+  }
+})

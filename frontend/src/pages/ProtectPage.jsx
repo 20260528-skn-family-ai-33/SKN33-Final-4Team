@@ -73,7 +73,7 @@ export default function ProtectPage() {
   const [fieldErrors, setFieldErrors] = useState({})
   const [busy, setBusy] = useState(false)
   const [showCardSync, setShowCardSync] = useState(false)
-  const { openPopup } = usePopup()
+  const { openPopup, closePopup } = usePopup()
   const [reviewVersion, setReviewVersion] = useState(0)
   // 11/09: 카드 내역을 서버가 뒤에서 불러오는 중이면 재조회를 권하지 않고 기다렸다가 끝나면(성공 · 실패 모두) 다시 읽는다
   // 11/10: 상태 조회가 끊기거나 5분을 넘기면 잠깐 쉬고 다시 읽는다. 다시 읽을 때마다(data 가 바뀔 때마다) 조회를 새로 시작해서,
@@ -125,6 +125,22 @@ export default function ProtectPage() {
       document.getElementById('mc-main')?.scrollTo?.({ top: 0, behavior: 'smooth' })
       return
     }
+    // 11/13: 마이에서 들어왔으면 저장 전에 가운데 창으로 '예산을 다시 추천한다'를 알리고, [예산 확인하러 가기]를 눌러야 저장한다.
+    // 닫으면 저장하지 않는다. 온보딩은 원래 다음 단계가 추천이라 바로 저장
+    if (manage) {
+      openPopup(
+        <Popup label="예산 다시 추천" dialog>
+          <h2>예산을 다시 추천해요</h2>
+          <p className="mc-muted">저장하면 바뀐 금액으로 예산을 다시 추천해요.<br />새 추천을 승인해야 지금 예산이 바뀌어요.</p>
+          <button type="button" className="mc-primary" onClick={() => { closePopup(); save() }}>예산 확인하러 가기</button>
+        </Popup>,
+      )
+      return
+    }
+    save()
+  }
+
+  const save = async () => {
     setBusy(true)
     setError('')
     setFieldErrors({})
