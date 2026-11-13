@@ -4,9 +4,12 @@
 // - 핵심 안내(lead)는 서버가 나눈 칸 그대로 맨 위에. '안내:' 글자 + 굵게 (색만으로 구분하지 않음)
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { won } from '../utils/money.js'
+import { apiSend, useApi } from '../utils/api.js'
+import { policyNumber, policyTitle } from '../utils/policyCards.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
+import '../styles/policies.css'
 
 const Lead = ({ items }) => items.map((l, i) => (
   // span 을 쓰지 않는다: mc-spend-unc 의 마지막 span 은 금액 칸용 줄바꿈 금지라 긴 문장이 카드 밖으로 나간다
@@ -144,6 +147,9 @@ function ViewCard({ content, title }) {
 
 // 정책 카드의 DB 링크 줄만 연결한다. 일반 문장·HTML은 해석하지 않는다.
 function PolicyLine({ text }) {
+  if (text.length > 350 && !text.startsWith('링크: ')) {
+    return <details className="mc-policy-detail"><summary>{text.slice(0, 180)}… <strong>전체 내용 보기</strong></summary><p>{text}</p></details>
+  }
   const prefix = '링크: '
   if (!text.startsWith(prefix)) return text
   const href = text.slice(prefix.length)
@@ -157,6 +163,52 @@ function PolicyLine({ text }) {
   return <>{prefix}<a className="mc-fx-policy-link" href={href} target="_blank" rel="noopener noreferrer" aria-label={`${href} (새 탭에서 열기)`}>{href}</a></>
 }
 
+// 정책 저장은 대화의 turn 선택지가 아니라 정책 ID를 쓰는 멱등 북마크 API다.
+// 지난 답변에서도 저장할 수 있고, 대화 상태나 현재 질문을 바꾸지 않는다.
+function PolicySections({ sections }) {
+  const [index, setIndex] = useState(0)
+  const [changes, setChanges] = useState({})
+  const pending = useRef(new Set())
+  const bookmarks = useApi('/api/policies/saved/')
+  const section = sections[Math.min(index, sections.length - 1)]
+  const id = section.policyNo
+  const title = policyTitle(section.title)
+  const number = policyNumber(section.title)
+  const state = changes[id] ?? {}
+  const saved = state.saved || bookmarks.data?.items?.some((item) => item.policyNo === id)
+  const save = async () => {
+    if (!id || saved || pending.current.has(id)) return
+    pending.current.add(id)
+    setChanges((prev) => ({ ...prev, [id]: { busy: true } }))
+    try {
+      await apiSend(`/api/policies/${encodeURIComponent(id)}/saved/`, 'PUT')
+      setChanges((prev) => ({ ...prev, [id]: { saved: true } }))
+      bookmarks.reload()
+    } catch (error) {
+      setChanges((prev) => ({ ...prev, [id]: { error: error.message || '저장하지 못했어요. 다시 시도해 주세요.' } }))
+    } finally {
+      pending.current.delete(id)
+    }
+  }
+  return <div className="mc-spend-cats mc-policy-cards">
+    <article aria-label={title}>
+      {number && <div className="mc-eyebrow">{number}번 정책</div>}
+      <h3 className="mc-policy-title">{title}</h3>
+      <ul className="mc-spend-lines">{section.lines.map((line, i) => <li key={i}><PolicyLine text={line} /></li>)}</ul>
+      {sections.length > 1 && <div className="mc-policy-nav" role="group" aria-label="추천 정책 넘기기">
+        <button type="button" className="mc-secondary" disabled={index === 0} onClick={() => setIndex((n) => n - 1)}>이전 정책</button>
+        <span role="status">{index + 1} / {sections.length}</span>
+        <button type="button" className="mc-secondary" disabled={index === sections.length - 1} onClick={() => setIndex((n) => n + 1)}>다음 정책</button>
+      </div>}
+      {id && <button type="button" className="mc-secondary mc-policy-save" onClick={save}
+        disabled={Boolean(saved || state.busy || bookmarks.loading || bookmarks.error)}
+        aria-label={`${title} ${saved ? '저장됨' : '저장'}`}>{saved ? '저장됨' : state.busy ? '저장 중…' : '저장'}</button>}
+      {state.error && <p role="alert">{state.error}</p>}
+      {bookmarks.error && <p role="alert">저장 상태를 확인하지 못했어요. <button type="button" className="mc-link" onClick={bookmarks.reload}>다시 확인</button></p>}
+    </article>
+  </div>
+}
+
 // 분석 결과 카드 (SpendingCard 와 같은 틀 · 클래스). 카드 보기가 있으면 그것으로, 없으면(설명 답변 등) 문장 목록
 function ResultCard({ content, title }) {
   if (content.view?.length) return <ViewCard content={content} title={title} />
@@ -166,11 +218,13 @@ function ResultCard({ content, title }) {
       <div className="mc-spend-head"><span>{title}</span></div>
       <Lead items={content.lead ?? []} />
       {content.lines.length > 0 && <ul className="mc-spend-lines">{content.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
-      {(content.sections ?? []).length > 0 && (
+      {content.agent === 'policy' && content.sections?.some((s) => s.policyNo)
+        ? <PolicySections sections={content.sections} />
+        : (content.sections ?? []).length > 0 && (
         <div className="mc-spend-cats">
           {content.sections.map((s, i) => (
             <div key={`sec-${i}`}>
-              <strong>{s.title}</strong>
+              <strong className={content.agent === 'policy' ? 'mc-policy-title' : undefined}>{content.agent === 'policy' ? policyTitle(s.title) : s.title}</strong>
               {s.lines.length > 0 && <ul className="mc-spend-lines">{s.lines.map((l, j) => <li key={j}>{content.agent === 'policy' ? <PolicyLine text={l} /> : l}</li>)}</ul>}
             </div>
           ))}

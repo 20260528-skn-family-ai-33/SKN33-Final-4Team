@@ -247,6 +247,32 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(policy.json()["messages"][0]["content"]["text"], "청년 정책")
         self.assertEqual(self.calls.call_count, 0)  # 기능 버튼은 라우터 해석 없이
 
+    def test_common_router_choices_open_policy_without_reclassification(self):
+        from chat.llm.fake import EXTRA_SAID
+
+        menu = [{"value": "spending", "label": "소비 분석"}, {"value": "budget", "label": "예산 조정"},
+                {"value": "policy", "label": "청년 정책"}]
+        cases = (
+            ("안녕", "조금 더 자세히 적어 주세요."),
+            ("날씨 어때?", "머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요."),
+            ("이번 주 커피 얼마나 마셨지?", "지금은 이해하지 못했어요, 아래에서 골라 주세요."),
+        )
+        with mock.patch.dict(EXTRA_SAID, {"안녕": {"intents": ["unclear"]}}):
+            for text, line in cases:
+                with self.subTest(text=text):
+                    out = self.send("A", text=text)
+                    asked = self.bot(out)
+                    cid = out.json()["conversationId"]
+                    self.assertEqual((asked["lines"], asked["choices"]), ([line], menu))
+                    self.assertEqual(asked["choices"], out.json()["features"])
+                    self.calls.reset_mock()
+                    picked = self.pick("A", cid, asked, "청년 정책")
+                    self.assertEqual((picked.json()["agent"], self.bot(picked)["lines"]),
+                                     ("policy", [policy_agent.ASK_REGION]))
+                    self.assertEqual(picked.json()["messages"][0]["content"]["text"], "청년 정책")
+                    self.assertEqual(Conversation.objects.get(pk=cid).active_agent, "policy")
+                    self.assertEqual(self.calls.call_count, 0)
+
     def test_policy_region_buttons_answer_save_and_spending_goes_back(self):
         """청년 정책 (7단계 연결): 지역 버튼 → 문장 → 추천 → [1번 저장]은 대화 저장과 함께 DB 에 → 소비 질문은 소비 담당으로"""
         from policies.models import SavedPolicy
@@ -260,6 +286,7 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(content["lines"], [policy_agent.ASK_TOPIC])
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])  # 결과 카드 (제목 + 점 목록)
+        self.assertEqual(content["sections"][0]["policyNo"], "20260000000000000001")
         self.assertEqual((content["agent"], content["result"], content["notices"][0]), ("policy", True, policy_agent.NOTICE))
         content = self.bot(self.pick("A", cid, content, "1번 저장"))
         self.assertEqual(content["lines"], [policy_agent.SAVED.format(name="청년 월세 지원")])

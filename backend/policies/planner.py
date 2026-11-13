@@ -16,7 +16,7 @@ ACTIONS = ("search", "detail", "not_mine", "end")  # 분야를 되묻지 않는�
 # 맞춤 추천 분야 (agent.FIELDS 의 키). 주거 · 취업 · 직업훈련 · 생활비 · 저축 · 창업 · 마음 건강
 FIELD_CODES = ("housing", "job", "training", "living", "saving", "startup", "mind")
 MAX_FIELDS = 3
-TOPICS = ("support", "apply", "documents", "period", "eligibility", "other")
+TOPICS = ("support", "apply", "documents", "period", "eligibility", "selection", "guarantee", "other")
 DEFAULT_TOPICS = ("support", "period", "apply")  # 무엇이 궁금한지 모를 때
 
 PROMPT = """너는 청년 정책 챗봇의 '다음 행동 고르기' 단계다. 사용자 문장, 질문 읽기 결과, 직전 추천 목록을 보고 행동 하나를 JSON 으로 고른다.
@@ -34,7 +34,8 @@ fields: search 인데 문장에 지원 분야가 드러나지 않을 때(막연�
   housing=월세 · 주거, job=취업 · 일자리, training=교육 · 직업훈련, living=생활비 · 현금 지원, saving=저축 · 자산, startup=창업, mind=마음 건강.
   "받을 수 있는 돈" · "지원금"처럼 돈을 말하면 living 을 넣는다. 짐작할 단서가 전혀 없으면 []. 분야가 드러난 문장이나 다른 행동이면 [].
 topics: detail 일 때 궁금한 항목 (여러 개 가능). support=지원 내용 · 금액, apply=신청 방법 · 링크, documents=제출 서류 · 준비물,
-  period=신청 기간 · 아직 신청되는지, eligibility=자격 · 일해도 되는지 · 나이, other=중복 수혜 · 재신청 · 그 밖. 무엇이 궁금한지 모르면 []. 다른 행동이면 [].
+  period=신청 기간 · 아직 신청되는지, eligibility=자격 · 일해도 되는지 · 나이, selection=심사·선정 절차,
+  guarantee=신청하면 무조건 받는지 · 지원 확정 여부 (eligibility와 selection도 함께), other=중복 수혜 · 재신청 · 그 밖. 무엇이 궁금한지 모르면 []. 다른 행동이면 [].
 
 예 (직전 추천: 1. 청년 월세 지원 / 2. 청년 전월세 대출보증)
 "2번 신청 링크랑 서류 알려줘" → {"action":"detail","number":2,"topics":["apply","documents"],"fields":[]}
