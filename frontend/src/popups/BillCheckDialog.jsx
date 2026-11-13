@@ -25,7 +25,7 @@ const ASK_CARD_VALUES = '0302'  // 현대카드: 조회마다 카드번호 · �
 const UNCHECKED = '조회 결과를 확인하지 못했어요. 다시 시도해 주세요.'  // 두 번 불러와도 결과에 없는 카드사
 
 // 카드사 다시 로그인 (CardSyncPanel 의 다시 연결과 같은 요청). 창이 닫혀도 끝까지 가서 결과만 돌려준다
-//   문자 인증을 요구하면 문자 인증 팝업이 이 창 자리를 쓰고, 닫히면 reopen 으로 확인 창을 다시 연다 (11/14)
+//   문자 인증 · 카드 확인을 요구하면 그 팝업이 이 창 자리를 쓰고, 닫히면 reopen 으로 확인 창을 다시 연다 (11/14)
 async function reconnectCard(openPopup, connection, form, sms) {
   const item = await reconnect(openPopup, { ...connection, businessType: 'card' }, form, sms)
   if (item.status === 'connected') return { ok: true }
@@ -158,7 +158,7 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null, 
     // 문자 인증 팝업이 떠 있는 동안은 확인 창으로 덮지 않는다 (서버가 빨리 답하면 문자 인증 팝업이 먼저 뜬다)
     let inSms = false
     const reopen = () => { if (!inSms) openPopup(<BillCheckDialog cardIds={cardIds} onFound={onFound} resume={pending} done={[...doneRef.current]} />) }
-    const pending = reconnectCard(openPopup, connection, form, { beforeSms: () => { inSms = true }, afterSms: () => { inSms = false; reopen() } })
+    const pending = reconnectCard(openPopup, connection, form, { beforePopup: () => { inSms = true }, afterPopup: () => { inSms = false; reopen() } })
     setTimeout(reopen)
   }} />)
 

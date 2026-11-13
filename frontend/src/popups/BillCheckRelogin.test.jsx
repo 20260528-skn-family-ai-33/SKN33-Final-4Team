@@ -27,6 +27,7 @@ beforeEach(() => {
     if (url === '/api/finance/connections/' && method === 'POST') {
       posted = JSON.parse(options.body)
       const result = Array.isArray(loginResult) ? loginResult.shift() : loginResult  // 배열이면 차례로 (문자 인증 2단계)
+      if (result.http) return reply(result.body, result.http)  // 400 같은 오류 응답
       if (result.status === 'connected') connStatus = 'connected'
       return reply({ results: [result] })
     }
@@ -56,10 +57,11 @@ const type = (name, value) => {
   el.dispatchEvent(new Event('input', { bubbles: true }))
 }
 const login = async () => {
+  const name = org.organizationName
   await act(async () => root.render(<MemoryRouter><PopupProvider><Host /></PopupProvider></MemoryRouter>))
-  for (let i = 0; i < 5 && !button('신한카드 다시 연결하기'); i++) await settle()
-  await act(async () => button('신한카드 다시 연결하기').click())
-  expect(host.textContent).toContain('신한카드 로그인')                // 로그인 팝업이 확인 창을 대신함
+  for (let i = 0; i < 5 && !button(`${name} 다시 연결하기`); i++) await settle()
+  await act(async () => button(`${name} 다시 연결하기`).click())
+  expect(host.textContent).toContain(`${name} 로그인`)                // 로그인 팝업이 확인 창을 대신함
   await act(async () => { type('instId', 'hong'); type('instPw', 'pw') })
   await act(async () => host.querySelector('form').requestSubmit())
   for (let i = 0; i < 10; i++) await settle()
@@ -132,5 +134,35 @@ it('현대카드 직접 조회가 건너뜀이면 아직 없음으로 끝내지 
   for (let i = 0; i < 5; i++) await settle()
   expect(host.textContent).not.toContain('아직 청구서가 조회되지 않았어요')
   expect(host.textContent).toContain('카드사 확인이 필요해요')
+  expect(onFound).not.toHaveBeenCalled()
+})
+
+// PR #122 리뷰: 국민카드 카드 소지 확인(CF-12108) → 서버 400 fields → 카드 칸 붙은 로그인 팝업 → 카드 값까지 넣어 다시 연결
+const KB_CHECK = { http: 400, body: { error: { code: 'invalid', message: '카드사에서 카드 확인을 요청했어요.',
+  fields: { 'institutions[0].cardNo': ['카드번호를 입력해 주세요.'], 'institutions[0].cardPassword': ['카드 비밀번호를 입력해 주세요.'] } } } }
+
+it('국민카드가 카드 소지 확인을 요구하면 카드번호 · 비밀번호 앞 2자리를 받아 이어서 다시 연결한다', async () => {
+  org = { organizationCode: '0301', organizationName: '국민카드' }
+  loginResult = [KB_CHECK, { status: 'connected', syncStatus: 'done' }]
+  await login()
+  expect(host.textContent).toContain('카드사에서 카드번호와 카드 비밀번호를 요청했어요.')
+  expect(host.textContent).toContain('카드 비밀번호 앞 2자리')
+  await act(async () => { type('instId', 'hong'); type('instPw', 'pw'); type('cardNo', '4111222233334444'); type('cardPw', '1234') })
+  await act(async () => host.querySelector('form').requestSubmit())
+  expect(host.textContent).toContain('카드 비밀번호 앞 2자리를 숫자로 입력해 주세요.')  // 4자리는 막는다
+  await act(async () => type('cardPw', '12'))
+  await act(async () => host.querySelector('form').requestSubmit())
+  for (let i = 0; i < 10; i++) await settle()
+  expect(posted.institutions[0]).toMatchObject({ organizationCode: '0301', loginId: 'hong', cardNo: '4111222233334444', cardPassword: '12' })
+  expect(onFound).toHaveBeenCalledOnce()
+})
+
+it('카드 확인 팝업을 닫으면 확인 창에 이유를 보여 준다', async () => {
+  org = { organizationCode: '0301', organizationName: '국민카드' }
+  loginResult = [KB_CHECK]
+  await login()
+  await act(async () => button('닫기 ×').click())
+  for (let i = 0; i < 10; i++) await settle()
+  expect(host.textContent).toContain('국민카드 · 카드 확인을 취소했어요.')
   expect(onFound).not.toHaveBeenCalled()
 })
