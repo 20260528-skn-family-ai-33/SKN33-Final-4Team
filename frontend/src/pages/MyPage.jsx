@@ -13,6 +13,7 @@ import { apiSend, useApi } from '../utils/api.js'
 import { won } from '../utils/money.js'
 import { paydayText } from '../utils/days.js'
 import { clearConnectDraft } from '../utils/connectDraft.js'
+import { saveId } from '../utils/chatConversation.js'
 
 const MENU = [
   { icon: 'IdCard', name: '내 정보', sub: '나이·자취 여부·우선순위 등', to: PATHS.profile, state: { from: 'my' } },
@@ -74,6 +75,7 @@ export default function MyPage() {
       }
 
       clearConnectDraft()  // 계좌 연결에서 고르던 기관을 다음 사람이 보지 않게 (11/12)
+      saveId(null)
       navigate(PATHS.login, { replace: true })
     } catch (err) {
       setLogoutError(
@@ -155,6 +157,17 @@ export default function MyPage() {
         <p className="mc-error">내 돈 관리 요약을 불러오지 못했어요.</p>
         <button type="button" className="mc-link" onClick={summary.reload}>요약 다시 불러오기</button>
       </div>}
+      <section aria-labelledby="my-saved-policies-title">
+        <div className="mc-row mc-section"><h2 id="my-saved-policies-title">저장한 정책</h2></div>
+        <div className="mc-card">
+          <button type="button" className="mc-listrow" onClick={() => navigate(PATHS.myPolicies)}>
+            <span className="mc-tile"><Icon name="Landmark" /></span>
+            <span className="mc-grow"><strong>저장한 정책 보기</strong><span className="mc-muted">관심 있는 청년 정책 모아보기</span></span>
+            <span className="mc-right"><span className="mc-muted">›</span></span>
+          </button>
+        </div>
+      </section>
+
       <div className="mc-row mc-section"><h2>앱 설정</h2></div>
       <div className="mc-card">
         <button type="button" className="mc-listrow" onClick={() => openPopup(<PrivacyPopup onChanged={summary.reload} />)}>동의·데이터 관리　›</button>

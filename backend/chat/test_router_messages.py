@@ -8,7 +8,8 @@ from spending_analysis import agent as spending_agent
 from .router_core import MemoryStateStore, messages, run_turn
 from .test_router_agents import PHASE_B_SAID, FakeAgent, FakeServer
 
-MENU = [{"value": "spending", "label": "소비 분석"}, {"value": "budget", "label": "예산 조정"}]
+MENU = [{"value": "spending", "label": "소비 분석"}, {"value": "budget", "label": "예산 조정"},
+        {"value": "policy", "label": "청년 정책"}]
 
 
 class MessagesTest(SimpleTestCase):
@@ -72,9 +73,9 @@ class MessagesTest(SimpleTestCase):
 
     def test_router_questions_and_confirmed_chat_md_texts(self):
         out = self.say("소비 분석하고 예산도 줄여줘")
-        self.assertEqual((out["lines"], out["choices"]), (["무엇부터 도와드릴까요?"], MENU))
+        self.assertEqual((out["lines"], out["choices"]), (["무엇부터 도와드릴까요?"], MENU[:2]))
         self.say("취소")
-        self.assertEqual(self.say("날씨 어때?"), {"lines": ["머니쿠션은 소비 분석과 예산 조정을 도와드려요."],
+        self.assertEqual(self.say("날씨 어때?"), {"lines": ["머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요."],
                                                "choices": MENU, "notices": [], "review": []})
         self.assertEqual(self.say("잘 모르겠어"), {"lines": ["조금 더 자세히 적어 주세요."], "choices": MENU, "notices": [],
                                                  "review": []})

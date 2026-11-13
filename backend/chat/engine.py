@@ -43,7 +43,7 @@ KEY = "conversation"  # 저장소 하나 = 대화 하나라 run_turn 의 대화 
 BUSY = {"error": {"code": "conversation_busy", "message": "앞 메시지를 처리하는 중이에요. 잠시 후 다시 보내 주세요."}}
 STALE = {"error": {"code": "stale_choice", "message": "이전 질문의 선택지예요. 가장 최근 질문에서 골라 주세요."}}
 # 기능 버튼 (큰 지출 상담 → 청년 정책으로 대체, 22-12 결정). spending · budget 은 기존 chat API 선택지와 같은 값 · 이름
-FEATURES = {"spending": "소비 분석", "budget": "예산 조정", "policy": "청년 정책"}
+FEATURES = {choice["value"]: choice["label"] for choice in router_messages.CHOICES}
 NOT_READY = {
     # 예산 설계(새로 짜기)는 추천 화면에서 한다 — 채팅은 금액을 바꾸지 않는다 (11/3)
     "budget": "예산 조정 챗봇은 준비 중이에요. 예산을 새로 짜려면 예산 화면에서 추천을 다시 받을 수 있어요.",

@@ -29,6 +29,7 @@ beforeEach(() => {
     if (options.method) { requests.push({ url, method: options.method, body: JSON.parse(options.body) }); return send(url) }
     if (url === '/api/auth/me/') return reply({ nickname: '테스트', email: 'synthetic@example.com' })
     if (url === '/api/my/') return summaryError || reply(summary)
+    if (url === '/api/policies/saved/') return reply({ items: [] })
     if (url === '/api/profile/') return profileError || reply(profile)
     if (url === '/api/budgets/salary/') return reply(summary.salary)
     if (url === '/api/finance/consents/') return consentError || reply(consents)
@@ -100,6 +101,7 @@ it('삭제 중 중복 요청을 막고 실패를 성공으로 표시하지 않�
   expect(host.querySelector('[role=dialog] form')).not.toBeNull()
 })
 it('탈퇴는 로그인 비밀번호와 삭제 확인 후 실행하고 로그인으로 이동한다', async () => {
+  sessionStorage.setItem('mc-chat-conversation', 'conversation-before-withdrawal')
   localStorage.setItem('moneycushion.savedEmail', 'synthetic@example.com')
   await render(); await click('회원 탈퇴　›')
   const submit = () => host.querySelector('[role=dialog] button[type=submit]')
@@ -111,6 +113,7 @@ it('탈퇴는 로그인 비밀번호와 삭제 확인 후 실행하고 로그인
   expect(requests[0]).toEqual({ url: '/api/auth/me/', method: 'DELETE', body: { password: 'Synthetic123!', confirm: true } })
   expect(host.querySelector('[data-path]').textContent).toBe('/login')
   expect(localStorage.getItem('moneycushion.savedEmail')).toBeNull()
+  expect(sessionStorage.getItem('mc-chat-conversation')).toBeNull()
   expect(fetch.mock.calls.some(([url]) => url === '/api/finance/consents/')).toBe(false)
 })
 it('동의 조회 실패 시 임의 상태나 철회 버튼을 표시하지 않는다', async () => {
