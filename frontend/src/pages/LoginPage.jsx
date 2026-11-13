@@ -7,6 +7,7 @@ import { PATHS } from '../routes.js'
 
 import { useRef, useState } from 'react'
 import { apiSend } from '../utils/api.js'
+import { saveId } from '../utils/chatConversation.js'
 
 const SAVED_EMAIL_KEY = 'moneycushion.savedEmail'
 
@@ -63,6 +64,7 @@ export default function LoginPage() {
         ? PATHS.home
         : PATHS.onboard
 
+      saveId(null)
       navigate(destination, { replace: true })
     } catch (err) {
       setFieldErrors(err.fields ?? {})
