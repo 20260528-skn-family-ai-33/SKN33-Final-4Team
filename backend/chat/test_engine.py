@@ -281,9 +281,10 @@ class ServiceChoiceTest(ServiceChatBase):
         add("20260000000000000001", plcyNm="청년 월세 지원")  # 화성시 정책 (가짜 임베딩이라 순위는 상관없다)
         out = self.send("A", choice="policy")
         cid, content = out.json()["conversationId"], self.bot(out)
-        for label in ("경기도", "화성시", "동탄구"):
-            content = self.bot(self.pick("A", cid, content, label))
+        self.assertEqual(content["inputs"], [policy_agent.REGION_SELECT])  # 화면은 지역 드롭다운
+        content = self.bot(self.send("A", cid, text="경기도 화성시 동탄구"))  # 드롭다운은 고른 이름을 문장으로
         self.assertEqual(content["lines"], [policy_agent.ASK_TOPIC])
+        self.assertEqual(content["examples"], policy_agent.TOPIC_EXAMPLES)  # 화면은 질문 아래 예시 목록
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])  # 결과 카드 (제목 + 점 목록)
         self.assertEqual(content["sections"][0]["policyNo"], "20260000000000000001")
@@ -310,8 +311,7 @@ class ServiceChoiceTest(ServiceChatBase):
         add("20260000000000000001", plcyNm="청년 월세 지원")
         out = self.send("A", choice="policy")
         cid, content = out.json()["conversationId"], self.bot(out)
-        for label in ("경기도", "화성시", "동탄구"):
-            content = self.bot(self.pick("A", cid, content, label))
+        content = self.bot(self.send("A", cid, text="경기도 화성시 동탄구"))  # 지역 드롭다운
         return cid, self.bot(self.send("A", cid, text="월세 지원 있어?"))
 
     def test_review_saving_a_policy_that_became_inactive_says_it_failed(self):
@@ -387,8 +387,7 @@ class ServiceChoiceTest(ServiceChatBase):
         add("20260000000000000001", plcyNm="청년 월세 지원")
         out = self.send("A", choice="policy")
         cid, content = out.json()["conversationId"], self.bot(out)
-        for label in ("경기도", "화성시", "동탄구"):
-            content = self.bot(self.pick("A", cid, content, label))
+        content = self.bot(self.send("A", cid, text="경기도 화성시 동탄구"))  # 지역 드롭다운
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         real = engine.answer
 

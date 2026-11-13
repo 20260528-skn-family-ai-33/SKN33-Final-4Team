@@ -7,6 +7,7 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 
 from policies import search
+from policies.regions import NATIONWIDE
 from policies.llm import DIMENSIONS, EmbedFailed
 from policies.models import Policy
 from policies.normalize import policy_fields
@@ -55,10 +56,15 @@ class CandidateTest(TestCase):
         add("SEOUL", zipCd="11680")
         self.assertEqual(sorted(numbers(find())), ["CITY", "GU", "PROVINCE"])
 
-    def test_시군구까지_고르지_않은_지역과_없는_코드는_받지_않는다(self):
-        for code in ("41000", "99999"):
-            with self.assertRaises(ValueError):
-                find(region=code)
+    def test_시도_시_전국으로도_찾고_없는_코드는_받지_않는다(self):
+        add("CITY", zipCd="41590")
+        add("PROVINCE", zipCd="41000")
+        add("GU", zipCd="41597")
+        add("OTHER", zipCd="11680")
+        self.assertEqual(sorted(numbers(find(region="41000"))), ["CITY", "GU", "PROVINCE"])  # 경기도 안 어디든
+        self.assertEqual(sorted(numbers(find(region=NATIONWIDE))), ["CITY", "GU", "OTHER", "PROVINCE"])
+        with self.assertRaises(ValueError):
+            find(region="99999")
 
     def test_마감된_정책과_비활성_정책은_뺀다(self):
         add("CLOSED", aplyPrdSeCd="0057003")
@@ -172,6 +178,6 @@ class CommandTest(TestCase):
         with self.assertRaisesMessage(CommandError, "지역을 하나로 정할 수 없어요"):
             self.run_command("--region", "중구")
 
-    def test_시군구까지_고르지_않은_지역이면_멈춘다(self):
-        with self.assertRaisesMessage(CommandError, "검색하지 못했어요"):
-            self.run_command("--region", "41000")
+    def test_없는_지역_코드면_멈춘다(self):
+        with self.assertRaises(CommandError):
+            self.run_command("--region", "99999")

@@ -185,7 +185,7 @@ def answer(user, store, text=None, button=None, *, budget_adapter=None, budget_h
     # 담당 표시: 진행 중인 담당, 없으면 이번에 답한 에이전트 (문장으로 추측하지 않는다)
     answered = turn["delivered"][-1] if turn["delivered"] and result.get("status") not in (None, "failed", "not_mine") else None
     now = current_agent(store, KEY)
-    bot.update(agent=now or answered, inputs=[],
+    bot.update(agent=now or answered, inputs=list(bot.get("inputs") or []),  # 정책 지역 드롭다운(region_select)만 reply 로 온다
                result=(answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
                # 청년 정책 추천 · 저장 목록은 정책마다 제목 + 점 목록(sections)인 결과 카드로 그린다
                or (answered == "policy" and bool((result.get("reply") or {}).get("sections"))))

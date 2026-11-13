@@ -5,6 +5,18 @@ from pathlib import Path
 _data = json.loads((Path(__file__).parent / "data" / "regions.json").read_text(encoding="utf-8"))
 REGIONS = {r["code"]: r for r in _data["regions"]}
 KNOWN_CODES = set(REGIONS) | set(_data["retired"])
+# 전국으로 찾기 (채팅 지역 고르기의 [전국]). 지역 표에는 넣지 않는다 — 내 정보 사는 지역 · 드롭다운 목록에 섞이지 않게
+NATIONWIDE, NATIONWIDE_NAME = "00000", "전국"
+BY_NAME = {r["name"]: code for code, r in REGIONS.items()}  # 드롭다운이 보내는 전체 이름 ('제주특별자치도 제주시')
+# 지역 → 그 안의 시군구 누구에게나 해당하는 정책 코드 (시군구는 자기 match, 시도 · 시는 아래 시군구 match 의 합)
+AREA_MATCH = {code: sorted({m for c, r in REGIONS.items()
+                            if r["final"] and (c == code or r["name"].startswith(REGIONS[code]["name"] + " "))
+                            for m in r["match"]} | set(REGIONS[code]["match"]))
+              for code in REGIONS}
+
+
+def region_name(code):
+    return NATIONWIDE_NAME if code == NATIONWIDE else REGIONS[code]["name"]
 
 
 def find_region(text):

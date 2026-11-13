@@ -84,8 +84,20 @@ it('저장 실패를 성공으로 표시하지 않고 재시도할 수 있다', 
 it('긴 자격 원문은 접되 마지막 조건까지 제공한다', async () => {
   const text = `자격: ${'조건 설명 '.repeat(100)}마지막 조건`
   await render({ ...content, sections: [{ ...content.sections[0], lines: [text] }] })
-  expect(host.querySelector('details p').textContent).toBe(text)
+  expect(host.querySelector('dd details p').textContent).toBe(text.slice('자격: '.length))
   expect(host.querySelector('summary').textContent).toContain('전체 내용 보기')
+})
+
+it('[자세히 보기]는 지금 보이는 정책의 버튼 이름을 문장으로 보내고, 지난 답변에서도 누를 수 있다', async () => {
+  const asked = []
+  const detailed = { ...content, choices: [...content.choices, { value: 'detail:P1', label: '첫 정책 자세히 보기' }, { value: 'detail:P/2', label: '둘째 정책 자세히 보기' }] }
+  await act(async () => root.render(<ChatReply content={detailed} title="청년 정책" active={false} onAsk={(text) => asked.push(text)} />))
+  await click('다음 정책')
+  await click('자세히 보기')
+  expect(asked).toEqual(['둘째 정책 자세히 보기'])
+  expect(policyChoices(detailed).map((c) => c.value)).toEqual(['more'])
+  await render(detailed)  // 보내는 중(onAsk 없음)에는 누를 수 없다
+  expect(button('자세히 보기').disabled).toBe(true)
 })
 
 it('새 카드에서는 번호별 저장 칩을 제거하고 예전 메시지의 선택지는 보존한다', () => {

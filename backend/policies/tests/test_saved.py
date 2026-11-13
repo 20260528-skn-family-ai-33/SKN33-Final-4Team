@@ -34,6 +34,13 @@ class SaveTest(TestCase):
         self.assertEqual(saved.save(self.user, NUMBER), (None, False))
         self.assertEqual(saved.save(self.user, "NONE"), (None, False))
 
+    def test_목록은_채팅_카드와_같은_지역과_지원_요약을_준다(self):
+        add("LOAN", plcyNm="청년 전세 대출", zipCd="11110", plcySprtCn="ㅁ 최대 2억 원 저금리 전세자금 대출")
+        saved.save(self.user, "LOAN")
+        [row] = saved.items(self.user, date(2026, 11, 10))
+        self.assertEqual((row["region"], row["support_type"], row["support"]),
+                         ("서울특별시 종로구", "대출 · 상환 필요", "최대 2억 원 저금리 전세자금 대출"))
+
     def test_목록은_마감과_수집_종료도_상태로_보여_준다(self):
         saved.save(self.user, NUMBER)
         [row] = saved.items(self.user, date(2026, 11, 10))
@@ -69,7 +76,7 @@ class ApiTest(TestCase):
         items = self.client.get("/api/policies/saved/").json()["items"]
         self.assertEqual([i["name"] for i in items], ["청년 월세 지원"])
         self.assertEqual(set(items[0]), {"savedPolicyId", "policyNo", "name", "applyState", "applyEnd", "link",
-                                         "active", "savedAt"})
+                                         "active", "savedAt", "region", "supportType", "support"})
         self.assertTrue(items[0]["savedAt"].endswith("+09:00"))  # 한국 시간 (API 규칙)
         self.assertEqual(self.client.delete(self.url()).status_code, 204)
         self.assertEqual(self.client.delete(self.url()).status_code, 204)  # 이미 취소해도 성공

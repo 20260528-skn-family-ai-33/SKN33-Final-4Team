@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it } from 'vitest'
-import ChatReply from './ChatReply.jsx'
+import ChatReply, { Choices } from './ChatReply.jsx'
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host, root
@@ -42,6 +42,7 @@ it('예산 조정 중에 물은 답(alt.first)은 예산 주기를 먼저 보여
   expect(host.textContent).toContain('100,000원')
 })
 
+const rows = () => [...host.querySelectorAll('.mc-policy-table > div')].map((row) => [row.querySelector('dt').textContent, row.querySelector('dd').textContent])
 const policyCard = (lines, extra = {}) => ({
   agent: 'policy', result: true, lines: [],
   sections: [{ title: '테스트 정책', lines }], ...extra,
@@ -53,12 +54,11 @@ it.each(['청년 정책 추천', '공고 원문에 적힌 내용이에요.', '�
     await render(policyCard(['지원: 테스트 안내', `링크: ${url}`], { lines: [heading] }))
     const link = host.querySelector('a')
     expect(link.getAttribute('href')).toBe(url)
-    expect(link.textContent).toBe(url)
+    expect(link.textContent).toContain('공고 보기')
     expect(link.target).toBe('_blank')
     expect(link.rel.split(' ')).toEqual(expect.arrayContaining(['noopener', 'noreferrer']))
     expect(link.getAttribute('aria-label')).toContain('새 탭에서 열기')
-    expect(host.textContent).toContain('지원: 테스트 안내')
-    expect(host.textContent).toContain(`링크: ${url}`)
+    expect(rows()).toEqual([['지원', '테스트 안내']])
   },
 )
 
@@ -77,7 +77,13 @@ it.each([
   await render(policyCard([`링크: ${value}`]))
   expect(host.querySelector('a')).toBeNull()
   expect(host.querySelector('img, script')).toBeNull()
-  expect(host.textContent).toContain(`링크: ${value}`)
+  expect(rows()).toEqual([['링크', value]])
+})
+
+it('라벨 없는 경고 줄은 표 밖 안내로, 값 속 쌍점은 값에 남긴다', async () => {
+  await render(policyCard(['곧 나이 상한을 넘어요. 신청 기간을 서둘러 확인해 보세요.', '신청: 상시: 예산 소진 시 마감']))
+  expect(host.querySelector('.mc-policy-note').textContent).toContain('곧 나이 상한')
+  expect(rows()).toEqual([['신청', '상시: 예산 소진 시 마감']])
 })
 
 it('정책의 일반 문장과 다른 담당·예전 담당 없는 카드는 링크로 해석하지 않는다', async () => {
@@ -89,4 +95,42 @@ it('정책의 일반 문장과 다른 담당·예전 담당 없는 카드는 링
     expect(host.querySelector('a')).toBeNull()
     expect(host.textContent).toContain(line)
   }
+})
+
+it('질문 아래 예시 문장(examples)을 회색 한 줄로 보인다', async () => {
+  await render({ agent: 'policy', lines: ['어떤 고민이 있으세요?'], examples: ['월세가 부담돼요', '돈을 모으고 싶어요'] })
+  expect(host.querySelector('.mc-examples').textContent).toBe('예) 월세가 부담돼요 · 돈을 모으고 싶어요')
+})
+
+it('결과 카드(분야 안내)도 안내 문장 아래 회색 예시 줄을 보인다', async () => {
+  await render({ agent: 'policy', result: true, lines: ['이런 분야를 찾을 수 있어요.'], examples: ['월세 지원 있을까요?'],
+    sections: [{ title: '찾을 수 있는 분야', lines: ['주거: 월세 지원'] }] })
+  expect(host.querySelector('.mc-examples').textContent).toBe('예) 월세 지원 있을까요?')
+  expect(host.querySelector('.mc-policy-table dd').textContent).toBe('월세 지원')
+})
+
+it('청년 정책 확인 질문은 줄을 나누고, 찾을 정책 · 지역을 작은 상자로 보인다', async () => {
+  await render({ agent: 'policy', lines: ['`월세 지원` 정책을 찾아볼게요.', '가입 지역인 `경기도 화성시 동탄구`로 찾으시는 거 맞나요?'],
+    choices: [{ value: 'yes', label: '예' }, { value: 'no', label: '아니요' }] })
+  expect(host.querySelector('.mc-bubble strong')).toBeNull()
+  expect(host.querySelectorAll('.mc-bubble br')).toHaveLength(1)
+  expect([...host.querySelectorAll('.mc-pill')].map((p) => p.textContent)).toEqual(['월세 지원', '경기도 화성시 동탄구'])
+  expect(host.querySelector('.mc-bubble').textContent).not.toContain('`')
+})
+
+it('청년 정책 결과 카드 위 문장의 지역도 파란 강조로 보인다 (다른 담당은 그대로)', async () => {
+  const card = { result: true, lines: ['`경기도 화성시` 기준으로 찾은 청년 정책이에요.'], sections: [{ title: '1. 정책', lines: ['지원: 월 20만 원'] }] }
+  await render({ ...card, agent: 'policy' })
+  expect(host.querySelector('.mc-pill').textContent).toBe('경기도 화성시')
+  expect(host.textContent).not.toContain('`')
+  await render({ ...card, agent: 'spending' })
+  expect(host.querySelector('.mc-pill')).toBeNull()
+})
+
+it('scroll 이면 선택지를 한 줄 가로 스크롤로 보인다 (기본은 줄바꿈)', async () => {
+  const choices = [{ value: 'more', label: '다른 정책 더 보기' }, { value: 'region', label: '지역 변경하기' }]
+  await act(() => root.render(<Choices choices={choices} active onPick={() => {}} scroll />))
+  expect(host.querySelector('.mc-fx-choices').classList.contains('is-scroll')).toBe(true)
+  await act(() => root.render(<Choices choices={choices} active onPick={() => {}} />))
+  expect(host.querySelector('.mc-fx-choices').classList.contains('is-scroll')).toBe(false)
 })

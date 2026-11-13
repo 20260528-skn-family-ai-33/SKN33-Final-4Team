@@ -252,7 +252,7 @@ def _spending(mode, text, cid, store, *, entry="text", declined=(), selected_fro
 
 def _policy_entry(store, cid, text, entry, notices, declined=(), classified=False):
     """정책으로 들어온다 (버튼 · 분류). 보류된 정책 작업이 있으면 묻지 않고 이어서(resume) — 예산 조정 재개와 같은 규칙.
-    지난 추천 · 지역은 정책 에이전트 상태에 남아 있고, 새로 찾기는 에이전트의 [다른 분야 찾기] · [지역 바꾸기]로 한다"""
+    지난 추천 · 지역은 정책 에이전트 상태에 남아 있고, 새로 찾기는 에이전트의 [다른 분야 찾기] · [지역 변경하기]로 한다"""
     work = store.get_work(cid, "policy")
     store.save_work(cid, "policy", {"work_ref": work and work["work_ref"], "suspended": False})
     return _policy(store, cid, "resume" if work else "start", text, entry=entry, declined=declined, notices=notices,
