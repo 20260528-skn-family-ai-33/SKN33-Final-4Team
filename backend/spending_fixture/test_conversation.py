@@ -1087,7 +1087,11 @@ class PeriodAndFixedTest(TestCase):
     def test_fixed_excluded_by_default_with_notice_and_choice(self):
         a = Chat(user("A"))
         out = a.say("요일별 소비 보여줘")[1]
-        self.assertIn(f"고정지출 {EXP['fixed_this_month']:,}원(월세 · 관리비 · 통신요금)은 빼고 봤어요.", out["notices"])
+        notice = next(n for n in out["notices"] if n.startswith("고정지출 "))
+        prefix, suffix = f"고정지출 {EXP['fixed_this_month']:,}원(", ")은 빼고 봤어요."
+        self.assertTrue(notice.startswith(prefix) and notice.endswith(suffix), notice)
+        # 항목 나열 순서는 조회 순서에 따르며, 고정지출 제외의 검증 대상은 금액과 항목이다.
+        self.assertCountEqual(notice[len(prefix):-len(suffix)].split(" · "), ["월세", "관리비", "통신요금"])
         self.assertEqual(out["suggest"], ["include_fixed"])
         out = a.say("고정지출 포함해서 보기")[1]  # 선택지 이름 그대로 → 직전 조건 + 고정지출 포함
         rows = next(b for b in out["view"] if b["kind"] == "rows")["rows"]
