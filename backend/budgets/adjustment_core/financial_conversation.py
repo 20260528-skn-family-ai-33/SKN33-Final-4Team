@@ -10,7 +10,7 @@ from .conversation import (_envelope, _pending_reply, _route_question as origina
 from . import interpretation
 from . import over_budget
 from .explanations import NAMES
-from .financial_planner import recommend, diagnose, reserve_after, QUESTIONS
+from .financial_planner import recommend, diagnose, reserve_after, recommendation_context, QUESTIONS
 from .diagnostics import with_overrides
 
 DIALOGUE_PROMPT = interpretation.PROMPT + """
@@ -24,6 +24,7 @@ manual_distribution 단계의 직접 조정은 줄일 항목과 늘릴 항목을
 '저축은 유지하고 쇼핑은 더 줄여도 돼'는 기존 증액 목적을 유지한다. 저축은 excluded로 보호하고,
 쇼핑은 자동 감액을 허용한 재원으로 해석한다. 감액 하한이나 잠금을 해제하는 금액 직접 지정으로 바꾸지 않는다.
 추가 허용한 카테고리 재원 외에는 sources/excluded로 사용자가 정한 범위를 확대하지 않는다.
+'저축에서만'처럼 다른 재원을 쓰지 말라는 제한은 sources뿐 아니라 나머지 재원을 excluded에도 넣는다.
 reading에는 기존 해석 스키마를, reply에는 짧은 공감·조건 요약과 필요한 질문 하나만 쓴다.
 reply는 사용자가 지금 할 일을 알 수 있게 짧은 일상어로 쓴다. '검수·재원·기지출·하한·ML 참조' 같은 내부 용어를 쓰지 않는다.
 막연히 '필요한 항목/조건을 확인해 주세요'라고 하지 않는다. 무엇이 불명확한지 구체적으로 묻는다.
@@ -53,7 +54,7 @@ transfer가 아니면 destination=null이다. 출발·도착·금액 중 모르�
 SPARE를 덜 쓰거나 더 남기려는데 사용자가 금액을 정하지 않았다면 amount와 suggested_target을 null로 둔다. 임의로 남길 금액을 정하지 않는다.
 재원에서 '최소/적어도 얼마를 남겨두고 싶다'는 조건은 그 재원을 덜 쓰는 refine_less이며 category는 그 재원, amount는 남길 금액, amount_mode=to다. 별개 증액 목표나 조회로 보내지 않는다.
 이를 쇼핑 증액 목표나 별개 조정으로 바꾸지 않는다. 명시적으로 '새 요청/새 조정/이건 취소하고'라고 할 때만 new다.
-금액이 없으면 amount=null로 두고 suggested_target에 보호 조건과 현재 미리보기·다른 가용 재원을 고려한 합리적 새 금액을 제안한다.
+금액이 없으면 amount=null로 두고 suggested_target에 보호 조건과 현재 미리보기·다른 가용 재원을 고려한 합리적 새 금액을 제안한다. 서버가 남길 금액을 보호한 범위로 맞춰 계산한다.
 금액이 있으면 suggested_target=null이다. '2만원 더 줄여'는 amount=20000, amount_mode=by이며 기준은 직전 미리보기다.
 '17만원으로'는 amount=170000, amount_mode=to다. 금액 단위는 원 정수다.
 기존 증액 목표의 '아니 식비 3만원만 늘릴래'는 change_goal/30000/by(원본 기준 증액)다.
@@ -171,6 +172,8 @@ def comparison_reply(store, cid, state, context, calculation, complete):
     calculation = _calculation(context, state)
     planning = with_overrides(calculation, state.get("financial_overrides", {}))
     request = _envelope(state)
+    if state.get('reason'):
+        request['reason'] = state['reason']
     if (len(request['items']) == 1 and request['items'][0].get('category') == 'LIVING'
             and request['items'][0].get('direction') == 'up' and request['items'][0].get('amount') is None):
         from .conversation import _living_target
@@ -243,7 +246,8 @@ def comparison_reply(store, cid, state, context, calculation, complete):
     for i, plan in enumerate(answer["plans"]):
         recommended = answer["recommended_index"] == i
         label = " + ".join(NAMES.get(f["source"], f["source"]) for f in plan["funding"])
-        actual = plan["result"]["allocations"][diagnosis["target"]] - context["allocations"][diagnosis["target"]]
+        actual = ({**plan['result']['allocations'], **plan['result']['buckets']}[diagnosis['target']]
+                  - {**context['allocations'], **context['buckets']}[diagnosis['target']])
         maximum = available_adjustment(calculation, diagnosis["target"], "up", sources=[f["source"] for f in plan["funding"]],
                                        excluded=request.get("excluded", []), allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
         plans.append({"id": str(i), "label": f"{i + 1}안 {label}", "status": "ready" if plan["result"]["status"] == "proposed" else "partial", "amount": actual,
@@ -256,11 +260,15 @@ def comparison_reply(store, cid, state, context, calculation, complete):
                   "basis_kind": "forecast_shortfall" if state["requests"][0].get("amount") is None else "requested",
                   "plans": plans, "recommendation": {"plan_id": str(answer["recommended_index"]) if answer["recommended_index"] is not None else None,
                                                        "reasons": answer.get("reasons", [])}, "message": "재정 상태를 반영한 검수 결과예요. 아직 저장하지 않았어요."}
+    if diagnosis.get('basis') == 'budget':
+        comparison['notice'] = diagnosis['facts']['basis']
+    if diagnosis.get('expanded_sources'):
+        comparison['notice'] = ' '.join(filter(None, [comparison.get('notice'), diagnosis['facts']['additional_sources']]))
     state["financial_offer"] = {"context": deepcopy(context), "planning": planning, "answer": answer, "comparison": comparison}
     response = _ask(store, cid, state, "financial_selection", "변경안을 볼 방법을 골라 주세요.",
                     [(f"financial_{i}", p["label"]) for i, p in enumerate(plans)] + [("manual_living", "생활비 직접 조정"), *reserve_choices, ("cancel", "취소")])
     response["reply"]["comparison"] = comparison
-    response["reply"]["lines"] = [diagnosis["facts"]["need"], diagnosis["facts"]["reserve"]]
+    response["reply"]["lines"] = [diagnosis["facts"]["need"], diagnosis['facts']['protection']]
     return response
 
 
@@ -273,6 +281,8 @@ def selected_preview(store, cid, state, index, ports):
     primary = {"items": [{"category": offer["answer"]["diagnosis"]["target"], "direction": "up", "amount_mode": "by", "amount": offer["answer"]["diagnosis"]["requested_amount"]}],
                "sources": [], "destinations": [], "excluded": list(state.get("excluded", []))}
     analysis_request = {**primary, "sources": list(offer["answer"]["diagnosis"]["allowed"])}
+    if state.get('spare_minimum') is not None:
+        analysis_request['spare_minimum'] = state['spare_minimum']
     if state.get("allow_reserve_risk"):
         analysis_request["allow_reserve_risk"] = True
     replay_request = deepcopy(plan["result"]["requests"])
@@ -597,6 +607,14 @@ def _handle(request, *, interpreted=None, **ports):
         if item.get('amount') is None:
             return comparison_reply(store, cid, state, context, _calculation(context, state), complete)
         response = original_route(store, cid, state, names, item, direction, context=context, allocator=ports.get('allocator'))
+        diagnosis = diagnose(_calculation(context, state), _envelope(state))
+        if diagnosis['status'] == 'ready' and sum(n >= 5000 for n in diagnosis['capacities'].values()) > 1:
+            choices = [(value, '여러 곳에서 나눠 가져오기' if value == 'compare' else label)
+                       for value, label in state['pending']['choices']]
+            if not any(value == 'compare' for value, _ in choices):
+                choices.append(('compare', '여러 곳에서 나눠 가져오기'))
+            state['pending']['choices'] = choices
+            response['reply']['choices'] = [{'value': value, 'label': label} for value, label in choices]
         if not any(value in {'living', 'spare', 'extended', 'compare'} for value, _ in state['pending']['choices']):
             return response
         name = names.get(item.get('category'), item.get('category'))
@@ -834,7 +852,8 @@ def feedback(request, state, ports):
     if action == "change_goal":
         if data["category"] not in (None, recipient) or data["amount"] is None:
             return _result("awaiting_input", ["기존 증액 목표를 어느 금액으로 바꿀지 알려 주세요."], proposal=old)
-        base = old["allocations"][recipient] if data["amount_mode"] == "preview_by" else context["allocations"][recipient]
+        base = ({**old['allocations'], **old['buckets']} if data['amount_mode'] == 'preview_by'
+                else {**context['allocations'], **context['buckets']})[recipient]
         final = data["amount"] if data["amount_mode"] == "to" else base + data["amount"]
         primary["items"] = [{"category": recipient, "amount_mode": "to", "amount": final, "direction": "up"}]
         limit_reply = check_amount_limit(store, cid, state, context, primary['items'])
@@ -858,18 +877,24 @@ def feedback(request, state, ports):
         if target is None: target = current + (-10000 if more else 10000)
         base = original_amounts[code]
         try:
-            prepared = _prepare(calculation, [])
+            protected = recommendation_context(calculation, primary) if diagnosis['status'] == 'ready' else calculation
+            prepared = _prepare(protected, [])
             if code in context["allocations"]:
                 floor = _hard_floor(prepared, code) if explicit else _floor(prepared, code)
                 if code in calculation.get("locks", {}): raise ValueError('locked_category')
                 if not explicit and not _eligible(prepared, code, recipient, allow_ranked=True): raise ValueError("protected_donor")
             else:
                 if context.get("bucket_status", {}).get(code) != "ready": raise ValueError("unverified_donor")
-                floor = max(context.get("bucket_floors", {}).get(code, 0), base - context.get("bucket_available", {}).get(code, 0))
+                floor = max(protected.get("bucket_floors", {}).get(code, 0), base - context.get("bucket_available", {}).get(code, 0))
             if action == "use_source":
                 # 금액 없이 재원만 바꿈: 증액분을 이 항목에서 하한까지 가져온다 (모자란 만큼은 기존 자동 재원이 채운다)
-                need = old["allocations"][recipient] - context["allocations"][recipient]
+                need = {**old['allocations'], **old['buckets']}[recipient] - {**context['allocations'], **context['buckets']}[recipient]
                 target = -(-max(floor, base - need) // 5000) * 5000
+            if not explicit:
+                if more:
+                    need = preview_amounts[recipient] - original_amounts[recipient]
+                    target = max(target, base - need)
+                target = min(base, -(-max(floor, target) // 5000) * 5000)
             if target < floor: raise ValueError('below_floor')
             if target > base: raise ValueError('above_original')
             if target % 5000: raise ValueError('invalid_unit')
@@ -909,17 +934,17 @@ def feedback(request, state, ports):
             new_request["items"].append({"category": code, "amount_mode": "by", "direction": "down", "amount": cut, "automatic": not condition["explicit"]})
     result = None
     try:
+        diagnosis = diagnose(planning, primary)
+        if diagnosis['status'] == 'ready':
+            new_request['analysis'] = {'request': {**primary, 'sources': allowed}, 'overrides': deepcopy(state.get('financial_overrides', {}))}
         result = ports["simulate"](calculation, new_request)
         if result["status"] not in {"proposed", "partial"}: raise ValueError("no_valid_plan")
         if any(result["allocations"].get(c, result["buckets"].get(c)) != condition["target"] for c, condition in conditions["donors"].items()): raise ValueError("donor_target_not_met")
-        diagnosis = diagnose(planning, primary)
         if diagnosis["status"] == "ready":
             after = context["bucket_available"]["SPARE"] - (context["buckets"]["SPARE"] - result["buckets"]["SPARE"])
             if (max(reserve_after(context, diagnosis, result["allocations"]) - after, 0) > max(diagnosis["reserve_before"] - context["bucket_available"]["SPARE"], 0)
                     and not state.get("allow_reserve_risk")):
                 raise ValueError("reserve_conflict")
-            new_request["analysis"] = {"request": {**primary, "sources": allowed}, "overrides": deepcopy(state.get("financial_overrides", {}))}
-            result = ports["simulate"](calculation, new_request)
         card = ports["propose"](context, result, scope=state.get("scope", "cycle"),
                                 unlock_categories=state.get("unlock_categories", []))
     except ValueError as error:

@@ -669,9 +669,11 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
                     result = dialogue.handle({'conversation_id': 'talk', 'text': '적어도 3만원은 남겨줘'}, **ports)
                 self.assertEqual(store.state.get('spare_minimum'), 30000, result)
                 self.assertIn('comparison', result['reply'], result)
-                plan = next(row for row in result['reply']['comparison']['plans'] if row['id'] == 'spare')
-                self.assertGreaterEqual(plan['result']['buckets']['SPARE'], 30000)
-                self.assertEqual(plan['result']['requests']['spare_minimum'], 30000)
+                plans = result['reply']['comparison']['plans']
+                self.assertTrue(plans)
+                for plan in plans:
+                    self.assertGreaterEqual(plan['result']['buckets']['SPARE'], 30000)
+                    self.assertEqual(plan['result']['requests']['spare_minimum'], 30000)
                 self.assertEqual(tasks['old']['state'], 'canceled')
                 ports['propose'].assert_not_called()
 
@@ -787,7 +789,7 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
                     state = {'requests': [item(amount=50000)], 'pending': {'kind': phase, 'choices': choices,
                         'line': '더 넣을 돈을 어디에서 가져올까요?' if phase == 'funding_scope' else '변경안을 볼 방법을 골라 주세요.'}}
                     data = self.interpret(text, state)
-                    self.assertIn(data['action'], {'compare', 'recommend'} if phase == 'funding_scope' else {expected})
+                    self.assertIn(data['action'], {'compare', 'recommend', 'help_decide'} if phase == 'funding_scope' else {expected})
                     self.assertFalse(data.get('selected_choice'))
                     self.assertFalse(data['approval'])
 

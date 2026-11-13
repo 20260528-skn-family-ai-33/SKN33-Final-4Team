@@ -2,18 +2,23 @@
 from copy import deepcopy
 from .calculation import proportional_group_reduction
 from .funding import simulate_funding, validate_funding
-from .financial_planner import diagnose, reserve_after
+from .financial_planner import diagnose, reserve_after, recommendation_context
 from .diagnostics import with_overrides
 
 def simulate(context, request, *, allocator=proportional_group_reduction):
     base, calculation = deepcopy(request), deepcopy(context)
     analysis = base.pop("analysis", None)
     refinement = base.pop("refinement", None)
+    if analysis is not None:
+        if (not isinstance(analysis, dict) or set(analysis) != {"request", "overrides"}
+                or not isinstance(analysis['request'], dict) or not isinstance(analysis["overrides"], dict)):
+            raise ValueError("invalid_analysis_proof")
+        calculation = recommendation_context(calculation, analysis['request'])
     if refinement is not None:
         if not {"primary", "donors"} <= set(refinement) or set(refinement) - {"primary", "donors", "bucket_caps"} or not isinstance(refinement["donors"], dict):
             raise ValueError("invalid_refinement")
         if (not isinstance(refinement["primary"], list) or not refinement["primary"]
-                or any(c not in context["allocations"] for c in refinement["primary"]) or set(refinement["primary"]) & set(refinement["donors"])):
+                or any(c not in {*context['allocations'], *context['buckets']} for c in refinement["primary"]) or set(refinement["primary"]) & set(refinement["donors"])):
             raise ValueError("invalid_primary")
         for code, condition in refinement["donors"].items():
             if not isinstance(condition, dict) or set(condition) != {"target", "explicit"} or type(condition["explicit"]) is not bool:
@@ -31,7 +36,7 @@ def simulate(context, request, *, allocator=proportional_group_reduction):
                 raise ValueError("invalid_bucket_cap")
             calculation.setdefault("bucket_available", {})[source] = min(calculation.get("bucket_available", {}).get(source, 0), cap)
     result = simulate_funding(calculation, base, allocate_group_reduction=allocator)
-    validate_funding(context, base, result)
+    validate_funding(calculation if analysis is not None else context, base, result)
     if refinement is not None:
         result["requests"]["refinement"] = deepcopy(refinement)
     if analysis is not None:
@@ -41,7 +46,7 @@ def simulate(context, request, *, allocator=proportional_group_reduction):
         diagnosis = diagnose(with_overrides(context, analysis["overrides"]), analysis["request"])
         if diagnosis["status"] != "ready":
             raise ValueError("diagnosis_no_longer_verified")
-        available = context["bucket_available"]["SPARE"]
+        available = context.get('bucket_available', {}).get('SPARE', 0)
         after = available - (context["buckets"]["SPARE"] - result["buckets"]["SPARE"])
         gap = max(reserve_after(context, diagnosis, result["allocations"]) - after, 0)
         before_gap = max(diagnosis["reserve_before"] - available, 0)

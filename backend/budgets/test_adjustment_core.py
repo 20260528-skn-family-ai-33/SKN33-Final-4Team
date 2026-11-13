@@ -66,6 +66,17 @@ def reading(**changes):
 
 
 class AdjustmentCalculationTest(unittest.TestCase):
+    def test_excluding_living_funding_allows_named_increase_but_never_a_living_cut(self):
+        inp = context()
+        result = simulate_funding(inp, envelope(item(amount=50000), sources=['SPARE', 'LIVING'], excluded=['LIVING']),
+                                  allocate_group_reduction=allocation)
+        validate_funding(inp, result['requests'], result)
+        self.assertEqual(result['status'], 'proposed')
+        self.assertEqual({row['from'] for row in result['transfers']}, {'SPARE'})
+        blocked = simulate_funding(inp, envelope(item(amount=50000, direction='down'), destinations=['SPARE'], excluded=['LIVING']),
+                                   allocate_group_reduction=allocation)
+        self.assertEqual(blocked['status'], 'infeasible')
+
     def test_salary_warning_uses_increase_not_target_and_includes_thirty_percent_boundary(self):
         ctx = context()
         ctx['monthly_income'] = 3000000

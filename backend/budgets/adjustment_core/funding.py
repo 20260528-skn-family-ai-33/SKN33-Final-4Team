@@ -142,7 +142,8 @@ def _data(context, envelope):
     data["request"] = normalized
     data["excluded"] = set(normalized["excluded"]) | NON_BUDGET_CODES
     if LIVING in data["excluded"]:
-        data["excluded"].update(data["allocations"])
+        # Excluding living as a source still permits the explicitly requested increase.
+        data["excluded"].update(c for c in data["allocations"] if data['targets'].get(c, before[c]) <= before[c])
     return data
 
 

@@ -70,7 +70,12 @@ def _verify(context, result, unlock_categories, allocator):
     base.pop("refinement", None)
     base.pop("analysis", None)
     stripped["requests"] = base
-    validate_funding(calculation, base, stripped)
+    if result['requests'].get('analysis') is not None:
+        from .adjustment_core.financial_planner import recommendation_context
+        protected = recommendation_context(calculation, result['requests']['analysis']['request'])
+        validate_funding(protected, base, stripped)
+    else:
+        validate_funding(calculation, base, stripped)
     if simulate_adjustment(calculation, result["requests"], allocator=allocator) != result:
         raise ValueError("calculation_mismatch")
 
