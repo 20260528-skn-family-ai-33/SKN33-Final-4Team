@@ -77,6 +77,7 @@ NO_TARGET = "어느 정책을 말씀하시는지 몰라요. 먼저 정책을 찾
 DETAIL_HEAD = "공고 원문에 적힌 내용이에요."
 NOT_GUARANTEED = "아니요. 신청만으로 지원이 확정되지는 않아요. 해당 정책의 자격 조건과 심사·선정 절차를 확인해야 해요."
 GUARANTEE_WORDS = re.compile(r"무조건|반드시\s*(?:받|지원)|100\s*%.{0,12}(?:받|확정|보장|선정)|(?:지원|수령|선정).{0,12}(?:확정|보장)|확실히.{0,8}받")
+POINTING_WORDS = re.compile(r"그거|그것|그\s*정책|이거|이\s*정책|아까|방금|추천한|추천해\s*준|위\s*정책")  # 보여 준 정책을 가리키는 말
 GONE = "그 정책은 지금 정책 목록에 없어요. 공고가 내려갔을 수 있어요."
 
 
@@ -420,17 +421,20 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
             results = state.get("results") or []
             focus = results.index(state["focus"]) + 1 if state.get("focus") in results else None
             choice = planner.ask(action.text, read, _shown(state), plan, focus) if plan else None
-            if (GUARANTEE_WORDS.search(action.text) and not re.search(r"찾아|추천\s*해", action.text)
-                    and (read.mine or (choice and choice[0] == "detail"))):
+            shown = _shown(state)
+            # 이름이 다른 이름에 포함되면('청년 월세 지원' ⊂ '… 특별사업') 더 긴 쪽. 그래도 둘 이상이면 모호 → 해석기 선택을 따른다
+            named = [(n, name) for n, name in shown if name in action.text]
+            specific = [n for n, name in named if not any(name != other and name in other for _, other in named)]
+            explicit = specific[0] if len(specific) == 1 else None
+            numeric = re.search(r"(\d+)\s*번", action.text)
+            if numeric and int(numeric[1]) in dict(shown):
+                explicit = int(numeric[1])
+            # 확답 안내는 보여 준 정책의 후속 질문에만 (PR 117 재리뷰). 해석기가 검색 등 다른 행동을 고르면 그대로 두고,
+            # 해석기가 없거나 실패했으면 문장이 보여 준 정책을 가리킬 때만
+            follow = choice[0] == "detail" if choice else bool(
+                shown and read.mine and (explicit or POINTING_WORDS.search(action.text)))
+            if GUARANTEE_WORDS.search(action.text) and not re.search(r"찾아|추천\s*해", action.text) and follow:
                 # 정책 선택을 되물어도 확답 요구를 topics에 남긴다. LLM이 자격만 고르거나 실패해도 유지한다.
-                shown = _shown(state)
-                # 이름이 다른 이름에 포함되면('청년 월세 지원' ⊂ '… 특별사업') 더 긴 쪽. 그래도 둘 이상이면 모호 → 해석기 선택을 따른다
-                named = [(n, name) for n, name in shown if name in action.text]
-                specific = [n for n, name in named if not any(name != other and name in other for _, other in named)]
-                explicit = specific[0] if len(specific) == 1 else None
-                numeric = re.search(r"(\d+)\s*번", action.text)
-                if numeric and int(numeric[1]) in dict(shown):
-                    explicit = int(numeric[1])
                 number = explicit or (choice[1] if choice and choice[0] == "detail" else None) or focus
                 if number is None and len(shown) == 1:
                     number = shown[0][0]

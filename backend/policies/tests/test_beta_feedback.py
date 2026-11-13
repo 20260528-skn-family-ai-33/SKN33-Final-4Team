@@ -95,3 +95,20 @@ class BetaFeedbackTest(TestCase):
         plan.return_value = chose('detail', 3, ['eligibility'])  # 두 정책 이름이 다 나오면 모호 → 해석기 선택
         result = talk.send('청년 월세 지원 특별사업이랑 청년 전세 지원 중 무조건 받는 거 있어?')
         self.assertEqual(result['reply']['sections'][0]['policy_no'], 'P3')
+
+    def test_new_search_with_guarantee_words_stays_a_search(self):
+        """PR 117 재리뷰: '무조건'이 있어도 새 검색이면 검색한다. 확답 안내는 보여 준 정책의 후속 질문에만"""
+        add('RENT', vector=near(1), plcyNm='청년 월세 지원')
+        add('LIVING', vector=near(2), plcyNm='청년 생활비 지원')
+        for plan in (mock.Mock(return_value=chose('search')), False):  # 해석기가 검색을 골랐을 때 · 해석기 없이 규칙만
+            with self.subTest(plan=bool(plan)):
+                talk = Talk(plan=plan)
+                talk.lives_in_dongtan()
+                first = talk.send('신청하면 무조건 받을 수 있는 월세 지원 정책 있어?')  # 첫 질문 — 되묻지 않고 검색
+                self.assertNotEqual(first['reply']['lines'], [agent.WHICH])
+                self.assertNotIn(agent.NOT_GUARANTEED, first['reply']['lines'])
+                self.assertTrue(first['reply']['sections'])
+                again = talk.send('그럼 무조건 받을 수 있는 생활비 지원 정책도 있어?')  # 추천 뒤 새 검색 — 이전 정책 자격이 아니다
+                self.assertNotIn(agent.NOT_GUARANTEED, again['reply']['lines'])
+                self.assertNotEqual(again['reply']['lines'][0], agent.DETAIL_HEAD)
+                self.assertTrue(again['reply']['sections'])
