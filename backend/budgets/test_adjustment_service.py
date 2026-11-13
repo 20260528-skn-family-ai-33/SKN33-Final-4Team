@@ -69,6 +69,21 @@ class AdjustmentServiceTest(TestCase):
             return approve_adjustment(self.user, proposal, keep_for_next_cycle=keep, key=key,
                 expected_mode=mode or self.snapshot["mode"], today=TODAY)
 
+    def test_incomplete_spending_preview_is_retained_but_cannot_be_approved(self):
+        self.snapshot.update(spending_status='partial', budget_preview=True)
+        adapter = self.adapter()
+        ctx = adapter.get_context()
+        result = adapter.simulate(ctx, envelope(item(amount=15000), sources=['LIVING']))
+        card = adapter.propose(ctx, result, scope='cycle')
+        self.assertFalse(card['can_approve'])
+        self.assertIn('미리보기', card['verification_notice'])
+        self.flush(adapter)
+        with self.assertRaises(AdjustmentNotReady):
+            self.approve(card['proposal_id'])
+        self.assertEqual(Budget.objects.get(pk=card['proposal_id']).status, 'validated')
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+
     def test_stage_writes_nothing_and_flush_preserves_original_until_approval(self):
         adapter, card = self.stage()
         self.assertEqual(Budget.objects.count(), 1)
@@ -144,14 +159,15 @@ class AdjustmentServiceTest(TestCase):
     def test_only_requested_category_persists_when_living_donors_are_automatically_reduced(self):
         path = "budgets.adjustment_core.calculation.proportional_group_reduction"
         with self.settings(BUDGET_ADJUST_ALLOCATOR=path):
-            adapter, card = self.stage(envelope(item(amount=100000), sources=["LIVING"]))
+            adapter, card = self.stage(envelope(item(amount=40000), sources=["LIVING"]))
             self.assertTrue(any(row["diff"] < 0 and not row["direct"] for row in card["changes"]))
             self.flush(adapter)
             self.approve(card["proposal_id"], keep=True)
         self.profile.refresh_from_db()
-        self.assertEqual(self.profile.budget_category_targets, {"FOOD": 500000})
+        self.assertEqual(self.profile.budget_category_targets, {"FOOD": 440000})
         proposal = Budget.objects.get(pk=card["proposal_id"])
-        self.assertLess(proposal.items.get(category_id="FASHION_SHOPPING").allocated_amount, 200000)
+        self.assertEqual(proposal.items.get(category_id="FASHION_SHOPPING").allocated_amount, 200000)
+        self.assertLess(proposal.items.get(category_id="HOUSEHOLD").allocated_amount, 50000)
 
     def test_approval_reuses_frozen_ml_without_calling_provider_under_user_lock(self):
         prediction = {"ml_reference": deepcopy(self.snapshot["ml_reference"]),

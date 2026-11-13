@@ -2916,6 +2916,12 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0
+          },
+          "reserve": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "11/13 (혜리 PR 118). 일회성 지출 준비금(budget_item bucket=reserve 합계). 0보다 크면 화면에 '일회성 지출 준비금' 줄"
           }
         },
         "additionalProperties": false,

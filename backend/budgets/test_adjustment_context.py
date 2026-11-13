@@ -85,6 +85,42 @@ class AdjustmentContextTest(TestCase):
             amount=amount, direction="out", transaction_type=kwargs.pop("transaction_type", "spending"),
             confirmed_category_id=category, confirmation_state="confirmed", **kwargs)
 
+    def test_reserve_anchor_uses_first_approved_budget_after_repeated_adjustments(self):
+        from .adjustment_core.funding import available_adjustment, reserve_floor
+        original = self.make_budget()
+        original.status = 'superseded'
+        original.save(update_fields=['status'])
+        current = self.make_budget(base=original)
+        current.items.filter(bucket='savings').update(allocated_amount=300000)
+        current.items.filter(bucket='living', category_id='FOOD').update(allocated_amount=1000000)
+        self.profile.living_budget = 1600000
+        self.profile.savings_floor = 300000
+        self.profile.save()
+        found = self.context()
+        self.assertEqual(found['reserve_anchors']['SAVINGS'], 600000)
+        self.assertEqual(found['reserve_anchors']['SPARE'], 400000)
+        self.assertEqual(reserve_floor(found, 'SAVINGS', 300000), 180000)
+        self.assertEqual(reserve_floor(found, 'SPARE', 100000), 120000)
+        self.assertEqual(available_adjustment(found, 'FOOD', 'up', sources=['SAVINGS'])['maximum'], 120000)
+
+    def test_closed_overlapping_cycle_does_not_hide_current_approved_budget(self):
+        approved = self.make_budget()
+        extra = BudgetCycle.objects.create(user=self.user, starts_on=TODAY,
+            ends_before=date(2026, 12, 5), status='closed')
+        found = self.context()
+        self.assertEqual(found['cycle_id'], str(self.cycle.pk))
+        self.assertEqual(found['base_budget_id'], str(approved.pk))
+        self.assertEqual(found['next_cycle_starts_on'], '2026-11-25')
+        extra.refresh_from_db()
+        self.assertEqual(extra.status, 'closed')
+
+    def test_two_active_overlapping_cycles_still_require_correction(self):
+        self.make_budget()
+        BudgetCycle.objects.create(user=self.user, starts_on=TODAY,
+            ends_before=date(2026, 12, 5), status='active')
+        with self.assertRaisesRegex(AdjustmentContextError, 'overlapping_cycles'):
+            self.context()
+
     def test_selects_approved_instead_of_newer_derived_or_ordinary_draft(self):
         approved = self.make_budget()
         self.make_budget(status="validated", base=approved)
@@ -197,7 +233,7 @@ class AdjustmentContextTest(TestCase):
                 FinancialProfile.objects.filter(user=self.user).update(has_car=vehicle)
                 found = self.context()
                 self.assertEqual(found["system_floors"], expected)
-                self.assertEqual(found["policy_version"], "budget-adjust-20261106-transport-v2")
+                self.assertEqual(found["policy_version"], "budget-adjust-20261113-living-first-v5")
                 self.assertEqual(found["transport_history_status"], "unavailable")
                 fingerprints.append(found["context_hash"])
         self.assertEqual(len(set(fingerprints)), 3)
@@ -264,8 +300,8 @@ class AdjustmentContextTest(TestCase):
         self.coverage.return_value = {"state": "partial", "targets": [], "undetermined": []}
         found = self.context()
         self.assertEqual(found["spending_status"], "partial")
-        self.assertEqual(set(found["bucket_status"].values()), {"unknown"})
-        self.assertEqual(found["bucket_available"], {})
+        self.assertEqual(found['bucket_status'], {'SAVINGS': 'ready', 'SPARE': 'unknown', 'CUSHION_MONTHLY': 'unknown'})
+        self.assertEqual(found['bucket_available'], {'SAVINGS': 600000})
 
     def test_spare_uses_living_overrun_and_free_ledger_without_double_counting(self):
         budget = self.make_budget()
@@ -294,25 +330,34 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(found["buckets"]["SPARE"], 300000)
         self.assertEqual(found["bucket_available"]["SPARE"], 230000)
 
-    def test_savings_protects_already_executed_amount_and_ambiguous_transfers(self):
+    def test_savings_budget_is_independent_of_executed_savings_and_transfers(self):
         self.make_budget()
         self.tx(150000, "ETC", transaction_type="saving")
         found = self.context()
-        self.assertEqual(found["bucket_available"]["SAVINGS"], 450000)
-        self.assertEqual(found["bucket_floors"]["SAVINGS"], 150000)
+        self.assertEqual(found["bucket_available"]["SAVINGS"], 600000)
+        self.assertEqual(found["bucket_floors"]["SAVINGS"], 0)
+        revision = found['bucket_revisions']['SAVINGS']
         self.tx(10000, "ETC", transaction_type="transfer")
+        self.tx(20000, "ETC", transaction_type="own_transfer")
         found = self.context()
-        self.assertEqual(found["bucket_status"]["SAVINGS"], "unknown")
-        self.assertNotIn("SAVINGS", found["bucket_available"])
+        self.assertEqual(found["bucket_status"]["SAVINGS"], "ready")
+        self.assertEqual(found["bucket_available"]["SAVINGS"], 600000)
+        self.assertEqual(found['bucket_revisions']['SAVINGS'], revision)
+        from .adjustment_core.funding import simulate_funding
+        from .test_adjustment_core import envelope, item
+        result = simulate_funding(found, envelope(item('FOOD', 550000), sources=['SAVINGS']))
+        self.assertEqual(result['status'], 'partial', result)
+        self.assertEqual(result['buckets']['SAVINGS'], 180000)
 
-    def test_registered_savings_schedule_unknown_is_not_assumed_unexecuted(self):
+    def test_registered_savings_minimum_does_not_require_transfer_schedule(self):
         self.make_budget()
         RecurringSaving.objects.create(user=self.user, name="정기 저축", amount=200000, status="confirmed", source_type="manual")
         found = self.context()
         self.assertEqual(found["bucket_floors"]["SAVINGS"], 200000)
-        self.assertEqual(found["bucket_status"]["SAVINGS"], "unknown")
+        self.assertEqual(found["bucket_status"]["SAVINGS"], "ready")
+        self.assertEqual(found['bucket_available']['SAVINGS'], 400000)
 
-    def test_registered_remaining_obligations_are_added_to_unrelated_executed_savings(self):
+    def test_registered_minimum_is_not_increased_by_executed_savings(self):
         self.make_budget()
         bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0004", status="connected")
         account = BankAccount.objects.create(user=self.user, connection=bank, source_account_key="context-saving", account_type="demand")
@@ -320,8 +365,8 @@ class AdjustmentContextTest(TestCase):
             from_account=account, status="confirmed", source_type="manual")
         self.tx(150000, "ETC", transaction_type="saving")
         found = self.context()
-        self.assertEqual(found["bucket_floors"]["SAVINGS"], 350000)
-        self.assertEqual(found["bucket_available"]["SAVINGS"], 250000)
+        self.assertEqual(found["bucket_floors"]["SAVINGS"], 200000)
+        self.assertEqual(found["bucket_available"]["SAVINGS"], 400000)
 
     def test_monthly_cushion_protects_cycle_allocations_and_does_not_read_accumulated_use_as_funds(self):
         budget = self.make_budget()

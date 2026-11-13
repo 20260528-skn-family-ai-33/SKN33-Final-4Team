@@ -190,6 +190,25 @@ class Bucket(models.TextChoices):
     CUSHION = "cushion", "쿠션"
 
 
+class BudgetAdjustmentSchedule(models.Model):
+    """Approved next-pay-cycle settings; never changes the current approved budget."""
+
+    schedule_id = uuid_pk()
+    user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name='budget_adjustment_schedules')
+    proposal = models.OneToOneField(Budget, on_delete=models.CASCADE, related_name='schedule')
+    effective_on = models.DateField()
+    status = models.CharField(max_length=20, default='scheduled', choices=[
+        ('scheduled', '예약됨'), ('applied', '설정 반영됨'), ('replaced', '새 예약으로 교체'), ('needs_review', '재확인 필요')])
+    settings = models.JSONField()
+    before_settings = models.JSONField()
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'budget_adjustment_schedule'
+        constraints = [models.UniqueConstraint(fields=['user'], condition=Q(status='scheduled'),
+                                               name='one_pending_budget_schedule')]
+
+
 class BudgetItem(models.Model):
     """예산 항목. 여윳돈(free)은 저장하지 않고 funding_amount − 항목 합계로 계산"""
 

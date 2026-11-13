@@ -66,6 +66,8 @@ class SpendingReading:
     other_person: bool | None = None    # 본인이 아닌 사람(가족 · 친구 · 연인 등)의 소비를 물음 — 볼 수 없다 (서버가 '내 것'을 제안)
     multi_step: bool | None = None      # 비교 뒤 한 번 더 확인할 새 질문 (CHAT_AGENT 가 켜졌을 때 추가 판단 1회, MEMO 31)
 
+    funds_overview: bool | None = None
+
 
 def _one_of(data, key, allowed):
     value = data.get(key)
@@ -149,7 +151,7 @@ def parse(data):
         raise ReadFailed("shape")
     if not isinstance(data.get("mine"), bool):
         raise ReadFailed("mine")
-    for key in ("confirm", "explain", "all_categories", "after_budget_change", "include_current", "include_fixed", "other_person", "multi_step"):
+    for key in ("confirm", "explain", "all_categories", "after_budget_change", "include_current", "include_fixed", "other_person", "multi_step", "funds_overview"):
         if data.get(key) is not None and not isinstance(data[key], bool):
             raise ReadFailed(key)
     from .investigation import parse as parse_hypothesis
@@ -173,6 +175,7 @@ def parse(data):
         month=_int(data, "month"), date_from=_mmdd(data, "date_from"), date_to=_mmdd(data, "date_to"),
         period_said=_text(data, "period_said"), include_fixed=data.get("include_fixed"), other_person=data.get("other_person"),
         compare_month=_int(data, "compare_month"), multi_step=data.get("multi_step"),
+        funds_overview=data.get("funds_overview"),
     )
 
 
@@ -186,6 +189,8 @@ def find_category(text):
 
 
 PROMPT = f"""너는 가계부 챗봇의 '소비 분석' 담당 해석기다. 사용자 문장을 JSON 하나로만 답한다. 설명 · 계산은 하지 않는다.
+이번 달 여윳돈·여유돈·쓸 수 있는 돈을 묻거나 미배정 금액과 쿠션을 묻는 조회는 mine=true,target=budget_left,period=this_month,funds_overview=true다.
+남은 생활비만을 명시한 조회와 구별한다. 여윳돈을 생활비 잔액 하나로 바꾸지 않는다. 돈의 종류가 모호하면 서버가 남은 생활비·미배정 여윳돈·쌓인 머니쿠션·월 적립액을 구분해 보여준다.
 설명 질문의 가설은 hypothesis_contract와 hypothesis_targets에 따라 hypothesis에만 적는다.
 categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원인으로 짐작한 대상은 hypothesis에 넣고 조회 조건에 중복하지 않는다.
 직전 분석의 이유를 물으면 refers_to=previous로 결과 범위를 유지한다. 명시적으로 새 범위를 조회하라는 요청이면 그 조건을 보존한다.

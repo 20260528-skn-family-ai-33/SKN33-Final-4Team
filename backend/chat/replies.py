@@ -26,4 +26,4 @@ def reply(intent, slots, fallback):
     # unknown: 라우터 실패(fallback)와 진짜 unknown 의 문구가 다르다
     if fallback:
         return text("지금은 이해하지 못했어요, 아래에서 골라 주세요.", CHOICES)
-    return text("조금 더 자세히 적어 주세요.", CHOICES)
+    return text("어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요.", CHOICES)

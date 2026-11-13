@@ -17,7 +17,7 @@ from spending_analysis.periods import Period
 from users.models import FinancialProfile
 
 from . import design_service
-from .adjustment_context import AdjustmentContextError, _free_used, _savings
+from .adjustment_context import AdjustmentContextError, _free_used
 from .adjustment_diagnostics import reserved_spare
 from .adjustment_service import AdjustmentConflict, AdjustmentExpired, AdjustmentNotReady
 from .design_reality import system_floors
@@ -62,8 +62,9 @@ def finances(user, handoff, today):
         raise AdjustmentExpired() from None
     used = outside + max(inside, max(living_spent(summary) - snapshot['saved']['living_budget'], 0))
     reserved, reserve_revision = reserved_spare(user, cycle, today)
-    saving_floor, saving_available, saving_reason, saving_revision = _savings(
-        user, cycle, today, snapshot['saved']['saving_floor'], complete)
+    saving_floor = snapshot['savings_min']
+    saving_available = max(snapshot['saved']['saving_floor'] - saving_floor, 0)
+    saving_revision = design_service.fingerprint({'amount': snapshot['saved']['saving_floor'], 'minimum': saving_floor})
     balance = balance_json(user)
     required = cushion_required(balance['total'], profile.monthly_take_home_income)
     accrued = CushionEntry.objects.filter(user=user, cycle=cycle, entry_type='allocation').aggregate(n=Sum('amount'))['n'] or 0
@@ -77,7 +78,7 @@ def finances(user, handoff, today):
     data = {'snapshot': snapshot, 'before': before, 'available': available,
             'floors': {'SAVINGS': saving_floor, 'CUSHION_MONTHLY': cushion_floor},
             'spent': {c: summary['by_category'].get(c, 0) for c in (*ALLOCATION_CODES, 'ETC')},
-            'complete': complete, 'saving_reason': saving_reason,
+            'complete': complete, 'saving_reason': None,
             'revisions': [free_revision, reserve_revision, saving_revision],
             'balance': balance['total'], 'unknown_balance': balance['unknown_count']}
     data['fingerprint'] = design_service.fingerprint(data)

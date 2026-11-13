@@ -225,6 +225,8 @@ def budget_settings(user, cycle):
 
 def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
     profile = profile or FinancialProfile.objects.get(user=user)
+    from .adjustment_schedule import cycle_profile
+    profile = cycle_profile(user, cycle, profile)
     today = today or timezone.localdate()
     minimums, locks = budget_settings(user, cycle)
     fixed = fixed_breakdown(user, cycle, card=card)

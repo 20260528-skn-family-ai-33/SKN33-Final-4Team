@@ -105,6 +105,7 @@ export default function BudgetPage() {
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>
         {splitRows(split).map(([key, name, amount]) => <div className="mc-keyvalue" key={key}><span>{name}{key === 'cardReserved' && <CardReservedHelp />}</span><strong>{won(amount)}</strong></div>)}
+        {split.reserve > 0 && <div className="mc-keyvalue"><span>일회성 지출 준비금</span><strong>{won(split.reserve)}</strong></div>}
       </div>
 
       <div className="mc-card">

@@ -17,6 +17,7 @@ from .adjustment_context import AdjustmentContextError, context_fingerprint, get
 from .adjustment_core.funding import validate_funding
 from .adjustment_core.simulation import simulate as simulate_adjustment
 from .models import Budget, BudgetCategorySetting, BudgetItem
+from .adjustment_schedule import planning_context, schedule_settings
 
 
 SCHEMA = "budget-adjust/1"
@@ -69,7 +70,12 @@ def _verify(context, result, unlock_categories, allocator):
     base.pop("refinement", None)
     base.pop("analysis", None)
     stripped["requests"] = base
-    validate_funding(calculation, base, stripped)
+    if result['requests'].get('analysis') is not None:
+        from .adjustment_core.financial_planner import recommendation_context
+        protected = recommendation_context(calculation, result['requests']['analysis']['request'])
+        validate_funding(protected, base, stripped)
+    else:
+        validate_funding(calculation, base, stripped)
     if simulate_adjustment(calculation, result["requests"], allocator=allocator) != result:
         raise ValueError("calculation_mismatch")
 
@@ -83,7 +89,7 @@ def _targets(context, result, scope, changes):
     candidates = {c: n for c, n in candidates.items() if c in primary}
     if changes is None:
         changes = candidates if scope == "ongoing" else {}
-    if not isinstance(changes, dict) or scope not in {"cycle", "ongoing"}:
+    if not isinstance(changes, dict) or scope not in {"cycle", "ongoing", "next_cycle"}:
         raise ValueError("invalid_targets")
     old = {**context.get("category_targets", {}), **context.get("bucket_targets", {})}
     for code, amount in changes.items():
@@ -141,11 +147,15 @@ def _mark_expired(budget):
         budget.task.save(update_fields=["result"])
 
 
-def _lines(base, result):
-    lines = list(base.items.exclude(bucket__in=["living", "savings", "cushion"]).values(
+def _lines(base, result, reserve_id=None):
+    kept = base.items.exclude(bucket__in=["living", "savings", "cushion"])
+    if 'TRAVEL_LODGING' in result['allocations']:
+        kept = kept.exclude(bucket='reserve', category_id='TRAVEL_LODGING')
+    lines = list(kept.values(
         "bucket", "category_id", "category_detail", "reserve_id", "allocated_amount"))
-    lines.extend({"bucket": "living", "category_id": code, "category_detail": None,
-                  "reserve_id": None, "allocated_amount": amount} for code, amount in result["allocations"].items())
+    lines.extend({"bucket": "reserve" if code == 'TRAVEL_LODGING' else "living", "category_id": code, "category_detail": None,
+                  "reserve_id": reserve_id if code == 'TRAVEL_LODGING' else None, "allocated_amount": amount}
+                 for code, amount in result["allocations"].items() if code != 'TRAVEL_LODGING' or amount)
     lines.extend({"bucket": bucket, "category_id": None, "category_detail": None, "reserve_id": None,
                   "allocated_amount": result["buckets"][code]} for bucket, code in (("savings", "SAVINGS"), ("cushion", "CUSHION_MONTHLY")))
     return lines
@@ -156,7 +166,7 @@ def _same_lines(budget, result):
         return sorted((line["bucket"], str(line["category_id"] or ""), str(line["category_detail"] or ""),
                        str(line["reserve_id"] or ""), line["allocated_amount"]) for line in lines)
     actual = budget.items.values("bucket", "category_id", "category_detail", "reserve_id", "allocated_amount")
-    return ordered(actual) == ordered(_lines(budget.base_budget, result))
+    return ordered(actual) == ordered(_lines(budget.base_budget, result, (budget.validation_summary or {})['adjustment'].get('reserve_id')))
 
 
 class AdjustmentAdapter:
@@ -199,7 +209,8 @@ class AdjustmentAdapter:
         return simulate_adjustment(context, request, allocator=self.allocator)
 
     def propose(self, context, result, *, scope, unlock_categories=(), target_changes=None):
-        if context_fingerprint(self.get_context()) != context_fingerprint(context):
+        expected = planning_context(self.get_context(), context.get('planning'))
+        if context_fingerprint(expected) != context_fingerprint(context):
             raise ValueError("expired")
         _verify(context, result, unlock_categories, self.allocator)
         changes, candidates = _targets(context, result, scope, target_changes)
@@ -209,6 +220,9 @@ class AdjustmentAdapter:
         meta = {"schema": SCHEMA, "result": deepcopy(result), "scope": scope,
                 "unlock_categories": list(unlock_categories), "target_changes": changes,
                 "persistence_candidates": candidates, "keep_for_next_cycle": scope == "ongoing"}
+        if context.get('planning'):
+            meta['effective_on'] = context['effective_on']
+            meta['income_change'] = {'before': context['income_before'], 'after': context['monthly_income']}
         if self.conversation is not None:
             for old in Budget.objects.filter(user=self.user, task__conversation=self.conversation,
                                              task__task_type="budget_adjust", status="validated"):
@@ -226,6 +240,10 @@ class AdjustmentAdapter:
                 mode=context["mode"], reference_provider=(lambda inputs: deepcopy(frozen_reference)) if frozen_reference else None,
                 reference_cache=self._reference_cache, allow_reference_backfill=False)
         except AdjustmentContextError:
+            raise AdjustmentExpired() from None
+        try:
+            fresh = planning_context(fresh, context.get('planning'))
+        except ValueError:
             raise AdjustmentExpired() from None
         if context_fingerprint(fresh) != context_fingerprint(context):
             raise AdjustmentExpired()
@@ -302,11 +320,17 @@ class AdjustmentAdapter:
                 result={"state": "canceled" if canceled else "awaiting_approval", "proposal_id": stage["proposal_id"], "saved_ref": None})
             version = (Budget.objects.filter(user=self.user, cycle=base.cycle).aggregate(last=Max("version_no"))["last"] or 0) + 1
             snapshot = {**deepcopy(base.input_snapshot or {}), "adjustment_context": deepcopy(context)}
+            if meta['result']['allocations'].get('TRAVEL_LODGING'):
+                from .models import ReservePlan
+                reserve = ReservePlan.objects.create(user=self.user, name='여행·숙박 일회성 예산',
+                    target_amount=meta['result']['allocations']['TRAVEL_LODGING'], confirmed_reserved_amount=0,
+                    due_date=context.get('effective_on'), confirmation_state='planned')
+                meta['reserve_id'] = str(reserve.pk)
             budget = Budget.objects.create(budget_id=stage["proposal_id"], user=self.user, cycle=base.cycle,
                 base_budget=base, task=task, version_no=version, status="rejected" if canceled else "validated",
                 funding_amount=context["funding_amount"], input_hash=context_fingerprint(context), input_snapshot=snapshot,
                 engine_version=SCHEMA, policy_version=context["policy_version"], validation_summary={"adjustment": meta}, validated_at=now)
-            BudgetItem.objects.bulk_create([BudgetItem(user=self.user, budget=budget, **line) for line in _lines(base, meta["result"])])
+            BudgetItem.objects.bulk_create([BudgetItem(user=self.user, budget=budget, **line) for line in _lines(base, meta["result"], meta.get('reserve_id'))])
         self.conversation = conversation
         self._staged.clear()
         self._canceled.clear()
@@ -318,12 +342,22 @@ def _card(proposal_id, task_ref, context, meta, state, *, can_approve=True):
     applied = meta.get("approval", {}) if state == "saved" else {}
     keep = applied.get("keep_for_next_cycle", meta["keep_for_next_cycle"])
     changes = applied.get("target_changes", meta["target_changes"])
+    displayed_changes = deepcopy(result['changes'])
+    if meta.get('effective_on') and context.get('planning_base'):
+        before = context['planning_base']['buckets']['SPARE']
+        after = result['buckets']['SPARE']
+        displayed_changes = [row for row in displayed_changes if row['category'] != 'SPARE']
+        if before != after:
+            displayed_changes.append({'category': 'SPARE', 'before': before, 'after': after, 'diff': after - before})
     return {"kind": "funding", "proposal_id": str(proposal_id), "task_ref": str(task_ref),
             "mode": context["mode"], "base_budget_id": context["base_budget_id"],
-            "scope": ("ongoing" if keep else "cycle") if state == "saved" else meta["scope"],
-            "state": state, "can_approve": state == "awaiting_approval" and can_approve,
+            "scope": 'next_cycle' if meta.get('effective_on') else (("ongoing" if keep else "cycle") if state == "saved" else meta["scope"]),
+            **({'effective_on': meta['effective_on'], 'income_change': meta['income_change'],
+                'one_off': context.get('planning', {}).get('one_off', False), 'expense': context.get('planning', {}).get('expense')} if meta.get('effective_on') else {}),
+            "state": state, "can_approve": state == "awaiting_approval" and can_approve and result.get('spending_verified', True),
+            **({'verification_notice': '이번 주기 지출을 아직 모두 확인하지 못했어요. 예산 기준 미리보기이며, 내역 확인 후 다시 계산해야 확정할 수 있어요.'} if not result.get('spending_verified', True) else {}),
             "allocations": deepcopy(result["allocations"]), "buckets": deepcopy(result["buckets"]),
-            "changes": deepcopy(result["changes"]), "shortfalls": deepcopy(result["shortfalls"]),
+            "changes": displayed_changes, "shortfalls": deepcopy(result["shortfalls"]),
             "transfers": deepcopy(result["transfers"]), "target_changes": deepcopy(changes),
             "unlock_categories": list(meta["unlock_categories"]), "persistence_candidates": deepcopy(meta["persistence_candidates"]),
             "persistence_items": [{"category": code, "amount": amount} for code, amount in meta["persistence_candidates"].items()],
@@ -340,7 +374,10 @@ def proposal_card(user, proposal, *, conversation=None, today=None):
     context, meta = _metadata(budget)
     adapter = AdjustmentAdapter(user, conversation=budget.task.conversation, today=today)
     checked = adapter.task_status(budget.task_id)
-    return _card(budget.pk, budget.task_id, context, meta, checked["state"], can_approve=_partial_selected(budget, meta))
+    card = _card(budget.pk, budget.task_id, context, meta, checked["state"], can_approve=_partial_selected(budget, meta))
+    if meta.get('effective_on') and budget.approved_at:
+        card['schedule_status'] = budget.schedule.status
+    return card
 
 
 def _persistence(context, changes):
@@ -391,6 +428,8 @@ def approve_adjustment(user, proposal, *, keep_for_next_cycle, key, expected_mod
         raise AdjustmentExpired()
     if budget.status != "validated" or budget.task.status != "succeeded":
         raise AdjustmentNotReady()
+    if not meta['result'].get('spending_verified', context.get('spending_status', 'complete') == 'complete'):
+        raise AdjustmentNotReady('이번 주기 지출 조회가 누락되어 실제로 옮길 수 있는 금액은 미확인이에요. 미리보기와 입력은 유지했어요. 계좌·카드 내역 확인 후 다시 계산해 주세요.')
     if not _partial_selected(budget, meta):
         raise AdjustmentNotReady("가능한 금액만 반영할지 먼저 선택해 주세요.")
     adapter = AdjustmentAdapter(user, conversation=budget.task.conversation, today=today,
@@ -405,6 +444,20 @@ def approve_adjustment(user, proposal, *, keep_for_next_cycle, key, expected_mod
         _mark_expired(budget)
         raise AdjustmentExpired() from None
     changes = {code: None for code, amount in meta["target_changes"].items() if amount is None}
+    if meta.get('effective_on'):
+        if keep_for_next_cycle:
+            raise AdjustmentNotReady('다음 주기 예약은 미리보기에 표시된 시작일부터 적용해요.')
+        if Budget.objects.filter(user=user, approval_key=key).exclude(pk=budget.pk).exists():
+            raise AdjustmentConflict()
+        profile = get_object_or_404(FinancialProfile.objects.select_for_update(), user=user)
+        schedule_settings(user, profile, budget, fresh, meta['result'], meta['unlock_categories'])
+        meta['approval'] = {'keep_for_next_cycle': False, 'target_changes': {}}
+        budget.validation_summary = {**(budget.validation_summary or {}), 'adjustment': meta}
+        budget.status, budget.approved_at, budget.approval_key = 'superseded', timezone.now(), key
+        budget.save(update_fields=['status', 'approved_at', 'approval_key', 'validation_summary'])
+        budget.task.result = _task_result(budget, 'saved', saved_ref=str(budget.pk))
+        budget.task.save(update_fields=['result'])
+        return proposal_card(user, budget, today=today)
     if keep_for_next_cycle:
         changes.update(meta["persistence_candidates"])
     _persistence(_unlocked(fresh, meta["unlock_categories"]), changes)

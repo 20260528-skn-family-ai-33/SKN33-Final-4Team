@@ -305,6 +305,8 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
     if not missing:
         start, next_payday, _ = salary_cycle_dates(profile, today)
         cycle = ensure_cycle(user, start, next_payday)
+        from .adjustment_schedule import cycle_profile
+        profile = cycle_profile(user, cycle, profile)
         breakdown = fixed_breakdown(user, cycle, card=card_reserved is _COMPUTE)
         if card_reserved is not _COMPUTE:
             breakdown["card_reserved"] = card_reserved
@@ -389,7 +391,7 @@ def recommend(request):
 
         cycle = active_cycle(request.user)
         from . import design_service
-        released = [] if design_service.enabled() else release_locks_without_budget(request.user, cycle, profile.living_budget)
+        released = [] if design_service.enabled() else release_locks_without_budget(request.user, cycle, state["saved"]["living_budget"])
         snapshot = budget_input_snapshot(request.user, cycle, profile=profile, today=today)
         task = AsyncTask.objects.create(
             user=request.user, task_type="budget_recommend", request_key=request.headers["Idempotency-Key"],
@@ -477,6 +479,8 @@ def recommended_budget_lines(snapshot, out):
              for code, amount in sorted(fixed["categories"].items()) if amount]
     lines += [{"bucket": Bucket.FIXED, "category_detail": detail, "allocated_amount": fixed[detail]}
               for detail in ("loan", "card_reserved") if fixed[detail]]
+    if fixed.get('planned_reserve'):
+        lines.append({'bucket': Bucket.RESERVE, 'category_id': 'TRAVEL_LODGING', 'reserve_id': fixed['planned_reserve_id'], 'allocated_amount': fixed['planned_reserve']})
     lines += [
         {"bucket": Bucket.SAVINGS, "allocated_amount": saved["saving_floor"]},
         {"bucket": Bucket.CUSHION, "allocated_amount": saved["cushion_monthly"]},

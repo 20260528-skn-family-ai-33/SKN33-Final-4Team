@@ -255,6 +255,44 @@ class ServiceLLMTest(ServiceLLMFixture):
 class ServiceLLMScenarioTest(ServiceLLMFixture):
     """Amounts, bands and seed below are synthetic experiment fixtures, not service defaults."""
 
+    def test_a_protects_every_rank_in_candidates_and_llm_selected_budget(self):
+        from .design_candidates import apply_priority_decisions
+
+        self.snapshot['engine_input'] = inp(priorities=priorities(
+            'FOOD', 'BEAUTY', 'CULTURE_LEISURE', 'TRANSPORT_CAR', 'FASHION_SHOPPING', 'EDUCATION'))
+        data = self.snapshot['engine_input']
+        config = {'decrease_limits': dict.fromkeys(CATEGORY_NAMES, 1000000)}
+        original = deepcopy(config)
+        policy = service.initial_a_policy(config, data, 0)
+        self.assertEqual(config, original)
+        ratios = dict.fromkeys(CATEGORY_NAMES, .1)
+        engine = service.build_candidates(data, ratios, policy=policy, reality_profile={'has_vehicle': False})
+        base = engine['candidates'][0]['result']['allocations']
+        self.assertTrue(engine['transfers'])
+        ranked = {r['category'] for r in data['priorities']}
+        self.assertTrue(all(t['from'] not in ranked for t in engine['transfers']))
+        decisions = [{'category': r['category'], 'action': 'increase_large'} for r in data['priorities'][:3]]
+        replay = apply_priority_decisions(data, ratios, policy=policy, decisions=decisions,
+                                          reality_profile={'has_vehicle': False})
+        self.assertTrue(all(t['from'] not in ranked for t in replay['transfers']))
+        self.actions = iter(('increase_large',) * 3)
+        result = self.run_plan('a', allow_external=True, synthetic=True)
+        self.assertEqual(result['status'], 'proposed')
+        self.assertEqual(result['_design']['llm']['status'], 'completed')
+        for category in ranked:
+            self.assertEqual(policy['decrease_limits'][category], 0)
+            self.assertGreaterEqual(result['allocations'][category], base[category])
+        self.assertEqual(sum(result['allocations'].values()) + result['unallocated'], data['target'])
+
+    def test_a_keeps_base_when_every_active_category_is_ranked(self):
+        self.snapshot['engine_input'] = inp()
+        base = self.run_plan('a')
+        self.actions = iter(('increase_large',) * 3)
+        result = self.run_plan('a', allow_external=True, synthetic=True)
+        self.assertEqual(result['status'], 'proposed')
+        self.assertEqual(result['allocations'], base['allocations'])
+        self.a_connection.request.assert_not_called()
+
     def test_missing_vehicle_profile_blocks_before_either_llm(self):
         self.snapshot['engine_input']['has_vehicle'] = None
         for plan in ('a', 'b'):

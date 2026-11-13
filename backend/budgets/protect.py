@@ -248,6 +248,7 @@ def first_budget_cycle(user, connected_at, cycle):
 
     return not Budget.objects.filter(
         user=user, approved_at__isnull=False, approved_at__gte=connected_at, cycle__starts_on__lt=cycle.starts_on,
+        schedule__isnull=True,
     ).exists()
 
 
@@ -375,8 +376,11 @@ def fixed_breakdown(user, cycle, *, card=True):
     ).values("category_id").annotate(total=Sum("amount")).values_list("category_id", "total"))
     loans = Loan.objects.filter(user=user, status="repaying").aggregate(total=Sum("monthly_payment"))["total"] or 0
     reserved = card_reserved(user, cycle) if card else {"amount": None, "pending": []}
+    from .adjustment_schedule import cycle_settings
+    planned = cycle_settings(user, cycle)
+    planned_reserve = planned.get('reserve_amount', 0)
     return {
-        "categories": categories, "loan": loans,
+        "categories": categories, "loan": loans, "planned_reserve": planned_reserve, "planned_reserve_id": planned.get('reserve_id'),
         "card_ids": sorted(str(c.pk) for c in selected_cards(user)),
         "card_reserved": reserved["amount"], "card_pending": reserved["pending"], "card_notes": reserved.get("notes", []),
     }
@@ -384,7 +388,7 @@ def fixed_breakdown(user, cycle, *, card=True):
 
 def fixed_base(fixed):
     """카드 선차감을 뺀 고정지출 합계 (확정 고정지출 + 대출)"""
-    return sum(fixed["categories"].values()) + fixed["loan"]
+    return sum(fixed["categories"].values()) + fixed["loan"] + fixed.get('planned_reserve', 0)
 
 
 def fixed_sum(fixed):
