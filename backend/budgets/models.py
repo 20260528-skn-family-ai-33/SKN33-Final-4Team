@@ -280,6 +280,8 @@ class CushionEntry(models.Model):
         USE = "use", "사용"
         REFUND = "refund", "환급"
         ADJUSTMENT = "adjustment", "정정"
+        # 11/13 (검수 P2): 예산 승인 · 지킬 돈 저장으로 '이번 주기 예산에서 쿠션으로 떼어 둔' 금액. 실제 이체(allocation)와 구분
+        PLANNED = "planned", "예산 보호 (승인 배정)"
 
     entry_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="cushion_entries")
@@ -315,23 +317,23 @@ class CushionEntry(models.Model):
             models.UniqueConstraint(
                 fields=["allocation"], condition=Q(entry_type="use"), name="cushion_one_use_per_allocation",
             ),
-            # 종류별 부호: initial ≥0, use <0, refund >0, allocation·adjustment ≠0
+            # 종류별 부호: initial ≥0, use <0, refund >0, allocation·adjustment·planned ≠0
             models.CheckConstraint(
                 condition=(
                     Q(entry_type="initial", amount__gte=0)
                     | Q(entry_type="use", amount__lt=0)
                     | Q(entry_type="refund", amount__gt=0)
-                    | (Q(entry_type__in=["allocation", "adjustment"]) & ~Q(amount=0))
+                    | (Q(entry_type__in=["allocation", "adjustment", "planned"]) & ~Q(amount=0))
                 ),
                 name="cushion_amount_sign_by_type",
             ),
-            # 종류별 필수 연결: initial은 연결 없음, use·refund는 배분 필수, allocation은 주기·예산 필수
+            # 종류별 필수 연결: initial은 연결 없음, use·refund는 배분 필수, allocation·planned는 주기·예산 필수
             models.CheckConstraint(
                 condition=(
                     Q(entry_type="initial", cycle__isnull=True, budget__isnull=True,
                       allocation__isnull=True, reference_entry__isnull=True)
                     | Q(entry_type__in=["use", "refund"], allocation__isnull=False)
-                    | Q(entry_type="allocation", cycle__isnull=False, budget__isnull=False)
+                    | Q(entry_type__in=["allocation", "planned"], cycle__isnull=False, budget__isnull=False)
                     | Q(entry_type="adjustment")
                 ),
                 name="cushion_fk_by_type",

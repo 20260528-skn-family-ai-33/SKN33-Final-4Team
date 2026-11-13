@@ -150,7 +150,7 @@ docker exec money-cushion-db psql -U money_cushion -d money_cushion -c "\d payme
 | budget_cycle | 시작일 ≥ 종료일, 상태가 active·closed 아님 — 10-24 |
 | budget | 상태 오타, **주기마다 approved 2개 이상**, 자기 자신을 이전 예산으로 |
 | budget_item · spending_allocation | 빈칸(NULL) 포함 중복 줄 (NULLS NOT DISTINCT), reserve인데 준비금 계획 없음 |
-| cushion_entry | 초기액 2번, 배분 1건에 사용 2번, 종류별 부호(initial ≥0, use <0, refund >0, 적립·정정 ≠0), 종류별 필수 연결 |
+| cushion_entry | 초기액 2번, 배분 1건에 사용 2번, 종류별 부호(initial ≥0, use <0, refund >0, 적립·정정·예산 보호 ≠0), 종류별 필수 연결 |
 | chat_message · async_task | 발화자 · 내용 종류 · 작업 상태 오타 — 10-24 |
 | consent | 조회 범위가 bank·card·loan 아님 (비우는 건 OK) — 10-24 |
 
@@ -260,6 +260,12 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 `salary_decision`에 nullable `snapshot_amount`(bigint), `snapshot_occurred_on`(date), `snapshot_description`(varchar 500), `snapshot_account_id`(UUID, 당시 계좌 값이므로 FK 아님)를 추가한다. 사용자 확인 시에만 원거래 값을 저장한다. 금액·거래일·적요 원문·계좌 UUID가 달라지거나 기준값이 없으면 `recheck`로 전환하고 `is_pattern`을 해제한다. 변경 없는 확정은 유지한다. 재확인 전까지 인정 합계에서 제외하며 과거 기준값과 `decided_at`은 보존한다.
 
 기존 확정 기록에는 기준값을 채우지 않는다. 데이터 마이그레이션은 기존 `confirmed`를 `recheck`로 바꾸고 자동 인식 기준과 영향 회차의 `confirmed_income` 캐시를 비운다. 개발/운영 DB 적용은 별도이며, 회귀 테스트는 전용 테스트 DB에서 수행한다. 상세 조회 계약은 [api/salary.md](api/salary.md)의 '사용자 확정 유효성' 참고.
+## 2026-11-13: 쿠션 기록 종류 '예산 보호' (budgets — 김나은 makemigrations)
+
+- `cushion_entry.entry_type`에 `planned`(예산 보호 — 승인 배정) 추가. 제약 `cushion_amount_sign_by_type`(≠0) · `cushion_fk_by_type`(주기 · 예산 필수)에 `planned`를 `allocation`과 같은 규칙으로 넣는다.
+- 이유: 검수 P2 — 예산 승인 때 쌓는 '보호 중인 쿠션'(R27)을 `allocation`으로 남기면, 예산 조정 · 분배 실패 복구가 `allocation`을 '이미 적립한 돈'(줄일 수 없는 바닥)으로 보아 승인만 해도 쿠션 감액 조정이 막혔다. 계획상 보호(`planned`)와 실제 이체 적립(`allocation`)을 나눈다. 확보액(`now`)은 둘 다 포함한 합계 그대로. 상세: api/cushion.md '보호 중인 쿠션 쌓기'.
+- 로컬에서 이 변경 전에 승인 · 저장해 생긴 `allocation` 기록(`request_key`가 `budget-approve:` · `protect-save:`로 시작)은 개발 데이터라 마이그레이션으로 옮기지 않는다. 필요하면 셸에서 `planned`로 바꾼다.
+
 ## 2026-11-13: 머니쿠션 목표 직접 정하기 (users — 김나은 makemigrations)
 
 - `financial_profile.cushion_goal_amount`(bigint, NULL 허용) 추가. NULL = 기본 목표(월 실수령액 × 3, 월급을 따라감). 값이 있으면 그 금액이 목표. 제약 `fp_cushion_goal_amount_range`: NULL 또는 10,000 ~ 1,000,000,000원.

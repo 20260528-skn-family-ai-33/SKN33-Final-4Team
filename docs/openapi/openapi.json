@@ -10133,6 +10133,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -10162,6 +10163,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -10198,6 +10200,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -10233,6 +10236,7 @@
                       ],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     },
@@ -10325,6 +10329,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -18819,6 +18824,11 @@
           "budgetApproved": {
             "type": "boolean",
             "description": "11/13. 이번 주기(진행 중)에 승인한 예산이 있는지. missing이 있으면 false"
+          },
+          "approvedBudgetUpdated": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "11/13. GET은 항상 null(PUT과 모양을 같게). PUT: 이번 주기 승인 예산이 없으면 null. 생활비를 그대로 두고 저장해 승인 예산의 저축 · 쿠션 줄도 새 값으로 바꿨으면(또는 이미 같으면) true, 생활비를 바꿨거나 합계가 승인 당시 배분 대상을 넘어 못 바꿨으면 false (화면은 다시 추천으로)"
           }
         },
         "additionalProperties": false
@@ -20026,8 +20036,8 @@
     "docs/api/transactions.md": "dea2cef12825b7d03de455f0b3e516f91d637040f38dc0370d089a0514d92118",
     "docs/api/fixed.md": "4761f8ff5a9444e033ea0aa980144f342db126e1732bb1f34452df46de08fae3",
     "docs/api/savings.md": "93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223",
-    "docs/api/home.md": "40924e2edbd177f2c8480f540926970b91dbcc74e9ac396a54792e172047c9f4",
+    "docs/api/home.md": "7bb99b1aed49c9547a9e78f6b189c0a83cc9358d1a509ae804e805fcb5b79128",
     "docs/api/chat.md": "e2f285d35fbda895d51533778d80eb31453061e213a3813cef6a94136053ff8e",
-    "docs/api/budgets.md": "1be8caa35c7adeaac03ca86dec142872d0b8f69151db061626e6918164e07333"
+    "docs/api/budgets.md": "b448e781adb8ad84e59934600748c66ffb7a0fdef0c175090cbc2cc68e9a9c25"
   }
 }

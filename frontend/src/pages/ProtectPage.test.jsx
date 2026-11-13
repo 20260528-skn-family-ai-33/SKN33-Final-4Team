@@ -6,7 +6,7 @@ import PopupProvider from '../popups/PopupProvider.jsx'
 import ProtectPage from './ProtectPage.jsx'
 import { PATHS } from '../routes.js'
 
-let host, root, data
+let host, root, data, putExtra
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   data = {
@@ -16,9 +16,10 @@ beforeEach(() => {
     saved: { livingBudget: 500000, savingFloor: 380000, cushionMonthly: 320000, spare: 720000 },
     cushion: { required: true, target: 9000000, balanceTotal: 0 },
   }
+  putExtra = {}
   vi.stubGlobal('fetch', vi.fn(async (url, options = {}) => {
     if (url !== '/api/budgets/protect/') throw new Error(`Unexpected URL: ${url}`)
-    return { ok: true, json: async () => options.method === 'PUT' ? { locksReleased: [] } : data }
+    return { ok: true, json: async () => options.method === 'PUT' ? { locksReleased: [], ...putExtra } : data }
   }))
   host = document.createElement('div'); document.body.append(host); root = createRoot(host)
 })
@@ -187,6 +188,28 @@ it('마이에서 생활비는 그대로 두고 저축 · 쿠션만 고치면 다
     const put = fetch.mock.calls.find(([, o]) => o?.method === 'PUT')
     expect(JSON.parse(put[1].body)).toEqual({ livingBudget: 500000, savingFloor: 400000, cushionMonthly: 320000 })
     expect(host.textContent).toContain('마이 화면')
+  } finally {
+    document.cookie = 'csrftoken=; max-age=0; path=/'
+  }
+})
+
+it('저축 · 쿠션만 고쳤는데 서버가 승인 예산에 반영하지 못하면 다시 추천으로 간다 (검수 P1)', async () => {
+  data.budgetApproved = true
+  putExtra = { approvedBudgetUpdated: false }
+  document.cookie = 'csrftoken=test; path=/'
+  try {
+    await act(async () => root.render(<MemoryRouter initialEntries={[{ pathname: PATHS.protect, state: { from: 'my' } }]}><PopupProvider><Routes>
+      <Route path={PATHS.protect} element={<ProtectPage />} />
+      <Route path={PATHS.recommend} element={<p>추천 화면</p>} />
+      <Route path={PATHS.my} element={<p>마이 화면</p>} />
+    </Routes></PopupProvider></MemoryRouter>))
+    await act(() => {
+      const el = host.querySelector('#mc-p-cushionMonthly')
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '300000')
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => host.querySelector('#mc-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(host.textContent).toContain('추천 화면')
   } finally {
     document.cookie = 'csrftoken=; max-age=0; path=/'
   }

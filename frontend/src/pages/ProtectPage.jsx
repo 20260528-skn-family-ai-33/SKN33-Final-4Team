@@ -126,7 +126,7 @@ export default function ProtectPage() {
       return
     }
     // 11/13: 이미 승인한 예산이 있고 생활비는 그대로면(저축 목표액 · 월 쿠션 적립금만 고침) 카테고리 배분이 바뀌지 않으니
-    // 다시 추천(LLM)하지 않고 저장만 한다. 월급 차이 · 카드 청구서로 다시 짜러 온 경우(refreshRecommendation)는 제외
+    // 다시 추천(LLM)하지 않고 저장만 한다(승인 예산의 저축 · 쿠션 줄은 서버가 같이 바꿈). 월급 차이 · 카드 청구서로 다시 짜러 온 경우(refreshRecommendation)는 제외
     if (manage && data.budgetApproved && !navState?.refreshRecommendation && num('livingBudget') === data.saved?.livingBudget) {
       saveOnly()
       return
@@ -146,14 +146,19 @@ export default function ProtectPage() {
     save()
   }
 
-  // 생활비를 안 바꾼 저장: 저장하고 마이로. 이번 주기 승인 예산(카테고리 배분)은 그대로다
+  // 생활비를 안 바꾼 저장: 서버가 이번 주기 승인 예산의 저축 · 쿠션 줄도 바꾼다(카테고리 배분은 그대로, 여윳돈은 같이 맞춰짐, 검수 P1).
+  // 바꿀 수 없으면(approvedBudgetUpdated=false, 합계가 승인 당시 배분 대상을 넘음 등) 다시 추천으로 보낸다
   const saveOnly = async () => {
     setBusy(true)
     setError('')
     setFieldErrors({})
     try {
-      await apiSend('/api/budgets/protect/', 'PUT', Object.fromEntries(ROWS.map(([k]) => [k, num(k)])))
-      toast('저장했어요. 생활비 예산은 그대로예요')
+      const saved = await apiSend('/api/budgets/protect/', 'PUT', Object.fromEntries(ROWS.map(([k]) => [k, num(k)])))
+      if (saved.approvedBudgetUpdated === false) {
+        navigate(PATHS.recommend, { state: { autoRecommend: true, refreshRecommendation: false, locksReleased: saved.locksReleased } })
+        return
+      }
+      toast('저장했어요. 이번 예산에도 반영했어요')
       navigate(PATHS.my, { replace: true })
     } catch (err) {
       setError(err.fields?.nonFieldErrors?.[0] ?? err.message)

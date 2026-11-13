@@ -430,6 +430,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -459,6 +460,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -495,6 +497,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -530,6 +533,7 @@
                       ],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     },
@@ -621,6 +625,7 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
+                      "approvedBudgetUpdated": null,
                       "cardLoadTaskId": null,
                       "budgetApproved": false
                     }
@@ -2765,6 +2770,11 @@
           "budgetApproved": {
             "type": "boolean",
             "description": "11/13. 이번 주기(진행 중)에 승인한 예산이 있는지. missing이 있으면 false"
+          },
+          "approvedBudgetUpdated": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "11/13. GET은 항상 null(PUT과 모양을 같게). PUT: 이번 주기 승인 예산이 없으면 null. 생활비를 그대로 두고 저장해 승인 예산의 저축 · 쿠션 줄도 새 값으로 바꿨으면(또는 이미 같으면) true, 생활비를 바꿨거나 합계가 승인 당시 배분 대상을 넘어 못 바꿨으면 false (화면은 다시 추천으로)"
           }
         },
         "additionalProperties": false

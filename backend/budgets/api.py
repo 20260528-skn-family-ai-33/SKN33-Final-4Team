@@ -108,12 +108,16 @@ def protect(request):
         data = protect_json(request.user, profile, today)
         if request.method == "PUT":
             values = clean_protect(request, data)
-            before = profile.cushion_monthly
+            living_changed = values["living_budget"] != profile.living_budget
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
-            if profile.cushion_monthly != before:
-                # R27 (11/13): 이번 주기에 승인한 예산이 있으면 보호 중인 쿠션을 새 월 적립금에 맞춘다 (차액)
-                from .cushion import record_protect_cushion
-                record_protect_cushion(request.user, current_approved_budget(request.user, today), profile.cushion_monthly)
+            # 검수 P1 (11/13): 생활비를 그대로 두고 저축 · 쿠션만 바꾸면 이번 주기 승인 예산의 저축 · 쿠션 줄도 바꾼다 (여윳돈도 같이 맞춰짐).
+            # null = 승인 예산 없음 · true = 반영 · false = 반영 못 함(생활비를 바꿨거나 합계 초과) → 화면이 다시 추천으로
+            approved_budget = current_approved_budget(request.user, today)
+            data["approved_budget_updated"] = None
+            if approved_budget is not None:
+                from .cushion import update_approved_split
+                data["approved_budget_updated"] = (not living_changed and update_approved_split(
+                    request.user, approved_budget, profile.savings_floor, profile.cushion_monthly))
             data["saved"] = protect_saved_json(profile, data["base"])
         # 11/13: 이번 주기에 승인한 예산이 있는지 — 화면이 '생활비 그대로면 다시 추천 없이 저장만'을 판단한다
         # (approved_budget 은 충당 · 설정 차이가 있을 때만 오므로 따로 둔다)
@@ -334,6 +338,7 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
         "card_pending": pending_cards,
         "card_notes": card_notes,  # 보류는 아니고 알릴 것 (no_bill_in_cycle 등, 11/06)
         "locks_released": [],  # PUT으로 저장할 때만 채운다 (P-13)
+        "approved_budget_updated": None,  # PUT으로 저장할 때만 채운다 (검수 P1, 11/13) — GET과 모양을 같게
     }
 
 
@@ -620,9 +625,7 @@ def budget_approve(request, budget_id):
         chosen.status = "approved"
         chosen.approved_at = timezone.now()
         chosen.approval_key = request.headers["Idempotency-Key"]
-        chosen.save(update_fields=["status", "approved_at", "approval_key"])
-        from .cushion import record_approved_cushion
-        record_approved_cushion(chosen)  # R27 (11/13): 승인한 쿠션 배정액을 보호 중인 쿠션에 쌓는다
+        chosen.save(update_fields=["status", "approved_at", "approval_key"])  # 보호 중인 쿠션 기록은 signals.py (R27)
         # auth.onboardingCompleted는 approved_at이 있는 예산의 존재 여부로 계산한다.
         return Response(budget_data(request.user, today, selected=chosen))
 

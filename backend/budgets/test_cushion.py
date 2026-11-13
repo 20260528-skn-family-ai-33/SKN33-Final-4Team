@@ -285,6 +285,19 @@ class ApprovedCushionLedgerTest(TestCase):
         self.assertEqual(self.now(), 1_100_000)  # 같은 주기 20만으로 다시 승인 → 차액 −10만
         self.assertEqual(list(CushionEntry.objects.filter(cycle=nov).order_by("created_at").values_list("amount", flat=True)), [300_000, -100_000])
 
+    def test_every_approval_path_records_planned_cushion_on_save(self):
+        """검수 P1 (11/13): 일반 승인 · 대화형 조정 · 분배 실패 복구 모두 budget.status='approved' 로 save 하므로
+        signals.py 가 같은 기록을 남긴다. 종류는 planned — 예산 조정이 줄이지 못하는 '이미 적립한 돈'(allocation)과 다르다 (검수 P2)"""
+        nov = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 10, 25), ends_before=date(2026, 11, 25))
+        budget = Budget.objects.create(user=self.user, cycle=nov, status="validated", version_no=1, funding_amount=2_800_000)
+        self.BudgetItem.objects.create(user=self.user, budget=budget, bucket="cushion", allocated_amount=300_000)
+        budget.status, budget.approved_at = "approved", timezone.now()
+        budget.save(update_fields=["status", "approved_at"])
+        budget.save(update_fields=["validation_summary"])  # 승인 뒤 다른 칸 저장은 다시 쌓지 않는다
+        self.assertEqual(self.now(), 300_000)
+        self.assertEqual(list(CushionEntry.objects.values_list("entry_type", "amount")), [("planned", 300_000)])
+        self.assertFalse(CushionEntry.objects.filter(entry_type="allocation").exists())
+
     def test_zero_cushion_budget_records_nothing(self):
         from .cushion import record_approved_cushion
         cycle = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 10, 25), ends_before=date(2026, 11, 25))
