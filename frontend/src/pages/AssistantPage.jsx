@@ -116,7 +116,7 @@ export default function AssistantPage() {
     if (storedApproval && navState?.budgetContext) navigate(PATHS.assistant, { replace: true, state: null })
   }, [storedApproval, navState, navigate])
 
-  // 새로고침 전 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
+  // 저장된 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
   useEffect(() => {
     if (!restoreId) return
     let live = true

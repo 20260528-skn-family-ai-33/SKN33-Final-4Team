@@ -27,7 +27,7 @@ def budget_nag(user, cycle):
     changed = BudgetCategorySetting.objects.filter(
         user=user, cycle=cycle, category_id__in=LIVING_CODES, change_count__gte=3,
     ).exclude(category_id="TRANSPORT_CAR").exists()
-    if changed or Budget.objects.filter(user=user, cycle=cycle, approved_at__isnull=False).count() >= 3:
+    if changed or Budget.objects.filter(user=user, cycle=cycle, approved_at__isnull=False, schedule__isnull=True).count() >= 3:
         return NAG
     return None
 
@@ -119,7 +119,7 @@ def budget_data(user, today, *, selected=None):
                    # 이전 기준으로 승인한 예산의 주거·통신 · 여행·숙박 배정 (생활비 총액에는 들어 있고 카테고리 줄에는 없음, N-F1)
                    "out_of_budget_allocated": sum(v for c, v in allocated.items() if c in OUT_OF_BUDGET)},
         "split": {"funding": selected.funding_amount, "fixed": totals.get("fixed", 0), "saving": totals.get("savings", 0),
-                  "cushion": totals.get("cushion", 0), "living": living, "spare": spare},
+                  "cushion": totals.get("cushion", 0), "living": living, "spare": spare, "reserve": totals.get('reserve', 0)},
         "living": {"budget": living, "spent": spent, "remaining": max(living - spent, 0)},
         "overspend": {"over": over, "covered_by_spare": covered, "spare_remaining": spare - covered, "shortfall": over - covered},
         "categories": categories, "nag": budget_nag(user, cycle),

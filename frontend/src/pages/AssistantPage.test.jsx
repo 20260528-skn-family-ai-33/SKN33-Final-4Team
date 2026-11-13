@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes, useNavigate } from 'react-router'
+import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AssistantPage from './AssistantPage.jsx'
 import PopupProvider from '../popups/PopupProvider.jsx'
@@ -156,7 +156,30 @@ it('성공 상태여도 응답 본문이 유실되면 같은 요청으로 복구
 })
 
 
-describe.each(['legacy', 'router'])('%s 엔진 새로고침 복원과 재전송 통합', (engine) => {
+describe.each(['legacy', 'router'])('%s 엔진 페이지 이동·새로고침 복원과 재전송 통합', (engine) => {
+  it('다른 페이지를 다녀와도 서버에서 이전 메시지를 복원하고 같은 대화를 이어간다', async () => {
+    useApi.mockReturnValue({ data: info(engine), error: null })
+    const saved = reply(engine, 1, '이전 질문')
+    apiSend.mockResolvedValueOnce(saved).mockResolvedValueOnce(saved)
+      .mockResolvedValueOnce(reply(engine, 2, '이어서 질문'))
+    await act(() => root.render(<MemoryRouter initialEntries={['/chat']}><PopupProvider>
+      <Link to="/other">다른 페이지로</Link><Link to="/chat">챗봇으로</Link>
+      <Routes><Route path="/chat" element={<AssistantPage />} /><Route path="/other" element={<p>다른 화면</p>} /></Routes>
+    </PopupProvider></MemoryRouter>))
+    await submit('이전 질문')
+    await click(host.querySelector('a[href="/other"]'))
+    expect(host.textContent).toContain('다른 화면')
+    expect(host.textContent).not.toContain('이전 질문')
+    expect(sessionStorage.getItem('mc-chat-conversation')).toBe('conversation-1')
+    await click(host.querySelector('a[href="/chat"]'))
+    expect(apiSend.mock.calls[1]).toEqual(['/api/chat/conversations/conversation-1/', 'GET'])
+    expect(host.textContent).toContain('이전 질문')
+    expect(host.textContent).toContain('답변 1')
+    await submit('이어서 질문')
+    expect(apiSend.mock.calls[2][2]).toEqual({ conversationId: 'conversation-1', text: '이어서 질문' })
+    expect(host.querySelectorAll('.mc-msg.me')).toHaveLength(2)
+  })
+
   it('복원 중 전송을 막고 복원된 대화에서 실패한 요청은 같은 키로 재전송한다', async () => {
     sessionStorage.setItem('mc-chat-conversation', 'conversation-1')
     useApi.mockReturnValue({ data: info(engine), error: null })

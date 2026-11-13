@@ -198,15 +198,16 @@ class RecoveryPlanAPITest(TestCase):
         self.assertFalse(Budget.objects.exists())
         self.assertEqual(self.protected(), before)
 
-    def test_unknown_savings_source_is_not_used(self):
+    def test_savings_budget_does_not_require_a_transfer_account(self):
         self.saving.from_account = None
         self.saving.save(update_fields=['from_account'])
         _, entered = self.failure(1300001)
         response = self.pick(entered, 'recovery_cycle')
         response = self.pick(response.json(), 'recovery_savings')
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()['messages'][-1]['content']['budgetAdjustment']['canApprove'])
-        self.assertFalse(Budget.objects.exists())
+        self.assertTrue(response.json()['messages'][-1]['content']['budgetAdjustment']['canApprove'])
+        proposal = Budget.objects.get(status='validated')
+        self.assertGreaterEqual(proposal.items.get(bucket='savings').allocated_amount, self.saving.amount)
 
     def test_model_failure_does_not_save_unchecked_money(self):
         _, entered = self.failure()

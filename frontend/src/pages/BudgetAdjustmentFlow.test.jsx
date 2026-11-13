@@ -170,9 +170,9 @@ it('비교안 여러 개를 펼쳐도 요청하지 않고 선택할 때만 최�
   expect(panels[1].querySelector('details').open).toBe(true)
   expect(apiSend).toHaveBeenCalledTimes(1)
   expect(button('여윳돈 활용')).toBeUndefined()
-  await click(button('이 안 선택', panels[1]))
+  await click(button('이 안 선택하기', panels[1]))
   expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', choice: { value: 'plan_spare', turn: 7 } })
-  expect(button('이 안 선택', panels[0]).disabled).toBe(true)
+  expect(button('이 안 선택하기', panels[0]).disabled).toBe(true)
 })
 
 it('조정안의 자동 감액 항목도 상세를 펼치기 전에 보여 준다', async () => {
@@ -224,7 +224,7 @@ it('부분 반영안과 다른 재원은 비교만 하며 선택 전에는 확�
   await submit('생활비에서만 조정할래')
   expect(host.textContent).toContain('여윳돈')
   expect(host.textContent).toContain('200,000원')
-  expect(button('이 안 선택')).toBeUndefined()
+  expect(button('이 안 선택하기')).toBeUndefined()
   expect(button('예산 확정하기')).toBeUndefined()
   await click(button('가능한 금액만 반영'))
   expect(apiSend.mock.calls[1][2].choice).toEqual({ value: 'partial_accept', turn: 7 })
@@ -241,6 +241,36 @@ it('자세히 요청한 답변은 변경안·비교안·설명 상세를 펼친 
   expect(details.every((element) => element.open)).toBe(true)
   expect(host.textContent).toContain('하한과 금액 단위를 함께 확인했어요.')
   expect(apiSend).toHaveBeenCalledTimes(1)
+})
+
+it('다음 주기 예약은 시작일과 월급 전후를 보여 주고 이번 예산 유지 옵션을 보내지 않는다', async () => {
+  const proposal = card({ scope: 'next_cycle', effectiveOn: '2026-11-25',
+    incomeChange: { before: 3000000, after: 3500000 } })
+  apiSend.mockResolvedValueOnce(proposalTalk(proposal)).mockResolvedValueOnce(saved(proposal))
+  await mount()
+  await submit('다음 달 월급 증가분으로 교육비를 늘려줘')
+  await click(button('다음 주기 변경 예약하기'))
+  const dialog = host.querySelector('[role=dialog]')
+  expect(dialog.textContent).toContain('2026-11-25')
+  expect(dialog.textContent).toContain('3,500,000원')
+  expect(dialog.textContent).toContain('이번 예산은 그대로')
+  expect(dialog.querySelector('input[type=checkbox]')).toBeNull()
+  await click(button('예약 확정', dialog))
+  expect(apiSend.mock.calls[1][2]).toEqual({ keepForNextCycle: false })
+  expect(host.textContent).toContain('다음 주기 변경을 예약했어요')
+})
+
+it('일회성 계획은 준비한 돈과 추가 조정액을 나누고 평소 설정 유지 여부를 안내한다', async () => {
+  const proposal = card({ scope: 'next_cycle', effectiveOn: '2026-11-25', oneOff: true,
+    expense: { total: 1000000, setAside: 700000, additional: 300000 } })
+  apiSend.mockResolvedValueOnce(proposalTalk(proposal))
+  await mount()
+  await submit('다음달 여행비를 준비하고 싶어')
+  await click(button('다음 주기 변경 예약하기'))
+  const dialog = host.querySelector('[role=dialog]')
+  expect(dialog.textContent).toContain('평소 저축·생활비 배분 설정은 바꾸지 않아요')
+  expect(dialog.textContent).toContain('따로 마련한 돈 700,000원 + 예산에서 마련할 돈 300,000원')
+  expect(dialog.querySelector('input[type=checkbox]')).toBeNull()
 })
 
 it.each([

@@ -99,9 +99,15 @@ class OverBudgetTest(unittest.TestCase):
     def test_locked_category_still_requires_unlock_consent(self):
         self.context["locks"]["FOOD"] = 400000
         self.turn(hints=self.hints)
-        self.turn("spare")
         self.assertEqual(self.store.state["pending"]["kind"], "unlock")
         self.assertNotIn("unlock_categories", self.store.state)
+        self.propose.assert_not_called()
+        self.turn('unlock')
+        self.assertEqual(self.store.state['pending']['kind'], 'amount')
+        self.turn('3만 원 늘려줘', reading(requests=[item(amount=30000)], reference='previous'))
+        self.assertEqual(self.store.state['pending']['kind'], 'comparison')
+        self.assertIn('plan_living', dict(self.store.state['pending']['choices']))
+        self.assertIn('FOOD', self.store.state['unlock_categories'])
         self.propose.assert_not_called()
 
     def test_new_entry_only_queues_choice_and_keep_restores_exact_original_state(self):

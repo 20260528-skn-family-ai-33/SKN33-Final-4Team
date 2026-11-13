@@ -2,6 +2,7 @@
 from datetime import datetime, date
 from functools import partial
 from io import StringIO
+from pathlib import Path
 from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
@@ -64,7 +65,7 @@ class AlphaHomePreviewTest(NoExternalCalls, SimpleTestCase):
             plan = load_alpha()['plan']
             self.assertTrue(plan(datetime(2026, 11, 5, 12, tzinfo=ZoneInfo('Asia/Seoul')))[0])
         self.assertTrue(ALPHA['MERCHANTS'].is_file())
-        self.assertNotIn('local_workspace', str(ALPHA['MERCHANTS']))
+        self.assertNotIn('local_workspace', ALPHA['MERCHANTS'].resolve().relative_to(Path(__file__).resolve().parents[1]).parts)
         self.assertNotIn('local_workspace', open(seed_alpha_home.__file__, encoding='utf-8').read())
 
 

@@ -9,6 +9,8 @@
   정해 둔 문장에는 not_mine, 그 밖에는 None(전달까지만 — 결과 기록은 테스트가 record_budget_task 로 직접)
 - [계약 변경] 예산 전달의 소비 맥락: last_analysis → shared.spending (소비가 공개한 요약)
 """
+import os
+import unittest
 from functools import partial
 
 from django.test import SimpleTestCase
@@ -504,3 +506,58 @@ class BudgetTaskTest(Talk, SimpleTestCase):
         self.assertIsNone(decision.handoff)
         self.assertIsNone(self.store.get_task("talk-2"))
         self.assertEqual(self.store.get_task("talk-1")["task_ref"], "T1")
+
+
+class FutureBudgetIntentLiveTest(SimpleTestCase):
+    @unittest.skipUnless(os.environ.get('CHAT_LIVE_ROUTER_TEST') == '1', 'opt-in actual LLM classification')
+    def test_declarative_financial_changes_and_inquiry_boundaries(self):
+        from .router_core.reading import read
+        from .llm.live import LiveReading
+        complete = LiveReading(20, None)
+        cases = [
+            ('다음달부터 교육비 50만원 추가될 예정', 'budget_adjust'),
+            ('내달부터 학원 등록해서 매달 50만원 더 나가', 'budget_adjust'),
+            ('다음 달에 병원비 20만원 더 들 것 같아', 'budget_adjust'),
+            ('다음달부터 월급이 30만원 늘어', 'budget_adjust'),
+            ('다음 급여부터 수입이 20만원 줄어들 예정', 'budget_adjust'),
+            ('다음 달 여행이 잡혔어', 'budget_adjust'),
+            ('지난달 교육비 얼마나 썼어?', 'spending'),
+            ('교육 예산 얼마나 남았어?', 'spending'),
+            ('이번 달 왜 생활비가 부족해졌어?', 'spending'),
+            ('이대로 쓰면 다음달 얼마나 쓸까?', 'spending'),
+            ('다음 달 날씨 알려줘', 'unsupported'),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(read(text, None, complete).intents, (expected,))
+        pending = {'asking': 'intent', 'options': ['spending', 'budget_adjust']}
+        actual = read(cases[0][0], pending, complete)
+        self.assertTrue('budget_adjust' in actual.intents or actual.choice == 'budget_adjust', actual)
+        self.assertNotEqual(actual.followup, 'unclear')
+
+
+    @unittest.skipUnless(os.environ.get('CHAT_LIVE_ROUTER_TEST') == '1', 'opt-in actual LLM, previously reported inputs')
+    def test_previous_reported_initial_messages(self):
+        from .router_core.reading import read
+        from .llm.live import LiveReading
+        cases = [
+            ('의료비 줄이고싶어', 'budget_adjust'),
+            ('의료비 줄이고 싶다고', 'budget_adjust'),
+            ('나 교육에 돈 필요 없는데', 'budget_adjust'),
+            ('생활비가 부족해', 'budget_adjust'),
+            ('생활비 늘려줘', 'budget_adjust'),
+            ('생활비를 5만원 늘리고 싶어요', 'budget_adjust'),
+            ('교통비 18만원으로 늘려줘', 'budget_adjust'),
+            ('쇼핑에서 3만원, 교육에서 2만원 줄여서 교통비에 5만원 옮겨줘.', 'budget_adjust'),
+            ('저축 30만원 늘려줘', 'budget_adjust'),
+            ('다음달부터 교육비 50만원 추가될 예정', 'budget_adjust'),
+            ('다음달부터 월급 50만원 늘어서 그냥 그것만 추가해', 'budget_adjust'),
+            ('다음달에 여행으로 100만원정도 나갈 예정이라 지금 미리 예산 조정 하고 싶어', 'budget_adjust'),
+            ('생활비를 1,000만원 늘리고 싶어요', 'budget_adjust'),
+            ('주거비 줄이려고해', 'budget_adjust'),
+            ('의료비 예산 왜이렇게 크게 책정됐어?', 'spending'),
+            ('이번달 여윳돈 얼마 있어', 'spending'),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(read(text, None, LiveReading(3, None)).intents, (expected,))
