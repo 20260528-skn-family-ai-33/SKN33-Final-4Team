@@ -65,3 +65,43 @@ it('PUT 응답에 충당 안내가 없어도 지킬 돈 화면을 교체하지 �
     document.cookie = 'csrftoken=; max-age=0; path=/'
   }
 })
+
+it('금액을 고치면 칸 아래에 저장해 둔 금액보다 얼마나 늘었는지 · 줄었는지 보여 준다 (11/12)', async () => {
+  await render()
+  const shown = () => [...host.querySelectorAll('.mc-protect-delta')].map((d) => d.textContent).filter(Boolean)
+  expect(shown()).toEqual([])  // 안 고쳤으면 글자 없이 자리만 (칸 높이를 맞추려고)
+  expect(host.querySelectorAll('.mc-cat-rec').length).toBe(3)  // 추천 칸은 고치지 않아도 세 칸 모두
+  const type = (id, value) => act(() => {
+    const el = host.querySelector(id)
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value)
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await type('#mc-p-livingBudget', '450000')
+  await type('#mc-p-savingFloor', '430000')
+  expect(shown()).toEqual(['기존보다 −50,000원', '기존보다 +50,000원'])
+  const cls = [...host.querySelectorAll('.mc-protect-delta')].filter((d) => d.textContent).map((d) => d.classList.contains('is-up') ? 'up' : d.classList.contains('is-down') ? 'down' : '')
+  expect(cls).toEqual(['down', 'up'])  // 줄면 파랑(is-down) · 늘면 빨강(is-up)
+})
+
+it('배분 가능한 금액보다 많이 넣고 저장하면 서버에 보내지 않고 토스트만 띄운다 (11/12)', async () => {
+  await render()
+  await act(() => {
+    const el = host.querySelector('#mc-p-livingBudget')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '99000000')
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => host.querySelector('#mc-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(fetch.mock.calls.some(([, options]) => options?.method === 'PUT')).toBe(false)
+  expect(document.getElementById('mc-toast').textContent).toBe('금액을 줄여 주세요')
+  expect(host.querySelector('.mc-form > .mc-error[role=alert]')).toBeNull()  // 아래에 같은 문장을 또 붙이지 않는다
+})
+
+it('나눈 기준은 맨 아래 글 대신 제목 옆 [?] 가운데 창으로 본다 (11/12)', async () => {
+  data.rates = { living: 45, saving: 40, spare: 5, cushion: 10 }
+  await render()
+  expect(host.textContent).not.toContain('뺀 금액을')
+  await act(async () => host.querySelector('[aria-label="추천안을 나눈 기준 보기"]').click())
+  expect(document.body.textContent).toContain('뺀 금액을 나눴어요')
+  expect(document.body.textContent).toContain('자취 여부는 내 정보에서 바꿀 수 있어요')
+  expect(document.querySelector('.mc-help-box')?.textContent).toBe('생활비 45% · 저축 40% · 여윳돈 5% · 쿠션 10%')  // 비율은 목록 말고 제목 밑 칸에
+})

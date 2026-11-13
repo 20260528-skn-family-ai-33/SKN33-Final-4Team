@@ -1199,6 +1199,8 @@
 #mc-new-preview .mc-help-list li{margin:0;padding:0 0 0 14px;position:relative}
 #mc-new-preview .mc-help-list li::before{content:'';position:absolute;left:3px;top:.72em;width:4px;height:4px;border-radius:50%;background:var(--mc-sub)}  /* 목록 점 (11/12): 점은 제목 '왜'와 같은 위치에서 시작 */
 #mc-new-preview .mc-help-list li::marker{content:none}
+#mc-new-preview .mc-help-box{margin:12px 0 0;padding:10px 12px;border-radius:12px;background:var(--mc-bg);color:var(--mc-ink);font-size:13.5px;font-weight:600;line-height:1.5;word-break:keep-all}  /* [?] 창 제목 밑 칸 (지킬 돈 비율 등, 11/12) */
+#mc-new-preview .mc-help-box+.mc-help-list{margin-top:14px}
 #mc-new-preview .mc-help-list,#mc-new-preview .mc-dialog h2{word-break:keep-all;overflow-wrap:anywhere}  /* 한글이 낱말 중간에서 끊기지 않게 (11/9) */
 /* 생활비 초과 안내 (11/9, 카테고리 예산) */
 #mc-new-preview .mc-over{width:100%;text-align:left;display:flex;gap:8px;align-items:flex-start;margin:10px 0 4px;padding:10px 12px;border-radius:12px;background:var(--mc-warm);border:1px solid var(--mc-alert-line)}
@@ -1277,3 +1279,21 @@
 #mc-new-preview .mc-day-error,#mc-new-preview .mc-day-note{display:block;margin:6px 0 0;font-size:12px;font-weight:400;line-height:1.5}
 #mc-new-preview .mc-day-note{color:var(--mc-sub)}
 #mc-new-preview .mc-fx-split{margin-top:12px;border-top:1px solid var(--mc-line)}  /* 고정지출 카드: '이 결제가 ○○ 맞나요?' 위 구분선 (11/12, '이번 달 납부 완료' 줄과 같은 모양) */
+/* 지킬 돈: 입력칸 아래 '기존보다 ±○원' (11/12) — 칸 오른쪽 끝에 작게. 늘면 파랑, 줄면 회색 */
+#mc-new-preview .mc-protect-delta{display:block;margin-top:4px;text-align:right;font-size:11.5px;font-weight:600;color:var(--mc-sub);font-variant-numeric:tabular-nums;white-space:nowrap}
+#mc-new-preview .mc-protect-delta.is-up{color:var(--mc-alert)}
+#mc-new-preview .mc-protect-delta.is-down{color:var(--mc-brand)}
+#mc-new-preview#mc-new-preview .mc-protect-line .mc-cat-rec:not([hidden]){display:table;margin-top:5px;padding:1px 6px;border-radius:6px;background:var(--mc-bg);color:var(--mc-sub);font-size:11.5px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums}  /* 지킬 돈: 고친 칸의 '추천 ○원'을 고정지출 카테고리처럼 작은 회색 칸으로 (11/12) */
+#mc-new-preview .mc-protect-name{font-size:15px;font-weight:600;color:var(--mc-ink)}  /* 지킬 돈 칸 이름 크게 (11/12) */
+#mc-new-preview#mc-new-preview .mc-protected-item .mc-projection small{font-size:11px;margin-top:1px}  /* 지킬 돈 칸 아래 기준 글씨 (11/12) */
+/* 지킬 돈 칸 두 줄 격자 (11/12): 1줄 [이름 · 비율 | 입력칸], 2줄 [추천 칸 | 기존보다 ±] — 고친 칸이든 아니든 높이가 같다 */
+#mc-new-preview#mc-new-preview .mc-protect-line{grid-template-columns:1fr 150px;row-gap:6px;align-items:center}
+#mc-new-preview#mc-new-preview .mc-protect-line .mc-cat-rec:not([hidden]){margin-top:0;justify-self:start}
+#mc-new-preview#mc-new-preview .mc-protect-line .mc-protect-delta{margin-top:0;min-height:1em}
+#mc-new-preview#mc-new-preview .mc-protect-line .mc-protect-input{padding-top:6px;padding-bottom:6px;line-height:1.25}  /* 11/12: 지킬 돈 입력칸 높이 낮춤 (약 40px → 34px). 글자는 16px 유지 — 폰에서 확대 안 되게 */
+/* 11/12: 입력칸을 [이름 · 비율]과 [추천 칸] 두 줄 가운데로 내림. '기존보다'는 입력칸 바로 아래 셋째 줄 (늘 자리 유지) */
+#mc-new-preview#mc-new-preview .mc-protect-line>span:first-child{grid-column:1;grid-row:1}
+#mc-new-preview#mc-new-preview .mc-protect-line>.mc-cat-input-wrap{grid-column:2;grid-row:1 / span 2;align-self:center}
+#mc-new-preview#mc-new-preview .mc-protect-line>.mc-cat-rec{grid-column:1;grid-row:2}
+#mc-new-preview#mc-new-preview .mc-protect-line>.mc-protect-delta{grid-column:2;grid-row:3;margin-top:-2px}
+#mc-new-preview#mc-new-preview .mc-protect-input.is-edited{border-color:var(--mc-line);color:var(--mc-ink)}  /* 11/12 시험: 지킬 돈은 고쳐도 칸·글씨를 파랗게 바꾸지 않음 (바뀐 건 아래 '기존보다'로 보임). 되돌리려면 이 줄만 지우기 */

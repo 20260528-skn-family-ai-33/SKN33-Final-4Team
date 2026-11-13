@@ -17,7 +17,9 @@ import CardReviewList from '../components/CardReviewList.jsx'
 import Popup from '../popups/Popup.jsx'
 import { usePopup } from '../popups/context.js'
 import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
+import HelpTip from '../components/HelpTip.jsx'
 import { won } from '../utils/money.js'
+import { toast } from '../utils/toast.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { waitTask } from '../utils/financeSync.js'
 import { HOUSING } from '../utils/direction.js'
@@ -37,13 +39,21 @@ const MISSING = {
 // 칸 아래 한 줄 안내
 function hint(key, value, data) {
   if (!Number.isFinite(value) || value < 0) return '0 이상의 금액을 입력해 주세요.'
-  if (key === 'livingBudget') return <>하루 약 <b>{won(Math.floor(value / 30 / 100) * 100)}</b>을 쓸 수 있어요. <span>(30일 기준)</span></>
+  // 11/12: 한 줄에 다 넣으면 줄바꿈이 어색해서, 기준(괄호)은 아래 작은 줄로
+  if (key === 'livingBudget') return <>하루 약 <b>{won(Math.floor(value / 30 / 100) * 100)}</b> 쓸 수 있어요<small>30일 기준</small></>
   if (key === 'savingFloor' && value < data.savingsMin) return `저축 확인에서 고른 ${won(data.savingsMin)}보다 적게 정할 수 없어요.`
-  if (key === 'savingFloor') return <>1년 모으면 <b>{won(value * 12)}</b>이 모여요. <span>(매달 같은 금액 · 이자 제외)</span></>
+  if (key === 'savingFloor') return <>1년이면 <b>{won(value * 12)}</b> 모여요<small>매달 같은 금액 · 이자 제외</small></>
   if (value === 0) return data.cushion.required ? '잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요.' : '쿠션을 적립하지 않아요.'
   const need = data.cushion.target - (data.cushion.balanceTotal ?? 0)  // 지금 잔액에서 더 모아야 할 돈
   if (need <= 0) return <>지금 잔액으로 쿠션 목표 {won(data.cushion.target)}를 이미 채웠어요.</>
-  return <>약 <b>{Math.ceil(need / value)}개월</b>이면 쿠션 목표 {won(data.cushion.target)}에 닿아요. <span>(지금 잔액 기준)</span></>
+  return <>약 <b>{Math.ceil(need / value)}개월</b>이면 쿠션 목표에 닿아요<small>목표 {won(data.cushion.target)} · 지금 잔액 기준</small></>
+}
+
+// 입력칸 아래 '기존보다 +50,000원' (11/12). 저장해 둔 값이 없거나(처음 설정) 같으면 빈 칸(격자 자리만 차지)
+function Delta({ now, before }) {
+  if (before == null || !Number.isFinite(now) || now === before) return <small className="mc-protect-delta" aria-hidden="true" />  // 자리만
+  const up = now > before
+  return <small className={`mc-protect-delta ${up ? 'is-up' : 'is-down'}`}>기존보다 {up ? '+' : '−'}{won(Math.abs(now - before))}</small>
 }
 
 // 지킬 돈 카드 보류 이유 묶음 (budgets.json cardPending[].reason)
@@ -108,6 +118,13 @@ export default function ProtectPage() {
     e.preventDefault()
     if (!ready || busy) return
     if (bad) { setError('금액을 확인해 주세요.'); return }
+    // 11/12: 배분 가능한 금액을 넘으면 서버에 보내지 않는다. 아래 합계 칸에 이미 빨간 안내가 있으니
+    // 같은 문장을 또 붙이지 않고, 토스트 + 맨 위로 올려서 입력칸부터 다시 보게 한다
+    if (left < 0) {
+      toast('금액을 줄여 주세요')
+      document.getElementById('mc-main')?.scrollTo?.({ top: 0, behavior: 'smooth' })
+      return
+    }
     setBusy(true)
     setError('')
     setFieldErrors({})
@@ -241,7 +258,12 @@ export default function ProtectPage() {
         {ready && <>
         <div className="mc-card" style={{ marginBottom: 0 }}>
           <div className="mc-row">
-            <h2>추천안 · {housingName} 기준</h2>
+            {/* 11/12: 맨 아래 '월급에서 고정지출을 뺀 금액을 … 비율로 나눴어요' 안내를 [?] 가운데 창으로 옮김 */}
+            <h2>추천안 · {housingName} 기준<HelpTip label="추천안을 나눈 기준" title={`${housingName} 비율로 나눴어요`} box={rateLine}>
+              <li>월급 {won(base.takeHomeIncome)}에서 고정지출 {won(base.fixedTotal)}을 뺀 금액을 나눴어요.</li>
+              {rec.rebalanced && <li>꼭 할 저축이 더 크면 저축을 먼저 떼고 나머지를 같은 비율로 나눠요.</li>}
+              <li>자취 여부는 내 정보에서 바꿀 수 있어요.</li>
+            </HelpTip></h2>
             <button type="button" className="mc-link" onClick={() => { setValues(Object.fromEntries(ROWS.map(([k]) => [k, String(rec[k])]))); setError(''); setFieldErrors({}) }}>추천값으로</button>
           </div>
           {/* 11/12: '저축을 먼저 뗐어요' 카드는 위에 따로 있어 잘 안 보이고 글이 길어서, 추천안 안에 짧은 한 줄로 */}
@@ -250,17 +272,22 @@ export default function ProtectPage() {
           </p>}
           <div className="mc-protected-values">
             {ROWS.map(([k, label]) => {
-              const edited = num(k) !== rec[k]  // 추천값과 다르면 "추천 ○원" 을 보여 준다
+              const edited = num(k) !== rec[k]  // 추천값과 다르면 칸을 '고침' 모양으로
               return (
                 <div className="mc-protected-item" key={k}>
+                  {/* 11/12: 두 줄 격자 — [이름 · 비율 | 입력칸] / [추천 ○원 | 기존보다 ±○원].
+                      '기존보다' 칸은 바뀐 게 없어도 자리를 지켜서, 칸마다 추천 칸과 아래 설명 사이 간격이 같다 */}
                   <label className="mc-protect-line" htmlFor={`mc-p-${k}`}>
-                    <span>{label}<b className="mc-protect-pct" aria-label={`배분 가능한 금액의 ${share(num(k))}`}>{share(num(k))}</b><small className="mc-cat-rec" hidden={!edited} id={`mc-p-rec-${k}`}>추천 {won(rec[k])}</small></span>
+                    <span><span className="mc-protect-name">{label}</span><b className="mc-protect-pct" aria-label={`배분 가능한 금액의 ${share(num(k))}`}>{share(num(k))}</b></span>
                     <span className="mc-cat-input-wrap">
                       <MoneyInput aria-label={label} className={edited ? 'mc-cat-input mc-protect-input is-edited' : 'mc-cat-input mc-protect-input'}
                         id={`mc-p-${k}`} name={k}
                         value={values[k]} onChange={(digits) => { setValues({ ...values, [k]: digits }); setError(''); setFieldErrors({}) }} />
                       <span>원</span>
                     </span>
+                    <small className="mc-cat-rec" id={`mc-p-rec-${k}`}>추천 {won(rec[k])}</small>
+                    {/* 저장해 둔 금액에서 얼마나 바뀌었는지: 생활비를 줄인 만큼 저축 · 쿠션을 얼마나 올릴지 감을 잡게 */}
+                    <Delta now={num(k)} before={data.saved?.[k]} />
                   </label>
                   <p aria-live="polite" className={fieldErrors[k] ? 'mc-projection mc-error' : 'mc-projection'} id={`mc-hint-${k}`}>{fieldErrors[k]?.[0] ?? hint(k, num(k), data)}</p>
                 </div>
@@ -274,7 +301,7 @@ export default function ProtectPage() {
             <strong>{won(total)}</strong> <span className="mc-muted">/ 배분 가능한 금액 {won(available)}</span>
             <p className={left < 0 ? 'mc-error' : 'mc-muted'} style={{ margin: '4px 0 0' }}>
               {left === 0 ? '배분 가능한 금액에 딱 맞게 나눴어요.'
-                : left < 0 ? `배분 가능한 금액보다 ${won(-left)} 많아요. 입력 금액을 줄여 주세요.`
+                : left < 0 ? <>배분 가능한 금액보다 {won(-left)} 많아요.<br />입력 금액을 줄여 주세요.</>
                 : `남는 ${won(left)}(${share(left)})은 여윳돈으로 둬요.`}
             </p>
           </>}
@@ -287,12 +314,6 @@ export default function ProtectPage() {
             <div className="mc-row" style={{ margin: '10px 0 2px' }}><span className="mc-muted">목표액</span><strong>{won(cushion.target)}</strong></div>
             <p className="mc-note" style={{ padding: 0 }}>갑작스러운 지출에 대비해 월급의 3배만큼 모아 두는 돈이에요.</p>
           </div>
-        )}
-        {ready && (
-          <p className="mc-note">
-            월급 {won(base.takeHomeIncome)}에서 고정지출 {won(base.fixedTotal)}을 뺀 금액을 {housingName} 비율({rateLine})로 나눴어요.
-            {rec?.rebalanced && ' 꼭 할 저축이 더 크면 저축을 먼저 떼고 나머지를 같은 비율로 나눠요.'} 자취 여부는 내 정보에서 바꿀 수 있어요.
-          </p>
         )}
         {error && <p className="mc-error" role="alert">{error}</p>}
       </form>
