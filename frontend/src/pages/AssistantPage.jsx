@@ -252,11 +252,11 @@ export default function AssistantPage() {
     </div>
   )
 
-  // 담당이 바뀐 답변 앞에만 '… 도우미에 연결했어요'
+  // 처음 연결할 때는 생략하고 다른 도우미로 전환될 때만 알린다.
   const switched = new Set()
   messages.reduce((prev, m) => {
     if (m.role !== 'bot' || !m.content.agent) return prev
-    if (m.content.agent !== prev) switched.add(m.messageId)
+    if (prev && m.content.agent !== prev) switched.add(m.messageId)
     return m.content.agent
   }, null)
 

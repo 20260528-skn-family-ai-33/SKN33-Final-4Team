@@ -158,7 +158,8 @@ def answer(user, store, text=None, button=None, *, budget_adapter=None, budget_h
                                   # B 가설 확인(MEMO 26) — CHAT_EXPLAIN_PLAN 이 켜졌을 때 가설을 말한 설명 질문에만, 해석과 같은 LLM(장부 · 상한 공유)
                                   explain_plan=llm if getattr(settings, "CHAT_EXPLAIN_PLAN", False) else None,
                                   # 첫 조회 뒤 추가 판단 1회(MEMO 31) — CHAT_AGENT 가 켜졌을 때만. 가짜 해석도 정해 둔 판단으로 돈다
-                                  agent_complete=llm if getattr(settings, "CHAT_AGENT", False) else None),
+                                  agent_complete=llm if getattr(settings, "CHAT_AGENT", False) else None,
+                                  insight_complete=llm),
               "budget": budget_handler(user, store, budget_adapter, llm, KEY),
               "policy": partial(policy_agent.handle, store=store, user=user)}
     turn = run_turn(KEY, store, llm, text=text, button=button, agents=agents, server=budget_adapter, today=today, as_of=as_of,
@@ -186,8 +187,8 @@ def answer(user, store, text=None, button=None, *, budget_adapter=None, budget_h
     answered = turn["delivered"][-1] if turn["delivered"] and result.get("status") not in (None, "failed", "not_mine") else None
     now = current_agent(store, KEY)
     bot.update(agent=now or answered, inputs=[],
-               result=(answered == "spending" and result.get("status") == "replied" and bool(result.get("reply")))
-               # 청년 정책 추천 · 저장 목록은 정책마다 제목 + 점 목록(sections)인 결과 카드로 그린다
+               result=(answered == "spending" and bool(result.get("reply"))
+                       and (result.get("status") == "replied" or bool(result["reply"].get("view"))))
                or (answered == "policy" and bool((result.get("reply") or {}).get("sections"))))
     if getattr(settings, "CHAT_DEV_TRACE", False):
         bot["entry"] = _entry(result.get("decision"))

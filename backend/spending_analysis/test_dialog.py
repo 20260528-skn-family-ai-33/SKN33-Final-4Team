@@ -47,6 +47,19 @@ class SpendingDialogTest(SimpleTestCase):
                 self.assertEqual(self.say(text).status, "not_mine")  # 목적지는 정하지 않는다
                 self.assertEqual(self.store.export("talk-1"), before)
 
+    def test_open_analysis_requests_start_an_overview_without_inheriting_scope(self):
+        from chat.llm.fake import FakeReading
+        for text in ("그냥 다 분석해줘", "뭐든 분석해줘", "아무거나 분석해줘", "내 소비 알아서 살펴봐줘",
+                     "어디부터 봐야 할지 모르겠어. 소비 좀 봐줘", "소비 분석으로 뭘 볼 수 있어?"):
+            with self.subTest(text=text):
+                self.done(self.say("지난달보다 식비 더 썼어?"))
+                decision = self.say(text, llm=FakeReading())
+                self.assertEqual((decision.status, decision.items), ("ready", (item(5),)))
+                self.assertFalse(decision.explain)
+                self.say("최근 0개월 식비 알려줘")
+                self.assertEqual(self.say(text, llm=FakeReading()).items, (item(5),))
+                self.assertIsNone(dialog.pending(self.store, "talk-1"))
+
     def test_own_domain_unsupported_and_missing_info_are_not_not_mine(self):
         budget_by_slot = lambda system, user: json.dumps({"mine": True, "target": "budget_left", "time_slot": ["night"]})  # noqa: E731
         self.assertEqual(self.say("예산 밤 시간대로", llm=budget_by_slot).reason, "budget_query")  # 미지원 = 소비가 안내

@@ -65,6 +65,10 @@ class SpendingReading:
     compare_month: int | None = None    # compare="month" 일 때 견줄 달 (1~12) — "9월보다" · "11월과 9월 비교"
     other_person: bool | None = None    # 본인이 아닌 사람(가족 · 친구 · 연인 등)의 소비를 물음 — 볼 수 없다 (서버가 '내 것'을 제안)
     multi_step: bool | None = None      # 비교 뒤 한 번 더 확인할 새 질문 (CHAT_AGENT 가 켜졌을 때 추가 판단 1회, MEMO 31)
+    analysis_scope: str | None = None   # 분석에서 생활비와 전체 소비의 표본을 구분한다
+    analysis_goal: str | None = None    # 이유·습관·전반·전망 중 질문의 초점
+    analysis_activity: str | None = None  # 생활 패턴 확인 질문에 사용자가 답한 지출 유형
+    analysis_planned: bool | None = None  # 늘어난 지출이 계획한 것이었는지 사용자의 답
 
 
 def _one_of(data, key, allowed):
@@ -149,7 +153,10 @@ def parse(data):
         raise ReadFailed("shape")
     if not isinstance(data.get("mine"), bool):
         raise ReadFailed("mine")
-    for key in ("confirm", "explain", "all_categories", "after_budget_change", "include_current", "include_fixed", "other_person", "multi_step"):
+    if data.get('analysis_goal') in ('habit', 'overview', 'forecast') and data.get('target') == 'spend' \
+            and data.get('measure') in (None, 'sum') and data.get('group_by') in (None, 'category'):
+        data = {**data, 'target': 'overview', 'measure': None, 'group_by': None}
+    for key in ("confirm", "explain", "all_categories", "after_budget_change", "include_current", "include_fixed", "other_person", "multi_step", "analysis_planned"):
         if data.get(key) is not None and not isinstance(data[key], bool):
             raise ReadFailed(key)
     from .investigation import parse as parse_hypothesis
@@ -159,6 +166,9 @@ def parse(data):
         raise ReadFailed("hypothesis") from error
     if hypothesis is not None and data.get("explain") is not True:
         raise ReadFailed("hypothesis_without_explanation")
+    # 일반 지출 이유 질문의 scope/amount는 원인 가설이 아니라 설명할 결과다.
+    if data.get("analysis_goal") == "reason" and hypothesis and hypothesis["metric"] == "amount" and hypothesis["target"] == "scope":
+        hypothesis = None
     return SpendingReading(
         mine=data["mine"], hypothesis=hypothesis, target=_one_of(data, "target", TARGETS), period=_one_of(data, "period", PERIODS),
         compare=_one_of(data, "compare", COMPARES), months=_int(data, "months"), categories=_categories(data),
@@ -173,6 +183,10 @@ def parse(data):
         month=_int(data, "month"), date_from=_mmdd(data, "date_from"), date_to=_mmdd(data, "date_to"),
         period_said=_text(data, "period_said"), include_fixed=data.get("include_fixed"), other_person=data.get("other_person"),
         compare_month=_int(data, "compare_month"), multi_step=data.get("multi_step"),
+        analysis_scope=_one_of(data, "analysis_scope", ("living", "total")),
+        analysis_goal=_one_of(data, "analysis_goal", ("reason", "habit", "overview", "forecast")),
+        analysis_activity=_one_of(data, "analysis_activity", ("dining", "delivery", "groceries", "cafe", "cinema", "performance", "exercise", "unknown")),
+        analysis_planned=data.get("analysis_planned"),
     )
 
 
@@ -196,8 +210,29 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
   '의료비 줄이고싶어', '의료비 줄이고 싶다고', '병원비 좀 줄여줘'는 예산 감액 의사이므로 mine=false다. '예산'을 생략해도 소비 조회로 해석하지 않는다.
   mine=false 면 다른 칸은 비운다 (어디로 보낼지는 정하지 않는다).
 - 내 소비 · 지출을 묻는데 무엇을 가리키는지만 불분명하면 '뜻을 알 수 없는 말'이 아니다 → mine=true, refers_to="unclear" (범위는 내가 되묻는다).
+- 목적이나 세부 항목을 정하지 않고 분석을 맡기는 말("그냥 다 분석해줘", "뭐든 분석해줘", "아무거나 분석해줘",
+  "내 소비 알아서 살펴봐줘")과 분석 가능한 항목을 묻는 말("소비 분석으로 뭘 볼 수 있어?")은 mine=true, target=overview, refers_to=none이다.
+  이런 독립 요청은 이전 카테고리·비교 조건을 이어받거나 범위가 불분명하다고 되묻지 않는다. 서버가 기본 전반 분석과 다음 질문을 안내한다.
+  사용자가 함께 말한 기간·카테고리·결제 수단은 보존한다. '다/뭐든/아무거나'라는 말만으로 비교·최근 3개월·예산 조회를 추가하지 않는다.
+  '그거/아까 것'처럼 특정 이전 결과를 가리키는데 찾을 수 없는 경우는 이 규칙과 구별해 refers_to=unclear로 둔다.
 - 입력의 chosen 이 true 면 사용자가 이 문장에서 소비 분석을 고른 것이다 → 소비 분석 부분만 해석하고 mine=true.
 추출 원칙:
+생활비의 소비 분석·이유 설명은 analysis_scope=living, 전체 소비·총지출의 분석은 total로 적는다. 말하지 않았으면 null이다.
+analysis_goal은 지출 이유 reason, 소비 습관 habit, 전반 분석 overview, 이대로 쓰면 월말 얼마인지 forecast다. 월말 전망 질문은 target=overview, period=this_month로 두고 단순 지출 합계 조회와 구별한다.
+"내 소비 습관 어때?", "내 소비 성향 분석", "잘 쓰고 있는지 봐줘"는 target=overview, analysis_goal=habit이다. 금액 합계·카테고리 비중 조회로 축소하지 않는다.
+사용자는 정확한 분석 용어를 쓰지 않는다. 말의 뜻으로 analysis_goal을 정한다 (모두 target=overview, refers_to=none, 기간을 말하지 않았으면 period=null):
+- 돈이 어디로 새는지·왜 빨리 없어지는지·왜 많이 썼는지: "돈이 왜 이렇게 빨리 없어지지", "요즘 왜 이렇게 돈이 없지", "이번 달 왜 이렇게 많이 썼지" → reason
+- 내가 어떻게 쓰는 사람인지·고쳐야 할 점: "나 돈 너무 막 쓰나?", "내 소비 문제 있어?", "나 뭐에 돈 제일 많이 써?", "소비 습관 고쳐야 할까" → habit
+- 이대로 가면 어떻게 되는지: "이대로 가면 괜찮아?", "이번 달 버틸 수 있을까", "이러다 예산 넘는 거 아니야?", "다음 달도 이렇게 쓰면 어때?" → forecast
+- 전체적으로 봐 달라: "요즘 내 소비 어때?", "이번 달 괜찮아?", "내 돈 관리 점검해줘" → overview
+- 방금 본 분석의 숫자가 어떻게 나왔는지·계산 근거: "왜 이렇게 계산된 거야?", "86만 원은 어떻게 나온 거야?", "무슨 기준이야?" → forecast
+- 분석으로 무엇을 볼 수 있는지: "또 뭐 분석해줄 수 있어?", "어떤 분석 돼?", "소비 분석해줘"(대상 없이) → overview (서버가 분석 메뉴를 보여 준다)
+예산을 바꿔 달라는 말("식비 늘려줘", "예산 다시 짜줘")은 이 규칙이 아니라 mine=false다.
+"나랑 비슷한 사람보다 많이 써?", "또래 소비와 비교해줘", "저축 여력이 어때?"는 내 소비의 평가이므로 target=overview, analysis_goal=habit, other_person=false다. 특정 타인의 거래내역을 조회하는 요청과 구별한다.
+"생활비가 왜 많이 나왔지?"처럼 결과만 묻는 일반 이유 질문은 hypothesis=null이다. 금액이 많다는 사실 자체를 scope/amount 가설로 만들지 않는다.
+생활비 분석은 고정지출·주거통신·여행숙박을 제외한 같은 표본으로 설명한다. 조회 금액이나 남은 예산 요청 자체는 기존 target을 유지한다.
+pending.asking=analysis_detail이면 생활 패턴 확인 질문이다. 선택지와 사용자 답에 따라 analysis_activity(dining 외식/delivery 배달/groceries 장보기/cafe 카페·간식/cinema 영화/performance 공연/exercise 운동시설/unknown 모름) 또는 analysis_planned(계획한 지출 true/예상 밖 지출 false)를 채운다.
+질문에 대한 답은 mine=true, followup=answer로 둔다. 새 소비 질문이면 followup=new다. analysis_detail 질문이 없으면 이 두 칸은 null로 둔다. 결제 내역만 보고 사용자의 활동이나 계획 여부를 채우지 않는다.
 0. 예산을 왜 그 금액으로 책정·배정했는지 묻는 말('의료비 예산 왜 이렇게 크게 잡았어?', '식비 예산 책정 근거 알려줘')은
    mine=true, target=budget_left, explain=true, explain_kind=allocation이다. 의료비·병원비는 MEDICAL_HEALTH다.
    이것은 지출 증감·지출 구성의 원인 질문이 아니다. 별도로 말하지 않은 지난달 비교나 소비 조회 조건을 만들지 않는다.

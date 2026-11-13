@@ -11,9 +11,9 @@
 from datetime import timedelta
 
 from budgets.scope import living_spent, outside_spent
-from finance.api import listed_transactions, transaction_item
+from finance.api import cancel_info, listed_transactions, transaction_item
 from finance.merchant_rules import normalize_merchant
-from finance.models import SourceKind
+from finance.models import PaymentDue, PaymentMatch, RecurringExpense, SourceKind
 from finance.spending import spending_summary
 
 from . import result as R, scope
@@ -49,7 +49,7 @@ def _words(word, names=()):
     return [w for w in {scope.plain(word), *(scope.plain(n) for n in (*(names or ()), *scope.online(word)[1]))} if w]
 
 
-def rows(user, period, where=None, stats=None, category=None):
+def rows(user, period, where=None, stats=None, category=None, *, include_activity=False):
     """기간 거래 → 목록 한 줄 모양. where(분석 항목 · 범위 칸)로 거른다:
     payment(card · bank) · merchant(가게 이름) · weekdays(요일) · time_slots(시간대) · amount_min · amount_max(한 건 순금액)
     시간대 조건이 있으면 시각 없는 거래는 빼고, stats 를 주면 뺀 소비 건수를 stats["no_time"] 에 더한다
@@ -61,7 +61,14 @@ def rows(user, period, where=None, stats=None, category=None):
     if where.get("merchant"):
         words = _words(where["merchant"], where.get("merchant_names"))
         found = [tx for tx in found if _named(tx, words)]
-    items = [transaction_item(tx) for tx in found]
+    if include_activity:
+        from .lifestyle import identify
+    items = []
+    for tx in found:
+        item = transaction_item(tx)
+        if include_activity:
+            item["activity"] = identify(item["category"], tx.merchant_category, tx.merchant_name)
+        items.append(item)
     days, slots = where.get("weekdays"), where.get("time_slots")
     low, high = where.get("amount_min"), where.get("amount_max")
     if days:
@@ -85,6 +92,38 @@ def rows(user, period, where=None, stats=None, category=None):
     if high is not None:
         items = [r for r in items if r["net_amount"] <= high]
     return items
+
+
+def fixed_forecast(user, period, current):
+    """달력월의 등록 고정지출 잔액. 날짜가 없어도 월 금액을 쓰며 DB는 변경하지 않는다."""
+    end = (period.start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    dues = list(PaymentDue.objects.filter(user=user, obligation_type="recurring",
+                due_date__gte=period.start, due_date__lt=end).prefetch_related("matches__transaction"))
+    expenses = RecurringExpense.objects.filter(user=user, status="confirmed")
+    # 지난달 회차를 늦게 낸 거래는 이번 달 회차의 납부액으로 다시 쓰지 않는다.
+    other_month = set(PaymentMatch.objects.filter(user=user, due__obligation_type="recurring",
+        transaction_id__in=[r["transaction_id"] for r in current if r.get("transaction_id")])
+        .exclude(due__due_date__gte=period.start, due__due_date__lt=end).values_list("transaction_id", flat=True))
+    remaining = 0
+    for expense in expenses:
+        occurrences = [d for d in dues if d.recurring_id == expense.pk]
+        if not occurrences:
+            paid = sum(r["net_amount"] for r in current if r.get("fixed_expense_id") == expense.pk
+                       and r.get("transaction_id") not in other_month)
+            if expense.payment_card_id is None or paid <= 0:
+                remaining += max(0, expense.amount - paid)
+            continue
+        for due in occurrences:
+            if due.obligation_state != "active":
+                continue
+            paid = sum(min(m.matched_amount, max(0, m.transaction.amount - cancel_info(m.transaction)["amount"]))
+                       for m in due.matches.all() if m.user_id == user.pk and m.transaction.user_id == user.pk
+                       and m.transaction.occurred_on < period.end_before and m.transaction.direction == "out"
+                       and m.transaction.transaction_type == "spending")
+            # 기존 납부 판정에서 완납한 회차는 소액 차액을 새 미납액으로 만들지 않는다.
+            if due.payment_state != "paid" or not paid or paid < due.paid_amount:
+                remaining += max(0, due.confirmed_amount - paid)
+    return {"paid": sum(r["net_amount"] for r in current if r["funding"] == "fixed"), "remaining": remaining}
 
 
 def has_merchant(user, word, today, names=()):

@@ -9,6 +9,8 @@ from spending_analysis import claims as spending_claims
 from spending_analysis import investigation
 from spending_analysis import supplement as spending_supplement
 from spending_analysis import reading as spending_reading
+from spending_analysis import insight as spending_insight
+from spending_analysis import narrative as spending_narrative
 
 ROLES = {"router": (router_reading.PROMPT, router_reading.RouterReading, router_reading.parse),
          "spending": (spending_reading.PROMPT, spending_reading.SpendingReading, spending_reading.parse)}
@@ -52,7 +54,11 @@ def role_schema(role):
                  "group_by": enum(r.GROUPS), "top_n": nullable("integer"), "month": nullable("integer"),
                  "date_from": nullable("string"), "date_to": nullable("string"), "period_said": nullable("string"),
                  "include_fixed": nullable("boolean"), "other_person": nullable("boolean"),
-                 "compare_month": nullable("integer"), "multi_step": nullable("boolean")}
+                 "compare_month": nullable("integer"), "multi_step": nullable("boolean"),
+                 "analysis_scope": enum(("living", "total")),
+                 "analysis_goal": enum(("reason", "habit", "overview", "forecast")),
+                 "analysis_activity": enum(("dining", "delivery", "groceries", "cafe", "cinema", "performance", "exercise", "unknown")),
+                 "analysis_planned": nullable("boolean")}
     assert set(props) == set(ROLES[role][1].__dataclass_fields__), f"{role} 스키마와 해석 칸이 다름"
     return {"type": "object", "properties": props, "required": list(props), "additionalProperties": False}
 
@@ -84,6 +90,10 @@ def agent_judge_schema():
 
 
 def schema_for(system):
+    if system == spending_narrative.CHECK_PROMPT:
+        return "spending_insight_check", spending_narrative.CHECK_SCHEMA
+    if system == spending_insight.PROMPT:
+        return "spending_insight", spending_insight.SCHEMA
     if system == spending_agent_loop.PROMPT:
         return "spending_agent_judge", agent_judge_schema()
     from budgets.adjustment_core import financial_conversation as conversation, financial_planner as planner

@@ -1,7 +1,7 @@
 // 챗봇 답변 한 개 (pages/AssistantPage.jsx). 옛 개발용 로컬 채팅(local_chat.html, 11/10 삭제)의 bot() · chart() 를 옮겼다 (MEMO 25절 2단계)
 // content = 서버 봇 메시지 content: { text, lead, lines, sections, notices, choices, chart?, view?, turn, agent, inputs, result } (MEMO 22-3 · 22-12 · 22-13)
 // 디자인은 기존 클래스만: 분석 결과(result) = 소비 분석 카드(mc-spend*), 그 밖의 답 = 채팅 말풍선(mc-bubble)
-// - 핵심 안내(lead)는 서버가 나눈 칸 그대로 맨 위에. '안내:' 글자 + 굵게 (색만으로 구분하지 않음)
+// - 분석 안내·계산 기준은 카드 맨 아래에서 펼쳐 본다. 금액 옆의 자료 제한 표시는 유지한다
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
 import { useRef, useState } from 'react'
@@ -11,13 +11,20 @@ import { policyNumber, policyTitle } from '../utils/policyCards.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
 import '../styles/policies.css'
 
-const Lead = ({ items }) => items.map((l, i) => (
-  // span 을 쓰지 않는다: mc-spend-unc 의 마지막 span 은 금액 칸용 줄바꿈 금지라 긴 문장이 카드 밖으로 나간다
-  <p key={`lead-${i}`} className="mc-spend-unc mc-fx-lead" role="note"><strong>안내:</strong> {l}</p>
-))
+function Notes({ content }) {
+  const oldUnclassified = content.chart?.rows?.find(isUnclassified) ?? content.view?.flatMap((b) => b.rows ?? []).find(isUnclassified)
+  const unclassified = content.chart?.unclassified ?? (oldUnclassified && `확인 필요 ${won(oldUnclassified.amount)}은 총액에 포함하고 주요 카테고리에서 제외했어요.`)
+  const items = [...new Set([...(content.lead ?? []), content.chart?.basis, content.chart?.limited, ...(content.notices ?? []), unclassified].filter(Boolean))]
+  if (!items.length) return null
+  return <details className="mc-fx-notes">
+    <summary>분석 기준·안내</summary>
+    {items.map((text, i) => <p key={i} className="mc-note">{text}</p>)}
+  </details>
+}
 
 // 카테고리 막대: 금액이 큰 상위 SHOWN 줄은 바로, 나머지는 '나머지 N개 더 보기'로 접는다 (순서 · 금액 · 비율은 서버 그대로, 화면은 자르기만)
 const SHOWN = 5
+const isUnclassified = (row) => row.code === 'UNCLASSIFIED' || row.name === '확인 필요' || row.name === '미분류'
 
 function CatRows({ rows }) {
   return (
@@ -34,12 +41,11 @@ function CatRows({ rows }) {
 }
 
 function Chart({ chart }) {
-  const top = chart.rows.slice(0, SHOWN)
-  const rest = chart.rows.slice(SHOWN)
+  const rows = chart.rows.filter((r) => !isUnclassified(r))
+  const top = rows.slice(0, SHOWN)
+  const rest = rows.slice(SHOWN)
   return (
     <div className="mc-fx-chart">
-      <p className="mc-note" style={{ padding: 0 }}>{chart.basis}</p>
-      {chart.limited && <p className="mc-note" style={{ padding: 0 }}>{chart.limited}</p>}
       {chart.empty && <p className="mc-spend-empty">{chart.empty}</p>}
       {top.length > 0 && <CatRows rows={top} />}
       {rest.length > 0 && (
@@ -56,12 +62,138 @@ function Chart({ chart }) {
 //   head = 머리줄(기간 · 범위, 둘째부터는 소제목) / total = 큰 금액(건수처럼 돈이 아니면 value 글자) / rows = 이름 · 막대 · 금액(또는 value 글자) 줄 (badge = 증감 글자 + 색) / text = 짧은 문장 / meter = 생활비 예산 막대
 const BADGE = { up: ' is-up', down: ' is-down', same: '' }
 const WAY = { up: ' mc-fx-up', down: ' mc-fx-down' }  // 늘었어요 = 붉은 글자 · 줄었어요 = 파란 글자 (배지와 같은 색, 글자로도 적혀 있음)
+const ANALYSIS_TITLES = new Set(['핵심 진단', '분석 근거', '앞으로의 의미', '주요 카테고리', '큰 결제와 반복 소비', '생활 패턴', '월말 전망', '지출이 달라진 형태', '소비 속도', '해볼 행동', '확인할 질문',
+  '예산 속도', '지난달과 비교', '또래 기준·저축 여력', '소비 추이', '소비 습관', '앞으로'])
+
+// 월별 생활비 막대 (11/13): 완료된 달 = 실제(진한 막대), 이번 달 = 쓴 돈 + 남은 기간 예상(빗금), 다음 달 = 예상(빗금).
+// 예산선은 서버가 예산과 같은 범위로 비교할 수 있을 때만 준다. 금액은 서버 값 그대로, 화면은 높이만 계산한다
+const man = (n) => (n >= 1000000 ? `${Math.round(n / 10000).toLocaleString()}만` : n >= 10000 ? `${Math.round(n / 1000) / 10}만` : won(n))
+
+function Months({ block }) {
+  const bars = block.bars
+  const top = Math.max(1, block.budget ?? 0, ...bars.map((b) => b.actual + b.projected))
+  const W = 360, H = 190, base = 150, left = 12, gap = 10
+  const width = (W - left * 2 - gap * (bars.length - 1)) / bars.length
+  const y = (v) => base - (v / top) * 118
+  const describe = bars.map((b) => `${b.label} ${b.kind === 'actual' ? won(b.actual) : b.kind === 'current' ? `쓴 돈 ${won(b.actual)} + 예상 ${won(b.projected)}` : `예상 ${won(b.projected)}`}`).join(', ')
+  return (
+    <figure className="mc-fx-months mc-fx-section">
+      <figcaption><h3>{block.title}</h3></figcaption>
+      <ul className="mc-fx-months-legend">
+        <li><i className="is-actual" />실제</li>
+        <li><i className="is-projected" />지금 흐름이면</li>
+        {block.budget && <li><i className="is-budget" />예산 {man(block.budget)}</li>}
+      </ul>
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${block.title}: ${describe}${block.budget ? `, 예산 ${won(block.budget)}` : ''}`}>
+        <defs>
+          <pattern id="mc-fx-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="6" height="6" className="mc-fx-hatch-bg" /><line x1="0" y1="0" x2="0" y2="6" className="mc-fx-hatch-line" />
+          </pattern>
+        </defs>
+        <line x1={left} x2={W - left} y1={base} y2={base} className="mc-fx-months-axis" />
+        {block.budget && <line x1={left} x2={W - left} y1={y(block.budget)} y2={y(block.budget)} className="mc-fx-months-budget" />}
+        {bars.map((b, i) => {
+          const x = left + i * (width + gap)
+          const total = b.actual + b.projected
+          return <g key={b.label}>
+            {b.actual > 0 && <rect x={x} y={y(b.actual)} width={width} height={base - y(b.actual)} rx="4" className="mc-fx-bar-actual" />}
+            {b.projected > 0 && <rect x={x} y={y(total)} width={width} height={y(b.actual) - y(total)} rx="4" fill="url(#mc-fx-hatch)" className="mc-fx-bar-projected" />}
+            {/* 금액은 막대 안쪽 위에 (예산선과 겹치지 않게). 막대가 너무 낮으면 위에 */}
+            <text x={x + width / 2} y={base - y(total) > 26 ? y(total) + 15 : y(total) - 6} textAnchor="middle"
+              className={`mc-fx-bar-value${base - y(total) > 26 ? (b.kind === 'actual' ? ' is-in' : ' is-in-light') : ''}`}>{man(total)}</text>
+            <text x={x + width / 2} y={base + 16} textAnchor="middle" className={b.kind === 'actual' ? '' : 'is-future'}>{b.label}</text>
+          </g>
+        })}
+      </svg>
+      <details><summary>월별 금액 보기</summary>
+        <table><caption>{block.basis}</caption><thead><tr><th scope="col">달</th><th scope="col">실제</th><th scope="col">예상</th></tr></thead>
+          <tbody>{bars.map((b) => <tr key={b.label}><th scope="row">{b.label}</th><td>{b.actual ? won(b.actual) : '-'}</td><td>{b.projected ? won(b.actual + b.projected) : '-'}</td></tr>)}</tbody>
+        </table>
+      </details>
+    </figure>
+  )
+}
+
+// 예산 속도 막대 (11/13): 카테고리마다 예산 사용률 막대 + 주기가 지난 지점 표시선. 금액 · 비율 · 상태는 서버 값 그대로
+//   상태 over = 예산 넘음 · fast = 주기보다 빨리 씀 · slack = 여유 · ok = 보통. 색만이 아니라 글자(넘음 · 빠름 · 여유)로도 적는다
+const PACE_STATE = { over: ['is-over', '넘음'], fast: ['is-fast', '빠름'], slack: ['is-slack', '여유'], ok: ['', ''] }
+const PACE_SHOWN = 4
+
+function PaceRow({ row, elapsed }) {
+  const [cls, word] = PACE_STATE[row.state] ?? PACE_STATE.ok
+  const label = `${row.name} 예산 ${won(row.allocated)} 중 ${won(row.spent)} 사용 (${row.ratio}%)${word ? `, ${word}` : ''}`
+  return (
+    <div className={`mc-fx-pace-row ${cls}`.trim()} role="img" aria-label={label}>
+      <span className="mc-fx-pace-name">{row.name}{word && <em>{word}</em>}</span>
+      <span className="mc-fx-pace-bar">
+        <span style={{ width: `${Math.min(Math.max(Number(row.ratio), 0), 100)}%` }}></span>
+        <i style={{ left: `${Math.min(Math.max(Number(elapsed), 0), 100)}%` }} aria-hidden="true"></i>
+      </span>
+      <span className="mc-fx-pace-amt">{row.ratio}%<small>{won(row.spent)} / {won(row.allocated)}</small></span>
+    </div>
+  )
+}
+
+function Pace({ block }) {
+  const top = block.rows.slice(0, PACE_SHOWN)
+  const rest = block.rows.slice(PACE_SHOWN)
+  return (
+    <figure className="mc-fx-pace">
+      <figcaption><strong>{block.title}</strong><small>{block.caption}</small></figcaption>
+      {top.map((r) => <PaceRow key={r.code} row={r} elapsed={block.elapsed} />)}
+      {rest.length > 0 && (
+        <details>
+          <summary>나머지 {rest.length}개 더 보기</summary>
+          {rest.map((r) => <PaceRow key={r.code} row={r} elapsed={block.elapsed} />)}
+        </details>
+      )}
+      <p className="mc-fx-pace-legend"><i aria-hidden="true"></i>세로선 = 지금까지 지난 예산 주기</p>
+    </figure>
+  )
+}
+
+function Trend({ block }) {
+  const series = block.series
+  const maximum = Math.max(0, ...series.flatMap((s) => s.points.map((p) => p.amount)))
+  const x = (i, count) => 68 + (count > 1 ? i * 256 / (count - 1) : 128)
+  const y = (amount) => 130 - (maximum ? amount / maximum * 104 : 0)
+  const colors = ['var(--mc-brand)', 'var(--mc-olive)']
+  return (
+    <figure className="mc-fx-trend mc-fx-section">
+      <figcaption><h3>{block.title}</h3></figcaption>
+      <ul className="mc-fx-trend-legend">
+        {series.map((s, i) => <li key={s.code}><i style={{ borderColor: colors[i % 2], borderTopStyle: i % 2 ? 'dashed' : 'solid' }} />{s.name}<strong>{won(s.points.at(-1).amount)}</strong><small>최근 7일</small></li>)}
+      </ul>
+      <svg viewBox="0 0 360 172" role="img" aria-label={block.title}>
+        <desc>{block.basis}. {series.map((s) => `${s.name}: ${s.points.map((p) => `${p.label} ${won(p.amount)}`).join(', ')}`).join('. ')}</desc>
+        {[0, 0.5, 1].map((ratio) => <g key={ratio}>
+          <line x1="68" x2="324" y1={y(maximum * ratio)} y2={y(maximum * ratio)} className="mc-fx-trend-grid" />
+          <text x="58" y={y(maximum * ratio) + 3} textAnchor="end">{won(Math.round(maximum * ratio))}</text>
+        </g>)}
+        {series.map((s, index) => <g key={s.code} style={{ color: colors[index % 2] }}>
+          <polyline fill="none" stroke="currentColor" strokeWidth="2.5" strokeDasharray={index % 2 ? '6 4' : undefined}
+            points={s.points.map((p, i) => `${x(i, s.points.length)},${y(p.amount)}`).join(' ')} />
+          {s.points.map((p, i) => <circle key={p.label} cx={x(i, s.points.length)} cy={y(p.amount)} r="4" fill="currentColor">
+            <title>{`${s.name} ${p.label}: ${won(p.amount)}`}</title>
+          </circle>)}
+        </g>)}
+        {series[0].points.map((p, i) => <text key={p.label} x={x(i, series[0].points.length)} y="154" textAnchor="middle">{p.label.split('~')[0]}</text>)}
+      </svg>
+      <details><summary>주별 금액 보기</summary>
+        {block.basis && <p className="mc-note">{block.basis}</p>}
+        <table><caption>주별 관측 금액</caption><thead><tr><th scope="col">기간</th>{series.map((s) => <th key={s.code} scope="col">{s.name}</th>)}</tr></thead>
+          <tbody>{series[0].points.map((p, i) => <tr key={p.label}><th scope="row">{p.label}</th>{series.map((s) => <td key={s.code}>{won(s.points[i].amount)}</td>)}</tr>)}</tbody>
+        </table>
+      </details>
+    </figure>
+  )
+}
 
 function Rows({ block }) {
   return (
     <div className="mc-spend-cats">
       {block.title && <strong>{block.title}</strong>}
-      {block.rows.map((r) => (
+      {block.rows.filter((r) => !isUnclassified(r)).map((r) => (
         <div key={r.name} className="mc-spend-cat">
           <span className="mc-spend-cname">{r.name}</span>
           {r.badge
@@ -76,7 +208,22 @@ function Rows({ block }) {
   )
 }
 
-function Block({ block }) {
+// 분석 메뉴 (11/14): 볼 수 있는 분석 + 한 줄 설명. 누르면 그 질문을 보낸다 (마지막 답변일 때만 — 지난 답은 설명만)
+function Options({ block, onSend }) {
+  return (
+    <ul className="mc-fx-options" aria-label="볼 수 있는 분석">
+      {block.items.map((o) => (
+        <li key={o.title}>
+          {onSend
+            ? <button type="button" onClick={() => onSend(o.ask)}><strong>{o.title}</strong><span>{o.desc}</span></button>
+            : <div><strong>{o.title}</strong><span>{o.desc}</span></div>}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function Block({ block, onSend }) {
   if (block.kind === 'total') {
     return (
       <div className="mc-spend-total">
@@ -89,7 +236,19 @@ function Block({ block }) {
   if (block.kind === 'rows') return <Rows block={block} />
   // 한 답에 카드가 여럿이면(예: 지난달 비교 + 남은 예산) 두 번째부터의 머리줄은 구분선 + 소제목 — 빠지면 어느 기간 · 무엇의 금액인지 모른다
   if (block.kind === 'head') return <div className="mc-spend-head mc-fx-subhead"><span>{block.title}</span></div>
-  if (block.kind === 'text') return <ul className="mc-spend-lines">{block.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+  if (block.kind === 'text') {
+    const title = block.title ?? (ANALYSIS_TITLES.has(block.lines[0]) ? block.lines[0] : null)
+    const lines = title && block.lines[0] === title ? block.lines.slice(1) : block.lines
+    if (block.tone === 'key') {  // 핵심 진단: 목록 점 없이 굵은 글자 한두 문장 (분석의 답을 먼저)
+      return <section className="mc-fx-section mc-fx-key"><h3>{title}</h3>{lines.map((l, i) => <p key={i}>{l}</p>)}</section>
+    }
+    const body = <ul className="mc-spend-lines">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+    return title ? <section className="mc-fx-section"><h3>{title}</h3>{body}</section> : body
+  }
+  if (block.kind === 'trend') return <Trend block={block} />
+  if (block.kind === 'pace') return <Pace block={block} />
+  if (block.kind === 'months') return <Months block={block} />
+  if (block.kind === 'options') return <Options block={block} onSend={onSend} />
   if (block.kind === 'meter') {  // 생활비 예산 사용률 (홈 화면과 같은 mc-bar). 기간은 title, 초과는 글자(lines)로도 · 줄마다 한 줄
     const lines = block.lines ?? [block.text]  // 줄 나누기 전에 저장된 옛 메시지는 text 한 줄
     return (
@@ -109,7 +268,7 @@ function Block({ block }) {
 // 줄 목록 블록이 이만큼 이상이면 한 토글로 접는다 (설명 답의 근거 줄처럼 길쭉한 카드). 큰 금액 · 문장은 그대로 보인다
 const FOLD_ROWS = 3
 
-function ViewCard({ content, title }) {
+function ViewCard({ content, title, onSend }) {
   // 기간 전환 (11/11): 이번 달 조회에 예산 주기 판(content.alt)이 함께 오면 [이번 달 | 예산 주기]로 바꿔 본다.
   // 두 판 모두 서버가 계산해 준 것 그대로 — 화면은 어느 판을 그릴지만 고른다. alt.first = 예산 조정 중에 물은 답이라 예산 주기를 먼저
   const alt = content.alt?.view?.length ? content.alt : null
@@ -128,9 +287,8 @@ function ViewCard({ content, title }) {
           <button type="button" aria-pressed={cycle} onClick={() => setCycle(true)}>{alt.label}</button>
         </div>
       )}
-      <Lead items={shown.lead ?? []} />
       {blocks.map((b, i) => {
-        if (!fold || b.kind !== 'rows') return <Block key={i} block={b} />
+        if (!fold || b.kind !== 'rows') return <Block key={i} block={b} onSend={onSend} />
         if (i !== first) return null
         return (
           <details key={i} className="mc-fx-fold">
@@ -140,7 +298,7 @@ function ViewCard({ content, title }) {
         )
       })}
       {shown.chart && <Chart chart={shown.chart} />}
-      {(shown.notices ?? []).map((n, i) => <p key={`notice-${i}`} className="mc-note" style={{ padding: 0 }}>{n}</p>)}
+      <Notes content={shown} />
     </div>
   )
 }
@@ -210,13 +368,11 @@ function PolicySections({ sections }) {
 }
 
 // 분석 결과 카드 (SpendingCard 와 같은 틀 · 클래스). 카드 보기가 있으면 그것으로, 없으면(설명 답변 등) 문장 목록
-function ResultCard({ content, title }) {
-  if (content.view?.length) return <ViewCard content={content} title={title} />
-  const notices = content.notices ?? []
+function ResultCard({ content, title, onSend }) {
+  if (content.view?.length) return <ViewCard content={content} title={title} onSend={onSend} />
   return (
     <div className="mc-spend" aria-label={`${title} 결과`}>
       <div className="mc-spend-head"><span>{title}</span></div>
-      <Lead items={content.lead ?? []} />
       {content.lines.length > 0 && <ul className="mc-spend-lines">{content.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
       {content.agent === 'policy' && content.sections?.some((s) => s.policyNo)
         ? <PolicySections sections={content.sections} />
@@ -231,7 +387,7 @@ function ResultCard({ content, title }) {
         </div>
       )}
       {content.chart && <Chart chart={content.chart} />}
-      {notices.map((n, i) => <p key={`notice-${i}`} className="mc-note" style={{ padding: 0 }}>{n}</p>)}
+      <Notes content={content} />
     </div>
   )
 }
@@ -256,7 +412,14 @@ function Bubble({ content }) {
 
 export default function ChatReply({ content, title, active, onPick, onApprove, onSend, navigation }) {
   if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} onSend={onSend} navigation={navigation} />
-  return content.result ? <ResultCard content={content} title={title} /> : <Bubble content={content} />
+  return <>
+    {content.result ? <ResultCard content={content} title={title} onSend={active && onSend ? onSend : null} /> : <Bubble content={content} />}
+    {content.examples?.length > 0 && <div>
+      <p className="mc-note">이런 질문으로 이어서 볼 수 있어요.</p>
+      <Choices choices={content.examples.map((text) => ({ value: text, label: text }))} active={active && Boolean(onSend)}
+        onPick={(choice) => onSend(choice.value)} />
+    </div>}
+  </>
 }
 
 // 답변 선택지 (기존 칩 모양). active = 마지막 답변의 선택지만 누를 수 있다 (서버도 지난 선택지는 409)
