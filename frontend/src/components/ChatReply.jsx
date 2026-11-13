@@ -7,7 +7,7 @@
 import { useRef, useState } from 'react'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
-import { policyTitle } from '../utils/policyCards.js'
+import { policyNumber, policyTitle } from '../utils/policyCards.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
 import '../styles/policies.css'
 
@@ -173,6 +173,7 @@ function PolicySections({ sections }) {
   const section = sections[Math.min(index, sections.length - 1)]
   const id = section.policyNo
   const title = policyTitle(section.title)
+  const number = policyNumber(section.title)
   const state = changes[id] ?? {}
   const saved = state.saved || bookmarks.data?.items?.some((item) => item.policyNo === id)
   const save = async () => {
@@ -191,6 +192,7 @@ function PolicySections({ sections }) {
   }
   return <div className="mc-spend-cats mc-policy-cards">
     <article aria-label={title}>
+      {number && <div className="mc-eyebrow">{number}번 정책</div>}
       <h3 className="mc-policy-title">{title}</h3>
       <ul className="mc-spend-lines">{section.lines.map((line, i) => <li key={i}><PolicyLine text={line} /></li>)}</ul>
       {sections.length > 1 && <div className="mc-policy-nav" role="group" aria-label="추천 정책 넘기기">

@@ -78,3 +78,20 @@ class BetaFeedbackTest(TestCase):
         result = talk.send('대출 이자 100% 지원하는 정책 찾아줘')
         self.assertNotIn(agent.NOT_GUARANTEED, result['reply']['lines'])
         self.assertEqual(result['reply']['sections'][0]['policy_no'], 'P1')
+
+    def test_exact_longer_policy_name_wins_and_ambiguous_names_keep_the_planner_choice(self):
+        """PR 117 리뷰 1: '청년 월세 지원'이 '청년 월세 지원 특별사업'에 포함돼도 지목한 긴 이름의 정책을 고른다"""
+        add('P1', vector=near(1), plcyNm='청년 월세 지원', srngMthdCn='일반 심사')
+        add('P2', vector=near(2), plcyNm='청년 월세 지원 특별사업', srngMthdCn='특별 심사')
+        add('P3', vector=near(3), plcyNm='청년 전세 지원', srngMthdCn='전세 심사')
+        plan = mock.Mock(return_value=chose('search'))
+        talk = Talk(plan=plan)
+        talk.lives_in_dongtan()
+        talk.send('월세 지원 있어?')
+        plan.return_value = chose('detail', 1, ['eligibility'])  # 해석기가 틀려도 정확한 이름이 앞선다
+        result = talk.send('청년 월세 지원 특별사업 신청하면 무조건 받을 수 있어?')
+        self.assertEqual(result['reply']['sections'][0]['policy_no'], 'P2')
+        self.assertIn('심사·선정 절차: 특별 심사', rows(result))
+        plan.return_value = chose('detail', 3, ['eligibility'])  # 두 정책 이름이 다 나오면 모호 → 해석기 선택
+        result = talk.send('청년 월세 지원 특별사업이랑 청년 전세 지원 중 무조건 받는 거 있어?')
+        self.assertEqual(result['reply']['sections'][0]['policy_no'], 'P3')

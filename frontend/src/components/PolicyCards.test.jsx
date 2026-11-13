@@ -93,3 +93,15 @@ it('새 카드에서는 번호별 저장 칩을 제거하고 예전 메시지의
   expect(policyChoices({ ...content, sections: [{ title: '예전 정책', lines: [] }] })).toEqual(content.choices)
   expect(policyChoices({ ...content, agent: 'budget' })).toEqual(content.choices)
 })
+
+it('카드마다 서버가 알아듣는 추천 번호를 보여 준다 (다른 정책 더 보기의 4번부터)', async () => {
+  await render({ ...content, sections: [
+    { policyNo: 'P4', title: '4. 넷째 정책', lines: ['지원: 넷째 지원'] },
+    { policyNo: 'P5', title: '5. 다섯째 정책', lines: ['지원: 다섯째 지원'] },
+  ] })
+  expect(host.querySelector('.mc-eyebrow').textContent).toBe('4번 정책')
+  expect(host.querySelector('.mc-policy-title').textContent).toBe('넷째 정책')
+  await click('다음 정책')
+  expect(host.querySelector('.mc-eyebrow').textContent).toBe('5번 정책')
+})
+

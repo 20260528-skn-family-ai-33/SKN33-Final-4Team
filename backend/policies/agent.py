@@ -424,7 +424,10 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
                     and (read.mine or (choice and choice[0] == "detail"))):
                 # 정책 선택을 되물어도 확답 요구를 topics에 남긴다. LLM이 자격만 고르거나 실패해도 유지한다.
                 shown = _shown(state)
-                explicit = next((n for n, name in shown if name in action.text), None)
+                # 이름이 다른 이름에 포함되면('청년 월세 지원' ⊂ '… 특별사업') 더 긴 쪽. 그래도 둘 이상이면 모호 → 해석기 선택을 따른다
+                named = [(n, name) for n, name in shown if name in action.text]
+                specific = [n for n, name in named if not any(name != other and name in other for _, other in named)]
+                explicit = specific[0] if len(specific) == 1 else None
                 numeric = re.search(r"(\d+)\s*번", action.text)
                 if numeric and int(numeric[1]) in dict(shown):
                     explicit = int(numeric[1])
