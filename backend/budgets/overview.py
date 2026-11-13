@@ -13,7 +13,7 @@ from .scope import OUT_OF_BUDGET, living_spent, outside_spent
 
 
 LIVING_CODES = (*ALLOCATION_CODES, "ETC")  # 예산 화면 · 자물쇠 대상. 예산 밖(scope.OUT_OF_BUDGET)은 없음
-NAG = "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?"
+NAG = "이번 달 예산을 여러 번 바꿨어요"
 
 
 def design_basis(design):

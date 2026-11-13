@@ -1329,3 +1329,6 @@
 #mc-new-preview#mc-new-preview .mc-cushion-uses .mc-tile svg{width:17px;height:17px}
 #mc-new-preview#mc-new-preview .mc-cushion-sub{margin:20px 0 0;padding-top:18px;border-top:1px solid var(--mc-line);font-size:14px;font-weight:650;color:var(--mc-ink)}
 #mc-new-preview#mc-new-preview .mc-cushion-sub+.mc-help-list{margin-top:8px;font-size:13.5px;color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-notice-list .mc-tile b.mc-notice-mark{font-size:20px;font-weight:800;line-height:1}  /* 알림 줄 굵은 느낌표 (예산을 여러 번 바꿨어요, 11/13) */
+#mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-title{display:block;font-size:14px;font-weight:700;margin-bottom:2px}  /* 알림 줄 이름 (11/13): 문장과 같은 크기, 굵게 */
+#mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-text{color:color-mix(in srgb,var(--mc-ink) 55%,var(--mc-sub))}  /* 알림 문장은 이름보다 조금 옅게 (11/13) */
