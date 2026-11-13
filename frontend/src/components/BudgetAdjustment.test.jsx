@@ -558,3 +558,16 @@ it('추천이 없어 금액 입력으로 넘어가도 숨긴 이유를 먼저 �
   expect(note.compareDocumentPosition(host.querySelector('form')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(host.textContent.split(brief)).toHaveLength(2)
 })
+
+
+it('조회 누락 미리보기의 이유를 표시하고 최종 확정을 막는다', async () => {
+  const approve = vi.fn()
+  const notice = '이번 주기 지출 조회가 누락되어 예산 기준으로만 계산했어요.'
+  const content = { budgetAdjustment: { canApprove: true,
+    proposal: { proposalId: 'unverified', state: 'awaiting_approval', canApprove: false, verificationNotice: notice, changes: [] } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onApprove={approve} />))
+  expect(host.textContent).toContain(notice)
+  expect(button('예산 확정하기').disabled).toBe(true)
+  await click(button('예산 확정하기'))
+  expect(approve).not.toHaveBeenCalled()
+})

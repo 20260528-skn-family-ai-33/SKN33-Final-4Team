@@ -67,16 +67,19 @@ def _assess_and_recommend(context, comparison, primary):
                 fact = {"kind": "category_reduction", "category": code, "rank": rank,
                         "before": change["before"], "after": change["after"], "decrease": amount,
                         "spent": context.get("spent", {}).get(code, 0), "remaining": remaining}
+                if not result.get('spending_verified', True):
+                    fact['spent'] = context.get('spent', {}).get(code)
+                    fact['remaining'] = None
                 assessment["facts"].append(fact)
                 assessment["cautions"].append(f"{rank_text}{names.get(code, code)} 예산이 "
                     f"{change['before']:,}원에서 {change['after']:,}원으로 {amount:,}원 줄어요. "
                     f"이미 쓴 돈을 뺀 남은 예산은 {remaining:,}원이에요.")
+                if not result.get('spending_verified', True):
+                    assessment['cautions'][-1] = f"{names.get(code, code)} 예산을 {change['before']:,}원에서 {change['after']:,}원으로 줄이는 예시예요. 실제 남은 돈은 지출 조회 후 확인할 수 있어요."
                 if remaining == 0:
                     exhausted += 1
                 floor = max(context.get("minimums", {}).get(code, 0),
                             context.get("system_floors", {}).get(code, 0), fact["spent"])
-                if code not in context.get("ml_not_applicable", ("ETC",)) and code in context.get("ml_reference", {}):
-                    floor = max(floor, min(change["before"], context["ml_reference"][code]))
                 if change["after"] == floor:
                     assessment["cautions"].append(f"{names.get(code, code)} 예산을 {floor:,}원까지 줄이는 안이에요. 이보다 더 줄이려면 직접 금액을 정해 주세요.")
             else:
@@ -110,7 +113,7 @@ def _assess_and_recommend(context, comparison, primary):
         category_change = sum((Fraction(-change["diff"], change["before"]) for change in collateral
                                if change["category"] in context["allocations"]), Fraction())
         if plan["status"] == "ready" and plan["amount"] == comparison["basis_amount"] and plan["amount"] > 0:
-            scores[plan["id"]] = (rank_damage, goal_damage, exhausted, upper_change, category_change)
+            scores[plan["id"]] = (sum(-c["diff"] for c in collateral if c["category"] in BUCKETS), rank_damage, goal_damage, exhausted, upper_change, category_change)
             assessment["label"] = "대안"
             assessment["reasons"].append(f"이 방법으로 {plan['amount']:,}원을 옮길 수 있어요.")
         else:
@@ -127,8 +130,9 @@ def _assess_and_recommend(context, comparison, primary):
     if not scores:
         recommendation["reasons"].append("원하는 금액을 모두 옮길 수 있는 방법이 없어요. 금액을 줄이거나 가져올 곳을 바꿔 주세요.")
         return
-    best = min(scores.values())
-    winners = [plan for plan in comparison["plans"] if scores.get(plan["id"]) == best]
+    best_score = min(scores.values())
+    best = best_score[1:]
+    winners = [plan for plan in comparison["plans"] if scores.get(plan["id"]) == best_score]
     if len(winners) != 1:
         recommendation["reasons"].append("중요하게 고른 항목과 남길 돈을 비교했을 때 비슷한 방법들이에요. 어느 쪽을 더 유지할지 골라 주세요.")
         return
@@ -155,6 +159,7 @@ def _assess_and_recommend(context, comparison, primary):
         if plan is winner:
             continue
         score = scores.get(plan["id"])
+        score = score[1:] if score is not None else None
         if score is None:
             if plan["status"] == "partial":
                 plan["assessment"]["label"] = "비추천"
@@ -232,9 +237,11 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
     plans = []
     profiles = _profiles(category, direction)
     selected = envelope.get('sources' if direction == 'up' else 'destinations', [])
-    if respect_selected and selected and any(code in context['allocations'] for code in selected):
+    if respect_selected and selected:
         names = {**context.get('category_names', {}), **NAMES}
         profiles = [('living', ' + '.join(names.get(code, code) for code in selected), list(selected))]
+    if direction == 'up' and category in context['allocations'] and not selected:
+        profiles = [(pid, label, list(dict.fromkeys([LIVING] + ([] if pid == 'living' else ['SPARE']) + edges))) for pid, label, edges in profiles]
     for plan_id, label, edges in profiles:
         candidate = {"items": [{"category": category, "amount_mode": "by", "amount": amount,
                                 "direction": direction, "automatic": item.get("automatic", False) if known else True}],
@@ -334,6 +341,12 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
     plans[:] = [plan for plan in plans if plan['id'] != 'combined' or (
         plan.get('result') and plan['result'].get('transfers') not in singles
         and len({LIVING if t['from'] in context['allocations'] else t['from'] for t in plan['result'].get('transfers', [])}) > 1)]
+    unique = []
+    for plan in plans:
+        if plan.get('result') and any((p.get('result') or {}).get('transfers') == plan['result']['transfers'] for p in unique):
+            continue
+        unique.append(plan)
+    plans[:] = unique
     selectable = any(plan['status'] in ('ready', 'partial') and plan.get('envelope')
                      and plan['amount'] > 0 and (plan.get('result') or {}).get('changes') for plan in plans)
     response["status"] = "ready" if selectable else "unavailable"

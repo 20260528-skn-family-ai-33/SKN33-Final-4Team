@@ -38,8 +38,8 @@ class AdjustmentDialogueTest(unittest.TestCase):
                 self.turn(reading(requests=[item('SAVINGS', 300000)]))
                 result = self.turn(reading(action=action))
                 lines = ' '.join(result['reply']['lines'])
-                self.assertIn('이번 달 적립할 예산을 줄여 저축에 최대 185,000원', lines)
-                self.assertIn('115,000원이 부족', lines)
+                self.assertIn('이번 달 적립할 예산을 줄여 저축에 최대 140,000원', lines)
+                self.assertIn('160,000원이 부족', lines)
                 self.assertIn('남길 여윳돈 정하기', lines)
                 self.assertNotIn('저축 ·', lines)
                 self.assertNotIn('SAVINGS', [c['value'] for c in result['reply']['choices']])
@@ -173,9 +173,9 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.turn(reading(requests=[item('LIVING', 1000000)]))
         response = self.turn(reading(action='inspect'))
         lines = response['reply']['lines']
-        self.assertIn('최대 185,000원', lines[0])
+        self.assertIn('최대 140,000원', lines[0])
         self.assertIn('저축 · 조정 가능한 예산 확인 필요', lines)
-        self.assertIn('815,000원이 부족', ' '.join(lines))
+        self.assertIn('860,000원이 부족', ' '.join(lines))
         self.assertNotIn('저축 · 이번에 저축할 예산을 줄여', ' '.join(lines))
         self.assertEqual([choice['value'] for choice in response['reply']['choices']],
                          ['CUSHION_MONTHLY', 'keep_spare'])
@@ -641,8 +641,8 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
             result = dialogue.handle({'conversation_id': 'talk', 'text': text}, **fixture.ports)
             if text != '저축 30만원 더 늘리고 싶어':
                 lines = ' '.join(result['reply']['lines'])
-                self.assertIn('185,000원', lines, result['status'])
-                self.assertIn('115,000원이 부족', lines)
+                self.assertIn('140,000원', lines, result['status'])
+                self.assertIn('160,000원이 부족', lines)
                 self.assertNotIn('저축 ·', lines)
                 self.assertEqual(fixture.store.state['requests'], [item('SAVINGS', 300000)])
         result = dialogue.handle({'conversation_id': 'talk', 'text': '다음달부터 교육비에 50만원 더 나감'}, **fixture.ports)

@@ -154,7 +154,7 @@ def maxima(context, request, refinement=None):
         return _result("awaiting_input", ["어느 생활비 항목을 늘리려는지 알려 주세요. 항목에 따라 최대 가능액이 달라요."])
     lines = []
     for label, sources in [("생활비 내 재배분", ["LIVING"]), ("여윳돈 활용", ["SPARE"]), ("저축·월 쿠션 재배분", ["SAVINGS", "CUSHION_MONTHLY"])]:
-        quote = available_adjustment(context, items[0]["category"], "up", sources=sources, excluded=request.get("excluded", []), allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
+        quote = available_adjustment(context, items[0]["category"], "up", sources=sources, excluded=request.get("excluded", []), destinations=request.get("destinations", []), allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
         if quote["status"] == "ready": lines.append(f"{label}: 최대 {quote['maximum']:,}원")
         elif quote["status"] == "infeasible": lines.append(f"{label}: 현재 보호 조건에서 이동 가능한 금액은 0원이에요.")
         else: lines.append(f"{label}: 자료·보호 조건 확인이 필요해요.")
@@ -181,12 +181,13 @@ def comparison_reply(store, cid, state, context, calculation, complete):
     if len(request['items']) == 1 and request['items'][0].get('direction') == 'down':
         return original_comparison(store, cid, state, context, calculation, proportional_group_reduction,
                                    envelope=request, respect_selected=True)
+    if len(request['items']) == 1 and request['items'][0].get('category') == 'LIVING' and not request.get('destinations'):
+        return original_comparison(store, cid, state, context, calculation, proportional_group_reduction,
+                                   envelope=request, respect_selected=True)
     category_sources = set(request.get("sources", [])) & set(context["allocations"])
-    if category_sources and "LIVING" not in request["sources"]:
-        targets = {item.get("category") for item in request["items"]}
-        request["sources"] = [s for s in request["sources"] if s not in category_sources] + ["LIVING"]
-        request["excluded"] = sorted(set(request.get("excluded", [])) | (set(context["allocations"]) - category_sources - targets))
-        state.update(sources=request["sources"], excluded=request["excluded"])
+    if category_sources and 'LIVING' not in request['sources']:
+        return original_comparison(store, cid, state, context, calculation, proportional_group_reduction,
+                                   envelope=request, respect_selected=True)
     if state.get("allow_reserve_risk"):
         request["allow_reserve_risk"] = True
     _save(store, cid, state)
@@ -227,6 +228,8 @@ def comparison_reply(store, cid, state, context, calculation, complete):
             return response
         return _ask(store, cid, state, "financial_data", QUESTIONS.get(field, diagnosis.get("message", "조정할 항목을 확인해 주세요.")),
                     [("manual_living", "생활비 직접 조정"), ("cancel", "취소")], field=field)
+    if context.get('budget_preview'):
+        diagnosis['facts']['basis'] = '이번 주기 지출 조회가 누락되어 예산 기준으로만 계산했어요. 실제 이동 가능액은 내역 확인 후 다시 검증해야 해요.'
     reserve_choices = []
     if 'SPARE' in diagnosis['allowed'] and not state.get('allow_reserve_risk'):
         quote = available_adjustment(calculation, diagnosis['target'], 'up', sources=['SPARE'],
@@ -234,8 +237,17 @@ def comparison_reply(store, cid, state, context, calculation, complete):
         if quote['status'] == 'ready' and quote['maximum'] > diagnosis['capacities'].get('SPARE', 0):
             reserve_choices = [('reserve_override', '남길 여윳돈 다시 정하기')]
     if not answer["plans"]:
-        capacities = [f"{NAMES.get(code, code)}에서 가져올 수 있는 돈은 {amount:,}원이에요."
-                      for code, amount in diagnosis['capacities'].items()]
+        if answer.get('error') == 'calculation_unverified':
+            return _result('awaiting_input', ['변경안의 합계를 검증하지 못했어요. 입력한 조건은 유지했으니 다시 계산해 주세요.'], error='calculation_unverified')
+        capacities = []
+        for code, amount in diagnosis['capacities'].items():
+            name = NAMES.get(code, code)
+            if code in context['buckets'] and context.get('bucket_status', {}).get(code) == 'unknown':
+                capacities.append(f'{name}은 이동 가능한 금액이 확인되지 않아 제외했어요.')
+            elif code == 'LIVING' and amount == 0:
+                capacities.append('다른 생활비는 1~6순위·잠금·최소금액·이미 쓴 돈을 지키면 자동으로 줄일 돈이 없어요.')
+            else:
+                capacities.append(f'{name}에서 보호금액을 남기고 가져올 수 있는 돈은 {amount:,}원이에요.')
         return _ask(store, cid, state, "request", "지금 조건으로 확인된 추천안이 없어 보여 드리지 않았어요. 줄여도 되는 생활비 항목과 금액을 직접 정할 수 있어요.",
             [("manual_living", "생활비 직접 조정"), *reserve_choices, ("cancel", "취소")],
             explanation={'title': '이번에 추천안을 보여 드리지 않은 이유',
@@ -246,10 +258,10 @@ def comparison_reply(store, cid, state, context, calculation, complete):
     for i, plan in enumerate(answer["plans"]):
         recommended = answer["recommended_index"] == i
         label = " + ".join(NAMES.get(f["source"], f["source"]) for f in plan["funding"])
-        actual = ({**plan['result']['allocations'], **plan['result']['buckets']}[diagnosis['target']]
-                  - {**context['allocations'], **context['buckets']}[diagnosis['target']])
+        actual = (sum(plan['result']['allocations'].values()) - sum(context['allocations'].values()) if diagnosis['target'] == 'LIVING' else
+                  {**plan['result']['allocations'], **plan['result']['buckets']}[diagnosis['target']] - {**context['allocations'], **context['buckets']}[diagnosis['target']])
         maximum = available_adjustment(recommendation_context(calculation, request), diagnosis["target"], "up", sources=[f["source"] for f in plan["funding"]],
-                                       excluded=request.get("excluded", []), allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
+                                       excluded=request.get("excluded", []), destinations=request.get("destinations", []), allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
         plans.append({"id": str(i), "label": f"{i + 1}안 {label}", "status": "ready" if plan["result"]["status"] == "proposed" else "partial", "amount": actual,
                       "maximum": min(maximum['maximum'], sum(diagnosis['capacities'].get(f['source'], 0) for f in plan['funding'])) if maximum["status"] == "ready" else None,
                       "result": plan["result"], "recommended": recommended,
@@ -279,7 +291,7 @@ def selected_preview(store, cid, state, index, ports):
         return _ask(store, cid, state, "request", "예산·지출·진단 자료가 바뀌었어요. 최신 조건으로 다시 추천받아 주세요.")
     plan = offer["answer"]["plans"][index]
     primary = {"items": [{"category": offer["answer"]["diagnosis"]["target"], "direction": "up", "amount_mode": "by", "amount": offer["answer"]["diagnosis"]["requested_amount"]}],
-               "sources": [], "destinations": [], "excluded": list(state.get("excluded", []))}
+               "sources": [], "destinations": list(offer["answer"]["diagnosis"].get("destinations", [])), "excluded": list(state.get("excluded", []))}
     analysis_request = {**primary, "sources": list(offer["answer"]["diagnosis"]["allowed"])}
     if state.get('spare_minimum') is not None:
         analysis_request['spare_minimum'] = state['spare_minimum']
@@ -708,7 +720,7 @@ def feedback(request, state, ports):
     if primary is None:
         items = [i for i in state.get("requests", []) if i.get("direction") == "up"]
         primary = {"items": items if len(items) == 1 else deepcopy(state.get('requests', [])),
-                   "sources": [], "destinations": [], "excluded": list(state.get("excluded", []))}
+                   "sources": [], "destinations": list(state.get("destinations", [])), "excluded": list(state.get("excluded", []))}
     recipient = primary['items'][0]['category'] if len(primary['items']) == 1 else None
     if state.get("allow_reserve_risk"):
         primary["allow_reserve_risk"] = True
@@ -872,8 +884,8 @@ def feedback(request, state, ports):
             minimum = data['amount'] if data['amount_mode'] == 'to' else current + data['amount']
             return _revise_spare_minimum(request, state, ports, minimum)
         more = action in {"refine_more", "use_source"}
-        explicit = action != "use_source" and data["amount"] is not None and bool(re.search(r"\d|[일이삼사오육칠팔구십백천만억]+\s*원", text))
-        target = (data["amount"] if data["amount_mode"] == "to" else current + (-data["amount"] if more else data["amount"])) if explicit else data["suggested_target"]
+        explicit = action == "use_source" or data["amount"] is not None and bool(re.search(r"\d|[일이삼사오육칠팔구십백천만억]+\s*원", text))
+        target = (data["amount"] if data["amount_mode"] == "to" else current + (-data["amount"] if more else data["amount"])) if explicit and data["amount"] is not None else data["suggested_target"]
         if target is None: target = current + (-10000 if more else 10000)
         base = original_amounts[code]
         try:

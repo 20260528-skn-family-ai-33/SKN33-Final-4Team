@@ -51,8 +51,8 @@ class AdjustmentCollabTest(unittest.TestCase):
         response = self.turn("교통·차량에서 가져오기", hints={"from": "spending", "category": "TRANSPORT_CAR"})
         self.complete.assert_not_called()
         proposal = response["reply"]["proposal"]
-        self.assertEqual(proposal["allocations"]["TRANSPORT_CAR"], 75000)
-        self.assertEqual(proposal["allocations"]["FOOD"], 425000)
+        self.assertEqual(proposal["allocations"]["TRANSPORT_CAR"], 60000)
+        self.assertEqual(proposal["allocations"]["FOOD"], 440000)
 
     def test_preview_query_preserves_proposal_and_task(self):
         self.preview()

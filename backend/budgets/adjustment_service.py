@@ -354,7 +354,8 @@ def _card(proposal_id, task_ref, context, meta, state, *, can_approve=True):
             "scope": 'next_cycle' if meta.get('effective_on') else (("ongoing" if keep else "cycle") if state == "saved" else meta["scope"]),
             **({'effective_on': meta['effective_on'], 'income_change': meta['income_change'],
                 'one_off': context.get('planning', {}).get('one_off', False), 'expense': context.get('planning', {}).get('expense')} if meta.get('effective_on') else {}),
-            "state": state, "can_approve": state == "awaiting_approval" and can_approve,
+            "state": state, "can_approve": state == "awaiting_approval" and can_approve and result.get('spending_verified', True),
+            **({'verification_notice': '이번 주기 지출을 아직 모두 확인하지 못했어요. 예산 기준 미리보기이며, 내역 확인 후 다시 계산해야 확정할 수 있어요.'} if not result.get('spending_verified', True) else {}),
             "allocations": deepcopy(result["allocations"]), "buckets": deepcopy(result["buckets"]),
             "changes": displayed_changes, "shortfalls": deepcopy(result["shortfalls"]),
             "transfers": deepcopy(result["transfers"]), "target_changes": deepcopy(changes),
@@ -427,6 +428,8 @@ def approve_adjustment(user, proposal, *, keep_for_next_cycle, key, expected_mod
         raise AdjustmentExpired()
     if budget.status != "validated" or budget.task.status != "succeeded":
         raise AdjustmentNotReady()
+    if not meta['result'].get('spending_verified', context.get('spending_status', 'complete') == 'complete'):
+        raise AdjustmentNotReady('이번 주기 지출 조회가 누락되어 실제로 옮길 수 있는 금액은 미확인이에요. 미리보기와 입력은 유지했어요. 계좌·카드 내역 확인 후 다시 계산해 주세요.')
     if not _partial_selected(budget, meta):
         raise AdjustmentNotReady("가능한 금액만 반영할지 먼저 선택해 주세요.")
     adapter = AdjustmentAdapter(user, conversation=budget.task.conversation, today=today,

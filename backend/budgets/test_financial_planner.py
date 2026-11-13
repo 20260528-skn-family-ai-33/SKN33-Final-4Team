@@ -53,11 +53,12 @@ class FinancialPlannerTest(unittest.TestCase):
         self.assertEqual(simulate(inp, replay)['buckets'], plan['result']['buckets'])
 
     def test_thirty_percent_rounds_up_and_preserves_higher_protection(self):
+        self.inp['diagnostic_inputs'] = {}
         self.inp['buckets']['SPARE'] = 98176
         protected = recommendation_context(self.inp, {})
         self.assertEqual(protected['bucket_floors']['SPARE'], 29453)
         self.assertEqual(protected['bucket_floors']['SAVINGS'], 300000)
-        self.assertEqual(protected['minimums']['FASHION_SHOPPING'], 100000)
+        self.assertNotIn('FASHION_SHOPPING', protected['minimums'])
         self.assertEqual(protected['priorities'], self.inp['priorities'])
         protected = recommendation_context(self.inp, {'spare_minimum': 50000})
         self.assertEqual(protected['bucket_floors']['SPARE'], 50000)
@@ -80,7 +81,7 @@ class FinancialPlannerTest(unittest.TestCase):
                 answer = recommend(inp, self.request, complete)
                 self.assertEqual(answer['diagnosis']['basis'], 'budget')
                 self.assertEqual(answer['recommended_index'], 0, answer)
-                self.assertGreater(len(answer['plans'][0]['funding']), 1)
+                self.assertEqual(answer['plans'][0]['funding'], funding(LIVING=answer['diagnosis']['planning_amount']))
                 self.assertNotIn('forecast', answer['diagnosis'])
 
     def test_unknown_spare_does_not_become_zero_available(self):
@@ -114,7 +115,7 @@ class FinancialPlannerTest(unittest.TestCase):
         answer = recommend(inp, request, complete)
         plan = answer['plans'][0]
         self.assertEqual(plan['result']['status'], 'proposed')
-        self.assertEqual({row['source'] for row in plan['funding']}, {'LIVING', 'SAVINGS', 'CUSHION_MONTHLY', 'SPARE'})
+        self.assertEqual({row['source'] for row in plan['funding']}, {'LIVING', 'SPARE'})
         self.assertEqual(sum(row['amount'] for row in plan['funding']), 500000)
         for code, before in inp['buckets'].items():
             self.assertGreaterEqual(plan['result']['buckets'][code], (before * 3 + 9) // 10)
@@ -135,19 +136,12 @@ class FinancialPlannerTest(unittest.TestCase):
         plan = simulate_plan(inp, diag, funding(SPARE=150000, CUSHION_MONTHLY=100000, LIVING=50000))
         self.assertEqual(plan['result']['buckets']['SAVINGS'], 900000)
 
-    def test_insufficient_selected_source_offers_combination_but_respects_exclusions(self):
-        self.inp['diagnostic_inputs'] = {}
-        def complete(system, payload):
-            payload = json.loads(payload)
-            return draft(payload['balanced_funding']) if payload['phase'] == 'draft' else review(index=None, ids=[])
-        for excluded in ([], ['LIVING', 'SPARE', 'CUSHION_MONTHLY']):
-            request = envelope(item('EDUCATION', 300000), sources=['SAVINGS'], excluded=excluded)
-            answer = recommend(self.inp, request, complete)
-            plan = answer['plans'][0]
-            self.assertEqual(plan['result']['status'], 'partial' if excluded else 'proposed')
-            self.assertEqual(len(plan['funding']) > 1, not bool(excluded))
-            for row in plan['funding']:
-                self.assertNotIn(row['source'], request['excluded'])
+    def test_selected_source_shortfall_does_not_authorize_other_sources(self):
+        answer = recommend(self.inp, envelope(item(amount=200000), sources=['SPARE']), Mock(side_effect=RuntimeError('unavailable')))
+        plan = answer['plans'][0]
+        self.assertEqual(plan['result']['status'], 'partial')
+        self.assertEqual(plan['funding'], funding(SPARE=70000))
+        self.assertEqual(plan['result']['shortfalls'][0]['missing_amount'], 130000)
 
     def test_unknown_amount_is_a_budget_example_but_missing_spending_is_not_invented(self):
         self.inp['diagnostic_inputs'] = {}
@@ -167,9 +161,9 @@ class FinancialPlannerTest(unittest.TestCase):
             phases.append(payload['phase'])
             return draft(payload['balanced_funding']) if payload['phase'] == 'draft' else review()
         answer = recommend(self.inp, envelope(item()), complete)
-        self.assertEqual(phases, ['draft', 'review'])
+        self.assertEqual(phases, ['review'])
         self.assertTrue(answer['diagnosis']['amount_is_example'])
-        self.assertGreater(len(answer['plans'][0]['funding']), 1)
+        self.assertEqual(answer['plans'][0]['funding'], funding(LIVING=answer['diagnosis']['planning_amount']))
         for code, before in self.inp['buckets'].items():
             self.assertGreaterEqual(answer['plans'][0]['result']['buckets'][code], (before * 3 + 9) // 10)
 
@@ -252,42 +246,35 @@ class FinancialPlannerTest(unittest.TestCase):
         self.inp["locks"]["FOOD"] = 400000
         self.assertEqual(diagnose(self.inp, self.request)["status"], "unsupported")
 
-    def test_llm_drafts_then_selects_only_verified_plan_and_facts(self):
-        complete = Mock(side_effect=[draft(funding(LIVING=80000, SPARE=70000, SAVINGS=50000)), review()])
+    def test_llm_only_explains_server_verified_plan(self):
+        complete = Mock(return_value=review())
         answer = recommend(self.inp, self.request, complete)
-        self.assertEqual(answer["recommended_index"], 0)
-        second = json.loads(complete.call_args_list[1].args[1])
-        self.assertEqual(second["phase"], "review")
-        self.assertEqual(second["verified_plans"][0]["status"], "proposed")
-        self.assertEqual(len(answer["reasons"]), 2)
+        self.assertEqual(answer['recommended_index'], 0)
+        payload = json.loads(complete.call_args.args[1])
+        self.assertEqual(payload['phase'], 'review')
+        self.assertEqual(payload['verified_plans'][0]['status'], 'proposed')
+        self.assertEqual(answer['plans'][0]['funding'], funding(LIVING=200000))
 
-    def test_single_source_draft_also_gets_a_verified_combined_alternative(self):
-        self.inp['bucket_available']['SAVINGS'] = 250000
-        complete = Mock(side_effect=[draft(funding(SAVINGS=200000)), review(index=1)])
+    def test_llm_cannot_replace_living_only_plan_with_savings(self):
+        complete = Mock(return_value=draft(funding(SAVINGS=200000)))
         answer = recommend(self.inp, self.request, complete)
-        self.assertEqual(answer['recommended_index'], 1, answer)
-        combined = answer['plans'][1]
-        self.assertGreater(len(combined['funding']), 1)
-        self.assertEqual(sum(row['amount'] for row in combined['funding']), 200000)
-        self.assertGreaterEqual(combined['spare_available_after'], combined['reserve_after'])
-        reviewed = json.loads(complete.call_args_list[1].args[1])['verified_plans']
-        self.assertEqual(len(reviewed), 2)
+        self.assertEqual(answer['plans'][0]['funding'], funding(LIVING=200000))
+        self.assertEqual(answer['plans'][0]['result']['buckets'], self.inp['buckets'])
 
-    def test_failed_draft_can_be_replanned_without_applying_anything(self):
+    def test_llm_failure_does_not_apply_or_discard_plan(self):
         before = deepcopy(self.inp)
-        complete = Mock(side_effect=[draft(funding(SPARE=200000)), draft(funding(LIVING=80000, SPARE=70000, SAVINGS=50000)), review()])
-        answer = recommend(self.inp, self.request, complete)
-        self.assertEqual(answer["recommended_index"], 0)
+        answer = recommend(self.inp, self.request, Mock(side_effect=RuntimeError('unavailable')))
         self.assertEqual(self.inp, before)
-        self.assertEqual(json.loads(complete.call_args_list[1].args[1])["error"]["code"], "funding_limit")
+        self.assertEqual(answer['plans'][0]['result']['status'], 'proposed')
+        self.assertEqual(answer['recommended_index'], 0)
 
-    def test_invented_fact_or_plan_cannot_be_recommended(self):
-        for bad in (review(999), review(ids=["invented_fact"]), review(ids=["reserve"])):
+    def test_invented_explanation_preserves_verified_plan_and_server_reason(self):
+        for bad in (review(999), review(ids=['invented_fact']), {'invalid': True}):
             with self.subTest(answer=bad):
-                complete = Mock(side_effect=[draft(funding(LIVING=80000, SPARE=70000, SAVINGS=50000)), bad, bad])
-                answer = recommend(self.inp, self.request, complete)
-                self.assertEqual(answer["error"], "planner_not_validated")
-                self.assertFalse(answer["plans"])
+                answer = recommend(self.inp, self.request, Mock(return_value=bad))
+                self.assertEqual(answer['recommended_index'], 0)
+                self.assertEqual(answer['plans'][0]['funding'], funding(LIVING=200000))
+                self.assertFalse(any('invented_fact' in reason for reason in answer['reasons']))
 
     def test_payload_contains_aggregates_not_personal_inputs(self):
         self.inp.update(api_key="do-not-send", account_number="do-not-send", raw_transactions=[{"secret": 1}])
@@ -296,3 +283,121 @@ class FinancialPlannerTest(unittest.TestCase):
         for call in complete.call_args_list:
             self.assertNotIn("do-not-send", call.args[1])
             self.assertNotIn("raw_transactions", call.args[1])
+
+
+class LivingFirstPolicyTest(unittest.TestCase):
+    def setUp(self):
+        self.ctx = financial_context()
+        self.ctx['allocations'] = {'FOOD': 100000, 'HOUSEHOLD': 60000, 'BEAUTY': 40000, 'EDUCATION': 100000}
+        self.ctx['spent'] = {'HOUSEHOLD': 20000}
+        self.ctx['minimums'] = {}
+        self.ctx['system_floors'] = {}
+        self.ctx['priorities'] = {'EDUCATION': 1, 'HOUSEHOLD': 7, 'BEAUTY': 8}
+        self.ctx['buckets'] = {'SPARE': 100000, 'SAVINGS': 200000, 'CUSHION_MONTHLY': 100000}
+        self.ctx['bucket_available'] = dict(self.ctx['buckets'])
+        self.ctx['bucket_targets'] = dict(self.ctx['buckets'])
+        self.ctx['reserve_anchors'] = dict(self.ctx['buckets'])
+        self.ctx['bucket_floors'] = {}
+        self.ctx['funding_amount'] = self.ctx['fixed_amount'] + 700000
+        self.ctx['diagnostic_inputs'] = {}
+        self.ctx['ml_reference'] = {}
+        self.fail_llm = Mock(side_effect=RuntimeError('LLM unavailable'))
+
+    def plan(self, amount=100000, **kwargs):
+        answer = recommend(self.ctx, envelope(item('FOOD', amount), **kwargs), self.fail_llm)
+        self.assertTrue(answer['plans'], answer)
+        return answer['plans'][0]
+
+    def test_living_only_uses_multiple_categories_without_upper_money(self):
+        result = self.plan(80000)['result']
+        self.assertEqual(result['buckets'], self.ctx['buckets'])
+        self.assertEqual({t['from'] for t in result['transfers']}, {'HOUSEHOLD', 'BEAUTY'})
+        self.assertEqual(result['allocations']['EDUCATION'], 100000)
+        self.assertEqual(result['allocations']['HOUSEHOLD'], 20000)
+        self.assertEqual(result['allocations']['BEAUTY'], 0)
+
+    def test_standard_comparison_uses_the_same_living_first_moves(self):
+        from .adjustment_core.comparison import compare_adjustments
+        from .adjustment_core.calculation import proportional_group_reduction
+        for amount in (80000, 100000):
+            comparison = compare_adjustments(self.ctx, envelope(item('FOOD', amount)), allocate_group_reduction=proportional_group_reduction)
+            full = [p for p in comparison['plans'] if p['status'] == 'ready']
+            self.assertTrue(full)
+            for plan in full:
+                transferred = plan['result']['transfers']
+                self.assertEqual(sum(t['amount'] for t in transferred if t['from'] in self.ctx['allocations']), min(amount, 80000))
+                self.assertEqual(sum(t['amount'] for t in transferred if t['from'] not in self.ctx['allocations']), max(amount - 80000, 0))
+
+    def test_only_shortfall_is_taken_from_spare(self):
+        result = self.plan()['result']
+        self.assertEqual(result['buckets'], {'SPARE': 80000, 'SAVINGS': 200000, 'CUSHION_MONTHLY': 100000})
+        self.assertEqual(sum(t['amount'] for t in result['transfers'] if t['from'] in self.ctx['allocations']), 80000)
+
+    def test_all_top_six_are_automatically_preserved_but_explicit_cut_is_allowed(self):
+        from .adjustment_core.funding import simulate_funding
+        for rank in range(1, 7):
+            self.ctx['priorities'] = {'EDUCATION': rank}
+            result = self.plan(50000)['result']
+            self.assertEqual(result['allocations']['EDUCATION'], 100000)
+        direct = simulate_funding(self.ctx, envelope(item('EDUCATION', 30000, 'down'), item('FOOD', 30000)))
+        self.assertEqual(direct['allocations']['EDUCATION'], 70000)
+
+    def test_locks_minimums_spending_and_confirmed_expenses_remain_protected(self):
+        self.ctx['locks'] = {'BEAUTY': 40000}
+        self.ctx['minimums'] = {'HOUSEHOLD': 30000}
+        self.ctx['required_expenses'] = {'HOUSEHOLD': 50000}
+        result = self.plan()['result']
+        self.assertEqual(result['allocations']['BEAUTY'], 40000)
+        self.assertEqual(result['allocations']['HOUSEHOLD'], 50000)
+        self.assertGreaterEqual(result['buckets']['SPARE'], 30000)
+        self.assertGreaterEqual(result['buckets']['SAVINGS'], 60000)
+
+    def test_user_selected_or_excluded_sources_are_not_expanded(self):
+        selected = self.plan(50000, sources=['SAVINGS'])['result']
+        self.assertEqual({t['from'] for t in selected['transfers']}, {'SAVINGS'})
+        excluded = self.plan(100000, excluded=['SPARE'])['result']
+        self.assertNotIn('SPARE', {t['from'] for t in excluded['transfers']})
+        self.assertEqual(sum(t['amount'] for t in excluded['transfers'] if t['from'] == 'SAVINGS'), 20000)
+
+    def test_living_total_increase_cannot_use_living_itself(self):
+        answer = recommend(self.ctx, envelope(item('LIVING', 50000), destinations=['FOOD']), self.fail_llm)
+        self.assertTrue(answer['plans'], answer)
+        self.assertFalse(any(t['from'] in self.ctx['allocations'] for t in answer['plans'][0]['result']['transfers']))
+
+    def test_partial_amount_retains_precise_shortfall(self):
+        result = self.plan(500000)['result']
+        self.assertEqual(result['status'], 'partial')
+        self.assertEqual(sum(t['amount'] for t in result['transfers']), 360000)
+        self.assertEqual(result['shortfalls'][0]['missing_amount'], 140000)
+
+    def test_quotes_replay_and_repeated_adjustments_keep_same_reserve_anchor(self):
+        from .adjustment_core.funding import available_adjustment, simulate_funding
+        from .adjustment_core.simulation import simulate
+        quote = available_adjustment(self.ctx, 'FOOD', 'up', sources=['LIVING'], allocate_group_reduction=__import__('budgets.adjustment_core.calculation', fromlist=['proportional_group_reduction']).proportional_group_reduction)
+        self.assertEqual(quote['maximum'], 80000)
+        result = self.plan()['result']
+        self.assertEqual(simulate(self.ctx, result['requests']), result)
+        self.ctx['allocations'] = result['allocations']
+        self.ctx['buckets'] = result['buckets']
+        self.ctx['bucket_available'] = dict(result['buckets'])
+        self.ctx['bucket_targets'] = dict(result['buckets'])
+        next_result = self.plan(150000)['result']
+        self.assertGreaterEqual(next_result['buckets']['SPARE'], 30000)
+        self.assertGreaterEqual(next_result['buckets']['SAVINGS'], 60000)
+
+    def test_missing_current_spending_is_only_an_unverified_preview(self):
+        self.ctx.update(spending_status='partial', budget_preview=True)
+        result = self.plan()['result']
+        self.assertFalse(result['spending_verified'])
+        self.assertEqual(result['allocations']['HOUSEHOLD'], 20000)
+        self.ctx.pop('budget_preview')
+        answer = recommend(self.ctx, envelope(item('FOOD', 100000)), self.fail_llm)
+        self.assertEqual(answer['plans'], [])
+
+    def test_future_cycle_does_not_reuse_current_spending(self):
+        from .adjustment_schedule import planning_context
+        self.ctx.update(monthly_income=self.ctx['funding_amount'], next_cycle_starts_on='2026-12-01')
+        planned = planning_context(self.ctx, {'scope': 'next_cycle'})
+        self.assertEqual(planned['spent'], {})
+        self.assertEqual(planned['required_expenses'], {})
+        self.assertFalse(planned['budget_preview'])

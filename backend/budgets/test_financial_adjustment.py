@@ -38,9 +38,9 @@ class FinancialAdjustmentApiTest(TestCase):
             draft(funding(LIVING=50000, SAVINGS=150000, CUSHION_MONTHLY=100000, SPARE=200000)), review()
         ])['messages'][-1]['content']
         comparison = reply['budgetAdjustment']['comparison']
-        self.assertIn('고른 곳만으로는 부족', comparison['notice'])
-        self.assertEqual(comparison['plans'][0]['status'], 'ready')
-        self.assertEqual(comparison['plans'][0]['amount'], 500000)
+        self.assertTrue(all(t['from'] == 'SAVINGS' for p in comparison['plans'] for t in p['result']['transfers']))
+        self.assertEqual(comparison['plans'][0]['status'], 'partial')
+        self.assertEqual(comparison['plans'][0]['amount'], self.ctx['bucket_available']['SAVINGS'])
         self.assertNotIn('proposal', reply['budgetAdjustment'])
         self.assertEqual(Budget.objects.count(), 1)
 
@@ -378,9 +378,9 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertNotIn('돈을 찾지 못했어요', content['text'])
         reply = self.chat(cid, choice={'value': 'FOOD', 'turn': content['turn']})
         content = reply['messages'][-1]['content']
-        self.assertEqual(content['budgetAdjustment']['phase'], 'comparison', content)
+        self.assertEqual(content['budgetAdjustment']['phase'], 'financial_selection', content)
         self.assertTrue(any(p['amount'] > 0 for p in content['budgetAdjustment']['comparison']['plans']))
-        self.assertIn('keep_spare', [choice['value'] for choice in content['choices']])
+        self.assertFalse(content['budgetAdjustment']['canApprove'])
         self.assertEqual(Budget.objects.count(), 1)
 
     def test_impossible_preview_goal_does_not_replace_existing_proposal(self):
@@ -422,7 +422,7 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertIn('budgetAdjustment', content, reply)
         card = content['budgetAdjustment']['proposal']
         self.assertGreaterEqual(card['buckets']['SPARE'], 350000)
-        if content['budgetAdjustment']['phase'] == 'partial':
+        if content['budgetAdjustment']['phase'] in {'partial', 'financial_partial'}:
             reply = self.chat(cid, choice={'value': 'partial_accept', 'turn': content['turn']})
             card = reply['messages'][-1]['content']['budgetAdjustment']['proposal']
         approved = self.post(f"/api/budgets/proposals/{card['proposalId']}/approve/", {})
@@ -473,7 +473,7 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertEqual(Budget.objects.count(), 1)
 
     def test_no_automatic_capacity_keeps_manual_living_adjustment_available(self):
-        self.ctx['ml_reference'] = dict(self.ctx['allocations'])
+        self.ctx['minimums'].update({c: n for c, n in self.ctx['allocations'].items() if c not in self.ctx['priorities']})
         self.ctx['spent']['ETC'] = self.ctx['allocations']['ETC']
         self.ctx['bucket_status'] = {code: 'unknown' for code in self.ctx['buckets']}
         cid = self.chat(choice='budget')['conversationId']
@@ -578,17 +578,16 @@ class FinancialAdjustmentApiTest(TestCase):
         opened = self.chat(cid, choice={'value': 'manual_living', 'turn': content['turn']})
         self.assertEqual(opened['messages'][-1]['content']['budgetAdjustment']['distributionInput']['target'], 'FOOD')
 
-    def test_extended_source_picker_hides_unverified_buckets(self):
+    def test_living_first_choices_hide_unverified_buckets_but_allow_explicit_savings(self):
         self.ctx['bucket_status'].update(SPARE='unknown', CUSHION_MONTHLY='unknown')
         cid = self.chat(choice='budget')['conversationId']
         response = self.chat(cid, text='식비 5만원 늘려줘', answers=[reading(requests=[item('FOOD', 50000)])])
-        content = response['messages'][-1]['content']
-        selected = self.chat(cid, choice={'value': 'extended', 'turn': content['turn']})
-        values = {c['value'] for c in selected['messages'][-1]['content']['choices']}
-        self.assertIn('SAVINGS', values)
-        self.assertIn('manual_living', values)
+        values = {c['value'] for c in response['messages'][-1]['content']['choices']}
         self.assertNotIn('SPARE', values)
         self.assertNotIn('CUSHION_MONTHLY', values)
+        selected = self.chat(cid, text='저축에서 5만원 가져와', answers=[reading(requests=[item('FOOD', 50000)], sources=['SAVINGS'], reference='previous')])
+        card = selected['messages'][-1]['content']['budgetAdjustment']['proposal']
+        self.assertEqual(card['buckets']['SAVINGS'], self.ctx['buckets']['SAVINGS'] - 50000)
 
     def test_distribution_preserves_unlock_consent_until_approval(self):
         setting = BudgetCategorySetting.objects.create(user=self.user, cycle=self.base.cycle,
@@ -800,7 +799,7 @@ class FinancialAdjustmentApiTest(TestCase):
         revised = response['messages'][-1]['content']['budgetAdjustment']['proposal']
         self.assertEqual(revised['allocations']['FOOD'], 440000)
         self.assertEqual(revised['allocations']['EDUCATION'], 60000)
-        self.assertEqual(revised['buckets']['SPARE'], 350000)
+        self.assertEqual(revised['buckets']['SPARE'], 400000)
         self.assertNotEqual(first['proposalId'], revised['proposalId'])
         self.assertEqual(Budget.objects.get(pk=first['proposalId']).status, 'expired')
         self.base.refresh_from_db()
@@ -874,7 +873,7 @@ class FinancialAdjustmentApiTest(TestCase):
             reading(requests=[item(amount=20000)], sources=['SPARE'], reference='previous')])
         adjustment = response['messages'][-1]['content']['budgetAdjustment']
         self.assertEqual(adjustment['proposal']['allocations']['FOOD'], 420000)
-        self.assertEqual(self.model.call_count, 4)
+        self.assertEqual(self.model.call_count, 3)
 
     def test_unknown_amount_has_the_same_examples_with_or_without_compare_action(self):
         comparisons = []
@@ -902,7 +901,7 @@ class FinancialAdjustmentApiTest(TestCase):
         response = self.chat(cid, text='식비를 좀 넉넉하게 잡아줘', answers=[reading(requests=[item()])])
         content = response['messages'][-1]['content']
         self.assertEqual(content['budgetAdjustment']['status'], 'awaiting_input')
-        self.assertIn('계산하는 중', content['budgetAdjustment']['explanation']['why'])
+        self.assertTrue(content['budgetAdjustment']['comparison']['plans'])
         stored = ConversationStore.load(Conversation.objects.get(pk=cid).slots).get_agent_state(KEY, 'budget')
         self.assertEqual(stored['requests'][0]['category'], 'FOOD')
         self.assertEqual(stored['requests'][0]['direction'], 'up')
@@ -924,26 +923,14 @@ class FinancialAdjustmentApiTest(TestCase):
         for key in ("requests", "pending", "financial_offer"):
             self.assertEqual(after[key], before[key])
 
-    def test_missing_recommendation_keeps_choices_and_allows_manual_plan_selection(self):
+    def test_server_recommendation_survives_llm_recommendation_abstention(self):
         offered = self.offer(recommendation_index=None)
-        comparison = offered["budgetAdjustment"]["comparison"]
-        self.assertIsNone(comparison["recommendation"]["planId"])
-        budgets = Budget.objects.count()
-
-        response = self.chat(self.cid, text="추천대로 선택할게", answers=[reading(approval=True, reference='previous')])
-        reply = response["messages"][-1]["content"]
-        adjustment = reply["budgetAdjustment"]
-        self.assertEqual(adjustment["status"], "awaiting_input")
-        self.assertEqual(adjustment["comparison"], comparison)
-        self.assertFalse(adjustment["canApprove"])
-        self.assertEqual([c["value"] for c in reply["choices"]], [c["value"] for c in offered["choices"]])
-        self.assertIn("financial_0", {c["value"] for c in reply["choices"]})
-        self.assertEqual(Budget.objects.count(), budgets)
-
-        proposal = self.select(reply)
-        self.assertEqual(proposal["allocations"]["FOOD"], 450000)
+        comparison = offered['budgetAdjustment']['comparison']
+        self.assertEqual(comparison['recommendation']['planId'], '0')
+        proposal = self.select(offered)
+        self.assertEqual(proposal['allocations']['FOOD'], 450000)
         self.base.refresh_from_db()
-        self.assertEqual(self.base.status, "approved")
+        self.assertEqual(self.base.status, 'approved')
 
     def test_preview_explanation_keeps_the_card_and_opens_details_in_web_response(self):
         first = self.select(self.offer())
@@ -991,7 +978,7 @@ class FinancialAdjustmentApiTest(TestCase):
 
     def test_no_amount_and_no_history_preserves_savings_reserve_through_approval(self):
         self.ctx['diagnostic_inputs'] = {}
-        self.ctx['allocations']['FOOD'] = 350000
+        self.ctx['allocations']['FOOD'] = 320000
         self.ctx['buckets']['SAVINGS'] = 500000
         self.ctx['bucket_floors']['SAVINGS'] = 0
         self.ctx['bucket_available']['SAVINGS'] = 500000
@@ -1000,17 +987,17 @@ class FinancialAdjustmentApiTest(TestCase):
         self.ctx['funding_amount'] = sum(self.ctx['allocations'].values()) + sum(self.ctx['buckets'].values()) + self.ctx['fixed_amount']
         self.cid = self.chat(choice='budget')['conversationId']
         content = self.chat(self.cid, text='식비 늘려줘', answers=[
-            reading(requests=[item()], action='compare'), draft(funding(SAVINGS=350000)), review()
+            reading(requests=[item()], action='compare'), draft(funding(SAVINGS=320000)), review()
         ])['messages'][-1]['content']
         comparison = content['budgetAdjustment']['comparison']
         self.assertEqual(comparison['basisKind'], 'budget_example')
         self.assertFalse(comparison['amountWasGiven'])
         plan = comparison['plans'][0]
-        self.assertEqual(plan['result']['buckets']['SAVINGS'], 150000)
-        self.assertEqual(plan['maximum'], 350000)
+        self.assertEqual(plan['result']['buckets']['SAVINGS'], 180000)
+        self.assertEqual(plan['maximum'], 320000)
         self.assertEqual({t['from'] for t in plan['result']['transfers']}, {'SAVINGS'})
         card = self.select(content)
-        self.assertEqual(card['buckets']['SAVINGS'], 150000)
+        self.assertEqual(card['buckets']['SAVINGS'], 180000)
         self.base.refresh_from_db()
         self.assertEqual(self.base.status, 'approved')
         approved = self.post(f"/api/budgets/proposals/{card['proposalId']}/approve/", {})
@@ -1020,6 +1007,7 @@ class FinancialAdjustmentApiTest(TestCase):
         self.ctx['diagnostic_inputs']['history'] = {}
         self.ctx['ml_reference']['MEDICAL_HEALTH'] = self.ctx['allocations']['MEDICAL_HEALTH']
         start = self.chat(choice='budget')
+        self.ctx['priorities']['MEDICAL_HEALTH'] = 4
         cid = start['conversationId']
         response = self.chat(cid, text='의료비 줄이는 방법을 비교해줘', answers=[
             reading(requests=[item('MEDICAL_HEALTH', direction='down')], action='compare')])
@@ -1143,7 +1131,7 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertEqual(self.profile.budget_category_targets, {"FOOD": 450000})
 
     def test_unspecified_feedback_does_not_take_more_than_needed(self):
-        for code, expected in [('FASHION_SHOPPING', 150000), ('CUSHION_MONTHLY', 150000)]:
+        for code, expected in [('FASHION_SHOPPING', 200000), ('CUSHION_MONTHLY', 150000)]:
             with self.subTest(code=code):
                 first = self.select(self.offer())
                 response = self.chat(self.cid, text='여기는 더 줄여도 돼', answers=[
@@ -1153,13 +1141,16 @@ class FinancialAdjustmentApiTest(TestCase):
                 card = content['budgetAdjustment']['proposal']
                 self.assertEqual({**card['allocations'], **card['buckets']}[code], expected, content.get('text'))
                 self.assertEqual(card['allocations']['FOOD'], 450000)
-                self.assertNotEqual(card['proposalId'], first['proposalId'])
+                if code == 'FASHION_SHOPPING':
+                    self.assertEqual(card['proposalId'], first['proposalId'])
+                else:
+                    self.assertNotEqual(card['proposalId'], first['proposalId'])
                 self.assertGreaterEqual(card['buckets']['CUSHION_MONTHLY'], 60000)
 
     def test_unspecified_feedback_keeps_category_and_bucket_reserves(self):
         self.ctx['diagnostic_inputs'] = {}
         self.ctx['bucket_available'] = dict(self.ctx['buckets'])
-        for code, expected in [('FASHION_SHOPPING', 100000), ('CUSHION_MONTHLY', 60000)]:
+        for code, expected in [('FASHION_SHOPPING', 200000), ('CUSHION_MONTHLY', 60000)]:
             with self.subTest(code=code):
                 self.cid = self.chat(choice='budget')['conversationId']
                 offered = self.chat(self.cid, text='식비를 50만원 늘려줘', answers=[
@@ -1174,7 +1165,10 @@ class FinancialAdjustmentApiTest(TestCase):
                 card = content['budgetAdjustment']['proposal']
                 self.assertEqual({**card['allocations'], **card['buckets']}[code], expected, content.get('text'))
                 self.assertEqual(card['allocations']['FOOD'], 900000)
-                self.assertNotEqual(card['proposalId'], first['proposalId'])
+                if code == 'FASHION_SHOPPING':
+                    self.assertEqual(card['proposalId'], first['proposalId'])
+                else:
+                    self.assertNotEqual(card['proposalId'], first['proposalId'])
 
     def test_free_text_recommendation_shows_examples_before_selection(self):
         cid = self.chat(choice="budget")["conversationId"]
@@ -1207,7 +1201,7 @@ class FinancialAdjustmentApiTest(TestCase):
         second = content["proposal"]
         self.assertEqual(second["mode"], "NORMAL_ADJUSTMENT")
         self.assertEqual(second["allocations"]["FOOD"], 460000)
-        self.assertEqual(second["buckets"]["SPARE"], 340000)
+        self.assertEqual(second["buckets"]["SPARE"], 390000)
         self.assertNotEqual(second["taskRef"], first["taskRef"])
         self.assertEqual(str(Budget.objects.get(pk=second["proposalId"]).base_budget_id), first["proposalId"])
         state = ConversationStore.load(Conversation.objects.get(pk=self.cid).slots).get_agent_state(KEY, "budget")
@@ -1408,7 +1402,7 @@ class ConcurrentAdjustmentApprovalTest(TransactionTestCase):
                 talk = Conversation.objects.create(user=user)
                 adapter = AdjustmentAdapter(user, conversation=talk)
                 inp = adapter.get_context()
-                card = adapter.propose(inp, adapter.simulate(inp, envelope(item(amount=300000), sources=["SPARE"])), scope="cycle")
+                card = adapter.propose(inp, adapter.simulate(inp, envelope(item(amount=250000), sources=["SPARE"])), scope="cycle")
                 with transaction.atomic():
                     lock_user(user)
                     adapter.flush(talk)

@@ -5,31 +5,18 @@ import json
 import math
 
 from budgets.adjustment_core.calculation import proportional_group_reduction
-from budgets.adjustment_core.funding import available_adjustment, simulate_funding, validate_funding, _data
+from budgets.adjustment_core.funding import available_adjustment, simulate_funding, validate_funding, _data, _value, reserve_floor
 from budgets.adjustment_core.explanations import NAMES
 from budgets.adjustment_core.diagnostics import resolve_history, POLICY
 
 SOURCES = ("LIVING", "SPARE", "SAVINGS", "CUSHION_MONTHLY")
-PROMPT = """머니쿠션 재정 상태 기반 조정 계획기. 제공된 집계·서버 계산만 근거로 JSON을 반환한다.
-draft 단계: 1~3개 계획을 만들고 recommendation_index=null, reason_fact_ids=[]로 반환한다.
-funding은 허용된 source와 이동 amount(원 정수) 목록이다. 합계는 planning_amount와 같아야 한다.
-한 재원을 여러 번 쓰지 않는다. 단일 재원만으로 부족하면 허용 재원을 함께 쓰는 복합안을 반드시 검토한다.
-최근 지출·남은 기간·예정 지출·목표·가용액을 보고 불필요한 카테고리 감액과 저축/월 쿠션 변경을 피한다.
-여윳돈도 예정 지출과 추정 보유액이 있어 전부 가용하다고 단정하지 않는다.
-저축은 금액이나 비율만 보고 과다하다고 판단하지 않는다. 실행·납입 예정·하한이 보호된 이동 가능액만 검토한다.
-사용자 제외·잠금·우선순위·하한을 무시하지 않는다. 현재 금액이 확인되지 않은 재원은 쓰지 않는다.
-과거 소비 기록이 부족해도 basis=budget이면 확인된 예산과 남길 금액으로 복합 예시를 만든다.
-이 경우 소비 패턴이나 필요한 지출을 알아낸 것처럼 설명하지 않는다. 모르는 값은 추측해 가용액에 더하지 않는다.
-capacities는 각 재원에 남길 돈까지 보호한 상한이다. balanced_funding을 출발점으로 여러 재원을 조금씩 함께 사용한다.
-한 재원만으로 모자라면 다른 허용 재원으로 보충한다. 저축·월 쿠션·여윳돈을 하나씩 소진하는 안은 피한다.
-review 단계: 서버가 검수한 ready 계획 중 추천할 번호(0부터)를 recommendation_index로 선택한다.
-review에서는 plans=[]이고, 근거는 제공된 fact id만 reason_fact_ids에 넣는다. 해당 계획의 fact를 반드시 포함한다.
-추천 순서는 요청 충족, 조정 후 부족 위험, 사용자 우선순위·저축·쿠션 목표 영향, 변경 규모다.
-동등한 안이나 판단 근거 부족이면 추천을 보류한다. 안은 의미 있게 다른 것만 최대 세 개다.
-여윳돈을 충분히 남기면서 저축·순위 항목을 유지하는 안을 우선 검토하되 자료에 근거해 판단한다.
-검수된 전액 반영안이 없으면 recommendation_index=null로 추천을 보류한다. 모자란 돈을 만들어내지 않는다.
-수정 요청을 받으면 오류를 반영해 draft를 다시 반환한다. 예산 확정·저장 권한은 없다.
-출력은 plans, recommendation_index, reason_fact_ids만 포함한다. 자유 문장으로 금융 판단을 덧붙이지 않는다."""
+PROMPT = """머니쿠션 예산 조정 설명 검토기. 서버가 계산한 verified_plans의 금액·순서·추천 번호를 바꾸지 않는다.
+생활비에서 먼저 조정하고 부족분만 여윳돈, 마지막으로 저축·월 머니쿠션에서 보충한다.
+저축은 이번 주기 예산이고 이미 저축한 계좌 잔액이 아니다. 월 머니쿠션과 누적 쿠션도 구분한다.
+review 단계에서 plans=[]와 서버가 정한 recommendation_index, 제공된 사실 ID만 reason_fact_ids에 반환한다.
+예산 미리보기와 실제 사용 가능액 확인을 구분한다. 설명을 위해 모르는 금액·가격·필요액을 만들지 않는다.
+출력은 plans, recommendation_index, reason_fact_ids만 포함한다."""
+
 
 SCHEMA = {"type": "object", "properties": {
     "plans": {"type": "array", "items": {"type": "object", "properties": {
@@ -61,16 +48,11 @@ def ceil_unit(value, unit=5000):
 
 
 def recommendation_context(context, request):
-    """Retain 50% of categories and 30% of upper budgets, plus existing protections."""
+    """Use the same source protections as quotes, direct edits and final replay."""
     result = deepcopy(context)
-    for field, amounts in (("minimums", context["allocations"]), ("bucket_floors", context["buckets"])):
-        for code, amount in amounts.items():
-            retained = (amount * 3 + 9) // 10 if field == 'bucket_floors' else (amount + 1) // 2
-            result.setdefault(field, {})[code] = max(result.get(field, {}).get(code, 0), retained)
-    # An initial recommendation is not a user minimum; protected floors and ranks still apply.
-    result['ml_not_applicable'] = sorted(set(context.get('ml_not_applicable', ())) | set(context['allocations']))
+    result['bucket_floors'] = {code: reserve_floor(context, code, amount) for code, amount in context['buckets'].items()}
     if request.get('spare_minimum') is not None:
-        result['bucket_floors']['SPARE'] = max(context.get('bucket_floors', {}).get('SPARE', 0), request['spare_minimum'])
+        result['bucket_floors']['SPARE'] = max(result['bucket_floors']['SPARE'], request['spare_minimum'])
     return result
 
 
@@ -80,14 +62,14 @@ def diagnose(context, request):
     items = request.get('items', [])
     example = len(items) == 1 and (items[0].get('amount') is None or items[0].get('amount_mode') == 'available')
     if (diagnosis['status'] != 'ready' and len(items) == 1
-            and items[0].get('category') in {*context['allocations'], *context['buckets']}
-            and context.get('spending_status') == 'complete'
+            and items[0].get('category') in {*context['allocations'], *context['buckets'], 'LIVING'}
+            and (context.get('spending_status') == 'complete' or context.get('budget_preview'))
             and (diagnosis.get('field') in {'history', 'period', 'stale', 'planned', 'spare', 'amount'}
-                 or items[0].get('category') in context['buckets'])):
+                 or items[0].get('category') in {*context['buckets'], 'LIVING'})):
         target = items[0]['category']
         checked = {**request, 'items': [{**items[0], 'amount': 0, 'amount_mode': 'by'}]} if example else request
         data = _data(protected, checked)
-        requested = data['targets'][target] - data['before'][target]
+        requested = data['targets'][target] - _value(data, data['before'], target)
         if ((requested > 0 or example and items[0].get('direction') == 'up')
                 and requested % 5000 == 0 and target not in context.get('locks', {})):
             planned = context.get('diagnostic_inputs', {}).get('planned_spare', {})
@@ -97,7 +79,7 @@ def diagnose(context, request):
                 'requested_amount': requested, 'planning_amount': requested,
                 'allowed': [s for s in (request.get('sources') or SOURCES) if s in SOURCES
                             and s != target and s not in request.get('excluded', [])],
-                'excluded': list(request.get('excluded', [])), 'reserve_forecast': {},
+                'excluded': list(request.get('excluded', [])), 'destinations': request.get('destinations', []), 'reserve_forecast': {},
                 'planned_spare': planned['amount'] if known_planned else 0,
                 'reserve_is_estimate': True, 'allow_reserve_risk': False,
                 'facts': {'need': f"{NAMES.get(target, target)}에 {requested:,}원을 더하는 예시예요.",
@@ -107,7 +89,7 @@ def diagnose(context, request):
             diagnosis['reserve_before'] = reserve_after(protected, diagnosis, context['allocations'])
             diagnosis['capacities'] = {}
             for source in diagnosis['allowed']:
-                quote = available_adjustment(protected, target, 'up', sources=[source], excluded=diagnosis['excluded'],
+                quote = available_adjustment(protected, target, 'up', sources=[source], destinations=request.get('destinations', []), excluded=diagnosis['excluded'],
                     allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
                 maximum = quote['maximum'] if quote['status'] == 'ready' else 0
                 if source == 'SPARE':
@@ -122,11 +104,11 @@ def diagnose(context, request):
     if diagnosis['status'] == 'ready':
         diagnosis.setdefault('basis', 'forecast')
         diagnosis['retained_amounts'] = {
-            **{code: max(protected['minimums'][code], context.get('spent', {}).get(code, 0),
+            **{code: max(protected.get('minimums', {}).get(code, 0), context.get('spent', {}).get(code, 0),
                          context.get('system_floors', {}).get(code, 0),
-                         amount if code in context.get('priorities', {}) or code in context.get('locks', {}) else 0)
+                         amount if context.get('priorities', {}).get(code, 99) <= 6 or code in context.get('locks', {}) else 0)
                for code, amount in context['allocations'].items()}, **protected['bucket_floors']}
-        diagnosis['facts']['protection'] = '저축·월 머니쿠션·여윳돈은 기본 30% 이상을 남겨요. 직접 정한 최소금액과 중요한 생활비도 지켜요.'
+        diagnosis['facts']['protection'] = '중요하게 고른 1~6순위 예산과 직접 정한 최소금액을 지켜요.'
         diagnosis['planning_amount'] = min(diagnosis['requested_amount'], sum(n // 5000 * 5000 for n in diagnosis['capacities'].values()))
     return diagnosis
 
@@ -211,13 +193,9 @@ def _forecast_diagnosis(context, request):
 
 
 def reserve_after(context, diagnosis, allocations):
-    target = diagnosis["target"]
-    # A surplus in one category cannot silently fund a deficit in another.
-    gaps = sum(max(predicted - max(allocations[c] - context["spent"].get(c, 0), 0), 0)
-               for c, predicted in diagnosis["reserve_forecast"].items() if c != target)
-    return max(diagnosis["planned_spare"] + gaps,
-               diagnosis.get('spare_minimum', (context['buckets']['SPARE'] * 3 + 9) // 10),
-               context.get('bucket_floors', {}).get('SPARE', 0))
+    # Forecasts explain risk; only confirmed obligations and saved protection consume capacity.
+    return max(diagnosis['planned_spare'],
+               diagnosis.get('spare_minimum', 0), reserve_floor(context, 'SPARE', context['buckets']['SPARE']))
 
 
 def simulate_plan(context, diagnosis, funding):
@@ -239,7 +217,7 @@ def simulate_plan(context, diagnosis, funding):
     items.extend({"category": s, "amount_mode": "by", "direction": "down", "amount": n, "automatic": True}
                  for s, n in limits.items() if s != "LIVING")
     request = {"items": items, "sources": ["LIVING"] if limits.get("LIVING") else [],
-               "destinations": [], "excluded": list(diagnosis["excluded"])}
+               "destinations": diagnosis.get("destinations", []), "excluded": list(diagnosis["excluded"])}
     if diagnosis.get('spare_minimum') is not None:
         request['spare_minimum'] = diagnosis['spare_minimum']
     result = simulate_funding(context, request, allocate_group_reduction=proportional_group_reduction)
@@ -274,7 +252,7 @@ def simulate_plan(context, diagnosis, funding):
             kind = "category_reduction" if code in context["allocations"] else "bucket_reduction"
             detail = {"kind": kind, "category": code, "rank": rank, "before": change["before"],
                       "after": change["after"], "decrease": -change["diff"]}
-            if kind == "category_reduction": detail["remaining"] = change["after"] - context["spent"].get(code, 0)
+            if kind == "category_reduction": detail["remaining"] = change["after"] - context["spent"].get(code, 0) if result.get("spending_verified", True) else None
             else: detail["available_after"] = max(context.get("bucket_available", {}).get(code, 0) + change["diff"], 0)
             structured.append(detail)
         goal = context.get("bucket_targets", {}).get(code, context.get("category_targets", {}).get(code))
@@ -282,14 +260,22 @@ def simulate_plan(context, diagnosis, funding):
             increase = max(goal - change["after"], 0) - max(goal - change["before"], 0)
             facts["goal_" + code] = f"{NAMES.get(code, code)}에 남겨 두기로 한 돈보다 부족한 금액이 {increase:,}원 더 커져요."
             structured.append({"kind": "goal_shortfall_increase", "category": code, "increase": increase})
-    if spare_after < reserve:
+    if available is not None and spare_after < reserve:
         facts["reserve_gap"] = f"여윳돈 보유 추천액보다 {reserve - spare_after:,}원 부족한 상태는 남아요."
+    living_used = actual.get('LIVING', 0)
+    gap = max(diagnosis['requested_amount'] - living_used, 0)
+    facts['funding_order'] = f"다른 생활비에서 {living_used:,}원을 조정해요. 요청액까지 {gap:,}원이 더 필요해요."
+    if gap and any(actual.get(c, 0) for c in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY')):
+        facts['funding_order'] += ' 부족분만 ' + ', '.join(f"{NAMES[c]} {actual[c]:,}원" for c in ('SPARE','SAVINGS','CUSHION_MONTHLY') if actual.get(c, 0)) + '에서 가져와요.'
+    for change in result['changes']:
+        if change['category'] in context['allocations'] and change['after'] == 0:
+            facts['empty_' + change['category']] = f"{NAMES.get(change['category'], change['category'])}에 사용할 예산이 남지 않아요."
     preserved = [NAMES.get(c, c) for c in [*context.get("priorities", {}), "SAVINGS", "CUSHION_MONTHLY"]
                  if (result["allocations"].get(c, result["buckets"].get(c)) == context["allocations"].get(c, context["buckets"].get(c)))
                  and c != diagnosis["target"]]
     facts["preserved"] = (", ".join(preserved) + "의 배정을 유지해요.") if preserved else "다른 우선순위·저축 계획도 변경돼요."
     return {"result": result, "funding": [{"source": s, "amount": n} for s, n in actual.items() if n],
-            "reserve_after": reserve, "spare_available_after": spare_after, "facts": facts, "structured_facts": structured}
+            "reserve_after": reserve, "spare_available_after": spare_after if available is not None else None, "facts": facts, "structured_facts": structured}
 
 
 def parse(value):
@@ -310,66 +296,43 @@ def recommend(context, request, complete):
     diagnosis = diagnose(context, request)
     if diagnosis["status"] != "ready":
         return {"diagnosis": diagnosis, "plans": [], "recommended_index": None}
-    if request.get('sources') and diagnosis['planning_amount'] < diagnosis['requested_amount']:
-        expanded = diagnose(context, {**request, 'sources': []})
-        if expanded['status'] == 'ready' and expanded['planning_amount'] > diagnosis['planning_amount']:
-            expanded['expanded_sources'] = [s for s in expanded['allowed'] if s not in request['sources']]
-            expanded['facts']['additional_sources'] = '고른 곳만으로는 부족해 다른 예산도 조금씩 쓰는 예시를 함께 계산했어요. 선택하기 전에는 바뀌지 않아요.'
-            diagnosis = expanded
-    if diagnosis["planning_amount"] <= 0:
-        return {"diagnosis": diagnosis, "plans": [], "recommended_index": None}
-    split = proportional_group_reduction(list(diagnosis['capacities']), diagnosis['planning_amount'], diagnosis['capacities'])
-    combined = [{'source': source, 'amount': amount} for source, amount in split['reductions'].items() if amount]
-    payload = {"phase": "draft", "diagnosis": diagnosis, "budget": {
-        key: context.get(key, {}) for key in ("allocations", "spent", "priorities", "category_targets", "bucket_targets", "buckets", "bucket_available", "bucket_status")}}
-    payload['balanced_funding'] = combined
-    payload['user_preferences'] = {key: request[key] for key in ('reason', 'sources', 'excluded', 'spare_minimum') if key in request}
-    plans, evidence = [], dict(diagnosis["facts"])
-    for _ in range(3):
+    if diagnosis['planning_amount'] <= 0:
+        return {'diagnosis': diagnosis, 'plans': [], 'recommended_index': None}
+    plans = []
+    for order in (SOURCES, ('LIVING', 'SPARE', 'CUSHION_MONTHLY', 'SAVINGS')):
+        left, funding = diagnosis['planning_amount'], []
+        for source in order:
+            amount = min(left, diagnosis['capacities'].get(source, 0)) // 5000 * 5000
+            if amount:
+                funding.append({'source': source, 'amount': amount})
+                left -= amount
+        if left:
+            continue
+        try:
+            plan = simulate_plan(context, diagnosis, funding)
+        except ValueError:
+            continue
+        if plan['funding'] not in [p['funding'] for p in plans]:
+            plans.append(plan)
+    evidence = dict(diagnosis['facts'])
+    for index, plan in enumerate(plans):
+        evidence.update({f'plan_{index}.{key}': value for key, value in plan['facts'].items()})
+    recommended = 0 if plans and plans[0]['result']['status'] == 'proposed' else None
+    reasons = [plans[0]['facts']['funding_order']] if plans else []
+    if plans:
+        payload = {'phase': 'review', 'recommendation_index': recommended, 'diagnosis': diagnosis, 'facts': evidence,
+                   'verified_plans': [{'index': i, 'funding': p['funding'], 'status': p['result']['status']} for i, p in enumerate(plans)]}
         try:
             answer = parse(complete(PROMPT, json.dumps(payload, ensure_ascii=False)))
-            if payload["phase"] == "draft":
-                if not answer["plans"] or answer["recommendation_index"] is not None:
-                    raise ValueError("draft_required")
-                proposed = []
-                for draft in answer["plans"]:
-                    if not isinstance(draft, dict) or set(draft) != {"funding"}:
-                        raise ValueError("planner_draft")
-                    plan = simulate_plan(context, diagnosis, draft["funding"])
-                    if plan["funding"] not in [p["funding"] for p in proposed]:
-                        proposed.append(plan)
-                if not split['remaining'] and len(combined) > 1:
-                    try:
-                        verified = simulate_plan(context, diagnosis, combined)
-                    except ValueError:
-                        # Living cuts can require a larger reserve than the individual source quotes.
-                        verified = None
-                    if verified is not None and verified['funding'] not in [p['funding'] for p in proposed]:
-                        proposed = proposed[:2] + [verified]
-                plans = proposed
-                evidence = dict(diagnosis["facts"])
-                review = []
-                for i, plan in enumerate(plans):
-                    keys = {f"plan_{i}.{key}": text for key, text in plan["facts"].items()}
-                    evidence.update(keys)
-                    review.append({"index": i, "status": plan["result"]["status"], "funding": plan["funding"],
-                                   "shortfalls": plan["result"]["shortfalls"], "facts": keys})
-                payload = {"phase": "review", "diagnosis": diagnosis, "verified_plans": review, "facts": evidence}
-                continue
-            index, ids = answer["recommendation_index"], answer["reason_fact_ids"]
-            if answer["plans"] or any(key not in evidence for key in ids):
-                raise ValueError("unsupported_evidence")
-            if index is not None and (index >= len(plans) or plans[index]["result"]["status"] != "proposed"
-                                      or not any(key.startswith(f"plan_{index}.") for key in ids)):
-                raise ValueError("invalid_recommendation")
-            return {"diagnosis": diagnosis, "plans": plans, "recommended_index": index,
-                    "reasons": [evidence[key] for key in dict.fromkeys(ids)], "evidence_ids": ids}
-        except (ValueError, TypeError, KeyError) as error:
-            known = {"funding_limit", "funding_total", "spare_reserve_shortfall", "split_exceeded", "not_validated",
-                     "unsupported_evidence", "invalid_recommendation"}
-            code = str(error) if str(error) in known else "invalid_plan_or_evidence"
-            payload["error"] = {"code": code, "hint": "허용 재원·가용액·합계·보유 추천액·사실 ID를 확인해 수정해 주세요."}
-    return {"diagnosis": diagnosis, "plans": [], "recommended_index": None, "error": "planner_not_validated"}
+            ids = answer['reason_fact_ids']
+            if answer['plans'] or answer['recommendation_index'] != recommended or any(key not in evidence or key.startswith('plan_') and not key.startswith(f'plan_{recommended}.') for key in ids):
+                raise ValueError('unsupported_evidence')
+            # Server facts always explain the source order, even if the LLM omits them.
+            reasons.extend(evidence[key] for key in dict.fromkeys(ids) if evidence[key] not in reasons)
+        except Exception:
+            pass  # Calculation remains valid when optional explanation generation fails.
+    return {'diagnosis': diagnosis, 'plans': plans, 'recommended_index': recommended, 'reasons': reasons,
+            **({'error': 'calculation_unverified'} if not plans else {})}
 
 
 def synthetic_diagnostics(allocations):

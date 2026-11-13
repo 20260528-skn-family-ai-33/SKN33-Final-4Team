@@ -85,6 +85,24 @@ class AdjustmentContextTest(TestCase):
             amount=amount, direction="out", transaction_type=kwargs.pop("transaction_type", "spending"),
             confirmed_category_id=category, confirmation_state="confirmed", **kwargs)
 
+    def test_reserve_anchor_uses_first_approved_budget_after_repeated_adjustments(self):
+        from .adjustment_core.funding import available_adjustment, reserve_floor
+        original = self.make_budget()
+        original.status = 'superseded'
+        original.save(update_fields=['status'])
+        current = self.make_budget(base=original)
+        current.items.filter(bucket='savings').update(allocated_amount=300000)
+        current.items.filter(bucket='living', category_id='FOOD').update(allocated_amount=1000000)
+        self.profile.living_budget = 1600000
+        self.profile.savings_floor = 300000
+        self.profile.save()
+        found = self.context()
+        self.assertEqual(found['reserve_anchors']['SAVINGS'], 600000)
+        self.assertEqual(found['reserve_anchors']['SPARE'], 400000)
+        self.assertEqual(reserve_floor(found, 'SAVINGS', 300000), 180000)
+        self.assertEqual(reserve_floor(found, 'SPARE', 100000), 120000)
+        self.assertEqual(available_adjustment(found, 'FOOD', 'up', sources=['SAVINGS'])['maximum'], 120000)
+
     def test_selects_approved_instead_of_newer_derived_or_ordinary_draft(self):
         approved = self.make_budget()
         self.make_budget(status="validated", base=approved)
@@ -197,7 +215,7 @@ class AdjustmentContextTest(TestCase):
                 FinancialProfile.objects.filter(user=self.user).update(has_car=vehicle)
                 found = self.context()
                 self.assertEqual(found["system_floors"], expected)
-                self.assertEqual(found["policy_version"], "budget-adjust-20261112-planned-savings-v4")
+                self.assertEqual(found["policy_version"], "budget-adjust-20261113-living-first-v5")
                 self.assertEqual(found["transport_history_status"], "unavailable")
                 fingerprints.append(found["context_hash"])
         self.assertEqual(len(set(fingerprints)), 3)
@@ -310,8 +328,8 @@ class AdjustmentContextTest(TestCase):
         from .adjustment_core.funding import simulate_funding
         from .test_adjustment_core import envelope, item
         result = simulate_funding(found, envelope(item('FOOD', 550000), sources=['SAVINGS']))
-        self.assertEqual(result['status'], 'proposed', result)
-        self.assertEqual(result['buckets']['SAVINGS'], 50000)
+        self.assertEqual(result['status'], 'partial', result)
+        self.assertEqual(result['buckets']['SAVINGS'], 180000)
 
     def test_registered_savings_minimum_does_not_require_transfer_schedule(self):
         self.make_budget()

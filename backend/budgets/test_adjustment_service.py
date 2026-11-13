@@ -69,6 +69,21 @@ class AdjustmentServiceTest(TestCase):
             return approve_adjustment(self.user, proposal, keep_for_next_cycle=keep, key=key,
                 expected_mode=mode or self.snapshot["mode"], today=TODAY)
 
+    def test_incomplete_spending_preview_is_retained_but_cannot_be_approved(self):
+        self.snapshot.update(spending_status='partial', budget_preview=True)
+        adapter = self.adapter()
+        ctx = adapter.get_context()
+        result = adapter.simulate(ctx, envelope(item(amount=15000), sources=['LIVING']))
+        card = adapter.propose(ctx, result, scope='cycle')
+        self.assertFalse(card['can_approve'])
+        self.assertIn('미리보기', card['verification_notice'])
+        self.flush(adapter)
+        with self.assertRaises(AdjustmentNotReady):
+            self.approve(card['proposal_id'])
+        self.assertEqual(Budget.objects.get(pk=card['proposal_id']).status, 'validated')
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+
     def test_stage_writes_nothing_and_flush_preserves_original_until_approval(self):
         adapter, card = self.stage()
         self.assertEqual(Budget.objects.count(), 1)

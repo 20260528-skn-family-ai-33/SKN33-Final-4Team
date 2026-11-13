@@ -45,7 +45,7 @@ def planning_context(context, planning):
     # A negative projected remainder must be covered by the requested cuts before approval.
     planned.update(funding_amount=income, monthly_income=income, fixed_amount=fixed, spent={}, spending_status='complete',
                    planning_base=deepcopy(base), planning=deepcopy(planning),
-                   effective_on=base['next_cycle_starts_on'], income_before=income_before)
+                   effective_on=base['next_cycle_starts_on'], income_before=income_before, required_expenses={}, budget_preview=False)
     planned['buckets']['SPARE'] = spare
     planned['allocations'].pop('TRAVEL_LODGING', None)
     if planning.get('reserve_category') == 'TRAVEL_LODGING' or base.get('reserved_budget_amount'):
@@ -55,6 +55,7 @@ def planning_context(context, planning):
     planned['bucket_available'] = {code: max(amount - planned['bucket_floors'].get(code, 0), 0)
                                    for code, amount in planned['buckets'].items()}
     planned['bucket_status'] = {code: 'ready' for code in planned['buckets']}
+    planned['reserve_anchors'] = {code: max(amount, 0) for code, amount in planned['buckets'].items()}
     # Current-cycle spending cannot forecast an unstarted cycle; use verified budget examples.
     planned['diagnostic_inputs'] = {}
     planned.pop('context_hash', None)

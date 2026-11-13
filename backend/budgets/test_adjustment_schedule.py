@@ -104,7 +104,7 @@ class FuturePlanningTest(unittest.TestCase):
     def test_one_off_trip_asks_prepared_money_and_only_funds_the_gap(self):
         store, propose = Store(), Mock(return_value={'proposal_id': 'plan', 'task_ref': 'task'})
         answers = [reading(requests=[item('TRAVEL_LODGING', 1000000)], scope='next_cycle', one_off=True),
-                   reading(set_aside_amount=700000, sources=['SPARE'], reference='previous')]
+                   reading(set_aside_amount=720000, sources=['SPARE'], reference='previous')]
         ports = dict(store=store, complete=Mock(side_effect=[json.dumps(a) for a in answers]),
                      get_context=lambda: deepcopy(self.base), simulate=simulate_funding, propose=propose,
                      task_status=Mock(), cancel=Mock(), allocator=allocation)
@@ -115,7 +115,7 @@ class FuturePlanningTest(unittest.TestCase):
         result = financial_conversation.handle({'conversation_id': 'talk', 'text': '따로 준비한 돈 70만원 있고 나머지는 여윳돈에서'}, **ports)
         self.assertIn('proposal', result['reply'], result)
         calculated = propose.call_args.args[1]
-        self.assertEqual(calculated['allocations']['TRAVEL_LODGING'], 300000)
+        self.assertEqual(calculated['allocations']['TRAVEL_LODGING'], 280000)
         self.assertEqual(calculated['buckets']['SAVINGS'], self.base['buckets']['SAVINGS'])
         self.assertEqual(calculated['buckets']['CUSHION_MONTHLY'], self.base['buckets']['CUSHION_MONTHLY'])
         self.assertTrue({'SAVINGS', 'CUSHION_MONTHLY'} <= set(store.state['excluded']))
@@ -271,21 +271,21 @@ class SchedulePersistenceTest(TestCase):
         self.snapshot.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
         adapter = self.adapter()
         ctx = planning_context(adapter.get_context(), {'scope': 'next_cycle', 'one_off': True, 'reserve_category': 'TRAVEL_LODGING',
-             'expense': {'category': 'TRAVEL_LODGING', 'total': 1000000, 'set_aside': 700000, 'additional': 300000}})
-        result = adapter.simulate(ctx, {**envelope(item('TRAVEL_LODGING', 300000), sources=['SPARE']), 'spare_minimum': 100000})
+             'expense': {'category': 'TRAVEL_LODGING', 'total': 1000000, 'set_aside': 720000, 'additional': 280000}})
+        result = adapter.simulate(ctx, {**envelope(item('TRAVEL_LODGING', 280000), sources=['SPARE']), 'spare_minimum': 100000})
         card = adapter.propose(ctx, result, scope='next_cycle')
         self.flush(adapter)
         saved = self.approve(card['proposal_id'])
         self.assertTrue(saved['one_off'])
-        self.assertEqual(Budget.objects.get(pk=card['proposal_id']).items.get(bucket='reserve').allocated_amount, 300000)
+        self.assertEqual(Budget.objects.get(pk=card['proposal_id']).items.get(bucket='reserve').allocated_amount, 280000)
         from .adjustment_context import _budget_amounts
         from .adjustment_service import _lines
         planned_budget = Budget.objects.get(pk=card['proposal_id'])
         allocations, totals, spare, _ = _budget_amounts(self.user, planned_budget)
         self.assertNotIn('TRAVEL_LODGING', allocations)
-        self.assertEqual(spare, 100000)
+        self.assertEqual(spare, 120000)
         ordinary_result = {'allocations': allocations, 'buckets': {'SAVINGS': 600000, 'CUSHION_MONTHLY': 200000}}
-        self.assertEqual(next(line for line in _lines(planned_budget, ordinary_result) if line['bucket'] == 'reserve')['allocated_amount'], 300000)
+        self.assertEqual(next(line for line in _lines(planned_budget, ordinary_result) if line['bucket'] == 'reserve')['allocated_amount'], 280000)
         with transaction.atomic():
             activate_due_settings(self.user, self.profile, date(2026, 11, 25))
         self.profile.refresh_from_db()
@@ -294,7 +294,7 @@ class SchedulePersistenceTest(TestCase):
         self.assertEqual(self.profile.budget_category_targets, {})
         cycle = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 11, 25), ends_before=date(2026, 12, 25))
         snap = budget_input_snapshot(self.user, cycle, profile=self.profile, today=date(2026, 11, 25), card=False)
-        self.assertEqual(snap['fixed']['planned_reserve'], 300000)
+        self.assertEqual(snap['fixed']['planned_reserve'], 280000)
         self.assertNotIn('TRAVEL_LODGING', snap['engine_input']['category_targets'])
         snap['fixed']['card_reserved'] = 0
         lines = recommended_budget_lines(snap, {'allocations': self.snapshot['allocations']})

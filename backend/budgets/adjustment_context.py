@@ -27,7 +27,7 @@ from .salary import salary_cycle_dates
 from .scope import OUT_OF_BUDGET, living_spent
 
 
-POLICY_VERSION = "budget-adjust-20261112-planned-savings-v4"
+POLICY_VERSION = "budget-adjust-20261113-living-first-v5"
 MODES = {"INITIAL_ADJUSTMENT": "validated", "NORMAL_ADJUSTMENT": "approved"}
 ML_CATEGORIES = set(LIVING_CODES) - {"ETC"}
 
@@ -358,7 +358,7 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
         system_floors['TRANSPORT_CAR'] = min(system_floors['TRANSPORT_CAR'], int(amount/1000+Fraction(1, 2))*1000)
     context = {
         "base_budget_id": str(chosen.pk), "cycle_id": str(cycle.pk), "mode": mode, "source_status": chosen.status,
-        "policy_version": POLICY_VERSION, "automatic_unit": 10000, "fallback_unit": 5000,
+        "budget_preview": collected["state"] != "complete", "policy_version": POLICY_VERSION, "automatic_unit": 10000, "fallback_unit": 5000,
         "reserved_budget_amount": sum(line['amount'] for line in items if line['bucket'] == 'reserve'),
         "allocations": allocations, "spent": spent, "spending_status": collected["state"],
         "spending_coverage": _json(collected), "minimums": dict(CategoryMinimum.objects.filter(user=user,
@@ -402,6 +402,25 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
         context["bucket_reasons"]["SPARE"] = "reservation_unverified"
     elif context["bucket_status"]["SPARE"] == "ready":
         context["bucket_available"]["SPARE"] = max(context["bucket_available"]["SPARE"] - reserved, 0)
+    previous = (chosen.input_snapshot or {}).get('adjustment_context', {})
+    previous_request = (chosen.validation_summary or {}).get('adjustment', {}).get('result', {}).get('requests', {})
+    spare_minimum = previous_request.get('spare_minimum')
+    for code, amount in previous.get('bucket_floors', {}).items():
+        if code in context['buckets'] and type(amount) is int and amount >= 0:
+            context['bucket_floors'][code] = max(context['bucket_floors'].get(code, 0), amount)
+    if type(spare_minimum) is int and spare_minimum >= 0:
+        context['bucket_floors']['SPARE'] = max(context['bucket_floors'].get('SPARE', 0), spare_minimum)
+    original = Budget.objects.filter(user=user, cycle=cycle, approved_at__isnull=False).order_by('approved_at', 'pk').first()
+    if original is not None:
+        original_amounts = {code: 0 for code in ('SAVINGS', 'CUSHION_MONTHLY')}
+        for line in original.items.filter(bucket__in=('savings', 'cushion')):
+            original_amounts['SAVINGS' if line.bucket == 'savings' else 'CUSHION_MONTHLY'] += line.allocated_amount
+        original_amounts['SPARE'] = max(original.funding_amount - sum(original.items.values_list('allocated_amount', flat=True)), 0)
+        context['reserve_anchors'] = original_amounts
+    from .adjustment_schedule import cycle_settings
+    expense = (cycle_settings(user, cycle).get('expense') or {})
+    if expense.get('category') in allocations and type(expense.get('additional')) is int and expense['additional'] >= 0:
+        context['required_expenses'] = {expense['category']: expense['additional']}
     context["diagnostic_inputs"] = read_diagnostics(user, context, cycle, today)
     context = _json(context)
     context["context_hash"] = context_fingerprint(context)

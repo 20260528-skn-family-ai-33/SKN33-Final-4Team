@@ -211,7 +211,7 @@ class AgentCollabTest(CollabFixture, TestCase):
         data, card = self.say("그럼 거기서 빼줘")
         self.assertEqual(data["agent"], "budget")
         changes = self.changes(card)
-        self.assertEqual((changes["FOOD"], changes["TRANSPORT_CAR"]), (25000, -25000))  # 교통에서 가능한 만큼만
+        self.assertEqual((changes["FOOD"], changes["TRANSPORT_CAR"]), (45000, -45000))  # 교통에서 가능한 만큼만
         self.assertEqual(card['budgetAdjustment']['phase'], 'partial')
         self.assertFalse(card['budgetAdjustment']['canApprove'])
         self.assertEqual(set(changes), {'FOOD', 'TRANSPORT_CAR'})

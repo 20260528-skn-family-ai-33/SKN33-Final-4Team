@@ -247,7 +247,7 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
   const scheduleTitle = { scheduled: '다음 주기 변경을 예약했어요', applied: '예약한 설정을 반영했어요',
     replaced: '새 예약으로 교체된 변경안이에요', needs_review: '예약 내용을 다시 확인해 주세요' }[proposal?.scheduleStatus]
   const guidance = proposal && TERMINAL.has(state) ? null : adjustment.guidance
-  const canApprove = active && adjustment.canApprove && proposal?.state === 'awaiting_approval'
+  const canApprove = active && adjustment.canApprove && proposal?.canApprove !== false && proposal?.state === 'awaiting_approval'
   const hasComparison = (adjustment.comparison?.plans ?? []).some((plan) => ['ready', 'partial'].includes(plan.status) && plan.amount > 0 && plan.result?.changes?.length)
   const hasPreview = proposal || hasComparison
   const amountInput = !hasPreview && !TERMINAL.has(state) && adjustment.amountInput
@@ -282,6 +282,7 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
     {hasComparison && <Comparison comparison={adjustment.comparison} choices={content.choices} active={active} onPick={onPick} detail={adjustment.detail} />}
     {proposal && <section className="mc-budget-proposal" aria-label="예산 변경안">
       {state === 'awaiting_approval' && <p className="mc-budget-preview-label">확정 전 미리보기</p>}
+      {proposal?.verificationNotice && <p>{proposal.verificationNotice}</p>}
       <h2>{state === 'saved' ? scheduleTitle ?? (proposal.effectiveOn ? '다음 주기 변경을 예약했어요' : '예산에 반영했어요') : state === 'expired' ? '만료된 변경안이에요' : '예산 변경안'}</h2>
       {proposal.effectiveOn && !['replaced', 'needs_review'].includes(proposal.scheduleStatus) && <p>{proposal.effectiveOn}부터 {proposal.oneOff ? '해당 주기에만 반영해요. 평소 배분 설정은 유지해요.' : '월급·배분 설정에 반영해요.'} 새 예산은 그때 확인된 수입과 지출로 다시 계산해요.</p>}
       {proposal.scheduleStatus === 'needs_review' && <p role="alert">예약 후 설정이 달라져 자동 반영하지 않았어요. 최신 조건으로 다시 조정해 주세요.</p>}

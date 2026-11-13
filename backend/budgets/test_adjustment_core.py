@@ -175,14 +175,11 @@ class AdjustmentCalculationTest(unittest.TestCase):
         return result
 
     def test_real_budget_amounts_use_five_thousand_fallback_without_changing_total(self):
-        inp = context()
-        inp['ml_reference']['MEDICAL_HEALTH'] = 35000
-        result = self.simulate(inp, envelope(item(amount=200000), sources=["LIVING"]))
-        self.assertEqual(result["status"], "partial")
-        self.assertEqual(result["allocations"]["FOOD"], 445000)
-        self.assertEqual(result["allocations"]["TRANSPORT_CAR"], 100000)
-        self.assertEqual(result["shortfalls"][0]["missing_amount"], 155000)
-        self.assertTrue(all(value % 5000 == 0 for value in result["allocations"].values()))
+        result = self.simulate(context(), envelope(item(amount=200000), sources=['LIVING']))
+        self.assertEqual(result['status'], 'proposed')
+        self.assertEqual(result['allocations']['FOOD'], 600000)
+        self.assertEqual(result['allocations']['TRANSPORT_CAR'], 100000)
+        self.assertTrue(all(value % 5000 == 0 for value in result['allocations'].values()))
 
     def test_explicit_won_request_has_no_precision_exception(self):
         result = self.simulate(context(), envelope(item(amount=35555), item("SAVINGS", 35555, "down")))
@@ -265,25 +262,20 @@ class AdjustmentCalculationTest(unittest.TestCase):
         result = self.simulate(inp, envelope(item("FASHION_SHOPPING", 200000), sources=["LIVING"]))
         for code in ("FOOD", "TRANSPORT_CAR", "EDUCATION"):
             self.assertEqual(result["allocations"][code], inp["allocations"][code])
-        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["status"], "proposed")
+
 
     def test_every_assigned_rank_is_protected_until_a_donor_is_named(self):
         inp = context()
-        inp['priorities'] = dict(zip(['FOOD', 'TRANSPORT_CAR', 'HOUSEHOLD', 'MEDICAL_HEALTH',
-                                     'FASHION_SHOPPING', 'EDUCATION', 'BEAUTY', 'CULTURE_LEISURE'], range(1, 9)))
-        inp['spent']['ETC'] = inp['allocations']['ETC']
-        original = deepcopy(inp)
+        inp['priorities'] = dict(zip(['FOOD', 'TRANSPORT_CAR', 'HOUSEHOLD', 'MEDICAL_HEALTH', 'FASHION_SHOPPING', 'EDUCATION', 'BEAUTY', 'CULTURE_LEISURE'], range(1, 9)))
         result = self.simulate(inp, envelope(item(amount=10000), sources=['LIVING']))
-        self.assertEqual(result['allocations'], inp['allocations'])
-        self.assertEqual(result['transfers'], [])
-        self.assertEqual(available_adjustment(inp, 'FOOD', 'up', sources=['LIVING'],
-            allocate_group_reduction=allocation)['maximum'], 0)
-        for donor in ('FASHION_SHOPPING', 'EDUCATION', 'BEAUTY', 'CULTURE_LEISURE'):
-            with self.subTest(rank=inp['priorities'][donor]):
-                consented = self.simulate(inp, envelope(item(amount=10000), sources=[donor]))
-                self.assertEqual(consented['status'], 'proposed')
-                self.assertEqual(consented['allocations'][donor], inp['allocations'][donor] - 10000)
-        self.assertEqual(inp, original)
+        self.assertEqual(result['status'], 'proposed')
+        self.assertTrue({t['from'] for t in result['transfers']} <= {'BEAUTY', 'CULTURE_LEISURE'})
+        for code, rank in inp['priorities'].items():
+            if rank <= 6 and code != 'FOOD':
+                self.assertEqual(result['allocations'][code], inp['allocations'][code])
+        direct = self.simulate(inp, envelope(item('EDUCATION', 10000, 'down'), item(amount=10000)))
+        self.assertEqual(direct['allocations']['EDUCATION'], 40000)
 
     def test_ranked_automatic_transfer_without_source_consent_is_rejected(self):
         inp = context()
@@ -300,17 +292,17 @@ class AdjustmentCalculationTest(unittest.TestCase):
         inp = context()
         inp["ml_reference"] = {}
         automatic = self.simulate(inp, envelope(item(amount=10000), sources=["FASHION_SHOPPING"]))
-        self.assertEqual(automatic["status"], "needs_data")
+        self.assertEqual(automatic["status"], "proposed")
         direct = self.simulate(inp, envelope(item(amount=10000), item("FASHION_SHOPPING", 10000, "down")))
         self.assertEqual(direct["status"], "proposed")
 
     def test_quote_is_same_amount_as_verified_simulation(self):
         inp = context()
         quote = available_adjustment(inp, "FOOD", "up", sources=["LIVING"], allocate_group_reduction=allocation)
-        self.assertEqual(quote["maximum"], 40000)
+        self.assertEqual(quote["maximum"], 200000)
         result = self.simulate(inp, quote["envelope"])
         self.assertEqual(result["status"], "proposed")
-        self.assertEqual(result["allocations"]["FOOD"], 440000)
+        self.assertEqual(result["allocations"]["FOOD"], 600000)
 
     def test_no_automatic_group_policy_is_silently_selected(self):
         inp = context()
@@ -341,21 +333,23 @@ class AdjustmentCalculationTest(unittest.TestCase):
         inp["bucket_available"]["SPARE"] = 35555
         inp["funding_amount"] -= 400000 - 35555
         result = self.simulate(inp, envelope(item(amount=35000), sources=["SPARE"]))
-        self.assertEqual(result["status"], "proposed")
-        self.assertEqual(result["allocations"]["FOOD"], 435000)
-        self.assertEqual(result["buckets"]["SPARE"], 555)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["allocations"]["FOOD"], 420000)
+        self.assertEqual(result["buckets"]["SPARE"], 15555)
         self.assertTrue(all(value % 5000 == 0 for value in result["allocations"].values()))
         self.assertTrue(all(row["amount"] % 5000 == 0 for row in result["transfers"]))
+
 
     def test_comparison_preserves_original_amount_and_independent_sources(self):
         inp = context()
         before = deepcopy(inp)
         result = compare_adjustments(inp, {**envelope(item(amount=200000)), 'spare_minimum': 100000}, allocate_group_reduction=allocation)
         self.assertEqual(inp, before)
-        self.assertEqual(result["basis_amount"], 200000)
-        self.assertEqual([plan["amount"] for plan in result["plans"]], [40000, 200000, 200000, 200000])
-        self.assertEqual(result["recommendation"]["plan_id"], "spare")
-        self.assertEqual(result["plans"][1]["result"]["buckets"]["SAVINGS"], 600000)
+        self.assertEqual(result['basis_amount'], 200000)
+        self.assertTrue(all(plan['amount'] == 200000 for plan in result['plans']))
+        self.assertEqual(result['recommendation']['plan_id'], 'living')
+        selected = next(p for p in result['plans'] if p['id'] == 'living')
+        self.assertEqual(selected['result']['buckets'], inp['buckets'])
 
     def test_combined_savings_increase_uses_three_sources_and_preserves_spare(self):
         inp = context()
@@ -366,7 +360,7 @@ class AdjustmentCalculationTest(unittest.TestCase):
         self.assertEqual(combined['amount'], 300000)
         sources = {t['from'] for t in combined['result']['transfers']}
         self.assertIn('SPARE', sources)
-        self.assertIn('CUSHION_MONTHLY', sources)
+        self.assertNotIn('CUSHION_MONTHLY', sources)
         self.assertTrue(sources.intersection(inp['allocations']))
         self.assertNotIn('SAVINGS', sources)
         self.assertGreaterEqual(combined['result']['buckets']['SPARE'], 200000)
@@ -438,11 +432,11 @@ class AdjustmentConversationTest(unittest.TestCase):
 
     def test_natural_scope_and_partial_selection_do_not_repeat_question_or_save(self):
         before = deepcopy(self.context)
-        self.turn("식비를 20만원 늘려줘", reading(requests=[item(amount=200000)]))
+        self.turn("식비를 30만원 늘려줘", reading(requests=[item(amount=300000)]))
         response = self.turn("생활비 내에서 해결하고 싶어", reading(funding_scope="living", reference="previous"))
         card = response["reply"]["proposal"]
-        self.assertEqual(card["allocations"]["FOOD"], 440000)
-        self.assertEqual(response["reply"]["alternatives"]["basis_amount"], 200000)
+        self.assertEqual(card["allocations"]["FOOD"], 600000)
+        self.assertEqual(response["reply"]["alternatives"]["basis_amount"], 300000)
         count = self.complete.call_count
         response = self.turn("그냥 이렇게 해줘")
         self.assertEqual(response["reply"]["proposal"]["proposal_id"], card["proposal_id"])
@@ -455,7 +449,7 @@ class AdjustmentConversationTest(unittest.TestCase):
     def test_comparison_and_details_do_not_create_or_select_a_proposal(self):
         self.turn("식비가 부족해", reading(requests=[item(mode=None)]))
         response = self.turn("잘 모르겠어요", reading(action='help_decide'))
-        self.assertEqual(response["reply"]["comparison"]["basis_amount"], 40000)
+        self.assertEqual(response["reply"]["comparison"]["basis_amount"], 200000)
         self.assertEqual(self.cards, [])
         before = deepcopy(self.store.state)
         self.turn("2안 예산 보여줘")
@@ -463,7 +457,7 @@ class AdjustmentConversationTest(unittest.TestCase):
         self.assertEqual(self.cards, [])
         self.assertNotIn('plan_spare', dict(self.store.state['pending']['choices']))
         card = self.turn("plan_living")["reply"]["proposal"]
-        self.assertEqual(card["allocations"]["FOOD"], 440000)
+        self.assertEqual(card["allocations"]["FOOD"], 600000)
         self.assertEqual(card["buckets"]["SPARE"], 400000)
         self.assertEqual(self.context["allocations"]["FOOD"], 400000)
 

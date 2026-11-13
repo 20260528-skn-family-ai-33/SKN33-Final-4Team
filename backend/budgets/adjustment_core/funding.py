@@ -10,6 +10,16 @@ BLOCKED = {"needs_amount", "needs_source", "needs_destination", "needs_confirmat
            "needs_policy", "needs_data", "infeasible"}
 
 
+def reserve_floor(context, code, amount):
+    anchor = max(amount, context.get('bucket_targets', {}).get(code, 0), context.get('reserve_anchors', {}).get(code, 0))
+    floor = max(context.get('bucket_floors', {}).get(code, 0), (anchor * 3 + 9) // 10)
+    planned = context.get('diagnostic_inputs', {}).get('planned_spare', {})
+    if (code == 'SPARE' and planned.get('status') in {'confirmed', 'user_confirmed'}
+            and planned.get('scope') == 'unbudgeted_only' and type(planned.get('amount')) is int and planned['amount'] >= 0):
+        floor = max(floor, planned['amount'])
+    return floor
+
+
 def increase_input_limit(context, category):
     """Absolute budget ceiling, not a recommendation or permission to spend it all."""
     living = 0 if category == LIVING else sum(amount for code, amount in context['allocations'].items()
@@ -91,6 +101,8 @@ def _data(context, envelope):
         raise AdjustmentError("funding_total_mismatch")
     for key in ("bucket_floors", "bucket_available"):
         data[key] = _money_map(context.get(key, {}), "invalid_" + key, BUCKETS)
+    for code, amount in data['buckets'].items():
+        data['bucket_floors'][code] = max(data['bucket_floors'].get(code, 0), reserve_floor(context, code, amount))
     status = context.get("bucket_status", {})
     if (not isinstance(status, dict) or set(status) - set(BUCKETS)
             or any(v not in ("ready", "unknown", "disabled") for v in status.values())):
@@ -149,6 +161,7 @@ def _data(context, envelope):
     if LIVING in data["targets"] and set(data["targets"]) & set(data["allocations"]):
         raise AdjustmentError("overlapping_living_requests")
     normalized["items"] = data["items"]
+    data["spending_verified"] = context.get("spending_status", "complete") == "complete"
     data["request"] = normalized
     data["excluded"] = set(normalized["excluded"]) | NON_BUDGET_CODES
     if LIVING in data["excluded"]:
@@ -190,7 +203,7 @@ def _check_alignment(data):
 
 
 def _check_spending(context):
-    if context.get("spending_status", "complete") != "complete":
+    if context.get("spending_status", "complete") != "complete" and not context.get("budget_preview"):
         raise _Blocked("needs_data", "spending_unverified")
 
 
@@ -205,11 +218,13 @@ def _capacity(data, amounts, donor, recipient, *, explicit=False, primary=False)
         return _unit_amount(data, capacity)
     if donor in data["locks"]:
         return 0
+    explicit = explicit or (data['request']['sources'] == [donor] and len(data['items']) == 1
+                            and not data['items'][0]['automatic'])
     if explicit:
         return _unit_amount(data, max(amounts[donor] - _hard_floor(data, donor), 0))
-    # A named primary decrease selects the donor, but does not waive its ML floor.
+    # Generated decreases keep the shared automatic protection.
     if not primary and ((recipient in data["allocations"] and not _eligible(data, donor, recipient, allow_ranked=donor in data['request']['sources']))
-                        or (recipient not in data["allocations"] and donor in data["priorities"])):
+                        or (recipient not in data["allocations"] and data["priorities"].get(donor, 99) <= 6)):
         return 0
     if amounts[donor] <= _hard_floor(data, donor):
         return 0
@@ -234,11 +249,12 @@ def _groups(data, sources, recipient, forbidden):
         expanded = data["allocations"] if c == LIVING else [c]
         candidates.extend(code for code in expanded if code not in candidates)
     candidates = [c for c in candidates if c not in forbidden and c != recipient and c not in data["excluded"]]
-    unranked = [c for c in candidates if c in BUCKETS or c not in data["priorities"]]
-    groups = [unranked] if unranked else []
-    ranks = sorted({data["priorities"][c] for c in candidates if c in data["priorities"]}, reverse=True)
-    groups.extend([c for c in candidates if data["priorities"].get(c) == rank] for rank in ranks)
-    return groups
+    living = [c for c in candidates if c in data['allocations']]
+    groups = [[c for c in living if c not in data['priorities']]]
+    for rank in sorted({data['priorities'][c] for c in living if c in data['priorities']}, reverse=True):
+        groups.append([c for c in living if data['priorities'].get(c) == rank])
+    groups.extend([[c] for c in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY') if c in candidates])
+    return [group for group in groups if group]
 
 
 def priority_destination(context, *, excluded=(), requested=()):
@@ -315,7 +331,7 @@ def _response(data, status, amounts=None, transfers=(), conflicts=()):
             shortfalls.append({"category": c, "direction": "up" if target > current else "down",
                                "requested_amount": requested, "applied_amount": applied,
                                "missing_amount": requested - applied})
-    return {"kind": "funding", "status": status, "requests": deepcopy(data["request"]),
+    return {"kind": "funding", "status": status, "spending_verified": (data.get("spending_verified", True) or (not any(amounts[c] < before[c] for c in data["allocations"]) and not any(i["amount_mode"] == "remaining" for i in data["items"]))), "requests": deepcopy(data["request"]),
             "allocations": {c: amounts[c] for c in data["allocations"]},
             "buckets": {c: amounts[c] for c in BUCKETS},
             "requested_targets": dict(data["targets"]),
@@ -505,7 +521,7 @@ def validate_funding(context, envelope, result):
     except _Blocked:
         raise AdjustmentError("unverified_funding_result") from None
     checked = _response(data, result["status"], amounts, transfers)
-    for key in ("requested_targets", "persistence_candidates", "changes", "shortfalls", "conflicts"):
+    for key in ("requested_targets", "persistence_candidates", "changes", "shortfalls", "conflicts", "spending_verified"):
         if result.get(key) != checked[key]:
             raise AdjustmentError("funding_result_details_mismatch")
     if ((result["status"] == "proposed" and checked["shortfalls"])
