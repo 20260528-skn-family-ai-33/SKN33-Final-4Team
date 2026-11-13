@@ -30,6 +30,22 @@ from .test_financial_planner import draft, funding, review
 class FinancialAdjustmentApiTest(TestCase):
     post, say = api_fixtures.BudgetAdjustmentApiTest.post, api_fixtures.BudgetAdjustmentApiTest.say
 
+    @unittest.skipUnless(os.environ.get('CHAT_LIVE_ROUTER_TEST') == '1', 'opt-in real LLM routing and budget interpretation')
+    def test_declarative_next_cycle_expense_routes_and_keeps_amount_without_saving(self):
+        from chat.llm.live import LiveReading
+        from chat.engine import ConversationStore, KEY
+        self.ctx.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
+        with patch('chat.engine.reading', return_value=LiveReading(12, None)):
+            response = self.say(text='다음달부터 교육비 50만원 추가될 예정')
+        content = response['messages'][-1]['content']
+        self.assertIn('budgetAdjustment', content, content)
+        cid = response['conversationId']
+        state = ConversationStore.load(Conversation.objects.get(pk=cid).slots).get_agent_state(KEY, 'budget')
+        self.assertEqual(state['requests'], [item('EDUCATION', 500000)])
+        self.assertEqual(state['scope'], 'next_cycle')
+        self.assertFalse(content['budgetAdjustment']['canApprove'])
+        self.assertEqual(Budget.objects.count(), 1)
+
     def test_insufficient_selected_savings_opens_combined_examples_before_partial_preview(self):
         self.ctx['diagnostic_inputs'] = {}
         cid = self.chat(choice='budget')['conversationId']
