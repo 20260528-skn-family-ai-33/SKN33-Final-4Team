@@ -368,7 +368,7 @@ export default function AssistantPage() {
                       onPick: (p) => pick(last.content, p) }}
                     onPick={(p) => pick(c, p)} onApprove={(proposal) => openApproval(proposal)}
                     onSend={(text) => { if (isLast && !blocked) send({ text }, text) }}
-                    onAsk={blocked ? undefined : (text) => send({ text }, text)}>
+                    onDetail={blocked ? undefined : (p) => pick(c, p)}>
                     {(c.inputs ?? []).includes('region_select') &&
                       <RegionSelect done={!isLast || blocked} onSubmit={(text) => send({ text }, text)} />}
                   </ChatReply>

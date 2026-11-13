@@ -44,6 +44,7 @@ ACTIVE = ("proposing", "awaiting_approval", "saving")
 ENDED = ("saved", "failed", "canceled", "expired", "rejected")
 TASK_QUESTIONS = ("cancel_target", "budget_task_choice")
 NEW_TASK = {"task_ref": None, "phase": "started", "suspended": False}
+POLICY_DETAIL = "detail:"  # 청년 정책 카드 [자세히 보기] 선택지 값 앞부분 (policies.agent.DETAIL)
 MAX_DELIVERIES = 2  # 같은 입력을 에이전트에 전달하는 최대 횟수 (현재 담당 1 + 새 담당 1)
 RESULT_STATUSES = ("replied", "awaiting_input", "unsupported", "ended", "failed", "not_mine")
 
@@ -477,6 +478,10 @@ def route(text, conversation_id, store, complete, server=None):
         cancelled = _cancel_word(text, cid, store, asked, active, task)
         if cancelled is not None:
             return cancelled
+    if text.startswith(POLICY_DETAIL):  # 지난 정책 카드의 [자세히 보기]: 담당이 바뀌었어도 분류하지 않고 정책으로
+        store.clear(cid)
+        return _policy(store, cid, "continue", text) if active == "policy" else \
+            _policy_entry(store, cid, text, "text", _switch(store, cid, "policy"))
     try:
         if asked:
             return _router_answer(text, cid, store, server, asked, task, complete)

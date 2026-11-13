@@ -44,16 +44,11 @@ DEFAULT_FIELDS = {"jobless": ["job", "living", "training"], "employed": ["housin
 MORE, OTHER_FIELD, CHANGE_REGION = "다른 정책 더 보기", "다른 분야 찾기", "지역 변경하기"
 SAVE = "save:"  # 저장 버튼 값 = "save:" + 정책번호 (번호는 서버 상태에서만 나온다)
 SAVE_LABEL = "{number}번 저장"
-DETAIL = "detail:"  # 카드의 [자세히 보기] 값 = "detail:" + 정책번호. 이름이 사용자 말풍선이 된다
+# 카드의 [자세히 보기] 선택지 값 = "detail:" + 정책번호 (이름은 말풍선에만). 지난 답변의 카드에서도 엔진이 이 값을 그대로 넘긴다
+# → 이름이 같은 다른 정책과 섞이지 않는다 (64b0c4b 리뷰 1)
+DETAIL = "detail:"
 DETAIL_BUTTON = "{name} 자세히 보기"
 DETAIL_TOPICS = ["support", "period", "eligibility", "apply", "documents"]
-DETAIL_KEEP = 30  # 지난 카드의 [자세히 보기]도 받도록 대화 상태에 남기는 버튼 수 (최근 것만)
-
-
-def _keep_details(state, pairs):
-    """[자세히 보기] 이름 → 정책번호를 대화 상태에 쌓는다. 지난 답변의 버튼은 선택지가 아니라 이 이름 문장으로 온다"""
-    kept = {**(state.get("details") or {}), **{DETAIL_BUTTON.format(name=name): no for no, name in pairs}}
-    state["details"] = dict(list(kept.items())[-DETAIL_KEEP:])
 SAVED = "‘{name}’ 정책을 저장했어요. [저장한 정책 보기]에서 모아 볼 수 있어요."
 SAVE_FAILED = "‘{name}’ 정책은 지금 저장할 수 없어요. 정책 목록에서 빠졌을 수 있어요."
 SAVED_LIST = "저장한 정책 보기"
@@ -178,8 +173,8 @@ def _decide(state, text, read=None, choice=None):
         return Action("end")
     if GUIDE_WORDS.search(said) or GUIDE_ONLY.fullmatch(said.strip(" \t\r\n.!?~…")):
         return Action("guide")
-    if said in (state.get("details") or {}):  # 위로 올라가 지난 카드의 [자세히 보기]를 눌러도 그 정책 상세
-        return Action("detail", text=state["details"][said], topics=list(DETAIL_TOPICS))
+    if said.startswith(DETAIL):  # 카드의 [자세히 보기] (지난 답변 카드 포함). 없는 번호면 _detail 이 '찾을 수 없어요'
+        return Action("detail", text=said[len(DETAIL):], topics=list(DETAIL_TOPICS))
     if ask and said in ask["options"]:
         return _answer(ask, ask["options"][said], home, state.get("query"))
     if ask and ask["kind"] in {"confirm", "region"}:
@@ -377,7 +372,6 @@ def _show(store, cid, state, found, region, today, start, member=False, lead=Non
     after += _common_after(state, region, member)
     after += [("guide", GUIDE_BUTTON)] if lead else []  # 분야를 짐작한 맞춤 추천 → 다른 분야도 볼 수 있게
     after += [(DETAIL + f.policy.pk, DETAIL_BUTTON.format(name=f.policy.name)) for f in page]
-    _keep_details(state, [(f.policy.pk, f.policy.name) for f in page])
     state.update(results=[f.policy.pk for f in found], shown=start + len(page), region_used=region,
                  last=[f.policy.pk for f in page], focus=None)
     name = region_name(region)
@@ -442,7 +436,6 @@ def _show_saved(store, cid, state, user, today):
         rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
         sections.append({"title": f"{number}. {item['name']}", "lines": rows, "policy_no": item["policy_no"]})
     after += [(DETAIL + item["policy_no"], DETAIL_BUTTON.format(name=item["name"])) for item in items]
-    _keep_details(state, [(item["policy_no"], item["name"]) for item in items])
     return _card(_ask(store, cid, state, "after", [SAVED_HEAD], after), sections)
 
 
@@ -634,6 +627,14 @@ def _detail(store, cid, state, user, today, action):
     topics = list(dict.fromkeys([*action.topics, "eligibility", "selection"])) if "guarantee" in action.topics else action.topics
     info = tools.detail(action.text, topics, tools.profile_for(user, job=_job(state)), today)
     state["focus"] = action.text  # 다음 "그거"는 이 정책
+    results, shown = list(state.get("results") or []), state.get("shown", 0)
+    if action.text not in results[:shown]:
+        # 지난 카드의 정책: 지금 보인 목록 뒤에 번호를 붙여 '그거' · 'N번'이 이 정책을 가리키게 한다 (64b0c4b 리뷰 2).
+        # 아직 안 보인 나머지(더 보기)는 그 뒤로 밀린다
+        if action.text in results:
+            results.remove(action.text)
+        results.insert(shown, action.text)
+        state.update(results=results, shown=shown + 1)
     if info is None:
         result = _ask(store, cid, state, "after", [GONE], after)
         result["status"] = "replied"

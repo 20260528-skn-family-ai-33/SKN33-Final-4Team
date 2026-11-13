@@ -88,15 +88,15 @@ it('긴 자격 원문은 접되 마지막 조건까지 제공한다', async () =
   expect(host.querySelector('summary').textContent).toContain('전체 내용 보기')
 })
 
-it('[자세히 보기]는 지금 보이는 정책의 버튼 이름을 문장으로 보내고, 지난 답변에서도 누를 수 있다', async () => {
-  const asked = []
+it('[자세히 보기]는 지금 보이는 정책의 선택지(정책번호)를 고르고, 지난 답변에서도 누를 수 있다', async () => {
+  const picked = []
   const detailed = { ...content, choices: [...content.choices, { value: 'detail:P1', label: '첫 정책 자세히 보기' }, { value: 'detail:P/2', label: '둘째 정책 자세히 보기' }] }
-  await act(async () => root.render(<ChatReply content={detailed} title="청년 정책" active={false} onAsk={(text) => asked.push(text)} />))
+  await act(async () => root.render(<ChatReply content={detailed} title="청년 정책" active={false} onDetail={(c) => picked.push(c)} />))
   await click('다음 정책')
   await click('자세히 보기')
-  expect(asked).toEqual(['둘째 정책 자세히 보기'])
+  expect(picked).toEqual([{ value: 'detail:P/2', label: '둘째 정책 자세히 보기' }])
   expect(policyChoices(detailed).map((c) => c.value)).toEqual(['more'])
-  await render(detailed)  // 보내는 중(onAsk 없음)에는 누를 수 없다
+  await render(detailed)  // 보내는 중(onDetail 없음)에는 누를 수 없다
   expect(button('자세히 보기').disabled).toBe(true)
 })
 

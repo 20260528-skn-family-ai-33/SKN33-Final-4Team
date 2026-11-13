@@ -188,7 +188,7 @@ function PolicyRows({ lines, head }) {
 
 // 정책 저장은 대화의 turn 선택지가 아니라 정책 ID를 쓰는 멱등 북마크 API다.
 // 지난 답변에서도 저장할 수 있고, 대화 상태나 현재 질문을 바꾸지 않는다.
-function PolicySections({ sections, choices, onAsk }) {
+function PolicySections({ sections, choices, onDetail }) {
   const [index, setIndex] = useState(0)
   const [changes, setChanges] = useState({})
   const pending = useRef(new Set())
@@ -199,7 +199,7 @@ function PolicySections({ sections, choices, onAsk }) {
   const number = policyNumber(section.title)
   const state = changes[id] ?? {}
   const saved = state.saved || bookmarks.data?.items?.some((item) => item.policyNo === id)
-  // [자세히 보기]는 서버가 준 버튼 이름을 문장으로 보낸다 → 지난 답변의 카드에서도 누를 수 있다 (서버가 대화 상태에서 정책을 찾는다)
+  // [자세히 보기]는 그 답변의 선택지(detail:정책번호)를 고른다. 지난 답변의 카드도 서버가 받아 준다 (이름이 같은 정책과 섞이지 않게 번호로)
   const detail = choices?.find((c) => c.value === `${DETAIL}${id}`)
   const save = async () => {
     if (!id || saved || pending.current.has(id)) return
@@ -227,7 +227,7 @@ function PolicySections({ sections, choices, onAsk }) {
         <button type="button" className="mc-secondary" disabled={index === sections.length - 1} onClick={() => setIndex((n) => n + 1)}>다음 정책</button>
       </div>}
       {id && <div className="mc-policy-actions">
-        {detail && <button type="button" className="mc-secondary" disabled={!onAsk} onClick={() => onAsk(detail.label)}
+        {detail && <button type="button" className="mc-secondary" disabled={!onDetail} onClick={() => onDetail(detail)}
           aria-label={`${title} 자세히 보기`}>자세히 보기</button>}
         <button type="button" className="mc-secondary mc-policy-save" onClick={save}
           disabled={Boolean(saved || state.busy || bookmarks.loading || bookmarks.error)}
@@ -240,7 +240,7 @@ function PolicySections({ sections, choices, onAsk }) {
 }
 
 // 분석 결과 카드 (SpendingCard 와 같은 틀 · 클래스). 카드 보기가 있으면 그것으로, 없으면(설명 답변 등) 문장 목록
-function ResultCard({ content, title, onAsk }) {
+function ResultCard({ content, title, onDetail }) {
   if (content.view?.length) return <ViewCard content={content} title={title} />
   const notices = content.notices ?? []
   return (
@@ -250,7 +250,7 @@ function ResultCard({ content, title, onAsk }) {
       {content.lines.length > 0 && <ul className="mc-spend-lines">{content.lines.map((l, i) => <li key={i}><Boxed text={l} on={content.agent === 'policy'} /></li>)}</ul>}
       {(content.examples ?? []).length > 0 && <p className="mc-examples">예) {content.examples.join(' · ')}</p>}
       {content.agent === 'policy' && content.sections?.some((s) => s.policyNo)
-        ? <PolicySections sections={content.sections} choices={content.choices} onAsk={onAsk} />
+        ? <PolicySections sections={content.sections} choices={content.choices} onDetail={onDetail} />
         : (content.sections ?? []).length > 0 && (
         <div className="mc-spend-cats">
           {content.sections.map((s, i) => (
@@ -299,9 +299,9 @@ function Bubble({ content, children }) {
   )
 }
 
-export default function ChatReply({ content, title, active, onPick, onApprove, onSend, onAsk, navigation, children }) {
+export default function ChatReply({ content, title, active, onPick, onApprove, onSend, onDetail, navigation, children }) {
   if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} onSend={onSend} navigation={navigation} />
-  return content.result ? <ResultCard content={content} title={title} onAsk={onAsk} /> : <Bubble content={content}>{children}</Bubble>
+  return content.result ? <ResultCard content={content} title={title} onDetail={onDetail} /> : <Bubble content={content}>{children}</Bubble>
 }
 
 // 답변 선택지 (기존 칩 모양). active = 마지막 답변의 선택지만 누를 수 있다 (서버도 지난 선택지는 409)

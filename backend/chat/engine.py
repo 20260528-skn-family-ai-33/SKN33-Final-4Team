@@ -26,7 +26,7 @@ from django.db import transaction
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
-from chat.router_core import CANCEL_WORDS, MemoryStateStore, current_agent, messages as router_messages, run_turn
+from chat.router_core import CANCEL_WORDS, POLICY_DETAIL, MemoryStateStore, current_agent, messages as router_messages, run_turn
 from finance.inputs import body_dict, reject_unknown_fields
 from policies import agent as policy_agent
 from policies import profiles as policy_profiles
@@ -258,7 +258,11 @@ def _conversation_id(raw, required):
 
 
 def _picked(talk, choice):
-    """답변 선택지 → 그 이름. 마지막 봇 메시지의 turn · 선택지가 아니면 None (지난 질문의 선택지)"""
+    """답변 선택지 → 그 이름. 마지막 봇 메시지의 turn · 선택지가 아니면 None (지난 질문의 선택지).
+    예외: 청년 정책 카드의 [자세히 보기](detail:정책번호)는 지난 답변의 것이어도 그 답변에 있던 선택지면 받는다"""
+    if choice["value"].startswith(POLICY_DETAIL):
+        past = talk.messages.filter(role=ChatMessage.Role.BOT, content__turn=choice["turn"]).first()
+        return next((c["label"] for c in (past and past.content or {}).get("choices", []) if c["value"] == choice["value"]), None)
     last = talk.messages.filter(role=ChatMessage.Role.BOT).order_by("-created_at", "-message_id").first()
     content = last and last.content or {}
     if content.get("turn") != choice["turn"]:
@@ -323,6 +327,8 @@ def prepare(request):
             return Response(STALE, status=409)
         feature = choice["value"] if choice["value"] in FEATURES else None  # 의도 선택 · 범위 밖 답변의 기능 선택지
         text = None if feature else said
+        if choice["value"].startswith(POLICY_DETAIL):
+            text = choice["value"]  # 정책에는 번호를 넘긴다 (이름이 같은 정책과 섞이지 않게). 말풍선은 이름(said)
     store = ConversationStore.load(talk and talk.slots)
     state = store.get_agent_state(KEY, "budget") or {}
     if entry:

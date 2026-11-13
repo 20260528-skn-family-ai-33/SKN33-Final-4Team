@@ -382,18 +382,51 @@ class SaveTest(TestCase):
         self.assertEqual(self.talk.details, [])  # 상세 카드에는 다시 [자세히 보기]가 없다
         self.assertIn("지원 내용", [row.split(":")[0] for row in rows(result)])
 
-    def test_지난_카드의_자세히_보기도_이름_문장으로_그_정책_상세(self):
-        self.talk.send("1번 자세히 보기")  # 상세를 본 뒤라 마지막 답의 선택지에는 [자세히 보기]가 없다
+    def test_지난_카드의_자세히_보기는_정책번호로_그_정책_상세(self):
         self.talk.send("2번 저장")
         self.talk.complete.reset_mock()
-        result = self.talk.send("정책 3 자세히 보기")
-        self.assertEqual(titles(result), ["정책 3"])
-        self.talk.complete.assert_not_called()  # 해석기(LLM) 없이 버튼 이름으로 바로
+        result = self.talk.send("detail:P3")  # 엔진이 지난 카드 선택지의 값(정책번호)을 그대로 넘긴다
+        self.assertEqual((titles(result), result["reply"]["sections"][0]["policy_no"]), (["정책 3"], "P3"))
+        self.talk.complete.assert_not_called()  # 해석기(LLM) 없이
+
 
     def test_저장은_DB_에_쓰지_않는다(self):
         from policies.models import SavedPolicy
         self.talk.send("1번 저장")
         self.assertFalse(SavedPolicy.objects.exists())  # 엔진이 save_policies 를 보고 저장한다 (7단계)
+
+
+
+class SameNameDetailTest(TestCase):
+    """64b0c4b 리뷰: 이름이 같은 정책 · 지난 카드 상세 뒤 '그거'"""
+
+    def setUp(self):
+        add("DONG", vector=near(1), plcyNm="청년 상담", zipCd=DONGTAN, aplyUrlAddr="https://example.org/dong")
+        add("JONG", vector=near(2), plcyNm="청년 상담", zipCd="11110", aplyUrlAddr="https://example.org/jong")
+
+    def talk(self, plan=False):
+        talk = Talk(answer=said(needs=(("심리상담 지원", ["상담"]),)))
+        talk.lives_in_dongtan()
+        talk.send("상담 받고 싶어")
+        self.assertEqual(talk.state["results"], ["DONG"])
+        talk.send(agent.CHANGE_REGION)
+        talk.send("서울특별시 종로구")  # 같은 이름의 다른 정책이 지금 추천
+        self.assertEqual(talk.state["results"], ["JONG"])
+        talk.plan = plan  # 행동 고르기 LLM 은 여기부터 (위 검색 문장은 규칙으로)
+        return talk
+
+    def test_1_이름이_같아도_지난_카드는_그_카드의_정책을_연다(self):
+        talk = self.talk()
+        result = talk.send("detail:DONG")
+        self.assertEqual(result["reply"]["sections"][0]["policy_no"], "DONG")
+        self.assertIn("링크: https://example.org/dong", rows(result))
+
+    def test_2_지난_카드_상세_뒤_그거는_방금_본_정책(self):
+        talk = self.talk(plan=mock.Mock(return_value=chose("detail", topics=["apply"])))
+        talk.send("detail:DONG")
+        self.assertEqual((talk.state["focus"], talk.state["results"][:talk.state["shown"]]), ("DONG", ["JONG", "DONG"]))
+        result = talk.send("그거 신청 방법 알려줘")
+        self.assertEqual(result["reply"]["sections"][0]["policy_no"], "DONG")
 
 
 class TidyTest(TestCase):

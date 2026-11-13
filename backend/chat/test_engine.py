@@ -305,6 +305,21 @@ class ServiceChoiceTest(ServiceChatBase):
         spending = self.send("A", cid, text="이번 달 얼마 썼어?")  # 정책 담당이 not_mine → 라우터가 다시 고른다
         self.assertEqual(spending.json()["agent"], "spending")
 
+    def test_past_policy_card_detail_choice_opens_that_policy_by_number(self):
+        """지난 답변 카드의 [자세히 보기]만 지난 선택지를 받는다. 정책에는 이름이 아니라 번호가 간다 (64b0c4b 리뷰 1)"""
+        cid, cards = self._policy_results()
+        self.send("A", cid, text="이번 달 얼마 썼어?")  # 담당이 소비 분석으로 바뀐 뒤에도
+        label = next(c["label"] for c in cards["choices"] if c["value"].startswith("detail:"))
+        self.calls.reset_mock()
+        out = self.pick("A", cid, cards, label)
+        self.assertEqual(out.status_code, 200)
+        self.assertEqual(out.json()["messages"][0]["content"]["text"], label)  # 말풍선은 이름
+        detail = self.bot(out)
+        self.assertEqual((out.json()["agent"], detail["sections"][0]["policyNo"]), ("policy", cards["sections"][0]["policyNo"]))
+        self.assertEqual(self.calls.call_count, 0)  # 라우터 분류 없이
+        stale = self.pick("A", cid, cards, policy_agent.CHANGE_REGION)  # 다른 지난 선택지는 그대로 막는다
+        self.assertEqual(stale.status_code, 409)
+
     def _policy_results(self):
         """화성시 동탄구로 '월세 지원 있어?' 추천까지 → (대화 번호, 마지막 봇 content)"""
         from policies.tests.test_search import add
