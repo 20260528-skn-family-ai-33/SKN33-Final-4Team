@@ -26,8 +26,9 @@ beforeEach(() => {
       ...org, status: connStatus, cardIds: ['card-1'] }] })
     if (url === '/api/finance/connections/' && method === 'POST') {
       posted = JSON.parse(options.body)
-      if (loginResult.status === 'connected') connStatus = 'connected'
-      return reply({ results: [loginResult] })
+      const result = Array.isArray(loginResult) ? loginResult.shift() : loginResult  // 배열이면 차례로 (문자 인증 2단계)
+      if (result.status === 'connected') connStatus = 'connected'
+      return reply({ results: [result] })
     }
     if (url === '/api/finance/sync/') return reply({ taskId: 'sync-1', status: 'running' }, 202)
     if (url === '/api/tasks/sync-1/') {
@@ -79,11 +80,44 @@ it('다시 로그인에 실패하면 새 확인 창에 이유와 다시 시도�
   expect(button('다시 시도')).toBeDefined()
 })
 
-it('추가 인증이 필요하면 금융 연결 화면으로 안내한다', async () => {
-  loginResult = { status: 'sms_required' }
+// 11/14: 문자 인증을 요구하면 그 자리에서 문자 인증 팝업 → 같은 값 + smsAuth 로 한 번 더 → 확인 창이 이어서 청구서까지
+const SMS = { status: 'sms_required', smsAuth: { authToken: 'tok-1', expiresAt: null, phoneHint: null } }
+const smsInput = () => host.querySelector('input[autocomplete="one-time-code"]')
+
+it('문자 인증을 요구하면 그 자리에서 받고 이어서 청구서를 확인한다', async () => {
+  loginResult = [SMS, { status: 'connected', syncStatus: 'done' }]
   await login()
-  expect(host.textContent).toContain('카드사 추가 인증이 필요해요')
-  expect(button('추가 인증하러 가기')).toBeDefined()
+  expect(host.textContent).toContain('문자로 받은 인증번호를 입력해 주세요')
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(smsInput(), '123456')
+    smsInput().dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => host.querySelector('form').requestSubmit())
+  for (let i = 0; i < 10; i++) await settle()
+  expect(posted.institutions[0]).toMatchObject({ organizationCode: '0306', loginId: 'hong', smsAuth: { authToken: 'tok-1', code: '123456' } })
+  expect(onFound).toHaveBeenCalledOnce()
+})
+
+it('인증번호가 틀리면 그 이유와 함께 문자 인증 팝업을 다시 띄운다', async () => {
+  loginResult = [SMS, { ...SMS, smsAuth: { ...SMS.smsAuth, authToken: 'tok-2' }, error: { code: 'invalid', message: '인증번호가 맞지 않아요.' } }]
+  await login()
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(smsInput(), '111111')
+    smsInput().dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => host.querySelector('form').requestSubmit())
+  for (let i = 0; i < 10; i++) await settle()
+  expect(host.textContent).toContain('인증번호가 맞지 않아요.')
+  expect(smsInput()).not.toBeNull()
+})
+
+it('문자 인증을 취소하면 확인 창에 이유를 보여 준다', async () => {
+  loginResult = [SMS]
+  await login()
+  await act(async () => button('인증 취소').click())
+  for (let i = 0; i < 10; i++) await settle()
+  expect(host.textContent).toContain('신한카드 · 문자 인증을 취소했어요.')
+  expect(onFound).not.toHaveBeenCalled()
 })
 
 // PR #116 2차 리뷰: 실제 조회 칸에서 건너뜀(skipped)은 불러온 게 아니라서 청구서 확인으로 넘어가지 않는다

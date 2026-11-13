@@ -5,21 +5,16 @@
 import { useState } from 'react'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
-import { EXTRA, FIELD, SERVER_FIELDS, instInfo } from '../utils/institutions.js'
+import { EXTRA, FIELD, instInfo } from '../utils/institutions.js'
 import CardNoInput from '../components/CardNoInput.jsx'
 import { josa } from '../utils/adjust.js'
-
-const METHODS = [['id', '아이디 로그인'], ['cert', '공동인증서']]
 
 export default function ConnectLoginPopup({ inst, onSubmit, recheck }) {
   const { closePopup } = usePopup()
   const extra = EXTRA[inst] ?? {}
-  const info = instInfo(inst)  // 아이디 로그인 지원 여부 · 잠김 횟수
-  const wanted = [...new Set([...(extra.fields ?? []), ...(recheck?.fields ?? [])])]
-  const extraKeys = wanted.filter((k) => k in SERVER_FIELDS)  // 서버가 받는 칸만 묻는다
-  const unsupported = wanted.length > extraKeys.length
+  const info = instInfo(inst)  // 잠김 횟수
+  const extraKeys = [...new Set([...(extra.fields ?? []), ...(recheck?.fields ?? [])])]
   const keys = ['id', 'password', ...extraKeys]
-  const [method, setMethod] = useState(info.idLogin ? 'id' : 'cert')
   const [form, setForm] = useState(() => Object.fromEntries(keys.map((k) => [k, ''])))
   const [error, setError] = useState('')
   const set = (k, v) => { setForm((f) => ({ ...f, [k]: v })); setError('') }
@@ -29,7 +24,7 @@ export default function ConnectLoginPopup({ inst, onSubmit, recheck }) {
     const empty = keys.find((k) => !form[k].trim())
     if (empty) {
       const label = empty === 'id' ? '아이디' : empty === 'password' ? '비밀번호' : FIELD[empty].label
-      setError(`${label}${josa(label)} ${FIELD[empty]?.options ? '골라' : '입력해'} 주세요.`)
+      setError(`${label}${josa(label)} 입력해 주세요.`)
       return
     }
     onSubmit(form)
@@ -40,55 +35,31 @@ export default function ConnectLoginPopup({ inst, onSubmit, recheck }) {
     <Popup label={`${inst} 로그인`}>
       <h2>{inst} 로그인</h2>
       <p className="mc-muted" style={{ margin: '4px 0 12px' }}>{inst} 홈페이지에서 쓰는 로그인 정보를 넣어 주세요.</p>
-      <div className="mc-tabsw" role="tablist" aria-label="로그인 방법">
-        {METHODS.map(([k, label]) => (
-          <button key={k} type="button" role="tab" aria-selected={method === k} onClick={() => setMethod(k)}>{label}</button>
-        ))}
-      </div>
-
-      {method === 'cert' && (
-        <p className="mc-note mc-login-cert">
-          {info.idLogin
-            ? '공동인증서 로그인은 지원 방식을 정한 뒤 열어요. 지금은 아이디 로그인을 써 주세요.'
-            : `${inst}${josa(inst, '은', '는')} 공동인증서로만 연결돼요. 공동인증서 로그인은 지원 방식을 정한 뒤 열어요.`}
-        </p>
-      )}
-      {method === 'id' && !info.idLogin && (
-        <p className="mc-note mc-login-cert">{inst}{josa(inst, '은', '는')} 아이디 로그인을 지원하지 않아요. 공동인증서로만 연결돼요.</p>
-      )}
-      {method === 'id' && info.idLogin && (
-        <form className="mc-form mc-login-form" onSubmit={submit}>
-          {recheck ? <p className="mc-login-note is-warn" role="note">{recheck.message}</p> : extra.note && <p className="mc-login-note">{extra.note}</p>}
-          {unsupported && <p className="mc-login-warn" role="note">{inst}에서 요구하는 추가 확인 항목은 아직 지원하지 않아 연결이 실패할 수 있어요.</p>}
-          <label className="mc-field">아이디
-            <input autoComplete="off" name="instId" value={form.id} onChange={(e) => set('id', e.target.value)} />
-          </label>
-          <label className="mc-field">비밀번호
-            <input autoComplete="off" name="instPw" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} />
-          </label>
-          {extraKeys.map((k) => {
-            const f = FIELD[k]
-            return (
-              <label className="mc-field" key={k}>{f.label}
-                {f.options ? (
-                  <select value={form[k]} onChange={(e) => set(k, e.target.value)}>
-                    <option value="">선택</option>
-                    {f.options.map((o) => <option key={o}>{o}</option>)}
-                  </select>
-                ) : k === 'cardNo' ? <CardNoInput value={form[k]} onChange={(v) => set(k, v)} /> : (
-                  <input autoComplete="off" inputMode={f.inputMode} maxLength={f.maxLength} placeholder={f.placeholder} type={f.type ?? 'text'}
-                    value={form[k]} onChange={(e) => set(k, f.inputMode === 'numeric' ? e.target.value.replace(/\D/g, '') : e.target.value)} />
-                )}
-              </label>
-            )
-          })}
-          {info.lock && <p className="mc-login-warn" role="note">비밀번호를 {info.lock}번 틀리면 {inst} 로그인이 잠겨요.</p>}
-          {extra.warn && <p className="mc-login-warn" role="note">{extra.warn}</p>}
-          {error && <p className="mc-error" role="alert">{error}</p>}
-          <button type="submit" className="mc-primary">연결하기</button>
-          <p className="mc-note" style={{ paddingBottom: 0 }}>비밀번호는 암호화해서 {inst}에 한 번 보내고 저장하지 않아요. 송금·결제는 하지 않아요.</p>
-        </form>
-      )}
+      <form className="mc-form mc-login-form" onSubmit={submit}>
+        {recheck ? <p className="mc-login-note is-warn" role="note">{recheck.message}</p> : extra.note && <p className="mc-login-note">{extra.note}</p>}
+        <label className="mc-field">아이디
+          <input autoComplete="off" name="instId" value={form.id} onChange={(e) => set('id', e.target.value)} />
+        </label>
+        <label className="mc-field">비밀번호
+          <input autoComplete="off" name="instPw" type="password" value={form.password} onChange={(e) => set('password', e.target.value)} />
+        </label>
+        {extraKeys.map((k) => {
+          const f = FIELD[k]
+          return (
+            <label className="mc-field" key={k}>{f.label}
+              {k === 'cardNo' ? <CardNoInput value={form[k]} onChange={(v) => set(k, v)} /> : (
+                <input autoComplete="off" inputMode={f.inputMode} maxLength={f.maxLength} placeholder={f.placeholder} type={f.type ?? 'text'}
+                  value={form[k]} onChange={(e) => set(k, f.inputMode === 'numeric' ? e.target.value.replace(/\D/g, '') : e.target.value)} />
+              )}
+            </label>
+          )
+        })}
+        {info.lock && <p className="mc-login-warn" role="note">비밀번호를 {info.lock}번 틀리면 {inst} 로그인이 잠겨요.</p>}
+        {extra.warn && <p className="mc-login-warn" role="note">{extra.warn}</p>}
+        {error && <p className="mc-error" role="alert">{error}</p>}
+        <button type="submit" className="mc-primary">연결하기</button>
+        <p className="mc-note" style={{ paddingBottom: 0 }}>비밀번호는 암호화해서 {inst}에 한 번 보내고 저장하지 않아요. 송금·결제는 하지 않아요.</p>
+      </form>
     </Popup>
   )
 }

@@ -11,7 +11,6 @@
 // 다시 로그인(PR #116 리뷰): 로그인 팝업이 뜨면 팝업은 하나만 열려서 이 창은 닫힌다. 그래서 로그인 결과는 창 밖 함수(reconnectCard)가 받고,
 //   새 확인 창이 그 결과(resume)를 이어받아 성공이면 다시 불러오기부터, 실패면 이유를 보여 준다
 import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router'
 import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import ConnectLoginPopup from './ConnectLoginPopup.jsx'
@@ -19,41 +18,30 @@ import Icon from '../components/Icon.jsx'
 import CardSyncPanel from '../components/CardSyncPanel.jsx'
 import { apiSend } from '../utils/api.js'
 import { runFinanceSync, syncLines } from '../utils/financeSync.js'
-import { SERVER_FIELDS } from '../utils/institutions.js'
-import { PATHS } from '../routes.js'
+import { reconnect } from '../utils/reconnect.jsx'
 
 const NOT_YET = 'first_bill_unavailable'
 const ASK_CARD_VALUES = '0302'  // 현대카드: 조회마다 카드번호 · 카드 비밀번호 (CardSyncPanel 과 같은 기준)
 const UNCHECKED = '조회 결과를 확인하지 못했어요. 다시 시도해 주세요.'  // 두 번 불러와도 결과에 없는 카드사
 
 // 카드사 다시 로그인 (CardSyncPanel 의 다시 연결과 같은 요청). 창이 닫혀도 끝까지 가서 결과만 돌려준다
-async function reconnectCard(connection, form) {
-  const name = connection.organizationName
-  const institution = { businessType: 'card', organizationCode: connection.organizationCode, loginId: form.id.trim(), password: form.password }
-  for (const [key, value] of Object.entries(form)) if (SERVER_FIELDS[key] && value) institution[SERVER_FIELDS[key]] = value
-  try {
-    const result = await apiSend('/api/finance/connections/', 'POST', { institutions: [institution] })
-    const item = result.results?.[0]
-    if (item?.status === 'connected') return { ok: true }
-    if (item?.status === 'sms_required') return { ok: false, needsAuth: true, name, text: '카드사 추가 인증이 필요해요. 금융 연결 화면에서 인증을 마쳐 주세요.' }
-    return { ok: false, name, text: item?.error?.message || '카드사에 다시 연결하지 못했어요.' }
-  } catch (err) {
-    return { ok: false, name, text: Object.values(err.fields ?? {}).flat()[0] || err.message }
-  }
+//   문자 인증을 요구하면 문자 인증 팝업이 이 창 자리를 쓰고, 닫히면 reopen 으로 확인 창을 다시 연다 (11/14)
+async function reconnectCard(openPopup, connection, form, sms) {
+  const item = await reconnect(openPopup, { ...connection, businessType: 'card' }, form, sms)
+  if (item.status === 'connected') return { ok: true }
+  return { ok: false, name: connection.organizationName, text: item.error?.message || '카드사에 다시 연결하지 못했어요.' }
 }
 
 // props: cardIds = 청구서가 아직 안 보이는 카드, onFound = 새 청구서가 있을 때 (창은 닫고 부른다)
-//        resume = 다시 로그인 결과 Promise ({ ok, name, text, needsAuth }) — 로그인 팝업 뒤에 새로 연 창만 받는다
+//        resume = 다시 로그인 결과 Promise ({ ok, name, text }) — 로그인 팝업 뒤에 새로 연 창만 받는다
 //        done = 이 흐름에서 이미 직접 조회를 끝낸 연결 ID (다시 로그인 뒤 새 창이 다시 묻지 않게)
 export default function BillCheckDialog({ cardIds = [], onFound, resume = null, done = [] }) {
   const { openPopup, closePopup } = usePopup()
-  const navigate = useNavigate()
   // reconnecting 다시 연결 중 · syncing 불러오는 중 · checking 청구서 확인 중 · manual 카드사 확인 필요 · none 아직 없음 · error 실패
   const [phase, setPhase] = useState(resume ? 'reconnecting' : 'syncing')
   const [message, setMessage] = useState('')
   const [failedLines, setFailedLines] = useState([])  // 불러오지 못한 카드사 [{ name, text }] — 다음 단계까지 남긴다
   const failedRef = useRef([])
-  const [needsAuth, setNeedsAuth] = useState(false)
   const [manualCardIds, setManualCardIds] = useState([])  // 직접 조회할 카드사의 카드 (아직 안 끝낸 카드사만)
   const manualRef = useRef([])  // 직접 조회할 연결 목록
   const doneRef = useRef(new Set(done))  // 직접 조회를 끝낸 연결 ID
@@ -113,7 +101,6 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null, 
   const run = async () => {
     setPhase('syncing')
     setMessage('')
-    setNeedsAuth(false)
     rememberFailed([])
     try {
       // 11/12: 홈 새로고침 등으로 이미 청구서가 들어와 있으면 다시 불러오지 않고 바로 넘어간다
@@ -167,9 +154,12 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null, 
 
   // 다시 로그인: 로그인 팝업이 이 창을 대신하므로, 결과는 reconnectCard 가 받아 두고 로그인 팝업이 닫힌 뒤 새 확인 창에 넘긴다
   const relogin = (connection) => openPopup(<ConnectLoginPopup inst={connection.organizationName} onSubmit={(form) => {
-    const pending = reconnectCard(connection, form)
     // 로그인 팝업은 onSubmit 뒤에 스스로 닫힌다. 이미 직접 조회한 카드사는 새 창에 넘겨 다시 묻지 않는다
-    setTimeout(() => openPopup(<BillCheckDialog cardIds={cardIds} onFound={onFound} resume={pending} done={[...doneRef.current]} />))
+    // 문자 인증 팝업이 떠 있는 동안은 확인 창으로 덮지 않는다 (서버가 빨리 답하면 문자 인증 팝업이 먼저 뜬다)
+    let inSms = false
+    const reopen = () => { if (!inSms) openPopup(<BillCheckDialog cardIds={cardIds} onFound={onFound} resume={pending} done={[...doneRef.current]} />) }
+    const pending = reconnectCard(openPopup, connection, form, { beforeSms: () => { inSms = true }, afterSms: () => { inSms = false; reopen() } })
+    setTimeout(reopen)
   }} />)
 
   useEffect(() => {
@@ -181,7 +171,6 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null, 
       if (result.ok) run()  // 다시 연결됐으면 처음부터 (이번엔 자동으로 불러올 수 있는 연결)
       else {
         rememberFailed([{ name: result.name, text: result.text }])  // 불러오기 실패와 같은 모양 (카드사 이름 굵게)
-        setNeedsAuth(Boolean(result.needsAuth))
         setPhase('error')
       }
     })
@@ -228,9 +217,7 @@ export default function BillCheckDialog({ cardIds = [], onFound, resume = null, 
           <h2>청구서를 불러오지 못했어요</h2>
           {message && <div className="mc-bill-failed" role="alert"><p style={{ whiteSpace: 'pre-line' }}>{message}</p></div>}
           {failedList}
-          {needsAuth
-            ? <button type="button" className="mc-primary" onClick={() => { closePopup(); navigate(PATHS.connect) }}>추가 인증하러 가기</button>
-            : <button type="button" className="mc-primary" onClick={run}>다시 시도</button>}
+          <button type="button" className="mc-primary" onClick={run}>다시 시도</button>
           <button type="button" className="mc-secondary" onClick={closePopup}>닫기</button>
         </>}
       </div>
