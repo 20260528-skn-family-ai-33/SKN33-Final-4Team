@@ -4,6 +4,7 @@ import Popup from './Popup.jsx'
 import { usePopup } from './context.js'
 import { apiSend } from '../utils/api.js'
 import { PATHS } from '../routes.js'
+import { saveId } from '../utils/chatConversation.js'
 
 export default function WithdrawPopup() {
   const navigate = useNavigate()
@@ -24,6 +25,7 @@ export default function WithdrawPopup() {
     try {
       const result = await apiSend('/api/auth/me/', 'DELETE', { password, confirm: true })
       if (result?.ok !== true && !['processing', 'retry_required'].includes(result?.status)) throw new Error('탈퇴 결과를 확인하지 못했어요. 다시 확인해 주세요.')
+      saveId(null)
       try { localStorage.removeItem('moneycushion.savedEmail') } catch { /* 저장소가 차단돼도 탈퇴는 완료됨 */ }
       // 접수됐지만 삭제가 남음(R21): 로그아웃 · 로그인 차단 상태. 완료라고 하지 않고 안내만 보인다
       if (result?.ok !== true) { setPending(result.status); return }

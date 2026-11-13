@@ -115,3 +115,11 @@
 #mc-new-preview .mc-budget-advice ul { margin: 8px 0 14px; padding-left: 20px; }
 /* 정책 공고 주소: 긴 경로도 카드 안에서 줄바꿈, 밑줄로 링크를 구분 */
 #mc-new-preview .mc-fx-policy-link { color: var(--mc-ink); text-decoration: underline; overflow-wrap: anywhere; }
+#mc-new-preview .mc-policy-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
+#mc-new-preview .mc-policy-nav button { width: auto; min-height: 44px; padding: 8px 12px; }
+#mc-new-preview .mc-policy-nav span { white-space: nowrap; font-size: 13px; }
+#mc-new-preview .mc-policy-save { width: 100%; min-height: 44px; margin-top: 12px; }
+#mc-new-preview .mc-policy-cards button:disabled { opacity: .5; cursor: default; }
+#mc-new-preview .mc-policy-detail summary { cursor: pointer; }
+#mc-new-preview .mc-policy-detail p { white-space: pre-wrap; overflow-wrap: anywhere; }
+#mc-new-preview .mc-policy-detail[open] summary { margin-bottom: 8px; }
