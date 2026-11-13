@@ -8,18 +8,19 @@ import { usePopup } from './context.js'
 import { needsCardValues, runFinanceSync, syncLines } from '../utils/financeSync.js'
 import { toast } from '../utils/toast.js'
 import CardNoInput from '../components/CardNoInput.jsx'
+import { cardPw } from '../utils/institutions.js'
 
 export default function CardCredentialPopup({ item, onDone }) {
   const { closePopup } = usePopup()
   const [form, setForm] = useState({ cardNo: '', cardPassword: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const pwOk = item.organizationCode === '0302' ? /^\d{4}$/ : /^(\d{2}|\d{4})$/  // 현대카드는 4자리, 그 밖은 앞 2자리 또는 4자리 (CardSyncPanel 과 같음)
+  const pw = cardPw(item.organizationCode)  // 현대 4자리 · 하나 · 국민 앞 2자리 (CardSyncPanel 과 같음)
 
   const submit = async (e) => {
     e.preventDefault()
     if (busy) return
-    if (!/^\d{14,19}$/.test(form.cardNo) || !pwOk.test(form.cardPassword)) {
+    if (!/^\d{14,19}$/.test(form.cardNo) || !pw.ok(form.cardPassword)) {
       setError('카드번호와 카드 비밀번호를 확인해 주세요.')
       return
     }
@@ -49,7 +50,7 @@ export default function CardCredentialPopup({ item, onDone }) {
       <p className="mc-muted">{item.organizationName}는 불러올 때마다 카드번호와 카드 비밀번호가 필요해요.<br />이번 요청에만 쓰고 저장하지 않아요.</p>
       <form onSubmit={submit} noValidate>
         <label className="mc-field">카드번호<CardNoInput value={form.cardNo} onChange={(cardNo) => setForm((f) => ({ ...f, cardNo }))} /></label>
-        <label className="mc-field">카드 비밀번호<input autoComplete="off" type="password" inputMode="numeric" value={form.cardPassword} onChange={digits('cardPassword', 4)} /></label>
+        <label className="mc-field">카드 비밀번호{pw.hint}<input autoComplete="off" type="password" inputMode="numeric" value={form.cardPassword} onChange={digits('cardPassword', pw.maxLength)} /></label>
         {error && <p className="mc-error" role="alert">{error}</p>}
         <button type="submit" className="mc-primary" disabled={busy}>{busy ? '불러오는 중…' : '넣고 다시 불러오기'}</button>
       </form>

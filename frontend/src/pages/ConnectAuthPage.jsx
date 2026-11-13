@@ -61,7 +61,7 @@ function AuthList({ picked }) {
       update(inst.name, { status: { failed: 'okNoSync', loading: 'loading' }[result.syncStatus] ?? 'ok', error: null })
     } else if (result.status === 'sms_required') {
       update(inst.name, { status: 'sms', error: result.error?.message ?? null })
-      askSms(inst, row, result.smsAuth)
+      askSms(inst, row, result.smsAuth, result.error?.message)
     } else {
       fail(inst, result.error ?? {})
     }
@@ -90,8 +90,8 @@ function AuthList({ picked }) {
   }
 
   // 문자 인증 팝업 → 인증번호 확인
-  const askSms = (inst, row, smsAuth) => openPopup(
-    <SmsAuthPopup inst={inst.name} phoneHint={smsAuth?.phoneHint}
+  const askSms = (inst, row, smsAuth, notice) => openPopup(
+    <SmsAuthPopup inst={inst.name} phoneHint={smsAuth?.phoneHint} notice={notice}
       onCancel={() => update(inst.name, { status: 'fail', error: '문자 인증을 취소했어요.' })}
       onSubmit={(code) => send(inst, { ...row, smsAuth: { authToken: smsAuth.authToken, code } })} />,
   )
