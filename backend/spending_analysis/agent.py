@@ -7,11 +7,11 @@ from datetime import date, datetime
 
 from django.db import DatabaseError
 
-from . import adapter, agent_loop, agent_tools, claims, dialog, explain, investigation, tools
-from .answer import compose, over_target
+from . import adapter, agent_loop, agent_tools, claims, dialog, explain, insight, investigation, tools
+from .answer import EXAMPLES, compose, over_target
 
 START = {"lines": ["어떤 소비가 궁금하세요?"],
-         "examples": ["이번 달 얼마 썼어?", "지난달보다 식비 더 썼어?", "식비 예산 얼마 남았어?", "최근 3개월 소비 어때?"]}
+         "examples": list(EXAMPLES)}
 
 
 def _result(status, reply=None, decision=None, **extra):
@@ -48,7 +48,7 @@ def _run(user, request):
     return lambda decision: adapter.run(user, decision, today=today, as_of=as_of)
 
 
-def handle(request, *, store, complete, user=None, execute=None, explain_plan=None, agent_complete=None):
+def handle(request, *, store, complete, user=None, execute=None, explain_plan=None, agent_complete=None, insight_complete=None):
     """request = 공통 입력 {agent: "spending", mode, entry, text, input_id, conversation_id, today, as_of, context}
     context = {selected_from?, budget_change?: {outcome, checked_at}, switched_from?, declined_by?, budget_targets?: 넘겨 둔 조정이 늘리려는 카테고리,
                suggested_category?: 예산 조정이 넘기며 알려 준 카테고리, budget_return?: 넘겨 둔 예산 조정이 있음}
@@ -97,6 +97,18 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         if split is not None:
             decision, need, note = split
             dialog.cancel_question(store, cid)  # 예산 + 비교를 예산 되묻기로 저장했으면 지운다 (비교부터 하므로)
+    if user is not None and insight_complete is not None and decision.status == "unsupported" and decision.reason == "evidence_incomplete":
+        reading = decision.interpretation
+        if reading is not None and reading.hypothesis is None:
+            observed = dialog._explain_query(reading, text, store.get_analysis(cid), _merchant(user, request), _today(request))
+            if insight.eligible(observed):
+                decision = replace(observed, interpretation=reading)
+    if user is not None and insight_complete is not None and insight.eligible(decision):
+        items = tuple({**item, "include_fixed": False} for item in decision.items)
+        explanation = decision.explain
+        if explanation:
+            explanation = {**explanation, "items": tuple({**item, "include_fixed": False} for item in explanation.get("items", ()))}
+        decision = replace(decision, items=items, explain=explanation)
     ran = []
     run = execute or _run(user, request)
 
@@ -108,9 +120,19 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
                       user and (lambda items, question=None, hypothesis=None: explain.answer(
                           user, items, today=_today(request), question=question, hypothesis=hypothesis,
                           plan=explain_plan if hypothesis is not None else None)))  # B 는 가설 질문에만
-    if judging and result["status"] == "replied" and result.get("reply") and decision.items and ran and ran[-1] \
+    analyzed, analysis_notice = False, None
+    if insight_complete is not None and user is not None and result["status"] == "replied" and result.get("reply") and insight.eligible(decision):
+        reply, reason = insight.answer(user, decision, _today(request), insight_complete, question=question)
+        if reply is not None:
+            result = {**result, "reply": reply}
+            analyzed = True
+        elif reason:
+            analysis_notice = reason
+    if judging and not analyzed and result["status"] == "replied" and result.get("reply") and decision.items and ran and ran[-1] \
             and (need is not None or _multi_step(decision)):
         result = _judged(result, decision, ran[-1], question, need, user, request, agent_complete)
+    if analysis_notice:
+        result["reply"] = {**result["reply"], "notices": [*result["reply"].get("notices", []), analysis_notice]}
     if note and result.get("reply"):  # 가설 경로로 나누며 뺀 나누기 — 확인하지 못했다고 밝힌다
         result["reply"] = {**result["reply"], "notices": [*result["reply"].get("notices", []), note]}
     if context.get("budget_return") and result["status"] == "replied" and result.get("reply"):

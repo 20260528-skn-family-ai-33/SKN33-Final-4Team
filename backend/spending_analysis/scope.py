@@ -83,8 +83,10 @@ SHORT_PERIODS = ("this_week", "last_week", "range")  # 달보다 짧은 기간: 
 
 def excludes_fixed(item):
     """요일 · 시간대 조건 · 묶기(10번 group_by) · 달보다 짧은 기간이면 고정지출을 기본으로 뺀다 — 월세 같은 자동이체가 '화요일 · 아침'을 덮지 않게.
-    '고정지출 포함해서'(include_fixed)면 포함. 총액 · 카테고리 · 금액 범위 · 평균 · 최대 조회는 지금처럼 포함 (10/30 결정)"""
+    include_fixed=false는 명시적으로 제외, true면 포함. 기본 총액 · 카테고리 조회는 포함한다."""
     item = item or {}
+    if item.get("include_fixed") is False:
+        return True
     query = item.get("query") or {}
     return not item.get("include_fixed") and bool(item.get("weekdays") or item.get("time_slots") or query.get("group_by")
                                                   or query.get("period") in SHORT_PERIODS)

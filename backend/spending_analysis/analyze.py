@@ -55,8 +55,8 @@ def validate(item, today, as_of):
             raise ValueError(f"달끼리 비교할 수 없는 달: {item!r}")
     elif any(item.get(k) is not None for k in ("month", "date_from", "date_to", "compare_month")):
         raise ValueError(f"특정 달 · 날짜 범위는 10번에만, 비교할 달은 6 · 7번에만: {item!r}")
-    if item.get("include_fixed") not in (None, True):
-        raise ValueError(f"include_fixed 는 true 만: {item!r}")
+    if item.get("include_fixed") is not None and not isinstance(item["include_fixed"], bool):
+        raise ValueError(f"include_fixed 는 boolean: {item!r}")
     if kind in CATEGORY_TYPES:
         if category not in R.CATEGORY_ORDER or (kind == 3 and category == R.UNCLASSIFIED):
             raise ValueError(f"{kind}번에 쓸 수 없는 카테고리: {category!r}")

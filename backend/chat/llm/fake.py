@@ -7,6 +7,8 @@ from chat.interpretation.legacy import SAID, RoleFakeLLM
 from spending_analysis import agent_loop as spending_agent_loop
 from spending_analysis import claims as spending_claims
 from spending_analysis import reading as spending_reading
+from spending_analysis import insight as spending_insight
+from spending_analysis import narrative as spending_narrative
 
 def hypothesis(metric, target, unavailable=None):
     return {"metric": metric, "target": target, "unavailable": unavailable}
@@ -21,6 +23,16 @@ EXTRA_SAID = {
 }
 # 소비 형식으로만 답하는 가짜 해석 (통합 형식에 없는 칸 — 세부 지출 · 이번 달 포함 · 별칭)
 SPENDING_SAID = {
+    "내 소비 습관 어때?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
+    "이대로 쓰면 이번 달 얼마나 쓸까?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
+    "외식이었어": {"mine": True, "followup": "answer", "analysis_activity": "dining"},
+    "원래 계획했던 거야": {"mine": True, "followup": "answer", "analysis_planned": True},
+    **{text: {"mine": True, "target": "spend", "explain": True, "explain_kind": "change",
+              "period": "this_month", "analysis_scope": "living"} for text in (
+        "이번달 생활비 왜이렇게 많이 나왔지?", "이번 달 생활비 왜 이렇게 많이 나왔지?")},
+    **{text: {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"} for text in (
+        "그냥 다 분석해줘", "뭐든 분석해줘", "아무거나 분석해줘", "내 소비 알아서 살펴봐줘",
+        "어디부터 봐야 할지 모르겠어. 소비 좀 봐줘", "소비 분석으로 뭘 볼 수 있어?", "이번 달 전체 소비 분석해줘")},
     # 범위·근거 회귀를 외부 호출 없이 서비스 화면에서도 확인할 고정 입력
     "지난달 식비는 왜 많이 나왔어?": {"mine": True, "explain": True, "explain_kind": "composition",
                                   "period": "last_month", "period_said": "지난달", "categories": ["FOOD"]},
@@ -314,6 +326,15 @@ class FakeReading(RoleFakeLLM):
         self.missed = 0
 
     def __call__(self, system, user, timeout=None):  # timeout: 실제 해석기와 같은 모양 (가짜는 기다리지 않음)
+        if system == spending_insight.PROMPT:
+            data = json.loads(user)
+            self.calls.append({"role": "fake_insight"})
+            return json.dumps(spending_narrative.fake(data), ensure_ascii=False)
+        if system == spending_narrative.CHECK_PROMPT:
+            data = json.loads(user)["answer"]
+            statements = [data["diagnosis"], *data["evidence"], *([data["outlook"]] if data["outlook"] else [])]
+            return json.dumps({"supported": True, "answers_question": True, "no_repetition": True,
+                               "checked_findings": list({i for s in statements for i in s["findings"]})})
         if system == spending_agent_loop.PROMPT:
             self.calls.append({"role": "fake_judge"})
             return fake_judge(user)

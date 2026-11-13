@@ -204,7 +204,8 @@ class PersonaAnswerTest(TestCase):
                                           "남은 26일 동안 하루 11,153원씩 쓸 수 있어요.",
                 "예산 얼마 남았어?": A_CYCLE + "생활비 예산 900,000원 중 180,000원을 썼고 720,000원 남았어요. "
                                        "남은 26일 동안 하루 27,692원씩 쓸 수 있어요.",
-                "소비 분석해줘": "이번 달(10월 1일~29일) 소비는 1,510,000원이에요. 고정지출 700,000원을 빼면 생활비는 810,000원이에요. "
+                "소비 분석해줘": "먼저 이번 달 전체 소비를 볼게요. 비교나 남은 예산은 아래 질문에서 이어서 확인할 수 있어요. "
+                           "이번 달(10월 1일~29일) 소비는 1,510,000원이에요. 고정지출 700,000원을 빼면 생활비는 810,000원이에요. "
                            "분류된 소비 중 가장 많이 쓴 곳은 주거·통신, 700,000원이에요. 전체 소비 1,510,000원의 46.36%예요.",
                 "지난달보다 많이 썼어?": COMPARE + "전체 · 1,510,000원 지난달보다 42,000원 증가했어요. ↑ 2.86%",
                 "지난달보다 식비 더 썼어?": COMPARE + "식비 · 390,000원 지난달보다 42,000원 증가했어요. ↑ 12.07%",
@@ -274,12 +275,14 @@ class PersonaAnswerTest(TestCase):
         self.assertEqual(Chat(user("B")).say("식비 예산 얼마 남았어?")[1]["suggest"], ["budget_adjust"])
         self.assertNotIn("suggest", Chat(user("A")).say("식비 예산 얼마 남았어?")[1])
 
-    def test_partial_overview_chart_is_marked_and_keeps_unclassified(self):
+    def test_partial_overview_chart_moves_unclassified_to_footer_without_changing_total(self):
         _, out = Chat(user("C")).say("소비 분석해줘")
         chart = out["chart"]
         self.assertIsNotNone(chart["limited"])
-        self.assertIn(("UNCLASSIFIED", 50_000), [(r["code"], r["amount"]) for r in chart["rows"]])
-        self.assertEqual(sum(r["amount"] for r in chart["rows"]), 390_000)  # 관측 합계 = 표시한 전체
+        self.assertNotIn("UNCLASSIFIED", [r["code"] for r in chart["rows"]])
+        self.assertIn("확인 필요 50,000원은 총액에 포함", chart["unclassified"])
+        self.assertEqual(sum(r["amount"] for r in chart["rows"]), 340_000)
+        self.assertIn("390,000원", chart["basis"])
 
     def test_c_limited_data_and_no_approved_budget(self):
         c = Chat(user("C"))
@@ -554,6 +557,26 @@ class ZeroAndNoDataAnswerTest(TestCase):
 
 @fixture_db_only
 class ComposeWithoutDbTest(SimpleTestCase):
+    def test_overview_keeps_missing_data_distinct_from_zero_and_offers_next_questions(self):
+        figures = {"total": 0, "fixed_amount": 0, "living_amount": 0, "unclassified_amount": 0,
+                   "needs_review_count": 0, "by_category": {}, "top_spending": [], "shares": {}}
+        for state in ("none", "partial", "complete"):
+            with self.subTest(state=state):
+                item = {"type": 5, "category": None}
+                block = {"period": Period(date(2026, 10, 1), date(2026, 10, 30)), "coverage": {"state": state},
+                         "observed": figures, "confirmed": figures if state == "complete" else None}
+                out = compose([{"item": item, "ok": True, "result": {"type": 5, "item": item, "current": block}}])
+                self.assertEqual(out["examples"], ["지난달보다 많이 썼어?", "식비 얼마 썼어?", "예산 얼마 남았어?"])
+                self.assertIn("이번 달 전체 소비", out["lead"][0])
+                if state == "none":
+                    self.assertIn("확인할 수 있는 내역이 없어요", out["lines"][0])
+                    self.assertFalse(any(b.get("kind") == "total" for b in out["view"]))
+                elif state == "partial":
+                    self.assertIn("일부 내역 기준", out["lines"][0])
+                    self.assertTrue(out["notices"])
+                else:
+                    self.assertEqual(out["lines"][0], "이번 달(10월 1일~29일) 소비는 0원이에요.")
+
     def test_unavailable_comparison_has_no_delta(self):
         block = {"period": Period(date(2026, 10, 1), date(2026, 10, 30)), "coverage": {"state": "complete"},
                  "observed": {"total": 100, "unclassified_amount": 0, "needs_review_count": 0}}
@@ -597,7 +620,8 @@ class ComposeWithoutDbTest(SimpleTestCase):
         result = {"type": 5, "item": {"type": 5, "category": None}, "current": block}
         out = compose([{"item": result["item"], "ok": True, "result": result}])
         self.assertEqual(out["lines"][-1], "분류된 소비 중 가장 많이 쓴 곳은 식비·교통·차량, 각각 100원이에요. 각각 전체 소비 300원의 33.33%예요.")
-        self.assertEqual([r["code"] for r in out["chart"]["rows"]], ["FOOD", "TRANSPORT_CAR", "UNCLASSIFIED"])
+        self.assertEqual([r["code"] for r in out["chart"]["rows"]], ["FOOD", "TRANSPORT_CAR"])
+        self.assertIn("확인 필요 100원", out["chart"]["unclassified"])
 
 
 @fixture_db_only

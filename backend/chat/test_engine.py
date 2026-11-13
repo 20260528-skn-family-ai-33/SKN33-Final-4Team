@@ -4,6 +4,8 @@
 실행: python manage.py test chat.test_engine --settings=spending_fixture.settings
 """
 import json
+from contextlib import contextmanager
+from datetime import date, time, timedelta
 from unittest import mock
 
 from django.test import Client, TestCase, override_settings
@@ -11,6 +13,7 @@ from django.test import Client, TestCase, override_settings
 from chat.models import ChatMessage, Conversation
 
 from spending_analysis import explain
+from spending_analysis import insight
 from spending_fixture import seed
 from spending_fixture.test_fixture import DESIGN, EXPECTED, fixture_db_only
 from spending_fixture.test_service import NO_NETWORK, PASSWORD, SERVICE, login
@@ -61,6 +64,301 @@ class ServiceChatBase(TestCase):
 @fixture_db_only
 @SERVICE
 class ServiceChatTest(ServiceChatBase):
+    @contextmanager
+    def capture_summaries(self):
+        summaries, summarize = [], insight.summarize
+
+        def capture(*args, **kwargs):
+            result = summarize(*args, **kwargs)
+            summaries.append(result[0])
+            return result
+
+        with mock.patch.object(insight, "summarize", side_effect=capture):
+            yield summaries
+
+    def test_month_end_forecast_selects_parameters_from_completed_user_history_and_shows_test_error(self):
+        from finance.models import BankAccount, FinancialTransaction as Tx, RecurringExpense, SyncRun
+        from chat.llm.fake import FakeReading
+        uid = seed.user_ids(DESIGN)["A"]
+        account = BankAccount.objects.filter(user_id=uid, account_type="demand").first()
+        fixed_ids = list(Tx.objects.filter(user_id=uid, transaction_type="spending", confirmed_category_id="HOUSING_TELECOM").values_list("pk", flat=True))
+        Tx.objects.filter(user_id=uid, transaction_type="spending").update(transaction_type="transfer")
+        Tx.objects.filter(pk__in=fixed_ids).update(transaction_type="spending")
+        RecurringExpense.objects.create(user_id=uid, name="날짜 미정 고정지출", amount=75000,
+            payment_day=None, category_id="HOUSING_TELECOM", status="confirmed", source_type="manual")
+        first, last = date(2026, 4, 1), date(2026, 10, 29)
+        SyncRun.objects.filter(user_id=uid, status="success").update(covered_from=first)
+        rows, day = [], first
+        while day <= last:
+            rows.append(Tx(user_id=uid, source_kind="bank", account=account, occurred_on=day, occurred_time=time(12),
+                           amount=5000 + (day - first).days * 100, direction="out", transaction_type="spending",
+                           confirmed_category_id="FOOD", confirmation_state="confirmed", merchant_category="한식",
+                           merchant_name="합성 식당"))
+            day += timedelta(days=1)
+        Tx.objects.bulk_create(rows)
+        fake, payloads = FakeReading(), []
+
+        def complete(system, user, **kwargs):
+            if system == insight.PROMPT:
+                payloads.append(json.loads(user))
+            return fake(system, user, **kwargs)
+
+        with self.capture_summaries() as summaries, mock.patch.object(engine, "reading", return_value=complete):
+            content = self.bot(self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?"))
+        self.assertTrue(payloads, content)
+        projection = summaries[0]["trends"]["FOOD"]
+        report = projection["validation"]
+        overall = summaries[0]["overall_trend"]
+        self.assertEqual(projection["state"], "ready")
+        self.assertEqual(overall["state"], "ready")
+        self.assertEqual(overall["validation"]["test_months"], ["2026-08", "2026-09"])
+        self.assertEqual(report["candidate_count"], 74)
+        self.assertLess(max(report["tuning_months"]), min(report["test_months"]))
+        self.assertEqual(report["test_months"], ["2026-08", "2026-09"])
+        text = " ".join(content["lines"])
+        self.assertIn(f"{overall['month_end']:,}원", text)
+        self.assertTrue(any(f"{report['test_mae']:,}원" in n for n in content["notices"]))
+        self.assertTrue(any("별도 2개월" in n for n in content["notices"]))
+        self.assertFalse(content["choices"])
+        self.assertNotIn("merchant_name", json.dumps(payloads))
+        with self.capture_summaries() as general_summaries, mock.patch.object(engine, "reading", return_value=complete):
+            general = self.bot(self.send("A", text="아무거나 분석해줘"))
+        variable = general_summaries[0]
+        self.assertEqual(variable["overall_trend"], overall)
+        self.assertEqual(variable["current"], summaries[0]["current"])
+        self.assertEqual(variable["basis"]["scope"], "변동 소비")
+        self.assertNotIn("결제 일정", " ".join(general["lines"]))
+        total = variable["total_forecast"]
+        self.assertEqual(total["state"], "ready")
+        self.assertEqual(total["fixed_paid"], 700000)
+        self.assertEqual(total["fixed_remaining"], 75000)
+        self.assertEqual(total["actual"], variable["current"]["amount"] + 700000)
+        self.assertEqual(total["month_end"], round((total["actual"] + overall["remaining"] + 75000) / 1000) * 1000)
+        self.assertIn(f"월말 총지출 예상은 약 {total['month_end']:,}원", " ".join(general["lines"]))
+        self.assertEqual(total["month_end"], summaries[0]["total_forecast"]["month_end"])
+
+    def test_fixed_forecast_uses_monthly_amount_and_valid_partial_payment_without_writes(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        from django.utils import timezone
+        from finance.models import BankAccount, Card, FinancialTransaction as Tx, PaymentDue, PaymentMatch, RecurringExpense
+        from spending_analysis import tools
+        from spending_analysis.periods import this_month
+        from spending_fixture.test_fixture import user
+        u = user("A")
+        account = BankAccount.objects.filter(user=u, account_type="demand").first()
+        card = Card.objects.filter(user=u).first()
+        period = this_month(date(2026, 10, 29))
+
+        def expense(amount, **extra):
+            return RecurringExpense.objects.create(user=u, name="합성 고정지출", amount=amount,
+                category_id="HOUSING_TELECOM", status=extra.pop("status", "confirmed"), source_type="manual", **extra)
+
+        def due(e, day, **extra):
+            return PaymentDue.objects.create(user=u, recurring=e, obligation_type="recurring", due_date=day,
+                occurrence_key=f"test:{e.pk}:{day}", confirmed_amount=e.amount,
+                source_type="manual", confirmation_state="confirmed", **extra)
+
+        def payment(d, amount, day=date(2026, 10, 20), **extra):
+            tx = Tx.objects.create(user=u, source_kind="bank", account=account, direction="out",
+                transaction_type="spending", confirmed_category_id="HOUSING_TELECOM",
+                confirmation_state="confirmed", occurred_on=day, amount=amount, **extra)
+            PaymentMatch.objects.create(user=u, due=d, transaction=tx, matched_amount=amount)
+            return tx
+
+        expense(75000, payment_day=None)  # 결제일 없이 금액만 등록
+        partial = due(expense(100000), date(2026, 10, 31), payment_state="partial", paid_amount=40000)
+        payment(partial, 40000, canceled_amount=10000)  # 취소 후 실제 납부 3만 원 → 잔액 7만 원
+        canceled = due(expense(90000), date(2026, 10, 31), obligation_state="canceled", canceled_at=timezone.now())
+        due(expense(80000, status="stopped"), date(2026, 10, 31))
+        expense(60000, status="suggested")
+        overdue = expense(20000, payment_day=None)
+        payment(due(overdue, date(2026, 9, 30), payment_state="paid", paid_amount=20000), 20000)
+        future = due(expense(30000), date(2026, 10, 31), payment_state="paid", paid_amount=30000)
+        payment(future, 30000, day=date(2026, 10, 30))  # 기준일 이후 납부 기록은 미리 빼지 않음
+        subscription = expense(15000, payment_card=card)
+        tx = Tx.objects.create(user=u, source_kind="card", card=card, direction="out", transaction_type="spending",
+            confirmed_category_id="CULTURE_LEISURE", confirmation_state="confirmed",
+            occurred_on=date(2026, 10, 21), amount=14900)
+        subscription.evidence = [str(tx.pk)]
+        subscription.save(update_fields=["evidence"])
+        # 다른 회원의 확정 고정지출도 이 회원의 전망에는 포함하지 않는다.
+        RecurringExpense.objects.create(user=user("B"), name="다른 회원", amount=999999,
+            category_id="HOUSING_TELECOM", status="confirmed", source_type="manual")
+        current = [r for r in tools.rows(u, period, {"include_fixed": True}) if r["transaction_type"] == "spending"]
+        with CaptureQueriesContext(connection) as queries:
+            result = tools.fixed_forecast(u, period, current)
+        self.assertEqual(result, {"paid": 764900, "remaining": 195000})  # 7.5만 + 7만 + 2만 + 3만
+        self.assertTrue(all(q["sql"].lstrip().upper().startswith("SELECT") for q in queries))
+        self.assertEqual(PaymentDue.objects.get(pk=canceled.pk).obligation_state, "canceled")
+
+    def test_large_payment_and_repeat_pattern_keep_analysis_but_defer_unvalidated_forecast(self):
+        from finance.models import BankAccount, FinancialTransaction as Tx
+        from chat.llm.fake import FakeReading
+        uid = seed.user_ids(DESIGN)["A"]
+        account = BankAccount.objects.filter(user_id=uid, account_type="demand").first()
+        Tx.objects.filter(user_id=uid, transaction_type="spending").update(transaction_type="transfer")
+        rows = []
+        day = date(2026, 7, 1)
+        while day <= date(2026, 10, 29):
+            amount = 10000 if day.month < 10 else 12000 if day.day == 1 else (12000, 14000, 16000, 18000)[(day.day - 2) // 7]
+            rows.append(Tx(user_id=uid, source_kind="bank", account=account, occurred_on=day, occurred_time=time(12), amount=amount,
+                           direction="out", transaction_type="spending", confirmed_category_id="FOOD",
+                           confirmation_state="confirmed", merchant_category="한식", merchant_name="합성 식당"))
+            day += timedelta(days=1)
+        rows.append(Tx(user_id=uid, source_kind="bank", account=account, occurred_on=date(2026, 10, 15), amount=400000,
+                       direction="out", transaction_type="spending", confirmed_category_id="HOUSEHOLD",
+                       confirmation_state="confirmed", merchant_name="합성 생활용품점"))
+        Tx.objects.bulk_create(rows)
+        fake, payloads = FakeReading(), []
+
+        def complete(system, user, **kwargs):
+            if system == insight.PROMPT:
+                payloads.append(json.loads(user))
+            return fake(system, user, **kwargs)
+
+        with self.capture_summaries() as summaries, mock.patch.object(engine, "reading", return_value=complete):
+            content = self.bot(self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?"))
+        self.assertTrue(payloads, content)
+        summary = summaries[0]
+        self.assertEqual(summary["trends"]["HOUSEHOLD"]["state"], "large_only")
+        self.assertEqual(summary["trends"]["FOOD"]["weekly_direction"], "increase")
+        self.assertEqual(summary["trends"]["FOOD"]["state"], "unavailable")
+        self.assertEqual(summary["trends"]["FOOD"]["validation"]["state"], "insufficient")
+        self.assertNotIn("month_end", summary["trends"]["FOOD"])
+        self.assertEqual(summary["trends"]["FOOD"]["baseline"]["amount"], 310000)
+        text = " ".join(content["lines"])
+        self.assertIn("큰 결제 1건(400,000원)", text)
+        self.assertEqual(summary["trends"]["FOOD"]["weekly_direction"], "increase")
+        self.assertIn("예상액을 보류", text)
+        self.assertNotIn("469,000원", text)
+        self.assertNotIn("869,000원", text)
+        graph = next(block for block in content["view"] if block["kind"] == "trend")
+        self.assertEqual([s["name"] for s in graph["series"]], ["식비"])
+        self.assertEqual([p["amount"] for p in graph["series"][0]["points"]], [84000, 98000, 112000, 126000])
+        self.assertEqual(graph["series"][0]["points"][0]["label"], "10/2~10/8")
+        self.assertNotIn("forecast", graph)
+        self.assertFalse(content["choices"])
+        self.assertNotIn("?", text)
+        self.assertNotIn("합성 식당", json.dumps(payloads, ensure_ascii=False))
+
+    def test_living_analysis_sends_aggregate_json_and_keeps_agreed_reply_stages(self):
+        from chat.llm.fake import FakeReading
+        fake, payloads = FakeReading(), []
+
+        def complete(system, user, **kwargs):
+            if system == insight.PROMPT:
+                payloads.append(json.loads(user))
+            return fake(system, user, **kwargs)
+
+        with self.capture_summaries() as summaries, mock.patch.object(engine, "reading", return_value=complete):
+            content = self.bot(self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?"))
+        self.assertEqual(len(payloads), 1)
+        self.assertNotIn("summary", payloads[0])
+        summary = summaries[0]
+        self.assertEqual(summary["basis"]["scope"], "생활비")
+        self.assertTrue(summary["basis"]["fixed_excluded"])
+        self.assertEqual(summary["current"]["amount"], 810000)
+        self.assertEqual(summary["previous"]["amount"], 768000)
+        self.assertGreater(summary["current"]["count"], 0)
+        self.assertNotIn("merchant_name", json.dumps(payloads))
+        self.assertTrue(any("고정지출 제외" in n for n in content["notices"]))
+        self.assertEqual([block["lines"][0] for block in content["view"][1:] if block["kind"] == "text"],
+                         list(insight.TITLES))
+        self.assertNotIn("2건에서 2건", " ".join(content["lines"]))
+        self.assertNotIn("빠른 소비 속도", " ".join(content["lines"]))
+
+    def test_analysis_incomplete_history_shows_observed_patterns_and_specific_limits(self):
+        with mock.patch.object(insight, "coverage", return_value={"state": "partial"}):
+            content = self.bot(self.send("A", text="아무거나 분석해줘"))
+        self.assertNotIn("chart", content)
+        text = " ".join(content["lines"])
+        self.assertIn("확인된", text)
+        self.assertTrue(any("증감 비교는 보류" in n for n in content["notices"]))
+        self.assertIn("월말 예상액은 계산하지 않았어요", text)
+        self.assertNotIn("지난달 같은 기간보다", text)
+        self.assertIn("일부 내역 기준", content["view"][0]["title"])
+
+    def test_analysis_invalid_generated_ids_do_not_reach_the_user(self):
+        from chat.llm.fake import FakeReading
+        fake = FakeReading()
+
+        def complete(system, user, **kwargs):
+            return '{"stages":{"action":["임의로 100만 원 줄이세요"]}}' if system == insight.PROMPT else fake(system, user, **kwargs)
+
+        with mock.patch.object(engine, "reading", return_value=complete):
+            content = self.bot(self.send("A", text="아무거나 분석해줘"))
+        self.assertEqual([block["lines"][0] for block in content["view"][1:] if block["kind"] == "text"],
+                         list(insight.TITLES))
+        self.assertNotIn("100만 원", json.dumps(content, ensure_ascii=False))
+        self.assertTrue(any("계산으로 확인된 분석" in n for n in content["notices"]))
+
+    def test_partial_analysis_followup_keeps_observed_category_patterns(self):
+        response = self.send("C", text="아무거나 분석해줘")
+        first = self.bot(response)
+        self.assertIn("일부 내역 기준", first["view"][0]["title"])
+        follow = self.bot(self.send("C", response.json()["conversationId"], text="식비는 왜 늘었을까?"))
+        self.assertIn("소비 분석", follow["view"][0]["title"])
+        text = " ".join(follow["lines"])
+        self.assertIn("식비", text)
+        self.assertTrue(any("증감 비교는 보류" in n for n in follow["notices"]))
+        self.assertNotIn("지난달 같은 기간보다", text)
+
+    def test_open_analysis_requests_show_trend_overview_without_forced_questions(self):
+        for text in ("그냥 다 분석해줘", "뭐든 분석해줘", "아무거나 분석해줘", "소비 분석으로 뭘 볼 수 있어?"):
+            with self.subTest(text=text):
+                content = self.bot(self.send("A", text=text))
+                self.assertTrue(content["result"])
+                self.assertEqual(content["agent"], "spending")
+                self.assertTrue(any("변동 소비" in n for n in content["notices"]))
+                self.assertEqual(content["view"][-1]["lines"][0], "앞으로의 의미")
+                self.assertFalse(content["choices"])
+                self.assertFalse(content.get("examples"))
+                self.assertNotIn("어떤 용도", " ".join(content["lines"]))
+
+    def test_habit_and_forecast_questions_use_different_narrative_goals(self):
+        from chat.llm.fake import FakeReading
+        fake, inputs = FakeReading(), []
+        def complete(system, user, **kwargs):
+            if system == insight.PROMPT:
+                inputs.append(json.loads(user))
+            return fake(system, user, **kwargs)
+        with mock.patch.object(engine, "reading", return_value=complete):
+            habit = self.bot(self.send("A", text="내 소비 습관 어때?"))
+            forecast = self.bot(self.send("A", text="이대로 쓰면 이번 달 얼마나 쓸까?"))
+        self.assertEqual([p["goal"] for p in inputs], ["habit", "forecast"])
+        self.assertTrue(habit["lines"])
+        self.assertEqual(forecast["view"][1]["title"], "핵심 진단")
+        self.assertTrue(any(word in forecast["view"][1]["lines"][1] for word in ("예상", "보류", "계산하지")))
+
+    def test_analysis_finishes_without_creating_an_activity_confirmation(self):
+        response = self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?")
+        content = self.bot(response)
+        self.assertNotIn("analysis_question", content)
+        self.assertFalse(content["choices"])
+        self.assertNotIn("어떤 용도", " ".join(content["lines"]))
+        self.assertNotIn("저렴한 메뉴", " ".join(content["lines"]))
+        conversation = Conversation.objects.get(pk=response.json()["conversationId"])
+        self.assertNotIn('"asking": "analysis_detail"', json.dumps(conversation.slots))
+
+    def test_specific_industry_enables_lunch_interpretation_without_sending_merchant_details(self):
+        from finance.models import FinancialTransaction
+        from chat.llm.fake import FakeReading
+        FinancialTransaction.objects.filter(user_id=seed.user_ids(DESIGN)["A"], confirmed_category_id="FOOD").update(merchant_category="한식")
+        fake, payloads = FakeReading(), []
+
+        def complete(system, user, **kwargs):
+            if system == insight.PROMPT:
+                payloads.append(json.loads(user))
+            return fake(system, user, **kwargs)
+
+        with mock.patch.object(engine, "reading", return_value=complete):
+            content = self.bot(self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?"))
+        self.assertIn("외식", " ".join(content["lines"]))
+        self.assertNotIn("저렴한 메뉴", " ".join(content["lines"]))
+        self.assertNotIn("merchant_category", json.dumps(payloads))
+        self.assertNotIn("merchant_name", json.dumps(payloads))
+
     def test_fake_engine_first_screen_and_message_without_live_imports(self):
         import builtins
         import importlib
@@ -153,9 +451,8 @@ class ServiceChatTest(ServiceChatBase):
         self.assertEqual(content["choices"], [{"value": "budget", "label": "예산 조정하기"}])
         self.assertIn("필요하면 예산 조정을 요청할 수 있어요.", content["notices"])
         overview = self.bot(self.send("A", text="소비 분석해줘"))
-        self.assertEqual(overview["view"][0], {"kind": "head", "title": "10월 1일~29일 · 소비"})  # 카드 보기도 함께
-        chart = overview["chart"]
-        self.assertEqual(chart["rows"][0]["text"], "주거·통신 700,000원 (46.36%)")
+        self.assertEqual(overview["view"][0], {"kind": "head", "title": "10월 1일~29일 · 소비 분석"})
+        self.assertEqual(overview["view"][-1]["lines"][0], "앞으로의 의미")
         lead = self.bot(self.send("A", text="최근 6개월 식비 어때?"))
         self.assertEqual(lead["lead"], ["3개월까지만 볼 수 있어 3개월로 보여드려요."])
         self.assertTrue(lead["text"].startswith(lead["lead"][0]))
@@ -493,7 +790,9 @@ class ServiceLiveTest(ServiceChatBase):
         cid = first.json()["conversationId"]
         out = self.bot(self.send("A", cid, text="왜 식비가 늘었어?"))
         self.assertNotIn("spending_explanation", self.sent)  # 일반 '왜 늘었어?'에 설명 문장용 LLM 없음 (MEMO 31)
-        self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 42,000원 늘었어요. ↑ 12.07%")
+        self.assertIn("식비", out["lines"][0])
+        self.assertIn("업종 정보가 부족", out["lines"][0])
+        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], list(insight.TITLES))
         self.assertEqual(self.live.usage()["limit"], None)
         self.assertEqual(self.live.usage()["used"], len(self.sent))
 
@@ -529,7 +828,7 @@ class ServiceLiveTest(ServiceChatBase):
 @fixture_db_only
 @SERVICE
 class ExplainPlanTest(ServiceChatBase):
-    """B 증감 설명(MEMO 26, CHAT_EXPLAIN_PLAN) — 가짜 계획 · 답 LLM(chat.llm.fake 의 정해 둔 출력)으로 끝까지. 꺼짐 = 지금 템플릿"""
+    """가설 설명의 CHAT_EXPLAIN_PLAN 여부와 독립적인 일반 소비 분석을 검증한다."""
 
     def ask(self, persona, question, first=None):
         cid = self.send(persona, text=first).json()["conversationId"] if first else None
@@ -571,17 +870,20 @@ class ExplainPlanTest(ServiceChatBase):
         out = self.bot(self.send("A", first["conversationId"], text="그럼 교통비는?"))
         self.assertEqual(out["devTrace"]["entry"]["items"][0]["type"], 7)
 
-    def test_off_is_the_current_template(self):
+    def test_off_keeps_general_analysis_without_hypothesis_plan(self):
         out = self.ask("B", "왜 식비가 늘었어?")
-        self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 224,000원 늘었어요. ↑ 55.17%")
+        self.assertIn("식비", out["lines"][0])
+        self.assertIn("증가·감소 요인", out["lines"][0])
+        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], list(insight.TITLES))
         self.assertNotIn("stop", out["devTrace"])  # B 를 거치지 않았다 (분석 과정엔 B 전 단계만)
 
     def test_general_why_does_not_go_to_b(self):
-        """MEMO 31: 가설이 없는 일반 '왜 늘었어?'는 B 를 켜도 B 계획 · 답을 부르지 않는다 — 짧은 서버 설명"""
+        """가설 없는 일반 질문은 B 계획 대신 소비 분석 결론과 근거를 보여준다."""
         with override_settings(CHAT_EXPLAIN_PLAN=True), mock.patch("chat.llm.fake.fake_plan_answer") as llm:
             out = self.ask("B", "왜 식비가 늘었어?")
         llm.assert_not_called()
-        self.assertEqual(out["lines"][0], "식비 지출은 지난달 같은 기간보다 224,000원 늘었어요. ↑ 55.17%")
+        self.assertIn("증가·감소 요인", out["lines"][0])
+        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], list(insight.TITLES))
         self.assertNotIn("stop", out["devTrace"])
 
     def test_yunseo_plan_stops_with_no_query(self):

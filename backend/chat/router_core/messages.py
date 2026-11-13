@@ -8,7 +8,7 @@
   기능 선택지 이름 = 아래 CHOICES (서비스 엔진과 공유). 나머지는 [임시] 문구 (MEMO 18번).
 - 미정 정책에 걸린 코드는 문구를 만들지 않고 undecided 로 돌려준다 (MEMO 18번 목록).
 """
-from spending_analysis.answer import NAMES, josa
+from spending_analysis.answer import EXAMPLES, NAMES, josa
 from spending_analysis.dialog import REPICK, YES_NO
 
 from . import CANCEL_WORDS, rules
@@ -36,6 +36,7 @@ ASK = {
     "fallback_scope": "대신 {scope} 전체를 확인할까요?",
     "fallback_category": "대신 어느 카테고리 전체를 볼까요?",
     "scope": "어떤 기간이나 카테고리를 볼지 알려 주세요.",
+    "analysis_detail": "앞서 확인하던 지출에 대해 아래에서 고르거나 직접 답해 주세요.",
     "explain_target": "어느 카테고리를 설명해 드릴까요?",
     "budget_current": "현재 예산 기간의 {name} 남은 예산을 확인할까요?",
     "self_instead": "대신 내 {words}{words_obj} 볼까요?",
@@ -141,7 +142,7 @@ def _choices(asking, options):
         return [dict(CHOICE[o]) for o in options]
     if asking in ("category", "explain_target", "fallback_category"):
         return [{"value": o["code"], "label": o["name"]} for o in options]
-    if asking in ("period_choice", "category_choice", "include_choice", "fallback_scope", "self_instead", "spend_instead"):
+    if asking in ("period_choice", "category_choice", "include_choice", "fallback_scope", "self_instead", "spend_instead", "analysis_detail"):
         return [{"value": o["value"], "label": o["label"]} for o in options]
     return [{"value": o, "label": OPTION[o]} for o in options]
 
@@ -175,7 +176,7 @@ def _ask(asking, reason, ask_about, options, router):
     choices = _choices(asking, options)
     if asking == "detail" and router:
         choices = [dict(c) for c in CHOICES]  # chat.md: 불명확 의도는 기능 선택지와 함께
-    return {"lines": lines, "choices": choices}
+    return {"lines": lines, "choices": choices, **({"examples": list(EXAMPLES)} if asking == "scope" else {})}
 
 
 def _decision(status, asking, reason, ask_about, options, router):

@@ -39,7 +39,13 @@ class MessagesTest(SimpleTestCase):
     def test_spending_start_button_keeps_agent_reply(self):
         out = self.say(button="spending")
         self.assertEqual(out["lines"], ["어떤 소비가 궁금하세요?"])
-        self.assertIn("이번 달 얼마 썼어?", out["examples"])
+        self.assertIn("이번 달 전체 소비 분석해줘", out["examples"])
+
+    def test_missing_reference_offers_concrete_analysis_examples(self):
+        out = self.say("그럼 교통비는?")
+        self.assertIn("이어서 볼 이전 분석이 없어요.", out["lines"])
+        self.assertIn("이번 달 전체 소비 분석해줘", out["examples"])
+        self.assertIn("지난달보다 많이 썼어?", out["examples"])
 
     def test_questions_are_stem_plus_reason_plus_choices(self):
         self.assertEqual(self.say("최근 0개월 식비 알려줘")["lines"], ["몇 개월을 볼까요? 최근 3개월까지 볼 수 있어요."])
