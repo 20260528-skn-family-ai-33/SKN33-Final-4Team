@@ -68,7 +68,7 @@
 
 | 무엇 | 왜 |
 |---|---|
-| `financial_profile.housing_type` (VARCHAR 10, `alone` 자취 · `family` 본가 거주, 비어도 됨) | 10-27 온보딩 변경. 예산 산정 방향(생활 안정형 · 저축 집중형) 대신 **자취 여부로 지킬 돈 비율**을 정한다 (자취 55·30·5·10 / 본가 45·40·5·10, `docs/api/budgets.md` P-02). 비어 있으면 아직 안 고름 → 지킬 돈 API가 `missing`으로 알림. `budget_direction`은 아직 지우지 않음(내 정보 API 정리 때) |
+| `financial_profile.housing_type` (VARCHAR 10, `alone` 자취 · `family` 본가 거주, 비어도 됨) | 10-27 온보딩 변경. 예산 산정 방향(생활 안정형 · 저축 집중형) 대신 **자취 여부로 지킬 돈 비율**을 정한다 (자취 55·30·5·10 / 본가 45·40·5·10, `docs/api/budgets.md` P-02). 비어 있으면 아직 안 고름 → 지킬 돈 API가 `missing`으로 알림. `budget_direction`은 11-13에 지움(아래 '안 쓰는 칸 정리') |
 | `budget_category_setting.locked_amount` (BIGINT, 원 단위, 비어도 됨) | 10-28 예산 명세 리뷰. 자물쇠는 주기 전체가 같이 쓰는데, 초안 · 승인 예산의 금액이 다를 수 있어서 **걸 때 그 예산의 금액을 같이 저장**하고 다시 추천할 때 이 금액을 유지한다. 풀면 NULL |
 | CHECK `fp_housing_type_valid` · `bcs_locked_amount_gte_0` · `bcs_unlocked_no_amount` | 거주 형태 코드 오타, 잠긴 금액 음수, 자물쇠가 풀렸는데 금액이 남아 있는 것 방지 |
 
@@ -212,6 +212,22 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 - 가맹점 이름은 저장할 때도 `normalize_merchant()`로 공백을 정리해 둔다. 그래야 같은 가게로 찾아진다.
 - 다른 회원의 기록은 쓰지 않는다 (회원별로만 기억).
 
+
+## 2026-11-13: 안 쓰는 칸 정리 (users/0014_remove_unused_profile_columns · finance/0015_remove_source_ref_ciphertext)
+
+서비스 코드가 읽지도 쓰지도 않는 칸 9개를 지운다. 저장소 전체 사용처 검수(Claude · Codex 각각) 결과 둘 다 '지워도 됨'으로 본 칸만이다.
+
+| 칸 | 지우는 이유 |
+|---|---|
+| `financial_profile.budget_direction` | 10-27 온보딩 변경으로 자취 여부(`housing_type`)가 대신함. 내 정보 API도 쓰지 않음 |
+| `financial_profile.payday_rule` | 급여일 계산에서 읽거나 쓰는 곳 없음. 월급 API는 `paydayRule`을 400으로 막음 |
+| `financial_profile.loan_presence` | 내 정보 입력 · 응답에 없음. 대출은 `loan` 표로 관리 |
+| `financial_profile.cushion_enabled` | 쿠션 계산에서 쓰지 않음 (시연 데이터에만 값) |
+| `financial_profile.monthly_disposable_income` · `disposable_income_basis` | 예산 ML은 실수령액(`monthly_take_home_income`)을 소득 입력으로 씀. 동의 철회 때 비우는 코드에만 남아 있었음 (함께 지움) |
+| `bank_account.source_account_ref_ciphertext` · `card.source_card_ref_ciphertext` · `loan.source_loan_ref_ciphertext` | 동기화 때 항상 NULL 로만 저장, 읽는 곳 없음. 중복 확인은 `source_*_key` 로 함 |
+
+- 보류(이번에 안 지움): `cushion_use_policy`(쿠션 사용 규칙 미정, 위 65줄) · `async_task.regeneration_count`(재생성 3회 제한 미구현) · `app_user.email_verified_at` · `password_changed_at` · `budget_cycle.approved_carryover` · `cushion_entry.reference_entry` · `bank_account.withdrawable_amount` · `financial_transaction.category_detail`
+- 되돌리려면 이 두 마이그레이션 이전으로 migrate 하면 칸은 다시 생기지만, 값은 돌아오지 않는다 (지운 칸은 NULL 로 다시 생김).
 
 ## 2026-11-05: 카드 미매칭 승인 확인 (finance/0012)
 

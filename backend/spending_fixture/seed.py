@@ -85,8 +85,7 @@ def plan(design):
             user_id=u, birth_date=date.fromisoformat(persona["birth_date"]), gender=persona["gender"],
             housing_type=persona["housing_type"], has_car=persona["has_car"],
             monthly_take_home_income=persona["income"], payday=persona["payday"], living_budget=persona["living"],
-            savings_floor=persona["savings"], cushion_monthly=persona["cushion"],
-            monthly_disposable_income=None, disposable_income_basis=None), updated_at=joined)
+            savings_floor=persona["savings"], cushion_monthly=persona["cushion"]), updated_at=joined)
         for rank, code in enumerate(persona["priorities"], start=1):
             add("CategoryPriority", dict(category_priority_id=uid(p, "priority", rank), user_id=u, category_id=code, rank=rank))
         for code, amount in persona["minimums"].items():

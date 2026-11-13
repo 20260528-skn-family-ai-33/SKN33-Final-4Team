@@ -97,7 +97,6 @@ class BankAccount(models.Model):
     account_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="bank_accounts")
     connection = models.ForeignKey(Connection, on_delete=models.RESTRICT, related_name="bank_accounts")
-    source_account_ref_ciphertext = models.TextField("암호화된 기관 계좌 식별값", null=True, blank=True)
     source_account_key = models.CharField("계좌 중복 확인 키", max_length=128)
     masked_number = models.CharField("마스킹 계좌번호", max_length=50, null=True, blank=True)
     name = models.CharField("계좌명", max_length=100, null=True, blank=True)
@@ -141,7 +140,6 @@ class Card(models.Model):
     issuer_code = models.CharField("카드사 코드", max_length=50, null=True, blank=True)
     name = models.CharField("카드명", max_length=100, null=True, blank=True)
     masked_number = models.CharField("마스킹 카드번호", max_length=50, null=True, blank=True)
-    source_card_ref_ciphertext = models.TextField("암호화된 기관 카드 식별값", null=True, blank=True)
     source_card_key = models.CharField("카드 중복 확인 키", max_length=128, null=True, blank=True)
     card_type = models.CharField("신용/체크", max_length=20, null=True, blank=True)
     card_status = models.CharField("기관 제공 카드 상태", max_length=20, null=True, blank=True)
@@ -192,7 +190,6 @@ class Loan(models.Model):
     linked_account = models.ForeignKey(
         BankAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="linked_loans",
     )
-    source_loan_ref_ciphertext = models.TextField("암호화된 기관 대출 식별값", null=True, blank=True)
     source_loan_key = models.CharField("대출 중복 확인 키", max_length=128, null=True, blank=True)
     origin = models.CharField("출처", max_length=20, choices=Origin.choices)
     status = models.CharField("상환 상태", max_length=20, choices=Status.choices, default=Status.REPAYING)
