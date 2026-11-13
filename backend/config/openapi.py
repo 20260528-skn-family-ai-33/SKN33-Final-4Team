@@ -216,7 +216,8 @@ def build_contract():
                 if not any(p.get("name", "").lower() == "idempotency-key" or p.get("$ref", "").endswith("/IdempotencyKey") for p in params):
                     params.append({"$ref": "#/components/parameters/IdempotencyKey"})
     source_files = ["docs/API_RULES.md", "docs/api/README.md", "docs/api/spending-analysis.md", "docs/결정기록_2026-10-21.md"] + [f"docs/api/{d}.md" for d in DOMAINS]
-    schema["x-source-sha256"] = {p: hashlib.sha256((ROOT / p).read_bytes()).hexdigest() for p in source_files}
+    # 체크아웃 줄바꿈(CRLF/LF)은 문서 내용 변경으로 보지 않는다.
+    schema["x-source-sha256"] = {p: hashlib.sha256((ROOT / p).read_text(encoding="utf-8").encode("utf-8")).hexdigest() for p in source_files}
     return schema
 
 

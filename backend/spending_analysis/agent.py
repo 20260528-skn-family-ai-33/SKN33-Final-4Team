@@ -79,8 +79,9 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         return _result("not_mine", reason=decision.reason, decision=decision)
     if decision.status == "failed":
         return _result("failed", error=decision.reason, decision=decision)
-    if user is not None and decision.interpretation and decision.interpretation.funds_overview and not decision.interpretation.other_person:
-        if decision.interpretation.period not in (None, 'this_month'):
+    query = decision.request or decision.interpretation
+    if user is not None and query and query.funds_overview and not query.other_person:
+        if query.period not in (None, 'this_month'):
             return _result('awaiting_input', {'lines': ['돈 종류별 잔액은 현재 급여 주기 기준으로 확인할 수 있어요. 현재 금액을 볼까요?']})
         from budgets.funds_overview import funds_overview
         try:

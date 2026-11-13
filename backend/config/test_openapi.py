@@ -4,6 +4,8 @@ from collections import Counter
 import json
 from pathlib import Path
 import re
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.contrib.staticfiles import finders
 from django.test import SimpleTestCase, override_settings
@@ -222,6 +224,19 @@ class OpenAPIContractTests(SimpleTestCase):
         error_examples = document["paths"]["/api/finance/connect/cards/"]["get"]["responses"]["403"]["content"]["application/json"]["examples"]
         self.assertIn("not_authenticated", error_examples)
         self.assertIn("머니쿠션", response.content.decode())
+
+    def test_source_hashes_ignore_checkout_line_endings(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for source in self.contract['x-source-sha256']:
+                path = root / source
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'contract\nsource\n')
+            with patch('config.openapi.ROOT', root):
+                lf = build_contract()['x-source-sha256']
+                for source in lf:
+                    (root / source).write_bytes(b'contract\r\nsource\r\n')
+                self.assertEqual(build_contract()['x-source-sha256'], lf)
 
     def test_runtime_document_contains_all_implemented_operations(self):
         response = self.client.get("/api/schema/runtime/")

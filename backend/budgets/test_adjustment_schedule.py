@@ -151,6 +151,31 @@ class SchedulePersistenceTest(TestCase):
         self.flush(adapter)
         return card
 
+    def test_next_cycle_reservation_responses_match_the_public_contract(self):
+        from rest_framework.test import APIClient
+        from openapi_schema_validator import OAS30Validator, oas30_format_checker
+        from config.openapi import build_contract
+
+        contract = build_contract()
+        card = self.make_schedule()
+        client = APIClient()
+        client.force_authenticate(self.user)
+        url = f"/api/budgets/proposals/{card['proposal_id']}/"
+        with patch('django.utils.timezone.localdate', return_value=fixtures.TODAY):
+            responses = [(url, 'get', client.get(url))]
+            responses.append((url + 'approve/', 'post', client.post(url + 'approve/', {},
+                format='json', HTTP_IDEMPOTENCY_KEY='schedule-contract')))
+        for path, method, response in responses:
+            with self.subTest(method=method):
+                self.assertEqual(response.status_code, 200, response.content)
+                payload = response.json()
+                self.assertEqual((payload.get('adjustment') or payload)['scope'], 'next_cycle')
+                template = path.replace(card['proposal_id'], '{id}')
+                schema = contract['paths'][template][method]['responses']['200']['content']['application/json']['schema']
+                validator = OAS30Validator({**schema, 'components': contract['components']},
+                                          format_checker=oas30_format_checker)
+                self.assertEqual([error.message for error in validator.iter_errors(payload)], [])
+
     def test_salary_decrease_cut_survives_preview_approval_and_activation(self):
         self.snapshot.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
         adapter = self.adapter()
