@@ -27,8 +27,9 @@ export async function reconnect(openPopup, connection, form, { beforeSms, afterS
     if (item?.status !== 'sms_required') return item ?? { status: 'failed', error: { message: '다시 연결하지 못했어요.' } }
     // 인증번호가 틀리면 서버가 새 토큰과 함께 다시 sms_required + error 를 준다 → 그 문구를 팝업에 보여 주고 한 번 더
     beforeSms?.()
+    // key: 다른 기관 다시 연결이 팝업 자리를 덮으면 앞 팝업이 진짜로 닫혀(언마운트) 앞 연결이 취소로 끝나게
     const code = await new Promise((resolve) => openPopup(
-      <SmsAuthPopup inst={connection.organizationName} phoneHint={item.smsAuth?.phoneHint} notice={item.error?.message}
+      <SmsAuthPopup key={item.smsAuth?.authToken} inst={connection.organizationName} phoneHint={item.smsAuth?.phoneHint} notice={item.error?.message}
         onSubmit={resolve} onCancel={() => resolve(null)} />,
     ))
     afterSms?.()  // await 뒤라서 문자 인증 팝업이 스스로 닫힌(closePopup) 다음에 실행된다. 다음 요청보다 먼저
