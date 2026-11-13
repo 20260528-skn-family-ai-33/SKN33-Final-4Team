@@ -548,7 +548,7 @@
 - 2026-11-03 사용자 요청으로 최종 금액과 함께 서버 생성 explanations를 반환·로컬 표시한다. 기존 계산 엔진의 reasons/summary 계약은 보존하며 팀 화면·저장 연동은 통합 검수 대상이다.
 
 - 여행 순위·최소액·잠금 금지를 서비스 입력 화면·저장 API에도 맞춰야 한다. 정책은 사용자 확정이며 추가 정책 선택을 기다리지 않는다.
-- `FinancialProfile.monthly_disposable_income`·`disposable_income_basis`가 있음. 값이 있으면 실수령액보다 우선 사용할지 **나은님 확인 필요**. 현재 `ml_profile`의 take_home_income 매핑은 유지. 사용 시 입력 스냅샷·해시 계약도 함께 확인.
+- ~~`FinancialProfile.monthly_disposable_income`·`disposable_income_basis` 우선 사용 여부~~ → 11-13 결정: 두 칸을 지우고 실수령액(take_home_income) 매핑만 쓴다 (`docs/DB_MODELS.md`).
 - D2 수치 결정: 카테고리/순위별 증액률, 총액/항목별 한도 적용 방식, 카테고리 상한, 감액 한도, 경고 기준 산정. 증액률 20%·총한도 10만원은 테스트 예시이며 서비스 확정값 아님. 최신 사용자 요청에 따라 천 원 단위 반올림은 구현. 사례는 `local_workspace/output/technical_design/budget_design/예산_설계_D2_합성사례.md` 참고.
 - 주거·통신 최소액·잠금 제외에 맞춘 화면·저장 API와 예산 없는 항목의 소비 집계/조정 연동은 통합 검수 필요. 기존 API·시드·모델은 여전히 10개를 사용하므로 실제 화면에서 제외 완료라고 안내하면 안 됨.
 - 미연결 카드대금 별도 합산·기수집 카드 승인과의 중복 방지·출금월 표시 규칙은 금융/소비 분석 담당에 공유할 사항. 이 에이전트의 이력 미사용 경로에 거래 집계를 추가하지 않음.

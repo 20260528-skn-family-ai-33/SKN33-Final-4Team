@@ -120,7 +120,6 @@ def purge_scope(user, scope):
         refresh_due_state(due, timezone.localdate())
     FinancialProfile.objects.filter(user=user).update(
         living_budget=None, savings_floor=None, cushion_monthly=None,
-        monthly_disposable_income=None, disposable_income_basis=None,
     )
 
 

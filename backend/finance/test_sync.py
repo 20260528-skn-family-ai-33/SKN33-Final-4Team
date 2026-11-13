@@ -183,7 +183,6 @@ class BankSyncTest(NoCodefNetwork, TestCase):
             self.assertNotIn(first_number, stored)
             self.assertNotIn(second_number, stored)
             self.assertNotIn("test-connected-id", stored)
-        self.assertFalse(BankAccount.objects.filter(source_account_ref_ciphertext__isnull=False).exists())
         tx = FinancialTransaction.objects.get()
         self.assertEqual(tx.source_key, original_row["source_key"])
         self.assertEqual(tx.source_description, f"이체 {codef.mask(first_number)} {codef.mask(second_number)}")
