@@ -104,4 +104,3 @@ it('카드마다 서버가 알아듣는 추천 번호를 보여 준다 (다른 �
   await click('다음 정책')
   expect(host.querySelector('.mc-eyebrow').textContent).toBe('5번 정책')
 })
-
