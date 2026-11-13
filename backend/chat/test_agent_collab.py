@@ -122,7 +122,7 @@ class AgentCollabTest(CollabFixture, TestCase):
         self.assertEqual(self.roles(), ["spending", "router", "budget_feedback"])
         second = self.changes(revised)
         self.assertEqual(second["FOOD"], 50000)  # 증액 목표는 그대로
-        self.assertEqual(second["TRANSPORT_CAR"], -25000)  # 교통은 자동 감액 하한(75,000원)까지
+        self.assertEqual(second["TRANSPORT_CAR"], -45000)  # 직접 고른 교통도 시스템 보호액 55,000원을 남긴다.
         self.assertEqual(sum(second.values()), 0)
         self.assertTrue(revised["budgetAdjustment"]["canApprove"])
         self.assertNotEqual(revised["budgetAdjustment"]["proposal"]["proposalId"], proposal_id)
@@ -133,7 +133,7 @@ class AgentCollabTest(CollabFixture, TestCase):
         data, revised = self.pick(answer, "take_from")
         self.assertEqual(data["agent"], "budget")
         self.assertEqual(self.roles(), [])
-        self.assertEqual(self.changes(revised)["TRANSPORT_CAR"], -25000)
+        self.assertEqual(self.changes(revised)["TRANSPORT_CAR"], -45000)
 
     def test_budget_button_returns_to_the_kept_proposal_without_llm(self):
         card = self.proposal()
@@ -212,6 +212,10 @@ class AgentCollabTest(CollabFixture, TestCase):
         self.assertEqual(data["agent"], "budget")
         changes = self.changes(card)
         self.assertEqual((changes["FOOD"], changes["TRANSPORT_CAR"]), (25000, -25000))  # 교통에서 가능한 만큼만
+        self.assertEqual(card['budgetAdjustment']['phase'], 'partial')
+        self.assertFalse(card['budgetAdjustment']['canApprove'])
+        self.assertEqual(set(changes), {'FOOD', 'TRANSPORT_CAR'})
+        self.assertIn('partial_compare', [choice['value'] for choice in card['choices']])
 
     def test_not_mine_restores_the_comparison_card(self):
         from budgets.adjustment_core import financial_conversation as fc

@@ -1338,7 +1338,8 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
         return _ask(store, cid, state, "request", explanation['brief'] + ' ' + explanation['next'],
                     explanation=explanation)
     if (result['status'] == 'partial' and comparison_handler is not None and len(requests) == 1
-            and requests[0].get('direction') == 'up' and not state.get('manual_funding') and not state.get('manual_living')):
+            and requests[0].get('direction') == 'up' and not state.get('manual_funding') and not state.get('manual_living')
+            and not any(source in context['allocations'] for source in state.get('sources', []))):
         return comparison_handler(store, cid, state, context, calculation, allocator)
     targets = _target_changes(context, result, scope, requests, clear)
     if result["status"] == "unchanged" and not targets:
