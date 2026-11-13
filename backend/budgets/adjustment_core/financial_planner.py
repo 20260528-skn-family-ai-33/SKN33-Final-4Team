@@ -82,7 +82,7 @@ def diagnose(context, request):
                 'excluded': list(request.get('excluded', [])), 'destinations': request.get('destinations', []), 'reserve_forecast': {},
                 'planned_spare': planned['amount'] if known_planned else 0,
                 'reserve_is_estimate': True, 'allow_reserve_risk': False,
-                'facts': {'need': f"{NAMES.get(target, target)}에 {requested:,}원을 더하는 예시예요.",
+                'facts': {'need': f"{NAMES.get(target, target)}를 {requested:,}원 늘리는 방법을 계산했어요.",
                     'basis': '현재 예산으로 계산한 예시예요. 앞으로 쓸 돈을 예측한 결과는 아니에요.'}}
             if request.get('spare_minimum') is not None:
                 diagnosis['spare_minimum'] = request['spare_minimum']
@@ -264,9 +264,14 @@ def simulate_plan(context, diagnosis, funding):
         facts["reserve_gap"] = f"여윳돈 보유 추천액보다 {reserve - spare_after:,}원 부족한 상태는 남아요."
     living_used = actual.get('LIVING', 0)
     gap = max(diagnosis['requested_amount'] - living_used, 0)
-    facts['funding_order'] = f"다른 생활비에서 {living_used:,}원을 조정해요. 요청액까지 {gap:,}원이 더 필요해요."
-    if gap and any(actual.get(c, 0) for c in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY')):
-        facts['funding_order'] += ' 부족분만 ' + ', '.join(f"{NAMES[c]} {actual[c]:,}원" for c in ('SPARE','SAVINGS','CUSHION_MONTHLY') if actual.get(c, 0)) + '에서 가져와요.'
+    parts = [f"다른 생활비에서 {living_used:,}원을 조정해요."] if living_used else []
+    external = [(c, actual[c]) for c in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY') if actual.get(c, 0)]
+    if external:
+        parts.append(('남은 금액은 ' if living_used else '') + ', '.join(f"{NAMES[c]} {n:,}원" for c, n in external) + '에서 가져와요.')
+    missing = max(gap - sum(n for _, n in external), 0)
+    if missing:
+        parts.append(f"요청액까지 {missing:,}원이 부족해요.")
+    facts['funding_order'] = ' '.join(parts)
     for change in result['changes']:
         if change['category'] in context['allocations'] and change['after'] == 0:
             facts['empty_' + change['category']] = f"{NAMES.get(change['category'], change['category'])}에 사용할 예산이 남지 않아요."

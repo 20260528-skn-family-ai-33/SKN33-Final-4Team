@@ -237,7 +237,9 @@ class ServiceChoiceTest(ServiceChatBase):
                          ("budget", "budget", [], ["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."]))
         self.calls.reset_mock()
         sent = self.bot(self.send("A", cid, text="식비를 5만원 늘리고 싶어요"))  # 화면 adjustSentence 문장 그대로
-        self.assertEqual((sent["agent"], sent["inputs"], sent["budgetAdjustment"]["phase"]), ("budget", [], "funding_scope"))
+        self.assertEqual((sent["agent"], sent["inputs"], sent["budgetAdjustment"]["phase"]), ("budget", [], "comparison"))
+        self.assertEqual(sent['budgetAdjustment']['comparison']['basisAmount'], 50000)
+        self.assertFalse(sent['budgetAdjustment']['canApprove'])
         self.assertEqual(self.calls.call_count, 1)  # 담당 예산 해석만 호출하고 라우터 재해석은 하지 않는다
         self.calls.reset_mock()
         spending = self.bot(self.send("A", cid, choice="spending"))

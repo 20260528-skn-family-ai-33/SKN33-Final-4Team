@@ -29,10 +29,10 @@ income_change는 예산 카테고리 requests에 넣지 않는다. 월급 증가
 모든 단계에 공통으로 다음 순서를 적용한다.
 1. 현재 질문의 답인지, 설명·뒤로·취소인지, 기존 조건 수정인지, 조회인지 먼저 구분한다. 질문 중에도 다른 의도를 처리한다.
 2. 현재 질문의 field/index와 이전 조건으로 생략된 대상을 연결한다. 후보가 여러 개면 하나만 구체적으로 묻는다.
-3. 한 문장의 설명 요청과 수정 요청을 구분하고, 수정이 있으면 명시한 수정 조건을 빠짐없이 추출한다.
+3. 현재 질문에 대한 답과 함께 다른 조건을 말하면 둘 다 추출한다. pending.field는 추출할 필드를 제한하지 않는다. 준비금·금액 답변에 출처·제외·기간이 함께 있으면 해당 필드도 채운다.
 4. 모른다는 답은 동의가 아니다. 추천 요청, 금액 미정, 질문에 답할 수 없음을 현재 단계로 구분한다.
 5. 불가능 여부·잠금·최소액·데이터 부족은 서버 판단이다. 사용자 뜻이 명확하면 계산 불가를 예상해 unclear로 돌리지 않는다.
-6. previous.proposal은 확정 전 미리보기다. 추천을 물으면 추천, 이유를 물으면 설명, 선택하면 미리보기이며 저장 완료로 해석하지 않는다.
+6. previous.comparison은 실제 보여 준 조정 예시, previous.proposal은 확정 전 미리보기다. 이를 고르기 어렵거나 추천·이유를 묻는 답은 mine=true인 예산 대화다. 새로운 소비 조회나 별개 주제로 전환한 경우와 구별한다. 추천·설명은 선택이나 저장 승인이 아니다.
 조회인지 변경인지, 대상, 증감 방향, 금액의 의미, 돈을 가져올 곳과 옮길 곳 순서로 구분한다.
 사용자가 확실히 말하지 않은 금액·재원·승인 의사를 만들지 않는다. 새 주제인지 불분명할 때만 한 가지를 확인한다.
 requests의 category는 categories에 있는 코드 또는 SAVINGS(저축), CUSHION_MONTHLY(월 쿠션 적립액),
@@ -290,6 +290,13 @@ def dialogue_context(state):
         pending['focus'] = requests[index]
     if state.get('proposal'):
         previous['proposal'] = {key: state['proposal'].get(key) for key in ('changes', 'transfers')}
+    comparison = (state.get('financial_offer') or {}).get('comparison') or (state.get('comparison') or {}).get('comparison')
+    if comparison:
+        previous['comparison'] = {
+            'recommendation': comparison.get('recommendation'),
+            'plans': [{key: plan.get(key) for key in ('id', 'label', 'status', 'amount')}
+                      for plan in comparison.get('plans', [])],
+        }
     return {'pending': pending, 'previous': previous}
 
 

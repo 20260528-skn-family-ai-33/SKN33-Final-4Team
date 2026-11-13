@@ -76,71 +76,8 @@ def _explain_current(state, context, text, ref=None):
 
 
 def _inspect_sources(store, cid, state, context, allocator):
-    from .funding import _data, _value, available_adjustment, available_bucket_source
-    item = state['requests'][state.get('pending', {}).get('index', state.get('focus', 0)) or 0]
-    category = item['category']
-    calculation = _calculation(context, state)
-    labels = {**SPECIAL_NAMES, 'LIVING': '다른 생활비'}
-    target = {**NAMES, **SPECIAL_NAMES, **context.get('category_names', {})}.get(category, category)
-    methods = {'SAVINGS': '이번에 저축할 예산을 줄여', 'CUSHION_MONTHLY': '이번 달 적립할 예산을 줄여',
-               'LIVING': '다른 생활비 예산을 줄여', 'SPARE': '남기기로 한 돈을 제외하고'}
-    reasons = {
-        'spending_unverified': '최근 지출 내역 확인 필요',
-        'bucket_unverified': '조정 가능한 예산 확인 필요',
-        'bucket_disabled': '현재 가져올 수 없음',
-        'unit_alignment_required': '현재 예산 금액 정리 필요',
-        'ml_reference_unavailable': '남겨 둘 생활비 기준 미확인',
-        'insufficient_funds': '가져올 수 있는 금액 0원 · 이미 쓴 돈과 지킬 예산을 남겨야 해요.',
-    }
-    lines, unavailable, choices, capacities = [], [], [], {}
-    sources = ['SAVINGS', 'CUSHION_MONTHLY', 'SPARE']
-    if category != 'LIVING':
-        sources.insert(0, 'LIVING')
-    for source in sources:
-        if source == category:
-            continue
-        label = labels[source]
-        if source in state.get('excluded', []):
-            unavailable.append(f'{label} · 유지하기로 한 항목')
-            continue
-        kwargs = dict(excluded=state.get('excluded', []), spare_minimum=state.get('spare_minimum'))
-        quote = (available_bucket_source(calculation, source, **kwargs) if category == 'LIVING' else
-                 available_adjustment(calculation, category, 'up', sources=[source],
-                                      allocate_group_reduction=allocator, **kwargs))
-        if source == 'SPARE' and state.get('spare_minimum') is None and (
-                quote['status'] == 'ready' or any(c['code'] == 'spare_minimum_required' for c in quote['conflicts'])):
-            unavailable.append(f'{label} · 먼저 남길 금액을 정하면 {target}에 보탤 수 있는 돈을 계산해요.')
-            choices.append(('keep_spare', '남길 여윳돈 정하기'))
-        elif quote['status'] == 'ready' and quote['maximum'] > 0:
-            capacities[source] = quote['maximum']
-            lines.append(f'{label} · {methods[source]} {target}에 최대 {quote["maximum"]:,}원을 더해요.')
-            value = {'LIVING': 'living', 'SPARE': 'spare'}.get(source, source) if category != 'LIVING' else source
-            choices.append((value, label))
-        else:
-            reason = next((reasons[c['code']] for c in quote['conflicts'] if c['code'] in reasons),
-                          '보호 조건 확인 필요')
-            unavailable.append(f'{label} · {reason}')
-    next_step = []
-    if capacities and item.get('amount') is not None and item.get('amount_mode') not in {None, 'available'}:
-        normalized = _data(calculation, {'items': [item]})
-        needed = normalized['targets'][category] - _value(normalized, normalized['before'], category)
-        best = max(capacities, key=capacities.get)
-        if needed > capacities[best]:
-            next_step.append(f'{labels[best]}에서 최대한 가져와도 요청한 증액에는 {needed - capacities[best]:,}원이 부족해요.')
-    if any(value == 'keep_spare' for value, _ in choices):
-        next_step.append('더 가져올 곳을 찾으려면 “남길 여윳돈 정하기”를 눌러 주세요. 늘릴 금액을 줄여도 돼요.' if next_step else
-                         '유지할 예산은 그대로 두고 줄여도 괜찮은 항목을 골라 주세요. 여윳돈을 쓰려면 남길 금액부터 정해요.')
-    elif choices:
-        next_step.append('늘릴 금액을 줄이거나, 표시된 항목을 골라 가능한 조정안을 확인해 보세요.' if next_step else
-                         '줄여도 괜찮은 항목을 골라 주세요. 변경 전후 금액을 확인한 뒤 확정할 수 있어요.')
-    else:
-        next_step.append('지금 확인된 방법으로는 옮길 돈이 없어요. 위에 표시된 조건을 확인하거나 다른 항목을 직접 정해 주세요.')
-    if len(capacities) > 1:
-        choices.append(('compare', '여러 방법 비교하기'))
-        next_step.append('한 곳에서 전부 가져올 필요는 없어요. 여러 곳에서 나눠 가져오는 방법도 비교할 수 있어요.')
-    state['pending']['choices'] = choices
-    _save(store, cid, state)
-    return _result('awaiting_input', lines + unavailable + next_step, work_ref=state.get('work_ref'), choices=choices, detail=True, explanation={})
+    return _show_comparison(store, cid, state, context, _calculation(context, state), allocator,
+                            respect_selected=True)
 
 
 def decision_help(store, cid, state, context, allocator=None):
@@ -505,11 +442,14 @@ def _show_comparison(store, cid, state, context, calculation, allocator, *, enve
                and (plan.get('result') or {}).get('changes')]
     state["comparison"] = {"context": deepcopy(context), "request": envelope, "comparison": deepcopy(comparison)}
     direct = [('distribute', '생활비 직접 조정')] if len(envelope.get('items', [])) == 1 and envelope['items'][0].get('direction') == 'down' and envelope['items'][0].get('amount') is not None else [('manual_living', '생활비 직접 조정')]
-    if any(plan.get('needs_spare_minimum') for plan in comparison['plans']):
+    if (any(plan.get('needs_spare_minimum') for plan in comparison['plans'])
+            and context.get('bucket_status', {}).get('SPARE') == 'ready'
+            and context.get('bucket_available', {}).get('SPARE', 0) > 0
+            and (context.get('spending_status', 'complete') == 'complete' or context.get('budget_preview'))):
         direct.append(('keep_spare', '남길 여윳돈 정하기'))
-    response = _ask(store, cid, state, "comparison", "조정 방법을 같은 기준으로 비교했어요. 변경안을 볼 방법을 골라 주세요."
+    response = _ask(store, cid, state, "comparison", "가져올 곳과 금액을 계산한 예시예요. 아직 예산은 바뀌지 않았어요."
                     if choices else comparison.get("message") or "현재 검수된 조건에서 선택할 수 있는 비교안이 없어요. 제한 사유를 확인하고 조건을 바꿔 주세요.",
-                    [*choices, *direct, ("manual", "금액 직접 입력"), ("back", "재원 다시 선택")], index=0,
+                    [*choices, *direct, *([("manual", "금액 직접 입력"), ("back", "재원 다시 선택")] if choices else [])], index=0,
                     explanation=unavailable_explanation(calculation, comparison))
     response["reply"]["comparison"] = deepcopy(comparison)
     return response
@@ -522,7 +462,7 @@ def _envelope(state):
 
 
 def ask_spare_minimum(store, cid, state):
-    resume = deepcopy(state['pending']) if state.get('pending', {}).get('kind') in {'sources', 'funding_scope'} else None
+    resume = deepcopy(state['pending']) if state.get('pending', {}).get('kind') in {'sources', 'funding_scope', 'comparison'} else None
     return _ask(store, cid, state, 'financial_data', '여윳돈을 최소 얼마 남겨 둘까요?',
                 [('cancel', '취소')], field='spare_minimum', resume_sources=resume,
                 explanation={'brief': '남길 돈을 정한 뒤, 그 금액을 지키면서 변경안을 다시 계산할게요.'})
@@ -943,8 +883,7 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
         return _result('unsupported', ['기타는 소비 내역을 분류하는 항목이라 예산을 배분하거나 가져올 수 없어요. 식비·교통비 같은 예산 항목을 골라 주세요.'], work_ref=ref)
     if data.get('action') == 'help_decide' and not (data.get('requests') or any(data.get(field) for field in LIST_FIELDS)
             or data.get('scope') or data.get('clear_targets') or data.get('unlock') is not None or data.get('approval')):
-        if (pending.get('kind') == 'amount' or pending.get('kind') == 'financial_data' and pending.get('field') == 'amount') or (pending.get('kind') in {'sources', 'funding_scope'}
-                and len(state.get('requests', [])) == 1 and state['requests'][0].get('category') in context['allocations']):
+        if pending.get('kind') == 'amount' or pending.get('kind') == 'financial_data' and pending.get('field') == 'amount':
             data['action'] = 'compare'
         else:
             return decision_help(store, cid, state, context, allocator)
@@ -1012,7 +951,14 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
     selected.update(item["category"] for item in data.get("requests", []) if item.get("category"))
     if selected & set(data.get("excluded", [])):
         return _ask(store, cid, state, "clarification", "같은 항목을 바꾸기와 제외하기로 함께 말씀하셨어요. 어느 쪽으로 할까요?")
+    if data.get('action') == 'inspect' and (any(data.get(field) for field in LIST_FIELDS)
+            or data.get('scope') or data.get('funding_scope') or data.get('clear_targets')):
+        data['action'] = 'compare'
     if data.get("action") == "inspect" and not data.get("requests") and not data.get("use_available"):
+        if pending.get('kind') == 'destinations' and pending.get('compare_after_selection'):
+            return _pending_reply(state, ref, context)
+        if pending.get('kind') == 'comparison' and state.get('comparison', {}).get('context') == context:
+            return _pending_reply(state, ref, context)
         if pending.get('kind') in {'sources', 'funding_scope'} and state.get('requests'):
             index = pending.get('index', state.get('focus', 0)) or 0
             if state['requests'][index].get('direction') == 'up':
@@ -1029,14 +975,13 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                         and (not data.get("funding_scope") or plan.get("scope") == data["funding_scope"])
                         and all(not data.get(field) or set(plan.get("envelope", {}).get(field, [])) == set(data[field])
                                 for field in ("sources", "destinations"))]
-            if len(matching) != 1:
-                response = _pending_reply(state, ref, context)
-                response["reply"]["lines"] = ["말씀하신 범위만으로 안을 하나로 고를 수 없어요. 사용할 재원·목적지가 표시된 안을 골라 주세요."]
-                return response
-            data["comparison_plan"] = matching[0]["id"]
+            if len(matching) == 1:
+                data["comparison_plan"] = matching[0]["id"]
         elif data.get("approval") and not data.get("requests") and not any(data.get(field) for field in LIST_FIELDS):
             return _pending_reply(state, ref, context)
-        elif data.get("requests") or data.get("excluded"):
+        elif data.get("excluded") or (data.get("requests") and not (
+                (data.get('sources') or data.get('destinations'))
+                and all(row.get('amount') is not None for row in data['requests']))):
             data["action"] = "compare"
     mutating = (data.get("requests") or data.get('income_change') or data.get('one_off') is not None or data.get('set_aside_amount') is not None or data.get("clear_targets") or data.get("funding_scope")
                 or data.get('request_update') == 'replace'
@@ -1238,6 +1183,15 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
     for index, item in enumerate(requests):
         state["focus"] = index
         code, direction = item.get("category"), item.get("direction")
+        if item.get('amount') is not None and item.get('amount_mode') in {'to', 'remaining', 'percent_to'}:
+            from .funding import _data, _value
+            try:
+                checked = _data(calculation, {'items': [item]})
+                difference = checked['targets'][code] - _value(checked, checked['before'], code)
+                direction = 'up' if difference > 0 else 'down' if difference < 0 else None
+                item['direction'] = direction
+            except ValueError:
+                pass  # Invalid amounts are reported by the existing simulation validation.
         if code is None:
             return _ask(store, cid, state, "category", "어떤 항목을 조정할까요?", list(names.items()), index=index)
         if direction is None and item.get("amount_mode") in (None, "by", "percent_by", "available"):

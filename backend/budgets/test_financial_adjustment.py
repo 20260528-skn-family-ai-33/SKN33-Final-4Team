@@ -314,10 +314,18 @@ class FinancialAdjustmentApiTest(TestCase):
             third = self.say(cid, text='이번 예산과 별도로 70만원 모아놨어. 나머지는 미배정 여윳돈에서 쓸게')['messages'][-1]['content']
             final = third
             if 'proposal' not in third['budgetAdjustment']:
-                self.assertEqual(third['budgetAdjustment']['phase'], 'financial_data', third)
-                final = self.say(cid, text='여윳돈은 10만원 남겨줘')['messages'][-1]['content']
+                if third['budgetAdjustment']['phase'] == 'financial_data':
+                    third = self.say(cid, text='여윳돈은 12만원 남겨줘')['messages'][-1]['content']
+                comparison = third['budgetAdjustment']['comparison']
+                plan = next(p for p in comparison['plans'] if p.get('amount', 0) > 0)
+                self.assertEqual(plan['amount'], 280000)
+                self.assertEqual({t['from'] for t in plan['result']['transfers']}, {'SPARE'})
+                choice = next(c['value'] for c in third['choices'] if c['value'] in {'financial_0', 'plan_spare'})
+                final = self.say(cid, choice={'value': choice, 'turn': third['turn']})['messages'][-1]['content']
             card = final['budgetAdjustment']['proposal']
-            self.assertEqual(card['allocations']['TRAVEL_LODGING'], 300000)
+            self.assertEqual(card['allocations']['TRAVEL_LODGING'], 280000)
+            self.assertEqual(card['buckets']['SPARE'], 120000)
+            self.assertEqual(card['shortfalls'][0]['missingAmount'], 20000)
             self.assertEqual(card['buckets']['SAVINGS'], self.ctx['buckets']['SAVINGS'])
             self.assertEqual(card['buckets']['CUSHION_MONTHLY'], self.ctx['buckets']['CUSHION_MONTHLY'])
             with patch('budgets.funds_overview.get_adjustment_context', return_value=self.ctx), patch('budgets.funds_overview.cushion_data', return_value={'cushion': {'now': 900000, 'monthly': 200000}}):
@@ -404,12 +412,11 @@ class FinancialAdjustmentApiTest(TestCase):
         reply = self.chat(cid, text='전체 생활비', answers=[reading(selected_choice='LIVING', reference='previous')])
         self.assertEqual(reply['messages'][-1]['content']['budgetAdjustment']['phase'], 'amount')
         reply = self.chat(cid, text='5만원 늘려줘', answers=[reading(requests=[item('LIVING', 50000, 'up')], reference='previous')])
-        self.assertEqual(reply['messages'][-1]['content']['budgetAdjustment']['phase'], 'sources')
-        reply = self.chat(cid, text='여윳돈에서', answers=[reading(selected_choice='SPARE', reference='previous')])
+        self.assertEqual(reply['messages'][-1]['content']['budgetAdjustment']['phase'], 'destinations')
         content = reply['messages'][-1]['content']
         self.assertEqual(content['budgetAdjustment']['phase'], 'destinations')
         self.assertNotIn('줄인 돈', json.dumps(content, ensure_ascii=False))
-        self.assertIn('생활비에 더할 돈', content['text'])
+        self.assertIn('늘릴 생활비 항목', content['text'])
         self.assertEqual(Budget.objects.count(), 1)
 
     def test_revised_goal_survives_adding_and_withdrawing_another_request(self):
@@ -455,7 +462,7 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertEqual(Budget.objects.count(), 1)
         response = self.chat(cid, text='그럼 5만원만', answers=[
             reading(requests=[item('LIVING', 50000)], reference='previous')])
-        self.assertEqual(response['messages'][-1]['content']['budgetAdjustment']['phase'], 'sources')
+        self.assertEqual(response['messages'][-1]['content']['budgetAdjustment']['phase'], 'destinations')
 
     def test_amount_input_supplies_current_category_total_and_bucket_budgets(self):
         amounts = {**self.ctx['allocations'], **self.ctx['buckets'], 'LIVING': sum(self.ctx['allocations'].values())}
@@ -511,16 +518,25 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertEqual(Budget.objects.count(), 1)
         self.assertEqual(live.usage()['failed'], 0)
 
-    def test_funding_inspection_keeps_goal_and_buttons_continue_to_destination(self):
+    def test_funding_inspection_keeps_examples_and_selection_only_creates_preview(self):
         cid = self.chat(choice='budget')['conversationId']
-        self.chat(cid, text='생활비를 5만원 늘리고 싶어요', answers=[reading(requests=[item('LIVING', 50000)])])
+        first = self.chat(cid, text='교통비 18만원으로 늘려줘', answers=[
+            reading(requests=[item('TRANSPORT_CAR', 180000, 'up', 'to')])])
+        original = first['messages'][-1]['content']['budgetAdjustment']['comparison']
+        self.assertEqual(original['basisAmount'], 80000)
         reply = self.chat(cid, text='어디서 가져올 수 있어?', answers=[reading(action='inspect', reference='previous')])
         content = reply['messages'][-1]['content']
-        self.assertEqual(content['budgetAdjustment']['guidance']['kind'], 'explanation')
-        self.assertIn('최대 150,000원', content['budgetAdjustment']['guidance']['message'])
-        reply = self.chat(cid, choice={'value': 'SAVINGS', 'turn': content['turn']})
-        self.assertEqual(reply['messages'][-1]['content']['budgetAdjustment']['phase'], 'destinations')
-        self.assertEqual(Budget.objects.count(), 1)
+        self.assertEqual(content['budgetAdjustment']['guidance']['kind'], 'comparison')
+        self.assertEqual(content['budgetAdjustment']['comparison'], original)
+        self.assertLessEqual(len(content['lines']), 1)
+        selected = self.chat(cid, choice={'value': 'plan_living', 'turn': content['turn']})
+        card = selected['messages'][-1]['content']['budgetAdjustment']['proposal']
+        self.assertEqual(card['allocations']['TRANSPORT_CAR'], 180000)
+        self.assertEqual(card['buckets'], self.ctx['buckets'])
+        self.assertEqual(sum(t['amount'] for t in card['transfers']), 80000)
+        self.assertEqual(Budget.objects.filter(status='approved').count(), 1)
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
 
     def test_large_increase_warns_without_blocking_and_correction_clears_warning(self):
         self.ctx['monthly_income'] = 3000000
@@ -528,7 +544,7 @@ class FinancialAdjustmentApiTest(TestCase):
         reply = self.chat(cid, text='생활비를 90만원 늘려줘', answers=[reading(requests=[item('LIVING', 900000)])])
         content = reply['messages'][-1]['content']
         self.assertIn('30% 이상', content['budgetAdjustment']['increaseWarning'])
-        self.assertEqual(content['budgetAdjustment']['phase'], 'sources')
+        self.assertEqual(content['budgetAdjustment']['phase'], 'destinations')
         self.assertTrue(content['choices'])
         reply = self.chat(cid, text='아니 5만원만', answers=[reading(requests=[item('LIVING', 50000)], reference='previous')])
         self.assertNotIn('increaseWarning', reply['messages'][-1]['content']['budgetAdjustment'])

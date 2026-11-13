@@ -5,7 +5,7 @@ import re
 from .agent import _ask as core_ask, _check, _result, _save, CANCEL
 from .calculation import _prepare, _floor, _hard_floor, _eligible, proportional_group_reduction
 from .funding import available_adjustment, _data
-from .conversation import (_envelope, _pending_reply, _route_question as original_route, _show_comparison as original_comparison,
+from .conversation import (_envelope, _pending_reply, _show_comparison as original_comparison,
                            handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute, _calculation, _manual_living, ask_spare_minimum, check_amount_limit)
 from . import interpretation
 from . import over_budget
@@ -598,7 +598,7 @@ def _handle(request, *, interpreted=None, **ports):
                                choices=pending["choices"], comparison=offer["comparison"])
             if (selected is None and not modifying and not interpreted.get('cancel')
                     and interpreted.get('reference') != 'new' and not interpreted.get('unclear')
-                    and interpreted.get('action') not in {'back', 'undo', 'fixed_expense', 'compare', 'inspect'}):
+                    and interpreted.get('action') not in {'back', 'undo', 'fixed_expense', 'compare'}):
                 if interpreted.get('reason'):
                     state['reason'] = interpreted['reason']
                     _save(store, cid, state)
@@ -625,24 +625,8 @@ def _handle(request, *, interpreted=None, **ports):
             return original_comparison(store, cid, state, context, _calculation(context, state), ports.get('allocator'))
         if item.get('amount') is None:
             return comparison_reply(store, cid, state, context, _calculation(context, state), complete)
-        response = original_route(store, cid, state, names, item, direction, context=context, allocator=ports.get('allocator'))
-        diagnosis = diagnose(_calculation(context, state), _envelope(state))
-        if diagnosis['status'] == 'ready' and sum(n >= 5000 for n in diagnosis['capacities'].values()) > 1:
-            choices = [(value, '여러 곳에서 나눠 가져오기' if value == 'compare' else label)
-                       for value, label in state['pending']['choices']]
-            if not any(value == 'compare' for value, _ in choices):
-                choices.append(('compare', '여러 곳에서 나눠 가져오기'))
-            state['pending']['choices'] = choices
-            response['reply']['choices'] = [{'value': value, 'label': label} for value, label in choices]
-        if not any(value in {'living', 'spare', 'extended', 'compare'} for value, _ in state['pending']['choices']):
-            return response
-        name = names.get(item.get('category'), item.get('category'))
-        line = (f'{name}에 더 넣을 돈을 어디에서 가져올까요?' if direction == 'up'
-                else f'{name}에서 줄일 돈을 어디에 옮길까요?')
-        state["pending"]["line"] = line
-        response["reply"]["lines"] = [line]
-        _save(store, cid, state)
-        return response
+        return original_comparison(store, cid, state, context, _calculation(context, state), allocator,
+                                   respect_selected=True)
 
     dialogue_line = None
     def conversational_complete(system, payload):
