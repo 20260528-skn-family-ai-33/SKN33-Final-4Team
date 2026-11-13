@@ -99,11 +99,19 @@ class AdjustmentDialogueTest(unittest.TestCase):
                 self.assertFalse(self.store.state.get('unlock_categories'))
 
     def test_amount_decision_help_shows_calculated_examples_and_then_recommendation(self):
+        from .adjustment_core.financial_planner import PROMPT
+        from .test_financial_planner import draft, review
         self.context['spending_status'] = 'complete'
         self.question('amount')
         self.store.state['requests'] = [item(amount=None)]
         self.store.state['sources'] = []
-        response = self.turn(reading(action='help_decide'))
+        def complete(system, payload):
+            if system != PROMPT:
+                return json.dumps(reading(action='help_decide'))
+            payload = json.loads(payload)
+            return json.dumps(draft(payload['balanced_funding']) if payload['phase'] == 'draft' else review())
+        self.complete.side_effect = complete
+        response = dialogue.handle({'conversation_id': 'talk', 'text': '얼마가 좋을지 모르겠어'}, **self.ports)
         comparison = response['reply']['comparison']
         self.assertGreater(comparison['basis_amount'], 0)
         self.assertTrue(any(p.get('result', {}).get('changes') for p in comparison['plans'] if p.get('result')))

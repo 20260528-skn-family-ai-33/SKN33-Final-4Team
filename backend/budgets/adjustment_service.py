@@ -342,6 +342,13 @@ def _card(proposal_id, task_ref, context, meta, state, *, can_approve=True):
     applied = meta.get("approval", {}) if state == "saved" else {}
     keep = applied.get("keep_for_next_cycle", meta["keep_for_next_cycle"])
     changes = applied.get("target_changes", meta["target_changes"])
+    displayed_changes = deepcopy(result['changes'])
+    if meta.get('effective_on') and context.get('planning_base'):
+        before = context['planning_base']['buckets']['SPARE']
+        after = result['buckets']['SPARE']
+        displayed_changes = [row for row in displayed_changes if row['category'] != 'SPARE']
+        if before != after:
+            displayed_changes.append({'category': 'SPARE', 'before': before, 'after': after, 'diff': after - before})
     return {"kind": "funding", "proposal_id": str(proposal_id), "task_ref": str(task_ref),
             "mode": context["mode"], "base_budget_id": context["base_budget_id"],
             "scope": 'next_cycle' if meta.get('effective_on') else (("ongoing" if keep else "cycle") if state == "saved" else meta["scope"]),
@@ -349,7 +356,7 @@ def _card(proposal_id, task_ref, context, meta, state, *, can_approve=True):
                 'one_off': context.get('planning', {}).get('one_off', False), 'expense': context.get('planning', {}).get('expense')} if meta.get('effective_on') else {}),
             "state": state, "can_approve": state == "awaiting_approval" and can_approve,
             "allocations": deepcopy(result["allocations"]), "buckets": deepcopy(result["buckets"]),
-            "changes": deepcopy(result["changes"]), "shortfalls": deepcopy(result["shortfalls"]),
+            "changes": displayed_changes, "shortfalls": deepcopy(result["shortfalls"]),
             "transfers": deepcopy(result["transfers"]), "target_changes": deepcopy(changes),
             "unlock_categories": list(meta["unlock_categories"]), "persistence_candidates": deepcopy(meta["persistence_candidates"]),
             "persistence_items": [{"category": code, "amount": amount} for code, amount in meta["persistence_candidates"].items()],

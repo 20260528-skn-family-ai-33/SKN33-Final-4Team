@@ -149,11 +149,29 @@ class FinancialPlannerTest(unittest.TestCase):
             for row in plan['funding']:
                 self.assertNotIn(row['source'], request['excluded'])
 
-    def test_missing_current_spending_or_unknown_request_amount_is_not_invented(self):
+    def test_unknown_amount_is_a_budget_example_but_missing_spending_is_not_invented(self):
         self.inp['diagnostic_inputs'] = {}
-        self.assertNotEqual(diagnose(self.inp, envelope(item()))['status'], 'ready')
+        diagnosis = diagnose(self.inp, envelope(item()))
+        self.assertEqual(diagnosis['status'], 'ready')
+        self.assertTrue(diagnosis['amount_is_example'])
+        self.assertNotIn('forecast', diagnosis)
         self.inp['spending_status'] = 'partial'
         self.assertNotEqual(diagnose(self.inp, self.request)['status'], 'ready')
+
+    def test_no_amount_sparse_example_uses_llm_and_retains_money_in_combined_sources(self):
+        self.inp['diagnostic_inputs'] = {}
+        self.inp['bucket_available'] = dict(self.inp['buckets'])
+        phases = []
+        def complete(system, payload):
+            payload = json.loads(payload)
+            phases.append(payload['phase'])
+            return draft(payload['balanced_funding']) if payload['phase'] == 'draft' else review()
+        answer = recommend(self.inp, envelope(item()), complete)
+        self.assertEqual(phases, ['draft', 'review'])
+        self.assertTrue(answer['diagnosis']['amount_is_example'])
+        self.assertGreater(len(answer['plans'][0]['funding']), 1)
+        for code, before in self.inp['buckets'].items():
+            self.assertGreaterEqual(answer['plans'][0]['result']['buckets'][code], (before * 3 + 9) // 10)
 
     def test_missing_initial_reference_does_not_block_protected_unranked_cuts(self):
         from budgets.adjustment_core.simulation import simulate
@@ -219,7 +237,10 @@ class FinancialPlannerTest(unittest.TestCase):
 
     def test_no_inference_if_recent_forecast_already_fits(self):
         for sample in self.inp["diagnostic_inputs"]["history"]["samples"]: sample["FOOD"] = 10000
-        self.assertEqual(diagnose(self.inp, envelope(item(mode=None)))["field"], "amount")
+        diagnosis = diagnose(self.inp, envelope(item(mode=None)))
+        self.assertTrue(diagnosis['amount_is_example'])
+        self.assertEqual(diagnosis['basis'], 'budget')
+        self.assertNotIn('forecast', diagnosis)
 
     def test_priority_lock_and_user_minimum_are_still_enforced(self):
         self.inp["locks"] = {"FASHION_SHOPPING": 200000}

@@ -1176,6 +1176,9 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                      'planning_income_invalid': '변경 후 월급은 0원보다 커야 해요.',
                      'planning_date_required': '월급 변화는 다음 급여부터 적용할까요?'}
             return _ask(store, cid, state, 'clarification', lines.get(str(error), '예상 월급과 적용 시점을 확인해 주세요.'))
+        if (context['monthly_income'] < context['income_before'] and not state.get('destinations')
+                and requests and all(row.get('direction') == 'down' for row in requests)):
+            state['destinations'] = ['SPARE']
         if data.get('income_change') and context['monthly_income'] > context['income_before']:
             previous_spare = max(context['buckets']['SPARE'] - (context['monthly_income'] - context['income_before']), 0)
             state['spare_minimum'] = max(state.get('spare_minimum', 0), previous_spare)

@@ -225,13 +225,8 @@ def budget_settings(user, cycle):
 
 def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
     profile = profile or FinancialProfile.objects.get(user=user)
-    from copy import copy
-    from .adjustment_schedule import cycle_settings
-    planned = cycle_settings(user, cycle)
-    if planned:
-        profile = copy(profile)
-        for field in ('living_budget', 'savings_floor', 'cushion_monthly', 'budget_category_targets'):
-            setattr(profile, field, planned[field])
+    from .adjustment_schedule import cycle_profile
+    profile = cycle_profile(user, cycle, profile)
     today = today or timezone.localdate()
     minimums, locks = budget_settings(user, cycle)
     fixed = fixed_breakdown(user, cycle, card=card)

@@ -1,5 +1,5 @@
 """Next-cycle planning and approved settings activation, without spending future income now."""
-from copy import deepcopy
+from copy import copy, deepcopy
 from datetime import date
 
 from django.utils import timezone
@@ -42,8 +42,7 @@ def planning_context(context, planning):
         raise ValueError('planning_income_invalid')
     fixed = base['fixed_amount'] - base.get('reserved_budget_amount', 0)
     spare = income - fixed - sum(amount for code, amount in base['allocations'].items() if code != 'TRAVEL_LODGING') - sum(base['buckets'][c] for c in ('SAVINGS', 'CUSHION_MONTHLY'))
-    if spare < 0:
-        raise ValueError('planning_income_shortfall')
+    # A negative projected remainder must be covered by the requested cuts before approval.
     planned.update(funding_amount=income, monthly_income=income, fixed_amount=fixed, spent={}, spending_status='complete',
                    planning_base=deepcopy(base), planning=deepcopy(planning),
                    effective_on=base['next_cycle_starts_on'], income_before=income_before)
@@ -105,3 +104,13 @@ def cycle_settings(user, cycle):
         return {}
     row = BudgetAdjustmentSchedule.objects.filter(user=user, status='applied', effective_on=cycle.starts_on).first()
     return row.settings if row and row.settings.get('one_off') else {}
+
+
+def cycle_profile(user, cycle, profile):
+    planned = cycle_settings(user, cycle)
+    if not planned:
+        return profile
+    profile = copy(profile)
+    for field in ('living_budget', 'savings_floor', 'cushion_monthly', 'budget_category_targets'):
+        setattr(profile, field, deepcopy(planned[field]))
+    return profile

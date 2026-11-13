@@ -97,6 +97,25 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertEqual(self.base.status, 'approved')
 
     @unittest.skipUnless(os.environ.get('BUDGET_LIVE_SYNTHETIC_TEST') == '1', 'opt-in synthetic LLM')
+    def test_live_no_amount_sparse_history_still_offers_protected_combination(self):
+        from chat.llm.live import LiveReading
+        self.ctx['diagnostic_inputs'] = {}
+        self.ctx['bucket_available'] = dict(self.ctx['buckets'])
+        cid = self.chat(choice='budget')['conversationId']
+        with patch('chat.engine.reading', return_value=LiveReading(12, None)):
+            reply = self.say(cid, text='식비 늘려줘')['messages'][-1]['content']
+            comparison = reply['budgetAdjustment']['comparison']
+            self.assertEqual(comparison['basisKind'], 'budget_example')
+            self.assertFalse(comparison['amountWasGiven'])
+            plan = next(p for p in comparison['plans'] if p['status'] == 'ready' and len({t['from'] for t in p['result']['transfers']}) > 1)
+            for code, before in self.ctx['buckets'].items():
+                self.assertGreaterEqual(plan['result']['buckets'][code], (before * 3 + 9) // 10)
+            selected = self.say(cid, choice={'value': 'financial_' + plan['id'], 'turn': reply['turn']})['messages'][-1]['content']
+            card = selected['budgetAdjustment']['proposal']
+            approved = self.post(f"/api/budgets/proposals/{card['proposalId']}/approve/", {})
+            self.assertEqual(approved.status_code, 200, approved.content)
+
+    @unittest.skipUnless(os.environ.get('BUDGET_LIVE_SYNTHETIC_TEST') == '1', 'opt-in synthetic LLM')
     def test_live_next_cycle_expense_and_income_change(self):
         from chat.llm.live import LiveReading
         self.ctx.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
@@ -537,7 +556,7 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertEqual(card['unlockCategories'], ['EDUCATION'])
 
     def test_manual_living_can_ask_amount_before_source_categories(self):
-        self.ctx['ml_reference'] = dict(self.ctx['allocations'])
+        self.ctx['priorities'] = {code: rank for rank, code in enumerate(self.ctx['allocations'], 1)}
         self.ctx['diagnostic_inputs']['history'] = {}
         self.ctx['bucket_status'] = {code: 'unknown' for code in self.ctx['buckets']}
         cid = self.chat(choice='budget')['conversationId']
@@ -969,6 +988,33 @@ class FinancialAdjustmentApiTest(TestCase):
         self.assertFalse(reply['budgetAdjustment']['canApprove'])
         self.assertFalse(any(c['value'].startswith('plan_') for c in reply['choices']))
         self.assertEqual(Budget.objects.count(), 1)
+
+    def test_no_amount_and_no_history_preserves_savings_reserve_through_approval(self):
+        self.ctx['diagnostic_inputs'] = {}
+        self.ctx['allocations']['FOOD'] = 350000
+        self.ctx['buckets']['SAVINGS'] = 500000
+        self.ctx['bucket_floors']['SAVINGS'] = 0
+        self.ctx['bucket_available']['SAVINGS'] = 500000
+        self.ctx['bucket_status'].update(SPARE='unknown', CUSHION_MONTHLY='unknown')
+        self.ctx['locks'] = {c: amount for c, amount in self.ctx['allocations'].items() if c != 'FOOD'}
+        self.ctx['funding_amount'] = sum(self.ctx['allocations'].values()) + sum(self.ctx['buckets'].values()) + self.ctx['fixed_amount']
+        self.cid = self.chat(choice='budget')['conversationId']
+        content = self.chat(self.cid, text='식비 늘려줘', answers=[
+            reading(requests=[item()], action='compare'), draft(funding(SAVINGS=350000)), review()
+        ])['messages'][-1]['content']
+        comparison = content['budgetAdjustment']['comparison']
+        self.assertEqual(comparison['basisKind'], 'budget_example')
+        self.assertFalse(comparison['amountWasGiven'])
+        plan = comparison['plans'][0]
+        self.assertEqual(plan['result']['buckets']['SAVINGS'], 150000)
+        self.assertEqual(plan['maximum'], 350000)
+        self.assertEqual({t['from'] for t in plan['result']['transfers']}, {'SAVINGS'})
+        card = self.select(content)
+        self.assertEqual(card['buckets']['SAVINGS'], 150000)
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+        approved = self.post(f"/api/budgets/proposals/{card['proposalId']}/approve/", {})
+        self.assertEqual(approved.status_code, 200, approved.content)
 
     def test_no_automatic_example_explains_the_limit_without_an_example_notice(self):
         self.ctx['diagnostic_inputs']['history'] = {}

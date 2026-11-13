@@ -78,15 +78,18 @@ def diagnose(context, request):
     protected = recommendation_context(context, request)
     diagnosis = _forecast_diagnosis(protected, request)
     items = request.get('items', [])
+    example = len(items) == 1 and (items[0].get('amount') is None or items[0].get('amount_mode') == 'available')
     if (diagnosis['status'] != 'ready' and len(items) == 1
-            and items[0].get('amount') is not None and items[0].get('amount_mode') != 'available'
+            and items[0].get('category') in {*context['allocations'], *context['buckets']}
             and context.get('spending_status') == 'complete'
-            and (diagnosis.get('field') in {'history', 'period', 'stale', 'planned', 'spare'}
+            and (diagnosis.get('field') in {'history', 'period', 'stale', 'planned', 'spare', 'amount'}
                  or items[0].get('category') in context['buckets'])):
         target = items[0]['category']
-        data = _data(protected, request)
+        checked = {**request, 'items': [{**items[0], 'amount': 0, 'amount_mode': 'by'}]} if example else request
+        data = _data(protected, checked)
         requested = data['targets'][target] - data['before'][target]
-        if requested > 0 and requested % 5000 == 0 and target not in context.get('locks', {}):
+        if ((requested > 0 or example and items[0].get('direction') == 'up')
+                and requested % 5000 == 0 and target not in context.get('locks', {})):
             planned = context.get('diagnostic_inputs', {}).get('planned_spare', {})
             known_planned = (planned.get('status') in {'confirmed', 'user_confirmed'}
                             and planned.get('scope') == 'unbudgeted_only' and money(planned.get('amount')))
@@ -110,6 +113,11 @@ def diagnose(context, request):
                 if source == 'SPARE':
                     maximum = min(maximum, max(context.get('bucket_available', {}).get('SPARE', 0) - diagnosis['reserve_before'], 0))
                 diagnosis['capacities'][source] = maximum
+            if example:
+                maxima = [amount // 5000 * 5000 for amount in diagnosis['capacities'].values() if amount >= 5000]
+                diagnosis['requested_amount'] = min(maxima, default=0)
+                diagnosis['amount_is_example'] = True
+                diagnosis['facts']['need'] = f"{NAMES.get(target, target)}에 {diagnosis['requested_amount']:,}원을 더하는 예시예요. 원하는 금액으로 바꿀 수 있어요."
             diagnosis['facts']['reserve'] = f"여윳돈은 최소 {diagnosis['reserve_before']:,}원을 남기는 예시예요. 예정된 지출이 있다면 더 남겨야 해요."
     if diagnosis['status'] == 'ready':
         diagnosis.setdefault('basis', 'forecast')

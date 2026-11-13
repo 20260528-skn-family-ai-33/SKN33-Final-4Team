@@ -1,6 +1,6 @@
 from copy import deepcopy
 from datetime import date
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import json
 import unittest
 
@@ -20,6 +20,29 @@ class FuturePlanningTest(unittest.TestCase):
     def setUp(self):
         self.base = context()
         self.base.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
+
+    def test_salary_decrease_and_requested_savings_cut_are_calculated_together(self):
+        store, propose = Store(), Mock(return_value={'proposal_id': 'plan', 'task_ref': 'task'})
+        parsed = reading(requests=[item('SAVINGS', 100000, 'down')], scope='next_cycle',
+                         income_change={'amount': 500000, 'mode': 'by', 'direction': 'down'})
+        result = financial_conversation.handle({'conversation_id': 'talk', 'text': '다음 달 월급 50만원 감소, 저축 10만원 감액'},
+            store=store, complete=Mock(return_value=json.dumps(parsed)), get_context=lambda: deepcopy(self.base),
+            simulate=simulate_funding, propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+        self.assertIn('proposal', result['reply'], result)
+        calculated = propose.call_args.args[1]
+        self.assertEqual(calculated['buckets']['SAVINGS'], 500000)
+        self.assertEqual(calculated['buckets']['SPARE'], 0)
+        self.assertEqual(propose.call_args.args[0]['monthly_income'], 2500000)
+
+    def test_salary_shortfall_still_blocks_insufficient_or_protected_cuts(self):
+        for cut, floor in ((50000, 300000), (100000, 550000)):
+            with self.subTest(cut=cut, floor=floor):
+                base = deepcopy(self.base)
+                base['bucket_floors']['SAVINGS'] = floor
+                planned = planning_context(base, {'scope': 'next_cycle',
+                    'income_change': {'amount': 500000, 'mode': 'by', 'direction': 'down'}})
+                result = simulate_funding(planned, envelope(item('SAVINGS', cut, 'down'), destinations=['SPARE']))
+                self.assertEqual(result['status'], 'infeasible', result)
 
     def test_projection_uses_next_salary_not_current_spending_or_carryover(self):
         before = deepcopy(self.base)
@@ -127,6 +150,64 @@ class SchedulePersistenceTest(TestCase):
         card = adapter.propose(planned, result, scope='next_cycle')
         self.flush(adapter)
         return card
+
+    def test_salary_decrease_cut_survives_preview_approval_and_activation(self):
+        self.snapshot.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
+        adapter = self.adapter()
+        planned = planning_context(adapter.get_context(), {'scope': 'next_cycle',
+            'income_change': {'amount': 500000, 'mode': 'by', 'direction': 'down'}})
+        result = adapter.simulate(planned, envelope(item('SAVINGS', 100000, 'down'), destinations=['SPARE']))
+        card = adapter.propose(planned, result, scope='next_cycle')
+        self.flush(adapter)
+        self.approve(card['proposal_id'])
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.savings_floor, 600000)
+        spare_change = next(row for row in card['changes'] if row['category'] == 'SPARE')
+        self.assertEqual((spare_change['before'], spare_change['after']), (400000, 0))
+        with transaction.atomic():
+            activate_due_settings(self.user, self.profile, date(2026, 11, 25))
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.monthly_take_home_income, 2500000)
+        self.assertEqual(self.profile.savings_floor, 500000)
+
+    def test_one_off_education_reservation_can_generate_and_approve_due_budget(self):
+        from rest_framework.test import APIClient
+        from finance.models import RecurringExpense
+        from chat.models import AsyncTask
+        from .api import protect_json
+        self.profile.housing_type = 'family'
+        self.profile.save()
+        RecurringExpense.objects.create(user=self.user, name='고정비', amount=800000,
+            category_id='HOUSING_TELECOM', status='confirmed', source_type='manual')
+        self.snapshot.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
+        self.snapshot['allocations']['FOOD'] += self.snapshot['allocations']['ETC']
+        self.snapshot['allocations']['ETC'] = 0
+        adapter = self.adapter()
+        planned = planning_context(adapter.get_context(), {'scope': 'next_cycle', 'one_off': True})
+        result = adapter.simulate(planned, {**envelope(item('EDUCATION', 100000), sources=['SPARE']), 'spare_minimum': 100000})
+        card = adapter.propose(planned, result, scope='next_cycle')
+        self.flush(adapter)
+        self.approve(card['proposal_id'])
+        client = APIClient()
+        client.force_authenticate(self.user)
+        with patch('django.utils.timezone.localdate', return_value=date(2026, 11, 25)), self.settings(BUDGET_DESIGN_ENABLED=False):
+            response = client.post('/api/budgets/recommend/', {}, format='json', HTTP_IDEMPOTENCY_KEY='scheduled-recommend')
+            self.assertEqual(response.status_code, 202, response.content)
+            task = AsyncTask.objects.get(pk=response.json()['task']['taskId'])
+            self.assertEqual(task.status, 'succeeded', task.result)
+            draft = Budget.objects.get(pk=task.result['budget_id'])
+            self.assertEqual(draft.items.get(category_id='EDUCATION', bucket='living').allocated_amount, 150000)
+            self.assertEqual(draft.funding_amount - sum(draft.items.values_list('allocated_amount', flat=True)), 300000)
+            response = client.post(f'/api/budgets/{draft.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='scheduled-approve')
+            self.assertEqual(response.status_code, 200, response.content)
+            draft.refresh_from_db()
+            self.assertEqual(draft.status, 'approved')
+            self.profile.refresh_from_db()
+            self.assertEqual(self.profile.living_budget, 1000000)
+            with transaction.atomic():
+                state = protect_json(self.user, self.profile, date(2026, 12, 25))
+            self.assertEqual(state['saved']['living_budget'], 1000000)
+            self.assertEqual(state['saved']['spare'], 400000)
 
     def test_approval_is_idempotent_and_changes_no_current_budget_or_income(self):
         card = self.make_schedule()

@@ -72,7 +72,17 @@ def _units(context):
 def _data(context, envelope):
     data = _prepare(context, [])
     data["automatic_unit"], data["fallback_unit"] = _units(context)
-    data["buckets"] = _money_map(context.get("buckets"), "invalid_buckets", BUCKETS)
+    buckets = context.get("buckets")
+    spare = buckets.get('SPARE') if isinstance(buckets, dict) else None
+    projected_deficit = ((context.get('planning') or {}).get('scope') == 'next_cycle'
+                         and context.get('income_before', 0) > context.get('monthly_income', 0)
+                         and context.get('funding_amount') == context.get('monthly_income')
+                         and type(spare) is int and spare < 0)
+    if projected_deficit:
+        buckets = {**buckets, 'SPARE': 0}
+    data["buckets"] = _money_map(buckets, "invalid_buckets", BUCKETS)
+    if projected_deficit:
+        data['buckets']['SPARE'] = spare
     if set(data["buckets"]) != set(BUCKETS):
         raise AdjustmentError("missing_buckets")
     data["funding_amount"] = _money(context.get("funding_amount"), "invalid_funding_amount")
@@ -350,6 +360,8 @@ def simulate_funding(context, envelope, *, allocate_group_reduction=None):
         _check_alignment(data)
         increases, decreases = _plan(data)
         if not increases:
+            if data['buckets']['SPARE'] < 0:
+                raise _Blocked('infeasible', 'insufficient_funds', shortfall=-data['buckets']['SPARE'])
             return _response(data, "unchanged")
         amounts, transfers = dict(data["before"]), []
         primary = set(data["targets"]) | set(increases)
@@ -393,6 +405,8 @@ def simulate_funding(context, envelope, *, allocate_group_reduction=None):
             if required and data["request"]["sources"]:
                 _apply_group(data, amounts, recipient, required, data["request"]["sources"], primary,
                              allocate_group_reduction, move)
+        if amounts['SPARE'] < 0:
+            raise _Blocked('infeasible', 'insufficient_funds', shortfall=-amounts['SPARE'])
         for c, value in amounts.items():
             if value == data["before"][c]:
                 continue
@@ -416,7 +430,13 @@ def validate_funding(context, envelope, result):
     if not isinstance(result, dict) or result.get("kind") != "funding" or result.get("requests") != data["request"]:
         raise AdjustmentError("invalid_funding_result")
     allocations = _money_map(result.get("allocations"), "invalid_result_allocations", data["allocations"])
-    buckets = _money_map(result.get("buckets"), "invalid_result_buckets", BUCKETS)
+    raw_buckets = result.get('buckets')
+    blocked_deficit = (result.get('status') in BLOCKED and data['buckets']['SPARE'] < 0
+                       and isinstance(raw_buckets, dict) and raw_buckets.get('SPARE') == data['buckets']['SPARE'])
+    buckets = _money_map({**raw_buckets, 'SPARE': 0} if blocked_deficit else raw_buckets,
+                         'invalid_result_buckets', BUCKETS)
+    if blocked_deficit:
+        buckets['SPARE'] = data['buckets']['SPARE']
     if set(allocations) != set(data["allocations"]) or set(buckets) != set(BUCKETS):
         raise AdjustmentError("funding_result_keys_mismatch")
     amounts = {**allocations, **buckets}

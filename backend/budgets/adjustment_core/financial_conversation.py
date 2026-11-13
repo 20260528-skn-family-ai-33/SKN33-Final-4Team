@@ -248,16 +248,16 @@ def comparison_reply(store, cid, state, context, calculation, complete):
         label = " + ".join(NAMES.get(f["source"], f["source"]) for f in plan["funding"])
         actual = ({**plan['result']['allocations'], **plan['result']['buckets']}[diagnosis['target']]
                   - {**context['allocations'], **context['buckets']}[diagnosis['target']])
-        maximum = available_adjustment(calculation, diagnosis["target"], "up", sources=[f["source"] for f in plan["funding"]],
+        maximum = available_adjustment(recommendation_context(calculation, request), diagnosis["target"], "up", sources=[f["source"] for f in plan["funding"]],
                                        excluded=request.get("excluded", []), allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
         plans.append({"id": str(i), "label": f"{i + 1}안 {label}", "status": "ready" if plan["result"]["status"] == "proposed" else "partial", "amount": actual,
-                      "maximum": maximum["maximum"] if maximum["status"] == "ready" else None,
+                      "maximum": min(maximum['maximum'], sum(diagnosis['capacities'].get(f['source'], 0) for f in plan['funding'])) if maximum["status"] == "ready" else None,
                       "result": plan["result"], "recommended": recommended,
                       "assessment": {"label": "추천" if recommended else "대안", "facts": plan["structured_facts"],
                                      "reasons": answer.get("reasons", []) if recommended else [plan["facts"]["preserved"]],
                                      "cautions": list(plan["facts"].values())}})
     comparison = {"basis_amount": diagnosis["requested_amount"], "amount_was_given": state["requests"][0].get("amount") is not None,
-                  "basis_kind": "forecast_shortfall" if state["requests"][0].get("amount") is None else "requested",
+                  "basis_kind": "budget_example" if diagnosis.get('amount_is_example') else "forecast_shortfall" if state["requests"][0].get("amount") is None else "requested",
                   "plans": plans, "recommendation": {"plan_id": str(answer["recommended_index"]) if answer["recommended_index"] is not None else None,
                                                        "reasons": answer.get("reasons", [])}, "message": "재정 상태를 반영한 검수 결과예요. 아직 저장하지 않았어요."}
     if diagnosis.get('basis') == 'budget':
