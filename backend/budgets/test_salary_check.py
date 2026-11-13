@@ -134,6 +134,238 @@ class FirstConfirmTest(SalaryCheckFixture):
         self.assertEqual((self.profile.monthly_take_home_income, budget.status, budget.funding_amount), (2_500_000, "approved", 2_500_000))
 
 
+class AmountTolerantAutoTest(SalaryCheckFixture):
+    """11/13: 식대 · 수당으로 매달 금액이 달라도 같은 계좌 · 같은 적요면 자동 인정 (기준 월급의 절반 이상만)"""
+    NEXT = date(2026, 11, 21)
+
+    def test_different_amount_same_pattern_is_auto(self):
+        self.learn()
+        nxt = self.tx(OCT, 2_620_000)
+        period = self.period(self.NEXT)
+        self.assertEqual((period["salary_state"], period["salary_source"], period["salary_amount"]), ("received", "auto", 2_620_000))
+        self.assertEqual(self.decision(nxt), ("auto", OCT))
+
+    def test_less_than_half_of_pattern_is_not_auto(self):
+        self.learn()
+        small = self.tx(OCT, 1_249_999)
+        self.assertEqual(self.state(self.NEXT), "waiting")  # 80% 미만이라 후보도 아님
+        self.assertIsNone(self.decision(small))
+        exact_half = self.tx(date(2026, 10, 26), 1_250_000)
+        self.assertEqual(self.state(self.NEXT), "received")
+        self.assertEqual(self.decision(exact_half), ("auto", OCT))
+
+
+class SplitConfirmTurnsOffPatternTest(SalaryCheckFixture):
+    """11/13: 여러 건을 월급으로 확인하면 1건 기준을 끈다 (다음 달 일부만 자동 인정 → 잘못된 '덜 들어왔어요' 방지)"""
+    NEXT = date(2026, 11, 21)
+
+    def test_split_confirm_turns_off_old_pattern(self):
+        self.learn()
+        base = self.tx(OCT, 2_000_000)
+        meal = self.tx(date(2026, 10, 26), 200_000, memo="식대")
+        self.assertEqual(self.post([base, meal], today=self.NEXT).status_code, 200)
+        self.assertFalse(SalaryDecision.objects.filter(user=self.user, is_pattern=True).exists())
+        self.assertEqual(self.period(self.NEXT)["salary_amount"], 2_200_000)
+        self.assertEqual(SalaryDecision.objects.filter(user=self.user, state="confirmed", pay_cycle_on=SEPT).count(), 1)  # 지난 기록은 그대로
+
+    def test_single_confirm_without_pattern_keeps_old_pattern(self):
+        self.learn()
+        tx = self.tx(OCT, 2_500_000, memo="보너스")
+        self.post([tx], today=self.NEXT)
+        self.assertTrue(SalaryDecision.objects.filter(user=self.user, is_pattern=True).exists())
+
+
+class SalaryGapTest(SalaryCheckFixture):
+    """11/13 월급 차이 안내: 받은 월급이 등록 실수령액(250만)과 1만원 이상 · 3% 이상 다르면 period.salary_gap (답은 apply · keep 둘)"""
+    NEXT = date(2026, 11, 21)
+    GAP_URL = "/api/budgets/salary/gap/"
+
+    def answer(self, answer, amount, today=None):
+        with patch("django.utils.timezone.localdate", return_value=today or self.NEXT):
+            return self.client.post(self.GAP_URL, {"answer": answer, "salaryAmount": amount}, format="json")
+
+    def test_small_difference_is_ignored(self):
+        self.learn()
+        for amount in (2_490_001, 2_430_000):  # 1만원 미만 · 3% 미만(7만원 = 2.8%)
+            with self.subTest(amount=amount):
+                tx = self.tx(OCT, amount)
+                self.assertIsNone(self.period(self.NEXT)["salary_gap"])
+                tx.delete()
+
+    def test_less_and_more_salary_are_reported(self):
+        self.learn()
+        tx = self.tx(OCT, 2_200_000)
+        gap = self.period(self.NEXT)["salary_gap"]
+        self.assertEqual(gap, {"diff": -300_000, "received": 2_200_000, "registered": 2_500_000, "basis": None})
+        tx.delete()
+        self.tx(OCT, 2_800_000)
+        self.assertEqual(self.period(self.NEXT)["salary_gap"]["diff"], 300_000)
+
+    def test_apply_uses_actual_salary_for_this_cycle_only(self):
+        from .api import protect_json
+        self.profile.housing_type = "family"
+        self.profile.save()
+        self.learn()
+        self.tx(OCT, 2_200_000)
+        self.period(self.NEXT)
+        res = self.answer("apply", 2_200_000)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json(), {"incomeBasis": 2_200_000, "salaryAmount": 2_200_000})
+        cycle = BudgetCycle.objects.get(starts_on=OCT)
+        self.assertEqual((cycle.income_basis, cycle.income_answered_for), (2_200_000, 2_200_000))
+        self.assertIsNone(self.period(self.NEXT)["salary_gap"])  # 같은 금액으로는 다시 묻지 않는다
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.monthly_take_home_income, 2_500_000)  # 등록 실수령액은 그대로
+        base = protect_json(self.user, self.profile, self.NEXT)["base"]
+        self.assertEqual((base["take_home_income"], base["income_source"]), (2_200_000, "actual"))
+        self.assertEqual(self.answer("apply", 2_200_000).status_code, 200)  # 같은 답을 다시 보내도 성공
+
+    def test_cancelling_salary_confirmation_drops_actual_basis(self):
+        """11/13: 받은 금액으로 다시 짠 뒤 월급 확인을 취소하면 등록 실수령액 기준으로 돌아간다 (지킬 돈이 0원 월급으로 막히지 않게)"""
+        from .api import protect_json
+        self.profile.housing_type = "family"
+        self.profile.save()
+        wrong = self.tx(OCT, 305_400, memo="중고거래")
+        self.assertEqual(self.post([wrong], today=self.NEXT).status_code, 200)
+        self.period(self.NEXT)
+        self.assertEqual(self.answer("apply", 305_400).status_code, 200)
+        self.assertEqual(BudgetCycle.objects.get(starts_on=OCT).income_basis, 305_400)
+        res = self.post([wrong], decision="none", today=self.NEXT)  # 확인 취소
+        self.assertEqual((res.status_code, res.json()["basisReset"]), (200, True))  # 화면이 '다시 짤까요?'를 묻는 근거
+        cycle = BudgetCycle.objects.get(starts_on=OCT)
+        self.assertEqual((cycle.income_basis, cycle.income_answered_for, cycle.confirmed_income), (None, None, None))
+        base = protect_json(self.user, self.profile, self.NEXT)["base"]
+        self.assertEqual((base["take_home_income"], base["income_source"]), (2_500_000, "registered"))
+
+    def test_plain_cancel_without_actual_basis_does_not_ask(self):
+        tx = self.tx(OCT, 2_500_000)
+        self.post([tx], today=self.NEXT)
+        res = self.post([tx], decision="none", today=self.NEXT)
+        self.assertEqual((res.status_code, res.json()["basisReset"]), (200, False))
+
+    def test_keep_only_stops_asking(self):
+        self.learn()
+        salary = self.tx(OCT, 2_800_000)
+        self.period(self.NEXT)
+        self.assertEqual(self.answer("keep", 2_800_000).json(), {"incomeBasis": None, "salaryAmount": 2_800_000})
+        self.assertIsNone(self.period(self.NEXT)["salary_gap"])
+        bonus = self.tx(date(2026, 10, 26), 100_000, memo="상여")  # 사용자가 상여까지 월급으로 확인 → 받은 금액이 바뀌면 다시 묻는다
+        self.assertEqual(self.post([salary, bonus], today=self.NEXT).status_code, 200)
+        self.assertEqual(self.period(self.NEXT)["salary_gap"]["received"], 2_900_000)
+
+    def test_answer_validation(self):
+        self.learn()
+        self.tx(OCT, 2_200_000)
+        self.period(self.NEXT)
+        stale = self.answer("apply", 2_300_000)
+        self.assertEqual(stale.status_code, 400)
+        self.assertIn("salaryAmount", stale.json()["error"]["fields"])
+        self.assertIsNone(BudgetCycle.objects.get(starts_on=OCT).income_basis)
+        for body in ({"answer": "spare", "salaryAmount": 2_200_000}, {"answer": "apply"},
+                     {"answer": "apply", "salaryAmount": "2200000"}, {"answer": "apply", "salaryAmount": 2_200_000, "userId": 1}):
+            with self.subTest(body=body), patch("django.utils.timezone.localdate", return_value=self.NEXT):
+                self.assertEqual(self.client.post(self.GAP_URL, body, format="json").status_code, 400)
+
+    def test_apply_expires_drafts(self):
+        self.learn()
+        self.tx(OCT, 2_200_000)
+        self.period(self.NEXT)
+        cycle = BudgetCycle.objects.get(starts_on=OCT)
+        draft = Budget.objects.create(user=self.user, cycle=cycle, status="validated", version_no=1, funding_amount=2_500_000)
+        self.answer("apply", 2_200_000)
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, "expired")
+
+
+class SalaryChangeOverActualBasisTest(SalaryCheckFixture):
+    """11/13 검수: 받은 월급(220만)으로 이번 주기를 다시 짠 뒤 월급 설정에서 실수령액을 바꿀 때.
+    이번 주기부터면 둘 중 무엇을 쓸지 고른다(keepIncomeBasis) — 안 고르면 받은 월급 기준이 계속 이겨 화면끼리 달라진다"""
+    NEXT, SALARY_URL = SalaryGapTest.NEXT, "/api/budgets/salary/"
+    answer = SalaryGapTest.answer
+    GAP_URL = SalaryGapTest.GAP_URL
+
+    def setUp(self):
+        super().setUp()
+        self.profile.housing_type = "family"
+        self.profile.save()
+        self.learn()
+        self.tx(OCT, 2_200_000)
+        self.period(self.NEXT)
+        self.assertEqual(self.answer("apply", 2_200_000).status_code, 200)
+
+    def put(self, **body):
+        with patch("django.utils.timezone.localdate", return_value=self.NEXT):
+            return self.client.put(self.SALARY_URL, {"takeHomeIncome": 3_000_000, "payday": 25, **body}, format="json")
+
+    def base(self):
+        from .api import protect_json
+        self.profile.refresh_from_db()
+        base = protect_json(self.user, self.profile, self.NEXT)["base"]
+        return base["take_home_income"], base["income_source"]
+
+    def basis(self):
+        return BudgetCycle.objects.get(starts_on=OCT).income_basis
+
+    def test_get_shows_actual_basis(self):
+        with patch("django.utils.timezone.localdate", return_value=self.NEXT):
+            self.assertEqual(self.client.get(self.SALARY_URL).json()["incomeBasis"], 2_200_000)
+
+    def test_this_cycle_change_needs_basis_choice_and_saves_nothing(self):
+        res = self.put(applyFrom="current_cycle")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("keepIncomeBasis", res.json()["error"]["fields"])
+        self.profile.refresh_from_db()
+        self.assertEqual((self.profile.monthly_take_home_income, self.basis()), (2_500_000, 2_200_000))
+        for value in ("true", 1, None):
+            with self.subTest(value=value):
+                self.assertEqual(self.put(applyFrom="current_cycle", keepIncomeBasis=value).status_code, 400)
+
+    def test_switch_to_new_salary_drops_actual_basis(self):
+        res = self.put(applyFrom="current_cycle", keepIncomeBasis=False)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["takeHomeIncome"], res.json()["incomeBasis"]), (3_000_000, None))
+        self.assertEqual(self.base(), (3_000_000, "registered"))
+        self.assertIsNone(self.period(self.NEXT)["salary_gap"])  # 같은 받은 금액으로는 다시 묻지 않는다
+
+    def test_keep_actual_basis_changes_registered_only(self):
+        res = self.put(applyFrom="current_cycle", keepIncomeBasis=True)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["takeHomeIncome"], res.json()["incomeBasis"]), (3_000_000, 2_200_000))
+        self.assertEqual(self.base(), (2_200_000, "actual"))
+
+    def test_next_cycle_change_keeps_basis_without_choice(self):
+        res = self.put(applyFrom="next_cycle")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.base(), (2_200_000, "actual"))
+
+    def test_payday_change_this_cycle_cannot_keep_basis(self):
+        # 11/13 재검수: 급여일도 이번 주기부터 바꾸면 주기를 새로 만든다 → 받은 월급 기준은 이어 갈 수 없어 새 월급으로만
+        res = self.put(payday=10, applyFrom="current_cycle", keepIncomeBasis=True)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("keepIncomeBasis", res.json()["error"]["fields"])
+        self.profile.refresh_from_db()
+        self.assertEqual((self.profile.monthly_take_home_income, self.profile.payday, self.basis()), (2_500_000, 25, 2_200_000))
+        res = self.put(payday=10, applyFrom="current_cycle")  # 고르지 않아도 된다
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["payday"], res.json()["incomeBasis"]), (10, None))
+        self.assertEqual(self.base(), (3_000_000, "registered"))
+
+    def test_before_first_approval_also_needs_basis_choice(self):
+        # 첫 예산 승인 전에는 applyFrom 없이 이번 주기로 바로 바꾼다 — 받은 월급 기준이 있으면 그래도 고른다
+        res = self.put()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("keepIncomeBasis", res.json()["error"]["fields"])
+        res = self.put(keepIncomeBasis=True)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.base(), (2_200_000, "actual"))
+
+    def test_new_salary_same_as_received_needs_no_choice(self):
+        res = self.put(takeHomeIncome=2_200_000, applyFrom="current_cycle")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertIsNone(self.basis())
+        self.assertEqual(self.base(), (2_200_000, "registered"))
+
+
 class AutoRecognizeTest(SalaryCheckFixture):
     NEXT = date(2026, 11, 21)  # 10/25 회차 (구간 10/18 ~ 11/17)
 
@@ -162,7 +394,8 @@ class AutoRecognizeTest(SalaryCheckFixture):
     def test_changed_memo_amount_account_need_check(self):
         self.learn()
         other = self.make_account("k9", masked_number="****0000")
-        for label, kwargs in (("문구", {"memo": "10월 월급"}), ("금액", {"amount": 2_500_001}), ("계좌", {"account": other})):
+        # 11/13: 금액은 '기준의 절반 이상'이면 같은 패턴 (금액 조건은 아래 AmountTolerantAutoTest)
+        for label, kwargs in (("문구", {"memo": "10월 월급"}), ("계좌", {"account": other})):
             with self.subTest(label):
                 tx = self.tx(OCT, **kwargs)
                 self.assertEqual(self.state(self.NEXT), "needs_check")
@@ -173,11 +406,21 @@ class AutoRecognizeTest(SalaryCheckFixture):
         self.tx(date(2026, 10, 30), 5_000_000, memo="국세환급")
         self.assertEqual(self.state(self.NEXT), "needs_check")
 
-    def test_two_matches_need_check_and_late_arrival_undoes_auto(self):
+    def test_late_same_pattern_keeps_deposit_closest_to_payday(self):
+        """11/13: 같은 회사 경비가 말일에 따로 들어와도 월급날에 가장 가까운 입금만 월급"""
         self.learn()
         first = self.tx(OCT)
         self.assertEqual(self.state(self.NEXT), "received")
-        self.tx(date(2026, 11, 1))  # 늦게 들어온 같은 패턴 입금
+        late = self.tx(date(2026, 11, 1))  # 늦게 들어온 같은 패턴 입금 (경비 등)
+        self.assertEqual(self.state(self.NEXT), "received")
+        self.assertEqual((self.decision(first), self.decision(late)), (("auto", OCT), None))
+        self.assertEqual(BudgetCycle.objects.get(starts_on=OCT).confirmed_income, 2_500_000)
+
+    def test_two_matches_same_distance_need_check_and_undo_auto(self):
+        self.learn()
+        first = self.tx(date(2026, 10, 23))
+        self.assertEqual(self.state(self.NEXT), "received")
+        self.tx(date(2026, 10, 27))  # 월급날(10/25)에서 같은 거리 → 어느 쪽인지 모름
         self.assertEqual(self.state(self.NEXT), "needs_check")
         self.assertEqual(self.decision(first), ("recheck", OCT))  # 다른 후보로 갈아 붙이지 않고 재확인 대상으로
         self.assertIsNone(BudgetCycle.objects.get(starts_on=OCT).confirmed_income)
@@ -428,9 +671,9 @@ class NoSilentAutoSwapTest(R12FollowUpFixture):
 
     def test_ambiguous_then_single_again_is_not_auto(self):
         self.learn()
-        a = self.tx(OCT)
+        a = self.tx(date(2026, 10, 23))
         self.state(self.NEXT)
-        b = self.tx(date(2026, 11, 1))
+        b = self.tx(date(2026, 10, 27))  # 월급날에서 같은 거리 → 모호
         self.assertEqual(self.state(self.NEXT), "needs_check")
         FinancialTransaction.objects.filter(pk=a.pk).update(is_canceled=True)  # 다시 한 건만 남아도
         for _ in range(2):

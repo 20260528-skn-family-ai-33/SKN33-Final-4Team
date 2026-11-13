@@ -27,6 +27,7 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host, root
 beforeEach(() => {
   vi.clearAllMocks()
+  sessionStorage.clear()
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -92,4 +93,32 @@ it('서버가 문서가 바뀌었다고 하면 다시 받고 체크를 지운다
   useApi.mockReturnValue({ data: { items: [doc('bank', '[필수] 은행', 'v3')] }, error: null, reload })
   await render()
   expect(box('[필수] 은행').checked).toBe(false)  // v2 체크는 v3 에 넘어가지 않음
+})
+
+it('고를 때마다 이 탭에 남겨 두고, 버튼을 누르기 전에 나갔다 다시 들어와도 그대로 채운다 (11/12)', async () => {
+  useApi.mockReturnValue({ data: DOCS, error: null, reload })
+  await render()
+  await click(button('있어요'))
+  await pickBank()
+  await click(box('[필수] 은행'))
+  expect(navigate).not.toHaveBeenCalled()  // [선택한 기관 연결하기]는 누르지 않음
+
+  await act(() => root.unmount())          // 내 정보로 갔다가 [저장하고 계속]으로 새로 들어온 것과 같음
+  root = createRoot(host)
+  await render()
+  expect(button('있어요').getAttribute('aria-pressed')).toBe('true')
+  expect(button(BANKS.find((b) => b.popular).label).getAttribute('aria-pressed')).toBe('true')
+  expect(box('[필수] 은행').checked).toBe(true)
+  expect(box('[선택] 대출').checked).toBe(false)
+})
+
+it('30분이 지난 선택은 버리고 빈 화면부터 · 로그아웃하면 지운다', async () => {
+  const { clearConnectDraft } = await import('../utils/connectDraft.js')
+  useApi.mockReturnValue({ data: DOCS, error: null, reload })
+  const bank = BANKS.find((b) => b.popular)
+  sessionStorage.setItem('mc-connect-draft', JSON.stringify({ at: Date.now() - 31 * 60 * 1000, draft: { hasLoan: '있어요', banks: [bank.name], cards: [], agreed: [] } }))
+  await render()
+  expect(button(bank.label).getAttribute('aria-pressed')).toBe('false')
+  clearConnectDraft()
+  expect(sessionStorage.getItem('mc-connect-draft')).toBeNull()
 })

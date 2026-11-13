@@ -22,7 +22,8 @@ import { useState } from 'react'
 import Popup from './Popup.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
-import { MONTH_DAYS } from '../utils/days.js'
+import { dayBad } from '../utils/days.js'
+import DayInput from '../components/DayInput.jsx'
 import { PICK_CATS, catCode, guessCat } from '../utils/categories.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
 import { toast } from '../utils/toast.js'
@@ -54,6 +55,7 @@ export default function FixedPopup({ item, onSaved }) {
   const [pay, setPay] = useState(() => payOf(item))
   const [payPick, setPayPick] = useState(disconnected ? '' : (item?.paymentAccount?.accountId ?? item?.paymentCard?.cardId ?? ''))
   const [error, setError] = useState('')
+  const [dayText, setDayText] = useState(item?.paymentDay ? String(item.paymentDay) : '')  // 출금일 글자 ('' = 모름, 11/12 숫자 입력)
   const [requestKey] = useState(newRequestKey)   // 이 팝업의 요청 번호 (다시 눌러도 같은 번호)
   const [saving, setSaving] = useState(false)
   const [stopAsk, setStopAsk] = useState(false)   // [더 이상 안 나가요]를 한 번 누르면 확인 문구를 보여 준다
@@ -94,6 +96,7 @@ export default function FixedPopup({ item, onSaved }) {
     if (!name) { setError('항목 이름을 입력해 주세요.'); return }
     if (amount < MIN_AMOUNT) { setError('금액은 1,000원 이상 입력해 주세요.'); return }
     if (amount > MAX_AMOUNT) { setError('금액은 1억 원까지 입력할 수 있어요.'); return }
+    if (dayBad(dayText)) { setError('출금일은 1~31 중에서 입력해 주세요.'); return }
     if (!cat) { setError('카테고리를 골라 주세요.'); return }
     if (pay !== 'none' && !payPick) { setError(pay === 'card' ? '결제 카드를 골라 주세요.' : '출금 계좌를 골라 주세요.'); return }
     if (saving) return
@@ -127,12 +130,8 @@ export default function FixedPopup({ item, onSaved }) {
         <label className="mc-field">항목 이름<input name="fxName" placeholder="월세, 통신비 등" type="text" maxLength={100} defaultValue={item?.name} onChange={onName} /></label>
         <label className="mc-field">금액<MoneyInput name="fxAmount" placeholder="예: 55,000" defaultValue={item?.amount} /></label>
         <label className="mc-field">출금일
-          <select name="fxDay" defaultValue={item?.paymentDay ?? ''}>
-            {MONTH_DAYS.map((d) => <option key={d} value={d}>매월 {d}일</option>)}
-            <option value="">모름</option>
-          </select>
+          <DayInput id="mc-fx-day" name="fxDay" what="출금일" optional value={dayText} onChange={(d) => { setDayText(d); setError('') }} />
         </label>
-        <p className="mc-note" style={{ padding: 0 }}>31일처럼 그 달에 없는 날은 그 달 말일에 나가는 걸로 봐요.</p>
 
         <div className="mc-field">결제 수단
           <div className="mc-seg mc-seg-sm" role="group" aria-label="결제 수단" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginTop: 6 }}>

@@ -26,7 +26,12 @@
 #mc-new-preview .mc-budget-adjustment h2 { font-size: 16px; margin: 0 0 8px; }
 #mc-new-preview .mc-budget-adjustment h3 { font-size: 14px; margin: 0; }
 #mc-new-preview .mc-budget-plan, #mc-new-preview .mc-budget-proposal { padding: 14px; margin: 10px 0; border: 1px solid var(--mc-line); border-radius: 14px; background: var(--mc-paper); }
-#mc-new-preview .mc-budget-plan.is-recommended { border: 2px solid var(--mc-brand); }
+#mc-new-preview .mc-budget-plan.is-selected { border-color: var(--mc-brand); box-shadow: inset 0 0 0 1px var(--mc-brand); }
+#mc-new-preview .mc-budget-plan-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+#mc-new-preview .mc-budget-plan-badges span { padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+#mc-new-preview .mc-budget-recommended { background: #fff0ce; color: #775000; }
+#mc-new-preview .mc-budget-selected { background: #e9efff; color: #214ac5; }
+#mc-new-preview .mc-budget-preview-label { border-left: 3px solid var(--mc-brand); padding: 4px 8px; color: var(--mc-brand); font-weight: 650; }
 #mc-new-preview .mc-budget-plan-head { display: flex; gap: 8px; align-items: start; justify-content: space-between; }
 #mc-new-preview .mc-budget-plan-head > span { flex: none; color: var(--mc-brand); font-size: 12px; font-weight: 650; }
 #mc-new-preview .mc-budget-outcome, #mc-new-preview .mc-budget-reason, #mc-new-preview .mc-budget-shortfall, #mc-new-preview .mc-budget-warning { margin: 6px 0; line-height: 1.55; }
@@ -40,7 +45,13 @@
 #mc-new-preview .mc-budget-details { margin: 8px 0; }
 #mc-new-preview .mc-budget-details > summary { color: var(--mc-brand); font-weight: 650; cursor: pointer; padding: 8px 0; min-height: 36px; }
 #mc-new-preview .mc-budget-details p { font-size: 12px; line-height: 1.55; }
-#mc-new-preview .mc-budget-select { margin-top: 6px; width: 100%; }
+#mc-new-preview .mc-budget-select { display: block; margin-top: 12px; width: 100%; min-height: 44px; padding: 10px 16px; border: 1px solid var(--mc-brand); border-radius: 10px; background: var(--mc-brand); color: white; font: inherit; font-weight: 650; cursor: pointer; }
+#mc-new-preview .mc-budget-select:disabled { background: #edf0f5; border-color: #c7cfdd; color: #647087; cursor: default; }
+#mc-new-preview .mc-budget-select:focus-visible { outline: 3px solid #839bff; outline-offset: 3px; }
+#mc-new-preview .mc-budget-explanation { margin: 0; font-size: 12px; line-height: 1.6; }
+#mc-new-preview .mc-budget-explanation > div { margin: 10px 0; }
+#mc-new-preview .mc-budget-explanation dt { font-weight: 650; }
+#mc-new-preview .mc-budget-explanation dd { margin: 2px 0 0; color: var(--mc-sub); white-space: pre-line; }
 #mc-new-preview .mc-budget-keep { padding: 12px; margin: 12px 0; border-radius: 12px; background: var(--mc-soft); }
 #mc-new-preview .mc-budget-keep label { display: flex; align-items: center; gap: 8px; font-weight: 650; }
 #mc-new-preview .mc-budget-keep input { width: 20px; height: 20px; flex: none; }
@@ -91,6 +102,7 @@
 #mc-new-preview .mc-budget-category-picks button[aria-pressed=true] { border-color: #2655db; background: #f3f6ff; color: #2655db; font-weight: 650; }
 #mc-new-preview .mc-budget-distribution-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; }
 #mc-new-preview .mc-budget-distribution-row > strong { font-size: 13px; }
+#mc-new-preview .mc-budget-distribution-change { flex-basis: 100%; color: var(--mc-sub); font-size: 12px; }
 #mc-new-preview .mc-budget-distribution-stepper { display: flex; align-items: center; width: 210px; max-width: 100%; border: 1px solid var(--mc-line); border-radius: 10px; overflow: hidden; }
 #mc-new-preview .mc-budget-distribution-stepper button { flex: 0 0 44px; min-height: 44px; padding: 0; border: 0; background: #f7f9fd; color: #2655db; font: inherit; font-size: 12px; }
 #mc-new-preview .mc-budget-distribution-stepper label { display: flex; align-items: center; flex: 1; min-width: 0; gap: 2px; padding: 0 6px; font-size: 12px; }

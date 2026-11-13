@@ -4,7 +4,8 @@ import { Navigate, useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
-import { MONTH_DAYS } from '../utils/days.js'
+import DayInput from '../components/DayInput.jsx'
+import { dayBad } from '../utils/days.js'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { toast } from '../utils/toast.js'
@@ -49,6 +50,7 @@ function LoanCard({ loan, onEditing, onPaymentSaved, onPaidOff }) {
       setFields({ monthlyPayment: ['월 상환액은 1원부터 1억 원까지 입력해 주세요.'] })
       return
     }
+    if (dayBad(draft.paymentDay)) return  // 1~31 이 아니면 납부일 칸 아래에 이미 알려 준다 (DayInput)
     pending.current = true
     setBusy(true)
     onEditing(loan.loanId, true)
@@ -117,19 +119,17 @@ function LoanCard({ loan, onEditing, onPaymentSaved, onPaidOff }) {
             {stateNote('repaymentMethod')}
           </label>
           {fieldError('repaymentMethod')}
-          <div className="mc-loan-2">
-            <label className="mc-field">월 상환 예정액
-              <MoneyInput value={draft.monthlyPayment} onChange={(value) => change('monthlyPayment', value)} aria-invalid={!!fields.monthlyPayment} placeholder="모르면 비워 두세요" />
-              {stateNote('monthlyPayment')}
-            </label>
-            <label className="mc-field">매월 납부일
-              <select value={draft.paymentDay} onChange={(e) => change('paymentDay', e.target.value)}>
-                <option value="">모름</option>{MONTH_DAYS.map((day) => <option key={day} value={String(day)}>매월 {day}일</option>)}
-              </select>
-              {stateNote('paymentDay')}
-            </label>
-          </div>
-          {fieldError('monthlyPayment')}{fieldError('paymentDay')}
+          {/* 11/12: 납부일은 숫자 입력 + [직접 입력|말일] 칸이라 반 칸에 안 들어가서 월 상환 예정액과 한 줄씩 */}
+          <label className="mc-field">월 상환 예정액
+            <MoneyInput value={draft.monthlyPayment} onChange={(value) => change('monthlyPayment', value)} aria-invalid={!!fields.monthlyPayment} placeholder="모르면 비워 두세요" />
+            {stateNote('monthlyPayment')}
+          </label>
+          {fieldError('monthlyPayment')}
+          <label className="mc-field">매월 납부일
+            <DayInput id={`mc-loan-day-${loan.loanId}`} what="납부일" optional value={draft.paymentDay} onChange={(d) => change('paymentDay', d)} />
+            {stateNote('paymentDay')}
+          </label>
+          {fieldError('paymentDay')}
           {saved.estimatedMonthlyPayment != null && <button type="button" className="mc-link" onClick={() => change('monthlyPayment', String(saved.estimatedMonthlyPayment))}>추정액 {won(saved.estimatedMonthlyPayment)} 쓰기</button>}
           {saved.reportedPaymentDate && <p className="mc-note">기관 제공 납부일: {saved.reportedPaymentDate}. 매월 납부일은 직접 확인해 주세요.</p>}
           <p className="mc-note">빈 칸으로 저장하면 해당 값을 비워요. 월 상환액과 납부일을 모두 저장하면 홈 ‘꼭 나갈 돈’에 반영돼요.</p>

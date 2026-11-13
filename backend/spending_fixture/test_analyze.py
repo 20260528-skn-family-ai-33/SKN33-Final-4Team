@@ -284,3 +284,68 @@ class AnalysisVariantTest(TestCase):
         got = run(self.u, 4)
         self.assertEqual((got["state"], got["budget"]), ("ok", {"state": "no_cycle"}))
         self.assertFalse({"confirmed", "observed", "spent_period"} & set(got))  # 주기가 없으면 사용액 범위도 없다
+
+
+@fixture_db_only
+class RecentGapTest(TestCase):
+    """카드를 오늘 안 불러와 끝부분(오늘 쪽)만 빈 경우 (11/13 베타 피드백) — 3일 이내면 불러온 데까지 기준 잔액, 아니면 확정 불가"""
+    @classmethod
+    def setUpTestData(cls):
+        seed.apply(DESIGN)
+
+    def setUp(self):
+        self.a = user("A")
+        self.full = run(self.a, 4, breakdown=True)  # 다 불러왔을 때 (10/25~29)
+
+    def card_runs(self, *ranges):
+        card = Card.objects.get(user=self.a)
+        SyncRun.objects.filter(user=self.a, product_code="card_approval_list").delete()
+        for start, end in ranges:
+            SyncRun.objects.create(user=self.a, connection=card.connection, card=card, product_code="card_approval_list",
+                                   status="success", covered_from=start, covered_to=end)
+        return card
+
+    def compose(self, result):
+        from spending_analysis.answer import compose
+        return compose([{"item": result["item"], "ok": True, "result": result}])
+
+    def test_last_day_missing_shows_category_left(self):
+        card = self.card_runs((d(2026, 7, 1), d(2026, 10, 28)))  # 10/29 하루 빔
+        Card.objects.filter(pk=card.pk).update(masked_number="5310-12**-****-4321")
+        four = run(self.a, 4, breakdown=True)
+        self.assertEqual(four["coverage"]["state"], "partial")
+        self.assertEqual((four["confirmed"], four["categories"]), (self.full["confirmed"], self.full["categories"]))
+        out = self.compose(four)
+        self.assertIn("카드 1장은 10월 28일까지 불러온 내역이에요. 다시 불러오면 더 정확해져요.", out["notices"])
+        self.assertNotIn("일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.", out["notices"])
+        self.assertEqual(out["sections"][0]["title"], "카테고리별 남은 예산")
+        [late] = out["synced_until"]
+        self.assertEqual((late["kind"], late["until"]), ("card", "2026-10-28"))
+        self.assertEqual(late["name"], "가상 체크카드 · ****4321")  # 표시 이름 규칙 — 끝 4자리만
+        self.assertNotIn("5310", str(out))
+
+    def test_three_days_missing_still_shown(self):
+        self.card_runs((d(2026, 7, 1), d(2026, 10, 26)))  # 10/27~29 사흘 빔
+        self.assertIsNotNone(run(self.a, 3, "FOOD")["confirmed"])
+
+    def test_middle_gap_stays_unconfirmed(self):
+        self.card_runs((d(2026, 7, 1), d(2026, 10, 26)), (d(2026, 10, 28), d(2026, 10, 29)))  # 10/27 빔
+        four = run(self.a, 4, breakdown=True)
+        self.assertEqual((four["confirmed"], "categories" in four, "recent" in four["coverage"]), (None, False, False))
+        out = self.compose(four)
+        self.assertIn("남은 금액은 확정할 수 없어요.", out["lines"][-1])
+        self.assertNotIn("synced_until", out)
+
+    def test_four_days_missing_stays_unconfirmed(self):
+        self.card_runs((d(2026, 7, 1), d(2026, 10, 25)))  # 10/26~29 나흘 빔
+        four = run(self.a, 4, breakdown=True)
+        self.assertEqual((four["confirmed"], "categories" in four), (None, False))
+        self.assertNotIn("synced_until", self.compose(four))
+
+    def test_spending_answer_gets_same_notice(self):
+        self.card_runs((d(2026, 7, 1), d(2026, 10, 28)))
+        one = run(self.a, 1)
+        self.assertIsNone(one["current"]["confirmed"])  # 이번 달 소비 금액은 지금처럼 '일부 내역 기준'
+        out = self.compose(one)
+        self.assertIn("카드 1장은 10월 28일까지 불러온 내역이에요. 다시 불러오면 더 정확해져요.", out["notices"])
+        self.assertEqual(out["synced_until"][0]["until"], "2026-10-28")

@@ -178,6 +178,7 @@ def period_compare(user, current, previous, category=None, *, where=None):
 
 def budget_left(user, category, today, breakdown=False):
     """3 · 4번. 승인 예산이 있어도 사용액 범위가 complete 가 아니면 confirmed=None (확정 잔액 없음)
+    단 끝부분(오늘 쪽)만 며칠 빈 partial(coverage 의 recent)이면 불러온 데까지 기준으로 confirmed · categories 를 채운다 (11/13)
     days_left = 사용액을 센 다음 날부터 주기 끝까지 일수 (하루에 쓸 수 있는 금액용). breakdown = 4번에 카테고리별 잔액도"""
     found = _ok(approved_budget(user, today))
     out = {"budget": {"state": found["state"]}}
@@ -200,7 +201,7 @@ def budget_left(user, category, today, breakdown=False):
         allocated = found["living"].get(category) if category else found["living_total"]
         out["budget"].update({k: found["budget"][k] for k in ("budget_id", "version_no", "approved_at")},
                              allocated=allocated, out_of_budget_allocated=found["out_of_budget_allocated"])
-        if cov["state"] == "complete" and allocated is not None:
+        if (cov["state"] == "complete" or cov.get("recent")) and allocated is not None:
             out["confirmed"] = R.budget_numbers(allocated, spent, None if category else found["spare"])
             if breakdown:  # 승인 예산에 배정된 카테고리만, 화면 순서대로
                 out["categories"] = [{"category": c, **R.budget_numbers(found["living"][c], living["by_category"].get(c, 0))}
@@ -302,9 +303,11 @@ def query(user, item, today):
     """10번 범용 조회 → {"periods", "states", "coverage", "observed", "confirmed", "no_time", "days"}
     모든 기간이 complete 일 때만 confirmed. 소비만 · 카테고리 · 범위 조건은 rows · 여기서. 금액은 순금액(취소 차감)"""
     q, category, stats = item["query"], item.get("category"), {"no_time": 0, "fixed_excluded": 0, "fixed_names": []}
-    periods, states, picked, unclassified = query_periods(item, today), [], [], 0
+    periods, states, picked, unclassified, recent = query_periods(item, today), [], [], 0, []
     for period in periods:
-        states.append(_ok(coverage(user, period))["state"])
+        cov = _ok(coverage(user, period))
+        states.append(cov["state"])
+        recent += cov.get("recent") or ([None] if cov["state"] != "complete" else [])  # None = 끝부분만 빈 게 아닌 기간
         spent = [r for r in rows(user, period, item, stats, category) if r["transaction_type"] == "spending"]
         picked += [(period, r) for r in spent if category is None or r["category"] == category]
         # 카테고리로 좁힌 조회: 같은 조건의 '확인 필요' 금액 (분류가 정해지면 답이 달라질 수 있다는 안내용)
@@ -322,7 +325,8 @@ def query(user, item, today):
         fig["max_living"] = _biggest([r for r in paid if r["funding"] != "fixed"])
     state = "complete" if all(s == "complete" for s in states) else "none" if all(s == "none" for s in states) else "partial"
     clipped = q["period"] == "range" and resolve_range(today, item.get("date_from"), item.get("date_to"))["state"] == "clipped"
-    return {"periods": periods, "states": states, "coverage": {"state": state}, "observed": fig, "clipped": clipped,
+    return {"periods": periods, "states": states, "coverage": {"state": state, **({"recent": recent} if recent and None not in recent else {})},
+            "observed": fig, "clipped": clipped,
             "confirmed": fig if state == "complete" else None, "no_time": stats["no_time"], "days": days,
             "unclassified": unclassified if category != R.UNCLASSIFIED else 0,
             "fixed_excluded": stats["fixed_excluded"] if scope.excludes_fixed(item) else None, "fixed_names": stats["fixed_names"]}

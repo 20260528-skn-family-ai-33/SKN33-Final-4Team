@@ -4,13 +4,14 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import BudgetAdjustConsentPopup from './BudgetAdjustConsentPopup.jsx'
 import { apiSend } from '../utils/api.js'
 
-const { closePopup } = vi.hoisted(() => ({ closePopup: vi.fn() }))
+const { closePopup, toast } = vi.hoisted(() => ({ closePopup: vi.fn(), toast: vi.fn() }))
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn() }))
 vi.mock('./context.js', () => ({ usePopup: () => ({ closePopup }) }))
+vi.mock('../utils/toast.js', () => ({ toast }))
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host, root
 const URL = '/api/budgets/adjustment-ai-consent/'
-const doc = (title) => ({ title, label: `[선택] ${title}`, sections: [{ h: '전송 항목', items: [`${title} 본문`] }] })
+const doc = (title) => ({ title, label: `[필수] ${title}`, sections: [{ h: '전송 항목', items: [`${title} 본문`] }] })
 const state = { available: true, canRevoke: false, status: 'not_granted', documentVersion: 'v1', documentHash: 'hash', document: doc('외부 전송 동의'),
   healthDocumentVersion: 'v1', healthDocumentHash: 'health-hash', healthDocument: doc('건강 요약 처리 동의') }
 const button = (text) => [...host.querySelectorAll('button')].find((el) => el.textContent.trim() === text)
@@ -38,6 +39,8 @@ it('문서를 불러오되 자동으로 체크하지 않고, 두 항목을 모�
   })
   expect(closePopup).toHaveBeenCalledOnce()
   expect(onAgreed).toHaveBeenCalledOnce()
+  expect(toast).toHaveBeenCalledWith('동의했어요. 철회는 마이에서 할 수 있어요')  // 철회 안내는 창 글자 대신 토스트로 (11/12)
+  expect(host.textContent).not.toContain('동의 이력 확인과 철회')
 })
 
 it('문서 [보기]는 창 안에서 펼쳐 보여 주고 체크 상태를 바꾸지 않는다', async () => {
@@ -51,11 +54,12 @@ it('문서 [보기]는 창 안에서 펼쳐 보여 주고 체크 상태를 바�
   expect(apiSend).toHaveBeenCalledTimes(1)
 })
 
-it('취소하면 아무것도 저장하지 않고 창만 닫는다', async () => {
+it('[닫기 ×]를 누르면 아무것도 저장하지 않고 창만 닫는다 ([취소]는 없다, 11/12)', async () => {
   apiSend.mockResolvedValueOnce(state)
   const onAgreed = await open()
   await click(boxes()[0])
-  await click(button('취소'))
+  expect(button('취소')).toBeUndefined()
+  await click(button('닫기 ×'))
   expect(closePopup).toHaveBeenCalledOnce()
   expect(onAgreed).not.toHaveBeenCalled()
   expect(apiSend).toHaveBeenCalledTimes(1)

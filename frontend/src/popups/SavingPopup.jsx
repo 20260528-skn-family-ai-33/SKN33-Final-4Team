@@ -15,7 +15,8 @@ import { useState } from 'react'
 import Popup from './Popup.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
-import { MONTH_DAYS } from '../utils/days.js'
+import { dayBad } from '../utils/days.js'
+import DayInput from '../components/DayInput.jsx'
 import { apiSend, newRequestKey } from '../utils/api.js'
 import { payOptionsNote, usePayOptions } from '../utils/fixed.js'
 
@@ -28,6 +29,7 @@ export default function SavingPopup({ item, manage = false, onSaved }) {
   const editing = !!item
   const suggested = item?.status === 'suggested'   // 찾은 저축(후보) → 계좌 잠금
   const [error, setError] = useState('')
+  const [dayText, setDayText] = useState(item?.transferDay ? String(item.transferDay) : '')  // 이체일 글자 ('' = 모름, 11/12 숫자 입력)
   const [requestKey] = useState(newRequestKey)
   const [saving, setSaving] = useState(false)
   const load = usePayOptions('/api/finance/connect/accounts/')  // 실패를 빈 목록으로 바꾸지 않는다 (N-F2)
@@ -57,6 +59,7 @@ export default function SavingPopup({ item, manage = false, onSaved }) {
     const amount = Number(form.get('svAmount') || 0)
     if (!name || name.length > 100) { setError('이름은 1~100자로 입력해 주세요.'); return }
     if (amount < MIN_AMOUNT || amount > MAX_AMOUNT) { setError('금액은 1,000원 ~ 1억 원으로 입력해 주세요.'); return }
+    if (dayBad(dayText)) { setError('이체일은 1~31 중에서 입력해 주세요.'); return }
     if (saving) return
     const full = {
       name, amount, transferDay: form.get('svDay') ? Number(form.get('svDay')) : null,
@@ -79,10 +82,7 @@ export default function SavingPopup({ item, manage = false, onSaved }) {
         <label className="mc-field">이름<input name="svName" placeholder="청약, 적금 등" type="text" maxLength={100} defaultValue={item?.name} /></label>
         <label className="mc-field">매달 저축액<MoneyInput name="svAmount" placeholder="예: 100,000" defaultValue={item?.amount} /></label>
         <label className="mc-field">이체일
-          <select name="svDay" defaultValue={item?.transferDay ?? ''}>
-            {MONTH_DAYS.map((d) => <option key={d} value={d}>매월 {d}일</option>)}
-            <option value="">모름</option>
-          </select>
+          <DayInput id="mc-sv-day" name="svDay" what="이체일" optional value={dayText} onChange={(d) => { setDayText(d); setError('') }} />
         </label>
 
         <label className="mc-field">보내는 계좌

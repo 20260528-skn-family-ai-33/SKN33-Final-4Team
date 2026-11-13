@@ -148,7 +148,7 @@ class FixedScreenFlowTest(FixedFixture, TestCase):
         self.assertEqual((r.status_code, r.json()["amount"]), (200, 720000))
         self.assertEqual(self.client.get(URL).json()["summary"]["confirmedMonthlyTotal"], 720000)
         self.assertEqual(self.client.delete(f"{URL}{rid}/").status_code, 204)
-        self.assertEqual(self.client.get(URL).json(), {"items": [], "cardBills": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
+        self.assertEqual(self.client.get(URL).json(), {"items": [], "cardBills": [], "cardLoading": None, "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
 
 
 class FixedPaymentDueTest(FixedFixture, TestCase):
@@ -732,3 +732,30 @@ class FixedFirstMonthNoPreviousDueTest(TestCase):
         send(client, "patch", f"{URL}{rid}/", {"paymentDay": 20})
         self.assertEqual(must_pay(), [("2026-11-20", "unpaid")])
         self.assertEqual(PaymentDue.objects.filter(recurring_id=rid).count(), 1)
+
+
+class FixedCardLoadingTest(FixedFixture, TestCase):
+    """11/12: 카드 내역을 뒤에서 불러오는 중이면 목록에 cardLoading(작업 ID · 카드사 이름)을 준다"""
+
+    def setUp(self):
+        self.make_world()
+
+    def test_no_task_is_null(self):
+        self.assertIsNone(self.client.get(URL).json()["cardLoading"])
+
+    def test_card_first_load_names_the_card_company(self):
+        from config import tasks
+        task = tasks.start(self.user, tasks.CARD_FIRST_LOAD, tasks.input_hash({"connection": str(self.card.connection_id)}))
+        body = self.client.get(URL).json()["cardLoading"]
+        self.assertEqual(body, {"taskId": str(task.task_id), "institutions": ["국민카드"]})
+        task.status = "succeeded"
+        task.save(update_fields=["status"])
+        self.assertIsNone(self.client.get(URL).json()["cardLoading"])
+
+    def test_finance_sync_has_no_names_and_other_users_task_is_hidden(self):
+        from config import tasks
+        other = get_user_model().objects.create_user(email="other-loading@example.com", password="Example123!")
+        tasks.start(other, tasks.CARD_FIRST_LOAD, tasks.input_hash({"connection": "x"}))
+        self.assertIsNone(self.client.get(URL).json()["cardLoading"])
+        task = tasks.start(self.user, "finance_sync", tasks.input_hash({"any": 1}))
+        self.assertEqual(self.client.get(URL).json()["cardLoading"], {"taskId": str(task.task_id), "institutions": []})

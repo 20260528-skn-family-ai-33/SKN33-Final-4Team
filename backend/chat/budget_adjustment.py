@@ -65,13 +65,25 @@ def handler(user, store, adapter, complete, conversation_key):
                                         and result["status"] == "replied"),
                        phase="over_entry" if state.get("over_entry") else (state.get("pending") or {}).get("kind"))
         items = state.get('requests', [])
+        def active_context():
+            from budgets.adjustment_schedule import planning_context
+            return planning_context(adapter.get_context(), state.get('planning'))
+
+        if state.get('planning', {}).get('scope') == 'next_cycle':
+            try:
+                planned = active_context()
+                payload['planning'] = {'effective_on': planned['effective_on'], 'income_before': planned['income_before'],
+                                       'income_after': planned['monthly_income'], 'one_off': state['planning'].get('one_off', False),
+                                       'expense': state['planning'].get('expense')}
+            except ValueError:
+                pass  # The conversation is still asking for the missing planning input.
         proposal = reply.get('proposal')
-        if proposal and payload['can_approve'] and proposal.get('state') == 'awaiting_approval':
+        if proposal and payload['can_approve'] and proposal.get('state') == 'awaiting_approval' and not proposal.get('one_off'):
             from budgets.adjustment_core.conversation import distribution_fields
             donors = [{'category': row['category'], 'amount': -row['diff'], 'amount_mode': 'by', 'direction': 'down'}
                       for row in proposal.get('changes', []) if row['diff'] < 0]
             try:
-                fields = distribution_fields(adapter.get_context(), donors, state.get('excluded', []))
+                fields = distribution_fields(active_context(), donors, state.get('excluded', []))
                 fields['values'] = [{'category': row['category'], 'amount': row['diff']}
                                     for row in proposal['changes'] if row['diff'] > 0]
                 if (fields['categories'] and sum(row['amount'] for row in fields['values']) == fields['amount']
@@ -88,9 +100,14 @@ def handler(user, store, adapter, complete, conversation_key):
                                                and items[0]['category'] not in context.get('locks', {})):
                 from budgets.adjustment_core.explanations import NAMES
                 code, direction = items[0]['category'], items[0]['direction']
-                payload['amount_input'] = {'category': code, 'direction': direction}
+                current = active_context()
+                before = (sum(current['allocations'].values()) if code == 'LIVING' else
+                          {**current['allocations'], **current['buckets']}.get(code))
+                payload['amount_input'] = {'category': code, 'direction': direction, 'before_amount': before}
+                if direction == 'up':
+                    from budgets.adjustment_core.funding import increase_input_limit
+                    payload['amount_input']['max_amount'] = increase_input_limit(current, code) // 5000 * 5000
                 if direction == 'down':
-                    current = adapter.get_context()
                     if code in current.get('allocations', {}):
                         floor = max(current.get(field, {}).get(code, 0) for field in ('spent', 'minimums', 'system_floors'))
                         maximum = max(current['allocations'][code] - floor, 0)
@@ -105,6 +122,18 @@ def handler(user, store, adapter, complete, conversation_key):
         reply["budget_adjustment"] = payload
         if (reply.get("proposal") or reply.get("comparison")) and not reply.get("detail") and not reply.get('recommendation_advice'):
             reply["lines"] = reply.get("lines", [])[:1]
+        from budgets.adjustment_core.responses import guidance
+        payload['guidance'] = guidance(result, state)
+        if items and result['status'] not in {'ended', 'failed', 'unsupported'}:
+            from budgets.adjustment_core.funding import large_increase_warning
+            try:
+                warning = large_increase_warning(active_context(), items)
+            except ValueError:
+                warning = None  # Planning inputs are not complete yet.
+            if warning:
+                payload['increase_warning'] = warning
+        if previous.get('work_ref') and not result.get('work_ref') and state.get('pending') and result['status'] == 'awaiting_input':
+            result['continued_work'] = True
         return result
     return handle
 

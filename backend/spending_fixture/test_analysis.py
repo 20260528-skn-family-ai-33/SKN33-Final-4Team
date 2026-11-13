@@ -101,8 +101,15 @@ class ApprovedBudgetTest(TestCase):
         self.assertEqual((p["spent"].start, p["spent"].last_day), (d(2026, 10, 25), d(2026, 10, 29)))
 
     def test_payday_boundaries(self):
-        before, on = approved_budget(user("A"), d(2026, 10, 24)), approved_budget(user("A"), d(2026, 10, 25))
+        # 11/13: 진행 중(active) 주기만 읽는다 → 10/24 당시처럼 9/25 주기가 진행 중인 상태로 맞춰 급여일 전날을 본다
+        cycles = BudgetCycle.objects.filter(user=user("A"))
+        cycles.filter(starts_on=d(2026, 10, 25)).update(status="closed")
+        cycles.filter(starts_on=d(2026, 9, 25)).update(status="active")
+        before = approved_budget(user("A"), d(2026, 10, 24))
         self.assertEqual(before["cycle"]["starts_on"], d(2026, 9, 25))  # 급여일 전날은 지난 주기
+        cycles.filter(starts_on=d(2026, 9, 25)).update(status="closed")
+        cycles.filter(starts_on=d(2026, 10, 25)).update(status="active")
+        on = approved_budget(user("A"), d(2026, 10, 25))
         self.assertEqual(on["cycle"]["starts_on"], d(2026, 10, 25))
         self.assertEqual(approved_budget(user("A"), d(2026, 11, 25)), {"state": "no_cycle"})  # ends_before 미포함
         self.assertEqual(approved_budget(user("A"), d(2026, 6, 24)), {"state": "no_cycle"})
@@ -151,8 +158,14 @@ class ApprovedBudgetTest(TestCase):
         with mock.patch.object(BudgetCycle.objects, "filter", side_effect=OperationalError("down")):
             self.assertEqual(approved_budget(user("A"), d(2026, 10, 29)), {"state": "error", "reason": "db_error"})
 
-    def test_overlapping_cycles_are_not_guessed(self):
+    def test_closed_overlapping_cycle_is_ignored(self):
+        # 11/13: 급여일 변경으로 남은 끝난 주기가 겹쳐도 진행 중 주기의 승인 예산을 읽는다
+        before = approved_budget(user("C"), d(2026, 10, 29))
         BudgetCycle.objects.create(user=user("C"), starts_on=d(2026, 10, 22), ends_before=d(2026, 11, 22), status="closed")
+        self.assertEqual(approved_budget(user("C"), d(2026, 10, 29)), before)
+
+    def test_overlapping_active_cycles_are_not_guessed(self):
+        BudgetCycle.objects.create(user=user("C"), starts_on=d(2026, 10, 22), ends_before=d(2026, 11, 22), status="active")
         self.assertEqual(approved_budget(user("C"), d(2026, 10, 29)), {"state": "error", "reason": "overlapping_cycles"})
 
 

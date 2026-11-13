@@ -14,9 +14,34 @@ import { usePopup } from './context.js'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { toast } from '../utils/toast.js'
+import Icon from '../components/Icon.jsx'
+
+// 카테고리 고르기 (11/12): 글자 버튼 나열 대신 아이콘 + 이름 칸 4줄 격자. 고른 칸은 강조 + aria-pressed
+// 칸을 눌러도 바로 저장하지 않는다 — 고르기만 하고 [확인]을 눌러야 저장 (11/12)
+function CatGrid({ categories, current, disabled, onPick }) {
+  return (
+    <div className="mc-catgrid">
+      {categories.map((cat) => (
+        <button type="button" key={cat.code} aria-pressed={cat.code === current} disabled={disabled} onClick={() => onPick(cat.code)}>
+          <Icon name={cat.icon ?? 'Circle'} size={18} /><span>{cat.name}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
 
 // 분류 출처 → 화면 문구 (DB classification_source, H-07)
 const CLASSIFIED_BY = { user: '내가 고름', rule: '규칙으로 자동 분류', ml: 'AI 자동 분류', llm: 'AI 자동 분류 (가게 정보 확인)' }
+
+// 격자 아래 [취소] [확인] (11/12)
+function PickActions({ disabled, saving, onCancel, onConfirm }) {
+  return (
+    <div className="mc-pick-actions">
+      <button type="button" className="mc-secondary" disabled={saving} onClick={onCancel}>취소</button>
+      <button type="button" className="mc-primary" disabled={disabled} onClick={onConfirm}>{saving ? '저장하는 중…' : '확인'}</button>
+    </div>
+  )
+}
 
 export default function TransactionPopup({ tx, date, categories, onSaved }) {
   const { closePopup } = usePopup()
@@ -24,10 +49,15 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const [applyToFuture, setApplyToFuture] = useState(false)  // '앞으로도 적용' (canApplyToFuture 일 때만 보임, 10/30)
-  // 이체 화면에서만 쓰는 단계: 'idle' → 'pick'(카테고리 고르는 중)
+  // 카테고리 고르는 단계: 'idle' → 'pick'([수정하기] · [소비로 분류하기]를 누름) → [확인]으로 저장 (11/12)
   const [step, setStep] = useState('idle')
+  const original = categories.find((cat) => cat.name === tx.cat)?.code ?? null
+  const [picked, setPicked] = useState(null)  // 고른 칸 (null = 아직 안 고름 → 지금 카테고리)
+  const chosen = picked ?? original
+  const cancelPick = () => { setStep('idle'); setPicked(null); setApplyToFuture(false); setError(null) }
   const isIncome = tx.kind === 'income'
   const isTransfer = tx.kind === 'transfer'
+  const isExcluded = tx.kind === 'excluded'  // '소비가 아니에요'로 뺀 소비 (11/13)
   const isOwn = tx.isOwn  // 내 계좌 이체(own_transfer). 소비로 바꾸려면 확인을 먼저 취소
   const wasTransfer = Boolean(data?.wasTransfer)  // 원래 이체였던 소비 → [이체로 되돌리기] (거래 한 건 보기, 11/03)
   const isFixed = tx.funding === 'fixed'
@@ -51,7 +81,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
 
   return (
     <Popup label="거래 상세" sub>
-      <div className="mc-eyebrow">{isIncome ? (tx.isSalary ? '월급 입금' : '입금') : tx.isSaving ? '저축 이체' : isOwn ? '내 계좌 이체' : isTransfer ? '보낸 이체' : '거래 상세'}</div>
+      <div className="mc-eyebrow">{isIncome ? (tx.isSalary ? '월급 입금' : '입금') : tx.isSaving ? '저축 이체' : isOwn ? '내 계좌 이체' : isTransfer ? '보낸 이체' : isExcluded ? '소비 아님' : '거래 상세'}</div>
       <h1>{tx.name}</h1>
       <div className="mc-card">
         <div className="mc-money">
@@ -67,8 +97,8 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
         )}
         <div className="mc-keyvalue"><span>거래일</span><strong>{date}</strong></div>
         <div className="mc-keyvalue"><span>{isIncome ? '들어온 계좌' : isTransfer || wasTransfer ? '보낸 계좌' : '결제 수단'}</span><strong>{tx.via ?? '확인 안 됨'}</strong></div>
-        {!isIncome && !isTransfer && <div className="mc-keyvalue"><span>카테고리</span><strong>{tx.cat}</strong></div>}
-        {!isIncome && !isTransfer && (
+        {!isIncome && !isTransfer && !isExcluded && <div className="mc-keyvalue"><span>카테고리</span><strong>{tx.cat}</strong></div>}
+        {!isIncome && !isTransfer && !isExcluded && (
           <div className="mc-keyvalue"><span>분류</span><strong>{wasTransfer ? '내가 소비로 분류함' : CLASSIFIED_BY[data?.classifiedBy] ?? (data ? '확인 필요' : '')}</strong></div>
         )}
         {isFixed && <div className="mc-keyvalue"><span>고정지출</span><strong>{tx.fixedName} <em className="mc-tx-tag is-fixed">고정</em></strong></div>}
@@ -124,38 +154,56 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
         <div className="mc-card">
           <h2>어디에 쓴 돈인가요?</h2>
           {/* 고르면 PATCH { category } → transactionType: spending, 소비 합계 · 예산에 들어감 */}
-          <div className="mc-pend-pick">
-            {categories.map((cat) => <button type="button" key={cat.code} disabled={saving} onClick={() => save(cat.code)}>{cat.name}</button>)}
-          </div>
+          <CatGrid categories={categories} current={picked} disabled={saving} onPick={setPicked} />
           <p className="mc-note" style={{ paddingBottom: 0 }}>이 거래만 바뀌어요. 같은 사람에게 다음에 보내는 이체는 다시 이체로 들어와요. 나중에 이체로 되돌릴 수 있어요.</p>
+          <PickActions disabled={saving || !picked} saving={saving} onCancel={cancelPick} onConfirm={() => save(picked)} />
+        </div>
+      )}
+
+      {/* 소비 아님 (11/13): 예산 · 소비 합계에서 빠진 거래 → [소비로 되돌리기] (카테고리는 그대로 남아 있음) */}
+      {isExcluded && (
+        <div className="mc-card">
+          <h2>소비가 아니라고 표시했어요</h2>
+          <p className="mc-muted" style={{ marginTop: 4 }}>예산 · 소비 합계에 들어가지 않아요. 거래 내역에는 남아요.</p>
+          <button type="button" className="mc-secondary" disabled={saving} onClick={() => send({ notSpending: false }, '소비로 되돌렸어요')}>소비로 되돌리기</button>
         </div>
       )}
 
       {/* 소비: 카테고리 수정 */}
-      {!isIncome && !isTransfer && (
+      {!isIncome && !isTransfer && !isExcluded && step === 'idle' && (
+        <button type="button" className="mc-secondary" onClick={() => setStep('pick')}>카테고리 수정하기</button>
+      )}
+      {/* 11/13: 회사 경비처럼 돌려받는 돈이면 소비에서 뺀다. 고정지출에 연결된 거래 · 전액 취소는 안 됨 */}
+      {!isIncome && !isTransfer && !isExcluded && !isFixed && tx.cancel !== 'full' && step === 'idle' && (
+        <p className="mc-note mc-tx-notspend"><button type="button" className="mc-link" disabled={saving} onClick={() => send({ notSpending: true }, '소비에서 뺐어요')}>소비가 아니에요</button></p>
+      )}
+      {!isIncome && !isTransfer && !isExcluded && step === 'pick' && (
         <div className="mc-card">
           <h2>카테고리 수정</h2>
-          <div className="mc-pend-pick">
-            {categories.map((cat) => (
-              <button type="button" key={cat.code} disabled={saving} onClick={() => save(cat.code)}>{cat.name === tx.cat && '✓ '}{cat.name}</button>
-            ))}
-          </div>
+          <CatGrid categories={categories} current={chosen} disabled={saving} onPick={setPicked} />
+          {/* '앞으로도 적용'은 격자 아래 · [확인] 위 (11/12) */}
           {data?.canApplyToFuture && (
             <label className="mc-field mc-check">
               <input type="checkbox" checked={applyToFuture} onChange={(e) => setApplyToFuture(e.target.checked)} />
               앞으로 이 가게 거래도 이 카테고리로 분류
             </label>
           )}
-          <p className="mc-note" style={{ paddingBottom: 0 }}>
-            {wasTransfer ? '이 거래만 바뀌어요. 받는 사람은 기억하지 않아요.' : data?.canApplyToFuture ? (applyToFuture ? '지금 확인이 필요한 같은 가게 거래도 함께 바뀌어요.' : '체크하지 않으면 이 거래만 바뀌어요.') : '여러 종류를 파는 곳이라 이 거래만 바뀌어요.'}
-            {isFixed && ' 고정지출 연결은 그대로예요.'}
-          </p>
+          {/* '체크하지 않으면 이 거래만 바뀌어요'는 뺐다 (11/12): 체크 문구만 봐도 알 수 있어서 */}
+          {(() => {
+            const note = [wasTransfer ? '이 거래만 바뀌어요. 받는 사람은 기억하지 않아요.' : data?.canApplyToFuture ? (applyToFuture ? '지금 확인이 필요한 같은 가게 거래도 함께 바뀌어요.' : '')
+              : '여러 종류를 파는 곳이라 이 거래만 바뀌어요.', isFixed ? '고정지출 연결은 그대로예요.' : ''].filter(Boolean).join(' ')
+            return note && <p className="mc-note" style={{ paddingBottom: 0 }}>{note}</p>
+          })()}
+          {/* 그대로면 [확인]을 막는다. 같은 카테고리라도 '앞으로도 적용'을 체크하면 저장할 수 있다 */}
+          <PickActions disabled={saving || !chosen || (chosen === original && !applyToFuture)} saving={saving}
+            onCancel={cancelPick} onConfirm={() => save(chosen)} />
         </div>
       )}
 
-      {/* 원래 이체였던 소비 → 되돌리기 (PATCH { category: null }). 고정지출에 연결된 이체는 연결을 먼저 풀어야 함 */}
+      {/* 원래 이체였던 소비 → 되돌리기 (PATCH { category: null }). 고정지출에 연결된 이체는 연결을 먼저 풀어야 함
+          되돌렸다는 걸 토스트로 알린다 (11/12 베타 피드백: 되돌린 뒤 거래가 어디 갔는지 헷갈림) */}
       {wasTransfer && !isFixed && (
-        <button type="button" className="mc-secondary" disabled={saving} onClick={() => save(null)}>이체로 되돌리기</button>
+        <button type="button" className="mc-secondary" disabled={saving} onClick={() => send({ category: null, applyToFuture: Boolean(data?.canApplyToFuture && applyToFuture) }, '이체로 되돌렸어요')}>이체로 되돌리기</button>
       )}
       {wasTransfer && isFixed && (
         <p className="mc-note">고정지출에 연결된 이체예요. 이체로 되돌리려면 고정지출 화면에서 연결을 먼저 풀어 주세요.</p>

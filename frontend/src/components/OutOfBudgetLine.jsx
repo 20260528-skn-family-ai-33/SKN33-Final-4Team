@@ -6,7 +6,7 @@ export default function OutOfBudgetLine({ value, className = 'mc-note' }) {
   if (!value?.total) return null
   return (
     <p className={className} style={{ padding: 0 }}>
-      예산 밖 지출 {won(value.total)} · {OUT_OF_BUDGET.map(catName).join(', ')}은 생활비에서 빼고 따로 보여드려요
+      예산 밖 지출 {won(value.total)} · {OUT_OF_BUDGET.map(catName).join(', ')}은 따로 보여드려요
     </p>
   )
 }

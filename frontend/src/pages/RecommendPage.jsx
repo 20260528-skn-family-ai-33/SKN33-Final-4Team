@@ -11,6 +11,8 @@ import Icon from '../components/Icon.jsx'
 import LockIcon from '../components/LockIcon.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import BudgetAIConsent from '../components/BudgetAIConsent.jsx'
+import CardReservedHelp from '../components/CardReservedHelp.jsx'
+import HelpTip from '../components/HelpTip.jsx'
 import { won } from '../utils/money.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
 import { PATHS } from '../routes.js'
@@ -22,10 +24,74 @@ const SPLIT_ROWS = [
   ['fix', '고정지출', 'fixed'], ['save', '저축', 'saving'], ['live', '생활비', 'living'],
   ['cushion', '머니 쿠션 적립', 'cushion'], ['left', '여윳돈', 'spare'],   // 비정기 준비금은 10/24 결정 AB로 2차
 ]
+// 고정지출 중 '지난 카드값'(가입 전에 쓴 카드값 · 할부 회차)은 따로 칸 (11/12). 0원이면 칸 없음. [CSS, 이름, 금액]
+const splitParts = (split) => {
+  const card = split.cardReserved ?? 0
+  return SPLIT_ROWS.flatMap(([css, name, key]) => key !== 'fixed' ? [[css, name, split[key]]]
+    : [[css, name, split.fixed - card], ...(card > 0 ? [['card', '지난 카드값', card]] : [])])
+}
+// 예산을 짜기 전 AI 동의 단계 (11/12): 동의하면 첫 예산부터 AI가 다듬는다. 동의는 이미 나온 예산을 바꾸지 않으므로 짜기 전에 묻는다
+function ConsentStep({ onStart }) {
+  const [granted, setGranted] = useState(false)
+  return (
+    <Layout title="추천 예산 확인" showBack foot={<button type="button" className="mc-primary" onClick={onStart}>{granted ? '예산 짜기' : 'AI 없이 예산 짜기'}</button>}>
+      <StepBar step={6} />
+      <div className="mc-eyebrow">추천 예산 확인</div>
+      <h1>AI로 예산을<br />다듬을까요?</h1>
+      <p className="mc-muted">동의하면 첫 예산부터 AI가 금액을 한 번 더 다듬어요.<br />동의하지 않아도 예산은 짤 수 있어요.</p>
+      <BudgetAIConsent onChange={(next) => setGranted(next.status === 'granted')} />
+    </Layout>
+  )
+}
+// 이 예산을 어떻게 짰는지 (11/12, 서버 recommendation.basis). 예산 설계 에이전트가 만든 예산에만 있다
+//   b = 지난 3개월 내 소비 기반 · a = 거래가 적어 비슷한 사람들의 소비 비율(통계 모델) 기반 · ai = 동의한 AI 가 금액을 다듬었음
+//   궁금한 사람만 보도록 설명 문장 끝 [?] → 가운데 작은 창 (11/12)
+function BudgetBasisHelp({ basis }) {
+  if (!basis) return null
+  const b = basis.plan === 'b'
+  return (
+    <HelpTip label="이 예산을 짠 방법" title={b ? '지난 3개월 소비를 바탕으로 짰어요' : '비슷한 사람들의 소비 비율로 짰어요'}>
+      {b ? <>
+        <li>최근 석 달 동안 카테고리마다 쓴 흐름을 봤어요.</li>
+        <li>그 흐름을 소비 우선순위에 맞춰 나눴어요.</li>
+      </> : <>
+        <li>아직 내 거래 기록이 충분하지 않아요.</li>
+        <li>그래서 나이·자차 여부 같은 조건이 비슷한 사람들의 소비 비율을 참고했어요.</li>
+        <li>거래가 쌓이면 내 소비에 더 맞춰져요.</li>
+      </>}
+      {basis.ai && <li>AI가 우선순위와 최근 소비를 보고 금액을 한 번 더 다듬었어요.</li>}
+    </HelpTip>
+  )
+}
+
 // 카테고리 막대 색 진하기: 첫 칸 100% → 마지막 칸 18%
 const shade = (i, n) => `color-mix(in srgb,var(--mc-brand) ${Math.round(100 - (82 * i) / Math.max(n - 1, 1))}%,var(--mc-paper))`
 const pct = (part, whole) => (whole > 0 ? (part / whole) * 100 : 0)
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+const WAIT_TRIES = 90  // 추천 작업을 기다리는 최대 횟수 (1초씩). AI 를 쓰면 30초를 넘길 때가 있어 11/12 에 30 → 90
+
+// 추천을 만드는 동안 보여 줄 화면 (11/12): 오래 걸릴 수 있어 버튼 글자만 바뀌던 것을 화면 전체 안내로.
+// 단계 문구는 실제 진행률이 아니라 기다리는 동안의 안내라서, 몇 초마다 다음 문구로 넘어가고 마지막 문구에서 멈춘다 (몇 % 같은 숫자는 보여 주지 않음)
+const MAKING_STEPS = ['지난 소비를 살펴보고 있어요', '꼭 나갈 돈과 지킬 돈을 맞춰 보고 있어요', '카테고리별로 예산을 나누고 있어요', '마지막으로 금액을 검사하고 있어요']
+function MakingView() {
+  const [step, setStep] = useState(0)
+  useEffect(() => {
+    if (step >= MAKING_STEPS.length - 1) return undefined
+    const timer = setTimeout(() => setStep((s) => s + 1), 3000)
+    return () => clearTimeout(timer)
+  }, [step])
+  return (
+    <Layout title="추천 예산 확인">
+      <StepBar step={6} />
+      <div className="mc-making" role="status" aria-live="polite">
+        <span className="mc-conn-busy"><Icon name="Loader" /></span>
+        <h1>예산을 짜고 있어요</h1>
+        <p className="mc-muted">{MAKING_STEPS[step]}</p>
+        <p className="mc-note">조금 걸릴 수 있어요. 다 되면 이 화면에서 바로 보여 드려요.</p>
+      </div>
+    </Layout>
+  )
+}
 
 // 추천을 못 만든 이유 (작업 결과 conflicts) → 화면 문장
 function conflictText(c) {
@@ -59,6 +125,7 @@ export default function RecommendPage() {
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [making, setMaking] = useState(false)  // 새 추천을 만드는 중 (11/12: 이때는 화면 전체를 기다림 안내로)
   const [problem, setProblem] = useState(null)  // { message, conflicts?, code? }
   const [draftBlocked, setDraftBlocked] = useState(false)
   // 서버가 푼 자물쇠 (P-13): 지킬 돈에서 생활비를 바꿔 풀렸거나(이전 화면에서 넘겨받음), 추천할 때 막혀서 풀린 것
@@ -68,6 +135,7 @@ export default function RecommendPage() {
   const [released, setReleased] = useState(() => navState?.locksReleased ?? [])
   const approveKeys = useRef(new Map())  // 초안 하나에 요청 번호 하나 (같은 초안을 다시 눌러도 한 번만 승인)
   const mounted = useRef(false)
+  const [asking, setAsking] = useState(false)  // 예산 짜기 전 AI 동의 단계 (11/12)
 
   const openRecovery = useCallback((sourceTaskId) => navigate(PATHS.assistant, { replace: true, state: {
     budgetContext: { mode: 'DESIGN_RECOVERY', sourceTaskId },
@@ -99,13 +167,14 @@ export default function RecommendPage() {
     if (creating.current) return
     creating.current = true
     setBusy(true)
+    setMaking(true)
     setProblem(null)
     setResumeRecovery(null)
     setDraftBlocked(true)
     try {
       const { task } = await apiSend('/api/budgets/recommend/', 'POST', {}, { requestKey: newRequestKey() })
       let now = await apiSend(`/api/tasks/${task.taskId}/`, 'GET')
-      for (let i = 0; ['queued', 'running'].includes(now.status) && i < 30; i += 1) {
+      for (let i = 0; ['queued', 'running'].includes(now.status) && i < WAIT_TRIES; i += 1) {
         await wait(1000)
         now = await apiSend(`/api/tasks/${task.taskId}/`, 'GET')
       }
@@ -138,6 +207,7 @@ export default function RecommendPage() {
     } finally {
       creating.current = false
       setBusy(false)
+      setMaking(false)
     }
   }, [load, openRecovery])
 
@@ -149,7 +219,6 @@ export default function RecommendPage() {
       const saved = await apiSend(`/api/budgets/${draft.budgetId}/categories/${c.category}/`, 'PATCH', { locked: !c.locked })
       setData((now) => ({
         ...now,
-        nag: saved.nag,
         categories: now.categories.map((x) => (x.category === c.category ? { ...x, locked: saved.locked, lockedAmount: saved.lockedAmount } : x)),
       }))
     } catch (err) {
@@ -189,17 +258,24 @@ export default function RecommendPage() {
     let alive = true  // 화면을 떠나면 늦게 온 응답은 버린다
     mounted.current = true
     apiSend('/api/budgets/', 'GET')
-      .then((first) => {
+      .then(async (first) => {
         if (!alive) return
         setData(first)
         if (!autoRecommend.current) return
         autoRecommend.current = false  // 첫 데이터로만 판단
-        if (refreshRecommendation.current || first.budget?.status !== 'validated') makeDraft()
+        if (!refreshRecommendation.current && first.budget?.status === 'validated') return
+        // AI를 쓸 수 있는데 아직 동의 전이면 동의 단계를 먼저 (11/12). 동의 상태를 못 읽으면 그냥 짠다(기본 추천은 동의 없이 된다)
+        const consent = await apiSend('/api/budgets/ai-consent/', 'GET').catch(() => null)
+        if (!alive) return
+        if (consent?.available === true && consent.status !== 'granted') setAsking(true)
+        else makeDraft()
       })
       .catch((err) => { if (alive) setLoadError(err) })
     return () => { alive = false; mounted.current = false }
   }, [makeDraft])  // makeDraft는 useCallback이라 화면을 열 때 한 번만 돈다
 
+  if (making) return <MakingView />
+  if (asking) return <ConsentStep onStart={() => { setAsking(false); makeDraft() }} />
   if (!data) return <Layout title="추천 예산 확인" showBack><ApiStatus error={loadError} /></Layout>
 
   const foot = draft
@@ -259,20 +335,20 @@ export default function RecommendPage() {
     <Layout title="추천 예산 확인" showBack foot={foot}>
       <StepBar step={6} />
       {/* 임시 엔진(temp-…)일 때만 — ML 엔진으로 바뀌면 서버 값이 바뀌어 저절로 사라진다 */}
-      <div className="mc-eyebrow">추천 예산 확인 · 예산 {draft.versionNo}{draft.engineVersion?.startsWith('temp-') && ' · 테스트 추천'}</div>
+      <div className="mc-eyebrow">추천 예산 확인{draft.engineVersion?.startsWith('temp-') && ' · 테스트 추천'}</div>
       <h1>카테고리별 예산을<br />확인하고 고쳐 주세요</h1>
-      <p className="mc-muted">지킬 돈에서 정한 생활비를 카테고리별로 나눴어요.</p>
+      <p className="mc-muted">지킬 돈에서 정한 생활비를 카테고리별로 나눴어요.<BudgetBasisHelp basis={data.recommendation?.basis} /></p>
       {data.recommendation?.spareTransfer > 0 && <p className="mc-note" role="status">여윳돈 {won(data.recommendation.spareTransfer)}을 이번 예산 생활비에만 포함해요. 기존 생활비 설정은 유지돼요.</p>}
       {data.recommendation?.targetConflicts?.map((c) => <p key={c.category} className="mc-note" role="status">{catName(c.category)} 유지 목표 {won(c.requestedAmount)} → 이번 예산 {won(c.possibleAmount)} (차이 {won(c.diff)}). {c.reason === 'amount_unit' ? '최종 금액 단위를 맞췄어요.' : '생활비와 보호 조건을 함께 반영했어요.'} 저장된 유지 목표는 그대로예요.</p>)}
       {released.length > 0 && <p className="mc-min-warn" role="status">생활비가 바뀌어서 이번 달 자물쇠({released.map(catName).join(' · ')})를 풀었어요. 필요하면 다시 걸어 주세요.</p>}
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>
-        <div className="mc-split" role="img" aria-label={SPLIT_ROWS.map(([, n, k]) => `${n} ${won(split[k])}`).join(', ')}>
-          {SPLIT_ROWS.map(([css, n, k]) => <span key={n} className={`mc-split-${css}`} style={{ width: `${pct(split[k], split.funding)}%` }}></span>)}
+        <div className="mc-split" role="img" aria-label={splitParts(split).map(([, n, v]) => `${n} ${won(v)}`).join(', ')}>
+          {splitParts(split).map(([css, n, v]) => <span key={n} className={`mc-split-${css}`} style={{ width: `${pct(v, split.funding)}%` }}></span>)}
         </div>
         <div className="mc-split-legend">
-          {SPLIT_ROWS.map(([css, n, k]) => <div key={n}><i className={`mc-split-${css}`}></i><span>{n}</span><strong>{won(split[k])}</strong></div>)}
+          {splitParts(split).map(([css, n, v]) => <div key={n}><i className={`mc-split-${css}`}></i><span>{n}{css === 'card' && <CardReservedHelp />}</span><strong>{won(v)}</strong></div>)}
         </div>
       </div>
 
@@ -298,7 +374,6 @@ export default function RecommendPage() {
               </div>
             ))}
           </div>
-          {data.nag && <p className="mc-note" style={{ padding: '10px 0 0' }}>{data.nag}</p>}
           <div className="mc-chat-alt">
             <span>꼭 바꾸고 싶은 부분이 있나요?</span>
             <button type="button" className="mc-link" disabled={busy} onClick={() => navigate(PATHS.assistant, {
@@ -310,7 +385,6 @@ export default function RecommendPage() {
         {recoveryBox}
         <p className="mc-note">최소 표시는 내 정보에서 정한 카테고리 최소 금액이에요. 그 밑으로는 줄지 않고, 자물쇠를 걸면 다음에 다시 추천받을 때 그 금액 그대로 고정돼요.</p>
       </form>
-      <BudgetAIConsent />
     </Layout>
   )
 }

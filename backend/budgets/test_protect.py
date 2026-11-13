@@ -151,16 +151,74 @@ class ProtectAPITest(TestCase):
         self.assertEqual(response.json(), {
             "missing": [], "housingType": "family",
             "rates": {"living": 45, "saving": 40, "spare": 5, "cushion": 10},
-            "base": {"takeHomeIncome": 2_800_000, "fixedTotal": 770_000, "available": 2_030_000},
+            "base": {"takeHomeIncome": 2_800_000, "fixedTotal": 770_000, "available": 2_030_000, "cardReserved": 0, "incomeSource": "registered"},
             "savingsMin": 1_000_000,
             "recommended": {"livingBudget": 770_000, "savingFloor": 1_000_000, "cushionMonthly": 170_000,
                             "spare": 90_000, "rebalanced": True, "restAmount": 1_030_000, "ratioSavingFloor": 810_000},
             "blocked": None, "saved": None,
             "cushion": {"required": True, "target": 8_400_000, "balanceTotal": 2_800_000},
-            "cardPending": [], "cardNotes": [], "locksReleased": [], "cardLoadTaskId": None,
+            "cardPending": [], "cardNotes": [], "locksReleased": [], "approvedBudgetUpdated": None, "cardLoadTaskId": None, "budgetApproved": False,
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual((cycle.starts_on, cycle.ends_before), (date(2026, 10, 25), date(2026, 11, 25)))
+
+    def test_budget_approved_flag_follows_this_cycles_approved_budget(self):
+        """11/13: 화면이 '생활비 그대로면 저장만'을 고르는 근거 (approvedBudget 은 충당 · 설정 차이가 있을 때만 옴)"""
+        self.assertFalse(self.client.get(URL).json()["budgetApproved"])
+        cycle = BudgetCycle.objects.get(user=self.user, status="active")
+        Budget.objects.create(user=self.user, cycle=cycle, status="approved", version_no=1, funding_amount=2_800_000, approved_at=timezone.now())
+        self.assertTrue(self.client.get(URL).json()["budgetApproved"])
+
+    def approve_budget(self, fixed=770_000, saving=1_000_000, cushion=170_000, living=770_000):
+        """항목을 먼저 만든 검수 예산을 승인으로 바꾼다 (실제 승인 순서 — 쿠션 기록은 signals.py)"""
+        budget = self.make_budget(status="validated")
+        budget.funding_amount = 2_800_000
+        budget.save(update_fields=["funding_amount"])
+        BudgetItem.objects.bulk_create([BudgetItem(user=self.user, budget=budget, bucket=bucket, allocated_amount=amount)
+                                        for bucket, amount in (("fixed", fixed), ("savings", saving), ("cushion", cushion), ("living", living))])
+        budget.status, budget.approved_at = "approved", timezone.now()
+        budget.save(update_fields=["status", "approved_at"])
+        return budget
+
+    def test_put_with_same_living_updates_approved_saving_and_cushion(self):
+        """검수 P1 (11/13): 생활비는 그대로 두고 저축 · 쿠션만 바꿔 저장하면 이번 주기 승인 예산의 두 줄도 바꾼다
+        (여윳돈 = 배분 대상 − 항목 합계라 같이 맞춰짐). 다시 추천은 없고, 보호 중인 쿠션은 차액만"""
+        from .models import CushionEntry
+        first = self.put()
+        self.assertIsNone(first.json()["approvedBudgetUpdated"])  # 승인 예산이 없으면 null
+        self.assertFalse(CushionEntry.objects.exists())
+        budget = self.approve_budget()
+        self.assertEqual(self.client.get("/api/budgets/cushion/").json()["cushion"]["now"], 170_000)  # 승인 때 쌓임
+        proposal = self.make_budget(status="validated")  # 만들어 둔 조정안 · 초안은 만료
+        # 저축 확인에서 고른 최소 저축이 100만이라 그 이상으로 (배분 가능 203만: 77만 + 105만 + 20만)
+        response = self.put({"livingBudget": 770_000, "savingFloor": 1_050_000, "cushionMonthly": 200_000})
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertTrue(response.json()["approvedBudgetUpdated"])
+        amounts = dict(budget.items.values_list("bucket", "allocated_amount"))
+        self.assertEqual((amounts["savings"], amounts["cushion"], amounts["living"], amounts["fixed"]), (1_050_000, 200_000, 770_000, 770_000))
+        self.assertEqual(self.client.get("/api/budgets/cushion/").json()["cushion"]["now"], 200_000)
+        proposal.refresh_from_db()
+        self.assertEqual(proposal.status, "expired")
+        self.assertNotIn("approvedBudget", self.client.get(URL).json())  # 설정과 승인 예산이 같아져 차이 안내 없음
+        budget.refresh_from_db()
+        self.assertEqual(budget.validation_summary["protect_updates"][0]["after"], {"saving_floor": 1_050_000, "cushion_monthly": 200_000})
+        self.assertTrue(self.put({"livingBudget": 770_000, "savingFloor": 1_050_000, "cushionMonthly": 200_000}).json()["approvedBudgetUpdated"])
+        self.assertEqual(CushionEntry.objects.count(), 2)  # 같은 값으로 다시 저장하면 기록 없음
+        # 생활비를 바꾸면 승인 예산은 그대로 — 화면이 다시 추천으로 보낸다
+        changed = self.put({"livingBudget": 700_000, "savingFloor": 1_050_000, "cushionMonthly": 250_000})
+        self.assertEqual(changed.status_code, 200, changed.content)
+        self.assertFalse(changed.json()["approvedBudgetUpdated"])
+        self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 200_000)
+        self.assertEqual(CushionEntry.objects.count(), 2)
+
+    def test_put_that_overflows_approved_funding_is_not_applied(self):
+        """승인 당시 고정지출이 더 컸으면 바꾼 저축 · 쿠션이 배분 대상을 넘을 수 있다 → 바꾸지 않고 false (다시 추천)"""
+        self.assertEqual(self.put().status_code, 200)
+        budget = self.approve_budget(fixed=1_000_000)
+        response = self.put({"livingBudget": 770_000, "savingFloor": 1_000_000, "cushionMonthly": 200_000})
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(response.json()["approvedBudgetUpdated"])  # 100만 + 100만 + 20만 + 77만 > 280만
+        self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 170_000)
 
     def test_approved_breakdown_compares_any_budget_and_keeps_design_spare(self):
         self.assertEqual(self.put().status_code, 200)
@@ -338,7 +396,7 @@ class ProtectAPITest(TestCase):
     def test_put_step_5_required_cushion_precedes_total(self):
         error = self.assert_error(self.put({"livingBudget": 3_000_000, "savingFloor": 1_000_000, "cushionMonthly": 0}),
                                   400, "cushionMonthly")
-        self.assertEqual(error["fields"]["cushionMonthly"], ["잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요."])
+        self.assertEqual(error["fields"]["cushionMonthly"], ["잔액이 쿠션 목표보다 적어서 쿠션을 꼭 적립해야 해요."])
 
     def test_put_step_6_total(self):
         error = self.assert_error(self.put({"livingBudget": 1_000_000, "savingFloor": 1_000_000, "cushionMonthly": 30_001}),
@@ -441,12 +499,12 @@ class EmptyOnboardingFlowTest(TestCase):
 
     def test_no_fixed_no_savings_reaches_protect_save(self):
         self.assertEqual(self.client.get("/api/budgets/fixed/").json(),
-                         {"items": [], "cardBills": [], "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
+                         {"items": [], "cardBills": [], "cardLoading": None, "summary": {"confirmedMonthlyTotal": 0, "suggestedCount": 0}})
         self.assertEqual(self.client.get("/api/budgets/savings/?v=1").json(),  # 화면이 다시 받을 때 붙이는 ?v= 는 무시
                          {"items": [], "summary": {"minimumMonthly": 0, "suggestedCount": 0}})
         data = self.client.get(URL).json()
         self.assertEqual((data["missing"], data["blocked"], data["savingsMin"]), ([], None, 0))
-        self.assertEqual(data["base"], {"takeHomeIncome": 2_500_000, "fixedTotal": 0, "available": 2_500_000})
+        self.assertEqual(data["base"], {"takeHomeIncome": 2_500_000, "fixedTotal": 0, "available": 2_500_000, "cardReserved": 0, "incomeSource": "registered"})
         rec = data["recommended"]
         body = {"livingBudget": rec["livingBudget"], "savingFloor": rec["savingFloor"], "cushionMonthly": rec["cushionMonthly"]}
         response = self.client.put(URL, data=json.dumps(body), content_type="application/json")

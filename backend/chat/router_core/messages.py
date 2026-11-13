@@ -27,7 +27,7 @@ ASK = {
     "intent": "무엇부터 도와드릴까요?",
     "cancel_target": "무엇을 취소할까요?",
     "budget_task_choice": "진행 중인 예산 조정이 있어요. 어떻게 할까요?",
-    "detail": "조금 더 자세히 적어 주세요.",
+    "detail": "어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요.",
     "months": "몇 개월을 볼까요? 최근 3개월까지 볼 수 있어요.",
     "category": "'{words}'{words_obj} 어느 카테고리로 조회할까요?",
     "period_choice": "어느 기간의 {name}{name_obj} 볼까요?",

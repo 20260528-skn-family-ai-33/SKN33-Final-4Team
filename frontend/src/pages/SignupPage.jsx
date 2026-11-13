@@ -6,6 +6,8 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import PasswordInput from '../components/PasswordInput.jsx'
+import { useLoggedInRedirect } from '../utils/useLoggedInRedirect.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
 import { useConsentDocs } from '../popups/consentDocs.js'
 import { usePopup } from '../popups/context.js'
@@ -24,6 +26,7 @@ const pwOk = (p) => PW_RULES.every(([, test]) => test(p))
 
 export default function SignupPage() {
   const navigate = useNavigate()
+  useLoggedInRedirect()  // 이미 로그인했으면 시작하기 · 홈으로 (가입 직후 뒤로 가기 등)
   const { openPopup } = usePopup()
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
@@ -221,15 +224,14 @@ export default function SignupPage() {
 
           <label className="mc-field">
             비밀번호
-            <input
+            <PasswordInput
               aria-describedby={
                 pwError ? 'mc-pwrules signup-pw-error' : 'mc-pwrules'
               }
               aria-invalid={Boolean(pwError)}
               autoComplete="new-password"
               name="suPw"
-              placeholder="8~25자, 영문 · 숫자 · 특수문자 중 2가지 이상"
-              type="password"
+              placeholder="사용할 비밀번호를 입력해 주세요"
               required
               maxLength={PW_MAX}
               value={pw}
@@ -255,14 +257,13 @@ export default function SignupPage() {
 
           <label className="mc-field">
             비밀번호 확인
-            <input
+            <PasswordInput
               aria-describedby={
                 pwError ? 'mc-pwmatch signup-pw-error' : 'mc-pwmatch'
               }
               autoComplete="new-password"
               name="suPw2"
-              placeholder="비밀번호를 한 번 더 입력"
-              type="password"
+              placeholder="위와 같은 비밀번호를 입력해 주세요"
               required
               maxLength={PW_MAX}
               value={pw2}

@@ -4955,6 +4955,7 @@ paths:
                       confirmedMonthlyTotal: 715000
                       suggestedCount: 1
                     cardBills: []
+                    cardLoading: null
                 empty:
                   value:
                     items: []
@@ -4962,6 +4963,7 @@ paths:
                       confirmedMonthlyTotal: 0
                       suggestedCount: 0
                     cardBills: []
+                    cardLoading: null
         '403':
           description: '로그인하지 않음: not_authenticated. 권한 없음 또는 저장 요청 CSRF 검증 실패: permission_denied. 칸과 무관한 오류에는 fields를
             넣지 않는다.'
@@ -6683,6 +6685,7 @@ paths:
                       salarySource: user
                       salaryAmount: 2500000
                       salaryCheckCount: 0
+                      salaryGap: null
                     balance:
                       total: 2800000
                       accountCount: 2
@@ -7450,6 +7453,8 @@ paths:
                       takeHomeIncome: 2800000
                       fixedTotal: 770000
                       available: 2030000
+                      incomeSource: registered
+                      cardReserved: 0
                     savingsMin: 1000000
                     recommended:
                       livingBudget: 770000
@@ -7468,7 +7473,9 @@ paths:
                     cardPending: []
                     cardNotes: []
                     locksReleased: []
+                    approvedBudgetUpdated: null
                     cardLoadTaskId: null
+                    budgetApproved: false
                 missingIncome:
                   value:
                     missing:
@@ -7491,7 +7498,9 @@ paths:
                     cardPending: []
                     cardNotes: []
                     locksReleased: []
+                    approvedBudgetUpdated: null
                     cardLoadTaskId: null
+                    budgetApproved: false
                 blocked:
                   value:
                     missing: []
@@ -7505,6 +7514,8 @@ paths:
                       takeHomeIncome: 700000
                       fixedTotal: 770000
                       available: -70000
+                      incomeSource: registered
+                      cardReserved: 0
                     savingsMin: 1000000
                     recommended: null
                     blocked:
@@ -7518,7 +7529,9 @@ paths:
                     cardPending: []
                     cardNotes: []
                     locksReleased: []
+                    approvedBudgetUpdated: null
                     cardLoadTaskId: null
+                    budgetApproved: false
                 cardBillPending:
                   value:
                     missing: []
@@ -7544,7 +7557,9 @@ paths:
                       reason: bill_history_incomplete
                     cardNotes: []
                     locksReleased: []
+                    approvedBudgetUpdated: null
                     cardLoadTaskId: null
+                    budgetApproved: false
                   summary: 카드 첫 청구서 확인 중
         '403':
           description: not_authenticated
@@ -7597,6 +7612,8 @@ paths:
                       takeHomeIncome: 2800000
                       fixedTotal: 770000
                       available: 2030000
+                      incomeSource: registered
+                      cardReserved: 0
                     savingsMin: 1000000
                     recommended:
                       livingBudget: 770000
@@ -7620,7 +7637,9 @@ paths:
                     cardPending: []
                     cardNotes: []
                     locksReleased: []
+                    approvedBudgetUpdated: null
                     cardLoadTaskId: null
+                    budgetApproved: false
         '400':
           description: invalid
           content:
@@ -7643,7 +7662,7 @@ paths:
                       message: 입력값을 확인해 주세요.
                       fields:
                         cushionMonthly:
-                        - 잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요.
+                        - 잔액이 쿠션 목표보다 적어서 쿠션을 꼭 적립해야 해요.
                 totalExceeded:
                   value:
                     error:
@@ -7849,6 +7868,7 @@ paths:
                     split:
                       funding: 2800000
                       fixed: 770000
+                      cardReserved: 0
                       saving: 610000
                       cushion: 200000
                       living: 1120000
@@ -8156,6 +8176,7 @@ paths:
                     split:
                       funding: 2800000
                       fixed: 770000
+                      cardReserved: 0
                       saving: 610000
                       cushion: 200000
                       living: 1120000
@@ -9088,6 +9109,8 @@ components:
           - takeHomeIncome
           - payday
           - pendingPaydayChange
+          - pendingIncomeChange
+          - incomeBasis
           properties:
             takeHomeIncome:
               type: integer
@@ -9113,6 +9136,26 @@ components:
                   format: date
               additionalProperties: false
               nullable: true
+            pendingIncomeChange:
+              type: object
+              required:
+              - takeHomeIncome
+              - effectiveOn
+              properties:
+                takeHomeIncome:
+                  type: integer
+                  minimum: 1
+                effectiveOn:
+                  type: string
+                  format: date
+              nullable: true
+              description: 다음 주기부터 바뀔 월 실수령액 예약 (11/12). 없으면 null
+              additionalProperties: false
+            incomeBasis:
+              type: integer
+              minimum: 1
+              nullable: true
+              description: 이번 주기를 받은 월급 기준으로 짰으면 그 금액 (11/13). 없으면 null
           additionalProperties: false
         fixed:
           type: object
@@ -11537,12 +11580,14 @@ components:
       - $ref: '#/components/schemas/TransactionSpending'
       - $ref: '#/components/schemas/TransactionIncome'
       - $ref: '#/components/schemas/TransactionTransfer'
+      - $ref: '#/components/schemas/TransactionNotSpending'
       discriminator:
         propertyName: transactionType
         mapping:
           spending: '#/components/schemas/TransactionSpending'
           income: '#/components/schemas/TransactionIncome'
           transfer: '#/components/schemas/TransactionTransfer'
+          not_spending: '#/components/schemas/TransactionNotSpending'
     TransactionPeriod:
       type: object
       properties:
@@ -11685,12 +11730,72 @@ components:
           description: '내 계좌 이체 확인 (R11). true = [맞아요]: 이 출금만 own_transfer(입금 거래로 넓히지 않음), auto면 유형·연결 그대로 confirmed.
             false = [아니에요]·확인 취소·연결 해제: transfer로, 규칙이 이은 입금은 income으로 되돌리고, saving이 된 출금은 정기 저축 근거에서 뺀다. 거절해도 소비로
             바뀌지 않는다. 지금 유형이 소비 등이면 true·false 모두 400. 다른 칸과 같이 보내면 400.'
+        notSpending:
+          type: boolean
+          description: 11/13 '소비가 아니에요'. true = 소비(spending) → not_spending (예산 · 소비 합계에서 빠지고 목록에는 남음), false =
+            not_spending → spending (카테고리 · 분류 상태는 그대로 둬서 원래대로). 소비가 아닌 거래 · 전액 취소 · 고정지출 연결 소비는 400. 이미 원하는 상태면
+            200. 다른 칸과 같이 보내면 400.
       additionalProperties: false
       oneOf:
       - required:
         - category
       - required:
         - ownTransfer
+      - required:
+        - notSpending
+    TransactionNotSpending:
+      allOf:
+      - $ref: '#/components/schemas/TransactionBase'
+      - type: object
+        properties:
+          transactionType:
+            type: string
+            enum:
+            - not_spending
+          direction:
+            type: string
+            enum:
+            - out
+          category:
+            type: string
+            nullable: true
+            enum:
+            - null
+            description: 입금/이체에는 null.
+          categoryName:
+            type: string
+            nullable: true
+            enum:
+            - null
+            description: 입금/이체에는 null.
+          classifyState:
+            type: string
+            nullable: true
+            enum:
+            - null
+            description: 입금/이체에는 null.
+          funding:
+            type: string
+            nullable: true
+            enum:
+            - null
+            description: 입금/이체에는 null.
+          fixedExpenseId:
+            type: string
+            nullable: true
+            enum:
+            - null
+            description: 소비 아님 거래는 고정지출에 연결될 수 없어 null.
+        required:
+        - transactionType
+        - direction
+        - category
+        - categoryName
+        - classifyState
+        - funding
+        - fixedExpenseId
+        description: 11/13 '소비가 아니에요'로 뺀 소비 (회사 경비 등). 카테고리 · 분류 상태 · funding은 null이고 예산 · 소비 합계에 들어가지 않는다. PATCH
+          {notSpending:false}로 원래 카테고리의 소비로 되돌린다.
     FixedEvidence:
       type: object
       properties:
@@ -12019,10 +12124,29 @@ components:
           items:
             $ref: '#/components/schemas/FixedCardBillPreview'
           description: 관리 대상 카드가 있는 카드사별 참고 청구금액. 유효한 카드 동의·연결·선택이 없으면 빈 배열. 별도 CODEF 조회 없이 저장 자료 사용.
+        cardLoading:
+          type: object
+          nullable: true
+          description: 11/12. 카드 내역을 서버가 뒤에서 불러오는 중이면 { taskId, institutions }, 아니면 null. 첫 설정 화면은 안내를 띄우고 [다음]을
+            막은 뒤 작업이 끝나면 다시 읽는다
+          required:
+          - taskId
+          - institutions
+          properties:
+            taskId:
+              type: string
+              format: uuid
+              description: 가장 최근에 시작한 불러오기 작업 ID (GET /api/tasks/<taskId>/)
+            institutions:
+              type: array
+              items:
+                type: string
+              description: 첫 연결 뒤 불러오는 중인 카드사 이름. 다시 불러오기 작업만 있으면 빈 배열
       required:
       - items
       - summary
       - cardBills
+      - cardLoading
     FixedBatchResponse:
       type: object
       properties:
@@ -12587,6 +12711,30 @@ components:
               type: integer
               minimum: 0
               description: 인정된 급여가 없는 구간의 확인 필요 후보 수
+            salaryGap:
+              type: object
+              nullable: true
+              description: '11/13. 받은 월급이 등록 실수령액과 1만원 이상 · 3% 이상 다르고 아직 그 금액으로 답하지 않았으면 채운다. 답하기: POST /api/budgets/salary/gap/
+                (docs/api/salary.md)'
+              properties:
+                diff:
+                  type: integer
+                  description: 받은 - 등록 (원, 음수 = 적게)
+                received:
+                  type: integer
+                  description: 이번 회차 인정된 월급 합계
+                registered:
+                  type: integer
+                  description: 등록 실수령액
+                basis:
+                  type: integer
+                  nullable: true
+                  description: 지금 이 주기 예산 기준 금액 (apply로 정했으면)
+              required:
+              - diff
+              - received
+              - registered
+              - basis
           required:
           - startDate
           - endDate
@@ -12598,6 +12746,7 @@ components:
           - salarySource
           - salaryAmount
           - salaryCheckCount
+          - salaryGap
           nullable: true
           description: 설정한 급여일 기준. 없는 날짜는 말일. 급여일 미입력 시 null. 실제 입금 시각은 주기를 바꾸지 않는다.
         balance:
@@ -12711,6 +12860,10 @@ components:
                 - kind
                 - category
                 - categoryName
+            nag:
+              type: string
+              nullable: true
+              description: 11/13. 이번 주기에 예산을 자주 바꾸면 홈 종 알림 문구 (예산 화면 nag 와 같은 값). 없으면 null
             overCategories:
               type: array
               description: 예산을 넘긴 카테고리 (홈 알림 줄). 쓴 돈이 배정을 넘은 카테고리만, 배정 0원은 제외. 많이 넘긴 순
@@ -13033,6 +13186,28 @@ components:
           type: boolean
         budgetAdjustment:
           $ref: '#/components/schemas/BudgetAdjustmentContent'
+        syncedUntil:
+          type: array
+          description: 소비 분석이 끝부분(오늘 쪽)만 3일 이내로 빠진 내역 기준일 때만. 빠진 계좌·카드마다 마지막으로 불러온 날. 화면은 [내역 다시 불러오기](POST /api/finance/sync/)
+            뒤 같은 질문을 다시 보낸다.
+          items:
+            type: object
+            properties:
+              kind:
+                type: string
+                enum:
+                - card
+                - account
+              name:
+                type: string
+                description: 표시 이름 (끝 4자리만)
+              until:
+                type: string
+                format: date
+            required:
+            - kind
+            - name
+            - until
       required:
       - text
       - choices
@@ -13530,6 +13705,8 @@ components:
       - takeHomeIncome
       - fixedTotal
       - available
+      - incomeSource
+      - cardReserved
       properties:
         takeHomeIncome:
           type: integer
@@ -13542,6 +13719,16 @@ components:
         available:
           type: integer
           format: int64
+        incomeSource:
+          type: string
+          enum:
+          - registered
+          - actual
+          description: 11/13. registered 등록 실수령액 · actual 이번 주기만 받은 월급(budget_cycle.income_basis)으로 나눔
+        cardReserved:
+          type: integer
+          minimum: 0
+          description: 11/13. fixedTotal 안의 카드값(첫 청구서 선차감 + 이번 회차 할부금). 고정지출 = fixedTotal - cardReserved
       additionalProperties: false
       nullable: true
     ProtectRecommendation:
@@ -13671,6 +13858,7 @@ components:
       - cardNotes
       - locksReleased
       - cardLoadTaskId
+      - budgetApproved
       properties:
         approvedBudget:
           type: object
@@ -13809,6 +13997,14 @@ components:
           nullable: true
           description: 11/09. 카드 내역을 서버가 뒤에서 불러오는 중이면 그 작업 ID(GET /api/tasks/<id>/), 아니면 null. 화면은 재조회를 권하지 않고 '불러오는
             중'을 보여 준 뒤 작업이 끝나면 다시 읽는다
+        budgetApproved:
+          type: boolean
+          description: 11/13. 이번 주기(진행 중)에 승인한 예산이 있는지. missing이 있으면 false
+        approvedBudgetUpdated:
+          type: boolean
+          nullable: true
+          description: '11/13. GET은 항상 null(PUT과 모양을 같게). PUT: 이번 주기 승인 예산이 없으면 null. 생활비를 그대로 두고 저장해 승인 예산의 저축
+            · 쿠션 줄도 새 값으로 바꿨으면(또는 이미 같으면) true, 생활비를 바꿨거나 합계가 승인 당시 배분 대상을 넘어 못 바꿨으면 false (화면은 다시 추천으로)'
       additionalProperties: false
     ProtectSaveRequest:
       type: object
@@ -13884,6 +14080,7 @@ components:
       required:
       - funding
       - fixed
+      - cardReserved
       - saving
       - cushion
       - living
@@ -13897,6 +14094,11 @@ components:
           type: integer
           format: int64
           minimum: 0
+        cardReserved:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 11/12. fixed 중 '지난 카드값'(카드사 첫 청구서 선차감 + 가입 전 할부의 이번 회차). 없으면 0. 화면은 0보다 크면 고정비 줄과 나눠 보여 준다
         saving:
           type: integer
           format: int64
@@ -13913,6 +14115,11 @@ components:
           type: integer
           format: int64
           minimum: 0
+        reserve:
+          type: integer
+          format: int64
+          minimum: 0
+          description: 11/13 (혜리 PR 118). 일회성 지출 준비금(budget_item bucket=reserve 합계). 0보다 크면 화면에 '일회성 지출 준비금' 줄
       additionalProperties: false
       nullable: true
     BudgetLiving:
@@ -14703,9 +14910,9 @@ x-source-sha256:
   docs/api/finance-connect.md: a26dbe3b1a45f4f443f7bab03816bfffb7828c82e9d9c62f8605d921ebbb7576
   docs/api/cards.md: 9b03a770b42b5152316f86175f53882febc7eb2d9a24e6608e46fb8e574f4343
   docs/api/loans.md: fc16dd8767564035b5afb0e66c90ed27099b5eba510f13a2d497cc5b265c9c7b
-  docs/api/transactions.md: c5a98e1c1893a18dfbfef8a5c430e476e45a391ab56511e9c1203c629ac43c95
-  docs/api/fixed.md: 416ec78f256332ccc5af61eedd75883c7effdfa1539114597a2db98d659cc1a5
+  docs/api/transactions.md: dea2cef12825b7d03de455f0b3e516f91d637040f38dc0370d089a0514d92118
+  docs/api/fixed.md: 4761f8ff5a9444e033ea0aa980144f342db126e1732bb1f34452df46de08fae3
   docs/api/savings.md: 93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223
-  docs/api/home.md: a9645dbe952aa3ea2ebb713b00c13ed36ddb5492d7883aa7c78b6d43b6873334
-  docs/api/chat.md: a29fb7a3b5f7adccc7dc34af1949138195b81d16659efdeb7ef45b931e6e536c
-  docs/api/budgets.md: 46dedb2f69ba4a9957a5f17d038b065f340fa25f533a6744ed6b5d35f98bfa56
+  docs/api/home.md: 7bb99b1aed49c9547a9e78f6b189c0a83cc9358d1a509ae804e805fcb5b79128
+  docs/api/chat.md: ca877f76a8d7a0d00d3f9950e0d4489cb437a7dba32c636a2378656897674301
+  docs/api/budgets.md: 4c1abcd5305ea96860842acbcb88a63f1d1dd82ca85eb596256ca513e0a36e92

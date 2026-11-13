@@ -277,6 +277,7 @@ class CardReservedTest(TestCase):
         response = self.approve(client, second)
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual((response.json()["split"]["fixed"], response.json()["cardNotes"]), (350_000, []))
+        self.assertEqual(response.json()["split"]["cardReserved"], 250_000)  # 11/12: 고정비 350,000원 중 지난 카드값 250,000원
         self.assertEqual(client.get("/api/home/").json()["budget"]["cardNotes"], [])
         self.assertEqual(client.get("/api/home/").json()["budget"]["cardBillsReady"], [])  # 반영한 뒤에는 없음
         first.refresh_from_db()

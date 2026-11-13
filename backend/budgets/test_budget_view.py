@@ -111,13 +111,25 @@ class BudgetViewTest(TestCase):
         CategoryMinimum.objects.create(user=self.user, category_id="FOOD", min_amount=155_000)
         self.lock(budget, {"locked": True})
         data = self.get()
-        self.assertEqual(data["split"], {"funding": 1_500_000, "fixed": 100_000, "saving": 200_000,
-                                         "cushion": 100_000, "living": 1_000_000, "spare": 100_000})
+        self.assertEqual(data["split"], {"funding": 1_500_000, "fixed": 100_000, "cardReserved": 0, "saving": 200_000,
+                                         "cushion": 100_000, "living": 1_000_000, "spare": 100_000, "reserve": 0})
         self.assertEqual([item["category"] for item in data["categories"]], list(LIVING_CODES))
         food = data["categories"][0]
         self.assertEqual(food, {"category": "FOOD", "categoryName": "식비", "allocated": 1_000_000, "spent": 0,
                                "minAmount": 155_000, "locked": True, "lockedAmount": 1_000_000, "reason": None})
         self.assertIsNone(data["categories"][1]["minAmount"])
+
+    def test_reserve_is_visible_separately_and_not_in_living_or_spare(self):
+        from .models import ReservePlan
+        budget = self.make_budget('approved')
+        reserve = ReservePlan.objects.create(user=self.user, name='여행', target_amount=50000, confirmation_state='planned')
+        BudgetItem.objects.create(user=self.user, budget=budget, bucket='reserve', reserve=reserve,
+                                  category_id='TRAVEL_LODGING', allocated_amount=50000)
+        split = self.get()['split']
+        self.assertEqual(split['reserve'], 50000)
+        self.assertEqual(split['spare'], 50000)
+        self.assertEqual(split['living'], 1000000)
+        self.assertEqual(sum(v for k, v in split.items() if k != 'funding'), split['funding'])
 
     def test_spent_matches_transaction_items_with_fixed_excluded(self):
         budget = self.make_budget()

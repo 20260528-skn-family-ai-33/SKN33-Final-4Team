@@ -16,20 +16,39 @@ def expire_salary_drafts(user):
 def current_salary_profile(user, today):
     """회원 잠금 안에서 예약된 급여일을 적용한다."""
     profile = FinancialProfile.objects.select_for_update().filter(user=user).first()
+    from .adjustment_schedule import activate_due_settings
+    activate_due_settings(user, profile, today)
     if (profile and profile.payday_changes_on and today >= profile.payday_changes_on
             and profile.payday != profile.scheduled_payday):
         profile.payday = profile.scheduled_payday
         profile.save(update_fields=["payday", "updated_at"])
         expire_salary_drafts(user)
         sync_salary_cycle(profile.user, profile, today)
+    # 11/12: 다음 주기부터 바꾸기로 한 실수령액. 주기 경계와 상관없어서 옮기고 예약 칸을 비운다
+    if profile and profile.income_changes_on and today >= profile.income_changes_on:
+        profile.monthly_take_home_income = profile.scheduled_take_home_income
+        profile.scheduled_take_home_income = profile.income_changes_on = None
+        profile.save(update_fields=["monthly_take_home_income", "scheduled_take_home_income", "income_changes_on", "updated_at"])
+        expire_salary_drafts(user)
+    return profile
+
+
+def due_income(profile, today):
+    """전환일이 지난 '다음 주기 실수령액'을 메모리에서만 반영한다 (11/12). 저장 · 예약 정리는 current_salary_profile 이 한다.
+    프로필을 직접 읽는 곳(예산 조정 · 설계 복구 · 쿠션)이 전환일 당일 다른 화면보다 먼저 열려도 새 금액으로 계산하게"""
+    if profile is not None and profile.income_changes_on and today >= profile.income_changes_on:
+        profile.monthly_take_home_income = profile.scheduled_take_home_income
     return profile
 
 
 def activate_salary_if_due(user, today):
     from .api import lock_user
 
-    pending = FinancialProfile.objects.filter(user=user, payday_changes_on__lte=today).exclude(payday=F("scheduled_payday"))
-    if pending.exists():
+    # 11/13 합침: 급여일 예약(나은) · 실수령액 예약(나은) · 예산 조정 예약(혜리) 중 하나라도 오늘 적용할 게 있으면
+    payday_due = Q(payday_changes_on__lte=today) & ~Q(payday=F("scheduled_payday"))
+    pending = FinancialProfile.objects.filter(user=user).filter(payday_due | Q(income_changes_on__lte=today))
+    from .models import BudgetAdjustmentSchedule
+    if pending.exists() or BudgetAdjustmentSchedule.objects.filter(user=user, status='scheduled', effective_on__lte=today).exists():
         with transaction.atomic():
             lock_user(user)
             current_salary_profile(user, today)
@@ -131,7 +150,8 @@ def sync_salary_cycle(user, profile, today):
 # ---------------- 급여 인식 (R12) ----------------
 # 후보: 판정 구간 안의 적격 입금 중 등록 실수령액 80% 이상 + 아직 판단 없음 → '급여 확인 필요' (자동 확정 안 함)
 # 인정: SalaryDecision 의 confirmed(사용자) · auto(자동) 만. 홈 수령 상태 · confirmed_income · 거래 isSalary 가 같은 줄을 읽는다
-# 자동 인정: 사용자가 기준으로 고른 단일 입금과 같은 계좌 · 같은 금액 · 같은 적요 규칙인 입금이 그 회차에 정확히 1건일 때만
+# 자동 인정: 사용자가 기준으로 고른 단일 입금과 같은 계좌 · 같은 적요 규칙이고 금액이 기준의 절반 이상인 입금 중
+#   월급날에 가장 가까운 1건 (11/13: 금액 같음 → 절반 이상, 여러 건이면 가장 가까운 1건 · 같은 거리면 고르지 않음)
 
 GENERIC_MEMOS = {"입금", "이체", "급여", "월급"}
 MONTH_ONLY = re.compile(r"(?:\d{4}년)?\d{1,2}월")
@@ -273,8 +293,14 @@ def refresh_auto(user, windows):
         if SalaryDecision.objects.filter(user=user, pay_cycle_on=cycle_on, state="recheck").exists():
             continue
         taken = SalaryDecision.objects.filter(transaction=OuterRef("pk")).exclude(state="auto", pay_cycle_on=cycle_on)
-        found = [tx for tx in pool.filter(account_id=base_tx.account_id, amount=base_tx.amount, occurred_on__range=(low, high))
+        # 11/13: 식대 · 수당이 붙어 매달 금액이 조금씩 달라도 인식하도록 금액은 '기준 월급의 절반 이상'만 본다 (같은 계좌 · 같은 적요 규칙은 그대로)
+        found = [tx for tx in pool.filter(account_id=base_tx.account_id, amount__gte=-(-base_tx.amount // 2), occurred_on__range=(low, high))
                  .exclude(Exists(taken)) if memo_key(tx.source_description)[0] == key]
+        # 11/13: 같은 회사에서 경비 · 수당이 따로 들어와 여러 건이면 월급날(cycle_on)에 가장 가까운 1건을 월급으로 본다.
+        # 가장 가까운 입금이 둘 이상(같은 거리)이면 고르지 않는다 (예전처럼 확인 필요)
+        if len(found) > 1:
+            gaps = sorted((abs((tx.occurred_on - cycle_on).days), i) for i, tx in enumerate(found))
+            found = [found[gaps[0][1]]] if gaps[0][0] != gaps[1][0] else []
         if autos.exists():
             if len(found) != 1 or not autos.filter(transaction=found[0]).exists():
                 autos.update(state="recheck")
@@ -289,6 +315,11 @@ def store_income(user, pay_cycle_on):
 
     total = sum(tx.amount for tx in recognized(user, pay_cycle_on)) or None
     BudgetCycle.objects.filter(user=user, starts_on=pay_cycle_on).exclude(confirmed_income=total).update(confirmed_income=total)
+    # 11/13: '이번 주기만 받은 금액으로'(income_basis)는 그때 받은 금액이 지금도 인정 합계일 때만 쓴다.
+    # 월급 확인을 취소 · 정정해서 합계가 바뀌면 등록 실수령액 기준으로 되돌리고, 새 금액으로 다시 묻는다
+    stale = BudgetCycle.objects.filter(user=user, starts_on=pay_cycle_on, income_basis__isnull=False).exclude(income_basis=total or 0)
+    if stale.update(income_basis=None, income_answered_for=None):
+        expire_salary_drafts(user)  # 나눌 월급이 바뀌었으니 만들어 둔 초안은 다시 추천
 
 
 def salary_reviews(user):
@@ -296,3 +327,34 @@ def salary_reviews(user):
     refresh_confirmed(user)
     return dict(known_deposits(user).filter(salary_decision__state__in=["confirmed", "auto"])
                 .values_list("pk", "salary_decision__state"))
+
+
+# ---------------- 월급 차이 안내 (11/13) ----------------
+# 인정된 월급 합계가 등록 실수령액과 1만원 이상 · 3% 이상 다르면 홈에서 묻는다.
+# 답(이번 주기만 실제 금액으로 / 그대로)은 그 주기(budget_cycle)에 남기고, 받은 금액이 바뀌면 다시 묻는다.
+# 답은 둘뿐 (11/13 정리): 이번 주기만 받은 금액으로 다시 짜기(apply) · 그대로 두기(keep)
+
+GAP_MIN_WON = 10_000
+GAP_MIN_PERCENT = 3
+
+
+def gap_matters(diff, income):
+    return abs(diff) >= GAP_MIN_WON and abs(diff) * 100 >= income * GAP_MIN_PERCENT
+
+
+def budget_income(cycle, profile):
+    """이 주기 예산을 나눌 월급: 사용자가 실제 금액으로 고른 주기면 그 금액, 아니면 등록 실수령액"""
+    if cycle is not None and cycle.income_basis is not None:
+        return cycle.income_basis
+    return profile.monthly_take_home_income if profile else None
+
+
+def salary_gap(user, profile, cycle, received):
+    """{diff(받은 - 등록, 부호 있음), received, registered, basis} 또는 None"""
+    income = profile.monthly_take_home_income if profile else None
+    if cycle is None or not received or not income or income <= 0:
+        return None
+    diff = received - income
+    if not gap_matters(diff, income) or cycle.income_answered_for == received:
+        return None
+    return {"diff": diff, "received": received, "registered": income, "basis": cycle.income_basis}

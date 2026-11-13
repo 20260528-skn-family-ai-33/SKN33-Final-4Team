@@ -1,5 +1,6 @@
 // 팝업: 필터 (거래 유형 · 카테고리 · 계좌 · 카드) — 거래 화면 '거래 N건' 줄 오른쪽 (11/3: 동작 없던 [소비만 보기] 대신, 11/9: 카테고리 칩도 이 안으로)
-// props: categories = 고를 카테고리 [{ code, name }], pendingCount = 확인 필요 건수, types · categoryCodes · accountIds · cardIds = 지금 고른 것
+// props: categories = 고를 카테고리 [{ code, name }], types · categoryCodes · accountIds · cardIds = 지금 고른 것
+//   11/12: '카테고리 확인 필요' 칩의 건수는 뺐다 (전체 기간 건수라 지금 보는 기간과 달라 보였다. 건수는 거래내역 위 안내 띠에만)
 //        onApply(categoryCodes, accountIds, cardIds, types) = 적용 (거래 목록 API 의 category · accountId · cardId · transactionType)
 // 목록 = 연결된 계좌 · 카드 (GET /api/finance/connect/accounts/ · /cards/). 카드 조회 동의가 없으면 카드는 안내만
 import { useState } from 'react'
@@ -34,7 +35,7 @@ function Section({ title, q, idKey, picked, toggle }) {
   )
 }
 
-export default function FilterPopup({ categories = [], pendingCount = 0, categoryCodes = [], types = [], accountIds = [], cardIds = [], onApply }) {
+export default function FilterPopup({ categories = [], categoryCodes = [], types = [], accountIds = [], cardIds = [], onApply }) {
   const { openPopup, closePopup } = usePopup()
   const accounts = useApi('/api/finance/connect/accounts/')
   const cards = useApi('/api/finance/connect/cards/')
@@ -73,7 +74,7 @@ export default function FilterPopup({ categories = [], pendingCount = 0, categor
         <div className="mc-eyebrow">카테고리</div>
         <p className="mc-muted">카테고리는 소비 거래에만 있어요.</p>
         <div className="mc-chipbar">
-          <button type="button" className="mc-chip-warn" aria-pressed={cats.includes(PENDING.code)} onClick={() => toggleCat(PENDING.code)}>{PENDING.name} {pendingCount}</button>
+          <button type="button" className="mc-chip-warn" aria-pressed={cats.includes(PENDING.code)} onClick={() => toggleCat(PENDING.code)}>{PENDING.name}</button>
           {categories.map((c) => (
             <button type="button" key={c.code} aria-pressed={cats.includes(c.code)} onClick={() => toggleCat(c.code)}>{c.name}</button>
           ))}

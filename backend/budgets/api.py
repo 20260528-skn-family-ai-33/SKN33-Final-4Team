@@ -50,11 +50,38 @@ def budget(request):
     return Response(data)
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated])
 def cushion(request):
-    """GET /api/budgets/cushion/ — 머니 쿠션 화면 데이터"""
+    """GET /api/budgets/cushion/ — 머니 쿠션 화면 데이터
+    PATCH {"goalAmount": 원 | null} — 목표 금액을 직접 정하기, null 이면 기본(월급의 3배)으로 (11/13, docs/api/cushion.md).
+    같은 값이면 그대로 성공"""
     from .cushion import cushion_data
+    if request.method == "PATCH":
+        from finance.inputs import reject_unknown_fields
+        from .protect import GOAL_MAX, GOAL_MIN, cushion_goal
+        data = body_dict(request)
+        reject_unknown_fields(data, {"goal_amount"})
+        if "goal_amount" not in data:
+            raise ValidationError({"goal_amount": ["목표 금액을 입력해 주세요."]})
+        value = data["goal_amount"]
+        if value is not None and (type(value) is not int or not GOAL_MIN <= value <= GOAL_MAX):
+            raise ValidationError({"goal_amount": [f"{GOAL_MIN:,}원부터 {GOAL_MAX:,}원까지 정할 수 있어요."]})
+        with transaction.atomic():
+            lock_user(request.user)
+            profile = FinancialProfile.objects.select_for_update().filter(user=request.user).first()
+            if profile is None:
+                raise ProtectNotReady()
+            if profile.cushion_goal_amount != value:
+                profile.cushion_goal_amount = value
+                fields = ["cushion_goal_amount", "updated_at"]
+                target = cushion_goal(profile, profile.monthly_take_home_income)
+                if target != profile.cushion_target:
+                    profile.cushion_target = target  # 지킬 돈 저장 때와 같은 '현재 목표'
+                    fields.append("cushion_target")
+                profile.save(update_fields=fields)
+                # 쿠션 필수 판단 · 추천 쿠션이 바뀔 수 있어 만들어 둔 초안은 다시 추천받게 한다 (승인 예산은 그대로)
+                Budget.objects.filter(user=request.user, status__in=["draft", "validated"]).update(status="expired")
     return Response(cushion_data(request.user))
 
 
@@ -81,9 +108,22 @@ def protect(request):
         data = protect_json(request.user, profile, today)
         if request.method == "PUT":
             values = clean_protect(request, data)
+            living_changed = values["living_budget"] != profile.living_budget
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
+            # 검수 P1 (11/13): 생활비를 그대로 두고 저축 · 쿠션만 바꾸면 이번 주기 승인 예산의 저축 · 쿠션 줄도 바꾼다 (여윳돈도 같이 맞춰짐).
+            # null = 승인 예산 없음 · true = 반영 · false = 반영 못 함(생활비를 바꿨거나 합계 초과) → 화면이 다시 추천으로
+            approved_budget = current_approved_budget(request.user, today)
+            data["approved_budget_updated"] = None
+            if approved_budget is not None:
+                from .cushion import update_approved_split
+                data["approved_budget_updated"] = (not living_changed and update_approved_split(
+                    request.user, approved_budget, profile.savings_floor, profile.cushion_monthly))
             data["saved"] = protect_saved_json(profile, data["base"])
+        # 11/13: 이번 주기에 승인한 예산이 있는지 — 화면이 '생활비 그대로면 다시 추천 없이 저장만'을 판단한다
+        # (approved_budget 은 충당 · 설정 차이가 있을 때만 오므로 따로 둔다)
+        data["budget_approved"] = False
         if not data["missing"]:
+            data["budget_approved"] = current_approved_budget(request.user, today) is not None
             approved = approved_protect_budget(request.user, profile, today)
             if approved is not None:
                 data["approved_budget"] = approved
@@ -93,9 +133,14 @@ def protect(request):
     return Response(data)
 
 
+def current_approved_budget(user, today):
+    """이번 주기(진행 중)에 승인한 예산 (없으면 None)"""
+    return Budget.objects.filter(user=user, status="approved", cycle__status="active",
+                                 cycle__starts_on__lte=today, cycle__ends_before__gt=today).order_by("-approved_at", "-pk").first()
+
+
 def approved_protect_budget(user, profile, today):
-    budget = Budget.objects.filter(user=user, status="approved", cycle__status="active",
-                                   cycle__starts_on__lte=today, cycle__ends_before__gt=today).order_by("-approved_at", "-pk").first()
+    budget = current_approved_budget(user, today)
     if budget is None:
         return None
     amounts = budget.items.aggregate(total=Sum("allocated_amount"),
@@ -147,7 +192,7 @@ def clean_protect(request, state):
             "saving_floor": [f"저축 확인에서 고른 {state['savings_min']:,}원보다 적게 정할 수 없어요."],
         })
     if state["cushion"]["required"] and data["cushion_monthly"] == 0:
-        raise ValidationError({"cushion_monthly": ["잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요."]})
+        raise ValidationError({"cushion_monthly": ["잔액이 쿠션 목표보다 적어서 쿠션을 꼭 적립해야 해요."]})
     excess = sum(data[key] for key in fields) - state["base"]["available"]
     if excess > 0:
         raise ValidationError({
@@ -252,12 +297,16 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
     ) if value is None]
     minimum = savings_min(user)
     balance = balance_json(user)["total"]
-    required = cushion_required(balance, income)
+    from .protect import cushion_goal
+    goal = cushion_goal(profile, income)  # 11/13: 직접 정한 목표 또는 월급 × 3
+    required = cushion_required(balance, income, goal)
     base = recommendation = blocked_state = None
     pending_cards, card_notes = [], []
     if not missing:
         start, next_payday, _ = salary_cycle_dates(profile, today)
         cycle = ensure_cycle(user, start, next_payday)
+        from .adjustment_schedule import cycle_profile
+        profile = cycle_profile(user, cycle, profile)
         breakdown = fixed_breakdown(user, cycle, card=card_reserved is _COMPUTE)
         if card_reserved is not _COMPUTE:
             breakdown["card_reserved"] = card_reserved
@@ -268,8 +317,13 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
             # 카드 첫 청구서 선차감을 아직 계산할 수 없음 → 고정지출 합계 · 배분 기준도 모른다 (0원으로 치지 않음)
             blocked_state = {"reason": "card_bill_pending", "shortfall": None}
         else:
-            available = income - fixed
-            base = {"take_home_income": income, "fixed_total": fixed, "available": available}
+            # 11/13: 이번 주기만 실제 들어온 월급으로 고른 경우(budget_cycle.income_basis) 그 금액으로 나눈다. 쿠션 목표는 등록 실수령액 그대로
+            from .salary import budget_income
+            pay = budget_income(cycle, profile)
+            available = pay - fixed
+            base = {"take_home_income": pay, "fixed_total": fixed, "available": available,
+                    "card_reserved": breakdown["card_reserved"],  # 11/13: fixed_total 안의 카드값(첫 청구서 선차감) — 화면에서 나눠 보여 준다
+                    "income_source": "actual" if cycle.income_basis is not None else "registered"}
             blocked_state = blocked(available, minimum)
             if blocked_state is None:
                 recommendation = recommend(available, housing, minimum, cushion_required=required)
@@ -282,10 +336,11 @@ def protect_json(user, profile, today, card_reserved=_COMPUTE):
         "recommended": recommendation,
         "blocked": blocked_state,
         "saved": protect_saved_json(profile, base),
-        "cushion": {"required": required, "target": income * 3 if income is not None else None, "balance_total": balance},
+        "cushion": {"required": required, "target": goal, "balance_total": balance},
         "card_pending": pending_cards,
         "card_notes": card_notes,  # 보류는 아니고 알릴 것 (no_bill_in_cycle 등, 11/06)
         "locks_released": [],  # PUT으로 저장할 때만 채운다 (P-13)
+        "approved_budget_updated": None,  # PUT으로 저장할 때만 채운다 (검수 P1, 11/13) — GET과 모양을 같게
     }
 
 
@@ -336,7 +391,7 @@ def recommend(request):
 
         cycle = active_cycle(request.user)
         from . import design_service
-        released = [] if design_service.enabled() else release_locks_without_budget(request.user, cycle, profile.living_budget)
+        released = [] if design_service.enabled() else release_locks_without_budget(request.user, cycle, state["saved"]["living_budget"])
         snapshot = budget_input_snapshot(request.user, cycle, profile=profile, today=today)
         task = AsyncTask.objects.create(
             user=request.user, task_type="budget_recommend", request_key=request.headers["Idempotency-Key"],
@@ -424,6 +479,8 @@ def recommended_budget_lines(snapshot, out):
              for code, amount in sorted(fixed["categories"].items()) if amount]
     lines += [{"bucket": Bucket.FIXED, "category_detail": detail, "allocated_amount": fixed[detail]}
               for detail in ("loan", "card_reserved") if fixed[detail]]
+    if fixed.get('planned_reserve'):
+        lines.append({'bucket': Bucket.RESERVE, 'category_id': 'TRAVEL_LODGING', 'reserve_id': fixed['planned_reserve_id'], 'allocated_amount': fixed['planned_reserve']})
     lines += [
         {"bucket": Bucket.SAVINGS, "allocated_amount": saved["saving_floor"]},
         {"bucket": Bucket.CUSHION, "allocated_amount": saved["cushion_monthly"]},
@@ -572,7 +629,7 @@ def budget_approve(request, budget_id):
         chosen.status = "approved"
         chosen.approved_at = timezone.now()
         chosen.approval_key = request.headers["Idempotency-Key"]
-        chosen.save(update_fields=["status", "approved_at", "approval_key"])
+        chosen.save(update_fields=["status", "approved_at", "approval_key"])  # 보호 중인 쿠션 기록은 signals.py (R27)
         # auth.onboardingCompleted는 approved_at이 있는 예산의 존재 여부로 계산한다.
         return Response(budget_data(request.user, today, selected=chosen))
 
@@ -590,6 +647,21 @@ def budget_approve(request, budget_id):
 
 
 # ---------------- 고정지출: 주소 입구 · 중지 · 후보 확정/무시 ----------------
+
+def card_loading_json(user):
+    """카드 내역을 뒤에서 불러오는 중이면 { task_id, institutions: [카드사 이름] }, 아니면 None (11/12)
+    카드사 첫 연결 작업(card_first_load)은 입력 해시가 연결 ID 라서 어느 카드사인지 알 수 있다.
+    다시 불러오기(finance_sync)는 기관을 특정하지 않으니 이름 없이 '불러오는 중'만 알린다 (institutions 가 빌 수 있음)"""
+    rows = tasks.active_tasks(user, tasks.SYNC_TASK_TYPES)
+    if not rows:
+        return None
+    from finance.display import organization_name
+    from finance.models import Connection
+    cards = Connection.objects.filter(user=user, business_type=Connection.BusinessType.CARD, disconnected_at__isnull=True)
+    names = {tasks.input_hash({"connection": str(c.pk)}): organization_name(c) for c in cards}
+    loading = [names[t.input_hash] for t in rows if t.task_type == tasks.CARD_FIRST_LOAD and t.input_hash in names]
+    return {"task_id": rows[0].task_id, "institutions": list(dict.fromkeys(loading))}
+
 
 # 고정지출 /fixed/ — GET 목록(후보 → 확정, 확정 합계) · POST 직접 추가
 @api_view(["GET", "POST"])
@@ -618,6 +690,8 @@ def fixed_list(request):
     return Response({
         "items" : items,
         "card_bills": fixed_bill_preview(request.user, cycle, today),
+        # 11/12: 카드 내역을 불러오는 중이면 카드 결제 고정지출을 아직 못 찾았을 수 있다 → 화면이 안내하고 [다음]을 막는다
+        "card_loading": card_loading_json(request.user),
         "summary" : {
             "confirmed_monthly_total" : confirmed.aggregate(total = Sum("amount"))["total"] or 0, # 확정 합계
             "suggested_count" : suggested.count()

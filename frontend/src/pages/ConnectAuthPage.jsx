@@ -6,6 +6,9 @@
 //     지킬 돈 화면이 끝날 때까지 '불러오는 중'을 보여 준다 (업종 조회로 1분 넘게 걸려 온보딩이 멈춰 보였다)
 //   - 연결(인증) 성공과 불러오기 성공은 다르다: syncStatus 'failed' 면 연결은 됐지만 불러오기 실패로 보여 준다
 //   - 문자 인증: 같은 기관 값 + smsAuth { authToken, code } 를 한 번 더 보낸다. 로그인 값은 팝업이 닫힐 때까지 메모리에만
+//   - 11/12 피드백: 이미 연결된 기관은 '연결 완료'로 보여 준다. GET /api/finance/connections/ (저장된 연결만 읽고 CODEF 를 부르지 않음)
+//     다음 화면에 갔다가 뒤로 오면 전부 '로그인 필요'로 돌아가 다시 로그인(= CODEF 다시 호출)해야 했다.
+//     연결 상태가 connected 인 곳만 완료로 본다 — relogin(다시 로그인 필요)은 [로그인] 버튼 그대로
 import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -15,7 +18,7 @@ import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
 import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 import SmsAuthPopup from '../popups/SmsAuthPopup.jsx'
-import { apiSend } from '../utils/api.js'
+import { apiSend, useApi } from '../utils/api.js'
 import { BANKS, CARDS, CARD_RECHECK, SERVER_FIELDS } from '../utils/institutions.js'
 
 // 상태별 작은 글씨
@@ -23,6 +26,7 @@ const SUB = {
   todo: ['로그인이 필요해요', ''],
   busy: ['연결하는 중…', ''],
   sms: ['문자 인증이 필요해요', 'warn-t'],
+  saved: ['연결 완료 · 이미 연결된 기관이에요', 'ok'],
   ok: ['연결 완료 · 내역을 불러왔어요', 'ok'],
   loading: ['연결 완료 · 카드 내역은 뒤에서 불러오고 있어요. 다음 단계로 넘어가도 돼요.', 'ok'],
   okNoSync: ['연결은 됐지만 내역을 불러오지 못했어요. 연결 결과 화면에서 다시 불러오기를 눌러 주세요.', 'warn-t'],
@@ -47,11 +51,17 @@ function AuthList({ picked }) {
   const { openPopup } = usePopup()
   const codeOf = Object.fromEntries([...BANKS, ...CARDS].map((x) => [x.name, x.code]))
   // [{ name, kind: 'bank' | 'card', code, status: todo·busy·sms·recheck·ok·loading·okNoSync·fail, error?, recheck? }]
+  //   saved(이미 연결됨)는 여기 넣지 않고 그릴 때 서버 연결 목록으로 붙인다 (shown)
   const [insts, setInsts] = useState(() => [
     ...picked.banks.map((name) => ({ name, kind: 'bank', code: codeOf[name], status: 'todo' })),
     ...picked.cards.map((name) => ({ name, kind: 'card', code: codeOf[name], status: 'todo' })),
   ])
   const [pageError, setPageError] = useState('')
+  // 이미 연결된 기관 ('bank:0088' 꼴). 못 받으면 빈 목록 — 예전처럼 로그인부터
+  const savedConns = useApi('/api/finance/connections/').data?.items ?? []
+  const saved = new Set(savedConns.filter((c) => c.status === 'connected').map((c) => `${c.businessType}:${c.organizationCode}`))
+  // 이 화면에서 아직 손대지 않은(todo) 기관만 서버 연결로 채운다. 화면에서 다시 로그인하면 그 결과가 우선
+  const shown = insts.map((i) => (i.status === 'todo' && saved.has(`${i.kind}:${i.code}`) ? { ...i, status: 'saved' } : i))
 
   const update = (name, patch) => setInsts((list) => list.map((i) => (i.name === name ? { ...i, ...patch } : i)))
 
@@ -101,9 +111,9 @@ function AuthList({ picked }) {
     <ConnectLoginPopup inst={inst.name} recheck={recheck} onSubmit={(form) => send(inst, entry(inst, form))} />,
   )
 
-  const connected = (i) => ['ok', 'loading', 'okNoSync'].includes(i.status)
-  const okBanks = insts.filter((i) => i.kind === 'bank' && connected(i)).length
-  const okCards = insts.filter((i) => i.kind === 'card' && connected(i)).length
+  const connected = (i) => ['ok', 'loading', 'okNoSync', 'saved'].includes(i.status)
+  const okBanks = shown.filter((i) => i.kind === 'bank' && connected(i)).length
+  const okCards = shown.filter((i) => i.kind === 'card' && connected(i)).length
   const next = () => {
     if (okBanks === 0) { setPageError('은행을 1곳 이상 연결해야 계좌를 불러올 수 있어요.'); return }
     navigate(PATHS.connectAccounts, { state: { cards: okCards > 0 } })
@@ -124,7 +134,7 @@ function AuthList({ picked }) {
   }
 
   const group = (kind, title) => {
-    const list = insts.filter((i) => i.kind === kind)
+    const list = shown.filter((i) => i.kind === kind)
     if (list.length === 0) return null
     return (
       <div className="mc-card">

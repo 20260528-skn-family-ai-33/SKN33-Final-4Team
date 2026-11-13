@@ -31,6 +31,9 @@ _BUDGET_AI_V3 = _load("budget_ai_v3.json")
 _BUDGET_AI_HEALTH_V1 = _load("budget_ai_health_v1.json")
 _BUDGET_ADJUST_AI_V1 = _load("budget_adjust_ai_v1.json")
 _BUDGET_ADJUST_AI_HEALTH_V1 = _load("budget_adjust_ai_health_v1.json")
+# 조정 동의 v2 (11/12): 내용은 v1 과 같고 [선택] → [필수]. 동의하지 않으면 예산 조정 챗봇을 쓸 수 없어서 (베타 피드백)
+_BUDGET_ADJUST_AI_V2 = _load("budget_adjust_ai_v2.json")
+_BUDGET_ADJUST_AI_HEALTH_V2 = _load("budget_adjust_ai_health_v2.json")
 
 # 금융 조회 v1: 화면 원문이 아니라 임시 문장 한 줄을 그대로 UTF-8 SHA-256 한 문서 (11/06 전 기록).
 # 그 기록의 해시를 다시 확인할 수 있게 문장과 방식을 그대로 남긴다. 새 동의는 받지 않는다
@@ -45,6 +48,8 @@ ARCHIVE = {
     ("budget_ai_health", None, "v1"): canonical_hash(_BUDGET_AI_HEALTH_V1),
     ("budget_adjust_ai", None, "v1"): canonical_hash(_BUDGET_ADJUST_AI_V1),
     ("budget_adjust_ai_health", None, "v1"): canonical_hash(_BUDGET_ADJUST_AI_HEALTH_V1),
+    ("budget_adjust_ai", None, "v2"): canonical_hash(_BUDGET_ADJUST_AI_V2),
+    ("budget_adjust_ai_health", None, "v2"): canonical_hash(_BUDGET_ADJUST_AI_HEALTH_V2),
     ("terms", None, "v1"): canonical_hash(_SIGNUP_V1["terms"]),
     ("privacy", None, "v1"): canonical_hash(_SIGNUP_V1["privacy"]),
     **{("finance_inquiry", scope, "v1"): FINANCE_V1_HASH for scope in ("bank", "card", "loan")},
@@ -60,8 +65,8 @@ CURRENT = {
     ("finance_inquiry", "loan"): _FINANCE_V2["loan"],
     ("budget_ai", None): _BUDGET_AI_V3,
     ("budget_ai_health", None): _BUDGET_AI_HEALTH_V1,
-    ("budget_adjust_ai", None): _BUDGET_ADJUST_AI_V1,
-    ("budget_adjust_ai_health", None): _BUDGET_ADJUST_AI_HEALTH_V1,
+    ("budget_adjust_ai", None): _BUDGET_ADJUST_AI_V2,
+    ("budget_adjust_ai_health", None): _BUDGET_ADJUST_AI_HEALTH_V2,
 }
 for (_purpose, _scope), _doc in CURRENT.items():
     assert ARCHIVE[(_purpose, _scope, _doc["version"])] == canonical_hash(_doc), "현재 문서는 ARCHIVE 원문과 같아야 해요"

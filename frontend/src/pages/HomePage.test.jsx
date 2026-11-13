@@ -7,6 +7,7 @@ import { runFinanceSync } from '../utils/financeSync.js'
 import { PATHS } from '../routes.js'
 import BillCheckDialog from '../popups/BillCheckDialog.jsx'
 import SyncResultPopup from '../popups/SyncResultPopup.jsx'
+import SalaryGapPopup from '../popups/SalaryGapPopup.jsx'
 import CardCredentialPopup from '../popups/CardCredentialPopup.jsx'
 import { toast } from '../utils/toast.js'
 
@@ -104,28 +105,35 @@ it('예산을 넘긴 카테고리마다 종 알림에 한 줄이 생기고 누�
   await act(() => root.render(<HomePage />))
   await act(async () => host.querySelector('[aria-label="알림 1개"]').click())
   const [item] = openPopup.mock.calls.at(-1)[0].props.items
-  expect(item).toMatchObject({ key: 'over-FOOD', icon: 'Utensils', text: '식비 예산을 12,000원 넘었어요' })
+  expect(item).toMatchObject({ key: 'over-FOOD', title: '예산 초과', icon: 'Utensils', text: '식비 예산을 12,000원 넘었어요' })
   item.go()
   expect(navigate).toHaveBeenCalledWith(PATHS.budget)
 })
 
-it('생활비 예산 대비 큰 지출 · 이체마다 종 알림에 한 줄이 생기고 누르면 거래 내역으로 간다', async () => {
+// 11/13: 예산을 자주 바꿨다는 문구(nag)는 예산 화면 대신 종 알림 한 줄
+it('예산을 자주 바꾸면 종 알림에 한 줄이 생기고 누르면 예산 화면으로 간다', async () => {
+  const nag = '이번 달 예산을 여러 번 바꿨어요'
+  const budget = { livingBudget: 300000, livingLeft: 100000, livingPct: 67, spare: 0, daily: 0, daysLeft: 10, outOfBudgetAllocated: 0,
+    outOfBudget: { total: 0, categories: [] }, overCategories: [], nag }
+  useApi.mockReturnValue({ reload, data: { period: null, balance: { accountCount: 0, total: null }, pendingCount: 0, needsPaydayCount: 0, mustPay: [], budget } })
+  await act(() => root.render(<HomePage />))
+  await act(async () => host.querySelector('[aria-label="알림 1개"]').click())
+  const [item] = openPopup.mock.calls.at(-1)[0].props.items
+  expect(item).toMatchObject({ key: 'nag', title: '예산 변경', mark: '!', text: nag })
+  item.go()
+  expect(navigate).toHaveBeenCalledWith(PATHS.budget)
+})
+
+// 11/13: 큰 지출 기준(생활비의 10%)이 아직 어색해서 종 알림 줄을 잠시 뺐다 (서버 bigSpendings 는 그대로)
+it('큰 지출 · 이체가 있어도 지금은 종 알림에 올리지 않는다', async () => {
   const budget = { livingBudget: 1000000, livingLeft: 500000, livingPct: 50, spare: 0, daily: 0, daysLeft: 10, outOfBudgetAllocated: 0,
     outOfBudget: { total: 0, categories: [] }, overCategories: [],
     bigSpendings: [
       { transactionId: 't1', occurredOn: '2026-11-10', merchantName: '홍길동', amount: 300000, kind: 'transfer', category: null, categoryName: null },
-      { transactionId: 't2', occurredOn: '2026-11-08', merchantName: '', amount: 150000, kind: 'spending', category: 'FOOD', categoryName: '식비' },
     ] }
   useApi.mockReturnValue({ reload, data: { period: null, balance: { accountCount: 0, total: null }, pendingCount: 0, needsPaydayCount: 0, mustPay: [], budget } })
   await act(() => root.render(<HomePage />))
-  await act(async () => host.querySelector('[aria-label="알림 2개"]').click())
-  const items = openPopup.mock.calls.at(-1)[0].props.items
-  expect(items.map((n) => [n.key, n.icon, n.text])).toEqual([
-    ['big-t1', 'Send', '11.10 홍길동 300,000원 · 큰 이체가 있었어요'],
-    ['big-t2', 'Utensils', '11.08 150,000원 · 큰 지출이 있었어요'],
-  ])
-  items[0].go()
-  expect(navigate).toHaveBeenCalledWith(PATHS.txs)
+  expect(host.querySelector('[aria-label="알림"]')).not.toBeNull()
 })
 
 // 11/12: 서버가 '지금은 청구서가 나온 카드'를 주면 띠 문구가 바뀌고, 시트 · 확인 창 없이 바로 재추천으로
@@ -160,4 +168,18 @@ it('시작한 예산의 카드값 미반영 안내와 같은 주기 재추천 �
   expect(navigate).not.toHaveBeenCalled()
   dialog.props.onFound()
   expect(navigate).toHaveBeenCalledWith(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })
+})
+
+it('받은 월급이 등록 금액과 다르면 주기 밑 띠와 알림으로 묻고, 누르면 월급 차이 창을 연다 (11/13)', async () => {
+  const salaryGap = { diff: -300000, received: 2200000, registered: 2500000, basis: null }
+  const period = { startDate: '2026-10-25', endDate: '2026-11-24', nextPayday: '2026-11-25', dday: 12, salaryState: 'received', salaryGap }
+  useApi.mockReturnValue({ reload, data: { period, balance: { accountCount: 1, total: 0 }, pendingCount: 0, needsPaydayCount: 0, mustPay: [], budget: null } })
+  await act(() => root.render(<HomePage />))
+  const strip = host.querySelector('.mc-home2-gap')
+  expect(strip.textContent).toContain('월급이 300,000원 덜 들어왔어요')
+  await act(async () => strip.click())
+  const popup = openPopup.mock.calls.at(-1)[0]
+  expect(popup.type).toBe(SalaryGapPopup)
+  expect(popup.props.gap).toEqual(salaryGap)
+  expect(host.querySelector('[aria-label="알림 1개"]')).not.toBeNull()
 })

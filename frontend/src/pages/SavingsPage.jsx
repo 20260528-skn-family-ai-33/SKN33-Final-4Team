@@ -7,7 +7,7 @@
 // 저축은 사용자 확인 없이 자동으로 확정하지 않는다 (TXN-005). 자동 감지는 아직 없어 후보가 없으면 직접 추가 · 계속하기만 보여 준다
 // [+ 저축 직접 추가] = 자동으로 못 찾는 저축(다른 은행 적금 등). 바로 확정 (S-03)
 // 찾은 후보의 [수정]은 이름 · 금액 · 이체일만 (계좌는 못 바꿈, S-11) → SavingPopup
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
@@ -15,35 +15,59 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import SavingPopup from '../popups/SavingPopup.jsx'
 import { won } from '../utils/money.js'
+import { shortVia } from '../utils/transactions.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
 import { PATHS } from '../routes.js'
+import { useApplyTiming } from '../utils/useApplyTiming.js'
 
 const ANSWERS = [['yes', '저축이에요'], ['no', '아니에요']]
 
 // 저장 뒤 같은 목록을 다시 받는다 (같은 주소 reload — 받는 동안 지난 목록 유지, 실패하면 오류 카드)
 const useSavingsList = () => useApi('/api/budgets/savings/')
 
-// "매월 25일 · 국민 급여통장 · ****5678 → 신한 자유적금 · ****9012"
+// 두 줄 (11/12): "매월 25일" / "국민 5678 → 신한 9012". 계좌 이름이 길어 한 줄로 이으면 지저분해서
+//   계좌는 거래 목록과 같은 짧은 모양(은행 + 끝 4자리, shortVia). 전체 이름은 [수정] 팝업에서 본다
 function savingLine(s) {
   const day = s.transferDay ? `매월 ${s.transferDay}일` : '이체일 모름'
-  const from = s.fromAccount?.displayName
-  const to = s.toAccount?.displayName
+  const from = shortVia(s.fromAccount?.displayName)
+  const to = shortVia(s.toAccount?.displayName)
   const route = from || to ? `${from ?? '보내는 계좌 모름'} → ${to ?? '다른 은행'}` : '계좌 모름'
-  return `${day} · ${route}`
+  return <>{day}<br />{route}</>
 }
 
 // 마이 > 정기 저축
 function ManageView() {
   const { openPopup } = usePopup()
-  const { data, error, reload } = useSavingsList()
+  const { data, error, reload, refreshing } = useSavingsList()
+  // 11/12: 무엇이든 바꿨으면 아래 [저장] (utils/useApplyTiming.js, 고정지출과 같음).
+  //   묻는 건 '매달 꼭 저축할 돈'(저축 최소 금액)이 화면을 열 때와 달라졌고, 지킬 돈에 정해 둔 저축보다 커졌을 때만.
+  //   예: 지킬 돈 저축 74만 원인데 3만 원 적금을 추가 → 최소 3만 원이라 이번 예산은 그대로 → 묻지 않는다(다시 추천 · AI 호출 안 함)
+  //   최소 금액이 줄었을 때는, 지킬 돈 저축이 처음 최소 금액과 딱 같았을 때만 묻는다 — 최소액에 끌려 올라간 저축이라
+  //   줄어든 만큼 생활비로 돌릴 수 있다. 사용자가 저축을 더 크게 정해 둔 경우(74만 원 · 최소 30만 원)는 그대로 둔다
+  const timing = useApplyTiming(PATHS.my)
+  const my = useApi('/api/my/')
+  const floor = my.data?.protect?.savingsFloor  // 지킬 돈에 정해 둔 월 저축 (못 받았거나 미설정이면 null → 바뀌면 묻는다)
+  // 처음 최소 금액은 첫 변경 때 기억한다 (팝업을 연 순간의 목록 = 바꾸기 전). 다시 받는 중엔 [저장]을 잠근다
+  const startMin = useRef(null)
+  const onSaved = () => {
+    if (startMin.current === null) startMin.current = data.summary.minimumMonthly
+    timing.mark()
+    reload()
+  }
+  const save = () => {
+    const min = data.summary.minimumMonthly, start = startMin.current
+    const raised = floor == null || min > floor            // 늘어서 지킬 돈 저축으로 모자람
+    const freed = min < start && floor === start           // 줄었고, 저축이 최소액 때문에 정해진 금액이었음
+    timing.save(min !== start && (raised || freed))
+  }
   if (!data) return <Layout title="정기 저축" showBack><ApiStatus error={error} /></Layout>
   const confirmed = data.items.filter((s) => s.status === 'confirmed')
 
   return (
-    <Layout title="정기 저축" showBack>
+    <Layout title="정기 저축" showBack foot={timing.changed ? <button type="button" className="mc-primary" disabled={refreshing || !timing.ready || my.loading} onClick={save}>저장</button> : null}>
       <div className="mc-eyebrow">정기 저축</div>
       <h1>매달 하는 저축</h1>
-      <p className="mc-muted">여기 있는 저축은 예산에서 먼저 떼어 둬요. 금액을 바꾸거나 그만두면 다음 달 예산부터 반영돼요.</p>
+      <p className="mc-muted">여기 있는 저축은 예산에서 먼저 떼어 둬요.{timing.started && <><br />바꾼 뒤 [저장]을 누르면 언제부터 예산에 반영할지 고를 수 있어요.</>}</p>
 
       {confirmed.length === 0 && (
         <div className="mc-card"><p className="mc-muted" style={{ margin: 0 }}>등록된 정기 저축이 없어요. 매달 하는 저축이 있으면 추가해 주세요.</p></div>
@@ -56,11 +80,11 @@ function ManageView() {
           </div>
           <div className="mc-row" style={{ marginTop: 8 }}>
             <span className="mc-badge">{s.sourceType === 'manual' ? '직접 추가' : '자동으로 찾음'}</span>
-            <button type="button" className="mc-link" onClick={() => openPopup(<SavingPopup item={s} manage onSaved={reload} />)}>수정</button>
+            <button type="button" className="mc-link" onClick={() => openPopup(<SavingPopup item={s} manage onSaved={onSaved} />)}>수정</button>
           </div>
         </div>
       ))}
-      <button type="button" className="mc-secondary" onClick={() => openPopup(<SavingPopup manage onSaved={reload} />)}>+ 저축 직접 추가</button>
+      <button type="button" className="mc-secondary" onClick={() => openPopup(<SavingPopup manage onSaved={onSaved} />)}>+ 저축 직접 추가</button>
 
       <div className="mc-card" style={{ marginTop: 14 }}>
         <div className="mc-keyvalue"><span>매달 꼭 저축할 돈</span><strong>{won(data.summary.minimumMonthly)}</strong></div>
@@ -112,8 +136,8 @@ function OnboardingView() {
       <div className="mc-eyebrow">저축 확인</div>
       <h1>{candidates.length ? '이 돈, 저축인가요?' : '매달 하는 저축이 있나요?'}</h1>
       {candidates.length > 0
-        ? <p className="mc-muted">최근 3개월 동안 내 다른 계좌로 매달 같은 금액을 보낸 기록을 찾았어요. 저축이면 그 금액만큼은 꼭 저축하도록 예산을 짜요.</p>
-        : <p className="mc-muted">매달 반복되는 내 계좌끼리 이체를 찾지 못했어요. 따로 하는 저축이 있으면 직접 추가하고, 없으면 계속하기를 눌러 주세요. 저축 금액은 지킬 돈 설정에서 정할 수 있어요.</p>}
+        ? <p className="mc-muted">매달 내 다른 계좌로 같은 금액을 보냈어요.<br />저축이 맞으면 이 금액은 꼭 떼어 둘게요.</p>
+        : <p className="mc-muted">매달 내 다른 계좌로 보낸 돈을 찾지 못했어요.<br />따로 하는 저축이 있으면 직접 추가해 주세요.</p>}
 
       {candidates.map((c) => (
         <div className="mc-card" key={c.savingId}>

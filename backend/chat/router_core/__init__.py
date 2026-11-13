@@ -608,11 +608,11 @@ def _record_policy(store, cid, result):
 
 def _budget_result(store, cid, result, server):
     """예산 조정 결과 → 라우터의 예산 작업 기록.
-    새 상담(new_work, PR #111 리뷰): 예산 조정이 이전 작업을 끝내고 서버 작업이 아직 없는 새 상담을 시작했다 (초과 항목으로 새 조정).
+    새 상담(new_work) 또는 이전 안 취소 후 재계산(continued_work)은 서버 작업 참조가 없는 상담을 이어간다.
     참조가 없다고 이전 작업 번호로 확인하면 끝난 이전 작업과 함께 지금 상담까지 지워진다 — 이전 작업이 끝났다는 서버 확인을 먼저 하고
     그 결과만 기록한 뒤, 참조 없는 새 작업을 진행 중으로 남긴다 (담당 = 예산 조정 유지). 확인 실패 · 아직 진행 중이면 상태를 바꾸지 않는다"""
     task = store.get_task(cid)
-    if result.get("new_work") and not result.get("work_ref") and result["status"] != "ended" and task and task["task_ref"]:
+    if (result.get("new_work") or result.get('continued_work')) and not result.get("work_ref") and result["status"] != "ended" and task and task["task_ref"]:
         old = _check(server, task["task_ref"])
         if old is None:
             return "unknown"

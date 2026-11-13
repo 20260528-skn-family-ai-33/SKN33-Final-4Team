@@ -27,14 +27,14 @@ class DocumentListTest(TestCase):
         self.assertEqual(keys, [("terms", None, "v1"), ("privacy", None, "v1"),
                                 ("finance_inquiry", "bank", "v2"), ("finance_inquiry", "card", "v2"),
                                 ("finance_inquiry", "loan", "v2"), ("budget_ai", None, "v3"),
-                                ("budget_ai_health", None, "v1"), ("budget_adjust_ai", None, "v1"),
-                                ("budget_adjust_ai_health", None, "v1")])
+                                ("budget_ai_health", None, "v1"), ("budget_adjust_ai", None, "v2"),
+                                ("budget_adjust_ai_health", None, "v2")])
         signup = json.loads((HERE / "signup_terms_v1.json").read_text(encoding="utf-8"))
         finance = json.loads((HERE / "finance_inquiry_v2.json").read_text(encoding="utf-8"))
         budget_ai = json.loads((HERE / "budget_ai_v3.json").read_text(encoding="utf-8"))
         health = json.loads((HERE / "budget_ai_health_v1.json").read_text(encoding="utf-8"))
-        adjust = json.loads((HERE / "budget_adjust_ai_v1.json").read_text(encoding="utf-8"))
-        adjust_health = json.loads((HERE / "budget_adjust_ai_health_v1.json").read_text(encoding="utf-8"))
+        adjust = json.loads((HERE / "budget_adjust_ai_v2.json").read_text(encoding="utf-8"))
+        adjust_health = json.loads((HERE / "budget_adjust_ai_health_v2.json").read_text(encoding="utf-8"))
         files = [signup["terms"], signup["privacy"], finance["bank"], finance["card"], finance["loan"], budget_ai, health,
                  adjust, adjust_health]
         for item, original in zip(items, files):
@@ -42,6 +42,8 @@ class DocumentListTest(TestCase):
             self.assertEqual(item["documentHash"], docs.canonical_hash(original))
             self.assertEqual(item["document"]["version"], item["version"])
         self.assertEqual(len({i["documentHash"] for i in items}), 9)
+        self.assertTrue(adjust["required"] and adjust_health["required"])  # 조정 동의는 필수 (11/12)
+        self.assertIn(("budget_adjust_ai", None, "v1"), docs.ARCHIVE)  # 옛 v1 기록은 지우지 않는다
 
     def test_v1_finance_hash_is_still_the_old_placeholder(self):
         old = hashlib.sha256("머니쿠션 금융 정보 조회 동의 v1 (최종 문구 확정 전 임시 원문)".encode("utf-8")).hexdigest()

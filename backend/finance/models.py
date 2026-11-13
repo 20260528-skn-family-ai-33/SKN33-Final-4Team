@@ -356,6 +356,7 @@ class FinancialTransaction(models.Model):
         SAVING = "saving", "저축"
         LOAN_REPAYMENT = "loan_repayment", "대출 상환"
         INCOME = "income", "입금"
+        NOT_SPENDING = "not_spending", "소비 아님"  # 11/13: 사용자가 '소비가 아니에요'로 뺀 소비 (회사 경비 등). 카테고리는 그대로 둔다
 
     class ConfirmationState(models.TextChoices):
         NEEDS_REVIEW = "needs_review", "확인 필요"
@@ -465,6 +466,7 @@ class FinancialTransaction(models.Model):
             models.CheckConstraint(
                 condition=Q(transaction_type__in=[
                     "spending", "transfer", "own_transfer", "card_payment", "saving", "loan_repayment", "income",
+                    "not_spending",
                 ]),
                 name="ft_transaction_type_valid",
             ),

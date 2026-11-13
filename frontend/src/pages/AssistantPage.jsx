@@ -12,15 +12,17 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
 import RegionSelect from '../components/RegionSelect.jsx'
-import ChatReply, { Choices } from '../components/ChatReply.jsx'
+import ChatReply, { Choices, Resync } from '../components/ChatReply.jsx'
 import { policyChoices } from '../utils/policyCards.js'
 import BudgetApprovalPopup from '../popups/BudgetApprovalPopup.jsx'
 import BudgetAdjustConsentPopup from '../popups/BudgetAdjustConsentPopup.jsx'
+import CardCredentialPopup from '../popups/CardCredentialPopup.jsx'
 import { usePopup } from '../popups/context.js'
 import { PATHS } from '../routes.js'
 import { adjustmentChoices, adjustSentence } from '../utils/adjust.js'
 import { catName } from '../utils/categories.js'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { needsCardValues, runFinanceSync, syncLines } from '../utils/financeSync.js'
 import { savedId, saveId } from '../utils/chatConversation.js'
 import { approvalPath, forgetPendingApproval, readPendingApproval, rememberPendingApproval } from '../utils/budgetApproval.js'
 import '../styles/chat.css'
@@ -94,6 +96,8 @@ export default function AssistantPage() {
 
   const [error, setError] = useState(null)
   const [recoveryExpired, setRecoveryExpired] = useState(false)
+  const [resync, setResync] = useState(null)  // [내역 다시 불러오기] { id: 봇 메시지, failed }
+  const cardWait = useRef(null)  // 카드 값 입력 팝업을 기다리는 중 (닫히면 false 로 끝)
   const inFlight = useRef(false)  // React가 다시 그리기 전의 연속 클릭도 한 번만 보낸다
   const mounted = useRef(false)
   const latest = useRef({})  // 가장 최근에 그린 send · openPopup (동의 창이 닫힌 뒤 거절됐던 요청을 다시 보낼 때 쓴다)
@@ -117,7 +121,7 @@ export default function AssistantPage() {
     if (storedApproval && navState?.budgetContext) navigate(PATHS.assistant, { replace: true, state: null })
   }, [storedApproval, navState, navigate])
 
-  // 새로고침 전 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
+  // 저장된 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
   useEffect(() => {
     if (!restoreId) return
     let live = true
@@ -158,7 +162,7 @@ export default function AssistantPage() {
 
   const info = engine ?? first.data
   const entryUnavailable = Boolean(budgetEntry && (info ? info.engine !== 'router' : first.error))
-  const blocked = busy || pending !== null || approvalPending !== null || approvalRecovery
+  const blocked = busy || pending !== null || Boolean(resync && !resync.failed) || approvalPending !== null || approvalRecovery
     || (entryWaiting && !entryUnavailable) || Boolean(recovery && !conversationId)
   const returnToRecommendation = useCallback(({ canceled = false, expired = false } = {}) => {
     navigate(PATHS.recommend, { replace: true, state: { recoveryReturn: { sourceTaskId: recovery?.sourceTaskId, canceled, expired } } })
@@ -218,6 +222,35 @@ export default function AssistantPage() {
   }, [busy, pending, conversationId, approvalPending, approvalRecovery, recovery, navigate, returnToRecommendation])
 
   useEffect(() => { latest.current = { send, openPopup } })
+
+  // 일부 내역 답의 [내역 다시 불러오기]: 홈 새로고침과 같은 POST /api/finance/sync/ → 카드 값이 필요한 카드사는 입력 팝업 →
+  // 한 곳이라도 불러왔으면 그 답 앞의 사용자 질문을 그대로 다시 보낸다. 아무 데도 못 불러왔으면 그 자리에 실패 + 다시 시도
+  useEffect(() => {
+    if (popup || !cardWait.current) return
+    const done = cardWait.current
+    cardWait.current = null
+    done(false)  // 입력 팝업을 그냥 닫음 → 그 카드사는 이번에 안 불러온 채로
+  }, [popup])
+  const askCard = (item) => new Promise((resolve) => {
+    cardWait.current = resolve
+    openPopup(<CardCredentialPopup item={item} onDone={() => { cardWait.current = null; resolve(true) }} />)
+  })
+  const reloadAndAsk = async (m) => {
+    if (blocked || inFlight.current) return
+    const asked = messages.slice(0, messages.indexOf(m)).findLast((x) => x.role === 'user')?.content.text
+    setResync({ id: m.messageId, failed: false })
+    try {
+      const items = (await runFinanceSync()).items ?? []
+      let loaded = syncLines({ items: items.filter((it) => !needsCardValues(it)) }).some((l) => l.ok)
+      for (const item of items.filter(needsCardValues)) loaded = (await askCard(item)) || loaded
+      if (!loaded) throw new Error('불러온 기관 없음')
+      if (!mounted.current) return
+      setResync(null)
+      if (asked) latest.current.send({ text: asked }, asked)
+    } catch {
+      if (mounted.current) setResync({ id: m.messageId, failed: true })
+    }
+  }
 
   const submit = (e) => {
     e.preventDefault()
@@ -374,6 +407,9 @@ export default function AssistantPage() {
                   </ChatReply>
                 </div>
                 {import.meta.env.DEV && c.devTrace && <Trace trace={c.devTrace} />}
+                {isLast && c.syncedUntil?.length > 0 && (
+                  <Resync state={resync?.id === m.messageId ? resync : null} disabled={blocked} onRun={() => reloadAndAsk(m)} />
+                )}
                 {!(c.inputs ?? []).includes('region_select') &&
                   <Choices choices={policyChoices(c, adjustmentChoices(c))} active={isLast && !blocked} onPick={(p) => pick(c, p)}
                     scroll={c.agent === 'policy'} />}
