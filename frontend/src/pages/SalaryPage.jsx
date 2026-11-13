@@ -8,6 +8,9 @@
 //   상태(income)는 늘 원 단위 숫자 문자열 — 서버에 보내는 값은 그대로. 저장된 금액이 만원으로 안 떨어지면 원 단위로 연다
 //   단위만 바꾸면 금액은 그대로 둔다 (2,453,322원 → 만원 칸엔 245 → 다시 원 칸엔 2,453,322). 만원 칸에서 고쳐야 만원 단위로 바뀐다
 // 11/12 피드백: 급여일은 드롭다운 대신 숫자로 입력 (1~31). 숫자만 2자리까지 받고, 범위를 벗어나면 칸 아래에 바로 알려 준다
+// 11/13 검수: 이번 주기를 받은 월급 기준(incomeBasis)으로 짠 뒤 실수령액을 이번 주기부터 바꾸면, 한 번 더 묻는다(SalaryBasisChoicePopup)
+//   새 월급으로 다시 짜기(keepIncomeBasis: false) → 지킬 돈 화면 · 받은 월급 유지(true) → 이번 주기 예산은 그대로라 돌아간다
+//   첫 예산 승인 전(적용 시점을 안 묻고 바로 이번 주기)에도 묻는다. 급여일도 이번 주기부터 바꾸면 주기가 새로 생겨 유지할 수 없으니 묻지 않는다(서버가 기준을 푼다)
 //   29 · 30일은 그날이 없는 달에 말일로 계산한다는 안내를 붙인다 (API_RULES '매월 N일', utils/days.js dayIn)
 //   칸 안 [직접 입력|말일] 전환. 말일 = 급여일 31 (31일이 없는 달은 말일이라 31 이 곧 매달 말일). 서버에는 31 을 보내고, 칸은 '말일'로 잠근다
 import { useState } from 'react'
@@ -17,6 +20,7 @@ import MoneyInput from '../components/MoneyInput.jsx'
 import StepBar from '../components/StepBar.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import ApplyTimingPopup from '../popups/ApplyTimingPopup.jsx'
+import SalaryBasisChoicePopup from '../popups/SalaryBasisChoicePopup.jsx'
 import { usePopup } from '../popups/context.js'
 import { toast } from '../utils/toast.js'
 import { apiSend, useApi } from '../utils/api.js'
@@ -60,7 +64,8 @@ function SalaryForm({ saved }) {
   const asks = budgetStarted && saved.payday != null && edited
 
   // applyFrom: 창에서 고른 값. 안 물었는데 예약이 있으면 next_cycle 로 보내 예약을 그대로 둔다
-  const save = async (applyFrom) => {
+  // keepIncomeBasis: 받은 월급 기준을 둘지 고른 경우만 (true · false)
+  const save = async (applyFrom, keepIncomeBasis) => {
     setBusy(true)
     setError('')
     try {
@@ -68,8 +73,12 @@ function SalaryForm({ saved }) {
         takeHomeIncome: Number(income),
         payday: Number(payday),
         ...(applyFrom ? { applyFrom } : {}),
+        ...(keepIncomeBasis !== undefined ? { keepIncomeBasis } : {}),
       })
-      if (asks && applyFrom === 'current_cycle') {
+      if (asks && applyFrom === 'current_cycle' && keepIncomeBasis === true) {
+        toast('월급은 바꾸고 이번 주기 예산은 그대로 둘게요')
+        navigate(manage ? PATHS.my : PATHS.home, { replace: true })
+      } else if (asks && applyFrom === 'current_cycle') {
         toast('이번 주기부터 바꿨어요')
         navigate(PATHS.protect, { replace: true, state: { from: 'my', refreshRecommendation: true } })
       } else if (asks) {
@@ -91,8 +100,17 @@ function SalaryForm({ saved }) {
     if (!income || amount < 1) { setError('월 실수령액을 입력해 주세요.'); return }
     if (payday === '') { setError('급여일을 입력해 주세요.'); return }
     if (dayBad(payday)) { setError('급여일은 1~31 중에서 입력해 주세요.'); return }
-    if (asks) openPopup(<ApplyTimingPopup onPick={(k) => { closePopup(); save(k) }} />)
-    else save(pending || pendingIncome ? 'next_cycle' : undefined)
+    // 받은 월급 기준이 걸린 주기에서 실수령액을 이번 주기부터 바꾸면 기준을 하나 더 고른다
+    // (새 월급이 받은 금액과 같거나 급여일도 바꾸면 고를 게 없다 — 서버가 기준을 푼다)
+    const basis = saved.incomeBasis
+    const asksBasis = basis != null && amount !== saved.takeHomeIncome && amount !== basis && Number(payday) === saved.payday
+    const pickBasis = (applyFrom) => openPopup(
+      <SalaryBasisChoicePopup received={basis} next={amount} onPick={(keep) => { closePopup(); save(applyFrom, keep) }} />,
+    )
+    if (asks) openPopup(<ApplyTimingPopup onPick={(k) => { closePopup(); if (k === 'current_cycle' && asksBasis) pickBasis(k); else save(k) }} />)
+    else if (pending || pendingIncome) save('next_cycle')
+    else if (asksBasis) pickBasis(undefined)  // 첫 예산 승인 전: 시점 없이 바로 이번 주기로 바뀐다
+    else save(undefined)
   }
 
   return (

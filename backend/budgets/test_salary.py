@@ -164,7 +164,7 @@ class SalaryTests(TestCase):
         response = self.put(payload(takeHomeIncome=3_000_000, payday=10))
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json(), {"takeHomeIncome": 3_000_000, "payday": 10, "pendingPaydayChange": None,
-                                           "pendingIncomeChange": None})
+                                           "pendingIncomeChange": None, "incomeBasis": None})
 
     def test_first_registration_cannot_be_delayed(self):
         self.assert_invalid(payload(paydayApplyFrom="next_cycle"), "paydayApplyFrom")
@@ -193,6 +193,7 @@ class SalaryTests(TestCase):
         self.assertEqual(response.json(), {
             "takeHomeIncome": 2_800_000, "payday": 25,
             "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"}, "pendingIncomeChange": None,
+            "incomeBasis": None,
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual(cycle.ends_before, date(2026, 11, 10))
@@ -386,7 +387,8 @@ class SalaryTests(TestCase):
         response = self.put(payload(takeHomeIncome=3_000_000, applyFrom="next_cycle"))
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json(), {"takeHomeIncome": 2_800_000, "payday": 25, "pendingPaydayChange": None,
-                                           "pendingIncomeChange": {"takeHomeIncome": 3_000_000, "effectiveOn": "2026-11-25"}})
+                                           "pendingIncomeChange": {"takeHomeIncome": 3_000_000, "effectiveOn": "2026-11-25"},
+                                           "incomeBasis": None})
         self.today.return_value = date(2026, 11, 24)
         self.assertEqual(self.client.get(URL).json()["takeHomeIncome"], 2_800_000)
         self.today.return_value = date(2026, 11, 25)

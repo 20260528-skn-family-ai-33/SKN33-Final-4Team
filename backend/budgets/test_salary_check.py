@@ -277,6 +277,95 @@ class SalaryGapTest(SalaryCheckFixture):
         self.assertEqual(draft.status, "expired")
 
 
+class SalaryChangeOverActualBasisTest(SalaryCheckFixture):
+    """11/13 검수: 받은 월급(220만)으로 이번 주기를 다시 짠 뒤 월급 설정에서 실수령액을 바꿀 때.
+    이번 주기부터면 둘 중 무엇을 쓸지 고른다(keepIncomeBasis) — 안 고르면 받은 월급 기준이 계속 이겨 화면끼리 달라진다"""
+    NEXT, SALARY_URL = SalaryGapTest.NEXT, "/api/budgets/salary/"
+    answer = SalaryGapTest.answer
+    GAP_URL = SalaryGapTest.GAP_URL
+
+    def setUp(self):
+        super().setUp()
+        self.profile.housing_type = "family"
+        self.profile.save()
+        self.learn()
+        self.tx(OCT, 2_200_000)
+        self.period(self.NEXT)
+        self.assertEqual(self.answer("apply", 2_200_000).status_code, 200)
+
+    def put(self, **body):
+        with patch("django.utils.timezone.localdate", return_value=self.NEXT):
+            return self.client.put(self.SALARY_URL, {"takeHomeIncome": 3_000_000, "payday": 25, **body}, format="json")
+
+    def base(self):
+        from .api import protect_json
+        self.profile.refresh_from_db()
+        base = protect_json(self.user, self.profile, self.NEXT)["base"]
+        return base["take_home_income"], base["income_source"]
+
+    def basis(self):
+        return BudgetCycle.objects.get(starts_on=OCT).income_basis
+
+    def test_get_shows_actual_basis(self):
+        with patch("django.utils.timezone.localdate", return_value=self.NEXT):
+            self.assertEqual(self.client.get(self.SALARY_URL).json()["incomeBasis"], 2_200_000)
+
+    def test_this_cycle_change_needs_basis_choice_and_saves_nothing(self):
+        res = self.put(applyFrom="current_cycle")
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("keepIncomeBasis", res.json()["error"]["fields"])
+        self.profile.refresh_from_db()
+        self.assertEqual((self.profile.monthly_take_home_income, self.basis()), (2_500_000, 2_200_000))
+        for value in ("true", 1, None):
+            with self.subTest(value=value):
+                self.assertEqual(self.put(applyFrom="current_cycle", keepIncomeBasis=value).status_code, 400)
+
+    def test_switch_to_new_salary_drops_actual_basis(self):
+        res = self.put(applyFrom="current_cycle", keepIncomeBasis=False)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["takeHomeIncome"], res.json()["incomeBasis"]), (3_000_000, None))
+        self.assertEqual(self.base(), (3_000_000, "registered"))
+        self.assertIsNone(self.period(self.NEXT)["salary_gap"])  # 같은 받은 금액으로는 다시 묻지 않는다
+
+    def test_keep_actual_basis_changes_registered_only(self):
+        res = self.put(applyFrom="current_cycle", keepIncomeBasis=True)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["takeHomeIncome"], res.json()["incomeBasis"]), (3_000_000, 2_200_000))
+        self.assertEqual(self.base(), (2_200_000, "actual"))
+
+    def test_next_cycle_change_keeps_basis_without_choice(self):
+        res = self.put(applyFrom="next_cycle")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.base(), (2_200_000, "actual"))
+
+    def test_payday_change_this_cycle_cannot_keep_basis(self):
+        # 11/13 재검수: 급여일도 이번 주기부터 바꾸면 주기를 새로 만든다 → 받은 월급 기준은 이어 갈 수 없어 새 월급으로만
+        res = self.put(payday=10, applyFrom="current_cycle", keepIncomeBasis=True)
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("keepIncomeBasis", res.json()["error"]["fields"])
+        self.profile.refresh_from_db()
+        self.assertEqual((self.profile.monthly_take_home_income, self.profile.payday, self.basis()), (2_500_000, 25, 2_200_000))
+        res = self.put(payday=10, applyFrom="current_cycle")  # 고르지 않아도 된다
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["payday"], res.json()["incomeBasis"]), (10, None))
+        self.assertEqual(self.base(), (3_000_000, "registered"))
+
+    def test_before_first_approval_also_needs_basis_choice(self):
+        # 첫 예산 승인 전에는 applyFrom 없이 이번 주기로 바로 바꾼다 — 받은 월급 기준이 있으면 그래도 고른다
+        res = self.put()
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("keepIncomeBasis", res.json()["error"]["fields"])
+        res = self.put(keepIncomeBasis=True)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(self.base(), (2_200_000, "actual"))
+
+    def test_new_salary_same_as_received_needs_no_choice(self):
+        res = self.put(takeHomeIncome=2_200_000, applyFrom="current_cycle")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertIsNone(self.basis())
+        self.assertEqual(self.base(), (2_200_000, "registered"))
+
+
 class AutoRecognizeTest(SalaryCheckFixture):
     NEXT = date(2026, 11, 21)  # 10/25 회차 (구간 10/18 ~ 11/17)
 

@@ -15,6 +15,7 @@
 | `payday` | 정수 | 필수, 매월 1~31일 |
 | `applyFrom` | 문자열 | 첫 예산 승인 뒤 기존 급여일 **또는 월 실수령액**을 바꿀 때 필수. `current_cycle` 이번 주기 / `next_cycle` 다음 주기. 한 번 고르면 이번 저장의 두 값에 함께 적용. 승인 전(온보딩)에 생략하면 `current_cycle`로 처리 (11/12) |
 | `paydayApplyFrom` | 문자열 | `applyFrom`의 예전 이름(같은 뜻). 둘 다 보내고 값이 다르면 400 `applyFrom` |
+| `keepIncomeBasis` | boolean | 이번 주기를 받은 월급 기준(`incomeBasis`)으로 짠 뒤 월 실수령액을 `current_cycle`로 바꿀 때 필수. `true` = 이번 주기는 받은 월급 기준 그대로 · `false` = 이번 주기도 새 월급으로. 새 월급이 받은 월급과 같으면 생략해도 된다(기준을 푼다). 그 밖의 경우는 보내도 무시 (11/13) |
 
 숫자 문자열·소수·boolean·null은 받지 않는다. 미정의 필드도 400이다.
 주급·격주 지급, 휴일 보정, 세전 금액은 지원하지 않는다. 없는 날짜는 그 달 말일로 계산한다.
@@ -43,6 +44,13 @@ PUT은 두 필수 값을 모두 받는다. 같은 값으로 반복 요청해도 
 - **월 실수령액 (2026-11-12 변경)**: 급여일과 같은 선택을 따른다. 예전에는 저장 즉시 적용했다.
   - `current_cycle`: 바로 바꾸고, 있던 실수령액 예약은 지운다.
   - `next_cycle`: **다음 주기 시작일**(지금 주기 끝 다음 날 = 급여일 예약이 있으면 그 전환일)에 바꾼다. 그 전까지 `takeHomeIncome`은 지금 금액이고 `pendingIncomeChange`로 예약을 알려 준다. 같은 금액으로 다시 보내면 예약만 다시 맞춘다.
+  - **받은 월급 기준과 겹칠 때 (11/13 검수)**: 이번 주기를 [월급 차이 안내](#월급-차이-안내-1113)의 `apply`로 받은 월급 기준(`budget_cycle.income_basis`)으로 짰다면, `current_cycle`로 실수령액을 바꿀 때 `keepIncomeBasis`로 둘 중 하나를 고른다. 안 보내면 아무것도 저장하지 않고 400 `keepIncomeBasis`. 예전에는 등록 실수령액만 바뀌고 받은 월급 기준이 계속 이겨서, 월급 화면(새 월급)과 지킬 돈 배분(받은 월급)이 달랐다.
+    - `false`: 이번 주기 `income_basis`를 비워 지킬 돈 · 추천이 새 월급으로 나뉜다(`base.incomeSource = "registered"`). `income_answered_for`는 남겨 같은 받은 금액으로 월급 차이 안내를 다시 띄우지 않는다.
+    - `true`: 등록 실수령액만 바뀌고 이번 주기는 받은 월급 그대로. 다음 주기부터 새 월급이 기준이다.
+    - 새 월급 = 받은 월급이면 고를 게 없어 기준을 푼다. `next_cycle`이면 이번 주기는 그대로라 묻지 않는다.
+    - **급여일도 `current_cycle`로 바꾸면** 주기가 새로 생겨 받은 월급 기준을 이어 갈 수 없다. 묻지 않고 기준을 풀며, `keepIncomeBasis: true`를 보내면 400 `keepIncomeBasis`.
+    - 첫 예산 승인 전(`applyFrom` 생략 = 이번 주기)에도 기준이 있으면 같은 규칙이다.
+    - 화면: `SalaryBasisChoicePopup`. 승인 뒤에는 [이번 주기부터]를 고른 뒤 한 번 더, 승인 전에는 [저장] 바로 뒤에 묻는다. 다시 짜기 → 지킬 돈 화면(승인 전은 원래 다음 화면), 유지 → 마이(또는 홈) + 토스트.
   - 예약 중 지금 금액을 보내고 선택도 보내면 예약을 취소한다. 선택 없이 보내면(예전 화면) 예약을 유지한다.
   - 전환일이 되면 `current_salary_profile`이 실수령액을 옮기고 예약 칸을 비운다(`scheduled_take_home_income` · `income_changes_on`). 급여일과 달리 지난 주기 계산에 필요 없어 기록을 남기지 않는다.
   - 프로필을 직접 읽는 예산 조정 · 설계 복구 · 쿠션 화면은 `due_income(profile, today)`로 전환일이 지난 예약을 메모리에서 반영한다(저장은 하지 않음). 전환일 당일 이 화면들을 먼저 열어도 새 금액으로 계산한다.
@@ -60,12 +68,14 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
   "takeHomeIncome": 2800000,
   "payday": 25,
   "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"},
-  "pendingIncomeChange": {"takeHomeIncome": 3000000, "effectiveOn": "2026-11-10"}
+  "pendingIncomeChange": {"takeHomeIncome": 3000000, "effectiveOn": "2026-11-10"},
+  "incomeBasis": null
 }
 ```
 
 전환 이후에는 `payday: 10`, `pendingPaydayChange: null`이다. 실수령액도 전환일 이후 `takeHomeIncome: 3000000`, `pendingIncomeChange: null`이다.
-미등록 GET은 `{"takeHomeIncome": null, "payday": null, "pendingPaydayChange": null, "pendingIncomeChange": null}`이며 프로필을 만들지 않는다.
+`incomeBasis`(11/13): 이번 주기를 받은 월급 기준으로 짰으면 그 금액, 아니면 `null`. 화면이 `keepIncomeBasis`를 물을지 정하는 근거다. 마이 요약(`GET /api/my/`의 `salary`)에도 같은 값이 들어간다.
+미등록 GET은 `{"takeHomeIncome": null, "payday": null, "pendingPaydayChange": null, "pendingIncomeChange": null, "incomeBasis": null}`이며 프로필을 만들지 않는다.
 
 ## 저장과 연동
 
@@ -214,7 +224,7 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 | 이번 예산 다시 짜기 | `apply` | 지킬 돈 화면을 받은 금액으로 나눈 추천값으로 연다(`refreshRecommendation`). 늘거나 준 돈을 어디에 둘지는 거기서 정한다 → 저장 → 새 추천 → 승인 |
 | 그대로 두기 | `keep` | 예산 그대로. 토스트 |
 
-등록 실수령액 자체를 바꾸려면 월급 설정 화면에서 바꾼다(이번/다음 주기 선택).
+등록 실수령액 자체를 바꾸려면 월급 설정 화면에서 바꾼다(이번/다음 주기 선택). 이번 주기에 `apply`해 둔 상태에서 이번 주기부터 바꾸면 받은 월급 기준을 둘지 한 번 더 고른다(`keepIncomeBasis`, 위 '적용 시점').
 
 ### POST `/api/budgets/salary/gap/`
 

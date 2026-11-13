@@ -18,6 +18,15 @@ from .salary import (confirmation_snapshot, current_salary_profile, expire_salar
 from .salary_serializers import SalaryGapSerializer, SalarySerializer
 
 
+def current_income_basis(profile, today):
+    """이번 주기를 받은 월급 기준으로 짰으면(월급 차이 안내 apply) 그 금액, 아니면 None"""
+    if not (profile and profile.pk and profile.payday):
+        return None
+    start = salary_cycle_dates(profile, today)[0]
+    return (BudgetCycle.objects.filter(user_id=profile.user_id, starts_on=start)
+            .values_list("income_basis", flat=True).first())
+
+
 def salary_data(profile, today):
     pending = income_pending = None
     if profile and profile.payday_changes_on and today < profile.payday_changes_on:
@@ -29,6 +38,7 @@ def salary_data(profile, today):
         "payday": profile.payday if profile else None,
         "pending_payday_change": pending,
         "pending_income_change": income_pending,  # 11/12: 다음 주기부터 바뀔 실수령액
+        "income_basis": current_income_basis(profile, today),  # 11/13: 이번 주기만 받은 월급 기준 (없으면 null)
     }
 
 
@@ -57,6 +67,13 @@ def save_salary(user, profile, data, today):
     pending = profile.payday_changes_on is not None and today < profile.payday_changes_on
     income_pending = profile.income_changes_on is not None  # 전환일이 지난 예약은 current_salary_profile 이 이미 옮겼다
     started = None  # 첫 예산을 승인했는지 — 필요할 때만 한 번 센다
+    # 11/13 검수: 이번 주기를 받은 월급 기준(income_basis)으로 짰으면, 월급을 이번 주기부터 바꿀 때 둘 중 무엇을 쓸지 고른다.
+    # 고르지 않으면 이 기준이 계속 이겨서 월급 화면(새 월급)과 지킬 돈 배분(받은 월급)이 달라진다
+    basis_cycle = None
+    if profile.pk and profile.payday is not None:
+        basis_cycle = BudgetCycle.objects.filter(user=user, starts_on=salary_cycle_dates(profile, today)[0],
+                                                 income_basis__isnull=False).first()
+    drop_basis = payday_moved = False
 
     def choice():
         """바뀐 값의 적용 시점. 첫 예산 승인 전(온보딩)에는 지키는 예산 주기가 없으니 묻지 않고 바로 바꾼다 (11/12 피드백)"""
@@ -83,6 +100,7 @@ def save_salary(user, profile, data, today):
         else:
             profile.payday = payday
             profile.scheduled_payday = profile.payday_changes_on = profile.payday_previous_start = None
+            payday_moved = True
     elif pending and apply_from is not None:
         # 지금 급여일로 되돌리고 시점을 골랐다 → 예약 취소 (시점 없이 보낸 예전 화면은 예약을 그대로 둔다)
         profile.scheduled_payday = profile.payday_changes_on = profile.payday_previous_start = None
@@ -98,6 +116,18 @@ def save_salary(user, profile, data, today):
         else:
             profile.monthly_take_home_income = income
             profile.scheduled_take_home_income = profile.income_changes_on = None
+            if basis_cycle is not None:
+                if payday_moved:
+                    # 급여일도 이번 주기부터 바꾸면 주기를 새로 만들어 받은 월급 기준을 이어 갈 주기가 없다 → 새 월급으로만
+                    if data.get("keep_income_basis") is True:
+                        raise ValidationError({"keep_income_basis": ["급여일도 이번 주기부터 바꾸면 받은 월급 기준을 유지할 수 없어요."]})
+                    drop_basis = True
+                elif income == basis_cycle.income_basis:
+                    drop_basis = True  # 새 월급 = 받은 월급 → 따로 둘 기준이 없다
+                elif data.get("keep_income_basis") is None:
+                    raise ValidationError({"keep_income_basis": ["이번 주기 예산을 받은 월급 기준으로 둘지 골라 주세요."]})
+                else:
+                    drop_basis = not data["keep_income_basis"]
     elif income_pending and apply_from is not None:
         # 지금 금액으로 되돌리고 시점을 골랐다 → 예약 취소
         profile.scheduled_take_home_income = profile.income_changes_on = None
@@ -107,6 +137,9 @@ def save_salary(user, profile, data, today):
     )):
         profile.payday_revision += 1
         changed.append("payday_revision")
+    if drop_basis:
+        # 등록 실수령액 기준으로 돌린다. income_answered_for 는 남겨 같은 받은 금액으로 월급 차이 안내를 다시 띄우지 않는다
+        BudgetCycle.objects.filter(pk=basis_cycle.pk).update(income_basis=None)
     if changed:
         if profile._state.adding:
             profile.save()
@@ -115,7 +148,6 @@ def save_salary(user, profile, data, today):
         expire_salary_drafts(user)
         # 이미 조회한 주기가 있으면 새 경계도 바로 맞춘다.
         from .salary import sync_salary_cycle
-        from .models import BudgetCycle
         if BudgetCycle.objects.filter(user=user, status="active").exists():
             sync_salary_cycle(user, profile, today)
     return profile

@@ -28,7 +28,7 @@ afterEach(async () => {
 })
 
 const render = (saved, me = { userId: 'u1', onboardingCompleted: false }) => {
-  const salary = { takeHomeIncome: null, payday: null, pendingPaydayChange: null, pendingIncomeChange: null, ...saved }
+  const salary = { takeHomeIncome: null, payday: null, pendingPaydayChange: null, pendingIncomeChange: null, incomeBasis: null, ...saved }
   useApi.mockImplementation((path) => ({ data: path === '/api/auth/me/' ? me : salary, error: null }))
   return act(() => root.render(<SalaryPage />))
 }
@@ -135,6 +135,59 @@ it('이번 주기부터를 고르면 지킬 돈 화면으로 간다 (11/12)', as
   await pickApply('이번 주기부터')
   expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, applyFrom: 'current_cycle' })
   expect(navigate).toHaveBeenCalledWith('/budgets/protect', { replace: true, state: { from: 'my', refreshRecommendation: true } })
+})
+
+it('받은 월급 기준으로 짠 주기에서 이번 주기부터 바꾸면 기준을 한 번 더 묻고, 새 월급으로 다시 짜면 지킬 돈 화면으로 간다 (11/13 검수)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25, incomeBasis: 2200000 }, STARTED)
+  await type('300')
+  await submit()
+  await pickApply('이번 주기부터')
+  expect(apiSend).not.toHaveBeenCalled()
+  const box = await openedPopup()
+  expect(box.textContent).toContain('이번 주기는 실제 받은 2,200,000원 기준으로 짜여 있어요')
+  await act(() => popupRoot.unmount()); popupHost.remove()
+  await pickApply('3,000,000원으로 다시 짜기')
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, applyFrom: 'current_cycle', keepIncomeBasis: false })
+  expect(navigate).toHaveBeenCalledWith('/budgets/protect', { replace: true, state: { from: 'my', refreshRecommendation: true } })
+})
+
+it('받은 월급 기준을 유지하면 이번 주기 예산은 그대로 두고 돌아간다 (11/13 검수)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25, incomeBasis: 2200000 }, STARTED)
+  await type('300')
+  await submit()
+  await pickApply('이번 주기부터')
+  await pickApply('받은 2,200,000원 유지')
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, applyFrom: 'current_cycle', keepIncomeBasis: true })
+  expect(toast).toHaveBeenCalledWith('월급은 바꾸고 이번 주기 예산은 그대로 둘게요')
+  expect(navigate).toHaveBeenCalledWith('/', { replace: true })
+})
+
+it('첫 예산 승인 전에도 받은 월급 기준이 있으면 기준을 묻고 시점 없이 보낸다 (11/13 재검수)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25, incomeBasis: 2200000 })
+  await type('300')
+  await submit()
+  expect(apiSend).not.toHaveBeenCalled()
+  await pickApply('받은 2,200,000원 유지')
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, keepIncomeBasis: true })
+})
+
+it('급여일도 이번 주기부터 바꾸면 받은 월급 기준은 묻지 않는다 (11/13 재검수)', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25, incomeBasis: 2200000 }, STARTED)
+  await type('300')
+  await pickDay('10')
+  await submit()
+  await pickApply('이번 주기부터')
+  expect(openPopup).toHaveBeenCalledTimes(1)
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 10, applyFrom: 'current_cycle' })
+})
+
+it('받은 월급 기준이 있어도 다음 주기부터면 더 묻지 않는다', async () => {
+  await render({ takeHomeIncome: 2500000, payday: 25, incomeBasis: 2200000 }, STARTED)
+  await type('300')
+  await submit()
+  await pickApply('다음 주기부터')
+  expect(openPopup).toHaveBeenCalledTimes(1)
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3000000, payday: 25, applyFrom: 'next_cycle' })
 })
 
 it('바꾼 게 없으면 묻지 않고, 예약이 있으면 예약 값을 보여 주고 그대로 둔다 (11/12)', async () => {

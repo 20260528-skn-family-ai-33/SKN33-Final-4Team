@@ -12354,7 +12354,8 @@
               "takeHomeIncome",
               "payday",
               "pendingPaydayChange",
-              "pendingIncomeChange"
+              "pendingIncomeChange",
+              "incomeBasis"
             ],
             "properties": {
               "takeHomeIncome": {
@@ -12407,6 +12408,12 @@
                 "nullable": true,
                 "description": "다음 주기부터 바뀔 월 실수령액 예약 (11/12). 없으면 null",
                 "additionalProperties": false
+              },
+              "incomeBasis": {
+                "type": "integer",
+                "minimum": 1,
+                "nullable": true,
+                "description": "이번 주기를 받은 월급 기준으로 짰으면 그 금액 (11/13). 없으면 null"
               }
             },
             "additionalProperties": false
