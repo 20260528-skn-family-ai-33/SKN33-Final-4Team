@@ -93,7 +93,7 @@ export default function MyPage() {
 
   if (userError) {
     return (
-      <Layout title="마이" showBack>
+      <Layout title="마이메뉴" showBack>
         <p className="mc-error" role="alert">
           {userError.status
             ? userError.message
@@ -112,14 +112,14 @@ export default function MyPage() {
 
   if (!user) {
     return (
-      <Layout title="마이" showBack>
+      <Layout title="마이메뉴" showBack>
         <p role="status">회원 정보를 불러오는 중이에요.</p>
       </Layout>
     )
   }
 
   return (
-    <Layout title="마이" showBack>
+    <Layout title="마이메뉴" showBack>
       <div className="mc-card">
         <div className="mc-row">
           <span className="mc-tile"><Icon name="UserRound" /></span>
@@ -175,7 +175,6 @@ export default function MyPage() {
           </p>
         )}
       </div>
-      <button type="button" className="mc-link" onClick={() => navigate(PATHS.login)}>처음 사용하는 흐름 다시 보기</button>
     </Layout>
   )
 }
