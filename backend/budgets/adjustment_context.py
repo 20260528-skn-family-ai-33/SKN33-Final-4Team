@@ -84,7 +84,7 @@ def _select_basis(user, today, base_budget_id, mode):
     if effective.payday is None:
         raise AdjustmentContextError("profile_not_ready")
     start, end, _ = salary_cycle_dates(effective, today)
-    cycles = list(BudgetCycle.objects.filter(user=user, starts_on__lte=today, ends_before__gt=today)[:2])
+    cycles = list(BudgetCycle.objects.filter(user=user, status="active", starts_on__lte=today, ends_before__gt=today)[:2])
     if len(cycles) != 1:
         raise AdjustmentContextError("no_cycle" if not cycles else "overlapping_cycles")
     cycle = cycles[0]

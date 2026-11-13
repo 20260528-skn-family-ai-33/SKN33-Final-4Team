@@ -103,6 +103,24 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(reserve_floor(found, 'SPARE', 100000), 120000)
         self.assertEqual(available_adjustment(found, 'FOOD', 'up', sources=['SAVINGS'])['maximum'], 120000)
 
+    def test_closed_overlapping_cycle_does_not_hide_current_approved_budget(self):
+        approved = self.make_budget()
+        extra = BudgetCycle.objects.create(user=self.user, starts_on=TODAY,
+            ends_before=date(2026, 12, 5), status='closed')
+        found = self.context()
+        self.assertEqual(found['cycle_id'], str(self.cycle.pk))
+        self.assertEqual(found['base_budget_id'], str(approved.pk))
+        self.assertEqual(found['next_cycle_starts_on'], '2026-11-25')
+        extra.refresh_from_db()
+        self.assertEqual(extra.status, 'closed')
+
+    def test_two_active_overlapping_cycles_still_require_correction(self):
+        self.make_budget()
+        BudgetCycle.objects.create(user=self.user, starts_on=TODAY,
+            ends_before=date(2026, 12, 5), status='active')
+        with self.assertRaisesRegex(AdjustmentContextError, 'overlapping_cycles'):
+            self.context()
+
     def test_selects_approved_instead_of_newer_derived_or_ordinary_draft(self):
         approved = self.make_budget()
         self.make_budget(status="validated", base=approved)
