@@ -14,6 +14,72 @@ from .test_adjustment_core import Store, allocation, context, envelope, item, re
 
 
 class AdjustmentDialogueTest(unittest.TestCase):
+    def test_feedback_role_conflict_is_reinterpreted_before_changing_money(self):
+        request = envelope(item('HOUSEHOLD', 50000), sources=['SPARE'])
+        preview = simulate_funding(self.context, request)
+        preview.update(task_ref='old', proposal_id='old', state='awaiting_approval')
+        self.store.state = {'requests': request['items'], 'sources': ['SPARE'], 'proposal': deepcopy(preview), 'work_ref': 'old'}
+        self.ports['task_status'] = Mock(return_value={'state': 'awaiting_approval'})
+        wrong = {'action': 'refine_less', 'category': 'HOUSEHOLD', 'amount': None, 'amount_mode': None, 'suggested_target': None}
+        correct = {**wrong, 'category': 'SPARE'}
+        self.complete.side_effect = [json.dumps(wrong), json.dumps(correct)]
+        result = dialogue.handle({'conversation_id': 'talk', 'text': '여윳돈이 너무 없어지잖아'}, **self.ports)
+        self.assertEqual(self.store.state['pending']['field'], 'spare_minimum')
+        self.assertIn('최소', result['reply']['lines'][0])
+        repair = json.loads(self.complete.call_args_list[1].args[1])
+        self.assertEqual(repair['recipient'], 'HOUSEHOLD')
+        self.assertEqual(repair['funding_sources'], ['SPARE'])
+        self.assertEqual(repair['interpretation_error']['code'], 'recipient_is_not_funding_source')
+        self.assertEqual(self.proposals, [])
+        self.ports['cancel'].assert_not_called()
+
+    def test_feedback_failure_keeps_the_verified_preview_and_task(self):
+        request = envelope(item('HOUSEHOLD', 50000), sources=['SPARE'])
+        preview = simulate_funding(self.context, request)
+        preview.update(task_ref='old', proposal_id='old', state='awaiting_approval')
+        before = {'requests': request['items'], 'sources': ['SPARE'], 'proposal': deepcopy(preview), 'work_ref': 'old'}
+        self.store.state = deepcopy(before)
+        self.ports['task_status'] = Mock(return_value={'state': 'awaiting_approval'})
+        self.complete.side_effect = RuntimeError('temporary LLM error')
+        result = dialogue.handle({'conversation_id': 'talk', 'text': '돈을 더 남기고 싶어'}, **self.ports)
+        self.assertEqual(result['status'], 'awaiting_input')
+        self.assertEqual(result['reply']['proposal'], preview)
+        self.assertEqual(result['work_ref'], 'old')
+        for key, value in before.items():
+            self.assertEqual(self.store.state[key], value)
+        self.assertEqual(self.proposals, [])
+        self.ports['cancel'].assert_not_called()
+
+    def test_source_decrease_encoding_keeps_the_actual_recipient_for_feedback(self):
+        self.context['funding_amount'] += 98176 - self.context['buckets']['SPARE']
+        self.context['buckets']['SPARE'] = self.context['bucket_available']['SPARE'] = 98176
+        request = envelope(item('SPARE', 95000, 'down'), destinations=['HOUSEHOLD'])
+        preview = simulate_funding(self.context, request)
+        self.assertEqual(preview['status'], 'partial')
+        preview.pop('requested_targets')
+        preview.update(task_ref='old', proposal_id='old', state='awaiting_approval')
+        self.store.state = {'requests': request['items'], 'sources': ['SPARE'], 'destinations': ['HOUSEHOLD'],
+                            'proposal': deepcopy(preview), 'proposal_request': deepcopy(request), 'work_ref': 'old'}
+        self.ports['task_status'] = Mock(return_value={'state': 'awaiting_approval'})
+        self.complete.return_value = json.dumps({'action': 'refine_less', 'category': 'SPARE',
+            'amount': None, 'amount_mode': None, 'suggested_target': None})
+        result = dialogue.handle({'conversation_id': 'talk', 'text': '여윳돈이 너무 없어지잖아'}, **self.ports)
+        self.assertEqual(self.store.state['pending']['field'], 'spare_minimum')
+        self.assertEqual(self.store.state['primary_request']['items'], [item('HOUSEHOLD', 95000)])
+        self.assertIn('최소', result['reply']['lines'][0])
+        self.assertEqual(self.proposals, [])
+
+    def test_explicit_transfer_amount_omitted_by_model_is_reinterpreted(self):
+        empty = reading(requests=[], sources=['SPARE'], destinations=['HOUSEHOLD'])
+        filled = reading(requests=[item('HOUSEHOLD', 95000)], sources=['SPARE'])
+        self.complete.side_effect = [json.dumps({'reading': empty, 'reply': ''}), json.dumps({'reading': filled, 'reply': ''})]
+        result = dialogue.handle({'conversation_id': 'talk', 'text': '여윳돈에서 생활용품에 95000원 옮겨줘',
+            'hints': {'categories': ['HOUSEHOLD'], 'direction': 'up', 'amount': 95000, 'amount_mode': 'by'}}, **self.ports)
+        self.assertEqual(result['reply']['proposal']['allocations']['HOUSEHOLD'], 145000)
+        self.assertEqual(result['reply']['proposal']['buckets']['SPARE'], 305000)
+        self.assertIn('interpretation_error', json.loads(self.complete.call_args_list[1].args[1]))
+        self.assertEqual(len(self.proposals), 1)
+
     def test_new_topic_preserves_new_amount_and_asks_about_future_timing(self):
         self.turn(reading(requests=[item('SAVINGS', 300000)]))
         self.store.state.update(financial_offer={'old': True}, financial_overrides={'remaining_days': 1},

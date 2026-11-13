@@ -534,3 +534,30 @@ class FutureBudgetIntentLiveTest(SimpleTestCase):
         actual = read(cases[0][0], pending, complete)
         self.assertTrue('budget_adjust' in actual.intents or actual.choice == 'budget_adjust', actual)
         self.assertNotEqual(actual.followup, 'unclear')
+
+
+    @unittest.skipUnless(os.environ.get('CHAT_LIVE_ROUTER_TEST') == '1', 'opt-in actual LLM, previously reported inputs')
+    def test_previous_reported_initial_messages(self):
+        from .router_core.reading import read
+        from .llm.live import LiveReading
+        cases = [
+            ('의료비 줄이고싶어', 'budget_adjust'),
+            ('의료비 줄이고 싶다고', 'budget_adjust'),
+            ('나 교육에 돈 필요 없는데', 'budget_adjust'),
+            ('생활비가 부족해', 'budget_adjust'),
+            ('생활비 늘려줘', 'budget_adjust'),
+            ('생활비를 5만원 늘리고 싶어요', 'budget_adjust'),
+            ('교통비 18만원으로 늘려줘', 'budget_adjust'),
+            ('쇼핑에서 3만원, 교육에서 2만원 줄여서 교통비에 5만원 옮겨줘.', 'budget_adjust'),
+            ('저축 30만원 늘려줘', 'budget_adjust'),
+            ('다음달부터 교육비 50만원 추가될 예정', 'budget_adjust'),
+            ('다음달부터 월급 50만원 늘어서 그냥 그것만 추가해', 'budget_adjust'),
+            ('다음달에 여행으로 100만원정도 나갈 예정이라 지금 미리 예산 조정 하고 싶어', 'budget_adjust'),
+            ('생활비를 1,000만원 늘리고 싶어요', 'budget_adjust'),
+            ('주거비 줄이려고해', 'budget_adjust'),
+            ('의료비 예산 왜이렇게 크게 책정됐어?', 'spending'),
+            ('이번달 여윳돈 얼마 있어', 'spending'),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(read(text, None, LiveReading(3, None)).intents, (expected,))

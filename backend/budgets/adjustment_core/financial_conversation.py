@@ -4,7 +4,7 @@ import json
 import re
 from .agent import _ask as core_ask, _check, _result, _save, CANCEL
 from .calculation import _prepare, _floor, _hard_floor, _eligible, proportional_group_reduction
-from .funding import available_adjustment
+from .funding import available_adjustment, _data
 from .conversation import (_envelope, _pending_reply, _route_question as original_route, _show_comparison as original_comparison,
                            handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute, _calculation, _manual_living, ask_spare_minimum, check_amount_limit)
 from . import interpretation
@@ -20,6 +20,8 @@ DIALOGUE_PROMPT = interpretation.PROMPT + """
 한 항목에 몰지 않고 다른 항목에도 나누려는 말은 action=distribute다. 받을 항목이나 금액을 아직 몰라도 unclear로 묻지 않는다.
 manual_distribution 단계의 직접 조정은 줄일 항목과 늘릴 항목을 모두 requests에 담는다. 사용자가 정한 감액을 과거 추천액으로 되돌리지 않고, 같은 조정의 항목·금액 편집은 reference=previous로 해석한다.
 현재 목적과 sources/destinations/excluded를 이어받고, reason에는 사용자가 말한 지출 사유를 기록한다.
+금액을 명시한 이동은 requests에 대상·금액·방식을 반드시 기록한다. sources/destinations만 채우고 requests를 비우지 않는다.
+같은 이동을 표현할 때는 받는 항목의 증액 요청과 출처를 기본으로 사용한다. router_hints는 원문에서 추출한 보조값이며 최종 해석은 원문·대화로 확인한다.
 이유·사정만 덧붙인 말은 기존 요청의 후속 설명이며 requests=[], reference=previous, unclear=[]이다.
 '저축은 유지하고 쇼핑은 더 줄여도 돼'는 기존 증액 목적을 유지한다. 저축은 excluded로 보호하고,
 쇼핑은 자동 감액을 허용한 재원으로 해석한다. 감액 하한이나 잠금을 해제하는 금액 직접 지정으로 바꾸지 않는다.
@@ -49,6 +51,8 @@ category는 출발 항목, destination은 받는 항목, amount는 옮길 금액
 transfer가 아니면 destination=null이다. 출발·도착·금액 중 모르는 값은 null로 남긴다.
 기존 조정 대상을 다른 항목으로 바꾸거나, 다른 항목의 조정을 추가·철회하는 요청은 revise다.
 아래의 한 항목 감액 수정으로 표현할 수 없는 복합 수정도 revise로 보내며 금액·대상을 억지로 하나로 줄이지 않는다.
+recipient는 예산을 받는 기존 목표이고 funding_sources는 현재 돈을 가져오는 출처다. 두 역할을 구분한다.
+refine_more/refine_less의 category는 재원이며 recipient를 넣지 않는다. 받는 목표 금액 자체의 변경은 change_goal이다.
 현재 목표를 유지한 재원 수정은 refine_more/refine_less다. 쇼핑 더 줄여도 돼=refine_more, 쇼핑 너무 많이 줄였어=refine_less.
 미리보기에서 줄어든 돈이 너무 적게 남는다는 불만은 그 출처를 덜 사용하라는 refine_less다. 여윳돈·여유돈은 SPARE이며 생활비 항목만 재원이 되는 것은 아니다.
 SPARE를 덜 쓰거나 더 남기려는데 사용자가 금액을 정하지 않았다면 amount와 suggested_target을 null로 둔다. 임의로 남길 금액을 정하지 않는다.
@@ -415,6 +419,9 @@ def handle(request, **ports):
 
 def _revise_spare_minimum(request, state, ports, minimum):
     resume_sources = state.get('pending', {}).get('resume_sources')
+    primary = state.get('primary_request')
+    if primary and len(primary.get('items', [])) == 1 and primary['items'][0].get('direction') == 'up':
+        state['requests'] = deepcopy(primary['items'])
     replaced = bool(state.get('work_ref'))
     if state.get('work_ref'):
         try:
@@ -644,7 +651,16 @@ def _handle(request, *, interpreted=None, **ports):
             return complete(system, payload)
         if interpreted is not None:
             return json.dumps(interpreted, ensure_ascii=False)
-        parsed = json.loads(complete(DIALOGUE_PROMPT, payload))
+        dialogue_payload = json.loads(payload)
+        hints = request.get('hints') or {}
+        if hints:
+            dialogue_payload['router_hints'] = hints
+        parsed = json.loads(complete(DIALOGUE_PROMPT, json.dumps(dialogue_payload, ensure_ascii=False)))
+        data = parsed.get('reading', parsed) if isinstance(parsed, dict) else {}
+        if (not state.get('requests') and data.get('mine') is True and not data.get('requests')
+                and type(hints.get('amount')) is int and hints.get('categories') and not data.get('action')):
+            dialogue_payload['interpretation_error'] = '원문에 명시된 조정 대상과 금액이 requests에서 빠졌어요. 선택된 출처·도착점과 금액 요청을 구분해 다시 추출하세요.'
+            parsed = json.loads(complete(DIALOGUE_PROMPT, json.dumps(dialogue_payload, ensure_ascii=False)))
         if set(parsed) == {"reading", "reply"}:
             line = parsed["reply"]
             if isinstance(line, str) and 0 < len(line) <= 250 and not re.search(r"\d", line):
@@ -719,6 +735,15 @@ def feedback(request, state, ports):
     primary = deepcopy(state.get("primary_request"))
     if primary is None:
         items = [i for i in state.get("requests", []) if i.get("direction") == "up"]
+        gains = [row for row in old['changes'] if row['diff'] > 0]
+        if not items and len(gains) == 1:
+            gain = gains[0]
+            before = {**context['allocations'], **context['buckets']}
+            targets = old.get('requested_targets') or _data(_calculation(context, state), state.get('proposal_request') or _envelope(state))['targets']
+            needed = targets.get(gain['category'], before[gain['category']]) - before[gain['category']]
+            if needed <= 0:
+                needed = sum(max(before[code] - target, 0) for code, target in targets.items() if code in before)
+            items = [{'category': gain['category'], 'direction': 'up', 'amount_mode': 'by', 'amount': max(needed, gain['diff'])}]
         primary = {"items": items if len(items) == 1 else deepcopy(state.get('requests', [])),
                    "sources": [], "destinations": list(state.get("destinations", [])), "excluded": list(state.get("excluded", []))}
     recipient = primary['items'][0]['category'] if len(primary['items']) == 1 else None
@@ -731,7 +756,7 @@ def feedback(request, state, ports):
     payload = {"text": text, "codes": [*context["allocations"], *context["buckets"]], "category_names": NAMES, "primary_request": primary,
                "original": {"allocations": context["allocations"], "buckets": context["buckets"]},
                "current_preview": {k: old.get(k) for k in ("allocations", "buckets", "changes", "transfers")},
-               "permitted_sources": allowed, "last_feedback_category": state.get("last_feedback_category"),
+               "recipient": recipient, "funding_sources": changed_donors, "permitted_sources": allowed, "last_feedback_category": state.get("last_feedback_category"),
                "constraints": state.get("refinement", {}), "minimums": context.get("minimums"), "locks": context.get("locks"),
                "ml_reference": context.get("ml_reference"), "priorities": context.get("priorities"),
                "spent": context.get("spent"), "system_floors": context.get("system_floors"),
@@ -746,6 +771,10 @@ def feedback(request, state, ports):
             data = {"action": "use_source", "category": hinted, "amount": None, "amount_mode": None, "suggested_target": None}
         else:
             data = json.loads(ports["complete"](FEEDBACK_PROMPT, json.dumps(payload, ensure_ascii=False)))
+            if isinstance(data, dict) and recipient is not None and data.get('action') in {'refine_more', 'refine_less'} and data.get('category') == recipient:
+                payload['interpretation_error'] = {'code': 'recipient_is_not_funding_source',
+                    'message': '기존 목표와 재원의 역할이 충돌해요. 원문에서 받는 금액을 바꾸려는지, 가져오는 돈을 바꾸려는지 다시 구분하세요.'}
+                data = json.loads(ports['complete'](FEEDBACK_PROMPT, json.dumps(payload, ensure_ascii=False)))
         if not isinstance(data, dict) or set(data) not in (set(FEEDBACK_SCHEMA['properties']), set(FEEDBACK_SCHEMA['properties']) - {'destination'}):
             raise ValueError("feedback_fields")
         action = data["action"]
@@ -756,7 +785,10 @@ def feedback(request, state, ports):
     except Exception as error:
         limit = getattr(error, 'kind', None) == 'call_limit' or str(error) == 'call_limit'
         line = "이번 조정의 대화 횟수를 다 썼어요. 변경안을 확인하거나 취소 후 새로 시작해 주세요." if limit else "수정 요청을 읽는 중 문제가 생겼어요. 변경안은 그대로 두었으니 다시 말씀해 주세요."
-        return _result("failed", [line], error='call_limit' if limit else "feedback_unavailable")
+        return _result("awaiting_input", [line], proposal=old, work_ref=old["task_ref"], error='call_limit' if limit else "feedback_unavailable")
+    if recipient is not None and action in {'refine_more', 'refine_less'} and data['category'] == recipient:
+        source_names = '·'.join(names.get(code, code) for code in changed_donors) or '재원'
+        return _result('awaiting_input', [f'{names.get(recipient, recipient)}에 넣을 금액을 바꿀까요, {source_names}에서 가져올 금액을 바꿀까요?'], proposal=old)
     if action == "not_mine":
         # 조회 질문 → 소비 분석으로. 조정안(proposal)과 서버 작업은 그대로 둔다 — 돌아오면 이 조정안을 이어서 고친다
         return not_mine(old["task_ref"], "spending", data["category"], context["allocations"])
@@ -879,6 +911,7 @@ def feedback(request, state, ports):
             return _result("awaiting_input", ["어느 재원 항목을 말씀하신 건가요? 기존 증액 목표는 유지했어요."], proposal=old)
         current = preview_amounts[code]
         if code == 'SPARE' and action == 'refine_less':
+            state['primary_request'] = deepcopy(primary)
             if data['amount'] is None:
                 return ask_spare_minimum(store, cid, state)
             minimum = data['amount'] if data['amount_mode'] == 'to' else current + data['amount']
