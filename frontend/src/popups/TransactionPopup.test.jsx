@@ -71,3 +71,23 @@ it('남에게 보낸 이체도 [소비로 분류하기] → 칸 고르기 → [�
   await click(button('확인'))
   expect(apiSend).toHaveBeenCalledWith('/api/finance/transactions/tx-1/', 'PATCH', { category: 'FOOD', applyToFuture: false })
 })
+
+it('소비 거래는 [소비가 아니에요]로 소비에서 빼고, 소비 아님 거래는 [소비로 되돌리기]만 보여 준다 (11/13)', async () => {
+  await open()
+  await click(button('소비가 아니에요'))
+  expect(apiSend).toHaveBeenCalledWith('/api/finance/transactions/tx-1/', 'PATCH', { notSpending: true })
+  expect(closePopup).toHaveBeenCalledOnce()
+  await act(() => root.render(<TransactionPopup key="excluded" tx={{ ...tx, kind: 'excluded', cat: null }} date="11월 8일" categories={CHIPS} />))  // 새 창 (저장 중 표시가 남지 않게)
+  expect(host.querySelector('.mc-eyebrow').textContent).toBe('소비 아님')
+  expect(button('카테고리 수정하기')).toBeUndefined()
+  expect(button('소비가 아니에요')).toBeUndefined()
+  await click(button('소비로 되돌리기'))
+  expect(apiSend).toHaveBeenLastCalledWith('/api/finance/transactions/tx-1/', 'PATCH', { notSpending: false })
+})
+
+it('고정지출에 연결된 거래 · 전액 취소 거래에는 [소비가 아니에요]가 없다 (11/13)', async () => {
+  await open({ tx: { ...tx, funding: 'fixed', fixedName: '넷플릭스' } })
+  expect(button('소비가 아니에요')).toBeUndefined()
+  await open({ tx: { ...tx, cancel: 'full', cancelAmount: 12_000 } })
+  expect(button('소비가 아니에요')).toBeUndefined()
+})

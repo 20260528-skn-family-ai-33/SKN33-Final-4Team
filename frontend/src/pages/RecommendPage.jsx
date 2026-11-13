@@ -219,7 +219,6 @@ export default function RecommendPage() {
       const saved = await apiSend(`/api/budgets/${draft.budgetId}/categories/${c.category}/`, 'PATCH', { locked: !c.locked })
       setData((now) => ({
         ...now,
-        nag: saved.nag,
         categories: now.categories.map((x) => (x.category === c.category ? { ...x, locked: saved.locked, lockedAmount: saved.lockedAmount } : x)),
       }))
     } catch (err) {
@@ -375,7 +374,6 @@ export default function RecommendPage() {
               </div>
             ))}
           </div>
-          {data.nag && <p className="mc-note" style={{ padding: '10px 0 0' }}>{data.nag}</p>}
           <div className="mc-chat-alt">
             <span>꼭 바꾸고 싶은 부분이 있나요?</span>
             <button type="button" className="mc-link" disabled={busy} onClick={() => navigate(PATHS.assistant, {

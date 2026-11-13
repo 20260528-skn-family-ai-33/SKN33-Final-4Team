@@ -228,6 +228,8 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
     today = today or timezone.localdate()
     minimums, locks = budget_settings(user, cycle)
     fixed = fixed_breakdown(user, cycle, card=card)
+    from .salary import budget_income
+    pay = budget_income(cycle, profile)  # 11/13: 이번 주기만 실제 월급으로 고른 경우 그 금액 (protect_json 과 같은 값)
     saved = {"living_budget": profile.living_budget, "saving_floor": profile.savings_floor, "cushion_monthly": profile.cushion_monthly}
     birth = profile.birth_date
     age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
@@ -239,7 +241,7 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
     priorities = [{"category": code, "rank": rank} for rank, code in enumerate(ranked.values_list("category_id", flat=True), 1)]
     return {
         "cycle": {"id": str(cycle.pk), "starts_on": cycle.starts_on.isoformat(), "ends_before": cycle.ends_before.isoformat()},
-        "take_home_income": profile.monthly_take_home_income,
+        "take_home_income": pay,
         "fixed_total": fixed_sum(fixed),
         "fixed_base": fixed_base(fixed),
         "card_ids": fixed["card_ids"],
@@ -250,7 +252,7 @@ def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):
                            "has_vehicle": profile.has_car, "priorities": priorities},
         "engine_input": {
             "age": age, "sex": profile.gender, "has_vehicle": profile.has_car,
-            "take_home_income": profile.monthly_take_home_income,
+            "take_home_income": pay,
             "housing_fixed": fixed["categories"].get("HOUSING_TELECOM", 0),
             "target": profile.living_budget - etc if profile.living_budget is not None and etc is not None else None,
             "priorities": priorities,

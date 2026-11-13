@@ -30,3 +30,14 @@ class SalarySerializer(serializers.Serializer):
         if isinstance(data, dict):
             reject_unknown_fields(data, self.fields)
         return super().to_internal_value(data)
+
+
+class SalaryGapSerializer(serializers.Serializer):
+    """월급 차이 안내 답 (11/13). apply = 이번 주기만 실제 들어온 월급으로 예산을 나눈다 · keep = 등록 실수령액 그대로"""
+    answer = serializers.ChoiceField(choices=["apply", "keep"])
+    salary_amount = StrictIntegerField(min_value=1, max_value=9_999_999_999_999)
+
+    def to_internal_value(self, data):
+        if isinstance(data, dict):
+            reject_unknown_fields(data, self.fields)
+        return super().to_internal_value(data)

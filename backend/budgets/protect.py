@@ -31,8 +31,24 @@ def blocked(available, savings_min):
     return None
 
 
-def cushion_required(balance_total, take_home_income):
-    return balance_total is None or take_home_income is None or balance_total < take_home_income * 3
+DEFAULT_GOAL_MULTIPLE = 3  # 머니쿠션 기본 목표 = 월 실수령액 × 3
+GOAL_MIN, GOAL_MAX = 10_000, 1_000_000_000  # 11/13: 직접 정하는 목표 범위 (users.FinancialProfile.cushion_goal_amount)
+
+
+def cushion_goal(profile, take_home_income):
+    """11/13: 머니쿠션 목표. 직접 정한 금액이 있으면 그 금액, 없으면 월 실수령액 × 3 (모르면 None)"""
+    custom = getattr(profile, "cushion_goal_amount", None) if profile is not None else None
+    if custom is not None:
+        return custom
+    return take_home_income * DEFAULT_GOAL_MULTIPLE if take_home_income is not None else None
+
+
+def cushion_required(balance_total, take_home_income, goal=None):
+    """P-08: 계좌 잔액이 쿠션 목표보다 적거나 모르면 쿠션 필수.
+    goal 을 안 넘기는 호출(예산 조정 · 분배 실패 복구, 혜리 코드)은 아직 월급 × 3 — 합칠 때 cushion_goal(profile, income)로 연결"""
+    if goal is None and take_home_income is not None:
+        goal = take_home_income * DEFAULT_GOAL_MULTIPLE
+    return balance_total is None or goal is None or balance_total < goal
 
 
 def round_amount(numerator, denominator):

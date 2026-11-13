@@ -406,7 +406,9 @@
                       "base": {
                         "takeHomeIncome": 2800000,
                         "fixedTotal": 770000,
-                        "available": 2030000
+                        "available": 2030000,
+                        "incomeSource": "registered",
+                        "cardReserved": 0
                       },
                       "savingsMin": 1000000,
                       "recommended": {
@@ -428,7 +430,8 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
-                      "cardLoadTaskId": null
+                      "cardLoadTaskId": null,
+                      "budgetApproved": false
                     }
                   },
                   "missingIncome": {
@@ -456,7 +459,8 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
-                      "cardLoadTaskId": null
+                      "cardLoadTaskId": null,
+                      "budgetApproved": false
                     }
                   },
                   "blocked": {
@@ -472,7 +476,9 @@
                       "base": {
                         "takeHomeIncome": 700000,
                         "fixedTotal": 770000,
-                        "available": -70000
+                        "available": -70000,
+                        "incomeSource": "registered",
+                        "cardReserved": 0
                       },
                       "savingsMin": 1000000,
                       "recommended": null,
@@ -489,7 +495,8 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
-                      "cardLoadTaskId": null
+                      "cardLoadTaskId": null,
+                      "budgetApproved": false
                     }
                   },
                   "cardBillPending": {
@@ -523,7 +530,8 @@
                       ],
                       "cardNotes": [],
                       "locksReleased": [],
-                      "cardLoadTaskId": null
+                      "cardLoadTaskId": null,
+                      "budgetApproved": false
                     },
                     "summary": "카드 첫 청구서 확인 중"
                   }
@@ -583,7 +591,9 @@
                       "base": {
                         "takeHomeIncome": 2800000,
                         "fixedTotal": 770000,
-                        "available": 2030000
+                        "available": 2030000,
+                        "incomeSource": "registered",
+                        "cardReserved": 0
                       },
                       "savingsMin": 1000000,
                       "recommended": {
@@ -611,7 +621,8 @@
                       "cardPending": [],
                       "cardNotes": [],
                       "locksReleased": [],
-                      "cardLoadTaskId": null
+                      "cardLoadTaskId": null,
+                      "budgetApproved": false
                     }
                   }
                 }
@@ -646,7 +657,7 @@
                         "message": "입력값을 확인해 주세요.",
                         "fields": {
                           "cushionMonthly": [
-                            "잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요."
+                            "잔액이 쿠션 목표보다 적어서 쿠션을 꼭 적립해야 해요."
                           ]
                         }
                       }
@@ -2389,7 +2400,9 @@
         "required": [
           "takeHomeIncome",
           "fixedTotal",
-          "available"
+          "available",
+          "incomeSource",
+          "cardReserved"
         ],
         "properties": {
           "takeHomeIncome": {
@@ -2405,6 +2418,19 @@
           "available": {
             "type": "integer",
             "format": "int64"
+          },
+          "incomeSource": {
+            "type": "string",
+            "enum": [
+              "registered",
+              "actual"
+            ],
+            "description": "11/13. registered 등록 실수령액 · actual 이번 주기만 받은 월급(budget_cycle.income_basis)으로 나눔"
+          },
+          "cardReserved": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "11/13. fixedTotal 안의 카드값(첫 청구서 선차감 + 이번 회차 할부금). 고정지출 = fixedTotal - cardReserved"
           }
         },
         "additionalProperties": false,
@@ -2565,7 +2591,8 @@
           "cardPending",
           "cardNotes",
           "locksReleased",
-          "cardLoadTaskId"
+          "cardLoadTaskId",
+          "budgetApproved"
         ],
         "properties": {
           "approvedBudget": {
@@ -2734,6 +2761,10 @@
             "format": "uuid",
             "nullable": true,
             "description": "11/09. 카드 내역을 서버가 뒤에서 불러오는 중이면 그 작업 ID(GET /api/tasks/<id>/), 아니면 null. 화면은 재조회를 권하지 않고 '불러오는 중'을 보여 준 뒤 작업이 끝나면 다시 읽는다"
+          },
+          "budgetApproved": {
+            "type": "boolean",
+            "description": "11/13. 이번 주기(진행 중)에 승인한 예산이 있는지. missing이 있으면 false"
           }
         },
         "additionalProperties": false

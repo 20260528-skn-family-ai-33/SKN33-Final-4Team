@@ -97,7 +97,7 @@ def carry_over_locks(user, cycle):
 def period_json(user, profile, today, cycle, start, next_payday):
     """급여 주기 + 월급 상태 (R12). 인정된 급여(사용자 확인 · 자동 인정)만 받음으로 보고 합계를 budget_cycle.confirmed_income 에 남긴다.
     인정된 급여가 없고 후보만 있으면 needs_check — 후보를 받음으로도, '아직 안 들어옴'으로도 단정하지 않는다"""
-    from .salary import recognized, refresh_auto, salary_candidates, salary_windows, store_income
+    from .salary import recognized, refresh_auto, salary_candidates, salary_gap, salary_windows, store_income
 
     windows = salary_windows(profile, today)
     refresh_auto(user, windows)
@@ -121,6 +121,8 @@ def period_json(user, profile, today, cycle, start, next_payday):
         "salary_received_on": received[0].occurred_on.isoformat() if received else None,
         "next_salary_early_on": early[0].occurred_on.isoformat() if early else None,
         "salary_check_count": checks,
+        # 11/13: 받은 월급이 등록 실수령액과 꽤 다르면 묻는다 (답한 금액 그대로면 null)
+        "salary_gap": salary_gap(user, profile, cycle, sum(tx.amount for tx in received)),
     }
 
 
@@ -319,6 +321,7 @@ def home_budget(user, today, cycle):
         "out_of_budget_allocated": data["budget"]["out_of_budget_allocated"],
         "over_categories": over_categories(data["categories"]),  # 예산을 넘긴 카테고리 → 홈 알림 줄
         "big_spendings": big_spendings(user, cycle, today, budget),  # 생활비 예산 대비 큰 지출 → 홈 알림 줄
+        "nag": data["nag"],  # 11/13: 예산을 자주 바꾸면 홈 종 알림 한 줄 (예산 화면 문구 대신)
         "card_notes": data["card_notes"],
         "card_bills_ready": data["card_bills_ready"],  # 그중 지금은 청구서가 나온 카드 (11/12)
     }

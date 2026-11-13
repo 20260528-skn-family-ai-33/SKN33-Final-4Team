@@ -57,6 +57,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
   const cancelPick = () => { setStep('idle'); setPicked(null); setApplyToFuture(false); setError(null) }
   const isIncome = tx.kind === 'income'
   const isTransfer = tx.kind === 'transfer'
+  const isExcluded = tx.kind === 'excluded'  // '소비가 아니에요'로 뺀 소비 (11/13)
   const isOwn = tx.isOwn  // 내 계좌 이체(own_transfer). 소비로 바꾸려면 확인을 먼저 취소
   const wasTransfer = Boolean(data?.wasTransfer)  // 원래 이체였던 소비 → [이체로 되돌리기] (거래 한 건 보기, 11/03)
   const isFixed = tx.funding === 'fixed'
@@ -80,7 +81,7 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
 
   return (
     <Popup label="거래 상세" sub>
-      <div className="mc-eyebrow">{isIncome ? (tx.isSalary ? '월급 입금' : '입금') : tx.isSaving ? '저축 이체' : isOwn ? '내 계좌 이체' : isTransfer ? '보낸 이체' : '거래 상세'}</div>
+      <div className="mc-eyebrow">{isIncome ? (tx.isSalary ? '월급 입금' : '입금') : tx.isSaving ? '저축 이체' : isOwn ? '내 계좌 이체' : isTransfer ? '보낸 이체' : isExcluded ? '소비 아님' : '거래 상세'}</div>
       <h1>{tx.name}</h1>
       <div className="mc-card">
         <div className="mc-money">
@@ -96,8 +97,8 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
         )}
         <div className="mc-keyvalue"><span>거래일</span><strong>{date}</strong></div>
         <div className="mc-keyvalue"><span>{isIncome ? '들어온 계좌' : isTransfer || wasTransfer ? '보낸 계좌' : '결제 수단'}</span><strong>{tx.via ?? '확인 안 됨'}</strong></div>
-        {!isIncome && !isTransfer && <div className="mc-keyvalue"><span>카테고리</span><strong>{tx.cat}</strong></div>}
-        {!isIncome && !isTransfer && (
+        {!isIncome && !isTransfer && !isExcluded && <div className="mc-keyvalue"><span>카테고리</span><strong>{tx.cat}</strong></div>}
+        {!isIncome && !isTransfer && !isExcluded && (
           <div className="mc-keyvalue"><span>분류</span><strong>{wasTransfer ? '내가 소비로 분류함' : CLASSIFIED_BY[data?.classifiedBy] ?? (data ? '확인 필요' : '')}</strong></div>
         )}
         {isFixed && <div className="mc-keyvalue"><span>고정지출</span><strong>{tx.fixedName} <em className="mc-tx-tag is-fixed">고정</em></strong></div>}
@@ -159,11 +160,24 @@ export default function TransactionPopup({ tx, date, categories, onSaved }) {
         </div>
       )}
 
+      {/* 소비 아님 (11/13): 예산 · 소비 합계에서 빠진 거래 → [소비로 되돌리기] (카테고리는 그대로 남아 있음) */}
+      {isExcluded && (
+        <div className="mc-card">
+          <h2>소비가 아니라고 표시했어요</h2>
+          <p className="mc-muted" style={{ marginTop: 4 }}>예산 · 소비 합계에 들어가지 않아요. 거래 내역에는 남아요.</p>
+          <button type="button" className="mc-secondary" disabled={saving} onClick={() => send({ notSpending: false }, '소비로 되돌렸어요')}>소비로 되돌리기</button>
+        </div>
+      )}
+
       {/* 소비: 카테고리 수정 */}
-      {!isIncome && !isTransfer && step === 'idle' && (
+      {!isIncome && !isTransfer && !isExcluded && step === 'idle' && (
         <button type="button" className="mc-secondary" onClick={() => setStep('pick')}>카테고리 수정하기</button>
       )}
-      {!isIncome && !isTransfer && step === 'pick' && (
+      {/* 11/13: 회사 경비처럼 돌려받는 돈이면 소비에서 뺀다. 고정지출에 연결된 거래 · 전액 취소는 안 됨 */}
+      {!isIncome && !isTransfer && !isExcluded && !isFixed && tx.cancel !== 'full' && step === 'idle' && (
+        <p className="mc-note mc-tx-notspend"><button type="button" className="mc-link" disabled={saving} onClick={() => send({ notSpending: true }, '소비에서 뺐어요')}>소비가 아니에요</button></p>
+      )}
+      {!isIncome && !isTransfer && !isExcluded && step === 'pick' && (
         <div className="mc-card">
           <h2>카테고리 수정</h2>
           <CatGrid categories={categories} current={chosen} disabled={saving} onPick={setPicked} />

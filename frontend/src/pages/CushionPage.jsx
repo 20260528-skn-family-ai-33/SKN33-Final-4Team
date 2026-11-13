@@ -9,7 +9,7 @@ import HelpTip from '../components/HelpTip.jsx'
 
 export default function CushionPage() {
   const { openPopup } = usePopup()
-  const { data, error } = useApi('/api/budgets/cushion/')
+  const { data, error, reload } = useApi('/api/budgets/cushion/')
 
   if (!data) return <Layout title="머니 쿠션" activeTab="fund"><ApiStatus error={error} /></Layout>
   const c = data.cushion
@@ -20,10 +20,12 @@ export default function CushionPage() {
       <h1>내 돈의 안전장치</h1>
 
       <div className="mc-card">
-        <span className="mc-muted">현재 확보한 쿠션
+        <span className="mc-muted mc-cushion-title">현재 확보한 쿠션
           {/* 11/9: 맨 아래 안내문을 [?] 창으로 */}
-          <HelpTip label="쿠션 금액 안내" title="쿠션 금액은 계획이에요">
-            <li>앱에서 계획한 배정액이에요.</li>
+          {/* 11/13 (R27): 예산 승인 · 지킬 돈 저장 때 쿠션 배정액이 쌓인다 */}
+          <HelpTip label="쿠션 금액 안내" title="예산을 승인할 때 쌓여요">
+            <li>예산을 승인하면 그 달 쿠션 적립금만큼 쌓여요.</li>
+            <li>지킬 돈 설정에서 적립금을 바꾸면 바뀐 만큼 함께 바뀌어요.</li>
             <li>은행 계좌의 돈이 이동하지는 않아요.</li>
           </HelpTip>
         </span>
@@ -31,19 +33,15 @@ export default function CushionPage() {
         <div className="mc-bar"><span style={{ width: `${c.bar ?? 0}%` }}></span></div>
         {/* null(미설정)은 0원·0%로 보이지 않게 안내 문구로 바꾼다 (cushion.md 누락·경계 처리) */}
         <div className="mc-row">
-          <span className="mc-muted">목표 {c.goalLabel} · {c.goal == null ? '급여를 입력하면 계산돼요' : won(c.goal)}</span>
+          <span className="mc-muted">목표 {c.goalCustom ? '' : `${c.goalLabel} · `}{c.goal == null ? '급여를 입력하면 계산돼요' : won(c.goal)}</span>
           {c.pct != null && <strong>{c.pct}%</strong>}
         </div>
         <div className="mc-keyvalue"><span>월 쿠션 적립금</span><strong>{c.monthly == null ? '아직 정하지 않았어요' : won(c.monthly)}</strong></div>
-        <div className="mc-keyvalue"><span>예산 조정 시 사용</span><strong>{c.useRule ?? '정책 확인 필요'}</strong></div>
-        <button type="button" className="mc-secondary" onClick={() => openPopup(<CushionPopup cushion={c} />)}>쿠션 기준 확인</button>
-      </div>
-
-      <div className="mc-card">
-        <h2>재적립 계획</h2>
+        {/* 11/13: '재적립 계획' 카드를 따로 두지 않고 월 쿠션 적립금 아래로 (예상 기간 = 이 적립금 기준) */}
         <div className="mc-keyvalue"><span>목표까지 남은 금액</span><strong>{c.remain == null ? '급여를 입력하면 계산돼요' : won(c.remain)}</strong></div>
         <div className="mc-keyvalue"><span>예상 기간</span><strong>{c.eta}</strong></div>
-        <p className="mc-note" style={{ paddingBottom: 0 }}>지킬 돈 설정에서 정한 월 쿠션 적립금 기준이에요.</p>
+        {/* 11/13: '쿠션 기준 확인'(읽기 전용) 대신 목표를 월급의 3 · 6 · 12배 중에서 바꾼다 */}
+        <button type="button" className="mc-secondary" onClick={() => openPopup(<CushionPopup cushion={c} onSaved={reload} />)}>목표 바꾸기</button>
       </div>
     </Layout>
   )

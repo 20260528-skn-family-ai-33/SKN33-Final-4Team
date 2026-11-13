@@ -151,16 +151,39 @@ class ProtectAPITest(TestCase):
         self.assertEqual(response.json(), {
             "missing": [], "housingType": "family",
             "rates": {"living": 45, "saving": 40, "spare": 5, "cushion": 10},
-            "base": {"takeHomeIncome": 2_800_000, "fixedTotal": 770_000, "available": 2_030_000},
+            "base": {"takeHomeIncome": 2_800_000, "fixedTotal": 770_000, "available": 2_030_000, "cardReserved": 0, "incomeSource": "registered"},
             "savingsMin": 1_000_000,
             "recommended": {"livingBudget": 770_000, "savingFloor": 1_000_000, "cushionMonthly": 170_000,
                             "spare": 90_000, "rebalanced": True, "restAmount": 1_030_000, "ratioSavingFloor": 810_000},
             "blocked": None, "saved": None,
             "cushion": {"required": True, "target": 8_400_000, "balanceTotal": 2_800_000},
-            "cardPending": [], "cardNotes": [], "locksReleased": [], "cardLoadTaskId": None,
+            "cardPending": [], "cardNotes": [], "locksReleased": [], "cardLoadTaskId": None, "budgetApproved": False,
         })
         cycle = BudgetCycle.objects.get(user=self.user, status="active")
         self.assertEqual((cycle.starts_on, cycle.ends_before), (date(2026, 10, 25), date(2026, 11, 25)))
+
+    def test_budget_approved_flag_follows_this_cycles_approved_budget(self):
+        """11/13: 화면이 '생활비 그대로면 저장만'을 고르는 근거 (approvedBudget 은 충당 · 설정 차이가 있을 때만 옴)"""
+        self.assertFalse(self.client.get(URL).json()["budgetApproved"])
+        cycle = BudgetCycle.objects.get(user=self.user, status="active")
+        Budget.objects.create(user=self.user, cycle=cycle, status="approved", version_no=1, funding_amount=2_800_000, approved_at=timezone.now())
+        self.assertTrue(self.client.get(URL).json()["budgetApproved"])
+
+    def test_put_with_approved_budget_records_cushion_difference(self):
+        """R27 (11/13): 이번 주기에 승인한 예산이 있으면 월 쿠션 적립금을 바꿔 저장할 때 보호 중인 쿠션도 차액만큼"""
+        from .models import CushionEntry
+        self.assertEqual(self.put().status_code, 200)
+        self.assertFalse(CushionEntry.objects.exists())  # 승인 예산이 없으면 기록하지 않는다
+        budget = self.make_budget(status="approved")
+        budget.approved_at = timezone.now()
+        budget.save(update_fields=["approved_at"])
+        BudgetItem.objects.create(user=self.user, budget=budget, bucket="cushion", allocated_amount=170_000)
+        CushionEntry.objects.create(user=self.user, cycle=budget.cycle, budget=budget, entry_type="allocation",
+                                    amount=170_000, request_key="approve", occurred_at=timezone.now())
+        self.assertEqual(self.put({"livingBudget": 770_000, "savingFloor": 1_000_000, "cushionMonthly": 120_000}).status_code, 200)
+        self.assertEqual(self.client.get("/api/budgets/cushion/").json()["cushion"]["now"], 120_000)
+        self.assertEqual(self.put({"livingBudget": 770_000, "savingFloor": 1_000_000, "cushionMonthly": 120_000}).status_code, 200)
+        self.assertEqual(CushionEntry.objects.count(), 2)  # 같은 값으로 다시 저장하면 기록 없음
 
     def test_approved_breakdown_compares_any_budget_and_keeps_design_spare(self):
         self.assertEqual(self.put().status_code, 200)
@@ -338,7 +361,7 @@ class ProtectAPITest(TestCase):
     def test_put_step_5_required_cushion_precedes_total(self):
         error = self.assert_error(self.put({"livingBudget": 3_000_000, "savingFloor": 1_000_000, "cushionMonthly": 0}),
                                   400, "cushionMonthly")
-        self.assertEqual(error["fields"]["cushionMonthly"], ["잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요."])
+        self.assertEqual(error["fields"]["cushionMonthly"], ["잔액이 쿠션 목표보다 적어서 쿠션을 꼭 적립해야 해요."])
 
     def test_put_step_6_total(self):
         error = self.assert_error(self.put({"livingBudget": 1_000_000, "savingFloor": 1_000_000, "cushionMonthly": 30_001}),
@@ -446,7 +469,7 @@ class EmptyOnboardingFlowTest(TestCase):
                          {"items": [], "summary": {"minimumMonthly": 0, "suggestedCount": 0}})
         data = self.client.get(URL).json()
         self.assertEqual((data["missing"], data["blocked"], data["savingsMin"]), ([], None, 0))
-        self.assertEqual(data["base"], {"takeHomeIncome": 2_500_000, "fixedTotal": 0, "available": 2_500_000})
+        self.assertEqual(data["base"], {"takeHomeIncome": 2_500_000, "fixedTotal": 0, "available": 2_500_000, "cardReserved": 0, "incomeSource": "registered"})
         rec = data["recommended"]
         body = {"livingBudget": rec["livingBudget"], "savingFloor": rec["savingFloor"], "cushionMonthly": rec["cushionMonthly"]}
         response = self.client.put(URL, data=json.dumps(body), content_type="application/json")

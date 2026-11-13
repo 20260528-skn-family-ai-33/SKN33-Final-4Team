@@ -69,7 +69,7 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | `items[].occurredOn` | 날짜 | 거래일 |
 | `items[].occurredTime` | 시각 문자 / null | 거래 시각 `"14:32"` (기관이 주지 않으면 `null`) |
 | `items[].direction` | 문자 | `out`(출금) · `in`(입금). DB 코드와 같음(H-07, 10/22 V①로 목록에도 넣음) |
-| `items[].transactionType` | 문자 | 목록에 나오는 값: `spending`(소비) · `income`(입금) · `transfer`(남에게 보낸 이체). DB 코드와 같음(H-07) |
+| `items[].transactionType` | 문자 | 목록에 나오는 값: `spending`(소비) · `income`(입금) · `transfer`(남에게 보낸 이체) · `not_spending`(사용자가 '소비가 아니에요'로 뺀 소비, 11/13 — 카테고리 · 분류 상태 · `funding`은 `null`, `transactionType` 필터 `spending`에는 안 나옴). DB 코드와 같음(H-07) |
 | `items[].merchantName` | 문자 | 표시 이름. 카드 = 가맹점명, 계좌 = 적요 |
 | `items[].amount` | 정수 | 원거래 금액(원, 0 이상) |
 | `items[].cancel` | 객체 | 취소 정보(위 공통 값) |
@@ -253,12 +253,13 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
 | 로그인 필요 | O |
 | 명세 상태 | 초안 |
 
-**보내는 값** — 보낼 수 있는 칸은 아래 세 개뿐이다. `category`(+ `applyToFuture`) 또는 `ownTransfer` 하나만 보낸다.
+**보내는 값** — 보낼 수 있는 칸은 아래 네 개뿐이다. `category`(+ `applyToFuture`) · `ownTransfer` · `notSpending` 중 하나만 보낸다.
 
 | 이름 | 타입 | 필수 | 범위·설명 | 예시 |
 |---|---|---|---|---|
 | `category` | 문자 / null | O | 10개 카테고리 + `ETC`(기타) 중 하나. `UNCLASSIFIED`는 보낼 수 없음. `null`은 **원래 이체였던 거래를 다시 이체로 돌릴 때만**(W) | `"FOOD"` |
 | `ownTransfer` | 불린 | X | 내 계좌 이체 확인 (R11, 11/5). 다른 칸과 같이 보내면 400. 아래 '내 계좌 이체 확인' | `true` |
+| `notSpending` | 불린 | X | '소비가 아니에요' (11/13). 다른 칸과 같이 보내면 400. 아래 '소비가 아니에요' | `true` |
 | `applyToFuture` | 불린 | X (기본 `false`) | `true`면 **같은 가맹점의 다음 새 거래**와 **이미 '확인 필요'로 남아 있는 같은 가맹점 거래**도 이 카테고리로 자동 분류 (10/30, 11/11). `canApplyToFuture: false`인 거래에 `true`를 보내도 400을 내지 않고 재사용하지 않는다 | `true` |
 
 ```json
@@ -286,6 +287,12 @@ GET /api/finance/transactions/?category=FOOD&from=2026-10-01&to=2026-10-31
     - 이체의 **받는 사람은 기억하지 않는다.** 같은 사람에게 다음에 보낸 이체는 다시 `transfer`로 들어온다(`remembered_category()`를 쓰지 않음).
 - 입금(`income`) 거래는 카테고리를 고를 수 없다 → 400 (10/24 AA⑦ 확정, 아래 실패 표).
 - **'원래 이체였던 거래' 표시 (10/24 AA⑥)**: 새 칸 없이 거래의 `field_states.original_transaction_type = "transfer"`로 남긴다. W로 소비가 된 이체 · AA⑤로 소비가 된 이체 모두. `category: null`로 되돌릴 수 있는지, 연결을 풀 때 무엇으로 돌릴지 이 값으로 판단한다. 원값은 내보내지 않고, 거래 한 건 보기에 `wasTransfer`(불린)만 준다(11/03).
+- **소비가 아니에요 (11/13)** — `{"notSpending": true | false}`. 회사 경비로 돌려받는 돈 · 친구 대신 낸 돈처럼 내가 쓴 돈이 아닌 소비를 뺀다.
+    - `true`: 소비(`spending`) → `not_spending`. 예산 사용액 · 홈 · 소비 분석 · 챗봇은 `spending`만 세서 모두 빠진다. 거래 목록(전체)에는 남는다. '확인 필요' 수에서도 빠진다.
+    - `false`: `not_spending` → `spending`. 카테고리 · 분류 상태는 바꾸지 않고 두었으므로 원래대로 돌아온다(확인 필요였으면 다시 확인 필요).
+    - 400: 소비가 아닌 거래(입금 · 이체 · 내 계좌 이체 등)에 `true`, 소비 아님이 아닌 거래에 `false`(이미 소비면 200), 전액 취소 거래, 고정지출에 연결된 소비("고정지출에 연결된 거래예요. 고정지출 연결을 먼저 풀어 주세요."). `not_spending` 거래에 `category`를 보내면 400 "소비로 되돌린 뒤 카테고리를 고를 수 있어요."
+    - 이미 원하는 상태면 200. 잠금: 회원 → 거래. DB: `financial_transaction.transaction_type`에 `not_spending` 추가 (DB_MODELS.md).
+    - 카드 첫 청구서 선차감(P-12)은 '예산에 이미 잡힌 소비'만 빼므로, 소비 아님으로 뺀 카드 사용은 청구서 미리 떼기에 남는다(실제로 카드값으로 나가는 돈).
 - **내 계좌 이체 확인 (R11, 11/5)** — `{"ownTransfer": true | false}`
     - `true` [맞아요]: `suggested` · `rejected`인 `transfer` → **이 출금만** `own_transfer`(`confirmed`). 같은 금액 입금 등 다른 거래로 넓히지 않는다. `auto`면 연결 · 유형(`own_transfer` · `saving`)은 그대로 두고 `confirmed`로만 바꾼다.
     - `false` [아니에요] · 확인 취소 · 연결 해제: → `transfer`(`rejected`). 규칙이 이은 입금이 있으면 연결(`OWN_TRANSFER`)을 지우고 입금을 `income`으로 되돌린 뒤 입금에도 `rejected`를 남겨 다시 잇지 않는다. 거절해도 **소비로 바꾸지 않는다** — 소비로 넣으려면 [소비로 분류하기].

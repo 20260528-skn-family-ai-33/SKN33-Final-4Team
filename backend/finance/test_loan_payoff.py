@@ -18,13 +18,18 @@ from . import loan_payments
 from .api_loans import sync_loan_due
 from .models import (BankAccount, Connection, FinancialTransaction as Tx, Loan, PaymentDue, PaymentMatch)
 
-# 실제 CODEF·LLM 호출 차단: 모듈을 불러올 때(테스트 DB 생성·시드 전) 시작한다
+# 실제 CODEF·LLM 호출 차단: 이 모듈 테스트가 도는 동안만 (setUpModule ~ tearDownModule)
 _blocks = [
     patch("finance.codef._request", side_effect=AssertionError("CODEF 호출 금지")),
     patch("chat.llm.openai_rest.ResponsesClient.__init__", side_effect=AssertionError("LLM 호출 금지")),
 ]
-for _block in _blocks:
-    _block.start()
+
+
+def setUpModule():
+    # 11/13: 모듈을 불러올 때 시작하면 전체 테스트(python manage.py test)에서 다른 앱(chat · policies)의
+    # ResponsesClient 테스트까지 막혀 깨진다. 이 모듈 테스트가 돌 때만 막는다
+    for block in _blocks:
+        block.start()
 
 
 def tearDownModule():

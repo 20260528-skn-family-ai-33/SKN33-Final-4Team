@@ -170,8 +170,14 @@ class LegacyConfirmationMigrationTest(TransactionTestCase):
             Cycle.objects.create(user=user, starts_on=SEPT, ends_before=OCT, confirmed_income=2500000)
         finally:
             MigrationExecutor(connection).migrate(new)
-        upgraded = SalaryDecision.objects.get(pk=original.pk)
-        self.assertEqual((upgraded.state, upgraded.is_pattern, upgraded.decided_at), ("recheck", False, original.decided_at))
-        self.assertIsNone(BudgetCycle.objects.get(user_id=user.pk).confirmed_income)
-        for field in ("snapshot_amount", "snapshot_occurred_on", "snapshot_description", "snapshot_account_id"):
-            self.assertIsNone(getattr(upgraded, field))
+        try:
+            upgraded = SalaryDecision.objects.get(pk=original.pk)
+            self.assertEqual((upgraded.state, upgraded.is_pattern, upgraded.decided_at), ("recheck", False, original.decided_at))
+            # 0008 시점 표에는 뒤에 생긴 칸(0009 income_basis 등)이 없어서, 지금 모델 전체가 아니라 이 칸만 읽는다
+            self.assertIsNone(BudgetCycle.objects.filter(user_id=user.pk).values_list("confirmed_income", flat=True).get())
+            for field in ("snapshot_amount", "snapshot_occurred_on", "snapshot_description", "snapshot_account_id"):
+                self.assertIsNone(getattr(upgraded, field))
+        finally:
+            # 11/13: 0008에 멈춘 채 끝나면 뒤 테스트(TransactionTestCase)가 새 칸 없는 표를 써서 깨진다 → 최신으로 되돌린다
+            latest = MigrationExecutor(connection)
+            latest.migrate(latest.loader.graph.leaf_nodes())

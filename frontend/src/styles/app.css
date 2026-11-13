@@ -771,7 +771,7 @@
 #mc-new-preview#mc-new-preview .mc-catuse .mc-bar.is-over span{background:var(--mc-lime-accent,#C7E948)}
 #mc-new-preview#mc-new-preview .mc-catuse-n{font-size:12.5px}
 #mc-new-preview#mc-new-preview .mc-catuse-n strong.is-over{color:var(--mc-alert)}
-#mc-new-preview#mc-new-preview .mc-catuse-adjust{display:block;margin:2px 0 0 auto;padding:4px 0;font-size:12.5px;font-weight:600}
+#mc-new-preview#mc-new-preview .mc-catuse-adjust{display:inline-flex;margin:0 0 0 2px;padding:2px 0;min-height:0;font-size:12px;font-weight:600}  /* 11/13: 카테고리 이름 옆 */
 #mc-new-preview#mc-new-preview .mc-catuse-pend{display:flex;justify-content:space-between;font-size:13px;color:var(--mc-alert)}
 #mc-new-preview#mc-new-preview .mc-neg{color:var(--mc-alert)}
 #mc-new-preview#mc-new-preview .mc-kv-btn{display:flex;justify-content:space-between;width:100%;background:none;border:0;border-radius:0;margin:0;min-height:0;color:var(--mc-ink);text-align:left;font:inherit}
@@ -1056,7 +1056,7 @@
 #mc-new-preview .mc-tx-tag.is-fixed{background:var(--mc-soft);color:var(--mc-brand)}
 #mc-new-preview .mc-tx-in{color:var(--mc-brand);font-weight:700}
 #mc-new-preview .mc-tx-out{color:var(--mc-sub)}
-#mc-new-preview .mc-listrow.is-transfer .mc-tile,#mc-new-preview .mc-listrow.is-income .mc-tile{background:var(--mc-bg);color:var(--mc-sub)}
+#mc-new-preview .mc-listrow.is-transfer .mc-tile,#mc-new-preview .mc-listrow.is-income .mc-tile,#mc-new-preview .mc-listrow.is-excluded .mc-tile{background:var(--mc-bg);color:var(--mc-sub)}
 
 /* 챗봇 — 소비 분석 카드 (결정 J · S · N · Z②) */
 #mc-new-preview .mc-asst-log .mc-msg.mc-asst-card{max-width:100%;width:100%}
@@ -1297,3 +1297,26 @@
 #mc-new-preview#mc-new-preview .mc-protect-line>.mc-cat-rec{grid-column:1;grid-row:2}
 #mc-new-preview#mc-new-preview .mc-protect-line>.mc-protect-delta{grid-column:2;grid-row:3;margin-top:-2px}
 #mc-new-preview#mc-new-preview .mc-protect-input.is-edited{border-color:var(--mc-line);color:var(--mc-ink)}  /* 11/12 시험: 지킬 돈은 고쳐도 칸·글씨를 파랗게 바꾸지 않음 (바뀐 건 아래 '기존보다'로 보임). 되돌리려면 이 줄만 지우기 */
+#mc-new-preview#mc-new-preview .mc-home2-gap{display:flex;align-items:center;gap:12px;width:100%;min-height:0;margin:10px 0 0;padding:12px 14px;border:1px solid var(--mc-line);border-radius:16px;background:var(--mc-paper);color:var(--mc-ink);text-align:left;word-break:keep-all}  /* 홈: 월급 차이 카드 (11/13) */
+#mc-new-preview#mc-new-preview .mc-home2-gap .mc-grow{display:grid;gap:2px}
+#mc-new-preview#mc-new-preview .mc-home2-gap strong{font-size:14px;font-weight:650}
+#mc-new-preview#mc-new-preview .mc-home2-gap small{font-size:12px;color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-home2-gap b,#mc-new-preview#mc-new-preview .mc-compare dd{font-weight:700;font-variant-numeric:tabular-nums}
+#mc-new-preview#mc-new-preview .is-less{color:var(--mc-brand)}
+#mc-new-preview#mc-new-preview .is-more{color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-compare{margin:14px 0 0;padding:12px 14px;border-radius:14px;background:var(--mc-bg);display:grid;gap:6px;font-size:13.5px}
+#mc-new-preview#mc-new-preview .mc-compare>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+#mc-new-preview#mc-new-preview .mc-compare dt{color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-compare dd{margin:0;color:var(--mc-ink)}
+#mc-new-preview#mc-new-preview .mc-compare .mc-compare-total{margin-top:2px;padding-top:8px;border-top:1px dashed var(--mc-line)}
+#mc-new-preview#mc-new-preview .mc-compare .mc-compare-total dt{color:var(--mc-ink);font-weight:600}
+#mc-new-preview#mc-new-preview .mc-compare .mc-compare-total dd{font-size:15px}
+#mc-new-preview#mc-new-preview .mc-compare dd.is-less{color:var(--mc-brand)}
+#mc-new-preview#mc-new-preview .mc-compare dd.is-more{color:var(--mc-alert)}  /* 11/13: 앱 공통 규칙 + 빨강 · − 파랑 (소비 증감 · 지킬 돈 '기존보다'와 같게) */
+#mc-new-preview#mc-new-preview .mc-compare dd.is-short{color:var(--mc-alert)}  /* 지킬 돈 '모자란 돈'은 경고라 빨강 (+/− 색 규칙과 별개) */
+#mc-new-preview#mc-new-preview .mc-salary-head{align-items:baseline;gap:8px}  /* 월급 확인 창: 회차 제목 | [확인 취소] (11/13) */
+#mc-new-preview#mc-new-preview .mc-salary-head .mc-link{flex:none;min-height:0;padding:0;font-size:13px}
+#mc-new-preview#mc-new-preview .mc-dialog .mc-cushion-reset{display:block;margin:14px auto 0}
+#mc-new-preview#mc-new-preview .mc-dialog .mc-cushion-hint{margin:-11px 0 0;font-size:12px}  /* 입력칸 바로 아래 추천 금액 */
+#mc-new-preview#mc-new-preview .mc-dialog .mc-cushion-field{font-size:15px;margin-top:18px;padding-top:18px;border-top:1px solid var(--mc-line)}  /* 머니쿠션 목표 창: '목표 금액' 칸 이름 */  /* 머니쿠션 목표 창: 기본으로 되돌리기 (11/13) */
+#mc-new-preview#mc-new-preview .mc-cushion-title{font-size:17px;font-weight:600;color:var(--mc-ink)}  /* 머니쿠션 카드 제목 (11/13) */

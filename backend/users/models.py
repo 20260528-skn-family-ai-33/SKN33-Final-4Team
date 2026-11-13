@@ -132,6 +132,9 @@ class FinancialProfile(models.Model):
     cushion_enabled = models.BooleanField("쿠션 설정 여부", null=True, blank=True)
     cushion_target = models.BigIntegerField("쿠션 목표액", null=True, blank=True)
     cushion_monthly = models.BigIntegerField("월 쿠션 적립금", null=True, blank=True)  # 2026-10-21 보호 하한(cushion_floor) 대체
+    # 11/13: 머니쿠션 목표를 사용자가 직접 정한 금액. NULL=기본(월 실수령액 × 3, 월급이 바뀌면 같이 바뀜)
+    # 쿠션 필수 판단(P-08) · 지킬 돈 목표도 같은 목표를 쓴다. cushion_target 은 저장 때의 '현재 목표' 기록
+    cushion_goal_amount = models.BigIntegerField("쿠션 목표액 (직접 정함)", null=True, blank=True)
     cushion_use_policy = models.CharField("쿠션 사용 조건", max_length=50, null=True, blank=True)
     updated_at = models.DateTimeField("수정 시각", auto_now=True)
 
@@ -164,6 +167,10 @@ class FinancialProfile(models.Model):
             ),
             models.CheckConstraint(
                 condition=Q(cushion_monthly__isnull=True) | Q(cushion_monthly__gte=0), name="fp_cushion_monthly_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(cushion_goal_amount__isnull=True) | Q(cushion_goal_amount__gte=10_000, cushion_goal_amount__lte=1_000_000_000),
+                name="fp_cushion_goal_amount_range",
             ),
             models.CheckConstraint(
                 condition=Q(housing_type__isnull=True) | Q(housing_type__in=["alone", "family"]),

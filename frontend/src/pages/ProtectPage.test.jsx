@@ -137,3 +137,72 @@ it('온보딩에서는 창 없이 바로 저장하고 추천으로 간다 (11/13
     document.cookie = 'csrftoken=; max-age=0; path=/'
   }
 })
+
+it('홈 월급 차이에서 [이번 예산 다시 짜기]로 오면 받은 금액으로 나눈 추천값을 채우고, 받은 월급으로 나눈다고 알려 준다 (11/13)', async () => {
+  data.base = { ...data.base, takeHomeIncome: 2700000, available: 1620000, incomeSource: 'actual' }
+  data.recommended = { livingBudget: 450000, savingFloor: 380000, cushionMonthly: 320000 }
+  await act(async () => root.render(<MemoryRouter initialEntries={[{ pathname: PATHS.protect, state: { from: 'my', refreshRecommendation: true } }]}><PopupProvider><Routes>
+    <Route path={PATHS.protect} element={<ProtectPage />} />
+  </Routes></PopupProvider></MemoryRouter>))
+  expect(host.querySelector('#mc-p-livingBudget').value).toBe('450,000')
+  expect(host.textContent).toContain('이번 주기는 실제로 받은 월급 2,700,000원으로 나눠요.')
+  expect(host.textContent).toContain('기존보다 −50,000원')
+})
+
+it('고정지출이 월급보다 많으면 월급 · 고정지출 · 카드값을 나눠 보여 주고 모자란 돈을 알려 준다 (11/13)', async () => {
+  data.base = { takeHomeIncome: 1000000, fixedTotal: 1056824, available: -56824, cardReserved: 498515, incomeSource: 'registered' }
+  data.blocked = { reason: 'fixed_over_income', shortfall: 56824 }
+  data.recommended = null
+  await render()
+  const rows = [...host.querySelectorAll('.mc-compare > div')].map((d) => d.textContent)
+  expect(rows).toEqual(['월급1,000,000원', '고정지출−558,309원', '이번 주기 카드값−498,515원', '모자란 돈−56,824원'])
+  expect(host.querySelector('[role=alert] h2').textContent).toBe('고정지출이 월급보다 많아요')
+  expect([...host.querySelectorAll('[role=alert] button')].map((b) => b.textContent)).toEqual(['월급 확인', '고정지출 확인'])
+})
+
+it('나눈 기준 창은 고정지출과 이번 주기 카드값을 나눠 적는다 (11/13)', async () => {
+  data.base = { ...data.base, fixedTotal: 1080000, cardReserved: 300000 }
+  await render()
+  await act(async () => host.querySelector('[aria-label="추천안을 나눈 기준 보기"]').click())
+  expect(document.body.textContent).toContain('월급 3,000,000원에서 고정지출 780,000원과 이번 주기 카드값 300,000원을 뺀 금액을 나눴어요.')
+})
+
+it('마이에서 생활비는 그대로 두고 저축 · 쿠션만 고치면 다시 추천하지 않고 저장만 한다 (11/13)', async () => {
+  data.budgetApproved = true  // 이번 주기 승인 예산 있음 (approvedBudget 은 충당 · 설정 차이가 있을 때만 와서 보통 없다)
+  document.cookie = 'csrftoken=test; path=/'
+  try {
+    await act(async () => root.render(<MemoryRouter initialEntries={[{ pathname: PATHS.protect, state: { from: 'my' } }]}><PopupProvider><Routes>
+      <Route path={PATHS.protect} element={<ProtectPage />} />
+      <Route path={PATHS.recommend} element={<p>추천 화면</p>} />
+      <Route path={PATHS.my} element={<p>마이 화면</p>} />
+    </Routes></PopupProvider></MemoryRouter>))
+    const type = (id, value) => act(() => {
+      const el = host.querySelector(id)
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value)
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await type('#mc-p-savingFloor', '400000')
+    await act(async () => host.querySelector('#mc-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(document.querySelector('[aria-label="예산 다시 추천"]')).toBeNull()  // 다시 추천 창 없이
+    const put = fetch.mock.calls.find(([, o]) => o?.method === 'PUT')
+    expect(JSON.parse(put[1].body)).toEqual({ livingBudget: 500000, savingFloor: 400000, cushionMonthly: 320000 })
+    expect(host.textContent).toContain('마이 화면')
+  } finally {
+    document.cookie = 'csrftoken=; max-age=0; path=/'
+  }
+})
+
+it('마이에서 생활비를 고치면 다시 추천 창을 연다 (11/13)', async () => {
+  data.budgetApproved = true
+  await act(async () => root.render(<MemoryRouter initialEntries={[{ pathname: PATHS.protect, state: { from: 'my' } }]}><PopupProvider><Routes>
+    <Route path={PATHS.protect} element={<ProtectPage />} />
+  </Routes></PopupProvider></MemoryRouter>))
+  await act(() => {
+    const el = host.querySelector('#mc-p-livingBudget')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, '450000')
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => host.querySelector('#mc-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(document.querySelector('[aria-label="예산 다시 추천"]')).not.toBeNull()
+  expect(fetch.mock.calls.some(([, o]) => o?.method === 'PUT')).toBe(false)
+})

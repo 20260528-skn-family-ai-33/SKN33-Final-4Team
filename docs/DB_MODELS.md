@@ -260,6 +260,22 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 `salary_decision`에 nullable `snapshot_amount`(bigint), `snapshot_occurred_on`(date), `snapshot_description`(varchar 500), `snapshot_account_id`(UUID, 당시 계좌 값이므로 FK 아님)를 추가한다. 사용자 확인 시에만 원거래 값을 저장한다. 금액·거래일·적요 원문·계좌 UUID가 달라지거나 기준값이 없으면 `recheck`로 전환하고 `is_pattern`을 해제한다. 변경 없는 확정은 유지한다. 재확인 전까지 인정 합계에서 제외하며 과거 기준값과 `decided_at`은 보존한다.
 
 기존 확정 기록에는 기준값을 채우지 않는다. 데이터 마이그레이션은 기존 `confirmed`를 `recheck`로 바꾸고 자동 인식 기준과 영향 회차의 `confirmed_income` 캐시를 비운다. 개발/운영 DB 적용은 별도이며, 회귀 테스트는 전용 테스트 DB에서 수행한다. 상세 조회 계약은 [api/salary.md](api/salary.md)의 '사용자 확정 유효성' 참고.
+## 2026-11-13: 머니쿠션 목표 직접 정하기 (users — 김나은 makemigrations)
+
+- `financial_profile.cushion_goal_amount`(bigint, NULL 허용) 추가. NULL = 기본 목표(월 실수령액 × 3, 월급을 따라감). 값이 있으면 그 금액이 목표. 제약 `fp_cushion_goal_amount_range`: NULL 또는 10,000 ~ 1,000,000,000원.
+- 이유: 베타 피드백 — 목표가 월급의 3배로 고정이라 바꿀 수 없었다. 처음엔 3 · 6 · 12배 중 고르게 했다가 직접 입력으로 바꿨다(배수 선택이 어색하다는 의견). 기존 `cushion_target`은 '저장 당시 목표액' 기록이라 NULL 과 기본을 구분할 수 없어 칸을 따로 둔다. 목표를 바꿀 때 `cushion_target`도 함께 맞춘다. 상세: api/cushion.md 'PATCH'.
+
+## 2026-11-13: 거래 유형 '소비 아님' (finance — 김나은 makemigrations)
+
+- `financial_transaction.transaction_type`에 `not_spending`(소비 아님) 추가 → 제약 `ft_transaction_type_valid` 값 목록이 바뀐다.
+- 이유: 베타 피드백 — 회사 경비로 돌려받는 교통비처럼 내가 쓴 돈이 아닌 카드 · 계좌 소비를 예산에서 뺄 방법이 없었다. 새 칸 대신 유형으로 둔 이유: 예산 · 홈 · 소비 분석 · 챗봇이 모두 `transaction_type = 'spending'`만 세므로 계산 코드를 고치지 않아도 빠진다. 카테고리(`confirmed_category`) · 분류 상태는 그대로 둬서 되돌리면 원래대로 돌아온다. 상세: api/transactions.md '소비가 아니에요'.
+
+## 2026-11-13: 이번 주기만 받은 월급으로 예산 나누기 (budgets/0009 — 김나은 makemigrations)
+
+- `budget_cycle.income_basis`(이번 주기 예산 기준 월급, 없으면 등록 실수령액) · `income_answered_for`(월급 차이 안내에 답했을 때의 받은 월급 합계) 추가. `income_basis`는 비었거나 1 이상(`bc_income_basis_positive`).
+- 이유: 베타 피드백 — 식대 · 수당으로 월급이 매달 조금씩 다른데, 예산은 등록 실수령액으로만 나눠서 실제로 받은 돈과 맞지 않았다. 등록 실수령액을 매달 바꾸게 하면 다음 달에도 그 금액이 남으니, 사용자가 고른 **그 주기에만** 받은 금액을 쓴다. 주기마다 다른 값이라 `financial_profile`이 아니라 `budget_cycle`에 둔다.
+- `income_answered_for`는 같은 금액으로 다시 묻지 않으려고 둔다. 받은 금액이 바뀌면(분할 입금 · 확인 정정) 값이 달라져 다시 묻는다. 상세: [api/salary.md](api/salary.md) '월급 차이 안내'.
+
 ## 2026-11-12: 월 실수령액 '다음 주기부터' 적용 (users/0014)
 
 - `financial_profile.scheduled_take_home_income`(다음 주기 실수령액) · `income_changes_on`(실수령액 전환일) 추가. 둘 다 비었거나 둘 다 있어야 한다(`fp_income_change_valid`, 금액 ≥ 1).

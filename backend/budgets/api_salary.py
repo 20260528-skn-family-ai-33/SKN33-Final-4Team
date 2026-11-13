@@ -12,10 +12,10 @@ from finance.inputs import body_dict, reject_unknown_fields
 from finance.models import FinancialTransaction
 from users.models import FinancialProfile
 from .api import account_json, lock_user
-from .models import Budget, SalaryDecision
+from .models import Budget, BudgetCycle, SalaryDecision
 from .salary import (confirmation_snapshot, current_salary_profile, expire_salary_drafts, known_deposits, memo_key, next_payday_on,
-                     refresh_auto, refresh_confirmed, salary_cycle_dates, salary_windows, store_income)
-from .salary_serializers import SalarySerializer
+                     recognized, refresh_auto, refresh_confirmed, salary_cycle_dates, salary_windows, store_income)
+from .salary_serializers import SalaryGapSerializer, SalarySerializer
 
 
 def salary_data(profile, today):
@@ -221,6 +221,8 @@ def salary_decide(request):
     user, today = request.user, timezone.localdate()
     with transaction.atomic():
         profile = locked_profile(user, today)
+        # 11/13: '이번 주기만 받은 금액으로' 기준이 있던 주기 — 이 판단으로 받은 금액이 바뀌어 기준이 풀리면 화면이 다시 짤지 묻는다
+        based = set(BudgetCycle.objects.filter(user=user, income_basis__isnull=False).values_list("pk", flat=True))
         refresh_confirmed(user)
         windows = salary_windows(profile, today)
         touched = set(SalaryDecision.objects.filter(user=user, transaction_id__in=ids)
@@ -238,6 +240,10 @@ def salary_decide(request):
                 if reason:
                     raise ValidationError({"use_pattern": [reason]})
                 SalaryDecision.objects.filter(user=user, is_pattern=True).exclude(transaction=txs[0]).update(is_pattern=False)
+            elif len(txs) > 1:
+                # 11/13: 월급을 여러 건으로 확인하면 예전 1건 기준을 끈다. 켜 두면 다음 달에 그 1건만 자동 인정돼
+                # 나머지(식대 등)가 빠지고 '월급이 덜 들어왔어요'가 잘못 뜬다. 지난 확인 · 자동 인정 기록은 그대로
+                SalaryDecision.objects.filter(user=user, is_pattern=True).update(is_pattern=False)
             # 이 회차의 판단을 고른 목록으로: 빠진 확인 · 자동 인정은 판단 없음으로 되돌린다
             SalaryDecision.objects.filter(user=user, pay_cycle_on=cycle_on).exclude(transaction_id__in=ids).delete()
             for tx in txs:
@@ -258,7 +264,8 @@ def salary_decide(request):
         result = deposits_data(user, profile, today)
         for cycle_on in touched:
             store_income(user, cycle_on)
-        return Response(result)
+        still = set(BudgetCycle.objects.filter(pk__in=based, income_basis__isnull=False).values_list("pk", flat=True))
+        return Response({**result, "basis_reset": bool(based - still)})
 
 
 @api_view(["DELETE"])
@@ -270,3 +277,34 @@ def salary_pattern(request):
         profile = locked_profile(request.user, today)
         SalaryDecision.objects.filter(user=request.user, is_pattern=True).update(is_pattern=False)
         return Response(deposits_data(request.user, profile, today))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@idempotent()
+def salary_gap_answer(request):
+    """월급 차이 안내에 답하기 (11/13, docs/api/salary.md). 화면이 본 받은 금액(salaryAmount)이 지금과 다르면 400.
+    apply → 이번 주기 budget_cycle.income_basis = 받은 금액 (등록 실수령액은 그대로). keep → 기준은 그대로.
+    둘 다 income_answered_for = 받은 금액이라 같은 금액으로는 다시 묻지 않는다. 같은 답을 다시 보내도 성공"""
+    from .home import ensure_cycle
+
+    serializer = SalaryGapSerializer(data=body_dict(request))
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+    today = timezone.localdate()
+    with transaction.atomic():
+        profile = locked_profile(request.user, today)
+        start, next_payday, _ = salary_cycle_dates(profile, today)
+        cycle = ensure_cycle(request.user, start, next_payday)
+        refresh_auto(request.user, salary_windows(profile, today))
+        received = sum(tx.amount for tx in recognized(request.user, start))
+        if received != data["salary_amount"]:
+            raise ValidationError({"salary_amount": ["받은 월급이 바뀌었어요. 홈을 새로고침해 주세요."]})
+        changed = ["income_answered_for"]
+        if data["answer"] == "apply" and cycle.income_basis != received:
+            cycle.income_basis = received
+            changed.append("income_basis")
+            expire_salary_drafts(request.user)  # 기준 금액이 바뀌면 만들어 둔 초안은 다시 추천
+        cycle.income_answered_for = received
+        cycle.save(update_fields=changed)
+        return Response({"income_basis": cycle.income_basis, "salary_amount": received})

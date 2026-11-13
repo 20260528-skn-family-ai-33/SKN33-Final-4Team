@@ -36,7 +36,8 @@ UNCLASSIFIED = "UNCLASSIFIED"
 # 내 계좌끼리 이체 · 저축 · 대출 상환 · 카드값은 넣지 않는다. 단 이 기능이 자동 분류하거나 사용자가 확인한 내 계좌 이체(출금 쪽)는
 # 그 뒤 저축으로 바뀌었어도 되돌릴 수 있게 남긴다 (R11)
 OWN_TYPES = (Tx.TransactionType.OWN_TRANSFER, Tx.TransactionType.SAVING)
-LIST_TYPES = (Tx.TransactionType.SPENDING, Tx.TransactionType.INCOME, Tx.TransactionType.TRANSFER)
+LIST_TYPES = (Tx.TransactionType.SPENDING, Tx.TransactionType.INCOME, Tx.TransactionType.TRANSFER,
+              Tx.TransactionType.NOT_SPENDING)  # 11/13: '소비가 아니에요'로 뺀 거래도 목록에는 남긴다
 PERIOD_ERROR = "기간을 다시 골라 주세요."
 # 목록 거래 유형 필터 (11/9). transfer = 남에게 보낸 이체 + 목록에 나오는 내 계좌 이체 줄(OWN_TYPES)
 TYPE_FILTERS = {
@@ -292,6 +293,9 @@ OWN_TRANSFER_ERROR = "내 계좌 이체로 확인할 수 없는 거래예요."
 OWN_TRANSFER_ONLY_ERROR = "내 계좌 이체 확인은 다른 칸과 같이 보낼 수 없어요."
 OWN_TRANSFER_FIRST_ERROR = "내 계좌 이체 확인을 먼저 취소해 주세요."
 OWN_TRANSFER_FIXED_ERROR = "고정지출 근거로 쓰인 거래예요. 고정지출 화면에서 먼저 정리해 주세요."
+NOT_SPENDING_ERROR = "소비 거래만 '소비가 아니에요'로 바꿀 수 있어요."
+NOT_SPENDING_ONLY_ERROR = "'소비가 아니에요'는 다른 칸과 같이 보낼 수 없어요."
+NOT_SPENDING_FIRST_ERROR = "소비로 되돌린 뒤 카테고리를 고를 수 있어요."
 
 
 def suggestion_info(tx):
@@ -377,6 +381,22 @@ def _apply_category(tx, code):
     return changed
 
 
+def _apply_not_spending(tx, excluded):
+    """'소비가 아니에요' (11/13). true = 소비(spending) → not_spending, false = not_spending → spending.
+    카테고리 · 분류 상태는 그대로 둬서 되돌리면 원래 카테고리로 돌아온다. 고정지출에 연결된 소비 · 전액 취소 거래는 400.
+    이미 원하는 상태면 성공(바꿀 칸 없음)"""
+    T = Tx.TransactionType
+    want, other = (T.NOT_SPENDING, T.SPENDING) if excluded else (T.SPENDING, T.NOT_SPENDING)
+    if tx.transaction_type == want:
+        return []
+    if tx.transaction_type != other or (excluded and cancel_info(tx)["state"] == "full"):
+        raise ValidationError({"not_spending": [NOT_SPENDING_ERROR]})
+    if excluded and is_fixed_linked(tx):
+        raise ValidationError({"not_spending": [FIXED_TRANSFER_ERROR]})
+    tx.transaction_type = want
+    return ["transaction_type"]
+
+
 def _apply_own_transfer(tx, is_mine):
     """내 계좌 이체 확인 (R11). 이 기능이 판단한 은행 출금만 바꾼다. 고칠 칸 목록을 돌려준다 (틀리면 400)
     - true  [맞아요]: 추정(suggested) · 거절(rejected)한 transfer → 이 출금만 own_transfer. 자동 분류(auto)는 연결 · 유형 그대로 확인만
@@ -447,17 +467,21 @@ def transaction_detail(request, transaction_id):
     """17. GET  /api/finance/transactions/<id>/ — 거래 한 건 보기
     18. PATCH /api/finance/transactions/<id>/ — 거래 분류 수정 {"category": "FOOD" | null, "applyToFuture": true}
         또는 내 계좌 이체 확인 {"ownTransfer": true | false} (R11, 다른 칸과 같이 보낼 수 없음)
+        또는 '소비가 아니에요' {"notSpending": true | false} (11/13, 다른 칸과 같이 보낼 수 없음)
     없는 거래 · 남의 거래 · 목록에 안 나오는 거래(같은 구매로 빠진 계좌 출금, 카드값 등)는 모두 404 (★3)"""
     if request.method == "GET":
         tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
         return Response(transaction_detail_body(tx))
 
     data = body_dict(request)
-    reject_unknown_fields(data, {"category", "apply_to_future", "own_transfer"})
+    reject_unknown_fields(data, {"category", "apply_to_future", "own_transfer", "not_spending"})
     own = "own_transfer" in data
+    excluded = "not_spending" in data  # 11/13 '소비가 아니에요' {"notSpending": true | false} — 다른 칸과 같이 못 보냄
+    if excluded and (len(data) != 1 or not isinstance(data["not_spending"], bool)):
+        raise ValidationError({"not_spending": [NOT_SPENDING_ONLY_ERROR if len(data) != 1 else APPLY_TO_FUTURE_ERROR]})
     if own and (len(data) != 1 or not isinstance(data["own_transfer"], bool)):
         raise ValidationError({"own_transfer": [OWN_TRANSFER_ONLY_ERROR if len(data) != 1 else APPLY_TO_FUTURE_ERROR]})
-    if not own and "category" not in data:
+    if not own and not excluded and "category" not in data:
         raise ValidationError({"category": [CATEGORY_ERROR]})
     apply_to_future = data.get("apply_to_future", False)
     if not isinstance(apply_to_future, bool):
@@ -467,7 +491,7 @@ def transaction_detail(request, transaction_id):
     # 같은 거래에 '카테고리 변경'과 '이체로 되돌리기'가 동시에 와도 하나씩 차례로 처리되어
     # transfer + 카테고리 확정 같은 섞인 상태가 남지 않는다 (PR #41 리뷰).
     with transaction.atomic():
-        if own or apply_to_future:
+        if own or excluded or apply_to_future:
             # 잠금 순서: 회원 → 거래 (pipeline · budgets.api.lock_user 와 같음). 저장 뒤 처리와 차례로 돈다
             get_user_model().objects.select_for_update(no_key=True).filter(pk=request.user.pk).first()
         # 1) 잠금: 조인 없이 거래 행만 잠근다 (outer join 쪽은 FOR UPDATE 불가)
@@ -478,7 +502,11 @@ def transaction_detail(request, transaction_id):
         tx = get_object_or_404(listed_transactions(request.user), pk=transaction_id)
         if own:
             changed = _apply_own_transfer(tx, data["own_transfer"])
+        elif excluded:
+            changed = _apply_not_spending(tx, data["not_spending"])
         else:
+            if tx.transaction_type == Tx.TransactionType.NOT_SPENDING:
+                raise ValidationError({"category": [NOT_SPENDING_FIRST_ERROR]})
             if tx.transaction_type == Tx.TransactionType.INCOME:
                 raise ValidationError({"category": [INCOME_ERROR]})  # 10/24 AA⑦
             if tx.transaction_type in OWN_TYPES:
@@ -496,7 +524,7 @@ def transaction_detail(request, transaction_id):
         if changed:
             tx.save(update_fields=[*changed, "updated_at"])
         # '앞으로도 적용'이면 같은 가게의 다른 '확인 필요' 거래도 같은 카테고리로 (11/11)
-        if not own and FUTURE_KEY in (tx.field_states or {}):
+        if not own and not excluded and FUTURE_KEY in (tx.field_states or {}):
             for other in same_store_pending(tx):
                 classifier.apply_remembered(other, data["category"])
                 other.save(update_fields=[*classifier.FIELDS, "updated_at"])

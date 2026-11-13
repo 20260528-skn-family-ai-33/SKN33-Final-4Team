@@ -46,7 +46,6 @@ export default function BudgetPage() {
   const { data, error } = useApi('/api/budgets/')
   // 자물쇠를 누른 결과 (서버 응답). 카테고리 코드 → { locked, lockedAmount }
   const [locks, setLocks] = useState({})
-  const [nag, setNag] = useState(undefined)
   const [overOpen, setOverOpen] = useState(false)  // 생활비 초과 안내 펼침
   const [lockError, setLockError] = useState(null)
 
@@ -77,7 +76,6 @@ export default function BudgetPage() {
     )
   }
 
-  const shownNag = nag === undefined ? data.nag : nag
   const lockOf = (c) => locks[c.category] ?? { locked: c.locked, lockedAmount: c.lockedAmount }
 
   const toggleLock = async (c) => {
@@ -85,7 +83,6 @@ export default function BudgetPage() {
     try {
       const saved = await apiSend(`/api/budgets/${budget.budgetId}/categories/${c.category}/`, 'PATCH', { locked: !lockOf(c).locked })
       setLocks((now) => ({ ...now, [c.category]: { locked: saved.locked, lockedAmount: saved.lockedAmount } }))
-      setNag(saved.nag)
     } catch (err) {
       setLockError(err.message)
     }
@@ -140,7 +137,21 @@ export default function BudgetPage() {
           return (
             <div className="mc-catuse" key={c.category}>
               <div className="mc-row">
-                <span className="mc-catname"><span className="mc-cat-ic"><Icon name={catIcon(c.categoryName)} /></span>{c.categoryName}{c.minAmount > 0 && <em className="mc-min-tag">최소 {manwon(c.minAmount)}</em>}</span>
+                <span className="mc-catname"><span className="mc-cat-ic"><Icon name={catIcon(c.categoryName)} /></span>{c.categoryName}
+                  {c.minAmount > 0 && <em className="mc-min-tag">최소 {manwon(c.minAmount)}</em>}
+                  {/* 초과한 카테고리 → 그 카테고리를 담아 챗봇 예산 조정으로 (11/11, docs/api/chat.md budgetContext.hints). 11/13: 카테고리 이름 옆으로
+                      overAmount 는 참고값이고 서버가 최신 초과액을 다시 확인한다.
+                      승인된 예산에서만, 기타는 빼고 보여 준다 (예산 조정이 초과 항목 조정을 시작하는 조건과 같게) */}
+                  {over > 0 && budget.status === 'approved' && c.category !== ETC.code && (
+                    <button type="button" className="mc-link mc-catuse-adjust" aria-label={`${c.categoryName} 예산 조정하기`}
+                      onClick={() => navigate(PATHS.assistant, { state: { budgetContext: {
+                        baseBudgetId: budget.budgetId, mode: 'NORMAL_ADJUSTMENT',
+                        hints: { reason: 'over', categories: [c.category], overAmount: over },
+                      } } })}>
+                      예산 조정하기 ›
+                    </button>
+                  )}
+                </span>
                 <button type="button" className="mc-lockt" aria-pressed={lock.locked} aria-label={`${c.categoryName} 자물쇠`} onClick={() => toggleLock(c)}>
                   <LockIcon />
                 </button>
@@ -150,25 +161,12 @@ export default function BudgetPage() {
                 <span className="mc-muted">{won(c.spent)} / {won(c.allocated)} · {pct(c.spent, c.allocated)}%</span>
                 {over ? <strong className="is-over">{won(over)} 초과</strong> : <strong>남은 {won(Math.max(c.allocated - c.spent, 0))}</strong>}
               </div>
-              {/* 초과한 카테고리 → 그 카테고리를 담아 챗봇 예산 조정으로 (11/11, docs/api/chat.md budgetContext.hints).
-                  overAmount 는 참고값이고 서버가 최신 초과액을 다시 확인한다.
-                  승인된 예산에서만, 기타는 빼고 보여 준다 (예산 조정이 초과 항목 조정을 시작하는 조건과 같게) */}
-              {over > 0 && budget.status === 'approved' && c.category !== ETC.code && (
-                <button type="button" className="mc-link mc-catuse-adjust" aria-label={`${c.categoryName} 예산 조정하기`}
-                  onClick={() => navigate(PATHS.assistant, { state: { budgetContext: {
-                    baseBudgetId: budget.budgetId, mode: 'NORMAL_ADJUSTMENT',
-                    hints: { reason: 'over', categories: [c.category], overAmount: over },
-                  } } })}>
-                  예산 조정하기 ›
-                </button>
-              )}
             </div>
           )
         })}
         <OutOfBudgetLine value={data.outOfBudget} />
         <OldScopeNote amount={budget.outOfBudgetAllocated} />
         {lockError && <p className="mc-note" role="alert" style={{ padding: 0 }}>{lockError}</p>}
-        {shownNag && <p className="mc-note" style={{ padding: 0 }}>{shownNag}</p>}
         {unclassifiedCount > 0 && (
           <button type="button" className="mc-catuse mc-catuse-pend" onClick={goPending}>
             <span>확인 필요 {unclassifiedCount}건</span><strong>고르러 가기 ›</strong>

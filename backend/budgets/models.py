@@ -56,6 +56,10 @@ class BudgetCycle(models.Model):
     expected_payday = models.DateField("다음 급여 예정일", null=True, blank=True)
     confirmed_income = models.BigIntegerField("확인된 주기 수입", null=True, blank=True)
     approved_carryover = models.BigIntegerField("승인된 이월금", null=True, blank=True)
+    # 11/13 월급 차이 안내: 사용자가 '이번 주기만 실제 들어온 월급으로' 고르면 그 금액. 없으면 등록 실수령액으로 계산
+    income_basis = models.BigIntegerField("이번 주기 예산 기준 월급", null=True, blank=True)
+    # 월급 차이 안내에 답했을 때의 받은 월급 합계. 받은 금액이 이 값과 다르면 다시 묻는다
+    income_answered_for = models.BigIntegerField("월급 차이 안내에 답한 받은 금액", null=True, blank=True)
     status = models.CharField("진행 상태", max_length=20, choices=Status.choices, default=Status.ACTIVE)
     revision_no = models.IntegerField("동시성 확인 번호", default=0)
 
@@ -66,6 +70,7 @@ class BudgetCycle(models.Model):
             models.UniqueConstraint(fields=["user", "starts_on"], name="budget_cycle_user_id_starts_on_key"),
             models.CheckConstraint(condition=Q(starts_on__lt=models.F("ends_before")), name="bc_starts_before_ends"),
             models.CheckConstraint(condition=Q(status__in=["active", "closed"]), name="bc_status_valid"),
+            models.CheckConstraint(condition=Q(income_basis__isnull=True) | Q(income_basis__gt=0), name="bc_income_basis_positive"),
         ]
 
     def __str__(self):

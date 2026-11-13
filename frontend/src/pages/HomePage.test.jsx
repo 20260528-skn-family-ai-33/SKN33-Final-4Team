@@ -7,6 +7,7 @@ import { runFinanceSync } from '../utils/financeSync.js'
 import { PATHS } from '../routes.js'
 import BillCheckDialog from '../popups/BillCheckDialog.jsx'
 import SyncResultPopup from '../popups/SyncResultPopup.jsx'
+import SalaryGapPopup from '../popups/SalaryGapPopup.jsx'
 import CardCredentialPopup from '../popups/CardCredentialPopup.jsx'
 import { toast } from '../utils/toast.js'
 
@@ -109,6 +110,20 @@ it('예산을 넘긴 카테고리마다 종 알림에 한 줄이 생기고 누�
   expect(navigate).toHaveBeenCalledWith(PATHS.budget)
 })
 
+// 11/13: '자주 바꾸고 있어요' 문구는 예산 화면 대신 종 알림 한 줄
+it('예산을 자주 바꾸면 종 알림에 한 줄이 생기고 누르면 예산 화면으로 간다', async () => {
+  const nag = '자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?'
+  const budget = { livingBudget: 300000, livingLeft: 100000, livingPct: 67, spare: 0, daily: 0, daysLeft: 10, outOfBudgetAllocated: 0,
+    outOfBudget: { total: 0, categories: [] }, overCategories: [], nag }
+  useApi.mockReturnValue({ reload, data: { period: null, balance: { accountCount: 0, total: null }, pendingCount: 0, needsPaydayCount: 0, mustPay: [], budget } })
+  await act(() => root.render(<HomePage />))
+  await act(async () => host.querySelector('[aria-label="알림 1개"]').click())
+  const [item] = openPopup.mock.calls.at(-1)[0].props.items
+  expect(item).toMatchObject({ key: 'nag', icon: 'RefreshCw', text: nag })
+  item.go()
+  expect(navigate).toHaveBeenCalledWith(PATHS.budget)
+})
+
 it('생활비 예산 대비 큰 지출 · 이체마다 종 알림에 한 줄이 생기고 누르면 거래 내역으로 간다', async () => {
   const budget = { livingBudget: 1000000, livingLeft: 500000, livingPct: 50, spare: 0, daily: 0, daysLeft: 10, outOfBudgetAllocated: 0,
     outOfBudget: { total: 0, categories: [] }, overCategories: [],
@@ -160,4 +175,18 @@ it('시작한 예산의 카드값 미반영 안내와 같은 주기 재추천 �
   expect(navigate).not.toHaveBeenCalled()
   dialog.props.onFound()
   expect(navigate).toHaveBeenCalledWith(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })
+})
+
+it('받은 월급이 등록 금액과 다르면 주기 밑 띠와 알림으로 묻고, 누르면 월급 차이 창을 연다 (11/13)', async () => {
+  const salaryGap = { diff: -300000, received: 2200000, registered: 2500000, basis: null }
+  const period = { startDate: '2026-10-25', endDate: '2026-11-24', nextPayday: '2026-11-25', dday: 12, salaryState: 'received', salaryGap }
+  useApi.mockReturnValue({ reload, data: { period, balance: { accountCount: 1, total: 0 }, pendingCount: 0, needsPaydayCount: 0, mustPay: [], budget: null } })
+  await act(() => root.render(<HomePage />))
+  const strip = host.querySelector('.mc-home2-gap')
+  expect(strip.textContent).toContain('월급이 300,000원 덜 들어왔어요')
+  await act(async () => strip.click())
+  const popup = openPopup.mock.calls.at(-1)[0]
+  expect(popup.type).toBe(SalaryGapPopup)
+  expect(popup.props.gap).toEqual(salaryGap)
+  expect(host.querySelector('[aria-label="알림 1개"]')).not.toBeNull()
 })

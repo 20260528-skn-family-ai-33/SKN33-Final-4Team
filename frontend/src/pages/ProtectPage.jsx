@@ -43,7 +43,7 @@ function hint(key, value, data) {
   if (key === 'livingBudget') return <>하루 약 <b>{won(Math.floor(value / 30 / 100) * 100)}</b> 쓸 수 있어요<small>30일 기준</small></>
   if (key === 'savingFloor' && value < data.savingsMin) return `저축 확인에서 고른 ${won(data.savingsMin)}보다 적게 정할 수 없어요.`
   if (key === 'savingFloor') return <>1년이면 <b>{won(value * 12)}</b> 모여요<small>매달 같은 금액 · 이자 제외</small></>
-  if (value === 0) return data.cushion.required ? '잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요.' : '쿠션을 적립하지 않아요.'
+  if (value === 0) return data.cushion.required ? '잔액이 쿠션 목표보다 적어서 쿠션을 꼭 적립해야 해요.' : '쿠션을 적립하지 않아요.'
   const need = data.cushion.target - (data.cushion.balanceTotal ?? 0)  // 지금 잔액에서 더 모아야 할 돈
   if (need <= 0) return <>지금 잔액으로 쿠션 목표 {won(data.cushion.target)}를 이미 채웠어요.</>
   return <>약 <b>{Math.ceil(need / value)}개월</b>이면 쿠션 목표에 닿아요<small>목표 {won(data.cushion.target)} · 지금 잔액 기준</small></>
@@ -125,6 +125,12 @@ export default function ProtectPage() {
       document.getElementById('mc-main')?.scrollTo?.({ top: 0, behavior: 'smooth' })
       return
     }
+    // 11/13: 이미 승인한 예산이 있고 생활비는 그대로면(저축 목표액 · 월 쿠션 적립금만 고침) 카테고리 배분이 바뀌지 않으니
+    // 다시 추천(LLM)하지 않고 저장만 한다. 월급 차이 · 카드 청구서로 다시 짜러 온 경우(refreshRecommendation)는 제외
+    if (manage && data.budgetApproved && !navState?.refreshRecommendation && num('livingBudget') === data.saved?.livingBudget) {
+      saveOnly()
+      return
+    }
     // 11/13: 마이에서 들어왔으면 저장 전에 가운데 창으로 '예산을 다시 추천한다'를 알리고, [예산 확인하러 가기]를 눌러야 저장한다.
     // 닫으면 저장하지 않는다. 온보딩은 원래 다음 단계가 추천이라 바로 저장
     if (manage) {
@@ -138,6 +144,22 @@ export default function ProtectPage() {
       return
     }
     save()
+  }
+
+  // 생활비를 안 바꾼 저장: 저장하고 마이로. 이번 주기 승인 예산(카테고리 배분)은 그대로다
+  const saveOnly = async () => {
+    setBusy(true)
+    setError('')
+    setFieldErrors({})
+    try {
+      await apiSend('/api/budgets/protect/', 'PUT', Object.fromEntries(ROWS.map(([k]) => [k, num(k)])))
+      toast('저장했어요. 생활비 예산은 그대로예요')
+      navigate(PATHS.my, { replace: true })
+    } catch (err) {
+      setError(err.fields?.nonFieldErrors?.[0] ?? err.message)
+      setFieldErrors(err.fields ?? {})
+      setBusy(false)
+    }
   }
 
   const save = async () => {
@@ -164,6 +186,8 @@ export default function ProtectPage() {
       <div className="mc-eyebrow">지킬 돈 설정</div>
       <h1>먼저 지킬 돈을 정해요</h1>
       {ready && <p className="mc-muted">{housingName} 비율로 나눈 추천 금액이에요. 바꾸고 싶은 칸만 고치세요.</p>}
+      {/* 11/13: 이번 주기만 실제 받은 월급으로 나누는 경우 */}
+      {ready && base.incomeSource === 'actual' && <p className="mc-note" role="note">이번 주기는 실제로 받은 월급 {won(base.takeHomeIncome)}으로 나눠요.</p>}
       {data.approvedBudget?.spareTransfer > 0 && <p className="mc-note" role="status" aria-label="이번 승인 예산 여윳돈">
         이번 승인 예산에는 여윳돈 {won(data.approvedBudget.spareTransfer)}을 생활비로 포함했어요.
         {' '}이번 예산 배분 기준 여윳돈은 {won(data.approvedBudget.spare)}이고, 아래 지킬 돈 설정은 그대로예요.
@@ -256,19 +280,36 @@ export default function ProtectPage() {
         navigate(PATHS.protect, { replace: true, state: { ...navState, refreshRecommendation: true } })
       }} />}
 
-      {blocked && blocked.reason !== 'card_bill_pending' && (
-        <div className="mc-card" role="alert">
-          <h2>{blocked.reason === 'fixed_over_income' ? '고정지출만으로 월급을 다 써요' : '저축과 고정지출만으로 월급을 다 써요'}</h2>
-          <p className="mc-muted" style={{ margin: '6px 0 0' }}>
-            고정지출 {won(base.fixedTotal)}{blocked.reason === 'savings_over_available' && <> + 꼭 할 저축 {won(data.savingsMin)}</>}이
-            월급 {won(base.takeHomeIncome)}보다 {blocked.shortfall > 0 ? <><b className="mc-error">{won(blocked.shortfall)}</b> 많아요.</> : '남는 돈이 없어요.'} 생활비를 나눌 수 없어서 하나를 줄여야 해요.
-          </p>
-          <div className="mc-two" style={{ marginTop: 12, gap: 8 }}>
-            <button type="button" className="mc-secondary" onClick={() => go(PATHS.savings)}>정기 저축 고치기</button>
-            <button type="button" className="mc-secondary" onClick={() => go(PATHS.fixed)}>고정지출 확인</button>
+      {/* 11/13: 고정지출 · 카드값 · 저축을 월급과 줄 맞춰 비교하고, 모자란 돈을 빨강으로. 고칠 수 있는 것만 버튼으로 */}
+      {blocked && blocked.reason !== 'card_bill_pending' && (() => {
+        const savingsCase = blocked.reason === 'savings_over_available'
+        const card = base.cardReserved ?? 0
+        return (
+          <div className="mc-card" role="alert">
+            <h2>{savingsCase ? '저축까지 하면 월급이 모자라요' : '고정지출이 월급보다 많아요'}</h2>
+            <dl className="mc-compare">
+              <div><dt>월급</dt><dd>{won(base.takeHomeIncome)}</dd></div>
+              <div><dt>고정지출</dt><dd>−{won(base.fixedTotal - card)}</dd></div>
+              {card > 0 && <div><dt>이번 주기 카드값</dt><dd>−{won(card)}</dd></div>}
+              {savingsCase && <div><dt>꼭 할 저축</dt><dd>−{won(data.savingsMin)}</dd></div>}
+              <div className="mc-compare-total">
+                <dt>{blocked.shortfall > 0 ? '모자란 돈' : '남는 돈'}</dt>
+                <dd className={blocked.shortfall > 0 ? 'is-short' : undefined}>{blocked.shortfall > 0 ? `−${won(blocked.shortfall)}` : won(0)}</dd>
+              </div>
+            </dl>
+            <p className="mc-muted" style={{ margin: '10px 0 0' }}>
+              {savingsCase ? '정기 저축이나 고정지출을 줄이면 생활비를 나눌 수 있어요.' : '고정지출을 줄이거나 월급을 다시 확인해 주세요.'}
+              {card > 0 && <><br />카드값은 이번 주기에 결제되는 청구서 금액이에요.</>}
+            </p>
+            <div className="mc-two" style={{ marginTop: 12, gap: 8 }}>
+              {savingsCase
+                ? <button type="button" className="mc-secondary" onClick={() => go(PATHS.savings)}>정기 저축 고치기</button>
+                : <button type="button" className="mc-secondary" onClick={() => go(PATHS.salary)}>월급 확인</button>}
+              <button type="button" className="mc-secondary" onClick={() => go(PATHS.fixed)}>고정지출 확인</button>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       <form className="mc-form" id="mc-form" onSubmit={onSubmit}>
         {ready && <>
@@ -276,7 +317,7 @@ export default function ProtectPage() {
           <div className="mc-row">
             {/* 11/12: 맨 아래 '월급에서 고정지출을 뺀 금액을 … 비율로 나눴어요' 안내를 [?] 가운데 창으로 옮김 */}
             <h2>추천안 · {housingName} 기준<HelpTip label="추천안을 나눈 기준" title={`${housingName} 비율로 나눴어요`} box={rateLine}>
-              <li>월급 {won(base.takeHomeIncome)}에서 고정지출 {won(base.fixedTotal)}을 뺀 금액을 나눴어요.</li>
+              <li>월급 {won(base.takeHomeIncome)}에서 고정지출 {won(base.fixedTotal - (base.cardReserved ?? 0))}{base.cardReserved > 0 && <>과 이번 주기 카드값 {won(base.cardReserved)}</>}을 뺀 금액을 나눴어요.</li>
               {rec.rebalanced && <li>꼭 할 저축이 더 크면 저축을 먼저 떼고 나머지를 같은 비율로 나눠요.</li>}
               <li>자취 여부는 내 정보에서 바꿀 수 있어요.</li>
             </HelpTip></h2>
@@ -328,7 +369,7 @@ export default function ProtectPage() {
           <div className="mc-card mc-cjudge">
             <div className="mc-row"><h2>머니 쿠션</h2><span className="mc-badge">{cushion.required ? '필수' : '선택'}</span></div>
             <div className="mc-row" style={{ margin: '10px 0 2px' }}><span className="mc-muted">목표액</span><strong>{won(cushion.target)}</strong></div>
-            <p className="mc-note" style={{ padding: 0 }}>갑작스러운 지출에 대비해 월급의 3배만큼 모아 두는 돈이에요.</p>
+            <p className="mc-note" style={{ padding: 0 }}>갑작스러운 지출에 대비해 모아 두는 돈이에요. 목표는 머니쿠션 화면에서 바꿀 수 있어요.</p>
           </div>
         )}
         {error && <p className="mc-error" role="alert">{error}</p>}

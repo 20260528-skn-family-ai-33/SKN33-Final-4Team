@@ -76,6 +76,7 @@ GET /api/home/
 | `period.salaryCheckCount` | 정수 | 인정된 급여가 없는 구간(이번 · 다음 조기)의 확인 필요 후보 수. 화면 알림 "월급으로 보이는 입금이 있어요" |
 | `period.salaryReceivedOn` | 날짜 또는 `null` | 이번 회차에 인정된 급여 중 가장 이른 입금일. 월급날보다 일찍 들어왔으면 그 날짜(예: 명절 전 9/18) |
 | `period.nextSalaryEarlyOn` | 날짜 또는 `null` | **다음 회차로 인정된 조기 급여의 입금일** (후보만 있으면 `null`). 화면 "월급이 12/18에 미리 들어왔어요. 12/25부터 예산에 넣을게요" |
+| `period.salaryGap` | 객체 또는 `null` | 11/13. 이번 회차에 인정된 월급이 등록 실수령액과 1만원 이상 · 3% 이상 다르고 아직 그 금액으로 답하지 않았으면 `{diff, received, registered, basis}`. 화면 "월급이 300,000원 적게 들어왔어요. 예산을 조정할까요?" 칸 뜻 · 답하기는 [salary.md 월급 차이 안내](salary.md#월급-차이-안내-1113) |
 | `balance` | 객체 | 입출금 계좌 잔액 요약 (항상 있음) |
 | `balance.total` | 정수 또는 `null` | 잔액을 아는 계좌들의 잔액 합계(원). 셀 계좌가 없거나 전부 잔액을 모르면 `null` (0으로 채우지 않음) |
 | `balance.accountCount` | 정수 | 합계 대상 계좌 수 (잔액을 모르는 계좌 포함). 화면 "입출금 계좌 2개" |
@@ -107,6 +108,7 @@ GET /api/home/
 | `budget.daysLeft` | 정수 | 오늘까지 쓴 돈을 뺀 뒤 나누는 날 수 = 다음 월급날 − 오늘 − 1 (채팅 소비 분석의 남은 일수와 같음) |
 | `budget.outOfBudgetAllocated` | 정수 | 이전 기준 예산의 주거·통신 · 여행·숙박 배정 (예산 화면 `budget.outOfBudgetAllocated`와 같음, N-F1). 0보다 크면 파란 카드 안에 재추천 안내. `livingBudget`은 이 금액을 포함한 저장값 그대로 |
 | `budget.overCategories[]` | 배열 | 예산을 넘긴 카테고리 (11/11). 칸: `category` · `categoryName` · `allocated`(배정) · `spent`(쓴 돈) · `over`(= `spent − allocated`). **쓴 돈이 배정을 1원이라도 넘으면** 넣고, 배정이 0원인 카테고리는 넣지 않는다. 많이 넘긴 순. 없으면 `[]`. 값은 예산 화면 `categories[]`와 같은 계산 |
+| `budget.nag` | 문자열 / null | 11/13. 예산을 자주 바꾸면 "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?" (예산 화면 `nag`와 같은 규칙 · 문구). 화면은 종 알림 한 줄, 누르면 예산 화면 |
 | `budget.bigSpendings[]` | 배열 | 생활비 예산 대비 큰 지출 (11/11, 돌발 지출 감지 1단계). 이번 주기(시작일 ~ 오늘)에 **한 건이 `livingBudget`의 10% 이상**(원 미만 올림, 취소분을 뺀 금액)인 거래. 칸: `transactionId` · `occurredOn` · `merchantName`(없으면 `""`) · `amount` · `kind`(`spending` / `transfer`) · `category` · `categoryName`(이체는 둘 다 `null`). 최신순(같은 날은 큰 금액 먼저). 없으면 `[]` |
 | `budget.outOfBudget` | 객체 | 예산 밖 지출 안내 — 예산 화면 `outOfBudget`과 같은 모양 · 금액 (budgets.md) |
 
@@ -119,7 +121,8 @@ GET /api/home/
     "dday": 4,
     "salaryState": "received",
     "salaryReceivedOn": "2026-09-25",
-    "nextSalaryEarlyOn": null
+    "nextSalaryEarlyOn": null,
+    "salaryGap": null
   },
   "balance": {
     "total": 2800000,
@@ -160,7 +163,8 @@ GET /api/home/
   "dday": 31,
   "salaryState": "waiting",
   "salaryReceivedOn": null,
-  "nextSalaryEarlyOn": null
+  "nextSalaryEarlyOn": null,
+  "salaryGap": null
 }
 ```
 
@@ -174,7 +178,8 @@ GET /api/home/
   "dday": 7,
   "salaryState": "received",
   "salaryReceivedOn": "2026-11-25",
-  "nextSalaryEarlyOn": "2026-12-18"
+  "nextSalaryEarlyOn": "2026-12-18",
+  "salaryGap": null
 }
 ```
 
