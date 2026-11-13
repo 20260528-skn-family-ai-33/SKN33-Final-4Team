@@ -1320,3 +1320,12 @@
 #mc-new-preview#mc-new-preview .mc-dialog .mc-cushion-hint{margin:-11px 0 0;font-size:12px}  /* 입력칸 바로 아래 추천 금액 */
 #mc-new-preview#mc-new-preview .mc-dialog .mc-cushion-field{font-size:15px;margin-top:18px;padding-top:18px;border-top:1px solid var(--mc-line)}  /* 머니쿠션 목표 창: '목표 금액' 칸 이름 */  /* 머니쿠션 목표 창: 기본으로 되돌리기 (11/13) */
 #mc-new-preview#mc-new-preview .mc-cushion-title{font-size:17px;font-weight:600;color:var(--mc-ink)}  /* 머니쿠션 카드 제목 (11/13) */
+/* 머니쿠션 [?] 소개 창 (11/13): 정의 → 쓰는 곳 세 칸 → 이렇게 쌓여요 */
+#mc-new-preview#mc-new-preview .mc-cushion-def{margin:8px 0 0;color:var(--mc-sub);font-size:14px;line-height:1.6;word-break:keep-all}
+#mc-new-preview#mc-new-preview .mc-cushion-def b{color:var(--mc-brand);font-weight:650}
+#mc-new-preview#mc-new-preview .mc-cushion-uses{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0 0}
+#mc-new-preview#mc-new-preview .mc-cushion-uses>div{display:flex;flex-direction:column;align-items:center;gap:7px;padding:13px 0 11px;border-radius:14px;background:var(--mc-bg);font-size:12.5px;font-weight:600;color:var(--mc-ink)}
+#mc-new-preview#mc-new-preview .mc-cushion-uses .mc-tile{width:34px;height:34px;border-radius:11px;background:var(--mc-paper)}
+#mc-new-preview#mc-new-preview .mc-cushion-uses .mc-tile svg{width:17px;height:17px}
+#mc-new-preview#mc-new-preview .mc-cushion-sub{margin:20px 0 0;padding-top:18px;border-top:1px solid var(--mc-line);font-size:14px;font-weight:650;color:var(--mc-ink)}
+#mc-new-preview#mc-new-preview .mc-cushion-sub+.mc-help-list{margin-top:8px;font-size:13.5px;color:var(--mc-sub)}

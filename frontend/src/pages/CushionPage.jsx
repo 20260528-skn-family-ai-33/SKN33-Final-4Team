@@ -6,6 +6,7 @@ import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import CushionPopup from '../popups/CushionPopup.jsx'
 import HelpTip from '../components/HelpTip.jsx'
+import Icon from '../components/Icon.jsx'
 
 export default function CushionPage() {
   const { openPopup } = usePopup()
@@ -23,11 +24,8 @@ export default function CushionPage() {
         <span className="mc-muted mc-cushion-title">현재 확보한 쿠션
           {/* 11/9: 맨 아래 안내문을 [?] 창으로 */}
           {/* 11/13 (R27): 예산 승인 · 지킬 돈 저장 때 쿠션 배정액이 쌓인다 */}
-          <HelpTip label="쿠션 금액 안내" title="예산을 승인할 때 쌓여요">
-            <li>예산을 승인하면 그 달 쿠션 적립금만큼 쌓여요.</li>
-            <li>지킬 돈 설정에서 적립금을 바꾸면 바뀐 만큼 함께 바뀌어요.</li>
-            <li>은행 계좌의 돈이 이동하지는 않아요.</li>
-          </HelpTip>
+          {/* 11/13: 머니쿠션이 무엇인지 먼저 소개(정의 · 쓰는 곳)하고, 쌓이는 방식은 그 아래 */}
+          <HelpTip label="머니쿠션 안내" title="머니쿠션이란?" body={<CushionIntro />} />
         </span>
         <div className="mc-money">{comma(c.now)}<span style={{ fontSize: 18 }}>원</span></div>
         <div className="mc-bar"><span style={{ width: `${c.bar ?? 0}%` }}></span></div>
@@ -44,5 +42,24 @@ export default function CushionPage() {
         <button type="button" className="mc-secondary" onClick={() => openPopup(<CushionPopup cushion={c} onSaved={reload} />)}>목표 바꾸기</button>
       </div>
     </Layout>
+  )
+}
+
+// [?] 창 내용: 머니쿠션 정의 → 쓰는 곳 세 칸 → 쌓이는 방식
+const USES = [['Stethoscope', '병원비'], ['Heart', '경조사'], ['Wrench', '수리비']]
+function CushionIntro() {
+  return (
+    <>
+      <p className="mc-cushion-def">갑자기 큰돈이 필요할 때 꺼내 쓰는 <b>비상금</b>이에요.<br />급할 때 저축을 깨지 않게 받쳐 줘요.</p>
+      <div className="mc-cushion-uses">
+        {USES.map(([icon, text]) => <div key={text}><span className="mc-tile"><Icon name={icon} /></span>{text}</div>)}
+      </div>
+      <h3 className="mc-cushion-sub">이렇게 쌓여요</h3>
+      <ul className="mc-help-list">
+        <li>예산을 승인하면 쿠션 적립금만큼 쌓여요.</li>
+        <li>지킬 돈 설정에서 적립금을 바꾸면 같이 바뀌어요.</li>
+        <li>실제 계좌의 돈이 옮겨지지는 않아요.</li>
+      </ul>
+    </>
   )
 }
