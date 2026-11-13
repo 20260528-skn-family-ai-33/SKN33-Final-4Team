@@ -8,6 +8,7 @@ from django.utils import timezone
 
 from . import search
 from .models import Policy, SavedPolicy
+from .normalize import _clean
 
 
 def save(user, policy_no):
@@ -45,8 +46,10 @@ def apply_state(policy, today):
 
 
 def item(saved, today):
-    """API 응답 한 칸 (snake_case — 렌더러가 camelCase 로 바꾼다)"""
+    """API 응답 한 칸 (snake_case — 렌더러가 camelCase 로 바꾼다). 지역 · 지원은 채팅 추천 카드와 같은 값"""
+    from . import tools  # tools 가 이 모듈을 불러 쓴다 → 순환을 피해 여기서
     policy = saved.policy
+    support = _clean(policy.raw, "plcySprtCn") or _clean(policy.raw, "plcyExplnCn")
     return {
         "saved_policy_id": saved.pk,
         "policy_no": policy.pk,
@@ -55,6 +58,9 @@ def item(saved, today):
         "apply_end": policy.last_apply_end,
         "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
         "active": policy.is_active,
+        "region": tools.region_text(policy.zip_codes),  # "전국" · "서울특별시" · "경기도 수원시 외 2곳" …, 지역 코드가 없으면 None
+        "support_type": tools.support_type(policy),  # 대출 · 보증일 때만 ("대출 · 상환 필요"), 아니면 None
+        "support": tools.tidy(support) or None,  # 지원 내용 앞 80자 (DB 원문을 자르기만)
         "saved_at": timezone.localtime(saved.created_at).isoformat(timespec="seconds"),  # 한국 시간 (+09:00)
     }
 

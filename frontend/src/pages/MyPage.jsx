@@ -145,11 +145,11 @@ export default function MyPage() {
         <button type="button" className="mc-link" onClick={summary.reload}>요약 다시 불러오기</button>
       </div>}
       <section aria-labelledby="my-saved-policies-title">
-        <div className="mc-row mc-section"><h2 id="my-saved-policies-title">저장한 정책</h2></div>
+        <div className="mc-row mc-section"><h2 id="my-saved-policies-title">청년 정책</h2></div>
         <div className="mc-card">
           <button type="button" className="mc-listrow" onClick={() => navigate(PATHS.myPolicies)}>
             <span className="mc-tile"><Icon name="Landmark" /></span>
-            <span className="mc-grow"><strong>저장한 정책 보기</strong><span className="mc-muted">관심 있는 청년 정책 모아보기</span></span>
+            <span className="mc-grow"><strong>저장한 정책</strong><span className="mc-muted">관심 있는 청년 정책 모아보기</span></span>
             <span className="mc-right"><span className="mc-muted">›</span></span>
           </button>
         </div>

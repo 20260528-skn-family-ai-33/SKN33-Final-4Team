@@ -7,7 +7,7 @@
 import { useRef, useState } from 'react'
 import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
-import { policyNumber, policyTitle } from '../utils/policyCards.js'
+import { DETAIL, policyNumber, policyTitle } from '../utils/policyCards.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
 import '../styles/policies.css'
 
@@ -145,27 +145,50 @@ function ViewCard({ content, title }) {
   )
 }
 
-// 정책 카드의 DB 링크 줄만 연결한다. 일반 문장·HTML은 해석하지 않는다.
-function PolicyLine({ text }) {
-  if (text.length > 350 && !text.startsWith('링크: ')) {
-    return <details className="mc-policy-detail"><summary>{text.slice(0, 180)}… <strong>전체 내용 보기</strong></summary><p>{text}</p></details>
-  }
-  const prefix = '링크: '
-  if (!text.startsWith(prefix)) return text
-  const href = text.slice(prefix.length)
-  if (!/^https?:\/\/[^\s<>]+$/i.test(href)) return text
+// 긴 공고 원문은 접어 두되 끝까지 읽을 수 있게 한다
+function PolicyText({ text }) {
+  if (text.length <= 350) return text
+  return <details className="mc-policy-detail"><summary>{text.slice(0, 180)}… <strong>전체 내용 보기</strong></summary><p>{text}</p></details>
+}
+
+// DB 링크 줄의 주소만 연결한다. 일반 문장·HTML은 해석하지 않는다.
+function policyHref(href) {
+  if (!/^https?:\/\/[^\s<>]+$/i.test(href)) return null
   try {
     const url = new URL(href)
-    if (!['http:', 'https:'].includes(url.protocol) || !url.hostname) return text
+    return ['http:', 'https:'].includes(url.protocol) && url.hostname ? href : null
   } catch {
-    return text
+    return null
   }
-  return <>{prefix}<a className="mc-fx-policy-link" href={href} target="_blank" rel="noopener noreferrer" aria-label={`${href} (새 탭에서 열기)`}>{href}</a></>
+}
+
+// "라벨: 값" 줄은 2열 표(dl), 라벨 없는 줄(나이 상한·목록 제외 경고)은 표 위 안내, 공고 주소는 버튼으로 나눈다
+// head(번호 · 정책명)는 표와 같은 회색 영역 맨 위에 둔다
+function PolicyRows({ lines, head }) {
+  const notes = [], rows = []
+  let href = null
+  for (const line of lines) {
+    const m = line.match(/^([^:\n]{1,12}): ([\s\S]*)$/)
+    if (!m) notes.push(line)
+    else if (m[1] === '링크' && policyHref(m[2])) href = m[2]
+    else rows.push([m[1], m[2]])
+  }
+  return <>
+    <div className="mc-policy-box">
+      {head && <div className="mc-policy-head">{head}</div>}
+      {notes.map((text, i) => <p key={`n-${i}`} className="mc-policy-note"><PolicyText text={text} /></p>)}
+      {rows.length > 0 && <dl className="mc-policy-table">{rows.map(([label, value], i) => (
+        <div key={i}><dt>{label}</dt><dd><PolicyText text={value} /></dd></div>
+      ))}</dl>}
+    </div>
+    {href && <a className="mc-secondary mc-policy-link" href={href} target="_blank" rel="noopener noreferrer"
+      aria-label="공고 보기 (새 탭에서 열기)">공고 보기 ↗</a>}
+  </>
 }
 
 // 정책 저장은 대화의 turn 선택지가 아니라 정책 ID를 쓰는 멱등 북마크 API다.
 // 지난 답변에서도 저장할 수 있고, 대화 상태나 현재 질문을 바꾸지 않는다.
-function PolicySections({ sections }) {
+function PolicySections({ sections, choices, onDetail }) {
   const [index, setIndex] = useState(0)
   const [changes, setChanges] = useState({})
   const pending = useRef(new Set())
@@ -176,6 +199,8 @@ function PolicySections({ sections }) {
   const number = policyNumber(section.title)
   const state = changes[id] ?? {}
   const saved = state.saved || bookmarks.data?.items?.some((item) => item.policyNo === id)
+  // [자세히 보기]는 그 답변의 선택지(detail:정책번호)를 고른다. 지난 답변의 카드도 서버가 받아 준다 (이름이 같은 정책과 섞이지 않게 번호로)
+  const detail = choices?.find((c) => c.value === `${DETAIL}${id}`)
   const save = async () => {
     if (!id || saved || pending.current.has(id)) return
     pending.current.add(id)
@@ -192,17 +217,22 @@ function PolicySections({ sections }) {
   }
   return <div className="mc-spend-cats mc-policy-cards">
     <article aria-label={title}>
-      {number && <div className="mc-eyebrow">{number}번 정책</div>}
-      <h3 className="mc-policy-title">{title}</h3>
-      <ul className="mc-spend-lines">{section.lines.map((line, i) => <li key={i}><PolicyLine text={line} /></li>)}</ul>
+      <PolicyRows lines={section.lines} head={<>
+        {number && <div className="mc-eyebrow">{number}번 정책</div>}
+        <h3 className="mc-policy-title">{title}</h3>
+      </>} />
       {sections.length > 1 && <div className="mc-policy-nav" role="group" aria-label="추천 정책 넘기기">
         <button type="button" className="mc-secondary" disabled={index === 0} onClick={() => setIndex((n) => n - 1)}>이전 정책</button>
         <span role="status">{index + 1} / {sections.length}</span>
         <button type="button" className="mc-secondary" disabled={index === sections.length - 1} onClick={() => setIndex((n) => n + 1)}>다음 정책</button>
       </div>}
-      {id && <button type="button" className="mc-secondary mc-policy-save" onClick={save}
-        disabled={Boolean(saved || state.busy || bookmarks.loading || bookmarks.error)}
-        aria-label={`${title} ${saved ? '저장됨' : '저장'}`}>{saved ? '저장됨' : state.busy ? '저장 중…' : '저장'}</button>}
+      {id && <div className="mc-policy-actions">
+        {detail && <button type="button" className="mc-secondary" disabled={!onDetail} onClick={() => onDetail(detail)}
+          aria-label={`${title} 자세히 보기`}>자세히 보기</button>}
+        <button type="button" className="mc-secondary mc-policy-save" onClick={save}
+          disabled={Boolean(saved || state.busy || bookmarks.loading || bookmarks.error)}
+          aria-label={`${title} ${saved ? '저장됨' : '저장'}`}>{saved ? '저장됨' : state.busy ? '저장 중…' : '저장'}</button>
+      </div>}
       {state.error && <p role="alert">{state.error}</p>}
       {bookmarks.error && <p role="alert">저장 상태를 확인하지 못했어요. <button type="button" className="mc-link" onClick={bookmarks.reload}>다시 확인</button></p>}
     </article>
@@ -210,22 +240,27 @@ function PolicySections({ sections }) {
 }
 
 // 분석 결과 카드 (SpendingCard 와 같은 틀 · 클래스). 카드 보기가 있으면 그것으로, 없으면(설명 답변 등) 문장 목록
-function ResultCard({ content, title }) {
+function ResultCard({ content, title, onDetail }) {
   if (content.view?.length) return <ViewCard content={content} title={title} />
   const notices = content.notices ?? []
   return (
     <div className="mc-spend" aria-label={`${title} 결과`}>
       <div className="mc-spend-head"><span>{title}</span></div>
       <Lead items={content.lead ?? []} />
-      {content.lines.length > 0 && <ul className="mc-spend-lines">{content.lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+      {content.lines.length > 0 && <ul className="mc-spend-lines">{content.lines.map((l, i) => <li key={i}><Boxed text={l} on={content.agent === 'policy'} /></li>)}</ul>}
+      {(content.examples ?? []).length > 0 && <p className="mc-examples">예) {content.examples.join(' · ')}</p>}
       {content.agent === 'policy' && content.sections?.some((s) => s.policyNo)
-        ? <PolicySections sections={content.sections} />
+        ? <PolicySections sections={content.sections} choices={content.choices} onDetail={onDetail} />
         : (content.sections ?? []).length > 0 && (
         <div className="mc-spend-cats">
           {content.sections.map((s, i) => (
             <div key={`sec-${i}`}>
-              <strong className={content.agent === 'policy' ? 'mc-policy-title' : undefined}>{content.agent === 'policy' ? policyTitle(s.title) : s.title}</strong>
-              {s.lines.length > 0 && <ul className="mc-spend-lines">{s.lines.map((l, j) => <li key={j}>{content.agent === 'policy' ? <PolicyLine text={l} /> : l}</li>)}</ul>}
+              {content.agent === 'policy'
+                ? <PolicyRows lines={s.lines} head={<strong className="mc-policy-title">{policyTitle(s.title)}</strong>} />
+                : <>
+                  <strong>{s.title}</strong>
+                  {s.lines.length > 0 && <ul className="mc-spend-lines">{s.lines.map((l, j) => <li key={j}>{l}</li>)}</ul>}
+                </>}
             </div>
           ))}
         </div>
@@ -237,33 +272,44 @@ function ResultCard({ content, title }) {
 }
 
 // 짧은 답 · 질문 (채팅 말풍선)
-function Bubble({ content }) {
+// 청년 정책 문장의 `…` 부분(찾을 정책 · 지역)을 파란 글자로. 다른 담당 문장은 그대로
+function Boxed({ text, on }) {
+  if (!on) return text
+  return text.split(/`([^`]+)`/).map((part, i) => i % 2 ? <span key={i} className="mc-pill">{part}</span> : part)
+}
+
+// children = 질문과 같은 말풍선 안에 둘 입력 (청년 정책 지역 드롭다운)
+function Bubble({ content, children }) {
   const lines = content.lines ?? (content.text ? [content.text] : [])
   const notices = content.notices ?? []
   // 선택지가 붙은 여러 줄 질문(예: '…은 아직 어려워요.' + '대신 … 확인할까요?'): 한 문단으로 잇고 마지막 줄(묻는 말)만 굵게
-  const asking = (content.choices ?? []).length > 0 && lines.length > 1 && lines.at(-1).endsWith('?')
+  // 청년 정책은 줄마다 나눠 굵게 하지 않는다 ('‘월세 지원’ 정책을 찾아볼게요.' / '가입 지역인 …로 찾으시는 거 맞나요?')
+  const asking = content.agent !== 'policy' && (content.choices ?? []).length > 0 && lines.length > 1 && lines.at(-1).endsWith('?')
   return (
     <div className="mc-bubble">
       {(content.lead ?? []).map((l, i) => <span key={`lead-${i}`}><strong>안내: {l}</strong><br /></span>)}
       {asking
         ? <>{lines.slice(0, -1).join(' ')} <strong>{lines.at(-1)}</strong></>
-        : lines.map((l, i) => <span key={`line-${i}`}>{i > 0 && <br />}{l}</span>)}
+        : lines.map((l, i) => <span key={`line-${i}`}>{i > 0 && <br />}<Boxed text={l} on={content.agent === 'policy'} /></span>)}
       {!lines.length && !(content.lead ?? []).length && !notices.length && '(보일 답변이 없어요)'}
       {notices.map((n, i) => <span key={`notice-${i}`}><br /><small>{n}</small></span>)}
+      {(content.examples ?? []).length > 0 && <p className="mc-examples">예) {content.examples.join(' · ')}</p>}
+      {children}
     </div>
   )
 }
 
-export default function ChatReply({ content, title, active, onPick, onApprove, onSend, navigation }) {
+export default function ChatReply({ content, title, active, onPick, onApprove, onSend, onDetail, navigation, children }) {
   if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} onSend={onSend} navigation={navigation} />
-  return content.result ? <ResultCard content={content} title={title} /> : <Bubble content={content} />
+  return content.result ? <ResultCard content={content} title={title} onDetail={onDetail} /> : <Bubble content={content}>{children}</Bubble>
 }
 
 // 답변 선택지 (기존 칩 모양). active = 마지막 답변의 선택지만 누를 수 있다 (서버도 지난 선택지는 409)
-export function Choices({ choices, active, onPick }) {
+// scroll = 한 줄로 두고 옆으로 밀어서 보기 (청년 정책: 추천 뒤 버튼이 4~5개라 줄이 늘어지지 않게)
+export function Choices({ choices, active, onPick, scroll = false }) {
   if (!choices?.length) return null
   return (
-    <div className="mc-chipbar mc-fx-choices" role="group" aria-label="선택지">
+    <div className={`mc-chipbar mc-fx-choices${scroll ? ' is-scroll' : ''}`} role="group" aria-label="선택지">
       {choices.map((c) => (
         <button key={c.value} type="button" disabled={!active} aria-disabled={!active || undefined} onClick={() => onPick(c)}>
           {c.label}

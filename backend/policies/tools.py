@@ -12,6 +12,7 @@ from . import eligibility, saved, search
 from .eligibility import Profile
 from .models import Policy, PolicySync
 from .normalize import _clean
+from .regions import REGIONS
 
 EMPLOYED, JOBLESS = "0013001", "0013003"
 # "취업 준비 중" · "회사 다녀"처럼 말하면 그 말을 따른다 (메모: 조건 입력). 월급 정보보다 앞서고, 대화 중에 고쳐 말하면 바뀐다
@@ -115,16 +116,48 @@ def facts(found, today):
         "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
         "keywords": found.keywords,
         "support_type": support_type(policy),
+        "region": region_text(policy.zip_codes),
     }
+
+
+# 지역 코드 → 그 아래 시군구(final) 코드 묶음. 시군구 자신은 자기 하나
+_FINALS_UNDER = {code: {c for c, r in REGIONS.items() if r["final"] and (c == code or r["name"].startswith(REGIONS[code]["name"] + " "))}
+                 for code in REGIONS}
+
+
+def region_text(codes):
+    """정책 대상 지역 코드 → 카드에 보일 한 줄. 시도 · 시를 통째로 덮으면 그 이름 하나로 묶는다 (서울 25개 구 → '서울특별시')"""
+    if len(codes) > search.NATIONWIDE_CODES:
+        return "전국"
+    codes = set(codes)
+    finals = {c for c, r in REGIONS.items() if r["final"] and codes & set(r["match"])}  # match 에 상위 · 폐지 코드가 들어 있다
+    picked = []
+    for code in sorted(REGIONS, key=lambda c: (len(REGIONS[c]["name"].split()), c)):  # 넓은 곳 먼저
+        inside = _FINALS_UNDER[code]
+        if inside and inside <= finals:
+            picked.append(code)
+            finals -= inside
+    groups = {}  # 시도 → 그 안에서 고른 이름 (시도 통째면 빈 목록)
+    for code in sorted(picked):
+        top, _, rest = REGIONS[code]["name"].partition(" ")
+        groups.setdefault(top, [])
+        if rest:
+            groups[top].append(rest)
+    # 일부만이면 5곳까지 이름, 넘으면 곳 수 (개편 전 코드로 적힌 공고는 새 구가 빠져 일부로 보인다)
+    parts = [top if not rest else f"{top} {' · '.join(rest)}" if len(rest) <= 5 else f"{top} {len(rest)}곳"
+             for top, rest in groups.items()]
+    if not parts:
+        return None
+    return ", ".join(parts) if len(parts) <= 2 else f"{', '.join(parts[:2])} 외 {len(parts) - 2}개 시·도"
 
 
 def support_type(policy):
     """이름에 명시된 대출·보증만 표시한다. 이자 지원을 대출로 오인하지 않는다."""
     name = re.sub(r"\s+", "", policy.name)
     if "대출보증" in name:
-        return "대출 보증 (지원금 지급이 아니에요)"
+        return "대출 보증 · 지원금 아님"
     if "대출" in name and not any(word in name for word in ("이자", "이차보전")):
-        return "대출 (상환이 필요해요)"
+        return "대출 · 상환 필요"
     return None
 
 
@@ -176,7 +209,7 @@ def detail(policy_no, topics, profile, today):
         rows.append((DETAIL_LABEL[topic], value))
     agency = _clean(policy.raw, "operInstCdNm") or _clean(policy.raw, "sprvsnInstCdNm") or None
     return {"name": policy.name, "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
-            "agency": agency, "rows": rows, "support_type": support_type(policy)}
+            "agency": agency, "rows": rows, "support_type": support_type(policy), "region": region_text(policy.zip_codes)}
 
 
 def policy_name(policy_no):

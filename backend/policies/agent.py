@@ -5,7 +5,7 @@ LLM 이 실패하면 규칙으로 돌아간다. handle() 의 반복문 · 도구
 
 흐름: (생년월일 확인) → 문장 읽기(LLM 1회) → 찾을 지역: 문장 속 지역(이번 검색에만) > 사는 지역(저장해 둔 지역) > 지역 버튼 →
 막연하면 맞춤 추천(분야는 LLM 이 짐작, 못 하면 취업 상태로 코드가 고름 — 멘토 요청 ④) → 검색 · 자격 → 돌아보기 →
-추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] [지역 바꾸기]. 분야 버튼은 없다 (기능 버튼으로 오면 말로 묻는다)
+추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] [지역 변경하기]. 분야 버튼은 없다 (기능 버튼으로 오면 말로 묻는다)
 - 저장 · 지역 기억은 핸들러가 DB 에 쓰지 않고 save_policies · save_profile 로 돌려준다 (엔진이 대화 저장 트랜잭션에서 쓴다)
 - 사실(정책명 · 기간 · 지원 내용 · 링크 · 자격)은 모두 DB 값 · 코드 계산이다. 1차 추천 이유는 찾은 키워드로 코드가 쓴다 (LLM 이유는 다음)
 - 버튼은 이름이 다음 문장으로 들어온다. 질문할 때 {이름: 값}을 상태에 남겨 두고 같은 이름이면 그 값을 쓴다
@@ -20,7 +20,7 @@ from django.conf import settings
 from . import planner, profiles, reading, review, saved, tools
 from .llm import EmbedFailed
 from .reading import Need, ReadFailed
-from .regions import REGIONS
+from .regions import BY_NAME, NATIONWIDE, NATIONWIDE_NAME, REGIONS, region_name
 
 AGENT = "policy"
 CANCEL_WORDS = {"취소", "됐어", "그만"}  # 라우터(chat.router_core.CANCEL_WORDS)와 같은 단어
@@ -41,9 +41,14 @@ FIELD_BY_LABEL = {label: code for code, (label, _) in FIELDS.items()}  # 예전 
 # LLM 이 분야를 못 짐작했거나 가짜 모드일 때: 이 대화 · 회원 정보의 취업 상태로 코드가 고른다
 DEFAULT_FIELDS = {"jobless": ["job", "living", "training"], "employed": ["housing", "saving", "living"],
                   None: ["living", "housing", "job"]}
-MORE, OTHER_FIELD, CHANGE_REGION = "다른 정책 더 보기", "다른 분야 찾기", "지역 바꾸기"
+MORE, OTHER_FIELD, CHANGE_REGION = "다른 정책 더 보기", "다른 분야 찾기", "지역 변경하기"
 SAVE = "save:"  # 저장 버튼 값 = "save:" + 정책번호 (번호는 서버 상태에서만 나온다)
 SAVE_LABEL = "{number}번 저장"
+# 카드의 [자세히 보기] 선택지 값 = "detail:" + 정책번호 (이름은 말풍선에만). 지난 답변의 카드에서도 엔진이 이 값을 그대로 넘긴다
+# → 이름이 같은 다른 정책과 섞이지 않는다 (64b0c4b 리뷰 1)
+DETAIL = "detail:"
+DETAIL_BUTTON = "{name} 자세히 보기"
+DETAIL_TOPICS = ["support", "period", "eligibility", "apply", "documents"]
 SAVED = "‘{name}’ 정책을 저장했어요. [저장한 정책 보기]에서 모아 볼 수 있어요."
 SAVE_FAILED = "‘{name}’ 정책은 지금 저장할 수 없어요. 정책 목록에서 빠졌을 수 있어요."
 SAVED_LIST = "저장한 정책 보기"
@@ -53,22 +58,54 @@ NO_SAVED = "아직 저장한 정책이 없어요. 추천 결과에서 [N번 저�
 SAVED_NEED_LOGIN = "저장한 정책은 로그인한 뒤 볼 수 있어요."
 APPLY_LABEL = tools.STATE
 REMEMBER_LABEL = "다음에도 {name}로 찾기"  # 시군구 이름은 모두 구 · 시 · 군(받침 없음)으로 끝나 '로'가 맞다
-REMEMBERED = "다음부터 {name} 기준으로 찾을게요. 내 정보의 사는 지역도 {name}로 바꿨어요."
-CONFIRM_HOME = "가입 지역({name})으로 찾으시는 거 맞나요?"
+REMEMBERED = "다음부터 `{name}` 기준으로 찾을게요. 내 정보의 사는 지역도 `{name}`로 바꿨어요."  # `…` = 화면 파란 강조
+# `…` 는 화면이 작은 상자로 그린다 (청년 정책 말풍선만). 시군구 이름은 모두 받침 없이 끝나 '로'
+CONFIRM_HOME = "가입 지역인 `{name}`로 찾으시는 거 맞나요?"
+CONFIRM_TOPIC = "`{topic}` 정책을 찾아볼게요."  # 확인 질문 앞에 무엇을 찾는지 보여 준다
+CONFIRM_ANY = "받을 수 있는 정책을 찾아볼게요."  # 막연한 질문 (분야를 코드가 고른다)
 YES, NO = "예", "아니요"
 CONFIRM_YES = {YES, "네", "넵", "응", "맞아", "맞아요"}
 CONFIRM_NO = {NO, "아니오", "아니", "아뇨"}
 HESITATIONS = {"", "음", "흠", "글쎄", "글쎄요", "잠깐", "잠시만"}
-ASK_REGION = "어느 지역에 사세요? 사는 곳 기준으로 정책을 찾아요."
-ASK_AREA = "{name}의 어디인가요?"
+ASK_AREA = "`{name}`의 어디인가요?"
 ASK_WHICH_PLACE = "말씀하신 곳이 여러 곳이에요. 어느 지역인가요?"
 ASK_OTHER_REGION = "어느 지역으로 찾을까요?"
-ASK_TOPIC = "어떤 고민이 있으세요? 편하게 말해 주세요. (예: 월세가 부담돼요 · 취업 준비 중이에요 · 돈을 모으고 싶어요)"
-AUTO_LEAD = "어떤 지원인지 말씀이 없어서 {fields} 쪽으로 찾아봤어요. 고민을 말해 주시면 더 맞게 찾아 드려요."
+ASK_REGION = ASK_OTHER_REGION  # 처음 물을 때도 같은 말로 (전국 · 시도로도 찾으니 "사는 곳"을 묻지 않는다)
+REGION_SELECT = "region_select"
+ASK_TOPIC = "어떤 고민이 있으세요? 편하게 말해 주세요."
+TOPIC_EXAMPLES = ["월세가 부담되는데 받을 수 있는 지원이 있을까요?"]  # 화면은 질문 아래 회색 '예) …' 한 줄 (reply.examples)
+AUTO_LEAD = "어떤 지원인지 말씀이 없어서 `{fields}` 쪽으로 찾아봤어요. 고민을 말해 주시면 더 맞게 찾아 드려요."
 OTHER_TOPIC = "다른 고민도 문장으로 말해 주세요."
+# 찾을 수 있는 분야 안내: [찾을 수 있는 분야 보기] 버튼이나 "어떤 분야 찾을 수 있어?" 같은 문장 (LLM 없이 규칙으로)
+GUIDE_BUTTON = "찾을 수 있는 분야 보기"
+GUIDE_WORDS = re.compile(r"찾을\s*수\s*있는\s*분야|(어떤|무슨)\s*분야|분야\s*(보기|목록|알려|보여|뭐)"
+                         r"|(뭘|뭐|무엇을?|어떤\s*(거|것|정책들?))\s*(찾|검색)(을|할)\s*수\s*있")
+# 기능을 묻는 짧은 문장 전체 ("뭐 돼?", "어떤 지원 있어?") → 분야 안내. 문장 전체가 맞을 때만 — "월세 어떤 지원 있어?"는 검색.
+# "나 뭐 받을 수 있어?"처럼 나한테 맞는 걸 원하는 막연한 문장은 여기 없다 → 분야를 짐작한 맞춤 추천 (멘토 요청 ④)
+GUIDE_ONLY = re.compile(r"((그럼|여기서|다른\s*(건|거))\s*)*"
+                        r"(뭐|뭘|무엇을?)\s*(돼|돼요|되나요?|가능해요?|가능한가요|있어요?|있나요|(찾|검색)(을|할)\s*수\s*있어요?)"
+                        r"|(그럼\s*|다른\s*)?(어떤|무슨)\s*(지원|정책|분야|거|것)(들)?\s*(이|은|가|는)?\s*(있어요?|있나요|돼|돼요|되나요?)")
+GUIDE_HEAD = "이런 분야의 청년 정책을 찾을 수 있어요. 궁금한 걸 문장으로 말해 주세요."
+GUIDE_EXAMPLES = ["취업 준비 중인데 지원금 있어?"]  # 첫 질문처럼 아래 회색 '예) …' 한 줄
+GUIDE_TITLE = "찾을 수 있는 분야"
+# 분야 → 예시 키워드. 온통청년 분류(일자리 · 주거 · 교육 · 복지문화 · 참여권리 · 자산 형성)와 자주 붙는 키워드에서 골랐다
+GUIDE_ROWS = [("일자리", "취업 준비 지원금 · 인턴 · 장기 미취업 청년 · 중소기업 취업"),
+              ("주거", "월세 지원 · 전세 대출 이자 · 공공임대주택 · 기숙사"),
+              ("생활 · 복지", "생활비 · 문화 활동비 · 출산 · 육아 · 바우처"),
+              ("교육", "자격증 · 학원비 · 직업훈련 · 교육비"),
+              ("금융 · 자산", "청년 저축 통장 · 자산 형성 · 대출 금리 혜택 · 신용회복"),
+              ("창업", "창업 지원금 · 사업장 임대료 · 벤처"),
+              ("마음 건강", "심리상담 · 건강 지원"),
+              ("참여 · 권리", "청년 네트워크 · 정책 참여 · 해외 교류")]
 PICK_BUTTON = "아래 버튼에서 골라 주세요."
 NO_BIRTH = "청년 정책은 나이 조건이 있어서 생년월일이 필요해요. 내 정보에서 생년월일을 입력한 뒤 다시 찾아 주세요."
-NONE_FOUND = "{region} 기준으로 지금 신청할 수 있는 정책을 찾지 못했어요. 다른 고민을 말해 주시거나 지역을 바꿔 볼까요?"
+NONE_FOUND = "`{region}` 기준으로 지금 신청할 수 있는 정책을 찾지 못했어요. 다른 고민을 말해 주시거나 지역을 바꿔 볼까요?"
+# 무엇을 찾았는지 보이면 '못 알아들었다'가 아니라 '그런 정책이 없다'로 읽힌다
+NONE_FOUND_TOPIC = "`{topic}` 정책은 `{region}` 기준으로 지금 신청할 수 있는 걸 찾지 못했어요. 다른 고민을 말해 주시거나 지역을 바꿔 볼까요?"
+# 못 찾았을 때 전국으로 한 번 더 본 결과로 나눈다: 어디에도 없음 / 다른 지역에는 있음
+NONE_ANYWHERE = "`{topic}` 지원은 지금 신청할 수 있는 청년 정책에서 찾지 못했어요. 청년 정책에는 이런 지원이 거의 없어요. 다른 고민을 말해 주세요."
+NONE_HERE = "`{topic}` 정책은 `{region}`에는 없지만 다른 지역에는 있어요. 전국에서 찾아볼까요?"
+NATIONWIDE_BUTTON = "전국에서 찾기"
 REVIEW_FAILED = "추천할 정책을 확인하지 못했어요. 잠시 후 같은 질문으로 다시 시도해 주세요."
 NO_MORE = "더 보여 드릴 정책이 없어요."
 ENDED = "청년 정책 찾기를 마칠게요."
@@ -94,12 +131,6 @@ class Action:
     fields: list[str] | None = None  # 맞춤 추천이면 분야 코드 목록 (빈 목록 = 코드가 기본값으로 고름), 아니면 None
 
 
-def _children(code):
-    name = REGIONS[code]["name"]
-    depth = len(name.split()) + 1
-    return [c for c, r in REGIONS.items() if r["name"].startswith(name + " ") and len(r["name"].split()) == depth]
-
-
 TOP = sorted(c for c, r in REGIONS.items() if " " not in r["name"])
 
 
@@ -110,7 +141,7 @@ def _label(code):
 
 def _within(place_codes, home):
     """문장 속 지명이 사는 곳 자신이거나 사는 곳을 품는 곳인가 ('서울' · '관악구' ⊇ 관악구)"""
-    return any(code in REGIONS[home]["match"] for code in place_codes)
+    return home in REGIONS and any(code in REGIONS[home]["match"] for code in place_codes)
 
 
 def _picked_region(ask, said):
@@ -140,8 +171,12 @@ def _decide(state, text, read=None, choice=None):
     said = text.strip()
     if said.strip(" .!~") in CANCEL_WORDS:
         return Action("end")
+    if GUIDE_WORDS.search(said) or GUIDE_ONLY.fullmatch(said.strip(" \t\r\n.!?~…")):
+        return Action("guide")
+    if said.startswith(DETAIL):  # 카드의 [자세히 보기] (지난 답변 카드 포함). 없는 번호면 _detail 이 '찾을 수 없어요'
+        return Action("detail", text=said[len(DETAIL):], topics=list(DETAIL_TOPICS))
     if ask and said in ask["options"]:
-        return _answer(ask, ask["options"][said], home)
+        return _answer(ask, ask["options"][said], home, state.get("query"))
     if ask and ask["kind"] in {"confirm", "region"}:
         # 짧은 답 전체가 일치할 때만 처리한다. "아니, 취업 지원 찾아줘"는 새 질문으로 읽는다.
         short = said.strip(" \t\r\n.!?~…。！？")
@@ -155,7 +190,8 @@ def _decide(state, text, read=None, choice=None):
     if SAVED_WORDS.search(said):  # 버튼 이름을 먼저 본다 ('저장한 정책 보기' 버튼도 이름으로 들어온다)
         return Action("show_saved")
     if ask and ask["kind"] == "region":
-        code = _picked_region(ask, said)
+        # 드롭다운의 전체 이름은 그대로 ('제주특별자치도 제주시'는 줄인 이름 '제주'가 시도와 겹친다)
+        code = NATIONWIDE if said == NATIONWIDE_NAME else BY_NAME.get(said) or _picked_region(ask, said)
         if code:
             return _answer(ask, code, home)
         if read is None:  # 지역 이름이 아니면 먼저 읽는다 — 소비 · 예산 질문은 지역을 다시 묻지 않고 다른 담당으로
@@ -189,25 +225,21 @@ def _place_action(read, said, home, fields=None):
     needs, codes = (None if fields is not None else reading.needs_for(read, said)), read.place_codes
     if codes and home and _within(codes, home):  # '서울' 이라고 했고 사는 곳이 관악구 → 관악구로
         codes = []
-    if len(codes) == 1 and REGIONS[codes[0]]["final"]:
+    if len(codes) == 1:  # 시도 · 시만 말해도 그 지역 전체로 찾는다
         return Action("search", text=said, region=codes[0], needs=needs, fields=fields)
-    if codes:
-        options = codes if len(codes) > 1 else _children(codes[0])
-        return Action("ask_region", codes=options, text=said, needs=needs, home=False, fields=fields)
+    if codes:  # '중구' 처럼 여러 곳이면 고르게 한다
+        return Action("ask_region", codes=codes, text=said, needs=needs, home=False, fields=fields)
     if home:
         return Action("search", text=said, region=home, needs=needs, fields=fields)
     return Action("ask_region", codes=TOP, text=said, needs=needs, fields=fields)
 
 
-def _answer(ask, value, home):
-    """질문의 답(버튼 값) → 행동"""
+def _answer(ask, value, home, query=None):
+    """질문의 답(버튼 값) → 행동. query = 이 대화에서 마지막으로 찾은 것 (지역을 바꾸면 그대로 다시 찾는다)"""
     kind, pending, fields = ask["kind"], ask.get("text"), ask.get("fields")
     needs = [Need(q, k) for q, k in ask["needs"]] if ask.get("needs") is not None else None
-    if kind == "region":
-        if REGIONS[value]["final"]:
-            return Action("use_region", region=value, text=pending, needs=needs, home=ask.get("home", True), fields=fields)
-        return Action("ask_region", codes=_children(value), text=pending, needs=needs, home=ask.get("home", True),
-                      fields=fields)
+    if kind == "region":  # 전국 · 시도 · 시 · 시군구 어느 단계든 그대로 찾는다 (더 좁히라고 묻지 않는다)
+        return Action("use_region", region=value, text=pending, needs=needs, home=ask.get("home", True), fields=fields)
     if kind == "field":  # 11-12 전에 시작한 대화의 분야 버튼 (지금은 분야 버튼을 보이지 않는다)
         return Action("search", region=home, needs=[FIELDS[FIELD_BY_LABEL[value]][1]])
     if kind == "which":
@@ -219,6 +251,8 @@ def _answer(ask, value, home):
     if kind == "after":
         if value.startswith(SAVE):
             return Action("save", text=value[len(SAVE):])
+        if value.startswith(DETAIL):
+            return Action("detail", text=value[len(DETAIL):], topics=list(DETAIL_TOPICS))
         if value == "saved":
             return Action("show_saved")
         if value == "remember":
@@ -227,6 +261,12 @@ def _answer(ask, value, home):
             return Action("more")
         if value == "field":  # 11-12 전 대화의 [다른 분야 찾기]
             return Action("ask_topic")
+        if value == "nationwide" and query:  # [전국에서 찾기]: 방금 찾던 것을 전국으로 (이번 검색만)
+            return Action("search", region=NATIONWIDE, text=query["text"], fields=query["fields"],
+                          needs=None if query["needs"] is None else [Need(q, k) for q, k in query["needs"]])
+        if query:  # [지역 변경하기]: 고른 지역에서 방금 찾던 것을 다시 찾는다 (다시 읽지 않는다)
+            return Action("ask_region", codes=TOP, text=query["text"], fields=query["fields"],
+                          needs=None if query["needs"] is None else [Need(q, k) for q, k in query["needs"]])
         return Action("ask_region", codes=TOP)
     raise ValueError(f"모르는 질문 종류: {kind}")
 
@@ -253,28 +293,52 @@ def _ask_region(store, cid, state, action):
     line = ASK_AREA.format(name=parent) if area else ASK_REGION if action.home else \
         ASK_OTHER_REGION if action.codes == TOP else ASK_WHICH_PLACE  # 가입 지역 [아니요] · '중구' 처럼 여러 시도
     options = [(code, _label(code) if area else REGIONS[code]["name"]) for code in action.codes]
-    return _ask(store, cid, state, "region", [line], options, codes=action.codes, text=action.text,
-                needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], home=action.home,
-                fields=action.fields)
+    result = _ask(store, cid, state, "region", [line], options, codes=action.codes, text=action.text,
+                  needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], home=action.home,
+                  fields=action.fields)
+    if action.codes == TOP:  # 처음부터 고를 때는 화면이 버튼 대신 [전국 · 시도 → 시군구] 드롭다운을 보인다 (이름 문장으로 온다)
+        result["reply"]["inputs"] = [REGION_SELECT]
+    return result
+
+
+def _confirm_topic(action):
+    """확인 질문 앞줄: 읽은 필요('월세 지원') · 고른 분야 이름. 둘 다 없으면 막연한 질문 안내"""
+    if action.needs:
+        return CONFIRM_TOPIC.format(topic=tools.tidy(", ".join(n.query for n in action.needs), 40))
+    names = [FIELDS[code][0] for code in action.fields or [] if code in FIELDS]
+    return CONFIRM_TOPIC.format(topic=", ".join(names)) if names else CONFIRM_ANY
 
 
 def _ask_confirm(store, cid, state, action):
-    return _ask(store, cid, state, "confirm", [CONFIRM_HOME.format(name=REGIONS[action.region]["name"])],
+    lines = [_confirm_topic(action), CONFIRM_HOME.format(name=REGIONS[action.region]["name"])]
+    return _ask(store, cid, state, "confirm", lines,
                 [("yes", YES), ("no", NO)], text=action.text,
                 needs=None if action.needs is None else [[n.query, n.keywords] for n in action.needs], fields=action.fields)
 
 
 def _ask_topic(store, cid, state, lines=(ASK_TOPIC,)):
-    """무엇을 찾을지 말로 묻는다 (버튼 없음, 멘토 요청 ④). 다음 문장은 새 질문으로 읽는다"""
+    """무엇을 찾을지 말로 묻는다 (분야 버튼 없음, 멘토 요청 ④ — 대신 [찾을 수 있는 분야 보기] 안내). 다음 문장은 새 질문으로 읽는다"""
     state["ask"] = None
     store.save_agent_state(cid, AGENT, state)
-    return _reply("awaiting_input", lines)
+    if ASK_TOPIC not in lines:
+        return _reply("awaiting_input", lines)
+    result = _reply("awaiting_input", lines, [{"value": "guide", "label": GUIDE_BUTTON}])
+    result["reply"]["examples"] = list(TOPIC_EXAMPLES)
+    return result
+
+
+def _guide(store, cid, state):
+    """찾을 수 있는 분야 표 (결과 카드의 2열 표로 보인다). 답한 뒤에도 무엇을 찾을지 문장을 기다린다"""
+    result = _ask_topic(store, cid, state, [GUIDE_HEAD])
+    result["reply"]["examples"] = list(GUIDE_EXAMPLES)
+    result["reply"]["sections"] = [{"title": GUIDE_TITLE, "lines": [f"{field}: {examples}" for field, examples in GUIDE_ROWS]}]
+    return result
 
 
 def _common_after(state, region, member):
-    """추천 · 저장 목록 뒤에 늘 붙는 버튼: [저장한 정책 보기] · [다음에도 …로 찾기] · [다른 분야 찾기] · [지역 바꾸기]"""
+    """추천 · 저장 목록 뒤에 늘 붙는 버튼: [저장한 정책 보기] · [다음에도 …로 찾기] · [지역 변경하기]"""
     after = [("saved", SAVED_LIST)] if member else []
-    if member and region and state.get("remembered") != region:  # 저장된 지역과 다른 곳으로 찾았을 때 (말한 지역 · 고른 지역)
+    if member and region and profiles.is_final(region) and state.get("remembered") != region:  # 사는 곳은 시군구만  # 저장된 지역과 다른 곳으로 찾았을 때 (말한 지역 · 고른 지역)
         after.append(("remember", REMEMBER_LABEL.format(name=_label(region))))
     return after + [("region", CHANGE_REGION)]  # [다른 분야 찾기]는 없다 — 다른 고민은 문장으로 (멘토 요청 ④)
 
@@ -297,26 +361,35 @@ def _card(result, sections):
     return result
 
 
-def _show(store, cid, state, found, region, today, start, member=False, lead=None):
-    """추천 3칸 (start 번째부터). 사실은 tools.facts, 이유는 찾은 키워드로. lead = 맞춤 추천 안내 줄 (첫 결과에만)"""
+def _show(store, cid, state, found, region, today, start, member=False, lead=None, nowhere=None):
+    """추천 3칸 (start 번째부터). 사실은 tools.facts, 이유는 찾은 키워드로. lead = 맞춤 추천 안내 줄 (첫 결과에만)
+    nowhere = 못 찾았을 때 전국에도 없으면 True, 다른 지역에는 있으면 False, 모르면 None"""
     page = found[start:start + SHOW]
     done = state.get("saved") or []  # 예전 상태(칸 없음)도 읽는다
     after = [(SAVE + f.policy.pk, SAVE_LABEL.format(number=number))
              for number, f in enumerate(page, start + 1) if f.policy.pk not in done]
     after += [("more", MORE)] if len(found) > start + SHOW else []
     after += _common_after(state, region, member)
+    after += [("guide", GUIDE_BUTTON)] if lead else []  # 분야를 짐작한 맞춤 추천 → 다른 분야도 볼 수 있게
+    after += [(DETAIL + f.policy.pk, DETAIL_BUTTON.format(name=f.policy.name)) for f in page]
     state.update(results=[f.policy.pk for f in found], shown=start + len(page), region_used=region,
                  last=[f.policy.pk for f in page], focus=None)
-    name = REGIONS[region]["name"]
+    name = region_name(region)
     if not page:  # 추천 없음은 정상 결과 → failed 가 아니라 replied (계약 3절)
-        lines = ([lead] if lead else []) + [NONE_FOUND.format(region=name) if start == 0 else NO_MORE]
+        needs = (state.get("query") or {}).get("needs")  # 막연한 질문(분야를 코드가 고름)은 lead 가 이미 분야를 말한다
+        topic = tools.tidy(", ".join(q for q, _ in needs), 40) if needs and not lead else None
+        none = NONE_FOUND.format(region=name) if not topic else NONE_ANYWHERE.format(topic=topic) if nowhere \
+            else NONE_HERE.format(topic=topic, region=name) if nowhere is False else NONE_FOUND_TOPIC.format(topic=topic, region=name)
+        if topic and nowhere is False:
+            after.insert(0, ("nationwide", NATIONWIDE_BUTTON))
+        lines = ([lead] if lead else []) + [none if start == 0 else NO_MORE]
         result = _ask(store, cid, state, "after", lines, [a for a in after if not a[0].startswith(SAVE)])
         result["status"] = "replied"
         return result
-    lines = ([lead] if lead else []) + [f"{name} 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
+    lines = ([lead] if lead else []) + [f"`{name}` 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
     sections = []
     for number, item in enumerate((tools.facts(f, today) for f in page), start + 1):
-        rows = [f"신청: {item['period']}", f"지원: {item['support'] or '정보 없음'}"]
+        rows = ([f"지역: {item['region']}"] if item["region"] else []) + [f"신청: {item['period']}", f"지원: {item['support'] or '정보 없음'}"]
         if item["check"]:
             rows.append(f"확인할 것: {', '.join(item['check'])}")
         if item["soon_over"]:
@@ -331,7 +404,9 @@ def _show(store, cid, state, found, region, today, start, member=False, lead=Non
         lines.append(OTHER_TOPIC)
     day = tools.data_date()
     result = _card(_ask(store, cid, state, "after", lines, after), sections)
-    result["reply"]["notices"] = [NOTICE] + ([f"정책 정보는 {day} 기준이에요."] if day else [])
+    result["reply"]["notices"] = [NOTICE]
+    if day:  # 기준일은 결과 카드 위 안내 줄에 (아래 면책 문구와 떨어뜨려 먼저 보이게)
+        result["reply"]["lines"].append(f"정책 정보는 {day} 기준이에요.")
     return result
 
 
@@ -360,6 +435,7 @@ def _show_saved(store, cid, state, user, today):
             rows.append("정책 목록에서 빠진 정책이에요. 공고가 내려갔을 수 있어요.")
         rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
         sections.append({"title": f"{number}. {item['name']}", "lines": rows, "policy_no": item["policy_no"]})
+    after += [(DETAIL + item["policy_no"], DETAIL_BUTTON.format(name=item["name"])) for item in items]
     return _card(_ask(store, cid, state, "after", [SAVED_HEAD], after), sections)
 
 
@@ -405,7 +481,7 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
     if said:  # 대화에서 말한 취업 상태는 뒤의 버튼 · 상세에서도 쓰고, 고쳐 말하면 바꾼다 (PR 97 재리뷰)
         state["job"] = said
         state.pop("jobless", None)
-    if not state.get("region"):  # 저장해 둔 사는 지역이 있으면 다시 묻지 않는다 ([지역 바꾸기]로 바꿀 수 있다)
+    if not state.get("region"):  # 저장해 둔 사는 지역이 있으면 다시 묻지 않는다 ([지역 변경하기]로 바꿀 수 있다)
         remembered = profiles.remembered_region(user)
         if remembered:
             state.update(region=remembered, remembered=remembered)
@@ -472,6 +548,8 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         return _ask_region(store, cid, state, action)
     if kind == "ask_topic":
         return _ask_topic(store, cid, state)
+    if kind == "guide":
+        return _guide(store, cid, state)
     if kind == "reask":
         ask = state["ask"]
         return _reply("awaiting_input", [PICK_BUTTON], [{"value": v, "label": k} for k, v in ask["options"].items()])
@@ -491,6 +569,9 @@ def _act(action, store, cid, state, user, today, embed, check=None):
         return _show(store, cid, state, found, state.get("region_used") or state["region"], today,
                      state.get("shown", 0), member)
     if kind == "search":
+        # 무엇을 찾았는지 남긴다 → [지역 변경하기] 뒤 새 지역에서 같은 것을 찾는다
+        state["query"] = {"text": action.text, "fields": action.fields,
+                          "needs": None if action.needs is None else [[n.query, n.keywords] for n in action.needs]}
         needs, lead, said = action.needs or [Need(action.text)], None, action.text
         if action.fields is not None:  # 맞춤 추천: LLM 이 짐작한 분야, 없으면 취업 상태로 코드가 고른 분야
             codes = [code for code in action.fields if code in FIELDS] or DEFAULT_FIELDS[_profile_job(profile)]
@@ -506,12 +587,28 @@ def _act(action, store, cid, state, user, today, embed, check=None):
             return _ask_topic(store, cid, state, [REVIEW_FAILED])  # 키·모델 설정 누락도 미검토 추천으로 우회하지 않는다
         if judge and found:  # 돌아보기: 질문과 맞는 것만 남긴다. 실패와 검색 결과 없음은 별개다
             kept = review.keep(said or " / ".join(n.query for n in needs), found, judge,
-                               region=REGIONS[action.region]["name"])
+                               region=region_name(action.region))
             if kept is None:
                 return _ask_topic(store, cid, state, [REVIEW_FAILED])
             found = kept
-        return _show(store, cid, state, found, action.region, today, 0, member, lead)
+        nowhere = None
+        if not found and not lead:  # 어디에도 없는 주제인지, 이 지역에만 없는지 (못 찾았을 때만 한 번 더 찾는다)
+            nowhere = True if action.region == NATIONWIDE else _nowhere(needs, profile, today, embed, judge, said)
+        return _show(store, cid, state, found, action.region, today, 0, member, lead, nowhere)
     raise ValueError(f"처리하지 못한 행동: {kind}")
+
+
+def _nowhere(needs, profile, today, embed, judge, said):
+    """전국으로 찾아도(돌아보기까지) 없으면 True, 있으면 False. 검색 · 돌아보기가 실패하면 None (나누지 않는다)"""
+    try:
+        wide, _ = tools.find(needs, NATIONWIDE, profile, today, embed=embed)
+    except EmbedFailed:
+        return None
+    if wide and judge:
+        wide = review.keep(said or " / ".join(n.query for n in needs), wide, judge, region=NATIONWIDE_NAME)
+        if wide is None:
+            return None
+    return not wide
 
 
 def _detail(store, cid, state, user, today, action):
@@ -530,6 +627,14 @@ def _detail(store, cid, state, user, today, action):
     topics = list(dict.fromkeys([*action.topics, "eligibility", "selection"])) if "guarantee" in action.topics else action.topics
     info = tools.detail(action.text, topics, tools.profile_for(user, job=_job(state)), today)
     state["focus"] = action.text  # 다음 "그거"는 이 정책
+    results, shown = list(state.get("results") or []), state.get("shown", 0)
+    if action.text not in results[:shown]:
+        # 지난 카드의 정책: 지금 보인 목록 뒤에 번호를 붙여 '그거' · 'N번'이 이 정책을 가리키게 한다 (64b0c4b 리뷰 2).
+        # 아직 안 보인 나머지(더 보기)는 그 뒤로 밀린다
+        if action.text in results:
+            results.remove(action.text)
+        results.insert(shown, action.text)
+        state.update(results=results, shown=shown + 1)
     if info is None:
         result = _ask(store, cid, state, "after", [GONE], after)
         result["status"] = "replied"
@@ -539,13 +644,17 @@ def _detail(store, cid, state, user, today, action):
     rows.append(f"링크: {info['link']}" if info["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
     if info["agency"]:
         rows.append(f"운영 기관: {info['agency']}")
+    if info["region"]:
+        rows.insert(0, f"지역: {info['region']}")
     if info["support_type"]:
         rows.insert(0, f"지원 형태: {info['support_type']}")
     lines = [NOT_GUARANTEED, DETAIL_HEAD] if "guarantee" in action.topics else [DETAIL_HEAD]
     result = _card(_ask(store, cid, state, "after", lines, after),
                    [{"title": info["name"], "lines": rows, "policy_no": action.text}])
     day = tools.data_date()
-    result["reply"]["notices"] = [NOTICE] + ([f"정책 정보는 {day} 기준이에요."] if day else [])
+    result["reply"]["notices"] = [NOTICE]
+    if day:  # 기준일은 결과 카드 위 안내 줄에 (아래 면책 문구와 떨어뜨려 먼저 보이게)
+        result["reply"]["lines"].append(f"정책 정보는 {day} 기준이에요.")
     return result
 
 
