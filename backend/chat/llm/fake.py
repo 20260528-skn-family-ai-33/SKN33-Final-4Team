@@ -25,6 +25,16 @@ EXTRA_SAID = {
 SPENDING_SAID = {
     "내 소비 습관 어때?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
     "이대로 쓰면 이번 달 얼마나 쓸까?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
+    # 분석 용어 없이 말해도 의도대로 (11/13)
+    "돈이 왜 이렇게 빨리 없어지지": {"mine": True, "target": "overview", "analysis_goal": "reason", "refers_to": "none"},
+    "나 돈 너무 막 쓰나?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
+    "이대로 가면 괜찮아?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
+    "요즘 내 소비 어때?": {"mine": True, "target": "overview", "analysis_goal": "overview", "refers_to": "none"},
+    # 분석 메뉴 · 계산 방법 (11/14)
+    "또 뭐 분석해줄 수 있어?": {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"},
+    "소비 분석": {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"},
+    "전체적으로 분석해줘": {"mine": True, "target": "overview", "analysis_goal": "overview", "refers_to": "none", "followup": "new"},
+    "왜 이렇게 계산된거야?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "previous"},
     "외식이었어": {"mine": True, "followup": "answer", "analysis_activity": "dining"},
     "원래 계획했던 거야": {"mine": True, "followup": "answer", "analysis_planned": True},
     **{text: {"mine": True, "target": "spend", "explain": True, "explain_kind": "change",

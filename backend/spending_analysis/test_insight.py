@@ -39,6 +39,7 @@ class InsightTest(SimpleTestCase):
         self.cover = mock.patch.object(insight, "coverage", return_value={"state": "complete"}).start()
         self.fixed = mock.patch.object(insight.tools, "fixed_forecast", return_value={"paid": 510000, "remaining": 50000}).start()
         mock.patch.object(insight.reasoning, "persistence", return_value={"state": "usual", "weeks": [70000] * 4}).start()
+        mock.patch.object(insight, "covered_through", return_value=None).start()  # 수집 범위 맞추기는 따로 시험한다
         self.addCleanup(mock.patch.stopall)
 
     def test_consistent_living_aggregates_no_identity_and_all_candidates_reviewed(self):
@@ -52,28 +53,23 @@ class InsightTest(SimpleTestCase):
         self.assertNotIn("비공개 가게", json.dumps(summary, ensure_ascii=False))
         self.assertNotIn("occurred_on", json.dumps(summary))
 
-    def test_general_analysis_is_variable_and_explicit_fixed_request_keeps_lookup(self):
+    def test_general_analysis_is_variable_and_fixed_request_still_allows_analysis(self):
         reading = SpendingReading(mine=True, target="overview")
         d = replace(dialog.decide(reading, "아무거나 분석해줘", today=TODAY), interpretation=reading)
         summary, _ = insight.summarize(object(), d, TODAY)
         self.assertEqual(summary["current"]["amount"], 219000)
         self.assertEqual(summary["basis"]["scope"], "변동 소비")
-        self.assertFalse(insight.eligible(decision(include_fixed=True)))
+        self.assertTrue(insight.eligible(decision(include_fixed=True)))
 
-    def test_new_narrative_and_independent_semantic_check_are_both_called(self):
+    def test_story_answer_is_computed_on_the_server_without_llm_prose(self):
+        # 추이 → 습관 → 앞으로 답은 서버 계산 문장으로 만든다 (사용자 확정 구성, 11/13). 문장 LLM · 의미 대조 호출 없음
         complete = mock.Mock(wraps=FakeReading())
         reply, reason = insight.answer(object(), decision(), TODAY, complete, question="내 소비 습관 어때?")
         self.assertIsNone(reason)
-        self.assertEqual(complete.call_count, 2)
-        data = json.loads(complete.call_args_list[0].args[1])
-        self.assertIn("findings", data)
-        self.assertNotIn("facts", data)
-        self.assertNotIn("summary", data)
-        self.assertNotIn("without_largest", json.dumps(data))
-        self.assertEqual(data["question"], "내 소비 습관 어때?")
-        self.assertEqual(complete.call_args_list[1].args[0], narrative.CHECK_PROMPT)
+        complete.assert_not_called()
         self.assertEqual(reply["view"][1]["title"], "핵심 진단")
-        self.assertFalse(reply["examples"])
+        self.assertEqual(reply["view"][1]["tone"], "key")
+        self.assertTrue(reply["examples"])  # 이어서 물을 만한 말
 
     def test_total_paid_fixed_is_added_once_even_for_living_scope(self):
         with mock.patch.object(insight.trend, "forecast", return_value=projection()), mock.patch.object(insight.trend, "summarize", return_value={}):
@@ -93,16 +89,15 @@ class InsightTest(SimpleTestCase):
         complete = mock.Mock(wraps=FakeReading())
         with mock.patch.object(insight.trend, "forecast", return_value=projection()), mock.patch.object(insight.trend, "summarize", return_value={}):
             reply, _ = insight.answer(object(), decision(analysis_goal="forecast"), TODAY, complete)
-        data = json.loads(complete.call_args_list[0].args[1])
-        self.assertNotIn("test_mae", json.dumps(data))
         self.assertNotIn("오차", " ".join(reply["lines"]))
-        self.assertTrue(any("평균 2,000원 차이" in n for n in reply["notices"]))
+        self.assertTrue(any(n.startswith("예상 방식:") for n in reply["notices"]))  # 예상 방식 · 검증 결과는 하단에서 확인
 
     def test_failed_forecast_validation_keeps_reason_and_error_separate(self):
         text, notes = insight._outlook({"overall_trend": {"state": "unavailable",
             "reason": "월말 검증 평균 오차가 20,000원으로 기준선보다 나은 예측을 확인하지 못했어요."}})
-        self.assertNotIn("오차", text)
-        self.assertIn("예측이 충분히 잘 맞지 않아", text)
+        self.assertIsNone(text)  # 검증되지 않은 전망은 본문에 쓰지 않는다
+        self.assertIn("예측이 충분히 맞지 않아", notes[0])
+        self.assertNotIn("오차", notes[0])
         self.assertIn("20,000원", " ".join(notes))
 
     def test_partial_data_keeps_observations_without_change_claims(self):
@@ -113,9 +108,8 @@ class InsightTest(SimpleTestCase):
         self.assertNotIn("지난달보다", text)
         self.assertIn("확인된", text)
         self.assertIn("일부 내역 기준", reply["view"][0]["title"])
-        self.assertTrue(any("증감 비교는 보류" in n for n in reply["notices"]))
-        self.assertTrue(any("월말 예상액은 계산하지" in n for n in reply["notices"]))
-        self.assertTrue(any("수집된 내역에서 보이는 패턴" in n for n in reply["notices"]))
+        self.assertTrue(any("지난달 비교는 빼고" in n for n in reply["notices"]))
+        self.assertTrue(any(n.startswith("월말 전망:") for n in reply["notices"]))
         self.assertFalse(any(v["kind"] == "trend" for v in reply["view"]))
 
     def test_missing_comparison_period_does_not_block_valid_forecast(self):
@@ -155,6 +149,7 @@ class InsightTest(SimpleTestCase):
         reply, _ = insight.answer(object(), decision(), TODAY, FakeReading())
         self.assertNotIn("UNCLASSIFIED", " ".join(reply["lines"]))
         self.assertTrue(any("172,600원" in n for n in reply["notices"]))
+        self.assertNotIn("어려워요", " ".join(reply["lines"]))
         self.assertNotIn("0원 썼", " ".join(reply["lines"]))
 
     def test_filtered_scope_does_not_mix_all_fixed_expenses(self):
@@ -184,14 +179,44 @@ class InsightTest(SimpleTestCase):
         self.current = [{**transaction(10000, day=d, time="12:00"), "activity": "dining"} for d in range(2, 7)]
         self.previous = [{**transaction(10000, month=10, day=d, time="12:00"), "activity": "dining"} for d in range(2, 7)]
         reply, _ = insight.answer(object(), decision(analysis_goal="habit"), TODAY, FakeReading(), question="내 소비 습관 어때?")
-        self.assertIn("원래도 있던 소비 방식", " ".join(reply["lines"]))
+        self.assertIn("외식", " ".join(reply["lines"]))
         self.assertNotIn("늘어난", " ".join(reply["lines"]))
+        self.assertNotIn("늘었", " ".join(reply["lines"]))
+
+    def test_partial_unknown_industry_explains_spending_shape_not_payment_counts(self):
+        self.cover.return_value = {'state': 'partial'}
+        self.current = [transaction(amount, day=day, time=None) for day, amount in
+                        zip((2, 3, 4, 5, 6, 7, 7), (15000, 16000, 15500, 17000, 16000, 16000, 16000))]
+        self.current += [transaction(13300, 'TRANSPORT_CAR', day=d, time=None) for d in (2, 3, 4, 4)]
+        self.current += [transaction(172600, 'UNCLASSIFIED', day=4)]
+        for complete in (FakeReading(), mock.Mock(side_effect=TimeoutError())):
+            reply, _ = insight.answer(object(), decision(analysis_goal='habit'), TODAY, complete)
+            text = ' '.join(reply['lines'])
+            # 고르게 나눠 쓴 식비는 발견이 아니다. 대신 이번 달 총액을 좌우한 큰 결제 한 건의 몫을 설명한다
+            self.assertNotIn('나눠 쓴 돈이 쌓이는', text)
+            self.assertIn('큰 결제 1건', text)
+            self.assertIn('51%', text)
+            self.assertNotIn('외식', text)
+            self.assertNotIn('미분류', text)
+            self.assertNotIn('UNCLASSIFIED', text)
+            self.assertNotIn('지속 여부', text)
+            self.assertNotIn('어려워요', text)
+            self.assertTrue(any('분류 전 결제' in note for note in reply['notices']))
+            self.assertFalse(any('자동으로 작성한 설명' in note for note in reply['notices']))
+
+    def test_habit_keeps_explained_change_instead_of_replacing_it_with_repetition(self):
+        self.current = [{**transaction(20000, day=d, time='12:00'), 'activity': 'dining'} for d in range(2, 10)]
+        self.previous = [{**transaction(10000, month=10, day=d, time='12:00'), 'activity': 'dining'} for d in range(2, 10)]
+        reply, _ = insight.answer(object(), decision(analysis_goal='habit'), TODAY, FakeReading())
+        lead = reply['view'][1]['lines'][1:]
+        self.assertTrue(any('한 번에 쓰는 금액이 커진 것' in line for line in lead), lead)  # 반복 방식 + 최근 달라진 점
 
     def test_call_failure_or_semantic_rejection_uses_computed_analysis(self):
         for complete in (mock.Mock(side_effect=TimeoutError()), lambda s, u, **kw: json.dumps({"supported": False, "answers_question": True, "no_repetition": True, "checked_findings": []}) if s == narrative.CHECK_PROMPT else FakeReading()(s, u)):
             reply, _ = insight.answer(object(), decision(), TODAY, complete)
             self.assertTrue(reply["lines"])
-            self.assertTrue(any("계산으로 확인된 분석" in n for n in reply["notices"]))
+            # LLM 서술이 실패해도 사용자에게 내부 사정을 알리지 않고 계산된 분석을 그대로 보여 준다
+            self.assertFalse(any("자동으로 작성한 설명" in n for n in reply["notices"]))
 
 
 class NarrativeBoundaryTest(SimpleTestCase):

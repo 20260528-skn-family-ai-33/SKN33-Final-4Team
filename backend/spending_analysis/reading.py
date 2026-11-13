@@ -153,6 +153,9 @@ def parse(data):
         raise ReadFailed("shape")
     if not isinstance(data.get("mine"), bool):
         raise ReadFailed("mine")
+    if data.get('analysis_goal') in ('habit', 'overview', 'forecast') and data.get('target') == 'spend' \
+            and data.get('measure') in (None, 'sum') and data.get('group_by') in (None, 'category'):
+        data = {**data, 'target': 'overview', 'measure': None, 'group_by': None}
     for key in ("confirm", "explain", "all_categories", "after_budget_change", "include_current", "include_fixed", "other_person", "multi_step", "analysis_planned"):
         if data.get(key) is not None and not isinstance(data[key], bool):
             raise ReadFailed(key)
@@ -216,6 +219,16 @@ categories·weekday·time_slot은 설명할 결과의 조회 조건이다. 원�
 추출 원칙:
 생활비의 소비 분석·이유 설명은 analysis_scope=living, 전체 소비·총지출의 분석은 total로 적는다. 말하지 않았으면 null이다.
 analysis_goal은 지출 이유 reason, 소비 습관 habit, 전반 분석 overview, 이대로 쓰면 월말 얼마인지 forecast다. 월말 전망 질문은 target=overview, period=this_month로 두고 단순 지출 합계 조회와 구별한다.
+"내 소비 습관 어때?", "내 소비 성향 분석", "잘 쓰고 있는지 봐줘"는 target=overview, analysis_goal=habit이다. 금액 합계·카테고리 비중 조회로 축소하지 않는다.
+사용자는 정확한 분석 용어를 쓰지 않는다. 말의 뜻으로 analysis_goal을 정한다 (모두 target=overview, refers_to=none, 기간을 말하지 않았으면 period=null):
+- 돈이 어디로 새는지·왜 빨리 없어지는지·왜 많이 썼는지: "돈이 왜 이렇게 빨리 없어지지", "요즘 왜 이렇게 돈이 없지", "이번 달 왜 이렇게 많이 썼지" → reason
+- 내가 어떻게 쓰는 사람인지·고쳐야 할 점: "나 돈 너무 막 쓰나?", "내 소비 문제 있어?", "나 뭐에 돈 제일 많이 써?", "소비 습관 고쳐야 할까" → habit
+- 이대로 가면 어떻게 되는지: "이대로 가면 괜찮아?", "이번 달 버틸 수 있을까", "이러다 예산 넘는 거 아니야?", "다음 달도 이렇게 쓰면 어때?" → forecast
+- 전체적으로 봐 달라: "요즘 내 소비 어때?", "이번 달 괜찮아?", "내 돈 관리 점검해줘" → overview
+- 방금 본 분석의 숫자가 어떻게 나왔는지·계산 근거: "왜 이렇게 계산된 거야?", "86만 원은 어떻게 나온 거야?", "무슨 기준이야?" → forecast
+- 분석으로 무엇을 볼 수 있는지: "또 뭐 분석해줄 수 있어?", "어떤 분석 돼?", "소비 분석해줘"(대상 없이) → overview (서버가 분석 메뉴를 보여 준다)
+예산을 바꿔 달라는 말("식비 늘려줘", "예산 다시 짜줘")은 이 규칙이 아니라 mine=false다.
+"나랑 비슷한 사람보다 많이 써?", "또래 소비와 비교해줘", "저축 여력이 어때?"는 내 소비의 평가이므로 target=overview, analysis_goal=habit, other_person=false다. 특정 타인의 거래내역을 조회하는 요청과 구별한다.
 "생활비가 왜 많이 나왔지?"처럼 결과만 묻는 일반 이유 질문은 hypothesis=null이다. 금액이 많다는 사실 자체를 scope/amount 가설로 만들지 않는다.
 생활비 분석은 고정지출·주거통신·여행숙박을 제외한 같은 표본으로 설명한다. 조회 금액이나 남은 예산 요청 자체는 기존 target을 유지한다.
 pending.asking=analysis_detail이면 생활 패턴 확인 질문이다. 선택지와 사용자 답에 따라 analysis_activity(dining 외식/delivery 배달/groceries 장보기/cafe 카페·간식/cinema 영화/performance 공연/exercise 운동시설/unknown 모름) 또는 analysis_planned(계획한 지출 true/예상 밖 지출 false)를 채운다.

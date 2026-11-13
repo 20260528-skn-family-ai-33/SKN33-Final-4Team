@@ -67,7 +67,7 @@ class ExplanationScenarioTest(SimpleTestCase):
         self.assertEqual(f["decomposition"]["parts"]["within_type_amount"], 0)
         text = " ".join([f["conclusion"], *f["evidence"]])
         self.assertNotIn("금액 분해:", text)
-        self.assertIn("소비 유형의 비중이 달라진 점", text)
+        self.assertIn("외식에 쓰는 비중이 커진", text)
         self.assertIn("외식 관련 지출은", text)
 
     def test_one_week_spike_reverts_but_three_week_rise_persists(self):
@@ -103,13 +103,15 @@ class ExplanationScenarioTest(SimpleTestCase):
         periods = (Period(date(2026, 11, 1), date(2026, 11, 30)), Period(date(2026, 10, 1), date(2026, 10, 30)))
         now = [row(date(2026, 11, d), 20000 if date(2026, 11, d).weekday() >= 5 else 10000) for d in range(1, 30)]
         before = [row(date(2026, 10, d), 20000 if date(2026, 10, d).weekday() >= 5 else 10000) for d in range(1, 30)]
-        f = analyze(now, before, periods=periods)["findings"][0]
+        result = analyze(now, before, periods=periods)
+        self.assertEqual(result['findings'], [])  # 요일 수 차이뿐이면 보여 줄 변화가 없다 ('변화 없음' 대체 문장도 만들지 않는다)
+        f = result['candidates'][0]
         self.assertEqual(f["kind"], "calendar")
         self.assertEqual(f["calendar"], {"available": True, "calendar": 10000, "behavior": 0})
 
     def test_unchanged_and_personal_normal_variation_are_not_new_habits(self):
         result = analyze(month(11), month(10))
-        self.assertEqual(result["findings"][0]["kind"], "stable")
+        self.assertEqual(result["findings"], [])
         self.assertFalse(reasoning.material(20000, [100000, 160000, 110000, 170000])["meaningful"])
 
     def test_partial_unknown_data_keeps_observations_without_claiming_change(self):
@@ -118,7 +120,7 @@ class ExplanationScenarioTest(SimpleTestCase):
         self.assertTrue(result["findings"])
         self.assertTrue(all(f.get("category") != "UNCLASSIFIED" for f in result["findings"]))
         self.assertFalse(result["findings"][0]["decomposition"]["available"])
-        self.assertTrue(result["findings"][0]["limits"])
+        self.assertIn("외식 중심으로", result["findings"][0]["conclusion"])  # 일부 내역이어도 확인된 패턴은 보여 준다
 
     def test_unclassified_growth_does_not_become_no_change(self):
         result = analyze(month(11, 20000, "UNCLASSIFIED", None), month(10, 10000, "UNCLASSIFIED", None), history=[])
@@ -140,7 +142,7 @@ class ExplanationScenarioTest(SimpleTestCase):
         self.assertTrue(f["decomposition"]["reconciled"])
         self.assertEqual(f["persistence"]["state"], "unknown")
 
-    def test_small_but_persistent_category_is_not_hidden_by_large_stable_category(self):
+    def test_tiny_persistent_changes_are_not_promoted_as_increases(self):
         history, day = [], date(2026, 5, 1)
         while day < date(2026, 11, 1):
             history += [row(day), row(day, 20, "MEDICAL_HEALTH", None)]
@@ -148,8 +150,10 @@ class ExplanationScenarioTest(SimpleTestCase):
         now = month(11) + [row(date(2026, 11, d), (20, 30, 40, 50)[(d - 1) // 7], "MEDICAL_HEALTH", None) for d in range(1, 29)]
         before = month(10) + month(10, 20, "MEDICAL_HEALTH", None)
         result = analyze(now, before, history=history)
-        self.assertEqual(result["findings"][0]["category"], "MEDICAL_HEALTH")
-        self.assertEqual(result["findings"][0]["kind"], "persistent_small")
+        self.assertFalse([f for f in result["findings"] if f.get("category") == "MEDICAL_HEALTH"])
+        medical = next(c for c in result["candidates"] if c['category'] == 'MEDICAL_HEALTH')
+        self.assertNotIn('증가 신호', medical['conclusion'])
+        self.assertNotIn('3주 연속', medical['outlook'])
 
     def test_changed_classification_share_limits_category_causality(self):
         before = month(10) + [row(date(2026, 10, 8), 100000, "UNCLASSIFIED", None)]
@@ -157,13 +161,26 @@ class ExplanationScenarioTest(SimpleTestCase):
         result = analyze(now, before)
         self.assertTrue(result["classification_changed"])
         self.assertTrue(all(f.get("main_type") is None for f in result["candidates"]))
-        self.assertTrue(any("미분류 비중" in t for f in result["findings"] for t in f["limits"]))
+        self.assertTrue(any("미분류 비중" in t for f in result["candidates"] for t in f["limits"]))
+        food = next(f for f in result['candidates'] if f.get('category') == 'FOOD')
+        self.assertEqual(food['kind'], 'classification_limited')
+        self.assertTrue(food['quiet'])  # 판단할 수 없는 결론은 사용자에게 보이지 않는다
+        self.assertNotIn(food, result['findings'])
+        self.assertNotIn('주된 이유', food['conclusion'])
+
+    def test_a_few_thousand_won_unclassified_does_not_block_category_analysis(self):
+        # 11/13 실제 답변: 편의점 5,000원 때문에 모든 카테고리가 '단정하기 어려워요'로 막혔다
+        before = month(10) + [row(date(2026, 10, 8), 5000, "UNCLASSIFIED", None)]
+        now = month(11, 12000) + [row(TODAY, 3000, "UNCLASSIFIED", None)]
+        result = analyze(now, before)
+        self.assertFalse(result["classification_changed"])
+        self.assertEqual(result["findings"][0]["kind"], "within_type_amount")
 
     def test_unknown_industry_keeps_observed_time_pattern_without_activity_guess(self):
         now = month(11, activity=None, days=5)
         f = analyze(now, [], complete=False, history=[])["findings"][0]
-        evidence = " ".join(f["evidence"])
-        self.assertIn("점심 시간대", evidence)
+        evidence = " ".join([f['conclusion'], *f["evidence"]])
+        self.assertIn("점심", evidence)
         self.assertNotIn("외식", evidence)
 
     def test_recurrent_large_category_is_not_called_one_off(self):

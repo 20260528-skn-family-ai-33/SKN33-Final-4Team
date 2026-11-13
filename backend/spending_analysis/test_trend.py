@@ -113,16 +113,27 @@ class TrendTest(SimpleTestCase):
         now, past, months = series()
         past = [r for r in past if r["occurred_on"] >= months[-3].start]
         result = trend.forecast(now, past, TODAY, months=months[-3:])
+        report = result["validation"]
+        # 3개월이면 방식 선택용과 확인용을 1개월 이상씩 나눠 검증한다 (고정 계수 없이 과거 오차로 고른다)
+        self.assertGreaterEqual(len(report["tuning_months"]), 1)
+        self.assertEqual(len(report["test_months"]), 1)
+        self.assertLess(max(report["tuning_months"]), min(report["test_months"]))
+        self.assertTrue(all(spec["lookback_days"] == 28 for spec in [report["selected"]]))
+        self.assertEqual(report["candidate_count"], 37)  # 56일 자료가 없으니 56일 방식은 후보에 넣지 않는다
+
+    def test_a_single_past_month_is_still_not_enough_to_validate(self):
+        now, past, months = series()
+        past = [r for r in past if r["occurred_on"] >= months[-1].start]
+        result = trend.forecast(now, past, TODAY, months=months[-1:])
         self.assertEqual(result["state"], "unavailable")
         self.assertEqual(result["validation"]["state"], "insufficient")
-        self.assertNotIn("selected", result["validation"])
         self.assertNotIn("month_end", result)
 
     def test_missing_month_is_not_treated_as_zero_spending(self):
         now, past, months = series()
         result = trend.forecast(now, past, TODAY, months=[p for p in months if p.start.month != 8])
         self.assertEqual(result["state"], "unavailable")
-        self.assertEqual(result["validation"]["available_months"], 0)
+        self.assertLess(result["validation"]["available_months"], 2)  # 빠진 8월을 0원으로 채워 이어 붙이지 않는다
 
     def test_large_payment_is_included_once_without_changing_future_repeat_spending(self):
         now, past, months = series()

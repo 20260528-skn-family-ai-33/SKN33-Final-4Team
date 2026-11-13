@@ -8,8 +8,8 @@ from .periods import last_month
 
 LOOKBACKS = (28, 56)
 WEIGHTS = ("equal", "linear", "latest")
-MIN_TUNING_MONTHS = 2
-TEST_MONTHS = 2
+MIN_TUNING_MONTHS = 1   # 방식 선택용 최소 1개월 + 성능 확인용 최소 1개월 (11/13: 2+2 는 반년치 자료가 필요해 거의 항상 보류됐다)
+TEST_MONTHS = 1         # 과거 월이 4개 이상이면 확인용을 2개월로 늘린다 (_calibrate)
 MODEL_NAMES = {"average": "일평균", "weekday": "요일 패턴", "trend": "주별 추이"}
 WEIGHT_NAMES = {"equal": "동일 가중치", "linear": "최근 주에 선형 가중치", "latest": "마지막 주만 반영"}
 
@@ -104,7 +104,8 @@ def _folds(rows, today, months):
     folds = []
     for period in tail:
         origin = period.last_day - timedelta(days=remaining)
-        if origin < period.start or origin - timedelta(days=max(LOOKBACKS) - 1) < end:
+        # 28일 기준선만 있어도 쓴다. 56일 방식은 모든 월에 56일 자료가 있을 때만 후보에 넣는다 (_calibrate)
+        if origin < period.start or origin - timedelta(days=min(LOOKBACKS) - 1) < end:
             continue
         visible = [r for r in rows if end <= r["occurred_on"] <= origin]
         (_, regular), _ = split_large(visible, [])
@@ -113,7 +114,8 @@ def _folds(rows, today, months):
             continue
         observed = sum(r["net_amount"] for r in visible if period.start <= r["occurred_on"])
         actual = sum(r["net_amount"] for r in rows if period.start <= r["occurred_on"] < period.end_before)
-        folds.append({"origin": origin, "end": period.last_day, "weeks": weeks, "observed": observed, "actual": actual})
+        folds.append({"origin": origin, "end": period.last_day, "weeks": weeks, "observed": observed, "actual": actual,
+                      "long": origin - timedelta(days=max(LOOKBACKS) - 1) >= end})
     return folds
 
 
@@ -129,13 +131,18 @@ def _score(spec, folds):
 
 def _calibrate(rows, today, months):
     folds = _folds(rows, today, months)
+    long = [f for f in folds if f["long"]]
+    if len(long) >= 4:  # 56일 자료가 넉넉하면 예전 방식 그대로 (방식 선택 2개월 + 확인 2개월, 28 · 56일 후보 모두)
+        folds = long
     report = {"horizon_days": calendar.monthrange(today.year, today.month)[1] - today.day,
               "available_months": len(folds), "required_tuning_months": MIN_TUNING_MONTHS, "required_test_months": TEST_MONTHS}
     if len(folds) < MIN_TUNING_MONTHS + TEST_MONTHS:
-        return {**report, "state": "insufficient", "reason": f"같은 남은 일수로 월말 검증을 할 수 있는 과거 기간이 {len(folds)}개월이에요. 방식 선택용 2개월과 별도 검증용 2개월이 확보되지 않아 예상액을 보류했어요."}
-    tuning, testing = folds[:-TEST_MONTHS], folds[-TEST_MONTHS:]
-    # 후보는 앞선 달의 MAE로만 선택한다. 뒤의 두 달은 선택에 사용하지 않는다.
-    ranking = sorted([(spec, _score(spec, tuning)[0]) for spec in candidates()],
+        return {**report, "state": "insufficient", "reason": f"예측 방식을 고르고 따로 확인할 과거 월이 {len(folds)}개월뿐이라(2개월 필요) 월말 예상액은 이번에는 빼고 분석했어요."}
+    test_months = 2 if len(folds) >= 4 else TEST_MONTHS
+    tuning, testing = folds[:-test_months], folds[-test_months:]
+    specs = [spec for spec in candidates() if spec["lookback_days"] == min(LOOKBACKS) or all(f["long"] for f in folds)]
+    # 후보는 앞선 달의 MAE로만 선택한다. 뒤의 확인용 달은 선택에 사용하지 않는다.
+    ranking = sorted([(spec, _score(spec, tuning)[0]) for spec in specs],
                      key=lambda x: (round(x[1], 6), list(MODEL_NAMES).index(x[0]["model"]),
                                     WEIGHTS.index(x[0]["weights"]) if x[0]["weights"] else -1,
                                     x[0]["lookback_days"], x[0]["phi"] or 0))

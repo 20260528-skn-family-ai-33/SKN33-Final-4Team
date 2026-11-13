@@ -25,10 +25,14 @@
 #mc-new-preview .mc-fx-subhead { border-top: 1px solid var(--mc-line); padding-top: 12px; }
 #mc-new-preview .mc-fx-section { margin: 0; display: flex; flex-direction: column; gap: 8px; }
 #mc-new-preview .mc-fx-section + .mc-fx-section { padding-top: 14px; border-top: 1px solid var(--mc-line); }
-#mc-new-preview .mc-fx-section h3 { margin: 0; color: var(--mc-ink); font-size: 15px; font-weight: 750; line-height: 1.4; }
+#mc-new-preview .mc-fx-section h3 { margin: 0; color: var(--mc-ink); font-size: 14px; font-weight: 700; line-height: 1.4; }
 #mc-new-preview .mc-fx-trend { padding: 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); min-width: 0; }
 #mc-new-preview .mc-fx-trend .mc-note { margin: 4px 0 0; padding: 0; font-size: 11px; }
 #mc-new-preview .mc-fx-trend svg { display: block; width: 100%; height: auto; }
+@media (prefers-reduced-motion: no-preference) {
+  #mc-new-preview .mc-fx-trend svg { animation: mc-trend-appear 350ms ease-out both; }
+}
+@keyframes mc-trend-appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 #mc-new-preview .mc-fx-trend svg text { fill: var(--mc-sub); font-size: 12px; font-variant-numeric: tabular-nums; }
 #mc-new-preview .mc-fx-trend-grid { stroke: var(--mc-line); stroke-width: 1; }
 #mc-new-preview .mc-fx-trend-legend { display: flex; flex-direction: column; gap: 6px; padding: 0; margin: 4px 0 0; list-style: none; }
@@ -46,7 +50,12 @@
 #mc-new-preview .mc-budget-adjustment h2 { font-size: 16px; margin: 0 0 8px; }
 #mc-new-preview .mc-budget-adjustment h3 { font-size: 14px; margin: 0; }
 #mc-new-preview .mc-budget-plan, #mc-new-preview .mc-budget-proposal { padding: 14px; margin: 10px 0; border: 1px solid var(--mc-line); border-radius: 14px; background: var(--mc-paper); }
-#mc-new-preview .mc-budget-plan.is-recommended { border: 2px solid var(--mc-brand); }
+#mc-new-preview .mc-budget-plan.is-selected { border-color: var(--mc-brand); box-shadow: inset 0 0 0 1px var(--mc-brand); }
+#mc-new-preview .mc-budget-plan-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+#mc-new-preview .mc-budget-plan-badges span { padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 650; white-space: nowrap; }
+#mc-new-preview .mc-budget-recommended { background: #fff0ce; color: #775000; }
+#mc-new-preview .mc-budget-selected { background: #e9efff; color: #214ac5; }
+#mc-new-preview .mc-budget-preview-label { border-left: 3px solid var(--mc-brand); padding: 4px 8px; color: var(--mc-brand); font-weight: 650; }
 #mc-new-preview .mc-budget-plan-head { display: flex; gap: 8px; align-items: start; justify-content: space-between; }
 #mc-new-preview .mc-budget-plan-head > span { flex: none; color: var(--mc-brand); font-size: 12px; font-weight: 650; }
 #mc-new-preview .mc-budget-outcome, #mc-new-preview .mc-budget-reason, #mc-new-preview .mc-budget-shortfall, #mc-new-preview .mc-budget-warning { margin: 6px 0; line-height: 1.55; }
@@ -60,7 +69,13 @@
 #mc-new-preview .mc-budget-details { margin: 8px 0; }
 #mc-new-preview .mc-budget-details > summary { color: var(--mc-brand); font-weight: 650; cursor: pointer; padding: 8px 0; min-height: 36px; }
 #mc-new-preview .mc-budget-details p { font-size: 12px; line-height: 1.55; }
-#mc-new-preview .mc-budget-select { margin-top: 6px; width: 100%; }
+#mc-new-preview .mc-budget-select { display: block; margin-top: 12px; width: 100%; min-height: 44px; padding: 10px 16px; border: 1px solid var(--mc-brand); border-radius: 10px; background: var(--mc-brand); color: white; font: inherit; font-weight: 650; cursor: pointer; }
+#mc-new-preview .mc-budget-select:disabled { background: #edf0f5; border-color: #c7cfdd; color: #647087; cursor: default; }
+#mc-new-preview .mc-budget-select:focus-visible { outline: 3px solid #839bff; outline-offset: 3px; }
+#mc-new-preview .mc-budget-explanation { margin: 0; font-size: 12px; line-height: 1.6; }
+#mc-new-preview .mc-budget-explanation > div { margin: 10px 0; }
+#mc-new-preview .mc-budget-explanation dt { font-weight: 650; }
+#mc-new-preview .mc-budget-explanation dd { margin: 2px 0 0; color: var(--mc-sub); white-space: pre-line; }
 #mc-new-preview .mc-budget-keep { padding: 12px; margin: 12px 0; border-radius: 12px; background: var(--mc-soft); }
 #mc-new-preview .mc-budget-keep label { display: flex; align-items: center; gap: 8px; font-weight: 650; }
 #mc-new-preview .mc-budget-keep input { width: 20px; height: 20px; flex: none; }
@@ -111,6 +126,7 @@
 #mc-new-preview .mc-budget-category-picks button[aria-pressed=true] { border-color: #2655db; background: #f3f6ff; color: #2655db; font-weight: 650; }
 #mc-new-preview .mc-budget-distribution-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 10px 0; }
 #mc-new-preview .mc-budget-distribution-row > strong { font-size: 13px; }
+#mc-new-preview .mc-budget-distribution-change { flex-basis: 100%; color: var(--mc-sub); font-size: 12px; }
 #mc-new-preview .mc-budget-distribution-stepper { display: flex; align-items: center; width: 210px; max-width: 100%; border: 1px solid var(--mc-line); border-radius: 10px; overflow: hidden; }
 #mc-new-preview .mc-budget-distribution-stepper button { flex: 0 0 44px; min-height: 44px; padding: 0; border: 0; background: #f7f9fd; color: #2655db; font: inherit; font-size: 12px; }
 #mc-new-preview .mc-budget-distribution-stepper label { display: flex; align-items: center; flex: 1; min-width: 0; gap: 2px; padding: 0 6px; font-size: 12px; }
@@ -121,13 +137,69 @@
 #mc-new-preview .mc-budget-edit-toggle,
 #mc-new-preview .mc-budget-edit-cancel { display: block; width: 100%; min-height: 44px; margin-top: 6px; text-align: center; }
 #mc-new-preview .mc-budget-advice ul { margin: 8px 0 14px; padding-left: 20px; }
-/* 정책 공고 주소: 긴 경로도 카드 안에서 줄바꿈, 밑줄로 링크를 구분 */
-#mc-new-preview .mc-fx-policy-link { color: var(--mc-ink); text-decoration: underline; overflow-wrap: anywhere; }
-#mc-new-preview .mc-policy-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
-#mc-new-preview .mc-policy-nav button { width: auto; min-height: 44px; padding: 8px 12px; }
-#mc-new-preview .mc-policy-nav span { white-space: nowrap; font-size: 13px; }
-#mc-new-preview .mc-policy-save { width: 100%; min-height: 44px; margin-top: 12px; }
-#mc-new-preview .mc-policy-cards button:disabled { opacity: .5; cursor: default; }
-#mc-new-preview .mc-policy-detail summary { cursor: pointer; }
-#mc-new-preview .mc-policy-detail p { white-space: pre-wrap; overflow-wrap: anywhere; }
-#mc-new-preview .mc-policy-detail[open] summary { margin-bottom: 8px; }
+
+/* 소비 분석 답 (11/13): 핵심 진단 강조 · 예산 속도 막대 */
+#mc-new-preview .mc-fx-key { padding: 12px 14px; border-radius: 12px; background: var(--mc-soft); }
+#mc-new-preview .mc-fx-key h3 { font-size: 12px; font-weight: 700; color: var(--mc-brand); letter-spacing: .2px; }
+#mc-new-preview .mc-fx-key p { margin: 0; font-size: 13.5px; font-weight: 600; line-height: 1.55; color: var(--mc-ink); }
+#mc-new-preview .mc-fx-key + .mc-fx-section { border-top: 0; padding-top: 2px; }
+#mc-new-preview .mc-fx-pace { margin: 0; display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); min-width: 0; }
+#mc-new-preview .mc-fx-pace figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; }
+#mc-new-preview .mc-fx-pace figcaption small { color: var(--mc-sub); white-space: nowrap; }
+#mc-new-preview .mc-fx-pace-row { display: grid; grid-template-columns: minmax(0, 6.5em) 1fr auto; gap: 10px; align-items: center; }
+#mc-new-preview .mc-fx-pace-name { font-size: 12.5px; min-width: 0; }
+#mc-new-preview .mc-fx-pace-name em { display: block; font-style: normal; font-size: 10px; font-weight: 700; color: var(--mc-sub); }
+#mc-new-preview .mc-fx-pace-bar { position: relative; height: 8px; border-radius: 5px; background: var(--mc-paper); border: 1px solid var(--mc-line); }
+#mc-new-preview .mc-fx-pace-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--mc-brand); opacity: .55; }
+#mc-new-preview .mc-fx-pace-bar > i { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--mc-ink); border-radius: 1px; }
+#mc-new-preview .mc-fx-pace-row.is-over .mc-fx-pace-bar > span, #mc-new-preview .mc-fx-pace-row.is-fast .mc-fx-pace-bar > span { background: var(--mc-alert); opacity: .85; }
+#mc-new-preview .mc-fx-pace-row.is-over em, #mc-new-preview .mc-fx-pace-row.is-fast em { color: var(--mc-alert); }
+#mc-new-preview .mc-fx-pace-row.is-slack em { color: var(--mc-brand); }
+#mc-new-preview .mc-fx-pace-amt { text-align: right; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 12.5px; }
+#mc-new-preview .mc-fx-pace-amt small { display: block; font-weight: 400; font-size: 10.5px; color: var(--mc-sub); }
+#mc-new-preview .mc-fx-pace summary { cursor: pointer; color: var(--mc-brand); font-size: 12px; font-weight: 650; }
+#mc-new-preview .mc-fx-pace details[open] { display: flex; flex-direction: column; gap: 9px; }
+#mc-new-preview .mc-fx-pace-legend { margin: 0; font-size: 11px; color: var(--mc-sub); display: flex; align-items: center; gap: 6px; }
+#mc-new-preview .mc-fx-pace-legend i { display: inline-block; width: 2px; height: 12px; background: var(--mc-ink); border-radius: 1px; }
+@media (prefers-reduced-motion: no-preference) {
+  #mc-new-preview .mc-fx-pace-bar > span { animation: mc-pace-grow 450ms ease-out both; transform-origin: left center; }
+  @keyframes mc-pace-grow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+}
+
+/* 월별 생활비 막대 (11/13): 실제 = 진한 막대, 예상 = 빗금, 예산 = 점선 */
+#mc-new-preview .mc-fx-months { padding: 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); min-width: 0; }
+#mc-new-preview .mc-fx-months svg { display: block; width: 100%; height: auto; }
+#mc-new-preview .mc-fx-months svg text { fill: var(--mc-sub); font-size: 12px; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-fx-months svg text.mc-fx-bar-value { fill: var(--mc-ink); font-weight: 650; font-size: 11.5px; }
+#mc-new-preview .mc-fx-months svg text.is-future { fill: var(--mc-brand); font-weight: 650; }
+#mc-new-preview .mc-fx-months svg text.mc-fx-bar-value.is-in { fill: var(--mc-on); }
+#mc-new-preview .mc-fx-months svg text.mc-fx-bar-value.is-in-light { fill: var(--mc-brand); }
+#mc-new-preview .mc-fx-bar-actual { fill: var(--mc-brand); }
+#mc-new-preview .mc-fx-bar-projected { stroke: var(--mc-brand); stroke-width: 1.2; stroke-dasharray: 3 2; }
+#mc-new-preview .mc-fx-hatch-bg { fill: var(--mc-soft); }
+#mc-new-preview .mc-fx-hatch-line { stroke: var(--mc-brand); stroke-width: 2; opacity: .45; }
+#mc-new-preview .mc-fx-months-axis { stroke: var(--mc-line); stroke-width: 1; }
+#mc-new-preview .mc-fx-months-budget { stroke: var(--mc-alert); stroke-width: 1.5; stroke-dasharray: 5 4; }
+#mc-new-preview .mc-fx-months-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 0; margin: 2px 0 4px; list-style: none; font-size: 11.5px; color: var(--mc-sub); }
+#mc-new-preview .mc-fx-months-legend li { display: flex; align-items: center; gap: 5px; }
+#mc-new-preview .mc-fx-months-legend i { display: inline-block; width: 12px; height: 10px; border-radius: 2px; }
+#mc-new-preview .mc-fx-months-legend i.is-actual { background: var(--mc-brand); }
+#mc-new-preview .mc-fx-months-legend i.is-projected { background: repeating-linear-gradient(45deg, var(--mc-soft) 0 3px, color-mix(in srgb, var(--mc-brand) 45%, var(--mc-soft)) 3px 5px); outline: 1px dashed var(--mc-brand); }
+#mc-new-preview .mc-fx-months-legend i.is-budget { height: 0; border-top: 2px dashed var(--mc-alert); border-radius: 0; }
+#mc-new-preview .mc-fx-months summary { cursor: pointer; color: var(--mc-brand); font-size: 12px; font-weight: 650; }
+#mc-new-preview .mc-fx-months table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 11px; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-fx-months caption { text-align: left; color: var(--mc-sub); padding-bottom: 4px; }
+#mc-new-preview .mc-fx-months th, #mc-new-preview .mc-fx-months td { padding: 5px 2px; text-align: right; border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-fx-months th:first-child { text-align: left; }
+@media (prefers-reduced-motion: no-preference) {
+  #mc-new-preview .mc-fx-months svg rect { animation: mc-bar-rise 420ms ease-out both; transform-box: fill-box; transform-origin: bottom; }
+  @keyframes mc-bar-rise { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+}
+/* 분석 메뉴 (11/14): 누를 수 있는 분석 카드 — 제목 + 한 줄 설명 */
+#mc-new-preview .mc-fx-options { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+#mc-new-preview .mc-fx-options button, #mc-new-preview .mc-fx-options li > div { display: flex; flex-direction: column; gap: 3px; width: 100%; margin: 0;
+  padding: 10px 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); color: var(--mc-ink); text-align: left; font: inherit; }
+#mc-new-preview .mc-fx-options button { cursor: pointer; }
+#mc-new-preview .mc-fx-options button:hover, #mc-new-preview .mc-fx-options button:focus-visible { border-color: var(--mc-brand); background: var(--mc-soft); }
+#mc-new-preview .mc-fx-options strong { font-size: 13.5px; font-weight: 700; color: var(--mc-brand); }
+#mc-new-preview .mc-fx-options span { font-size: 12.5px; line-height: 1.5; color: var(--mc-sub); }

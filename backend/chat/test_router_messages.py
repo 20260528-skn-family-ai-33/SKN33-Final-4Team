@@ -39,7 +39,9 @@ class MessagesTest(SimpleTestCase):
     def test_spending_start_button_keeps_agent_reply(self):
         out = self.say(button="spending")
         self.assertEqual(out["lines"], ["어떤 소비가 궁금하세요?"])
-        self.assertIn("이번 달 전체 소비 분석해줘", out["examples"])
+        options = next(b for b in out["view"] if b["kind"] == "options")["items"]  # 문장 '소비 분석해줘'와 같은 분석 메뉴
+        self.assertIn("전체 분석", [o["title"] for o in options])
+        self.assertIn("식비 얼마 썼어?", out["examples"])
 
     def test_missing_reference_offers_concrete_analysis_examples(self):
         out = self.say("그럼 교통비는?")

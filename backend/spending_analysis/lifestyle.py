@@ -4,7 +4,9 @@ from finance.merchant_rules import store_type
 from . import scope
 
 INDUSTRIES = {
-    "dining": ("FOOD", {"한식", "한식당", "일반한식", "한식음식점", "한식음식점업", "일반음식점", "음식점", "일식", "중식", "양식", "분식", "패스트푸드"}),
+    "dining": ("FOOD", {"한식", "한식당", "일반한식", "한식음식점", "한식음식점업", "일반음식점", "음식점", "일식", "중식", "양식", "분식", "패스트푸드",
+                         "백반/한정식", "김밥/만두/분식", "국/탕/찌개류", "중국집", "국수/칼국수", "일식 회/초밥", "경양식", "횟집",
+                         "기타 한식 음식점", "일식 면 요리", "파스타/스테이크", "뷔페", "일식 카레/돈가스/덮밥", "구내식당", "패밀리레스토랑"}),
     "delivery": ("FOOD", {"배달앱", "배달음식"}),
     "groceries": ("FOOD", {"식료품점", "식료품 소매업", "청과물", "정육점", "채소/과일 소매업"}),
     "cafe": ("FOOD", {"카페", "커피전문점", "커피숍", "제과점", "베이커리"}),
@@ -40,6 +42,25 @@ def summarize(sides, metrics):
         if any(subsets):
             groups[kind] = [{**metrics(rows), "days": len({r["occurred_on"] for r in rows})} for rows in subsets]
     return {"known_amount_percent": coverage, "types": groups}
+
+
+def suggestions(findings):
+    """확인된 반복 패턴에만 선택 가능한 행동을 연결한다. 절약액은 추측하지 않는다."""
+    actions = {
+        "dining": "외식 중 주 1회는 도시락이나 이용 가능한 구내식당으로 바꿔보세요.",
+        "delivery": "배달 주문 중 주 1회는 집에 있는 식재료로 한 끼를 준비해보세요.",
+        "cafe": "카페·간식 구매 중 주 1회는 생략하거나 집에서 준비해보세요.",
+    }
+    for finding in findings:
+        pattern = finding.get('pattern')
+        if not pattern or pattern['activity'] not in actions or pattern['dates'] < 4:
+            continue
+        if finding.get('kind') in ('large_payment', 'large_total', 'calendar', 'classification_limited'):
+            continue
+        if not finding.get('reference_high') and not (finding.get('material', {}).get('meaningful') and finding.get('regular_delta', 0) > 0):
+            continue
+        return [' '.join(t for t in (pattern['timing'], actions[pattern['activity']]) if t)]
+    return []
 
 
 def options(question):

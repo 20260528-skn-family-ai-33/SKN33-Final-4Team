@@ -11,7 +11,14 @@ from . import adapter, agent_loop, agent_tools, claims, dialog, explain, insight
 from .answer import EXAMPLES, compose, over_target
 
 START = {"lines": ["어떤 소비가 궁금하세요?"],
-         "examples": list(EXAMPLES)}
+         "examples": list(EXAMPLES)}  # 화면에는 start_reply() — 같은 첫 줄 + 분석 메뉴 카드 (11/14)
+
+
+def start_reply():
+    """[소비 분석] 버튼: 무엇이 궁금한지 묻는 첫 줄은 그대로, 볼 수 있는 분석을 설명과 함께 카드로 (문장 '소비 분석해줘'와 같은 메뉴).
+    메뉴에 없는 단순 조회는 칩으로"""
+    menu = insight.menu_reply(lead="어떤 소비가 궁금하세요? 분석을 고르거나 편하게 물어보세요.")
+    return {**menu, "lines": list(START["lines"]), "examples": ["식비 얼마 썼어?", "예산 얼마 남았어?"]}
 
 
 def _result(status, reply=None, decision=None, **extra):
@@ -132,7 +139,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
             and (need is not None or _multi_step(decision)):
         result = _judged(result, decision, ran[-1], question, need, user, request, agent_complete)
     if analysis_notice:
-        result["reply"] = {**result["reply"], "notices": [*result["reply"].get("notices", []), analysis_notice]}
+        result["reply"] = {"lines": [analysis_notice], "notices": [], "view": [
+            {"kind": "head", "title": "소비 분석"}, {"kind": "text", "lines": [analysis_notice]}]}
     if note and result.get("reply"):  # 가설 경로로 나누며 뺀 나누기 — 확인하지 못했다고 밝힌다
         result["reply"] = {**result["reply"], "notices": [*result["reply"].get("notices", []), note]}
     if context.get("budget_return") and result["status"] == "replied" and result.get("reply"):
@@ -146,7 +154,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         result["reply"] = {**result["reply"], "alt": {**result["reply"]["alt"], "first": True}}
     if result["status"] == "replied" and "budget_adjust" in (result.get("reply") or {}).get("suggest", []):
         # 초과 답변에 [예산 조정하기]가 붙었다 → 어느 카테고리가 얼마 넘었는지 라우터에 알린다 (화면 응답에는 넣지 않는다, 11/11)
-        target = over_target([r for results in ran if results for r in results])
+        # 소비 분석(insight)이 예산 초과 전망으로 붙인 경우는 그 답이 카테고리를 알려 준다 (화면 응답에서는 뺀다)
+        target = result["reply"].pop("over", None) or over_target([r for results in ran if results for r in results])
         if target:
             result["over"] = target
     dialog.publish(store, cid)
@@ -272,7 +281,7 @@ def _outcome(decision, store, cid, execute, explainer=None):
             dialog.record_analysis(store, cid, decision, records)
         return _result("replied", reply, decision)
     if decision.status == "ask":
-        return _result("awaiting_input", START if decision.reason == "start" else None, decision)
+        return _result("awaiting_input", start_reply() if decision.reason == "start" else None, decision)
     if decision.status == "unsupported":
         return _result("unsupported", decision=decision, reason=decision.reason)
     return _result("replied", decision=decision, reason=decision.reason)  # cancelled · declined
