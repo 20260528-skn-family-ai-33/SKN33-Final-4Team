@@ -79,7 +79,7 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 
 ## 저장과 연동
 
-- `financial_profile.monthly_take_home_income`에 월 실수령액을 그대로 저장한다. 예산 ML도 이 값을 소득 입력으로 읽는다. 기존 `monthly_disposable_income`에 복제하거나 고정비를 빼지 않는다.
+- `financial_profile.monthly_take_home_income`에 월 실수령액을 그대로 저장한다. 예산 ML도 이 값을 소득 입력으로 읽는다. 고정비를 빼지 않는다 (옛 `monthly_disposable_income` 칼럼은 11-13에 지웠다).
 - 급여일과 전환 정보 외에 생년월일·성별·자취 여부·자차·지킬 돈·쿠션 등 다른 프로필 값은 보존한다.
 - 실제 값 변경과 예약 적용 시 본인의 `draft`·`validated` 예산만 `expired`로 바꾼다. 동일 값 재요청은 새로 만든 초안을 만료시키지 않는다. 승인 예산은 자동 재배분하지 않는다.
 - 회원 → 프로필 순서로 잠그고 트랜잭션으로 저장한다. 홈도 회원 잠금 뒤에 급여 정보를 읽는다.

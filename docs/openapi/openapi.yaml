@@ -1075,8 +1075,8 @@ paths:
                       syncStatus: done
                       accountCount: 2
                     - businessType: card
-                      organizationCode: '0311'
-                      organizationName: 롯데카드
+                      organizationCode: '0307'
+                      organizationName: 씨티카드
                       status: sms_required
                       smsAuth:
                         authToken: example-signed-token
@@ -1093,8 +1093,8 @@ paths:
                   value:
                     results:
                     - businessType: card
-                      organizationCode: '0311'
-                      organizationName: 롯데카드
+                      organizationCode: '0307'
+                      organizationName: 씨티카드
                       status: sms_required
                       smsAuth:
                         authToken: example-signed-token
@@ -9545,7 +9545,8 @@ components:
           - card
         organizationCode:
           type: string
-          description: finance/institutions.py 표의 아이디 로그인 지원 기관만. 공동인증서 전용 기관은 400.
+          description: finance/institutions.py 표에서 blocked 가 없는 기관만. 공동인증서 전용 · 휴대폰 본인인증 · 출금 계좌 확인이 필요한 기관과 서비스가
+            끝난 기관은 400 (이유별 문구).
         loginId:
           type: string
           minLength: 1
@@ -14906,12 +14907,12 @@ x-source-sha256:
   docs/api/spending-analysis.md: cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab
   docs/결정기록_2026-10-21.md: eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e
   docs/api/auth.md: fb25c9473822ae1e3e83e50f85cb138484c1b58b54301ab9b62860b5439cfe92
-  docs/api/finance-connect.md: d974a2f74f353a1d656c0cc4e2b37f07aa6d2538d43371d1f600c61bb0e82af5
+  docs/api/finance-connect.md: a26dbe3b1a45f4f443f7bab03816bfffb7828c82e9d9c62f8605d921ebbb7576
   docs/api/cards.md: 9b03a770b42b5152316f86175f53882febc7eb2d9a24e6608e46fb8e574f4343
   docs/api/loans.md: fc16dd8767564035b5afb0e66c90ed27099b5eba510f13a2d497cc5b265c9c7b
   docs/api/transactions.md: dea2cef12825b7d03de455f0b3e516f91d637040f38dc0370d089a0514d92118
   docs/api/fixed.md: 4761f8ff5a9444e033ea0aa980144f342db126e1732bb1f34452df46de08fae3
   docs/api/savings.md: 93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223
   docs/api/home.md: 7bb99b1aed49c9547a9e78f6b189c0a83cc9358d1a509ae804e805fcb5b79128
-  docs/api/chat.md: 37abcbab642d090b57b8ea1a4cc3fe8cab08a582477bf44df10673672f64abbd
+  docs/api/chat.md: ca877f76a8d7a0d00d3f9950e0d4489cb437a7dba32c636a2378656897674301
   docs/api/budgets.md: 4c1abcd5305ea96860842acbcb88a63f1d1dd82ca85eb596256ca513e0a36e92

@@ -281,9 +281,10 @@ class ServiceChoiceTest(ServiceChatBase):
         add("20260000000000000001", plcyNm="청년 월세 지원")  # 화성시 정책 (가짜 임베딩이라 순위는 상관없다)
         out = self.send("A", choice="policy")
         cid, content = out.json()["conversationId"], self.bot(out)
-        for label in ("경기도", "화성시", "동탄구"):
-            content = self.bot(self.pick("A", cid, content, label))
+        self.assertEqual(content["inputs"], [policy_agent.REGION_SELECT])  # 화면은 지역 드롭다운
+        content = self.bot(self.send("A", cid, text="경기도 화성시 동탄구"))  # 드롭다운은 고른 이름을 문장으로
         self.assertEqual(content["lines"], [policy_agent.ASK_TOPIC])
+        self.assertEqual(content["examples"], policy_agent.TOPIC_EXAMPLES)  # 화면은 질문 아래 예시 목록
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         self.assertEqual([s["title"] for s in content["sections"]], ["1. 청년 월세 지원"])  # 결과 카드 (제목 + 점 목록)
         self.assertEqual(content["sections"][0]["policyNo"], "20260000000000000001")
@@ -304,14 +305,28 @@ class ServiceChoiceTest(ServiceChatBase):
         spending = self.send("A", cid, text="이번 달 얼마 썼어?")  # 정책 담당이 not_mine → 라우터가 다시 고른다
         self.assertEqual(spending.json()["agent"], "spending")
 
+    def test_past_policy_card_detail_choice_opens_that_policy_by_number(self):
+        """지난 답변 카드의 [자세히 보기]만 지난 선택지를 받는다. 정책에는 이름이 아니라 번호가 간다 (64b0c4b 리뷰 1)"""
+        cid, cards = self._policy_results()
+        self.send("A", cid, text="이번 달 얼마 썼어?")  # 담당이 소비 분석으로 바뀐 뒤에도
+        label = next(c["label"] for c in cards["choices"] if c["value"].startswith("detail:"))
+        self.calls.reset_mock()
+        out = self.pick("A", cid, cards, label)
+        self.assertEqual(out.status_code, 200)
+        self.assertEqual(out.json()["messages"][0]["content"]["text"], label)  # 말풍선은 이름
+        detail = self.bot(out)
+        self.assertEqual((out.json()["agent"], detail["sections"][0]["policyNo"]), ("policy", cards["sections"][0]["policyNo"]))
+        self.assertEqual(self.calls.call_count, 0)  # 라우터 분류 없이
+        stale = self.pick("A", cid, cards, policy_agent.CHANGE_REGION)  # 다른 지난 선택지는 그대로 막는다
+        self.assertEqual(stale.status_code, 409)
+
     def _policy_results(self):
         """화성시 동탄구로 '월세 지원 있어?' 추천까지 → (대화 번호, 마지막 봇 content)"""
         from policies.tests.test_search import add
         add("20260000000000000001", plcyNm="청년 월세 지원")
         out = self.send("A", choice="policy")
         cid, content = out.json()["conversationId"], self.bot(out)
-        for label in ("경기도", "화성시", "동탄구"):
-            content = self.bot(self.pick("A", cid, content, label))
+        content = self.bot(self.send("A", cid, text="경기도 화성시 동탄구"))  # 지역 드롭다운
         return cid, self.bot(self.send("A", cid, text="월세 지원 있어?"))
 
     def test_review_saving_a_policy_that_became_inactive_says_it_failed(self):
@@ -387,8 +402,7 @@ class ServiceChoiceTest(ServiceChatBase):
         add("20260000000000000001", plcyNm="청년 월세 지원")
         out = self.send("A", choice="policy")
         cid, content = out.json()["conversationId"], self.bot(out)
-        for label in ("경기도", "화성시", "동탄구"):
-            content = self.bot(self.pick("A", cid, content, label))
+        content = self.bot(self.send("A", cid, text="경기도 화성시 동탄구"))  # 지역 드롭다운
         content = self.bot(self.send("A", cid, text="월세 지원 있어?"))
         real = engine.answer
 

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { Navigate, useNavigate } from 'react-router'
-import { apiSend, useApi } from '../utils/api.js'
+import { Navigate } from 'react-router'
+import { useApi } from '../utils/api.js'
 import { runFinanceSync, syncLines } from '../utils/financeSync.js'
-import { SERVER_FIELDS } from '../utils/institutions.js'
+import { cardPw } from '../utils/institutions.js'
+import { reconnect as reconnectWith } from '../utils/reconnect.jsx'
 import CardNoInput from './CardNoInput.jsx'
 import { PATHS } from '../routes.js'
 import { usePopup } from '../popups/context.js'
@@ -10,24 +11,22 @@ import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 
 function CardConnection({ connection, onChanged, onRelogin }) {
   const { openPopup } = usePopup()
-  const navigate = useNavigate()
   const [credentials, setCredentials] = useState({ cardNo: '', cardPassword: '' })
   const [needCredentials, setNeedCredentials] = useState(connection.organizationCode === '0302')
   const [needLogin, setNeedLogin] = useState(connection.status === 'relogin')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [lines, setLines] = useState([])
-  const [needsAdditionalAuth, setNeedsAdditionalAuth] = useState(false)
   const working = useRef(false)
   const mounted = useRef(true)
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const name = connection.organizationName
+  const pw = cardPw(connection.organizationCode)
 
   const refresh = async (event) => {
     event.preventDefault()
     if (working.current) return
-    const passwordPattern = connection.organizationCode === '0302' ? /^\d{4}$/ : /^(\d{2}|\d{4})$/
-    if (needCredentials && (!/^\d{14,19}$/.test(credentials.cardNo) || !passwordPattern.test(credentials.cardPassword))) {
+    if (needCredentials && (!/^\d{14,19}$/.test(credentials.cardNo) || !pw.ok(credentials.cardPassword))) {
       setError('카드번호와 카드 비밀번호를 확인해 주세요.')
       return
     }
@@ -64,24 +63,16 @@ function CardConnection({ connection, onChanged, onRelogin }) {
     setBusy(true)
     setError('')
     setLines([])
-    const institution = { businessType: 'card', organizationCode: connection.organizationCode, loginId: form.id.trim(), password: form.password }
-    for (const [key, value] of Object.entries(form)) if (SERVER_FIELDS[key] && value) institution[SERVER_FIELDS[key]] = value
     try {
-      const result = await apiSend('/api/finance/connections/', 'POST', { institutions: [institution] })
+      // 문자 인증을 요구하면 그 자리에서 문자 인증 팝업 (utils/reconnect.jsx)
+      const item = await reconnectWith(openPopup, { ...connection, businessType: 'card' }, form)
       if (!mounted.current) return
-      const item = result.results?.[0]
-      if (item?.status === 'connected') {
+      if (item.status === 'connected') {
         setNeedLogin(false)
-        setNeedsAdditionalAuth(false)
         setLines([{ name, ok: item.syncStatus !== 'failed', text: item.syncStatus === 'failed'
           ? '다시 연결했지만 내역을 가져오지 못했어요. 아래에서 다시 불러와 주세요.' : '다시 연결하고 카드 내역을 불러왔어요.' }])
-      } else if (item?.status === 'sms_required') {
-        setNeedsAdditionalAuth(true)
-        setError('카드사 추가 인증이 필요해요. 금융 연결 화면에서 인증을 마쳐 주세요.')
-      } else setError(item?.error?.message || '카드사에 다시 연결하지 못했어요.')
-      onChanged({ ok: item?.status === 'connected' && item.syncStatus !== 'failed', connectionId: connection.connectionId })
-    } catch (err) {
-      if (mounted.current) setError(Object.values(err.fields ?? {}).flat()[0] || err.message)
+      } else setError(item.error?.message || '카드사에 다시 연결하지 못했어요.')
+      onChanged({ ok: item.status === 'connected' && item.syncStatus !== 'failed', connectionId: connection.connectionId })
     } finally {
       working.current = false
       if (mounted.current) setBusy(false)
@@ -100,8 +91,8 @@ function CardConnection({ connection, onChanged, onRelogin }) {
           <CardNoInput name="cardNo" value={credentials.cardNo} disabled={busy}
             onChange={(cardNo) => setCredentials((previous) => ({ ...previous, cardNo }))} />
         </label>
-        <label className="mc-field">카드 비밀번호{connection.organizationCode === '0302' ? ' 4자리' : ' (2자리 또는 4자리)'}
-          <input name="cardPassword" type="password" autoComplete="off" inputMode="numeric" maxLength={4} value={credentials.cardPassword} disabled={busy}
+        <label className="mc-field">카드 비밀번호{pw.hint}
+          <input name="cardPassword" type="password" autoComplete="off" inputMode="numeric" maxLength={pw.maxLength} value={credentials.cardPassword} disabled={busy}
             onChange={(event) => setCredentials((previous) => ({ ...previous, cardPassword: event.target.value.replace(/\D/g, '') }))} />
         </label>
         <p className="mc-note">입력한 정보는 이번 조회에만 사용해요.</p>
@@ -110,7 +101,6 @@ function CardConnection({ connection, onChanged, onRelogin }) {
     </form>}
     {lines.map((line) => <p key={line.name} className={line.ok ? 'mc-note' : 'mc-error'} role="status">{line.text}</p>)}
     {error && <p className="mc-error" role="alert">{error}</p>}
-    {needsAdditionalAuth && <button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>추가 인증하러 가기</button>}
   </section>
 }
 

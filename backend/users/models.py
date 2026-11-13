@@ -104,7 +104,6 @@ class FinancialProfile(models.Model):
     )
     birth_date = models.DateField("생년월일", null=True, blank=True)
     gender = models.CharField("성별", max_length=20, null=True, blank=True)
-    loan_presence = models.CharField("대출 보유 응답", max_length=20, null=True, blank=True)
     has_car = models.BooleanField("자동차 보유", null=True, blank=True)  # NULL=미응답, false=미보유
     housing_type = models.CharField(
         "거주 형태", max_length=10, choices=HousingType.choices, null=True, blank=True,
@@ -112,8 +111,6 @@ class FinancialProfile(models.Model):
     # 2026-11-11 온보딩: 사는 지역 (청년 정책 찾기 기본 지역). policies/data/regions.json 의 시군구 코드(final). NULL=미응답
     region_code = models.CharField("사는 지역 코드", max_length=10, null=True, blank=True)
     monthly_take_home_income = models.BigIntegerField("월 실수령액", null=True, blank=True)
-    monthly_disposable_income = models.BigIntegerField("모델용 처분가능소득", null=True, blank=True)
-    disposable_income_basis = models.CharField("처분가능소득 근거", max_length=30, null=True, blank=True)
     payday = models.SmallIntegerField("매월 급여일", null=True, blank=True)  # 1~31
     scheduled_payday = models.SmallIntegerField("변경 급여일", null=True, blank=True)
     payday_revision = models.PositiveIntegerField("급여일 변경 횟수", default=0)
@@ -122,14 +119,11 @@ class FinancialProfile(models.Model):
     # 2026-11-12: 월 실수령액도 '다음 주기부터' 적용할 수 있다. 전환일이 되면 monthly_take_home_income 으로 옮기고 둘 다 비운다
     scheduled_take_home_income = models.BigIntegerField("다음 주기 실수령액", null=True, blank=True)
     income_changes_on = models.DateField("실수령액 전환일", null=True, blank=True)
-    payday_rule = models.CharField("급여일 보정 규칙", max_length=30, null=True, blank=True)
-    budget_direction = models.CharField("예산 산정 방향", max_length=30, null=True, blank=True)
     # 지킬 돈 (지킬 돈 설정 화면 · 2026-10-21 A안): 생활비 · 저축 · 월 쿠션 적립금 세 칸 모두 사용자 설정값
     # 이 값으로 매 주기 예산(budget_item)을 나눈다. 실제 배정 결과는 budget_item 에 있다
     living_budget = models.BigIntegerField("월 생활비", null=True, blank=True)  # NULL=미설정. 카테고리 예산 합계의 기준
     budget_category_targets = models.JSONField('유지할 카테고리 예산 목표', default=dict, blank=True)
     savings_floor = models.BigIntegerField("월 저축 보호액", null=True, blank=True)
-    cushion_enabled = models.BooleanField("쿠션 설정 여부", null=True, blank=True)
     cushion_target = models.BigIntegerField("쿠션 목표액", null=True, blank=True)
     cushion_monthly = models.BigIntegerField("월 쿠션 적립금", null=True, blank=True)  # 2026-10-21 보호 하한(cushion_floor) 대체
     # 11/13: 머니쿠션 목표를 사용자가 직접 정한 금액. NULL=기본(월 실수령액 × 3, 월급이 바뀌면 같이 바뀜)

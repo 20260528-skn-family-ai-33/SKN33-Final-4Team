@@ -610,8 +610,8 @@
                         },
                         {
                           "businessType": "card",
-                          "organizationCode": "0311",
-                          "organizationName": "롯데카드",
+                          "organizationCode": "0307",
+                          "organizationName": "씨티카드",
                           "status": "sms_required",
                           "smsAuth": {
                             "authToken": "example-signed-token",
@@ -637,8 +637,8 @@
                       "results": [
                         {
                           "businessType": "card",
-                          "organizationCode": "0311",
-                          "organizationName": "롯데카드",
+                          "organizationCode": "0307",
+                          "organizationName": "씨티카드",
                           "status": "sms_required",
                           "smsAuth": {
                             "authToken": "example-signed-token",
@@ -1521,7 +1521,7 @@
           },
           "organizationCode": {
             "type": "string",
-            "description": "finance/institutions.py 표의 아이디 로그인 지원 기관만. 공동인증서 전용 기관은 400."
+            "description": "finance/institutions.py 표에서 blocked 가 없는 기관만. 공동인증서 전용 · 휴대폰 본인인증 · 출금 계좌 확인이 필요한 기관과 서비스가 끝난 기관은 400 (이유별 문구)."
           },
           "loginId": {
             "type": "string",

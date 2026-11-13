@@ -13,33 +13,40 @@ import { usePopup } from '../popups/context.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
 import { useConsentDocs } from '../popups/consentDocs.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
+import { josa } from '../utils/adjust.js'
 import { readConnectDraft, saveConnectDraft } from '../utils/connectDraft.js'
 
 const LOAN_ANSWERS = ['있어요', '없어요', '나중에 확인']
 
 // 칩 여러 개 + "다른 ○○ 보기" + "2곳 선택 · 신한, 국민" 을 한 덩어리로
 // items = utils/institutions.js 의 BANKS · CARDS. 자주 쓰는 곳(popular)만 먼저 보이고 나머지는 펼친다
-function PickCard({ title, hint, items, picked, moreLabel, notSupported = [] }) {
+// soon = 아직 연결할 수 없는 곳. 펼치면 토글 아래에 누를 수 없는 칩으로 보인다 (은행)
+function PickCard({ title, hint, items, picked, moreLabel, notSupported = [], soon = [], className = '' }) {
   const [open, setOpen] = useState(false)
   // 펼치지 않았어도 이미 고른 기관은 보이게
   const shown = items.filter((x) => open || x.popular || picked.has(x.name))
-  const rest = items.length - items.filter((x) => x.popular).length
+  const rest = items.length - items.filter((x) => x.popular).length + soon.length
 
   return (
-    <div className="mc-card">
+    <div className={`mc-card ${className}`}>
       <h2>{title} <span className="mc-hint">{hint}</span></h2>
       <div className="mc-chipbar">
         {shown.map((x) => (
           <button key={x.name} type="button" aria-pressed={picked.has(x.name)} onClick={() => picked.toggle(x.name)}>
-            {x.label}{!x.idLogin && <small className="mc-chip-cert">인증서만</small>}
+            {x.label}
           </button>
         ))}
       </div>
-      <button type="button" className="mc-link mc-pick-more" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {open ? '접기 ∧' : `${moreLabel} ${rest}곳 더 보기 ∨`}
-      </button>
-      {open && items.some((x) => !x.idLogin) && <p className="mc-picked">'인증서만'은 공동인증서로만 연결돼요.</p>}
-      {notSupported.length > 0 && <p className="mc-picked">{notSupported.join('·')}는 아직 지원하지 않아요.</p>}
+      {rest > 0 && <button type="button" className="mc-link mc-pick-more" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {soon.length ? `${moreLabel} ${rest}곳` : open ? '접기' : `${moreLabel} ${rest}곳 더 보기`} <span className="mc-pick-arrow" aria-hidden="true">▼</span>
+      </button>}
+      {/* 준비 중인 곳은 토글 아래에서 펼쳐진다 (누를 수 없음) */}
+      {soon.length > 0 && (
+        <div className="mc-pick-soon" data-open={open} aria-hidden={!open}>
+          <div><div className="mc-chipbar mc-chipbar-soon">{soon.map((label) => <button key={label} type="button" disabled>{label}</button>)}</div></div>
+        </div>
+      )}
+      {notSupported.length > 0 && <p className="mc-picked">{notSupported.join('·')}{josa(notSupported.at(-1), '은', '는')} 아직 지원하지 않아요.</p>}
       {/* 고른 순서가 아니라 화면 순서대로 이름을 보여 준다 */}
       <p className="mc-picked"><b>{picked.list.length}곳</b> 선택 · {items.filter((x) => picked.has(x.name)).map((x) => x.label).join(', ')}</p>
     </div>
@@ -68,8 +75,8 @@ export default function ConnectPage() {
   const openConsent = (d) => openPopup(<TermsPopup doc={d.document} onAgree={() => setOne(d, true)} />)
 
   const notes = [...BANKS, ...CARDS]
-    .filter((x) => (banks.has(x.name) || cards.has(x.name)) && (EXTRA[x.name]?.note || !x.idLogin))
-    .map((x) => [x.name, x.idLogin ? EXTRA[x.name].note : '공동인증서로만 연결돼요. (공동인증서 로그인은 준비 중)'])
+    .filter((x) => (banks.has(x.name) || cards.has(x.name)) && EXTRA[x.name]?.note)
+    .map((x) => [x.name, EXTRA[x.name].note])
 
   const next = async () => {
     if (busy) return
@@ -118,10 +125,10 @@ export default function ConnectPage() {
         <p className="mc-picked">은행 대출은 은행을 연결하면 자동으로 불러와요. 학자금·캐피탈처럼 은행 밖 대출이 있으면 '있어요'를 골라 주세요.</p>
       </div>
 
-      <PickCard title="연결할 은행" hint="필수 · 복수 선택" items={BANKS} picked={banks} moreLabel="다른 은행" notSupported={NOT_SUPPORTED} />
-      <PickCard title="카드사" hint="선택 · 나중에 해도 돼요" items={CARDS} picked={cards} moreLabel="다른 카드사" />
+      <PickCard title="연결할 은행" hint="필수 · 복수 선택" items={BANKS} picked={banks} moreLabel="준비 중인 은행" soon={NOT_SUPPORTED.bank} className="mc-pick-bank" />
+      <PickCard title="카드사" hint="선택 · 나중에 해도 돼요" items={CARDS} picked={cards} moreLabel="다른 카드사" notSupported={NOT_SUPPORTED.card} />
 
-      {/* 고른 기관 중 미리 알아 둘 것이 있는 곳 (농협 조회계좌 · 씨티/롯데 문자 인증 · 대구 출금계좌 등) */}
+      {/* 고른 기관 중 미리 알아 둘 것이 있는 곳 (농협 조회계좌 · 씨티 문자 인증 등) */}
       {notes.length > 0 && (
         <div className="mc-card mc-inst-notes">
           <h2>연결 전에 확인해 주세요</h2>

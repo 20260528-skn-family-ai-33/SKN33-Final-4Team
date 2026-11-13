@@ -130,7 +130,6 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                     account.save(update_fields=["connection"])
                     saved_accounts.append((account, rows))
                     continue
-                account.source_account_ref_ciphertext = None
                 account.masked_number = codef.mask(number)
                 account.name = _mask_account_numbers(data["name"], account_numbers)
                 account.balance = data["balance"]
@@ -141,7 +140,7 @@ def sync_bank(user, connected_id, org, start, end, *, connection_id=None, requir
                 account.fetched_at = timezone.now()
                 account.save(update_fields=[
                     "connection",
-                    "source_account_ref_ciphertext", "masked_number", "name", "balance",
+                    "masked_number", "name", "balance",
                     "account_type", "field_states", "fetched_at",
                 ])
                 saved_accounts.append((account, rows))

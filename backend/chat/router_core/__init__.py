@@ -44,6 +44,7 @@ ACTIVE = ("proposing", "awaiting_approval", "saving")
 ENDED = ("saved", "failed", "canceled", "expired", "rejected")
 TASK_QUESTIONS = ("cancel_target", "budget_task_choice")
 NEW_TASK = {"task_ref": None, "phase": "started", "suspended": False}
+POLICY_DETAIL = "detail:"  # 청년 정책 카드 [자세히 보기] 선택지 값 앞부분 (policies.agent.DETAIL)
 MAX_DELIVERIES = 2  # 같은 입력을 에이전트에 전달하는 최대 횟수 (현재 담당 1 + 새 담당 1)
 RESULT_STATUSES = ("replied", "awaiting_input", "unsupported", "ended", "failed", "not_mine")
 
@@ -252,7 +253,7 @@ def _spending(mode, text, cid, store, *, entry="text", declined=(), selected_fro
 
 def _policy_entry(store, cid, text, entry, notices, declined=(), classified=False):
     """정책으로 들어온다 (버튼 · 분류). 보류된 정책 작업이 있으면 묻지 않고 이어서(resume) — 예산 조정 재개와 같은 규칙.
-    지난 추천 · 지역은 정책 에이전트 상태에 남아 있고, 새로 찾기는 에이전트의 [다른 분야 찾기] · [지역 바꾸기]로 한다"""
+    지난 추천 · 지역은 정책 에이전트 상태에 남아 있고, 새로 찾기는 에이전트의 [다른 분야 찾기] · [지역 변경하기]로 한다"""
     work = store.get_work(cid, "policy")
     store.save_work(cid, "policy", {"work_ref": work and work["work_ref"], "suspended": False})
     return _policy(store, cid, "resume" if work else "start", text, entry=entry, declined=declined, notices=notices,
@@ -477,6 +478,10 @@ def route(text, conversation_id, store, complete, server=None):
         cancelled = _cancel_word(text, cid, store, asked, active, task)
         if cancelled is not None:
             return cancelled
+    if text.startswith(POLICY_DETAIL):  # 지난 정책 카드의 [자세히 보기]: 담당이 바뀌었어도 분류하지 않고 정책으로
+        store.clear(cid)
+        return _policy(store, cid, "continue", text) if active == "policy" else \
+            _policy_entry(store, cid, text, "text", _switch(store, cid, "policy"))
     try:
         if asked:
             return _router_answer(text, cid, store, server, asked, task, complete)

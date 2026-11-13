@@ -80,8 +80,8 @@ def _check_entry(entry, index, errors):
         info = institutions.find(business_type, code) if isinstance(code, str) else None
         if info is None:
             errors[key("organization_code")] = ["연결할 수 없는 기관이에요."]
-        elif not info["id_login"]:
-            errors[key("organization_code")] = ["이 기관은 공동인증서로만 연결돼서 아직 연결할 수 없어요."]
+        elif info["blocked"]:
+            errors[key("organization_code")] = [info["blocked"]]
 
     if not _text(entry.get("login_id"), 100):
         errors[key("login_id")] = ["아이디를 입력해 주세요."]

@@ -102,6 +102,7 @@
 **정해진 것 (10/27 나은)**
 
 1. 로그인 방식은 **아이디 · 비밀번호만** 받는다. 공동인증서 · 간편인증은 받지 않는다. 공동인증서로만 연결되는 기관(산업 · 수협 · 신협 · 부산 · 광주 · 제주은행, 수협 · 광주 · 제주카드)은 400.
+   - **11/13 추가**: 아이디 로그인이어도 서버가 받지 않는 값이 필요하거나 쓸 수 없는 기관도 400으로 막는다(CODEF 상세 명세 2026-11-13 확인). 우리 · 대구은행(출금계좌번호 · 계좌 비밀번호), 롯데카드(이름 · 주민번호 앞 7자리 · 통신사 · 휴대폰 본인인증), 우체국(아이디 로그인은 보유계좌만, 거래내역은 공동인증서), K뱅크(2023 개인뱅킹 종료로 CODEF 제공 중단). 문구는 이유별로 다르다(`finance/institutions.py`의 `blocked`).
 2. 추가 인증은 **문자(SMS) 본인확인만** 지원한다. CODEF가 `CF-03002`(추가 인증 필요)를 주면 응답의 그 기관이 `sms_required`가 되고, 화면은 문자 인증 팝업(`SmsAuthPopup`)을 연다. 받은 인증번호를 **같은 기관 정보와 함께 한 번 더 보낸다**(두 번 나눠 보내기, 2-way). 인증 시간이 지나면 [다시 받기] 없이 처음부터 다시 연결한다.
 3. 카드사별 추가 값(현대카드 카드번호 · 카드 비밀번호)은 **저장하지 않고 매번 받는다**. CODEF에 보내고 바로 버린다(DB · 로그 저장 금지). 현대카드는 조회할 때도 매번 필요해서 다시 불러오기 API에서도 받는다.
 4. 여러 기관을 한 번에 보내면 **성공한 것만 저장**한다. 하나라도 연결되거나 문자 인증 대기면 **200 + 기관별 결과**, 전부 실패하면 아래 '실패하면' 기준으로 에러.
@@ -165,7 +166,7 @@
 { "results": [
   { "businessType": "bank", "organizationCode": "0088", "organizationName": "신한은행", "status": "connected",
     "connectionId": "5e0a…", "reconnected": false, "syncStatus": "done", "accountCount": 2 },
-  { "businessType": "card", "organizationCode": "0311", "organizationName": "롯데카드", "status": "sms_required",
+  { "businessType": "card", "organizationCode": "0307", "organizationName": "씨티카드", "status": "sms_required",
     "smsAuth": { "authToken": "eyJ1Ijo…", "expiresAt": "2026-10-27T17:43:00+09:00", "phoneHint": null } },
   { "businessType": "card", "organizationCode": "0306", "organizationName": "신한카드", "status": "failed",
     "error": { "code": "invalid", "message": "아이디 또는 비밀번호를 확인해 주세요." } }
@@ -211,12 +212,13 @@
 **확인 필요**
 
 - **아직 직접 확인하지 못한 CODEF 코드**: 아이디 · 비밀번호 오류(`CF-12100`, 주석 기준) · 잠김 · 비밀번호 변경 · 인증번호 틀림 · 인증 시간 지남 · 이미 등록된 기관. 데모 계정으로 받으면 `codef_accounts.py`의 `CODE_REASONS`에 옮긴다. 그전까지는 CODEF 안내 문장의 낱말(예: '비밀번호' + '일치')로 임시 판단하고, 판단이 안 되면 502 안내로 보낸다 → 김혜리(`codef_card_check`가 `errorList`까지 출력하도록 나은 PR에 올라옴)
-- **문자 인증 2-way 세부**: 인증번호를 보내는 칸 이름(`smsAuthNo`)과 위치(요청 맨 바깥), CODEF 응답의 `method` 값(`smsAuthNo`), 인증 제한 시간, 문자 받은 번호(`phoneHint`)를 응답에서 얻을 수 있는지 → 실제 문자 인증 기관(롯데카드 · 씨티)으로 확인 필요 (김혜리)
+- **문자 인증 2-way 세부**: 인증번호를 보내는 칸 이름(`smsAuthNo`)과 위치(요청 맨 바깥), CODEF 응답의 `method` 값(`smsAuthNo`), 인증 제한 시간, 문자 받은 번호(`phoneHint`)를 응답에서 얻을 수 있는지 → 실제 문자 인증 기관(씨티)으로 확인 필요 (김혜리)
 - 새 환경변수 `CONNECTED_ID_ENCRYPTION_KEY`를 `docs/ENV_SETUP.md` · `LOCAL_SETUP.md` 3단계(.env 필수 칸) 표에도 적어 줄지 → 김나은(공통 문서)
 - **연결 직후 불러오기를 요청 안에서 기다림**: 은행 여러 곳을 한 번에 연결하면 응답이 길어질 수 있다. 다시 불러오기처럼 작업(`taskId`) 방식으로 바꿀지는 실제 속도를 보고 정한다
 - **CODEF에서 기관 빼기**가 아직 없어서(연결 해제 '정해진 것'), 한 번 연결한 기관은 해제했어도 다시 연결할 때 CODEF '계정 갱신'(`/v1/account/update`)으로 보낸다. 기관 빼기를 붙이면 '추가'(`/v1/account/add`)로 바뀐다. 추가가 '이미 등록됨'으로 실패하면 갱신으로 한 번 더 시도한다
 - `connection.auth_method` 값 `id_password`는 H-07 코드표에 없다 → 코드표에 넣을지 김나은
-- 화면 연동(김혜리): `ConnectAuthPage`의 `mockConnect` · `mockSms`를 이 API로 바꾸기, `SmsAuthPopup`의 `phoneHint`가 null일 때 문구, 로그인 팝업의 대구은행 출금 계좌 · 롯데카드 본인확인 칸은 이번 결정 범위 밖이라 서버가 받지 않음(보내면 400)
+- 화면 연동(김혜리): `ConnectAuthPage`의 `mockConnect` · `mockSms`를 이 API로 바꾸기, `SmsAuthPopup`의 `phoneHint`가 null일 때 문구
+- 우리 · 대구은행 출금 계좌, 롯데카드 본인인증을 지원하려면 서버가 받을 칸을 늘려야 한다. 우리은행 출금 계좌가 정말 필수인지는 CODEF 공통 문서와 상세 명세가 달라 CODEF 확인 필요 (11/13)
 
 ---
 
@@ -516,7 +518,7 @@
 ```
 
 - **작업 상태와 기관 결과는 다르다**: 작업이 끝까지 돌았으면 기관이 전부 실패해도 작업은 `succeeded`이고, 실패는 `items[].error`로 본다. 작업 `failed`는 서버 오류로 중간에 멈춘 경우뿐이다(`error.code`: `server_error`, 10분 넘게 멈춘 작업은 `stale`).
-- **기관별 실패 코드**: '금융기관 인증 · 새 연결' 실패 안내 표의 문구를 그대로 쓰되, 로그인 오류 · 잠김은 `code: relogin_required`로 보낸다(그 연결은 `relogin`이 되고 화면은 [다시 연결]). 이미 `relogin`인 연결이나 저장된 `connectedId`가 없는 회원은 CODEF를 부르지 않고 "○○ 다시 연결이 필요해요. 연결 관리에서 다시 연결해 주세요."(`relogin_required`). 기관 점검 · 응답 없음은 `provider_unavailable`. HMAC 키 전환(11/10) 전 키로 저장된 계좌 · 대출 · 카드가 남아 있으면 새 행을 만들지 않고 `not_ready` "예전 방식으로 저장된 금융 정보가 남아 있어요. 금융 정보 조회 동의를 철회한 뒤 다시 연결해 주세요."(같은 계좌 · 거래가 두 번 저장되는 것을 막음, PR #102 리뷰).
+- **기관별 실패 코드**: '금융기관 인증 · 새 연결' 실패 안내 표의 문구를 그대로 쓰되, 로그인 오류 · 잠김은 `code: relogin_required`로 보낸다(그 연결은 `relogin`이 되고 화면은 [다시 연결]). 이미 `relogin`인 연결이나 저장된 `connectedId`가 없는 회원은 CODEF를 부르지 않고 "○○ 다시 연결이 필요해요. 연결 관리에서 다시 연결해 주세요."(`relogin_required`). 조회 중 CODEF가 추가 인증(`CF-03002`, 씨티 문자 인증 등)을 요구하면 여기서는 받을 수 없어 같은 문구로 `relogin`으로 바꾼다 — 다시 연결의 문자 인증 흐름을 타게 한다(11/13). 기관 점검 · 응답 없음은 `provider_unavailable`. HMAC 키 전환(11/10) 전 키로 저장된 계좌 · 대출 · 카드가 남아 있으면 새 행을 만들지 않고 `not_ready` "예전 방식으로 저장된 금융 정보가 남아 있어요. 금융 정보 조회 동의를 철회한 뒤 다시 연결해 주세요."(같은 계좌 · 거래가 두 번 저장되는 것을 막음, PR #102 리뷰).
 - **카드 값이 필요해요**를 받으면 화면은 그 기관의 카드번호 · 카드 비밀번호를 받아 `connectionIds`(그 기관) + `cardCredentials`로 다시 보낸다. 카드 값을 보낸 요청은 1분 안이어도 새로 부른다.
 - 은행 거래 저장은 나은의 `sync_bank`(PR #44 · #45), 대출은 권세진의 `sync_bank_loans`(PR #50)를 부른다. 카드 · 승인 · 청구서는 권세진의 `sync_card`(위 11번, 10/28 구현)를 부른다.
 - 진행 중 판단과 결과 보관은 공용 작업 표(`async_task`, `taskType = finance_sync`)로 한다. 기관 조회 한 번 한 번의 기록은 기존대로 `sync_run`에 남는다.

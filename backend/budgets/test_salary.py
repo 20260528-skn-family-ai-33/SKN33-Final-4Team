@@ -118,7 +118,6 @@ class SalaryTests(TestCase):
     def test_preserves_other_profile_values(self):
         FinancialProfile.objects.create(
             user=self.user, birth_date=date(1999, 3, 15), gender="female", has_car=True, housing_type="alone",
-            monthly_disposable_income=123, disposable_income_basis="legacy", payday_rule="legacy",
             living_budget=1_000_000, savings_floor=200_000, cushion_monthly=100_000, cushion_target=8_000_000,
         )
         before = FinancialProfile.objects.filter(user=self.user).values().get()
@@ -365,7 +364,6 @@ class SalaryTests(TestCase):
         self.assertEqual(response.json()["pendingPaydayChange"]["payday"], 10)
         saved = FinancialProfile.objects.get(user=self.user)
         self.assertEqual(saved.monthly_take_home_income, 3_000_000)
-        self.assertIsNone(saved.monthly_disposable_income)
 
     def test_schedule_can_be_replaced_or_explicitly_canceled(self):
         self.put(payload())

@@ -193,6 +193,13 @@ class SyncTest(SyncBase):
         self.assertEqual(self.shinhan.status, "relogin")
         self.assertEqual(task["result"]["summary"], {"total": 2, "succeeded": 1, "failed": 1, "skipped": 0})
 
+    def test_extra_auth_during_sync_asks_reconnect(self):
+        self.bank.side_effect = codef.CodefError("CF-03002", "추가 인증 정보 입력이 필요합니다.")
+        _, task = self.run_sync({"connectionIds": [str(self.shinhan.connection_id)]})
+        self.assertEqual(self.items(task)["0088"]["error"]["code"], "relogin_required")
+        self.shinhan.refresh_from_db()
+        self.assertEqual(self.shinhan.status, "relogin")
+
     def test_provider_error_keeps_connection_and_stops_loans(self):
         self.loan_syncer.return_value = self.loans
         self.bank.side_effect = codef.CodefError("CF-90002", "기관 점검 시간입니다.")
