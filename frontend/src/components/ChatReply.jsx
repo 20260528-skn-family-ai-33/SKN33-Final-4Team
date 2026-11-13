@@ -9,6 +9,7 @@ import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { policyNumber, policyTitle } from '../utils/policyCards.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
+import Icon from './Icon.jsx'
 import '../styles/policies.css'
 
 const Lead = ({ items }) => items.map((l, i) => (
@@ -269,6 +270,23 @@ export function Choices({ choices, active, onPick }) {
           {c.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+// 끝부분만 빠진 소비 답(content.syncedUntil) 아래 [내역 다시 불러오기] (11/13). 불러오기 · 같은 질문 다시 보내기는 AssistantPage 가 한다
+// state = null(버튼) · { failed: false }(불러오는 중) · { failed: true }(실패 + 다시 시도)
+export function Resync({ state, disabled, onRun }) {
+  if (state && !state.failed) return <div className="mc-asst-route is-busy" role="status"><Icon name="Loader" /> 내역 불러오는 중…</div>
+  if (state?.failed) {
+    return <div className="mc-msg bot"><div className="mc-bubble" role="alert">
+      <p>불러오지 못했어요</p>
+      <button type="button" className="mc-btn" disabled={disabled} onClick={onRun}>다시 시도</button>
+    </div></div>
+  }
+  return (
+    <div className="mc-chipbar mc-fx-choices" role="group" aria-label="내역 다시 불러오기">
+      <button type="button" disabled={disabled} onClick={onRun}>내역 다시 불러오기</button>
     </div>
   )
 }

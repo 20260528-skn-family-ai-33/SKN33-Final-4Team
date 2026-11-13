@@ -105,6 +105,7 @@ NOTICE = {
     "classified_compare": "{name}{particle} 분류된 내역 기준으로 비교했어요. 확인 필요(이번 달 {current} · 지난달 {previous})에 따라 증감이 달라질 수 있어요.",
     "months_capped": "{n}개월까지만 볼 수 있어 {n}개월로 보여드려요.",  # 360px 폰에서도 한 줄 (기간은 카드 머리줄에)
     "retry": "불러오지 못한 항목은 잠시 후 다시 물어봐 주세요.",
+    "synced_until": "{targets} 불러온 내역이에요. 다시 불러오면 더 정확해져요.",
 }
 CHART = {
     "title": "카테고리별 소비 보기",
@@ -935,6 +936,10 @@ def compose(results, notices=(), _alt=True):
             out.notice("fixed_excluded", amount=won(excluded), names=names)
     for amount, names in out.classified.items():
         out.notice("classified_only", name=" · ".join(names), particle=josa(names[-1], ("으로", "로")), amount=won(amount))
+    late = list(_late([r["result"] for r in results if r["ok"]], {}).values())
+    if late:  # 끝부분만 빈 일부 내역: 어디까지 불러왔는지 + [내역 다시 불러오기](화면). 일반 '일부 내역' 안내는 이걸로 대신한다
+        out.notices = [n for n in out.notices if n != NOTICE["partial"]]
+        out.notice("synced_until", targets=_late_text(late))
     if "months_capped" in notices:
         applied = next((r["item"]["months_applied"] for r in results if r["item"].get("months_applied")), None)
         if applied:
@@ -947,6 +952,8 @@ def compose(results, notices=(), _alt=True):
         reply["lead"] = out.lead
     if out.sections:
         reply["sections"] = out.sections
+    if late:
+        reply["synced_until"] = [{"kind": t["kind"], "name": t["name"], "until": t["until"].isoformat()} for t in late]
     done = [r["result"] for r in results if r["ok"]]
     if any(r["type"] == 5 for r in done):
         reply["chart"] = chart(next(r for r in done if r["type"] == 5))
@@ -960,6 +967,28 @@ def compose(results, notices=(), _alt=True):
         reply["alt"] = {"label": ALT["cycle"], "base_label": ALT["month"],
                         **{k: other[k] for k in ("lines", "notices", "view", "chart", "lead", "sections") if k in other}}
     return reply
+
+
+def _late(value, found):
+    """결과 안의 수집 판정(coverage)마다 '끝부분만 빈 대상'(recent) → found[(kind, id)] (같은 대상이면 이른 날짜)"""
+    if isinstance(value, dict):
+        for t in value.get("recent") or []:
+            key = t["kind"], t["id"]
+            found[key] = min(found.get(key, t), t, key=lambda x: x["until"])
+        for v in value.values():
+            _late(v, found)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _late(v, found)
+    return found
+
+
+def _late_text(late):
+    """→ '카드 2장은 11월 12일까지, 계좌 1개는 11월 11일까지' (번호 없이 개수만 — 기관별 이름은 synced_until 칸에)"""
+    groups = {}
+    for t in sorted(late, key=lambda t: (t["kind"] != "card", t["until"])):
+        groups[t["kind"], t["until"]] = groups.get((t["kind"], t["until"]), 0) + 1
+    return ", ".join(f"{'카드' if k == 'card' else '계좌'} {n}{'장은' if k == 'card' else '개는'} {day(u)}까지" for (k, u), n in groups.items())
 
 
 def _short_total(result):

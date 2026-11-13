@@ -355,6 +355,7 @@
 | `view` | 목록 / 없음 | 카드 블록 `head` · `total` · `rows` · `text` · `meter` (서버가 준 금액 · 비율 · 글자 그대로 그린다) |
 | `chart` | 객체 / 없음 | 전반 분석의 카테고리 막대 `{ title, basis, limited, empty, rows: [{ code, name, amount, share, text }] }` |
 | `alt` | 객체 / 없음 | 이번 달 조회(달력 한 달)를 **이번 예산 주기(시작일 ~ 기준일)** 로 다시 본 판 (11/11). `{ label: "예산 주기", baseLabel: "이번 달", lines, notices, view?, chart?, lead?, sections?, first? }` — 화면은 `[baseLabel \| label]` 전환 버튼으로 `view` · `chart` · `lead` · `notices` 를 이 판의 것으로 바꿔 그린다(금액은 다시 계산하지 않는다). 예산 주기가 없거나 달력 한 달과 같은 기간이면 없다. `first: true` = 넘겨 둔 예산 조정이 있는 대화라 예산 주기를 먼저 보인다 |
+| `syncedUntil` | 목록 / 없음 | 소비 분석이 **끝부분(오늘 쪽)만 3일 이내로 빠진 내역** 기준일 때 (11/13). 빠진 계좌 · 카드마다 `{ kind: "card" \| "account", name: 표시 이름(끝 4자리만, displayName 규칙), until: 마지막으로 불러온 날 "YYYY-MM-DD" }`. 이때 남은 예산은 불러온 데까지 기준으로 계산하고(카테고리별 잔액 포함), `notices`에 "카드 2장은 11월 12일까지 불러온 내역이에요. 다시 불러오면 더 정확해져요."가 붙는다. 화면은 이 칸이 있는 마지막 답 아래 [내역 다시 불러오기](`POST /api/finance/sync/`, 홈 새로고침과 같음) → 끝나면 같은 질문을 다시 보낸다. 중간이 비었거나 · 3일 넘게 비었거나 · 수집 범위를 정할 수 없는 원천(직접 등록 카드 등)이 있으면 없다(남은 금액은 지금처럼 확정 불가) |
 | `examples` | 목록 / 없음 | 예시 질문 |
 | `turn` | 정수 | 이 봇 메시지 차례 번호 (답변 선택지 확인용) |
 | `agent` | 문자 / null | 이 답을 한 도우미 |

@@ -5,10 +5,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AssistantPage from './AssistantPage.jsx'
 import PopupProvider from '../popups/PopupProvider.jsx'
 import { apiSend, newRequestKey, useApi } from '../utils/api.js'
+import { runFinanceSync } from '../utils/financeSync.js'
 
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), newRequestKey: vi.fn(), useApi: vi.fn() }))
-vi.mock('../components/Layout.jsx', () => ({ default: ({ children, foot }) => <main>{children}{foot}</main> }))
+vi.mock('../components/Layout.jsx', async () => {
+  const { usePopup } = await import('../popups/context.js')
+  return { default: function Layout({ children, foot }) { return <main>{children}{foot}{usePopup().popup}</main> } }  // 팝업은 Layout 이 그린다
+})
 vi.mock('../components/Icon.jsx', () => ({ default: () => <span /> }))
+vi.mock('../utils/financeSync.js', async (original) => ({ ...await original(), runFinanceSync: vi.fn() }))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host, root, keyNumber
@@ -253,4 +258,59 @@ it('[새 대화]는 대화가 있을 때만 보이고, 누르면 화면을 비�
   await submit('그럼 교통비는?')
   expect(apiSend.mock.calls[0][2].conversationId).toBeNull()
   expect(apiSend.mock.calls[1][2].conversationId).toBeNull()
+})
+
+describe('일부 내역 답의 [내역 다시 불러오기] (11/13)', () => {
+  const asked = '식비 얼마 남았어?'
+  const partial = { result: true, agent: 'spending', lines: ['식비 예산 350,000원 중 60,000원을 썼고 290,000원 남았어요.'],
+    notices: ['카드 1장은 11월 12일까지 불러온 내역이에요. 다시 불러오면 더 정확해져요.'],
+    syncedUntil: [{ kind: 'card', name: '현대카드 · ****1234', until: '2026-11-12' }] }
+  const fresh = { result: true, agent: 'spending', lines: ['새로 받은 답'] }
+  const loaded = { items: [{ organizationName: '현대카드', status: 'succeeded', newTransactionCount: 2 }] }
+  const resync = () => [...host.querySelectorAll('button')].find((b) => b.textContent.includes('내역 다시 불러오기'))
+  const start = async () => {
+    apiSend.mockResolvedValueOnce(reply('router', 1, asked, partial)).mockResolvedValueOnce(reply('router', 2, asked, fresh))
+    await mount()
+    await submit(asked)
+  }
+
+  it('누르면 불러오는 중을 보이고, 다 불러오면 같은 질문을 다시 보내 새 답을 보인다', async () => {
+    let finish
+    runFinanceSync.mockImplementation(() => new Promise((resolve) => { finish = resolve }))
+    await start()
+    expect(resync()).toBeDefined()
+    await click(resync())
+    expect(runFinanceSync).toHaveBeenCalledWith()  // 홈 새로고침과 같은 API (새 API 없음)
+    expect(host.querySelector('[role="status"]').textContent).toContain('내역 불러오는 중…')
+    expect(resync()).toBeUndefined()
+    expect(input().disabled).toBe(true)
+    await act(async () => finish(loaded))
+    expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', text: asked })
+    expect(host.textContent).toContain('새로 받은 답')
+    expect(resync()).toBeUndefined()  // 새 답엔 syncedUntil 이 없다
+  })
+
+  it('실패하면 그 자리에 안내 + [다시 시도], 다시 시도가 되면 같은 질문을 보낸다', async () => {
+    runFinanceSync.mockRejectedValueOnce(new Error('서버 오류')).mockResolvedValueOnce(loaded)
+    await start()
+    await click(resync())
+    expect(host.querySelector('[role="alert"]').textContent).toContain('불러오지 못했어요')
+    expect(apiSend).toHaveBeenCalledTimes(1)
+    expect(input().disabled).toBe(false)
+    await click(button('다시 시도'))
+    expect(runFinanceSync).toHaveBeenCalledTimes(2)
+    expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', text: asked })
+    expect(host.textContent).toContain('새로 받은 답')
+  })
+
+  it('카드번호가 필요한 카드사는 입력 팝업부터, 그냥 닫으면 다시 묻지 않고 실패로', async () => {
+    runFinanceSync.mockResolvedValueOnce({ items: [{ connectionId: 'conn-1', organizationCode: '0302', organizationName: '현대카드',
+      status: 'failed', error: { code: 'invalid', message: '카드 값', fields: { cardNo: ['카드번호를 넣어 주세요.'] } } }] })
+    await start()
+    await act(async () => resync().click())
+    expect(document.body.textContent).toContain('카드 정보를 넣어 주세요')
+    await click(button('닫기 ×'))
+    expect(host.querySelector('[role="alert"]').textContent).toContain('불러오지 못했어요')
+    expect(apiSend).toHaveBeenCalledTimes(1)
+  })
 })
