@@ -51,8 +51,11 @@ def request_context(state):
     amount, mode = item.get('amount'), item.get('amount_mode')
     if amount is None:
         return f'{name} {direction}'
-    suffix = {'by': '원만큼', 'to': '원으로', 'remaining': '원이 남도록',
-              'percent_by': '%만큼', 'percent_to': '%로'}.get(mode)
+    from .advisor import money
+    if mode in {'by', 'to', 'remaining'}:
+        suffix = {'by': '', 'to': '으로', 'remaining': '이 남도록'}[mode]
+        return f'{name} {money(amount)}{suffix} {direction}'
+    suffix = {'percent_by': '%만큼', 'percent_to': '%로'}.get(mode)
     return f'{name} {amount:,}{suffix} {direction}' if suffix else f'{name} {direction}'
 
 

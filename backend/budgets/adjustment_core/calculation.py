@@ -52,6 +52,10 @@ def _prepare(context, requests):
             or any(not isinstance(c, str) or c not in ALL_CODES for c in not_applicable)):
         raise AdjustmentError("invalid_ml_not_applicable")
     data["ml_not_applicable"] = set(not_applicable)
+    from .protection import usage_floors
+    usage = usage_floors(context)
+    data["usage_floors"] = None if usage is None else _money_map(
+        {code: value for code, value in usage.items() if code in amounts}, "invalid_usage_floors", amounts)
     if not isinstance(requests, list):
         raise AdjustmentError("invalid_requests")
     normalized, targets = [], {}
@@ -92,11 +96,16 @@ def _hard_floor(data, category):
 
 
 def _floor(data, category):
+    """서버가 자동으로 줄일 때의 하한. 직접 정한 감액은 _hard_floor 만 지킨다."""
     floor = _hard_floor(data, category)
-    # Temporary until verified price and usage evidence supplies a protected amount.
+    # 1~6순위는 물가 근거가 준비될 때까지 현재 배정액을 유지한다(임시 정책).
     if data['priorities'].get(category, 99) <= 6:
         return max(floor, data['allocations'][category])
-    return floor
+    usage = data.get('usage_floors')
+    # 소비 기록을 확인하지 못하면 예산이 너무 낮아지지 않게 자동으로 줄이지 않는다.
+    if usage is None:
+        return max(floor, data['allocations'][category])
+    return max(floor, usage.get(category, data['allocations'][category]))
 
 
 def _eligible(data, donor, recipient, *, allow_ranked=False):

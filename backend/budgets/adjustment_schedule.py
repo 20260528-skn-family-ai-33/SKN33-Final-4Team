@@ -57,6 +57,8 @@ def planning_context(context, planning):
     planned['bucket_status'] = {code: 'ready' for code in planned['buckets']}
     planned['reserve_anchors'] = {code: max(amount, 0) for code, amount in planned['buckets'].items()}
     # Current-cycle spending cannot forecast an unstarted cycle; use verified budget examples.
+    from .adjustment_core.protection import next_cycle_floors
+    planned['usage_floors'] = next_cycle_floors(base)
     planned['diagnostic_inputs'] = {}
     planned.pop('context_hash', None)
     return planned

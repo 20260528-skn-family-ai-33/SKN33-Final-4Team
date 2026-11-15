@@ -9,7 +9,7 @@ from budgets.adjustment_core.funding import available_adjustment, simulate_fundi
 from budgets.adjustment_core.explanations import NAMES
 from budgets.adjustment_core.diagnostics import resolve_history, POLICY
 
-SOURCES = ("LIVING", "SPARE", "SAVINGS", "CUSHION_MONTHLY")
+SOURCES = ("LIVING", "SPARE", "CUSHION_MONTHLY", "SAVINGS")
 PROMPT = """머니쿠션 예산 조정 설명 검토기. 서버가 계산한 verified_plans의 금액·순서·추천 번호를 바꾸지 않는다.
 생활비에서 먼저 조정하고 부족분만 여윳돈, 마지막으로 저축·월 머니쿠션에서 보충한다.
 저축은 이번 주기 예산이고 이미 저축한 계좌 잔액이 아니다. 월 머니쿠션과 누적 쿠션도 구분한다.
@@ -304,7 +304,7 @@ def recommend(context, request, complete):
     if diagnosis['planning_amount'] <= 0:
         return {'diagnosis': diagnosis, 'plans': [], 'recommended_index': None}
     plans = []
-    for order in (SOURCES, ('LIVING', 'SPARE', 'CUSHION_MONTHLY', 'SAVINGS')):
+    for order in (SOURCES,):
         left, funding = diagnosis['planning_amount'], []
         for source in order:
             amount = min(left, diagnosis['capacities'].get(source, 0)) // 5000 * 5000

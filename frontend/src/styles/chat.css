@@ -113,6 +113,25 @@
 #mc-new-preview .mc-budget-edit-toggle,
 #mc-new-preview .mc-budget-edit-cancel { display: block; width: 100%; min-height: 44px; margin-top: 6px; text-align: center; }
 #mc-new-preview .mc-budget-advice ul { margin: 8px 0 14px; padding-left: 20px; }
+/* 예산 조정 추천 카드 (11/14): 이해한 요청 → 추천안 → 고르기 */
+#mc-new-preview .mc-budget-lead { margin: 0 0 6px; color: var(--mc-sub); line-height: 1.55; }
+#mc-new-preview .mc-budget-headline { margin: 0 0 4px; font-size: 14px; font-weight: 650; line-height: 1.55; }
+#mc-new-preview .mc-budget-plan.is-recommended { border-color: color-mix(in srgb, var(--mc-brand) 45%, var(--mc-line)); }
+#mc-new-preview .mc-budget-plan .mc-budget-reason { margin: 4px 0 2px; }
+#mc-new-preview .mc-budget-plan .mc-budget-warning { font-size: 12px; margin: 4px 0; }
+#mc-new-preview .mc-budget-compact { margin: 8px 0; font-size: 12.5px; }
+#mc-new-preview .mc-budget-compact > div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--mc-line); }
+#mc-new-preview .mc-budget-compact > div:last-child { border-bottom: 0; }
+#mc-new-preview .mc-budget-compact dt { color: var(--mc-sub); }
+#mc-new-preview .mc-budget-compact dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+#mc-new-preview .mc-budget-compact small { color: var(--mc-sub); }
+#mc-new-preview .mc-budget-compact .is-up dt, #mc-new-preview .mc-budget-compact .is-up small { color: var(--mc-brand); font-weight: 650; }
+#mc-new-preview .mc-budget-why { margin: 0 0 4px; padding-left: 18px; font-size: 12px; line-height: 1.6; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-comparison > .mc-note { margin: 8px 0 0; text-align: center; }
+#mc-new-preview .mc-budget-salary { padding: 12px 14px; margin: 10px 0; border-radius: 12px; background: var(--mc-soft); }
+#mc-new-preview .mc-budget-salary .mc-note { margin: 0; }
+#mc-new-preview .mc-budget-salary-amounts { margin: 4px 0 10px; font-size: 16px; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-salary .mc-primary { width: 100%; min-height: 44px; }
 /* 정책 공고 주소: 긴 경로도 카드 안에서 줄바꿈, 밑줄로 링크를 구분 */
 #mc-new-preview .mc-fx-policy-link { color: var(--mc-ink); text-decoration: underline; overflow-wrap: anywhere; }
 #mc-new-preview .mc-policy-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
@@ -123,3 +142,5 @@
 #mc-new-preview .mc-policy-detail summary { cursor: pointer; }
 #mc-new-preview .mc-policy-detail p { white-space: pre-wrap; overflow-wrap: anywhere; }
 #mc-new-preview .mc-policy-detail[open] summary { margin-bottom: 8px; }
+#mc-new-preview .mc-budget-category-picks button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+#mc-new-preview .mc-budget-category-picks button small { color: var(--mc-sub); font-size: 11px; font-weight: 400; opacity: .85; }

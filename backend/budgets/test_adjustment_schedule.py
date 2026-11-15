@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import Mock, patch
 import json
 import unittest
@@ -74,6 +74,53 @@ class FuturePlanningTest(unittest.TestCase):
         self.assertEqual(args.args[1]['allocations']['EDUCATION'], 550000)
         self.assertEqual(args.args[1]['buckets']['SPARE'], 400000)
 
+    def test_new_income_funds_pending_goal_without_reducing_other_budgets(self):
+        for explicit in ([], ['LIVING']):
+            with self.subTest(explicit=explicit):
+                store, propose = Store(), Mock(return_value={'proposal_id': 'plan', 'task_ref': 'task'})
+                answers = [reading(requests=[item('EDUCATION', 500000)], scope='next_cycle'),
+                           reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'},
+                                   sources=explicit, reference='previous')]
+                ports = dict(store=store, complete=Mock(side_effect=[json.dumps(a) for a in answers]),
+                             get_context=lambda: deepcopy(self.base), simulate=simulate_funding,
+                             propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+                financial_conversation.handle({'conversation_id': 'talk', 'text': '다음달 교육비 50만원 더 나갈 예정'}, **ports)
+                financial_conversation.handle({'conversation_id': 'talk', 'text': '다음달 월급 50만원 늘어서 그거 쓰면 됨'}, **ports)
+                self.assertEqual(store.state['sources'], explicit or ['SPARE'])
+                if not explicit:
+                    result = propose.call_args.args[1]
+                    self.assertEqual(result['allocations']['EDUCATION'], 550000)
+                    self.assertTrue(all(t['from'] == 'SPARE' for t in result['transfers']))
+                    self.assertEqual(result['buckets'], self.base['buckets'])
+                    for code, amount in self.base['allocations'].items():
+                        if code != 'EDUCATION':
+                            self.assertEqual(result['allocations'][code], amount)
+
+    def test_income_funding_keeps_reserve_and_explicit_exclusion(self):
+        self.base.update(monthly_income=2700000, funding_amount=2700000)
+        self.base['buckets']['SPARE'] = self.base['bucket_available']['SPARE'] = 100000
+        for excluded in ([], ['SPARE']):
+            with self.subTest(excluded=excluded):
+                store, propose = Store(), Mock()
+                store.state = {'requests': [item('EDUCATION', 500000)], 'scope': 'next_cycle',
+                               'planning': {'scope': 'next_cycle'}, 'excluded': excluded}
+                parsed = reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'}, reference='previous')
+                response = financial_conversation.handle({'conversation_id': 'talk', 'text': '급여가 더 들어와'},
+                    store=store, complete=Mock(return_value=json.dumps(parsed)), get_context=lambda: deepcopy(self.base),
+                    simulate=simulate_funding, propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+                plans = [p for p in response['reply']['comparison']['plans'] if p.get('result')]
+                self.assertTrue(plans)
+                for plan in plans:
+                    sources = {t['from'] for t in plan['result']['transfers']}
+                    if excluded:
+                        self.assertNotIn('SPARE', sources)
+                    else:
+                        self.assertEqual(sources, {'SPARE'})
+                        self.assertEqual(plan['amount'], 420000)
+                        self.assertEqual(plan['result']['buckets']['SPARE'], 180000)
+                        self.assertEqual(plan['result']['shortfalls'][0]['missing_amount'], 80000)
+                propose.assert_not_called()
+
     def test_income_input_rejects_boolean_negative_and_unbounded_values(self):
         for amount in [True, -1, 10**11]:
             with self.subTest(amount=amount), self.assertRaises(interpretation.InterpretationFailed):
@@ -98,7 +145,12 @@ class FuturePlanningTest(unittest.TestCase):
                 scope='next_cycle', one_off=True, set_aside_amount=0, sources=['SPARE']))),
             get_context=lambda: deepcopy(self.base), simulate=simulate_funding, propose=propose,
             task_status=Mock(), cancel=Mock(), allocator=allocation)
-        self.assertEqual(store.state['pending']['field'], 'spare_minimum', result)
+        # 따로 정하지 않아도 여윳돈은 30% 이상 남기고, 모자란 금액을 보여 준다(바로 저장하지 않음).
+        self.assertEqual(store.state['pending']['kind'], 'comparison', result)
+        plan = result['reply']['comparison']['plans'][0]
+        self.assertEqual(plan['status'], 'partial')
+        spare = planning_context(self.base, {'scope': 'next_cycle'})['buckets']['SPARE']
+        self.assertGreaterEqual(plan['result']['buckets']['SPARE'], (spare * 3 + 9) // 10)
         propose.assert_not_called()
 
     def test_one_off_trip_asks_prepared_money_and_only_funds_the_gap(self):
@@ -331,6 +383,8 @@ class SchedulePersistenceTest(TestCase):
         from .overview import budget_nag
         from .protect import first_budget_cycle
         connected_at = timezone.now()
+        # The existing approval precedes the connection, even on a coarse system clock.
+        Budget.objects.filter(pk=self.base.pk).update(approved_at=connected_at - timedelta(seconds=1))
         first = self.make_schedule()
         self.approve(first['proposal_id'])
         second = self.make_schedule()

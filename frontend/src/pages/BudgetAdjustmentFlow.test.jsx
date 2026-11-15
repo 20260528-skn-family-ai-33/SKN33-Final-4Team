@@ -67,7 +67,7 @@ afterEach(async () => { await act(() => root.unmount()); host.remove(); vi.resto
 const mount = async (entry = '/chat') => act(() => root.render(
   <MemoryRouter initialEntries={[entry]}><PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>,
 ))
-const button = (label, within = host) => [...within.querySelectorAll('button')].find((item) => item.textContent.trim() === label)
+const button = (label, within = host) => [...within.querySelectorAll('button')].find((item) => (item.querySelector('.mc-pick-name') ?? item).textContent.trim() === label)
 const click = async (element) => act(() => element.click())
 const input = () => host.querySelector('input[aria-label="챗봇에게 보낼 메시지"]')
 async function submit(text) {
@@ -77,6 +77,27 @@ async function submit(text) {
   })
   await act(() => input().form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 }
+
+it('큰 증액은 경고 확인 후 항목 선택으로 진행하고 실제 예산은 확정하지 않는다', async () => {
+  const warning = '요청 금액이 월 실수령액의 30% 이상이에요. 다른 예산이 크게 줄 수 있어요. 어떤 지출에 얼마가 더 필요한가요?'
+  apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'increase_review', canApprove: false,
+    guidance: { kind: 'question', message: warning } }, [
+    { value: 'revise_increase', label: '금액 다시 정하기' },
+    { value: 'continue_increase', label: '주의사항 확인 후 계속' },
+  ])).mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'destinations', canApprove: false }, [
+    { value: 'FOOD', label: '식비' },
+  ], 8))
+  await mount()
+  await submit('생활비를 100만원 늘리고 싶어요')
+  expect(host.querySelectorAll('.mc-budget-warning')).toHaveLength(1)
+  expect(host.querySelector('.mc-budget-warning').textContent).toBe(warning)
+  expect(button('식비')).toBeUndefined()
+  expect(button('예산 확정하기')).toBeUndefined()
+  await click(button('주의사항 확인 후 계속'))
+  expect(button('식비')).toBeDefined()
+  expect(button('예산 확정하기')).toBeUndefined()
+  expect(apiSend.mock.calls.every(([path]) => path === '/api/chat/messages/')).toBe(true)
+})
 
 it('여러 항목으로 나눈 금액을 채팅으로 보내고 확정 없이 새 미리보기를 표시한다', async () => {
   apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'distribution', distributionInput: {

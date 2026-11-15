@@ -17,7 +17,8 @@ def approved_budget(user, on_date):
     """→ {"state": "approved" | "no_cycle" | "no_approved" | "error", ...}
     approved 일 때만 cycle · budget · 금액 칸이 있다. 금액은 BudgetItem 그대로 (원)"""
     try:
-        cycles = list(BudgetCycle.objects.filter(user=user, starts_on__lte=on_date, ends_before__gt=on_date)
+        # 진행 중(active) 주기만 본다. 급여일을 바꾸면 이전 주기는 닫힌(closed) 채 날짜가 겹쳐 남는다 — 예산 조정 · 홈과 같은 기준
+        cycles = list(BudgetCycle.objects.filter(user=user, status="active", starts_on__lte=on_date, ends_before__gt=on_date)
                       .order_by("-starts_on").values("cycle_id", "starts_on", "ends_before")[:2])
         if len(cycles) > 1:  # 겹친 주기는 어느 쪽인지 모른다 — 고르지 않는다
             return {"state": "error", "reason": "overlapping_cycles"}

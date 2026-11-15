@@ -14,6 +14,41 @@ from .test_adjustment_core import Store, allocation, context, envelope, item, re
 
 
 class AdjustmentDialogueTest(unittest.TestCase):
+    def test_multi_request_missing_amount_does_not_erase_the_known_amount(self):
+        requests = [item('FOOD', 50000), item('TRANSPORT_CAR', None, 'up', None)]
+        self.turn(reading(requests=requests))
+        self.assertEqual(self.store.state['pending']['kind'], 'amount')
+        self.assertEqual(self.store.state['pending']['index'], 1)
+        self.assertEqual(self.store.state['requests'][0], requests[0])
+        response = self.turn(reading(requests=[item('TRANSPORT_CAR', 30000)], reference='previous'))
+        # 두 금액이 모두 정해지면 재원 이름 대신 계산한 추천안을 보여 준다.
+        self.assertIn('plan_living', {c['value'] for c in response['reply']['choices']})
+        self.assertEqual(response['reply']['comparison']['basis_amount'], 80000)
+        self.assertEqual(self.store.state['requests'], [item('FOOD', 50000), item('TRANSPORT_CAR', 30000)])
+        self.assertFalse(self.proposals)
+
+    def test_multi_request_source_help_preserves_amounts_and_protections(self):
+        requests = [item('FOOD', 50000), item('TRANSPORT_CAR', 30000)]
+        self.context['spending_status'] = 'complete'
+        self.context['bucket_status']['CUSHION_MONTHLY'] = 'unknown'
+        self.turn(reading(requests=requests, excluded=['SAVINGS']))
+        for action in ('inspect', 'compare', 'help_decide'):
+            response = self.turn(reading(action=action, reference='previous'))
+            values = {c['value'] for c in response['reply']['choices']}
+            self.assertIn('plan_living', values)
+            self.assertNotIn('manual_living', values)
+            plans = self.store.state['comparison']['comparison']['plans']
+            used = {t['from'] for plan in plans for t in plan['result']['transfers']}
+            self.assertFalse(used & {'SAVINGS', 'CUSHION_MONTHLY'})
+            self.assertEqual(self.store.state['requests'], requests)
+            self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+            self.assertFalse(self.proposals)
+        selected = self.turn(reading(selected_choice='plan_living', reference='previous'))
+        proposal = selected['reply']['proposal']
+        self.assertEqual(proposal['allocations']['FOOD'], self.context['allocations']['FOOD'] + 50000)
+        self.assertEqual(proposal['allocations']['TRANSPORT_CAR'], self.context['allocations']['TRANSPORT_CAR'] + 30000)
+        self.assertEqual(proposal['buckets']['SAVINGS'], self.context['buckets']['SAVINGS'])
+
     def test_interpreter_sees_the_same_verified_examples_in_both_comparison_flows(self):
         comparison = {'recommendation': {'plan_id': 'living'}, 'plans': [
             {'id': 'living', 'label': '생활비 내 재배분', 'status': 'ready', 'amount': 50000,
@@ -120,11 +155,12 @@ class AdjustmentDialogueTest(unittest.TestCase):
                 plans = [p for p in comparison['plans'] if p['status'] in {'ready', 'partial'}]
                 self.assertTrue(plans)
                 for plan in plans:
-                    self.assertEqual(plan['amount'], 140000)
-                    self.assertEqual(plan['status'], 'partial')
-                    self.assertEqual(plan['result']['buckets']['SAVINGS'], 740000)
-                    self.assertTrue(all(t['from'] == 'CUSHION_MONTHLY' for t in plan['result']['transfers']))
-                self.assertEqual(comparison['basis_amount'] - max(p['amount'] for p in plans), 160000)
+                    # 생활비가 모두 잠겨 여윳돈(30% 남김)을 먼저 쓰고, 부족분만 월 머니쿠션에서 가져온다.
+                    self.assertEqual(plan['amount'], 300000)
+                    self.assertEqual(plan['status'], 'ready')
+                    self.assertEqual(plan['result']['buckets']['SAVINGS'], 900000)
+                    self.assertEqual({t['from']: t['amount'] for t in plan['result']['transfers']},
+                                     {'SPARE': 280000, 'CUSHION_MONTHLY': 20000})
                 self.assertIn('keep_spare', [c['value'] for c in result['reply']['choices']])
                 self.assertFalse(self.proposals)
 
@@ -132,8 +168,9 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.turn(reading(requests=[item('SAVINGS', 300000)]))
         self.store.state['spare_minimum'] = 200000
         result = self.turn(reading(action='compare'))
-        self.assertIn('plan_combined', [c['value'] for c in result['reply']['choices']])
-        result = self.turn(reading(selected_choice='plan_combined'))
+        # 생활비로 부족한 만큼만 여윳돈에서 채우는 안이 추천된다.
+        self.assertEqual(result['reply']['comparison']['recommendation']['plan_id'], 'spare')
+        result = self.turn(reading(selected_choice='plan_spare'))
         self.assertIn('proposal', result['reply'], result)
         proposal = result['reply']['proposal']
         self.assertEqual(proposal['buckets']['SAVINGS'], 900000)
@@ -215,7 +252,6 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.assertEqual(self.store.state['destinations'], ['FOOD'])
         comparison = response['reply']['comparison']
         self.assertTrue(any(p['amount'] > 0 for p in comparison['plans']))
-        self.assertTrue(next(p for p in comparison['plans'] if p['id'] == 'spare')['needs_spare_minimum'])
         self.assertFalse(self.proposals)
 
     def test_source_question_shows_calculated_examples_without_selecting_or_applying(self):
@@ -272,7 +308,7 @@ class AdjustmentDialogueTest(unittest.TestCase):
     def test_examples_keep_explicit_sources_exclusions_and_only_supplement_shortfall(self):
         response = self.turn(reading(requests=[item('FOOD', 250000)], excluded=['SAVINGS']))
         comparison = response['reply']['comparison']
-        combined = next(p for p in comparison['plans'] if p['id'] == 'combined')
+        combined = next(p for p in comparison['plans'] if p['id'] == 'spare')
         transfers = combined['result']['transfers']
         self.assertEqual(sum(t['amount'] for t in transfers if t['from'] in self.context['allocations']), 200000)
         self.assertEqual(sum(t['amount'] for t in transfers if t['from'] in self.context['buckets']), 50000)
@@ -301,7 +337,7 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.context['bucket_available']['CUSHION_MONTHLY'] = 0
         self.context['bucket_status']['SPARE'] = 'unknown'
         response = self.turn(reading(requests=[item('SAVINGS', 50000)], excluded=['SPARE']))
-        comparison = response['reply']['comparison']
+        comparison = response['reply'].get('comparison') or {'plans': []}
         self.assertFalse(any(p['status'] in {'ready', 'partial'} for p in comparison['plans']))
         self.assertFalse(any(c['value'].startswith('plan_') for c in response['reply']['choices']))
         self.assertEqual(self.store.state['excluded'], ['SPARE'])
@@ -316,9 +352,12 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.assertTrue(plans)
         for plan in plans:
             self.assertEqual(plan['status'], 'partial')
-            self.assertEqual(plan['amount'], 140000)
-            self.assertEqual(plan['result']['transfers'], [{'from': 'CUSHION_MONTHLY', 'to': 'FOOD', 'amount': 140000, 'direct': False}])
-        self.assertEqual(comparison['basis_amount'] - max(p['amount'] for p in plans), 860000)
+            self.assertNotIn('SAVINGS', {t['from'] for t in plan['result']['transfers']})
+        best = max(plans, key=lambda p: p['amount'])
+        # 여윳돈(30% 남김) → 월 머니쿠션 순서로 부족분만 채운다. 확인 안 된 저축은 쓰지 않는다.
+        self.assertEqual(best['result']['transfers'], [{'from': 'SPARE', 'to': 'FOOD', 'amount': 280000, 'direct': False},
+                                                       {'from': 'CUSHION_MONTHLY', 'to': 'FOOD', 'amount': 140000, 'direct': False}])
+        self.assertEqual(comparison['basis_amount'] - best['amount'], 580000)
         self.assertFalse(self.proposals)
 
     def test_source_question_preserves_spare_minimum_and_asks_before_using_spare(self):
@@ -439,7 +478,9 @@ class AdjustmentDialogueTest(unittest.TestCase):
                 self.store.state = None
                 response = self.turn(reading(requests=[item('LIVING', None, 'up', None)], action=action))
                 self.assertEqual(self.store.state['pending']['kind'], 'category')
-                self.assertIn('어느 지출에서 돈이 부족', response['reply']['lines'][0])
+                # 가져올 수 있는 곳(여윳돈 등)을 먼저 알려 주고 받을 항목을 묻는다.
+                self.assertIn('여윳돈', response['reply']['lines'][0])
+                self.assertIn('어느 항목이 부족한가요', response['reply']['lines'][0])
                 self.assertNotIn('줄인', json.dumps(response, ensure_ascii=False))
                 self.assertFalse(self.proposals)
 
@@ -452,7 +493,7 @@ class AdjustmentDialogueTest(unittest.TestCase):
                     self.store.state['financial_offer'] = {'answer': {'plans': [], 'recommended_index': None}, 'comparison': {'plans': []}}
                 response = self.turn(reading(selected_choice='manual_living', reference='previous'))
                 self.assertEqual(self.store.state['pending']['kind'], 'category')
-                self.assertIn('부족하다고', response['reply']['lines'][0])
+                self.assertIn('어느 항목이 부족한가요', response['reply']['lines'][0])
                 self.assertFalse(self.proposals)
 
     def test_total_living_followup_keeps_increase_and_asks_destination_before_examples(self):
@@ -478,8 +519,9 @@ class AdjustmentDialogueTest(unittest.TestCase):
                         'choices': [('TRANSPORT_CAR', '교통·차량')]}}
         response = self.turn(reading(selected_choice='TRANSPORT_CAR', reference='previous'))
         self.assertEqual(self.store.state['requests'], [item('TRANSPORT_CAR', None, 'up', None)])
-        self.assertEqual(self.store.state['pending']['kind'], 'amount')
-        self.assertEqual(response['reply']['explanation'], {})
+        # 금액을 몰라도 옮길 수 있는 돈으로 만든 예시를 먼저 보여 준다(요청 금액은 비워 둔다).
+        self.assertEqual(self.store.state['pending']['kind'], 'comparison')
+        self.assertEqual(response['reply']['comparison']['basis_kind'], 'budget_example')
         response = self.turn(reading(requests=[item('LIVING', 50000, 'up')], reference='previous'))
         self.assertEqual(self.store.state['requests'], [item('TRANSPORT_CAR', 50000, 'up')])
         self.assertNotEqual(self.store.state['pending']['kind'], 'amount')
@@ -555,16 +597,18 @@ class AdjustmentDialogueTest(unittest.TestCase):
                 self.assertEqual(proposal['allocations']['FASHION_SHOPPING'], 170000)
                 self.assertEqual(proposal['allocations']['EDUCATION'], 30000)
 
-    def test_old_spare_card_requires_a_minimum_before_reuse(self):
+    def test_old_spare_card_keeps_the_default_reserve_without_another_question(self):
         for category, automatic in [('HOUSEHOLD', True), ('SAVINGS', False)]:
             with self.subTest(category=category):
+                self.proposals.clear()
                 request = envelope({**item(category, 95000), 'automatic': automatic}, sources=['SPARE'])
                 self.store.state = {'requests': request['items'], 'comparison': {'context': deepcopy(self.context),
                     'comparison': {'plans': [{'id': 'spare', 'status': 'ready', 'envelope': request}]}},
                     'pending': {'kind': 'comparison', 'choices': [('plan_spare', '여윳돈 활용')]}}
                 result = dialogue.handle({'conversation_id': 'talk', 'text': 'plan_spare'}, **self.ports)
-                self.assertEqual(self.store.state['pending']['field'], 'spare_minimum', result)
-                self.assertFalse(self.proposals)
+                self.assertIn('proposal', result['reply'], result)
+                # 따로 정하지 않아도 여윳돈은 30% 이상 남긴다.
+                self.assertGreaterEqual(result['reply']['proposal']['buckets']['SPARE'], 120000)
                 self.complete.assert_not_called()
 
     def test_selection_does_not_trap_unsupported_or_ambiguous_requests(self):
@@ -628,22 +672,25 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.assertIn('횟수', response['reply']['explanation']['why'])
         self.assertEqual(self.store.state, before)
 
-    def test_no_recommendation_only_offers_reserve_change_when_it_can_help(self):
-        for allowed, limit, expected in [(['SPARE'], 0, False), (['SPARE'], 400000, True), ([], 0, False)]:
-            with self.subTest(allowed=allowed, limit=limit):
+    def test_chosen_source_without_money_explains_and_offers_direct_choice(self):
+        for limit, ready in [(0, False), (400000, True)]:
+            with self.subTest(limit=limit):
                 state = {'requests': [item(amount=50000)], 'sources': ['SPARE']}
                 self.context['bucket_available']['SPARE'] = limit
-                answer = {'plans': [], 'diagnosis': {'status': 'ready', 'target': 'FOOD',
-                    'allowed': allowed, 'excluded': [], 'capacities': {'SPARE': 0} if allowed else {}}}
-                with patch.object(dialogue, 'recommend', return_value=answer):
-                    response = dialogue.comparison_reply(self.store, 'talk', state, self.context, self.context, self.complete)
-                self.assertEqual('reserve_override' in [row['value'] for row in response['reply']['choices']], expected)
-                self.assertIn('직접 정한 금액', response['reply']['explanation']['effect'])
-                self.assertIn('추천안이 없어', response['reply']['lines'][0])
+                response = dialogue.comparison_reply(self.store, 'talk', state, self.context, self.context, self.complete)
+                comparison = response['reply'].get('comparison') or {'status': 'unavailable'}
+                self.assertEqual(comparison['status'] == 'ready', ready)
+                values = [row['value'] for row in response['reply']['choices']]
+                self.assertIn('manual_living', values)
+                if ready:
+                    self.assertEqual({t['from'] for t in comparison['plans'][0]['result']['transfers']}, {'SPARE'})
+                else:
+                    self.assertIn('자동으로 추천할 방법이 없어요', response['reply']['lines'][0])
+                self.assertFalse(self.proposals)
 
     def test_calculator_failure_does_not_ask_user_for_another_category(self):
         state = {'requests': [item(amount=50000)], 'sources': ['SPARE']}
-        with patch.object(dialogue, 'recommend', side_effect=ValueError('invalid_result')):
+        with patch('budgets.adjustment_core.advisor.plan_increase', side_effect=ValueError('invalid_result')):
             response = dialogue.comparison_reply(self.store, 'talk', state, self.context, self.context, self.complete)
         self.assertEqual(response['status'], 'awaiting_input')
         self.assertEqual(response['error'], 'planner_unavailable')
@@ -989,3 +1036,59 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
                 data = json.loads(self.live(dialogue.ANSWER_PROMPT, json.dumps(
                     {'text': text, 'field': 'planned', **interpretation.dialogue_context(state)}, ensure_ascii=False)))
                 self.assertEqual(data['value'], expected)
+
+
+class SalaryChangeDialogueTest(unittest.TestCase):
+    """챗봇으로 월급을 바꿀 때: 변경 전후를 보여 주고, 늘어난 돈만 미리 나누게 안내한다."""
+
+    def setUp(self):
+        self.store, self.context = Store(), context()
+        self.context.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
+        self.proposals = []
+        self.ports = dict(store=self.store, complete=Mock(), get_context=lambda: deepcopy(self.context),
+            simulate=lambda ctx, request: simulate_funding(ctx, request, allocate_group_reduction=allocation),
+            propose=self.propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+
+    def propose(self, ctx, result, **settings):
+        self.proposals.append(result)
+        return {**result, **settings, 'proposal_id': 'plan', 'task_ref': 'task'}
+
+    def say(self, text, parsed=None):
+        if parsed is not None:
+            self.ports['complete'].side_effect = lambda system, payload: json.dumps(parsed, ensure_ascii=False)
+        return dialogue.handle({'conversation_id': 'talk', 'text': text}, **self.ports)
+
+    def test_raise_shows_before_after_then_only_new_money_is_planned(self):
+        response = self.say('월급이 50만원 올랐어', reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'}))
+        pending = self.store.state['pending']
+        self.assertEqual(pending['kind'], 'salary_change')
+        self.assertEqual(pending['salary'], {'before': 3000000, 'after': 3500000})
+        self.assertIn('350만 원으로', response['reply']['lines'][0])
+        self.assertEqual([c['value'] for c in response['reply']['choices']], ['salary_plan'])
+        self.say('salary_plan')
+        self.assertEqual(self.store.state['planning']['income_change']['amount'], 3500000)
+        self.assertEqual(self.store.state['sources'], ['SPARE'])
+        self.say('SAVINGS')
+        response = self.say('30만원', reading(requests=[item('SAVINGS', 300000)], reference='previous'))
+        plan = response['reply']['comparison']['plans'][0]
+        self.assertEqual(plan['sources']['SPARE'], 300000)
+        self.say('plan_' + plan['id'])
+        result = self.proposals[-1]
+        self.assertEqual(result['buckets']['SAVINGS'], self.context['buckets']['SAVINGS'] + 300000)
+        self.assertEqual({t['from'] for t in result['transfers']}, {'SPARE'})
+        for code, amount in self.context['allocations'].items():
+            self.assertEqual(result['allocations'][code], amount)  # 다른 생활비는 줄이지 않는다.
+
+    def test_raise_already_saved_in_my_info_is_not_counted_twice(self):
+        self.say('월급 350만원으로 바뀌었어', reading(income_change={'amount': 3500000, 'mode': 'to', 'direction': None}))
+        self.context['monthly_income'] = 3500000  # 화면의 '월급 수정하기'로 이미 저장
+        self.say('salary_plan')
+        self.assertNotIn('income_change', self.store.state['planning'])
+
+    def test_cut_asks_what_to_reduce_without_saving(self):
+        response = self.say('월급이 280만원으로 줄었어', reading(income_change={'amount': 2800000, 'mode': 'to', 'direction': None}))
+        self.assertIn('20만 원이 줄어요', response['reply']['lines'][0])
+        response = self.say('salary_plan')
+        self.assertEqual(self.store.state['pending']['kind'], 'category')
+        self.assertEqual(self.store.state['requests'][0]['direction'], 'down')
+        self.assertFalse(self.proposals)

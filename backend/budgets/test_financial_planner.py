@@ -360,7 +360,9 @@ class LivingFirstPolicyTest(unittest.TestCase):
         self.assertEqual({t['from'] for t in selected['transfers']}, {'SAVINGS'})
         excluded = self.plan(100000, excluded=['SPARE'])['result']
         self.assertNotIn('SPARE', {t['from'] for t in excluded['transfers']})
-        self.assertEqual(sum(t['amount'] for t in excluded['transfers'] if t['from'] == 'SAVINGS'), 20000)
+        # 생활비 다음에는 월 머니쿠션을 저축보다 먼저 쓴다.
+        self.assertEqual(sum(t['amount'] for t in excluded['transfers'] if t['from'] == 'CUSHION_MONTHLY'), 20000)
+        self.assertNotIn('SAVINGS', {t['from'] for t in excluded['transfers']})
 
     def test_living_total_increase_cannot_use_living_itself(self):
         answer = recommend(self.ctx, envelope(item('LIVING', 50000), destinations=['FOOD']), self.fail_llm)

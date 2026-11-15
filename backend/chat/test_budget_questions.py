@@ -69,11 +69,32 @@ class BudgetQuestionTest(CollabFixture, TestCase):
 
     def test_basis_question_during_adjustment_keeps_the_existing_adjustment(self):
         self.proposal()
-        before = self.budget_state()
+        before, budgets = self.budget_state(), Budget.objects.count()
         data, reply = self.say('의료비 예산 책정 근거 알려줘')
-        self.assertEqual(data['agent'], 'spending')
+        self.assertEqual(data['agent'], 'budget')  # 조정 중의 예산 질문은 예산 대화가 답한다 (소비 분석 연결 없음)
         self.assertIn('50,000원', reply['text'])
-        self.assertEqual(self.budget_state(), before)
+        self.assertEqual(self.budget_state()['requests'], before['requests'])
+        self.assertEqual(self.budget_state().get('proposal'), before.get('proposal'))
+        self.assertEqual(Budget.objects.count(), budgets)  # 질문만으로 새 예산안을 만들지 않는다
+
+    def test_basis_question_right_after_starting_adjustment_is_answered_in_budget(self):
+        """'예산 조정' → '패션쇼핑 예산 왜 이렇게 높게 책정됐어?' (11/14 화면): 소비 분석으로 넘기지 않고 근거 + 다음 안내"""
+        self.say(choice='budget')
+        data, reply = self.say('의료비 예산 왜이렇게 크게 잡았어')
+        self.assertEqual(data['agent'], 'budget')
+        self.assertIn('50,000원', reply['text'])
+        self.assertIn('줄이거나 다른 항목으로 옮기고 싶으면', reply['text'])
+        self.assertNotIn('불러오지 못했어요', reply['text'])
+
+    def test_closed_cycle_left_by_a_payday_change_does_not_break_budget_lookups(self):
+        """급여일을 바꾸면 이전 주기가 closed 로 남아 날짜가 겹친다 — 진행 중 주기만 보고 답한다 (11/14 '예산을 불러오지 못했어요')"""
+        from datetime import timedelta
+        from budgets.models import BudgetCycle
+        cycle = self.base.cycle
+        BudgetCycle.objects.create(user=self.base.user, starts_on=cycle.starts_on - timedelta(days=3),
+                                   ends_before=cycle.ends_before - timedelta(days=3), status='closed')
+        lines = explain_current_budget(self.base.user, ['MEDICAL_HEALTH'], timezone.localdate())
+        self.assertIn('50,000원', ' '.join(lines))
 
     def test_budget_basis_does_not_select_another_users_budget(self):
         from django.contrib.auth import get_user_model

@@ -141,6 +141,11 @@ FEEDBACK_SAID = {
 }
 
 
+def _basis(text):
+    """예산 금액이 정해진 이유를 묻는 말 — 예산 조정 중이면 예산 대화가 직접 답한다(소비 분석으로 넘기지 않는다)"""
+    return SPENDING_SAID.get(text, {}).get("explain_kind") == "allocation"
+
+
 def _asked_category(text, fallback):
     """조회 질문이 물어본 카테고리 코드 하나 (여러 개 · 전체면 None). 가리키는 말("이건")이면 조정 대상(fallback)"""
     said = SPENDING_SAID[text]
@@ -156,7 +161,7 @@ def fake_feedback(user):
     text, hinted = data["text"], (data.get("hints") or {}).get("category")
     if text in SPENDING_SAID:  # 조회 질문 → 소비 분석으로
         goal = (data.get("primary_request") or {}).get("items") or [{}]
-        answer = ("not_mine", _asked_category(text, goal[0].get("category")), None, None, None)
+        answer = ("basis" if _basis(text) else "not_mine", _asked_category(text, goal[0].get("category")), None, None, None)
     elif text in BUDGET_POINTING:  # "거기서 빼줘" → 방금 본 카테고리를 재원으로 (없으면 서버가 대상을 되묻는다)
         answer = ("use_source", hinted, None, None, None)
     elif text in FEEDBACK_SAID:
@@ -337,7 +342,8 @@ class FakeReading(RoleFakeLLM):
                        "reason": None, "unclear": [], "handoff": None, "handoff_category": None}
             if text in SPENDING_SAID:  # 조회 질문 → 소비 분석 + 물어본 카테고리 (가리키는 말이면 조정 중인 항목)
                 goal = (payload.get("previous") or {}).get("requests") or [{}]
-                reading.update(handoff="spending", handoff_category=_asked_category(text, goal[0].get("category")))
+                reading.update(handoff="budget_basis" if _basis(text) else "spending",
+                               handoff_category=_asked_category(text, goal[0].get("category")))
             if pointing:  # "거기서 빼줘": 방금 본 카테고리(hints)를 재원으로. 본 게 없으면 대상을 되묻게 한다
                 reading.update(sources=[hinted] if hinted else [], destinations=[], excluded=[], funding_scope=None,
                                action=None, use_available=None, reference="previous",
