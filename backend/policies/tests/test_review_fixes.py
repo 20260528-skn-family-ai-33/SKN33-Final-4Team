@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase, override_settings
 
 from policies import agent, llm, profiles
+from policies.regions import NATIONWIDE
 from policies.tests.test_agent import CID, Talk, said
 from policies.tests.test_search import DONGTAN
 from users.models import FinancialProfile
@@ -28,7 +29,9 @@ class RegionConversationTest(TestCase):
         return talk
 
     def assert_search(self, query, region=DONGTAN, keyword="월세"):
-        needs, found_region, *_ = self.find.call_args.args
+        # 못 찾으면 전국으로 한 번 더 찾는다 → 그 확인 호출을 빼고 마지막 검색을 본다
+        searched = [c for c in self.find.call_args_list if c.args[1] != NATIONWIDE]
+        needs, found_region, *_ = searched[-1].args
         self.assertEqual((needs[0].query, needs[0].keywords, found_region), (query, [keyword], region))
 
     def test_짧은_긍정은_원래_질문으로_검색하고_다시_읽지_않는다(self):
@@ -47,8 +50,7 @@ class RegionConversationTest(TestCase):
                 talk.send(answer)
                 self.assertEqual(talk.state["ask"]["kind"], "region")
                 self.assertEqual(talk.state["ask"]["text"], "월세 지원 있어?")
-                talk.send("서울특별시")
-                talk.send("종로구")
+                talk.send("서울특별시 종로구")
                 self.assert_search("월세 지원", "11110")
                 talk.complete.assert_called_once()
 
@@ -75,15 +77,13 @@ class RegionConversationTest(TestCase):
         FinancialProfile.objects.filter(user=self.user).update(region_code=None)
         talk = Talk(user=self.user)
         talk.send("월세 지원 있어?")
-        talk.send("경기도")
         codes = talk.state["ask"]["codes"]
         talk.complete.return_value = said(needs=(("취업 지원", ["취업"]),))
         question = "아니, 취업 지원 찾아줘"
         talk.send(question)
         self.assertEqual(talk.state["ask"]["text"], question)
         self.assertEqual(talk.state["ask"]["codes"], codes)
-        talk.send("화성시")
-        talk.send("동탄구")
+        talk.send("경기도 화성시 동탄구")
         self.assert_search("취업 지원", keyword="취업")
         self.assertEqual(talk.complete.call_count, 2)
 

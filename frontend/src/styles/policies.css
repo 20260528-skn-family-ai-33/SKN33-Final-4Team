@@ -1,2 +1,27 @@
 #mc-new-preview .mc-policy-title { display: block; margin: 0 0 12px; font-size: 20px; line-height: 1.45; font-weight: 700; overflow-wrap: anywhere; }
 #mc-new-preview .mc-saved-policies .mc-card { margin-bottom: 14px; }
+/* 정책 카드 (채팅 추천 카드 · 저장한 정책 화면 같이): 번호 · 정책명 · 경고 · 표를 한 회색 영역으로, 아래 버튼 두 개 */
+#mc-new-preview .mc-policy-box { padding: 14px 12px 2px; border-radius: 12px; background: var(--mc-bg); }
+#mc-new-preview .mc-policy-head { padding-bottom: 10px; margin-bottom: 4px; border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-policy-head .mc-policy-title { margin: 2px 0 0; }
+#mc-new-preview .mc-policy-box .mc-policy-note { margin: 8px 0; }
+#mc-new-preview .mc-policy-table { margin: 0; }
+#mc-new-preview .mc-policy-table > div { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-policy-table > div:last-child { border-bottom: 0; }
+#mc-new-preview .mc-policy-table dt { color: var(--mc-sub); font-size: 13px; line-height: 1.5; }
+#mc-new-preview .mc-policy-table dd { margin: 0; color: var(--mc-ink); line-height: 1.5; overflow-wrap: anywhere; }
+#mc-new-preview .mc-policy-note { margin: 0 0 12px; padding: 10px 12px; border-radius: 12px; background: var(--mc-warm); color: var(--mc-alert); font-size: 13px; font-weight: 600; }
+#mc-new-preview .mc-policy-link { box-sizing: border-box; min-height: 44px; margin-top: 14px; text-align: center; text-decoration: none; }
+#mc-new-preview .mc-policy-actions { display: flex; gap: 8px; margin-top: 12px; }
+#mc-new-preview .mc-policy-actions > * { flex: 1; min-height: 44px; margin-top: 0; }
+/* 저장한 정책 화면: 상태 배지 · 지난 정책 접기 · 해제 되돌리기 */
+#mc-new-preview .mc-saved-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+#mc-new-preview .mc-saved-badge { padding: 3px 8px; border-radius: 7px; font-size: 12px; font-weight: 650; background: var(--mc-soft); color: var(--mc-brand); }
+#mc-new-preview .mc-saved-badge.is-urgent { background: var(--mc-warm); color: var(--mc-alert); }
+#mc-new-preview .mc-saved-badge.is-closed { background: var(--mc-bg); color: var(--mc-sub); }
+#mc-new-preview .mc-saved-card .mc-policy-title { font-size: 17px; }
+#mc-new-preview .mc-saved-past > summary { cursor: pointer; padding: 12px 0; min-height: 44px; color: var(--mc-sub); font-weight: 650; }
+#mc-new-preview .mc-saved-past .mc-card { opacity: .8; }
+#mc-new-preview .mc-saved-undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--mc-soft); color: var(--mc-brand); font-size: 13px; }
+#mc-new-preview .mc-saved-undo button { min-height: 32px; font-weight: 650; }
+#mc-new-preview .mc-policy-actions > a { display: flex; align-items: center; justify-content: center; box-sizing: border-box; text-decoration: none; }

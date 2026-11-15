@@ -29,7 +29,7 @@ from users.models import Consent
 
 from . import codef, connected_id, institutions
 from .api_new_connection import CARD_NO, CARD_PASSWORD, failure
-from .codef_accounts import classify, missing_fields
+from .codef_accounts import SMS_REQUIRED, classify, missing_fields
 from .identifiers import LegacyIdentifierKey
 from .inputs import body_dict, reject_unknown_fields
 from .models import Connection, SyncRun
@@ -173,7 +173,8 @@ def run_part(kind, connection, work):
     except PermissionError:  # 저장 직전 동의 철회 (sync_loans)
         return {"kind": kind, "status": "skipped", "reason": "no_consent"}, None
     except codef.CodefError as exc:
-        reason = classify(exc.code, exc.message, exc.extra)
+        # 조회 중 추가 인증(씨티 문자 등)은 여기서 못 받는다 → 다시 연결(문자 인증 흐름 있음)로 보낸다 (11/13)
+        reason = "relogin" if exc.code == SMS_REQUIRED else classify(exc.code, exc.message, exc.extra)
         missing = missing_fields(exc.extra, exc.message) if reason == "card_fields" else ()
         logger.warning("다시 불러오기 실패 connection=%s kind=%s reason=%s codef_code=%s",
                        connection.pk, kind, reason, exc.code)

@@ -52,6 +52,18 @@
 #mc-new-preview .mc-field input.mc-bad{border-color:var(--mc-alert)}
 #mc-new-preview .mc-card .mc-row h2{margin:0}
 #mc-new-preview .mc-picked{font-size:12px;color:var(--mc-sub);margin:0}
+#mc-new-preview .mc-chipbar button:disabled{opacity:.5;cursor:not-allowed}
+/* 은행 칩: 지원 10곳이 닫힌 상태에서 두 줄(5칸 × 2)에 들어가게 */
+#mc-new-preview .mc-pick-bank .mc-chipbar{display:grid;grid-template-columns:repeat(5,1fr)}
+#mc-new-preview .mc-pick-bank .mc-chipbar button{padding:6px 2px;white-space:nowrap}
+/* 준비 중 은행: 높이를 부드럽게 펼치고 접기 · 세모는 돌려서 방향만 바꿈 */
+#mc-new-preview .mc-pick-soon{display:grid;grid-template-rows:0fr;transition:grid-template-rows .25s ease}
+#mc-new-preview .mc-pick-soon[data-open=true]{grid-template-rows:1fr}
+#mc-new-preview .mc-pick-soon>div{min-height:0;overflow:hidden}
+#mc-new-preview .mc-pick-bank .mc-chipbar-soon{margin:0 0 10px}
+#mc-new-preview .mc-pick-arrow{display:inline-block;font-size:10px;transition:transform .25s ease}
+#mc-new-preview .mc-pick-more[aria-expanded=true] .mc-pick-arrow{transform:rotate(180deg)}
+@media (prefers-reduced-motion:reduce){#mc-new-preview .mc-pick-soon,#mc-new-preview .mc-pick-arrow{transition:none}}
 #mc-new-preview .mc-picked b{color:var(--mc-brand)}
 #mc-new-preview .mc-cardday{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--mc-line);font-size:14px}
 #mc-new-preview .mc-cardday:last-of-type{border-bottom:0}
@@ -173,9 +185,6 @@
 #mc-new-preview .mc-ai-tags{margin-top:14px}
 #mc-new-preview .mc-tx-sum .mc-tabs button{white-space:nowrap;padding:6px 12px}
 #mc-new-preview .mc-tx-sum>.mc-muted{min-width:0}
-#mc-new-preview .mc-tabsw{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:0 0 10px;border-radius:14px;background:var(--mc-line)}
-#mc-new-preview .mc-tabsw button{margin:0;min-height:42px;border:0;border-radius:11px;background:transparent;color:var(--mc-sub);font-size:15px;font-weight:650}
-#mc-new-preview .mc-tabsw button[aria-selected=true]{background:var(--mc-brand);color:var(--mc-on);box-shadow:0 2px 6px color-mix(in srgb,var(--mc-brand) 35%,transparent)}
 #mc-new-preview .mc-sumbar{display:flex;align-items:center;gap:2px;margin:0 0 10px}
 #mc-new-preview .mc-sumbar .mc-icon{min-height:32px;width:28px;padding:0}
 #mc-new-preview .mc-sumbar-m{font-size:15px}
@@ -635,9 +644,6 @@
 #mc-new-preview .mc-step span.on{background:var(--mc-brand)}
 #mc-new-preview .mc-step span.on:not(:has(+ span.on)){background:var(--mc-lime-accent)}
 /* 탭 · 세그먼트: 연한 블루 바탕 */
-#mc-new-preview .mc-tabsw,#mc-new-preview .mc-tabs{background:var(--mc-soft)}
-#mc-new-preview .mc-tabsw button{color:var(--mc-sub)}
-#mc-new-preview .mc-tabsw button[aria-selected=true]{background:var(--mc-brand);color:#fff;box-shadow:none}
 #mc-new-preview .mc-tabs button[aria-pressed=true]{background:var(--mc-paper);color:var(--mc-brand);box-shadow:none}
 /* 칩 · 선택 카드 */
 #mc-new-preview .mc-chipbar button{border:1px solid var(--mc-line);color:var(--mc-ink)}
@@ -889,11 +895,9 @@
 #mc-new-preview#mc-new-preview .mc-login-form .mc-field{margin:12px 0}
 #mc-new-preview#mc-new-preview .mc-login-note{margin:4px 0 0;padding:10px 12px;border-radius:12px;background:var(--mc-soft);color:var(--mc-ink);font-size:12.5px;line-height:1.5}
 #mc-new-preview#mc-new-preview .mc-login-warn{margin:4px 0 0;font-size:12.5px;color:var(--mc-alert)}
-#mc-new-preview#mc-new-preview .mc-login-cert{background:var(--mc-bg);border-radius:12px;padding:14px;margin:4px 0 0}
 @media (prefers-reduced-motion:reduce){#mc-new-preview#mc-new-preview .mc-conn-busy svg{animation:none}}
 #mc-new-preview#mc-new-preview .mc-inst .mc-grow{flex:1;min-width:0}
 #mc-new-preview#mc-new-preview .mc-inst>svg{flex:none;color:var(--mc-brand)}
-#mc-new-preview#mc-new-preview .mc-chip-cert{display:block;font-size:9.5px;line-height:1.1;opacity:.75}
 #mc-new-preview#mc-new-preview .mc-pick-more{display:block;min-height:32px;padding:0;margin:-4px 0 6px;font-size:12.5px}
 #mc-new-preview#mc-new-preview .mc-consent-card{padding:12px 16px;margin-bottom:0}
 #mc-new-preview#mc-new-preview .mc-consent-card .mc-terms-open{font-size:13.5px}
