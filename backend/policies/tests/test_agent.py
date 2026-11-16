@@ -32,11 +32,12 @@ def rows(result, number=0):
 class Talk:
     """한 대화: 같은 store 로 여러 번 부른다. 버튼은 이름(label)을 문장으로 보낸다 (라우터 어댑터와 같다)"""
 
-    def __init__(self, user=PERSON, answer=None, plan=False, check=False):
+    def __init__(self, user=PERSON, answer=None, plan=False, check=False, retry=False):
         self.store, self.user = MemoryStateStore(), user
         self.complete = mock.Mock(return_value=answer or said())
         self.plan = plan  # False = 행동 고르기 LLM 없이 규칙 (6단계 고정 흐름)
         self.check = check  # False = 돌아보기 없이 검색 결과 그대로
+        self.retry = retry  # False = 맞는 게 없어도 다시 찾지 않는다
         self.last = None
 
     def send(self, text=None, mode="continue"):
@@ -44,7 +45,7 @@ class Talk:
                    "work_ref": None, "input_id": "x", "conversation_id": CID, "today": TODAY, "as_of": None,
                    "context": {}}
         self.last = agent.handle(request, store=self.store, user=self.user, complete=self.complete, embed=question,
-                                 plan=self.plan, check=self.check)
+                                 plan=self.plan, check=self.check, retry=self.retry)
         return self.last
 
     @property
@@ -578,6 +579,58 @@ class ReviewTest(TestCase):
         self.talk.send("받을 수 있는 거 없나")
         self.assertEqual(json.loads(self.check.call_args[0][1])["문장"],
                          "받을 수 있는 거 없나 (고른 분야: 월세 · 주거, 저축 · 자산, 생활비)")
+
+
+def rewrote(*queries, give_up=False):
+    return json.dumps({"give_up": give_up, "needs": [{"query": q, "keywords": []} for q in queries]},
+                      ensure_ascii=False)
+
+
+class RetryTest(TestCase):
+    """8단계 다시 검색: 맞는 게 없으면 LLM 이 검색어를 고쳐 한 번 더 찾는다. 판단은 처음 문장으로"""
+
+    def setUp(self):
+        add("ARMY", vector=near(1), plcyNm="장병 체력단련 지원")
+        add("SPORT", vector=near(2), plcyNm="청년 스포츠 이용권")
+        self.check = mock.Mock(side_effect=[kept(), kept(1)])
+        self.retry = mock.Mock(return_value=rewrote("청년 체육 이용권 지원"))
+        self.talk = Talk(check=self.check, retry=self.retry)
+        self.talk.lives_in_dongtan()
+        profile, today = agent.tools.profile_for(PERSON), date.fromisoformat(TODAY)
+        self.first, self.second = (agent.tools.again([n], profile, today) for n in ("ARMY", "SPORT"))
+
+    def send(self, finds):
+        with mock.patch("policies.tools.find", side_effect=finds) as find:
+            return self.talk.send("헬스장이 비싸"), find
+
+    def test_모두_빠지면_고친_검색어로_다시_찾고_처음_문장으로_판단한다(self):
+        result, find = self.send([(self.first, 0), (self.second, 0)])
+        self.assertEqual(titles(result), ["1. 청년 스포츠 이용권"])
+        self.assertEqual(result["reply"]["lines"][0], agent.RETRIED.format(query="청년 체육 이용권 지원"))
+        self.assertEqual(find.call_args_list[1][0][0][0].query, "청년 체육 이용권 지원")
+        asked = json.loads(self.retry.call_args[0][1])
+        self.assertEqual((asked["문장"], asked["결과"]), ("헬스장이 비싸", {"빠진 후보": ["장병 체력단련 지원"]}))
+        self.assertEqual(json.loads(self.check.call_args[0][1])["문장"], "헬스장이 비싸")
+
+    def test_앞에서_뺀_정책은_다시_검토하지_않는다(self):
+        result, _ = self.send([(self.first, 0), (self.first + self.second, 0)])
+        self.assertEqual(titles(result), ["1. 청년 스포츠 이용권"])
+        self.assertEqual([c["정책명"] for c in json.loads(self.check.call_args[0][1])["후보"]], ["청년 스포츠 이용권"])
+
+    def test_그만두거나_답이_틀리면_한_번만_찾고_없다고_답한다(self):
+        for answer in (rewrote(give_up=True), "다시 찾아볼게요", rewrote("월세 지원")):
+            with self.subTest(answer=answer):
+                self.check.side_effect = [kept()]
+                self.retry.return_value = answer
+                result, find = self.send([(self.first, 0)])
+                self.assertEqual(find.call_count, 1)
+                self.assertEqual(result["reply"]["lines"], [agent.NONE_FOUND.format(region="경기도 화성시 동탄구")])
+
+    def test_다시_찾아도_없으면_더_찾지_않는다(self):
+        self.check.side_effect = [kept(), kept()]
+        result, find = self.send([(self.first, 0), (self.second, 0)])
+        self.assertEqual((find.call_count, self.retry.call_count), (2, 1))
+        self.assertEqual(titles(result), [])
 
 
 class ButtonOrderTest(TestCase):
