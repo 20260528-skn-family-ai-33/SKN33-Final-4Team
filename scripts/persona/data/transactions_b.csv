@@ -163,474 +163,480 @@ persona-b:0143,2026-08-09,18:20,6,parking,한국정보통신 - 하이파킹(주)
 persona-b:0144,2026-08-10,09:00,0,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,15951000,
 persona-b:0145,2026-08-10,12:31,0,lunch,대표_3_카카오페이 - 주시브로스GFC점,10500,out,spending,FOOD,living,D,card,persona-b:0145,0,,0,,store_snapshot,대표_3_카카오페이 - 주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,,
 persona-b:0146,2026-08-10,12:31,0,lunch,대표_3_카카오페이 - 주시브로스GFC점,10500,out,spending,FOOD,living,A,bank,persona-b:0145,1,,0,,store_snapshot,대표_3_카카오페이 - 주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,15940500,
-persona-b:0148,2026-08-11,09:10,1,saving,박민준,500000,out,saving,,,A,bank,saving:8,0,,0,,non_store,박민준,,,,,,15440500,
+persona-b:0636,2026-08-10,19:10,0,one_off,다이소 수지성복점,12000,out,spending,HOUSEHOLD,living,D,card,persona-b:0636,0,,0,,non_store,다이소 수지성복점,,,,,,,수납함 · 차량용 방향제
+persona-b:0637,2026-08-10,19:10,0,one_off,다이소 수지성복점,12000,out,spending,HOUSEHOLD,living,A,bank,persona-b:0636,1,,0,,non_store,다이소 수지성복점,,,,,,15928500,수납함 · 차량용 방향제
+persona-b:0148,2026-08-11,09:10,1,saving,박민준,500000,out,saving,,,A,bank,saving:8,0,,0,,non_store,박민준,,,,,,15428500,
 persona-b:0149,2026-08-11,09:10,1,saving,박민준,500000,in,saving,,,C,bank,saving:8,0,,0,,non_store,박민준,,,,,,7000000,
-persona-b:0150,2026-08-11,09:20,1,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:8,0,,0,,non_store,박민준,,,,,,15340500,
+persona-b:0150,2026-08-11,09:20,1,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:8,0,,0,,non_store,박민준,,,,,,15328500,
 persona-b:0151,2026-08-11,09:20,1,housing_saving,박민준,100000,in,saving,,,H,bank,housing_saving:8,0,,0,,non_store,박민준,,,,,,2600000,
-persona-b:0147,2026-08-11,10:00,1,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,15040500,
+persona-b:0147,2026-08-11,10:00,1,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,15028500,
 persona-b:0152,2026-08-11,15:30,1,convenience,지에스25S점 역삼역,5000,out,spending,FOOD,living,D,card,persona-b:0152,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0153,2026-08-11,15:30,1,convenience,지에스25S점 역삼역,5000,out,spending,FOOD,living,A,bank,persona-b:0152,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,15035500,
+persona-b:0153,2026-08-11,15:30,1,convenience,지에스25S점 역삼역,5000,out,spending,FOOD,living,A,bank,persona-b:0152,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,15023500,
 persona-b:0568,2026-08-12,19:30,2,screen_golf,골프존파크역삼G5,30000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0568,0,,0,,store_snapshot,골프존파크역삼G5,MA0106202201A2075797,,골프 연습장,강남구,역삼1동,,퇴근 후 동료랑
-persona-b:0569,2026-08-12,19:30,2,screen_golf,골프존파크역삼G5,30000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0568,1,,0,,store_snapshot,골프존파크역삼G5,MA0106202201A2075797,,골프 연습장,강남구,역삼1동,15005500,퇴근 후 동료랑
+persona-b:0569,2026-08-12,19:30,2,screen_golf,골프존파크역삼G5,30000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0568,1,,0,,store_snapshot,골프존파크역삼G5,MA0106202201A2075797,,골프 연습장,강남구,역삼1동,14993500,퇴근 후 동료랑
 persona-b:0154,2026-08-13,12:13,3,lunch,가연,11000,out,spending,FOOD,living,D,card,persona-b:0154,0,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,,
-persona-b:0155,2026-08-13,12:13,3,lunch,가연,11000,out,spending,FOOD,living,A,bank,persona-b:0154,1,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,14994500,
+persona-b:0155,2026-08-13,12:13,3,lunch,가연,11000,out,spending,FOOD,living,A,bank,persona-b:0154,1,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,14982500,
 persona-b:0610,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,ETC,living,D,card,persona-b:0610,0,,0,,non_store,DB손해보험 다이렉트,,,,,,,자동차보험 1년 갱신 (한 번만 나간 큰돈)
-persona-b:0611,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,ETC,living,A,bank,persona-b:0610,1,,0,,non_store,DB손해보험 다이렉트,,,,,,14032500,자동차보험 1년 갱신 (한 번만 나간 큰돈)
+persona-b:0611,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,ETC,living,A,bank,persona-b:0610,1,,0,,non_store,DB손해보험 다이렉트,,,,,,14020500,자동차보험 1년 갱신 (한 번만 나간 큰돈)
 persona-b:0156,2026-08-14,12:12,4,lunch,한옥집김치찜GFC몰점,13000,out,spending,FOOD,living,D,card,persona-b:0156,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0157,2026-08-14,12:12,4,lunch,한옥집김치찜GFC몰점,13000,out,spending,FOOD,living,A,bank,persona-b:0156,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14019500,
+persona-b:0157,2026-08-14,12:12,4,lunch,한옥집김치찜GFC몰점,13000,out,spending,FOOD,living,A,bank,persona-b:0156,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14007500,
 persona-b:0158,2026-08-14,12:53,4,cafe,클로리스 역삼점,4500,out,spending,FOOD,living,D,card,persona-b:0158,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0159,2026-08-14,12:53,4,cafe,클로리스 역삼점,4500,out,spending,FOOD,living,A,bank,persona-b:0158,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,14015000,
+persona-b:0159,2026-08-14,12:53,4,cafe,클로리스 역삼점,4500,out,spending,FOOD,living,A,bank,persona-b:0158,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,14003000,
 persona-b:0160,2026-08-15,07:10,5,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0160,0,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,,
-persona-b:0161,2026-08-15,07:10,5,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0160,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,13956000,
+persona-b:0161,2026-08-15,07:10,5,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0160,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,13944000,
 persona-b:0162,2026-08-15,11:20,5,fuel,풍덕천주유소,65000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0162,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0163,2026-08-15,11:20,5,fuel,풍덕천주유소,65000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0162,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13891000,
+persona-b:0163,2026-08-15,11:20,5,fuel,풍덕천주유소,65000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0162,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13879000,
 persona-b:0164,2026-08-15,13:00,5,pangyo_meal,우물집판교,22500,out,spending,FOOD,living,D,card,persona-b:0164,0,,0,,store_snapshot,우물집판교,MA0101202409A0040428,,백반/한정식,성남시 분당구,백현동,,friend
-persona-b:0165,2026-08-15,13:00,5,pangyo_meal,우물집판교,22500,out,spending,FOOD,living,A,bank,persona-b:0164,1,,0,,store_snapshot,우물집판교,MA0101202409A0040428,,백반/한정식,성남시 분당구,백현동,13868500,friend
+persona-b:0165,2026-08-15,13:00,5,pangyo_meal,우물집판교,22500,out,spending,FOOD,living,A,bank,persona-b:0164,1,,0,,store_snapshot,우물집판교,MA0101202409A0040428,,백반/한정식,성남시 분당구,백현동,13856500,friend
 persona-b:0166,2026-08-15,15:00,5,weekend_cafe,카카오페이_3 - 발트페이먼츠,8300,out,spending,UNCLASSIFIED,living,D,card,persona-b:0166,0,FOOD,0,,card_statement,카카오페이_3 - 발트페이먼츠,,,PG쇼핑몰,,,,friend · 확인 필요(운영사 이름)
-persona-b:0167,2026-08-15,15:00,5,weekend_cafe,카카오페이_3 - 발트페이먼츠,8300,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0166,1,FOOD,0,,card_statement,카카오페이_3 - 발트페이먼츠,,,PG쇼핑몰,,,13860200,friend · 확인 필요(운영사 이름)
+persona-b:0167,2026-08-15,15:00,5,weekend_cafe,카카오페이_3 - 발트페이먼츠,8300,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0166,1,FOOD,0,,card_statement,카카오페이_3 - 발트페이먼츠,,,PG쇼핑몰,,,13848200,friend · 확인 필요(운영사 이름)
 persona-b:0168,2026-08-15,17:00,5,fun,콩깍지노래연습장,17000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0168,0,,0,,store_snapshot,콩깍지노래연습장,MA010120220805163120,,노래방,성남시 분당구,정자1동,,friend
-persona-b:0169,2026-08-15,17:00,5,fun,콩깍지노래연습장,17000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0168,1,,0,,store_snapshot,콩깍지노래연습장,MA010120220805163120,,노래방,성남시 분당구,정자1동,13843200,friend
+persona-b:0169,2026-08-15,17:00,5,fun,콩깍지노래연습장,17000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0168,1,,0,,store_snapshot,콩깍지노래연습장,MA010120220805163120,,노래방,성남시 분당구,정자1동,13831200,friend
 persona-b:0170,2026-08-15,20:30,5,pangyo_bar,풍류별당,19000,out,spending,FOOD,living,D,card,persona-b:0170,0,,0,,store_snapshot,풍류별당,MA010120220812492927,,요리 주점,성남시 분당구,삼평동,,friend
-persona-b:0171,2026-08-15,20:30,5,pangyo_bar,풍류별당,19000,out,spending,FOOD,living,A,bank,persona-b:0170,1,,0,,store_snapshot,풍류별당,MA010120220812492927,,요리 주점,성남시 분당구,삼평동,13824200,friend
+persona-b:0171,2026-08-15,20:30,5,pangyo_bar,풍류별당,19000,out,spending,FOOD,living,A,bank,persona-b:0170,1,,0,,store_snapshot,풍류별당,MA010120220812492927,,요리 주점,성남시 분당구,삼평동,13812200,friend
 persona-b:0172,2026-08-16,10:30,6,bakery,화이트리에 수지점,10400,out,spending,FOOD,living,D,card,persona-b:0172,0,,0,,store_snapshot,화이트리에 수지점,MA0101202502A0060179,수지점,빵/도넛,용인시 수지구,풍덕천2동,,
-persona-b:0173,2026-08-16,10:30,6,bakery,화이트리에 수지점,10400,out,spending,FOOD,living,A,bank,persona-b:0172,1,,0,,store_snapshot,화이트리에 수지점,MA0101202502A0060179,수지점,빵/도넛,용인시 수지구,풍덕천2동,13813800,
+persona-b:0173,2026-08-16,10:30,6,bakery,화이트리에 수지점,10400,out,spending,FOOD,living,A,bank,persona-b:0172,1,,0,,store_snapshot,화이트리에 수지점,MA0101202502A0060179,수지점,빵/도넛,용인시 수지구,풍덕천2동,13801800,
 persona-b:0174,2026-08-16,16:10,6,family_mart,이마트 죽전점,66800,out,spending,FOOD,living,D,card,persona-b:0174,0,,0,,non_store,이마트 죽전점,,,,,,,부모님과 장보기 (내가 냄)
-persona-b:0175,2026-08-16,16:10,6,family_mart,이마트 죽전점,66800,out,spending,FOOD,living,A,bank,persona-b:0174,1,,0,,non_store,이마트 죽전점,,,,,,13747000,부모님과 장보기 (내가 냄)
+persona-b:0175,2026-08-16,16:10,6,family_mart,이마트 죽전점,66800,out,spending,FOOD,living,A,bank,persona-b:0174,1,,0,,non_store,이마트 죽전점,,,,,,13735000,부모님과 장보기 (내가 냄)
 persona-b:0176,2026-08-18,12:39,1,lunch,정원식당,11500,out,spending,FOOD,living,D,card,persona-b:0176,0,,0,,store_snapshot,정원식당,MA010120220804461054,,백반/한정식,강남구,역삼1동,,
-persona-b:0177,2026-08-18,12:39,1,lunch,정원식당,11500,out,spending,FOOD,living,A,bank,persona-b:0176,1,,0,,store_snapshot,정원식당,MA010120220804461054,,백반/한정식,강남구,역삼1동,13735500,
+persona-b:0177,2026-08-18,12:39,1,lunch,정원식당,11500,out,spending,FOOD,living,A,bank,persona-b:0176,1,,0,,store_snapshot,정원식당,MA010120220804461054,,백반/한정식,강남구,역삼1동,13723500,
 persona-b:0566,2026-08-18,19:50,1,olive,카카오페이 - CJ올리브네트웍스,24800,out,spending,BEAUTY,living,D,card,persona-b:0566,0,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,,
-persona-b:0567,2026-08-18,19:50,1,olive,카카오페이 - CJ올리브네트웍스,24800,out,spending,BEAUTY,living,A,bank,persona-b:0566,1,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,13710700,
+persona-b:0567,2026-08-18,19:50,1,olive,카카오페이 - CJ올리브네트웍스,24800,out,spending,BEAUTY,living,A,bank,persona-b:0566,1,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,13698700,
 persona-b:0178,2026-08-19,12:12,2,lunch,써브웨이 역삼점,11500,out,spending,FOOD,living,D,card,persona-b:0178,0,,0,,store_snapshot,써브웨이 역삼점,MA010120220813937009,역삼점,토스트/샌드위치/샐러드,강남구,역삼1동,,
-persona-b:0179,2026-08-19,12:12,2,lunch,써브웨이 역삼점,11500,out,spending,FOOD,living,A,bank,persona-b:0178,1,,0,,store_snapshot,써브웨이 역삼점,MA010120220813937009,역삼점,토스트/샌드위치/샐러드,강남구,역삼1동,13699200,
+persona-b:0179,2026-08-19,12:12,2,lunch,써브웨이 역삼점,11500,out,spending,FOOD,living,A,bank,persona-b:0178,1,,0,,store_snapshot,써브웨이 역삼점,MA010120220813937009,역삼점,토스트/샌드위치/샐러드,강남구,역삼1동,13687200,
 persona-b:0180,2026-08-19,12:46,2,cafe,폴바셋GFC,4200,out,spending,FOOD,living,D,card,persona-b:0180,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0181,2026-08-19,12:46,2,cafe,폴바셋GFC,4200,out,spending,FOOD,living,A,bank,persona-b:0180,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13695000,
+persona-b:0181,2026-08-19,12:46,2,cafe,폴바셋GFC,4200,out,spending,FOOD,living,A,bank,persona-b:0180,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13683000,
 persona-b:0182,2026-08-19,15:30,2,convenience,지에스25S점 역삼역,2000,out,spending,FOOD,living,D,card,persona-b:0182,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0183,2026-08-19,15:30,2,convenience,지에스25S점 역삼역,2000,out,spending,FOOD,living,A,bank,persona-b:0182,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13693000,
-persona-b:0184,2026-08-20,10:00,3,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,13624000,
+persona-b:0183,2026-08-19,15:30,2,convenience,지에스25S점 역삼역,2000,out,spending,FOOD,living,A,bank,persona-b:0182,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13681000,
+persona-b:0184,2026-08-20,10:00,3,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,13612000,
 persona-b:0185,2026-08-20,12:08,3,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,12000,out,spending,FOOD,living,D,card,persona-b:0185,0,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0186,2026-08-20,12:08,3,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0185,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13612000,
+persona-b:0186,2026-08-20,12:08,3,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0185,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13600000,
 persona-b:0187,2026-08-21,15:30,4,convenience,지에스25S점 역삼역,2700,out,spending,FOOD,living,D,card,persona-b:0187,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0188,2026-08-21,15:30,4,convenience,지에스25S점 역삼역,2700,out,spending,FOOD,living,A,bank,persona-b:0187,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13609300,
+persona-b:0188,2026-08-21,15:30,4,convenience,지에스25S점 역삼역,2700,out,spending,FOOD,living,A,bank,persona-b:0187,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13597300,
 persona-b:0582,2026-08-22,22:40,5,pangyo_bar,맥주창고 판교점,96000,out,spending,FOOD,living,D,card,persona-b:0582,0,,0,,store_snapshot,맥주창고 판교점,MA0101202506A0040377,판교점,생맥주 전문,성남시 분당구,삼평동,,친구 몫까지 내가 결제 → 1/n 받음
-persona-b:0583,2026-08-22,22:40,5,pangyo_bar,맥주창고 판교점,96000,out,spending,FOOD,living,A,bank,persona-b:0582,1,,0,,store_snapshot,맥주창고 판교점,MA0101202506A0040377,판교점,생맥주 전문,성남시 분당구,삼평동,13513300,친구 몫까지 내가 결제 → 1/n 받음
-persona-b:0586,2026-08-22,23:30,5,friend,김나은,24000,in,income,,,A,bank,,0,,0,,non_store,김나은,,,,,,13537300,"판교 술자리 1/n 받음 (내가 96,000원 결제)"
-persona-b:0587,2026-08-22,23:41,5,friend,김혜리,24000,in,income,,,A,bank,,0,,0,,non_store,김혜리,,,,,,13561300,판교 술자리 1/n 받음
-persona-b:0588,2026-08-23,10:05,6,friend,권세진,24000,in,income,,,A,bank,,0,,0,,non_store,권세진,,,,,,13585300,판교 술자리 1/n 받음
+persona-b:0583,2026-08-22,22:40,5,pangyo_bar,맥주창고 판교점,96000,out,spending,FOOD,living,A,bank,persona-b:0582,1,,0,,store_snapshot,맥주창고 판교점,MA0101202506A0040377,판교점,생맥주 전문,성남시 분당구,삼평동,13501300,친구 몫까지 내가 결제 → 1/n 받음
+persona-b:0586,2026-08-22,23:30,5,friend,김나은,24000,in,income,,,A,bank,,0,,0,,non_store,김나은,,,,,,13525300,"판교 술자리 1/n 받음 (내가 96,000원 결제)"
+persona-b:0587,2026-08-22,23:41,5,friend,김혜리,24000,in,income,,,A,bank,,0,,0,,non_store,김혜리,,,,,,13549300,판교 술자리 1/n 받음
+persona-b:0588,2026-08-23,10:05,6,friend,권세진,24000,in,income,,,A,bank,,0,,0,,non_store,권세진,,,,,,13573300,판교 술자리 1/n 받음
 persona-b:0189,2026-08-23,11:20,6,fuel,풍덕천주유소,62000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0189,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0190,2026-08-23,11:20,6,fuel,풍덕천주유소,62000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0189,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13523300,
+persona-b:0190,2026-08-23,11:20,6,fuel,풍덕천주유소,62000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0189,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13511300,
 persona-b:0191,2026-08-23,13:10,6,date_meal,기생,54000,out,spending,FOOD,living,D,card,persona-b:0191,0,,0,,store_snapshot,기생,MA0101202411A0056889,,경양식,용산구,이태원1동,,date
-persona-b:0192,2026-08-23,13:10,6,date_meal,기생,54000,out,spending,FOOD,living,A,bank,persona-b:0191,1,,0,,store_snapshot,기생,MA0101202411A0056889,,경양식,용산구,이태원1동,13469300,date
+persona-b:0192,2026-08-23,13:10,6,date_meal,기생,54000,out,spending,FOOD,living,A,bank,persona-b:0191,1,,0,,store_snapshot,기생,MA0101202411A0056889,,경양식,용산구,이태원1동,13457300,date
 persona-b:0195,2026-08-23,15:20,6,weekend_cafe,섹터118,15100,out,spending,FOOD,living,D,card,persona-b:0195,0,,0,,store_snapshot,섹터118,MA010120220803399200,,카페,용산구,이태원1동,,date
-persona-b:0196,2026-08-23,15:20,6,weekend_cafe,섹터118,15100,out,spending,FOOD,living,A,bank,persona-b:0195,1,,0,,store_snapshot,섹터118,MA010120220803399200,,카페,용산구,이태원1동,13454200,date
+persona-b:0196,2026-08-23,15:20,6,weekend_cafe,섹터118,15100,out,spending,FOOD,living,A,bank,persona-b:0195,1,,0,,store_snapshot,섹터118,MA010120220803399200,,카페,용산구,이태원1동,13442200,date
 persona-b:0193,2026-08-23,18:20,6,parking,한국정보통신 - 하이파킹(주),8000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0193,0,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,,date
-persona-b:0194,2026-08-23,18:20,6,parking,한국정보통신 - 하이파킹(주),8000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0193,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,13446200,date
+persona-b:0194,2026-08-23,18:20,6,parking,한국정보통신 - 하이파킹(주),8000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0193,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,13434200,date
 persona-b:0606,2026-08-23,19:10,6,pay,카카오페이 - 배달의민족,32000,out,spending,FOOD,living,D,card,persona-b:0606,0,,0,,non_store,카카오페이 - 배달의민족,,,,,,,가족 야식 배달 (카카오페이)
-persona-b:0607,2026-08-23,19:10,6,pay,카카오페이 - 배달의민족,32000,out,spending,FOOD,living,A,bank,persona-b:0606,1,,0,,non_store,카카오페이 - 배달의민족,,,,,,13414200,가족 야식 배달 (카카오페이)
+persona-b:0607,2026-08-23,19:10,6,pay,카카오페이 - 배달의민족,32000,out,spending,FOOD,living,A,bank,persona-b:0606,1,,0,,non_store,카카오페이 - 배달의민족,,,,,,13402200,가족 야식 배달 (카카오페이)
 persona-b:0197,2026-08-24,12:13,0,lunch,정희GFC몰점,9500,out,spending,FOOD,living,D,card,persona-b:0197,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0198,2026-08-24,12:13,0,lunch,정희GFC몰점,9500,out,spending,FOOD,living,A,bank,persona-b:0197,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13404700,
+persona-b:0198,2026-08-24,12:13,0,lunch,정희GFC몰점,9500,out,spending,FOOD,living,A,bank,persona-b:0197,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13392700,
 persona-b:0199,2026-08-24,12:45,0,cafe,클로리스 역삼점,5600,out,spending,FOOD,living,D,card,persona-b:0199,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0200,2026-08-24,12:45,0,cafe,클로리스 역삼점,5600,out,spending,FOOD,living,A,bank,persona-b:0199,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13399100,
+persona-b:0200,2026-08-24,12:45,0,cafe,클로리스 역삼점,5600,out,spending,FOOD,living,A,bank,persona-b:0199,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13387100,
 persona-b:0201,2026-08-26,12:30,2,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,D,card,persona-b:0201,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0202,2026-08-26,12:30,2,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0201,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13386600,
+persona-b:0202,2026-08-26,12:30,2,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0201,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13374600,
 persona-b:0203,2026-08-26,12:48,2,cafe,클로리스 역삼점,6200,out,spending,FOOD,living,D,card,persona-b:0203,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0204,2026-08-26,12:48,2,cafe,클로리스 역삼점,6200,out,spending,FOOD,living,A,bank,persona-b:0203,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13380400,
+persona-b:0204,2026-08-26,12:48,2,cafe,클로리스 역삼점,6200,out,spending,FOOD,living,A,bank,persona-b:0203,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13368400,
 persona-b:0205,2026-08-27,12:20,3,lunch,탑텐 코리아,11000,out,spending,FOOD,living,D,card,persona-b:0205,0,,0,,store_snapshot,탑텐 코리아,MA010120220808362760,코리아,백반/한정식,강남구,역삼1동,,
-persona-b:0206,2026-08-27,12:20,3,lunch,탑텐 코리아,11000,out,spending,FOOD,living,A,bank,persona-b:0205,1,,0,,store_snapshot,탑텐 코리아,MA010120220808362760,코리아,백반/한정식,강남구,역삼1동,13369400,
+persona-b:0206,2026-08-27,12:20,3,lunch,탑텐 코리아,11000,out,spending,FOOD,living,A,bank,persona-b:0205,1,,0,,store_snapshot,탑텐 코리아,MA010120220808362760,코리아,백반/한정식,강남구,역삼1동,13357400,
 persona-b:0207,2026-08-27,12:52,3,cafe,폴바셋GFC,5200,out,spending,FOOD,living,D,card,persona-b:0207,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0208,2026-08-27,12:52,3,cafe,폴바셋GFC,5200,out,spending,FOOD,living,A,bank,persona-b:0207,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13364200,
+persona-b:0208,2026-08-27,12:52,3,cafe,폴바셋GFC,5200,out,spending,FOOD,living,A,bank,persona-b:0207,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13352200,
 persona-b:0601,2026-08-29,01:20,5,review,STEAM PURCHASE,32450,out,spending,UNCLASSIFIED,living,D,card,persona-b:0601,0,CULTURE_LEISURE,0,,non_store,STEAM PURCHASE,,,,,,,확인 필요(해외 결제) · 게임
-persona-b:0602,2026-08-29,01:20,5,review,STEAM PURCHASE,32450,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0601,1,CULTURE_LEISURE,0,,non_store,STEAM PURCHASE,,,,,,13331750,확인 필요(해외 결제) · 게임
+persona-b:0602,2026-08-29,01:20,5,review,STEAM PURCHASE,32450,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0601,1,CULTURE_LEISURE,0,,non_store,STEAM PURCHASE,,,,,,13319750,확인 필요(해외 결제) · 게임
 persona-b:0209,2026-08-29,15:00,5,cafe,카페다1 4호점,6200,out,spending,FOOD,living,D,card,persona-b:0209,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0210,2026-08-29,15:00,5,cafe,카페다1 4호점,6200,out,spending,FOOD,living,A,bank,persona-b:0209,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13325550,
+persona-b:0210,2026-08-29,15:00,5,cafe,카페다1 4호점,6200,out,spending,FOOD,living,A,bank,persona-b:0209,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13313550,
 persona-b:0632,2026-08-29,15:10,5,one_off,티켓링크,36000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0632,0,,0,,non_store,티켓링크,,,,,,,친구랑 야구 직관 2장
-persona-b:0633,2026-08-29,15:10,5,one_off,티켓링크,36000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0632,1,,0,,non_store,티켓링크,,,,,,13289550,친구랑 야구 직관 2장
+persona-b:0633,2026-08-29,15:10,5,one_off,티켓링크,36000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0632,1,,0,,non_store,티켓링크,,,,,,13277550,친구랑 야구 직관 2장
 persona-b:0211,2026-08-29,17:30,5,grocery,광성슈퍼,16100,out,spending,FOOD,living,D,card,persona-b:0211,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0212,2026-08-29,17:30,5,grocery,광성슈퍼,16100,out,spending,FOOD,living,A,bank,persona-b:0211,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13273450,
+persona-b:0212,2026-08-29,17:30,5,grocery,광성슈퍼,16100,out,spending,FOOD,living,A,bank,persona-b:0211,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13261450,
 persona-b:0213,2026-08-30,13:00,6,pangyo_meal,아방뮤제,21500,out,spending,FOOD,living,D,card,persona-b:0213,0,,0,,store_snapshot,아방뮤제,MA010120220813227870,,경양식,성남시 분당구,백현동,,friend
-persona-b:0214,2026-08-30,13:00,6,pangyo_meal,아방뮤제,21500,out,spending,FOOD,living,A,bank,persona-b:0213,1,,0,,store_snapshot,아방뮤제,MA010120220813227870,,경양식,성남시 분당구,백현동,13251950,friend
+persona-b:0214,2026-08-30,13:00,6,pangyo_meal,아방뮤제,21500,out,spending,FOOD,living,A,bank,persona-b:0213,1,,0,,store_snapshot,아방뮤제,MA010120220813227870,,경양식,성남시 분당구,백현동,13239950,friend
 persona-b:0215,2026-08-30,15:00,6,weekend_cafe,카멜판교04,5700,out,spending,FOOD,living,D,card,persona-b:0215,0,,0,,store_snapshot,카멜판교04,MA010120220803249009,,카페,성남시 분당구,백현동,,friend
-persona-b:0216,2026-08-30,15:00,6,weekend_cafe,카멜판교04,5700,out,spending,FOOD,living,A,bank,persona-b:0215,1,,0,,store_snapshot,카멜판교04,MA010120220803249009,,카페,성남시 분당구,백현동,13246250,friend
+persona-b:0216,2026-08-30,15:00,6,weekend_cafe,카멜판교04,5700,out,spending,FOOD,living,A,bank,persona-b:0215,1,,0,,store_snapshot,카멜판교04,MA010120220803249009,,카페,성남시 분당구,백현동,13234250,friend
 persona-b:0217,2026-08-30,20:30,6,pangyo_bar,맘마미아,24000,out,spending,FOOD,living,D,card,persona-b:0217,0,,0,,store_snapshot,맘마미아,MA010120220804011193,,요리 주점,성남시 분당구,정자1동,,friend
-persona-b:0218,2026-08-30,20:30,6,pangyo_bar,맘마미아,24000,out,spending,FOOD,living,A,bank,persona-b:0217,1,,0,,store_snapshot,맘마미아,MA010120220804011193,,요리 주점,성남시 분당구,정자1동,13222250,friend
+persona-b:0218,2026-08-30,20:30,6,pangyo_bar,맘마미아,24000,out,spending,FOOD,living,A,bank,persona-b:0217,1,,0,,store_snapshot,맘마미아,MA010120220804011193,,요리 주점,성남시 분당구,정자1동,13210250,friend
 persona-b:0219,2026-08-31,12:18,0,lunch,정희GFC몰점,10500,out,spending,FOOD,living,D,card,persona-b:0219,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0220,2026-08-31,12:18,0,lunch,정희GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0219,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13211750,
+persona-b:0220,2026-08-31,12:18,0,lunch,정희GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0219,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13199750,
 persona-b:0221,2026-09-01,10:00,1,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,D,card,persona-b:0221,0,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,,
-persona-b:0222,2026-09-01,10:00,1,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0221,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13061750,
-persona-b:0223,2026-09-01,19:10,1,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,13011750,하이패스 선불카드 계좌 자동충전
+persona-b:0222,2026-09-01,10:00,1,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0221,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13049750,
+persona-b:0223,2026-09-01,19:10,1,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,12999750,하이패스 선불카드 계좌 자동충전
 persona-b:0224,2026-09-02,07:40,2,fuel,풍덕천주유소,60000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0224,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0225,2026-09-02,07:40,2,fuel,풍덕천주유소,60000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0224,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,12951750,
+persona-b:0225,2026-09-02,07:40,2,fuel,풍덕천주유소,60000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0224,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,12939750,
 persona-b:0226,2026-09-02,12:20,2,lunch,에스지케이컴퍼니,11000,out,spending,FOOD,living,D,card,persona-b:0226,0,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,,
-persona-b:0227,2026-09-02,12:20,2,lunch,에스지케이컴퍼니,11000,out,spending,FOOD,living,A,bank,persona-b:0226,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,12940750,
+persona-b:0227,2026-09-02,12:20,2,lunch,에스지케이컴퍼니,11000,out,spending,FOOD,living,A,bank,persona-b:0226,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,12928750,
 persona-b:0228,2026-09-02,12:51,2,cafe,폴바셋GFC,5100,out,spending,FOOD,living,D,card,persona-b:0228,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0229,2026-09-02,12:51,2,cafe,폴바셋GFC,5100,out,spending,FOOD,living,A,bank,persona-b:0228,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,12935650,
+persona-b:0229,2026-09-02,12:51,2,cafe,폴바셋GFC,5100,out,spending,FOOD,living,A,bank,persona-b:0228,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,12923650,
 persona-b:0230,2026-09-03,10:00,3,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0230,0,,1,youtube,non_store,유튜브프리미엄,,,,,,,
-persona-b:0231,2026-09-03,10:00,3,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0230,1,,1,youtube,non_store,유튜브프리미엄,,,,,,12920750,
+persona-b:0231,2026-09-03,10:00,3,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0230,1,,1,youtube,non_store,유튜브프리미엄,,,,,,12908750,
 persona-b:0232,2026-09-03,12:37,3,lunch,나주곰탕,13000,out,spending,FOOD,living,D,card,persona-b:0232,0,,0,,store_snapshot,나주곰탕,MA010120220810282478,,국/탕/찌개류,강남구,역삼1동,,
-persona-b:0233,2026-09-03,12:37,3,lunch,나주곰탕,13000,out,spending,FOOD,living,A,bank,persona-b:0232,1,,0,,store_snapshot,나주곰탕,MA010120220810282478,,국/탕/찌개류,강남구,역삼1동,12907750,
+persona-b:0233,2026-09-03,12:37,3,lunch,나주곰탕,13000,out,spending,FOOD,living,A,bank,persona-b:0232,1,,0,,store_snapshot,나주곰탕,MA010120220810282478,,국/탕/찌개류,강남구,역삼1동,12895750,
 persona-b:0554,2026-09-05,11:00,5,mens_hair,컨텀바버샵,26000,out,spending,BEAUTY,living,D,card,persona-b:0554,0,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,,커트
-persona-b:0555,2026-09-05,11:00,5,mens_hair,컨텀바버샵,26000,out,spending,BEAUTY,living,A,bank,persona-b:0554,1,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,12881750,커트
+persona-b:0555,2026-09-05,11:00,5,mens_hair,컨텀바버샵,26000,out,spending,BEAUTY,living,A,bank,persona-b:0554,1,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,12869750,커트
 persona-b:0234,2026-09-05,13:10,5,date_meal,주빌리,38000,out,spending,FOOD,living,D,card,persona-b:0234,0,,0,,store_snapshot,주빌리,MA010120220813135000,,경양식,용산구,이태원1동,,date
-persona-b:0235,2026-09-05,13:10,5,date_meal,주빌리,38000,out,spending,FOOD,living,A,bank,persona-b:0234,1,,0,,store_snapshot,주빌리,MA010120220813135000,,경양식,용산구,이태원1동,12843750,date
+persona-b:0235,2026-09-05,13:10,5,date_meal,주빌리,38000,out,spending,FOOD,living,A,bank,persona-b:0234,1,,0,,store_snapshot,주빌리,MA010120220813135000,,경양식,용산구,이태원1동,12831750,date
 persona-b:0238,2026-09-05,15:20,5,weekend_cafe,메가MGC_인증_3 - 메가 MGC 커피(정자역점,14500,out,spending,FOOD,living,D,card,persona-b:0238,0,,0,,store_snapshot,메가MGC_인증_3 - 메가 MGC 커피(정자역점,MA010120220812659254,,카페,성남시 분당구,정자1동,,date
-persona-b:0239,2026-09-05,15:20,5,weekend_cafe,메가MGC_인증_3 - 메가 MGC 커피(정자역점,14500,out,spending,FOOD,living,A,bank,persona-b:0238,1,,0,,store_snapshot,메가MGC_인증_3 - 메가 MGC 커피(정자역점,MA010120220812659254,,카페,성남시 분당구,정자1동,12829250,date
+persona-b:0239,2026-09-05,15:20,5,weekend_cafe,메가MGC_인증_3 - 메가 MGC 커피(정자역점,14500,out,spending,FOOD,living,A,bank,persona-b:0238,1,,0,,store_snapshot,메가MGC_인증_3 - 메가 MGC 커피(정자역점,MA010120220812659254,,카페,성남시 분당구,정자1동,12817250,date
 persona-b:0240,2026-09-05,16:40,5,dessert,지유가오카브레드분당정자역점,9500,out,spending,FOOD,living,D,card,persona-b:0240,0,,0,,store_snapshot,지유가오카브레드분당정자역점,MA010120220812248576,,빵/도넛,성남시 분당구,정자1동,,date
-persona-b:0241,2026-09-05,16:40,5,dessert,지유가오카브레드분당정자역점,9500,out,spending,FOOD,living,A,bank,persona-b:0240,1,,0,,store_snapshot,지유가오카브레드분당정자역점,MA010120220812248576,,빵/도넛,성남시 분당구,정자1동,12819750,date
+persona-b:0241,2026-09-05,16:40,5,dessert,지유가오카브레드분당정자역점,9500,out,spending,FOOD,living,A,bank,persona-b:0240,1,,0,,store_snapshot,지유가오카브레드분당정자역점,MA010120220812248576,,빵/도넛,성남시 분당구,정자1동,12807750,date
 persona-b:0236,2026-09-05,18:20,5,parking,한국정보통신 - 하이파킹(주),9000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0236,0,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,,date
-persona-b:0237,2026-09-05,18:20,5,parking,한국정보통신 - 하이파킹(주),9000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0236,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,12810750,date
+persona-b:0237,2026-09-05,18:20,5,parking,한국정보통신 - 하이파킹(주),9000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0236,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,12798750,date
 persona-b:0242,2026-09-06,10:30,6,bakery,던킨 수지구청점,11800,out,spending,FOOD,living,D,card,persona-b:0242,0,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,,
-persona-b:0243,2026-09-06,10:30,6,bakery,던킨 수지구청점,11800,out,spending,FOOD,living,A,bank,persona-b:0242,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,12798950,
+persona-b:0243,2026-09-06,10:30,6,bakery,던킨 수지구청점,11800,out,spending,FOOD,living,A,bank,persona-b:0242,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,12786950,
 persona-b:0244,2026-09-06,17:30,6,grocery,광성슈퍼,16300,out,spending,FOOD,living,D,card,persona-b:0244,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0245,2026-09-06,17:30,6,grocery,광성슈퍼,16300,out,spending,FOOD,living,A,bank,persona-b:0244,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,12782650,
+persona-b:0245,2026-09-06,17:30,6,grocery,광성슈퍼,16300,out,spending,FOOD,living,A,bank,persona-b:0244,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,12770650,
+persona-b:0638,2026-09-07,16:30,0,one_off,다이소 수지성복점,8000,out,spending,HOUSEHOLD,living,D,card,persona-b:0638,0,,0,,non_store,다이소 수지성복점,,,,,,,건전지 · 멀티탭
+persona-b:0639,2026-09-07,16:30,0,one_off,다이소 수지성복점,8000,out,spending,HOUSEHOLD,living,A,bank,persona-b:0638,1,,0,,non_store,다이소 수지성복점,,,,,,12762650,건전지 · 멀티탭
 persona-b:0246,2026-09-08,12:09,1,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,10500,out,spending,FOOD,living,D,card,persona-b:0246,0,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0247,2026-09-08,12:09,1,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0246,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,12772150,
+persona-b:0247,2026-09-08,12:09,1,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0246,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,12752150,
 persona-b:0248,2026-09-08,15:30,1,convenience,지에스25S점 역삼역,1900,out,spending,FOOD,living,D,card,persona-b:0248,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0249,2026-09-08,15:30,1,convenience,지에스25S점 역삼역,1900,out,spending,FOOD,living,A,bank,persona-b:0248,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,12770250,
+persona-b:0249,2026-09-08,15:30,1,convenience,지에스25S점 역삼역,1900,out,spending,FOOD,living,A,bank,persona-b:0248,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,12750250,
 persona-b:0250,2026-09-09,12:15,2,lunch,참배나무골역삼지점주,12500,out,spending,FOOD,living,D,card,persona-b:0250,0,,0,,store_snapshot,참배나무골역삼지점주,MA010120220804481241,,백반/한정식,강남구,역삼1동,,
-persona-b:0251,2026-09-09,12:15,2,lunch,참배나무골역삼지점주,12500,out,spending,FOOD,living,A,bank,persona-b:0250,1,,0,,store_snapshot,참배나무골역삼지점주,MA010120220804481241,,백반/한정식,강남구,역삼1동,12757750,
+persona-b:0251,2026-09-09,12:15,2,lunch,참배나무골역삼지점주,12500,out,spending,FOOD,living,A,bank,persona-b:0250,1,,0,,store_snapshot,참배나무골역삼지점주,MA010120220804481241,,백반/한정식,강남구,역삼1동,12737750,
 persona-b:0572,2026-09-09,19:30,2,screen_golf,블랙토마토스크린,23000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0572,0,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,,퇴근 후 동료랑
-persona-b:0573,2026-09-09,19:30,2,screen_golf,블랙토마토스크린,23000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0572,1,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,12734750,퇴근 후 동료랑
-persona-b:0252,2026-09-10,09:00,3,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,15634750,
+persona-b:0573,2026-09-09,19:30,2,screen_golf,블랙토마토스크린,23000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0572,1,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,12714750,퇴근 후 동료랑
+persona-b:0252,2026-09-10,09:00,3,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,15614750,
 persona-b:0253,2026-09-10,20:10,3,team_dinner,갓포돈,23000,out,spending,FOOD,living,D,card,persona-b:0253,0,,0,,store_snapshot,갓포돈,MA010120220810879070,,일식 회/초밥,강남구,역삼1동,,
-persona-b:0254,2026-09-10,20:10,3,team_dinner,갓포돈,23000,out,spending,FOOD,living,A,bank,persona-b:0253,1,,0,,store_snapshot,갓포돈,MA010120220810879070,,일식 회/초밥,강남구,역삼1동,15611750,
-persona-b:0256,2026-09-11,09:10,4,saving,박민준,500000,out,saving,,,A,bank,saving:9,0,,0,,non_store,박민준,,,,,,15111750,
+persona-b:0254,2026-09-10,20:10,3,team_dinner,갓포돈,23000,out,spending,FOOD,living,A,bank,persona-b:0253,1,,0,,store_snapshot,갓포돈,MA010120220810879070,,일식 회/초밥,강남구,역삼1동,15591750,
+persona-b:0256,2026-09-11,09:10,4,saving,박민준,500000,out,saving,,,A,bank,saving:9,0,,0,,non_store,박민준,,,,,,15091750,
 persona-b:0257,2026-09-11,09:10,4,saving,박민준,500000,in,saving,,,C,bank,saving:9,0,,0,,non_store,박민준,,,,,,7500000,
-persona-b:0258,2026-09-11,09:20,4,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:9,0,,0,,non_store,박민준,,,,,,15011750,
+persona-b:0258,2026-09-11,09:20,4,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:9,0,,0,,non_store,박민준,,,,,,14991750,
 persona-b:0259,2026-09-11,09:20,4,housing_saving,박민준,100000,in,saving,,,H,bank,housing_saving:9,0,,0,,non_store,박민준,,,,,,2700000,
-persona-b:0255,2026-09-11,10:00,4,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,14711750,
+persona-b:0255,2026-09-11,10:00,4,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,14691750,
 persona-b:0260,2026-09-11,12:34,4,lunch,프랭크버거 역삼점,11500,out,spending,FOOD,living,D,card,persona-b:0260,0,,0,,store_snapshot,프랭크버거 역삼점,MA0101202406A0338254,역삼점,버거,강남구,역삼1동,,
-persona-b:0261,2026-09-11,12:34,4,lunch,프랭크버거 역삼점,11500,out,spending,FOOD,living,A,bank,persona-b:0260,1,,0,,store_snapshot,프랭크버거 역삼점,MA0101202406A0338254,역삼점,버거,강남구,역삼1동,14700250,
+persona-b:0261,2026-09-11,12:34,4,lunch,프랭크버거 역삼점,11500,out,spending,FOOD,living,A,bank,persona-b:0260,1,,0,,store_snapshot,프랭크버거 역삼점,MA0101202406A0338254,역삼점,버거,강남구,역삼1동,14680250,
 persona-b:0262,2026-09-12,11:20,5,fuel,풍덕천주유소,52000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0262,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0263,2026-09-12,11:20,5,fuel,풍덕천주유소,52000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0262,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,14648250,
+persona-b:0263,2026-09-12,11:20,5,fuel,풍덕천주유소,52000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0262,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,14628250,
 persona-b:0628,2026-09-12,19:40,5,one_off,메가박스 온라인 예매,28000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0628,0,,0,,non_store,메가박스 온라인 예매,,,,,,,데이트 영화
-persona-b:0629,2026-09-12,19:40,5,one_off,메가박스 온라인 예매,28000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0628,1,,0,,non_store,메가박스 온라인 예매,,,,,,14620250,데이트 영화
+persona-b:0629,2026-09-12,19:40,5,one_off,메가박스 온라인 예매,28000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0628,1,,0,,non_store,메가박스 온라인 예매,,,,,,14600250,데이트 영화
 persona-b:0264,2026-09-13,13:00,6,pangyo_meal,마츠노하나현대백화점 판교점,19500,out,spending,FOOD,living,D,card,persona-b:0264,0,,0,,store_snapshot,마츠노하나현대백화점 판교점,MA0101202309A0059850,판교점,일식 회/초밥,성남시 분당구,백현동,,friend
-persona-b:0265,2026-09-13,13:00,6,pangyo_meal,마츠노하나현대백화점 판교점,19500,out,spending,FOOD,living,A,bank,persona-b:0264,1,,0,,store_snapshot,마츠노하나현대백화점 판교점,MA0101202309A0059850,판교점,일식 회/초밥,성남시 분당구,백현동,14600750,friend
+persona-b:0265,2026-09-13,13:00,6,pangyo_meal,마츠노하나현대백화점 판교점,19500,out,spending,FOOD,living,A,bank,persona-b:0264,1,,0,,store_snapshot,마츠노하나현대백화점 판교점,MA0101202309A0059850,판교점,일식 회/초밥,성남시 분당구,백현동,14580750,friend
 persona-b:0266,2026-09-13,15:00,6,weekend_cafe,스타벅스 정자역,7100,out,spending,FOOD,living,D,card,persona-b:0266,0,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,,friend
-persona-b:0267,2026-09-13,15:00,6,weekend_cafe,스타벅스 정자역,7100,out,spending,FOOD,living,A,bank,persona-b:0266,1,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,14593650,friend
+persona-b:0267,2026-09-13,15:00,6,weekend_cafe,스타벅스 정자역,7100,out,spending,FOOD,living,A,bank,persona-b:0266,1,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,14573650,friend
 persona-b:0268,2026-09-13,16:30,6,fashion,엄브로,76000,out,spending,FASHION_SHOPPING,living,D,card,persona-b:0268,0,,0,,store_snapshot,엄브로,MA010120220800061453,,기타 의류 소매업,성남시 분당구,백현동,,friend
-persona-b:0269,2026-09-13,16:30,6,fashion,엄브로,76000,out,spending,FASHION_SHOPPING,living,A,bank,persona-b:0268,1,,0,,store_snapshot,엄브로,MA010120220800061453,,기타 의류 소매업,성남시 분당구,백현동,14517650,friend
+persona-b:0269,2026-09-13,16:30,6,fashion,엄브로,76000,out,spending,FASHION_SHOPPING,living,A,bank,persona-b:0268,1,,0,,store_snapshot,엄브로,MA010120220800061453,,기타 의류 소매업,성남시 분당구,백현동,14497650,friend
 persona-b:0270,2026-09-13,20:30,6,pangyo_bar,프로짓,23000,out,spending,FOOD,living,D,card,persona-b:0270,0,,0,,store_snapshot,프로짓,MA0101202406A0011167,,생맥주 전문,성남시 분당구,백현동,,friend
-persona-b:0271,2026-09-13,20:30,6,pangyo_bar,프로짓,23000,out,spending,FOOD,living,A,bank,persona-b:0270,1,,0,,store_snapshot,프로짓,MA0101202406A0011167,,생맥주 전문,성남시 분당구,백현동,14494650,friend
+persona-b:0271,2026-09-13,20:30,6,pangyo_bar,프로짓,23000,out,spending,FOOD,living,A,bank,persona-b:0270,1,,0,,store_snapshot,프로짓,MA0101202406A0011167,,생맥주 전문,성남시 분당구,백현동,14474650,friend
 persona-b:0272,2026-09-14,12:23,0,lunch,속초코다리냉면 역삼점,12500,out,spending,FOOD,living,D,card,persona-b:0272,0,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,,
-persona-b:0273,2026-09-14,12:23,0,lunch,속초코다리냉면 역삼점,12500,out,spending,FOOD,living,A,bank,persona-b:0272,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14482150,
+persona-b:0273,2026-09-14,12:23,0,lunch,속초코다리냉면 역삼점,12500,out,spending,FOOD,living,A,bank,persona-b:0272,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14462150,
 persona-b:0274,2026-09-14,12:53,0,cafe,폴바셋GFC,4500,out,spending,FOOD,living,D,card,persona-b:0274,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0275,2026-09-14,12:53,0,cafe,폴바셋GFC,4500,out,spending,FOOD,living,A,bank,persona-b:0274,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14477650,
+persona-b:0275,2026-09-14,12:53,0,cafe,폴바셋GFC,4500,out,spending,FOOD,living,A,bank,persona-b:0274,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14457650,
 persona-b:0276,2026-09-15,07:10,1,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0276,0,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,,
-persona-b:0277,2026-09-15,07:10,1,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0276,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,14418650,
+persona-b:0277,2026-09-15,07:10,1,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0276,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,14398650,
 persona-b:0278,2026-09-15,12:23,1,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,10500,out,spending,FOOD,living,D,card,persona-b:0278,0,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0279,2026-09-15,12:23,1,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0278,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14408150,
+persona-b:0279,2026-09-15,12:23,1,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0278,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14388150,
 persona-b:0597,2026-09-15,22:10,1,review,KCP-쿠팡,41200,out,spending,UNCLASSIFIED,living,D,card,persona-b:0597,0,FASHION_SHOPPING,0,,card_statement,KCP-쿠팡,,,PG쇼핑몰,,,,확인 필요(쿠팡) · 바람막이
-persona-b:0598,2026-09-15,22:10,1,review,KCP-쿠팡,41200,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0597,1,FASHION_SHOPPING,0,,card_statement,KCP-쿠팡,,,PG쇼핑몰,,,14366950,확인 필요(쿠팡) · 바람막이
+persona-b:0598,2026-09-15,22:10,1,review,KCP-쿠팡,41200,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0597,1,FASHION_SHOPPING,0,,card_statement,KCP-쿠팡,,,PG쇼핑몰,,,14346950,확인 필요(쿠팡) · 바람막이
 persona-b:0280,2026-09-16,12:27,2,lunch,대표_3_카카오페이 - 정희GFC몰점,10500,out,spending,FOOD,living,D,card,persona-b:0280,0,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0281,2026-09-16,12:27,2,lunch,대표_3_카카오페이 - 정희GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0280,1,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14356450,
+persona-b:0281,2026-09-16,12:27,2,lunch,대표_3_카카오페이 - 정희GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0280,1,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14336450,
 persona-b:0282,2026-09-16,12:57,2,cafe,클로리스 역삼점,6200,out,spending,FOOD,living,D,card,persona-b:0282,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0283,2026-09-16,12:57,2,cafe,클로리스 역삼점,6200,out,spending,FOOD,living,A,bank,persona-b:0282,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,14350250,
+persona-b:0283,2026-09-16,12:57,2,cafe,클로리스 역삼점,6200,out,spending,FOOD,living,A,bank,persona-b:0282,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,14330250,
 persona-b:0614,2026-09-16,18:50,2,clinic,길동석이비인후과의원,35000,out,spending,MEDICAL_HEALTH,living,D,card,persona-b:0614,0,,0,,store_snapshot,길동석이비인후과의원,MA0101202410A0108766,,이비인후과 의원,용인시 수지구,풍덕천2동,,치과 스케일링
-persona-b:0615,2026-09-16,18:50,2,clinic,길동석이비인후과의원,35000,out,spending,MEDICAL_HEALTH,living,A,bank,persona-b:0614,1,,0,,store_snapshot,길동석이비인후과의원,MA0101202410A0108766,,이비인후과 의원,용인시 수지구,풍덕천2동,14315250,치과 스케일링
+persona-b:0615,2026-09-16,18:50,2,clinic,길동석이비인후과의원,35000,out,spending,MEDICAL_HEALTH,living,A,bank,persona-b:0614,1,,0,,store_snapshot,길동석이비인후과의원,MA0101202410A0108766,,이비인후과 의원,용인시 수지구,풍덕천2동,14295250,치과 스케일링
 persona-b:0616,2026-09-16,19:20,2,pharmacy,메디칼약국,6500,out,spending,MEDICAL_HEALTH,living,D,card,persona-b:0616,0,,0,,store_snapshot,메디칼약국,MA010120220813033666,,약국,용인시 수지구,풍덕천2동,,
-persona-b:0617,2026-09-16,19:20,2,pharmacy,메디칼약국,6500,out,spending,MEDICAL_HEALTH,living,A,bank,persona-b:0616,1,,0,,store_snapshot,메디칼약국,MA010120220813033666,,약국,용인시 수지구,풍덕천2동,14308750,
+persona-b:0617,2026-09-16,19:20,2,pharmacy,메디칼약국,6500,out,spending,MEDICAL_HEALTH,living,A,bank,persona-b:0616,1,,0,,store_snapshot,메디칼약국,MA010120220813033666,,약국,용인시 수지구,풍덕천2동,14288750,
 persona-b:0284,2026-09-17,12:10,3,lunch,속초코다리냉면 역삼점,11500,out,spending,FOOD,living,D,card,persona-b:0284,0,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,,
-persona-b:0285,2026-09-17,12:10,3,lunch,속초코다리냉면 역삼점,11500,out,spending,FOOD,living,A,bank,persona-b:0284,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14297250,
+persona-b:0285,2026-09-17,12:10,3,lunch,속초코다리냉면 역삼점,11500,out,spending,FOOD,living,A,bank,persona-b:0284,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14277250,
 persona-b:0286,2026-09-17,12:51,3,cafe,클로리스 역삼점,4500,out,spending,FOOD,living,D,card,persona-b:0286,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0287,2026-09-17,12:51,3,cafe,클로리스 역삼점,4500,out,spending,FOOD,living,A,bank,persona-b:0286,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,14292750,
+persona-b:0287,2026-09-17,12:51,3,cafe,클로리스 역삼점,4500,out,spending,FOOD,living,A,bank,persona-b:0286,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,14272750,
 persona-b:0288,2026-09-17,15:30,3,convenience,지에스25S점 역삼역,3100,out,spending,FOOD,living,D,card,persona-b:0288,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0289,2026-09-17,15:30,3,convenience,지에스25S점 역삼역,3100,out,spending,FOOD,living,A,bank,persona-b:0288,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14289650,
+persona-b:0289,2026-09-17,15:30,3,convenience,지에스25S점 역삼역,3100,out,spending,FOOD,living,A,bank,persona-b:0288,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14269650,
 persona-b:0290,2026-09-18,12:37,4,lunch,김밥친구들,11000,out,spending,FOOD,living,D,card,persona-b:0290,0,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,,
-persona-b:0291,2026-09-18,12:37,4,lunch,김밥친구들,11000,out,spending,FOOD,living,A,bank,persona-b:0290,1,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,14278650,
+persona-b:0291,2026-09-18,12:37,4,lunch,김밥친구들,11000,out,spending,FOOD,living,A,bank,persona-b:0290,1,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,14258650,
 persona-b:0570,2026-09-18,19:50,4,olive,카카오페이 - CJ올리브네트웍스,23100,out,spending,BEAUTY,living,D,card,persona-b:0570,0,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,,
-persona-b:0571,2026-09-18,19:50,4,olive,카카오페이 - CJ올리브네트웍스,23100,out,spending,BEAUTY,living,A,bank,persona-b:0570,1,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,14255550,
+persona-b:0571,2026-09-18,19:50,4,olive,카카오페이 - CJ올리브네트웍스,23100,out,spending,BEAUTY,living,A,bank,persona-b:0570,1,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,14235550,
 persona-b:0292,2026-09-19,15:00,5,cafe,카페다1 4호점,6100,out,spending,FOOD,living,D,card,persona-b:0292,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0293,2026-09-19,15:00,5,cafe,카페다1 4호점,6100,out,spending,FOOD,living,A,bank,persona-b:0292,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,14249450,
+persona-b:0293,2026-09-19,15:00,5,cafe,카페다1 4호점,6100,out,spending,FOOD,living,A,bank,persona-b:0292,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,14229450,
 persona-b:0294,2026-09-19,17:30,5,grocery,광성슈퍼,15400,out,spending,FOOD,living,D,card,persona-b:0294,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0295,2026-09-19,17:30,5,grocery,광성슈퍼,15400,out,spending,FOOD,living,A,bank,persona-b:0294,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,14234050,
+persona-b:0295,2026-09-19,17:30,5,grocery,광성슈퍼,15400,out,spending,FOOD,living,A,bank,persona-b:0294,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,14214050,
 persona-b:0296,2026-09-19,18:30,5,family_meal,미분당 수지구청점,63000,out,spending,FOOD,living,D,card,persona-b:0296,0,,0,,store_snapshot,미분당 수지구청점,MA0101202509A0042735,수지구청점,백반/한정식,용인시 수지구,풍덕천2동,,부모님과 외식 (내가 냄)
-persona-b:0297,2026-09-19,18:30,5,family_meal,미분당 수지구청점,63000,out,spending,FOOD,living,A,bank,persona-b:0296,1,,0,,store_snapshot,미분당 수지구청점,MA0101202509A0042735,수지구청점,백반/한정식,용인시 수지구,풍덕천2동,14171050,부모님과 외식 (내가 냄)
-persona-b:0298,2026-09-20,10:00,6,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,14102050,
+persona-b:0297,2026-09-19,18:30,5,family_meal,미분당 수지구청점,63000,out,spending,FOOD,living,A,bank,persona-b:0296,1,,0,,store_snapshot,미분당 수지구청점,MA0101202509A0042735,수지구청점,백반/한정식,용인시 수지구,풍덕천2동,14151050,부모님과 외식 (내가 냄)
+persona-b:0298,2026-09-20,10:00,6,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,14082050,
 persona-b:0299,2026-09-20,11:20,6,fuel,SK에너지대흥주유소,55000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0299,0,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,,
-persona-b:0300,2026-09-20,11:20,6,fuel,SK에너지대흥주유소,55000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0299,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,14047050,
+persona-b:0300,2026-09-20,11:20,6,fuel,SK에너지대흥주유소,55000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0299,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,14027050,
 persona-b:0301,2026-09-20,13:10,6,date_meal,앙카라피크닉,44000,out,spending,FOOD,living,D,card,persona-b:0301,0,,0,,store_snapshot,앙카라피크닉,MA010120220800277279,,베트남식 전문,용산구,이태원1동,,date
-persona-b:0302,2026-09-20,13:10,6,date_meal,앙카라피크닉,44000,out,spending,FOOD,living,A,bank,persona-b:0301,1,,0,,store_snapshot,앙카라피크닉,MA010120220800277279,,베트남식 전문,용산구,이태원1동,14003050,date
+persona-b:0302,2026-09-20,13:10,6,date_meal,앙카라피크닉,44000,out,spending,FOOD,living,A,bank,persona-b:0301,1,,0,,store_snapshot,앙카라피크닉,MA010120220800277279,,베트남식 전문,용산구,이태원1동,13983050,date
 persona-b:0305,2026-09-20,15:20,6,weekend_cafe,스타벅스 정자역,11000,out,spending,FOOD,living,D,card,persona-b:0305,0,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,,date
-persona-b:0306,2026-09-20,15:20,6,weekend_cafe,스타벅스 정자역,11000,out,spending,FOOD,living,A,bank,persona-b:0305,1,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,13992050,date
+persona-b:0306,2026-09-20,15:20,6,weekend_cafe,스타벅스 정자역,11000,out,spending,FOOD,living,A,bank,persona-b:0305,1,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,13972050,date
 persona-b:0307,2026-09-20,16:40,6,dessert,와플대학이태원캠퍼스,14600,out,spending,FOOD,living,D,card,persona-b:0307,0,,0,,store_snapshot,와플대학이태원캠퍼스,MA010120220803100460,,빵/도넛,용산구,이태원1동,,date
-persona-b:0308,2026-09-20,16:40,6,dessert,와플대학이태원캠퍼스,14600,out,spending,FOOD,living,A,bank,persona-b:0307,1,,0,,store_snapshot,와플대학이태원캠퍼스,MA010120220803100460,,빵/도넛,용산구,이태원1동,13977450,date
+persona-b:0308,2026-09-20,16:40,6,dessert,와플대학이태원캠퍼스,14600,out,spending,FOOD,living,A,bank,persona-b:0307,1,,0,,store_snapshot,와플대학이태원캠퍼스,MA010120220803100460,,빵/도넛,용산구,이태원1동,13957450,date
 persona-b:0303,2026-09-20,18:20,6,parking,한국정보통신 - 하이파킹(주),7000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0303,0,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,,date
-persona-b:0304,2026-09-20,18:20,6,parking,한국정보통신 - 하이파킹(주),7000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0303,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,13970450,date
+persona-b:0304,2026-09-20,18:20,6,parking,한국정보통신 - 하이파킹(주),7000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0303,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,13950450,date
 persona-b:0309,2026-09-21,12:05,0,lunch,푸에르코역삼,10500,out,spending,FOOD,living,D,card,persona-b:0309,0,,0,,store_snapshot,푸에르코역삼,MA010120220813237885,,백반/한정식,강남구,역삼1동,,
-persona-b:0310,2026-09-21,12:05,0,lunch,푸에르코역삼,10500,out,spending,FOOD,living,A,bank,persona-b:0309,1,,0,,store_snapshot,푸에르코역삼,MA010120220813237885,,백반/한정식,강남구,역삼1동,13959950,
+persona-b:0310,2026-09-21,12:05,0,lunch,푸에르코역삼,10500,out,spending,FOOD,living,A,bank,persona-b:0309,1,,0,,store_snapshot,푸에르코역삼,MA010120220813237885,,백반/한정식,강남구,역삼1동,13939950,
 persona-b:0311,2026-09-22,12:20,1,lunch,테이스터스바스버거 역삼점,9000,out,spending,FOOD,living,D,card,persona-b:0311,0,,0,,store_snapshot,테이스터스바스버거 역삼점,MA0106202201A0047509,역삼점,버거,강남구,역삼1동,,
-persona-b:0312,2026-09-22,12:20,1,lunch,테이스터스바스버거 역삼점,9000,out,spending,FOOD,living,A,bank,persona-b:0311,1,,0,,store_snapshot,테이스터스바스버거 역삼점,MA0106202201A0047509,역삼점,버거,강남구,역삼1동,13950950,
+persona-b:0312,2026-09-22,12:20,1,lunch,테이스터스바스버거 역삼점,9000,out,spending,FOOD,living,A,bank,persona-b:0311,1,,0,,store_snapshot,테이스터스바스버거 역삼점,MA0106202201A0047509,역삼점,버거,강남구,역삼1동,13930950,
 persona-b:0313,2026-09-22,15:30,1,convenience,GS25역삼쏘도베점,1900,out,spending,FOOD,living,D,card,persona-b:0313,0,,0,,store_snapshot,GS25역삼쏘도베점,MA010120220804459724,,편의점,강남구,역삼1동,,
-persona-b:0314,2026-09-22,15:30,1,convenience,GS25역삼쏘도베점,1900,out,spending,FOOD,living,A,bank,persona-b:0313,1,,0,,store_snapshot,GS25역삼쏘도베점,MA010120220804459724,,편의점,강남구,역삼1동,13949050,
+persona-b:0314,2026-09-22,15:30,1,convenience,GS25역삼쏘도베점,1900,out,spending,FOOD,living,A,bank,persona-b:0313,1,,0,,store_snapshot,GS25역삼쏘도베점,MA010120220804459724,,편의점,강남구,역삼1동,13929050,
 persona-b:0315,2026-09-23,12:09,2,lunch,차이797역삼GFC점,11000,out,spending,FOOD,living,D,card,persona-b:0315,0,,0,,store_snapshot,차이797역삼GFC점,MA0106202201A0056206,,중국집,강남구,역삼1동,,
-persona-b:0316,2026-09-23,12:09,2,lunch,차이797역삼GFC점,11000,out,spending,FOOD,living,A,bank,persona-b:0315,1,,0,,store_snapshot,차이797역삼GFC점,MA0106202201A0056206,,중국집,강남구,역삼1동,13938050,
+persona-b:0316,2026-09-23,12:09,2,lunch,차이797역삼GFC점,11000,out,spending,FOOD,living,A,bank,persona-b:0315,1,,0,,store_snapshot,차이797역삼GFC점,MA0106202201A0056206,,중국집,강남구,역삼1동,13918050,
 persona-b:0574,2026-09-23,19:30,2,screen_golf,블랙토마토스크린,25000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0574,0,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,,퇴근 후 동료랑
-persona-b:0575,2026-09-23,19:30,2,screen_golf,블랙토마토스크린,25000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0574,1,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,13913050,퇴근 후 동료랑
+persona-b:0575,2026-09-23,19:30,2,screen_golf,블랙토마토스크린,25000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0574,1,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,13893050,퇴근 후 동료랑
 persona-b:0317,2026-09-26,13:00,5,pangyo_meal,효,19500,out,spending,FOOD,living,D,card,persona-b:0317,0,,0,,store_snapshot,효,MA010120220801231923,,일식 회/초밥,성남시 분당구,백현동,,friend
-persona-b:0318,2026-09-26,13:00,5,pangyo_meal,효,19500,out,spending,FOOD,living,A,bank,persona-b:0317,1,,0,,store_snapshot,효,MA010120220801231923,,일식 회/초밥,성남시 분당구,백현동,13893550,friend
+persona-b:0318,2026-09-26,13:00,5,pangyo_meal,효,19500,out,spending,FOOD,living,A,bank,persona-b:0317,1,,0,,store_snapshot,효,MA010120220801231923,,일식 회/초밥,성남시 분당구,백현동,13873550,friend
 persona-b:0624,2026-09-26,14:00,5,one_off,여기어때 강릉 씨마크호텔,280000,out,spending,TRAVEL_LODGING,free,D,card,persona-b:0624,0,,0,,non_store,여기어때 강릉 씨마크호텔,,,,,,,추석 연휴 여행 (여윳돈)
-persona-b:0625,2026-09-26,14:00,5,one_off,여기어때 강릉 씨마크호텔,280000,out,spending,TRAVEL_LODGING,free,A,bank,persona-b:0624,1,,0,,non_store,여기어때 강릉 씨마크호텔,,,,,,13613550,추석 연휴 여행 (여윳돈)
+persona-b:0625,2026-09-26,14:00,5,one_off,여기어때 강릉 씨마크호텔,280000,out,spending,TRAVEL_LODGING,free,A,bank,persona-b:0624,1,,0,,non_store,여기어때 강릉 씨마크호텔,,,,,,13593550,추석 연휴 여행 (여윳돈)
 persona-b:0319,2026-09-26,15:00,5,weekend_cafe,쥬르드카페,7300,out,spending,FOOD,living,D,card,persona-b:0319,0,,0,,store_snapshot,쥬르드카페,MA0101202302A0053153,,카페,성남시 분당구,정자1동,,friend
-persona-b:0320,2026-09-26,15:00,5,weekend_cafe,쥬르드카페,7300,out,spending,FOOD,living,A,bank,persona-b:0319,1,,0,,store_snapshot,쥬르드카페,MA0101202302A0053153,,카페,성남시 분당구,정자1동,13606250,friend
+persona-b:0320,2026-09-26,15:00,5,weekend_cafe,쥬르드카페,7300,out,spending,FOOD,living,A,bank,persona-b:0319,1,,0,,store_snapshot,쥬르드카페,MA0101202302A0053153,,카페,성남시 분당구,정자1동,13586250,friend
 persona-b:0321,2026-09-26,17:00,5,fun,에스지스크린골프판교,17000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0321,0,,0,,store_snapshot,에스지스크린골프판교,MA0101202310A0067799,,골프 연습장,성남시 분당구,삼평동,,friend
-persona-b:0322,2026-09-26,17:00,5,fun,에스지스크린골프판교,17000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0321,1,,0,,store_snapshot,에스지스크린골프판교,MA0101202310A0067799,,골프 연습장,성남시 분당구,삼평동,13589250,friend
+persona-b:0322,2026-09-26,17:00,5,fun,에스지스크린골프판교,17000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0321,1,,0,,store_snapshot,에스지스크린골프판교,MA0101202310A0067799,,골프 연습장,성남시 분당구,삼평동,13569250,friend
 persona-b:0323,2026-09-27,10:30,6,bakery,던킨 수지구청점,6800,out,spending,FOOD,living,D,card,persona-b:0323,0,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,,
-persona-b:0324,2026-09-27,10:30,6,bakery,던킨 수지구청점,6800,out,spending,FOOD,living,A,bank,persona-b:0323,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,13582450,
+persona-b:0324,2026-09-27,10:30,6,bakery,던킨 수지구청점,6800,out,spending,FOOD,living,A,bank,persona-b:0323,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,13562450,
 persona-b:0325,2026-09-28,12:13,0,lunch,에스지케이컴퍼니,10000,out,spending,FOOD,living,D,card,persona-b:0325,0,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,,
-persona-b:0326,2026-09-28,12:13,0,lunch,에스지케이컴퍼니,10000,out,spending,FOOD,living,A,bank,persona-b:0325,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,13572450,
+persona-b:0326,2026-09-28,12:13,0,lunch,에스지케이컴퍼니,10000,out,spending,FOOD,living,A,bank,persona-b:0325,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,13552450,
 persona-b:0327,2026-09-29,07:40,1,fuel,SK에너지대흥주유소,56000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0327,0,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,,
-persona-b:0328,2026-09-29,07:40,1,fuel,SK에너지대흥주유소,56000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0327,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,13516450,
-persona-b:0329,2026-09-29,19:10,1,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,13466450,하이패스 선불카드 계좌 자동충전
+persona-b:0328,2026-09-29,07:40,1,fuel,SK에너지대흥주유소,56000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0327,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,13496450,
+persona-b:0329,2026-09-29,19:10,1,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,13446450,하이패스 선불카드 계좌 자동충전
 persona-b:0330,2026-09-30,12:22,2,lunch,주시브로스GFC점,13000,out,spending,FOOD,living,D,card,persona-b:0330,0,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,,
-persona-b:0331,2026-09-30,12:22,2,lunch,주시브로스GFC점,13000,out,spending,FOOD,living,A,bank,persona-b:0330,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13453450,
+persona-b:0331,2026-09-30,12:22,2,lunch,주시브로스GFC점,13000,out,spending,FOOD,living,A,bank,persona-b:0330,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13433450,
 persona-b:0332,2026-09-30,15:30,2,convenience,지에스25S점 역삼역,2300,out,spending,FOOD,living,D,card,persona-b:0332,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0333,2026-09-30,15:30,2,convenience,지에스25S점 역삼역,2300,out,spending,FOOD,living,A,bank,persona-b:0332,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13451150,
-persona-b:0605,2026-09-30,19:20,2,pay,네이버페이충전,50000,out,spending,UNCLASSIFIED,living,A,bank,,0,FOOD,0,,non_store,네이버페이충전,,,,,,13401150,확인 필요(페이 충전) · 충전 뒤 추석 선물 세트 구매
+persona-b:0333,2026-09-30,15:30,2,convenience,지에스25S점 역삼역,2300,out,spending,FOOD,living,A,bank,persona-b:0332,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13431150,
+persona-b:0605,2026-09-30,19:20,2,pay,네이버페이충전,50000,out,spending,UNCLASSIFIED,living,A,bank,,0,FOOD,0,,non_store,네이버페이충전,,,,,,13381150,확인 필요(페이 충전) · 충전 뒤 추석 선물 세트 구매
 persona-b:0334,2026-10-01,10:00,3,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,D,card,persona-b:0334,0,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,,
-persona-b:0335,2026-10-01,10:00,3,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0334,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13251150,
+persona-b:0335,2026-10-01,10:00,3,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0334,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13231150,
 persona-b:0336,2026-10-01,12:07,3,lunch,속초코다리냉면 역삼점,10500,out,spending,FOOD,living,D,card,persona-b:0336,0,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,,
-persona-b:0337,2026-10-01,12:07,3,lunch,속초코다리냉면 역삼점,10500,out,spending,FOOD,living,A,bank,persona-b:0336,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,13240650,
+persona-b:0337,2026-10-01,12:07,3,lunch,속초코다리냉면 역삼점,10500,out,spending,FOOD,living,A,bank,persona-b:0336,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,13220650,
 persona-b:0338,2026-10-01,20:10,3,team_dinner,맥주창고이층,31000,out,spending,FOOD,living,D,card,persona-b:0338,0,,0,,store_snapshot,맥주창고이층,MA010120220811745334,,요리 주점,강남구,역삼1동,,
-persona-b:0339,2026-10-01,20:10,3,team_dinner,맥주창고이층,31000,out,spending,FOOD,living,A,bank,persona-b:0338,1,,0,,store_snapshot,맥주창고이층,MA010120220811745334,,요리 주점,강남구,역삼1동,13209650,
+persona-b:0339,2026-10-01,20:10,3,team_dinner,맥주창고이층,31000,out,spending,FOOD,living,A,bank,persona-b:0338,1,,0,,store_snapshot,맥주창고이층,MA010120220811745334,,요리 주점,강남구,역삼1동,13189650,
 persona-b:0340,2026-10-02,15:30,4,convenience,지에스25S점 역삼역,3300,out,spending,FOOD,living,D,card,persona-b:0340,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0341,2026-10-02,15:30,4,convenience,지에스25S점 역삼역,3300,out,spending,FOOD,living,A,bank,persona-b:0340,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13206350,
+persona-b:0341,2026-10-02,15:30,4,convenience,지에스25S점 역삼역,3300,out,spending,FOOD,living,A,bank,persona-b:0340,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13186350,
 persona-b:0342,2026-10-03,10:00,5,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0342,0,,1,youtube,non_store,유튜브프리미엄,,,,,,,
-persona-b:0343,2026-10-03,10:00,5,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0342,1,,1,youtube,non_store,유튜브프리미엄,,,,,,13191450,
+persona-b:0343,2026-10-03,10:00,5,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0342,1,,1,youtube,non_store,유튜브프리미엄,,,,,,13171450,
 persona-b:0344,2026-10-03,13:10,5,date_meal,게더링 코리아,37000,out,spending,FOOD,living,D,card,persona-b:0344,0,,0,,store_snapshot,게더링 코리아,MA0101202306A0068118,코리아,경양식,용산구,이태원1동,,date
-persona-b:0345,2026-10-03,13:10,5,date_meal,게더링 코리아,37000,out,spending,FOOD,living,A,bank,persona-b:0344,1,,0,,store_snapshot,게더링 코리아,MA0101202306A0068118,코리아,경양식,용산구,이태원1동,13154450,date
+persona-b:0345,2026-10-03,13:10,5,date_meal,게더링 코리아,37000,out,spending,FOOD,living,A,bank,persona-b:0344,1,,0,,store_snapshot,게더링 코리아,MA0101202306A0068118,코리아,경양식,용산구,이태원1동,13134450,date
 persona-b:0608,2026-10-03,14:20,5,pay,네이버페이 - 무신사,59000,out,spending,FASHION_SHOPPING,living,D,card,persona-b:0608,0,,0,,non_store,네이버페이 - 무신사,,,,,,,맨투맨 (네이버페이)
-persona-b:0609,2026-10-03,14:20,5,pay,네이버페이 - 무신사,59000,out,spending,FASHION_SHOPPING,living,A,bank,persona-b:0608,1,,0,,non_store,네이버페이 - 무신사,,,,,,13095450,맨투맨 (네이버페이)
+persona-b:0609,2026-10-03,14:20,5,pay,네이버페이 - 무신사,59000,out,spending,FASHION_SHOPPING,living,A,bank,persona-b:0608,1,,0,,non_store,네이버페이 - 무신사,,,,,,13075450,맨투맨 (네이버페이)
 persona-b:0348,2026-10-03,15:20,5,weekend_cafe,쥬르드카페,17600,out,spending,FOOD,living,D,card,persona-b:0348,0,,0,,store_snapshot,쥬르드카페,MA0101202302A0053153,,카페,성남시 분당구,정자1동,,date
-persona-b:0349,2026-10-03,15:20,5,weekend_cafe,쥬르드카페,17600,out,spending,FOOD,living,A,bank,persona-b:0348,1,,0,,store_snapshot,쥬르드카페,MA0101202302A0053153,,카페,성남시 분당구,정자1동,13077850,date
+persona-b:0349,2026-10-03,15:20,5,weekend_cafe,쥬르드카페,17600,out,spending,FOOD,living,A,bank,persona-b:0348,1,,0,,store_snapshot,쥬르드카페,MA0101202302A0053153,,카페,성남시 분당구,정자1동,13057850,date
 persona-b:0346,2026-10-03,18:20,5,parking,한국정보통신 - 하이파킹(주),5000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0346,0,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,,date
-persona-b:0347,2026-10-03,18:20,5,parking,한국정보통신 - 하이파킹(주),5000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0346,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,13072850,date
+persona-b:0347,2026-10-03,18:20,5,parking,한국정보통신 - 하이파킹(주),5000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0346,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,13052850,date
 persona-b:0350,2026-10-04,10:30,6,bakery,던킨 수지구청점,8900,out,spending,FOOD,living,D,card,persona-b:0350,0,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,,
-persona-b:0351,2026-10-04,10:30,6,bakery,던킨 수지구청점,8900,out,spending,FOOD,living,A,bank,persona-b:0350,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,13063950,
+persona-b:0351,2026-10-04,10:30,6,bakery,던킨 수지구청점,8900,out,spending,FOOD,living,A,bank,persona-b:0350,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,13043950,
 persona-b:0352,2026-10-04,15:00,6,cafe,카페다1 4호점,5700,out,spending,FOOD,living,D,card,persona-b:0352,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0353,2026-10-04,15:00,6,cafe,카페다1 4호점,5700,out,spending,FOOD,living,A,bank,persona-b:0352,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13058250,
+persona-b:0353,2026-10-04,15:00,6,cafe,카페다1 4호점,5700,out,spending,FOOD,living,A,bank,persona-b:0352,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13038250,
 persona-b:0354,2026-10-07,12:06,2,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,D,card,persona-b:0354,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0355,2026-10-07,12:06,2,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0354,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13045750,
+persona-b:0355,2026-10-07,12:06,2,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0354,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13025750,
 persona-b:0356,2026-10-07,12:57,2,cafe,클로리스 역삼점,4700,out,spending,FOOD,living,D,card,persona-b:0356,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0357,2026-10-07,12:57,2,cafe,클로리스 역삼점,4700,out,spending,FOOD,living,A,bank,persona-b:0356,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13041050,
-persona-b:0358,2026-10-08,09:00,3,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,15941050,
+persona-b:0357,2026-10-07,12:57,2,cafe,클로리스 역삼점,4700,out,spending,FOOD,living,A,bank,persona-b:0356,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13021050,
+persona-b:0358,2026-10-08,09:00,3,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,15921050,
 persona-b:0359,2026-10-08,12:34,3,lunch,한옥집김치찜GFC몰점,9000,out,spending,FOOD,living,D,card,persona-b:0359,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0360,2026-10-08,12:34,3,lunch,한옥집김치찜GFC몰점,9000,out,spending,FOOD,living,A,bank,persona-b:0359,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,15932050,
+persona-b:0360,2026-10-08,12:34,3,lunch,한옥집김치찜GFC몰점,9000,out,spending,FOOD,living,A,bank,persona-b:0359,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,15912050,
 persona-b:0361,2026-10-08,15:30,3,convenience,지에스25S점 역삼역,2200,out,spending,FOOD,living,D,card,persona-b:0361,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0362,2026-10-08,15:30,3,convenience,지에스25S점 역삼역,2200,out,spending,FOOD,living,A,bank,persona-b:0361,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,15929850,
+persona-b:0362,2026-10-08,15:30,3,convenience,지에스25S점 역삼역,2200,out,spending,FOOD,living,A,bank,persona-b:0361,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,15909850,
 persona-b:0363,2026-10-09,11:20,4,fuel,풍덕천주유소,53000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0363,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0364,2026-10-09,11:20,4,fuel,풍덕천주유소,53000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0363,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,15876850,
+persona-b:0364,2026-10-09,11:20,4,fuel,풍덕천주유소,53000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0363,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,15856850,
 persona-b:0365,2026-10-10,10:30,5,bakery,던킨 수지구청점,7700,out,spending,FOOD,living,D,card,persona-b:0365,0,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,,
-persona-b:0366,2026-10-10,10:30,5,bakery,던킨 수지구청점,7700,out,spending,FOOD,living,A,bank,persona-b:0365,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,15869150,
+persona-b:0366,2026-10-10,10:30,5,bakery,던킨 수지구청점,7700,out,spending,FOOD,living,A,bank,persona-b:0365,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,15849150,
 persona-b:0556,2026-10-10,11:00,5,mens_hair,컨텀바버샵,58000,out,spending,BEAUTY,living,D,card,persona-b:0556,0,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,,커트 + 다운펌
-persona-b:0557,2026-10-10,11:00,5,mens_hair,컨텀바버샵,58000,out,spending,BEAUTY,living,A,bank,persona-b:0556,1,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,15811150,커트 + 다운펌
+persona-b:0557,2026-10-10,11:00,5,mens_hair,컨텀바버샵,58000,out,spending,BEAUTY,living,A,bank,persona-b:0556,1,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,15791150,커트 + 다운펌
 persona-b:0367,2026-10-10,15:00,5,cafe,카페다1 4호점,4600,out,spending,FOOD,living,D,card,persona-b:0367,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0368,2026-10-10,15:00,5,cafe,카페다1 4호점,4600,out,spending,FOOD,living,A,bank,persona-b:0367,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,15806550,
-persona-b:0370,2026-10-11,09:10,6,saving,박민준,500000,out,saving,,,A,bank,saving:10,0,,0,,non_store,박민준,,,,,,15306550,
+persona-b:0368,2026-10-10,15:00,5,cafe,카페다1 4호점,4600,out,spending,FOOD,living,A,bank,persona-b:0367,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,15786550,
+persona-b:0370,2026-10-11,09:10,6,saving,박민준,500000,out,saving,,,A,bank,saving:10,0,,0,,non_store,박민준,,,,,,15286550,
 persona-b:0371,2026-10-11,09:10,6,saving,박민준,500000,in,saving,,,C,bank,saving:10,0,,0,,non_store,박민준,,,,,,8000000,
-persona-b:0372,2026-10-11,09:20,6,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:10,0,,0,,non_store,박민준,,,,,,15206550,
+persona-b:0372,2026-10-11,09:20,6,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:10,0,,0,,non_store,박민준,,,,,,15186550,
 persona-b:0373,2026-10-11,09:20,6,housing_saving,박민준,100000,in,saving,,,H,bank,housing_saving:10,0,,0,,non_store,박민준,,,,,,2800000,
-persona-b:0369,2026-10-11,10:00,6,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,14906550,
+persona-b:0369,2026-10-11,10:00,6,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,14886550,
 persona-b:0374,2026-10-11,13:00,6,pangyo_meal,제주상춘재,20500,out,spending,FOOD,living,D,card,persona-b:0374,0,,0,,store_snapshot,제주상춘재,MA0101202406A0375349,,백반/한정식,성남시 분당구,백현동,,friend
-persona-b:0375,2026-10-11,13:00,6,pangyo_meal,제주상춘재,20500,out,spending,FOOD,living,A,bank,persona-b:0374,1,,0,,store_snapshot,제주상춘재,MA0101202406A0375349,,백반/한정식,성남시 분당구,백현동,14886050,friend
+persona-b:0375,2026-10-11,13:00,6,pangyo_meal,제주상춘재,20500,out,spending,FOOD,living,A,bank,persona-b:0374,1,,0,,store_snapshot,제주상춘재,MA0101202406A0375349,,백반/한정식,성남시 분당구,백현동,14866050,friend
 persona-b:0376,2026-10-11,15:00,6,weekend_cafe,하트티라미수현대백화점 판교점,9000,out,spending,FOOD,living,D,card,persona-b:0376,0,,0,,store_snapshot,하트티라미수현대백화점 판교점,MA0101202409A0216364,판교점,카페,성남시 분당구,백현동,,friend
-persona-b:0377,2026-10-11,15:00,6,weekend_cafe,하트티라미수현대백화점 판교점,9000,out,spending,FOOD,living,A,bank,persona-b:0376,1,,0,,store_snapshot,하트티라미수현대백화점 판교점,MA0101202409A0216364,판교점,카페,성남시 분당구,백현동,14877050,friend
+persona-b:0377,2026-10-11,15:00,6,weekend_cafe,하트티라미수현대백화점 판교점,9000,out,spending,FOOD,living,A,bank,persona-b:0376,1,,0,,store_snapshot,하트티라미수현대백화점 판교점,MA0101202409A0216364,판교점,카페,성남시 분당구,백현동,14857050,friend
 persona-b:0378,2026-10-11,17:00,6,fun,미르노래연습장,12000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0378,0,,0,,store_snapshot,미르노래연습장,MA010120220804231243,,노래방,성남시 분당구,정자1동,,friend
-persona-b:0379,2026-10-11,17:00,6,fun,미르노래연습장,12000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0378,1,,0,,store_snapshot,미르노래연습장,MA010120220804231243,,노래방,성남시 분당구,정자1동,14865050,friend
+persona-b:0379,2026-10-11,17:00,6,fun,미르노래연습장,12000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0378,1,,0,,store_snapshot,미르노래연습장,MA010120220804231243,,노래방,성남시 분당구,정자1동,14845050,friend
 persona-b:0380,2026-10-12,12:06,0,lunch,정희GFC몰점,10000,out,spending,FOOD,living,D,card,persona-b:0380,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0381,2026-10-12,12:06,0,lunch,정희GFC몰점,10000,out,spending,FOOD,living,A,bank,persona-b:0380,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14855050,
+persona-b:0381,2026-10-12,12:06,0,lunch,정희GFC몰점,10000,out,spending,FOOD,living,A,bank,persona-b:0380,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14835050,
 persona-b:0382,2026-10-12,12:54,0,cafe,폴바셋GFC,5200,out,spending,FOOD,living,D,card,persona-b:0382,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0383,2026-10-12,12:54,0,cafe,폴바셋GFC,5200,out,spending,FOOD,living,A,bank,persona-b:0382,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14849850,
+persona-b:0383,2026-10-12,12:54,0,cafe,폴바셋GFC,5200,out,spending,FOOD,living,A,bank,persona-b:0382,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14829850,
+persona-b:0640,2026-10-12,15:40,0,one_off,다이소 수지성복점,14000,out,spending,HOUSEHOLD,living,D,card,persona-b:0640,0,,0,,non_store,다이소 수지성복점,,,,,,,세차 타월 · 옷걸이
+persona-b:0641,2026-10-12,15:40,0,one_off,다이소 수지성복점,14000,out,spending,HOUSEHOLD,living,A,bank,persona-b:0640,1,,0,,non_store,다이소 수지성복점,,,,,,14815850,세차 타월 · 옷걸이
 persona-b:0384,2026-10-13,12:36,1,lunch,강남불고기,11500,out,spending,FOOD,living,D,card,persona-b:0384,0,,0,,store_snapshot,강남불고기,MA010120220804464048,,돼지고기 구이/찜,강남구,역삼1동,,
-persona-b:0385,2026-10-13,12:36,1,lunch,강남불고기,11500,out,spending,FOOD,living,A,bank,persona-b:0384,1,,0,,store_snapshot,강남불고기,MA010120220804464048,,돼지고기 구이/찜,강남구,역삼1동,14838350,
+persona-b:0385,2026-10-13,12:36,1,lunch,강남불고기,11500,out,spending,FOOD,living,A,bank,persona-b:0384,1,,0,,store_snapshot,강남불고기,MA010120220804464048,,돼지고기 구이/찜,강남구,역삼1동,14804350,
 persona-b:0386,2026-10-14,12:23,2,lunch,대표_3_카카오페이 - 정희GFC몰점,12000,out,spending,FOOD,living,D,card,persona-b:0386,0,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0387,2026-10-14,12:23,2,lunch,대표_3_카카오페이 - 정희GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0386,1,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14826350,
+persona-b:0387,2026-10-14,12:23,2,lunch,대표_3_카카오페이 - 정희GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0386,1,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14792350,
 persona-b:0388,2026-10-15,07:10,3,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0388,0,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,,
-persona-b:0389,2026-10-15,07:10,3,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0388,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,14767350,
+persona-b:0389,2026-10-15,07:10,3,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0388,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,14733350,
 persona-b:0390,2026-10-15,12:30,3,lunch,정희GFC몰점,9000,out,spending,FOOD,living,D,card,persona-b:0390,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0391,2026-10-15,12:30,3,lunch,정희GFC몰점,9000,out,spending,FOOD,living,A,bank,persona-b:0390,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14758350,
+persona-b:0391,2026-10-15,12:30,3,lunch,정희GFC몰점,9000,out,spending,FOOD,living,A,bank,persona-b:0390,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14724350,
 persona-b:0392,2026-10-15,12:55,3,cafe,폴바셋GFC,5100,out,spending,FOOD,living,D,card,persona-b:0392,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0393,2026-10-15,12:55,3,cafe,폴바셋GFC,5100,out,spending,FOOD,living,A,bank,persona-b:0392,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14753250,
-persona-b:0589,2026-10-16,23:20,4,friend,백동현,18000,out,transfer,,,A,bank,,0,FOOD,0,,non_store,백동현,,,,,,14735250,회식 2차 1/n 보냄
+persona-b:0393,2026-10-15,12:55,3,cafe,폴바셋GFC,5100,out,spending,FOOD,living,A,bank,persona-b:0392,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14719250,
+persona-b:0589,2026-10-16,23:20,4,friend,백동현,18000,out,transfer,,,A,bank,,0,FOOD,0,,non_store,백동현,,,,,,14701250,회식 2차 1/n 보냄
 persona-b:0612,2026-10-17,10:40,5,car_repair,애니수지,320000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0612,0,,0,,store_snapshot,애니수지,MA010120220813945612,,자동차 정비소,용인시 수지구,풍덕천1동,,엔진오일 · 타이어 2짝 교체
-persona-b:0613,2026-10-17,10:40,5,car_repair,애니수지,320000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0612,1,,0,,store_snapshot,애니수지,MA010120220813945612,,자동차 정비소,용인시 수지구,풍덕천1동,14415250,엔진오일 · 타이어 2짝 교체
+persona-b:0613,2026-10-17,10:40,5,car_repair,애니수지,320000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0612,1,,0,,store_snapshot,애니수지,MA010120220813945612,,자동차 정비소,용인시 수지구,풍덕천1동,14381250,엔진오일 · 타이어 2짝 교체
 persona-b:0394,2026-10-17,15:00,5,cafe,카페다1 4호점,6500,out,spending,FOOD,living,D,card,persona-b:0394,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0395,2026-10-17,15:00,5,cafe,카페다1 4호점,6500,out,spending,FOOD,living,A,bank,persona-b:0394,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,14408750,
+persona-b:0395,2026-10-17,15:00,5,cafe,카페다1 4호점,6500,out,spending,FOOD,living,A,bank,persona-b:0394,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,14374750,
 persona-b:0398,2026-10-17,16:10,5,family_mart,이마트 죽전점,78700,out,spending,FOOD,living,D,card,persona-b:0398,0,,0,,non_store,이마트 죽전점,,,,,,,부모님과 장보기 (내가 냄)
-persona-b:0399,2026-10-17,16:10,5,family_mart,이마트 죽전점,78700,out,spending,FOOD,living,A,bank,persona-b:0398,1,,0,,non_store,이마트 죽전점,,,,,,14330050,부모님과 장보기 (내가 냄)
+persona-b:0399,2026-10-17,16:10,5,family_mart,이마트 죽전점,78700,out,spending,FOOD,living,A,bank,persona-b:0398,1,,0,,non_store,이마트 죽전점,,,,,,14296050,부모님과 장보기 (내가 냄)
 persona-b:0396,2026-10-17,17:30,5,grocery,오늘우리집반찬,17600,out,spending,FOOD,living,D,card,persona-b:0396,0,,0,,store_snapshot,오늘우리집반찬,MA010120220809133644,,반찬/식료품 소매업,용인시 수지구,풍덕천1동,,
-persona-b:0397,2026-10-17,17:30,5,grocery,오늘우리집반찬,17600,out,spending,FOOD,living,A,bank,persona-b:0396,1,,0,,store_snapshot,오늘우리집반찬,MA010120220809133644,,반찬/식료품 소매업,용인시 수지구,풍덕천1동,14312450,
+persona-b:0397,2026-10-17,17:30,5,grocery,오늘우리집반찬,17600,out,spending,FOOD,living,A,bank,persona-b:0396,1,,0,,store_snapshot,오늘우리집반찬,MA010120220809133644,,반찬/식료품 소매업,용인시 수지구,풍덕천1동,14278450,
 persona-b:0400,2026-10-18,11:20,6,fuel,풍덕천주유소,53000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0400,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0401,2026-10-18,11:20,6,fuel,풍덕천주유소,53000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0400,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,14259450,
+persona-b:0401,2026-10-18,11:20,6,fuel,풍덕천주유소,53000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0400,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,14225450,
 persona-b:0402,2026-10-18,11:30,6,brunch,지유가오카브레드분당정자역점,29500,out,spending,FOOD,living,D,card,persona-b:0402,0,,0,,store_snapshot,지유가오카브레드분당정자역점,MA010120220812248576,,빵/도넛,성남시 분당구,정자1동,,date
-persona-b:0403,2026-10-18,11:30,6,brunch,지유가오카브레드분당정자역점,29500,out,spending,FOOD,living,A,bank,persona-b:0402,1,,0,,store_snapshot,지유가오카브레드분당정자역점,MA010120220812248576,,빵/도넛,성남시 분당구,정자1동,14229950,date
+persona-b:0403,2026-10-18,11:30,6,brunch,지유가오카브레드분당정자역점,29500,out,spending,FOOD,living,A,bank,persona-b:0402,1,,0,,store_snapshot,지유가오카브레드분당정자역점,MA010120220812248576,,빵/도넛,성남시 분당구,정자1동,14195950,date
 persona-b:0622,2026-10-18,19:30,6,one_off,메가박스 온라인 예매,28000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0622,0,,0,,non_store,메가박스 온라인 예매,,,,,,,데이트 영화
-persona-b:0623,2026-10-18,19:30,6,one_off,메가박스 온라인 예매,28000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0622,1,,0,,non_store,메가박스 온라인 예매,,,,,,14201950,데이트 영화
+persona-b:0623,2026-10-18,19:30,6,one_off,메가박스 온라인 예매,28000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0622,1,,0,,non_store,메가박스 온라인 예매,,,,,,14167950,데이트 영화
 persona-b:0404,2026-10-19,12:17,0,lunch,도화77,9000,out,spending,FOOD,living,D,card,persona-b:0404,0,,0,,store_snapshot,도화77,MA0101202411A0008754,,돼지고기 구이/찜,강남구,역삼1동,,
-persona-b:0405,2026-10-19,12:17,0,lunch,도화77,9000,out,spending,FOOD,living,A,bank,persona-b:0404,1,,0,,store_snapshot,도화77,MA0101202411A0008754,,돼지고기 구이/찜,강남구,역삼1동,14192950,
+persona-b:0405,2026-10-19,12:17,0,lunch,도화77,9000,out,spending,FOOD,living,A,bank,persona-b:0404,1,,0,,store_snapshot,도화77,MA0101202411A0008754,,돼지고기 구이/찜,강남구,역삼1동,14158950,
 persona-b:0576,2026-10-19,19:50,0,olive,올리브영수지타운,18600,out,spending,BEAUTY,living,D,card,persona-b:0576,0,,0,,store_snapshot,올리브영수지타운,MA0106202201A2215328,,그 외 기타 상품 전문 소매업,용인시 수지구,풍덕천2동,,
-persona-b:0577,2026-10-19,19:50,0,olive,올리브영수지타운,18600,out,spending,BEAUTY,living,A,bank,persona-b:0576,1,,0,,store_snapshot,올리브영수지타운,MA0106202201A2215328,,그 외 기타 상품 전문 소매업,용인시 수지구,풍덕천2동,14174350,
-persona-b:0406,2026-10-20,10:00,1,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,14105350,
+persona-b:0577,2026-10-19,19:50,0,olive,올리브영수지타운,18600,out,spending,BEAUTY,living,A,bank,persona-b:0576,1,,0,,store_snapshot,올리브영수지타운,MA0106202201A2215328,,그 외 기타 상품 전문 소매업,용인시 수지구,풍덕천2동,14140350,
+persona-b:0406,2026-10-20,10:00,1,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,14071350,
 persona-b:0407,2026-10-20,12:20,1,lunch,속초코다리냉면 역삼점,10500,out,spending,FOOD,living,D,card,persona-b:0407,0,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,,
-persona-b:0408,2026-10-20,12:20,1,lunch,속초코다리냉면 역삼점,10500,out,spending,FOOD,living,A,bank,persona-b:0407,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14094850,
+persona-b:0408,2026-10-20,12:20,1,lunch,속초코다리냉면 역삼점,10500,out,spending,FOOD,living,A,bank,persona-b:0407,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14060850,
 persona-b:0409,2026-10-20,12:49,1,cafe,하우점 역삼역,5100,out,spending,FOOD,living,D,card,persona-b:0409,0,,0,,store_snapshot,하우점 역삼역,MA010120220811836784,역삼역,카페,강남구,역삼1동,,
-persona-b:0410,2026-10-20,12:49,1,cafe,하우점 역삼역,5100,out,spending,FOOD,living,A,bank,persona-b:0409,1,,0,,store_snapshot,하우점 역삼역,MA010120220811836784,역삼역,카페,강남구,역삼1동,14089750,
+persona-b:0410,2026-10-20,12:49,1,cafe,하우점 역삼역,5100,out,spending,FOOD,living,A,bank,persona-b:0409,1,,0,,store_snapshot,하우점 역삼역,MA010120220811836784,역삼역,카페,강남구,역삼1동,14055750,
 persona-b:0411,2026-10-21,12:16,2,lunch,텐위스키,12000,out,spending,FOOD,living,D,card,persona-b:0411,0,,0,,store_snapshot,텐위스키,MA0106202605A0116367,,백반/한정식,강남구,역삼1동,,
-persona-b:0412,2026-10-21,12:16,2,lunch,텐위스키,12000,out,spending,FOOD,living,A,bank,persona-b:0411,1,,0,,store_snapshot,텐위스키,MA0106202605A0116367,,백반/한정식,강남구,역삼1동,14077750,
+persona-b:0412,2026-10-21,12:16,2,lunch,텐위스키,12000,out,spending,FOOD,living,A,bank,persona-b:0411,1,,0,,store_snapshot,텐위스키,MA0106202605A0116367,,백반/한정식,강남구,역삼1동,14043750,
 persona-b:0413,2026-10-22,12:33,3,lunch,에스지케이컴퍼니,10500,out,spending,FOOD,living,D,card,persona-b:0413,0,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,,
-persona-b:0414,2026-10-22,12:33,3,lunch,에스지케이컴퍼니,10500,out,spending,FOOD,living,A,bank,persona-b:0413,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,14067250,
+persona-b:0414,2026-10-22,12:33,3,lunch,에스지케이컴퍼니,10500,out,spending,FOOD,living,A,bank,persona-b:0413,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,14033250,
 persona-b:0415,2026-10-22,12:50,3,cafe,매머드익스프레스역삼역5번 출구점,5200,out,spending,FOOD,living,D,card,persona-b:0415,0,,0,,store_snapshot,매머드익스프레스역삼역5번 출구점,MA0106202603A0407613,출구점,카페,강남구,역삼1동,,
-persona-b:0416,2026-10-22,12:50,3,cafe,매머드익스프레스역삼역5번 출구점,5200,out,spending,FOOD,living,A,bank,persona-b:0415,1,,0,,store_snapshot,매머드익스프레스역삼역5번 출구점,MA0106202603A0407613,출구점,카페,강남구,역삼1동,14062050,
+persona-b:0416,2026-10-22,12:50,3,cafe,매머드익스프레스역삼역5번 출구점,5200,out,spending,FOOD,living,A,bank,persona-b:0415,1,,0,,store_snapshot,매머드익스프레스역삼역5번 출구점,MA0106202603A0407613,출구점,카페,강남구,역삼1동,14028050,
 persona-b:0417,2026-10-23,12:20,4,lunch,에스지케이컴퍼니,9000,out,spending,FOOD,living,D,card,persona-b:0417,0,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,,
-persona-b:0418,2026-10-23,12:20,4,lunch,에스지케이컴퍼니,9000,out,spending,FOOD,living,A,bank,persona-b:0417,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,14053050,
+persona-b:0418,2026-10-23,12:20,4,lunch,에스지케이컴퍼니,9000,out,spending,FOOD,living,A,bank,persona-b:0417,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,14019050,
 persona-b:0419,2026-10-24,13:00,5,pangyo_meal,모모야더키친,18500,out,spending,FOOD,living,D,card,persona-b:0419,0,,0,,store_snapshot,모모야더키친,MA010120220810823314,,경양식,성남시 분당구,백현동,,friend
-persona-b:0420,2026-10-24,13:00,5,pangyo_meal,모모야더키친,18500,out,spending,FOOD,living,A,bank,persona-b:0419,1,,0,,store_snapshot,모모야더키친,MA010120220810823314,,경양식,성남시 분당구,백현동,14034550,friend
+persona-b:0420,2026-10-24,13:00,5,pangyo_meal,모모야더키친,18500,out,spending,FOOD,living,A,bank,persona-b:0419,1,,0,,store_snapshot,모모야더키친,MA010120220810823314,,경양식,성남시 분당구,백현동,14000550,friend
 persona-b:0634,2026-10-24,14:30,5,one_off,인터파크 티켓,32000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0634,0,,0,,non_store,인터파크 티켓,,,,,,,한남동 전시 2장 (데이트)
-persona-b:0635,2026-10-24,14:30,5,one_off,인터파크 티켓,32000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0634,1,,0,,non_store,인터파크 티켓,,,,,,14002550,한남동 전시 2장 (데이트)
+persona-b:0635,2026-10-24,14:30,5,one_off,인터파크 티켓,32000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0634,1,,0,,non_store,인터파크 티켓,,,,,,13968550,한남동 전시 2장 (데이트)
 persona-b:0421,2026-10-24,15:00,5,weekend_cafe,스타벅스 판교역힐스테이트,9000,out,spending,FOOD,living,D,card,persona-b:0421,0,,0,,store_snapshot,스타벅스 판교역힐스테이트,MA0106202501A0498873,판교역힐스테이트,카페,성남시 분당구,백현동,,friend
-persona-b:0422,2026-10-24,15:00,5,weekend_cafe,스타벅스 판교역힐스테이트,9000,out,spending,FOOD,living,A,bank,persona-b:0421,1,,0,,store_snapshot,스타벅스 판교역힐스테이트,MA0106202501A0498873,판교역힐스테이트,카페,성남시 분당구,백현동,13993550,friend
+persona-b:0422,2026-10-24,15:00,5,weekend_cafe,스타벅스 판교역힐스테이트,9000,out,spending,FOOD,living,A,bank,persona-b:0421,1,,0,,store_snapshot,스타벅스 판교역힐스테이트,MA0106202501A0498873,판교역힐스테이트,카페,성남시 분당구,백현동,13959550,friend
 persona-b:0423,2026-10-25,17:30,6,grocery,정갈한반찬식당,16100,out,spending,FOOD,living,D,card,persona-b:0423,0,,0,,store_snapshot,정갈한반찬식당,MA010120220813645858,,반찬/식료품 소매업,용인시 수지구,풍덕천2동,,
-persona-b:0424,2026-10-25,17:30,6,grocery,정갈한반찬식당,16100,out,spending,FOOD,living,A,bank,persona-b:0423,1,,0,,store_snapshot,정갈한반찬식당,MA010120220813645858,,반찬/식료품 소매업,용인시 수지구,풍덕천2동,13977450,
+persona-b:0424,2026-10-25,17:30,6,grocery,정갈한반찬식당,16100,out,spending,FOOD,living,A,bank,persona-b:0423,1,,0,,store_snapshot,정갈한반찬식당,MA010120220813645858,,반찬/식료품 소매업,용인시 수지구,풍덕천2동,13943450,
 persona-b:0603,2026-10-25,23:50,6,review,STEAM PURCHASE,18730,out,spending,UNCLASSIFIED,living,D,card,persona-b:0603,0,CULTURE_LEISURE,0,,non_store,STEAM PURCHASE,,,,,,,확인 필요(해외 결제) · 게임 · 같은 적요 다른 금액
-persona-b:0604,2026-10-25,23:50,6,review,STEAM PURCHASE,18730,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0603,1,CULTURE_LEISURE,0,,non_store,STEAM PURCHASE,,,,,,13958720,확인 필요(해외 결제) · 게임 · 같은 적요 다른 금액
+persona-b:0604,2026-10-25,23:50,6,review,STEAM PURCHASE,18730,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0603,1,CULTURE_LEISURE,0,,non_store,STEAM PURCHASE,,,,,,13924720,확인 필요(해외 결제) · 게임 · 같은 적요 다른 금액
 persona-b:0426,2026-10-27,12:24,1,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,D,card,persona-b:0426,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0427,2026-10-27,12:24,1,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0426,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13946220,
+persona-b:0427,2026-10-27,12:24,1,lunch,한옥집김치찜GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0426,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13912220,
 persona-b:0428,2026-10-27,12:55,1,cafe,폴바셋GFC,5500,out,spending,FOOD,living,D,card,persona-b:0428,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0429,2026-10-27,12:55,1,cafe,폴바셋GFC,5500,out,spending,FOOD,living,A,bank,persona-b:0428,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13940720,
-persona-b:0425,2026-10-27,19:10,1,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,13890720,하이패스 선불카드 계좌 자동충전
+persona-b:0429,2026-10-27,12:55,1,cafe,폴바셋GFC,5500,out,spending,FOOD,living,A,bank,persona-b:0428,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13906720,
+persona-b:0425,2026-10-27,19:10,1,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,13856720,하이패스 선불카드 계좌 자동충전
 persona-b:0430,2026-10-28,07:40,2,fuel,SK에너지대흥주유소,65000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0430,0,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,,
-persona-b:0431,2026-10-28,07:40,2,fuel,SK에너지대흥주유소,65000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0430,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,13825720,
+persona-b:0431,2026-10-28,07:40,2,fuel,SK에너지대흥주유소,65000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0430,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,13791720,
 persona-b:0432,2026-10-28,12:22,2,lunch,김밥친구들,13000,out,spending,FOOD,living,D,card,persona-b:0432,0,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,,
-persona-b:0433,2026-10-28,12:22,2,lunch,김밥친구들,13000,out,spending,FOOD,living,A,bank,persona-b:0432,1,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,13812720,
+persona-b:0433,2026-10-28,12:22,2,lunch,김밥친구들,13000,out,spending,FOOD,living,A,bank,persona-b:0432,1,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,13778720,
 persona-b:0434,2026-10-29,12:34,3,lunch,주시브로스GFC점,12000,out,spending,FOOD,living,D,card,persona-b:0434,0,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,,
-persona-b:0435,2026-10-29,12:34,3,lunch,주시브로스GFC점,12000,out,spending,FOOD,living,A,bank,persona-b:0434,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13800720,
+persona-b:0435,2026-10-29,12:34,3,lunch,주시브로스GFC점,12000,out,spending,FOOD,living,A,bank,persona-b:0434,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13766720,
 persona-b:0436,2026-10-30,12:33,4,lunch,한옥집김치찜GFC몰점,9500,out,spending,FOOD,living,D,card,persona-b:0436,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0437,2026-10-30,12:33,4,lunch,한옥집김치찜GFC몰점,9500,out,spending,FOOD,living,A,bank,persona-b:0436,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13791220,
+persona-b:0437,2026-10-30,12:33,4,lunch,한옥집김치찜GFC몰점,9500,out,spending,FOOD,living,A,bank,persona-b:0436,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,13757220,
 persona-b:0438,2026-10-30,15:30,4,convenience,세븐역삼하이츠점 코리아,2400,out,spending,FOOD,living,D,card,persona-b:0438,0,,0,,store_snapshot,세븐역삼하이츠점 코리아,MA010120220806130442,코리아,편의점,강남구,역삼1동,,
-persona-b:0439,2026-10-30,15:30,4,convenience,세븐역삼하이츠점 코리아,2400,out,spending,FOOD,living,A,bank,persona-b:0438,1,,0,,store_snapshot,세븐역삼하이츠점 코리아,MA010120220806130442,코리아,편의점,강남구,역삼1동,13788820,
+persona-b:0439,2026-10-30,15:30,4,convenience,세븐역삼하이츠점 코리아,2400,out,spending,FOOD,living,A,bank,persona-b:0438,1,,0,,store_snapshot,세븐역삼하이츠점 코리아,MA010120220806130442,코리아,편의점,강남구,역삼1동,13754820,
 persona-b:0440,2026-10-31,11:30,5,brunch,써브웨이 정자점,27000,out,spending,FOOD,living,D,card,persona-b:0440,0,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,,date
-persona-b:0441,2026-10-31,11:30,5,brunch,써브웨이 정자점,27000,out,spending,FOOD,living,A,bank,persona-b:0440,1,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,13761820,date
+persona-b:0441,2026-10-31,11:30,5,brunch,써브웨이 정자점,27000,out,spending,FOOD,living,A,bank,persona-b:0440,1,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,13727820,date
 persona-b:0442,2026-10-31,15:20,5,weekend_cafe,카페온,16900,out,spending,FOOD,living,D,card,persona-b:0442,0,,0,,store_snapshot,카페온,MA0101202409A0011808,,카페,성남시 분당구,정자1동,,date
-persona-b:0443,2026-10-31,15:20,5,weekend_cafe,카페온,16900,out,spending,FOOD,living,A,bank,persona-b:0442,1,,0,,store_snapshot,카페온,MA0101202409A0011808,,카페,성남시 분당구,정자1동,13744920,date
+persona-b:0443,2026-10-31,15:20,5,weekend_cafe,카페온,16900,out,spending,FOOD,living,A,bank,persona-b:0442,1,,0,,store_snapshot,카페온,MA0101202409A0011808,,카페,성남시 분당구,정자1동,13710920,date
 persona-b:0444,2026-10-31,16:40,5,dessert,곤트란쉐리에정자역점,12900,out,spending,FOOD,living,D,card,persona-b:0444,0,,0,,store_snapshot,곤트란쉐리에정자역점,MA0101202306A0088044,,빵/도넛,성남시 분당구,정자1동,,date
-persona-b:0445,2026-10-31,16:40,5,dessert,곤트란쉐리에정자역점,12900,out,spending,FOOD,living,A,bank,persona-b:0444,1,,0,,store_snapshot,곤트란쉐리에정자역점,MA0101202306A0088044,,빵/도넛,성남시 분당구,정자1동,13732020,date
+persona-b:0445,2026-10-31,16:40,5,dessert,곤트란쉐리에정자역점,12900,out,spending,FOOD,living,A,bank,persona-b:0444,1,,0,,store_snapshot,곤트란쉐리에정자역점,MA0101202306A0088044,,빵/도넛,성남시 분당구,정자1동,13698020,date
 persona-b:0446,2026-11-01,10:00,6,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,D,card,persona-b:0446,0,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,,
-persona-b:0447,2026-11-01,10:00,6,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0446,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13582020,
+persona-b:0447,2026-11-01,10:00,6,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0446,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13548020,
 persona-b:0448,2026-11-01,17:30,6,grocery,정갈한반찬식당,9800,out,spending,FOOD,living,D,card,persona-b:0448,0,,0,,store_snapshot,정갈한반찬식당,MA010120220813645858,,반찬/식료품 소매업,용인시 수지구,풍덕천2동,,
-persona-b:0449,2026-11-01,17:30,6,grocery,정갈한반찬식당,9800,out,spending,FOOD,living,A,bank,persona-b:0448,1,,0,,store_snapshot,정갈한반찬식당,MA010120220813645858,,반찬/식료품 소매업,용인시 수지구,풍덕천2동,13572220,
+persona-b:0449,2026-11-01,17:30,6,grocery,정갈한반찬식당,9800,out,spending,FOOD,living,A,bank,persona-b:0448,1,,0,,store_snapshot,정갈한반찬식당,MA010120220813645858,,반찬/식료품 소매업,용인시 수지구,풍덕천2동,13538220,
 persona-b:0450,2026-11-03,10:00,1,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0450,0,,1,youtube,non_store,유튜브프리미엄,,,,,,,
-persona-b:0451,2026-11-03,10:00,1,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0450,1,,1,youtube,non_store,유튜브프리미엄,,,,,,13557320,
+persona-b:0451,2026-11-03,10:00,1,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0450,1,,1,youtube,non_store,유튜브프리미엄,,,,,,13523320,
 persona-b:0618,2026-11-03,19:30,1,pharmacy,메디칼약국,8200,out,spending,MEDICAL_HEALTH,living,D,card,persona-b:0618,0,,0,,store_snapshot,메디칼약국,MA010120220813033666,,약국,용인시 수지구,풍덕천2동,,감기약
-persona-b:0619,2026-11-03,19:30,1,pharmacy,메디칼약국,8200,out,spending,MEDICAL_HEALTH,living,A,bank,persona-b:0618,1,,0,,store_snapshot,메디칼약국,MA010120220813033666,,약국,용인시 수지구,풍덕천2동,13549120,감기약
+persona-b:0619,2026-11-03,19:30,1,pharmacy,메디칼약국,8200,out,spending,MEDICAL_HEALTH,living,A,bank,persona-b:0618,1,,0,,store_snapshot,메디칼약국,MA010120220813033666,,약국,용인시 수지구,풍덕천2동,13515120,감기약
 persona-b:0452,2026-11-04,12:19,2,lunch,정희GFC몰점,12000,out,spending,FOOD,living,D,card,persona-b:0452,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0453,2026-11-04,12:19,2,lunch,정희GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0452,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13537120,
+persona-b:0453,2026-11-04,12:19,2,lunch,정희GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0452,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13503120,
 persona-b:0454,2026-11-04,15:30,2,convenience,지에스25S점 역삼역,4800,out,spending,FOOD,living,D,card,persona-b:0454,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0455,2026-11-04,15:30,2,convenience,지에스25S점 역삼역,4800,out,spending,FOOD,living,A,bank,persona-b:0454,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13532320,
+persona-b:0455,2026-11-04,15:30,2,convenience,지에스25S점 역삼역,4800,out,spending,FOOD,living,A,bank,persona-b:0454,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13498320,
 persona-b:0599,2026-11-04,20:40,2,review,쿠팡_쿠페이 - 쿠팡페이 주식회사,16900,out,spending,UNCLASSIFIED,living,D,card,persona-b:0599,0,HOUSEHOLD,0,,card_statement,쿠팡_쿠페이 - 쿠팡페이 주식회사,,,PG쇼핑몰,,,,확인 필요(쿠팡) · 생필품
-persona-b:0600,2026-11-04,20:40,2,review,쿠팡_쿠페이 - 쿠팡페이 주식회사,16900,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0599,1,HOUSEHOLD,0,,card_statement,쿠팡_쿠페이 - 쿠팡페이 주식회사,,,PG쇼핑몰,,,13515420,확인 필요(쿠팡) · 생필품
+persona-b:0600,2026-11-04,20:40,2,review,쿠팡_쿠페이 - 쿠팡페이 주식회사,16900,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0599,1,HOUSEHOLD,0,,card_statement,쿠팡_쿠페이 - 쿠팡페이 주식회사,,,PG쇼핑몰,,,13481420,확인 필요(쿠팡) · 생필품
 persona-b:0456,2026-11-05,12:12,3,lunch,정희GFC몰점,12500,out,spending,FOOD,living,D,card,persona-b:0456,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0457,2026-11-05,12:12,3,lunch,정희GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0456,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13502920,
+persona-b:0457,2026-11-05,12:12,3,lunch,정희GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0456,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13468920,
 persona-b:0458,2026-11-05,20:10,3,team_dinner,크레이지카츠역삼,27000,out,spending,FOOD,living,D,card,persona-b:0458,0,,0,,store_snapshot,크레이지카츠역삼,MA0101202602A0005325,,일식 회/초밥,강남구,역삼1동,,
-persona-b:0459,2026-11-05,20:10,3,team_dinner,크레이지카츠역삼,27000,out,spending,FOOD,living,A,bank,persona-b:0458,1,,0,,store_snapshot,크레이지카츠역삼,MA0101202602A0005325,,일식 회/초밥,강남구,역삼1동,13475920,
+persona-b:0459,2026-11-05,20:10,3,team_dinner,크레이지카츠역삼,27000,out,spending,FOOD,living,A,bank,persona-b:0458,1,,0,,store_snapshot,크레이지카츠역삼,MA0101202602A0005325,,일식 회/초밥,강남구,역삼1동,13441920,
 persona-b:0460,2026-11-06,12:12,4,lunch,신세계푸드노브랜드버거점 역삼역,9000,out,spending,FOOD,living,D,card,persona-b:0460,0,,0,,store_snapshot,신세계푸드노브랜드버거점 역삼역,MA010120220809867775,역삼역,버거,강남구,역삼1동,,
-persona-b:0461,2026-11-06,12:12,4,lunch,신세계푸드노브랜드버거점 역삼역,9000,out,spending,FOOD,living,A,bank,persona-b:0460,1,,0,,store_snapshot,신세계푸드노브랜드버거점 역삼역,MA010120220809867775,역삼역,버거,강남구,역삼1동,13466920,
+persona-b:0461,2026-11-06,12:12,4,lunch,신세계푸드노브랜드버거점 역삼역,9000,out,spending,FOOD,living,A,bank,persona-b:0460,1,,0,,store_snapshot,신세계푸드노브랜드버거점 역삼역,MA010120220809867775,역삼역,버거,강남구,역삼1동,13432920,
 persona-b:0558,2026-11-07,11:00,5,mens_hair,컨텀바버샵,30000,out,spending,BEAUTY,living,D,card,persona-b:0558,0,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,,커트
-persona-b:0559,2026-11-07,11:00,5,mens_hair,컨텀바버샵,30000,out,spending,BEAUTY,living,A,bank,persona-b:0558,1,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,13436920,커트
+persona-b:0559,2026-11-07,11:00,5,mens_hair,컨텀바버샵,30000,out,spending,BEAUTY,living,A,bank,persona-b:0558,1,,0,,store_snapshot,컨텀바버샵,MA010120220804835531,,미용실,용인시 수지구,풍덕천2동,13402920,커트
 persona-b:0462,2026-11-07,11:20,5,fuel,풍덕천주유소,55000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0462,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0463,2026-11-07,11:20,5,fuel,풍덕천주유소,55000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0462,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13381920,
-persona-b:0590,2026-11-07,21:10,5,friend,김혜리,12000,out,transfer,,,A,bank,,0,CULTURE_LEISURE,0,,non_store,김혜리,,,,,,13369920,볼링 1/n 보냄
+persona-b:0463,2026-11-07,11:20,5,fuel,풍덕천주유소,55000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0462,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13347920,
+persona-b:0590,2026-11-07,21:10,5,friend,김혜리,12000,out,transfer,,,A,bank,,0,CULTURE_LEISURE,0,,non_store,김혜리,,,,,,13335920,볼링 1/n 보냄
 persona-b:0464,2026-11-08,13:00,6,pangyo_meal,마츠노하나현대백화점 판교점,19000,out,spending,FOOD,living,D,card,persona-b:0464,0,,0,,store_snapshot,마츠노하나현대백화점 판교점,MA0101202309A0059850,판교점,일식 회/초밥,성남시 분당구,백현동,,friend
-persona-b:0465,2026-11-08,13:00,6,pangyo_meal,마츠노하나현대백화점 판교점,19000,out,spending,FOOD,living,A,bank,persona-b:0464,1,,0,,store_snapshot,마츠노하나현대백화점 판교점,MA0101202309A0059850,판교점,일식 회/초밥,성남시 분당구,백현동,13350920,friend
+persona-b:0465,2026-11-08,13:00,6,pangyo_meal,마츠노하나현대백화점 판교점,19000,out,spending,FOOD,living,A,bank,persona-b:0464,1,,0,,store_snapshot,마츠노하나현대백화점 판교점,MA0101202309A0059850,판교점,일식 회/초밥,성남시 분당구,백현동,13316920,friend
 persona-b:0466,2026-11-08,15:00,6,weekend_cafe,메가후르츠판교,7200,out,spending,FOOD,living,D,card,persona-b:0466,0,,0,,store_snapshot,메가후르츠판교,MA0101202308A0017707,,카페,성남시 분당구,백현동,,friend
-persona-b:0467,2026-11-08,15:00,6,weekend_cafe,메가후르츠판교,7200,out,spending,FOOD,living,A,bank,persona-b:0466,1,,0,,store_snapshot,메가후르츠판교,MA0101202308A0017707,,카페,성남시 분당구,백현동,13343720,friend
+persona-b:0467,2026-11-08,15:00,6,weekend_cafe,메가후르츠판교,7200,out,spending,FOOD,living,A,bank,persona-b:0466,1,,0,,store_snapshot,메가후르츠판교,MA0101202308A0017707,,카페,성남시 분당구,백현동,13309720,friend
 persona-b:0468,2026-11-08,17:00,6,fun,아이센스리그PC방정자역점,14000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0468,0,,0,,store_snapshot,아이센스리그PC방정자역점,MA010120220809970271,,PC방,성남시 분당구,정자1동,,friend
-persona-b:0469,2026-11-08,17:00,6,fun,아이센스리그PC방정자역점,14000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0468,1,,0,,store_snapshot,아이센스리그PC방정자역점,MA010120220809970271,,PC방,성남시 분당구,정자1동,13329720,friend
+persona-b:0469,2026-11-08,17:00,6,fun,아이센스리그PC방정자역점,14000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0468,1,,0,,store_snapshot,아이센스리그PC방정자역점,MA010120220809970271,,PC방,성남시 분당구,정자1동,13295720,friend
 persona-b:0470,2026-11-09,15:30,0,convenience,지에스25S점 역삼역,4800,out,spending,FOOD,living,D,card,persona-b:0470,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0471,2026-11-09,15:30,0,convenience,지에스25S점 역삼역,4800,out,spending,FOOD,living,A,bank,persona-b:0470,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13324920,
-persona-b:0472,2026-11-10,09:00,1,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,16224920,
+persona-b:0471,2026-11-09,15:30,0,convenience,지에스25S점 역삼역,4800,out,spending,FOOD,living,A,bank,persona-b:0470,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13290920,
+persona-b:0472,2026-11-10,09:00,1,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,16190920,
 persona-b:0473,2026-11-10,12:21,1,lunch,가연,10000,out,spending,FOOD,living,D,card,persona-b:0473,0,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,,
-persona-b:0474,2026-11-10,12:21,1,lunch,가연,10000,out,spending,FOOD,living,A,bank,persona-b:0473,1,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,16214920,
+persona-b:0474,2026-11-10,12:21,1,lunch,가연,10000,out,spending,FOOD,living,A,bank,persona-b:0473,1,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,16180920,
 persona-b:0475,2026-11-10,12:47,1,cafe,클로리스 역삼점,5700,out,spending,FOOD,living,D,card,persona-b:0475,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0476,2026-11-10,12:47,1,cafe,클로리스 역삼점,5700,out,spending,FOOD,living,A,bank,persona-b:0475,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,16209220,
+persona-b:0476,2026-11-10,12:47,1,cafe,클로리스 역삼점,5700,out,spending,FOOD,living,A,bank,persona-b:0475,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,16175220,
 persona-b:0477,2026-11-10,15:30,1,convenience,지에스25S점 역삼역,2700,out,spending,FOOD,living,D,card,persona-b:0477,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0478,2026-11-10,15:30,1,convenience,지에스25S점 역삼역,2700,out,spending,FOOD,living,A,bank,persona-b:0477,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,16206520,
-persona-b:0480,2026-11-11,09:10,2,saving,박민준,500000,out,saving,,,A,bank,saving:11,0,,0,,non_store,박민준,,,,,,15706520,
+persona-b:0478,2026-11-10,15:30,1,convenience,지에스25S점 역삼역,2700,out,spending,FOOD,living,A,bank,persona-b:0477,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,16172520,
+persona-b:0480,2026-11-11,09:10,2,saving,박민준,500000,out,saving,,,A,bank,saving:11,0,,0,,non_store,박민준,,,,,,15672520,
 persona-b:0481,2026-11-11,09:10,2,saving,박민준,500000,in,saving,,,C,bank,saving:11,0,,0,,non_store,박민준,,,,,,8500000,
-persona-b:0482,2026-11-11,09:20,2,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:11,0,,0,,non_store,박민준,,,,,,15606520,
+persona-b:0482,2026-11-11,09:20,2,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:11,0,,0,,non_store,박민준,,,,,,15572520,
 persona-b:0483,2026-11-11,09:20,2,housing_saving,박민준,100000,in,saving,,,H,bank,housing_saving:11,0,,0,,non_store,박민준,,,,,,2900000,
-persona-b:0479,2026-11-11,10:00,2,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,15306520,
+persona-b:0479,2026-11-11,10:00,2,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,15272520,
 persona-b:0484,2026-11-11,12:24,2,lunch,에스지케이컴퍼니,11500,out,spending,FOOD,living,D,card,persona-b:0484,0,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,,
-persona-b:0485,2026-11-11,12:24,2,lunch,에스지케이컴퍼니,11500,out,spending,FOOD,living,A,bank,persona-b:0484,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,15295020,
+persona-b:0485,2026-11-11,12:24,2,lunch,에스지케이컴퍼니,11500,out,spending,FOOD,living,A,bank,persona-b:0484,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,15261020,
 persona-b:0486,2026-11-13,12:08,4,lunch,정희GFC몰점,12500,out,spending,FOOD,living,D,card,persona-b:0486,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0487,2026-11-13,12:08,4,lunch,정희GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0486,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,15282520,
+persona-b:0487,2026-11-13,12:08,4,lunch,정희GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0486,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,15248520,
 persona-b:0488,2026-11-13,12:56,4,cafe,폴바셋GFC,4000,out,spending,FOOD,living,D,card,persona-b:0488,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0489,2026-11-13,12:56,4,cafe,폴바셋GFC,4000,out,spending,FOOD,living,A,bank,persona-b:0488,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,15278520,
+persona-b:0489,2026-11-13,12:56,4,cafe,폴바셋GFC,4000,out,spending,FOOD,living,A,bank,persona-b:0488,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,15244520,
 persona-b:0584,2026-11-13,21:30,4,team_dinner,청기와타운 역삼점,150000,out,spending,FOOD,living,D,card,persona-b:0584,0,,0,,store_snapshot,청기와타운 역삼점,MA0101202406A0215481,역삼점,소고기 구이/찜,강남구,역삼1동,,친구 몫까지 내가 결제 → 1/n 받음
-persona-b:0585,2026-11-13,21:30,4,team_dinner,청기와타운 역삼점,150000,out,spending,FOOD,living,A,bank,persona-b:0584,1,,0,,store_snapshot,청기와타운 역삼점,MA0101202406A0215481,역삼점,소고기 구이/찜,강남구,역삼1동,15128520,친구 몫까지 내가 결제 → 1/n 받음
-persona-b:0591,2026-11-13,22:40,4,friend,권세진,37500,in,income,,,A,bank,,0,,0,,non_store,권세진,,,,,,15166020,"팀 저녁 1/n 받음 (내가 150,000원 결제)"
-persona-b:0592,2026-11-13,22:52,4,friend,백동현,37500,in,income,,,A,bank,,0,,0,,non_store,백동현,,,,,,15203520,팀 저녁 1/n 받음
+persona-b:0585,2026-11-13,21:30,4,team_dinner,청기와타운 역삼점,150000,out,spending,FOOD,living,A,bank,persona-b:0584,1,,0,,store_snapshot,청기와타운 역삼점,MA0101202406A0215481,역삼점,소고기 구이/찜,강남구,역삼1동,15094520,친구 몫까지 내가 결제 → 1/n 받음
+persona-b:0591,2026-11-13,22:40,4,friend,권세진,37500,in,income,,,A,bank,,0,,0,,non_store,권세진,,,,,,15132020,"팀 저녁 1/n 받음 (내가 150,000원 결제)"
+persona-b:0592,2026-11-13,22:52,4,friend,백동현,37500,in,income,,,A,bank,,0,,0,,non_store,백동현,,,,,,15169520,팀 저녁 1/n 받음
 persona-b:0490,2026-11-14,15:00,5,cafe,카페다1 4호점,6200,out,spending,FOOD,living,D,card,persona-b:0490,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0491,2026-11-14,15:00,5,cafe,카페다1 4호점,6200,out,spending,FOOD,living,A,bank,persona-b:0490,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,15197320,
+persona-b:0491,2026-11-14,15:00,5,cafe,카페다1 4호점,6200,out,spending,FOOD,living,A,bank,persona-b:0490,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,15163320,
 persona-b:0492,2026-11-15,07:10,6,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0492,0,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,,
-persona-b:0493,2026-11-15,07:10,6,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0492,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,15138320,
+persona-b:0493,2026-11-15,07:10,6,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0492,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,15104320,
 persona-b:0494,2026-11-15,11:20,6,fuel,풍덕천주유소,51000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0494,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0495,2026-11-15,11:20,6,fuel,풍덕천주유소,51000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0494,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,15087320,
+persona-b:0495,2026-11-15,11:20,6,fuel,풍덕천주유소,51000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0494,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,15053320,
 persona-b:0496,2026-11-15,11:30,6,brunch,써브웨이 정자점,19000,out,spending,FOOD,living,D,card,persona-b:0496,0,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,,date
-persona-b:0497,2026-11-15,11:30,6,brunch,써브웨이 정자점,19000,out,spending,FOOD,living,A,bank,persona-b:0496,1,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,15068320,date
+persona-b:0497,2026-11-15,11:30,6,brunch,써브웨이 정자점,19000,out,spending,FOOD,living,A,bank,persona-b:0496,1,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,15034320,date
 persona-b:0498,2026-11-15,16:40,6,dessert,알페도,12200,out,spending,FOOD,living,D,card,persona-b:0498,0,,0,,store_snapshot,알페도,MA010120220814388591,,빵/도넛,용산구,이태원1동,,date
-persona-b:0499,2026-11-15,16:40,6,dessert,알페도,12200,out,spending,FOOD,living,A,bank,persona-b:0498,1,,0,,store_snapshot,알페도,MA010120220814388591,,빵/도넛,용산구,이태원1동,15056120,date
+persona-b:0499,2026-11-15,16:40,6,dessert,알페도,12200,out,spending,FOOD,living,A,bank,persona-b:0498,1,,0,,store_snapshot,알페도,MA010120220814388591,,빵/도넛,용산구,이태원1동,15022120,date
 persona-b:0630,2026-11-15,19:40,6,one_off,롯데시네마 온라인 예매,30000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0630,0,,0,,non_store,롯데시네마 온라인 예매,,,,,,,데이트 영화
-persona-b:0631,2026-11-15,19:40,6,one_off,롯데시네마 온라인 예매,30000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0630,1,,0,,non_store,롯데시네마 온라인 예매,,,,,,15026120,데이트 영화
+persona-b:0631,2026-11-15,19:40,6,one_off,롯데시네마 온라인 예매,30000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0630,1,,0,,non_store,롯데시네마 온라인 예매,,,,,,14992120,데이트 영화
 persona-b:0500,2026-11-16,12:25,0,lunch,한옥집김치찜GFC몰점,11500,out,spending,FOOD,living,D,card,persona-b:0500,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0501,2026-11-16,12:25,0,lunch,한옥집김치찜GFC몰점,11500,out,spending,FOOD,living,A,bank,persona-b:0500,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,15014620,
+persona-b:0501,2026-11-16,12:25,0,lunch,한옥집김치찜GFC몰점,11500,out,spending,FOOD,living,A,bank,persona-b:0500,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14980620,
 persona-b:0502,2026-11-17,15:30,1,convenience,지에스25S점 역삼역,3200,out,spending,FOOD,living,D,card,persona-b:0502,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0503,2026-11-17,15:30,1,convenience,지에스25S점 역삼역,3200,out,spending,FOOD,living,A,bank,persona-b:0502,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,15011420,
+persona-b:0503,2026-11-17,15:30,1,convenience,지에스25S점 역삼역,3200,out,spending,FOOD,living,A,bank,persona-b:0502,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14977420,
 persona-b:0578,2026-11-18,19:50,2,olive,카카오페이 - CJ올리브네트웍스,32000,out,spending,BEAUTY,living,D,card,persona-b:0578,0,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,,
-persona-b:0579,2026-11-18,19:50,2,olive,카카오페이 - CJ올리브네트웍스,32000,out,spending,BEAUTY,living,A,bank,persona-b:0578,1,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,14979420,
+persona-b:0579,2026-11-18,19:50,2,olive,카카오페이 - CJ올리브네트웍스,32000,out,spending,BEAUTY,living,A,bank,persona-b:0578,1,,0,,card_statement,카카오페이 - CJ올리브네트웍스,,,PG쇼핑몰,,,14945420,
 persona-b:0504,2026-11-19,12:32,3,lunch,주시브로스GFC점,9000,out,spending,FOOD,living,D,card,persona-b:0504,0,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,,
-persona-b:0505,2026-11-19,12:32,3,lunch,주시브로스GFC점,9000,out,spending,FOOD,living,A,bank,persona-b:0504,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,14970420,
+persona-b:0505,2026-11-19,12:32,3,lunch,주시브로스GFC점,9000,out,spending,FOOD,living,A,bank,persona-b:0504,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,14936420,
 persona-b:0506,2026-11-19,15:30,3,convenience,지에스25S점 역삼역,5000,out,spending,FOOD,living,D,card,persona-b:0506,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0507,2026-11-19,15:30,3,convenience,지에스25S점 역삼역,5000,out,spending,FOOD,living,A,bank,persona-b:0506,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14965420,
-persona-b:0508,2026-11-20,10:00,4,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,14896420,
+persona-b:0507,2026-11-19,15:30,3,convenience,지에스25S점 역삼역,5000,out,spending,FOOD,living,A,bank,persona-b:0506,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14931420,
+persona-b:0508,2026-11-20,10:00,4,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,14862420,
 persona-b:0510,2026-11-20,12:12,4,lunch,담뿍화로된장,12500,out,spending,FOOD,living,D,card,persona-b:0510,0,,0,,store_snapshot,담뿍화로된장,MA010120220811198135,,백반/한정식,강남구,역삼1동,,
-persona-b:0511,2026-11-20,12:12,4,lunch,담뿍화로된장,12500,out,spending,FOOD,living,A,bank,persona-b:0510,1,,0,,store_snapshot,담뿍화로된장,MA010120220811198135,,백반/한정식,강남구,역삼1동,14883920,
-persona-b:0509,2026-11-20,19:10,4,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,14833920,하이패스 선불카드 계좌 자동충전
+persona-b:0511,2026-11-20,12:12,4,lunch,담뿍화로된장,12500,out,spending,FOOD,living,A,bank,persona-b:0510,1,,0,,store_snapshot,담뿍화로된장,MA010120220811198135,,백반/한정식,강남구,역삼1동,14849920,
+persona-b:0509,2026-11-20,19:10,4,hipass_charge,에스엠하이플러스,50000,out,spending,TRANSPORT_CAR,living,A,bank,,0,,0,,non_store,에스엠하이플러스,,,,,,14799920,하이패스 선불카드 계좌 자동충전
 persona-b:0512,2026-11-21,13:00,5,pangyo_meal,정돈현대백화점 판교점,13000,out,spending,FOOD,living,D,card,persona-b:0512,0,,0,,store_snapshot,정돈현대백화점 판교점,MA010120220808702285,판교점,일식 회/초밥,성남시 분당구,백현동,,friend
-persona-b:0513,2026-11-21,13:00,5,pangyo_meal,정돈현대백화점 판교점,13000,out,spending,FOOD,living,A,bank,persona-b:0512,1,,0,,store_snapshot,정돈현대백화점 판교점,MA010120220808702285,판교점,일식 회/초밥,성남시 분당구,백현동,14820920,friend
+persona-b:0513,2026-11-21,13:00,5,pangyo_meal,정돈현대백화점 판교점,13000,out,spending,FOOD,living,A,bank,persona-b:0512,1,,0,,store_snapshot,정돈현대백화점 판교점,MA010120220808702285,판교점,일식 회/초밥,성남시 분당구,백현동,14786920,friend
 persona-b:0514,2026-11-21,15:00,5,weekend_cafe,카멜커피판교현대,5800,out,spending,FOOD,living,D,card,persona-b:0514,0,,0,,store_snapshot,카멜커피판교현대,MA010120220811789651,,카페,성남시 분당구,백현동,,friend
-persona-b:0515,2026-11-21,15:00,5,weekend_cafe,카멜커피판교현대,5800,out,spending,FOOD,living,A,bank,persona-b:0514,1,,0,,store_snapshot,카멜커피판교현대,MA010120220811789651,,카페,성남시 분당구,백현동,14815120,friend
+persona-b:0515,2026-11-21,15:00,5,weekend_cafe,카멜커피판교현대,5800,out,spending,FOOD,living,A,bank,persona-b:0514,1,,0,,store_snapshot,카멜커피판교현대,MA010120220811789651,,카페,성남시 분당구,백현동,14781120,friend
 persona-b:0516,2026-11-22,15:00,6,cafe,카페다1 4호점,6400,out,spending,FOOD,living,D,card,persona-b:0516,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0517,2026-11-22,15:00,6,cafe,카페다1 4호점,6400,out,spending,FOOD,living,A,bank,persona-b:0516,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,14808720,
+persona-b:0517,2026-11-22,15:00,6,cafe,카페다1 4호점,6400,out,spending,FOOD,living,A,bank,persona-b:0516,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,14774720,
 persona-b:0518,2026-11-22,17:30,6,grocery,광성슈퍼,17000,out,spending,FOOD,living,D,card,persona-b:0518,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0519,2026-11-22,17:30,6,grocery,광성슈퍼,17000,out,spending,FOOD,living,A,bank,persona-b:0518,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,14791720,
+persona-b:0519,2026-11-22,17:30,6,grocery,광성슈퍼,17000,out,spending,FOOD,living,A,bank,persona-b:0518,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,14757720,
 persona-b:0520,2026-11-23,12:30,0,lunch,냉동고집역삼,11000,out,spending,FOOD,living,D,card,persona-b:0520,0,,0,,store_snapshot,냉동고집역삼,MA0101202406A0529347,,백반/한정식,강남구,역삼1동,,
-persona-b:0521,2026-11-23,12:30,0,lunch,냉동고집역삼,11000,out,spending,FOOD,living,A,bank,persona-b:0520,1,,0,,store_snapshot,냉동고집역삼,MA0101202406A0529347,,백반/한정식,강남구,역삼1동,14780720,
+persona-b:0521,2026-11-23,12:30,0,lunch,냉동고집역삼,11000,out,spending,FOOD,living,A,bank,persona-b:0520,1,,0,,store_snapshot,냉동고집역삼,MA0101202406A0529347,,백반/한정식,강남구,역삼1동,14746720,
 persona-b:0522,2026-11-23,12:54,0,cafe,폴바셋GFC,5000,out,spending,FOOD,living,D,card,persona-b:0522,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0523,2026-11-23,12:54,0,cafe,폴바셋GFC,5000,out,spending,FOOD,living,A,bank,persona-b:0522,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14775720,
+persona-b:0523,2026-11-23,12:54,0,cafe,폴바셋GFC,5000,out,spending,FOOD,living,A,bank,persona-b:0522,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14741720,
 persona-b:0524,2026-11-24,07:40,1,fuel,풍덕천주유소,59000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0524,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0525,2026-11-24,07:40,1,fuel,풍덕천주유소,59000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0524,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,14716720,
+persona-b:0525,2026-11-24,07:40,1,fuel,풍덕천주유소,59000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0524,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,14682720,
 persona-b:0526,2026-11-24,12:15,1,lunch,한옥집김치찜GFC몰점,11000,out,spending,FOOD,living,D,card,persona-b:0526,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0527,2026-11-24,12:15,1,lunch,한옥집김치찜GFC몰점,11000,out,spending,FOOD,living,A,bank,persona-b:0526,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14705720,
+persona-b:0527,2026-11-24,12:15,1,lunch,한옥집김치찜GFC몰점,11000,out,spending,FOOD,living,A,bank,persona-b:0526,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14671720,
 persona-b:0528,2026-11-25,12:09,2,lunch,대표_3_카카오페이 - 정희GFC몰점,10500,out,spending,FOOD,living,D,card,persona-b:0528,0,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0529,2026-11-25,12:09,2,lunch,대표_3_카카오페이 - 정희GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0528,1,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14695220,
+persona-b:0529,2026-11-25,12:09,2,lunch,대표_3_카카오페이 - 정희GFC몰점,10500,out,spending,FOOD,living,A,bank,persona-b:0528,1,,0,,store_snapshot,대표_3_카카오페이 - 정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,14661220,
 persona-b:0530,2026-11-25,12:49,2,cafe,폴바셋GFC,5500,out,spending,FOOD,living,D,card,persona-b:0530,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0531,2026-11-25,12:49,2,cafe,폴바셋GFC,5500,out,spending,FOOD,living,A,bank,persona-b:0530,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14689720,
+persona-b:0531,2026-11-25,12:49,2,cafe,폴바셋GFC,5500,out,spending,FOOD,living,A,bank,persona-b:0530,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,14655720,
 persona-b:0580,2026-11-25,19:30,2,screen_golf,블랙토마토스크린,26000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0580,0,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,,퇴근 후 동료랑
-persona-b:0581,2026-11-25,19:30,2,screen_golf,블랙토마토스크린,26000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0580,1,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,14663720,퇴근 후 동료랑
+persona-b:0581,2026-11-25,19:30,2,screen_golf,블랙토마토스크린,26000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0580,1,,0,,store_snapshot,블랙토마토스크린,MA0101202311A0098410,,골프 연습장,강남구,역삼1동,14629720,퇴근 후 동료랑
 persona-b:0532,2026-11-26,12:14,3,lunch,선비칼국수점 역삼역,9500,out,spending,FOOD,living,D,card,persona-b:0532,0,,0,,store_snapshot,선비칼국수점 역삼역,MA0101202603A0023153,역삼역,국수/칼국수,강남구,역삼1동,,
-persona-b:0533,2026-11-26,12:14,3,lunch,선비칼국수점 역삼역,9500,out,spending,FOOD,living,A,bank,persona-b:0532,1,,0,,store_snapshot,선비칼국수점 역삼역,MA0101202603A0023153,역삼역,국수/칼국수,강남구,역삼1동,14654220,
+persona-b:0533,2026-11-26,12:14,3,lunch,선비칼국수점 역삼역,9500,out,spending,FOOD,living,A,bank,persona-b:0532,1,,0,,store_snapshot,선비칼국수점 역삼역,MA0101202603A0023153,역삼역,국수/칼국수,강남구,역삼1동,14620220,
 persona-b:0534,2026-11-26,15:30,3,convenience,지에스25S점 역삼역,1800,out,spending,FOOD,living,D,card,persona-b:0534,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0535,2026-11-26,15:30,3,convenience,지에스25S점 역삼역,1800,out,spending,FOOD,living,A,bank,persona-b:0534,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14652420,
+persona-b:0535,2026-11-26,15:30,3,convenience,지에스25S점 역삼역,1800,out,spending,FOOD,living,A,bank,persona-b:0534,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14618420,
 persona-b:0536,2026-11-28,13:10,5,date_meal,킹케밥버거앤후라이즈,43000,out,spending,FOOD,living,D,card,persona-b:0536,0,,0,,store_snapshot,킹케밥버거앤후라이즈,MA010120220810235059,,베트남식 전문,용산구,이태원1동,,date
-persona-b:0537,2026-11-28,13:10,5,date_meal,킹케밥버거앤후라이즈,43000,out,spending,FOOD,living,A,bank,persona-b:0536,1,,0,,store_snapshot,킹케밥버거앤후라이즈,MA010120220810235059,,베트남식 전문,용산구,이태원1동,14609420,date
+persona-b:0537,2026-11-28,13:10,5,date_meal,킹케밥버거앤후라이즈,43000,out,spending,FOOD,living,A,bank,persona-b:0536,1,,0,,store_snapshot,킹케밥버거앤후라이즈,MA010120220810235059,,베트남식 전문,용산구,이태원1동,14575420,date
 persona-b:0540,2026-11-28,15:20,5,weekend_cafe,카카오페이_3 - 발트페이먼츠,16800,out,spending,UNCLASSIFIED,living,D,card,persona-b:0540,0,FOOD,0,,card_statement,카카오페이_3 - 발트페이먼츠,,,PG쇼핑몰,,,,date · 확인 필요(운영사 이름)
-persona-b:0541,2026-11-28,15:20,5,weekend_cafe,카카오페이_3 - 발트페이먼츠,16800,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0540,1,FOOD,0,,card_statement,카카오페이_3 - 발트페이먼츠,,,PG쇼핑몰,,,14592620,date · 확인 필요(운영사 이름)
+persona-b:0541,2026-11-28,15:20,5,weekend_cafe,카카오페이_3 - 발트페이먼츠,16800,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0540,1,FOOD,0,,card_statement,카카오페이_3 - 발트페이먼츠,,,PG쇼핑몰,,,14558620,date · 확인 필요(운영사 이름)
 persona-b:0538,2026-11-28,18:20,5,parking,한국정보통신 - 하이파킹(주),6000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0538,0,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,,date
-persona-b:0539,2026-11-28,18:20,5,parking,한국정보통신 - 하이파킹(주),6000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0538,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,14586620,date
+persona-b:0539,2026-11-28,18:20,5,parking,한국정보통신 - 하이파킹(주),6000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0538,1,,0,,card_statement,한국정보통신 - 하이파킹(주),,,주차장,,,14552620,date
 persona-b:0542,2026-11-29,10:30,6,bakery,화이트리에 수지점,11500,out,spending,FOOD,living,D,card,persona-b:0542,0,,0,,store_snapshot,화이트리에 수지점,MA0101202502A0060179,수지점,빵/도넛,용인시 수지구,풍덕천2동,,
-persona-b:0543,2026-11-29,10:30,6,bakery,화이트리에 수지점,11500,out,spending,FOOD,living,A,bank,persona-b:0542,1,,0,,store_snapshot,화이트리에 수지점,MA0101202502A0060179,수지점,빵/도넛,용인시 수지구,풍덕천2동,14575120,
+persona-b:0543,2026-11-29,10:30,6,bakery,화이트리에 수지점,11500,out,spending,FOOD,living,A,bank,persona-b:0542,1,,0,,store_snapshot,화이트리에 수지점,MA0101202502A0060179,수지점,빵/도넛,용인시 수지구,풍덕천2동,14541120,
 persona-b:0544,2026-11-29,17:30,6,grocery,광성슈퍼,15900,out,spending,FOOD,living,D,card,persona-b:0544,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0545,2026-11-29,17:30,6,grocery,광성슈퍼,15900,out,spending,FOOD,living,A,bank,persona-b:0544,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,14559220,
+persona-b:0545,2026-11-29,17:30,6,grocery,광성슈퍼,15900,out,spending,FOOD,living,A,bank,persona-b:0544,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,14525220,
 persona-b:0546,2026-11-30,12:13,0,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,9500,out,spending,FOOD,living,D,card,persona-b:0546,0,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
-persona-b:0547,2026-11-30,12:13,0,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,9500,out,spending,FOOD,living,A,bank,persona-b:0546,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14549720,
+persona-b:0547,2026-11-30,12:13,0,lunch,대표_3_카카오페이 - 한옥집김치찜GFC몰점,9500,out,spending,FOOD,living,A,bank,persona-b:0546,1,,0,,store_snapshot,대표_3_카카오페이 - 한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14515720,
 persona-b:0548,2026-11-30,15:30,0,convenience,지에스25S점 역삼역,1500,out,spending,FOOD,living,D,card,persona-b:0548,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0549,2026-11-30,15:30,0,convenience,지에스25S점 역삼역,1500,out,spending,FOOD,living,A,bank,persona-b:0548,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14548220,
+persona-b:0549,2026-11-30,15:30,0,convenience,지에스25S점 역삼역,1500,out,spending,FOOD,living,A,bank,persona-b:0548,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,14514220,
