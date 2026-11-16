@@ -161,9 +161,6 @@ def insert_connected_state(persona, as_of, password, *, real_classify=False):
             # 은행은 실제 첫 연결처럼 출금 transfer · 입금 income 으로 넣고 파이프라인이 판단한다
             tx_type = 'transfer' if r['direction'] == 'out' else 'income'
             category, state, source = 'UNCLASSIFIED', 'needs_review', None
-            if r['transaction_type'] == 'spending' and r['is_duplicate'] == '0' and r['role'] == 'pay':
-                tx_type = 'spending'  # 카카오페이충전 · 페이 출금은 소비로 넘어온다 (분류기가 '페이 충전'으로 묻는다)
-                source = 'rule'
         else:
             tx_type = r['transaction_type']
             category = r['confirmed_category'] or 'UNCLASSIFIED'
@@ -325,8 +322,8 @@ def onboard(persona, user, log):
     result = task.get('result') or {}
     if task.get('status') != 'succeeded' or not result.get('budgetId'):
         raise RuntimeError(f'추천 예산 실패: {json.dumps(task, ensure_ascii=False)[:800]}')
-    budget = api.call('GET', 'budgets/')
     api.call('POST', f"budgets/{result['budgetId']}/approve/", {}, key=f'persona-{persona}-approve')
+    budget = api.call('GET', 'budgets/')  # 승인 뒤 예산 (쓴 돈 포함)
     log(f"추천 예산 승인: {result.get('summary') or ''}")
     # 온보딩 뒤: 홈의 '월급 확인' 팝업에서 이번 회차 월급을 확인한다 (온보딩 단계에는 없음)
     deposits = api.call('GET', 'budgets/salary/deposits/')
@@ -350,7 +347,7 @@ def summarize(user, budget, log):
     log('예산 응답 요약: ' + json.dumps({k: budget.get(k) for k in ('status', 'split', 'recommendation') if budget and k in budget},
                                     ensure_ascii=False)[:600])
     for c in (budget or {}).get('categories', []):
-        log(f"  {c.get('categoryName') or c.get('category')}: {c.get('amount', c.get('allocatedAmount'))}")
+        log(f"  {c.get('categoryName') or c.get('category')}: 예산 {c.get('allocated')} · 쓴 돈 {c.get('spent')}")
     # 서버가 저장한 예산 설계 기록 (A안/B안 선택 · 이유 · 카테고리 설명). 시드는 금액을 계산하지 않는다
     from budgets.models import Budget
     approved = Budget.objects.filter(user=user, status='approved').order_by('-approved_at').first()
