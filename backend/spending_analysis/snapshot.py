@@ -62,6 +62,76 @@ def _finding(fid, kind, section, *, conclusion, evidence=(), impact=0, category=
     return out
 
 
+def observation(rows):
+    """유형·반복 습관을 정할 근거가 없어도, 현재 결제의 성격과 금액 집중도는 설명한다."""
+    paid = _paid(rows)
+    net_by_category = {}
+    for r in rows:
+        if r["funding"] != "fixed":
+            net_by_category[r["category"]] = net_by_category.get(r["category"], 0) + r["net_amount"]
+    paid = [r for r in paid if net_by_category[r["category"]] > 0]
+    if not paid:
+        return []
+    limits = ["사용처·시간대와 결제 비중은 환불액을 제외한 결제 내역 기준이에요."] if any(r["net_amount"] < 0 for r in rows) else []
+    total = sum(r["net_amount"] for r in paid)
+    biggest = max(paid, key=lambda r: r["net_amount"])
+    amount = biggest["net_amount"]
+    if len(paid) > 1 and amount >= LARGE_MIN and amount > total - amount:
+        return [_finding("OBSERVED_LARGE", "observation", "지출의 특징",
+            conclusion="확인된 지출은 한 번의 큰 결제가 총액을 좌우하고 있어요.",
+            evidence=[f"가장 큰 결제 {won(amount)}이 확인된 결제액의 {round(amount * 100 / total)}%이고, 나머지는 모두 합해 {won(total - amount)}이에요."], impact=amount, limits=limits)]
+    groups = {}
+    for r in paid:
+        if r["category"] in NAMES and r["category"] != "UNCLASSIFIED":
+            groups.setdefault(r["category"], []).append(r)
+    if not groups:
+        timed = {}
+        for r in paid:
+            slot = scope.slot_of(r.get("occurred_time"))
+            if slot:
+                timed.setdefault(slot, []).append(r)
+        if timed:
+            slot, subset = max(timed.items(), key=lambda item: sum(r["net_amount"] for r in item[1]))
+            amount = sum(r["net_amount"] for r in subset)
+            if len(subset) >= 2 and amount * 2 > total:
+                return [_finding("OBSERVED_TIME", "observation", "결제 시간대",
+                    conclusion=f"확인된 결제는 {scope.SLOTS[slot][0]} 시간대에 집중돼 있어요.",
+                    evidence=[f"확인된 결제액의 {round(amount * 100 / total)}%가 이 시간대에 나갔어요."], limits=limits)]
+        return []
+    code, typed = max(groups.items(), key=lambda item: sum(r["net_amount"] for r in item[1]))
+    amount = sum(r["net_amount"] for r in typed)
+    if amount * 2 <= total:
+        if sum(len(group) for group in groups.values()) == len(paid):
+            names = "·".join(NAMES[c] for c in groups)
+            return [_finding("OBSERVED_MIX", "observation", "지출의 특징",
+                conclusion=f"확인된 소비는 {names}에 나뉘어 있어요. 한 항목이 전체 지출의 절반을 넘지는 않아요.",
+                evidence=[f"가장 큰 비중인 {NAMES[code]}도 확인된 결제액의 {round(amount * 100 / total)}%예요."], limits=limits)]
+        return []
+    name = NAMES[code]
+    activities = {r.get("activity") for r in typed} - {None, "unknown"}
+    for activity in sorted(activities):
+        subset = [r for r in typed if r.get("activity") == activity]
+        value = sum(r["net_amount"] for r in subset)
+        if activity in lifestyle.LABELS and value * 2 > total:
+            name, typed, amount = lifestyle.LABELS[activity], subset, value
+            break
+    slots = {}
+    for r in typed:
+        slot = scope.slot_of(r.get("occurred_time"))
+        if slot:
+            slots.setdefault(slot, []).append(r)
+    when = ""
+    if slots:
+        slot, subset = max(slots.items(), key=lambda item: sum(r["net_amount"] for r in item[1]))
+        # 한 번의 결제 시각을 생활 습관으로 확대하지 않는다.
+        if len(subset) >= 2 and sum(r["net_amount"] for r in subset) * 2 > total:
+            when = scope.SLOTS[slot][0] + " 시간대 "
+    conclusion = (f"지금 확인된 지출은 {name} 결제예요." if len(paid) == 1 else
+                  f"확인된 소비는 {when}{name} 중심이에요.")
+    return [_finding("OBSERVED_USE", "observation", "지출의 특징", category=code,
+        conclusion=conclusion, evidence=[f"확인된 결제액 {won(total)} 중 {name}에 {won(amount)}을 썼어요."], impact=amount, limits=limits)]
+
+
 # ---------- 예산 속도 ----------
 
 def budget_pace(budget, today, categories=None, rows=()):
@@ -137,7 +207,7 @@ def budget_pace(budget, today, categories=None, rows=()):
             evidence = [f"생활비 예산 {won(total['allocated'])} 중 {won(total['spent'])}을 썼어요."]
             if slack:
                 slack.sort(key=lambda x: -x[0])
-                evidence.append(", ".join(f"{NAMES[x[1]['category']]}(남은 {short(x[1]['remaining'])})" for x in slack[:2]) + "는 아직 여유가 커요.")
+                evidence.append(", ".join(f"{NAMES[x[1]['category']]}(남은 {short(x[1]['remaining'])})" for x in slack[:2]) + "에는 아직 여유가 있어요.")
             out.append(_finding("PACE", "budget_ok", "예산 속도", conclusion=conclusion, evidence=evidence,
                                 impact=0, visual=visual))
     return out
@@ -246,10 +316,13 @@ def composition(rows):
     if share < 0.5 or len(ranked) < 3:  # 두세 항목뿐이면 '쏠림'이 아니다
         return []
     second = ranked[1]
-    conclusion = f"이번 달 소비의 {round(share * 100)}%가 {NAMES[code]}에 몰려 있어요."
+    conclusion = f"분류된 소비의 {round(share * 100)}%가 {NAMES[code]}에 몰려 있어요."
     evidence = [f"{NAMES[code]} {won(amount)}, 다음으로 많은 {josa(NAMES[second[0]], '은는')} {won(second[1])}({round(second[1] * 100 / total)}%)이에요."]
+    visual = {"kind": "rows", "title": "분류된 소비의 비중", "rows": [
+        {"code": c, "name": NAMES[c], "amount": value, "ratio": round(value * 100 / total, 1),
+         "note": f"{round(value * 100 / total, 1):g}%"} for c, value in ranked]}
     return [_finding("SHARE", "composition", "주요 카테고리", category=code, conclusion=conclusion, evidence=evidence,
-                     impact=amount * 0.2)]
+                     impact=amount * 0.2, visual=visual)]
 
 
 # ---------- 지난달 같은 기간과의 차이 (어느 카테고리가 · 왜) ----------

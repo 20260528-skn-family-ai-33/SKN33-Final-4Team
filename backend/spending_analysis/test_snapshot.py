@@ -118,6 +118,21 @@ class SnapshotPatternTest(SimpleTestCase):
         self.assertIn("86%가 식비에 몰려", snapshot.composition(rows)[0]["conclusion"])
         self.assertEqual(snapshot.composition([pay(1, 30000), pay(2, 30000, "CULTURE_LEISURE")]), [])
 
+    def test_observation_does_not_invent_a_pattern_from_empty_refunded_or_fixed_payments(self):
+        for rows in ([], [pay(2, 0)], [pay(2, -10000)], [pay(2, 10000), pay(3, -10000)],
+                     [pay(2, 10000, funding="fixed")]):
+            with self.subTest(rows=rows):
+                self.assertEqual(snapshot.observation(rows), [])
+
+    def test_observation_uses_all_payments_as_the_category_share_denominator(self):
+        rows = [pay(2, 10000), pay(3, 10000, "UNCLASSIFIED")]
+        self.assertEqual(snapshot.observation(rows), [])
+        finding = snapshot.observation([pay(2, 12000, activity="dining"), pay(3, 10000, "UNCLASSIFIED")])[0]
+        self.assertIn("외식", finding["conclusion"])
+        self.assertIn("22,000원", finding["evidence"][0])
+        self.assertIn("12,000원", finding["evidence"][0])
+        self.assertFalse(finding["actions"])
+
     def test_change_total_names_categories_and_early_monthly_purchases(self):
         now = [pay(d, 10000) for d in range(1, 6)] + [pay(2, 40000, "BEAUTY"), pay(3, 30000, "HOUSEHOLD")]
         before = [pay(d, 10000, month=10) for d in range(1, 6)]
@@ -152,7 +167,15 @@ class AnswerContractTest(SimpleTestCase):
     def check(self, reply):
         body = " ".join(reply["lines"])
         self.assertFalse(BANNED.search(body), body)
-        self.assertEqual(reply["view"][1]["title"], "핵심 진단")
+        lead = reply["view"][1]
+        if lead["kind"] == "persona":
+            self.assertTrue(lead["name"] and lead["mascot"])
+            self.assertTrue(lead["reasons"])  # 유형 미확정이어도 분석은 접지 않은 첫 카드에 남는다
+            self.assertLessEqual(len(reply["notices"]), 7)
+            return body
+        self.assertEqual((lead["kind"], lead["tone"]), ("text", "key"))
+        self.assertEqual(lead["lines"][0], lead["title"])
+        self.assertTrue(any(line.strip() for line in lead["lines"][1:]))
         self.assertLessEqual(len(reply["notices"]), 7)
         return body
 
@@ -210,6 +233,79 @@ class AnswerContractTest(SimpleTestCase):
     def test_llm_narrative_path_also_passes_the_contract(self):
         self.current = [pay(d, 9000, activity="dining") for d in range(2, 20)] + [pay(5, 150000, "FASHION_SHOPPING")]
         self.check(self.ask("habit", FakeReading()))
+
+    def test_sparse_current_payments_are_analyzed_with_or_without_complete_collection(self):
+        scenarios = (
+            ([pay(2, 12000, activity="dining")], ("외식",), ("시간대",)),
+            ([pay(d, 12000, activity="dining") for d in (2, 3)], ("점심", "외식"), ()),
+            ([pay(d, 12000) for d in (2, 3)], ("점심", "식비"), ("외식", "배달", "카페")),
+            ([pay(d, 12000, time=None) for d in (2, 3)], ("식비",), ("시간대", "점심", "외식")),
+        )
+        for rows, expected, forbidden in scenarios:
+            for state in ("complete", "partial"):
+                for goal in ("overview", "habit", "reason", "forecast"):
+                    with self.subTest(rows=rows, state=state, goal=goal):
+                        self.current = rows
+                        self.cover.side_effect = lambda _u, p: {"state": state if p.start == START else "none"}
+                        reply = self.ask(goal)
+                        body = self.check(reply)
+                        first = reply["view"][1]
+                        front = " ".join(first.get("reasons", first.get("lines", [])))
+                        for word in expected:
+                            self.assertIn(word, front)
+                        for word in (*forbidden, "패턴을 읽기엔 적어요", "더 쌓이면", "아직 탐색", "과소비", "반복돼요", "매달"):
+                            self.assertNotIn(word, body)
+                        self.assertTrue(any(f"결제 {len(rows)}건 기준" in note for note in reply["notices"]))
+                        self.assertTrue(any(note.startswith("월말 전망:") for note in reply["notices"]))
+                        self.assertEqual("일부 내역 기준" in reply["view"][0]["title"], state == "partial")
+                        self.assertNotIn("months", [block["kind"] for block in reply["view"]])
+
+    def test_two_unclassified_payments_explain_large_payment_influence_and_keep_classification_below(self):
+        self.current = [pay(2, 120000, "UNCLASSIFIED"), pay(3, 10000, "UNCLASSIFIED")]
+        self.cover.return_value = {"state": "partial"}
+        reply = self.ask("habit")
+        body = self.check(reply)
+        first = reply["view"][1]
+        self.assertIn("한 번의 큰 결제", " ".join(first.get("reasons", first.get("lines", []))))
+        self.assertIn("92%", body)
+        for word in ("미분류", "UNCLASSIFIED", "확인 필요", "일회성", "외식", "과소비"):
+            self.assertNotIn(word, body)
+        self.assertTrue(any("분류 전 결제 130,000원" in note for note in reply["notices"]))
+        self.assertTrue(any("결제 2건 기준" in note for note in reply["notices"]))
+
+    def test_sparse_balanced_or_refunded_payments_are_not_rejected_as_too_few(self):
+        for rows in ([pay(2, 10000, time=None), pay(3, 10000, "CULTURE_LEISURE", time=None)],
+                     [pay(2, 10000, time=None), pay(3, -10000, time=None)]):
+            with self.subTest(rows=rows):
+                self.current = rows
+                self.cover.return_value = {"state": "partial"}
+                reply = self.ask("habit")
+                body = " ".join(reply["lines"])
+                self.assertTrue(body)
+                for word in ("패턴을 읽기엔 적어요", "더 쌓이면", "아직 탐색", "반복", "과소비", "외식", "점심"):
+                    self.assertNotIn(word, body)
+                self.assertFalse(any(block["kind"] in ("months", "trend") for block in reply["view"]))
+
+    def test_no_payments_are_distinct_from_a_small_spending_sample(self):
+        self.cover.return_value = {"state": "partial"}
+        for rows in ([], [pay(2, -10000)]):
+            with self.subTest(rows=rows):
+                self.current = rows
+                reply = self.ask("habit")
+                self.assertIn("분석할 소비 내역이 아직 없어요", " ".join(reply["lines"]))
+                self.assertFalse(any("결제 0건 기준" in note for note in reply["notices"]))
+
+    def test_habit_analysis_keeps_its_conclusion_without_unrelated_monthly_graphs(self):
+        from .test_story import month_rows
+
+        self.current = [r for r in month_rows(11) if r["occurred_on"] <= TODAY]
+        self.previous = [r for month in (7, 8, 9, 10) for r in month_rows(month)]
+        with mock.patch.object(insight.tools, "rows", side_effect=lambda _u, p, *_a, **_k:
+                               [r for r in (*self.previous, *self.current) if p.start <= r["occurred_on"] < p.end_before]):
+            reply = self.ask("habit")
+        self.assertIn("외식", self.check(reply))
+        blocks = [block for outer in reply["view"] for block in [outer, *outer.get("blocks", [])]]
+        self.assertNotIn("months", [block["kind"] for block in blocks])
 
 
 class CoveredThroughTest(SimpleTestCase):

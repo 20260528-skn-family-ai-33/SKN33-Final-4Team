@@ -149,6 +149,13 @@ def answer(user, store, text=None, button=None, *, budget_adapter=None, budget_h
     """한 입력 → (render 결과, route). DB 를 잠그지 않는다 (가짜 · 실제 LLM 호출과 분석은 여기서)
     budget_hints = 예산 화면이 넘긴 초과 항목 시작 정보 (_entry_hints). 예산 조정 버튼에만 쓴다
     suggested = 이번 버튼이 직전 답변의 선택지를 누른 것 — 직전이 소비 분석 초과 답변이면 라우터가 그 카테고리를 hints 로 만든다"""
+    from .replies import greeting_reply, thanks_reply, without_thanks
+    social = (thanks_reply(text) or greeting_reply(text)) if button is None else ''
+    if social:
+        return ({'lines': [social], 'choices': [], 'notices': [], 'agent': None, 'inputs': [], 'result': False},
+                {'intent': 'unknown', 'slots': {}, 'fallback': False})
+    if button is None:
+        text = without_thanks(text)
     llm = reading()
     from budgets.adjustment_service import AdjustmentAdapter
     from .budget_adjustment import handler as budget_handler

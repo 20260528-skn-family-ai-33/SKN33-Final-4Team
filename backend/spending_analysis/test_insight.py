@@ -63,13 +63,17 @@ class InsightTest(SimpleTestCase):
 
     def test_story_answer_is_computed_on_the_server_without_llm_prose(self):
         # 추이 → 습관 → 앞으로 답은 서버 계산 문장으로 만든다 (사용자 확정 구성, 11/13). 문장 LLM · 의미 대조 호출 없음
-        complete = mock.Mock(wraps=FakeReading())
+        def suggest(_system, user, **_kwargs):
+            choices = json.loads(user)["candidates"]
+            return json.dumps({"questions": [{"id": c["id"], "text": c["question"]} for c in choices]}, ensure_ascii=False)
+        complete = mock.Mock(side_effect=suggest)
         reply, reason = insight.answer(object(), decision(), TODAY, complete, question="내 소비 습관 어때?")
         self.assertIsNone(reason)
-        complete.assert_not_called()
+        complete.assert_called_once()
+        self.assertEqual(complete.call_args.args[0], insight.followups.PROMPT)
         self.assertEqual(reply["view"][1]["title"], "핵심 진단")
         self.assertEqual(reply["view"][1]["tone"], "key")
-        self.assertTrue(reply["examples"])  # 이어서 물을 만한 말
+        self.assertEqual(reply["examples"], [c["question"] for c in json.loads(complete.call_args.args[1])["candidates"]])
 
     def test_total_paid_fixed_is_added_once_even_for_living_scope(self):
         with mock.patch.object(insight.trend, "forecast", return_value=projection()), mock.patch.object(insight.trend, "summarize", return_value={}):
@@ -108,7 +112,7 @@ class InsightTest(SimpleTestCase):
         self.assertNotIn("지난달보다", text)
         self.assertIn("확인된", text)
         self.assertIn("일부 내역 기준", reply["view"][0]["title"])
-        self.assertTrue(any("지난달 비교는 빼고" in n for n in reply["notices"]))
+        self.assertTrue(any("지난달과의 총액 비교는 제외" in n for n in reply["notices"]))
         self.assertTrue(any(n.startswith("월말 전망:") for n in reply["notices"]))
         self.assertFalse(any(v["kind"] == "trend" for v in reply["view"]))
 
@@ -208,8 +212,85 @@ class InsightTest(SimpleTestCase):
         self.current = [{**transaction(20000, day=d, time='12:00'), 'activity': 'dining'} for d in range(2, 10)]
         self.previous = [{**transaction(10000, month=10, day=d, time='12:00'), 'activity': 'dining'} for d in range(2, 10)]
         reply, _ = insight.answer(object(), decision(analysis_goal='habit'), TODAY, FakeReading())
-        lead = reply['view'][1]['lines'][1:]
-        self.assertTrue(any('한 번에 쓰는 금액이 커진 것' in line for line in lead), lead)  # 반복 방식 + 최근 달라진 점
+        # 완료된 달이 2개월 미만이면 이번 달 진행분만으로 소비 유형을 정하지 않는다 (v2) — 핵심 진단이 첫 화면에 그대로
+        self.assertEqual(reply['view'][1].get('tone'), 'key')
+        self.assertFalse(any(b['kind'] == 'persona' for b in reply['view']))
+        self.assertTrue(any('한 번에 쓰는 금액이 커진 것' in line for line in reply['lines']), reply['lines'])
+
+    def test_habit_details_keep_original_blocks_and_approved_history(self):
+        self.current = [{**transaction(20000, day=d, time='12:00'), 'activity': 'dining'} for d in range(2, 10)]
+        summary, _ = insight.summarize(object(), decision(analysis_goal='habit'), TODAY)
+        st = summary['story']
+        with mock.patch.object(insight.benchmark, 'for_user', return_value=([], [])):
+            original, _, _ = insight._story_blocks(None, summary, 'habit', TODAY, {f['id']: f for f in st['findings']}, st)
+            history = {'state': 'ready', 'period': {'from': '2026-10-25', 'to': '2026-11-25'},
+                       'change_count': 3, 'categories': [{'code': 'FOOD', 'name': '식비', 'increases': 3,
+                       'decreases': 0, 'increase_amount': 90000}], 'savings': {'increases': 0, 'decreases': 1}}
+            with mock.patch.object(insight.budget_habits, 'for_user', return_value=history):
+                reply = insight._story_answer(mock.Mock(pk='user'), summary, 'habit', TODAY, '')
+        persona = reply['view'][1]
+        # 예산 반복 증액은 대표 유형이 아니라 태그 (v2). 취향 근거가 없으니 대표는 기본 + 구체적인 이유
+        self.assertEqual((persona['kind'], persona['mascot']), ('persona', 'basic'))
+        self.assertEqual(persona['tags'], [{'code': 'stretch', 'label': '이번만 조금 더'}])
+        self.assertTrue(persona['desc'] and persona['reasons'] and persona['action'])
+        self.assertTrue(any(t['code'] == 'FOOD' and t['status'] == 'unavailable' for t in persona['traits']))
+        self.assertFalse(any('average' in t for t in persona['traits']))
+        details = next(b['blocks'] for b in reply['view'] if b['kind'] == 'details')
+        # 핵심 진단은 유형 카드 바로 아래(접지 않음), 나머지 기존 블록은 상세에 그대로
+        self.assertEqual(reply['view'][2]['tone'], 'key')
+        self.assertFalse(any(b.get('tone') == 'key' for b in details))
+        for block in original:
+            if block.get('tone') != 'key':
+                self.assertIn(block, details)
+        text = ' '.join(reply['lines'])
+        self.assertIn('11월 24일', text)
+        self.assertIn('실제 저축액이 아닌 예산 기준', text)
+        self.assertNotIn('0번', text)  # 바뀌지 않은 쪽 횟수는 늘어놓지 않는다
+        self.assertNotIn('11월 25일', text)
+
+    def test_habit_details_only_add_graphs_related_to_the_interpretation(self):
+        monthly = {'kind': 'months', 'title': '월별 생활비'}
+        weekly = {'kind': 'trend', 'title': '반복 소비 추이'}
+        pace = {'kind': 'pace', 'title': '예산 사용'}
+        f = {'id': 'large', 'kind': 'large_share', 'section': '큰 결제', 'conclusion': '큰 결제가 영향을 줬어요.',
+             'evidence': ['나머지 소비는 비슷해요.'], 'visual': pace}
+        summary = {'story': {'chart': monthly, 'forecast_rows': [{'name': '식비'}]}, 'snapshot': [f],
+                   'findings': [{'quiet': True, 'comparable': True, 'conclusion': '조용한 변화'}]}
+        by_id = {'TREND': {'conclusion': '최근 추이', 'evidence': ['월별 근거']},
+                 'FORECAST': {'conclusion': '월말 예상', 'evidence': ['예상 근거']}}
+        original = [{'kind': 'text', 'lines': ['핵심 진단', '원래 분석']}]
+        with mock.patch.object(insight, 'chart', return_value=weekly), mock.patch.object(insight, '_total_line', return_value=None):
+            blocks = insight._habit_details(summary, original, TODAY, by_id)
+        for block in [*original, pace]:
+            self.assertIn(block, blocks)
+        self.assertNotIn(monthly, blocks)
+        self.assertNotIn(weekly, blocks)
+        text = ' '.join(line for b in blocks if b['kind'] == 'text' for line in b['lines'])
+        self.assertIn('예상 근거', text)
+        self.assertNotIn('조용한 변화', text)
+
+    def test_category_habit_does_not_use_another_categorys_budget_changes(self):
+        reply = {'view': [{'kind': 'head', 'title': '식비 분석'},
+                          {'kind': 'text', 'tone': 'key', 'lines': ['핵심 진단', '식비의 흐름']}],
+                 'lines': ['식비의 흐름'], 'notices': []}
+        with mock.patch.object(insight.budget_habits, 'for_user') as history:
+            out = insight._habit_card(mock.Mock(pk='user'), {'basis': {'categories': ['FOOD']}}, reply, TODAY)
+        history.assert_not_called()
+        self.assertNotIn('이번만 조금 더형', str(out))
+        # 근거가 없으면 유형(마스코트 카드)을 지어내지 않고 확인된 핵심 진단을 바로 보여 준다
+        self.assertEqual(out['view'][1], reply['view'][1])
+        self.assertNotIn('persona', str(out))
+        self.assertNotIn('탐색 중', str(out))
+        self.assertEqual(out['notices'], [])
+
+    def test_habit_keeps_limits_of_findings_added_to_details(self):
+        summary, _ = insight.summarize(object(), decision(analysis_goal='habit'), TODAY)
+        limit = '가게 업종 정보가 없는 결제가 있어 세부 소비는 구분하지 못했어요.'
+        summary['findings'] = [{'id': 'new', 'kind': 'change', 'section': '달라진 점', 'comparable': True,
+                                'conclusion': '한 번에 쓰는 금액이 커졌어요.', 'evidence': [], 'limits': [limit]}]
+        with mock.patch.object(insight.benchmark, 'for_user', return_value=([], [])):
+            reply = insight._story_answer(None, summary, 'habit', TODAY, '')
+        self.assertIn(limit, reply['notices'])
 
     def test_call_failure_or_semantic_rejection_uses_computed_analysis(self):
         for complete in (mock.Mock(side_effect=TimeoutError()), lambda s, u, **kw: json.dumps({"supported": False, "answers_question": True, "no_repetition": True, "checked_findings": []}) if s == narrative.CHECK_PROMPT else FakeReading()(s, u)):
@@ -217,6 +298,209 @@ class InsightTest(SimpleTestCase):
             self.assertTrue(reply["lines"])
             # LLM 서술이 실패해도 사용자에게 내부 사정을 알리지 않고 계산된 분석을 그대로 보여 준다
             self.assertFalse(any("자동으로 작성한 설명" in n for n in reply["notices"]))
+
+
+class PersonaContextTest(SimpleTestCase):
+    def test_saver_uses_the_same_fixed_deduction_as_protect(self):
+        from budgets.models import Budget
+        from budgets.protect import recommend
+        from finance.models import FinancialTransaction
+        user = mock.Mock(pk="synthetic-user")
+        user.financial_profile = mock.Mock(birth_date=date(1998, 1, 1), housing_type="family", savings_floor=800000)
+        budget = mock.Mock(funding_amount=3000000, cycle=mock.Mock(starts_on=date(2026, 11, 1)))
+        with mock.patch.object(Budget.objects, "filter") as budgets, \
+                mock.patch("budgets.protect.fixed_breakdown", return_value={
+                    "categories": {"HOUSING_TELECOM": 700000}, "loan": 100000, "card_reserved": 200000}) as fixed, \
+                mock.patch.object(FinancialTransaction.objects, "filter") as transfers:
+            budgets.return_value.order_by.return_value.select_related.return_value.first.return_value = budget
+            transfers.return_value.exists.return_value = True
+            context = insight._persona_context(user, {}, TODAY)
+        fixed.assert_called_once_with(user, budget.cycle)
+        self.assertEqual(context["base"], 2000000)
+        self.assertEqual(recommend(context["base"], "family", 0)["ratio_saving_floor"], 800000)
+        result = insight.personality.assess({}, {"state": "unavailable"}, context)
+        self.assertEqual(result["profile"]["mascot"], "saver")
+        self.assertIn("권장 저축액(800,000원)", result["profile"]["lines"][0])
+
+    def test_unknown_fixed_total_does_not_treat_income_as_available(self):
+        from budgets.models import Budget
+        from finance.models import FinancialTransaction
+        user = mock.Mock(pk="synthetic-user")
+        user.financial_profile = mock.Mock(birth_date=date(1998, 1, 1), housing_type="family", savings_floor=1200000)
+        budget = mock.Mock(funding_amount=3000000, cycle=mock.Mock(starts_on=date(2026, 11, 1)))
+        with mock.patch.object(Budget.objects, "filter") as budgets, \
+                mock.patch("budgets.protect.fixed_total", return_value=None), \
+                mock.patch.object(FinancialTransaction.objects, "filter") as transfers:
+            budgets.return_value.order_by.return_value.select_related.return_value.first.return_value = budget
+            transfers.return_value.exists.return_value = True
+            context = insight._persona_context(user, {}, TODAY)
+        self.assertNotIn("base", context)
+        result = insight.personality.assess({}, {"state": "unavailable"}, context)
+        self.assertIsNone(result["profile"])
+
+
+class AnalysisPresentationTest(SimpleTestCase):
+    def test_forecast_notices_follow_amount_even_without_monthly_graph(self):
+        forecast = {"id": "FORECAST", "conclusion": "월말 예상은 42만 원이에요.", "evidence": []}
+        for method in ("pattern", "validated"):
+            for goal in ("overview", "habit", "forecast"):
+                with self.subTest(method=method, goal=goal):
+                    summary = self.summary()
+                    summary["story"].update(
+                        findings=[{"id": "TREND", "kind": "trend_flat", "conclusion": "생활비는 비슷했어요.", "evidence": []}, forecast],
+                        projection={"method": method, "month_end": 420000, "observed": 300000,
+                                    "checked": 3, "error": 50000,
+                                    "validation": {"selected": {"model": "average", "lookback_days": 28},
+                                                   "test_months": ["8월", "9월", "10월"], "test_mae": 50000}})
+                    with mock.patch.object(insight.benchmark, "for_user", return_value=([], [])):
+                        reply = insight._story_answer(None, summary, goal, TODAY, "")
+                    self.assertIn(forecast["conclusion"], reply["lines"])
+                    self.assertNotIn("months", [b["kind"] for b in reply["view"]])
+                    self.assertTrue(any("예상 방식:" in n and "50,000원" in n for n in reply["notices"]))
+                    self.assertIn("예상액에는 앞으로 새로 생길 큰 결제가 들어 있지 않아요.", reply["notices"])
+                    if goal == "habit":
+                        self.assertIn("월말 전망", str(next(b for b in reply["view"] if b["kind"] == "details")))
+
+    def test_unshown_forecast_does_not_add_prediction_notices(self):
+        summary = self.summary()
+        summary["story"].update(
+            findings=[{"id": "FORECAST", "conclusion": "월말 예상은 42만 원이에요.", "evidence": []}],
+            projection={"method": "pattern", "checked": 3, "error": 50000})
+        reply = insight._story_answer(None, summary, "reason", TODAY, "")
+        self.assertFalse(any("예상 방식:" in n or "앞으로 새로 생길 큰 결제" in n for n in reply["notices"]))
+
+    def summary(self):
+        return {"basis": {"coverage": "partial", "comparison_available": False, "scope": "생활비",
+                          "comparison_reason": "직접 등록한 카드의 조회 범위를 확인할 수 없어요.", "as_of": TODAY.isoformat()},
+                "current": {"amount": 20000, "count": 2}, "previous": {"amount": 20000}, "total_material": {"meaningful": False},
+                "snapshot": [], "findings": [], "unclassified_amount": [0, 0], "categories": [],
+                "forecast_reason": "직접 등록한 카드의 조회 범위를 확인할 수 없어 월말 예상은 보류했어요.",
+                "story": {"findings": [], "actions": [], "chart": None, "over": None, "slot": "과거 점심 시간대 소비는 식비 중심이에요."}}
+
+    def test_slot_only_analysis_is_not_dropped_for_any_question(self):
+        for goal in ("habit", "overview", "reason", "forecast"):
+            with self.subTest(goal=goal), mock.patch.object(insight, "summarize", return_value=(self.summary(), None)), \
+                    mock.patch.object(insight.benchmark, "for_user", return_value=([], [])):
+                reply, _ = insight.answer(object(), decision(analysis_goal=goal), TODAY, None)
+            front = reply["view"][1]
+            lines = front.get("reasons", front.get("lines", []))
+            self.assertTrue(lines and all(isinstance(line, str) and line for line in lines))
+            self.assertNotIn("탐색 중", str(reply))
+            self.assertNotIn("패턴을 읽기엔", str(reply))
+            if goal != "forecast":
+                self.assertIn("과거", " ".join(lines))
+            else:
+                self.assertTrue(any("월말 전망:" in note for note in reply["notices"]))
+
+    def test_unavailable_forecast_does_not_repeat_monthly_graph_or_offer_increase_question(self):
+        summary = self.summary()
+        summary["story"].update(slot=None, chart={"kind": "months", "title": "월별 생활비", "basis": "지난 3개월"},
+            findings=[{"id": "TREND", "conclusion": "지난 3개월 생활비는 비슷했어요.", "evidence": []}])
+        with mock.patch.object(insight, "summarize", return_value=(summary, None)):
+            reply, _ = insight.answer(object(), decision(analysis_goal="forecast"), TODAY, None)
+        self.assertNotIn("지난 3개월 생활비는 비슷했어요.", reply["lines"])
+        self.assertFalse(any(block["kind"] == "months" for block in reply["view"]))
+        self.assertEqual(reply["examples"], [])
+        self.assertTrue(any("조회 범위" in note for note in reply["notices"]))
+
+    def test_already_shown_forecast_only_offers_its_new_calculation_detail(self):
+        summary = self.summary()
+        summary["story"].update(slot=None, projection={"month_end": 420000},
+            findings=[{"id": "FORECAST", "conclusion": "월말 예상은 42만 원이에요.", "evidence": []}])
+        reply = {"lines": ["월말 예상은 42만 원이에요."], "view": []}
+        context = insight._followup_context(summary, "overview", reply, TODAY)
+        candidates = context["candidates"]
+        self.assertEqual([row["id"] for row in candidates], ["calculation"])
+        self.assertEqual(context["answered"], ["forecast"])
+        self.assertEqual(insight._followup_context(summary, "calculation", reply, TODAY)["candidates"], [])
+
+    def test_shown_nested_comparison_is_remembered_but_unshown_findings_remain_available(self):
+        summary = self.summary()
+        summary["basis"]["comparison_available"] = True
+        changes = [{"kind": "change", "comparable": True, "conclusion": line}
+                   for line in ("식비가 늘었어요.", "교통비는 줄었어요.")]
+        for shown in (changes[:1], changes):
+            reply = {"lines": [], "view": [{"kind": "details", "blocks": [
+                {"kind": "text", "lines": [f["conclusion"] for f in shown]}]}]}
+            with mock.patch.object(insight, "select", return_value=changes):
+                context = insight._followup_context(summary, "habit", reply, TODAY)
+            self.assertEqual("reason" in context["answered"], len(shown) == len(changes))
+            self.assertEqual("reason" in [c["id"] for c in context["candidates"]], len(shown) < len(changes))
+
+    def test_unavailable_comparison_and_forecast_are_not_marked_as_answered(self):
+        context = insight._followup_context(self.summary(), "overview", {"lines": [], "view": []}, TODAY)
+        self.assertFalse({"reason", "forecast"} & set(context["answered"]))
+
+    def test_forecast_input_is_not_offered_when_it_would_repeat_weekly_graph(self):
+        summary = self.summary()
+        weekly = {"kind": "trend", "title": "식비 추이"}
+        summary["trends"] = {"FOOD": {"weekly_direction": "increase"}}
+        summary["story"].update(slot=None, findings=[{"id": "FORECAST", "conclusion": "월말 예상", "evidence": []}])
+        with mock.patch.object(insight, "chart", return_value=weekly):
+            candidates = insight._followup_context(summary, "reason", {"lines": [], "view": [weekly]}, TODAY)["candidates"]
+        self.assertNotIn("forecast", [row["id"] for row in candidates])
+
+    def test_coverage_notice_distinguishes_unverified_dates_and_manual_records(self):
+        from .periods import Period
+        period = Period(date(2026, 11, 1), date(2026, 11, 13))
+        missing = Period(date(2026, 11, 5), date(2026, 11, 8))
+        notice = insight._coverage_note({"state": "partial", "targets": [{"missing": [missing]}]}, period)
+        self.assertIn("11월 5일~7일", notice)
+        self.assertIn("빠짐없이 불러왔는지 확인되지", notice)
+        notice = insight._coverage_note({"state": "partial", "undetermined": [{"reason": "manual_card"}]}, period)
+        self.assertIn("직접 등록", notice)
+        self.assertNotIn("다 모이지", notice)
+        self.assertNotIn("내역이 적", notice)
+
+    def test_habit_input_does_not_repeat_category_share_or_budget_graph(self):
+        for visual in ({"kind": "rows", "rows": [{"name": "식비", "ratio": 70}]}, {"kind": "pace"}):
+            with self.subTest(visual=visual):
+                summary = self.summary()
+                summary["snapshot"] = [{"id": "SHARE", "kind": "composition", "section": "비중", "conclusion": "식비 중심이에요.",
+                                        "evidence": [], "category": "FOOD", "visual": visual}]
+                reply = {"lines": ["식비 중심이에요."], "view": [visual]}
+                self.assertEqual(insight._followup_context(summary, "overview", reply, TODAY)["candidates"], [])
+
+    def test_change_table_excludes_small_or_quiet_changes(self):
+        summary = {"categories": [
+            {"code": "FOOD", "name": "식비", "delta": 6000, "current": {"amount": 1006000}, "previous": {"amount": 1000000}},
+            {"code": "FASHION_SHOPPING", "name": "패션·쇼핑", "delta": 100000, "current": {"amount": 200000}, "previous": {"amount": 100000}}],
+            "candidates": [
+                {"category": "FOOD", "comparable": True, "quiet": True, "material": {"meaningful": False}},
+                {"category": "FASHION_SHOPPING", "comparable": True, "quiet": False, "material": {"meaningful": True}}]}
+        self.assertEqual([row["name"] for row in insight._change_rows(summary)], ["패션·쇼핑"])
+
+    def test_weekly_chart_shows_the_changing_category_instead_of_flat_total(self):
+        summary = {"findings": [], "trends": {"FOOD": {"weekly_direction": "increase", "weeks": [{"amount": n} for n in (10000, 20000, 30000, 40000)]}},
+                   "overall_trend": {"weekly_direction": "flat", "weeks": [{"amount": 50000}] * 4}}
+        visual = insight.chart(summary, TODAY)
+        self.assertEqual([s["code"] for s in visual["series"]], ["FOOD"])
+        self.assertEqual([p["amount"] for p in visual["series"][0]["points"]], [10000, 20000, 30000, 40000])
+
+    def test_forecast_alone_cannot_create_an_empty_habit_card(self):
+        summary = self.summary()
+        summary["story"].update(slot=None, findings=[{"id": "FORECAST", "conclusion": "월말 예상", "evidence": []}])
+        with mock.patch.object(insight.benchmark, "for_user", return_value=([], [])):
+            reply = insight._story_answer(object(), summary, "habit", TODAY, "")
+        # 유형이 없으면 빈 유형 카드 대신 확인된 핵심 진단을 바로 보여 준다
+        first = reply["view"][1]
+        self.assertNotEqual(first["kind"], "persona")
+        self.assertEqual(first.get("tone"), "key")
+        self.assertTrue(all(isinstance(line, str) and line for line in first["lines"][1:]) and first["lines"][1:])
+
+    def test_refund_in_another_category_does_not_erase_observed_food_timing(self):
+        rows = [transaction(12000, day=d, time="12:00") for d in (2, 3)] + [transaction(-1000, "MEDICAL_HEALTH")]
+        found = insight.snapshot.observation(rows)
+        self.assertIn("점심 시간대 식비 중심", found[0]["conclusion"])
+        self.assertIn("환불액을 제외", found[0]["limits"][0])
+
+    def test_unclassified_payments_still_have_analyzable_timing(self):
+        rows = [transaction(12000, "UNCLASSIFIED", day=d, time="12:00") for d in (2, 3)]
+        finding = insight.snapshot.observation(rows)[0]
+        self.assertIn("점심 시간대에 집중", finding["conclusion"])
+        self.assertIn("100%", finding["evidence"][0])
+        self.assertNotIn("식비", str(finding))
+        self.assertNotIn("외식", str(finding))
 
 
 class NarrativeBoundaryTest(SimpleTestCase):

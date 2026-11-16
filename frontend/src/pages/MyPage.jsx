@@ -14,6 +14,7 @@ import { won } from '../utils/money.js'
 import { paydayText } from '../utils/days.js'
 import { clearConnectDraft } from '../utils/connectDraft.js'
 import { saveId } from '../utils/chatConversation.js'
+import { askGuideReplay } from '../utils/guideTour.js'
 
 const MENU = [
   { icon: 'IdCard', name: '내 정보', sub: '나이·자취 여부·우선순위 등', to: PATHS.profile, state: { from: 'my' } },
@@ -172,6 +173,8 @@ export default function MyPage() {
       <div className="mc-card">
         <button type="button" className="mc-listrow" onClick={() => openPopup(<PrivacyPopup onChanged={summary.reload} />)}>동의·데이터 관리　›</button>
         <button type="button" className="mc-listrow" onClick={() => openPopup(<HelpPopup />)}>도움말　›</button>
+        {/* 11/16: 홈에서 쿠숑이 가이드 투어를 처음부터 다시 */}
+        <button type="button" className="mc-listrow" onClick={() => { askGuideReplay(); navigate(PATHS.home) }}>쿠숑이 가이드 다시 보기　›</button>
         <button
           type="button"
           className="mc-listrow"

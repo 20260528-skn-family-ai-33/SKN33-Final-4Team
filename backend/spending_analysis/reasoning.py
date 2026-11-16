@@ -8,7 +8,17 @@ from statistics import median
 
 from . import lifestyle, scope, trend
 from .answer import NAMES, won
+from .snapshot import josa, short
 
+
+
+def _offset_text(changed):
+    """총액은 비슷한데 항목끼리 늘고 줄어 상쇄된 경우 — '구성이 달라졌다'는 총론 대신 어떤 항목이 얼마나 늘고 줄었는지 바로 말한다"""
+    def part(rows):
+        return "·".join(f"{NAMES[c['category']]}({'+' if c['delta'] > 0 else '-'}{short(abs(c['delta']))})" for c in rows[:2])
+    ups = [c for c in changed if c["delta"] > 0]
+    downs = [c for c in changed if c["delta"] < 0]
+    return f"총액은 지난달 같은 기간과 비슷하지만 {part(ups)}에서 늘고 {part(downs)}에서 줄었어요."
 
 def metrics(rows):
     paid = [r for r in rows if r["net_amount"] > 0]
@@ -198,8 +208,8 @@ def observed_pattern(rows):
         timing = ("주말 " + timing).strip()
     name = lifestyle.LABELS[activity] if activity != "unknown" else NAMES[subset[0]["category"]]
     label = ' '.join(t for t in (timing, name) if t)
-    conclusion = (f'{category}가 {label} 중심으로 나가고 있어요.' if activity != 'unknown' else
-                  f'{category}는 {timing} 시간대에 지출이 몰려 있어요.')
+    conclusion = (f"{josa(category, '이가')} {label} 중심으로 나가고 있어요." if activity != 'unknown' else
+                  f"{josa(category, '은는')} {timing} 시간대에 지출이 몰려 있어요.")
     if amount == total:
         evidence = f'확인된 {category} {won(total)} 전부가 {label} 결제예요.'
     else:
@@ -451,7 +461,7 @@ def analyze(current, previous, history, periods, months, *, comparable, window_c
     if comparable and not total_material["meaningful"] and any(c.get("material", {}).get("meaningful") and c["delta"] > 0 for c in candidates) and any(c.get("material", {}).get("meaningful") and c["delta"] < 0 for c in candidates):
         changed = sorted((c for c in candidates if c.get("material", {}).get("meaningful")), key=lambda c: -abs(c["delta"]))
         candidates.append(dict(id="OFFSET", category=None, kind="offset", impact=sum(abs(c["delta"]) for c in changed),
-            comparable=True, conclusion="총액은 비슷하지만 카테고리 증가와 감소가 서로 상쇄돼 소비 구성이 달라졌어요.",
+            comparable=True, conclusion=_offset_text(changed),
             evidence=[" · ".join(f"{NAMES[c['category']]} {c['delta']:+,}원" for c in changed)], outlook="", limits=[]))
         quiet_up(candidates[-1])
         significant.insert(0, candidates[-1])

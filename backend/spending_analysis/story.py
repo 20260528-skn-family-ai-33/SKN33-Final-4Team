@@ -66,6 +66,31 @@ def _finding(fid, kind, section, conclusion, evidence=(), **extra):
             "outlook": "", "limits": [], "actions": extra.pop("actions", []), "story": True, **extra}
 
 
+def taste_months(history_all, months):
+    """소비 유형(취향 축)용 완료 달별 재료: 카테고리 금액 · 카테고리별 가장 큰 결제 1건 · 미분류 금액.
+    금액 기준은 monthly 와 같다 (예산과 같은 생활비 범위). 미분류는 판정 보류를 위해 따로 센다"""
+    out = []
+    for period in months:
+        rows = _in(history_all, period)
+        living = _living(rows)
+        largest = {}
+        for r in living:
+            if r["net_amount"] > 0:
+                largest[r["category"]] = max(largest.get(r["category"], 0), r["net_amount"])
+        unclassified = sum(r["net_amount"] for r in rows if r["category"] == "UNCLASSIFIED" and r["funding"] != "fixed" and r["net_amount"] > 0)
+        # 그 달에 반복 활동 습관 기준(결제일 HABIT_MIN_DAYS 이상)을 넘은 활동 — 유형은 최근 달 기준으로 다시 본다
+        days = {}
+        for r in living:
+            if r.get("activity") in HABIT_KINDS and r["net_amount"] > 0:
+                days.setdefault(r["activity"], set()).add(r["occurred_on"])
+        out.append({"label": f"{period.start.month}월", "total": _sum(living), "categories": _by_category(living),
+                    "largest": largest, "unclassified": unclassified,
+                    "habit_kinds": sorted(kind for kind, seen in days.items() if len(seen) >= HABIT_MIN_DAYS)})
+    while out and out[0]["total"] <= 0 and out[0]["unclassified"] <= 0:
+        out.pop(0)  # 실제 기록이 시작되기 전의 빈 달만 제외한다.
+    return out
+
+
 # ---------- 소비 추이 ----------
 
 def monthly(history, months):
@@ -468,6 +493,7 @@ def build(current_all, history_all, months, today, *, complete, budget, categori
            "series": [...], "habits": {...}}
     current_all · history_all 은 고정지출이 빠진 소비 결제(범위 필터 전). 여기서 예산과 같은 생활비 범위로 다시 거른다"""
     current, history = _living(current_all, categories), _living(history_all, categories)
+    taste_history = taste_months(history_all, months)  # 유형 판정에는 첫 달의 미분류 거래도 포함한다.
     series = monthly(history, months)
     months = [m["period"] for m in series]  # 소비 기록이 있는 완료된 달만 (그 전의 빈 달은 평소 금액 계산에서 뺀다)
     findings = []
@@ -491,6 +517,7 @@ def build(current_all, history_all, months, today, *, complete, budget, categori
             "projection": projection and {k: v for k, v in projection.items() if k != "validation"} | (
                 {"validation": projection["validation"]} if projection.get("validation") else {}),
             "series": [{"label": m["label"], "total": m["total"]} for m in series], "habits": habits,
+            "taste_months": taste_history,
             "habit_rows": habit_rows(habits), "slot": slot_line(history), "weekend": weekend_f and weekend_f["conclusion"],
             "forecast_rows": forecast_rows(projection, budget, today)}
 
@@ -525,9 +552,10 @@ def slot_line(history):
             in_slot[r["category"]] = in_slot.get(r["category"], 0) + 1
     cat, k = max(in_slot.items(), key=lambda kv: kv[1])
     where = f"{name}({start}~{end + 1}시)"
-    if cat in NAMES and k / n >= 0.5:
-        return f"결제의 {josa(_pct(share), '이가')} {where}에 몰려 있고, 그중 {josa(_pct(k / n), '이가')} {ieyo(NAMES[cat])}."
-    return f"결제의 {josa(_pct(share), '이가')} {where}에 몰려 있어요."
+    if cat in NAMES and cat != "UNCLASSIFIED" and k / n >= 0.5:
+        return (f"과거 내역에서 {name} 시간대 소비는 {NAMES[cat]} 중심이에요. "
+                f"시간을 확인할 수 있는 결제의 {josa(_pct(share), '이가')} {where}에 몰려 있고, 그중 {josa(_pct(k / n), '이가')} {ieyo(NAMES[cat])}.")
+    return f"과거 내역에서 시간을 확인할 수 있는 결제의 {josa(_pct(share), '이가')} {where}에 몰려 있어요."
 
 
 def forecast_rows(projection, budget, today):

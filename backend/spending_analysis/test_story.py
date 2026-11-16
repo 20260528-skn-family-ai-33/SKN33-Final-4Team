@@ -5,7 +5,7 @@ from unittest import mock
 
 from django.test import SimpleTestCase
 
-from . import story
+from . import personality, story
 from .periods import Period
 from .snapshot import josa
 
@@ -74,6 +74,40 @@ class TrendTest(SimpleTestCase):
     def test_months_before_any_spending_are_not_zero_months(self):
         series = story.monthly(month_rows(10), MONTHS)
         self.assertEqual([m["label"] for m in series], ["10월"])
+
+
+class TasteHistoryTest(SimpleTestCase):
+    def test_build_does_not_count_empty_months_before_first_payment(self):
+        st = story.build([], [pay(5, 100000, month=10)], MONTHS, TODAY, complete=False, budget=None)
+        result = personality.assess({"story": st}, {"state": "unavailable"},
+                                    {"housing": "alone", "age": 28, "base": 2500000})
+        self.assertEqual([m["label"] for m in st["taste_months"]], ["10월"])
+        self.assertEqual(result["reason"], "short_history")
+
+    def test_build_keeps_unclassified_only_month_before_classified_history(self):
+        history = [pay(5, 2000000, "UNCLASSIFIED", month=8)]
+        history += [pay(day, 250000, month=month) for month in (9, 10) for day in (5, 10, 15, 20)]
+        st = story.build([], history, MONTHS, TODAY, complete=False, budget=None)
+        result = personality.assess({"story": st}, {"state": "unavailable"},
+                                    {"housing": "alone", "age": 28, "base": 2500000})
+        self.assertEqual(result["reason"], "too_unclassified")
+        self.assertIsNone(result["profile"])
+        recent = st["taste_months"][-3:]
+        self.assertEqual([m["label"] for m in recent], ["8월", "9월", "10월"])
+        self.assertEqual(sum(m["unclassified"] for m in recent), 2000000)
+        self.assertEqual(sum(m["total"] for m in recent), 2000000)
+        # 추이·예측에서는 종전처럼 분류된 생활비가 시작된 달부터 본다.
+        self.assertEqual([m["label"] for m in st["series"]], ["9월", "10월"])
+        self.assertTrue(st["findings"])
+
+    def test_build_with_only_unclassified_months_does_not_invent_a_type(self):
+        history = [pay(5, 1000000, "UNCLASSIFIED", month=m) for m in (8, 9, 10)]
+        st = story.build([], history, MONTHS, TODAY, complete=False, budget=None)
+        result = personality.assess({"story": st}, {"state": "unavailable"},
+                                    {"housing": "alone", "age": 28, "base": 2500000})
+        self.assertEqual(result["reason"], "too_unclassified")
+        self.assertIsNone(result["profile"])
+        self.assertEqual(len(st["taste_months"][-3:]), 3)
 
 
 class HabitTest(SimpleTestCase):
@@ -269,7 +303,8 @@ class MenuLayoutTest(SimpleTestCase):
         st = story.build(current, history, MONTHS, TODAY, complete=True, budget=budget(1000000, {"FOOD": 800000, "BEAUTY": 50000}))
         by_id = {f["id"]: f for f in st["findings"]}
         summary = {"findings": [], "basis": {"comparison_available": True},
-                   "categories": [{"name": "식비", "current": {"amount": 200000}, "previous": {"amount": 150000}, "delta": 50000}]}
+                   "candidates": [{"category": "FOOD", "comparable": True, "quiet": False, "material": {"meaningful": True}}],
+                   "categories": [{"code": "FOOD", "name": "식비", "current": {"amount": 200000}, "previous": {"amount": 150000}, "delta": 50000}]}
         cause = {"kind": "change_total", "conclusion": "지난달 같은 기간보다 5만 원 더 썼어요.", "evidence": ["이번 달 200,000원, 지난달 같은 기간 150,000원이에요."]}
         layouts = {}
         with mock.patch.object(insight.benchmark, "for_user", return_value=([], [])), mock.patch.object(insight, "select", return_value=[cause]):
@@ -277,7 +312,9 @@ class MenuLayoutTest(SimpleTestCase):
                 blocks, examples, _ = insight._story_blocks(None, summary, goal, TODAY, by_id, st)
                 layouts[goal] = [b.get("title") or b["kind"] for b in blocks]
                 self.assertNotIn(insight.ASK[goal], examples)  # 이어 볼 분석 = 지금 본 것 말고
-        self.assertEqual(layouts["overview"][:2], ["핵심 진단", "월별 생활비"])
+        self.assertEqual(layouts["overview"][0], "핵심 진단")
+        # 월별 막대는 지난 달들 추이가 실제로 변할 때만 (평평하면 글로만) — 11/16 그래프는 내용에 맞는 것만
+        self.assertEqual("월별 생활비" in layouts["overview"], by_id["TREND"]["kind"] != "trend_flat")
         self.assertIn("소비 습관", layouts["overview"])
         self.assertIn("매달 반복되는 소비", layouts["habit"])
         self.assertNotIn("월별 생활비", layouts["habit"])  # 습관 답에는 월별 막대 · 예상이 없다

@@ -277,8 +277,9 @@ class ServiceChatTest(ServiceChatBase):
         text = " ".join(content["lines"])
         self.assertIn("확인된", text)
         # 비교 · 예상을 못 한 이유는 하단 안내에 한 줄씩 (본문은 확인된 모습만)
-        self.assertTrue(any("지난달 비교는 빼고" in n for n in content["notices"]))
-        self.assertTrue(any("월말 예상액은 계산하지 않았어요" in n for n in content["notices"]))
+        self.assertTrue(any("총액 비교" in n and "제외" in n for n in content["notices"]))
+        self.assertTrue(any("월말 예상액" in n and "보류" in n for n in content["notices"]))
+        self.assertTrue(any("전체 계좌·카드 내역" in n and "확인할 수 없어요" in n for n in content["notices"]))
         self.assertNotIn("지난달 같은 기간보다", text)
         self.assertIn("일부 내역 기준", content["view"][0]["title"])
 
@@ -303,8 +304,8 @@ class ServiceChatTest(ServiceChatBase):
         self.assertIn("소비 분석", follow["view"][0]["title"])
         text = " ".join(follow["lines"])
         self.assertIn("식비", text)
-        self.assertTrue(any("지난달 비교는 빼고" in n for n in follow["notices"]), follow["notices"])
-        self.assertIn("아직 비교하지 못했어요", text)  # 본문 첫머리에서도 비교를 못 했다고 밝힌다
+        self.assertTrue(any("총액 비교" in n and "제외" in n for n in follow["notices"]), follow["notices"])
+        self.assertTrue(any("10월 1일~19일" in n and "거래" in n for n in follow["notices"]))
         self.assertNotIn("지난달 같은 기간보다", text)
 
     def test_open_analysis_requests_show_trend_overview_without_forced_questions(self):
@@ -560,11 +561,11 @@ class ServiceChoiceTest(ServiceChatBase):
         menu = [{"value": "spending", "label": "소비 분석"}, {"value": "budget", "label": "예산 조정"},
                 {"value": "policy", "label": "청년 정책"}]
         cases = (
-            ("안녕", "어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요."),
+            ("도와줘", "어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요."),
             ("날씨 어때?", "머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요."),
             ("이번 주 커피 얼마나 마셨지?", "지금은 이해하지 못했어요, 아래에서 골라 주세요."),
         )
-        with mock.patch.dict(EXTRA_SAID, {"안녕": {"intents": ["unclear"]}}):
+        with mock.patch.dict(EXTRA_SAID, {"도와줘": {"intents": ["unclear"]}}):
             for text, line in cases:
                 with self.subTest(text=text):
                     out = self.send("A", text=text)
@@ -579,6 +580,18 @@ class ServiceChoiceTest(ServiceChatBase):
                     self.assertEqual(picked.json()["messages"][0]["content"]["text"], "청년 정책")
                     self.assertEqual(Conversation.objects.get(pk=cid).active_agent, "policy")
                     self.assertEqual(self.calls.call_count, 0)
+
+    def test_greeting_has_no_inline_menu_and_feature_button_still_opens_policy(self):
+        out = self.send("A", text="안녕")
+        content = self.bot(out)
+        self.assertIn("쿠숑이에요", content["lines"][0])
+        self.assertEqual(content["choices"], [])
+        self.calls.assert_not_called()
+        self.assertIn({"value": "policy", "label": "청년 정책"}, out.json()["features"])
+        picked = self.send("A", out.json()["conversationId"], choice="policy")
+        self.assertEqual((picked.json()["agent"], self.bot(picked)["lines"]),
+                         ("policy", [policy_agent.ASK_REGION]))
+        self.calls.assert_not_called()
 
     def test_policy_region_buttons_answer_save_and_spending_goes_back(self):
         """청년 정책 (7단계 연결): 지역 버튼 → 문장 → 추천 → [1번 저장]은 대화 저장과 함께 DB 에 → 소비 질문은 소비 담당으로"""

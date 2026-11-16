@@ -6,6 +6,30 @@
 - 예산 조정 에이전트가 나오면: budget → 에이전트 호출 + task 로 교체 (나은 · 세진)
 """
 from .router import CHOICES
+import re
+
+THANKS = r"(?:고마워(?:요)?|고맙습니다|감사합니다|감사해(?:요)?|땡큐|thank\s+you|thanks)"
+
+
+def greeting_reply(message):
+    return "안녕하세요! 쿠숑이에요. 소비나 예산 관리에 고민이 있으신가요? 궁금한 점이나 조정이 필요한 부분을 말씀해 주시면 함께 살펴보겠습니다." if isinstance(message, str) and re.fullmatch(r"\s*(?:안녕|안녕하세요|하이)[\s.!?~。！？]*", message) else ""
+
+
+def thanks_reply(message):
+    if isinstance(message, str) and re.fullmatch(r"\s*" + THANKS + r"[\s.!?~。！？]*", message, re.IGNORECASE):
+        return "감사합니다! 앞으로도 궁금한 지출이나 조정이 필요한 예산이 있다면 언제든 편하게 말씀해 주세요."
+    return ""
+
+
+def without_thanks(message):
+    if not isinstance(message, str):
+        return message
+    match = re.match(r"\s*" + THANKS + r"(?=$|[\s,.!?~。！？，])", message, re.IGNORECASE)
+    if not match:
+        return message
+    request = message[match.end():].lstrip(' \t\r\n,.!?~。！？，')
+    request = re.sub(r"^(?:근데|그런데|그리고|그럼|그러면|하지만)(?=[\s,，])(?:[\s,，]+)", '', request)
+    return request if request else message
 
 
 def text(message, choices=()):

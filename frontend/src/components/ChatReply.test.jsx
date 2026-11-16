@@ -343,3 +343,161 @@ it('scroll 이면 선택지를 한 줄 가로 스크롤로 보인다 (기본은 
   await act(() => root.render(<Choices choices={choices} active onPick={() => {}} />))
   expect(host.querySelector('.mc-fx-choices').classList.contains('is-scroll')).toBe(false)
 })
+
+it('소비 비중 분석에는 카테고리별 금액과 비율 막대를 보여 준다', async () => {
+  await render({ ...month, view: [
+    { kind: 'head', title: '소비 분석' },
+    { kind: 'rows', title: '분류된 소비의 비중', rows: [
+      { code: 'FOOD', name: '식비', amount: 60000, ratio: 60, note: '60%' },
+      { code: 'FASHION_SHOPPING', name: '패션·쇼핑', amount: 40000, ratio: 40, note: '40%' },
+      { code: 'UNCLASSIFIED', name: '미분류', amount: 10000, ratio: 10, note: '10%' },
+    ] },
+  ] })
+  const chart = host.querySelector('.mc-spend-cats')
+  expect(chart.querySelector('strong').textContent).toBe('분류된 소비의 비중')
+  const rows = [...chart.querySelectorAll('.mc-spend-cat')]
+  expect(rows.map((row) => row.querySelector('.mc-spend-cname').textContent)).toEqual(['식비', '패션·쇼핑'])
+  expect(rows.map((row) => row.querySelector('.mc-spend-cbar > span').style.width)).toEqual(['60%', '40%'])
+  expect(rows.map((row) => row.querySelector('.mc-spend-camt').textContent)).toEqual(['60,000원60%', '40,000원40%'])
+  expect(chart.textContent).not.toContain('미분류')
+  expect(host.querySelector('.mc-fx-months')).toBeNull()
+})
+
+it('항목별 전망 막대의 읽기 이름은 화면 금액과 같고 NaN원이 나오지 않는다', async () => {
+  await render({ ...month, view: [
+    { kind: 'head', title: '소비 분석' },
+    { kind: 'rows', title: '항목별 이번 달 말 예상', rows: [
+      { name: '식비', value: '41.7만', note: '예산 40만의 104% · 넘을 전망', ratio: 100, direction: 'up' },
+      { name: '교통·차량', value: '9만', note: '예산 10만의 90%', ratio: 22 },
+    ] },
+  ] })
+  const bars = [...host.querySelectorAll('.mc-spend-cbar')]
+  expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual(['식비 41.7만', '교통·차량 9만'])
+  expect(host.textContent).not.toContain('NaN')
+  const amounts = [...host.querySelectorAll('.mc-spend-camt')].map((el) => el.firstChild.textContent)
+  expect(amounts).toEqual(['41.7만', '9만'])
+})
+
+
+it('소비 유형 아래 자세히 보기는 처음에 접고 분석 문장과 그래프를 한 번씩 보존한다', async () => {
+  const summary = '쇼핑 예산을 여러 번 늘렸어요.'
+  const evidence = '쇼핑 예산을 세 번 올렸어요.'
+  await render({ ...month, view: [
+    { kind: 'head', title: '이번 달 소비 성향' },
+    { kind: 'text', title: '이번만 조금 더형 🐣', tone: 'key', lines: [summary] },
+    { kind: 'details', title: '자세히 보기', blocks: [
+      { kind: 'text', title: '예산 관리 습관', lines: [evidence] },
+      { kind: 'trend', title: '최근 소비 추이', series: [
+        { code: 'FASHION_SHOPPING', name: '패션·쇼핑', points: [{ label: '첫째 주', amount: 50000 }, { label: '둘째 주', amount: 90000 }] },
+      ] },
+      { kind: 'rows', title: '월말 전망', rows: [{ name: '패션·쇼핑', value: '24만 원' }] },
+    ] },
+  ] })
+  const fold = host.querySelector('.mc-fx-fold')
+  expect(fold.open).toBe(false)
+  expect(host.querySelector('.mc-fx-key').closest('details')).toBeNull()
+  expect(host.querySelector('.mc-fx-key').textContent).toContain(summary)
+  await act(() => fold.querySelector('summary').click())
+  expect(fold.open).toBe(true)
+  expect(fold.textContent).toContain(evidence)
+  expect(fold.textContent).toContain('24만 원')
+  expect(fold.querySelectorAll('svg[role="img"]')).toHaveLength(1)
+  expect(fold.querySelector('table').textContent).toContain('90,000원')
+  expect(host.textContent.match(/쇼핑 예산을 세 번 올렸어요./g)).toHaveLength(1)
+  await act(() => fold.querySelector('summary').click())
+  expect(fold.open).toBe(false)
+  expect(fold.querySelector('svg[role="img"]')).not.toBeNull()
+})
+
+it('자세히 보기 안의 분석 선택도 마지막 답변에서만 원래 질문을 전송한다', async () => {
+  const onSend = vi.fn()
+  const question = '쇼핑 소비 추이를 보여줘'
+  const content = { ...month, view: [
+    { kind: 'head', title: '소비 분석' },
+    { kind: 'details', blocks: [{ kind: 'options', items: [{ title: '쇼핑 추이', desc: '최근 흐름', ask: question }] }] },
+  ] }
+  await act(() => root.render(<ChatReply content={content} title="소비 분석" active onSend={onSend} />))
+  await act(() => host.querySelector('.mc-fx-fold > summary').click())
+  await act(() => host.querySelector('.mc-fx-options button').click())
+  expect(onSend).toHaveBeenCalledExactlyOnceWith(question)
+  await act(() => root.render(<ChatReply content={content} title="소비 분석" active={false} onSend={onSend} />))
+  expect(host.querySelector('.mc-fx-options button')).toBeNull()
+  expect(host.querySelector('.mc-fx-options').textContent).toContain('쇼핑 추이')
+})
+
+
+it('소비 유형 카드는 마스코트 · 유형 이름 · 소개 · 근거 · 해볼 한 가지를 접지 않고 맨 위에 보여 준다', async () => {
+  await render({ ...month, view: [
+    { kind: 'head', title: '이번 달 소비 성향' },
+    { kind: 'persona', mascot: 'planner', name: '계획 척척형', desc: '정한 예산 안에서 꾸준히 소비를 관리해요.',
+      reasons: ['생활비는 예산 속도에 맞게 쓰고 있어요.'], action: '이번 주도 남은 예산을 한 번 확인해 보세요.' },
+    { kind: 'details', title: '자세한 소비 분석 보기', blocks: [{ kind: 'text', title: '소비 추이', lines: ['소비 추이', '지난달과 비슷해요.'] }] },
+  ] })
+  const card = host.querySelector('.mc-fx-persona')
+  expect(card.closest('details')).toBeNull()
+  expect(card.getAttribute('aria-label')).toBe('나의 소비 유형')
+  expect(card.querySelector('small').textContent).toBe('나의 소비 유형')
+  expect(card.querySelector('.mc-fx-persona-tags')).toBeNull()
+  expect(card.querySelector('.mc-mascot').dataset.mood).toBe('planner')
+  expect(card.querySelector('h3').textContent).toBe('계획 척척형')
+  expect(card.textContent).toContain('정한 예산 안에서 꾸준히 소비를 관리해요.')
+  expect(card.textContent).toContain('생활비는 예산 속도에 맞게 쓰고 있어요.')
+  expect(card.textContent).toContain('이번에 해볼 한 가지')
+  expect(host.querySelector('.mc-fx-fold').open).toBe(false)
+})
+
+it('소비 유형 카드는 예산 관리 태그를 칩으로 보여 주고 판정 기록(traits)은 그리지 않는다', async () => {
+  await render({ ...month, view: [{ kind: 'head', title: '소비 분석' },
+    { kind: 'persona', mascot: 'beauty', name: '나를 가꾸는 게 좋아형', desc: '나를 위한 관리에 투자하는 편이에요.',
+      tags: [{ code: 'saver', label: '차곡차곡 모아요' }, { code: 'stretch', label: '이번만 조금 더' }],
+      traits: [{ code: 'BEAUTY', axis: 'taste', basis: 'own_history', status: 'met', strength: 0.87 }],
+      reasons: ['최근 완료된 3개월 생활비의 평균 10%가 뷰티·미용이에요.'], action: null }] })
+  const card = host.querySelector('.mc-fx-persona')
+  const chips = [...card.querySelectorAll('.mc-fx-persona-tags li')]
+  expect(chips.map((li) => li.textContent)).toEqual(['차곡차곡 모아요', '이번만 조금 더'])
+  expect(chips.map((li) => li.dataset.tag)).toEqual(['saver', 'stretch'])
+  expect(card.textContent).not.toContain('own_history')
+  expect(card.textContent).not.toContain('0.87')
+})
+
+it('유형을 정하지 않아도 확인된 소비 특징을 분석 카드로 보여 준다', async () => {
+  await render({ ...month, view: [{ kind: 'head', title: '소비 분석' },
+    { kind: 'persona', mascot: 'basic', label: '지금까지의 소비 분석', name: '확인된 소비 특징', desc: '',
+      reasons: ['점심 무렵에는 식비 결제가 가장 많아요.'], action: null }] })
+  const card = host.querySelector('.mc-fx-persona')
+  expect(card.getAttribute('aria-label')).toBe('지금까지의 소비 분석')
+  expect(card.querySelector('small').textContent).toBe('지금까지의 소비 분석')
+  expect(card.querySelector('h3').textContent).toBe('확인된 소비 특징')
+  expect(card.textContent).toContain('점심 무렵에는 식비 결제가 가장 많아요.')
+  expect(card.querySelector('.mc-mascot').dataset.mood).toBe('basic')
+  expect(card.closest('details')).toBeNull()
+  expect(card.querySelector('.mc-fx-persona-top p')).toBeNull()
+  expect(card.querySelector('.mc-fx-persona-act')).toBeNull()
+})
+
+it('모르는 마스코트 코드는 기본 표정으로 그린다', async () => {
+  await render({ ...month, view: [{ kind: 'head', title: '이번 달 소비 성향' },
+    { kind: 'persona', mascot: 'unknown', name: '아직 탐색 중이에요', desc: '아직 뚜렷한 습관이 보이지 않아요.', reasons: [] }] })
+  expect(host.querySelector('.mc-mascot').dataset.mood).toBe('basic')
+  expect(host.querySelector('.mc-fx-persona-why')).toBeNull()
+})
+
+it('분석 문장은 글자를 그대로 두고 숫자 · 괄호 · 나열 · 계산식만 읽기 쉽게 나눈다', async () => {
+  const eq = '이번 달 말 약 52.5만 원 = 지금까지 쓴 23.5만 원 + 남은 18일 예상 29만 원'
+  const list = '패션·쇼핑 +70,660원 · 문화·여가 -54,800원 · 기타 -29,748원'
+  const aside = '식비 630,000원 (지난달 같은 기간 406,000원)'
+  await render({ ...month, view: [
+    { kind: 'head', title: '소비 분석' },
+    { kind: 'text', tone: 'key', title: '계산 요약', lines: ['계산 요약', eq] },
+    { kind: 'text', title: '지난달과 달라진 점', lines: ['지난달과 달라진 점', list, aside, '다음 달(11월)도 지금처럼 쓰면 약 141만 원이에요.'] },
+  ] })
+  const key = host.querySelector('.mc-fx-key p')
+  expect(key.textContent).toBe(eq)
+  expect(key.querySelector('.mc-fx-eq-result').textContent).toBe('이번 달 말 약 52.5만 원')
+  const items = [...host.querySelectorAll('.mc-fx-lines li')]
+  expect(items.map((li) => li.textContent)).toEqual([list, aside, '다음 달(11월)도 지금처럼 쓰면 약 141만 원이에요.'])
+  expect([...items[0].querySelectorAll('.mc-fx-chip')].map((c) => c.textContent)).toEqual(['패션·쇼핑 +70,660원', '문화·여가 -54,800원', '기타 -29,748원'])
+  expect(items[0].querySelector('.mc-fx-num.mc-fx-up').textContent).toBe('+70,660원')
+  expect(items[1].querySelector('.mc-fx-aside').textContent).toBe(' (지난달 같은 기간 406,000원)')
+  expect(items[2].querySelector('.mc-fx-aside')).toBeNull()  // 붙여 쓴 괄호(11월)는 그대로
+})

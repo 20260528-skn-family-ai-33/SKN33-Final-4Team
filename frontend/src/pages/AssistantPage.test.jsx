@@ -45,6 +45,20 @@ const mount = async () => act(() => root.render(<MemoryRouter><PopupProvider><As
 const button = (label) => [...host.querySelectorAll('button')].find((b) => b.textContent === label)
 const click = async (element) => act(() => element.click())
 const input = () => host.querySelector('input[aria-label="챗봇에게 보낼 메시지"]')
+it.each(['legacy', 'router'])('%s 일반 대화를 복원하면 최신 메시지까지 스크롤한다', async (engine) => {
+  sessionStorage.setItem('mc-chat-conversation', 'conversation-1')
+  useApi.mockReturnValue({ data: info(engine), error: null })
+  let restore
+  apiSend.mockImplementationOnce(() => new Promise((resolve) => { restore = resolve }))
+  await mount()
+  const main = host.querySelector('main')
+  Object.defineProperty(main, 'scrollHeight', { configurable: true, value: 2400 })
+  main.scrollTop = 0
+  await act(() => restore(reply(engine, 1, '이전 질문')))
+  expect(host.textContent).toContain('답변 1')
+  expect(main.scrollTop).toBe(2400)
+})
+
 async function submit(text) {
   await act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input(), text)
