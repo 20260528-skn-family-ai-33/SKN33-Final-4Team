@@ -148,9 +148,9 @@ export default function AssistantPage() {
       .then((talk) => {
         if (!live) return
         if (!Array.isArray(talk.messages) || talk.conversationId !== restoreId) throw new Error('대화를 정상적으로 받지 못했어요.')
+        scrollTarget.current = 'bottom'
         setMessages(talk.messages)
         if (!storedApproval) return
-        scrollTarget.current = 'bottom'
         const proposal = talk.messages.map((m) => m.content.budgetAdjustment?.proposal)
           .filter((item) => item?.proposalId === storedApproval.proposalId).at(-1)
         if (!proposal || storedApproval.path !== approvalPath(proposal)) {
