@@ -11,6 +11,7 @@ from django.urls import path, re_path
 
 from budgets import api as budgets_api
 from budgets import api_salary as budgets_salary
+from budgets import api_salary_review as budgets_salary_review
 from budgets import api_adjustment as budgets_adjustment
 from budgets import ai_consent as budget_ai
 from budgets import design_consent as budgets_design_consent
@@ -68,6 +69,7 @@ urlpatterns = [
     path("budgets/", budgets_api.budget, name="budget"),
     path("budgets/cushion/", budgets_api.cushion, name="cushion"),
     path("budgets/salary/", budgets_salary.salary, name="salary"),
+    path("budgets/salary-review/", budgets_salary_review.salary_review, name="salary-review"),
     path("budgets/salary/deposits/", budgets_salary.salary_deposits, name="salary-deposits"),
     path("budgets/salary/decisions/", budgets_salary.salary_decide, name="salary-decisions"),
     path("budgets/salary/pattern/", budgets_salary.salary_pattern, name="salary-pattern"),

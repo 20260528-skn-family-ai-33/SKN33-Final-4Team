@@ -278,7 +278,8 @@ def _calculation(context, state):
     if (set(codes) != set(consents) or any(code not in context.get("locks", {}) for code in codes)
             or _lock_snapshot(context, codes) != consents):
         raise ValueError("stale_unlock_consent")
-    result = deepcopy(context)
+    from .diagnostics import with_overrides
+    result = with_overrides(context, state.get('financial_overrides', {}))
     result["locks"] = {code: amount for code, amount in context.get("locks", {}).items() if code not in codes}
     return result
 
@@ -406,66 +407,134 @@ def _living_target(store, cid, state, context):
     return _ask(store, cid, state, 'destinations', ' '.join(lines), choices, index=0, explanation={})
 
 
-def salary_reply(store, cid, state, context, change):
-    """월급 변경: 내 정보와 같은 저장 경로를 쓰도록 화면에 변경 전후만 보여 주고, 다음 행동을 안내한다."""
-    from .advisor import josa, money
-    base = context.get('planning_base', context)
-    before = base.get('monthly_income')
-    amount = change.get('amount') if isinstance(change, dict) else None
-    if type(before) is not int or before <= 0 or type(amount) is not int or amount <= 0:
-        return _ask(store, cid, state, 'clarification', '바뀐 월 실수령액이 얼마인지 알려 주세요.', explanation={})
-    if change.get('mode') == 'to':
-        after = amount
-    else:
-        after = before + (amount if change.get('direction') == 'up' else -amount)
-    if after <= 0:
-        return _ask(store, cid, state, 'clarification', '바뀐 월 실수령액이 얼마인지 다시 알려 주세요.', explanation={})
-    if after == before:
-        return _ask(store, cid, state, 'request', f"지금 등록된 월 실수령액도 {money(before)}이에요. 바꿀 예산이 있으면 알려 주세요.",
-                    explanation={})
-    delta = after - before
-    lines = [f"월 실수령액을 {money(after)}{josa(money(after), '으로로')} 바꿀게요. 아래 버튼을 누르면 내 정보에도 저장돼요."]
-    if delta > 0:
-        lines.append(f"늘어난 {money(delta)}{josa(money(delta), '은는')} 다음 예산부터 여윳돈으로 들어가요. 이번 달 예산은 그대로예요.")
-        choices = [('salary_plan', '늘어난 돈 미리 나누기')]
-    else:
-        lines.append(f"다음 예산부터 {money(-delta)}{josa(money(-delta), '이가')} 줄어요. 줄일 예산을 미리 정해 둘 수 있어요.")
-        choices = [('salary_plan', '줄일 예산 미리 정하기')]
-    for key in ('requests', 'sources', 'destinations', 'comparison', 'quote'):
-        state.pop(key, None)
-    return _ask(store, cid, state, 'salary_change', ' '.join(lines), choices, explanation={},
-                salary={'before': before, 'after': after})
+def is_salary_resume(request, state):
+    return bool(state.get('salary_handoff') and (request.get('text') or '').strip() in {
+        'salary_resume', '이전 예산 조정 이어하기'})
 
 
-def salary_plan(store, cid, state, context):
-    """바뀐 월급으로 다음 주기 예산을 미리 정한다. 이미 내 정보에 저장했다면 두 번 더하지 않는다."""
-    from ..adjustment_schedule import planning_context
-    salary = (state.get('pending') or {}).get('salary') or state.get('salary_change') or {}
-    before, after = salary.get('before'), salary.get('after')
-    if type(before) is not int or type(after) is not int or before == after:
-        return _ask(store, cid, state, 'request', '어떤 예산을 조정하고 싶으세요?', explanation={})
-    base = context.get('planning_base', context)
-    up = after > before
-    planning = {'scope': 'next_cycle'}
-    if base.get('monthly_income') != after:
-        planning['income_change'] = {'amount': after, 'mode': 'to', 'direction': 'up' if up else 'down'}
-    state.update(scope='next_cycle', planning=planning, salary_change={'before': before, 'after': after})
-    state['requests'] = [{'category': None, 'amount': None, 'amount_mode': 'by', 'direction': 'up' if up else 'down'}]
-    for key in ('sources', 'destinations', 'excluded', 'comparison', 'quote'):
+def salary_reply(store, cid, state, context, data):
+    """Keep the adjustment while salary edits are handled by MyPage."""
+    from .funding import _data
+    pending = deepcopy(state.get('pending'))
+    incoming = deepcopy(data)
+    incoming.pop('income_change', None)
+    incoming.pop('action', None)
+    # A salary-only follow-up must not replace the expense or its intended period.
+    conditions = {field: incoming[field] for field in (*LIST_FIELDS, 'funding_scope') if incoming.get(field)}
+    if incoming.get('requests'):
+        _merge(state, incoming, pending or {})
+        pending = None
+    elif conditions:
+        _merge(state, conditions, pending or {})
+        pending = None
+    if not state.get('requests'):
+        state.pop('planning', None)
+        state.pop('scope', None)
+    state.get('planning', {}).pop('income_change', None)
+    if not state.get('salary_handoff') or incoming.get('requests'):
+        items = deepcopy(state.get('requests', []) if incoming.get('requests') else
+                         (state.get('primary_request') or state.get('plan_request') or {}).get('items')
+                         or state.get('requests', []))
+        requested = {item.get('category') for item in items}
+        for code, condition in state.get('refinement', {}).get('donors', {}).items():
+            if condition.get('explicit') and type(condition.get('target')) is int and code not in requested:
+                items.append({'category': code, 'amount': condition['target'], 'amount_mode': 'to', 'direction': 'down'})
+        targets = {}
+        for item in items:
+            try:
+                targets.update(_data(context, {'items': [item]})['targets'])
+            except ValueError:
+                pass  # An unfinished request keeps its missing input for the return step.
+        state['salary_handoff'] = {'pending': pending, 'context': deepcopy(context),
+                                   'items': items, 'targets': targets, 'rebuild': bool(incoming.get('requests') or conditions)}
+    if conditions:
+        state['salary_handoff'].update(pending=None, rebuild=True)
+    future = data.get('scope') == 'next_cycle'
+    state['salary_handoff']['future_income'] = future
+    line = '월급은 마이페이지에서 수정할 수 있어요. 저장한 뒤 돌아오면 이전 예산 조정을 이어갈 수 있어요.'
+    if future:
+        line = ('월급 변경은 실제 변경 시점에 마이페이지에서 하실 수 있어요. '
+                '진행 중인 예산 조정은 그대로 유지해 둘게요.')
+    return _ask(store, cid, state, 'salary_handoff', line,
+                [('salary_resume', '이전 예산 조정 이어하기')], explanation={})
+
+
+def resume_salary(store, cid, state, context, task_status, cancel):
+    """Return the saved screen, or rebase the original targets on the current budget."""
+    handoff = state['salary_handoff']
+    reference = state.get('work_ref')
+    checked = _check(reference, task_status) if reference else None
+    if not handoff.get('rebuild') and handoff['context'] == context and (not checked or checked['state'] not in ENDED):
+        state.pop('salary_handoff')
+        if handoff.get('pending'):
+            state['pending'] = handoff['pending']
+        else:
+            state.pop('pending', None)
+        _save(store, cid, state)
+        if state.get('pending'):
+            return _pending_reply(state, reference, context)
+        if state.get('proposal'):
+            return _result('replied', ['이전 예산 조정을 이어갈게요. 아직 예산은 바뀌지 않았어요.'],
+                           work_ref=reference, proposal=state['proposal'])
+        if not state.get('requests') and not state.get('clear_targets'):
+            return _ask(store, cid, state, 'request', '어떤 예산을 조정하고 싶으세요?', explanation={})
+        return None
+    if checked and checked['state'] == 'saving':
+        return _result('awaiting_input', ['이전 조정안의 저장 결과를 확인한 뒤 이어갈 수 있어요.'], work_ref=reference)
+    if checked and checked['state'] not in ENDED:
+        cancel(reference)
+        if _check(reference, task_status)['state'] not in ENDED:
+            return _result('awaiting_input', ['이전 미리보기를 정리한 뒤 최신 예산으로 이어갈게요.'], work_ref=reference)
+    before = {**context['allocations'], **context['buckets'], 'LIVING': sum(context['allocations'].values())}
+    requests, completed_reductions = [], []
+    for item in handoff['items']:
+        item = deepcopy(item)
+        code = item.get('category')
+        target = handoff['targets'].get(code)
+        if target is not None and code in before:
+            fulfilled = (before[code] >= target if item.get('direction') == 'up' else
+                         before[code] <= target if item.get('direction') == 'down' else before[code] == target)
+            if fulfilled:
+                if item.get('direction') == 'down':
+                    completed_reductions.append({**item, 'amount': before[code], 'amount_mode': 'to', 'direction': None})
+                continue
+            item.update(amount=target, amount_mode='to')
+        requests.append(item)
+    if requests:
+        # A previously fulfilled cut is still a limit, not permission to cut the same source again.
+        requests.extend(completed_reductions)
+    state['requests'] = requests
+    planned = deepcopy(state.get('financial_overrides', {}).get('planned_spare', {}))
+    confirmed_planned = (planned.get('status') == 'user_confirmed' and planned.get('scope') == 'unbudgeted_only'
+                         and type(planned.get('amount')) is int and planned['amount'] >= 0)
+    same_period = (handoff['context'].get('cycle_id') == context.get('cycle_id')
+                   and handoff['context'].get('effective_on') == context.get('effective_on'))
+    expense = state.get('expense_request') or {}
+    expense_target = handoff['targets'].get(expense.get('category'))
+    if state.get('one_off') and expense_target is not None and type(state.get('set_aside_amount')) is int:
+        state['expense_budget_base'] = expense_target - (expense['amount'] - state['set_aside_amount'])
+    for key in ('salary_handoff', 'pending', 'proposal', 'work_ref', 'reference_context', 'pending_edit',
+                'comparison', 'financial_offer', 'quote', 'partial', 'primary_request', 'plan_request',
+                'proposal_request', 'refinement', 'risk_acknowledged', 'plan_selected', 'history',
+                'financial_overrides', 'requested_view'):
         state.pop(key, None)
-    names = {**context.get('category_names', {}), **SPECIAL_NAMES}
-    living = [(code, names.get(code, code)) for code in context['allocations'] if code not in NON_BUDGET_CODES]
-    if up:
-        try:
-            planned = planning_context(base, planning)
-            state['spare_minimum'] = max(planned['buckets']['SPARE'] - (after - before), 0)
-        except ValueError:
-            pass
-        state.update(sources=['SPARE'], funding_scope='spare')
-        return _ask(store, cid, state, 'category', '늘어난 돈을 어디에 쓸까요? 기존 여윳돈은 그대로 두고 늘어난 금액 안에서 나눠요.',
-                    [('SAVINGS', '저축'), ('CUSHION_MONTHLY', '월 머니쿠션'), *living], index=0, explanation={})
-    return _ask(store, cid, state, 'category', '어느 예산을 줄일까요?',
-                [*living, ('CUSHION_MONTHLY', '월 머니쿠션'), ('SAVINGS', '저축')], index=0, explanation={})
+    codes = state.get('unlock_categories', [])
+    valid = [code for code in codes if code in context.get('locks', {})
+             and state.get('unlock_consents', {}).get(code) == _lock_snapshot(context, [code])[code]]
+    state['unlock_categories'] = valid
+    state['unlock_consents'] = {code: state['unlock_consents'][code] for code in valid}
+    if confirmed_planned and same_period:
+        state['financial_overrides'] = {'planned_spare': planned}
+    _save(store, cid, state)
+    if confirmed_planned and not same_period and requests:
+        return _ask(store, cid, state, 'financial_data',
+                    '예산 주기가 바뀌었어요. 이번 주기에 여윳돈으로 따로 쓸 예정인 금액이 있나요?',
+                    field='planned', explanation={})
+    if not requests and not state.get('clear_targets'):
+        line = ('이전 요청은 최신 예산에 이미 반영되어 있어요. 같은 금액을 다시 조정하지 않을게요.'
+                if handoff['items'] else '등록된 최신 정보로 이어갈게요. 어떤 예산을 조정하고 싶으세요?')
+        return _ask(store, cid, state, 'request', line, explanation={})
+    return None
 
 
 def _manual_living(store, cid, state, context):
@@ -784,6 +853,8 @@ def _merge(state, data, pending):
         data = deepcopy(data)
         data["requests"][0]["category"] = state["requests"][0].get("category")
     incoming = deepcopy(data.get("requests", []))
+    if incoming:
+        state.pop('expense_budget_base', None)
     old = state.setdefault("requests", [])
     if data.get("reference") == "new":
         for key in ("requests", "sources", "destinations", "excluded", "funding_scope", "quote",
@@ -896,7 +967,7 @@ def choice_input(state, picked):
     if picked == 'keep_spare':
         return {'keep_spare': True}
     if kind == 'salary_change' and picked == 'salary_plan':
-        return {'salary_plan': True}
+        return {'action': 'salary_change'}
     if kind == 'increase_review':
         if picked == 'continue_increase':
             return {'acknowledge_increase': True}
@@ -959,11 +1030,22 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
     text, mode = (request.get("text") or "").strip(), request.get("mode", "continue")
     ref = request.get("work_ref") or state.get("work_ref")
     resumed = deepcopy(initial_data)
+    if is_salary_resume(request, state):
+        try:
+            response = resume_salary(store, cid, state, get_context(), task_status, cancel)
+        except Exception:
+            return _result('awaiting_input', ['최신 예산을 확인하지 못했어요. 이전 조정 내용은 보관했어요. 다시 이어하기를 눌러 주세요.'],
+                           choices=[('salary_resume', '이전 예산 조정 이어하기')],
+                           work_ref=ref, error='salary_resume_unavailable')
+        if response is not None:
+            return response
+        ref = state.get('work_ref')
+        resumed = {}
     try:
         checked = _check(ref, task_status) if ref else None
     except Exception:
         return _result("failed", ["진행 중인 조정 상태를 확인하지 못했어요."], work_ref=ref, error="task_check_failed")
-    if checked and checked["state"] in ENDED:
+    if checked and checked["state"] in ENDED and not state.get("salary_handoff"):
         if checked["state"] == "canceled" and state.get("pending_edit") and mode != "cancel" and text not in CANCEL:
             resumed = state.pop("pending_edit")
             for key in ("proposal", "work_ref", "pending"):
@@ -995,6 +1077,14 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
         names = {**NAMES, **context.get("category_names", {}), **SPECIAL_NAMES}
         names.update({code: names.get(code, code) for code in context["allocations"]})
     except Exception:
+        # Salary settings remain reachable even before the first budget exists.
+        try:
+            data = resumed or read(text, complete, categories={**NAMES, **SPECIAL_NAMES},
+                                   **dialogue_context(state))
+            if data.get('income_change') or data.get('action') == 'salary_change':
+                return salary_reply(store, cid, state, {}, data)
+        except InterpretationFailed:
+            pass
         return _result("failed", ["현재 예산을 확인하지 못했어요."], work_ref=ref, error="context_unavailable")
     pending = state.get("pending", {})
     if not text and resumed is None:
@@ -1065,9 +1155,8 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                     'why': '생활비 예산은 월급에서 고정지출과 저축 등을 뺀 뒤 남은 돈으로 나눠요. 고정지출 금액을 바꾸는 작업과는 별개예요.',
                     'effect': '고정지출과 기존 예산은 아직 바뀌지 않았어요.',
                     'next': '이 대화에서는 식비·교통비·쇼핑 등 생활비 항목을 조정할 수 있어요.'})
-        if (data.get('income_change') and not data.get('requests') and not state.get('requests')
-                and not data.get('clear_targets') and not data.get('cancel')):
-            return salary_reply(store, cid, state, context, data['income_change'])
+        if data.get('income_change') or data.get('action') == 'salary_change':
+            return salary_reply(store, cid, state, context, data)
         if state.get('manual_living') and data.get('requests'):
             data['action'] = None
             if len(data['requests']) > 1:
@@ -1123,8 +1212,8 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
         return ask_spare_minimum(store, cid, state)
     if data.get('manual_living'):
         return _manual_living(store, cid, state, context)
-    if data.get('salary_plan'):
-        return salary_plan(store, cid, state, context)
+    if data.get('income_change') or data.get('action') == 'salary_change' or data.get('salary_plan'):
+        return salary_reply(store, cid, state, context, data)
     if data.get('action') == 'recommend':
         if _explanation_only({**data, 'action': 'explain'}) and state.get('comparison'):
             return recommendation_reply(state, context, ref)
@@ -1314,7 +1403,10 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
             if saved == total:
                 _save(store, cid, state)
                 return _result('replied', [f'따로 마련한 {saved:,}원으로 이번 지출을 충당할 수 있어요. 추가 예산 조정은 필요하지 않아요.'], work_ref=ref)
-            state['requests'] = requests = [{**expense, 'amount': total - saved}]
+            remaining = {**expense, 'amount': total - saved}
+            if 'expense_budget_base' in state:
+                remaining.update(amount=state['expense_budget_base'] + total - saved, amount_mode='to')
+            state['requests'] = requests = [remaining]
         allowed_sources = set(state.get('expense_allowed_sources', [])) | set(data.get('sources', []))
         if data.get('funding_scope') == 'extended':
             allowed_sources.update(('SAVINGS', 'CUSHION_MONTHLY'))
@@ -1333,7 +1425,8 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                      'planning_income_invalid': '변경 후 월급은 0원보다 커야 해요.',
                      'planning_date_required': '월급 변화는 다음 급여부터 적용할까요?'}
             return _ask(store, cid, state, 'clarification', lines.get(str(error), '예상 월급과 적용 시점을 확인해 주세요.'))
-        if (context['monthly_income'] < context['income_before'] and not state.get('destinations')
+        if ((context['monthly_income'] < context['income_before'] or context['buckets']['SPARE'] < 0)
+                and not state.get('destinations')
                 and requests and all(row.get('direction') == 'down' for row in requests)):
             state['destinations'] = ['SPARE']
         if data.get('income_change') and context['monthly_income'] > context['income_before']:
@@ -1402,9 +1495,7 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
                                      "next": "현재 잠금 조건으로 변경 요청을 다시 확인해 주세요."})
         state["unlock_categories"] = list(dict.fromkeys([*state.get("unlock_categories", []), *codes]))
         state.setdefault("unlock_consents", {}).update(pending["lock_snapshot"])
-    calculation = deepcopy(context)
-    calculation["locks"] = {code: amount for code, amount in context.get("locks", {}).items()
-                             if code not in state.get("unlock_categories", [])}
+    calculation = _calculation(context, state)
     limit_reply = check_amount_limit(store, cid, state, context)
     if limit_reply is not None:
         return limit_reply

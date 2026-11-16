@@ -204,6 +204,47 @@ class FinancialPlannerTest(unittest.TestCase):
         self.assertEqual(plan["spare_available_after"], plan["reserve_after"])
         self.assertEqual(self.inp, before)
 
+    def test_price_review_requires_a_new_valid_funding_plan_without_changing_budgets(self):
+        original = deepcopy(self.inp)
+        disabled = simulate_plan(self.inp, self.diag, funding(LIVING=200000))
+        self.assertEqual(disabled['result']['allocations']['BEAUTY'], 25000)
+        self.assertEqual(self.inp, original)
+
+        self.inp['price_reference'] = {
+            'status': 'ready', 'snapshot': 'synthetic-price-review', 'region_code': '11110',
+            'references': [{'category': 'BEAUTY', 'item_group': 'haircut', 'unit': '1회',
+                'reference_price': 35000, 'scope': 'local', 'region_code': '11110',
+                'tier': 'everyday', 'sample_kind': 'general', 'as_of': '2026-11-01'}],
+        }
+        self.inp['price_history_totals'] = {'BEAUTY': 35000}
+        original = deepcopy(self.inp)
+        with self.assertRaisesRegex(ValueError, '^price_reallocation_required$'):
+            simulate_plan(self.inp, self.diag, funding(LIVING=200000))
+        self.assertEqual(self.inp, original)
+
+        revised = simulate_plan(self.inp, self.diag, funding(LIVING=80000, SPARE=70000, SAVINGS=50000))
+        self.assertEqual(revised['result']['allocations']['BEAUTY'], 40000)
+        self.assertEqual(revised['result']['allocations']['FOOD'], 600000)
+        self.assertEqual(sum(revised['result']['allocations'].values())
+                         + sum(revised['result']['buckets'].values()) + self.inp['fixed_amount'],
+                         self.inp['funding_amount'])
+        self.assertEqual(self.inp, original)
+
+    def test_price_review_preserves_the_explicit_target_amount(self):
+        self.inp['price_reference'] = {
+            'status': 'ready', 'snapshot': 'synthetic-explicit-target', 'region_code': '11110',
+            'references': [{'category': 'BEAUTY', 'item_group': 'haircut', 'unit': '1회',
+                'reference_price': 100000, 'scope': 'local', 'region_code': '11110',
+                'tier': 'everyday', 'sample_kind': 'general', 'as_of': '2026-11-01'}],
+        }
+        self.inp['price_history_totals'] = {'BEAUTY': 35000}
+        original = deepcopy(self.inp)
+        diag = diagnose(self.inp, envelope(item('BEAUTY', 5000)))
+        plan = simulate_plan(self.inp, diag, funding(SAVINGS=5000))
+        self.assertEqual(plan['result']['allocations']['BEAUTY'], 55000)
+        self.assertEqual(plan['result']['buckets']['SAVINGS'], 595000)
+        self.assertEqual(self.inp, original)
+
     def test_spare_overuse_is_rejected_even_when_engine_balance_is_valid(self):
         with self.assertRaisesRegex(ValueError, "funding_limit|spare_reserve_shortfall"):
             simulate_plan(self.inp, self.diag, funding(SPARE=200000))

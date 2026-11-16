@@ -6,6 +6,7 @@
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
 import { useRef, useState } from 'react'
 import { won } from '../utils/money.js'
+import { ENDED_ADJUSTMENTS } from '../utils/adjust.js'
 import Mascot from './Mascot.jsx'
 import { apiSend, useApi } from '../utils/api.js'
 import { DETAIL, policyNumber, policyTitle } from '../utils/policyCards.js'
@@ -529,12 +530,15 @@ function Bubble({ content, children }) {
   )
 }
 
-export default function ChatReply({ content, title, active, onPick, onApprove, onSend, onDetail, navigation, children }) {
-  if (content.budgetAdjustment) return <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} onSend={onSend} navigation={navigation} />
+export default function ChatReply({ content, title, active, onPick, onApprove, onSend, onSalaryEdit, onSalaryReview, onDetail, navigation, children }) {
+  const adjustment = content.budgetAdjustment
+  const ended = adjustment && (adjustment.status === 'ended' || ENDED_ADJUSTMENTS.has(adjustment.status) || ENDED_ADJUSTMENTS.has(adjustment.proposal?.state))
   return <>
-    {content.result ? <ResultCard content={content} title={title} onDetail={onDetail} onSend={active && onSend ? onSend : null} /> : <Bubble content={content}>{children}</Bubble>}
-    {content.agent !== 'policy' && content.examples?.length > 0 && <div>
-      <p className="mc-note">이런 질문으로 이어서 볼 수 있어요.</p>
+    {adjustment
+      ? <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} onSend={onSend} onSalaryEdit={onSalaryEdit} onSalaryReview={onSalaryReview} navigation={navigation} />
+      : content.result ? <ResultCard content={content} title={title} onDetail={onDetail} onSend={active && onSend ? onSend : null} /> : <Bubble content={content}>{children}</Bubble>}
+    {content.agent !== 'policy' && !ended && content.examples?.length > 0 && <div className="mc-fx-next">
+      <p className="mc-note">{adjustment ? '이렇게 이어서 말해 보세요.' : '이런 질문으로 이어서 볼 수 있어요.'}</p>
       <Choices choices={content.examples.map((text) => ({ value: text, label: text }))} active={active && Boolean(onSend)}
         onPick={(choice) => onSend(choice.value)} />
     </div>}

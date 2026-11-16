@@ -51,6 +51,47 @@ class AdjustmentServiceTest(TestCase):
     def adapter(self):
         return AdjustmentAdapter(self.user, self.talk, TODAY, str(self.base.pk), self.snapshot["mode"])
 
+    def salary_draft(self, version, *, valid=True):
+        from .recommend import budget_input_snapshot, hash_snapshot
+        draft = Budget.objects.create(user=self.user, cycle=self.cycle, version_no=version, status="validated",
+            funding_amount=3000000, input_hash=hash_snapshot(budget_input_snapshot(
+                self.user, self.cycle, profile=self.profile, today=TODAY, card=False)) if valid else "stale")
+        BudgetItem.objects.bulk_create([BudgetItem(user=self.user, budget=draft, **row) for row in
+            self.base.items.values("bucket", "category_id", "allocated_amount")])
+        return draft
+
+    def test_salary_return_prefers_latest_valid_recommendation_over_cached_approved_budget(self):
+        from .adjustment_context import get_adjustment_context
+        adapter = self.adapter()
+        adapter.get_context()
+        self.salary_draft(2)
+        latest = self.salary_draft(3)
+        stale = self.salary_draft(4, valid=False)
+        self.context_reader.side_effect = get_adjustment_context
+
+        fresh = adapter.fresh_salary_context()
+
+        self.assertEqual((fresh["base_budget_id"], fresh["mode"]), (str(latest.pk), "INITIAL_ADJUSTMENT"))
+        self.assertEqual(adapter.reference_context["base_budget_id"], str(latest.pk))
+        self.assertEqual(adapter.get_context(), fresh)
+        self.base.refresh_from_db()
+        stale.refresh_from_db()
+        self.assertEqual(self.base.status, "approved")
+        self.assertEqual(stale.status, "validated")
+
+    def test_salary_return_falls_back_to_approved_budget_when_draft_is_stale(self):
+        from .adjustment_context import get_adjustment_context
+        stale = self.salary_draft(2, valid=False)
+        adapter = AdjustmentAdapter(self.user, self.talk, TODAY, str(stale.pk), "INITIAL_ADJUSTMENT")
+        adapter.reference_context = {"base_budget_id": str(stale.pk), "mode": "INITIAL_ADJUSTMENT"}
+        adapter._context = {"base_budget_id": str(stale.pk), "mode": "INITIAL_ADJUSTMENT"}
+        self.context_reader.side_effect = get_adjustment_context
+
+        fresh = adapter.fresh_salary_context()
+
+        self.assertEqual((fresh["base_budget_id"], fresh["mode"]), (str(self.base.pk), "NORMAL_ADJUSTMENT"))
+        self.assertEqual(adapter.reference_context["base_budget_id"], str(self.base.pk))
+
     def stage(self, request=None, **settings):
         adapter = self.adapter()
         baseline = adapter.get_context()

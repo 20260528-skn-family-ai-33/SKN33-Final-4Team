@@ -224,7 +224,7 @@ it('분석 메뉴는 분석마다 설명을 보여 주고, 누르면 그 질문�
     { kind: 'head', title: '소비 분석 · 볼 수 있는 분석' },
     { kind: 'options', items: [
       { title: '소비 습관', desc: '매달 반복되는 소비를 짚어요.', ask: '내 소비 습관 어때?' },
-      { title: '지난달과 비교', desc: '더 쓴 이유를 찾아요.', ask: '이번 달 생활비 왜 이렇게 많이 나왔지?' },
+      { title: '지난달과 비교', desc: '더 쓰거나 덜 쓴 이유를 찾아요.', ask: '지난달과 달라진 소비는 뭐야?' },
     ] },
   ] }
   await act(() => root.render(<ChatReply content={content} title="소비 분석" active onPick={() => {}} onSend={onSend} />))
@@ -232,7 +232,7 @@ it('분석 메뉴는 분석마다 설명을 보여 주고, 누르면 그 질문�
   expect(cards).toHaveLength(2)
   expect(cards[0].textContent).toContain('매달 반복되는 소비를 짚어요.')
   await act(() => cards[1].click())
-  expect(onSend).toHaveBeenCalledWith('이번 달 생활비 왜 이렇게 많이 나왔지?')
+  expect(onSend).toHaveBeenCalledWith('지난달과 달라진 소비는 뭐야?')
   await act(() => root.render(<ChatReply content={content} title="소비 분석" active={false} onPick={() => {}} onSend={onSend} />))
   expect(host.querySelectorAll('.mc-fx-options button')).toHaveLength(0)
   expect(host.querySelector('.mc-fx-options').textContent).toContain('소비 습관')
@@ -480,6 +480,49 @@ it('모르는 마스코트 코드는 기본 표정으로 그린다', async () =>
     { kind: 'persona', mascot: 'unknown', name: '아직 탐색 중이에요', desc: '아직 뚜렷한 습관이 보이지 않아요.', reasons: [] }] })
   expect(host.querySelector('.mc-mascot').dataset.mood).toBe('basic')
   expect(host.querySelector('.mc-fx-persona-why')).toBeNull()
+})
+
+it('예산 조정의 추천 질문은 미리보기와 확정 버튼을 유지하고 표시 문장만 보낸다', async () => {
+  const onSend = vi.fn(), onPick = vi.fn(), onApprove = vi.fn()
+  const content = { lines: [], examples: ['이 조정안의 변경 내역을 설명해줘'], budgetAdjustment: {
+    status: 'replied', canApprove: true, proposal: { state: 'awaiting_approval', changes: [
+      { category: 'FOOD', before: 400000, after: 420000, diff: 20000 },
+    ] },
+  } }
+  await act(() => root.render(<ChatReply content={content} active onPick={onPick} onApprove={onApprove} onSend={onSend} />))
+  const before = host.querySelector('.mc-budget-changes').textContent
+  expect(before).toContain('400,000원')
+  expect(before).toContain('420,000원')
+  expect(button('예산 확정하기').disabled).toBe(false)
+  await act(() => button(content.examples[0]).click())
+  expect(onSend).toHaveBeenCalledExactlyOnceWith(content.examples[0])
+  expect(onPick).not.toHaveBeenCalled()
+  expect(onApprove).not.toHaveBeenCalled()
+  expect(host.querySelector('.mc-budget-changes').textContent).toBe(before)
+  expect(button('예산 확정하기').disabled).toBe(false)
+})
+
+it('지난 예산 답변이나 전송 기능이 없는 답변의 추천 질문은 실행할 수 없다', async () => {
+  const onSend = vi.fn()
+  const content = { lines: ['금액을 알려 주세요.'], examples: ['금액을 어떻게 정하면 좋을까?'],
+    budgetAdjustment: { status: 'awaiting_input', phase: 'amount' } }
+  for (const props of [{ active: false, onSend }, { active: true }]) {
+    await act(() => root.render(<ChatReply content={content} {...props} />))
+    expect(button(content.examples[0]).disabled).toBe(true)
+    await act(() => button(content.examples[0]).click())
+    expect(onSend).not.toHaveBeenCalled()
+  }
+})
+
+it('종료된 예산 응답에는 저장된 추천 질문이 남아 있어도 표시하지 않는다', async () => {
+  for (const state of ['saved', 'expired', 'canceled', 'rejected', 'failed', 'ended']) {
+    for (const adjustment of [{ status: state }, { status: 'replied', proposal: { state } }]) {
+      if (state === 'ended' && adjustment.proposal) continue
+      const content = { lines: ['조정을 마쳤어요.'], examples: ['변경 내역을 설명해줘'], budgetAdjustment: adjustment }
+      await act(() => root.render(<ChatReply content={content} active onSend={vi.fn()} />))
+      expect(button(content.examples[0])).toBeUndefined()
+    }
+  }
 })
 
 it('분석 문장은 글자를 그대로 두고 숫자 · 괄호 · 나열 · 계산식만 읽기 쉽게 나눈다', async () => {

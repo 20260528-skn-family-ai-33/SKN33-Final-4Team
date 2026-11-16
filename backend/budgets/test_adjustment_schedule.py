@@ -41,14 +41,21 @@ class FuturePlanningTest(unittest.TestCase):
         store, propose = Store(), Mock(return_value={'proposal_id': 'plan', 'task_ref': 'task'})
         parsed = reading(requests=[item('SAVINGS', 100000, 'down')], scope='next_cycle',
                          income_change={'amount': 500000, 'mode': 'by', 'direction': 'down'})
-        result = financial_conversation.handle({'conversation_id': 'talk', 'text': '다음 달 월급 50만원 감소, 저축 10만원 감액'},
-            store=store, complete=Mock(return_value=json.dumps(parsed)), get_context=lambda: deepcopy(self.base),
-            simulate=simulate_funding, propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+        ports = dict(store=store, complete=Mock(return_value=json.dumps(parsed)), get_context=lambda: deepcopy(self.base),
+                     simulate=simulate_funding, propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+        result = financial_conversation.handle({'conversation_id': 'talk', 'text': '다음 달 월급 50만원 감소, 저축 10만원 감액'}, **ports)
+        self.assertEqual(store.state['pending']['kind'], 'salary_handoff')
+        self.assertEqual(store.state['requests'], [item('SAVINGS', 100000, 'down')])
+        propose.assert_not_called()
+        self.assertEqual(self.base['monthly_income'], 3000000)
+        self.base['monthly_income'] = 2500000  # Current salary saved through MyPage.
+        result = financial_conversation.handle({'conversation_id': 'talk', 'text': 'salary_resume'}, **ports)
         self.assertIn('proposal', result['reply'], result)
         calculated = propose.call_args.args[1]
         self.assertEqual(calculated['buckets']['SAVINGS'], 500000)
         self.assertEqual(calculated['buckets']['SPARE'], 0)
         self.assertEqual(propose.call_args.args[0]['monthly_income'], 2500000)
+        self.assertNotIn('income_change', store.state['planning'])
 
     def test_salary_shortfall_still_blocks_insufficient_or_protected_cuts(self):
         for cut, floor in ((50000, 300000), (100000, 550000)):
@@ -82,26 +89,39 @@ class FuturePlanningTest(unittest.TestCase):
                      simulate=simulate_funding, propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
         financial_conversation.handle({'conversation_id': 'talk', 'text': '다음달 교육비 50만원 더 나감'}, **ports)
         self.assertEqual(store.state['requests'], [item('EDUCATION', 500000)])
-        result = financial_conversation.handle({'conversation_id': 'talk', 'text': '다음달 월급 50만원 늘어서 그것만 추가해'}, **ports)
+        result = financial_conversation.handle({'conversation_id': 'talk', 'text': '다음달 월급 50만원 늘어서 여윳돈에서만 추가해'}, **ports)
+        self.assertEqual(store.state['pending']['kind'], 'salary_handoff')
+        self.assertEqual(result['reply']['lines'][0],
+            '월급 변경은 실제 변경 시점에 마이페이지에서 하실 수 있어요. 진행 중인 예산 조정은 그대로 유지해 둘게요.')
+        propose.assert_not_called()
+        self.base['monthly_income'] = 3500000  # Only after this is the current, saved salary.
+        result = financial_conversation.handle({'conversation_id': 'talk', 'text': 'salary_resume'}, **ports)
         self.assertIn('proposal', result['reply'], result)
         args = propose.call_args
         self.assertEqual(args.kwargs['scope'], 'next_cycle')
         self.assertEqual(args.args[0]['monthly_income'], 3500000)
         self.assertEqual(args.args[1]['allocations']['EDUCATION'], 550000)
         self.assertEqual(args.args[1]['buckets']['SPARE'], 400000)
+        self.assertNotIn('income_change', store.state['planning'])
 
     def test_new_income_funds_pending_goal_without_reducing_other_budgets(self):
         for explicit in ([], ['LIVING']):
             with self.subTest(explicit=explicit):
                 store, propose = Store(), Mock(return_value={'proposal_id': 'plan', 'task_ref': 'task'})
-                answers = [reading(requests=[item('EDUCATION', 500000)], scope='next_cycle'),
-                           reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'},
-                                   sources=explicit, reference='previous')]
-                ports = dict(store=store, complete=Mock(side_effect=[json.dumps(a) for a in answers]),
+                self.base['monthly_income'] = 3000000
+                store.state = {'requests': [item('EDUCATION', 500000)], 'scope': 'next_cycle',
+                               'planning': {'scope': 'next_cycle'}, 'sources': ['SPARE']}
+                parsed = reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'},
+                                 sources=explicit, reference='previous')
+                ports = dict(store=store, complete=Mock(return_value=json.dumps(parsed)),
                              get_context=lambda: deepcopy(self.base), simulate=simulate_funding,
                              propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
-                financial_conversation.handle({'conversation_id': 'talk', 'text': '다음달 교육비 50만원 더 나갈 예정'}, **ports)
-                financial_conversation.handle({'conversation_id': 'talk', 'text': '다음달 월급 50만원 늘어서 그거 쓰면 됨'}, **ports)
+                financial_conversation.handle({'conversation_id': 'talk', 'text': '월급 50만원 올랐어'}, **ports)
+                self.assertEqual(store.state['sources'], explicit or ['SPARE'])
+                self.assertEqual(store.state['pending']['kind'], 'salary_handoff')
+                propose.assert_not_called()
+                self.base['monthly_income'] = 3500000
+                response = financial_conversation.handle({'conversation_id': 'talk', 'text': 'salary_resume'}, **ports)
                 self.assertEqual(store.state['sources'], explicit or ['SPARE'])
                 if not explicit:
                     result = propose.call_args.args[1]
@@ -111,19 +131,32 @@ class FuturePlanningTest(unittest.TestCase):
                     for code, amount in self.base['allocations'].items():
                         if code != 'EDUCATION':
                             self.assertEqual(result['allocations'][code], amount)
+                else:
+                    propose.assert_not_called()
+                    self.assertNotIn('proposal', response['reply'])
+                    self.assertIn('가져올 수 있는 돈이 요청한 금액보다 적어요', response['reply']['lines'][0])
+                    calculated = simulate_funding(planning_context(self.base, store.state['planning']),
+                        envelope(*store.state['requests'], sources=store.state['sources']))
+                    self.assertEqual(calculated['buckets']['SPARE'], 900000)
 
     def test_income_funding_keeps_reserve_and_explicit_exclusion(self):
         self.base.update(monthly_income=2700000, funding_amount=2700000)
         self.base['buckets']['SPARE'] = self.base['bucket_available']['SPARE'] = 100000
         for excluded in ([], ['SPARE']):
             with self.subTest(excluded=excluded):
+                self.base['monthly_income'] = 2700000
                 store, propose = Store(), Mock()
                 store.state = {'requests': [item('EDUCATION', 500000)], 'scope': 'next_cycle',
-                               'planning': {'scope': 'next_cycle'}, 'excluded': excluded}
+                               'planning': {'scope': 'next_cycle'}, 'excluded': excluded,
+                               'sources': [] if excluded else ['SPARE']}
                 parsed = reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'}, reference='previous')
-                response = financial_conversation.handle({'conversation_id': 'talk', 'text': '급여가 더 들어와'},
-                    store=store, complete=Mock(return_value=json.dumps(parsed)), get_context=lambda: deepcopy(self.base),
-                    simulate=simulate_funding, propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+                ports = dict(store=store, complete=Mock(return_value=json.dumps(parsed)), get_context=lambda: deepcopy(self.base),
+                             simulate=simulate_funding, propose=propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+                financial_conversation.handle({'conversation_id': 'talk', 'text': '급여가 더 들어와'}, **ports)
+                self.assertEqual(store.state['pending']['kind'], 'salary_handoff')
+                propose.assert_not_called()
+                self.base['monthly_income'] = 3200000
+                response = financial_conversation.handle({'conversation_id': 'talk', 'text': 'salary_resume'}, **ports)
                 plans = [p for p in response['reply']['comparison']['plans'] if p.get('result')]
                 self.assertTrue(plans)
                 for plan in plans:

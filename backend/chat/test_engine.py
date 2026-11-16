@@ -64,6 +64,65 @@ class ServiceChatBase(TestCase):
 @fixture_db_only
 @SERVICE
 class ServiceChatTest(ServiceChatBase):
+    def test_generated_followup_and_habit_details_survive_reload_and_question_submission(self):
+        from chat.llm.fake import FakeReading
+        from spending_analysis import followups
+        fake = FakeReading()
+        questions = []
+
+        def complete(system, user, **kwargs):
+            if system == followups.PROMPT:
+                candidate = json.loads(user)["candidates"][0]
+                questions.append(candidate["question"])
+                return json.dumps({"questions": [{"id": candidate["id"], "text": candidate["question"]}]}, ensure_ascii=False)
+            return fake(system, user, **kwargs)
+
+        with mock.patch.object(engine, "reading", return_value=complete):
+            response = self.send("A", text="내 소비 습관 어때?")
+            content = self.bot(response)
+            cid = response.json()["conversationId"]
+            self.assertTrue(questions)
+            question = questions[0]
+            self.assertEqual(content["examples"], [question])
+            self.assertTrue(any(b["kind"] == "details" for b in content["view"]))
+            history = self.client_for("A").get(f"/api/chat/conversations/{cid}/").json()
+            self.assertEqual(history["messages"][-1]["content"]["view"], content["view"])
+            self.assertEqual(history["messages"][-1]["content"]["examples"], [question])
+            follow = self.bot(self.send("A", cid, text=question))
+            self.assertTrue(follow["text"])
+            self.assertNotIn("어떤 분석을 볼까요", follow["text"])
+
+    def test_shown_comparison_is_not_suggested_again_after_calculation(self):
+        from chat.llm.fake import FakeReading
+        from spending_analysis import followups
+        fake = FakeReading()
+        with mock.patch.object(engine, "reading", return_value=fake):
+            response = self.send("A", text="내 소비 습관 어때?")
+            cid, first = response.json()["conversationId"], self.bot(response)
+            self.assertTrue(any("지난달" in line for line in first["lines"]))
+            question = next(q for q in first["examples"] if followups.topic(q) == "calculation")
+            self.client_for("A").get(f"/api/chat/conversations/{cid}/")
+            calculated = self.bot(self.send("A", cid, text=question))
+            self.assertFalse({"reason", "forecast", "habit"} &
+                             {followups.topic(q) for q in calculated.get("examples", [])})
+            self.assertNotIn("_answered_topics", calculated)
+            # 추천에서 빠져도 사용자가 직접 다시 요청한 비교는 답한다.
+            repeated = self.bot(self.send("A", cid, text="지난달과 달라진 소비는 뭐야?"))
+            self.assertTrue(repeated["result"])
+            self.assertTrue(any("지난달" in line for line in repeated["lines"]))
+
+    def test_comparison_menu_sends_a_neutral_question_and_gets_comparison(self):
+        from chat.llm.fake import FakeReading
+        with mock.patch.object(engine, "reading", return_value=FakeReading()):
+            response = self.send("A", text="소비 분석으로 뭘 볼 수 있어?")
+            cid, menu = response.json()["conversationId"], self.bot(response)
+            items = next(block["items"] for block in menu["view"] if block["kind"] == "options")
+            question = next(row["ask"] for row in items if row["title"] == "지난달과 비교")
+            self.assertEqual(question, "지난달과 달라진 소비는 뭐야?")
+            compared = self.bot(self.send("A", cid, text=question))
+            self.assertTrue(compared["result"])
+            self.assertTrue(any("지난달" in line for line in compared["lines"]))
+
     @contextmanager
     def capture_summaries(self):
         summaries, summarize = [], insight.summarize
@@ -275,10 +334,10 @@ class ServiceChatTest(ServiceChatBase):
             content = self.bot(self.send("A", text="아무거나 분석해줘"))
         self.assertNotIn("chart", content)
         text = " ".join(content["lines"])
-        self.assertIn("확인된", text)
+        self.assertIn("시간대", text)
         # 비교 · 예상을 못 한 이유는 하단 안내에 한 줄씩 (본문은 확인된 모습만)
-        self.assertTrue(any("지난달 비교는 빼고" in n for n in content["notices"]))
-        self.assertTrue(any("월말 예상액은 계산하지 않았어요" in n for n in content["notices"]))
+        self.assertTrue(any("지난달과의 총액 비교는 제외" in n for n in content["notices"]))
+        self.assertTrue(any("월말 예상액은 보류" in n for n in content["notices"]))
         self.assertNotIn("지난달 같은 기간보다", text)
         self.assertIn("일부 내역 기준", content["view"][0]["title"])
 
@@ -303,8 +362,8 @@ class ServiceChatTest(ServiceChatBase):
         self.assertIn("소비 분석", follow["view"][0]["title"])
         text = " ".join(follow["lines"])
         self.assertIn("식비", text)
-        self.assertTrue(any("지난달 비교는 빼고" in n for n in follow["notices"]), follow["notices"])
-        self.assertIn("아직 비교하지 못했어요", text)  # 본문 첫머리에서도 비교를 못 했다고 밝힌다
+        self.assertTrue(any("지난달과의 총액 비교는 제외" in n for n in follow["notices"]), follow["notices"])
+        self.assertIn("지난달보다 더 썼는지는 비교할 수 없어", text)
         self.assertNotIn("지난달 같은 기간보다", text)
 
     def test_open_analysis_requests_show_trend_overview_without_forced_questions(self):
@@ -536,6 +595,9 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(self.bot(self.pick("A", cid, asked, "취소"))["lines"], ["방금 질문은 취소했어요."])
 
     def test_feature_buttons_switch_agent_and_budget_free_text_turn(self):
+        from budgets.adjustment_core import followups, interpretation
+        from budgets.adjustment_core.financial_conversation import DIALOGUE_PROMPT
+
         out = self.send("A", choice="budget")
         cid, budget = out.json()["conversationId"], self.bot(out)
         self.assertEqual((out.json()["agent"], budget["agent"], budget["inputs"], budget["lines"]),
@@ -545,7 +607,10 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual((sent["agent"], sent["inputs"], sent["budgetAdjustment"]["phase"]), ("budget", [], "comparison"))
         self.assertEqual(sent['budgetAdjustment']['comparison']['basisAmount'], 50000)
         self.assertFalse(sent['budgetAdjustment']['canApprove'])
-        self.assertEqual(self.calls.call_count, 1)  # 담당 예산 해석만 호출하고 라우터 재해석은 하지 않는다
+        systems = [call.args[1] for call in self.calls.call_args_list]
+        self.assertEqual(len(systems), 2)
+        self.assertIn(systems[0], (interpretation.PROMPT, DIALOGUE_PROMPT))
+        self.assertEqual(systems[1], followups.PROMPT)  # 예산 해석 + 후속 입력 추천만; 라우터 재해석 없음
         self.calls.reset_mock()
         spending = self.bot(self.send("A", cid, choice="spending"))
         self.assertEqual((spending["agent"], spending["lines"]), ("spending", ["어떤 소비가 궁금하세요?"]))
@@ -560,11 +625,11 @@ class ServiceChoiceTest(ServiceChatBase):
         menu = [{"value": "spending", "label": "소비 분석"}, {"value": "budget", "label": "예산 조정"},
                 {"value": "policy", "label": "청년 정책"}]
         cases = (
-            ("안녕", "어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요."),
+            ("어디부터 시작하지?", "어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요."),
             ("날씨 어때?", "머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요."),
             ("이번 주 커피 얼마나 마셨지?", "지금은 이해하지 못했어요, 아래에서 골라 주세요."),
         )
-        with mock.patch.dict(EXTRA_SAID, {"안녕": {"intents": ["unclear"]}}):
+        with mock.patch.dict(EXTRA_SAID, {"어디부터 시작하지?": {"intents": ["unclear"]}}):
             for text, line in cases:
                 with self.subTest(text=text):
                     out = self.send("A", text=text)
@@ -724,7 +789,9 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(busy.status_code, 409)
         self.assertFalse(SavedPolicy.objects.exists())  # 409 면 저장도 안 됨
 
-    def test_suspended_budget_resume_choice_without_llm(self):
+    def test_suspended_budget_resume_choice_only_calls_followup_llm(self):
+        from budgets.adjustment_core import followups
+
         cid = self.send("A", choice="budget").json()["conversationId"]
         moved = self.bot(self.send("A", cid, choice="spending"))
         self.assertEqual(moved["notices"], ["진행 중이던 예산 조정은 잠시 멈춰 뒀어요. 다시 이어갈 때 상태를 확인할게요."])
@@ -732,8 +799,9 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual([c["label"] for c in asked["choices"]], ["이어서 하기", "취소하고 새로 시작"])
         self.calls.reset_mock()
         resumed = self.bot(self.pick("A", cid, asked, "이어서 하기"))
-        self.assertEqual((resumed["lines"], resumed["inputs"], self.calls.call_count),
-                         (["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."], [], 0))
+        self.assertEqual((resumed["lines"], resumed["inputs"]),
+                         (["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."], []))
+        self.assertEqual([call.args[1] for call in self.calls.call_args_list], [followups.PROMPT])
 
     def test_yes_no_choice_without_llm(self):
         out = self.send("A", text="최근 3개월 식비 예산 얼마나 남았어?")

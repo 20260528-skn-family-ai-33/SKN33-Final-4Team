@@ -27,6 +27,7 @@ class SalarySerializer(serializers.Serializer):
     # 11/13 검수: 이번 주기를 받은 월급 기준(budget_cycle.income_basis)으로 짠 뒤 월급을 이번 주기부터 바꿀 때만 필요.
     # true = 이번 주기는 받은 월급 기준 그대로 · false = 이번 주기도 새 월급으로 (받은 월급 기준을 푼다)
     keep_income_basis = StrictBooleanField(required=False)
+    preserve_unchanged_schedules = StrictBooleanField(required=False, default=False)
 
     def validate(self, attrs):
         new, old = attrs.pop("apply_from", None), attrs.pop("payday_apply_from", None)

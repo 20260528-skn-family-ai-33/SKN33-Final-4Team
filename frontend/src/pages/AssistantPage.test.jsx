@@ -1,6 +1,6 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Link, MemoryRouter, Route, Routes, useNavigate } from 'react-router'
+import { Link, MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AssistantPage from './AssistantPage.jsx'
 import PopupProvider from '../popups/PopupProvider.jsx'
@@ -40,11 +40,24 @@ beforeEach(() => {
 afterEach(async () => {
   await act(() => root.unmount())
   host.remove()
+  vi.restoreAllMocks()
 })
 const mount = async () => act(() => root.render(<MemoryRouter><PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
 const button = (label) => [...host.querySelectorAll('button')].find((b) => b.textContent === label)
 const click = async (element) => act(() => element.click())
 const input = () => host.querySelector('input[aria-label="챗봇에게 보낼 메시지"]')
+const salaryHandoff = () => reply('router', 1, '월급 수정하고 싶어', {
+  agent: 'budget', turn: 4, lines: ['월급은 마이페이지에서 수정해 주세요. 이전 조정은 보관했어요.'],
+  choices: [{ value: 'salary_resume', label: '이전 예산 조정 이어하기' }],
+  budgetAdjustment: { status: 'awaiting_input', phase: 'salary_handoff', canApprove: false },
+})
+
+function SalaryHandoffPage() {
+  const { state, search } = useLocation()
+  return <div><output>{JSON.stringify({ state, search })}</output>
+    <Link to={state.budgetReturn.returnTo}>이전 예산 조정 이어하기</Link></div>
+}
+
 async function submit(text) {
   await act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input(), text)
@@ -52,6 +65,170 @@ async function submit(text) {
   })
   await act(() => input().form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 }
+
+describe('대화 스크롤', () => {
+  function geometry(replyHeight = 120) {
+    const main = host.querySelector('main')
+    const spacer = host.querySelector('.mc-asst-log > [aria-hidden="true"]')
+    const questions = () => [...host.querySelectorAll('.mc-msg.me')]
+    const lastTop = () => 400 + Math.max(0, questions().length - 1) * 900
+    let scrollTop = 0
+    Object.defineProperties(main, {
+      clientHeight: { get: () => 600 },
+      scrollHeight: { get: () => Math.max(600, lastTop() + replyHeight + (parseFloat(spacer.style.height) || 0) + 100) },
+      scrollTop: { get: () => scrollTop, set: (value) => { scrollTop = Math.max(0, Math.min(value, main.scrollHeight - 600)) } },
+    })
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const index = questions().indexOf(this)
+      return { top: this === main ? 80 : 80 - scrollTop + (this === spacer ? lastTop() + replyHeight : 400 + index * 900) }
+    })
+    return { main, spacer }
+  }
+
+  it.each([120, 1100])('전송하면 하단, %i px 답변이 오면 방금 보낸 질문을 상단에 놓는다', async (height) => {
+    let resolve
+    apiSend.mockImplementation(() => new Promise((done) => { resolve = done }))
+    await mount()
+    const { main, spacer } = geometry(height)
+    await submit('교육비를 늘려줘')
+    expect(main.scrollTop).toBe(main.scrollHeight - main.clientHeight)
+    await act(() => resolve(reply('router', 1, '교육비를 늘려줘')))
+    expect(main.scrollTop).toBe(400)
+    expect(parseFloat(spacer.style.height) > 0).toBe(height < 600)
+
+    main.scrollTop = 100 // 이전 답변을 읽는 중에도 새 메시지를 보내면 끝으로 이동한다.
+    await submit('다른 방법도 보여줘')
+    expect(spacer.style.height).toBe('0px')
+    expect(main.scrollTop).toBe(main.scrollHeight - main.clientHeight)
+    await act(() => resolve(reply('router', 2, '다른 방법도 보여줘')))
+    expect(main.scrollTop).toBe(1300)
+
+    main.scrollTop = 100
+    await act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input(), '작성 중')
+      input().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(main.scrollTop).toBe(100)
+    await click(button('새 대화'))
+    expect(spacer.style.height).toBe('0px')
+  })
+
+  it('추천 선택지 전송도 같은 규칙을 사용한다', async () => {
+    let resolve
+    apiSend.mockImplementation(() => new Promise((done) => { resolve = done }))
+    await mount()
+    const { main } = geometry()
+    await click(button('소비를 분석해주세요'))
+    expect(main.scrollTop).toBe(main.scrollHeight - main.clientHeight)
+    await act(() => resolve(reply('router', 1, '소비를 분석해주세요', {
+      choices: [{ value: 'this_month', label: '이번 달로 보기' }], turn: 1,
+    })))
+    expect(main.scrollTop).toBe(400)
+    await click(button('이번 달로 보기'))
+    expect(main.scrollTop).toBe(main.scrollHeight - main.clientHeight)
+    await act(() => resolve(reply('router', 2, '이번 달로 보기')))
+    expect(main.scrollTop).toBe(1300)
+  })
+
+  it('전송 오류는 아래에서 보여주고 재시도 성공 때 해당 질문으로 이동한다', async () => {
+    let resolve, reject
+    apiSend.mockImplementation(() => new Promise((done, fail) => { resolve = done; reject = fail }))
+    await mount()
+    const { main, spacer } = geometry()
+    await submit('첫 질문')
+    await act(() => resolve(reply('router', 1, '첫 질문')))
+    await submit('두 번째 질문')
+    await act(() => reject(new TypeError('연결 끊김')))
+    expect(spacer.style.height).toBe('0px')
+    expect(main.scrollTop).toBe(main.scrollHeight - main.clientHeight)
+    await click(button('다시 보내기'))
+    await act(() => resolve(reply('router', 2, '두 번째 질문')))
+    expect(main.scrollTop).toBe(1300)
+  })
+})
+
+it('월급 수정 버튼에 복귀 대화를 전달하고 돌아오면 같은 대화를 한 번만 재검토한다', async () => {
+  const handoff = salaryHandoff()
+  apiSend.mockResolvedValueOnce(handoff).mockResolvedValueOnce(handoff)
+    .mockResolvedValueOnce(reply('router', 2, '이전 예산 조정 이어하기', {
+      agent: 'budget', turn: 5, lines: ['최신 월급으로 이전 조정을 이어갈게요.'],
+      budgetAdjustment: { status: 'awaiting_input', phase: 'comparison' },
+    }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat']}><PopupProvider><Routes>
+    <Route path="/chat" element={<AssistantPage />} />
+    <Route path="/budgets/salary" element={<SalaryHandoffPage />} />
+  </Routes></PopupProvider></MemoryRouter>))
+  await submit('월급 수정하고 싶어')
+  await click(button('마이페이지에서 월급 수정하기'))
+  expect(JSON.parse(host.querySelector('output').textContent)).toEqual({
+    search: '?budgetConversation=conversation-1',
+    state: { from: 'my', budgetReturn: { conversationId: 'conversation-1', returnTo: '/chat?budgetConversation=conversation-1' } },
+  })
+  expect(apiSend).toHaveBeenCalledTimes(1)
+  await click(host.querySelector('a'))
+  expect(apiSend.mock.calls[1]).toEqual(['/api/chat/conversations/conversation-1/', 'GET'])
+  expect(apiSend.mock.calls[2][2]).toEqual({ conversationId: 'conversation-1', choice: { value: 'salary_resume', turn: 4 } })
+  expect(apiSend).toHaveBeenCalledTimes(3)
+  expect(apiSend.mock.calls.every(([path]) => path.startsWith('/api/chat/'))).toBe(true)
+  expect(host.textContent).toContain('월급 수정하고 싶어')
+  expect(host.textContent).toContain('최신 월급으로 이전 조정을 이어갈게요.')
+})
+
+it('명시한 복귀 대화가 저장된 다른 대화보다 우선하고 이미 이어간 대화는 다시 전송하지 않는다', async () => {
+  sessionStorage.setItem('mc-chat-conversation', 'another-conversation')
+  apiSend.mockResolvedValueOnce(reply('router', 2, '이어서 조정', {
+    agent: 'budget', turn: 5, budgetAdjustment: { status: 'awaiting_input', phase: 'comparison' },
+  }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=conversation-1']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(apiSend.mock.calls).toEqual([['/api/chat/conversations/conversation-1/', 'GET']])
+  expect(sessionStorage.getItem('mc-chat-conversation')).toBe('conversation-1')
+})
+
+it('월급 증가분 검토는 같은 대화를 마이페이지와 공통인 배분 화면으로 연결한다', async () => {
+  const handoff = salaryHandoff()
+  handoff.messages[1].content.budgetAdjustment.phase = 'salary_allocation_review'
+  apiSend.mockResolvedValueOnce(handoff).mockResolvedValueOnce(handoff)
+    .mockResolvedValueOnce(reply('router', 2, '이전 예산 조정 이어하기', {
+      agent: 'budget', turn: 5, lines: ['확정한 변경을 반영했어요. 같은 요청을 다시 적용하지 않을게요.'],
+      budgetAdjustment: { status: 'replied', phase: null },
+    }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat']}><PopupProvider><Routes>
+    <Route path="/chat" element={<AssistantPage />} />
+    <Route path="/budgets/protect" element={<SalaryHandoffPage />} />
+  </Routes></PopupProvider></MemoryRouter>))
+  await submit('이전 예산 조정 이어하기')
+  await click(button('월급 증가분 배분 검토'))
+  expect(JSON.parse(host.querySelector('output').textContent)).toEqual({
+    search: '?budgetConversation=conversation-1&salaryReview=1',
+    state: { from: 'my', salaryReview: true,
+      budgetReturn: { conversationId: 'conversation-1', returnTo: '/chat?budgetConversation=conversation-1' } },
+  })
+  expect(apiSend).toHaveBeenCalledTimes(1)
+  await click(host.querySelector('a'))
+  expect(apiSend.mock.calls[2][2]).toEqual({ conversationId: 'conversation-1', choice: { value: 'salary_resume', turn: 4 } })
+  expect(host.textContent).toContain('같은 요청을 다시 적용하지 않을게요.')
+  expect(apiSend).toHaveBeenCalledTimes(3)
+})
+
+it('복귀 요청의 응답이 유실돼도 자동 반복하지 않고 같은 키로 재시도한다', async () => {
+  apiSend.mockResolvedValueOnce(salaryHandoff()).mockRejectedValueOnce(new TypeError('응답 유실'))
+    .mockResolvedValueOnce(reply('router', 2, '이전 예산 조정 이어하기'))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=conversation-1']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(apiSend).toHaveBeenCalledTimes(2)
+  await click(button('다시 보내기'))
+  expect(apiSend.mock.calls[2]).toEqual(apiSend.mock.calls[1])
+})
+
+it('복귀 대화가 없거나 다른 사용자 것이면 이어가기 요청을 보내지 않는다', async () => {
+  apiSend.mockRejectedValueOnce(Object.assign(new Error('없는 대화'), { status: 404 }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=missing']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(apiSend).toHaveBeenCalledTimes(1)
+  expect(sessionStorage.getItem('mc-chat-conversation')).toBeNull()
+  expect(button('이전 예산 조정 이어하기')).toBeUndefined()
+})
 
 it('전체 분석 뒤 예시를 누르면 같은 대화에서 새 질문으로 전송한다', async () => {
   const question = '지난달보다 많이 썼어?'
@@ -154,6 +331,23 @@ it.each([400, 403, 409])('명시적인 %i 거절은 입력을 복원해 고칠 �
   expect(button('다시 보내기')).toBeUndefined()
   await submit('수정한 질문')
   expect(apiSend.mock.calls[1][3].requestKey).not.toBe(apiSend.mock.calls[0][3].requestKey)
+})
+
+it.each(['첫 화면', '대화 복원', '메시지 전송'].flatMap((stage) => [
+  [stage, 403, 'not_authenticated', '인증 정보가 없습니다.', '로그인해 주세요.'],
+  [stage, 401, undefined, '인증이 필요합니다.', '로그인해 주세요.'],
+  [stage, 403, 'permission_denied', 'CSRF 확인에 실패했어요.', 'CSRF 확인에 실패했어요.'],
+]))('%s의 %i %s 오류는 로그인 오류와 권한 오류를 구분한다', async (stage, status, code, message, expected) => {
+  const error = Object.assign(new Error(message), { status, code })
+  if (stage === '첫 화면') useApi.mockReturnValue({ data: null, error })
+  else {
+    apiSend.mockRejectedValueOnce(error)
+    if (stage === '대화 복원') sessionStorage.setItem('mc-chat-conversation', 'conversation-1')
+  }
+  await mount()
+  if (stage === '메시지 전송') await submit('내 소비 습관 어때?')
+  expect(host.querySelector('[role="alert"]').textContent).toBe(expected)
+  if (code === 'permission_denied') expect(host.textContent).not.toContain('로그인해 주세요.')
 })
 
 it.each([408, 500])('%i 응답은 성공 여부가 불명확해 같은 요청을 유지한다', async (status) => {

@@ -59,6 +59,9 @@ def step_explanation(kind, state=None):
 
 
 def status_explanation(status, *, proposal=None, error=None):
+    if error == 'salary_resume_unavailable':
+        return {'why': '최신 예산을 확인하지 못했어요. 이전 조정 내용은 보관했어요.',
+                'effect': '기존 예산은 그대로예요.', 'next': '이전 예산 조정 이어하기를 다시 눌러 주세요.'}
     if error in {"task_check_failed", "invalid_saved_ref"}:
         return {"why": "서버에서 이 작업의 실제 저장·취소 결과를 확인하지 못했어요.",
                 "effect": "저장됐는지 알 수 없어 성공·실패를 추정하거나 다시 승인하지 않아요.",
@@ -99,6 +102,7 @@ def status_explanation(status, *, proposal=None, error=None):
 
 def choice_descriptions(kind, choices):
     common = {
+        'salary_resume': '최신 월급과 예산을 확인하고 이전 조정을 이어가요. 바로 확정하지 않아요.',
         "living": "기존 생활비 항목끼리 옮겨 생활비 총액을 유지해요.",
         "spare": "배분되지 않은 여윳돈과 해당 항목 사이의 배정을 바꿔요.",
         "extended": "저축·월 쿠션의 배분 계획까지 변경 대상에 포함해요. 누적 쿠션 사용과는 달라요.",

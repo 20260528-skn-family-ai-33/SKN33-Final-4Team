@@ -1,5 +1,5 @@
 """실제 LLM 해석 (CHAT_LLM = "live" 이거나 로컬 채팅 --live 일 때만) — 역할별 Structured Outputs 호출 어댑터 + 호출 장부.
-재시도 없음 · 모델을 바꾸지 않는다. 키 · 모델은 환경변수(OPENAI_API_KEY · LLM_MODEL)에서만 읽고 출력하지 않는다. 요청 · 응답 원문은 남기지 않는다.
+재시도 없음 · 모델을 바꾸지 않는다. 키 · 모델은 환경변수(OPENAI_API_KEY · LLM_MODEL)에서만 읽고 출력하지 않는다. 예산 조정 원문 추적은 별도 opt-in이다.
 spending_fixture/live_reading.py 에서 옮김 (MEMO 25-12)
 """
 import os
@@ -33,7 +33,8 @@ class LiveReading:
         self.model, self.missed = model, 0
 
     def __call__(self, system, user, timeout=None):
-        return self.client.complete(system, user, timeout)
+        from .budget_tracing import trace_llm
+        return trace_llm(self.client, system, user, timeout)
 
     def usage(self):
         used, limit = (self.ledger.data["used"], self.ledger.data["limit"]) if self.ledger else \

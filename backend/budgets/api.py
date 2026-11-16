@@ -124,7 +124,7 @@ def protect(request):
             data["approved_budget_updated"] = None
             if approved_budget is not None:
                 from .cushion import update_approved_split
-                data["approved_budget_updated"] = (not living_changed and update_approved_split(
+                data["approved_budget_updated"] = (values["update_approved_budget"] and not living_changed and update_approved_split(
                     request.user, approved_budget, profile.savings_floor, profile.cushion_monthly))
             data["saved"] = protect_saved_json(profile, data["base"])
         # 11/13: 이번 주기에 승인한 예산이 있는지 — 화면이 '생활비 그대로면 다시 추천 없이 저장만'을 판단한다
@@ -189,7 +189,10 @@ def clean_protect(request, state):
 
     data = body_dict(request)
     fields = ("living_budget", "saving_floor", "cushion_monthly")
-    errors = {key: ["이 칸은 보낼 수 없어요."] for key in data if key not in fields}
+    errors = {key: ["이 칸은 보낼 수 없어요."] for key in data if key not in (*fields, "update_approved_budget")}
+    update_approved_budget = data.get("update_approved_budget", True)
+    if type(update_approved_budget) is not bool:
+        errors["update_approved_budget"] = ["승인 예산 반영 여부는 참 또는 거짓으로 입력해 주세요."]
     for key in fields:
         if type(data.get(key)) is not int or data[key] < 0:
             errors[key] = ["금액은 0 이상의 정수로 입력해 주세요."]
@@ -206,7 +209,7 @@ def clean_protect(request, state):
         raise ValidationError({
             "non_field_errors": [f"배분 가능한 금액보다 {excess:,}원 많아요. 입력 금액을 줄여 주세요."],
         })
-    return {key: data[key] for key in fields}
+    return {**{key: data[key] for key in fields}, "update_approved_budget": update_approved_budget}
 
 
 def save_protect(user, profile, values, target):
@@ -225,7 +228,8 @@ def save_protect(user, profile, values, target):
     if changed:
         profile.save(update_fields=changed + ["updated_at"])
         Budget.objects.filter(user=user, status__in=["draft", "validated"]).update(status="expired")
-    return release_stale_locks(user, profile) if "living_budget" in changed else []
+    # 새 조건 검토에서는 승인 전까지 기존 예산의 잠금도 유지한다.
+    return release_stale_locks(user, profile) if "living_budget" in changed and values["update_approved_budget"] else []
 
 
 def release_stale_locks(user, profile):

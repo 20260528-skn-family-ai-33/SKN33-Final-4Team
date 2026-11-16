@@ -4,7 +4,9 @@ from copy import deepcopy
 from django.conf import settings
 
 from budgets.adjustment_core.financial_conversation import handle as handle_expanded, starts_new_request
+from budgets.adjustment_core.conversation import is_salary_resume
 from budgets.adjustment_core.interpretation import InterpretationFailed
+from budgets.adjustment_core import followups
 
 
 def handler(user, store, adapter, complete, conversation_key):
@@ -18,15 +20,36 @@ def handler(user, store, adapter, complete, conversation_key):
                     require_consent(user)
                 except ConsentRequired:
                     return {"status": "failed", "error": "budget_adjust_consent_required"}
+        if getattr(settings, 'CHAT_LLM', 'fake') == 'live':
+            from .llm.budget_tracing import trace_turn
+            conversation = getattr(adapter, 'conversation', None)
+            return trace_turn(request, str(conversation.pk) if conversation is not None else None, lambda: _handle(request))
+        return _handle(request)
+
+    def _handle(request):
         previous = store.get_agent_state(conversation_key, "budget") or {}
         reference = previous.get("work_ref") or request.get("work_ref")
-        if reference and adapter.task_status(reference).get("state") == "saved":
+        task_state = adapter.task_status(reference).get('state') if reference else None
+        if task_state == "saved" and not previous.get('salary_handoff'):
             previous = {}
             store.save_agent_state(conversation_key, "budget", {})
             adapter.base_budget_id = adapter.mode = None
             if request.get("mode") in (None, "start", "continue") and request.get("work_ref") in (None, reference):
                 request = {**request, "mode": "start", "work_ref": None, "active_task": None}
         adapter.reference_context = previous.get("reference_context")
+        refresh_salary = is_salary_resume(request, previous)
+        salary_context = None
+
+        def get_context():
+            nonlocal refresh_salary
+            if salary_context is not None:
+                return deepcopy(salary_context)
+            if refresh_salary:
+                context = adapter.fresh_salary_context()
+                refresh_salary = False
+                return context
+            return adapter.get_context()
+
         used = 0 if starts_new_request(request.get("text")) else previous.get("llm_call_count", 0)
         called = 0
 
@@ -37,9 +60,45 @@ def handler(user, store, adapter, complete, conversation_key):
             called += 1
             return complete(system, text)
 
-        result = handle_expanded(
+        followup_answer = (followups.answer(previous, request.get('text'))
+                           if request.get('mode') != 'cancel' and not previous.get('salary_handoff')
+                           and task_state not in followups.TERMINAL else None)
+        salary_reply = None
+        if refresh_salary:
+            from budgets.salary_redistribution import review_proposal, salary_review_needed
+            from budgets.adjustment_service import AdjustmentAdapter
+            from budgets.adjustment_core.agent import _result
+            from budgets.adjustment_core.financial_conversation import _ask
+            try:
+                # Both entry points review the increase against approved money, not an unapproved salary draft.
+                context = AdjustmentAdapter(user, conversation=getattr(adapter, 'conversation', None),
+                    today=adapter.today, mode='NORMAL_ADJUSTMENT').get_context()
+            except ValueError:
+                context = None  # The existing resume path preserves the request and offers a retry.
+            card = review_proposal(user, previous, context, conversation=getattr(adapter, 'conversation', None)) if context else None
+            if card:
+                salary_context = context
+                previous.update(proposal=card, work_ref=card['task_ref'])
+                previous.pop('pending', None)
+                if card['state'] == 'saved':
+                    previous.pop('salary_handoff', None)
+                store.save_agent_state(conversation_key, 'budget', previous)
+                salary_reply = _result('replied', [
+                    '확정한 변경을 반영했어요. 같은 요청을 다시 적용하지 않을게요.' if card['state'] == 'saved'
+                    else '월급 증가분으로 만든 변경안이에요. 최종 확정 전까지 기존 예산은 그대로예요.'
+                ], proposal=card, work_ref=card['task_ref'])
+            elif context and salary_review_needed(context, previous):
+                salary_context = context
+                previous = deepcopy(previous)
+                previous.pop('work_ref', None)
+                previous.pop('proposal', None)
+                salary_reply = _ask(store, conversation_key, previous, 'salary_allocation_review',
+                    '기존 요청을 먼저 반영하고, 남은 월급 증가분을 나눌게요. 저축할 비율을 확인해 주세요.',
+                    [('salary_resume', '이전 예산 조정 이어하기')], explanation={})
+                salary_reply['continued_work'] = True
+        result = salary_reply or followup_answer or handle_expanded(
             {**request, "conversation_id": conversation_key}, store=store, complete=interpret,
-            get_context=adapter.get_context, simulate=adapter.simulate, propose=adapter.propose,
+            get_context=get_context, simulate=adapter.simulate, propose=adapter.propose,
             task_status=adapter.task_status, cancel=adapter.cancel, allocator=adapter.allocator,
         )
         answered = False
@@ -65,7 +124,8 @@ def handler(user, store, adapter, complete, conversation_key):
                    if key in reply}
         payload.update(status=result["status"], work_ref=result.get("work_ref"),
                        request_summary=reply.get('request_summary', ''),
-                       can_approve=bool(reply.get("proposal") and not state.get("pending")
+                       can_approve=bool(reply.get("proposal") and reply['proposal'].get('state') == 'awaiting_approval'
+                                        and reply['proposal'].get('can_approve', True) and not state.get("pending")
                                         and result["status"] == "replied"),
                        phase="over_entry" if state.get("over_entry") else (state.get("pending") or {}).get("kind"))
         salary = (state.get('pending') or {}).get('salary') if payload['phase'] == 'salary_change' else None
@@ -76,9 +136,9 @@ def handler(user, store, adapter, complete, conversation_key):
         items = state.get('requests', [])
         def active_context():
             from budgets.adjustment_schedule import planning_context
-            return planning_context(adapter.get_context(), state.get('planning'))
+            return planning_context(get_context(), state.get('planning'))
 
-        if state.get('planning', {}).get('scope') == 'next_cycle':
+        if state.get('planning', {}).get('scope') == 'next_cycle' and payload['phase'] not in {'salary_handoff', 'salary_allocation_review'}:
             try:
                 planned = active_context()
                 payload['planning'] = {'effective_on': planned['effective_on'], 'income_before': planned['income_before'],
@@ -127,14 +187,15 @@ def handler(user, store, adapter, complete, conversation_key):
                                           current.get('bucket_available', {}).get(code, 0)), 0)
                     payload['amount_input']['max_amount'] = maximum // 5000 * 5000
                 payload['request_summary'] = ''
-                reply['lines'] = [f"{NAMES.get(code, code)} 예산을 얼마 {'늘릴까요' if direction == 'up' else '줄일까요'}?"]
+                if followup_answer is None:
+                    reply['lines'] = [f"{NAMES.get(code, code)} 예산을 얼마 {'늘릴까요' if direction == 'up' else '줄일까요'}?"]
         reply["budget_adjustment"] = payload
         if (not answered and (reply.get("proposal") or reply.get("comparison")) and not reply.get("detail")
                 and not reply.get('recommendation_advice')):
             reply["lines"] = reply.get("lines", [])[:1]
         from budgets.adjustment_core.responses import guidance
         payload['guidance'] = guidance(result, state)
-        if items and payload['phase'] != 'increase_review' and result['status'] not in {'ended', 'failed', 'unsupported'}:
+        if items and payload['phase'] not in {'increase_review', 'salary_handoff', 'salary_allocation_review'} and result['status'] not in {'ended', 'failed', 'unsupported'}:
             from budgets.adjustment_core.funding import large_increase_warning
             try:
                 warning = large_increase_warning(active_context(), items, reason=state.get('reason'))
@@ -144,6 +205,16 @@ def handler(user, store, adapter, complete, conversation_key):
                 payload['increase_warning'] = warning
         if previous.get('work_ref') and not result.get('work_ref') and state.get('pending') and result['status'] == 'awaiting_input':
             result['continued_work'] = True
+        questions = [] if payload['phase'] in {'salary_handoff', 'salary_allocation_review'} else ([row for row in previous.get('followups', []) if row['question'] != request.get('text')]
+                     if followup_answer is not None else followups.suggest(
+                         reply, state, request.get('text'), complete if used + called < 10 else None))
+        if questions:
+            reply['examples'] = [row['question'] for row in questions]
+        if state:
+            state.pop('followups', None)
+            if questions:
+                state['followups'] = questions
+            store.save_agent_state(conversation_key, 'budget', state)
         return result
     return handle
 

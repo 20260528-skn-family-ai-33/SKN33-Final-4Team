@@ -60,6 +60,195 @@ class BudgetAdjustmentApiTest(TestCase):
         reply = self.say(cid, choice={"value": "plan_living", "turn": content["turn"]})
         return cid, reply["messages"][-1]["content"]
 
+    def test_salary_handoff_keeps_preview_and_restores_it_without_saving(self):
+        cid, preview = self.ready()
+        proposal_id = preview['budgetAdjustment']['proposal']['proposalId']
+        handoff = self.say(cid, text='월급 수정하고 싶어')['messages'][-1]['content']
+        adjustment = handoff['budgetAdjustment']
+        self.assertEqual(adjustment['phase'], 'salary_handoff')
+        self.assertFalse(adjustment['canApprove'])
+        self.assertNotIn('salaryChange', adjustment)
+        self.assertNotIn('proposal', adjustment)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.monthly_take_home_income, 3000000)
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+        restored = self.client.get(f'/api/chat/conversations/{cid}/').json()['messages'][-1]['content']
+        self.assertEqual(restored['budgetAdjustment']['phase'], 'salary_handoff')
+        resumed = self.say(cid, choice={'value': 'salary_resume', 'turn': handoff['turn']})['messages'][-1]['content']
+        self.assertEqual(resumed['budgetAdjustment']['proposal']['proposalId'], proposal_id)
+        self.assertEqual(Budget.objects.count(), 2)
+
+    def test_salary_return_after_expired_preview_reads_latest_budget_and_keeps_remaining_goal(self):
+        from chat import engine
+        cid, preview = self.ready()
+        original = Budget.objects.get(pk=preview['budgetAdjustment']['proposal']['proposalId'])
+        handoff = self.say(cid, text='월급 수정하고 싶어')['messages'][-1]['content']
+        original.status = 'expired'
+        original.save(update_fields=['status'])
+        original.task.result = {**original.task.result, 'state': 'expired'}
+        original.task.save(update_fields=['result'])
+        self.profile.monthly_take_home_income = 3500000
+        self.profile.save(update_fields=['monthly_take_home_income'])
+        self.ctx['monthly_income'] = 3500000
+        self.ctx['allocations']['FOOD'] += 5000
+        self.ctx['allocations']['BEAUTY'] -= 5000
+        resumed = self.say(cid, choice={'value': 'salary_resume', 'turn': handoff['turn']})['messages'][-1]['content']
+        state = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
+        saved = state.get_agent_state(engine.KEY, 'budget')
+        self.assertEqual(saved['salary_handoff']['targets']['FOOD'], 415000)
+        self.assertEqual(resumed['budgetAdjustment']['phase'], 'salary_allocation_review')
+        review = self.client.get('/api/budgets/salary-review/', {'conversationId': cid}).json()
+        self.assertEqual(review['status'], 'ready', review)
+        self.assertEqual(review['requestedAmount'], 10000)
+        self.assertEqual(review['remainingAmount'], 490000)
+        preview = self.post('/api/budgets/salary-review/', {
+            'conversationId': cid, 'basisHash': review['basisHash'], 'savingPercent': 30,
+        })
+        self.assertEqual(preview.status_code, 200, preview.content)
+        self.assertEqual(preview.json()['proposal']['allocations']['FOOD'], 415000)
+        self.assertNotEqual(preview.json()['proposal']['taskRef'], str(original.task_id))
+        self.assertTrue(preview.json()['proposal']['canApprove'])
+
+    def test_salary_return_preserves_request_when_refresh_temporarily_fails(self):
+        from chat import engine
+        cid, _ = self.ready()
+        handoff = self.say(cid, text='월급 수정하고 싶어')['messages'][-1]['content']
+        with patch('budgets.adjustment_service.AdjustmentAdapter.fresh_salary_context', side_effect=ValueError('unavailable')):
+            result = self.say(cid, choice={'value': 'salary_resume', 'turn': handoff['turn']})['messages'][-1]['content']
+        saved = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots).get_agent_state(engine.KEY, 'budget')
+        self.assertIn('salary_handoff', saved)
+        self.assertIn('이전 조정 내용은 보관', result['text'])
+        self.assertIn('이전 조정 내용은 보관', result['budgetAdjustment']['guidance']['message'])
+        retried = self.say(cid, choice={'value': 'salary_resume', 'turn': result['turn']})['messages'][-1]['content']
+        self.assertTrue(retried['budgetAdjustment']['canApprove'])
+
+    def test_salary_increase_return_keeps_original_request_and_asks_for_allocation_review(self):
+        from chat import engine
+        cid, _ = self.ready()
+        handoff = self.say(cid, text='월급 수정하고 싶어')['messages'][-1]['content']
+        self.ctx.update(effective_income=4000000, monthly_income=4000000)
+        self.profile.monthly_take_home_income = 4000000
+        self.profile.save(update_fields=['monthly_take_home_income'])
+        count = Budget.objects.count()
+        resumed = self.say(cid, choice={'value': 'salary_resume', 'turn': handoff['turn']})['messages'][-1]['content']
+        self.assertEqual(resumed['budgetAdjustment']['phase'], 'salary_allocation_review')
+        self.assertFalse(resumed['budgetAdjustment']['canApprove'])
+        self.assertNotIn('proposal', resumed['budgetAdjustment'])
+        self.assertIn('기존 요청을 먼저 반영', resumed['text'])
+        saved = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots).get_agent_state(engine.KEY, 'budget')
+        self.assertEqual(saved['salary_handoff']['targets']['FOOD'], 415000)
+        self.assertEqual(Budget.objects.count(), count)
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+
+    def test_salary_review_return_restores_preview_and_then_approved_result_without_reapplying(self):
+        self.assert_salary_review_return(next_cycle=False)
+
+    def test_next_cycle_salary_review_return_restores_the_approved_reservation(self):
+        self.assert_salary_review_return(next_cycle=True)
+
+    def assert_salary_review_return(self, *, next_cycle):
+        cid, _ = self.ready()
+        handoff = self.say(cid, text='월급 수정하고 싶어')['messages'][-1]['content']
+        self.ctx.update(effective_income=4000000, monthly_income=4000000,
+                        next_cycle_starts_on='2026-12-01')
+        if next_cycle:
+            conversation = Conversation.objects.get(pk=cid)
+            state = conversation.slots['state']['agent:budget']
+            state.update(planning={'scope': 'next_cycle'}, scope='next_cycle')
+            conversation.save(update_fields=['slots'])
+        with patch('budgets.adjustment_service.AdjustmentAdapter.fresh_salary_context',
+                   side_effect=AssertionError('급여 재배분은 미승인 초안 대신 승인 예산을 기준으로 검토한다')):
+            resumed = self.say(cid, choice={'value': 'salary_resume', 'turn': handoff['turn']})['messages'][-1]['content']
+        self.assertEqual(resumed['budgetAdjustment']['phase'], 'salary_allocation_review')
+        review = self.client.get('/api/budgets/salary-review/', {'conversationId': cid}).json()
+        self.assertEqual(review['status'], 'ready', review)
+        response = self.post('/api/budgets/salary-review/', {
+            'conversationId': cid, 'basisHash': review['basisHash'], 'savingPercent': 30,
+        })
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertIn('proposal', response.json(), response.json())
+        card = response.json()['proposal']
+        count = Budget.objects.count()
+        restored = self.say(cid, choice={'value': 'salary_resume', 'turn': resumed['turn']})['messages'][-1]['content']
+        self.assertIn('budgetAdjustment', restored, restored)
+        self.assertEqual(restored['budgetAdjustment']['proposal']['proposalId'], card['proposalId'])
+        approved = self.post(f"/api/budgets/proposals/{card['proposalId']}/approve/", {'keepForNextCycle': False})
+        self.assertEqual(approved.status_code, 200, approved.content)
+        if not next_cycle:
+            self.ctx.update(base_budget_id=card['proposalId'], funding_amount=4000000,
+                            allocations=card['allocations'], buckets=card['buckets'])
+        returned = self.say(cid, text='이전 예산 조정 이어하기')['messages'][-1]['content']
+        adjustment = returned['budgetAdjustment']
+        self.assertEqual(adjustment['proposal']['proposalId'], card['proposalId'])
+        self.assertEqual(adjustment['proposal']['state'], 'saved')
+        self.assertEqual(adjustment['proposal']['allocations']['FOOD'], 415000)
+        self.assertFalse(adjustment['canApprove'])
+        self.assertEqual(Budget.objects.count(), count)
+
+    @override_settings(BUDGET_DESIGN_ENABLED=False, BUDGET_DESIGN_EXTERNAL_ENABLED=False)
+    def test_salary_save_review_approval_and_chat_return_only_apply_remaining_goal(self):
+        from budgets.adjustment_context import get_adjustment_context
+        from budgets.recommend import ALLOCATION_CODES
+        from finance.models import RecurringExpense
+        from chat import engine
+        self.profile.housing_type = 'alone'
+        self.profile.save(update_fields=['housing_type'])
+        RecurringExpense.objects.create(user=self.user, name='고정비', amount=800000,
+            category_id='HOUSING_TELECOM', status='confirmed', source_type='manual')
+        cid, preview = self.ready()
+        handoff = self.say(cid, text='월급 수정하고 싶어')['messages'][-1]['content']
+        before = list(self.base.items.order_by('pk').values())
+
+        saved = self.client.put('/api/budgets/salary/',
+            {'takeHomeIncome': 3500000, 'payday': 1, 'applyFrom': 'current_cycle'}, format='json')
+        self.assertEqual(saved.status_code, 200, saved.content)
+        original = Budget.objects.get(pk=preview['budgetAdjustment']['proposal']['proposalId'])
+        self.assertEqual(original.status, 'expired')
+        self.assertFalse(AsyncTask.objects.filter(task_type='budget_recommend').exists())
+        protected = self.client.put('/api/budgets/protect/', {'livingBudget': 1000000,
+            'savingFloor': 650000, 'cushionMonthly': 250000, 'updateApprovedBudget': False}, format='json')
+        self.assertEqual(protected.status_code, 200, protected.content)
+        self.assertFalse(protected.json()['approvedBudgetUpdated'])
+        self.assertEqual(list(self.base.items.order_by('pk').values()), before)
+
+        amounts = {code: self.ctx['allocations'][code] for code in ALLOCATION_CODES}
+        amounts['FOOD'] += 5000
+        amounts['BEAUTY'] -= 5000
+        amounts['HOUSEHOLD'] += 50000
+        calculated = {'status': 'proposed', 'allocations': amounts, 'unallocated': 0,
+                      'reasons': [], 'summary': '새 월급 기준 예산', 'conflicts': []}
+        with patch('budgets.recommend.recommend_category_budgets', return_value=calculated):
+            recommendation = self.post('/api/budgets/recommend/', {})
+        self.assertEqual(recommendation.status_code, 202, recommendation.content)
+        task = AsyncTask.objects.get(pk=recommendation.json()['task']['taskId'])
+        self.assertEqual(task.status, 'succeeded', task.error_code)
+        draft = Budget.objects.get(task=task)
+        self.base.refresh_from_db()
+        self.assertEqual((draft.status, self.base.status), ('validated', 'approved'))
+        self.assertEqual(list(self.base.items.order_by('pk').values()), before)
+        approved = self.post(f'/api/budgets/{draft.pk}/approve/', {})
+        self.assertEqual(approved.status_code, 200, approved.content)
+        self.base.refresh_from_db()
+        draft.refresh_from_db()
+        self.assertEqual((draft.status, self.base.status), ('approved', 'superseded'))
+
+        self.context_read.side_effect = get_adjustment_context
+        with patch('budgets.adjustment_context.coverage', return_value={'state': 'complete'}):
+            resumed = self.say(cid, choice={'value': 'salary_resume', 'turn': handoff['turn']})['messages'][-1]['content']
+            state = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
+            saved_request = state.get_agent_state(engine.KEY, 'budget')['requests'][0]
+            self.assertEqual((saved_request['amount'], saved_request['amount_mode']), (415000, 'to'))
+            adjustment = resumed['budgetAdjustment']
+            if 'proposal' not in adjustment:
+                self.assertEqual(adjustment['comparison']['basisAmount'], 10000)
+                selected = self.say(cid, choice={'value': 'plan_living', 'turn': resumed['turn']})['messages'][-1]['content']
+                adjustment = selected['budgetAdjustment']
+        self.assertEqual(adjustment['proposal']['allocations']['FOOD'], 415000)
+        self.assertEqual(sum(row['amount'] for row in adjustment['proposal']['transfers']), 10000)
+        self.assertEqual(adjustment['proposal']['baseBudgetId'], str(draft.pk))
+
     def test_message_preview_approval_and_refresh_keep_same_verified_money(self):
         cid, content = self.ready()
         adjustment = content["budgetAdjustment"]

@@ -92,6 +92,11 @@ def agent_judge_schema():
 
 
 def schema_for(system):
+    from budgets.adjustment_core import followups as budget_followups
+    if system == budget_followups.PROMPT:
+        return 'budget_followups', budget_followups.SCHEMA
+    if system == spending_followups.PROMPT:
+        return "spending_followups", spending_followups.SCHEMA
     if system == spending_narrative.CHECK_PROMPT:
         return "spending_insight_check", spending_narrative.CHECK_SCHEMA
     if system == spending_insight.PROMPT:
@@ -113,7 +118,5 @@ def schema_for(system):
         return "explain_plan", PLAN_SCHEMA
     if system == spending_claims.ANSWER_PROMPT:
         return "explain_answer", ANSWER_SCHEMA
-    if system == spending_followups.PROMPT:
-        return "spending_followups", spending_followups.SCHEMA
     role = ROLE_OF[system]
     return f"{role}_reading", role_schema(role)

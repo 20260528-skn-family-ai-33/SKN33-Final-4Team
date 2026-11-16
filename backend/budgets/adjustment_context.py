@@ -378,6 +378,7 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
         "category_targets": _money_map(getattr(profile, "budget_category_targets", {}) or {}, allocations),
         "funding_amount": chosen.funding_amount, "fixed_amount": totals["fixed"],
         "monthly_income": profile.monthly_take_home_income,
+        "effective_income": protection['take_home_income'],
         "next_cycle_starts_on": cycle.ends_before.isoformat(),
         "buckets": {"SAVINGS": totals["savings"], "CUSHION_MONTHLY": totals["cushion"], "SPARE": spare},
         "bucket_floors": {"SAVINGS": savings_floor, "CUSHION_MONTHLY": cushion_floor},
@@ -424,6 +425,10 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
     if expense.get('category') in allocations and type(expense.get('additional')) is int and expense['additional'] >= 0:
         context['required_expenses'] = {expense['category']: expense['additional']}
     context["diagnostic_inputs"] = read_diagnostics(user, context, cycle, today)
+    from .price_reference import price_context, history_totals
+    context['price_reference'] = price_context(user)
+    if context['price_reference']['status'] == 'ready':
+        context['price_history_totals'] = history_totals(user, today)
     context = _json(context)
     context["context_hash"] = context_fingerprint(context)
     return context

@@ -24,6 +24,9 @@ import { apiSend, useApi } from '../utils/api.js'
 import { waitTask } from '../utils/financeSync.js'
 import { HOUSING } from '../utils/direction.js'
 import { PATHS } from '../routes.js'
+import SalaryReviewActions from '../components/SalaryReviewActions.jsx'
+import SalaryRedistributionReview from '../components/SalaryRedistributionReview.jsx'
+import { salaryReviewContext, salaryReviewUrl } from '../utils/salaryReview.js'
 
 const RETRY_MS = 3000   // 카드 작업 상태 조회가 실패했을 때 다시 읽기까지 쉬는 시간
 
@@ -63,10 +66,19 @@ const NOT_YET = (r) => r === 'first_bill_unavailable'   // 조회는 됐지만 �
 const DATA = (r) => !REVIEW(r) && !SYNC(r) && !NOT_YET(r)
 
 export default function ProtectPage() {
+  const context = salaryReviewContext(useLocation())
+  return context.salaryReview
+    ? <SalaryRedistributionReview context={context} fallback={<ProtectForm />} />
+    : <ProtectForm />
+}
+
+function ProtectForm() {
   const navigate = useNavigate()
-  const { state: navState } = useLocation()
-  const manage = navState?.from === 'my'
-  const go = (to) => navigate(to, { state: navState })  // 고치러 가는 화면도 마이에서 왔으면 관리 모드로
+  const location = useLocation()
+  const navState = location.state
+  const context = salaryReviewContext(location)
+  const manage = context.salaryReview || navState?.from === 'my'
+  const go = (to) => navigate(salaryReviewUrl(to, context), { state: { ...navState, ...context } })
   const { data, error: loadError, reload } = useApi('/api/budgets/protect/')
   const [edits, setValues] = useState(null)  // 고친 칸 글자 그대로 (빈 칸도 허용하려고 문자열로). 안 고쳤으면 null
   const [error, setError] = useState('')
@@ -89,7 +101,7 @@ export default function ProtectPage() {
   }, [loadingTask, data]) // eslint-disable-line react-hooks/exhaustive-deps -- reload 는 렌더마다 새로 만들어져 넣으면 계속 다시 돈다
 
 
-  if (!data) return <Layout title="지킬 돈 설정" showBack><ApiStatus error={loadError} /></Layout>
+  if (!data) return <Layout title="지킬 돈 설정" showBack><ApiStatus error={loadError} /><SalaryReviewActions context={context} note={Boolean(loadError)} /></Layout>
 
   const { base, blocked, recommended: rec, cushion } = data
   // 보류 카드를 이유별로 (아래 REVIEW · SYNC · NOT_YET · DATA)
@@ -102,7 +114,7 @@ export default function ProtectPage() {
   const foreignCount = notes.filter((n) => n.reason === 'foreign_amount_pending').reduce((sum, n) => sum + n.count, 0)
   const mismatch = idsFor((r) => r === 'bill_total_mismatch').length > 0
   // 카드값을 반영해 다시 추천받는 경로에서는 새 가용 금액으로 나눈 추천값부터 보여 준다.
-  const start = navState?.refreshRecommendation ? rec : data.saved ?? rec
+  const start = context.salaryReview || navState?.refreshRecommendation ? rec : data.saved ?? rec
   const values = edits ?? (start ? Object.fromEntries(ROWS.map(([k]) => [k, String(start[k])])) : null)
   const housingName = HOUSING[data.housingType]?.name
   const rateLine = data.rates ? RATE_LABELS.map(([k, n]) => `${n} ${data.rates[k]}%`).join(' · ') : ''
@@ -127,13 +139,13 @@ export default function ProtectPage() {
     }
     // 11/13: 이미 승인한 예산이 있고 생활비는 그대로면(저축 목표액 · 월 쿠션 적립금만 고침) 카테고리 배분이 바뀌지 않으니
     // 다시 추천(LLM)하지 않고 저장만 한다(승인 예산의 저축 · 쿠션 줄은 서버가 같이 바꿈). 월급 차이 · 카드 청구서로 다시 짜러 온 경우(refreshRecommendation)는 제외
-    if (manage && data.budgetApproved && !navState?.refreshRecommendation && num('livingBudget') === data.saved?.livingBudget) {
+    if (manage && !context.salaryReview && data.budgetApproved && !navState?.refreshRecommendation && num('livingBudget') === data.saved?.livingBudget) {
       saveOnly()
       return
     }
     // 11/13: 마이에서 들어왔으면 저장 전에 가운데 창으로 '예산을 다시 추천한다'를 알리고, [예산 확인하러 가기]를 눌러야 저장한다.
     // 닫으면 저장하지 않는다. 온보딩은 원래 다음 단계가 추천이라 바로 저장
-    if (manage) {
+    if (manage && !context.salaryReview) {
       openPopup(
         <Popup label="예산 다시 추천" dialog>
           <h2>예산을 다시 추천해요</h2>
@@ -172,9 +184,16 @@ export default function ProtectPage() {
     setError('')
     setFieldErrors({})
     try {
-      const saved = await apiSend('/api/budgets/protect/', 'PUT', Object.fromEntries(ROWS.map(([k]) => [k, num(k)])))
+      const saved = await apiSend('/api/budgets/protect/', 'PUT', {
+        ...Object.fromEntries(ROWS.map(([k]) => [k, num(k)])),
+        ...(context.salaryReview ? { updateApprovedBudget: false } : {}),
+      })
       // 저장 뒤 새 추천을 바로 만든다. 생활비가 바뀌어 풀린 자물쇠(P-13)는 다음 화면에서 알려 준다
-      navigate(PATHS.recommend, { state: { autoRecommend: true, refreshRecommendation: Boolean(navState?.refreshRecommendation), locksReleased: saved.locksReleased } })
+      navigate(salaryReviewUrl(PATHS.recommend, context), { state: {
+        ...context, autoRecommend: true,
+        refreshRecommendation: context.salaryReview || Boolean(navState?.refreshRecommendation),
+        locksReleased: saved.locksReleased,
+      } })
     } catch (err) {
       setError(err.fields?.nonFieldErrors?.[0] ?? err.message)
       setFieldErrors(err.fields ?? {})
@@ -183,13 +202,14 @@ export default function ProtectPage() {
     }
   }
 
-  const foot = <button className="mc-primary" form="mc-form" type="submit" disabled={!ready || busy}>{busy ? '저장하는 중…' : manage ? '저장' : '추천 예산 보기'}</button>
+  const foot = <button className="mc-primary" form="mc-form" type="submit" disabled={!ready || busy}>{busy ? '저장하는 중…' : manage && !context.salaryReview ? '저장' : '추천 예산 보기'}</button>
 
   return (
     <Layout title="지킬 돈 설정" showBack foot={foot}>
       {!manage && <StepBar step={5} />}
       <div className="mc-eyebrow">지킬 돈 설정</div>
       <h1>먼저 지킬 돈을 정해요</h1>
+      {context.salaryReview && <p className="mc-note">새 안을 승인하기 전까지 기존 승인 예산은 유지돼요.</p>}
       {ready && <p className="mc-muted">{housingName} 비율로 나눈 추천 금액이에요. 바꾸고 싶은 칸만 고치세요.</p>}
       {/* 11/13: 이번 주기만 실제 받은 월급으로 나누는 경우 */}
       {ready && base.incomeSource === 'actual' && <p className="mc-note" role="note">이번 주기는 실제로 받은 월급 {won(base.takeHomeIncome)}으로 나눠요.</p>}
@@ -379,6 +399,7 @@ export default function ProtectPage() {
         )}
         {error && <p className="mc-error" role="alert">{error}</p>}
       </form>
+      <SalaryReviewActions context={context} busy={busy} note={Boolean(error || blocked)} />
       {/* 진행을 막지 않는 작은 카드 안내는 추천 금액을 먼저 보도록 맨 아래에 둔다 */}
       {notes.some((n) => n.reason === 'no_bill_in_cycle') && !blocked && (
         <p className="mc-note">이번 급여 주기에 결제일인 카드 청구서가 없어서 첫 카드값은 따로 떼지 않았어요.</p>

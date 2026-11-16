@@ -21,12 +21,12 @@ replace에서는 사용자가 바꾸지 않은 기존 금액·방향은 그대�
 다음 달 여행처럼 한 번의 예정 지출은 scope=next_cycle, one_off=true, 해당 category/up 요청이다. 금액이 없으면 amount=null이다.
 일회성 준비금 질문의 set_aside_amount는 이번 예산에 이미 포함되지 않은 별도 모아둔 돈 중 이번 지출에 쓰겠다고 확인한 금액이다. 없다는 답은 0, 모른다는 답은 null이다. 계좌 총액·미배정 여윳돈·머니쿠션을 대신 넣지 않는다.
 준비된 돈만 답하면 requests=[]로 목표를 유지한다. 남은 필요액은 서버가 계산한다. 저축·월 쿠션 감액은 명시적으로 허용한 경우에만 sources에 담는다.
-월급·급여·실수령액 변화는 mine=true이며 income_change에 사용자가 말한 amount, mode(by=증감액/to=변경 후 월급), direction(up/down/to일 때 null)을 담는다.
-income_change는 예산 카테고리 requests에 넣지 않는다. 월급 증가분을 기존 증액에 쓰려는 후속 답이면 reference=previous로 목표를 유지한다.
-예: 교육비 증액 대화의 '다음달부터 월급 50만원 늘어서 그냥 그것만 추가해'는 income_change={amount:500000,mode:by,direction:up}, scope=next_cycle, sources=[SPARE], reference=previous다.
-증가한 월급은 다음 주기 여윳돈에 더해져 재원이 된다. 이미 쌓인 저축이나 이번 달 실제 입금으로 해석하지 않는다.
-늘어난 수입을 기존 증액 목표에 쓰겠다는 뜻이면 sources=[SPARE]로 연결한다. 다른 항목을 줄이라고 바꾸거나 증액 목적을 지우지 않는다.
-예산을 바꾸자는 말 없이 월급이 바뀌었다고 알리거나 월급을 고쳐 달라는 말('월급이 320만원으로 올랐어', '월급 수정해줘 350만원')은 월급 수정이다. income_change만 채우고 requests=[], unclear=[]로 둔다. 적용 시점은 서버가 안내하므로 묻지 않는다. 바뀐 금액을 말하지 않았으면 unclear로 금액만 묻는다. 기존 조정 대화 중 월급 변화로 그 목표를 채우려는 말은 위 예처럼 reference=previous다. '이번 달 이미 들어온 월급'은 현재 설정 수정·실제 입금 확인이 필요하므로 미래 수입으로 현재 자금을 만들지 않는다.
+월급·급여·실수령액을 수정하거나 바뀌었다고 알리는 말은 mine=true, action=salary_change다. 금액을 몰라도 unclear로 묻지 않는다.
+금액이 명시되면 income_change에 amount, mode(by=증감액/to=변경 후 월급), direction(up/down/to일 때 null)을 담고, 금액이 없으면 income_change=null이다.
+월급은 마이페이지에서 현재 적용된 금액만 수정한다. 미래 월급 변경 예약은 지원하지 않으며, 챗봇이 월급을 저장하거나 미리 재원으로 계산하지 않는다.
+다음 달부터 월급이 바뀐다는 말은 scope=next_cycle로 시점을 표시하되 서버가 미래 예약 미지원과 현재 월급 수정 화면을 안내한다. 다음 주기 지출 예산 계획은 기존대로 지원하며 급여 예약과 구별한다.
+income_change는 예산 카테고리 requests에 넣지 않는다. 월급 이야기만 하면 requests=[]이며, 함께 요청한 지출 조정이 있으면 그 항목만 requests로 추출한다.
+기존 교육비 증액 대화의 '다음달부터 월급 50만원 늘어서 그걸 쓰면 돼'는 action=salary_change, income_change={amount:500000,mode:by,direction:up}, scope=next_cycle, reference=previous다. 기존 증액 목적과 기간은 유지하며 sources에 SPARE를 임의로 추가하지 않는다.
 무엇을 바꾸거나 철회하는지 여러 해석이 가능하면 replace를 실행하지 말고 unclear로 그 부분만 묻는다.
 모든 단계에 공통으로 다음 순서를 적용한다.
 1. 현재 질문의 답인지, 설명·뒤로·취소인지, 기존 조건 수정인지, 조회인지 먼저 구분한다. 질문 중에도 다른 의도를 처리한다.
@@ -177,7 +177,7 @@ SCHEMA = {
         "destinations": {"type": "array", "items": {"type": "string"}},
         "excluded": {"type": "array", "items": {"type": "string"}},
         "funding_scope": _enum(("living", "spare", "extended")),
-        "action": _enum(("back", "undo", "inspect", "compare", "explain", "recommend", "distribute", "fixed_expense", "help_decide")),
+        "action": _enum(("back", "undo", "inspect", "compare", "explain", "recommend", "distribute", "fixed_expense", "help_decide", "salary_change")),
         "use_available": {"type": ["boolean", "null"]},
         "reference": _enum(("previous", "new", "unclear")),
         # mine=false 일 때 어디로 보낼지: 조회 질문이면 소비 분석 + 물어본 카테고리 (라우터가 LLM 없이 넘긴다)
@@ -254,7 +254,7 @@ def parse(value):
                     or len(set(value[field])) != len(value[field])):
                 raise InterpretationFailed("invalid_" + field)
         enums = {"funding_scope": (None, "living", "spare", "extended"),
-                 "action": (None, "back", "undo", "inspect", "compare", "explain", "recommend", "distribute", "fixed_expense", "help_decide"),
+                 "action": (None, "back", "undo", "inspect", "compare", "explain", "recommend", "distribute", "fixed_expense", "help_decide", "salary_change"),
                  "reference": (None, "previous", "new", "unclear")}
         if any(value[field] not in choices for field, choices in enums.items()):
             raise InterpretationFailed("invalid_control")

@@ -100,6 +100,7 @@ export default function BudgetPage() {
           <button type="button" className="mc-primary" onClick={() => navigate(PATHS.recommend)}>추천 예산 확인하러 가기</button>
         </div>
       )}
+      {!budget.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}
       <UnreflectedCardNote notes={data.cardNotes} readyIds={data.cardBillsReady} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
       <div className="mc-card">

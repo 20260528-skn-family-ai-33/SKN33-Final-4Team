@@ -1039,15 +1039,13 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
 
 
 class SalaryChangeDialogueTest(unittest.TestCase):
-    """챗봇으로 월급을 바꿀 때: 변경 전후를 보여 주고, 늘어난 돈만 미리 나누게 안내한다."""
-
     def setUp(self):
         self.store, self.context = Store(), context()
         self.context.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
         self.proposals = []
         self.ports = dict(store=self.store, complete=Mock(), get_context=lambda: deepcopy(self.context),
             simulate=lambda ctx, request: simulate_funding(ctx, request, allocate_group_reduction=allocation),
-            propose=self.propose, task_status=Mock(), cancel=Mock(), allocator=allocation)
+            propose=self.propose, task_status=Mock(return_value={'state': 'expired'}), cancel=Mock(), allocator=allocation)
 
     def propose(self, ctx, result, **settings):
         self.proposals.append(result)
@@ -1058,37 +1056,243 @@ class SalaryChangeDialogueTest(unittest.TestCase):
             self.ports['complete'].side_effect = lambda system, payload: json.dumps(parsed, ensure_ascii=False)
         return dialogue.handle({'conversation_id': 'talk', 'text': text}, **self.ports)
 
-    def test_raise_shows_before_after_then_only_new_money_is_planned(self):
-        response = self.say('월급이 50만원 올랐어', reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'}))
-        pending = self.store.state['pending']
-        self.assertEqual(pending['kind'], 'salary_change')
-        self.assertEqual(pending['salary'], {'before': 3000000, 'after': 3500000})
-        self.assertIn('350만 원으로', response['reply']['lines'][0])
-        self.assertEqual([c['value'] for c in response['reply']['choices']], ['salary_plan'])
-        self.say('salary_plan')
-        self.assertEqual(self.store.state['planning']['income_change']['amount'], 3500000)
-        self.assertEqual(self.store.state['sources'], ['SPARE'])
-        self.say('SAVINGS')
-        response = self.say('30만원', reading(requests=[item('SAVINGS', 300000)], reference='previous'))
-        plan = response['reply']['comparison']['plans'][0]
-        self.assertEqual(plan['sources']['SPARE'], 300000)
-        self.say('plan_' + plan['id'])
-        result = self.proposals[-1]
-        self.assertEqual(result['buckets']['SAVINGS'], self.context['buckets']['SAVINGS'] + 300000)
-        self.assertEqual({t['from'] for t in result['transfers']}, {'SPARE'})
-        for code, amount in self.context['allocations'].items():
-            self.assertEqual(result['allocations'][code], amount)  # 다른 생활비는 줄이지 않는다.
+    def handoff(self, **changes):
+        return self.say('월급 수정할래', reading(action='salary_change', **changes))
 
-    def test_raise_already_saved_in_my_info_is_not_counted_twice(self):
-        self.say('월급 350만원으로 바뀌었어', reading(income_change={'amount': 3500000, 'mode': 'to', 'direction': None}))
-        self.context['monthly_income'] = 3500000  # 화면의 '월급 수정하기'로 이미 저장
-        self.say('salary_plan')
+    def test_salary_without_amount_goes_to_mypage_without_asking_again(self):
+        response = self.handoff()
+        self.assertEqual(self.store.state['pending']['kind'], 'salary_handoff')
+        self.assertIn('마이페이지', response['reply']['lines'][0])
+        self.assertEqual([c['value'] for c in response['reply']['choices']], ['salary_resume'])
+        self.assertNotIn('planning', self.store.state)
+        self.assertFalse(self.proposals)
+
+    def test_known_salary_amount_is_not_applied_or_used_for_calculation(self):
+        before = deepcopy(self.context)
+        self.say('월급 50만원 올랐어', reading(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'}))
+        self.assertEqual(self.store.state['pending']['kind'], 'salary_handoff')
+        self.assertNotIn('salary', self.store.state['pending'])
+        self.assertNotIn('income_change', self.store.state.get('planning', {}))
+        self.assertEqual(self.context, before)
+        self.assertFalse(self.proposals)
+
+    def test_future_salary_does_not_replace_existing_expense_period_or_source(self):
+        self.store.state = {'requests': [item('EDUCATION', 500000)], 'scope': 'next_cycle',
+            'planning': {'scope': 'next_cycle'}, 'sources': ['SAVINGS'], 'excluded': ['SPARE'],
+            'clear_targets': ['EDUCATION']}
+        response = self.say('다음달 월급 50만원 오르니까 그걸 써', reading(
+            income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'},
+            scope='next_cycle', reference='previous'))
+        state = self.store.state
+        self.assertEqual(response['reply']['lines'][0],
+            '월급 변경은 실제 변경 시점에 마이페이지에서 하실 수 있어요. 진행 중인 예산 조정은 그대로 유지해 둘게요.')
+        self.assertEqual(state['requests'], [item('EDUCATION', 500000)])
+        self.assertEqual(state['planning'], {'scope': 'next_cycle'})
+        self.assertEqual(state['sources'], ['SAVINGS'])
+        self.assertEqual(state['excluded'], ['SPARE'])
+        self.assertEqual(state['clear_targets'], ['EDUCATION'])
+        self.assertFalse(self.proposals)
+
+    def test_salary_and_expense_in_one_turn_keeps_the_expense(self):
+        self.handoff(income_change={'amount': 500000, 'mode': 'by', 'direction': 'up'},
+            requests=[item('EDUCATION', 100000)], scope='next_cycle', excluded=['SAVINGS'])
+        self.assertEqual(self.store.state['requests'], [item('EDUCATION', 100000)])
+        self.assertEqual(self.store.state['planning'], {'scope': 'next_cycle'})
+        self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
         self.assertNotIn('income_change', self.store.state['planning'])
 
-    def test_cut_asks_what_to_reduce_without_saving(self):
-        response = self.say('월급이 280만원으로 줄었어', reading(income_change={'amount': 2800000, 'mode': 'to', 'direction': None}))
-        self.assertIn('20만 원이 줄어요', response['reply']['lines'][0])
-        response = self.say('salary_plan')
-        self.assertEqual(self.store.state['pending']['kind'], 'category')
-        self.assertEqual(self.store.state['requests'][0]['direction'], 'down')
+    def test_canceling_salary_edit_restores_previous_question_without_llm(self):
+        pending = {'kind': 'amount', 'line': '식비를 얼마나 늘릴까요?', 'choices': [], 'index': 0}
+        self.store.state = {'requests': [item('FOOD')], 'pending': deepcopy(pending)}
+        self.handoff()
+        self.ports['complete'].reset_mock(side_effect=True)
+        response = self.say('salary_resume')
+        self.assertEqual(self.store.state['pending'], pending)
+        self.assertEqual(response['reply']['lines'], [pending['line']])
+        self.ports['complete'].assert_not_called()
+
+    def test_preview_survives_salary_handoff_and_no_change_return(self):
+        request = envelope(item('FOOD', 50000), sources=['SPARE'])
+        preview = simulate_funding(self.context, request)
+        preview.update(task_ref='old', proposal_id='old', state='awaiting_approval')
+        self.store.state = {'requests': request['items'], 'sources': ['SPARE'], 'proposal': deepcopy(preview), 'work_ref': 'old'}
+        self.ports['task_status'].return_value = {'state': 'awaiting_approval'}
+        self.ports['complete'].side_effect = [json.dumps({'action': 'revise', 'category': None, 'amount': None,
+            'amount_mode': None, 'suggested_target': None}), json.dumps(reading(action='salary_change'))]
+        response = self.say('월급을 수정할래')
+        self.assertEqual(self.store.state['requests'], request['items'])
+        self.assertEqual(self.store.state['proposal'], preview)
+        self.assertEqual(self.store.state['work_ref'], 'old')
+        self.assertNotIn('proposal', response['reply'])
+        response = self.say('salary_resume')
+        self.assertEqual(response['reply']['proposal'], preview)
+        self.ports['cancel'].assert_not_called()
         self.assertFalse(self.proposals)
+
+    def test_fulfilled_target_in_new_budget_is_not_added_again(self):
+        self.store.state = {'requests': [item('FOOD', 50000)], 'sources': ['SPARE']}
+        self.handoff()
+        self.store.state['work_ref'] = 'old'
+        self.context['base_budget_id'] = 'new-budget'
+        self.context['allocations']['FOOD'] += 50000
+        self.context['buckets']['SPARE'] -= 50000
+        response = self.say('salary_resume')
+        self.assertIn('이미 반영', response['reply']['lines'][0])
+        self.assertEqual(self.store.state['requests'], [])
+        self.assertNotIn('work_ref', self.store.state)
+        self.assertFalse(self.proposals)
+
+    def test_partial_target_in_new_budget_only_calculates_remaining_amount(self):
+        self.store.state = {'requests': [item('FOOD', 50000)], 'sources': ['SPARE'], 'excluded': ['SAVINGS'],
+            'clear_targets': ['FOOD'], 'scope': 'cycle'}
+        self.handoff()
+        self.context['base_budget_id'] = 'new-budget'
+        self.context['allocations']['FOOD'] += 30000
+        self.context['buckets']['SPARE'] -= 30000
+        response = self.say('salary_resume')
+        self.assertEqual(self.store.state['requests'], [item('FOOD', 450000, 'up', 'to')])
+        self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+        self.assertEqual(self.store.state['clear_targets'], ['FOOD'])
+        self.assertEqual(self.store.state['scope'], 'cycle')
+        proposal = response['reply']['proposal']
+        self.assertEqual(proposal['allocations']['FOOD'], 450000)
+        self.assertEqual(sum(row['amount'] for row in proposal['transfers']), 20000)
+
+    def test_changed_lock_revision_requires_new_consent(self):
+        from .adjustment_core.agent import _lock_snapshot
+        self.context['locks'] = {'EDUCATION': 50000}
+        self.context['lock_revisions'] = {'EDUCATION': 'old-revision'}
+        self.store.state = {'requests': [item('EDUCATION', 10000, 'down')], 'destinations': ['FOOD'],
+            'unlock_categories': ['EDUCATION'], 'unlock_consents': _lock_snapshot(self.context, ['EDUCATION'])}
+        self.handoff()
+        self.context['lock_revisions']['EDUCATION'] = 'new-revision'
+        self.say('salary_resume')
+        self.assertEqual(self.store.state['unlock_categories'], [])
+        self.assertEqual(self.store.state['pending']['kind'], 'unlock')
+        self.assertFalse(self.proposals)
+
+    def test_legacy_salary_plan_button_only_hands_off(self):
+        self.store.state = {'pending': {'kind': 'salary_change', 'choices': [('salary_plan', '늘어난 돈 미리 나누기')],
+            'salary': {'before': 3000000, 'after': 3500000}}}
+        self.say('salary_plan')
+        self.assertEqual(self.store.state['pending']['kind'], 'salary_handoff')
+        self.assertNotIn('planning', self.store.state)
+        self.assertFalse(self.proposals)
+
+    def test_salary_handoff_works_before_a_budget_is_available(self):
+        self.ports['get_context'] = Mock(side_effect=ValueError('no_budget'))
+        response = self.handoff()
+        self.assertEqual(self.store.state['pending']['kind'], 'salary_handoff')
+        self.assertIn('마이페이지', response['reply']['lines'][0])
+        response = self.say('salary_resume')
+        self.assertEqual(response['status'], 'awaiting_input')
+        self.assertEqual(response['reply']['choices'][0]['value'], 'salary_resume')
+        self.assertIn('salary_handoff', self.store.state)
+
+    def test_target_release_is_preserved_when_amount_is_already_applied(self):
+        self.context['category_targets'] = {'FOOD': 400000}
+        self.store.state = {'requests': [item('FOOD', 50000)], 'clear_targets': ['FOOD'], 'scope': 'cycle'}
+        self.handoff()
+        self.context['allocations']['FOOD'] += 50000
+        self.context['buckets']['SPARE'] -= 50000
+        response = self.say('salary_resume')
+        self.assertEqual(response['reply']['proposal']['target_changes'], {'FOOD': None})
+        self.assertEqual(response['reply']['proposal']['allocations']['FOOD'], 450000)
+
+    def test_new_expense_while_handoff_pending_updates_the_return_target(self):
+        self.store.state = {'requests': [item('FOOD', 50000)], 'sources': ['SPARE'], 'scope': 'cycle',
+                            'primary_request': {'items': [item('FOOD', 50000)]}}
+        self.handoff()
+        self.handoff(requests=[item('FOOD', 70000)], reference='previous')
+        response = self.say('salary_resume')
+        self.assertEqual(response['reply']['proposal']['allocations']['FOOD'], 470000)
+
+    def test_one_off_return_keeps_absolute_target_after_partial_reallocation(self):
+        self.store.state = {'requests': [item('FOOD', 100000)], 'sources': ['SPARE'], 'scope': 'next_cycle',
+            'planning': {'scope': 'next_cycle', 'one_off': True}, 'one_off': True,
+            'expense_request': item('FOOD', 100000), 'set_aside_amount': 0}
+        self.handoff()
+        self.context['allocations']['FOOD'] += 30000
+        self.context['buckets']['SPARE'] -= 30000
+        response = self.say('salary_resume')
+        proposal = response['reply']['proposal']
+        self.assertEqual(proposal['allocations']['FOOD'], 500000)
+        self.assertEqual(sum(row['amount'] for row in proposal['transfers']), 70000)
+        self.assertEqual(self.store.state['scope'], 'next_cycle')
+        self.assertTrue(self.store.state['planning']['one_off'])
+
+    def test_salary_followup_keeps_explicit_sources_and_exclusions(self):
+        self.store.state = {'requests': [item('FOOD', 50000)], 'scope': 'cycle'}
+        self.handoff(scope='next_cycle', sources=['SPARE'], excluded=['SAVINGS', 'CUSHION_MONTHLY'])
+        self.assertEqual(self.store.state['sources'], ['SPARE'])
+        self.assertEqual(self.store.state['excluded'], ['CUSHION_MONTHLY', 'SAVINGS'])
+        self.assertEqual(self.store.state['scope'], 'cycle')
+        response = self.say('salary_resume')
+        self.assertEqual({row['from'] for row in response['reply']['proposal']['transfers']}, {'SPARE'})
+
+    def test_explicit_donor_amount_survives_return_but_automatic_donor_does_not(self):
+        self.store.state = {'requests': [item('FOOD', 50000), item('SAVINGS', 50000, 'down')],
+            'primary_request': {'items': [item('FOOD', 50000)]}, 'sources': ['SAVINGS'], 'scope': 'cycle',
+            'refinement': {'donors': {'SAVINGS': {'target': 550000, 'explicit': True},
+                                      'CULTURE_LEISURE': {'target': 40000, 'explicit': False}}},
+            'spare_minimum': 250000}
+        self.handoff()
+        self.context['monthly_income'] += 500000
+        response = self.say('salary_resume')
+        card = response['reply']['proposal']
+        self.assertEqual(card['allocations']['FOOD'], 450000)
+        self.assertEqual(card['buckets']['SAVINGS'], 550000)
+        self.assertEqual(card['allocations']['CULTURE_LEISURE'], self.context['allocations']['CULTURE_LEISURE'])
+        self.assertEqual(self.store.state['spare_minimum'], 250000)
+        self.assertEqual({row['category'] for row in self.store.state['requests']}, {'FOOD', 'SAVINGS'})
+
+    def test_confirmed_planned_spare_is_kept_only_within_the_same_period(self):
+        for changed_cycle in (False, True):
+            with self.subTest(changed_cycle=changed_cycle):
+                self.setUp()
+                planned = {'status': 'user_confirmed', 'scope': 'unbudgeted_only', 'amount': 200000}
+                self.store.state = {'requests': [item('FOOD', 250000)], 'sources': ['SPARE'], 'scope': 'cycle',
+                                    'financial_overrides': {'planned_spare': deepcopy(planned)}}
+                self.handoff()
+                self.context['monthly_income'] += 500000
+                if changed_cycle:
+                    self.context['cycle_id'] = 'next-cycle'
+                response = self.say('salary_resume')
+                if changed_cycle:
+                    self.assertEqual(self.store.state['pending']['field'], 'planned')
+                    self.assertNotIn('financial_overrides', self.store.state)
+                    self.assertFalse(self.proposals)
+                else:
+                    self.assertEqual(self.store.state['financial_overrides']['planned_spare'], planned)
+                    results = [plan['result'] for plan in response['reply']['comparison']['plans'] if plan.get('result')]
+                    self.assertTrue(results)
+                    self.assertTrue(all(result['buckets']['SPARE'] >= 200000 for result in results))
+
+    def test_completed_donor_cut_is_not_reused_for_the_remaining_increase(self):
+        for sources in (['SAVINGS'], ['SAVINGS', 'SPARE']):
+            with self.subTest(sources=sources):
+                self.setUp()
+                calculated = []
+                def simulate(ctx, request):
+                    result = simulate_funding(ctx, request, allocate_group_reduction=allocation)
+                    calculated.append(result)
+                    return result
+                self.ports['simulate'] = simulate
+                self.store.state = {'requests': [item('FOOD', 100000), item('SAVINGS', 50000, 'down')],
+                    'primary_request': {'items': [item('FOOD', 100000)]}, 'sources': sources, 'scope': 'cycle',
+                    'refinement': {'donors': {'SAVINGS': {'target': 550000, 'explicit': True}}}}
+                self.handoff()
+                self.context['allocations']['FOOD'] = 450000
+                self.context['buckets']['SAVINGS'] = 550000
+                self.say('salary_resume')
+                self.assertTrue(calculated)
+                result = calculated[-1]
+                self.assertEqual(result['buckets']['SAVINGS'], 550000)
+                self.assertNotIn('SAVINGS', {row['from'] for row in result['transfers']})
+                if 'SPARE' in sources:
+                    self.assertEqual(result['allocations']['FOOD'], 500000)
+                    self.assertEqual(result['buckets']['SPARE'], 350000)
+                else:
+                    self.assertEqual(result['allocations']['FOOD'], 450000)
+                    self.assertEqual(result['shortfalls'][0]['missing_amount'], 50000)
+                    self.assertFalse(self.proposals)

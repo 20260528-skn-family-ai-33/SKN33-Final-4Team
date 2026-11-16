@@ -13,6 +13,8 @@ TAGS = ["공통 · 인증", "금융 동의 · 연결", "카드", "대출", "거�
 
 # 실제 API 구현 및 계약 검증이 끝났을 때 변경. URL 존재만으로 구현 완료가 되지 않는다.
 IMPLEMENTATION = {
+    ("get", "/api/budgets/salary/"): "implemented",
+    ("put", "/api/budgets/salary/"): "implemented",
     ("get", "/api/budgets/ai-consent/"): "implemented",
     ("put", "/api/budgets/ai-consent/"): "implemented",
     ("delete", "/api/budgets/ai-consent/"): "implemented",
@@ -65,6 +67,8 @@ IMPLEMENTATION = {
     ("patch", "/api/finance/transactions/{id}/"): "implemented",
     # 예산: 지킬 돈 · 추천 · 보기 · 자물쇠 · 승인 (10/28)
     ("get", "/api/budgets/protect/"): "implemented",
+    ("get", "/api/budgets/salary-review/"): "implemented",
+    ("post", "/api/budgets/salary-review/"): "implemented",
     ("put", "/api/budgets/protect/"): "implemented",
     ("post", "/api/budgets/recommend/"): "implemented",
     ("get", "/api/budgets/"): "implemented",
@@ -85,6 +89,7 @@ for _domain, _state in (("fixed", "implemented"), ("savings", "implemented")):
 IDEMPOTENT_PATHS = {
     "/api/finance/consents/", "/api/finance/loans/", "/api/finance/loan-dues/{id}/payments/", "/api/finance/card-bills/{id}/payments/", "/api/chat/messages/",
     "/api/budgets/recommend/", "/api/budgets/{id}/approve/", "/api/budgets/proposals/{id}/approve/",
+    "/api/budgets/salary-review/",
     "/api/budgets/fixed/", "/api/budgets/fixed/confirm/", "/api/budgets/fixed/ignore/",
     "/api/budgets/savings/", "/api/budgets/savings/confirm/", "/api/budgets/savings/ignore/",
 }
@@ -215,7 +220,7 @@ def build_contract():
             if method == "post" and path in IDEMPOTENT_PATHS:
                 if not any(p.get("name", "").lower() == "idempotency-key" or p.get("$ref", "").endswith("/IdempotencyKey") for p in params):
                     params.append({"$ref": "#/components/parameters/IdempotencyKey"})
-    source_files = ["docs/API_RULES.md", "docs/api/README.md", "docs/api/spending-analysis.md", "docs/결정기록_2026-10-21.md"] + [f"docs/api/{d}.md" for d in DOMAINS]
+    source_files = ["docs/API_RULES.md", "docs/api/README.md", "docs/api/salary.md", "docs/api/spending-analysis.md", "docs/결정기록_2026-10-21.md"] + [f"docs/api/{d}.md" for d in DOMAINS]
     # 체크아웃 줄바꿈(CRLF/LF)은 문서 내용 변경으로 보지 않는다.
     schema["x-source-sha256"] = {p: hashlib.sha256((ROOT / p).read_text(encoding="utf-8").encode("utf-8")).hexdigest() for p in source_files}
     return schema

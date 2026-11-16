@@ -18,6 +18,8 @@ import { apiSend, newRequestKey } from '../utils/api.js'
 import { PATHS } from '../routes.js'
 import { catIcon, catName, OUT_OF_BUDGET } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
+import SalaryReviewActions from '../components/SalaryReviewActions.jsx'
+import { salaryReviewContext, salaryReviewUrl } from '../utils/salaryReview.js'
 
 // [CSS 이름(색), 이름, split 칸]
 const SPLIT_ROWS = [
@@ -31,7 +33,7 @@ const splitParts = (split) => {
     : [[css, name, split.fixed - card], ...(card > 0 ? [['card', '지난 카드값', card]] : [])])
 }
 // 예산을 짜기 전 AI 동의 단계 (11/12): 동의하면 첫 예산부터 AI가 다듬는다. 동의는 이미 나온 예산을 바꾸지 않으므로 짜기 전에 묻는다
-function ConsentStep({ onStart }) {
+function ConsentStep({ onStart, children }) {
   const [granted, setGranted] = useState(false)
   return (
     <Layout title="추천 예산 확인" showBack foot={<button type="button" className="mc-primary" onClick={onStart}>{granted ? '예산 짜기' : 'AI 없이 예산 짜기'}</button>}>
@@ -40,6 +42,7 @@ function ConsentStep({ onStart }) {
       <h1>AI로 예산을<br />다듬을까요?</h1>
       <p className="mc-muted">동의하면 첫 예산부터 AI가 금액을 한 번 더 다듬어요.<br />동의하지 않아도 예산은 짤 수 있어요.</p>
       <BudgetAIConsent onChange={(next) => setGranted(next.status === 'granted')} />
+      {children}
     </Layout>
   )
 }
@@ -73,7 +76,7 @@ const WAIT_TRIES = 90  // 추천 작업을 기다리는 최대 횟수 (1초씩).
 // 추천을 만드는 동안 보여 줄 화면 (11/12): 오래 걸릴 수 있어 버튼 글자만 바뀌던 것을 화면 전체 안내로.
 // 단계 문구는 실제 진행률이 아니라 기다리는 동안의 안내라서, 몇 초마다 다음 문구로 넘어가고 마지막 문구에서 멈춘다 (몇 % 같은 숫자는 보여 주지 않음)
 const MAKING_STEPS = ['지난 소비를 살펴보고 있어요', '꼭 나갈 돈과 지킬 돈을 맞춰 보고 있어요', '카테고리별로 예산을 나누고 있어요', '마지막으로 금액을 검사하고 있어요']
-function MakingView() {
+function MakingView({ children }) {
   const [step, setStep] = useState(0)
   useEffect(() => {
     if (step >= MAKING_STEPS.length - 1) return undefined
@@ -89,6 +92,7 @@ function MakingView() {
         <p className="mc-muted">{MAKING_STEPS[step]}</p>
         <p className="mc-note">조금 걸릴 수 있어요. 다 되면 이 화면에서 바로 보여 드려요.</p>
       </div>
+      {children}
     </Layout>
   )
 }
@@ -129,7 +133,11 @@ export default function RecommendPage() {
   const [problem, setProblem] = useState(null)  // { message, conflicts?, code? }
   const [draftBlocked, setDraftBlocked] = useState(false)
   // 서버가 푼 자물쇠 (P-13): 지킬 돈에서 생활비를 바꿔 풀렸거나(이전 화면에서 넘겨받음), 추천할 때 막혀서 풀린 것
-  const { state: navState } = useLocation()
+  const location = useLocation()
+  const navState = location.state
+  const context = salaryReviewContext(location)
+  const salaryReview = context.salaryReview
+  const [approved, setApproved] = useState(false)
   const returnedRecovery = navState?.recoveryReturn
   const [resumeRecovery, setResumeRecovery] = useState(() => returnedRecovery ?? null)
   const [released, setReleased] = useState(() => navState?.locksReleased ?? [])
@@ -186,7 +194,7 @@ export default function RecommendPage() {
       } else {
         const handoff = now.result?.handoff
         if (['infeasible', 'target_conflict', 'needs_upper_allocation_review'].includes(now.result?.outcome) && handoff?.mode === 'DESIGN_RECOVERY'
-            && handoff.sourceTaskId === task.taskId && !now.result.budgetId) {
+            && handoff.sourceTaskId === task.taskId && !now.result.budgetId && !salaryReview) {
           if (mounted.current) openRecovery(handoff.sourceTaskId)
           return
         }
@@ -209,7 +217,7 @@ export default function RecommendPage() {
       setBusy(false)
       setMaking(false)
     }
-  }, [load, openRecovery])
+  }, [load, openRecovery, salaryReview])
 
   const toggleLock = async (c) => {
     if (!draft || busy || OUT_OF_BUDGET.includes(c.category)) return
@@ -235,7 +243,8 @@ export default function RecommendPage() {
     setProblem(null)
     try {
       await apiSend(`/api/budgets/${draft.budgetId}/approve/`, 'POST', {}, { requestKey: approveKey(draft.budgetId) })
-      navigate(PATHS.home)
+      if (salaryReview) setApproved(true)
+      else navigate(PATHS.home)
     } catch (err) {
       setProblem({ message: err.message, code: err.code })
       if (err.status === 409) {
@@ -252,8 +261,11 @@ export default function RecommendPage() {
   const autoRecommend = useRef(Boolean(navState?.autoRecommend))
   const refreshRecommendation = useRef(Boolean(navState?.refreshRecommendation))
   useEffect(() => {
-    if (navState?.autoRecommend) navigate(PATHS.recommend, { replace: true, state: null })
-  }, [navState, navigate])
+    if (navState?.autoRecommend) {
+      const { autoRecommend: _auto, refreshRecommendation: _refresh, ...rest } = navState
+      navigate(salaryReviewUrl(PATHS.recommend, salaryReviewContext(location)), { replace: true, state: rest })
+    }
+  }, [location, navState, navigate])
   useEffect(() => {
     let alive = true  // 화면을 떠나면 늦게 온 응답은 버린다
     mounted.current = true
@@ -274,14 +286,23 @@ export default function RecommendPage() {
     return () => { alive = false; mounted.current = false }
   }, [makeDraft])  // makeDraft는 useCallback이라 화면을 열 때 한 번만 돈다
 
-  if (making) return <MakingView />
-  if (asking) return <ConsentStep onStart={() => { setAsking(false); makeDraft() }} />
-  if (!data) return <Layout title="추천 예산 확인" showBack><ApiStatus error={loadError} /></Layout>
+  if (approved) return <Layout title="추천 예산 확인" showBack>
+    <h1>새 예산을 승인했어요.</h1>
+    <p className="mc-muted">새 예산을 기준으로 이어서 조정할 수 있어요.</p>
+    {context.budgetReturn ? <SalaryReviewActions context={context} />
+      : <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.my)}>마이페이지로 돌아가기</button>}
+  </Layout>
+  if (making) return <MakingView><SalaryReviewActions context={context} /></MakingView>
+  if (asking) return <ConsentStep onStart={() => { setAsking(false); makeDraft() }}><SalaryReviewActions context={context} /></ConsentStep>
+  if (!data) return <Layout title="추천 예산 확인" showBack><ApiStatus error={loadError} /><SalaryReviewActions context={context} note={Boolean(loadError)} /></Layout>
 
   const foot = draft
     ? <button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '처리하는 중…' : '이 예산으로 시작하기'}</button>
     : null
   const settingsConflict = problem?.conflicts?.some(c => ['minimums_over_living', 'lock_below_minimum', 'locks_mismatch_living'].includes(c.type))
+  const goProtect = () => salaryReview
+    ? navigate(salaryReviewUrl(PATHS.protect, context), { state: { from: 'my', ...context } })
+    : navigate(PATHS.protect)
   const problemBox = problem && (
     <div className="mc-min-warn" role="alert">
       {!settingsConflict && <p style={{ margin: 0 }}>{problem.message}</p>}
@@ -293,10 +314,10 @@ export default function RecommendPage() {
         </div>
       )}
       {problem.code === 'not_ready' && !draft && (
-        <button type="button" className="mc-link" onClick={() => navigate(PATHS.protect)}>지킬 돈 확인하러 가기 ›</button>
+        <button type="button" className="mc-link" onClick={goProtect}>지킬 돈 확인하러 가기 ›</button>
       )}
       {problem.code === 'needs_upper_allocation_review' && !draft && (
-        <button type="button" className="mc-link" onClick={() => navigate(PATHS.protect)}>지킬 돈 배분 확인하기 ›</button>
+        <button type="button" className="mc-link" onClick={goProtect}>지킬 돈 배분 확인하기 ›</button>
       )}
     </div>
   )
@@ -323,6 +344,7 @@ export default function RecommendPage() {
           {busy ? '추천 만드는 중…' : data.budget ? '다시 추천받기' : '추천 예산 만들기'}
         </button>
         {!data.cycle && <p className="mc-note">급여일을 먼저 정해 주세요.</p>}
+        <SalaryReviewActions context={context} note={Boolean(problem)} />
       </Layout>
     )
   }
@@ -374,17 +396,18 @@ export default function RecommendPage() {
               </div>
             ))}
           </div>
-          <div className="mc-chat-alt">
+          {!context.budgetReturn && <div className="mc-chat-alt">
             <span>꼭 바꾸고 싶은 부분이 있나요?</span>
             <button type="button" className="mc-link" disabled={busy} onClick={() => navigate(PATHS.assistant, {
               state: { budgetContext: { baseBudgetId: draft.budgetId, mode: 'INITIAL_ADJUSTMENT' } },
             })}>챗봇과 조정하기 ›</button>
-          </div>
+          </div>}
         </div>
         {problemBox}
         {recoveryBox}
         <p className="mc-note">최소 표시는 내 정보에서 정한 카테고리 최소 금액이에요. 그 밑으로는 줄지 않고, 자물쇠를 걸면 다음에 다시 추천받을 때 그 금액 그대로 고정돼요.</p>
       </form>
+      <SalaryReviewActions context={context} busy={busy} note={Boolean(problem)} />
     </Layout>
   )
 }

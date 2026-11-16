@@ -222,6 +222,13 @@ def simulate_plan(context, diagnosis, funding):
         request['spare_minimum'] = diagnosis['spare_minimum']
     result = simulate_funding(context, request, allocate_group_reduction=proportional_group_reduction)
     validate_funding(context, request, result)
+    from budgets.price_reference import review_prices
+    price_review = review_prices(context.get('price_reference', {}), context['allocations'],
+        result['allocations'], context.get('price_history_totals', {}),
+        user_direct=(diagnosis['target'],), locks=context.get('locks', {}),
+        spent=context.get('spent', {}), as_of=context.get('today'))
+    if price_review['issues']:
+        raise ValueError('price_reallocation_required')
     if result["status"] not in {"proposed", "partial"}:
         raise ValueError("not_validated")
     actual = {s: 0 for s in SOURCES}
@@ -327,8 +334,11 @@ def recommend(context, request, complete):
     if plans:
         payload = {'phase': 'review', 'recommendation_index': recommended, 'diagnosis': diagnosis, 'facts': evidence,
                    'verified_plans': [{'index': i, 'funding': p['funding'], 'status': p['result']['status']} for i, p in enumerate(plans)]}
+        payload['price_reference'] = context.get('price_reference', {'status': 'disabled'})
         try:
-            answer = parse(complete(PROMPT, json.dumps(payload, ensure_ascii=False)))
+            from budgets.price_reference import PRICE_GUIDANCE
+            guidance = PRICE_GUIDANCE if context.get('price_reference', {}).get('status') == 'ready' else ''
+            answer = parse(complete(PROMPT + guidance, json.dumps(payload, ensure_ascii=False)))
             ids = answer['reason_fact_ids']
             if answer['plans'] or answer['recommendation_index'] != recommended or any(key not in evidence or key.startswith('plan_') and not key.startswith(f'plan_{recommended}.') for key in ids):
                 raise ValueError('unsupported_evidence')

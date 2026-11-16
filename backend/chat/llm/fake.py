@@ -17,6 +17,7 @@ def hypothesis(metric, target, unavailable=None):
 
 # 가짜 해석에 더 넣는 문장 (기존 대역 SAID 에 없는 정책 요청 · 예시용)
 EXTRA_SAID = {
+    "월급 수정하고 싶어": {"intents": ["budget_adjust"]},
     "청년 정책 추천해줘": {"intents": ["policy"]},
     "소비 분석해줘": {"intents": ["spending"], "target": "overview"},
     "왜 식비가 늘었어?": {"intents": ["spending"], "explain": True, "categories": ["FOOD"], "refers_to": "previous"},
@@ -25,8 +26,8 @@ EXTRA_SAID = {
 # 소비 형식으로만 답하는 가짜 해석 (통합 형식에 없는 칸 — 세부 지출 · 이번 달 포함 · 별칭)
 SPENDING_SAID = {
     "내 소비 습관 어때?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
-    "이대로 쓰면 이번 달 얼마나 쓸까?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
     "식비 습관 어때?": {"mine": True, "target": "overview", "analysis_goal": "habit", "categories": ["FOOD"], "refers_to": "none"},
+    "이대로 쓰면 이번 달 얼마나 쓸까?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
     # 분석 용어 없이 말해도 의도대로 (11/13)
     "돈이 왜 이렇게 빨리 없어지지": {"mine": True, "target": "overview", "analysis_goal": "reason", "refers_to": "none"},
     "나 돈 너무 막 쓰나?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
@@ -36,10 +37,10 @@ SPENDING_SAID = {
     "또 뭐 분석해줄 수 있어?": {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"},
     "소비 분석": {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"},
     "전체적으로 분석해줘": {"mine": True, "target": "overview", "analysis_goal": "overview", "refers_to": "none", "followup": "new"},
-    "왜 이렇게 계산된거야?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "previous"},
     # 다음 추천 입력 버튼 문구 (insight._followup_context) — 눌렀을 때 가짜 해석에서도 같은 분석으로 이어지게
     "지난달과 달라진 소비는 뭐야?": {"mine": True, "target": "overview", "analysis_goal": "reason", "refers_to": "none"},
     "월말 예상은 어떻게 계산했어?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "previous"},
+    "왜 이렇게 계산된거야?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "previous"},
     "외식이었어": {"mine": True, "followup": "answer", "analysis_activity": "dining"},
     "원래 계획했던 거야": {"mine": True, "followup": "answer", "analysis_planned": True},
     **{text: {"mine": True, "target": "spend", "explain": True, "explain_kind": "change",
@@ -119,6 +120,9 @@ SPENDING_SAID = {
 
 # 네트워크 없는 서비스 연결 검증용 고정 문장. 일반 자유 대화는 live 설정을 사용한다.
 BUDGET_SAID = {
+    "식비 예산을 늘리고 싶어": [{"category": "FOOD", "amount": None, "amount_mode": None, "direction": "up"}],
+    "쇼핑 예산을 줄이고 싶어": [{"category": "FASHION_SHOPPING", "amount": None, "amount_mode": None, "direction": "down"}],
+    "저축을 늘리고 싶어": [{"category": "SAVINGS", "amount": None, "amount_mode": None, "direction": "up"}],
     "의료비를 1만 원으로 줄여줘": [{"category": "MEDICAL_HEALTH", "amount": 10000, "amount_mode": "to", "direction": "down"}],
     "의료비 줄이고싶어": [{"category": "MEDICAL_HEALTH", "amount": None, "amount_mode": None, "direction": "down"}],
     "의료비 줄이고 싶다고": [{"category": "MEDICAL_HEALTH", "amount": None, "amount_mode": None, "direction": "down"}],
@@ -159,6 +163,7 @@ for _text in BUDGET_POINTING:
     EXTRA_SAID[_text] = {"intents": ["budget_adjust"]}
 # 조정안 카드가 떠 있을 때의 말 (FEEDBACK_PROMPT 가짜 응답: action, category, amount, amount_mode, suggested_target)
 FEEDBACK_SAID = {
+    "월급 수정하고 싶어": ("revise", None, None, None, None),
     "식비 얼마까지 늘릴 수 있어?": ("maxima", "FOOD", None, None, None),
     "쇼핑 더 줄여도 돼": ("refine_more", "FASHION_SHOPPING", None, None, None),
     "쇼핑 너무 많이 줄였어": ("refine_less", "FASHION_SHOPPING", None, None, None),
@@ -349,6 +354,10 @@ class FakeReading(RoleFakeLLM):
         self.missed = 0
 
     def __call__(self, system, user, timeout=None):  # timeout: 실제 해석기와 같은 모양 (가짜는 기다리지 않음)
+        from budgets.adjustment_core import followups as budget_followups
+        if system == budget_followups.PROMPT:
+            self.calls.append({'role': 'fake_budget_followups'})
+            return json.dumps({'questions': [row['id'] for row in json.loads(user)['candidates'][:2]]})
         if system == spending_followups.PROMPT:
             self.calls.append({"role": "fake_spending_followups"})
             return json.dumps({"questions": [{"id": row["id"], "text": row["question"]}
@@ -376,13 +385,17 @@ class FakeReading(RoleFakeLLM):
             intents = self.said.get(text, {}).get("intents", [])
             other = text in SPENDING_SAID or bool(intents) and "budget_adjust" not in intents
             pointing = text in BUDGET_POINTING
-            if text not in BUDGET_SAID and not other and not pointing:
+            salary_edit = text == '월급 수정하고 싶어'
+            if text not in BUDGET_SAID and not other and not pointing and not salary_edit:
                 self.missed += 1
                 raise TimeoutError("가짜 예산 해석: 모르는 문장")
             self.calls.append({"role": "budget"})
             reading = {"mine": not other, "requests": BUDGET_SAID.get(text, []), "scope": None,
                        "clear_targets": [], "unlock": None, "approval": None, "cancel": False,
                        "reason": None, "unclear": [], "handoff": None, "handoff_category": None}
+            if salary_edit:
+                reading.update(action='salary_change', sources=[], destinations=[], excluded=[], funding_scope=None,
+                               use_available=None, reference='previous')
             if text in SPENDING_SAID:  # 조회 질문 → 소비 분석 + 물어본 카테고리 (가리키는 말이면 조정 중인 항목)
                 goal = (payload.get("previous") or {}).get("requests") or [{}]
                 reading.update(handoff="budget_basis" if _basis(text) else "spending",

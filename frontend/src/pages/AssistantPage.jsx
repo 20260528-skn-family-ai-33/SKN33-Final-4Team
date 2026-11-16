@@ -75,7 +75,8 @@ function Trace({ trace }) {
 const wideAdjustment = (a) => Boolean(a && (a.proposal || a.comparison || a.alternatives))
 
 export default function AssistantPage() {
-  const { state: navState } = useLocation()
+  const { state: navState, search } = useLocation()
+  const salaryReturn = new URLSearchParams(search).get('budgetConversation')
   const navigate = useNavigate()
   const { openPopup, popup } = usePopup()
   const [storedApproval] = useState(readPendingApproval)
@@ -83,9 +84,10 @@ export default function AssistantPage() {
   const [budgetEntry] = useState(() => storedApproval ? null : navState?.budgetContext ?? null)
   const [entryWaiting, setEntryWaiting] = useState(Boolean(budgetEntry))
   const entryStarted = useRef(false)
+  const salaryResumed = useRef(false)
   const first = useApi('/api/chat/messages/')  // 첫 화면의 엔진 · 기능 버튼 (저장 없음)
   const [engine, setEngine] = useState(null)   // 응답마다 서버가 다시 알려 준 값 { engine, features, testMode, today }
-  const [restoreId] = useState(() => storedApproval?.conversationId ?? recovery?.conversationId ?? (budgetEntry ? null : savedId()))
+  const [restoreId] = useState(() => storedApproval?.conversationId ?? salaryReturn ?? recovery?.conversationId ?? (budgetEntry ? null : savedId()))
   const [restoreVersion, setRestoreVersion] = useState(0)
   const [conversationId, setConversationId] = useState(restoreId)
   const [messages, setMessages] = useState([])
@@ -103,7 +105,6 @@ export default function AssistantPage() {
   const mounted = useRef(false)
   const latest = useRef({})  // 가장 최근에 그린 send · openPopup (동의 창이 닫힌 뒤 거절됐던 요청을 다시 보낼 때 쓴다)
   const end = useRef(null)
-
   const scrollTarget = useRef(null)
 
   useEffect(() => {
@@ -148,9 +149,9 @@ export default function AssistantPage() {
       .then((talk) => {
         if (!live) return
         if (!Array.isArray(talk.messages) || talk.conversationId !== restoreId) throw new Error('대화를 정상적으로 받지 못했어요.')
+        scrollTarget.current = 'bottom'
         setMessages(talk.messages)
         if (!storedApproval) return
-        scrollTarget.current = 'bottom'
         const proposal = talk.messages.map((m) => m.content.budgetAdjustment?.proposal)
           .filter((item) => item?.proposalId === storedApproval.proposalId).at(-1)
         if (!proposal || storedApproval.path !== approvalPath(proposal)) {
@@ -194,18 +195,18 @@ export default function AssistantPage() {
       key: body?.budgetContext?.mode === 'DESIGN_RECOVERY' && recovery?.requestKey ? recovery.requestKey : newRequestKey(),
     }
     inFlight.current = true
+    scrollTarget.current = 'bottom'
     setEntryWaiting(false)
     setPending(request)
-    scrollTarget.current = 'bottom'
     setBusy(true)
     setError(null)
     try {
       const out = await apiSend('/api/chat/messages/', 'POST', request.body, { requestKey: request.key })
       if (!out?.conversationId || !Array.isArray(out.messages)) throw new Error('답변을 정상적으로 받지 못했어요.')
       if (!mounted.current) return
+      scrollTarget.current = 'question'
       setConversationId(out.conversationId)
       setMessages((m) => [...m, ...out.messages])
-      scrollTarget.current = 'question'
       setEngine({ engine: out.engine, features: out.features, testMode: out.testMode, today: out.today })
       setPending(null)
       const adjustment = out.messages.at(-1)?.content?.budgetAdjustment
@@ -217,9 +218,9 @@ export default function AssistantPage() {
         } } })
       }
     } catch (err) {
+      scrollTarget.current = 'bottom'
       // 서버가 명시적으로 거절한 요청은 수정할 수 있게 돌려준다. 타임아웃 · 통신/서버 오류는 성공 여부가 불명확하다.
       if (err.status >= 400 && err.status < 500 && err.status !== 408) {
-      scrollTarget.current = 'bottom'
         setPending(null)
         if (request.body.text) setText(request.body.text)
         if (err.fields?.conversationId) setConversationId(null)  // 끝났거나 남의 대화 → 다음 문장부터 새 대화
@@ -285,15 +286,43 @@ export default function AssistantPage() {
 
   const startOver = () => {
     if (blocked || inFlight.current) return
+    scrollTarget.current = 'bottom'
     setConversationId(null)
     setMessages([])
-    scrollTarget.current = 'bottom'
     setError(null)
   }
 
   const bots = messages.filter((m) => m.role === 'bot')
   const last = bots.at(-1)
   const agent = last?.content.agent ?? null
+
+  useEffect(() => {
+    if (!salaryReturn || salaryResumed.current || blocked || error || conversationId !== salaryReturn) return
+    const choice = last?.content.choices?.find((item) => item.value === 'salary_resume')
+    if (!['salary_handoff', 'salary_allocation_review'].includes(last?.content.budgetAdjustment?.phase) || !choice) return
+    salaryResumed.current = true
+    // oxlint-disable-next-line react/set-state-in-effect -- 복귀한 대화의 최신 서버 상태를 한 번 확인하며 기존 전송 상태 관리를 사용한다.
+    send({ choice: { value: choice.value, turn: last.content.turn } }, choice.label)
+  }, [salaryReturn, blocked, error, conversationId, last, send])
+
+  const editSalary = () => {
+    if (blocked || !conversationId) return
+    saveId(conversationId)
+    const query = `budgetConversation=${encodeURIComponent(conversationId)}`
+    navigate(`${PATHS.salary}?${query}`, { state: {
+      from: 'my', budgetReturn: { conversationId, returnTo: `${PATHS.assistant}?${query}` },
+    } })
+  }
+
+  const reviewSalary = () => {
+    if (blocked || !conversationId) return
+    saveId(conversationId)
+    const query = `budgetConversation=${encodeURIComponent(conversationId)}`
+    navigate(`${PATHS.protect}?${query}&salaryReview=1`, { state: {
+      from: 'my', salaryReview: true,
+      budgetReturn: { conversationId, returnTo: `${PATHS.assistant}?${query}` },
+    } })
+  }
 
   const features = (
     <div className="mc-asst-opts" role="group" aria-label="기능 고르기">
@@ -424,6 +453,8 @@ export default function AssistantPage() {
                     navigation={{ choices: last?.content.budgetAdjustment ? last.content.choices : [], active: !blocked,
                       onPick: (p) => pick(last.content, p) }}
                     onPick={(p) => pick(c, p)} onApprove={(proposal) => openApproval(proposal)}
+                    onSalaryEdit={editSalary}
+                    onSalaryReview={reviewSalary}
                     onSend={(text) => { if (isLast && !blocked) send({ text }, text) }}
                     onDetail={blocked ? undefined : (p) => pick(c, p)}>
                     {(c.inputs ?? []).includes('region_select') &&

@@ -604,3 +604,35 @@ LLM은 더 이상 완성 문장 ID를 고르지 않는다. `narrative`는 검증
 - 조정안 승인이 조건 변경을 발견하면 `409 expired`와 함께 조정안·작업 `result.state`를 만료로 저장한다. 읽기 전용 카드 조회도 최신 조건을 검사해 만료를 표시한다.
 - 작업 취소 API(`DELETE /api/tasks/<taskId>/`)가 필요한지 → 결정 후
 - `queued` 상태는 1차(요청 안에서 처리)에서는 생기지 않는다. 뒤에서 돌리게 바꿀 때 쓴다
+
+### 월급 수정 화면과 예산 조정 복귀 연동 (2026-11-16)
+
+챗봇 구현: `budgetAdjustment.phase=salary_handoff`이면 **마이페이지에서 월급 수정하기** 버튼을 표시한다. 버튼은 `/budgets/salary?budgetConversation=<conversationId>`로 이동하며 다음 router state를 전달한다. 월급 저장·재추천·승인 API는 호출하지 않는다.
+
+```js
+{
+  from: 'my',
+  budgetReturn: {
+    conversationId,
+    returnTo: `/chat?budgetConversation=${encodeURIComponent(conversationId)}`
+  }
+}
+```
+
+**마이페이지 저장·검토·복귀(구현됨)**
+
+- `budgetReturn`을 월급 저장·예산 검토 화면까지 보존한다. 저장 성공 후에는 `salaryReview: true`도 전달하며 URL에 `budgetConversation=<conversationId>&salaryReview=1`을 유지한다. 새로고침으로 state가 없으면 두 query를 읽고 내부 `/chat?budgetConversation=<conversationId>` 복귀 주소를 구성한다. 외부 주소로 이동시키지 않는다. `salaryReview=1`은 화면 흐름 표시이며 저장·승인 여부의 서버 검증을 대신하지 않는다.
+- 월급 저장은 기존 `PUT /api/budgets/salary/`를 사용한다. 저장 성공만으로 예산을 재계산하거나 승인하지 않고, 사용자가 **새 조건으로 예산 검토**를 눌러 시작하게 한다. 새 안 승인 전에는 기존 승인 예산을 유지한다.
+- 검토 버튼은 `/budgets/protect?salaryReview=1`의 공통 급여 검토 화면을 연다. 승인 예산 대비 증가분이 있으면 기존 요청을 먼저 반영하고 남은 증가분의 저축 비율을 확인한 뒤 재배분 미리보기를 만든다. 기존 승인 예산·설정은 최종 확정 전까지 유지한다. 증가분이 없거나 첫 예산인 경우 기존 지킬 돈·추천 흐름을 사용한다.
+- 챗봇에서 온 경우 월급 입력·저장 성공부터 지킬 돈·추천의 로딩·검토·실패·승인 완료까지 **이전 예산 조정 이어하기**를 제공한다. 검토 취소도 같은 대화로 돌아갈 수 있다. 저장 이후 실패 시 “월급은 저장됐어요. 예산 검토는 나중에 다시 할 수 있어요.”로 상태를 구분하고 위 `returnTo`로 이동한다. 저장 전 실패를 저장 완료로 안내하지 않는다.
+- 챗봇에서 온 월급 변경은 현재 월급 즉시 수정만 지원한다. PUT에 `applyFrom: current_cycle`, `preserveUnchangedSchedules: true`를 보내 변경하지 않은 항목의 기존 예약을 보존한다. 실제로 바꾼 항목의 예약은 현재 적용으로 대체되므로 저장 전에 안내한다. 챗봇이 들은 미래 급여나 증감액을 저장 폼에 자동 반영하지 않는다. 마이에서 직접 진입하는 기존 다음 주기 예약 흐름은 유지한다.
+
+**챗봇 복귀 처리(구현됨)**
+
+1. `budgetConversation`의 대화를 기존 GET API로 복원한다. 서버가 대화 소유권을 검사하며, 없는 대화·다른 사용자 대화면 복귀를 실행하지 않는다.
+2. 마지막 답변이 `salary_handoff` 또는 `salary_allocation_review`이면 기존 메시지 API에 `{conversationId, choice: {value: 'salary_resume', turn}}`을 한 번 보낸다. `turn`은 복원한 최신 답변 값이며, 응답 유실 재시도는 같은 요청 키를 사용한다. 일반 뒤로 가기로 돌아온 경우에는 이어하기 버튼으로 실행할 수 있다.
+3. 서버가 최신 월급과 현재 주기의 유효한 미승인 추천 초안을 우선 확인하고, 없으면 승인 예산을 사용한다. 예전 조정 미리보기가 만료됐어도 원래 목표를 유지해 아직 반영되지 않은 차액만 계산한다. 자료 조회 실패 시 요청을 보관하고 다시 이어갈 수 있게 한다. 변경된 잠금 조건은 재확인하며 최종 승인 절차는 유지한다.
+
+실제 `SalaryPage`·`ProtectPage`·`RecommendPage`·`AssistantPage`가 이 계약을 사용한다. 복귀 시 선택한 초안이 원래 요청의 일부를 이미 반영했다면 나머지 차액만 조정하며, 최종 확정은 기존 승인 API와 재검산을 거친다.
+
+급여 증가분이 남아 있으면 `salary_allocation_review` 단계에서 **월급 증가분 배분 검토** 버튼으로 마이페이지와 같은 검토 화면을 연다. 이미 만든 유효 미리보기나 승인·예약 결과가 있으면 복귀 시 해당 카드를 이어 보여주며 원래 요청을 중복 실행하지 않는다.
