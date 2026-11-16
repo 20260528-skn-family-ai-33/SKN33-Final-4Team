@@ -10,7 +10,7 @@ from datetime import date, timedelta
 
 from generate_a import Builder, days, is_workday, main
 
-SEED = 20261121
+SEED = 20261189  # 11/19 기준 모든 카테고리가 8~10월 평균의 50% 안쪽, 뷰티·문화여가가 평소 습관만큼 나오는 무작위 값 (11/16 고정)
 # 계좌·카드: A 국민 입출금(월급) · C 적금 · H 주택청약 · D 국민 체크카드(결제 계좌 A)
 OPENING = {'A': 13_000_000, 'C': 6_000_000, 'H': 2_400_000}
 SALARY, SALARY_NAME, PAYDAY = 2_900_000, '(주)어리둥절', 10
@@ -64,7 +64,16 @@ ONE_OFF = [
     (date(2026, 8, 2), '20:00', None, 'CGV 온라인 예매', 30_000, 'CULTURE_LEISURE', '데이트 영화'),
     (date(2026, 10, 18), '19:30', None, '메가박스 온라인 예매', 28_000, 'CULTURE_LEISURE', '데이트 영화'),
     (date(2026, 9, 26), '14:00', None, '여기어때 강릉 씨마크호텔', 280_000, 'TRAVEL_LODGING', '추석 연휴 여행 (여윳돈)'),
+    # 문화·여가: 데이트 영화는 한 달에 한 번, 야구 직관 · 전시는 한 번씩
+    (date(2026, 7, 25), '19:40', None, 'CGV 온라인 예매', 28_000, 'CULTURE_LEISURE', '데이트 영화'),
+    (date(2026, 9, 12), '19:40', None, '메가박스 온라인 예매', 28_000, 'CULTURE_LEISURE', '데이트 영화'),
+    (date(2026, 11, 15), '19:40', None, '롯데시네마 온라인 예매', 30_000, 'CULTURE_LEISURE', '데이트 영화'),
+    (date(2026, 8, 29), '15:10', None, '티켓링크', 36_000, 'CULTURE_LEISURE', '친구랑 야구 직관 2장'),
+    (date(2026, 10, 24), '14:30', None, '인터파크 티켓', 32_000, 'CULTURE_LEISURE', '한남동 전시 2장 (데이트)'),
 ]
+# 커트는 4주마다 (토요일 오전, 집 앞 바버샵), 두 번에 한 번은 다운펌을 같이 한다
+MENS_HAIR = [(date(2026, 7, 11), False), (date(2026, 8, 8), True), (date(2026, 9, 5), False),
+             (date(2026, 10, 10), True), (date(2026, 11, 7), False)]
 
 
 def pay_date(year, month):
@@ -87,6 +96,7 @@ class BuilderB(Builder):
         paid_days = {p[0] for p in FRIEND_PAID}
         fuel_next = date(2026, 7, 3)
         family_turn = 0
+        self.hipass_balance = 32_000  # 7/1 하이패스 카드 잔액
 
         for d in days():
             last_day = calendar.monthrange(d.year, d.month)[1]
@@ -115,8 +125,13 @@ class BuilderB(Builder):
                 fuel_next = d + timedelta(days=rng.choice((8, 9, 10)))
             # ----- 평일 -----
             if is_workday(d):
-                for t in ('07:55', '19:05'):
-                    self.add(d, t, 'hipass', 1_400, name='한국도로공사 하이패스', category='TRANSPORT_CAR')
+                # 선불 하이패스: 통행료(출퇴근 1,400원 × 2)는 카드 잔액에서 빠지고, 잔액이 1만 원 이하가 되면
+                # 등록한 계좌에서 5만 원이 자동충전된다 → 거래 내역에는 충전 출금만 찍힌다 (적요 '에스엠하이플러스')
+                self.hipass_balance -= 2_800
+                if self.hipass_balance <= 10_000:
+                    self.add(d, '19:10', 'hipass_charge', 50_000, name='에스엠하이플러스', category='TRANSPORT_CAR',
+                             instrument='A', note='하이패스 선불카드 계좌 자동충전')
+                    self.hipass_balance += 50_000
                 if rng.random() < 0.65:
                     self.spend(d, f'12:{rng.randrange(5, 40):02d}', 'lunch', 9_000, 13_000, zone='office',
                                regular=0.7, step=500)
@@ -148,10 +163,7 @@ class BuilderB(Builder):
                         family_turn += 1
                     if d.weekday() == 6 and d.day in range(8, 15):
                         self.spend(d, '09:40', 'carwash', 8_000, 15_000, regular=1.0, step=1_000)
-            # ----- 한 달에 몇 번 -----
-            if d.day == 6 and d.month % 2 == 0 or d.day == 22 and d.month % 2 == 1:
-                self.spend(d, '13:00' if d.weekday() >= 5 else '19:40', 'hair', 15_000, 22_000, zone='home',
-                           regular=1.0, step=1_000)
+        self.lifestyle(paid_days)
         self.extras()
         self.balances()
 
@@ -162,10 +174,10 @@ class BuilderB(Builder):
                 self.spend(d, '13:00', 'pangyo_meal', 13_000, 24_000, zone='pangyo', step=500, note=kind)
             self.spend(d, '15:00', 'weekend_cafe', 5_000, 9_000, zone=rng.choice(['pangyo', 'jeongja']), note=kind)
             extra = rng.random()
-            if extra < 0.3:
+            if extra < 0.5:  # 노래방 · 볼링 · PC방 · 당구
                 self.spend(d, '17:00', 'fun', 10_000, 25_000, zone=rng.choice(['pangyo', 'jeongja']), step=1_000,
                            note=kind)
-            elif extra < 0.45:
+            elif extra < 0.62:
                 self.spend(d, '16:30', 'fashion', 39_000, 89_000, zone='pangyo', step=1_000, note=kind)
             if not skip and rng.random() < 0.3:
                 self.spend(d, '20:30', 'pangyo_bar', 18_000, 32_000, zone=rng.choice(['pangyo', 'jeongja']),
@@ -185,6 +197,28 @@ class BuilderB(Builder):
                 self.spend(d, '16:40', 'dessert', 7_000, 16_000, zone=rng.choice(['hannam', 'jeongja']), note=kind)
             elif extra < 0.35:
                 self.spend(d, '17:00', 'gift', 20_000, 40_000, zone='hannam', step=1_000, note=kind)
+
+    def lifestyle(self, paid_days):
+        """한 달에 몇 번 나가는 뷰티 · 여가 (커트 · 올리브영 · 퇴근 후 스크린골프)"""
+        rng = self.rng
+        for d, perm in MENS_HAIR:
+            low, high = (55_000, 60_000) if perm else (25_000, 30_000)
+            self.spend(d, '11:00', 'mens_hair', low, high, zone='home', regular=1.0, step=1_000,
+                       note='커트 + 다운펌' if perm else '커트')
+        for month in range(7, 12):
+            d = date(2026, month, 18)
+            while not is_workday(d):
+                d += timedelta(days=1)
+            # 스킨케어 · 면도용품: 보통 집 앞, 가끔 회사 근처
+            self.spend(d, '19:50', 'olive', 18_000, 38_000, zone='home' if rng.random() < 0.75 else 'office',
+                       regular=1.0)
+            # 둘째 · 넷째 수요일 퇴근 후 동료랑 스크린골프 (안 갈 때도 있음)
+            wednesdays = [date(2026, month, day) for day in range(1, calendar.monthrange(2026, month)[1] + 1)
+                          if date(2026, month, day).weekday() == 2]
+            for w in (wednesdays[1], wednesdays[3]):
+                if is_workday(w) and w not in paid_days and rng.random() < 0.7:
+                    self.spend(w, '19:30', 'screen_golf', 20_000, 30_000, zone='office', regular=0.8, step=1_000,
+                               note='퇴근 후 동료랑')
 
     def extras(self):
         for d, t, role, zone, amount in FRIEND_PAID:

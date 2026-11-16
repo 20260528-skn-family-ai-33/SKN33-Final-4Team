@@ -73,15 +73,21 @@ ROLES = {
         'fashion': (['pangyo', 'hannam'], ['남성 의류 소매업', '기타 의류 소매업', '신발 소매업', '가방 소매업'], {}, 8),
         'gift': (['hannam'], ['꽃집', '기념품점'], {}, 4),
         'fun': (['pangyo', 'jeongja', 'home'], ['노래방', '볼링장', '당구장', 'PC방', '골프 연습장'], {}, 6),
+        # 11/16 추가 (앞 역할의 단골 선택이 바뀌지 않게 맨 끝에 둔다): 남성 커트 · 올리브영 · 퇴근 후 스크린골프
+        'mens_hair': (['home'], ['미용실'], {'home': 1}, 5),
+        'olive': (['home', 'office'], ['그 외 기타 상품 전문 소매업', '화장품 소매업'], {'home': 1}, 3),
+        'screen_golf': (['office'], ['골프 연습장'], {'office': 1}, 4),
     },
 }
 SEEDS = {'a': 20261120, 'b': 20261121}
 # 업종 라벨이 틀린 가게(예: 옷가게가 슈퍼마켓)를 거르려고 이름에 이 말이 있어야 하는 역할
-NAME_KEYWORDS = {'grocery': ('마트', '슈퍼', '식자재', '청과', '야채', '반찬', '정육')}
+NAME_KEYWORDS = {'grocery': ('마트', '슈퍼', '식자재', '청과', '야채', '반찬', '정육'),
+                 'mens_hair': ('바버', '맨즈', '남성'), 'olive': ('올리브영',), 'screen_golf': ('스크린', '골프존')}
 EXCLUDE_NAME = ('유흥',)
 # 상가정보 라벨(v3: 다품목 미분류)과 서비스 분류 규칙이 다른 역할은 서비스 규칙을 정답으로 쓴다
 # (backend/finance/classifier.py — 11/05 결정: 편의점·슈퍼·마트는 식비, 세탁·수선은 기타)
-CATEGORY_OVERRIDE = {'convenience': 'FOOD', 'grocery': 'FOOD', 'laundry': 'ETC'}
+CATEGORY_OVERRIDE = {'convenience': 'FOOD', 'grocery': 'FOOD', 'laundry': 'ETC', 'mens_hair': 'BEAUTY', 'olive': 'BEAUTY',
+                     'screen_golf': 'CULTURE_LEISURE'}
 SOURCE = '상가정보_20260630/상가라벨_v3.2_20261020'  # alpha_home_merchants.csv 와 같은 원본
 
 

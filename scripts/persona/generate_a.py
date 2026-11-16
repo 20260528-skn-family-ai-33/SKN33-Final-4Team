@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from pathlib import Path
 
 DATA = Path(__file__).with_name('data')
-SEED = 20261120
+SEED = 20262380  # 11/19 기준 식비만 8~10월 평균의 93%(거의 다 씀), 나머지는 87% 안쪽인 무작위 값 (11/16 골라서 고정)
 START, END = date(2026, 7, 1), date(2026, 11, 30)
 # 2026 평일 공휴일 (8/17 광복절 대체, 9/24~25 추석, 10/5 개천절 대체, 10/9 한글날)
 HOLIDAYS = {date(2026, 8, 17), date(2026, 9, 24), date(2026, 9, 25), date(2026, 10, 5), date(2026, 10, 9)}
@@ -65,13 +65,19 @@ PAY = [
 ]
 # 한 번씩: (날짜, 시각, 역할 또는 None, 적요(역할 없을 때), 금액, 카테고리)
 ONE_OFF = [
+    # 미용실은 5~6주마다 (8~10월에 두 번 들어가야 평균이 실제 습관과 맞는다)
     (date(2026, 7, 11), '14:30', 'hair', None, 38_000, 'BEAUTY'),
-    (date(2026, 9, 5), '14:30', 'hair', None, 35_000, 'BEAUTY'),
-    (date(2026, 11, 7), '14:30', 'hair', None, 42_000, 'BEAUTY'),
+    (date(2026, 8, 22), '14:30', 'hair', None, 35_000, 'BEAUTY'),
+    (date(2026, 10, 3), '14:30', 'hair', None, 38_000, 'BEAUTY'),
+    (date(2026, 11, 14), '14:30', 'hair', None, 38_000, 'BEAUTY'),
+    # 병원은 환절기 두 번, 약국(상비약 · 영양제)은 매달
     (date(2026, 8, 19), '19:10', 'clinic', None, 6_800, 'MEDICAL_HEALTH'),
     (date(2026, 8, 19), '19:30', 'pharmacy', None, 4_500, 'MEDICAL_HEALTH'),
-    (date(2026, 11, 12), '19:05', 'clinic', None, 7_200, 'MEDICAL_HEALTH'),
-    (date(2026, 11, 12), '19:25', 'pharmacy', None, 5_800, 'MEDICAL_HEALTH'),
+    (date(2026, 10, 14), '19:10', 'clinic', None, 7_200, 'MEDICAL_HEALTH'),
+    (date(2026, 10, 14), '19:30', 'pharmacy', None, 5_800, 'MEDICAL_HEALTH'),
+    (date(2026, 7, 8), '20:10', 'pharmacy', None, 6_500, 'MEDICAL_HEALTH'),
+    (date(2026, 9, 9), '20:10', 'pharmacy', None, 7_000, 'MEDICAL_HEALTH'),
+    (date(2026, 11, 4), '20:10', 'pharmacy', None, 6_000, 'MEDICAL_HEALTH'),
     (date(2026, 7, 26), '15:00', 'books', None, 16_800, 'EDUCATION'),
     (date(2026, 9, 27), '15:00', 'books', None, 14_400, 'EDUCATION'),
     (date(2026, 8, 1), '19:50', None, 'CGV 온라인 예매', 28_000, 'CULTURE_LEISURE'),
@@ -191,23 +197,24 @@ class Builder:
                 amount = rng.choice((20_000, 20_000, 20_000, 10_000, 30_000))
                 self.add(d, '08:05', 'tmoney', amount, name='모바일티머니선불형', category='TRANSPORT_CAR')
                 tmoney_next = d + timedelta(days=max(3, round(amount / 20_000 * 7) + rng.choice((-1, 0, 1))))
-            # 11/1~18은 배달을 늘려서 시연 무렵 식비 예산을 넘기게 한다
+            # 11월은 배달을 조금 늘려서 시연일(11/20)에 식비 예산을 거의 다 쓴 상태로 만든다
             heavy = date(2026, 11, 1) <= d <= date(2026, 11, 18)
             # ----- 평일 -----
             if is_workday(d):
-                if rng.random() < 0.68:
+                # 회사가 점심을 구내식당으로 준다(식대 지원) → 동료랑 밖에서 먹는 날만 내 카드로 나간다
+                if rng.random() < 0.12:
                     self.spend(d, f'12:{rng.randrange(5, 40):02d}', 'lunch', 8_000, 12_000, zone='office',
                                regular=0.7, step=500)
-                    if rng.random() < 0.5:
-                        self.spend(d, f'12:{rng.randrange(45, 59):02d}', 'cafe', 2_500, 5_500, zone='office',
-                                   regular=0.8)
+                if rng.random() < 0.35:  # 점심 먹고 커피
+                    self.spend(d, f'12:{rng.randrange(45, 59):02d}', 'cafe', 2_500, 5_500, zone='office',
+                               regular=0.8)
                 if rng.random() < 0.2:
                     self.spend(d, '15:20', 'convenience', 1_500, 5_000, zone='office', regular=0.9)
                 evening = rng.random()
-                if evening < (0.3 if heavy else 0.12):
+                if evening < (0.2 if heavy else 0.12):
                     self.spend(d, f'{rng.choice((19, 20, 21))}:{rng.randrange(0, 59):02d}', 'delivery',
                                17_000, 27_000, zone='home', regular=0.5, step=500)
-                elif evening < (0.42 if heavy else 0.27):
+                elif evening < (0.35 if heavy else 0.27):
                     self.spend(d, f'19:{rng.randrange(10, 50):02d}', 'home_meal', 8_000, 12_000, zone='home',
                                regular=0.6, step=500)
                 if rng.random() < 0.15:
@@ -220,15 +227,15 @@ class Builder:
                 else:
                     if d.weekday() == 6:
                         self.spend(d, '16:30', 'grocery', 15_000, 35_000, zone='home', regular=0.8)
-                    if rng.random() < (0.6 if heavy else 0.3):
+                    if rng.random() < (0.45 if heavy else 0.3):
                         self.spend(d, '19:30', 'delivery', 18_000, 28_000, zone='home', regular=0.5, step=500)
                     if rng.random() < 0.35:
                         self.spend(d, '11:30', 'bakery', 4_000, 9_000, zone='home', regular=0.7)
             # ----- 한 달에 몇 번 -----
             if d.weekday() == 6 and d.day <= 14 and d.day > 7 or d.weekday() == 6 and 21 < d.day <= 28:
                 self.spend(d, '10:30', 'laundry', 6_000, 12_000, zone='home', regular=1.0, step=1_000)
-            if d.day == 13:
-                self.spend(d, '20:30', 'household', 8_000, 25_000, zone='home')
+            if d.day == 21:  # 생필품은 한 달에 한 번 몰아서
+                self.spend(d, '20:30', 'household', 11_000, 16_000, zone='home')
             if d.day == 23:
                 self.spend(d, '18:40', 'cosmetics', 12_000, 30_000, regular=0.5)
         self.extras()
