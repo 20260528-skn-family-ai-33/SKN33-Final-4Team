@@ -1,4 +1,5 @@
 // 시작하기
+// 가입 · 로그인 바로 다음 첫 화면이라 뒤로 가기 버튼이 없다 (11/12 피드백: 뒤로 가면 로그인된 채 로그인 화면이 나왔다)
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import { PATHS } from '../routes.js'
@@ -17,7 +18,6 @@ export default function OnboardPage() {
   return (
     <Layout
       title="시작하기"
-      showBack
       foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.profile)}>시작하기</button>}
     >
       <div className="mc-eyebrow">MONEY CUSHION</div>

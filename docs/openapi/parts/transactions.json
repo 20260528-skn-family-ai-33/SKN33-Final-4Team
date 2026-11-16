@@ -1087,6 +1087,9 @@
           },
           {
             "$ref": "#/components/schemas/TransactionTransfer"
+          },
+          {
+            "$ref": "#/components/schemas/TransactionNotSpending"
           }
         ],
         "discriminator": {
@@ -1094,7 +1097,8 @@
           "mapping": {
             "spending": "#/components/schemas/TransactionSpending",
             "income": "#/components/schemas/TransactionIncome",
-            "transfer": "#/components/schemas/TransactionTransfer"
+            "transfer": "#/components/schemas/TransactionTransfer",
+            "not_spending": "#/components/schemas/TransactionNotSpending"
           }
         }
       },
@@ -1293,6 +1297,10 @@
           "ownTransfer": {
             "type": "boolean",
             "description": "내 계좌 이체 확인 (R11). true = [맞아요]: 이 출금만 own_transfer(입금 거래로 넓히지 않음), auto면 유형·연결 그대로 confirmed. false = [아니에요]·확인 취소·연결 해제: transfer로, 규칙이 이은 입금은 income으로 되돌리고, saving이 된 출금은 정기 저축 근거에서 뺀다. 거절해도 소비로 바뀌지 않는다. 지금 유형이 소비 등이면 true·false 모두 400. 다른 칸과 같이 보내면 400."
+          },
+          "notSpending": {
+            "type": "boolean",
+            "description": "11/13 '소비가 아니에요'. true = 소비(spending) → not_spending (예산 · 소비 합계에서 빠지고 목록에는 남음), false = not_spending → spending (카테고리 · 분류 상태는 그대로 둬서 원래대로). 소비가 아닌 거래 · 전액 취소 · 고정지출 연결 소비는 400. 이미 원하는 상태면 200. 다른 칸과 같이 보내면 400."
           }
         },
         "additionalProperties": false,
@@ -1306,6 +1314,85 @@
             "required": [
               "ownTransfer"
             ]
+          },
+          {
+            "required": [
+              "notSpending"
+            ]
+          }
+        ]
+      },
+      "TransactionNotSpending": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/TransactionBase"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "transactionType": {
+                "type": "string",
+                "enum": [
+                  "not_spending"
+                ]
+              },
+              "direction": {
+                "type": "string",
+                "enum": [
+                  "out"
+                ]
+              },
+              "category": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  null
+                ],
+                "description": "입금/이체에는 null."
+              },
+              "categoryName": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  null
+                ],
+                "description": "입금/이체에는 null."
+              },
+              "classifyState": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  null
+                ],
+                "description": "입금/이체에는 null."
+              },
+              "funding": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  null
+                ],
+                "description": "입금/이체에는 null."
+              },
+              "fixedExpenseId": {
+                "type": "string",
+                "nullable": true,
+                "enum": [
+                  null
+                ],
+                "description": "소비 아님 거래는 고정지출에 연결될 수 없어 null."
+              }
+            },
+            "required": [
+              "transactionType",
+              "direction",
+              "category",
+              "categoryName",
+              "classifyState",
+              "funding",
+              "fixedExpenseId"
+            ],
+            "description": "11/13 '소비가 아니에요'로 뺀 소비 (회사 경비 등). 카테고리 · 분류 상태 · funding은 null이고 예산 · 소비 합계에 들어가지 않는다. PATCH {notSpending:false}로 원래 카테고리의 소비로 되돌린다."
           }
         ]
       }

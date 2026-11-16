@@ -33,7 +33,7 @@ const URL = '/api/finance/card-bills/bill-1/payment-check/'
 
 it('청구액을 보여 주고 거래를 고르지 않고 답을 저장한다', async () => {
   await render(bill())
-  expect(host.textContent).toContain('현대카드 · 11월 청구액 511,515원')
+  expect(host.querySelector('.mc-bill-head').textContent).toBe('현대카드11월 청구 · 결제일 11.05511,515원')
   expect(host.textContent).toContain('결제일 11.05')
   for (const [text, answer] of [['아직 안 냈어요', 'unpaid'], ['전부 냈어요', 'paid'], ['나중에 확인', 'later']]) {
     await click(button(text))
@@ -62,7 +62,7 @@ it('일부 냈어요는 앞으로 더 낼 금액을 받아 저장하고, 실패�
 
 it('확인한 청구서는 결과와 수정만 보이고 사용자 확인 · 계좌 출금 확인을 구분한다', async () => {
   await render(bill({ status: 'user_confirmed', remainingAmount: 0, needsCheck: false, userCheck: { answer: 'paid' } }))
-  expect(host.textContent).toContain('앞으로 낼 금액 0원 · 사용자 확인')
+  expect(host.querySelector('.mc-bill-result').textContent).toBe('앞으로 낼 금액 0원사용자 확인수정')
   expect(button('전부 냈어요')).toBeUndefined()
   await click(button('수정'))
   expect(button('전부 냈어요')).toBeTruthy()

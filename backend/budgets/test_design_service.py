@@ -55,7 +55,7 @@ class DesignServiceTest(SimpleTestCase):
         with override_settings(BUDGET_DESIGN_POLICY=None), patch.dict(os.environ):
             os.environ.pop('BUDGET_DESIGN_POLICY', None)
             configured = service.configured_policy()
-            self.assertEqual(configured, {'version': '2026-11-10-forecast-band', 'a': {},
+            self.assertEqual(configured, {'version': '2026-11-12-a-ranked-protection', 'a': {},
                                          'b_forecast_band': {'down_percent': 20, 'up_percent': 20}})
             configured['a']['test_mutation'] = True
             self.assertNotIn('test_mutation', service.configured_policy()['a'])
@@ -153,7 +153,9 @@ class DesignServiceTest(SimpleTestCase):
         resolved = build.call_args.kwargs['policy']
         self.assertEqual(resolved['total_limit'], 200000)
         self.assertTrue(all(v is None for v in resolved['increase_rates'].values()))
-        self.assertTrue(all(v == 1000000 for v in resolved['decrease_limits'].values()))
+        ranked = {row['category'] for row in snapshot['engine_input']['priorities']}
+        self.assertTrue(all(v == (0 if c in ranked else 1000000)
+                            for c, v in resolved['decrease_limits'].items()))
         engine = service.build_candidates(snapshot['engine_input'], dict.fromkeys(CATEGORY_NAMES, 0.1),
                                           policy=resolved, reality_profile={'has_vehicle': False})
         self.assertEqual(sum(t['amount'] for t in engine['transfers']), 200000)
@@ -490,6 +492,8 @@ class DesignAPITest(TestCase):
             self.assertEqual(data['split']['living'], 600000)
             self.assertEqual(data['split']['spare'], 620000)
             self.assertEqual(data['recommendation']['spareTransfer'], 100000)
+            self.assertEqual(data['recommendation']['basis']['plan'], 'b')  # 11/12: 지난 3개월 소비로 짰다고 화면에 알린다
+            self.assertEqual(data['recommendation']['basis']['reason'], 'sufficient_transactions')
             self.assertNotIn('approvedBudget', self.client.get('/api/budgets/protect/').json())
             response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json', HTTP_IDEMPOTENCY_KEY='synthetic-b-approve')
         self.assertEqual(response.status_code, 200, response.content)

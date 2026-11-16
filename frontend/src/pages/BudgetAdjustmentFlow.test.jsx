@@ -67,7 +67,7 @@ afterEach(async () => { await act(() => root.unmount()); host.remove(); vi.resto
 const mount = async (entry = '/chat') => act(() => root.render(
   <MemoryRouter initialEntries={[entry]}><PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>,
 ))
-const button = (label, within = host) => [...within.querySelectorAll('button')].find((item) => item.textContent.trim() === label)
+const button = (label, within = host) => [...within.querySelectorAll('button')].find((item) => (item.querySelector('.mc-pick-name') ?? item).textContent.trim() === label)
 const click = async (element) => act(() => element.click())
 const input = () => host.querySelector('input[aria-label="챗봇에게 보낼 메시지"]')
 async function submit(text) {
@@ -77,6 +77,27 @@ async function submit(text) {
   })
   await act(() => input().form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 }
+
+it('큰 증액은 경고 확인 후 항목 선택으로 진행하고 실제 예산은 확정하지 않는다', async () => {
+  const warning = '요청 금액이 월 실수령액의 30% 이상이에요. 다른 예산이 크게 줄 수 있어요. 어떤 지출에 얼마가 더 필요한가요?'
+  apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'increase_review', canApprove: false,
+    guidance: { kind: 'question', message: warning } }, [
+    { value: 'revise_increase', label: '금액 다시 정하기' },
+    { value: 'continue_increase', label: '주의사항 확인 후 계속' },
+  ])).mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'destinations', canApprove: false }, [
+    { value: 'FOOD', label: '식비' },
+  ], 8))
+  await mount()
+  await submit('생활비를 100만원 늘리고 싶어요')
+  expect(host.querySelectorAll('.mc-budget-warning')).toHaveLength(1)
+  expect(host.querySelector('.mc-budget-warning').textContent).toBe(warning)
+  expect(button('식비')).toBeUndefined()
+  expect(button('예산 확정하기')).toBeUndefined()
+  await click(button('주의사항 확인 후 계속'))
+  expect(button('식비')).toBeDefined()
+  expect(button('예산 확정하기')).toBeUndefined()
+  expect(apiSend.mock.calls.every(([path]) => path === '/api/chat/messages/')).toBe(true)
+})
 
 it('여러 항목으로 나눈 금액을 채팅으로 보내고 확정 없이 새 미리보기를 표시한다', async () => {
   apiSend.mockResolvedValueOnce(talk({ status: 'awaiting_input', phase: 'distribution', distributionInput: {
@@ -170,9 +191,9 @@ it('비교안 여러 개를 펼쳐도 요청하지 않고 선택할 때만 최�
   expect(panels[1].querySelector('details').open).toBe(true)
   expect(apiSend).toHaveBeenCalledTimes(1)
   expect(button('여윳돈 활용')).toBeUndefined()
-  await click(button('이 안 선택', panels[1]))
+  await click(button('이 안 선택하기', panels[1]))
   expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', choice: { value: 'plan_spare', turn: 7 } })
-  expect(button('이 안 선택', panels[0]).disabled).toBe(true)
+  expect(button('이 안 선택하기', panels[0]).disabled).toBe(true)
 })
 
 it('조정안의 자동 감액 항목도 상세를 펼치기 전에 보여 준다', async () => {
@@ -224,7 +245,7 @@ it('부분 반영안과 다른 재원은 비교만 하며 선택 전에는 확�
   await submit('생활비에서만 조정할래')
   expect(host.textContent).toContain('여윳돈')
   expect(host.textContent).toContain('200,000원')
-  expect(button('이 안 선택')).toBeUndefined()
+  expect(button('이 안 선택하기')).toBeUndefined()
   expect(button('예산 확정하기')).toBeUndefined()
   await click(button('가능한 금액만 반영'))
   expect(apiSend.mock.calls[1][2].choice).toEqual({ value: 'partial_accept', turn: 7 })
@@ -241,6 +262,36 @@ it('자세히 요청한 답변은 변경안·비교안·설명 상세를 펼친 
   expect(details.every((element) => element.open)).toBe(true)
   expect(host.textContent).toContain('하한과 금액 단위를 함께 확인했어요.')
   expect(apiSend).toHaveBeenCalledTimes(1)
+})
+
+it('다음 주기 예약은 시작일과 월급 전후를 보여 주고 이번 예산 유지 옵션을 보내지 않는다', async () => {
+  const proposal = card({ scope: 'next_cycle', effectiveOn: '2026-11-25',
+    incomeChange: { before: 3000000, after: 3500000 } })
+  apiSend.mockResolvedValueOnce(proposalTalk(proposal)).mockResolvedValueOnce(saved(proposal))
+  await mount()
+  await submit('다음 달 월급 증가분으로 교육비를 늘려줘')
+  await click(button('다음 주기 변경 예약하기'))
+  const dialog = host.querySelector('[role=dialog]')
+  expect(dialog.textContent).toContain('2026-11-25')
+  expect(dialog.textContent).toContain('3,500,000원')
+  expect(dialog.textContent).toContain('이번 예산은 그대로')
+  expect(dialog.querySelector('input[type=checkbox]')).toBeNull()
+  await click(button('예약 확정', dialog))
+  expect(apiSend.mock.calls[1][2]).toEqual({ keepForNextCycle: false })
+  expect(host.textContent).toContain('다음 주기 변경을 예약했어요')
+})
+
+it('일회성 계획은 준비한 돈과 추가 조정액을 나누고 평소 설정 유지 여부를 안내한다', async () => {
+  const proposal = card({ scope: 'next_cycle', effectiveOn: '2026-11-25', oneOff: true,
+    expense: { total: 1000000, setAside: 700000, additional: 300000 } })
+  apiSend.mockResolvedValueOnce(proposalTalk(proposal))
+  await mount()
+  await submit('다음달 여행비를 준비하고 싶어')
+  await click(button('다음 주기 변경 예약하기'))
+  const dialog = host.querySelector('[role=dialog]')
+  expect(dialog.textContent).toContain('평소 저축·생활비 배분 설정은 바꾸지 않아요')
+  expect(dialog.textContent).toContain('따로 마련한 돈 700,000원 + 예산에서 마련할 돈 300,000원')
+  expect(dialog.querySelector('input[type=checkbox]')).toBeNull()
 })
 
 it.each([
@@ -515,7 +566,8 @@ it('추천 실패에서 자동 연결하고 승인 후 반영된 예산을 볼 �
   await click(button('예산 확정', host.querySelector('aside')))
   await click(button('반영된 예산 보기'))
   expect(location().pathname).toBe('/budgets')
-  expect(host.textContent).toContain('예산 2')
+  expect(host.textContent).toContain('한 달 나눠보기')  // 반영된 예산 화면 (11/12: 예산 버전 번호는 화면에 안 보임)
+  expect(host.textContent).not.toContain('예산 2')
 })
 
 it('조정 대화에서 재원이나 보호 조건을 맞추지 못하면 승인할 수 없다', async () => {
@@ -606,9 +658,9 @@ it.each([
 })
 
 const consentState = { available: true, canRevoke: false, status: 'not_granted', documentVersion: 'v1', documentHash: 'hash',
-  document: { title: '외부 전송 동의', label: '[선택] 외부 전송 동의', sections: [] },
+  document: { title: '외부 전송 동의', label: '[필수] 외부 전송 동의', sections: [] },
   healthDocumentVersion: 'v1', healthDocumentHash: 'health-hash',
-  healthDocument: { title: '건강 요약 처리 동의', label: '[선택] 건강 요약 처리 동의', sections: [] } }
+  healthDocument: { title: '건강 요약 처리 동의', label: '[필수] 건강 요약 처리 동의', sections: [] } }
 const needConsent = () => Object.assign(new Error('예산 조정 AI 전송 동의를 먼저 확인해 주세요.'), { status: 403, code: 'budget_adjust_consent_required' })
 const consentCalls = () => apiSend.mock.calls.filter(([url]) => url === '/api/budgets/adjustment-ai-consent/')
 
@@ -648,7 +700,7 @@ it('동의 창을 닫으면 다시 보내지 않고 안내만 남기며 입력�
   })
   await mount()
   await submit('식비를 5만 원 늘려줘')
-  await click(button('취소', host.querySelector('[role="dialog"]')))
+  await click(button('닫기 ×', host.querySelector('[role="dialog"]')))
   expect(host.querySelector('[role="dialog"]')).toBeNull()
   expect(sentChat()).toHaveLength(1)
   expect(consentCalls().map(([, method]) => method)).toEqual(['GET'])

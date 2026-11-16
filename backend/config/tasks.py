@@ -225,6 +225,11 @@ def active_task(user, task_types):
     return AsyncTask.objects.filter(_valid_q(timezone.now()), user=user, task_type__in=task_types).order_by("-created_at").first()
 
 
+def active_tasks(user, task_types):
+    """지금 진행 중인(유효한) 작업 전부, 최근 것부터. active_task 와 같은 용도 (11/12: 고정지출 화면이 불러오는 카드사 이름을 보여 줄 때)"""
+    return list(AsyncTask.objects.filter(_valid_q(timezone.now()), user=user, task_type__in=task_types).order_by("-created_at"))
+
+
 def _start_allowed(task):
     """작업 행을 잠근 뒤의 시각으로 시작해도 되는지. 진행 중인데 기한이 지났으면 그 자리에서 failed(stale)"""
     with transaction.atomic():

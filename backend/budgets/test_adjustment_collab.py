@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from budgets.adjustment_core.financial_conversation import handle
-from budgets.adjustment_core.funding import simulate_funding
+from budgets.adjustment_core.simulation import simulate
 from budgets.adjustment_core.calculation import proportional_group_reduction
 from budgets.test_adjustment_core import Store, item, reading
 from budgets.test_financial_planner import financial_context
@@ -30,7 +30,7 @@ class AdjustmentCollabTest(unittest.TestCase):
         self.complete.side_effect = [json.dumps(answer, ensure_ascii=False) for answer in answers]
         return handle({"conversation_id": "talk", "text": text, "hints": hints}, store=self.store,
                       complete=self.complete, get_context=lambda: deepcopy(self.context),
-                      simulate=lambda inp, req: simulate_funding(inp, req, allocate_group_reduction=proportional_group_reduction),
+                      simulate=lambda inp, req: simulate(inp, req, allocator=proportional_group_reduction),
                       propose=self.propose, task_status=lambda ref: {"task_ref": ref, "state": "awaiting_approval"},
                       cancel=self.cancel, allocator=proportional_group_reduction)
 
@@ -46,13 +46,13 @@ class AdjustmentCollabTest(unittest.TestCase):
     def test_funding_question_button_uses_db_category_name_without_llm(self):
         self.turn("식비 5만 원 늘려줘", reading(requests=[item(amount=50000)]))
         before = deepcopy(self.store.state)
-        self.assertEqual(before["pending"]["kind"], "funding_scope")
+        self.assertEqual(before["pending"]["kind"], "comparison")
         self.assert_handoff(self.turn("교통은 얼마 남았어?", reading(mine=False, handoff="spending", handoff_category="TRANSPORT_CAR")), before)
         response = self.turn("교통·차량에서 가져오기", hints={"from": "spending", "category": "TRANSPORT_CAR"})
         self.complete.assert_not_called()
         proposal = response["reply"]["proposal"]
-        self.assertEqual(proposal["allocations"]["TRANSPORT_CAR"], 75000)
-        self.assertEqual(proposal["allocations"]["FOOD"], 425000)
+        self.assertEqual(proposal["allocations"]["TRANSPORT_CAR"], 60000)
+        self.assertEqual(proposal["allocations"]["FOOD"], 440000)
 
     def test_preview_query_preserves_proposal_and_task(self):
         self.preview()
@@ -75,8 +75,8 @@ class AdjustmentCollabTest(unittest.TestCase):
         self.complete.assert_not_called()
         proposal = response["reply"]["proposal"]
         self.assertEqual(proposal["allocations"]["FOOD"], 450000)
-        self.assertEqual(proposal["allocations"]["TRANSPORT_CAR"], 75000)
-        self.assertEqual(proposal["buckets"]["SPARE"], 375000)
+        self.assertEqual(proposal["allocations"]["TRANSPORT_CAR"], 60000)  # 시스템 보호액 유지
+        self.assertEqual(proposal["buckets"]["SPARE"], 390000)
 
     def test_pointing_feedback_receives_spending_hint(self):
         self.preview()

@@ -109,13 +109,13 @@ it('기관 원본·저장된 상환 정보를 표시하고 미확보 값은 0이
   expect(host.querySelector('tbody').textContent).toContain('확인 필요')
   expect(loanForm().querySelector('input[type=text]').value).toBe('120,000')
   expect(loanForm().querySelectorAll('select')[0].value).toBe('equal_principal')
-  expect(loanForm().querySelectorAll('select')[1].value).toBe('25')
+  expect(loanForm().querySelector('#mc-loan-day-loan-1').value).toBe('25')
 })
 it('보완 세 칸만 PATCH하고 지운 값은 null, 모름 선택은 unknown으로 저장한다', async () => {
   await mount()
   await input(loanForm().querySelector('input[type=text]'), '')
   await input(loanForm().querySelectorAll('select')[0], 'unknown')
-  await input(loanForm().querySelectorAll('select')[1], '')
+  await input(loanForm().querySelector('#mc-loan-day-loan-1'), '')
   expect(button('다음').disabled).toBe(true)
   await submit(loanForm())
   const [url, options] = sent('PATCH')[0]

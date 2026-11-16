@@ -4,6 +4,8 @@ from collections import Counter
 import json
 from pathlib import Path
 import re
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.contrib.staticfiles import finders
 from django.test import SimpleTestCase, override_settings
@@ -162,6 +164,36 @@ class OpenAPIContractTests(SimpleTestCase):
         self.assertEqual(response["content"]["application/json"]["schema"]["$ref"],
                          "#/components/schemas/BudgetAdjustmentApproveResponse")
 
+    def test_calculated_adjustment_comparisons_match_public_contract(self):
+        from openapi_schema_validator import OAS30Validator
+        from budgets.adjustment_core.advisor import PLAN_IDS, plan_increase
+        from budgets.adjustment_core.comparison import compare_adjustments
+        from budgets.test_adjustment_core import allocation, context, envelope, item
+        from .api import camel
+
+        comparisons = {
+            'tiered': plan_increase(context(), {
+                **envelope(item('FOOD', 600000)), 'spare_minimum': 200000,
+            }, allocation),
+            'explicit_source': plan_increase(context(),
+                envelope(item('FOOD', 50000), sources=['SAVINGS']), allocation, respect_selected=True),
+            'combined': compare_adjustments(context(), {
+                **envelope(item('SAVINGS', 300000)), 'spare_minimum': 200000,
+            }, allocate_group_reduction=allocation),
+        }
+        validator = OAS30Validator({
+            '$ref': '#/components/schemas/BudgetAdjustmentComparison',
+            'components': self.contract['components'],
+        })
+        ids = {plan['id'] for comparison in comparisons.values() for plan in comparison['plans']}
+        self.assertTrue({'cushion', 'savings', 'chosen', 'combined'} <= ids)
+        self.assertTrue(ids <= PLAN_IDS)  # 계산된 안은 일반 대화의 선택지로도 허용한다.
+        for name, comparison in comparisons.items():
+            with self.subTest(path=name):
+                validator.validate(camel(comparison))
+        id_validator = OAS30Validator(self.contract['components']['schemas']['BudgetAdjustmentPlan']['properties']['id'])
+        id_validator.validate('0')  # 재정 추천 경로는 안의 인덱스를 문자열 ID로 반환한다.
+
     def test_recovery_entry_accepts_only_the_appropriate_id_and_no_money(self):
         from openapi_schema_validator import OAS30Validator
 
@@ -222,6 +254,19 @@ class OpenAPIContractTests(SimpleTestCase):
         error_examples = document["paths"]["/api/finance/connect/cards/"]["get"]["responses"]["403"]["content"]["application/json"]["examples"]
         self.assertIn("not_authenticated", error_examples)
         self.assertIn("머니쿠션", response.content.decode())
+
+    def test_source_hashes_ignore_checkout_line_endings(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for source in self.contract['x-source-sha256']:
+                path = root / source
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'contract\nsource\n')
+            with patch('config.openapi.ROOT', root):
+                lf = build_contract()['x-source-sha256']
+                for source in lf:
+                    (root / source).write_bytes(b'contract\r\nsource\r\n')
+                self.assertEqual(build_contract()['x-source-sha256'], lf)
 
     def test_runtime_document_contains_all_implemented_operations(self):
         response = self.client.get("/api/schema/runtime/")

@@ -376,7 +376,7 @@ class HomeApiTest(HomeFixture):
         self.assertEqual(set(body), {"period", "balance", "pendingCount", "needsPaydayCount", "mustPay", "budget"})
         self.assertEqual(set(body["period"]), {"startDate", "endDate", "nextPayday", "dday", "salaryState",
                                                "salaryReceivedOn", "nextSalaryEarlyOn",
-                                               "salarySource", "salaryAmount", "salaryCheckCount"})
+                                               "salarySource", "salaryAmount", "salaryCheckCount", "salaryGap"})
         self.assertEqual(set(body["balance"]), {"total", "accountCount", "unknownCount", "reloginCount", "asOf"})
         self.assertEqual(set(body["mustPay"][0]), {"dueId", "type", "sourceId", "name", "dueDate", "amount",
                                                    "paymentState", "userChecked", "isEstimated", "paymentAccount"})
@@ -1030,6 +1030,7 @@ class HomeBudgetTest(TestCase):
                                 "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED,  # N-F1 칸 추가
                                 "overCategories": [],  # 넘긴 카테고리 없음
                                 "bigSpendings": home["bigSpendings"],  # 내용은 test_big_spendings_* 에서 확인
+                                "nag": None,  # 11/13: 자주 바꾸기 알림 없음
                                 "cardNotes": [],
                                 "cardBillsReady": []})  # 11/12: 청구서가 나온 카드 (안내가 없으면 빈 목록)
         self.assertEqual(page["budget"]["engineVersion"], "temp-fallback-1")

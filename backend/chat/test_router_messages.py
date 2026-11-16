@@ -39,7 +39,15 @@ class MessagesTest(SimpleTestCase):
     def test_spending_start_button_keeps_agent_reply(self):
         out = self.say(button="spending")
         self.assertEqual(out["lines"], ["어떤 소비가 궁금하세요?"])
-        self.assertIn("이번 달 얼마 썼어?", out["examples"])
+        options = next(b for b in out["view"] if b["kind"] == "options")["items"]  # 문장 '소비 분석해줘'와 같은 분석 메뉴
+        self.assertIn("전체 분석", [o["title"] for o in options])
+        self.assertIn("식비 얼마 썼어?", out["examples"])
+
+    def test_missing_reference_offers_concrete_analysis_examples(self):
+        out = self.say("그럼 교통비는?")
+        self.assertIn("이어서 볼 이전 분석이 없어요.", out["lines"])
+        self.assertIn("이번 달 전체 소비 분석해줘", out["examples"])
+        self.assertIn("지난달보다 많이 썼어?", out["examples"])
 
     def test_questions_are_stem_plus_reason_plus_choices(self):
         self.assertEqual(self.say("최근 0개월 식비 알려줘")["lines"], ["몇 개월을 볼까요? 최근 3개월까지 볼 수 있어요."])
@@ -77,7 +85,7 @@ class MessagesTest(SimpleTestCase):
         self.say("취소")
         self.assertEqual(self.say("날씨 어때?"), {"lines": ["머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요."],
                                                "choices": MENU, "notices": [], "review": []})
-        self.assertEqual(self.say("잘 모르겠어"), {"lines": ["조금 더 자세히 적어 주세요."], "choices": MENU, "notices": [],
+        self.assertEqual(self.say("잘 모르겠어"), {"lines": ["어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요."], "choices": MENU, "notices": [],
                                                  "review": []})
         self.assertEqual(self.say("식비 얼마 썼어?", llm=RoleFakeLLM(broken=True)),
                          {"lines": ["지금은 이해하지 못했어요, 아래에서 골라 주세요."], "choices": MENU, "notices": [], "review": []})

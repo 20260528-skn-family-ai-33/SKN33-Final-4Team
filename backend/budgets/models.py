@@ -56,6 +56,10 @@ class BudgetCycle(models.Model):
     expected_payday = models.DateField("다음 급여 예정일", null=True, blank=True)
     confirmed_income = models.BigIntegerField("확인된 주기 수입", null=True, blank=True)
     approved_carryover = models.BigIntegerField("승인된 이월금", null=True, blank=True)
+    # 11/13 월급 차이 안내: 사용자가 '이번 주기만 실제 들어온 월급으로' 고르면 그 금액. 없으면 등록 실수령액으로 계산
+    income_basis = models.BigIntegerField("이번 주기 예산 기준 월급", null=True, blank=True)
+    # 월급 차이 안내에 답했을 때의 받은 월급 합계. 받은 금액이 이 값과 다르면 다시 묻는다
+    income_answered_for = models.BigIntegerField("월급 차이 안내에 답한 받은 금액", null=True, blank=True)
     status = models.CharField("진행 상태", max_length=20, choices=Status.choices, default=Status.ACTIVE)
     revision_no = models.IntegerField("동시성 확인 번호", default=0)
 
@@ -66,6 +70,7 @@ class BudgetCycle(models.Model):
             models.UniqueConstraint(fields=["user", "starts_on"], name="budget_cycle_user_id_starts_on_key"),
             models.CheckConstraint(condition=Q(starts_on__lt=models.F("ends_before")), name="bc_starts_before_ends"),
             models.CheckConstraint(condition=Q(status__in=["active", "closed"]), name="bc_status_valid"),
+            models.CheckConstraint(condition=Q(income_basis__isnull=True) | Q(income_basis__gt=0), name="bc_income_basis_positive"),
         ]
 
     def __str__(self):
@@ -185,6 +190,25 @@ class Bucket(models.TextChoices):
     CUSHION = "cushion", "쿠션"
 
 
+class BudgetAdjustmentSchedule(models.Model):
+    """Approved next-pay-cycle settings; never changes the current approved budget."""
+
+    schedule_id = uuid_pk()
+    user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name='budget_adjustment_schedules')
+    proposal = models.OneToOneField(Budget, on_delete=models.CASCADE, related_name='schedule')
+    effective_on = models.DateField()
+    status = models.CharField(max_length=20, default='scheduled', choices=[
+        ('scheduled', '예약됨'), ('applied', '설정 반영됨'), ('replaced', '새 예약으로 교체'), ('needs_review', '재확인 필요')])
+    settings = models.JSONField()
+    before_settings = models.JSONField()
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'budget_adjustment_schedule'
+        constraints = [models.UniqueConstraint(fields=['user'], condition=Q(status='scheduled'),
+                                               name='one_pending_budget_schedule')]
+
+
 class BudgetItem(models.Model):
     """예산 항목. 여윳돈(free)은 저장하지 않고 funding_amount − 항목 합계로 계산"""
 
@@ -275,6 +299,8 @@ class CushionEntry(models.Model):
         USE = "use", "사용"
         REFUND = "refund", "환급"
         ADJUSTMENT = "adjustment", "정정"
+        # 11/13 (검수 P2): 예산 승인 · 지킬 돈 저장으로 '이번 주기 예산에서 쿠션으로 떼어 둔' 금액. 실제 이체(allocation)와 구분
+        PLANNED = "planned", "예산 보호 (승인 배정)"
 
     entry_id = uuid_pk()
     user = models.ForeignKey(USER, on_delete=models.CASCADE, related_name="cushion_entries")
@@ -310,23 +336,23 @@ class CushionEntry(models.Model):
             models.UniqueConstraint(
                 fields=["allocation"], condition=Q(entry_type="use"), name="cushion_one_use_per_allocation",
             ),
-            # 종류별 부호: initial ≥0, use <0, refund >0, allocation·adjustment ≠0
+            # 종류별 부호: initial ≥0, use <0, refund >0, allocation·adjustment·planned ≠0
             models.CheckConstraint(
                 condition=(
                     Q(entry_type="initial", amount__gte=0)
                     | Q(entry_type="use", amount__lt=0)
                     | Q(entry_type="refund", amount__gt=0)
-                    | (Q(entry_type__in=["allocation", "adjustment"]) & ~Q(amount=0))
+                    | (Q(entry_type__in=["allocation", "adjustment", "planned"]) & ~Q(amount=0))
                 ),
                 name="cushion_amount_sign_by_type",
             ),
-            # 종류별 필수 연결: initial은 연결 없음, use·refund는 배분 필수, allocation은 주기·예산 필수
+            # 종류별 필수 연결: initial은 연결 없음, use·refund는 배분 필수, allocation·planned는 주기·예산 필수
             models.CheckConstraint(
                 condition=(
                     Q(entry_type="initial", cycle__isnull=True, budget__isnull=True,
                       allocation__isnull=True, reference_entry__isnull=True)
                     | Q(entry_type__in=["use", "refund"], allocation__isnull=False)
-                    | Q(entry_type="allocation", cycle__isnull=False, budget__isnull=False)
+                    | Q(entry_type__in=["allocation", "planned"], cycle__isnull=False, budget__isnull=False)
                     | Q(entry_type="adjustment")
                 ),
                 name="cushion_fk_by_type",

@@ -14,15 +14,29 @@ import { PATHS } from '../routes.js'
 import { catIcon, ETC, PENDING } from '../utils/categories.js'
 import { manwon } from '../utils/adjust.js'
 import HelpTip from '../components/HelpTip.jsx'
+import CardReservedHelp from '../components/CardReservedHelp.jsx'
 
 // 한 달 나눠보기 줄 (split 칸 이름 → 화면 이름)
 const SPLIT_ROWS = [['fixed', '고정비'], ['saving', '저축'], ['cushion', '쿠션 적립'], ['living', '생활비'], ['spare', '여윳돈']]
+// 고정비 중 '지난 카드값'(가입 전에 쓴 카드값 · 할부 회차)은 따로 한 줄 (11/12). 0원이면 줄 없음
+const splitRows = (split) => {
+  const card = split.cardReserved ?? 0
+  return SPLIT_ROWS.flatMap(([key, name]) => key !== 'fixed' ? [[key, name, split[key]]]
+    : [[key, name, split.fixed - card], ...(card > 0 ? [['cardReserved', '지난 카드값', card]] : [])])
+}
 
 // '2026-10-25' ~ 끝 경계 '2026-11-25' → '10.25 ~ 11.24' (끝 경계 전날까지가 이번 주기)
 const shortDay = (iso, minusDays = 0) => {
   const d = new Date(`${iso}T00:00:00`)
   d.setDate(d.getDate() - minusDays)
   return `${d.getMonth() + 1}.${d.getDate()}`
+}
+
+// 'YYYY-MM-DD' 에서 며칠 뺀 날짜 (주기 끝 = endsBefore 하루 전)
+const isoDay = (iso, minusDays = 0) => {
+  const d = new Date(`${iso}T00:00:00`)
+  d.setDate(d.getDate() - minusDays)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 const pct = (used, budget) => (budget > 0 ? Math.min(100, Math.round((used / budget) * 100)) : used > 0 ? 100 : 0)
@@ -32,13 +46,14 @@ export default function BudgetPage() {
   const { data, error } = useApi('/api/budgets/')
   // 자물쇠를 누른 결과 (서버 응답). 카테고리 코드 → { locked, lockedAmount }
   const [locks, setLocks] = useState({})
-  const [nag, setNag] = useState(undefined)
   const [overOpen, setOverOpen] = useState(false)  // 생활비 초과 안내 펼침
   const [lockError, setLockError] = useState(null)
 
   if (!data) return <Layout title="카테고리 예산" activeTab="budget"><ApiStatus error={error} /></Layout>
   const { budget, split, living, overspend, categories, unclassifiedCount } = data
-  const goPending = () => navigate(`${PATHS.txs}?category=${PENDING.code}`)
+  // '확인 필요 N건'은 이번 예산 주기 거래만 센 숫자라, 거래 화면도 그 주기만 연다 (11/12). 주기가 없으면 전체 기간
+  const goPending = () => navigate(`${PATHS.txs}?category=${PENDING.code}${data.cycle
+    ? `&month=cycle&from=${data.cycle.startsOn}&to=${isoDay(data.cycle.endsBefore, 1)}` : ''}`)
 
   // 예산이 아직 없을 때 (첫 가입 · 급여일 없음)
   if (!budget) {
@@ -61,7 +76,6 @@ export default function BudgetPage() {
     )
   }
 
-  const shownNag = nag === undefined ? data.nag : nag
   const lockOf = (c) => locks[c.category] ?? { locked: c.locked, lockedAmount: c.lockedAmount }
 
   const toggleLock = async (c) => {
@@ -69,7 +83,6 @@ export default function BudgetPage() {
     try {
       const saved = await apiSend(`/api/budgets/${budget.budgetId}/categories/${c.category}/`, 'PATCH', { locked: !lockOf(c).locked })
       setLocks((now) => ({ ...now, [c.category]: { locked: saved.locked, lockedAmount: saved.lockedAmount } }))
-      setNag(saved.nag)
     } catch (err) {
       setLockError(err.message)
     }
@@ -77,7 +90,7 @@ export default function BudgetPage() {
 
   return (
     <Layout title="카테고리 예산" activeTab="budget">
-      <div className="mc-eyebrow">{shortDay(data.cycle.startsOn)} ~ {shortDay(data.cycle.endsBefore, 1)} · 예산 {budget.versionNo}</div>
+      <div className="mc-eyebrow">{shortDay(data.cycle.startsOn)} ~ {shortDay(data.cycle.endsBefore, 1)}</div>
       <h1>카테고리 예산</h1>
 
       {budget.status === 'validated' && (
@@ -87,12 +100,12 @@ export default function BudgetPage() {
           <button type="button" className="mc-primary" onClick={() => navigate(PATHS.recommend)}>추천 예산 확인하러 가기</button>
         </div>
       )}
-      {!budget.salaryConfirmed && <p className="mc-note">이번 주기 월급이 아직 확인되지 않았어요.</p>}
       <UnreflectedCardNote notes={data.cardNotes} readyIds={data.cardBillsReady} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>
-        {SPLIT_ROWS.map(([key, name]) => <div className="mc-keyvalue" key={key}><span>{name}</span><strong>{won(split[key])}</strong></div>)}
+        {splitRows(split).map(([key, name, amount]) => <div className="mc-keyvalue" key={key}><span>{name}{key === 'cardReserved' && <CardReservedHelp />}</span><strong>{won(amount)}</strong></div>)}
+        {split.reserve > 0 && <div className="mc-keyvalue"><span>일회성 지출 준비금</span><strong>{won(split.reserve)}</strong></div>}
       </div>
 
       <div className="mc-card">
@@ -125,7 +138,21 @@ export default function BudgetPage() {
           return (
             <div className="mc-catuse" key={c.category}>
               <div className="mc-row">
-                <span className="mc-catname"><span className="mc-cat-ic"><Icon name={catIcon(c.categoryName)} /></span>{c.categoryName}{c.minAmount > 0 && <em className="mc-min-tag">최소 {manwon(c.minAmount)}</em>}</span>
+                <span className="mc-catname"><span className="mc-cat-ic"><Icon name={catIcon(c.categoryName)} /></span>{c.categoryName}
+                  {c.minAmount > 0 && <em className="mc-min-tag">최소 {manwon(c.minAmount)}</em>}
+                  {/* 초과한 카테고리 → 그 카테고리를 담아 챗봇 예산 조정으로 (11/11, docs/api/chat.md budgetContext.hints). 11/13: 카테고리 이름 옆으로
+                      overAmount 는 참고값이고 서버가 최신 초과액을 다시 확인한다.
+                      승인된 예산에서만, 기타는 빼고 보여 준다 (예산 조정이 초과 항목 조정을 시작하는 조건과 같게) */}
+                  {over > 0 && budget.status === 'approved' && c.category !== ETC.code && (
+                    <button type="button" className="mc-link mc-catuse-adjust" aria-label={`${c.categoryName} 예산 조정하기`}
+                      onClick={() => navigate(PATHS.assistant, { state: { budgetContext: {
+                        baseBudgetId: budget.budgetId, mode: 'NORMAL_ADJUSTMENT',
+                        hints: { reason: 'over', categories: [c.category], overAmount: over },
+                      } } })}>
+                      예산 조정하기 ›
+                    </button>
+                  )}
+                </span>
                 <button type="button" className="mc-lockt" aria-pressed={lock.locked} aria-label={`${c.categoryName} 자물쇠`} onClick={() => toggleLock(c)}>
                   <LockIcon />
                 </button>
@@ -135,25 +162,12 @@ export default function BudgetPage() {
                 <span className="mc-muted">{won(c.spent)} / {won(c.allocated)} · {pct(c.spent, c.allocated)}%</span>
                 {over ? <strong className="is-over">{won(over)} 초과</strong> : <strong>남은 {won(Math.max(c.allocated - c.spent, 0))}</strong>}
               </div>
-              {/* 초과한 카테고리 → 그 카테고리를 담아 챗봇 예산 조정으로 (11/11, docs/api/chat.md budgetContext.hints).
-                  overAmount 는 참고값이고 서버가 최신 초과액을 다시 확인한다.
-                  승인된 예산에서만, 기타는 빼고 보여 준다 (예산 조정이 초과 항목 조정을 시작하는 조건과 같게) */}
-              {over > 0 && budget.status === 'approved' && c.category !== ETC.code && (
-                <button type="button" className="mc-link mc-catuse-adjust" aria-label={`${c.categoryName} 예산 조정하기`}
-                  onClick={() => navigate(PATHS.assistant, { state: { budgetContext: {
-                    baseBudgetId: budget.budgetId, mode: 'NORMAL_ADJUSTMENT',
-                    hints: { reason: 'over', categories: [c.category], overAmount: over },
-                  } } })}>
-                  예산 조정하기 ›
-                </button>
-              )}
             </div>
           )
         })}
         <OutOfBudgetLine value={data.outOfBudget} />
         <OldScopeNote amount={budget.outOfBudgetAllocated} />
         {lockError && <p className="mc-note" role="alert" style={{ padding: 0 }}>{lockError}</p>}
-        {shownNag && <p className="mc-note" style={{ padding: 0 }}>{shownNag}</p>}
         {unclassifiedCount > 0 && (
           <button type="button" className="mc-catuse mc-catuse-pend" onClick={goPending}>
             <span>확인 필요 {unclassifiedCount}건</span><strong>고르러 가기 ›</strong>

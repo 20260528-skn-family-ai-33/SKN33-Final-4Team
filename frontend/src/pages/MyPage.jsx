@@ -11,6 +11,8 @@ import HelpPopup from '../popups/HelpPopup.jsx'
 import { PATHS } from '../routes.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { won } from '../utils/money.js'
+import { paydayText } from '../utils/days.js'
+import { clearConnectDraft } from '../utils/connectDraft.js'
 import { saveId } from '../utils/chatConversation.js'
 
 const MENU = [
@@ -23,11 +25,21 @@ const MENU = [
   { icon: 'Link', name: '연결 관리', summary: 'connections', to: PATHS.connections },
 ]
 
+// '2026-11-25' → '11월 25일'
+const monthDay = (iso) => `${Number(iso.slice(5, 7))}월 ${Number(iso.slice(8, 10))}일`
+
 function summaryText(key, data) {
   const item = data[key]
   if (key === 'salary') {
-    const current = `${item.takeHomeIncome == null ? '월급 미설정' : `월 ${won(item.takeHomeIncome)}`} · ${item.payday == null ? '급여일 미설정' : `매월 ${item.payday}일`}`
-    return current + (item.pendingPaydayChange ? ` · ${item.pendingPaydayChange.effectiveOn}부터 ${item.pendingPaydayChange.payday}일` : '')
+    const current = `${item.takeHomeIncome == null ? '월급 미설정' : `월 ${won(item.takeHomeIncome)}`} · ${item.payday == null ? '급여일 미설정' : `매월 ${paydayText(item.payday)}`}`
+    // 다음 주기부터 바뀔 값은 줄을 바꿔 따로 (11/12). 날짜가 같으면 한 줄로: '11월 10일부터 매월 10일 · 월 3,000,000원'
+    const pay = item.pendingPaydayChange, income = item.pendingIncomeChange
+    const changes = {}
+    if (pay) (changes[pay.effectiveOn] ??= []).push(`매월 ${paydayText(pay.payday)}`)
+    if (income) (changes[income.effectiveOn] ??= []).push(`월 ${won(income.takeHomeIncome)}`)
+    const dates = Object.keys(changes).sort()
+    if (!dates.length) return current
+    return <>{current}{dates.map((d) => <span key={d} className="mc-my-pending">{monthDay(d)}부터 {changes[d].join(' · ')}</span>)}</>
   }
   if (key === 'fixed' || key === 'savings') return `${item.count}건 · ${won(item.monthlyTotal)}`
   // 11/9: 한 줄이 길어 쿠션은 빼고 생활비 · 저축만 (쿠션은 지킬 돈 화면에서)
@@ -62,6 +74,7 @@ export default function MyPage() {
         return
       }
 
+      clearConnectDraft()  // 계좌 연결에서 고르던 기관을 다음 사람이 보지 않게 (11/12)
       saveId(null)
       navigate(PATHS.login, { replace: true })
     } catch (err) {
@@ -82,7 +95,7 @@ export default function MyPage() {
 
   if (userError) {
     return (
-      <Layout title="마이" showBack>
+      <Layout title="마이메뉴" showBack>
         <p className="mc-error" role="alert">
           {userError.status
             ? userError.message
@@ -101,14 +114,14 @@ export default function MyPage() {
 
   if (!user) {
     return (
-      <Layout title="마이" showBack>
+      <Layout title="마이메뉴" showBack>
         <p role="status">회원 정보를 불러오는 중이에요.</p>
       </Layout>
     )
   }
 
   return (
-    <Layout title="마이" showBack>
+    <Layout title="마이메뉴" showBack>
       <div className="mc-card">
         <div className="mc-row">
           <span className="mc-tile"><Icon name="UserRound" /></span>
@@ -175,7 +188,6 @@ export default function MyPage() {
           </p>
         )}
       </div>
-      <button type="button" className="mc-link" onClick={() => navigate(PATHS.login)}>처음 사용하는 흐름 다시 보기</button>
     </Layout>
   )
 }

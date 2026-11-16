@@ -71,6 +71,7 @@ urlpatterns = [
     path("budgets/salary/deposits/", budgets_salary.salary_deposits, name="salary-deposits"),
     path("budgets/salary/decisions/", budgets_salary.salary_decide, name="salary-decisions"),
     path("budgets/salary/pattern/", budgets_salary.salary_pattern, name="salary-pattern"),
+    path("budgets/salary/gap/", budgets_salary.salary_gap_answer, name="salary-gap"),
     path("finance/transactions/", finance_api.transactions, name="transactions"),
 
     # ---- 나은: 고정지출 19~24 · 정기 저축 25~30 (구현) ----

@@ -399,6 +399,76 @@ class TransactionDetailTest(FinanceData):
         self.assertEqual(res.status_code, 403)
 
 
+class NotSpendingTest(FinanceData):
+    """11/13 '소비가 아니에요' — PATCH {"notSpending": true | false} (transactions.md)"""
+
+    def url(self, tx):
+        return f"{URL}{tx.transaction_id}/"
+
+    def patch(self, tx, body):
+        self.client.force_login(self.user)
+        return self.client.patch(self.url(tx), data=json.dumps(body), content_type="application/json")
+
+    def test_exclude_and_restore_keeps_category(self):
+        tx = self.tx(source_kind="card", card=self.card, merchant_name="카카오T", confirmed_category_id="TRANSPORT_CAR")
+        body = self.patch(tx, {"notSpending": True}).json()
+        self.assertEqual((body["transactionType"], body["category"], body["classifyState"], body["funding"]),
+                         ("not_spending", None, None, None))
+        self.assertEqual(self.patch(tx, {"notSpending": True}).status_code, 200)  # 이미 원하는 상태도 성공
+        listed = self.get().json()["items"]
+        self.assertEqual([i["transactionType"] for i in listed], ["not_spending"])  # 목록에는 남는다
+        self.assertEqual(self.get("?transactionType=spending").json()["items"], [])  # 소비 필터에서는 빠진다
+        body = self.patch(tx, {"notSpending": False}).json()
+        self.assertEqual((body["transactionType"], body["category"]), ("spending", "TRANSPORT_CAR"))
+
+    def test_pending_excluded_is_not_counted_as_needs_review(self):
+        tx = self.tx(confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review")
+        self.patch(tx, {"notSpending": True})
+        self.assertEqual(self.get("?category=UNCLASSIFIED").json()["items"], [])
+        body = self.patch(tx, {"notSpending": False}).json()
+        self.assertEqual(body["classifyState"], "needs_review")  # 되돌리면 다시 확인 필요
+
+    def test_bad_requests(self):
+        spending, income = self.tx(), self.tx(direction="in", transaction_type="income")
+        transfer = self.tx(transaction_type="transfer", source_description="이하늘")
+        canceled = self.tx(is_canceled=True, canceled_amount=10000)
+        cases = [
+            (spending, {"notSpending": "yes"}, "true 또는 false 로 보내 주세요."),
+            (spending, {"notSpending": True, "category": "FOOD"}, "'소비가 아니에요'는 다른 칸과 같이 보낼 수 없어요."),
+            (income, {"notSpending": True}, "소비 거래만 '소비가 아니에요'로 바꿀 수 있어요."),
+            (transfer, {"notSpending": True}, "소비 거래만 '소비가 아니에요'로 바꿀 수 있어요."),
+            (spending, {"notSpending": False}, None),  # 이미 소비 → 성공
+            (canceled, {"notSpending": True}, "소비 거래만 '소비가 아니에요'로 바꿀 수 있어요."),
+        ]
+        for tx, body, message in cases:
+            with self.subTest(body=body, type=tx.transaction_type):
+                res = self.patch(tx, body)
+                if message is None:
+                    self.assertEqual(res.status_code, 200)
+                    continue
+                self.assertEqual(res.status_code, 400)
+                self.assertEqual(res.json()["error"]["fields"]["notSpending"], [message])
+
+    def test_category_on_excluded_needs_restore_first(self):
+        tx = self.tx()
+        self.patch(tx, {"notSpending": True})
+        res = self.patch(tx, {"category": "BEAUTY"})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["error"]["fields"]["category"], ["소비로 되돌린 뒤 카테고리를 고를 수 있어요."])
+
+    def test_fixed_linked_cannot_be_excluded(self):
+        expense = RecurringExpense.objects.create(user=self.user, name="넷플릭스", amount=10000, payment_day=1,
+                                                  category_id="CULTURE_LEISURE", status="confirmed", source_type="manual")
+        from finance.models import PaymentDue, PaymentMatch
+        tx = self.tx()
+        due = PaymentDue.objects.create(user=self.user, recurring=expense, obligation_type="recurring", occurrence_key="x",
+                                        due_date=self.month_start, confirmed_amount=10000, source_type="manual")
+        PaymentMatch.objects.create(user=self.user, due=due, transaction=tx, matched_amount=10000)
+        res = self.patch(tx, {"notSpending": True})
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.json()["error"]["fields"]["notSpending"], ["고정지출에 연결된 거래예요. 고정지출 연결을 먼저 풀어 주세요."])
+
+
 class ConnectTest(FinanceData):
     """6 동의 저장 · 7 계좌 후보 · 8 계좌 선택 · 9 연결 목록 (finance-connect.md)"""
 

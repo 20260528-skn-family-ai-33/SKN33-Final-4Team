@@ -5,12 +5,12 @@ import RecommendPage from './RecommendPage.jsx'
 import { apiSend } from '../utils/api.js'
 import { PATHS } from '../routes.js'
 
-const { navigate, location } = vi.hoisted(() => ({ navigate: vi.fn(), location: { state: null } }))
+const { navigate, location, openPopup } = vi.hoisted(() => ({ navigate: vi.fn(), location: { state: null }, openPopup: vi.fn() }))
 vi.mock('react-router', () => ({ useNavigate: () => navigate, useLocation: () => location }))
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), newRequestKey: () => 'synthetic-key' }))
 vi.mock('../components/Layout.jsx', () => ({ default: ({ children, foot }) => <main>{children}{foot}</main> }))
-vi.mock('../components/BudgetAIConsent.jsx', () => ({ default: () => <section aria-label="예산 AI 전송 동의" /> }))
-vi.mock('../popups/context.js', () => ({ usePopup: () => ({ openPopup: vi.fn() }) }))
+vi.mock('../components/BudgetAIConsent.jsx', () => ({ default: ({ onChange }) => <section aria-label="예산 AI 전송 동의"><button type="button" onClick={() => onChange?.({ status: 'granted' })}>동의 저장</button></section> }))
+vi.mock('../popups/context.js', () => ({ usePopup: () => ({ openPopup, closePopup: vi.fn() }) }))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let root, host
@@ -98,6 +98,7 @@ it('자물쇠 요청 중 승인과 중복 자물쇠 클릭을 막는다', async 
 it.each(['infeasible', 'needs_upper_allocation_review', 'needs_policy'])('추천 결과 %s를 성공 초안으로 보여주지 않는다', async outcome => {
   location.state = { autoRecommend: true }
   apiSend.mockResolvedValueOnce({ ...data(), budget: { ...data().budget, status: 'approved' } })
+    .mockResolvedValueOnce({ available: false, status: 'not_granted' })
     .mockResolvedValueOnce({ task: { taskId: 'task' } })
     .mockResolvedValueOnce({ status: 'succeeded', result: { outcome, summary: '생활비를 다시 확인해 주세요.' } })
   await act(() => root.render(<RecommendPage />))
@@ -111,6 +112,7 @@ it('추천 성공 후 서버가 다시 보내준 최종 생활비와 여윳돈�
   const next = data('new')
   next.split = { ...next.split, living: 850000, spare: 150000 }
   apiSend.mockResolvedValueOnce({ ...data(), budget: null })
+    .mockResolvedValueOnce({ available: false, status: 'not_granted' })
     .mockResolvedValueOnce({ task: { taskId: 'task' } })
     .mockResolvedValueOnce({ status: 'succeeded', result: { outcome: 'proposed', budgetId: 'new' } })
     .mockResolvedValueOnce(next)
@@ -123,6 +125,7 @@ it('추천 성공 후 서버가 다시 보내준 최종 생활비와 여윳돈�
 it('완료 작업의 예산 ID와 다른 예전 초안은 승인하지 못하게 한다', async () => {
   location.state = { autoRecommend: true }
   apiSend.mockResolvedValueOnce({ ...data(), budget: null })
+    .mockResolvedValueOnce({ available: false, status: 'not_granted' })
     .mockResolvedValueOnce({ task: { taskId: 'task' } })
     .mockResolvedValueOnce({ status: 'succeeded', result: { outcome: 'proposed', budgetId: 'new' } })
     .mockResolvedValueOnce(data('old'))
@@ -134,6 +137,7 @@ it('완료 작업의 예산 ID와 다른 예전 초안은 승인하지 못하게
 it('성공 후 조회에 실패하면 기존 초안으로 승인을 계속하지 않는다', async () => {
   location.state = { autoRecommend: true }
   apiSend.mockResolvedValueOnce({ ...data(), budget: null })
+    .mockResolvedValueOnce({ available: false, status: 'not_granted' })
     .mockResolvedValueOnce({ task: { taskId: 'task' } })
     .mockResolvedValueOnce({ status: 'succeeded', result: { outcome: 'proposed', budgetId: 'new' } })
     .mockRejectedValueOnce(new Error('조회 실패'))
@@ -244,4 +248,87 @@ it.each([
   expect(host.querySelector('[role="alert"]').textContent).toContain('목표 300,000원')
   expect(host.querySelector('[role="alert"]').textContent).toContain('350,000원')
   expect(host.querySelector('button[form="mc-form"]')).toBeNull()
+})
+
+it('추천을 만드는 동안에는 화면 전체를 기다림 안내로 바꾸고, 끝나면 결과 화면으로 돌아온다 (11/12)', async () => {
+  let finish
+  const task = new Promise((r) => { finish = r })
+  apiSend.mockImplementation(async (url, method) => {
+    if (url === '/api/budgets/recommend/') return { task: { taskId: 'task-1', status: 'running' } }
+    if (url === '/api/tasks/task-1/') return task
+    return { ...data(), budget: null }
+  })
+  await act(() => root.render(<RecommendPage />))
+  await click('추천 예산 만들기')
+  expect(host.querySelector('.mc-making[role=status]').textContent).toContain('예산을 짜고 있어요')
+  expect(host.textContent).not.toContain('추천 예산 만들기')
+  await act(async () => { finish({ status: 'failed', error: { message: '추천을 만들지 못했어요.' } }) })
+  expect(host.querySelector('.mc-making')).toBeNull()
+  expect(host.textContent).toContain('추천을 만들지 못했어요.')
+})
+
+it('고정지출 중 지난 카드값이 있으면 따로 보여 주고, 없으면 칸을 만들지 않는다 (11/12)', async () => {
+  await render()
+  expect(host.textContent).not.toContain('지난 카드값')
+  await act(() => root.unmount())
+  root = createRoot(host)
+  const response = data()
+  response.split = { ...response.split, cardReserved: 250000 }
+  await render(response)
+  const legend = [...host.querySelectorAll('.mc-split-legend div')].map((d) => d.textContent)
+  expect(legend).toContain('고정지출350,000원')   // 600,000 − 250,000
+  expect(legend).toContain('지난 카드값250,000원')
+  expect(host.querySelector('[aria-label="지난 카드값 안내 보기"]')).not.toBeNull()  // 옆 [?] — 누르면 '왜 청구서 금액과 달라 보이나요?' 창
+})
+
+it('어떻게 짰는지(A안 · B안 · AI)는 [?]를 눌러야 가운데 창으로 보이고, 정보가 없으면 [?]도 없다 (11/12)', async () => {
+  await render()
+  expect(host.querySelector('[aria-label="이 예산을 짠 방법 보기"]')).toBeNull()
+  for (const [basis, text] of [[{ plan: 'b', reason: 'sufficient_transactions', ai: true }, '지난 3개월 소비를 바탕으로 짰어요'],
+    [{ plan: 'a', reason: 'sparse_transactions', ai: false }, '비슷한 사람들의 소비 비율로 짰어요']]) {
+    await act(() => root.unmount())
+    root = createRoot(host)
+    openPopup.mockClear()
+    await render({ ...data(), recommendation: { spareTransfer: 0, targetConflicts: [], basis } })
+    expect(host.textContent).not.toContain(text)  // 화면에는 설명을 바로 펼치지 않는다
+    await act(async () => host.querySelector('[aria-label="이 예산을 짠 방법 보기"]').click())
+    const box = document.createElement('div')
+    const popupRoot = createRoot(box)
+    await act(() => popupRoot.render(openPopup.mock.calls[0][0]))
+    expect(box.querySelector('[role="dialog"]').className).toContain('mc-dialog')
+    expect(box.textContent).toContain(text)
+    expect(box.textContent.includes('AI가')).toBe(basis.ai)
+    await act(() => popupRoot.unmount())
+  }
+})
+
+it('AI를 쓸 수 있고 아직 동의 전이면 예산을 짜기 전에 동의 단계를 먼저 보여 준다 (11/12)', async () => {
+  location.state = { autoRecommend: true }
+  const next = data('new')
+  apiSend.mockResolvedValueOnce({ ...data(), budget: null })
+    .mockResolvedValueOnce({ available: true, status: 'not_granted' })
+  await act(() => root.render(<RecommendPage />))
+  expect(host.textContent).toContain('AI로 예산을다듬을까요?')
+  expect(apiSend.mock.calls.some(([url]) => url === '/api/budgets/recommend/')).toBe(false)  // 아직 안 짠다
+  expect([...host.querySelectorAll('button')].some(b => b.textContent === 'AI 없이 예산 짜기')).toBe(true)
+  await click('동의 저장')
+  apiSend.mockResolvedValueOnce({ task: { taskId: 'task' } })
+    .mockResolvedValueOnce({ status: 'succeeded', result: { outcome: 'proposed', budgetId: 'new' } })
+    .mockResolvedValueOnce(next)
+  await click('예산 짜기')
+  expect(apiSend.mock.calls.some(([url]) => url === '/api/budgets/recommend/')).toBe(true)
+  expect(host.querySelector('button[form="mc-form"]')).not.toBeNull()
+  expect(host.querySelector('[aria-label="예산 AI 전송 동의"]')).toBeNull()  // 다 짠 뒤에는 동의 상자를 다시 보이지 않는다
+})
+
+it('이미 동의했으면 동의 단계 없이 바로 예산을 짠다 (11/12)', async () => {
+  location.state = { autoRecommend: true }
+  apiSend.mockResolvedValueOnce({ ...data(), budget: null })
+    .mockResolvedValueOnce({ available: true, status: 'granted' })
+    .mockResolvedValueOnce({ task: { taskId: 'task' } })
+    .mockResolvedValueOnce({ status: 'succeeded', result: { outcome: 'proposed', budgetId: 'new' } })
+    .mockResolvedValueOnce(data('new'))
+  await act(() => root.render(<RecommendPage />))
+  expect(host.textContent).not.toContain('다듬을까요?')
+  expect(host.querySelector('button[form="mc-form"]')).not.toBeNull()
 })

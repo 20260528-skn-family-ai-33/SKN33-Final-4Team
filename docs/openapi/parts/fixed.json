@@ -123,7 +123,8 @@
                         "confirmedMonthlyTotal": 715000,
                         "suggestedCount": 1
                       },
-                      "cardBills": []
+                      "cardBills": [],
+                      "cardLoading": null
                     }
                   },
                   "empty": {
@@ -133,7 +134,8 @@
                         "confirmedMonthlyTotal": 0,
                         "suggestedCount": 0
                       },
-                      "cardBills": []
+                      "cardBills": [],
+                      "cardLoading": null
                     }
                   }
                 }
@@ -1664,12 +1666,36 @@
               "$ref": "#/components/schemas/FixedCardBillPreview"
             },
             "description": "관리 대상 카드가 있는 카드사별 참고 청구금액. 유효한 카드 동의·연결·선택이 없으면 빈 배열. 별도 CODEF 조회 없이 저장 자료 사용."
+          },
+          "cardLoading": {
+            "type": "object",
+            "nullable": true,
+            "description": "11/12. 카드 내역을 서버가 뒤에서 불러오는 중이면 { taskId, institutions }, 아니면 null. 첫 설정 화면은 안내를 띄우고 [다음]을 막은 뒤 작업이 끝나면 다시 읽는다",
+            "required": [
+              "taskId",
+              "institutions"
+            ],
+            "properties": {
+              "taskId": {
+                "type": "string",
+                "format": "uuid",
+                "description": "가장 최근에 시작한 불러오기 작업 ID (GET /api/tasks/<taskId>/)"
+              },
+              "institutions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "첫 연결 뒤 불러오는 중인 카드사 이름. 다시 불러오기 작업만 있으면 빈 배열"
+              }
+            }
           }
         },
         "required": [
           "items",
           "summary",
-          "cardBills"
+          "cardBills",
+          "cardLoading"
         ]
       },
       "FixedBatchResponse": {

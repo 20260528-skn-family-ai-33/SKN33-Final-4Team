@@ -76,6 +76,7 @@ GET /api/home/
 | `period.salaryCheckCount` | 정수 | 인정된 급여가 없는 구간(이번 · 다음 조기)의 확인 필요 후보 수. 화면 알림 "월급으로 보이는 입금이 있어요" |
 | `period.salaryReceivedOn` | 날짜 또는 `null` | 이번 회차에 인정된 급여 중 가장 이른 입금일. 월급날보다 일찍 들어왔으면 그 날짜(예: 명절 전 9/18) |
 | `period.nextSalaryEarlyOn` | 날짜 또는 `null` | **다음 회차로 인정된 조기 급여의 입금일** (후보만 있으면 `null`). 화면 "월급이 12/18에 미리 들어왔어요. 12/25부터 예산에 넣을게요" |
+| `period.salaryGap` | 객체 또는 `null` | 11/13. 이번 회차에 인정된 월급이 등록 실수령액과 1만원 이상 · 3% 이상 다르고 아직 그 금액으로 답하지 않았으면 `{diff, received, registered, basis}`. 화면 "월급이 300,000원 적게 들어왔어요. 예산을 조정할까요?" 칸 뜻 · 답하기는 [salary.md 월급 차이 안내](salary.md#월급-차이-안내-1113) |
 | `balance` | 객체 | 입출금 계좌 잔액 요약 (항상 있음) |
 | `balance.total` | 정수 또는 `null` | 잔액을 아는 계좌들의 잔액 합계(원). 셀 계좌가 없거나 전부 잔액을 모르면 `null` (0으로 채우지 않음) |
 | `balance.accountCount` | 정수 | 합계 대상 계좌 수 (잔액을 모르는 계좌 포함). 화면 "입출금 계좌 2개" |
@@ -107,6 +108,7 @@ GET /api/home/
 | `budget.daysLeft` | 정수 | 오늘까지 쓴 돈을 뺀 뒤 나누는 날 수 = 다음 월급날 − 오늘 − 1 (채팅 소비 분석의 남은 일수와 같음) |
 | `budget.outOfBudgetAllocated` | 정수 | 이전 기준 예산의 주거·통신 · 여행·숙박 배정 (예산 화면 `budget.outOfBudgetAllocated`와 같음, N-F1). 0보다 크면 파란 카드 안에 재추천 안내. `livingBudget`은 이 금액을 포함한 저장값 그대로 |
 | `budget.overCategories[]` | 배열 | 예산을 넘긴 카테고리 (11/11). 칸: `category` · `categoryName` · `allocated`(배정) · `spent`(쓴 돈) · `over`(= `spent − allocated`). **쓴 돈이 배정을 1원이라도 넘으면** 넣고, 배정이 0원인 카테고리는 넣지 않는다. 많이 넘긴 순. 없으면 `[]`. 값은 예산 화면 `categories[]`와 같은 계산 |
+| `budget.nag` | 문자열 / null | 11/13. 예산을 자주 바꾸면 "이번 달 예산을 여러 번 바꿨어요" (예산 화면 `nag`와 같은 규칙 · 문구). 화면은 종 알림 한 줄, 누르면 예산 화면 |
 | `budget.bigSpendings[]` | 배열 | 생활비 예산 대비 큰 지출 (11/11, 돌발 지출 감지 1단계). 이번 주기(시작일 ~ 오늘)에 **한 건이 `livingBudget`의 10% 이상**(원 미만 올림, 취소분을 뺀 금액)인 거래. 칸: `transactionId` · `occurredOn` · `merchantName`(없으면 `""`) · `amount` · `kind`(`spending` / `transfer`) · `category` · `categoryName`(이체는 둘 다 `null`). 최신순(같은 날은 큰 금액 먼저). 없으면 `[]` |
 | `budget.outOfBudget` | 객체 | 예산 밖 지출 안내 — 예산 화면 `outOfBudget`과 같은 모양 · 금액 (budgets.md) |
 
@@ -119,7 +121,8 @@ GET /api/home/
     "dday": 4,
     "salaryState": "received",
     "salaryReceivedOn": "2026-09-25",
-    "nextSalaryEarlyOn": null
+    "nextSalaryEarlyOn": null,
+    "salaryGap": null
   },
   "balance": {
     "total": 2800000,
@@ -160,7 +163,8 @@ GET /api/home/
   "dday": 31,
   "salaryState": "waiting",
   "salaryReceivedOn": null,
-  "nextSalaryEarlyOn": null
+  "nextSalaryEarlyOn": null,
+  "salaryGap": null
 }
 ```
 
@@ -174,7 +178,8 @@ GET /api/home/
   "dday": 7,
   "salaryState": "received",
   "salaryReceivedOn": "2026-11-25",
-  "nextSalaryEarlyOn": "2026-12-18"
+  "nextSalaryEarlyOn": "2026-12-18",
+  "salaryGap": null
 }
 ```
 
@@ -306,7 +311,7 @@ GET /api/home/
 - 화면: 파란 카드 제목은 **"하루에 쓸 수 있는 돈"**(오늘 쓴 돈까지 빼고 내일부터 나눈 금액이라). `daily`가 `null`(마지막 날)이면 "—". [계산 근거]는 `livingLeft ÷ daysLeft`를 그대로 보여 준다. `outOfBudget.total > 0`이면 계좌 잔액 카드 안 둘째 줄(구분선)에 "예산 밖 지출 N원 ›"을 두고, 누르면 카테고리별 금액(`outOfBudget.categories`)과 "생활비 예산에 넣지 않고 따로 보여 드려요" 안내를 팝업으로 보여 준다(11/3 — 파란 카드 안 문장에서 옮김).
 - 화면 (11/11): `overCategories`의 카테고리마다 종 알림에 한 줄 — "식비 예산을 12,000원 넘었어요 ›". 누르면 예산 화면. 읽음 처리는 없고, 넘긴 상태인 동안 계속 보인다(예산을 조정하거나 새 주기가 되면 사라짐). 푸시 알림은 없다. 예산 화면은 같은 기준으로 넘긴 카테고리의 막대를 라임색으로 바꾸고 '남은 N원' 자리에 'N원 초과'를 보여 준다.
 - **큰 지출 (`bigSpendings`, 11/11)**: 대상은 ① 생활비 쪽 소비 — 고정지출로 연결된 거래와 예산 밖 카테고리(주거·통신, 여행·숙박)는 뺀다. '확인 필요' 소비는 넣는다. ② 남에게 보낸 이체(`transfer`, 출금) — 납부(고정지출 · 대출 · 카드 청구서)로 연결된 이체는 뺀다. 내 계좌 간 이체 · 저축 · 카드값 · 대출 상환은 거래 유형이 달라 들어오지 않는다. **알리기만 하고 어떤 숫자도 바꾸지 않는다**(소비는 소비 그대로, 이체는 소비 아님 그대로). 답을 저장하지 않으므로 이번 주기 동안 계속 보인다. 기준 10%는 `budgets/home.py`의 `BIG_SPENDING_PCT`(팀 확정 전 시작값). 같은 카테고리 평소 금액과 비교하는 필터 · '어떤 돈인가요?' 질문 · 조정 연결은 다음 단계.
-- 화면 (11/11): `bigSpendings`의 거래마다 종 알림에 한 줄 — "11.10 홍길동 300,000원 · 큰 이체가 있었어요 ›"(소비는 "큰 지출이 있었어요"). 아이콘은 소비 = 카테고리, 이체 = 보내기. 누르면 거래 내역.
+- 화면 (11/11, **11/13 잠시 뺌** — 기준 10%가 아직 어색해서 종 알림에 올리지 않는다. API 값은 그대로 준다): `bigSpendings`의 거래마다 종 알림에 한 줄 — "11.10 홍길동 300,000원 · 큰 이체가 있었어요 ›"(소비는 "큰 지출이 있었어요"). 아이콘은 소비 = 카테고리, 이체 = 보내기. 누르면 거래 내역.
 - 화면: `budget`이 `null`이면 파란 카드 자리에 **안내 카드**를 보여 준다 — "예산을 만들면 여기에 하루에 쓸 수 있는 돈이 보여요 [예산 만들기]".
 - **온보딩을 안 끝낸 회원은 홈을 열지 않는다.** 화면이 로그인 응답 · `GET /api/auth/me/`의 **`onboardingCompleted`**가 `false`면 온보딩으로 보낸다(10/22 결정 R — 첫 예산을 승인하면 `true`). 이 API는 막지 않는다(온보딩 중에 불러도 위 규칙대로 답함).
 

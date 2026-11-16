@@ -4,14 +4,14 @@ import {
   Banknote, Bell, Building, Bus, ChartNoAxesCombined, ChevronRight, Circle, CircleAlert, CircleCheck, CircleMinus, CircleQuestionMark, Compass,
   CreditCard, Ellipsis, Film, GraduationCap, Heart, HeartPulse, House, IdCard, Landmark, Link, Loader,
   MessageCircle, PiggyBank, Plane, RefreshCw, Repeat, Scissors, Search, Send, ShieldCheck, Shirt, ShoppingBasket, ShoppingCart, SlidersHorizontal,
-  Sparkles, Stethoscope, Store, Ticket, Unlink, UserRound, Users, Utensils, Wallet,
+  Sparkles, Stethoscope, Store, Ticket, Unlink, UserRound, Users, Utensils, Wallet, Wrench,
 } from 'lucide-react'
 
 const ICONS = {
   Banknote, Bell, Building, Bus, ChartNoAxesCombined, ChevronRight, Circle, CircleAlert, CircleCheck, CircleMinus, CircleQuestionMark, Compass,
   CreditCard, Ellipsis, Film, GraduationCap, Heart, HeartPulse, House, IdCard, Landmark, Link, Loader,
   MessageCircle, PiggyBank, Plane, RefreshCw, Repeat, Scissors, Search, Send, ShieldCheck, Shirt, ShoppingBasket, ShoppingCart, SlidersHorizontal,
-  Sparkles, Stethoscope, Store, Ticket, Unlink, UserRound, Users, Utensils, Wallet,
+  Sparkles, Stethoscope, Store, Ticket, Unlink, UserRound, Users, Utensils, Wallet, Wrench,
 }
 
 // 'credit-card'(장고 API 이름)도 'CreditCard'(리액트 이름)로 바꿔서 찾는다

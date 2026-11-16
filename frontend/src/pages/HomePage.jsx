@@ -21,6 +21,7 @@ import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
 import CardBillPopup from '../popups/CardBillPopup.jsx'
 import NoticePopup from '../popups/NoticePopup.jsx'
 import SalaryCheckPopup from '../popups/SalaryCheckPopup.jsx'
+import SalaryGapPopup from '../popups/SalaryGapPopup.jsx'
 import CardCredentialPopup from '../popups/CardCredentialPopup.jsx'
 import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
 import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
@@ -165,21 +166,24 @@ export default function HomePage() {
   //   할 일: 확인할 거래 · 출금일을 모르는 고정지출 (H-05 — 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다)
   //   R12: 후보만 있으면 '확인 필요'(받음 · 아직으로 단정하지 않음), 자동 인식이면 맞는지 바꿀 수 있게
   //   예산 초과 (11/11): 예산을 넘긴 카테고리마다 한 줄 (budget.overCategories, 많이 넘긴 순). 누르면 예산 화면
-  //   큰 지출 (11/11, 돌발 지출 감지 1단계): 한 건이 생활비 예산의 10% 이상인 소비 · 이체마다 한 줄 (budget.bigSpendings). 누르면 거래 내역
+  //   자주 바꾸기 (11/13): 예산을 자주 바꾸면 '계획을 정리해 볼까요?' 한 줄 (budget.nag, 전에는 예산 화면에 있던 문구)
+  //   큰 지출 (11/11, budget.bigSpendings): 11/13 기준(생활비의 10%)이 아직 어색해서 알림 줄은 잠시 뺐다. 서버 값은 그대로 온다
   const openSalary = () => openPopup(<SalaryCheckPopup onSaved={reload} />)
+  // 11/13: 받은 월급이 등록한 실수령액과 꽤 다르면 (1만원 이상 · 3% 이상, 서버가 판단) 어떻게 할지 묻는다
+  const gap = period?.salaryGap
+  const gapText = gap && `월급이 ${won(Math.abs(gap.diff))} ${gap.diff < 0 ? '덜' : '더'} 들어왔어요`
+  const openGap = () => openPopup(<SalaryGapPopup gap={gap} onDone={reload} />)
+  // 11/13: 줄마다 무슨 알림인지 굵은 이름(title)을 문장 위에 단다
   const notices = [
-    period?.salaryCheckCount > 0 && { key: 'salary-check', count: period.salaryCheckCount, text: '월급으로 보이는 입금이 있어요. 맞는지 확인해 주세요', go: openSalary },
-    period?.salaryState === 'waiting' && { key: 'salary-wait', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
-    period?.salarySource === 'auto' && { key: 'salary-auto', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 자동 인식했어요`, go: openSalary },
-    period?.nextSalaryEarlyOn && { key: 'salary-early', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
-    ...(b.overCategories ?? []).map((c) => ({ key: `over-${c.category}`, icon: catIcon(c.categoryName), text: `${c.categoryName} 예산을 ${won(c.over)} 넘었어요`, go: () => navigate(PATHS.budget) })),
-    ...(b.bigSpendings ?? []).map((s) => ({
-      key: `big-${s.transactionId}`, icon: s.kind === 'transfer' ? 'Send' : catIcon(s.categoryName),
-      text: `${mmdd(s.occurredOn)} ${s.merchantName ? `${s.merchantName} ` : ''}${won(s.amount)} · 큰 ${s.kind === 'transfer' ? '이체가' : '지출이'} 있었어요`,
-      go: () => navigate(PATHS.txs),
-    })),
-    pendingCount > 0 && { key: 'pending', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
-    needsPaydayCount > 0 && { key: 'payday', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
+    gap && { key: 'salary-gap', title: '월급 차이', icon: 'Banknote', text: `${gapText}. 예산을 조정할까요?`, go: openGap },
+    period?.salaryCheckCount > 0 && { key: 'salary-check', title: '월급 확인', count: period.salaryCheckCount, text: '월급으로 보이는 입금이 있어요. 맞는지 확인해 주세요', go: openSalary },
+    period?.salaryState === 'waiting' && { key: 'salary-wait', title: '월급 입금', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
+    period?.salarySource === 'auto' && { key: 'salary-auto', title: '월급 자동 인식', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 자동 인식했어요`, go: openSalary },
+    period?.nextSalaryEarlyOn && { key: 'salary-early', title: '월급 입금', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
+    ...(b.overCategories ?? []).map((c) => ({ key: `over-${c.category}`, title: '예산 초과', icon: catIcon(c.categoryName), text: `${c.categoryName} 예산을 ${won(c.over)} 넘었어요`, go: () => navigate(PATHS.budget) })),
+    b.nag && { key: 'nag', title: '예산 변경', mark: '!', text: b.nag, go: () => navigate(PATHS.budget) },  // 11/13: 예산을 자주 바꾸면 (예산 화면 문구 대신)
+    pendingCount > 0 && { key: 'pending', title: '카테고리 확인', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
+    needsPaydayCount > 0 && { key: 'payday', title: '출금일 확인', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
   ].filter(Boolean)
   const headAction = (
     <>
@@ -210,6 +214,17 @@ export default function HomePage() {
             </button>
             {balance.asOf && <span className="mc-muted mc-home2-asof">{asOfText(balance.asOf)}</span>}
           </div>
+          {/* 11/13: 월급 차이 — 알림 줄과 같은 [아이콘 | 두 줄 | ›] 카드. 덜 들어오면 금액을 빨강, 더 들어오면 파랑 */}
+          {gap && (
+            <button type="button" className="mc-home2-gap" onClick={openGap}>
+              <span className="mc-tile"><Icon name="Banknote" /></span>
+              <span className="mc-grow">
+                <strong>월급이 <b className={gap.diff < 0 ? 'is-less' : 'is-more'}>{won(Math.abs(gap.diff))}</b> {gap.diff < 0 ? '덜' : '더'} 들어왔어요</strong>
+                <small>이번 예산을 맞출까요?</small>
+              </span>
+              <span className="mc-muted" aria-hidden="true">›</span>
+            </button>
+          )}
         </div>
       )}
 

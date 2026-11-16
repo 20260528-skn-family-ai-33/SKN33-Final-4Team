@@ -5,6 +5,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from threading import Barrier
+from unittest import addModuleCleanup
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -21,18 +22,17 @@ from .models import (BankAccount, Card, CardBill, Connection, FinancialTransacti
                      PaymentMatch)
 from .transfer_rules import CARD_CANDIDATE, apply as apply_rules
 
-# 실제 CODEF·LLM 호출 차단: 모듈을 불러올 때(테스트 DB 생성·시드 전) 시작한다
+# 이 모듈의 테스트 동안만 외부 호출을 차단한다.
 _blocks = [
     patch("finance.codef._request", side_effect=AssertionError("CODEF 호출 금지")),
     patch("chat.llm.openai_rest.ResponsesClient.__init__", side_effect=AssertionError("LLM 호출 금지")),
 ]
-for _block in _blocks:
-    _block.start()
 
 
-def tearDownModule():
+def setUpModule():
     for block in _blocks:
-        block.stop()
+        block.start()
+        addModuleCleanup(block.stop)
 
 
 TODAY = date(2026, 11, 12)

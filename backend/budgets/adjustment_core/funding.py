@@ -1,13 +1,71 @@
 """Pure category and upper-allocation simulation; no bank or database mutations."""
 from copy import deepcopy
 
-from .calculation import AdjustmentError, _cuts, _eligible, _floor, _hard_floor, _money, _money_map, _prepare
+from .calculation import AdjustmentError, NON_BUDGET_CODES, _cuts, _eligible, _floor, _hard_floor, _money, _money_map, _prepare
 
 
 BUCKETS = ("SAVINGS", "CUSHION_MONTHLY", "SPARE")
 LIVING = "LIVING"
 BLOCKED = {"needs_amount", "needs_source", "needs_destination", "needs_confirmation",
            "needs_policy", "needs_data", "infeasible"}
+
+
+def reserve_floor(context, code, amount):
+    anchor = max(amount, context.get('bucket_targets', {}).get(code, 0), context.get('reserve_anchors', {}).get(code, 0))
+    floor = max(context.get('bucket_floors', {}).get(code, 0), (anchor * 3 + 9) // 10)
+    planned = context.get('diagnostic_inputs', {}).get('planned_spare', {})
+    if (code == 'SPARE' and planned.get('status') in {'confirmed', 'user_confirmed'}
+            and planned.get('scope') == 'unbudgeted_only' and type(planned.get('amount')) is int and planned['amount'] >= 0):
+        floor = max(floor, planned['amount'])
+    return floor
+
+
+def increase_input_limit(context, category):
+    """Absolute budget ceiling, not a recommendation or permission to spend it all."""
+    living = 0 if category == LIVING else sum(amount for code, amount in context['allocations'].items()
+                                             if code != category and code not in NON_BUDGET_CODES)
+    return living + sum(amount for code, amount in context['buckets'].items() if code != category)
+
+
+def oversized_increase(context, item):
+    if item.get('amount') is None or item.get('amount_mode') in (None, 'available'):
+        return None
+    try:
+        data = _data(context, {'items': [item]})
+    except AdjustmentError:
+        return None
+    category = item['category']
+    increase = data['targets'][category] - _value(data, data['before'], category)
+    limit = increase_input_limit(context, category)
+    return (increase, limit) if increase > limit else None
+
+
+def large_increase_warning(context, items, *, reason=None):
+    income = context.get('monthly_income')
+    if type(income) is not int or income <= 0 or not items or any(item.get('amount') is None for item in items):
+        return None
+    try:
+        data = _data(context, {'items': items})
+    except AdjustmentError:
+        return None
+    increases = {code: max(target - _value(data, data['before'], code), 0) for code, target in data['targets'].items()}
+    living = max(increases.get(LIVING, 0), sum(increases.get(code, 0) for code in data['allocations']))
+    amount = living + sum(increases.get(code, 0) for code in BUCKETS)
+    if amount * 100 >= income * 30:
+        from .advisor import impact_line, money
+        percent = amount * 100 // income
+        impact = impact_line(context, items)
+        prefix = (f'요청 금액 {money(amount)}은 월 실수령액의 약 {percent}%로 30% 이상이에요. '
+                  + (impact + ' ' if impact else ''))
+        planning = context.get('planning') or {}
+        if planning.get('income_change') and income - context.get('income_before', income) >= amount:
+            return prefix + '늘어난 월급으로 충당하는 요청이에요. 남겨 둘 돈을 지키면서 가능한 금액을 확인해 주세요.'
+        if planning.get('expense'):
+            return prefix + '예정된 지출이어도 다른 예산이 크게 줄 수 있어요. 따로 마련한 돈을 제외한 필요액과 줄어드는 예산을 확인해 주세요.'
+        if reason:
+            return prefix + '말씀하신 사유만으로 이 금액이 꼭 필요한지는 확인하기 어려워요. 필요한 지출과 금액을 한 번 더 확인해 주세요.'
+        return prefix + '다른 예산이 크게 줄 수 있어요. 어떤 지출에 얼마가 더 필요한가요?'
+    return None
 
 
 class _Blocked(Exception):
@@ -36,7 +94,17 @@ def _units(context):
 def _data(context, envelope):
     data = _prepare(context, [])
     data["automatic_unit"], data["fallback_unit"] = _units(context)
-    data["buckets"] = _money_map(context.get("buckets"), "invalid_buckets", BUCKETS)
+    buckets = context.get("buckets")
+    spare = buckets.get('SPARE') if isinstance(buckets, dict) else None
+    # A saved salary cut can leave a future deficit even when income_before is unchanged.
+    projected_deficit = ((context.get('planning') or {}).get('scope') == 'next_cycle'
+                         and context.get('funding_amount') == context.get('monthly_income')
+                         and type(spare) is int and spare < 0)
+    if projected_deficit:
+        buckets = {**buckets, 'SPARE': 0}
+    data["buckets"] = _money_map(buckets, "invalid_buckets", BUCKETS)
+    if projected_deficit:
+        data['buckets']['SPARE'] = spare
     if set(data["buckets"]) != set(BUCKETS):
         raise AdjustmentError("missing_buckets")
     data["funding_amount"] = _money(context.get("funding_amount"), "invalid_funding_amount")
@@ -45,6 +113,8 @@ def _data(context, envelope):
         raise AdjustmentError("funding_total_mismatch")
     for key in ("bucket_floors", "bucket_available"):
         data[key] = _money_map(context.get(key, {}), "invalid_" + key, BUCKETS)
+    for code, amount in data['buckets'].items():
+        data['bucket_floors'][code] = max(data['bucket_floors'].get(code, 0), reserve_floor(context, code, amount))
     status = context.get("bucket_status", {})
     if (not isinstance(status, dict) or set(status) - set(BUCKETS)
             or any(v not in ("ready", "unknown", "disabled") for v in status.values())):
@@ -55,6 +125,12 @@ def _data(context, envelope):
     allowed = set(data["allocations"]) | set(BUCKETS) | {LIVING}
     normalized = {key: _codes(envelope.get(key, []), allowed, key)
                   for key in ("sources", "destinations", "excluded")}
+    if NON_BUDGET_CODES.intersection(normalized['sources'] + normalized['destinations']):
+        raise AdjustmentError('unsupported_category')
+    if envelope.get('spare_minimum') is not None:
+        minimum = _money(envelope['spare_minimum'], 'invalid_spare_minimum')
+        normalized['spare_minimum'] = minimum
+        data['bucket_available']['SPARE'] = max(data['bucket_available'].get('SPARE', 0) - minimum, 0)
     before = {**data["allocations"], **data["buckets"]}
     data["before"] = before
     data["targets"], data["items"] = {}, []
@@ -62,7 +138,7 @@ def _data(context, envelope):
         if not isinstance(item, dict):
             raise AdjustmentError("invalid_funding_item")
         c, mode, direction = item.get("category"), item.get("amount_mode"), item.get("direction")
-        if not isinstance(c, str) or c not in allowed:
+        if not isinstance(c, str) or c not in allowed or c in NON_BUDGET_CODES:
             raise AdjustmentError("unsupported_category")
         if c in data["targets"]:
             raise AdjustmentError("duplicate_request")
@@ -96,10 +172,12 @@ def _data(context, envelope):
     if LIVING in data["targets"] and set(data["targets"]) & set(data["allocations"]):
         raise AdjustmentError("overlapping_living_requests")
     normalized["items"] = data["items"]
+    data["spending_verified"] = context.get("spending_status", "complete") == "complete"
     data["request"] = normalized
-    data["excluded"] = set(normalized["excluded"])
+    data["excluded"] = set(normalized["excluded"]) | NON_BUDGET_CODES
     if LIVING in data["excluded"]:
-        data["excluded"].update(data["allocations"])
+        # Excluding living as a source still permits the explicitly requested increase.
+        data["excluded"].update(c for c in data["allocations"] if data['targets'].get(c, before[c]) <= before[c])
     return data
 
 
@@ -136,7 +214,7 @@ def _check_alignment(data):
 
 
 def _check_spending(context):
-    if context.get("spending_status", "complete") != "complete":
+    if context.get("spending_status", "complete") != "complete" and not context.get("budget_preview"):
         raise _Blocked("needs_data", "spending_unverified")
 
 
@@ -151,11 +229,13 @@ def _capacity(data, amounts, donor, recipient, *, explicit=False, primary=False)
         return _unit_amount(data, capacity)
     if donor in data["locks"]:
         return 0
+    explicit = explicit or (data['request']['sources'] == [donor] and len(data['items']) == 1
+                            and not data['items'][0]['automatic'])
     if explicit:
         return _unit_amount(data, max(amounts[donor] - _hard_floor(data, donor), 0))
-    # A named primary decrease selects the donor, but does not waive its ML floor.
-    if not primary and ((recipient in data["allocations"] and not _eligible(data, donor, recipient))
-                        or (recipient not in data["allocations"] and donor in data["priorities"])):
+    # Generated decreases keep the shared automatic protection.
+    if not primary and ((recipient in data["allocations"] and not _eligible(data, donor, recipient, allow_ranked=donor in data['request']['sources']))
+                        or (recipient not in data["allocations"] and data["priorities"].get(donor, 99) <= 6)):
         return 0
     if amounts[donor] <= _hard_floor(data, donor):
         return 0
@@ -180,16 +260,19 @@ def _groups(data, sources, recipient, forbidden):
         expanded = data["allocations"] if c == LIVING else [c]
         candidates.extend(code for code in expanded if code not in candidates)
     candidates = [c for c in candidates if c not in forbidden and c != recipient and c not in data["excluded"]]
-    unranked = [c for c in candidates if c in BUCKETS or c not in data["priorities"]]
-    groups = [unranked] if unranked else []
-    ranks = sorted({data["priorities"][c] for c in candidates if c in data["priorities"]}, reverse=True)
-    groups.extend([c for c in candidates if data["priorities"].get(c) == rank] for rank in ranks)
-    return groups
+    living = [c for c in candidates if c in data['allocations']]
+    groups = [[c for c in living if c not in data['priorities']]]
+    for rank in sorted({data['priorities'][c] for c in living if c in data['priorities']}, reverse=True):
+        groups.append([c for c in living if data['priorities'].get(c) == rank])
+    # 생활비 다음에는 여윳돈 → 월 머니쿠션 → 저축 순서로만 부족분을 채운다.
+    groups.extend([[c] for c in ('SPARE', 'CUSHION_MONTHLY', 'SAVINGS') if c in candidates])
+    return [group for group in groups if group]
 
 
 def priority_destination(context, *, excluded=(), requested=()):
     candidates = [code for code in context['priorities'] if code in context['allocations']
-                  and code not in requested and code not in context.get('locks', {}) and code not in excluded]
+                  and code not in requested and code not in context.get('locks', {}) and code not in excluded
+                  and code not in NON_BUDGET_CODES]
     return min(candidates, key=lambda code: context['priorities'][code]) if candidates else None
 
 
@@ -260,7 +343,7 @@ def _response(data, status, amounts=None, transfers=(), conflicts=()):
             shortfalls.append({"category": c, "direction": "up" if target > current else "down",
                                "requested_amount": requested, "applied_amount": applied,
                                "missing_amount": requested - applied})
-    return {"kind": "funding", "status": status, "requests": deepcopy(data["request"]),
+    return {"kind": "funding", "status": status, "spending_verified": (data.get("spending_verified", True) or (not any(amounts[c] < before[c] for c in data["allocations"]) and not any(i["amount_mode"] == "remaining" for i in data["items"]))), "requests": deepcopy(data["request"]),
             "allocations": {c: amounts[c] for c in data["allocations"]},
             "buckets": {c: amounts[c] for c in BUCKETS},
             "requested_targets": dict(data["targets"]),
@@ -305,6 +388,8 @@ def simulate_funding(context, envelope, *, allocate_group_reduction=None):
         _check_alignment(data)
         increases, decreases = _plan(data)
         if not increases:
+            if data['buckets']['SPARE'] < 0:
+                raise _Blocked('infeasible', 'insufficient_funds', shortfall=-data['buckets']['SPARE'])
             return _response(data, "unchanged")
         amounts, transfers = dict(data["before"]), []
         primary = set(data["targets"]) | set(increases)
@@ -348,6 +433,8 @@ def simulate_funding(context, envelope, *, allocate_group_reduction=None):
             if required and data["request"]["sources"]:
                 _apply_group(data, amounts, recipient, required, data["request"]["sources"], primary,
                              allocate_group_reduction, move)
+        if amounts['SPARE'] < 0:
+            raise _Blocked('infeasible', 'insufficient_funds', shortfall=-amounts['SPARE'])
         for c, value in amounts.items():
             if value == data["before"][c]:
                 continue
@@ -371,7 +458,13 @@ def validate_funding(context, envelope, result):
     if not isinstance(result, dict) or result.get("kind") != "funding" or result.get("requests") != data["request"]:
         raise AdjustmentError("invalid_funding_result")
     allocations = _money_map(result.get("allocations"), "invalid_result_allocations", data["allocations"])
-    buckets = _money_map(result.get("buckets"), "invalid_result_buckets", BUCKETS)
+    raw_buckets = result.get('buckets')
+    blocked_deficit = (result.get('status') in BLOCKED and data['buckets']['SPARE'] < 0
+                       and isinstance(raw_buckets, dict) and raw_buckets.get('SPARE') == data['buckets']['SPARE'])
+    buckets = _money_map({**raw_buckets, 'SPARE': 0} if blocked_deficit else raw_buckets,
+                         'invalid_result_buckets', BUCKETS)
+    if blocked_deficit:
+        buckets['SPARE'] = data['buckets']['SPARE']
     if set(allocations) != set(data["allocations"]) or set(buckets) != set(BUCKETS):
         raise AdjustmentError("funding_result_keys_mismatch")
     amounts = {**allocations, **buckets}
@@ -440,7 +533,7 @@ def validate_funding(context, envelope, result):
     except _Blocked:
         raise AdjustmentError("unverified_funding_result") from None
     checked = _response(data, result["status"], amounts, transfers)
-    for key in ("requested_targets", "persistence_candidates", "changes", "shortfalls", "conflicts"):
+    for key in ("requested_targets", "persistence_candidates", "changes", "shortfalls", "conflicts", "spending_verified"):
         if result.get(key) != checked[key]:
             raise AdjustmentError("funding_result_details_mismatch")
     if ((result["status"] == "proposed" and checked["shortfalls"])
@@ -450,14 +543,35 @@ def validate_funding(context, envelope, result):
     return result
 
 
+def available_bucket_source(context, source, *, excluded=(), spare_minimum=None):
+    """Source-only limit while the user has not chosen a living destination yet."""
+    if source not in BUCKETS:
+        raise AdjustmentError('unsupported_category')
+    request = {'items': [], 'excluded': list(excluded)}
+    if spare_minimum is not None:
+        request['spare_minimum'] = spare_minimum
+    data = _data(context, request)
+    try:
+        _check_spending(context)
+        _check_alignment(data)
+        # 여윳돈은 따로 정하지 않아도 30% 이상을 남기는 보호금액으로 계산한다.
+        maximum = _capacity(data, data['before'], source, LIVING)
+        return {'status': 'ready' if maximum else 'infeasible', 'maximum': maximum,
+                'conflicts': [] if maximum else [{'code': 'insufficient_funds'}]}
+    except _Blocked as error:
+        return {'status': error.status, 'maximum': None, 'conflicts': [error.conflict]}
+
+
 def available_adjustment(context, category, direction, *, sources=(), destinations=(), excluded=(),
-                         allocate_group_reduction=None):
+                         allocate_group_reduction=None, spare_minimum=None):
     """Quote a verified maximum and an automatic by-amount envelope for confirmation."""
     if direction not in ("up", "down"):
         raise AdjustmentError("invalid_direction")
     envelope = {"items": [{"category": category, "amount_mode": "by", "amount": 0,
                             "direction": direction, "automatic": True}],
                 "sources": list(sources), "destinations": list(destinations), "excluded": list(excluded)}
+    if spare_minimum is not None:
+        envelope['spare_minimum'] = spare_minimum
     data = _data(context, envelope)
     capacities = {}
     try:

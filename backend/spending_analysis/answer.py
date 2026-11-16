@@ -15,6 +15,7 @@ from .result import CATEGORY_ORDER, percent
 from .scope import ONLINE, SHORT_PERIODS, excludes_fixed, filters, name as scope, label as _name, narrowed, online
 
 NAMES = {code: name for code, name, *_ in import_module("budgets.migrations.0003_seed_categories").CATEGORIES}
+EXAMPLES = ("이번 달 전체 소비 분석해줘", "지난달보다 많이 썼어?", "식비 얼마 썼어?", "예산 얼마 남았어?")
 
 TEXT = {
     "total": "{period} 소비는 {amount}이에요.",
@@ -105,10 +106,11 @@ NOTICE = {
     "classified_compare": "{name}{particle} 분류된 내역 기준으로 비교했어요. 확인 필요(이번 달 {current} · 지난달 {previous})에 따라 증감이 달라질 수 있어요.",
     "months_capped": "{n}개월까지만 볼 수 있어 {n}개월로 보여드려요.",  # 360px 폰에서도 한 줄 (기간은 카드 머리줄에)
     "retry": "불러오지 못한 항목은 잠시 후 다시 물어봐 주세요.",
+    "synced_until": "{targets} 불러온 내역이에요. 다시 불러오면 더 정확해져요.",
 }
 CHART = {
     "title": "카테고리별 소비 보기",
-    "basis": "{period} 전체 소비 {total} 기준 (카테고리 금액 ÷ 전체 소비)",
+    "basis": "{period} {scope} {total} 기준 (카테고리 금액 ÷ {scope})",
     "limited": "일부 내역 기준이에요. 빠진 내역이 있으면 금액과 비율이 달라질 수 있어요.",
     "zero": "이번 달 소비가 0원이라 나눌 항목이 없어요.",
     "none": "확인할 수 있는 내역이 없어요.",
@@ -283,19 +285,27 @@ def _current(out, result):
 
 def chart(result):
     """5번 전반 분석의 카테고리별 막대 자료 (서버 금액 · 비율 그대로). 금액 내림차순, 동률은 카테고리 순서.
-    확인 필요(UNCLASSIFIED)도 한 줄. 부분 수집이면 관측값 + 제한 표시. 예산 기간과 달라 예산 초과 표시는 넣지 않는다"""
+    확인 필요는 총액에 포함하되 하단 안내로 분리. 부분 수집이면 관측값 + 제한 표시."""
     block = result["current"]
     fig, limited = block["confirmed"] or block["observed"], block["confirmed"] is None
     out = {"title": CHART["title"], "rows": [], "limited": CHART["limited"] if limited else None, "empty": None,
            "basis": CHART["basis"].format(period=f"{result.get('period_label', '이번 달')}({span(block['period'])})",
+                                          scope="변동 소비" if result["item"].get("include_fixed") is False else "전체 소비",
                                           total=won(fig["total"]))}
     if not fig["total"]:
         out["empty"] = CHART["none"] if block["coverage"]["state"] == "none" else CHART["zero"]
         return out
+    unclassified = fig["by_category"].get("UNCLASSIFIED", 0)
+    if unclassified:
+        out["unclassified"] = f"확인 필요 {won(unclassified)}은 총액에 포함하고 주요 카테고리에서 제외했어요."
     for code in sorted(fig["by_category"], key=lambda c: (-fig["by_category"][c], CATEGORY_ORDER.index(c))):
+        if code == "UNCLASSIFIED":
+            continue
         share = fig["shares"][code]["value"]
         out["rows"].append({"code": code, "name": NAMES[code], "amount": fig["by_category"][code], "share": str(share),
                             "text": f"{NAMES[code]} {won(fig['by_category'][code])} ({share}%)"})
+    if not out["rows"]:
+        out["empty"] = "카테고리가 확인된 내역이 없어 항목별 분석은 보류했어요."
     return out
 
 
@@ -622,7 +632,8 @@ def _meter(result):
 def _view_current(results, many):
     first = results[0]
     item = first["item"]
-    head = _head(f"{span(first['current']['period'])} · {scope(item) if not many and narrowed(item) else '소비'}")
+    heading = scope(item) if not many and narrowed(item) else "변동 소비" if item.get("include_fixed") is False else "소비"
+    head = _head(f"{span(first['current']['period'])} · {heading}")
     if many:  # 여러 카테고리를 물었으면 (일부가 실패해도) 줄 목록
         rows = []
         for r in results:
@@ -935,6 +946,10 @@ def compose(results, notices=(), _alt=True):
             out.notice("fixed_excluded", amount=won(excluded), names=names)
     for amount, names in out.classified.items():
         out.notice("classified_only", name=" · ".join(names), particle=josa(names[-1], ("으로", "로")), amount=won(amount))
+    late = list(_late([r["result"] for r in results if r["ok"]], {}).values())
+    if late:  # 끝부분만 빈 일부 내역: 어디까지 불러왔는지 + [내역 다시 불러오기](화면). 일반 '일부 내역' 안내는 이걸로 대신한다
+        out.notices = [n for n in out.notices if n != NOTICE["partial"]]
+        out.notice("synced_until", targets=_late_text(late))
     if "months_capped" in notices:
         applied = next((r["item"]["months_applied"] for r in results if r["item"].get("months_applied")), None)
         if applied:
@@ -947,12 +962,19 @@ def compose(results, notices=(), _alt=True):
         reply["lead"] = out.lead
     if out.sections:
         reply["sections"] = out.sections
+    if late:
+        reply["synced_until"] = [{"kind": t["kind"], "name": t["name"], "until": t["until"].isoformat()} for t in late]
     done = [r["result"] for r in results if r["ok"]]
-    if any(r["type"] == 5 for r in done):
-        reply["chart"] = chart(next(r for r in done if r["type"] == 5))
+    overview = next((r for r in done if r["type"] == 5), None)
+    if overview:
+        reply["chart"] = chart(overview)
+        reply["examples"] = list(EXAMPLES[1:])
+        label = overview.get("period_label", "이번 달")
+        topic = "변동 소비" if overview["item"].get("include_fixed") is False else "전체 소비"
+        reply["lead"] = [f"먼저 {label} {topic}를 볼게요. 비교나 남은 예산은 아래 질문에서 이어서 확인할 수 있어요.", *reply.get("lead", [])]
     if any((r.get("confirmed") or {}).get("over") for r in done if r["type"] in (3, 4)) or over_target(results):
         reply["suggest"] = ["budget_adjust"]  # 초과 뒤 예산 조정 제안 (문구 · 선택지는 라우터 안내가 붙인다)
-    if excluded:
+    if excluded and not all(r["item"].get("include_fixed") is False for r in done):
         reply["suggest"] = [*reply.get("suggest", []), "include_fixed"]
     cycle = _alt and _cycle_results(results)
     if cycle:
@@ -960,6 +982,28 @@ def compose(results, notices=(), _alt=True):
         reply["alt"] = {"label": ALT["cycle"], "base_label": ALT["month"],
                         **{k: other[k] for k in ("lines", "notices", "view", "chart", "lead", "sections") if k in other}}
     return reply
+
+
+def _late(value, found):
+    """결과 안의 수집 판정(coverage)마다 '끝부분만 빈 대상'(recent) → found[(kind, id)] (같은 대상이면 이른 날짜)"""
+    if isinstance(value, dict):
+        for t in value.get("recent") or []:
+            key = t["kind"], t["id"]
+            found[key] = min(found.get(key, t), t, key=lambda x: x["until"])
+        for v in value.values():
+            _late(v, found)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            _late(v, found)
+    return found
+
+
+def _late_text(late):
+    """→ '카드 2장은 11월 12일까지, 계좌 1개는 11월 11일까지' (번호 없이 개수만 — 기관별 이름은 synced_until 칸에)"""
+    groups = {}
+    for t in sorted(late, key=lambda t: (t["kind"] != "card", t["until"])):
+        groups[t["kind"], t["until"]] = groups.get((t["kind"], t["until"]), 0) + 1
+    return ", ".join(f"{'카드' if k == 'card' else '계좌'} {n}{'장은' if k == 'card' else '개는'} {day(u)}까지" for (k, u), n in groups.items())
 
 
 def _short_total(result):

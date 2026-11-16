@@ -33,6 +33,20 @@ export default function TxPickPopup({ tx, categories, onSaved }) {
     }
   }
 
+  async function notSpending() {
+    setSaving(true)
+    setError(null)
+    try {
+      await apiSend(`/api/finance/transactions/${tx.id}/`, 'PATCH', { notSpending: true })
+      onSaved?.()
+      closePopup()
+      toast('소비에서 뺐어요')
+    } catch (err) {
+      setError(err.message)
+      setSaving(false)
+    }
+  }
+
   const option = (code, name) => (
     <button type="button" className="mc-lock-opt" key={code} disabled={saving} onClick={() => pick(code)}>
       <span className="mc-grow">{name}</span>
@@ -60,6 +74,8 @@ export default function TxPickPopup({ tx, categories, onSaved }) {
         </>
       )}
       <div className="mc-lock-list">{others.map((c) => option(c.code, c.name))}</div>
+      {/* 11/13: 확인 필요 거래도 회사 경비 등이면 카테고리 없이 소비에서 뺀다 */}
+      <p className="mc-note mc-tx-notspend"><button type="button" className="mc-link" disabled={saving} onClick={notSpending}>소비가 아니에요</button></p>
       {error && <p className="mc-error" role="alert">{error}</p>}
     </Popup>
   )

@@ -5,9 +5,10 @@ from fractions import Fraction
 
 CATEGORY_CODES = (
     "FOOD", "TRANSPORT_CAR", "HOUSEHOLD", "FASHION_SHOPPING", "MEDICAL_HEALTH",
-    "BEAUTY", "EDUCATION", "CULTURE_LEISURE", "ETC",
+    "BEAUTY", "EDUCATION", "CULTURE_LEISURE", "ETC", "TRAVEL_LODGING",
 )
 ALL_CODES = set(CATEGORY_CODES) | {"HOUSING_TELECOM", "TRAVEL_LODGING", "UNCLASSIFIED"}
+NON_BUDGET_CODES = {"ETC"}
 BLOCKED = {"needs_policy", "needs_data", "needs_destination", "infeasible"}
 
 
@@ -34,7 +35,7 @@ def _prepare(context, requests):
     if not amounts:
         raise AdjustmentError("empty_allocations")
     data = {"allocations": amounts}
-    for key in ("spent", "minimums", "system_floors", "locks"):
+    for key in ("spent", "minimums", "system_floors", "locks", "required_expenses"):
         data[key] = _money_map(context.get(key, {}), "invalid_" + key)
     if set(data["locks"]) - set(amounts):
         raise AdjustmentError("lock_without_allocation")
@@ -51,6 +52,10 @@ def _prepare(context, requests):
             or any(not isinstance(c, str) or c not in ALL_CODES for c in not_applicable)):
         raise AdjustmentError("invalid_ml_not_applicable")
     data["ml_not_applicable"] = set(not_applicable)
+    from .protection import usage_floors
+    usage = usage_floors(context)
+    data["usage_floors"] = None if usage is None else _money_map(
+        {code: value for code, value in usage.items() if code in amounts}, "invalid_usage_floors", amounts)
     if not isinstance(requests, list):
         raise AdjustmentError("invalid_requests")
     normalized, targets = [], {}
@@ -58,7 +63,7 @@ def _prepare(context, requests):
         if not isinstance(request, dict):
             raise AdjustmentError("invalid_request")
         c, mode, direction = request.get("category"), request.get("amount_mode"), request.get("direction")
-        if not isinstance(c, str) or c not in amounts:
+        if not isinstance(c, str) or c not in amounts or c in NON_BUDGET_CODES:
             raise AdjustmentError("unsupported_category")
         if c in targets:
             raise AdjustmentError("duplicate_request")
@@ -86,23 +91,27 @@ def _prepare(context, requests):
 
 
 def _hard_floor(data, category):
-    keys = ("minimums", "spent") if category in data["locks"] else ("minimums", "system_floors", "spent")
+    keys = ("minimums", "spent", "required_expenses") if category in data["locks"] else ("minimums", "system_floors", "spent", "required_expenses")
     return max(data[key].get(category, 0) for key in keys)
 
 
 def _floor(data, category):
+    """서버가 자동으로 줄일 때의 하한. 직접 정한 감액은 _hard_floor 만 지킨다."""
     floor = _hard_floor(data, category)
-    if category in data["ml_not_applicable"]:
-        return floor
-    if category not in data["ml_reference"]:
-        raise AdjustmentError("ml_reference_unavailable")
-    return max(floor, min(data["allocations"][category], data["ml_reference"][category]))
+    # 1~6순위는 물가 근거가 준비될 때까지 현재 배정액을 유지한다(임시 정책).
+    if data['priorities'].get(category, 99) <= 6:
+        return max(floor, data['allocations'][category])
+    usage = data.get('usage_floors')
+    # 소비 기록을 확인하지 못하면 예산이 너무 낮아지지 않게 자동으로 줄이지 않는다.
+    if usage is None:
+        return max(floor, data['allocations'][category])
+    return max(floor, usage.get(category, data['allocations'][category]))
 
 
-def _eligible(data, donor, recipient):
-    donor_rank = data["priorities"].get(donor)
-    receiver_rank = data["priorities"].get(recipient)
-    return donor_rank is None or receiver_rank is not None and donor_rank > receiver_rank
+def _eligible(data, donor, recipient, *, allow_ranked=False):
+    if donor in NON_BUDGET_CODES or recipient in NON_BUDGET_CODES:
+        return False
+    return data['priorities'].get(donor, 99) > 6
 
 
 def _groups(data, recipient):
@@ -228,9 +237,6 @@ def simulate_adjustment(context, requests, *, allocate_group_reduction=None):
             capacities, missing = {}, []
             for donor in group:
                 if amounts[donor] <= _hard_floor(data, donor):
-                    continue
-                if donor not in data["ml_not_applicable"] and donor not in data["ml_reference"]:
-                    missing.append(donor)
                     continue
                 capacity = max(amounts[donor] - _floor(data, donor), 0)
                 if capacity:

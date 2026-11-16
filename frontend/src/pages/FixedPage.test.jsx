@@ -15,6 +15,8 @@ const bill = (extra = {}) => ({ billId: 'bill-1', issuerCode: '0301', billingMon
 let host, root, serverData
 const response = () => ({ ok: true, json: async () => structuredClone(serverData) })
 const button = (text) => [...host.querySelectorAll('button')].find((b) => b.textContent === text)
+// 카드사 머리 줄 글자 (이름 · 청구월/결제일 · 청구액, 11/12 모양)
+const head = (name) => [...host.querySelectorAll('.mc-bill-head')].find((h) => h.querySelector('strong').textContent === name)?.textContent
 const amountRow = (text) => [...host.querySelectorAll('.mc-keyvalue')].find((row) => row.textContent.includes(text))?.textContent
 
 beforeEach(() => {
@@ -83,12 +85,12 @@ it('확인하지 못한 청구서 · 0원 청구서 · 묻는 청구서를 구�
   serverData.cardBills.push({ issuerCode: '0306', issuerName: '현대카드', totalAmount: 511515, confirmedFixedAmount: 33309,
     amountAfterFixed: 478206, isEstimated: null, reason: null, bills: [bill({ billId: 'h', totalAmount: 511515 })] })
   await act(() => root.render(<FixedPage />))
-  expect(host.textContent).toContain('이번 급여 주기에 낼 청구서가 아직 안 나왔어요')
+  expect(host.textContent).toContain('이번 주기 청구서가 아직 안 나왔어요')
   expect(host.textContent).not.toContain('청구서 확인 필요')
-  expect(host.textContent).toContain('다른카드 · 11월 청구액 0원')
+  expect(head('다른카드')).toBe('다른카드11월 청구 · 결제일 11.050원')
   expect(host.textContent).toContain('낼 금액이 없어요')
-  expect(host.textContent).toContain('현대카드 · 11월 청구액 511,515원')
-  expect(host.textContent).toContain('이 카드값은 얼마나 납부하셨나요?')
+  expect(head('현대카드')).toBe('현대카드11월 청구 · 결제일 11.05511,515원')
+  expect(host.textContent).toContain('이 카드값, 얼마나 냈나요?')
   expect(host.textContent).not.toContain('478,206원')          // 고정비 제외 참고 금액 안 보임
   expect(host.textContent).not.toContain('확인된 납부액')
   expect(host.textContent).not.toContain('실제 예산에서는')
@@ -99,6 +101,39 @@ it('카드값을 확인하지 않아도 다음 단계로 갈 수 있다', async 
   serverData.items = []
   serverData.summary = { confirmedMonthlyTotal: 0, suggestedCount: 0 }
   await act(() => root.render(<FixedPage />))
-  expect(host.textContent).toContain('이 카드값은 얼마나 납부하셨나요?')
+  expect(host.textContent).toContain('이 카드값, 얼마나 냈나요?')
   expect(button('계속하기').disabled).toBe(false)
+})
+
+it('카드 내역을 불러오는 중이면 카드사를 알리고 다음을 막았다가, 다 불러오면 다시 읽고 풀어 준다 (11/12)', async () => {
+  serverData.cardLoading = { taskId: 'task-1', institutions: ['국민카드'] }
+  let finish
+  const done = new Promise((r) => { finish = r })
+  vi.stubGlobal('fetch', vi.fn(async (url) => {
+    if (String(url).startsWith('/api/tasks/')) {
+      await done
+      serverData.cardLoading = null
+      return { ok: true, json: async () => ({ status: 'succeeded', result: {} }) }
+    }
+    return response()
+  }))
+  await act(() => root.render(<FixedPage />))
+  expect(host.querySelector('[role=status]').textContent).toContain('국민카드 내역 불러오는 중')
+  const next = button('카드 내역 불러오는 중…')
+  expect(next.disabled).toBe(true)
+  expect(host.textContent).not.toContain('자동으로 찾은 고정지출이 없어요')
+  await act(async () => { finish(); await new Promise((r) => setTimeout(r, 0)) })
+  expect(host.querySelector('[role=status]')).toBeNull()
+  expect(button('확인하고 다음').disabled).toBe(false)
+})
+
+it('연결한 카드가 없으면 카드 청구서 카드를 숨기고, [카드 관리] 링크는 없다 (11/12)', async () => {
+  await act(() => root.render(<FixedPage />))
+  expect(host.textContent).toContain('카드 청구서')
+  expect(button('카드 관리')).toBeUndefined()
+  await act(() => root.unmount())
+  root = createRoot(host)
+  serverData.cardBills = []
+  await act(() => root.render(<FixedPage />))
+  expect(host.textContent).not.toContain('카드 청구서')
 })

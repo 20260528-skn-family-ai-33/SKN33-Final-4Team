@@ -159,6 +159,18 @@ class RecoveryPlanAPITest(TestCase):
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.savings_floor, 610000)
 
+    def test_custom_cushion_goal_decides_recovery_cushion_floor(self):
+        """PR #120 리뷰 P2: 분배 실패 복구도 지킬 돈 화면과 같은 쿠션 목표(직접 정한 금액)로 적립 필수 여부를 판단한다"""
+        from .design_recovery_plans import finances
+        source, _ = self.failure()
+        handoff = source.result['_design_handoff']
+        data = finances(self.user, handoff, fixtures.TODAY)
+        self.assertEqual(data['floors']['CUSHION_MONTHLY'], 0)  # 잔액 1,200만 ≥ 기본 목표(월급 × 3)
+        self.profile.cushion_goal_amount = 15000000
+        self.profile.save(update_fields=['cushion_goal_amount'])
+        data = finances(self.user, handoff, fixtures.TODAY)
+        self.assertEqual(data['floors']['CUSHION_MONTHLY'], 1)
+
     def test_extended_plan_and_cushion_protection(self):
         _, _, proposal = self.preview(1500001, funding='recovery_extended')
         saving = proposal.items.get(bucket='savings').allocated_amount
@@ -198,15 +210,16 @@ class RecoveryPlanAPITest(TestCase):
         self.assertFalse(Budget.objects.exists())
         self.assertEqual(self.protected(), before)
 
-    def test_unknown_savings_source_is_not_used(self):
+    def test_savings_budget_does_not_require_a_transfer_account(self):
         self.saving.from_account = None
         self.saving.save(update_fields=['from_account'])
         _, entered = self.failure(1300001)
         response = self.pick(entered, 'recovery_cycle')
         response = self.pick(response.json(), 'recovery_savings')
         self.assertEqual(response.status_code, 200)
-        self.assertFalse(response.json()['messages'][-1]['content']['budgetAdjustment']['canApprove'])
-        self.assertFalse(Budget.objects.exists())
+        self.assertTrue(response.json()['messages'][-1]['content']['budgetAdjustment']['canApprove'])
+        proposal = Budget.objects.get(status='validated')
+        self.assertGreaterEqual(proposal.items.get(bucket='savings').allocated_amount, self.saving.amount)
 
     def test_model_failure_does_not_save_unchecked_money(self):
         _, entered = self.failure()

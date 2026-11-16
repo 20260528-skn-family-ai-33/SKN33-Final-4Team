@@ -3,7 +3,7 @@
 ## main(#89 병합본) 기준 이관 (2026-11-10)
 
 - 기준: main `d6b7e2b`(#89 squash, 내용은 `46e6ebd`와 같음). 조정·분배 실패 복구 변경만 옮겼고, 오래된 작업 트리의 공용 파일(`salary.py`, `users/models.py`, 카드 파일, 마이그레이션 0006·0007·0011)은 main 버전을 그대로 쓴다.
-- 동의: 원문은 `users/consent_documents.py` 한 곳에서 관리한다. 조정 문서 `budget_adjust_ai_v1`·`budget_adjust_ai_health_v1`를 추가하고 `budgets/` 아래 중복 문서 파일은 지웠다. 서버 구현은 `budgets/ai_consent.py` 하나(설계·조정 공통, #89 응답 계약 + `canRevoke`), `design_consent.py`는 설계용 얇은 연결만 남긴다. 기능 OFF 시 새 동의 거부 코드는 #89와 같은 409 `budget_ai_unavailable`.
+- 동의: 원문은 `users/consent_documents.py` 한 곳에서 관리한다. 조정 문서 `budget_adjust_ai_v1`·`budget_adjust_ai_health_v1`를 추가하고(11/12 v2: 내용 같고 `[선택]`→`[필수]`. 동의 없이는 조정 챗봇을 못 쓰므로. v1 기록은 ARCHIVE 에 남김) `budgets/` 아래 중복 문서 파일은 지웠다. 서버 구현은 `budgets/ai_consent.py` 하나(설계·조정 공통, #89 응답 계약 + `canRevoke`), `design_consent.py`는 설계용 얇은 연결만 남긴다. 기능 OFF 시 새 동의 거부 코드는 #89와 같은 409 `budget_ai_unavailable`.
 - 조정 동의 v1 문구(아직 배포 전): 두 동의가 모두 있어야 외부 조정 대화를 쓸 수 있음, 일반 채팅의 분야 판단을 위해 동의 확인 전에도 입력 문장이 전송될 수 있음을 반영했다.
 - 화면: 설계 동의는 #89의 `BudgetAIConsent` 그대로 두고, 채팅의 조정 동의 컴포넌트는 `BudgetAdjustConsent.jsx`로 이름을 바꿨다. 대소문자만 다른 `BudgetAiConsent.jsx`/`BudgetAIConsent.jsx`가 Windows에서 같은 파일로 충돌하기 때문이다.
 - `approvedBudget`은 #89의 `spareTransfer`·`spare`와 저축·월 쿠션 승인액·이동액을 한 객체로 합쳤다.
