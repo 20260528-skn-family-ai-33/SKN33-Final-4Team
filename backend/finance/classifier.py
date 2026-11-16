@@ -204,6 +204,16 @@ BRAND_CATEGORIES = {
 MIXED_SERVICE_NAMES = {"apple", "appleservices"}
 MIXED_SERVICE_REASON = "애플 결제는 음악·저장공간·앱이 같은 이름으로 찍혀서 무엇에 썼는지 골라 주세요."
 
+
+def is_mixed_service(name):
+    """여러 서비스가 같은 이름으로 결제되는 곳 (애플). 이름만으로 정하지 않고 묻는다"""
+    return common.normalize_name(name or "") in MIXED_SERVICE_NAMES
+
+
+def mixed_service_candidates(past):
+    """여러 서비스 이름의 후보: 과거 선택(앞으로도 적용 아님)이 있으면 첫 후보로, 그다음 문화·여가"""
+    return [(c, None) for c in dict.fromkeys((past, "CULTURE_LEISURE")) if c]
+
 # ----- 5. 검색 + Jev -----
 # Jev 선택지 = 10개 + 기타 + 판단 보류 (10/30 결정). 설명은 분류 기준 문서 2장
 UNKNOWN = "UNKNOWN"
@@ -648,10 +658,8 @@ def classify(user, txs):
         elif is_pg_name(name):
             # 결제대행사만 찍힘 (11/16): 어느 가게인지 몰라 SVM · 검색 없이 묻는다. 과거 선택은 후보로 ('앞으로도 적용'이면 위에서 자동)
             _review(tx, [(code, None)] if code else [], PG_REASON, Tx.ClassificationSource.RULE if code else None)
-        elif common.normalize_name(name or "") in MIXED_SERVICE_NAMES:
-            # 과거 선택(앞으로도 적용 아님)이 있으면 첫 후보로
-            candidates = [c for c in dict.fromkeys((code, "CULTURE_LEISURE")) if c]
-            _review(tx, [(c, None) for c in candidates], MIXED_SERVICE_REASON, Tx.ClassificationSource.RULE)
+        elif is_mixed_service(name):
+            _review(tx, mixed_service_candidates(code), MIXED_SERVICE_REASON, Tx.ClassificationSource.RULE)
         elif name and (rule := rule_category(name)):
             _apply(tx, rule, Tx.ClassificationSource.RULE, None)
         elif name and (answer := _card_answer(tx, card_answers)):
@@ -770,10 +778,13 @@ def _name_action(name, past, judged, cut=False):
     rule = {"step": "rule"}
     if code := retail_category(name):
         return {"apply": (code, Tx.ClassificationSource.RULE, None), "record": rule, "open": False}
+    # classify() 의 첫 이름(A)과 같은 보호 규칙을 같은 순서로 (11/16 PR 리뷰: B 에 여러 서비스 규칙이 빠져 APPLE SERVICES 가 자동 분류됨)
     for check, reason in ((is_multi_item, MULTI_ITEM_REASON), (is_pay_charge, PAY_CHARGE_REASON), (is_pg_name, PG_REASON)):
         if check(name):
             return _review_action([(past, None)] if past else [], reason, Tx.ClassificationSource.RULE if past else None,
                                   rule, open_=reason == PG_REASON)
+    if is_mixed_service(name):
+        return _review_action(mixed_service_candidates(past), MIXED_SERVICE_REASON, Tx.ClassificationSource.RULE, rule, open_=False)
     if code := rule_category(name):
         return {"apply": (code, Tx.ClassificationSource.RULE, None), "record": rule, "open": False}
     if is_unknown_store(name):

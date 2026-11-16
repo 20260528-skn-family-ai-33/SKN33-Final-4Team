@@ -474,6 +474,18 @@ class ClassifyTest(TestCase):
         self.assertEqual(tx.field_states["classifier"], {"step": "search_jev", "used": "A", "other": {"step": "rule"}})
         self.judge.assert_called_once_with("새봄")
 
+    def test_b_keeps_the_same_review_rules_as_a(self, predict):
+        # 11/16 PR 리뷰: A 를 못 정해 B 로 볼 때도 단독 이름과 같은 보호 규칙. 'APPLE SERVICES' 는 SVM 이 확신해도 묻는다
+        predict.side_effect = lambda names: [[("CULTURE_LEISURE", 0.99)] if "APPLE" in n else [("FOOD", 0.4)] for n in names]
+        self.judge.return_value = {"review": ([("FOOD", 0.2)], classifier.NOT_FOUND_REASON), "record": {"step": "search_jev"}}
+        alone, paired = self.run_classify(self.tx("APPLE SERVICES"), self.tx("낯선상호 - APPLE SERVICES"))
+        for tx in (alone, paired):
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.MIXED_SERVICE_REASON), tx.merchant_name)
+            self.assertEqual(tx.suggestion_candidates, [{"category": "CULTURE_LEISURE", "confidence": None}])
+        self.assertEqual(paired.field_states["classifier"]["used"], "B")
+        self.judge.assert_called_once_with("낯선상호")
+
     def test_only_the_last_name_is_judged_as_cut(self, predict):
         # 11/16: 카드사가 자른 건 맨 끝 이름뿐 → 결제 경로 뒤의 B, 'A - B' 의 B 만 cut
         predict.side_effect = lambda names: [[("FOOD", 0.4)] for _ in names]

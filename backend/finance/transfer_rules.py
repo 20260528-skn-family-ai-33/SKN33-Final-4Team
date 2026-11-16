@@ -257,13 +257,16 @@ def link_same_purchases(user):
     같은 날 · 같은 금액 · 같은 이름이 양쪽 다 한 건일 때만 잇는다. 금액 · 날짜만 같은 거래는 다른 결제일 수 있어서다.
     신용카드는 결제 때 출금이 없어 보지 않는다. CODEF 카드 종류는 카드사마다 달라(NH 는 '본인') 카드 이름의 '체크'도 본다.
     양쪽 저장 순서가 달라도 되게 이미 이은 거래까지 모두 다시 본다. 뒤늦게 같은 출금이 들어와 모호해지면 규칙이 이은 연결을 푼다.
-    사용자가 확정했거나 납부에 붙은 출금은 바꾸지 않는다"""
+    사용자가 확정했거나 납부에 붙은 출금은 바꾸지 않는다.
+    적요 규칙이 소비로 바꾼 출금(mark_merchant_transfers)도 찾는다: 계좌 출금이 카드 승인보다 먼저 들어오면 출금이 먼저 소비가 돼서
+    카드 승인과 이어지지 못하고 한 결제를 두 번 셌다 (11/16 PR 리뷰). 이으면 출금은 원래 이체로 되돌린다 (소비는 카드 줄이 맡는다)"""
     approvals = Tx.objects.filter(
         Q(card__name__contains="체크") | Q(card__card_type__contains="체크"),
         user=user, source_kind="card", transaction_type=Type.SPENDING, is_canceled=False,
     )
     withdrawals = Tx.objects.filter(
-        user=user, source_kind="bank", direction="out", transaction_type=Type.TRANSFER, is_canceled=False,
+        Q(transaction_type=Type.TRANSFER) | Q(transaction_type=Type.SPENDING, **{f"field_states__{CONVERTED_BY_MEMO}": True}),
+        user=user, source_kind="bank", direction="out", is_canceled=False,
     ).exclude(confirmation_state=Tx.ConfirmationState.CONFIRMED).exclude(
         Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk"))),
     )
@@ -275,6 +278,7 @@ def link_same_purchases(user):
     for key, found in cards.items():
         if key[2] and len(found) == 1 and len(banks[key]) == 1:
             link(user, found[0], banks[key][0], Relation.SAME_PURCHASE, found[0].amount)
+            restore_memo_transfer(banks[key][0])
         else:
             TransactionLink.objects.filter(
                 relation_type=Relation.SAME_PURCHASE, confirmation_state=LINK_STATE,
@@ -300,6 +304,23 @@ def link_same_purchases(user):
         same_banks = [tx for tx in banks_by[key] if same_store(tx.source_description, card.merchant_name)]
         if (card.occurred_on, card.amount) != key or same_cards != [card] or same_banks != [bank]:
             row.delete()
+
+
+def restore_memo_transfer(tx):
+    """적요 규칙이 소비로 바꾼 출금을 원래 이체로 되돌린다 (같은 구매로 이어졌을 때, 11/16 PR 리뷰).
+    분류 결과도 지운다. 사용자가 [이체로 되돌리기]를 누른 것과 달리 '이체 유지' 표시(KEPT_TRANSFER)는 남기지 않는다"""
+    states = dict(tx.field_states or {})
+    if tx.transaction_type != Type.SPENDING or not states.pop(CONVERTED_BY_MEMO, False):
+        return
+    states.pop(ORIGINAL_TYPE, None)
+    states.pop("classifier", None)  # 분류 근거 (classifier.classify)
+    fields = {"transaction_type": Type.TRANSFER, "confirmed_category_id": "UNCLASSIFIED",
+              "confirmation_state": Tx.ConfirmationState.NEEDS_REVIEW, "classification_source": None,
+              "suggested_category": None, "suggestion_source": None, "suggestion_confidence": None,
+              "suggestion_candidates": None, "suggestion_reason": None}
+    if states.pop(MERCHANT_FROM_MEMO, False):
+        fields["merchant_name"] = None
+    Tx.objects.filter(pk=tx.pk, transaction_type=Type.SPENDING).update(field_states=states, **fields)
 
 
 def merchant_evidence(user, description):
@@ -330,10 +351,20 @@ def mark_merchant_transfers(user, txs):
             .exclude(classification_source=Tx.ClassificationSource.USER)
             .exclude(Exists(linked)).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk")))))
     skip = (CARD_CANDIDATE, LOAN_CANDIDATE, OWN_REVIEW, OWN_RECHECK, KEPT_TRANSFER)
+    # 같은 날 · 같은 금액 · 같은 이름의 체크카드 승인이 있는데 이어지지 않은 출금(짝이 모호함)은 소비로 바꾸지 않는다.
+    # 바꾸면 카드 승인과 함께 두 번 센다 (11/16 PR 리뷰). 짝이 정해지면 link_same_purchases 가 잇는다
+    check_cards = {
+        (day, amount, squeeze(name)) for day, amount, name in Tx.objects.filter(
+            Q(card__name__contains="체크") | Q(card__card_type__contains="체크"),
+            user=user, source_kind="card", transaction_type=Type.SPENDING, is_canceled=False,
+        ).values_list("occurred_on", "amount", "merchant_name")
+    }
     for tx in rows:
         states = tx.field_states or {}
         description = (tx.source_description or "").strip()
         if not description or any(key in states for key in skip) or not merchant_evidence(user, description):
+            continue
+        if (tx.occurred_on, tx.amount, squeeze(description)) in check_cards:
             continue
         states = {**states, ORIGINAL_TYPE: Type.TRANSFER, CONVERTED_BY_MEMO: True}
         fields = {"transaction_type": Type.SPENDING, "confirmed_category_id": "UNCLASSIFIED",

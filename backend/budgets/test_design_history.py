@@ -169,6 +169,25 @@ class BudgetHistoryEvidenceTest(TestCase):
                 self.assertEqual(decision.snapshot_amount, 2500000)
                 tx.delete()
 
+    def test_changed_salary_blocks_b_even_under_an_ordinary_name(self):
+        # 11/16 PR 리뷰: 일반 입금은 B안을 막지 않지만, 확인한 월급이 확인 뒤 바뀌면 월급 근거가 흔들려 막는다
+        from .models import SalaryDecision
+        from .salary import confirmation_snapshot
+
+        deposits = []
+        for month in (8, 9, 10):
+            tx = self.tx(direction='in', transaction_type='income', amount=2500000, occurred_on=date(2026, month, 25),
+                source_description='합성 급여', confirmed_category_id='UNCLASSIFIED', confirmation_state='needs_review')
+            SalaryDecision.objects.create(user=self.user, transaction=tx, state='confirmed', pay_cycle_on=tx.occurred_on,
+                **confirmation_snapshot(tx))
+            deposits.append(tx)
+        self.assertEqual(self.selected()[0]['plan'], 'b')
+        self.Tx.objects.filter(pk=deposits[0].pk).update(amount=2500001)
+        selection, records = self.selected()
+        self.assertEqual(selection['plan'], 'a')
+        self.assertEqual(records['2026-08']['normalization_checks']['refunds'], 'unknown')
+        self.assertEqual(records['2026-10']['normalization_checks'], CLEAN)  # 바뀐 달과 그 이후는 그대로
+
     def test_matching_amount_unconfirmed_inflow_is_not_excused_by_salary(self):
         self.salary()
         self.tx(direction='in', transaction_type='income', amount=2500000,

@@ -42,12 +42,7 @@ class Command(BaseCommand):
             self.stdout.write('미리보기: DB에 쓰지 않았어요. DEMO_LOGIN_PASSWORD 를 정하고 --apply 로 만드세요.')
             return
 
-        User = get_user_model()
-        if options['reset']:
-            deleted = ps.delete_persona(persona)
-            self.stdout.write(f'기존 시연 계정 삭제: 행 {deleted}개')
-        if User.objects.filter(email=cfg['email']).exists():
-            raise CommandError('같은 이메일의 계정이 이미 있어요. 다시 만들려면 --reset 을 붙이세요.')
+        # 비밀번호를 먼저 확인한다: 지운 뒤에 실패하면 기존 시연 계정만 없어진다 (11/16 PR 리뷰)
         password = os.environ.get('DEMO_LOGIN_PASSWORD')
         if not password:
             raise CommandError('환경변수 DEMO_LOGIN_PASSWORD 에 로그인 비밀번호를 넣어 주세요.')
@@ -55,9 +50,15 @@ class Command(BaseCommand):
             validate_password(password)
         except ValidationError as exc:
             raise CommandError(' '.join(exc.messages)) from exc
+        User = get_user_model()
+        if not options['reset'] and User.objects.filter(email=cfg['email']).exists():
+            raise CommandError('같은 이메일의 계정이 이미 있어요. 다시 만들려면 --reset 을 붙이세요.')
 
         log = lambda text: self.stdout.write('  · ' + text)
-        with transaction.atomic():
+        with transaction.atomic():  # 지우기와 새로 넣기를 한 번에: 넣다가 실패하면 지운 계정도 되돌린다
+            if options['reset']:
+                deleted = ps.delete_persona(persona)
+                self.stdout.write(f'기존 시연 계정 삭제: 행 {deleted}개')
             user, txs = ps.insert_connected_state(persona, as_of, password, real_classify=options['real_classify'])
         log(f'1. 연결 상태 저장: 거래 {len(txs)}행 (체크카드 통장 중복 포함)')
         try:

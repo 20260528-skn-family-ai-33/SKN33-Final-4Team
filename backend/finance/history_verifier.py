@@ -76,9 +76,14 @@ def _report_for_months(user, months, *, use_confirmed_salary):
             Q(from_transaction__user=user) | Q(to_transaction__user=user),
             relation_type__in=["SAME_PURCHASE", "CANCELLATION"],
         ).order_by("pk"))
-        confirmed_salary = {}
+        confirmed_salary, claimed_salary = {}, set()
         if use_confirmed_salary:
+            from budgets.models import SalaryDecision
             from budgets.salary import known_deposits
+            # 사용자가 월급이라고 확인한(또는 재확인 중인) 입금. 아래 confirmed_salary 에 없으면 확인 뒤 거래가 바뀐 것
+            claimed_salary = set(SalaryDecision.objects.filter(
+                user=user, transaction__user=user, state__in=["confirmed", "recheck"],
+            ).values_list("transaction_id", flat=True))
             confirmed_salary = {
                 pk: (amount, on, description, account_id)
                 for pk, amount, on, description, account_id in known_deposits(user).filter(
@@ -253,6 +258,11 @@ def _report_for_months(user, months, *, use_confirmed_salary):
             # Compare the rows already inspected too; a changed row must not inherit another snapshot's proof.
             if (tx.source_kind == "bank" and tx.transaction_type == "income"
                     and confirmed_salary.get(tx.pk) == (tx.amount, tx.occurred_on, tx.source_description, tx.account_id)):
+                continue
+            if tx.pk in claimed_salary:
+                # 확인한 월급의 금액 · 날짜 · 적요 · 계좌가 확인 때와 달라짐: 예산의 월급 근거가 흔들려 B안을 막는다
+                # (11/16 PR 리뷰. 일반 입금은 막지 않지만, 사용자 확인이 더는 이 거래를 증명하지 못하는 경우는 다르다)
+                mark(preceding(tx), "refunds", "unknown", "changed_salary_evidence", tx.amount)
                 continue
             # 11/16 결정: B안의 '쓴 돈'은 서비스 전체(홈 · 예산 사용액 · 소비 분석)와 같은 기준이다
             #   = 결제 − 서비스가 아는 취소 · 환불(취소 상태 · CANCELLATION 연결, 위에서 검사).

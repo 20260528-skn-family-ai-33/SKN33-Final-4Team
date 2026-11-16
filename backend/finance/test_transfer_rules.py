@@ -381,6 +381,54 @@ class MerchantTransferTest(Fixture):
         self.assertTrue(TransactionLink.objects.filter(relation_type="SAME_PURCHASE", to_transaction=withdrawal).exists())
         self.assertEqual(withdrawal.transaction_type, "transfer")
 
+    def spent_total(self):
+        self.client.force_login(self.user)
+        return self.client.get(URL + "?from=2026-11-01&to=2026-11-30").json()["summary"]["spentTotal"]
+
+    def test_withdrawal_first_then_check_card_is_counted_once(self):
+        # 11/16 PR 리뷰: 출금이 먼저 들어와 소비가 된 뒤 같은 체크카드 승인이 오면 이어서 출금을 이체로 되돌린다
+        self.card.name = "테스트 체크카드"
+        self.card.save(update_fields=["name"])
+        withdrawal = self.bank(self.a, "out", desc="GS25 역삼점", amount=30_000)
+        self.run_on(withdrawal)
+        self.classify(withdrawal)
+        self.assertEqual((withdrawal.transaction_type, withdrawal.confirmed_category_id), ("spending", "FOOD"))
+        approval = self.approval("A1", day=date(2026, 11, 3), merchant_name="GS25 역삼점")
+        self.run_on(approval)
+        withdrawal.refresh_from_db()
+        self.assertTrue(TransactionLink.objects.filter(relation_type="SAME_PURCHASE", to_transaction=withdrawal).exists())
+        self.assertEqual((withdrawal.transaction_type, withdrawal.classification_source, withdrawal.merchant_name),
+                         ("transfer", None, None))
+        self.assertIsNone(withdrawal.suggested_category_id)
+        for key in (CONVERTED_BY_MEMO, "original_transaction_type", "merchant_from_memo", "classifier", KEPT_TRANSFER):
+            self.assertNotIn(key, withdrawal.field_states)
+        self.assertEqual(self.spent_total(), 30_000)
+        self.run_on(approval, withdrawal)  # 다시 처리해도 그대로
+        self.assertEqual(self.spent_total(), 30_000)
+
+    def test_check_card_first_then_withdrawal_is_counted_once(self):
+        self.card.name = "테스트 체크카드"
+        self.card.save(update_fields=["name"])
+        approval = self.approval("A1", day=date(2026, 11, 3), merchant_name="GS25 역삼점")
+        self.run_on(approval)
+        withdrawal = self.bank(self.a, "out", desc="GS25 역삼점", amount=30_000)
+        self.run_on(withdrawal)
+        self.assertEqual(withdrawal.transaction_type, "transfer")
+        self.assertTrue(TransactionLink.objects.filter(relation_type="SAME_PURCHASE", to_transaction=withdrawal).exists())
+        self.assertEqual(self.spent_total(), 30_000)
+
+    def test_withdrawal_that_may_be_a_check_card_payment_stays_transfer(self):
+        # 같은 체크카드 승인 한 건에 같은 출금이 두 건이면 어느 쪽인지 몰라 잇지 않는다 → 출금을 소비로 바꾸지도 않는다
+        self.card.name = "테스트 체크카드"
+        self.card.save(update_fields=["name"])
+        approval = self.approval("A1", day=date(2026, 11, 3), merchant_name="GS25 역삼점")
+        first = self.bank(self.a, "out", desc="GS25 역삼점", amount=30_000, occurred_time=time(1, 0))
+        second = self.bank(self.b, "out", desc="GS25 역삼점", amount=30_000, occurred_time=time(2, 0))
+        self.run_on(approval, first, second)
+        self.assertFalse(TransactionLink.objects.filter(relation_type="SAME_PURCHASE").exists())
+        self.assertEqual((first.transaction_type, second.transaction_type), ("transfer", "transfer"))
+        self.assertEqual(self.spent_total(), 30_000)
+
     def test_running_twice_gives_same_result(self):
         tx = self.bank(self.a, "out", desc="모바일티머니충전", amount=20_000)
         self.run_on(tx)
