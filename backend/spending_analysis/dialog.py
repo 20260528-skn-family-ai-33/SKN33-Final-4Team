@@ -69,6 +69,17 @@ def _save_pending(store, conversation_id, value):
     _save(store, conversation_id, pending=value)
 
 
+def ask_analysis(store, conversation_id, decision, question):
+    request = decision.request or decision.interpretation
+    updates = {"categories": (question["category"],), "target": "overview", "explain": None, "explain_kind": None,
+               "refers_to": None, "followup": None, "confirm": None}
+    if question.get("slot"):
+        updates["time_slot"] = (question["slot"],)
+    updates["analysis_activity" if question["kind"] == "activity" else "analysis_planned"] = None
+    _save_pending(store, conversation_id, {"request": asdict(replace(request, **updates)), "text": question["text"],
+                  "intent": AGENT, "asking": "analysis_detail", "ask_about": (), "options": question["options"]})
+
+
 def _word(text):
     return " ".join(text.split())
 
@@ -172,6 +183,8 @@ def step(store, conversation_id, text, complete, *, mode="continue", chosen=Fals
     if not interp.mine:
         # 다른 분야 · 복합 의도 · 범위 밖 · 불분명 → 라우터가 다시 분류 (목적지는 정하지 않는다)
         return Decision("not_mine", reason="other_domain", interpretation=interp, agent=AGENT)
+    if not asked or asked["asking"] != "analysis_detail" or interp.followup != "answer":
+        interp = replace(interp, analysis_activity=None, analysis_planned=None)
     if (suggested_category and not asked and interp.target is not None and not interp.categories
             and not interp.all_categories and interp.refers_to in ("previous", "unclear")):
         interp = replace(interp, categories=(suggested_category,), refers_to=None)  # 가리킨 대상 = 조정 중이던 카테고리
@@ -413,6 +426,8 @@ def conditions(interp):
            "months": interp.months, "categories": list(interp.categories)}
     out = {**out, "include_current": True} if interp.include_current else out  # 이번 달 포함일 때만 (기존 기록 모양 그대로)
     out = {**out, "payment": interp.payment} if interp.payment else out  # 결제 수단을 말했을 때만
+    if interp.analysis_scope:
+        out["analysis_scope"] = interp.analysis_scope
     # 범용 조회 조건 · 계산은 말했을 때만 (기존 기록 모양 그대로)
     return {**out, **{k: list(v) if isinstance(v, tuple) else v for k in (*QUERY_FILTERS, *QUERY_CALC, *PERIOD_GROUP[4:])
                       if (v := getattr(interp, k)) not in (None, ())}}
@@ -441,6 +456,8 @@ def overlay(top, base):
         fields["categories"] = tuple(base["categories"])
     if top.payment is None and base.get("payment"):  # 카드 결제만 → 후속 질문도 카드 결제만 ("그럼 식비는?")
         fields["payment"] = base["payment"]
+    if top.analysis_scope is None and base.get("analysis_scope"):
+        fields["analysis_scope"] = base["analysis_scope"]
     for k in (*QUERY_FILTERS, *QUERY_CALC):  # 주말 · 밤 · 건수 · 가게별 … 도 말하지 않았으면 이어받는다 ("그럼 교통비는?")
         if getattr(top, k) in (None, ()) and base.get(k) not in (None, []):
             fields[k] = tuple(base[k]) if isinstance(base[k], list) else base[k]
@@ -448,7 +465,7 @@ def overlay(top, base):
 
 
 CHOICE_ASKS = ("period_choice", "category_choice", "include_choice")
-LABELED = CHOICE_ASKS + ("fallback_scope", "self_instead", "spend_instead")  # 선택지 이름을 그대로 보내면 LLM 없이 답으로 본다
+LABELED = CHOICE_ASKS + ("fallback_scope", "self_instead", "spend_instead", "analysis_detail")  # 선택지 이름을 그대로 보내면 LLM 없이 답으로 본다
 _NONE = {"period": None, "compare": None, "months": None, "include_current": None, "month": None, "date_from": None,
          "date_to": None, "period_said": None, "compare_month": None}
 VIEWS = {  # 기간 묶음 하나를 고르면 그 묶음 칸만 바꾼다 (최근 N개월의 개월 수 · 이번 달 포함은 말한 값 그대로)
@@ -788,6 +805,12 @@ def _decide(interp, text, last=None, merchant=None, today=None):
 
 def merge(request, answer, asking, options):
     """대기 중인 소비 요청 + 후속 답변 → 합친 Interpretation. 답이 질문에 맞지 않으면 None (거절은 step 이 먼저 처리)"""
+    if asking == "analysis_detail":
+        for field in ("analysis_activity", "analysis_planned"):
+            value = getattr(answer, field)
+            if value is not None and any(o.get("set", {}).get(field) == value for o in options):
+                return replace(request, **{field: value}, refers_to=None)
+        return None
     if asking == "months" and answer.months is not None:
         return replace(request, months=answer.months, period="recent")
     if asking == "category":

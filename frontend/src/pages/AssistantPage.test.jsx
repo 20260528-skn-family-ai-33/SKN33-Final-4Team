@@ -48,6 +48,20 @@ async function submit(text) {
   await act(() => input().form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 }
 
+it('전체 분석 뒤 예시를 누르면 같은 대화에서 새 질문으로 전송한다', async () => {
+  const question = '지난달보다 많이 썼어?'
+  apiSend.mockResolvedValueOnce(reply('router', 1, '아무거나 분석해줘', {
+    result: true, lines: ['이번 달 소비예요.'], examples: [question], agent: 'spending', turn: 1,
+  })).mockResolvedValueOnce(reply('router', 2, question, { result: true, lines: ['지난달 비교예요.'], agent: 'spending', turn: 2 }))
+  await mount()
+  await submit('아무거나 분석해줘')
+  expect(host.querySelector('.mc-asst-route')).toBeNull()
+  await click(button(question))
+  expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', text: question })
+  expect(button(question).disabled).toBe(true)
+  expect(host.textContent).toContain('지난달 비교예요.')
+})
+
 describe.each(['legacy', 'router'])('%s 엔진 메시지 복구', (engine) => {
   it('첫 메시지를 저장한 뒤 응답만 유실돼도 같은 요청으로 복구하고 다음 메시지만 새 키를 쓴다', async () => {
     useApi.mockReturnValue({ data: info(engine), error: null })

@@ -15,6 +15,7 @@ from .result import CATEGORY_ORDER, percent
 from .scope import ONLINE, SHORT_PERIODS, excludes_fixed, filters, name as scope, label as _name, narrowed, online
 
 NAMES = {code: name for code, name, *_ in import_module("budgets.migrations.0003_seed_categories").CATEGORIES}
+EXAMPLES = ("이번 달 전체 소비 분석해줘", "지난달보다 많이 썼어?", "식비 얼마 썼어?", "예산 얼마 남았어?")
 
 TEXT = {
     "total": "{period} 소비는 {amount}이에요.",
@@ -108,7 +109,7 @@ NOTICE = {
 }
 CHART = {
     "title": "카테고리별 소비 보기",
-    "basis": "{period} 전체 소비 {total} 기준 (카테고리 금액 ÷ 전체 소비)",
+    "basis": "{period} {scope} {total} 기준 (카테고리 금액 ÷ {scope})",
     "limited": "일부 내역 기준이에요. 빠진 내역이 있으면 금액과 비율이 달라질 수 있어요.",
     "zero": "이번 달 소비가 0원이라 나눌 항목이 없어요.",
     "none": "확인할 수 있는 내역이 없어요.",
@@ -283,19 +284,27 @@ def _current(out, result):
 
 def chart(result):
     """5번 전반 분석의 카테고리별 막대 자료 (서버 금액 · 비율 그대로). 금액 내림차순, 동률은 카테고리 순서.
-    확인 필요(UNCLASSIFIED)도 한 줄. 부분 수집이면 관측값 + 제한 표시. 예산 기간과 달라 예산 초과 표시는 넣지 않는다"""
+    확인 필요는 총액에 포함하되 하단 안내로 분리. 부분 수집이면 관측값 + 제한 표시."""
     block = result["current"]
     fig, limited = block["confirmed"] or block["observed"], block["confirmed"] is None
     out = {"title": CHART["title"], "rows": [], "limited": CHART["limited"] if limited else None, "empty": None,
            "basis": CHART["basis"].format(period=f"{result.get('period_label', '이번 달')}({span(block['period'])})",
+                                          scope="변동 소비" if result["item"].get("include_fixed") is False else "전체 소비",
                                           total=won(fig["total"]))}
     if not fig["total"]:
         out["empty"] = CHART["none"] if block["coverage"]["state"] == "none" else CHART["zero"]
         return out
+    unclassified = fig["by_category"].get("UNCLASSIFIED", 0)
+    if unclassified:
+        out["unclassified"] = f"확인 필요 {won(unclassified)}은 총액에 포함하고 주요 카테고리에서 제외했어요."
     for code in sorted(fig["by_category"], key=lambda c: (-fig["by_category"][c], CATEGORY_ORDER.index(c))):
+        if code == "UNCLASSIFIED":
+            continue
         share = fig["shares"][code]["value"]
         out["rows"].append({"code": code, "name": NAMES[code], "amount": fig["by_category"][code], "share": str(share),
                             "text": f"{NAMES[code]} {won(fig['by_category'][code])} ({share}%)"})
+    if not out["rows"]:
+        out["empty"] = "카테고리가 확인된 내역이 없어 항목별 분석은 보류했어요."
     return out
 
 
@@ -622,7 +631,8 @@ def _meter(result):
 def _view_current(results, many):
     first = results[0]
     item = first["item"]
-    head = _head(f"{span(first['current']['period'])} · {scope(item) if not many and narrowed(item) else '소비'}")
+    heading = scope(item) if not many and narrowed(item) else "변동 소비" if item.get("include_fixed") is False else "소비"
+    head = _head(f"{span(first['current']['period'])} · {heading}")
     if many:  # 여러 카테고리를 물었으면 (일부가 실패해도) 줄 목록
         rows = []
         for r in results:
@@ -948,11 +958,16 @@ def compose(results, notices=(), _alt=True):
     if out.sections:
         reply["sections"] = out.sections
     done = [r["result"] for r in results if r["ok"]]
-    if any(r["type"] == 5 for r in done):
-        reply["chart"] = chart(next(r for r in done if r["type"] == 5))
+    overview = next((r for r in done if r["type"] == 5), None)
+    if overview:
+        reply["chart"] = chart(overview)
+        reply["examples"] = list(EXAMPLES[1:])
+        label = overview.get("period_label", "이번 달")
+        topic = "변동 소비" if overview["item"].get("include_fixed") is False else "전체 소비"
+        reply["lead"] = [f"먼저 {label} {topic}를 볼게요. 비교나 남은 예산은 아래 질문에서 이어서 확인할 수 있어요.", *reply.get("lead", [])]
     if any((r.get("confirmed") or {}).get("over") for r in done if r["type"] in (3, 4)) or over_target(results):
         reply["suggest"] = ["budget_adjust"]  # 초과 뒤 예산 조정 제안 (문구 · 선택지는 라우터 안내가 붙인다)
-    if excluded:
+    if excluded and not all(r["item"].get("include_fixed") is False for r in done):
         reply["suggest"] = [*reply.get("suggest", []), "include_fixed"]
     cycle = _alt and _cycle_results(results)
     if cycle:
