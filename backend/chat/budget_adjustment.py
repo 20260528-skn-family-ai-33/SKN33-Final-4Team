@@ -42,6 +42,10 @@ def handler(user, store, adapter, complete, conversation_key):
             get_context=adapter.get_context, simulate=adapter.simulate, propose=adapter.propose,
             task_status=adapter.task_status, cancel=adapter.cancel, allocator=adapter.allocator,
         )
+        answered = False
+        if result["status"] == "not_mine" and (result.get("suggest") or {}).get("to") == "budget_basis":
+            # '이 예산 왜 이렇게 잡았어?'는 예산 질문 — 소비 분석으로 넘기지 않고 저장된 배정 근거로 답한 뒤 조정을 이어 간다
+            result, answered = basis_reply(user, store, conversation_key, result, request), True
         if result["status"] == "not_mine":
             return result
         if result.get("new_work"):
@@ -64,14 +68,31 @@ def handler(user, store, adapter, complete, conversation_key):
                        can_approve=bool(reply.get("proposal") and not state.get("pending")
                                         and result["status"] == "replied"),
                        phase="over_entry" if state.get("over_entry") else (state.get("pending") or {}).get("kind"))
+        salary = (state.get('pending') or {}).get('salary') if payload['phase'] == 'salary_change' else None
+        if salary:
+            from users.models import FinancialProfile
+            payday = FinancialProfile.objects.filter(user=user).values_list('payday', flat=True).first()
+            payload['salary_change'] = {'before': salary['before'], 'after': salary['after'], 'payday': payday}
         items = state.get('requests', [])
+        def active_context():
+            from budgets.adjustment_schedule import planning_context
+            return planning_context(adapter.get_context(), state.get('planning'))
+
+        if state.get('planning', {}).get('scope') == 'next_cycle':
+            try:
+                planned = active_context()
+                payload['planning'] = {'effective_on': planned['effective_on'], 'income_before': planned['income_before'],
+                                       'income_after': planned['monthly_income'], 'one_off': state['planning'].get('one_off', False),
+                                       'expense': state['planning'].get('expense')}
+            except ValueError:
+                pass  # The conversation is still asking for the missing planning input.
         proposal = reply.get('proposal')
-        if proposal and payload['can_approve'] and proposal.get('state') == 'awaiting_approval':
+        if proposal and payload['can_approve'] and proposal.get('state') == 'awaiting_approval' and not proposal.get('one_off'):
             from budgets.adjustment_core.conversation import distribution_fields
             donors = [{'category': row['category'], 'amount': -row['diff'], 'amount_mode': 'by', 'direction': 'down'}
                       for row in proposal.get('changes', []) if row['diff'] < 0]
             try:
-                fields = distribution_fields(adapter.get_context(), donors, state.get('excluded', []))
+                fields = distribution_fields(active_context(), donors, state.get('excluded', []))
                 fields['values'] = [{'category': row['category'], 'amount': row['diff']}
                                     for row in proposal['changes'] if row['diff'] > 0]
                 if (fields['categories'] and sum(row['amount'] for row in fields['values']) == fields['amount']
@@ -79,7 +100,7 @@ def handler(user, store, adapter, complete, conversation_key):
                     payload['distribution_edit'] = fields
             except (ValueError, KeyError):
                 pass  # 편집할 수 없는 기존 안은 확정·자연어 대화 경로를 유지한다.
-        if (result['status'] == 'awaiting_input' and not reply.get('proposal') and len(items) == 1
+        if (not answered and result['status'] == 'awaiting_input' and not reply.get('proposal') and len(items) == 1
                 and items[0].get('category') and items[0].get('direction') in {'up', 'down'}
                 and items[0].get('amount') is None and payload['phase'] in {'amount', 'comparison'}):
             context = (state.get('comparison') or {}).get('context', {})
@@ -88,9 +109,14 @@ def handler(user, store, adapter, complete, conversation_key):
                                                and items[0]['category'] not in context.get('locks', {})):
                 from budgets.adjustment_core.explanations import NAMES
                 code, direction = items[0]['category'], items[0]['direction']
-                payload['amount_input'] = {'category': code, 'direction': direction}
+                current = active_context()
+                before = (sum(current['allocations'].values()) if code == 'LIVING' else
+                          {**current['allocations'], **current['buckets']}.get(code))
+                payload['amount_input'] = {'category': code, 'direction': direction, 'before_amount': before}
+                if direction == 'up':
+                    from budgets.adjustment_core.funding import increase_input_limit
+                    payload['amount_input']['max_amount'] = increase_input_limit(current, code) // 5000 * 5000
                 if direction == 'down':
-                    current = adapter.get_context()
                     if code in current.get('allocations', {}):
                         floor = max(current.get(field, {}).get(code, 0) for field in ('spent', 'minimums', 'system_floors'))
                         maximum = max(current['allocations'][code] - floor, 0)
@@ -103,10 +129,53 @@ def handler(user, store, adapter, complete, conversation_key):
                 payload['request_summary'] = ''
                 reply['lines'] = [f"{NAMES.get(code, code)} 예산을 얼마 {'늘릴까요' if direction == 'up' else '줄일까요'}?"]
         reply["budget_adjustment"] = payload
-        if (reply.get("proposal") or reply.get("comparison")) and not reply.get("detail") and not reply.get('recommendation_advice'):
+        if (not answered and (reply.get("proposal") or reply.get("comparison")) and not reply.get("detail")
+                and not reply.get('recommendation_advice')):
             reply["lines"] = reply.get("lines", [])[:1]
+        from budgets.adjustment_core.responses import guidance
+        payload['guidance'] = guidance(result, state)
+        if items and payload['phase'] != 'increase_review' and result['status'] not in {'ended', 'failed', 'unsupported'}:
+            from budgets.adjustment_core.funding import large_increase_warning
+            try:
+                warning = large_increase_warning(active_context(), items, reason=state.get('reason'))
+            except ValueError:
+                warning = None  # Planning inputs are not complete yet.
+            if warning:
+                payload['increase_warning'] = warning
+        if previous.get('work_ref') and not result.get('work_ref') and state.get('pending') and result['status'] == 'awaiting_input':
+            result['continued_work'] = True
         return result
     return handle
+
+
+def basis_reply(user, store, conversation_key, result, request):
+    """저장된 예산의 배정 근거를 답하고, 진행 중이던 질문(있으면)을 그대로 다시 보여 준다. 예산·조정 상태는 바꾸지 않는다"""
+    from datetime import date
+    from django.db import DatabaseError
+    from django.utils import timezone
+    from budgets.adjustment_core.conversation import _pending_reply
+    from budgets.adjustment_core.agent import _result
+    from budgets.adjustment_core.explanations import NAMES
+    from budgets.budget_explanation import explain_current_budget
+
+    state = store.get_agent_state(conversation_key, "budget") or {}
+    code = result["suggest"].get("category") or next(
+        (item.get("category") for item in state.get("requests", []) if item.get("category") in NAMES), None)
+    ref = result.get("work_ref") or state.get("work_ref")
+    if code is None:
+        return _result("awaiting_input", ["어느 항목 예산이 왜 그렇게 정해졌는지 궁금하세요? 항목 이름을 알려 주세요."], work_ref=ref)
+    try:
+        today = date.fromisoformat(request["today"]) if request.get("today") else timezone.localdate()
+        lines = explain_current_budget(user, [code], today)
+    except (DatabaseError, ValueError, TypeError):
+        lines = ["저장된 예산 근거를 지금 불러오지 못했어요. 진행 중인 조정은 그대로 두었어요."]
+    if state.get("pending") and state["pending"].get("kind") not in ("request", "discussion"):  # 고르던 질문이 있으면 이어서
+        reply = _pending_reply(state, ref)
+        reply["reply"]["lines"] = [*lines, *reply["reply"]["lines"]]
+        return reply
+    name = NAMES.get(code, code)
+    return _result("awaiting_input", [*lines, f"{name} 예산을 줄이거나 다른 항목으로 옮기고 싶으면 금액과 함께 말씀해 주세요."],
+                   work_ref=ref)
 
 
 def refreshed_content(message):

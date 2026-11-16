@@ -23,6 +23,7 @@ class ProportionalGroupTest(unittest.TestCase):
 
     def test_adjustment_has_no_initial_design_twenty_percent_cap(self):
         inp = context()
+        inp['priorities'] = {'FOOD': 1}
         inp["ml_reference"] = {c: 0 for c in inp["allocations"] if c != "ETC"}
         result = simulate_funding(inp, envelope(item(amount=300000), sources=["LIVING"]),
                                   allocate_group_reduction=proportional_group_reduction)

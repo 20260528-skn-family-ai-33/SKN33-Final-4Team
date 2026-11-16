@@ -14,9 +14,10 @@ import ConnectLoginPopup from '../popups/ConnectLoginPopup.jsx'
 import DisconnectPopup from '../popups/DisconnectPopup.jsx'
 import AccountPopup from '../popups/AccountPopup.jsx'
 import LoanAddPopup from '../popups/LoanAddPopup.jsx'
-import { apiSend, useApi } from '../utils/api.js'
+import { useApi } from '../utils/api.js'
 import { runFinanceSync, syncLines } from '../utils/financeSync.js'
-import { SERVER_FIELDS } from '../utils/institutions.js'
+import { cardPw } from '../utils/institutions.js'
+import { reconnect } from '../utils/reconnect.jsx'
 import CardNoInput from '../components/CardNoInput.jsx'
 import { won } from '../utils/money.js'
 import { splitName } from '../utils/transactions.js'
@@ -108,20 +109,14 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
   const relogin = (c) => openPopup(
     <ConnectLoginPopup inst={c.organizationName} onSubmit={async (form) => {
       setOne(c.connectionId, { busy: true, error: '', lines: null })
-      const row = { businessType: c.businessType, organizationCode: c.organizationCode, loginId: form.id.trim(), password: form.password }
-      for (const [k, v] of Object.entries(form)) if (SERVER_FIELDS[k] && v) row[SERVER_FIELDS[k]] = v
-      try {
-        const res = await apiSend('/api/finance/connections/', 'POST', { institutions: [row] })
-        const r = res.results[0]
-        setOne(c.connectionId, {
-          busy: false,
-          error: r.status === 'connected' ? '' : r.status === 'sms_required' ? '문자 인증이 필요한 기관은 계좌 연결 화면에서 다시 연결해 주세요.' : r.error?.message,
-          lines: r.status === 'connected' ? [{ name: c.organizationName, ok: r.syncStatus !== 'failed', text: r.syncStatus === 'failed' ? '연결됐지만 내역을 불러오지 못했어요.' : '다시 연결하고 내역을 불러왔어요.' }] : null,
-        })
-        reload()
-      } catch (err) {
-        setOne(c.connectionId, { busy: false, error: err.message })
-      }
+      // 문자 인증을 요구하면 그 자리에서 문자 인증 팝업 (utils/reconnect.jsx, 11/14)
+      const r = await reconnect(openPopup, c, form)
+      setOne(c.connectionId, {
+        busy: false,
+        error: r.status === 'connected' ? '' : r.error?.message ?? '다시 연결하지 못했어요.',
+        lines: r.status === 'connected' ? [{ name: c.organizationName, ok: r.syncStatus !== 'failed', text: r.syncStatus === 'failed' ? '연결됐지만 내역을 불러오지 못했어요.' : '다시 연결하고 내역을 불러왔어요.' }] : null,
+      })
+      reload()
     }} />,
   )
 
@@ -159,7 +154,7 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
           <form className="mc-form" onSubmit={(e) => { e.preventDefault(); refresh(c, cardForm); setCardForm({ cardNo: '', cardPassword: '' }) }}>
             <label className="mc-field">카드번호<CardNoInput value={cardForm.cardNo}
               onChange={(cardNo) => setCardForm((f) => ({ ...f, cardNo }))} /></label>
-            <label className="mc-field">카드 비밀번호<input autoComplete="off" type="password" inputMode="numeric" maxLength={4} value={cardForm.cardPassword}
+            <label className="mc-field">카드 비밀번호{cardPw(c.organizationCode).hint}<input autoComplete="off" type="password" inputMode="numeric" maxLength={cardPw(c.organizationCode).maxLength} value={cardForm.cardPassword}
               onChange={(e) => setCardForm((f) => ({ ...f, cardPassword: e.target.value.replace(/\D/g, '') }))} /></label>
             <button type="submit" className="mc-secondary">카드 값 넣고 다시 불러오기</button>
             <p className="mc-note">카드번호 · 카드 비밀번호는 이번 요청에만 쓰고 저장하지 않아요.</p>

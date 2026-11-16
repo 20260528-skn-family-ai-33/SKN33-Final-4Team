@@ -57,7 +57,7 @@ def plan(as_of=None):
         if home:
             add('FinancialProfile',user,birth_date=date(1998,4,12),gender='female',has_car=False,
                 housing_type='alone',monthly_take_home_income=3000000,payday=1,living_budget=1050000,
-                savings_floor=900000,cushion_enabled=True,cushion_target=9000000,cushion_monthly=150000)
+                savings_floor=900000,cushion_target=9000000,cushion_monthly=150000)
             for rank,code in enumerate(('FOOD','TRANSPORT_CAR','CULTURE_LEISURE'),1):
                 add('CategoryPriority',uid(persona,'priority',rank),user_id=user,category_id=code,rank=rank)
         for kind in ('bank','bank_savings','card'):

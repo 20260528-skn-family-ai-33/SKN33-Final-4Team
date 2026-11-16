@@ -262,10 +262,9 @@ class ProfileTests(TestCase):
 
     def test_other_profile_columns_preserved(self):
         saved = FinancialProfile.objects.create(
-            user=self.user, monthly_take_home_income=2500000, monthly_disposable_income=2000000,
-            disposable_income_basis="manual", payday=25, payday_rule="last_day", budget_direction="stable",
-            living_budget=1000000, savings_floor=200000, cushion_enabled=True, cushion_target=7500000,
-            cushion_monthly=100000, cushion_use_policy="manual", loan_presence="yes",
+            user=self.user, monthly_take_home_income=2500000, payday=25,
+            living_budget=1000000, savings_floor=200000, cushion_target=7500000,
+            cushion_monthly=100000, cushion_use_policy="manual",
         )
         before = FinancialProfile.objects.filter(pk=saved.pk).values().get()
         self.assertEqual(self.put().status_code, 200)

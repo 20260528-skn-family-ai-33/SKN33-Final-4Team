@@ -33,6 +33,7 @@ CODE_REASONS = {
     "CF-12401": "card_fields",  # 로그인 값 누락. extraMessage 에 빠진 칸 이름이 {cardNo} · {cardPassword} 처럼 온다
     "CF-13001": "unavailable",  # 조회일 · 기간 오류 (청구서 startDate 를 일 단위로 보냄 = 우리 요청 실수 → 로그로 확인)
     "CF-12100": "login",        # 아이디 · 비밀번호 오류 (codef.py 주석 기준, 직접 재현은 아직)
+    "CF-12108": "card_fields",  # KB국민카드 카드 소지 확인 → 카드번호 전체 + 카드 비밀번호 앞 2자리 (CODEF 보유카드 명세, 직접 재현은 아직)
 }
 # CODEF 칸 이름 → 우리 요청 칸 이름 (CF-12401 extraMessage 의 {칸})
 CODEF_FIELDS = {"cardNo": "card_no", "cardPassword": "card_password"}

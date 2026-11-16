@@ -55,7 +55,7 @@ class DesignServiceTest(SimpleTestCase):
         with override_settings(BUDGET_DESIGN_POLICY=None), patch.dict(os.environ):
             os.environ.pop('BUDGET_DESIGN_POLICY', None)
             configured = service.configured_policy()
-            self.assertEqual(configured, {'version': '2026-11-10-forecast-band', 'a': {},
+            self.assertEqual(configured, {'version': '2026-11-12-a-ranked-protection', 'a': {},
                                          'b_forecast_band': {'down_percent': 20, 'up_percent': 20}})
             configured['a']['test_mutation'] = True
             self.assertNotIn('test_mutation', service.configured_policy()['a'])
@@ -153,7 +153,9 @@ class DesignServiceTest(SimpleTestCase):
         resolved = build.call_args.kwargs['policy']
         self.assertEqual(resolved['total_limit'], 200000)
         self.assertTrue(all(v is None for v in resolved['increase_rates'].values()))
-        self.assertTrue(all(v == 1000000 for v in resolved['decrease_limits'].values()))
+        ranked = {row['category'] for row in snapshot['engine_input']['priorities']}
+        self.assertTrue(all(v == (0 if c in ranked else 1000000)
+                            for c, v in resolved['decrease_limits'].items()))
         engine = service.build_candidates(snapshot['engine_input'], dict.fromkeys(CATEGORY_NAMES, 0.1),
                                           policy=resolved, reality_profile={'has_vehicle': False})
         self.assertEqual(sum(t['amount'] for t in engine['transfers']), 200000)

@@ -7,7 +7,7 @@ from pgvector.django import CosineDistance
 
 from .llm import cached, embedder
 from .models import Policy
-from .regions import REGIONS
+from .regions import AREA_MATCH, NATIONWIDE
 
 LIMIT = 30  # 5단계가 자격으로 거르고도 3개가 남도록 넉넉히 넘긴다
 RRF_K = 60  # 순위 합치기 상수. 거리와 키워드는 단위가 달라 점수 대신 순위를 더한다
@@ -26,12 +26,14 @@ class Hit:
 
 
 def candidates(region_code, today):
-    """사용자 지역에 해당하고 신청이 끝나지 않은 활성 정책. 시도처럼 더 고를 수 있는 지역은 받지 않는다"""
-    region = REGIONS.get(region_code)
-    if not region or not region["final"]:
-        raise ValueError(f"시군구까지 고른 지역 코드가 아니에요: {region_code}")
+    """지역에 해당하고 신청이 끝나지 않은 활성 정책. 전국 · 시도 · 시 · 시군구 어느 단계든 받는다
+    (시도 · 시면 그 안 어느 시군구 대상 정책이든 — 카드의 '지역' 줄로 대상이 보인다)"""
     not_over = Q(apply_type__in=("always", "unknown")) | Q(apply_type="specific", last_apply_end__gte=today)
-    return Policy.objects.filter(not_over, is_active=True, zip_codes__overlap=region["match"])
+    if region_code == NATIONWIDE:
+        return Policy.objects.filter(not_over, is_active=True)
+    if region_code not in AREA_MATCH:
+        raise ValueError(f"지역 표에 없는 코드예요: {region_code}")
+    return Policy.objects.filter(not_over, is_active=True, zip_codes__overlap=AREA_MATCH[region_code])
 
 
 def _apply_state(policy, today):

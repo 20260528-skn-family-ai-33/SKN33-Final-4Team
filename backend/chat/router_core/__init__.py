@@ -44,6 +44,7 @@ ACTIVE = ("proposing", "awaiting_approval", "saving")
 ENDED = ("saved", "failed", "canceled", "expired", "rejected")
 TASK_QUESTIONS = ("cancel_target", "budget_task_choice")
 NEW_TASK = {"task_ref": None, "phase": "started", "suspended": False}
+POLICY_DETAIL = "detail:"  # 청년 정책 카드 [자세히 보기] 선택지 값 앞부분 (policies.agent.DETAIL)
 MAX_DELIVERIES = 2  # 같은 입력을 에이전트에 전달하는 최대 횟수 (현재 담당 1 + 새 담당 1)
 RESULT_STATUSES = ("replied", "awaiting_input", "unsupported", "ended", "failed", "not_mine")
 
@@ -252,7 +253,7 @@ def _spending(mode, text, cid, store, *, entry="text", declined=(), selected_fro
 
 def _policy_entry(store, cid, text, entry, notices, declined=(), classified=False):
     """정책으로 들어온다 (버튼 · 분류). 보류된 정책 작업이 있으면 묻지 않고 이어서(resume) — 예산 조정 재개와 같은 규칙.
-    지난 추천 · 지역은 정책 에이전트 상태에 남아 있고, 새로 찾기는 에이전트의 [다른 분야 찾기] · [지역 바꾸기]로 한다"""
+    지난 추천 · 지역은 정책 에이전트 상태에 남아 있고, 새로 찾기는 에이전트의 [다른 분야 찾기] · [지역 변경하기]로 한다"""
     work = store.get_work(cid, "policy")
     store.save_work(cid, "policy", {"work_ref": work and work["work_ref"], "suspended": False})
     return _policy(store, cid, "resume" if work else "start", text, entry=entry, declined=declined, notices=notices,
@@ -477,6 +478,10 @@ def route(text, conversation_id, store, complete, server=None):
         cancelled = _cancel_word(text, cid, store, asked, active, task)
         if cancelled is not None:
             return cancelled
+    if text.startswith(POLICY_DETAIL):  # 지난 정책 카드의 [자세히 보기]: 담당이 바뀌었어도 분류하지 않고 정책으로
+        store.clear(cid)
+        return _policy(store, cid, "continue", text) if active == "policy" else \
+            _policy_entry(store, cid, text, "text", _switch(store, cid, "policy"))
     try:
         if asked:
             return _router_answer(text, cid, store, server, asked, task, complete)
@@ -603,11 +608,11 @@ def _record_policy(store, cid, result):
 
 def _budget_result(store, cid, result, server):
     """예산 조정 결과 → 라우터의 예산 작업 기록.
-    새 상담(new_work, PR #111 리뷰): 예산 조정이 이전 작업을 끝내고 서버 작업이 아직 없는 새 상담을 시작했다 (초과 항목으로 새 조정).
+    새 상담(new_work) 또는 이전 안 취소 후 재계산(continued_work)은 서버 작업 참조가 없는 상담을 이어간다.
     참조가 없다고 이전 작업 번호로 확인하면 끝난 이전 작업과 함께 지금 상담까지 지워진다 — 이전 작업이 끝났다는 서버 확인을 먼저 하고
     그 결과만 기록한 뒤, 참조 없는 새 작업을 진행 중으로 남긴다 (담당 = 예산 조정 유지). 확인 실패 · 아직 진행 중이면 상태를 바꾸지 않는다"""
     task = store.get_task(cid)
-    if result.get("new_work") and not result.get("work_ref") and result["status"] != "ended" and task and task["task_ref"]:
+    if (result.get("new_work") or result.get('continued_work')) and not result.get("work_ref") and result["status"] != "ended" and task and task["task_ref"]:
         old = _check(server, task["task_ref"])
         if old is None:
             return "unknown"

@@ -11,6 +11,7 @@ import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
+import RegionSelect from '../components/RegionSelect.jsx'
 import ChatReply, { Choices } from '../components/ChatReply.jsx'
 import { policyChoices } from '../utils/policyCards.js'
 import BudgetApprovalPopup from '../popups/BudgetApprovalPopup.jsx'
@@ -116,7 +117,7 @@ export default function AssistantPage() {
     if (storedApproval && navState?.budgetContext) navigate(PATHS.assistant, { replace: true, state: null })
   }, [storedApproval, navState, navigate])
 
-  // 새로고침 전 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
+  // 저장된 대화 다시 불러오기. 404 = 다른 계정 · 없는 대화 → 번호를 지우고 새 대화. 그 밖의 실패는 안내만 (대화를 비우지 않음)
   useEffect(() => {
     if (!restoreId) return
     let live = true
@@ -366,10 +367,16 @@ export default function AssistantPage() {
                     navigation={{ choices: last?.content.budgetAdjustment ? last.content.choices : [], active: !blocked,
                       onPick: (p) => pick(last.content, p) }}
                     onPick={(p) => pick(c, p)} onApprove={(proposal) => openApproval(proposal)}
-                    onSend={(text) => { if (isLast && !blocked) send({ text }, text) }} />
+                    onSend={(text) => { if (isLast && !blocked) send({ text }, text) }}
+                    onDetail={blocked ? undefined : (p) => pick(c, p)}>
+                    {(c.inputs ?? []).includes('region_select') &&
+                      <RegionSelect done={!isLast || blocked} onSubmit={(text) => send({ text }, text)} />}
+                  </ChatReply>
                 </div>
                 {import.meta.env.DEV && c.devTrace && <Trace trace={c.devTrace} />}
-                <Choices choices={policyChoices(c, adjustmentChoices(c))} active={isLast && !blocked} onPick={(p) => pick(c, p)} />
+                {!(c.inputs ?? []).includes('region_select') &&
+                  <Choices choices={policyChoices(c, adjustmentChoices(c))} active={isLast && !blocked} onPick={(p) => pick(c, p)}
+                    scroll={c.agent === 'policy'} />}
                 {!c.budgetAdjustment && (c.inputs ?? []).includes('budget_form') && (
                   <div className="mc-msg bot mc-asst-form">
                     <AdjustForm done={!isLast || blocked} onSubmit={(slots) => send({ text: adjustSentence(slots) }, adjustSentence(slots))} />
