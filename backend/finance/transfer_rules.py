@@ -2,6 +2,7 @@
 
 은행 거래는 출금 transfer · 입금 income 으로 저장되는데, 이 단계가 내 계좌 간 이체 추정 · 카드값 · 대출 상환 후보를 나눈다.
 친구 송금은 그대로 transfer 다 (11/3 결정: 기본은 소비 아님).
+적요가 가게 · 기관이라는 근거(분류기 규칙 · 사전 · 회사 표시)가 있는 출금만 소비로 바꾼다 (11/16, mark_merchant_transfers).
 """
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -30,6 +31,12 @@ OWN_REVIEW = "own_transfer_review"
 OWN_GAP = timedelta(minutes=5)  # 내 계좌 이체 자동 분류: 출금 · 입금 시각 차이, 5분 포함 (11/5 결정, 자정 넘김 포함)
 # 거래 field_states: 늦게 온 거래로 자동 연결이 모호해졌지만 저축 · 납부 근거라 풀지 않은 연결 (출금 쪽, 거래 상세에서 정정)
 OWN_RECHECK = "own_transfer_recheck"
+# 거래 field_states: 적요가 가게 · 기관이라 이체를 소비로 바꿈 (11/16, mark_merchant_transfers). [이체로 되돌리기]로 풀 수 있다
+ORIGINAL_TYPE = "original_transaction_type"   # finance/api.py 와 같은 '원래 이체였음' 표시
+CONVERTED_BY_MEMO = "converted_by_memo"
+MERCHANT_FROM_MEMO = "merchant_from_memo"     # 가게 이름 칸을 적요로 채웠다는 표시 (되돌릴 때 비운다)
+KEPT_TRANSFER = "transfer_kept_by_user"      # 사용자가 [이체로 되돌리기]로 이체라고 정함 → 다시 바꾸지 않는다
+COMPANY_MARKS = ("(주)", "㈜", "주식회사")
 
 
 def squeeze(text):
@@ -295,6 +302,45 @@ def link_same_purchases(user):
             row.delete()
 
 
+def merchant_evidence(user, description):
+    """출금 적요가 가게 · 기관이라는 근거가 있는지. 분류기에 이미 있는 규칙만 쓴다 (새 추측 없음).
+    사람 이름을 따로 알아보지 않는다 — 근거가 없으면 이체 그대로라 친구 송금은 소비가 되지 않는다 (11/3 결정)"""
+    from . import classifier
+
+    name = classifier.store_name(description) or description
+    if classifier.is_pay_charge(name) or classifier.rule_category(name):
+        return True
+    if classifier.is_multi_item(name) or classifier.retail_category(name):
+        return True
+    # 사용자 기억('앞으로도 적용')은 쓰지 않는다: 원래 이체였던 거래는 받는 사람을 기억하지 않는다 (10/22 결정 W, api.can_apply_to_future)
+    return any(mark in description for mark in COMPANY_MARKS)
+
+
+def mark_merchant_transfers(user, txs):
+    """남은 이체 중 적요가 가게 · 기관이라는 근거가 있는 것만 소비로 바꾼다 (11/16).
+    계좌로 낸 통신요금 · 하이패스 충전 · 페이 충전 · 계좌이체 결제가 소비에서 빠지던 문제.
+    카테고리는 정하지 않는다 — 다음 단계(classify_spending)가 카드 결제와 같은 순서(사전 → ML → 검색)로 정한다.
+    건너뜀: 사용자가 고르거나 되돌린 거래 · 같은 구매 · 내 계좌 · 취소 연결 · 납부 연결 · 카드값 · 대출 후보"""
+    linked = TransactionLink.objects.filter(Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")))
+    rows = (txs.filter(source_kind="bank", direction="out", transaction_type=Type.TRANSFER, is_canceled=False)
+            .exclude(confirmation_state=Tx.ConfirmationState.CONFIRMED)
+            .exclude(classification_source=Tx.ClassificationSource.USER)
+            .exclude(Exists(linked)).exclude(Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk")))))
+    skip = (CARD_CANDIDATE, LOAN_CANDIDATE, OWN_REVIEW, OWN_RECHECK, KEPT_TRANSFER)
+    for tx in rows:
+        states = tx.field_states or {}
+        description = (tx.source_description or "").strip()
+        if not description or any(key in states for key in skip) or not merchant_evidence(user, description):
+            continue
+        states = {**states, ORIGINAL_TYPE: Type.TRANSFER, CONVERTED_BY_MEMO: True}
+        fields = {"transaction_type": Type.SPENDING, "confirmed_category_id": "UNCLASSIFIED",
+                  "confirmation_state": Tx.ConfirmationState.NEEDS_REVIEW, "classification_source": None}
+        if not tx.merchant_name:
+            states[MERCHANT_FROM_MEMO] = True
+            fields["merchant_name"] = description
+        Tx.objects.filter(pk=tx.pk, transaction_type=Type.TRANSFER).update(field_states=states, **fields)
+
+
 def apply(user, txs):
     link_cancellations(user, txs)
     link_bank_cancellations(user)
@@ -302,3 +348,4 @@ def apply(user, txs):
     link_own_transfers(user, txs)
     mark_by_description(user, txs)
     suggest_own_transfers(user, txs)  # 카드값 · 대출 후보로 바뀌지 않은 이체만
+    mark_merchant_transfers(user, txs)  # 남은 이체 중 가게 · 기관 적요만 소비로 (11/16)

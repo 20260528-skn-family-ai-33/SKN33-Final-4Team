@@ -131,6 +131,35 @@ TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
 NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
 # 교통카드 (11/05): 가게 이름이 아니라 SVM 이 엉뚱한 카테고리를 확신한다 (모바일티머니선불형 생활용품 0.94). 충전도 교통비라 페이 충전으로 묻지 않는다 (11/06)
 TRANSIT_CARDS = ("티머니", "캐시비", "레일플러스")
+# 교통·차량 추가 (11/16). 이름은 normalize_name 뒤 기준 (소문자 · 공백 · 문장부호 제거: S-OIL → soil)
+# 후불교통 · 교통카드 · 하이패스(선불 충전 적요 '에스엠하이플러스' · '하이플러스') — 다른 뜻으로 쓰일 일이 거의 없어 '들어 있으면'
+TRANSPORT_WORDS = ("후불교통", "교통카드", "하이패스", "하이플러스")
+# 주유 · 주차 브랜드는 '시작하면' (이름 뒤쪽에 들어간 다른 가게 제외)
+TRANSPORT_PREFIXES = (
+    "sk에너지", "gs칼텍스", "지에스칼텍스", "에쓰오일", "soil", "현대오일뱅크", "hd현대오일뱅크",
+    "하이파킹", "ajpark", "aj파크", "카카오t주차", "캐롯",
+)
+# 주유소 · 주차장은 '끝나면' ('주차장문' 같은 셔터 가게 제외)
+TRANSPORT_SUFFIXES = ("주유소", "주차장")
+# 자동차보험은 '보험' 기타 규칙보다 먼저: '자동차보험'이 들어 있거나, 손해보험 · 화재 · 해상 회사의 '다이렉트'(자동차보험 채널)
+CAR_INSURANCE_WORDS = ("자동차보험", "손해보험다이렉트", "화재다이렉트", "해상다이렉트")
+# 교통 낱말이 있어도 교통비로 자동 분류하지 않는 것 (벌금 · 합의금)
+NOT_TRANSPORT_WORDS = ("범칙금", "과태료", "합의금")
+# 통신요금 = 주거·통신 (11/16). 이름은 normalize_name 뒤(소문자 · 공백 · 문장부호 · '(주)' 제거) 기준.
+# 회사 · 서비스 이름이 분명한 것만 '들어 있으면'. 다른 가게와 겹치기 쉬운 알뜰폰 브랜드는 '시작하면'
+TELECOM_NAMES = (
+    "sk텔레콤", "에스케이텔레콤", "sk브로드밴드", "에스케이브로드밴드", "kt통신", "케이티통신", "kt스카이라이프",
+    "lg유플러스", "엘지유플러스", "lg헬로비전", "엘지헬로비전",
+)
+TELECOM_MVNO_PREFIXES = (
+    "케이티엠모바일", "kt엠모바일", "헬로모바일", "세븐모바일", "토스모바일", "리브모바일", "kb리브모바일",
+    "u+유모바일", "유모바일", "이야기모바일",
+)
+# 짧은 이름(SKT · KT · LGU+ · SKB · 케이티)은 이름 전체가 이것이거나 뒤에 숫자(전화 · 고객번호)만 붙을 때만.
+# 실제 카드 명세 'SKT0104948…' (11/16). KT&G(→ktg) · KTX · SKT1굿즈 같은 다른 이름은 안 걸린다
+TELECOM_SHORT = re.compile(r"^\d*(skt|kt|케이티|lgu\+|skb)\d*$")  # 번호가 앞(01012345678SKT)이나 뒤(SKT0104948…)에 붙음
+# 통신사 이름이 들어가도 통신요금이 아닌 것 (렌탈 · 렌터카 · 정수기 · 상품권)
+NOT_TELECOM_WORDS = ("렌탈", "렌터카", "매직", "인텔릭스", "상품권")
 # PC방 = 문화·여가 (분류 기준 2장). 표기가 피시방·PC방 둘 다
 CULTURE_KEYWORDS = ("피시방", "pc방")
 # 검증된 브랜드 = 식비 (11/02): SVM 확신이 낮고(0.81~0.84) 검색하면 다른 지점·본사가 자주 나와서(7건 중 5건) 이름으로 정한다
@@ -262,6 +291,22 @@ def is_pay_charge(name):
     return bool(PAY_CHARGE.search(normalized)) and not any(card in normalized for card in TRANSIT_CARDS)
 
 
+def is_transport_name(normalized):
+    """정규화한 이름이 교통·차량 사전에 있는지 (후불교통 · 교통카드 · 하이패스 · 주유 · 주차 · 자동차보험)"""
+    if not normalized or any(word in normalized for word in NOT_TRANSPORT_WORDS):
+        return False
+    return (any(word in normalized for word in TRANSPORT_WORDS + CAR_INSURANCE_WORDS)
+            or normalized.startswith(TRANSPORT_PREFIXES) or normalized.endswith(TRANSPORT_SUFFIXES))
+
+
+def is_telecom(normalized):
+    """정규화한 이름이 통신요금인지 (통신사 · 알뜰폰 · 인터넷 · IPTV). 렌탈 · 상품권 같은 다른 용도는 제외"""
+    if not normalized or any(word in normalized for word in NOT_TELECOM_WORDS):
+        return False
+    return (bool(TELECOM_SHORT.match(normalized)) or any(name in normalized for name in TELECOM_NAMES)
+            or normalized.startswith(TELECOM_MVNO_PREFIXES))
+
+
 def rule_category(name):
     """3단계 규칙·사전으로 정해지는 카테고리 코드. 없으면 None"""
     normalized = common.normalize_name(name)
@@ -271,6 +316,10 @@ def rule_category(name):
         return "TRANSPORT_CAR"
     if any(card in normalized for card in TRANSIT_CARDS):
         return "TRANSPORT_CAR"
+    if is_transport_name(normalized):
+        return "TRANSPORT_CAR"
+    if is_telecom(normalized):
+        return "HOUSING_TELECOM"
     if any(keyword in normalized for keyword in CULTURE_KEYWORDS):
         return "CULTURE_LEISURE"
     if normalized.startswith(FOOD_BRANDS):

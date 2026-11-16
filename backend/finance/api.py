@@ -351,13 +351,19 @@ def _apply_category(tx, code):
         if is_fixed_linked(tx):
             raise ValidationError({"category": [FIXED_TRANSFER_ERROR]})  # 10/24 AA⑤
         states.pop(ORIGINAL_TYPE)
+        # 11/16: 적요 규칙이 바꾼 거래를 사용자가 되돌리면 다시 바꾸지 않는다 (transfer_rules.mark_merchant_transfers)
+        states.pop("converted_by_memo", None)
+        states["transfer_kept_by_user"] = True
+        if states.pop("merchant_from_memo", False):
+            tx.merchant_name = None
         tx.transaction_type = Tx.TransactionType.TRANSFER
         # 이체는 카테고리가 없지만 DB 칸은 비울 수 없어서 '확인 필요'로 둔다 (목록 응답에서는 None)
         tx.confirmed_category_id = UNCLASSIFIED
         tx.confirmation_state = Tx.ConfirmationState.NEEDS_REVIEW
         tx.classification_source = None
         tx.field_states = states
-        return ["transaction_type", "confirmed_category", "confirmation_state", "classification_source", "field_states"]
+        return ["transaction_type", "confirmed_category", "confirmation_state", "classification_source", "field_states",
+                "merchant_name"]
 
     # 고를 수 있는 카테고리 = 10개 + 기타 (UNCLASSIFIED · 숨긴 카테고리는 안 됨)
     if (not isinstance(code, str) or code == UNCLASSIFIED
@@ -367,6 +373,7 @@ def _apply_category(tx, code):
     if tx.transaction_type == Tx.TransactionType.TRANSFER:
         # 이체를 소비로 바꾸기 (10/22 W). 원래 이체였다는 표시를 남긴다 (AA⑥)
         states[ORIGINAL_TYPE] = Tx.TransactionType.TRANSFER
+        states.pop("transfer_kept_by_user", None)
         tx.transaction_type = Tx.TransactionType.SPENDING
         tx.field_states = states
         changed += ["transaction_type", "field_states"]

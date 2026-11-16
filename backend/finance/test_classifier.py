@@ -494,6 +494,45 @@ class RuleTest(SimpleTestCase):
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
 
+    def test_transport_dictionary(self):
+        # 11/16: 후불교통 · 교통카드 · 하이패스 충전 · 주유 · 주차 · 자동차보험 = 교통·차량
+        cases = {
+            "후불교통": "TRANSPORT_CAR", "후불교통대금": "TRANSPORT_CAR", "11월후불교통": "TRANSPORT_CAR",
+            "교통카드충전": "TRANSPORT_CAR", "에스엠하이플러스": "TRANSPORT_CAR", "하이플러스": "TRANSPORT_CAR",
+            "하이패스": "TRANSPORT_CAR", "SK에너지대흥주유소": "TRANSPORT_CAR", "GS칼텍스 죽전점": "TRANSPORT_CAR",
+            "S-OIL": "TRANSPORT_CAR", "현대오일뱅크": "TRANSPORT_CAR", "풍덕천주유소": "TRANSPORT_CAR",
+            "하이파킹 한남점": "TRANSPORT_CAR", "AJ파크 이태원": "TRANSPORT_CAR", "롯데월드몰주차장": "TRANSPORT_CAR",
+            "DB손해보험 다이렉트": "TRANSPORT_CAR", "삼성화재다이렉트": "TRANSPORT_CAR", "현대해상다이렉트": "TRANSPORT_CAR",
+            "KB손해보험 자동차보험": "TRANSPORT_CAR", "캐롯손해보험": "TRANSPORT_CAR",
+            # 교통이 아니거나 교통비로 자동 분류하지 않음
+            "교통범칙금": None, "교통과태료": None, "교통사고합의금": None,
+            "전동셔터방범샷다주차장문오버헤드도어": None, "주유소식당": None,
+            # 자동차보험이 아닌 보험은 지금처럼 기타
+            "OO화재해상보험": "ETC", "OO생명보험": "ETC",
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+
+    def test_telecom_bills(self):
+        # 11/16: 통신요금 = 주거·통신. 짧은 이름은 전체가 같거나 앞뒤에 번호만 붙을 때만 (실제 명세 'SKT0104948…', '010…SKT')
+        cases = {
+            "SKT0104948": "HOUSING_TELECOM", "01012345678SKT": "HOUSING_TELECOM", "SKB1234567890": "HOUSING_TELECOM",
+            "SKT": "HOUSING_TELECOM", "SKT 010-4948-1234": "HOUSING_TELECOM",
+            "KT": "HOUSING_TELECOM", "KT 1234567": "HOUSING_TELECOM", "(주)케이티": "HOUSING_TELECOM",
+            "LGU+0105555": "HOUSING_TELECOM", "SK텔레콤": "HOUSING_TELECOM", "SK텔레콤 자동납부": "HOUSING_TELECOM",
+            "KT통신요금": "HOUSING_TELECOM", "LG유플러스": "HOUSING_TELECOM", "SK브로드밴드": "HOUSING_TELECOM",
+            "KT스카이라이프": "HOUSING_TELECOM", "LG헬로비전": "HOUSING_TELECOM",
+            "케이티엠모바일": "HOUSING_TELECOM", "헬로모바일": "HOUSING_TELECOM", "토스모바일": "HOUSING_TELECOM",
+            "세븐모바일": "HOUSING_TELECOM",
+            # 통신사가 아니거나 다른 용도
+            "KT&G": None, "KTX": None, "SKT1 굿즈샵": None, "SK에너지": "TRANSPORT_CAR", "LG전자": None, "토스": None,
+            "SK매직 렌탈": None, "KT 렌탈": None, "SK텔레콤 상품권": None, "모바일상품권": None, "카페모바일": None,
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+        # 결제대행 표기를 뗀 뒤에도 같다
+        self.assertEqual(classifier.rule_category(classifier.store_name("KCP-SK텔레콤_SK텔레콤")), "HOUSING_TELECOM")
+
     def test_starbucks_brand(self):
         # 11/02: 지점명·회사명·앱 충전 모두 식비. 이름 뒤쪽에 '스타벅스'가 들어간 다른 가게는 제외
         for name in ("스타벅스 강남역점", "스타벅스코리아", "스타벅스계좌", "STARBUCKS KOREA", "(주)스타벅스코리아"):

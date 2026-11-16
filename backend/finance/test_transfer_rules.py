@@ -9,7 +9,7 @@ from . import pipeline
 from .models import (BankAccount, Card, Connection, FinancialTransaction as Tx, Loan, PaymentDue, PaymentMatch,
                      RecurringExpense, TransactionLink)
 from .tests import URL
-from .transfer_rules import CARD_CANDIDATE, LOAN_CANDIDATE, OWN_REVIEW
+from .transfer_rules import CARD_CANDIDATE, CONVERTED_BY_MEMO, KEPT_TRANSFER, LOAN_CANDIDATE, OWN_REVIEW
 
 
 class Fixture(TestCase):
@@ -318,6 +318,82 @@ class DescriptionRuleTest(Fixture):
         self.run_on(out, income)
         self.assertEqual((out.transaction_type, income.transaction_type), ("transfer", "income"))
         self.assertIn(CARD_CANDIDATE, out.field_states)
+
+
+class MerchantTransferTest(Fixture):
+    """11/16: 남은 이체 중 적요가 가게 · 기관이라는 근거가 있는 것만 소비로 (mark_merchant_transfers)"""
+
+    def classify(self, *txs):
+        pipeline.classify_spending(self.user, Tx.objects.filter(pk__in=[tx.pk for tx in txs]))
+        for tx in txs:
+            tx.refresh_from_db()
+
+    def test_pay_charge_telecom_and_hipass_become_spending(self):
+        pay = self.bank(self.a, "out", desc="카카오페이충전", amount=30_000)
+        telecom = self.bank(self.a, "out", desc="KT 통신요금 자동납부", amount=69_000)
+        hipass = self.bank(self.a, "out", desc="에스엠하이플러스", amount=50_000)
+        self.run_on(pay, telecom, hipass)
+        for tx in (pay, telecom, hipass):
+            self.assertEqual(tx.transaction_type, "spending", tx.source_description)
+            self.assertEqual(tx.field_states.get("original_transaction_type"), "transfer")
+            self.assertTrue(tx.field_states.get(CONVERTED_BY_MEMO))
+            self.assertEqual(tx.merchant_name, tx.source_description)
+        self.classify(pay, telecom, hipass)
+        self.assertEqual(pay.confirmation_state, "needs_review")  # 페이 충전은 무엇에 썼는지 묻는다
+        self.assertEqual(telecom.confirmed_category_id, "HOUSING_TELECOM")
+        self.assertEqual(hipass.confirmed_category_id, "TRANSPORT_CAR")
+
+    def test_company_mark_becomes_spending_but_people_stay_transfers(self):
+        academy = self.bank(self.a, "out", desc="(주)미래영어학원")
+        friend, rent = self.bank(self.a, "out", desc="김혜리"), self.bank(self.a, "out", desc="박정숙")
+        self.run_on(academy, friend, rent)
+        self.assertEqual(academy.transaction_type, "spending")
+        self.assertEqual((friend.transaction_type, rent.transaction_type), ("transfer", "transfer"))
+        self.assertIsNone(friend.merchant_name)
+
+    def test_other_judgements_come_first(self):
+        Loan.objects.create(user=self.user, origin="manual", lender_name="한국장학재단")
+        card_bill = self.bank(self.a, "out", desc="신한카드")
+        loan = self.bank(self.a, "out", desc="한국장학재단 학자금상환")
+        kept = self.bank(self.a, "out", desc="카카오페이충전", field_states={KEPT_TRANSFER: True})
+        chosen = self.bank(self.a, "out", desc="쿠팡")
+        Tx.objects.filter(pk=chosen.pk).update(confirmation_state="confirmed")  # 사용자가 이미 고른 거래
+        self.run_on(card_bill, loan, kept, chosen)
+        for tx in (card_bill, loan, kept, chosen):
+            self.assertEqual(tx.transaction_type, "transfer", tx.source_description)
+
+    def test_check_card_withdrawal_is_not_counted_twice(self):
+        self.card.name = "테스트 체크카드"
+        self.card.save(update_fields=["name"])
+        approval = self.approval("A1", day=date(2026, 11, 3), merchant_name="GS25 역삼점")
+        withdrawal = self.bank(self.a, "out", desc="GS25 역삼점", amount=30_000)
+        self.run_on(approval, withdrawal)
+        self.assertTrue(TransactionLink.objects.filter(relation_type="SAME_PURCHASE", to_transaction=withdrawal).exists())
+        self.assertEqual(withdrawal.transaction_type, "transfer")
+
+    def test_running_twice_gives_same_result(self):
+        tx = self.bank(self.a, "out", desc="모바일티머니충전", amount=20_000)
+        self.run_on(tx)
+        first = (tx.transaction_type, tx.merchant_name, dict(tx.field_states))
+        self.run_on(tx)
+        self.assertEqual((tx.transaction_type, tx.merchant_name, dict(tx.field_states)), first)
+
+    def test_user_revert_is_kept(self):
+        self.client.force_login(self.user)
+        converted = self.bank(self.a, "out", desc="에스엠하이플러스", day=timezone.localdate())
+        self.run_on(converted)
+        reverted = self.client.patch(f"{URL}{converted.pk}/", data='{"category": null}', content_type="application/json")
+        self.assertEqual(reverted.status_code, 200)
+        converted.refresh_from_db()
+        self.assertEqual(converted.transaction_type, "transfer")
+        self.assertIsNone(converted.merchant_name)
+        self.assertTrue(converted.field_states.get(KEPT_TRANSFER))
+        self.run_on(converted)  # 다시 처리해도 사용자가 정한 이체 그대로
+        self.assertEqual(converted.transaction_type, "transfer")
+        # 원래 이체였던 거래는 받는 사람을 기억하지 않는다 (결정 W) → 사전에 없는 적요는 다음에도 이체
+        first = self.bank(self.a, "out", desc="한빛피아노", day=timezone.localdate())
+        self.run_on(first)
+        self.assertEqual(first.transaction_type, "transfer")
 
 
 class CollectionOrderTest(Fixture):
