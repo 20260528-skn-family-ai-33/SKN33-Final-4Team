@@ -143,7 +143,7 @@ def _decide(state, text, read=None, choice=None):
     if said.strip(" .!~") in CANCEL_WORDS:
         return Action("end")
     if ask and said in ask["options"]:
-        return _answer(ask, ask["options"][said], home)
+        return _answer(ask, ask["options"][said], home, state.get("asked"))
     if ask and ask["kind"] in {"confirm", "region"}:
         # 짧은 답 전체가 일치할 때만 처리한다. "아니, 취업 지원 찾아줘"는 새 질문으로 읽는다.
         short = said.strip(" \t\r\n.!?~…。！？")
@@ -201,8 +201,8 @@ def _place_action(read, said, home, fields=None):
     return Action("ask_region", codes=TOP, text=said, needs=needs, fields=fields)
 
 
-def _answer(ask, value, home):
-    """질문의 답(버튼 값) → 행동"""
+def _answer(ask, value, home, asked=None):
+    """질문의 답(버튼 값) → 행동. asked = 마지막 검색 질문 (state["asked"], [지역 바꾸기] 뒤 같은 질문으로 다시 찾는다)"""
     kind, pending, fields = ask["kind"], ask.get("text"), ask.get("fields")
     needs = [Need(q, k) for q, k in ask["needs"]] if ask.get("needs") is not None else None
     if kind == "region":
@@ -229,7 +229,9 @@ def _answer(ask, value, home):
             return Action("more")
         if value == "field":  # 11-12 전 대화의 [다른 분야 찾기]
             return Action("ask_topic")
-        return Action("ask_region", codes=TOP)
+        asked = asked or {}  # [지역 바꾸기]: 고른 지역에서 같은 질문을 다시 찾는다 (질문을 다시 쓰지 않게)
+        return Action("ask_region", codes=TOP, text=asked.get("text"), fields=asked.get("fields"),
+                      needs=None if asked.get("needs") is None else [Need(q, k) for q, k in asked["needs"]])
     raise ValueError(f"모르는 질문 종류: {kind}")
 
 
@@ -493,6 +495,8 @@ def _act(action, store, cid, state, user, today, embed, check=None, retry=None):
         return _show(store, cid, state, found, state.get("region_used") or state["region"], today,
                      state.get("shown", 0), member)
     if kind == "search":
+        state["asked"] = {"text": action.text, "fields": action.fields,
+                          "needs": None if action.needs is None else [[n.query, n.keywords] for n in action.needs]}
         needs, lead, said = action.needs or [Need(action.text)], None, action.text
         if action.fields is not None:  # 맞춤 추천: LLM 이 짐작한 분야, 없으면 취업 상태로 코드가 고른 분야
             codes = [code for code in action.fields if code in FIELDS] or DEFAULT_FIELDS[_profile_job(profile)]

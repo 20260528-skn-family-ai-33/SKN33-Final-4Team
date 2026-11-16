@@ -117,6 +117,17 @@ class AnswerTest(TestCase):
         self.assertEqual(talk.state["last"], ["RENT"])
         self.assertEqual(talk.labels, ["1번 저장", agent.CHANGE_REGION])
 
+    def test_지역을_바꾸면_같은_질문으로_다시_찾는다(self):
+        add("RENT", vector=near(1), plcyNm="청년 월세 지원")
+        talk = Talk()
+        talk.lives_in_dongtan()
+        talk.send("월세 지원 있어?")
+        talk.send(agent.CHANGE_REGION)
+        talk.send("서울특별시")
+        result = talk.send("관악구")
+        self.assertEqual(result["reply"]["lines"], [agent.NONE_FOUND.format(region="서울특별시 관악구")])
+        self.assertEqual(talk.complete.call_count, 1)  # 질문을 다시 쓰지도 다시 읽지도 않는다
+
     def test_자격_불충족과_같은_이름_재등록은_뺀다(self):
         add("OLD", vector=near(1), plcyNm="청년 월세 지원")
         add("NEW", vector=near(2), plcyNm="청년 월세 지원")
