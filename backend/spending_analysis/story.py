@@ -266,7 +266,7 @@ def by_pattern(current, history, months, today, horizon_end=None, detail=None):
         recent = _sum([r for r in (*history, *current) if r["category"] == code and r["net_amount"] > 0
                        and today - timedelta(days=27) <= r["occurred_on"] <= today])
         if months and count <= 2:
-            expected, nxt = max(spent, usual), usual
+            expected, nxt = (max(spent, usual) if left > 0 else spent), usual
             way, daily = "occasional", None
         else:
             daily = recent / 28
@@ -300,7 +300,7 @@ def project(current, history, today, months, complete, validated=None):
     최근 28일 하루 평균으로 계산한 참고치를 쓴다 (method 로 구분해 하단에 밝힌다). 검증에서 기준선보다 못하면 만들지 않는다"""
     if not complete:
         return None
-    if months:  # 지난 달이 있으면 카테고리 소비 방식대로 예상하고, 지난 달들로 되짚어 맞춰 본다 (요구사항 6 · 7)
+    if months or today.day == calendar.monthrange(today.year, today.month)[1]:  # 월말 실제 합계에는 과거 자료가 필요 없다
         detail = {}
         month_end, per, next_total = by_pattern(current, history, months, today, detail=detail)
         checked, error = backtest(history, months, today.day)
@@ -338,6 +338,8 @@ def _category_month_end(code, current, history, months, today):
     한 달에 한두 번 사는 항목은 평소 한 달 금액(완료된 달의 중앙값)을 넘지 않게 본다 (일찍 산 것을 매일 쓰는 것처럼 늘리지 않는다)"""
     spent = _sum([r for r in current if r["category"] == code])
     last = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+    if today == last:
+        return spent
     recent = [r for r in (*history, *current) if r["category"] == code and today - timedelta(days=27) <= r["occurred_on"] <= today and r["net_amount"] > 0]
     monthly_counts = [len([r for r in _in(history, p) if r["category"] == code and r["net_amount"] > 0]) for p in months]
     usual = [ _sum([r for r in _in(history, p) if r["category"] == code]) for p in months]
@@ -346,7 +348,7 @@ def _category_month_end(code, current, history, months, today):
     return spent + _sum(recent) / 28 * (last - today).days
 
 
-def outlook_finding(projection, current, today, budget, habits, history=(), months=()):
+def outlook_finding(projection, current, today, budget, habits, history=(), months=(), categories=None):
     """이번 달 말 · 다음 달 예상과 예산 대비. budget = tools.budget_left 결과 (주기가 달력 달과 같을 때만 비교)"""
     if not projection:
         return None, None
@@ -356,20 +358,22 @@ def outlook_finding(projection, current, today, budget, habits, history=(), mont
     regular = projection["month_end"] - projection["large"]
     next_month = int(round(projection["next"] if projection.get("next") is not None else regular * days_next / days_this, -3))
     allocated = None
+    label = '·'.join(NAMES[c] for c in sorted(set(categories))) if categories else '생활비'
+    cats = {c['category']: c for c in (budget or {}).get('categories', [])
+            if not categories or c['category'] in categories}
     if budget and budget.get("budget", {}).get("state") == "approved" and budget.get("budget", {}).get("allocated"):
         cycle = budget.get("cycle_period")
         if cycle and cycle.start == today.replace(day=1) and cycle.end_before == date(ny, nm, 1):
-            allocated = budget["budget"]["allocated"]
+            allocated = (sum(c['allocated'] for c in cats.values()) if set(categories) <= cats.keys() else None) if categories else budget['budget']['allocated']
     evidence, over_category = [], None
     if allocated:
         gap = month_end - allocated
-        evidence.append(f"이번 달 말 약 {man(month_end)} (생활비 예산 {man(allocated)} 대비 {'+' if gap >= 0 else '-'}{man(abs(gap))})")
+        evidence.append(f"이번 달 말 약 {man(month_end)} ({label} 예산 {man(allocated)} 대비 {'+' if gap >= 0 else '-'}{man(abs(gap))})")
         next_gap = next_month - allocated
         evidence.append(f"다음 달({nm}월)도 지금처럼 쓰면 약 {man(next_month)}"
                         + (f", 예산보다 {man(next_gap)} 많아요." if next_gap > 10000 else
                            f", 예산 안이에요 (남는 돈 약 {man(-next_gap)})." if next_gap < -10000 else ", 예산과 비슷해요."))
         # 먼저 넘을 항목: 이번 달 쓴 돈 + 남은 기간 예상을 최근 비중대로 나눔
-        cats = {c["category"]: c for c in budget.get("categories", [])}
         spent = _by_category(current)
         worst = None
         for code, info in cats.items():
@@ -382,24 +386,24 @@ def outlook_finding(projection, current, today, budget, habits, history=(), mont
         if worst:
             over_category = {"category": worst[0], "over_amount": round(worst[2] - worst[3], -3)}
             evidence.append(f"{'가장 먼저 넘을' if month_end > allocated else '예산을 넘을 것 같은'} 항목은 {ieyo(NAMES[worst[0]])} (예상 {man(worst[2])} / 예산 {man(worst[3])}).")
-        lead = (f"이 흐름이면 이번 달은 약 {man(month_end)}, 생활비 예산({man(allocated)})보다 {man(gap)}쯤 넘을 거예요." if gap > 10000 else
-                f"이 흐름이면 이번 달은 약 {josa(man(month_end), '으로로')} 생활비 예산({man(allocated)}) 안에서 끝날 거예요." if gap < -10000 else
-                f"이 흐름이면 이번 달은 약 {josa(man(month_end), '으로로')} 생활비 예산({man(allocated)})과 비슷하게 끝나요.")
+        lead = (f"이 흐름이면 이번 달은 약 {man(month_end)}, {label} 예산({man(allocated)})보다 {man(gap)}쯤 넘을 거예요." if gap > 10000 else
+                f"이 흐름이면 이번 달은 약 {josa(man(month_end), '으로로')} {label} 예산({man(allocated)}) 안에서 끝날 거예요." if gap < -10000 else
+                f"이 흐름이면 이번 달은 약 {josa(man(month_end), '으로로')} {label} 예산({man(allocated)})과 비슷하게 끝나요.")
     else:
         evidence.append(f"이번 달 말 약 {man(month_end)} (지금까지 {man(projection['observed'])})")
         evidence.append(f"다음 달({nm}월)도 지금처럼 쓰면 약 {man(next_month)}이에요.")
-        lead = f"이 흐름이면 이번 달 생활비는 약 {man(month_end)}이 될 거예요."
+        lead = f"이 흐름이면 이번 달 {josa(label, '은는')} 약 {man(month_end)}이 될 거예요."
     finding = _finding("FORECAST", "forecast", "앞으로", lead, evidence, impact=month_end,
                        month_end=month_end, next_month=next_month, allocated=allocated, over=over_category, next_label=f"{nm}월")
     return finding, over_category
 
 
-def actions(habits, outlook):
+def actions(habits, outlook, today, projection):
     """확인된 습관과 평균 결제액으로 계산되는 행동만. 예산을 넘을 전망이면 초과분과 비교해 준다"""
     out = []
-    gap = None
-    if outlook and outlook.get("allocated"):
-        gap = outlook["month_end"] - outlook["allocated"]
+    left = calendar.monthrange(today.year, today.month)[1] - today.day
+    if left == 0:
+        return []
     plans = {"dining": ("점심 외식을 주 1회 도시락으로 바꾸면", 4), "delivery": ("배달을 주 1회 집밥으로 바꾸면", 4),
              "cafe": ("카페·간식을 주 2회 건너뛰면", 8)}
     for kind, s in sorted(habits.items(), key=lambda kv: -kv[1]["amount"]):
@@ -410,17 +414,27 @@ def actions(habits, outlook):
             text = "외식을 주 1회 집밥으로 바꾸면"
         saved = s["average"] * times
         line = f"{text} 한 달 약 {man(saved)} (평균 {man(s['average'])} × {times}회)"
-        if gap and gap > 0:
-            ratio = saved / gap
-            line += " — " + ("이번 달 초과분을 다 메울 수 있어요." if ratio >= 1 else
-                             f"이번 달 초과분의 {'절반 정도' if ratio >= 0.4 else '일부'}예요.")
+        if projection:
+            times = left * (times // 4) // 7
+            remaining = max(projection['month_end'] - projection['observed'], 0)
+            food = projection.get('detail', {}).get('FOOD')
+            if food:
+                remaining = min(remaining, max(projection['per'].get('FOOD', 0) - food['spent'], 0))
+            saved = int(min(s['average'] * times, remaining) // 100) * 100
+            if saved <= 0:
+                continue
+            line = f"{text} 남은 {left}일 동안 최대 {man(saved)}을 덜 쓸 수 있어요"
+            if outlook and outlook.get('allocated') is not None and projection['observed'] > outlook['allocated']:
+                line += ". 이미 쓴 돈이 예산을 넘어서, 추가 초과를 줄이는 효과예요"
+        if kind in ('dining', 'delivery'):
+            line += " (도시락·집밥 비용은 별도)"
         out.append(line + ("" if line.endswith(".") else "."))
         if len(out) == 2:
             break
     return out
 
 
-def chart(series, projection, outlook, today):
+def chart(series, projection, outlook, today, categories=None):
     """월별 막대: 완료된 달(실제) + 이번 달(쓴 돈 + 남은 기간 예상) + 다음 달(예상). 예산선은 예산과 비교할 수 있을 때만"""
     if not series and not projection:
         return None
@@ -432,8 +446,9 @@ def chart(series, projection, outlook, today):
             bars.append({"label": outlook["next_label"], "actual": 0, "projected": int(outlook["next_month"]), "kind": "next"})
     if len(bars) < 2:
         return None
-    return {"kind": "months", "title": "월별 생활비", "bars": bars, "budget": outlook.get("allocated") if outlook else None,
-            "basis": "생활비 카테고리 결제 기준 · 고정지출·예산 밖 지출 제외 · 진한 막대 = 실제, 빗금 = 지금 흐름이 이어질 때 예상"}
+    label = '·'.join(NAMES[c] for c in sorted(set(categories))) if categories else '생활비'
+    return {"kind": "months", "title": f"월별 {label}", "bars": bars, "budget": outlook.get("allocated") if outlook else None,
+            "basis": f"{label} 카테고리 결제 기준 · 고정지출·예산 밖 지출 제외 · 진한 막대 = 실제, 빗금 = 지금 흐름이 이어질 때 예상"}
 
 
 def examples(over, habits, top_category):
@@ -466,12 +481,12 @@ def build(current_all, history_all, months, today, *, complete, budget, categori
     if weekend_f:
         findings.append(weekend_f)
     projection = project(current, history, today, months, complete, validated)
-    outlook, over = outlook_finding(projection, current, today, budget, habits, history, months)
+    outlook, over = outlook_finding(projection, current, today, budget, habits, history, months, categories)
     if outlook:
         findings.append(outlook)
     spent = _by_category(current) or (series[-1]["categories"] if series else {})
     top = max(spent, key=spent.get) if spent else None
-    return {"findings": findings, "chart": chart(series, projection, outlook, today), "actions": actions(habits, outlook),
+    return {"findings": findings, "chart": chart(series, projection, outlook, today, categories), "actions": actions(habits, outlook, today, projection),
             "examples": examples(over, habits, top), "over": over, "method": projection and projection["method"],
             "projection": projection and {k: v for k, v in projection.items() if k != "validation"} | (
                 {"validation": projection["validation"]} if projection.get("validation") else {}),

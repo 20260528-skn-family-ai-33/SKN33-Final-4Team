@@ -96,6 +96,56 @@ class HabitTest(SimpleTestCase):
 
 
 class ProjectionTest(SimpleTestCase):
+    def test_scoped_forecast_uses_only_selected_category_budget(self):
+        from copy import deepcopy
+        history = [r for m in (7, 8, 9, 10) for r in month_rows(m)]
+        current = [r for r in month_rows(11) if r['occurred_on'] <= TODAY]
+        plan = budget(1000000, {'FOOD': 300000, 'BEAUTY': 700000})
+        before = deepcopy(plan)
+        st = story.build(current, history, MONTHS, TODAY, complete=True, budget=plan, categories=['FOOD'])
+        forecast = next(f for f in st['findings'] if f['id'] == 'FORECAST')
+        self.assertEqual(forecast['allocated'], 300000)
+        self.assertIn('식비 예산', forecast['conclusion'])
+        self.assertIn('넘을 거예요', forecast['conclusion'])
+        self.assertEqual(st['chart']['budget'], 300000)
+        self.assertIn('식비', st['chart']['title'])
+        self.assertEqual([r['name'] for r in st['forecast_rows']], ['식비'])
+        self.assertEqual(st['forecast_rows'][0]['direction'], 'up')
+        self.assertEqual(plan, before)
+
+    def test_month_end_never_adds_unspent_occasional_purchase(self):
+        today = date(2026, 11, 30)
+        history = [r for m in (7, 8, 9, 10) for r in month_rows(m)]
+        current = [pay(d, 13800) for d in range(1, 31)]
+        st = story.build(current, history, MONTHS, today, complete=True,
+                         budget=budget(440000, {'FOOD': 440000, 'BEAUTY': 40000}))
+        self.assertEqual(st['projection']['month_end'], 414000)
+        self.assertEqual(st['projection']['remaining'], 0)
+        self.assertEqual(st['projection']['per']['BEAUTY'], 0)
+        self.assertEqual(story._category_month_end('BEAUTY', current, history, MONTHS, today), 0)
+        self.assertIsNone(st['over'])
+        self.assertEqual(st['chart']['bars'][-2]['projected'], 0)
+        self.assertGreater(st['projection']['next'], 0)
+
+    def test_month_end_actual_total_does_not_require_history_or_prediction_validation(self):
+        result = story.project([pay(30, 12345)], [], date(2026, 11, 30), [], True,
+                               {'state': 'unavailable', 'validation': {'state': 'failed'}})
+        self.assertEqual(result['month_end'], 12345)
+        self.assertEqual(result['remaining'], 0)
+        self.assertIsNone(story.project([pay(30, 12345)], [], date(2026, 11, 30), [], False))
+
+    def test_multiple_selected_budgets_are_summed_and_missing_budgets_are_not_replaced(self):
+        history = [r for m in (7, 8, 9, 10) for r in month_rows(m)]
+        current = [r for r in month_rows(11) if r['occurred_on'] <= TODAY]
+        for categories, expected in ((['FOOD', 'BEAUTY'], 350000), (['FOOD', 'EDUCATION'], None)):
+            with self.subTest(categories=categories):
+                st = story.build(current, history, MONTHS, TODAY, complete=True,
+                                 budget=budget(1000000, {'FOOD': 300000, 'BEAUTY': 50000}), categories=categories)
+                forecast = next(f for f in st['findings'] if f['id'] == 'FORECAST')
+                self.assertEqual(forecast['allocated'], expected)
+                self.assertEqual(st['chart']['budget'], expected)
+                self.assertNotIn('생활비 예산', forecast['conclusion'])
+
     def test_occasional_purchase_bought_early_is_not_extrapolated(self):
         history = [r for m in (7, 8, 9, 10) for r in month_rows(m)]
         current = [r for r in month_rows(11) if r["occurred_on"] <= TODAY] + [pay(2, 40000, "BEAUTY")]
@@ -140,12 +190,31 @@ class ProjectionTest(SimpleTestCase):
 
 
 class ActionsAndChartTest(SimpleTestCase):
+    def test_already_over_budget_cannot_be_erased_by_future_savings(self):
+        habits = {'dining': {'amount': 230000, 'average': 10000, 'weekday_lunch': True}}
+        projection = {'observed': 440000, 'month_end': 450000, 'remaining': 10000,
+                      'per': {'FOOD': 450000}, 'detail': {'FOOD': {'spent': 440000}}}
+        lines = story.actions(habits, {'month_end': 450000, 'allocated': 430000},
+                              date(2026, 11, 29), projection)
+        self.assertEqual(lines, [])  # 주 1회 조정할 온전한 1주도 남지 않음
+
+    def test_savings_are_capped_by_remaining_food_spending(self):
+        habits = {'dining': {'amount': 230000, 'average': 10000, 'weekday_lunch': True}}
+        projection = {'observed': 440000, 'month_end': 460000, 'remaining': 20000,
+                      'per': {'FOOD': 445000}, 'detail': {'FOOD': {'spent': 440000}}}
+        lines = story.actions(habits, {'month_end': 460000, 'allocated': 430000}, date(2026, 11, 16), projection)
+        self.assertIn('최대 5,000원', lines[0])
+        self.assertNotIn('다 메울', ' '.join(lines))
+        self.assertEqual(story.actions(habits, None, date(2026, 11, 30), projection), [])
+
     def test_actions_use_the_persons_average_and_compare_with_the_overrun(self):
         habits = {"dining": {"amount": 230000, "average": 10000, "weekday_lunch": True},
                   "cafe": {"amount": 90000, "average": 4000, "weekday_lunch": True}}
-        lines = story.actions(habits, {"month_end": 1100000, "allocated": 1050000})
-        self.assertEqual(lines[0], "점심 외식을 주 1회 도시락으로 바꾸면 한 달 약 4만 원 (평균 1만 원 × 4회) — 이번 달 초과분의 절반 정도예요.")
-        self.assertIn("카페·간식을 주 2회 건너뛰면 한 달 약 3.2만 원", lines[1])
+        lines = story.actions(habits, {"month_end": 1100000, "allocated": 1050000}, TODAY,
+                              {"month_end": 1100000, "observed": 700000})
+        self.assertIn("남은 20일 동안 최대 2만 원", lines[0])
+        self.assertIn("도시락·집밥 비용은 별도", lines[0])
+        self.assertIn("카페·간식을 주 2회 건너뛰면 남은 20일 동안 최대 2만 원", lines[1])
 
     def test_chart_separates_actual_current_and_next(self):
         series = [{"label": "9월", "total": 900000}, {"label": "10월", "total": 950000}]
