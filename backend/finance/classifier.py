@@ -162,9 +162,11 @@ TRANSIT_CARDS = ("티머니", "캐시비", "레일플러스")
 TRANSPORT_WORDS = ("후불교통", "교통카드", "하이패스", "하이플러스")
 # 주유 · 주차 브랜드는 '시작하면' (이름 뒤쪽에 들어간 다른 가게 제외)
 TRANSPORT_PREFIXES = (
-    "sk에너지", "gs칼텍스", "지에스칼텍스", "에쓰오일", "soil", "현대오일뱅크", "hd현대오일뱅크",
-    "하이파킹", "ajpark", "aj파크", "카카오t주차", "캐롯",
+    "sk에너지", "gs칼텍스", "지에스칼텍스", "에쓰오일", "현대오일뱅크", "hd현대오일뱅크",
+    "하이파킹", "ajpark", "aj파크", "카카오t주차", "캐롯손해보험",
 )
+# S-OIL 은 정리하면 영어 낱말 soil 과 같아져서('Soil 베이커리') 이름 전체가 같거나 번호만 붙을 때만 (11/17 리뷰). 주유소 지점은 위 '주유소'로
+TRANSPORT_EXACT = re.compile(r"soil\d*")
 # 주유소 · 주차장은 '끝나면' ('주차장문' 같은 셔터 가게 제외)
 TRANSPORT_SUFFIXES = ("주유소", "주차장")
 # 자동차보험은 '보험' 기타 규칙보다 먼저: '자동차보험'이 들어 있거나, 손해보험 · 화재 · 해상 회사의 '다이렉트'(자동차보험 채널)
@@ -361,7 +363,8 @@ def is_transport_name(normalized):
     if not normalized or any(word in normalized for word in NOT_TRANSPORT_WORDS):
         return False
     return (any(word in normalized for word in TRANSPORT_WORDS + CAR_INSURANCE_WORDS)
-            or normalized.startswith(TRANSPORT_PREFIXES) or normalized.endswith(TRANSPORT_SUFFIXES))
+            or normalized.startswith(TRANSPORT_PREFIXES) or normalized.endswith(TRANSPORT_SUFFIXES)
+            or bool(TRANSPORT_EXACT.fullmatch(normalized)))
 
 
 def is_telecom(normalized):
@@ -488,7 +491,8 @@ def completed_name(texts, query):
     for text in texts:
         for match in re.finditer(rf"(?<![가-힣a-z0-9]){pattern}[가-힣a-z0-9]*", unicodedata.normalize("NFKC", text).lower()):
             full = re.sub(r"\s+", "", match.group(0))
-            if len(full) > len(name):
+            # 이름 뒤에 조사만 붙은 것('…점에서')은 온전한 이름이 아니다 (11/17 리뷰)
+            if len(full) > len(name) and not re.fullmatch(JOSA, full[len(name):]):
                 return full
     return None
 

@@ -259,17 +259,20 @@ def link_same_purchases(user):
     양쪽 저장 순서가 달라도 되게 이미 이은 거래까지 모두 다시 본다. 뒤늦게 같은 출금이 들어와 모호해지면 규칙이 이은 연결을 푼다.
     사용자가 확정했거나 납부에 붙은 출금은 바꾸지 않는다.
     적요 규칙이 소비로 바꾼 출금(mark_merchant_transfers)도 찾는다: 계좌 출금이 카드 승인보다 먼저 들어오면 출금이 먼저 소비가 돼서
-    카드 승인과 이어지지 못하고 한 결제를 두 번 셌다 (11/16 PR 리뷰). 이으면 출금은 원래 이체로 되돌린다 (소비는 카드 줄이 맡는다)"""
+    카드 승인과 이어지지 못하고 한 결제를 두 번 셌다 (11/16 PR 리뷰). 이으면 출금은 원래 이체로 되돌린다 (소비는 카드 줄이 맡는다).
+    짝이 모호해도 되돌린다: 카드가 먼저 오면 mark_merchant_transfers 가 바꾸지 않으므로 저장 순서와 상관없이 같은 결과가 된다 (11/17 PR 리뷰).
+    출금 후보는 잠근 뒤 최신 상태로 읽는다: 파이프라인은 새 거래만 잠가서, 그 사이 사용자가 확정한 기존 출금을 잇거나 덮어썼다 (11/17 PR 리뷰)"""
     approvals = Tx.objects.filter(
         Q(card__name__contains="체크") | Q(card__card_type__contains="체크"),
         user=user, source_kind="card", transaction_type=Type.SPENDING, is_canceled=False,
     )
-    withdrawals = Tx.objects.filter(
+    # 잠금 순서: 회원(pipeline) → 거래 ID 순. PATCH 가 먼저 확정했으면 잠금을 기다린 뒤 조건을 다시 봐서 빠진다
+    withdrawals = list(Tx.objects.select_for_update().filter(
         Q(transaction_type=Type.TRANSFER) | Q(transaction_type=Type.SPENDING, **{f"field_states__{CONVERTED_BY_MEMO}": True}),
         user=user, source_kind="bank", direction="out", is_canceled=False,
     ).exclude(confirmation_state=Tx.ConfirmationState.CONFIRMED).exclude(
         Exists(PaymentMatch.objects.filter(transaction=OuterRef("pk"))),
-    )
+    ).order_by("pk"))
     cards, banks = defaultdict(list), defaultdict(list)
     for tx in approvals:
         cards[tx.occurred_on, tx.amount, squeeze(tx.merchant_name)].append(tx)
@@ -284,6 +287,8 @@ def link_same_purchases(user):
                 relation_type=Relation.SAME_PURCHASE, confirmation_state=LINK_STATE,
                 from_transaction__in=found, to_transaction__in=banks[key],
             ).delete()
+            for bank in banks[key]:
+                restore_memo_transfer(bank)  # 짝이 모호한 출금은 카드가 먼저 온 경우처럼 이체로 둔다
     # 11/10 PR #98 검수: 이름이 잘려 달라도 이은 연결(외화 승인 원화 채우기, card_foreign)은 위 묶음에 들지 않아 다시 보지 않았다.
     # 같은 날 · 같은 금액 · 같은 가게(앞부분 일치) 후보가 양쪽 다 한 건일 때만 남긴다. 확정 · 납부에 붙은 출금은 위와 같이 그대로 둔다
     cards_by, banks_by = defaultdict(list), defaultdict(list)

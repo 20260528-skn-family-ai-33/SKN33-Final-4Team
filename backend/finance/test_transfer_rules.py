@@ -1,11 +1,18 @@
 """거래 유형 판단 테스트 (pipeline.link_basics → finance/transfer_rules.py)."""
+import threading
+import time as clock
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, time
+from unittest import mock, skipUnless
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.db import connection, connections, transaction
+from django.test import TestCase, TransactionTestCase
 from django.utils import timezone
 
-from . import pipeline
+from rest_framework.test import APIRequestFactory, force_authenticate
+
+from . import api as finance_api, pipeline
 from .models import (BankAccount, Card, Connection, FinancialTransaction as Tx, Loan, PaymentDue, PaymentMatch,
                      RecurringExpense, TransactionLink)
 from .tests import URL
@@ -424,7 +431,26 @@ class MerchantTransferTest(Fixture):
         approval = self.approval("A1", day=date(2026, 11, 3), merchant_name="GS25 역삼점")
         first = self.bank(self.a, "out", desc="GS25 역삼점", amount=30_000, occurred_time=time(1, 0))
         second = self.bank(self.b, "out", desc="GS25 역삼점", amount=30_000, occurred_time=time(2, 0))
-        self.run_on(approval, first, second)
+        self.run_on(approval)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertFalse(TransactionLink.objects.filter(relation_type="SAME_PURCHASE").exists())
+        self.assertEqual((first.transaction_type, second.transaction_type), ("transfer", "transfer"))
+        self.assertEqual(self.spent_total(), 30_000)
+
+    def test_withdrawals_first_then_one_check_card_matches_card_first_order(self):
+        # 11/17 PR 리뷰: 같은 출금 두 건이 먼저 소비가 된 뒤 체크카드 승인 한 건이 오면 짝이 모호해 그대로 9만 원이 됐다.
+        # 카드가 먼저 온 경우(위 테스트)처럼 출금을 이체로 되돌려 3만 원
+        self.card.name = "테스트 체크카드"
+        self.card.save(update_fields=["name"])
+        first = self.bank(self.a, "out", desc="GS25 역삼점", amount=30_000, occurred_time=time(1, 0))
+        second = self.bank(self.b, "out", desc="GS25 역삼점", amount=30_000, occurred_time=time(2, 0))
+        self.run_on(first, second)
+        self.assertEqual((first.transaction_type, second.transaction_type), ("spending", "spending"))
+        approval = self.approval("A1", day=date(2026, 11, 3), merchant_name="GS25 역삼점")
+        self.run_on(approval)
+        first.refresh_from_db()
+        second.refresh_from_db()
         self.assertFalse(TransactionLink.objects.filter(relation_type="SAME_PURCHASE").exists())
         self.assertEqual((first.transaction_type, second.transaction_type), ("transfer", "transfer"))
         self.assertEqual(self.spent_total(), 30_000)
@@ -670,3 +696,57 @@ class CancellationTest(Fixture):
         self.approval("A2")
         self.run_on(in_place, no_number)
         self.assertFalse(TransactionLink.objects.exists())
+
+
+@skipUnless(connection.vendor == "postgresql", "행 잠금 경합은 PostgreSQL에서 검증")
+class SamePurchaseRaceTest(TransactionTestCase):
+    """11/17 PR 리뷰: 늦게 온 체크카드 승인을 처리하는 동안 사용자가 기존 출금의 카테고리를 고치면
+    파이프라인이 예전 상태로 출금을 잇고 이체로 덮어썼다. 출금을 잠근 뒤 최신 상태로 다시 봐야 한다"""
+    serialized_rollback = True  # 다른 트랜잭션 테스트도 쓰는 마이그레이션 초기 데이터(카테고리)를 복원
+
+    def test_user_category_saved_during_pipeline_is_kept(self):
+        user = get_user_model().objects.create_user(email="race@example.invalid")
+        bank = Connection.objects.create(user=user, business_type="bank", organization_code="0004", status="connected")
+        account = BankAccount.objects.create(user=user, connection=bank, source_account_key="a")
+        card = Card.objects.create(user=user, origin="provider", issuer_code="0306", name="테스트 체크카드")
+        withdrawal = Tx.objects.create(
+            user=user, source_kind="bank", account=account, occurred_on=date(2026, 11, 3), amount=30_000,
+            direction="out", source_description="GS25 역삼점", transaction_type="transfer",
+            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
+        )
+        with transaction.atomic():
+            pipeline.link_basics(user, Tx.objects.filter(pk=withdrawal.pk))
+        withdrawal.refresh_from_db()
+        self.assertTrue(withdrawal.field_states.get(CONVERTED_BY_MEMO))
+        approval = Tx.objects.create(
+            user=user, source_kind="card", card=card, occurred_on=date(2026, 11, 3), amount=30_000, direction="out",
+            approval_no="A1", merchant_name="GS25 역삼점", transaction_type="spending",
+            confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
+        )
+        locked = threading.Event()
+        original = finance_api._apply_category
+
+        def slow_apply(tx, code):
+            locked.set()       # PATCH 가 출금 행을 잠근 상태에서 파이프라인을 출발시킨다
+            clock.sleep(0.5)
+            return original(tx, code)
+
+        def patch():
+            try:
+                request = APIRequestFactory().patch(f"/api/finance/transactions/{withdrawal.pk}/",
+                                                    {"category": "HOUSEHOLD"}, format="json")
+                force_authenticate(request, user=user)
+                return finance_api.transaction_detail(request, transaction_id=withdrawal.pk).status_code
+            finally:
+                connections.close_all()
+
+        with mock.patch.object(finance_api, "_apply_category", side_effect=slow_apply), ThreadPoolExecutor(1) as pool:
+            job = pool.submit(patch)
+            self.assertTrue(locked.wait(10))
+            with transaction.atomic():
+                pipeline.link_basics(user, Tx.objects.filter(pk=approval.pk))
+            self.assertEqual(job.result(timeout=30), 200)
+        withdrawal.refresh_from_db()
+        self.assertEqual((withdrawal.transaction_type, withdrawal.confirmed_category_id, withdrawal.confirmation_state),
+                         ("spending", "HOUSEHOLD", "confirmed"))
+        self.assertFalse(TransactionLink.objects.filter(to_transaction=withdrawal).exists())

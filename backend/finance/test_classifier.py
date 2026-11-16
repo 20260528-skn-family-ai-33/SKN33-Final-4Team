@@ -605,6 +605,7 @@ class RuleTest(SimpleTestCase):
             # 교통이 아니거나 교통비로 자동 분류하지 않음
             "교통범칙금": None, "교통과태료": None, "교통사고합의금": None,
             "전동셔터방범샷다주차장문오버헤드도어": None, "주유소식당": None,
+            "Soil 베이커리": None, "캐롯케이크": None, "S-OIL 강남주유소": "TRANSPORT_CAR",  # 11/17 리뷰
             # 자동차보험이 아닌 보험은 지금처럼 기타
             "OO화재해상보험": "ETC", "OO생명보험": "ETC",
         }
@@ -866,6 +867,7 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual([c.args[0] for c in store.call_args_list], ["더뮤지엄비지", "더뮤지엄비지터"])
         self.assertEqual(classifier.completed_name(texts("x"), "더뮤지엄비지"), "더뮤지엄비지터")
         self.assertIsNone(classifier.completed_name(["더뮤지엄비지 매장"], "더뮤지엄비지"))
+        self.assertIsNone(classifier.completed_name(["스타벅스강남대로점에서 커피를"], "스타벅스강남대로점"))  # 조사만 붙음
 
     def test_cut_name_prefix_on_map_and_short_names(self):
         beauty = ("BEAUTY", 0.95, {"BEAUTY": 0.95, "ETC": 0.05}, "jev-test")
