@@ -9,18 +9,22 @@
 - SyncRun.covered_to 는 포함(CODEF endDate, budgets.protect.covered_until 과 같은 해석) → Period(covered_from, covered_to + 1일)
 - 실패 기록은 읽지 않는다: 나중 실패가 이미 확보한 성공 범위를 지우지 않고, 실패 요청 범위(requested)를 성공으로 쓰지 않는다
 - complete 는 수집 범위가 다 있다는 뜻이지 최신이라는 뜻이 아니다 (최근 성공 시각은 evidence · latest_success_at)
+- recent (11/13 베타 피드백): partial 이지만 빈 날이 모든 대상에서 기간 끝(오늘 쪽) RECENT_DAYS 일 이내뿐이면
+  빈 대상마다 어디까지 불러왔는지 — 부르는 쪽이 '불러온 데까지' 기준으로 계산 · 안내한다
 """
 from datetime import timedelta
 
 from django.db import DatabaseError
 
 from finance.api import LIST_TYPES
+from finance.display import account_display, card_display
 from finance.models import BankAccount, Card, FinancialTransaction, SyncRun
 
 from .periods import Period
 
 BANK_RUN, CARD_RUN = "bank_sync", "card_approval_list"
 DAY = timedelta(days=1)
+RECENT_DAYS = 3  # 끝부분만 이 일수 이내로 비었으면 불러온 데까지 기준으로 본다
 
 
 def merge(periods):
@@ -62,13 +66,35 @@ def _target(kind, target_id, runs, period):
     }
 
 
+def _recent(period, targets, undetermined):
+    """빈 날이 모든 대상에서 기간 끝 RECENT_DAYS 일 이내 한 덩어리뿐 → 빈 대상마다 {"kind", "id", "name", "until"}, 아니면 None
+    name = 화면 표시 이름(끝 4자리만, finance.display), until = 마지막으로 불러온 날. 중간이 비었거나 기간 안에 불러온 날이 없으면 None"""
+    if undetermined:
+        return None
+    late = []
+    for t in targets:
+        if not t["missing"]:
+            continue
+        gap = t["missing"][0]
+        if len(t["missing"]) > 1 or not t["covered"] or gap.end_before != period.end_before \
+                or (gap.end_before - gap.start).days > RECENT_DAYS:
+            return None
+        late.append({"kind": t["kind"], "id": t["id"], "until": gap.start - DAY})
+    found = {("account", a.pk): account_display(a) for a in BankAccount.objects.select_related("connection").filter(
+        pk__in=[t["id"] for t in late if t["kind"] == "account"])}
+    found.update({("card", c.pk): card_display(c) for c in Card.objects.select_related("connection").filter(
+        pk__in=[t["id"] for t in late if t["kind"] == "card"])})
+    return [{**t, "name": found[t["kind"], t["id"]]["display_name"]} for t in late] or None
+
+
 def coverage(user, period):
     """→ {"state": "complete" | "partial" | "none" | "error", "period", "targets", "undetermined"}
     - targets: 계좌 · 카드마다 {"kind", "id", "covered", "missing", "evidence", "latest_success_at"}
     - undetermined: 수집 범위를 정할 규칙이 없는 원천 (complete 를 막는다)
     - complete = 대상이 1개 이상 · 모든 대상에 빈 날 없음 · undetermined 없음
     - none = 기간 안에 확보된 날이 하나도 없음(대상이 없을 때 포함) / partial = 그 밖
-    - error = 이 판정의 DB 조회 실패 (기관 조회 실패 기록은 판정 근거가 아니라 그냥 '성공 없음')"""
+    - error = 이 판정의 DB 조회 실패 (기관 조회 실패 기록은 판정 근거가 아니라 그냥 '성공 없음')
+    - recent: partial 이고 끝부분만 비었을 때만 있는 칸 (_recent)"""
     try:
         accounts = list(BankAccount.objects.filter(user=user).order_by("account_id")
                         .values("account_id", "connection_id", "account_type"))
@@ -107,4 +133,9 @@ def coverage(user, period):
         state = "complete"
     else:
         state = "partial"
-    return {"state": state, "period": period, "targets": targets, "undetermined": undetermined}
+    out = {"state": state, "period": period, "targets": targets, "undetermined": undetermined}
+    try:
+        recent = _recent(period, targets, undetermined) if state == "partial" else None
+    except DatabaseError:
+        return {"state": "error", "reason": "db_error", "period": period}
+    return {**out, "recent": recent} if recent else out

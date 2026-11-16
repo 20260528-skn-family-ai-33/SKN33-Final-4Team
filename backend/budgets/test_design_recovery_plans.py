@@ -159,6 +159,18 @@ class RecoveryPlanAPITest(TestCase):
         self.profile.refresh_from_db()
         self.assertEqual(self.profile.savings_floor, 610000)
 
+    def test_custom_cushion_goal_decides_recovery_cushion_floor(self):
+        """PR #120 리뷰 P2: 분배 실패 복구도 지킬 돈 화면과 같은 쿠션 목표(직접 정한 금액)로 적립 필수 여부를 판단한다"""
+        from .design_recovery_plans import finances
+        source, _ = self.failure()
+        handoff = source.result['_design_handoff']
+        data = finances(self.user, handoff, fixtures.TODAY)
+        self.assertEqual(data['floors']['CUSHION_MONTHLY'], 0)  # 잔액 1,200만 ≥ 기본 목표(월급 × 3)
+        self.profile.cushion_goal_amount = 15000000
+        self.profile.save(update_fields=['cushion_goal_amount'])
+        data = finances(self.user, handoff, fixtures.TODAY)
+        self.assertEqual(data['floors']['CUSHION_MONTHLY'], 1)
+
     def test_extended_plan_and_cushion_protection(self):
         _, _, proposal = self.preview(1500001, funding='recovery_extended')
         saving = proposal.items.get(bucket='savings').allocated_amount

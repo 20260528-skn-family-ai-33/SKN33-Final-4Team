@@ -5,9 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import SalaryCheckPopup from './SalaryCheckPopup.jsx'
 import { apiSend, useApi } from '../utils/api.js'
 
-const { reload } = vi.hoisted(() => ({ reload: vi.fn() }))
+const { reload, openPopup } = vi.hoisted(() => ({ reload: vi.fn(), openPopup: vi.fn() }))
 vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), useApi: vi.fn() }))
-vi.mock('./context.js', () => ({ usePopup: () => ({ closePopup: vi.fn() }) }))
+vi.mock('./context.js', () => ({ usePopup: () => ({ closePopup: vi.fn(), openPopup }) }))
 
 const account = { accountId: 'acc', displayName: '합성은행 월급통장 · ****1001', status: 'connected' }
 const item = (id, extra = {}) => ({ transactionId: id, payCycleOn: '2026-09-25', date: '2026-09-25', amount: 2_500_000, description: '합성회사',
@@ -96,4 +96,28 @@ it('과거 회차 재확인은 정상 분할 급여를 함께 유지하고 사�
   await click(button('월급이 맞아요'))
   expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/decisions/', 'POST',
     { transactionIds: ['unchanged', 'changed'], decision: 'confirmed', usePattern: false })
+})
+
+it('내가 월급으로 확인한 회차에는 [확인 취소]가 있고, 누르면 그 회차 확인을 지운다 (11/13)', async () => {
+  await render()
+  expect(button('확인 취소')).toBeUndefined()  // 아직 확인한 월급이 없으면 없다
+  useApi.mockReturnValue({ reload, data: body({ windows: [{ payCycleOn: '2026-09-25', from: '2026-09-18', to: '2026-10-17', items: [
+    item('tx-1', { decision: 'confirmed' }), item('tx-3', { decision: 'confirmed', amount: 200_000 }), item('tx-2', { decision: 'auto' }),
+  ] }] }) })
+  await render()
+  await click(button('확인 취소'))
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/decisions/', 'POST', { transactionIds: ['tx-1', 'tx-3'], decision: 'none' })
+  expect(reload).toHaveBeenCalled()
+  expect(onSaved).toHaveBeenCalled()
+})
+
+it('확인 취소로 받은 금액 기준이 풀리면(basisReset) 다시 짤지 묻는 창을 연다 (11/13)', async () => {
+  useApi.mockReturnValue({ reload, data: body({ windows: [{ payCycleOn: '2026-09-25', from: '2026-09-18', to: '2026-10-17', items: [
+    item('tx-1', { decision: 'confirmed' }),
+  ] }] }) })
+  apiSend.mockResolvedValue({ windows: [], pattern: null, basisReset: true })
+  await render()
+  await click(button('확인 취소'))
+  expect(openPopup).toHaveBeenCalledOnce()
+  expect(openPopup.mock.calls[0][0].type.name).toBe('SalaryBasisResetPopup')
 })

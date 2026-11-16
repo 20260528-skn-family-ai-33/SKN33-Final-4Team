@@ -1,6 +1,8 @@
 // 계좌 연결 1: 은행·카드사 고르기
 // [선택한 기관 연결하기] = 금융 조회 동의 저장(POST /api/finance/consents/) 성공 후 기관 로그인 화면으로 (11/03 S2)
-import { useState } from 'react'
+// 11/12 피드백: 고를 때마다 고른 것(대출 답 · 은행 · 카드사 · 동의 체크)을 이 탭에 남긴다 (utils/connectDraft.js, 30분 · 로그아웃 시 지움)
+//   → 기관 로그인에서 뒤로 와도, 버튼을 누르기 전에 내 정보로 갔다가 [저장하고 계속]으로 다시 들어와도 그대로 채워져 있다
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
@@ -12,6 +14,7 @@ import TermsPopup from '../popups/TermsPopup.jsx'
 import { useConsentDocs } from '../popups/consentDocs.js'
 import { apiSend, newRequestKey } from '../utils/api.js'
 import { josa } from '../utils/adjust.js'
+import { readConnectDraft, saveConnectDraft } from '../utils/connectDraft.js'
 
 const LOAN_ANSWERS = ['있어요', '없어요', '나중에 확인']
 
@@ -52,13 +55,18 @@ function PickCard({ title, hint, items, picked, moreLabel, notSupported = [], so
 
 export default function ConnectPage() {
   const navigate = useNavigate()
-  const [hasLoan, setHasLoan] = useState(null)
-  const banks = usePicked()
-  const cards = usePicked()
+  const [draft] = useState(readConnectDraft)  // 처음 그릴 때 한 번만 읽는다 (없으면 null)
+  const [hasLoan, setHasLoan] = useState(draft?.hasLoan ?? null)
+  const banks = usePicked(draft?.banks)
+  const cards = usePicked(draft?.cards)
   const [busy, setBusy] = useState(false)
   const { openPopup } = usePopup()
   // 동의 3개(서버 문서): 계좌 필수 · 카드 선택 · 대출 선택 — docs/api/finance-connect.md '금융 조회 동의 저장'
-  const consent = useConsentDocs((d) => d.purpose === 'finance_inquiry')
+  const consent = useConsentDocs((d) => d.purpose === 'finance_inquiry', draft?.agreed)
+  // 바뀔 때마다 이 탭에 남긴다 (agreedKeys 는 매번 새 배열이라 글자로 바꿔 비교)
+  const agreed = consent.agreedKeys()
+  const snapshot = JSON.stringify({ hasLoan, banks: banks.list, cards: cards.list, agreed })
+  useEffect(() => { saveConnectDraft(JSON.parse(snapshot)) }, [snapshot])
   const [error, setError] = useState('')
   const agreedTo = (scope) => consent.docs?.some((d) => d.productScope === scope && consent.isAgreed(d))
   const setOne = (d, on) => { consent.setOne(d, on); setError('') }

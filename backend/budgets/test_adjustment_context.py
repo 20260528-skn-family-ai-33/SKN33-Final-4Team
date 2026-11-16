@@ -380,6 +380,17 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(found["bucket_floors"]["CUSHION_MONTHLY"], 1)
         self.assertEqual(found["bucket_available"]["CUSHION_MONTHLY"], 199999)
 
+    def test_custom_cushion_goal_decides_cushion_floor(self):
+        """PR #120 리뷰 P2: 월급 300만 · 잔액 1,200만이면 기본 목표(900만)로는 적립 필수가 아니지만,
+        사용자가 목표를 1,500만으로 정했으면 적립 필수 → 월 쿠션 하한 1원"""
+        self.make_budget()
+        self.assertEqual(self.context()["bucket_floors"]["CUSHION_MONTHLY"], 0)
+        self.profile.cushion_goal_amount = 15000000
+        self.profile.save(update_fields=["cushion_goal_amount"])
+        found = self.context()
+        self.assertEqual(found["bucket_floors"]["CUSHION_MONTHLY"], 1)
+        self.assertEqual(found["bucket_available"]["CUSHION_MONTHLY"], 199999)
+
     def test_missing_and_temporary_references_are_never_claimed_to_be_ml(self):
         budget = self.make_budget(snapshot={"engine_input": {"target": 950000}})
         found = self.context()

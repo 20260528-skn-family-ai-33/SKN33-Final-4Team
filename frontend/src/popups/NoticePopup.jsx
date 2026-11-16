@@ -1,5 +1,5 @@
 // 팝업: 알림 — 홈 오른쪽 위 종 아이콘 (11/3: 메인 카드 위에 늘어놓던 할 일 · 월급 안내를 여기로 모음)
-// props: items = [{ key, text, count?, icon?, go? }] — go 가 있으면 누르는 줄(누르면 닫고 그 화면으로), 없으면 같은 모양의 안내 줄
+// props: items = [{ key, title?, text, count?, mark?, icon?, go? }] — title = 문장 위 굵은 이름 (예: '월급 확인', 11/13) — mark = 아이콘 대신 굵은 글자 하나 (예: '!', 11/13) — go 가 있으면 누르는 줄(누르면 닫고 그 화면으로), 없으면 같은 모양의 안내 줄
 // 목록 모양은 홈 '꼭 나갈 돈'과 같다: 왼쪽 네모(건수 또는 아이콘) · 문장 · ›, 줄 사이 구분선
 import Popup from './Popup.jsx'
 import Icon from '../components/Icon.jsx'
@@ -19,8 +19,8 @@ export default function NoticePopup({ items }) {
             const Row = n.go ? 'button' : 'div'  // 안내(월급 상태)는 갈 화면이 없어서 누를 수 없고 화살표가 없다
             return (
               <Row {...(n.go ? { type: 'button', onClick: () => open(n.go) } : {})} className="mc-listrow" key={n.key}>
-                <span className="mc-tile">{n.count != null ? <b>{n.count}</b> : <Icon name={n.icon ?? 'Bell'} />}</span>
-                <span className="mc-grow">{n.text}</span>
+                <span className="mc-tile">{n.count != null ? <b>{n.count}</b> : n.mark ? <b className="mc-notice-mark">{n.mark}</b> : <Icon name={n.icon ?? 'Bell'} />}</span>
+                <span className="mc-grow">{n.title && <strong className="mc-notice-title">{n.title}</strong>}<span className="mc-notice-text">{n.text}</span></span>
                 {n.go && <span className="mc-muted" aria-hidden="true">›</span>}
               </Row>
             )

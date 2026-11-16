@@ -10,7 +10,8 @@ import { PATHS } from '../routes.js'
 import Popup from './Popup.jsx'
 import MoneyInput from '../components/MoneyInput.jsx'
 import { usePopup } from './context.js'
-import { MONTH_DAYS } from '../utils/days.js'
+import { dayBad } from '../utils/days.js'
+import DayInput from '../components/DayInput.jsx'
 import { apiSend, newRequestKey } from '../utils/api.js'
 import { toast } from '../utils/toast.js'
 
@@ -31,6 +32,7 @@ export default function LoanAddPopup({ onSaved }) {
   const [error, setError] = useState('')
   const [method, setMethod] = useState(null)   // null = 고르지 않음(모름)
   const [errors, setErrors] = useState({})
+  const [day, setDay] = useState('')  // 납부일 글자 ('' = 모름, 11/12 숫자 입력)
   const [requestKey] = useState(newRequestKey)  // 이 팝업의 요청 번호 (다시 눌러도 같은 번호)
   const [saving, setSaving] = useState(false)
 
@@ -57,6 +59,7 @@ export default function LoanAddPopup({ onSaved }) {
       if (Number.isNaN(rate) || rate < 0 || rate > 30) next.rate = '금리는 0 ~ 30% 사이로 적어 주세요.'
     }
     if (monthly !== null && (!Number.isInteger(monthly) || monthly < 1 || monthly > MAX_MONTHLY)) next.monthly = '월 상환액은 1원부터 1억 원까지 입력해 주세요.'
+    if (dayBad(day)) next.day = '납부일은 1~31 중에서 입력해 주세요.'
     setErrors(next)
     if (Object.keys(next).length > 0 || saving) return
     pending.current = true
@@ -128,19 +131,15 @@ export default function LoanAddPopup({ onSaved }) {
               ))}
             </div>
           </div>
-          <div className="mc-loan-2">
-            <label className="mc-field">월 상환액
-              <MoneyInput name="lnMonthly" placeholder="금액 입력" />
-            </label>
-            <label className="mc-field">납부일
-              <select name="lnDay" defaultValue="">
-                <option value="">모름</option>
-                {MONTH_DAYS.map((d) => <option key={d} value={String(d)}>매월 {d}일</option>)}
-              </select>
-            </label>
-          </div>
+          {/* 11/12: 납부일은 숫자 입력 + [직접 입력|말일] 칸이라 반 칸에 안 들어가서 월 상환액과 한 줄씩 */}
+          <label className="mc-field">월 상환액
+            <MoneyInput name="lnMonthly" placeholder="금액 입력" />
+          </label>
           {errors.monthly && <p className="mc-field-error">{errors.monthly}</p>}
-          {errors.day && <p className="mc-field-error">{errors.day}</p>}
+          <label className="mc-field">납부일
+            <DayInput id="mc-ln-day" name="lnDay" what="납부일" optional value={day} onChange={(d) => { setDay(d); setErrors({ ...errors, day: undefined }) }} />
+          </label>
+          {errors.day && !dayBad(day) && <p className="mc-field-error">{errors.day}</p>}
           {errors.method && <p className="mc-field-error">{errors.method}</p>}
           {errors.nonFieldErrors && <p className="mc-field-error">{errors.nonFieldErrors}</p>}
           {error && <p className="mc-error" role="alert">{error}</p>}

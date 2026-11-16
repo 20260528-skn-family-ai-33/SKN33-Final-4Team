@@ -13,7 +13,9 @@
 |---|---|---|
 | `takeHomeIncome` | 정수 | 필수, 1~9,999,999,999,999원. MoneyInput의 13자리 상한과 동일 |
 | `payday` | 정수 | 필수, 매월 1~31일 |
-| `paydayApplyFrom` | 문자열 | 기존 급여일 변경 시 필수. `current_cycle` 이번 주기 / `next_cycle` 다음 주기 |
+| `applyFrom` | 문자열 | 첫 예산 승인 뒤 기존 급여일 **또는 월 실수령액**을 바꿀 때 필수. `current_cycle` 이번 주기 / `next_cycle` 다음 주기. 한 번 고르면 이번 저장의 두 값에 함께 적용. 승인 전(온보딩)에 생략하면 `current_cycle`로 처리 (11/12) |
+| `paydayApplyFrom` | 문자열 | `applyFrom`의 예전 이름(같은 뜻). 둘 다 보내고 값이 다르면 400 `applyFrom` |
+| `keepIncomeBasis` | boolean | 이번 주기를 받은 월급 기준(`incomeBasis`)으로 짠 뒤 월 실수령액을 `current_cycle`로 바꿀 때 필수. `true` = 이번 주기는 받은 월급 기준 그대로 · `false` = 이번 주기도 새 월급으로. 새 월급이 받은 월급과 같으면 생략해도 된다(기준을 푼다). 그 밖의 경우는 보내도 무시 (11/13) |
 
 숫자 문자열·소수·boolean·null은 받지 않는다. 미정의 필드도 400이다.
 주급·격주 지급, 휴일 보정, 세전 금액은 지원하지 않는다. 없는 날짜는 그 달 말일로 계산한다.
@@ -28,19 +30,32 @@ PUT은 두 필수 값을 모두 받는다. 같은 값으로 반복 요청해도 
 급여일 변경:
 
 ```json
-{"takeHomeIncome": 2800000, "payday": 10, "paydayApplyFrom": "next_cycle"}
+{"takeHomeIncome": 2800000, "payday": 10, "applyFrom": "next_cycle"}
 ```
 
 ## 적용 시점 (2026-10-28 결정)
 
 - 최초 등록은 바로 적용한다. 최초 등록에 `next_cycle`을 보내면 400이다.
 - 기존 급여일과 다른 날을 보내면 화면에서 **이번 주기부터 / 다음 주기부터**를 반드시 선택한다. 선택이 없으면 금액도 함께 저장하지 않고 400을 반환한다.
+- 단, 첫 예산을 승인하기 전(온보딩)에는 지키는 예산 주기가 없으므로 화면에서 묻지 않는다. 선택을 생략하면 바로 적용(`current_cycle`)한다 (2026-11-12 피드백). 보내면 보낸 값대로 처리한다.
 - `current_cycle`: 새 급여일 기준으로 오늘이 속한 주기를 즉시 다시 계산한다.
 - `next_cycle`: **오늘보다 뒤에 오는 가장 가까운 새 급여일**에 전환한다. 현재 주기 시작일은 유지하고, 종료일을 전환일 전날로 바꾼다. 오늘이 새 급여일이면 다음 달 해당일에 전환한다.
 - 예: 10/28에 현재 10/25~11/24 주기의 급여일을 10일로 수정할 때, 이번 주기 선택은 10/10~11/9, 다음 주기 선택은 10/25~11/9를 거쳐 11/10부터 새 주기가 된다.
-- 월 실수령액은 저장 즉시 적용한다. 선택은 급여일에만 적용되며 미래 월급 금액 예약은 이번 범위에 없다.
+- **월 실수령액 (2026-11-12 변경)**: 급여일과 같은 선택을 따른다. 예전에는 저장 즉시 적용했다.
+  - `current_cycle`: 바로 바꾸고, 있던 실수령액 예약은 지운다.
+  - `next_cycle`: **다음 주기 시작일**(지금 주기 끝 다음 날 = 급여일 예약이 있으면 그 전환일)에 바꾼다. 그 전까지 `takeHomeIncome`은 지금 금액이고 `pendingIncomeChange`로 예약을 알려 준다. 같은 금액으로 다시 보내면 예약만 다시 맞춘다.
+  - **받은 월급 기준과 겹칠 때 (11/13 검수)**: 이번 주기를 [월급 차이 안내](#월급-차이-안내-1113)의 `apply`로 받은 월급 기준(`budget_cycle.income_basis`)으로 짰다면, `current_cycle`로 실수령액을 바꿀 때 `keepIncomeBasis`로 둘 중 하나를 고른다. 안 보내면 아무것도 저장하지 않고 400 `keepIncomeBasis`. 예전에는 등록 실수령액만 바뀌고 받은 월급 기준이 계속 이겨서, 월급 화면(새 월급)과 지킬 돈 배분(받은 월급)이 달랐다.
+    - `false`: 이번 주기 `income_basis`를 비워 지킬 돈 · 추천이 새 월급으로 나뉜다(`base.incomeSource = "registered"`). `income_answered_for`는 남겨 같은 받은 금액으로 월급 차이 안내를 다시 띄우지 않는다.
+    - `true`: 등록 실수령액만 바뀌고 이번 주기는 받은 월급 그대로. 다음 주기부터 새 월급이 기준이다.
+    - 새 월급 = 받은 월급이면 고를 게 없어 기준을 푼다. `next_cycle`이면 이번 주기는 그대로라 묻지 않는다.
+    - **급여일도 `current_cycle`로 바꾸면** 주기가 새로 생겨 받은 월급 기준을 이어 갈 수 없다. 묻지 않고 기준을 풀며, `keepIncomeBasis: true`를 보내면 400 `keepIncomeBasis`.
+    - 첫 예산 승인 전(`applyFrom` 생략 = 이번 주기)에도 기준이 있으면 같은 규칙이다.
+    - 화면: `SalaryBasisChoicePopup`. 승인 뒤에는 [이번 주기부터]를 고른 뒤 한 번 더, 승인 전에는 [저장] 바로 뒤에 묻는다. 다시 짜기 → 지킬 돈 화면(승인 전은 원래 다음 화면), 유지 → 마이(또는 홈) + 토스트.
+  - 예약 중 지금 금액을 보내고 선택도 보내면 예약을 취소한다. 선택 없이 보내면(예전 화면) 예약을 유지한다.
+  - 전환일이 되면 `current_salary_profile`이 실수령액을 옮기고 예약 칸을 비운다(`scheduled_take_home_income` · `income_changes_on`). 급여일과 달리 지난 주기 계산에 필요 없어 기록을 남기지 않는다.
+  - 프로필을 직접 읽는 예산 조정 · 설계 복구 · 쿠션 화면은 `due_income(profile, today)`로 전환일이 지난 예약을 메모리에서 반영한다(저장은 하지 않음). 전환일 당일 이 화면들을 먼저 열어도 새 금액으로 계산한다.
 - 예약 중 같은 새 급여일과 `next_cycle`을 재전송해도 전환일을 뒤로 미루지 않는다.
-- 예약 중 현재 급여일을 보내고 선택을 생략하면 예약을 유지한다(금액만 수정 가능). 현재 급여일과 `current_cycle`을 보내면 예약을 취소한다. 다른 날을 선택하면 예약을 교체한다.
+- 예약 중 현재 급여일을 보내고 선택을 생략하면 예약을 유지한다. 현재 급여일과 선택(`current_cycle` · `next_cycle`)을 보내면 예약을 취소한다(11/12: 예전에는 `current_cycle`만). 다른 날을 선택하면 예약을 교체한다.
 - 전환일 이후 급여 GET·PUT, 홈, 활성 주기를 읽는 고정지출·저축 API, 대출 납부 예정 저장에서 예약을 반영한다. 별도 스케줄러는 필요 없다. 첫 전환 주기의 이전 주기를 알 수 있도록 전환 정보는 DB에 보존한다.
 - 지킬 돈·추천·카테고리 잠금·승인·예산 조회는 회원 잠금 뒤 `current_salary_profile(user, today)`로 예약을 반영한 프로필을 읽고, 주기 날짜는 `salary_cycle_dates(profile, today)`로 계산한다. 별도 호출부에서 예약 적용만 필요하면 `activate_salary_if_due(user, today)`를 사용한다. 일반 `cycle_dates`만 쓰면 전환 중인 주기의 경계를 놓칠 수 있다.
 
@@ -52,12 +67,15 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 {
   "takeHomeIncome": 2800000,
   "payday": 25,
-  "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"}
+  "pendingPaydayChange": {"payday": 10, "effectiveOn": "2026-11-10"},
+  "pendingIncomeChange": {"takeHomeIncome": 3000000, "effectiveOn": "2026-11-10"},
+  "incomeBasis": null
 }
 ```
 
-전환 이후에는 `payday: 10`, `pendingPaydayChange: null`이다.
-미등록 GET은 `{"takeHomeIncome": null, "payday": null, "pendingPaydayChange": null}`이며 프로필을 만들지 않는다.
+전환 이후에는 `payday: 10`, `pendingPaydayChange: null`이다. 실수령액도 전환일 이후 `takeHomeIncome: 3000000`, `pendingIncomeChange: null`이다.
+`incomeBasis`(11/13): 이번 주기를 받은 월급 기준으로 짰으면 그 금액, 아니면 `null`. 화면이 `keepIncomeBasis`를 물을지 정하는 근거다. 마이 요약(`GET /api/my/`의 `salary`)에도 같은 값이 들어간다.
+미등록 GET은 `{"takeHomeIncome": null, "payday": null, "pendingPaydayChange": null, "pendingIncomeChange": null, "incomeBasis": null}`이며 프로필을 만들지 않는다.
 
 ## 저장과 연동
 
@@ -108,13 +126,15 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 **자동 인정 조건** — 사용자가 직접 확인하면서 기준으로 고른 단일 입금(`is_pattern`, 회원당 하나)과 비교해 모두 만족할 때만:
 
 1. 같은 회원 · 같은 계좌, 취소 아님, 지금도 급여로 고를 수 있는 입금(기준 거래 자신도 그래야 함)
-2. 같은 금액 (허용 오차 없음)
+2. 금액이 기준 입금의 **절반 이상** (11/13: 같은 금액 → 절반 이상. 식대 · 수당이 붙어 매달 금액이 조금씩 달라도 인식)
 3. 그 회차 구간 안
 4. 적요 규칙 일치 (아래)
-5. 조건에 맞는 입금이 그 회차에 **정확히 1건** — 다른 회차에 쓴 거래 · 거절한 거래 · 사용자 확인 거래는 제외
+5. 조건에 맞는 입금 중 **월급날(회차 시작일)에 가장 가까운 1건** (11/13: 같은 회사 경비 · 수당이 따로 들어와도 월급만 인정. 가장 가까운 입금이 같은 거리로 둘 이상이면 고르지 않는다) — 다른 회차에 쓴 거래 · 거절한 거래 · 사용자 확인 거래는 제외
 6. 그 회차에 사용자 확인 급여가 없음 (있으면 자동으로 더하지 않음)
 
-이미 자동 인정한 거래가 무효(취소 · 이체 등)가 되거나 조건 맞는 입금이 여러 건이 되면, 다른 거래로 갈아 붙이지 않고 그 판단을 `recheck`(재확인 필요)로 바꾼다. 그 회차는 사용자가 확인하거나(그 회차 판단을 고른 목록으로 바꿈) `none`으로 판단을 지울 때까지 반복 조회해도 자동 인정하지 않는다. `recheck` 거래는 인정 합계에 넣지 않는다. 처음부터 0건 · 여러 건이면 자동 인정을 만들지 않는다. 자동 인정은 기준을 바꾸지 않는다. 분할 급여 자동 합산 · 출처 추론은 하지 않는다.
+**분할 급여로 확인하면 기준을 끈다 (11/13)**: 여러 건을 함께 월급으로 확인(`confirmed`, 2건 이상)하면 있던 자동 인식 기준(`is_pattern`)을 끈다. 켜 두면 다음 달 기준과 같은 1건만 자동 인정돼 나머지(식대 등)가 빠지고 '월급 차이 안내'가 잘못 '덜 들어왔어요'로 뜬다. 지난 확인 · 자동 인정 기록은 그대로다. 화면은 여러 건을 고를 때 기준이 있으면 '지금 켜 둔 자동 인식도 꺼져요'를 보여 준다.
+
+이미 자동 인정한 거래가 무효(취소 · 이체 등)가 되거나 월급날에 더 가까운(또는 같은 거리의) 입금이 생기면, 다른 거래로 갈아 붙이지 않고 그 판단을 `recheck`(재확인 필요)로 바꾼다. 그 회차는 사용자가 확인하거나(그 회차 판단을 고른 목록으로 바꿈) `none`으로 판단을 지울 때까지 반복 조회해도 자동 인정하지 않는다. `recheck` 거래는 인정 합계에 넣지 않는다. 처음부터 0건이거나 가장 가까운 입금을 고를 수 없으면 자동 인정을 만들지 않는다. 자동 인정은 기준을 바꾸지 않는다. 분할 급여 자동 합산 · 출처 추론은 하지 않는다.
 
 **적요 규칙** (`budgets/salary.py memo_key`, 테스트 `budgets/test_salary_check.py MemoKeyTest`)
 
@@ -161,6 +181,10 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 - `none`: 판단 줄을 지운다. 자동 인정을 `none`으로 지우면 다음 조회 때 다시 자동 인정될 수 있으니 아니면 `rejected`를 쓴다.
 - 없는 · 남의 · 출금 거래는 400 `invalid`(같은 문구). 영향 받은 회차의 `confirmed_income`을 다시 계산한다. 등록 실수령액 · 승인 예산은 바꾸지 않는다.
 
+**`basisReset` (11/13)**: `POST /api/budgets/salary/decisions/` 응답은 GET과 같은 모양에 `basisReset`(불린)을 더한다. 이 판단(확인 · 거절 · 취소)으로 인정 합계가 바뀌어 '이번 주기만 받은 금액으로' 기준(`income_basis`)이 풀렸으면 `true`. 화면은 "월급 확인을 취소했어요. 등록한 월급으로 다시 짤까요?" [다시 짜기](지킬 돈을 등록 월급 기준 추천값으로) · [그대로 두기]를 묻는다. 승인한 예산은 자동으로 바꾸거나 이전 예산으로 되돌리지 않는다.
+
+**확인 취소 (11/13, 화면)**: 월급 확인 창의 회차 제목 옆 [확인 취소]는 그 회차에서 내가 확인한(`confirmed`) 입금 전부를 `decision: "none"`으로 보낸다(새 API 없음). 판단 줄이 지워져 확인 전(후보면 '확인 필요')으로 돌아가고 인정 합계도 다시 계산한다. 그 입금이 자동 인식 기준이었으면 기준도 함께 없어진다. 다른 기준이 남아 있고 같은 패턴이면 다음 조회 때 자동 인정될 수 있다. 자동 인정(`auto`)만 있는 회차는 [확인 취소]를 보여 주지 않는다(지워도 다시 자동 인정되므로 '월급이 아니에요'를 쓴다).
+
 ### DELETE `/api/budgets/salary/pattern/`
 
 자동 인식 기준을 끈다(기준 거래의 확인은 그대로). 이번 · 다음 회차에서 사용자 확인 없는 자동 인정은 확인 대상으로 돌아간다. 지난 회차의 기록은 바꾸지 않는다. 응답은 GET과 같다.
@@ -179,7 +203,48 @@ GET과 PUT은 현재 적용 값과 변경 예약을 반환한다. PUT에 보낸 
 
 **기존 자료**: R12 전 `confirmed_income` · `isSalary`는 자동 추정이라 확인 이력 · 학습 근거로 쓰지 않는다. 일괄 확정 · 삭제 · 보정하지 않는다. 이번 주기는 홈을 열면 판단 기준으로 다시 계산되어(후보면 `needs_check`, 금액 비움) 사용자가 한 번 확인하면 된다. 지난 주기 `confirmed_income`은 그대로 남고, 지난 거래의 `isSalary`는 `false`로 보인다.
 
+## 월급 차이 안내 (11/13)
+
+받은 월급(그 회차 인정 합계)이 등록 실수령액과 꽤 다르면 홈에서 묻는다. 등록 실수령액은 바꾸지 않고, 사용자가 고르면 **그 주기만** 받은 금액으로 지킬 돈 · 추천을 나눈다.
+
+- **묻는 조건** (`budgets/salary.py salary_gap`): 이번 회차에 인정된 월급이 있고, `|받은 - 등록| ≥ 10,000원` **이고** `≥ 등록 실수령액의 3%`. 이미 같은 받은 금액으로 답했으면(`budget_cycle.income_answered_for`) 묻지 않는다. 받은 금액이 바뀌면(분할 입금 추가 · 확인 정정) 다시 묻는다.
+- 홈 응답: `period.salaryGap` ([home.md](home.md)). 없으면 `null`.
+
+| `period.salaryGap` 칸 | 타입 | 설명 |
+|---|---|---|
+| `diff` | 정수 | 받은 - 등록 (원, 부호 있음. 음수 = 적게) |
+| `received` | 정수 | 이번 회차 인정된 월급 합계 |
+| `registered` | 정수 | 등록 실수령액 |
+| `basis` | 정수 또는 `null` | 지금 이 주기 예산 기준으로 쓰는 금액 (`apply`로 정했으면 그 값) |
+
+**화면 선택지** (`frontend/src/popups/SalaryGapPopup.jsx`, 11/13 둘로 정리)
+
+| 선택 | 보내는 답 | 다음 |
+|---|---|---|
+| 이번 예산 다시 짜기 | `apply` | 지킬 돈 화면을 받은 금액으로 나눈 추천값으로 연다(`refreshRecommendation`). 늘거나 준 돈을 어디에 둘지는 거기서 정한다 → 저장 → 새 추천 → 승인 |
+| 그대로 두기 | `keep` | 예산 그대로. 토스트 |
+
+등록 실수령액 자체를 바꾸려면 월급 설정 화면에서 바꾼다(이번/다음 주기 선택). 이번 주기에 `apply`해 둔 상태에서 이번 주기부터 바꾸면 받은 월급 기준을 둘지 한 번 더 고른다(`keepIncomeBasis`, 위 '적용 시점').
+
+### POST `/api/budgets/salary/gap/`
+
+```json
+{ "answer": "apply", "salaryAmount": 2200000 }
+```
+
+| 칸 | 타입 | 설명 |
+|---|---|---|
+| `answer` | `"apply"` · `"keep"` | `apply` = 이번 주기만 받은 금액으로 나눈다 (`budget_cycle.income_basis = 받은 금액`). `keep` = 기준은 그대로 둔다 (전에 `apply`한 값이 있으면 그대로) |
+| `salaryAmount` | 정수 | 화면이 본 받은 금액(`salaryGap.received`). 지금 인정 합계와 다르면 `400 invalid` (`fields.salaryAmount`: "받은 월급이 바뀌었어요. 홈을 새로고침해 주세요.") |
+
+- 응답 `200`: `{ "incomeBasis": 2200000 | null, "salaryAmount": 2200000 }`. 같은 답을 다시 보내도 성공.
+- 두 답 모두 `income_answered_for = 받은 금액`으로 남겨 같은 금액으로는 다시 묻지 않는다.
+- **받은 금액이 바뀌면 기준을 되돌린다 (11/13)**: 월급 확인 취소 · 정정 · 분할 입금 추가로 그 회차 인정 합계가 `income_basis`와 달라지면(`store_income`), `income_basis` · `income_answered_for`를 비워 등록 실수령액 기준으로 돌아가고 만들어 둔 초안은 만료한다. 새 금액이 다시 조건에 맞으면 다시 묻는다. 예: 잘못 확인한 30만원 입금으로 '다시 짜기'를 했다가 확인을 취소하면, 지킬 돈이 30만원 월급으로 막혀 있지 않고 등록 실수령액으로 돌아온다.
+- `apply`로 기준 금액이 바뀌면 만들어 둔 초안 · 검수된 예산은 만료(`expired`)한다. 이미 승인한 예산은 그대로이고, 지킬 돈 저장 → 새 추천을 승인해야 바뀐다.
+- 기준 금액은 `GET/PUT /api/budgets/protect/`의 `base.takeHomeIncome`(이때 `base.incomeSource = "actual"`)과 추천 입력의 `take_home_income`에 쓴다. 머니 쿠션 기본 목표(월급 3배) · 후보(80%) · 차이 계산은 등록 실수령액 그대로다.
+- 급여일 미등록이면 `400 invalid`(`fields.payday`). 다른 칸을 보내면 `400`.
+
 ## 자동 검사
 
-PostgreSQL 개발 환경에서 `python manage.py test budgets.test_salary budgets.test_salary_check budgets.test_home budgets.test_fixed finance.test_loans`를 실행한다.
+PostgreSQL 개발 환경에서 `python manage.py test budgets.test_salary budgets.test_salary_check budgets.test_home budgets.test_fixed finance.test_loans` (월급 차이 안내: `budgets.test_salary_check.SalaryGapTest` · `AmountTolerantAutoTest`)를 실행한다.
 Django가 별도 테스트 DB를 생성·삭제한다. 개발 DB의 급여 정보는 변경하지 않는다.

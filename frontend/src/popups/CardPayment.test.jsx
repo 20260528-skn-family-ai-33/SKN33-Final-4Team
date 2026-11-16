@@ -86,3 +86,21 @@ it('납부 완료 뒤에도 연결 내역과 연결 취소가 보인다', async 
   expect(apiSend).toHaveBeenCalledWith('/api/finance/card-bills/bill-1/payments/a/', 'DELETE')
   expect(toast).toHaveBeenCalledWith('납부 연결을 취소하고 분류를 ‘이체’로 되돌렸어요.')
 })
+
+it('출금은 카드 안에 5건씩 보이고 [다음 ›] · [‹ 이전]으로 넘긴다 · 기간 칸은 목록 위에 있다 (11/12)', async () => {
+  const many = Array.from({ length: 8 }, (_, i) => tx(`m${i}`, 10_000 * (i + 1)))
+  useApi.mockReturnValue({ data: body({ items: many }), reload })
+  await render()
+  const options = () => [...host.querySelectorAll('.mc-pay-list .mc-lock-opt')]
+  expect(options()).toHaveLength(5)
+  expect(host.querySelector('.mc-pager').textContent).toContain('1 / 2')
+  expect(button('‹ 이전').disabled).toBe(true)
+  const range = host.querySelector('.mc-pay-range')
+  expect(range.compareDocumentPosition(options()[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  await click(button('다음 ›'))
+  expect(options().map((b) => b.textContent)).toEqual(expect.arrayContaining([expect.stringContaining('합성카드 m5')]))
+  expect(options()).toHaveLength(3)
+  expect(button('다음 ›').disabled).toBe(true)
+  await click(button('‹ 이전'))
+  expect(options()).toHaveLength(5)
+})

@@ -207,7 +207,7 @@ class SchedulePersistenceTest(TestCase):
     def test_saved_salary_decrease_can_cover_deficit_before_approval_and_activation(self):
         from .api_salary import save_salary
         with transaction.atomic():
-            save_salary(self.user, self.profile, {'take_home_income': 2500000, 'payday': 25}, fixtures.TODAY)
+            save_salary(self.user, self.profile, {'take_home_income': 2500000, 'payday': 25, 'apply_from': 'current_cycle'}, fixtures.TODAY)
         self.profile.refresh_from_db()
         self.snapshot.update(monthly_income=self.profile.monthly_take_home_income, next_cycle_starts_on='2026-11-25')
         adapter = self.adapter()

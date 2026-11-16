@@ -116,6 +116,9 @@ class FinancialProfile(models.Model):
     payday_revision = models.PositiveIntegerField("급여일 변경 횟수", default=0)
     payday_changes_on = models.DateField("급여일 전환일", null=True, blank=True)
     payday_previous_start = models.DateField("전환 전 주기 시작일", null=True, blank=True)
+    # 2026-11-12: 월 실수령액도 '다음 주기부터' 적용할 수 있다. 전환일이 되면 monthly_take_home_income 으로 옮기고 둘 다 비운다
+    scheduled_take_home_income = models.BigIntegerField("다음 주기 실수령액", null=True, blank=True)
+    income_changes_on = models.DateField("실수령액 전환일", null=True, blank=True)
     # 지킬 돈 (지킬 돈 설정 화면 · 2026-10-21 A안): 생활비 · 저축 · 월 쿠션 적립금 세 칸 모두 사용자 설정값
     # 이 값으로 매 주기 예산(budget_item)을 나눈다. 실제 배정 결과는 budget_item 에 있다
     living_budget = models.BigIntegerField("월 생활비", null=True, blank=True)  # NULL=미설정. 카테고리 예산 합계의 기준
@@ -123,6 +126,9 @@ class FinancialProfile(models.Model):
     savings_floor = models.BigIntegerField("월 저축 보호액", null=True, blank=True)
     cushion_target = models.BigIntegerField("쿠션 목표액", null=True, blank=True)
     cushion_monthly = models.BigIntegerField("월 쿠션 적립금", null=True, blank=True)  # 2026-10-21 보호 하한(cushion_floor) 대체
+    # 11/13: 머니쿠션 목표를 사용자가 직접 정한 금액. NULL=기본(월 실수령액 × 3, 월급이 바뀌면 같이 바뀜)
+    # 쿠션 필수 판단(P-08) · 지킬 돈 목표도 같은 목표를 쓴다. cushion_target 은 저장 때의 '현재 목표' 기록
+    cushion_goal_amount = models.BigIntegerField("쿠션 목표액 (직접 정함)", null=True, blank=True)
     cushion_use_policy = models.CharField("쿠션 사용 조건", max_length=50, null=True, blank=True)
     updated_at = models.DateTimeField("수정 시각", auto_now=True)
 
@@ -144,10 +150,21 @@ class FinancialProfile(models.Model):
                 name="fp_payday_change_valid",
             ),
             models.CheckConstraint(
+                condition=(
+                    Q(scheduled_take_home_income__isnull=True, income_changes_on__isnull=True)
+                    | Q(scheduled_take_home_income__gte=1, income_changes_on__isnull=False)
+                ),
+                name="fp_income_change_valid",
+            ),
+            models.CheckConstraint(
                 condition=Q(living_budget__isnull=True) | Q(living_budget__gte=0), name="fp_living_budget_gte_0",
             ),
             models.CheckConstraint(
                 condition=Q(cushion_monthly__isnull=True) | Q(cushion_monthly__gte=0), name="fp_cushion_monthly_gte_0",
+            ),
+            models.CheckConstraint(
+                condition=Q(cushion_goal_amount__isnull=True) | Q(cushion_goal_amount__gte=10_000, cushion_goal_amount__lte=1_000_000_000),
+                name="fp_cushion_goal_amount_range",
             ),
             models.CheckConstraint(
                 condition=Q(housing_type__isnull=True) | Q(housing_type__in=["alone", "family"]),

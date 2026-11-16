@@ -101,8 +101,15 @@ class ApprovedBudgetTest(TestCase):
         self.assertEqual((p["spent"].start, p["spent"].last_day), (d(2026, 10, 25), d(2026, 10, 29)))
 
     def test_payday_boundaries(self):
-        before, on = approved_budget(user("A"), d(2026, 10, 24)), approved_budget(user("A"), d(2026, 10, 25))
+        # 11/13: 진행 중(active) 주기만 읽는다 → 10/24 당시처럼 9/25 주기가 진행 중인 상태로 맞춰 급여일 전날을 본다
+        cycles = BudgetCycle.objects.filter(user=user("A"))
+        cycles.filter(starts_on=d(2026, 10, 25)).update(status="closed")
+        cycles.filter(starts_on=d(2026, 9, 25)).update(status="active")
+        before = approved_budget(user("A"), d(2026, 10, 24))
         self.assertEqual(before["cycle"]["starts_on"], d(2026, 9, 25))  # 급여일 전날은 지난 주기
+        cycles.filter(starts_on=d(2026, 9, 25)).update(status="closed")
+        cycles.filter(starts_on=d(2026, 10, 25)).update(status="active")
+        on = approved_budget(user("A"), d(2026, 10, 25))
         self.assertEqual(on["cycle"]["starts_on"], d(2026, 10, 25))
         self.assertEqual(approved_budget(user("A"), d(2026, 11, 25)), {"state": "no_cycle"})  # ends_before 미포함
         self.assertEqual(approved_budget(user("A"), d(2026, 6, 24)), {"state": "no_cycle"})

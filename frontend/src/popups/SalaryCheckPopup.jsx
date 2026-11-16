@@ -1,6 +1,7 @@
 // 팝업: 월급 확인 (R12) — 급여 구간의 입금을 골라 '월급이 맞아요 / 아니에요'. 분할 급여는 여러 건을 골라 합계로 확인
 // GET  /api/budgets/salary/deposits/   구간(이번 회차 · 다음 회차 조기)별 입금 · 지금 자동 인식 기준
 // POST /api/budgets/salary/decisions/  { transactionIds, decision: confirmed|rejected|none, usePattern }  · DELETE /api/budgets/salary/pattern/ 자동 인식 끄기
+// 회차 제목 옆 [확인 취소] (11/13): 그 회차에 내가 확인한 월급을 none 으로 → 확인 전 (자동 인식 기준이었으면 기준도 없어진다)
 // 같은 구간에서만 함께 고를 수 있다. 확인하면 그 회차의 월급 = 고른 입금 목록 (docs/api/salary.md)
 // props: onSaved = 저장 뒤 부를 함수 (홈 새로고침)
 import { useState } from 'react'
@@ -9,6 +10,8 @@ import { won } from '../utils/money.js'
 import { apiSend, useApi } from '../utils/api.js'
 import { toast } from '../utils/toast.js'
 import PaymentTxLine from '../components/PaymentTxLine.jsx'
+import SalaryBasisResetPopup from './SalaryBasisResetPopup.jsx'
+import { usePopup } from './context.js'
 
 const TAG = { confirmed: '월급으로 확인함', auto: '자동 인식', rejected: '월급 아니라고 함', recheck: '거래 또는 확인 근거가 바뀌어서 다시 확인 필요' }
 const mmdd = (iso) => `${iso.slice(5, 7)}.${iso.slice(8, 10)}`
@@ -17,6 +20,7 @@ const detected = (t) => t.isCandidate || ['confirmed', 'auto', 'recheck'].includ
 
 export default function SalaryCheckPopup({ onSaved }) {
   const { data, error, reload } = useApi('/api/budgets/salary/deposits/')
+  const { openPopup } = usePopup()
   const [pick, setPick] = useState(null)        // { cycle, ids: [] } — 한 구간 안에서만
   const [usePattern, setUsePattern] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -46,8 +50,11 @@ export default function SalaryCheckPopup({ onSaved }) {
     if (busy) return
     setBusy(true); setSaveError('')
     try {
-      await apiSend(url, method, body)
-      setPick(null); setUsePattern(false); toast(done); reload(); onSaved?.()  // 11/9: 창 안 문장 대신 위에 잠깐 뜨는 토스트
+      const res = await apiSend(url, method, body)
+      setPick(null); setUsePattern(false); reload(); onSaved?.()
+      // 11/13: 확인 취소 · 정정으로 '이번 주기만 받은 금액으로' 기준이 풀렸으면 다시 짤지 묻는다 (이 창 대신 가운데 창)
+      if (res?.basisReset) openPopup(<SalaryBasisResetPopup onDone={onSaved} />)
+      else toast(done)  // 11/9: 창 안 문장 대신 위에 잠깐 뜨는 토스트
     } catch (err) {
       setSaveError(err.fields ? Object.values(err.fields).flat().join(' ') : err.status ? err.message : '서버에 연결하지 못했어요. 다시 시도해 주세요.')
     } finally { setBusy(false) }
@@ -61,9 +68,16 @@ export default function SalaryCheckPopup({ onSaved }) {
       <div className="mc-eyebrow">월급 확인</div>
       <h1>어느 입금이 월급인가요?</h1>
 
-      {windows.map(({ w, shown }) => (
+      {windows.map(({ w, shown }) => {
+        // 11/13: 이 회차에 내가 월급으로 확인한 입금 → [확인 취소]로 확인 전으로 되돌린다 (decision: none)
+        const mine = w.items.filter((i) => i.decision === 'confirmed').map((i) => i.transactionId)
+        return (
         <section key={w.payCycleOn} aria-label={`${mmdd(w.payCycleOn)} 월급`}>
-          <h3 className="mc-loan-h">{mmdd(w.payCycleOn)} 회차 월급 <small>{mmdd(w.from)} ~ {mmdd(w.to)}</small></h3>
+          <div className="mc-row mc-salary-head">
+            <h3 className="mc-loan-h">{mmdd(w.payCycleOn)} 회차 월급 <small>{mmdd(w.from)} ~ {mmdd(w.to)}</small></h3>
+            {mine.length > 0 && <button type="button" className="mc-link" disabled={busy}
+              onClick={() => send('POST', '/api/budgets/salary/decisions/', { transactionIds: mine, decision: 'none' }, '월급 확인을 취소했어요')}>확인 취소</button>}
+          </div>
           {shown.length === 0 && <p className="mc-note">이 기간에 고를 수 있는 입금이 없어요.</p>}
           <div className="mc-lock-list">{shown.map((t) => (
             <button type="button" key={t.transactionId} className="mc-lock-opt" style={{ flexWrap: 'wrap' }} disabled={busy}
@@ -75,7 +89,8 @@ export default function SalaryCheckPopup({ onSaved }) {
             </button>))}
           </div>
         </section>
-      ))}
+        )
+      })}
       {hiddenCount > 0 && <button type="button" className="mc-link" onClick={() => setShowAll(true)}>다른 입금 {hiddenCount}건도 보기 ›</button>}
 
       {picked.length > 0 && <div className="mc-card">
@@ -84,7 +99,7 @@ export default function SalaryCheckPopup({ onSaved }) {
           <label className="mc-field mc-check mc-salary-auto"><input type="checkbox" checked={usePattern} onChange={(e) => setUsePattern(e.target.checked)} />
             다음 달부터 비슷한 입금은 자동으로 월급으로 볼게요</label>)}
         {single?.patternUnusableReason && <p className="mc-note">{single.patternUnusableReason}. 다음 달에도 직접 확인해 주세요.</p>}
-        {picked.length > 1 && <p className="mc-note">여러 건은 합계로 확인해요. 분할 급여는 자동 인식 기준으로 쓸 수 없어요.</p>}
+        {picked.length > 1 && <p className="mc-note">여러 건은 합계로 확인해요. 분할 급여는 자동 인식 기준으로 쓸 수 없어요.{data.pattern && ' 지금 켜 둔 자동 인식도 꺼져요.'}</p>}
         <button type="button" className="mc-primary" disabled={busy} onClick={() => decide('confirmed')}>월급이 맞아요</button>
         <button type="button" className="mc-secondary" disabled={busy} onClick={() => decide('rejected')}>월급이 아니에요</button>
         {picked.some((t) => t.decision === 'confirmed' || t.decision === 'rejected') &&

@@ -2,7 +2,7 @@
 import { SPEND_CATS, ETC, catIcon } from './categories.js'
 
 export const CHIPS = [...SPEND_CATS, ETC]  // 카테고리 칩 (확인 필요는 따로) · 사용자가 거래 카테고리를 고를 때도 이 목록
-const KIND = { spending: 'normal', income: 'income', transfer: 'transfer', own_transfer: 'transfer', saving: 'transfer' }  // 내 계좌 이체 판단이 있는 거래만 목록에 옴 (R11)
+const KIND = { spending: 'normal', income: 'income', transfer: 'transfer', own_transfer: 'transfer', saving: 'transfer', not_spending: 'excluded' }  // excluded = '소비가 아니에요'로 뺀 소비 (11/13)  // 내 계좌 이체 판단이 있는 거래만 목록에 옴 (R11)
 
 // '신한 주거래 우대통장 · ****0303' → ['신한 주거래 우대통장', '****0303'] (끝 4자리는 아래 줄 회색으로 쓰는 화면용)
 export const splitName = (name) => {
@@ -23,7 +23,7 @@ export function toView(item) {
   return {
     id: item.transactionId,
     kind: item.classifyState === 'needs_review' ? 'pending' : kind,
-    icon: kind === 'income' ? 'Banknote' : kind === 'transfer' ? 'Send' : catIcon(item.categoryName),
+    icon: kind === 'income' ? 'Banknote' : kind === 'transfer' ? 'Send' : kind === 'excluded' ? 'CircleMinus' : catIcon(item.categoryName),
     name: item.merchantName,
     cat: item.categoryName,
     amount: item.amount,

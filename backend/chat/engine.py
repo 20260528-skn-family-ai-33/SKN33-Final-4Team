@@ -101,7 +101,7 @@ def _content(bot, turn):
     content = {"text": "\n".join(lead + lines), "choices": bot.get("choices", []), "lead": lead, "lines": lines,
                "sections": bot.get("sections", []), "notices": bot.get("notices", []), "turn": turn,
                "agent": bot["agent"], "inputs": bot["inputs"], "result": bot["result"]}
-    content.update({k: bot[k] for k in ("chart", "examples", "view", "alt", "budget_adjustment") if bot.get(k)})
+    content.update({k: bot[k] for k in ("chart", "examples", "view", "alt", "budget_adjustment", "synced_until") if bot.get(k)})
     if getattr(settings, "CHAT_DEV_TRACE", False) and (bot.get("trace") or bot.get("entry")):
         # 개발용 분석 과정 — 더미 설정에서만 (chat.md 계약 칸 아님). entry = B 전 단계, 그 밖 = B 흐름
         content["dev_trace"] = {**(bot.get("trace") or {}), "entry": bot.get("entry")}

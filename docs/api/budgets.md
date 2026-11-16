@@ -117,7 +117,10 @@
 | `missing` | 문자 배열 | 계산에 필요한데 없는 값. `housingType`(→ 내 정보) · `takeHomeIncome` · `payday`(→ 급여). 비어 있지 않으면 아래 `rates`(자취 여부가 있으면 채움) 말고 `base` · `recommended` · `blocked`는 `null`, `savingsMin`은 계산해서 줌 |
 | `housingType` | 문자 / null | `alone`(자취) · `family`(본가 거주) |
 | `rates` | 객체 / null | 쓰는 비율, 0~100 정수. `{ "living", "saving", "spare", "cushion" }` |
-| `base.takeHomeIncome` | 정수 | 월 실수령액 |
+| `base.takeHomeIncome` | 정수 | 이번 주기 배분에 쓰는 월급. 보통 등록 월 실수령액, 홈 '월급 차이 안내'에서 이번 주기만 받은 금액으로 고르면 그 금액 (11/13, [salary.md](salary.md#월급-차이-안내-1113)). 추천 입력(`take_home_income`)도 같은 값 |
+| `budgetApproved` | 불린 | 11/13. 이번 주기(진행 중)에 승인한 예산이 있는지. 화면이 마이에서 생활비를 안 바꾸고 저장하면 다시 추천 없이 저장만 하는 근거(`approvedBudget`은 충당 · 설정 차이가 있을 때만 와서 따로 둔다). `missing`이 있으면 `false` |
+| `base.cardReserved` | 정수 | 11/13. `fixedTotal` 안에 든 카드값(첫 청구서 선차감 P-12 + 이번 회차 할부금). 화면이 '고정지출'과 '이번 주기 카드값'을 나눠 보여 줄 때 쓴다 (고정지출 = `fixedTotal − cardReserved`). 관리 대상 카드가 없으면 0 |
+| `base.incomeSource` | 문자 | 11/13. `registered` 등록 실수령액 · `actual` 이번 주기만 받은 월급(`budget_cycle.income_basis`) |
 | `base.fixedTotal` | 정수 | 이번 주기에 먼저 빼는 고정비 합계 (P-04 · 카드 선차감 P-12 포함). 홈 `mustPay` 합계와 다를 수 있다. 카드 선차감을 모르면 `base`가 `null` |
 | `base.available` | 정수 | 배분 기준 금액 = `takeHomeIncome − fixedTotal`. 음수면 0이 아니라 **음수 그대로** (부족 판정용) |
 | `savingsMin` | 정수 | 저축 최소 금액 = 확정 정기 저축 월 합계 (savings.md S-02, 저장하지 않고 그때 계산) |
@@ -218,13 +221,16 @@
 |---|---|---|---|
 | 칸이 비었거나 형식이 틀림 · 표에 없는 칸 | 400 | `invalid` | `fields.<칸>` 메시지 |
 | 저축 < 저축 최소 금액 | 400 | `invalid` | `fields.savingFloor`: "저축 확인에서 고른 ○원보다 적게 정할 수 없어요." |
-| 쿠션 필수인데 0원 | 400 | `invalid` | `fields.cushionMonthly`: "잔액이 월급의 3배보다 적어서 쿠션을 꼭 적립해야 해요." |
+| 쿠션 필수인데 0원 | 400 | `invalid` | `fields.cushionMonthly`: "잔액이 쿠션 목표보다 적어서 쿠션을 꼭 적립해야 해요." |
+| 이번 주기 승인 예산이 있고, 이번 주기에 실제로 적립한(`CushionEntry` allocation) 쿠션보다 적은 금액 (PR #120 리뷰) | 400 | `invalid` | `fields.cushionMonthly`: "이번 주기에 이미 150,000원을 쿠션에 적립해서 그보다 적게 정할 수 없어요." (금액은 실제 적립액) |
 | 합계 > 배분 기준 금액 | 400 | `invalid` | `fields.nonFieldErrors`: "배분 가능한 금액보다 ○원 많아요. 입력 금액을 줄여 주세요." |
 | 자취 여부 · 월 실수령액이 없음 | 409 | `not_ready` | "내 정보 · 급여를 먼저 입력해 주세요." |
 | 고정비 · 정기 저축만으로 모자람 | 409 | `not_ready` | "정기 저축이나 고정지출을 먼저 고쳐 주세요." |
 | 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 |
 
 ---
+
+**마이에서 저장한 뒤 화면 흐름 (11/13, `frontend/src/pages/ProtectPage.jsx`)**: 이미 승인한 예산이 있고(`budgetApproved`) **생활비(`livingBudget`)가 저장값 그대로**면(저축 목표액 · 월 쿠션 적립금만 고침) 저장만 하고 마이로 돌아간다 — 카테고리 배분이 바뀌지 않으므로 새 추천(LLM 포함)을 만들지 않는다. 대신 서버가 이번 주기 승인 예산의 저축 · 쿠션 줄을 새 값으로 바꾸고(여윳돈 같이 맞춰짐, 검수 P1) PUT 응답 `approvedBudgetUpdated = true`를 준다. `false`(합계가 승인 당시 배분 대상을 넘는 등)면 화면이 추천 화면으로 보낸다. 규칙: cushion.md '보호 중인 쿠션 쌓기'. 생활비를 바꿨거나, 월급 차이 · 카드 청구서로 다시 짜러 온 경우(`refreshRecommendation`)는 전처럼 '예산을 다시 추천해요' 창 → 추천 화면.
 
 ## 추천 예산 · 카테고리 예산 공통 결정 (10/27)
 
@@ -344,6 +350,8 @@
 | `budget.outOfBudgetAllocated` | 정수 | **이전 기준 예산 표시** (N-F1). 이 예산의 생활비 줄 중 주거·통신 · 여행·숙박 배정 합계. 11/3 전에 승인한 예산만 0보다 크다. 생활비 총액(`living.budget` · `split.living`)은 승인 때 저장한 그대로 이 금액을 포함하고, `categories`에는 두 카테고리가 없어 카테고리 합계 = 생활비 − 이 금액. 0보다 크면 화면이 "이전 기준으로 승인한 예산이에요 … 새 기준으로 추천을 다시 받아 주세요"를 보여 준다. 조회만으로 DB 금액 · 상태를 바꾸지 않는다 |
 | `budget.engineVersion` | 문자 / null | 이 예산을 만든 계산 엔진 버전. `temp-`로 시작하면 임시 비율 추천 → 추천 화면에 "테스트 추천" 표시 (11/3) |
 | `split` | 객체 / null | 한 달 나눠보기: `{ "funding", "fixed", "saving", "cushion", "living", "spare" }` (원). `funding = fixed + saving + cushion + living + spare` |
+| `recommendation.basis` | 객체 / null | 11/12. 예산 설계 에이전트가 만든 예산이면 어떻게 짰는지: `{ plan: "a" \| "b", reason, ai }`. `plan=b` 지난 3개월 내 소비 기반, `plan=a` 거래가 적어 통계 모델(비슷한 사람들의 소비 비율) 기반. `reason`은 `history_not_ready` · `transaction_counts_unavailable` · `sparse_transactions` · `sufficient_transactions`. `ai`는 동의한 외부 AI가 실제로 금액을 다듬었으면 true. 예전 계산 엔진으로 만든 예산은 `recommendation` 자체가 null |
+| `split.cardReserved` | 정수 | 11/12. `fixed` 안에 든 **지난 카드값** — 예산을 만들 때 저장한 카드 선차감(그 카드사로 처음 예산을 만드는 주기의 첫 청구서 + 가입 전에 산 할부의 이번 회차). 없으면 0. `fixed`를 넘지 않으며 합계 식은 그대로(`fixed`에 이미 포함). 화면은 0보다 클 때만 고정비 줄과 나눠 보여 준다 |
 | `living` | 객체 / null | `{ "budget", "spent", "remaining" }` 이번 주기 생활비 · 쓴 돈 · 남은 돈(0 아래 안 내림). 쓴 돈은 **주기 시작일 ~ 오늘**(홈 · 채팅과 같은 기간, 11/3) 거래이며 예산 밖 카테고리(R-13) 지출은 뺀다 |
 | `overspend` | 객체 / null | 생활비를 넘게 썼을 때 여윳돈 충당 (플로우 4.7): `{ "over", "coveredBySpare", "spareRemaining", "shortfall" }` = 생활비 초과액 · 여윳돈으로 충당한 금액 · 남은 여윳돈 · 그래도 모자란 금액. 안 넘었으면 `over`·`coveredBySpare`·`shortfall` = 0, `spareRemaining` = 여윳돈 전체. 저축 · 쿠션에서는 가져오지 않는다 |
 | `categories` | 배열 | 배분 대상 카테고리 + 기타(R-13, 주거·통신 · 여행·숙박 없음), 화면 순서(`display_order`). 예산이 없으면 `[]`. 옛 정책 승인 예산에 두 카테고리 줄이 있어도 목록에 넣지 않는다 |
@@ -361,7 +369,7 @@
 {
   "cycle": { "startsOn": "2026-10-25", "endsBefore": "2026-11-25" },
   "budget": { "budgetId": "5c2a…", "versionNo": 1, "status": "validated", "salaryConfirmed": true, "engineVersion": "temp-fallback-targets-2" },
-  "split": { "funding": 2800000, "fixed": 770000, "saving": 610000, "cushion": 200000, "living": 1120000, "spare": 100000 },
+  "split": { "funding": 2800000, "fixed": 770000, "cardReserved": 0, "saving": 610000, "cushion": 200000, "living": 1120000, "spare": 100000 },
   "living": { "budget": 1120000, "spent": 0, "remaining": 1120000 },
   "overspend": { "over": 0, "coveredBySpare": 0, "spareRemaining": 100000, "shortfall": 0 },
   "categories": [
@@ -413,7 +421,7 @@
 
 - 자물쇠는 **급여 주기 단위**로 저장한다(`budget_category_setting`). 같은 주기의 초안 · 승인 예산이 같은 자물쇠를 본다. **새 주기가 처음 만들어질 때 바로 전 주기의 자물쇠(잠긴 카테고리 · 잠긴 금액)를 이어받는다** — 자물쇠는 다음 달에도 적용 (10/28 기획 확인). 바꾼 횟수는 0부터 다시 센다(잔소리는 이번 주기 기준). 생활비가 바뀌어 안 맞으면 풀린다(P-13).
 - **걸 때 금액도 같이 저장한다** (리뷰 10/28): `budget_category_setting`에 **`locked_amount` 칸 추가**(DB 변경). 자물쇠를 거는 순간 **주소의 예산(`budget_id`)에서 그 카테고리 배정 금액**을 저장하고, 다시 추천받을 때 이 금액을 그대로 쓴다. 풀면 `null`. 이미 걸린 상태에서 다른 예산 화면에서 다시 `true`를 보내면 그 예산 금액으로 바꾼다 (`changeCount`는 안 늘림 — 잠금 여부는 그대로라서).
-- 잔소리 규칙(10/15 결정): ① 주거 · 통신, 교통 · 차량 **말고** 다른 카테고리의 자물쇠를 이번 주기에 **3번 이상** 바꾸면 ② 이번 주기에 예산을 **3번 이상 승인**하면 → `nag`에 문구. 문구: "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?" (10/28 확정)
+- 잔소리 규칙(10/15 결정): ① 주거 · 통신, 교통 · 차량 **말고** 다른 카테고리의 자물쇠를 이번 주기에 **3번 이상** 바꾸면 ② 이번 주기에 예산을 **3번 이상 승인**하면 → `nag`에 문구. 문구: "이번 달 예산을 여러 번 바꿨어요" (10/28 확정 → 11/13 알림 줄에 맞게 바꿈, 전: "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?"). **11/13: 화면에서는 예산 · 추천 화면에 띄우지 않고 홈 종 알림 한 줄로만 보여 준다** (홈 `budget.nag`). API 응답 `nag`는 그대로
 - 바꿀 수 있는 예산: 이번 주기의 일반 `validated` 또는 `approved`. 미승인 조정안(`base_budget` 또는 `task_type=budget_adjust`)의 잠금 설정·해제는 거절한다. 승인된 파생 예산은 일반 승인 예산과 같이 처리한다. 지난 주기 · `superseded` · `expired` 예산은 409.
 
 **실패하면**

@@ -1,23 +1,66 @@
-// 팝업: 쿠션 기준 확인 — 쿠션 화면 "쿠션 기준 확인"
-// 읽기 전용. 월 적립금 저장(PATCH /api/budgets/cushion/)은 예산 설정 작업과 조율한 뒤 연결한다 (R26 후속)
+// 가운데 창: 머니쿠션 목표 바꾸기 — 쿠션 화면 [목표 바꾸기] (11/13)
+// 목표 금액을 직접 입력한다. 기본은 월급의 3배(월급이 바뀌면 같이 바뀜), 직접 정하면 월급이 바뀌어도 그대로
+// 쿠션 필수 판단 · 지킬 돈의 '목표까지 N개월'도 같은 목표를 쓴다
+// PATCH /api/budgets/cushion/ { goalAmount } (null = 기본으로 되돌리기, docs/api/cushion.md). 월 쿠션 적립금은 지킬 돈 설정에서 바꾼다
+// props: cushion = 쿠션 화면이 받은 값 (goal · goalCustom · defaultGoal), onSaved = 바꾼 뒤 쿠션 화면 다시 불러오기
+import { useState } from 'react'
 import Popup from './Popup.jsx'
-import { won } from '../utils/money.js'
 import { usePopup } from './context.js'
+import MoneyInput from '../components/MoneyInput.jsx'
+import { apiSend } from '../utils/api.js'
+import { won } from '../utils/money.js'
+import { toast } from '../utils/toast.js'
 
-// props: cushion = 쿠션 화면이 장고에게 받아 온 값. null은 0원으로 보이지 않게 안내 문구로 바꾼다
-export default function CushionPopup({ cushion }) {
+const MIN = 10_000
+const MAX = 1_000_000_000
+
+export default function CushionPopup({ cushion, onSaved }) {
   const { closePopup } = usePopup()
+  const [digits, setDigits] = useState(cushion.goal == null ? '' : String(cushion.goal))
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const send = async (goalAmount, message) => {
+    setBusy(true)
+    setError('')
+    try {
+      await apiSend('/api/budgets/cushion/', 'PATCH', { goalAmount })
+      onSaved?.()
+      closePopup()
+      toast(message)
+    } catch (err) {
+      setError(err.message)
+      setBusy(false)
+    }
+  }
+
+  const save = (e) => {
+    e.preventDefault()
+    if (busy) return
+    const amount = Number(digits)
+    if (digits === '') { setError('목표 금액을 입력해 주세요.'); return }
+    if (amount < MIN || amount > MAX) { setError(`${won(MIN)}부터 ${won(MAX)}까지 정할 수 있어요.`); return }
+    if (cushion.goalCustom && amount === cushion.goal) { closePopup(); return }
+    send(amount, `목표를 ${won(amount)}으로 바꿨어요`)
+  }
 
   return (
-    <Popup label="쿠션 기준 확인" sub>
-      <div className="mc-eyebrow">쿠션 기준 확인</div>
-      <h1>내 예비비의 기준</h1>
-      <div className="mc-keyvalue"><span>쿠션 목표액</span><strong>{cushion.goal == null ? '급여 정보 확인이 필요해요' : won(cushion.goal)}</strong></div>
-      <p className="mc-note">목표액은 월 실수령액의 3배로 정해져요.</p>
-      <div className="mc-keyvalue"><span>월 쿠션 적립금</span><strong>{cushion.monthly == null ? '아직 정하지 않았어요' : won(cushion.monthly)}</strong></div>
-      <p className="mc-note">월 쿠션 적립금은 이 화면에서 바꿀 수 없어요.</p>
-      <div className="mc-keyvalue"><span>예산 조정 시 쿠션 사용</span><strong>{cushion.useRule ?? '아직 설정을 지원하지 않아요'}</strong></div>
-      <div className="mc-foot"><button type="button" className="mc-primary" onClick={closePopup}>확인</button></div>
+    <Popup label="쿠션 목표 바꾸기" dialog>
+      <h2>목표를 얼마로 할까요?</h2>
+      <p className="mc-muted" style={{ margin: '6px 0 0' }}>갑자기 큰돈이 필요할 때를 대비해 모아 둘 금액이에요.</p>
+      <form onSubmit={save}>
+        <label className="mc-field mc-cushion-field">목표 금액
+          <MoneyInput value={digits} onChange={(d) => { setDigits(d); setError('') }} placeholder="예: 5,000,000" aria-label="목표 금액 (원)" />
+        </label>
+        {cushion.defaultGoal != null && <p className="mc-muted mc-cushion-hint">추천 {won(cushion.defaultGoal)} · 월급의 3배</p>}
+        {error && <p className="mc-error" role="alert">{error}</p>}
+        <button type="submit" className="mc-primary" disabled={busy}>{busy ? '저장 중…' : '저장'}</button>
+      </form>
+      {cushion.goalCustom && (
+        <button type="button" className="mc-link mc-cushion-reset" disabled={busy} onClick={() => send(null, '목표를 추천 금액으로 되돌렸어요')}>
+          추천 금액으로 되돌리기
+        </button>
+      )}
     </Popup>
   )
 }

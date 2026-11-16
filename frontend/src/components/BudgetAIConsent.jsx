@@ -9,7 +9,8 @@ import TermsPopup from '../popups/TermsPopup.jsx'
 const URL = '/api/budgets/ai-consent/'
 const BADGES = { granted: '동의함', revoked: '철회함', needs_renewal: '다시 동의 필요' }
 
-export default function BudgetAIConsent() {
+// onChange(data): 동의 상태를 읽거나 바꿀 때마다 알려 준다 (11/12, 예산 짜기 전 동의 단계의 버튼 문구용)
+export default function BudgetAIConsent({ onChange }) {
   const { openPopup } = usePopup()
   const [data, setData] = useState(null)
   const [checked, setChecked] = useState(false)
@@ -26,6 +27,9 @@ export default function BudgetAIConsent() {
       setError('예산 AI 동의 상태를 불러오지 못했어요. 기본 예산 추천은 이용할 수 있어요.')
     }), [])
   useEffect(() => { load() }, [load])
+  const changed = useRef(onChange)
+  useEffect(() => { changed.current = onChange })
+  useEffect(() => { if (data) changed.current?.(data) }, [data])
   const save = async () => {
     if (working.current || !data) return
     const revoke = data.status === 'granted' || revokeOnly
