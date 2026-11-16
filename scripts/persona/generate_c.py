@@ -78,6 +78,10 @@ def days():
 
 class BuilderC(Builder):
     persona, seed, opening = 'c', SEED, OPENING
+    STATEMENT_STYLES = [
+        (lambda r: r['role'] == 'delivery', 1.0, '쿠팡이츠 - 쿠팡', 'PG쇼핑몰', False),
+        (lambda r: r['merchant_name'] == '쿠팡', 1.0, ['쿠팡_쿠페이 - 쿠팡', 'KCP-쿠팡'], 'PG쇼핑몰', False),
+    ]
 
     def build(self):
         rng = self.rng
@@ -164,6 +168,7 @@ class BuilderC(Builder):
             if d == date(2026, 11, 12):
                 self.spend(d, '20:10', 'pharmacy', 4_000, 8_000, zone='home', regular=1.0, note='파스')
         self.extras()
+        self.restyle()
         self.balances()
 
     def outing(self, d, zone):

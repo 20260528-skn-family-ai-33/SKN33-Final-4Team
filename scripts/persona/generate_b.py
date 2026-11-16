@@ -85,6 +85,19 @@ def pay_date(year, month):
 
 class BuilderB(Builder):
     persona, seed, opening = 'b', SEED, OPENING
+    STATEMENT_STYLES = [
+        (lambda r: r['role'] == 'parking', 1.0, '한국정보통신 - 하이파킹(주)', '주차장', False),
+        (lambda r: r['role'] == 'olive', 0.4, '카카오페이 - CJ올리브네트웍스', 'PG쇼핑몰', False),
+        # 매머드커피는 결제대행사 이름만 찍힌다 → 실제 서비스도 묻는다
+        (lambda r: r['role'] == 'weekend_cafe' and '매머드' in r['merchant_name'], 1.0, '카카오페이_3 - 발트페이먼츠',
+         'PG쇼핑몰', True),
+        (lambda r: r['role'] == 'weekend_cafe' and r['merchant_name'] == '메가엠지씨커피정자역점', 0.5,
+         '메가MGC_인증_3 - 메가 MGC 커피(정자역점', None, False),
+        (lambda r: r['role'] == 'lunch' and 'GFC' in r['merchant_name'], 0.25,
+         lambda r: '대표_3_카카오페이 - ' + r['merchant_name'], None, False),
+        (lambda r: r['merchant_name'] == '쿠팡', 1.0, ['쿠팡_쿠페이 - 쿠팡', 'KCP-쿠팡', '쿠팡_쿠페이 - 쿠팡페이 주식회사'],
+         'PG쇼핑몰', False),
+    ]
 
     def build(self):
         rng = self.rng
@@ -165,6 +178,7 @@ class BuilderB(Builder):
                         self.spend(d, '09:40', 'carwash', 8_000, 15_000, regular=1.0, step=1_000)
         self.lifestyle(paid_days)
         self.extras()
+        self.restyle()
         self.balances()
 
     def outing(self, d, kind, skip=False):

@@ -133,6 +133,19 @@ class Builder:
             return self.rng.choice(regulars)
         return self.rng.choice([m for m in cands if m['regular'] == 'N'] or cands)
 
+    # 실제 카드 명세 표기 (11/16, 나은 현대카드 실거래에서 본 모양만): (조건, 비율, 새 이름, 카드 업종, 확인 필요로 바꿀지)
+    # 새 이름은 문자열 · 목록(차례로 돌림) · 함수(row → 이름). 카드 업종은 실제 응답처럼 (배달앱 · 쿠팡 · 결제대행사 = PG쇼핑몰)
+    STATEMENT_STYLES = [
+        (lambda r: r['role'] == 'delivery', 0.65, ['쿠팡이츠 - 쿠팡', '쿠팡이츠 - 쿠팡', '카카오페이 - 배달의민족'], 'PG쇼핑몰', False),
+        (lambda r: r['merchant_name'] == '쿠팡', 1.0,
+         ['쿠팡_쿠페이 - 쿠팡', 'KCP-쿠팡', '쿠팡_쿠페이 - 쿠팡페이 주식회사', '쿠팡(주)'], 'PG쇼핑몰', False),
+        (lambda r: '발트페이먼츠' in r['merchant_name'], 1.0, None, 'PG쇼핑몰', False),
+        # 백화점 식당가 결제는 운영사 이름이 잘려서 찍힌다 → 실제 서비스도 묻는다
+        (lambda r: r['role'] == 'weekend_meal' and '롯데백화점' in r['merchant_name'], 1.0, '롯데쇼핑(주)롯', '백화점', True),
+        (lambda r: r['role'] == 'cafe' and r.get('zone_hint') == 'office', 0.15, lambda r: '카카오페이_3 - ' + r['merchant_name'],
+         None, False),
+    ]
+
     card_instruments = ('D',)  # 카드 결제 수단 (나머지는 계좌)
     card_account = 'A'         # 체크카드 결제가 함께 찍히는 계좌
 
@@ -163,8 +176,44 @@ class Builder:
 
     def spend(self, d, t, role, low=0, high=0, *, zone=None, regular=0.0, amount=None, step=100, note=''):
         m = self.pick(role, zone, regular)
-        return self.add(d, t, role, amount or self.won(low, high, step), merchant=m,
-                        category=m['category_code'], note=note)
+        row = self.add(d, t, role, amount or self.won(low, high, step), merchant=m,
+                       category=m['category_code'], note=note)
+        row['zone_hint'] = m.get('zone', '')  # 표기 바꾸기(restyle)에서만 쓰고 CSV 에는 안 남긴다
+        return row
+
+    def restyle(self):
+        """가게 이름을 실제 카드 명세 표기로 바꾼다 (STATEMENT_STYLES). 체크카드 결제와 통장 중복 줄을 같이 바꾼다.
+        주 RNG 와 따로 돌려서 다른 거래는 그대로. 확인 필요로 바꾸면 원래 카테고리를 정답 칸으로 옮긴다"""
+        rng = random.Random(self.seed + 7)
+        pairs = defaultdict(list)
+        for r in self.rows:
+            pairs[r['pair_key'] or r['source_key']].append(r)
+        turns = Counter()
+        for r in self.rows:
+            if r['is_duplicate'] or r['source_kind'] != 'card':
+                continue
+            for i, (match, share, name, industry, review) in enumerate(self.STATEMENT_STYLES):
+                if not match(r):
+                    continue
+                if rng.random() < share:
+                    if isinstance(name, list):
+                        new = name[turns[i] % len(name)]
+                        turns[i] += 1
+                    else:
+                        new = name(r) if callable(name) else (name or r['merchant_name'])
+                    for x in pairs[r['pair_key'] or r['source_key']]:
+                        x['merchant_name'] = x['source_description'] = new
+                        if industry is not None:
+                            # 카드사 업종 · 가게 위치는 카드 응답에 없는 값이라 지운다
+                            x.update(industry_small=industry, store_id='', branch_name='', sigungu='', dong='',
+                                     metadata_source='card_statement')
+                        if review and x['confirmed_category'] != 'UNCLASSIFIED':
+                            x['ans_category_if_user_set'] = x['confirmed_category']
+                            x['confirmed_category'] = 'UNCLASSIFIED'
+                            x['note'] = (x['note'] + ' · ' if x['note'] else '') + '확인 필요(운영사 이름)'
+                break
+        for r in self.rows:
+            r.pop('zone_hint', None)
 
     def build(self):
         rng = self.rng
@@ -239,6 +288,7 @@ class Builder:
             if d.day == 23:
                 self.spend(d, '18:40', 'cosmetics', 12_000, 30_000, regular=0.5)
         self.extras()
+        self.restyle()
         self.balances()
 
     def outing(self, d, kind, skip_meal=False):

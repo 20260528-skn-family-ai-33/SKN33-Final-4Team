@@ -8,8 +8,8 @@ persona-a:0006,2026-07-02,19:22,3,home_meal,남산터포도몰점,9500,out,spend
 persona-a:0007,2026-07-02,19:22,3,home_meal,남산터포도몰점,9500,out,spending,FOOD,living,A,bank,persona-a:0006,1,,0,,store_snapshot,남산터포도몰점,MA010120220808021763,,백반/한정식,관악구,서원동,1112900,
 persona-a:0586,2026-07-03,09:00,4,review_apple,Apple_KCP,1100,out,spending,UNCLASSIFIED,living,D,card,persona-a:0586,0,ETC,0,,non_store,Apple_KCP,,,,,,,애플 결제(용도 섞임) · iCloud 50GB · 클라우드 구독은 기타
 persona-a:0587,2026-07-03,09:00,4,review_apple,Apple_KCP,1100,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0586,1,ETC,0,,non_store,Apple_KCP,,,,,,1111800,애플 결제(용도 섞임) · iCloud 50GB · 클라우드 구독은 기타
-persona-a:0008,2026-07-03,12:56,4,cafe,스타벅스 강남R,4600,out,spending,FOOD,living,D,card,persona-a:0008,0,,0,,store_snapshot,스타벅스 강남R,MA0106202301A2416246,강남R,카페,강남구,역삼1동,,
-persona-a:0009,2026-07-03,12:56,4,cafe,스타벅스 강남R,4600,out,spending,FOOD,living,A,bank,persona-a:0008,1,,0,,store_snapshot,스타벅스 강남R,MA0106202301A2416246,강남R,카페,강남구,역삼1동,1107200,
+persona-a:0008,2026-07-03,12:56,4,cafe,카카오페이_3 - 스타벅스 강남R,4600,out,spending,FOOD,living,D,card,persona-a:0008,0,,0,,store_snapshot,카카오페이_3 - 스타벅스 강남R,MA0106202301A2416246,강남R,카페,강남구,역삼1동,,
+persona-a:0009,2026-07-03,12:56,4,cafe,카카오페이_3 - 스타벅스 강남R,4600,out,spending,FOOD,living,A,bank,persona-a:0008,1,,0,,store_snapshot,카카오페이_3 - 스타벅스 강남R,MA0106202301A2416246,강남R,카페,강남구,역삼1동,1107200,
 persona-a:0010,2026-07-04,13:10,5,weekend_meal,퍼틴롯데 캐슬점,15000,out,spending,FOOD,living,D,card,persona-a:0010,0,,0,,store_snapshot,퍼틴롯데 캐슬점,MA010120220803177156,캐슬점,베트남식 전문,송파구,잠실6동,,friend
 persona-a:0011,2026-07-04,13:10,5,weekend_meal,퍼틴롯데 캐슬점,15000,out,spending,FOOD,living,A,bank,persona-a:0010,1,,0,,store_snapshot,퍼틴롯데 캐슬점,MA010120220803177156,캐슬점,베트남식 전문,송파구,잠실6동,1092200,friend
 persona-a:0012,2026-07-04,15:00,5,weekend_cafe,만쥬킹,12000,out,spending,FOOD,living,D,card,persona-a:0012,0,,0,,store_snapshot,만쥬킹,MA0101202601A0038187,,카페,송파구,잠실6동,,friend
@@ -20,8 +20,8 @@ persona-a:0016,2026-07-05,10:00,6,ott,넷플릭스,17000,out,spending,CULTURE_LE
 persona-a:0017,2026-07-05,10:00,6,ott,넷플릭스,17000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-a:0016,1,,1,ott,non_store,넷플릭스,,,,,,1058200,
 persona-a:0018,2026-07-05,16:30,6,grocery,야채 백화점,29100,out,spending,FOOD,living,D,card,persona-a:0018,0,,0,,store_snapshot,야채 백화점,MA0101202410A0065762,백화점,채소/과일 소매업,관악구,신원동,,
 persona-a:0019,2026-07-05,16:30,6,grocery,야채 백화점,29100,out,spending,FOOD,living,A,bank,persona-a:0018,1,,0,,store_snapshot,야채 백화점,MA0101202410A0065762,백화점,채소/과일 소매업,관악구,신원동,1029100,
-persona-a:0020,2026-07-05,19:30,6,delivery,빅바이트컴퍼니쉐이크쉑신림,28000,out,spending,FOOD,living,D,card,persona-a:0020,0,,0,,store_snapshot,빅바이트컴퍼니쉐이크쉑신림,MA0106202312A1134619,,피자,관악구,서원동,,
-persona-a:0021,2026-07-05,19:30,6,delivery,빅바이트컴퍼니쉐이크쉑신림,28000,out,spending,FOOD,living,A,bank,persona-a:0020,1,,0,,store_snapshot,빅바이트컴퍼니쉐이크쉑신림,MA0106202312A1134619,,피자,관악구,서원동,1001100,
+persona-a:0020,2026-07-05,19:30,6,delivery,쿠팡이츠 - 쿠팡,28000,out,spending,FOOD,living,D,card,persona-a:0020,0,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,,
+persona-a:0021,2026-07-05,19:30,6,delivery,쿠팡이츠 - 쿠팡,28000,out,spending,FOOD,living,A,bank,persona-a:0020,1,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,1001100,
 persona-a:0022,2026-07-06,12:58,0,cafe,더벤티강남역지하 상가점,4800,out,spending,FOOD,living,D,card,persona-a:0022,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
 persona-a:0023,2026-07-06,12:58,0,cafe,더벤티강남역지하 상가점,4800,out,spending,FOOD,living,A,bank,persona-a:0022,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,996300,
 persona-a:0024,2026-07-06,19:25,0,home_meal,남산터포도몰점,9500,out,spending,FOOD,living,D,card,persona-a:0024,0,,0,,store_snapshot,남산터포도몰점,MA010120220808021763,,백반/한정식,관악구,서원동,,
@@ -53,13 +53,13 @@ persona-a:0045,2026-07-13,19:42,0,home_meal,명동칼국수,11500,out,spending,F
 persona-a:0046,2026-07-13,19:42,0,home_meal,명동칼국수,11500,out,spending,FOOD,living,A,bank,persona-a:0045,1,,0,,store_snapshot,명동칼국수,MA010120220806653223,,국수/칼국수,관악구,서원동,765300,
 persona-a:0047,2026-07-13,22:45,0,convenience,세븐일레븐신림허브 그린점,6900,out,spending,FOOD,living,D,card,persona-a:0047,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0048,2026-07-13,22:45,0,convenience,세븐일레븐신림허브 그린점,6900,out,spending,FOOD,living,A,bank,persona-a:0047,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,758400,
-persona-a:0578,2026-07-14,21:20,1,review_coupang,쿠팡,18900,out,spending,UNCLASSIFIED,living,D,card,persona-a:0578,0,HOUSEHOLD,0,,non_store,쿠팡,,,,,,,다품목(쿠팡) · 휴지·세제
-persona-a:0579,2026-07-14,21:20,1,review_coupang,쿠팡,18900,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0578,1,HOUSEHOLD,0,,non_store,쿠팡,,,,,,739500,다품목(쿠팡) · 휴지·세제
+persona-a:0578,2026-07-14,21:20,1,review_coupang,쿠팡_쿠페이 - 쿠팡,18900,out,spending,UNCLASSIFIED,living,D,card,persona-a:0578,0,HOUSEHOLD,0,,card_statement,쿠팡_쿠페이 - 쿠팡,,,PG쇼핑몰,,,,다품목(쿠팡) · 휴지·세제
+persona-a:0579,2026-07-14,21:20,1,review_coupang,쿠팡_쿠페이 - 쿠팡,18900,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0578,1,HOUSEHOLD,0,,card_statement,쿠팡_쿠페이 - 쿠팡,,,PG쇼핑몰,,,739500,다품목(쿠팡) · 휴지·세제
 persona-a:0049,2026-07-15,10:00,2,telecom,SK텔레콤 자동납부,55000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,SK텔레콤 자동납부,,,,,,684500,
 persona-a:0050,2026-07-15,19:37,2,home_meal,담솥타임스트림점,9500,out,spending,FOOD,living,D,card,persona-a:0050,0,,0,,store_snapshot,담솥타임스트림점,MA0101202508A0015469,,백반/한정식,관악구,서원동,,
 persona-a:0051,2026-07-15,19:37,2,home_meal,담솥타임스트림점,9500,out,spending,FOOD,living,A,bank,persona-a:0050,1,,0,,store_snapshot,담솥타임스트림점,MA0101202508A0015469,,백반/한정식,관악구,서원동,675000,
-persona-a:0052,2026-07-16,12:56,3,cafe,더벤티강남역지하 상가점,4100,out,spending,FOOD,living,D,card,persona-a:0052,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0053,2026-07-16,12:56,3,cafe,더벤티강남역지하 상가점,4100,out,spending,FOOD,living,A,bank,persona-a:0052,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,670900,
+persona-a:0052,2026-07-16,12:56,3,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4100,out,spending,FOOD,living,D,card,persona-a:0052,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0053,2026-07-16,12:56,3,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4100,out,spending,FOOD,living,A,bank,persona-a:0052,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,670900,
 persona-a:0054,2026-07-17,08:05,4,tmoney,모바일티머니선불형,30000,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0054,0,,0,,non_store,모바일티머니선불형,,,,,,,
 persona-a:0055,2026-07-17,08:05,4,tmoney,모바일티머니선불형,30000,out,spending,TRANSPORT_CAR,living,A,bank,persona-a:0054,1,,0,,non_store,모바일티머니선불형,,,,,,640900,
 persona-a:0056,2026-07-17,12:52,4,cafe,더벤티강남역지하 상가점,4100,out,spending,FOOD,living,D,card,persona-a:0056,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
@@ -80,19 +80,19 @@ persona-a:0068,2026-07-21,12:54,1,cafe,쥬스식스 강남역점,3400,out,spendi
 persona-a:0069,2026-07-21,12:54,1,cafe,쥬스식스 강남역점,3400,out,spending,FOOD,living,A,bank,persona-a:0068,1,,0,,store_snapshot,쥬스식스 강남역점,MA010120220805313986,강남역점,카페,강남구,역삼1동,414600,
 persona-a:0070,2026-07-21,20:30,1,household,은혜침구,11300,out,spending,HOUSEHOLD,living,D,card,persona-a:0070,0,,0,,store_snapshot,은혜침구,MA010120220800940040,,침구류/커튼 소매업,관악구,신원동,,
 persona-a:0071,2026-07-21,20:30,1,household,은혜침구,11300,out,spending,HOUSEHOLD,living,A,bank,persona-a:0070,1,,0,,store_snapshot,은혜침구,MA010120220800940040,,침구류/커튼 소매업,관악구,신원동,403300,
-persona-a:0072,2026-07-22,12:52,2,cafe,더벤티강남역지하 상가점,5000,out,spending,FOOD,living,D,card,persona-a:0072,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0073,2026-07-22,12:52,2,cafe,더벤티강남역지하 상가점,5000,out,spending,FOOD,living,A,bank,persona-a:0072,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,398300,
+persona-a:0072,2026-07-22,12:52,2,cafe,카카오페이_3 - 더벤티강남역지하 상가점,5000,out,spending,FOOD,living,D,card,persona-a:0072,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0073,2026-07-22,12:52,2,cafe,카카오페이_3 - 더벤티강남역지하 상가점,5000,out,spending,FOOD,living,A,bank,persona-a:0072,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,398300,
 persona-a:0512,2026-07-22,21:30,2,pay,카카오페이 - 배달의민족,21500,out,spending,FOOD,living,D,card,persona-a:0512,0,,0,,non_store,카카오페이 - 배달의민족,,,,,,,배달 (카카오페이 결제)
 persona-a:0513,2026-07-22,21:30,2,pay,카카오페이 - 배달의민족,21500,out,spending,FOOD,living,A,bank,persona-a:0512,1,,0,,non_store,카카오페이 - 배달의민족,,,,,,376800,배달 (카카오페이 결제)
 persona-a:0074,2026-07-23,18:40,3,cosmetics,네이처리퍼블릭 강남역점,28700,out,spending,BEAUTY,living,D,card,persona-a:0074,0,,0,,store_snapshot,네이처리퍼블릭 강남역점,MA0106202201A0666889,강남역점,화장품 소매업,강남구,역삼1동,,
 persona-a:0075,2026-07-23,18:40,3,cosmetics,네이처리퍼블릭 강남역점,28700,out,spending,BEAUTY,living,A,bank,persona-a:0074,1,,0,,store_snapshot,네이처리퍼블릭 강남역점,MA0106202201A0666889,강남역점,화장품 소매업,강남구,역삼1동,348100,
 persona-a:0076,2026-07-24,09:00,4,salary,(주)와와컴퍼니,2600000,in,income,,,A,bank,,0,,0,,non_store,(주)와와컴퍼니,,,,,,2948100,
-persona-a:0077,2026-07-24,12:47,4,cafe,더벤티강남역지하 상가점,4600,out,spending,FOOD,living,D,card,persona-a:0077,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0078,2026-07-24,12:47,4,cafe,더벤티강남역지하 상가점,4600,out,spending,FOOD,living,A,bank,persona-a:0077,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,2943500,
+persona-a:0077,2026-07-24,12:47,4,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4600,out,spending,FOOD,living,D,card,persona-a:0077,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0078,2026-07-24,12:47,4,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4600,out,spending,FOOD,living,A,bank,persona-a:0077,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,2943500,
 persona-a:0079,2026-07-24,20:22,4,delivery,지미존스신림역점,19000,out,spending,FOOD,living,D,card,persona-a:0079,0,,0,,store_snapshot,지미존스신림역점,MA0101202504A0010003,,피자,관악구,서원동,,
 persona-a:0080,2026-07-24,20:22,4,delivery,지미존스신림역점,19000,out,spending,FOOD,living,A,bank,persona-a:0079,1,,0,,store_snapshot,지미존스신림역점,MA0101202504A0010003,,피자,관악구,서원동,2924500,
-persona-a:0081,2026-07-25,13:10,5,weekend_meal,올투딜리셔스롯데백화점 잠실점,31500,out,spending,FOOD,living,D,card,persona-a:0081,0,,0,,store_snapshot,올투딜리셔스롯데백화점 잠실점,MA010120220811926639,잠실점,일식 회/초밥,송파구,잠실3동,,date
-persona-a:0082,2026-07-25,13:10,5,weekend_meal,올투딜리셔스롯데백화점 잠실점,31500,out,spending,FOOD,living,A,bank,persona-a:0081,1,,0,,store_snapshot,올투딜리셔스롯데백화점 잠실점,MA010120220811926639,잠실점,일식 회/초밥,송파구,잠실3동,2893000,date
+persona-a:0081,2026-07-25,13:10,5,weekend_meal,롯데쇼핑(주)롯,31500,out,spending,UNCLASSIFIED,living,D,card,persona-a:0081,0,FOOD,0,,card_statement,롯데쇼핑(주)롯,,,백화점,,,,date · 확인 필요(운영사 이름)
+persona-a:0082,2026-07-25,13:10,5,weekend_meal,롯데쇼핑(주)롯,31500,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0081,1,FOOD,0,,card_statement,롯데쇼핑(주)롯,,,백화점,,,2893000,date · 확인 필요(운영사 이름)
 persona-a:0083,2026-07-25,18:00,5,fun,앨리스인원더랜드 잠실점,20000,out,spending,CULTURE_LEISURE,living,D,card,persona-a:0083,0,,0,,store_snapshot,앨리스인원더랜드 잠실점,MA0101202409A0111225,잠실점,전자 게임장,송파구,잠실6동,,date
 persona-a:0084,2026-07-25,18:00,5,fun,앨리스인원더랜드 잠실점,20000,out,spending,CULTURE_LEISURE,living,A,bank,persona-a:0083,1,,0,,store_snapshot,앨리스인원더랜드 잠실점,MA0101202409A0111225,잠실점,전자 게임장,송파구,잠실6동,2873000,date
 persona-a:0087,2026-07-26,08:05,6,tmoney,모바일티머니선불형,20000,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0087,0,,0,,non_store,모바일티머니선불형,,,,,,,
@@ -133,8 +133,8 @@ persona-a:0113,2026-08-06,19:22,3,home_meal,명동칼국수,10500,out,spending,F
 persona-a:0114,2026-08-06,19:22,3,home_meal,명동칼국수,10500,out,spending,FOOD,living,A,bank,persona-a:0113,1,,0,,store_snapshot,명동칼국수,MA010120220806653223,,국수/칼국수,관악구,서원동,1698000,
 persona-a:0115,2026-08-07,12:46,4,cafe,이터너발효커피,5400,out,spending,FOOD,living,D,card,persona-a:0115,0,,0,,store_snapshot,이터너발효커피,MA010120220802267432,,카페,강남구,역삼1동,,
 persona-a:0116,2026-08-07,12:46,4,cafe,이터너발효커피,5400,out,spending,FOOD,living,A,bank,persona-a:0115,1,,0,,store_snapshot,이터너발효커피,MA010120220802267432,,카페,강남구,역삼1동,1692600,
-persona-a:0117,2026-08-08,19:30,5,delivery,빅바이트컴퍼니쉐이크쉑신림,20000,out,spending,FOOD,living,D,card,persona-a:0117,0,,0,,store_snapshot,빅바이트컴퍼니쉐이크쉑신림,MA0106202312A1134619,,피자,관악구,서원동,,
-persona-a:0118,2026-08-08,19:30,5,delivery,빅바이트컴퍼니쉐이크쉑신림,20000,out,spending,FOOD,living,A,bank,persona-a:0117,1,,0,,store_snapshot,빅바이트컴퍼니쉐이크쉑신림,MA0106202312A1134619,,피자,관악구,서원동,1672600,
+persona-a:0117,2026-08-08,19:30,5,delivery,쿠팡이츠 - 쿠팡,20000,out,spending,FOOD,living,D,card,persona-a:0117,0,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,,
+persona-a:0118,2026-08-08,19:30,5,delivery,쿠팡이츠 - 쿠팡,20000,out,spending,FOOD,living,A,bank,persona-a:0117,1,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,1672600,
 persona-a:0500,2026-08-08,22:50,5,bar,낙조연남,72000,out,spending,FOOD,living,D,card,persona-a:0500,0,,0,,store_snapshot,낙조연남,MA0101202310A0033393,,요리 주점,마포구,서교동,,친구들 몫까지 내가 결제 → 1/n 받음
 persona-a:0501,2026-08-08,22:50,5,bar,낙조연남,72000,out,spending,FOOD,living,A,bank,persona-a:0500,1,,0,,store_snapshot,낙조연남,MA0101202310A0033393,,요리 주점,마포구,서교동,1600600,친구들 몫까지 내가 결제 → 1/n 받음
 persona-a:0504,2026-08-08,23:40,5,friend,김혜리,24000,in,income,,,A,bank,,0,,0,,non_store,김혜리,,,,,,1624600,"연남 술자리 1/n 받음 (내가 72,000원 결제)"
@@ -152,8 +152,8 @@ persona-a:0128,2026-08-10,22:23,0,convenience,GS25더 관악점,10100,out,spendi
 persona-a:0129,2026-08-10,22:23,0,convenience,GS25더 관악점,10100,out,spending,FOOD,living,A,bank,persona-a:0128,1,,0,,store_snapshot,GS25더 관악점,MA0106202308A0100004,관악점,편의점,관악구,신림동,1483400,
 persona-a:0130,2026-08-11,19:47,1,home_meal,소표국수신림역점,10500,out,spending,FOOD,living,D,card,persona-a:0130,0,,0,,store_snapshot,소표국수신림역점,MA0101202409A0170289,,국수/칼국수,관악구,서원동,,
 persona-a:0131,2026-08-11,19:47,1,home_meal,소표국수신림역점,10500,out,spending,FOOD,living,A,bank,persona-a:0130,1,,0,,store_snapshot,소표국수신림역점,MA0101202409A0170289,,국수/칼국수,관악구,서원동,1472900,
-persona-a:0562,2026-08-12,08:40,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,D,card,persona-a:0562,0,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 강남역 근처 · 출근 전 커피
-persona-a:0563,2026-08-12,08:40,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0562,1,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,1470900,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 강남역 근처 · 출근 전 커피
+persona-a:0562,2026-08-12,08:40,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,D,card,persona-a:0562,0,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 강남역 근처 · 출근 전 커피
+persona-a:0563,2026-08-12,08:40,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0562,1,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,1470900,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 강남역 근처 · 출근 전 커피
 persona-a:0132,2026-08-12,12:25,2,lunch,리샨삼성타운점,11000,out,spending,FOOD,living,D,card,persona-a:0132,0,,0,,store_snapshot,리샨삼성타운점,MA010120220804183815,,중국집,서초구,서초2동,,
 persona-a:0133,2026-08-12,12:25,2,lunch,리샨삼성타운점,11000,out,spending,FOOD,living,A,bank,persona-a:0132,1,,0,,store_snapshot,리샨삼성타운점,MA010120220804183815,,중국집,서초구,서초2동,1459900,
 persona-a:0134,2026-08-12,12:52,2,cafe,스타벅스 강남R,5200,out,spending,FOOD,living,D,card,persona-a:0134,0,,0,,store_snapshot,스타벅스 강남R,MA0106202301A2416246,강남R,카페,강남구,역삼1동,,
@@ -214,8 +214,8 @@ persona-a:0178,2026-08-25,12:51,1,cafe,메가커피지하도점 강남역,5400,o
 persona-a:0179,2026-08-25,12:51,1,cafe,메가커피지하도점 강남역,5400,out,spending,FOOD,living,A,bank,persona-a:0178,1,,0,,store_snapshot,메가커피지하도점 강남역,MA010120220804461630,강남역,카페,강남구,역삼1동,3625780,
 persona-a:0180,2026-08-26,09:10,2,saving,청년도약 적금 자동이체,300000,out,saving,,,A,bank,saving:8,0,,0,,non_store,청년도약 적금 자동이체,,,,,,3325780,
 persona-a:0181,2026-08-26,09:10,2,saving,청년도약 적금 자동이체,300000,in,saving,,,C,bank,saving:8,0,,0,,non_store,청년도약 적금 자동이체,,,,,,1800000,
-persona-a:0182,2026-08-26,12:58,2,cafe,더벤티강남역지하 상가점,3300,out,spending,FOOD,living,D,card,persona-a:0182,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0183,2026-08-26,12:58,2,cafe,더벤티강남역지하 상가점,3300,out,spending,FOOD,living,A,bank,persona-a:0182,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,3322480,
+persona-a:0182,2026-08-26,12:58,2,cafe,카카오페이_3 - 더벤티강남역지하 상가점,3300,out,spending,FOOD,living,D,card,persona-a:0182,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0183,2026-08-26,12:58,2,cafe,카카오페이_3 - 더벤티강남역지하 상가점,3300,out,spending,FOOD,living,A,bank,persona-a:0182,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,3322480,
 persona-a:0184,2026-08-26,22:45,2,convenience,세븐일레븐신림허브 그린점,9600,out,spending,FOOD,living,D,card,persona-a:0184,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0185,2026-08-26,22:45,2,convenience,세븐일레븐신림허브 그린점,9600,out,spending,FOOD,living,A,bank,persona-a:0184,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,3312880,
 persona-a:0187,2026-08-27,08:05,3,tmoney,모바일티머니선불형,20000,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0187,0,,0,,non_store,모바일티머니선불형,,,,,,,
@@ -243,8 +243,8 @@ persona-a:0206,2026-09-01,15:20,1,convenience,GS25강남메트로,4300,out,spend
 persona-a:0207,2026-09-01,15:20,1,convenience,GS25강남메트로,4300,out,spending,FOOD,living,A,bank,persona-a:0206,1,,0,,store_snapshot,GS25강남메트로,MA010120220804445535,,편의점,강남구,역삼1동,2508680,
 persona-a:0208,2026-09-02,19:45,2,home_meal,당나발포차 신림점,10000,out,spending,FOOD,living,D,card,persona-a:0208,0,,0,,store_snapshot,당나발포차 신림점,MA0101202604A0015309,신림점,백반/한정식,관악구,서원동,,
 persona-a:0209,2026-09-02,19:45,2,home_meal,당나발포차 신림점,10000,out,spending,FOOD,living,A,bank,persona-a:0208,1,,0,,store_snapshot,당나발포차 신림점,MA0101202604A0015309,신림점,백반/한정식,관악구,서원동,2498680,
-persona-a:0564,2026-09-03,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,D,card,persona-a:0564,0,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
-persona-a:0565,2026-09-03,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0564,1,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,2495180,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
+persona-a:0564,2026-09-03,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,D,card,persona-a:0564,0,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
+persona-a:0565,2026-09-03,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0564,1,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,2495180,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
 persona-a:0590,2026-09-03,09:00,3,review_apple,Apple_KCP,1100,out,spending,UNCLASSIFIED,living,D,card,persona-a:0590,0,ETC,0,,non_store,Apple_KCP,,,,,,,애플 결제(용도 섞임) · iCloud
 persona-a:0591,2026-09-03,09:00,3,review_apple,Apple_KCP,1100,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0590,1,ETC,0,,non_store,Apple_KCP,,,,,,2494080,애플 결제(용도 섞임) · iCloud
 persona-a:0210,2026-09-03,15:20,3,convenience,GS25강남메트로,4300,out,spending,FOOD,living,D,card,persona-a:0210,0,,0,,store_snapshot,GS25강남메트로,MA010120220804445535,,편의점,강남구,역삼1동,,
@@ -271,15 +271,15 @@ persona-a:0230,2026-09-09,12:06,2,lunch,연희동칼국수,10500,out,spending,FO
 persona-a:0231,2026-09-09,12:06,2,lunch,연희동칼국수,10500,out,spending,FOOD,living,A,bank,persona-a:0230,1,,0,,store_snapshot,연희동칼국수,MA010120220804192418,,국수/칼국수,서초구,서초4동,2340480,
 persona-a:0540,2026-09-09,20:10,2,pharmacy,으뜸약국,7000,out,spending,MEDICAL_HEALTH,living,D,card,persona-a:0540,0,,0,,store_snapshot,으뜸약국,MA0101202511A0016358,,약국,관악구,신림동,,
 persona-a:0541,2026-09-09,20:10,2,pharmacy,으뜸약국,7000,out,spending,MEDICAL_HEALTH,living,A,bank,persona-a:0540,1,,0,,store_snapshot,으뜸약국,MA0101202511A0016358,,약국,관악구,신림동,2333480,
-persona-a:0580,2026-09-09,22:05,2,review_coupang,쿠팡,12400,out,spending,UNCLASSIFIED,living,D,card,persona-a:0580,0,HOUSEHOLD,0,,non_store,쿠팡,,,,,,,다품목(쿠팡) · 주방용품
-persona-a:0581,2026-09-09,22:05,2,review_coupang,쿠팡,12400,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0580,1,HOUSEHOLD,0,,non_store,쿠팡,,,,,,2321080,다품목(쿠팡) · 주방용품
+persona-a:0580,2026-09-09,22:05,2,review_coupang,KCP-쿠팡,12400,out,spending,UNCLASSIFIED,living,D,card,persona-a:0580,0,HOUSEHOLD,0,,card_statement,KCP-쿠팡,,,PG쇼핑몰,,,,다품목(쿠팡) · 주방용품
+persona-a:0581,2026-09-09,22:05,2,review_coupang,KCP-쿠팡,12400,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0580,1,HOUSEHOLD,0,,card_statement,KCP-쿠팡,,,PG쇼핑몰,,,2321080,다품목(쿠팡) · 주방용품
 persona-a:0232,2026-09-09,22:37,2,convenience,세븐일레븐신림허브 그린점,10600,out,spending,FOOD,living,D,card,persona-a:0232,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0233,2026-09-09,22:37,2,convenience,세븐일레븐신림허브 그린점,10600,out,spending,FOOD,living,A,bank,persona-a:0232,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,2310480,
 persona-a:0235,2026-09-10,08:05,3,tmoney,모바일티머니선불형,20000,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0235,0,,0,,non_store,모바일티머니선불형,,,,,,,
 persona-a:0236,2026-09-10,08:05,3,tmoney,모바일티머니선불형,20000,out,spending,TRANSPORT_CAR,living,A,bank,persona-a:0235,1,,0,,non_store,모바일티머니선불형,,,,,,2290480,
 persona-a:0234,2026-09-10,10:00,3,maintenance,신림해오름원룸,70000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,maintenance,non_store,신림해오름원룸,,,,,,2220480,
-persona-a:0237,2026-09-10,12:51,3,cafe,더벤티강남역지하 상가점,3800,out,spending,FOOD,living,D,card,persona-a:0237,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0238,2026-09-10,12:51,3,cafe,더벤티강남역지하 상가점,3800,out,spending,FOOD,living,A,bank,persona-a:0237,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,2216680,
+persona-a:0237,2026-09-10,12:51,3,cafe,카카오페이_3 - 더벤티강남역지하 상가점,3800,out,spending,FOOD,living,D,card,persona-a:0237,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0238,2026-09-10,12:51,3,cafe,카카오페이_3 - 더벤티강남역지하 상가점,3800,out,spending,FOOD,living,A,bank,persona-a:0237,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,2216680,
 persona-a:0239,2026-09-10,22:36,3,convenience,세븐일레븐신림허브 그린점,7800,out,spending,FOOD,living,D,card,persona-a:0239,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0240,2026-09-10,22:36,3,convenience,세븐일레븐신림허브 그린점,7800,out,spending,FOOD,living,A,bank,persona-a:0239,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,2208880,
 persona-a:0241,2026-09-12,13:10,5,weekend_meal,오복수산 여의도점,21500,out,spending,FOOD,living,D,card,persona-a:0241,0,,0,,store_snapshot,오복수산 여의도점,MA010120220809827878,여의도점,일식 회/초밥,영등포구,여의동,,friend
@@ -304,8 +304,8 @@ persona-a:0258,2026-09-14,22:45,0,convenience,세븐일레븐신림허브 그린
 persona-a:0259,2026-09-15,10:00,1,telecom,SK텔레콤 자동납부,55000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,SK텔레콤 자동납부,,,,,,1973580,
 persona-a:0260,2026-09-15,12:20,1,lunch,이천밥쌤 강남역점,8500,out,spending,FOOD,living,D,card,persona-a:0260,0,,0,,store_snapshot,이천밥쌤 강남역점,MA0106202307A2182190,강남역점,백반/한정식,서초구,서초4동,,
 persona-a:0261,2026-09-15,12:20,1,lunch,이천밥쌤 강남역점,8500,out,spending,FOOD,living,A,bank,persona-a:0260,1,,0,,store_snapshot,이천밥쌤 강남역점,MA0106202307A2182190,강남역점,백반/한정식,서초구,서초4동,1965080,
-persona-a:0262,2026-09-16,12:48,2,cafe,더벤티강남역지하 상가점,5000,out,spending,FOOD,living,D,card,persona-a:0262,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0263,2026-09-16,12:48,2,cafe,더벤티강남역지하 상가점,5000,out,spending,FOOD,living,A,bank,persona-a:0262,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,1960080,
+persona-a:0262,2026-09-16,12:48,2,cafe,카카오페이_3 - 더벤티강남역지하 상가점,5000,out,spending,FOOD,living,D,card,persona-a:0262,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0263,2026-09-16,12:48,2,cafe,카카오페이_3 - 더벤티강남역지하 상가점,5000,out,spending,FOOD,living,A,bank,persona-a:0262,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,1960080,
 persona-a:0264,2026-09-16,22:36,2,convenience,세븐일레븐신림허브 그린점,3700,out,spending,FOOD,living,D,card,persona-a:0264,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0265,2026-09-16,22:36,2,convenience,세븐일레븐신림허브 그린점,3700,out,spending,FOOD,living,A,bank,persona-a:0264,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,1956380,
 persona-a:0266,2026-09-17,08:05,3,tmoney,모바일티머니선불형,10000,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0266,0,,0,,non_store,모바일티머니선불형,,,,,,,
@@ -332,21 +332,21 @@ persona-a:0280,2026-09-21,15:20,0,convenience,GS25강남메트로,4100,out,spend
 persona-a:0281,2026-09-21,15:20,0,convenience,GS25강남메트로,4100,out,spending,FOOD,living,A,bank,persona-a:0280,1,,0,,store_snapshot,GS25강남메트로,MA010120220804445535,,편의점,강남구,역삼1동,1782280,
 persona-a:0284,2026-09-21,20:30,0,household,경남전기,15700,out,spending,HOUSEHOLD,living,D,card,persona-a:0284,0,,0,,store_snapshot,경남전기,MA010120220800443641,,전기용품/조명장치 소매업,관악구,신림동,,
 persona-a:0285,2026-09-21,20:30,0,household,경남전기,15700,out,spending,HOUSEHOLD,living,A,bank,persona-a:0284,1,,0,,store_snapshot,경남전기,MA010120220800443641,,전기용품/조명장치 소매업,관악구,신림동,1766580,
-persona-a:0282,2026-09-21,21:03,0,delivery,부발디아시간포,23500,out,spending,FOOD,living,D,card,persona-a:0282,0,,0,,store_snapshot,부발디아시간포,MA010120220800978251,,치킨,관악구,신림동,,
-persona-a:0283,2026-09-21,21:03,0,delivery,부발디아시간포,23500,out,spending,FOOD,living,A,bank,persona-a:0282,1,,0,,store_snapshot,부발디아시간포,MA010120220800978251,,치킨,관악구,신림동,1743080,
+persona-a:0282,2026-09-21,21:03,0,delivery,카카오페이 - 배달의민족,23500,out,spending,FOOD,living,D,card,persona-a:0282,0,,0,,card_statement,카카오페이 - 배달의민족,,,PG쇼핑몰,,,,
+persona-a:0283,2026-09-21,21:03,0,delivery,카카오페이 - 배달의민족,23500,out,spending,FOOD,living,A,bank,persona-a:0282,1,,0,,card_statement,카카오페이 - 배달의민족,,,PG쇼핑몰,,,1743080,
 persona-a:0286,2026-09-22,08:05,1,tmoney,모바일티머니선불형,20000,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0286,0,,0,,non_store,모바일티머니선불형,,,,,,,
 persona-a:0287,2026-09-22,08:05,1,tmoney,모바일티머니선불형,20000,out,spending,TRANSPORT_CAR,living,A,bank,persona-a:0286,1,,0,,non_store,모바일티머니선불형,,,,,,1723080,
 persona-a:0288,2026-09-22,12:37,1,lunch,이천밥쌤 강남역점,11500,out,spending,FOOD,living,D,card,persona-a:0288,0,,0,,store_snapshot,이천밥쌤 강남역점,MA0106202307A2182190,강남역점,백반/한정식,서초구,서초4동,,
 persona-a:0289,2026-09-22,12:37,1,lunch,이천밥쌤 강남역점,11500,out,spending,FOOD,living,A,bank,persona-a:0288,1,,0,,store_snapshot,이천밥쌤 강남역점,MA0106202307A2182190,강남역점,백반/한정식,서초구,서초4동,1711580,
 persona-a:0290,2026-09-22,19:11,1,home_meal,담솥타임스트림점,9500,out,spending,FOOD,living,D,card,persona-a:0290,0,,0,,store_snapshot,담솥타임스트림점,MA0101202508A0015469,,백반/한정식,관악구,서원동,,
 persona-a:0291,2026-09-22,19:11,1,home_meal,담솥타임스트림점,9500,out,spending,FOOD,living,A,bank,persona-a:0290,1,,0,,store_snapshot,담솥타임스트림점,MA0101202508A0015469,,백반/한정식,관악구,서원동,1702080,
-persona-a:0566,2026-09-23,08:45,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,D,card,persona-a:0566,0,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
-persona-a:0567,2026-09-23,08:45,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0566,1,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,1700080,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
+persona-a:0566,2026-09-23,08:45,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,D,card,persona-a:0566,0,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
+persona-a:0567,2026-09-23,08:45,2,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0566,1,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,1700080,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
 persona-a:0292,2026-09-23,09:00,2,salary,(주)와와컴퍼니,2600000,in,income,,,A,bank,,0,,0,,non_store,(주)와와컴퍼니,,,,,,4300080,
 persona-a:0295,2026-09-23,18:40,2,cosmetics,네이처리퍼블릭 신림점,25500,out,spending,BEAUTY,living,D,card,persona-a:0295,0,,0,,store_snapshot,네이처리퍼블릭 신림점,MA0106202201A0666872,신림점,화장품 소매업,관악구,서원동,,
 persona-a:0296,2026-09-23,18:40,2,cosmetics,네이처리퍼블릭 신림점,25500,out,spending,BEAUTY,living,A,bank,persona-a:0295,1,,0,,store_snapshot,네이처리퍼블릭 신림점,MA0106202201A0666872,신림점,화장품 소매업,관악구,서원동,4274580,
-persona-a:0293,2026-09-23,21:44,2,delivery,더차이,17000,out,spending,FOOD,living,D,card,persona-a:0293,0,,0,,store_snapshot,더차이,MA010120220813689995,,중국집,관악구,서원동,,
-persona-a:0294,2026-09-23,21:44,2,delivery,더차이,17000,out,spending,FOOD,living,A,bank,persona-a:0293,1,,0,,store_snapshot,더차이,MA010120220813689995,,중국집,관악구,서원동,4257580,
+persona-a:0293,2026-09-23,21:44,2,delivery,쿠팡이츠 - 쿠팡,17000,out,spending,FOOD,living,D,card,persona-a:0293,0,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,,
+persona-a:0294,2026-09-23,21:44,2,delivery,쿠팡이츠 - 쿠팡,17000,out,spending,FOOD,living,A,bank,persona-a:0293,1,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,4257580,
 persona-a:0556,2026-09-26,00:40,5,one_off,카카오_개인택시,13800,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0556,0,,0,,non_store,카카오_개인택시,,,,,,,
 persona-a:0557,2026-09-26,00:40,5,one_off,카카오_개인택시,13800,out,spending,TRANSPORT_CAR,living,A,bank,persona-a:0556,1,,0,,non_store,카카오_개인택시,,,,,,4243780,
 persona-a:0297,2026-09-26,09:10,5,saving,청년도약 적금 자동이체,300000,out,saving,,,A,bank,saving:9,0,,0,,non_store,청년도약 적금 자동이체,,,,,,3943780,
@@ -370,10 +370,10 @@ persona-a:0312,2026-09-29,22:34,1,convenience,세븐일레븐신림허브 그린
 persona-a:0313,2026-09-29,22:34,1,convenience,세븐일레븐신림허브 그린점,6400,out,spending,FOOD,living,A,bank,persona-a:0312,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,3689280,
 persona-a:0314,2026-10-01,10:00,3,rent,박정숙,500000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,rent,non_store,박정숙,,,,,,3189280,
 persona-a:0507,2026-10-02,12:30,4,friend,백동현,20000,out,transfer,,,A,bank,,0,ETC,0,,non_store,백동현,,,,,,3169280,친구 생일 선물 모아서 보냄
-persona-a:0315,2026-10-02,12:51,4,cafe,더벤티강남역지하 상가점,4900,out,spending,FOOD,living,D,card,persona-a:0315,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0316,2026-10-02,12:51,4,cafe,더벤티강남역지하 상가점,4900,out,spending,FOOD,living,A,bank,persona-a:0315,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,3164380,
-persona-a:0317,2026-10-02,21:10,4,delivery,보배반점 신림점,22500,out,spending,FOOD,living,D,card,persona-a:0317,0,,0,,store_snapshot,보배반점 신림점,MA0101202406A0524829,신림점,중국집,관악구,신림동,,
-persona-a:0318,2026-10-02,21:10,4,delivery,보배반점 신림점,22500,out,spending,FOOD,living,A,bank,persona-a:0317,1,,0,,store_snapshot,보배반점 신림점,MA0101202406A0524829,신림점,중국집,관악구,신림동,3141880,
+persona-a:0315,2026-10-02,12:51,4,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4900,out,spending,FOOD,living,D,card,persona-a:0315,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0316,2026-10-02,12:51,4,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4900,out,spending,FOOD,living,A,bank,persona-a:0315,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,3164380,
+persona-a:0317,2026-10-02,21:10,4,delivery,쿠팡이츠 - 쿠팡,22500,out,spending,FOOD,living,D,card,persona-a:0317,0,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,,
+persona-a:0318,2026-10-02,21:10,4,delivery,쿠팡이츠 - 쿠팡,22500,out,spending,FOOD,living,A,bank,persona-a:0317,1,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,3141880,
 persona-a:0594,2026-10-03,09:00,5,review_apple,Apple_KCP,1100,out,spending,UNCLASSIFIED,living,D,card,persona-a:0594,0,ETC,0,,non_store,Apple_KCP,,,,,,,애플 결제(용도 섞임) · iCloud
 persona-a:0595,2026-10-03,09:00,5,review_apple,Apple_KCP,1100,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0594,1,ETC,0,,non_store,Apple_KCP,,,,,,3140780,애플 결제(용도 섞임) · iCloud
 persona-a:0526,2026-10-03,14:30,5,hair,박준뷰티랩,38000,out,spending,BEAUTY,living,D,card,persona-a:0526,0,,0,,store_snapshot,박준뷰티랩,MA010120220800988691,,미용실,관악구,서원동,,
@@ -397,8 +397,8 @@ persona-a:0334,2026-10-08,19:15,3,home_meal,담솥타임스트림점,9500,out,sp
 persona-a:0576,2026-10-09,22:30,4,review_taobao,TAOBAO,21760,out,spending,UNCLASSIFIED,living,D,card,persona-a:0576,0,FASHION_SHOPPING,0,,non_store,TAOBAO,,,,,,,해외 결제 · 가게 판단 어려움 · 타오바오 옷
 persona-a:0577,2026-10-09,22:30,4,review_taobao,TAOBAO,21760,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0576,1,FASHION_SHOPPING,0,,non_store,TAOBAO,,,,,,2947220,해외 결제 · 가게 판단 어려움 · 타오바오 옷
 persona-a:0335,2026-10-10,10:00,5,maintenance,신림해오름원룸,70000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,maintenance,non_store,신림해오름원룸,,,,,,2877220,
-persona-a:0336,2026-10-10,19:30,5,delivery,비비큐신림역점,20500,out,spending,FOOD,living,D,card,persona-a:0336,0,,0,,store_snapshot,비비큐신림역점,MA0101202506A0015370,,치킨,관악구,서원동,,
-persona-a:0337,2026-10-10,19:30,5,delivery,비비큐신림역점,20500,out,spending,FOOD,living,A,bank,persona-a:0336,1,,0,,store_snapshot,비비큐신림역점,MA0101202506A0015370,,치킨,관악구,서원동,2856720,
+persona-a:0336,2026-10-10,19:30,5,delivery,카카오페이 - 배달의민족,20500,out,spending,FOOD,living,D,card,persona-a:0336,0,,0,,card_statement,카카오페이 - 배달의민족,,,PG쇼핑몰,,,,
+persona-a:0337,2026-10-10,19:30,5,delivery,카카오페이 - 배달의민족,20500,out,spending,FOOD,living,A,bank,persona-a:0336,1,,0,,card_statement,카카오페이 - 배달의민족,,,PG쇼핑몰,,,2856720,
 persona-a:0342,2026-10-11,10:30,6,laundry,크린아트,10000,out,spending,ETC,living,D,card,persona-a:0342,0,,0,,store_snapshot,크린아트,MA010120220808323671,,세탁소,관악구,신림동,,
 persona-a:0343,2026-10-11,10:30,6,laundry,크린아트,10000,out,spending,ETC,living,A,bank,persona-a:0342,1,,0,,store_snapshot,크린아트,MA010120220808323671,,세탁소,관악구,신림동,2846720,
 persona-a:0338,2026-10-11,13:10,6,weekend_meal,퍼틴 코리아,21000,out,spending,FOOD,living,D,card,persona-a:0338,0,,0,,store_snapshot,퍼틴 코리아,MA010120220813010433,코리아,베트남식 전문,송파구,잠실3동,,friend
@@ -419,8 +419,8 @@ persona-a:0534,2026-10-14,19:10,2,clinic,언제나열린이비인후과의원,72
 persona-a:0535,2026-10-14,19:10,2,clinic,언제나열린이비인후과의원,7200,out,spending,MEDICAL_HEALTH,living,A,bank,persona-a:0534,1,,0,,store_snapshot,언제나열린이비인후과의원,MA0101202301A0067167,,이비인후과 의원,관악구,신림동,2750520,
 persona-a:0536,2026-10-14,19:30,2,pharmacy,으뜸약국,5800,out,spending,MEDICAL_HEALTH,living,D,card,persona-a:0536,0,,0,,store_snapshot,으뜸약국,MA0101202511A0016358,,약국,관악구,신림동,,
 persona-a:0537,2026-10-14,19:30,2,pharmacy,으뜸약국,5800,out,spending,MEDICAL_HEALTH,living,A,bank,persona-a:0536,1,,0,,store_snapshot,으뜸약국,MA0101202511A0016358,,약국,관악구,신림동,2744720,
-persona-a:0568,2026-10-15,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,4300,out,spending,UNCLASSIFIED,living,D,card,persona-a:0568,0,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 2잔
-persona-a:0569,2026-10-15,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,4300,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0568,1,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,2740420,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 2잔
+persona-a:0568,2026-10-15,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,4300,out,spending,UNCLASSIFIED,living,D,card,persona-a:0568,0,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 2잔
+persona-a:0569,2026-10-15,08:40,3,review_mammoth,대표인증_3 - 발트페이먼츠,4300,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0568,1,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,2740420,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 2잔
 persona-a:0352,2026-10-15,10:00,3,telecom,SK텔레콤 자동납부,55000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,SK텔레콤 자동납부,,,,,,2685420,
 persona-a:0353,2026-10-15,15:20,3,convenience,GS25강남메트로,4500,out,spending,FOOD,living,D,card,persona-a:0353,0,,0,,store_snapshot,GS25강남메트로,MA010120220804445535,,편의점,강남구,역삼1동,,
 persona-a:0354,2026-10-15,15:20,3,convenience,GS25강남메트로,4500,out,spending,FOOD,living,A,bank,persona-a:0353,1,,0,,store_snapshot,GS25강남메트로,MA010120220804445535,,편의점,강남구,역삼1동,2680920,
@@ -475,8 +475,8 @@ persona-a:0397,2026-10-27,12:50,1,cafe,쥬스식스 강남역점,4200,out,spendi
 persona-a:0398,2026-10-27,12:50,1,cafe,쥬스식스 강남역점,4200,out,spending,FOOD,living,A,bank,persona-a:0397,1,,0,,store_snapshot,쥬스식스 강남역점,MA010120220805313986,강남역점,카페,강남구,역삼1동,4456820,
 persona-a:0399,2026-10-27,19:56,1,delivery,족발신선생 신림점,25500,out,spending,FOOD,living,D,card,persona-a:0399,0,,0,,store_snapshot,족발신선생 신림점,MA0101202311A0011122,신림점,족발/보쌈,관악구,서원동,,
 persona-a:0400,2026-10-27,19:56,1,delivery,족발신선생 신림점,25500,out,spending,FOOD,living,A,bank,persona-a:0399,1,,0,,store_snapshot,족발신선생 신림점,MA0101202311A0011122,신림점,족발/보쌈,관악구,서원동,4431320,
-persona-a:0582,2026-10-28,21:40,2,review_coupang,쿠팡,29800,out,spending,UNCLASSIFIED,living,D,card,persona-a:0582,0,FASHION_SHOPPING,0,,non_store,쿠팡,,,,,,,다품목(쿠팡) · 운동화 · 같은 적요인데 카테고리 다름
-persona-a:0583,2026-10-28,21:40,2,review_coupang,쿠팡,29800,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0582,1,FASHION_SHOPPING,0,,non_store,쿠팡,,,,,,4401520,다품목(쿠팡) · 운동화 · 같은 적요인데 카테고리 다름
+persona-a:0582,2026-10-28,21:40,2,review_coupang,쿠팡_쿠페이 - 쿠팡페이 주식회사,29800,out,spending,UNCLASSIFIED,living,D,card,persona-a:0582,0,FASHION_SHOPPING,0,,card_statement,쿠팡_쿠페이 - 쿠팡페이 주식회사,,,PG쇼핑몰,,,,다품목(쿠팡) · 운동화 · 같은 적요인데 카테고리 다름
+persona-a:0583,2026-10-28,21:40,2,review_coupang,쿠팡_쿠페이 - 쿠팡페이 주식회사,29800,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0582,1,FASHION_SHOPPING,0,,card_statement,쿠팡_쿠페이 - 쿠팡페이 주식회사,,,PG쇼핑몰,,,4401520,다품목(쿠팡) · 운동화 · 같은 적요인데 카테고리 다름
 persona-a:0401,2026-10-29,19:26,3,delivery,브라더,27000,out,spending,FOOD,living,D,card,persona-a:0401,0,,0,,store_snapshot,브라더,MA010120220800986672,,김밥/만두/분식,관악구,서원동,,
 persona-a:0402,2026-10-29,19:26,3,delivery,브라더,27000,out,spending,FOOD,living,A,bank,persona-a:0401,1,,0,,store_snapshot,브라더,MA010120220800986672,,김밥/만두/분식,관악구,서원동,4374520,
 persona-a:0521,2026-10-30,18:20,4,pay,카카오페이충전,20000,out,spending,UNCLASSIFIED,living,A,bank,,0,FOOD,0,,non_store,카카오페이충전,,,,,,4354520,확인 필요(페이 충전) · 충전 뒤 회식 2차 1/n 보냄
@@ -497,8 +497,8 @@ persona-a:0542,2026-11-04,20:10,2,pharmacy,으뜸약국,6000,out,spending,MEDICA
 persona-a:0543,2026-11-04,20:10,2,pharmacy,으뜸약국,6000,out,spending,MEDICAL_HEALTH,living,A,bank,persona-a:0542,1,,0,,store_snapshot,으뜸약국,MA0101202511A0016358,,약국,관악구,신림동,3768220,
 persona-a:0412,2026-11-04,22:21,2,convenience,세븐일레븐신림허브 그린점,10600,out,spending,FOOD,living,D,card,persona-a:0412,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0413,2026-11-04,22:21,2,convenience,세븐일레븐신림허브 그린점,10600,out,spending,FOOD,living,A,bank,persona-a:0412,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,3757620,
-persona-a:0570,2026-11-05,08:42,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,D,card,persona-a:0570,0,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
-persona-a:0571,2026-11-05,08:42,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0570,1,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,3754120,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
+persona-a:0570,2026-11-05,08:42,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,D,card,persona-a:0570,0,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
+persona-a:0571,2026-11-05,08:42,3,review_mammoth,대표인증_3 - 발트페이먼츠,3500,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0570,1,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,3754120,가게 정보 못 찾음(결제대행사 이름) · 매머드커피
 persona-a:0414,2026-11-05,10:00,3,ott,넷플릭스,17000,out,spending,CULTURE_LEISURE,fixed,D,card,persona-a:0414,0,,1,ott,non_store,넷플릭스,,,,,,,
 persona-a:0415,2026-11-05,10:00,3,ott,넷플릭스,17000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-a:0414,1,,1,ott,non_store,넷플릭스,,,,,,3737120,
 persona-a:0416,2026-11-05,12:56,3,cafe,더벤티강남역지하 상가점,5300,out,spending,FOOD,living,D,card,persona-a:0416,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
@@ -524,8 +524,8 @@ persona-a:0519,2026-11-09,21:50,0,pay,네이버페이 - 무신사,39800,out,spen
 persona-a:0434,2026-11-09,22:26,0,convenience,세븐일레븐신림허브 그린점,4900,out,spending,FOOD,living,D,card,persona-a:0434,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0435,2026-11-09,22:26,0,convenience,세븐일레븐신림허브 그린점,4900,out,spending,FOOD,living,A,bank,persona-a:0434,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,3589820,
 persona-a:0436,2026-11-10,10:00,1,maintenance,신림해오름원룸,70000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,maintenance,non_store,신림해오름원룸,,,,,,3519820,
-persona-a:0584,2026-11-11,20:50,2,review_coupang,쿠팡,15600,out,spending,UNCLASSIFIED,living,D,card,persona-a:0584,0,HOUSEHOLD,0,,non_store,쿠팡,,,,,,,다품목(쿠팡) · 생필품
-persona-a:0585,2026-11-11,20:50,2,review_coupang,쿠팡,15600,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0584,1,HOUSEHOLD,0,,non_store,쿠팡,,,,,,3504220,다품목(쿠팡) · 생필품
+persona-a:0584,2026-11-11,20:50,2,review_coupang,쿠팡(주),15600,out,spending,UNCLASSIFIED,living,D,card,persona-a:0584,0,HOUSEHOLD,0,,card_statement,쿠팡(주),,,PG쇼핑몰,,,,다품목(쿠팡) · 생필품
+persona-a:0585,2026-11-11,20:50,2,review_coupang,쿠팡(주),15600,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0584,1,HOUSEHOLD,0,,card_statement,쿠팡(주),,,PG쇼핑몰,,,3504220,다품목(쿠팡) · 생필품
 persona-a:0437,2026-11-12,08:05,3,tmoney,모바일티머니선불형,30000,out,spending,TRANSPORT_CAR,living,D,card,persona-a:0437,0,,0,,non_store,모바일티머니선불형,,,,,,,
 persona-a:0438,2026-11-12,08:05,3,tmoney,모바일티머니선불형,30000,out,spending,TRANSPORT_CAR,living,A,bank,persona-a:0437,1,,0,,non_store,모바일티머니선불형,,,,,,3474220,
 persona-a:0439,2026-11-13,12:25,4,lunch,이천밥쌤 강남역점,10000,out,spending,FOOD,living,D,card,persona-a:0439,0,,0,,store_snapshot,이천밥쌤 강남역점,MA0106202307A2182190,강남역점,백반/한정식,서초구,서초4동,,
@@ -540,8 +540,8 @@ persona-a:0441,2026-11-15,10:00,6,telecom,SK텔레콤 자동납부,55000,out,spe
 persona-a:0511,2026-11-15,10:20,6,friend,백동현,30000,in,income,,,A,bank,,0,,0,,non_store,백동현,,,,,,3341220,생일 저녁 1/n 받음
 persona-a:0442,2026-11-15,13:10,6,weekend_meal,클럽2,30500,out,spending,FOOD,living,D,card,persona-a:0442,0,,0,,store_snapshot,클럽2,MA010120220804427883,,경양식,송파구,잠실6동,,date
 persona-a:0443,2026-11-15,13:10,6,weekend_meal,클럽2,30500,out,spending,FOOD,living,A,bank,persona-a:0442,1,,0,,store_snapshot,클럽2,MA010120220804427883,,경양식,송파구,잠실6동,3310720,date
-persona-a:0572,2026-11-17,08:40,1,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,D,card,persona-a:0572,0,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 시연에서 '앞으로도 적용' 장면
-persona-a:0573,2026-11-17,08:40,1,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0572,1,FOOD,0,,non_store,대표인증_3 - 발트페이먼츠,,,,,,3308720,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 시연에서 '앞으로도 적용' 장면
+persona-a:0572,2026-11-17,08:40,1,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,D,card,persona-a:0572,0,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 시연에서 '앞으로도 적용' 장면
+persona-a:0573,2026-11-17,08:40,1,review_mammoth,대표인증_3 - 발트페이먼츠,2000,out,spending,UNCLASSIFIED,living,A,bank,persona-a:0572,1,FOOD,0,,card_statement,대표인증_3 - 발트페이먼츠,,,PG쇼핑몰,,,3308720,가게 정보 못 찾음(결제대행사 이름) · 매머드커피 · 시연에서 '앞으로도 적용' 장면
 persona-a:0444,2026-11-17,12:14,1,lunch,한마음분식,10000,out,spending,FOOD,living,D,card,persona-a:0444,0,,0,,store_snapshot,한마음분식,MA010120220804447749,,김밥/만두/분식,강남구,역삼1동,,
 persona-a:0445,2026-11-17,12:14,1,lunch,한마음분식,10000,out,spending,FOOD,living,A,bank,persona-a:0444,1,,0,,store_snapshot,한마음분식,MA010120220804447749,,김밥/만두/분식,강남구,역삼1동,3298720,
 persona-a:0446,2026-11-17,19:28,1,home_meal,남산터포도몰점,8500,out,spending,FOOD,living,D,card,persona-a:0446,0,,0,,store_snapshot,남산터포도몰점,MA010120220808021763,,백반/한정식,관악구,서원동,,
@@ -552,8 +552,8 @@ persona-a:0450,2026-11-18,19:30,2,home_meal,고망고 신림점,12000,out,spendi
 persona-a:0451,2026-11-18,19:30,2,home_meal,고망고 신림점,12000,out,spending,FOOD,living,A,bank,persona-a:0450,1,,0,,store_snapshot,고망고 신림점,MA0106202408A2122373,신림점,백반/한정식,관악구,서원동,3273520,
 persona-a:0452,2026-11-19,12:53,3,cafe,쥬스식스 강남역점,4800,out,spending,FOOD,living,D,card,persona-a:0452,0,,0,,store_snapshot,쥬스식스 강남역점,MA010120220805313986,강남역점,카페,강남구,역삼1동,,
 persona-a:0453,2026-11-19,12:53,3,cafe,쥬스식스 강남역점,4800,out,spending,FOOD,living,A,bank,persona-a:0452,1,,0,,store_snapshot,쥬스식스 강남역점,MA010120220805313986,강남역점,카페,강남구,역삼1동,3268720,
-persona-a:0454,2026-11-20,12:58,4,cafe,이터너발효커피,5000,out,spending,FOOD,living,D,card,persona-a:0454,0,,0,,store_snapshot,이터너발효커피,MA010120220802267432,,카페,강남구,역삼1동,,
-persona-a:0455,2026-11-20,12:58,4,cafe,이터너발효커피,5000,out,spending,FOOD,living,A,bank,persona-a:0454,1,,0,,store_snapshot,이터너발효커피,MA010120220802267432,,카페,강남구,역삼1동,3263720,
+persona-a:0454,2026-11-20,12:58,4,cafe,카카오페이_3 - 이터너발효커피,5000,out,spending,FOOD,living,D,card,persona-a:0454,0,,0,,store_snapshot,카카오페이_3 - 이터너발효커피,MA010120220802267432,,카페,강남구,역삼1동,,
+persona-a:0455,2026-11-20,12:58,4,cafe,카카오페이_3 - 이터너발효커피,5000,out,spending,FOOD,living,A,bank,persona-a:0454,1,,0,,store_snapshot,카카오페이_3 - 이터너발효커피,MA010120220802267432,,카페,강남구,역삼1동,3263720,
 persona-a:0456,2026-11-21,13:10,5,weekend_meal,로바더현대서울점,15500,out,spending,FOOD,living,D,card,persona-a:0456,0,,0,,store_snapshot,로바더현대서울점,MA010120220802904385,,일식 회/초밥,영등포구,여의동,,friend
 persona-a:0457,2026-11-21,13:10,5,weekend_meal,로바더현대서울점,15500,out,spending,FOOD,living,A,bank,persona-a:0456,1,,0,,store_snapshot,로바더현대서울점,MA010120220802904385,,일식 회/초밥,영등포구,여의동,3248220,friend
 persona-a:0458,2026-11-21,15:00,5,weekend_cafe,라운지리포즈,10100,out,spending,FOOD,living,D,card,persona-a:0458,0,,0,,store_snapshot,라운지리포즈,MA010120220813191304,,카페,영등포구,여의동,,friend
@@ -574,8 +574,8 @@ persona-a:0474,2026-11-23,18:40,0,cosmetics,일월뷰티,15100,out,spending,BEAU
 persona-a:0475,2026-11-23,18:40,0,cosmetics,일월뷰티,15100,out,spending,BEAUTY,living,A,bank,persona-a:0474,1,,0,,store_snapshot,일월뷰티,MA0101202502A0033134,,화장품 소매업,관악구,신림동,3152820,
 persona-a:0472,2026-11-23,22:06,0,convenience,지에스25유신림마음,3700,out,spending,FOOD,living,D,card,persona-a:0472,0,,0,,store_snapshot,지에스25유신림마음,MA010120220802859537,,편의점,관악구,서원동,,
 persona-a:0473,2026-11-23,22:06,0,convenience,지에스25유신림마음,3700,out,spending,FOOD,living,A,bank,persona-a:0472,1,,0,,store_snapshot,지에스25유신림마음,MA010120220802859537,,편의점,관악구,서원동,3149120,
-persona-a:0476,2026-11-24,12:56,1,cafe,스타벅스 7번출구,5000,out,spending,FOOD,living,D,card,persona-a:0476,0,,0,,store_snapshot,스타벅스 7번출구,MA0106202512A0488739,7번출구,카페,서초구,서초2동,,
-persona-a:0477,2026-11-24,12:56,1,cafe,스타벅스 7번출구,5000,out,spending,FOOD,living,A,bank,persona-a:0476,1,,0,,store_snapshot,스타벅스 7번출구,MA0106202512A0488739,7번출구,카페,서초구,서초2동,3144120,
+persona-a:0476,2026-11-24,12:56,1,cafe,카카오페이_3 - 스타벅스 7번출구,5000,out,spending,FOOD,living,D,card,persona-a:0476,0,,0,,store_snapshot,카카오페이_3 - 스타벅스 7번출구,MA0106202512A0488739,7번출구,카페,서초구,서초2동,,
+persona-a:0477,2026-11-24,12:56,1,cafe,카카오페이_3 - 스타벅스 7번출구,5000,out,spending,FOOD,living,A,bank,persona-a:0476,1,,0,,store_snapshot,카카오페이_3 - 스타벅스 7번출구,MA0106202512A0488739,7번출구,카페,서초구,서초2동,3144120,
 persona-a:0478,2026-11-24,22:48,1,convenience,세븐일레븐신림허브 그린점,8400,out,spending,FOOD,living,D,card,persona-a:0478,0,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,,
 persona-a:0479,2026-11-24,22:48,1,convenience,세븐일레븐신림허브 그린점,8400,out,spending,FOOD,living,A,bank,persona-a:0478,1,,0,,store_snapshot,세븐일레븐신림허브 그린점,MA010120220800947142,그린점,편의점,관악구,신림동,3135720,
 persona-a:0480,2026-11-25,09:00,2,salary,(주)와와컴퍼니,2600000,in,income,,,A,bank,,0,,0,,non_store,(주)와와컴퍼니,,,,,,5735720,
@@ -585,13 +585,13 @@ persona-a:0483,2026-11-25,19:20,2,home_meal,명동칼국수,8000,out,spending,FO
 persona-a:0484,2026-11-25,19:20,2,home_meal,명동칼국수,8000,out,spending,FOOD,living,A,bank,persona-a:0483,1,,0,,store_snapshot,명동칼국수,MA010120220806653223,,국수/칼국수,관악구,서원동,5724020,
 persona-a:0485,2026-11-26,09:10,3,saving,청년도약 적금 자동이체,300000,out,saving,,,A,bank,saving:11,0,,0,,non_store,청년도약 적금 자동이체,,,,,,5424020,
 persona-a:0486,2026-11-26,09:10,3,saving,청년도약 적금 자동이체,300000,in,saving,,,C,bank,saving:11,0,,0,,non_store,청년도약 적금 자동이체,,,,,,2700000,
-persona-a:0487,2026-11-26,12:45,3,cafe,더벤티강남역지하 상가점,4100,out,spending,FOOD,living,D,card,persona-a:0487,0,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
-persona-a:0488,2026-11-26,12:45,3,cafe,더벤티강남역지하 상가점,4100,out,spending,FOOD,living,A,bank,persona-a:0487,1,,0,,store_snapshot,더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,5419920,
+persona-a:0487,2026-11-26,12:45,3,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4100,out,spending,FOOD,living,D,card,persona-a:0487,0,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,,
+persona-a:0488,2026-11-26,12:45,3,cafe,카카오페이_3 - 더벤티강남역지하 상가점,4100,out,spending,FOOD,living,A,bank,persona-a:0487,1,,0,,store_snapshot,카카오페이_3 - 더벤티강남역지하 상가점,MA010120220812427726,상가점,카페,강남구,역삼1동,5419920,
 persona-a:0489,2026-11-27,10:00,4,student_loan,한국장학재단 학자금상환,150000,out,loan_repayment,,,A,bank,,0,,0,,non_store,한국장학재단 학자금상환,,,,,,5269920,
 persona-a:0490,2026-11-27,15:20,4,convenience,이마트24 강남역점,2600,out,spending,FOOD,living,D,card,persona-a:0490,0,,0,,store_snapshot,이마트24 강남역점,MA010120220813166387,강남역점,편의점,강남구,역삼1동,,
 persona-a:0491,2026-11-27,15:20,4,convenience,이마트24 강남역점,2600,out,spending,FOOD,living,A,bank,persona-a:0490,1,,0,,store_snapshot,이마트24 강남역점,MA010120220813166387,강남역점,편의점,강남구,역삼1동,5267320,
-persona-a:0492,2026-11-27,20:27,4,delivery,보배반점 신림점,20000,out,spending,FOOD,living,D,card,persona-a:0492,0,,0,,store_snapshot,보배반점 신림점,MA0101202406A0524829,신림점,중국집,관악구,신림동,,
-persona-a:0493,2026-11-27,20:27,4,delivery,보배반점 신림점,20000,out,spending,FOOD,living,A,bank,persona-a:0492,1,,0,,store_snapshot,보배반점 신림점,MA0101202406A0524829,신림점,중국집,관악구,신림동,5247320,
+persona-a:0492,2026-11-27,20:27,4,delivery,쿠팡이츠 - 쿠팡,20000,out,spending,FOOD,living,D,card,persona-a:0492,0,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,,
+persona-a:0493,2026-11-27,20:27,4,delivery,쿠팡이츠 - 쿠팡,20000,out,spending,FOOD,living,A,bank,persona-a:0492,1,,0,,card_statement,쿠팡이츠 - 쿠팡,,,PG쇼핑몰,,,5247320,
 persona-a:0494,2026-11-28,13:10,5,weekend_meal,탐광더현대서울,25500,out,spending,FOOD,living,D,card,persona-a:0494,0,,0,,store_snapshot,탐광더현대서울,MA010120220803574500,,일식 회/초밥,영등포구,여의동,,date
 persona-a:0495,2026-11-28,13:10,5,weekend_meal,탐광더현대서울,25500,out,spending,FOOD,living,A,bank,persona-a:0494,1,,0,,store_snapshot,탐광더현대서울,MA010120220803574500,,일식 회/초밥,영등포구,여의동,5221820,date
 persona-a:0496,2026-11-29,16:30,6,grocery,신림마트,23400,out,spending,FOOD,living,D,card,persona-a:0496,0,,0,,store_snapshot,신림마트,MA010120220813284388,,슈퍼마켓,관악구,서원동,,
