@@ -133,6 +133,10 @@ CORPORATE_NAMES = {
     # 온라인 여행 예약: 지도 검색에 서비스가 아니라 같은 이름의 다른 장소가 나온다 (트립닷컴 → 에버랜드 편의시설)
     "트립닷컴": "TRAVEL_LODGING", "아고다": "TRAVEL_LODGING", "야놀자": "TRAVEL_LODGING", "여기어때": "TRAVEL_LODGING",
     "익스피디아": "TRAVEL_LODGING", "에어비앤비": "TRAVEL_LODGING", "호텔스닷컴": "TRAVEL_LODGING", "부킹닷컴": "TRAVEL_LODGING",
+    # 외식 프랜차이즈 운영사 (11/16 나은): 앱 · 키오스크 결제는 운영사 이름으로 찍히고, 검색하면 본사(기업)가 나온다.
+    # 이름이 정확히 같을 때만 ('비케이알오플라워' 같은 꽃집이 버거킹 운영사로 잡히지 않게)
+    "엠지씨글로벌": "FOOD", "앤하우스": "FOOD", "비알코리아": "FOOD", "비케이알": "FOOD", "청오디피케이": "FOOD",
+    "교촌에프앤비": "FOOD", "엠즈씨드": "FOOD", "롯데지알에스": "FOOD", "롯데grs": "FOOD", "이랜드이츠": "FOOD",
 }
 # '기타' = 10개 밖 소비 (분류 기준 2장). shortcut: 이름 끝·이름 안의 낱말로 판별. 5단계에서는 Jev 가 업종으로 판단
 ETC_SUFFIXES = (

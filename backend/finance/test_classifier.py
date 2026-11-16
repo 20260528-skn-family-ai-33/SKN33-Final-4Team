@@ -1016,6 +1016,14 @@ class DeliveryAppTest(SimpleTestCase):
                            "롯데하이마트 강남점": None, "신앙촌상회": None, "루덴치과의원": None, "": None, None: None}.items():
             self.assertEqual(classifier.retail_category(name), code, name)
 
+    def test_food_franchise_operators(self):
+        # 11/16: 외식 프랜차이즈 운영사 이름은 이름이 정확히 같을 때만 식비
+        for name in ("엠지씨글로벌", "(주)비케이알", "주식회사 청오디피케이", "롯데GRS", "롯데지알에스", "교촌에프앤비", "이랜드이츠",
+                     "카카오페이 - 비알코리아(주)"):
+            self.assertEqual(classifier.rule_category(classifier.store_name(name)), "FOOD", name)
+        for name in ("비케이알오플라워", "엠지씨글로벌물류"):
+            self.assertIsNone(classifier.rule_category(name), name)
+
     def test_zigzag_operator_is_fashion(self):
         # 11/09: 지도(회사 사무실)와 웹(패션)이 엇갈려 묻던 지그재그 운영사
         self.assertEqual(classifier.rule_category(classifier.store_name("카카오스타일 - 카카오스타일")), "FASHION_SHOPPING")
