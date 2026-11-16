@@ -83,6 +83,31 @@ PERSONAS = {
                   ('telecom', '휴대폰 요금', 69_000, 20, 'HOUSING_TELECOM', 'A')],
         'loans': [],
     },
+    'c': {
+        'email': 'demo.seoyeon@moneycushion.test',
+        'nickname': '이서연',
+        'csv': 'transactions_c.csv',
+        # 10/12 첫 연결 → 수집 시작일은 '4달 전 1일'(6/1). 통장 · 카드는 9/14 입사 때 새로 만들어서 거래는 9/14부터
+        'connected_on': date(2026, 10, 12),
+        'first_connected': date(2026, 6, 1),
+        'bank': {'org': '0081', 'alias': '하나은행'},
+        'card': {'org': '0313', 'alias': '하나카드'},
+        'accounts': {'A': ('하나 급여하나 통장', 'demand', '2716', True),
+                     'C': ('하나 청년도약계좌', 'deposit', '8843', False)},
+        'cards': {'D': ('하나 트래블로그 체크카드', '체크', '5307', 'A')},
+        'profile': {
+            'birthDate': '1998-03-09', 'gender': 'female', 'housingType': 'family', 'hasCar': False,
+            'regionCode': '28237',  # 인천 부평구
+            'priorities': [{'category': 'MEDICAL_HEALTH', 'rank': 1}, {'category': 'FOOD', 'rank': 2},
+                           {'category': 'FASHION_SHOPPING', 'rank': 3}],
+            'categoryMinimums': [],
+        },
+        'salary': {'takeHomeIncome': 2_500_000, 'payday': 25},
+        'fixed': [('telecom', '휴대폰 요금', 52_000, 22, 'HOUSING_TELECOM', 'A'),
+                  ('ott', '티빙', 13_900, 5, 'CULTURE_LEISURE', 'D'),
+                  ('parents', '부모님 생활비', 200_000, 26, 'ETC', 'A')],
+        'loans': [],
+    },
 }
 
 
@@ -111,7 +136,7 @@ def insert_connected_state(persona, as_of, password, *, real_classify=False):
     cfg = PERSONAS[persona]
     User = get_user_model()
     now = datetime.now(KST)
-    first = at(cfg['first_connected'], 9)
+    first = at(cfg.get('connected_on', cfg['first_connected']), 9)  # 가입 · 동의 · 연결 시각
     user = User(pk=uid(persona, 'user'), email=cfg['email'], nickname=cfg['nickname'], is_staff=False,
                 email_verified_at=first)
     user.set_password(password)
@@ -187,7 +212,7 @@ def insert_connected_state(persona, as_of, password, *, real_classify=False):
                 to_transaction=txs[r['source_key']], relation_type='SAME_PURCHASE', matched_amount=int(r['amount']),
                 confirmation_state='confirmed', confirmed_at=now)
 
-    start = cfg['first_connected']
+    start = cfg['first_connected']  # 수집 시작일 (첫 연결의 '4달 전 1일')
     for key, asset in assets.items():
         is_card = key in cfg['cards']
         if not is_card and not cfg['accounts'][key][3]:

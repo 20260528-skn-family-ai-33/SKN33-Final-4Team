@@ -78,11 +78,36 @@ ROLES = {
         'olive': (['home', 'office'], ['그 외 기타 상품 전문 소매업', '화장품 소매업'], {'home': 1}, 3),
         'screen_golf': (['office'], ['골프 연습장'], {'office': 1}, 4),
     },
+    'c': {
+        'lunch': (['office'], ['백반/한정식', '국/탕/찌개류', '김밥/만두/분식', '국수/칼국수', '중국집',
+                               '일식 카레/돈가스/덮밥', '버거', '베트남식 전문', '토스트/샌드위치/샐러드'], {'office': 4}, 30),
+        'cafe': (['office', 'home'], ['카페'], {'office': 2, 'home': 1}, 15),
+        'convenience': (['office', 'home'], ['편의점'], {'office': 1, 'home': 1}, 8),
+        'delivery': (['home'], ['치킨', '피자', '족발/보쌈', '중국집', '김밥/만두/분식'], {'home': 2}, 15),
+        'bakery': (['home'], ['빵/도넛'], {'home': 1}, 6),
+        'dosu': (['home_wide'], ['외과 의원', '기타 의원'], {'home_wide': 1}, 6),
+        'pharmacy': (['home'], ['약국'], {'home': 1}, 5),
+        'hair': (['home'], ['미용실'], {'home': 1}, 5),
+        'cosmetics': (['home', 'bupyeong'], ['화장품 소매업'], {'home': 1}, 8),
+        'household': (['home'], ['주방/가정용품 소매업', '전기용품/조명장치 소매업'], {}, 6),
+        'books': (['office', 'home'], ['서점', '문구/회화용품 소매업'], {}, 5),
+        'weekend_meal': (['bupyeong', 'songdo', 'yeongdeungpo', 'hongdae'],
+                         ['경양식', '파스타/스테이크', '일식 회/초밥', '일식 면 요리', '베트남식 전문', '기타 서양식 음식점',
+                          '돼지고기 구이/찜', '버거', '마라탕/훠궈'], {}, 12),
+        'weekend_cafe': (['bupyeong', 'songdo', 'yeongdeungpo', 'hongdae'], ['카페'], {}, 12),
+        'dessert': (['bupyeong', 'hongdae'], ['빵/도넛', '아이스크림/빙수'], {}, 6),
+        'bar': (['bupyeong', 'hongdae'], ['요리 주점', '생맥주 전문'], {}, 8),
+        'fun': (['bupyeong', 'hongdae'], ['노래방', '전자 게임장', '기타 오락장', '볼링장'], {}, 6),
+        'fashion': (['bupyeong', 'yeongdeungpo', 'hongdae'], ['여성 의류 소매업', '기타 의류 소매업', '신발 소매업',
+                                                             '액세서리/잡화 소매업'], {}, 8),
+        'gift': (['bupyeong', 'hongdae'], ['꽃집', '기념품점'], {}, 4),
+    },
 }
-SEEDS = {'a': 20261120, 'b': 20261121}
+SEEDS = {'a': 20261120, 'b': 20261121, 'c': 20261122}
 # 업종 라벨이 틀린 가게(예: 옷가게가 슈퍼마켓)를 거르려고 이름에 이 말이 있어야 하는 역할
 NAME_KEYWORDS = {'grocery': ('마트', '슈퍼', '식자재', '청과', '야채', '반찬', '정육'),
-                 'mens_hair': ('바버', '맨즈', '남성'), 'olive': ('올리브영',), 'screen_golf': ('스크린', '골프존')}
+                 'mens_hair': ('바버', '맨즈', '남성'), 'olive': ('올리브영',), 'screen_golf': ('스크린', '골프존'),
+                 'dosu': ('정형', '재활', '통증')}
 EXCLUDE_NAME = ('유흥',)
 # 상가정보 라벨(v3: 다품목 미분류)과 서비스 분류 규칙이 다른 역할은 서비스 규칙을 정답으로 쓴다
 # (backend/finance/classifier.py — 11/05 결정: 편의점·슈퍼·마트는 식비, 세탁·수선은 기타)
