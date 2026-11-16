@@ -152,8 +152,14 @@ class ApprovedBudgetTest(TestCase):
             self.assertEqual(approved_budget(user("A"), d(2026, 10, 29)), {"state": "error", "reason": "db_error"})
 
     def test_overlapping_cycles_are_not_guessed(self):
-        BudgetCycle.objects.create(user=user("C"), starts_on=d(2026, 10, 22), ends_before=d(2026, 11, 22), status="closed")
+        BudgetCycle.objects.create(user=user("C"), starts_on=d(2026, 10, 22), ends_before=d(2026, 11, 22), status="active")
         self.assertEqual(approved_budget(user("C"), d(2026, 10, 29)), {"state": "error", "reason": "overlapping_cycles"})
+
+    def test_closed_overlap_does_not_hide_the_active_approved_budget(self):
+        before = approved_budget(user("A"), d(2026, 10, 29))
+        BudgetCycle.objects.create(user=user("A"), starts_on=d(2026, 10, 26), ends_before=d(2026, 11, 26), status="closed")
+        after = approved_budget(user("A"), d(2026, 10, 29))
+        self.assertEqual(after, before)
 
 
 @fixture_db_only

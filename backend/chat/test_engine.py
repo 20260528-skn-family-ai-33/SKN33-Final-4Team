@@ -13,7 +13,7 @@ from django.test import Client, TestCase, override_settings
 from chat.models import ChatMessage, Conversation
 
 from spending_analysis import explain
-from spending_analysis import insight
+from spending_analysis import insight, story
 from spending_fixture import seed
 from spending_fixture.test_fixture import DESIGN, EXPECTED, fixture_db_only
 from spending_fixture.test_service import NO_NETWORK, PASSWORD, SERVICE, login
@@ -104,8 +104,7 @@ class ServiceChatTest(ServiceChatBase):
             return fake(system, user, **kwargs)
 
         with self.capture_summaries() as summaries, mock.patch.object(engine, "reading", return_value=complete):
-            content = self.bot(self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?"))
-        self.assertTrue(payloads, content)
+            content = self.bot(self.send("A", text="이대로 쓰면 이번 달 얼마나 쓸까?"))
         projection = summaries[0]["trends"]["FOOD"]
         report = projection["validation"]
         overall = summaries[0]["overall_trend"]
@@ -116,9 +115,13 @@ class ServiceChatTest(ServiceChatBase):
         self.assertLess(max(report["tuning_months"]), min(report["test_months"]))
         self.assertEqual(report["test_months"], ["2026-08", "2026-09"])
         text = " ".join(content["lines"])
-        self.assertIn(f"{overall['month_end']:,}원", text)
-        self.assertTrue(any(f"{report['test_mae']:,}원" in n for n in content["notices"]))
-        self.assertTrue(any("별도 2개월" in n for n in content["notices"]))
+        # 화면 숫자 = 이야기 예상(카테고리 소비 방식). 같은 방식으로 지난 달들을 되짚어 본 오차를 하단에 밝힌다
+        shown = summaries[0]["story"]["projection"]
+        self.assertIn(story.man(round(shown["month_end"], -3)), text)
+        self.assertTrue(shown["checked"])
+        self.assertTrue(any(f"지난 {shown['checked']}개월" in n and f"{int(round(shown['error'], -3)):,}원" in n
+                            for n in content["notices"]), content["notices"])
+        self.assertIn("고정지출까지 더하면 월말 총지출 예상은", text)
         self.assertFalse(content["choices"])
         self.assertNotIn("merchant_name", json.dumps(payloads))
         with self.capture_summaries() as general_summaries, mock.patch.object(engine, "reading", return_value=complete):
@@ -134,7 +137,9 @@ class ServiceChatTest(ServiceChatBase):
         self.assertEqual(total["fixed_remaining"], 75000)
         self.assertEqual(total["actual"], variable["current"]["amount"] + 700000)
         self.assertEqual(total["month_end"], round((total["actual"] + overall["remaining"] + 75000) / 1000) * 1000)
-        self.assertIn(f"월말 총지출 예상은 약 {total['month_end']:,}원", " ".join(general["lines"]))
+        # 화면의 총지출은 위에 보여 준 생활비 예상 + 고정지출(이미 낸 것 + 남은 것)로 맞춰 두 숫자가 어긋나지 않는다
+        shown_total = round((total["actual"] + shown["month_end"] - shown["observed"] + 75000) / 1000) * 1000
+        self.assertIn(f"월말 총지출 예상은 약 {story.man(shown_total)}", " ".join(general["lines"]))
         self.assertEqual(total["month_end"], summaries[0]["total_forecast"]["month_end"])
 
     def test_fixed_forecast_uses_monthly_amount_and_valid_partial_payment_without_writes(self):
@@ -219,18 +224,16 @@ class ServiceChatTest(ServiceChatBase):
 
         with self.capture_summaries() as summaries, mock.patch.object(engine, "reading", return_value=complete):
             content = self.bot(self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?"))
-        self.assertTrue(payloads, content)
         summary = summaries[0]
         self.assertEqual(summary["trends"]["HOUSEHOLD"]["state"], "large_only")
         self.assertEqual(summary["trends"]["FOOD"]["weekly_direction"], "increase")
-        self.assertEqual(summary["trends"]["FOOD"]["state"], "unavailable")
-        self.assertEqual(summary["trends"]["FOOD"]["validation"]["state"], "insufficient")
-        self.assertNotIn("month_end", summary["trends"]["FOOD"])
-        self.assertEqual(summary["trends"]["FOOD"]["baseline"]["amount"], 310000)
+        # 7~9월 세 달이 완료돼 있어 지금은 과거 달로 검증한 예상이 만들어진다(이전 기대값 'insufficient'는 완료 달 기준 변경 전)
+        self.assertEqual(summary["trends"]["FOOD"]["validation"]["state"], "validated")
         text = " ".join(content["lines"])
         self.assertIn("큰 결제 1건(400,000원)", text)
         self.assertEqual(summary["trends"]["FOOD"]["weekly_direction"], "increase")
-        self.assertIn("예상액을 보류", text)
+        # 이유 질문에는 월말 예상액을 붙이지 않는다(예상은 '이번 달 얼마나 쓸까' 답에서 주간 증가 주의와 함께)
+        self.assertNotIn("이번 달 생활비는 약", text)
         self.assertNotIn("469,000원", text)
         self.assertNotIn("869,000원", text)
         graph = next(block for block in content["view"] if block["kind"] == "trend")
@@ -253,8 +256,7 @@ class ServiceChatTest(ServiceChatBase):
 
         with self.capture_summaries() as summaries, mock.patch.object(engine, "reading", return_value=complete):
             content = self.bot(self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?"))
-        self.assertEqual(len(payloads), 1)
-        self.assertNotIn("summary", payloads[0])
+        self.assertEqual(payloads, [])  # 서버 문장으로 답한다 — 거래 자료를 서술 모델에 보내지 않는다
         summary = summaries[0]
         self.assertEqual(summary["basis"]["scope"], "생활비")
         self.assertTrue(summary["basis"]["fixed_excluded"])
@@ -264,7 +266,7 @@ class ServiceChatTest(ServiceChatBase):
         self.assertNotIn("merchant_name", json.dumps(payloads))
         self.assertTrue(any("고정지출 제외" in n for n in content["notices"]))
         self.assertEqual([block["lines"][0] for block in content["view"][1:] if block["kind"] == "text"],
-                         list(insight.TITLES))
+                         ["핵심 진단", "왜 달라졌나요"])
         self.assertNotIn("2건에서 2건", " ".join(content["lines"]))
         self.assertNotIn("빠른 소비 속도", " ".join(content["lines"]))
 
@@ -274,8 +276,9 @@ class ServiceChatTest(ServiceChatBase):
         self.assertNotIn("chart", content)
         text = " ".join(content["lines"])
         self.assertIn("확인된", text)
-        self.assertTrue(any("증감 비교는 보류" in n for n in content["notices"]))
-        self.assertIn("월말 예상액은 계산하지 않았어요", text)
+        # 비교 · 예상을 못 한 이유는 하단 안내에 한 줄씩 (본문은 확인된 모습만)
+        self.assertTrue(any("지난달 비교는 빼고" in n for n in content["notices"]))
+        self.assertTrue(any("월말 예상액은 계산하지 않았어요" in n for n in content["notices"]))
         self.assertNotIn("지난달 같은 기간보다", text)
         self.assertIn("일부 내역 기준", content["view"][0]["title"])
 
@@ -288,10 +291,9 @@ class ServiceChatTest(ServiceChatBase):
 
         with mock.patch.object(engine, "reading", return_value=complete):
             content = self.bot(self.send("A", text="아무거나 분석해줘"))
-        self.assertEqual([block["lines"][0] for block in content["view"][1:] if block["kind"] == "text"],
-                         list(insight.TITLES))
+        # 메뉴별 답은 서버가 계산한 문장만 쓴다 — 모델이 만든 문장이 그대로 들어가지 않는다
+        self.assertEqual(content["view"][1]["lines"][0], "핵심 진단")
         self.assertNotIn("100만 원", json.dumps(content, ensure_ascii=False))
-        self.assertTrue(any("계산으로 확인된 분석" in n for n in content["notices"]))
 
     def test_partial_analysis_followup_keeps_observed_category_patterns(self):
         response = self.send("C", text="아무거나 분석해줘")
@@ -301,20 +303,22 @@ class ServiceChatTest(ServiceChatBase):
         self.assertIn("소비 분석", follow["view"][0]["title"])
         text = " ".join(follow["lines"])
         self.assertIn("식비", text)
-        self.assertTrue(any("증감 비교는 보류" in n for n in follow["notices"]))
+        self.assertTrue(any("지난달 비교는 빼고" in n for n in follow["notices"]), follow["notices"])
+        self.assertIn("아직 비교하지 못했어요", text)  # 본문 첫머리에서도 비교를 못 했다고 밝힌다
         self.assertNotIn("지난달 같은 기간보다", text)
 
     def test_open_analysis_requests_show_trend_overview_without_forced_questions(self):
-        for text in ("그냥 다 분석해줘", "뭐든 분석해줘", "아무거나 분석해줘", "소비 분석으로 뭘 볼 수 있어?"):
+        for text in ("그냥 다 분석해줘", "뭐든 분석해줘", "아무거나 분석해줘"):
             with self.subTest(text=text):
                 content = self.bot(self.send("A", text=text))
                 self.assertTrue(content["result"])
                 self.assertEqual(content["agent"], "spending")
-                self.assertTrue(any("변동 소비" in n for n in content["notices"]))
-                self.assertEqual(content["view"][-1]["lines"][0], "앞으로의 의미")
-                self.assertFalse(content["choices"])
-                self.assertFalse(content.get("examples"))
+                self.assertTrue(any("고정지출 제외" in n for n in content["notices"]), content["notices"])
+                self.assertEqual(content["view"][1]["lines"][0], "핵심 진단")
+                self.assertFalse(content["choices"])  # 강제 질문 버튼 없음 (이어 물어볼 예시 문장만)
                 self.assertNotIn("어떤 용도", " ".join(content["lines"]))
+        menu = self.bot(self.send("A", text="소비 분석으로 뭘 볼 수 있어?"))  # 무엇을 볼 수 있는지 물으면 메뉴
+        self.assertEqual(menu["view"][0]["title"], "소비 분석 · 볼 수 있는 분석")
 
     def test_habit_and_forecast_questions_use_different_narrative_goals(self):
         from chat.llm.fake import FakeReading
@@ -326,10 +330,12 @@ class ServiceChatTest(ServiceChatBase):
         with mock.patch.object(engine, "reading", return_value=complete):
             habit = self.bot(self.send("A", text="내 소비 습관 어때?"))
             forecast = self.bot(self.send("A", text="이대로 쓰면 이번 달 얼마나 쓸까?"))
-        self.assertEqual([p["goal"] for p in inputs], ["habit", "forecast"])
+        self.assertEqual(inputs, [])  # 메뉴별 답은 서버 문장 — 서술용 모델 호출 없음
         self.assertTrue(habit["lines"])
+        self.assertNotEqual([b.get("title") for b in habit["view"]], [b.get("title") for b in forecast["view"]])
         self.assertEqual(forecast["view"][1]["title"], "핵심 진단")
-        self.assertTrue(any(word in forecast["view"][1]["lines"][1] for word in ("예상", "보류", "계산하지")))
+        self.assertTrue(any(word in forecast["view"][1]["lines"][1] for word in ("이번 달", "보류", "계산하지")), forecast["view"])
+        self.assertTrue(any(block["kind"] == "months" for block in forecast["view"]))  # 예상 답에는 월별 막대
 
     def test_analysis_finishes_without_creating_an_activity_confirmation(self):
         response = self.send("A", text="이번 달 생활비 왜 이렇게 많이 나왔지?")
@@ -450,9 +456,11 @@ class ServiceChatTest(ServiceChatBase):
         self.assertIn("초과했어요", " ".join(content["lines"]))
         self.assertEqual(content["choices"], [{"value": "budget", "label": "예산 조정하기"}])
         self.assertIn("필요하면 예산 조정을 요청할 수 있어요.", content["notices"])
-        overview = self.bot(self.send("A", text="소비 분석해줘"))
+        menu = self.bot(self.send("A", text="소비 분석해줘"))
+        self.assertEqual(menu["view"][0], {"kind": "head", "title": "소비 분석 · 볼 수 있는 분석"})
+        self.assertTrue(any(block["kind"] == "options" for block in menu["view"]))
+        overview = self.bot(self.send("A", text="전체적으로 분석해줘"))
         self.assertEqual(overview["view"][0], {"kind": "head", "title": "10월 1일~29일 · 소비 분석"})
-        self.assertEqual(overview["view"][-1]["lines"][0], "앞으로의 의미")
         lead = self.bot(self.send("A", text="최근 6개월 식비 어때?"))
         self.assertEqual(lead["lead"], ["3개월까지만 볼 수 있어 3개월로 보여드려요."])
         self.assertTrue(lead["text"].startswith(lead["lead"][0]))
@@ -791,8 +799,9 @@ class ServiceLiveTest(ServiceChatBase):
         out = self.bot(self.send("A", cid, text="왜 식비가 늘었어?"))
         self.assertNotIn("spending_explanation", self.sent)  # 일반 '왜 늘었어?'에 설명 문장용 LLM 없음 (MEMO 31)
         self.assertIn("식비", out["lines"][0])
-        self.assertIn("업종 정보가 부족", out["lines"][0])
-        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], list(insight.TITLES))
+        # 업종을 모르는 결제가 있어 어떤 소비에서 달라졌는지 못 나눈 한계는 하단 안내에 남는다
+        self.assertTrue(any("업종 정보" in n for n in out["notices"]), out["notices"])
+        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], ["핵심 진단", "왜 달라졌나요"])
         self.assertEqual(self.live.usage()["limit"], None)
         self.assertEqual(self.live.usage()["used"], len(self.sent))
 
@@ -873,8 +882,8 @@ class ExplainPlanTest(ServiceChatBase):
     def test_off_keeps_general_analysis_without_hypothesis_plan(self):
         out = self.ask("B", "왜 식비가 늘었어?")
         self.assertIn("식비", out["lines"][0])
-        self.assertIn("증가·감소 요인", out["lines"][0])
-        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], list(insight.TITLES))
+        self.assertTrue(any("영향이" in line for line in out["lines"]), out["lines"])
+        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], ["핵심 진단", "왜 달라졌나요"])
         self.assertNotIn("stop", out["devTrace"])  # B 를 거치지 않았다 (분석 과정엔 B 전 단계만)
 
     def test_general_why_does_not_go_to_b(self):
@@ -882,8 +891,10 @@ class ExplainPlanTest(ServiceChatBase):
         with override_settings(CHAT_EXPLAIN_PLAN=True), mock.patch("chat.llm.fake.fake_plan_answer") as llm:
             out = self.ask("B", "왜 식비가 늘었어?")
         llm.assert_not_called()
-        self.assertIn("증가·감소 요인", out["lines"][0])
-        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], list(insight.TITLES))
+        # 지난달 대비 결론 → 항목별 변화 → 왜 달라졌나요(결론 + 원인 한 줄). 11/14 메뉴별 구성
+        self.assertIn("식비", out["lines"][0])
+        self.assertTrue(any("영향이" in line for line in out["lines"]), out["lines"])
+        self.assertEqual([b["title"] for b in out["view"] if b["kind"] == "text"], ["핵심 진단", "왜 달라졌나요"])
         self.assertNotIn("stop", out["devTrace"])
 
     def test_yunseo_plan_stops_with_no_query(self):

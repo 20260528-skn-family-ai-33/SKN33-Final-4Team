@@ -1,6 +1,7 @@
 """Local model reference, aligned monthly comparisons, and conditional saving room."""
 from functools import lru_cache
 import json
+import logging
 from math import isfinite
 import os
 from pathlib import Path
@@ -13,6 +14,28 @@ from .answer import NAMES, won
 from . import reasoning
 
 ROOT = Path(__file__).resolve().parents[2]
+log = logging.getLogger(__name__)
+# 모델 C 추론에 꼭 있어야 하는 파일 (Git에 없음 — 담당자에게 받아 SPENDING_REFERENCE_ROOT 아래에 둔다)
+ARTIFACTS = ('models/original/C/model.cbm', 'models/original/C/metadata.json', 'reports/tables/observed_metrics.json')
+
+
+class NotInstalled(ValueError):
+    """추론용 Python 이나 모델 파일이 이 서버에 없다 — ML 비교 기능이 꺼진 상태로 본다"""
+
+
+def installed(python, root):
+    """추론 환경 · 모델 파일이 모두 있는지. 없으면 하위 프로세스를 띄우지 않는다(요청마다 30초 대기 방지)"""
+    missing = [name for name in ARTIFACTS if not (Path(root) / name).is_file()]
+    if not Path(python).is_file():
+        missing.insert(0, 'python')
+    if missing:
+        _warn_once(tuple(missing))
+    return not missing
+
+
+@lru_cache(maxsize=4)
+def _warn_once(missing):
+    log.warning('ML 월 소비 비교를 건너뜀: 추론 환경 또는 모델 파일 없음 (%s). BUDGET_INFERENCE_PYTHON · SPENDING_REFERENCE_ROOT 확인', ', '.join(missing))
 MODEL_CODES = dict(zip(('FOOD', 'HOUSING_TELECOM', 'TRANSPORT_CAR', 'HOUSEHOLD', 'FASHION_SHOPPING',
                        'MEDICAL_HEALTH', 'BEAUTY', 'EDUCATION', 'CULTURE_LEISURE', 'TRAVEL_LODGING', 'ETC'),
                       ('food', 'housing_communication', 'transport_vehicle', 'household_goods', 'fashion_shopping',
@@ -128,7 +151,11 @@ def for_user(user, summary, today):
         model_profile = dict(age=age, sex=sex, net_income=income, vehicle_count=int(profile.has_car), fixed_expense_amount=fixed)
         python = os.getenv('BUDGET_INFERENCE_PYTHON', str(ROOT / 'local_workspace/.venv-budget-inference' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')))
         root = os.getenv('SPENDING_REFERENCE_ROOT', str(ROOT / 'local_workspace/models/living_expense_prediction'))
+        if not installed(python, root):
+            raise NotInstalled('reference_not_installed')
         prediction = _predict(json.dumps(model_profile, sort_keys=True), python, root)
         return compare(summary, prediction, dict(income=income, fixed=fixed, savings_goal=profile.savings_floor))
+    except NotInstalled:  # 이 서버에 ML 비교가 설치되지 않음 — 매 답변마다 '못 불러왔다'고 쓰지 않고 비교만 뺀다
+        return savings_lines, savings_notes
     except (AttributeError, ObjectDoesNotExist, DatabaseError, ValueError):
         return savings_lines, [*savings_notes, 'ML 비교 자료를 불러오지 못했어요. 거래에서 확인한 소비 패턴과 추이는 그대로 분석했어요.']

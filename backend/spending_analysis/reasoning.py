@@ -259,7 +259,8 @@ def analyze(current, previous, history, periods, months, *, comparable, window_c
             diagnosis = f"분류된 {name} 지출이 {won(abs(delta))} {direction}어요."
             if abs(large_delta) >= 10000 and large_delta * delta > 0 and not material(regular_delta, historical, metrics(before_regular)["amount"])["meaningful"]:
                 kind = "large_payment"
-                diagnosis = f"{name}가 {'늘어난' if delta > 0 else '줄어든'} 건 큰 결제 때문이에요. 나머지 {name} 소비는 지난달과 비슷해요."
+                subject = name + ("이" if "가" <= name[-1] <= "힣" and (ord(name[-1]) - 0xAC00) % 28 else "가")
+                diagnosis = f"{subject} {'늘어난' if delta > 0 else '줄어든'} 건 큰 결제 때문이에요. 나머지 {name} 소비는 지난달과 비슷해요."
             elif calendar.get("available") and abs(calendar["calendar"]) >= 10000 and abs(calendar["behavior"]) < 10000:
                 kind = "calendar"
                 diagnosis = f"{name} 합계 차이는 요일 수의 차이로 설명되며, 요일별 소비 강도는 비슷해요."
@@ -280,6 +281,7 @@ def analyze(current, previous, history, periods, months, *, comparable, window_c
                     diagnosis = f"{name} 지출이 지난달 같은 기간보다 {won(abs(delta))} {'늘었' if delta > 0 else '줄었'}어요."
                 if kind == "average_unknown":
                     diagnosis = f"{name} 지출이 {won(abs(delta))} {'늘었' if delta > 0 else '줄었'}어요. 한 번에 쓰는 평균 금액이 {'커진' if delta > 0 else '작아진'} 영향이 커요."
+                    limits.append("가게 업종 정보가 없는 결제가 있어 어떤 소비에서 금액이 달라졌는지는 나누지 못했어요.")
             elif not threshold["meaningful"]:
                 kind = "usual"
                 diagnosis = (f"{name} 차이는 과거에 관측된 변동 폭 안에 있어 뚜렷한 습관 변화로 보기 어려워요." if threshold["typical_change"] is not None else

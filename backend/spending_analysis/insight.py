@@ -226,7 +226,8 @@ def summarize(user, decision, today):
         *snapshot.budget_pace(budget, today, requested or None, rows[0]),
         *(snapshot.change_total(rows[0], rows[1], [r for r in history if (r["occurred_on"].year, r["occurred_on"].month) == (periods[1].start.year, periods[1].start.month)],
                                 summary["total_material"]) if comparison_available else []),
-        *snapshot.large_share(rows[0], history),
+        # 분류 전 결제도 이번 달에 쓴 돈이다 — 큰 결제의 몫을 말할 때는 함께 본다(항목별 분석에서는 뺀다)
+        *snapshot.large_share(rows[0] if requested else scoped[0], history),
         *snapshot.frequent(rows[0], today, periods[0].start, month_end_before),
         *(snapshot.weekend(rows[0], periods[0].start, today) if whole else []),
         *(snapshot.composition(rows[0]) if whole else []),
@@ -247,7 +248,7 @@ def chart(summary, today):
                  ([f["category"]] if f.get("category") else f.get("categories", []))))[:2]
     choices = [(code, NAMES[code], summary.get("trends", {}).get(code, {})) for code in codes]
     if not choices:
-        choices = [("overall", summary["basis"]["scope"], summary.get("overall_trend", {}))]
+        choices = [("overall", summary.get("basis", {}).get("scope", "생활비"), summary.get("overall_trend", {}))]
     series = []
     for code, name, projection in choices:
         weeks = projection.get("weeks", [])
@@ -492,6 +493,8 @@ def answer(user, decision, today, complete, question=None):
     composed = narrative.compose(data, complete) if data else None
     if composed is not None:
         lead, evidence, outlook = composed
+        if goal == "reason" and not basis["comparison_available"]:
+            lead = [_no_comparison_line(summary), *lead]
         statements = composed_statements(data, evidence, outlook)
         cited = {i for _, ids in statements for i in ids} | set((data.get("_statement_ids") or {}).get("diagnosis", []))
         sections = _sections(findings, statements, None if "FORECAST" in cited else forecast)
@@ -508,6 +511,8 @@ def answer(user, decision, today, complete, question=None):
             # 습관 질문은 '달라진 점'과 '반복 방식'을 함께 말한다 (요구사항: 확인된 반복 방식 + 최근 달라진 점 연결)
             joined = 2 if goal == "habit" and len(findings) > 1 and findings[0]["section"] != findings[1]["section"] else 1
             lead = [f["conclusion"] for f in findings[:joined]] if findings else sentences[:1]
+            if goal == "reason" and not basis["comparison_available"]:
+                lead = [_no_comparison_line(summary), *lead]
             for i, f in enumerate(findings):
                 lines = ([] if i < joined else [f["conclusion"]]) + f["evidence"][:1 if i else 2]
                 if f.get("outlook"):
@@ -555,7 +560,7 @@ def answer(user, decision, today, complete, question=None):
 
 def _unclassified_note(summary):
     amount = summary["unclassified_amount"][0]
-    return f"'확인 필요' 결제 {won(amount)}은 무엇에 쓴 돈인지 몰라 분석에서 뺐어요. 소비 내역에서 분류를 정하면 다음 분석부터 들어가요." if amount else None
+    return f"분류 전 결제 {won(amount)}은 어디에 쓴 돈인지 아직 몰라 항목별 분석에서는 뺐어요. 소비 내역에서 분류를 정하면 다음 분석부터 들어가요." if amount else None
 
 
 def composed_statements(data, evidence, outlook):
@@ -593,6 +598,43 @@ def _change_rows(summary):
             for c in rows]
 
 
+def _why_lines(finding):
+    """변화 하나를 결론 + 원인 한 줄로 (금액 표와 겹치는 'X원 (지난달 Y원)' 줄은 뺀다)."""
+    lines = [finding["conclusion"]]
+    evidence = [l for l in finding.get("evidence", []) if "(지난달 같은 기간" not in l]
+    best = next((l for l in evidence if "관련 지출" in l), None) or next((l for l in evidence if "영향이" in l or "큰 결제" in l), None)
+    if best and best not in finding["conclusion"]:
+        lines.append(best)
+    return lines
+
+
+def _rising_weeks(summary):
+    """최근 4주 주마다 늘고 있는 항목 → 예상보다 더 쓸 수 있다는 주의 한 줄 (예상액을 바꾸지는 않는다)."""
+    rising = [NAMES[code] for code, t in (summary.get("trends") or {}).items()
+              if t.get("weekly_direction") == "increase" and code in NAMES]
+    if not rising:
+        return None
+    listed = "·".join(rising[:2])
+    return f"{snapshot.josa(listed, '이가')} 최근 4주 동안 주마다 늘고 있어요. 이 흐름이 이어지면 예상보다 더 쓸 수 있어요."
+
+
+def _no_comparison_line(summary):
+    reason = summary["basis"].get("comparison_reason") or ""
+    why = ("이번 달 내역이 아직 다 모이지 않아" if "이번 달 내역" in reason else
+           "지난달 같은 기간 내역이 다 모이지 않아" if "지난달 같은 기간 내역" in reason else "지난달 자료를 확인하지 못해")
+    return f"{why} 지난달보다 늘었는지는 아직 비교하지 못했어요. 지금까지 확인된 모습을 알려 드릴게요."
+
+
+def _total_line(summary):
+    """고정지출까지 더한 월말 총지출. 생활비 예상은 위에 보여 준 이야기(story) 예상을 그대로 써서 두 숫자가 어긋나지 않게 한다"""
+    total, projection = summary.get("total_forecast") or {}, (summary.get("story") or {}).get("projection")
+    if total.get("state") != "ready" or not projection:
+        return None
+    remaining = max(projection["month_end"] - projection["observed"], 0)
+    amount = round((total["actual"] + remaining + total["fixed_remaining"]) / 1000) * 1000
+    return f"고정지출까지 더하면 월말 총지출 예상은 약 {story.man(amount)}이에요."
+
+
 def _story_blocks(user, summary, goal, today, by_id, st):
     """→ (blocks, examples, reference_notes). 메뉴에 맞는 재료가 없으면 overview 구성으로"""
     first = lambda i: (by_id[i]["evidence"] or [None])[0] if i in by_id else None
@@ -625,7 +667,13 @@ def _story_blocks(user, summary, goal, today, by_id, st):
             blocks.append(st["chart"])
         if st.get("forecast_rows"):
             blocks.append({"kind": "rows", "title": "항목별 이번 달 말 예상", "rows": st["forecast_rows"]})
-        blocks += _section("앞으로", [l for l in f["evidence"] if l not in lead and not l.startswith("이번 달 말")])  # 핵심 진단의 월말 금액을 되풀이하지 않는다
+        ahead = [l for l in f["evidence"] if l not in lead and not l.startswith("이번 달 말")]  # 핵심 진단의 월말 금액을 되풀이하지 않는다
+        ahead.append(_total_line(summary))
+        ahead.append(_rising_weeks(summary))
+        blocks += _section("앞으로", ahead)
+        weekly = chart(summary, today) if _rising_weeks(summary) else None
+        if weekly:
+            blocks.append(weekly)
         if st.get("over"):
             blocks += _section("해볼 행동", st["actions"])
         return blocks, ["왜 이렇게 계산된거야?", ASK["habit"], ASK["reason"]], []
@@ -638,20 +686,35 @@ def _story_blocks(user, summary, goal, today, by_id, st):
             if rows:
                 blocks.append({"kind": "rows", "title": "항목별 변화 (지난달 같은 기간 대비)", "rows": rows})
             why = sorted((l for l in cause["evidence"] if l not in lead), key=lambda l: not l.startswith("이번 달 "))  # 총액 비교를 먼저
-            why += [x["conclusion"] for x in select(summary, "reason") if x is not cause and x.get("comparable")
-                    and x["kind"] not in ("total",)][:2]  # 지난달 대비 달라진 점만 (평소 모습 설명은 습관 답에서)
+            changes = [x for x in summary.get("findings", []) if x.get("comparable") and not x.get("quiet")
+                       and x["kind"] not in ("total", "offset", "usual") and x["conclusion"] not in lead]
+            changes.sort(key=lambda x: -x.get("impact", 0))
+            for x in changes[:2]:  # 지난달 대비 달라진 점만 — 결론과 원인 한 줄씩 (평소 모습 설명은 습관 답에서)
+                why += _why_lines(x)
+            st["limits"] = list(dict.fromkeys(t for x in changes[:2] for t in x.get("limits", [])))
+            frequent_dining = next((x for x in summary.get("snapshot", []) if x["kind"] == "frequent"), None)
+            if frequent_dining and any(x.get("category") == frequent_dining.get("category") for x in changes[:2]):
+                why.append(frequent_dining["conclusion"])
             blocks += _section("왜 달라졌나요", why)
+            weekly = chart(summary, today)
+            if weekly:
+                blocks.append(weekly)
             return blocks, [ASK["forecast"], ASK["habit"]], []
+        if not summary["basis"].get("comparison_available"):
+            st = {**st, "no_comparison": True}
     # overview (또는 메뉴에 맞는 재료가 없을 때): 세 가지를 한 줄씩 + 월별 막대
     order = [i for i in ("TREND", "HABIT", "FORECAST") if i in by_id]
     lead = [by_id[i]["conclusion"] for i in order]
+    if st.get("no_comparison"):
+        lead.insert(0, _no_comparison_line(summary))
     blocks = [_key(lead)]
     if st["chart"]:
         blocks.append(st["chart"])
     for i, title in (("TREND", "소비 추이"), ("HABIT", "소비 습관"), ("FORECAST", "앞으로")):
         line = first(i)
-        if line and line not in lead:
-            blocks += _section(title, [line])
+        extra = _total_line(summary) if i == "FORECAST" else None
+        if (line and line not in lead) or extra:
+            blocks += _section(title, [line if line not in lead else None, extra])
     return blocks, others[:3], []
 
 
@@ -664,6 +727,9 @@ def _story_answer(user, summary, goal, today, suffix):
     if basis.get("clipped"):
         after = today + timedelta(days=1)
         notes.append(f"{after.month}월 {after.day}일 이후 내역은 아직 불러오지 않아 {today.month}월 {today.day}일까지 기준으로 분석했어요.")
+    if basis.get("comparison_reason"):
+        notes.append(basis["comparison_reason"])
+    notes.extend(st.pop("limits", []) if goal == "reason" else [])
     shown = any(b["kind"] in ("months",) for b in blocks)  # 예상이 화면에 나온 답(전체 · 앞으로)에만 예상 방식 안내
     projection = st.get("projection") if shown else None
     if projection and projection["method"] == "validated":
@@ -691,6 +757,8 @@ def _story_answer(user, summary, goal, today, suffix):
     if _unclassified_note(summary):
         notes.append(_unclassified_note(summary))
     notes.extend(n for n in reference_notes if n.startswith(("ML 기준은", "남는 돈은")))
+    if basis.get("scope"):
+        notes.append(f"분석 범위: {basis['scope']} · {span(this_month(today))} · 고정지출 제외")
     reply = {"lines": list(dict.fromkeys(l for b in blocks if b["kind"] == "text" for l in b["lines"][1:])), "lead": [],
              "notices": list(dict.fromkeys(notes)), "view": blocks, "examples": examples}
     if st.get("over"):  # 예산을 넘을 전망 → [예산 조정하기] (어느 카테고리인지는 라우터에만 알린다)

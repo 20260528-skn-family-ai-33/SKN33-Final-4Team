@@ -53,6 +53,22 @@ class BenchmarkTest(SimpleTestCase):
         self.assertFalse(lines)
         self.assertIn('소비 패턴과 추이는 그대로', notes[0])
 
+    def test_not_installed_model_skips_comparison_without_subprocess_or_notice(self):
+        """배포 서버에 추론 Python · 모델 C 파일이 없으면 하위 프로세스를 띄우지 않고, 저축 여력만 남긴다"""
+        user = SimpleNamespace(financial_profile=SimpleNamespace(birth_date=date(2000, 1, 1), gender='female', has_car=False,
+                               monthly_take_home_income=3000000, savings_floor=1000000))
+        summary = {**self.summary, 'reference_month': {'label': '10월 전체', 'categories': {'FOOD': 300000}, 'unclassified': 0}}
+        fixed = mock.MagicMock()
+        fixed.objects.filter.return_value.aggregate.return_value = {'amount': 0}
+        with mock.patch.dict('os.environ', {'BUDGET_INFERENCE_PYTHON': '/nonexistent/python', 'SPENDING_REFERENCE_ROOT': '/nonexistent/models'}), \
+                mock.patch('finance.models.RecurringExpense', fixed), mock.patch.object(benchmark.subprocess, 'run') as run, \
+                self.assertLogs('spending_analysis.benchmark', 'WARNING'):
+            benchmark._warn_once.cache_clear()
+            lines, notes = benchmark.for_user(user, summary, date(2026, 11, 13))
+        run.assert_not_called()
+        self.assertIn('600,000원이 남아요', ' '.join(lines))
+        self.assertFalse([n for n in notes if 'ML' in n])
+
     def test_invalid_subprocess_output_is_not_used(self):
         benchmark._predict.cache_clear()
         with mock.patch.object(benchmark.subprocess, 'run', return_value=SimpleNamespace(returncode=0, stdout='{"amounts": {}}')):
