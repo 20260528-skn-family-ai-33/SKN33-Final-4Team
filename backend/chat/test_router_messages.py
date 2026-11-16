@@ -77,7 +77,7 @@ class MessagesTest(SimpleTestCase):
         self.say("취소")
         self.assertEqual(self.say("날씨 어때?"), {"lines": ["머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요."],
                                                "choices": MENU, "notices": [], "review": []})
-        self.assertEqual(self.say("잘 모르겠어"), {"lines": ["조금 더 자세히 적어 주세요."], "choices": MENU, "notices": [],
+        self.assertEqual(self.say("잘 모르겠어"), {"lines": ["어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요."], "choices": MENU, "notices": [],
                                                  "review": []})
         self.assertEqual(self.say("식비 얼마 썼어?", llm=RoleFakeLLM(broken=True)),
                          {"lines": ["지금은 이해하지 못했어요, 아래에서 골라 주세요."], "choices": MENU, "notices": [], "review": []})

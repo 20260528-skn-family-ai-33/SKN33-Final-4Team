@@ -87,10 +87,13 @@ def carry_over_locks(user, cycle):
     previous = BudgetCycle.objects.filter(user=user, starts_on__lt=cycle.starts_on).order_by("-starts_on").first()
     if previous is None:
         return
+    from .models import BudgetAdjustmentSchedule
+    planned = BudgetAdjustmentSchedule.objects.filter(user=user, status='applied', effective_on=cycle.starts_on).first()
+    unlock = planned.settings.get('unlock_categories', []) if planned else []
     BudgetCategorySetting.objects.bulk_create([
         BudgetCategorySetting(user=user, cycle=cycle, category_id=setting.category_id,
                               locked=True, locked_amount=setting.locked_amount)
-        for setting in BudgetCategorySetting.objects.filter(user=user, cycle=previous, locked=True)
+        for setting in BudgetCategorySetting.objects.filter(user=user, cycle=previous, locked=True).exclude(category_id__in=unlock)
     ])
 
 

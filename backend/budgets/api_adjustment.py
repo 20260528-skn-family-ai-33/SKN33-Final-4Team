@@ -48,7 +48,7 @@ def approve_response(request, budget_id, *, expected_mode):
             return Response({"error": {"code": "expired", "message": str(error.detail)}}, status=409)
         chosen.refresh_from_db()
         return Response({"adjustment": card,
-                         "budget": budget_data(request.user, adjustment_today(), selected=chosen)})
+                         "budget": budget_data(request.user, adjustment_today(), **({} if card.get('effective_on') else {'selected': chosen}))})
 
 
 @api_view(["POST"])

@@ -237,7 +237,9 @@ class ServiceChoiceTest(ServiceChatBase):
                          ("budget", "budget", [], ["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."]))
         self.calls.reset_mock()
         sent = self.bot(self.send("A", cid, text="식비를 5만원 늘리고 싶어요"))  # 화면 adjustSentence 문장 그대로
-        self.assertEqual((sent["agent"], sent["inputs"], sent["budgetAdjustment"]["phase"]), ("budget", [], "funding_scope"))
+        self.assertEqual((sent["agent"], sent["inputs"], sent["budgetAdjustment"]["phase"]), ("budget", [], "comparison"))
+        self.assertEqual(sent['budgetAdjustment']['comparison']['basisAmount'], 50000)
+        self.assertFalse(sent['budgetAdjustment']['canApprove'])
         self.assertEqual(self.calls.call_count, 1)  # 담당 예산 해석만 호출하고 라우터 재해석은 하지 않는다
         self.calls.reset_mock()
         spending = self.bot(self.send("A", cid, choice="spending"))
@@ -253,7 +255,7 @@ class ServiceChoiceTest(ServiceChatBase):
         menu = [{"value": "spending", "label": "소비 분석"}, {"value": "budget", "label": "예산 조정"},
                 {"value": "policy", "label": "청년 정책"}]
         cases = (
-            ("안녕", "조금 더 자세히 적어 주세요."),
+            ("안녕", "어떤 점이 고민이신가요? 돈이 부족하게 느껴지는 부분이나 궁금한 지출을 말씀해 주시면 함께 살펴볼게요."),
             ("날씨 어때?", "머니쿠션은 소비 분석, 예산 조정, 청년 정책 추천을 도와드려요."),
             ("이번 주 커피 얼마나 마셨지?", "지금은 이해하지 못했어요, 아래에서 골라 주세요."),
         )

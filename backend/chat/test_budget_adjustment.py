@@ -57,7 +57,7 @@ class BudgetAdjustmentApiTest(TestCase):
         cid = start["conversationId"]
         asked = self.say(cid, text="식비를 1만 5천 원 늘려줘")
         content = asked["messages"][-1]["content"]
-        reply = self.say(cid, choice={"value": "spare", "turn": content["turn"]})
+        reply = self.say(cid, choice={"value": "plan_living", "turn": content["turn"]})
         return cid, reply["messages"][-1]["content"]
 
     def test_message_preview_approval_and_refresh_keep_same_verified_money(self):
@@ -300,7 +300,7 @@ class BudgetAdjustmentApiTest(TestCase):
         with patch.object(engine, "answer", side_effect=another_turn_commits):
             # 헤더 없는 요청도 대화 버전 충돌 전에 제안·작업을 저장하지 않아야 한다.
             response = self.client.post("/api/chat/messages/", {"conversationId": cid,
-                "choice": {"value": "spare", "turn": asked["turn"]}}, format="json")
+                "choice": {"value": "plan_living", "turn": asked["turn"]}}, format="json")
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()["error"]["code"], "conversation_busy")
         self.assertEqual(Budget.objects.count(), 1)
@@ -314,7 +314,7 @@ class BudgetAdjustmentApiTest(TestCase):
         asked = self.say(cid, text="식비를 1만 5천 원 늘려줘")["messages"][-1]["content"]
         with patch("users.privacy.require_bank_not_revoked", side_effect=[None, PermissionDenied("금융 동의가 철회됐어요.")]):
             response = self.post("/api/chat/messages/", {"conversationId": cid,
-                "choice": {"value": "spare", "turn": asked["turn"]}})
+                "choice": {"value": "plan_living", "turn": asked["turn"]}})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(Budget.objects.count(), 1)
         self.assertEqual(AsyncTask.objects.count(), 0)
