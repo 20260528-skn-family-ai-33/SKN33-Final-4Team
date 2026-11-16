@@ -9,6 +9,10 @@
 
     head -1 stores_all_categories.csv > seoul.csv
     LC_ALL=C grep -F ',서울특별시,' stores_all_categories.csv >> seoul.csv
+
+경기도가 들어가는 페르소나(B)는 서울 · 경기 줄을 같이 자른다:
+
+    LC_ALL=C grep -E ',(서울특별시|경기도),' stores_all_categories.csv >> seoul_gg.csv
 """
 import argparse
 import csv
@@ -24,6 +28,14 @@ ZONES = {
         ('yeonnam', '연남', 37.5600, 126.9235, 500, '주말'),
         ('jamsil', '잠실', 37.5133, 127.1001, 500, '주말'),
         ('yeouido', '여의도', 37.5250, 126.9270, 500, '주말'),
+    ],
+    'b': [
+        ('home', '수지구청역', 37.3222, 127.0950, 600, '집 근처'),
+        ('home_car', '수지 차량권', 37.3222, 127.0950, 2500, '주유 · 세차 · 정비 (차로 가는 곳)'),
+        ('office', '역삼역', 37.5006, 127.0364, 300, '회사 근처'),
+        ('pangyo', '판교', 37.3925, 127.1120, 500, '주말 친구'),
+        ('jeongja', '정자', 37.3664, 127.1063, 400, '주말 카페'),
+        ('hannam', '한남·이태원', 37.5345, 126.9946, 500, '주말 데이트'),
     ],
 }
 
@@ -58,15 +70,13 @@ def main():
         writer = csv.DictWriter(dst, fieldnames=['zone', 'zone_name', 'distance_m', 'category_code', *KEEP], lineterminator='\n')
         writer.writeheader()
         for row in csv.DictReader(src):
-            if row['시도명'] != '서울특별시':
-                continue
             try:
                 lat, lon = float(row['위도']), float(row['경도'])
             except ValueError:
                 continue
             for zone, name, zlat, zlon, radius, _ in zones:
-                # 빠른 사각형 거르기 뒤 실제 거리 계산
-                if abs(lat - zlat) > 0.01 or abs(lon - zlon) > 0.012:
+                # 빠른 사각형 거르기 뒤 실제 거리 계산 (반경에 맞춘 위도 · 경도 폭)
+                if abs(lat - zlat) > radius / 110_000 or abs(lon - zlon) > radius / 88_000:
                     continue
                 d = distance_m(lat, lon, zlat, zlon)
                 if d <= radius:

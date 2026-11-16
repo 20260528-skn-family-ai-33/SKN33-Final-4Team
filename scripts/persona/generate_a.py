@@ -36,10 +36,11 @@ FIXED = [
 SAVING = ('saving', '청년도약 적금 자동이체', 300_000, 26)
 
 # 친구 송금: (날짜, 시각, 이름, 금액, 방향, 정답 카테고리, 메모)
+# 받은 1/n 은 B안 기준 달(8~10월) 밖에 둔다: 서버는 '월급 확인' 안 된 입금을 환불일 수 있다고 보고 그 달 기록을 미검증으로 친다
 # 받은 돈은 income, 보낸 돈은 transfer (처음엔 소비 아님, 사용자가 카테고리를 고르면 소비)
 FRIENDS = [
-    (date(2026, 8, 8), '23:40', '김혜리', 24_000, 'in', '', '연남 술자리 1/n 받음 (내가 72,000원 결제)'),
-    (date(2026, 8, 8), '23:52', '권세진', 24_000, 'in', '', '연남 술자리 1/n 받음'),
+    (date(2026, 7, 11), '23:40', '김혜리', 24_000, 'in', '', '연남 술자리 1/n 받음 (내가 72,000원 결제)'),
+    (date(2026, 7, 11), '23:52', '권세진', 24_000, 'in', '', '연남 술자리 1/n 받음'),
     (date(2026, 9, 12), '21:15', '김나은', 18_500, 'out', 'FOOD', '친구가 낸 저녁 1/n 보냄'),
     (date(2026, 10, 2), '12:30', '백동현', 20_000, 'out', 'ETC', '친구 생일 선물 모아서 보냄'),
     (date(2026, 10, 24), '23:10', '권세진', 9_000, 'out', 'CULTURE_LEISURE', '노래방 1/n 보냄'),
@@ -49,7 +50,7 @@ FRIENDS = [
 ]
 # 친구 송금과 짝인 내 결제 (체크카드): (날짜, 시각, 역할, 구역, 금액)
 FRIEND_PAID = [
-    (date(2026, 8, 8), '22:50', 'bar', 'yeonnam', 72_000),
+    (date(2026, 7, 11), '22:50', 'bar', 'yeonnam', 72_000),
     (date(2026, 11, 14), '20:40', 'weekend_meal', 'yeonnam', 120_000),
 ]
 # 카카오페이·네이버페이: (날짜, 시각, 적요, 금액, 카테고리, 수단, 정답, 메모)
@@ -108,9 +109,12 @@ def pay_date(year, month):
 
 
 class Builder:
+    """페르소나 공통 거래 만들기 도구. 다른 페르소나는 persona · seed · opening 을 바꾸고 build 를 새로 쓴다"""
+    persona, seed, opening = 'a', SEED, OPENING
+
     def __init__(self):
-        self.rng = random.Random(SEED)
-        with (DATA / 'merchants_a.csv').open(encoding='utf-8-sig', newline='') as f:
+        self.rng = random.Random(self.seed)
+        with (DATA / f'merchants_{self.persona}.csv').open(encoding='utf-8-sig', newline='') as f:
             self.merchants = list(csv.DictReader(f))
         self.rows = []
 
@@ -124,15 +128,18 @@ class Builder:
             return self.rng.choice(regulars)
         return self.rng.choice([m for m in cands if m['regular'] == 'N'] or cands)
 
+    card_instruments = ('D',)  # 카드 결제 수단 (나머지는 계좌)
+    card_account = 'A'         # 체크카드 결제가 함께 찍히는 계좌
+
     def add(self, d, t, role, amount, *, merchant=None, name='', kind='spending', category='', instrument='D',
             direction='out', funding='living', ans='', note='', duplicate_of=''):
-        key = f'persona-a:{len(self.rows) + 1:04d}'
+        key = f'persona-{self.persona}:{len(self.rows) + 1:04d}'
         m = merchant or {}
         merchant_name = (m['merchant_name'] + (' ' + m['branch_name'] if m.get('branch_name') else '')) if m else name
         row = dict(source_key=key, occurred_on=d.isoformat(), occurred_time=t, weekday=d.weekday(), role=role,
                    merchant_name=merchant_name, amount=amount, direction=direction, transaction_type=kind,
                    confirmed_category=category, funding_bucket=funding if kind == 'spending' else '',
-                   instrument=instrument, source_kind='card' if instrument == 'D' else 'bank',
+                   instrument=instrument, source_kind='card' if instrument in self.card_instruments else 'bank',
                    pair_key=duplicate_of, is_duplicate=int(bool(duplicate_of)), ans_category_if_user_set=ans,
                    is_fixed=int(kind == 'spending' and funding == 'fixed'),
                    fixed_role=role if kind == 'spending' and funding == 'fixed' else '',
@@ -141,11 +148,12 @@ class Builder:
                    industry_small=m.get('industry_small', ''), sigungu=m.get('sigungu', ''), dong=m.get('dong', ''),
                    balance_after='', note=note)
         self.rows.append(row)
-        if instrument == 'D':
+        if instrument in self.card_instruments:
             # 체크카드 결제는 월급통장 출금으로도 한 번 더 찍힌다 (같은 구매라 소비는 한 번만)
             row['pair_key'] = key
             self.add(d, t, role, amount, merchant=merchant, name=name, kind=kind, category=category,
-                     instrument='A', direction=direction, funding=funding, ans=ans, note=note, duplicate_of=key)
+                     instrument=self.card_account, direction=direction, funding=funding, ans=ans, note=note,
+                     duplicate_of=key)
         return row
 
     def spend(self, d, t, role, low=0, high=0, *, zone=None, regular=0.0, amount=None, step=100, note=''):
@@ -268,7 +276,7 @@ class Builder:
 
     def balances(self):
         self.rows.sort(key=lambda r: (r['occurred_on'], r['occurred_time'], r['source_key']))
-        bal = dict(OPENING)
+        bal = dict(self.opening)
         for r in self.rows:
             if r['source_kind'] == 'bank':
                 bal[r['instrument']] += r['amount'] if r['direction'] == 'in' else -r['amount']
@@ -307,10 +315,10 @@ def summary(rows, final):
     print('11/30 잔액:', final)
 
 
-def main():
-    b = Builder()
+def main(builder=Builder):
+    b = builder()
     b.build()
-    out = DATA / 'transactions_a.csv'
+    out = DATA / f'transactions_{b.persona}.csv'
     with out.open('w', encoding='utf-8-sig', newline='') as f:
         w = csv.DictWriter(f, fieldnames=COLUMNS, lineterminator='\n')
         w.writeheader()
