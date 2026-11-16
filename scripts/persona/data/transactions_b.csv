@@ -154,216 +154,216 @@ persona-b:0150,2026-07-24,19:05,4,hipass,한국도로공사 하이패스,1400,ou
 persona-b:0151,2026-07-24,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0150,1,,0,,non_store,한국도로공사 하이패스,,,,,,13931700,
 persona-b:0152,2026-07-25,17:30,5,grocery,광성슈퍼,7400,out,spending,FOOD,living,D,card,persona-b:0152,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
 persona-b:0153,2026-07-25,17:30,5,grocery,광성슈퍼,7400,out,spending,FOOD,living,A,bank,persona-b:0152,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13924300,
-persona-b:0958,2026-07-25,22:40,5,pangyo_bar,맥주창고 판교점,96000,out,spending,FOOD,living,D,card,persona-b:0958,0,,0,,store_snapshot,맥주창고 판교점,MA0101202506A0040377,판교점,생맥주 전문,성남시 분당구,삼평동,,친구 몫까지 내가 결제 → 1/n 받음
-persona-b:0959,2026-07-25,22:40,5,pangyo_bar,맥주창고 판교점,96000,out,spending,FOOD,living,A,bank,persona-b:0958,1,,0,,store_snapshot,맥주창고 판교점,MA0101202506A0040377,판교점,생맥주 전문,성남시 분당구,삼평동,13828300,친구 몫까지 내가 결제 → 1/n 받음
-persona-b:0962,2026-07-25,23:30,5,friend,김나은,24000,in,income,,,A,bank,,0,,0,,non_store,김나은,,,,,,13852300,"판교 술자리 1/n 받음 (내가 96,000원 결제)"
-persona-b:0963,2026-07-25,23:41,5,friend,김혜리,24000,in,income,,,A,bank,,0,,0,,non_store,김혜리,,,,,,13876300,판교 술자리 1/n 받음
-persona-b:0964,2026-07-26,10:05,6,friend,권세진,24000,in,income,,,A,bank,,0,,0,,non_store,권세진,,,,,,13900300,판교 술자리 1/n 받음
 persona-b:0154,2026-07-26,13:10,6,date_meal,베어케이브,41000,out,spending,FOOD,living,D,card,persona-b:0154,0,,0,,store_snapshot,베어케이브,MA0101202510A0005149,,경양식,용산구,이태원1동,,date
-persona-b:0155,2026-07-26,13:10,6,date_meal,베어케이브,41000,out,spending,FOOD,living,A,bank,persona-b:0154,1,,0,,store_snapshot,베어케이브,MA0101202510A0005149,,경양식,용산구,이태원1동,13859300,date
+persona-b:0155,2026-07-26,13:10,6,date_meal,베어케이브,41000,out,spending,FOOD,living,A,bank,persona-b:0154,1,,0,,store_snapshot,베어케이브,MA0101202510A0005149,,경양식,용산구,이태원1동,13883300,date
 persona-b:0158,2026-07-26,15:20,6,weekend_cafe,투썸플레이스,14700,out,spending,FOOD,living,D,card,persona-b:0158,0,,0,,store_snapshot,투썸플레이스,MA0106202201A1168632,,카페,용산구,이태원1동,,date
-persona-b:0159,2026-07-26,15:20,6,weekend_cafe,투썸플레이스,14700,out,spending,FOOD,living,A,bank,persona-b:0158,1,,0,,store_snapshot,투썸플레이스,MA0106202201A1168632,,카페,용산구,이태원1동,13844600,date
+persona-b:0159,2026-07-26,15:20,6,weekend_cafe,투썸플레이스,14700,out,spending,FOOD,living,A,bank,persona-b:0158,1,,0,,store_snapshot,투썸플레이스,MA0106202201A1168632,,카페,용산구,이태원1동,13868600,date
 persona-b:0156,2026-07-26,18:20,6,parking,하이파킹 한남점,4000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0156,0,,0,,non_store,하이파킹 한남점,,,,,,,date
-persona-b:0157,2026-07-26,18:20,6,parking,하이파킹 한남점,4000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0156,1,,0,,non_store,하이파킹 한남점,,,,,,13840600,date
-persona-b:0982,2026-07-26,19:10,6,pay,카카오페이 - 배달의민족,32000,out,spending,FOOD,living,D,card,persona-b:0982,0,,0,,non_store,카카오페이 - 배달의민족,,,,,,,가족 야식 배달 (카카오페이)
-persona-b:0983,2026-07-26,19:10,6,pay,카카오페이 - 배달의민족,32000,out,spending,FOOD,living,A,bank,persona-b:0982,1,,0,,non_store,카카오페이 - 배달의민족,,,,,,13808600,가족 야식 배달 (카카오페이)
+persona-b:0157,2026-07-26,18:20,6,parking,하이파킹 한남점,4000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0156,1,,0,,non_store,하이파킹 한남점,,,,,,13864600,date
 persona-b:0160,2026-07-27,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0160,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0161,2026-07-27,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0160,1,,0,,non_store,한국도로공사 하이패스,,,,,,13807200,
+persona-b:0161,2026-07-27,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0160,1,,0,,non_store,한국도로공사 하이패스,,,,,,13863200,
 persona-b:0164,2026-07-27,12:17,0,lunch,주시브로스GFC점,11000,out,spending,FOOD,living,D,card,persona-b:0164,0,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,,
-persona-b:0165,2026-07-27,12:17,0,lunch,주시브로스GFC점,11000,out,spending,FOOD,living,A,bank,persona-b:0164,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13796200,
+persona-b:0165,2026-07-27,12:17,0,lunch,주시브로스GFC점,11000,out,spending,FOOD,living,A,bank,persona-b:0164,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13852200,
 persona-b:0162,2026-07-27,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0162,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0163,2026-07-27,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0162,1,,0,,non_store,한국도로공사 하이패스,,,,,,13794800,
+persona-b:0163,2026-07-27,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0162,1,,0,,non_store,한국도로공사 하이패스,,,,,,13850800,
 persona-b:0166,2026-07-28,07:40,1,fuel,SK에너지대흥주유소,57000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0166,0,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,,
-persona-b:0167,2026-07-28,07:40,1,fuel,SK에너지대흥주유소,57000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0166,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,13737800,
+persona-b:0167,2026-07-28,07:40,1,fuel,SK에너지대흥주유소,57000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0166,1,,0,,store_snapshot,SK에너지대흥주유소,MA0106202201A0010102,,주유소,용인시 기흥구,보정동,13793800,
 persona-b:0168,2026-07-28,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0168,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0169,2026-07-28,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0168,1,,0,,non_store,한국도로공사 하이패스,,,,,,13736400,
+persona-b:0169,2026-07-28,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0168,1,,0,,non_store,한국도로공사 하이패스,,,,,,13792400,
 persona-b:0170,2026-07-28,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0170,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0171,2026-07-28,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0170,1,,0,,non_store,한국도로공사 하이패스,,,,,,13735000,
+persona-b:0171,2026-07-28,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0170,1,,0,,non_store,한국도로공사 하이패스,,,,,,13791000,
 persona-b:0172,2026-07-29,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0172,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0173,2026-07-29,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0172,1,,0,,non_store,한국도로공사 하이패스,,,,,,13733600,
+persona-b:0173,2026-07-29,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0172,1,,0,,non_store,한국도로공사 하이패스,,,,,,13789600,
 persona-b:0176,2026-07-29,12:18,2,lunch,정희GFC몰점,12500,out,spending,FOOD,living,D,card,persona-b:0176,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0177,2026-07-29,12:18,2,lunch,정희GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0176,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13721100,
+persona-b:0177,2026-07-29,12:18,2,lunch,정희GFC몰점,12500,out,spending,FOOD,living,A,bank,persona-b:0176,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,13777100,
 persona-b:0178,2026-07-29,15:30,2,convenience,지에스25S점 역삼역,1600,out,spending,FOOD,living,D,card,persona-b:0178,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0179,2026-07-29,15:30,2,convenience,지에스25S점 역삼역,1600,out,spending,FOOD,living,A,bank,persona-b:0178,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13719500,
+persona-b:0179,2026-07-29,15:30,2,convenience,지에스25S점 역삼역,1600,out,spending,FOOD,living,A,bank,persona-b:0178,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13775500,
 persona-b:0174,2026-07-29,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0174,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0175,2026-07-29,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0174,1,,0,,non_store,한국도로공사 하이패스,,,,,,13718100,
+persona-b:0175,2026-07-29,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0174,1,,0,,non_store,한국도로공사 하이패스,,,,,,13774100,
 persona-b:0180,2026-07-30,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0180,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0181,2026-07-30,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0180,1,,0,,non_store,한국도로공사 하이패스,,,,,,13716700,
+persona-b:0181,2026-07-30,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0180,1,,0,,non_store,한국도로공사 하이패스,,,,,,13772700,
 persona-b:0184,2026-07-30,12:34,3,lunch,나주곰탕,10500,out,spending,FOOD,living,D,card,persona-b:0184,0,,0,,store_snapshot,나주곰탕,MA010120220810282478,,국/탕/찌개류,강남구,역삼1동,,
-persona-b:0185,2026-07-30,12:34,3,lunch,나주곰탕,10500,out,spending,FOOD,living,A,bank,persona-b:0184,1,,0,,store_snapshot,나주곰탕,MA010120220810282478,,국/탕/찌개류,강남구,역삼1동,13706200,
+persona-b:0185,2026-07-30,12:34,3,lunch,나주곰탕,10500,out,spending,FOOD,living,A,bank,persona-b:0184,1,,0,,store_snapshot,나주곰탕,MA010120220810282478,,국/탕/찌개류,강남구,역삼1동,13762200,
 persona-b:0182,2026-07-30,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0182,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0183,2026-07-30,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0182,1,,0,,non_store,한국도로공사 하이패스,,,,,,13704800,
+persona-b:0183,2026-07-30,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0182,1,,0,,non_store,한국도로공사 하이패스,,,,,,13760800,
 persona-b:0186,2026-07-31,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0186,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0187,2026-07-31,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0186,1,,0,,non_store,한국도로공사 하이패스,,,,,,13703400,
+persona-b:0187,2026-07-31,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0186,1,,0,,non_store,한국도로공사 하이패스,,,,,,13759400,
 persona-b:0190,2026-07-31,12:29,4,lunch,강남손제비,10500,out,spending,FOOD,living,D,card,persona-b:0190,0,,0,,store_snapshot,강남손제비,MA0101202301A0032887,,김밥/만두/분식,강남구,역삼1동,,
-persona-b:0191,2026-07-31,12:29,4,lunch,강남손제비,10500,out,spending,FOOD,living,A,bank,persona-b:0190,1,,0,,store_snapshot,강남손제비,MA0101202301A0032887,,김밥/만두/분식,강남구,역삼1동,13692900,
+persona-b:0191,2026-07-31,12:29,4,lunch,강남손제비,10500,out,spending,FOOD,living,A,bank,persona-b:0190,1,,0,,store_snapshot,강남손제비,MA0101202301A0032887,,김밥/만두/분식,강남구,역삼1동,13748900,
 persona-b:0192,2026-07-31,12:45,4,cafe,클로리스 역삼점,5200,out,spending,FOOD,living,D,card,persona-b:0192,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0193,2026-07-31,12:45,4,cafe,클로리스 역삼점,5200,out,spending,FOOD,living,A,bank,persona-b:0192,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13687700,
+persona-b:0193,2026-07-31,12:45,4,cafe,클로리스 역삼점,5200,out,spending,FOOD,living,A,bank,persona-b:0192,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13743700,
 persona-b:0194,2026-07-31,15:30,4,convenience,지에스25S점 역삼역,4500,out,spending,FOOD,living,D,card,persona-b:0194,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0195,2026-07-31,15:30,4,convenience,지에스25S점 역삼역,4500,out,spending,FOOD,living,A,bank,persona-b:0194,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13683200,
+persona-b:0195,2026-07-31,15:30,4,convenience,지에스25S점 역삼역,4500,out,spending,FOOD,living,A,bank,persona-b:0194,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13739200,
 persona-b:0188,2026-07-31,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0188,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0189,2026-07-31,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0188,1,,0,,non_store,한국도로공사 하이패스,,,,,,13681800,
+persona-b:0189,2026-07-31,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0188,1,,0,,non_store,한국도로공사 하이패스,,,,,,13737800,
 persona-b:0196,2026-08-01,10:00,5,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,D,card,persona-b:0196,0,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,,
-persona-b:0197,2026-08-01,10:00,5,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0196,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13531800,
+persona-b:0197,2026-08-01,10:00,5,parking_pass,하이파킹 역삼센터 월정기권,150000,out,spending,TRANSPORT_CAR,fixed,A,bank,persona-b:0196,1,,1,parking_pass,non_store,하이파킹 역삼센터 월정기권,,,,,,13587800,
 persona-b:0198,2026-08-01,13:00,5,pangyo_meal,우물집판교,21500,out,spending,FOOD,living,D,card,persona-b:0198,0,,0,,store_snapshot,우물집판교,MA0101202409A0040428,,백반/한정식,성남시 분당구,백현동,,friend
-persona-b:0199,2026-08-01,13:00,5,pangyo_meal,우물집판교,21500,out,spending,FOOD,living,A,bank,persona-b:0198,1,,0,,store_snapshot,우물집판교,MA0101202409A0040428,,백반/한정식,성남시 분당구,백현동,13510300,friend
+persona-b:0199,2026-08-01,13:00,5,pangyo_meal,우물집판교,21500,out,spending,FOOD,living,A,bank,persona-b:0198,1,,0,,store_snapshot,우물집판교,MA0101202409A0040428,,백반/한정식,성남시 분당구,백현동,13566300,friend
 persona-b:0200,2026-08-01,15:00,5,weekend_cafe,카페챗,6500,out,spending,FOOD,living,D,card,persona-b:0200,0,,0,,store_snapshot,카페챗,MA0101202508A0015988,,카페,성남시 분당구,정자1동,,friend
-persona-b:0201,2026-08-01,15:00,5,weekend_cafe,카페챗,6500,out,spending,FOOD,living,A,bank,persona-b:0200,1,,0,,store_snapshot,카페챗,MA0101202508A0015988,,카페,성남시 분당구,정자1동,13503800,friend
+persona-b:0201,2026-08-01,15:00,5,weekend_cafe,카페챗,6500,out,spending,FOOD,living,A,bank,persona-b:0200,1,,0,,store_snapshot,카페챗,MA0101202508A0015988,,카페,성남시 분당구,정자1동,13559800,friend
 persona-b:0202,2026-08-01,17:00,5,fun,핑크노래연습장,18000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0202,0,,0,,store_snapshot,핑크노래연습장,MA010120220811714535,,노래방,성남시 분당구,삼평동,,friend
-persona-b:0203,2026-08-01,17:00,5,fun,핑크노래연습장,18000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0202,1,,0,,store_snapshot,핑크노래연습장,MA010120220811714535,,노래방,성남시 분당구,삼평동,13485800,friend
+persona-b:0203,2026-08-01,17:00,5,fun,핑크노래연습장,18000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0202,1,,0,,store_snapshot,핑크노래연습장,MA010120220811714535,,노래방,성남시 분당구,삼평동,13541800,friend
 persona-b:0204,2026-08-01,20:30,5,pangyo_bar,안주의신,18000,out,spending,FOOD,living,D,card,persona-b:0204,0,,0,,store_snapshot,안주의신,MA010120220808035465,,요리 주점,성남시 분당구,삼평동,,friend
-persona-b:0205,2026-08-01,20:30,5,pangyo_bar,안주의신,18000,out,spending,FOOD,living,A,bank,persona-b:0204,1,,0,,store_snapshot,안주의신,MA010120220808035465,,요리 주점,성남시 분당구,삼평동,13467800,friend
+persona-b:0205,2026-08-01,20:30,5,pangyo_bar,안주의신,18000,out,spending,FOOD,living,A,bank,persona-b:0204,1,,0,,store_snapshot,안주의신,MA010120220808035465,,요리 주점,성남시 분당구,삼평동,13523800,friend
 persona-b:0206,2026-08-02,15:00,6,cafe,카페다1 4호점,6000,out,spending,FOOD,living,D,card,persona-b:0206,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0207,2026-08-02,15:00,6,cafe,카페다1 4호점,6000,out,spending,FOOD,living,A,bank,persona-b:0206,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13461800,
+persona-b:0207,2026-08-02,15:00,6,cafe,카페다1 4호점,6000,out,spending,FOOD,living,A,bank,persona-b:0206,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13517800,
 persona-b:0208,2026-08-02,17:30,6,grocery,광성슈퍼,14100,out,spending,FOOD,living,D,card,persona-b:0208,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0209,2026-08-02,17:30,6,grocery,광성슈퍼,14100,out,spending,FOOD,living,A,bank,persona-b:0208,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13447700,
+persona-b:0209,2026-08-02,17:30,6,grocery,광성슈퍼,14100,out,spending,FOOD,living,A,bank,persona-b:0208,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13503700,
 persona-b:0996,2026-08-02,20:00,6,one_off,CGV 온라인 예매,30000,out,spending,CULTURE_LEISURE,living,D,card,persona-b:0996,0,,0,,non_store,CGV 온라인 예매,,,,,,,데이트 영화
-persona-b:0997,2026-08-02,20:00,6,one_off,CGV 온라인 예매,30000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0996,1,,0,,non_store,CGV 온라인 예매,,,,,,13417700,데이트 영화
+persona-b:0997,2026-08-02,20:00,6,one_off,CGV 온라인 예매,30000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0996,1,,0,,non_store,CGV 온라인 예매,,,,,,13473700,데이트 영화
 persona-b:0212,2026-08-03,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0212,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0213,2026-08-03,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0212,1,,0,,non_store,한국도로공사 하이패스,,,,,,13416300,
+persona-b:0213,2026-08-03,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0212,1,,0,,non_store,한국도로공사 하이패스,,,,,,13472300,
 persona-b:0210,2026-08-03,10:00,0,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0210,0,,1,youtube,non_store,유튜브프리미엄,,,,,,,
-persona-b:0211,2026-08-03,10:00,0,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0210,1,,1,youtube,non_store,유튜브프리미엄,,,,,,13401400,
+persona-b:0211,2026-08-03,10:00,0,youtube,유튜브프리미엄,14900,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0210,1,,1,youtube,non_store,유튜브프리미엄,,,,,,13457400,
 persona-b:0214,2026-08-03,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0214,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0215,2026-08-03,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0214,1,,0,,non_store,한국도로공사 하이패스,,,,,,13400000,
+persona-b:0215,2026-08-03,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0214,1,,0,,non_store,한국도로공사 하이패스,,,,,,13456000,
 persona-b:0216,2026-08-04,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0216,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0217,2026-08-04,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0216,1,,0,,non_store,한국도로공사 하이패스,,,,,,13398600,
+persona-b:0217,2026-08-04,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0216,1,,0,,non_store,한국도로공사 하이패스,,,,,,13454600,
 persona-b:0220,2026-08-04,12:15,1,lunch,김밥친구들,12000,out,spending,FOOD,living,D,card,persona-b:0220,0,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,,
-persona-b:0221,2026-08-04,12:15,1,lunch,김밥친구들,12000,out,spending,FOOD,living,A,bank,persona-b:0220,1,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,13386600,
+persona-b:0221,2026-08-04,12:15,1,lunch,김밥친구들,12000,out,spending,FOOD,living,A,bank,persona-b:0220,1,,0,,store_snapshot,김밥친구들,MA010120220808421360,,김밥/만두/분식,강남구,역삼1동,13442600,
 persona-b:0218,2026-08-04,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0218,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0219,2026-08-04,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0218,1,,0,,non_store,한국도로공사 하이패스,,,,,,13385200,
+persona-b:0219,2026-08-04,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0218,1,,0,,non_store,한국도로공사 하이패스,,,,,,13441200,
 persona-b:0222,2026-08-05,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0222,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0223,2026-08-05,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0222,1,,0,,non_store,한국도로공사 하이패스,,,,,,13383800,
+persona-b:0223,2026-08-05,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0222,1,,0,,non_store,한국도로공사 하이패스,,,,,,13439800,
 persona-b:0226,2026-08-05,12:33,2,lunch,냉동고집역삼,9500,out,spending,FOOD,living,D,card,persona-b:0226,0,,0,,store_snapshot,냉동고집역삼,MA0101202406A0529347,,백반/한정식,강남구,역삼1동,,
-persona-b:0227,2026-08-05,12:33,2,lunch,냉동고집역삼,9500,out,spending,FOOD,living,A,bank,persona-b:0226,1,,0,,store_snapshot,냉동고집역삼,MA0101202406A0529347,,백반/한정식,강남구,역삼1동,13374300,
+persona-b:0227,2026-08-05,12:33,2,lunch,냉동고집역삼,9500,out,spending,FOOD,living,A,bank,persona-b:0226,1,,0,,store_snapshot,냉동고집역삼,MA0101202406A0529347,,백반/한정식,강남구,역삼1동,13430300,
 persona-b:0228,2026-08-05,12:50,2,cafe,폴바셋GFC,5300,out,spending,FOOD,living,D,card,persona-b:0228,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0229,2026-08-05,12:50,2,cafe,폴바셋GFC,5300,out,spending,FOOD,living,A,bank,persona-b:0228,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13369000,
+persona-b:0229,2026-08-05,12:50,2,cafe,폴바셋GFC,5300,out,spending,FOOD,living,A,bank,persona-b:0228,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13425000,
 persona-b:0224,2026-08-05,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0224,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0225,2026-08-05,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0224,1,,0,,non_store,한국도로공사 하이패스,,,,,,13367600,
+persona-b:0225,2026-08-05,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0224,1,,0,,non_store,한국도로공사 하이패스,,,,,,13423600,
 persona-b:0971,2026-08-05,21:30,2,review,쿠팡,23800,out,spending,UNCLASSIFIED,living,D,card,persona-b:0971,0,TRANSPORT_CAR,0,,non_store,쿠팡,,,,,,,확인 필요(쿠팡) · 세차용품
-persona-b:0972,2026-08-05,21:30,2,review,쿠팡,23800,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0971,1,TRANSPORT_CAR,0,,non_store,쿠팡,,,,,,13343800,확인 필요(쿠팡) · 세차용품
+persona-b:0972,2026-08-05,21:30,2,review,쿠팡,23800,out,spending,UNCLASSIFIED,living,A,bank,persona-b:0971,1,TRANSPORT_CAR,0,,non_store,쿠팡,,,,,,13399800,확인 필요(쿠팡) · 세차용품
 persona-b:0230,2026-08-06,07:40,3,fuel,청정에너지,55000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0230,0,,0,,store_snapshot,청정에너지,MA010120220806338299,,주유소,용인시 기흥구,보정동,,
-persona-b:0231,2026-08-06,07:40,3,fuel,청정에너지,55000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0230,1,,0,,store_snapshot,청정에너지,MA010120220806338299,,주유소,용인시 기흥구,보정동,13288800,
+persona-b:0231,2026-08-06,07:40,3,fuel,청정에너지,55000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0230,1,,0,,store_snapshot,청정에너지,MA010120220806338299,,주유소,용인시 기흥구,보정동,13344800,
 persona-b:0232,2026-08-06,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0232,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0233,2026-08-06,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0232,1,,0,,non_store,한국도로공사 하이패스,,,,,,13287400,
+persona-b:0233,2026-08-06,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0232,1,,0,,non_store,한국도로공사 하이패스,,,,,,13343400,
 persona-b:0236,2026-08-06,12:08,3,lunch,주시브로스GFC점,10500,out,spending,FOOD,living,D,card,persona-b:0236,0,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,,
-persona-b:0237,2026-08-06,12:08,3,lunch,주시브로스GFC점,10500,out,spending,FOOD,living,A,bank,persona-b:0236,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13276900,
+persona-b:0237,2026-08-06,12:08,3,lunch,주시브로스GFC점,10500,out,spending,FOOD,living,A,bank,persona-b:0236,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,13332900,
 persona-b:0238,2026-08-06,15:30,3,convenience,지에스25S점 역삼역,1500,out,spending,FOOD,living,D,card,persona-b:0238,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0239,2026-08-06,15:30,3,convenience,지에스25S점 역삼역,1500,out,spending,FOOD,living,A,bank,persona-b:0238,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13275400,
+persona-b:0239,2026-08-06,15:30,3,convenience,지에스25S점 역삼역,1500,out,spending,FOOD,living,A,bank,persona-b:0238,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13331400,
 persona-b:0234,2026-08-06,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0234,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0235,2026-08-06,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0234,1,,0,,non_store,한국도로공사 하이패스,,,,,,13274000,
+persona-b:0235,2026-08-06,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0234,1,,0,,non_store,한국도로공사 하이패스,,,,,,13330000,
 persona-b:0242,2026-08-06,19:40,3,hair,모모헤어수지구청역점,18000,out,spending,BEAUTY,living,D,card,persona-b:0242,0,,0,,store_snapshot,모모헤어수지구청역점,MA0101202601A0004181,,미용실,용인시 수지구,풍덕천2동,,
-persona-b:0243,2026-08-06,19:40,3,hair,모모헤어수지구청역점,18000,out,spending,BEAUTY,living,A,bank,persona-b:0242,1,,0,,store_snapshot,모모헤어수지구청역점,MA0101202601A0004181,,미용실,용인시 수지구,풍덕천2동,13256000,
+persona-b:0243,2026-08-06,19:40,3,hair,모모헤어수지구청역점,18000,out,spending,BEAUTY,living,A,bank,persona-b:0242,1,,0,,store_snapshot,모모헤어수지구청역점,MA0101202601A0004181,,미용실,용인시 수지구,풍덕천2동,13312000,
 persona-b:0240,2026-08-06,20:10,3,team_dinner,스노우폭스역삼 파이낸스점,25000,out,spending,FOOD,living,D,card,persona-b:0240,0,,0,,store_snapshot,스노우폭스역삼 파이낸스점,MA010120220814058948,파이낸스점,일식 회/초밥,강남구,역삼1동,,
-persona-b:0241,2026-08-06,20:10,3,team_dinner,스노우폭스역삼 파이낸스점,25000,out,spending,FOOD,living,A,bank,persona-b:0240,1,,0,,store_snapshot,스노우폭스역삼 파이낸스점,MA010120220814058948,파이낸스점,일식 회/초밥,강남구,역삼1동,13231000,
+persona-b:0241,2026-08-06,20:10,3,team_dinner,스노우폭스역삼 파이낸스점,25000,out,spending,FOOD,living,A,bank,persona-b:0240,1,,0,,store_snapshot,스노우폭스역삼 파이낸스점,MA010120220814058948,파이낸스점,일식 회/초밥,강남구,역삼1동,13287000,
 persona-b:0244,2026-08-07,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0244,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0245,2026-08-07,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0244,1,,0,,non_store,한국도로공사 하이패스,,,,,,13229600,
+persona-b:0245,2026-08-07,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0244,1,,0,,non_store,한국도로공사 하이패스,,,,,,13285600,
 persona-b:0248,2026-08-07,12:05,4,lunch,테이스터스바스버거 역삼점,13000,out,spending,FOOD,living,D,card,persona-b:0248,0,,0,,store_snapshot,테이스터스바스버거 역삼점,MA0106202201A0047509,역삼점,버거,강남구,역삼1동,,
-persona-b:0249,2026-08-07,12:05,4,lunch,테이스터스바스버거 역삼점,13000,out,spending,FOOD,living,A,bank,persona-b:0248,1,,0,,store_snapshot,테이스터스바스버거 역삼점,MA0106202201A0047509,역삼점,버거,강남구,역삼1동,13216600,
+persona-b:0249,2026-08-07,12:05,4,lunch,테이스터스바스버거 역삼점,13000,out,spending,FOOD,living,A,bank,persona-b:0248,1,,0,,store_snapshot,테이스터스바스버거 역삼점,MA0106202201A0047509,역삼점,버거,강남구,역삼1동,13272600,
 persona-b:0250,2026-08-07,12:48,4,cafe,폴바셋GFC,4700,out,spending,FOOD,living,D,card,persona-b:0250,0,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,,
-persona-b:0251,2026-08-07,12:48,4,cafe,폴바셋GFC,4700,out,spending,FOOD,living,A,bank,persona-b:0250,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13211900,
+persona-b:0251,2026-08-07,12:48,4,cafe,폴바셋GFC,4700,out,spending,FOOD,living,A,bank,persona-b:0250,1,,0,,store_snapshot,폴바셋GFC,MA0106202201A0605684,,카페,강남구,역삼1동,13267900,
 persona-b:0246,2026-08-07,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0246,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0247,2026-08-07,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0246,1,,0,,non_store,한국도로공사 하이패스,,,,,,13210500,
+persona-b:0247,2026-08-07,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0246,1,,0,,non_store,한국도로공사 하이패스,,,,,,13266500,
 persona-b:0252,2026-08-08,11:30,5,brunch,써브웨이 정자점,25000,out,spending,FOOD,living,D,card,persona-b:0252,0,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,,date
-persona-b:0253,2026-08-08,11:30,5,brunch,써브웨이 정자점,25000,out,spending,FOOD,living,A,bank,persona-b:0252,1,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,13185500,date
+persona-b:0253,2026-08-08,11:30,5,brunch,써브웨이 정자점,25000,out,spending,FOOD,living,A,bank,persona-b:0252,1,,0,,store_snapshot,써브웨이 정자점,MA010120220802876874,정자점,토스트/샌드위치/샐러드,성남시 분당구,정자1동,13241500,date
 persona-b:0254,2026-08-08,16:40,5,dessert,어니스타컴퍼니,14900,out,spending,FOOD,living,D,card,persona-b:0254,0,,0,,store_snapshot,어니스타컴퍼니,MA0101202509A0034987,,빵/도넛,용산구,이태원1동,,date
-persona-b:0255,2026-08-08,16:40,5,dessert,어니스타컴퍼니,14900,out,spending,FOOD,living,A,bank,persona-b:0254,1,,0,,store_snapshot,어니스타컴퍼니,MA0101202509A0034987,,빵/도넛,용산구,이태원1동,13170600,date
+persona-b:0255,2026-08-08,16:40,5,dessert,어니스타컴퍼니,14900,out,spending,FOOD,living,A,bank,persona-b:0254,1,,0,,store_snapshot,어니스타컴퍼니,MA0101202509A0034987,,빵/도넛,용산구,이태원1동,13226600,date
 persona-b:0260,2026-08-09,09:40,6,carwash,금호세차장,15000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0260,0,,0,,store_snapshot,금호세차장,MA010120220802421339,,자동차 세차장,용인시 수지구,풍덕천2동,,
-persona-b:0261,2026-08-09,09:40,6,carwash,금호세차장,15000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0260,1,,0,,store_snapshot,금호세차장,MA010120220802421339,,자동차 세차장,용인시 수지구,풍덕천2동,13155600,
+persona-b:0261,2026-08-09,09:40,6,carwash,금호세차장,15000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0260,1,,0,,store_snapshot,금호세차장,MA010120220802421339,,자동차 세차장,용인시 수지구,풍덕천2동,13211600,
 persona-b:0256,2026-08-09,10:30,6,bakery,던킨 수지구청점,8100,out,spending,FOOD,living,D,card,persona-b:0256,0,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,,
-persona-b:0257,2026-08-09,10:30,6,bakery,던킨 수지구청점,8100,out,spending,FOOD,living,A,bank,persona-b:0256,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,13147500,
+persona-b:0257,2026-08-09,10:30,6,bakery,던킨 수지구청점,8100,out,spending,FOOD,living,A,bank,persona-b:0256,1,,0,,store_snapshot,던킨 수지구청점,MA010120220800927906,수지구청점,빵/도넛,용인시 수지구,풍덕천2동,13203500,
 persona-b:0258,2026-08-09,17:30,6,grocery,광성슈퍼,16000,out,spending,FOOD,living,D,card,persona-b:0258,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0259,2026-08-09,17:30,6,grocery,광성슈퍼,16000,out,spending,FOOD,living,A,bank,persona-b:0258,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13131500,
+persona-b:0259,2026-08-09,17:30,6,grocery,광성슈퍼,16000,out,spending,FOOD,living,A,bank,persona-b:0258,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13187500,
 persona-b:0263,2026-08-10,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0263,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0264,2026-08-10,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0263,1,,0,,non_store,한국도로공사 하이패스,,,,,,13130100,
-persona-b:0262,2026-08-10,09:00,0,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,16030100,
+persona-b:0264,2026-08-10,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0263,1,,0,,non_store,한국도로공사 하이패스,,,,,,13186100,
+persona-b:0262,2026-08-10,09:00,0,salary,(주)어리둥절,2900000,in,income,,,A,bank,,0,,0,,non_store,(주)어리둥절,,,,,,16086100,
 persona-b:0267,2026-08-10,12:32,0,lunch,주시브로스GFC점,13000,out,spending,FOOD,living,D,card,persona-b:0267,0,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,,
-persona-b:0268,2026-08-10,12:32,0,lunch,주시브로스GFC점,13000,out,spending,FOOD,living,A,bank,persona-b:0267,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,16017100,
+persona-b:0268,2026-08-10,12:32,0,lunch,주시브로스GFC점,13000,out,spending,FOOD,living,A,bank,persona-b:0267,1,,0,,store_snapshot,주시브로스GFC점,MA0106202201A2107550,,백반/한정식,강남구,역삼1동,16073100,
 persona-b:0265,2026-08-10,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0265,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0266,2026-08-10,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0265,1,,0,,non_store,한국도로공사 하이패스,,,,,,16015700,
+persona-b:0266,2026-08-10,19:05,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0265,1,,0,,non_store,한국도로공사 하이패스,,,,,,16071700,
 persona-b:0274,2026-08-11,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0274,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0275,2026-08-11,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0274,1,,0,,non_store,한국도로공사 하이패스,,,,,,16014300,
-persona-b:0270,2026-08-11,09:10,1,saving,박민준,500000,out,saving,,,A,bank,saving:8,0,,0,,non_store,박민준,,,,,,15514300,
+persona-b:0275,2026-08-11,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0274,1,,0,,non_store,한국도로공사 하이패스,,,,,,16070300,
+persona-b:0270,2026-08-11,09:10,1,saving,박민준,500000,out,saving,,,A,bank,saving:8,0,,0,,non_store,박민준,,,,,,15570300,
 persona-b:0271,2026-08-11,09:10,1,saving,박민준,500000,in,saving,,,C,bank,saving:8,0,,0,,non_store,박민준,,,,,,7000000,
-persona-b:0272,2026-08-11,09:20,1,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:8,0,,0,,non_store,박민준,,,,,,15414300,
+persona-b:0272,2026-08-11,09:20,1,housing_saving,박민준,100000,out,saving,,,A,bank,housing_saving:8,0,,0,,non_store,박민준,,,,,,15470300,
 persona-b:0273,2026-08-11,09:20,1,housing_saving,박민준,100000,in,saving,,,H,bank,housing_saving:8,0,,0,,non_store,박민준,,,,,,2600000,
-persona-b:0269,2026-08-11,10:00,1,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,15114300,
+persona-b:0269,2026-08-11,10:00,1,parents,이경숙,300000,out,spending,ETC,fixed,A,bank,,0,,1,parents,non_store,이경숙,,,,,,15170300,
 persona-b:0278,2026-08-11,12:10,1,lunch,에스지케이컴퍼니,12500,out,spending,FOOD,living,D,card,persona-b:0278,0,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,,
-persona-b:0279,2026-08-11,12:10,1,lunch,에스지케이컴퍼니,12500,out,spending,FOOD,living,A,bank,persona-b:0278,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,15101800,
+persona-b:0279,2026-08-11,12:10,1,lunch,에스지케이컴퍼니,12500,out,spending,FOOD,living,A,bank,persona-b:0278,1,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,15157800,
 persona-b:0276,2026-08-11,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0276,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0277,2026-08-11,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0276,1,,0,,non_store,한국도로공사 하이패스,,,,,,15100400,
+persona-b:0277,2026-08-11,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0276,1,,0,,non_store,한국도로공사 하이패스,,,,,,15156400,
 persona-b:0280,2026-08-12,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0280,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0281,2026-08-12,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0280,1,,0,,non_store,한국도로공사 하이패스,,,,,,15099000,
+persona-b:0281,2026-08-12,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0280,1,,0,,non_store,한국도로공사 하이패스,,,,,,15155000,
 persona-b:0282,2026-08-12,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0282,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0283,2026-08-12,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0282,1,,0,,non_store,한국도로공사 하이패스,,,,,,15097600,
+persona-b:0283,2026-08-12,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0282,1,,0,,non_store,한국도로공사 하이패스,,,,,,15153600,
 persona-b:0284,2026-08-13,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0284,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0285,2026-08-13,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0284,1,,0,,non_store,한국도로공사 하이패스,,,,,,15096200,
+persona-b:0285,2026-08-13,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0284,1,,0,,non_store,한국도로공사 하이패스,,,,,,15152200,
 persona-b:0288,2026-08-13,12:24,3,lunch,정희GFC몰점,12000,out,spending,FOOD,living,D,card,persona-b:0288,0,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,,
-persona-b:0289,2026-08-13,12:24,3,lunch,정희GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0288,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,15084200,
+persona-b:0289,2026-08-13,12:24,3,lunch,정희GFC몰점,12000,out,spending,FOOD,living,A,bank,persona-b:0288,1,,0,,store_snapshot,정희GFC몰점,MA0101202602A0034288,,백반/한정식,강남구,역삼1동,15140200,
 persona-b:0286,2026-08-13,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0286,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0287,2026-08-13,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0286,1,,0,,non_store,한국도로공사 하이패스,,,,,,15082800,
+persona-b:0287,2026-08-13,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0286,1,,0,,non_store,한국도로공사 하이패스,,,,,,15138800,
 persona-b:0290,2026-08-14,07:40,4,fuel,풍덕천주유소,54000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0290,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0291,2026-08-14,07:40,4,fuel,풍덕천주유소,54000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0290,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,15028800,
+persona-b:0291,2026-08-14,07:40,4,fuel,풍덕천주유소,54000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0290,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,15084800,
 persona-b:0292,2026-08-14,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0292,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0293,2026-08-14,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0292,1,,0,,non_store,한국도로공사 하이패스,,,,,,15027400,
+persona-b:0293,2026-08-14,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0292,1,,0,,non_store,한국도로공사 하이패스,,,,,,15083400,
 persona-b:0986,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0986,0,,0,,non_store,DB손해보험 다이렉트,,,,,,,자동차보험 1년 갱신 (한 번만 나간 큰돈)
-persona-b:0987,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0986,1,,0,,non_store,DB손해보험 다이렉트,,,,,,14065400,자동차보험 1년 갱신 (한 번만 나간 큰돈)
+persona-b:0987,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0986,1,,0,,non_store,DB손해보험 다이렉트,,,,,,14121400,자동차보험 1년 갱신 (한 번만 나간 큰돈)
 persona-b:0296,2026-08-14,12:23,4,lunch,속초코다리냉면 역삼점,12000,out,spending,FOOD,living,D,card,persona-b:0296,0,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,,
-persona-b:0297,2026-08-14,12:23,4,lunch,속초코다리냉면 역삼점,12000,out,spending,FOOD,living,A,bank,persona-b:0296,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14053400,
+persona-b:0297,2026-08-14,12:23,4,lunch,속초코다리냉면 역삼점,12000,out,spending,FOOD,living,A,bank,persona-b:0296,1,,0,,store_snapshot,속초코다리냉면 역삼점,MA010120220804533658,역삼점,국수/칼국수,강남구,역삼1동,14109400,
 persona-b:0294,2026-08-14,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0294,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0295,2026-08-14,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0294,1,,0,,non_store,한국도로공사 하이패스,,,,,,14052000,
+persona-b:0295,2026-08-14,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0294,1,,0,,non_store,한국도로공사 하이패스,,,,,,14108000,
 persona-b:0298,2026-08-15,07:10,5,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,D,card,persona-b:0298,0,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,,
-persona-b:0299,2026-08-15,07:10,5,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0298,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,13993000,
+persona-b:0299,2026-08-15,07:10,5,gym,바이칼토탈휘트니스주,59000,out,spending,CULTURE_LEISURE,fixed,A,bank,persona-b:0298,1,,1,gym,store_snapshot,바이칼토탈휘트니스주,MA010120220802841912,,헬스장,용인시 수지구,풍덕천2동,14049000,
 persona-b:0300,2026-08-15,13:00,5,pangyo_meal,서보현대백화점 판교점,17500,out,spending,FOOD,living,D,card,persona-b:0300,0,,0,,store_snapshot,서보현대백화점 판교점,MA0101202409A0012244,판교점,베트남식 전문,성남시 분당구,백현동,,friend
-persona-b:0301,2026-08-15,13:00,5,pangyo_meal,서보현대백화점 판교점,17500,out,spending,FOOD,living,A,bank,persona-b:0300,1,,0,,store_snapshot,서보현대백화점 판교점,MA0101202409A0012244,판교점,베트남식 전문,성남시 분당구,백현동,13975500,friend
+persona-b:0301,2026-08-15,13:00,5,pangyo_meal,서보현대백화점 판교점,17500,out,spending,FOOD,living,A,bank,persona-b:0300,1,,0,,store_snapshot,서보현대백화점 판교점,MA0101202409A0012244,판교점,베트남식 전문,성남시 분당구,백현동,14031500,friend
 persona-b:0302,2026-08-15,15:00,5,weekend_cafe,스타벅스 정자역,7500,out,spending,FOOD,living,D,card,persona-b:0302,0,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,,friend
-persona-b:0303,2026-08-15,15:00,5,weekend_cafe,스타벅스 정자역,7500,out,spending,FOOD,living,A,bank,persona-b:0302,1,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,13968000,friend
+persona-b:0303,2026-08-15,15:00,5,weekend_cafe,스타벅스 정자역,7500,out,spending,FOOD,living,A,bank,persona-b:0302,1,,0,,store_snapshot,스타벅스 정자역,MA0106202301A2417056,정자역,카페,성남시 분당구,정자1동,14024000,friend
 persona-b:0304,2026-08-16,15:00,6,cafe,카페다1 4호점,5400,out,spending,FOOD,living,D,card,persona-b:0304,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0305,2026-08-16,15:00,6,cafe,카페다1 4호점,5400,out,spending,FOOD,living,A,bank,persona-b:0304,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13962600,
+persona-b:0305,2026-08-16,15:00,6,cafe,카페다1 4호점,5400,out,spending,FOOD,living,A,bank,persona-b:0304,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,14018600,
 persona-b:0308,2026-08-16,16:10,6,family_mart,이마트 죽전점,86400,out,spending,FOOD,living,D,card,persona-b:0308,0,,0,,non_store,이마트 죽전점,,,,,,,부모님과 장보기 (내가 냄)
-persona-b:0309,2026-08-16,16:10,6,family_mart,이마트 죽전점,86400,out,spending,FOOD,living,A,bank,persona-b:0308,1,,0,,non_store,이마트 죽전점,,,,,,13876200,부모님과 장보기 (내가 냄)
+persona-b:0309,2026-08-16,16:10,6,family_mart,이마트 죽전점,86400,out,spending,FOOD,living,A,bank,persona-b:0308,1,,0,,non_store,이마트 죽전점,,,,,,13932200,부모님과 장보기 (내가 냄)
 persona-b:0306,2026-08-16,17:30,6,grocery,광성슈퍼,10200,out,spending,FOOD,living,D,card,persona-b:0306,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0307,2026-08-16,17:30,6,grocery,광성슈퍼,10200,out,spending,FOOD,living,A,bank,persona-b:0306,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13866000,
+persona-b:0307,2026-08-16,17:30,6,grocery,광성슈퍼,10200,out,spending,FOOD,living,A,bank,persona-b:0306,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13922000,
 persona-b:0310,2026-08-18,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0310,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0311,2026-08-18,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0310,1,,0,,non_store,한국도로공사 하이패스,,,,,,13864600,
+persona-b:0311,2026-08-18,07:55,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0310,1,,0,,non_store,한국도로공사 하이패스,,,,,,13920600,
 persona-b:0314,2026-08-18,12:06,1,lunch,선비칼국수점 역삼역,11000,out,spending,FOOD,living,D,card,persona-b:0314,0,,0,,store_snapshot,선비칼국수점 역삼역,MA0101202603A0023153,역삼역,국수/칼국수,강남구,역삼1동,,
-persona-b:0315,2026-08-18,12:06,1,lunch,선비칼국수점 역삼역,11000,out,spending,FOOD,living,A,bank,persona-b:0314,1,,0,,store_snapshot,선비칼국수점 역삼역,MA0101202603A0023153,역삼역,국수/칼국수,강남구,역삼1동,13853600,
+persona-b:0315,2026-08-18,12:06,1,lunch,선비칼국수점 역삼역,11000,out,spending,FOOD,living,A,bank,persona-b:0314,1,,0,,store_snapshot,선비칼국수점 역삼역,MA0101202603A0023153,역삼역,국수/칼국수,강남구,역삼1동,13909600,
 persona-b:0316,2026-08-18,12:54,1,cafe,클로리스 역삼점,5800,out,spending,FOOD,living,D,card,persona-b:0316,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0317,2026-08-18,12:54,1,cafe,클로리스 역삼점,5800,out,spending,FOOD,living,A,bank,persona-b:0316,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13847800,
+persona-b:0317,2026-08-18,12:54,1,cafe,클로리스 역삼점,5800,out,spending,FOOD,living,A,bank,persona-b:0316,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13903800,
 persona-b:0312,2026-08-18,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0312,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0313,2026-08-18,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0312,1,,0,,non_store,한국도로공사 하이패스,,,,,,13846400,
+persona-b:0313,2026-08-18,19:05,1,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0312,1,,0,,non_store,한국도로공사 하이패스,,,,,,13902400,
 persona-b:0318,2026-08-19,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0318,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0319,2026-08-19,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0318,1,,0,,non_store,한국도로공사 하이패스,,,,,,13845000,
+persona-b:0319,2026-08-19,07:55,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0318,1,,0,,non_store,한국도로공사 하이패스,,,,,,13901000,
 persona-b:0322,2026-08-19,15:30,2,convenience,지에스25S점 역삼역,4000,out,spending,FOOD,living,D,card,persona-b:0322,0,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,,
-persona-b:0323,2026-08-19,15:30,2,convenience,지에스25S점 역삼역,4000,out,spending,FOOD,living,A,bank,persona-b:0322,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13841000,
+persona-b:0323,2026-08-19,15:30,2,convenience,지에스25S점 역삼역,4000,out,spending,FOOD,living,A,bank,persona-b:0322,1,,0,,store_snapshot,지에스25S점 역삼역,MA0101202301A0040105,역삼역,편의점,강남구,역삼1동,13897000,
 persona-b:0320,2026-08-19,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0320,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0321,2026-08-19,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0320,1,,0,,non_store,한국도로공사 하이패스,,,,,,13839600,
+persona-b:0321,2026-08-19,19:05,2,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0320,1,,0,,non_store,한국도로공사 하이패스,,,,,,13895600,
 persona-b:0325,2026-08-20,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0325,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0326,2026-08-20,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0325,1,,0,,non_store,한국도로공사 하이패스,,,,,,13838200,
-persona-b:0324,2026-08-20,10:00,3,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,13769200,
+persona-b:0326,2026-08-20,07:55,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0325,1,,0,,non_store,한국도로공사 하이패스,,,,,,13894200,
+persona-b:0324,2026-08-20,10:00,3,telecom,KT 통신요금 자동납부,69000,out,spending,HOUSING_TELECOM,fixed,A,bank,,0,,1,telecom,non_store,KT 통신요금 자동납부,,,,,,13825200,
 persona-b:0327,2026-08-20,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0327,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0328,2026-08-20,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0327,1,,0,,non_store,한국도로공사 하이패스,,,,,,13767800,
+persona-b:0328,2026-08-20,19:05,3,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0327,1,,0,,non_store,한국도로공사 하이패스,,,,,,13823800,
 persona-b:0329,2026-08-20,20:10,3,team_dinner,생활맥주역삼역4번 출구점,24000,out,spending,FOOD,living,D,card,persona-b:0329,0,,0,,store_snapshot,생활맥주역삼역4번 출구점,MA0101202209A0084951,출구점,생맥주 전문,강남구,역삼1동,,
-persona-b:0330,2026-08-20,20:10,3,team_dinner,생활맥주역삼역4번 출구점,24000,out,spending,FOOD,living,A,bank,persona-b:0329,1,,0,,store_snapshot,생활맥주역삼역4번 출구점,MA0101202209A0084951,출구점,생맥주 전문,강남구,역삼1동,13743800,
+persona-b:0330,2026-08-20,20:10,3,team_dinner,생활맥주역삼역4번 출구점,24000,out,spending,FOOD,living,A,bank,persona-b:0329,1,,0,,store_snapshot,생활맥주역삼역4번 출구점,MA0101202209A0084951,출구점,생맥주 전문,강남구,역삼1동,13799800,
 persona-b:0331,2026-08-21,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0331,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0332,2026-08-21,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0331,1,,0,,non_store,한국도로공사 하이패스,,,,,,13742400,
+persona-b:0332,2026-08-21,07:55,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0331,1,,0,,non_store,한국도로공사 하이패스,,,,,,13798400,
 persona-b:0335,2026-08-21,12:25,4,lunch,담뿍화로된장,10500,out,spending,FOOD,living,D,card,persona-b:0335,0,,0,,store_snapshot,담뿍화로된장,MA010120220811198135,,백반/한정식,강남구,역삼1동,,
-persona-b:0336,2026-08-21,12:25,4,lunch,담뿍화로된장,10500,out,spending,FOOD,living,A,bank,persona-b:0335,1,,0,,store_snapshot,담뿍화로된장,MA010120220811198135,,백반/한정식,강남구,역삼1동,13731900,
+persona-b:0336,2026-08-21,12:25,4,lunch,담뿍화로된장,10500,out,spending,FOOD,living,A,bank,persona-b:0335,1,,0,,store_snapshot,담뿍화로된장,MA010120220811198135,,백반/한정식,강남구,역삼1동,13787900,
 persona-b:0337,2026-08-21,12:55,4,cafe,클로리스 역삼점,5200,out,spending,FOOD,living,D,card,persona-b:0337,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,
-persona-b:0338,2026-08-21,12:55,4,cafe,클로리스 역삼점,5200,out,spending,FOOD,living,A,bank,persona-b:0337,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13726700,
+persona-b:0338,2026-08-21,12:55,4,cafe,클로리스 역삼점,5200,out,spending,FOOD,living,A,bank,persona-b:0337,1,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,13782700,
 persona-b:0333,2026-08-21,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0333,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
-persona-b:0334,2026-08-21,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0333,1,,0,,non_store,한국도로공사 하이패스,,,,,,13725300,
+persona-b:0334,2026-08-21,19:05,4,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0333,1,,0,,non_store,한국도로공사 하이패스,,,,,,13781300,
 persona-b:0339,2026-08-22,11:20,5,fuel,풍덕천주유소,60000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0339,0,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,,
-persona-b:0340,2026-08-22,11:20,5,fuel,풍덕천주유소,60000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0339,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13665300,
+persona-b:0340,2026-08-22,11:20,5,fuel,풍덕천주유소,60000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0339,1,,0,,store_snapshot,풍덕천주유소,MA010120220802405148,,주유소,용인시 수지구,풍덕천2동,13721300,
 persona-b:0341,2026-08-22,13:10,5,date_meal,주빌리,40000,out,spending,FOOD,living,D,card,persona-b:0341,0,,0,,store_snapshot,주빌리,MA010120220813135000,,경양식,용산구,이태원1동,,date
-persona-b:0342,2026-08-22,13:10,5,date_meal,주빌리,40000,out,spending,FOOD,living,A,bank,persona-b:0341,1,,0,,store_snapshot,주빌리,MA010120220813135000,,경양식,용산구,이태원1동,13625300,date
+persona-b:0342,2026-08-22,13:10,5,date_meal,주빌리,40000,out,spending,FOOD,living,A,bank,persona-b:0341,1,,0,,store_snapshot,주빌리,MA010120220813135000,,경양식,용산구,이태원1동,13681300,date
 persona-b:0345,2026-08-22,16:40,5,dessert,알페도,14600,out,spending,FOOD,living,D,card,persona-b:0345,0,,0,,store_snapshot,알페도,MA010120220814388591,,빵/도넛,용산구,이태원1동,,date
-persona-b:0346,2026-08-22,16:40,5,dessert,알페도,14600,out,spending,FOOD,living,A,bank,persona-b:0345,1,,0,,store_snapshot,알페도,MA010120220814388591,,빵/도넛,용산구,이태원1동,13610700,date
+persona-b:0346,2026-08-22,16:40,5,dessert,알페도,14600,out,spending,FOOD,living,A,bank,persona-b:0345,1,,0,,store_snapshot,알페도,MA010120220814388591,,빵/도넛,용산구,이태원1동,13666700,date
 persona-b:0343,2026-08-22,18:20,5,parking,하이파킹 한남점,11000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0343,0,,0,,non_store,하이파킹 한남점,,,,,,,date
-persona-b:0344,2026-08-22,18:20,5,parking,하이파킹 한남점,11000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0343,1,,0,,non_store,하이파킹 한남점,,,,,,13599700,date
+persona-b:0344,2026-08-22,18:20,5,parking,하이파킹 한남점,11000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0343,1,,0,,non_store,하이파킹 한남점,,,,,,13655700,date
+persona-b:0958,2026-08-22,22:40,5,pangyo_bar,맥주창고 판교점,96000,out,spending,FOOD,living,D,card,persona-b:0958,0,,0,,store_snapshot,맥주창고 판교점,MA0101202506A0040377,판교점,생맥주 전문,성남시 분당구,삼평동,,친구 몫까지 내가 결제 → 1/n 받음
+persona-b:0959,2026-08-22,22:40,5,pangyo_bar,맥주창고 판교점,96000,out,spending,FOOD,living,A,bank,persona-b:0958,1,,0,,store_snapshot,맥주창고 판교점,MA0101202506A0040377,판교점,생맥주 전문,성남시 분당구,삼평동,13559700,친구 몫까지 내가 결제 → 1/n 받음
+persona-b:0962,2026-08-22,23:30,5,friend,김나은,24000,in,income,,,A,bank,,0,,0,,non_store,김나은,,,,,,13583700,"판교 술자리 1/n 받음 (내가 96,000원 결제)"
+persona-b:0963,2026-08-22,23:41,5,friend,김혜리,24000,in,income,,,A,bank,,0,,0,,non_store,김혜리,,,,,,13607700,판교 술자리 1/n 받음
+persona-b:0964,2026-08-23,10:05,6,friend,권세진,24000,in,income,,,A,bank,,0,,0,,non_store,권세진,,,,,,13631700,판교 술자리 1/n 받음
 persona-b:0347,2026-08-23,15:00,6,cafe,카페다1 4호점,5300,out,spending,FOOD,living,D,card,persona-b:0347,0,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,,
-persona-b:0348,2026-08-23,15:00,6,cafe,카페다1 4호점,5300,out,spending,FOOD,living,A,bank,persona-b:0347,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13594400,
+persona-b:0348,2026-08-23,15:00,6,cafe,카페다1 4호점,5300,out,spending,FOOD,living,A,bank,persona-b:0347,1,,0,,store_snapshot,카페다1 4호점,MA010120220801088873,4호점,카페,용인시 수지구,풍덕천2동,13626400,
 persona-b:0349,2026-08-23,17:30,6,grocery,광성슈퍼,9500,out,spending,FOOD,living,D,card,persona-b:0349,0,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,,
-persona-b:0350,2026-08-23,17:30,6,grocery,광성슈퍼,9500,out,spending,FOOD,living,A,bank,persona-b:0349,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13584900,
+persona-b:0350,2026-08-23,17:30,6,grocery,광성슈퍼,9500,out,spending,FOOD,living,A,bank,persona-b:0349,1,,0,,store_snapshot,광성슈퍼,MA010120220802436560,,슈퍼마켓,용인시 수지구,풍덕천1동,13616900,
+persona-b:0982,2026-08-23,19:10,6,pay,카카오페이 - 배달의민족,32000,out,spending,FOOD,living,D,card,persona-b:0982,0,,0,,non_store,카카오페이 - 배달의민족,,,,,,,가족 야식 배달 (카카오페이)
+persona-b:0983,2026-08-23,19:10,6,pay,카카오페이 - 배달의민족,32000,out,spending,FOOD,living,A,bank,persona-b:0982,1,,0,,non_store,카카오페이 - 배달의민족,,,,,,13584900,가족 야식 배달 (카카오페이)
 persona-b:0351,2026-08-24,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0351,0,,0,,non_store,한국도로공사 하이패스,,,,,,,
 persona-b:0352,2026-08-24,07:55,0,hipass,한국도로공사 하이패스,1400,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0351,1,,0,,non_store,한국도로공사 하이패스,,,,,,13583500,
 persona-b:0355,2026-08-24,12:36,0,lunch,에스지케이컴퍼니,9500,out,spending,FOOD,living,D,card,persona-b:0355,0,,0,,store_snapshot,에스지케이컴퍼니,MA010120220810307402,,백반/한정식,강남구,역삼1동,,

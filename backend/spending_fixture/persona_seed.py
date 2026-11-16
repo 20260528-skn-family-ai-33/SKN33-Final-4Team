@@ -276,33 +276,6 @@ def onboard(persona, user, log):
     api.call('PUT', 'budgets/salary/', cfg['salary'])
     log(f"월급 저장: {cfg['salary']['takeHomeIncome']:,}원 · 매달 {cfg['salary']['payday']}일")
 
-    deposits = api.call('GET', 'budgets/salary/deposits/')
-    for window in deposits['windows']:
-        picks = [i for i in window['items'] if i['amount'] == cfg['salary']['takeHomeIncome'] and i['isCandidate']]
-        if picks:
-            api.call('POST', 'budgets/salary/decisions/',
-                     {'transactionIds': [picks[0]['transactionId']], 'decision': 'confirmed',
-                      'usePattern': picks[0]['patternUnusableReason'] is None},
-                     key=f'persona-{persona}-salary-{window["payCycleOn"]}')
-            log(f"월급 확인: {window['payCycleOn']} 회차 {picks[0]['date']} 입금")
-
-    # 지난 회차 월급도 '월급 맞아요'로 확인한다. 서버는 확인한 월급 입금만 환불이 아닌 것으로 보고,
-    # 확인 안 된 입금이 있는 달은 B안 기록 검증(refunds)을 통과시키지 않는다 (finance/history_verifier.py)
-    from finance.models import FinancialTransaction
-    confirmed = {w['payCycleOn'] for w in deposits['windows']
-                 for i in w['items'] if i['amount'] == cfg['salary']['takeHomeIncome'] and i['isCandidate']}
-    past = FinancialTransaction.objects.filter(
-        user=user, source_kind='bank', direction='in', transaction_type='income',
-        amount=cfg['salary']['takeHomeIncome']).order_by('occurred_on')
-    for tx in past:
-        try:
-            api.call('POST', 'budgets/salary/decisions/',
-                     {'transactionIds': [str(tx.pk)], 'decision': 'confirmed', 'usePattern': False},
-                     key=f'persona-{persona}-salary-past-{tx.occurred_on:%Y%m%d}')
-            log(f'지난 월급 확인: {tx.occurred_on}')
-        except RuntimeError as exc:
-            log(f'지난 월급 확인 못 함 {tx.occurred_on}: {str(exc)[:200]}')
-
     fixed = api.call('GET', 'budgets/fixed/')['items']
     loan_like = [f for f in fixed if f['status'] == 'suggested' and is_loan_payment(persona, f)]
     if loan_like:
@@ -355,6 +328,16 @@ def onboard(persona, user, log):
     budget = api.call('GET', 'budgets/')
     api.call('POST', f"budgets/{result['budgetId']}/approve/", {}, key=f'persona-{persona}-approve')
     log(f"추천 예산 승인: {result.get('summary') or ''}")
+    # 온보딩 뒤: 홈의 '월급 확인' 팝업에서 이번 회차 월급을 확인한다 (온보딩 단계에는 없음)
+    deposits = api.call('GET', 'budgets/salary/deposits/')
+    for window in deposits['windows']:
+        picks = [i for i in window['items'] if i['amount'] == cfg['salary']['takeHomeIncome'] and i['isCandidate']]
+        if picks:
+            api.call('POST', 'budgets/salary/decisions/',
+                     {'transactionIds': [picks[0]['transactionId']], 'decision': 'confirmed',
+                      'usePattern': picks[0]['patternUnusableReason'] is None},
+                     key=f'persona-{persona}-salary-{window["payCycleOn"]}')
+            log(f"(홈) 월급 확인: {window['payCycleOn']} 회차 {picks[0]['date']} 입금")
     return budget
 
 
