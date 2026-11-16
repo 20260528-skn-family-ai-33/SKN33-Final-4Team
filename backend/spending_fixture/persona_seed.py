@@ -57,6 +57,32 @@ PERSONAS = {
                    'manualRate': 1.7, 'maturityDate': '2031-06-27', 'monthlyPayment': 150_000, 'paymentDay': 27,
                    'repaymentMethod': 'equal_payment'}],
     },
+    'b': {
+        'email': 'demo.minjun@moneycushion.test',
+        'nickname': '박민준',
+        'csv': 'transactions_b.csv',
+        'first_connected': date(2026, 7, 1),
+        'bank': {'org': '0004', 'alias': '국민은행'},
+        'card': {'org': '0301', 'alias': '국민카드'},
+        'accounts': {'A': ('KB 직장인우대통장', 'demand', '3307', True),
+                     'C': ('KB 내맘대로적금', 'deposit', '5512', False),
+                     'H': ('KB 주택청약종합저축', 'deposit', '0948', False)},
+        'cards': {'D': ('KB국민 노리2 체크카드', '체크', '6620', 'A')},
+        'profile': {
+            'birthDate': '1999-08-21', 'gender': 'male', 'housingType': 'family', 'hasCar': True,
+            'regionCode': '41465',  # 경기도 용인시 수지구
+            'priorities': [{'category': 'TRANSPORT_CAR', 'rank': 1}, {'category': 'FOOD', 'rank': 2},
+                           {'category': 'CULTURE_LEISURE', 'rank': 3}],
+            'categoryMinimums': [],
+        },
+        'salary': {'takeHomeIncome': 2_900_000, 'payday': 10},
+        'fixed': [('parking_pass', '회사 월 주차권', 150_000, 1, 'TRANSPORT_CAR', 'D'),
+                  ('youtube', '유튜브 프리미엄', 14_900, 3, 'CULTURE_LEISURE', 'D'),
+                  ('parents', '부모님 생활비', 300_000, 11, 'ETC', 'A'),
+                  ('gym', '헬스장', 59_000, 15, 'CULTURE_LEISURE', 'D'),
+                  ('telecom', '휴대폰 요금', 69_000, 20, 'HOUSING_TELECOM', 'A')],
+        'loans': [],
+    },
 }
 
 
@@ -260,6 +286,23 @@ def onboard(persona, user, log):
                      key=f'persona-{persona}-salary-{window["payCycleOn"]}')
             log(f"월급 확인: {window['payCycleOn']} 회차 {picks[0]['date']} 입금")
 
+    # 지난 회차 월급도 '월급 맞아요'로 확인한다. 서버는 확인한 월급 입금만 환불이 아닌 것으로 보고,
+    # 확인 안 된 입금이 있는 달은 B안 기록 검증(refunds)을 통과시키지 않는다 (finance/history_verifier.py)
+    from finance.models import FinancialTransaction
+    confirmed = {w['payCycleOn'] for w in deposits['windows']
+                 for i in w['items'] if i['amount'] == cfg['salary']['takeHomeIncome'] and i['isCandidate']}
+    past = FinancialTransaction.objects.filter(
+        user=user, source_kind='bank', direction='in', transaction_type='income',
+        amount=cfg['salary']['takeHomeIncome']).order_by('occurred_on')
+    for tx in past:
+        try:
+            api.call('POST', 'budgets/salary/decisions/',
+                     {'transactionIds': [str(tx.pk)], 'decision': 'confirmed', 'usePattern': False},
+                     key=f'persona-{persona}-salary-past-{tx.occurred_on:%Y%m%d}')
+            log(f'지난 월급 확인: {tx.occurred_on}')
+        except RuntimeError as exc:
+            log(f'지난 월급 확인 못 함 {tx.occurred_on}: {str(exc)[:200]}')
+
     fixed = api.call('GET', 'budgets/fixed/')['items']
     loan_like = [f for f in fixed if f['status'] == 'suggested' and is_loan_payment(persona, f)]
     if loan_like:
@@ -325,6 +368,36 @@ def summarize(user, budget, log):
                                     ensure_ascii=False)[:600])
     for c in (budget or {}).get('categories', []):
         log(f"  {c.get('categoryName') or c.get('category')}: {c.get('amount', c.get('allocatedAmount'))}")
+    # 서버가 저장한 예산 설계 기록 (A안/B안 선택 · 이유 · 카테고리 설명). 시드는 금액을 계산하지 않는다
+    from budgets.models import Budget
+    approved = Budget.objects.filter(user=user, status='approved').order_by('-approved_at').first()
+    design = ((approved.validation_summary or {}).get('design') or {}) if approved else {}
+    sel = design.get('selection') or {}
+    if sel:
+        log(f"예산 설계: {sel.get('plan', '?').upper()}안 · 이유 {sel.get('reason')} · "
+            f"3개월 최다 카테고리 건수 {sel.get('max_category_count')} · 기준 달 {sel.get('months')}")
+    else:
+        log('예산 설계 기록 없음 (BUDGET_DESIGN_ENABLED 가 꺼져 있으면 예전 임시 엔진으로 만든 예산이에요)')
+    if sel.get('plan') == 'a':
+        # A안이면 왜 B안이 안 됐는지: 달마다 수집 범위 · 기록 검증 상태와 막은 이유
+        from django.utils import timezone
+        from budgets import design_service
+        from plan_b_history import summarize_history
+        today = timezone.localdate()
+        months = design_service.history_for_user(user, today)
+        for month, row in months.items():
+            log(f"  {month}: 수집 {row['coverage_state']} · 검증 {row['normalization_checks']}")
+        log(f"  막은 이유: {summarize_history(months, as_of=today).get('missing_data')}")
+        try:
+            from finance.history_verifier import transaction_history_report
+            for month, report in transaction_history_report(user, list(months), use_confirmed_salary=True).items():
+                for kind, item in report.items():
+                    if item['status'] != 'verified':
+                        log(f"  {month} {kind}: {item['status']} · {[r['code'] for r in item['reasons']]}")
+        except Exception as exc:  # 진단 출력만 (계정 생성에는 영향 없음)
+            log(f'  검증 상세를 읽지 못함: {type(exc).__name__}')
+    for e in design.get('explanations', []):
+        log(f"  설명 {e['category']}: {e['text']}")
     return meta
 
 
