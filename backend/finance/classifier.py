@@ -40,6 +40,9 @@ ROOT = Path(settings.BASE_DIR).parent
 MODEL_PATH = Path(os.getenv("SPENDING_MODEL_PATH") or ROOT / "local_workspace/models/spending_classifier/artifacts/content_policy_svm/spending_category_svm.joblib")
 THRESHOLD = 0.85  # 임시: 상가정보 검증에서 자동 확정 정확도 98.5%. 실거래 표본으로 다시 정함
 JEV_THRESHOLD = 0.9  # 임시: Jev confidence 기준. 정답 붙인 실거래 표본으로 다시 정함
+# 지도·웹 근거 없이 이름만으로 물은 Jev 답의 기준 (11/16): 이름만 보면 속을 수 있어서 근거가 있을 때(0.9)보다 높게
+# 평가셋 114건에서 근거 없이 0.9 이상이던 5건이 모두 맞음 (춘향가스테이 0.97 · 영화관람권 0.99 · 637무신사 0.96 · DB손보 0.93 · 철도승차권 0.99)
+JEV_NAME_ONLY_THRESHOLD = 0.95
 # 동명 충돌 목록 (분류 워크플로 10/26 4장): 상가 데이터에서 같은 이름에 다른 카테고리가 붙은 상호.
 # 혜리 님 prepare_data.py 가 만드는 label_conflicts.csv (정리한 이름 기준). 모델처럼 Git 에 없다. 다른 곳이면 .env 의 SPENDING_CONFLICTS_PATH
 CONFLICTS_PATH = Path(os.getenv("SPENDING_CONFLICTS_PATH") or ROOT / "local_workspace/models/spending_classifier/label_conflicts.csv")
@@ -576,8 +579,13 @@ def judge(name, cut=False):
     if len({answer[0] for answer in decided}) > 1:
         record["evidence_conflict"] = True  # 같은 이름의 가게와 서비스 (미스터블루: 미용실 ↔ 웹툰). 어느 쪽 거래인지 모른다
         return {"review": ([(answer[0], answer[1]) for answer in decided], UNSURE_REASON), "record": record}
-    # Jev 점수만으로는 확정하지 않는다: 지도 업종이나 인정된 웹 설명이 있을 때만 자동 적용 (PR #64 리뷰)
+    # 지도 업종이나 인정된 웹 설명이 있으면 0.9 이상에서 자동 적용 (PR #64 리뷰)
     if evidence and choice != UNKNOWN and confidence >= JEV_THRESHOLD:
+        return {"apply": (choice, confidence), "record": record}
+    # 근거가 없어도 이름만으로 0.95 이상이면 자동 적용 (11/16 나은, PR #64 의 '점수만으로 확정 금지'를 평가셋 결과로 완화)
+    # name_only 표시로 이렇게 정한 거래만 따로 세어 오분류가 늘었는지 본다. 동명 충돌·지도/웹 충돌은 위·_ml_action 에서 그대로 묻는다
+    if not evidence and choice != UNKNOWN and confidence >= JEV_NAME_ONLY_THRESHOLD:
+        record["name_only"] = True
         return {"apply": (choice, confidence), "record": record}
     top = sorted(((c, p) for c, p in probabilities.items() if c != UNKNOWN), key=lambda x: -x[1])[:3]
     return {"review": (top, UNSURE_REASON if evidence else NOT_FOUND_REASON), "record": record}

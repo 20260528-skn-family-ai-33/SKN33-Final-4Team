@@ -770,9 +770,9 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual(result["review"], ([], classifier.LOOKUP_FAILED_REASON))
         self.assertEqual(result["record"]["error"], "OSError")
 
-    def test_high_jev_score_without_store_evidence_stays_in_review(self):
-        # PR #64 리뷰: 검색 0건 · 가게가 아닌 업종 · 다른 가게가 검색됐으면 Jev 0.99 여도 확정하지 않음
-        food = ("FOOD", 0.99, {"FOOD": 0.99, "ETC": 0.01}, "jev-test")
+    def test_name_only_jev_needs_higher_score(self):
+        # 검색 0건 · 가게가 아닌 업종 · 다른 가게가 검색됐으면 이름만으로 물은 답 (PR #64 리뷰: 다른 가게 업종은 Jev 에도 안 넘김)
+        # 11/16: 이름만으로 물은 답은 0.95 이상이면 적용하고 name_only 를 남긴다. 0.9 이상 0.95 미만은 지금처럼 '확인 필요'
         cases = {
             "검색 0건": None,
             "가게 아닌 업종": ("kakao", "새봄동물", "금융서비스"),
@@ -780,11 +780,21 @@ class JudgeTest(SimpleTestCase):
         }
         for label, found in cases.items():
             with self.subTest(label):
-                result, ask = self.run_judge(found, food)
+                result, ask = self.run_judge(found, ("FOOD", 0.99, {"FOOD": 0.99, "ETC": 0.01}, "jev-test"))
+                self.assertEqual(result["apply"], ("FOOD", 0.99))
+                self.assertTrue(result["record"]["name_only"])
+                self.assertEqual(ask.call_args.args[0], "가맹점 이름: 새봄동물")
+                result, _ = self.run_judge(found, ("FOOD", 0.93, {"FOOD": 0.93, "ETC": 0.07}, "jev-test"))
                 self.assertNotIn("apply", result)
-                self.assertEqual(result["review"], ([("FOOD", 0.99), ("ETC", 0.01)], classifier.NOT_FOUND_REASON))
-                self.assertEqual(ask.call_args.args[0], "가맹점 이름: 새봄동물")  # 다른 가게 업종은 Jev 에도 안 넘김
+                self.assertEqual(result["review"], ([("FOOD", 0.93), ("ETC", 0.07)], classifier.NOT_FOUND_REASON))
+                self.assertNotIn("name_only", result["record"])
         self.assertTrue(result["record"]["store_mismatch"])
+
+    def test_name_only_unknown_stays_in_review(self):
+        # 이름만으로는 판단 보류(UNKNOWN)가 확신해도 적용하지 않는다 (11/16 실거래 '인터넷상거래_2' UNKNOWN 1.0)
+        result, _ = self.run_judge(None, ("UNKNOWN", 1.0, {"UNKNOWN": 1.0}, "jev-test"))
+        self.assertNotIn("apply", result)
+        self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
 
     def test_pg_is_found_by_map_or_web(self):
         # 11/16 실제 검색: 나이스페이먼츠 지도 '지불,결제대행', KG이니시스 웹 '온라인 전자결제PG사' → Jev 를 부르지 않는다
@@ -815,8 +825,9 @@ class JudgeTest(SimpleTestCase):
         self.assertTrue(result["record"]["cut_name"])
         self.assertIn("더뮤지엄비지터", ask.call_args.args[0])
         self.assertNotIn("더티셔츠", ask.call_args.args[0])
-        # 잘리지 않은 적요면 지금처럼 낱말이 끝나야 근거
-        result, _ = self.run_judge(None, fashion, name="주식회사 더뮤지엄비지", web=web)
+        # 잘리지 않은 적요면 지금처럼 낱말이 끝나야 근거 (이름만 기준 0.95 아래 점수로 확인)
+        unsure = ("FASHION_SHOPPING", 0.93, {"FASHION_SHOPPING": 0.93, "ETC": 0.07}, "jev-test")
+        result, _ = self.run_judge(None, unsure, name="주식회사 더뮤지엄비지", web=web)
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
         self.assertNotIn("cut_name", result["record"])
 
@@ -871,7 +882,8 @@ class JudgeTest(SimpleTestCase):
         self.assertTrue(result["record"]["web_accepted"])
         self.assertNotIn("항공권", str(result["record"]))  # 웹 원문은 저장하지 않는다
 
-        result, ask = self.run_judge(None, travel, name="여행앱", web=["전혀 다른 글"])  # 이름이 없으면 근거 아님
+        unsure = ("TRAVEL_LODGING", 0.93, {"TRAVEL_LODGING": 0.93, "ETC": 0.07}, "jev-test")
+        result, ask = self.run_judge(None, unsure, name="여행앱", web=["전혀 다른 글"])  # 이름이 없으면 근거 아님 (이름만 기준 0.95 아래)
         self.assertEqual(ask.call_args.args[0], "가맹점 이름: 여행앱")
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
         self.assertFalse(result["record"]["web_accepted"])
@@ -942,7 +954,7 @@ class JudgeTest(SimpleTestCase):
         self.assertTrue(classifier.names_store("메가 MGC 커피 안내", "메가MGC"))
         self.assertTrue(classifier.names_store("Trip.com 트립닷컴에서 예약", "트립닷컴"))
         self.assertFalse(classifier.names_store("아무 글", ""))
-        result, ask = self.run_judge(None, ("BEAUTY", 0.97, {"BEAUTY": 0.97}, "jev-test"), name="리디", web=["팩토리디 / 헤어 전문 미용실"])
+        result, ask = self.run_judge(None, ("BEAUTY", 0.93, {"BEAUTY": 0.93}, "jev-test"), name="리디", web=["팩토리디 / 헤어 전문 미용실"])
         self.assertEqual(ask.call_args.args[0], "가맹점 이름: 리디")
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
 

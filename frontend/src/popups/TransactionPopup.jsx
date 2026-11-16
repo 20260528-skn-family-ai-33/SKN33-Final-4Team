@@ -31,7 +31,7 @@ function CatGrid({ categories, current, disabled, onPick }) {
 }
 
 // 분류 출처 → 화면 문구 (DB classification_source, H-07)
-const CLASSIFIED_BY = { user: '내가 고름', rule: '규칙으로 자동 분류', ml: 'AI 자동 분류', llm: 'AI 자동 분류 (가게 정보 확인)' }
+const CLASSIFIED_BY = { user: '내가 고름', rule: '규칙으로 자동 분류', ml: 'AI 자동 분류', llm: 'AI 자동 분류' }  // 11/16: Jev 는 가게 정보 없이 이름만으로도 정할 수 있어서 '(가게 정보 확인)'을 뺐다
 
 // 격자 아래 [취소] [확인] (11/12)
 function PickActions({ disabled, saving, onCancel, onConfirm }) {

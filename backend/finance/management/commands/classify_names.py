@@ -32,7 +32,9 @@ def stage(tx):
 
 
 def classify_names(names):
-    """이름 목록을 실제 classify() 로 분류한 결과 행 목록 (노트북에서 pd.DataFrame 으로 바로 본다)"""
+    """이름 목록을 실제 classify() 로 분류한 결과 행 목록 (노트북에서 pd.DataFrame 으로 바로 본다)
+    names 의 한 항목은 이름 또는 (이름, 카드사 업종) — 업종이 있으면 실제 카드 거래처럼 카드 업종 단계도 탄다 (11/16)"""
+    items = [(n, None) if isinstance(n, str) else (n[0], n[1] or None) for n in names]
     rows = []
     # 임시 회원·거래로 실제 classify() 를 그대로 돌리고, 결과만 읽은 뒤 전부 되돌린다
     with transaction.atomic():
@@ -40,10 +42,10 @@ def classify_names(names):
         txs = [
             FinancialTransaction.objects.create(
                 user=user, source_kind="manual", occurred_on="2026-01-01", amount=10000, direction="out",
-                transaction_type="spending", merchant_name=name,
+                transaction_type="spending", merchant_name=name, merchant_category=industry,
                 confirmed_category_id="UNCLASSIFIED", confirmation_state="needs_review",
             )
-            for name in names
+            for name, industry in items
         ]
         classifier.classify(user, FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs]))
         for tx in FinancialTransaction.objects.filter(pk__in=[t.pk for t in txs]).order_by("created_at"):
@@ -51,13 +53,14 @@ def classify_names(names):
             candidates = [c["category"] for c in tx.suggestion_candidates or []]
             rows.append({
                 "이름": tx.merchant_name,
+                "업종": tx.merchant_category or "",
                 "결과": tx.confirmed_category_id,
                 "단계": stage(tx),
                 "확신도": "" if tx.suggestion_confidence is None else f"{tx.suggestion_confidence:.2f}",
                 "후보": " ".join(candidates),
                 "검색": f"{record.get('source') or '0건'}:{record.get('industry') or '-'}" if record else "",
                 "메모": " ".join([k for k in ("dropped_industry", "store_mismatch", "error", "web_accepted", "web_error",
-                                               "evidence_conflict", "pg", "cut_name", "completed_name") if record.get(k)]
+                                               "evidence_conflict", "pg", "cut_name", "completed_name", "name_only") if record.get(k)]
                                + ([f"이름 {record['used']}"] if record.get("used") else [])),  # 'A - B' 중 정한 쪽 (11/16)
                 "Jev": f"{record.get('choice')} {record.get('confidence')}" if record.get("choice") else "",
                 "ms": record.get("ms", ""),
@@ -71,14 +74,18 @@ class Command(BaseCommand):
     help = "가맹점 이름 목록을 실제 거래 분류 에이전트(1~6단계, 실제 SVM·검색·Jev)로 분류해 표로 보여 준다. DB에는 아무것도 남기지 않는다"
 
     def add_arguments(self, parser):
-        parser.add_argument("names_file", help="가맹점 이름을 한 줄에 하나씩 적은 UTF-8 파일")
+        parser.add_argument("names_file", help="가맹점 이름을 한 줄에 하나씩 적은 UTF-8 파일. '이름<탭>카드사 업종'도 된다 (탭 뒤 칸은 더 있어도 무시)")
         parser.add_argument("--csv", dest="csv_path", help="결과를 CSV로도 저장할 경로 (정답 칸을 붙여 임계값 평가에 쓰기)")
 
     def handle(self, *args, names_file, csv_path=None, **options):
         path = Path(names_file)
         if not path.exists():
             raise CommandError("이름 파일을 찾을 수 없어요.")
-        names = [line.strip() for line in path.read_text(encoding="utf-8-sig").splitlines() if line.strip()]
+        names = []
+        for line in path.read_text(encoding="utf-8-sig").splitlines():
+            parts = [p.strip() for p in line.split("\t")]
+            if parts and parts[0]:
+                names.append((parts[0], parts[1] if len(parts) > 1 else None))
         if not names:
             raise CommandError("이름이 비어 있어요.")
 
