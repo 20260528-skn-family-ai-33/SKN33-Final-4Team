@@ -23,7 +23,7 @@ from .adjustment_service import AdjustmentConflict, AdjustmentExpired, Adjustmen
 from .design_reality import system_floors
 from .home import balance_json
 from .models import Budget, BudgetCycle, CushionEntry
-from .protect import cushion_required, fixed_base
+from .protect import cushion_goal, cushion_required, fixed_base
 from .recommend import ALLOCATION_CODES, EngineCheckFailed, budget_input_snapshot
 from .salary import due_income
 from .scope import living_spent
@@ -66,7 +66,9 @@ def finances(user, handoff, today):
     saving_available = max(snapshot['saved']['saving_floor'] - saving_floor, 0)
     saving_revision = design_service.fingerprint({'amount': snapshot['saved']['saving_floor'], 'minimum': saving_floor})
     balance = balance_json(user)
-    required = cushion_required(balance['total'], profile.monthly_take_home_income)
+    # PR #120 리뷰 P2: 지킬 돈 화면과 같은 목표(직접 정한 금액 또는 월급 × 3)로 쿠션 필수 여부를 판단한다
+    required = cushion_required(balance['total'], profile.monthly_take_home_income,
+                                cushion_goal(profile, profile.monthly_take_home_income))
     accrued = CushionEntry.objects.filter(user=user, cycle=cycle, entry_type='allocation').aggregate(n=Sum('amount'))['n'] or 0
     cushion_floor = max(1 if required else 0, accrued)
     cushion_known = complete and balance['total'] is not None and not balance['unknown_count']

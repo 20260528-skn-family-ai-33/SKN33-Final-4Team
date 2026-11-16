@@ -108,11 +108,19 @@ def protect(request):
         data = protect_json(request.user, profile, today)
         if request.method == "PUT":
             values = clean_protect(request, data)
+            approved_budget = current_approved_budget(request.user, today)
+            if approved_budget is not None:
+                # PR #120 리뷰 P1: 이번 주기에 실제로 적립한 쿠션보다 적게 정하면 그 차액이 여윳돈으로 풀린다 → 저장하지 않는다
+                # (예산 조정 계산의 쿠션 하한과 같은 기준)
+                from .cushion import cycle_allocated
+                allocated = cycle_allocated(request.user.pk, approved_budget.cycle_id)
+                if values["cushion_monthly"] < allocated:
+                    raise ValidationError({"cushion_monthly": [
+                        f"이번 주기에 이미 {allocated:,}원을 쿠션에 적립해서 그보다 적게 정할 수 없어요."]})
             living_changed = values["living_budget"] != profile.living_budget
             data["locks_released"] = save_protect(request.user, profile, values, data["cushion"]["target"])
             # 검수 P1 (11/13): 생활비를 그대로 두고 저축 · 쿠션만 바꾸면 이번 주기 승인 예산의 저축 · 쿠션 줄도 바꾼다 (여윳돈도 같이 맞춰짐).
             # null = 승인 예산 없음 · true = 반영 · false = 반영 못 함(생활비를 바꿨거나 합계 초과) → 화면이 다시 추천으로
-            approved_budget = current_approved_budget(request.user, today)
             data["approved_budget_updated"] = None
             if approved_budget is not None:
                 from .cushion import update_approved_split

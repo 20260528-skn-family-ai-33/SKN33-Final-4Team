@@ -45,7 +45,7 @@ def cushion_goal(profile, take_home_income):
 
 def cushion_required(balance_total, take_home_income, goal=None):
     """P-08: 계좌 잔액이 쿠션 목표보다 적거나 모르면 쿠션 필수.
-    goal 을 안 넘기는 호출(예산 조정 · 분배 실패 복구, 혜리 코드)은 아직 월급 × 3 — 합칠 때 cushion_goal(profile, income)로 연결"""
+    호출하는 곳(지킬 돈 · 예산 조정 · 분배 실패 복구)은 모두 cushion_goal(profile, income)을 넘긴다. goal 이 없으면 월급 × 3"""
     if goal is None and take_home_income is not None:
         goal = take_home_income * DEFAULT_GOAL_MULTIPLE
     return balance_total is None or goal is None or balance_total < goal

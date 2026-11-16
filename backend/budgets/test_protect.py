@@ -220,6 +220,29 @@ class ProtectAPITest(TestCase):
         self.assertFalse(response.json()["approvedBudgetUpdated"])  # 100만 + 100만 + 20만 + 77만 > 280만
         self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 170_000)
 
+    def test_put_below_cycle_allocated_cushion_is_rejected(self):
+        """PR #120 리뷰 P1: 이번 주기에 실제로 15만 원을 적립했으면 승인 예산의 쿠션을 10만 원으로 낮출 수 없다
+        (차액이 여윳돈으로 풀리지 않게). 적립액과 같거나 큰 금액은 지금처럼 반영한다"""
+        from .models import CushionEntry
+        self.assertEqual(self.put().status_code, 200)
+        budget = self.approve_budget()
+        CushionEntry.objects.create(user=self.user, cycle_id=budget.cycle_id, budget=budget, entry_type="allocation",
+                                    amount=150_000, request_key="review-p1-allocation", occurred_at=timezone.now())
+        self.profile.refresh_from_db()
+        before = self.profile.cushion_monthly
+        response = self.put({"livingBudget": 770_000, "savingFloor": 1_000_000, "cushionMonthly": 100_000})
+        self.assertEqual(response.status_code, 400, response.content)
+        error = response.json()["error"]
+        self.assertEqual(error["code"], "invalid")
+        self.assertEqual(error["fields"], {"cushionMonthly": ["이번 주기에 이미 150,000원을 쿠션에 적립해서 그보다 적게 정할 수 없어요."]})
+        self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 170_000)
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.cushion_monthly, before)  # 설정도 저장하지 않음
+        same = self.put({"livingBudget": 770_000, "savingFloor": 1_000_000, "cushionMonthly": 150_000})
+        self.assertEqual(same.status_code, 200, same.content)
+        self.assertTrue(same.json()["approvedBudgetUpdated"])
+        self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 150_000)
+
     def test_approved_breakdown_compares_any_budget_and_keeps_design_spare(self):
         self.assertEqual(self.put().status_code, 200)
         approved = self.make_budget(status="approved")

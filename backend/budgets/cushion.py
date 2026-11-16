@@ -64,6 +64,12 @@ def _cycle_recorded(user_id, cycle_id):
                                        entry_type="planned").aggregate(total=Sum("amount"))["total"] or 0
 
 
+def cycle_allocated(user_id, cycle_id):
+    """이번 주기에 실제로 옮긴 쿠션 적립(allocation) 합계. 승인 예산의 쿠션 금액은 이보다 낮출 수 없다 (PR #120 리뷰 P1)"""
+    return CushionEntry.objects.filter(user_id=user_id, cycle_id=cycle_id,
+                                       entry_type="allocation").aggregate(total=Sum("amount"))["total"] or 0
+
+
 def _planned(budget):
     from .models import BudgetItem
     return BudgetItem.objects.filter(budget=budget, bucket="cushion").aggregate(total=Sum("allocated_amount"))["total"] or 0
