@@ -572,6 +572,9 @@ class RuleTest(SimpleTestCase):
             "카카오_법인택시6": "TRANSPORT_CAR", "서울법인택시조합": None,
             "택시파스타 압구정로데오역점": None, "피자택시": None, "옐로우택시": None, "택시종사자쉼터": None,
             "서울개인택시조합새마을금고": None, "카카오페이택시충전": None,
+            # 11/16 실제 카드 명세: 낱말 뒤 번호 · 택시 앱 이름에 붙은 표기
+            "카카오_택시9": "TRANSPORT_CAR", "카카오T택시_가승인": "TRANSPORT_CAR", "택시12": "TRANSPORT_CAR",
+            "택시9파스타": None, "카카오T택시충전": None,
             "레벨업 피시방 남부터미널점": "CULTURE_LEISURE", "탑PC방": "CULTURE_LEISURE",
         }
         for name, code in cases.items():
@@ -627,6 +630,7 @@ class RuleTest(SimpleTestCase):
         cases = {
             "아트박스테스트홈플러스점": "FASHION_SHOPPING", "카카오프렌즈테스트점": "FASHION_SHOPPING",
             "펀앤펀테스트점": "CULTURE_LEISURE", "토피코테스트점": "CULTURE_LEISURE", "테스트아트박스": None,
+            "반다이남코코리아캡슐4": "CULTURE_LEISURE",  # 11/16 실거래 가챠샵 기계
         }
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)

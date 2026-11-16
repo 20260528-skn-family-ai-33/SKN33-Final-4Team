@@ -144,7 +144,9 @@ ETC_KEYWORDS = ("연회비", "보험")
 # '개인택시'·'일반택시'·'법인택시'가 들어 있거나 '택시'가 띄어 쓴 한 낱말일 때만. 택시조합·조합 금고는 소비처가 아니라 뺀다
 # 11/09 실제 카드 명세: '카카오_법인택시6' (법인택시 뒤에 번호가 붙어 낱말 규칙에도 안 걸렸다)
 TAXI_NAMES = ("개인택시", "일반택시", "법인택시")
-TAXI_WORD = re.compile(r"(^|[\s_\-])택시($|[\s_\-])")
+# 11/16 실제 카드 명세: '카카오_택시9' (낱말 뒤에 번호) · '카카오T택시_가승인' (택시 앱 이름에 붙음, 가승인 = 미리 잡는 택시비)
+TAXI_WORD = re.compile(r"(^|[\s_\-])택시\d*($|[\s_\-])")  # 뒤에 숫자만 붙는 건 같은 낱말. '택시파스타'처럼 글자가 붙으면 아님
+TAXI_APP_PREFIXES = ("카카오t택시",)  # 정리한 이름이 이렇게 시작하면 (택시 앱이라 다른 가게와 겹치지 않음)
 NOT_TAXI_WORDS = ("조합", "금고", "공제", "충전", "취소", "환불")
 # 교통카드 (11/05): 가게 이름이 아니라 SVM 이 엉뚱한 카테고리를 확신한다 (모바일티머니선불형 생활용품 0.94). 충전도 교통비라 페이 충전으로 묻지 않는다 (11/06)
 TRANSIT_CARDS = ("티머니", "캐시비", "레일플러스")
@@ -187,6 +189,8 @@ FOOD_BRANDS = ("스타벅스", "starbucks")
 # shortcut: 일반 원인을 못 고친 예외만 둔다. 검색 개선(메모의 5단계 개선 계획) 뒤 없앨 수 있는지 다시 본다
 BRAND_CATEGORIES = {
     "아트박스": "FASHION_SHOPPING", "카카오프렌즈": "FASHION_SHOPPING", "펀앤펀": "CULTURE_LEISURE", "토피코": "CULTURE_LEISURE",
+    # 11/16 나은 실거래 '반다이남코코리아캡슐4': 가챠샵 기계 (뽑기 = 문화·여가). 검색 0건이라 Jev 0.98 이어도 근거가 없었다
+    "반다이남코": "CULTURE_LEISURE",
 }
 # 한 이름으로 여러 서비스가 찍히는 곳 (애플: 음악·iCloud·앱·TV+). 무엇에 썼는지 몰라 '확인 필요' + 문화·여가 후보 (11/02 결정)
 # 다품목과 달리 사용자가 '앞으로도 적용'을 고르면 다음부터 그 카테고리로 자동 분류
@@ -356,7 +360,8 @@ def rule_category(name):
     normalized = common.normalize_name(name)
     if transport_rule(name, "N"):  # 혜리 님 교통 적요 규칙. 'N' = 소비로 정해진 거래 (분류 대상은 이미 소비)
         return "TRANSPORT_CAR"
-    if (any(w in normalized for w in TAXI_NAMES) or TAXI_WORD.search(name)) and not any(w in normalized for w in NOT_TAXI_WORDS):
+    if ((any(w in normalized for w in TAXI_NAMES) or TAXI_WORD.search(name) or normalized.startswith(TAXI_APP_PREFIXES))
+            and not any(w in normalized for w in NOT_TAXI_WORDS)):
         return "TRANSPORT_CAR"
     if any(card in normalized for card in TRANSIT_CARDS):
         return "TRANSPORT_CAR"
