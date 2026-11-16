@@ -9,6 +9,7 @@ from spending_analysis import claims as spending_claims
 from spending_analysis import reading as spending_reading
 from spending_analysis import insight as spending_insight
 from spending_analysis import narrative as spending_narrative
+from spending_analysis import followups as spending_followups
 
 def hypothesis(metric, target, unavailable=None):
     return {"metric": metric, "target": target, "unavailable": unavailable}
@@ -25,6 +26,7 @@ EXTRA_SAID = {
 SPENDING_SAID = {
     "내 소비 습관 어때?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
     "이대로 쓰면 이번 달 얼마나 쓸까?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
+    "식비 습관 어때?": {"mine": True, "target": "overview", "analysis_goal": "habit", "categories": ["FOOD"], "refers_to": "none"},
     # 분석 용어 없이 말해도 의도대로 (11/13)
     "돈이 왜 이렇게 빨리 없어지지": {"mine": True, "target": "overview", "analysis_goal": "reason", "refers_to": "none"},
     "나 돈 너무 막 쓰나?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
@@ -35,6 +37,9 @@ SPENDING_SAID = {
     "소비 분석": {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"},
     "전체적으로 분석해줘": {"mine": True, "target": "overview", "analysis_goal": "overview", "refers_to": "none", "followup": "new"},
     "왜 이렇게 계산된거야?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "previous"},
+    # 다음 추천 입력 버튼 문구 (insight._followup_context) — 눌렀을 때 가짜 해석에서도 같은 분석으로 이어지게
+    "지난달과 달라진 소비는 뭐야?": {"mine": True, "target": "overview", "analysis_goal": "reason", "refers_to": "none"},
+    "월말 예상은 어떻게 계산했어?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "previous"},
     "외식이었어": {"mine": True, "followup": "answer", "analysis_activity": "dining"},
     "원래 계획했던 거야": {"mine": True, "followup": "answer", "analysis_planned": True},
     **{text: {"mine": True, "target": "spend", "explain": True, "explain_kind": "change",
@@ -344,6 +349,10 @@ class FakeReading(RoleFakeLLM):
         self.missed = 0
 
     def __call__(self, system, user, timeout=None):  # timeout: 실제 해석기와 같은 모양 (가짜는 기다리지 않음)
+        if system == spending_followups.PROMPT:
+            self.calls.append({"role": "fake_spending_followups"})
+            return json.dumps({"questions": [{"id": row["id"], "text": row["question"]}
+                for row in json.loads(user)["candidates"][:3]]}, ensure_ascii=False)
         if system == spending_insight.PROMPT:
             data = json.loads(user)
             self.calls.append({"role": "fake_insight"})

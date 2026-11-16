@@ -4,11 +4,11 @@ import re
 from datetime import date, timedelta
 from statistics import median
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
 from django.db import DatabaseError
 
 from budgets.scope import OUT_OF_BUDGET
-from . import benchmark, lifestyle, narrative, reasoning, result as R, scope, snapshot, story, tools, trend
+from . import benchmark, budget_habits, followups, lifestyle, narrative, personality, reasoning, result as R, scope, snapshot, story, tools, trend
 from .answer import NAMES, span, won
 from .coverage import coverage
 from .periods import Period, previous_month_same_days, this_month
@@ -69,6 +69,19 @@ def covered_through(user, today):
     return last if period.start + timedelta(days=2) <= last < today else None
 
 
+def _coverage_note(found, period):
+    label = span(period)
+    if found["state"] == "error":
+        return f"{label} 거래의 조회 완료 여부를 확인하지 못했어요."
+    missing = sorted({p for t in found.get("targets", []) for p in t.get("missing", [])})
+    if missing:
+        dates = ", ".join(span(p) for p in missing[:2])
+        return f"일부 계좌·카드의 {dates}{' 등' if len(missing) > 2 else ''} 거래를 빠짐없이 불러왔는지 확인되지 않았어요."
+    if found.get("undetermined"):
+        return f"직접 등록한 카드·거래 등이 있어 {label}의 전체 소비가 빠짐없이 반영됐는지 확인할 수 없어요."
+    return f"{label}의 전체 계좌·카드 내역이 빠짐없이 반영됐는지 확인할 수 없어요."
+
+
 def summarize(user, decision, today):
     request = decision.request or decision.interpretation
     items = decision.items or decision.explain["items"]
@@ -81,12 +94,12 @@ def summarize(user, decision, today):
     if clipped:  # 최근 며칠만 아직 안 불러왔다 → 그 전날까지로 분석 기간을 맞춘다 (비교 · 전망이 '일부 내역'으로 막히지 않게)
         today = clipped
     periods = (this_month(today), previous_month_same_days(today))
-    states = [coverage(user, p)["state"] for p in periods]
+    collected = [coverage(user, p) for p in periods]
+    states = [c["state"] for c in collected]
     comparison_available = states == ["complete", "complete"]
+    incomplete = 0 if states[0] != "complete" else 1
     comparison_reason = None if comparison_available else (
-        "지난달 같은 기간의 수집 상태를 확인하지 못해 지난달 비교는 빼고 분석했어요." if "error" in states else
-        "이번 달 내역이 아직 다 모이지 않아 지난달 비교는 빼고 분석했어요." if states[0] != "complete" else
-        "지난달 같은 기간 내역이 다 모이지 않아 지난달 비교는 빼고 분석했어요.")
+        _coverage_note(collected[incomplete], periods[incomplete]) + " 지난달과의 총액 비교는 제외했어요.")
     living = request.analysis_scope == "living"
     source = [[r for r in tools.rows(user, p, {**where, "include_fixed": True}, include_activity=True)
                if r["transaction_type"] == "spending"] for p in periods]
@@ -129,6 +142,7 @@ def summarize(user, decision, today):
                           "comparison_reason": comparison_reason,
                           "count_basis": "취소 차감 후 순금액이 양수인 소비 결제"},
                "current": current, "previous": previous, "categories": selected,
+               "observed_count": _metrics(rows[0] if requested else scoped[0])["count"],
                "user_context": {"activity": request.analysis_activity, "planned": request.analysis_planned},
                "unclassified_amount": unclassified_amount}
     months = trend.history_months(today)
@@ -136,18 +150,23 @@ def summarize(user, decision, today):
     try:
         complete_months = [p for p in months if coverage(user, p)["state"] == "complete"]
         observed = Period(today - timedelta(days=27), today + timedelta(days=1))
-        complete = coverage(user, observed)["state"] == "complete" and states[0] == "complete"
+        observed_coverage = coverage(user, observed)
+        complete = observed_coverage["state"] == "complete" and states[0] == "complete"
         windows = {28: complete}
+        window_notes = {28: _coverage_note(observed_coverage, observed) if not complete else ""}
 
         def checked(projection, current_rows, past_rows):
             if projection["state"] != "ready":
                 return projection
             days = projection["validation"].get("selected", {}).get("lookback_days", 28)
             if days not in windows:
-                windows[days] = coverage(user, Period(today - timedelta(days=days - 1), today + timedelta(days=1)))["state"] == "complete"
+                window = Period(today - timedelta(days=days - 1), today + timedelta(days=1))
+                found = coverage(user, window)
+                windows[days] = found["state"] == "complete"
+                window_notes[days] = _coverage_note(found, window) if not windows[days] else ""
             if not windows[days]:
                 return {**{k: v for k, v in projection.items() if k not in ("month_end", "remaining", "observed", "model")},
-                        "state": "unavailable", "reason": f"선택한 예측 방식에 필요한 최근 {days}일 내역이 모두 모이지 않아 월말 예상액은 보류했어요."}
+                        "state": "unavailable", "reason": window_notes[days] + f" 예측에 필요한 최근 {days}일의 소비 합계를 확인할 수 없어 월말 예상액은 보류했어요."}
             continuity = reasoning.persistence(current_rows, past_rows, today, complete_months, complete)
             if continuity["state"] == "mixed" and continuity["weeks"][-1] > continuity["baseline_range"][1]:
                 return {**{k: v for k, v in projection.items() if k not in ("month_end", "remaining", "observed", "model")},
@@ -177,8 +196,9 @@ def summarize(user, decision, today):
         summary["trends"] = {code: checked(value, [r for r in rows[0] if r["category"] == code], [r for r in history if r["category"] == code]) for code, value in trend.summarize(rows[0], history, today, complete_months, complete=complete).items()}
         summary["overall_trend"] = checked(trend.forecast(rows[0], history, today, complete=complete, months=complete_months), rows[0], history)
         if states[0] != "complete":
-            summary["forecast_reason"] = ("이번 달 전체 수집 상태를 확인하지 못해 월말 예상액은 계산하지 않았어요." if states[0] == "error" else
-                                          "이번 달 내역이 모두 모이지 않아 월말 예상액은 계산하지 않았어요.")
+            summary["forecast_reason"] = _coverage_note(collected[0], periods[0]) + " 이 내역을 한 달 전체로 늘려 계산하면 실제보다 적게 예상할 수 있어 월말 예상액은 보류했어요."
+        elif observed_coverage["state"] != "complete":
+            summary["forecast_reason"] = window_notes[28] + " 예측에 필요한 최근 4주의 소비 합계를 확인할 수 없어 월말 예상액은 보류했어요."
         summary["monthly_totals"] = [{"month": p.start.isoformat()[:7], "amount": sum(r["net_amount"] for r in history if p.start <= r["occurred_on"] < p.end_before)}
                                      for p in complete_months[-3:]]
         if complete_months:
@@ -232,6 +252,7 @@ def summarize(user, decision, today):
         *(snapshot.weekend(rows[0], periods[0].start, today) if whole else []),
         *(snapshot.composition(rows[0]) if whole else []),
     ]
+    summary["observation"] = snapshot.observation(rows[0] if requested else scoped[0])
     # 소비 추이 → 습관 → 앞으로 (11/13 확정 구성). 카테고리 · 결제수단 등으로 좁힌 질문은 기존 분석만
     summary["story"] = None
     if not any(where.get(k) for k in scope.FILTERS):
@@ -244,8 +265,10 @@ def summarize(user, decision, today):
 
 
 def chart(summary, today):
-    codes = list(dict.fromkeys(code for f in summary.get("findings", []) for code in
-                 ([f["category"]] if f.get("category") else f.get("categories", []))))[:2]
+    changed = [code for code, t in (summary.get("trends") or {}).items()
+               if code in NAMES and t.get("weekly_direction") in ("increase", "decrease")]
+    codes = (changed or list(dict.fromkeys(code for f in summary.get("findings", []) for code in
+                 ([f["category"]] if f.get("category") else f.get("categories", [])))))[:2]
     choices = [(code, NAMES[code], summary.get("trends", {}).get(code, {})) for code in codes]
     if not choices:
         choices = [("overall", summary.get("basis", {}).get("scope", "생활비"), summary.get("overall_trend", {}))]
@@ -359,7 +382,7 @@ def select(summary, goal):
         chosen.append(f)
         if len(chosen) == limit:
             break
-    return chosen
+    return chosen or summary.get("observation", [])
 
 
 def _sections(findings, statements, forecast_text):
@@ -386,7 +409,7 @@ MENU = (
      "내 소비 습관 어때?"),
     ("이번 달 말·다음 달 예상", "지금 쓰는 속도가 이어지면 이번 달 말과 다음 달에 얼마가 되는지, 예산을 넘을 항목이 있는지 봐요.",
      "이대로 쓰면 이번 달 얼마나 쓸까?"),
-    ("지난달과 비교", "지난달 같은 기간보다 더 쓰거나 덜 쓴 이유를 항목별로 찾아요.", "이번 달 생활비 왜 이렇게 많이 나왔지?"),
+    ("지난달과 비교", "지난달 같은 기간보다 더 쓰거나 덜 쓴 이유를 항목별로 찾아요.", "지난달과 달라진 소비는 뭐야?"),
 )
 _MENU = re.compile(r"(뭐|뭘|무엇|무슨|어떤)\s*(걸|것을?|을|를)?\s*(더\s*|또\s*)?(분석|볼\s*수|알\s*수)"
                    r"|분석\s*(으로|에서|은|는)?\s*(뭐|뭘|무엇|어떤\s*(걸|것))"
@@ -454,7 +477,16 @@ def _same_day(start_iso, as_of_iso):
     return start.replace(day=min(as_of.day, last)).isoformat()
 
 
-def answer(user, decision, today, complete, question=None):
+def answered_topic(decision, question=None):
+    """이 답이 다룬 분석 종류 (추천 버튼 중복 방지용). 전체 분석 · 모르는 것은 None"""
+    if wants_calculation(question):
+        return "calculation"
+    request = decision.request or decision.interpretation
+    goal = getattr(request, "analysis_goal", None) or ("reason" if getattr(request, "explain", None) else "overview")
+    return goal if goal in ("habit", "reason", "forecast") else None
+
+
+def answer(user, decision, today, complete, question=None, covered=()):
     asked = question
     if wants_menu(asked):  # 무엇을 볼지 고르기 전 — DB 를 읽지 않고 메뉴만
         return menu_reply(), None
@@ -473,9 +505,10 @@ def answer(user, decision, today, complete, question=None):
     if wants_calculation(asked) and summary.get("story"):
         reply = _calculation_reply(summary, today, suffix)
         if reply is not None:
-            return reply, None
-    if summary.get("story") and summary["story"]["findings"]:
-        return _story_answer(user, summary, goal, today, suffix), None
+            return followups.apply(reply, question, complete, **_followup_context(summary, "calculation", reply, today), covered=covered), None
+    if summary.get("story") and (summary["story"]["findings"] or summary["story"].get("slot") or summary["story"].get("weekend")):
+        reply = _story_answer(user, summary, goal, today, suffix)
+        return followups.apply(reply, question, complete, **_followup_context(summary, goal, reply, today), covered=covered), None
     findings = select(summary, goal)
     forecast, notes = _outlook(summary)
     if forecast and goal in ("reason", "habit"):  # 이유 · 습관 질문에는 전망을 붙이지 않는다 (방식 안내만 하단에서 뺀다)
@@ -484,9 +517,12 @@ def answer(user, decision, today, complete, question=None):
         forecast = re.split(r"(?<=[.!?])\s+", forecast)[0]
     if not findings and not forecast:
         current = summary["current"]
-        line = (f"이번 달 소비는 아직 {current['count']}건이라 패턴을 읽기엔 적어요. 내역이 조금 더 쌓이면 다시 분석해 볼게요."
+        line = ("확인된 내역에서는 특정 항목이나 시간대에 소비가 몰리는 특징은 보이지 않아요."
                 if current["count"] else "이번 달에 분석할 소비 내역이 아직 없어요.")
-        notes = [n for n in (_unclassified_note(summary), f"분석 범위: {basis['scope']} · {span(this_month(today))} · 고정지출 제외") if n]
+        if not current["count"] and summary["unclassified_amount"][0]:
+            line = "결제 내역은 있지만, 사용처가 정해진 내역이 없어 소비 성향은 아직 구분할 수 없어요."
+        notes = [n for n in (*notes, basis.get("comparison_reason"), _unclassified_note(summary), _small_sample_note(summary),
+                 f"분석 범위: {basis['scope']} · {span(this_month(today))} · 고정지출 제외") if n]
         return {"lines": [line], "lead": [], "notices": notes, "examples": [],
                 "view": [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}, {"kind": "text", "lines": [line]}]}, None
     data = narrative.payload(question, findings, forecast, goal) if findings else None
@@ -530,6 +566,8 @@ def answer(user, decision, today, complete, question=None):
     notes.extend(dict.fromkeys(t for f in findings for t in f.get("limits", [])))
     if _unclassified_note(summary):
         notes.append(_unclassified_note(summary))
+    if _small_sample_note(summary):
+        notes.append(_small_sample_note(summary))
     notes.append(f"분석 범위: {basis['scope']} · {span(this_month(today))} · 고정지출 제외")
     reference_lines, reference_notes = benchmark.for_user(user, summary, today) if goal != "reason" else ([], [])
     notes.extend(n for n in reference_notes if n.startswith(("ML 기준은", "남는 돈은")))
@@ -537,7 +575,7 @@ def answer(user, decision, today, complete, question=None):
                                   *(lifestyle.suggestions(findings) or summary.get('reference_actions', []))]))[:3]
     blocks = [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}]
     blocks.append({"kind": "text", "title": "핵심 진단", "lines": ["핵심 진단", *lead], "tone": "key"})
-    graph = chart(summary, today)
+    graph = chart(summary, today) if _changing_trend(summary) else None
     visuals = {f["section"]: f["visual"] for f in findings if f.get("visual")}
     for title, lines in sections.items():
         lines = [l for l in dict.fromkeys(lines) if l not in lead]
@@ -555,7 +593,71 @@ def answer(user, decision, today, complete, question=None):
         if lines:
             blocks.append({"kind": "text", "title": title, "lines": [title, *lines]})
     body = [line for b in blocks if b["kind"] == "text" for line in b["lines"][1:]]
-    return {"lines": list(dict.fromkeys(body)), "lead": [], "notices": list(dict.fromkeys(notes)), "view": blocks, "examples": []}, None
+    reply = {"lines": list(dict.fromkeys(body)), "lead": [], "notices": list(dict.fromkeys(notes)), "view": blocks, "examples": []}
+    if goal == "habit":
+        reply = _habit_card(user, summary, reply, today)
+    return followups.apply(reply, question, complete, **_followup_context(summary, goal, reply, today), covered=covered), None
+
+
+def _small_sample_note(summary):
+    count = summary.get("observed_count", summary.get("current", {}).get("count", 0))
+    return (f"이번 분석은 확인된 결제 {count}건 기준이에요. 지금까지의 특징이며 평소 습관으로 확정한 결과는 아니에요."
+            if 0 < count < 5 else None)
+
+
+def _changing_trend(summary):
+    return any(t.get("weekly_direction") in ("increase", "decrease") for t in
+               [summary.get("overall_trend") or {}, *(summary.get("trends") or {}).values()])
+
+
+def _followup_context(summary, goal, reply, today):
+    """이미 보여 준 분석 근거와 새로 설명할 후보를 함께 판단한다."""
+    st = summary.get("story") or {}
+    by_id = {f["id"]: f for f in st.get("findings", [])}
+    seen = set(reply.get("lines", []))
+    graphs = []
+
+    def visit(blocks):
+        for block in blocks:
+            if block["kind"] in ("months", "trend", "pace") or (block["kind"] == "rows" and any("ratio" in row for row in block.get("rows", []))):
+                graphs.append(block)
+            seen.update(block.get("lines", []))
+            seen.update(block.get("reasons", []))
+            visit(block.get("blocks", []))
+
+    visit(reply.get("view", []))
+    out = []
+    habits = [by_id["HABIT"]["conclusion"]] if "HABIT" in by_id else []
+    habits += [s for s in (st.get("slot"), st.get("weekend")) if s]
+    habits += [f["conclusion"] for f in select(summary, "habit") if not f.get("comparable")]
+    weekly = chart(summary, today) if _changing_trend(summary) else None
+    habit_visuals = [f["visual"] for f in _habit_findings(summary) if f.get("visual")]
+    if (goal != "habit" and any(line not in seen for line in habits) and (not weekly or weekly not in graphs) and
+            not any(visual in graphs for visual in habit_visuals)):
+        out.append({"id": "habit", "question": "내 소비 습관 어때?"})
+    changes = [f for f in select(summary, "reason") if f.get("comparable") and f["kind"] != "total"]
+    material = summary.get("total_material", {}).get("meaningful")
+    if (goal != "reason" and summary["basis"].get("comparison_available") and
+            (material or changes) and any(f["conclusion"] not in seen for f in changes) and
+            (not weekly or weekly not in graphs)):
+        out.append({"id": "reason", "question": "지난달과 달라진 소비는 뭐야?"})
+    forecast = by_id.get("FORECAST")
+    answered = []
+    if habits and all(line in seen for line in habits):
+        answered.append("habit")
+    if summary["basis"].get("comparison_available") and changes and all(f["conclusion"] in seen for f in changes):
+        answered.append("reason")
+    if forecast and forecast["conclusion"] in seen:
+        answered.append("forecast")
+    if goal == "calculation":
+        answered.append("calculation")
+    if (goal not in ("forecast", "calculation") and forecast and forecast["conclusion"] not in seen and
+            (not st.get("chart") or st["chart"] not in graphs) and
+            (not _rising_weeks(summary) or not weekly or weekly not in graphs)):
+        out.append({"id": "forecast", "question": "이대로 쓰면 이번 달 얼마나 쓸까?"})
+    if goal != "calculation" and forecast and forecast["conclusion"] in seen and st.get("projection"):
+        out.append({"id": "calculation", "question": "월말 예상은 어떻게 계산했어?"})
+    return {"candidates": out[:3], "answered": answered}
 
 
 def _unclassified_note(summary):
@@ -592,7 +694,9 @@ def _section(title, lines):
 
 
 def _change_rows(summary):
-    rows = sorted((c for c in summary["categories"] if abs(c["delta"]) >= 5000), key=lambda c: -abs(c["delta"]))[:5]
+    changed = {f.get("category") for f in summary.get("candidates", [])
+               if f.get("comparable") and not f.get("quiet") and f.get("material", {}).get("meaningful")}
+    rows = sorted((c for c in summary["categories"] if c["code"] in changed), key=lambda c: -abs(c["delta"]))[:5]
     return [{"name": c["name"], "value": story._m(c["current"]["amount"]), "note": f"지난달 {story._m(c['previous']['amount'])}",
              "badge": {"direction": "up" if c["delta"] > 0 else "down", "text": f"{'+' if c['delta'] > 0 else '-'}{story._m(abs(c['delta']))}"}}
             for c in rows]
@@ -619,10 +723,7 @@ def _rising_weeks(summary):
 
 
 def _no_comparison_line(summary):
-    reason = summary["basis"].get("comparison_reason") or ""
-    why = ("이번 달 내역이 아직 다 모이지 않아" if "이번 달 내역" in reason else
-           "지난달 같은 기간 내역이 다 모이지 않아" if "지난달 같은 기간 내역" in reason else "지난달 자료를 확인하지 못해")
-    return f"{why} 지난달보다 늘었는지는 아직 비교하지 못했어요. 지금까지 확인된 모습을 알려 드릴게요."
+    return "지난달보다 더 썼는지는 비교할 수 없어, 지금 확인된 소비의 특징을 살펴봤어요."
 
 
 def _total_line(summary):
@@ -635,12 +736,60 @@ def _total_line(summary):
     return f"고정지출까지 더하면 월말 총지출 예상은 약 {story.man(amount)}이에요."
 
 
+def _now_points(summary):
+    """이번 달 분석 결과 — 첫 화면 핵심 진단의 재료. 의미 있는 변화 → 이번 달 특징(쏠림 · 큰 결제 · 반복 · 예산 속도) → 적은 내역의 관찰.
+    예산 속도가 '맞게'인 것은 강조할 특징이 아니라 뺀다 (유형 카드 · 상세에서 쓴다)"""
+    changes = [f for f in summary.get("findings", []) if f.get("comparable") and not f.get("quiet")]
+    current = [f for f in summary.get("snapshot", []) if f["kind"] != "budget_ok"
+               and not (changes and f["kind"] == "change_total")]  # 항목별 변화가 있으면 총액 비교 문장은 같은 말의 반복
+    current += [f for f in _pattern_findings(summary) if f not in current]
+    # 예산을 넘었거나 빨리 쓰는 항목은 바로 행동할 수 있는 정보라 변화보다 앞에 둔다
+    pace = [f for f in current if f["kind"] == "budget_fast"]
+    points = [*pace, *changes, *(f for f in current if f not in pace)]
+    return points or list(summary.get("observation", []))
+
+
+HABIT_KINDS = ("frequent", "pattern", "weekend", "composition", "large_share", "observation")
+
+
+def _habit_points(summary):
+    """습관 답의 첫 화면 재료 — 어떻게 쓰는지(반복 · 시간대 · 쏠림 · 큰 결제 비중)가 먼저, 지난달 대비 변화는 그다음.
+    전체 분석과 같은 변화 문장으로 시작해 내용이 반복되지 않게 한다"""
+    points = _now_points(summary)
+    return [*(f for f in points if f["kind"] in HABIT_KINDS), *(f for f in points if f["kind"] not in HABIT_KINDS)]
+
+
+def _share_rows(summary):
+    """카테고리별 이번 달 비중 (가로막대). 분류된 생활비가 두 항목 이상일 때만. 미분류는 비중에서 빼고 하단 안내로"""
+    rows = [(c["code"], c["name"], c["current"]["amount"]) for c in summary.get("categories", [])
+            if c["code"] in NAMES and c["code"] != "UNCLASSIFIED" and c["current"]["amount"] > 0]
+    total = sum(amount for *_, amount in rows)
+    if len(rows) < 2 or total <= 0:
+        return None
+    rows.sort(key=lambda r: -r[2])
+    return {"kind": "rows", "title": "이번 달 어디에 썼나요", "rows": [
+        {"code": code, "name": name, "amount": amount, "ratio": round(amount * 100 / total, 1), "note": f"{round(amount * 100 / total):g}%"}
+        for code, name, amount in rows]}
+
+
 def _story_blocks(user, summary, goal, today, by_id, st):
     """→ (blocks, examples, reference_notes). 메뉴에 맞는 재료가 없으면 overview 구성으로"""
     first = lambda i: (by_id[i]["evidence"] or [None])[0] if i in by_id else None
     others = [ASK[g] for g in ("habit", "forecast", "reason", "overview") if g != goal]
-    if goal == "habit" and ("HABIT" in by_id or st.get("slot") or st.get("weekend")):
-        lead = [by_id["HABIT"]["conclusion"]] if "HABIT" in by_id else [st.get("weekend") or st["slot"]]
+    if goal == "forecast" and "FORECAST" not in by_id:
+        # 전망이 없는데 과거 월별 그래프를 전망의 답처럼 다시 보여 주지 않는다.
+        current = select(summary, "habit")[:1]
+        blocks = [_key(["월말 예상액은 아직 계산하지 않았어요.", *(f["conclusion"] for f in current)])]
+        blocks += _section("확인된 소비 특징", [line for f in current for line in f.get("evidence", [])[:1]])
+        return blocks, [], []
+    if goal == "habit":
+        # 첫 화면: 매달 반복되는 습관 → 이번 달 구체적인 특징 · 변화 → 언제 쓰는지 (최대 3줄, 총론만 두지 않는다)
+        now = _habit_points(summary)
+        habitual = [f["conclusion"] for f in now if f["kind"] in HABIT_KINDS]
+        others = [f["conclusion"] for f in now if f["kind"] not in HABIT_KINDS]
+        timing = [x for x in (st.get("weekend"), st.get("slot")) if x][:1]
+        lead = [*([by_id["HABIT"]["conclusion"]] if "HABIT" in by_id else []), *habitual, *timing, *others][:3]
+        lead = lead or [first("TREND") or "현재 확인된 내역에서는 두드러지는 소비 습관은 보이지 않아요."]
         change = next((f for f in summary.get("findings", []) if f.get("comparable") and not f.get("quiet")
                        and f["kind"] not in ("large_total", "large_payment", "unclassified_change")), None)
         if change:  # 반복되는 방식 + 최근 달라진 점은 핵심에 같이 (근거는 아래 섹션)
@@ -680,7 +829,8 @@ def _story_blocks(user, summary, goal, today, by_id, st):
     if goal == "reason":
         cause = next((x for x in select(summary, "reason") if x["kind"] in ("change_total", "large_share", "total")), None)
         if cause and summary["basis"].get("comparison_available"):
-            lead = [cause["conclusion"]]
+            offset = next((x for x in summary.get("findings", []) if x["kind"] == "offset"), None)
+            lead = [offset["conclusion"] if offset else cause["conclusion"]]  # 상쇄면 총액 비교 대신 어떤 항목이 늘고 줄었는지를 결론으로
             blocks = [_key(lead)]
             rows = _change_rows(summary)
             if rows:
@@ -696,33 +846,188 @@ def _story_blocks(user, summary, goal, today, by_id, st):
             if frequent_dining and any(x.get("category") == frequent_dining.get("category") for x in changes[:2]):
                 why.append(frequent_dining["conclusion"])
             blocks += _section("왜 달라졌나요", why)
-            weekly = chart(summary, today)
+            weekly = chart(summary, today) if _changing_trend(summary) else None
             if weekly:
                 blocks.append(weekly)
             return blocks, [ASK["forecast"], ASK["habit"]], []
         if not summary["basis"].get("comparison_available"):
-            st = {**st, "no_comparison": True}
-    # overview (또는 메뉴에 맞는 재료가 없을 때): 세 가지를 한 줄씩 + 월별 막대
-    order = [i for i in ("TREND", "HABIT", "FORECAST") if i in by_id]
-    lead = [by_id[i]["conclusion"] for i in order]
+            current = select(summary, "habit")[:2]
+            lead = [f["conclusion"] for f in current] or [st.get("slot") or st.get("weekend") or _no_comparison_line(summary)]
+            blocks = [_key(lead), *_section("확인된 소비 특징", [line for f in current for line in f.get("evidence", [])[:1]])]
+            return blocks, [], []
+    # overview: 이번 달 분석이 먼저(무엇이 달라졌고 어디에 몰렸나), 지난 달들 추이 · 월말 전망은 한 줄씩.
+    # 그래프는 내용에 맞는 것만 — 어디에 썼나 = 카테고리 비중, 예산 속도 = 예산 막대, 추이가 실제로 변할 때만 월별 막대
+    now = _now_points(summary)
+    trend_f, forecast_f = by_id.get("TREND"), by_id.get("FORECAST")
+    moving = bool(trend_f and trend_f["kind"] != "trend_flat")
+    lead = [f["conclusion"] for f in now[:2]]
+    if trend_f and (moving or not lead):
+        lead.append(trend_f["conclusion"])
+    if forecast_f:
+        lead.append(forecast_f["conclusion"])
+    if not lead:
+        lead = [st.get("slot") or st.get("weekend") or "확인된 내역에서는 특정 항목이나 시간대에 소비가 몰리는 특징은 보이지 않아요."]
     if st.get("no_comparison"):
         lead.insert(0, _no_comparison_line(summary))
     blocks = [_key(lead)]
-    if st["chart"]:
-        blocks.append(st["chart"])
-    for i, title in (("TREND", "소비 추이"), ("HABIT", "소비 습관"), ("FORECAST", "앞으로")):
-        line = first(i)
-        extra = _total_line(summary) if i == "FORECAST" else None
-        if (line and line not in lead) or extra:
-            blocks += _section(title, [line if line not in lead else None, extra])
+    share = _share_rows(summary)
+    if share:
+        blocks.append(share)
+    shown = {line for line in lead}
+    for f in now[:3]:
+        lines = [f["conclusion"], *([] if f["kind"] == "offset" else (f.get("evidence") or [])[:2])]
+        blocks += _section(f.get("section") or "이번 달 특징", [l for l in lines if l not in shown])
+        shown.update(lines)
+        if f.get("visual") and f["visual"] not in blocks and not (share and f["kind"] == "composition"):
+            blocks.append(f["visual"])
+    if "HABIT" in by_id:  # 매달 반복되는 소비 습관 (지난 달들 기준) — 한 줄 + 근거
+        habit_f = by_id["HABIT"]
+        blocks += _section("소비 습관", [l for l in [habit_f["conclusion"], *habit_f["evidence"][:1]] if l not in shown])
+    if trend_f:
+        blocks += _section("소비 추이", [l for l in [trend_f["conclusion"], *trend_f["evidence"][:1]] if l not in shown])
+        if moving and st.get("chart"):
+            blocks.append(st["chart"])
+    if forecast_f:
+        ahead = [l for l in forecast_f["evidence"] if l not in shown and not l.startswith("이번 달 말")]
+        ahead.append(_total_line(summary))
+        blocks += _section("앞으로", ahead)
+    weekly = chart(summary, today) if _changing_trend(summary) else None
+    if weekly and weekly not in blocks:
+        blocks.append(weekly)
     return blocks, others[:3], []
+
+
+def _habit_findings(summary):
+    findings = [*summary.get("snapshot", []), *_pattern_findings(summary),
+                *(f for f in summary.get("findings", []) if f.get("comparable") and not f.get("quiet"))]
+    return findings or summary.get("observation", [])
+
+
+def _habit_details(summary, body, today, by_id):
+    """요약 뒤에서 현재 계산된 근거와 그래프를 보존한다. 조용한 변화는 설명에 추가하지 않는다."""
+    body = list(body)
+    seen = {line for b in body if b["kind"] == "text" for line in b["lines"]}
+
+    def add(title, lines):
+        fresh = [line for line in dict.fromkeys(lines) if line and line not in seen]
+        body.extend(_section(title, fresh))
+        seen.update(fresh)
+
+    if "TREND" in by_id:
+        f = by_id["TREND"]
+        add("소비 추이", [f["conclusion"], *f["evidence"]])
+    st = summary["story"]
+    for f in _habit_findings(summary):
+        add(f["section"], [f["conclusion"], *f.get("evidence", []), f.get("outlook")])
+        if f.get("visual") and f["visual"] not in body:
+            body.append(f["visual"])
+    graph = chart(summary, today) if _changing_trend(summary) else None
+    if graph and graph not in body:
+        body.append(graph)
+    share = _share_rows(summary)
+    if share and not any(b["kind"] == "rows" and b.get("title") == "분류된 소비의 비중" for b in body):
+        body.append(share)
+    if "FORECAST" in by_id:
+        f = by_id["FORECAST"]
+        add("월말 전망", [f["conclusion"], *f["evidence"], _total_line(summary)])
+        if st.get("forecast_rows"):
+            body.append({"kind": "rows", "title": "항목별 이번 달 말 예상", "rows": st["forecast_rows"]})
+    return body
+
+
+def _persona_context(user, summary, today):
+    """소비 유형 관리 축 · 보조 근거 재료 (읽기만 한다). 없는 값은 None — 그 특성만 판정하지 않는다"""
+    context = {}
+    if not getattr(user, "pk", None):
+        return context
+    try:
+        from budgets.models import Budget
+        from finance.models import FinancialTransaction
+        profile = user.financial_profile
+        birth, housing, floor = profile.birth_date, profile.housing_type, profile.savings_floor
+        context.update(housing=housing if isinstance(housing, str) else None,
+                       savings_floor=floor if type(floor) is int else None,
+                       age=today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if isinstance(birth, date) else None)
+        # 배분 기준 금액 = 이번 급여 주기에 승인한 예산의 배분 대상 자금 (월 실수령액 − 확정 고정지출)
+        budget = (Budget.objects.filter(user=user, status="approved", cycle__status="active", cycle__starts_on__lte=today,
+                                        cycle__ends_before__gt=today).order_by("-approved_at", "-pk")
+                  .values("funding_amount", "cycle__starts_on").first())
+        if budget and type(budget.get("funding_amount")) is int:
+            context["base"] = budget["funding_amount"]
+            context["saving_seen"] = FinancialTransaction.objects.filter(
+                user=user, transaction_type="saving", is_canceled=False,
+                occurred_on__gte=budget["cycle__starts_on"], occurred_on__lte=today).exists()
+    except (AttributeError, ObjectDoesNotExist, DatabaseError, TypeError, ValueError):
+        return context
+    # 모델 C는 대상(20~34세 1인 가구)일 때만 부른다 — 대상 밖이면 하위 프로세스를 띄우지 않는다
+    if context.get("housing") == "alone" and context.get("age") is not None and 20 <= context["age"] <= 34:
+        context["model"] = benchmark.reference(user, summary, today)
+    else:
+        context["model"] = {"reason": "out_of_range"}
+    return context
+
+
+def _habit_card(user, summary, reply, today, context=None):
+    """소비 습관 답: 맨 위 = 소비 유형 카드(마스코트 · 이름 · 한 줄 소개 · 태그 · 근거 · 해볼 한 가지), 아래 '자세히 보기' = 기존 분석 전부"""
+    basis = summary.get("basis", {})
+    scoped = bool(basis.get("categories") or any(basis.get("filters", {}).values()))
+    history = ({"state": "not_applicable"} if scoped else
+               budget_habits.for_user(user, today) if getattr(user, "pk", None) else {"state": "unavailable"})
+    if history["state"] == "unavailable":
+        reply = {**reply, "notices": [*reply["notices"], "승인된 예산 변경 이력을 확인하지 못해 소비 내역으로 성향을 살펴봤어요."]}
+    if context is None:
+        context = {} if scoped else _persona_context(user, summary, today)
+    result = personality.assess(summary, history, {**context, "scoped": scoped})
+    profile = result["profile"]
+    if not profile and result["reason"] == "too_unclassified":
+        reply = {**reply, "notices": [*reply["notices"], "분류되지 않은 결제가 많아 소비 유형은 아직 정하지 않았어요."]}
+    details = [*reply["view"][1:], *_section("예산을 관리하는 습관", personality.habit_lines(history, profile))]
+    # 핵심 진단(구체적인 소비 특징 · 변화)은 접지 않고 첫 화면에 둔다 — 유형 카드 뒤에 묻히거나 상세를 열어야만 이해되지 않게
+    key = details[0] if details and details[0].get("tone") == "key" else None
+    details = details[1:] if key else details
+    if profile:
+        persona = {"kind": "persona", "mascot": profile["mascot"], "name": profile["title"], "desc": profile["desc"],
+                   "reasons": profile["lines"], "action": profile.get("action"), "tags": profile.get("tags", []),
+                   # 특성 기록은 검증 · 로그용 (화면에 쓰지 않는다). 금액 원본은 빼고 비율 · 상태만
+                   "traits": [{k: v for k, v in t.items() if k != "average"} for t in profile.get("traits", [])]}
+        lines = [l for l in (key["lines"][1:] if key else []) if l not in profile["lines"]]
+        front = [persona, *([{**key, "lines": [key["lines"][0], *lines]}] if lines else [])]
+        tags = "".join(f" · {t['label']}" for t in profile.get("tags", []))
+        extra = [f"나의 소비 유형은 '{profile['title']}'이에요{f'({tags[3:]})' if tags else ''}. {profile['desc']}", *profile["lines"],
+                 *([profile["action"]] if profile.get("action") else [])]
+    else:
+        # 근거가 없으면 유형을 지어내지 않는다 — 유형 카드 없이 이번에 확인된 분석을 바로 보여 준다
+        front = [key] if key else []
+        extra = []
+    detail_lines = [line for b in details if b["kind"] == "text" for line in b["lines"][1:]]
+    view = [reply["view"][0], *front]
+    if details:
+        view.append({"kind": "details", "title": "자세한 소비 분석 보기", "blocks": details})
+    return {**reply, "view": view, "lines": list(dict.fromkeys([*extra, *reply["lines"], *detail_lines]))}
+
+
+def _merge_sections(blocks):
+    """같은 소제목(예: '지난달과 비교')이 여러 번 나오면 첫 번째 칸으로 합친다. 같은 문장은 한 번만"""
+    out, index = [], {}
+    for b in blocks:
+        title = b.get("title") if b["kind"] == "text" and b.get("tone") != "key" else None
+        if title and title in index:
+            first = out[index[title]]
+            out[index[title]] = {**first, "lines": [first["lines"][0], *dict.fromkeys([*first["lines"][1:], *b["lines"][1:]])]}
+            continue
+        if title:
+            index[title] = len(out)
+        out.append(b)
+    return out
 
 
 def _story_answer(user, summary, goal, today, suffix):
     st, basis = summary["story"], summary["basis"]
     by_id = {f["id"]: f for f in st["findings"]}
     body, examples, reference_notes = _story_blocks(user, summary, goal, today, by_id, st)
-    blocks = [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}, *body]
+    if goal == "habit":
+        body = _habit_details(summary, body, today, by_id)
+    blocks = [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}, *_merge_sections(body)]
     notes = []
     if basis.get("clipped"):
         after = today + timedelta(days=1)
@@ -730,6 +1035,8 @@ def _story_answer(user, summary, goal, today, suffix):
     if basis.get("comparison_reason"):
         notes.append(basis["comparison_reason"])
     notes.extend(st.pop("limits", []) if goal == "reason" else [])
+    if goal == "habit":
+        notes.extend(note for f in _habit_findings(summary) for note in f.get("limits", []))
     shown = any(b["kind"] in ("months",) for b in blocks)  # 예상이 화면에 나온 답(전체 · 앞으로)에만 예상 방식 안내
     projection = st.get("projection") if shown else None
     if projection and projection["method"] == "validated":
@@ -744,8 +1051,11 @@ def _story_answer(user, summary, goal, today, suffix):
         notes.append("예상 방식: 방식을 시험해 볼 과거 달이 아직 적어서, 최근 4주 하루 평균이 이어진다고 보고 계산한 참고치예요.")
     if projection:
         notes.append("예상액에는 앞으로 새로 생길 큰 결제가 들어 있지 않아요.")
-    if shown and st["findings"] and not any(f["id"] == "FORECAST" for f in st["findings"]):
+    if (shown or goal in ("forecast", "overview")) and not any(f["id"] == "FORECAST" for f in st["findings"]):
         reason = summary.get("forecast_reason") or summary.get("overall_trend", {}).get("reason")
+        cause = (basis.get("comparison_reason") or "").split(". ")[0]
+        if reason and cause and reason.startswith(cause):  # 수집 범위 설명은 비교 안내에 이미 있다 — 같은 긴 문장을 두 번 쓰지 않는다
+            reason = reason[len(cause):].lstrip(". ").strip()
         if reason:
             notes.append(f"월말 전망: {reason}")
     if shown and st.get("chart"):
@@ -756,6 +1066,8 @@ def _story_answer(user, summary, goal, today, suffix):
                      f"{_md(basis['previous']['from'])}~{date.fromisoformat(_same_day(basis['previous']['from'], basis['as_of'])).day}일).")
     if _unclassified_note(summary):
         notes.append(_unclassified_note(summary))
+    if _small_sample_note(summary):
+        notes.append(_small_sample_note(summary))
     notes.extend(n for n in reference_notes if n.startswith(("ML 기준은", "남는 돈은")))
     if basis.get("scope"):
         notes.append(f"분석 범위: {basis['scope']} · {span(this_month(today))} · 고정지출 제외")
@@ -764,4 +1076,4 @@ def _story_answer(user, summary, goal, today, suffix):
     if st.get("over"):  # 예산을 넘을 전망 → [예산 조정하기] (어느 카테고리인지는 라우터에만 알린다)
         reply["suggest"] = ["budget_adjust"]
         reply["over"] = st["over"]
-    return reply
+    return _habit_card(user, summary, reply, today) if goal == "habit" else reply

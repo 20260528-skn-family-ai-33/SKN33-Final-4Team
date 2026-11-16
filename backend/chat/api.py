@@ -156,12 +156,17 @@ def messages(request):
     # 라우팅은 DB 잠금 밖에서 한다 (LLM 호출이 붙으면 몇 초 걸릴 수 있음)
     if choice is not None:
         (intent, slots), fallback = router.route_choice(choice), False
+    elif replies.thanks_reply(text) or replies.greeting_reply(text):
+        (intent, slots), fallback = ('unknown', {}), False
     else:
         try:
-            (intent, slots), fallback = router.route_text(text, talk), False
+            (intent, slots), fallback = router.route_text(replies.without_thanks(text), talk), False
         except router.RouterUnavailable:
             intent, slots, fallback = "unknown", {}, True
     content_type, content = replies.reply(intent, slots, fallback)
+    social = replies.thanks_reply(text) or replies.greeting_reply(text)
+    if social:
+        content_type, content = replies.text(social)
 
     with transaction.atomic():
         if talk is None:

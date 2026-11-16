@@ -130,27 +130,64 @@ def saving_outlook(summary, income, goal):
     return lines, ['남는 돈은 실제 저축액이 아니며 대출 원금·이체·미등록 예정 지출에 따라 달라져요.']
 
 
+def _model_input(user, profile, today):
+    """모델 C 입력 (나이 · 성별 · 소득 · 차량 · 고정비). 대상 범위 밖이거나 정보가 없으면 None"""
+    birth = profile.birth_date
+    age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
+    income = profile.monthly_take_home_income
+    sex = {'male': 1, 'female': 2}.get(profile.gender)
+    if age is None or not 20 <= age <= 34 or sex is None or profile.has_car is None or not income:
+        return None
+    from finance.models import RecurringExpense
+    from django.db.models import Sum
+    fixed = RecurringExpense.objects.filter(user=user, status='confirmed', category_id__in=('HOUSING_TELECOM', 'ETC')).aggregate(amount=Sum('amount'))['amount'] or 0
+    return dict(age=age, sex=sex, net_income=income, vehicle_count=int(profile.has_car), fixed_expense_amount=fixed)
+
+
+def _paths():
+    python = os.getenv('BUDGET_INFERENCE_PYTHON', str(ROOT / 'local_workspace/.venv-budget-inference' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')))
+    root = os.getenv('SPENDING_REFERENCE_ROOT', str(ROOT / 'local_workspace/models/living_expense_prediction'))
+    return python, root
+
+
+def reference(user, summary, today):
+    """소비 유형 보조 근거용 모델 C 기준 (유형 판정에는 쓰지 않는다).
+    → {'amounts': {카테고리 코드: 원}, 'mae': {코드: 원}, 'version', 'label', 'actual': {코드: 원}} 또는 {'reason': ...}"""
+    observations = summary.get('reference_month')
+    if not observations:
+        return {'reason': 'no_full_month'}
+    try:
+        model_profile = _model_input(user, user.financial_profile, today)
+        if model_profile is None:
+            return {'reason': 'out_of_range'}
+        python, root = _paths()
+        if not installed(python, root):
+            return {'reason': 'not_installed'}
+        prediction = _predict(json.dumps(model_profile, sort_keys=True), python, root)
+    except (AttributeError, ObjectDoesNotExist, DatabaseError, ValueError):
+        return {'reason': 'failed'}
+    codes = {code: key for code, key in MODEL_CODES.items() if code not in ('ETC', 'HOUSING_TELECOM')}
+    return {'amounts': {code: round(prediction['amounts'][key] / 1000) * 1000 for code, key in codes.items()},
+            'mae': {code: prediction['category_mae'][key] for code, key in codes.items()},
+            'version': prediction['model'], 'label': observations['label'],
+            'actual': dict(observations['categories']), 'unclassified': observations.get('unclassified', 0)}
+
+
 def for_user(user, summary, today):
     if summary.get('basis', {}).get('filters') or summary.get('basis', {}).get('categories'):
         return [], []
     savings_lines, savings_notes = [], []
     try:
         profile = user.financial_profile
-        birth = profile.birth_date
-        age = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day)) if birth else None
         income = profile.monthly_take_home_income
         savings_lines, savings_notes = saving_outlook(summary, income, profile.savings_floor)
         if not summary.get('reference_month'):
             return savings_lines, [*savings_notes, '한 달 전체가 확인된 내역이 없어 ML 월 소비 기준과의 비교는 보류했어요.']
-        sex = {'male': 1, 'female': 2}.get(profile.gender)
-        if age is None or not 20 <= age <= 34 or sex is None or profile.has_car is None or not income:
+        model_profile = _model_input(user, profile, today)
+        if model_profile is None:
             return savings_lines, [*savings_notes, 'ML 비교에 필요한 나이·성별·월 소득·차량 정보가 부족하거나 모델의 대상 범위와 달라 비교를 보류했어요.']
-        from finance.models import RecurringExpense
-        from django.db.models import Sum
-        fixed = RecurringExpense.objects.filter(user=user, status='confirmed', category_id__in=('HOUSING_TELECOM', 'ETC')).aggregate(amount=Sum('amount'))['amount'] or 0
-        model_profile = dict(age=age, sex=sex, net_income=income, vehicle_count=int(profile.has_car), fixed_expense_amount=fixed)
-        python = os.getenv('BUDGET_INFERENCE_PYTHON', str(ROOT / 'local_workspace/.venv-budget-inference' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')))
-        root = os.getenv('SPENDING_REFERENCE_ROOT', str(ROOT / 'local_workspace/models/living_expense_prediction'))
+        fixed = model_profile['fixed_expense_amount']
+        python, root = _paths()
         if not installed(python, root):
             raise NotInstalled('reference_not_installed')
         prediction = _predict(json.dumps(model_profile, sort_keys=True), python, root)

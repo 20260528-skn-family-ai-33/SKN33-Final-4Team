@@ -1336,3 +1336,36 @@
 #mc-new-preview#mc-new-preview .mc-notice-list .mc-tile b.mc-notice-mark{font-size:20px;font-weight:800;line-height:1}  /* 알림 줄 굵은 느낌표 (예산을 여러 번 바꿨어요, 11/13) */
 #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-title{display:block;font-size:14px;font-weight:700;margin-bottom:2px}  /* 알림 줄 이름 (11/13): 문장과 같은 크기, 굵게 */
 #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-text{color:color-mix(in srgb,var(--mc-ink) 55%,var(--mc-sub))}  /* 알림 문장은 이름보다 조금 옅게 (11/13) */
+
+/* ---------- 마스코트 쿠숑이 (11/16) — 시작하기 첫인사 · 홈 가이드 투어 (components/GuideTour.jsx) ---------- */
+/* 시작하기: 쿠숑이 + 왼쪽 아래 꼬리가 달린 말풍선 */
+#mc-new-preview .mc-kushong{display:flex;align-items:flex-end;gap:10px;margin:4px 0 8px;word-break:keep-all}
+#mc-new-preview .mc-kushong .mc-mascot{flex:none}
+#mc-new-preview .mc-kushong-say{position:relative;flex:1;margin:0 0 6px;padding:12px 14px;border-radius:14px;border-bottom-left-radius:4px;background:var(--mc-soft);font-size:13px;line-height:1.6;color:var(--mc-ink)}
+#mc-new-preview .mc-kushong-say strong{display:block;margin-bottom:3px;font-size:14px;color:var(--mc-brand)}
+#mc-new-preview .mc-kushong-say::after{content:'';position:absolute;left:-5px;bottom:12px;width:10px;height:10px;background:var(--mc-soft);transform:rotate(45deg)}
+/* 가이드 투어: 기기 화면 전체를 덮고, 설명하는 탭만 구멍(큰 그림자)으로 밝게 */
+#mc-new-preview .mc-tour{position:absolute;inset:0;z-index:30;word-break:keep-all}
+#mc-new-preview .mc-tour-dim{position:absolute;inset:0;background:light-dark(#0f172a8c,#000a)}
+#mc-new-preview .mc-tour-spot{position:absolute;border-radius:50%;box-shadow:0 0 0 9999px light-dark(#0f172a8c,#000a),0 0 0 3px var(--mc-brand),0 0 18px 4px light-dark(#2f6bff66,#7ea2ff66);pointer-events:none;transition:left .25s,top .25s}
+#mc-new-preview .mc-tour-spot::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:3px solid var(--mc-brand);animation:mc-tour-pulse 1.6s ease-out infinite}
+@keyframes mc-tour-pulse{from{transform:scale(1);opacity:.7}to{transform:scale(1.45);opacity:0}}
+#mc-new-preview .mc-tour-card:not(.is-center)::after{content:'';position:absolute;bottom:-8px;left:clamp(16px,calc(var(--mc-tour-caret,50%) - 8px),calc(100% - 32px));width:16px;height:16px;background:var(--mc-paper);transform:rotate(45deg);border-radius:0 0 4px 0}
+#mc-new-preview .mc-tour-card{position:absolute;left:16px;right:16px;display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:20px;background:var(--mc-paper);box-shadow:0 12px 40px #0004}
+#mc-new-preview .mc-tour-card.is-center{top:50%;transform:translateY(-50%)}
+#mc-new-preview .mc-tour-who{display:flex;align-items:flex-end;gap:10px}
+#mc-new-preview .mc-tour-who .mc-mascot{flex:none}
+#mc-new-preview .mc-tour-say{position:relative;flex:1;padding:12px 14px;border-radius:14px;border-bottom-left-radius:4px;background:var(--mc-soft)}
+#mc-new-preview .mc-tour-say::after{content:'';position:absolute;left:-5px;bottom:12px;width:10px;height:10px;background:var(--mc-soft);transform:rotate(45deg)}
+#mc-new-preview .mc-tour-say strong{display:block;margin-bottom:3px;font-size:14px;color:var(--mc-brand)}
+#mc-new-preview .mc-tour-say p{margin:0;font-size:13px;line-height:1.6;color:var(--mc-ink)}
+#mc-new-preview .mc-tour-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#mc-new-preview .mc-tour-dots{display:flex;gap:5px}
+#mc-new-preview .mc-tour-dots i{width:6px;height:6px;border-radius:4px;background:var(--mc-line)}
+#mc-new-preview .mc-tour-dots i.on{width:16px;background:var(--mc-brand)}
+#mc-new-preview .mc-tour-btns{display:flex;gap:4px}
+#mc-new-preview .mc-tour-btns button{border-radius:12px;padding:9px 12px;font-size:13px;font-weight:650}
+#mc-new-preview .mc-tour-skip{color:var(--mc-sub)}
+#mc-new-preview .mc-tour-next{background:var(--mc-brand);color:var(--mc-on);padding:9px 16px}
+#mc-new-preview .mc-tour-btns button:focus-visible{outline:2px solid var(--mc-brand);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){#mc-new-preview .mc-tour-spot{transition:none}#mc-new-preview .mc-tour-spot::after{animation:none;opacity:0}}

@@ -66,6 +66,28 @@ def _finding(fid, kind, section, conclusion, evidence=(), **extra):
             "outlook": "", "limits": [], "actions": extra.pop("actions", []), "story": True, **extra}
 
 
+def taste_months(history_all, series):
+    """소비 유형(취향 축)용 완료 달별 재료: 카테고리 금액 · 카테고리별 가장 큰 결제 1건 · 미분류 금액.
+    금액 기준은 monthly 와 같다 (예산과 같은 생활비 범위). 미분류는 판정 보류를 위해 따로 센다"""
+    out = []
+    for m in series:
+        rows = _in(history_all, m["period"])
+        largest = {}
+        for r in _living(rows):
+            if r["net_amount"] > 0:
+                largest[r["category"]] = max(largest.get(r["category"], 0), r["net_amount"])
+        unclassified = sum(r["net_amount"] for r in rows if r["category"] == "UNCLASSIFIED" and r["funding"] != "fixed" and r["net_amount"] > 0)
+        # 그 달에 반복 활동 습관 기준(결제일 HABIT_MIN_DAYS 이상)을 넘은 활동 — 유형은 최근 달 기준으로 다시 본다
+        days = {}
+        for r in _living(rows):
+            if r.get("activity") in HABIT_KINDS and r["net_amount"] > 0:
+                days.setdefault(r["activity"], set()).add(r["occurred_on"])
+        out.append({"label": m["label"], "total": m["total"], "categories": dict(m["categories"]),
+                    "largest": largest, "unclassified": unclassified,
+                    "habit_kinds": sorted(kind for kind, seen in days.items() if len(seen) >= HABIT_MIN_DAYS)})
+    return out
+
+
 # ---------- 소비 추이 ----------
 
 def monthly(history, months):
@@ -491,6 +513,7 @@ def build(current_all, history_all, months, today, *, complete, budget, categori
             "projection": projection and {k: v for k, v in projection.items() if k != "validation"} | (
                 {"validation": projection["validation"]} if projection.get("validation") else {}),
             "series": [{"label": m["label"], "total": m["total"]} for m in series], "habits": habits,
+            "taste_months": taste_months(history_all, series),
             "habit_rows": habit_rows(habits), "slot": slot_line(history), "weekend": weekend_f and weekend_f["conclusion"],
             "forecast_rows": forecast_rows(projection, budget, today)}
 
@@ -525,9 +548,10 @@ def slot_line(history):
             in_slot[r["category"]] = in_slot.get(r["category"], 0) + 1
     cat, k = max(in_slot.items(), key=lambda kv: kv[1])
     where = f"{name}({start}~{end + 1}시)"
-    if cat in NAMES and k / n >= 0.5:
-        return f"결제의 {josa(_pct(share), '이가')} {where}에 몰려 있고, 그중 {josa(_pct(k / n), '이가')} {ieyo(NAMES[cat])}."
-    return f"결제의 {josa(_pct(share), '이가')} {where}에 몰려 있어요."
+    if cat in NAMES and cat != "UNCLASSIFIED" and k / n >= 0.5:
+        return (f"과거 내역에서 {name} 시간대 소비는 {NAMES[cat]} 중심이에요. "
+                f"시간을 확인할 수 있는 결제의 {josa(_pct(share), '이가')} {where}에 몰려 있고, 그중 {josa(_pct(k / n), '이가')} {ieyo(NAMES[cat])}.")
+    return f"과거 내역에서 시간을 확인할 수 있는 결제의 {josa(_pct(share), '이가')} {where}에 몰려 있어요."
 
 
 def forecast_rows(projection, budget, today):

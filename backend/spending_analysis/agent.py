@@ -2,13 +2,16 @@
 
 라우터의 run_turn 이 agents["spending"] 으로 부른다: functools.partial(handle, store=..., complete=..., user=...)
 """
+import logging
 from dataclasses import replace
 from datetime import date, datetime
 
 from django.db import DatabaseError
 
-from . import adapter, agent_loop, agent_tools, claims, dialog, explain, insight, investigation, tools
+from . import adapter, agent_loop, agent_tools, claims, dialog, explain, followups, insight, investigation, tools
 from .answer import EXAMPLES, compose, over_target
+
+log = logging.getLogger(__name__)
 
 START = {"lines": ["어떤 소비가 궁금하세요?"],
          "examples": list(EXAMPLES)}  # 화면에는 start_reply() — 같은 첫 줄 + 분석 메뉴 카드 (11/14)
@@ -139,7 +142,8 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
                           plan=explain_plan if hypothesis is not None else None)))  # B 는 가설 질문에만
     analyzed, analysis_notice = False, None
     if insight_complete is not None and user is not None and result["status"] == "replied" and result.get("reply") and insight.eligible(decision):
-        reply, reason = insight.answer(user, decision, _today(request), insight_complete, question=question)
+        covered = tuple(dialog._state(store, cid).get("covered", ()))
+        reply, reason = insight.answer(user, decision, _today(request), insight_complete, question=question, covered=covered)
         if reply is not None:
             result = {**result, "reply": reply}
             analyzed = True
@@ -168,8 +172,28 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
         target = result["reply"].pop("over", None) or over_target([r for results in ran if results for r in results])
         if target:
             result["over"] = target
+    if result["status"] == "replied" and result.get("reply"):
+        result = _covered(store, cid, decision, question, result, analyzed)
     dialog.publish(store, cid)
     return result
+
+
+def _covered(store, cid, decision, question, result, analyzed):
+    """이 대화에서 이미 답한 분석 종류를 남기고, 어느 경로의 답이든 다음 추천 버튼에서 뺀다.
+    질문한 주제 외에도 서버가 답변에 함께 넣은 분석 근거를 기록한다."""
+    covered = list(dialog._state(store, cid).get("covered", ()))
+    reply = result["reply"]
+    answered = [t for t in dict.fromkeys((insight.answered_topic(decision, question) if analyzed else None,
+                                          followups.topic(question), *reply.pop("_answered_topics", ()))) if t]
+    examples = reply.get("examples") or []
+    done = {*covered, *answered}
+    kept = [e for e in examples if followups.topic(e) not in done]
+    after = [*covered, *(t for t in answered if t not in covered)]
+    if after != covered:
+        dialog._save(store, cid, covered=after)
+    log.debug("spending followups: analyzed=%s answered=%s covered=%s→%s examples=%s→%s", analyzed, answered, covered, after,
+              [followups.topic(e) for e in examples], [followups.topic(e) for e in kept])
+    return {**result, "reply": {**reply, "examples": kept}} if kept != examples else result
 
 
 LOOKUP_TYPES = {"budget_lookup": (3, 4)}

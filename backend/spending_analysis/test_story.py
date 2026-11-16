@@ -269,7 +269,8 @@ class MenuLayoutTest(SimpleTestCase):
         st = story.build(current, history, MONTHS, TODAY, complete=True, budget=budget(1000000, {"FOOD": 800000, "BEAUTY": 50000}))
         by_id = {f["id"]: f for f in st["findings"]}
         summary = {"findings": [], "basis": {"comparison_available": True},
-                   "categories": [{"name": "식비", "current": {"amount": 200000}, "previous": {"amount": 150000}, "delta": 50000}]}
+                   "candidates": [{"category": "FOOD", "comparable": True, "quiet": False, "material": {"meaningful": True}}],
+                   "categories": [{"code": "FOOD", "name": "식비", "current": {"amount": 200000}, "previous": {"amount": 150000}, "delta": 50000}]}
         cause = {"kind": "change_total", "conclusion": "지난달 같은 기간보다 5만 원 더 썼어요.", "evidence": ["이번 달 200,000원, 지난달 같은 기간 150,000원이에요."]}
         layouts = {}
         with mock.patch.object(insight.benchmark, "for_user", return_value=([], [])), mock.patch.object(insight, "select", return_value=[cause]):
@@ -277,7 +278,9 @@ class MenuLayoutTest(SimpleTestCase):
                 blocks, examples, _ = insight._story_blocks(None, summary, goal, TODAY, by_id, st)
                 layouts[goal] = [b.get("title") or b["kind"] for b in blocks]
                 self.assertNotIn(insight.ASK[goal], examples)  # 이어 볼 분석 = 지금 본 것 말고
-        self.assertEqual(layouts["overview"][:2], ["핵심 진단", "월별 생활비"])
+        self.assertEqual(layouts["overview"][0], "핵심 진단")
+        # 월별 막대는 지난 달들 추이가 실제로 변할 때만 (평평하면 글로만) — 11/16 그래프는 내용에 맞는 것만
+        self.assertEqual("월별 생활비" in layouts["overview"], by_id["TREND"]["kind"] != "trend_flat")
         self.assertIn("소비 습관", layouts["overview"])
         self.assertIn("매달 반복되는 소비", layouts["habit"])
         self.assertNotIn("월별 생활비", layouts["habit"])  # 습관 답에는 월별 막대 · 예상이 없다

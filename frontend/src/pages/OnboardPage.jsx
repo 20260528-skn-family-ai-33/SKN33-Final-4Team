@@ -2,6 +2,7 @@
 // 가입 · 로그인 바로 다음 첫 화면이라 뒤로 가기 버튼이 없다 (11/12 피드백: 뒤로 가면 로그인된 채 로그인 화면이 나왔다)
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import Mascot from '../components/Mascot.jsx'
 import { PATHS } from '../routes.js'
 
 const STEPS = [
@@ -30,6 +31,14 @@ export default function OnboardPage() {
       <div className="mc-stack" style={{ margin: '25px 0' }}>
         {/* 번호 뒤 칸은 넓은 공백(\u3000) */}
         {STEPS.map((s, i) => <p key={s}>{`${String(i + 1).padStart(2, '0')}\u3000${s}`}</p>)}
+      </div>
+      {/* 11/16: 마스코트 쿠숑이가 첫인사 (시작하기 버튼 바로 위). 그림은 꾸밈이라 같은 말을 글자로 적는다 */}
+      <div className="mc-kushong">
+        <Mascot mood="hello" size={92} />
+        <p className="mc-kushong-say">
+          <strong>안녕하세요! 쿠숑이에요</strong>
+          앞으로 여러분의 돈 관리를 제가 함께 도와드릴게요. 위 다섯 단계만 같이 설정해 볼까요?
+        </p>
       </div>
     </Layout>
   )

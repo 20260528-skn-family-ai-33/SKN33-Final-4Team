@@ -6,7 +6,7 @@
 // - 담당 표시 · 예산 폼은 서버가 준 content.agent · content.inputs 로만 정한다 (문장으로 추측하지 않음)
 // - 새로고침하면 이 대화를 다시 불러온다 (11/3, GET /api/chat/conversations/<id>/). 대화 번호는 sessionStorage 에 두고
 //   다른 화면을 다녀와도 유지한다. 새 대화·로그아웃·404(다른 계정·없는 대화)에서 초기화한다.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
@@ -28,6 +28,7 @@ import { approvalPath, forgetPendingApproval, readPendingApproval, rememberPendi
 import '../styles/chat.css'
 
 const AGENTS = { spending: '소비 분석', budget: '예산 조정', policy: '청년 정책' }
+const errorText = (error) => error.status === 401 || error.code === 'not_authenticated' ? '로그인해 주세요.' : error.message
 // 기능 버튼 모양 (목록 · 순서는 서버가 준 features 그대로, 모르는 값은 서버 이름 그대로)
 const LOOK = {
   spending: { icon: 'ChartNoAxesCombined', text: '소비를 분석해주세요' },
@@ -103,14 +104,32 @@ export default function AssistantPage() {
   const latest = useRef({})  // 가장 최근에 그린 send · openPopup (동의 창이 닫힌 뒤 거절됐던 요청을 다시 보낼 때 쓴다)
   const end = useRef(null)
 
+  const scrollTarget = useRef(null)
+
   useEffect(() => {
     mounted.current = true
     return () => { mounted.current = false }
   }, [])
 
-  useEffect(() => {
-    end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
-  }, [messages, busy])
+  useLayoutEffect(() => {
+    const target = scrollTarget.current
+    const spacer = end.current
+    const scroller = spacer?.closest('main')
+    if (!target || !scroller) return
+    scrollTarget.current = null
+    spacer.style.height = '0px'
+    const question = target === 'question'
+      ? [...spacer.parentElement.querySelectorAll('.mc-asst-turn > .mc-msg.me')].at(-1)
+      : null
+    if (question) {
+      const top = question.getBoundingClientRect().top
+      // 짧은 답변도 질문을 맨 위에 놓을 수 있도록 마지막에 필요한 높이를 확보한다.
+      spacer.style.height = `${Math.max(0, scroller.clientHeight - (spacer.getBoundingClientRect().top - top))}px`
+      scroller.scrollTop += top - scroller.getBoundingClientRect().top
+    } else {
+      scroller.scrollTop = scroller.scrollHeight
+    }
+  }, [messages, busy, error])
 
   // 메뉴·다른 탭을 다녀와도 같은 대화를 복원한다. 본문은 저장하지 않고 서버에서 다시 읽는다.
   useEffect(() => {
@@ -131,6 +150,7 @@ export default function AssistantPage() {
         if (!Array.isArray(talk.messages) || talk.conversationId !== restoreId) throw new Error('대화를 정상적으로 받지 못했어요.')
         setMessages(talk.messages)
         if (!storedApproval) return
+        scrollTarget.current = 'bottom'
         const proposal = talk.messages.map((m) => m.content.budgetAdjustment?.proposal)
           .filter((item) => item?.proposalId === storedApproval.proposalId).at(-1)
         if (!proposal || storedApproval.path !== approvalPath(proposal)) {
@@ -154,7 +174,7 @@ export default function AssistantPage() {
           if (storedApproval) forgetPendingApproval(storedApproval.conversationId, storedApproval.proposalId)
           setApprovalRecovery(false)
         }
-        else setError(err.status === 403 ? '로그인해 주세요.' : err.message)
+        else setError(errorText(err))
       })
       .finally(() => { if (live) setBusy(false) })
     return () => { live = false }
@@ -176,6 +196,7 @@ export default function AssistantPage() {
     inFlight.current = true
     setEntryWaiting(false)
     setPending(request)
+    scrollTarget.current = 'bottom'
     setBusy(true)
     setError(null)
     try {
@@ -184,6 +205,7 @@ export default function AssistantPage() {
       if (!mounted.current) return
       setConversationId(out.conversationId)
       setMessages((m) => [...m, ...out.messages])
+      scrollTarget.current = 'question'
       setEngine({ engine: out.engine, features: out.features, testMode: out.testMode, today: out.today })
       setPending(null)
       const adjustment = out.messages.at(-1)?.content?.budgetAdjustment
@@ -197,6 +219,7 @@ export default function AssistantPage() {
     } catch (err) {
       // 서버가 명시적으로 거절한 요청은 수정할 수 있게 돌려준다. 타임아웃 · 통신/서버 오류는 성공 여부가 불명확하다.
       if (err.status >= 400 && err.status < 500 && err.status !== 408) {
+      scrollTarget.current = 'bottom'
         setPending(null)
         if (request.body.text) setText(request.body.text)
         if (err.fields?.conversationId) setConversationId(null)  // 끝났거나 남의 대화 → 다음 문장부터 새 대화
@@ -214,7 +237,7 @@ export default function AssistantPage() {
         }} />)
       }
       setError(expired ? '예산 조건이 바뀌었거나 조정 대화가 만료됐어요. 추천 화면에서 다시 추천받아 주세요.'
-        : needsConsent ? '예산 조정을 이용하려면 AI 전송 동의가 필요해요. 예산 조정을 다시 요청하면 동의 창이 열려요.' : err.status === 403 ? '로그인해 주세요.' : err.message)
+        : needsConsent ? '예산 조정을 이용하려면 AI 전송 동의가 필요해요. 예산 조정을 다시 요청하면 동의 창이 열려요.' : errorText(err))
     } finally {
       inFlight.current = false
       setBusy(false)
@@ -264,6 +287,7 @@ export default function AssistantPage() {
     if (blocked || inFlight.current) return
     setConversationId(null)
     setMessages([])
+    scrollTarget.current = 'bottom'
     setError(null)
   }
 
@@ -377,12 +401,12 @@ export default function AssistantPage() {
         </div>
         <div className="mc-bc-log mc-chat-log mc-asst-log" aria-live="polite">
           <div className="mc-msg bot">
-            <div className="mc-bubble">안녕하세요! 무엇을 도와드릴까요?<br /><small>아래에서 고르거나 하고 싶은 말을 바로 적어 주세요.</small></div>
+            <div className="mc-bubble">안녕하세요! 쿠숑이에요. 무엇을 도와드릴까요?<br /><small>아래에서 고르거나 하고 싶은 말을 바로 적어 주세요.</small></div>
           </div>
           {features}
           {entryUnavailable && !messages.length && <div className="mc-msg bot"><div className="mc-bubble" role="alert">예산 조정 서비스를 아직 사용할 수 없어요. 잠시 후 다시 열어 주세요.</div></div>}
           {first.error && !info && !entryUnavailable && (
-            <div className="mc-msg bot"><div className="mc-bubble" role="alert">{first.error.status === 403 ? '로그인해 주세요.' : first.error.message}</div></div>
+            <div className="mc-msg bot"><div className="mc-bubble" role="alert">{errorText(first.error)}</div></div>
           )}
 
           {messages.map((m) => {
@@ -440,7 +464,7 @@ export default function AssistantPage() {
             {recovery?.conversationId && !pending && !busy && !recoveryExpired && !approvalRecovery && !messages.length &&
               <button type="button" className="mc-btn" onClick={() => { setBusy(true); setError(null); setRestoreVersion((v) => v + 1) }}>조정 대화 다시 불러오기</button>}
           </div></div>}
-          <div ref={end} />
+          <div ref={end} aria-hidden="true" style={{ flexShrink: 0 }} />
         </div>
       </div>
     </Layout>

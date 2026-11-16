@@ -14,7 +14,11 @@ let host, root, answers
 beforeEach(() => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true
   answers = [reply(home), reply({ error: { code: 'server_error', message: '내부 오류' } }, 500), reply(home)]
-  vi.stubGlobal('fetch', vi.fn(async () => answers.shift()))
+  vi.stubGlobal('fetch', vi.fn(async (path) => {
+    if (path === '/api/home/') return answers.shift()
+    if (path === '/api/auth/me/') return reply({ userId: 'home-retry-user', onboardingCompleted: true, guideTourSeen: true })
+    throw new Error(`예상하지 못한 요청: ${path}`)
+  }))
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -33,5 +37,7 @@ it('다시 받기가 실패하면 오류 카드로 알리고, 다시 시도로 �
   await click('[role=alert] button')
   expect(host.querySelector('[role=alert]')).toBeNull()
   expect(host.querySelector('[aria-label="새로고침"]')).not.toBeNull()
-  expect(fetch).toHaveBeenCalledTimes(3)
+  expect(fetch.mock.calls.filter(([path]) => path === '/api/home/')).toHaveLength(3)
+  expect(fetch.mock.calls.filter(([path]) => path === '/api/auth/me/')).toHaveLength(1)
+  expect(answers).toHaveLength(0)
 })

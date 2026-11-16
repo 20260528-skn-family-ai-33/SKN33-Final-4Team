@@ -6,6 +6,7 @@
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
 import { useRef, useState } from 'react'
 import { won } from '../utils/money.js'
+import Mascot from './Mascot.jsx'
 import { apiSend, useApi } from '../utils/api.js'
 import { DETAIL, policyNumber, policyTitle } from '../utils/policyCards.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
@@ -70,6 +71,33 @@ const BADGE = { up: ' is-up', down: ' is-down', same: '' }
 const WAY = { up: ' mc-fx-up', down: ' mc-fx-down' }  // 늘었어요 = 붉은 글자 · 줄었어요 = 파란 글자 (배지와 같은 색, 글자로도 적혀 있음)
 const ANALYSIS_TITLES = new Set(['핵심 진단', '분석 근거', '앞으로의 의미', '주요 카테고리', '큰 결제와 반복 소비', '생활 패턴', '월말 전망', '지출이 달라진 형태', '소비 속도', '해볼 행동', '확인할 질문',
   '예산 속도', '지난달과 비교', '또래 기준·저축 여력', '소비 추이', '소비 습관', '앞으로'])
+
+// 분석 문장 읽기 쉽게 (11/16): 글자는 서버 문장 그대로 두고(textContent 같음) 모양만 나눈다.
+// 금액 · 비율 · 배수는 굵게(+ 붉은 · - 파란), 괄호 속 보조 설명은 옅게, '항목 금액 · 항목 금액' 나열은 칩으로, 'A = B + C' 계산식은 결과와 식을 두 줄로
+const NUM = /([+\-−]?\d[\d,]*(?:\.\d+)?(?:\s?만\s?원|만|원|%|배))/
+function Nums({ text }) {
+  return text.split(NUM).map((part, i) => {
+    if (i % 2 === 0) return part
+    const sign = /^[+]/.test(part) ? ' mc-fx-up' : /^[-−]/.test(part) ? ' mc-fx-down' : ''
+    return <b key={i} className={`mc-fx-num${sign}`}>{part}</b>
+  })
+}
+function Rich({ text }) {
+  if (typeof text !== 'string') return text
+  const parts = text.split(' · ')
+  if (parts.length >= 2 && parts.every((p) => /\d/.test(p) && !/[요다]\.?$/.test(p.trim()))) {
+    return <span className="mc-fx-chips">{parts.map((p, i) => <span key={i}>
+      {i > 0 && <span className="mc-fx-sr"> · </span>}<span className="mc-fx-chip"><Nums text={p} /></span></span>)}</span>
+  }
+  return text.split(/( \([^()]*\))/).map((part, i) => i % 2  // 띄어 쓴 괄호만 (예: '다음 달(11월)'은 그대로)
+    ? <span key={i} className="mc-fx-aside">{part}</span>
+    : <Nums key={i} text={part} />)
+}
+function KeyLine({ text }) {
+  const eq = typeof text === 'string' && text.match(/^(.+?) = (.+)$/)
+  if (eq) return <p className="mc-fx-eq"><span className="mc-fx-eq-result"><Nums text={eq[1]} /></span> <span className="mc-fx-eq-calc">= <Nums text={eq[2]} /></span></p>
+  return <p><Rich text={text} /></p>
+}
 
 // 월별 생활비 막대 (11/13): 완료된 달 = 실제(진한 막대), 이번 달 = 쓴 돈 + 남은 기간 예상(빗금), 다음 달 = 예상(빗금).
 // 예산선은 서버가 예산과 같은 범위로 비교할 수 있을 때만 준다. 금액은 서버 값 그대로, 화면은 높이만 계산한다
@@ -195,6 +223,9 @@ function Trend({ block }) {
   )
 }
 
+// 막대의 읽기 이름은 화면에 보이는 금액과 같은 값을 쓴다 (전망 행은 amount 없이 value 문자열만 온다 → NaN원 방지)
+const rowAmount = (r) => r.value ?? (r.amount != null && Number.isFinite(Number(r.amount)) ? won(r.amount) : '')
+
 function Rows({ block }) {
   return (
     <div className="mc-spend-cats">
@@ -205,9 +236,9 @@ function Rows({ block }) {
           {r.badge
             ? <span className={`mc-spend-diff${BADGE[r.badge.direction]}`}>{r.badge.text}</span>
             : r.ratio != null
-              ? <span className="mc-spend-cbar" role="img" aria-label={`${r.name} ${won(r.amount)}`}><span style={{ width: `${Number(r.ratio)}%` }}></span></span>
+              ? <span className="mc-spend-cbar" role="img" aria-label={`${r.name} ${rowAmount(r)}`.trim()}><span style={{ width: `${Number(r.ratio)}%` }}></span></span>
               : <span></span>}
-          <span className={`mc-spend-camt${WAY[r.direction] ?? ''}`}>{r.value ?? won(r.amount)}{r.note && <small>{r.note}</small>}</span>
+          <span className={`mc-spend-camt${WAY[r.direction] ?? ''}`}>{rowAmount(r)}{r.note && <small>{r.note}</small>}</span>
         </div>
       ))}
     </div>
@@ -229,7 +260,42 @@ function Options({ block, onSend }) {
   )
 }
 
+// 소비 유형 카드 (11/16 v2): 마스코트(유형별 표정) · 유형 이름 · 한 줄 소개 · 예산 관리 태그 → 이렇게 본 이유(사용자 자료) → 해볼 한 가지.
+// 이름 · 문장 · 태그는 서버 그대로. 마스코트는 꾸밈이라 유형 이름을 글자로도 적는다. traits(판정 기록)는 그리지 않는다
+function Persona({ block }) {
+  const reasons = block.reasons ?? []
+  const tags = block.tags ?? []
+  const label = block.label ?? '나의 소비 유형'
+  return (
+    <section className="mc-fx-section mc-fx-persona" aria-label={label}>
+      <div className="mc-fx-persona-top">
+        <Mascot mood={block.mascot} />
+        <div>
+          <small>{label}</small>
+          <h3>{block.name}</h3>
+          {block.desc && <p>{block.desc}</p>}
+          {tags.length > 0 && <ul className="mc-fx-persona-tags" aria-label="예산 관리 태그">
+            {tags.map((t) => <li key={t.code} data-tag={t.code}>{t.label}</li>)}
+          </ul>}
+        </div>
+      </div>
+      {reasons.length > 0 && <div className="mc-fx-persona-why">
+        <strong>이렇게 봤어요</strong>
+        <ul className="mc-spend-lines mc-fx-lines">{reasons.map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>
+      </div>}
+      {block.action && <p className="mc-fx-persona-act"><strong>이번에 해볼 한 가지</strong>{block.action}</p>}
+    </section>
+  )
+}
+
 function Block({ block, onSend }) {
+  if (block.kind === 'persona') return <Persona block={block} />
+  if (block.kind === 'details') return (
+    <details className="mc-fx-fold">
+      <summary>{block.title ?? '자세히 보기'}</summary>
+      {(block.blocks ?? []).map((child, i) => <Block key={i} block={child} onSend={onSend} />)}
+    </details>
+  )
   if (block.kind === 'total') {
     return (
       <div className="mc-spend-total">
@@ -246,9 +312,9 @@ function Block({ block, onSend }) {
     const title = block.title ?? (ANALYSIS_TITLES.has(block.lines[0]) ? block.lines[0] : null)
     const lines = title && block.lines[0] === title ? block.lines.slice(1) : block.lines
     if (block.tone === 'key') {  // 핵심 진단: 목록 점 없이 굵은 글자 한두 문장 (분석의 답을 먼저)
-      return <section className="mc-fx-section mc-fx-key"><h3>{title}</h3>{lines.map((l, i) => <p key={i}>{l}</p>)}</section>
+      return <section className="mc-fx-section mc-fx-key"><h3>{title}</h3>{lines.map((l, i) => <KeyLine key={i} text={l} />)}</section>
     }
-    const body = <ul className="mc-spend-lines">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+    const body = <ul className="mc-spend-lines mc-fx-lines">{lines.map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>
     return title ? <section className="mc-fx-section"><h3>{title}</h3>{body}</section> : body
   }
   if (block.kind === 'trend') return <Trend block={block} />
