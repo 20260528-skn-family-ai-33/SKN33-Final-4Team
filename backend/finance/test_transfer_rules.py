@@ -328,20 +328,30 @@ class MerchantTransferTest(Fixture):
         for tx in txs:
             tx.refresh_from_db()
 
-    def test_pay_charge_telecom_and_hipass_become_spending(self):
-        pay = self.bank(self.a, "out", desc="카카오페이충전", amount=30_000)
+    def test_telecom_and_hipass_become_spending(self):
         telecom = self.bank(self.a, "out", desc="KT 통신요금 자동납부", amount=69_000)
         hipass = self.bank(self.a, "out", desc="에스엠하이플러스", amount=50_000)
-        self.run_on(pay, telecom, hipass)
-        for tx in (pay, telecom, hipass):
+        self.run_on(telecom, hipass)
+        for tx in (telecom, hipass):
             self.assertEqual(tx.transaction_type, "spending", tx.source_description)
             self.assertEqual(tx.field_states.get("original_transaction_type"), "transfer")
             self.assertTrue(tx.field_states.get(CONVERTED_BY_MEMO))
             self.assertEqual(tx.merchant_name, tx.source_description)
-        self.classify(pay, telecom, hipass)
-        self.assertEqual(pay.confirmation_state, "needs_review")  # 페이 충전은 무엇에 썼는지 묻는다
+        self.classify(telecom, hipass)
         self.assertEqual(telecom.confirmed_category_id, "HOUSING_TELECOM")
         self.assertEqual(hipass.confirmed_category_id, "TRANSPORT_CAR")
+
+    def test_pay_charge_stays_transfer(self):
+        # 11/16 나은: 페이 충전은 내 돈을 페이 지갑으로 옮긴 것이라 소비 아님 그대로. 교통카드 충전만 교통비
+        naver = self.bank(self.a, "out", desc="네이버페이충전", amount=10_000)
+        kakao = self.bank(self.a, "out", desc="카카오페이머니 충전", amount=30_000)
+        tmoney = self.bank(self.a, "out", desc="모바일티머니충전", amount=20_000)
+        self.run_on(naver, kakao, tmoney)
+        for tx in (naver, kakao):
+            self.assertEqual(tx.transaction_type, "transfer", tx.source_description)
+            self.assertIsNone(tx.merchant_name)
+            self.assertNotIn(CONVERTED_BY_MEMO, tx.field_states)
+        self.assertEqual(tmoney.transaction_type, "spending")
 
     def test_company_mark_becomes_spending_but_people_stay_transfers(self):
         academy = self.bank(self.a, "out", desc="(주)미래영어학원")
@@ -355,7 +365,7 @@ class MerchantTransferTest(Fixture):
         Loan.objects.create(user=self.user, origin="manual", lender_name="한국장학재단")
         card_bill = self.bank(self.a, "out", desc="신한카드")
         loan = self.bank(self.a, "out", desc="한국장학재단 학자금상환")
-        kept = self.bank(self.a, "out", desc="카카오페이충전", field_states={KEPT_TRANSFER: True})
+        kept = self.bank(self.a, "out", desc="에스엠하이플러스", field_states={KEPT_TRANSFER: True})
         chosen = self.bank(self.a, "out", desc="쿠팡")
         Tx.objects.filter(pk=chosen.pk).update(confirmation_state="confirmed")  # 사용자가 이미 고른 거래
         self.run_on(card_bill, loan, kept, chosen)

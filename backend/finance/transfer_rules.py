@@ -308,7 +308,10 @@ def merchant_evidence(user, description):
     from . import classifier
 
     name = classifier.store_name(description) or description
-    if classifier.is_pay_charge(name) or classifier.rule_category(name):
+    if classifier.is_pay_charge(name):
+        # 페이 충전은 소비 아님 그대로 (11/16 나은): 내 돈을 페이 지갑으로 옮긴 것. 교통카드 충전은 아래 사전대로 교통비
+        return False
+    if classifier.rule_category(name):
         return True
     if classifier.is_multi_item(name) or classifier.retail_category(name):
         return True
@@ -318,7 +321,7 @@ def merchant_evidence(user, description):
 
 def mark_merchant_transfers(user, txs):
     """남은 이체 중 적요가 가게 · 기관이라는 근거가 있는 것만 소비로 바꾼다 (11/16).
-    계좌로 낸 통신요금 · 하이패스 충전 · 페이 충전 · 계좌이체 결제가 소비에서 빠지던 문제.
+    계좌로 낸 통신요금 · 하이패스 충전 · 계좌이체 결제가 소비에서 빠지던 문제. 페이 충전(네이버페이 · 카카오페이머니)은 이체 그대로.
     카테고리는 정하지 않는다 — 다음 단계(classify_spending)가 카드 결제와 같은 순서(사전 → ML → 검색)로 정한다.
     건너뜀: 사용자가 고르거나 되돌린 거래 · 같은 구매 · 내 계좌 · 취소 연결 · 납부 연결 · 카드값 · 대출 후보"""
     linked = TransactionLink.objects.filter(Q(from_transaction=OuterRef("pk")) | Q(to_transaction=OuterRef("pk")))
