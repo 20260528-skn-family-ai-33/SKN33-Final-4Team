@@ -163,14 +163,12 @@ TRANSPORT_WORDS = ("후불교통", "교통카드", "하이패스", "하이플러
 # 주유 · 주차 브랜드는 '시작하면' (이름 뒤쪽에 들어간 다른 가게 제외)
 TRANSPORT_PREFIXES = (
     "sk에너지", "gs칼텍스", "지에스칼텍스", "에쓰오일", "현대오일뱅크", "hd현대오일뱅크",
-    "하이파킹", "ajpark", "aj파크", "카카오t주차", "캐롯손해보험",
+    "하이파킹", "ajpark", "aj파크", "카카오t주차",
 )
 # S-OIL 은 정리하면 영어 낱말 soil 과 같아져서('Soil 베이커리') 이름 전체가 같거나 번호만 붙을 때만 (11/17 리뷰). 주유소 지점은 위 '주유소'로
 TRANSPORT_EXACT = re.compile(r"soil\d*")
 # 주유소 · 주차장은 '끝나면' ('주차장문' 같은 셔터 가게 제외)
 TRANSPORT_SUFFIXES = ("주유소", "주차장")
-# 자동차보험은 '보험' 기타 규칙보다 먼저: '자동차보험'이 들어 있거나, 손해보험 · 화재 · 해상 회사의 '다이렉트'(자동차보험 채널)
-CAR_INSURANCE_WORDS = ("자동차보험", "손해보험다이렉트", "화재다이렉트", "해상다이렉트")
 # 교통 낱말이 있어도 교통비로 자동 분류하지 않는 것 (벌금 · 합의금)
 NOT_TRANSPORT_WORDS = ("범칙금", "과태료", "합의금")
 # 통신요금 = 주거·통신 (11/16). 이름은 normalize_name 뒤(소문자 · 공백 · 문장부호 · '(주)' 제거) 기준.
@@ -359,10 +357,11 @@ def is_pay_charge(name):
 
 
 def is_transport_name(normalized):
-    """정규화한 이름이 교통·차량 사전에 있는지 (후불교통 · 교통카드 · 하이패스 · 주유 · 주차 · 자동차보험)"""
+    """정규화한 이름이 교통·차량 사전에 있는지 (후불교통 · 교통카드 · 하이패스 · 주유 · 주차).
+    보험료는 자동차보험도 기타 (분류 기준 20261105, 11/17 PR 리뷰: 보험사 · 다이렉트 이름으로는 보험 종류를 모른다)"""
     if not normalized or any(word in normalized for word in NOT_TRANSPORT_WORDS):
         return False
-    return (any(word in normalized for word in TRANSPORT_WORDS + CAR_INSURANCE_WORDS)
+    return (any(word in normalized for word in TRANSPORT_WORDS)
             or normalized.startswith(TRANSPORT_PREFIXES) or normalized.endswith(TRANSPORT_SUFFIXES)
             or bool(TRANSPORT_EXACT.fullmatch(normalized)))
 
@@ -561,7 +560,8 @@ def judge(name, cut=False):
             again = judge(full)  # 온전한 이름은 잘리지 않았으니 cut 없이 (한 번만)
             if again and ("apply" in again or "retail" in again):
                 again["record"] = {**again["record"], "cut_name": True, "completed_name": True}
-                return again
+                # 온전한 이름도 동명 충돌 검사를 받는다 (11/17 PR 리뷰). _ml_action 은 잘린 이름만 검사한다
+                return {**again, "conflict": common.normalize_name(full) in conflict_names()}
             record["completed_name"] = False  # 다시 찾아도 못 정함 → 처음 근거로 계속
         base = f"가맹점 이름: {query}"
         web_state = web and f"{base}\n웹 검색 설명: {' | '.join(web)}"
@@ -753,6 +753,7 @@ def _ml_action(name, top, past, judged, cut=False):
     result = judged[key]
     if result is None:
         return _review_action(top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
+    conflict = conflict or result.get("conflict", False)
     record = {**result["record"], "name_conflict": True} if conflict else result["record"]
     if "pg" in result:
         # 검색해 보니 결제대행사 (11/16): 이 이름으로는 어느 가게인지 모른다. 과거 선택만 후보로

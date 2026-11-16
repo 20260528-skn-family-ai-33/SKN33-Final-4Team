@@ -43,6 +43,14 @@ def squeeze(text):
     return (text or "").replace(" ", "").upper()
 
 
+def purchase_name(text):
+    """같은 구매를 찾을 때 비교할 가게 이름: 결제대행 표기를 뗀 이름(classifier.store_name)을 공백 · 대소문자 무시로.
+    카드에는 '카카오페이 - 비알코리아', 계좌에는 '비알코리아'로 찍혀도 같은 가게로 본다 (11/17 PR 리뷰)"""
+    from .classifier import store_name  # classifier 가 모델 · 검색 모듈을 읽어서 함수 안에서 부른다
+
+    return squeeze(store_name(text) or text)
+
+
 MIN_PREFIX = 6   # 잘린 이름을 같은 가게로 볼 최소 글자 수 (공백 뺀 길이)
 
 
@@ -254,7 +262,7 @@ def link_bank_cancellations(user):
 def link_same_purchases(user):
     """[임시] 체크카드 승인과 그 결제로 나간 계좌 출금을 같은 구매로 잇는다. 이어진 계좌 줄은 거래 목록에서 빠진다 (api.listed_transactions).
     소비는 카드 줄이 맡고 계좌 줄은 이체로 남아 있어서, 잇지 않으면 한 결제가 두 줄로 보인다.
-    같은 날 · 같은 금액 · 같은 이름이 양쪽 다 한 건일 때만 잇는다. 금액 · 날짜만 같은 거래는 다른 결제일 수 있어서다.
+    같은 날 · 같은 금액 · 같은 이름(결제대행 표기를 뗀 이름, purchase_name)이 양쪽 다 한 건일 때만 잇는다. 금액 · 날짜만 같은 거래는 다른 결제일 수 있어서다.
     신용카드는 결제 때 출금이 없어 보지 않는다. CODEF 카드 종류는 카드사마다 달라(NH 는 '본인') 카드 이름의 '체크'도 본다.
     양쪽 저장 순서가 달라도 되게 이미 이은 거래까지 모두 다시 본다. 뒤늦게 같은 출금이 들어와 모호해지면 규칙이 이은 연결을 푼다.
     사용자가 확정했거나 납부에 붙은 출금은 바꾸지 않는다.
@@ -275,9 +283,9 @@ def link_same_purchases(user):
     ).order_by("pk"))
     cards, banks = defaultdict(list), defaultdict(list)
     for tx in approvals:
-        cards[tx.occurred_on, tx.amount, squeeze(tx.merchant_name)].append(tx)
+        cards[tx.occurred_on, tx.amount, purchase_name(tx.merchant_name)].append(tx)
     for tx in withdrawals:
-        banks[tx.occurred_on, tx.amount, squeeze(tx.source_description)].append(tx)
+        banks[tx.occurred_on, tx.amount, purchase_name(tx.source_description)].append(tx)
     for key, found in cards.items():
         if key[2] and len(found) == 1 and len(banks[key]) == 1:
             link(user, found[0], banks[key][0], Relation.SAME_PURCHASE, found[0].amount)
@@ -302,7 +310,7 @@ def link_same_purchases(user):
     ).select_related("from_transaction", "to_transaction")
     for row in loose:
         card, bank = row.from_transaction, row.to_transaction
-        if squeeze(card.merchant_name) == squeeze(bank.source_description):
+        if purchase_name(card.merchant_name) == purchase_name(bank.source_description):
             continue   # 이름이 같은 연결은 위에서 봤다
         key = (bank.occurred_on, bank.amount)
         same_cards = [tx for tx in cards_by[key] if same_store(tx.merchant_name, bank.source_description)]
@@ -359,7 +367,7 @@ def mark_merchant_transfers(user, txs):
     # 같은 날 · 같은 금액 · 같은 이름의 체크카드 승인이 있는데 이어지지 않은 출금(짝이 모호함)은 소비로 바꾸지 않는다.
     # 바꾸면 카드 승인과 함께 두 번 센다 (11/16 PR 리뷰). 짝이 정해지면 link_same_purchases 가 잇는다
     check_cards = {
-        (day, amount, squeeze(name)) for day, amount, name in Tx.objects.filter(
+        (day, amount, purchase_name(name)) for day, amount, name in Tx.objects.filter(
             Q(card__name__contains="체크") | Q(card__card_type__contains="체크"),
             user=user, source_kind="card", transaction_type=Type.SPENDING, is_canceled=False,
         ).values_list("occurred_on", "amount", "merchant_name")
@@ -369,7 +377,7 @@ def mark_merchant_transfers(user, txs):
         description = (tx.source_description or "").strip()
         if not description or any(key in states for key in skip) or not merchant_evidence(user, description):
             continue
-        if (tx.occurred_on, tx.amount, squeeze(description)) in check_cards:
+        if (tx.occurred_on, tx.amount, purchase_name(description)) in check_cards:
             continue
         states = {**states, ORIGINAL_TYPE: Type.TRANSFER, CONVERTED_BY_MEMO: True}
         fields = {"transaction_type": Type.SPENDING, "confirmed_category_id": "UNCLASSIFIED",

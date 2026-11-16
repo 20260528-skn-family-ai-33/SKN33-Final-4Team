@@ -174,8 +174,8 @@ persona-b:0568,2026-08-12,19:30,2,screen_golf,골프존파크역삼G5,30000,out,
 persona-b:0569,2026-08-12,19:30,2,screen_golf,골프존파크역삼G5,30000,out,spending,CULTURE_LEISURE,living,A,bank,persona-b:0568,1,,0,,store_snapshot,골프존파크역삼G5,MA0106202201A2075797,,골프 연습장,강남구,역삼1동,15005500,퇴근 후 동료랑
 persona-b:0154,2026-08-13,12:13,3,lunch,가연,11000,out,spending,FOOD,living,D,card,persona-b:0154,0,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,,
 persona-b:0155,2026-08-13,12:13,3,lunch,가연,11000,out,spending,FOOD,living,A,bank,persona-b:0154,1,,0,,store_snapshot,가연,MA010120220808538048,,중국집,강남구,역삼1동,14994500,
-persona-b:0610,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,TRANSPORT_CAR,living,D,card,persona-b:0610,0,,0,,non_store,DB손해보험 다이렉트,,,,,,,자동차보험 1년 갱신 (한 번만 나간 큰돈)
-persona-b:0611,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,TRANSPORT_CAR,living,A,bank,persona-b:0610,1,,0,,non_store,DB손해보험 다이렉트,,,,,,14032500,자동차보험 1년 갱신 (한 번만 나간 큰돈)
+persona-b:0610,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,ETC,living,D,card,persona-b:0610,0,,0,,non_store,DB손해보험 다이렉트,,,,,,,자동차보험 1년 갱신 (한 번만 나간 큰돈)
+persona-b:0611,2026-08-14,11:20,4,one_off,DB손해보험 다이렉트,962000,out,spending,ETC,living,A,bank,persona-b:0610,1,,0,,non_store,DB손해보험 다이렉트,,,,,,14032500,자동차보험 1년 갱신 (한 번만 나간 큰돈)
 persona-b:0156,2026-08-14,12:12,4,lunch,한옥집김치찜GFC몰점,13000,out,spending,FOOD,living,D,card,persona-b:0156,0,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,,
 persona-b:0157,2026-08-14,12:12,4,lunch,한옥집김치찜GFC몰점,13000,out,spending,FOOD,living,A,bank,persona-b:0156,1,,0,,store_snapshot,한옥집김치찜GFC몰점,MA010120220811731859,,백반/한정식,강남구,역삼1동,14019500,
 persona-b:0158,2026-08-14,12:53,4,cafe,클로리스 역삼점,4500,out,spending,FOOD,living,D,card,persona-b:0158,0,,0,,store_snapshot,클로리스 역삼점,MA010120220810067384,역삼점,카페,강남구,역삼1동,,

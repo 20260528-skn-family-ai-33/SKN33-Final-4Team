@@ -593,15 +593,17 @@ class RuleTest(SimpleTestCase):
             self.assertEqual(classifier.rule_category(name), code, name)
 
     def test_transport_dictionary(self):
-        # 11/16: 후불교통 · 교통카드 · 하이패스 충전 · 주유 · 주차 · 자동차보험 = 교통·차량
+        # 11/16: 후불교통 · 교통카드 · 하이패스 충전 · 주유 · 주차 = 교통·차량
         cases = {
             "후불교통": "TRANSPORT_CAR", "후불교통대금": "TRANSPORT_CAR", "11월후불교통": "TRANSPORT_CAR",
             "교통카드충전": "TRANSPORT_CAR", "에스엠하이플러스": "TRANSPORT_CAR", "하이플러스": "TRANSPORT_CAR",
             "하이패스": "TRANSPORT_CAR", "SK에너지대흥주유소": "TRANSPORT_CAR", "GS칼텍스 죽전점": "TRANSPORT_CAR",
             "S-OIL": "TRANSPORT_CAR", "현대오일뱅크": "TRANSPORT_CAR", "풍덕천주유소": "TRANSPORT_CAR",
             "하이파킹 한남점": "TRANSPORT_CAR", "AJ파크 이태원": "TRANSPORT_CAR", "롯데월드몰주차장": "TRANSPORT_CAR",
-            "DB손해보험 다이렉트": "TRANSPORT_CAR", "삼성화재다이렉트": "TRANSPORT_CAR", "현대해상다이렉트": "TRANSPORT_CAR",
-            "KB손해보험 자동차보험": "TRANSPORT_CAR", "캐롯손해보험": "TRANSPORT_CAR",
+            # 보험료는 자동차보험도 기타 (분류 기준 20261105, 11/17 PR 리뷰: 보험사 · 다이렉트 이름으로는 보험 종류를 모른다)
+            "DB손해보험 다이렉트": "ETC", "KB손해보험 자동차보험": "ETC", "캐롯손해보험": "ETC",
+            "캐롯손해보험 운전자보험": "ETC", "삼성화재다이렉트 여행자보험": "ETC",
+            "삼성화재다이렉트": None, "현대해상다이렉트": None,
             # 교통이 아니거나 교통비로 자동 분류하지 않음
             "교통범칙금": None, "교통과태료": None, "교통사고합의금": None,
             "전동셔터방범샷다주차장문오버헤드도어": None, "주유소식당": None,
@@ -868,6 +870,24 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual(classifier.completed_name(texts("x"), "더뮤지엄비지"), "더뮤지엄비지터")
         self.assertIsNone(classifier.completed_name(["더뮤지엄비지 매장"], "더뮤지엄비지"))
         self.assertIsNone(classifier.completed_name(["스타벅스강남대로점에서 커피를"], "스타벅스강남대로점"))  # 조사만 붙음
+
+    def test_completed_name_in_conflict_list_is_only_suggested(self):
+        # 11/17 PR 리뷰: 잘린 이름을 온전한 이름으로 다시 찾아 정해도, 온전한 이름이 동명 충돌 목록에 있으면 후보로만
+        def stores(query):
+            return [("kakao", "더 뮤지엄비지터", "의류판매")] if query == "더뮤지엄비지터" else []
+
+        def texts(query):
+            return ["디자이너 박문수의 브랜드 '더뮤지엄비지터(THE MUSEUM VISITOR)'"]
+
+        answer = ("FASHION_SHOPPING", 0.98, {"FASHION_SHOPPING": 0.98, "ETC": 0.02}, "jev-test")
+        with patch("finance.classifier.search_store", side_effect=stores), \
+                patch("finance.classifier.search_web", side_effect=texts), \
+                patch("finance.classifier.ask_jev", return_value=answer), \
+                patch("finance.classifier.conflict_names", return_value=frozenset({"더뮤지엄비지터"})):
+            action = classifier._ml_action("더뮤지엄비지", [("FASHION_SHOPPING", 0.5)], None, {}, cut=True)
+        self.assertNotIn("apply", action)
+        self.assertEqual(action["review"][1], classifier.CONFLICT_REASON)
+        self.assertEqual(action["review"][0][0], ("FASHION_SHOPPING", 0.98))
 
     def test_cut_name_prefix_on_map_and_short_names(self):
         beauty = ("BEAUTY", 0.95, {"BEAUTY": 0.95, "ETC": 0.05}, "jev-test")

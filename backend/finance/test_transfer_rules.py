@@ -455,6 +455,23 @@ class MerchantTransferTest(Fixture):
         self.assertEqual((first.transaction_type, second.transaction_type), ("transfer", "transfer"))
         self.assertEqual(self.spent_total(), 30_000)
 
+    def test_pay_route_prefix_on_card_is_same_purchase_in_any_order(self):
+        # 11/17 PR 리뷰: 카드 '카카오페이 - 비알코리아' · 계좌 '비알코리아'는 이름이 달라 이어지지 않고 6만 원이 됐다
+        self.card.name = "테스트 체크카드"
+        self.card.save(update_fields=["name"])
+        for card_first in (True, False):
+            with self.subTest(card_first=card_first):
+                Tx.objects.filter(user=self.user).delete()
+                approval = self.approval("A1", day=date(2026, 11, 3), merchant_name="카카오페이 - 비알코리아")
+                withdrawal = self.bank(self.a, "out", desc="비알코리아", amount=30_000)
+                for tx in ((approval, withdrawal) if card_first else (withdrawal, approval)):
+                    self.run_on(tx)
+                withdrawal.refresh_from_db()
+                self.assertTrue(TransactionLink.objects.filter(
+                    relation_type="SAME_PURCHASE", from_transaction=approval, to_transaction=withdrawal).exists())
+                self.assertEqual(withdrawal.transaction_type, "transfer")
+                self.assertEqual(self.spent_total(), 30_000)
+
     def test_running_twice_gives_same_result(self):
         tx = self.bank(self.a, "out", desc="모바일티머니충전", amount=20_000)
         self.run_on(tx)
