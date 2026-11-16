@@ -5,6 +5,7 @@ LLM 이 실패하면 규칙으로 돌아간다. handle() 의 반복문 · 도구
 
 흐름: (생년월일 확인) → 문장 읽기(LLM 1회) → 찾을 지역: 문장 속 지역(이번 검색에만) > 사는 지역(저장해 둔 지역) > 지역 버튼 →
 막연하면 맞춤 추천(분야는 LLM 이 짐작, 못 하면 취업 상태로 코드가 고름 — 멘토 요청 ④) → 검색 · 자격 → 돌아보기 →
+(맞는 게 없으면 LLM 이 검색어를 고쳐 planner.RETRIES 번까지 다시 검색 · 자격 · 돌아보기) →
 추천 3개 카드 + [N번 저장] [저장한 정책 보기] [다음에도 …로 찾기] [지역 변경하기]. 분야 버튼은 없다 (기능 버튼으로 오면 말로 묻는다)
 - 저장 · 지역 기억은 핸들러가 DB 에 쓰지 않고 save_policies · save_profile 로 돌려준다 (엔진이 대화 저장 트랜잭션에서 쓴다)
 - 사실(정책명 · 기간 · 지원 내용 · 링크 · 자격)은 모두 DB 값 · 코드 계산이다. 1차 추천 이유는 찾은 키워드로 코드가 쓴다 (LLM 이유는 다음)
@@ -76,6 +77,7 @@ ASK_TOPIC = "어떤 고민이 있으세요? 편하게 말해 주세요."
 TOPIC_EXAMPLES = ["월세가 부담되는데 받을 수 있는 지원이 있을까요?"]  # 화면은 질문 아래 회색 '예) …' 한 줄 (reply.examples)
 AUTO_LEAD = "어떤 지원인지 말씀이 없어서 `{fields}` 쪽으로 찾아봤어요. 고민을 말해 주시면 더 맞게 찾아 드려요."
 OTHER_TOPIC = "다른 고민도 문장으로 말해 주세요."
+RETRIED = "처음 찾은 정책 중 맞는 게 없어서 ‘{query}’(으)로 다시 찾아봤어요."
 # 찾을 수 있는 분야 안내: [찾을 수 있는 분야 보기] 버튼이나 "어떤 분야 찾을 수 있어?" 같은 문장 (LLM 없이 규칙으로)
 GUIDE_BUTTON = "찾을 수 있는 분야 보기"
 GUIDE_WORDS = re.compile(r"찾을\s*수\s*있는\s*분야|(어떤|무슨)\s*분야|분야\s*(보기|목록|알려|보여|뭐)"
@@ -361,9 +363,11 @@ def _card(result, sections):
     return result
 
 
-def _show(store, cid, state, found, region, today, start, member=False, lead=None, nowhere=None):
+def _show(store, cid, state, found, region, today, start, member=False, lead=None, nowhere=None, retried=None):
     """추천 3칸 (start 번째부터). 사실은 tools.facts, 이유는 찾은 키워드로. lead = 맞춤 추천 안내 줄 (첫 결과에만)
-    nowhere = 못 찾았을 때 전국에도 없으면 True, 다른 지역에는 있으면 False, 모르면 None"""
+    nowhere = 못 찾았을 때 전국에도 없으면 True, 다른 지역에는 있으면 False, 모르면 None
+    retried = 검색어를 고쳐 다시 찾았다는 안내 줄 (lead 와 따로 — lead 는 분야 안내 버튼 · 주제 문구를 바꾼다)"""
+    lead_lines = [line for line in (lead, retried) if line]
     page = found[start:start + SHOW]
     done = state.get("saved") or []  # 예전 상태(칸 없음)도 읽는다
     after = [(SAVE + f.policy.pk, SAVE_LABEL.format(number=number))
@@ -382,11 +386,11 @@ def _show(store, cid, state, found, region, today, start, member=False, lead=Non
             else NONE_HERE.format(topic=topic, region=name) if nowhere is False else NONE_FOUND_TOPIC.format(topic=topic, region=name)
         if topic and nowhere is False:
             after.insert(0, ("nationwide", NATIONWIDE_BUTTON))
-        lines = ([lead] if lead else []) + [none if start == 0 else NO_MORE]
+        lines = lead_lines + [none if start == 0 else NO_MORE]
         result = _ask(store, cid, state, "after", lines, [a for a in after if not a[0].startswith(SAVE)])
         result["status"] = "replied"
         return result
-    lines = ([lead] if lead else []) + [f"`{name}` 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
+    lines = lead_lines + [f"`{name}` 기준으로 찾은 청년 정책이에요." if start == 0 else "다른 정책도 보여 드릴게요."]
     sections = []
     for number, item in enumerate((tools.facts(f, today) for f in page), start + 1):
         rows = ([f"지역: {item['region']}"] if item["region"] else []) + [f"신청: {item['period']}", f"지원: {item['support'] or '정보 없음'}"]
@@ -465,11 +469,12 @@ def _shown(state):
     return [(number, tools.policy_name(policy_no)) for number, policy_no in enumerate(numbers, 1)]
 
 
-def handle(request, *, store, user=None, complete=None, embed=None, plan=None, check=None):
+def handle(request, *, store, user=None, complete=None, embed=None, plan=None, check=None, retry=None):
     """request = 라우터 공통 입력 {agent, mode, entry, text, work_ref, conversation_id, today, as_of, context}
     complete = 읽기 LLM (기본 reading.reader()), embed = 임베딩 (기본 llm.embedder()),
     plan = 행동 고르기 LLM (기본 planner.chooser()), check = 돌아보기 LLM (기본 review.reviewer()).
-    plan · check 는 가짜 모드면 None → 규칙 · 거르지 않음, False 면 끈다. 모두 테스트 대역을 넣을 수 있다"""
+    retry = 다시 검색 LLM (기본 planner.retrier()).
+    plan · check · retry 는 가짜 모드면 None → 규칙 · 거르지 않음, False 면 끈다. 모두 테스트 대역을 넣을 수 있다"""
     cid, text, today = request["conversation_id"], request.get("text"), _today(request)
     state = dict(store.get_agent_state(cid, AGENT) or {})
     if request.get("mode") == "cancel":
@@ -535,10 +540,10 @@ def handle(request, *, store, user=None, complete=None, embed=None, plan=None, c
                 action = Action("ask_topic")
         else:
             break
-    return _act(action, store, cid, state, user, today, embed, check)
+    return _act(action, store, cid, state, user, today, embed, check, retry)
 
 
-def _act(action, store, cid, state, user, today, embed, check=None):
+def _act(action, store, cid, state, user, today, embed, check=None, retry=None):
     kind = action.kind
     if kind == "not_mine":
         return {"status": "not_mine", "work_ref": None}
@@ -578,23 +583,38 @@ def _act(action, store, cid, state, user, today, embed, check=None):
             names = [FIELDS[code][0] for code in codes]
             needs, lead = [FIELDS[code][1] for code in codes], AUTO_LEAD.format(fields=", ".join(names))
             said = f"{action.text or ''} (고른 분야: {', '.join(names)})".strip()  # 막연한 원문만 주면 돌아보기가 다 뺄 수 있다
-        try:
-            found, _ = tools.find(needs, action.region, profile, today, embed=embed)
-        except EmbedFailed as error:
-            return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
         judge = check if check is not None else review.reviewer()
-        if found and judge is None and check is not False and getattr(settings, "CHAT_LLM", "fake") == "live":
-            return _ask_topic(store, cid, state, [REVIEW_FAILED])  # 키·모델 설정 누락도 미검토 추천으로 우회하지 않는다
-        if judge and found:  # 돌아보기: 질문과 맞는 것만 남긴다. 실패와 검색 결과 없음은 별개다
-            kept = review.keep(said or " / ".join(n.query for n in needs), found, judge,
-                               region=region_name(action.region))
-            if kept is None:
-                return _ask_topic(store, cid, state, [REVIEW_FAILED])
-            found = kept
+        rewrite = retry if retry is not None else planner.retrier()
+        said = said or " / ".join(n.query for n in needs)  # 다시 찾아도 돌아보기는 처음 문장으로 판단한다
+        asked, tried, seen, retried = needs, [], set(), None
+        for attempt in range(planner.RETRIES + 1):  # 관찰 → 다시 행동: 맞는 게 없으면 검색어를 고쳐 다시 찾는다
+            try:
+                found, _ = tools.find(needs, action.region, profile, today, embed=embed)
+            except EmbedFailed as error:
+                return {"status": "failed", "work_ref": None, "error": f"embed:{error}"}
+            found = [f for f in found if f.policy.pk not in seen]  # 앞에서 돌아보기가 뺀 정책은 다시 보지 않는다
+            if found and judge is None and check is not False and getattr(settings, "CHAT_LLM", "fake") == "live":
+                return _ask_topic(store, cid, state, [REVIEW_FAILED])  # 키·모델 설정 누락도 미검토 추천으로 우회하지 않는다
+            rejected = []
+            if judge and found:  # 돌아보기: 질문과 맞는 것만 남긴다. 실패와 검색 결과 없음은 별개다
+                kept = review.keep(said, found, judge, region=region_name(action.region))
+                if kept is None:
+                    return _ask_topic(store, cid, state, [REVIEW_FAILED])
+                looked = found[:review.LOOK]
+                seen |= {f.policy.pk for f in looked}
+                rejected = [f.policy.name for f in looked if f not in kept]
+                found = kept
+            tried += [n.query for n in needs]
+            if found or not rewrite or attempt == planner.RETRIES:
+                break
+            needs = planner.retry(said, tried, rejected, rewrite)
+            if not needs:
+                break
+            retried = RETRIED.format(query=", ".join(n.query for n in needs))
         nowhere = None
-        if not found and not lead:  # 어디에도 없는 주제인지, 이 지역에만 없는지 (못 찾았을 때만 한 번 더 찾는다)
-            nowhere = True if action.region == NATIONWIDE else _nowhere(needs, profile, today, embed, judge, said)
-        return _show(store, cid, state, found, action.region, today, 0, member, lead, nowhere)
+        if not found and not lead:  # 어디에도 없는 주제인지, 이 지역에만 없는지 (원래 질문으로 — [전국에서 찾기]도 원래 질문을 쓴다)
+            nowhere = True if action.region == NATIONWIDE else _nowhere(asked, profile, today, embed, judge, said)
+        return _show(store, cid, state, found, action.region, today, 0, member, lead, nowhere, retried)
     raise ValueError(f"처리하지 못한 행동: {kind}")
 
 
