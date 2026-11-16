@@ -816,6 +816,30 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
         self.assertNotIn("cut_name", result["record"])
 
+    def test_cut_name_is_completed_and_searched_again(self):
+        # 11/16 실제 검색: '더뮤지엄비지터'로 다시 찾으면 카카오 '더 뮤지엄비지터' · 의류판매, 웹 'Official Online Store'
+        def stores(query):
+            return [("kakao", "더 뮤지엄비지터", "의류판매")] if query == "더뮤지엄비지터" else []
+
+        def texts(query):
+            if query == "더뮤지엄비지터":
+                return ["더 뮤지엄 비지터 / The Museum Visitor | Official Online Store | Art & Design Studio"]
+            return ["다이닛x더뮤지엄비지터, 성수동 팝업 연다 / 디자이너 박문수의 브랜드 '더뮤지엄비지터(THE MUSEUM VISITOR)'"]
+
+        def answer(state):
+            confidence = 0.98 if "의류판매" in state else 0.79
+            return "FASHION_SHOPPING", confidence, {"FASHION_SHOPPING": confidence, "ETC": 1 - confidence}, "jev-test"
+
+        with patch("finance.classifier.search_store", side_effect=stores) as store, \
+                patch("finance.classifier.search_web", side_effect=texts), patch("finance.classifier.ask_jev", side_effect=answer):
+            result = classifier.judge("주식회사 더뮤지엄비지", cut=True)
+        self.assertEqual(result["apply"], ("FASHION_SHOPPING", 0.98))
+        self.assertEqual((result["record"]["industry"], result["record"]["cut_name"], result["record"]["completed_name"]),
+                         ("의류판매", True, True))
+        self.assertEqual([c.args[0] for c in store.call_args_list], ["더뮤지엄비지", "더뮤지엄비지터"])
+        self.assertEqual(classifier.completed_name(texts("x"), "더뮤지엄비지"), "더뮤지엄비지터")
+        self.assertIsNone(classifier.completed_name(["더뮤지엄비지 매장"], "더뮤지엄비지"))
+
     def test_cut_name_prefix_on_map_and_short_names(self):
         beauty = ("BEAUTY", 0.95, {"BEAUTY": 0.95, "ETC": 0.05}, "jev-test")
         result, _ = self.run_judge(("naver", "새봄헤어살롱 성수점", "미용실"), beauty, name="새봄헤어살", cut=True)

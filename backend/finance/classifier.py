@@ -458,6 +458,19 @@ def names_store(text, query, prefix=False):
     return bool(name) and bool(re.search(rf"(?<![가-힣a-z0-9]){pattern}{tail}", unicodedata.normalize("NFKC", text).lower()))
 
 
+def completed_name(texts, query):
+    """잘린 이름으로 찾은 웹 글에서 온전한 이름 (11/16: 더뮤지엄비지 → 더뮤지엄비지터). 더 긴 이름이 없으면 None.
+    정리한 이름(소문자 · 공백 없음)으로 돌려준다 — 검색어로만 쓴다"""
+    name = common.normalize_name(query)
+    pattern = r"\s*".join(map(re.escape, name))
+    for text in texts:
+        for match in re.finditer(rf"(?<![가-힣a-z0-9]){pattern}[가-힣a-z0-9]*", unicodedata.normalize("NFKC", text).lower()):
+            full = re.sub(r"\s+", "", match.group(0))
+            if len(full) > len(name):
+                return full
+    return None
+
+
 def web_evidence(query, record, prefix=False):
     """근거로 인정한 웹 설명. 실패하면 지도 근거만으로 간다. 원문은 record 에 남기지 않는다 (거래 내용이 섞일 수 있음)"""
     try:
@@ -516,6 +529,14 @@ def judge(name, cut=False):
         if any(word in unicodedata.normalize("NFKC", text).lower() for text in web for word in PG_WEB_WORDS):
             record["pg"] = "web"  # 결제대행사 (KG이니시스 '온라인 전자결제PG사')
             return {"pg": True, "record": record}
+        if prefix and (full := completed_name(web, query)):
+            # 잘린 이름 (11/16): 웹 글에서 찾은 온전한 이름으로 한 번 더 검색한다. 지도에 같은 가게가 나오면 업종이 강한 근거가 된다
+            # (더뮤지엄비지 → 웹 '더뮤지엄비지터' 한 줄로는 Jev 0.79 → 더뮤지엄비지터로 다시 찾으면 카카오 '의류판매')
+            again = judge(full)  # 온전한 이름은 잘리지 않았으니 cut 없이 (한 번만)
+            if again and ("apply" in again or "retail" in again):
+                again["record"] = {**again["record"], "cut_name": True, "completed_name": True}
+                return again
+            record["completed_name"] = False  # 다시 찾아도 못 정함 → 처음 근거로 계속
         base = f"가맹점 이름: {query}"
         web_state = web and f"{base}\n웹 검색 설명: {' | '.join(web)}"
         if any(i in MULTI_ITEM_INDUSTRIES or i.endswith("마트") for i in kept):

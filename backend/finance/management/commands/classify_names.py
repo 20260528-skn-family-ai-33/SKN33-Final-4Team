@@ -57,7 +57,7 @@ def classify_names(names):
                 "후보": " ".join(candidates),
                 "검색": f"{record.get('source') or '0건'}:{record.get('industry') or '-'}" if record else "",
                 "메모": " ".join([k for k in ("dropped_industry", "store_mismatch", "error", "web_accepted", "web_error",
-                                               "evidence_conflict", "pg", "cut_name") if record.get(k)]
+                                               "evidence_conflict", "pg", "cut_name", "completed_name") if record.get(k)]
                                + ([f"이름 {record['used']}"] if record.get("used") else [])),  # 'A - B' 중 정한 쪽 (11/16)
                 "Jev": f"{record.get('choice')} {record.get('confidence')}" if record.get("choice") else "",
                 "ms": record.get("ms", ""),
