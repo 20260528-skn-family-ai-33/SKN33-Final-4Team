@@ -16,6 +16,8 @@ def stage(tx):
         return "1 다품목"
     if tx.suggestion_reason == classifier.PAY_CHARGE_REASON:
         return "1 페이 충전"
+    if tx.suggestion_reason == classifier.PG_REASON and "classifier" not in tx.field_states:
+        return "1 결제대행사"
     if tx.suggestion_reason == classifier.UNKNOWN_STORE_REASON:
         return "3 이름 모름"
     if tx.suggestion_reason == classifier.MIXED_SERVICE_REASON:
@@ -54,7 +56,9 @@ def classify_names(names):
                 "확신도": "" if tx.suggestion_confidence is None else f"{tx.suggestion_confidence:.2f}",
                 "후보": " ".join(candidates),
                 "검색": f"{record.get('source') or '0건'}:{record.get('industry') or '-'}" if record else "",
-                "메모": " ".join(k for k in ("dropped_industry", "store_mismatch", "error", "web_accepted", "web_error", "evidence_conflict") if record.get(k)),
+                "메모": " ".join([k for k in ("dropped_industry", "store_mismatch", "error", "web_accepted", "web_error",
+                                               "evidence_conflict", "pg", "cut_name") if record.get(k)]
+                               + ([f"이름 {record['used']}"] if record.get("used") else [])),  # 'A - B' 중 정한 쪽 (11/16)
                 "Jev": f"{record.get('choice')} {record.get('confidence')}" if record.get("choice") else "",
                 "ms": record.get("ms", ""),
                 "이유": tx.suggestion_reason or "",

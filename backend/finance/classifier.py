@@ -2,6 +2,7 @@
 거래 분류 에이전트 (pipeline.classify_spending 에서 부른다). 메모: docs/agents/거래분류.md
 
 순서: 결제대행 접두어 떼기 → 1 다품목 → 2 사용자 기억 → 3 규칙·사전 → 4 SVM → 5 검색+Jev → 6 확인 필요
+- 'A - B' 표기는 A 로 먼저 보고, 못 정하거나 A 가 결제대행사면 B 로 다시 본다. 그래도 못 정하면 확인 필요 (11/16)
 - 분류 기준: docs/소비카테고리_분류기준_20261105.md
 - 모델 파일은 Git에 없다. 기본 위치: local_workspace/models/spending_classifier/artifacts/content_policy_svm/
   (docs/ML_MODELS.md). 다른 곳이면 .env 의 SPENDING_MODEL_PATH
@@ -52,6 +53,7 @@ LOOKUP_FAILED_REASON = "가게 정보를 확인하지 못했어요. 직접 골�
 PAY_CHARGE_REASON = "페이 충전이라 무엇에 썼는지 골라 주세요."
 CONFLICT_REASON = "같은 이름의 다른 업종 가게가 있어 카테고리를 정하지 못했어요."
 USER_DIFFERS_REASON = "전에 이 가게를 다른 카테고리로 고르셨어요. 이번 거래도 확인해 주세요."
+PG_REASON = "결제대행사 이름으로 찍혀서 어느 가게인지 알 수 없어요. 직접 골라 주세요."
 
 # 토스·네이버페이 등 충전 출금 (10/30): 충전 뒤 무엇을 샀는지는 페이 안에만 있어서 사용자에게 묻는다
 # link_basics가 충전을 소비로 넘겨줄 때부터 동작한다. 아직 쓰지 않았거나 송금이면 화면의 [이체로 되돌리기]
@@ -74,6 +76,21 @@ PG_NAMED_PREFIX = re.compile(r"^(kcp|kg이니시스|이니시스|nice|ksnet|토�
 # shortcut: 확인된 결제 경로만. 실거래에서 새 경로가 보이면 추가
 PAY_ROUTES = ("네이버페이", "카카오페이", "토스페이", "페이코", "payco", "페이레터", "대표인증", "대표일반", "인터넷상거래", "다우데이타", "한국정보통신")
 ROUTE_TAIL = re.compile(r"(_구)?_(nice|인증|일반)(_\d+)?$|_\d+$", re.IGNORECASE)
+# 카드사가 이름 길이를 잘라서 괄호가 안 닫힌 꼬리 (11/16 실거래 '메가 MGC 커피(서울서일초' · '주식회사 노이즈엑스(NoizX C').
+# 잘린 지점명이라 검색 · 웹 근거에 방해만 된다. 닫힌 괄호('테스트파킹(주)')는 그대로
+CUT_TAIL = re.compile(r"\s*\([^)]*$")
+# 카드사가 가맹점 이름을 자르는 길이 (11/16 실거래: 잘린 적요는 모두 41~42바이트, 안 잘린 건 37바이트 이하. 한글 2 · 영문 1 = cp949).
+# 적요가 이만큼이면 맨 끝 이름이 잘렸을 수 있다고 보고(예: '더뮤지엄비지터' → '더뮤지엄비지') 검색 근거에서 앞부분 일치를 허용한다
+CUT_BYTES = 40
+CUT_PREFIX_MIN = 5  # 앞부분 일치를 허용하는 최소 글자 수 (정리한 이름). 짧으면 다른 가게와 우연히 겹친다 (리디 ↔ 리디앤폴)
+# 결제대행사 (11/16 실거래 '대표인증_3 - 발트페이먼츠'): 여러 가게가 같은 이름으로 찍혀서 이 이름으로는 어느 가게인지 모른다.
+# 'A - B' 의 다른 쪽 이름으로 보고, 다른 쪽이 없으면 묻는다. 이름만 보고(…페이먼츠) 또는 검색 결과(5단계)로 알아본다
+# 11/16 검색 확인: 토스·나이스는 지도 '금융서비스' · '지불,결제대행', 이니시스는 웹 '전자결제PG사',
+# 발트페이먼츠는 지도 '경영컨설팅' · 웹 '가맹본부(블랙라인커피)'라 검색으로는 못 알아봐서 이름 끝으로 본다
+PG_NAME_SUFFIXES = ("페이먼츠", "payments")
+PG_NAMES = ("kcp", "kg이니시스", "이니시스", "ksnet", "nicepay", "나이스페이")  # 정리한 이름 전체가 이것일 때
+PG_INDUSTRY_WORD = "결제"  # 같은 가게의 지도 업종 (네이버 '지불,결제대행')
+PG_WEB_WORDS = ("pg사", "pg(", "pg 서비스", "결제대행", "전자결제", "지급결제")  # 이 이름이 들어간 웹 설명
 
 # ----- 1. 다품목 -----
 # 다품목 = 상호만으로 품목을 모르는 곳 (분류 기준 D1, D16). 대부분 사용자에게 묻고, 과거 선택은 후보로만 보여 준다 (분류 워크플로 10/26 단계 2)
@@ -207,7 +224,7 @@ WEB_TEXT_LIMIT = 150  # 웹 결과 한 건을 Jev 에 넘기는 글자 수
 
 
 def store_name(name):
-    """결제대행 접두어·결제수단 꼬리표를 뗀 가맹점명. 없으면 None"""
+    """결제대행 접두어·결제수단 꼬리표를 뗀 가맹점명. 없으면 None. 'A - B' 에서 A 를 쓸 때 B 는 fallback_name"""
     left, dash, right = (name or "").partition(" - ")
     if dash and left.strip() and right.strip():
         # 11/09 실거래 '대표_3_카카오페이 - 파파존스 청라점': 경로가 앞이 아니라 꼬리에 붙은 A 도 결제 경로다
@@ -215,7 +232,34 @@ def store_name(name):
         route = left.lower().startswith(PAY_ROUTES) or PAY_SUFFIX.search(left.strip())
         name = right if route else ROUTE_TAIL.sub("", left)
     name = PG_NAMED_PREFIX.sub("", PG_PREFIX.sub("", name or "").strip())
-    return PAY_SUFFIX.sub("", name).strip() or None
+    return CUT_TAIL.sub("", PAY_SUFFIX.sub("", name).strip()).strip() or None
+
+
+def fallback_name(name):
+    """'A - B' 에서 A 를 가맹점으로 쓸 때 다음으로 볼 B (11/16). A 로 못 정하거나 A 가 결제대행사면 B 로 다시 본다.
+    예: '메가MGC_인증_3 - 메가 MGC 커피' → A '메가MGC'(검색하면 다른 지점 · 웹 글은 '메가MGC커피'라 근거 없음) → B '메가 MGC 커피'.
+    A 가 결제 경로(B 가 이미 가맹점)이거나 A 와 같은 이름이면 None"""
+    left, dash, right = (name or "").partition(" - ")
+    if not (dash and left.strip() and right.strip()):
+        return None
+    if left.lower().startswith(PAY_ROUTES) or PAY_SUFFIX.search(left.strip()):
+        return None
+    alt = store_name(right.strip())
+    first = common.normalize_name(store_name(name) or "")
+    return alt if alt and common.normalize_name(alt) not in ("", first) else None
+
+
+def maybe_cut(name):
+    """적요가 카드사 길이 한도에 닿아 맨 끝 이름이 잘렸을 수 있는지 (11/16)"""
+    return len((name or "").encode("cp949", errors="replace")) >= CUT_BYTES
+
+
+def is_pg_name(name):
+    """결제대행사 이름인지 (이름만 보고). 검색으로 알아보는 건 judge 의 "pg".
+    결제 경로 이름만 찍힌 거래(11/16 실거래 '네이버페이')도 어느 가게인지 몰라서 같게 본다"""
+    normalized = common.normalize_name(name or "")
+    return bool(normalized) and (normalized.endswith(PG_NAME_SUFFIXES) or normalized in PG_NAMES
+                                 or normalized in {common.normalize_name(route) for route in PAY_ROUTES})
 
 
 @functools.cache
@@ -340,12 +384,13 @@ def _get_json(url, headers):
         return json.loads(res.read())
 
 
-def same_store(query, found_name):
+def same_store(query, found_name, prefix=False):
     """검색된 가게가 거래 가맹점과 같은 가게인지. 다른 가게면 그 업종을 근거로 쓰지 않는다 (PR #64 리뷰)
     정리한 이름이 완전히 같을 때만 (11/05 결정). 포함만 보면 리디 ↔ 팩토리디, 스타벅스 ↔ 홍단헤어 스타벅스점이 같은 가게가 된다
+    prefix: 카드사가 이름 끝을 잘랐을 수 있으면 검색된 이름이 이 이름으로 시작해도 같은 가게 (11/16, 더뮤지엄비지 → 더뮤지엄비지터 성수점)
     shortcut: 이름만 비교. 지점명이 다르면 놓치고 웹 근거가 보완한다. 지점·주소 대조는 카드 응답에 주소가 생기면"""
     q, f = common.normalize_name(query), common.normalize_name(found_name or "")
-    return bool(q) and q == f
+    return bool(q) and (q == f or (prefix and f.startswith(q)))
 
 
 def service_name(name):
@@ -404,14 +449,16 @@ def search_web(query):
     return [f"{_text(item['title'])} / {_text(item['description'])}"[:WEB_TEXT_LIMIT] for item in items]
 
 
-def names_store(text, query):
-    """웹 설명에 이 가맹점 이름이 한 낱말로 있는지. 다른 상호 안에 들어 있으면 아니다 (PR #94 리뷰: 리디 ↔ 팩토리디 · 리디앤폴)"""
+def names_store(text, query, prefix=False):
+    """웹 설명에 이 가맹점 이름이 한 낱말로 있는지. 다른 상호 안에 들어 있으면 아니다 (PR #94 리뷰: 리디 ↔ 팩토리디 · 리디앤폴)
+    prefix: 카드사가 이름 끝을 잘랐을 수 있으면 낱말이 이 이름으로 시작하기만 하면 된다 (11/16, 더뮤지엄비지 → 더뮤지엄비지터)"""
     name = common.normalize_name(query)
     pattern = r"\s*".join(map(re.escape, name))  # 메가MGC ↔ 메가 MGC
-    return bool(name) and bool(re.search(rf"(?<![가-힣a-z0-9]){pattern}{JOSA}(?![가-힣a-z0-9])", unicodedata.normalize("NFKC", text).lower()))
+    tail = "" if prefix else rf"{JOSA}(?![가-힣a-z0-9])"
+    return bool(name) and bool(re.search(rf"(?<![가-힣a-z0-9]){pattern}{tail}", unicodedata.normalize("NFKC", text).lower()))
 
 
-def web_evidence(query, record):
+def web_evidence(query, record, prefix=False):
     """근거로 인정한 웹 설명. 실패하면 지도 근거만으로 간다. 원문은 record 에 남기지 않는다 (거래 내용이 섞일 수 있음)"""
     try:
         texts = search_web(query)
@@ -419,7 +466,7 @@ def web_evidence(query, record):
         logger.warning("5단계 웹 검색 실패: %s", type(exc).__name__)
         record["web_error"] = type(exc).__name__
         return []
-    accepted = [text for text in texts if names_store(text, query)]
+    accepted = [text for text in texts if names_store(text, query, prefix)]
     record["web_accepted"] = bool(accepted)
     return accepted
 
@@ -438,26 +485,37 @@ def ask_jev(state):
     return answer.choice, answer.confidence, dict(answer.probabilities), res.model
 
 
-def judge(name):
+def judge(name, cut=False):
     """5단계: 지도 업종과 웹 설명을 각각 Jev 에 물어 판단한다. 키가 없으면 None.
-    {"apply": (코드, 확신도)} · {"retail": 코드} · {"review": ([(코드, 확률), ...], 이유)} + "record"(field_states 에 남길 근거)"""
+    cut: 카드사가 이 이름 끝을 잘랐을 수 있음 (maybe_cut, 11/16) → 5글자 이상이면 지도 이름 · 웹 낱말의 앞부분 일치를 허용
+    {"apply": (코드, 확신도)} · {"retail": 코드} · {"review": ([(코드, 확률), ...], 이유)} · {"pg": True}(결제대행사, 11/16)
+    + "record"(field_states 에 남길 근거)"""
     if not (os.getenv("TYPESAFE_API_KEY") and os.getenv("JEV_MODEL")):
         return None
     started = time.monotonic()
     query = service_name(common.CORPORATE.sub("", name).strip())  # 법인 표기만 빼고 상호·지점명 그대로 검색
     record = {"step": "search_jev", "source": None, "industry": None}
+    prefix = cut and len(common.normalize_name(query)) >= CUT_PREFIX_MIN
+    if prefix:
+        record["cut_name"] = True
     try:
         found = search_store(query)
-        same = [store for store in found if same_store(query, store[1])]
+        same = [store for store in found if same_store(query, store[1], prefix)]
         shown = same or found
         industries = list(dict.fromkeys(store[2] for store in same))
         record.update(source=shown[0][0] if shown else None, industry=", ".join(dict.fromkeys(store[2] for store in shown)) or None)
         if found and not same:
             record["store_mismatch"] = True  # 다른 가게 (예: 새봄동물 → 새봄식당). 그 업종은 이 거래의 근거가 아님
+        if any(PG_INDUSTRY_WORD in i for i in industries):
+            record["pg"] = "industry"  # 결제대행사 (나이스페이먼츠 '지불,결제대행'). 이 이름으로는 어느 가게인지 모른다
+            return {"pg": True, "record": record}
         kept = [i for i in industries if not any(word in i for word in NON_STORE_INDUSTRIES)]
         if len(kept) != len(industries):
             record["dropped_industry"] = True  # 본사·사무소가 검색된 경우. 근거로 쓰면 확신하며 틀림 (10/29 테스트)
-        web = web_evidence(query, record)
+        web = web_evidence(query, record, prefix)
+        if any(word in unicodedata.normalize("NFKC", text).lower() for text in web for word in PG_WEB_WORDS):
+            record["pg"] = "web"  # 결제대행사 (KG이니시스 '온라인 전자결제PG사')
+            return {"pg": True, "record": record}
         base = f"가맹점 이름: {query}"
         web_state = web and f"{base}\n웹 검색 설명: {' | '.join(web)}"
         if any(i in MULTI_ITEM_INDUSTRIES or i.endswith("마트") for i in kept):
@@ -531,7 +589,11 @@ def classify(user, txs):
     changed, for_ml, judged, card_answers = [], [], {}, {}
     for tx in todo:
         name = store_name(tx.merchant_name)
+        alt = fallback_name(tx.merchant_name)  # 'A - B' 의 B (11/16)
+        if alt and (is_pg_name(name) or is_unknown_store(name)):
+            name, alt = alt, None  # A 가 결제대행사 · 알 수 없는 이름이면 처음부터 B 로
         # 사용자의 마지막 선택. 자동 적용은 '앞으로도 적용'(future)일 때만, 다품목·페이 충전은 후보로만 (10/30)
+        # 결제대행사 이름도 '앞으로도 적용'은 쓴다: 같은 이름 + 같은 카드사 업종이면 같은 가게로 본다 (11/11, PR #114)
         code, future = last_user_choice(user, tx.merchant_name, store_type(tx.merchant_category))
         if code and future and not is_pay_charge(name):
             # 임시 결정: 사용자 기억으로 정한 건 이 거래를 사용자가 고른 게 아니라서 rule 로 둔다
@@ -545,6 +607,9 @@ def classify(user, txs):
         elif is_pay_charge(name):
             # 충전도 매번 쓰임이 달라서 다품목처럼 과거 선택은 후보로만
             _review(tx, [(code, None)] if code else [], PAY_CHARGE_REASON, Tx.ClassificationSource.RULE if code else None)
+        elif is_pg_name(name):
+            # 결제대행사만 찍힘 (11/16): 어느 가게인지 몰라 SVM · 검색 없이 묻는다. 과거 선택은 후보로 ('앞으로도 적용'이면 위에서 자동)
+            _review(tx, [(code, None)] if code else [], PG_REASON, Tx.ClassificationSource.RULE if code else None)
         elif common.normalize_name(name or "") in MIXED_SERVICE_NAMES:
             # 과거 선택(앞으로도 적용 아님)이 있으면 첫 후보로
             candidates = [c for c in dict.fromkeys((code, "CULTURE_LEISURE")) if c]
@@ -575,49 +640,123 @@ def classify(user, txs):
             _review(tx, [], UNKNOWN_STORE_REASON, None)
         else:
             if name:
-                for_ml.append((tx, name, code))
+                for_ml.append((tx, name, code, alt))
             continue
         changed.append(tx)
 
-    for (tx, name, past), top in zip(for_ml, predict([name for _, name, _ in for_ml])):
-        if not top:
-            continue
-        code, confidence = top[0]
-        # 동명 충돌이면 SVM 이 확신해도 확정하지 않고 검색+Jev 로 (분류 워크플로 10/26 3단계·4장)
-        conflict = common.normalize_name(name) in conflict_names()
-        if confidence >= THRESHOLD and not conflict:
-            _apply_unless_user_differs(tx, code, Tx.ClassificationSource.ML, confidence, past, top)
+    for (tx, name, past, alt), top in zip(for_ml, predict([name for _, name, _, _ in for_ml])):
+        # 카드사가 자른 건 맨 끝 이름뿐: 'A - B' 면 B, 아니면 이 이름 (11/16)
+        cut = maybe_cut(tx.merchant_name)
+        action = first = _ml_action(name, top, past, judged, cut=cut and not alt)
+        if alt and (first is None or first["open"]):
+            # A 로 못 정함 (11/16) → B 로 다시. B 가 정하면 B, 둘 다 못 정하면 근거가 나은 쪽의 '확인 필요'
+            second = _name_action(alt, past, judged, cut=cut)
+            action = second if second and not second["open"] else _pick_review(first, second)
+            if action is not None:
+                other = first if action is second else second
+                record = {**(action["record"] or {}), "used": "B" if action is second else "A"}
+                if other and other["record"]:
+                    record["other"] = other["record"]  # 다른 쪽 이름으로 본 결과 (원인 확인용)
+                action = {**action, "record": record}
+        if action is None:
+            continue  # SVM 결과가 없으면 그대로 둔다
+        if "apply" in action:
+            _apply(tx, *action["apply"])
         else:
-            # shortcut: 거래 잠금 안에서 외부 API 를 부른다. record 의 ms 로 시간을 재고 길면 잠금 밖으로 옮길지 팀 회의 (메모 참고)
-            if name not in judged:  # 호출이 잠금 안에서 돌아서 같은 이름은 한 번만
-                judged[name] = judge(name)
-            result = judged[name]
-            if result is None:
-                _review(tx, top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
-            elif "retail" in result and conflict:
-                _review(tx, [(result["retail"], None)], CONFLICT_REASON, Tx.ClassificationSource.RULE)
-            elif "retail" in result:
-                _apply(tx, result["retail"], Tx.ClassificationSource.RULE, None)
-            elif "apply" in result and conflict:
-                # 동명 충돌: 검색 이름이 같아도 동명 가게 중 어느 곳의 거래인지 모른다 → Jev 답은 후보로만 (PR #68 리뷰)
-                # shortcut: 지금 입력(이름뿐)으로는 구별 근거가 없다. 카드 응답에 주소·업종 코드가 생기면 그걸로 풀기
-                code, confidence = result["apply"]
-                candidates = [(code, confidence)] + [(c, p) for c, p in top if c != code]
-                if past:
-                    candidates = [(past, None)] + [(c, p) for c, p in candidates if c != past]
-                _review(tx, candidates[:3], CONFLICT_REASON, Tx.ClassificationSource.LLM)
-            elif "apply" in result:
-                code, confidence = result["apply"]
-                _apply_unless_user_differs(tx, code, Tx.ClassificationSource.LLM, confidence, past, top)
-            else:
-                _review(tx, *result["review"], Tx.ClassificationSource.LLM)
-            if result is not None:
-                record = {**result["record"], "name_conflict": True} if conflict else result["record"]
-                tx.field_states = {**tx.field_states, "classifier": record}
+            _review(tx, *action["review"])
+        if action["record"] is not None:
+            tx.field_states = {**tx.field_states, "classifier": action["record"]}
         changed.append(tx)
 
     if changed:
         Tx.objects.bulk_update(changed, FIELDS, batch_size=500)
+
+
+def _apply_action(code, source, confidence, past=None, top=(), record=None):
+    """정한 결과. 사용자가 같은 가게를 전에 다른 카테고리로 골랐으면('앞으로도 적용' 아님) 묻는다.
+    사용자 수정이 반복되는 가게 = 동명 충돌 후보 (분류 워크플로 10/26 4장). 지난 선택을 첫 후보로"""
+    if past and past != code:
+        candidates = [(past, None)] + [(c, p) for c, p in top if c != past]
+        return {"review": (candidates[:3], USER_DIFFERS_REASON, source), "record": record, "open": False}
+    return {"apply": (code, source, confidence), "record": record, "open": False}
+
+
+def _review_action(candidates, reason, source, record=None, *, open_=True):
+    """'확인 필요' 결과. open = 다른 이름(B)으로 다시 볼 수 있음. 다품목 · 사용자 선택과 다름은 이름을 바꿔도 같아서 닫는다"""
+    return {"review": (candidates, reason, source), "record": record, "open": open_}
+
+
+def _ml_action(name, top, past, judged, cut=False):
+    """4 SVM → 5 검색+Jev 판단. SVM 결과가 없으면 None. 거래에 쓰지는 않고 결과만 돌려준다 (A · B 를 비교하려고, 11/16)
+    cut: 카드사가 이 이름 끝을 잘랐을 수 있음 → judge 에 넘긴다"""
+    if not top:
+        return None
+    code, confidence = top[0]
+    # 동명 충돌이면 SVM 이 확신해도 확정하지 않고 검색+Jev 로 (분류 워크플로 10/26 3단계·4장)
+    conflict = common.normalize_name(name) in conflict_names()
+    if confidence >= THRESHOLD and not conflict:
+        return _apply_action(code, Tx.ClassificationSource.ML, confidence, past, top)
+    # shortcut: 거래 잠금 안에서 외부 API 를 부른다. record 의 ms 로 시간을 재고 길면 잠금 밖으로 옮길지 팀 회의 (메모 참고)
+    key = (name, cut)
+    if key not in judged:  # 호출이 잠금 안에서 돌아서 같은 이름은 한 번만
+        judged[key] = judge(name, cut=True) if cut else judge(name)
+    result = judged[key]
+    if result is None:
+        return _review_action(top, CONFLICT_REASON if conflict else REVIEW_REASON, Tx.ClassificationSource.ML)
+    record = {**result["record"], "name_conflict": True} if conflict else result["record"]
+    if "pg" in result:
+        # 검색해 보니 결제대행사 (11/16): 이 이름으로는 어느 가게인지 모른다. 과거 선택만 후보로
+        return _review_action([(past, None)] if past else [], PG_REASON,
+                              Tx.ClassificationSource.RULE if past else None, record)
+    if "retail" in result and conflict:
+        return _review_action([(result["retail"], None)], CONFLICT_REASON, Tx.ClassificationSource.RULE, record)
+    if "retail" in result:
+        return {"apply": (result["retail"], Tx.ClassificationSource.RULE, None), "record": record, "open": False}
+    if "apply" in result and conflict:
+        # 동명 충돌: 검색 이름이 같아도 동명 가게 중 어느 곳의 거래인지 모른다 → Jev 답은 후보로만 (PR #68 리뷰)
+        # shortcut: 지금 입력(이름뿐)으로는 구별 근거가 없다. 카드 응답에 주소·업종 코드가 생기면 그걸로 풀기
+        code, confidence = result["apply"]
+        candidates = [(code, confidence)] + [(c, p) for c, p in top if c != code]
+        if past:
+            candidates = [(past, None)] + [(c, p) for c, p in candidates if c != past]
+        return _review_action(candidates[:3], CONFLICT_REASON, Tx.ClassificationSource.LLM, record)
+    if "apply" in result:
+        code, confidence = result["apply"]
+        return _apply_action(code, Tx.ClassificationSource.LLM, confidence, past, top, record)
+    candidates, reason = result["review"]
+    return _review_action(candidates, reason, Tx.ClassificationSource.LLM, record, open_=reason != MULTI_ITEM_REASON)
+
+
+def _name_action(name, past, judged, cut=False):
+    """'A - B' 의 B 로 다시 보는 판단 (11/16): 이름으로 정하는 규칙 → SVM → 검색+Jev. 정하지 못하면 '확인 필요' 결과나 None"""
+    rule = {"step": "rule"}
+    if code := retail_category(name):
+        return {"apply": (code, Tx.ClassificationSource.RULE, None), "record": rule, "open": False}
+    for check, reason in ((is_multi_item, MULTI_ITEM_REASON), (is_pay_charge, PAY_CHARGE_REASON), (is_pg_name, PG_REASON)):
+        if check(name):
+            return _review_action([(past, None)] if past else [], reason, Tx.ClassificationSource.RULE if past else None,
+                                  rule, open_=reason == PG_REASON)
+    if code := rule_category(name):
+        return {"apply": (code, Tx.ClassificationSource.RULE, None), "record": rule, "open": False}
+    if is_unknown_store(name):
+        return None
+    return _ml_action(name, predict([name])[0], past, judged, cut=cut)
+
+
+def _has_evidence(action):
+    record = action["record"] or {}
+    return bool(record.get("industry") and not record.get("store_mismatch")) or bool(record.get("web_accepted"))
+
+
+def _pick_review(first, second):
+    """A · B 둘 다 못 정했을 때 보여 줄 '확인 필요' (11/16): 결제대행사로 나온 쪽은 버리고, 가게 근거를 찾은 쪽을 먼저. 같으면 A"""
+    if not (first and second):
+        return first or second
+    if first["review"][1] == PG_REASON:
+        return second
+    if second["review"][1] == PG_REASON:
+        return first
+    return second if _has_evidence(second) and not _has_evidence(first) else first
 
 
 def _card_answer(tx, answers):
@@ -640,16 +779,6 @@ def _apply(tx, code, source, confidence):
     tx.confirmation_state, tx.classification_source, tx.suggestion_source = Tx.ConfirmationState.SUGGESTED, source, source
     tx.suggestion_confidence = None if confidence is None else Decimal(f"{confidence:.4f}")
     tx.suggestion_candidates = tx.suggestion_reason = None
-
-
-def _apply_unless_user_differs(tx, code, source, confidence, past, top):
-    """사용자가 같은 가게를 전에 다른 카테고리로 골랐으면('앞으로도 적용' 아님) 자동 적용하지 않고 묻는다.
-    사용자 수정이 반복되는 가게 = 동명 충돌 후보 (분류 워크플로 10/26 4장). 지난 선택을 첫 후보로"""
-    if past and past != code:
-        candidates = [(past, None)] + [(c, p) for c, p in top if c != past]
-        _review(tx, candidates[:3], USER_DIFFERS_REASON, source)
-    else:
-        _apply(tx, code, source, confidence)
 
 
 def _review(tx, top, reason, source):
