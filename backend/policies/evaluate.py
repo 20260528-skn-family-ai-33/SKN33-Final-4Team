@@ -17,7 +17,7 @@ from .regions import REGIONS, find_region
 
 # 없음 = 맞는 정책이 없는 질문 (정답 묶음 []). 이사 = 문장 속 지역이 사는 곳과 다른 질문 (region 은 최종 검색 지역)
 KINDS = ("구체", "막연", "두고민", "없음", "지역", "이사")
-FIELDS = {"id", "kind", "query", "region", "keywords", "answers", "profile", "note"}
+FIELDS = {"id", "kind", "query", "region", "keywords", "answers", "profile", "note", "field"}  # field = 분야 (에이전트 평가용, 검색 채점은 쓰지 않음)
 PROFILE_FIELDS = {"age", "job", "gender", "specials"}
 MODES = (("벡터만", False), ("키워드", True))
 AUTO = "자동"  # 4단계 질문 읽기(LLM)가 뽑은 검색 문장 · 키워드. 목표는 '키워드'(사람이 뽑음) 점수에 가까워지는 것
