@@ -96,8 +96,8 @@ def _data(context, envelope):
     data["automatic_unit"], data["fallback_unit"] = _units(context)
     buckets = context.get("buckets")
     spare = buckets.get('SPARE') if isinstance(buckets, dict) else None
+    # A saved salary cut can leave a future deficit even when income_before is unchanged.
     projected_deficit = ((context.get('planning') or {}).get('scope') == 'next_cycle'
-                         and context.get('income_before', 0) > context.get('monthly_income', 0)
                          and context.get('funding_amount') == context.get('monthly_income')
                          and type(spare) is int and spare < 0)
     if projected_deficit:
@@ -130,8 +130,7 @@ def _data(context, envelope):
     if envelope.get('spare_minimum') is not None:
         minimum = _money(envelope['spare_minimum'], 'invalid_spare_minimum')
         normalized['spare_minimum'] = minimum
-        data['bucket_available']['SPARE'] = min(data['bucket_available'].get('SPARE', 0),
-                                               max(data['buckets']['SPARE'] - minimum, 0))
+        data['bucket_available']['SPARE'] = max(data['bucket_available'].get('SPARE', 0) - minimum, 0)
     before = {**data["allocations"], **data["buckets"]}
     data["before"] = before
     data["targets"], data["items"] = {}, []

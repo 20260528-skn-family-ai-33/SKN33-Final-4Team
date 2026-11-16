@@ -69,6 +69,22 @@ def reading(**changes):
 
 
 class AdjustmentCalculationTest(unittest.TestCase):
+    def test_spare_minimum_protects_available_balance_after_spending_and_reservations(self):
+        for available in (250000, 230000):
+            with self.subTest(available=available):
+                ctx = context()
+                ctx['bucket_available']['SPARE'] = available
+                request = {**envelope(item('FOOD', 100000), sources=['SPARE']), 'spare_minimum': 200000}
+                quote = available_bucket_source(ctx, 'SPARE', spare_minimum=200000)
+                self.assertEqual(quote['maximum'], available - 200000)
+                result = simulate_funding(ctx, request)
+                moved = ctx['buckets']['SPARE'] - result['buckets']['SPARE']
+                self.assertEqual(moved, available - 200000)
+                self.assertEqual(result['status'], 'partial')
+                self.assertEqual(available - moved, 200000)
+                validate_funding(ctx, request, result)
+
+
     def test_excluding_living_funding_allows_named_increase_but_never_a_living_cut(self):
         inp = context()
         result = simulate_funding(inp, envelope(item(amount=50000), sources=['SPARE', 'LIVING'], excluded=['LIVING']),

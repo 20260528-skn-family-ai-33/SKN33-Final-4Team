@@ -21,6 +21,22 @@ class FuturePlanningTest(unittest.TestCase):
         self.base = context()
         self.base.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
 
+    def test_next_cycle_spare_minimum_is_not_subtracted_twice(self):
+        from .adjustment_core.funding import available_bucket_source
+        self.base['bucket_floors']['SPARE'] = 200000
+        planned = planning_context(self.base, {'scope': 'next_cycle'})
+        quote = available_bucket_source(planned, 'SPARE', spare_minimum=200000)
+        self.assertEqual(quote['maximum'], 200000)
+
+    def test_saved_salary_deficit_still_requires_sufficient_unprotected_cuts(self):
+        self.base['monthly_income'] = 2500000
+        for cut, floor in ((50000, 300000), (100000, 550000)):
+            with self.subTest(cut=cut, floor=floor):
+                self.base['bucket_floors']['SAVINGS'] = floor
+                planned = planning_context(self.base, {'scope': 'next_cycle'})
+                result = simulate_funding(planned, envelope(item('SAVINGS', cut, 'down'), destinations=['SPARE']))
+                self.assertEqual(result['status'], 'infeasible')
+
     def test_salary_decrease_and_requested_savings_cut_are_calculated_together(self):
         store, propose = Store(), Mock(return_value={'proposal_id': 'plan', 'task_ref': 'task'})
         parsed = reading(requests=[item('SAVINGS', 100000, 'down')], scope='next_cycle',
@@ -188,6 +204,50 @@ class FuturePlanningTest(unittest.TestCase):
 
 
 class SchedulePersistenceTest(TestCase):
+    def test_saved_salary_decrease_can_cover_deficit_before_approval_and_activation(self):
+        from .api_salary import save_salary
+        with transaction.atomic():
+            save_salary(self.user, self.profile, {'take_home_income': 2500000, 'payday': 25}, fixtures.TODAY)
+        self.profile.refresh_from_db()
+        self.snapshot.update(monthly_income=self.profile.monthly_take_home_income, next_cycle_starts_on='2026-11-25')
+        adapter = self.adapter()
+        planned = planning_context(adapter.get_context(), {'scope': 'next_cycle'})
+        self.assertEqual(planned['income_before'], planned['monthly_income'])
+        self.assertEqual(planned['buckets']['SPARE'], -100000)
+        result = adapter.simulate(planned, envelope(item('SAVINGS', 100000, 'down'), destinations=['SPARE']))
+        self.assertEqual(result['status'], 'proposed')
+        self.assertEqual(result['buckets']['SPARE'], 0)
+        card = adapter.propose(planned, result, scope='next_cycle')
+        self.flush(adapter)
+        self.approve(card['proposal_id'])
+        with transaction.atomic():
+            activate_due_settings(self.user, self.profile, date(2026, 11, 25))
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.monthly_take_home_income, 2500000)
+        self.assertEqual(self.profile.savings_floor, 500000)
+
+    def test_scheduled_target_release_survives_approval_and_activation(self):
+        self.profile.budget_category_targets = {'FOOD': 400000}
+        self.profile.save(update_fields=['budget_category_targets'])
+        self.snapshot.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25', category_targets={'FOOD': 400000})
+        adapter = self.adapter()
+        planned = planning_context(adapter.get_context(), {'scope': 'next_cycle'})
+        result = adapter.simulate(planned, envelope(item('EDUCATION', 50000), sources=['SPARE']))
+        card = adapter.propose(planned, result, scope='next_cycle', target_changes={'FOOD': None})
+        self.assertEqual(card['target_changes']['FOOD'], None)
+        self.flush(adapter)
+        approved = self.approve(card['proposal_id'])
+        self.assertEqual(approved['target_changes']['FOOD'], None)
+        schedule = BudgetAdjustmentSchedule.objects.get(proposal_id=card['proposal_id'])
+        self.assertNotIn('FOOD', schedule.settings['budget_category_targets'])
+        self.profile.refresh_from_db()
+        self.assertEqual(self.profile.budget_category_targets['FOOD'], 400000)
+        with transaction.atomic():
+            activate_due_settings(self.user, self.profile, date(2026, 11, 25))
+        self.profile.refresh_from_db()
+        self.assertNotIn('FOOD', self.profile.budget_category_targets)
+        self.assertEqual(self.profile.budget_category_targets['EDUCATION'], 100000)
+
     setUp = fixtures.AdjustmentServiceTest.setUp
     adapter = fixtures.AdjustmentServiceTest.adapter
     flush = fixtures.AdjustmentServiceTest.flush
