@@ -144,7 +144,7 @@ class LoanSyncTest(TestCase):
         self.assertEqual(loan.origin, "provider")
         self.assertEqual(loan.source_loan_key, identifier_key("loan", NUMBER))
         for field in ["monthly_payment", "payment_day", "repayment_method", "overdue", "linked_account_id",
-                      "source_loan_ref_ciphertext", "manual_balance", "manual_rate"]:
+                      "manual_balance", "manual_rate"]:
             self.assertIsNone(getattr(loan, field))
         self.assertFalse(FinancialTransaction.objects.filter(user=self.user).exists())
         self.assertFalse(PaymentDue.objects.filter(user=self.user).exists())

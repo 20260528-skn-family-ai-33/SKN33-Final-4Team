@@ -65,7 +65,7 @@ def bank(code="0088", **extra):
     return {"businessType": "bank", "organizationCode": code, "loginId": "hong-login", "password": "Bank-Pass-9!", **extra}
 
 
-def card(code="0311", **extra):
+def card(code="0307", **extra):
     return {"businessType": "card", "organizationCode": code, "loginId": "hong-login", "password": "Bank-Pass-9!", **extra}
 
 
@@ -296,14 +296,14 @@ class SmsAuthTest(ConnectBase):
         res = self.post(card(smsAuth={"authToken": first["smsAuth"]["authToken"], "code": "123456"}))
         item = res.json()["results"][0]
         # 11/03: 카드사도 연결 직후 카드 · 승인 · 청구서를 불러온다 (sync_card)
-        self.assertEqual((item["status"], item["organizationName"], item["syncStatus"]), ("connected", "롯데카드", "loading"))
+        self.assertEqual((item["status"], item["organizationName"], item["syncStatus"]), ("connected", "씨티카드", "loading"))
         kind, path, params = self.fake.calls[-1]
         self.assertEqual((kind, path), ("certification", "/v1/account/create"))
         self.assertEqual((params["smsAuthNo"], params["is2Way"]), ("123456", True))
         self.assertEqual(params["twoWayInfo"], {"jobIndex": 0, "threadIndex": 0, "jti": "j-1", "twoWayTimestamp": 1793088000000})
         self.assertEqual(params["accountList"][0]["businessType"], "CD")
         self.sync.assert_not_called()
-        self.assertEqual(self.client.get(URL).json()["items"][0]["organizationName"], "롯데카드")
+        self.assertEqual(self.client.get(URL).json()["items"][0]["organizationName"], "씨티카드")
 
     def test_wrong_code_asks_again_with_new_token(self):
         first = self.start()
@@ -345,7 +345,7 @@ class SmsAuthTest(ConnectBase):
         self.fake.responses = [answer]
         res = self.post(card())
         self.assertEqual(res.status_code, 400)
-        self.assertEqual(res.json()["error"]["message"], "롯데카드에서 요구한 추가 인증은 아직 지원하지 않아요.")
+        self.assertEqual(res.json()["error"]["message"], "씨티카드에서 요구한 추가 인증은 아직 지원하지 않아요.")
 
 
 class CardFieldsAndInputTest(ConnectBase):
@@ -390,6 +390,12 @@ class CardFieldsAndInputTest(ConnectBase):
             "institutions[0].cardPassword": ["카드번호와 카드 비밀번호를 확인해 주세요."],
         })
 
+    def test_kb_card_possession_check_asks_card_fields(self):
+        self.fake.responses = [fail("CF-12108", "카드소지확인이 필요합니다.")]
+        res = self.post(card("0301"))
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(set(res.json()["error"]["fields"]), {"institutions[0].cardNo", "institutions[0].cardPassword"})
+
     def test_consent_required_before_codef(self):
         Consent.objects.filter(user=self.user, product_scope="card").update(revoked_at=timezone.now())
         res = self.post(bank(), card())
@@ -430,6 +436,22 @@ class CardFieldsAndInputTest(ConnectBase):
                 res = self.client.post(URL, data=json.dumps(body), content_type="application/json")
                 self.assertEqual(res.status_code, 400)
                 self.assertIn(field, res.json()["error"]["fields"])
+        self.assertEqual(self.fake.calls, [])
+
+    def test_blocked_institutions_say_why_without_codef(self):
+        cases = [
+            (bank("0002"), "이 기관은 공동인증서로만 연결돼서 아직 연결할 수 없어요."),
+            (bank("0020"), "이 기관은 출금 계좌 확인이 필요해서 아직 연결할 수 없어요."),
+            (bank("0031"), "이 기관은 출금 계좌 확인이 필요해서 아직 연결할 수 없어요."),
+            (bank("0071"), "이 기관은 아이디 로그인으로 거래내역을 불러올 수 없어서 아직 연결할 수 없어요."),
+            (bank("0089"), "이 기관은 개인 연결 서비스가 끝나서 연결할 수 없어요."),
+            (card("0311"), "이 기관은 휴대폰 본인인증이 필요해서 아직 연결할 수 없어요."),
+        ]
+        for row, message in cases:
+            with self.subTest(code=row["organizationCode"]):
+                res = self.post(row)
+                self.assertEqual(res.status_code, 400)
+                self.assertEqual(res.json()["error"]["fields"], {"institutions[0].organizationCode": [message]})
         self.assertEqual(self.fake.calls, [])
 
     def test_login_required(self):

@@ -49,7 +49,7 @@ class BetaFeedbackTest(TestCase):
         talk.lives_in_dongtan()
         talk.send('월세 지원 있어?')
         self.assertEqual(talk.last['reply']['sections'][0]['policy_no'], 'P1')
-        self.assertIn('지원 형태: 대출 보증 (지원금 지급이 아니에요)', rows(talk.last))
+        self.assertIn('지원 형태: 대출 보증 · 지원금 아님', rows(talk.last))
         plan.return_value = chose('detail', topics=['eligibility'])  # 베타에서 실제 빠진 의도
         asked = talk.send('추천한 정책 신청하면 무조건 지원 받을 수 있는 거지?')
         self.assertEqual(asked['reply']['lines'], [agent.WHICH])

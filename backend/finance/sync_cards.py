@@ -90,7 +90,6 @@ def _save_cards(user, connection, org, cards, run, fetched_at):
                 counts["skipped"] += 1
                 continue
         card.connection, card.issuer_code = connection, org
-        card.source_card_ref_ciphertext = None
         for field in ("masked_number", "name", "card_type", "card_status"):
             setattr(card, field, data[field])
         card.fetched_at = fetched_at
@@ -99,7 +98,7 @@ def _save_cards(user, connection, org, cards, run, fetched_at):
             counts["created"] += 1
         else:
             card.save(update_fields=[
-                "connection", "issuer_code", "source_card_ref_ciphertext",
+                "connection", "issuer_code",
                 "masked_number", "name", "card_type", "card_status", "fetched_at",
             ])
             counts["updated"] += 1

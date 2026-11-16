@@ -172,7 +172,7 @@ class CushionAPITest(TestCase):
         self.assertIsNone(data["cushion"]["goal"])
 
     def test_unknown_use_policy_is_not_presented_as_permission(self):
-        self.profile(cushion_use_policy="legacy", cushion_enabled=True)
+        self.profile(cushion_use_policy="legacy")
         self.assertIsNone(self.get()["cushion"]["useRule"])
 
     def test_get_preserves_pending_salary_and_budgets(self):
