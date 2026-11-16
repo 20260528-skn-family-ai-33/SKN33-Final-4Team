@@ -5,6 +5,7 @@ import json
 PROMPT = """너는 머니쿠션 예산 조정 요청 해석기다. JSON 하나만 반환한다.
 사용자가 이번 문장에서 직접 말한 조건만 추출하고 계산·금액 제안·예산 승인·저장은 하지 않는다.
 previous는 현재까지 확인한 조건이고 conversation은 최근 대화다. 둘을 함께 읽어 생략·대명사·정정을 해석한다.
+pending.kind=increase_review는 큰 증액의 부담을 확인하는 단계다. 지출 사유는 reason에만 기록하고, 사유를 말했다는 이유로 계속 진행에 동의했다고 해석하지 않는다. 주의사항을 이해하고 계속하겠다는 의사를 명확히 밝힌 경우에만 selected_choice=continue_increase다. 금액 정정은 requests로 추출하고 기존 대상·기간을 유지한다.
 단어 일치가 아니라 문장의 뜻으로 판단한다. 이미 확인한 조건은 서버가 유지하므로 이번에 바뀐 조건만 반환한다.
 request_update는 요청 목록을 어떻게 고칠지 나타낸다. 기본은 merge다.
 추가·금액 수정은 merge로 이번에 바뀐 항목만 반환한다.
@@ -24,15 +25,16 @@ replace에서는 사용자가 바꾸지 않은 기존 금액·방향은 그대�
 income_change는 예산 카테고리 requests에 넣지 않는다. 월급 증가분을 기존 증액에 쓰려는 후속 답이면 reference=previous로 목표를 유지한다.
 예: 교육비 증액 대화의 '다음달부터 월급 50만원 늘어서 그냥 그것만 추가해'는 income_change={amount:500000,mode:by,direction:up}, scope=next_cycle, sources=[SPARE], reference=previous다.
 증가한 월급은 다음 주기 여윳돈에 더해져 재원이 된다. 이미 쌓인 저축이나 이번 달 실제 입금으로 해석하지 않는다.
-월급 변화 시점을 말하지 않으면 다음 급여부터 적용할지 unclear로 확인한다. '이번 달 이미 들어온 월급'은 현재 설정 수정·실제 입금 확인이 필요하므로 미래 수입으로 현재 자금을 만들지 않는다.
+늘어난 수입을 기존 증액 목표에 쓰겠다는 뜻이면 sources=[SPARE]로 연결한다. 다른 항목을 줄이라고 바꾸거나 증액 목적을 지우지 않는다.
+예산을 바꾸자는 말 없이 월급이 바뀌었다고 알리거나 월급을 고쳐 달라는 말('월급이 320만원으로 올랐어', '월급 수정해줘 350만원')은 월급 수정이다. income_change만 채우고 requests=[], unclear=[]로 둔다. 적용 시점은 서버가 안내하므로 묻지 않는다. 바뀐 금액을 말하지 않았으면 unclear로 금액만 묻는다. 기존 조정 대화 중 월급 변화로 그 목표를 채우려는 말은 위 예처럼 reference=previous다. '이번 달 이미 들어온 월급'은 현재 설정 수정·실제 입금 확인이 필요하므로 미래 수입으로 현재 자금을 만들지 않는다.
 무엇을 바꾸거나 철회하는지 여러 해석이 가능하면 replace를 실행하지 말고 unclear로 그 부분만 묻는다.
 모든 단계에 공통으로 다음 순서를 적용한다.
 1. 현재 질문의 답인지, 설명·뒤로·취소인지, 기존 조건 수정인지, 조회인지 먼저 구분한다. 질문 중에도 다른 의도를 처리한다.
 2. 현재 질문의 field/index와 이전 조건으로 생략된 대상을 연결한다. 후보가 여러 개면 하나만 구체적으로 묻는다.
-3. 한 문장의 설명 요청과 수정 요청을 구분하고, 수정이 있으면 명시한 수정 조건을 빠짐없이 추출한다.
+3. 현재 질문에 대한 답과 함께 다른 조건을 말하면 둘 다 추출한다. pending.field는 추출할 필드를 제한하지 않는다. 준비금·금액 답변에 출처·제외·기간이 함께 있으면 해당 필드도 채운다.
 4. 모른다는 답은 동의가 아니다. 추천 요청, 금액 미정, 질문에 답할 수 없음을 현재 단계로 구분한다.
 5. 불가능 여부·잠금·최소액·데이터 부족은 서버 판단이다. 사용자 뜻이 명확하면 계산 불가를 예상해 unclear로 돌리지 않는다.
-6. previous.proposal은 확정 전 미리보기다. 추천을 물으면 추천, 이유를 물으면 설명, 선택하면 미리보기이며 저장 완료로 해석하지 않는다.
+6. previous.comparison은 실제 보여 준 조정 예시, previous.proposal은 확정 전 미리보기다. 이를 고르기 어렵거나 추천·이유를 묻는 답은 mine=true인 예산 대화다. 새로운 소비 조회나 별개 주제로 전환한 경우와 구별한다. 추천·설명은 선택이나 저장 승인이 아니다.
 조회인지 변경인지, 대상, 증감 방향, 금액의 의미, 돈을 가져올 곳과 옮길 곳 순서로 구분한다.
 사용자가 확실히 말하지 않은 금액·재원·승인 의사를 만들지 않는다. 새 주제인지 불분명할 때만 한 가지를 확인한다.
 requests의 category는 categories에 있는 코드 또는 SAVINGS(저축), CUSHION_MONTHLY(월 쿠션 적립액),
@@ -111,9 +113,11 @@ pending.kind가 partial 또는 available_quote일 때 '그냥 이렇게 해줘',
 cancel은 그만두기 요청이면 true다.
 mine은 '예산을 바꾸기'와 '바꿀 수 있는 범위'에 관한 말이면 true다. 늘리기·줄이기·옮기기, '얼마까지 늘릴 수 있어?',
 '줄일 만한 데 있어?', 그리고 pending 질문의 답·선택·설명 요청·취소가 여기에 든다.
-'지금 상태를 조회'만 하는 말은 mine=false다. '얼마 남았어?', '얼마 썼어?', '왜 늘었어?'처럼 남은 예산·쓴 돈·소비 이유를 묻는 말이다.
-'의료비 예산 왜 이렇게 크게 잡았어?', '예산 책정 근거 알려줘'도 배정 근거 조회이므로 mine=false, handoff=spending이다.
-이때 handoff=spending이고 handoff_category에는 물어본 카테고리 코드 하나를 쓴다. 전체·생활비를 물었거나 여러 개거나 없으면 null이다.
+예산 금액이 왜 그렇게 정해졌는지 묻는 말은 소비 조회가 아니라 예산 질문이다. mine=false, handoff=budget_basis다(예산 조정에서 직접 답한다).
+예: '쇼핑에 예산 왜 이렇게 많이 분배됐어?', '패션쇼핑 예산 왜 이렇게 높게 책정됐어?', '의료비 예산 왜 크게 잡았어?', '식비 배정 기준이 뭐야?', '예산 책정 근거 알려줘'.
+'예산'·'배정'·'분배'·'책정'·'잡았어' 같은 말로 정해진 금액의 이유를 물으면 '왜'가 있어도 budget_basis이고 spending이 아니다.
+'지금 상태를 조회'만 하는 말은 mine=false, handoff=spending이다. '얼마 남았어?', '얼마 썼어?', '왜 늘었어?'처럼 남은 예산·쓴 돈·소비가 늘거나 준 이유를 묻는 말이다.
+budget_basis·spending 모두 handoff_category에는 물어본 카테고리 코드 하나를 쓴다. 전체·생활비를 물었거나 여러 개거나 없으면 null이다.
 '이건 얼마 남았어?'처럼 가리키는 말이면 previous의 조정 대상에서 풀고, 풀 수 없으면 null이다. mine=false면 나머지 칸은 비운다.
 조회와 변경을 한 문장에 함께 말하면 mine=true로 두고 변경 조건만 추출한다.
 pending 질문에 대한 답(금액, 선택지 이름, 네/아니요)은 조회처럼 보여도 mine=true다.
@@ -177,7 +181,7 @@ SCHEMA = {
         "use_available": {"type": ["boolean", "null"]},
         "reference": _enum(("previous", "new", "unclear")),
         # mine=false 일 때 어디로 보낼지: 조회 질문이면 소비 분석 + 물어본 카테고리 (라우터가 LLM 없이 넘긴다)
-        "handoff": _enum(("spending",)),
+        "handoff": _enum(("spending", "budget_basis")),
         "handoff_category": {"type": ["string", "null"]},
     },
     "required": ["selected_choice", "request_update", "income_change", "one_off", "set_aside_amount", "mine", "requests", "scope", "clear_targets", "unlock", "approval", "cancel", "reason", "unclear",
@@ -258,7 +262,7 @@ def parse(value):
             raise InterpretationFailed("invalid_available_flag")
     if "handoff" in value:
         category = value["handoff_category"]
-        if value["handoff"] not in (None, "spending") or category is not None and (
+        if value["handoff"] not in (None, "spending", "budget_basis") or category is not None and (
                 not isinstance(category, str) or not 0 < len(category) <= 40):
             raise InterpretationFailed("invalid_handoff")
     if value.get('action') == 'help_decide':
@@ -290,6 +294,13 @@ def dialogue_context(state):
         pending['focus'] = requests[index]
     if state.get('proposal'):
         previous['proposal'] = {key: state['proposal'].get(key) for key in ('changes', 'transfers')}
+    comparison = (state.get('financial_offer') or {}).get('comparison') or (state.get('comparison') or {}).get('comparison')
+    if comparison:
+        previous['comparison'] = {
+            'recommendation': comparison.get('recommendation'),
+            'plans': [{key: plan.get(key) for key in ('id', 'label', 'status', 'amount')}
+                      for plan in comparison.get('plans', [])],
+        }
     return {'pending': pending, 'previous': previous}
 
 

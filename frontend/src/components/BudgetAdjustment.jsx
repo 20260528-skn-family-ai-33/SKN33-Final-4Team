@@ -1,8 +1,9 @@
 // 금액·추천 근거는 서버 검수 결과 그대로 표시한다. 펼침은 조회·선택·저장을 호출하지 않는다.
 // 답변 전체를 다른 답변과 같은 말풍선(mc-bubble) 안에 그린다 (11/11). 모양은 styles/chat.css
-import { adjustSentence, allocationName, ENDED_ADJUSTMENTS as TERMINAL } from '../utils/adjust.js'
+import { adjustSentence, allocationName, manwon, ENDED_ADJUSTMENTS as TERMINAL } from '../utils/adjust.js'
 import { useId, useState } from 'react'
 import { won } from '../utils/money.js'
+import { apiSend } from '../utils/api.js'
 import MoneyInput from './MoneyInput.jsx'
 import { PATHS } from '../routes.js'
 
@@ -76,7 +77,43 @@ function Explanation({ value, detail, shown = [] }) {
   </>
 }
 
+// 추천 카드용 짧은 변경표: 늘어나는 항목 먼저, 한 줄에 '5만원 → 1만원 (−4만원)'
+function CompactChanges({ changes = [] }) {
+  const rows = [...changes].sort((a, b) => (b.diff > 0) - (a.diff > 0))
+  return <dl className="mc-budget-compact">{rows.map((row) => (
+    <div key={row.category} className={row.diff > 0 ? 'is-up' : undefined}>
+      <dt>{allocationName(row.category)}</dt>
+      <dd>{manwon(row.before)} → <strong>{manwon(row.after)}</strong> <small>{row.diff > 0 ? '+' : '−'}{manwon(Math.abs(row.diff))}</small></dd>
+    </div>
+  ))}</dl>
+}
+
 function Plan({ plan, choice, active, onPick, detail, selected }) {
+  const changes = plan.result?.changes ?? []
+  const [summary, ...why] = plan.assessment?.reasons ?? []
+  const cautions = (plan.assessment?.cautions ?? []).filter((line) => line !== summary)
+  const missing = (plan.result?.shortfalls ?? []).reduce((sum, row) => sum + (row.missingAmount ?? 0), 0)
+  return <article className={`mc-budget-plan${plan.recommended ? ' is-recommended' : ''}${selected ? ' is-selected' : ''}`} aria-label={plan.label}>
+    <div className="mc-budget-plan-head"><h3>{plan.label}</h3><div className="mc-budget-plan-badges">
+      {plan.recommended && <span className="mc-budget-recommended">추천</span>}
+      {selected && <span className="mc-budget-selected">✓ 선택한 안</span>}
+    </div></div>
+    {plan.status === 'partial' && missing > 0 && <p className="mc-budget-shortfall">일부만 가능 · <strong>{manwon(missing)} 부족</strong></p>}
+    {summary && !plan.recommended && <p className="mc-budget-reason">{summary}</p>}
+    {plan.recommended ? <CompactChanges changes={changes} /> : <details className="mc-budget-details">
+      <summary>예산 변화 보기</summary><CompactChanges changes={changes} /></details>}
+    {cautions.slice(0, plan.recommended ? 2 : 1).map((line) => <p className="mc-budget-warning" key={line}>{line}</p>)}
+    {why.length > 0 && <details className="mc-budget-details" open={Boolean(detail)}>
+      <summary>추천 이유</summary>
+      <ul className="mc-budget-why">{why.map((line) => <li key={line}>{line}</li>)}</ul>
+    </details>}
+    {choice && <button type="button" className="mc-budget-select" disabled={!active || !onPick} aria-pressed={selected}
+      aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : '이 안 선택하기'}</button>}
+  </article>
+}
+
+// 예전 비교 카드(재정 추천·감액 비교). 서버 추천기 카드는 위 Plan 을 쓴다.
+function LegacyPlan({ plan, choice, active, onPick, detail, selected }) {
   const [expanded, setExpanded] = useState(Boolean(detail))
   const selectionHelp = useId()
   const changes = plan.result?.changes ?? []
@@ -97,7 +134,6 @@ function Plan({ plan, choice, active, onPick, detail, selected }) {
     {zeroes.map((fact) => <p className="mc-budget-warning" key={fact.category}>
       주의: {allocationName(fact.category)} {fact.availableAfter != null ? '가용액' : '남은 예산'} 0원
     </p>)}
-    {(plan.lines ?? []).filter((line) => line.includes('비교 재원에서 제외')).map((line) => <p className="mc-budget-warning" key={line}>{line}</p>)}
     <details className="mc-budget-details" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary>{expanded ? '예산 변화 접기' : '예산 변화 보기'}</summary>
       <BudgetChanges changes={changes} />
@@ -116,17 +152,49 @@ function Comparison({ comparison, choices, active, onPick, readOnly = false, det
   const [selected, setSelected] = useState(null)
   const plans = (comparison.plans ?? []).filter((plan) => ['ready', 'partial'].includes(plan.status) && plan.result?.changes?.length)
   if (!plans.length) return null
+  // 서버 추천기(headline 있음): 이해한 요청 → 추천안 → 고르기, 한 형식으로 짧게 보여 준다.
+  const advised = typeof comparison.headline === 'string'
+  const Card = advised ? Plan : LegacyPlan
   return <section className="mc-budget-comparison" aria-label={readOnly ? '다른 범위 예산 비교' : '예산 조정안 비교'}>
-    <h2>{readOnly ? '다른 방법으로 바꾸면 이렇게 돼요' : '예산 조정 예시'}</h2>
+    {advised ? <>
+      {comparison.lead && <p className="mc-budget-lead">{comparison.lead}</p>}
+      <p className="mc-budget-headline">{comparison.headline}</p>
+    </> : <>
+      <h2>{readOnly ? '다른 방법으로 바꾸면 이렇게 돼요' : '예산 조정 예시'}</h2>
+      <p className="mc-budget-outcome">{comparison.amountWasGiven ? '요청한 금액' : comparison.basisKind === 'forecast_shortfall' ? '최근 지출을 참고해 제안하는 금액' : '옮길 수 있는 범위에서 계산한 예시'} {won(comparison.basisAmount)}</p>
+      {!comparison.amountWasGiven && comparison.basisKind !== 'forecast_shortfall' && <p className="mc-budget-reason">현재 예산에서 옮길 수 있는 돈으로 만든 예시예요. 원하는 금액으로 바꿀 수 있어요.</p>}
+    </>}
     {comparison.notice && <p className="mc-budget-reason" role="note">{comparison.notice}</p>}
-    <p className="mc-budget-outcome">{comparison.amountWasGiven ? '요청한 금액' : comparison.basisKind === 'forecast_shortfall' ? '최근 지출을 참고해 제안하는 금액' : '옮길 수 있는 범위에서 계산한 예시'} {won(comparison.basisAmount)}</p>
-    {!comparison.amountWasGiven && comparison.basisKind !== 'forecast_shortfall' && <p className="mc-budget-reason">현재 예산에서 옮길 수 있는 돈으로 만든 예시예요. 원하는 금액으로 바꿀 수 있어요.</p>}
     {readOnly && <p className="mc-budget-reason">비교만 해요. 선택한 재원은 그대로예요.</p>}
-    {plans.map((plan) => <Plan key={plan.id} plan={plan} active={active} selected={selected === plan.id}
+    {plans.map((plan) => <Card key={plan.id} plan={plan} active={active} selected={selected === plan.id}
       onPick={onPick && ((choice) => { setSelected(plan.id); onPick(choice) })} detail={detail}
       choice={readOnly ? null : choices?.find((choice) => choice.value === `plan_${plan.id}` || choice.value === `financial_${plan.id}`)} />)}
+    {advised && !readOnly && <p className="mc-note">고르면 확정 전 미리보기를 보여 드려요. 아직 예산은 바뀌지 않아요.</p>}
     {!comparison.recommendation?.planId && comparison.recommendation?.reasons?.[0] &&
       <p className="mc-budget-reason">{comparison.recommendation.reasons[0]}</p>}
+  </section>
+}
+
+// 챗봇에서 월급을 바꿀 때도 내 정보와 같은 API(PUT /api/budgets/salary/)로만 저장한다.
+function SalaryChange({ value, active }) {
+  const [phase, setPhase] = useState('idle')
+  const save = async () => {
+    setPhase('saving')
+    try {
+      await apiSend('/api/budgets/salary/', 'PUT', { takeHomeIncome: value.after, payday: value.payday })
+      setPhase('saved')
+    } catch {
+      setPhase('error')
+    }
+  }
+  return <section className="mc-budget-salary" aria-label="월급 변경">
+    <p className="mc-note">월 실수령액</p>
+    <p className="mc-budget-salary-amounts">{won(value.before)} <span aria-label="변경 후">→</span> <strong>{won(value.after)}</strong></p>
+    {value.payday == null
+      ? <p className="mc-note">급여일이 없어 여기서 바꿀 수 없어요. <a href={PATHS.salary}>월급·급여일 수정</a>에서 입력해 주세요.</p>
+      : <button type="button" className="mc-primary" disabled={!active || phase === 'saving' || phase === 'saved'} onClick={save}>
+        {phase === 'saved' ? '✓ 내 정보에 저장했어요' : phase === 'saving' ? '저장 중…' : '월급 수정하기'}</button>}
+    {phase === 'error' && <p className="mc-budget-warning" role="alert">저장하지 못했어요. 잠시 후 다시 눌러 주세요.</p>}
   </section>
 }
 
@@ -208,7 +276,8 @@ function DistributionInput({ value, active, onSend, onCancel }) {
           const selected = rows.some((row) => row.category === code)
           return <button key={code} type="button" aria-pressed={selected} onClick={() => setRows(selected
             ? rows.filter((row) => row.category !== code) : [...rows, { category: code, digits: '' }])}>
-            {selected && <span aria-hidden="true">✓ </span>}{allocationName(code)}
+            <span className="mc-pick-name">{selected && <span aria-hidden="true">✓ </span>}{allocationName(code)}</span>
+            {Number.isSafeInteger(before[code]) && <small>현재 {won(before[code])}</small>}
           </button>
         })}
       </div>
@@ -233,7 +302,10 @@ function DistributionInput({ value, active, onSend, onCancel }) {
       {rows.some((row) => Number(row.digits) % 5000 !== 0) && <p className="mc-note">5,000원 단위로 입력해 주세요.</p>}
       {value.needsRefresh
         ? <p className="mc-note">최신 지출을 확인한 뒤 변경안을 만들 수 있어요. <a href={PATHS.connections}>계좌·카드 연결 관리에서 내역 확인하기</a></p>
-        : <button type="submit" className="mc-primary" disabled={!valid || !changed}>나눈 예산 미리보기</button>}
+        : <>
+          {value.preview && <p className="mc-note">최근 지출 내역이 아직 다 모이지 않아 지금까지 확인된 기록으로 계산해요.</p>}
+          <button type="submit" className="mc-primary" disabled={!valid || !changed}>나눈 예산 미리보기</button>
+        </>}
       {onCancel && <button type="button" className="mc-link mc-budget-edit-cancel" onClick={onCancel}>수정 취소</button>}
     </fieldset>
   </form>
@@ -273,9 +345,10 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
     {(guidance?.context ?? adjustment.requestSummary) && !amountInput && !distributionInput && !TERMINAL.has(state) && <p className="mc-budget-reason" aria-label="이해한 요청">{guidance?.context ?? adjustment.requestSummary}</p>}
     {!guidance && inputNotice && <p className="mc-budget-reason" role="note">{inputNotice}</p>}
     {guidance?.message && (guidance.kind === 'error' || (!amountInput && !distributionInput && !hasPreview && !adjustment.recommendationAdvice)
-      || (guidance.kind === 'explanation' && !adjustment.recommendationAdvice)) && guidance.message.split('\n').filter(Boolean).map((line, index) => <p key={index}>{line}</p>)}
+      || (guidance.kind === 'explanation' && !adjustment.recommendationAdvice)) && guidance.message.split('\n').filter(Boolean).map((line, index) => <p key={index} className={adjustment.phase === 'increase_review' ? 'mc-budget-warning' : undefined}>{line}</p>)}
     {guidance?.reason && <p className="mc-budget-reason" role="note">{guidance.reason}</p>}
     {adjustment.increaseWarning && !TERMINAL.has(state) && <p className="mc-budget-warning" role="note">{adjustment.increaseWarning}</p>}
+    {adjustment.salaryChange && !TERMINAL.has(state) && <SalaryChange value={adjustment.salaryChange} active={active} />}
     {amountInput && <AdjustmentAmount key={`${content.turn}-${amountInput.category}-${amountInput.direction}`} value={amountInput} active={active} onSend={onSend} />}
     {distributionInput && <DistributionInput key={content.turn} value={distributionInput} active={active} onSend={onSend} />}
     {!guidance && !proposal && !hasComparison && !amountInput && !adjustment.recommendationAdvice && (content.lines ?? (content.text ? [content.text] : [])).filter((line) => !distributionInput || !line.endsWith('어디에 나눌까요?')).map((line, i) => <p key={i}>{line}</p>)}

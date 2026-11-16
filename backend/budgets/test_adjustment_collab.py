@@ -46,7 +46,7 @@ class AdjustmentCollabTest(unittest.TestCase):
     def test_funding_question_button_uses_db_category_name_without_llm(self):
         self.turn("식비 5만 원 늘려줘", reading(requests=[item(amount=50000)]))
         before = deepcopy(self.store.state)
-        self.assertEqual(before["pending"]["kind"], "funding_scope")
+        self.assertEqual(before["pending"]["kind"], "comparison")
         self.assert_handoff(self.turn("교통은 얼마 남았어?", reading(mine=False, handoff="spending", handoff_category="TRANSPORT_CAR")), before)
         response = self.turn("교통·차량에서 가져오기", hints={"from": "spending", "category": "TRANSPORT_CAR"})
         self.complete.assert_not_called()

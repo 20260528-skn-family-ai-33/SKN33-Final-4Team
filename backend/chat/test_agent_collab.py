@@ -82,10 +82,10 @@ class CollabFixture:
         return store.get_agent_state(engine.KEY, "budget") or {}
 
     def proposal(self):
-        """식비 5만 원 늘려줘 → 생활비 내에서 → 조정안 카드"""
+        """식비 5만 원 늘려줘 → 계산한 예시 선택 → 확정 전 변경안"""
         data, asked = self.say("식비 5만 원 늘려줘")
         self.assertEqual(data["agent"], "budget")
-        data, card = self.pick(asked, "living")
+        data, card = self.pick(asked, "plan_living")
         return card
 
     def changes(self, card):

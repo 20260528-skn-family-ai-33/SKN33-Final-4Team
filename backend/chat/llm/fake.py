@@ -7,6 +7,8 @@ from chat.interpretation.legacy import SAID, RoleFakeLLM
 from spending_analysis import agent_loop as spending_agent_loop
 from spending_analysis import claims as spending_claims
 from spending_analysis import reading as spending_reading
+from spending_analysis import insight as spending_insight
+from spending_analysis import narrative as spending_narrative
 
 def hypothesis(metric, target, unavailable=None):
     return {"metric": metric, "target": target, "unavailable": unavailable}
@@ -21,6 +23,26 @@ EXTRA_SAID = {
 }
 # 소비 형식으로만 답하는 가짜 해석 (통합 형식에 없는 칸 — 세부 지출 · 이번 달 포함 · 별칭)
 SPENDING_SAID = {
+    "내 소비 습관 어때?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
+    "이대로 쓰면 이번 달 얼마나 쓸까?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
+    # 분석 용어 없이 말해도 의도대로 (11/13)
+    "돈이 왜 이렇게 빨리 없어지지": {"mine": True, "target": "overview", "analysis_goal": "reason", "refers_to": "none"},
+    "나 돈 너무 막 쓰나?": {"mine": True, "target": "overview", "analysis_goal": "habit", "refers_to": "none"},
+    "이대로 가면 괜찮아?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "none"},
+    "요즘 내 소비 어때?": {"mine": True, "target": "overview", "analysis_goal": "overview", "refers_to": "none"},
+    # 분석 메뉴 · 계산 방법 (11/14)
+    "또 뭐 분석해줄 수 있어?": {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"},
+    "소비 분석": {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"},
+    "전체적으로 분석해줘": {"mine": True, "target": "overview", "analysis_goal": "overview", "refers_to": "none", "followup": "new"},
+    "왜 이렇게 계산된거야?": {"mine": True, "target": "overview", "period": "this_month", "analysis_goal": "forecast", "refers_to": "previous"},
+    "외식이었어": {"mine": True, "followup": "answer", "analysis_activity": "dining"},
+    "원래 계획했던 거야": {"mine": True, "followup": "answer", "analysis_planned": True},
+    **{text: {"mine": True, "target": "spend", "explain": True, "explain_kind": "change",
+              "period": "this_month", "analysis_scope": "living"} for text in (
+        "이번달 생활비 왜이렇게 많이 나왔지?", "이번 달 생활비 왜 이렇게 많이 나왔지?")},
+    **{text: {"mine": True, "target": "overview", "refers_to": "none", "followup": "new"} for text in (
+        "그냥 다 분석해줘", "뭐든 분석해줘", "아무거나 분석해줘", "내 소비 알아서 살펴봐줘",
+        "어디부터 봐야 할지 모르겠어. 소비 좀 봐줘", "소비 분석으로 뭘 볼 수 있어?", "이번 달 전체 소비 분석해줘")},
     # 범위·근거 회귀를 외부 호출 없이 서비스 화면에서도 확인할 고정 입력
     "지난달 식비는 왜 많이 나왔어?": {"mine": True, "explain": True, "explain_kind": "composition",
                                   "period": "last_month", "period_said": "지난달", "categories": ["FOOD"]},
@@ -105,6 +127,9 @@ BUDGET_SAID = {
 
 for _text in ("의료비 줄이고싶어", "의료비 줄이고 싶다고"):
     EXTRA_SAID[_text] = {"intents": ["budget_adjust"], "categories": ["MEDICAL_HEALTH"], "direction": "down"}
+for _text in ('생활비가 부족해', '생활비 늘려줘'):
+    EXTRA_SAID[_text] = {'intents': ['budget_adjust']}
+    BUDGET_SAID[_text] = [{'category': 'LIVING', 'amount': None, 'amount_mode': None, 'direction': 'up'}]
 EXTRA_SAID['의료비를 1만 원으로 줄여줘'] = {'intents': ['budget_adjust'], 'categories': ['MEDICAL_HEALTH'],
                                               'direction': 'down', 'amount': 10000, 'amount_mode': 'to'}
 for _text in ("의료비 예산 왜이렇게 크게 잡았어", "의료비 예산 책정 근거 알려줘"):
@@ -141,6 +166,11 @@ FEEDBACK_SAID = {
 }
 
 
+def _basis(text):
+    """예산 금액이 정해진 이유를 묻는 말 — 예산 조정 중이면 예산 대화가 직접 답한다(소비 분석으로 넘기지 않는다)"""
+    return SPENDING_SAID.get(text, {}).get("explain_kind") == "allocation"
+
+
 def _asked_category(text, fallback):
     """조회 질문이 물어본 카테고리 코드 하나 (여러 개 · 전체면 None). 가리키는 말("이건")이면 조정 대상(fallback)"""
     said = SPENDING_SAID[text]
@@ -156,7 +186,7 @@ def fake_feedback(user):
     text, hinted = data["text"], (data.get("hints") or {}).get("category")
     if text in SPENDING_SAID:  # 조회 질문 → 소비 분석으로
         goal = (data.get("primary_request") or {}).get("items") or [{}]
-        answer = ("not_mine", _asked_category(text, goal[0].get("category")), None, None, None)
+        answer = ("basis" if _basis(text) else "not_mine", _asked_category(text, goal[0].get("category")), None, None, None)
     elif text in BUDGET_POINTING:  # "거기서 빼줘" → 방금 본 카테고리를 재원으로 (없으면 서버가 대상을 되묻는다)
         answer = ("use_source", hinted, None, None, None)
     elif text in FEEDBACK_SAID:
@@ -314,6 +344,15 @@ class FakeReading(RoleFakeLLM):
         self.missed = 0
 
     def __call__(self, system, user, timeout=None):  # timeout: 실제 해석기와 같은 모양 (가짜는 기다리지 않음)
+        if system == spending_insight.PROMPT:
+            data = json.loads(user)
+            self.calls.append({"role": "fake_insight"})
+            return json.dumps(spending_narrative.fake(data), ensure_ascii=False)
+        if system == spending_narrative.CHECK_PROMPT:
+            data = json.loads(user)["answer"]
+            statements = [data["diagnosis"], *data["evidence"], *([data["outlook"]] if data["outlook"] else [])]
+            return json.dumps({"supported": True, "answers_question": True, "no_repetition": True,
+                               "checked_findings": list({i for s in statements for i in s["findings"]})})
         if system == spending_agent_loop.PROMPT:
             self.calls.append({"role": "fake_judge"})
             return fake_judge(user)
@@ -337,7 +376,8 @@ class FakeReading(RoleFakeLLM):
                        "reason": None, "unclear": [], "handoff": None, "handoff_category": None}
             if text in SPENDING_SAID:  # 조회 질문 → 소비 분석 + 물어본 카테고리 (가리키는 말이면 조정 중인 항목)
                 goal = (payload.get("previous") or {}).get("requests") or [{}]
-                reading.update(handoff="spending", handoff_category=_asked_category(text, goal[0].get("category")))
+                reading.update(handoff="budget_basis" if _basis(text) else "spending",
+                               handoff_category=_asked_category(text, goal[0].get("category")))
             if pointing:  # "거기서 빼줘": 방금 본 카테고리(hints)를 재원으로. 본 게 없으면 대상을 되묻게 한다
                 reading.update(sources=[hinted] if hinted else [], destinations=[], excluded=[], funding_scope=None,
                                action=None, use_available=None, reference="previous",

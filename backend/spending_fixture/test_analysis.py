@@ -158,15 +158,15 @@ class ApprovedBudgetTest(TestCase):
         with mock.patch.object(BudgetCycle.objects, "filter", side_effect=OperationalError("down")):
             self.assertEqual(approved_budget(user("A"), d(2026, 10, 29)), {"state": "error", "reason": "db_error"})
 
-    def test_closed_overlapping_cycle_is_ignored(self):
-        # 11/13: 급여일 변경으로 남은 끝난 주기가 겹쳐도 진행 중 주기의 승인 예산을 읽는다
-        before = approved_budget(user("C"), d(2026, 10, 29))
-        BudgetCycle.objects.create(user=user("C"), starts_on=d(2026, 10, 22), ends_before=d(2026, 11, 22), status="closed")
-        self.assertEqual(approved_budget(user("C"), d(2026, 10, 29)), before)
-
-    def test_overlapping_active_cycles_are_not_guessed(self):
+    def test_overlapping_cycles_are_not_guessed(self):
         BudgetCycle.objects.create(user=user("C"), starts_on=d(2026, 10, 22), ends_before=d(2026, 11, 22), status="active")
         self.assertEqual(approved_budget(user("C"), d(2026, 10, 29)), {"state": "error", "reason": "overlapping_cycles"})
+
+    def test_closed_overlap_does_not_hide_the_active_approved_budget(self):
+        before = approved_budget(user("A"), d(2026, 10, 29))
+        BudgetCycle.objects.create(user=user("A"), starts_on=d(2026, 10, 26), ends_before=d(2026, 11, 26), status="closed")
+        after = approved_budget(user("A"), d(2026, 10, 29))
+        self.assertEqual(after, before)
 
 
 @fixture_db_only

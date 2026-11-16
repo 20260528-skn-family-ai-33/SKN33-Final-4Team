@@ -327,6 +327,9 @@ class LivingFirstPolicyTest(unittest.TestCase):
                 transferred = plan['result']['transfers']
                 self.assertEqual(sum(t['amount'] for t in transferred if t['from'] in self.ctx['allocations']), min(amount, 80000))
                 self.assertEqual(sum(t['amount'] for t in transferred if t['from'] not in self.ctx['allocations']), max(amount - 80000, 0))
+                cautions = ' '.join(plan['assessment']['cautions'])
+                self.assertIn('사용할 예산이 남지 않아요', cautions)
+                self.assertNotIn('이보다 더 줄이려면', cautions)
 
     def test_only_shortfall_is_taken_from_spare(self):
         result = self.plan()['result']
@@ -357,7 +360,9 @@ class LivingFirstPolicyTest(unittest.TestCase):
         self.assertEqual({t['from'] for t in selected['transfers']}, {'SAVINGS'})
         excluded = self.plan(100000, excluded=['SPARE'])['result']
         self.assertNotIn('SPARE', {t['from'] for t in excluded['transfers']})
-        self.assertEqual(sum(t['amount'] for t in excluded['transfers'] if t['from'] == 'SAVINGS'), 20000)
+        # 생활비 다음에는 월 머니쿠션을 저축보다 먼저 쓴다.
+        self.assertEqual(sum(t['amount'] for t in excluded['transfers'] if t['from'] == 'CUSHION_MONTHLY'), 20000)
+        self.assertNotIn('SAVINGS', {t['from'] for t in excluded['transfers']})
 
     def test_living_total_increase_cannot_use_living_itself(self):
         answer = recommend(self.ctx, envelope(item('LIVING', 50000), destinations=['FOOD']), self.fail_llm)
@@ -365,10 +370,13 @@ class LivingFirstPolicyTest(unittest.TestCase):
         self.assertFalse(any(t['from'] in self.ctx['allocations'] for t in answer['plans'][0]['result']['transfers']))
 
     def test_partial_amount_retains_precise_shortfall(self):
-        result = self.plan(500000)['result']
+        plan = self.plan(500000)
+        result = plan['result']
         self.assertEqual(result['status'], 'partial')
         self.assertEqual(sum(t['amount'] for t in result['transfers']), 360000)
         self.assertEqual(result['shortfalls'][0]['missing_amount'], 140000)
+        self.assertIn('140,000원이 부족해요', plan['facts']['funding_order'])
+        self.assertIn('다른 생활비에서 80,000원', plan['facts']['funding_order'])
 
     def test_quotes_replay_and_repeated_adjustments_keep_same_reserve_anchor(self):
         from .adjustment_core.funding import available_adjustment, simulate_funding

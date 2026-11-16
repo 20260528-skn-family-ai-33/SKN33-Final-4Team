@@ -450,8 +450,8 @@ def approve_adjustment(user, proposal, *, keep_for_next_cycle, key, expected_mod
         if Budget.objects.filter(user=user, approval_key=key).exclude(pk=budget.pk).exists():
             raise AdjustmentConflict()
         profile = get_object_or_404(FinancialProfile.objects.select_for_update(), user=user)
-        schedule_settings(user, profile, budget, fresh, meta['result'], meta['unlock_categories'])
-        meta['approval'] = {'keep_for_next_cycle': False, 'target_changes': {}}
+        schedule_settings(user, profile, budget, fresh, meta['result'], meta['unlock_categories'], target_changes=changes)
+        meta['approval'] = {'keep_for_next_cycle': False, 'target_changes': changes}
         budget.validation_summary = {**(budget.validation_summary or {}), 'adjustment': meta}
         budget.status, budget.approved_at, budget.approval_key = 'superseded', timezone.now(), key
         budget.save(update_fields=['status', 'approved_at', 'approval_key', 'validation_summary'])

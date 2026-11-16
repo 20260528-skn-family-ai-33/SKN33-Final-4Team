@@ -2,10 +2,14 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
+import { apiSend } from '../utils/api.js'
+
+vi.mock('../utils/api.js', () => ({ apiSend: vi.fn(), newRequestKey: vi.fn(), useApi: vi.fn() }))
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 let host, root
-const button = (text) => [...host.querySelectorAll('button')].find((el) => el.textContent.trim() === text)
+// 항목 고르기 버튼은 이름 아래에 현재 예산이 붙는다 — 이름(.mc-pick-name)으로도 찾는다
+const button = (text) => [...host.querySelectorAll('button')].find((el) => (el.querySelector('.mc-pick-name') ?? el).textContent.trim() === text)
 const click = async (el) => act(() => el.click())
 beforeEach(() => { vi.resetAllMocks(); host = document.createElement('div'); document.body.append(host); root = createRoot(host) })
 afterEach(async () => { await act(() => root.unmount()); host.remove() })
@@ -570,4 +574,60 @@ it('조회 누락 미리보기의 이유를 표시하고 최종 확정을 막는
   expect(button('예산 확정하기').disabled).toBe(true)
   await click(button('예산 확정하기'))
   expect(approve).not.toHaveBeenCalled()
+})
+
+it('서버 추천안은 결론 한 줄과 추천 카드를 먼저 보여 주고 대안의 변화는 접어 둔다', async () => {
+  const pick = vi.fn()
+  const change = (category, before, after) => ({ category, before, after, diff: after - before })
+  const content = { turn: 3, choices: [{ value: 'plan_spare', label: '생활비 16만 원 + 여윳돈 9만 원' }, { value: 'plan_living', label: '생활비 16만 원' }],
+    budgetAdjustment: { status: 'awaiting_input', phase: 'comparison', comparison: {
+      headline: '다른 생활비에서 16만 원을 옮기고, 모자란 9만 원은 여윳돈에서 채울 수 있어요.',
+      plans: [
+        { id: 'spare', label: '생활비 16만 원 + 여윳돈 9만 원', status: 'ready', amount: 250000, recommended: true,
+          result: { changes: [change('BEAUTY', 50000, 10000), change('FOOD', 400000, 650000), change('SPARE', 400000, 310000)], shortfalls: [] },
+          assessment: { reasons: ['뷰티·미용에서 16만 원, 여윳돈에서 9만 원을 가져와요.', '여윳돈은 30% 이상 남겨요.'], cautions: ['뷰티·미용은 다음 급여일까지 평소 쓰는 만큼만 남아요.'] } },
+        { id: 'living', label: '생활비 16만 원', status: 'partial', amount: 160000, recommended: false,
+          result: { changes: [change('BEAUTY', 50000, 10000), change('FOOD', 400000, 560000)], shortfalls: [{ category: 'FOOD', missingAmount: 90000 }] },
+          assessment: { reasons: ['뷰티·미용에서 16만 원을 가져와요. 9만 원은 부족해요.'], cautions: [] } },
+      ] } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onPick={pick} />))
+  expect(host.querySelector('.mc-budget-headline').textContent).toContain('모자란 9만 원은 여윳돈')
+  const [recommended, alternative] = host.querySelectorAll('.mc-budget-plan')
+  expect(recommended.querySelector('.mc-budget-recommended')).not.toBeNull()
+  expect(recommended.querySelector('.mc-budget-compact .is-up').textContent).toContain('식비')
+  expect(alternative.textContent).toContain('9만원 부족')
+  expect(alternative.querySelector('details').open).toBe(false)
+  await click(recommended.querySelector('.mc-budget-select'))
+  expect(pick).toHaveBeenCalledWith(content.choices[0])
+})
+
+it('챗봇 월급 변경은 내 정보와 같은 API로만 저장한다', async () => {
+  apiSend.mockResolvedValue({ takeHomeIncome: 3500000, payday: 25 })
+  const content = { budgetAdjustment: { status: 'awaiting_input', phase: 'salary_change',
+    salaryChange: { before: 3000000, after: 3500000, payday: 25 } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active />))
+  expect(host.querySelector('.mc-budget-salary-amounts').textContent).toContain('3,500,000원')
+  await click(button('월급 수정하기'))
+  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3500000, payday: 25 })
+  expect(button('✓ 내 정보에 저장했어요').disabled).toBe(true)
+})
+
+it('줄일 항목을 고르기 전에도 항목마다 현재 예산을 보여 준다', async () => {
+  const content = { budgetAdjustment: { distributionInput: { target: 'TRANSPORT_CAR', amount: 50000,
+    categories: ['FASHION_SHOPPING', 'EDUCATION'], maximums: { FASHION_SHOPPING: 100000, EDUCATION: 50000 },
+    before: { TRANSPORT_CAR: 130000, FASHION_SHOPPING: 150000, EDUCATION: 50000 } } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onSend={vi.fn()} />))
+  const picks = [...host.querySelectorAll('.mc-budget-category-picks button')].map((el) => el.textContent)
+  expect(picks).toEqual(['패션·쇼핑현재 150,000원', '교육현재 50,000원'])
+})
+
+it('지출 내역이 덜 모인 미리보기 상태에서도 직접 고른 조정안을 만들 수 있다', async () => {
+  const send = vi.fn()
+  const content = { budgetAdjustment: { distributionInput: { target: 'TRANSPORT_CAR', amount: 50000,
+    categories: ['FASHION_SHOPPING'], maximums: { FASHION_SHOPPING: 100000 }, needsRefresh: false, preview: true,
+    before: { TRANSPORT_CAR: 130000, FASHION_SHOPPING: 150000 }, values: [{ category: 'FASHION_SHOPPING', amount: 50000 }] } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onSend={send} />))
+  expect(host.textContent).toContain('지금까지 확인된 기록으로 계산해요')
+  await click(button('나눈 예산 미리보기'))
+  expect(send).toHaveBeenCalledWith('기존 요청 대신 패션·쇼핑 예산을 50000원 줄여 교통·차량 예산을 50000원 늘려줘.')
 })

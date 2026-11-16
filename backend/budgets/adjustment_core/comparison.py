@@ -81,7 +81,9 @@ def _assess_and_recommend(context, comparison, primary):
                 floor = max(context.get("minimums", {}).get(code, 0),
                             context.get("system_floors", {}).get(code, 0), fact["spent"])
                 if change["after"] == floor:
-                    assessment["cautions"].append(f"{names.get(code, code)} 예산을 {floor:,}원까지 줄이는 안이에요. 이보다 더 줄이려면 직접 금액을 정해 주세요.")
+                    assessment["cautions"].append(
+                        f"{names.get(code, code)}에 사용할 예산이 남지 않아요." if floor == 0 else
+                        f"{names.get(code, code)}는 이미 쓴 돈과 남겨 둘 돈을 지켜 {floor:,}원보다 줄이지 않았어요.")
             else:
                 available_before = context.get("bucket_available", {}).get(code, 0)
                 available_after = max(available_before - amount, 0)

@@ -11,6 +11,7 @@ from . import seed
 from . import service_settings as svc
 from . import service_urls
 from .test_fixture import DESIGN, fixture_db_only
+from .settings import FIXTURE_DB
 
 NO_NETWORK = mock.patch("urllib.request.urlopen", side_effect=AssertionError("네트워크 호출 금지"))
 SERVICE = override_settings(ROOT_URLCONF=svc.ROOT_URLCONF, SESSION_COOKIE_NAME=svc.SESSION_COOKIE_NAME,
@@ -36,7 +37,7 @@ class ServiceSettingsTest(TestCase):
         self.assertNotIn(svc.CSRF_COOKIE_NAME, ("sessionid", "csrftoken", svc.SESSION_COOKIE_NAME))
         self.assertEqual({k: svc.CODEF[k] for k in ("CLIENT_ID", "CLIENT_SECRET", "PUBLIC_KEY", "CONNECTED_ID")},
                          dict.fromkeys(("CLIENT_ID", "CLIENT_SECRET", "PUBLIC_KEY", "CONNECTED_ID"), ""))
-        self.assertIn(svc.DATABASES["default"]["NAME"], ("money_cushion_router_fixture", "test_money_cushion_router_fixture"))
+        self.assertIn(svc.DATABASES["default"]["NAME"], (FIXTURE_DB, f"test_{FIXTURE_DB}"))
         self.assertIn("http://localhost:5174", svc.CSRF_TRUSTED_ORIGINS)
 
     def test_frontend_config_uses_same_csrf_cookie_name(self):

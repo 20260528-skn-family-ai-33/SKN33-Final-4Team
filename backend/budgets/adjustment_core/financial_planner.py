@@ -9,7 +9,7 @@ from budgets.adjustment_core.funding import available_adjustment, simulate_fundi
 from budgets.adjustment_core.explanations import NAMES
 from budgets.adjustment_core.diagnostics import resolve_history, POLICY
 
-SOURCES = ("LIVING", "SPARE", "SAVINGS", "CUSHION_MONTHLY")
+SOURCES = ("LIVING", "SPARE", "CUSHION_MONTHLY", "SAVINGS")
 PROMPT = """머니쿠션 예산 조정 설명 검토기. 서버가 계산한 verified_plans의 금액·순서·추천 번호를 바꾸지 않는다.
 생활비에서 먼저 조정하고 부족분만 여윳돈, 마지막으로 저축·월 머니쿠션에서 보충한다.
 저축은 이번 주기 예산이고 이미 저축한 계좌 잔액이 아니다. 월 머니쿠션과 누적 쿠션도 구분한다.
@@ -82,7 +82,7 @@ def diagnose(context, request):
                 'excluded': list(request.get('excluded', [])), 'destinations': request.get('destinations', []), 'reserve_forecast': {},
                 'planned_spare': planned['amount'] if known_planned else 0,
                 'reserve_is_estimate': True, 'allow_reserve_risk': False,
-                'facts': {'need': f"{NAMES.get(target, target)}에 {requested:,}원을 더하는 예시예요.",
+                'facts': {'need': f"{NAMES.get(target, target)}를 {requested:,}원 늘리는 방법을 계산했어요.",
                     'basis': '현재 예산으로 계산한 예시예요. 앞으로 쓸 돈을 예측한 결과는 아니에요.'}}
             if request.get('spare_minimum') is not None:
                 diagnosis['spare_minimum'] = request['spare_minimum']
@@ -264,9 +264,14 @@ def simulate_plan(context, diagnosis, funding):
         facts["reserve_gap"] = f"여윳돈 보유 추천액보다 {reserve - spare_after:,}원 부족한 상태는 남아요."
     living_used = actual.get('LIVING', 0)
     gap = max(diagnosis['requested_amount'] - living_used, 0)
-    facts['funding_order'] = f"다른 생활비에서 {living_used:,}원을 조정해요. 요청액까지 {gap:,}원이 더 필요해요."
-    if gap and any(actual.get(c, 0) for c in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY')):
-        facts['funding_order'] += ' 부족분만 ' + ', '.join(f"{NAMES[c]} {actual[c]:,}원" for c in ('SPARE','SAVINGS','CUSHION_MONTHLY') if actual.get(c, 0)) + '에서 가져와요.'
+    parts = [f"다른 생활비에서 {living_used:,}원을 조정해요."] if living_used else []
+    external = [(c, actual[c]) for c in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY') if actual.get(c, 0)]
+    if external:
+        parts.append(('남은 금액은 ' if living_used else '') + ', '.join(f"{NAMES[c]} {n:,}원" for c, n in external) + '에서 가져와요.')
+    missing = max(gap - sum(n for _, n in external), 0)
+    if missing:
+        parts.append(f"요청액까지 {missing:,}원이 부족해요.")
+    facts['funding_order'] = ' '.join(parts)
     for change in result['changes']:
         if change['category'] in context['allocations'] and change['after'] == 0:
             facts['empty_' + change['category']] = f"{NAMES.get(change['category'], change['category'])}에 사용할 예산이 남지 않아요."
@@ -299,7 +304,7 @@ def recommend(context, request, complete):
     if diagnosis['planning_amount'] <= 0:
         return {'diagnosis': diagnosis, 'plans': [], 'recommended_index': None}
     plans = []
-    for order in (SOURCES, ('LIVING', 'SPARE', 'CUSHION_MONTHLY', 'SAVINGS')):
+    for order in (SOURCES,):
         left, funding = diagnosis['planning_amount'], []
         for source in order:
             amount = min(left, diagnosis['capacities'].get(source, 0)) // 5000 * 5000

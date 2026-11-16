@@ -52,22 +52,28 @@ def planning_context(context, planning):
         planned['allocations'].setdefault('TRAVEL_LODGING', 0)
         planned.setdefault('category_names', {})['TRAVEL_LODGING'] = '여행·숙박'
         planned['ml_not_applicable'] = list(set(planned.get('ml_not_applicable', ['ETC'])) | {'TRAVEL_LODGING'})
-    planned['bucket_available'] = {code: max(amount - planned['bucket_floors'].get(code, 0), 0)
+    # SPARE is the unspent balance; its minimum is enforced by the common funding calculation.
+    planned['bucket_available'] = {code: max(amount - (0 if code == 'SPARE' else planned['bucket_floors'].get(code, 0)), 0)
                                    for code, amount in planned['buckets'].items()}
     planned['bucket_status'] = {code: 'ready' for code in planned['buckets']}
     planned['reserve_anchors'] = {code: max(amount, 0) for code, amount in planned['buckets'].items()}
     # Current-cycle spending cannot forecast an unstarted cycle; use verified budget examples.
+    from .adjustment_core.protection import next_cycle_floors
+    planned['usage_floors'] = next_cycle_floors(base)
     planned['diagnostic_inputs'] = {}
     planned.pop('context_hash', None)
     return planned
 
 
-def schedule_settings(user, profile, budget, context, result, unlock_categories=()):
+def schedule_settings(user, profile, budget, context, result, unlock_categories=(), *, target_changes=None):
     before = profile_settings(profile)
     values = {**before, 'monthly_take_home_income': context['monthly_income'],
               'living_budget': sum(amount for code, amount in result['allocations'].items() if code != 'TRAVEL_LODGING'), 'savings_floor': result['buckets']['SAVINGS'],
               'cushion_monthly': result['buckets']['CUSHION_MONTHLY'],
               'budget_category_targets': {code: amount for code, amount in result['allocations'].items() if code not in {'ETC', 'UNCLASSIFIED', 'TRAVEL_LODGING'}}}
+    for code, amount in (target_changes or {}).items():
+        if amount is None:
+            values['budget_category_targets'].pop(code, None)
     values['one_off'] = bool(context['planning'].get('one_off'))
     values['reserve_amount'] = result['allocations'].get('TRAVEL_LODGING', 0)
     values['reserve_id'] = (budget.validation_summary or {})['adjustment'].get('reserve_id')

@@ -210,6 +210,10 @@ def _limit_details(context, result):
 
 
 def unavailable_explanation(context, comparison):
+    if any(plan.get('status') == 'ready' and (plan.get('result') or {}).get('transfers')
+           and all(row['from'] in context['allocations'] for row in plan['result']['transfers'])
+           for plan in comparison.get('plans', [])):
+        return None
     hidden = [plan for plan in comparison.get('plans', []) if not (
         plan.get('status') in {'ready', 'partial'} and plan.get('amount', 0) > 0
         and (plan.get('result') or {}).get('changes'))]

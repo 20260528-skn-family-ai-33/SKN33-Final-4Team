@@ -40,7 +40,7 @@ def oversized_increase(context, item):
     return (increase, limit) if increase > limit else None
 
 
-def large_increase_warning(context, items):
+def large_increase_warning(context, items, *, reason=None):
     income = context.get('monthly_income')
     if type(income) is not int or income <= 0 or not items or any(item.get('amount') is None for item in items):
         return None
@@ -52,7 +52,19 @@ def large_increase_warning(context, items):
     living = max(increases.get(LIVING, 0), sum(increases.get(code, 0) for code in data['allocations']))
     amount = living + sum(increases.get(code, 0) for code in BUCKETS)
     if amount * 100 >= income * 30:
-        return '요청 금액이 월 실수령액의 30% 이상이에요. 준비한 돈과 추가로 필요한 돈을 나눠 확인해 주세요.'
+        from .advisor import impact_line, money
+        percent = amount * 100 // income
+        impact = impact_line(context, items)
+        prefix = (f'요청 금액 {money(amount)}은 월 실수령액의 약 {percent}%로 30% 이상이에요. '
+                  + (impact + ' ' if impact else ''))
+        planning = context.get('planning') or {}
+        if planning.get('income_change') and income - context.get('income_before', income) >= amount:
+            return prefix + '늘어난 월급으로 충당하는 요청이에요. 남겨 둘 돈을 지키면서 가능한 금액을 확인해 주세요.'
+        if planning.get('expense'):
+            return prefix + '예정된 지출이어도 다른 예산이 크게 줄 수 있어요. 따로 마련한 돈을 제외한 필요액과 줄어드는 예산을 확인해 주세요.'
+        if reason:
+            return prefix + '말씀하신 사유만으로 이 금액이 꼭 필요한지는 확인하기 어려워요. 필요한 지출과 금액을 한 번 더 확인해 주세요.'
+        return prefix + '다른 예산이 크게 줄 수 있어요. 어떤 지출에 얼마가 더 필요한가요?'
     return None
 
 
@@ -84,8 +96,8 @@ def _data(context, envelope):
     data["automatic_unit"], data["fallback_unit"] = _units(context)
     buckets = context.get("buckets")
     spare = buckets.get('SPARE') if isinstance(buckets, dict) else None
+    # A saved salary cut can leave a future deficit even when income_before is unchanged.
     projected_deficit = ((context.get('planning') or {}).get('scope') == 'next_cycle'
-                         and context.get('income_before', 0) > context.get('monthly_income', 0)
                          and context.get('funding_amount') == context.get('monthly_income')
                          and type(spare) is int and spare < 0)
     if projected_deficit:
@@ -118,8 +130,7 @@ def _data(context, envelope):
     if envelope.get('spare_minimum') is not None:
         minimum = _money(envelope['spare_minimum'], 'invalid_spare_minimum')
         normalized['spare_minimum'] = minimum
-        data['bucket_available']['SPARE'] = min(data['bucket_available'].get('SPARE', 0),
-                                               max(data['buckets']['SPARE'] - minimum, 0))
+        data['bucket_available']['SPARE'] = max(data['bucket_available'].get('SPARE', 0) - minimum, 0)
     before = {**data["allocations"], **data["buckets"]}
     data["before"] = before
     data["targets"], data["items"] = {}, []
@@ -253,7 +264,8 @@ def _groups(data, sources, recipient, forbidden):
     groups = [[c for c in living if c not in data['priorities']]]
     for rank in sorted({data['priorities'][c] for c in living if c in data['priorities']}, reverse=True):
         groups.append([c for c in living if data['priorities'].get(c) == rank])
-    groups.extend([[c] for c in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY') if c in candidates])
+    # 생활비 다음에는 여윳돈 → 월 머니쿠션 → 저축 순서로만 부족분을 채운다.
+    groups.extend([[c] for c in ('SPARE', 'CUSHION_MONTHLY', 'SAVINGS') if c in candidates])
     return [group for group in groups if group]
 
 
@@ -542,10 +554,8 @@ def available_bucket_source(context, source, *, excluded=(), spare_minimum=None)
     try:
         _check_spending(context)
         _check_alignment(data)
+        # 여윳돈은 따로 정하지 않아도 30% 이상을 남기는 보호금액으로 계산한다.
         maximum = _capacity(data, data['before'], source, LIVING)
-        if source == 'SPARE' and spare_minimum is None and maximum:
-            return {'status': 'needs_confirmation', 'maximum': None,
-                    'conflicts': [{'code': 'spare_minimum_required'}]}
         return {'status': 'ready' if maximum else 'infeasible', 'maximum': maximum,
                 'conflicts': [] if maximum else [{'code': 'insufficient_funds'}]}
     except _Blocked as error:

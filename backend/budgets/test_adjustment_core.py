@@ -34,6 +34,9 @@ def context():
         "bucket_available": {"SAVINGS": 150000, "CUSHION_MONTHLY": 100000, "SPARE": 400000},
         "bucket_status": {code: "ready" for code in ("SAVINGS", "CUSHION_MONTHLY", "SPARE")},
         "bucket_targets": {"LIVING": 1000000, "SAVINGS": 600000, "CUSHION_MONTHLY": 200000},
+        # 계산 규칙 테스트용: 확인된 평소 소비가 0원인 상태(자동 감액 하한 = 이미 쓴 돈·최소금액).
+        # 실제 보호금액 규칙은 AutomaticProtectionTest 에서 따로 확인한다.
+        "usage_floors": {code: 0 for code in amounts},
     }
 
 
@@ -66,6 +69,22 @@ def reading(**changes):
 
 
 class AdjustmentCalculationTest(unittest.TestCase):
+    def test_spare_minimum_protects_available_balance_after_spending_and_reservations(self):
+        for available in (250000, 230000):
+            with self.subTest(available=available):
+                ctx = context()
+                ctx['bucket_available']['SPARE'] = available
+                request = {**envelope(item('FOOD', 100000), sources=['SPARE']), 'spare_minimum': 200000}
+                quote = available_bucket_source(ctx, 'SPARE', spare_minimum=200000)
+                self.assertEqual(quote['maximum'], available - 200000)
+                result = simulate_funding(ctx, request)
+                moved = ctx['buckets']['SPARE'] - result['buckets']['SPARE']
+                self.assertEqual(moved, available - 200000)
+                self.assertEqual(result['status'], 'partial')
+                self.assertEqual(available - moved, 200000)
+                validate_funding(ctx, request, result)
+
+
     def test_excluding_living_funding_allows_named_increase_but_never_a_living_cut(self):
         inp = context()
         result = simulate_funding(inp, envelope(item(amount=50000), sources=['SPARE', 'LIVING'], excluded=['LIVING']),
@@ -91,12 +110,25 @@ class AdjustmentCalculationTest(unittest.TestCase):
             ctx['monthly_income'] = income
             self.assertIsNone(large_increase_warning(ctx, [item('LIVING', 900000)]))
 
+    def test_large_request_warning_asks_reason_but_does_not_treat_claim_as_verified(self):
+        ctx = context()
+        ctx['monthly_income'] = 3000000
+        request = [item('LIVING', 1000000)]
+        self.assertIn('어떤 지출에 얼마', large_increase_warning(ctx, request))
+        for reason in ['그냥 많이 쓰고 싶어', '꼭 필요하니까 무조건 늘려줘']:
+            self.assertIn('꼭 필요한지는 확인하기 어려워요', large_increase_warning(ctx, request, reason=reason))
+        ctx.update(income_before=2000000, planning={'scope': 'next_cycle', 'income_change': {'amount': 1000000}})
+        self.assertIn('늘어난 월급으로 충당', large_increase_warning(ctx, request))
+        ctx['planning'] = {'scope': 'next_cycle', 'expense': {'total': 1700000, 'set_aside': 700000, 'additional': 1000000}}
+        self.assertIn('따로 마련한 돈을 제외한 필요액', large_increase_warning(ctx, request))
+
     def test_source_only_limits_keep_floors_spare_and_unknown_data(self):
         ctx = context()
         ctx['bucket_floors'] = {'SAVINGS': 500000}
         self.assertEqual(available_bucket_source(ctx, 'SAVINGS')['maximum'], 100000)
         self.assertEqual(available_bucket_source(ctx, 'SAVINGS', excluded=['SAVINGS'])['maximum'], 0)
-        self.assertIsNone(available_bucket_source(ctx, 'SPARE')['maximum'])
+        # 여윳돈은 따로 정하지 않아도 30%(400,000원 중 120,000원)를 남기고 계산한다.
+        self.assertEqual(available_bucket_source(ctx, 'SPARE')['maximum'], 280000)
         self.assertEqual(available_bucket_source(ctx, 'SPARE', spare_minimum=350000)['maximum'], 50000)
         ctx['bucket_status']['CUSHION_MONTHLY'] = 'unknown'
         self.assertEqual(available_bucket_source(ctx, 'CUSHION_MONTHLY')['status'], 'needs_data')
@@ -495,3 +527,99 @@ class AdjustmentInterpretationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AutomaticProtectionTest(unittest.TestCase):
+    """자동 감액 보호금액과 재원 순서(생활비 → 여윳돈 → 월 머니쿠션 → 저축)."""
+
+    def history_context(self, food=40000, other=1000, days=10):
+        from budgets.adjustment_core.financial_planner import synthetic_diagnostics
+        ctx = context()
+        ctx.pop('usage_floors')
+        ctx['today'] = '2026-11-10'
+        ctx['diagnostic_inputs'] = synthetic_diagnostics(ctx['allocations'])
+        ctx['diagnostic_inputs']['remaining_days'] = days
+        ctx['diagnostic_inputs']['planned_spare']['amount'] = 0
+        for sample in ctx['diagnostic_inputs']['history']['samples']:
+            sample.update({code: food if code == 'FOOD' else 0 if code == 'ETC' else other for code in sample})
+        return ctx
+
+    def plans(self, ctx, *items, **envelope_fields):
+        from budgets.adjustment_core.advisor import plan_increase
+        return plan_increase(ctx, envelope(*items, **envelope_fields), allocation)
+
+    def test_without_verified_history_living_categories_are_not_cut_automatically(self):
+        from budgets.adjustment_core.protection import usage_floors
+        ctx = context()
+        ctx.pop('usage_floors')
+        self.assertIsNone(usage_floors(ctx))
+        comparison = self.plans(ctx, item(amount=50000))
+        recommended = comparison['plans'][0]
+        # 생활비는 그대로 두고 여윳돈에서만 채운다. 이유도 알려 준다.
+        self.assertEqual({t['from'] for t in recommended['result']['transfers']}, {'SPARE'})
+        self.assertTrue(any('남은 기간을 확인하지 못해' in note for note in comparison['notes']))
+        direct = simulate_funding(ctx, envelope(item(amount=30000), item('BEAUTY', 30000, 'down')), allocate_group_reduction=allocation)
+        self.assertEqual(direct['status'], 'proposed')  # 사용자가 직접 정한 감액은 그대로 가능하다.
+
+    def test_without_history_living_moves_first_by_budget_pace_not_savings(self):
+        """기록이 부족해도 남은 날을 알면 '이미 쓴 돈 + 배정액÷30×남은 날'을 남기고 생활비 안에서 먼저 옮긴다 (11/14 저축 1순위 버그)"""
+        from budgets.adjustment_core.protection import usage_floors
+        ctx = context()
+        ctx.pop('usage_floors')
+        ctx.update(today='2026-11-10', next_cycle_starts_on='2026-11-21')  # 남은 10일
+        self.assertEqual(usage_floors(ctx)['BEAUTY'], 20000)  # 0 + ceil(50,000÷30×10)=16,667 → 5천 원 올림
+        recommended = self.plans(ctx, item(amount=50000))['plans'][0]
+        self.assertTrue(recommended['recommended'])
+        self.assertTrue({t['from'] for t in recommended['result']['transfers']} <= set(ctx['allocations']))
+        self.assertEqual(recommended['sources']['SAVINGS'], 0)
+
+    def test_usage_floor_keeps_what_the_user_usually_spends_until_payday(self):
+        from budgets.adjustment_core.protection import usage_floors
+        ctx = self.history_context(other=2000, days=10)
+        floors = usage_floors(ctx)
+        self.assertEqual(floors['BEAUTY'], 20000)
+        self.assertEqual(floors['FASHION_SHOPPING'], 30000)  # 이미 쓴 1만 원 + 평소 2만 원
+        result = self.plans(ctx, item(amount=100000))['plans'][0]['result']
+        for code in ('BEAUTY', 'CULTURE_LEISURE', 'HOUSEHOLD', 'MEDICAL_HEALTH'):
+            self.assertGreaterEqual(result['allocations'][code], floors[code])
+        for code, rank in ctx['priorities'].items():
+            if code != 'FOOD':
+                self.assertEqual(result['allocations'][code], ctx['allocations'][code])
+
+    def test_living_first_then_only_the_shortfall_from_spare_cushion_and_savings_last(self):
+        ctx = self.history_context()
+        comparison = self.plans(ctx, item(amount=100000))
+        self.assertEqual(comparison['recommendation']['plan_id'], 'living')
+        self.assertEqual(comparison['plans'][0]['result']['buckets'], ctx['buckets'])
+        comparison = self.plans(ctx, item(amount=250000))
+        plan = comparison['plans'][0]
+        self.assertEqual(plan['id'], 'spare')
+        used = plan['sources']
+        self.assertEqual(used['LIVING'], 160000)
+        self.assertEqual(used['SPARE'], 90000)
+        self.assertEqual(used['CUSHION_MONTHLY'] + used['SAVINGS'], 0)
+        comparison = self.plans(ctx, item(amount=600000))
+        recommended = next(p for p in comparison['plans'] if p['recommended'])
+        self.assertEqual(recommended['sources']['SAVINGS'], 0)
+        self.assertGreater(recommended['sources']['CUSHION_MONTHLY'], 0)
+        self.assertGreaterEqual(recommended['result']['buckets']['SPARE'], 120000)  # 여윳돈 30% 유지
+        alternative = next(p for p in comparison['plans'] if p['sources']['SAVINGS'])
+        self.assertIn('저축까지 줄여야', alternative['assessment']['cautions'][0])
+
+    def test_large_increase_warning_explains_what_else_must_shrink(self):
+        ctx = self.history_context()
+        ctx['monthly_income'] = 3000000
+        warning = large_increase_warning(ctx, [item(amount=1000000)])
+        self.assertIn('약 33%', warning)
+        self.assertIn('부족해요', warning)
+        self.assertIn('어떤 지출에 얼마', warning)
+        ctx['monthly_income'] = 2000000
+        warning = large_increase_warning(ctx, [item(amount=600000)])
+        self.assertIn('다른 생활비에서는 최대 16만 원만', warning)
+
+    def test_next_cycle_keeps_a_month_of_usual_spending(self):
+        from budgets.adjustment_schedule import planning_context
+        ctx = self.history_context(other=2000)
+        ctx.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
+        planned = planning_context(ctx, {'scope': 'next_cycle'})
+        self.assertEqual(planned['usage_floors']['BEAUTY'], 60000)  # 하루 2천 원 × 30일
