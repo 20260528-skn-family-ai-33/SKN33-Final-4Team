@@ -105,6 +105,9 @@ BUDGET_SAID = {
 
 for _text in ("의료비 줄이고싶어", "의료비 줄이고 싶다고"):
     EXTRA_SAID[_text] = {"intents": ["budget_adjust"], "categories": ["MEDICAL_HEALTH"], "direction": "down"}
+for _text in ('생활비가 부족해', '생활비 늘려줘'):
+    EXTRA_SAID[_text] = {'intents': ['budget_adjust']}
+    BUDGET_SAID[_text] = [{'category': 'LIVING', 'amount': None, 'amount_mode': None, 'direction': 'up'}]
 EXTRA_SAID['의료비를 1만 원으로 줄여줘'] = {'intents': ['budget_adjust'], 'categories': ['MEDICAL_HEALTH'],
                                               'direction': 'down', 'amount': 10000, 'amount_mode': 'to'}
 for _text in ("의료비 예산 왜이렇게 크게 잡았어", "의료비 예산 책정 근거 알려줘"):

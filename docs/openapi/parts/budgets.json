@@ -3626,11 +3626,8 @@
         "properties": {
           "id": {
             "type": "string",
-            "enum": [
-              "living",
-              "spare",
-              "extended"
-            ]
+            "minLength": 1,
+            "description": "서버가 반환한 조정 예시 식별자. 재원 조합이나 추천 경로에 따라 달라지며, 클라이언트는 고정 목록으로 해석하지 않는다. 선택할 때는 함께 반환된 선택지 값을 사용한다."
           },
           "scope": {
             "type": "string"
