@@ -3,6 +3,7 @@
 // 오류 종류는 docs/API_RULES.md 에러 표. 로그인 안 함은 403 + not_authenticated 라서 상태가 아니라 code 로 가른다
 import { Link } from 'react-router'
 import { PATHS } from '../routes.js'
+import KushongRunner from './KushongRunner.jsx'
 
 // 서버 문장은 {"error": {code, message}} 로 온 것만 쓴다 — HTML · 스택 같은 원문은 화면에 안 낸다
 const serverText = (error, fallback) => (error.code && error.message ? error.message : fallback)
@@ -25,7 +26,8 @@ function describeError(error) {
 
 export default function ApiStatus({ error, onRetry }) {
   if (!error) {
-    return <div className="mc-card"><p className="mc-muted" role="status" style={{ margin: 0 }}>불러오는 중…</p></div>
+    // 11/17: 쿠숑이가 달리는 로딩 표시 (그림은 꾸밈, 글자는 그대로)
+    return <div className="mc-card mc-run-card"><KushongRunner size={104} /><p className="mc-muted" role="status" style={{ margin: 0 }}>불러오는 중…</p></div>
   }
   const { title, text, to, retry } = describeError(error)
   return (

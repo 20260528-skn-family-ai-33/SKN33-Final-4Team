@@ -19,6 +19,7 @@ it('쿠숑이가 인사한 뒤 홈 · 거래 · 예산 · 쿠션 · 챗봇 순�
   expect(title()).toBe('안녕하세요! 쿠숑이에요')
   expect(host.textContent).toContain('앞으로 여러분의 돈 관리를 제가 함께 도와드릴게요.')
   expect(host.querySelector('.mc-mascot').dataset.mood).toBe('hello')
+  expect(host.querySelector('.mc-mascot').getAttribute('src')).toBe('/mascots/kushong/hello.svg')
   const seen = [title()]
   for (let i = 1; i < GUIDE_STEPS.length; i++) {
     await next()

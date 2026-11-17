@@ -12,6 +12,7 @@ import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
 import RegionSelect from '../components/RegionSelect.jsx'
+import KushongRunner from '../components/KushongRunner.jsx'
 import ChatReply, { Choices, Resync } from '../components/ChatReply.jsx'
 import { policyChoices } from '../utils/policyCards.js'
 import BudgetApprovalPopup from '../popups/BudgetApprovalPopup.jsx'
@@ -492,7 +493,7 @@ export default function AssistantPage() {
             )
           })}
           {pending?.said && <div className="mc-asst-turn"><div className="mc-msg me"><div className="mc-bubble">{pending.said}</div></div></div>}
-          {busy && <div className="mc-asst-route is-busy" role="status"><Icon name="Loader" /> 답을 준비하고 있어요…</div>}
+          {busy && <div className="mc-asst-route is-busy mc-run-wait" role="status"><KushongRunner size={52} /> 답을 준비하고 있어요…</div>}
           {approvalRecovery && !busy && <div className="mc-msg bot"><div className="mc-bubble" role="alert">
             <p>이전 예산 확정 상태를 먼저 확인해 주세요.</p>
             <button type="button" className="mc-btn" onClick={() => { setBusy(true); setError(null); setRestoreVersion((v) => v + 1) }}>확정 상태 다시 불러오기</button>
