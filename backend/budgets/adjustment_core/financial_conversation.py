@@ -5,23 +5,27 @@ import re
 from .agent import _ask as core_ask, _check, _result, _save, CANCEL
 from .calculation import _prepare, _floor, _hard_floor, _eligible, proportional_group_reduction
 from .funding import available_adjustment, _data
-from .conversation import (_envelope, _pending_reply, _show_comparison as original_comparison, _increase_only, advised_comparison,
-                           handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute, _calculation, _manual_living, ask_spare_minimum, check_amount_limit, salary_reply)
+from .conversation import (_envelope, _pending_reply, _show_comparison as original_comparison, _increase_only, advised_comparison, ask_missing_amount,
+                           handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute, _calculation, _manual_living, ask_spare_minimum, check_amount_limit, salary_reply, has_alternative)
 from . import interpretation
 from . import over_budget
 from .explanations import NAMES
 from .financial_planner import recommend, diagnose, reserve_after, recommendation_context, QUESTIONS
 from .diagnostics import with_overrides
+from .responses import observation_notice
 
 DIALOGUE_PROMPT = interpretation.PROMPT + """
-대상과 방향이 정해진 첫 조정 요청은 계산 가능한 변경 예시로 이어간다. 첫 요청에서 금액·방법을 못 정했다면 action=compare다.
+금액 없는 단순 증감 요청은 amount=null, action=null, use_available=null이다. 서버가 희망 금액을 먼저 묻는다.
+가능한 금액·재원별 한도 조회는 action=inspect다. 계산 예시·방법 비교를 명시적으로 요청한 경우에만 action=compare, use_available=true로 해석한다.
 진행 중인 질문에 답하기 어려워 결정 도움을 요청하면 action=help_decide다. 설명을 이해하지 못한 뜻(explain), 사실을 모르는 답(null)과 구분한다.
 이미 예시를 본 comparison/financial_selection 단계에서 고르기 어렵거나 추천을 물으면 action=recommend다.
 한 항목에 몰지 않고 다른 항목에도 나누려는 말은 action=distribute다. 받을 항목이나 금액을 아직 몰라도 unclear로 묻지 않는다.
 manual_distribution 단계의 직접 조정은 줄일 항목과 늘릴 항목을 모두 requests에 담는다. 사용자가 정한 감액을 과거 추천액으로 되돌리지 않고, 같은 조정의 항목·금액 편집은 reference=previous로 해석한다.
 현재 목적과 sources/destinations/excluded를 이어받고, reason에는 사용자가 말한 지출 사유를 기록한다.
 금액을 명시한 이동은 requests에 대상·금액·방식을 반드시 기록한다. sources/destinations만 채우고 requests를 비우지 않는다.
-같은 이동을 표현할 때는 받는 항목의 증액 요청과 출처를 기본으로 사용한다. router_hints는 원문에서 추출한 보조값이며 최종 해석은 원문·대화로 확인한다.
+출발·도착과 금액이 명확한 단일 이동은 받는 항목의 증액 요청과 출처로 표현할 수 있다. 금액 없이 줄일 항목을 명시하면 그 항목의 down 요청과 destinations를 사용한다.
+항목 하나와 금액만으로는 그 항목이 출발인지 도착인지 추측하지 않는다.
+router_hints는 원문에서 추출한 보조값이며 최종 해석은 원문·대화로 확인한다. 방향이 불명확하면 hints의 방향도 확정값으로 사용하지 않는다.
 이유·사정만 덧붙인 말은 기존 요청의 후속 설명이며 requests=[], reference=previous, unclear=[]이다.
 '저축은 유지하고 쇼핑은 더 줄여도 돼'는 기존 증액 목적을 유지한다. 저축은 excluded로 보호하고,
 쇼핑은 자동 감액을 허용한 재원으로 해석한다. 감액 하한이나 잠금을 해제하는 금액 직접 지정으로 바꾸지 않는다.
@@ -50,6 +54,9 @@ category는 출발 항목, destination은 받는 항목, amount는 옮길 금액
 이 이동은 직전 미리보기 기준이다. 원래 변경안의 나머지 조건은 유지한다. 금액을 계산하거나 보충하지 않는다.
 transfer가 아니면 destination=null이다. 출발·도착·금액 중 모르는 값은 null로 남긴다.
 기존 조정 대상을 다른 항목으로 바꾸거나, 다른 항목의 조정을 추가·철회하는 요청은 revise다.
+기존 감액액을 다른 곳에 넣으려는 목적지 교체도 revise다. previous.requests의 감액 항목·금액을 유지하고 받을 항목만 바꾸며, 금액을 다시 말하지 않아도 된다.
+예를 들어 기존 식비 감액의 받는 곳을 '문화여가 말고 병원비로' 바꾸려는 말은 revise다. 현재 문화여가 예산에서 새 돈을 빼는 transfer나 기존 안의 accept가 아니다.
+previous는 사용자의 원래 조정 조건이고 primary_request는 현재 미리보기에서 추린 목표이므로, 둘의 표현이 다르면 원래 조정 의도는 previous를 기준으로 판단한다.
 여러 출처 중 일부 감액을 취소하고 나머지 출처의 돈만 옮기라는 요청도 revise다. 취소한 감액과 연결된 증액을 함께 다시 계산해야 하므로 refine_less·accept·transfer로 처리하지 않는다.
 월급·급여·실수령액을 수정하거나 바뀌었다는 말도 revise다. 기존 목표는 유지하며 월급 수정 화면으로 안내한다.
 아래의 한 항목 감액 수정으로 표현할 수 없는 복합 수정도 revise로 보내며 금액·대상을 억지로 하나로 줄이지 않는다.
@@ -71,6 +78,8 @@ SPARE를 덜 쓰거나 더 남기려는데 사용자가 금액을 정하지 않�
 refine_more의 일반 허용만으로 ML 하한·최소액·잠금·기지출·순위를 해제하지 않는다. 대상이 여러 개라 모호하면 category=null이다.
 이전 식비 목표 금액 변경만 change_goal이다. 추천대로/아무거나 해줘=accept, 왜 추천해=explain,
 얼마까지 조정 가능해=maxima, 뭐가 제일 나아/추천해줘=recommend, 그만두기=cancel, 이전 선택으로 돌아가기=back, 없으면 unknown이다.
+maxima 중 목표 항목을 얼마나 늘리거나 줄일 수 있는지 물으면 inspection=capacity다. 어디에서 얼마씩 가져오는지·옮길 수 있는지 물으면 inspection=sources다.
+조회 목적은 문맥으로 판단하고 금액·재원·제외 조건을 바꾸지 않는다. maxima가 아니거나 구분하기 어려우면 inspection=null이다.
 어떤 표현이든 질문·추천·수락·수정을 구분한다. 추천이나 이유를 물은 것을 accept로 처리하지 않는다.
 금액을 제안할 수 없으면 suggested_target=null이다. 사용자 사정이나 보호 조건을 임의로 지우지 않는다.
 지금 상태를 조회만 하는 말은 not_mine이다. '교통은 얼마 남았어?', '식비 얼마 썼어?', '왜 늘었어?'처럼 남은 예산·쓴 돈·소비 이유를 묻는 말이다.
@@ -85,7 +94,7 @@ last_feedback_category에서 풀고, 전체·생활비를 물었거나 모르면
 금액을 함께 말하면('교통에서 2만원 빼줘') use_source가 아니라 refine_more다.
 hints.category가 있으면 사용자가 방금 소비 분석에서 본 카테고리다. '거기서 빼줘', '그거 줄여줘', '거기서 가져와'의 대상은
 hints.category다. 금액이 없으면 use_source, 금액이 있으면 refine_more이고 category=hints.category다. 가리키는 말이 없으면 hints를 쓰지 않는다.
-답은 action, category, destination, amount, amount_mode, suggested_target만 반환한다. category와 destination은 codes 중 하나 또는 null이다."""
+답은 action, category, destination, amount, amount_mode, suggested_target, inspection만 반환한다. category와 destination은 codes 중 하나 또는 null이다."""
 FEEDBACK_SCHEMA = {"type": "object", "properties": {
     "action": {"type": "string", "enum": ["refine_more", "refine_less", "change_goal", "new", "revise", "accept", "explain", "maxima", "recommend", "cancel", "back", "unknown",
                                            "not_mine", "basis", "use_source", "transfer", "distribute"]},
@@ -93,7 +102,8 @@ FEEDBACK_SCHEMA = {"type": "object", "properties": {
     "category": {"type": ["string", "null"]}, "amount": {"type": ["integer", "null"]},
     "amount_mode": {"type": ["string", "null"], "enum": ["by", "preview_by", "to", None]},
     "suggested_target": {"type": ["integer", "null"]},
-}, "required": ["action", "category", "destination", "amount", "amount_mode", "suggested_target"], "additionalProperties": False}
+    "inspection": {"type": ["string", "null"], "enum": ["capacity", "sources", None]},
+}, "required": ["action", "category", "destination", "amount", "amount_mode", "suggested_target", "inspection"], "additionalProperties": False}
 ANSWER_PROMPT = """머니쿠션 진단 확인 답 해석기. text에 직접 나온 값만 반환한다.
 field=planned이면 고정비·카테고리와 겹치지 않는 예정 지출 원 금액, 없어요=0이다.
 field=period이면 다음 급여일까지 남은 일수, field=amount이면 증액 희망 원 금액이다.
@@ -151,7 +161,10 @@ def _ask(store, cid, state, kind, line, choices=(), **details):
     return core_ask(store, cid, state, kind, line, choices, **details)
 
 
-def maxima(context, request, refinement=None):
+def maxima(context, request, refinement=None, inspection=None):
+    from .advisor import capacity_reply_lines, money
+    from .explanations import result_explanation
+    from .funding import available_bucket_source
     context = deepcopy(context)
     for code, condition in (refinement or {}).get("donors", {}).items():
         if code in context["allocations"]:
@@ -161,22 +174,59 @@ def maxima(context, request, refinement=None):
     for code, cap in (refinement or {}).get("bucket_caps", {}).items():
         context.setdefault("bucket_available", {})[code] = min(context.get("bucket_available", {}).get(code, 0), cap)
     items = request.get("items", [])
-    if len(items) != 1 or items[0].get("category") not in context["allocations"]:
-        return _result("awaiting_input", ["어느 생활비 항목을 늘리려는지 알려 주세요. 항목에 따라 최대 가능액이 달라요."])
-    lines = []
-    for label, sources in [("생활비 내 재배분", ["LIVING"]), ("여윳돈 활용", ["SPARE"]), ("저축·월 쿠션 재배분", ["SAVINGS", "CUSHION_MONTHLY"])]:
-        quote = available_adjustment(context, items[0]["category"], "up", sources=sources, excluded=request.get("excluded", []), destinations=request.get("destinations", []), allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
-        if quote["status"] == "ready": lines.append(f"{label}: 최대 {quote['maximum']:,}원")
-        elif quote["status"] == "infeasible": lines.append(f"{label}: 현재 보호 조건에서 이동 가능한 금액은 0원이에요.")
-        else: lines.append(f"{label}: 자료·보호 조건 확인이 필요해요.")
-    diagnosis = diagnose(context, request)
-    if diagnosis["status"] == "ready":
-        lines.append(f"예정 지출·소비 추정을 고려하면 여윳돈에서는 {diagnosis['capacities'].get('SPARE', 0):,}원까지 보충하는 범위를 검토해요.")
-    if refinement: lines.append("현재 수정안의 재원 제한과 여윳돈 보유 추천 범위를 반영했어요.")
-    return _result("replied", lines, explanation={"why": "최대 가능액은 요청 항목·보호 조건·현재 수정 조건을 기준으로 계산했어요.", "effect": "필요 금액의 권고나 저장은 아니에요.", "next": "추천을 요청하면 재정 상태에 맞는 조합을 비교해요."})
+    if len(items) != 1 or items[0].get("category") not in {*context["allocations"], 'LIVING'}:
+        return _result("awaiting_input", ["어느 생활비 항목을 조정하려는지 알려 주세요. 항목에 따라 최대 가능액이 달라요."])
+    code = items[0]['category']
+    status = 'replied'
+    if items[0].get('direction') == 'down':
+        quote = available_adjustment(context, code, 'down', sources=request.get('sources', []),
+            destinations=request.get('destinations', []), excluded=request.get('excluded', []),
+            allocate_group_reduction=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
+        if quote['status'] == 'ready' or (quote['status'] == 'infeasible'
+                and all(c.get('code') == 'insufficient_funds' for c in quote.get('conflicts', []))):
+            lines = [f"{NAMES.get(code, code)}에서 최대 {money(quote['maximum'])}을 줄일 수 있어요."]
+        else:
+            status = 'awaiting_input'
+            lines = [result_explanation(context, quote)['brief']]
+    else:
+        found = {}
+        sources = request.get('sources') or (['SPARE', 'CUSHION_MONTHLY', 'SAVINGS'] if code == 'LIVING'
+                                            else ['LIVING', 'SPARE', 'CUSHION_MONTHLY', 'SAVINGS'])
+        external = [source for source in sources if source in context['buckets']]
+        for source in external if code == 'LIVING' else sources:
+            if source in request.get('excluded', []):
+                continue
+            if source in context['buckets'] and context.get('bucket_status', {}).get(source) != 'ready':
+                continue
+            quote = (available_bucket_source(context, source, excluded=request.get('excluded', []),
+                        spare_minimum=request.get('spare_minimum')) if code == 'LIVING' else
+                available_adjustment(context, code, 'up', sources=[source], excluded=request.get('excluded', []),
+                    destinations=request.get('destinations', []), allocate_group_reduction=proportional_group_reduction,
+                    spare_minimum=request.get('spare_minimum')))
+            if quote['status'] in {'ready', 'infeasible'}:
+                found[source] = quote['maximum'] if quote['status'] == 'ready' else 0
+        if code != 'LIVING':
+            diagnosis = diagnose(context, request)
+            if diagnosis['status'] == 'ready' and 'SPARE' in found and 'SPARE' in diagnosis.get('capacities', {}):
+                found['SPARE'] = min(found['SPARE'], diagnosis['capacities']['SPARE'])
+        lines = (capacity_reply_lines(context, code, found, inspection=inspection,
+            sources=external if code == 'LIVING' else request.get('sources'), excluded=request.get('excluded', []),
+            allocator=proportional_group_reduction, spare_minimum=request.get('spare_minimum'))
+            if code != 'LIVING' or external else [])
+        if code == 'LIVING' and any(source == 'LIVING' or source in context['allocations'] for source in sources):
+            lines.insert(0, '생활비 항목끼리 옮기면 생활비 전체 금액은 늘어나지 않아요.')
+    note = observation_notice(context)
+    if note:
+        lines.append(note)
+    if refinement:
+        lines.append('직접 정한 감액 제한과 남길 금액을 반영했어요.')
+    return _result(status, lines, explanation={"why": "남겨 둘 금액을 보호한 최대 이동 금액이에요.", "effect": "확정 전에는 예산이 바뀌지 않아요.", "next": "원하는 금액으로 조정안을 비교할 수 있어요."})
 
 
 def comparison_reply(store, cid, state, context, calculation, complete):
+    amount_reply = ask_missing_amount(store, cid, state, context)
+    if amount_reply is not None:
+        return amount_reply
     limit_reply = check_amount_limit(store, cid, state, context)
     if limit_reply is not None:
         return limit_reply
@@ -227,7 +277,8 @@ def comparison_reply(store, cid, state, context, calculation, complete):
     if diagnosis["status"] != "ready":
         field = diagnosis.get("field")
         if ((field in {"history", "period", "stale"} or field == 'amount' and request['items'][0].get('amount') is None)
-                and context.get("spending_status") == "complete"):
+                and (context.get("spending_status") == "complete" or context.get('budget_preview')
+                     or context.get('observed_spending', {}).get('transaction_count', 0) > 0)):
             limited = deepcopy(request)
             response = original_comparison(store, cid, state, context, calculation, proportional_group_reduction,
                                            envelope=limited, respect_selected=True)
@@ -235,8 +286,8 @@ def comparison_reply(store, cid, state, context, calculation, complete):
             has_example = any(plan.get('status') in {'ready', 'partial'} and plan.get('amount', 0) > 0
                               and (plan.get('result') or {}).get('changes') for plan in comparison.get('plans', []))
             if has_example:
-                comparison['notice'] = ('지출 기록이 부족해 앞으로 필요한 금액을 추천하기는 어려워요. 지금 예산에서 옮길 수 있는 돈으로 만든 예시를 보여 드릴게요.'
-                    if field == 'history' else '앞으로 필요한 금액을 예상할 정보가 부족해요. 지금 예산에서 옮길 수 있는 돈으로 만든 예시를 보여 드릴게요.')
+                comparison['notice'] = '\n'.join(filter(None, ['현재 예산으로 계산한 예시예요. 필요한 금액은 직접 바꿀 수 있어요.',
+                                                                observation_notice(calculation)]))
                 state['comparison']['comparison']['notice'] = comparison['notice']
                 _save(store, cid, state)
             return response
@@ -250,8 +301,6 @@ def comparison_reply(store, cid, state, context, calculation, complete):
             return response
         return _ask(store, cid, state, "financial_data", QUESTIONS.get(field, diagnosis.get("message", "조정할 항목을 확인해 주세요.")),
                     [("manual_living", "생활비 직접 조정"), ("cancel", "취소")], field=field)
-    if context.get('budget_preview'):
-        diagnosis['facts']['basis'] = '이번 주기 지출 조회가 누락되어 예산 기준으로만 계산했어요. 실제 이동 가능액은 내역 확인 후 다시 검증해야 해요.'
     reserve_choices = []
     if 'SPARE' in diagnosis['allowed'] and not state.get('allow_reserve_risk'):
         quote = available_adjustment(calculation, diagnosis['target'], 'up', sources=['SPARE'],
@@ -273,7 +322,7 @@ def comparison_reply(store, cid, state, context, calculation, complete):
         return _ask(store, cid, state, "request", "지금 조건으로 확인된 추천안이 없어 보여 드리지 않았어요. 줄여도 되는 생활비 항목과 금액을 직접 정할 수 있어요.",
             [("manual_living", "생활비 직접 조정"), *reserve_choices, ("cancel", "취소")],
             explanation={'title': '이번에 추천안을 보여 드리지 않은 이유',
-                'why': ' '.join(capacities) or '돈을 가져올 수 있도록 선택한 곳이 없어요.',
+                'why': '\n'.join(capacities) or '돈을 가져올 수 있도록 선택한 곳이 없어요.',
                 'effect': '자동 추천이 없다는 뜻이며, 직접 정한 금액으로도 조정할 수 없다는 뜻은 아니에요.',
                 'next': '생활비 직접 조정에서 항목과 금액을 고르면 가능한지 확인해요.'})
     plans = []
@@ -294,10 +343,11 @@ def comparison_reply(store, cid, state, context, calculation, complete):
                   "basis_kind": "budget_example" if diagnosis.get('amount_is_example') else "forecast_shortfall" if state["requests"][0].get("amount") is None else "requested",
                   "plans": plans, "recommendation": {"plan_id": str(answer["recommended_index"]) if answer["recommended_index"] is not None else None,
                                                        "reasons": answer.get("reasons", [])}, "message": "재정 상태를 반영한 검수 결과예요. 아직 저장하지 않았어요."}
-    if diagnosis.get('basis') == 'budget':
-        comparison['notice'] = diagnosis['facts']['basis']
+    basis_note = observation_notice(planning) or diagnosis['facts'].get('basis')
+    if basis_note:
+        comparison['notice'] = basis_note
     if diagnosis.get('expanded_sources'):
-        comparison['notice'] = ' '.join(filter(None, [comparison.get('notice'), diagnosis['facts']['additional_sources']]))
+        comparison['notice'] = '\n'.join(filter(None, [comparison.get('notice'), diagnosis['facts']['additional_sources']]))
     state["financial_offer"] = {"context": deepcopy(context), "planning": planning, "answer": answer, "comparison": comparison}
     response = _ask(store, cid, state, "financial_selection", "변경안을 볼 방법을 골라 주세요.",
                     [(f"financial_{i}", p["label"]) for i, p in enumerate(plans)] + [("manual_living", "생활비 직접 조정"), *reserve_choices, ("cancel", "취소")])
@@ -308,7 +358,7 @@ def comparison_reply(store, cid, state, context, calculation, complete):
 
 def unknown_amount_reply(store, cid, state, context, calculation):
     """금액을 모르는 증액: 최근 소비로 부족액을 추정해 바로 예시를 보이고, 근거가 없으면 재원별 가능액을 먼저 알린다."""
-    from .advisor import capacities, capacity_line, josa, money, names_of, suggested_amount
+    from .advisor import capacities, source_capacity_lines, money, names_of, suggested_amount
     item = state['requests'][0]
     code = item['category']
     name = names_of(context).get(code, code)
@@ -317,17 +367,22 @@ def unknown_amount_reply(store, cid, state, context, calculation):
         envelope = _envelope(state)
         envelope['items'] = [{key: value for key, value in item.items() if key != 'automatic'}]
         envelope['items'][0].update(amount=need, amount_mode='by', direction='up')
-        lead = f"최근 30일 쓰는 속도로 보면 다음 급여일까지 {name}{josa(name, '이가')} 약 {money(need)} 더 필요해 보여요."
+        lead = f"다음 급여일까지 {name} 예상 부족액은 약 {money(need)}이에요."
         response = advised_comparison(store, cid, state, context, calculation, proportional_group_reduction,
                                       envelope=envelope, lead=lead, respect_selected=bool(envelope.get('sources')))
         comparison = response['reply'].get('comparison')
         if comparison is not None:
             comparison.update(amount_was_given=False, basis_kind='forecast_shortfall')
+            note = observation_notice(calculation)
+            if note:
+                comparison['notice'] = note
             state['comparison']['comparison'].update(amount_was_given=False, basis_kind='forecast_shortfall')
+            if note:
+                state['comparison']['comparison']['notice'] = note
             _save(store, cid, state)
         return response
     found = capacities(calculation, code, excluded=state.get('excluded', []), allocator=proportional_group_reduction,
-                       sources=[c for c in state.get('sources', []) if c in ('LIVING', 'SPARE', 'CUSHION_MONTHLY', 'SAVINGS')],
+                       sources=state.get('sources'),
                        spare_minimum=state.get('spare_minimum'))
     positive = [value // 10000 * 10000 for source, value in found.items() if source != 'SAVINGS' and value >= 10000]
     if need is None and positive:
@@ -336,8 +391,7 @@ def unknown_amount_reply(store, cid, state, context, calculation):
         envelope = _envelope(state)
         envelope['items'] = [{key: value for key, value in item.items() if key != 'automatic'}]
         envelope['items'][0].update(amount=example, amount_mode='by', direction='up')
-        lead = (f"얼마가 필요한지 몰라도 괜찮아요. 지금 옮길 수 있는 돈으로 {name} {money(example)} 예시를 만들었어요. "
-                "금액은 바꿀 수 있어요.")
+        lead = f"현재 예산으로 만든 {name} {money(example)} 증액 예시예요. 금액은 바꿀 수 있어요."
         response = advised_comparison(store, cid, state, context, calculation, proportional_group_reduction,
                                       envelope=envelope, lead=lead, respect_selected=bool(envelope.get('sources')))
         comparison = response['reply'].get('comparison')
@@ -348,13 +402,21 @@ def unknown_amount_reply(store, cid, state, context, calculation):
         return response
     lines = []
     if need == 0:
-        lines.append(f"최근 쓰는 속도로는 {name} 예산이 다음 급여일까지 충분해 보여요.")
-    lines.append(capacity_line(calculation, code, found))
+        lines.append(f"{name} 예산은 현재 내역 기준으로 다음 급여일까지 충분해 보여요.")
+    else:
+        lines.append(f'{name}에 옮길 수 있는 금액이에요.')
+    lines.extend(source_capacity_lines(calculation, code, found, sources=state.get('sources'),
+        excluded=state.get('excluded', []), allocator=proportional_group_reduction, spare_minimum=state.get('spare_minimum')))
+    note = observation_notice(calculation)
+    if note:
+        lines.append(note)
     state['requests'][0].update(amount=None, amount_mode='by', direction='up')
     state['requests'][0].pop('automatic', None)
     # 질문은 금액 입력창 제목으로 한 번만 보이고, 재원별 가능액은 그 위 안내로 보인다.
-    return _ask(store, cid, state, 'amount', f"{name} 예산을 얼마 늘릴까요?", [], index=0,
-                explanation={'brief': ' '.join(lines)}, capacities=found)
+    response = _ask(store, cid, state, 'amount', f"{name} 예산을 얼마 늘릴까요?", [], index=0,
+                    explanation={'brief': '\n'.join(lines)}, capacities=found)
+    response['reply']['lines'] = lines
+    return response
 
 
 def selected_preview(store, cid, state, index, ports):
@@ -363,6 +425,11 @@ def selected_preview(store, cid, state, index, ports):
         state.pop("financial_offer", None)
         return _ask(store, cid, state, "request", "예산·지출·진단 자료가 바뀌었어요. 최신 조건으로 다시 추천받아 주세요.")
     plan = offer["answer"]["plans"][index]
+    if offer['comparison'].get('amount_was_given') is False:
+        state['sources'] = [fund['source'] for fund in plan['funding']]
+        state['use_available'] = False
+        state.pop('financial_offer', None)
+        return ask_missing_amount(store, cid, state, offer['context'], confirm_example=True)
     primary = {"items": [{"category": offer["answer"]["diagnosis"]["target"], "direction": "up", "amount_mode": "by", "amount": offer["answer"]["diagnosis"]["requested_amount"]}],
                "sources": [], "destinations": list(offer["answer"]["diagnosis"].get("destinations", [])), "excluded": list(state.get("excluded", []))}
     analysis_request = {**primary, "sources": list(offer["answer"]["diagnosis"]["allowed"])}
@@ -398,6 +465,18 @@ def selected_preview(store, cid, state, index, ports):
     _save(store, cid, state)
     return _result("replied", ["추천안의 미리보기예요. 이 예산으로 결정할지 최종 확인해 주세요."], proposal=card,
                    choices=[("apply", "이 안으로 적용"), ("cancel", "취소")], explanation={"title": "이 방법을 추천한 이유", "why": " ".join(offer["answer"].get("reasons", [])), "effect": "미리보기만 만들었고 기존 예산은 그대로예요.", "next": "바뀌는 금액을 확인한 뒤 예산을 확정해 주세요."})
+
+
+def _has_other_plans(state, context):
+    if state.get('refinement', {}).get('donors'):
+        return False
+    offer = state.get('financial_offer') or state.get('comparison')
+    if offer:
+        return offer.get('context') == context and has_alternative(offer['comparison'], state.get('proposal'))
+    alternatives = state.get('plan_alternatives') or {}
+    proposal = {key: state.get('proposal', {}).get(key) for key in ('allocations', 'buckets')}
+    return bool(state.get('plan_selected') and alternatives.get('available')
+                and alternatives.get('context') == context and alternatives.get('selected') == proposal)
 
 
 def handle(request, **ports):
@@ -448,7 +527,7 @@ def handle(request, **ports):
         navigation = []
         if comparison and state.get('financial_offer') and (comparison.get("recommendation") or {}).get("plan_id") is not None:
             navigation = NAVIGATION[:1]
-        elif reply.get("proposal") and (state.get("financial_offer") or state.get('plan_selected')) and not state.get("pending"):
+        elif reply.get("proposal") and _has_other_plans(state, ports['get_context']()) and not state.get("pending"):
             navigation = NAVIGATION[1:]
         if not reply.get('comparison') and not reply.get('proposal'):
             reply['choices'] = [choice for choice in reply.get('choices', [])
@@ -532,7 +611,11 @@ def _handle(request, *, interpreted=None, **ports):
             ports["cancel"](state["work_ref"])
         _save(store, cid, None)
         return handle({**request, "mode": "start"}, **ports)
-    view = ("comparison" if compact in {"compare", "비교하기", "다른조정안비교", "다른방법보기"} else
+    comparison_only = (interpreted and interpreted.get('action') == 'compare'
+        and interpreted.get('reference') != 'new' and interpreted.get('request_update') != 'replace'
+        and not any(interpreted.get(key) for key in ('requests', 'sources', 'destinations', 'excluded', 'clear_targets', 'scope', 'funding_scope', 'income_change'))
+        and all(interpreted.get(key) is None for key in ('one_off', 'set_aside_amount', 'unlock', 'use_available')))
+    view = ("comparison" if comparison_only or compact in {"compare", "비교하기", "다른조정안비교", "다른방법보기"} else
             "recommendation" if compact in {"recommend", "추천안보기", "추천한조정안미리보기"} else None)
     if view:
         state["requested_view"] = view
@@ -545,6 +628,15 @@ def _handle(request, *, interpreted=None, **ports):
             return _result("replied", ["현재 수정 조건이 반영된 안이에요. 다른 재원을 허용하거나 감액 조건을 바꾸고 싶으면 말씀해 주세요."], proposal=state.get("proposal"))
         if not state.get("requests"):
             return _ask(store, cid, state, "discussion", "어떤 예산을 어떻게 조정하고 싶은지 말씀해 주세요. 금액은 몰라도 괜찮아요.")
+        previous_options = state.get('financial_offer') or state.get('comparison') or state.get('plan_alternatives') or {}
+        if (view == 'comparison' and previous_options.get('context') == ports['get_context']()
+                and not _has_other_plans(state, ports['get_context']())):
+            line = '지금 조건에서 확인된 다른 조정안은 없어요. 옮길 곳이나 금액을 바꾸면 다시 계산할게요.'
+            if state.get('proposal'):
+                return _result('replied', [line], proposal=state['proposal'], work_ref=state.get('work_ref'))
+            response = _pending_reply(state, state.get('work_ref'))
+            response['reply']['lines'] = [line]
+            return response
         if state.get("primary_request"):
             state["requests"] = deepcopy(state["primary_request"]["items"])
             state["sources"] = list(state.get("permitted_sources", state.get("sources", [])))
@@ -666,6 +758,8 @@ def _handle(request, *, interpreted=None, **ports):
             if interpreted.get('action') == 'help_decide' and not modifying:
                 from .conversation import decision_help
                 return decision_help(store, cid, state, context, ports.get('allocator'))
+            if interpreted.get('action') == 'inspect' and not modifying:
+                return _handle(request, interpreted=interpreted, **ports)
             if interpreted.get('action') == 'explain' and not modifying:
                 return _result('replied', offer['answer'].get('reasons', []), choices=pending['choices'],
                                comparison=offer['comparison'], detail=True)
@@ -771,7 +865,8 @@ def _inquiry(request, state, ports):
         return not_mine(state.get("work_ref"), data.get("handoff"), data.get("handoff_category"), names)
     changing = data.get('request_update') == 'replace' or data.get('one_off') is not None or data.get('set_aside_amount') is not None or any(data.get(key) for key in ('requests', 'sources', 'destinations', 'excluded', 'clear_targets', 'scope', 'funding_scope', 'income_change'))
     if (data.get('cancel') or data.get('selected_choice') or data.get('unclear') or data.get('reference') == 'unclear'
-            or data.get('action') in {'back', 'undo', 'explain', 'fixed_expense', 'distribute', 'help_decide', 'salary_change'} or changing):
+            or data.get('action') in {'back', 'undo', 'explain', 'inspect', 'fixed_expense', 'distribute', 'help_decide', 'salary_change'}
+            or data.get('action') == 'compare' and state.get('pending', {}).get('kind') != 'financial_data' or changing):
         return _handle(request, interpreted=data, **ports)
     if state.get('pending', {}).get('kind') == 'financial_data' and data.get('action') in {'compare', 'recommend'}:
         response = _pending_reply(state, state.get('work_ref'))
@@ -819,6 +914,7 @@ def feedback(request, state, ports):
     allowed = list(state.get("permitted_sources", state.get("sources", [])))
     changed_donors = [r["category"] for r in old["changes"] if r["diff"] < 0]
     payload = {"text": text, "codes": [*context["allocations"], *context["buckets"]], "category_names": NAMES, "primary_request": primary,
+               "previous": interpretation.dialogue_context(state)['previous'],
                "original": {"allocations": context["allocations"], "buckets": context["buckets"]},
                "current_preview": {k: old.get(k) for k in ("allocations", "buckets", "changes", "transfers")},
                "recipient": recipient, "funding_sources": changed_donors, "permitted_sources": allowed, "last_feedback_category": state.get("last_feedback_category"),
@@ -840,10 +936,13 @@ def feedback(request, state, ports):
                 payload['interpretation_error'] = {'code': 'recipient_is_not_funding_source',
                     'message': '기존 목표와 재원의 역할이 충돌해요. 원문에서 받는 금액을 바꾸려는지, 가져오는 돈을 바꾸려는지 다시 구분하세요.'}
                 data = json.loads(ports['complete'](FEEDBACK_PROMPT, json.dumps(payload, ensure_ascii=False)))
-        if not isinstance(data, dict) or set(data) not in (set(FEEDBACK_SCHEMA['properties']), set(FEEDBACK_SCHEMA['properties']) - {'destination'}):
+        fields = set(FEEDBACK_SCHEMA['properties'])
+        if not isinstance(data, dict) or not fields - {'destination', 'inspection'} <= set(data) <= fields:
             raise ValueError("feedback_fields")
         action = data["action"]
-        if action not in FEEDBACK_SCHEMA["properties"]["action"]["enum"] or data["amount_mode"] not in (None, "by", "preview_by", "to"):
+        if (action not in FEEDBACK_SCHEMA["properties"]["action"]["enum"]
+                or data["amount_mode"] not in (None, "by", "preview_by", "to")
+                or data.get('inspection') not in (None, 'capacity', 'sources')):
             raise ValueError("feedback_control")
         for key in ("amount", "suggested_target"):
             if data[key] is not None and (type(data[key]) is not int or data[key] < 0): raise ValueError("invalid_amount")
@@ -933,7 +1032,15 @@ def feedback(request, state, ports):
         return handle_expanded({**request, "mode": "cancel"}, **ports)
     if action == 'back':
         return handle_expanded({**request, 'text': '뒤로'}, **ports)
-    if action == "maxima": return maxima(calculation, primary, state.get("refinement"))
+    if action == 'maxima':
+        inquiry = deepcopy(primary)
+        original = state.get('requests', [])
+        if len(original) == 1 and original[0].get('direction') == 'down':
+            inquiry['items'] = deepcopy(original)
+        for field in ('sources', 'destinations', 'excluded'):
+            inquiry[field] = list(state.get(field, inquiry.get(field, [])))
+        inquiry['sources'] = list(state.get('permitted_sources', inquiry['sources']))
+        return maxima(calculation, inquiry, state.get('refinement'), inspection=data.get('inspection'))
     if action == "explain":
         return _result("replied", [*old.get("revision_summary", []), "현재 미승인 조정안의 전후 금액이에요. 아직 저장하지 않았어요."], proposal=old, detail=True)
     if action == "accept":
@@ -966,6 +1073,10 @@ def feedback(request, state, ports):
         base = ({**old['allocations'], **old['buckets']} if data['amount_mode'] == 'preview_by'
                 else {**context['allocations'], **context['buckets']})[recipient]
         final = data["amount"] if data["amount_mode"] == "to" else base + data["amount"]
+        original = {**context['allocations'], **context['buckets']}[recipient]
+        if data["amount_mode"] == "to" and final <= original:
+            # '3만 원 가져와서 늘려줘' 뒤 '5만원으로 바꿔줘'를 최종 금액(51만 → 5만)으로 읽은 경우: 늘리는 목표라 늘릴 금액으로 본다 (11/17)
+            final = original + data["amount"]
         primary["items"] = [{"category": recipient, "amount_mode": "to", "amount": final, "direction": "up"}]
         limit_reply = check_amount_limit(store, cid, state, context, primary['items'])
         if limit_reply is not None:
@@ -1067,6 +1178,9 @@ def feedback(request, state, ports):
         if str(error) == 'reserve_conflict':
             explanation.update(why='이렇게 바꾸면 앞으로 쓸 돈에 대비해 남겨 두려던 여윳돈이 부족해져요.',
                                next='늘릴 금액을 줄이거나 돈을 가져올 다른 항목을 골라 주세요.')
+        elif str(error) == 'direction_conflict':  # 늘리는 목표인데 최종 금액이 더 작은 등 — 원인 없는 일반 문구로 묻히지 않게
+            explanation.update(why='늘리려는 항목의 금액이 지금 예산보다 작게 전해져서 변경안을 만들지 않았어요.',
+                               next='늘릴 금액(예: 5만 원 더)이나 최종 금액(예: 56만 원)으로 다시 알려 주세요.')
         elif str(error) == 'donor_target_not_met':
             explanation.update(why='지금 조건에서는 가져올 항목을 말씀하신 금액에 맞추면서 기존 증액 금액을 유지할 수 없어요.',
                                next='늘릴 금액을 줄이거나 돈을 가져올 다른 항목을 골라 주세요.')

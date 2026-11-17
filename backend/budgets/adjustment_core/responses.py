@@ -7,10 +7,29 @@ from .explanations import NAMES, status_explanation
 CONDITION_STEPS = {'unlock', 'partial', 'financial_partial', 'financial_risk', 'fixed_expense', 'financial_data'}
 
 
+def observation_notice(context):
+    info = context.get('diagnostic_inputs') or {}
+    observation = (info.get('history') or {}).get('observation') or {}
+    if (context.get('spending_status', 'complete') == 'complete' and not observation.get('limited')
+            and (not info.get('as_of') or info.get('as_of') == context.get('today'))):
+        return ''
+    observed = context.get('observed_spending') or {}
+    through = observed.get('through') or observation.get('through')
+    basis = f'{through}까지 불러온 내역 기준' if through else '현재 예산·불러온 내역 기준'
+    return f'{basis} · 최근 거래 미반영 가능 · 참고 금액'
+
+
 def focus(state, index=None):
     items = state.get('requests', [])
     index = index if index is not None else (state.get('pending') or {}).get('index', state.get('focus', 0))
     return items[index] if isinstance(index, int) and 0 <= index < len(items) else {}
+
+
+def amount_edit_label(state):
+    item = focus(state)
+    name = NAMES.get(item.get('category'))
+    verb = {'up': '늘릴', 'down': '줄일'}.get(item.get('direction'))
+    return f'{name} {verb} 금액 바꾸기' if name and verb and len(state.get('requests', [])) == 1 else '요청 금액 바꾸기'
 
 
 def question(kind, state, fallback, index=None):
@@ -73,7 +92,7 @@ def guidance(result, state):
             if part and not any(part in prior for prior in seen):
                 seen.append(part)
                 parts.append(part)
-        return ' '.join(parts)
+        return ('\n' if '\n' in (text or '') else ' ').join(parts)
 
     if result.get('error'):
         facts = status_explanation(result['status'], error=result['error'])

@@ -320,8 +320,10 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
             raise AdjustmentContextError("expired")
     span = Period(cycle.starts_on, min(today + timedelta(days=1), cycle.ends_before))
     collected = coverage(user, span)
-    rows = listed_transactions(user).filter(occurred_on__gte=span.start, occurred_on__lt=span.end_before)
-    summary = spending_summary((transaction_item(tx) for tx in rows), living_only=True)
+    rows = list(listed_transactions(user).filter(occurred_on__gte=span.start, occurred_on__lt=span.end_before))
+    transactions = [transaction_item(tx) for tx in rows]
+    summary = spending_summary(transactions, living_only=True)
+    observed_dates = [tx.occurred_on for tx, row in zip(rows, transactions) if row['transaction_type'] == 'spending']
     spent = {code: summary["by_category"].get(code, 0) for code in allocations}
     spent["UNCLASSIFIED"] = summary["by_category"].get("UNCLASSIFIED", 0)
     complete = collected["state"] == "complete"
@@ -337,12 +339,12 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
                                 cushion_goal(profile, profile.monthly_take_home_income))
     accrued = CushionEntry.objects.filter(user=user, cycle=cycle, entry_type="allocation").aggregate(total=Sum("amount"))["total"] or 0
     cushion_floor = max(1 if required else 0, accrued)
-    cushion_known = complete and balance["total"] is not None and not balance["unknown_count"]
+    cushion_known = (complete or bool(observed_dates)) and balance["total"] is not None and not balance["unknown_count"]
     available = {'SAVINGS': savings_available}
     status = {code: "unknown" for code in ("SPARE", "SAVINGS", "CUSHION_MONTHLY")}
     status['SAVINGS'] = 'ready'
     reasons = {}
-    if complete:
+    if complete or observed_dates:
         available["SPARE"], status["SPARE"] = max(spare - spare_used, 0), "ready"
     else:
         reasons["SPARE"] = "spending_unverified"
@@ -363,6 +365,9 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
         "budget_preview": collected["state"] != "complete", "policy_version": POLICY_VERSION, "automatic_unit": 10000, "fallback_unit": 5000,
         "reserved_budget_amount": sum(line['amount'] for line in items if line['bucket'] == 'reserve'),
         "allocations": allocations, "spent": spent, "spending_status": collected["state"],
+        "observed_spending": {"transaction_count": len(observed_dates),
+            "from": min(observed_dates, default=None), "through": max(observed_dates, default=None)},
+        "estimated_buckets": [code for code in ('SPARE', 'CUSHION_MONTHLY') if not complete and status[code] == 'ready'],
         "spending_coverage": _json(collected), "minimums": dict(CategoryMinimum.objects.filter(user=user,
             category_id__in=LIVING_CODES).values_list("category_id", "min_amount")),
         "system_floors": system_floors,
@@ -405,6 +410,7 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
         context["bucket_reasons"]["SPARE"] = "reservation_unverified"
     elif context["bucket_status"]["SPARE"] == "ready":
         context["bucket_available"]["SPARE"] = max(context["bucket_available"]["SPARE"] - reserved, 0)
+    context['estimated_buckets'] = [code for code in context['estimated_buckets'] if context['bucket_status'][code] == 'ready']
     previous = (chosen.input_snapshot or {}).get('adjustment_context', {})
     previous_request = (chosen.validation_summary or {}).get('adjustment', {}).get('result', {}).get('requests', {})
     spare_minimum = previous_request.get('spare_minimum')

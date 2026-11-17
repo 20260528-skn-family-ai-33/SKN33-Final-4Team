@@ -30,6 +30,17 @@ def projection(days=28):
 
 
 class InsightTest(SimpleTestCase):
+    def test_one_saved_transaction_still_produces_observed_analysis(self):
+        self.cover.return_value = {'state': 'partial'}
+        self.current, self.previous = [transaction(13000, day=10)], []
+        with mock.patch.object(insight, 'select', return_value=[]), mock.patch.object(insight.story, 'build', return_value=None):
+            reply, reason = insight.answer(object(), decision(), TODAY, FakeReading())
+        self.assertIsNone(reason)
+        self.assertIn('13,000원', ' '.join(reply['lines']))
+        self.assertIn('1건', ' '.join(reply['lines']))
+        self.assertIn('식비', ' '.join(reply['lines']))
+        self.assertTrue(any('10일' in note and '저장된 거래' in note for note in reply['notices']))
+
     def setUp(self):
         self.current = [transaction(3000), transaction(3000), transaction(12000, time=None), transaction(1000, "TRANSPORT_CAR"),
                         transaction(500000, "HOUSING_TELECOM", funding="fixed"), transaction(200000, "TRAVEL_LODGING"), transaction(10000, funding="fixed")]

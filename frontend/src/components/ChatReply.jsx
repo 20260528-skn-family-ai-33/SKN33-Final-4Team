@@ -12,6 +12,8 @@ import { apiSend, useApi } from '../utils/api.js'
 import { DETAIL, policyNumber, policyTitle } from '../utils/policyCards.js'
 import BudgetAdjustment from './BudgetAdjustment.jsx'
 import Icon from './Icon.jsx'
+import Popup from '../popups/Popup.jsx'
+import { usePopup } from '../popups/context.js'
 import '../styles/policies.css'
 
 const Lead = ({ items }) => items.map((l, i) => (
@@ -89,8 +91,36 @@ function Nums({ text }) {
   }
   return out
 }
+// 달마다 흐름 ('9월 47만 원 → 10월 64.5만 원'): 달 · 금액 칸을 화살표로 잇는다. 마지막 달(가장 최근)만 진하게. 글자는 그대로
+const FLOW = /^\d{1,2}월 [^→]+(?: → \d{1,2}월 [^→]+)+$/
+function Flow({ text }) {
+  const steps = text.split(' → ')
+  return <span className="mc-fx-flow">{steps.map((step, i) => {
+    const [, month, amount] = step.match(/^(\d{1,2}월) (.+)$/)
+    return <span key={i} className="mc-fx-flow-item">
+      {i > 0 && <span className="mc-fx-flow-arrow"> → </span>}
+      <span className={`mc-fx-flow-step${i === steps.length - 1 ? ' is-last' : ''}`}><small>{month}</small> <b>{amount}</b></span>
+    </span>
+  })}</span>
+}
+const digits = (t) => Number(t.replace(/\D/g, ''))  // '40,400원' → 40400
+// 생활 패턴 (11/17): 주말 · 평일 하루 평균 문장은 두 칸 나란히(큰 쪽 강조) + 기준은 작은 글씨. 금액은 문장 속 숫자 그대로
+const WEEKDAYS = /^주말 하루 평균 ([\d,]+원), 평일 하루 평균 ([\d,]+원)이에요 \((.+)\)\.$/
+function Weekdays({ text }) {
+  const [, end, day, basis] = text.match(WEEKDAYS)
+  const big = digits(end) >= digits(day)
+  return <span className="mc-fx-pair" role="img" aria-label={text}>
+    <span className="mc-fx-flow">
+      <span className={`mc-fx-flow-step${big ? ' is-last' : ''}`}><small>주말 하루 평균</small> <b>{end}</b></span>
+      <span className={`mc-fx-flow-step${big ? '' : ' is-last'}`}><small>평일 하루 평균</small> <b>{day}</b></span>
+    </span>
+    <small className="mc-fx-pair-basis">{basis}</small>
+  </span>
+}
 function Rich({ text }) {
   if (typeof text !== 'string') return text
+  if (FLOW.test(text)) return <Flow text={text} />
+  if (WEEKDAYS.test(text)) return <Weekdays text={text} />
   const parts = text.split(' · ')
   if (parts.length >= 2 && parts.every((p) => /\d/.test(p) && !/[요다]\.?$/.test(p.trim()))) {
     return <span className="mc-fx-chips">{parts.map((p, i) => <span key={i}>
@@ -174,7 +204,8 @@ function PaceRow({ row, elapsed }) {
         <span style={{ width: `${Math.min(Math.max(Number(row.ratio), 0), 100)}%` }}></span>
         <i style={{ left: `${Math.min(Math.max(Number(elapsed), 0), 100)}%` }} aria-hidden="true"></i>
       </span>
-      <span className="mc-fx-pace-amt">{row.ratio}%<small>{won(row.spent)} / {won(row.allocated)}</small></span>
+      <span className="mc-fx-pace-amt">{row.ratio}%</span>
+      <small className="mc-fx-pace-sub">{won(row.spent)} / {won(row.allocated)}</small>
     </div>
   )
 }
@@ -284,12 +315,13 @@ function Persona({ block }) {
         <div>
           <small>{label}</small>
           <h3>{block.name}</h3>
-          {block.desc && <p>{block.desc}</p>}
-          {tags.length > 0 && <ul className="mc-fx-persona-tags" aria-label="예산 관리 태그">
-            {tags.map((t) => <li key={t.code} data-tag={t.code}>{t.label}</li>)}
-          </ul>}
         </div>
       </div>
+      {/* 11/17: 마스코트 옆 좁은 칸 대신 소개 · 태그는 카드 폭 전체로 */}
+      {block.desc && <p className="mc-fx-persona-desc">{block.desc}</p>}
+      {tags.length > 0 && <ul className="mc-fx-persona-tags" aria-label="예산 관리 태그">
+        {tags.map((t) => <li key={t.code} data-tag={t.code}>{t.label}</li>)}
+      </ul>}
       {reasons.length > 0 && <div className="mc-fx-persona-why">
         <strong>이렇게 봤어요</strong>
         <ul className="mc-spend-lines mc-fx-lines">{reasons.map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>
@@ -299,14 +331,92 @@ function Persona({ block }) {
   )
 }
 
+// 지난달과 비교 (11/17): '이름 금액 (지난달 같은 기간 금액)' 줄이 있으면 카테고리마다 묶는다 — 이름 · 이번 금액 한 줄, 지난달 금액은 그 아래, 이유 문장은 그 밑에.
+// 이유 문장은 카테고리 이름으로 시작하면 그 카테고리에(예: '교통·차량 지출이 달라진 주된 이유는…'은 뒤 교통·차량 줄에), 아니면 바로 앞 카테고리에 붙인다. 글자는 서버 그대로(괄호만 화면에서 뺌)
+const COMPARE_ROW = /^(.+?) ([\d,]+원) \((지난달 같은 기간 [\d,]+원)\)$/
+const compareRows = (lines) => lines.some((l) => COMPARE_ROW.test(l))
+// 이번 금액 옆 증감 화살표: 서버가 준 두 금액(이번 · 지난달 같은 기간)의 크기만 비교한다. 같으면 없음. 색 · 기호만으로 뜻을 전하지 않게 읽기 글자도
+function Arrow({ now, before }) {
+  const diff = digits(now) - digits(before)
+  if (!diff) return null
+  return <span className={`mc-fx-arrow ${diff > 0 ? 'mc-fx-up' : 'mc-fx-down'}`}>
+    <span aria-hidden="true">{diff > 0 ? '▲' : '▼'}</span><span className="mc-fx-sr">{diff > 0 ? ' 늘었어요' : ' 줄었어요'}</span>
+  </span>
+}
+// 예산을 관리하는 습관 (11/17): '이름: N번 늘림(+금액), M번 줄임(-금액)' 줄이 둘 이상이면 표로 (카테고리 | 늘림 | 줄임). 앞 문장은 머리말, 뒤 문장은 목록.
+// 금액 · 횟수는 문장 속 글자 그대로, 늘림은 붉게 · 줄임은 파랗게 (글자로도 '늘림 · 줄임' 머리줄이 있다)
+const HABIT_PART = /^(\d+)번 (늘림|줄임)\(([+\-−][\d,]+원)\)$/
+const habitRow = (l) => {
+  const m = l.match(/^([^:]{1,12}): (.+)$/)
+  const parts = m?.[2].split(', ').map((p) => p.match(HABIT_PART))
+  return parts?.every(Boolean) ? { name: m[1], parts } : null
+}
+const habitRows = (lines) => lines.filter(habitRow).length >= 2
+function HabitLines({ lines }) {
+  const first = lines.findIndex(habitRow)
+  const last = lines.findLastIndex(habitRow)
+  const cell = (row, way) => {
+    const p = row.parts.find((x) => x[2] === way)
+    return <td>{p ? <><b className={way === '늘림' ? 'mc-fx-up' : 'mc-fx-down'}>{p[3]}</b><small>{p[1]}번</small></> : <span className="mc-muted">-</span>}</td>
+  }
+  return <>
+    {lines.slice(0, first).map((l, i) => <p key={`h${i}`} className="mc-fx-money-lead"><Rich text={l} /></p>)}
+    <table className="mc-fx-habit">
+      <thead><tr><th scope="col"><span className="mc-fx-sr">카테고리</span></th><th scope="col">늘림</th><th scope="col">줄임</th></tr></thead>
+      <tbody>{lines.slice(first, last + 1).map(habitRow).filter(Boolean).map((row) => (
+        <tr key={row.name}><th scope="row">{row.name}</th>{cell(row, '늘림')}{cell(row, '줄임')}</tr>
+      ))}</tbody>
+    </table>
+    {last + 1 < lines.length && <ul className="mc-spend-lines mc-fx-lines">{lines.slice(last + 1).map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>}
+  </>
+}
+
+// 카테고리 줄 앞의 전체 요약 (11/17): 회색 판 하나에 모으고, '이번 달 N원, 지난달 같은 기간 M원이에요.'는 지난달 → 이번 달 칸으로. 아래 카테고리 묶음과 나뉘어 보이게
+const TOTALS = /^이번 달 ([\d,]+원), 지난달 같은 기간 ([\d,]+원)이에요\.$/
+function CompareSummary({ lines }) {
+  const totals = lines.map((l) => l.match(TOTALS)).find(Boolean)
+  const rest = lines.filter((l) => !TOTALS.test(l))
+  return <div className="mc-fx-compare-sum">
+    {totals && <p className="mc-fx-flow" role="img" aria-label={totals[0]}>
+      <span className="mc-fx-flow-step"><small>지난달 같은 기간</small> <b>{totals[2]}</b></span>
+      <span className="mc-fx-flow-arrow" aria-hidden="true"> → </span>
+      <span className="mc-fx-flow-step is-last"><small>이번 달</small> <b>{totals[1]}</b></span>
+    </p>}
+    {rest.length > 0 && <ul className="mc-spend-lines mc-fx-lines">{rest.map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>}
+  </div>
+}
+
+function CompareLines({ lines }) {
+  const groups = []
+  const extra = []  // 첫 카테고리 줄보다 앞에 있으면서 어느 카테고리 이름으로도 시작하지 않는 문장
+  const names = lines.map((l) => l.match(COMPARE_ROW)?.[1]).filter(Boolean)
+  let waiting = []  // 다음 카테고리 줄을 기다리는 이유 문장
+  for (const l of lines) {
+    const row = l.match(COMPARE_ROW)
+    if (row) { groups.push({ name: row[1], amount: row[2], before: row[3], notes: [...waiting] }); waiting = []; continue }
+    const ahead = names.find((n) => l.startsWith(n) && !groups.some((g) => g.name === n))
+    if (ahead) waiting.push(l)
+    else if (groups.length) groups.at(-1).notes.push(l)
+    else extra.push(l)
+  }
+  if (waiting.length) groups.at(-1).notes.push(...waiting)
+  return <>
+    {extra.length > 0 && <CompareSummary lines={extra} />}
+    {extra.length > 0 && <p className="mc-fx-compare-label">카테고리별</p>}
+    <dl className="mc-fx-money mc-fx-compare">
+      {groups.map((g) => <div key={g.name}>
+        <dt>{g.name}</dt>
+        <dd className="mc-fx-money-amt">{g.amount}<Arrow now={g.amount} before={g.before} /></dd>
+        <dd className="mc-fx-money-desc">{g.before}</dd>
+        {g.notes.map((n, i) => <dd key={i} className="mc-fx-compare-why"><Rich text={n} /></dd>)}
+      </div>)}
+    </dl>
+  </>
+}
+
 function Block({ block, onSend }) {
   if (block.kind === 'persona') return <Persona block={block} />
-  if (block.kind === 'details') return (
-    <details className="mc-fx-fold">
-      <summary>{block.title ?? '자세히 보기'}</summary>
-      {(block.blocks ?? []).map((child, i) => <Block key={i} block={child} onSend={onSend} />)}
-    </details>
-  )
+  if (block.kind === 'details') return <Details block={block} onSend={onSend} />
   if (block.kind === 'total') {
     return (
       <div className="mc-spend-total">
@@ -325,7 +435,9 @@ function Block({ block, onSend }) {
     if (block.tone === 'key') {  // 핵심 진단: 목록 점 없이 굵은 글자 한두 문장 (분석의 답을 먼저)
       return <section className="mc-fx-section mc-fx-key"><h3>{title}</h3>{lines.map((l, i) => <KeyLine key={i} text={l} />)}</section>
     }
-    const body = <ul className="mc-spend-lines mc-fx-lines">{lines.map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>
+    // 달마다 흐름 칸은 섹션 맨 위로 (그림으로 먼저 보고 설명 문장을 읽게, 11/17)
+    const shown = [...lines.filter((l) => FLOW.test(l)), ...lines.filter((l) => !FLOW.test(l))]
+    const body = compareRows(lines) ? <CompareLines lines={lines} /> : habitRows(lines) ? <HabitLines lines={lines} /> : <ul className="mc-spend-lines mc-fx-lines">{shown.map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>
     return title ? <section className="mc-fx-section"><h3>{title}</h3>{body}</section> : body
   }
   if (block.kind === 'trend') return <Trend block={block} />
@@ -351,6 +463,94 @@ function Block({ block, onSend }) {
 // 줄 목록 블록이 이만큼 이상이면 한 토글로 접는다 (설명 답의 근거 줄처럼 길쭉한 카드). 큰 금액 · 문장은 그대로 보인다
 const FOLD_ROWS = 3
 
+// 쪽 넘기기 (11/17): 핵심 진단으로 시작하는 긴 분석 답만 쪽으로 나눈다. 블록 순서 · 글자는 서버 그대로, 화면은 묶기만.
+// 첫 쪽 = 핵심 진단 + 뒤따르는 그래프 · 목록 하나. 제목 있는 글 블록마다 새 쪽, 그래프 · 목록은 앞 쪽에 붙이고(쪽마다 하나까지) '앞으로'는 앞 쪽(월별 그래프)에, 최근 4주 선그래프는 따로
+const titleOf = (b) => b.title ?? (b.kind === 'text' && ANALYSIS_TITLES.has(b.lines[0]) ? b.lines[0] : null)
+// loose = 자세히 보기 팝업: 핵심 진단 없이 시작해도 나눈다 (첫 쪽 이름 = 첫 블록 제목)
+function paginate(blocks, loose = false) {
+  const key = blocks[0]?.kind === 'text' && blocks[0].tone === 'key'
+  if (!key && !loose) return null
+  const pages = []
+  for (const b of blocks) {
+    const t = titleOf(b)
+    // 제목 있는 그래프 · 목록은 이미 그래프가 있는 쪽이면 새 쪽으로 (한 쪽에 그래프 하나 — 예: 월별 그래프 뒤 항목별 예상, 4주 추이 뒤 카테고리 막대)
+    const visual = b.kind !== 'text' && t && pages.at(-1)?.blocks.some((x) => x.kind !== 'text')
+    if (!pages.length || b.kind === 'trend' || visual || (b.kind === 'text' && t && t !== '앞으로')) pages.push({ title: pages.length || !key ? t ?? '요약' : '요약', blocks: [b] })
+    else pages.at(-1).blocks.push(b)
+  }
+  if (!loose) return pages.length >= 3 ? pages : null
+  // 팝업 (11/17): 글만 있는 짧은 쪽끼리는 한 쪽으로 묶는다 (쪽마다 빈 칸이 크지 않게). 글자 수 기준 = 팝업 한 쪽에 스크롤 없이 들어가는 정도
+  const textOnly = (p) => p.blocks.every((x) => x.kind === 'text')
+  const size = (p) => p.blocks.reduce((n, x) => n + x.lines.join('').length, 0)
+  const merged = []
+  for (const p of pages) {
+    const last = merged.at(-1)
+    if (last && textOnly(last) && textOnly(p) && size(last) + size(p) <= MERGE_CHARS) merged[merged.length - 1] = { title: `${last.title} · ${p.title}`, blocks: [...last.blocks, ...p.blocks] }
+    else merged.push(p)
+  }
+  return merged.length >= 2 ? merged : null
+}
+const MERGE_CHARS = 300
+
+function Pager({ pages, onSend }) {
+  const [at, setAt] = useState(0)
+  const box = useRef(null)
+  const touch = useRef(null)
+  const i = Math.min(at, pages.length - 1)  // 기간 전환으로 쪽 수가 줄어도 범위 안
+  const go = (n) => {
+    if (n < 0 || n >= pages.length) return
+    setAt(n)
+    // 아래 버튼을 눌러 넘겼는데 새 쪽 머리가 화면 위로 지나가 있으면 쪽 머리로 올린다
+    const scroller = box.current?.closest('.mc-sheet, main')
+    if (scroller?.classList.contains('mc-sheet')) return void (scroller.scrollTop = 0)  // 팝업 안: 새 쪽은 맨 위부터
+    const top = box.current?.getBoundingClientRect().top
+    const log = scroller?.getBoundingClientRect().top ?? 0
+    if (top < log) box.current.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }
+  const start = (e) => { touch.current = [e.touches[0].clientX, e.touches[0].clientY] }
+  const end = (e) => {
+    if (!touch.current) return
+    const dx = e.changedTouches[0].clientX - touch.current[0], dy = e.changedTouches[0].clientY - touch.current[1]
+    touch.current = null
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) go(i + (dx < 0 ? 1 : -1))  // 세로 스크롤과 헷갈리지 않게 확실한 가로 밀기만
+  }
+  return (
+    <section className="mc-fx-pager" ref={box} aria-roledescription="쪽 넘기기" aria-label="분석 내용" onTouchStart={start} onTouchEnd={end}>
+      <div className="mc-fx-page" key={i} role="group" aria-label={`${pages.length}쪽 중 ${i + 1}쪽: ${pages[i].title}`}>
+        {pages[i].blocks.map((b, j) => <Block key={j} block={b} onSend={onSend} />)}
+      </div>
+      <div className="mc-fx-pager-nav">
+        <button type="button" onClick={() => go(i - 1)} disabled={i === 0} aria-label="이전 쪽"><Icon name="ChevronLeft" /></button>
+        <span aria-live="polite">
+          <span className="mc-fx-pager-dots" aria-hidden="true">{pages.map((p, n) => <i key={n} className={n === i ? 'on' : undefined} />)}</span>
+          <span>{i + 1}/{pages.length} · {pages[i].title}</span>
+        </span>
+        <button type="button" onClick={() => go(i + 1)} disabled={i === pages.length - 1} aria-label="다음 쪽"><Icon name="ChevronRight" /></button>
+      </div>
+    </section>
+  )
+}
+
+// 자세히 보기 (11/17): 화면(팝업 틀) 안이고 3쪽 이상이면 버튼 → 가운데 팝업에서 쪽 넘기기. 아니면(테스트 · 짧은 내용) 예전처럼 접기
+function Details({ block, onSend }) {
+  const popups = usePopup()
+  const title = block.title ?? '자세히 보기'
+  const children = block.blocks ?? []
+  const pages = popups && paginate(children, true)
+  if (!pages) return (
+    <details className="mc-fx-fold">
+      <summary>{title}</summary>
+      {children.map((child, i) => <Block key={i} block={child} onSend={onSend} />)}
+    </details>
+  )
+  const send = onSend && ((ask) => { popups.closePopup(); onSend(ask) })
+  const open = () => popups.openPopup(
+    <Popup label={title} dialog>
+      <div className="mc-fx-detail-pop"><h2>{title}</h2><Pager pages={pages} onSend={send} /></div>
+    </Popup>)
+  return <button type="button" className="mc-fx-detail-open" onClick={open} aria-haspopup="dialog">{title}<Icon name="ChevronRight" size={18} /></button>
+}
+
 function ViewCard({ content, title, onSend }) {
   // 기간 전환 (11/11): 이번 달 조회에 예산 주기 판(content.alt)이 함께 오면 [이번 달 | 예산 주기]로 바꿔 본다.
   // 두 판 모두 서버가 계산해 준 것 그대로 — 화면은 어느 판을 그릴지만 고른다. alt.first = 예산 조정 중에 물은 답이라 예산 주기를 먼저
@@ -361,6 +561,7 @@ function ViewCard({ content, title, onSend }) {
   const rows = blocks.filter((b) => b.kind === 'rows')
   const fold = rows.length >= FOLD_ROWS
   const first = blocks.indexOf(rows[0])
+  const pages = paginate(blocks)
   return (
     <div className="mc-spend" aria-label={`${title} 결과`}>
       <div className="mc-spend-head"><span>{head ? head.title : title}</span>{head && <small>{title}</small>}</div>
@@ -370,7 +571,7 @@ function ViewCard({ content, title, onSend }) {
           <button type="button" aria-pressed={cycle} onClick={() => setCycle(true)}>{alt.label}</button>
         </div>
       )}
-      {blocks.map((b, i) => {
+      {pages ? <Pager pages={pages} onSend={onSend} /> : blocks.map((b, i) => {
         if (!fold || b.kind !== 'rows') return <Block key={i} block={b} onSend={onSend} />
         if (i !== first) return null
         return (
@@ -481,6 +682,29 @@ function PolicySections({ sections, choices, onDetail }) {
 }
 
 // 분석 결과 카드 (SpendingCard 와 같은 틀 · 클래스). 카드 보기가 있으면 그것으로, 없으면(설명 답변 등) 문장 목록
+// 돈 종류 나눠 보기 (11/17, 예: '여윳돈 얼마나 있어?'): '이름: 금액 — 설명' 줄이 둘 이상이면 이름 · 설명은 왼쪽, 금액은 오른쪽 줄로.
+// 글자는 서버 문장 그대로(': ' · ' — ' 구분 기호만 화면에서 뺌), 읽는 순서도 이름 → 금액 → 설명 그대로. 금액 대신 안내 문장이 온 줄(확인 필요)은 설명 자리에. 앞 · 뒤 일반 문장은 머리말 · 안내로
+const MONEY_ROW = /^([^:]{1,24}): (?:([\d,]+원) — (.+)|(.+))$/
+const moneyRows = (lines = []) => lines.filter((l) => /^[^:]{1,24}: [\d,]+원 — /.test(l)).length >= 2
+function MoneyLines({ lines }) {
+  const first = lines.findIndex((l) => MONEY_ROW.test(l))
+  const last = lines.findLastIndex((l) => MONEY_ROW.test(l))
+  return <>
+    {lines.slice(0, first).map((l, i) => <p key={`h${i}`} className="mc-fx-money-lead">{l}</p>)}
+    <dl className="mc-fx-money">
+      {lines.slice(first, last + 1).map((l, i) => {
+        const [, name, amount, desc, other] = l.match(MONEY_ROW) ?? [null, null, null, null, l]
+        return <div key={i} className={amount ? undefined : 'is-pending'}>
+          {name && <dt>{name}</dt>}
+          {amount && <dd className="mc-fx-money-amt">{amount}</dd>}
+          <dd className="mc-fx-money-desc">{desc ?? other}</dd>
+        </div>
+      })}
+    </dl>
+    {lines.slice(last + 1).map((l, i) => <p key={`n${i}`} className="mc-note mc-note-flush">{l}</p>)}
+  </>
+}
+
 function ResultCard({ content, title, onDetail, onSend }) {
   if (content.view?.length) return <ViewCard content={content} title={title} onSend={onSend} />
   const notices = content.notices ?? []
@@ -488,7 +712,9 @@ function ResultCard({ content, title, onDetail, onSend }) {
     <div className="mc-spend" aria-label={`${title} 결과`}>
       <div className="mc-spend-head"><span>{title}</span></div>
       {content.agent === 'policy' && <Lead items={content.lead ?? []} />}
-      {content.lines.length > 0 && <ul className="mc-spend-lines">{content.lines.map((l, i) => <li key={i}><Boxed text={l} on={content.agent === 'policy'} /></li>)}</ul>}
+      {content.agent !== 'policy' && moneyRows(content.lines)
+        ? <MoneyLines lines={content.lines} />
+        : content.lines.length > 0 && <ul className="mc-spend-lines">{content.lines.map((l, i) => <li key={i}><Boxed text={l} on={content.agent === 'policy'} /></li>)}</ul>}
       {content.agent === 'policy' && (content.examples ?? []).length > 0 && <p className="mc-examples">예) {content.examples.join(' · ')}</p>}
       {content.agent === 'policy' && content.sections?.some((s) => s.policyNo)
         ? <PolicySections sections={content.sections} choices={content.choices} onDetail={onDetail} />
@@ -507,7 +733,7 @@ function ResultCard({ content, title, onDetail, onSend }) {
         </div>
       )}
       {content.chart && <Chart chart={content.chart} />}
-      {content.agent === 'policy' ? notices.map((n, i) => <p key={`notice-${i}`} className="mc-note" style={{ padding: 0 }}>{n}</p>) : <Notes content={content} />}
+      {content.agent === 'policy' ? notices.map((n, i) => <p key={`notice-${i}`} className="mc-note mc-note-flush">{n}</p>) : <Notes content={content} />}
     </div>
   )
 }

@@ -302,6 +302,54 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(found["spending_status"], "partial")
         self.assertEqual(found['bucket_status'], {'SAVINGS': 'ready', 'SPARE': 'unknown', 'CUSHION_MONTHLY': 'unknown'})
         self.assertEqual(found['bucket_available'], {'SAVINGS': 600000})
+        self.assertEqual(found['observed_spending'], {'transaction_count': 0, 'from': None, 'through': None})
+        self.assertEqual(found['estimated_buckets'], [])
+
+    def test_partial_collection_uses_stored_spending_dates_and_reserved_bucket_limits(self):
+        budget = self.make_budget()
+        self.coverage.return_value = {'state': 'partial', 'targets': [], 'undetermined': []}
+        food = self.tx(20000)
+        FinancialTransaction.objects.filter(pk=food.pk).update(occurred_on=date(2026, 11, 2))
+        outside = self.tx(80000, 'TRAVEL_LODGING')
+        FinancialTransaction.objects.filter(pk=outside.pk).update(occurred_on=date(2026, 11, 3))
+        SpendingAllocation.objects.create(user=self.user, cycle=self.cycle, budget=budget, transaction=outside,
+            funding_bucket='free', category_id='TRAVEL_LODGING', amount=80000)
+        CushionEntry.objects.create(user=self.user, cycle=self.cycle, budget=budget, entry_type='allocation',
+            amount=50000, request_key='observed-cushion', occurred_at=timezone.now())
+        with patch('budgets.adjustment_diagnostics.reserved_spare', return_value=(70000, 'observed-reservation')):
+            found = self.context()
+        self.assertEqual(found['spending_status'], 'partial')
+        self.assertTrue(found['budget_preview'])
+        self.assertEqual(found['observed_spending'], {'transaction_count': 2, 'from': '2026-11-02', 'through': '2026-11-03'})
+        self.assertEqual(found['spent']['FOOD'], 20000)
+        self.assertEqual(found['bucket_available']['SPARE'], 250000)
+        self.assertEqual(found['bucket_available']['CUSHION_MONTHLY'], 150000)
+        self.assertEqual(found['estimated_buckets'], ['SPARE', 'CUSHION_MONTHLY'])
+        self.assertEqual(found['bucket_status']['SPARE'], 'ready')
+        self.assertEqual(found['bucket_status']['CUSHION_MONTHLY'], 'ready')
+
+    def test_observed_spending_does_not_invent_unknown_reservations_or_balances(self):
+        self.make_budget()
+        self.tx(20000)
+        self.coverage.return_value = {'state': 'partial', 'targets': [], 'undetermined': []}
+        self.balance.return_value.update(total=None, unknown_count=1)
+        with patch('budgets.adjustment_diagnostics.reserved_spare', return_value=(None, 'missing-reservation')):
+            found = self.context()
+        self.assertEqual(found['bucket_status']['SPARE'], 'unknown')
+        self.assertNotIn('SPARE', found['bucket_available'])
+        self.assertEqual(found['bucket_reasons']['SPARE'], 'reservation_unverified')
+        self.assertEqual(found['bucket_status']['CUSHION_MONTHLY'], 'unknown')
+        self.assertNotIn('CUSHION_MONTHLY', found['bucket_available'])
+        self.assertEqual(found['estimated_buckets'], [])
+
+    def test_transfers_do_not_count_as_observed_spending(self):
+        self.make_budget()
+        self.tx(20000, transaction_type='transfer')
+        self.coverage.return_value = {'state': 'partial', 'targets': [], 'undetermined': []}
+        found = self.context()
+        self.assertEqual(found['observed_spending']['transaction_count'], 0)
+        self.assertEqual(found['bucket_status']['SPARE'], 'unknown')
+        self.assertEqual(found['bucket_status']['CUSHION_MONTHLY'], 'unknown')
 
     def test_spare_uses_living_overrun_and_free_ledger_without_double_counting(self):
         budget = self.make_budget()

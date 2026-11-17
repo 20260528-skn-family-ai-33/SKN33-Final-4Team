@@ -109,6 +109,12 @@ class SnapshotPatternTest(SimpleTestCase):
                [pay(d, 10000) for d in range(1, 21) if date(2026, 11, d).weekday() < 5]
         f = snapshot.weekend(rows, START, TODAY)[0]
         self.assertIn("주말 하루에 평일의 5.0배", f["conclusion"])
+        self.assertIn("주말 하루 평균 50,000원, 평일 하루 평균 10,000원", f["evidence"][0])  # '50,000.0원' 아님
+
+    def test_weekend_top_category_particle_follows_final_consonant(self):
+        rows = [pay(d, 50000, "FASHION_SHOPPING") for d in range(1, 21) if date(2026, 11, d).weekday() >= 5] + \
+               [pay(d, 10000) for d in range(1, 21) if date(2026, 11, d).weekday() < 5]
+        self.assertIn("주말 소비의 100%가 패션·쇼핑이에요.", snapshot.weekend(rows, START, TODAY)[0]["evidence"])
 
     def test_even_week_is_not_a_weekend_finding(self):
         self.assertEqual(snapshot.weekend([pay(d, 10000) for d in range(1, 21)], START, TODAY), [])

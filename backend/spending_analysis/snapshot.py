@@ -292,10 +292,11 @@ def weekend(rows, period_start, today):
         return []
     ratio = end_avg / day_avg
     conclusion = f"주말 하루에 평일의 {ratio:.1f}배를 쓰고 있어요."
-    evidence = [f"주말 하루 평균 {won(round(end_avg, -2))}, 평일 하루 평균 {won(round(day_avg, -2))}이에요 (지난 날짜 기준)."]
+    evidence = [f"주말 하루 평균 {won(int(round(end_avg, -2)))}, 평일 하루 평균 {won(int(round(day_avg, -2)))}이에요 (지난 날짜 기준)."]  # round(실수, -2)는 실수라 int 없으면 '40,400.0원'
     top = max(by_category.items(), key=lambda kv: kv[1], default=None)
     if top and top[0] in NAMES and top[1] * 10 >= amounts[True] * 4:
-        evidence.append(f"주말 소비의 {round(top[1] * 100 / amounts[True])}%가 {NAMES[top[0]]}예요.")
+        name = NAMES[top[0]]  # 받침에 맞게: '식비예요' · '패션·쇼핑이에요'
+        evidence.append(f"주말 소비의 {round(top[1] * 100 / amounts[True])}%가 {name}{'이에요' if josa(name, '은는').endswith('은') else '예요'}.")
     return [_finding("WEEKEND", "weekend", "생활 패턴", conclusion=conclusion, evidence=evidence,
                      impact=round((end_avg - day_avg) * len(weekend_days)))]
 

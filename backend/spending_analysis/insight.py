@@ -139,6 +139,7 @@ def summarize(user, decision, today):
                           "previous": {"from": periods[1].start.isoformat(), "to": periods[1].last_day.isoformat()},
                           "coverage": states[0], "comparison_available": comparison_available,
                           "as_of": today.isoformat(), "asked_today": asked_today.isoformat(), "clipped": bool(clipped),
+                          "observed_through": max((r['occurred_on'].isoformat() for r in source[0]), default=None),
                           "comparison_reason": comparison_reason,
                           "count_basis": "취소 차감 후 순금액이 양수인 소비 결제"},
                "current": current, "previous": previous, "categories": selected,
@@ -403,7 +404,7 @@ def _sections(findings, statements, forecast_text):
 # '소비 분석해줘'처럼 무엇을 볼지 정하지 않은 말 · '또 뭐 분석해 줄 수 있어?' → 볼 수 있는 분석과 설명 (같은 분석을 다시 내보내지 않는다)
 # '왜 이렇게 계산됐어?' → 방금 보인 숫자의 계산식 (다른 분석으로 바꿔 답하지 않는다)
 MENU = (
-    ("전체 분석", "최근 몇 달 생활비 흐름, 매달 반복되는 소비, 이대로 쓰면 이번 달 말·다음 달에 얼마가 될지를 한 번에 봐요.",
+    ("전체 분석", "최근 몇 달간의 생활비 흐름과 매달 반복되는 소비를 살펴보고, 지금처럼 소비할 때 이번 달 말과 다음 달의 예상 지출까지 한눈에 확인해요.",
      "전체적으로 분석해줘"),
     ("소비 습관", "외식·카페·배달처럼 매달 반복되는 소비가 생활비에서 얼마나 되는지, 줄이면 한 달에 얼마가 남는지 짚어요.",
      "내 소비 습관 어때?"),
@@ -499,15 +500,22 @@ def answer(user, decision, today, complete, question=None, covered=()):
     basis = summary["basis"]
     today = date.fromisoformat(basis["as_of"]) if basis.get("as_of") else today
     suffix = " · 일부 내역 기준" if basis["coverage"] != "complete" else ""
+    observed_day = date.fromisoformat(basis['observed_through']) if basis.get('observed_through') else None
+    observed_note = (f"{observed_day.month}월 {observed_day.day}일까지 저장된 거래로 분석했어요. 이후 거래나 누락 내역이 추가되면 달라질 수 있어요."
+                     if observed_day and basis['coverage'] != 'complete' else None)
     request = decision.request or decision.interpretation
     question = question or (decision.explain or {}).get("question") or "소비 분석해줘"
     goal = getattr(request, "analysis_goal", None) or ("reason" if request.explain else "overview")
     if wants_calculation(asked) and summary.get("story"):
         reply = _calculation_reply(summary, today, suffix)
         if reply is not None:
+            if observed_note:
+                reply['notices'] = [observed_note, *reply.get('notices', [])]
             return followups.apply(reply, question, complete, **_followup_context(summary, "calculation", reply, today), covered=covered), None
     if summary.get("story") and (summary["story"]["findings"] or summary["story"].get("slot") or summary["story"].get("weekend")):
         reply = _story_answer(user, summary, goal, today, suffix)
+        if observed_note:
+            reply['notices'] = [observed_note, *reply.get('notices', [])]
         return followups.apply(reply, question, complete, **_followup_context(summary, goal, reply, today), covered=covered), None
     findings = select(summary, goal)
     forecast, notes = _outlook(summary)
@@ -517,14 +525,21 @@ def answer(user, decision, today, complete, question=None, covered=()):
         forecast = re.split(r"(?<=[.!?])\s+", forecast)[0]
     if not findings and not forecast:
         current = summary["current"]
-        line = ("확인된 내역에서는 특정 항목이나 시간대에 소비가 몰리는 특징은 보이지 않아요."
+        line = (f"저장된 내역에서 확인한 소비는 {won(current['amount'])}, {current['count']}건이에요."
                 if current["count"] else "이번 달에 분석할 소비 내역이 아직 없어요.")
         if not current["count"] and summary["unclassified_amount"][0]:
             line = "결제 내역은 있지만, 사용처가 정해진 내역이 없어 소비 성향은 아직 구분할 수 없어요."
-        notes = [n for n in (*notes, basis.get("comparison_reason"), _unclassified_note(summary), _small_sample_note(summary),
+        lines = [line]
+        categories = [row for row in summary['categories'] if row['current']['amount'] > 0]
+        if categories:
+            top = max(categories, key=lambda row: row['current']['amount'])
+            lines.append(f"이 내역에서는 {top['name']}에 {won(top['current']['amount'])}을 써 가장 큰 비중을 차지해요.")
+        elif not current['count'] and summary['previous']['count']:
+            lines.append(f"지난달 같은 기간에 저장된 소비는 {won(summary['previous']['amount'])}, {summary['previous']['count']}건이에요.")
+        notes = [n for n in (observed_note, *notes, basis.get("comparison_reason"), _unclassified_note(summary), _small_sample_note(summary),
                  f"분석 범위: {basis['scope']} · {span(this_month(today))} · 고정지출 제외") if n]
-        return {"lines": [line], "lead": [], "notices": notes, "examples": [],
-                "view": [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}, {"kind": "text", "lines": [line]}]}, None
+        return {"lines": lines, "lead": [], "notices": notes, "examples": [],
+                "view": [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}, {"kind": "text", "lines": lines}]}, None
     data = narrative.payload(question, findings, forecast, goal) if findings else None
     composed = narrative.compose(data, complete) if data else None
     if composed is not None:
@@ -563,6 +578,8 @@ def answer(user, decision, today, complete, question=None, covered=()):
         notes.insert(0, f"{after.month}월 {after.day}일 이후 내역은 아직 불러오지 않아 {today.month}월 {today.day}일까지 기준으로 분석했어요.")
     if basis["comparison_reason"]:
         notes.append(basis["comparison_reason"])
+    if observed_note:
+        notes.insert(0, observed_note)
     notes.extend(dict.fromkeys(t for f in findings for t in f.get("limits", [])))
     if _unclassified_note(summary):
         notes.append(_unclassified_note(summary))

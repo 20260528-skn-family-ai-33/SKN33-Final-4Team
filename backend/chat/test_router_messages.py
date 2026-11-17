@@ -117,7 +117,7 @@ class MessagesTest(SimpleTestCase):
         """질문 취소 / 에이전트에 취소 요청 전달 / 서버가 확인한 취소 — 전달만으로 취소됐다고 말하지 않는다"""
         self.say("식비 예산 줄여줘")
         out = self.say("취소")  # 진행 중 예산 작업 + 질문 없음 → 원문 그대로 에이전트에 전달
-        self.assertEqual(out["notices"], ["예산 조정 쪽에 취소 요청을 전달했어요. 실제로 취소됐는지는 확인한 뒤 알려드릴게요."])
+        self.assertEqual(out["notices"], ["예산 조정 취소를 요청했어요. 취소 완료 여부는 아직 확인되지 않았어요."])
         self.assertNotIn("방금 질문은 취소했어요.", out["lines"])
         turn = {"decision": run_turn("talk-1", self.store, self.llm, text="취소", agents={}, server=self.server)["decision"],
                 "result": {"status": "replied", "reply": None}}
@@ -129,7 +129,7 @@ class MessagesTest(SimpleTestCase):
         self.server.states["T1"] = {"state": "saving"}
         self.say("그렇게 해줘")  # 대역이 다시 답하면 서버 확인 → 저장 중
         out = self.say("이번 달 얼마 썼어?")
-        self.assertEqual(out["notices"], ["예산 조정은 저장이 진행 중이에요. 결과는 확인한 뒤 알려드릴게요."])
+        self.assertEqual(out["notices"], ["예산 조정을 저장 중이에요. 아직 저장이 완료되지 않았어요."])
 
     def test_policy_work_suspends_and_button_resumes(self):
         self.say("청년 정책 추천해줘")

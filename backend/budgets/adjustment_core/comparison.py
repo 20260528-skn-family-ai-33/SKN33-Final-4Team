@@ -136,7 +136,7 @@ def _assess_and_recommend(context, comparison, primary):
     best = best_score[1:]
     winners = [plan for plan in comparison["plans"] if scores.get(plan["id"]) == best_score]
     if len(winners) != 1:
-        recommendation["reasons"].append("중요하게 고른 항목과 남길 돈을 비교했을 때 비슷한 방법들이에요. 어느 쪽을 더 유지할지 골라 주세요.")
+        recommendation["reasons"].append("비교해 보니 비슷한 방법들이라 추천을 정하지 않았어요. 더 지키고 싶은 쪽을 골라 주세요.")
         return
     winner = winners[0]
     reasons = list(winner["assessment"]["reasons"])
@@ -197,8 +197,10 @@ def _profiles(category, direction):
                  ("extended", "월 쿠션 배분 조정", ["CUSHION_MONTHLY"])]
     else:
         edges = [("living", "생활비 내 재배분" if direction == "up" else "다른 생활비에 배분", [LIVING]),
-                 ("spare", "여윳돈 활용" if direction == "up" else "여윳돈으로 남기기", ["SPARE"]),
-                 ("extended", "저축·월 쿠션 배분 조정", ["SAVINGS", "CUSHION_MONTHLY"])]
+                 ("spare", "여윳돈 활용" if direction == "up" else "여윳돈으로 남기기", ["SPARE"])]
+        edges.extend([("extended", "저축·월 쿠션 배분 조정", ["SAVINGS", "CUSHION_MONTHLY"])] if direction == "up" else [
+            ("savings", "저축에 더하기", ["SAVINGS"]),
+            ("cushion", "월 머니쿠션에 더하기", ["CUSHION_MONTHLY"])])
     if direction == 'up':
         sources = list(dict.fromkeys(code for _, _, codes in edges for code in codes if code != category))
         edges.append(('combined', '여러 곳에서 나눠 가져오기', sources))
@@ -276,7 +278,8 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
                 else:
                     usable.append(code)
             candidate["sources"] = usable
-        pending_destination = direction == "down" and len(candidate['destinations']) != 1
+        pending_destination = direction == "down" and (
+            len(candidate['destinations']) != 1 or candidate['destinations'] == [LIVING])
         scope = "living" if LIVING in edges else "spare" if edges == ["SPARE"] else "extended"
         plan = {"id": plan_id, "scope": scope, "label": label, "status": "needs_destination",
                 "maximum": None, "amount": 0, "result": None, "envelope": None,
@@ -351,21 +354,26 @@ def compare_adjustments(context, envelope, *, allocate_group_reduction=None, res
     plans[:] = unique
     selectable = any(plan['status'] in ('ready', 'partial') and plan.get('envelope')
                      and plan['amount'] > 0 and (plan.get('result') or {}).get('changes') for plan in plans)
-    response["status"] = "ready" if selectable else "unavailable"
+    choosing_destination = any(plan['status'] == 'needs_destination' and plan.get('envelope') for plan in plans)
+    response["status"] = "ready" if selectable or choosing_destination else "unavailable"
     response["message"] = (f"같은 {amount:,}원을 기준으로 비교했어요." if known else
                            f"금액 미지정으로 비교 가능한 안의 공통 가능액 {amount:,}원을 기준으로 삼았어요. 필요한 금액의 권고는 아니에요.")
-    if not selectable:
+    if not selectable and choosing_destination:
+        response['message'] = '받을 생활비 항목과 금액을 고르면 변경안을 계산할 수 있어요.'
+    elif not selectable:
         name = (context.get('category_names') or {}).get(category, category)
         current = context['allocations'].get(category)
-        if context.get('spending_status', 'complete') != 'complete':
+        conflicts = [conflict.get('code') for plan in plans for conflict in (plan.get('result') or {}).get('conflicts', [])]
+        if 'spending_unverified' in conflicts and not context.get('budget_preview'):
             response['message'] = '지금까지 쓴 돈을 모두 확인하지 못해 계산하지 못했어요. 계좌·카드 내역을 다시 불러온 뒤 확인해 주세요.'
         elif category in context.get('locks', {}):
             response['message'] = f'{name} 예산을 {context["locks"][category]:,}원으로 고정해 두셨어요. 이 금액을 바꾸려면 먼저 고정을 풀어도 되는지 알려 주세요.'
         elif direction == 'down' and not known and current is not None:
-            keep = max(context.get('minimums', {}).get(category, 0), context.get('system_floors', {}).get(category, 0),
-                       context.get('spent', {}).get(category, 0), min(current, context.get('ml_reference', {}).get(category, 0)))
+            from .calculation import _floor
+            keep = _floor(data, category)
             if current <= keep:
-                response['message'] = (f'자동으로 줄일 때는 {name}에 {keep:,}원을 남기도록 계산해요. 지금 예산은 {current:,}원이어서 '
+                reason = '우선순위 1~6위는 자동 감액에서 현재 예산을 유지해요. ' if context.get('priorities', {}).get(category, 99) <= 6 else ''
+                response['message'] = (reason + f'자동으로 줄일 때는 {name}에 {keep:,}원을 남기도록 계산해요. 지금 예산은 {current:,}원이어서 '
                                        '자동으로 줄일 수 있는 금액이 없어요. 그보다 적게 잡고 싶다면 원하는 금액을 알려 주세요.')
             else:
                 response['message'] = f'{name} 예산을 줄일 금액을 자동으로 정하지 못했어요. 줄인 뒤 얼마를 남기고 싶은지 알려 주세요.'

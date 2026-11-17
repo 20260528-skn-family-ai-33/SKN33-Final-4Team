@@ -130,11 +130,11 @@ export default function LoanPaymentPopup({ dueId, onSaved }) {
           <div className="mc-keyvalue"><span>남은 금액</span><strong>{won(remaining)}</strong></div>
         </>}
         <div className="mc-keyvalue"><span>{remaining !== due.expectedAmount ? '이번 출금' : '실제 출금'}</span><strong>{won(choice.amount)}</strong></div>
-        <p className="mc-note" style={{ padding: 0 }}>{diffText(choice.amountDifference, remaining !== due.expectedAmount ? '남은 금액' : '예정액')}{choice.hints.nearDueDate ? '' : ' · 납부일과 멀어요'}</p>{/* 11/9: 맞는 근거(연결 계좌 등)는 후보 순서에만 쓰고 문구에서 뺌 — 주의할 것만 */}
+        <p className="mc-note mc-note-flush">{diffText(choice.amountDifference, remaining !== due.expectedAmount ? '남은 금액' : '예정액')}{choice.hints.nearDueDate ? '' : ' · 납부일과 멀어요'}</p>{/* 11/9: 맞는 근거(연결 계좌 등)는 후보 순서에만 쓰고 문구에서 뺌 — 주의할 것만 */}
         {choice.reclassify && (needsAgree
           ? <label className="mc-field mc-check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
               ‘{fromLabel(choice.reclassify)}’ → ‘대출 상환’으로 바꿔요 (소비 합계에서 빠져요)</label>
-          : <p className="mc-note" style={{ padding: 0 }}>‘{fromLabel(choice.reclassify)}’ → ‘대출 상환’으로 바꿔요</p>)}
+          : <p className="mc-note mc-note-flush">‘{fromLabel(choice.reclassify)}’ → ‘대출 상환’으로 바꿔요</p>)}
         <button type="button" className="mc-primary" disabled={busy || (needsAgree && !agree)} onClick={() => send('full')}>이번 납부를 전부 냈어요</button>
         <button type="button" className="mc-secondary" disabled={busy || (needsAgree && !agree)} onClick={() => send('partial')}>일부만 냈어요</button>
       </div>}
