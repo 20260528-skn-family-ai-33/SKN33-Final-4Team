@@ -4,7 +4,7 @@
 // - 분석 안내·계산 기준은 카드 맨 아래에서 펼쳐 본다. 금액 옆의 자료 제한 표시는 유지한다
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { won } from '../utils/money.js'
 import { ENDED_ADJUSTMENTS } from '../utils/adjust.js'
 import Mascot from './Mascot.jsx'
@@ -784,9 +784,25 @@ export default function ChatReply({ content, title, active, onPick, onApprove, o
 // 답변 선택지 (기존 칩 모양). active = 마지막 답변의 선택지만 누를 수 있다 (서버도 지난 선택지는 409)
 // scroll = 한 줄로 두고 옆으로 밀어서 보기 (청년 정책: 추천 뒤 버튼이 4~5개라 줄이 늘어지지 않게)
 export function Choices({ choices, active, onPick, scroll = false }) {
+  const bar = useRef(null)
+  // 스크롤바를 숨겼으니 PC 마우스 세로 휠을 가로 이동으로 바꾼다. React onWheel 은 passive 라 preventDefault 가 안 돼 직접 단다
+  useEffect(() => {
+    const el = bar.current
+    if (!scroll || !el) return
+    const onWheel = (e) => {
+      // Ctrl+휠 · 트랙패드 확대(ctrlKey) · 가로 휠 · 넘칠 게 없으면 브라우저 기본 동작 그대로
+      if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return
+      e.preventDefault()
+      // 이동량 단위: 0 픽셀 · 1 줄(줄 높이, 'normal' 이면 16px) · 2 페이지(선택지 줄 너비)
+      const unit = e.deltaMode === 1 ? parseFloat(getComputedStyle(el).lineHeight) || 16 : e.deltaMode === 2 ? el.clientWidth : 1
+      el.scrollLeft += e.deltaY * unit
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [scroll, choices?.length])
   if (!choices?.length) return null
   return (
-    <div className={`mc-chipbar mc-fx-choices${scroll ? ' is-scroll' : ''}`} role="group" aria-label="선택지">
+    <div ref={bar} className={`mc-chipbar mc-fx-choices${scroll ? ' is-scroll' : ''}`} role="group" aria-label="선택지">
       {choices.map((c) => (
         <button key={c.value} type="button" disabled={!active} aria-disabled={!active || undefined} onClick={() => onPick(c)}>
           {c.label}

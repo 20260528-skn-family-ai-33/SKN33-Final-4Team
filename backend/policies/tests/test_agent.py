@@ -6,7 +6,7 @@ from unittest import mock
 from django.test import TestCase
 
 from chat.router_core import MemoryStateStore
-from policies import agent
+from policies import agent, tools
 from policies.regions import NATIONWIDE
 from policies.llm import EmbedFailed
 from policies.tests.test_search import DONGTAN, add, near, question
@@ -567,7 +567,7 @@ class PlannerTest(TestCase):
         self.assertEqual((result["status"], result["reply"]["lines"], titles(result)),
                          ("replied", [agent.DETAIL_HEAD], ["청년 월세 지원"]))
         self.assertEqual(rows(result), ["지역: 경기도 화성시", "지원 내용: 월 20만 원", "신청 방법: 수집한 공고의 해당 항목에서 확인되지 않아요. 서울시에 확인해 주세요.",
-                                        "제출 서류: 임대차계약서", "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)",
+                                        "제출 서류: 임대차계약서", f"링크: {tools.YOUTHCENTER}P1",
                                         "운영 기관: 서울시"])
         self.assertIn("1번 저장", self.talk.labels)  # 추천 뒤 버튼은 그대로
 

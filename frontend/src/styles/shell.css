@@ -12,17 +12,63 @@ html body #mc-new-preview .mc-preview-stage { display: flex; justify-content: ce
 
 /* 휴대폰: 화면 전체 */
 html body #mc-new-preview .mc-device {
-  width: 100%; max-width: 430px; height: 100vh; height: 100dvh;
+  width: 100%; max-width: none; min-width: 0; flex-shrink: 1;
+  height: 100vh; height: 100dvh;
   margin: 0 auto; border: 0; border-radius: 0; box-shadow: none;
 }
 
 /* PC에서 열면 가운데 휴대폰 크기 틀로 보여주기 */
-@media (min-width: 600px) {
+@media (min-width: 600px) and (hover: hover) and (pointer: fine) {
   html body #mc-new-preview .mc-device {
     width: 393px; height: min(852px, calc(100dvh - 48px));
     margin: 24px auto; border: 1px solid var(--mc-line); border-radius: 28px;
     box-shadow: 0 16px 60px #26365a16;
   }
+}
+
+@media (max-width: 599px), (hover: none), (pointer: coarse) {
+  html body #mc-new-preview #mc-header { padding-top: calc(18px + env(safe-area-inset-top)); }
+  html body #mc-new-preview #mc-header,
+  html body #mc-new-preview .mc-screen,
+  html body #mc-new-preview#mc-new-preview #mc-toast { padding-left: calc(20px + env(safe-area-inset-left)); padding-right: calc(20px + env(safe-area-inset-right)); }
+  html body #mc-new-preview #mc-main { min-width: 0; scrollbar-gutter: auto; }
+  html body #mc-new-preview .mc-screen,
+  html body #mc-new-preview .mc-body { min-width: 0; }
+  html body #mc-new-preview .mc-screen > .mc-foot { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
+  html body #mc-new-preview #mc-nav {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    padding-left: calc(6px + env(safe-area-inset-left));
+    padding-right: calc(6px + env(safe-area-inset-right));
+  }
+  html body #mc-new-preview .mc-sheet { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  html body #mc-new-preview .mc-sheet:has(.mc-chat) { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  html body #mc-new-preview .mc-sheet:not(.mc-dialog) {
+    padding-left: calc(22px + env(safe-area-inset-left));
+    padding-right: calc(22px + env(safe-area-inset-right));
+  }
+  html body #mc-new-preview#mc-new-preview .mc-dialog {
+    left: calc(16px + env(safe-area-inset-left));
+    right: calc(16px + env(safe-area-inset-right));
+  }
+  html body #mc-new-preview .mc-tour-card {
+    left: calc(16px + env(safe-area-inset-left));
+    right: calc(16px + env(safe-area-inset-right));
+  }
+}
+
+@media (max-width: 370px) {
+  html body #mc-new-preview .mc-screen {
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+  }
+  html body #mc-new-preview .mc-big-form,
+  html body #mc-new-preview .mc-big-rec,
+  html body #mc-new-preview .mc-cf,
+  html body #mc-new-preview .mc-chat-card { min-width: 0; max-width: 100%; }
+  html body #mc-new-preview .mc-two { grid-template-columns: minmax(0, 1fr); }
+  html body #mc-new-preview .mc-catview { grid-template-columns: 86px minmax(0, 1fr) 30px 72px; gap: 6px; }
+  html body #mc-new-preview .mc-catline { grid-template-columns: 82px minmax(0, 1fr) 68px; gap: 6px; }
+  html body #mc-new-preview .mc-catgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* 하단 탭: 프로토타입은 button, 여기서는 화면 이동(Link)이라 a 태그 */

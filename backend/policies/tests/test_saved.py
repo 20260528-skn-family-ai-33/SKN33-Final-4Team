@@ -5,7 +5,7 @@ from django.db.models import ProtectedError
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from policies import saved
+from policies import saved, tools
 from policies.models import Policy, SavedPolicy
 from policies.tests.test_search import add
 
@@ -116,3 +116,25 @@ class RegionsApiTest(TestCase):
         self.assertNotIn("41590", [r["code"] for r in gyeonggi["regions"]])  # 화성시 자체는 고르지 않는다
         sejong = next(item for item in items if item["code"] == "36110")
         self.assertEqual(sejong["regions"], [{"code": "36110", "name": "세종특별자치시"}])
+
+
+class LinkTest(TestCase):
+    """원본 링크가 상세 페이지면 그대로, 없거나 기관 메인 주소뿐이면 온통청년 상세 페이지"""
+
+    def link(self, **raw):
+        number = f"LINK{Policy.objects.count()}"
+        add(number, **raw)
+        return tools.policy_link(Policy.objects.get(pk=number)).replace(number, "LINK")
+
+    def test_상세_주소는_그대로(self):
+        for url in ("https://youth.seoul.go.kr/content.do?key=2310100046", "https://www.chungbuk.go.kr/young/contents.do",
+                    "https://youth.gyeongnam.go.kr/youth/"):
+            with self.subTest(url=url):
+                self.assertEqual(self.link(aplyUrlAddr=url), url)
+
+    def test_없거나_메인뿐이면_온통청년(self):
+        for raw in ({}, {"aplyUrlAddr": "https://mafra.go.kr"}, {"refUrlAddr1": "https://www.hf.go.kr/"},
+                    {"refUrlAddr1": "https://www.eumseong.go.kr/www/index.do"},
+                    {"aplyUrlAddr": "https://[invalid"}, {"refUrlAddr1": "https://[invalid"}):  # 깨진 주소 (urlparse ValueError)
+            with self.subTest(raw=raw):
+                self.assertEqual(self.link(**raw), tools.YOUTHCENTER + "LINK")

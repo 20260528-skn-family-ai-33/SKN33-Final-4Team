@@ -400,7 +400,7 @@ def _show(store, cid, state, found, region, today, start, member=False, lead=Non
             rows.append("곧 나이 상한을 넘어요. 신청 기간을 서둘러 확인해 보세요.")
         if item["keywords"]:
             rows.append(f"관련: {', '.join(item['keywords'])}")
-        rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
+        rows.append(f"링크: {item['link']}")
         if item["support_type"]:
             rows.insert(0, f"지원 형태: {item['support_type']}")
         sections.append({"title": f"{number}. {item['name']}", "lines": rows, "policy_no": item["policy_no"]})
@@ -437,7 +437,7 @@ def _show_saved(store, cid, state, user, today):
         rows = [f"신청: {state_text}", f"저장: {item['saved_at'][:10]}"]
         if not item["active"]:
             rows.append("정책 목록에서 빠진 정책이에요. 공고가 내려갔을 수 있어요.")
-        rows.append(f"링크: {item['link']}" if item["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
+        rows.append(f"링크: {item['link']}")
         sections.append({"title": f"{number}. {item['name']}", "lines": rows, "policy_no": item["policy_no"]})
     after += [(DETAIL + item["policy_no"], DETAIL_BUTTON.format(name=item["name"])) for item in items]
     return _card(_ask(store, cid, state, "after", [SAVED_HEAD], after), sections)
@@ -661,7 +661,7 @@ def _detail(store, cid, state, user, today, action):
         return result
     missing = f"수집한 공고의 해당 항목에서 확인되지 않아요. {info['agency'] or '운영 기관'}에 확인해 주세요."
     rows = [f"{label}: {value or missing}" for label, value in info["rows"]]
-    rows.append(f"링크: {info['link']}" if info["link"] else "링크: 정보 없음 (온통청년에서 정책명으로 찾아 주세요)")
+    rows.append(f"링크: {info['link']}")
     if info["agency"]:
         rows.append(f"운영 기관: {info['agency']}")
     if info["region"]:
