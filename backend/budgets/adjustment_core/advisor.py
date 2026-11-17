@@ -9,7 +9,7 @@
 from copy import deepcopy
 
 from .calculation import AdjustmentError, NON_BUDGET_CODES
-from .funding import BUCKETS, LIVING, _data, _value, available_adjustment, available_bucket_source, simulate_funding
+from .funding import BUCKETS, LIVING, _Blocked, _check_spending, _data, _value, available_adjustment, available_bucket_source, simulate_funding
 from .protection import expected_need, has_history, usage_floors
 
 SOURCE_NAMES = {LIVING: '다른 생활비', 'SPARE': '여윳돈', 'CUSHION_MONTHLY': '월 머니쿠션', 'SAVINGS': '저축'}
@@ -270,32 +270,61 @@ def plan_increase(context, envelope, allocator, *, respect_selected=False):
 def capacities(context, category, *, excluded=(), destinations=(), allocator=None, sources=None, spare_minimum=None):
     """재원별 최대 가능액(권장액 아님). 0원인 재원도 이유 설명에 쓰도록 남긴다."""
     out = {}
-    for source in ORDER:
+    for source in dict.fromkeys(sources or ORDER):
         if source == category or (source == LIVING and category == LIVING) or source in excluded:
             continue
-        if sources and source not in sources:
+        if source in context['allocations'] and LIVING in (sources or ()):
             continue
         if source in BUCKETS and context.get('bucket_status', {}).get(source) != 'ready':
             continue
         quote = available_adjustment(context, category, 'up', sources=[source], destinations=list(destinations),
                                      excluded=list(excluded), allocate_group_reduction=allocator,
                                      spare_minimum=spare_minimum)
-        out[source] = quote['maximum'] if quote['status'] == 'ready' else 0
+        if quote['status'] in {'ready', 'infeasible'}:
+            out[source] = quote['maximum'] if quote['status'] == 'ready' else 0
     return out
 
 
-def capacity_line(context, category, found):
-    parts = [f"{SOURCE_NAMES[code]} 최대 {money(amount)}" for code, amount in found.items()
-             if amount and code != 'SAVINGS']
-    if not parts:
-        if found.get('SAVINGS'):
-            return (f"다른 생활비·여윳돈·월 머니쿠션에서는 옮길 돈이 없고, 저축에서는 최대 {money(found['SAVINGS'])}까지 가능해요. "
-                    '저축은 꼭 필요할 때만 줄이는 걸 권해요.')
-        return '지금은 다른 생활비·여윳돈·월 머니쿠션에서 옮길 수 있는 돈이 없어요.'
-    line = '지금 옮길 수 있는 돈은 ' + ', '.join(parts) + '이에요.'
-    if found.get('SPARE'):
-        line += ' 여윳돈은 30% 이상 남겨요.'
-    return line
+def source_capacity_lines(context, category, found, *, sources=None, excluded=(), allocator=None, spare_minimum=None, details=True):
+    """한도와 같은 계산으로 생활비 세부 출처를 표시한다. 최대액은 권장액이 아니다."""
+    names = {**names_of(context), **SOURCE_NAMES}
+    lines, unknown = [], []
+    for source in dict.fromkeys(sources or ORDER):
+        if source == category or source in excluded or (source in context['allocations'] and LIVING in (sources or ())):
+            continue
+        if source not in found:
+            unknown.append(names.get(source, source))
+            continue
+        amount = found[source]
+        lines.append(f"{names.get(source, source)} · 최대 {money(amount)}")
+        if not details or source != LIVING or not amount:
+            continue
+        request = {'items': [{'category': category, 'direction': 'up', 'amount': amount,
+                              'amount_mode': 'by', 'automatic': True}],
+                   'sources': [LIVING], 'destinations': [], 'excluded': list(excluded)}
+        if spare_minimum is not None:
+            request['spare_minimum'] = spare_minimum
+        result = simulate_funding(context, request, allocate_group_reduction=allocator)
+        for change in result.get('changes', []):
+            if change['category'] in context['allocations'] and change['diff'] < 0:
+                lines.append(f"· {names.get(change['category'], change['category'])} {money(-change['diff'])}")
+    if unknown:
+        lines.append('· '.join(unknown) + ' · 금액 확인 필요')
+    return lines
+
+
+def capacity_reply_lines(context, category, found, *, inspection=None, sources=None, excluded=(), allocator=None, spare_minimum=None):
+    """조회 초점만 바꾼다. 재원별 최대액의 합을 권장 증액으로 제시하지 않는다."""
+    if inspection == 'capacity' and not sources and found.get(LIVING, 0) > 0:
+        name = names_of(context).get(category, category)
+        lines = [f'다른 생활비에서 {name}에 최대 {money(found[LIVING])}을 더할 수 있어요.']
+        extra = [SOURCE_NAMES[code] for code in ORDER if code != LIVING and found.get(code, 0) > 0]
+        if extra:
+            lines.append('더 필요하면 ' + '·'.join(extra) + '도 검토할 수 있어요.')
+        return lines
+    return source_capacity_lines(context, category, found, sources=sources, excluded=excluded,
+                                 allocator=allocator, spare_minimum=spare_minimum,
+                                 details=inspection != 'capacity')
 
 
 def suggested_amount(context, category):
@@ -381,7 +410,9 @@ def why_recommended(context, plan):
 def unavailable_reasons(context, envelope):
     """자동 추천이 없을 때 재원별로 왜 비었는지(사용자 말로)."""
     excluded = set(envelope.get('excluded', []))
-    if context.get('spending_status', 'complete') != 'complete' and not context.get('budget_preview'):
+    try:
+        _check_spending(context)
+    except _Blocked:
         return ['지금까지 쓴 돈을 모두 확인하지 못해 옮길 수 있는 돈을 계산하지 못했어요.']
     lines = []
     if LIVING in excluded:

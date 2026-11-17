@@ -86,6 +86,8 @@ TEXT = {
 GROUP_TITLE = {"category": "카테고리", "merchant": "가게", "weekday": "요일", "time_slot": "시간대", "month": "월"}
 NOTICE = {
     "partial": "일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",
+    "observed_through": "저장된 거래는 {until}까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
+    "observed_through_scoped": "{name} 기준으로 저장된 거래는 {until}까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
     "previous_incomplete": "지난달 같은 기간의 내역이 충분하지 않아 비교하기 어려워요.",
     "current_incomplete": "이번 달 내역이 충분하지 않아 비교하기 어려워요.",
     "instead_of": "{word}만 따로 볼 수 없어 {name} 전체로 조회했어요.",  # 360px 폰에서도 한 줄 (카드 안내 칸)
@@ -240,6 +242,12 @@ def _period_block(out, block, item, label):
     seen = _amount(block["observed"], item)
     if block["confirmed"] is not None:
         return True
+    if block.get('observed_through'):
+        key = 'observed_through_scoped' if narrowed(item) else 'observed_through'
+        out.notice(key, name=name, until=day(block['observed_through']))
+    if not seen and not block.get('observed_count'):
+        out.line('no_data', period=label, name=name)
+        return False
     if state == "none":
         out.line("no_record" if seen else "no_data", period=label, name=name, amount=won(seen))
     else:
@@ -266,21 +274,31 @@ def _current(out, result):
     item, block = result["item"], result["current"]
     label = f"{result.get('period_label', '이번 달')}({span(block['period'])})"
     _unclassified(out, block["observed"], item)
-    if not _period_block(out, block, item, label):
+    confirmed = _period_block(out, block, item, label)
+    if not confirmed and not block.get('observed_count', bool(_amount(block['observed'], item))):
         return
-    fig = block["confirmed"]
+    fig = block["confirmed"] or block['observed']
     if narrowed(item):
-        out.line("category", period=label, name=scope(item), amount=won(_amount(fig, item)))
+        if confirmed:
+            out.line("category", period=label, name=scope(item), amount=won(_amount(fig, item)))
         if item.get("category") and fig["category"]["share"] and not filters(item):  # 거른 조회면 분모가 달라 빼낸다
-            out.line("share", total=won(fig["total"]), share=fig["category"]["share"]["value"])
+            if confirmed:
+                out.line("share", total=won(fig["total"]), share=fig["category"]["share"]["value"])
+            else:
+                out.lines.append(f"불러온 소비 내역 중 {fig['category']['share']['value']}%예요.")
         return
-    out.line("total", period=label, amount=won(fig["total"]))
+    if confirmed:
+        out.line("total", period=label, amount=won(fig["total"]))
     if fig["fixed_amount"]:
         out.line("fixed", fixed=won(fig["fixed_amount"]), living=won(fig["living_amount"]))
     if result["type"] == 5 and fig["top_spending"]:
         top = fig["top_spending"]  # 동률이면 모두 (같은 금액이라 비중도 같다). 비중 분모 = 고정지출 · 확인 필요를 포함한 전체 소비
-        out.line("top_tied" if len(top) > 1 else "top", names="·".join(NAMES[t["category"]] for t in top),
-                 amount=won(top[0]["amount"]), total=won(fig["total"]), share=fig["shares"][top[0]["category"]]["value"])
+        names = '·'.join(NAMES[t['category']] for t in top)
+        if confirmed:
+            out.line("top_tied" if len(top) > 1 else "top", names=names,
+                     amount=won(top[0]["amount"]), total=won(fig["total"]), share=fig["shares"][top[0]["category"]]["value"])
+        else:
+            out.lines.append(f"불러온 내역에서 가장 많이 쓴 항목은 {names}, {'각각 ' if len(top) > 1 else ''}{won(top[0]['amount'])}이에요.")
 
 
 def chart(result):
@@ -293,7 +311,7 @@ def chart(result):
                                           scope="변동 소비" if result["item"].get("include_fixed") is False else "전체 소비",
                                           total=won(fig["total"]))}
     if not fig["total"]:
-        out["empty"] = CHART["none"] if block["coverage"]["state"] == "none" else CHART["zero"]
+        out["empty"] = CHART["none"] if block['confirmed'] is None and not block.get('observed_count') else CHART["zero"]
         return out
     unclassified = fig["by_category"].get("UNCLASSIFIED", 0)
     if unclassified:
@@ -398,16 +416,12 @@ def _compare_lines(out, result):
     if not any(pair):
         _unclassified(out, cur["observed"], item)
     seen = _amount(cur["observed"], item)
-    if not c["available"]:  # 비교 못 함이 핵심(lead), 이번 달 금액은 참고. '비교했어요' 라고 쓰지 않는다
-        out.head("compare_reference", current=span(cur["period"]))
-        if cur["confirmed"] is not None:
-            title = TEXT["compare_title"].format(name=name, amount=won(seen))
-        elif cur["coverage"]["state"] == "none" and not seen:
-            title = TEXT["compare_title_none"].format(name=name)
-        else:
-            title = TEXT["compare_title_observed"].format(name=name, amount=won(seen))
-        out.section(title)
-        out.notice("previous_incomplete" if c["previous_incomplete"] else "current_incomplete")
+    if not c["available"]:
+        for label, block in (('이번 달', cur), ('지난달 같은 기간', prev)):
+            if _period_block(out, block, item, f'{label}({span(block["period"])})'):
+                out.line('category', period=f'{label}({span(block["period"])})', name=name,
+                         amount=won(_amount(block['confirmed'], item)))
+        out.notice('partial')
         return
     change = change_sentence(result)
     if any(pair):
@@ -610,9 +624,12 @@ def _seen(block, item):
     amount = _amount(block["observed"], item)
     if block["confirmed"] is not None:
         return amount, None
-    if block["coverage"]["state"] == "none":
-        return (amount, VIEW["no_record"]) if amount else (None, None)
-    return amount, VIEW["partial"]
+    if not amount and not block.get('observed_count'):
+        return None, None
+    note = VIEW['partial']
+    if block.get('observed_through'):
+        note += f" · 마지막 거래 {day(block['observed_through'])}"
+    return amount, note
 
 
 def _meter(result):
@@ -647,12 +664,12 @@ def _view_current(results, many):
     amount, note = _seen(first["current"], item)
     if amount is None:
         return [head, *_text([VIEW["none"]]), *_meter(first)]
-    fig = first["current"]["confirmed"]
-    if fig is None:
-        return [head, {"kind": "total", "amount": amount, "note": note}, *_meter(first)]
+    fig = first["current"]["confirmed"] or first['current']['observed']
+    limited = first['current']['confirmed'] is None
     if narrowed(item):
         share = item.get("category") and not filters(item) and fig["category"]["share"]
-        note = share and VIEW["share"].format(total=won(fig["total"]), share=share["value"])
+        share_note = share and (f"불러온 내역 중 {share['value']}%" if limited else VIEW["share"].format(total=won(fig["total"]), share=share["value"]))
+        note = ' · '.join(n for n in (note, share_note) if n)
         return [head, {"kind": "total", "amount": amount, "note": note or None}]
     lines = [TEXT["fixed"].format(fixed=won(fig["fixed_amount"]), living=won(fig["living_amount"]))] if fig["fixed_amount"] else []
     if first["type"] == 5 and fig["top_spending"]:
@@ -662,7 +679,7 @@ def _view_current(results, many):
         lines += [VIEW["top"].format(names=names, copula=josa(names, ("이에요", "예요"))),
                   VIEW["top_tied" if len(top) > 1 else "top_amount"].format(
                       amount=money, share=fig["shares"][top[0]["category"]]["value"])]
-    return [head, {"kind": "total", "amount": amount, "note": None}, *_text(lines), *_meter(first)]
+    return [head, {"kind": "total", "amount": amount, "note": note}, *_text(lines), *_meter(first)]
 
 
 def _view_budget(results, many):
@@ -750,6 +767,14 @@ def _view_compare(results, many):
     available = all(r["comparison"]["category" if r["item"].get("category") else "total"]["available"] for r in results)
     if available and not many:
         return _view_one_compare(results[0])
+    if not available:
+        rows = []
+        for result in results:
+            for label, key in (('이번 달', 'current'), ('지난달', 'previous')):
+                amount, note = _seen(result[key], result['item'])
+                rows.append({'name': f'{_name(result["item"])} · {label}', 'amount': amount,
+                             'note': ' · '.join(n for n in (span(result[key]['period']), note) if n)})
+        return _relabel_blocks([_head('기간별 불러온 소비 내역'), {'kind': 'rows', 'rows': rows}], results[0])
     head = _head(f"{span(cur['period'])} · " + ("지난달 같은 기간과 비교" if available else "이번 달 금액"))
     rows = []
     for r in results:

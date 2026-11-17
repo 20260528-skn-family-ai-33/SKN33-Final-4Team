@@ -147,12 +147,13 @@ def handler(user, store, adapter, complete, conversation_key):
             except ValueError:
                 pass  # The conversation is still asking for the missing planning input.
         proposal = reply.get('proposal')
-        if proposal and payload['can_approve'] and proposal.get('state') == 'awaiting_approval' and not proposal.get('one_off'):
-            from budgets.adjustment_core.conversation import distribution_fields
+        if (proposal and proposal.get('state') == 'awaiting_approval' and not proposal.get('one_off')
+                and not state.get('pending') and result['status'] == 'replied'):
+            from budgets.adjustment_core.conversation import distribution_fields, _calculation
             donors = [{'category': row['category'], 'amount': -row['diff'], 'amount_mode': 'by', 'direction': 'down'}
                       for row in proposal.get('changes', []) if row['diff'] < 0]
             try:
-                fields = distribution_fields(active_context(), donors, state.get('excluded', []))
+                fields = distribution_fields(_calculation(active_context(), state), donors, state.get('excluded', []))
                 fields['values'] = [{'category': row['category'], 'amount': row['diff']}
                                     for row in proposal['changes'] if row['diff'] > 0]
                 if (fields['categories'] and sum(row['amount'] for row in fields['values']) == fields['amount']

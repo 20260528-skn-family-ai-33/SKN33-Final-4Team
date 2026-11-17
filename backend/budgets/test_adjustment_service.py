@@ -125,6 +125,30 @@ class AdjustmentServiceTest(TestCase):
         self.base.refresh_from_db()
         self.assertEqual(self.base.status, 'approved')
 
+    def test_observed_bucket_estimates_can_preview_but_cannot_bypass_approval_verification(self):
+        self.snapshot.update(spending_status='partial', budget_preview=False,
+            observed_spending={'transaction_count': 2, 'from': '2026-11-01', 'through': '2026-11-03'},
+            estimated_buckets=['SPARE', 'CUSHION_MONTHLY'])
+        for source in ('SPARE', 'CUSHION_MONTHLY'):
+            with self.subTest(source=source):
+                adapter = self.adapter()
+                ctx = adapter.get_context()
+                result = adapter.simulate(ctx, envelope(item(amount=15000), sources=[source]))
+                self.assertEqual(result['status'], 'proposed')
+                self.assertFalse(result['spending_verified'])
+                self.assertEqual(result['allocations']['FOOD'], 415000)
+                self.assertEqual(result['buckets'][source], ctx['buckets'][source] - 15000)
+                card = adapter.propose(ctx, result, scope='cycle')
+                self.assertFalse(card['can_approve'])
+                self.assertIn('미리보기', card['verification_notice'])
+                self.flush(adapter)
+                with self.assertRaises(AdjustmentNotReady):
+                    self.approve(card['proposal_id'], key=f'observed-{source}')
+                self.assertEqual(Budget.objects.get(pk=card['proposal_id']).status, 'validated')
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+        self.assertEqual(Budget.objects.filter(status='approved').count(), 1)
+
     def test_stage_writes_nothing_and_flush_preserves_original_until_approval(self):
         adapter, card = self.stage()
         self.assertEqual(Budget.objects.count(), 1)

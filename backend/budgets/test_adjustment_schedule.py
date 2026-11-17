@@ -21,6 +21,25 @@ class FuturePlanningTest(unittest.TestCase):
         self.base = context()
         self.base.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25')
 
+    def test_next_cycle_does_not_inherit_current_estimated_funding(self):
+        self.base.update(spending_status='partial', budget_preview=True,
+                         observed_spending={'transaction_count': 1, 'through': '2026-11-12'},
+                         estimated_buckets=['SPARE', 'CUSHION_MONTHLY'])
+        before = deepcopy(self.base)
+        planned = planning_context(self.base, {'scope': 'next_cycle'})
+        for source in ('SPARE', 'CUSHION_MONTHLY'):
+            with self.subTest(source=source):
+                request = envelope(item('EDUCATION', 50000), sources=[source])
+                current = simulate_funding(self.base, request)
+                future = simulate_funding(planned, request)
+                self.assertFalse(current['spending_verified'])
+                self.assertEqual(future['status'], 'proposed')
+                self.assertTrue(future['spending_verified'])
+                self.assertEqual(future['allocations']['EDUCATION'], 100000)
+        self.assertEqual(planned['estimated_buckets'], [])
+        self.assertEqual(self.base, before)
+        self.assertEqual(planning_context(planned, None), before)
+
     def test_next_cycle_spare_minimum_is_not_subtracted_twice(self):
         from .adjustment_core.funding import available_bucket_source
         self.base['bucket_floors']['SPARE'] = 200000
@@ -237,6 +256,29 @@ class FuturePlanningTest(unittest.TestCase):
 
 
 class SchedulePersistenceTest(TestCase):
+    def test_incomplete_current_spending_allows_next_cycle_spare_reservation(self):
+        self.snapshot.update(monthly_income=3000000, next_cycle_starts_on='2026-11-25',
+                             spending_status='partial', budget_preview=True,
+                             observed_spending={'transaction_count': 1, 'through': '2026-11-12'},
+                             estimated_buckets=['SPARE', 'CUSHION_MONTHLY'])
+        before = deepcopy(self.snapshot)
+        adapter = self.adapter()
+        planned = planning_context(adapter.get_context(), {'scope': 'next_cycle'})
+        result = adapter.simulate(planned, envelope(item('EDUCATION', 50000), sources=['SPARE']))
+        self.assertEqual(result['status'], 'proposed')
+        self.assertTrue(result['spending_verified'])
+        card = adapter.propose(planned, result, scope='next_cycle')
+        self.assertTrue(card['can_approve'])
+        self.flush(adapter)
+        approved = self.approve(card['proposal_id'])
+        self.assertEqual(approved['schedule_status'], 'scheduled')
+        schedule = BudgetAdjustmentSchedule.objects.get(proposal_id=card['proposal_id'])
+        self.assertEqual(schedule.settings['budget_category_targets']['EDUCATION'], 100000)
+        self.assertEqual(schedule.effective_on, date(2026, 11, 25))
+        self.assertEqual(self.snapshot, before)
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+
     def test_saved_salary_decrease_can_cover_deficit_before_approval_and_activation(self):
         from .api_salary import save_salary
         with transaction.atomic():

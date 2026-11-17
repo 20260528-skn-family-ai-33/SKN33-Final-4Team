@@ -1,6 +1,6 @@
 // 금액·추천 근거는 서버 검수 결과 그대로 표시한다. 펼침은 조회·선택·저장을 호출하지 않는다.
 // 답변 전체를 다른 답변과 같은 말풍선(mc-bubble) 안에 그린다 (11/11). 모양은 styles/chat.css
-import { adjustSentence, allocationName, manwon, ENDED_ADJUSTMENTS as TERMINAL } from '../utils/adjust.js'
+import { adjustSentence, allocationName, manwon, isVisibleAdjustmentPlan, ENDED_ADJUSTMENTS as TERMINAL } from '../utils/adjust.js'
 import { useId, useState } from 'react'
 import { won } from '../utils/money.js'
 import MoneyInput from './MoneyInput.jsx'
@@ -129,7 +129,7 @@ function CompactChanges({ changes = [] }) {
   ))}</dl>
 }
 
-function Plan({ plan, choice, active, onPick, detail, selected, selectionHelp }) {
+function Plan({ plan, choice, active, onPick, detail, selected, selectionHelp, children }) {
   const changes = plan.result?.changes ?? []
   const [summary, ...why] = plan.assessment?.reasons ?? []
   const cautions = (plan.assessment?.cautions ?? []).filter((line) => line !== summary)
@@ -149,22 +149,25 @@ function Plan({ plan, choice, active, onPick, detail, selected, selectionHelp })
       <ul className="mc-budget-why">{why.map((line) => <li key={line}>{line}</li>)}</ul>
     </details>}
     {choice && <button type="button" className="mc-budget-select" disabled={!active || !onPick} aria-pressed={selected}
-      aria-describedby={selectionHelp} aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : '이 안 선택하기'}</button>}
+      aria-describedby={selectionHelp} aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : plan.recommended ? '추천대로 선택하기' : '이 배분으로 선택하기'}</button>}
+    {children}
   </article>
 }
 
 // 예전 비교 카드(재정 추천·감액 비교). 서버 추천기 카드는 위 Plan 을 쓴다.
-function LegacyPlan({ plan, choice, active, onPick, detail, selected, selectionHelp }) {
+function LegacyPlan({ plan, choice, active, onPick, detail, selected, selectionHelp, children }) {
   const [expanded, setExpanded] = useState(Boolean(detail))
+  const choosingDestination = plan.status === 'needs_destination'
   const changes = plan.result?.changes ?? []
   const headline = changes.filter((row) => row.direct || ['SAVINGS', 'CUSHION_MONTHLY', 'SPARE'].includes(row.category))
   const reason = plan.assessment?.reasons?.[0] ?? plan.assessment?.cautions?.[0] ?? plan.lines?.[0]
   const zeroes = (plan.assessment?.facts ?? []).filter((fact) => (fact.availableAfter ?? fact.remaining) === 0)
   return <article className={`mc-budget-plan${selected ? ' is-selected' : ''}`} aria-label={plan.label}>
     <div className="mc-budget-plan-head"><h3>{plan.label}</h3><div className="mc-budget-plan-badges">
-      {plan.recommended && <span className="mc-budget-recommended">추천</span>}
+      {plan.recommended && !choosingDestination && <span className="mc-budget-recommended">추천</span>}
       {selected && <span className="mc-budget-selected">✓ 선택한 안</span>}
     </div></div>
+    {choosingDestination ? <p className="mc-budget-reason">받을 항목과 금액을 직접 고를 수 있어요.</p> : <>
     <p className="mc-budget-outcome">{PLAN_STATUS[plan.status] ?? '확인 필요'}{['ready', 'partial'].includes(plan.status) && ` · ${won(plan.amount)}`}</p>
     {plan.maximum != null && <p className="mc-note">이 방법으로 옮길 수 있는 최대 금액 {won(plan.maximum)}</p>}
     <BudgetChanges changes={headline} />
@@ -180,19 +183,30 @@ function LegacyPlan({ plan, choice, active, onPick, detail, selected, selectionH
       {(plan.assessment?.reasons ?? []).filter((line) => line !== reason).map((line) => <p key={line}>{line}</p>)}
       {(plan.assessment?.cautions ?? []).filter((line) => line !== reason).map((line) => <p key={line}>{line}</p>)}
     </details>
+    </>}
     {choice && <button type="button" className="mc-budget-select" disabled={!active || !onPick} aria-pressed={selected}
-      aria-describedby={selectionHelp} aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : '이 안 선택하기'}</button>}
+      aria-describedby={selectionHelp} aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : plan.recommended && !choosingDestination ? '추천대로 선택하기' : '이 배분으로 선택하기'}</button>}
+    {children}
   </article>
+}
+
+function amountEditLabel(plan, label) {
+  if (label && !['금액 바꾸기', '금액 직접 입력', '조정 금액 바꾸기'].includes(label)) return label
+  const direct = (plan.result?.changes ?? []).filter((change) => change.direct)
+  const change = direct[0]
+  const diff = change?.after - change?.before
+  return direct.length === 1 && change.category && Number.isFinite(diff) && diff !== 0
+    ? `${allocationName(change.category)} ${diff > 0 ? '늘릴' : '줄일'} 금액 바꾸기` : '요청 금액 바꾸기'
 }
 
 function Comparison({ comparison, choices, active, onPick, readOnly = false, detail }) {
   const [selected, setSelected] = useState(null)
   const selectionHelp = useId()
-  const plans = (comparison.plans ?? []).filter((plan) => ['ready', 'partial'].includes(plan.status) && plan.result?.changes?.length)
+  const plans = (comparison.plans ?? []).filter((plan) => isVisibleAdjustmentPlan(plan, choices))
   if (!plans.length) return null
   // 서버 추천기(headline 있음): 이해한 요청 → 추천안 → 고르기, 한 형식으로 짧게 보여 준다.
   const advised = typeof comparison.headline === 'string'
-  const Card = advised ? Plan : LegacyPlan
+  const edits = readOnly ? [] : (choices ?? []).filter((choice) => ['manual', 'manual_living'].includes(choice.value))
   return <section className="mc-budget-comparison" aria-label={readOnly ? '다른 범위 예산 비교' : '예산 조정안 비교'}>
     {!readOnly && <p className="mc-budget-example-intro" id={selectionHelp}>
       <span className="mc-budget-tag">미리보기</span>안을 골라도 확정 전까지 예산은 바뀌지 않아요.
@@ -207,9 +221,16 @@ function Comparison({ comparison, choices, active, onPick, readOnly = false, det
     </>}
     {comparison.notice && <p className="mc-budget-reason" role="note">{comparison.notice}</p>}
     {readOnly && <p className="mc-budget-reason">비교만 해요. 선택한 재원은 그대로예요.</p>}
-    {plans.map((plan) => <Card key={plan.id} plan={plan} active={active} selected={selected === plan.id} selectionHelp={selectionHelp}
+    {plans.map((plan) => {
+      const Card = advised && plan.status !== 'needs_destination' ? Plan : LegacyPlan
+      return <Card key={plan.id} plan={plan} active={active} selected={selected === plan.id} selectionHelp={selectionHelp}
       onPick={onPick && ((choice) => { setSelected(plan.id); onPick(choice) })} detail={detail}
-      choice={readOnly ? null : choices?.find((choice) => choice.value === `plan_${plan.id}` || choice.value === `financial_${plan.id}`)} />)}
+      choice={readOnly ? null : choices?.find((choice) => choice.value === `plan_${plan.id}` || choice.value === `financial_${plan.id}`)}>
+      {edits.length > 0 && <div className="mc-chipbar" role="group" aria-label="조정안 수정">
+        {edits.map((choice) => <button key={choice.value} type="button" disabled={!active || !onPick}
+          onClick={() => onPick(choice)}>{choice.value === 'manual' ? amountEditLabel(plan, choice.label) : choice.label}</button>)}
+      </div>}
+    </Card>})}
     {!comparison.recommendation?.planId && comparison.recommendation?.reasons?.[0] &&
       <p className="mc-budget-reason">{comparison.recommendation.reasons[0]}</p>}
   </section>
@@ -306,6 +327,7 @@ function DistributionInput({ value, active, onSend, onCancel }) {
       </div>
       {!rows.length && <p className="mc-note">{funding ? '줄여도 괜찮은 항목' : '받을 항목'}을 골라 주세요. 여러 개 골라도 돼요.</p>}
       {rows.length > 0 && <p id={inputHelp} className="mc-note">금액을 직접 입력하거나 −1만·+1만 버튼으로 바꿔 주세요. 비워 두거나 0원인 항목은 바뀌지 않아요.</p>}
+      {rows.length > 0 && total === value.amount && <p className="mc-note" role="status">조정 금액을 모두 분배했어요. 다른 항목에 넣으려면 먼저 배분한 금액을 줄여 주세요.</p>}
       {rows.map((row, index) => {
         const amount = Number(row.digits)
         const maximum = Math.min(value.amount - total + amount, funding ? value.maximums[row.category] : value.amount)
@@ -343,7 +365,7 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
     replaced: '새 예약으로 교체된 변경안이에요', needs_review: '예약 내용을 다시 확인해 주세요' }[proposal?.scheduleStatus]
   const guidance = proposal && TERMINAL.has(state) ? null : adjustment.guidance
   const canApprove = active && adjustment.canApprove && proposal?.canApprove !== false && proposal?.state === 'awaiting_approval'
-  const hasComparison = (adjustment.comparison?.plans ?? []).some((plan) => ['ready', 'partial'].includes(plan.status) && plan.amount > 0 && plan.result?.changes?.length)
+  const hasComparison = (adjustment.comparison?.plans ?? []).some((plan) => isVisibleAdjustmentPlan(plan, content.choices))
   const hasPreview = proposal || hasComparison
   const amountInput = !hasPreview && !TERMINAL.has(state) && adjustment.amountInput
   const distributionInput = !TERMINAL.has(state) && adjustment.distributionInput
@@ -405,10 +427,10 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
         key={proposal.proposalId} value={adjustment.distributionEdit} active={active} onSend={onSend} onCancel={() => setEditing(false)} />}
       {state === 'expired' && <p className="mc-budget-warning">조건이 바뀌었어요. 원하는 조정을 다시 입력해 주세요.</p>}
       {['canceled', 'rejected', 'failed'].includes(state) && <p className="mc-budget-warning">이 변경안은 적용할 수 없어요. 원하는 조정을 다시 입력해 주세요.</p>}
-      {adjustment.canApprove && state === 'awaiting_approval' && !editing && <button type="button" className="mc-primary" disabled={!canApprove} onClick={() => onApprove(proposal)}>{proposal.effectiveOn ? '다음 주기 변경 예약하기' : '예산 확정하기'}</button>}
+      {(adjustment.canApprove || !adjustment.phase) && state === 'awaiting_approval' && !editing && <button type="button" className="mc-primary" disabled={!canApprove} onClick={() => onApprove(proposal)}>{proposal.effectiveOn ? '다음 주기 변경 예약하기' : '예산 확정하기'}</button>}
       {proposal.state === 'awaiting_approval' && adjustment.distributionEdit && !adjustment.phase && !editing && <button
         type="button" className="mc-link mc-budget-edit-toggle" aria-expanded={false} disabled={!active || !onSend}
-        onClick={() => setEditing(true)}>배분 수정</button>}
+        onClick={() => setEditing(true)}>수정할래요</button>}
     </section>}
     {adjustment.alternatives && <Comparison comparison={adjustment.alternatives} readOnly detail={adjustment.detail} />}
     {adjustment.alternativesNotice && <p className="mc-budget-warning">{adjustment.alternativesNotice}</p>}

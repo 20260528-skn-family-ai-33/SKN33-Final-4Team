@@ -13,7 +13,334 @@ from .adjustment_core.responses import guidance
 from .test_adjustment_core import Store, allocation, context, envelope, item, reading
 
 
+class AdjustmentInspectionInterpretationTest(unittest.TestCase):
+    def test_inspection_focus_is_optional_for_existing_readings_and_validated(self):
+        legacy = reading(action='inspect')
+        self.assertNotIn('inspection', interpretation.parse(legacy))
+        for focus in ('capacity', 'sources', None):
+            with self.subTest(focus=focus):
+                parsed = interpretation.parse({**legacy, 'inspection': focus})
+                self.assertEqual(parsed['inspection'], focus)
+        for focus in ('all', True, 0, [], {}):
+            with self.subTest(focus=focus):
+                with self.assertRaisesRegex(interpretation.InterpretationFailed, 'invalid_inspection'):
+                    interpretation.parse({**legacy, 'inspection': focus})
+
+    def test_live_schema_lookup_includes_inspection_for_both_interpreters(self):
+        from chat.llm.schemas import schema_for
+        for prompt in (interpretation.PROMPT, dialogue.DIALOGUE_PROMPT):
+            with self.subTest(prompt=prompt[:30]):
+                _, schema = schema_for(prompt)
+                if prompt == dialogue.DIALOGUE_PROMPT:
+                    schema = schema['properties']['reading']
+                self.assertEqual(schema['properties']['inspection']['enum'], ['capacity', 'sources', None])
+                self.assertIn('inspection', schema['required'])
+
+    def test_inspection_focus_does_not_replace_or_persist_budget_conditions(self):
+        original = {'requests': [item('FOOD', 50000)], 'sources': ['HOUSEHOLD'], 'excluded': ['SAVINGS'],
+                    'scope': 'cycle', 'clear_targets': ['FOOD'], 'spare_minimum': 200000}
+        for focus in ('capacity', 'sources'):
+            with self.subTest(focus=focus):
+                state = deepcopy(original)
+                _merge(state, interpretation.parse(reading(action='inspect', inspection=focus)), {})
+                for field, value in original.items():
+                    self.assertEqual(state[field], value)
+                self.assertNotIn('inspection', state)
+
+
 class AdjustmentDialogueTest(unittest.TestCase):
+
+    def test_amount_edit_choice_names_the_requested_category_and_direction(self):
+        for direction, label in [('up', '식비 늘릴 금액 바꾸기'), ('down', '식비 줄일 금액 바꾸기')]:
+            self.store.state = {}
+            response = self.turn(reading(requests=[item('FOOD', 50000, direction)], action='compare'))
+            choice = next(row for row in response['reply']['choices'] if row['value'] == 'manual')
+            self.assertEqual(choice['label'], label)
+
+    def test_category_capacity_inquiry_keeps_target_and_lists_verified_living_donors(self):
+        self.context.update(spending_status='partial', budget_preview=True,
+                            observed_spending={'transaction_count': 3, 'through': '2026-11-09'})
+        response = self.turn(reading(requests=[item('FOOD', None)], action='inspect', inspection='sources'))
+        lines = response['reply']['lines']
+        self.assertTrue(lines[0].startswith('다른 생활비 · 최대'), lines)
+        self.assertFalse(any('확인된 증액 한도' in line for line in lines))
+        self.assertIn('· 생활용품 5만 원', lines)
+        self.assertIn('· 의료·건강 5만 원', lines)
+        self.assertTrue(any('2026-11-09' in line and '참고 금액' in line for line in lines))
+        self.assertFalse(any('계산하지 못했' in line for line in lines))
+        self.assertIsNone(self.store.state['requests'][0]['amount'])
+        self.assertFalse(self.proposals)
+        # Subsequent maximum inquiry must preserve an explicitly selected source.
+        self.context['priorities'].pop('FASHION_SHOPPING')
+        self.store.state['sources'] = ['FASHION_SHOPPING']
+        response = self.turn(reading(action='inspect', reference='previous'))
+        self.assertIn('패션·쇼핑 · 최대 19만 원', response['reply']['lines'])
+        self.assertFalse(any('저축 ·' in line for line in response['reply']['lines']))
+        self.store.state = {}
+        response = self.turn(reading(action='inspect', requests=[item('FOOD', None)], sources=['FASHION_SHOPPING']))
+        self.assertIn('패션·쇼핑 · 최대 19만 원', response['reply']['lines'])
+        self.assertNotIn('comparison', response['reply'])
+
+    def test_capacity_breakdown_matches_calculated_total_and_deduplicates_sources(self):
+        from .adjustment_core.advisor import capacities, source_capacity_lines
+        found = capacities(self.context, 'FOOD', sources=['LIVING', 'HOUSEHOLD'], allocator=allocation)
+        self.assertEqual(set(found), {'LIVING'})
+        lines = source_capacity_lines(self.context, 'FOOD', found, sources=['LIVING', 'HOUSEHOLD'], allocator=allocation)
+        self.assertEqual(lines[0], '다른 생활비 · 최대 20만 원')
+        self.assertCountEqual(lines[1:], ['· 생활용품 5만 원', '· 의료·건강 5만 원',
+                                         '· 뷰티·미용 5만 원', '· 문화·여가 5만 원'])
+
+    def test_unknown_source_is_not_reported_as_zero(self):
+        self.context['bucket_status']['SPARE'] = 'unknown'
+        response = self.turn(reading(requests=[item('FOOD', None)], action='inspect'))
+        self.assertIn('여윳돈 · 금액 확인 필요', response['reply']['lines'])
+        self.assertNotIn('여윳돈 · 최대 0원', response['reply']['lines'])
+        self.store.state['sources'] = ['SPARE']
+        response = self.turn(reading(action='inspect', reference='previous'))
+        self.assertEqual(response['reply']['lines'][0], '여윳돈 · 금액 확인 필요')
+        self.assertFalse(any('0원' in line for line in response['reply']['lines']))
+
+    def test_capacity_summary_and_source_details_preserve_request_and_conditions(self):
+        self.store.state = {'requests': [item('FOOD', None)], 'excluded': ['SAVINGS'],
+                            'pending': {'kind': 'amount', 'index': 0}}
+        summary = self.turn(reading(action='inspect', inspection='capacity'))['reply']['lines']
+        self.assertEqual(summary[0], '다른 생활비에서 식비에 최대 20만 원을 더할 수 있어요.')
+        self.assertFalse(any('· 생활용품' in line or '저축' in line for line in summary))
+        details = self.turn(reading(action='inspect', inspection='sources'))['reply']['lines']
+        self.assertIn('· 생활용품 5만 원', details)
+        self.assertNotEqual(summary, details)
+        self.assertEqual(self.store.state['requests'], [item('FOOD', None)])
+        self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+        self.assertFalse(self.proposals)
+
+    def test_capacity_inquiry_does_not_replace_selected_amount_or_preview(self):
+        self.turn(reading(requests=[item('FOOD', 50000)], action='compare'))
+        comparison = deepcopy(self.store.state['comparison'])
+        response = self.turn(reading(action='inspect', inspection='capacity'))
+        self.assertIn('최대 20만 원', response['reply']['lines'][0])
+        self.assertEqual(self.store.state['requests'], [item('FOOD', 50000)])
+        self.assertEqual(self.store.state['comparison'], comparison)
+        self.assertNotIn('comparison', response['reply'])
+        self.assertFalse(self.proposals)
+
+    def test_capacity_inquiry_for_total_living_does_not_use_internal_transfers(self):
+        response = self.turn(reading(requests=[item('LIVING', None)], action='inspect', inspection='capacity'))
+        lines = response['reply']['lines']
+        self.assertTrue(any('여윳돈' in line for line in lines))
+        self.assertFalse(any('다른 생활비' in line for line in lines))
+        self.assertFalse(self.proposals)
+
+    def test_reduction_capacity_inquiry_keeps_direction_and_destination(self):
+        self.store.state = {'requests': [item('FOOD', 50000, 'down')], 'destinations': ['EDUCATION'],
+                            'excluded': ['SAVINGS'], 'pending': {'kind': 'comparison'}}
+        before = deepcopy(self.store.state)
+        response = self.turn(reading(action='inspect', inspection='capacity'))
+        self.assertIn('줄일 수', ' '.join(response['reply']['lines']))
+        self.assertNotIn('더할 수', ' '.join(response['reply']['lines']))
+        for key in ('requests', 'destinations', 'excluded'):
+            self.assertEqual(self.store.state[key], before[key])
+        self.assertFalse(self.proposals)
+
+    def test_living_distribution_choice_opens_editor_without_picking_a_recipient(self):
+        response = self.turn(reading(requests=[item('FOOD', 100000, 'down')], action='compare'))
+        living = next(p for p in response['reply']['comparison']['plans'] if p['id'] == 'living')
+        self.assertEqual(living['status'], 'needs_destination')
+        self.assertIsNone(living['result'])
+        self.assertIn('plan_living', {c['value'] for c in response['reply']['choices']})
+        response = self.turn(reading(selected_choice='plan_living', reference='previous'))
+        self.assertEqual(self.store.state['pending']['kind'], 'distribution')
+        self.assertEqual(response['reply']['distribution_input']['amount'], 100000)
+        self.assertNotIn('proposal', response['reply'])
+        self.assertFalse(self.proposals)
+        self.assertIn('임의로 배분하지', response['reply']['explanation']['brief'])
+
+    def test_distribution_guidance_uses_verified_shortfalls_not_priority(self):
+        from .adjustment_core.financial_planner import synthetic_diagnostics
+        self.context['diagnostic_inputs'] = synthetic_diagnostics(self.context['allocations'])
+        self.context['today'] = self.context['diagnostic_inputs']['as_of']
+        for sample in self.context['diagnostic_inputs']['history']['samples']:
+            sample['HOUSEHOLD'] = 10000
+            sample['MEDICAL_HEALTH'] = 7000
+        response = self.turn(reading(requests=[item('FOOD', 100000, 'down')], destinations=['LIVING']))
+        evidence = response['reply']['explanation']['brief']
+        self.assertIn('생활용품 약 50,000원', evidence)
+        self.assertIn('의료·건강 약 20,000원', evidence)
+        self.assertNotIn('교통·차량', evidence)
+        self.assertIn('예상', evidence)
+        self.assertFalse(self.proposals)
+        self.store.state = {}
+        self.context['spending_status'] = 'incomplete'
+        self.context['budget_preview'] = True
+        response = self.turn(reading(requests=[item('FOOD', 100000, 'down')], destinations=['LIVING']))
+        self.assertNotIn('50,000', response['reply']['explanation']['brief'])
+        self.assertIn('임의로 배분하지', response['reply']['explanation']['brief'])
+
+    def test_unspecified_amount_asks_before_calculating_in_either_direction(self):
+        for direction in ('up', 'down'):
+            for action in (None, 'compare'):
+                with self.subTest(direction=direction, action=action):
+                    self.store.state = {}
+                    result = self.turn(reading(requests=[item('FOOD', None, direction)], action=action))
+                    self.assertEqual(self.store.state['pending']['kind'], 'amount')
+                    self.assertIsNone(self.store.state['requests'][0]['amount'])
+                    self.assertNotIn('comparison', result['reply'])
+                    self.assertNotIn('proposal', result['reply'])
+                    self.assertFalse(self.proposals)
+
+    def test_explicit_capacity_examples_require_amount_after_method_selection(self):
+        for direction in ('up', 'down'):
+            with self.subTest(direction=direction):
+                self.store.state = {}
+                self.proposals.clear()
+                original = deepcopy(self.context)
+                code = 'FOOD' if direction == 'up' else 'HOUSEHOLD'
+                response = self.turn(reading(requests=[item(code, None, direction)],
+                    action='compare', use_available=True, excluded=['SAVINGS']))
+                comparison = response['reply']['comparison']
+                self.assertFalse(comparison['amount_was_given'])
+                plan = next(p for p in comparison['plans'] if p['status'] == 'ready')
+                response = self.turn(reading(selected_choice='plan_' + plan['id'], reference='previous'))
+                self.assertEqual(self.store.state['pending']['kind'], 'amount')
+                self.assertIsNone(self.store.state['requests'][0]['amount'])
+                self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+                self.assertFalse(self.proposals)
+                self.assertNotIn('proposal', response['reply'])
+                response = self.turn(reading(requests=[item(code, 20000, direction)], reference='previous'))
+                after = response['reply']['proposal']['allocations'][code]
+                self.assertEqual(after, original['allocations'][code] + (20000 if direction == 'up' else -20000))
+                self.assertEqual(self.context, original)
+
+    def test_financial_example_selection_does_not_create_a_proposal(self):
+        self.store.state = {'requests': [item('FOOD', None)], 'excluded': ['SAVINGS'],
+            'scope': 'next_cycle', 'clear_targets': ['FOOD'],
+            'over_budget': {'category': 'FOOD', 'over_amount': 12000},
+            'financial_offer': {'context': deepcopy(self.context), 'comparison': {'amount_was_given': False},
+                                'answer': {'plans': [{'funding': [{'source': 'LIVING', 'amount': 100000}]}]}}}
+        response = dialogue.selected_preview(self.store, 'talk', self.store.state, 0, self.ports)
+        self.assertEqual(self.store.state['pending']['kind'], 'amount')
+        self.assertIsNone(self.store.state['requests'][0]['amount'])
+        self.assertEqual(self.store.state['sources'], ['LIVING'])
+        self.assertEqual(self.store.state['scope'], 'next_cycle')
+        self.assertEqual(self.store.state['clear_targets'], ['FOOD'])
+        self.assertNotIn('proposal', response['reply'])
+        self.assertFalse(self.proposals)
+
+    def test_ambiguous_transfer_keeps_amount_until_direction_is_confirmed(self):
+        result = self.turn(reading(requests=[item('FOOD', 50000, None)]))
+        self.assertEqual(self.store.state['pending']['kind'], 'direction', result)
+        self.assertEqual(self.store.state['requests'], [item('FOOD', 50000, None)])
+        self.assertFalse(self.proposals)
+        result = self.turn(reading(requests=[item('FOOD', None, 'down', None)], reference='previous'))
+        self.assertEqual(self.store.state['requests'], [item('FOOD', 50000, 'down')])
+        ready = [p for p in result['reply']['comparison']['plans'] if p['status'] == 'ready']
+        self.assertTrue(ready)
+        self.assertTrue(all(p['result']['allocations']['FOOD'] == 350000 for p in ready))
+
+    def test_preview_destination_change_preserves_reduction_and_original_conditions(self):
+        request = envelope(item('FOOD', 100000, 'down'), destinations=['CULTURE_LEISURE'], excluded=['SAVINGS'])
+        preview = simulate_funding(self.context, request)
+        preview.update(task_ref='old', proposal_id='old', state='awaiting_approval')
+        self.store.state = {'requests': request['items'], 'destinations': ['CULTURE_LEISURE'],
+                            'excluded': ['SAVINGS'], 'proposal': deepcopy(preview), 'work_ref': 'old',
+                            'scope': 'cycle', 'clear_targets': ['FOOD']}
+        self.ports['task_status'].return_value = {'state': 'awaiting_approval'}
+        self.ports['cancel'].side_effect = lambda ref: self.ports['task_status'].configure_mock(
+            return_value={'state': 'canceled', 'task_ref': ref})
+        self.complete.side_effect = [
+            json.dumps({'action': 'revise', 'category': None, 'destination': None, 'amount': None,
+                        'amount_mode': None, 'suggested_target': None}),
+            json.dumps(reading(destinations=['MEDICAL_HEALTH'], reference='previous')),
+        ]
+        original = deepcopy(self.context)
+        result = dialogue.handle({'conversation_id': 'talk', 'text': '문화여가 말고 병원비에 옮겨줘'}, **self.ports)
+        self.assertNotIn('error', result)
+        self.assertIn('proposal', result['reply'], result)
+        after = result['reply']['proposal']['allocations']
+        self.assertEqual({k: after[k] for k in ['FOOD', 'CULTURE_LEISURE', 'MEDICAL_HEALTH']},
+                         {'FOOD': 300000, 'CULTURE_LEISURE': 50000, 'MEDICAL_HEALTH': 150000})
+        payload = json.loads(self.complete.call_args_list[0].args[1])
+        self.assertEqual(payload['previous']['requests'], request['items'])
+        self.assertEqual(payload['previous']['destinations'], ['CULTURE_LEISURE'])
+        self.assertEqual(self.store.state['requests'], request['items'])
+        self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+        self.assertEqual(self.store.state['scope'], 'cycle')
+        self.assertEqual(self.store.state['clear_targets'], ['FOOD'])
+        self.assertEqual(self.context, original)
+
+    def test_oversized_decrease_keeps_request_and_recovers_to_examples(self):
+        self.context['allocations']['EDUCATION'] = 30000
+        self.context['buckets']['SPARE'] += 20000
+        for mode, amount in [('by', 50000), ('percent_by', 200)]:
+            with self.subTest(mode=mode):
+                self.store.state = {}
+                request = item('EDUCATION', amount, 'down', mode)
+                result = self.turn(reading(requests=[request], action='compare', excluded=['SAVINGS']))
+                self.assertEqual(self.store.state['pending']['kind'], 'amount')
+                self.assertIn('30,000원', result['reply']['lines'][0])
+                self.assertIn('현재 예산보다', result['reply']['lines'][0])
+                self.assertEqual(self.store.state['requests'], [request])
+                result = self.turn(reading(requests=[item('EDUCATION', 10000, 'down')], reference='previous'))
+                self.assertIn('comparison', result['reply'], result)
+                ready = [p for p in result['reply']['comparison']['plans'] if p['status'] == 'ready']
+                self.assertTrue(ready)
+                self.assertTrue(all(p['result']['allocations']['EDUCATION'] == 20000 for p in ready))
+                self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+        self.assertFalse(self.proposals)
+
+    def test_valid_reduction_to_zero_and_absolute_target_still_show_examples(self):
+        for mode, amount, target in [('by', 50000, 0), ('to', 10000, 10000)]:
+            with self.subTest(mode=mode):
+                self.store.state = {}
+                result = self.turn(reading(requests=[item('EDUCATION', amount, 'down', mode)], action='compare'))
+                ready = [p for p in result['reply']['comparison']['plans'] if p['status'] == 'ready']
+                self.assertTrue(ready)
+                self.assertTrue(all(p['result']['allocations']['EDUCATION'] == target for p in ready))
+
+    def test_excessive_reduction_keeps_other_requests_and_constraints(self):
+        requests = [item('FOOD', 10000), item('EDUCATION', 60000, 'down')]
+        result = self.turn(reading(requests=requests, destinations=['TRANSPORT_CAR'], excluded=['SAVINGS']))
+        self.assertEqual(self.store.state['pending']['kind'], 'amount', result)
+        self.assertEqual(self.store.state['pending']['index'], 1)
+        self.assertEqual(self.store.state['requests'], requests)
+        self.assertEqual(self.store.state['destinations'], ['TRANSPORT_CAR'])
+        self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+        self.assertFalse(self.proposals)
+
+    def test_zero_budget_reduction_asks_for_another_category(self):
+        self.context['allocations']['EDUCATION'] = 0
+        self.context['buckets']['SPARE'] += 50000
+        for mode, amount in [('by', 50000), ('to', 0), ('percent_by', 100), (None, None)]:
+            with self.subTest(mode=mode):
+                self.store.state = {}
+                result = self.turn(reading(requests=[item('EDUCATION', amount, 'down', mode)]))
+                self.assertEqual(self.store.state['pending']['kind'], 'category')
+                self.assertIn('교육의 현재 예산은 0원', result['reply']['lines'][0])
+                self.assertTrue(result['reply']['choices'])
+                self.assertNotIn('EDUCATION', [row['value'] for row in result['reply']['choices']])
+
+    def test_direct_distribution_uses_same_zero_budget_reason_and_keeps_recipient(self):
+        self.context['allocations']['EDUCATION'] = 0
+        self.context['buckets']['SPARE'] += 50000
+        result = self.turn(reading(requests=[item('EDUCATION', 50000, 'down'), item('FOOD', 50000)], action='distribute'))
+        self.assertIn('교육의 현재 예산은 0원', result['reply']['lines'][0])
+        self.assertEqual(self.store.state['requests'], [item('EDUCATION', 50000, 'down'), item('FOOD', 50000)])
+        self.assertNotIn('FOOD', [row['value'] for row in result['reply']['choices']])
+        self.assertFalse(self.proposals)
+
+    def test_comparison_failure_explains_known_cause_and_preserves_request(self):
+        from .adjustment_core.conversation import _show_comparison
+        for error, status, reason in [('funding_total_mismatch', 'failed', '합계'),
+                                      ('direction_conflict', 'awaiting_input', '최종 금액'),
+                                      ('unexpected_error', 'failed', '계산하는 중')]:
+            with self.subTest(error=error):
+                self.store.state = {'requests': [item('EDUCATION', 10000, 'down')]}
+                requests = deepcopy(self.store.state['requests'])
+                with patch('budgets.adjustment_core.comparison.compare_adjustments', side_effect=ValueError(error)):
+                    result = _show_comparison(self.store, 'talk', self.store.state, self.context, self.context, allocation)
+                self.assertEqual(result['status'], status)
+                self.assertIn(reason, ' '.join(result['reply']['lines']))
+                self.assertEqual(self.store.state['requests'], requests)
+                self.assertNotIn('방법별 비교를 할 수', ' '.join(result['reply']['lines']))
 
     def test_amount_context_preserves_category_but_allows_explicit_topic_change(self):
         pending = {'kind': 'amount', 'index': 0}
@@ -603,7 +930,9 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.turn(reading(requests=[item('LIVING', None, 'up', None)]))
         with patch.object(dialogue, 'comparison_reply', return_value={'status': 'awaiting_input', 'reply': {}}) as compare:
             self.turn(reading(selected_choice='FOOD', reference='previous'))
-        self.assertEqual(compare.call_args.args[2]['requests'], [item('FOOD', None, 'up', None)])
+        compare.assert_not_called()
+        self.assertEqual(self.store.state['requests'], [item('FOOD', None, 'up', None)])
+        self.assertEqual(self.store.state['pending']['kind'], 'amount')
         self.assertFalse(self.proposals)
 
     def test_old_destination_flow_resolves_the_amount_question_to_selected_category(self):
@@ -612,9 +941,8 @@ class AdjustmentDialogueTest(unittest.TestCase):
                         'choices': [('TRANSPORT_CAR', '교통·차량')]}}
         response = self.turn(reading(selected_choice='TRANSPORT_CAR', reference='previous'))
         self.assertEqual(self.store.state['requests'], [item('TRANSPORT_CAR', None, 'up', None)])
-        # 금액을 몰라도 옮길 수 있는 돈으로 만든 예시를 먼저 보여 준다(요청 금액은 비워 둔다).
-        self.assertEqual(self.store.state['pending']['kind'], 'comparison')
-        self.assertEqual(response['reply']['comparison']['basis_kind'], 'budget_example')
+        self.assertEqual(self.store.state['pending']['kind'], 'amount')
+        self.assertNotIn('comparison', response['reply'])
         response = self.turn(reading(requests=[item('LIVING', 50000, 'up')], reference='previous'))
         self.assertEqual(self.store.state['requests'], [item('TRANSPORT_CAR', 50000, 'up')])
         self.assertNotEqual(self.store.state['pending']['kind'], 'amount')
@@ -883,6 +1211,116 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
     def setUp(self):
         from chat.llm.live import LiveReading
         self.live = LiveReading(30, None)
+
+    def test_preview_capacity_feedback_uses_strict_schema_and_preserves_inquiry_focus(self):
+        ctx = context()
+        state = {'requests': [item('FOOD', 50000)], 'sources': ['HOUSEHOLD']}
+        for text, focus in [('얼마나 늘릴 수 있어?', 'capacity'), ('어디서 얼마나 가져올 수 있어?', 'sources')]:
+            with self.subTest(text=text):
+                payload = {'text': text, 'codes': [*ctx['allocations'], *ctx['buckets']],
+                           'category_names': ctx['category_names'],
+                           'primary_request': envelope(item('FOOD', 50000), sources=['HOUSEHOLD']),
+                           'previous': state}
+                data = json.loads(self.live(dialogue.FEEDBACK_PROMPT, json.dumps(payload, ensure_ascii=False)))
+                self.assertEqual(data['action'], 'maxima', data)
+                self.assertEqual(data['inspection'], focus, data)
+        self.assertEqual(self.live.usage()['failed'], 0)
+
+    def test_capacity_question_keeps_food_and_followup_source(self):
+        for direct in (False, True):
+            with self.subTest(direct=direct):
+                def interpret(text, state=None):
+                    if direct:
+                        return interpretation.read(text, self.live, categories=context()['category_names'],
+                            **interpretation.dialogue_context(state or {}))
+                    return self.interpret(text, state)
+                data = interpret('식비 어디까지 늘릴 수 있어?')
+                self.assertEqual(data['requests'], [item('FOOD', None, 'up', data['requests'][0]['amount_mode'])], data)
+                self.assertEqual(data['action'], 'inspect', data)
+                self.assertEqual(data['inspection'], 'capacity', data)
+                state = {'requests': [item('FOOD', None)], 'sources': ['HOUSEHOLD'],
+                         'pending': {'kind': 'amount', 'question': '식비 예산을 얼마 늘릴까요?'}}
+                for text, focus in [('얼마나 늘릴 수 있어?', 'capacity'),
+                                    ('어디서 얼마나 가져올 수 있는데?', 'sources')]:
+                    data = interpret(text, state)
+                    _merge(state, data, state['pending'])
+                    self.assertEqual(state['requests'][0]['category'], 'FOOD', data)
+                    self.assertEqual(state['sources'], ['HOUSEHOLD'], data)
+                    self.assertEqual(data['action'], 'inspect', data)
+                    self.assertEqual(data['inspection'], focus, data)
+                    self.assertNotIn('inspection', state)
+
+    def test_transfer_direction_and_unspecified_reduction_amount(self):
+        for text in ['식비 5만 원 옮겨줘', '교통비 3만원 이동해줘']:
+            with self.subTest(text=text):
+                data = self.interpret(text)
+                self.assertEqual(len(data['requests']), 1, data)
+                self.assertIsNone(data['requests'][0]['direction'], data)
+                self.assertIsNone(data['action'], data)
+        previous = {'requests': [item('FOOD', 50000)],
+                    'pending': {'kind': 'sources', 'question': '식비로 옮길 돈은 어디서 가져올까요?'}}
+        data = self.interpret('아니 식비에서', previous)
+        state = deepcopy(previous)
+        _merge(state, data, previous['pending'])
+        self.assertEqual(state['requests'], [item('FOOD', 50000, 'down')], data)
+        for text in ['패션줄여서 교육에다 분배', '패션 돈 줄여서 교육에다가 분배하고 싶다니까']:
+            with self.subTest(text=text):
+                state = {'requests': [item('FASHION_SHOPPING', None, 'down', None)],
+                         'pending': {'kind': 'request', 'question': '어느 항목에서 얼마를 줄여 나눌까요?'}}
+                data = self.interpret(text, state)
+                _merge(state, data, state['pending'])
+                self.assertEqual(state['requests'][0]['category'], 'FASHION_SHOPPING', data)
+                self.assertEqual(state['requests'][0]['direction'], 'down', data)
+                self.assertIsNone(state['requests'][0]['amount'], data)
+                self.assertEqual(state['destinations'], ['EDUCATION'], data)
+                self.assertNotEqual(data['action'], 'distribute', data)
+
+    def test_live_reduction_destination_change_rebuilds_preview(self):
+        store, ctx = Store(), context()
+        request = envelope(item('FOOD', 100000, 'down'), destinations=['CULTURE_LEISURE'], excluded=['SAVINGS'])
+        preview = simulate_funding(ctx, request)
+        preview.update(task_ref='old', proposal_id='old', state='awaiting_approval')
+        store.state = {'requests': request['items'], 'destinations': ['CULTURE_LEISURE'], 'excluded': ['SAVINGS'],
+                       'proposal': deepcopy(preview), 'work_ref': 'old'}
+        tasks = {'old': {'state': 'awaiting_approval'}}
+        ports = dict(store=store, complete=self.live, get_context=lambda: deepcopy(ctx),
+            simulate=lambda current, req: simulate_funding(current, req, allocate_group_reduction=allocation),
+            propose=lambda current, result, **settings: {**result, **settings, 'task_ref': 'new', 'proposal_id': 'new'},
+            cancel=lambda ref: tasks[ref].update(state='canceled'),
+            task_status=lambda ref: deepcopy(tasks[ref]), allocator=allocation)
+        before = deepcopy(ctx)
+        result = dialogue.handle({'conversation_id': 'synthetic', 'text': '문화여가 말고 병원비에 옮겨줘'}, **ports)
+        self.assertNotIn('error', result)
+        self.assertIn('proposal', result['reply'], result)
+        after = result['reply']['proposal']['allocations']
+        self.assertEqual({k: after[k] for k in ['FOOD', 'CULTURE_LEISURE', 'MEDICAL_HEALTH']},
+                         {'FOOD': 300000, 'CULTURE_LEISURE': 50000, 'MEDICAL_HEALTH': 150000})
+        self.assertEqual(store.state['requests'], request['items'])
+        self.assertEqual(store.state['excluded'], ['SAVINGS'])
+        self.assertEqual(ctx, before)
+
+    def test_live_transfer_without_amount_keeps_route_through_amount_answer(self):
+        fixture = AdjustmentDialogueTest()
+        fixture.setUp()
+        fixture.ports['complete'] = self.live
+        before = deepcopy(fixture.context)
+        result = dialogue.handle({'conversation_id': 'synthetic', 'text': '패션 돈 줄여서 교육에다가 분배하고 싶어'},
+                                 **fixture.ports)
+        state = fixture.store.state
+        self.assertEqual(state['requests'][0]['category'], 'FASHION_SHOPPING', result)
+        self.assertEqual(state['requests'][0]['direction'], 'down', result)
+        self.assertEqual(state['destinations'], ['EDUCATION'], result)
+        self.assertNotIn('어느 항목에서', ' '.join(result['reply']['lines']))
+        self.assertNotIn('요청한 금액보다 적어요', ' '.join(result['reply']['lines']))
+        result = dialogue.handle({'conversation_id': 'synthetic', 'text': '그럼 3만원만 옮길게'}, **fixture.ports)
+        if result['reply'].get('comparison'):
+            plan = next(p for p in result['reply']['comparison']['plans'] if p['status'] == 'ready')
+            result = dialogue.handle({'conversation_id': 'synthetic', 'text': 'plan_' + plan['id']}, **fixture.ports)
+        self.assertIn('proposal', result['reply'], result)
+        after = result['reply']['proposal']['allocations']
+        self.assertEqual(after['FASHION_SHOPPING'], 170000)
+        self.assertEqual(after['EDUCATION'], 80000)
+        self.assertEqual(fixture.context, before)
 
     def test_same_uncertainty_has_different_meanings_from_previous_question(self):
         cases = [
@@ -1393,3 +1831,72 @@ class SalaryChangeDialogueTest(unittest.TestCase):
                     self.assertEqual(result['allocations']['FOOD'], 450000)
                     self.assertEqual(result['shortfalls'][0]['missing_amount'], 50000)
                     self.assertFalse(self.proposals)
+
+
+class DirectDistributionContinuationTest(unittest.TestCase):
+    setUp = AdjustmentDialogueTest.setUp
+    propose = AdjustmentDialogueTest.propose
+    turn = AdjustmentDialogueTest.turn
+
+    def test_known_transfer_preserves_both_categories_until_amount_answer(self):
+        for destination_as_request in (False, True):
+            for action in (None, 'distribute'):
+                with self.subTest(destination_as_request=destination_as_request, action=action):
+                    self.setUp()
+                    donor = item('FASHION_SHOPPING', None, 'down', None)
+                    self.store.state = {'clear_targets': ['FASHION_SHOPPING'], 'spare_minimum': 200000}
+                    parsed = reading(requests=[donor, item('EDUCATION', None)] if destination_as_request else [donor],
+                        destinations=[] if destination_as_request else ['EDUCATION'],
+                        action='distribute', excluded=['SAVINGS'], scope='cycle')
+                    for _ in range(2):
+                        response = self.turn(parsed)
+                        self.assertEqual(self.store.state['pending']['kind'], 'amount', response)
+                        self.assertEqual(self.store.state['requests'], [donor])
+                        self.assertEqual(self.store.state['destinations'], ['EDUCATION'])
+                        self.assertEqual(response['reply']['lines'], ['패션·쇼핑에서 얼마를 줄여 교육에 옮길까요?'])
+                        self.assertFalse(self.proposals)
+                    response = self.turn(reading(requests=[item('FASHION_SHOPPING', 50000, 'down')],
+                                                 action=action, reference='previous'))
+                    proposal = response['reply']['proposal']
+                    self.assertEqual(proposal['allocations']['FASHION_SHOPPING'], 150000)
+                    self.assertEqual(proposal['allocations']['EDUCATION'], 100000)
+                    self.assertEqual(proposal['buckets'], self.context['buckets'])
+                    self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+                    self.assertEqual(self.store.state['clear_targets'], ['FASHION_SHOPPING'])
+                    self.assertEqual(self.store.state['spare_minimum'], 200000)
+
+    def test_unknown_transfer_amount_keeps_zero_budget_reason(self):
+        from .adjustment_core.conversation import distribute
+        self.store.state = {}
+        self.context['allocations']['FASHION_SHOPPING'] = 0
+        response = distribute({'conversation_id': 'talk'}, self.store.state, reading(
+            requests=[item('FASHION_SHOPPING', None, 'down'), item('EDUCATION', None)], action='distribute'), **self.ports)
+        self.assertEqual(self.store.state['pending']['kind'], 'category')
+        self.assertIn('패션·쇼핑의 현재 예산은 0원', response['reply']['lines'][0])
+        self.assertEqual(self.store.state['destinations'], ['EDUCATION'])
+        self.assertFalse(self.proposals)
+
+    def test_known_destination_cannot_bypass_verified_spending(self):
+        from .adjustment_core.conversation import distribute
+        self.context['spent']['FASHION_SHOPPING'] = 190000
+        self.store.state = {'requests': [item('FASHION_SHOPPING', None, 'down')],
+                            'destinations': ['EDUCATION'], 'pending': {'kind': 'amount', 'index': 0}}
+        response = distribute({'conversation_id': 'talk'}, self.store.state, reading(
+            requests=[item('FASHION_SHOPPING', 50000, 'down')], action='distribute'), **self.ports)
+        self.assertEqual(self.store.state['pending']['kind'], 'distribution', response)
+        self.assertIn('이미 쓴 돈', response['reply']['lines'][0])
+        self.assertFalse(self.proposals)
+
+    def test_generic_distribution_after_preview_reopens_recipient_picker(self):
+        from .adjustment_core.conversation import distribute
+        donor = item('EDUCATION', 50000, 'down')
+        result = simulate_funding(self.context, envelope(donor, destinations=['FOOD']),
+                                  allocate_group_reduction=allocation)
+        old = {**result, 'proposal_id': 'old-preview', 'task_ref': 'old-task'}
+        self.store.state = {'requests': [donor], 'destinations': ['FOOD'], 'proposal': old}
+        response = distribute({'conversation_id': 'talk'}, self.store.state,
+                              reading(action='distribute'), **self.ports)
+        self.assertIn('distribution_input', response['reply'])
+        self.assertEqual(self.store.state['pending']['kind'], 'distribution')
+        self.assertEqual(self.store.state['proposal'], old)
+        self.assertFalse(self.proposals)
