@@ -7,6 +7,7 @@
 """
 import re
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from . import eligibility, saved, search
 from .eligibility import Profile
@@ -22,6 +23,10 @@ SAID_JOB = {"jobless": JOBLESS, "employed": EMPLOYED}
 STATE = {"open": "신청 중", "always": "상시", "upcoming": "신청 예정", "unknown": "기간 확인 필요", "closed": "마감"}
 SUPPORT_CHARS = 80  # 지원 내용은 DB 문장 앞부분만 (자르기만 하고 바꿔 쓰지 않는다)
 # 원문 글머리 기호 (ㅁ · □ · ㅇ · ○ · ※ · ① · ➊ · - …). 낱자 자모(ㅁ · ㅇ)는 낱말 안에 오지 않아 지워도 뜻이 바뀌지 않는다
+YOUTHCENTER = "https://www.youthcenter.go.kr/youthPolicy/ythPlcyTotalSearch/ythPlcyDetail/"
+# 기관 메인 주소: 경로 없음 · "/index.do" · "/www/main.html" 처럼 첫 화면 파일만 있는 주소 (물음표 값이 붙으면 상세로 본다)
+# shortcut: "/youth/" 같은 폴더형 첫 화면은 상세로 남는다. 많이 보이면 폴더 한 칸짜리도 메인으로 넓힌다
+MAIN_PATH = re.compile(r"(?:\w+/)?(?:(?:index|main)\.\w+)?", re.I)
 BULLETS = re.compile(r"(?:(?<=\s)|^)(?:[ㅁㅇ□■○●◦▪▫◆◇※•►▶❍]|[①-⑳]|[➊-➓]|-(?=\s|[가-힣]))\s*")
 
 
@@ -101,8 +106,17 @@ def tidy(text, limit=SUPPORT_CHARS):
     return (cut[:cut.rfind(" ")] if " " in cut[limit // 2:] else cut).rstrip(" ,·/") + "…"
 
 
+def policy_link(policy):
+    """원본 링크가 상세 페이지면 그대로, 없거나 기관 메인 주소뿐이면 온통청년 상세 페이지 (정책번호로 연다)"""
+    link = policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else "")
+    url = urlparse(link)
+    if link and (url.query or not MAIN_PATH.fullmatch(url.path.strip("/"))):
+        return link
+    return YOUTHCENTER + policy.pk
+
+
 def facts(found, today):
-    """답변 한 칸의 사실 (모두 DB 값 · 코드 계산). 링크가 없으면 None — 지어내지 않는다"""
+    """답변 한 칸의 사실 (모두 DB 값 · 코드 계산). 링크는 policy_link — 원본이 없거나 메인뿐이면 온통청년 상세"""
     policy, verdict = found.policy, found.verdict
     support = _clean(policy.raw, "plcySprtCn") or _clean(policy.raw, "plcyExplnCn")
     checks = [f"{c.item}({c.detail})" if c.item in ("나이", "소득") else c.item for c in verdict.to_check]
@@ -113,7 +127,7 @@ def facts(found, today):
         "support": tidy(support),
         "check": checks,
         "soon_over": verdict.soon_over,
-        "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
+        "link": policy_link(policy),
         "keywords": found.keywords,
         "support_type": support_type(policy),
         "region": region_text(policy.zip_codes),
@@ -208,7 +222,7 @@ def detail(policy_no, topics, profile, today):
             value = tidy(next((v for v in (_clean(policy.raw, k) for k in DETAIL_KEYS[topic]) if v), ""), None) or None
         rows.append((DETAIL_LABEL[topic], value))
     agency = _clean(policy.raw, "operInstCdNm") or _clean(policy.raw, "sprvsnInstCdNm") or None
-    return {"name": policy.name, "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
+    return {"name": policy.name, "link": policy_link(policy),
             "agency": agency, "rows": rows, "support_type": support_type(policy), "region": region_text(policy.zip_codes)}
 
 
