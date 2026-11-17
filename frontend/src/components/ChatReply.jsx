@@ -564,9 +564,12 @@ export function Choices({ choices, active, onPick, scroll = false }) {
     const el = bar.current
     if (!scroll || !el) return
     const onWheel = (e) => {
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return  // 가로 휠·트랙패드 · 넘칠 게 없으면 그대로
+      // Ctrl+휠 · 트랙패드 확대(ctrlKey) · 가로 휠 · 넘칠 게 없으면 브라우저 기본 동작 그대로
+      if (e.ctrlKey || Math.abs(e.deltaY) <= Math.abs(e.deltaX) || el.scrollWidth <= el.clientWidth) return
       e.preventDefault()
-      el.scrollLeft += e.deltaY
+      // 이동량 단위: 0 픽셀 · 1 줄(줄 높이, 'normal' 이면 16px) · 2 페이지(선택지 줄 너비)
+      const unit = e.deltaMode === 1 ? parseFloat(getComputedStyle(el).lineHeight) || 16 : e.deltaMode === 2 ? el.clientWidth : 1
+      el.scrollLeft += e.deltaY * unit
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)

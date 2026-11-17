@@ -555,3 +555,18 @@ it('scroll 이면 마우스 세로 휠로 선택지 줄이 옆으로 넘어간�
   expect(bar.scrollLeft).toBe(100)
   expect(wheel.defaultPrevented).toBe(true)  // 화면 전체는 위아래로 안 움직인다
 })
+
+it('휠 이동량이 줄 · 페이지 단위면 픽셀로 바꿔 넘기고, Ctrl+휠(확대)은 가로채지 않는다', async () => {
+  const choices = [{ value: 'more', label: '다른 정책 더 보기' }, { value: 'region', label: '지역 변경하기' }]
+  await act(() => root.render(<Choices choices={choices} active onPick={() => {}} scroll />))
+  const bar = host.querySelector('.mc-fx-choices')
+  Object.defineProperties(bar, { scrollWidth: { value: 900 }, clientWidth: { value: 300 } })
+  const roll = (init) => { const e = new WheelEvent('wheel', { cancelable: true, ...init }); bar.dispatchEvent(e); return e }
+  roll({ deltaY: 3, deltaMode: WheelEvent.DOM_DELTA_LINE })
+  expect(bar.scrollLeft).toBe(48)  // 3줄 × 16px (jsdom 줄 높이는 'normal')
+  roll({ deltaY: 1, deltaMode: WheelEvent.DOM_DELTA_PAGE })
+  expect(bar.scrollLeft).toBe(348)  // + 선택지 줄 너비 300px
+  const zoom = roll({ deltaY: 100, ctrlKey: true })
+  expect(zoom.defaultPrevented).toBe(false)  // 확대 · 축소는 브라우저가 처리
+  expect(bar.scrollLeft).toBe(348)
+})
