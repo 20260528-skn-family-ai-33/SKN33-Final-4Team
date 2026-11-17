@@ -257,7 +257,8 @@
 #mc-new-preview .mc-examples { margin: 4px 0 0; font-size: 12.5px; color: var(--mc-sub); }
 /* 청년 정책 문장 속 `찾을 정책` · `지역`: 파란 글자만 */
 #mc-new-preview .mc-pill { color: var(--mc-brand); font-weight: 600; }
-/* 청년 정책 답변 아래 버튼: 한 줄 가로 스크롤 (스크롤바는 숨기고, 오른쪽 끝을 흐리게 해 더 있다는 걸 보인다) */
+/* 청년 정책 답변 아래 버튼: 한 줄 가로 스크롤 (스크롤바는 숨기고, 오른쪽 끝을 흐리게 해 더 있다는 걸 보인다).
+   PC 마우스 세로 휠은 Choices 가 가로로 바꿔 준다 */
 #mc-new-preview .mc-fx-choices.is-scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
   padding-right: 24px; mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent); }
 #mc-new-preview .mc-fx-choices.is-scroll::-webkit-scrollbar { display: none; }

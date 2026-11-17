@@ -544,3 +544,14 @@ it('분석 문장은 글자를 그대로 두고 숫자 · 괄호 · 나열 · �
   expect(items[1].querySelector('.mc-fx-aside').textContent).toBe(' (지난달 같은 기간 406,000원)')
   expect(items[2].querySelector('.mc-fx-aside')).toBeNull()  // 붙여 쓴 괄호(11월)는 그대로
 })
+
+it('scroll 이면 마우스 세로 휠로 선택지 줄이 옆으로 넘어간다', async () => {
+  const choices = [{ value: 'more', label: '다른 정책 더 보기' }, { value: 'region', label: '지역 변경하기' }]
+  await act(() => root.render(<Choices choices={choices} active onPick={() => {}} scroll />))
+  const bar = host.querySelector('.mc-fx-choices')
+  Object.defineProperties(bar, { scrollWidth: { value: 500 }, clientWidth: { value: 300 } })  // jsdom 은 크기가 0
+  const wheel = new WheelEvent('wheel', { deltaY: 100, cancelable: true })
+  bar.dispatchEvent(wheel)
+  expect(bar.scrollLeft).toBe(100)
+  expect(wheel.defaultPrevented).toBe(true)  // 화면 전체는 위아래로 안 움직인다
+})
