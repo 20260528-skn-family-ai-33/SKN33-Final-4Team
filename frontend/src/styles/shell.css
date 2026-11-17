@@ -28,16 +28,39 @@ html body #mc-new-preview .mc-device {
 
 @media (max-width: 599px), (hover: none), (pointer: coarse) {
   html body #mc-new-preview #mc-header { padding-top: calc(18px + env(safe-area-inset-top)); }
+  html body #mc-new-preview #mc-header,
+  html body #mc-new-preview .mc-screen,
+  html body #mc-new-preview#mc-new-preview #mc-toast { padding-left: calc(20px + env(safe-area-inset-left)); padding-right: calc(20px + env(safe-area-inset-right)); }
   html body #mc-new-preview #mc-main { min-width: 0; scrollbar-gutter: auto; }
   html body #mc-new-preview .mc-screen,
   html body #mc-new-preview .mc-body { min-width: 0; }
   html body #mc-new-preview .mc-screen > .mc-foot { padding-bottom: calc(20px + env(safe-area-inset-bottom)); }
-  html body #mc-new-preview #mc-nav { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+  html body #mc-new-preview #mc-nav {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    padding-left: calc(6px + env(safe-area-inset-left));
+    padding-right: calc(6px + env(safe-area-inset-right));
+  }
   html body #mc-new-preview .mc-sheet { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   html body #mc-new-preview .mc-sheet:has(.mc-chat) { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+  html body #mc-new-preview .mc-sheet:not(.mc-dialog) {
+    padding-left: calc(22px + env(safe-area-inset-left));
+    padding-right: calc(22px + env(safe-area-inset-right));
+  }
+  html body #mc-new-preview#mc-new-preview .mc-dialog {
+    left: calc(16px + env(safe-area-inset-left));
+    right: calc(16px + env(safe-area-inset-right));
+  }
+  html body #mc-new-preview .mc-tour-card {
+    left: calc(16px + env(safe-area-inset-left));
+    right: calc(16px + env(safe-area-inset-right));
+  }
 }
 
 @media (max-width: 370px) {
+  html body #mc-new-preview .mc-screen {
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+  }
   html body #mc-new-preview .mc-big-form,
   html body #mc-new-preview .mc-big-rec,
   html body #mc-new-preview .mc-cf,
