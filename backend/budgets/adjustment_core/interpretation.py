@@ -59,6 +59,11 @@ amount는 사용자가 말한 원 단위 정수 그대로다. 5만원 늘리기=
 재원 항목과 구체적 감액액을 함께 말했을 때만 별도 요청으로 쓴다. '식비 5만원 늘리고 쇼핑에서 5만원 가져와'는
 FOOD by/up 50000과 FASHION_SHOPPING by/down 50000이다. '쇼핑에서 가져와'처럼 재원만 말하면 sources에만 기록한다.
 재원을 임의로 정하지 않는다.
+줄일 항목과 받을 항목만 정하고 금액을 말하지 않았다면 출발 항목의 down 요청(amount=null)과 destinations에 받는 항목을 기록한다. 받는 항목의 별도 up 요청이나 임의 금액을 만들지 않는다.
+한 항목에서 다른 한 항목으로 옮기는 말의 '분배'는 action=distribute를 뜻하지 않는다. 여러 수령 항목에 나누거나 직접 배분표를 편집하려는 경우와 구별한다.
+옮긴다는 말에 항목 하나와 금액만 있고 출발·도착 방향이 명시되지 않으면, 이전 대화로 방향을 확정할 수 있는지 확인한다.
+방향 근거가 없으면 그 항목과 금액은 requests에 보존하되 amount_mode=by, direction=null로 두고 action=null이다. 서버가 출발 항목인지 받을 항목인지 확인한다.
+기존 해석을 정정하여 '아니 그 항목에서'라고 하면 같은 금액을 옮기는 출발 항목의 감액으로 바꾼다. 이전 금액·기간은 유지하고 같은 항목의 증액과 출처로 중복 해석하지 않는다.
 여러 항목에서 각각 정한 돈을 한 항목으로 옮기면 각 출처의 감액 요청과 destinations에 목적지만 쓴다.
 예: '쇼핑 2만원과 교통비 3만원을 식비로'는 쇼핑 by/down 20000, 교통 by/down 30000,
 destinations=[FOOD]다. 합계는 서버가 계산하므로 FOOD/null/up 요청을 추가하지 않는다.
@@ -66,6 +71,8 @@ destinations=[FOOD]다. 합계는 서버가 계산하므로 FOOD/null/up 요청�
 받을 항목을 destinations에 반드시 보존하고 action=null로 계산을 이어간다.
 sources와 destinations는 이번 문장에서 명시한 출처·목적지 코드 목록이다. '여윳돈에서 식비로'는 sources=[SPARE], destinations=[FOOD]이다.
 '그 돈을 식비로'는 destinations=[FOOD]이며 이를 금액없는 새 증액 요청으로 만들지 않는다.
+기존 감액 요청에서 받을 항목만 바꾸면 requests=[]와 새 destinations, reference=previous로 해석한다. 기존 감액 항목·금액·조건은 유지하며 이전 수령 항목은 새 목적지로 교체한다.
+이는 직전 미리보기의 수령 항목을 추가로 감액하는 요청이 아니다. 기존 요청이 증액 목표라면 그 목표 항목만 교체하되 기존 증액 금액은 유지한다.
 excluded는 '저축은 건드리지 마'처럼 이번 문장에서 제외한 재원 코드다.
 기존 배분 예시와 다르게 여러 항목에 나누거나 받을 항목·금액을 직접 정하고 싶다는 뜻은 action=distribute다.
 아직 받을 항목이나 금액을 못 정해도 unclear가 아니라 distribute로 반환한다. 서버가 항목·금액 선택 화면을 제공한다.
@@ -92,7 +99,9 @@ action은 뒤로=back, 이미 적용한 예산 되돌리기=undo, 조정 가능�
 이때 어떤 안이 나은지·무엇을 추천하는지·고르기 어렵다는 뜻은 표현과 무관하게 action=recommend다.
 recommend는 기존 예시 중 추천안과 이유를 설명하는 요청이며 selected_choice=null, approval=null이다.
 금액·대상·재원 변경이 함께 있으면 변경 조건을 우선 추출한다. 단순히 다시 비교해 달라는 뜻만 action=compare다.
-조정 대상과 방향을 알 때 금액·방법을 못 정했거나 가능한 범위를 바탕으로 제안을 원하는 뜻이면 표현과 무관하게 action=compare다.
+금액 없는 단순 증감 요청은 action=null, amount=null, use_available=null이다. 금액 미지정을 계산 예시 요청으로 해석하지 않는다.
+가능한 범위·재원별 한도를 묻는 조회는 action=inspect다. 계산 예시·방법 비교를 명시적으로 요청하면 action=compare, use_available=true다.
+특정 항목을 얼마까지 늘릴 수 있는지 묻는 조회는 그 항목의 amount=null/direction=up 요청을 requests에 보존한다. 항목을 버리고 저축·쿠션만 조회하는 요청으로 바꾸지 않는다.
 금액과 재원을 정했더라도 변경 예시나 조정 방법을 먼저 보고 싶다는 뜻은 action=compare다. 미리 본다는 뜻을 승인으로 바꾸지 않는다.
 한 문장에 대상·방향과 이런 뜻이 함께 있으면 requests와 action=compare를 함께 반환한다.
 단, 일회성 지출 여부·잠금 해제·최종 승인 질문에서 모른다는 답을 조정안 선택이나 승인으로 해석하지 않는다.
@@ -318,7 +327,7 @@ def dialogue_context(state):
 
 PROMPT += """
 카테고리와 증감 방향을 알지만 금액이 없거나 '액수는 모르겠어', '얼마나 늘려야 할지 몰라'라고 한 것은 정상 조정 요청이다.
-금액 미정이라는 이유만으로 unclear에 쓰지 않는다. amount=null, amount_mode=null로 남겨 서버가 재원과 가능액을 묻게 한다.
+금액 미정이라는 이유만으로 unclear에 쓰지 않는다. amount=null, amount_mode=null로 남겨 서버가 희망 금액을 먼저 묻게 한다.
 예: '교육비를 조금 늘리고 싶은데 액수는 모르겠어'는 EDUCATION/null/null/up, unclear=[]이다.
 후속 답이 이전 한 항목의 가능액 요청이면 reference=previous, amount_mode=available, use_available=true로 연결한다.
 pending.kind=available_quote에서 '방금 그 금액으로 변경안 보여줘', '그 금액으로 보여줘', '그 금액으로 변경안 보여주세요'는

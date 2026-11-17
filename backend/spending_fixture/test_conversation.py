@@ -287,14 +287,18 @@ class PersonaAnswerTest(TestCase):
     def test_c_limited_data_and_no_approved_budget(self):
         c = Chat(user("C"))
         self.assertEqual(c.text("이번 달 얼마 썼어?"),
-                         "이번 달(10월 1일~29일) 전체 지출은 일부 내역 기준 390,000원이에요. 카테고리가 아직 정해지지 않은 거래 "
-                         "2건, 총 50,000원도 포함했어요. 일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.")
+                         "이번 달(10월 1일~29일) 전체 지출은 일부 내역 기준 390,000원이에요. "
+                         "고정지출 100,000원을 빼면 생활비는 290,000원이에요. 카테고리가 아직 정해지지 않은 거래 "
+                         "2건, 총 50,000원도 포함했어요. 저장된 거래는 10월 29일까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요. "
+                         "일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.")
         budget = c.text("예산 얼마 남았어?")
         self.assertTrue(budget.startswith("아직 승인된 예산이 없어서 생활비 남은 예산을 알려드릴 수 없어요."))
         self.assertNotIn("510,000", budget)
         trend = c.text("최근 몇 달 소비 어때?")
         self.assertEqual(trend, "최근 3개월 전체 지출은 확인할 수 있는 내역이 없어요.")  # 달마다 같은 문장을 반복하지 않는다
-        self.assertIn("지난달 같은 기간의 내역이 충분하지 않아 비교하기 어려워요.", c.text("지난달보다 많이 썼어?"))
+        comparison = c.text("지난달보다 많이 썼어?")
+        self.assertIn("390,000원", comparison)
+        self.assertIn("지난달 같은 기간(9월 1일~29일) 전체 지출은 확인할 수 있는 내역이 없어요.", comparison)
 
     def test_no_approved_budget_and_db_failure_differ(self):
         c = Chat(user("C"))
@@ -321,7 +325,8 @@ class PersonaAnswerTest(TestCase):
         self.assertNotIn("facts", saved["items"][0])
         d, out = c.say("그럼 식비는?")  # 부분 자료여도 이번 달 조건을 이어받는다
         self.assertEqual(d.items, ({"type": 2, "category": "FOOD"},))
-        self.assertEqual(out["lines"], ["이번 달(10월 1일~29일) 식비 지출은 일부 내역 기준 110,000원이에요."])
+        self.assertEqual(out["lines"], ["이번 달(10월 1일~29일) 식비 지출은 일부 내역 기준 110,000원이에요.",
+                                        "불러온 소비 내역 중 28.21%예요."])
 
     def test_explain_uses_only_confirmed_evidence(self):
         a = Chat(user("A"))
@@ -333,7 +338,8 @@ class PersonaAnswerTest(TestCase):
         # 지난달 카드 조회 기록이 없어져 비교 불가가 되면, 앞의 확정 분석으로 바꿔 설명하지 않는다
         SyncRun.objects.filter(user=user("A"), product_code="card_approval_list", covered_from=date(2026, 9, 1)).delete()
         _, out = a.say("지난달보다 식비 더 썼어?")
-        self.assertEqual(out["lead"], ["지난달 같은 기간의 내역이 충분하지 않아 비교하기 어려워요."])  # 핵심 안내가 먼저
+        self.assertTrue(any("지난달 같은 기간" in line and "일부 내역 기준" in line for line in out["lines"]))
+        self.assertTrue(all("badge" not in row for block in out["view"] for row in block.get("rows", [])))
         d, out = a.say("왜 늘었어?")
         self.assertEqual((d.status, d.reason, d.explain, out), ("unsupported", "evidence_incomplete", None, None))
 
@@ -439,8 +445,11 @@ class PersonaAnswerTest(TestCase):
         c = Chat(user("C"))
         d, out = c.say("식비랑 교통비 얼마 썼어?")
         self.assertEqual(out["lines"], ["이번 달(10월 1일~29일) 식비 지출은 일부 내역 기준 110,000원이에요.",
-                                        "이번 달(10월 1일~29일) 교통·차량 지출은 일부 내역 기준 30,000원이에요."])
-        self.assertEqual(out["notices"], ["일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",  # 한 번만
+                                        "불러온 소비 내역 중 28.21%예요.",
+                                        "이번 달(10월 1일~29일) 교통·차량 지출은 일부 내역 기준 30,000원이에요.",
+                                        "불러온 소비 내역 중 7.69%예요."])
+        self.assertEqual(out["notices"], ["저장된 거래는 10월 29일까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
+                                          "일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",  # 한 번만
                                           # 11/2 2차 검수: 같은 기간 확인 필요가 있으면 분류된 금액 기준 안내 (카테고리 여러 개도 한 줄)
                                           "식비 · 교통·차량으로 분류된 금액 기준이에요. 확인 필요 50,000원에 따라 달라질 수 있어요."])
 
@@ -568,12 +577,9 @@ class ComposeWithoutDbTest(SimpleTestCase):
                 out = compose([{"item": item, "ok": True, "result": {"type": 5, "item": item, "current": block}}])
                 self.assertEqual(out["examples"], ["지난달보다 많이 썼어?", "식비 얼마 썼어?", "예산 얼마 남았어?"])
                 self.assertIn("이번 달 전체 소비", out["lead"][0])
-                if state == "none":
+                if state in ("none", "partial"):
                     self.assertIn("확인할 수 있는 내역이 없어요", out["lines"][0])
                     self.assertFalse(any(b.get("kind") == "total" for b in out["view"]))
-                elif state == "partial":
-                    self.assertIn("일부 내역 기준", out["lines"][0])
-                    self.assertTrue(out["notices"])
                 else:
                     self.assertEqual(out["lines"][0], "이번 달(10월 1일~29일) 소비는 0원이에요.")
 
@@ -587,9 +593,10 @@ class ComposeWithoutDbTest(SimpleTestCase):
                   "comparison": {"total": {"available": False, "previous_incomplete": True, "current_incomplete": False,
                                            "delta": None, "rate": None}}}
         out = compose([{"item": result["item"], "ok": True, "result": result}])
-        self.assertEqual((out["lines"], out["sections"]), (["참고로 이번 달(10월 1일~29일) 금액이에요."],
-                                                           [{"title": "전체 · 100원", "lines": []}]))
-        self.assertEqual((out["lead"], out["notices"]), (["지난달 같은 기간의 내역이 충분하지 않아 비교하기 어려워요."], []))
+        self.assertEqual(out["lines"], ["이번 달(10월 1일~29일) 전체에 100원 썼어요.",
+                                        "지난달 같은 기간(9월 1일~29일) 전체 지출은 일부 내역 기준 100원이에요."])
+        self.assertEqual(out["notices"], ["일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요."])
+        self.assertTrue(all("badge" not in row for block in out["view"] for row in block.get("rows", [])))
 
     def test_gap_month_is_not_bridged_and_averages_skip_it(self):
         """7 · 9월만 완전 수집 → 평균은 두 달, 8월을 건너뛴 7→9월 비교는 하지 않는다. 진행 중인 달은 series 에 없다"""
@@ -674,12 +681,13 @@ class UserTestAnswerTest(TestCase):
         self.assertEqual((lines[0], lines[-1]), ("식비 전체 지출은 지난달 같은 기간보다 42,000원 늘었어요. ↑ 12.07%",
                                                  "식비 전체 기준이라 커피만의 변화는 알 수 없어요."))
 
-    def test_incomplete_comparison_is_the_lead(self):
+    def test_incomplete_comparison_keeps_observed_amounts_and_missing_period(self):
         _, out = Chat(user("C")).say("지난달보다 식비 더 썼어?")
-        self.assertEqual(out["lead"], ["지난달 같은 기간의 내역이 충분하지 않아 비교하기 어려워요."])
-        self.assertEqual(out["lines"], ["참고로 이번 달(10월 1일~29일) 금액이에요."])
-        self.assertEqual(out["sections"], [{"title": "식비 · 일부 내역 기준 110,000원", "lines": []}])
-        self.assertEqual(out["notices"], ["식비로 분류된 금액 기준이에요. 확인 필요 50,000원에 따라 달라질 수 있어요."])  # 일부 내역 기준은 금액 줄에 직접 표시
+        self.assertEqual(out["lines"], ["이번 달(10월 1일~29일) 식비 지출은 일부 내역 기준 110,000원이에요.",
+                                        "지난달 같은 기간(9월 1일~29일) 식비 지출은 확인할 수 있는 내역이 없어요."])
+        self.assertEqual(out["notices"], ["저장된 거래는 10월 29일까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
+                                          "일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",
+                                          "식비로 분류된 금액 기준이에요. 확인 필요 50,000원에 따라 달라질 수 있어요."])
 
 
 @fixture_db_only
@@ -750,9 +758,10 @@ class CardViewTest(TestCase):
             ("이번 달", 390_000, "10월 1일~29일", "100.00"), ("지난달", 348_000, "9월 1일~29일", "89.23")])
         head, *_ = self.view("A", "지난달보다 많이 썼어?")
         self.assertEqual(head["title"], "전체 소비 · 지난달 같은 기간과 비교")
-        head, rows = self.view("C", "지난달보다 식비 더 썼어?")  # 비교 불가: 참고 금액만 (핵심 안내는 lead)
-        self.assertEqual((head["title"], rows["rows"]), ("10월 1일~29일 · 이번 달 금액",
-                                                         [{"name": "식비", "amount": 110_000, "note": "일부 내역 기준"}]))
+        head, rows = self.view("C", "지난달보다 식비 더 썼어?")
+        self.assertEqual((head["title"], rows["rows"]), ("기간별 불러온 소비 내역",
+                         [{"name": "식비 · 이번 달", "amount": 110_000, "note": "10월 1일~29일 · 일부 내역 기준 · 마지막 거래 10월 29일"},
+                          {"name": "식비 · 지난달", "amount": None, "note": "9월 1일~29일"}]))
 
     def test_trend_rows_and_budget_total(self):
         sums = [EXPECTED["personas"]["A"]["monthly_known_sums"][m]["by_category"]["FOOD"] for m in ("7", "8", "9")]

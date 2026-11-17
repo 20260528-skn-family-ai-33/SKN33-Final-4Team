@@ -228,6 +228,7 @@ it('조회 완료 후에는 보존된 직접 조정 금액을 바꾸지 않아�
 
 it('여러 받을 항목과 금액을 직접 정하고 합계가 맞을 때만 미리보기를 보낸다', async () => {
   const send = vi.fn()
+  const completedHelp = '조정 금액을 모두 분배했어요. 다른 항목에 넣으려면 먼저 배분한 금액을 줄여 주세요.'
   const content = { turn: 2, budgetAdjustment: { status: 'awaiting_input', distributionInput: {
     source: 'EDUCATION', amount: 50000, categories: ['FOOD', 'TRANSPORT_CAR', 'SPARE'] } } }
   await act(() => root.render(<BudgetAdjustment content={content} active onSend={send} />))
@@ -239,10 +240,17 @@ it('여러 받을 항목과 금액을 직접 정하고 합계가 맞을 때만 �
   expect(host.querySelectorAll('[aria-pressed="true"]')).toHaveLength(2)
   for (let i = 0; i < 2; i++) await click(host.querySelector('[aria-label="1번 금액 10,000원 늘리기"]'))
   expect(button('나눈 예산 미리보기').disabled).toBe(true)
+  expect(host.textContent).not.toContain(completedHelp)
   for (let i = 0; i < 3; i++) await click(host.querySelector('[aria-label="2번 금액 10,000원 늘리기"]'))
   expect(host.querySelector('[role="status"]').textContent).toContain('모두 나눴어요')
+  expect(host.querySelector('.mc-budget-distribution-row').previousElementSibling.textContent).toBe(completedHelp)
   expect(host.querySelector('[aria-label="1번 금액 10,000원 늘리기"]').disabled).toBe(true)
   expect(host.querySelector('[aria-label="2번 금액 10,000원 늘리기"]').disabled).toBe(true)
+  await click(host.querySelector('[aria-label="1번 금액 10,000원 줄이기"]'))
+  expect(host.textContent).not.toContain(completedHelp)
+  expect(host.querySelector('[aria-label="2번 금액 10,000원 늘리기"]').disabled).toBe(false)
+  await click(host.querySelector('[aria-label="1번 금액 10,000원 늘리기"]'))
+  expect(host.textContent).toContain(completedHelp)
   const input = host.querySelector('input')
   await act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '130000')
@@ -453,7 +461,7 @@ it.each([['0', 'financial_0'], ['combined', 'plan_combined']])('복합안 %s 펼
   await click(host.querySelector('details summary'))
   expect(pick).not.toHaveBeenCalled()
   expect(approve).not.toHaveBeenCalled()
-  await click(button('이 안 선택하기'))
+  await click(button('추천대로 선택하기'))
   expect(pick).toHaveBeenCalledWith(choice)
   expect(approve).not.toHaveBeenCalled()
 })
@@ -489,17 +497,27 @@ it('검수한 비교 카드의 추천 버튼은 무엇을 보여주는지 설명
   expect(button('추천안 보기')).toBeUndefined()
 })
 
-it('계산한 예산 변화가 없는 안은 펼침과 선택 버튼도 보여 주지 않는다', async () => {
-  const content = { lines: ['의료·건강에 50,000원을 남기도록 계산해요. 원하는 금액을 알려 주세요.'],
-    choices: [{ value: 'plan_living', label: '다른 생활비에 배분' }],
+it.each([false, true])('생활비 분배 선택(advised=%s)은 받는 항목을 정하도록 안내하고 가짜 계산 결과를 표시하지 않는다', async (advised) => {
+  const pick = vi.fn(), approve = vi.fn()
+  const choice = { value: 'plan_living', label: '다른 생활비에 분배' }
+  const content = { choices: [choice],
     budgetAdjustment: { status: 'awaiting_input', canApprove: false,
-      comparison: { plans: [{ id: 'living', label: '다른 생활비에 배분', status: 'needs_destination', result: null }] } } }
-  await act(() => root.render(<BudgetAdjustment content={content} active onPick={vi.fn()} />))
+      comparison: { basisAmount: 50000, amountWasGiven: true, ...(advised ? { headline: '줄인 돈을 어디에 둘까요?' } : {}),
+        plans: [{ id: 'living', label: choice.label, status: 'needs_destination', result: null, amount: 0, recommended: true }] } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onPick={pick} onApprove={approve} />))
+  const card = host.querySelector('.mc-budget-plan')
+  expect(card.textContent).toContain('받을 항목과 금액을 직접 고를 수 있어요.')
+  expect(card.querySelector('.mc-budget-recommended')).toBeNull()
+  expect(card.querySelector('details')).toBeNull()
+  expect(card.querySelector('dl')).toBeNull()
+  expect(card.textContent).not.toMatch(/반영 가능|0원|최대 금액/)
+  await click(button('이 배분으로 선택하기'))
+  expect(pick).toHaveBeenCalledWith(choice)
+  expect(approve).not.toHaveBeenCalled()
+  await act(() => root.render(<BudgetAdjustment content={content} active={false} onPick={pick} />))
+  expect(card.querySelector('button').disabled).toBe(true)
+  await act(() => root.render(<BudgetAdjustment content={{ ...content, choices: [] }} active onPick={pick} />))
   expect(host.querySelector('.mc-budget-plan')).toBeNull()
-  expect(button('이 안 선택하기')).toBeUndefined()
-  expect(host.textContent).not.toContain('필요한 항목')
-  expect(host.textContent).toContain('의료·건강에 50,000원을 남기도록')
-  expect(host.textContent).not.toContain('지금 확인된 정보로 보여 드릴 조정안이 없어요')
 })
 
 
@@ -521,7 +539,8 @@ it.each([false, true])('추천 카드(advised=%s)는 위에 미리보기를 명�
   expect(intro.querySelector('.mc-budget-tag').textContent).toBe('미리보기')
   expect(intro.compareDocumentPosition(cards[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(host.textContent.split('확정 전까지 예산은 바뀌지 않아요.')).toHaveLength(2)
-  expect(select.textContent).toBe('이 안 선택하기')
+  expect(cards[0].querySelector('.mc-budget-select').textContent).toBe('추천대로 선택하기')
+  expect(select.textContent).toBe('이 배분으로 선택하기')
   expect(document.getElementById(select.getAttribute('aria-describedby')).textContent)
     .toBe('미리보기안을 골라도 확정 전까지 예산은 바뀌지 않아요.')
   expect(select.classList.contains('mc-budget-select')).toBe(true)
@@ -533,6 +552,60 @@ it.each([false, true])('추천 카드(advised=%s)는 위에 미리보기를 명�
   expect(select.getAttribute('aria-pressed')).toBe('true')
   expect(pick).toHaveBeenCalledWith(content.choices[1])
   expect(approve).not.toHaveBeenCalled()
+})
+
+it.each([false, true])('개별 조정안 카드(advised=%s)의 선택 버튼 바로 아래에서 금액과 감액 항목을 수정한다', async (advised) => {
+  const pick = vi.fn(), approve = vi.fn()
+  const edits = [{ value: 'manual', label: '금액 바꾸기' }, { value: 'manual_living', label: '줄일 항목 직접 고르기' }]
+  const content = { choices: [...edits, { value: 'plan_living', label: '생활비에서 가져오기' }], budgetAdjustment: { status: 'awaiting_input', comparison: {
+    ...(advised ? { headline: '생활비에서 1만 원을 옮길 수 있어요.' } : {}),
+    plans: [{ id: 'living', label: '생활비에서 가져오기', status: 'ready', amount: 10000,
+      result: { changes: [{ category: 'FOOD', before: 100000, after: 110000, diff: 10000 }] } }],
+  } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onPick={pick} onApprove={approve} />))
+  const card = host.querySelector('article.mc-budget-plan')
+  expect(card.querySelector('.mc-budget-select').nextElementSibling.getAttribute('aria-label')).toBe('조정안 수정')
+  for (const choice of edits) {
+    const label = choice.value === 'manual' ? '요청 금액 바꾸기' : choice.label
+    expect(card.contains(button(label))).toBe(true)
+    await click(button(label))
+    expect(pick).toHaveBeenLastCalledWith(choice)
+  }
+  expect(approve).not.toHaveBeenCalled()
+  await act(() => root.render(<BudgetAdjustment content={content} active={false} onPick={pick} />))
+  expect(edits.every((choice) => button(choice.value === 'manual' ? '요청 금액 바꾸기' : choice.label).disabled)).toBe(true)
+})
+
+it.each([
+  [[{ category: 'FOOD', before: 400000, after: 450000, direct: true }], '식비 늘릴 금액 바꾸기'],
+  [[{ category: 'FOOD', before: 400000, after: 350000, direct: true }], '식비 줄일 금액 바꾸기'],
+  [[{ category: 'FOOD', before: 400000, after: 400000, direct: true }], '요청 금액 바꾸기'],
+  [[{ category: 'FOOD', before: 400000, after: 450000, direct: true },
+    { category: 'EDUCATION', before: 50000, after: 70000, direct: true }], '요청 금액 바꾸기'],
+])('금액 수정은 직접 요청한 항목의 방향을 표시한다: %s', async (changes, label) => {
+  const pick = vi.fn()
+  const manual = { value: 'manual', label: '금액 바꾸기' }
+  const content = { choices: [manual, { value: 'plan_living', label: '생활비에서 가져오기' }], budgetAdjustment: {
+    status: 'awaiting_input', comparison: { headline: '조정안을 확인해 주세요.', plans: [{
+      id: 'living', label: '생활비에서 가져오기', status: 'ready', amount: 50000, recommended: true,
+      result: { changes },
+    }] },
+  } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onPick={pick} />))
+  await click(button(label))
+  expect(pick).toHaveBeenCalledWith(manual)
+  expect(button('금액 바꾸기')).toBeUndefined()
+})
+
+it('서버가 원래 요청을 명시한 금액 수정 문구는 계산안의 개별 항목으로 바꾸지 않는다', async () => {
+  const choice = { value: 'manual', label: '생활비 늘릴 금액 바꾸기' }
+  const content = { choices: [choice], budgetAdjustment: { status: 'awaiting_input', comparison: {
+    plans: [{ id: 'living', label: '생활비에서 가져오기', status: 'ready', amount: 50000,
+      result: { changes: [{ category: 'FOOD', before: 400000, after: 450000, direct: true }] } }],
+  } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onPick={vi.fn()} />))
+  expect(button(choice.label)).toBeDefined()
+  expect(button('식비 늘릴 금액 바꾸기')).toBeUndefined()
 })
 
 it('설명 제목은 내용을 밝히고 이미 답한 문장은 반복하지 않는다', async () => {

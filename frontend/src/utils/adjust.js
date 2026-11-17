@@ -24,6 +24,10 @@ const ALLOCATION_NAMES = { LIVING: '생활비', SAVINGS: '저축', CUSHION_MONTH
 export const allocationName = (code) => ALLOCATION_NAMES[code] ?? catName(code)
 
 export const ENDED_ADJUSTMENTS = new Set(['saved', 'expired', 'canceled', 'rejected', 'failed'])
+export const isVisibleAdjustmentPlan = (plan, choices = []) =>
+  (['ready', 'partial'].includes(plan.status) && plan.amount > 0 && plan.result?.changes?.length)
+  || (plan.id === 'living' && plan.status === 'needs_destination' && choices.some((choice) => choice.value === 'plan_living'))
+
 export function adjustmentChoices(content) {
   const adjustment = content.budgetAdjustment
   if (!adjustment) return content.choices
@@ -33,8 +37,10 @@ export function adjustmentChoices(content) {
   if (adjustment.phase === 'salary_handoff') return (content.choices ?? []).filter((choice) => choice.value !== 'salary_resume')
   if (ENDED_ADJUSTMENTS.has(adjustment.proposal?.state ?? adjustment.status)) return []
   const choosingMoney = ['funding_scope', 'sources', 'destinations'].includes(adjustment.phase)
+  const hasComparison = (adjustment.comparison?.plans ?? []).some((plan) => isVisibleAdjustmentPlan(plan, content.choices))
   return (content.choices ?? []).filter((choice) => choice.value !== 'recommend' && (choice.value !== 'compare' || choosingMoney)
     && !(adjustment.amountInput && choice.value === 'manual')
+    && !(hasComparison && ['manual', 'manual_living'].includes(choice.value))
     && !(adjustment.comparison && choice.value.startsWith('plan_'))
     && !(adjustment.proposal && choice.value === 'apply'))
 }

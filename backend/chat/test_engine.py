@@ -440,8 +440,10 @@ class ServiceChatTest(ServiceChatBase):
         out = self.send("A", text="식비 예산 줄여줘")
         cid = out.json()["conversationId"]
         adjustment = self.bot(out)["budgetAdjustment"]
-        self.assertEqual(adjustment["phase"], "comparison")
-        self.assertIn("comparison", adjustment)
+        self.assertEqual(adjustment["phase"], "amount")
+        self.assertEqual(adjustment['amountInput']['category'], 'FOOD')
+        self.assertEqual(adjustment['amountInput']['direction'], 'down')
+        self.assertNotIn("comparison", adjustment)
         self.assertFalse(adjustment["canApprove"])
         self.assertNotIn("proposal", adjustment)
         store = engine.ConversationStore.load(Conversation.objects.get(pk=cid).slots)
