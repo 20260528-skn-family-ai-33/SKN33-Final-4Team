@@ -284,12 +284,13 @@ function Persona({ block }) {
         <div>
           <small>{label}</small>
           <h3>{block.name}</h3>
-          {block.desc && <p>{block.desc}</p>}
-          {tags.length > 0 && <ul className="mc-fx-persona-tags" aria-label="예산 관리 태그">
-            {tags.map((t) => <li key={t.code} data-tag={t.code}>{t.label}</li>)}
-          </ul>}
         </div>
       </div>
+      {/* 11/17: 마스코트 옆 좁은 칸 대신 소개 · 태그는 카드 폭 전체로 */}
+      {block.desc && <p className="mc-fx-persona-desc">{block.desc}</p>}
+      {tags.length > 0 && <ul className="mc-fx-persona-tags" aria-label="예산 관리 태그">
+        {tags.map((t) => <li key={t.code} data-tag={t.code}>{t.label}</li>)}
+      </ul>}
       {reasons.length > 0 && <div className="mc-fx-persona-why">
         <strong>이렇게 봤어요</strong>
         <ul className="mc-spend-lines mc-fx-lines">{reasons.map((l, i) => <li key={i}><Rich text={l} /></li>)}</ul>
