@@ -19,26 +19,28 @@ export default function OnboardPage() {
   return (
     <Layout
       title="시작하기"
-      foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.profile)}>시작하기</button>}
+      foot={<div className="mc-onboard-footer">
+        <div className="mc-kushong">
+          <Mascot mood="hello" size={88} />
+          <p className="mc-kushong-say">
+            <strong>안녕하세요! 쿠숑이에요</strong>
+            돈 관리는 제가 함께 도와드릴게요. 위 다섯 단계부터 시작해 볼까요?
+          </p>
+        </div>
+        <button type="button" className="mc-primary" onClick={() => navigate(PATHS.profile)}>시작하기</button>
+      </div>}
     >
-      <div className="mc-eyebrow">MONEY CUSHION</div>
-      <h1>첫 월급부터,<br />흔들리지 않는 돈 관리</h1>
-      <div className="mc-hero" style={{ marginTop: 28 }}>
-        <span>내 돈을 세 가지로</span>
-        <div className="mc-money" style={{ fontSize: 28, color: '#fff' }}>생활비 · 저축 · 쿠션</div>
-        <p>나갈 돈을 먼저 챙기고<br />마음 편하게 쓸 돈을 확인하세요.</p>
-      </div>
-      <div className="mc-stack" style={{ margin: '25px 0' }}>
-        {/* 번호 뒤 칸은 넓은 공백(\u3000) */}
-        {STEPS.map((s, i) => <p key={s}>{`${String(i + 1).padStart(2, '0')}\u3000${s}`}</p>)}
-      </div>
-      {/* 11/16: 마스코트 쿠숑이가 첫인사 (시작하기 버튼 바로 위). 그림은 꾸밈이라 같은 말을 글자로 적는다 */}
-      <div className="mc-kushong">
-        <Mascot mood="hello" size={92} />
-        <p className="mc-kushong-say">
-          <strong>안녕하세요! 쿠숑이에요</strong>
-          앞으로 여러분의 돈 관리를 제가 함께 도와드릴게요. 위 다섯 단계만 같이 설정해 볼까요?
-        </p>
+      <div className="mc-onboard">
+        <div className="mc-eyebrow">MONEY CUSHION</div>
+        <h1>첫 월급부터,<br />흔들리지 않는 돈 관리</h1>
+        <div className="mc-hero">
+          <span>내 돈을 세 가지로</span>
+          <div className="mc-money">생활비 · 저축 · 쿠션</div>
+          <p>나갈 돈을 먼저 챙기고<br />마음 편하게 쓸 돈을 확인하세요.</p>
+        </div>
+        <ol className="mc-onboard-steps">
+          {STEPS.map((s) => <li key={s}>{s}</li>)}
+        </ol>
       </div>
     </Layout>
   )

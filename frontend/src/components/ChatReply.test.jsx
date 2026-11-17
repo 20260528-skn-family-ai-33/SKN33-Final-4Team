@@ -439,6 +439,7 @@ it('소비 유형 카드는 마스코트 · 유형 이름 · 소개 · 근거 ·
   expect(card.querySelector('small').textContent).toBe('나의 소비 유형')
   expect(card.querySelector('.mc-fx-persona-tags')).toBeNull()
   expect(card.querySelector('.mc-mascot').dataset.mood).toBe('planner')
+  expect(card.querySelector('.mc-mascot').getAttribute('src')).toBe('/mascots/kushong/planner.svg')
   expect(card.querySelector('h3').textContent).toBe('계획 척척형')
   expect(card.textContent).toContain('정한 예산 안에서 꾸준히 소비를 관리해요.')
   expect(card.textContent).toContain('생활비는 예산 속도에 맞게 쓰고 있어요.')
@@ -479,6 +480,7 @@ it('모르는 마스코트 코드는 기본 표정으로 그린다', async () =>
   await render({ ...month, view: [{ kind: 'head', title: '이번 달 소비 성향' },
     { kind: 'persona', mascot: 'unknown', name: '아직 탐색 중이에요', desc: '아직 뚜렷한 습관이 보이지 않아요.', reasons: [] }] })
   expect(host.querySelector('.mc-mascot').dataset.mood).toBe('basic')
+  expect(host.querySelector('.mc-mascot').getAttribute('src')).toBe('/mascots/kushong/basic.svg')
   expect(host.querySelector('.mc-fx-persona-why')).toBeNull()
 })
 

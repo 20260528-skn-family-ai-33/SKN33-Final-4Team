@@ -335,7 +335,7 @@
 #mc-new-preview .mc-fx-fold > :is(.mc-spend-cats, .mc-fx-trend, .mc-fx-months, .mc-fx-pace, figure, div) + .mc-fx-section { padding-top: 16px; border-top: 1px solid var(--mc-line); }
 
 /* ---------- 마스코트가 답하는 말풍선 (11/16) — 봇 답 왼쪽에 마스코트 얼굴, 말풍선 · 분석 카드에 꼬리 ----------
-   얼굴 그림은 components/Mascot.jsx 의 마스코트(웃는 눈 · 볼터치, 방석 없음)를 얼굴 부분만 잘라 SVG 로 넣은 것. 마스코트 원본 얼굴 · 색 그대로.
+   작은 원형 얼굴 그림은 사용자가 기존 그림 유지를 선택해 그대로 둔다.
    장식이라 글자 · 읽기에 영향 없음. 한 턴에 봇 메시지가 이어지면(답 + 입력 폼) 첫 메시지에만 얼굴을 둔다 */
 #mc-new-preview .mc-asst-log .mc-msg.bot { position: relative; padding-left: 46px; }
 #mc-new-preview .mc-asst-log .mc-msg.bot::before { content: ''; position: absolute; left: 0; top: 0; width: 38px; height: 38px; border-radius: 50%;
