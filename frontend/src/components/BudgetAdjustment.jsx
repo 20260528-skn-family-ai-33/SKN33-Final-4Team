@@ -3,13 +3,54 @@
 import { adjustSentence, allocationName, manwon, ENDED_ADJUSTMENTS as TERMINAL } from '../utils/adjust.js'
 import { useId, useState } from 'react'
 import { won } from '../utils/money.js'
-import { apiSend } from '../utils/api.js'
 import MoneyInput from './MoneyInput.jsx'
 import { PATHS } from '../routes.js'
 
 const PLAN_STATUS = { ready: '반영 가능', partial: '일부 반영', needs_destination: '받을 항목 선택 필요',
   needs_source: '재원 선택 필요', needs_data: '자료 확인 필요', needs_policy: '준비 중',
   needs_confirmation: '금액 단위 확인 필요', infeasible: '현재 이용 불가', unchanged: '변경 없음' }
+
+const dayText = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso ?? '')
+  return m ? `${Number(m[2])}월 ${Number(m[3])}일` : iso
+}
+
+// 맨 위 요약 (11/16 UI 정리): 이해한 요청은 굵은 한 줄, 적용 시점 · 지금 예산 유지 안내는 그 아래 작은 한 줄.
+// 같은 뜻의 안내 문장(…부터의 예산을 미리 조정해요 · 확정 전 미리보기 · …부터 반영해요)을 여러 칸에 반복하지 않는다
+function Summary({ request, effectiveOn, oneOff, keep }) {
+  const meta = [effectiveOn && `${dayText(effectiveOn)} 시작 주기부터${oneOff ? ' 그 주기에만' : ''} 적용`,
+    effectiveOn ? '이번 예산은 그대로예요' : keep && '확정 전까지 지금 예산은 그대로예요'].filter(Boolean)
+  return <>
+    {request && <p className="mc-budget-summary-request" aria-label="이해한 요청">{request}</p>}
+    {meta.length > 0 && <p className="mc-budget-summary-meta">{meta.join(' · ')}</p>}
+  </>
+}
+
+// 월급 증가분 배분안 (11/16 UI 정리): '월급 증가분 → 항목 금액' 줄을 늘어놓지 않고 받는 항목 · 금액 표 + 합계 한 줄
+function SalaryShares({ transfers = [] }) {
+  const rows = transfers.filter((row) => row.amount > 0).sort((a, b) => b.amount - a.amount)
+  if (!rows.length) return null
+  const total = rows.reduce((sum, row) => sum + row.amount, 0)
+  return <div className="mc-budget-shares" aria-label="월급 증가분을 나누는 내역">
+    <p className="mc-budget-shares-total"><span>늘어난 월급에서 나누는 돈</span><strong>{won(total)}</strong></p>
+    <dl>{rows.map((row) => <div key={`${row.to}-${row.amount}`}>
+      <dt>{allocationName(row.to)}</dt><dd>+{won(row.amount)}</dd>
+    </div>)}</dl>
+  </div>
+}
+
+// 대화 안 [월급 증가분 배분 검토] (11/16 UI 정리): 무엇을 하게 되는지 세 단계로만 보여 준다
+function SalaryAllocation({ request, active, onReview }) {
+  return <section className="mc-budget-salary-review" aria-label="월급 증가분 배분">
+    <p className="mc-budget-salary-title">늘어난 월급을 나눌 차례예요</p>
+    <ol className="mc-budget-steps">
+      <li>{request ? `${request} 먼저 반영` : '보관한 요청 먼저 반영'}</li>
+      <li>남은 증가분 중 저축할 비율 정하기</li>
+      <li>나머지는 생활비·월 머니쿠션·여윳돈에 나누기</li>
+    </ol>
+    <button type="button" className="mc-primary" disabled={!active || !onReview} onClick={onReview}>월급 증가분 배분 검토</button>
+  </section>
+}
 
 export function BudgetChanges({ changes = [] }) {
   return <dl className="mc-budget-changes">{changes.map((row) => (
@@ -22,10 +63,10 @@ export function BudgetChanges({ changes = [] }) {
   ))}</dl>
 }
 
-export function BudgetTransfers({ transfers = [] }) {
+export function BudgetTransfers({ transfers = [], salaryReview = false }) {
   if (!transfers.length) return null
   return <div className="mc-budget-transfers" aria-label="돈이 옮겨가는 내역">
-    {transfers.map((row, index) => <p key={index}>{allocationName(row.from)} → {allocationName(row.to)} <strong>{won(row.amount)}</strong></p>)}
+    {transfers.map((row, index) => <p key={index}>{salaryReview && row.from === 'SPARE' ? '월급 증가분' : allocationName(row.from)} → {allocationName(row.to)} <strong>{won(row.amount)}</strong></p>)}
   </div>
 }
 
@@ -88,7 +129,7 @@ function CompactChanges({ changes = [] }) {
   ))}</dl>
 }
 
-function Plan({ plan, choice, active, onPick, detail, selected }) {
+function Plan({ plan, choice, active, onPick, detail, selected, selectionHelp }) {
   const changes = plan.result?.changes ?? []
   const [summary, ...why] = plan.assessment?.reasons ?? []
   const cautions = (plan.assessment?.cautions ?? []).filter((line) => line !== summary)
@@ -108,14 +149,13 @@ function Plan({ plan, choice, active, onPick, detail, selected }) {
       <ul className="mc-budget-why">{why.map((line) => <li key={line}>{line}</li>)}</ul>
     </details>}
     {choice && <button type="button" className="mc-budget-select" disabled={!active || !onPick} aria-pressed={selected}
-      aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : '이 안 선택하기'}</button>}
+      aria-describedby={selectionHelp} aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : '이 안 선택하기'}</button>}
   </article>
 }
 
 // 예전 비교 카드(재정 추천·감액 비교). 서버 추천기 카드는 위 Plan 을 쓴다.
-function LegacyPlan({ plan, choice, active, onPick, detail, selected }) {
+function LegacyPlan({ plan, choice, active, onPick, detail, selected, selectionHelp }) {
   const [expanded, setExpanded] = useState(Boolean(detail))
-  const selectionHelp = useId()
   const changes = plan.result?.changes ?? []
   const headline = changes.filter((row) => row.direct || ['SAVINGS', 'CUSHION_MONTHLY', 'SPARE'].includes(row.category))
   const reason = plan.assessment?.reasons?.[0] ?? plan.assessment?.cautions?.[0] ?? plan.lines?.[0]
@@ -140,61 +180,44 @@ function LegacyPlan({ plan, choice, active, onPick, detail, selected }) {
       {(plan.assessment?.reasons ?? []).filter((line) => line !== reason).map((line) => <p key={line}>{line}</p>)}
       {(plan.assessment?.cautions ?? []).filter((line) => line !== reason).map((line) => <p key={line}>{line}</p>)}
     </details>
-    {choice && <>
-      <p id={selectionHelp} className="mc-budget-reason">선택해도 바로 적용되지 않아요. 다음 화면에서 확인 후 확정해 주세요.</p>
-      <button type="button" className="mc-budget-select" disabled={!active || !onPick} aria-pressed={selected}
-        aria-describedby={selectionHelp} aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : '이 안 선택하기'}</button>
-    </>}
+    {choice && <button type="button" className="mc-budget-select" disabled={!active || !onPick} aria-pressed={selected}
+      aria-describedby={selectionHelp} aria-label={`${plan.label} 선택`} onClick={() => onPick(choice)}>{selected ? '✓ 선택한 안' : '이 안 선택하기'}</button>}
   </article>
 }
 
 function Comparison({ comparison, choices, active, onPick, readOnly = false, detail }) {
   const [selected, setSelected] = useState(null)
+  const selectionHelp = useId()
   const plans = (comparison.plans ?? []).filter((plan) => ['ready', 'partial'].includes(plan.status) && plan.result?.changes?.length)
   if (!plans.length) return null
   // 서버 추천기(headline 있음): 이해한 요청 → 추천안 → 고르기, 한 형식으로 짧게 보여 준다.
   const advised = typeof comparison.headline === 'string'
   const Card = advised ? Plan : LegacyPlan
   return <section className="mc-budget-comparison" aria-label={readOnly ? '다른 범위 예산 비교' : '예산 조정안 비교'}>
+    {!readOnly && <p className="mc-budget-example-intro" id={selectionHelp}>
+      <span className="mc-budget-tag">미리보기</span>안을 골라도 확정 전까지 예산은 바뀌지 않아요.
+    </p>}
     {advised ? <>
       {comparison.lead && <p className="mc-budget-lead">{comparison.lead}</p>}
       <p className="mc-budget-headline">{comparison.headline}</p>
     </> : <>
-      <h2>{readOnly ? '다른 방법으로 바꾸면 이렇게 돼요' : '예산 조정 예시'}</h2>
+      {readOnly && <h2>다른 방법으로 바꾸면 이렇게 돼요</h2>}
       <p className="mc-budget-outcome">{comparison.amountWasGiven ? '요청한 금액' : comparison.basisKind === 'forecast_shortfall' ? '최근 지출을 참고해 제안하는 금액' : '옮길 수 있는 범위에서 계산한 예시'} {won(comparison.basisAmount)}</p>
       {!comparison.amountWasGiven && comparison.basisKind !== 'forecast_shortfall' && <p className="mc-budget-reason">현재 예산에서 옮길 수 있는 돈으로 만든 예시예요. 원하는 금액으로 바꿀 수 있어요.</p>}
     </>}
     {comparison.notice && <p className="mc-budget-reason" role="note">{comparison.notice}</p>}
     {readOnly && <p className="mc-budget-reason">비교만 해요. 선택한 재원은 그대로예요.</p>}
-    {plans.map((plan) => <Card key={plan.id} plan={plan} active={active} selected={selected === plan.id}
+    {plans.map((plan) => <Card key={plan.id} plan={plan} active={active} selected={selected === plan.id} selectionHelp={selectionHelp}
       onPick={onPick && ((choice) => { setSelected(plan.id); onPick(choice) })} detail={detail}
       choice={readOnly ? null : choices?.find((choice) => choice.value === `plan_${plan.id}` || choice.value === `financial_${plan.id}`)} />)}
-    {advised && !readOnly && <p className="mc-note">고르면 확정 전 미리보기를 보여 드려요. 아직 예산은 바뀌지 않아요.</p>}
     {!comparison.recommendation?.planId && comparison.recommendation?.reasons?.[0] &&
       <p className="mc-budget-reason">{comparison.recommendation.reasons[0]}</p>}
   </section>
 }
 
-// 챗봇에서 월급을 바꿀 때도 내 정보와 같은 API(PUT /api/budgets/salary/)로만 저장한다.
-function SalaryChange({ value, active }) {
-  const [phase, setPhase] = useState('idle')
-  const save = async () => {
-    setPhase('saving')
-    try {
-      await apiSend('/api/budgets/salary/', 'PUT', { takeHomeIncome: value.after, payday: value.payday })
-      setPhase('saved')
-    } catch {
-      setPhase('error')
-    }
-  }
+function SalaryChange({ active, onEdit }) {
   return <section className="mc-budget-salary" aria-label="월급 변경">
-    <p className="mc-note">월 실수령액</p>
-    <p className="mc-budget-salary-amounts">{won(value.before)} <span aria-label="변경 후">→</span> <strong>{won(value.after)}</strong></p>
-    {value.payday == null
-      ? <p className="mc-note">급여일이 없어 여기서 바꿀 수 없어요. <a href={PATHS.salary}>월급·급여일 수정</a>에서 입력해 주세요.</p>
-      : <button type="button" className="mc-primary" disabled={!active || phase === 'saving' || phase === 'saved'} onClick={save}>
-        {phase === 'saved' ? '✓ 내 정보에 저장했어요' : phase === 'saving' ? '저장 중…' : '월급 수정하기'}</button>}
-    {phase === 'error' && <p className="mc-budget-warning" role="alert">저장하지 못했어요. 잠시 후 다시 눌러 주세요.</p>}
+    <button type="button" className="mc-primary" disabled={!active || !onEdit} onClick={onEdit}>마이페이지에서 월급 수정하기</button>
   </section>
 }
 
@@ -311,7 +334,7 @@ function DistributionInput({ value, active, onSend, onCancel }) {
   </form>
 }
 
-export default function BudgetAdjustment({ content, active, onPick, onApprove, onSend, navigation }) {
+export default function BudgetAdjustment({ content, active, onPick, onApprove, onSend, onSalaryEdit, onSalaryReview, navigation }) {
   const [editing, setEditing] = useState(false)
   const adjustment = content.budgetAdjustment
   const proposal = adjustment.proposal
@@ -328,13 +351,17 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
     ? adjustment.explanation.brief : null
   const options = hasPreview
     ? (navigation?.choices ?? content.choices ?? []).filter((choice) => ['recommend', 'compare'].includes(choice.value)) : []
+  const salaryAllocation = adjustment.phase === 'salary_allocation_review' && !TERMINAL.has(state)
+  const showRequest = !amountInput && !distributionInput && !TERMINAL.has(state) && !salaryAllocation
   const pendingLines = guidance
     ? guidance.message && !['error', 'explanation'].includes(guidance.kind) ? [guidance.message] : []
     : content.lines ?? []
   return <div className="mc-bubble mc-budget-adjustment">
-    {adjustment.planning && <div role="note" className="mc-budget-reason">
-      <p>{adjustment.planning.effectiveOn}부터의 예산을 미리 조정해요. 이번 예산은 바뀌지 않아요.</p>
-      {adjustment.planning.oneOff && <p>해당 주기의 일회성 지출이에요. 평소 저축·생활비 설정은 유지해요.</p>}
+    {/* embedded = 월급 변경 후 예산 검토 화면 안의 미리보기 (화면 위에 같은 안내가 이미 있다) */}
+    {!adjustment.embedded && <Summary request={showRequest ? guidance?.context ?? adjustment.requestSummary : null}
+      effectiveOn={adjustment.planning?.effectiveOn ?? proposal?.effectiveOn} oneOff={adjustment.planning?.oneOff ?? proposal?.oneOff}
+      keep={state === 'awaiting_approval' && !hasComparison} />}
+    {adjustment.planning && (adjustment.planning.expense || adjustment.planning.incomeBefore !== adjustment.planning.incomeAfter) && <div role="note" className="mc-budget-facts">
       {adjustment.planning.expense && <p>필요한 돈 {won(adjustment.planning.expense.total)} · 따로 마련한 돈 {won(adjustment.planning.expense.setAside)} · 예산에서 추가로 마련할 돈 {won(adjustment.planning.expense.additional)}</p>}
       {adjustment.planning.incomeBefore !== adjustment.planning.incomeAfter && <p>월 실수령액 {won(adjustment.planning.incomeBefore)} → <strong>{won(adjustment.planning.incomeAfter)}</strong></p>}
     </div>}
@@ -342,27 +369,34 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
       <p><strong>{adjustment.recommendationAdvice.title}</strong></p>
       <ul>{adjustment.recommendationAdvice.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
     </section>}
-    {(guidance?.context ?? adjustment.requestSummary) && !amountInput && !distributionInput && !TERMINAL.has(state) && <p className="mc-budget-reason" aria-label="이해한 요청">{guidance?.context ?? adjustment.requestSummary}</p>}
     {!guidance && inputNotice && <p className="mc-budget-reason" role="note">{inputNotice}</p>}
-    {guidance?.message && (guidance.kind === 'error' || (!amountInput && !distributionInput && !hasPreview && !adjustment.recommendationAdvice)
+    {guidance?.message && !salaryAllocation && (guidance.kind === 'error' || (!amountInput && !distributionInput && !hasPreview && !adjustment.recommendationAdvice)
       || (guidance.kind === 'explanation' && !adjustment.recommendationAdvice)) && guidance.message.split('\n').filter(Boolean).map((line, index) => <p key={index} className={adjustment.phase === 'increase_review' ? 'mc-budget-warning' : undefined}>{line}</p>)}
     {guidance?.reason && <p className="mc-budget-reason" role="note">{guidance.reason}</p>}
     {adjustment.increaseWarning && !TERMINAL.has(state) && <p className="mc-budget-warning" role="note">{adjustment.increaseWarning}</p>}
-    {adjustment.salaryChange && !TERMINAL.has(state) && <SalaryChange value={adjustment.salaryChange} active={active} />}
+    {(adjustment.phase === 'salary_handoff' || adjustment.salaryChange) && !TERMINAL.has(state)
+      && <SalaryChange active={active} onEdit={onSalaryEdit} />}
+    {salaryAllocation && <SalaryAllocation request={guidance?.context ?? adjustment.requestSummary} active={active} onReview={onSalaryReview} />}
     {amountInput && <AdjustmentAmount key={`${content.turn}-${amountInput.category}-${amountInput.direction}`} value={amountInput} active={active} onSend={onSend} />}
     {distributionInput && <DistributionInput key={content.turn} value={distributionInput} active={active} onSend={onSend} />}
-    {!guidance && !proposal && !hasComparison && !amountInput && !adjustment.recommendationAdvice && (content.lines ?? (content.text ? [content.text] : [])).filter((line) => !distributionInput || !line.endsWith('어디에 나눌까요?')).map((line, i) => <p key={i}>{line}</p>)}
+    {!guidance && !proposal && !hasComparison && !amountInput && !salaryAllocation && !adjustment.recommendationAdvice && (content.lines ?? (content.text ? [content.text] : [])).filter((line) => !distributionInput || !line.endsWith('어디에 나눌까요?')).map((line, i) => <p key={i}>{line}</p>)}
     {hasComparison && <Comparison comparison={adjustment.comparison} choices={content.choices} active={active} onPick={onPick} detail={adjustment.detail} />}
     {proposal && <section className="mc-budget-proposal" aria-label="예산 변경안">
-      {state === 'awaiting_approval' && <p className="mc-budget-preview-label">확정 전 미리보기</p>}
-      {proposal?.verificationNotice && <p>{proposal.verificationNotice}</p>}
-      <h2>{state === 'saved' ? scheduleTitle ?? (proposal.effectiveOn ? '다음 주기 변경을 예약했어요' : '예산에 반영했어요') : state === 'expired' ? '만료된 변경안이에요' : '예산 변경안'}</h2>
-      {proposal.effectiveOn && !['replaced', 'needs_review'].includes(proposal.scheduleStatus) && <p>{proposal.effectiveOn}부터 {proposal.oneOff ? '해당 주기에만 반영해요. 평소 배분 설정은 유지해요.' : '월급·배분 설정에 반영해요.'} 새 예산은 그때 확인된 수입과 지출로 다시 계산해요.</p>}
+      <h2>{state === 'saved' ? scheduleTitle ?? (proposal.effectiveOn ? '다음 주기 변경을 예약했어요' : '예산에 반영했어요') : state === 'expired' ? '만료된 변경안이에요'
+        : proposal.salaryReview ? '월급 증가분 배분안' : '예산 변경안'}</h2>
+      {proposal?.verificationNotice && <p className="mc-budget-reason">{proposal.verificationNotice}</p>}
       {proposal.scheduleStatus === 'needs_review' && <p role="alert">예약 후 설정이 달라져 자동 반영하지 않았어요. 최신 조건으로 다시 조정해 주세요.</p>}
       {proposal.previewRevision > 1 && <p>{proposal.previewRevision}차 조정안</p>}
       {(proposal.revisionSummary ?? []).map((line) => <p className="mc-budget-reason" key={line}>{line}</p>)}
-      <BudgetTransfers transfers={proposal.transfers} />
-      <BudgetChanges changes={proposal.changes} />
+      {proposal.salaryReview && proposal.transfers?.length > 0 ? <>
+        <SalaryShares transfers={proposal.transfers} />
+        <details className="mc-budget-details"><summary>항목별 예산 변화 보기</summary><BudgetChanges changes={proposal.changes} /></details>
+      </> : <>
+        <BudgetTransfers transfers={proposal.transfers} />
+        <BudgetChanges changes={proposal.changes} />
+      </>}
+      {proposal.effectiveOn && !['replaced', 'needs_review'].includes(proposal.scheduleStatus) && state !== 'saved'
+        && <p className="mc-budget-footnote">{proposal.oneOff ? '그 주기에만 반영하고 평소 배분 설정은 유지해요. ' : ''}새 예산은 적용될 때 확인된 수입·지출로 다시 계산해요.</p>}
       <Shortfalls rows={proposal.shortfalls} />
       <BudgetSettings proposal={proposal} />
       <RecoveryAllocations proposal={proposal} />

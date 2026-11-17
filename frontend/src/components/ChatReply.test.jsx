@@ -482,6 +482,49 @@ it('모르는 마스코트 코드는 기본 표정으로 그린다', async () =>
   expect(host.querySelector('.mc-fx-persona-why')).toBeNull()
 })
 
+it('예산 조정의 추천 질문은 미리보기와 확정 버튼을 유지하고 표시 문장만 보낸다', async () => {
+  const onSend = vi.fn(), onPick = vi.fn(), onApprove = vi.fn()
+  const content = { lines: [], examples: ['이 조정안의 변경 내역을 설명해줘'], budgetAdjustment: {
+    status: 'replied', canApprove: true, proposal: { state: 'awaiting_approval', changes: [
+      { category: 'FOOD', before: 400000, after: 420000, diff: 20000 },
+    ] },
+  } }
+  await act(() => root.render(<ChatReply content={content} active onPick={onPick} onApprove={onApprove} onSend={onSend} />))
+  const before = host.querySelector('.mc-budget-changes').textContent
+  expect(before).toContain('400,000원')
+  expect(before).toContain('420,000원')
+  expect(button('예산 확정하기').disabled).toBe(false)
+  await act(() => button(content.examples[0]).click())
+  expect(onSend).toHaveBeenCalledExactlyOnceWith(content.examples[0])
+  expect(onPick).not.toHaveBeenCalled()
+  expect(onApprove).not.toHaveBeenCalled()
+  expect(host.querySelector('.mc-budget-changes').textContent).toBe(before)
+  expect(button('예산 확정하기').disabled).toBe(false)
+})
+
+it('지난 예산 답변이나 전송 기능이 없는 답변의 추천 질문은 실행할 수 없다', async () => {
+  const onSend = vi.fn()
+  const content = { lines: ['금액을 알려 주세요.'], examples: ['금액을 어떻게 정하면 좋을까?'],
+    budgetAdjustment: { status: 'awaiting_input', phase: 'amount' } }
+  for (const props of [{ active: false, onSend }, { active: true }]) {
+    await act(() => root.render(<ChatReply content={content} {...props} />))
+    expect(button(content.examples[0]).disabled).toBe(true)
+    await act(() => button(content.examples[0]).click())
+    expect(onSend).not.toHaveBeenCalled()
+  }
+})
+
+it('종료된 예산 응답에는 저장된 추천 질문이 남아 있어도 표시하지 않는다', async () => {
+  for (const state of ['saved', 'expired', 'canceled', 'rejected', 'failed', 'ended']) {
+    for (const adjustment of [{ status: state }, { status: 'replied', proposal: { state } }]) {
+      if (state === 'ended' && adjustment.proposal) continue
+      const content = { lines: ['조정을 마쳤어요.'], examples: ['변경 내역을 설명해줘'], budgetAdjustment: adjustment }
+      await act(() => root.render(<ChatReply content={content} active onSend={vi.fn()} />))
+      expect(button(content.examples[0])).toBeUndefined()
+    }
+  }
+})
+
 it('분석 문장은 글자를 그대로 두고 숫자 · 괄호 · 나열 · 계산식만 읽기 쉽게 나눈다', async () => {
   const eq = '이번 달 말 약 52.5만 원 = 지금까지 쓴 23.5만 원 + 남은 18일 예상 29만 원'
   const list = '패션·쇼핑 +70,660원 · 문화·여가 -54,800원 · 기타 -29,748원'

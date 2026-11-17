@@ -27,6 +27,10 @@ export const ENDED_ADJUSTMENTS = new Set(['saved', 'expired', 'canceled', 'rejec
 export function adjustmentChoices(content) {
   const adjustment = content.budgetAdjustment
   if (!adjustment) return content.choices
+  if (adjustment.phase === 'salary_allocation_review') return []
+  // 11/17: 월급을 고치기 전(안내 단계)에는 [이전 예산 조정 이어하기]를 보이지 않는다.
+  // 월급 화면에서 돌아오면 AssistantPage 가 같은 선택지(content.choices)로 자동으로 이어 간다
+  if (adjustment.phase === 'salary_handoff') return (content.choices ?? []).filter((choice) => choice.value !== 'salary_resume')
   if (ENDED_ADJUSTMENTS.has(adjustment.proposal?.state ?? adjustment.status)) return []
   const choosingMoney = ['funding_scope', 'sources', 'destinations'].includes(adjustment.phase)
   return (content.choices ?? []).filter((choice) => choice.value !== 'recommend' && (choice.value !== 'compare' || choosingMoney)

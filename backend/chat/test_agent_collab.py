@@ -75,7 +75,8 @@ class CollabFixture:
         return self.say(choice={"value": value, "turn": content["turn"]})
 
     def roles(self):
-        return [call["role"] for call in self.llm.calls]
+        # Routing/interpretation calls; optional next-question selection is tested separately.
+        return [call["role"] for call in self.llm.calls if call['role'] != 'fake_budget_followups']
 
     def budget_state(self):
         store = engine.ConversationStore.load(Conversation.objects.get(pk=self.cid).slots)

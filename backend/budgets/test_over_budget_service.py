@@ -24,7 +24,11 @@ class OverBudgetServiceTest(TestCase):
         self.talk = Conversation.objects.create(user=self.user)
         self.store, self.complete = MemoryStateStore(), Mock(side_effect=AssertionError("no interpretation expected"))
         self.adapter = AdjustmentAdapter(self.user, conversation=self.talk)
-        self.handle = handler(self.user, self.store, self.adapter, self.complete, "talk")
+        def complete(system, payload, **kwargs):
+            from budgets.adjustment_core.followups import PROMPT
+            # Optional input suggestions do not count as intent interpretation.
+            return '{"questions": []}' if system == PROMPT else self.complete(system, payload, **kwargs)
+        self.handle = handler(self.user, self.store, self.adapter, complete, "talk")
         self.request = {"mode": "start", "text": None, "hints": {
             "reason": "over", "categories": ["FOOD"], "over_amount": 999999}}
 

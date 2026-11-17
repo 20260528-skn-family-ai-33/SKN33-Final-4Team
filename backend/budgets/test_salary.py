@@ -420,6 +420,54 @@ class SalaryTests(TestCase):
         self.assertEqual(response.json()["pendingPaydayChange"]["effectiveOn"], "2026-11-10")
         self.assertEqual(response.json()["pendingIncomeChange"]["effectiveOn"], "2026-11-10")
 
+    def test_chat_save_preserves_both_schedules_when_current_values_are_unchanged(self):
+        self.put(payload())
+        self.approve_first_budget()
+        before = self.put(payload(takeHomeIncome=3_000_000, payday=10, applyFrom="next_cycle")).json()
+        original_profile = FinancialProfile.objects.get(user=self.user)
+        draft = self.make_budget(version=2)
+
+        response = self.put(payload(applyFrom="current_cycle", preserveUnchangedSchedules=True))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), before)
+        saved = FinancialProfile.objects.get(user=self.user)
+        self.assertEqual((saved.updated_at, saved.payday_revision),
+                         (original_profile.updated_at, original_profile.payday_revision))
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, "draft")
+
+    def test_chat_income_change_preserves_unmodified_payday_schedule(self):
+        self.put(payload())
+        self.approve_first_budget()
+        before = self.put(payload(takeHomeIncome=3_000_000, payday=10, applyFrom="next_cycle")).json()
+
+        response = self.put(payload(takeHomeIncome=3_200_000, applyFrom="current_cycle",
+                                    preserveUnchangedSchedules=True))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["takeHomeIncome"], 3_200_000)
+        self.assertEqual(response.json()["pendingPaydayChange"], before["pendingPaydayChange"])
+        self.assertIsNone(response.json()["pendingIncomeChange"])
+
+    def test_chat_payday_change_preserves_unmodified_income_schedule(self):
+        self.put(payload())
+        self.approve_first_budget()
+        before = self.put(payload(takeHomeIncome=3_000_000, payday=10, applyFrom="next_cycle")).json()
+
+        response = self.put(payload(payday=15, applyFrom="current_cycle", preserveUnchangedSchedules=True))
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["payday"], 15)
+        self.assertIsNone(response.json()["pendingPaydayChange"])
+        self.assertEqual(response.json()["pendingIncomeChange"], before["pendingIncomeChange"])
+
+    def test_preserve_unchanged_schedules_requires_boolean(self):
+        self.put(payload())
+        for value in (None, 0, 1, "false", [], {}):
+            with self.subTest(value=value):
+                self.assert_invalid(payload(preserveUnchangedSchedules=value), "preserveUnchangedSchedules")
+
     def test_due_income_is_used_even_if_cushion_screen_opens_first(self):
         # 전환일 당일 다른 화면보다 쿠션 화면을 먼저 열어도 새 실수령액(× 3)으로 목표를 계산한다 (budgets.salary.due_income)
         self.put(payload())
@@ -462,6 +510,28 @@ class SalaryTests(TestCase):
         self.assertEqual(FinancialProfile.objects.get(user=self.user).updated_at, before)
         draft.refresh_from_db()
         self.assertEqual(draft.status, "draft")
+
+    def test_immediate_income_changes_only_save_salary_until_budget_review_is_approved(self):
+        from chat.models import AsyncTask
+        from .models import BudgetItem
+        self.assertEqual(self.put(payload()).status_code, 200)
+        self.approve_first_budget()
+        approved = Budget.objects.get(status="approved")
+        approved.funding_amount = 2_800_000
+        approved.save(update_fields=["funding_amount"])
+        BudgetItem.objects.create(user=self.user, budget=approved, bucket="living",
+                                  category_id="FOOD", allocated_amount=400_000)
+        before = list(approved.items.values())
+        for income in (3_200_000, 2_500_000):
+            with self.subTest(income=income):
+                response = self.put(payload(takeHomeIncome=income, applyFrom="current_cycle"))
+                self.assertEqual(response.status_code, 200, response.content)
+                self.assertEqual(response.json()["takeHomeIncome"], income)
+                approved.refresh_from_db()
+                self.assertEqual((approved.status, approved.funding_amount), ("approved", 2_800_000))
+                self.assertEqual(list(approved.items.values()), before)
+                self.assertEqual(Budget.objects.count(), 1)
+                self.assertFalse(AsyncTask.objects.exists())
 
 
     def test_activation_expires_drafts_only_once(self):

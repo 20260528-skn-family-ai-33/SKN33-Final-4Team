@@ -11,8 +11,12 @@ BLOCKED = {"needs_amount", "needs_source", "needs_destination", "needs_confirmat
 
 
 def reserve_floor(context, code, amount):
+    if code == 'SPARE' and context.get('salary_review'):
+        amount = context['salary_review']['spare_anchor']
     anchor = max(amount, context.get('bucket_targets', {}).get(code, 0), context.get('reserve_anchors', {}).get(code, 0))
     floor = max(context.get('bucket_floors', {}).get(code, 0), (anchor * 3 + 9) // 10)
+    if code == 'SPARE' and context.get('salary_review'):
+        floor = max(floor, context['salary_review']['spare_anchor'])
     planned = context.get('diagnostic_inputs', {}).get('planned_spare', {})
     if (code == 'SPARE' and planned.get('status') in {'confirmed', 'user_confirmed'}
             and planned.get('scope') == 'unbudgeted_only' and type(planned.get('amount')) is int and planned['amount'] >= 0):
@@ -173,6 +177,9 @@ def _data(context, envelope):
         raise AdjustmentError("overlapping_living_requests")
     normalized["items"] = data["items"]
     data["spending_verified"] = context.get("spending_status", "complete") == "complete"
+    data['salary_review'] = bool(context.get('salary_review'))
+    if data['salary_review'] and not context['salary_review'].get('spare_verified'):
+        data['spending_verified'] = False
     data["request"] = normalized
     data["excluded"] = set(normalized["excluded"]) | NON_BUDGET_CODES
     if LIVING in data["excluded"]:
@@ -189,7 +196,9 @@ def _living_spent(data):
     return sum(data["spent"].get(c, 0) for c in data["allocations"]) + data["spent"].get("UNCLASSIFIED", 0)
 
 
-def _ready(data, category):
+def _ready(data, category, *, increasing=False):
+    if increasing and data.get('salary_review'):
+        return
     if category in BUCKETS:
         state = data["bucket_status"][category]
         if state == "unknown":
@@ -306,12 +315,12 @@ def _plan(data):
             raise _Blocked("infeasible", "locked_category", category=code)
         if target == current:
             continue
-        _ready(data, code)
+        _ready(data, code, increasing=target > current)
         if target > current:
             recipient = _single_destination(data, living=True) if code == LIVING else code
             if recipient in data["excluded"]:
                 raise _Blocked("infeasible", "excluded_destination", category=recipient)
-            _ready(data, recipient)
+            _ready(data, recipient, increasing=True)
             increases[recipient] = increases.get(recipient, 0) + target - current
         else:
             decreases.append({"category": code, "remaining": current - target,
@@ -323,7 +332,7 @@ def _plan(data):
             raise _Blocked("needs_destination", "destination_required")
         if any(d["category"] == LIVING for d in decreases) and recipient in data["allocations"]:
             raise _Blocked("needs_destination", "living_decrease_requires_upper_destination")
-        _ready(data, recipient)
+        _ready(data, recipient, increasing=True)
         increases[recipient] = increases.get(recipient, 0) + supply - demand
     if increases and not decreases and not data["request"]["sources"]:
         raise _Blocked("needs_source", "source_required")
@@ -343,7 +352,10 @@ def _response(data, status, amounts=None, transfers=(), conflicts=()):
             shortfalls.append({"category": c, "direction": "up" if target > current else "down",
                                "requested_amount": requested, "applied_amount": applied,
                                "missing_amount": requested - applied})
-    return {"kind": "funding", "status": status, "spending_verified": (data.get("spending_verified", True) or (not any(amounts[c] < before[c] for c in data["allocations"]) and not any(i["amount_mode"] == "remaining" for i in data["items"]))), "requests": deepcopy(data["request"]),
+    spending_verified = (data.get('spending_verified', True) or (not data.get('salary_review')
+        and not any(amounts[c] < before[c] for c in data['allocations'])
+        and not any(i['amount_mode'] == 'remaining' for i in data['items'])))
+    return {"kind": "funding", "status": status, "spending_verified": spending_verified, "requests": deepcopy(data["request"]),
             "allocations": {c: amounts[c] for c in data["allocations"]},
             "buckets": {c: amounts[c] for c in BUCKETS},
             "requested_targets": dict(data["targets"]),
@@ -438,7 +450,7 @@ def simulate_funding(context, envelope, *, allocate_group_reduction=None):
         for c, value in amounts.items():
             if value == data["before"][c]:
                 continue
-            _ready(data, c)
+            _ready(data, c, increasing=value > data['before'][c])
             floor = _hard_floor(data, c) if c in data["allocations"] else data["bucket_floors"].get(c, 0)
             if value < floor:
                 raise _Blocked("infeasible", "protected_amount_not_reached", category=c)
@@ -524,7 +536,7 @@ def validate_funding(context, envelope, result):
             if c in data["locks"] and amount != data["locks"][c]:
                 raise AdjustmentError("lock_violated")
             if amount != data["before"][c]:
-                _ready(data, c)
+                _ready(data, c, increasing=amount > data['before'][c])
                 floor = _hard_floor(data, c) if c in data["allocations"] else data["bucket_floors"].get(c, 0)
                 if amount < floor:
                     raise AdjustmentError("protected_amount_violated")

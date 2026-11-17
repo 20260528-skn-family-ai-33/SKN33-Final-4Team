@@ -503,22 +503,27 @@ it('계산한 예산 변화가 없는 안은 펼침과 선택 버튼도 보여 �
 })
 
 
-it('추천 배지는 선택 표시와 다르고 선택은 확정 요청을 보내지 않는다', async () => {
+it.each([false, true])('추천 카드(advised=%s)는 위에 미리보기를 명시하고 선택은 확정 요청을 보내지 않는다', async (advised) => {
   const pick = vi.fn(), approve = vi.fn()
   const plans = ['living', 'spare'].map((id, index) => ({ id, label: id === 'living' ? '생활비에서 가져오기' : '여윳돈에서 가져오기',
     recommended: index === 0, status: 'ready', amount: 10000,
     result: { changes: [{ category: 'FOOD', before: 100000, after: 110000, direct: true }] } }))
   const content = { choices: plans.map((p) => ({ value: `plan_${p.id}`, label: p.label })),
-    budgetAdjustment: { status: 'awaiting_input', comparison: { plans, basisAmount: 10000, amountWasGiven: true } } }
+    budgetAdjustment: { status: 'awaiting_input', comparison: { plans, basisAmount: 10000, amountWasGiven: true,
+      ...(advised ? { headline: '생활비에서 1만 원을 옮길 수 있어요.' } : {}) } } }
   await act(() => root.render(<BudgetAdjustment content={content} active onPick={pick} onApprove={approve} />))
   const cards = host.querySelectorAll('article')
   expect(cards[0].querySelector('.mc-budget-recommended').textContent).toBe('추천')
   expect(host.querySelector('.is-selected')).toBeNull()
   const select = cards[1].querySelector('button')
-  expect(host.querySelector('h2').textContent).toBe('예산 조정 예시')
+  // 11/16 UI 정리: 크게 튀던 안내 상자 대신 작은 '미리보기' 꼬리표 한 줄
+  const intro = host.querySelector('.mc-budget-example-intro')
+  expect(intro.querySelector('.mc-budget-tag').textContent).toBe('미리보기')
+  expect(intro.compareDocumentPosition(cards[0]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(host.textContent.split('확정 전까지 예산은 바뀌지 않아요.')).toHaveLength(2)
   expect(select.textContent).toBe('이 안 선택하기')
   expect(document.getElementById(select.getAttribute('aria-describedby')).textContent)
-    .toBe('선택해도 바로 적용되지 않아요. 다음 화면에서 확인 후 확정해 주세요.')
+    .toBe('미리보기안을 골라도 확정 전까지 예산은 바뀌지 않아요.')
   expect(select.classList.contains('mc-budget-select')).toBe(true)
   expect(select.getAttribute('aria-pressed')).toBe('false')
   await click(select)
@@ -601,15 +606,18 @@ it('서버 추천안은 결론 한 줄과 추천 카드를 먼저 보여 주고 
   expect(pick).toHaveBeenCalledWith(content.choices[0])
 })
 
-it('챗봇 월급 변경은 내 정보와 같은 API로만 저장한다', async () => {
-  apiSend.mockResolvedValue({ takeHomeIncome: 3500000, payday: 25 })
-  const content = { budgetAdjustment: { status: 'awaiting_input', phase: 'salary_change',
-    salaryChange: { before: 3000000, after: 3500000, payday: 25 } } }
-  await act(() => root.render(<BudgetAdjustment content={content} active />))
-  expect(host.querySelector('.mc-budget-salary-amounts').textContent).toContain('3,500,000원')
-  await click(button('월급 수정하기'))
-  expect(apiSend).toHaveBeenCalledWith('/api/budgets/salary/', 'PUT', { takeHomeIncome: 3500000, payday: 25 })
-  expect(button('✓ 내 정보에 저장했어요').disabled).toBe(true)
+it.each([
+  { phase: 'salary_handoff' },
+  { phase: 'salary_change', salaryChange: { before: 3000000, after: 3500000, payday: 25 } },
+])('새 안내와 이전 월급 카드 모두 저장 없이 마이페이지로 이동한다: $phase', async (adjustment) => {
+  const onSalaryEdit = vi.fn()
+  const content = { budgetAdjustment: { status: 'awaiting_input', ...adjustment } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onSalaryEdit={onSalaryEdit} />))
+  await click(button('마이페이지에서 월급 수정하기'))
+  expect(onSalaryEdit).toHaveBeenCalledOnce()
+  expect(apiSend).not.toHaveBeenCalled()
+  await act(() => root.render(<BudgetAdjustment content={content} active={false} onSalaryEdit={onSalaryEdit} />))
+  expect(button('마이페이지에서 월급 수정하기').disabled).toBe(true)
 })
 
 it('줄일 항목을 고르기 전에도 항목마다 현재 예산을 보여 준다', async () => {
@@ -630,4 +638,33 @@ it('지출 내역이 덜 모인 미리보기 상태에서도 직접 고른 조�
   expect(host.textContent).toContain('지금까지 확인된 기록으로 계산해요')
   await click(button('나눈 예산 미리보기'))
   expect(send).toHaveBeenCalledWith('기존 요청 대신 패션·쇼핑 예산을 50000원 줄여 교통·차량 예산을 50000원 늘려줘.')
+})
+
+it('월급 증가분 배분안은 받는 항목 · 금액 표와 합계로 보여 주고 항목별 전후는 접어 둔다', async () => {
+  const content = { budgetAdjustment: { status: 'replied', canApprove: true, requestSummary: '교육 50만 원 늘리기',
+    planning: { effectiveOn: '2026-12-05' },
+    proposal: { state: 'awaiting_approval', effectiveOn: '2026-12-05', salaryReview: { increase: 700000 },
+      transfers: [{ from: 'SPARE', to: 'SAVINGS', amount: 200000 }, { from: 'SPARE', to: 'EDUCATION', amount: 500000 }],
+      changes: [{ category: 'EDUCATION', before: 50000, after: 550000, diff: 500000 }] } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onApprove={vi.fn()} />))
+  expect(host.querySelector('[aria-label="이해한 요청"]').textContent).toBe('교육 50만 원 늘리기')
+  expect(host.querySelector('.mc-budget-summary-meta').textContent).toBe('12월 5일 시작 주기부터 적용 · 이번 예산은 그대로예요')
+  expect(host.textContent).not.toContain('부터의 예산을 미리 조정해요')
+  const shares = host.querySelector('.mc-budget-shares')
+  expect(shares.querySelector('.mc-budget-shares-total').textContent).toBe('늘어난 월급에서 나누는 돈700,000원')
+  expect([...shares.querySelectorAll('dt')].map((dt) => dt.textContent)).toEqual(['교육', '저축'])
+  expect(host.querySelector('.mc-budget-proposal details').open).toBe(false)
+  expect(host.querySelector('.mc-budget-proposal h2').textContent).toBe('월급 증가분 배분안')
+})
+
+it('대화 안 월급 증가분 배분 검토는 세 단계와 버튼만 보여 준다', async () => {
+  const review = vi.fn()
+  const content = { budgetAdjustment: { status: 'awaiting_input', phase: 'salary_allocation_review', requestSummary: '교육 50만 원 늘리기',
+    guidance: { kind: 'question', message: '기존 요청을 먼저 반영하고, 남은 월급 증가분을 나눌게요. 저축할 비율을 확인해 주세요.' } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onSalaryReview={review} />))
+  expect([...host.querySelectorAll('.mc-budget-steps li')].map((li) => li.textContent)).toEqual([
+    '교육 50만 원 늘리기 먼저 반영', '남은 증가분 중 저축할 비율 정하기', '나머지는 생활비·월 머니쿠션·여윳돈에 나누기'])
+  expect(host.textContent).not.toContain('저축할 비율을 확인해 주세요.')
+  await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent === '월급 증가분 배분 검토').click())
+  expect(review).toHaveBeenCalledOnce()
 })

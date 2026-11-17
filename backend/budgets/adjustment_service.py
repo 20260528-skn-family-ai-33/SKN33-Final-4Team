@@ -13,7 +13,7 @@ from rest_framework.exceptions import APIException, ValidationError
 from chat.models import AsyncTask, Conversation
 from users.models import FinancialProfile
 
-from .adjustment_context import AdjustmentContextError, context_fingerprint, get_adjustment_context
+from .adjustment_context import AdjustmentContextError, adjustment_today, context_fingerprint, get_adjustment_context
 from .adjustment_core.funding import validate_funding
 from .adjustment_core.simulation import simulate as simulate_adjustment
 from .models import Budget, BudgetCategorySetting, BudgetItem
@@ -87,6 +87,9 @@ def _targets(context, result, scope, changes):
     if primary is None:
         primary = [i["category"] for i in result["requests"]["items"] if not i.get("automatic")]
     candidates = {c: n for c, n in candidates.items() if c in primary}
+    if context.get('salary_review'):
+        candidates.update(LIVING=sum(amount for code, amount in result['allocations'].items() if code != 'TRAVEL_LODGING'),
+                          SAVINGS=result['buckets']['SAVINGS'], CUSHION_MONTHLY=result['buckets']['CUSHION_MONTHLY'])
     if changes is None:
         changes = candidates if scope == "ongoing" else {}
     if not isinstance(changes, dict) or scope not in {"cycle", "ongoing", "next_cycle"}:
@@ -205,16 +208,35 @@ class AdjustmentAdapter:
                 if key in self._context}
         return deepcopy(self._context)
 
+    def fresh_salary_context(self):
+        self.base_budget_id = self.mode = self.reference_context = self._context = None
+        self._reference_cache.clear()
+        today = adjustment_today(self.today)
+        drafts = Budget.objects.filter(user=self.user, status="validated", base_budget__isnull=True,
+            cycle__status="active", cycle__starts_on__lte=today, cycle__ends_before__gt=today
+        ).exclude(task__task_type="budget_adjust").order_by("-version_no")
+        for draft in drafts:
+            self.base_budget_id, self.mode = str(draft.pk), "INITIAL_ADJUSTMENT"
+            try:
+                return self.get_context()
+            except AdjustmentContextError:
+                self.base_budget_id = self.mode = None
+        return self.get_context()
+
     def simulate(self, context, request):
         return simulate_adjustment(context, request, allocator=self.allocator)
 
     def propose(self, context, result, *, scope, unlock_categories=(), target_changes=None):
-        expected = planning_context(self.get_context(), context.get('planning'))
+        if context.get('salary_review'):
+            from .salary_redistribution import fresh_income_context
+            expected = fresh_income_context(self.user, self.get_context(), context)
+        else:
+            expected = planning_context(self.get_context(), context.get('planning'))
         if context_fingerprint(expected) != context_fingerprint(context):
             raise ValueError("expired")
         _verify(context, result, unlock_categories, self.allocator)
         changes, candidates = _targets(context, result, scope, target_changes)
-        if not result.get("changes") and not changes and not unlock_categories:
+        if not result.get("changes") and not changes and not unlock_categories and not context.get('salary_review'):
             raise ValueError("unchanged")
         task_id, proposal_id = str(uuid.uuid4()), str(uuid.uuid4())
         meta = {"schema": SCHEMA, "result": deepcopy(result), "scope": scope,
@@ -242,7 +264,11 @@ class AdjustmentAdapter:
         except AdjustmentContextError:
             raise AdjustmentExpired() from None
         try:
-            fresh = planning_context(fresh, context.get('planning'))
+            if context.get('salary_review'):
+                from .salary_redistribution import fresh_income_context
+                fresh = fresh_income_context(self.user, fresh, context)
+            else:
+                fresh = planning_context(fresh, context.get('planning'))
         except ValueError:
             raise AdjustmentExpired() from None
         if context_fingerprint(fresh) != context_fingerprint(context):
@@ -282,7 +308,7 @@ class AdjustmentAdapter:
 
     def flush(self, conversation):
         _atomic()
-        if conversation.user_id != self.user.pk:
+        if conversation is not None and conversation.user_id != self.user.pk:
             raise AdjustmentNotReady()
         if self._context is not None or self._staged:
             from users.privacy import require_bank_not_revoked
@@ -339,23 +365,35 @@ class AdjustmentAdapter:
 
 def _card(proposal_id, task_ref, context, meta, state, *, can_approve=True):
     result = meta["result"]
+    verification_notice = '이번 주기 지출을 아직 모두 확인하지 못했어요. 예산 기준 미리보기이며, 내역 확인 후 다시 계산해야 확정할 수 있어요.'
+    if context.get('salary_review') and not context['salary_review'].get('spare_verified') and context.get('spending_status') == 'complete':
+        verification_notice = '여윳돈의 사용·예약 금액을 아직 확인하지 못했어요. 예산 기준 미리보기이며, 해당 금액 확인 후 확정할 수 있어요.'
     applied = meta.get("approval", {}) if state == "saved" else {}
     keep = applied.get("keep_for_next_cycle", meta["keep_for_next_cycle"])
     changes = applied.get("target_changes", meta["target_changes"])
     displayed_changes = deepcopy(result['changes'])
+    if context.get('salary_review') and not meta.get('effective_on'):
+        before = context['salary_review']['spare_anchor']
+        after = result['buckets']['SPARE']
+        displayed_changes = [row for row in displayed_changes if row['category'] != 'SPARE']
+        if before != after:
+            displayed_changes.append({'category': 'SPARE', 'before': before, 'after': after, 'diff': after - before, 'direct': False})
     if meta.get('effective_on') and context.get('planning_base'):
         before = context['planning_base']['buckets']['SPARE']
         after = result['buckets']['SPARE']
         displayed_changes = [row for row in displayed_changes if row['category'] != 'SPARE']
         if before != after:
-            displayed_changes.append({'category': 'SPARE', 'before': before, 'after': after, 'diff': after - before})
+            displayed_changes.append({'category': 'SPARE', 'before': before, 'after': after, 'diff': after - before, 'direct': False})
     return {"kind": "funding", "proposal_id": str(proposal_id), "task_ref": str(task_ref),
+            **({'salary_review': {key: context['salary_review'][key] for key in ('income_before', 'income_after')}
+                | {'increase': context['salary_review']['income_after'] - context['salary_review']['income_before']}}
+               if context.get('salary_review') else {}),
             "mode": context["mode"], "base_budget_id": context["base_budget_id"],
             "scope": 'next_cycle' if meta.get('effective_on') else (("ongoing" if keep else "cycle") if state == "saved" else meta["scope"]),
             **({'effective_on': meta['effective_on'], 'income_change': meta['income_change'],
                 'one_off': context.get('planning', {}).get('one_off', False), 'expense': context.get('planning', {}).get('expense')} if meta.get('effective_on') else {}),
             "state": state, "can_approve": state == "awaiting_approval" and can_approve and result.get('spending_verified', True),
-            **({'verification_notice': '이번 주기 지출을 아직 모두 확인하지 못했어요. 예산 기준 미리보기이며, 내역 확인 후 다시 계산해야 확정할 수 있어요.'} if not result.get('spending_verified', True) else {}),
+            **({'verification_notice': verification_notice} if not result.get('spending_verified', True) else {}),
             "allocations": deepcopy(result["allocations"]), "buckets": deepcopy(result["buckets"]),
             "changes": displayed_changes, "shortfalls": deepcopy(result["shortfalls"]),
             "transfers": deepcopy(result["transfers"]), "target_changes": deepcopy(changes),

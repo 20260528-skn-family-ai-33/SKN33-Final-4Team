@@ -153,6 +153,8 @@ def recommend(user, snapshot, available_spare, today, *, allow_external=False, s
     except (ValueError, TypeError, KeyError):
         return _blocked('needs_data', 'ml_unavailable', selection)
     reality = {'has_vehicle': inp['has_vehicle']}
+    from .price_reference import price_context
+    reality['price_reference'] = price_context(user)
     if history.get('status') == 'ready':
         reality['transport_history'] = history['categories']['TRANSPORT_CAR']['baseline_amount']
     from .design_reality import system_floors
@@ -236,6 +238,16 @@ def recommend(user, snapshot, available_spare, today, *, allow_external=False, s
     out, explanations, transfer = final['result'], final['explanations'], final['spare_transfer']
     checked = {**inp, 'target': final['funded_target']}
     check_result(checked, out)
+    from .price_reference import review_prices
+    price_review = review_prices(reality['price_reference'],
+        {c: int(row['baseline_amount']) for c, row in history.get('categories', {}).items()
+         if c in out['allocations']}, out['allocations'],
+        {c: sum(row['monthly_amounts']) for c, row in history.get('categories', {}).items()
+         if c in out['allocations']},
+        user_direct=inp.get('category_targets', {}), locks=inp['locks'], as_of=today)
+    if price_review['issues']:
+        return _blocked('needs_upper_allocation_review', 'price_reallocation_required', selection,
+                        details={'price_review': price_review})
     target_changes = final_target_changes(snapshot.get('category_targets', inp.get('category_targets', {})),
                                         {**out['allocations'], 'ETC': final['other_reserved']},
                                         {**view['allocations'], 'ETC': snapshot['etc']})
@@ -244,7 +256,7 @@ def recommend(user, snapshot, available_spare, today, *, allow_external=False, s
         'spare_transfer': transfer, 'available_spare': available_spare, 'funded_target': checked['target'],
         'other_reserved': final['other_reserved'], 'rounding': final['rounding'],
         'candidate_adjustment': final.get('candidate_adjustment'),
-        'llm': llm,
+        'llm': llm, 'price_review': price_review,
         'references': references, 'target_conflicts': target_changes,
         'explanations': [{'category': e['category'], 'text': e['text']} for e in explanations]}}
 
@@ -276,6 +288,10 @@ def approval_ready(user, budget, today):
         return True
     try:
         transfer = meta.get('spare_transfer')
+        if meta.get('price_review', {}).get('snapshot'):
+            from .price_reference import price_context
+            if price_context(user).get('snapshot') != meta['price_review']['snapshot']:
+                return False
         available = meta.get('available_spare')
         if (type(transfer) is not int or type(available) is not int or not 0 <= transfer <= available
                 or meta.get('funded_target') != budget.input_snapshot['engine_input']['target'] + transfer

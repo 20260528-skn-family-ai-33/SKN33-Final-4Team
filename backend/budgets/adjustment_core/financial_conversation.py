@@ -6,7 +6,7 @@ from .agent import _ask as core_ask, _check, _result, _save, CANCEL
 from .calculation import _prepare, _floor, _hard_floor, _eligible, proportional_group_reduction
 from .funding import available_adjustment, _data
 from .conversation import (_envelope, _pending_reply, _show_comparison as original_comparison, _increase_only, advised_comparison,
-                           handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute, _calculation, _manual_living, ask_spare_minimum, check_amount_limit)
+                           handle_expanded, hint_category, not_mine, take_from_label, SPECIAL_NAMES, recommendation_reply, distribute, _calculation, _manual_living, ask_spare_minimum, check_amount_limit, salary_reply)
 from . import interpretation
 from . import over_budget
 from .explanations import NAMES
@@ -50,10 +50,15 @@ category는 출발 항목, destination은 받는 항목, amount는 옮길 금액
 이 이동은 직전 미리보기 기준이다. 원래 변경안의 나머지 조건은 유지한다. 금액을 계산하거나 보충하지 않는다.
 transfer가 아니면 destination=null이다. 출발·도착·금액 중 모르는 값은 null로 남긴다.
 기존 조정 대상을 다른 항목으로 바꾸거나, 다른 항목의 조정을 추가·철회하는 요청은 revise다.
+여러 출처 중 일부 감액을 취소하고 나머지 출처의 돈만 옮기라는 요청도 revise다. 취소한 감액과 연결된 증액을 함께 다시 계산해야 하므로 refine_less·accept·transfer로 처리하지 않는다.
+월급·급여·실수령액을 수정하거나 바뀌었다는 말도 revise다. 기존 목표는 유지하며 월급 수정 화면으로 안내한다.
 아래의 한 항목 감액 수정으로 표현할 수 없는 복합 수정도 revise로 보내며 금액·대상을 억지로 하나로 줄이지 않는다.
 recipient는 예산을 받는 기존 목표이고 funding_sources는 현재 돈을 가져오는 출처다. 두 역할을 구분한다.
 refine_more/refine_less의 category는 재원이며 recipient를 넣지 않는다. 받는 목표 금액 자체의 변경은 change_goal이다.
 현재 목표를 유지한 재원 수정은 refine_more/refine_less다. 쇼핑 더 줄여도 돼=refine_more, 쇼핑 너무 많이 줄였어=refine_less.
+기존 증액 금액을 유지하면서 가져올 항목·금액만 바꾸는 요청은 transfer가 아니라 refine_more다.
+이때 category는 새로 감액할 재원, amount는 사용자가 지정한 감액액, amount_mode=by이며 destination=null이다.
+돈을 가져온다는 표현만으로 받는 항목을 추가 증액하지 않는다. 기존 목표 유지와 출처 교체를 함께 말하면 이 규칙을 우선한다.
 미리보기에서 줄어든 돈이 너무 적게 남는다는 불만은 그 출처를 덜 사용하라는 refine_less다. 여윳돈·여유돈은 SPARE이며 생활비 항목만 재원이 되는 것은 아니다.
 SPARE를 덜 쓰거나 더 남기려는데 사용자가 금액을 정하지 않았다면 amount와 suggested_target을 null로 둔다. 임의로 남길 금액을 정하지 않는다.
 재원에서 '최소/적어도 얼마를 남겨두고 싶다'는 조건은 그 재원을 덜 쓰는 refine_less이며 category는 그 재원, amount는 남길 금액, amount_mode=to다. 별개 증액 목표나 조회로 보내지 않는다.
@@ -69,6 +74,7 @@ refine_more의 일반 허용만으로 ML 하한·최소액·잠금·기지출·�
 어떤 표현이든 질문·추천·수락·수정을 구분한다. 추천이나 이유를 물은 것을 accept로 처리하지 않는다.
 금액을 제안할 수 없으면 suggested_target=null이다. 사용자 사정이나 보호 조건을 임의로 지우지 않는다.
 지금 상태를 조회만 하는 말은 not_mine이다. '교통은 얼마 남았어?', '식비 얼마 썼어?', '왜 늘었어?'처럼 남은 예산·쓴 돈·소비 이유를 묻는 말이다.
+여윳돈·머니쿠션도 동일하다. 현재 얼마 있는지 묻는 잔액 조회는 not_mine이며, 조정에 얼마까지 가져올 수 있는지 묻는 maxima와 구분한다. 이전에 같은 돈을 재원으로 골랐더라도 현재 잔액을 묻는 질문을 이동 한도 질문으로 바꾸지 않는다.
 '의료비 예산을 왜 크게 잡았어?', '쇼핑에 예산 왜 이렇게 많이 분배됐어?', '식비 예산 책정 근거 알려줘'처럼 저장된 예산 금액이 정해진 이유를 묻는 말은
 '왜'가 있어도 not_mine이 아니라 basis다(category는 그 항목).
 이 질문을 현재 조정안의 추천 이유(explain)와 구별한다. 의료비·병원비의 category는 MEDICAL_HEALTH다.
@@ -515,6 +521,8 @@ def _handle(request, *, interpreted=None, **ports):
     store, complete = ports["store"], ports["complete"]
     state = store.get_agent_state(cid, "budget") or {}
     compact = re.sub(r"[\s?!.,]", "", text)
+    if interpreted and (interpreted.get('income_change') or interpreted.get('action') == 'salary_change'):
+        return salary_reply(store, cid, state, ports['get_context'](), interpreted)
     if text in {'manual_living', '생활비 직접 조정'} and 'manual_living' in dict(state.get('pending', {}).get('choices', [])):
         return _manual_living(store, cid, state, ports['get_context']())
     if request.get("mode") == "cancel" or text in CANCEL:
@@ -547,7 +555,7 @@ def _handle(request, *, interpreted=None, **ports):
             for field in ('sources', 'destinations', 'excluded'):
                 state[field] = list(original.get(field, []))
         return comparison_reply(store, cid, state, ports["get_context"](), ports["get_context"](), complete)
-    if state.get("unlock_categories") or state.get("unlock_consents"):
+    if not state.get("salary_handoff") and (state.get("unlock_categories") or state.get("unlock_consents")):
         try:
             _calculation(ports["get_context"](), state)
         except ValueError:
@@ -643,6 +651,8 @@ def _handle(request, *, interpreted=None, **ports):
                                comparison=offer['comparison'], choices=pending['choices'])
             if not interpreted['mine']:
                 return not_mine(state.get('work_ref'), interpreted.get('handoff'), interpreted.get('handoff_category'), context['allocations'])
+            if interpreted.get('income_change') or interpreted.get('action') == 'salary_change':
+                return salary_reply(store, cid, state, context, interpreted)
             if interpreted.get('action') == 'distribute':
                 return distribute(request, state, interpreted, **ports)
             modifying = (interpreted.get('requests') or interpreted.get('request_update') == 'replace' or any(interpreted.get(key) for key in
@@ -668,7 +678,7 @@ def _handle(request, *, interpreted=None, **ports):
                                choices=pending["choices"], comparison=offer["comparison"])
             if (selected is None and not modifying and not interpreted.get('cancel')
                     and interpreted.get('reference') != 'new' and not interpreted.get('unclear')
-                    and interpreted.get('action') not in {'back', 'undo', 'fixed_expense', 'compare'}):
+                    and interpreted.get('action') not in {'back', 'undo', 'fixed_expense', 'compare', 'salary_change'}):
                 if interpreted.get('reason'):
                     state['reason'] = interpreted['reason']
                     _save(store, cid, state)
@@ -754,13 +764,14 @@ def _inquiry(request, state, ports):
         code = 'call_limit' if str(error) == 'call_limit' or getattr(error, 'kind', None) == 'call_limit' else 'call_failed'
         line = ('이번 조정의 대화 횟수를 다 썼어요. 변경안을 확인하거나 취소 후 새로 시작해 주세요.' if code == 'call_limit'
                 else '말씀하신 요청을 읽는 중 문제가 생겼어요. 진행 중인 조건은 그대로 두었어요.')
-        return _result('failed', [line],
+        proposal = state.get('proposal')
+        return _result('awaiting_input' if proposal else 'failed', [line], proposal=proposal,
                        work_ref=state.get('work_ref'), error=code)
     if not data['mine']:
         return not_mine(state.get("work_ref"), data.get("handoff"), data.get("handoff_category"), names)
     changing = data.get('request_update') == 'replace' or data.get('one_off') is not None or data.get('set_aside_amount') is not None or any(data.get(key) for key in ('requests', 'sources', 'destinations', 'excluded', 'clear_targets', 'scope', 'funding_scope', 'income_change'))
     if (data.get('cancel') or data.get('selected_choice') or data.get('unclear') or data.get('reference') == 'unclear'
-            or data.get('action') in {'back', 'undo', 'explain', 'fixed_expense', 'distribute', 'help_decide'} or changing):
+            or data.get('action') in {'back', 'undo', 'explain', 'fixed_expense', 'distribute', 'help_decide', 'salary_change'} or changing):
         return _handle(request, interpreted=data, **ports)
     if state.get('pending', {}).get('kind') == 'financial_data' and data.get('action') in {'compare', 'recommend'}:
         response = _pending_reply(state, state.get('work_ref'))

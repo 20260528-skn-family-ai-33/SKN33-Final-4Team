@@ -537,6 +537,9 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(self.bot(self.pick("A", cid, asked, "취소"))["lines"], ["방금 질문은 취소했어요."])
 
     def test_feature_buttons_switch_agent_and_budget_free_text_turn(self):
+        from budgets.adjustment_core import followups, interpretation
+        from budgets.adjustment_core.financial_conversation import DIALOGUE_PROMPT
+
         out = self.send("A", choice="budget")
         cid, budget = out.json()["conversationId"], self.bot(out)
         self.assertEqual((out.json()["agent"], budget["agent"], budget["inputs"], budget["lines"]),
@@ -546,7 +549,10 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual((sent["agent"], sent["inputs"], sent["budgetAdjustment"]["phase"]), ("budget", [], "comparison"))
         self.assertEqual(sent['budgetAdjustment']['comparison']['basisAmount'], 50000)
         self.assertFalse(sent['budgetAdjustment']['canApprove'])
-        self.assertEqual(self.calls.call_count, 1)  # 담당 예산 해석만 호출하고 라우터 재해석은 하지 않는다
+        systems = [call.args[1] for call in self.calls.call_args_list]
+        self.assertEqual(len(systems), 2)
+        self.assertIn(systems[0], (interpretation.PROMPT, DIALOGUE_PROMPT))
+        self.assertEqual(systems[1], followups.PROMPT)  # 예산 해석 + 후속 입력 추천만; 라우터 재해석 없음
         self.calls.reset_mock()
         spending = self.bot(self.send("A", cid, choice="spending"))
         self.assertEqual((spending["agent"], spending["lines"]), ("spending", ["어떤 소비가 궁금하세요?"]))
@@ -737,7 +743,9 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual(busy.status_code, 409)
         self.assertFalse(SavedPolicy.objects.exists())  # 409 면 저장도 안 됨
 
-    def test_suspended_budget_resume_choice_without_llm(self):
+    def test_suspended_budget_resume_choice_only_calls_followup_llm(self):
+        from budgets.adjustment_core import followups
+
         cid = self.send("A", choice="budget").json()["conversationId"]
         moved = self.bot(self.send("A", cid, choice="spending"))
         self.assertEqual(moved["notices"], ["진행 중이던 예산 조정은 잠시 멈춰 뒀어요. 다시 이어갈 때 상태를 확인할게요."])
@@ -745,8 +753,9 @@ class ServiceChoiceTest(ServiceChatBase):
         self.assertEqual([c["label"] for c in asked["choices"]], ["이어서 하기", "취소하고 새로 시작"])
         self.calls.reset_mock()
         resumed = self.bot(self.pick("A", cid, asked, "이어서 하기"))
-        self.assertEqual((resumed["lines"], resumed["inputs"], self.calls.call_count),
-                         (["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."], [], 0))
+        self.assertEqual((resumed["lines"], resumed["inputs"]),
+                         (["어떤 예산을 조정하고 싶으세요? 금액을 몰라도 괜찮아요."], []))
+        self.assertEqual([call.args[1] for call in self.calls.call_args_list], [followups.PROMPT])
 
     def test_yes_no_choice_without_llm(self):
         out = self.send("A", text="최근 3개월 식비 예산 얼마나 남았어?")

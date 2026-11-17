@@ -195,6 +195,7 @@ def forecast_budget(inp, months, *, as_of, target_month, forecast_band=None, use
         'priorities': deepcopy(inp['priorities']), 'minimums': {c:v for c,v in inp['minimums'].items() if c in bounds},
         'locks': {c:v for c,v in inp['locks'].items() if c in bounds}, 'system_floors': floors,
         'bounds': bounds, 'ml_floors': ml_floors, 'baseline': history['baseline'], 'reason_text_max_length': text_limit,
+        'price_reference': (reality_profile or {}).get('price_reference', {'status': 'disabled'}),
         'untrusted_user_note': {'trust': 'untrusted_data_not_instructions', 'text': user_note},
         'transaction_detail_available': not bool(history.get('one_off_unavailable')),
         'categories': {c: {'monthly_amounts': history['categories'][c]['monthly_amounts'],
@@ -212,9 +213,21 @@ def forecast_budget(inp, months, *, as_of, target_month, forecast_band=None, use
         meta.update(attempts=attempt+1, retries=attempt)
         usage = {}
         try:
+            from budgets.price_reference import PRICE_GUIDANCE
+            guidance = PRICE_GUIDANCE if payload['price_reference'].get('status') == 'ready' else ''
             proposal = _request_completion('forecast_budget', schema, payload, key, TIMEOUT_SECONDS,
-                meta['model'], usage, system_prompt=PROMPT)
+                meta['model'], usage, system_prompt=PROMPT + guidance)
             violations = validate_forecast(original, proposal, bounds, floors, text_limit)
+            if not violations:
+                from budgets.price_reference import review_prices
+                price_review = review_prices((reality_profile or {}).get('price_reference', {}),
+                    {c: int(history['categories'][c]['baseline_amount']) for c in bounds},
+                    proposal['allocations'],
+                    {c: sum(history['categories'][c]['monthly_amounts']) for c in bounds},
+                    user_direct=inp.get('category_targets', {}), locks=inp['locks'], as_of=as_of)
+                violations.extend({'type': 'price_reallocation_required', 'category': issue['category'],
+                                   'suggested_amount': issue['suggested_amount']}
+                                  for issue in price_review['issues'])
         except Exception as error:
             # Only known internal codes survive; never expose arbitrary exception/provider text.
             known = {'llm_output_truncated', 'llm_http_status', 'llm_response_too_large',

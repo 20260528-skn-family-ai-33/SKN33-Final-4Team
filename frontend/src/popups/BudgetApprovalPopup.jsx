@@ -57,14 +57,14 @@ export default function BudgetApprovalPopup({ proposal, request: previous, onPen
     {proposal.oneOff && <p>이번 계획은 해당 주기에만 적용해요. 평소 저축·생활비 배분 설정은 바꾸지 않아요.</p>}
     {proposal.expense && <p>따로 마련한 돈 {won(proposal.expense.setAside)} + 예산에서 마련할 돈 {won(proposal.expense.additional)} = 지출 예정액 {won(proposal.expense.total)}</p>}
     {proposal.incomeChange && proposal.incomeChange.before !== proposal.incomeChange.after && <p>월 실수령액 {won(proposal.incomeChange.before)} → <strong>{won(proposal.incomeChange.after)}</strong></p>}
-    <BudgetTransfers transfers={proposal.transfers} />
+    <BudgetTransfers transfers={proposal.transfers} salaryReview={Boolean(proposal.salaryReview)} />
     <BudgetChanges changes={proposal.changes} />
     {(proposal.shortfalls ?? []).map((row) => <p key={row.category} className="mc-budget-shortfall">{allocationName(row.category)}은 {won(row.appliedAmount)}만 반영하며 {won(row.missingAmount)}은 부족한 채로 남아요.</p>)}
     <BudgetSettings proposal={proposal} />
     <RecoveryAllocations proposal={proposal} />
     {!proposal.effectiveOn && items.length > 0 && <div className="mc-budget-keep">
       <label><input type="checkbox" checked={keep} disabled={busy || pending !== null || rejected} onChange={(e) => setKeep(e.target.checked)} /> 다음 달에도 이 금액 유지</label>
-      <p>{proposal.sourceTaskId ? '선택하면 아래 생활비·저축·월 쿠션 금액을 다음 예산의 설정에도 반영해요.'
+      <p>{proposal.sourceTaskId || proposal.salaryReview ? '선택하면 아래 생활비·저축·월 쿠션 금액을 다음 예산의 설정에도 반영해요.'
         : '직접 요청한 항목만 다음 예산의 목표로 저장해요. 잠금은 아니에요.'}</p>
       {items.map((item) => <div className="mc-keyvalue" key={item.category}><span>{allocationName(item.category)}</span><strong>{won(item.amount)}</strong></div>)}
     </div>}

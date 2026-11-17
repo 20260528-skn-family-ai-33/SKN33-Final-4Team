@@ -220,6 +220,49 @@ class ProtectAPITest(TestCase):
         self.assertFalse(response.json()["approvedBudgetUpdated"])  # 100만 + 100만 + 20만 + 77만 > 280만
         self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 170_000)
 
+    def test_review_saves_settings_without_changing_approved_budget_or_cushion(self):
+        from .models import CushionEntry
+        self.assertEqual(self.put().status_code, 200)
+        budget = self.approve_budget()
+        before = list(budget.items.order_by("pk").values())
+        entries = list(CushionEntry.objects.order_by("pk").values())
+        proposal = self.make_budget(status="validated")
+
+        response = self.put({"livingBudget": 770_000, "savingFloor": 1_050_000,
+                             "cushionMonthly": 200_000, "updateApprovedBudget": False})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(response.json()["approvedBudgetUpdated"])
+        self.profile.refresh_from_db()
+        self.assertEqual((self.profile.savings_floor, self.profile.cushion_monthly), (1_050_000, 200_000))
+        budget.refresh_from_db()
+        proposal.refresh_from_db()
+        self.assertEqual((budget.status, proposal.status), ("approved", "expired"))
+        self.assertEqual(list(budget.items.order_by("pk").values()), before)
+        self.assertEqual(list(CushionEntry.objects.order_by("pk").values()), entries)
+
+    def test_review_keeps_existing_category_locks_when_living_budget_changes(self):
+        from .models import BudgetCategorySetting
+        self.assertEqual(self.put().status_code, 200)
+        budget = self.approve_budget()
+        setting = BudgetCategorySetting.objects.create(user=self.user, cycle=budget.cycle,
+            category_id="FOOD", locked=True, locked_amount=770_000)
+
+        response = self.put({"livingBudget": 700_000, "savingFloor": 1_000_000,
+                             "cushionMonthly": 170_000, "updateApprovedBudget": False})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()["locksReleased"], [])
+        setting.refresh_from_db()
+        self.assertEqual((setting.locked, setting.locked_amount), (True, 770_000))
+        self.assertEqual(budget.items.get(bucket="living").allocated_amount, 770_000)
+
+    def test_review_option_requires_boolean(self):
+        for value in (None, 0, 1, "false", [], {}):
+            with self.subTest(value=value):
+                self.assert_error(self.put({"livingBudget": 770_000, "savingFloor": 1_000_000,
+                    "cushionMonthly": 170_000, "updateApprovedBudget": value}), 400, "updateApprovedBudget")
+
     def test_put_below_cycle_allocated_cushion_is_rejected(self):
         """PR #120 리뷰 P1: 이번 주기에 실제로 15만 원을 적립했으면 승인 예산의 쿠션을 10만 원으로 낮출 수 없다
         (차액이 여윳돈으로 풀리지 않게). 적립액과 같거나 큰 금액은 지금처럼 반영한다"""

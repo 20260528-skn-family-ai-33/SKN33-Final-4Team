@@ -1,2 +1,2 @@
-# Optional budget-design tracing; shared server requirements remain unchanged.
+# Optional budget-design and budget-adjustment tracing.
 langsmith==0.14.17

@@ -63,6 +63,9 @@
 #mc-new-preview .mc-budget-recommended { background: #fff0ce; color: #775000; }
 #mc-new-preview .mc-budget-selected { background: #e9efff; color: #214ac5; }
 #mc-new-preview .mc-budget-preview-label { border-left: 3px solid var(--mc-brand); padding: 4px 8px; color: var(--mc-brand); font-weight: 650; }
+#mc-new-preview .mc-budget-example-intro { display: block; margin: 0 0 14px; padding: 12px 14px; border-left: 4px solid var(--mc-brand); border-radius: 10px; background: #eef2ff; }
+#mc-new-preview .mc-budget-example-intro h2 { margin: 0; color: var(--mc-brand); font-size: 16px; font-weight: 700; }
+#mc-new-preview .mc-budget-example-intro p { margin: 6px 0 0; color: var(--mc-ink); font-size: 14px; line-height: 1.6; }
 #mc-new-preview .mc-budget-plan-head { display: flex; gap: 8px; align-items: start; justify-content: space-between; }
 #mc-new-preview .mc-budget-plan-head > span { flex: none; color: var(--mc-brand); font-size: 12px; font-weight: 650; }
 #mc-new-preview .mc-budget-outcome, #mc-new-preview .mc-budget-reason, #mc-new-preview .mc-budget-shortfall, #mc-new-preview .mc-budget-warning { margin: 6px 0; line-height: 1.55; }
@@ -226,7 +229,7 @@
 #mc-new-preview .mc-budget-compact .is-up dt, #mc-new-preview .mc-budget-compact .is-up small { color: var(--mc-brand); font-weight: 650; }
 #mc-new-preview .mc-budget-why { margin: 0 0 4px; padding-left: 18px; font-size: 12px; line-height: 1.6; color: var(--mc-sub); }
 #mc-new-preview .mc-budget-comparison > .mc-note { margin: 8px 0 0; text-align: center; }
-#mc-new-preview .mc-budget-salary { padding: 12px 14px; margin: 10px 0; border-radius: 12px; background: var(--mc-soft); }
+#mc-new-preview .mc-budget-salary { margin: 12px 0 0; }  /* 11/17: 버튼 뒤 하늘색 상자 제거 — 버튼만 */
 #mc-new-preview .mc-budget-salary .mc-note { margin: 0; }
 #mc-new-preview .mc-budget-salary-amounts { margin: 4px 0 10px; font-size: 16px; font-variant-numeric: tabular-nums; }
 #mc-new-preview .mc-budget-salary .mc-primary { width: 100%; min-height: 44px; }
@@ -347,3 +350,52 @@
 #mc-new-preview .mc-asst-log .mc-fx-next > .mc-note { margin: 0; padding: 2px 0 0; }
 #mc-new-preview .mc-asst-log .mc-fx-next .mc-chipbar { gap: 6px; }
 #mc-new-preview .mc-asst-log .mc-fx-next .mc-chipbar button { min-height: 32px; padding: 5px 12px; font-size: 12.5px; line-height: 1.4; }
+
+/* ---------- 예산 조정 답 정리 (11/16) — 요청 한 줄 + 작은 메타, 작은 미리보기 꼬리표, 월급 증가분 표 ---------- */
+#mc-new-preview .mc-budget-summary-request { margin: 0; font-size: 14px; font-weight: 700; color: var(--mc-ink); line-height: 1.5; }
+#mc-new-preview .mc-budget-summary-meta { margin: 2px 0 10px; font-size: 12px; color: var(--mc-sub); line-height: 1.5; }
+#mc-new-preview .mc-budget-facts { margin: 0 0 10px; font-size: 12px; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-facts p { margin: 2px 0; }
+/* 예전의 큰 파란 안내 상자(예산 조정 예시 · 미리보기) → 작은 꼬리표 + 한 줄 */
+#mc-new-preview .mc-budget-example-intro { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 0; border: 0; background: none;
+  font-size: 12px; color: var(--mc-sub); line-height: 1.5; }
+#mc-new-preview .mc-budget-tag { flex: none; padding: 1px 7px; border-radius: 6px; background: var(--mc-soft); color: var(--mc-brand); font-size: 11px; font-weight: 700; }
+#mc-new-preview .mc-budget-headline { font-size: 13.5px; }
+#mc-new-preview .mc-budget-adjustment h2 { font-size: 15px; }
+#mc-new-preview .mc-budget-footnote { margin: 8px 0 0; font-size: 12px; color: var(--mc-sub); line-height: 1.5; }
+/* 월급 증가분 배분안: 합계 한 줄 + 받는 항목 표 */
+#mc-new-preview .mc-budget-shares { margin: 8px 0; padding: 12px; border-radius: 12px; background: var(--mc-bg); }
+#mc-new-preview .mc-budget-shares-total { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 0 6px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--mc-line); font-size: 12.5px; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-shares-total strong { font-size: 16px; color: var(--mc-ink); font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-shares dl { margin: 0; }
+#mc-new-preview .mc-budget-shares dl > div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 13px; }
+#mc-new-preview .mc-budget-shares dt { color: var(--mc-ink); }
+#mc-new-preview .mc-budget-shares dd { margin: 0; font-weight: 650; color: var(--mc-brand); font-variant-numeric: tabular-nums; }
+/* 대화 안 월급 증가분 배분 검토: 세 단계 + 버튼 (파란 상자 안에 버튼만 있던 칸 대신) */
+#mc-new-preview .mc-budget-salary-review { display: flex; flex-direction: column; gap: 10px; }
+#mc-new-preview .mc-budget-salary-title { margin: 0; font-size: 14px; font-weight: 700; }
+#mc-new-preview .mc-budget-steps { margin: 0; padding: 0; list-style: none; counter-reset: mc-step; display: flex; flex-direction: column; gap: 6px; }
+#mc-new-preview .mc-budget-steps li { counter-increment: mc-step; display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.5; }
+#mc-new-preview .mc-budget-steps li::before { content: counter(mc-step); flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--mc-soft); color: var(--mc-brand); font-size: 11px; font-weight: 700; }
+#mc-new-preview .mc-budget-salary-review .mc-primary { margin-top: 2px; }
+
+/* ---------- 월급 변경 후 예산 검토 화면 (components/SalaryRedistributionReview.jsx, 11/16) ---------- */
+#mc-new-preview .mc-sr-sub { margin: -4px 0 14px; padding: 0; }
+#mc-new-preview .mc-sr-flow { display: flex; flex-direction: column; gap: 12px; }
+#mc-new-preview .mc-sr-income > span { font-size: 12.5px; color: var(--mc-sub); }
+#mc-new-preview .mc-sr-increase { padding: 4px 0 0; border: 0; }
+#mc-new-preview .mc-sr-increase strong { font-size: 20px; color: var(--mc-brand); font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-sr-steps { margin: 0; padding: 12px 0 0; border-top: 1px solid var(--mc-line); list-style: none; counter-reset: mc-sr; display: flex; flex-direction: column; gap: 8px; }
+#mc-new-preview .mc-sr-steps > li { counter-increment: mc-sr; position: relative; padding-left: 26px; }
+#mc-new-preview .mc-sr-steps > li::before { content: counter(mc-sr); position: absolute; left: 0; top: 10px; display: grid; place-items: center; width: 18px; height: 18px;
+  border-radius: 50%; background: var(--mc-soft); color: var(--mc-brand); font-size: 11px; font-weight: 700; }
+#mc-new-preview .mc-sr-steps .mc-keyvalue { border-bottom: 0; padding: 8px 0 2px; }
+#mc-new-preview .mc-sr-steps .mc-budget-changes { margin: 2px 0 0; font-size: 12.5px; }
+#mc-new-preview .mc-sr-form .mc-field { margin: 4px 0 8px; }
+#mc-new-preview .mc-sr-how { margin: 8px 0 4px; font-size: 12.5px; color: var(--mc-sub); }
+#mc-new-preview .mc-sr-how > summary { cursor: pointer; color: var(--mc-brand); font-weight: 650; padding: 4px 0; }
+#mc-new-preview .mc-sr-how p { margin: 6px 0 0; line-height: 1.6; }
+#mc-new-preview .mc-sr-actions { margin-top: 16px; }
+#mc-new-preview .mc-sr-actions .mc-note { padding: 6px 2px 0; line-height: 1.55; }

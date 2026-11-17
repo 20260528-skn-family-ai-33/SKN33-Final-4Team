@@ -84,6 +84,33 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 정책 데이터는 `docs/agents/청년정책.md`의 복원 절차에 따라 DB에 한 번 적재한다. 모델 설정이 없거나 비어 있으면
 정책 검색은 기존 실패 안내로 응답한다. 서버가 켜지는 것만으로 정책 검색 설정까지 확인되는 것은 아니다.
 
+예산 조정 LangSmith 추적은 선택 기능이다. 기존 SDK 설치 명령은
+`pip install -r backend/budgets/requirements-observability.txt`이다.
+다음 값을 프로젝트 루트 `.env`에 설정하고 백엔드를 재시작한다.
+
+```dotenv
+BUDGET_ADJUST_LANGSMITH=true
+BUDGET_ADJUST_LANGSMITH_PROJECT=budget-adjustment
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=<개인 LangSmith 키>
+```
+
+`BUDGET_ADJUST_LANGSMITH` 기본값은 false이며 두 추적 스위치가 모두 true여야 기록한다.
+기존 `LANGSMITH_ENDPOINT`, `LANGSMITH_WORKSPACE_ID`가 있으면 같은 값을 사용한다.
+LangSmith의 `budget-adjustment` 프로젝트에서 `budget_adjustment` 실행을 열면 질문과
+조정 핸들러의 최종 `reply`를, 하위 `budget_adjust*` LLM 실행에서 전달한 프롬프트·대화 맥락·
+원본 출력·처리 시간을 확인할 수 있다. 최종 `reply`는 서버의 카드·질문 데이터이며 DOM 캡처는 아니다.
+대화 식별자는 해시한 `session_id`로 묶는다. 라우터·소비 분석 호출은 이 추적 범위 밖이다.
+
+원문과 예산·재정 관련 정보가 LangSmith로 추가 전송되므로 개발·합성 검증 환경에서 명시적으로 켠다.
+서비스의 기존 은행 연결·예산 조정 AI 동의 검사는 추적 시작보다 먼저 실행한다.
+운영 활성화 전에는 LangSmith의 별도 전송·보관·동의 범위를 확인해야 하며, 기존 OpenAI 동의를
+LangSmith까지 자동으로 확장한 것으로 해석하지 않는다. 키·토큰은 추적에 넘기지 않는다.
+추적 실패는 경고에 오류 종류만 남기며 LLM 호출을 반복하거나 조정 결과를 실패로 바꾸지 않는다.
+전송은 SDK 백그라운드 큐를 사용하므로 프로세스를 강제 종료하면 아직 전송되지 않은 기록은 누락될 수 있다.
+끄려면 `BUDGET_ADJUST_LANGSMITH=false`로 바꾸고 재시작한다. 과거 미기록 원본은 복원하지 않는다.
+수동 추적 방식은 [LangSmith 공식 문서](https://docs.langchain.com/langsmith/annotate-code)를 따른다.
+
 | 변수 | 값·역할 |
 |---|---|
 | `CHAT_ENGINE` | `router`에서 실제 조정 대화·카드를 연결한다. `legacy`는 이전 안내 흐름이다. |
@@ -103,6 +130,41 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 실제 서비스 DB에는 DB 담당 절차로 `users`의 유지 목표 필드 마이그레이션을 적용해야 한다. 코드·파일 준비와 DB 적용은 별개이며 이 작업에서 운영 DB에 자동 적용하지 않는다. 기존 `.env` 비밀값이나 배포 설정은 문서 갱신만으로 변경되지 않는다.
 
 ---
+
+### 선택 기능: 가격 근거 예산 검토
+
+- `BUDGET_PRICE_REFERENCE_PATH`: 검증된 UTF-8 JSON 스냅샷의 서버 파일 경로. 기본값은 빈 값이며, 미설정 시 파일·지역 정보를 읽지 않고 기존 예산 계산을 유지한다. 실행 환경에 읽기 전용 파일로 제공하며 원자료·개인 PC 경로를 저장소에 넣지 않는다.
+- `BUDGET_PRICE_PROFILE_PROVIDER`: **Django 설정의 callable** `(user) -> {"region_code": "12345", "item_groups": {"BEAUTY": "haircut"}}`. 환경변수 문자열만으로는 연결되지 않는다. 서버가 확인한 5자리 시군구 코드와 선택적인 세부품목 코드를 반환하도록 연결한다. 위치·이용 품목을 추측하지 않으며 제공자·지역이 없으면 검토를 생략한다.
+- 실행 코드는 `budgets.price_reference`와 `budgets.price_review`에 있으며 개인 작업 폴더·수집기·추가 라이브러리가 필요하지 않다. 추천·조정은 동일한 검토 함수를 사용한다. 가격은 보조 근거이고 예산을 직접 변경하지 않는다.
+
+스냅샷 v1의 최소 형식은 다음과 같다. 아래 금액·지역은 **형식 설명용 합성 값**이며 실제 판매가가 아니다.
+
+```json
+{
+  "version": 1,
+  "snapshot": "synthetic-example-v1",
+  "regions": {"12345": "테스트 지역"},
+  "references": [{
+    "category": "BEAUTY",
+    "item_group": "haircut",
+    "unit": "1회",
+    "reference_price": 35000,
+    "scope": "local",
+    "region_code": "12345",
+    "sample_kind": "general",
+    "tier": "everyday",
+    "as_of": "2026-11-16"
+  }]
+}
+```
+
+`snapshot`은 자료가 바뀔 때 함께 바꾸는 비어 있지 않은 버전 식별자다. `category`는 확정된 10개 코드(`FOOD`, `HOUSING_TELECOM`, `TRANSPORT_CAR`, `HOUSEHOLD`, `FASHION_SHOPPING`, `MEDICAL_HEALTH`, `BEAUTY`, `EDUCATION`, `CULTURE_LEISURE`, `TRAVEL_LODGING`)만 허용한다. `reference_price`는 동일 품목·규격의 일반 판매가를 사전 검증·집계한 원 단위 양의 정수다. 실행 중에는 가격을 수집하거나 중앙값을 다시 만들지 않는다.
+
+`scope`는 `local` 또는 `national`이며 전국 공통이면 `region_code`는 빈 문자열이다. 지역 가격은 `regions`에 등록된 코드만 쓴다. `as_of`는 미래가 아닌 ISO 날짜이며 검토 기준일로부터 180일 이내 자료만 사용한다. `tier`는 `everyday`/`premium` 중 하나이고 비교에는 `everyday`만 사용한다. 저가 선정 표본 등 `sample_kind`가 `general`이 아닌 자료는 제외한다. `unit`은 비어 있지 않은 문자열이며 직접 비교는 `1회·1개·1벌·1켤레·1권`만 허용한다. 증거·표본 수 등 추가 메타데이터는 유지할 수 있다.
+
+잘못되거나 읽을 수 없는 파일은 `invalid_snapshot`, 지역 누락은 `needs_region`, 제공자 누락은 `needs_region_provider`, 스냅샷에 없는 지역은 `unknown_region`으로 검토를 생략한다. 유효한 파일이어도 가격 근거가 부족하면 `insufficient_price_data`이며 임의 가격으로 채우지 않는다. 기존 예산 검수·최소금액·잠금·승인은 그대로 적용한다.
+
+기존 검토 규칙을 유지한다: 확인된 소비 이력이 있는 항목의 1회 기준가 미달·30% 이상 자동 감액을 재검토하며, 70% 유지액은 재검토 대안이지 가격에서 산출한 월별 필수 하한이 아니다. 사용자가 직접 지정한 항목·잠금·미사용 0원은 존중하고, 주거·통신과 여행·숙박에는 월별 구매 하한을 적용하지 않는다. 세부품목이 없으면 패션의 `basic_top`·미용의 `haircut`만 임시 기준으로 표시한다. `needs_reallocation`은 추가 재원 검토가 필요하다는 뜻이며 사용자 승인이나 기존 보호 조건을 건너뛰지 않는다.
 
 ## 3. 로컬 PostgreSQL 준비
 

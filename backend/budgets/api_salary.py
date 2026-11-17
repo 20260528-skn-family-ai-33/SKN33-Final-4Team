@@ -64,6 +64,7 @@ def save_salary(user, profile, data, today):
     original = {field.name: getattr(profile, field.name) for field in profile._meta.fields}
     payday, income = data["payday"], data["take_home_income"]
     apply_from, key = data.get("apply_from"), data.get("apply_key", "apply_from")
+    preserve_unchanged_schedules = data.get("preserve_unchanged_schedules", False)
     pending = profile.payday_changes_on is not None and today < profile.payday_changes_on
     income_pending = profile.income_changes_on is not None  # 전환일이 지난 예약은 current_salary_profile 이 이미 옮겼다
     started = None  # 첫 예산을 승인했는지 — 필요할 때만 한 번 센다
@@ -101,7 +102,7 @@ def save_salary(user, profile, data, today):
             profile.payday = payday
             profile.scheduled_payday = profile.payday_changes_on = profile.payday_previous_start = None
             payday_moved = True
-    elif pending and apply_from is not None:
+    elif pending and apply_from is not None and not preserve_unchanged_schedules:
         # 지금 급여일로 되돌리고 시점을 골랐다 → 예약 취소 (시점 없이 보낸 예전 화면은 예약을 그대로 둔다)
         profile.scheduled_payday = profile.payday_changes_on = profile.payday_previous_start = None
 
@@ -128,7 +129,7 @@ def save_salary(user, profile, data, today):
                     raise ValidationError({"keep_income_basis": ["이번 주기 예산을 받은 월급 기준으로 둘지 골라 주세요."]})
                 else:
                     drop_basis = not data["keep_income_basis"]
-    elif income_pending and apply_from is not None:
+    elif income_pending and apply_from is not None and not preserve_unchanged_schedules:
         # 지금 금액으로 되돌리고 시점을 골랐다 → 예약 취소
         profile.scheduled_take_home_income = profile.income_changes_on = None
     changed = [name for name, value in original.items() if getattr(profile, name) != value]
