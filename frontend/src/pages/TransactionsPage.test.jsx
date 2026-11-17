@@ -108,3 +108,32 @@ it('주기 날짜가 없거나 이상하면 확인 필요 기본(전체 기간)�
     <PopupProvider><TransactionsPage /></PopupProvider></MemoryRouter>))
   expect(host.querySelector('.mc-sumbar-m').textContent).toBe('전체 기간')
 })
+
+// 11/17: '확인 필요'로 들어오면 뒤로 가기 — 거래 화면 배너에서 왔으면 그 화면, 예산 화면에서 왔으면 예산 화면으로
+it('확인 필요 목록은 뒤로 가기를 보여 주고, 들어오기 전 화면으로 돌아간다', async () => {
+  const { Routes, Route, useLocation } = await import('react-router')
+  let where = null
+  const Probe = () => { const l = useLocation(); where = l.pathname + l.search; return null }
+  const pendingTx = { ...tx, transactionId: 'tx-p', category: 'UNCLASSIFIED', categoryName: '미분류', classifyState: 'needs_review' }
+  fetch.mockImplementation((url) => (url.includes('category=UNCLASSIFIED')
+    ? Promise.resolve(reply({ items: [pendingTx], summary: { spentTotal: 12_345, needsReviewCount: 1 } }))
+    : new Promise((resolve) => waiting.push({ url, resolve }))))
+  const app = (entries, index) => <MemoryRouter key={entries.join()} initialEntries={entries} initialIndex={index}><PopupProvider><Probe /><Routes>
+    <Route path="/finance/transactions" element={<TransactionsPage />} /><Route path="/budgets" element={<p>예산 화면</p>} />
+  </Routes></PopupProvider></MemoryRouter>
+  const back = () => host.querySelector('[aria-label="뒤로"]')
+  // 거래 화면 → 배너 → (달별로 보기로 바꿔도) 뒤로 = 배너 누르기 전 거래 화면
+  await act(async () => root.render(app(['/finance/transactions'], 0)))
+  expect(back()).toBeNull()
+  await act(async () => host.querySelector('.mc-pend-banner').click())
+  expect(back()).not.toBeNull()
+  await act(async () => btn('달별로 보기').click())
+  await act(async () => back().click())
+  expect(where).toBe('/finance/transactions')
+  expect(back()).toBeNull()
+  // 예산 화면 → 확인 필요 → 뒤로 = 예산 화면
+  await act(async () => root.render(app(['/budgets', '/finance/transactions?category=UNCLASSIFIED&month=cycle&from=2026-10-25&to=2026-11-24'], 1)))
+  await act(async () => back().click())
+  expect(where).toBe('/budgets')
+  expect(host.textContent).toContain('예산 화면')
+})
