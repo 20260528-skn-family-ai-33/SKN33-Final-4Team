@@ -145,6 +145,52 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.assertEqual(self.proposals, [])
         self.ports['cancel'].assert_not_called()
 
+    def test_partial_withdrawal_read_failure_keeps_preview_and_can_resume(self):
+        from chat.llm.openai_rest import CapReached, ResponseError
+
+        for failure, code in [(ResponseError('network'), 'call_failed'),
+                              (ResponseError('incomplete'), 'call_failed'),
+                              (CapReached(), 'call_limit')]:
+            with self.subTest(failure=str(failure)):
+                self.setUp()
+                request = envelope(item('FASHION_SHOPPING', 30000, 'down'),
+                                   item('EDUCATION', 20000, 'down'), destinations=['TRANSPORT_CAR'])
+                preview = simulate_funding(self.context, request)
+                preview.update(task_ref='old', proposal_id='old', state='awaiting_approval')
+                before = {'requests': request['items'], 'destinations': ['TRANSPORT_CAR'],
+                          'proposal': deepcopy(preview), 'work_ref': 'old', 'excluded': ['SAVINGS']}
+                self.store.state = deepcopy(before)
+                original = deepcopy(self.context)
+                self.ports['task_status'] = Mock(return_value={'state': 'awaiting_approval'})
+                feedback = json.dumps({'action': 'revise', 'category': None, 'amount': None,
+                                       'amount_mode': None, 'suggested_target': None})
+                self.complete.side_effect = [feedback, failure]
+                result = dialogue.handle({'conversation_id': 'talk', 'text': '교육 감액은 취소할게'}, **self.ports)
+                self.assertEqual(result['error'], code)
+                self.assertEqual(result['status'], 'awaiting_input')
+                self.assertEqual(result['reply']['proposal'], preview)
+                self.assertEqual(result['work_ref'], 'old')
+                self.assertEqual({key: self.store.state[key] for key in before}, before)
+                self.assertEqual(self.proposals, [])
+                self.ports['cancel'].assert_not_called()
+
+                def cancel(ref):
+                    self.ports['task_status'].return_value = {'state': 'canceled', 'task_ref': ref}
+                    return self.ports['task_status'].return_value
+
+                self.ports['cancel'].side_effect = cancel
+                self.complete.side_effect = [feedback, json.dumps(reading(
+                    requests=[item('FASHION_SHOPPING', 30000, 'down')], destinations=['TRANSPORT_CAR'],
+                    request_update='replace', reference='previous'))]
+                result = dialogue.handle({'conversation_id': 'talk', 'text': '쇼핑에서 줄인 돈만 옮겨줘'}, **self.ports)
+                self.assertNotIn('error', result)
+                self.assertIn('proposal', result['reply'], result)
+                after = result['reply']['proposal']['allocations']
+                self.assertEqual({key: after[key] for key in ['FASHION_SHOPPING', 'EDUCATION', 'TRANSPORT_CAR']},
+                                 {'FASHION_SHOPPING': 170000, 'EDUCATION': 50000, 'TRANSPORT_CAR': 130000})
+                self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+                self.assertEqual(self.context, original)
+
     def test_source_decrease_encoding_keeps_the_actual_recipient_for_feedback(self):
         self.context['funding_amount'] += 98176 - self.context['buckets']['SPARE']
         self.context['buckets']['SPARE'] = self.context['bucket_available']['SPARE'] = 98176
@@ -964,14 +1010,14 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
             for text, expected in turns:
                 with self.subTest(text=text):
                     result = dialogue.handle({'conversation_id': 'synthetic', 'text': text}, **ports)
-                    self.assertNotIn('error', result, result)
+                    self.assertNotIn('error', result, (result, self.live.usage(), self.live.client.attempts[-1:]))
                     proposal = result['reply'].get('proposal')
                     self.assertIsNotNone(proposal, result)
                     self.assertEqual({key: proposal['allocations'][key] for key in expected}, expected)
                     self.assertEqual(sum(row['state'] == 'awaiting_approval' for row in tasks.values()), 1)
                     self.assertEqual(ctx, before)
             result = dialogue.handle({'conversation_id': 'synthetic', 'text': '이번 조정은 전부 그만둘게'}, **ports)
-            self.assertEqual(result['status'], 'ended')
+            self.assertEqual(result['status'], 'ended', (result, self.live.usage(), self.live.client.attempts[-1:]))
             self.assertTrue(all(row['state'] == 'canceled' for row in tasks.values()))
             self.assertEqual(ctx, before)
 

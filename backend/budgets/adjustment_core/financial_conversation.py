@@ -764,7 +764,8 @@ def _inquiry(request, state, ports):
         code = 'call_limit' if str(error) == 'call_limit' or getattr(error, 'kind', None) == 'call_limit' else 'call_failed'
         line = ('이번 조정의 대화 횟수를 다 썼어요. 변경안을 확인하거나 취소 후 새로 시작해 주세요.' if code == 'call_limit'
                 else '말씀하신 요청을 읽는 중 문제가 생겼어요. 진행 중인 조건은 그대로 두었어요.')
-        return _result('failed', [line],
+        proposal = state.get('proposal')
+        return _result('awaiting_input' if proposal else 'failed', [line], proposal=proposal,
                        work_ref=state.get('work_ref'), error=code)
     if not data['mine']:
         return not_mine(state.get("work_ref"), data.get("handoff"), data.get("handoff_category"), names)

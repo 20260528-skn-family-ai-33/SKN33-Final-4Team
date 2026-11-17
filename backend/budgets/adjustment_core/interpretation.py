@@ -290,7 +290,8 @@ def read(text, complete, *, pending=None, categories=None, previous=None, hints=
     except InterpretationFailed:
         raise
     except Exception as error:
-        raise InterpretationFailed("call_failed") from error
+        code = 'call_limit' if getattr(error, 'kind', None) == 'call_limit' else 'call_failed'
+        raise InterpretationFailed(code) from error
 
 
 def dialogue_context(state):

@@ -23,6 +23,89 @@ class SalaryReviewRegressionTest(TestCase):
     def planned(self, amount=800000):
         return {'planned_spare': {'status': 'user_confirmed', 'scope': 'unbudgeted_only', 'amount': amount}}
 
+    def destination_handoff(self, destinations=('TRANSPORT_CAR',), **extra):
+        from .adjustment_core.conversation import salary_reply
+        from .test_adjustment_core import Store, item
+
+        state = {'requests': [item('FASHION_SHOPPING', 30000, 'down'), item('EDUCATION', 20000, 'down')],
+                 'destinations': list(destinations), 'scope': 'cycle', **extra}
+        store = Store()
+        response = salary_reply(store, str(self.talk.pk), state, self.old_context, {'action': 'salary_change'})
+        self.assertEqual(response['status'], 'awaiting_input')
+        self.talk.slots = {'state': {'agent:budget': store.state}}
+        self.talk.save(update_fields=['slots'])
+        self.talk.refresh_from_db()
+        return deepcopy(self.talk.slots['state']['agent:budget'])
+
+    def test_salary_handoff_destination_is_funded_before_remaining_salary_savings_and_approval(self):
+        self.destination_handoff()
+        review = self.review()
+        changes = {row['category']: row['after'] for row in review['requestChanges']}
+        self.assertEqual(changes, {'FASHION_SHOPPING': 170000, 'EDUCATION': 30000, 'TRANSPORT_CAR': 150000})
+        self.assertEqual(review['requestedAmount'], 0)
+        self.assertEqual(review['remainingAmount'], 1000000)
+        shown = self.preview(review=review, percent=100)
+        proposal = shown['proposal']
+        for code, amount in changes.items():
+            self.assertEqual(proposal['allocations'][code], amount)
+        self.assertEqual(shown['summary']['savingIncrease'], 1000000)
+        self.assertEqual(proposal['buckets'], {'SAVINGS': 1600000, 'CUSHION_MONTHLY': 200000, 'SPARE': 400000})
+        self.assert_conserved(proposal)
+        self.assertTrue(proposal['canApprove'])
+        self.assertEqual(self.approve(proposal).status_code, 200)
+        approved = Budget.objects.get(pk=proposal['proposalId'])
+        self.assertEqual(approved.status, 'approved')
+        for code, amount in changes.items():
+            self.assertEqual(approved.items.get(category_id=code).allocated_amount, amount)
+
+    def test_salary_destination_request_only_leaves_salary_increase_in_spare(self):
+        self.destination_handoff()
+        review = self.review()
+        shown = self.post(salary_fixtures.URL, {'conversationId': str(self.talk.pk),
+            'basisHash': review['basisHash'], 'savingPercent': 0, 'requestOnly': True})
+        self.assertEqual(shown.status_code, 200, shown.content)
+        proposal = shown.json()['proposal']
+        self.assertEqual(proposal['allocations']['TRANSPORT_CAR'], 150000)
+        self.assertEqual(proposal['buckets']['SAVINGS'], 600000)
+        self.assertEqual(proposal['buckets']['SPARE'], 1400000)
+        self.assert_conserved(proposal)
+        self.assertEqual(self.approve(proposal).status_code, 200)
+
+    def test_ambiguous_salary_destination_preserves_request_without_creating_preview(self):
+        state = self.destination_handoff(destinations=('TRANSPORT_CAR', 'HOUSEHOLD'))
+        review = self.review()
+        self.assertEqual(review['status'], 'needs_input')
+        self.assertEqual(Budget.objects.count(), 1)
+        self.talk.refresh_from_db()
+        self.assertEqual(self.talk.slots['state']['agent:budget'], state)
+
+    def test_destination_transfer_does_not_spend_money_already_used(self):
+        self.snapshot['spent']['FASHION_SHOPPING'] = 190000
+        self.destination_handoff()
+        review = self.review()
+        self.assertEqual(review['status'], 'needs_input')
+        self.assertEqual(Budget.objects.count(), 1)
+
+    def test_destination_transfer_honors_existing_unlock_consent(self):
+        self.snapshot['locks']['FASHION_SHOPPING'] = 200000
+        self.destination_handoff()
+        self.assertEqual(self.review()['status'], 'needs_input')
+        self.destination_handoff(unlock_categories=['FASHION_SHOPPING'], unlock_consents={
+            'FASHION_SHOPPING': {'amount': 200000, 'revision': None, 'base_budget_id': str(self.base.pk)}})
+        proposal = self.preview(percent=100)['proposal']
+        self.assertEqual(proposal['allocations']['FASHION_SHOPPING'], 170000)
+        self.assertEqual(proposal['allocations']['TRANSPORT_CAR'], 150000)
+
+    def test_previous_destination_policy_preview_cannot_be_approved(self):
+        self.destination_handoff()
+        proposal = self.preview(percent=100)['proposal']
+        budget = Budget.objects.get(pk=proposal['proposalId'])
+        budget.input_snapshot['adjustment_context']['salary_review']['policy'] = 'salary-request-first-ab-20261117-planned-spare'
+        budget.save(update_fields=['input_snapshot'])
+        self.assertEqual(self.approve(proposal).status_code, 409)
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+
     def test_confirmed_plans_survive_salary_change_preview_and_approval(self):
         state = self.handoff(state={'financial_overrides': self.planned()})
         review = self.review()

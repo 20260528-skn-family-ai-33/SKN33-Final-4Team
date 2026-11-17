@@ -8,13 +8,13 @@ from rest_framework.exceptions import ValidationError
 
 from .adjustment_context import AdjustmentContextError, adjustment_today, context_fingerprint
 from .adjustment_core.diagnostics import with_overrides
-from .adjustment_core.funding import _data, available_bucket_source
+from .adjustment_core.funding import _data, available_bucket_source, simulate_funding
 from .adjustment_schedule import planning_context
 from .adjustment_service import AdjustmentAdapter, AdjustmentExpired, proposal_card
 from .models import Budget
 
 
-REVIEW_POLICY = 'salary-request-first-ab-20261117-planned-spare'
+REVIEW_POLICY = 'salary-request-first-ab-20261117-destinations'
 REQUEST_FIELDS = ('requests', 'planning', 'scope', 'sources', 'destinations', 'excluded',
                   'spare_minimum', 'clear_targets', 'unlock_categories', 'unlock_consents',
                   'financial_overrides', 'one_off', 'expense_request', 'set_aside_amount')
@@ -121,6 +121,17 @@ def _shares(amount, weights, unit=5000):
     return {code: int(Fraction(amount * weight, total) // unit) * unit for code, weight in weights.items()}
 
 
+def _unlocked_context(context, state):
+    calculation, unlock = deepcopy(context), []
+    for code in state.get('unlock_categories', []):
+        snapshot = {'amount': context['locks'].get(code), 'revision': context.get('lock_revisions', {}).get(code),
+                    'base_budget_id': context['base_budget_id']}
+        if state.get('unlock_consents', {}).get(code) == snapshot:
+            unlock.append(code)
+            calculation['locks'].pop(code, None)
+    return calculation, unlock
+
+
 def _targets(context, state):
     saved = request_state(state)
     codes = [item.get('category') for item in saved['items']]
@@ -160,6 +171,23 @@ def _targets(context, state):
         else:
             targets[code] = target
             explicit.add(code)
+    if saved.get('destinations'):
+        calculation, _ = _unlocked_context(context, state)
+        request = {'items': [{'category': code, 'amount_mode': 'to', 'amount': amount}
+                             for code, amount in targets.items()],
+                   'sources': ['SPARE'], 'destinations': saved['destinations'], 'excluded': saved.get('excluded', [])}
+        minimum = _spare_minimum(context, state)
+        if minimum is not None:
+            request['spare_minimum'] = minimum
+        moved = simulate_funding(calculation, request)
+        if moved['status'] not in {'proposed', 'unchanged'}:
+            raise ValueError((moved.get('conflicts') or [{'code': 'request_transfer_requires_review'}])[0]['code'])
+        for change in moved['changes']:
+            if change['diff'] > 0:
+                if change['category'] == 'SPARE':
+                    raise ValueError('spare_request_requires_review')
+                targets[change['category']] = change['after']
+                explicit.add(change['category'])
     return targets, explicit
 
 
@@ -283,15 +311,7 @@ def preview(user, data, conversation=None, today=None):
     shares = assessment['allocations']
     for code, amount in shares.items():
         targets[code] = targets.get(code, before[code]) + amount
-    unlock = []
-    for code in state.get('unlock_categories', []):
-        snapshot = {'amount': context['locks'].get(code), 'revision': context.get('lock_revisions', {}).get(code),
-                    'base_budget_id': context['base_budget_id']}
-        if state.get('unlock_consents', {}).get(code) == snapshot:
-            unlock.append(code)
-    calculation = deepcopy(context)
-    for code in unlock:
-        calculation['locks'].pop(code, None)
+    calculation, unlock = _unlocked_context(context, state)
     envelope = {'items': [{'category': code, 'amount_mode': 'to', 'amount': amount, 'automatic': code not in explicit}
                           for code, amount in targets.items() if amount != before[code]],
                 'sources': ['SPARE'], 'excluded': state.get('excluded', [])}
