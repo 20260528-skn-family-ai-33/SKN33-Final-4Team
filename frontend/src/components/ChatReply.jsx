@@ -507,7 +507,7 @@ function ResultCard({ content, title, onDetail, onSend }) {
         </div>
       )}
       {content.chart && <Chart chart={content.chart} />}
-      {content.agent === 'policy' ? notices.map((n, i) => <p key={`notice-${i}`} className="mc-note" style={{ padding: 0 }}>{n}</p>) : <Notes content={content} />}
+      {content.agent === 'policy' ? notices.map((n, i) => <p key={`notice-${i}`} className="mc-note mc-note-flush">{n}</p>) : <Notes content={content} />}
     </div>
   )
 }

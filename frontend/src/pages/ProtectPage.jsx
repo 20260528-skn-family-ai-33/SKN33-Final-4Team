@@ -394,7 +394,7 @@ function ProtectForm() {
           <div className="mc-card mc-cjudge">
             <div className="mc-row"><h2>머니 쿠션</h2><span className="mc-badge">{cushion.required ? '필수' : '선택'}</span></div>
             <div className="mc-row" style={{ margin: '10px 0 2px' }}><span className="mc-muted">목표액</span><strong>{won(cushion.target)}</strong></div>
-            <p className="mc-note" style={{ padding: 0 }}>갑작스러운 지출에 대비해 모아 두는 돈이에요. 목표는 머니쿠션 화면에서 바꿀 수 있어요.</p>
+            <p className="mc-note mc-note-flush">갑작스러운 지출에 대비해 모아 두는 돈이에요. 목표는 머니쿠션 화면에서 바꿀 수 있어요.</p>
           </div>
         )}
         {error && <p className="mc-error" role="alert">{error}</p>}

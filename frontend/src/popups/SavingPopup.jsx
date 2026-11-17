@@ -99,16 +99,16 @@ export default function SavingPopup({ item, manage = false, onSaved }) {
         </label>
         {/* 목록을 못 받았으면 이유 + 다시 불러오기. 저장된 계좌는 그대로 남고 '모름'으로 바꾸지 않는다 */}
         {!suggested && payOptionsNote(load.status, live.length, '계좌') && (
-          <p className="mc-note" role={load.status === 'ready' || load.status === 'loading' ? undefined : 'alert'} style={{ padding: 0 }}>
+          <p className="mc-note mc-note-flush" role={load.status === 'ready' || load.status === 'loading' ? undefined : 'alert'}>
             {payOptionsNote(load.status, live.length, '계좌')}
             {['error', 'consent', 'login'].includes(load.status) && <> <button type="button" className="mc-link" disabled={load.retrying} onClick={load.retry}>다시 불러오기</button></>}
           </p>
         )}
         {suggested
-          ? <p className="mc-note mc-saving-lock" style={{ padding: 0 }}>찾은 저축의 계좌는 바꿀 수 없어요. 계좌가 다르면 [아니에요]를 누르고 직접 추가해 주세요.</p>
-          : <p className="mc-note" style={{ padding: 0 }}>다른 은행 적금처럼 앱에 연결 안 한 계좌면 '연결 안 함'으로 두면 돼요.</p>}
+          ? <p className="mc-note mc-saving-lock mc-note-flush">찾은 저축의 계좌는 바꿀 수 없어요. 계좌가 다르면 [아니에요]를 누르고 직접 추가해 주세요.</p>
+          : <p className="mc-note mc-note-flush">다른 은행 적금처럼 앱에 연결 안 한 계좌면 '연결 안 함'으로 두면 돼요.</p>}
 
-        {manage && <p className="mc-note" style={{ padding: 0 }}>저축 금액이 바뀌면 다음 달 예산부터 반영돼요. 이번 달 예산은 그대로예요.</p>}
+        {manage && <p className="mc-note mc-note-flush">저축 금액이 바뀌면 다음 달 예산부터 반영돼요. 이번 달 예산은 그대로예요.</p>}
         <div className="mc-error" role="alert">{error}</div>
         <div className="mc-foot"><button className="mc-primary" form="mc-pop-form" type="submit" disabled={saving}>{saving ? '저장 중…' : editing ? '수정 저장' : '추가하기'}</button></div>
       </form>

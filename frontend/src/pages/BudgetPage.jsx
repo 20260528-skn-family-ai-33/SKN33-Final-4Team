@@ -168,7 +168,7 @@ export default function BudgetPage() {
         })}
         <OutOfBudgetLine value={data.outOfBudget} />
         <OldScopeNote amount={budget.outOfBudgetAllocated} />
-        {lockError && <p className="mc-note" role="alert" style={{ padding: 0 }}>{lockError}</p>}
+        {lockError && <p className="mc-note mc-note-flush" role="alert">{lockError}</p>}
         {unclassifiedCount > 0 && (
           <button type="button" className="mc-catuse mc-catuse-pend" onClick={goPending}>
             <span>확인 필요 {unclassifiedCount}건</span><strong>고르러 가기 ›</strong>

@@ -16,10 +16,10 @@
 #mc-new-preview .mc-policy-actions > * { flex: 1; min-height: 44px; margin-top: 0; }
 /* 저장한 정책 화면: 상태 배지 · 지난 정책 접기 · 해제 되돌리기 */
 #mc-new-preview .mc-saved-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-#mc-new-preview .mc-saved-badge { padding: 3px 8px; border-radius: 7px; font-size: 12px; font-weight: 650; background: var(--mc-soft); color: var(--mc-brand); }
+#mc-new-preview .mc-saved-badge { padding: 3px 8px; border-radius: 6px; font-size: 12px; font-weight: 650; background: var(--mc-soft); color: var(--mc-brand); }
 #mc-new-preview .mc-saved-badge.is-urgent { background: var(--mc-warm); color: var(--mc-alert); }
 #mc-new-preview .mc-saved-badge.is-closed { background: var(--mc-bg); color: var(--mc-sub); }
-#mc-new-preview .mc-saved-card .mc-policy-title { font-size: 17px; }
+#mc-new-preview .mc-saved-card .mc-policy-title { font-size: 18px; }
 #mc-new-preview .mc-saved-past > summary { cursor: pointer; padding: 12px 0; min-height: 44px; color: var(--mc-sub); font-weight: 650; }
 #mc-new-preview .mc-saved-past .mc-card { opacity: .8; }
 #mc-new-preview .mc-saved-undo { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 12px; background: var(--mc-soft); color: var(--mc-brand); font-size: 13px; }

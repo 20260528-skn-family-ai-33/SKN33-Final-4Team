@@ -140,9 +140,9 @@ export default function FixedPopup({ item, onSaved }) {
             ))}
           </div>
         </div>
-        {disconnected && pay !== 'none' && !payPick && <p className="mc-note" style={{ padding: 0 }}>연결 해제된 {item.paymentCard ? '카드' : '계좌'}예요. 다시 골라 주세요.</p>}
+        {disconnected && pay !== 'none' && !payPick && <p className="mc-note mc-note-flush">연결 해제된 {item.paymentCard ? '카드' : '계좌'}예요. 다시 골라 주세요.</p>}
         {pay === 'none' ? (
-          <p className="mc-note" style={{ padding: 0 }}>출금 계좌를 몰라도 저장돼요. 나중에 고를 수 있어요.</p>
+          <p className="mc-note mc-note-flush">출금 계좌를 몰라도 저장돼요. 나중에 고를 수 있어요.</p>
         ) : (
           <label className="mc-field">{pay === 'card' ? '결제 카드' : '출금 계좌'}
             <select value={payPick} onChange={(e) => { setPayPick(e.target.value); setError('') }}>
@@ -153,12 +153,12 @@ export default function FixedPopup({ item, onSaved }) {
         )}
         {/* 목록을 못 받았으면 빈 목록이라고 하지 않고 이유를 보여 준다. 저장된 결제 수단은 그대로 남는다 (모름으로 바꾸지 않음) */}
         {pay !== 'none' && loadNote && (
-          <p className="mc-note" role={load.status === 'ready' || load.status === 'loading' ? undefined : 'alert'} style={{ padding: 0 }}>
+          <p className="mc-note mc-note-flush" role={load.status === 'ready' || load.status === 'loading' ? undefined : 'alert'}>
             {loadNote}
             {['error', 'consent', 'login'].includes(load.status) && <> <button type="button" className="mc-link" disabled={load.retrying} onClick={load.retry}>다시 불러오기</button></>}
           </p>
         )}
-        {pay === 'card' && <p className="mc-note" style={{ padding: 0 }}>카드로 내는 돈은 카드값 안에 들어 있어서 따로 빼지 않아요. 저장하면 이 카드에서 비슷한 결제를 찾아 맞는지 물어볼게요.</p>}
+        {pay === 'card' && <p className="mc-note mc-note-flush">카드로 내는 돈은 카드값 안에 들어 있어서 따로 빼지 않아요. 저장하면 이 카드에서 비슷한 결제를 찾아 맞는지 물어볼게요.</p>}
 
         <label className="mc-field">카테고리
           <select value={cat} onChange={(e) => { setCat(e.target.value); setCatTouched(true); setError('') }}>
@@ -166,7 +166,7 @@ export default function FixedPopup({ item, onSaved }) {
             {PICK_CATS.map((c) => <option key={c}>{c}</option>)}
           </select>
         </label>
-        <p className="mc-note" style={{ padding: 0 }}>매달 나가는 돈만 넣어요. 커피처럼 자주 사는 건 생활비 예산에서 챙겨요. 저축·대출 상환·카드값도 따로 챙겨요.</p>
+        <p className="mc-note mc-note-flush">매달 나가는 돈만 넣어요. 커피처럼 자주 사는 건 생활비 예산에서 챙겨요. 저축·대출 상환·카드값도 따로 챙겨요.</p>
         <div className="mc-error" role="alert">{error}</div>
         <div className="mc-foot"><button className="mc-primary" form="mc-pop-form" type="submit" disabled={saving}>{saving ? '저장 중…' : editing ? '수정 저장' : '추가하기'}</button></div>
       </form>
