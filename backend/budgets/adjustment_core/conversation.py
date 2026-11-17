@@ -62,6 +62,14 @@ def _explain_current(state, context, text, ref=None):
     if state.get("pending"):
         response = _pending_reply(state, ref, context)
         explanation = state["pending"].get("explanation") or step_explanation(state["pending"]["kind"], state)
+        if (state['pending']['kind'] in {'category', 'destinations'}
+                and any(row.get('category') == 'LIVING' and row.get('direction') == 'up'
+                        for row in state.get('requests', []))):
+            explanation = {
+                'why': '저축·월 머니쿠션에서 가져오면 이번 주기에 배정한 예산이 줄어요. 이미 모은 돈을 인출하는 것은 아니에요.',
+                'effect': '여윳돈도 남겨 둘 돈을 제외한 범위에서만 사용할 수 있어요.',
+                'next': '늘릴 생활비 항목을 고르면, 가져올 수 있는 금액으로 조정 예시를 보여드릴게요.',
+            }
     elif state.get("proposal"):
         explanation = state["proposal"].get("explanation") or step_explanation("proposal", state)
         response = _result("replied", work_ref=ref, proposal=state["proposal"], explanation=explanation)
@@ -86,8 +94,10 @@ def decision_help(store, cid, state, context, allocator=None):
     pending, ref = state.get('pending', {}), state.get('work_ref')
     kind = pending.get('kind')
     if kind == 'increase_review':
+        from .funding import large_increase_warning
         response = _pending_reply(state, ref, context)
-        response['reply']['lines'] = ['꼭 필요한 지출과 금액부터 정해 보세요. 줄일 수 있다면 “금액 다시 정하기”, 이 금액이 필요하다면 “주의사항 확인 후 계속”을 선택하세요. 계속해도 예산이 바로 바뀌지는 않아요.']
+        warning = large_increase_warning(context, state.get('requests', []), reason=state.get('reason'))
+        response['reply']['lines'] = ([warning] if warning else []) + ['필요한 금액을 줄이거나, 주의사항을 확인한 뒤 계속할 수 있어요. 아직 예산은 바뀌지 않았어요.']
         return response
     if kind in {'comparison', 'financial_selection'}:
         return recommendation_reply(state, context, ref)
@@ -1161,6 +1171,10 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
             data['action'] = None
             if len(data['requests']) > 1:
                 state.pop('manual_living', None)
+        if (pending.get('kind') == 'increase_review' and (data['unclear'] or data.get('reference') == 'unclear')
+                and not data.get('requests') and not any(data.get(field) for field in LIST_FIELDS)
+                and not data.get('scope') and not data.get('clear_targets') and data.get('unlock') is None):
+            return decision_help(store, cid, state, context, allocator)
         if (data["unclear"] or data.get("reference") == "unclear") and not _explanation_only(data) and data.get('action') not in {'distribute', 'help_decide'}:
             if data.get('income_change'):
                 state.setdefault('planning', {})['income_change'] = deepcopy(data['income_change'])
@@ -1265,8 +1279,20 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
             index = pending.get('index', state.get('focus', 0)) or 0
             if state['requests'][index].get('direction') == 'up':
                 return _inspect_sources(store, cid, state, context, allocator)
-        lines = [f"{names.get(code, code)} 배정액은 {amount:,}원이에요." for code, amount in context.get("buckets", {}).items()]
-        return _result("replied", lines or ["조정하고 싶은 항목을 알려 주시면 가능액을 확인할게요."], work_ref=ref)
+        from .funding import available_bucket_source
+        lines = []
+        for code in context.get('buckets', {}):
+            if code in state.get('excluded', []) or any(
+                    row.get('category') == code and row.get('direction') == 'up' for row in state.get('requests', [])):
+                continue
+            quote = available_bucket_source(_calculation(context, state), code,
+                                            excluded=state.get('excluded', []), spare_minimum=state.get('spare_minimum'))
+            amount = quote['maximum']
+            lines.append(f"{names.get(code, code)} · 최대 {amount:,}원" if amount is not None
+                         else f"{names.get(code, code)} · 사용 가능액 확인 필요")
+        if lines:
+            lines.append('저축·월 머니쿠션은 이번에 배정한 예산을 줄이는 방법이에요. 이미 모은 돈을 인출하지 않아요.')
+        return _result("replied", lines or ["조정하고 싶은 항목을 알려 주시면 가능액을 확인할게요."], work_ref=ref, detail=True)
     if pending.get("kind") == "comparison" and not data.get("comparison_plan"):
         selecting = data.get("funding_scope") or data.get("sources") or data.get("destinations")
         if (selecting and not data.get("requests") and not data.get("excluded")

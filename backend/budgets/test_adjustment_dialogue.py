@@ -14,6 +14,53 @@ from .test_adjustment_core import Store, allocation, context, envelope, item, re
 
 
 class AdjustmentDialogueTest(unittest.TestCase):
+
+    def test_amount_context_preserves_category_but_allows_explicit_topic_change(self):
+        pending = {'kind': 'amount', 'index': 0}
+        previous = {'requests': [item('TRANSPORT_CAR', None, 'up', None)]}
+        for reference, update, expected in [('previous', 'merge', 'TRANSPORT_CAR'),
+                                           ('new', 'merge', 'LIVING'), ('previous', 'replace', 'LIVING')]:
+            answer = reading(requests=[item('LIVING', 50000)], reference=reference, request_update=update)
+            data = interpretation.read('금액 답변', lambda *_: json.dumps(answer),
+                                       pending=pending, previous=previous)
+            self.assertEqual(data['requests'][0]['category'], expected)
+
+    def test_unclear_reason_and_help_do_not_remove_large_increase_warning(self):
+        self.context['monthly_income'] = 3000000
+        self.turn(reading(requests=[item('LIVING', 1000000)]))
+        for answer in [reading(unclear=['그래도 계속할까요?']),
+                       reading(action='help_decide', reference='previous')]:
+            response = self.turn(answer)
+            self.assertIn('30% 이상', ' '.join(response['reply']['lines']))
+            self.assertEqual(self.store.state['pending']['kind'], 'increase_review')
+            self.assertFalse(self.proposals)
+
+    def test_funding_inquiry_shows_protected_capacity_and_preserves_pending_category(self):
+        from .adjustment_core.funding import available_bucket_source
+        self.turn(reading(requests=[item('LIVING', 50000)]))
+        before = deepcopy(self.store.state['requests'])
+        response = self.turn(reading(action='inspect', reference='previous'))
+        self.assertEqual(guidance(response, self.store.state)['kind'], 'explanation')
+        maximum = available_bucket_source(self.context, 'SAVINGS')['maximum']
+        self.assertIn(f'저축 · 최대 {maximum:,}원', response['reply']['lines'])
+        self.assertEqual(self.store.state['requests'], before)
+        self.assertFalse(self.proposals)
+        self.context['bucket_status']['SPARE'] = 'unknown'
+        self.store.state['excluded'] = ['SAVINGS']
+        response = self.turn(reading(action='inspect', reference='previous'))
+        self.assertIn('여윳돈 · 사용 가능액 확인 필요', response['reply']['lines'])
+        self.assertFalse(any(line.startswith('저축 ·') for line in response['reply']['lines']))
+
+    def test_living_category_step_explanation_includes_funding_meaning(self):
+        self.turn(reading(requests=[item('LIVING', 50000)]))
+        before = deepcopy(self.store.state['requests'])
+        response = self.turn(reading(action='explain', reference='previous'))
+        message = guidance(response, self.store.state)['message']
+        self.assertIn('저축·월 머니쿠션', message)
+        self.assertIn('이미 모은 돈을 인출하는 것은 아니에요', message)
+        self.assertEqual(self.store.state['requests'], before)
+        self.assertFalse(self.proposals)
+
     def test_multi_request_missing_amount_does_not_erase_the_known_amount(self):
         requests = [item('FOOD', 50000), item('TRANSPORT_CAR', None, 'up', None)]
         self.turn(reading(requests=requests))
@@ -835,13 +882,17 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
             self.assertIsNotNone(comparison, result)
             plans = [p for p in comparison['plans'] if p['status'] in {'ready', 'partial'}]
             self.assertTrue(plans)
-            self.assertEqual(max(p['amount'] for p in plans), 140000)
+            self.assertEqual(max(p['amount'] for p in plans), 300000)
+            for plan in plans:
+                self.assertEqual(plan['result']['allocations'], fixture.context['allocations'])
+                for code, before in fixture.context['buckets'].items():
+                    self.assertGreaterEqual(plan['result']['buckets'][code], (before * 3 + 9) // 10)
             self.assertEqual(comparison['basis_amount'], 300000)
             self.assertTrue(all(t['from'] != 'SAVINGS' for p in plans for t in p['result']['transfers']))
             self.assertEqual(fixture.store.state['requests'], [item('SAVINGS', 300000)])
         result = dialogue.handle({'conversation_id': 'talk', 'text': '다음달부터 교육비에 50만원 더 나감'}, **fixture.ports)
         self.assertEqual(fixture.store.state['requests'], [item('EDUCATION', 500000)])
-        self.assertIn('교육', ' '.join(result['reply']['lines']))
+        self.assertIn('교육', guidance(result, fixture.store.state)['context'])
         self.assertFalse(fixture.proposals)
 
     def test_spare_concern_asks_minimum_and_recalculates_without_spending_it_all(self):

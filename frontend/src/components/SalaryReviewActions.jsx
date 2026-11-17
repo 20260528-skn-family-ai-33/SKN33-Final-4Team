@@ -19,7 +19,7 @@ export default function SalaryReviewActions({ context, busy = false, note = fals
     {context.budgetReturn
       ? <>
         <button type="button" className="mc-secondary" disabled={busy} aria-describedby={help ? 'mc-sr-return-help' : undefined}
-          onClick={() => navigate(context.budgetReturn.returnTo)}>{label}</button>
+          onClick={() => navigate(`${context.budgetReturn.returnTo}${stage === 'pending' ? '&salaryResume=request_only' : ''}`)}>{label}</button>
         {help && <p id="mc-sr-return-help" className="mc-note">{help}</p>}
       </>
       : <button type="button" className="mc-link" disabled={busy} onClick={() => navigate(PATHS.my)}>예산 검토 나중에 하기</button>}

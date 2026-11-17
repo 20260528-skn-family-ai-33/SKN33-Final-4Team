@@ -300,7 +300,75 @@ class InsightTest(SimpleTestCase):
             self.assertFalse(any("자동으로 작성한 설명" in n for n in reply["notices"]))
 
 
+class PersonaContextTest(SimpleTestCase):
+    def test_saver_uses_the_same_fixed_deduction_as_protect(self):
+        from budgets.models import Budget
+        from budgets.protect import recommend
+        from finance.models import FinancialTransaction
+        user = mock.Mock(pk="synthetic-user")
+        user.financial_profile = mock.Mock(birth_date=date(1998, 1, 1), housing_type="family", savings_floor=800000)
+        budget = mock.Mock(funding_amount=3000000, cycle=mock.Mock(starts_on=date(2026, 11, 1)))
+        with mock.patch.object(Budget.objects, "filter") as budgets, \
+                mock.patch("budgets.protect.fixed_breakdown", return_value={
+                    "categories": {"HOUSING_TELECOM": 700000}, "loan": 100000, "card_reserved": 200000}) as fixed, \
+                mock.patch.object(FinancialTransaction.objects, "filter") as transfers:
+            budgets.return_value.order_by.return_value.select_related.return_value.first.return_value = budget
+            transfers.return_value.exists.return_value = True
+            context = insight._persona_context(user, {}, TODAY)
+        fixed.assert_called_once_with(user, budget.cycle)
+        self.assertEqual(context["base"], 2000000)
+        self.assertEqual(recommend(context["base"], "family", 0)["ratio_saving_floor"], 800000)
+        result = insight.personality.assess({}, {"state": "unavailable"}, context)
+        self.assertEqual(result["profile"]["mascot"], "saver")
+        self.assertIn("권장 저축액(800,000원)", result["profile"]["lines"][0])
+
+    def test_unknown_fixed_total_does_not_treat_income_as_available(self):
+        from budgets.models import Budget
+        from finance.models import FinancialTransaction
+        user = mock.Mock(pk="synthetic-user")
+        user.financial_profile = mock.Mock(birth_date=date(1998, 1, 1), housing_type="family", savings_floor=1200000)
+        budget = mock.Mock(funding_amount=3000000, cycle=mock.Mock(starts_on=date(2026, 11, 1)))
+        with mock.patch.object(Budget.objects, "filter") as budgets, \
+                mock.patch("budgets.protect.fixed_total", return_value=None), \
+                mock.patch.object(FinancialTransaction.objects, "filter") as transfers:
+            budgets.return_value.order_by.return_value.select_related.return_value.first.return_value = budget
+            transfers.return_value.exists.return_value = True
+            context = insight._persona_context(user, {}, TODAY)
+        self.assertNotIn("base", context)
+        result = insight.personality.assess({}, {"state": "unavailable"}, context)
+        self.assertIsNone(result["profile"])
+
+
 class AnalysisPresentationTest(SimpleTestCase):
+    def test_forecast_notices_follow_amount_even_without_monthly_graph(self):
+        forecast = {"id": "FORECAST", "conclusion": "월말 예상은 42만 원이에요.", "evidence": []}
+        for method in ("pattern", "validated"):
+            for goal in ("overview", "habit", "forecast"):
+                with self.subTest(method=method, goal=goal):
+                    summary = self.summary()
+                    summary["story"].update(
+                        findings=[{"id": "TREND", "kind": "trend_flat", "conclusion": "생활비는 비슷했어요.", "evidence": []}, forecast],
+                        projection={"method": method, "month_end": 420000, "observed": 300000,
+                                    "checked": 3, "error": 50000,
+                                    "validation": {"selected": {"model": "average", "lookback_days": 28},
+                                                   "test_months": ["8월", "9월", "10월"], "test_mae": 50000}})
+                    with mock.patch.object(insight.benchmark, "for_user", return_value=([], [])):
+                        reply = insight._story_answer(None, summary, goal, TODAY, "")
+                    self.assertIn(forecast["conclusion"], reply["lines"])
+                    self.assertNotIn("months", [b["kind"] for b in reply["view"]])
+                    self.assertTrue(any("예상 방식:" in n and "50,000원" in n for n in reply["notices"]))
+                    self.assertIn("예상액에는 앞으로 새로 생길 큰 결제가 들어 있지 않아요.", reply["notices"])
+                    if goal == "habit":
+                        self.assertIn("월말 전망", str(next(b for b in reply["view"] if b["kind"] == "details")))
+
+    def test_unshown_forecast_does_not_add_prediction_notices(self):
+        summary = self.summary()
+        summary["story"].update(
+            findings=[{"id": "FORECAST", "conclusion": "월말 예상은 42만 원이에요.", "evidence": []}],
+            projection={"method": "pattern", "checked": 3, "error": 50000})
+        reply = insight._story_answer(None, summary, "reason", TODAY, "")
+        self.assertFalse(any("예상 방식:" in n or "앞으로 새로 생길 큰 결제" in n for n in reply["notices"]))
+
     def summary(self):
         return {"basis": {"coverage": "partial", "comparison_available": False, "scope": "생활비",
                           "comparison_reason": "직접 등록한 카드의 조회 범위를 확인할 수 없어요.", "as_of": TODAY.isoformat()},

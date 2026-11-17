@@ -20689,6 +20689,11 @@
             "minimum": 0,
             "maximum": 100,
             "description": "기존 요청을 반영한 뒤 남은 급여 증가분 중 추가 저축할 비율."
+          },
+          "requestOnly": {
+            "type": "boolean",
+            "default": false,
+            "description": "true이면 보관한 요청만 반영하고 추가 저축·A/B 재배분 없이 잔액을 여윳돈으로 유지한다. savingPercent는 0이어야 한다."
           }
         }
       },
@@ -20743,6 +20748,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 100
+          },
+          "requestOnly": {
+            "type": "boolean",
+            "description": "보관한 요청만 반영하도록 선택한 미리보기인지 여부."
           },
           "scope": {
             "type": "string",
@@ -20905,6 +20914,6 @@
     "docs/api/savings.md": "93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223",
     "docs/api/home.md": "7bb99b1aed49c9547a9e78f6b189c0a83cc9358d1a509ae804e805fcb5b79128",
     "docs/api/chat.md": "6f17e87d367a271798b1597d03fad48f747450a45bb548d36c0720f705e0d0bd",
-    "docs/api/budgets.md": "d76a44ab7c47333a3307c87f2f9da1ea6b08c5bd0dadc15f043a1cf40e439762"
+    "docs/api/budgets.md": "86fee1a630b14f83342292342ecdd53cad56fc9c4f1a726a5f9a5a81957daa8f"
   }
 }

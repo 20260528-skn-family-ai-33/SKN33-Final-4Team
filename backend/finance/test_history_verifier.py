@@ -415,7 +415,7 @@ class HistoryPipelineTest(HistoryFixture):
         salary = self.bank(direction="in", transaction_type="income", amount=2000000,
                            source_description="급여", occurred_on=date(2026, 10, 25))
         apply(self.user, Tx.objects.filter(pk=salary.pk))
-        # R12: 큰 입금은 확인 전 급여가 아니다. 실제 확인 API를 거쳐도 환불 근거를 대신하지 않는다.
+        # R12: 큰 입금은 확인 전 급여가 아니다. 11/16: 결제한 가게 이름이 아닌 입금은 확인 여부와 상관없이 환불 후보가 아니다.
         self.assertNotIn(salary.pk, salary_reviews(self.user))
         client = APIClient()
         client.force_authenticate(self.user)
@@ -427,10 +427,10 @@ class HistoryPipelineTest(HistoryFixture):
         self.assertEqual(self.total(), 17000)
         report = verify_transaction_history(self.user, MONTHS)
         for state in report.values():
-            self.assertEqual(state, {**CLEAN, "refunds": "unknown"})
+            self.assertEqual(state, CLEAN)
         self.assertEqual(TransactionLink.objects.get(relation_type="SAME_PURCHASE").confirmation_state, "suggested")
 
-    def test_auto_own_transfer_does_not_certify_non_refund_inflow(self):
+    def test_own_transfer_inflow_is_not_a_refund_candidate(self):
         self.user.nickname = "김나은"
         self.user.save(update_fields=["nickname"])
         second = BankAccount.objects.create(user=self.user, connection=self.account.connection, source_account_key="second")
@@ -443,10 +443,33 @@ class HistoryPipelineTest(HistoryFixture):
         self.assertEqual(link.confirmation_state, "suggested")
         income.refresh_from_db()
         self.assertEqual(income.transaction_type, "own_transfer")
-        self.assertEqual(self.result()["refunds"], "unknown")
+        # 11/16: 내 계좌끼리 옮긴 돈은 결제한 가게에서 온 돈이 아니므로 환불 후보가 아니다
+        self.assertEqual(self.result()["refunds"], "verified")
 
-    def test_interest_description_and_user_category_confirmation_do_not_prove_non_refund(self):
+    def test_interest_inflow_is_not_a_refund_candidate(self):
         income = self.bank(direction="in", transaction_type="income", source_description="예금이자",
                            amount=100, confirmation_state="confirmed", occurred_on=date(2026, 10, 1))
         apply(self.user, Tx.objects.filter(pk=income.pk))
-        self.assertTrue(all(state["refunds"] == "unknown" for state in verify_transaction_history(self.user, MONTHS).values()))
+        self.assertTrue(all(state["refunds"] == "verified" for state in verify_transaction_history(self.user, MONTHS).values()))
+
+    def test_ordinary_inflows_do_not_block_like_other_screens(self):
+        # 11/16: 월급 · 친구 1/n · 판매 대금은 홈 · 예산 · 소비 분석 어디에서도 소비를 줄이지 않는다 → B안도 막지 않는다
+        self.tx(amount=120000)
+        for name, amount in (("(주)와와컴퍼니", 2600000), ("김혜리", 30000), ("번개장터 정산", 45000), ("", 5000)):
+            self.bank(direction="in", transaction_type="income", source_description=name, amount=amount,
+                      occurred_on=date(2026, 11, 3))
+        self.assertEqual(verify_transaction_history(self.user, MONTHS), {m: CLEAN for m in MONTHS})
+
+    def test_inflow_from_paid_merchant_is_refund_candidate(self):
+        self.tx(merchant_name="쿠팡", occurred_on=date(2026, 9, 3))
+        # 결제 전에 들어온 같은 이름 입금은 그 결제의 환불일 수 없다
+        self.bank(direction="in", transaction_type="income", source_description="쿠팡", amount=3000,
+                  occurred_on=date(2026, 8, 20))
+        self.assertEqual(verify_transaction_history(self.user, MONTHS)["2026-08"]["refunds"], "verified")
+        # 결제 뒤 같은 가게 이름(공백 무시)으로 들어온 돈은 환불일 수 있다 → 그 달과 앞 달을 미검증
+        self.bank(direction="in", transaction_type="income", source_description="쿠 팡", amount=5000,
+                  occurred_on=date(2026, 11, 2))
+        report = transaction_history_report(self.user, MONTHS)
+        for month in MONTHS:
+            self.assertEqual(report[month]["refunds"]["status"], "unknown")
+        self.assertEqual([r["code"] for r in report["2026-10"]["refunds"]["reasons"]], ["inflow_from_paid_merchant"])

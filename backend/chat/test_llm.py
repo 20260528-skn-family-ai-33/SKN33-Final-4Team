@@ -167,3 +167,17 @@ class ServiceErrorTest(SimpleTestCase):
         from .llm.openai_rest import SERVICE_STOP
         with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-not-real", "LLM_MODEL": "test-model"}):
             self.assertEqual(LiveReading(None, None).client.stop_on, SERVICE_STOP)
+
+    def test_budget_output_allowance_does_not_change_other_roles_or_explicit_limits(self):
+        from unittest import mock
+        from .llm.live import LiveReading
+        from budgets.adjustment_core.financial_conversation import DIALOGUE_PROMPT
+        from spending_analysis.reading import PROMPT as SPENDING_PROMPT
+        from chat.router_core.reading import PROMPT as ROUTER_PROMPT
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test-not-real", "LLM_MODEL": "test-model"}):
+            client = LiveReading(None, None).client
+            self.assertEqual(client.body(DIALOGUE_PROMPT, '{}')['max_output_tokens'], 4000)
+            for prompt in (SPENDING_PROMPT, ROUTER_PROMPT):
+                self.assertEqual(client.body(prompt, '{}')['max_output_tokens'], 2000)
+        explicit = ResponsesClient('test-model', 'sk-test-not-real', None, max_output_tokens=123)
+        self.assertEqual(explicit.body(DIALOGUE_PROMPT, '{}')['max_output_tokens'], 123)

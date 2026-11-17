@@ -92,12 +92,14 @@ function mockServer() {
       data = api.salaryReview ?? { status: 'no_increase' }
       if (api.salaryReview && method === 'POST') {
         const saving = data.remainingAmount * body.savingPercent / 100
-        api.salaryReview = { ...data, savingPercent: body.savingPercent, proposal: {
+        api.salaryReview = { ...data, savingPercent: body.savingPercent, requestOnly: body.requestOnly === true, proposal: {
           proposalId: 'salary-review-draft', state: 'awaiting_approval', mode: 'NORMAL_ADJUSTMENT',
           canApprove: true, changes: [
             ...data.requestChanges,
-            { category: 'SAVINGS', before: 500000, after: 500000 + saving, diff: saving },
-            { category: 'FOOD', before: 400000, after: 500000, diff: 100000 },
+            ...(body.requestOnly ? [] : [
+              { category: 'SAVINGS', before: 500000, after: 500000 + saving, diff: saving },
+              { category: 'FOOD', before: 400000, after: 500000, diff: 100000 },
+            ]),
           ], shortfalls: [], persistenceItems: [],
         }, summary: { allocationReview: { status: 'reviewed', plan: 'b', allocatedAmount: 100000,
           unallocatedAmount: data.remainingAmount - saving - 100000,
@@ -226,6 +228,23 @@ async function returnToChat() {
 }
 
 describe('실제 월급·지킬 돈·추천 화면과 예산 조정 대화 왕복', () => {
+  it('요청만 이어가기 버튼은 저축 비율 입력 없이 기존 요청의 미리보기를 만들고 대화로 돌아온다', async () => {
+    api.salaryReview = { status: 'ready', basisHash: 'latest-approved', incomeBefore: 3000000, incomeAfter: 4000000,
+      increase: 1000000, requestedAmount: 500000, remainingAmount: 500000, savingPercent: 30,
+      requestChanges: [{ category: 'EDUCATION', before: 50000, after: 550000, diff: 500000 }] }
+    await mount(`/budgets/protect?${RETURN_QUERY}&salaryReview=1`)
+    await click('저축·쿠션은 그대로 두고 요청만 이어가기')
+    expect(route().pathname).toBe('/chat')
+    expect(new URLSearchParams(route().search).get('salaryResume')).toBe('request_only')
+    expect(calls('/api/budgets/salary-review/', 'POST').map(({ body }) => body)).toEqual([
+      { conversationId: CONVERSATION, basisHash: 'latest-approved', savingPercent: 0, requestOnly: true },
+    ])
+    expect(api.salaryReview.proposal.changes).toEqual(api.salaryReview.requestChanges)
+    expect(calls('/api/chat/messages/', 'POST').at(-1).body.choice.value).toBe('salary_resume')
+    expect(api.approvedId).toBe('approved-budget')
+    expect(calls('/api/budgets/recommend/', 'POST')).toHaveLength(0)
+  })
+
   it.each(['chat', 'mypage'])('%s에서 월급을 저장하면 공통 검토 결과를 보여 주고 별도 승인한다', async (entry) => {
     api.salary.takeHomeIncome = 3000000
     api.salaryReview = { status: 'ready', basisHash: 'latest-approved', incomeBefore: 3000000, incomeAfter: 4000000,

@@ -405,6 +405,101 @@ class ClassifyTest(TestCase):
         self.assertEqual(tx.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
         predict.assert_called_once_with([])
 
+    def test_pg_only_asks_without_search(self, predict):
+        # 11/16: 결제대행사만 찍히면 어느 가게인지 몰라 SVM · 검색 없이 묻는다. 지난 선택은 후보로
+        self.tx("대표인증_3 - 발트페이먼츠", confirmed_category_id="FOOD", confirmation_state="confirmed",
+                classification_source="user")
+        (tx,) = self.run_classify(self.tx("대표인증_3 - 발트페이먼츠"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                         ("UNCLASSIFIED", "needs_review", classifier.PG_REASON))
+        self.assertEqual(tx.suggestion_candidates, [{"category": "FOOD", "confidence": None}])
+        predict.assert_called_once_with([])
+        self.judge.assert_not_called()
+
+    def test_pg_only_still_uses_apply_to_future(self, predict):
+        # 11/11 (PR #114): 결제대행사 이름이어도 '앞으로도 적용'을 고르면 같은 이름 + 같은 카드사 업종 거래에 쓴다
+        self.tx("대표인증_3 - 발트페이먼츠", confirmed_category_id="FOOD", confirmation_state="confirmed",
+                classification_source="user", field_states={"apply_to_future": True})
+        (tx,) = self.run_classify(self.tx("대표인증_3 - 발트페이먼츠"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
+                         ("FOOD", "suggested", "rule"))
+
+    def test_b_is_checked_when_a_is_not_decided(self, predict):
+        # 11/16 실거래 '메가MGC_인증_3 - 메가 MGC 커피': A '메가MGC' 는 근거를 못 찾고 B 로 다시 보면 식비
+        predict.side_effect = lambda names: [[("FOOD", 0.4), ("BEAUTY", 0.3)] for _ in names]
+        a_record = {"step": "search_jev", "store_mismatch": True, "web_accepted": False}
+        b_record = {"step": "search_jev", "web_accepted": True}
+        self.judge.side_effect = lambda name: {
+            "메가MGC": {"review": ([("FOOD", 0.1)], classifier.NOT_FOUND_REASON), "record": a_record},
+            "메가 MGC 커피": {"apply": ("FOOD", 0.97), "record": b_record},
+        }[name]
+        (tx,) = self.run_classify(self.tx("메가MGC_인증_3 - 메가 MGC 커피"))
+        self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.classification_source),
+                         ("FOOD", "suggested", "llm"))
+        self.assertEqual([c.args[0] for c in self.judge.call_args_list], ["메가MGC", "메가 MGC 커피"])
+        self.assertEqual(tx.field_states["classifier"], {**b_record, "used": "B", "other": a_record})
+
+    def test_decided_a_never_looks_at_b(self, predict):
+        (tx,) = self.run_classify(self.tx("루덴치과의원 - 새봄식당"))
+        self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("MEDICAL_HEALTH", "ml"))
+        predict.assert_called_once_with(["루덴치과의원"])
+        self.judge.assert_not_called()
+
+    def test_pg_found_by_search_moves_to_b(self, predict):
+        # A 를 검색해 보니 결제대행사 → B 로. B 는 규칙(택시)으로 정해진다
+        predict.side_effect = lambda names: [[("FOOD", 0.4)] for _ in names]
+        pg = {"step": "search_jev", "pg": "web"}
+        self.judge.return_value = {"pg": True, "record": pg}
+        (tx,) = self.run_classify(self.tx("테스트결제 - 카카오T일반택시_0"))
+        self.assertEqual((tx.confirmed_category_id, tx.classification_source), ("TRANSPORT_CAR", "rule"))
+        self.assertEqual(tx.field_states["classifier"], {"step": "rule", "used": "B", "other": pg})
+        self.judge.assert_called_once_with("테스트결제")
+
+    def test_both_unresolved_shows_the_side_with_store_evidence(self, predict):
+        predict.side_effect = lambda names: [[("FOOD", 0.4)] for _ in names]
+        a = {"review": ([("FOOD", 0.2)], classifier.NOT_FOUND_REASON), "record": {"industry": "한식", "store_mismatch": True}}
+        b = {"review": ([("BEAUTY", 0.6), ("FOOD", 0.3)], classifier.UNSURE_REASON), "record": {"industry": "미용실"}}
+        self.judge.side_effect = lambda name: {"새봄": a, "새봄헤어": b}[name]
+        (tx,) = self.run_classify(self.tx("새봄_인증_3 - 새봄헤어"))
+        self.assertEqual((tx.confirmation_state, tx.suggestion_reason), ("needs_review", classifier.UNSURE_REASON))
+        self.assertEqual([c["category"] for c in tx.suggestion_candidates], ["BEAUTY", "FOOD"])
+        self.assertEqual(tx.field_states["classifier"]["used"], "B")
+
+    def test_pg_on_b_keeps_a_review(self, predict):
+        # B 가 결제대행사면 A 의 결과를 보여 준다 (B 는 검색하지 않음)
+        predict.side_effect = lambda names: [[("FOOD", 0.4)] for _ in names]
+        self.judge.return_value = {"review": ([("FOOD", 0.2)], classifier.NOT_FOUND_REASON), "record": {"step": "search_jev"}}
+        (tx,) = self.run_classify(self.tx("새봄_인증_3 - 발트페이먼츠"))
+        self.assertEqual(tx.suggestion_reason, classifier.NOT_FOUND_REASON)
+        self.assertEqual(tx.field_states["classifier"], {"step": "search_jev", "used": "A", "other": {"step": "rule"}})
+        self.judge.assert_called_once_with("새봄")
+
+    def test_b_keeps_the_same_review_rules_as_a(self, predict):
+        # 11/16 PR 리뷰: A 를 못 정해 B 로 볼 때도 단독 이름과 같은 보호 규칙. 'APPLE SERVICES' 는 SVM 이 확신해도 묻는다
+        predict.side_effect = lambda names: [[("CULTURE_LEISURE", 0.99)] if "APPLE" in n else [("FOOD", 0.4)] for n in names]
+        self.judge.return_value = {"review": ([("FOOD", 0.2)], classifier.NOT_FOUND_REASON), "record": {"step": "search_jev"}}
+        alone, paired = self.run_classify(self.tx("APPLE SERVICES"), self.tx("낯선상호 - APPLE SERVICES"))
+        for tx in (alone, paired):
+            self.assertEqual((tx.confirmed_category_id, tx.confirmation_state, tx.suggestion_reason),
+                             ("UNCLASSIFIED", "needs_review", classifier.MIXED_SERVICE_REASON), tx.merchant_name)
+            self.assertEqual(tx.suggestion_candidates, [{"category": "CULTURE_LEISURE", "confidence": None}])
+        self.assertEqual(paired.field_states["classifier"]["used"], "B")
+        self.judge.assert_called_once_with("낯선상호")
+
+    def test_only_the_last_name_is_judged_as_cut(self, predict):
+        # 11/16: 카드사가 자른 건 맨 끝 이름뿐 → 결제 경로 뒤의 B, 'A - B' 의 B 만 cut
+        predict.side_effect = lambda names: [[("FOOD", 0.4)] for _ in names]
+        self.judge.return_value = {"apply": ("FASHION_SHOPPING", 0.97), "record": {"cut_name": True}}
+        (tx,) = self.run_classify(self.tx("대표_4_카카오페이 - 주식회사 더뮤지엄비지"))
+        self.judge.assert_called_once_with("주식회사 더뮤지엄비지", cut=True)
+        self.assertEqual(tx.confirmed_category_id, "FASHION_SHOPPING")
+
+        self.judge.reset_mock()
+        self.judge.return_value = {"review": ([], classifier.NOT_FOUND_REASON), "record": {}}
+        self.run_classify(self.tx("메가MGC_인증_3 - 메가 MGC 커피(서울서일초"))
+        self.assertEqual([(c.args[0], c.kwargs.get("cut", False)) for c in self.judge.call_args_list],
+                         [("메가MGC", False), ("메가 MGC 커피", True)])
+
     def test_apple_asks_user_until_apply_to_future(self, predict):
         # 11/02: 애플은 음악·iCloud·앱이 한 이름으로 찍혀서 '확인 필요' + 문화·여가 후보. '앞으로도 적용'이면 자동
         fresh, kcp = self.run_classify(self.tx("Apple Services"), self.tx("Apple_KCP"))
@@ -489,10 +584,55 @@ class RuleTest(SimpleTestCase):
             "카카오_법인택시6": "TRANSPORT_CAR", "서울법인택시조합": None,
             "택시파스타 압구정로데오역점": None, "피자택시": None, "옐로우택시": None, "택시종사자쉼터": None,
             "서울개인택시조합새마을금고": None, "카카오페이택시충전": None,
+            # 11/16 실제 카드 명세: 낱말 뒤 번호 · 택시 앱 이름에 붙은 표기
+            "카카오_택시9": "TRANSPORT_CAR", "카카오T택시_가승인": "TRANSPORT_CAR", "택시12": "TRANSPORT_CAR",
+            "택시9파스타": None, "카카오T택시충전": None,
             "레벨업 피시방 남부터미널점": "CULTURE_LEISURE", "탑PC방": "CULTURE_LEISURE",
         }
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
+
+    def test_transport_dictionary(self):
+        # 11/16: 후불교통 · 교통카드 · 하이패스 충전 · 주유 · 주차 = 교통·차량
+        cases = {
+            "후불교통": "TRANSPORT_CAR", "후불교통대금": "TRANSPORT_CAR", "11월후불교통": "TRANSPORT_CAR",
+            "교통카드충전": "TRANSPORT_CAR", "에스엠하이플러스": "TRANSPORT_CAR", "하이플러스": "TRANSPORT_CAR",
+            "하이패스": "TRANSPORT_CAR", "SK에너지대흥주유소": "TRANSPORT_CAR", "GS칼텍스 죽전점": "TRANSPORT_CAR",
+            "S-OIL": "TRANSPORT_CAR", "현대오일뱅크": "TRANSPORT_CAR", "풍덕천주유소": "TRANSPORT_CAR",
+            "하이파킹 한남점": "TRANSPORT_CAR", "AJ파크 이태원": "TRANSPORT_CAR", "롯데월드몰주차장": "TRANSPORT_CAR",
+            # 보험료는 자동차보험도 기타 (분류 기준 20261105, 11/17 PR 리뷰: 보험사 · 다이렉트 이름으로는 보험 종류를 모른다)
+            "DB손해보험 다이렉트": "ETC", "KB손해보험 자동차보험": "ETC", "캐롯손해보험": "ETC",
+            "캐롯손해보험 운전자보험": "ETC", "삼성화재다이렉트 여행자보험": "ETC",
+            "삼성화재다이렉트": None, "현대해상다이렉트": None,
+            # 교통이 아니거나 교통비로 자동 분류하지 않음
+            "교통범칙금": None, "교통과태료": None, "교통사고합의금": None,
+            "전동셔터방범샷다주차장문오버헤드도어": None, "주유소식당": None,
+            "Soil 베이커리": None, "캐롯케이크": None, "S-OIL 강남주유소": "TRANSPORT_CAR",  # 11/17 리뷰
+            # 자동차보험이 아닌 보험은 지금처럼 기타
+            "OO화재해상보험": "ETC", "OO생명보험": "ETC",
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+
+    def test_telecom_bills(self):
+        # 11/16: 통신요금 = 주거·통신. 짧은 이름은 전체가 같거나 앞뒤에 번호만 붙을 때만 (실제 명세 'SKT0104948…', '010…SKT')
+        cases = {
+            "SKT0104948": "HOUSING_TELECOM", "01012345678SKT": "HOUSING_TELECOM", "SKB1234567890": "HOUSING_TELECOM",
+            "SKT": "HOUSING_TELECOM", "SKT 010-4948-1234": "HOUSING_TELECOM",
+            "KT": "HOUSING_TELECOM", "KT 1234567": "HOUSING_TELECOM", "(주)케이티": "HOUSING_TELECOM",
+            "LGU+0105555": "HOUSING_TELECOM", "SK텔레콤": "HOUSING_TELECOM", "SK텔레콤 자동납부": "HOUSING_TELECOM",
+            "KT통신요금": "HOUSING_TELECOM", "LG유플러스": "HOUSING_TELECOM", "SK브로드밴드": "HOUSING_TELECOM",
+            "KT스카이라이프": "HOUSING_TELECOM", "LG헬로비전": "HOUSING_TELECOM",
+            "케이티엠모바일": "HOUSING_TELECOM", "헬로모바일": "HOUSING_TELECOM", "토스모바일": "HOUSING_TELECOM",
+            "세븐모바일": "HOUSING_TELECOM",
+            # 통신사가 아니거나 다른 용도
+            "KT&G": None, "KTX": None, "SKT1 굿즈샵": None, "SK에너지": "TRANSPORT_CAR", "LG전자": None, "토스": None,
+            "SK매직 렌탈": None, "KT 렌탈": None, "SK텔레콤 상품권": None, "모바일상품권": None, "카페모바일": None,
+        }
+        for name, code in cases.items():
+            self.assertEqual(classifier.rule_category(name), code, name)
+        # 결제대행 표기를 뗀 뒤에도 같다
+        self.assertEqual(classifier.rule_category(classifier.store_name("KCP-SK텔레콤_SK텔레콤")), "HOUSING_TELECOM")
 
     def test_starbucks_brand(self):
         # 11/02: 지점명·회사명·앱 충전 모두 식비. 이름 뒤쪽에 '스타벅스'가 들어간 다른 가게는 제외
@@ -505,6 +645,7 @@ class RuleTest(SimpleTestCase):
         cases = {
             "아트박스테스트홈플러스점": "FASHION_SHOPPING", "카카오프렌즈테스트점": "FASHION_SHOPPING",
             "펀앤펀테스트점": "CULTURE_LEISURE", "토피코테스트점": "CULTURE_LEISURE", "테스트아트박스": None,
+            "반다이남코코리아캡슐4": "CULTURE_LEISURE",  # 11/16 실거래 가챠샵 기계
         }
         for name, code in cases.items():
             self.assertEqual(classifier.rule_category(name), code, name)
@@ -561,16 +702,48 @@ class RuleTest(SimpleTestCase):
         for name in ("네이버페이", "카카오페이택시", "토스", "", None):
             self.assertFalse(classifier.is_pay_charge(name), name)
 
+    def test_fallback_name(self):
+        # 11/16: 'A - B' 에서 A 를 가맹점으로 쓸 때 다음으로 볼 B
+        cases = {
+            "메가MGC_인증_3 - 메가 MGC 커피": "메가 MGC 커피", "치킨 - 피자": "피자", "새봄_인증_3 - 발트페이먼츠": "발트페이먼츠",
+            "메가MGC_인증_3 - 메가 MGC 커피(서울서일초": "메가 MGC 커피",  # 카드사가 자른 지점명은 뗀다
+            "네이버페이 - 봄툰": None, "대표인증_3 - 발트페이먼츠": None, "대표_3_카카오페이 - 파파존스 청라점": None,
+            "카카오스타일 - 카카오스타일": None, "테스트 - ": None, "루덴치과의원": None, "": None, None: None,
+        }
+        for name, alt in cases.items():
+            self.assertEqual(classifier.fallback_name(name), alt, name)
+
+    def test_cut_branch_tail(self):
+        # 11/16 실거래: 카드사가 이름을 잘라 괄호가 안 닫힌 꼬리는 뗀다. 닫힌 괄호는 그대로
+        self.assertEqual(classifier.store_name("인터넷상거래 - 주식회사 노이즈엑스(NoizX C"), "주식회사 노이즈엑스")
+        self.assertEqual(classifier.store_name("메가 MGC 커피(서울서일초"), "메가 MGC 커피")
+        self.assertEqual(classifier.store_name("한국정보통신 - 테스트파킹(주)"), "테스트파킹(주)")
+        self.assertEqual(classifier.store_name("롯데쇼핑(주)롯"), "롯데쇼핑(주)롯")
+
+    def test_maybe_cut(self):
+        # 11/16 실거래: 잘린 적요는 41~42바이트, 안 잘린 건 37바이트 이하
+        for name in ("대표_4_카카오페이 - 주식회사 더뮤지엄비지", "인터넷상거래 - 주식회사 노이즈엑스(NoizX C"):
+            self.assertTrue(classifier.maybe_cut(name), name)
+        for name in ("PAYCO오더 - 엔에이치엔페이코 주식회사", "메가MGC_인증_3 - 메가 MGC 커피", "", None):
+            self.assertFalse(classifier.maybe_cut(name), name)
+
+    def test_pg_names(self):
+        for name in ("발트페이먼츠", "(주)발트페이먼츠", "토스페이먼츠", "나이스페이먼츠", "Toss Payments", "KG이니시스", "KCP",
+                     "네이버페이", "카카오페이"):  # 결제 경로 이름만 찍힌 것도 (11/16 실거래 '네이버페이')
+            self.assertTrue(classifier.is_pg_name(name), name)
+        for name in ("메가 MGC 커피", "카카오페이택시", "네이버페이충전", "페이먼트커피", "", None):
+            self.assertFalse(classifier.is_pg_name(name), name)
+
 
 @patch.dict(os.environ, {"TYPESAFE_API_KEY": "test", "JEV_MODEL": "jev-test"})
 class JudgeTest(SimpleTestCase):
-    def run_judge(self, found, answer=None, name="새봄동물", web=()):
+    def run_judge(self, found, answer=None, name="새봄동물", web=(), cut=False):
         stores = {"side_effect": found} if isinstance(found, Exception) else {"return_value": [found] if isinstance(found, tuple) else found or []}
         texts = {"side_effect": web} if isinstance(web, Exception) else {"return_value": list(web)}
         answers = {"side_effect": answer} if isinstance(answer, list) else {"return_value": answer}
         with patch("finance.classifier.search_store", **stores), patch("finance.classifier.search_web", **texts), \
                 patch("finance.classifier.ask_jev", **answers) as ask:
-            return classifier.judge(name), ask
+            return (classifier.judge(name, cut=True) if cut else classifier.judge(name)), ask
 
     def test_confident_jev_applies(self):
         result, ask = self.run_judge(("naver", "새봄동물", "동물병원"),
@@ -612,9 +785,9 @@ class JudgeTest(SimpleTestCase):
         self.assertEqual(result["review"], ([], classifier.LOOKUP_FAILED_REASON))
         self.assertEqual(result["record"]["error"], "OSError")
 
-    def test_high_jev_score_without_store_evidence_stays_in_review(self):
-        # PR #64 리뷰: 검색 0건 · 가게가 아닌 업종 · 다른 가게가 검색됐으면 Jev 0.99 여도 확정하지 않음
-        food = ("FOOD", 0.99, {"FOOD": 0.99, "ETC": 0.01}, "jev-test")
+    def test_name_only_jev_needs_higher_score(self):
+        # 검색 0건 · 가게가 아닌 업종 · 다른 가게가 검색됐으면 이름만으로 물은 답 (PR #64 리뷰: 다른 가게 업종은 Jev 에도 안 넘김)
+        # 11/16: 이름만으로 물은 답은 0.95 이상이면 적용하고 name_only 를 남긴다. 0.9 이상 0.95 미만은 지금처럼 '확인 필요'
         cases = {
             "검색 0건": None,
             "가게 아닌 업종": ("kakao", "새봄동물", "금융서비스"),
@@ -622,11 +795,110 @@ class JudgeTest(SimpleTestCase):
         }
         for label, found in cases.items():
             with self.subTest(label):
-                result, ask = self.run_judge(found, food)
+                result, ask = self.run_judge(found, ("FOOD", 0.99, {"FOOD": 0.99, "ETC": 0.01}, "jev-test"))
+                self.assertEqual(result["apply"], ("FOOD", 0.99))
+                self.assertTrue(result["record"]["name_only"])
+                self.assertEqual(ask.call_args.args[0], "가맹점 이름: 새봄동물")
+                result, _ = self.run_judge(found, ("FOOD", 0.93, {"FOOD": 0.93, "ETC": 0.07}, "jev-test"))
                 self.assertNotIn("apply", result)
-                self.assertEqual(result["review"], ([("FOOD", 0.99), ("ETC", 0.01)], classifier.NOT_FOUND_REASON))
-                self.assertEqual(ask.call_args.args[0], "가맹점 이름: 새봄동물")  # 다른 가게 업종은 Jev 에도 안 넘김
+                self.assertEqual(result["review"], ([("FOOD", 0.93), ("ETC", 0.07)], classifier.NOT_FOUND_REASON))
+                self.assertNotIn("name_only", result["record"])
         self.assertTrue(result["record"]["store_mismatch"])
+
+    def test_name_only_unknown_stays_in_review(self):
+        # 이름만으로는 판단 보류(UNKNOWN)가 확신해도 적용하지 않는다 (11/16 실거래 '인터넷상거래_2' UNKNOWN 1.0)
+        result, _ = self.run_judge(None, ("UNKNOWN", 1.0, {"UNKNOWN": 1.0}, "jev-test"))
+        self.assertNotIn("apply", result)
+        self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
+
+    def test_pg_is_found_by_map_or_web(self):
+        # 11/16 실제 검색: 나이스페이먼츠 지도 '지불,결제대행', KG이니시스 웹 '온라인 전자결제PG사' → Jev 를 부르지 않는다
+        result, ask = self.run_judge(("naver", "나이스페이먼츠", "지불,결제대행"), name="나이스페이먼츠")
+        self.assertEqual((result["pg"], result["record"]["pg"]), (True, "industry"))
+        ask.assert_not_called()
+        result, ask = self.run_judge(None, name="KG이니시스", web=["KG이니시스 / 온라인 전자결제PG사, 신용카드, 계좌이체"])
+        self.assertEqual((result["pg"], result["record"]["pg"]), (True, "web"))
+        ask.assert_not_called()
+
+    def test_coffee_brand_web_is_not_pg(self):
+        # 11/16 실제 검색: '메가 MGC 커피'는 지도는 다른 지점이지만 웹 설명이 근거가 되어 식비
+        food = ("FOOD", 0.97, {"FOOD": 0.97, "ETC": 0.03}, "jev-test")
+        result, _ = self.run_judge(("naver", "메가MGC커피 광화문역점", "카페"), food, name="메가 MGC 커피",
+                                   web=["메가MGC커피 / 메가커피 커피전문점, 프랜차이즈"])
+        self.assertEqual(result["apply"], ("FOOD", 0.97))
+        self.assertTrue(result["record"]["web_accepted"])
+        self.assertNotIn("pg", result["record"])
+
+    def test_cut_name_allows_prefix_match(self):
+        # 11/16 실거래 '대표_4_카카오페이 - 주식회사 더뮤지엄비지'(41바이트): 카드사가 '더뮤지엄비지터'를 잘랐다. 실제 웹 결과 그대로
+        fashion = ("FASHION_SHOPPING", 0.97, {"FASHION_SHOPPING": 0.97, "ETC": 0.03}, "jev-test")
+        web = ["새상품) 더티셔츠뮤지엄 셔츠 S | 셔츠 / 더티셔츠뮤지엄의 깔끔한 디자인의 셔츠예요",
+               "'디렉터 부부 첫 컬래버' 다이닛x더뮤지엄비지터, 성수동 팝업 연다 / 디자이너 박문수의 브랜드 '더뮤지엄비지터(THE MUSEUM VISITOR)'",
+               "'크림뮤지엄' 관련 상품 찾기 | 총 6건"]
+        result, ask = self.run_judge(None, fashion, name="주식회사 더뮤지엄비지", web=web, cut=True)
+        self.assertEqual(result["apply"], ("FASHION_SHOPPING", 0.97))
+        self.assertTrue(result["record"]["cut_name"])
+        self.assertIn("더뮤지엄비지터", ask.call_args.args[0])
+        self.assertNotIn("더티셔츠", ask.call_args.args[0])
+        # 잘리지 않은 적요면 지금처럼 낱말이 끝나야 근거 (이름만 기준 0.95 아래 점수로 확인)
+        unsure = ("FASHION_SHOPPING", 0.93, {"FASHION_SHOPPING": 0.93, "ETC": 0.07}, "jev-test")
+        result, _ = self.run_judge(None, unsure, name="주식회사 더뮤지엄비지", web=web)
+        self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
+        self.assertNotIn("cut_name", result["record"])
+
+    def test_cut_name_is_completed_and_searched_again(self):
+        # 11/16 실제 검색: '더뮤지엄비지터'로 다시 찾으면 카카오 '더 뮤지엄비지터' · 의류판매, 웹 'Official Online Store'
+        def stores(query):
+            return [("kakao", "더 뮤지엄비지터", "의류판매")] if query == "더뮤지엄비지터" else []
+
+        def texts(query):
+            if query == "더뮤지엄비지터":
+                return ["더 뮤지엄 비지터 / The Museum Visitor | Official Online Store | Art & Design Studio"]
+            return ["다이닛x더뮤지엄비지터, 성수동 팝업 연다 / 디자이너 박문수의 브랜드 '더뮤지엄비지터(THE MUSEUM VISITOR)'"]
+
+        def answer(state):
+            confidence = 0.98 if "의류판매" in state else 0.79
+            return "FASHION_SHOPPING", confidence, {"FASHION_SHOPPING": confidence, "ETC": 1 - confidence}, "jev-test"
+
+        with patch("finance.classifier.search_store", side_effect=stores) as store, \
+                patch("finance.classifier.search_web", side_effect=texts), patch("finance.classifier.ask_jev", side_effect=answer):
+            result = classifier.judge("주식회사 더뮤지엄비지", cut=True)
+        self.assertEqual(result["apply"], ("FASHION_SHOPPING", 0.98))
+        self.assertEqual((result["record"]["industry"], result["record"]["cut_name"], result["record"]["completed_name"]),
+                         ("의류판매", True, True))
+        self.assertEqual([c.args[0] for c in store.call_args_list], ["더뮤지엄비지", "더뮤지엄비지터"])
+        self.assertEqual(classifier.completed_name(texts("x"), "더뮤지엄비지"), "더뮤지엄비지터")
+        self.assertIsNone(classifier.completed_name(["더뮤지엄비지 매장"], "더뮤지엄비지"))
+        self.assertIsNone(classifier.completed_name(["스타벅스강남대로점에서 커피를"], "스타벅스강남대로점"))  # 조사만 붙음
+
+    def test_completed_name_in_conflict_list_is_only_suggested(self):
+        # 11/17 PR 리뷰: 잘린 이름을 온전한 이름으로 다시 찾아 정해도, 온전한 이름이 동명 충돌 목록에 있으면 후보로만
+        def stores(query):
+            return [("kakao", "더 뮤지엄비지터", "의류판매")] if query == "더뮤지엄비지터" else []
+
+        def texts(query):
+            return ["디자이너 박문수의 브랜드 '더뮤지엄비지터(THE MUSEUM VISITOR)'"]
+
+        answer = ("FASHION_SHOPPING", 0.98, {"FASHION_SHOPPING": 0.98, "ETC": 0.02}, "jev-test")
+        with patch("finance.classifier.search_store", side_effect=stores), \
+                patch("finance.classifier.search_web", side_effect=texts), \
+                patch("finance.classifier.ask_jev", return_value=answer), \
+                patch("finance.classifier.conflict_names", return_value=frozenset({"더뮤지엄비지터"})):
+            action = classifier._ml_action("더뮤지엄비지", [("FASHION_SHOPPING", 0.5)], None, {}, cut=True)
+        self.assertNotIn("apply", action)
+        self.assertEqual(action["review"][1], classifier.CONFLICT_REASON)
+        self.assertEqual(action["review"][0][0], ("FASHION_SHOPPING", 0.98))
+
+    def test_cut_name_prefix_on_map_and_short_names(self):
+        beauty = ("BEAUTY", 0.95, {"BEAUTY": 0.95, "ETC": 0.05}, "jev-test")
+        result, _ = self.run_judge(("naver", "새봄헤어살롱 성수점", "미용실"), beauty, name="새봄헤어살", cut=True)
+        self.assertEqual(result["apply"], ("BEAUTY", 0.95))
+        # 5글자보다 짧으면 잘렸어도 앞부분 일치를 허용하지 않는다 (리디 ↔ 리디앤폴)
+        result, _ = self.run_judge(("naver", "리디앤폴", "서점"), beauty, name="리디", cut=True)
+        self.assertTrue(result["record"]["store_mismatch"])
+        self.assertNotIn("cut_name", result["record"])
+        self.assertTrue(classifier.same_store("더뮤지엄비지", "더뮤지엄비지터 성수점", prefix=True))
+        self.assertFalse(classifier.same_store("더뮤지엄비지", "더뮤지엄비지터 성수점"))
 
     def test_same_store(self):
         # 11/05 결정: 공백·기호를 뺀 이름이 완전히 같을 때만
@@ -644,7 +916,8 @@ class JudgeTest(SimpleTestCase):
         self.assertTrue(result["record"]["web_accepted"])
         self.assertNotIn("항공권", str(result["record"]))  # 웹 원문은 저장하지 않는다
 
-        result, ask = self.run_judge(None, travel, name="여행앱", web=["전혀 다른 글"])  # 이름이 없으면 근거 아님
+        unsure = ("TRAVEL_LODGING", 0.93, {"TRAVEL_LODGING": 0.93, "ETC": 0.07}, "jev-test")
+        result, ask = self.run_judge(None, unsure, name="여행앱", web=["전혀 다른 글"])  # 이름이 없으면 근거 아님 (이름만 기준 0.95 아래)
         self.assertEqual(ask.call_args.args[0], "가맹점 이름: 여행앱")
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
         self.assertFalse(result["record"]["web_accepted"])
@@ -715,7 +988,7 @@ class JudgeTest(SimpleTestCase):
         self.assertTrue(classifier.names_store("메가 MGC 커피 안내", "메가MGC"))
         self.assertTrue(classifier.names_store("Trip.com 트립닷컴에서 예약", "트립닷컴"))
         self.assertFalse(classifier.names_store("아무 글", ""))
-        result, ask = self.run_judge(None, ("BEAUTY", 0.97, {"BEAUTY": 0.97}, "jev-test"), name="리디", web=["팩토리디 / 헤어 전문 미용실"])
+        result, ask = self.run_judge(None, ("BEAUTY", 0.93, {"BEAUTY": 0.93}, "jev-test"), name="리디", web=["팩토리디 / 헤어 전문 미용실"])
         self.assertEqual(ask.call_args.args[0], "가맹점 이름: 리디")
         self.assertEqual(result["review"][1], classifier.NOT_FOUND_REASON)
 
@@ -788,6 +1061,14 @@ class DeliveryAppTest(SimpleTestCase):
                            "(주)아성다이소": "HOUSEHOLD", "쿠팡": None, "쿠팡마트": None, "현대백화점 판교점": None, "번개장터": None,
                            "롯데하이마트 강남점": None, "신앙촌상회": None, "루덴치과의원": None, "": None, None: None}.items():
             self.assertEqual(classifier.retail_category(name), code, name)
+
+    def test_food_franchise_operators(self):
+        # 11/16: 외식 프랜차이즈 운영사 이름은 이름이 정확히 같을 때만 식비
+        for name in ("엠지씨글로벌", "(주)비케이알", "주식회사 청오디피케이", "롯데GRS", "롯데지알에스", "교촌에프앤비", "이랜드이츠",
+                     "카카오페이 - 비알코리아(주)"):
+            self.assertEqual(classifier.rule_category(classifier.store_name(name)), "FOOD", name)
+        for name in ("비케이알오플라워", "엠지씨글로벌물류"):
+            self.assertIsNone(classifier.rule_category(name), name)
 
     def test_zigzag_operator_is_fashion(self):
         # 11/09: 지도(회사 사무실)와 웹(패션)이 엇갈려 묻던 지그재그 운영사

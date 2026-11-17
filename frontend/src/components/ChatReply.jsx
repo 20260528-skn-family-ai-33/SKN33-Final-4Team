@@ -537,7 +537,7 @@ export default function ChatReply({ content, title, active, onPick, onApprove, o
     {adjustment
       ? <BudgetAdjustment content={content} active={active} onPick={onPick} onApprove={onApprove} onSend={onSend} onSalaryEdit={onSalaryEdit} onSalaryReview={onSalaryReview} navigation={navigation} />
       : content.result ? <ResultCard content={content} title={title} onDetail={onDetail} onSend={active && onSend ? onSend : null} /> : <Bubble content={content}>{children}</Bubble>}
-    {content.agent !== 'policy' && !ended && content.examples?.length > 0 && <div className="mc-fx-next">
+    {content.agent !== 'policy' && !ended && content.examples?.length > 0 && <div className={adjustment ? "mc-fx-next" : undefined}>
       <p className="mc-note">{adjustment ? '이렇게 이어서 말해 보세요.' : '이런 질문으로 이어서 볼 수 있어요.'}</p>
       <Choices choices={content.examples.map((text) => ({ value: text, label: text }))} active={active && Boolean(onSend)}
         onPick={(choice) => onSend(choice.value)} />

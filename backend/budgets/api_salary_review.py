@@ -28,11 +28,15 @@ def conversation_for(request, data):
 @idempotent(required=True)
 def create_preview(request):
     data = body_dict(request)
-    reject_unknown_fields(data, {'conversation_id', 'basis_hash', 'saving_percent'})
+    reject_unknown_fields(data, {'conversation_id', 'basis_hash', 'saving_percent', 'request_only'})
     if not isinstance(data.get('basis_hash'), str) or not data['basis_hash']:
         raise ValidationError({'basis_hash': ['검토 기준이 필요해요. 화면을 다시 확인해 주세요.']})
     if type(data.get('saving_percent')) is not int or not 0 <= data['saving_percent'] <= 100:
         raise ValidationError({'saving_percent': ['0부터 100 사이의 비율을 입력해 주세요.']})
+    if type(data.get('request_only', False)) is not bool:
+        raise ValidationError({'request_only': ['요청만 반영할지 확인해 주세요.']})
+    if data.get('request_only') and data['saving_percent'] != 0:
+        raise ValidationError({'saving_percent': ['요청만 이어갈 때는 추가 저축 비율을 0%로 정해 주세요.']})
     return Response(preview(request.user, data, conversation_for(request, data)))
 
 

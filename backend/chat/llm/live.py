@@ -13,6 +13,11 @@ def schema_for(system):
     return resolve(system)
 
 
+def output_tokens(system):
+    # Budget intent JSON shares the output allowance with reasoning tokens.
+    return 4000 if schema_for(system)[0].startswith('budget_adjust') else 2000
+
+
 class LiveReading:
     """B 가설 확인 · 추가 판단도 같은 클라이언트 · 상한 · 장부를 쓴다.
     상한은 call_limit으로 안내하고, 그 밖의 호출 실패는 해석 실패로 답한다 (대화 상태 그대로)"""
@@ -29,6 +34,7 @@ class LiveReading:
             self.ledger = Ledger(ledger_path, max_calls)
         # 서비스: 429 · 400 은 그 요청만 실패(다음 요청은 보냄), 설정 오류(인증 · 권한 · 모델)와 상한만 계속 막는다
         self.client = ResponsesClient(model, key, max_calls, schema=schema_for, stop_on=SERVICE_STOP,
+                                      max_output_tokens=output_tokens,
                                       on_attempt=self.ledger.spend if self.ledger else None)
         self.model, self.missed = model, 0
 

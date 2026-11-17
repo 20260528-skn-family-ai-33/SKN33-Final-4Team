@@ -119,8 +119,9 @@ class BudgetHistoryEvidenceTest(TestCase):
         from .models import SalaryDecision
         from .salary import confirmation_snapshot
 
+        # 11/16: 결제한 가게 이름으로 들어온 입금만 환불 후보다. 급여 확인 예외를 시험하려고 결제 가게와 같은 이름을 쓴다
         tx = self.tx(direction='in', transaction_type='income', amount=2500000, occurred_on=date(2026, month, 25),
-            source_description='합성 급여', confirmed_category_id='UNCLASSIFIED', confirmation_state='needs_review')
+            source_description='합성 식사', confirmed_category_id='UNCLASSIFIED', confirmation_state='needs_review')
         fields = confirmation_snapshot(tx) if snapshot else {}
         decision = SalaryDecision.objects.create(user=self.user, transaction=tx, state=state,
             pay_cycle_on=None if state == 'rejected' else tx.occurred_on, **fields)
@@ -156,7 +157,7 @@ class BudgetHistoryEvidenceTest(TestCase):
         other = BankAccount.objects.create(user=self.user, connection=self.bank, source_account_key='other',
             account_type='demand', currency='KRW', is_selected=True)
         for changed in ({'amount': 2500001}, {'occurred_on': date(2026, 8, 26)},
-                        {'source_description': '합성 급여 정정'}, {'account': other}):
+                        {'source_description': '합성  식사'}, {'account': other}):
             with self.subTest(field=next(iter(changed))):
                 tx, decision = self.salary()
                 self.Tx.objects.filter(pk=tx.pk).update(**changed)
@@ -168,13 +169,43 @@ class BudgetHistoryEvidenceTest(TestCase):
                 self.assertEqual(decision.snapshot_amount, 2500000)
                 tx.delete()
 
+    def test_changed_salary_blocks_b_even_under_an_ordinary_name(self):
+        # 11/16 PR 리뷰: 일반 입금은 B안을 막지 않지만, 확인한 월급이 확인 뒤 바뀌면 월급 근거가 흔들려 막는다
+        from .models import SalaryDecision
+        from .salary import confirmation_snapshot
+
+        deposits = []
+        for month in (8, 9, 10):
+            tx = self.tx(direction='in', transaction_type='income', amount=2500000, occurred_on=date(2026, month, 25),
+                source_description='합성 급여', confirmed_category_id='UNCLASSIFIED', confirmation_state='needs_review')
+            SalaryDecision.objects.create(user=self.user, transaction=tx, state='confirmed', pay_cycle_on=tx.occurred_on,
+                **confirmation_snapshot(tx))
+            deposits.append(tx)
+        self.assertEqual(self.selected()[0]['plan'], 'b')
+        self.Tx.objects.filter(pk=deposits[0].pk).update(amount=2500001)
+        selection, records = self.selected()
+        self.assertEqual(selection['plan'], 'a')
+        self.assertEqual(records['2026-08']['normalization_checks']['refunds'], 'unknown')
+        self.assertEqual(records['2026-10']['normalization_checks'], CLEAN)  # 바뀐 달과 그 이후는 그대로
+
     def test_matching_amount_unconfirmed_inflow_is_not_excused_by_salary(self):
         self.salary()
         self.tx(direction='in', transaction_type='income', amount=2500000,
-                occurred_on=date(2026, 9, 25), source_description='합성 일반 입금')
+                occurred_on=date(2026, 9, 25), source_description='합성 식사')
         selection, records = self.selected()
         self.assertEqual(selection['plan'], 'a')
         self.assertEqual(records['2026-09']['normalization_checks']['refunds'], 'unknown')
+
+    def test_ordinary_inflows_open_b_without_any_confirmation(self):
+        # 11/16: 서비스 전체와 같은 '쓴 돈' 기준 — 월급 · 적금 이체 · 친구 1/n 입금은 B안을 막지 않는다
+        for month in (8, 9, 10):
+            self.tx(direction='in', transaction_type='income', amount=2500000, occurred_on=date(2026, month, 25),
+                    source_description='합성 회사', confirmed_category_id='UNCLASSIFIED', confirmation_state='needs_review')
+        self.tx(direction='in', transaction_type='income', amount=30000, occurred_on=date(2026, 11, 3),
+                source_description='합성 친구', confirmed_category_id='UNCLASSIFIED', confirmation_state='needs_review')
+        selection, records = self.selected()
+        self.assertEqual((selection['plan'], selection['max_category_count']), ('b', 11))
+        self.assertTrue(all(r['normalization_checks'] == CLEAN for r in records.values()))
 
     def test_another_users_confirmation_cannot_prove_this_users_inflow(self):
         tx, decision = self.salary()

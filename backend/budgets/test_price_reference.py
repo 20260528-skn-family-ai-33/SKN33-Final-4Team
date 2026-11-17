@@ -1,6 +1,7 @@
 from copy import deepcopy
 from datetime import date, timedelta
 import json
+from io import BytesIO
 from pathlib import Path
 import shutil
 import subprocess
@@ -10,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase, override_settings
 
-from .price_reference import price_context, review_prices
+from .price_reference import PRICE_GUIDANCE, price_context, review_prices
 
 
 def reference(**changes):
@@ -25,6 +26,62 @@ def snapshot():
 
 
 class PriceReferenceTests(SimpleTestCase):
+    def test_planner_schema_accepts_only_the_registered_price_guidance(self):
+        from budgets.adjustment_core import financial_planner as planner
+        from chat.llm.live import schema_for
+
+        for prompt in (planner.PROMPT, planner.PROMPT + PRICE_GUIDANCE):
+            self.assertEqual(schema_for(prompt), ('budget_adjust_plan', planner.SCHEMA))
+        with self.assertRaises(KeyError):
+            schema_for(planner.PROMPT + '\nUnregistered instructions')
+
+    @patch.dict('os.environ', {'OPENAI_API_KEY': 'synthetic-test-key', 'LLM_MODEL': 'synthetic-test-model',
+                              'BUDGET_ADJUST_LANGSMITH': 'false'})
+    def test_price_planner_uses_live_schema_and_preserves_calculations_on_explanation_failure(self):
+        from budgets.adjustment_core import financial_planner as planner
+        from budgets.test_adjustment_core import envelope, item
+        from budgets.test_financial_planner import financial_context, review
+        from chat.llm.live import LiveReading
+
+        context = financial_context()
+        context['priorities'].pop('FASHION_SHOPPING')
+        context['price_reference'] = {'status': 'ready', 'snapshot': 'synthetic-test-only',
+            'region_code': '11110', 'references': [reference(category='FOOD', item_group='meal',
+                reference_price=1000, as_of='2026-11-01')]}
+        request = envelope(item(amount=200000))
+        baseline = planner.recommend(context, request, lambda *args: review(ids=[]))
+        self.assertTrue(baseline['plans'])
+
+        for outcome in ('verified', 'invalid_reason', 'timeout'):
+            with self.subTest(outcome=outcome):
+                def respond(http_request, **kwargs):
+                    if outcome == 'timeout':
+                        raise TimeoutError('synthetic timeout')
+                    answer = review(ids=['plan_0.preserved'] if outcome == 'verified' else ['invented_fact'])
+                    return BytesIO(json.dumps({'status': 'completed', 'output': [{'type': 'message',
+                        'content': [{'type': 'output_text', 'text': json.dumps(answer)}]}]}).encode())
+
+                live = LiveReading(1, None)
+                live.client.opener = Mock(side_effect=respond)
+                with patch('socket.socket', side_effect=AssertionError('No network')):
+                    result = planner.recommend(context, request, live)
+                live.client.opener.assert_called_once()
+                body = json.loads(live.client.opener.call_args.args[0].data)
+                self.assertEqual(body['instructions'], planner.PROMPT + PRICE_GUIDANCE)
+                self.assertEqual(body['text']['format'], {'type': 'json_schema', 'name': 'budget_adjust_plan',
+                    'schema': planner.SCHEMA, 'strict': True})
+                payload = json.loads(body['input'])
+                self.assertEqual(payload['price_reference'], context['price_reference'])
+                self.assertTrue(payload['verified_plans'])
+                self.assertEqual(result['plans'], baseline['plans'])
+                self.assertEqual(result['recommended_index'], baseline['recommended_index'])
+                self.assertEqual(len(live.client.attempts), 1)
+                if outcome == 'verified':
+                    self.assertIn(result['plans'][0]['facts']['preserved'], result['reasons'])
+                    self.assertEqual(live.client.attempts[0]['kind'], 'ok')
+                else:
+                    self.assertEqual(result['reasons'], baseline['reasons'])
+
     def context_from(self, document):
         with TemporaryDirectory() as directory:
             path = Path(directory) / 'references.json'

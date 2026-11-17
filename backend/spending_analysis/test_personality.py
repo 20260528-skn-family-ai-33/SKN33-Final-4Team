@@ -36,6 +36,22 @@ HABIT_FINDING = {"id": "HABIT", "kind": "habit", "category": "FOOD", "conclusion
 
 
 class TasteAxisTest(SimpleTestCase):
+    def test_unclassified_only_month_counts_toward_hold_threshold(self):
+        taste = months(*[{"BEAUTY": 120000}] * 3)
+        taste[-1].update(total=0, categories={}, largest={}, unclassified=2_000_000)
+        result = assess(summary(taste), history(), ALONE)
+        self.assertEqual((result["profile"], result["reason"]), (None, "too_unclassified"))
+        self.assertEqual(result["traits"][0]["months"], ["8월", "9월", "10월"])
+
+    def test_recent_window_keeps_zero_months_without_division_by_zero(self):
+        taste = months(*[{"BEAUTY": 120000}] * 4)
+        for m in taste[-2:]:
+            m.update(total=0, categories={}, largest={}, unclassified=10000)
+        result = assess(summary(taste), history(), ALONE)
+        self.assertIsNone(result["profile"])
+        self.assertIsNone(result["reason"])
+        self.assertEqual(result["traits"][0]["months"], ["9월", "10월", "11월"])
+
     def test_completed_month_habit_decides_food_type_with_own_history_reason(self):
         s = summary(months({"FOOD": 450000}, {"FOOD": 430000}, {"FOOD": 470000}, habits=DINING), [HABIT_FINDING])
         before = deepcopy(s)

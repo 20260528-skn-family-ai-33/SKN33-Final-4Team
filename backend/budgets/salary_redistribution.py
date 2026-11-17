@@ -3,16 +3,18 @@ from copy import deepcopy
 from fractions import Fraction
 
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from rest_framework.exceptions import ValidationError
 
 from .adjustment_context import AdjustmentContextError, adjustment_today, context_fingerprint
-from .adjustment_core.funding import _data
+from .adjustment_core.diagnostics import with_overrides
+from .adjustment_core.funding import _data, available_bucket_source
 from .adjustment_schedule import planning_context
 from .adjustment_service import AdjustmentAdapter, AdjustmentExpired, proposal_card
 from .models import Budget
 
 
-REVIEW_POLICY = 'salary-request-first-ab-20261117'
+REVIEW_POLICY = 'salary-request-first-ab-20261117-planned-spare'
 REQUEST_FIELDS = ('requests', 'planning', 'scope', 'sources', 'destinations', 'excluded',
                   'spare_minimum', 'clear_targets', 'unlock_categories', 'unlock_consents',
                   'financial_overrides', 'one_off', 'expense_request', 'set_aside_amount')
@@ -66,37 +68,45 @@ def income_context(base, proof):
     if proof.get('planning'):
         context['income_before'] = base['funding_amount']
     context.pop('context_hash', None)
-    return context
+    return with_overrides(context, proof.get('financial_overrides') or {})
 
 
 def review_proposal(user, state, context, conversation=None):
     marker = state.get('salary_review_proposal') or {}
-    if not marker and conversation is None:
-        candidate = Budget.objects.filter(user=user, task__conversation__isnull=True,
-            input_snapshot__adjustment_context__salary_review__conversation_id=None,
-            status__in=['validated', 'approved']).order_by('-version_no').first()
-        if candidate:
-            proof = candidate.input_snapshot['adjustment_context']['salary_review']
-            marker = {'proposal_id': str(candidate.pk), 'income_after': proof['income_after'],
-                      'request_hash': proof['request_hash']}
-    if not marker or marker.get('request_hash') != context_fingerprint(request_state(state)):
+    if conversation is not None and not marker:
         return None
     income = context.get('monthly_income') if state.get('planning', {}).get('scope') == 'next_cycle' else context.get('effective_income', context.get('monthly_income'))
-    if marker.get('income_after') != income:
-        return None
-    budget = Budget.objects.select_related('task').filter(user=user, pk=marker.get('proposal_id'), task__conversation=conversation).first()
-    if not budget:
-        return None
-    card = proposal_card(user, budget, conversation=conversation)
-    if card['state'] not in {'awaiting_approval', 'saved'}:
-        return None
-    if card['state'] == 'saved':
-        if card.get('effective_on'):
-            if card.get('schedule_status') not in {'scheduled', 'applied'}:
-                return None
-        elif context.get('base_budget_id') != str(budget.pk):
-            return None
-    return card
+    candidates = Budget.objects.select_related('task').filter(
+        user=user, cycle_id=context['cycle_id'], task__conversation=conversation, task__task_type='budget_adjust',
+        status__in=['validated', 'approved', 'superseded'],
+    ).filter(Q(base_budget_id=context['base_budget_id']) | Q(pk=context['base_budget_id']))
+    if marker:
+        candidates = candidates.filter(pk=marker.get('proposal_id'))
+    request_hash = context_fingerprint(request_state(state))
+    for budget in candidates.order_by('-version_no'):
+        proof = (budget.input_snapshot or {}).get('adjustment_context', {}).get('salary_review', {})
+        if proof.get('income_after') != income or proof.get('request_hash') != request_hash:
+            continue
+        card = proposal_card(user, budget, conversation=conversation)
+        if card['state'] not in {'awaiting_approval', 'saved'}:
+            continue
+        if card['state'] == 'saved':
+            if card.get('effective_on'):
+                if card.get('schedule_status') not in {'scheduled', 'applied'}:
+                    continue
+            elif context.get('base_budget_id') != str(budget.pk):
+                continue
+        return card
+    return None
+
+
+def _spare_minimum(context, state):
+    minimum = state.get('spare_minimum')
+    planned = context.get('diagnostic_inputs', {}).get('planned_spare', {})
+    if (planned.get('status') in {'confirmed', 'user_confirmed'} and planned.get('scope') == 'unbudgeted_only'
+            and type(planned.get('amount')) is int and planned['amount'] >= 0):
+        minimum = max(minimum or 0, planned['amount'])
+    return minimum
 
 
 def _stored_review(user, card):
@@ -174,12 +184,19 @@ def review(user, conversation=None, today=None):
                 'status': 'no_increase', 'message': '현재 급여가 예산에 이미 반영되어 있어요.',
                 **({'proposal': previous} if previous else {})}
     proof = {'planning': deepcopy(state.get('planning')), 'conversation_id': str(conversation.pk) if conversation else None,
-             'request_hash': context_fingerprint(request_state(state))}
+             'request_hash': context_fingerprint(request_state(state)),
+             'financial_overrides': deepcopy(state.get('financial_overrides', {}))}
     try:
         context = income_context(base, proof)
     except ValueError as error:
         return {'status': 'needs_input', 'reason': str(error),
                 'message': '변경을 시작할 급여 주기를 확인해 주세요. 기존 요청은 보관했어요.'}
+    prior = state.get('salary_handoff', {}).get('context')
+    planned = proof['financial_overrides'].get('planned_spare', {})
+    if (prior and planned.get('status') in {'confirmed', 'user_confirmed'}
+            and (prior.get('cycle_id'), prior.get('effective_on')) != (context.get('cycle_id'), context.get('effective_on'))):
+        return {'status': 'needs_input', 'reason': 'planned_expense_period_changed',
+                'message': '예산 주기가 바뀌었어요. 챗봇에서 이 주기에 따로 쓸 예정인 금액을 확인해 주세요. 기존 요청은 보관했어요.'}
     increase = context['funding_amount'] - base['funding_amount']
     before = {**context['allocations'], **base['buckets']}
     result = {'status': 'ready', 'basis_hash': context_fingerprint(context),
@@ -194,6 +211,7 @@ def review(user, conversation=None, today=None):
         result['proposal'] = previous
         result['saving_percent'] = stored.get('saving_percent', result['saving_percent'])
         result['summary'] = deepcopy(stored.get('summary', {}))
+        result['request_only'] = stored.get('request_only', False)
         if previous['state'] == 'saved':
             result.update(status='no_increase', message='이 월급으로 검토한 예산 변경을 이미 예약했어요.')
             return result
@@ -212,17 +230,21 @@ def review(user, conversation=None, today=None):
         result.update(status='needs_input', reason=str(error), message=messages.get(str(error), '보관한 요청의 금액·재원 조건을 먼저 확인해 주세요. 기존 요청은 그대로 유지했어요.'))
         return result
     requested = sum(target - before[code] for code, target in targets.items())
+    available = available_bucket_source(context, 'SPARE', spare_minimum=_spare_minimum(context, state))
+    allocatable = min(increase, available['maximum']) if available['maximum'] is not None else increase
     if not previous and ('SAVINGS' in explicit or 'SAVINGS' in state.get('excluded', [])):
         result['saving_percent'] = 0
         result['message'] = ('요청한 저축 금액을 먼저 반영했어요. 추가 저축 없이 나머지를 나눠요.'
                              if 'SAVINGS' in explicit else '저축을 유지하는 조건에 맞춰 추가 저축 없이 나머지를 나눠요.')
-    result.update(requested_amount=requested, remaining_amount=max(increase - requested, 0),
-                  shortfall_amount=max(requested - increase, 0),
+    result.update(requested_amount=requested, remaining_amount=max(allocatable - requested, 0),
+                  shortfall_amount=max(requested - allocatable, 0),
                   request_changes=[{'category': code, 'before': before[code], 'after': target, 'diff': target-before[code]}
                                    for code, target in targets.items() if target != before[code]],
                   _targets=targets, _explicit=explicit)
-    if requested > increase:
-        result.update(status='needs_input', message=f'기존 요청을 반영하려면 월급 증가분 외에 {requested-increase:,}원이 더 필요해요. 요청 금액은 그대로 보관했어요.')
+    if requested > allocatable:
+        result.update(status='needs_input', message=f'지킬 금액을 남기면 요청한 예산에 {requested-allocatable:,}원이 부족해요. 요청 금액은 그대로 보관했어요.')
+    elif allocatable < increase:
+        result['message'] = f'예정 지출과 지킬 금액을 위해 증가분 중 {increase-allocatable:,}원은 여윳돈으로 남겨 둬요.'
     return result
 
 
@@ -239,6 +261,9 @@ def preview(user, data, conversation=None, today=None):
     percent = data['saving_percent']
     if type(percent) is not int or not 0 <= percent <= 100:
         raise ValidationError({'saving_percent': ['0부터 100 사이의 비율을 입력해 주세요.']})
+    if data.get('request_only') and percent != 0:
+        raise ValidationError({'saving_percent': ['기존 요청만 이어갈 때는 추가 저축 비율을 0%로 정해 주세요.']})
+    result['request_only'] = bool(data.get('request_only'))
     context, state, adapter = result['_context'], result['_state'], result['_adapter']
     before = {**context['allocations'], **context['buckets']}
     targets, explicit = deepcopy(result['_targets']), result['_explicit']
@@ -250,9 +275,11 @@ def preview(user, data, conversation=None, today=None):
     else:
         targets['SAVINGS'] = before['SAVINGS'] + saving
     from .salary_design import review_remaining
-    assessment = review_remaining(user, context, targets, explicit, remaining - saving,
-                                  excluded=state.get('excluded', []), clear_targets=state.get('clear_targets', []),
-                                  today=adjustment_today(today))
+    assessment = ({'status': 'skipped', 'allocations': {}, 'unallocated': remaining,
+                   'selection': None, 'reason': 'request_only'} if data.get('request_only') else
+                  review_remaining(user, context, targets, explicit, remaining - saving,
+                                   excluded=state.get('excluded', []), clear_targets=state.get('clear_targets', []),
+                                   today=adjustment_today(today)))
     shares = assessment['allocations']
     for code, amount in shares.items():
         targets[code] = targets.get(code, before[code]) + amount
@@ -268,8 +295,9 @@ def preview(user, data, conversation=None, today=None):
     envelope = {'items': [{'category': code, 'amount_mode': 'to', 'amount': amount, 'automatic': code not in explicit}
                           for code, amount in targets.items() if amount != before[code]],
                 'sources': ['SPARE'], 'excluded': state.get('excluded', [])}
-    if state.get('spare_minimum') is not None:
-        envelope['spare_minimum'] = state['spare_minimum']
+    minimum = _spare_minimum(context, state)
+    if minimum is not None:
+        envelope['spare_minimum'] = minimum
     calculated = adapter.simulate(calculation, envelope)
     if calculated['status'] not in {'proposed', 'unchanged'}:
         return {**public_review(result), 'status': 'needs_input', 'calculation': calculated,
@@ -320,4 +348,5 @@ def fresh_income_context(user, base, saved):
         talk = get_object_or_404(Conversation, user=user, pk=proof['conversation_id'])
         if context_fingerprint(request_state(state_for(talk))) != proof['request_hash']:
             raise ValueError('salary_request_changed')
-    return income_context(base, {key: proof[key] for key in ('planning', 'conversation_id', 'request_hash')})
+    return income_context(base, {key: deepcopy(proof.get(key)) for key in
+                                ('planning', 'conversation_id', 'request_hash', 'financial_overrides')})

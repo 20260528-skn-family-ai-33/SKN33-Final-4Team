@@ -59,8 +59,9 @@ class ResponsesClient:
         self._lock = threading.Lock()
 
     def body(self, system, user):
+        output_tokens = self.max_output_tokens(system) if callable(self.max_output_tokens) else self.max_output_tokens
         body = {"model": self.model, "instructions": system, "input": user, "store": False,
-                "max_output_tokens": self.max_output_tokens, "reasoning": {"effort": self.reasoning_effort}}
+                "max_output_tokens": output_tokens, "reasoning": {"effort": self.reasoning_effort}}
         # schema = 스키마 하나 또는 지시문 → (이름, 스키마) 를 돌려주는 함수 (역할별 해석: 라우터 · 소비 지시문마다 다른 스키마)
         name, schema = self.schema(system) if callable(self.schema) else ("router_interpretation", self.schema)
         if schema:

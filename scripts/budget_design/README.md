@@ -39,7 +39,7 @@
 서비스는 이번 달을 제외한 완료 달력월 3개를 대상으로 수집 범위와 거래 정합성을 따로 확인한다. `BUDGET_HISTORY_VERIFIER` Django 설정이 없으면 `budgets.design_history.verify_budget_history`를 기본 사용한다. 명시적으로 `None`이면 정합성은 unknown으로 유지하고, 기존 사용자 정의 callable도 계속 사용할 수 있다. 잘못되거나 누락된 근거 값은 verified로 바꾸지 않는다. 이 연결이 `BUDGET_DESIGN_ENABLED`나 외부 LLM 호출을 켜지는 않는다.
 
 - 공용 `finance.history_verifier`의 기본 호출은 그대로다. 예산용 연결에서만 `use_confirmed_salary=True`를 넘겨 현재 유효한 사용자 급여 확인을 사용한다. `known_deposits(user)`의 적격 원화 입출금계좌 입금 중 `state='confirmed'`, 유형 `income`인 거래만 해당하며, 확정 당시 금액·날짜·적요·계좌가 현재 값과 같아야 한다. 검증기가 먼저 읽은 거래와도 다시 비교한다.
-- 이 근거는 해당 입금의 `unattributed_inflow` 판정만 제외한다. 다른 중복·취소·환불 문제를 지우지 않는다. `auto`·재확인·거절·스냅샷 누락·변경된 확정, 일반 입금과 불명확한 취소는 기존 검사를 유지한다. SalaryDecision 상태를 갱신하거나 소비 금액을 다시 차감하지 않는 읽기 전용 연결이다.
+- (2026-11-16 바뀜) 일반 입금은 이제 B안을 막지 않는다(`docs/finance_history_verifier.md` 양수 입금). 확인한 월급 근거는 결제한 가게와 같은 이름으로 들어온 입금(`inflow_from_paid_merchant`)일 때만 의미가 있다. 이전 설명: 이 근거는 해당 입금의 `unattributed_inflow` 판정만 제외한다. 다른 중복·취소·환불 문제를 지우지 않는다. `auto`·재확인·거절·스냅샷 누락·변경된 확정, 일반 입금과 불명확한 취소는 기존 검사를 유지한다. SalaryDecision 상태를 갱신하거나 소비 금액을 다시 차감하지 않는 읽기 전용 연결이다.
 - 수집 완료와 정합성 검증을 모두 통과한 최근 3개월에서 분류된 카테고리 최대 거래 건수가 11건 이상이면 B, 10건 이하면 A다. 미분류 건수로 B 자격을 만들지 않고 미분류 금액도 이력에서 지우지 않는다. 미분류·환불 허용 비율 등의 새 정책 숫자는 추가하지 않았다.
 - 2026-11-07 v2 소스에 main의 SalaryDecision과 users 연결용 마이그레이션을 통합했고, 2026-11-10에는 `.env`가 지정한 로컬 서비스 DB에 대기 15개를 적용했다. 백업 실제 복원·기존 행 보존·합성 회귀 58개·대기 0개를 확인했다. 서비스 기능 스위치는 OFF이며 활성화는 별도다. 배포/알파 fixture DB는 이관하지 않았다. 필요한 코드가 없는 다른 실행 환경에서는 모든 검수값을 unknown으로 유지한다.
 - DB 없는 연결 검증: backend에서 `python manage.py test budgets.test_design_history.HistoryProofTest --noinput`.

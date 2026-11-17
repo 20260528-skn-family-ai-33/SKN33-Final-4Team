@@ -104,7 +104,7 @@ export default function SalaryRedistributionReview({ context, fallback }) {
       <p id="salary-review-saving-help" className="mc-note">지금 승인된 예산의 저축 비율은 {data.previousSavingPercent ?? data.savingPercent}%예요.</p>
       <details className="mc-sr-how">
         <summary>어떻게 나누나요?</summary>
-        <p>고정지출을 뺀 금액 기준으로, 보관한 요청을 먼저 반영해요. 저축을 정한 뒤 남은 금액은 기존 생활비·월 머니쿠션·여윳돈의 비율로 나누고, 직접 요청한 항목의 금액은 그대로 둬요.</p>
+        <p>보관한 요청을 먼저 반영하고, 남은 증가분에서 저축할 금액을 정해요. 나머지는 이전 예산 변경과 소비 정보를 살펴 필요한 항목에 배분해요. 배분하지 않은 금액은 여윳돈으로 남겨요.</p>
       </details>
       <button type="submit" className="mc-primary" disabled={!valid || busy || Boolean(approval)}>{busy ? '계산하는 중…' : '이 비율로 예산 미리보기'}</button>
     </form>}

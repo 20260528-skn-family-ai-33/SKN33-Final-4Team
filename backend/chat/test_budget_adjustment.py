@@ -145,6 +145,46 @@ class BudgetAdjustmentApiTest(TestCase):
     def test_salary_review_return_restores_preview_and_then_approved_result_without_reapplying(self):
         self.assert_salary_review_return(next_cycle=False)
 
+    def test_salary_request_only_preview_returns_to_chat_without_reallocation_loop(self):
+        cid, _ = self.ready()
+        handoff = self.say(cid, text='월급 수정하고 싶어')['messages'][-1]['content']
+        self.ctx.update(effective_income=4000000, monthly_income=4000000)
+        review = self.client.get('/api/budgets/salary-review/', {'conversationId': cid}).json()
+        with patch('budgets.salary_design.review_remaining', side_effect=AssertionError('request only')):
+            response = self.post('/api/budgets/salary-review/', {
+                'conversationId': cid, 'basisHash': review['basisHash'], 'savingPercent': 0, 'requestOnly': True,
+            })
+        self.assertEqual(response.status_code, 200, response.content)
+        card = response.json()['proposal']
+        self.assertEqual(card['allocations'], {**self.ctx['allocations'], 'FOOD': 415000})
+        self.assertEqual(card['buckets'], {'SAVINGS': 600000, 'CUSHION_MONTHLY': 200000, 'SPARE': 1385000})
+        self.assertTrue(response.json()['requestOnly'])
+        self.assertTrue(self.client.get('/api/budgets/salary-review/', {'conversationId': cid}).json()['requestOnly'])
+        count = Budget.objects.count()
+        resumed = self.say(cid, choice={'value': 'salary_resume', 'turn': handoff['turn']})['messages'][-1]['content']
+        self.assertNotEqual(resumed['budgetAdjustment']['phase'], 'salary_allocation_review')
+        self.assertEqual(resumed['budgetAdjustment']['proposal']['proposalId'], card['proposalId'])
+        self.assertTrue(resumed['budgetAdjustment']['canApprove'])
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+        repeated = self.say(cid, text='이전 예산 조정 이어하기')['messages'][-1]['content']
+        self.assertEqual(repeated['budgetAdjustment']['proposal']['proposalId'], card['proposalId'])
+        self.assertEqual(Budget.objects.count(), count)
+
+    def test_salary_request_only_rejects_non_boolean_and_additional_savings(self):
+        cid, _ = self.ready()
+        self.say(cid, text='월급 수정하고 싶어')
+        self.ctx.update(effective_income=4000000, monthly_income=4000000)
+        review = self.client.get('/api/budgets/salary-review/', {'conversationId': cid}).json()
+        count = Budget.objects.count()
+        for flag, percent in (('true', 0), (1, 0), (None, 0), (True, 30)):
+            with self.subTest(flag=flag, percent=percent):
+                response = self.post('/api/budgets/salary-review/', {
+                    'conversationId': cid, 'basisHash': review['basisHash'], 'savingPercent': percent, 'requestOnly': flag,
+                })
+                self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(Budget.objects.count(), count)
+
     def test_next_cycle_salary_review_return_restores_the_approved_reservation(self):
         self.assert_salary_review_return(next_cycle=True)
 

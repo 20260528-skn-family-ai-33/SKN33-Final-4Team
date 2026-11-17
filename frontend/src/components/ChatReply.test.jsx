@@ -224,7 +224,7 @@ it('분석 메뉴는 분석마다 설명을 보여 주고, 누르면 그 질문�
     { kind: 'head', title: '소비 분석 · 볼 수 있는 분석' },
     { kind: 'options', items: [
       { title: '소비 습관', desc: '매달 반복되는 소비를 짚어요.', ask: '내 소비 습관 어때?' },
-      { title: '지난달과 비교', desc: '더 쓰거나 덜 쓴 이유를 찾아요.', ask: '지난달과 달라진 소비는 뭐야?' },
+      { title: '지난달과 비교', desc: '더 쓴 이유를 찾아요.', ask: '이번 달 생활비 왜 이렇게 많이 나왔지?' },
     ] },
   ] }
   await act(() => root.render(<ChatReply content={content} title="소비 분석" active onPick={() => {}} onSend={onSend} />))
@@ -232,7 +232,7 @@ it('분석 메뉴는 분석마다 설명을 보여 주고, 누르면 그 질문�
   expect(cards).toHaveLength(2)
   expect(cards[0].textContent).toContain('매달 반복되는 소비를 짚어요.')
   await act(() => cards[1].click())
-  expect(onSend).toHaveBeenCalledWith('지난달과 달라진 소비는 뭐야?')
+  expect(onSend).toHaveBeenCalledWith('이번 달 생활비 왜 이렇게 많이 나왔지?')
   await act(() => root.render(<ChatReply content={content} title="소비 분석" active={false} onPick={() => {}} onSend={onSend} />))
   expect(host.querySelectorAll('.mc-fx-options button')).toHaveLength(0)
   expect(host.querySelector('.mc-fx-options').textContent).toContain('소비 습관')

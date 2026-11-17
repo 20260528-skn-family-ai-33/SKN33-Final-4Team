@@ -112,7 +112,7 @@ def _usable(months, code):
 def _taste(summary, context):
     """→ (특성 기록 목록, 성립한 특성 [강도 큰 순], 보류 이유|None)"""
     st = summary.get("story") or {}
-    months = [m for m in (st.get("taste_months") or []) if m.get("total", 0) > 0][-MAX_MONTHS:]
+    months = (st.get("taste_months") or [])[-MAX_MONTHS:]
     period = {"months": [m["label"] for m in months]}
     if len(months) < MIN_MONTHS:
         return [{"code": c, "axis": "taste", "basis": "own_history", "status": "unavailable", "reason": "short_history", **period}
@@ -132,7 +132,7 @@ def _taste(summary, context):
         if len(usable) < MIN_MONTHS:
             traits.append({**record, "status": "not_met", "reason": "one_off"})
             continue
-        shares = [m["categories"].get(code, 0) / m["total"] for m in usable]
+        shares = [m["categories"].get(code, 0) / m["total"] if m["total"] > 0 else 0 for m in usable]
         average = sum(m["categories"].get(code, 0) for m in usable) / len(usable)
         share = sum(shares) / len(shares)
         # 달마다 ① 반복 활동 습관 또는 ② 비중 상위 25% — 같은 최근 달(최대 3개월) 안에서 과반이어야 한다

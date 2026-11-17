@@ -5,7 +5,7 @@
 """
 import re
 from collections import Counter, defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from django.db import DatabaseError
 from django.db.models import Q
@@ -76,9 +76,14 @@ def _report_for_months(user, months, *, use_confirmed_salary):
             Q(from_transaction__user=user) | Q(to_transaction__user=user),
             relation_type__in=["SAME_PURCHASE", "CANCELLATION"],
         ).order_by("pk"))
-        confirmed_salary = {}
+        confirmed_salary, claimed_salary = {}, set()
         if use_confirmed_salary:
+            from budgets.models import SalaryDecision
             from budgets.salary import known_deposits
+            # 사용자가 월급이라고 확인한(또는 재확인 중인) 입금. 아래 confirmed_salary 에 없으면 확인 뒤 거래가 바뀐 것
+            claimed_salary = set(SalaryDecision.objects.filter(
+                user=user, transaction__user=user, state__in=["confirmed", "recheck"],
+            ).values_list("transaction_id", flat=True))
             confirmed_salary = {
                 pk: (amount, on, description, account_id)
                 for pk, amount, on, description, account_id in known_deposits(user).filter(
@@ -212,6 +217,12 @@ def _report_for_months(user, months, *, use_confirmed_salary):
             for kind in ("cancellations", "refunds"):
                 mark([month(tx)], kind, "unresolved", "cancellation_not_reflected", delta)
 
+    # 가게 이름(공백 제외) → 처음 결제한 날. 환불은 결제 뒤에만 생긴다
+    paid_since = {}
+    for tx in rows:
+        if tx.direction == "out" and tx.transaction_type == "spending" and label(tx):
+            paid_since[label(tx)] = min(paid_since.get(label(tx), tx.occurred_on), tx.occurred_on)
+
     for tx in rows:
         detail = tx.source_detail if isinstance(tx.source_detail, dict) else {}
         status = detail.get("cancelStatus")
@@ -240,10 +251,24 @@ def _report_for_months(user, months, *, use_confirmed_salary):
                 for kind in ("cancellations", "refunds"):
                     mark(preceding(tx), kind, "unknown", "unlinked_card_cancellation", tx.amount)
         if tx.direction == "in" and tx.amount:
+            if spent(tx):
+                # 들어온 돈이 소비로 집계되는 자료 이상: 소비 합계가 양쪽으로 틀릴 수 있다
+                mark(preceding(tx), "refunds", "unknown", "inflow_counted_as_spending", tx.amount + spent(tx))
+                continue
             # Compare the rows already inspected too; a changed row must not inherit another snapshot's proof.
             if (tx.source_kind == "bank" and tx.transaction_type == "income"
                     and confirmed_salary.get(tx.pk) == (tx.amount, tx.occurred_on, tx.source_description, tx.account_id)):
                 continue
-            # income은 은행 입금의 기본 유형이며 '환불 아님'의 증거가 아니다. 미분류 비율과 무관하다.
-            mark(preceding(tx), "refunds", "unknown", "unattributed_inflow", tx.amount + spent(tx))
+            if tx.pk in claimed_salary:
+                # 확인한 월급의 금액 · 날짜 · 적요 · 계좌가 확인 때와 달라짐: 예산의 월급 근거가 흔들려 B안을 막는다
+                # (11/16 PR 리뷰. 일반 입금은 막지 않지만, 사용자 확인이 더는 이 거래를 증명하지 못하는 경우는 다르다)
+                mark(preceding(tx), "refunds", "unknown", "changed_salary_evidence", tx.amount)
+                continue
+            # 11/16 결정: B안의 '쓴 돈'은 서비스 전체(홈 · 예산 사용액 · 소비 분석)와 같은 기준이다
+            #   = 결제 − 서비스가 아는 취소 · 환불(취소 상태 · CANCELLATION 연결, 위에서 검사).
+            # 월급 · 내 계좌 이체 · 친구 1/n · 판매 대금 같은 일반 입금은 어느 화면에서도 소비를 줄이지 않으므로 막지 않는다.
+            # 환불 근거가 있는 입금만 남긴다: 그 전에 결제한 적 있는 가게와 같은 이름으로 들어온 돈 (예: 쿠팡 결제 → 쿠팡 입금)
+            name = label(tx)
+            if name and paid_since.get(name, tx.occurred_on + timedelta(days=1)) <= tx.occurred_on:
+                mark(preceding(tx), "refunds", "unknown", "inflow_from_paid_merchant", tx.amount)
     return report

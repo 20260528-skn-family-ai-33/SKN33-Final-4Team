@@ -36,6 +36,7 @@ income_change는 예산 카테고리 requests에 넣지 않는다. 월급 이야
 5. 불가능 여부·잠금·최소액·데이터 부족은 서버 판단이다. 사용자 뜻이 명확하면 계산 불가를 예상해 unclear로 돌리지 않는다.
 6. previous.comparison은 실제 보여 준 조정 예시, previous.proposal은 확정 전 미리보기다. 이를 고르기 어렵거나 추천·이유를 묻는 답은 mine=true인 예산 대화다. 새로운 소비 조회나 별개 주제로 전환한 경우와 구별한다. 추천·설명은 선택이나 저장 승인이 아니다.
 조회인지 변경인지, 대상, 증감 방향, 금액의 의미, 돈을 가져올 곳과 옮길 곳 순서로 구분한다.
+현재 남은 돈·잔액이 얼마인지 묻는 것은 mine=false, handoff=spending인 조회다. 생활비·여윳돈·머니쿠션 모두 동일하며, 조정 중이라도 이전 재원 선택과 분리한다. 조정에 얼마까지 가져올 수 있는지 묻는 action=inspect와 구분한다.
 사용자가 확실히 말하지 않은 금액·재원·승인 의사를 만들지 않는다. 새 주제인지 불분명할 때만 한 가지를 확인한다.
 requests의 category는 categories에 있는 코드 또는 SAVINGS(저축), CUSHION_MONTHLY(월 쿠션 적립액),
 SPARE(여윳돈), LIVING(생활비 전체), null이다. 모르는 항목을 기타에 넣지 않는다.
@@ -75,7 +76,8 @@ excluded는 '저축은 건드리지 마'처럼 이번 문장에서 제외한 재
 이때 action=distribute이며 기존 배분 대신 사용할 전체 배분 요청이다. 합계와 잠금·지출 검사는 서버가 한다.
 funding_scope는 생활비 내=living, 여윳돈 가져오기=spare, 저축·월 쿠션까지 재배분=extended, 없으면 null이다.
 action은 뒤로=back, 이미 적용한 예산 되돌리기=undo, 조정 가능액·배정액 확인=inspect, 조정 방법 비교=compare, 현재 단계·선택·결과 설명=explain, 없으면 null이다.
-돈을 가져올 곳을 고르는 중 후보가 무엇인지, 어디서 얼마나 가져올 수 있는지, 각 방법이 무슨 뜻인지 묻는 것은 action=inspect다.
+후보가 무엇인지, 어디서 얼마나 가져올 수 있는지, 저축·월 쿠션·여윳돈을 재원으로 쓴다는 뜻을 묻는 것은 현재 질문 단계와 무관하게 action=inspect다.
+아직 늘릴 생활비 항목을 고르는 중이어도 재원의 의미를 물으면 inspect이며, 카테고리 선택 단계를 설명하는 explain으로 바꾸지 않는다.
 이는 출처 선택이나 추천안 생성 요청이 아니다. selected_choice=null, requests=[], sources/destinations/excluded=[]로 두고 기존 목표를 유지한다.
 후보 이름이 질문에 등장해도 그곳에서 가져오겠다는 의사를 밝히지 않았다면 선택으로 해석하지 않는다.
 '왜 물어봐?', '이걸 선택하면 뭐가 바뀌어?', '지금 변경안을 설명해줘'도 action=explain이다.
@@ -275,7 +277,16 @@ def read(text, complete, *, pending=None, categories=None, previous=None, hints=
     if hints:  # 소비 분석에서 돌아올 때만 라우터가 붙인다: {"from": "spending", "category": 코드}
         payload["hints"] = hints
     try:
-        return parse(complete(PROMPT, json.dumps(payload, ensure_ascii=False)))
+        value = parse(complete(PROMPT, json.dumps(payload, ensure_ascii=False)))
+        old = (previous or {}).get('requests') or []
+        rows = value.get('requests') or []
+        index = (pending or {}).get('index', 0)
+        if ((pending or {}).get('kind') == 'amount' and type(index) is int and 0 <= index < len(old)
+                and len(rows) == 1 and rows[0].get('category') == 'LIVING'
+                and old[index].get('category') not in (None, 'LIVING', 'SAVINGS', 'SPARE', 'CUSHION_MONTHLY')
+                and value.get('reference') != 'new' and value.get('request_update') != 'replace'):
+            rows[0]['category'] = old[index]['category']
+        return value
     except InterpretationFailed:
         raise
     except Exception as error:

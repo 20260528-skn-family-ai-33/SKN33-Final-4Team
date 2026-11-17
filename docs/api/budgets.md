@@ -611,7 +611,7 @@
 ### 월급 증가분 재배분 검토 API
 
 - `GET /api/budgets/salary-review/?conversationId=<본인 대화 UUID>`: 대화 ID는 선택이다. `status`, `basisHash`, `incomeBefore/After`, `increase`, `requestedAmount`, `remainingAmount`, `savingPercent`, `requestChanges`, `scope`를 반환한다. 다음 주기 요청에는 `effectiveOn`이 포함된다. 기존 유효 미리보기·승인 결과가 있으면 `proposal`을 함께 반환한다.
-- `POST /api/budgets/salary-review/`: `Idempotency-Key` 필수. `{conversationId?, basisHash, savingPercent}`만 받으며 비율은 0~100 정수다. 재검산한 예시를 `proposal`로 반환한다. 요청·급여·잠금 등 기준이 바뀌면 409 `expired`로 거절한다.
+- `POST /api/budgets/salary-review/`: `Idempotency-Key` 필수. `{conversationId?, basisHash, savingPercent, requestOnly?}`를 받으며 비율은 0~100 정수다. `requestOnly:true`이면 비율은 0이어야 하며 보관한 요청만 반영하고, 추가 저축·A/B 재배분 없이 잔액은 여윳돈에 남긴다. 재검산한 예시를 `proposal`로 반환하며 실제 적용은 별도 승인한다. 복원 응답의 `requestOnly`도 유지한다. 요청·급여·잠금 등 기준이 바뀌면 409 `expired`로 거절한다.
 - 예: 증가분 100만 원, 교육비 증액 50만 원, 추가 저축 비율 30% → 교육비 50만 원, 저축 15만 원, 나머지 35만 원을 기존 비저축 비율로 배분한다. 명시한 교육비 목표는 추가 자동 배분에서 제외한다. 금액 단위로 배분하고 남는 자투리는 여윳돈으로 남긴다.
 - 부족·미완성 요청·지정 재원 충돌은 `needs_input`과 구체적인 이유를 반환하며 원래 요청을 유지한다. 보호 조건을 깨서 금액을 맞추지 않는다.
 - 현재 주기의 지출 조회가 불완전하면 예산 기준 미리보기를 유지하되 확정을 보류한다. 다음 주기 계획은 현재 주기의 실소비를 적용하지 않는다.

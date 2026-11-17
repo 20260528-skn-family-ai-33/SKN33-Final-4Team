@@ -95,8 +95,6 @@ def schema_for(system):
     from budgets.adjustment_core import followups as budget_followups
     if system == budget_followups.PROMPT:
         return 'budget_followups', budget_followups.SCHEMA
-    if system == spending_followups.PROMPT:
-        return "spending_followups", spending_followups.SCHEMA
     if system == spending_narrative.CHECK_PROMPT:
         return "spending_insight_check", spending_narrative.CHECK_SCHEMA
     if system == spending_insight.PROMPT:
@@ -104,7 +102,9 @@ def schema_for(system):
     if system == spending_agent_loop.PROMPT:
         return "spending_agent_judge", agent_judge_schema()
     from budgets.adjustment_core import financial_conversation as conversation, financial_planner as planner
+    from budgets.price_reference import PRICE_GUIDANCE
     extra = {planner.PROMPT: ("budget_adjust_plan", planner.SCHEMA),
+             planner.PROMPT + PRICE_GUIDANCE: ("budget_adjust_plan", planner.SCHEMA),
              conversation.DIALOGUE_PROMPT: ("budget_adjust_dialogue", conversation.DIALOGUE_SCHEMA),
              conversation.FEEDBACK_PROMPT: ("budget_adjust_feedback", conversation.FEEDBACK_SCHEMA),
              conversation.ANSWER_PROMPT: ("budget_adjust_answer", conversation.ANSWER_SCHEMA),
@@ -118,5 +118,7 @@ def schema_for(system):
         return "explain_plan", PLAN_SCHEMA
     if system == spending_claims.ANSWER_PROMPT:
         return "explain_answer", ANSWER_SCHEMA
+    if system == spending_followups.PROMPT:
+        return "spending_followups", spending_followups.SCHEMA
     role = ROLE_OF[system]
     return f"{role}_reading", role_schema(role)

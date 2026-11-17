@@ -5,7 +5,7 @@ from unittest import mock
 
 from django.test import SimpleTestCase
 
-from . import story
+from . import personality, story
 from .periods import Period
 from .snapshot import josa
 
@@ -74,6 +74,40 @@ class TrendTest(SimpleTestCase):
     def test_months_before_any_spending_are_not_zero_months(self):
         series = story.monthly(month_rows(10), MONTHS)
         self.assertEqual([m["label"] for m in series], ["10월"])
+
+
+class TasteHistoryTest(SimpleTestCase):
+    def test_build_does_not_count_empty_months_before_first_payment(self):
+        st = story.build([], [pay(5, 100000, month=10)], MONTHS, TODAY, complete=False, budget=None)
+        result = personality.assess({"story": st}, {"state": "unavailable"},
+                                    {"housing": "alone", "age": 28, "base": 2500000})
+        self.assertEqual([m["label"] for m in st["taste_months"]], ["10월"])
+        self.assertEqual(result["reason"], "short_history")
+
+    def test_build_keeps_unclassified_only_month_before_classified_history(self):
+        history = [pay(5, 2000000, "UNCLASSIFIED", month=8)]
+        history += [pay(day, 250000, month=month) for month in (9, 10) for day in (5, 10, 15, 20)]
+        st = story.build([], history, MONTHS, TODAY, complete=False, budget=None)
+        result = personality.assess({"story": st}, {"state": "unavailable"},
+                                    {"housing": "alone", "age": 28, "base": 2500000})
+        self.assertEqual(result["reason"], "too_unclassified")
+        self.assertIsNone(result["profile"])
+        recent = st["taste_months"][-3:]
+        self.assertEqual([m["label"] for m in recent], ["8월", "9월", "10월"])
+        self.assertEqual(sum(m["unclassified"] for m in recent), 2000000)
+        self.assertEqual(sum(m["total"] for m in recent), 2000000)
+        # 추이·예측에서는 종전처럼 분류된 생활비가 시작된 달부터 본다.
+        self.assertEqual([m["label"] for m in st["series"]], ["9월", "10월"])
+        self.assertTrue(st["findings"])
+
+    def test_build_with_only_unclassified_months_does_not_invent_a_type(self):
+        history = [pay(5, 1000000, "UNCLASSIFIED", month=m) for m in (8, 9, 10)]
+        st = story.build([], history, MONTHS, TODAY, complete=False, budget=None)
+        result = personality.assess({"story": st}, {"state": "unavailable"},
+                                    {"housing": "alone", "age": 28, "base": 2500000})
+        self.assertEqual(result["reason"], "too_unclassified")
+        self.assertIsNone(result["profile"])
+        self.assertEqual(len(st["taste_months"][-3:]), 3)
 
 
 class HabitTest(SimpleTestCase):

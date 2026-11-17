@@ -77,6 +77,7 @@ const wideAdjustment = (a) => Boolean(a && (a.proposal || a.comparison || a.alte
 export default function AssistantPage() {
   const { state: navState, search } = useLocation()
   const salaryReturn = new URLSearchParams(search).get('budgetConversation')
+  const salaryRequestOnly = new URLSearchParams(search).get('salaryResume') === 'request_only'
   const navigate = useNavigate()
   const { openPopup, popup } = usePopup()
   const [storedApproval] = useState(readPendingApproval)
@@ -188,11 +189,12 @@ export default function AssistantPage() {
   const returnToRecommendation = useCallback(({ canceled = false, expired = false } = {}) => {
     navigate(PATHS.recommend, { replace: true, state: { recoveryReturn: { sourceTaskId: recovery?.sourceTaskId, canceled, expired } } })
   }, [navigate, recovery?.sourceTaskId])
-  const send = useCallback(async (body, said) => {
+  const send = useCallback(async (body, said, options = {}) => {
     if (busy || inFlight.current || approvalPending || approvalRecovery || (pending && body)) return
     const request = pending ?? {
       body: { conversationId, ...body }, said: said ?? null,
       key: body?.budgetContext?.mode === 'DESIGN_RECOVERY' && recovery?.requestKey ? recovery.requestKey : newRequestKey(),
+      salaryRequestOnly: options.salaryRequestOnly === true,
     }
     inFlight.current = true
     scrollTarget.current = 'bottom'
@@ -201,6 +203,18 @@ export default function AssistantPage() {
     setBusy(true)
     setError(null)
     try {
+      if (request.salaryRequestOnly && !request.salaryPrepared) {
+        const path = '/api/budgets/salary-review/'
+        const review = await apiSend(`${path}?conversationId=${encodeURIComponent(request.body.conversationId)}`, 'GET')
+        if (review?.status === 'ready' && !(review.requestOnly && review.proposal?.proposalId)) {
+          const preview = await apiSend(path, 'POST', { conversationId: request.body.conversationId,
+            basisHash: review.basisHash, savingPercent: 0, requestOnly: true }, { requestKey: `${request.key}-salary` })
+          if (!preview?.proposal?.proposalId) throw Object.assign(new Error(preview?.message || '보관한 요청을 확인하지 못했어요. 요청은 그대로 유지했어요.'), { status: 400 })
+        } else if (!['ready', 'no_increase'].includes(review?.status)) {
+          throw Object.assign(new Error(review?.message || '보관한 요청을 확인하지 못했어요. 요청은 그대로 유지했어요.'), { status: 400 })
+        }
+        request.salaryPrepared = true
+      }
       const out = await apiSend('/api/chat/messages/', 'POST', request.body, { requestKey: request.key })
       if (!out?.conversationId || !Array.isArray(out.messages)) throw new Error('답변을 정상적으로 받지 못했어요.')
       if (!mounted.current) return
@@ -220,7 +234,8 @@ export default function AssistantPage() {
     } catch (err) {
       scrollTarget.current = 'bottom'
       // 서버가 명시적으로 거절한 요청은 수정할 수 있게 돌려준다. 타임아웃 · 통신/서버 오류는 성공 여부가 불명확하다.
-      if (err.status >= 400 && err.status < 500 && err.status !== 408) {
+      const salaryBasisChanged = request.salaryRequestOnly && !request.salaryPrepared && err.status === 409 && err.code === 'expired'
+      if (err.status >= 400 && err.status < 500 && err.status !== 408 && !salaryBasisChanged) {
         setPending(null)
         if (request.body.text) setText(request.body.text)
         if (err.fields?.conversationId) setConversationId(null)  // 끝났거나 남의 대화 → 다음 문장부터 새 대화
@@ -234,7 +249,7 @@ export default function AssistantPage() {
         latest.current.openPopup(<BudgetAdjustConsentPopup onAgreed={() => {
           setError(null)
           if (request.body.text) setText('')
-          latest.current.send(request.body, request.said)
+          latest.current.send(request.body, request.said, { salaryRequestOnly: request.salaryRequestOnly })
         }} />)
       }
       setError(expired ? '예산 조건이 바뀌었거나 조정 대화가 만료됐어요. 추천 화면에서 다시 추천받아 주세요.'
@@ -302,8 +317,8 @@ export default function AssistantPage() {
     if (!['salary_handoff', 'salary_allocation_review'].includes(last?.content.budgetAdjustment?.phase) || !choice) return
     salaryResumed.current = true
     // oxlint-disable-next-line react/set-state-in-effect -- 복귀한 대화의 최신 서버 상태를 한 번 확인하며 기존 전송 상태 관리를 사용한다.
-    send({ choice: { value: choice.value, turn: last.content.turn } }, choice.label)
-  }, [salaryReturn, blocked, error, conversationId, last, send])
+    send({ choice: { value: choice.value, turn: last.content.turn } }, choice.label, { salaryRequestOnly })
+  }, [salaryReturn, salaryRequestOnly, blocked, error, conversationId, last, send])
 
   const editSalary = () => {
     if (blocked || !conversationId) return

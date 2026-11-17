@@ -58,6 +58,20 @@ function SalaryHandoffPage() {
     <Link to={state.budgetReturn.returnTo}>이전 예산 조정 이어하기</Link></div>
 }
 
+it.each(['legacy', 'router'])('%s 일반 대화를 복원하면 최신 메시지까지 스크롤한다', async (engine) => {
+  sessionStorage.setItem('mc-chat-conversation', 'conversation-1')
+  useApi.mockReturnValue({ data: info(engine), error: null })
+  let restore
+  apiSend.mockImplementationOnce(() => new Promise((resolve) => { restore = resolve }))
+  await mount()
+  const main = host.querySelector('main')
+  Object.defineProperty(main, 'scrollHeight', { configurable: true, value: 2400 })
+  main.scrollTop = 0
+  await act(() => restore(reply(engine, 1, '이전 질문')))
+  expect(host.textContent).toContain('답변 1')
+  expect(main.scrollTop).toBe(2400)
+})
+
 async function submit(text) {
   await act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input(), text)
@@ -219,6 +233,82 @@ it('복귀 요청의 응답이 유실돼도 자동 반복하지 않고 같은 �
   expect(apiSend).toHaveBeenCalledTimes(2)
   await click(button('다시 보내기'))
   expect(apiSend.mock.calls[2]).toEqual(apiSend.mock.calls[1])
+})
+
+it('요청만 이어가기는 추가 배분 없이 미리보기를 만든 다음 같은 대화를 복원한다', async () => {
+  apiSend.mockResolvedValueOnce(salaryHandoff())
+    .mockResolvedValueOnce({ status: 'ready', basisHash: 'salary-basis' })
+    .mockResolvedValueOnce({ proposal: { proposalId: 'request-only-preview' }, requestOnly: true })
+    .mockResolvedValueOnce(reply('router', 2, '이전 예산 조정 이어하기', {
+      agent: 'budget', turn: 5, lines: ['원래 요청한 변경안이에요.'],
+      budgetAdjustment: { phase: null, status: 'replied' },
+    }))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=conversation-1&salaryResume=request_only']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(apiSend.mock.calls[1]).toEqual(['/api/budgets/salary-review/?conversationId=conversation-1', 'GET'])
+  expect(apiSend.mock.calls[2]).toEqual(['/api/budgets/salary-review/', 'POST', {
+    conversationId: 'conversation-1', basisHash: 'salary-basis', savingPercent: 0, requestOnly: true,
+  }, { requestKey: 'request-key-1-salary' }])
+  expect(apiSend.mock.calls[3][2]).toEqual({ conversationId: 'conversation-1', choice: { value: 'salary_resume', turn: 4 } })
+  expect(host.textContent).toContain('원래 요청한 변경안이에요.')
+  expect(apiSend.mock.calls.some(([path]) => path.includes('/approve/'))).toBe(false)
+})
+
+it('요청만 미리보기의 응답이 유실되면 같은 요청으로 복구하고 복귀 루프를 만들지 않는다', async () => {
+  apiSend.mockResolvedValueOnce(salaryHandoff())
+    .mockResolvedValueOnce({ status: 'ready', basisHash: 'salary-basis' })
+    .mockRejectedValueOnce(new TypeError('응답 유실'))
+    .mockResolvedValueOnce({ status: 'ready', basisHash: 'salary-basis', requestOnly: true,
+      proposal: { proposalId: 'saved-preview' } })
+    .mockResolvedValueOnce(reply('router', 2, '이전 예산 조정 이어하기'))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=conversation-1&salaryResume=request_only']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(apiSend.mock.calls.filter(([path]) => path === '/api/chat/messages/')).toHaveLength(0)
+  expect(host.textContent).toContain('월급 수정하고 싶어')
+  await click(button('다시 보내기'))
+  expect(apiSend.mock.calls.filter(([path, method]) => path === '/api/budgets/salary-review/' && method === 'POST')).toHaveLength(1)
+  expect(apiSend.mock.calls.filter(([path]) => path === '/api/chat/messages/')).toHaveLength(1)
+})
+
+it('요청만 이어갈 금액을 확인하지 못하면 이전 대화를 보존하고 배분 검토로 다시 보내지 않는다', async () => {
+  apiSend.mockResolvedValueOnce(salaryHandoff())
+    .mockResolvedValueOnce({ status: 'needs_input', message: '보관한 요청의 금액을 먼저 정해 주세요.' })
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=conversation-1&salaryResume=request_only']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(host.textContent).toContain('월급 수정하고 싶어')
+  expect(host.textContent).toContain('보관한 요청의 금액을 먼저 정해 주세요.')
+  expect(apiSend.mock.calls.some(([path, method]) => method === 'POST')).toBe(false)
+  expect(input().disabled).toBe(false)
+})
+
+it('요청만 미리보기 도중 기준이 바뀌면 같은 요청을 최신 기준으로 다시 계산한다', async () => {
+  apiSend.mockResolvedValueOnce(salaryHandoff())
+    .mockResolvedValueOnce({ status: 'ready', basisHash: 'old-basis' })
+    .mockRejectedValueOnce(Object.assign(new Error('예산 조건이 바뀌었어요.'), { status: 409, code: 'expired' }))
+    .mockResolvedValueOnce({ status: 'ready', basisHash: 'new-basis' })
+    .mockResolvedValueOnce({ proposal: { proposalId: 'new-preview' }, requestOnly: true })
+    .mockResolvedValueOnce(reply('router', 2, '이전 예산 조정 이어하기'))
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=conversation-1&salaryResume=request_only']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(apiSend.mock.calls.filter(([path]) => path === '/api/chat/messages/')).toHaveLength(0)
+  await click(button('다시 보내기'))
+  const calculations = apiSend.mock.calls.filter(([path, method]) => path === '/api/budgets/salary-review/' && method === 'POST')
+  expect(calculations.map(([, , body]) => body.basisHash)).toEqual(['old-basis', 'new-basis'])
+  expect(calculations[1][3]).toEqual(calculations[0][3])
+  expect(calculations[1][2]).toMatchObject({ conversationId: 'conversation-1', savingPercent: 0, requestOnly: true })
+  expect(apiSend.mock.calls.filter(([path]) => path === '/api/chat/messages/')).toHaveLength(1)
+})
+
+it('요청만 미리보기 계산을 마치지 못하면 기존 대화에서 금액을 다시 입력할 수 있다', async () => {
+  apiSend.mockResolvedValueOnce(salaryHandoff())
+    .mockResolvedValueOnce({ status: 'ready', basisHash: 'salary-basis' })
+    .mockResolvedValueOnce({ status: 'needs_input', message: '지킬 금액을 남기면 요청한 예산에 5만 원이 부족해요.' })
+  await act(() => root.render(<MemoryRouter initialEntries={['/chat?budgetConversation=conversation-1&salaryResume=request_only']}>
+    <PopupProvider><AssistantPage /></PopupProvider></MemoryRouter>))
+  expect(host.textContent).toContain('월급 수정하고 싶어')
+  expect(host.textContent).toContain('5만 원이 부족해요.')
+  expect(input().disabled).toBe(false)
+  expect(apiSend.mock.calls.filter(([path]) => path === '/api/chat/messages/')).toHaveLength(0)
 })
 
 it('복귀 대화가 없거나 다른 사용자 것이면 이어가기 요청을 보내지 않는다', async () => {

@@ -942,6 +942,7 @@ def _persona_context(user, summary, today):
         return context
     try:
         from budgets.models import Budget
+        from budgets.protect import fixed_total
         from finance.models import FinancialTransaction
         profile = user.financial_profile
         birth, housing, floor = profile.birth_date, profile.housing_type, profile.savings_floor
@@ -951,12 +952,14 @@ def _persona_context(user, summary, today):
         # 배분 기준 금액 = 이번 급여 주기에 승인한 예산의 배분 대상 자금 (월 실수령액 − 확정 고정지출)
         budget = (Budget.objects.filter(user=user, status="approved", cycle__status="active", cycle__starts_on__lte=today,
                                         cycle__ends_before__gt=today).order_by("-approved_at", "-pk")
-                  .values("funding_amount", "cycle__starts_on").first())
-        if budget and type(budget.get("funding_amount")) is int:
-            context["base"] = budget["funding_amount"]
+                  .select_related("cycle").first())
+        if budget and type(budget.funding_amount) is int:
+            fixed = fixed_total(user, budget.cycle)
+            if fixed is not None:
+                context["base"] = budget.funding_amount - fixed
             context["saving_seen"] = FinancialTransaction.objects.filter(
                 user=user, transaction_type="saving", is_canceled=False,
-                occurred_on__gte=budget["cycle__starts_on"], occurred_on__lte=today).exists()
+                occurred_on__gte=budget.cycle.starts_on, occurred_on__lte=today).exists()
     except (AttributeError, ObjectDoesNotExist, DatabaseError, TypeError, ValueError):
         return context
     # 모델 C는 대상(20~34세 1인 가구)일 때만 부른다 — 대상 밖이면 하위 프로세스를 띄우지 않는다
@@ -1037,8 +1040,10 @@ def _story_answer(user, summary, goal, today, suffix):
     notes.extend(st.pop("limits", []) if goal == "reason" else [])
     if goal == "habit":
         notes.extend(note for f in _habit_findings(summary) for note in f.get("limits", []))
-    shown = any(b["kind"] in ("months",) for b in blocks)  # 예상이 화면에 나온 답(전체 · 앞으로)에만 예상 방식 안내
-    projection = st.get("projection") if shown else None
+    shown = any(b["kind"] == "months" for b in blocks)
+    forecast = by_id.get("FORECAST")
+    forecast_shown = forecast and any(forecast["conclusion"] in b.get("lines", []) for b in blocks)
+    projection = st.get("projection") if forecast_shown else None
     if projection and projection["method"] == "validated":
         report = projection["validation"]
         notes.append(f"예상 방식: 과거 소비로 여러 방식을 시험해 {trend.MODEL_NAMES[report['selected']['model']]}(최근 {report['selected']['lookback_days']}일 반영)을 골랐어요. "

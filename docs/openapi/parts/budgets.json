@@ -4587,6 +4587,11 @@
             "minimum": 0,
             "maximum": 100,
             "description": "기존 요청을 반영한 뒤 남은 급여 증가분 중 추가 저축할 비율."
+          },
+          "requestOnly": {
+            "type": "boolean",
+            "default": false,
+            "description": "true이면 보관한 요청만 반영하고 추가 저축·A/B 재배분 없이 잔액을 여윳돈으로 유지한다. savingPercent는 0이어야 한다."
           }
         }
       },
@@ -4641,6 +4646,10 @@
             "type": "integer",
             "minimum": 0,
             "maximum": 100
+          },
+          "requestOnly": {
+            "type": "boolean",
+            "description": "보관한 요청만 반영하도록 선택한 미리보기인지 여부."
           },
           "scope": {
             "type": "string",
