@@ -286,6 +286,9 @@
 #mc-new-preview .mc-fx-lines li::before { content: ''; position: absolute; left: 2px; top: .72em; width: 4px; height: 4px; border-radius: 50%; background: var(--mc-sub); }
 /* 숫자는 굵게 · 자릿수 정렬, 괄호 속 보조 설명은 옅고 작게 */
 #mc-new-preview .mc-fx-num { font-weight: 700; font-variant-numeric: tabular-nums; }
+/* 11/17: 숫자 + 붙은 조사는 한 덩어리 · 분석 문장의 마지막 줄에 '있어요.'처럼 한 낱말만 남지 않게 (지원 안 하는 브라우저는 지금처럼) */
+#mc-new-preview .mc-fx-nb { white-space: nowrap; }
+#mc-new-preview :is(.mc-fx-key p, .mc-fx-lines li) { text-wrap: pretty; }
 #mc-new-preview .mc-fx-aside { color: var(--mc-sub); font-size: .92em; }
 /* '항목 금액 · 항목 금액' 나열 → 칩 (구분 글자는 화면 읽기용으로만 남긴다) */
 #mc-new-preview .mc-fx-chips { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: top; }
@@ -295,18 +298,21 @@
 #mc-new-preview .mc-fx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* 핵심 진단: 문장마다 끊고 왼쪽 점으로 한 항목씩. 첫 문장(가장 중요한 답)은 조금 크게 */
 #mc-new-preview .mc-fx-key { gap: 10px; padding: 14px 16px; }
-#mc-new-preview .mc-fx-key p { position: relative; padding-left: 14px; font-size: 13px; font-weight: 600; line-height: 1.6; }
-#mc-new-preview .mc-fx-key p::before { content: ''; position: absolute; left: 1px; top: .68em; width: 6px; height: 6px; border-radius: 50%; background: var(--mc-brand); opacity: .55; }
-#mc-new-preview .mc-fx-key p:first-of-type { font-size: 14px; font-weight: 700; }
-#mc-new-preview .mc-fx-key p:first-of-type::before { opacity: 1; }
+#mc-new-preview .mc-fx-key p { position: relative; padding-left: 13px; font-size: 13px; font-weight: 600; line-height: 1.6; }
+/* 11/17: 목록 점을 '이렇게 봤어요'(mc-fx-lines) 점과 같은 크기 · 색 · 위치로 (4px · mc-sub) */
+#mc-new-preview .mc-fx-key p::before { content: ''; position: absolute; left: 2px; top: .72em; width: 4px; height: 4px; border-radius: 50%; background: var(--mc-sub); }
+/* 11/17 A안: 첫 줄은 결론이라 목록 점 없이 제목처럼 조금 크게만 (굵기는 다른 줄과 같게 — 혼자 굵으면 튀어서) */
+#mc-new-preview .mc-fx-key p:first-of-type { padding-left: 0; font-size: 15px; font-weight: 600; }
+#mc-new-preview .mc-fx-key p:first-of-type::before { content: none; }
 #mc-new-preview .mc-fx-key p + p { padding-top: 10px; border-top: 1px solid light-dark(#26365a12, #ffffff14); }
-#mc-new-preview .mc-fx-key p + p::before { top: calc(10px + .68em); }
+#mc-new-preview .mc-fx-key p + p::before { top: calc(10px + .72em); }
 #mc-new-preview .mc-fx-key .mc-fx-num { color: var(--mc-brand); }
 #mc-new-preview .mc-fx-key .mc-fx-num.mc-fx-up { color: var(--mc-alert); }
 /* 계산식: 결과를 크게, '= 식'은 아래 줄에 작게 */
 #mc-new-preview .mc-fx-key .mc-fx-eq-result { display: block; }
 #mc-new-preview .mc-fx-key .mc-fx-eq-calc { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--mc-sub); }
 #mc-new-preview .mc-fx-key .mc-fx-eq-calc .mc-fx-num { color: var(--mc-ink); font-weight: 650; }
+#mc-new-preview .mc-fx-key .mc-fx-eq-term { display: block; }
 /* 자세히 보기: 글자 링크 대신 눌러서 펼치는 띠, 펼친 안쪽은 섹션 사이 여백 유지 */
 #mc-new-preview .mc-fx-fold { display: flex; flex-direction: column; gap: 14px; }
 #mc-new-preview .mc-fx-fold > summary { display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 11px 14px;

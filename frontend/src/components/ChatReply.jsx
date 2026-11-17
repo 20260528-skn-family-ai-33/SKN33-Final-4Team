@@ -74,13 +74,19 @@ const ANALYSIS_TITLES = new Set(['핵심 진단', '분석 근거', '앞으로의
 
 // 분석 문장 읽기 쉽게 (11/16): 글자는 서버 문장 그대로 두고(textContent 같음) 모양만 나눈다.
 // 금액 · 비율 · 배수는 굵게(+ 붉은 · - 파란), 괄호 속 보조 설명은 옅게, '항목 금액 · 항목 금액' 나열은 칩으로, 'A = B + C' 계산식은 결과와 식을 두 줄로
-const NUM = /([+\-−]?\d[\d,]*(?:\.\d+)?(?:\s?만\s?원|만|원|%|배))/
+// 11/17: 숫자 바로 뒤에 붙은 한글 조사(77.3만 원'이' · 4.9배'를')까지 한 덩어리로 묶어 줄이 그 사이에서 끊기지 않게 한다
+const NUM = /([+\-−]?\d[\d,]*(?:\.\d+)?(?:\s?만\s?원|만|원|%|배))([가-힣]*)/
 function Nums({ text }) {
-  return text.split(NUM).map((part, i) => {
-    if (i % 2 === 0) return part
-    const sign = /^[+]/.test(part) ? ' mc-fx-up' : /^[-−]/.test(part) ? ' mc-fx-down' : ''
-    return <b key={i} className={`mc-fx-num${sign}`}>{part}</b>
-  })
+  const parts = text.split(NUM)  // [글, 숫자, 붙은 조사, 글, 숫자, 붙은 조사, …]
+  const out = []
+  for (let i = 0; i < parts.length; i += 3) {
+    if (parts[i]) out.push(parts[i])
+    if (i + 1 >= parts.length) break
+    const num = parts[i + 1]
+    const sign = /^[+]/.test(num) ? ' mc-fx-up' : /^[-−]/.test(num) ? ' mc-fx-down' : ''
+    out.push(<span key={i} className="mc-fx-nb"><b className={`mc-fx-num${sign}`}>{num}</b>{parts[i + 2]}</span>)
+  }
+  return out
 }
 function Rich({ text }) {
   if (typeof text !== 'string') return text
@@ -95,7 +101,11 @@ function Rich({ text }) {
 }
 function KeyLine({ text }) {
   const eq = typeof text === 'string' && text.match(/^(.+?) = (.+)$/)
-  if (eq) return <p className="mc-fx-eq"><span className="mc-fx-eq-result"><Nums text={eq[1]} /></span> <span className="mc-fx-eq-calc">= <Nums text={eq[2]} /></span></p>
+  if (eq) {  // 11/17: 계산식은 '+ 항목'마다 새 줄로 (항목 중간에서 줄이 끊기지 않게). 글자는 그대로 — 줄 앞 공백은 화면에서 안 보인다
+    const [first, ...more] = eq[2].split(' + ')
+    return <p className="mc-fx-eq"><span className="mc-fx-eq-result"><Nums text={eq[1]} /></span> <span className="mc-fx-eq-calc">= <Nums text={first} />
+      {more.map((term, i) => <span key={i} className="mc-fx-eq-term"> + <Nums text={term} /></span>)}</span></p>
+  }
   return <p><Rich text={text} /></p>
 }
 
