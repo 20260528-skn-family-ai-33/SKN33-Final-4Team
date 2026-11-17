@@ -47,6 +47,7 @@ PERSONAS = {
             'categoryMinimums': [],
         },
         'salary': {'takeHomeIncome': 2_600_000, 'payday': 25},
+        'bills_checked_to_payday': True,  # 11/17: 지난 카드값 미반영 안내를 띄우지 않음 (아래 insert_connected_state 설명)
         # 감지가 안 되면 직접 등록할 고정지출: (CSV role, 이름, 금액, 날짜, 카테고리, 결제 수단)
         'fixed': [('rent', '월세', 500_000, 1, 'HOUSING_TELECOM', 'A'),
                   ('maintenance', '관리비', 70_000, 10, 'HOUSING_TELECOM', 'A'),
@@ -103,6 +104,7 @@ PERSONAS = {
             'categoryMinimums': [],
         },
         'salary': {'takeHomeIncome': 2_500_000, 'payday': 25},
+        'bills_checked_to_payday': True,  # 11/17: A와 같음
         'fixed': [('telecom', '휴대폰 요금', 52_000, 22, 'HOUSING_TELECOM', 'A'),
                   ('ott', '티빙', 13_900, 5, 'CULTURE_LEISURE', 'D'),
                   ('parents', '부모님 생활비', 200_000, 26, 'ETC', 'A')],
@@ -113,6 +115,14 @@ PERSONAS = {
 
 def uid(persona, *parts):
     return uuid.uuid5(NAMESPACE, ':'.join(['persona', persona, *map(str, parts)]))
+
+
+def next_payday(day, payday):
+    """day 다음에 오는 명목 월급날 (주말 · 휴일로 당겨지는 실제 날짜보다 늦거나 같다 → 주기 끝을 넉넉히 덮는다)"""
+    if day.day < payday:
+        return day.replace(day=payday)
+    year, month = (day.year + 1, 1) if day.month == 12 else (day.year, day.month + 1)
+    return date(year, month, payday)
 
 
 def at(day, hour=0, minute=0):
@@ -213,6 +223,10 @@ def insert_connected_state(persona, as_of, password, *, real_classify=False):
                 confirmation_state='confirmed', confirmed_at=now)
 
     start = cfg['first_connected']  # 수집 시작일 (첫 연결의 '4달 전 1일')
+    # 11/17 (A · C만): 체크카드라 청구서가 없다는 것을 다음 월급날까지 확인한 것으로 둔다.
+    # 실제 조회는 오늘까지만 기록돼서 주기 중간에는 '지난 카드값이 아직 반영 안 됐어요'가 뜬다 (budgets/protect.py first_bill_unavailable).
+    # 이번 주기 끝까지 청구서 0건으로 두면 no_bill_in_cycle(선차감 0원 · 지킬 돈 화면 작은 안내만)이 된다. 계산 규칙은 그대로
+    bills_to = next_payday(as_of, cfg['salary']['payday']) if cfg.get('bills_checked_to_payday') else as_of
     for key, asset in assets.items():
         is_card = key in cfg['cards']
         if not is_card and not cfg['accounts'][key][3]:
@@ -229,7 +243,7 @@ def insert_connected_state(persona, as_of, password, *, real_classify=False):
             SyncRun.objects.create(
                 pk=uid(persona, 'sync', 'bills', key), user=user, connection=conns['card'], card=asset,
                 product_code='card_bill_list', status='success',
-                requested_from=start, requested_to=as_of, covered_from=start, covered_to=as_of,
+                requested_from=start, requested_to=bills_to, covered_from=start, covered_to=bills_to,
                 started_at=now, completed_at=now)
     return user, list(txs.values())
 
