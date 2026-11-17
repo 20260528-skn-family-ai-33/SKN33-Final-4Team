@@ -13,6 +13,41 @@ from .adjustment_core.responses import guidance
 from .test_adjustment_core import Store, allocation, context, envelope, item, reading
 
 
+class AdjustmentInspectionInterpretationTest(unittest.TestCase):
+    def test_inspection_focus_is_optional_for_existing_readings_and_validated(self):
+        legacy = reading(action='inspect')
+        self.assertNotIn('inspection', interpretation.parse(legacy))
+        for focus in ('capacity', 'sources', None):
+            with self.subTest(focus=focus):
+                parsed = interpretation.parse({**legacy, 'inspection': focus})
+                self.assertEqual(parsed['inspection'], focus)
+        for focus in ('all', True, 0, [], {}):
+            with self.subTest(focus=focus):
+                with self.assertRaisesRegex(interpretation.InterpretationFailed, 'invalid_inspection'):
+                    interpretation.parse({**legacy, 'inspection': focus})
+
+    def test_live_schema_lookup_includes_inspection_for_both_interpreters(self):
+        from chat.llm.schemas import schema_for
+        for prompt in (interpretation.PROMPT, dialogue.DIALOGUE_PROMPT):
+            with self.subTest(prompt=prompt[:30]):
+                _, schema = schema_for(prompt)
+                if prompt == dialogue.DIALOGUE_PROMPT:
+                    schema = schema['properties']['reading']
+                self.assertEqual(schema['properties']['inspection']['enum'], ['capacity', 'sources', None])
+                self.assertIn('inspection', schema['required'])
+
+    def test_inspection_focus_does_not_replace_or_persist_budget_conditions(self):
+        original = {'requests': [item('FOOD', 50000)], 'sources': ['HOUSEHOLD'], 'excluded': ['SAVINGS'],
+                    'scope': 'cycle', 'clear_targets': ['FOOD'], 'spare_minimum': 200000}
+        for focus in ('capacity', 'sources'):
+            with self.subTest(focus=focus):
+                state = deepcopy(original)
+                _merge(state, interpretation.parse(reading(action='inspect', inspection=focus)), {})
+                for field, value in original.items():
+                    self.assertEqual(state[field], value)
+                self.assertNotIn('inspection', state)
+
+
 class AdjustmentDialogueTest(unittest.TestCase):
 
     def test_amount_edit_choice_names_the_requested_category_and_direction(self):
@@ -25,10 +60,10 @@ class AdjustmentDialogueTest(unittest.TestCase):
     def test_category_capacity_inquiry_keeps_target_and_lists_verified_living_donors(self):
         self.context.update(spending_status='partial', budget_preview=True,
                             observed_spending={'transaction_count': 3, 'through': '2026-11-09'})
-        response = self.turn(reading(requests=[item('FOOD', None)], action='inspect'))
+        response = self.turn(reading(requests=[item('FOOD', None)], action='inspect', inspection='sources'))
         lines = response['reply']['lines']
-        self.assertTrue(lines[0].startswith('식비 · 확인된 증액 한도'), lines)
-        self.assertTrue(lines[1].startswith('다른 생활비 · 최대'), lines)
+        self.assertTrue(lines[0].startswith('다른 생활비 · 최대'), lines)
+        self.assertFalse(any('확인된 증액 한도' in line for line in lines))
         self.assertIn('· 생활용품 5만 원', lines)
         self.assertIn('· 의료·건강 5만 원', lines)
         self.assertTrue(any('2026-11-09' in line and '참고 금액' in line for line in lines))
@@ -62,8 +97,49 @@ class AdjustmentDialogueTest(unittest.TestCase):
         self.assertNotIn('여윳돈 · 최대 0원', response['reply']['lines'])
         self.store.state['sources'] = ['SPARE']
         response = self.turn(reading(action='inspect', reference='previous'))
-        self.assertEqual(response['reply']['lines'][0], '식비 · 재원 금액 확인 필요')
+        self.assertEqual(response['reply']['lines'][0], '여윳돈 · 금액 확인 필요')
         self.assertFalse(any('0원' in line for line in response['reply']['lines']))
+
+    def test_capacity_summary_and_source_details_preserve_request_and_conditions(self):
+        self.store.state = {'requests': [item('FOOD', None)], 'excluded': ['SAVINGS'],
+                            'pending': {'kind': 'amount', 'index': 0}}
+        summary = self.turn(reading(action='inspect', inspection='capacity'))['reply']['lines']
+        self.assertEqual(summary[0], '다른 생활비에서 식비에 최대 20만 원을 더할 수 있어요.')
+        self.assertFalse(any('· 생활용품' in line or '저축' in line for line in summary))
+        details = self.turn(reading(action='inspect', inspection='sources'))['reply']['lines']
+        self.assertIn('· 생활용품 5만 원', details)
+        self.assertNotEqual(summary, details)
+        self.assertEqual(self.store.state['requests'], [item('FOOD', None)])
+        self.assertEqual(self.store.state['excluded'], ['SAVINGS'])
+        self.assertFalse(self.proposals)
+
+    def test_capacity_inquiry_does_not_replace_selected_amount_or_preview(self):
+        self.turn(reading(requests=[item('FOOD', 50000)], action='compare'))
+        comparison = deepcopy(self.store.state['comparison'])
+        response = self.turn(reading(action='inspect', inspection='capacity'))
+        self.assertIn('최대 20만 원', response['reply']['lines'][0])
+        self.assertEqual(self.store.state['requests'], [item('FOOD', 50000)])
+        self.assertEqual(self.store.state['comparison'], comparison)
+        self.assertNotIn('comparison', response['reply'])
+        self.assertFalse(self.proposals)
+
+    def test_capacity_inquiry_for_total_living_does_not_use_internal_transfers(self):
+        response = self.turn(reading(requests=[item('LIVING', None)], action='inspect', inspection='capacity'))
+        lines = response['reply']['lines']
+        self.assertTrue(any('여윳돈' in line for line in lines))
+        self.assertFalse(any('다른 생활비' in line for line in lines))
+        self.assertFalse(self.proposals)
+
+    def test_reduction_capacity_inquiry_keeps_direction_and_destination(self):
+        self.store.state = {'requests': [item('FOOD', 50000, 'down')], 'destinations': ['EDUCATION'],
+                            'excluded': ['SAVINGS'], 'pending': {'kind': 'comparison'}}
+        before = deepcopy(self.store.state)
+        response = self.turn(reading(action='inspect', inspection='capacity'))
+        self.assertIn('줄일 수', ' '.join(response['reply']['lines']))
+        self.assertNotIn('더할 수', ' '.join(response['reply']['lines']))
+        for key in ('requests', 'destinations', 'excluded'):
+            self.assertEqual(self.store.state[key], before[key])
+        self.assertFalse(self.proposals)
 
     def test_living_distribution_choice_opens_editor_without_picking_a_recipient(self):
         response = self.turn(reading(requests=[item('FOOD', 100000, 'down')], action='compare'))
@@ -1136,17 +1212,43 @@ class LiveAdjustmentIntentTest(unittest.TestCase):
         from chat.llm.live import LiveReading
         self.live = LiveReading(30, None)
 
+    def test_preview_capacity_feedback_uses_strict_schema_and_preserves_inquiry_focus(self):
+        ctx = context()
+        state = {'requests': [item('FOOD', 50000)], 'sources': ['HOUSEHOLD']}
+        for text, focus in [('얼마나 늘릴 수 있어?', 'capacity'), ('어디서 얼마나 가져올 수 있어?', 'sources')]:
+            with self.subTest(text=text):
+                payload = {'text': text, 'codes': [*ctx['allocations'], *ctx['buckets']],
+                           'category_names': ctx['category_names'],
+                           'primary_request': envelope(item('FOOD', 50000), sources=['HOUSEHOLD']),
+                           'previous': state}
+                data = json.loads(self.live(dialogue.FEEDBACK_PROMPT, json.dumps(payload, ensure_ascii=False)))
+                self.assertEqual(data['action'], 'maxima', data)
+                self.assertEqual(data['inspection'], focus, data)
+        self.assertEqual(self.live.usage()['failed'], 0)
+
     def test_capacity_question_keeps_food_and_followup_source(self):
-        data = self.interpret('식비 어디까지 늘릴 수 있어?')
-        self.assertEqual(data['requests'], [item('FOOD', None, 'up', data['requests'][0]['amount_mode'])], data)
-        self.assertEqual(data['action'], 'inspect', data)
-        state = {'requests': [item('FOOD', None)], 'sources': ['HOUSEHOLD'],
-                 'pending': {'kind': 'amount', 'question': '식비 예산을 얼마 늘릴까요?'}}
-        data = self.interpret('어디서 얼마나 가져올 수 있는데?', state)
-        _merge(state, data, state['pending'])
-        self.assertEqual(state['requests'][0]['category'], 'FOOD', data)
-        self.assertEqual(state['sources'], ['HOUSEHOLD'], data)
-        self.assertEqual(data['action'], 'inspect', data)
+        for direct in (False, True):
+            with self.subTest(direct=direct):
+                def interpret(text, state=None):
+                    if direct:
+                        return interpretation.read(text, self.live, categories=context()['category_names'],
+                            **interpretation.dialogue_context(state or {}))
+                    return self.interpret(text, state)
+                data = interpret('식비 어디까지 늘릴 수 있어?')
+                self.assertEqual(data['requests'], [item('FOOD', None, 'up', data['requests'][0]['amount_mode'])], data)
+                self.assertEqual(data['action'], 'inspect', data)
+                self.assertEqual(data['inspection'], 'capacity', data)
+                state = {'requests': [item('FOOD', None)], 'sources': ['HOUSEHOLD'],
+                         'pending': {'kind': 'amount', 'question': '식비 예산을 얼마 늘릴까요?'}}
+                for text, focus in [('얼마나 늘릴 수 있어?', 'capacity'),
+                                    ('어디서 얼마나 가져올 수 있는데?', 'sources')]:
+                    data = interpret(text, state)
+                    _merge(state, data, state['pending'])
+                    self.assertEqual(state['requests'][0]['category'], 'FOOD', data)
+                    self.assertEqual(state['sources'], ['HOUSEHOLD'], data)
+                    self.assertEqual(data['action'], 'inspect', data)
+                    self.assertEqual(data['inspection'], focus, data)
+                    self.assertNotIn('inspection', state)
 
     def test_transfer_direction_and_unspecified_reduction_amount(self):
         for text in ['식비 5만 원 옮겨줘', '교통비 3만원 이동해줘']:

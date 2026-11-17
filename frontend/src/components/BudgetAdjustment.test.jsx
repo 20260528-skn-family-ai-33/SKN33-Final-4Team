@@ -362,7 +362,7 @@ it('배분 수정은 선택할 때만 열리고 기존 배분액 안에서 다�
   await act(() => root.render(<BudgetAdjustment content={content} active onSend={send} onApprove={approve} />))
   expect(host.querySelector('input')).toBeNull()
   expect(button('예산 확정하기').disabled).toBe(false)
-  await click(button('배분 수정'))
+  await click(button('수정할래요'))
   expect(host.querySelector('select')).toBeNull()
   expect(button('예산 확정하기')).toBeUndefined()
   expect(host.querySelector('input').value).toBe('50,000')
@@ -382,7 +382,7 @@ it('배분 수정은 선택할 때만 열리고 기존 배분액 안에서 다�
   expect(host.querySelector('input')).toBeNull()
   expect(button('예산 확정하기').disabled).toBe(false)
   expect(send).not.toHaveBeenCalled()
-  await click(button('배분 수정'))
+  await click(button('수정할래요'))
   expect(host.querySelector('input').value).toBe('50,000')
   await click(button('교통·차량'))
   await click(host.querySelector('[aria-label="1번 금액 10,000원 줄이기"]'))
@@ -642,16 +642,38 @@ it('추천이 없어 금액 입력으로 넘어가도 숨긴 이유를 먼저 �
 })
 
 
-it('조회 누락 미리보기의 이유를 표시하고 최종 확정을 막는다', async () => {
-  const approve = vi.fn()
+it.each([false, true])('조회 누락 미리보기는 확정을 막고 수정을 제공한다 (canApprove=%s)', async (canApprove) => {
+  const approve = vi.fn(), send = vi.fn()
   const notice = '이번 주기 지출 조회가 누락되어 예산 기준으로만 계산했어요.'
-  const content = { budgetAdjustment: { canApprove: true,
+  const content = { budgetAdjustment: { canApprove,
+    distributionEdit: { source: 'EDUCATION', amount: 50000, categories: ['FOOD', 'TRANSPORT_CAR'],
+      values: [{ category: 'FOOD', amount: 50000 }] },
     proposal: { proposalId: 'unverified', state: 'awaiting_approval', canApprove: false, verificationNotice: notice, changes: [] } } }
-  await act(() => root.render(<BudgetAdjustment content={content} active onApprove={approve} />))
+  await act(() => root.render(<BudgetAdjustment content={content} active onApprove={approve} onSend={send} />))
   expect(host.textContent).toContain(notice)
   expect(button('예산 확정하기').disabled).toBe(true)
+  expect(button('수정할래요').disabled).toBe(false)
   await click(button('예산 확정하기'))
   expect(approve).not.toHaveBeenCalled()
+  await click(button('수정할래요'))
+  expect(host.querySelector('input').value).toBe('50,000')
+  expect(host.textContent).toContain(notice)
+  expect(send).not.toHaveBeenCalled()
+  await click(button('수정 취소'))
+  await act(() => root.render(<BudgetAdjustment content={content} active={false} onApprove={approve} onSend={send} />))
+  expect(button('예산 확정하기').disabled).toBe(true)
+  expect(button('수정할래요').disabled).toBe(true)
+  await click(button('수정할래요'))
+  expect(host.querySelector('input')).toBeNull()
+})
+
+it.each(['saved', 'expired', 'canceled', 'rejected', 'failed'])('종료된 %s 변경안에서는 확정과 수정 버튼을 숨긴다', async (state) => {
+  const content = { budgetAdjustment: { canApprove: false,
+    distributionEdit: { source: 'EDUCATION', amount: 50000, categories: ['FOOD'] },
+    proposal: { proposalId: 'ended', state, changes: [] } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onApprove={vi.fn()} onSend={vi.fn()} />))
+  expect(button('예산 확정하기')).toBeUndefined()
+  expect(button('수정할래요')).toBeUndefined()
 })
 
 it('서버 추천안은 결론 한 줄과 추천 카드를 먼저 보여 주고 대안의 변화는 접어 둔다', async () => {

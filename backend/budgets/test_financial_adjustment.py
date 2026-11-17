@@ -26,6 +26,14 @@ from .test_financial_planner import draft, funding, review
 
 
 class FinancialReplyFormattingTest(unittest.TestCase):
+    def test_live_feedback_schema_requires_every_property(self):
+        from chat.llm.schemas import schema_for
+        from .adjustment_core.financial_conversation import FEEDBACK_PROMPT
+        name, schema = schema_for(FEEDBACK_PROMPT)
+        self.assertEqual(name, 'budget_adjust_feedback')
+        self.assertEqual(set(schema['required']), set(schema['properties']))
+        self.assertIn('inspection', schema['required'])
+
     def setUp(self):
         from .test_adjustment_core import Store
         self.store, self.ctx = Store(), context()
@@ -62,6 +70,172 @@ class FinancialReplyFormattingTest(unittest.TestCase):
         self.assertFalse(any('여윳돈' in line and ('0원' in line or '보충' in line) for line in lines))
         self.assertTrue(any(line.startswith('· ') for line in lines))
         self.assertIn('2026-11-15', lines[-1])
+
+    def test_capacity_summary_and_source_details_keep_the_same_protected_limits(self):
+        from .adjustment_core.financial_conversation import maxima
+        request = {**envelope(item('FOOD', 50000), excluded=['SAVINGS']), 'spare_minimum': 350000}
+        refinement = {'donors': {'HOUSEHOLD': {'target': 40000}, 'MEDICAL_HEALTH': {'target': 30000}}}
+        before = deepcopy((self.ctx, request, refinement))
+        summary = maxima(self.ctx, request, refinement, inspection='capacity')['reply']['lines']
+        details = maxima(self.ctx, request, refinement, inspection='sources')['reply']['lines']
+        self.assertEqual(summary[0], '다른 생활비에서 식비에 최대 13만 원을 더할 수 있어요.')
+        self.assertFalse(any(line.startswith('· ') for line in summary))
+        self.assertIn('다른 생활비 · 최대 13만 원', details)
+        self.assertIn('· 생활용품 1만 원', details)
+        self.assertIn('· 의료·건강 2만 원', details)
+        self.assertIn('여윳돈 · 최대 5만 원', details)
+        self.assertIn('월 머니쿠션 · 최대 10만 원', details)
+        for lines in (summary, details):
+            self.assertNotIn('저축', '\n'.join(lines))
+            self.assertTrue(any('2026-11-15' in line for line in lines))
+            self.assertIn('직접 정한 감액 제한과 남길 금액을 반영했어요.', lines)
+        self.assertEqual((self.ctx, request, refinement), before)
+
+    def test_decrease_capacity_uses_the_original_direction_and_distinguishes_unknown(self):
+        from .adjustment_core.financial_conversation import maxima
+        self.ctx['minimums']['HOUSEHOLD'] = 20000
+        request = envelope(item('HOUSEHOLD', 10000, 'down'), destinations=['SAVINGS'])
+        before = deepcopy((self.ctx, request))
+        result = maxima(self.ctx, request, inspection='capacity')
+        self.assertEqual(result['reply']['lines'][0], '생활용품에서 최대 3만 원을 줄일 수 있어요.')
+        self.assertEqual((self.ctx, request), before)
+        for missing in ('transactions', 'destination'):
+            with self.subTest(missing=missing):
+                ctx, inquiry = deepcopy(self.ctx), deepcopy(request)
+                if missing == 'transactions':
+                    ctx.update(budget_preview=False, observed_spending={})
+                else:
+                    inquiry['destinations'] = []
+                result = maxima(ctx, inquiry, inspection='capacity')
+                self.assertEqual(result['status'], 'awaiting_input')
+                self.assertNotIn('최대 0원', '\n'.join(result['reply']['lines']))
+                self.assertNotIn('더할 수 있어요', '\n'.join(result['reply']['lines']))
+
+    def test_total_living_capacity_uses_external_sources_without_inventing_a_destination(self):
+        from .adjustment_core.financial_conversation import maxima
+        request = {**envelope(item('LIVING', 50000), sources=['SPARE']), 'spare_minimum': 350000}
+        before = deepcopy((self.ctx, request))
+        result = maxima(self.ctx, request, inspection='sources')
+        self.assertIn('여윳돈 · 최대 5만 원', result['reply']['lines'])
+        self.assertNotIn('어느 생활비 항목', '\n'.join(result['reply']['lines']))
+        self.assertEqual((self.ctx, request), before)
+        request['sources'] = ['HOUSEHOLD']
+        result = maxima(self.ctx, request, inspection='sources')
+        self.assertEqual(result['reply']['lines'][0], '생활비 항목끼리 옮기면 생활비 전체 금액은 늘어나지 않아요.')
+        self.assertNotIn('확인 필요', '\n'.join(result['reply']['lines']))
+
+    def test_feedback_capacity_preserves_source_restrictions_and_original_decrease(self):
+        from .adjustment_core.financial_conversation import feedback
+        cases = [
+            ({'requests': [item('FOOD', 50000)], 'sources': ['SPARE']}, '여윳돈 · 최대 5만 원'),
+            ({'requests': [item('FOOD', 50000)], 'sources': [], 'permitted_sources': ['SPARE']}, '여윳돈 · 최대 5만 원'),
+            ({'requests': [item('HOUSEHOLD', 10000, 'down')], 'destinations': ['SAVINGS'],
+              'primary_request': envelope(item('SAVINGS', 10000))}, '생활용품에서 최대 5만 원을 줄일 수 있어요.'),
+        ]
+        for fields, expected in cases:
+            with self.subTest(fields=fields):
+                state = {**fields, 'spare_minimum': 350000, 'proposal': {'task_ref': 'preview',
+                    'proposal_id': 'preview', 'changes': [], 'allocations': deepcopy(self.ctx['allocations']),
+                    'buckets': deepcopy(self.ctx['buckets'])}}
+                before = deepcopy(state)
+                ports = {'get_context': lambda: deepcopy(self.ctx), 'store': self.store, 'propose': Mock(),
+                    'task_status': Mock(return_value={'state': 'awaiting_approval'}),
+                    'complete': Mock(return_value=json.dumps({'action': 'maxima', 'category': None,
+                        'amount': None, 'amount_mode': None, 'suggested_target': None, 'inspection': 'sources'}))}
+                result = feedback({'conversation_id': 'inspect', 'text': '얼마까지 옮길 수 있어?'}, state, ports)
+                self.assertIn(expected, result['reply']['lines'])
+                if fields['requests'][0]['direction'] == 'up':
+                    self.assertNotIn('다른 생활비', '\n'.join(result['reply']['lines']))
+                    self.assertNotIn('저축', '\n'.join(result['reply']['lines']))
+                self.assertEqual(state, before)
+                ports['propose'].assert_not_called()
+
+    def test_feedback_inspection_preserves_preview_and_accepts_optional_legacy_fields(self):
+        from .adjustment_core.financial_conversation import feedback
+        primary = {**envelope(item('FOOD', 50000), excluded=['SAVINGS']), 'spare_minimum': 350000}
+        preview = {'task_ref': 'preview', 'proposal_id': 'preview', 'changes': [],
+                   'allocations': deepcopy(self.ctx['allocations']), 'buckets': deepcopy(self.ctx['buckets'])}
+        state = {'requests': deepcopy(primary['items']), 'primary_request': primary,
+                 'proposal': preview, 'spare_minimum': 350000, 'excluded': ['SAVINGS'],
+                 'financial_overrides': {'planned_spare': {'status': 'user_confirmed',
+                     'scope': 'unbudgeted_only', 'amount': 300000}}}
+        before = deepcopy((self.ctx, state))
+        for inspection in ('capacity', 'sources', None):
+            for has_destination in (False, True):
+                with self.subTest(inspection=inspection, destination=has_destination):
+                    interpreted = {'action': 'maxima', 'category': None, 'amount': None,
+                                   'amount_mode': None, 'suggested_target': None}
+                    if inspection is not None:
+                        interpreted['inspection'] = inspection
+                    if has_destination:
+                        interpreted['destination'] = None
+                    ports = {'get_context': lambda: deepcopy(self.ctx), 'store': self.store,
+                             'complete': Mock(return_value=json.dumps(interpreted)), 'propose': Mock(),
+                             'task_status': Mock(return_value={'state': 'awaiting_approval'})}
+                    result = feedback({'conversation_id': 'inspect', 'text': '가능한 범위가 궁금해'}, state, ports)
+                    self.assertEqual(result['status'], 'replied', result)
+                    lines = result['reply']['lines']
+                    if inspection == 'capacity':
+                        self.assertTrue(lines[0].startswith('다른 생활비에서 식비에 최대 '))
+                        self.assertFalse(any(line.startswith('· ') for line in lines))
+                    else:
+                        self.assertIn('여윳돈 · 최대 5만 원', lines)
+                        self.assertTrue(any(line.startswith('· ') for line in lines))
+                    self.assertNotIn('저축', '\n'.join(lines))
+                    ports['propose'].assert_not_called()
+                    self.assertEqual((self.ctx, state), before)
+
+    def test_inspection_during_diagnostic_questions_answers_without_losing_the_request(self):
+        from .adjustment_core.financial_conversation import _inquiry
+        for kind in ('financial_data', 'one_off_review'):
+            for inspection in ('capacity', 'sources'):
+                with self.subTest(pending=kind, inspection=inspection):
+                    self.store.state = {'requests': [item('FOOD', 50000)], 'excluded': ['SAVINGS'],
+                        'spare_minimum': 350000, 'pending': {'kind': kind, 'field': 'planned',
+                            'line': '예정 지출을 확인해 주세요.', 'choices': []}}
+                    before = deepcopy(self.store.state)
+                    ports = {'get_context': lambda: deepcopy(self.ctx), 'store': self.store,
+                        'allocator': proportional_group_reduction, 'simulate': Mock(), 'propose': Mock(),
+                        'task_status': Mock(), 'cancel': Mock(),
+                        'complete': Mock(return_value=json.dumps(reading(action='inspect', inspection=inspection)))}
+                    result = _inquiry({'conversation_id': 'inspect', 'text': '얼마나 가능한지 먼저 알려줘'},
+                                      self.store.state, ports)
+                    self.assertIsNotNone(result)
+                    self.assertEqual(result['status'], 'replied', result)
+                    lines = result['reply']['lines']
+                    if inspection == 'capacity':
+                        self.assertTrue(lines[0].startswith('다른 생활비에서 식비에 최대 '))
+                    else:
+                        self.assertIn('여윳돈 · 최대 5만 원', lines)
+                    for field in ('requests', 'excluded', 'spare_minimum'):
+                        self.assertEqual(self.store.state[field], before[field])
+                    ports['simulate'].assert_not_called()
+                    ports['propose'].assert_not_called()
+                    ports['cancel'].assert_not_called()
+
+    def test_inspection_during_plan_selection_keeps_existing_candidates(self):
+        from .adjustment_core.financial_conversation import _handle
+        for inspection in ('capacity', 'sources'):
+            with self.subTest(inspection=inspection):
+                self.store.state = {'requests': [item('FOOD', 50000)], 'excluded': ['SAVINGS'],
+                    'spare_minimum': 350000, 'pending': {'kind': 'financial_selection',
+                        'line': '어떤 안으로 조정할까요?', 'choices': []},
+                    'financial_offer': {'answer': {'plans': []}, 'comparison': {'amount': 50000}}}
+                before = deepcopy(self.store.state)
+                ports = {'get_context': lambda: deepcopy(self.ctx), 'store': self.store,
+                    'allocator': proportional_group_reduction, 'simulate': Mock(), 'propose': Mock(),
+                    'task_status': Mock(), 'cancel': Mock(),
+                    'complete': Mock(return_value=json.dumps(reading(action='inspect', inspection=inspection)))}
+                result = _handle({'conversation_id': 'inspect', 'text': '가능한 금액부터 알려줘'}, **ports)
+                self.assertEqual(result['status'], 'replied', result)
+                if inspection == 'capacity':
+                    self.assertTrue(result['reply']['lines'][0].startswith('다른 생활비에서 식비에 최대 '))
+                else:
+                    self.assertIn('여윳돈 · 최대 5만 원', result['reply']['lines'])
+                for field in ('requests', 'excluded', 'spare_minimum', 'financial_offer'):
+                    self.assertEqual(self.store.state[field], before[field])
+                ports['propose'].assert_not_called()
+                ports['cancel'].assert_not_called()
 
     def test_unknown_amount_preserves_a_named_category_source(self):
         from .adjustment_core.financial_conversation import unknown_amount_reply

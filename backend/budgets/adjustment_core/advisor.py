@@ -285,7 +285,7 @@ def capacities(context, category, *, excluded=(), destinations=(), allocator=Non
     return out
 
 
-def source_capacity_lines(context, category, found, *, sources=None, excluded=(), allocator=None, spare_minimum=None):
+def source_capacity_lines(context, category, found, *, sources=None, excluded=(), allocator=None, spare_minimum=None, details=True):
     """한도와 같은 계산으로 생활비 세부 출처를 표시한다. 최대액은 권장액이 아니다."""
     names = {**names_of(context), **SOURCE_NAMES}
     lines, unknown = [], []
@@ -297,7 +297,7 @@ def source_capacity_lines(context, category, found, *, sources=None, excluded=()
             continue
         amount = found[source]
         lines.append(f"{names.get(source, source)} · 최대 {money(amount)}")
-        if source != LIVING or not amount:
+        if not details or source != LIVING or not amount:
             continue
         request = {'items': [{'category': category, 'direction': 'up', 'amount': amount,
                               'amount_mode': 'by', 'automatic': True}],
@@ -311,6 +311,20 @@ def source_capacity_lines(context, category, found, *, sources=None, excluded=()
     if unknown:
         lines.append('· '.join(unknown) + ' · 금액 확인 필요')
     return lines
+
+
+def capacity_reply_lines(context, category, found, *, inspection=None, sources=None, excluded=(), allocator=None, spare_minimum=None):
+    """조회 초점만 바꾼다. 재원별 최대액의 합을 권장 증액으로 제시하지 않는다."""
+    if inspection == 'capacity' and not sources and found.get(LIVING, 0) > 0:
+        name = names_of(context).get(category, category)
+        lines = [f'다른 생활비에서 {name}에 최대 {money(found[LIVING])}을 더할 수 있어요.']
+        extra = [SOURCE_NAMES[code] for code in ORDER if code != LIVING and found.get(code, 0) > 0]
+        if extra:
+            lines.append('더 필요하면 ' + '·'.join(extra) + '도 검토할 수 있어요.')
+        return lines
+    return source_capacity_lines(context, category, found, sources=sources, excluded=excluded,
+                                 allocator=allocator, spare_minimum=spare_minimum,
+                                 details=inspection != 'capacity')
 
 
 def suggested_amount(context, category):
