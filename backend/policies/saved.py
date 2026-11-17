@@ -56,7 +56,7 @@ def item(saved, today):
         "name": policy.name,
         "apply_state": apply_state(policy, today),
         "apply_end": policy.last_apply_end,
-        "link": policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else None),
+        "link": tools.policy_link(policy),
         "active": policy.is_active,
         "region": tools.region_text(policy.zip_codes),  # "전국" · "서울특별시" · "경기도 수원시 외 2곳" …, 지역 코드가 없으면 None
         "support_type": tools.support_type(policy),  # 대출 · 보증일 때만 ("대출 · 상환 필요"), 아니면 None
