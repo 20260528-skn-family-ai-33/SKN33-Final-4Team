@@ -86,19 +86,25 @@ def _explain_current(state, context, text, ref=None):
     return response
 
 
-def _inspect_sources(store, cid, state, context, allocator):
+def _inspect_sources(store, cid, state, context, allocator, inspection=None):
     requests = state.get('requests', [])
-    if len(requests) == 1 and requests[0].get('amount') is None and requests[0].get('category') in context['allocations']:
-        from .advisor import capacities, source_capacity_lines, money, _living_note
+    if (len(requests) == 1 and inspection is not None
+            and (requests[0].get('direction') == 'down' or requests[0].get('category') == 'LIVING')):
+        from .financial_conversation import maxima
+        response = maxima(_calculation(context, state), _envelope(state), state.get('refinement'), inspection=inspection)
+        response['work_ref'] = state.get('work_ref')
+        _save(store, cid, state)
+        return response
+    if (len(requests) == 1 and requests[0].get('direction') == 'up'
+            and (requests[0].get('amount') is None or inspection is not None)
+            and requests[0].get('category') in context['allocations']):
+        from .advisor import capacities, capacity_reply_lines, _living_note
         from .responses import observation_notice
         calculation = _calculation(context, state)
         code = requests[0]['category']
         found = capacities(calculation, code, excluded=state.get('excluded', []),
                            sources=state.get('sources'), allocator=allocator, spare_minimum=state.get('spare_minimum'))
-        name = context.get('category_names', {}).get(code, code)
-        lines = [f'{name} · 확인된 증액 한도 {money(sum(found.values()))}' if found else
-                 f'{name} · 재원 금액 확인 필요']
-        lines += source_capacity_lines(calculation, code, found, sources=state.get('sources'),
+        lines = capacity_reply_lines(calculation, code, found, inspection=inspection, sources=state.get('sources'),
             excluded=state.get('excluded', []), allocator=allocator, spare_minimum=state.get('spare_minimum'))
         if found.get('LIVING') == 0:
             lines.append(_living_note(calculation, None))
@@ -1405,9 +1411,15 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
     if selected & set(data.get("excluded", [])):
         return _ask(store, cid, state, "clarification", "같은 항목을 바꾸기와 제외하기로 함께 말씀하셨어요. 어느 쪽으로 할까요?")
     if (data.get('action') == 'inspect' and data.get('requests')
-            and all(row.get('amount') is None and row.get('direction') == 'up' for row in data['requests'])):
+            and all(row.get('amount') is None and (row.get('direction') == 'up'
+                    or data.get('inspection') and row.get('direction') == 'down') for row in data['requests'])):
         _merge(state, data, pending)
-        return _inspect_sources(store, cid, state, context, allocator)
+        return _inspect_sources(store, cid, state, context, allocator, data.get('inspection'))
+    if (data.get('action') == 'inspect' and data.get('inspection') and not data.get('requests')
+            and len(state.get('requests', [])) == 1 and state['requests'][0].get('direction') in {'up', 'down'}
+            and state['requests'][0].get('category') in {*context['allocations'], 'LIVING'}):
+        _merge(state, data, pending)
+        return _inspect_sources(store, cid, state, context, allocator, data.get('inspection'))
     if data.get('action') == 'inspect' and (any(data.get(field) for field in LIST_FIELDS)
             or data.get('scope') or data.get('funding_scope') or data.get('clear_targets')):
         data['action'] = 'compare'
@@ -1420,7 +1432,7 @@ def handle_expanded(request, *, store, complete, get_context, simulate, propose,
             index = pending.get('index', state.get('focus', 0)) or 0
             if (state['requests'][index].get('direction') == 'up' and
                     (pending.get('kind') in {'sources', 'funding_scope'} or state['requests'][index].get('category') in context['allocations'])):
-                return _inspect_sources(store, cid, state, context, allocator)
+                return _inspect_sources(store, cid, state, context, allocator, data.get('inspection'))
         from .funding import available_bucket_source
         lines = []
         for code in context.get('buckets', {}):

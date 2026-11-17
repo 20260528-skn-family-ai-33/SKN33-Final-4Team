@@ -554,10 +554,10 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
         key={proposal.proposalId} value={adjustment.distributionEdit} active={active} onSend={onSend} onCancel={() => setEditing(false)} />}
       {state === 'expired' && <p className="mc-budget-warning">조건이 바뀌었어요. 원하는 조정을 다시 입력해 주세요.</p>}
       {['canceled', 'rejected', 'failed'].includes(state) && <p className="mc-budget-warning">이 변경안은 적용할 수 없어요. 원하는 조정을 다시 입력해 주세요.</p>}
-      {adjustment.canApprove && state === 'awaiting_approval' && !editing && <button type="button" className="mc-primary" disabled={!canApprove} onClick={() => onApprove(proposal)}>{proposal.effectiveOn ? '다음 주기 변경 예약하기' : '예산 확정하기'}</button>}
+      {(adjustment.canApprove || !adjustment.phase) && state === 'awaiting_approval' && !editing && <button type="button" className="mc-primary" disabled={!canApprove} onClick={() => onApprove(proposal)}>{proposal.effectiveOn ? '다음 주기 변경 예약하기' : '예산 확정하기'}</button>}
       {proposal.state === 'awaiting_approval' && adjustment.distributionEdit && !adjustment.phase && !editing && <button
         type="button" className="mc-link mc-budget-edit-toggle" aria-expanded={false} disabled={!active || !onSend}
-        onClick={() => setEditing(true)}>배분 수정</button>}
+        onClick={() => setEditing(true)}>수정할래요</button>}
     </section>}
     {adjustment.alternatives && <Comparison comparison={adjustment.alternatives} readOnly detail={adjustment.detail} />}
     {adjustment.alternativesNotice && <p className="mc-budget-warning">{adjustment.alternativesNotice}</p>}

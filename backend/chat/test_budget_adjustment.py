@@ -313,6 +313,39 @@ class BudgetAdjustmentApiTest(TestCase):
         self.assertEqual(opposite.status_code, 409)
         self.assertEqual(opposite.json()["error"]["code"], "idempotency_conflict")
 
+    def test_unverified_preview_is_editable_but_approval_stays_blocked(self):
+        self.ctx.update(spending_status='partial', budget_preview=True,
+                        observed_spending={'transaction_count': 3, 'through': '2026-11-12'})
+        _, content = self.ready()
+        adjustment = content['budgetAdjustment']
+        self.assertFalse(adjustment['canApprove'])
+        self.assertFalse(adjustment['proposal']['canApprove'])
+        self.assertIn('verificationNotice', adjustment['proposal'])
+        edit = adjustment['distributionEdit']
+        self.assertEqual(edit['amount'], 15000)
+        self.assertEqual(edit['values'], [{'category': 'FOOD', 'amount': 15000}])
+        self.assertEqual(sum(row['amount'] for row in edit['sources']), edit['amount'])
+        proposal_id = adjustment['proposal']['proposalId']
+        response = self.post(f'/api/budgets/proposals/{proposal_id}/approve/', {'keepForNextCycle': False})
+        self.assertEqual(response.status_code, 409, response.content)
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+
+    def test_unverified_reduction_keeps_destination_and_edit_fields(self):
+        from chat.llm.fake import BUDGET_SAID
+        from budgets.test_adjustment_core import item
+        self.ctx.update(spending_status='partial', budget_preview=True,
+                        observed_spending={'transaction_count': 3, 'through': '2026-11-12'})
+        cid = self.say(choice='budget')['conversationId']
+        text = '패션에서 5만원 줄여 교육에 옮겨줘'
+        with patch.dict(BUDGET_SAID, {text: [item('FASHION_SHOPPING', 50000, 'down'), item('EDUCATION', 50000)]}):
+            content = self.say(cid, text=text)['messages'][-1]['content']
+        adjustment = content['budgetAdjustment']
+        self.assertFalse(adjustment['canApprove'])
+        self.assertEqual(adjustment['proposal']['allocations']['EDUCATION'], 100000)
+        self.assertEqual(adjustment['distributionEdit']['amount'], 50000)
+        self.assertEqual(adjustment['distributionEdit']['values'], [{'category': 'EDUCATION', 'amount': 50000}])
+
     def test_initial_entry_uses_existing_approval_route_and_expires_original_after_success(self):
         self.base.status, self.base.approved_at = "validated", None
         self.base.save(update_fields=["status", "approved_at"])

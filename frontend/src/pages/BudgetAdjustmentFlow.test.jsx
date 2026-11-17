@@ -141,7 +141,7 @@ it('변경안의 배분 수정은 기존 총액을 다시 나누고 새 안만 �
   await mount()
   await submit('교육 5만원 줄여줘')
   expect(host.querySelector('.mc-budget-distribution')).toBeNull()
-  await click(button('배분 수정'))
+  await click(button('수정할래요'))
   expect(apiSend).toHaveBeenCalledTimes(1)
   expect(host.querySelector('select')).toBeNull()
   await click(button('교통·차량', host.querySelector('.mc-budget-chip-picks')))

@@ -64,6 +64,56 @@ class ObservedAnalysisTest(SimpleTestCase):
         self.assertFalse(response['chart']['rows'])
         self.assertNotRegex(' '.join(response['lines']), r'(?<![\d,])0원')
 
+    def test_non_spending_rows_do_not_confirm_zero_spending_in_incomplete_queries(self):
+        for state in ('none', 'partial'):
+            for kind in ('income', 'transfer'):
+                with self.subTest(coverage=state, transaction_type=kind), \
+                        patch.object(tools, 'coverage', return_value={'state': state}), \
+                        patch.object(tools, 'rows', return_value=[{**transaction(3000000, day=17),
+                                                                  'transaction_type': kind}]):
+                    block = tools.spend_query(object(), self.current, overview=True)
+                self.assertEqual(block['observed_count'], 0)
+                self.assertIsNone(block['observed_through'])
+                self.assertIsNone(block['confirmed'])
+                item = {'type': 5}
+                response = answer.compose([{'ok': True, 'item': item,
+                    'result': {'type': 5, 'item': item, 'current': block}}])
+                self.assertIn('확인할 수 있는 내역이 없어요', ' '.join(response['lines']))
+                self.assertFalse(any(view.get('kind') == 'total' and view.get('amount') == 0
+                                     for view in response.get('view', [])))
+
+    def test_observation_date_and_count_use_only_spending_in_the_selected_category(self):
+        records = [transaction(18000, day=10), transaction(25000, 'HOUSEHOLD', day=15),
+                   {**transaction(3000000, day=16), 'transaction_type': 'income'},
+                   {**transaction(100000, day=17), 'transaction_type': 'transfer'}]
+        for category, count, through in ((None, 2, date(2026, 11, 15)),
+                                         ('FOOD', 1, date(2026, 11, 10)), ('EDUCATION', 0, None)):
+            with self.subTest(category=category), patch.object(tools, 'coverage', return_value={'state': 'partial'}), \
+                    patch.object(tools, 'rows', return_value=records):
+                block = tools.spend_query(object(), self.current, category)
+            self.assertEqual((block['observed_count'], block['observed_through']), (count, through))
+            self.assertEqual(block['observed']['total'], 43000)
+            if category:
+                self.assertEqual(block['observed']['category']['amount'], 18000 if category == 'FOOD' else 0)
+            self.assertIsNone(block['confirmed'])
+
+    def test_fully_refunded_spending_is_observed_zero_and_complete_empty_period_is_confirmed_zero(self):
+        for coverage, records, count, confirmed in (
+                ('partial', [transaction(0, day=15)], 1, False),
+                ('complete', [], 0, True)):
+            with self.subTest(coverage=coverage), patch.object(tools, 'coverage', return_value={'state': coverage}), \
+                    patch.object(tools, 'rows', return_value=records):
+                block = tools.spend_query(object(), self.current)
+            self.assertEqual(block['observed_count'], count)
+            self.assertEqual(block['observed_through'], date(2026, 11, 15) if records else None)
+            self.assertEqual(block['observed']['total'], 0)
+            self.assertEqual(block['confirmed'] is not None, confirmed)
+            item = {'type': 1}
+            response = answer.compose([{'ok': True, 'item': item,
+                'result': {'type': 1, 'item': item, 'current': block}}])
+            self.assertTrue(any(view.get('kind') == 'total' and view.get('amount') == 0
+                                for view in response.get('view', [])))
+
     def test_database_failure_is_not_treated_as_missing_sync(self):
         with patch.object(tools, 'coverage', return_value={'state': 'error'}), \
                 patch.object(tools, 'rows') as rows, self.assertRaises(tools.DbError):
