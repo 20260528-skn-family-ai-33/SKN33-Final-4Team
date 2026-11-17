@@ -107,9 +107,12 @@ def tidy(text, limit=SUPPORT_CHARS):
 
 
 def policy_link(policy):
-    """원본 링크가 상세 페이지면 그대로, 없거나 기관 메인 주소뿐이면 온통청년 상세 페이지 (정책번호로 연다)"""
+    """원본 링크가 상세 페이지면 그대로, 없거나 기관 메인 주소뿐이거나 깨진 주소면 온통청년 상세 페이지 (정책번호로 연다)"""
     link = policy.apply_url or (policy.ref_urls[0] if policy.ref_urls else "")
-    url = urlparse(link)
+    try:
+        url = urlparse(link)
+    except ValueError:  # 'https://[invalid' 처럼 깨진 원본 주소 — 저장 목록 전체가 500 나지 않게
+        return YOUTHCENTER + policy.pk
     if link and (url.query or not MAIN_PATH.fullmatch(url.path.strip("/"))):
         return link
     return YOUTHCENTER + policy.pk

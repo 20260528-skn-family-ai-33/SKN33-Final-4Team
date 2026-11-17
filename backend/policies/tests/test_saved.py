@@ -134,6 +134,7 @@ class LinkTest(TestCase):
 
     def test_없거나_메인뿐이면_온통청년(self):
         for raw in ({}, {"aplyUrlAddr": "https://mafra.go.kr"}, {"refUrlAddr1": "https://www.hf.go.kr/"},
-                    {"refUrlAddr1": "https://www.eumseong.go.kr/www/index.do"}):
+                    {"refUrlAddr1": "https://www.eumseong.go.kr/www/index.do"},
+                    {"aplyUrlAddr": "https://[invalid"}, {"refUrlAddr1": "https://[invalid"}):  # 깨진 주소 (urlparse ValueError)
             with self.subTest(raw=raw):
                 self.assertEqual(self.link(**raw), tools.YOUTHCENTER + "LINK")
