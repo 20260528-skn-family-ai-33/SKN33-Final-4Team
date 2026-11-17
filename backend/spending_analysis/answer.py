@@ -688,8 +688,9 @@ def _view_budget(results, many):
                 spare.append(TEXT["spare_short"].format(shortfall=won(done["shortfall"])))
             blocks += _text(spare)
         else:
+            # 11/17: '68,400원 남음'을 한 줄로, 예산 설명은 그 아래 줄로 (금액 · 남음이 줄바꿈으로 갈라지지 않게)
             rows.append({"name": scope(r["item"]), "amount": done["over"] or done["remaining"],
-                         "note": ("초과 · " if done["over"] else "남음 · ") + note})
+                         "value": _left_word(done["over"], done["remaining"]), "note": note})
     if rows:
         blocks.append({"kind": "rows", "rows": rows})
     cats = [c for r in results for c in r.get("categories", [])]
@@ -698,10 +699,15 @@ def _view_budget(results, many):
     if cats:  # 카테고리별 남은 예산: 막대 = 쓴 비율(100% 넘으면 가득), 초과는 붉은 글자 + '초과' 글자
         blocks.append({"kind": "rows", "title": "카테고리별 남은 예산", "rows": [
             {"name": NAMES[c["category"]], "amount": c["over"] or c["remaining"],
-             "note": ("초과 · " if c["over"] else "남음 · ") + f"예산 {won(c['allocated'])}",
+             "value": _left_word(c["over"], c["remaining"]), "note": f"예산 {won(c['allocated'])}",
              "ratio": str(min(percent(c["spent"], c["allocated"])["value"], 100)) if c["allocated"] else "100",
              **({"direction": "up"} if c["over"] else {})} for c in cats]})
     return blocks + _text(other)
+
+
+def _left_word(over, remaining):
+    """예산 줄 금액 칸: '68,400원 남음' · '13,000원 초과' (금액과 낱말을 같은 줄에)"""
+    return f"{won(over)} 초과" if over else f"{won(remaining)} 남음"
 
 
 def _badge(c, uncertain=False):

@@ -228,7 +228,7 @@ const rowAmount = (r) => r.value ?? (r.amount != null && Number.isFinite(Number(
 
 function Rows({ block }) {
   return (
-    <div className="mc-spend-cats">
+    <div className="mc-spend-cats mc-fx-rows">
       {block.title && <strong>{block.title}</strong>}
       {block.rows.filter((r) => !isUnclassified(r)).map((r) => (
         <div key={r.name} className="mc-spend-cat">

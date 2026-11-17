@@ -850,7 +850,8 @@ class BudgetBreakdownTest(TestCase):
         _, out = Chat(user("A")).say("카테고리별로 예산 얼마나 남았어?")
         rows = next(v for v in out["view"] if v.get("title") == "카테고리별 남은 예산")["rows"]
         food = next(r for r in rows if r["name"] == "식비")
-        self.assertEqual((food["amount"], food["note"]), (b["food_signed_difference"], f"남음 · 예산 {b['food_budget']:,}원"))
+        self.assertEqual((food["amount"], food["note"]), (b["food_signed_difference"], f"예산 {b['food_budget']:,}원"))
+        self.assertEqual(food["value"], f"{b['food_signed_difference']:,}원 남음")  # 금액과 '남음'은 한 줄 (11/17)
         self.assertEqual(food["ratio"], str(percent(b["food_spent"], b["food_budget"])["value"]))
         self.assertEqual(out["sections"][0]["title"], "카테고리별 남은 예산")
 

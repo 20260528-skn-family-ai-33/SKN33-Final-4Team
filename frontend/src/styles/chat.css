@@ -12,6 +12,11 @@
 #mc-new-preview .mc-fx-choices button:disabled { color: var(--mc-sub); cursor: default; }
 #mc-new-preview .mc-fx-dev { margin-top: 6px; font-size: 12px; color: var(--mc-sub); }
 #mc-new-preview .mc-fx-dev summary { cursor: pointer; }
+/* 11/17: 줄 목록(Rows)의 이름 칸을 목록 안 가장 긴 이름 폭에 맞춘다 (최대는 기존 7.5em). 줄마다 따로 재면 막대 시작점이 어긋나서
+   목록 전체를 한 격자로 두고 줄(mc-spend-cat)은 칸만 넘긴다. 간격 · 글자 크기는 app.css 값 그대로 */
+#mc-new-preview .mc-fx-rows { display: grid; grid-template-columns: fit-content(7.5em) 1fr auto; column-gap: 10px; row-gap: 8px; align-items: center; }
+#mc-new-preview .mc-fx-rows > strong { grid-column: 1 / -1; }
+#mc-new-preview .mc-fx-rows > .mc-spend-cat { display: contents; }
 #mc-new-preview .mc-spend-cat .mc-spend-diff { justify-self: start; }   /* 비교 줄의 증감 배지를 글자 폭으로 (가운데 칸 전체로 늘어나지 않게) */
 #mc-new-preview .mc-asst-log .mc-spend-diff { background: none; padding: 0; }   /* 챗봇 답의 증감 글자는 배경 없이 색 글자만 (소비 화면 배지는 그대로) */
 /* 한국어 줄바꿈을 낱말 단위로 ('조회했어/요'처럼 글자 중간에서 끊기지 않게). 아주 긴 낱말은 그래도 끊어 칸 밖으로 안 나가게 */
