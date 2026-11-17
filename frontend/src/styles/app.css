@@ -1351,22 +1351,22 @@
 #mc-new-preview .mc-tour-spot::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:3px solid var(--mc-brand);animation:mc-tour-pulse 1.6s ease-out infinite}
 @keyframes mc-tour-pulse{from{transform:scale(1);opacity:.7}to{transform:scale(1.45);opacity:0}}
 #mc-new-preview .mc-tour-card:not(.is-center)::after{content:'';position:absolute;bottom:-8px;left:clamp(16px,calc(var(--mc-tour-caret,50%) - 8px),calc(100% - 32px));width:16px;height:16px;background:var(--mc-paper);transform:rotate(45deg);border-radius:0 0 4px 0}
-#mc-new-preview .mc-tour-card{position:absolute;left:16px;right:16px;display:flex;flex-direction:column;gap:12px;padding:16px;border-radius:20px;background:var(--mc-paper);box-shadow:0 12px 40px #0004}
-#mc-new-preview .mc-tour-card.is-center{top:50%;transform:translateY(-50%)}
-#mc-new-preview .mc-tour-who{display:flex;align-items:flex-end;gap:10px}
-#mc-new-preview .mc-tour-who .mc-mascot{flex:none}
-#mc-new-preview .mc-tour-say{position:relative;flex:1;padding:12px 14px;border-radius:12px;border-bottom-left-radius:4px;background:var(--mc-soft)}
-#mc-new-preview .mc-tour-say::after{content:'';position:absolute;left:-5px;bottom:12px;width:10px;height:10px;background:var(--mc-soft);transform:rotate(45deg)}
-#mc-new-preview .mc-tour-say strong{display:block;margin-bottom:3px;font-size:14px;color:var(--mc-brand)}
-#mc-new-preview .mc-tour-say p{margin:0;font-size:13px;line-height:1.6;color:var(--mc-ink)}
+#mc-new-preview .mc-tour-card{position:absolute;left:16px;right:16px;display:flex;flex-direction:column;gap:18px;padding:62px 20px 18px;border-radius:24px;background:var(--mc-paper);box-shadow:0 20px 50px #0f172a4d}
+#mc-new-preview .mc-tour-card.is-center{top:50%;transform:translateY(-40%)}  /* 위로 내민 쿠숑이까지 화면 가운데에 오게 */
+#mc-new-preview .mc-tour-who{display:block;text-align:center}
+#mc-new-preview .mc-tour-who .mc-mascot{position:absolute;top:-62px;left:50%;width:104px;height:auto;transform:translateX(-50%);filter:drop-shadow(0 8px 12px #0f172a33)}
+#mc-new-preview .mc-tour-say{position:static;padding:0;background:none}
+#mc-new-preview .mc-tour-say::after{content:none}
+#mc-new-preview .mc-tour-say strong{display:block;margin-bottom:8px;font-size:18px;font-weight:750;letter-spacing:-.3px;color:var(--mc-ink)}
+#mc-new-preview .mc-tour-say p{margin:0;font-size:14px;line-height:1.65;color:var(--mc-sub);text-wrap:pretty}
 #mc-new-preview .mc-tour-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
 #mc-new-preview .mc-tour-dots{display:flex;gap:5px}
-#mc-new-preview .mc-tour-dots i{width:6px;height:6px;border-radius:4px;background:var(--mc-line)}
+#mc-new-preview .mc-tour-dots i{width:6px;height:6px;border-radius:999px;background:var(--mc-line);transition:width .25s}
 #mc-new-preview .mc-tour-dots i.on{width:16px;background:var(--mc-brand)}
 #mc-new-preview .mc-tour-btns{display:flex;gap:4px}
-#mc-new-preview .mc-tour-btns button{border-radius:12px;padding:9px 12px;font-size:13px;font-weight:650}
+#mc-new-preview .mc-tour-btns button{min-height:44px;border-radius:999px;padding:0 14px;font-size:14px;font-weight:650}
 #mc-new-preview .mc-tour-skip{color:var(--mc-sub)}
-#mc-new-preview .mc-tour-next{background:var(--mc-brand);color:var(--mc-on);padding:9px 16px}
+#mc-new-preview .mc-tour-next{background:var(--mc-brand);color:var(--mc-on);padding:0 22px;box-shadow:0 6px 14px color-mix(in srgb,var(--mc-brand) 30%,transparent)}
 #mc-new-preview .mc-tour-btns button:focus-visible{outline:2px solid var(--mc-brand);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){#mc-new-preview .mc-tour-spot{transition:none}#mc-new-preview .mc-tour-spot::after{animation:none;opacity:0}}
 

@@ -397,3 +397,26 @@
 #mc-new-preview .mc-sr-how p { margin: 6px 0 0; line-height: 1.6; }
 #mc-new-preview .mc-sr-actions { margin-top: 16px; }
 #mc-new-preview .mc-sr-actions .mc-note { padding: 6px 2px 0; line-height: 1.55; }
+
+/* ---------- 챗봇 화면 다듬기 (11/17) — 답 내용은 그대로, 테두리 선 대신 옅은 그림자 · 넉넉한 여백 · 큰 본문으로 읽기 쉽게 ----------
+   통합 챗봇(.mc-asst) 안에서만. 말풍선 글은 15px(다른 화면 본문 14px보다 한 단계 크게, 대화는 길게 읽으므로) */
+#mc-new-preview .mc-asst { --mc-chat-shadow: 0 1px 2px light-dark(#17224214, #0006), 0 6px 16px light-dark(#1722420a, #0000); }
+#mc-new-preview .mc-asst .mc-asst-log { gap: 18px; }
+#mc-new-preview .mc-asst .mc-asst-turn { gap: 12px; }
+/* 봇 말풍선 · 결과 카드: 선 없이 그림자, 모서리 크게(쿠숑이 쪽 위 모서리만 작게) */
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble,
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-spend { border: 0; border-radius: 20px; border-top-left-radius: 6px; background: var(--mc-paper); box-shadow: var(--mc-chat-shadow); }
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble { padding: 13px 16px; line-height: 1.65; }
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble:not(.mc-budget-adjustment) { font-size: 15px; }
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble:not(.mc-budget-adjustment) small { font-size: 13px; line-height: 1.6; }
+/* 내 말풍선 */
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.me .mc-bubble { padding: 10px 16px; border-radius: 20px; border-top-right-radius: 6px; font-size: 15px; line-height: 1.55;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--mc-brand) 24%, transparent); }
+/* 결과 카드(소비 분석 · 정책): 안쪽 여백 · 간격 넉넉하게, 본문 14px */
+#mc-new-preview .mc-asst .mc-asst-card .mc-spend { padding: 18px 16px; gap: 18px; font-size: 14px; }
+/* 이어서 물어볼 칩: 누를 수 있게 브랜드색 글자 · 옅은 파랑 테두리 */
+#mc-new-preview .mc-asst .mc-asst-log .mc-fx-choices button { min-height: 36px; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  border: 1px solid color-mix(in srgb, var(--mc-brand) 28%, var(--mc-line)); background: var(--mc-paper); color: var(--mc-brand); }
+#mc-new-preview .mc-asst .mc-asst-log .mc-fx-choices button:disabled { border-color: var(--mc-line); color: var(--mc-sub); }
+/* 맨 위 안내 카드도 같은 결 */
+#mc-new-preview .mc-asst .mc-asst-ctx { border: 0; border-radius: 16px; box-shadow: var(--mc-chat-shadow); }
