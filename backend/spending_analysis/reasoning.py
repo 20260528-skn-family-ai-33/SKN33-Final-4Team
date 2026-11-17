@@ -192,7 +192,7 @@ def observed_pattern(rows):
             if len(dates) >= 3 and amount * 2 > total and (activity != 'unknown' or slot is not None):
                 groups.append((activity != 'unknown', slot is not None, amount, activity, slot, subset, dates))
     if concentrated:
-        conclusion = f'{category}는 금액이 큰 두 결제에 절반 이상이 몰려 있어요. 여러 번 쓴 것보다 이 두 결제의 규모가 총액에 더 큰 영향을 줬어요.'
+        conclusion = f'{josa(category, "은는")} 금액이 큰 두 결제에 절반 이상이 몰려 있어요. 여러 번 쓴 것보다 이 두 결제의 규모가 총액에 더 큰 영향을 줬어요.'
         evidence = f'확인된 {category} {won(total)} 중 금액이 큰 두 결제는 {won(top_two)}, 나머지를 모두 합하면 {won(total - top_two)}이에요.'
         return dict(activity='unknown', timing='', dates=len({r['occurred_on'] for r in paid}),
                     count=len(paid), amount=total, average=round(total / len(paid)),

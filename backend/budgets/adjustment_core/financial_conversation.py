@@ -1033,6 +1033,10 @@ def feedback(request, state, ports):
         base = ({**old['allocations'], **old['buckets']} if data['amount_mode'] == 'preview_by'
                 else {**context['allocations'], **context['buckets']})[recipient]
         final = data["amount"] if data["amount_mode"] == "to" else base + data["amount"]
+        original = {**context['allocations'], **context['buckets']}[recipient]
+        if data["amount_mode"] == "to" and final <= original:
+            # '3만 원 가져와서 늘려줘' 뒤 '5만원으로 바꿔줘'를 최종 금액(51만 → 5만)으로 읽은 경우: 늘리는 목표라 늘릴 금액으로 본다 (11/17)
+            final = original + data["amount"]
         primary["items"] = [{"category": recipient, "amount_mode": "to", "amount": final, "direction": "up"}]
         limit_reply = check_amount_limit(store, cid, state, context, primary['items'])
         if limit_reply is not None:
@@ -1134,6 +1138,9 @@ def feedback(request, state, ports):
         if str(error) == 'reserve_conflict':
             explanation.update(why='이렇게 바꾸면 앞으로 쓸 돈에 대비해 남겨 두려던 여윳돈이 부족해져요.',
                                next='늘릴 금액을 줄이거나 돈을 가져올 다른 항목을 골라 주세요.')
+        elif str(error) == 'direction_conflict':  # 늘리는 목표인데 최종 금액이 더 작은 등 — 원인 없는 일반 문구로 묻히지 않게
+            explanation.update(why='늘리려는 항목의 금액이 지금 예산보다 작게 전해져서 변경안을 만들지 않았어요.',
+                               next='늘릴 금액(예: 5만 원 더)이나 최종 금액(예: 56만 원)으로 다시 알려 주세요.')
         elif str(error) == 'donor_target_not_met':
             explanation.update(why='지금 조건에서는 가져올 항목을 말씀하신 금액에 맞추면서 기존 증액 금액을 유지할 수 없어요.',
                                next='늘릴 금액을 줄이거나 돈을 가져올 다른 항목을 골라 주세요.')

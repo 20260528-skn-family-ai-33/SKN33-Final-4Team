@@ -32,7 +32,7 @@
 #mc-new-preview .mc-fx-subhead { border-top: 1px solid var(--mc-line); padding-top: 12px; }
 #mc-new-preview .mc-fx-section { margin: 0; display: flex; flex-direction: column; gap: 8px; }
 #mc-new-preview .mc-fx-section + .mc-fx-section { padding-top: 14px; border-top: 1px solid var(--mc-line); }
-#mc-new-preview .mc-fx-section h3 { margin: 0; color: var(--mc-ink); font-size: 14px; font-weight: 700; line-height: 1.4; }
+#mc-new-preview .mc-fx-section h3 { margin: 0; color: var(--mc-ink); font-size: 15px; font-weight: 700; line-height: 1.4; }
 #mc-new-preview .mc-fx-trend { padding: 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); min-width: 0; }
 #mc-new-preview .mc-fx-trend .mc-note { margin: 4px 0 0; padding: 0; font-size: 11px; }
 #mc-new-preview .mc-fx-trend svg { display: block; width: 100%; height: auto; }
@@ -54,8 +54,8 @@
 #mc-new-preview .mc-fx-trend th:first-child { text-align: left; }
 
 #mc-new-preview .mc-budget-adjustment { width: 100%; font-size: 13px; }
-#mc-new-preview .mc-budget-adjustment h2 { font-size: 16px; margin: 0 0 8px; }
-#mc-new-preview .mc-budget-adjustment h3 { font-size: 14px; margin: 0; }
+#mc-new-preview .mc-budget-adjustment h2 { font-size: 17px; margin: 0 0 8px; }
+#mc-new-preview .mc-budget-adjustment h3 { font-size: 15px; margin: 0; }
 #mc-new-preview .mc-budget-plan, #mc-new-preview .mc-budget-proposal { padding: 14px; margin: 10px 0; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-paper); }
 #mc-new-preview .mc-budget-plan.is-selected { border-color: var(--mc-brand); box-shadow: inset 0 0 0 1px var(--mc-brand); }
 #mc-new-preview .mc-budget-plan-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
@@ -64,18 +64,36 @@
 #mc-new-preview .mc-budget-selected { background: #e9efff; color: #214ac5; }
 #mc-new-preview .mc-budget-preview-label { border-left: 3px solid var(--mc-brand); padding: 4px 8px; color: var(--mc-brand); font-weight: 650; }
 #mc-new-preview .mc-budget-example-intro { display: block; margin: 0 0 14px; padding: 12px 14px; border-left: 4px solid var(--mc-brand); border-radius: 10px; background: #eef2ff; }
-#mc-new-preview .mc-budget-example-intro h2 { margin: 0; color: var(--mc-brand); font-size: 16px; font-weight: 700; }
-#mc-new-preview .mc-budget-example-intro p { margin: 6px 0 0; color: var(--mc-ink); font-size: 14px; line-height: 1.6; }
+#mc-new-preview .mc-budget-example-intro h2 { margin: 0; color: var(--mc-brand); font-size: 17px; font-weight: 700; }
+#mc-new-preview .mc-budget-example-intro p { margin: 6px 0 0; color: var(--mc-ink); font-size: 15px; line-height: 1.6; }
 #mc-new-preview .mc-budget-plan-head { display: flex; gap: 8px; align-items: start; justify-content: space-between; }
 #mc-new-preview .mc-budget-plan-head > span { flex: none; color: var(--mc-brand); font-size: 12px; font-weight: 650; }
 #mc-new-preview .mc-budget-outcome, #mc-new-preview .mc-budget-reason, #mc-new-preview .mc-budget-shortfall, #mc-new-preview .mc-budget-warning { margin: 6px 0; line-height: 1.55; }
 #mc-new-preview .mc-budget-reason { color: var(--mc-sub); }
 #mc-new-preview .mc-budget-warning, #mc-new-preview .mc-budget-shortfall strong { color: var(--mc-alert); }
 #mc-new-preview .mc-budget-changes { margin: 8px 0; }
-#mc-new-preview .mc-budget-changes > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 6px 0; border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-budget-changes > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 8px; padding: 6px 0; border-bottom: 1px solid var(--mc-line); }
 #mc-new-preview .mc-budget-changes dt { font-weight: 550; }
 #mc-new-preview .mc-budget-changes dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 #mc-new-preview .mc-budget-changes small { display: block; color: var(--mc-sub); }
+/* 변경 전 → 변경 후 표: 고정 폭 칸으로 줄마다 화살표 · 금액 시작 위치를 맞추고 증감은 변경 후 금액 아래 (11/17) */
+/* 이름은 꺾지 않고, 좁은 화면에선 금액 묶음을 다음 줄 오른쪽으로 (칸 폭이 같아 화살표 위치는 그대로) */
+#mc-new-preview .mc-budget-changes > div:has(> dd > span) > dt { white-space: nowrap; }
+#mc-new-preview .mc-budget-changes dd:has(> span) { margin-left: auto; }
+#mc-new-preview .mc-budget-changes dd:has(> span) { flex: none; display: grid; grid-template-columns: 5.8em 1.3em 5.8em; justify-items: end; align-items: baseline; }
+#mc-new-preview .mc-budget-changes dd:has(> span) > span:nth-child(2) { justify-self: center; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-changes dd:has(> span) > small { grid-column: 3; }
+/* 돈이 옮겨가는 내역: 변경안 안의 작은 카드, 줄마다 금액은 오른쪽 */
+#mc-new-preview .mc-budget-transfers { margin: 10px 0; padding: 6px 14px; border-radius: 12px; background: var(--mc-bg); }
+#mc-new-preview .mc-budget-transfers p { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin: 0; padding: 8px 0; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-transfers p + p { border-top: 1px solid var(--mc-line); }
+#mc-new-preview .mc-budget-transfers strong { flex: none; }
+/* 비교안 카드 안에서는 상자 없이 위 표와 끝을 맞춘다 (카드 바탕과 같은 색 상자가 들여 쓴 것처럼 보여서) */
+/* 비교안 카드 안: 옮겨가는 요약은 표 위 흰 띠 (연회색 카드 바탕과 구분 · 표의 줄과 다른 내용이라 모양을 다르게). 파란 글씨는 눈이 피로해서 기본 글자색 */
+#mc-new-preview .mc-budget-plan .mc-budget-transfers { margin: 10px 0 4px; padding: 2px 12px; border-radius: 12px; background: var(--mc-paper); color: var(--mc-ink); }
+#mc-new-preview .mc-budget-plan .mc-budget-transfers p { padding: 7px 0; }
+#mc-new-preview .mc-budget-changes small.mc-fx-up, #mc-new-preview .mc-budget-compact small.mc-fx-up { color: var(--mc-alert); }  /* 늘어난 금액 빨강 */
+#mc-new-preview .mc-budget-changes small.mc-fx-down, #mc-new-preview .mc-budget-compact small.mc-fx-down { color: var(--mc-brand); }  /* 줄어든 금액 파랑 */
 #mc-new-preview .mc-budget-details { margin: 8px 0; }
 #mc-new-preview .mc-budget-details > summary { color: var(--mc-brand); font-weight: 650; cursor: pointer; padding: 8px 0; min-height: 36px; }
 #mc-new-preview .mc-budget-details p { font-size: 12px; line-height: 1.55; }
@@ -119,7 +137,7 @@
 #mc-new-preview .mc-budget-amount fieldset { border: 0; padding: 0; margin: 0; min-width: 0; width: 100%; box-sizing: border-box; }
 #mc-new-preview .mc-budget-amount legend { margin-bottom: 12px; font-weight: 650; }
 #mc-new-preview .mc-budget-amount-input { display: flex; align-items: center; gap: 8px; }
-#mc-new-preview .mc-budget-amount-input input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--mc-line); border-radius: 10px; font-size: 18px; }
+#mc-new-preview .mc-budget-amount-input input { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--mc-line); border-radius: 10px; font-size: 20px; }
 #mc-new-preview .mc-budget-amount-steps { display: flex; gap: 8px; margin: 10px 0 14px; }
 #mc-new-preview .mc-budget-amount-steps button { flex: 1; min-height: 44px; }
 #mc-new-preview .mc-budget-amount .mc-primary { width: 100%; min-height: 44px; }
@@ -140,7 +158,7 @@
 #mc-new-preview .mc-budget-distribution-stepper { display: flex; align-items: center; width: 210px; max-width: 100%; border: 1px solid var(--mc-line); border-radius: 10px; overflow: hidden; }
 #mc-new-preview .mc-budget-distribution-stepper button { flex: 0 0 44px; min-height: 44px; padding: 0; border: 0; background: #f7f9fd; color: #2655db; font: inherit; font-size: 12px; }
 #mc-new-preview .mc-budget-distribution-stepper label { display: flex; align-items: center; flex: 1; min-width: 0; gap: 2px; padding: 0 6px; font-size: 12px; }
-#mc-new-preview .mc-budget-distribution-stepper input { width: 100%; min-width: 0; padding: 8px 0; border: 0; outline-offset: -2px; background: transparent; text-align: right; font: inherit; font-size: 16px; font-weight: 650; }
+#mc-new-preview .mc-budget-distribution-stepper input { width: 100%; min-width: 0; padding: 8px 0; border: 0; outline-offset: -2px; background: transparent; text-align: right; font: inherit; font-size: 17px; font-weight: 650; }
 #mc-new-preview .mc-budget-distribution .mc-primary { margin-top: 12px; }
 #mc-new-preview .mc-budget-distribution button:disabled { opacity: .45; cursor: default; }
 #mc-new-preview .mc-budget-distribution button:focus-visible { outline: 2px solid #2655db; outline-offset: 2px; }
@@ -151,12 +169,18 @@
 /* 소비 분석 답 (11/13): 핵심 진단 강조 · 예산 속도 막대 */
 #mc-new-preview .mc-fx-key { padding: 12px 14px; border-radius: 12px; background: var(--mc-soft); }
 #mc-new-preview .mc-fx-key h3 { font-size: 12px; font-weight: 700; color: var(--mc-brand); letter-spacing: .2px; }
-#mc-new-preview .mc-fx-key p { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.55; color: var(--mc-ink); }
+#mc-new-preview .mc-fx-key p { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.55; color: var(--mc-ink); }
 #mc-new-preview .mc-fx-key + .mc-fx-section { border-top: 0; padding-top: 2px; }
 #mc-new-preview .mc-fx-pace { margin: 0; display: flex; flex-direction: column; gap: 9px; padding: 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); min-width: 0; }
 #mc-new-preview .mc-fx-pace figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; }
 #mc-new-preview .mc-fx-pace figcaption small { color: var(--mc-sub); white-space: nowrap; }
-#mc-new-preview .mc-fx-pace-row { display: grid; grid-template-columns: minmax(0, 6.5em) 1fr auto; gap: 10px; align-items: center; }
+#mc-new-preview .mc-fx-pace-row { display: grid; grid-template-columns: minmax(0, 4.2em) 1fr 3.4em; gap: 2px 8px; align-items: center; }
+/* 11/17: 쓴 돈 / 예산은 막대 바로 아래 (오른쪽 칸은 비율만 → 막대가 길어짐). 이름은 두 줄에 걸쳐 가운데 */
+#mc-new-preview .mc-fx-pace-row .mc-fx-pace-name { grid-row: 1 / span 2; align-self: start; line-height: 20px; }  /* 이름 첫 줄 = 막대 줄 높이, '여유 · 넘음'은 금액 줄 높이 */
+#mc-new-preview .mc-fx-pace-row .mc-fx-pace-name em { line-height: 18px; }
+#mc-new-preview .mc-fx-pace-row .mc-fx-pace-amt { line-height: 20px; }
+#mc-new-preview .mc-fx-pace-row .mc-fx-pace-sub { line-height: 18px; }
+#mc-new-preview .mc-fx-pace-sub { grid-column: 2 / -1; text-align: right; font-size: 12px; color: var(--mc-sub); font-variant-numeric: tabular-nums; }
 #mc-new-preview .mc-fx-pace-name { font-size: 13px; min-width: 0; }
 #mc-new-preview .mc-fx-pace-name em { display: block; font-style: normal; font-size: 11px; font-weight: 700; color: var(--mc-sub); }
 #mc-new-preview .mc-fx-pace-bar { position: relative; height: 8px; border-radius: 6px; background: var(--mc-paper); border: 1px solid var(--mc-line); }
@@ -211,27 +235,30 @@
   padding: 10px 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); color: var(--mc-ink); text-align: left; font: inherit; }
 #mc-new-preview .mc-fx-options button { cursor: pointer; }
 #mc-new-preview .mc-fx-options button:hover, #mc-new-preview .mc-fx-options button:focus-visible { border-color: var(--mc-brand); background: var(--mc-soft); }
-#mc-new-preview .mc-fx-options strong { font-size: 14px; font-weight: 700; color: var(--mc-brand); }
+#mc-new-preview .mc-fx-options strong { font-size: 15px; font-weight: 700; color: var(--mc-brand); }
 #mc-new-preview .mc-fx-options span { font-size: 13px; line-height: 1.5; color: var(--mc-sub); }
 
 /* 예산 조정 추천 카드 (11/14): 이해한 요청 → 추천안 → 고르기 */
 #mc-new-preview .mc-budget-lead { margin: 0 0 6px; color: var(--mc-sub); line-height: 1.55; }
-#mc-new-preview .mc-budget-headline { margin: 0 0 4px; font-size: 14px; font-weight: 650; line-height: 1.55; }
+#mc-new-preview .mc-budget-headline { margin: 0 0 4px; font-size: 15px; font-weight: 400; line-height: 1.6; color: var(--mc-ink); }  /* 11/17: 굵게 하면 아래 추천 카드 제목과 겹쳐 답답해서 본문 굵기 */
 #mc-new-preview .mc-budget-plan.is-recommended { border-color: color-mix(in srgb, var(--mc-brand) 45%, var(--mc-line)); }
 #mc-new-preview .mc-budget-plan .mc-budget-reason { margin: 4px 0 2px; }
 #mc-new-preview .mc-budget-plan .mc-budget-warning { font-size: 12px; margin: 4px 0; }
 #mc-new-preview .mc-budget-compact { margin: 8px 0; font-size: 13px; }
-#mc-new-preview .mc-budget-compact > div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--mc-line); }
+#mc-new-preview .mc-budget-compact > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 4px 0; border-bottom: 1px dashed var(--mc-line); }
 #mc-new-preview .mc-budget-compact > div:last-child { border-bottom: 0; }
 #mc-new-preview .mc-budget-compact dt { color: var(--mc-sub); }
 #mc-new-preview .mc-budget-compact dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 금액 칸 고정 폭 열: 변경 전 · 화살표 · 변경 후 · 증감 — 자릿수가 달라도 줄마다 같은 위치에서 시작 */
+#mc-new-preview .mc-budget-compact dd { display: grid; grid-template-columns: 4.6em 1.4em 4.6em 4.6em; align-items: baseline; }
+#mc-new-preview .mc-budget-compact dd > span:nth-child(2) { text-align: center; color: var(--mc-sub); }
 #mc-new-preview .mc-budget-compact small { color: var(--mc-sub); }
-#mc-new-preview .mc-budget-compact .is-up dt, #mc-new-preview .mc-budget-compact .is-up small { color: var(--mc-brand); font-weight: 650; }
+#mc-new-preview .mc-budget-compact .is-up dt { font-weight: 650; }  /* 증감액 색은 mc-fx-up · mc-fx-down (늘면 빨강 · 줄면 파랑) */
 #mc-new-preview .mc-budget-why { margin: 0 0 4px; padding-left: 18px; font-size: 12px; line-height: 1.6; color: var(--mc-sub); }
 #mc-new-preview .mc-budget-comparison > .mc-note { margin: 8px 0 0; text-align: center; }
 #mc-new-preview .mc-budget-salary { margin: 12px 0 0; }  /* 11/17: 버튼 뒤 하늘색 상자 제거 — 버튼만 */
 #mc-new-preview .mc-budget-salary .mc-note { margin: 0; }
-#mc-new-preview .mc-budget-salary-amounts { margin: 4px 0 10px; font-size: 16px; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-salary-amounts { margin: 4px 0 10px; font-size: 17px; font-variant-numeric: tabular-nums; }
 #mc-new-preview .mc-budget-salary .mc-primary { width: 100%; min-height: 44px; }
 /* 정책 카드: 라벨 열을 고정한 2열 표 · 경고 안내 · 공고 보기 버튼 */
 #mc-new-preview .mc-policy-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
@@ -274,7 +301,7 @@
 #mc-new-preview .mc-fx-persona-tags { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
 #mc-new-preview .mc-fx-persona-tags li { padding: 2px 8px; border-radius: 999px; background: var(--mc-paper); font-size: 12px; font-weight: 600; color: var(--mc-brand); }
 #mc-new-preview .mc-fx-persona-why { padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--mc-brand) 22%, transparent); }  /* 연파랑 카드 배경에서 --mc-line 은 안 보여서 (11/17) */
-#mc-new-preview .mc-fx-persona-why strong, #mc-new-preview .mc-fx-persona-act strong { display: block; margin-bottom: 6px; font-size: 14px; font-weight: 700; color: var(--mc-ink); }
+#mc-new-preview .mc-fx-persona-why strong, #mc-new-preview .mc-fx-persona-act strong { display: block; margin-bottom: 6px; font-size: 15px; font-weight: 700; color: var(--mc-ink); }
 #mc-new-preview .mc-fx-persona-act { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--mc-paper); font-size: 13px; line-height: 1.5; color: var(--mc-ink); }
 
 /* ---------- 분석 답변 가독성 (11/16) — 문장을 줄줄이 잇지 않고 끊어 읽히게. 색 · 글꼴은 기존 변수만 ---------- */
@@ -282,7 +309,7 @@
 /* 섹션: 제목과 본문 사이 · 섹션 사이 여백을 넓히고 구분선은 한 번만 */
 #mc-new-preview .mc-fx-section { gap: 10px; }
 #mc-new-preview .mc-fx-section + .mc-fx-section { padding-top: 16px; }
-#mc-new-preview .mc-fx-section h3 { font-size: 14px; letter-spacing: -.2px; }
+#mc-new-preview .mc-fx-section h3 { font-size: 15px; letter-spacing: -.2px; }
 /* 문장 목록: 글자 '· ' 대신 점을 왼쪽에 두고 줄바꿈된 줄도 같은 위치에서 시작 (매달린 들여쓰기) */
 #mc-new-preview .mc-fx-lines { gap: 9px; line-height: 1.6; }
 #mc-new-preview .mc-fx-lines li { position: relative; padding-left: 13px; }
@@ -301,15 +328,15 @@
 #mc-new-preview .mc-fx-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* 핵심 진단: 문장마다 끊고 왼쪽 점으로 한 항목씩. 첫 문장(가장 중요한 답)은 조금 크게 */
 #mc-new-preview .mc-fx-key { gap: 10px; padding: 14px 16px; }
-#mc-new-preview .mc-fx-key p { position: relative; padding-left: 13px; font-size: 13px; font-weight: 600; line-height: 1.6; }
+#mc-new-preview .mc-fx-key p { position: relative; padding-left: 13px; font-size: 15px; font-weight: 400; line-height: 1.6; }
 /* 11/17: 목록 점을 '이렇게 봤어요'(mc-fx-lines) 점과 같은 크기 · 색 · 위치로 (4px · mc-sub) */
 #mc-new-preview .mc-fx-key p::before { content: ''; position: absolute; left: 2px; top: .72em; width: 4px; height: 4px; border-radius: 50%; background: var(--mc-sub); }
 /* 11/17 A안: 첫 줄은 결론이라 목록 점 없이 제목처럼 조금 크게만 (굵기는 다른 줄과 같게 — 혼자 굵으면 튀어서) */
-#mc-new-preview .mc-fx-key p:first-of-type { padding-left: 0; font-size: 16px; font-weight: 600; }
+#mc-new-preview .mc-fx-key p:first-of-type { padding-left: 0; font-size: 17px; font-weight: 600; }
 #mc-new-preview .mc-fx-key p:first-of-type::before { content: none; }
 #mc-new-preview .mc-fx-key p + p { padding-top: 10px; border-top: 1px solid light-dark(#26365a12, #ffffff14); }
 #mc-new-preview .mc-fx-key p + p::before { top: calc(10px + .72em); }
-#mc-new-preview .mc-fx-key .mc-fx-num { color: var(--mc-brand); }
+#mc-new-preview .mc-fx-key p:first-of-type .mc-fx-num { color: var(--mc-brand); }  /* 11/17: 파란 숫자는 첫 문장만, 아래 줄은 다른 분석 문장처럼 검은 굵은 숫자 */
 #mc-new-preview .mc-fx-key .mc-fx-num.mc-fx-up { color: var(--mc-alert); }
 /* 계산식: 결과를 크게, '= 식'은 아래 줄에 작게 */
 #mc-new-preview .mc-fx-key .mc-fx-eq-result { display: block; }
@@ -351,7 +378,7 @@
 #mc-new-preview .mc-asst-log .mc-fx-next .mc-chipbar button { min-height: 32px; padding: 5px 12px; font-size: 13px; line-height: 1.4; }
 
 /* ---------- 예산 조정 답 정리 (11/16) — 요청 한 줄 + 작은 메타, 작은 미리보기 꼬리표, 월급 증가분 표 ---------- */
-#mc-new-preview .mc-budget-summary-request { margin: 0; font-size: 14px; font-weight: 700; color: var(--mc-ink); line-height: 1.5; }
+#mc-new-preview .mc-budget-summary-request { margin: 0; font-size: 15px; font-weight: 700; color: var(--mc-ink); line-height: 1.5; }
 #mc-new-preview .mc-budget-summary-meta { margin: 2px 0 10px; font-size: 12px; color: var(--mc-sub); line-height: 1.5; }
 #mc-new-preview .mc-budget-facts { margin: 0 0 10px; font-size: 12px; color: var(--mc-sub); }
 #mc-new-preview .mc-budget-facts p { margin: 2px 0; }
@@ -359,20 +386,20 @@
 #mc-new-preview .mc-budget-example-intro { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; padding: 0; border: 0; background: none;
   font-size: 12px; color: var(--mc-sub); line-height: 1.5; }
 #mc-new-preview .mc-budget-tag { flex: none; padding: 1px 7px; border-radius: 6px; background: var(--mc-soft); color: var(--mc-brand); font-size: 11px; font-weight: 700; }
-#mc-new-preview .mc-budget-headline { font-size: 14px; }
+#mc-new-preview .mc-budget-headline { font-size: 15px; }
 #mc-new-preview .mc-budget-footnote { margin: 8px 0 0; font-size: 12px; color: var(--mc-sub); line-height: 1.5; }
 /* 월급 증가분 배분안: 합계 한 줄 + 받는 항목 표 */
 #mc-new-preview .mc-budget-shares { margin: 8px 0; padding: 12px; border-radius: 12px; background: var(--mc-bg); }
 #mc-new-preview .mc-budget-shares-total { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin: 0 0 6px;
   padding-bottom: 8px; border-bottom: 1px solid var(--mc-line); font-size: 13px; color: var(--mc-sub); }
-#mc-new-preview .mc-budget-shares-total strong { font-size: 16px; color: var(--mc-ink); font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-shares-total strong { font-size: 17px; color: var(--mc-ink); font-variant-numeric: tabular-nums; }
 #mc-new-preview .mc-budget-shares dl { margin: 0; }
 #mc-new-preview .mc-budget-shares dl > div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 13px; }
 #mc-new-preview .mc-budget-shares dt { color: var(--mc-ink); }
 #mc-new-preview .mc-budget-shares dd { margin: 0; font-weight: 650; color: var(--mc-brand); font-variant-numeric: tabular-nums; }
 /* 대화 안 월급 증가분 배분 검토: 세 단계 + 버튼 (파란 상자 안에 버튼만 있던 칸 대신) */
 #mc-new-preview .mc-budget-salary-review { display: flex; flex-direction: column; gap: 10px; }
-#mc-new-preview .mc-budget-salary-title { margin: 0; font-size: 14px; font-weight: 700; }
+#mc-new-preview .mc-budget-salary-title { margin: 0; font-size: 15px; font-weight: 700; }
 #mc-new-preview .mc-budget-steps { margin: 0; padding: 0; list-style: none; counter-reset: mc-step; display: flex; flex-direction: column; gap: 6px; }
 #mc-new-preview .mc-budget-steps li { counter-increment: mc-step; display: flex; gap: 8px; align-items: baseline; font-size: 13px; line-height: 1.5; }
 #mc-new-preview .mc-budget-steps li::before { content: counter(mc-step); flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px;
@@ -399,7 +426,7 @@
 #mc-new-preview .mc-sr-actions .mc-note { padding: 6px 2px 0; line-height: 1.55; }
 
 /* ---------- 챗봇 화면 다듬기 (11/17) — 답 내용은 그대로, 테두리 선 대신 옅은 그림자 · 넉넉한 여백 · 큰 본문으로 읽기 쉽게 ----------
-   통합 챗봇(.mc-asst) 안에서만. 말풍선 글은 15px(다른 화면 본문 14px보다 한 단계 크게, 대화는 길게 읽으므로) */
+   통합 챗봇(.mc-asst) 안에서만. 말풍선 글은 앱 기본 본문과 같은 15px */
 #mc-new-preview .mc-asst { --mc-chat-shadow: 0 1px 2px light-dark(#17224214, #0006), 0 6px 16px light-dark(#1722420a, #0000); }
 #mc-new-preview .mc-asst .mc-asst-log { gap: 18px; }
 #mc-new-preview .mc-asst .mc-asst-turn { gap: 12px; }
@@ -408,15 +435,258 @@
 #mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-spend { border: 0; border-radius: 20px; border-top-left-radius: 6px; background: var(--mc-paper); box-shadow: var(--mc-chat-shadow); }
 #mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble { padding: 13px 16px; line-height: 1.65; }
 #mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble:not(.mc-budget-adjustment) { font-size: 15px; }
+/* 예산 조정 말풍선은 표가 있어 통째로 키우지 않고, 대화 문장(클래스 없는 바로 아래 p)만 다른 답과 같은 15px (11/17) */
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble.mc-budget-adjustment > p:not([class]) { font-size: 15px; line-height: 1.65; }
 #mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble:not(.mc-budget-adjustment) small { font-size: 13px; line-height: 1.6; }
 /* 내 말풍선 */
 #mc-new-preview .mc-asst .mc-asst-log .mc-msg.me .mc-bubble { padding: 10px 16px; border-radius: 20px; border-top-right-radius: 6px; font-size: 15px; line-height: 1.55;
   box-shadow: 0 4px 12px color-mix(in srgb, var(--mc-brand) 24%, transparent); }
 /* 결과 카드(소비 분석 · 정책): 안쪽 여백 · 간격 넉넉하게, 본문 14px */
-#mc-new-preview .mc-asst .mc-asst-card .mc-spend { padding: 18px 16px; gap: 18px; font-size: 14px; }
+#mc-new-preview .mc-asst .mc-asst-card .mc-spend { padding: 18px 16px; gap: 18px; font-size: 15px; }
 /* 이어서 물어볼 칩: 누를 수 있게 브랜드색 글자 · 옅은 파랑 테두리 */
 #mc-new-preview .mc-asst .mc-asst-log .mc-fx-choices button { min-height: 36px; padding: 6px 14px; border-radius: 999px; font-size: 13px; font-weight: 600;
   border: 1px solid color-mix(in srgb, var(--mc-brand) 28%, var(--mc-line)); background: var(--mc-paper); color: var(--mc-brand); }
 #mc-new-preview .mc-asst .mc-asst-log .mc-fx-choices button:disabled { border-color: var(--mc-line); color: var(--mc-sub); }
 /* 맨 위 안내 카드도 같은 결 */
 #mc-new-preview .mc-asst .mc-asst-ctx { border: 0; border-radius: 16px; box-shadow: var(--mc-chat-shadow); }
+
+/* ---------- 예산 조정 대화 다듬기 (11/17) — 문구 · 동작은 그대로, 앱 기준(본문 15 · 제목 17 · 보조 12~13, 둥근 정도 12/16)에 맞춰 화면만 ----------
+   질문 제목 · 안내 문구 정렬을 왼쪽으로 통일, 금액 버튼이 버튼으로 보이게, 하드코딩 색 대신 토큰(다크 모드) */
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot .mc-bubble.mc-budget-adjustment { padding: 16px; font-size: 15px; line-height: 1.6; }
+/* 제목: 요청 요약 · 질문(legend) · 변경안(h2)을 같은 17px 굵게 */
+#mc-new-preview .mc-asst .mc-budget-summary-request,
+#mc-new-preview .mc-asst .mc-budget-amount legend { font-size: 17px; font-weight: 700; line-height: 1.45; letter-spacing: -.2px; color: var(--mc-ink); }
+#mc-new-preview .mc-asst .mc-budget-amount legend { margin-bottom: 10px; padding: 0; }
+#mc-new-preview .mc-asst .mc-budget-summary-meta { margin: 4px 0 12px; font-size: 13px; }
+/* 나누기 폼: 가운데 좁은 칸 대신 말풍선 폭 그대로, 글은 왼쪽 */
+#mc-new-preview .mc-asst .mc-budget-adjustment form.mc-budget-distribution { max-width: none; }
+#mc-new-preview .mc-asst .mc-budget-distribution legend,
+#mc-new-preview .mc-asst .mc-budget-distribution .mc-note { text-align: left; }
+#mc-new-preview .mc-asst .mc-budget-adjustment .mc-note { padding: 6px 0; font-size: 13px; line-height: 1.55; }
+#mc-new-preview .mc-asst .mc-budget-distribution-total { padding: 16px; border-radius: 16px; background: var(--mc-soft); }
+#mc-new-preview .mc-asst .mc-budget-distribution-total div > span { font-size: 13px; }
+#mc-new-preview .mc-asst .mc-budget-distribution-total strong { font-size: 24px; }
+#mc-new-preview .mc-asst .mc-budget-distribution-total > span { color: var(--mc-brand); font-size: 13px; }
+/* 항목 고르기 칸: 이름 15 · 현재 금액 12, 고른 칸은 브랜드색 */
+#mc-new-preview .mc-asst .mc-budget-category-picks { gap: 8px; }
+#mc-new-preview .mc-asst .mc-budget-category-picks button { min-height: 56px; padding: 8px 6px; border-radius: 12px; color: var(--mc-ink); }
+#mc-new-preview .mc-asst .mc-budget-category-picks .mc-pick-name { font-size: 15px; font-weight: 600; }
+#mc-new-preview .mc-asst .mc-budget-category-picks button small { font-size: 12px; }
+#mc-new-preview .mc-asst .mc-budget-category-picks button[aria-pressed=true] { border-color: var(--mc-brand); background: var(--mc-soft); color: var(--mc-brand); }
+#mc-new-preview .mc-asst .mc-budget-distribution-stepper { border-radius: 12px; }
+#mc-new-preview .mc-asst .mc-budget-distribution-stepper button { background: var(--mc-soft); color: var(--mc-brand); font-size: 13px; font-weight: 650; }
+/* 금액 입력: 입력칸 17px(아이폰 확대 방지 16 이상), −/+ 는 연파랑 버튼 */
+#mc-new-preview .mc-asst .mc-budget-amount-input input { padding: 12px 14px; border-radius: 12px; font-size: 17px; font-weight: 650; }
+#mc-new-preview .mc-asst .mc-budget-amount-input input::placeholder { font-weight: 400; color: var(--mc-sub); }
+#mc-new-preview .mc-asst .mc-budget-amount-steps button { margin: 0; border: 0; border-radius: 12px; background: var(--mc-soft); color: var(--mc-brand); font-size: 15px; font-weight: 650; }
+#mc-new-preview .mc-asst .mc-budget-amount-steps button:disabled { background: var(--mc-bg); color: var(--mc-sub); }
+/* 비교안 카드: 선 대신 옅은 바탕, 모서리 16 */
+#mc-new-preview .mc-asst .mc-bubble .mc-budget-plan { padding: 16px; border: 0; border-radius: 16px; background: var(--mc-bg); }
+#mc-new-preview .mc-asst .mc-bubble .mc-budget-plan.is-recommended,
+#mc-new-preview .mc-asst .mc-bubble .mc-budget-plan.is-selected { box-shadow: inset 0 0 0 1.5px var(--mc-brand); }
+/* '부족 95,000원' 같은 강조 금액이 줄 중간에서 끊기지 않게 */
+#mc-new-preview .mc-asst .mc-budget-shortfall strong { white-space: nowrap; }
+
+/* 쪽 넘기기 (11/17): 긴 소비 분석 답을 쪽으로 나눠 한 쪽씩. 아래 줄 = 이전 · 점과 쪽 이름 · 다음 (밀어서도 넘김) */
+#mc-new-preview .mc-fx-pager { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: 12px; }
+#mc-new-preview .mc-fx-page { display: flex; flex-direction: column; gap: 14px; min-width: 0; animation: mc-fx-page-in .18s ease-out; }
+@keyframes mc-fx-page-in { from { opacity: 0; transform: translateX(8px); } }
+@media (prefers-reduced-motion: reduce) { #mc-new-preview .mc-fx-page { animation: none; } }
+#mc-new-preview .mc-fx-pager-nav { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 4px; padding-top: 6px; border-top: 1px solid var(--mc-line); }
+#mc-new-preview .mc-fx-pager-nav button { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 999px; color: var(--mc-brand); background: var(--mc-soft); }
+#mc-new-preview .mc-fx-pager-nav button:disabled { color: var(--mc-sub); background: transparent; opacity: .45; }
+#mc-new-preview .mc-fx-pager-nav > span { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--mc-ink); text-align: center; }
+#mc-new-preview .mc-fx-pager-nav > span > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#mc-new-preview .mc-fx-pager-dots { display: flex; gap: 5px; }
+#mc-new-preview .mc-fx-pager-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--mc-line); transition: width .18s; }
+#mc-new-preview .mc-fx-pager-dots i.on { width: 16px; background: var(--mc-brand); }
+
+/* 자세히 보기 팝업 (11/17): 카드 안 버튼 → 가운데 창에서 쪽 넘기기. 창 높이를 고정해 쪽마다 창이 커졌다 줄었다 하지 않게, 넘기기 줄은 창 아래에 붙여 둔다 */
+#mc-new-preview .mc-fx-detail-open { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 48px; padding: 0 14px 0 16px; border-radius: 12px; background: var(--mc-soft); color: var(--mc-brand); font-size: 15px; font-weight: 650; }
+#mc-new-preview .mc-dialog:has(.mc-fx-detail-pop) { height: 72%; max-height: 72%; display: flex; flex-direction: column; padding-bottom: 0; overflow: hidden; }
+#mc-new-preview .mc-fx-detail-pop { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+#mc-new-preview .mc-fx-detail-pop h2 { padding-right: 64px; font-size: 17px; font-weight: 700; }
+/* 내용 칸만 스크롤하고 넘기기 줄은 그 아래 따로 — 버튼이 글자를 덮지 않는다 */
+#mc-new-preview .mc-fx-detail-pop .mc-fx-pager { flex: 1; min-height: 0; gap: 0; }
+#mc-new-preview .mc-fx-detail-pop .mc-fx-page { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: 14px; scrollbar-width: thin; }
+#mc-new-preview .mc-fx-detail-pop .mc-fx-pager-nav { flex: none; padding: 8px 0 14px; }
+
+/* 소비 유형 답 (11/17): 파란 판은 소비 유형 카드 하나만. 뒤따르는 핵심 진단은 바탕 없이 글로 */
+#mc-new-preview .mc-fx-persona + .mc-fx-key { padding: 4px 2px 0; border-radius: 0; background: none; }
+#mc-new-preview .mc-fx-page > .mc-fx-rows:first-child { border-top: 0; padding-top: 0; }  /* 쪽 맨 위 목록은 위 구분선 없이 (상자 블록 · 핵심 진단은 그대로) */
+
+/* 돈 종류 나눠 보기 (11/17): 이름 · 금액 한 줄, 설명은 그 아래 작은 글씨. 줄 사이 구분선 */
+#mc-new-preview .mc-fx-money-lead { margin: 0; font-size: 15px; line-height: 1.6; color: var(--mc-ink); text-wrap: pretty; }
+#mc-new-preview .mc-fx-money { margin: -6px 0; display: flex; flex-direction: column; }
+#mc-new-preview .mc-fx-money > div { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; row-gap: 2px; align-items: baseline; padding: 12px 0; }
+#mc-new-preview .mc-fx-money > div + div { border-top: 1px solid var(--mc-line); }
+#mc-new-preview .mc-fx-money dt { font-size: 15px; font-weight: 600; color: var(--mc-ink); }
+#mc-new-preview .mc-fx-money dd { margin: 0; }
+#mc-new-preview .mc-fx-money-amt { font-size: 15px; font-weight: 700; color: var(--mc-ink); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-fx-money-desc { grid-column: 1 / -1; font-size: 13px; line-height: 1.5; color: var(--mc-sub); word-break: keep-all; }
+#mc-new-preview .mc-fx-money > .is-pending .mc-fx-money-desc { color: var(--mc-ink); font-size: 15px; }
+/* 지난달과 비교 (11/17): 돈 종류 목록과 같은 줄 모양 + 이유 문장 */
+#mc-new-preview .mc-fx-compare-why { grid-column: 1 / -1; margin-top: 6px; font-size: 15px; line-height: 1.6; color: var(--mc-ink); text-wrap: wrap; }  /* 마지막 줄 균형 맞추기(pretty)를 빼서 앞 줄을 꽉 채운다 */
+#mc-new-preview .mc-fx-compare > div:first-child { padding-top: 4px; }
+#mc-new-preview .mc-fx-arrow { margin-left: 4px; font-size: 11px; vertical-align: 1px; }
+
+/* 달마다 흐름 (11/17): '9월 47만 원 → 10월 64.5만 원'을 달 칸 → 달 칸으로. 목록 점 없이 */
+#mc-new-preview .mc-fx-lines li:has(> .mc-fx-flow) { padding-left: 0; }
+#mc-new-preview .mc-fx-lines li:has(> .mc-fx-flow)::before { display: none; }
+#mc-new-preview .mc-fx-flow { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+#mc-new-preview .mc-fx-flow-item { display: contents; }
+#mc-new-preview .mc-fx-flow-arrow { color: var(--mc-sub); font-size: 13px; }
+#mc-new-preview .mc-fx-flow-step { display: inline-flex; flex-direction: column; align-items: center; gap: 0; min-width: 76px; padding: 8px 12px; border-radius: 12px; background: var(--mc-bg); line-height: 1.35; }
+#mc-new-preview .mc-fx-flow-step small { font-size: 12px; color: var(--mc-sub); }
+#mc-new-preview .mc-fx-flow-step b { font-size: 15px; font-weight: 700; color: var(--mc-ink); font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-fx-flow-step.is-last { background: var(--mc-soft); }
+#mc-new-preview .mc-fx-flow-step.is-last small { color: var(--mc-brand); }
+
+/* 지난달과 비교 전체 요약 (11/17): 회색 판 + '카테고리별' 소제목으로 아래 카테고리 묶음과 나눈다 */
+#mc-new-preview .mc-fx-compare-sum { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 12px; background: var(--mc-bg); }
+#mc-new-preview .mc-fx-compare-sum .mc-fx-flow { margin: 0; }
+#mc-new-preview .mc-fx-compare-sum .mc-fx-flow-step { background: var(--mc-paper); }
+#mc-new-preview .mc-fx-compare-sum .mc-fx-flow-step.is-last { background: var(--mc-soft); }
+#mc-new-preview .mc-fx-compare-label { margin: 6px 0 -6px; font-size: 12px; font-weight: 700; color: var(--mc-sub); letter-spacing: .2px; }
+/* 팝업은 채팅 목록(.mc-asst-log) 밖(#mc-layer)에 그려져 한국어 단어 단위 줄바꿈이 빠져 있었다 → '영향|이'처럼 낱말 중간에서 끊김 (11/17) */
+#mc-new-preview .mc-fx-detail-pop { word-break: keep-all; overflow-wrap: break-word; }
+/* 카테고리 아래 이유 문장도 다른 분석 문장처럼 점 목록으로 (11/17) */
+#mc-new-preview .mc-fx-compare-why { position: relative; padding-left: 13px; }
+#mc-new-preview .mc-fx-compare-why::before { content: ''; position: absolute; left: 2px; top: .72em; width: 4px; height: 4px; border-radius: 50%; background: var(--mc-sub); }
+#mc-new-preview .mc-fx-money-desc + .mc-fx-compare-why { margin-top: 8px; }
+
+/* 생활 패턴 (11/17): 주말 · 평일 하루 평균 두 칸 */
+#mc-new-preview .mc-fx-lines li:has(> .mc-fx-pair) { padding-left: 0; }
+#mc-new-preview .mc-fx-lines li:has(> .mc-fx-pair)::before { display: none; }
+#mc-new-preview .mc-fx-pair { display: flex; flex-direction: column; gap: 6px; }
+#mc-new-preview .mc-fx-pair .mc-fx-flow-step { flex: 1; align-items: center; }
+#mc-new-preview .mc-fx-pair-basis { align-self: center; font-size: 12px; color: var(--mc-sub); }
+
+/* 예산을 관리하는 습관 (11/17): 카테고리 | 늘림 | 줄임 표. 금액 위 · 횟수 아래 */
+#mc-new-preview .mc-fx-habit { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-fx-habit th, #mc-new-preview .mc-fx-habit td { padding: 9px 0; text-align: right; vertical-align: top; }
+#mc-new-preview .mc-fx-habit thead th { padding: 0 0 6px; font-size: 12px; font-weight: 650; color: var(--mc-sub); border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-fx-habit tbody tr + tr > * { border-top: 1px solid var(--mc-line); }
+#mc-new-preview .mc-fx-habit th[scope=row] { text-align: left; font-size: 15px; font-weight: 600; color: var(--mc-ink); }
+#mc-new-preview .mc-fx-habit td { width: 7em; }
+#mc-new-preview .mc-fx-habit td b { display: block; font-size: 15px; font-weight: 650; }
+#mc-new-preview .mc-fx-habit td small { display: block; font-size: 12px; color: var(--mc-sub); }
+
+/* 줄일 · 받을 항목 고르기 (11/17): 작은 칩을 한데 모으고, 고른 항목의 금액은 아래 상자 한 곳에서 */
+#mc-new-preview .mc-budget-chip-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+#mc-new-preview .mc-budget-chip-picks button { display: inline-flex; align-items: baseline; gap: 4px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--mc-line); border-radius: 999px; background: var(--mc-paper); color: var(--mc-ink); font: inherit; font-size: 13px; font-weight: 600; }
+#mc-new-preview .mc-budget-chip-picks button small { font-size: 12px; font-weight: 500; color: var(--mc-sub); font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-chip-picks button[aria-pressed=true] { border-color: var(--mc-brand); background: var(--mc-brand); color: var(--mc-on); }
+#mc-new-preview .mc-budget-chip-picks button[aria-pressed=true] small { color: inherit; opacity: .8; }
+#mc-new-preview .mc-budget-chip-picks button:disabled { opacity: .45; }
+#mc-new-preview .mc-budget-picked { display: flex; flex-direction: column; padding: 4px 14px; border-radius: 12px; background: var(--mc-bg); }
+#mc-new-preview .mc-budget-picked .mc-budget-distribution-row { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 10px; margin: 0; padding: 10px 0; }
+#mc-new-preview .mc-budget-picked .mc-budget-distribution-row + .mc-budget-distribution-row { border-top: 1px solid var(--mc-line); }
+#mc-new-preview .mc-budget-picked-name { display: flex; flex-direction: column; min-width: 0; }
+#mc-new-preview .mc-budget-picked-name strong { font-size: 15px; }
+#mc-new-preview .mc-budget-picked .mc-budget-distribution-change { flex-basis: auto; font-size: 12px; }
+#mc-new-preview .mc-budget-picked .mc-budget-distribution-stepper { flex: none; width: 184px; background: var(--mc-paper); }
+#mc-new-preview .mc-budget-picked-help { padding: 0 0 10px; font-size: 12px; color: var(--mc-sub); }
+/* 11/17: 고른 항목 한 줄 = '이름 (작은 글씨)조정 후 N원', 그 아래에 조정 칸 (좁은 폭에서 이름이 줄바꿈되지 않게) */
+#mc-new-preview .mc-budget-picked .mc-budget-distribution-row { flex-direction: column; align-items: stretch; gap: 8px; }
+#mc-new-preview .mc-budget-picked-name { flex-direction: row; align-items: baseline; gap: 6px; white-space: nowrap; }
+#mc-new-preview .mc-budget-picked .mc-budget-distribution-stepper { width: 100%; }
+/* 11/17: 조정 칸 앞 이름표 '줄일 금액 · 받을 금액' */
+#mc-new-preview .mc-budget-picked-amount { display: flex; align-items: center; gap: 10px; }
+#mc-new-preview .mc-budget-picked-kind { flex: none; font-size: 13px; font-weight: 650; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-picked-amount .mc-budget-distribution-stepper { flex: 1; width: auto; }
+#mc-new-preview .mc-budget-picked-name { justify-content: space-between; }
+/* 11/17: 남은 금액 + 미리보기 버튼을 화면 아래에 붙여 둔다 (긴 말풍선에서도 보이게) */
+#mc-new-preview .mc-budget-pick-foot { position: sticky; bottom: 0; z-index: 1; display: flex; align-items: center; gap: 12px; margin: 12px -16px -16px; padding: 10px 16px 14px; border-radius: 0 0 20px 20px; background: var(--mc-paper); box-shadow: 0 -10px 16px -14px #0f172a59; }
+#mc-new-preview .mc-budget-pick-foot p { flex: none; margin: 0; font-size: 15px; font-weight: 700; color: var(--mc-brand); font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-pick-foot p.is-complete { color: #157346; }
+#mc-new-preview .mc-budget-pick-foot p small { font-size: 12px; font-weight: 500; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-distribution .mc-budget-pick-foot .mc-primary { flex: 1; margin-top: 0; }
+/* 11/17: 아래 줄 버튼은 내용 크기만큼 (남은 금액이 왼쪽에서 먼저 읽히게) */
+#mc-new-preview .mc-budget-pick-foot { justify-content: space-between; }
+#mc-new-preview .mc-budget-distribution .mc-budget-pick-foot .mc-primary { flex: none; width: auto; min-height: 44px; padding: 10px 18px; border-radius: 999px; font-size: 15px; }
+
+/* 11/17: 쿠숑이 답은 짧은 말풍선이든 카드든 폭을 하나로 — 가장 넓은 카드 폭(채팅 폭 전체)에 맞춘다 */
+#mc-new-preview .mc-asst .mc-asst-log .mc-msg.bot { width: 100%; max-width: 100%; }
+/* 11/17: 금액 조정 칸 높이 44 → 38px (글자도 한 단계 작게). 버튼 폭은 그대로 44px라 누르는 자리는 넉넉하다 */
+#mc-new-preview .mc-asst .mc-budget-distribution-stepper button { min-height: 38px; }
+#mc-new-preview .mc-asst .mc-budget-distribution-stepper input { padding: 6px 0; font-size: 15px; }
+#mc-new-preview .mc-budget-pick-foot { box-shadow: none; border-top: 1px solid var(--mc-line); }  /* 11/17: 그림자 대신 얇은 선 */
+
+/* 11/17: 조정안 카드 아래 = [선택하기] 버튼 + 그 옆에 작은 글자 버튼 '○○ 늘릴 금액 바꾸기 ›' (보조 동작이라 테두리 없이, 위아래로 쌓지 않는다) */
+#mc-new-preview .mc-budget-plan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 12px; }
+#mc-new-preview .mc-budget-plan-actions > .mc-budget-select { flex: 1 1 auto; width: auto; min-width: 0; margin-top: 0; padding: 10px 14px; font-size: 14px; white-space: nowrap; }
+#mc-new-preview .mc-budget-plan-actions > .mc-chipbar { display: flex; flex-wrap: wrap; flex: none; gap: 0 4px; margin: 0; }
+#mc-new-preview .mc-budget-plan-actions > .mc-chipbar button { min-height: 44px; padding: 10px 4px; border: 0; border-radius: 8px; background: none; color: var(--mc-brand); font-size: 13px; font-weight: 650; white-space: nowrap; }
+#mc-new-preview .mc-budget-plan-actions > .mc-chipbar button::after { content: ' ›'; }
+/* 고칠 버튼이 하나면 꼭 한 줄 (선택 버튼이 줄어든다), 둘이면 다음 줄로 넘겨도 된다 */
+#mc-new-preview .mc-budget-plan-actions:not(:has(.mc-chipbar > button + button)) { flex-wrap: nowrap; }
+#mc-new-preview .mc-budget-plan-actions > .mc-budget-select { padding-inline: 10px; overflow: hidden; text-overflow: ellipsis; }
+#mc-new-preview .mc-budget-plan-actions { column-gap: 4px; }
+#mc-new-preview .mc-budget-plan-actions > .mc-budget-select { padding-inline: 8px; }
+
+/* '○○ 어디까지 늘릴 수 있어?' (11/17): 한도 상자 + 재원 | 최대 줄 + 생활비 세부는 들여 쓴 작은 줄 */
+#mc-new-preview .mc-budget-capacity { display: flex; flex-direction: column; gap: 12px; }
+#mc-new-preview .mc-budget-capacity-rows { margin: 0; }
+#mc-new-preview .mc-budget-capacity-rows > div { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 12px; padding: 11px 0; }
+#mc-new-preview .mc-budget-capacity-rows > div + div { border-top: 1px solid var(--mc-line); }
+#mc-new-preview .mc-budget-capacity-rows dt { font-size: 15px; font-weight: 600; }
+#mc-new-preview .mc-budget-capacity-rows dd { margin: 0; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+#mc-new-preview .mc-budget-capacity-subs { grid-column: 1 / -1; }
+#mc-new-preview .mc-budget-capacity-subs ul { margin: 2px 0 0; padding: 8px 12px; list-style: none; border-radius: 10px; background: var(--mc-bg); }
+#mc-new-preview .mc-budget-capacity-subs li { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; font-weight: 500; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-capacity .mc-note { margin: 0; font-size: 12px; }
+#mc-new-preview .mc-budget-capacity { margin-top: 14px; }  /* 11/17: 위 제목('○○ 늘리기')과 한도 상자 사이 */
+/* 11/17: 한 줄에 놓으면 선택 버튼이 너무 작아진다 → 선택 버튼은 폭 전체, '금액 바꾸기 ›' 같은 고치기 버튼은 그 아래 작은 글자로 */
+#mc-new-preview .mc-budget-plan-actions,
+#mc-new-preview .mc-budget-plan-actions:not(:has(.mc-chipbar > button + button)) { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 2px; }
+#mc-new-preview .mc-budget-plan-actions > .mc-budget-select { flex: none; width: 100%; padding: 10px 16px; font-size: 15px; }
+#mc-new-preview .mc-budget-plan-actions > .mc-chipbar { justify-content: center; gap: 0 12px; }
+
+/* 11/17: 조정안 카드 고르기 — 제목 줄 = 라디오, 고른 카드는 파란 테두리, 보내기 버튼은 비교 맨 아래 하나 */
+#mc-new-preview .mc-budget-plan-list { display: flex; flex-direction: column; gap: 10px; }
+#mc-new-preview .mc-budget-plan:has(> .mc-budget-plan-head > .mc-budget-plan-pick) { cursor: pointer; }
+#mc-new-preview .mc-budget-plan-pick { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0; border: 0; background: none; color: var(--mc-ink); font: inherit; text-align: left; cursor: pointer; }
+#mc-new-preview .mc-budget-plan-title { font-size: 15px; font-weight: 700; }
+#mc-new-preview .mc-budget-radio { flex: none; width: 20px; height: 20px; border: 2px solid var(--mc-line); border-radius: 50%; background: var(--mc-paper); }
+#mc-new-preview .mc-budget-plan-pick[aria-checked=true] .mc-budget-radio { border: 6px solid var(--mc-brand); }
+#mc-new-preview .mc-asst .mc-budget-plan.is-selected { box-shadow: inset 0 0 0 2px var(--mc-brand); }
+#mc-new-preview .mc-budget-comparison > .mc-budget-plan-actions { margin-top: 14px; }
+/* 11/17: 동그라미 라디오는 숨기고, 고른 카드는 파란 테두리 + 파란 제목으로만 (카드 전체가 누르는 자리) */
+#mc-new-preview .mc-budget-radio { display: none; }
+#mc-new-preview .mc-budget-plan-pick[aria-checked=true] .mc-budget-plan-title { color: var(--mc-brand); }
+#mc-new-preview .mc-budget-plan-pick:focus-visible { outline: 2px solid var(--mc-brand); outline-offset: 2px; border-radius: 6px; }
+/* 파란 테두리는 '고른 카드'에만 — 추천은 배지로 보인다 (다른 카드를 골랐을 때 둘 다 골라진 것처럼 보이지 않게) */
+#mc-new-preview .mc-asst .mc-budget-plan.is-recommended:not(.is-selected) { box-shadow: none; }
+
+/* 적용 후 전체 예산 (11/17): 카드 안 작은 글자 버튼 → 가운데 팝업 표. 바뀐 줄은 진하게 + 증감 색, 나머지는 옅게 */
+#mc-new-preview .mc-budget-full-open { align-self: flex-start; min-height: 40px; margin-top: 4px; padding: 8px 0; border: 0; background: none; color: var(--mc-brand); font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+#mc-new-preview .mc-budget-full-pop { display: flex; flex-direction: column; gap: 10px; }
+#mc-new-preview .mc-budget-full-pop h2 { padding-right: 64px; font-size: 17px; font-weight: 700; }
+#mc-new-preview .mc-budget-full-pop > .mc-note { margin: -6px 0 0; padding: 0; }
+#mc-new-preview .mc-budget-full table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#mc-new-preview .mc-budget-full thead th { padding: 0 0 6px; font-size: 12px; font-weight: 650; color: var(--mc-sub); text-align: left; border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-budget-full thead th:last-child { text-align: right; }
+#mc-new-preview .mc-budget-full tbody th, #mc-new-preview .mc-budget-full tbody td { padding: 8px 0; font-size: 14px; border-bottom: 1px solid var(--mc-line); }
+#mc-new-preview .mc-budget-full tbody th { text-align: left; font-weight: 500; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-full tbody td { text-align: right; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-full tbody td strong { font-weight: 500; }
+#mc-new-preview .mc-budget-full tr.is-changed th { color: var(--mc-ink); font-weight: 700; }
+#mc-new-preview .mc-budget-full tr.is-changed td { color: var(--mc-ink); }
+#mc-new-preview .mc-budget-full tr.is-changed td strong { font-weight: 700; }
+#mc-new-preview .mc-budget-full tr.is-changed td small { display: block; font-size: 12px; font-weight: 650; }
+#mc-new-preview .mc-budget-full-before { font-size: 13px; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-full .mc-note { margin: 8px 0 0; padding: 0; font-size: 12px; }
+#mc-new-preview .mc-budget-full-pop .mc-budget-select { margin-top: 6px; }
+/* 11/17: 짧은 변경표도 원 단위 — 전 · → · 후 세 칸(7자리 금액까지 한 줄), 증감은 '후' 칸 아래 줄 (줄바꿈 없이) */
+#mc-new-preview .mc-budget-compact dd { grid-template-columns: 6.4em 1.2em 6.4em; row-gap: 0; }
+#mc-new-preview .mc-budget-compact dd > small { grid-column: 3; text-align: right; font-size: 12px; }
+#mc-new-preview .mc-budget-compact dt { white-space: nowrap; }
+/* 아주 좁은 화면(360px 미만)에서는 모든 줄을 같은 모양으로: 이름 한 줄, 그 아래 금액 칸 (금액이 카드 밖으로 넘치지 않게) */
+@media (max-width: 359px) {
+  #mc-new-preview .mc-budget-compact > div { flex-wrap: wrap; row-gap: 2px; }
+  #mc-new-preview .mc-budget-compact dt { flex-basis: 100%; }
+  #mc-new-preview .mc-budget-compact dd { margin-left: auto; }
+}
+/* 11/17: 추천을 못 정한 이유 위에 구분선 하나 (요청 금액 · 참고 안내와 나눈다) */
+#mc-new-preview .mc-budget-choose-help { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--mc-line); }

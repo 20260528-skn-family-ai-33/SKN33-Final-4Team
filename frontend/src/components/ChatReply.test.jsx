@@ -528,7 +528,7 @@ it('종료된 예산 응답에는 저장된 추천 질문이 남아 있어도 �
 it('분석 문장은 글자를 그대로 두고 숫자 · 괄호 · 나열 · 계산식만 읽기 쉽게 나눈다', async () => {
   const eq = '이번 달 말 약 52.5만 원 = 지금까지 쓴 23.5만 원 + 남은 18일 예상 29만 원'
   const list = '패션·쇼핑 +70,660원 · 문화·여가 -54,800원 · 기타 -29,748원'
-  const aside = '식비 630,000원 (지난달 같은 기간 406,000원)'
+  const aside = '주말 하루 평균 60,200원이에요 (지난 날짜 기준).'
   await render({ ...month, view: [
     { kind: 'head', title: '소비 분석' },
     { kind: 'text', tone: 'key', title: '계산 요약', lines: ['계산 요약', eq] },
@@ -541,6 +541,146 @@ it('분석 문장은 글자를 그대로 두고 숫자 · 괄호 · 나열 · �
   expect(items.map((li) => li.textContent)).toEqual([list, aside, '다음 달(11월)도 지금처럼 쓰면 약 141만 원이에요.'])
   expect([...items[0].querySelectorAll('.mc-fx-chip')].map((c) => c.textContent)).toEqual(['패션·쇼핑 +70,660원', '문화·여가 -54,800원', '기타 -29,748원'])
   expect(items[0].querySelector('.mc-fx-num.mc-fx-up').textContent).toBe('+70,660원')
-  expect(items[1].querySelector('.mc-fx-aside').textContent).toBe(' (지난달 같은 기간 406,000원)')
+  expect(items[1].querySelector('.mc-fx-aside').textContent).toBe(' (지난 날짜 기준)')
   expect(items[2].querySelector('.mc-fx-aside')).toBeNull()  // 붙여 쓴 괄호(11월)는 그대로
+})
+
+it('핵심 진단으로 시작하는 긴 분석은 쪽으로 나눠 한 쪽씩 보이고 버튼으로 넘긴다', async () => {
+  const text = (title, line) => ({ kind: 'text', title, lines: [title, line] })
+  await render({ result: true, lines: [], notices: [], view: [
+    { kind: 'head', title: '11월 1일~17일 · 소비 분석' },
+    { kind: 'text', tone: 'key', title: '핵심 진단', lines: ['핵심 진단', '식비가 늘었어요.'] },
+    { kind: 'rows', title: '이번 달 어디에 썼나요', rows: [{ name: '식비', amount: 193000, ratio: 40 }] },
+    text('지난달과 비교', '식비 193,000원'),
+    text('소비 추이', '9월 47만 원 → 10월 64.5만 원'),
+    text('앞으로', '다음 달도 약 68.8만 원이에요.'),
+  ] })
+  const page = () => host.querySelector('.mc-fx-page')
+  expect(page().textContent).toContain('식비가 늘었어요.')
+  expect(page().textContent).toContain('이번 달 어디에 썼나요')
+  expect(page().textContent).not.toContain('지난달과 비교')
+  expect(host.querySelector('.mc-fx-pager-nav').textContent).toContain('1/3 · 요약')
+  await act(() => host.querySelector('[aria-label="다음 쪽"]').click())
+  await act(() => host.querySelector('[aria-label="다음 쪽"]').click())
+  expect(page().textContent).toContain('9월 47만 원')
+  expect(page().textContent).toContain('다음 달도 약 68.8만 원이에요.')  // '앞으로'는 소비 추이 쪽에 붙는다
+  expect(host.querySelector('[aria-label="다음 쪽"]').disabled).toBe(true)
+})
+
+it('화면 안의 자세한 소비 분석 보기는 가운데 팝업에서 쪽을 넘겨 보고, 글만 있는 짧은 쪽은 한 쪽에 묶는다', async () => {
+  const { MemoryRouter } = await import('react-router')
+  const { default: PopupProvider } = await import('../popups/PopupProvider.jsx')
+  const { usePopup } = await import('../popups/context.js')
+  const Layer = () => <div id="layer">{usePopup().popup}</div>
+  const text = (title, line) => ({ kind: 'text', title, lines: [title, line] })
+  const content = { ...month, view: [
+    { kind: 'head', title: '이번 달 소비 성향' },
+    { kind: 'persona', mascot: 'planner', name: '계획 척척형', reasons: [] },
+    { kind: 'details', title: '자세한 소비 분석 보기', blocks: [
+      { kind: 'rows', title: '매달 반복되는 소비', rows: [{ name: '구독', value: '1만 원' }] },
+      text('언제 쓰나요', '주말에 더 써요.'), text('소비 추이', '꾸준했어요.'),
+    ] },
+  ] }
+  await act(() => root.render(<MemoryRouter><PopupProvider><ChatReply content={content} title="소비 분석" active /><Layer /></PopupProvider></MemoryRouter>))
+  expect(host.querySelector('.mc-fx-fold')).toBeNull()
+  await act(() => host.querySelector('.mc-fx-detail-open').click())
+  const dialog = host.querySelector('#layer [role="dialog"]')
+  expect(dialog.className).toContain('mc-dialog')
+  expect(dialog.querySelector('.mc-fx-pager-nav').textContent).toContain('1/2 · 매달 반복되는 소비')
+  await act(() => dialog.querySelector('[aria-label="다음 쪽"]').click())
+  expect(dialog.querySelector('.mc-fx-page').textContent).toContain('주말에 더 써요.')
+  expect(dialog.querySelector('.mc-fx-page').textContent).toContain('꾸준했어요.')
+  expect(dialog.querySelector('.mc-fx-pager-nav').textContent).toContain('2/2 · 언제 쓰나요 · 소비 추이')
+})
+
+it('월말 예상 답도 그래프마다 쪽을 나눠 넘겨 본다', async () => {
+  await render({ result: true, lines: [], notices: [], view: [
+    { kind: 'head', title: '11월 1일~17일 · 소비 분석' },
+    { kind: 'text', tone: 'key', title: '핵심 진단', lines: ['핵심 진단', '이번 달 생활비는 약 74.2만 원이 될 거예요.'] },
+    { kind: 'months', title: '월별 생활비', basis: '', bars: [{ label: '10월', kind: 'actual', actual: 645000, projected: 0 }, { label: '11월', kind: 'current', actual: 400000, projected: 342000 }] },
+    { kind: 'rows', title: '항목별 이번 달 말 예상', rows: [{ name: '식비', value: '34만' }] },
+    { kind: 'text', title: '앞으로', lines: ['앞으로', '교통·차량이 늘고 있어요.'] },
+    { kind: 'trend', title: '최근 4주 소비 추이', series: [{ code: 'T', name: '교통·차량', points: [{ label: '10/21', amount: 0 }, { label: '10/28', amount: 46700 }] }] },
+  ] })
+  const nav = () => host.querySelector('.mc-fx-pager-nav').textContent
+  expect(nav()).toContain('1/3 · 요약')
+  expect(host.querySelector('.mc-fx-page').textContent).toContain('월별 생활비')
+  expect(host.querySelector('.mc-fx-page').textContent).not.toContain('항목별 이번 달 말 예상')
+  await act(() => host.querySelector('[aria-label="다음 쪽"]').click())
+  expect(nav()).toContain('2/3 · 항목별 이번 달 말 예상')
+  expect(host.querySelector('.mc-fx-page').textContent).toContain('교통·차량이 늘고 있어요.')
+})
+
+it('돈 종류 답은 이름 · 금액 · 설명 줄로 나누고 서버 글자는 그대로 둔다', async () => {
+  const lines = ['이번 급여 주기 기준으로 돈의 종류를 나눠 보여드릴게요.',
+    '남은 생활비: 707,546원 — 이미 생활비로 배정한 돈 중 남은 금액이에요.',
+    '미배정 여윳돈: 사용·예약 내역 확인이 필요해 지금 쓸 수 있는 금액을 확정할 수 없어요.',
+    '쌓인 머니쿠션: 440,000원 — 비상용으로 따로 모은 돈이에요.',
+    '남은 생활비에는 앞으로 쓸 돈도 포함돼요.']
+  await render({ result: true, agent: 'spending', lines, notices: [] })
+  const rows = [...host.querySelectorAll('.mc-fx-money > div')]
+  expect(rows).toHaveLength(3)
+  expect(rows[0].querySelector('dt').textContent).toBe('남은 생활비')
+  expect(rows[0].querySelector('.mc-fx-money-amt').textContent).toBe('707,546원')
+  expect(rows[1].className).toBe('is-pending')
+  expect(host.querySelector('.mc-fx-money-lead').textContent).toBe(lines[0])
+  expect(host.querySelector('.mc-note').textContent).toBe(lines[4])
+})
+
+it('지난달과 비교는 카테고리마다 이번 금액 · 지난달 금액 · 이유로 묶는다', async () => {
+  const lines = ['지난달과 비교', '패션·쇼핑 189,160원 (지난달 같은 기간 3,800원)', '한 번에 쓰는 금액이 커진 영향이 11.9만 원이에요.',
+    '교통·차량 지출이 달라진 주된 이유는 돈을 쓰는 날에 더 자주 결제한 것이에요.', '교통·차량 73,200원 (지난달 같은 기간 52,800원)', '하루에 결제한 횟수가 늘어난 영향이 1.4만 원이에요.']
+  await render({ result: true, lines: [], notices: [], view: [{ kind: 'head', title: '소비 분석' }, { kind: 'text', title: '지난달과 비교', lines }] })
+  const rows = [...host.querySelectorAll('.mc-fx-compare > div')]
+  expect(rows.map((r) => r.querySelector('dt').textContent)).toEqual(['패션·쇼핑', '교통·차량'])
+  expect(rows[0].querySelector('.mc-fx-money-desc').textContent).toBe('지난달 같은 기간 3,800원')
+  expect(rows[0].textContent).toContain('11.9만 원')
+  expect(rows[1].textContent).toContain('주된 이유는')
+  expect(rows[1].textContent).toContain('1.4만 원')
+  expect(rows[0].querySelector('.mc-fx-arrow').className).toContain('mc-fx-up')
+  expect(rows[0].querySelector('.mc-fx-arrow').textContent).toBe('▲ 늘었어요')
+})
+
+it('달마다 흐름 문장은 달 칸을 화살표로 잇고 글자는 그대로 둔다', async () => {
+  const flow = '9월 47만 원 → 10월 64.5만 원'
+  await render({ result: true, lines: [], notices: [], view: [{ kind: 'head', title: '소비 분석' }, { kind: 'text', title: '소비 추이', lines: ['소비 추이', '10월 생활비는 늘었어요.', flow] }] })
+  expect(host.querySelector('.mc-fx-lines li').querySelector('.mc-fx-flow')).not.toBeNull()  // 흐름 칸이 섹션 맨 위
+  const steps = [...host.querySelectorAll('.mc-fx-flow-step')]
+  expect(steps.map((s) => s.textContent)).toEqual(['9월 47만 원', '10월 64.5만 원'])
+  expect(steps[1].className).toContain('is-last')
+  expect(host.querySelector('.mc-fx-flow').textContent).toBe(flow)
+})
+
+it('지난달과 비교의 전체 요약은 카테고리 묶음과 따로 모으고 총액은 지난달 → 이번 달 칸으로', async () => {
+  const lines = ['지난달과 비교', '지난달 같은 기간보다 18.9만 원 더 썼어요.', '이번 달 482,460원, 지난달 같은 기간 293,548원이에요.',
+    '식비 193,000원 (지난달 같은 기간 143,900원)', '돈 쓴 날이 줄어든 영향이 4.3만 원이에요.']
+  await render({ result: true, lines: [], notices: [], view: [{ kind: 'head', title: '소비 분석' }, { kind: 'text', title: '지난달과 비교', lines }] })
+  const sum = host.querySelector('.mc-fx-compare-sum')
+  expect([...sum.querySelectorAll('.mc-fx-flow-step b')].map((b) => b.textContent)).toEqual(['293,548원', '482,460원'])
+  expect(sum.textContent).toContain('18.9만 원 더 썼어요')
+  expect(sum.textContent).not.toContain('4.3만 원')
+  expect(host.querySelector('.mc-fx-compare dt').textContent).toBe('식비')
+})
+
+it('생활 패턴의 주말 · 평일 하루 평균 문장은 글자를 그대로 두고 두 칸으로 나란히 보인다', async () => {
+  const lines = ['생활 패턴', '주말 하루 평균 40,400원, 평일 하루 평균 23,400원이에요 (지난 날짜 기준).', '주말 소비의 44%가 패션·쇼핑이에요.',
+    '확인된 교통·차량 73,200원 중 금액이 큰 두 결제는 40,000원, 나머지를 모두 합하면 33,200원이에요.']
+  await render({ result: true, lines: [], notices: [], view: [{ kind: 'head', title: '소비 분석' }, { kind: 'text', title: '생활 패턴', lines }] })
+  const pair = host.querySelector('.mc-fx-pair')
+  expect(pair.getAttribute('aria-label')).toBe(lines[1])
+  expect(pair.querySelector('.is-last').textContent).toBe('주말 하루 평균 40,400원')
+  expect(host.querySelectorAll('.mc-fx-lines li')[2].textContent).toContain(lines[3])
+})
+
+it('예산을 관리하는 습관의 카테고리별 늘림 · 줄임 줄은 표로 나눈다', async () => {
+  const lines = ['예산을 관리하는 습관', '이번 급여 주기에 예산을 6번 바꿨어요.', '문화·여가: 1번 늘림(+50,000원), 3번 줄임(-65,000원)',
+    '식비: 1번 줄임(-50,000원)', '늘린 예산은 이번 주기 동안 지켜 보면 다음 달 계획이 더 정확해져요.']
+  await render({ result: true, lines: [], notices: [], view: [{ kind: 'head', title: '소비 분석' }, { kind: 'text', title: '예산을 관리하는 습관', lines }] })
+  const rows = [...host.querySelectorAll('.mc-fx-habit tbody tr')]
+  expect(rows.map((r) => r.querySelector('th').textContent)).toEqual(['문화·여가', '식비'])
+  expect(rows[0].querySelectorAll('td')[0].textContent).toBe('+50,000원1번')
+  expect(rows[0].querySelector('.mc-fx-down').textContent).toBe('-65,000원')
+  expect(rows[1].querySelectorAll('td')[0].textContent).toBe('-')
+  expect(host.querySelector('.mc-fx-money-lead').textContent).toBe(lines[1])
+  expect(host.querySelector('.mc-fx-lines').textContent).toContain('다음 달 계획')
 })

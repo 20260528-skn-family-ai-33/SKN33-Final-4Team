@@ -105,10 +105,10 @@ it('여러 항목으로 나눈 금액을 채팅으로 보내고 확정 없이 �
     .mockResolvedValueOnce(proposalTalk(card(), 8))
   await mount()
   await submit('식비 말고 다른 데도 분배하고 싶은데')
-  await click(button('식비', host.querySelector('.mc-budget-category-picks')))
-  await click(button('교통·차량', host.querySelector('.mc-budget-category-picks')))
-  for (let i = 0; i < 2; i++) await click(host.querySelector('[aria-label="1번 금액 10,000원 늘리기"]'))
-  for (let i = 0; i < 3; i++) await click(host.querySelector('[aria-label="2번 금액 10,000원 늘리기"]'))
+  await click(button('식비', host.querySelector('.mc-budget-chip-picks')))
+  await click(button('교통·차량', host.querySelector('.mc-budget-chip-picks')))
+  for (let i = 0; i < 3; i++) await click(host.querySelector('[aria-label="식비 받을 금액 10,000원 줄이기"]'))  // 미리 채운 50,000원 → 20,000원
+  for (let i = 0; i < 3; i++) await click(host.querySelector('[aria-label="교통·차량 받을 금액 10,000원 늘리기"]'))
   await click(button('나눈 예산 미리보기'))
   expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', text: '기존 배분 대신 교육 예산을 50000원 줄여 식비에 20000원, 교통·차량에 30000원 나눠줘.' })
   expect(host.querySelector('.mc-budget-amount fieldset').disabled).toBe(true)
@@ -144,9 +144,9 @@ it('변경안의 배분 수정은 기존 총액을 다시 나누고 새 안만 �
   await click(button('배분 수정'))
   expect(apiSend).toHaveBeenCalledTimes(1)
   expect(host.querySelector('select')).toBeNull()
-  await click(button('교통·차량', host.querySelector('.mc-budget-category-picks')))
-  await click(host.querySelector('[aria-label="1번 금액 10,000원 줄이기"]'))
-  await click(host.querySelector('[aria-label="2번 금액 10,000원 늘리기"]'))
+  await click(button('교통·차량', host.querySelector('.mc-budget-chip-picks')))
+  await click(host.querySelector('[aria-label="식비 받을 금액 10,000원 줄이기"]'))
+  await click(host.querySelector('[aria-label="교통·차량 받을 금액 10,000원 늘리기"]'))
   expect(button('예산 확정하기')).toBeUndefined()
   await click(button('나눈 예산 미리보기'))
   expect(apiSend.mock.calls[1][2].text).toBe('기존 배분 대신 교육 예산을 50000원 줄여 식비에 40000원, 교통·차량에 10000원 나눠줘.')
@@ -186,14 +186,16 @@ it('비교안 여러 개를 펼쳐도 요청하지 않고 선택할 때만 최�
   expect(host.textContent).toContain('부족 25,000원')
   expect(host.textContent).toContain('기타 남은 예산 0원')
   await click(panels[0].querySelector('summary'))
-  await click(panels[1].querySelector('summary'))
   expect(panels[0].querySelector('details').open).toBe(true)
-  expect(panels[1].querySelector('details').open).toBe(true)
+  expect(panels[0].querySelector('details').textContent).toContain('교통·차량')  // 펼치면 위에 없던 변화만
+  expect(panels[0].querySelector('details').textContent).not.toContain('식비')
+  expect(panels[1].querySelector('details')).toBeNull()  // 위에 다 보여서 펼칠 게 없다
   expect(apiSend).toHaveBeenCalledTimes(1)
-  expect(button('여윳돈 활용')).toBeUndefined()
-  await click(button('추천대로 선택하기', panels[1]))
+  expect([...host.querySelectorAll('button:not([role="radio"])')].find((el) => el.textContent.trim() === '여윳돈 활용')).toBeUndefined()  // 카드 제목(고르기) 말고 별도 버튼은 없다
+  expect(panels[1].classList.contains('is-selected')).toBe(true)  // 추천 카드를 미리 골라 둔다
+  await click(button('추천대로 선택하기'))
   expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', choice: { value: 'plan_spare', turn: 7 } })
-  expect(button('이 배분으로 선택하기', panels[0]).disabled).toBe(true)
+  expect(panels[0].querySelector('[role="radio"]')).toBeNull()  // 보낸 뒤(지난 답)는 고를 수 없다
 })
 
 it('조정안의 자동 감액 항목도 상세를 펼치기 전에 보여 준다', async () => {
@@ -258,7 +260,7 @@ it('자세히 요청한 답변은 변경안·비교안·설명 상세를 펼친 
   await mount()
   await submit('자세히')
   const details = [...host.querySelectorAll('.mc-budget-details')]
-  expect(details.length).toBe(4)
+  expect(details.length).toBe(2)  // 설명 + 생활비 내 재배분의 나머지 변화 (여윳돈 · 저축 안은 위에 다 보여 펼칠 게 없다)
   expect(details.every((element) => element.open)).toBe(true)
   expect(host.textContent).toContain('하한과 금액 단위를 함께 확인했어요.')
   expect(apiSend).toHaveBeenCalledTimes(1)
