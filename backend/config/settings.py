@@ -167,8 +167,13 @@ REST_FRAMEWORK = {
     "DATE_FORMAT": "iso-8601",
     "TIME_FORMAT": "iso-8601",
     # 비밀번호 대입 막기 (users/api.py 의 *Throttle). 넘으면 429 throttled
-    "DEFAULT_THROTTLE_RATES": {"login": "5/min", "signup": "10/hour", "withdraw": "5/hour"},
+    "DEFAULT_THROTTLE_RATES": {"login": "5/min", "signup": "10/hour", "withdraw": "5/hour", "password_reset": "5/hour"},
 }
+
+# 비밀번호 재설정 링크 유효 시간 (기본 3일 → 1시간)
+PASSWORD_RESET_TIMEOUT = 60 * 60
+# 메일 링크가 가리킬 화면 주소. 요청 Host 는 못 쓴다 (Vite 프록시가 127.0.0.1:8000 으로 바꿈). 배포에선 https://도메인
+FRONTEND_URL = os.getenv("FRONTEND_URL", "").strip().rstrip("/") or "http://localhost:5173"
 
 # 횟수 제한 기록이 남는 곳. 기본(LocMem)은 프로세스마다 따로 센다
 # shortcut: gunicorn 워커가 여럿이면 워커 수만큼 느슨해짐, 배포 때 settings_production 에서 DB 캐시로 바꾼다

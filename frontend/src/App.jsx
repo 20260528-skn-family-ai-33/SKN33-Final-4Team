@@ -11,6 +11,8 @@ import AssistantPage from './pages/AssistantPage.jsx'
 import LoginPage from './pages/LoginPage.jsx'
 import SignupPage from './pages/SignupPage.jsx'
 import OnboardPage from './pages/OnboardPage.jsx'
+import PasswordResetPage from './pages/PasswordResetPage.jsx'
+import PasswordResetConfirmPage from './pages/PasswordResetConfirmPage.jsx'
 import ProfilePage from './pages/ProfilePage.jsx'
 import MyPage from './pages/MyPage.jsx'
 import MyInfoPage from './pages/MyInfoPage.jsx'
@@ -36,6 +38,7 @@ const ROUTES = [
   [PATHS.home, HomePage], [PATHS.txs, TransactionsPage], [PATHS.budget, BudgetPage],
   [PATHS.fund, CushionPage], [PATHS.assistant, AssistantPage],
   [PATHS.login, LoginPage], [PATHS.signup, SignupPage], [PATHS.onboard, OnboardPage],
+  [PATHS.passwordReset, PasswordResetPage], [PATHS.passwordResetConfirm, PasswordResetConfirmPage],
   [PATHS.profile, ProfilePage], [PATHS.my, MyPage], [PATHS.myInfo, MyInfoPage],
   [PATHS.myPolicies, SavedPoliciesPage],
   [PATHS.connect, ConnectPage], [PATHS.connectAuth, ConnectAuthPage], [PATHS.connectAccounts, ConnectAccountsPage],

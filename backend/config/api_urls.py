@@ -55,6 +55,8 @@ urlpatterns = [
     path("auth/login/", users_api.login, name="login"),
     path("auth/logout/", users_api.logout, name="logout"),
     path("auth/me/", users_api.me, name="me"),
+    path("auth/password-reset/", users_api.password_reset, name="password-reset"),
+    path("auth/password-reset/confirm/", users_api.password_reset_confirm, name="password-reset-confirm"),
 
     # 화면 데이터
     path("profile/", users_profile.profile, name="profile"),

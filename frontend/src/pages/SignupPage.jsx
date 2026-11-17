@@ -13,16 +13,7 @@ import { useConsentDocs } from '../popups/consentDocs.js'
 import { usePopup } from '../popups/context.js'
 import { PATHS } from '../routes.js'
 import { apiSend } from '../utils/api.js'
-
-const PW_MIN = 8
-const PW_MAX = 25
-// 영문 · 숫자 · 특수문자 중 몇 가지를 썼는지
-const pwKinds = (p) => [/[A-Za-z]/, /[0-9]/, /[^A-Za-z0-9\s]/].filter((re) => re.test(p)).length
-const PW_RULES = [
-  [`${PW_MIN}~${PW_MAX}자`, (p) => p.length >= PW_MIN && p.length <= PW_MAX],
-  ['영문 · 숫자 · 특수문자 중 2가지 이상', (p) => pwKinds(p) >= 2],
-]
-const pwOk = (p) => PW_RULES.every(([, test]) => test(p))
+import { PW_MAX, PW_RULES, pwOk } from '../utils/password.js'
 
 export default function SignupPage() {
   const navigate = useNavigate()

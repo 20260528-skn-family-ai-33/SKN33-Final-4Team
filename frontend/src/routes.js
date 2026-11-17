@@ -9,6 +9,9 @@ export const PATHS = {
   // 회원 (users)
   login: '/login',
   signup: '/signup',
+  passwordReset: '/password-reset',
+  // 재설정 메일 속 링크 주소 — 서버 users/api.py password_reset 과 같아야 한다
+  passwordResetConfirm: '/reset-password',
   onboard: '/start',
   profile: '/profile',
   my: '/my',
