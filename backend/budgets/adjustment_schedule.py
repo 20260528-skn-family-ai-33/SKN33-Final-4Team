@@ -56,6 +56,8 @@ def planning_context(context, planning):
     planned['bucket_available'] = {code: max(amount - (0 if code == 'SPARE' else planned['bucket_floors'].get(code, 0)), 0)
                                    for code, amount in planned['buckets'].items()}
     planned['bucket_status'] = {code: 'ready' for code in planned['buckets']}
+    # These sources are next-cycle allocations, not estimates of current-cycle balances.
+    planned['estimated_buckets'] = []
     planned['reserve_anchors'] = {code: max(amount, 0) for code, amount in planned['buckets'].items()}
     # Current-cycle spending cannot forecast an unstarted cycle; use verified budget examples.
     from .adjustment_core.protection import next_cycle_floors
