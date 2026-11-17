@@ -153,8 +153,7 @@ def handle(request, *, store, complete, user=None, execute=None, explain_plan=No
             and (need is not None or _multi_step(decision)):
         result = _judged(result, decision, ran[-1], question, need, user, request, agent_complete)
     if analysis_notice:
-        result["reply"] = {"lines": [analysis_notice], "notices": [], "view": [
-            {"kind": "head", "title": "소비 분석"}, {"kind": "text", "lines": [analysis_notice]}]}
+        result['reply'] = {**result['reply'], 'notices': [*result['reply'].get('notices', []), analysis_notice]}
     if note and result.get("reply"):  # 가설 경로로 나누며 뺀 나누기 — 확인하지 못했다고 밝힌다
         result["reply"] = {**result["reply"], "notices": [*result["reply"].get("notices", []), note]}
     if context.get("budget_return") and result["status"] == "replied" and result.get("reply"):

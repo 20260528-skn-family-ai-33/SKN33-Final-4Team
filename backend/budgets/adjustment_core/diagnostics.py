@@ -25,25 +25,17 @@ def day(value):
 def build_history(as_of, categories, records, complete_days, normalization_checks):
     """Upstream supplies normalized purchases and verified coverage, never allocation amounts.
 
-    Read at most three completed months plus this month for recurrence; forecast
-    only the contiguous verified suffix of the last 30 completed calendar days.
+    Use up to 30 observed days. Unqueried dates are never inserted as zero-spend days.
     """
     from scripts.budget_design.plan_b_history import detect_one_offs, completed_months
     today = day(as_of)
     if (not isinstance(records, list) or not isinstance(complete_days, (list, tuple))
-            or any(normalization_checks.get(k) != "verified" for k in CHECKS)):
+            or not isinstance(normalization_checks, dict)
+            or any(normalization_checks.get(k) not in {"verified", "unknown"} for k in CHECKS)):
         return {"status": "unknown", "scope": "variable_living", "reason": "normalization_unverified"}
-    covered = {day(d) for d in complete_days}
-    dates = []
-    for offset in range(1, 31):
-        d = today - offset * DAY
-        if d not in covered:
-            break
-        dates.append(d.isoformat())
-    dates.reverse()
-    by_day = {d: dict.fromkeys(categories, 0) for d in dates}
-    detected, seen, transactions = [], set(), []
     history_start = day(completed_months(today)[0] + "-01")
+    covered = {day(d) for d in complete_days if history_start <= day(d) < today}
+    detected, seen, transactions, purchases, unclassified = [], set(), [], [], set()
     for record in records:
         if not isinstance(record, dict):
             raise ValueError("invalid_transaction")
@@ -65,26 +57,40 @@ def build_history(as_of, categories, records, complete_days, normalization_check
             continue
         code = record.get("category")
         if code not in categories:
-            # Unknown living purchases must be classified before a complete forecast.
-            if occurred.isoformat() in by_day:
-                return {"status": "unknown", "scope": "variable_living", "reason": "unclassified_spending"}
+            if history_start <= occurred < today:
+                unclassified.add(occurred)
             continue
-        if occurred.isoformat() in by_day:
-            by_day[occurred.isoformat()][code] += amount
+        if history_start <= occurred < today:
+            purchases.append((occurred, code, amount))
         if history_start <= occurred < today and occurred in covered:
             safe_id = digest({"transaction": tx_id})
             transactions.append({"id": safe_id, "month": occurred.strftime("%Y-%m"),
                                  "category": code, "amount": amount,
                                  "merchant_key": record.get("merchant_key")})
+    covered -= unclassified
+    selected_days = sorted(covered | {occurred for occurred, _, _ in purchases})[-30:]
+    dates = [d.isoformat() for d in selected_days]
+    by_day = {d: dict.fromkeys(categories, 0) for d in dates}
+    for occurred, code, amount in purchases:
+        if occurred.isoformat() in by_day:
+            by_day[occurred.isoformat()][code] += amount
     found = {c["id"]: c for c in detect_one_offs(transactions)}
     for record in records:
         candidate = found.get(digest({"transaction": record["transaction_id"]}))
         if candidate and record["occurred_on"] in by_day and not candidate["excluded_by_recurrence"]:
             detected.append({"id": candidate["id"], "date": record["occurred_on"],
                              "category": candidate["category"], "amount": candidate["amount"]})
-    return {"status": "ready" if len(dates) >= 14 else "unknown", "scope": "variable_living",
-            "reason": None if len(dates) >= 14 else "insufficient_complete_days",
+    verified = bool(dates) and all(d in covered for d in selected_days) and all(normalization_checks[k] == 'verified' for k in CHECKS)
+    complete_dates = [d.isoformat() for d in selected_days if d in covered]
+    return {"status": ("ready" if verified else "observed") if dates else "unknown", "scope": "variable_living",
+            "reason": None if verified else "observed_transactions_only" if dates else "no_observed_days",
             "policy_version": POLICY, "dates": dates, "samples": list(by_day.values()),
+            "complete_dates": complete_dates,
+            "observation": {"from": dates[0] if dates else None, "through": dates[-1] if dates else None,
+                "days": len(dates), "complete_days": len(complete_dates),
+                "limited": not verified or len(dates) < 14 or not dates or dates[-1] != (today - DAY).isoformat()
+                    or (selected_days[-1] - selected_days[0]).days + 1 != len(dates),
+                "category_days": {code: sum(d in complete_dates or sample[code] > 0 for d, sample in by_day.items()) for code in categories}},
             "normalization_checks": deepcopy(normalization_checks), "candidates": detected,
             "record_fingerprint": digest(records), "review_decisions": {}}
 
@@ -93,14 +99,18 @@ def resolve_history(history, as_of, categories):
     """Keep unknown candidates; remove only confirmed amounts, never their calendar days."""
     history = deepcopy(history)
     dates, samples = history.get("dates", []), history.get("samples", [])
-    if (history.get("status") != "ready" or history.get("scope") != "variable_living"
-            or history.get("policy_version") != POLICY or not 14 <= len(samples) <= 30
+    if (history.get("status") not in {"ready", "observed"} or history.get("scope") != "variable_living"
+            or history.get("policy_version") != POLICY or not 1 <= len(samples) <= 30
             or len(dates) != len(samples)
-            or any(history.get("normalization_checks", {}).get(k) != "verified" for k in CHECKS)):
+            or any(history.get("normalization_checks", {}).get(k) not in (
+                {"verified", "unknown"} if history.get('status') == 'observed' else {"verified"}) for k in CHECKS)):
         raise ValueError("history_unverified")
-    expected = [(day(as_of) - n * DAY).isoformat() for n in range(len(samples), 0, -1)]
-    if dates != expected:
-        raise ValueError("history_not_recent_contiguous")
+    parsed_dates = [day(d) for d in dates]
+    if parsed_dates != sorted(set(parsed_dates)) or any(d >= day(as_of) for d in parsed_dates):
+        raise ValueError("invalid_observation_dates")
+    if (history.get('status') == 'observed' and (not isinstance(history.get('complete_dates'), list)
+            or any(d not in dates for d in history['complete_dates']))):
+        raise ValueError('invalid_complete_dates')
     if any(not isinstance(s, dict) or set(s) != set(categories)
            or any(type(v) is not int or v < 0 for v in s.values()) for s in samples):
         raise ValueError("invalid_history_samples")

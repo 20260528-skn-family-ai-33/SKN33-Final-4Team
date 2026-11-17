@@ -30,6 +30,19 @@ def review(index=0, ids=None):
 
 
 class FinancialPlannerTest(unittest.TestCase):
+    def test_old_short_observed_history_still_produces_a_forecast(self):
+        ctx = financial_context()
+        ctx.update(today='2026-11-12', spending_status='partial', budget_preview=True)
+        history = ctx['diagnostic_inputs']['history']
+        history.update(status='observed', dates=history['dates'][-2:], samples=history['samples'][-2:],
+                       candidates=[], complete_dates=[], observation={'through': '2026-11-09', 'limited': True})
+        result = diagnose(ctx, envelope(item('FOOD', 50000)))
+        self.assertEqual(result['status'], 'ready')
+        self.assertEqual(result['basis'], 'forecast')
+        self.assertEqual(result['history_days'], 2)
+        self.assertEqual(result['remaining_days'], 8)
+        self.assertIn('참고 금액', result['facts']['basis'])
+
     def setUp(self):
         self.inp = financial_context()
         self.inp['priorities'].pop('FASHION_SHOPPING')

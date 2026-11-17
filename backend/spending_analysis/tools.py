@@ -197,6 +197,8 @@ def spend_query(user, period, category=None, *, where=None, overview=False, deta
     if detail:
         fig["detail"] = _detail(items, category, bool((where or {}).get("include_fixed")))
     out = {"period": period, "coverage": cov, "observed": fig, "confirmed": fig if cov["state"] == "complete" else None}
+    out['observed_count'] = len(items)
+    out['observed_through'] = max((row['occurred_on'] for row in items), default=None)
     return {**out, "fixed_excluded": stats["fixed_excluded"], "fixed_names": stats["fixed_names"]} if "fixed_excluded" in stats else out
 
 

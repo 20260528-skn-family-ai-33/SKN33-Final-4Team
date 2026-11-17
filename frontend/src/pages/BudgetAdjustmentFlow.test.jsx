@@ -191,9 +191,9 @@ it('비교안 여러 개를 펼쳐도 요청하지 않고 선택할 때만 최�
   expect(panels[1].querySelector('details').open).toBe(true)
   expect(apiSend).toHaveBeenCalledTimes(1)
   expect(button('여윳돈 활용')).toBeUndefined()
-  await click(button('이 안 선택하기', panels[1]))
+  await click(button('추천대로 선택하기', panels[1]))
   expect(apiSend.mock.calls[1][2]).toEqual({ conversationId: 'conversation-1', choice: { value: 'plan_spare', turn: 7 } })
-  expect(button('이 안 선택하기', panels[0]).disabled).toBe(true)
+  expect(button('이 배분으로 선택하기', panels[0]).disabled).toBe(true)
 })
 
 it('조정안의 자동 감액 항목도 상세를 펼치기 전에 보여 준다', async () => {
@@ -245,7 +245,7 @@ it('부분 반영안과 다른 재원은 비교만 하며 선택 전에는 확�
   await submit('생활비에서만 조정할래')
   expect(host.textContent).toContain('여윳돈')
   expect(host.textContent).toContain('200,000원')
-  expect(button('이 안 선택하기')).toBeUndefined()
+  expect(host.querySelector('.mc-budget-select')).toBeNull()
   expect(button('예산 확정하기')).toBeUndefined()
   await click(button('가능한 금액만 반영'))
   expect(apiSend.mock.calls[1][2].choice).toEqual({ value: 'partial_accept', turn: 7 })

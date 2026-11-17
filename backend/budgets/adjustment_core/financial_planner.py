@@ -121,9 +121,10 @@ def _forecast_diagnosis(context, request):
     target = item["category"]
     if target in context.get("locks", {}):
         return {"status": "unsupported", "message": "잠긴 항목은 먼저 잠금 해제 여부를 확인해 주세요. 임의로 풀지 않아요."}
-    if info.get("as_of") != context.get("today") or not info.get("as_of"):
+    from .protection import daily_averages, remaining_days
+    if not info.get("as_of"):
         return {"status": "needs_data", "field": "stale"}
-    days = info.get("remaining_days")
+    days = remaining_days(context)
     if type(days) is not int or not 0 <= days <= 365:
         return {"status": "needs_data", "field": "period"}
     planned = info.get("planned_spare", {})
@@ -132,19 +133,19 @@ def _forecast_diagnosis(context, request):
         samples, pending = resolve_history(history, info["as_of"], context["allocations"])
     except (ValueError, TypeError, KeyError):
         return {"status": "needs_data", "field": "history", "reason": history.get("reason", "history_unverified")}
-    if context.get("spending_status") != "complete":
-        return {"status": "needs_data", "field": "history"}
     if planned.get("status") not in {"confirmed", "user_confirmed"} or planned.get("scope") != "unbudgeted_only" or not money(planned.get("amount")):
         return {"status": "needs_data", "field": "planned"}
-    averages = {c: Fraction(sum(s[c] for s in samples), len(samples)) for c in context["allocations"]}
-    cycle_days = info.get("cycle_remaining_days", days)
+    averages = daily_averages(context)
+    if not averages or target not in averages:
+        return {"status": "needs_data", "field": "history", "reason": "target_observations_missing"}
+    cycle_days = days
     if type(cycle_days) is not int or not 0 <= cycle_days <= 365:
         return {"status": "needs_data", "field": "period"}
     forecast = {c: math.ceil(n * cycle_days) for c, n in averages.items()}
     reserve_forecast = {c: math.ceil(n * days) for c, n in averages.items()}
     expected_other = sum(v for c, v in reserve_forecast.items() if c != target)
     relevant = [p for p in pending if p["category"] == target or
-                reserve_forecast[p["category"]] > max(context["allocations"][p["category"]] - context["spent"].get(p["category"], 0), 0)
+                reserve_forecast.get(p["category"], 0) > max(context["allocations"][p["category"]] - context["spent"].get(p["category"], 0), 0)
                 or "LIVING" in (request.get("sources") or SOURCES)]
     if relevant:
         return {"status": "needs_data", "field": "one_off", "candidates": relevant}
@@ -189,6 +190,10 @@ def _forecast_diagnosis(context, request):
         "reserve": f"예정된 지출과 다른 항목에서 부족해질 돈을 대비해 여윳돈 {reserve:,}원을 남기길 권해요. 예상 금액이라 직접 바꿀 수 있어요.",
         "savings": f"저축 배정액 {context['buckets']['SAVINGS']:,}원 중 확인된 이동 가능액은 {context.get('bucket_available', {}).get('SAVINGS', 0):,}원이에요. 금액만으로 저축 과다를 판단하지 않아요.",
     }
+    from .responses import observation_notice
+    notice = observation_notice(context)
+    if notice:
+        base['facts']['basis'] = notice
     return base
 
 

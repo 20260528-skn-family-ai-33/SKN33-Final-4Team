@@ -44,6 +44,20 @@ def oversized_increase(context, item):
     return (increase, limit) if increase > limit else None
 
 
+def oversized_decrease(context, item):
+    if item.get('amount') is None or item.get('amount_mode') in (None, 'available'):
+        return None
+    try:
+        _data(context, {'items': [item]})
+    except AdjustmentError as error:
+        if str(error) == 'negative_target':
+            data = _data(context, {'items': []})
+            current = _value(data, data['before'], item['category'])
+            decrease = item['amount'] if item['amount_mode'] == 'by' else current * item['amount'] // 100
+            return decrease, current
+    return None
+
+
 def large_increase_warning(context, items, *, reason=None):
     income = context.get('monthly_income')
     if type(income) is not int or income <= 0 or not items or any(item.get('amount') is None for item in items):
@@ -177,6 +191,7 @@ def _data(context, envelope):
         raise AdjustmentError("overlapping_living_requests")
     normalized["items"] = data["items"]
     data["spending_verified"] = context.get("spending_status", "complete") == "complete"
+    data['estimated_buckets'] = set(context.get('estimated_buckets', []))
     data['salary_review'] = bool(context.get('salary_review'))
     if data['salary_review'] and not context['salary_review'].get('spare_verified'):
         data['spending_verified'] = False
@@ -201,7 +216,7 @@ def _ready(data, category, *, increasing=False):
         return
     if category in BUCKETS:
         state = data["bucket_status"][category]
-        if state == "unknown":
+        if state == "unknown" and not increasing:
             raise _Blocked("needs_data", "bucket_unverified", category=category)
         if state == "disabled":
             raise _Blocked("infeasible", "bucket_disabled", category=category)
@@ -223,7 +238,9 @@ def _check_alignment(data):
 
 
 def _check_spending(context):
-    if context.get("spending_status", "complete") != "complete" and not context.get("budget_preview"):
+    observed = context.get('observed_spending') or {}
+    if (context.get("spending_status", "complete") != "complete" and not context.get("budget_preview")
+            and not (type(observed.get('transaction_count')) is int and observed['transaction_count'] > 0)):
         raise _Blocked("needs_data", "spending_unverified")
 
 
@@ -278,18 +295,7 @@ def _groups(data, sources, recipient, forbidden):
     return [group for group in groups if group]
 
 
-def priority_destination(context, *, excluded=(), requested=()):
-    candidates = [code for code in context['priorities'] if code in context['allocations']
-                  and code not in requested and code not in context.get('locks', {}) and code not in excluded
-                  and code not in NON_BUDGET_CODES]
-    return min(candidates, key=lambda code: context['priorities'][code]) if candidates else None
-
-
 def _single_destination(data, *, living=False):
-    if not living and data['request']['destinations'] == [LIVING]:
-        recipient = priority_destination(data, excluded=data['excluded'], requested=data['targets'])
-        if recipient:
-            return recipient
     choices = [c for c in data["request"]["destinations"] if c != LIVING and c not in data["excluded"]]
     if living:
         choices = [c for c in choices if c in data["allocations"]]
@@ -355,6 +361,8 @@ def _response(data, status, amounts=None, transfers=(), conflicts=()):
     spending_verified = (data.get('spending_verified', True) or (not data.get('salary_review')
         and not any(amounts[c] < before[c] for c in data['allocations'])
         and not any(i['amount_mode'] == 'remaining' for i in data['items'])))
+    if any(row['from'] in data['estimated_buckets'] for row in transfers):
+        spending_verified = False
     return {"kind": "funding", "status": status, "spending_verified": spending_verified, "requests": deepcopy(data["request"]),
             "allocations": {c: amounts[c] for c in data["allocations"]},
             "buckets": {c: amounts[c] for c in BUCKETS},
@@ -591,7 +599,7 @@ def available_adjustment(context, category, direction, *, sources=(), destinatio
         _check_alignment(data)
         if direction == "up":
             recipient = _single_destination(data, living=True) if category == LIVING else category
-            _ready(data, recipient)
+            _ready(data, recipient, increasing=True)
             if not sources:
                 raise _Blocked("infeasible", "source_required")
             for source in sources:
@@ -601,7 +609,7 @@ def available_adjustment(context, category, direction, *, sources=(), destinatio
             maximum = sum(capacities.values())
         else:
             recipient = _single_destination(data)
-            _ready(data, recipient)
+            _ready(data, recipient, increasing=True)
             if category == LIVING:
                 candidates = _selected_categories(data, list(sources) or [LIVING])
                 capacities[LIVING] = _unit_amount(data, min(sum(_capacity(data, data["before"], c, recipient) for c in candidates),

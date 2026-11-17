@@ -180,9 +180,8 @@ class AdjustmentCalculationTest(unittest.TestCase):
         self.assertIn('최근 지출', explanation['why'])
         self.assertIn('계좌·카드 연결 관리', explanation['next'])
 
-    def test_released_living_budget_uses_priority_and_preserves_locks_and_exclusions(self):
-        for locked, excluded, recipient in ((False, [], 'FOOD'), (True, [], 'TRANSPORT_CAR'),
-                                             (False, ['FOOD'], 'TRANSPORT_CAR')):
+    def test_released_budget_requires_a_named_destination_regardless_of_priority(self):
+        for locked, excluded in ((False, []), (True, []), (False, ['FOOD'])):
             with self.subTest(locked=locked, excluded=excluded):
                 inp = context()
                 if locked:
@@ -191,10 +190,10 @@ class AdjustmentCalculationTest(unittest.TestCase):
                 request = envelope(item('MEDICAL_HEALTH', 10000, 'down', 'to'),
                                    destinations=['LIVING'], excluded=excluded)
                 result = simulate_funding(inp, request)
-                self.assertEqual(result['status'], 'proposed')
-                self.assertEqual(result['allocations']['MEDICAL_HEALTH'], 10000)
-                self.assertEqual(result['allocations'][recipient], before['allocations'][recipient] + 40000)
-                self.assertEqual(sum(result['allocations'].values()), sum(inp['allocations'].values()))
+                self.assertEqual(result['status'], 'needs_destination')
+                self.assertEqual(result['allocations'], before['allocations'])
+                self.assertEqual(result['buckets'], before['buckets'])
+                self.assertEqual(result['transfers'], [])
                 self.assertEqual(inp, before)
                 validate_funding(inp, request, result)
 
@@ -383,6 +382,89 @@ class AdjustmentCalculationTest(unittest.TestCase):
         selected = next(p for p in result['plans'] if p['id'] == 'living')
         self.assertEqual(selected['result']['buckets'], inp['buckets'])
 
+    def test_category_reduction_without_priorities_compares_all_destination_types(self):
+        inp = context()
+        inp['priorities'] = {}
+        before = deepcopy(inp)
+        result = compare_adjustments(inp, envelope(item('FOOD', 100000, 'down')), allocate_group_reduction=allocation)
+        plans = {plan['id']: plan for plan in result['plans'] if plan['status'] == 'ready'}
+        self.assertEqual(set(plans), {'spare', 'savings', 'cushion'})
+        for plan in plans.values():
+            self.assertEqual(plan['result']['allocations']['FOOD'], 300000)
+            self.assertEqual(plan['amount'], 100000)
+            validate_funding(inp, plan['envelope'], plan['result'])
+        self.assertEqual(plans['savings']['result']['buckets']['SAVINGS'], 700000)
+        self.assertEqual(plans['cushion']['result']['buckets']['CUSHION_MONTHLY'], 300000)
+        living = next(plan for plan in result['plans'] if plan['id'] == 'living')
+        self.assertEqual(living['status'], 'needs_destination')
+        self.assertIsNone(living['result'])
+        self.assertEqual(living['envelope']['items'], [item('FOOD', 100000, 'down', 'by') | {'automatic': False}])
+        self.assertEqual(living['envelope']['destinations'], ['LIVING'])
+        self.assertEqual(inp, before)
+
+    def test_unnamed_destination_cannot_validate_an_older_automatic_allocation(self):
+        inp = context()
+        explicit = envelope(item('FOOD', 100000, 'down'), destinations=['TRANSPORT_CAR'])
+        result = self.simulate(inp, explicit)
+        unnamed = envelope(item('FOOD', 100000, 'down'), destinations=['LIVING'])
+        result['requests']['destinations'] = ['LIVING']
+        with self.assertRaises(ValueError):
+            validate_funding(inp, unnamed, result)
+
+    def test_reduction_explicit_destination_and_exclusions_are_not_expanded(self):
+        inp = context()
+        result = compare_adjustments(inp, envelope(item('FOOD', 100000, 'down'),
+            destinations=['MEDICAL_HEALTH'], excluded=['SAVINGS']),
+            allocate_group_reduction=allocation, respect_selected=True)
+        plans = [plan for plan in result['plans'] if plan['status'] == 'ready']
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(plans[0]['result']['allocations']['MEDICAL_HEALTH'], 150000)
+        self.assertEqual(plans[0]['result']['buckets'], inp['buckets'])
+        excluded = compare_adjustments(inp, envelope(item('FOOD', 100000, 'down'),
+            excluded=['SAVINGS', 'CUSHION_MONTHLY']), allocate_group_reduction=allocation)
+        self.assertEqual({plan['id'] for plan in excluded['plans'] if plan['status'] == 'ready'}, {'spare'})
+
+    def test_receiving_bucket_does_not_require_withdrawal_availability(self):
+        inp = context()
+        inp['priorities'] = {}
+        inp['bucket_status'] = dict.fromkeys(inp['buckets'], 'unknown')
+        inp['bucket_available'] = {}
+        before = deepcopy(inp)
+        for code in ('SPARE', 'SAVINGS', 'CUSHION_MONTHLY'):
+            with self.subTest(destination=code):
+                request = envelope(item('FOOD', 100000, 'down'), destinations=[code])
+                result = simulate_funding(inp, request, allocate_group_reduction=allocation)
+                self.assertEqual(result['status'], 'proposed')
+                self.assertEqual(result['allocations']['FOOD'], 300000)
+                self.assertEqual(result['buckets'][code], inp['buckets'][code] + 100000)
+                validate_funding(inp, request, result)
+                quote = available_adjustment(inp, 'FOOD', 'down', destinations=[code],
+                                             allocate_group_reduction=allocation)
+                self.assertEqual((quote['status'], quote['maximum']), ('ready', 200000))
+                outgoing = simulate_funding(inp, envelope(item('FOOD', 10000), sources=[code]),
+                                            allocate_group_reduction=allocation)
+                self.assertEqual(outgoing['status'], 'needs_data')
+                self.assertEqual(outgoing['conflicts'][0]['code'], 'bucket_unverified')
+                self.assertEqual(outgoing['transfers'], [])
+                self.assertEqual(outgoing['allocations'], inp['allocations'])
+        comparison = compare_adjustments(inp, envelope(item('FOOD', 100000, 'down')),
+                                         allocate_group_reduction=allocation)
+        self.assertEqual({p['id'] for p in comparison['plans'] if p['status'] == 'ready'},
+                         {'spare', 'savings', 'cushion'})
+        self.assertEqual(inp, before)
+
+    def test_receiving_bucket_still_requires_budget_and_enabled_feature(self):
+        inp = context()
+        inp['bucket_status']['CUSHION_MONTHLY'] = 'disabled'
+        request = envelope(item('FOOD', 100000, 'down'), destinations=['CUSHION_MONTHLY'])
+        result = simulate_funding(inp, request, allocate_group_reduction=allocation)
+        self.assertEqual(result['status'], 'infeasible')
+        self.assertEqual(result['conflicts'][0]['code'], 'bucket_disabled')
+        self.assertEqual(result['transfers'], [])
+        inp['buckets'].pop('CUSHION_MONTHLY')
+        with self.assertRaisesRegex(ValueError, 'missing_buckets'):
+            simulate_funding(inp, request, allocate_group_reduction=allocation)
+
     def test_combined_savings_increase_uses_three_sources_and_preserves_spare(self):
         inp = context()
         request = {**envelope(item('SAVINGS', 300000)), 'spare_minimum': 200000}
@@ -488,8 +570,12 @@ class AdjustmentConversationTest(unittest.TestCase):
         self.assertEqual(self.store.state, before)
         self.assertEqual(self.cards, [])
         self.assertNotIn('plan_spare', dict(self.store.state['pending']['choices']))
-        card = self.turn("plan_living")["reply"]["proposal"]
-        self.assertEqual(card["allocations"]["FOOD"], 600000)
+        self.turn("plan_living")
+        self.assertEqual(self.store.state['pending']['kind'], 'amount')
+        self.assertIsNone(self.store.state['requests'][0]['amount'])
+        self.assertEqual(self.cards, [])
+        card = self.turn('5만원만 늘릴게', reading(requests=[item(amount=50000)], reference='previous'))['reply']['proposal']
+        self.assertEqual(card["allocations"]["FOOD"], 450000)
         self.assertEqual(card["buckets"]["SPARE"], 400000)
         self.assertEqual(self.context["allocations"]["FOOD"], 400000)
 

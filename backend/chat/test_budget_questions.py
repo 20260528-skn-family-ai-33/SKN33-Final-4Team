@@ -1,5 +1,8 @@
 """Budget basis questions and early adjustment steps use the real message API."""
+import json
+
 from django.test import TestCase, override_settings
+from unittest.mock import patch
 
 from budgets.models import Budget
 from budgets.budget_explanation import explain_current_budget
@@ -15,9 +18,13 @@ class BudgetQuestionTest(CollabFixture, TestCase):
                 self.cid = None
                 data, reply = self.say(text)
                 self.assertEqual(data['agent'], 'budget')
-                self.assertIn('의료·건강', reply['budgetAdjustment']['requestSummary'])
-                self.assertTrue(any(plan.get('result', {}).get('changes') for plan in
-                                    reply['budgetAdjustment']['comparison']['plans'] if plan.get('result')))
+                adjustment = reply['budgetAdjustment']
+                self.assertEqual(adjustment['phase'], 'amount')
+                self.assertEqual(adjustment['amountInput']['category'], 'MEDICAL_HEALTH')
+                self.assertEqual(adjustment['amountInput']['direction'], 'down')
+                self.assertIn('의료·건강', adjustment['guidance']['context'])
+                self.assertNotIn('comparison', adjustment)
+                self.assertNotIn('proposal', adjustment)
                 self.assertEqual(self.budget_state()['requests'][0]['category'], 'MEDICAL_HEALTH')
                 self.assertEqual(self.budget_state()['requests'][0]['direction'], 'down')
                 self.assertNotIn('recommend', {c['value'] for c in reply['choices']})
@@ -31,16 +38,40 @@ class BudgetQuestionTest(CollabFixture, TestCase):
         self.assertEqual(data['agent'], 'budget')
         self.assertEqual(self.budget_state()['requests'][0]['direction'], 'down')
 
-    def test_medical_reduction_has_a_calculated_priority_preview_before_selection(self):
+    def test_medical_reduction_waits_for_a_selected_destination_before_preview(self):
         _, reply = self.say('의료비를 1만 원으로 줄여줘')
         comparison = reply['budgetAdjustment']['comparison']
         plan = next(p for p in comparison['plans'] if p['id'] == 'living')
-        self.assertEqual(plan['status'], 'ready')
-        self.assertEqual(plan['result']['allocations']['MEDICAL_HEALTH'], 10000)
-        self.assertEqual(plan['result']['allocations']['FOOD'], 440000)
+        self.assertEqual(plan['status'], 'needs_destination')
+        self.assertIsNone(plan.get('result'))
         self.assertEqual(Budget.objects.count(), 1)
         _, selected = self.pick(reply, 'plan_living')
-        self.assertEqual(selected['budgetAdjustment']['proposal']['allocations']['FOOD'], 440000)
+        self.assertEqual(selected['budgetAdjustment']['phase'], 'distribution')
+        self.assertEqual(selected['budgetAdjustment']['distributionInput']['source'], 'MEDICAL_HEALTH')
+        self.assertEqual(selected['budgetAdjustment']['distributionInput']['amount'], 40000)
+        self.assertNotIn('proposal', selected['budgetAdjustment'])
+        self.assertEqual(Budget.objects.count(), 1)
+        from chat.llm.fake import BUDGET_SAID
+        from budgets.adjustment_core.financial_conversation import DIALOGUE_PROMPT
+        text = '의료비에서 줄인 4만원을 식비에 넣어줘'
+
+        def distribution_reading(system, user, **kwargs):
+            response = self.llm(system, user, **kwargs)
+            if system == DIALOGUE_PROMPT:
+                response = json.loads(response)
+                response['reading'].update(action='distribute', reference='previous',
+                                           sources=[], destinations=[], excluded=[], funding_scope=None, use_available=None)
+                return json.dumps(response, ensure_ascii=False)
+            return response
+
+        with patch.dict(BUDGET_SAID, {text: [
+            {'category': 'MEDICAL_HEALTH', 'amount': 40000, 'amount_mode': 'by', 'direction': 'down'},
+            {'category': 'FOOD', 'amount': 40000, 'amount_mode': 'by', 'direction': 'up'},
+        ]}), patch('chat.engine.reading', return_value=distribution_reading):
+            _, preview = self.say(text)
+        self.assertIn('proposal', preview['budgetAdjustment'], preview)
+        self.assertEqual(preview['budgetAdjustment']['proposal']['allocations']['MEDICAL_HEALTH'], 10000)
+        self.assertEqual(preview['budgetAdjustment']['proposal']['allocations']['FOOD'], 440000)
         self.base.refresh_from_db()
         self.assertEqual(self.base.status, 'approved')
 
