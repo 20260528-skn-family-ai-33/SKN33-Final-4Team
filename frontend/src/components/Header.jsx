@@ -6,7 +6,9 @@ import { PATHS } from '../routes.js'
 // action = 메뉴 아이콘 왼쪽 버튼 (홈의 알림 종)
 export default function Header({ title, showBack = false, backTo, showMy = true, action = null, inert = false }) {
   const navigate = useNavigate()  // 코드로 화면 이동할 때 쓰는 함수
-  const first = useLocation().key === 'default'  // 앱을 이 주소로 바로 열어 앞 화면 기록이 없다
+  const location = useLocation()
+  // 앱을 이 주소로 바로 열어 앞 화면 기록이 없다. direct = 그 뒤 replace 로 주소만 바꾼 경우(거래 화면 기간 변경)
+  const first = location.key === 'default' || !!location.state?.direct
 
   return (
     <header id="mc-header" inert={inert}>
