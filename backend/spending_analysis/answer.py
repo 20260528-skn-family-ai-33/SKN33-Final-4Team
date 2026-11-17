@@ -87,6 +87,7 @@ GROUP_TITLE = {"category": "카테고리", "merchant": "가게", "weekday": "요
 NOTICE = {
     "partial": "일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",
     "observed_through": "저장된 거래는 {until}까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
+    "observed_through_scoped": "{name} 기준으로 저장된 거래는 {until}까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
     "previous_incomplete": "지난달 같은 기간의 내역이 충분하지 않아 비교하기 어려워요.",
     "current_incomplete": "이번 달 내역이 충분하지 않아 비교하기 어려워요.",
     "instead_of": "{word}만 따로 볼 수 없어 {name} 전체로 조회했어요.",  # 360px 폰에서도 한 줄 (카드 안내 칸)
@@ -242,7 +243,8 @@ def _period_block(out, block, item, label):
     if block["confirmed"] is not None:
         return True
     if block.get('observed_through'):
-        out.notice('observed_through', until=day(block['observed_through']))
+        key = 'observed_through_scoped' if narrowed(item) else 'observed_through'
+        out.notice(key, name=name, until=day(block['observed_through']))
     if not seen and not block.get('observed_count'):
         out.line('no_data', period=label, name=name)
         return False
