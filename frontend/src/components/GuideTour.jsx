@@ -32,7 +32,8 @@ const TARGET = {
   fund: `#mc-nav a[href="${PATHS.fund}"]`,
   assistant: `#mc-nav a[href="${PATHS.assistant}"]`,
 }
-const PAD = 10
+const PAD = 3  // 아이콘 · 글자 묶음에서 빛 테두리까지 여백
+const LIFT = 2  // 원을 살짝 위로 (아래 탭 줄 바닥 여백 때문에 묶음 정가운데보다 위가 눈에 가운데로 보인다)
 
 export default function GuideTour({ onClose }) {
   const [step, setStep] = useState(0)
@@ -49,18 +50,23 @@ export default function GuideTour({ onClose }) {
       const el = current.tab && device?.querySelector(TARGET[current.tab])
       if (!device || !el) return setSpot(null)
       const d = device.getBoundingClientRect()
-      // 탭 칸 전체가 아니라 아이콘 + 글자만 감싼다 (칸 폭이 넓어 빛이 화면 끝에 잘리지 않게)
-      const parts = [...el.querySelectorAll('svg, span')].map((x) => x.getBoundingClientRect()).filter((x) => x.width)
-      const r = parts.length ? {
-        left: Math.min(...parts.map((x) => x.left)), top: Math.min(...parts.map((x) => x.top)),
-        width: Math.max(...parts.map((x) => x.right)) - Math.min(...parts.map((x) => x.left)),
-        height: Math.max(...parts.map((x) => x.bottom)) - Math.min(...parts.map((x) => x.top)),
-      } : el.getBoundingClientRect()
-      // 탭 크기와 관계없이 동그란 빛으로 (네모난 흰 칸이 튀지 않게). 카드 꼬리는 탭 가운데를 가리킨다
-      const size = Math.max(r.width, r.height) + PAD * 2
-      const cx = r.left - d.left + r.width / 2
-      const cy = r.top - d.top + r.height / 2
-      setSpot({ left: cx - size / 2, top: cy - size / 2, size, cardBottom: d.bottom - (cy - size / 2) + 14, caret: cx - 16 })
+      // 11/17: 아이콘 + 글자 묶음을 원 정가운데에, 묶음을 딱 감싸는 크기로. 가운데 홈은 동그란 버튼 둘레
+      const parts = el.classList.contains('mc-home') ? [el.getBoundingClientRect()]
+        : [...el.querySelectorAll('svg, span')].map((x) => x.getBoundingClientRect()).filter((x) => x.width)
+      if (!parts.length) parts.push(el.getBoundingClientRect())
+      const left = Math.min(...parts.map((r) => r.left)), right = Math.max(...parts.map((r) => r.right))
+      const top = Math.min(...parts.map((r) => r.top)), bottom = Math.max(...parts.map((r) => r.bottom))
+      const cx = (left + right) / 2
+      const cy = (top + bottom) / 2
+      // 홈 버튼은 원이라 폭의 절반, 탭 묶음은 네모라 모서리까지(대각선의 절반)
+      const reach = el.classList.contains('mc-home') ? (right - left) / 2 : Math.hypot(right - left, bottom - top) / 2
+      const size = Math.round((reach + PAD) * 2)
+      // 아래는 기기 틀(.mc-device) 기준 좌표. 카드 아래 끝은 틀 높이 기준 (PC 에서 틀이 화면 위에서 떨어져 있어도 맞게)
+      // 가운데 홈 버튼만 눈으로 맞춘 미세 보정 (왼쪽 0.5px · 아래 0.5px)
+      const home = el.classList.contains('mc-home')
+      const x = cx - d.left - (home ? 0.5 : 0)
+      const y = cy - d.top - LIFT + (home ? 0.5 : 0)
+      setSpot({ left: x - size / 2, top: y - size / 2, size, cardBottom: d.height - (y - size / 2) + 14, caret: x - 16 })
     }
     place()
     window.addEventListener('resize', place)

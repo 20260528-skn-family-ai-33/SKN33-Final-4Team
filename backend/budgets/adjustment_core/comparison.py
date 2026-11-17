@@ -136,7 +136,7 @@ def _assess_and_recommend(context, comparison, primary):
     best = best_score[1:]
     winners = [plan for plan in comparison["plans"] if scores.get(plan["id"]) == best_score]
     if len(winners) != 1:
-        recommendation["reasons"].append("중요하게 고른 항목과 남길 돈을 비교했을 때 비슷한 방법들이에요. 어느 쪽을 더 유지할지 골라 주세요.")
+        recommendation["reasons"].append("비교해 보니 비슷한 방법들이라 추천을 정하지 않았어요. 더 지키고 싶은 쪽을 골라 주세요.")
         return
     winner = winners[0]
     reasons = list(winner["assessment"]["reasons"])

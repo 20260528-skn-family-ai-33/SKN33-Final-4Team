@@ -869,6 +869,18 @@ class FinancialAdjustmentApiTest(TestCase):
         self.base.refresh_from_db()
         self.assertEqual(self.base.status, 'approved')
 
+    def test_goal_change_to_amount_below_current_budget_means_the_increase_amount(self):
+        """'5만원 더 넣어줘' 뒤 '2만원으로 바꿔줘'를 최종 금액(10만 → 2만)으로 읽어도, 늘리는 목표라 2만 원 늘리기로 고친다 (11/17)"""
+        cid = self.chat(choice='budget')['conversationId']
+        self.chat(cid, text='교통비에 여윳돈에서 5만원 더 넣어줘', answers=[
+            reading(requests=[item('TRANSPORT_CAR', 50000)], sources=['SPARE'])])
+        result = self.chat(cid, text='2만원으로 바꿔줘', answers=[
+            {'action': 'change_goal', 'category': 'TRANSPORT_CAR', 'amount': 20000,
+             'amount_mode': 'to', 'suggested_target': None}])
+        current = result['messages'][-1]['content']['budgetAdjustment']
+        self.assertEqual(current['proposal']['allocations']['TRANSPORT_CAR'], 120000)
+        self.assertNotIn('확인하지 못했어요', json.dumps(result['messages'][-1]['content'], ensure_ascii=False))
+
     def test_impossible_living_increase_is_rejected_before_funding_and_accepts_correction(self):
         cid = self.chat(choice='budget')['conversationId']
         response = self.chat(cid, text='생활비를 천만원 늘리고 싶어요', answers=[

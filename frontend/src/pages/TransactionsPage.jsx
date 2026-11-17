@@ -11,8 +11,9 @@
 // 이름 검색(11/11): 입력하는 대로 바로 거른다. 보고 있는 달 · 필터로 이미 받은 목록 안에서 화면이 거르고, 소비 합계도 걸러진 거래로 다시 센다
 //   (서버에 다시 묻지 않아서 글자마다 목록이 깜빡이지 않는다). 달 · 필터를 바꿔도 검색어는 남고, '확인 필요' 배너를 누르면 풀린다
 import { useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { useLocation, useSearchParams } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import { PATHS } from '../routes.js'
 import Icon from '../components/Icon.jsx'
 import { won } from '../utils/money.js'
 import { useApi } from '../utils/api.js'
@@ -71,6 +72,10 @@ function monthLabel(month, thisMonth) {
 export default function TransactionsPage() {
   // 주소의 ?category= 값(카테고리 코드, 쉼표로 여러 개)을 읽고 바꾸는 도구. 없으면 전체
   const [params, setParams] = useSearchParams()
+  const location = useLocation()
+  // replace 는 location.key 를 새로 만든다 — 주소로 바로 연 화면이었다는 표시(direct)를 넘겨 Header 뒤로 가기가 backTo 로 가게.
+  // 새 기록을 쌓는 이동(push)은 앞 화면이 생기므로 표시를 넘기지 않는다
+  const replaceOpts = (replace) => ({ replace, state: replace && (location.key === 'default' || location.state?.direct) ? { direct: true } : null })
   const list = (name) => (params.get(name) ?? '').split(',').filter(Boolean)
   const codes = list('category').map((c) => CODE_BY_NAME[c] ?? c)
   const accountIds = list('account')
@@ -88,6 +93,7 @@ export default function TransactionsPage() {
   const cycle = month === 'cycle'
   const shown = all || cycle ? thisMonth : month
   // 기본값과 같은 달은 주소에 안 남긴다
+  // 11/17: '확인 필요'를 보는 동안 달 · 기간만 바꾸는 이동은 기록을 쌓지 않는다 — 뒤로 가기가 확인 필요를 열기 전 화면(거래 · 예산 등)으로 바로 가게
   const go = (cats, m, acc = accountIds, crd = cardIds, typ = types) => setParams({
     ...(cats.length && { category: cats.join(',') }),
     ...(m !== (cats.length === 1 && cats[0] === PENDING.code ? 'all' : thisMonth) && { month: m }),
@@ -95,7 +101,7 @@ export default function TransactionsPage() {
     ...(acc.length && { account: acc.join(',') }),
     ...(crd.length && { card: crd.join(',') }),
     ...(typ.length && { type: typ.join(',') }),
-  })
+  }, replaceOpts(isPending && cats.length === 1 && cats[0] === PENDING.code))
   // 확인 필요는 그것만 · 전체 기간(숫자와 같게). 다른 카테고리로 바꾸면 보던 달, 그대로면 지금 달 그대로
   const applyFilter = (cats, acc, crd, typ) => {
     const toPending = cats[0] === PENDING.code
@@ -133,7 +139,8 @@ export default function TransactionsPage() {
   const days = groupByDay(items)
 
   return (
-    <Layout title="거래 내역" activeTab="txs">
+    // '확인 필요'로 들어오면(거래 화면 배너 · 예산 · 홈 · 소비 분석에서) 뒤로 가기를 보여 준다 — 누르면 들어오기 전 화면
+    <Layout title="거래 내역" activeTab="txs" showBack={isPending} backTo={PATHS.txs}>
       <div className="mc-sumbar">
         {cycle ? <strong className="mc-sumbar-m mc-sumbar-cycle">이번 주기<span className="mc-sumbar-range">{dotDay(range.from)}~{dotDay(range.to)}</span></strong>
           : all ? <strong className="mc-sumbar-m">전체 기간</strong> : <>

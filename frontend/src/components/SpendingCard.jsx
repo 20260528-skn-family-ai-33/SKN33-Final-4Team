@@ -73,7 +73,7 @@ export default function SpendingCard({ card }) {
       )}
 
       {lines.length > 0 && <ul className="mc-spend-lines">{lines.map((l) => <li key={l}>{l}</li>)}</ul>}
-      {!comparison.available && NO_COMPARE[comparison.reason] && <p className="mc-note" style={{ padding: 0 }}>{NO_COMPARE[comparison.reason]}</p>}
+      {!comparison.available && NO_COMPARE[comparison.reason] && <p className="mc-note mc-note-flush">{NO_COMPARE[comparison.reason]}</p>}
 
       {/* 카테고리별 (금액 큰 순) */}
       {!empty && !one && (

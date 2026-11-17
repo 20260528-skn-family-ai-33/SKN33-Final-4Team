@@ -92,7 +92,7 @@ export default function LoanEditPopup({ loan, onSaved }) {
             </label>
           </div>
           {fieldError('manualRate')}{fieldError('maturityDate')}{fieldError('nonFieldErrors')}
-          <p className="mc-note" style={{ padding: 0 }}>남은 금액을 0원으로 고쳐도 상환이 끝난 것으로 바뀌지 않아요. 다 갚았다면 [대출 전체 완납 처리]를 눌러 주세요.</p>
+          <p className="mc-note mc-note-flush">남은 금액을 0원으로 고쳐도 상환이 끝난 것으로 바뀌지 않아요. 다 갚았다면 [대출 전체 완납 처리]를 눌러 주세요.</p>
           {error && <p className="mc-error" role="alert">{error}</p>}
           <div className="mc-foot"><button className="mc-primary" type="submit">{saving ? '저장 중…' : '고친 정보 저장'}</button></div>
         </fieldset>

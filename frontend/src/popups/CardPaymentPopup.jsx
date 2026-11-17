@@ -138,7 +138,7 @@ export default function CardPaymentPopup({ billId, onSaved }) {
         {changes.length > 0 && (needsAgree
           ? <label className="mc-field mc-check"><input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
               분류가 바뀌어요: {changes.map((t) => `${t.description || '적요 없음'} ‘${fromLabel(t.reclassify)}’ → ‘카드값’`).join(', ')}. 소비 합계에서 빠져요.</label>
-          : <p className="mc-note" style={{ padding: 0 }}>고른 이체가 ‘카드값’으로 바뀌어요. 연결을 취소하면 되돌려요.</p>)}
+          : <p className="mc-note mc-note-flush">고른 이체가 ‘카드값’으로 바뀌어요. 연결을 취소하면 되돌려요.</p>)}
         <button type="button" className="mc-primary" disabled={busy || (needsAgree && !agree)} onClick={send}>{busy ? '저장 중…' : '이 청구서에 연결'}</button>
       </div>}
       {saveError && <p className="mc-error" role="alert">{saveError}</p>}
