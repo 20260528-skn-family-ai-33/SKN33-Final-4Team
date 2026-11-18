@@ -4,6 +4,6 @@ import { createContext, useContext } from 'react'
 export const PopupContext = createContext(null)
 
 // 사용법: const { openPopup, closePopup } = usePopup()
-//         openPopup(<CalcPopup />)  → 팝업 열기
+//         openPopup(<NoticePopup />)  → 팝업 열기
 //         closePopup()             → 팝업 닫기
 export const usePopup = () => useContext(PopupContext)

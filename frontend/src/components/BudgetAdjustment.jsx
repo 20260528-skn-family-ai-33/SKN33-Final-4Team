@@ -54,6 +54,18 @@ function SalaryAllocation({ request, active, onReview }) {
   </section>
 }
 
+// 잦은 조정 잔소리 (11/18 시안 C3): 서버 문장('이번 급여 주기에 예산을 N회 조정했어요. 다시 조정할까요?')의 첫 문장을
+// 말풍선 위 주황 경고 한 줄로, 나머지는 원래 질문 그대로. 글자는 서버 문장 그대로 (화면은 계산하지 않음)
+function NagLines({ lines }) {
+  const text = lines.join(' ')
+  const cut = text.indexOf('. ')
+  const [warn, rest] = cut < 0 ? [text, ''] : [text.slice(0, cut + 1), text.slice(cut + 2)]
+  return <>
+    <p className="mc-budget-nag" role="note"><span aria-hidden="true">⚠ </span>{warn}</p>
+    {rest && <p>{rest}</p>}
+  </>
+}
+
 // 증감액 색: 늘면 빨강(mc-fx-up) · 줄면 파랑(mc-fx-down) — 소비 분석과 같은 규칙, 부호(+ · −)로도 구분 (11/17)
 export function BudgetChanges({ changes = [] }) {
   return <dl className="mc-budget-changes">{changes.map((row) => (
@@ -91,7 +103,6 @@ function Shortfalls({ rows = [] }) {
 
 export function BudgetSettings({ proposal }) {
   return <>
-    {(proposal.unlockCategories ?? []).map((code) => <p key={code} className="mc-note">승인 시 {allocationName(code)} 잠금 해제 · 다음 주기에도 이어져요.</p>)}
     {(proposal.targetItems ?? []).filter((item) => item.amount === null).map((item) =>
       <p key={item.category} className="mc-note">승인 시 {allocationName(item.category)} 유지 목표 해제</p>)}
   </>
@@ -516,6 +527,7 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
       const lines = guidance.message.split('\n').filter(Boolean)
       // 11/17: 한도 안내(설명 단계로 오는 '○○ · 확인된 증액 한도 …')도 표 모양으로
       return CAPACITY_HEAD.test(lines[0]) ? <CapacityLines lines={lines} />
+        : adjustment.phase === 'adjustment_frequency' ? <NagLines lines={lines} />
         : lines.map((line, index) => <p key={index} className={adjustment.phase === 'increase_review' ? 'mc-budget-warning' : undefined}>{line}</p>)
     })()}
     {guidance?.reason && <p className="mc-budget-reason" role="note">{guidance.reason}</p>}
@@ -527,7 +539,8 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
     {distributionInput && <DistributionInput key={content.turn} value={distributionInput} active={active} onSend={onSend} />}
     {!guidance && !proposal && !hasComparison && !amountInput && !salaryAllocation && !adjustment.recommendationAdvice && (() => {
       const lines = (content.lines ?? (content.text ? [content.text] : [])).filter((line) => !distributionInput || !line.endsWith('어디에 나눌까요?'))
-      return CAPACITY_HEAD.test(lines[0] ?? '') ? <CapacityLines lines={lines} /> : lines.map((line, i) => <p key={i}>{line}</p>)
+      return CAPACITY_HEAD.test(lines[0] ?? '') ? <CapacityLines lines={lines} />
+        : adjustment.phase === 'adjustment_frequency' ? <NagLines lines={lines} /> : lines.map((line, i) => <p key={i}>{line}</p>)
     })()}
     {hasComparison && <Comparison comparison={adjustment.comparison} choices={content.choices} active={active} onPick={onPick} detail={adjustment.detail} />}
     {proposal && <section className="mc-budget-proposal" aria-label="예산 변경안">

@@ -9,7 +9,7 @@ from django.db import DatabaseError
 
 from budgets.scope import OUT_OF_BUDGET
 from . import benchmark, budget_habits, followups, lifestyle, narrative, personality, reasoning, result as R, scope, snapshot, story, tools, trend
-from .answer import NAMES, span, won
+from .answer import NAMES, period_comparison_bars, span, won
 from .coverage import coverage
 from .periods import Period, previous_month_same_days, this_month
 
@@ -506,6 +506,11 @@ def answer(user, decision, today, complete, question=None, covered=()):
     request = decision.request or decision.interpretation
     question = question or (decision.explain or {}).get("question") or "소비 분석해줘"
     goal = getattr(request, "analysis_goal", None) or ("reason" if request.explain else "overview")
+    comparison = []
+    if goal == "overview" and len(basis.get("categories", ())) == 1 and basis["comparison_available"]:
+        comparison.append(period_comparison_bars(
+            summary["current"]["amount"], summary["previous"]["amount"], this_month(today), previous_month_same_days(today),
+            title=f"{basis['scope']} · 같은 기간 비교"))
     if wants_calculation(asked) and summary.get("story"):
         reply = _calculation_reply(summary, today, suffix)
         if reply is not None:
@@ -514,6 +519,7 @@ def answer(user, decision, today, complete, question=None, covered=()):
             return followups.apply(reply, question, complete, **_followup_context(summary, "calculation", reply, today), covered=covered), None
     if summary.get("story") and (summary["story"]["findings"] or summary["story"].get("slot") or summary["story"].get("weekend")):
         reply = _story_answer(user, summary, goal, today, suffix)
+        reply["view"][2:2] = comparison
         if observed_note:
             reply['notices'] = [observed_note, *reply.get('notices', [])]
         return followups.apply(reply, question, complete, **_followup_context(summary, goal, reply, today), covered=covered), None
@@ -539,7 +545,8 @@ def answer(user, decision, today, complete, question=None, covered=()):
         notes = [n for n in (observed_note, *notes, basis.get("comparison_reason"), _unclassified_note(summary), _small_sample_note(summary),
                  f"분석 범위: {basis['scope']} · {span(this_month(today))} · 고정지출 제외") if n]
         return {"lines": lines, "lead": [], "notices": notes, "examples": [],
-                "view": [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}, {"kind": "text", "lines": lines}]}, None
+                "view": [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"},
+                         {"kind": "text", "lines": lines}, *comparison]}, None
     data = narrative.payload(question, findings, forecast, goal) if findings else None
     composed = narrative.compose(data, complete) if data else None
     if composed is not None:
@@ -592,6 +599,7 @@ def answer(user, decision, today, complete, question=None, covered=()):
                                   *(lifestyle.suggestions(findings) or summary.get('reference_actions', []))]))[:3]
     blocks = [{"kind": "head", "title": f"{span(this_month(today))} · 소비 분석{suffix}"}]
     blocks.append({"kind": "text", "title": "핵심 진단", "lines": ["핵심 진단", *lead], "tone": "key"})
+    blocks.extend(comparison)
     graph = chart(summary, today) if _changing_trend(summary) else None
     visuals = {f["section"]: f["visual"] for f in findings if f.get("visual")}
     for title, lines in sections.items():

@@ -8,7 +8,6 @@ from django.utils import timezone
 
 from users.models import CategoryMinimum, CategoryPriority, FinancialProfile
 
-from .models import BudgetCategorySetting
 from .protect import fixed_base, fixed_breakdown, fixed_sum, savings_min
 from .scope import OUT_OF_BUDGET
 
@@ -218,9 +217,8 @@ def budget_settings(user, cycle):
     """→ (최소 금액, 자물쇠). 예전에 걸어 둔 예산 밖 카테고리 설정은 새 계산에서 뺀다 (DB 값은 지우지 않음)"""
     minimums = dict(CategoryMinimum.objects.filter(user=user).exclude(category_id__in=OUT_OF_BUDGET)
                     .values_list("category_id", "min_amount"))
-    locks = dict(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, locked=True)
-                 .exclude(category_id__in=OUT_OF_BUDGET).values_list("category_id", "locked_amount"))
-    return minimums, locks
+    # 자물쇠 기능 제거 (11/18): 예전에 걸어 둔 DB 값(budget_category_setting.locked)은 읽지 않는다. 계산은 늘 '잠긴 카테고리 없음'
+    return minimums, {}
 
 
 def budget_input_snapshot(user, cycle, *, profile=None, today=None, card=True):

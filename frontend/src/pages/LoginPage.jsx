@@ -3,6 +3,7 @@
 // 로그인할 때는 비밀번호 길이 · 조합을 검사하지 않는다 (규칙이 바뀌어도 기존 회원이 로그인, 결정기록 X ⑨)
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import Mascot from '../components/Mascot.jsx'
 import PasswordInput from '../components/PasswordInput.jsx'
 import { useLoggedInRedirect } from '../utils/useLoggedInRedirect.js'
 import { PATHS } from '../routes.js'
@@ -83,11 +84,14 @@ export default function LoginPage() {
   }
 
   return (
-    <Layout title="로그인">
-      <div className="mc-eyebrow">MONEY CUSHION</div>
-      <h1>다시 만나서 반가워요</h1>
+    <Layout title="로그인" bare>
+      {/* 11/18 시안 O3 라임 스토리 카드: 라임 바탕 큰 문장 + 쿠숑이, 입력은 아래 흰 카드 */}
+      <div className="mc-o3-login-hero">
+        <h1>돈 걱정은<br />쿠숑이한테<br />맡겨요</h1>
+        <Mascot mood="saver" size={150} />
+      </div>
       <form
-        className="mc-form"
+        className="mc-form mc-o2-form mc-o3-sheet"
         id="mc-form"
         onSubmit={onSubmit}
         aria-busy={isSubmitting}
@@ -178,11 +182,8 @@ export default function LoginPage() {
             {isSubmitting ? '로그인 중…' : '로그인'}
           </button>
         </div>
+        <button type="button" className="mc-o3-ghost" onClick={() => navigate(PATHS.signup)}>회원가입</button>
       </form>
-      <div className="mc-card" style={{ marginTop: 22, textAlign: 'center' }}>
-        <p className="mc-muted">머니쿠션이 처음이신가요?</p>
-        <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.signup)}>회원가입</button>
-      </div>
     </Layout>
   )
 }

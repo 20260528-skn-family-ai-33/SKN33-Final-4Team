@@ -50,13 +50,10 @@ class DesignRecoveryAPITest(TestCase):
             'priorities': list(CategoryPriority.objects.filter(user=self.user).order_by('rank').values()),
             'locks': list(BudgetCategorySetting.objects.filter(user=self.user).order_by('category_id').values())}
 
-    def failed_task(self, *, locked=False):
-        CategoryMinimum.objects.create(user=self.user, category_id='FOOD', min_amount=150001 if locked else 1500001)
-        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id='EDUCATION',
-                                             locked=True, locked_amount=12345)
-        if locked:
-            BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id='FOOD',
-                                                 locked=True, locked_amount=100000)
+    def failed_task(self):
+        # 11/18 자물쇠 기능 제거: 예전 EDUCATION 자물쇠 대신 최소 금액으로 막힌 추천을 만든다
+        CategoryMinimum.objects.create(user=self.user, category_id='FOOD', min_amount=1500001)
+        CategoryMinimum.objects.create(user=self.user, category_id='EDUCATION', min_amount=12345)
         before = self.protected()
         response = self.post_recommend()
         self.assertEqual(response.status_code, 202, response.content)
@@ -79,7 +76,7 @@ class DesignRecoveryAPITest(TestCase):
         task = self.failed_task()
         private = task.result['_design_handoff']
         self.assertEqual(private['constraints']['minimums']['FOOD'], 1500001)
-        self.assertEqual(private['constraints']['locks']['EDUCATION'], 12345)
+        self.assertEqual(private['constraints']['locks'], {})  # 11/18: 자물쇠는 읽지 않는다
         self.assertEqual(private['priorities'][0], {'category': 'FOOD', 'rank': 1})
         public = self.client.get(f'/api/tasks/{task.pk}/').json()['result']
         self.assertEqual(set(public), {'outcome', 'budgetId', 'summary', 'conflicts', 'locksReleased', 'handoff'})
@@ -120,39 +117,6 @@ class DesignRecoveryAPITest(TestCase):
         self.assertEqual(result['conflicts'][0]['type'], 'minimums_over_living')
         self.assertNotIn('handoff', result)
         self.assertNotIn('_design_handoff', task.result)
-
-    def test_lock_conflict_is_not_automatically_unlocked(self):
-        task = self.failed_task(locked=True)
-        self.assertEqual(task.result['locks_released'], [])
-        self.assertEqual(task.result['_design_handoff']['issue']['reason'], 'lock_below_minimum')
-        before = self.protected()
-        response = self.chat(task)
-        self.assertEqual(response.status_code, 200)
-        content = response.json()['messages'][-1]['content']
-        self.assertIn('잠금 금액과 최소금액이 서로 충돌', content['text'])
-        self.assertEqual(content['choices'], [])
-        self.assertEqual(self.protected(), before)
-
-    def test_unallocatable_surplus_is_not_described_as_cash_shortage(self):
-        from .recommend import ALLOCATION_CODES
-        for code in ALLOCATION_CODES:
-            BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id=code,
-                                                 locked=True, locked_amount=100000)
-        before = self.protected()
-        response = self.post_recommend()
-        task = AsyncTask.objects.get(pk=response.json()['task']['taskId'])
-        self.assertIsNone(task.result['_design_handoff']['issue']['shortfall'])
-        entered = self.chat(task)
-        self.assertEqual(entered.status_code, 200, entered.content)
-        content = entered.json()['messages'][-1]['content']
-        self.assertIn('남는 생활비를 배분할 곳이 없어요', content['text'])
-        self.assertEqual(content['choices'], [
-            {'value': 'recovery_review', 'label': '조건을 유지해서 해결안 보기'}])
-        self.assertFalse(content['budgetAdjustment']['canApprove'])
-        self.assertFalse(Budget.objects.exists())
-        self.assertEqual(self.protected(), before)
-        self.llm.assert_not_called()
-        self.ml.assert_not_called()
 
     def test_reuses_bound_conversation_and_same_idempotency_key(self):
         task = self.failed_task()
@@ -203,11 +167,11 @@ class DesignRecoveryAPITest(TestCase):
             for key, value in original.items(): setattr(task, key, value)
         self.assertFalse(Conversation.objects.exists())
 
-    def test_changed_minimum_lock_priority_or_target_expires_entry(self):
+    def test_changed_minimum_priority_or_target_expires_entry(self):
         task = self.failed_task()
         changes = [
             (CategoryMinimum.objects.filter(user=self.user, category_id='FOOD'), {'min_amount': 1600001}, {'min_amount': 1500001}),
-            (BudgetCategorySetting.objects.filter(user=self.user, category_id='EDUCATION'), {'locked_amount': 23456}, {'locked_amount': 12345}),
+            (CategoryMinimum.objects.filter(user=self.user, category_id='EDUCATION'), {'min_amount': 23456}, {'min_amount': 12345}),
         ]
         for rows, changed, restore in changes:
             with self.subTest(changed=changed):

@@ -373,7 +373,8 @@ class HomeApiTest(HomeFixture):
         self.make_expense(payment_day=24)
         with patch("django.utils.timezone.localdate", return_value=TODAY):
             body = self.client.get("/api/home/").json()
-        self.assertEqual(set(body), {"period", "balance", "pendingCount", "needsPaydayCount", "mustPay", "budget"})
+        self.assertEqual(set(body), {"period", "balance", "cushionNotices", "pendingCount", "needsPaydayCount", "mustPay", "upcoming", "budget"})
+        self.assertEqual(body["cushionNotices"], {"depositDue": False, "balanceLow": False})
         self.assertEqual(set(body["period"]), {"startDate", "endDate", "nextPayday", "dday", "salaryState",
                                                "salaryReceivedOn", "nextSalaryEarlyOn",
                                                "salarySource", "salaryAmount", "salaryCheckCount", "salaryGap"})
@@ -381,6 +382,104 @@ class HomeApiTest(HomeFixture):
         self.assertEqual(set(body["mustPay"][0]), {"dueId", "type", "sourceId", "name", "dueDate", "amount",
                                                    "paymentState", "userChecked", "isEstimated", "paymentAccount"})
         self.assertIsNone(body["budget"])
+
+    def test_cushion_reminder_appears_only_the_day_after_payday(self):
+        for configured_day, payday in ((25, date(2026, 11, 25)), (31, date(2026, 11, 30))):
+            self.profile.payday = configured_day
+            self.profile.save(update_fields=["payday"])
+            for offset in (0, 1, 2):
+                today = payday + timedelta(days=offset)
+                with self.subTest(configured_day=configured_day, today=today):
+                    self.assertEqual(self.home(today)["cushion_notices"]["deposit_due"], offset == 1)
+
+    def test_cushion_balance_notice_uses_all_linked_won_accounts_with_known_balances(self):
+        from .models import CushionEntry
+
+        CushionEntry.objects.create(user=self.user, entry_type="initial", amount=2_500_000,
+                                    occurred_at=timezone.now(), request_key="cushion-estimate")
+        self.make_account("usd", currency="USD", balance=10_000_000)
+        self.assertTrue(self.home()["cushion_notices"]["balance_low"])
+
+        deposit = self.make_account("deposit", account_type="deposit", is_selected=False, balance=500_000)
+        self.assertFalse(self.home()["cushion_notices"]["balance_low"])
+        BankAccount.objects.filter(pk=deposit.pk).update(balance=499_999)
+        self.assertTrue(self.home()["cushion_notices"]["balance_low"])
+        BankAccount.objects.filter(pk=deposit.pk).update(balance=None)
+        self.assertFalse(self.home()["cushion_notices"]["balance_low"])
+        BankAccount.objects.filter(pk=deposit.pk).update(balance=499_999)
+        Connection.objects.filter(pk=self.bank.pk).update(status="relogin")
+        self.assertFalse(self.home()["cushion_notices"]["balance_low"])
+
+
+class RecurringBudgetTest(HomeFixture):
+    def approve(self, day, *, food, cushion, keep=None):
+        from .models import Budget, BudgetItem
+
+        self.home(day)
+        cycle = BudgetCycle.objects.get(user=self.user, status="active")
+        budgets = Budget.objects.filter(user=self.user, cycle=cycle)
+        budgets.filter(status="approved").update(status="superseded")
+        summary = None if keep is None else {"adjustment": {"approval": {"keep_for_next_cycle": keep}}}
+        budget = Budget.objects.create(user=self.user, cycle=cycle, version_no=budgets.count() + 1,
+                                       status="validated", funding_amount=2_500_000, validation_summary=summary)
+        BudgetItem.objects.bulk_create([
+            BudgetItem(user=self.user, budget=budget, bucket="living", category_id="FOOD", allocated_amount=food),
+            BudgetItem(user=self.user, budget=budget, bucket="savings", allocated_amount=200_000),
+            BudgetItem(user=self.user, budget=budget, bucket="cushion", allocated_amount=cushion),
+        ])
+        budget.status = "approved"
+        budget.approved_at = timezone.make_aware(datetime.combine(day, datetime.min.time()))
+        with patch("django.utils.timezone.localdate", return_value=day):
+            budget.save(update_fields=["status", "approved_at"])
+        return budget
+
+    def test_next_cycle_uses_ongoing_amounts_and_restarts_spending(self):
+        october, november = date(2026, 10, 25), date(2026, 11, 25)
+        self.approve(october, food=300_000, cushion=100_000)
+        self.make_tx(october, 25_000, direction="out", transaction_type="spending", confirmed_category_id="FOOD")
+        self.assertEqual(self.home(october)["budget"]["living_spent"], 25_000)
+        changed = self.home(november)["budget"]
+        self.assertEqual((changed["living_budget"], changed["living_spent"]), (300_000, 0))
+
+        self.approve(november, food=360_000, cushion=120_000, keep=False)
+        self.assertEqual(self.home(november)["budget"]["living_budget"], 360_000)
+        december = date(2026, 12, 25)
+        self.assertEqual(self.home(december)["budget"]["living_budget"], 300_000)
+
+        self.approve(december, food=380_000, cushion=150_000, keep=True)
+        jan = date(2027, 1, 25)
+        with patch("django.utils.timezone.localdate", return_value=jan):
+            page = self.client.get("/api/budgets/").json()
+        self.assertEqual((page["living"]["budget"], page["split"]["cushion"]), (380_000, 150_000))
+
+    def test_cushion_is_counted_two_days_after_payday_and_once_per_cycle(self):
+        from .cushion import cushion_total
+        from .models import CushionEntry
+
+        self.profile.payday = 31
+        self.profile.save(update_fields=["payday"])
+        payday = date(2026, 11, 30)
+        self.approve(payday, food=300_000, cushion=100_000)
+        self.assertEqual(cushion_total(self.user), 0)
+        self.home(date(2026, 12, 1))
+        self.assertEqual(cushion_total(self.user), 0)
+        self.approve(date(2026, 12, 1), food=300_000, cushion=150_000, keep=False)
+        self.assertEqual(cushion_total(self.user), 0)
+        with patch("django.utils.timezone.localdate", return_value=date(2026, 12, 2)):
+            for _ in range(2):
+                self.assertEqual(self.client.get("/api/budgets/cushion/").json()["cushion"]["now"], 150_000)
+        self.home(date(2026, 12, 31))
+        self.assertEqual(cushion_total(self.user), 150_000)
+        self.home(date(2027, 1, 5))
+        self.assertEqual(cushion_total(self.user), 250_000)
+        latest = CushionEntry.objects.get(user=self.user, cycle__starts_on=date(2026, 12, 31))
+        self.assertEqual(timezone.localtime(latest.occurred_at).date(), date(2027, 1, 2))
+
+    def test_budget_is_not_carried_when_recurring_amounts_exceed_new_income(self):
+        self.approve(date(2026, 10, 25), food=300_000, cushion=100_000)
+        self.profile.monthly_take_home_income = 550_000
+        self.profile.save(update_fields=["monthly_take_home_income"])
+        self.assertIsNone(self.home(date(2026, 11, 25))["budget"])
 
 
 @skipUnless(connection.vendor == "postgresql", "행 잠금은 PostgreSQL 에서만 확인")
@@ -1025,14 +1124,20 @@ class HomeBudgetTest(TestCase):
         self.assertEqual((total, page["living"]["spent"], home["livingLeft"]), (1_240_000, 320_000, 680_000))
         self.assertEqual(home["outOfBudget"], {"total": 220_000, "categories": [
             {"category": "HOUSING_TELECOM", "spent": 20_000}, {"category": "TRAVEL_LODGING", "spent": 200_000}]})
-        self.assertEqual(home, {"budgetId": str(self.budget.pk), "versionNo": 1, "livingBudget": 1_000_000, "livingLeft": 680_000,
+        self.assertEqual(home, {"budgetId": str(self.budget.pk), "versionNo": 1, "livingBudget": 1_000_000, "livingLeft": 680_000, "livingSpent": 320_000,
                                 "livingPct": 32, "spare": 400_000, "daily": 680_000 // 27, "daysLeft": 27,
                                 "outOfBudget": home["outOfBudget"], "outOfBudgetAllocated": self.OLD_ALLOCATED,  # N-F1 칸 추가
                                 "overCategories": [],  # 넘긴 카테고리 없음
                                 "bigSpendings": home["bigSpendings"],  # 내용은 test_big_spendings_* 에서 확인
                                 "nag": None,  # 11/13: 자주 바꾸기 알림 없음
                                 "cardNotes": [],
-                                "cardBillsReady": []})  # 11/12: 청구서가 나온 카드 (안내가 없으면 빈 목록)
+                                "cardBillsReady": [],  # 11/12: 청구서가 나온 카드 (안내가 없으면 빈 목록)
+                                # 11/17: 월요일(11/2) 시작 주, 12/1까지 29일 → 5주. 이번 주 전 지출 0 → 1,000,000 ÷ 5
+                                "week": {"budget": 200_000, "spent": 320_000, "left": 0},
+                                "forecast": {"total": 320_000 * 30 // 3, "gap": 1_000_000 - 320_000 * 30 // 3},
+                                "topCategories": [{"category": "FOOD", "categoryName": "식비", "spent": 320_000,
+                                                   "allocated": 1_000_000 - self.OLD_ALLOCATED, "over": False}],
+                                "vsPrev": None})  # 지난 주기(10/1~) 같은 기간에 거래 없음
         self.assertEqual(page["budget"]["engineVersion"], "temp-fallback-1")
 
     def test_friend_transfer_to_food_and_back(self):
@@ -1068,28 +1173,61 @@ class HomeBudgetTest(TestCase):
         home = self.client.get("/api/home/").json()["budget"]
         self.assertEqual((home["livingPct"], home["livingLeft"]), (122, 0))
 
-    def test_big_spendings_lists_living_spending_and_transfers_over_ten_percent(self):
-        """생활비 1,000,000원 → 한 건 100,000원 이상. 고정지출 · 예산 밖(주거·통신, 여행·숙박) · 내 계좌 이체 · 카드값은 빠진다"""
-        def big():
-            return [(b["kind"], b["category"], b["amount"]) for b in self.client.get("/api/home/").json()["budget"]["bigSpendings"]]
-        self.assertEqual(big(), [("spending", "FOOD", 200_000), ("spending", "FOOD", 120_000)])
-        sent = self.tx(300_000, "UNCLASSIFIED", account=self.account, transaction_type="transfer")   # 남에게 보낸 큰 이체
-        self.tx(99_999, "FOOD", account=self.account)                                                 # 기준 1원 아래
-        self.tx(150_000, "FOOD", account=self.account, canceled_amount=100_000)                       # 취소 뒤 50,000원
-        self.assertEqual(big(), [("transfer", None, 300_000), ("spending", "FOOD", 200_000), ("spending", "FOOD", 120_000)])
-        first = self.client.get("/api/home/").json()["budget"]["bigSpendings"][0]
-        self.assertEqual(first, {"transactionId": str(sent.pk), "occurredOn": "2026-11-03", "merchantName": "", "amount": 300_000,
-                                 "kind": "transfer", "category": None, "categoryName": None})
+    def test_big_spendings_counts_a_partially_canceled_purchase_once_at_the_five_percent_boundary(self):
+        today = date(2026, 11, 15)
+        # 거래 제외 15일 32만 원 → 주기 끝 64만 원. 순 결제액 41만 원을 더하면 105만 원.
+        purchase = self.tx(460_000, "FASHION_SHOPPING", card=self.card, occurred_on=today, canceled_amount=50_001)
+        with patch("django.utils.timezone.localdate", return_value=today):
+            self.assertEqual(self.client.get("/api/home/").json()["budget"]["bigSpendings"], [])
+            FinancialTransaction.objects.filter(pk=purchase.pk).update(canceled_amount=50_000)
+            home = self.client.get("/api/home/").json()["budget"]
 
-    def test_big_spendings_skips_transfer_matched_to_payment(self):
-        paid = self.tx(400_000, "UNCLASSIFIED", account=self.account, transaction_type="transfer")
-        expense = RecurringExpense.objects.create(user=self.user, name="학원비", amount=400_000, payment_day=3,
-            category_id="EDUCATION", status="confirmed", source_type="manual", payment_account=self.account)
-        due = PaymentDue.objects.create(user=self.user, recurring=expense, obligation_type="recurring", occurrence_key="big-academy",
-            due_date=self.TODAY, confirmed_amount=400_000, paid_amount=400_000, payment_state="paid", obligation_state="active")
-        PaymentMatch.objects.create(user=self.user, due=due, transaction=paid, matched_amount=400_000)
-        kinds = [b["kind"] for b in self.client.get("/api/home/").json()["budget"]["bigSpendings"]]
-        self.assertNotIn("transfer", kinds)
+        self.assertEqual(home["livingSpent"], 730_000)
+        self.assertEqual(home["bigSpendings"], [
+            {"transactionId": str(purchase.pk), "occurredOn": "2026-11-15", "merchantName": "", "amount": 410_000,
+             "kind": "spending", "category": "FASHION_SHOPPING", "categoryName": "패션·쇼핑"},
+        ])
+
+    def test_big_spendings_uses_five_percent_without_a_floor_and_only_counts_living_spending(self):
+        from .models import BudgetItem, SpendingAllocation
+
+        today = date(2026, 11, 20)
+        BudgetItem.objects.filter(budget=self.budget, bucket="living", category_id="FOOD").update(
+            allocated_amount=500_000 - self.OLD_ALLOCATED,
+        )
+        self.tx(45_000, "UNCLASSIFIED", account=self.account, occurred_on=today, transaction_type="transfer")
+        self.tx(45_000, "TRAVEL_LODGING", card=self.card, occurred_on=today)
+        fixed = self.tx(45_000, "EDUCATION", account=self.account, occurred_on=today)
+        SpendingAllocation.objects.create(user=self.user, transaction=fixed, cycle=self.cycle, budget=self.budget,
+                                          funding_bucket="fixed", category_id="EDUCATION", amount=45_000)
+        home = home_data(self.user, today)["budget"]
+        self.assertEqual(home["living_spent"], 320_000)
+        self.assertEqual(home["big_spendings"], [])
+
+        purchase = self.tx(45_000, "UNCLASSIFIED", card=self.card, occurred_on=today)  # 48만 → 52.5만 원
+        home = home_data(self.user, today)["budget"]
+        self.assertEqual(home["living_budget"], 500_000)
+        self.assertEqual([item["transaction_id"] for item in home["big_spendings"]], [purchase.pk])
+
+    def test_big_spendings_requires_the_forecast_without_the_purchase_to_be_within_budget(self):
+        today = date(2026, 11, 15)
+        earlier = self.tx(180_000, "FOOD", account=self.account)  # 거래 제외 15일 50만 원 → 주기 끝 100만 원
+        purchase = self.tx(50_000, "FOOD", card=self.card, occurred_on=today)
+        home = home_data(self.user, today)["budget"]
+        self.assertEqual([item["transaction_id"] for item in home["big_spendings"]], [purchase.pk])
+
+        FinancialTransaction.objects.filter(pk=earlier.pk).update(amount=180_001)
+        self.assertEqual(home_data(self.user, today)["budget"]["big_spendings"], [])
+
+    def test_big_spendings_stops_when_actual_spending_exceeds_the_budget(self):
+        today = date(2026, 11, 15)
+        purchase = self.tx(680_000, "FOOD", card=self.card, occurred_on=today)
+        home = home_data(self.user, today)["budget"]
+        self.assertEqual(home["living_spent"], 1_000_000)
+        self.assertEqual([item["transaction_id"] for item in home["big_spendings"]], [purchase.pk])
+
+        FinancialTransaction.objects.filter(pk=purchase.pk).update(amount=680_001)
+        self.assertEqual(home_data(self.user, today)["budget"]["big_spendings"], [])
 
     def test_over_categories_lists_budgeted_categories_past_budget(self):
         from .models import BudgetItem
@@ -1099,6 +1237,58 @@ class HomeBudgetTest(TestCase):
         home = self.client.get("/api/home/").json()["budget"]
         self.assertEqual(home["overCategories"], [
             {"category": "FOOD", "categoryName": "식비", "allocated": food, "spent": 1_220_000, "over": 1_220_000 - food}])
+
+    # ---- 11/17 홈 재설계: 이번 주 몫 · 전망 · 상위 카테고리 · 지난 주기 대비 ----
+
+    def test_week_share_takes_spending_before_this_week_once(self):
+        self.tx(100_000, "FOOD", account=self.account, occurred_on=date(2026, 11, 1))  # 지난주(일요일) 지출
+        week = home_data(self.user, self.TODAY)["budget"]["week"]
+        # (1,000,000 − 지난주 100,000) ÷ 5주. 이번 주 320,000 은 몫에서 한 번만 뺀다
+        self.assertEqual(week, {"budget": 180_000, "spent": 320_000, "left": 0})
+
+    def test_last_week_counts_as_one_and_daily_unchanged(self):
+        budget = home_data(self.user, date(2026, 11, 30))["budget"]   # 월요일 = 마지막 날 → 1주
+        self.assertEqual(budget["week"], {"budget": 680_000, "spent": 0, "left": 680_000})
+        self.assertEqual((budget["days_left"], budget["daily"]), (0, None))
+        self.assertEqual(home_data(self.user, date(2026, 11, 26))["budget"]["week"]["budget"], 680_000 // 2)  # 11/23~ 8일 → 2주
+
+    def test_first_day_forecast_is_null(self):
+        budget = home_data(self.user, date(2026, 11, 1))["budget"]
+        self.assertIsNone(budget["forecast"])
+        self.assertEqual(budget["week"], {"budget": 1_000_000 // 5, "spent": 0, "left": 1_000_000 // 5})
+
+    def test_top_categories_three_with_over_flag(self):
+        for amount, code in ((50_000, "BEAUTY"), (40_000, "EDUCATION"), (30_000, "ETC")):
+            self.tx(amount, code, account=self.account)
+        top = self.client.get("/api/home/").json()["budget"]["topCategories"]
+        self.assertEqual([(c["category"], c["spent"], c["over"]) for c in top],
+                         [("FOOD", 320_000, False), ("BEAUTY", 50_000, False), ("EDUCATION", 40_000, False)])  # 배정 0원은 넘김 아님
+        self.tx(900_000, "FOOD", account=self.account)
+        self.assertTrue(self.client.get("/api/home/").json()["budget"]["topCategories"][0]["over"])
+
+    def test_top_categories_empty_without_spending(self):
+        FinancialTransaction.objects.filter(user=self.user, payment_matches__isnull=True).delete()  # 남는 건 고정 월세(예산 밖)
+        self.assertEqual(self.client.get("/api/home/").json()["budget"]["topCategories"], [])
+
+    def test_vs_prev_same_elapsed_days(self):
+        self.tx(50_000, "FOOD", account=self.account, occurred_on=date(2026, 10, 2))   # 지난 주기 10/1~10/3 안
+        self.tx(70_000, "FOOD", account=self.account, occurred_on=date(2026, 10, 5))   # 같은 기간 밖
+        self.assertEqual(self.client.get("/api/home/").json()["budget"]["vsPrev"], {"diff": 320_000 - 50_000})
+
+
+class UpcomingTest(TestCase):
+    """11/17: mustPay 중 7일 안에 나갈 돈"""
+    TODAY = date(2026, 11, 3)
+
+    def items(self, *pairs):
+        return [{"due_date": on, "amount": amount} for on, amount in pairs]
+
+    def test_only_next_seven_days_and_shortfall(self):
+        from .home import upcoming_json
+        must = self.items(("2026-11-02", 10), ("2026-11-03", 100), ("2026-11-10", 200), ("2026-11-11", 400))
+        self.assertEqual(upcoming_json(must, 1_000, self.TODAY), {"total": 300, "shortfall": 0, "items": must[1:3]})
+        self.assertEqual(upcoming_json(must, 250, self.TODAY)["shortfall"], 50)
+        self.assertIsNone(upcoming_json(must, None, self.TODAY)["shortfall"])
 
 
 class OldPolicyBudgetTest(HomeBudgetTest):

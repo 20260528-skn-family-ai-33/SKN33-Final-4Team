@@ -960,8 +960,6 @@
                           "allocated": 330000,
                           "spent": 1200000,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -970,8 +968,6 @@
                           "allocated": 110000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -980,8 +976,6 @@
                           "allocated": 90000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -990,8 +984,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1000,8 +992,6 @@
                           "allocated": 80000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1010,8 +1000,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1020,8 +1008,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1030,8 +1016,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1040,8 +1024,6 @@
                           "allocated": 170000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1050,8 +1032,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1060,8 +1040,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         }
                       ],
@@ -1123,171 +1101,6 @@
                     }
                   }
                 }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/budgets/{id}/categories/{code}/": {
-      "patch": {
-        "summary": "카테고리 금액 고정 · 해제",
-        "operationId": "budgetCategoryLock",
-        "tags": [
-          "예산"
-        ],
-        "x-source": "docs/api/budgets.md",
-        "description": "이번 주기의 validated·approved만 가능하다. 지난 예산은 409 not_ready: 지난 예산은 바꿀 수 없어요. 없는·남의 예산 또는 예산 카테고리 코드(배분 대상 + 기타, 주거·통신·여행·숙박 제외)가 아니면 404. true는 주소의 예산 생활비 금액을 저장, false는 lockedAmount=null. 잠금 여부가 바뀔 때만 changeCount+1. 이미 true인데 다른 예산에서 다시 걸면 금액만 바뀌며 횟수는 유지한다. 자물쇠 변경은 초안을 만료시키지 않는다. 미승인 조정안 ID의 잠금 설정·해제는 거절하며 승인 전 금액으로 잠금액을 저장하지 않는다. 실제 잠금 변경과 두 자동 해제 경로의 revisionNo는 DB F표현식으로 증가시킨다.",
-        "responses": {
-          "200": {
-            "description": "현재 자물쇠",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BudgetLockResponse"
-                },
-                "examples": {
-                  "locked": {
-                    "value": {
-                      "category": "FOOD",
-                      "categoryName": "식비",
-                      "locked": true,
-                      "lockedAmount": 330000,
-                      "changeCount": 1,
-                      "nag": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "invalid": {
-                    "value": {
-                      "error": {
-                        "code": "invalid",
-                        "message": "입력값을 확인해 주세요.",
-                        "fields": {
-                          "locked": [
-                            "자물쇠는 참 또는 거짓으로 보내 주세요."
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "not_authenticated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "not_authenticated": {
-                    "value": {
-                      "error": {
-                        "code": "not_authenticated",
-                        "message": "로그인이 필요해요."
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "not_found": {
-                    "value": {
-                      "error": {
-                        "code": "not_found",
-                        "message": "찾을 수 없어요."
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "not_ready",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "not_ready": {
-                    "value": {
-                      "error": {
-                        "code": "not_ready",
-                        "message": "지난 예산은 바꿀 수 없어요."
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "code",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "FOOD",
-                "HOUSING_TELECOM",
-                "TRANSPORT_CAR",
-                "HOUSEHOLD",
-                "FASHION_SHOPPING",
-                "MEDICAL_HEALTH",
-                "BEAUTY",
-                "EDUCATION",
-                "CULTURE_LEISURE",
-                "TRAVEL_LODGING",
-                "ETC"
-              ]
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BudgetLockRequest"
-              },
-              "example": {
-                "locked": true
               }
             }
           }
@@ -1360,8 +1173,6 @@
                           "allocated": 330000,
                           "spent": 1200000,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1370,8 +1181,6 @@
                           "allocated": 110000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1380,8 +1189,6 @@
                           "allocated": 90000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1390,8 +1197,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1400,8 +1205,6 @@
                           "allocated": 80000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1410,8 +1213,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1420,8 +1221,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1430,8 +1229,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1440,8 +1237,6 @@
                           "allocated": 170000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1450,8 +1245,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -1460,8 +1253,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         }
                       ],
@@ -3378,8 +3169,6 @@
           "allocated",
           "spent",
           "minAmount",
-          "locked",
-          "lockedAmount",
           "reason"
         ],
         "properties": {
@@ -3413,15 +3202,6 @@
             "minimum": 0
           },
           "minAmount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "nullable": true
-          },
-          "locked": {
-            "type": "boolean"
-          },
-          "lockedAmount": {
             "type": "integer",
             "format": "int64",
             "minimum": 0,
@@ -3546,69 +3326,6 @@
                 }
               }
             }
-          }
-        },
-        "additionalProperties": false
-      },
-      "BudgetLockRequest": {
-        "type": "object",
-        "required": [
-          "locked"
-        ],
-        "properties": {
-          "locked": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "BudgetLockResponse": {
-        "type": "object",
-        "required": [
-          "category",
-          "categoryName",
-          "locked",
-          "lockedAmount",
-          "changeCount",
-          "nag"
-        ],
-        "properties": {
-          "category": {
-            "type": "string",
-            "enum": [
-              "FOOD",
-              "HOUSING_TELECOM",
-              "TRANSPORT_CAR",
-              "HOUSEHOLD",
-              "FASHION_SHOPPING",
-              "MEDICAL_HEALTH",
-              "BEAUTY",
-              "EDUCATION",
-              "CULTURE_LEISURE",
-              "TRAVEL_LODGING",
-              "ETC"
-            ]
-          },
-          "categoryName": {
-            "type": "string"
-          },
-          "locked": {
-            "type": "boolean"
-          },
-          "lockedAmount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "nullable": true
-          },
-          "changeCount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "nag": {
-            "type": "string",
-            "nullable": true
           }
         },
         "additionalProperties": false
@@ -4715,14 +4432,39 @@
               "allocationReview": {
                 "type": "object",
                 "description": "기존 요청과 저축을 반영한 뒤 남은 금액의 A/B 검토 결과. 추가 배정하지 않은 금액은 여윳돈으로 유지한다.",
-                "required": ["status", "message", "allocatedAmount", "unallocatedAmount"],
+                "required": [
+                  "status",
+                  "message",
+                  "allocatedAmount",
+                  "unallocatedAmount"
+                ],
                 "properties": {
-                  "status": {"type": "string"},
-                  "plan": {"type": "string", "enum": ["a", "b"], "nullable": true},
-                  "reason": {"type": "string", "nullable": true},
-                  "message": {"type": "string"},
-                  "allocatedAmount": {"type": "integer", "minimum": 0},
-                  "unallocatedAmount": {"type": "integer", "minimum": 0}
+                  "status": {
+                    "type": "string"
+                  },
+                  "plan": {
+                    "type": "string",
+                    "enum": [
+                      "a",
+                      "b"
+                    ],
+                    "nullable": true
+                  },
+                  "reason": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "allocatedAmount": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "unallocatedAmount": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
                 }
               },
               "remainingSpare": {

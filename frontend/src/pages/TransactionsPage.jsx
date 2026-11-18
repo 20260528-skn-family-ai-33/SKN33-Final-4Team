@@ -15,7 +15,9 @@ import { useLocation, useSearchParams } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import { PATHS } from '../routes.js'
 import Icon from '../components/Icon.jsx'
-import { won } from '../utils/money.js'
+import Mascot from '../components/Mascot.jsx'
+import TabHero from '../components/TabHero.jsx'
+import { comma, won } from '../utils/money.js'
 import { useApi } from '../utils/api.js'
 import { PENDING } from '../utils/categories.js'
 import { CHIPS, toView } from '../utils/transactions.js'
@@ -69,6 +71,29 @@ function monthLabel(month, thisMonth) {
   return month.slice(0, 4) === thisMonth.slice(0, 4) ? m : `${month.slice(0, 4)}년 ${m}`
 }
 
+// 날짜별 소비 막대 (11/18 시안 B, 달 보기에서만). 이 목록의 소비 거래를 날짜마다 더한다. 오늘은 진하게, 아직 안 온 날은 옅게
+//   숫자는 위 합계 · 아래 날짜별 목록에 있어 그림은 화면 읽기에서 뺀다
+function DayBars({ items, month, thisMonth, todayDate }) {
+  const days = lastDay(month)
+  const sums = Array(days).fill(0)
+  for (const item of items) {
+    if (item.transactionType === 'spending' && item.occurredOn.startsWith(month)) sums[Number(item.occurredOn.slice(8, 10)) - 1] += item.netAmount
+  }
+  const max = Math.max(...sums, 1)
+  const today = month === thisMonth ? todayDate : null
+  return (
+    <div className="mc-daybars" aria-hidden="true">
+      <div className="mc-daybars-bars">
+        {sums.map((v, i) => (
+          <i key={i} className={i + 1 === today ? 'is-today' : today && i + 1 > today ? 'is-future' : undefined}
+            style={{ height: `${Math.max(6, Math.round((Math.max(v, 0) * 100) / max))}%` }} />
+        ))}
+      </div>
+      <div className="mc-daybars-axis"><span>1일</span>{today && <span>오늘</span>}<span>{days}일</span></div>
+    </div>
+  )
+}
+
 export default function TransactionsPage() {
   // 주소의 ?category= 값(카테고리 코드, 쉼표로 여러 개)을 읽고 바꾸는 도구. 없으면 전체
   const [params, setParams] = useSearchParams()
@@ -83,6 +108,7 @@ export default function TransactionsPage() {
   const types = list('type')  // spending · income · transfer
   const isPending = codes.length === 1 && codes[0] === PENDING.code  // 확인 필요는 다른 카테고리와 섞지 않는다
   const [thisMonth] = useState(() => ym(new Date()))  // 화면을 연 날 기준
+  const [todayDate] = useState(() => new Date().getDate())
   // ?month= 값: 'YYYY-MM' 또는 'all'(확인 필요만). 없으면 확인 필요는 전체 기간, 그 밖은 이번 달
   const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v ?? '') ? v : null)
   const range = { from: day(params.get('from')), to: day(params.get('to')) }
@@ -139,42 +165,44 @@ export default function TransactionsPage() {
   const days = groupByDay(items)
 
   return (
-    // '확인 필요'로 들어오면(거래 화면 배너 · 예산 · 홈 · 소비 분석에서) 뒤로 가기를 보여 준다 — 누르면 들어오기 전 화면
-    <Layout title="거래 내역" activeTab="txs" showBack={isPending} backTo={PATHS.txs}>
-      <div className="mc-sumbar">
-        {cycle ? <strong className="mc-sumbar-m mc-sumbar-cycle">이번 주기<span className="mc-sumbar-range">{dotDay(range.from)}~{dotDay(range.to)}</span></strong>
-          : all ? <strong className="mc-sumbar-m">전체 기간</strong> : <>
-          <button type="button" className="mc-icon" aria-label="이전 달" onClick={() => go(codes, shiftMonth(shown, -1))}>‹</button>
-          <strong className="mc-sumbar-m">{monthLabel(shown, thisMonth)}</strong>
-          <button type="button" className="mc-icon" aria-label="다음 달" disabled={shown >= thisMonth} onClick={() => go(codes, shiftMonth(shown, 1))}>›</button>
-        </>}
-        {isPending && (
-          <button type="button" className="mc-sumbar-toggle" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간 보기'}</button>
-        )}
-        {/* 이 목록의 소비 소계일 뿐 — 예산 · 남은 생활비는 홈 · 예산 화면 값 (급여 주기 기준이라 다름) */}
-        {data && <span className="mc-sumbar-v"><b>{won(spentTotal)}</b><span className="mc-muted"> 소비</span></span>}
-      </div>
+    // '확인 필요'로 들어오면(배너 · 예산 · 홈 · 소비 분석에서) 뒤로 가기를 보여 준다 — 누르면 들어오기 전 화면
+    <Layout title="거래" activeTab="txs" showBack={isPending} backTo={PATHS.txs}>
+      {/* 11/18 시안 B: 흰 띠에 보고 있는 기간 · 소비 합계(가장 큰 글자) · 날짜별 막대 */}
+      <TabHero
+        eyebrow={<div className="mc-sumbar">
+          {cycle ? <strong className="mc-sumbar-m mc-sumbar-cycle">이번 주기<span className="mc-sumbar-range">{dotDay(range.from)}~{dotDay(range.to)}</span></strong>
+            : all ? <strong className="mc-sumbar-m">전체 기간</strong> : <>
+            <button type="button" className="mc-icon" aria-label="이전 달" onClick={() => go(codes, shiftMonth(shown, -1))}>‹</button>
+            <strong className="mc-sumbar-m">{monthLabel(shown, thisMonth)}</strong>
+            <button type="button" className="mc-icon" aria-label="다음 달" disabled={shown >= thisMonth} onClick={() => go(codes, shiftMonth(shown, 1))}>›</button>
+          </>}
+          {isPending && (
+            <button type="button" className="mc-sumbar-toggle" onClick={() => go(codes, all ? thisMonth : 'all')}>{all ? '달별로 보기' : '전체 기간 보기'}</button>
+          )}
+        </div>}
+        /* 이 목록의 소비 소계일 뿐 — 예산 · 남은 생활비는 홈 · 예산 화면 값 (급여 주기 기준이라 다름) */
+        title={data ? <>{comma(spentTotal)}<small>원 썼어요</small></> : <small>거래 불러오는 중</small>}
+      >
+        {data && !all && !cycle && <DayBars items={items} month={shown} thisMonth={thisMonth} todayDate={todayDate} />}
+      </TabHero>
 
       {pendingCount > 0 && (
         // 배너 숫자는 다른 조건 없이 센 전체 건수 → 누르면 거래 유형 · 계좌 · 카드 조건을 풀고 그 건수 그대로 보여 준다
         //   (입금 · 이체만 골라 둔 채 누르면 '확인 필요(소비)'와 겹치는 거래가 없어 늘 비던 문제, PR #101 리뷰)
         <button type="button" className="mc-pend-banner" aria-pressed={isPending} onClick={() => { setSearch(''); go([PENDING.code], 'all', [], [], []) }}>
-          <span className="mc-pend-dot">{pendingCount}</span>
-          <strong className="mc-grow">카테고리 확인이 필요한 거래</strong>
-          <span className="mc-muted">›</span>
+          <Mascot mood="review" size={40} />
+          <strong className="mc-grow">확인할 거래 <span className="mc-pend-dot">{pendingCount}</span>건</strong>
+          <Icon name="ChevronRight" size={18} />
         </button>
       )}
 
-      {/* 입력하는 대로 바로 걸러진다. 돋보기 · 엔터는 키보드를 닫는다(이미 걸러진 상태) */}
-      <form className="mc-tx-search" role="search" onSubmit={(e) => { e.preventDefault(); e.currentTarget.querySelector('input')?.blur() }}>
-        <input type="search" name="q" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름으로 검색"
-          aria-label="거래 이름 검색" enterKeyHint="search" maxLength={50} autoComplete="off" />
-        <button type="submit" className="mc-tx-search-btn" aria-label="검색"><Icon name="Search" size={16} /></button>
-      </form>
-
-      <div className="mc-row mc-tx-sum">
-        <span className="mc-muted">{data ? <>거래 {items.length}건 · 소비 <strong>{won(spentTotal)}</strong></> : '거래 불러오는 중'}</span>
-        {/* 달력 보기는 기능이 생기면 여기에 [리스트 | 달력] (11/3: 누를 수 없는 버튼이라 뺌) */}
+      {/* 11/18: 검색칸 + 필터 한 줄. 건수 · 소계 글은 위 띠 제목(검색하면 걸러진 합계)과 겹쳐서 뺐다 */}
+      <div className="mc-tx-tools">
+        <form className="mc-tx-search" role="search" onSubmit={(e) => { e.preventDefault(); e.currentTarget.querySelector('input')?.blur() }}>
+          <input type="search" name="q" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="이름으로 검색"
+            aria-label="거래 이름 검색" enterKeyHint="search" maxLength={50} autoComplete="off" />
+          <button type="submit" className="mc-tx-search-btn" aria-label="검색"><Icon name="Search" size={16} /></button>
+        </form>
         <button type="button" className="mc-filter-btn" aria-pressed={filterCount > 0} onClick={() => openPopup(
           <FilterPopup categories={CHIPS} categoryCodes={codes} types={types} accountIds={accountIds} cardIds={cardIds} onApply={applyFilter} />,
         )}><Icon name="SlidersHorizontal" size={14} />{filterCount > 0 ? `필터 ${filterCount}` : '필터'}</button>
@@ -197,7 +225,6 @@ export default function TransactionsPage() {
                   <strong className="mc-tx-amt">{won(tx.net)}</strong>
                 </div>
                 {/* 확인 필요 이유 · 후보 카테고리는 [카테고리 고르기] 팝업이 거래 한 건 보기(17번 suggestion)로 받아 보여 준다 (10/30 A안) */}
-                <p className="mc-pend-why">어디에 쓴 돈인가요?</p>
                 <div className="mc-pend-pick">
                   <button type="button" onClick={() => openPopup(<TxPickPopup tx={tx} categories={CHIPS} onSaved={refresh} />)}>카테고리 고르기</button>
                 </div>
@@ -208,15 +235,15 @@ export default function TransactionsPage() {
                 <span className="mc-tile"><Icon name={tx.icon} /></span>
                 <span className="mc-grow">
                   <strong className="mc-tx-name"><span>{tx.name}</span>{tx.funding === 'fixed' && <em className="mc-tx-tag is-fixed">고정</em>}</strong>
-                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? (tx.salaryAuto ? '월급 · 자동 인식' : '월급') : '입금') : tx.kind === 'excluded' ? '소비 아님' : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')}` : tx.cat}{tx.viaShort && ` · ${tx.viaShort}`}</span>
+                  <span className="mc-muted">{tx.kind === 'income' ? (tx.isSalary ? (tx.salaryAuto ? '월급 · 자동 인식' : '월급') : '입금') : tx.kind === 'excluded' ? '소비 아님' : tx.kind === 'transfer' ? `${tx.isSaving ? '저축 · ' : ''}${tx.ownRecheck ? '다시 확인 필요' : OWN_ROW[tx.ownTransfer] ?? (tx.isOwn ? '내 계좌 이체' : '이체')}` : tx.cat}</span>
                 </span>
                 <span className="mc-right mc-tx-amt">
                   {/* 취소: 금액에 줄 긋고 "취소" / 부분취소: 남은 금액 + 취소된 금액 */}
                   {tx.cancel === 'full' && <><s>{won(tx.amount)}</s> <em className="mc-cancel-tag">취소</em></>}
                   {tx.cancel === 'partial' && <>{won(tx.net)}<small className="mc-cancel-sub">부분취소 −{won(tx.cancelAmount)}</small></>}
-                  {!tx.cancel && tx.kind === 'income' && <><span className="mc-tx-in">+{won(tx.amount)}</span> <span className="mc-muted">›</span></>}
-                  {!tx.cancel && (tx.kind === 'transfer' || tx.kind === 'excluded') && <><span className="mc-tx-out">{won(tx.amount)}</span> <span className="mc-muted">›</span></>}
-                  {!tx.cancel && tx.kind === 'normal' && <>{won(tx.amount)} <span className="mc-muted">›</span></>}
+                  {!tx.cancel && tx.kind === 'income' && <><span className="mc-tx-in">+{won(tx.amount)}</span></>}
+                  {!tx.cancel && (tx.kind === 'transfer' || tx.kind === 'excluded') && <><span className="mc-tx-out">{won(tx.amount)}</span></>}
+                  {!tx.cancel && tx.kind === 'normal' && <>{won(tx.amount)}</>}
                 </span>
               </button>
             )

@@ -5,6 +5,8 @@
 // - 그래프: 상위 5줄은 바로, 나머지는 접기. 막대 길이 = 서버가 준 비율(share), 금액 · 비율은 글자로도. 화면에서 다시 계산하지 않는다
 // - 옛 메시지 · 꺼짐(legacy) 엔진 답(text · choices 만 있는 것)도 말풍선으로 그린다
 import { useEffect, useRef, useState } from 'react'
+import { useInRouterContext, useNavigate } from 'react-router'
+import { PATHS } from '../routes.js'
 import { won } from '../utils/money.js'
 import { ENDED_ADJUSTMENTS } from '../utils/adjust.js'
 import Mascot from './Mascot.jsx'
@@ -21,15 +23,45 @@ const Lead = ({ items }) => items.map((l, i) => (
   <p key={`lead-${i}`} className="mc-spend-unc mc-fx-lead" role="note"><strong>안내:</strong> {l}</p>
 ))
 
+// 11/18 검수: 아직 카테고리를 정하지 않은 거래 때문에 금액이 늘 수 있다는 안내는 결과를 바꾸는 정보라 접지 않고 보이게 + [확인하기]
+const CAVEAT = '카테고리를 정하지 않은 거래'
 function Notes({ content }) {
+  const inRouter = useInRouterContext()
   const oldUnclassified = content.chart?.rows?.find(isUnclassified) ?? content.view?.flatMap((b) => b.rows ?? []).find(isUnclassified)
   const unclassified = content.chart?.unclassified ?? (oldUnclassified && `확인 필요 ${won(oldUnclassified.amount)}은 총액에 포함하고 주요 카테고리에서 제외했어요.`)
-  const items = [...new Set([...(content.lead ?? []), content.chart?.basis, content.chart?.limited, ...(content.notices ?? []), unclassified].filter(Boolean))]
-  if (!items.length) return null
-  return <details className="mc-fx-notes">
-    <summary>분석 기준·안내</summary>
-    {items.map((text, i) => <p key={i} className="mc-note">{text}</p>)}
-  </details>
+  const all = [...new Set([...(content.lead ?? []), content.chart?.basis, content.chart?.limited, ...(content.notices ?? []), unclassified].filter(Boolean))]
+  const caveats = all.filter((t) => t.includes(CAVEAT))
+  const items = all.filter((t) => !t.includes(CAVEAT))
+  if (!all.length) return null
+  return <>
+    {caveats.map((text) => <p key={text} className="mc-fx-caveat" role="note">{text}{inRouter && <PendingLink />}</p>)}
+    {items.length > 0 && <details className="mc-fx-notes">
+      <summary>분석 기준·안내</summary>
+      {items.map((text, i) => <p key={i} className="mc-note">{text}</p>)}
+    </details>}
+  </>
+}
+function PendingLink() {
+  const navigate = useNavigate()
+  return <button type="button" className="mc-link" onClick={() => navigate(`${PATHS.txs}?category=UNCLASSIFIED`)}>확인하기 ›</button>
+}
+
+// 서버가 한 문장을 두 줄로 나눠 보내기도 해서('10월 … 소비' + '9월 …과 비교했어요.') 마침표 · 물음표로 끝나는 줄까지 이어 붙인다
+function firstSentence(lines) {
+  const end = lines.findIndex((l) => /[.?!]$/.test(l.trim()))
+  return lines.slice(0, end < 0 ? 1 : end + 1).join(' ')
+}
+
+// 머리줄 (11/18 검수): 서버 제목 '10월 1일~31일 · 식비' → 달 전체면 '10월 식비' 한 줄(질문과 같은 순서), 아니면 주제를 크게 · 기간을 작게.
+// 날짜로 시작하지 않는 제목은 그대로 + 오른쪽 작은 글자는 답 종류
+const FULL_MONTH = /^(\d{1,2})월 1일~(2[89]|3[01])일$/
+function headParts(text, kind) {
+  const cut = text.indexOf(' · ')
+  const period = cut < 0 ? '' : text.slice(0, cut)
+  if (!/^\d{1,2}월/.test(period)) return [text, kind]
+  const topic = text.slice(cut + 3)
+  const month = period.match(FULL_MONTH)
+  return month ? [`${month[1]}월 ${topic}`, null] : [topic, period]
 }
 
 // 카테고리 막대: 금액이 큰 상위 SHOWN 줄은 바로, 나머지는 '나머지 N개 더 보기'로 접는다 (순서 · 금액 · 비율은 서버 그대로, 화면은 자르기만)
@@ -269,9 +301,10 @@ function Trend({ block }) {
 const rowAmount = (r) => r.value ?? (r.amount != null && Number.isFinite(Number(r.amount)) ? won(r.amount) : '')
 
 function Rows({ block }) {
+  const comparison = block.presentation === 'period_comparison'
   return (
     <div className="mc-spend-cats mc-fx-rows">
-      {block.title && <strong>{block.title}</strong>}
+      {block.title && !comparison && <strong>{block.title}</strong>}
       {block.rows.filter((r) => !isUnclassified(r)).map((r) => (
         <div key={r.name} className="mc-spend-cat">
           <span className="mc-spend-cname">{r.name}</span>
@@ -285,6 +318,13 @@ function Rows({ block }) {
       ))}
     </div>
   )
+}
+
+function PeriodComparison({ block }) {
+  return <figure className="mc-fx-period-bars" aria-label={block.title}>
+    <figcaption>{block.title}</figcaption>
+    <Rows block={block} />
+  </figure>
 }
 
 // 분석 메뉴 (11/14): 볼 수 있는 분석 + 한 줄 설명. 누르면 그 질문을 보낸다 (마지막 답변일 때만 — 지난 답은 설명만)
@@ -426,7 +466,7 @@ function Block({ block, onSend }) {
       </div>
     )
   }
-  if (block.kind === 'rows') return <Rows block={block} />
+  if (block.kind === 'rows') return block.presentation === 'period_comparison' ? <PeriodComparison block={block} /> : <Rows block={block} />
   // 한 답에 카드가 여럿이면(예: 지난달 비교 + 남은 예산) 두 번째부터의 머리줄은 구분선 + 소제목 — 빠지면 어느 기간 · 무엇의 금액인지 모른다
   if (block.kind === 'head') return <div className="mc-spend-head mc-fx-subhead"><span>{block.title}</span></div>
   if (block.kind === 'text') {
@@ -558,13 +598,17 @@ function ViewCard({ content, title, onSend }) {
   const [cycle, setCycle] = useState(Boolean(alt?.first))
   const shown = alt && cycle ? { ...content, view: alt.view, chart: alt.chart, lead: alt.lead ?? [], notices: alt.notices ?? [] } : content
   const [head, ...blocks] = shown.view[0].kind === 'head' ? shown.view : [null, ...shown.view]
-  const rows = blocks.filter((b) => b.kind === 'rows')
+  const rows = blocks.filter((b) => b.kind === 'rows' && b.presentation !== 'period_comparison')
   const fold = rows.length >= FOLD_ROWS
   const first = blocks.indexOf(rows[0])
   const pages = paginate(blocks)
+  const [big, small] = head ? headParts(head.title, title) : [title, null]
+  const answer = !cycle && blocks.some((b) => b.kind === 'total') && firstSentence(shown.lines ?? [])
   return (
     <div className="mc-spend" aria-label={`${title} 결과`}>
-      <div className="mc-spend-head"><span>{head ? head.title : title}</span>{head && <small>{title}</small>}</div>
+      <div className="mc-spend-head"><span>{big}</span>{small && <small>{small}</small>}</div>
+      {/* 11/18 검수: 금액 한 장짜리 답이면 서버의 답 문장을 먼저 (숫자만 있으면 대답처럼 안 읽힌다) */}
+      {answer && <p className="mc-fx-answer">{answer}</p>}
       {alt && (
         <div className="mc-tabs mc-fx-period" role="group" aria-label="기간 기준">
           <button type="button" aria-pressed={!cycle} onClick={() => setCycle(false)}>{alt.baseLabel}</button>
@@ -572,7 +616,7 @@ function ViewCard({ content, title, onSend }) {
         </div>
       )}
       {pages ? <Pager pages={pages} onSend={onSend} /> : blocks.map((b, i) => {
-        if (!fold || b.kind !== 'rows') return <Block key={i} block={b} onSend={onSend} />
+        if (!fold || !rows.includes(b)) return <Block key={i} block={b} onSend={onSend} />
         if (i !== first) return null
         return (
           <details key={i} className="mc-fx-fold">

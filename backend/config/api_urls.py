@@ -62,7 +62,6 @@ urlpatterns = [
     path("home/", budgets_api.home, name="home"),
     path("budgets/protect/", budgets_api.protect, name="protect"),
     path("budgets/recommend/", budgets_api.recommend, name="recommend"),
-    path("budgets/<uuid:budget_id>/categories/<str:code>/", budgets_api.budget_category, name="budget-category"),
     path("budgets/<uuid:budget_id>/approve/", budgets_api.budget_approve, name="budget-approve"),
     path("budgets/proposals/<uuid:proposal_id>/", budgets_adjustment.proposal_detail, name="budget-proposal"),
     path("budgets/proposals/<uuid:proposal_id>/approve/", budgets_adjustment.proposal_approve, name="budget-proposal-approve"),

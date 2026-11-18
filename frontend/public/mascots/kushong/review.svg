@@ -1,0 +1,37 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="review-title review-desc">
+  <title id="review-title">쿠숑이 · 확인할 거래</title>
+  <desc id="review-desc">승인된 그림을 등비 배치한 서비스용 256px 벡터 이미지.</desc>
+  <g transform="translate(-10.7404 19.72) scale(0.68)" id="review-art">
+    <g>
+      <path d="M142 60 L51 30 Q34 24 38.5 41.5 L72 172 Z" fill="#F6B55F" />
+      <path d="M218 60 L309 30 Q326 24 321.5 41.5 L288 172 Z" fill="#F6B55F" />
+      <path d="M180 50 C243 50 294 101 294 164 C294 230 224 290 180 290 C136 290 66 230 66 164 C66 101 117 50 180 50 Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" />
+      <ellipse cx="146" cy="148" rx="18" ry="10" fill="#E88F3C" transform="rotate(24 146 148)" />
+      <ellipse cx="214" cy="148" rx="18" ry="10" fill="#E88F3C" transform="rotate(-24 214 148)" />
+      <g>
+        <circle cx="119" cy="204" r="27" fill="#1B2230" />
+        <circle cx="241" cy="204" r="27" fill="#1B2230" />
+        <circle cx="110" cy="194" r="6.5" fill="#fff" />
+        <circle cx="250" cy="194" r="6.5" fill="#fff" />
+      </g>
+      <ellipse cx="180" cy="262" rx="14" ry="9.5" fill="#33261F" />
+      <path d="M160 280 Q180 298 200 280" fill="none" stroke="#33261F" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+      <g>
+        <g fill="#FFFFFF" fill-opacity="0.18" stroke="#3A2A20" stroke-width="6">
+          <circle cx="119" cy="204" r="38" />
+          <circle cx="241" cy="204" r="38" />
+          <path d="M157 200 Q180 188 203 200" fill="none" />
+          <path d="M81 196 L64 184 M279 196 L296 184" fill="none" stroke-linecap="round" />
+        </g>
+      </g>
+      <g transform="translate(-18 0)">
+        <g>
+          <circle cx="352" cy="166" r="34" fill="#FFC738" stroke="#E79F12" stroke-width="5" />
+          <path d="M352 146 v22" stroke="#1B2230" stroke-width="9" stroke-linecap="round" />
+          <circle cx="352" cy="184" r="5.5" fill="#1B2230" />
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

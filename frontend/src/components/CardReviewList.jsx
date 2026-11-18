@@ -56,7 +56,7 @@ export default function CardReviewList({ cardIds, onChanged }) {
   if (query.error) return <div>
     <p className="mc-error" role="alert">{query.error.status ? query.error.message : '서버에 연결하지 못했어요. 잠시 후 다시 시도해 주세요.'}</p>
     {query.error.code === 'consent_required'
-      ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>카드 조회 동의하러 가기</button>
+      ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectCard, { state: { from: 'manage' } })}>카드 조회 동의하러 가기</button>
       : <button type="button" className="mc-secondary" onClick={query.reload}>다시 시도</button>}
   </div>
   if (!query.data) return <p role="status">확인할 거래를 불러오는 중이에요.</p>

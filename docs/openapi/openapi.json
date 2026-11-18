@@ -3,7 +3,7 @@
   "info": {
     "title": "머니쿠션 API 명세서",
     "version": "2026-10-24",
-    "description": "현재 계약 73개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 73개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 예산 조정 자유 대화는 router/live와 실제 ML·재원·감액 정책 연결 상태를 확인하세요.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
+    "description": "현재 계약 72개 · 10개 기능 묶음. **명세 작성 완료와 API 구현 완료는 다릅니다.**\n\n현재 구현 72개(CSRF·인증·금융 동의 및 연결·카드·대출·거래·고정지출·정기 저축·홈·이전 대화·작업 확인·예산), 목업 0개입니다. 전체 명세는 읽기 전용이며, 구현된 API는 [현재 서버 확인](/api/docs/runtime/)에서 직접 실행할 수 있습니다. 예산 조정 자유 대화는 router/live와 실제 ML·재원·감액 정책 연결 상태를 확인하세요.\n\n기준: docs/api/*.md, docs/API_RULES.md, 결정 AA·AB. 요청·응답은 camelCase, 금액은 원 단위 정수, ID는 UUID, 날짜는 YYYY-MM-DD, 시각은 ISO 8601. 빈 값은 null이며 PATCH의 생략은 유지, null은 허용된 칸만 비웁니다. 알 수 없는 요청 필드는 400.\n\n인증은 Django 세션 쿠키입니다(JWT 없음). 변경 요청에는 X-CSRFToken, 일부 생성·확정 요청에는 Idempotency-Key를 보냅니다. 세션 없음은 403 not_authenticated, 주소의 없는·남의·잘못된 ID는 404, 본문의 부적합한 ID는 400입니다. 오류의 fields는 입력 항목 오류일 때만 존재합니다.\n\n미정 항목은 설명에 남겼습니다. ML 에이전트 연동·쿠션, 비정기 준비금(2차), 그 밖의 아직 작성하지 않은 명세는 포함하지 않습니다."
   },
   "servers": [
     {
@@ -9067,7 +9067,7 @@
           "홈"
         ],
         "x-source": "docs/api/home.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. budget은 이번 주기 approved 예산이 있을 때만 채우며(초안 제외) 계산은 GET /api/budgets/와 같습니다. 쿠션 계산은 아직 없습니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.\n\n원본: `docs/api/home.md`",
+        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정·머니쿠션 알림. budget은 이번 주기 approved 예산이 있을 때만 채우며(초안 제외) 계산은 GET /api/budgets/와 같습니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.\n\n원본: `docs/api/home.md`",
         "responses": {
           "200": {
             "description": "정상 처리",
@@ -9101,6 +9101,10 @@
                         "asOf": "2026-10-21T09:30:00+09:00"
                       },
                       "pendingCount": 4,
+                      "cushionNotices": {
+                        "depositDue": false,
+                        "balanceLow": false
+                      },
                       "needsPaydayCount": 1,
                       "mustPay": [
                         {
@@ -9120,6 +9124,28 @@
                           "userChecked": false
                         }
                       ],
+                      "upcoming": {
+                        "total": 700000,
+                        "shortfall": 0,
+                        "items": [
+                          {
+                            "dueId": "5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90",
+                            "type": "recurring",
+                            "sourceId": "a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4",
+                            "name": "월세",
+                            "dueDate": "2026-10-24",
+                            "amount": 700000,
+                            "paymentState": "unpaid",
+                            "paymentAccount": {
+                              "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                              "displayName": "국민 급여통장 · ****5678",
+                              "status": "connected"
+                            },
+                            "isEstimated": false,
+                            "userChecked": false
+                          }
+                        ]
+                      },
                       "budget": null
                     }
                   },
@@ -9135,8 +9161,17 @@
                         "asOf": null
                       },
                       "pendingCount": 0,
+                      "cushionNotices": {
+                        "depositDue": false,
+                        "balanceLow": false
+                      },
                       "needsPaydayCount": 0,
                       "mustPay": [],
+                      "upcoming": {
+                        "total": 0,
+                        "shortfall": null,
+                        "items": []
+                      },
                       "budget": null
                     }
                   }
@@ -10674,8 +10709,6 @@
                           "allocated": 330000,
                           "spent": 1200000,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10684,8 +10717,6 @@
                           "allocated": 110000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10694,8 +10725,6 @@
                           "allocated": 90000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10704,8 +10733,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10714,8 +10741,6 @@
                           "allocated": 80000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10724,8 +10749,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10734,8 +10757,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10744,8 +10765,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10754,8 +10773,6 @@
                           "allocated": 170000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10764,8 +10781,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -10774,8 +10789,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         }
                       ],
@@ -10837,175 +10850,6 @@
                     }
                   }
                 }
-              }
-            }
-          }
-        },
-        "x-implementation-status": "implemented"
-      }
-    },
-    "/api/budgets/{id}/categories/{code}/": {
-      "patch": {
-        "summary": "[구현] 카테고리 금액 고정 · 해제",
-        "operationId": "budgetCategoryLock",
-        "tags": [
-          "예산"
-        ],
-        "x-source": "docs/api/budgets.md",
-        "description": "**개발 상태: 구현** — 현재 서버에서 구현된 API입니다.\n\n이번 주기의 validated·approved만 가능하다. 지난 예산은 409 not_ready: 지난 예산은 바꿀 수 없어요. 없는·남의 예산 또는 예산 카테고리 코드(배분 대상 + 기타, 주거·통신·여행·숙박 제외)가 아니면 404. true는 주소의 예산 생활비 금액을 저장, false는 lockedAmount=null. 잠금 여부가 바뀔 때만 changeCount+1. 이미 true인데 다른 예산에서 다시 걸면 금액만 바뀌며 횟수는 유지한다. 자물쇠 변경은 초안을 만료시키지 않는다. 미승인 조정안 ID의 잠금 설정·해제는 거절하며 승인 전 금액으로 잠금액을 저장하지 않는다. 실제 잠금 변경과 두 자동 해제 경로의 revisionNo는 DB F표현식으로 증가시킨다.\n\n원본: `docs/api/budgets.md`",
-        "responses": {
-          "200": {
-            "description": "현재 자물쇠",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BudgetLockResponse"
-                },
-                "examples": {
-                  "locked": {
-                    "value": {
-                      "category": "FOOD",
-                      "categoryName": "식비",
-                      "locked": true,
-                      "lockedAmount": 330000,
-                      "changeCount": 1,
-                      "nag": null
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "invalid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "invalid": {
-                    "value": {
-                      "error": {
-                        "code": "invalid",
-                        "message": "입력값을 확인해 주세요.",
-                        "fields": {
-                          "locked": [
-                            "자물쇠는 참 또는 거짓으로 보내 주세요."
-                          ]
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "not_authenticated CSRF 실패 시 permission_denied.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "not_authenticated": {
-                    "value": {
-                      "error": {
-                        "code": "not_authenticated",
-                        "message": "로그인이 필요해요."
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "not_found": {
-                    "value": {
-                      "error": {
-                        "code": "not_found",
-                        "message": "찾을 수 없어요."
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "not_ready",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                },
-                "examples": {
-                  "not_ready": {
-                    "value": {
-                      "error": {
-                        "code": "not_ready",
-                        "message": "지난 예산은 바꿀 수 없어요."
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "code",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "enum": [
-                "FOOD",
-                "HOUSING_TELECOM",
-                "TRANSPORT_CAR",
-                "HOUSEHOLD",
-                "FASHION_SHOPPING",
-                "MEDICAL_HEALTH",
-                "BEAUTY",
-                "EDUCATION",
-                "CULTURE_LEISURE",
-                "TRAVEL_LODGING",
-                "ETC"
-              ]
-            }
-          },
-          {
-            "$ref": "#/components/parameters/CsrfToken"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/BudgetLockRequest"
-              },
-              "example": {
-                "locked": true
               }
             }
           }
@@ -11079,8 +10923,6 @@
                           "allocated": 330000,
                           "spent": 1200000,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11089,8 +10931,6 @@
                           "allocated": 110000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11099,8 +10939,6 @@
                           "allocated": 90000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11109,8 +10947,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11119,8 +10955,6 @@
                           "allocated": 80000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11129,8 +10963,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11139,8 +10971,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11149,8 +10979,6 @@
                           "allocated": 50000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11159,8 +10987,6 @@
                           "allocated": 170000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11169,8 +10995,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         },
                         {
@@ -11179,8 +11003,6 @@
                           "allocated": 60000,
                           "spent": 0,
                           "minAmount": null,
-                          "locked": false,
-                          "lockedAmount": null,
                           "reason": null
                         }
                       ],
@@ -17655,6 +17477,23 @@
             "minimum": 0,
             "description": "전체 기간 UNCLASSIFIED 소비 거래 수. 거래 목록의 summary.needsReviewCount와 같다."
           },
+          "cushionNotices": {
+            "type": "object",
+            "properties": {
+              "depositDue": {
+                "type": "boolean",
+                "description": "설정한 월급날의 다음 날이면 참"
+              },
+              "balanceLow": {
+                "type": "boolean",
+                "description": "연결된 원화 통장의 잔액을 모두 확인할 수 있고 합계가 머니쿠션 추정액보다 적을 때 참"
+              }
+            },
+            "required": [
+              "depositDue",
+              "balanceLow"
+            ]
+          },
           "needsPaydayCount": {
             "type": "integer",
             "minimum": 0,
@@ -17669,7 +17508,7 @@
           "budget": {
             "type": "object",
             "nullable": true,
-            "description": "이번 주기 승인 예산 (없으면 null). docs/api/home.md ⑤",
+            "description": "이번 주기 승인 예산. 수입·고정비·보호 조건을 충족하면 평소 예산의 배정액을 자동으로 이어 쓴다. 없으면 null",
             "properties": {
               "budgetId": {
                 "type": "string",
@@ -17685,6 +17524,10 @@
               "livingLeft": {
                 "type": "integer",
                 "description": "남은 생활비 (0 미만 없음)"
+              },
+              "livingSpent": {
+                "type": "integer",
+                "description": "11/17. 이번 주기 생활비 사용액 (생활비를 넘어도 그대로)"
               },
               "livingPct": {
                 "type": "integer",
@@ -17709,7 +17552,7 @@
               },
               "bigSpendings": {
                 "type": "array",
-                "description": "생활비 예산 대비 큰 지출 (홈 알림 줄, 돌발 지출 감지 1단계). 이번 주기에 한 건이 livingBudget의 10% 이상인 생활비 쪽 소비 · 남에게 보낸 이체. 최신순",
+                "description": "실제 사용액이 생활비 예산 이내인 상태에서, 주기 말 예상 지출을 예산 이내에서 5% 이상 초과로 바꾼 이번 주기 생활비 결제. 해당 결제를 뺀 하루 평균을 기준으로 예측한 뒤 순 결제액을 한 번 더한다. 최신순",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -17733,14 +17576,13 @@
                     "kind": {
                       "type": "string",
                       "enum": [
-                        "spending",
-                        "transfer"
+                        "spending"
                       ]
                     },
                     "category": {
                       "type": "string",
                       "nullable": true,
-                      "description": "소비의 카테고리 코드. 이체는 null"
+                      "description": "소비의 카테고리 코드"
                     },
                     "categoryName": {
                       "type": "string",
@@ -17832,6 +17674,91 @@
                   "total",
                   "categories"
                 ]
+              },
+              "week": {
+                "type": "object",
+                "description": "11/17. 이번 주(월요일 시작) 몫. budget = 이번 주 전까지 쓰고 남은 생활비 ÷ 남은 주 수(올림, 최소 1)",
+                "properties": {
+                  "budget": {
+                    "type": "integer"
+                  },
+                  "spent": {
+                    "type": "integer"
+                  },
+                  "left": {
+                    "type": "integer",
+                    "description": "max(budget − spent, 0)"
+                  }
+                },
+                "required": [
+                  "budget",
+                  "spent",
+                  "left"
+                ]
+              },
+              "forecast": {
+                "type": "object",
+                "nullable": true,
+                "description": "11/17. 지금까지 하루 평균 × 주기 전체 일수. 주기 첫날 null",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "gap": {
+                    "type": "integer",
+                    "description": "livingBudget − total. 음수면 모자람"
+                  }
+                },
+                "required": [
+                  "total",
+                  "gap"
+                ]
+              },
+              "topCategories": {
+                "type": "array",
+                "description": "11/17. 이번 주기 생활비 지출 상위 3개 (지출 0원 제외)",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "category": {
+                      "type": "string"
+                    },
+                    "categoryName": {
+                      "type": "string"
+                    },
+                    "spent": {
+                      "type": "integer"
+                    },
+                    "allocated": {
+                      "type": "integer"
+                    },
+                    "over": {
+                      "type": "boolean",
+                      "description": "overCategories 와 같은 기준"
+                    }
+                  },
+                  "required": [
+                    "category",
+                    "categoryName",
+                    "spent",
+                    "allocated",
+                    "over"
+                  ]
+                }
+              },
+              "vsPrev": {
+                "type": "object",
+                "nullable": true,
+                "description": "11/17. 지난 주기 같은 기간 대비. 지난 주기 거래가 없으면 null",
+                "properties": {
+                  "diff": {
+                    "type": "integer",
+                    "description": "이번 − 지난. 양수면 더 씀"
+                  }
+                },
+                "required": [
+                  "diff"
+                ]
               }
             },
             "required": [
@@ -17839,6 +17766,7 @@
               "versionNo",
               "livingBudget",
               "livingLeft",
+              "livingSpent",
               "livingPct",
               "spare",
               "daily",
@@ -17846,7 +17774,36 @@
               "outOfBudget",
               "outOfBudgetAllocated",
               "overCategories",
-              "bigSpendings"
+              "bigSpendings",
+              "week",
+              "forecast",
+              "topCategories",
+              "vsPrev"
+            ]
+          },
+          "upcoming": {
+            "type": "object",
+            "description": "11/17. mustPay 중 오늘 ~ 7일 뒤에 나갈 돈",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shortfall": {
+                "type": "integer",
+                "nullable": true,
+                "description": "total − balance.total (모자랄 때만, 아니면 0). 잔액을 모르면 null"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HomePaymentDue"
+                }
+              }
+            },
+            "required": [
+              "total",
+              "shortfall",
+              "items"
             ]
           }
         },
@@ -17854,8 +17811,10 @@
           "period",
           "balance",
           "pendingCount",
+          "cushionNotices",
           "needsPaydayCount",
           "mustPay",
+          "upcoming",
           "budget"
         ]
       },
@@ -19480,8 +19439,6 @@
           "allocated",
           "spent",
           "minAmount",
-          "locked",
-          "lockedAmount",
           "reason"
         ],
         "properties": {
@@ -19515,15 +19472,6 @@
             "minimum": 0
           },
           "minAmount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "nullable": true
-          },
-          "locked": {
-            "type": "boolean"
-          },
-          "lockedAmount": {
             "type": "integer",
             "format": "int64",
             "minimum": 0,
@@ -19648,69 +19596,6 @@
                 }
               }
             }
-          }
-        },
-        "additionalProperties": false
-      },
-      "BudgetLockRequest": {
-        "type": "object",
-        "required": [
-          "locked"
-        ],
-        "properties": {
-          "locked": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "BudgetLockResponse": {
-        "type": "object",
-        "required": [
-          "category",
-          "categoryName",
-          "locked",
-          "lockedAmount",
-          "changeCount",
-          "nag"
-        ],
-        "properties": {
-          "category": {
-            "type": "string",
-            "enum": [
-              "FOOD",
-              "HOUSING_TELECOM",
-              "TRANSPORT_CAR",
-              "HOUSEHOLD",
-              "FASHION_SHOPPING",
-              "MEDICAL_HEALTH",
-              "BEAUTY",
-              "EDUCATION",
-              "CULTURE_LEISURE",
-              "TRAVEL_LODGING",
-              "ETC"
-            ]
-          },
-          "categoryName": {
-            "type": "string"
-          },
-          "locked": {
-            "type": "boolean"
-          },
-          "lockedAmount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0,
-            "nullable": true
-          },
-          "changeCount": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
-          },
-          "nag": {
-            "type": "string",
-            "nullable": true
           }
         },
         "additionalProperties": false
@@ -20901,7 +20786,7 @@
   },
   "x-source-sha256": {
     "docs/API_RULES.md": "1920a1e06660e6e0ef4c089d56b3dcf4fb84c35b43195c91cbbc9e3008854aab",
-    "docs/api/README.md": "9074758f70ce01151b542fd9418d588bf9894e9074757b52a5a551959e4be402",
+    "docs/api/README.md": "d2d07b51a05cb750fdbaec0346d4a1e45d4e00722a3151bccd684ae707ada7d6",
     "docs/api/salary.md": "1f65120db71f7626d075dc4147644d4987f294e8fb16bbd3533aca6731a29e3e",
     "docs/api/spending-analysis.md": "cc00337b6977a5e7eae24f66d41f2d64b7643bda3038958ea24baba078e9f1ab",
     "docs/결정기록_2026-10-21.md": "eced1eb6db628a785ed3643012f469329475cad84a86d972bbc5c2cadad2a58e",
@@ -20912,8 +20797,8 @@
     "docs/api/transactions.md": "dea2cef12825b7d03de455f0b3e516f91d637040f38dc0370d089a0514d92118",
     "docs/api/fixed.md": "4761f8ff5a9444e033ea0aa980144f342db126e1732bb1f34452df46de08fae3",
     "docs/api/savings.md": "93e8ae07ea0c828d2ad0bce903970968bfce322cc31abc211e944201ed150223",
-    "docs/api/home.md": "7bb99b1aed49c9547a9e78f6b189c0a83cc9358d1a509ae804e805fcb5b79128",
-    "docs/api/chat.md": "033051277cbd644a49c75b87a760336e0fe5da947dd3822eae36c74f81dddb33",
-    "docs/api/budgets.md": "3be9bc7e150244ab8c9e9bbeccc85b489d5d4a3051ffbfa6137f44eff24b7ab9"
+    "docs/api/home.md": "118b3ec1bff43b505f92ca53cb0ee68f0785a031767773291d08f81a31b38b52",
+    "docs/api/chat.md": "29db2b02a86c78ceb79a6b6afd9b2131b2e5f4eefa7b8dc05af75d50524e0831",
+    "docs/api/budgets.md": "b66cb27622b3e593bc0de492ad998abb34c5c4a84d3c0bb31bbca79b9459c691"
   }
 }

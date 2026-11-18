@@ -72,7 +72,6 @@ IMPLEMENTATION = {
     ("put", "/api/budgets/protect/"): "implemented",
     ("post", "/api/budgets/recommend/"): "implemented",
     ("get", "/api/budgets/"): "implemented",
-    ("patch", "/api/budgets/{id}/categories/{code}/"): "implemented",
     ("post", "/api/budgets/{id}/approve/"): "implemented",
     ("get", "/api/budgets/proposals/{id}/"): "implemented",
     ("post", "/api/budgets/proposals/{id}/approve/"): "implemented",

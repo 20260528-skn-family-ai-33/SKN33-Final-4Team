@@ -45,7 +45,7 @@ it('이미 연결된 기관은 연결 완료로 보이고 바로 다음 단계�
   const next = [...host.querySelectorAll('button')].find((b) => b.textContent.includes('보유 계좌 보기'))
   expect(next.textContent).toContain('은행 1곳')
   await act(async () => next.click())
-  expect(navigate).toHaveBeenCalledWith('/finance/connect/accounts', { state: { cards: true } })
+  expect(navigate).toHaveBeenCalledWith('/finance/connect/accounts', { state: { from: undefined } })
 })
 
 it('다시 로그인이 필요한 연결 · 목록을 못 받은 경우는 예전처럼 로그인부터', async () => {

@@ -17,7 +17,7 @@ it('쿠숑이가 인사한 뒤 홈 · 거래 · 예산 · 쿠션 · 챗봇 순�
   const dialog = host.querySelector('[role="dialog"]')
   expect(dialog.getAttribute('aria-modal')).toBe('true')
   expect(title()).toBe('안녕하세요! 쿠숑이에요')
-  expect(host.textContent).toContain('앞으로 여러분의 돈 관리를 제가 함께 도와드릴게요.')
+  expect(host.textContent).toContain('아래 다섯 탭을 하나씩 짚어 드릴게요.')
   expect(host.querySelector('.mc-mascot').dataset.mood).toBe('hello')
   expect(host.querySelector('.mc-mascot').getAttribute('src')).toBe('/mascots/kushong/hello.svg')
   const seen = [title()]
@@ -52,5 +52,6 @@ it('비출 탭을 찾지 못하면(기기 틀 밖) 화면 가운데 카드로 �
   await next()
   expect(host.querySelector('.mc-tour-spot')).toBeNull()
   expect(host.querySelector('.mc-tour-card').classList.contains('is-center')).toBe(true)
-  expect(host.querySelector('.mc-tour-dots').getAttribute('aria-label')).toBe(`${GUIDE_STEPS.length}단계 중 2단계`)
+  expect(host.querySelector('.mc-tour-dots').getAttribute('aria-label')).toBe(`${GUIDE_STEPS.length - 2}단계 중 1단계`)
+  expect(host.querySelectorAll(".mc-tour-dots i.on")).toHaveLength(1)  // 1 / 5 = 막대 하나
 })

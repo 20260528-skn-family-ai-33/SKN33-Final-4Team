@@ -84,12 +84,12 @@ it('이름 검색은 입력하는 대로 목록 · 합계를 거르고, 비우�
   })
 
   await type('star')                                       // 영어는 대소문자 무시
-  expect(host.textContent).toContain('거래 1건 · 소비 5,000원')
+  expect(host.querySelector('.mc-tabhero-title').textContent).toBe('5,000원 썼어요')  // 11/18: 걸러진 합계는 띠 제목
   expect(host.textContent).not.toContain('합성 식당')
   await type('없는 가게')
   expect(host.textContent).toContain("'없는 가게' 이름의 거래가 이 기간에 없어요.")
   await type('')
-  expect(host.textContent).toContain('거래 2건 · 소비 17,345원')
+  expect(host.querySelector('.mc-tabhero-title').textContent).toBe('17,345원 썼어요')
   expect(fetch.mock.calls.length).toBe(calls)              // 글자마다 서버에 다시 묻지 않는다
 })
 

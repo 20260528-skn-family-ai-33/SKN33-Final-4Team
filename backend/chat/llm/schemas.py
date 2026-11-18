@@ -95,6 +95,8 @@ def schema_for(system):
     from budgets.adjustment_core import followups as budget_followups
     if system == budget_followups.PROMPT:
         return 'budget_followups', budget_followups.SCHEMA
+    if system == spending_followups.PROMPT:
+        return "spending_followups", spending_followups.SCHEMA
     if system == spending_narrative.CHECK_PROMPT:
         return "spending_insight_check", spending_narrative.CHECK_SCHEMA
     if system == spending_insight.PROMPT:

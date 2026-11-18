@@ -125,7 +125,7 @@ it('보완 세 칸만 PATCH하고 지운 값은 null, 모름 선택은 unknown�
   expect(host.textContent).toContain('상환 정보를 저장했어요')
   expect(button('다음').disabled).toBe(false)
   await click('다음')
-  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.protect)
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connectDone)  // 11/18: 대출 확인은 계좌 연결 단계의 끝
 })
 it('수정 실패는 입력을 유지하고 재시도 성공 뒤 관리 화면으로 돌아간다', async () => {
   writes.mockResolvedValueOnce(failure('invalid', '입력값을 확인해 주세요.', { monthlyPayment: ['상환 금액 확인 필요'] }))
@@ -167,8 +167,8 @@ it('조회 실패·동의 없음은 빈 목록과 구분하고 재조회할 수 
   await click('다시 시도')
   expect(host.textContent).toContain('대출 조회 동의가 필요해요')
   expect(button('직접 등록')).toBeTruthy()
-  await click('연결 화면에서 동의하기')
-  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connect)
+  await click('대출 조회에 동의하기')
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connectLoan)
 })
 it('대출 세션 만료는 로그인으로 이동한다', async () => {
   loanError = failure('not_authenticated', '로그인이 필요해요.')
@@ -227,7 +227,9 @@ it('등록 응답을 기다리는 동안 중복 제출을 막고 성공 전에�
   expect(host.querySelector('[role=dialog]')).toBeNull()
 })
 async function openBill() {
+  homeData.upcoming = { total: homeData.mustPay[0].amount, shortfall: 0, items: homeData.mustPay }
   await mount(PATHS.home)
+  await act(async () => host.querySelector('.mc-home3-due summary').click())
   await click('합성카드 청구서')
   await click('청구서 상세 보기')
 }
@@ -252,13 +254,15 @@ it('청구서 실패 뒤 재조회하고 카드 동의가 없으면 연결 화�
   billError = failure('consent_required', '동의 필요')
   await click('다시 시도')
   expect(host.textContent).toContain('카드 조회 동의가 필요해요')
-  await click('연결 화면에서 동의하기')
-  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connect)
+  await click('카드 조회에 동의하기')
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connectCard)
 })
 it('홈 대출 항목에서 해당 대출을 우선 표시하고 저장 후 홈으로 돌아간다', async () => {
   loans.push({ ...loan, loanId: 'loan-2', productName: '선택한 대출' })
   homeData.mustPay = [{ ...homeData.mustPay[0], type: 'loan', sourceId: 'loan-2', name: '선택한 대출 상환' }]
+  homeData.upcoming = { total: homeData.mustPay[0].amount, shortfall: 0, items: homeData.mustPay }
   await mount(PATHS.home)
+  await act(async () => host.querySelector('.mc-home3-due summary').click())
   await click('선택한 대출 상환')
   await click('대출 상환 정보 확인')
   expect(host.querySelector('section.mc-loan h2').textContent).toContain('선택한 대출')
@@ -273,13 +277,10 @@ it('연결 완료에서는 월급 입력으로 진행한다', async () => {
   expect(host.querySelector('[data-path]').textContent).toBe(PATHS.salary)
 })
 
-it('저축 확인 후 대출이 없어도 대출 확인을 거쳐 지킬 돈으로 진행한다', async () => {
+it('저축 확인 다음은 바로 지킬 돈 (11/18: 대출 확인은 계좌 연결 단계로 옮김)', async () => {
   loans = []
   await mount(PATHS.savings)
   await click('계속하기')
-  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.loanCheck)
-  expect(host.textContent).toContain('저장된 상환 중 대출이 없어요')
-  await click('다음')
   expect(host.querySelector('[data-path]').textContent).toBe(PATHS.protect)
 })
 
@@ -310,7 +311,7 @@ it('직접 등록 목록이 비어도 기관 대출이 없다고 단정하지 �
   expect(host.textContent).toContain('금융기관에서 대출을 불러오려면')
   expect(button('다음').disabled).toBe(false)
   await click('기관 대출 조회에 동의하기')
-  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connect)
+  expect(host.querySelector('[data-path]').textContent).toBe(PATHS.connectLoan)
 })
 
 it('등록 요청 뒤 닫은 팝업의 늦은 응답은 새로 연 팝업을 닫지 않는다', async () => {

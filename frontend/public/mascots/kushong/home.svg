@@ -1,0 +1,49 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="home-title home-desc">
+  <title id="home-title">쿠숑이 · 홈</title>
+  <desc id="home-desc">승인된 그림을 등비 배치한 서비스용 256px 벡터 이미지.</desc>
+  <g transform="translate(0 -34)">
+    <g transform="translate(41.6 31.28) scale(0.48)" id="home-art">
+      <g>
+        <g>
+          <ellipse cx="180" cy="406" rx="150" ry="11" fill="#182235" opacity="0.14" />
+          <rect x="44" y="150" width="272" height="250" rx="10" fill="#F3E7C4" stroke="#D9C392" stroke-width="3" />
+          <polygon points="180,22 350,156 10,156" fill="#7AA7FF" stroke="#2655DB" stroke-width="7" stroke-linejoin="round" />
+          <path d="M180 48 L318 156 H42 Z" fill="none" stroke="#2655DB" stroke-width="3" stroke-opacity="0.45" />
+          <path d="M96 400 V262 a84 84 0 0 1 168 0 V400 Z" fill="#2A3344" />
+          <path d="M96 400 V262 a84 84 0 0 1 168 0 V400" fill="none" stroke="#E6D6A8" stroke-width="5" stroke-linejoin="round" />
+        </g>
+        <g transform="translate(180 404) scale(1.15) translate(-180 -400)" id="kushong">
+          <path d="M118 400 q0 -56 62 -56 q62 0 62 56 Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2.5" />
+          <g transform="translate(54 169) scale(0.7)">
+            <g transform="">
+              <path d="M142 60 L51 30 Q34 24 38.5 41.5 L72 172 Z" fill="#F6B55F" />
+              <path d="M218 60 L309 30 Q326 24 321.5 41.5 L288 172 Z" fill="#F6B55F" />
+              <path d="M180 50 C243 50 294 101 294 164 C294 230 224 290 180 290 C136 290 66 230 66 164 C66 101 117 50 180 50 Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" />
+              <ellipse cx="146" cy="158" rx="18" ry="10" fill="#E88F3C" transform="rotate(24 146 158)" />
+              <ellipse cx="214" cy="158" rx="18" ry="10" fill="#E88F3C" transform="rotate(-24 214 158)" />
+              <g fill="#F6A5A0" opacity="0.75">
+                <ellipse cx="94" cy="246" rx="17" ry="9" />
+                <ellipse cx="266" cy="246" rx="17" ry="9" />
+              </g>
+              <g fill="none" stroke="#1B2230" stroke-width="9" stroke-linecap="round">
+                <path d="M96 212 Q119 184 142 212" />
+                <path d="M218 212 Q241 184 264 212" />
+              </g>
+              <ellipse cx="180" cy="262" rx="14" ry="9.5" fill="#33261F" />
+              <path d="M160 280 Q180 298 200 280" fill="none" stroke="#33261F" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+            </g>
+          </g>
+          <g>
+            <path d="M129 380C122 382 117 388 116 396C115 405 122 411 135 412C148 413 159 409 162 402C165 394 158 388 148 385C141 382 135 380 129 380Z" fill="#FFF8E3" />
+            <path d="M124 383C119 386 117 391 116 396C115 405 122 411 135 412C148 413 159 409 162 402C164 397 162 393 158 390" fill="none" stroke="#E6D6A8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+          <g transform="translate(360 0) scale(-1 1)">
+            <path d="M129 380C122 382 117 388 116 396C115 405 122 411 135 412C148 413 159 409 162 402C165 394 158 388 148 385C141 382 135 380 129 380Z" fill="#FFF8E3" />
+            <path d="M124 383C119 386 117 391 116 396C115 405 122 411 135 412C148 413 159 409 162 402C164 397 162 393 158 390" fill="none" stroke="#E6D6A8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

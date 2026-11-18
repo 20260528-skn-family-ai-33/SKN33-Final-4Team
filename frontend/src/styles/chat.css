@@ -201,7 +201,12 @@
 }
 
 /* 월별 생활비 막대 (11/13): 실제 = 진한 막대, 예상 = 빗금, 예산 = 점선 */
-#mc-new-preview .mc-fx-months { padding: 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); min-width: 0; }
+#mc-new-preview :is(.mc-fx-months, .mc-fx-period-bars) { padding: 12px; border: 1px solid var(--mc-line); border-radius: 12px; background: var(--mc-bg); min-width: 0; }
+#mc-new-preview .mc-fx-period-bars { margin: 0; }
+#mc-new-preview .mc-fx-period-bars figcaption { margin-bottom: 8px; font-size: 15px; font-weight: 700; color: var(--mc-ink); }
+#mc-new-preview .mc-fx-period-bars .mc-fx-rows { border: 0; padding: 0; }
+#mc-new-preview .mc-fx-period-bars .mc-spend-cbar { height: 8px; background: var(--mc-line); }
+#mc-new-preview .mc-fx-period-bars .mc-spend-cat:nth-of-type(2) .mc-spend-cbar span { background: var(--mc-sub); }
 #mc-new-preview .mc-fx-months svg { display: block; width: 100%; height: auto; }
 #mc-new-preview .mc-fx-months svg text { fill: var(--mc-sub); font-size: 12px; font-variant-numeric: tabular-nums; }
 #mc-new-preview .mc-fx-months svg text.mc-fx-bar-value { fill: var(--mc-ink); font-weight: 650; font-size: 12px; }
@@ -361,16 +366,18 @@
 #mc-new-preview .mc-spend > :is(.mc-spend-cats, .mc-fx-trend, .mc-fx-months, .mc-fx-pace, figure, div) + .mc-fx-section,
 #mc-new-preview .mc-fx-fold > :is(.mc-spend-cats, .mc-fx-trend, .mc-fx-months, .mc-fx-pace, figure, div) + .mc-fx-section { padding-top: 16px; border-top: 1px solid var(--mc-line); }
 
-/* ---------- 마스코트가 답하는 말풍선 (11/16) — 봇 답 위에 마스코트 얼굴 + 이름 한 줄 (이름 옆 가로 뼈다귀 그림) ----------
+/* ---------- 마스코트가 답하는 말풍선 (11/16) — 봇 답 위에 마스코트 얼굴 + 이름 한 줄 ----------
    11/17: 말풍선 옆(왼쪽 46px)에 두면 답 칸이 좁아지고, 말풍선 안에 두면 글이 얼굴을 감싸 줄바꿈이 어색해서 메신저처럼 말풍선 위로
-   얼굴 그림은 components/Mascot.jsx 의 마스코트(웃는 눈 · 볼터치, 방석 없음)를 얼굴 부분만 잘라 SVG 로 넣은 것. 마스코트 원본 얼굴 · 색 그대로.
+   얼굴은 11/18부터 마스코트 그림(/mascots/kushong/hello.svg)을 흰 동그라미 안에 키워 넣는다 (아래 ::after).
    장식이라 글자 · 읽기에 영향 없음. 한 턴에 봇 메시지가 이어지면(답 + 입력 폼) 첫 메시지에만 얼굴을 둔다 */
 #mc-new-preview .mc-asst-log .mc-msg.bot:not(.mc-msg.bot + .mc-msg.bot)::before { content: '쿠숑이'; display: flex; align-items: center; height: 40px; margin: 0 0 6px; padding-left: 48px;
   font-size: 13px; font-weight: 700; color: var(--mc-ink);
-  /* 뼈다귀는 이름(한글 3자, 3em보다 조금 좁음) 바로 뒤, 줄 세로 가운데 */
-  background: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2040%2016'%3E%3Cg%20fill='%23D9792A'%20stroke='%23D9792A'%20stroke-width='2.6'%3E%3Ccircle%20cx='5'%20cy='4.8'%20r='3.3'/%3E%3Ccircle%20cx='5'%20cy='11.2'%20r='3.3'/%3E%3Ccircle%20cx='35'%20cy='4.8'%20r='3.3'/%3E%3Ccircle%20cx='35'%20cy='11.2'%20r='3.3'/%3E%3Crect%20x='5'%20y='5'%20width='30'%20height='6'/%3E%3C/g%3E%3Cg%20fill='%23F6B55F'%3E%3Ccircle%20cx='5'%20cy='4.8'%20r='3.3'/%3E%3Ccircle%20cx='5'%20cy='11.2'%20r='3.3'/%3E%3Ccircle%20cx='35'%20cy='4.8'%20r='3.3'/%3E%3Ccircle%20cx='35'%20cy='11.2'%20r='3.3'/%3E%3Crect%20x='5'%20y='5'%20width='30'%20height='6'/%3E%3C/g%3E%3C/svg%3E") calc(48px + 3em - 1px) 50% / 20px 8px no-repeat,
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 -10 360 360'%3E%3Cellipse cx='180' cy='404' rx='92' ry='9' fill='%23182235' opacity='0.14'%3E%3C/ellipse%3E%3Cg transform=''%3E%3Cg%3E%3Cg%3E%3Ccircle cx='252' cy='318' r='17' fill='%23F6B55F'%3E%3C/circle%3E%3Cpath d='M252 308 a10 10 0 1 1 -9.5 7' fill='none' stroke='%23E88F3C' stroke-width='3.5' stroke-linecap='round'%3E%3C/path%3E%3C/g%3E%3Cpath d='M132 262 C120 300 112 340 124 372 Q180 392 236 372 C248 340 240 300 228 262 Z' fill='%23FFF8E3' stroke='%23E6D6A8' stroke-width='2'%3E%3C/path%3E%3Cellipse cx='180' cy='272' rx='40' ry='24' fill='%23F1E3BC'%3E%3C/ellipse%3E%3Cellipse cx='126' cy='366' rx='24' ry='18' fill='%23FFF8E3' stroke='%23E6D6A8' stroke-width='2'%3E%3C/ellipse%3E%3Cellipse cx='234' cy='366' rx='24' ry='18' fill='%23FFF8E3' stroke='%23E6D6A8' stroke-width='2'%3E%3C/ellipse%3E%3C/g%3E%3Cg%3E%3Cpath d='M140 284 Q180 318 220 284' fill='none' stroke='%23D2452F' stroke-width='12' stroke-linecap='round'%3E%3C/path%3E%3Ccircle cx='180' cy='318' r='12' fill='%23FFC738' stroke='%23E79F12' stroke-width='2'%3E%3C/circle%3E%3Cpath d='M174.5 313.5 l2.6 9 l2.9 -7.5 l2.9 7.5 l2.6 -9 M173 317.6 h14' fill='none' stroke='%238A5200' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3C/path%3E%3C/g%3E%3Cg%3E%3Cg stroke-linecap='round'%3E%3Cline x1='163' y1='326' x2='163' y2='372' stroke='%23E6D6A8' stroke-width='30'%3E%3C/line%3E%3Cline x1='163' y1='326' x2='163' y2='372' stroke='%23FFF8E3' stroke-width='26'%3E%3C/line%3E%3C/g%3E%3Cg stroke-linecap='round'%3E%3Cline x1='197' y1='326' x2='197' y2='372' stroke='%23E6D6A8' stroke-width='30'%3E%3C/line%3E%3Cline x1='197' y1='326' x2='197' y2='372' stroke='%23FFF8E3' stroke-width='26'%3E%3C/line%3E%3C/g%3E%3C/g%3E%3Cg transform=''%3E%3Cpath d='M142 60 L51 30 Q34 24 38.5 41.5 L72 172 Z' fill='%23F6B55F'%3E%3C/path%3E%3Cpath d='M218 60 L309 30 Q326 24 321.5 41.5 L288 172 Z' fill='%23F6B55F'%3E%3C/path%3E%3Cpath d='M180 50 C243 50 294 101 294 164 C294 230 224 290 180 290 C136 290 66 230 66 164 C66 101 117 50 180 50 Z' fill='%23FFF8E3' stroke='%23E6D6A8' stroke-width='2'%3E%3C/path%3E%3Cellipse cx='146' cy='158' rx='18' ry='10' fill='%23E88F3C' transform='rotate%2824 146 158%29'%3E%3C/ellipse%3E%3Cellipse cx='214' cy='158' rx='18' ry='10' fill='%23E88F3C' transform='rotate%28-24 214 158%29'%3E%3C/ellipse%3E%3Cg fill='%23F6A5A0' opacity='0.75'%3E%3Cellipse cx='94' cy='246' rx='17' ry='9'%3E%3C/ellipse%3E%3Cellipse cx='266' cy='246' rx='17' ry='9'%3E%3C/ellipse%3E%3C/g%3E%3Cg fill='none' stroke='%231B2230' stroke-width='9' stroke-linecap='round'%3E%3Cpath d='M96 212 Q119 184 142 212'%3E%3C/path%3E%3Cpath d='M218 212 Q241 184 264 212'%3E%3C/path%3E%3C/g%3E%3Cellipse cx='180' cy='262' rx='14' ry='9.5' fill='%2333261F'%3E%3C/ellipse%3E%3Cpath d='M160 280 Q180 298 200 280' fill='none' stroke='%2333261F' stroke-width='6.5' stroke-linecap='round' stroke-linejoin='round'%3E%3C/path%3E%3C/g%3E%3C/g%3E%3C/svg%3E%0A") 0 0 / 40px 40px no-repeat,
-    radial-gradient(circle at 20px 20px, var(--mc-soft) 19px, var(--mc-line) 19.5px, var(--mc-line) 20px, transparent 20.5px) 0 0 / 40px 40px no-repeat; }
+}
+/* 11/18: 프로필 사진처럼 — 흰 동그라미 안에 쿠숑이 얼굴(마스코트 그림을 키워 머리만 보이게), 이름 옆 뼈다귀는 뺐다 */
+#mc-new-preview .mc-asst-log .mc-msg.bot:not(.mc-msg.bot + .mc-msg.bot) { position: relative; }
+#mc-new-preview .mc-asst-log .mc-msg.bot:not(.mc-msg.bot + .mc-msg.bot)::after { content: ''; position: absolute; left: 0; top: 0; width: 40px; height: 40px;
+  border-radius: 50%; background: #FFFFFF url(/mascots/kushong/hello.svg) 50% 28% / 60px 60px no-repeat;
+  box-shadow: 0 0 0 1px var(--mc-line), 0 2px 6px rgba(20, 33, 74, .08); pointer-events: none; }
 
 /* ---------- 이어서 말하기 추천 버튼 (11/16) — 안내 문구 · 버튼 사이 여백을 줄여 말풍선에 붙여 보이게 ---------- */
 #mc-new-preview .mc-asst-log .mc-fx-next { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
@@ -691,3 +698,25 @@
 }
 /* 11/17: 추천을 못 정한 이유 위에 구분선 하나 (요청 금액 · 참고 안내와 나눈다) */
 #mc-new-preview .mc-budget-choose-help { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--mc-line); }
+
+/* ---------- 11/18 소비 분석 답 검수 (design-for-ai) ---------- */
+/* 답 문장: 숫자 카드 위 한 줄, 왼쪽 라임 막대로 쿠숑이의 대답임을 표시 */
+#mc-new-preview .mc-fx-answer { margin: 2px 0 12px; padding: 2px 0 2px 10px; border-left: 3px solid #C6E85A; font-size: 15px; line-height: 1.6; color: var(--mc-ink); word-break: keep-all; }
+/* 핵심 금액은 홈 위계에 가깝게 크게 */
+#mc-new-preview#mc-new-preview .mc-spend-total strong { font-size: 30px; letter-spacing: -1px; }
+/* 결과를 바꿀 수 있는 안내(분류 안 된 거래)는 접지 않고 보이게 */
+#mc-new-preview .mc-fx-caveat { margin: 12px 0 0; padding: 10px 12px; border-radius: 12px; background: #FFF6E5; color: #8A4B08; font-size: 13px; line-height: 1.55; }
+#mc-new-preview .mc-fx-caveat .mc-link { display: inline-flex; align-items: center; min-height: 32px; margin-left: 4px; padding: 0 2px; font-weight: 700; }
+/* 기준 · 안내 접힘: '근거 자세히 보기'와 같은 오른쪽 셰브런 모양 + 누를 수 있는 높이 44px */
+#mc-new-preview#mc-new-preview .mc-fx-notes > summary { display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0; list-style: none; font-size: 12.5px; }
+#mc-new-preview .mc-fx-notes > summary::-webkit-details-marker { display: none; }
+#mc-new-preview .mc-fx-notes > summary::after { content: ''; width: 6px; height: 6px; margin-right: 4px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); transition: transform .2s; }
+#mc-new-preview .mc-fx-notes[open] > summary::after { transform: rotate(-135deg); }
+/* 대화 중 상단: 연결된 도우미 한 줄 */
+#mc-new-preview .mc-asst-ctxline { display: flex; align-items: center; gap: 6px; margin: 0 0 14px; font-size: 12.5px; font-weight: 600; color: var(--mc-sub); }
+#mc-new-preview .mc-asst-ctxline svg { width: 15px; height: 15px; color: var(--mc-brand); }
+/* 대화 중 하단: 새 대화 + 기능 칩 한 줄 (옆으로 넘김) */
+#mc-new-preview .mc-asst-quick { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 0 8px; padding: 2px 0; }
+#mc-new-preview .mc-asst-quick::-webkit-scrollbar { display: none; }
+#mc-new-preview#mc-new-preview .mc-asst-quick > button { flex: none; margin: 0; }
+#mc-new-preview .mc-asst-chip { min-height: 36px; padding: 0 13px; border-radius: 999px; background: var(--mc-paper); color: var(--mc-ink); font-size: 13px; font-weight: 600; box-shadow: 0 0 0 1px var(--mc-line); white-space: nowrap; }

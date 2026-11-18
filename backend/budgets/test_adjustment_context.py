@@ -218,7 +218,7 @@ class AdjustmentContextTest(TestCase):
         BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id="FOOD",
             locked=True, locked_amount=400000, revision_no=3)
         third = self.context()
-        self.assertEqual(third["locks"], {"FOOD": 400000})
+        self.assertEqual(third["locks"], {})  # 11/18: 자물쇠는 읽지 않는다
         self.assertEqual(third["lock_revisions"], {"FOOD": 3})
         self.assertNotEqual(second["context_hash"], third["context_hash"])
         FinancialProfile.objects.filter(user=self.user).update(savings_floor=650000)
@@ -261,7 +261,7 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(budget.input_snapshot, {})
         self.assertEqual(dict(budget.items.filter(bucket="living").values_list("category_id", "allocated_amount")), AMOUNTS)
 
-    def test_lower_lock_records_ignored_reference_without_changing_inputs_or_erasing_floor(self):
+    def test_saved_lock_does_not_override_floor_or_change_inputs(self):
         budget = self.make_budget(snapshot={"system_floors": {"TRANSPORT_CAR": 55000}})
         FinancialProfile.objects.filter(user=self.user).update(has_car=False)
         budget.items.filter(category_id="TRANSPORT_CAR").update(allocated_amount=37777)
@@ -272,10 +272,9 @@ class AdjustmentContextTest(TestCase):
         with CaptureQueriesContext(connection) as queries:
             found = self.context()
         self.assertTrue(all(row["sql"].lstrip().upper().startswith("SELECT") for row in queries))
-        self.assertEqual(found["locks"], {"TRANSPORT_CAR": 37777})
+        self.assertEqual(found["locks"], {})  # 11/18: 자물쇠는 읽지 않는다
         self.assertEqual(found["system_floors"], {"TRANSPORT_CAR": 60000})
-        self.assertEqual(found["system_floor_ignored_locked"], [{"category": "TRANSPORT_CAR",
-            "reference_amount": 60000, "locked_amount": 37777}])
+        self.assertEqual(found["system_floor_ignored_locked"], [])
         self.assertEqual(FinancialProfile.objects.filter(user=self.user).values().get(), before)
         setting.refresh_from_db()
         minimum.refresh_from_db()
@@ -285,15 +284,16 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(budget.input_snapshot, {"system_floors": {"TRANSPORT_CAR": 55000}})
         self.assertEqual(budget.items.get(category_id="TRANSPORT_CAR").allocated_amount, 37777)
 
-    def test_legacy_lock_without_amount_is_not_compared_or_replaced_with_reference(self):
+    def test_saved_lock_rows_are_ignored_after_lock_removal(self):
+        """11/18 자물쇠 기능 제거: DB에 남은 자물쇠(금액 없는 옛 값 포함)는 읽지 않고 그대로 둔다"""
         self.make_budget()
         FinancialProfile.objects.filter(user=self.user).update(has_car=False)
         setting = BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
             category_id="TRANSPORT_CAR", locked=True, locked_amount=None)
-        with self.assertRaisesRegex(AdjustmentContextError, "invalid_budget_data"):
-            self.context()
+        found = self.context()
+        self.assertEqual((found["locks"], found["system_floor_ignored_locked"]), ({}, []))
         setting.refresh_from_db()
-        self.assertIsNone(setting.locked_amount)
+        self.assertEqual((setting.locked, setting.locked_amount), (True, None))
 
     def test_unknown_collection_is_not_presented_as_zero_available(self):
         self.make_budget()
@@ -516,7 +516,7 @@ class AdjustmentContextTest(TestCase):
         self.assertEqual(self.context(reference_provider=provider)['ml_reference_status'], 'unavailable')
         provider.assert_not_called()
 
-    def test_transport_summary_is_used_only_when_verified_and_lock_has_priority(self):
+    def test_transport_summary_is_used_only_when_verified(self):
         ref = {'status': 'ready', 'months': ['2026-08', '2026-09', '2026-10'],
                'baseline_numerator': 90001, 'baseline_denominator': 3,
                'history_fingerprint': 'a'*64, 'version': 'one-off-category-mad10-dominance3-v1'}
@@ -527,8 +527,8 @@ class AdjustmentContextTest(TestCase):
         BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
             category_id='TRANSPORT_CAR', locked=True, locked_amount=12345)
         found = self.context()
-        self.assertEqual(found['locks']['TRANSPORT_CAR'], 12345)
-        self.assertEqual(found['system_floor_ignored_locked'][0]['reference_amount'], 30000)
+        self.assertEqual((found['locks'], found['system_floor_ignored_locked']), ({}, []))  # 11/18: 자물쇠는 읽지 않는다
+        self.assertEqual(found['system_floors']['TRANSPORT_CAR'], 30000)
         for bad in ({'status': 'unavailable'}, {'baseline_denominator': 0}, {'baseline_numerator': True},
                     {'months': ['2026-08', '2026-10', '2026-11']}):
             budget.input_snapshot = {'transport_history_reference': {**ref, **bad}}

@@ -385,9 +385,8 @@ class DesignAPITest(TestCase):
         self.assertIsNone(task.result['budget_id'])
         self.assertFalse(Budget.objects.filter(user=self.user).exists())
 
-    def test_minimum_lock_conflicts_preserve_budgets_and_settings_until_user_changes_them(self):
-        from .recommend import ALLOCATION_CODES
-
+    def test_minimum_conflicts_preserve_budgets_and_settings_until_user_changes_them(self):
+        # 11/18 자물쇠 기능 제거: 자물쇠 충돌(lock_below_minimum · locks_mismatch_living)은 더 생기지 않아 최소 금액 충돌만 본다
         for records in ({}, history()):
             with self.subTest(plan='b' if records else 'a'), \
                     patch.object(service, 'history_for_user', return_value=records):
@@ -398,19 +397,14 @@ class DesignAPITest(TestCase):
                 response = self.client.post(f'/api/budgets/{approved.pk}/approve/', {}, format='json',
                     HTTP_IDEMPOTENCY_KEY=str(approved.pk))
                 self.assertEqual(response.status_code, 200, response.content)
-                for minimums, locks, kind in (
-                    ({'FOOD': 150000}, {'FOOD': 100000}, 'lock_below_minimum'),
-                    ({'FOOD': 1100000}, {'MEDICAL_HEALTH': 250000}, 'minimums_over_living'),
-                    ({}, dict.fromkeys(ALLOCATION_CODES, 200000), 'locks_mismatch_living'),
+                for minimums, kind in (
+                    ({'FOOD': 1100000, 'MEDICAL_HEALTH': 250000}, 'minimums_over_living'),
                 ):
                     with self.subTest(conflict=kind):
                         CategoryMinimum.objects.filter(user=self.user).delete()
                         BudgetCategorySetting.objects.filter(user=self.user, cycle=self.cycle).delete()
                         for code, amount in minimums.items():
                             CategoryMinimum.objects.create(user=self.user, category_id=code, min_amount=amount)
-                        for code, amount in locks.items():
-                            BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
-                                category_id=code, locked=True, locked_amount=amount)
                         before = self.client.get('/api/budgets/').json()
                         count = Budget.objects.count()
                         failed = self.task(self.post())
@@ -421,8 +415,6 @@ class DesignAPITest(TestCase):
                         self.assertEqual(self.client.get('/api/budgets/').json(), before)
                         self.assertEqual(dict(CategoryMinimum.objects.filter(user=self.user)
                             .values_list('category_id', 'min_amount')), minimums)
-                        self.assertEqual(dict(BudgetCategorySetting.objects.filter(user=self.user,
-                            cycle=self.cycle, locked=True).values_list('category_id', 'locked_amount')), locks)
                         approved.refresh_from_db()
                         self.assertEqual(approved.status, 'approved')
                         # Simulate an explicit settings correction, then request a fresh proposal.
@@ -461,22 +453,20 @@ class DesignAPITest(TestCase):
         food = next(c for c in result['categories'] if c['category'] == 'FOOD')
         self.assertEqual(food['reason'], notice)
 
-    def test_saved_units_and_exact_user_lock_survive_approval(self):
-        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
-            category_id='EDUCATION', locked=True, locked_amount=12345)
+    def test_saved_units_survive_approval(self):
+        # 11/18 자물쇠 기능 제거: 단위 예외였던 자물쇠 금액이 없으니 모든 줄이 5천 원 단위
         CategoryMinimum.objects.create(user=self.user, category_id='ETC', min_amount=12345)
         with patch.object(service, 'history_for_user', return_value={}):
             task = self.task(self.post())
             self.assertEqual(task.result['outcome'], 'proposed')
             budget = Budget.objects.get(pk=task.result['budget_id'])
             lines = {r.category_id: r.allocated_amount for r in budget.items.filter(bucket=Bucket.LIVING)}
-            self.assertEqual(lines['EDUCATION'], 12345)
             self.assertGreaterEqual(lines['ETC'], 12345)
-            self.assertTrue(all(v % 5000 == 0 for c, v in lines.items() if c != 'EDUCATION'))
+            self.assertTrue(all(v % 5000 == 0 for v in lines.values()))
             response = self.client.post(f'/api/budgets/{budget.pk}/approve/', {}, format='json',
                                         HTTP_IDEMPOTENCY_KEY='synthetic-units-approve')
         self.assertEqual(response.status_code, 200, response.content)
-        self.assertEqual(budget.items.get(bucket=Bucket.LIVING, category_id='EDUCATION').allocated_amount, 12345)
+        self.assertEqual({r.category_id: r.allocated_amount for r in budget.items.filter(bucket=Bucket.LIVING)}, lines)
 
     def test_b_funding_is_cycle_only_and_preserves_profile_on_approval(self):
         self.profile.living_budget = 500000

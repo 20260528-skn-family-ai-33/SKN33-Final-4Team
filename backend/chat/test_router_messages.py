@@ -34,7 +34,7 @@ class MessagesTest(SimpleTestCase):
 
     def test_opening_reuses_chat_screen_text_and_menu(self):
         out = messages.opening()
-        self.assertEqual((out["lines"], out["choices"]), (["안녕하세요! 무엇을 도와드릴까요?"], MENU))
+        self.assertEqual((out["lines"], out["choices"]), (["안녕하세요! 쿠숑이에요. 무엇을 도와드릴까요?"], MENU))
 
     def test_spending_start_button_keeps_agent_reply(self):
         out = self.say(button="spending")

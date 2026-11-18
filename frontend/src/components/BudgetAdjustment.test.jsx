@@ -837,3 +837,12 @@ it('추천을 정하지 못한 비교는 이유를 카드 위에 보여 주고, 
   await click(select)
   expect(pick).toHaveBeenCalledWith(content.choices[1])
 })
+
+it('잦은 조정 잔소리는 첫 문장을 주황 경고 한 줄로, 나머지는 원래 질문으로 보여 준다 (11/18 시안 C3)', async () => {
+  const content = { turn: 3, text: '이번 급여 주기에 예산을 3회 조정했어요. 다시 조정할까요?', lines: ['이번 급여 주기에 예산을 3회 조정했어요. 다시 조정할까요?'],
+    choices: [{ value: 'continue_adjustment', label: '계속 조정하기' }, { value: 'keep_budget', label: '지금 예산 유지하기' }],
+    budgetAdjustment: { status: 'awaiting_input', phase: 'adjustment_frequency' } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onPick={vi.fn()} />))
+  expect(host.querySelector('.mc-budget-nag').textContent).toBe('⚠ 이번 급여 주기에 예산을 3회 조정했어요.')
+  expect(host.textContent).toContain('다시 조정할까요?')
+})

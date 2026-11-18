@@ -240,16 +240,10 @@
 #mc-new-preview .mc-cat-legend span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #mc-new-preview .mc-cat-legend b{margin-left:auto;color:var(--mc-ink);font-weight:650;font-variant-numeric:tabular-nums}
 #mc-new-preview .mc-cat-head{margin:14px 0 2px;padding-top:12px;border-top:1px solid var(--mc-line);font-size:11px;color:var(--mc-sub)}
-#mc-new-preview .mc-catrow{display:grid;grid-template-columns:1fr auto 36px;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--mc-line);font-size:15px}
+#mc-new-preview .mc-catrow{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:6px 0;border-bottom:1px solid var(--mc-line);font-size:14px}
 #mc-new-preview .mc-catrow:last-child{border-bottom:0}
 #mc-new-preview .mc-catrow strong{font-variant-numeric:tabular-nums}
-#mc-new-preview .mc-lockt{display:flex;align-items:center;justify-content:center;width:34px;height:34px;min-height:0;margin:0;padding:0;border:0;border-radius:10px;background:transparent;color:var(--mc-sub);opacity:.55}
-#mc-new-preview .mc-lockt svg{width:18px;height:18px}
-#mc-new-preview .mc-lockt[aria-pressed=true]{color:var(--mc-brand);opacity:1;background:var(--mc-soft)}
-#mc-new-preview .mc-lockt{width:24px;height:24px;border-radius:6px}
-#mc-new-preview .mc-lockt svg{width:12px;height:12px}
-#mc-new-preview .mc-catrow{grid-template-columns:1fr auto 24px;gap:10px;padding:5px 0}
-#mc-new-preview .mc-lockt[aria-pressed=true]{background:transparent}
+#mc-new-preview .mc-catrow{gap:10px;padding:5px 0}  /* 11/18: 자물쇠 칸 뺌 */
 #mc-new-preview .mc-catname{display:flex;align-items:center;gap:8px;min-width:0;white-space:nowrap}
 #mc-new-preview .mc-cat-ic{flex:none;width:24px;height:24px;border-radius:6px;background:var(--mc-soft);color:var(--mc-brand);display:inline-flex;align-items:center;justify-content:center}
 #mc-new-preview .mc-cat-ic svg{width:14px;height:14px}
@@ -841,36 +835,6 @@
 #mc-new-preview#mc-new-preview .mc-terms-err{margin:8px 0 0}
 #mc-new-preview#mc-new-preview .mc-terms-foot .mc-primary{margin-top:8px}
 
-/* ===== 홈 개선안 (2026-10-20) 시작 — 되돌릴 때 이 블록을 통째로 지운다 ===== */
-#mc-new-preview#mc-new-preview .mc-home2-period{margin:0 0 12px;display:grid;gap:2px}
-#mc-new-preview#mc-new-preview .mc-home2-period .mc-row{gap:8px}
-#mc-new-preview#mc-new-preview .mc-home2-period .mc-muted{font-size:12px;min-width:0}
-#mc-new-preview#mc-new-preview .mc-home2-period .mc-link{padding:0;min-height:32px;font-weight:600;white-space:nowrap}
-#mc-new-preview#mc-new-preview .mc-home2-asof{font-size:11px;white-space:nowrap}
-#mc-new-preview#mc-new-preview .mc-home2-period .mc-badge{flex:none;font-size:12px;padding:4px 9px}
-#mc-new-preview#mc-new-preview .mc-home2-todo{display:flex;align-items:center;gap:10px;width:100%;min-height:0;margin:0 0 4px;padding:10px 14px;border-radius:12px;text-align:left;font-size:13px;color:var(--mc-ink);background:light-dark(#FFF6E0,#3A2F14);border:1px solid light-dark(#F3D58A,#6B5520)}
-#mc-new-preview#mc-new-preview .mc-home2-todo .mc-grow{flex:1;min-width:0}
-#mc-new-preview#mc-new-preview .mc-home2-todo-dot{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 5px;border-radius:10px;font-size:11px;font-weight:700;background:light-dark(#F0B429,#F5C451);color:#3A2A00}
-#mc-new-preview#mc-new-preview .mc-home2-hero{margin-top:12px;margin-bottom:12px}
-#mc-new-preview#mc-new-preview .mc-home2-hero .mc-budget-amount{margin:10px 0 2px}
-#mc-new-preview#mc-new-preview .mc-home2-hero .mc-budget-amount>strong{font-size:36px}
-#mc-new-preview#mc-new-preview .mc-home2-left{margin:0;font-size:13px;opacity:.9}
-#mc-new-preview#mc-new-preview .mc-home2-left strong{font-weight:800}
-#mc-new-preview#mc-new-preview .mc-home2-bar{position:relative;overflow:visible;margin:16px 0 12px}
-#mc-new-preview#mc-new-preview .mc-home2-bar>span{border-radius:20px}
-#mc-new-preview#mc-new-preview .mc-home2-pace{position:absolute;top:-4px;width:2px;height:15px;margin-left:-1px;border-radius:2px;background:var(--mc-on)}
-#mc-new-preview#mc-new-preview .mc-home2-used{font-size:12px;font-weight:600;text-align:left;min-width:0}
-#mc-new-preview#mc-new-preview .mc-home2-usage{gap:8px;flex-wrap:wrap}
-#mc-new-preview#mc-new-preview .mc-home2-note{flex:none;font-size:12px;font-weight:700;line-height:1;padding:6px 10px;border-radius:999px;background:color-mix(in srgb,var(--mc-on) 16%,transparent)}
-#mc-new-preview#mc-new-preview .mc-home2-note.is-fast::before{content:"";display:inline-block;width:6px;height:6px;margin-right:6px;border-radius:50%;background:#FFB3A6;vertical-align:1px}
-#mc-new-preview#mc-new-preview .mc-home2-note.is-slow,#mc-new-preview#mc-new-preview .mc-home2-note.is-ok{color:var(--mc-lime)}
-#mc-new-preview#mc-new-preview .mc-home2-foot{margin-top:16px;padding-top:14px;border-top:1px solid color-mix(in srgb,var(--mc-on) 22%,transparent)}
-#mc-new-preview#mc-new-preview .mc-home2-spare{font-size:13px;font-weight:600}
-#mc-new-preview#mc-new-preview .mc-home2-spare strong{margin-left:6px;font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
-#mc-new-preview#mc-new-preview .mc-home2-foot .mc-link{font-size:13px}
-#mc-new-preview#mc-new-preview .mc-home2-bal{display:flex;align-items:center;justify-content:space-between;width:100%;min-height:0;padding:14px 18px;text-align:left}
-#mc-new-preview#mc-new-preview .mc-home2-bal strong{font-size:17px;font-variant-numeric:tabular-nums}
-/* ===== 홈 개선안 끝 ===== */
 
 /* ===== 통합 챗봇 자유 입력창 (2026-10-20) 시작 ===== */
 #mc-new-preview#mc-new-preview .mc-asst-in{padding:2px 0}
@@ -992,8 +956,6 @@
 
 /* 홈 · 꼭 나갈 돈 상태 배지 (10/22 PR #26 리뷰 · 결정 Z): 출금 확인 중 = 파랑, 미납 확인 필요 = 빨강, 예상 = 회색 */
 #mc-new-preview .mc-listrow .mc-paydot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--mc-alert);margin-left:6px;vertical-align:middle}
-#mc-new-preview .mc-tile-date{flex-direction:column;gap:1px;line-height:1;font-variant-numeric:tabular-nums}#mc-new-preview .mc-tile-date small{font-size:11px;font-weight:600}#mc-new-preview .mc-tile-date b{font-size:17px}
-#mc-new-preview#mc-new-preview .mc-home2-balcard{padding:0}#mc-new-preview#mc-new-preview .mc-home2-balcard .mc-home2-bal{background:none;border-radius:0;width:calc(100% - 36px);margin:0 18px;padding:14px 0}#mc-new-preview#mc-new-preview .mc-home2-balcard .mc-home2-bal+.mc-home2-bal{border-top:1px solid var(--mc-line)}
 
 /* 정기 저축 팝업 · 찾은 저축(후보)은 계좌를 못 바꿈 (10/22 PR #29 리뷰, S-11) */
 #mc-new-preview .mc-field select:disabled{background:var(--mc-bg);color:var(--mc-sub);cursor:not-allowed}
@@ -1036,11 +998,6 @@
 #mc-new-preview .mc-fixed-late .mc-secondary{margin:0;align-self:flex-start;padding:7px 16px}
 #mc-new-preview .mc-fixed-stop .mc-inline{margin-top:0}
 
-/* 홈 — 예산이 아직 없을 때 안내 카드 (H-06) */
-#mc-new-preview .mc-home2-nobudget{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:18px;border:1px dashed color-mix(in srgb,var(--mc-brand) 45%,var(--mc-line))}
-#mc-new-preview .mc-home2-nobudget h2{margin:4px 0 0;font-size:17px;line-height:1.4;text-wrap:balance}
-#mc-new-preview .mc-home2-nobudget p{margin:0;font-size:13px}
-#mc-new-preview .mc-home2-nobudget .mc-primary{margin-top:8px;width:auto;padding:9px 18px}
 
 /* 연결 해제 확인 (결정 F) */
 #mc-new-preview .mc-disc-list{margin:8px 0 12px;padding-left:18px;font-size:13px;color:var(--mc-sub);line-height:1.6}
@@ -1301,11 +1258,7 @@
 #mc-new-preview#mc-new-preview .mc-protect-line>.mc-cat-rec{grid-column:1;grid-row:2}
 #mc-new-preview#mc-new-preview .mc-protect-line>.mc-protect-delta{grid-column:2;grid-row:3;margin-top:-2px}
 #mc-new-preview#mc-new-preview .mc-protect-input.is-edited{border-color:var(--mc-line);color:var(--mc-ink)}  /* 11/12 시험: 지킬 돈은 고쳐도 칸·글씨를 파랗게 바꾸지 않음 (바뀐 건 아래 '기존보다'로 보임). 되돌리려면 이 줄만 지우기 */
-#mc-new-preview#mc-new-preview .mc-home2-gap{display:flex;align-items:center;gap:12px;width:100%;min-height:0;margin:10px 0 0;padding:12px 14px;border:1px solid var(--mc-line);border-radius:16px;background:var(--mc-paper);color:var(--mc-ink);text-align:left;word-break:keep-all}  /* 홈: 월급 차이 카드 (11/13) */
-#mc-new-preview#mc-new-preview .mc-home2-gap .mc-grow{display:grid;gap:2px}
-#mc-new-preview#mc-new-preview .mc-home2-gap strong{font-size:15px;font-weight:650}
-#mc-new-preview#mc-new-preview .mc-home2-gap small{font-size:12px;color:var(--mc-sub)}
-#mc-new-preview#mc-new-preview .mc-home2-gap b,#mc-new-preview#mc-new-preview .mc-compare dd{font-weight:700;font-variant-numeric:tabular-nums}
+#mc-new-preview#mc-new-preview .mc-compare dd{font-weight:700;font-variant-numeric:tabular-nums}
 #mc-new-preview#mc-new-preview .is-less{color:var(--mc-brand)}
 #mc-new-preview#mc-new-preview .is-more{color:var(--mc-alert)}
 #mc-new-preview#mc-new-preview .mc-compare{margin:14px 0 0;padding:12px 14px;border-radius:12px;background:var(--mc-bg);display:grid;gap:6px;font-size:15px}
@@ -1337,39 +1290,6 @@
 #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-title{display:block;font-size:15px;font-weight:700;margin-bottom:2px}  /* 알림 줄 이름 (11/13): 문장과 같은 크기, 굵게 */
 #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-text{color:color-mix(in srgb,var(--mc-ink) 55%,var(--mc-sub))}  /* 알림 문장은 이름보다 조금 옅게 (11/13) */
 
-/* ---------- 마스코트 쿠숑이 (11/16) — 시작하기 첫인사 · 홈 가이드 투어 (components/GuideTour.jsx) ---------- */
-/* 시작하기: 쿠숑이 + 왼쪽 아래 꼬리가 달린 말풍선 */
-#mc-new-preview .mc-kushong{display:flex;align-items:flex-end;gap:10px;margin:4px 0 8px;word-break:keep-all}
-#mc-new-preview .mc-kushong .mc-mascot{flex:none}
-#mc-new-preview .mc-kushong-say{position:relative;flex:1;margin:0 0 6px;padding:12px 14px;border-radius:12px;border-bottom-left-radius:4px;background:var(--mc-soft);font-size:13px;line-height:1.6;color:var(--mc-ink)}
-#mc-new-preview .mc-kushong-say strong{display:block;margin-bottom:3px;font-size:15px;color:var(--mc-brand)}
-#mc-new-preview .mc-kushong-say::after{content:'';position:absolute;left:-5px;bottom:12px;width:10px;height:10px;background:var(--mc-soft);transform:rotate(45deg)}
-/* 가이드 투어: 기기 화면 전체를 덮고, 설명하는 탭만 구멍(큰 그림자)으로 밝게 */
-#mc-new-preview .mc-tour{position:absolute;inset:0;z-index:30;word-break:keep-all}
-#mc-new-preview .mc-tour-dim{position:absolute;inset:0;background:light-dark(#0f172a8c,#000a)}
-#mc-new-preview .mc-tour-spot{position:absolute;border-radius:50%;box-shadow:0 0 0 9999px light-dark(#0f172a8c,#000a),0 0 0 3px var(--mc-brand),0 0 18px 4px light-dark(#2f6bff66,#7ea2ff66);pointer-events:none;transition:left .25s,top .25s}
-#mc-new-preview .mc-tour-spot::after{content:'';position:absolute;inset:-3px;border-radius:50%;border:3px solid var(--mc-brand);animation:mc-tour-pulse 1.6s ease-out infinite}
-@keyframes mc-tour-pulse{from{transform:scale(1);opacity:.7}to{transform:scale(1.45);opacity:0}}
-#mc-new-preview .mc-tour-card:not(.is-center)::after{content:'';position:absolute;bottom:-8px;left:clamp(16px,calc(var(--mc-tour-caret,50%) - 8px),calc(100% - 32px));width:16px;height:16px;background:var(--mc-paper);transform:rotate(45deg);border-radius:0 0 4px 0}
-#mc-new-preview .mc-tour-card{position:absolute;left:16px;right:16px;display:flex;flex-direction:column;gap:18px;padding:62px 20px 18px;border-radius:24px;background:var(--mc-paper);box-shadow:0 20px 50px #0f172a4d}
-#mc-new-preview .mc-tour-card.is-center{top:50%;transform:translateY(-40%)}  /* 위로 내민 쿠숑이까지 화면 가운데에 오게 */
-#mc-new-preview .mc-tour-who{display:block;text-align:center}
-#mc-new-preview .mc-tour-who .mc-mascot{position:absolute;top:-62px;left:50%;width:104px;height:auto;transform:translateX(-50%);filter:drop-shadow(0 8px 12px #0f172a33)}
-#mc-new-preview .mc-tour-say{position:static;padding:0;background:none}
-#mc-new-preview .mc-tour-say::after{content:none}
-#mc-new-preview .mc-tour-say strong{display:block;margin-bottom:8px;font-size:20px;font-weight:750;letter-spacing:-.3px;color:var(--mc-ink)}
-#mc-new-preview .mc-tour-say p{margin:0;font-size:15px;line-height:1.65;color:var(--mc-sub);text-wrap:pretty}
-#mc-new-preview .mc-tour-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
-#mc-new-preview .mc-tour-dots{display:flex;gap:5px}
-#mc-new-preview .mc-tour-dots i{width:6px;height:6px;border-radius:999px;background:var(--mc-line);transition:width .25s}
-#mc-new-preview .mc-tour-dots i.on{width:16px;background:var(--mc-brand)}
-#mc-new-preview .mc-tour-btns{display:flex;gap:4px}
-#mc-new-preview .mc-tour-btns button{min-height:44px;border-radius:999px;padding:0 14px;font-size:15px;font-weight:650}
-#mc-new-preview .mc-tour-skip{color:var(--mc-sub)}
-#mc-new-preview .mc-tour-next{background:var(--mc-brand);color:var(--mc-on);padding:0 22px;box-shadow:0 6px 14px color-mix(in srgb,var(--mc-brand) 30%,transparent)}
-#mc-new-preview .mc-tour-btns button:focus-visible{outline:2px solid var(--mc-brand);outline-offset:2px}
-@media (prefers-reduced-motion:reduce){#mc-new-preview .mc-tour-spot{transition:none}#mc-new-preview .mc-tour-spot::after{animation:none;opacity:0}}
-
 /* 시작하기: 소개는 짧게, 쿠숑이와 시작 버튼은 하단 고정 영역에 함께 표시한다. */
 #mc-new-preview .mc-onboard h1{font-size:24px;margin:2px 0 14px}
 #mc-new-preview .mc-onboard .mc-hero{padding:16px 20px;margin:0 0 16px;border-radius:20px}
@@ -1383,6 +1303,41 @@
 #mc-new-preview .mc-onboard-footer .mc-kushong-say{margin:0;padding:10px 12px}
 #mc-new-preview .mc-onboard-footer .mc-primary{margin-top:12px}
 
+/* ---------- 마스코트 쿠숑이 (11/16) — 시작하기 첫인사 · 홈 가이드 투어 (components/GuideTour.jsx) ---------- */
+/* 시작하기: 쿠숑이 + 왼쪽 아래 꼬리가 달린 말풍선 */
+#mc-new-preview .mc-kushong{display:flex;align-items:flex-end;gap:10px;margin:4px 0 8px;word-break:keep-all}
+#mc-new-preview .mc-kushong .mc-mascot{flex:none}
+#mc-new-preview .mc-kushong-say{position:relative;flex:1;margin:0 0 6px;padding:12px 14px;border-radius:14px;border-bottom-left-radius:4px;background:var(--mc-soft);font-size:13px;line-height:1.6;color:var(--mc-ink)}
+#mc-new-preview .mc-kushong-say strong{display:block;margin-bottom:3px;font-size:14px;color:var(--mc-brand)}
+#mc-new-preview .mc-kushong-say::after{content:'';position:absolute;left:-5px;bottom:12px;width:10px;height:10px;background:var(--mc-soft);transform:rotate(45deg)}
+/* 가이드 투어: 기기 화면 전체를 덮고, 설명하는 탭만 구멍(큰 그림자)으로 밝게 */
+/* 쿠숑이 가이드 투어 (11/18 시안: 첫 · 마지막 장 = 어두운 화면 가운데 쿠숑이(T2), 탭 소개 = 탭 동그란 빛 + 아래 시트(T1)) */
+#mc-new-preview .mc-tour{position:absolute;inset:0;z-index:30;word-break:keep-all}
+#mc-new-preview .mc-tour-dim{position:absolute;inset:0;background:#0e1424a6}
+#mc-new-preview .mc-tour-spot{position:absolute;border-radius:50%;box-shadow:0 0 0 9999px #0e1424a6,0 0 0 3px #fff;pointer-events:none;transition:left .25s,top .25s}
+#mc-new-preview .mc-tour-hello{position:absolute;left:24px;right:24px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;text-align:center;color:#fff}
+#mc-new-preview .mc-tour-hello strong{margin-top:10px;font-size:24px;font-weight:750;letter-spacing:-.8px}
+#mc-new-preview .mc-tour-hello p{margin:8px 0 28px;font-size:15px;line-height:1.55;color:#DDE5F7}
+#mc-new-preview .mc-tour-hello .mc-tour-next{width:100%;max-width:280px;min-height:52px;border-radius:16px;background:#fff;color:var(--mc-brand);font-size:16px;font-weight:700}
+#mc-new-preview .mc-tour-hello .mc-tour-skip{margin-top:8px;min-height:44px;padding:0 16px;color:#DDE5F7;font-size:14px;font-weight:600}
+#mc-new-preview .mc-tour-card{position:absolute;left:10px;right:10px;padding:20px 20px 16px;border-radius:28px;background:var(--mc-paper);box-shadow:0 16px 40px #0e142440}
+#mc-new-preview .mc-tour-card.is-center{top:50%;transform:translateY(-50%)}
+#mc-new-preview .mc-tour-who{position:relative;display:flex;align-items:center;gap:12px}
+#mc-new-preview .mc-tour-who .mc-mascot{flex:none;margin:-34px 0 -6px -6px}
+#mc-new-preview .mc-tour-say{flex:1;min-width:0;padding-right:56px}
+#mc-new-preview .mc-tour-say small{display:block;font-size:12px;font-weight:700;color:var(--mc-brand)}
+#mc-new-preview .mc-tour-say strong{display:block;margin-top:3px;font-size:18px;font-weight:750;letter-spacing:-.5px;color:var(--mc-ink)}
+#mc-new-preview .mc-tour-say p{margin:4px 0 0;font-size:14px;line-height:1.5;color:var(--mc-sub)}
+#mc-new-preview .mc-tour-x{position:absolute;top:-6px;right:-6px;min-height:36px;padding:0 6px;font-size:12.5px;font-weight:600;color:var(--mc-sub)}
+#mc-new-preview .mc-tour-dots{display:flex;gap:4px;margin:18px 0 14px}
+#mc-new-preview .mc-tour-dots i{flex:1;height:4px;border-radius:4px;background:#E3E8F1}
+#mc-new-preview .mc-tour-dots i.on{background:var(--mc-brand)}
+#mc-new-preview .mc-tour-btns{display:grid;grid-template-columns:1fr 2fr;gap:8px}
+#mc-new-preview .mc-tour-btns button{min-height:48px;border-radius:14px;font-size:15px;font-weight:700}
+#mc-new-preview .mc-tour-prev{background:var(--mc-soft);color:var(--mc-brand)}
+#mc-new-preview .mc-tour-btns .mc-tour-next{background:var(--mc-brand);color:var(--mc-on)}
+#mc-new-preview .mc-tour button:focus-visible{outline:2px solid var(--mc-brand);outline-offset:2px}
+@media (prefers-reduced-motion:reduce){#mc-new-preview .mc-tour-spot{transition:none}}
 
 /* ---------- 첨부된 달리기 그림: SVG 내부 상하 움직임 + 화면 속 짧은 전진·속도선 ---------- */
 #mc-new-preview .mc-run-motion{position:relative;display:inline-block;flex:none;max-width:100%;vertical-align:middle}
@@ -1393,5 +1348,88 @@
 @keyframes mc-run-forward{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
 @keyframes mc-run-speed{from{transform:translateX(7px);opacity:0}35%{opacity:.55}to{transform:translateX(-5px);opacity:0}}
 @media (prefers-reduced-motion:reduce){#mc-new-preview .mc-run-dog,#mc-new-preview .mc-run-motion::before{animation:none}#mc-new-preview .mc-run-motion::before{opacity:0}}
-/* 팝업 안 안내 문구: 위아래 여백 없이 (인라인 style padding:0 대신) */
-#mc-new-preview .mc-note.mc-note-flush{padding:0}
+/* ===== 홈 재설계 (2026-11-17, 그래픽 강조형) — mc-home3-*. 큰 원 그래프가 주인공, 파란색은 그래프 · 막대 · 링크에만.
+   금액 글자는 세 단계뿐: big(이번 주 36px) · mid(블록 대표 19px) · 줄 금액(15px). 새 색 없음 ===== */
+#mc-new-preview .mc-home3-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-6px 2px 0;font-size:12.5px;color:var(--mc-sub)}
+#mc-new-preview .mc-home3-meta>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mc-new-preview .mc-home3-meta .mc-link{flex:none;font-size:12.5px;min-height:36px;padding:0;color:var(--mc-brand);font-weight:650;text-decoration:none}
+/* 첫 화면 — 카드 없이 원 그래프 + 뒤에 은은한 빛 */
+#mc-new-preview .mc-home3-hero{position:relative;padding:6px 0 0;text-align:center;font-variant-numeric:tabular-nums}
+#mc-new-preview .mc-home3-hero::before{content:"";position:absolute;left:50%;top:-30px;width:340px;height:340px;transform:translateX(-50%);border-radius:50%;background:radial-gradient(closest-side,color-mix(in srgb,var(--mc-brand) 13%,transparent),transparent);pointer-events:none}
+#mc-new-preview .mc-home3-hero>*{position:relative}
+#mc-new-preview .mc-home3-ring{position:relative;width:228px;height:228px;margin:6px auto 0}
+#mc-new-preview .mc-home3-ring svg{display:block;width:100%;height:100%;transform:rotate(-90deg)}
+#mc-new-preview .mc-home3-ring circle{fill:none;stroke-width:12}
+#mc-new-preview .mc-home3-ring .t{stroke:color-mix(in srgb,var(--mc-brand) 12%,var(--mc-line))}
+#mc-new-preview .mc-home3-ring .v{stroke:var(--mc-brand);stroke-linecap:round}
+#mc-new-preview .mc-home3-ringin{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+#mc-new-preview .mc-home3-label{margin:0;font-size:13px;font-weight:600;color:var(--mc-sub)}
+#mc-new-preview .mc-home3-big{font-size:36px;font-weight:800;letter-spacing:-1.4px;line-height:1.15;white-space:nowrap;color:var(--mc-ink)}
+#mc-new-preview .mc-home3-big small{margin-left:2px;font-size:20px;font-weight:700;letter-spacing:-.4px}
+#mc-new-preview .mc-home3-chip{margin-top:4px;padding:4px 11px;border-radius:999px;background:var(--mc-soft);color:var(--mc-brand);font-size:12px;font-weight:700}
+#mc-new-preview .mc-home3-sub{margin:10px 0 0;font-size:13px;line-height:1.5;color:var(--mc-sub);word-break:keep-all}
+/* 같은 크기 두 칸 */
+#mc-new-preview .mc-home3-stats{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:10px;margin-top:22px}
+#mc-new-preview .mc-home3-stats>div{display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;padding:16px 14px 14px;border-radius:20px;background:var(--mc-paper);border:1px solid var(--mc-line)}
+#mc-new-preview .mc-home3-stats>div>span{font-size:12.5px;font-weight:600;color:var(--mc-sub);white-space:nowrap}
+#mc-new-preview .mc-home3-mid{font-size:19px;font-weight:750;letter-spacing:-.6px;white-space:nowrap;color:var(--mc-ink);font-variant-numeric:tabular-nums}
+#mc-new-preview .mc-home3-mid em{font-style:normal;font-size:13px;font-weight:700;letter-spacing:0}
+#mc-new-preview .mc-home3-stats .is-short .mc-home3-mid{color:var(--mc-alert)}
+#mc-new-preview .mc-home3-stats small{font-size:11.5px;color:var(--mc-sub);white-space:nowrap}
+#mc-new-preview .mc-home3-bar{position:relative;width:100%;height:6px;margin:8px 0 4px;border-radius:6px;background:var(--mc-line)}
+#mc-new-preview .mc-home3-bar>span{display:block;height:100%;border-radius:6px;background:var(--mc-brand)}
+#mc-new-preview .mc-home3-bar>i{position:absolute;top:-3px;width:2px;height:12px;margin-left:-1px;border-radius:2px;background:var(--mc-ink)}
+#mc-new-preview .mc-home3-stats .is-short .mc-home3-bar>span{background:var(--mc-alert)}
+/* 예산이 없을 때 */
+#mc-new-preview .mc-home3-empty{margin-top:10px;padding:22px 20px;border-radius:24px;background:var(--mc-paper);border:1px solid var(--mc-line);text-align:left}
+#mc-new-preview .mc-home3-empty .mc-home3-label{font-size:17px;font-weight:700;line-height:1.4;color:var(--mc-ink);word-break:keep-all;text-wrap:balance}
+#mc-new-preview .mc-home3-cta{margin-top:16px;min-height:44px;padding:0 18px;border:0;border-radius:12px;background:var(--mc-brand);color:var(--mc-on);font-weight:700;font-size:14px}
+/* 어떻게 쓰고 있나 */
+#mc-new-preview .mc-home3-sheet{margin:34px 0 0}
+#mc-new-preview .mc-home3-sheethead{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;margin:0 2px 12px}
+#mc-new-preview .mc-home3-sheethead .mc-link{font-size:12.5px;min-height:36px;padding:0;color:var(--mc-sub);font-weight:600;text-decoration:none}
+#mc-new-preview .mc-home3-eyebrow{margin:0;font-size:17px;font-weight:750;color:var(--mc-ink);letter-spacing:-.4px}
+#mc-new-preview .mc-home3-total{margin:2px 0 0;font-size:12.5px;color:var(--mc-sub)}
+#mc-new-preview .mc-home3-tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#mc-new-preview .mc-home3-tile{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;padding:14px 12px 12px;border-radius:18px;background:var(--mc-paper);border:1px solid var(--mc-line)}
+#mc-new-preview .mc-home3-tile .mc-tile{width:34px;height:34px;border-radius:11px;margin-bottom:8px}
+#mc-new-preview .mc-home3-tile-name{font-size:12.5px;color:var(--mc-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+#mc-new-preview .mc-home3-tile b{font-size:15px;font-weight:750;letter-spacing:-.3px;white-space:nowrap;color:var(--mc-ink);font-variant-numeric:tabular-nums}
+#mc-new-preview .mc-home3-minibar{width:100%;height:4px;margin:8px 0 4px;border-radius:4px;background:var(--mc-line);overflow:hidden}
+#mc-new-preview .mc-home3-minibar span{display:block;height:100%;border-radius:4px;background:var(--mc-brand)}
+#mc-new-preview .mc-home3-tile small{font-size:11px;color:var(--mc-sub);white-space:nowrap}
+/* 예산 초과는 예산 화면과 같은 라임 표시 (빨강은 모자람 · 잔액 부족 두 곳만) */
+#mc-new-preview .mc-home3-tile.is-over .mc-home3-minibar span{background:var(--mc-lime-accent)}
+#mc-new-preview .mc-home3-tile.is-over small{color:var(--mc-olive);font-weight:700}
+#mc-new-preview .mc-home3-facts{margin-top:10px;padding:4px 16px;border-radius:18px;background:var(--mc-paper);border:1px solid var(--mc-line)}
+#mc-new-preview .mc-home3-facts>p,#mc-new-preview .mc-home3-facts>button{display:flex;align-items:center;gap:10px;width:100%;min-height:50px;margin:0;padding:0;background:none;border:0;border-radius:0;text-align:left;font-size:13.5px;color:var(--mc-sub)}
+#mc-new-preview .mc-home3-facts>*+*{border-top:1px solid var(--mc-line)}
+#mc-new-preview .mc-home3-facts svg{flex:none}
+#mc-new-preview .mc-home3-facts span:not(.mc-muted){flex:1;min-width:0;word-break:keep-all}
+#mc-new-preview .mc-home3-facts b{color:var(--mc-ink);font-weight:700;white-space:nowrap}
+/* 할 일 — 카드 없이 구분선, 가장 가볍게 */
+#mc-new-preview .mc-home3-todo{list-style:none;margin:30px 0 20px;padding:0;border-top:1px solid var(--mc-line)}
+#mc-new-preview .mc-home3-todo>li{border-bottom:1px solid var(--mc-line)}
+#mc-new-preview .mc-home3-todo>li>button,#mc-new-preview .mc-home3-due>summary{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:10px 2px;background:none;border:0;border-radius:0;color:var(--mc-ink);text-align:left;font-size:14px;cursor:pointer;list-style:none}
+#mc-new-preview .mc-home3-due>summary::-webkit-details-marker{display:none}
+#mc-new-preview .mc-home3-todo svg{flex:none;color:var(--mc-sub)}
+#mc-new-preview .mc-home3-todo-name{flex:1;min-width:0}
+#mc-new-preview .mc-home3-todo-name small{margin-left:6px;font-size:12px;color:var(--mc-sub)}
+#mc-new-preview .mc-home3-todo-name .mc-home3-asof{display:block;margin:0;font-size:11px}
+#mc-new-preview .mc-home3-todo b{font-size:15px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
+#mc-new-preview .mc-home3-chev{color:var(--mc-sub);transition:transform .2s}
+#mc-new-preview .mc-home3-due[open] .mc-home3-chev{transform:rotate(90deg)}
+#mc-new-preview .mc-home3-dueitem{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0 2px 0 34px;background:none;border:0;border-radius:0;color:var(--mc-ink);text-align:left;font-size:13.5px}
+#mc-new-preview .mc-home3-dueitem>span:first-child{color:var(--mc-sub);font-variant-numeric:tabular-nums}
+#mc-new-preview .mc-home3-dueitem small{color:var(--mc-sub)}
+#mc-new-preview .mc-home3-dueitem b{font-size:14px}
+#mc-new-preview .mc-home3-dueall{display:block;margin:2px 0 10px 34px;font-size:12px;min-height:32px;padding:0}
+#mc-new-preview .mc-home3-dot{display:inline-block;width:6px;height:6px;margin-left:6px;border-radius:50%;background:var(--mc-brand);vertical-align:3px}
+#mc-new-preview .mc-home3-warn{margin:-6px 0 10px 34px;font-size:12px;font-weight:650;color:var(--mc-alert)}
+#mc-new-preview#mc-new-preview .mc-home3-gap{display:flex;align-items:center;gap:12px;width:100%;min-height:0;margin:16px 0 0;padding:12px 14px;border:1px solid var(--mc-line);border-radius:16px;background:var(--mc-paper);color:var(--mc-ink);text-align:left;word-break:keep-all}
+#mc-new-preview#mc-new-preview .mc-home3-gap .mc-grow{display:grid;gap:2px}
+#mc-new-preview#mc-new-preview .mc-home3-gap strong{font-size:14px;font-weight:650}
+#mc-new-preview#mc-new-preview .mc-home3-gap small{font-size:12px;color:var(--mc-sub)}
+#mc-new-preview#mc-new-preview .mc-home3-gap b{font-weight:700;font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){#mc-new-preview .mc-home3-chev{transition:none}}
+/* ===== 홈 재설계 끝 ===== */

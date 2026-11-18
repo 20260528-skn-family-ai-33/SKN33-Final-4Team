@@ -102,7 +102,7 @@ NOTICE = {
     "outside_spent": "예산 밖 지출({names}) {amount}은 남은 생활비에서 빼고 따로 보여드려요.",
     "old_scope_budget": "이전 기준으로 승인한 예산이에요. 주거·통신 · 여행·숙박 배정 {amount}이 생활비에 들어 있어요. 새 기준으로 추천을 다시 받아 주세요.",
     "unclassified": "카테고리가 아직 정해지지 않은 거래 {count}건, 총 {amount}도 포함했어요.",
-    "classified_only": "{name}{particle} 분류된 금액 기준이에요. 확인 필요 {amount}에 따라 달라질 수 있어요.",
+    "classified_only": "{name}{particle} 분류된 금액 기준이에요. 아직 카테고리를 정하지 않은 거래 {amount}이 있어서 금액이 늘 수 있어요.",  # 11/18: '확인 필요'는 내부 용어라 풀어 씀
     "classified_budget": "{name}{particle} 분류된 결제 기준이에요. 확인 필요 {amount}이 있어 실제로 쓸 수 있는 돈은 더 적을 수 있어요.",
     "classified_budget_rows": "카테고리별 남은 예산은 분류된 결제 기준이에요. 확인 필요 {amount}이 있어 실제로 쓸 수 있는 돈은 더 적을 수 있어요.",
     "classified_compare": "{name}{particle} 분류된 내역 기준으로 비교했어요. 확인 필요(이번 달 {current} · 지난달 {previous})에 따라 증감이 달라질 수 있어요.",
@@ -741,6 +741,14 @@ def _badge(c, uncertain=False):
     return {"text": VIEW["same"], "direction": "same"}
 
 
+def period_comparison_bars(now, before, current_period, previous_period, *, title="기간별 지출 비교"):
+    top = max(now, before)
+    rows = [{"name": name, "amount": amount, "note": span(period),
+             "ratio": str(percent(amount, top)["value"]) if top > 0 else "0"}
+            for name, amount, period in (("이번 달", now, current_period), ("지난달", before, previous_period))]
+    return {"kind": "rows", "presentation": "period_comparison", "title": title, "rows": rows}
+
+
 def _view_one_compare(r):
     """한 항목 비교: 큰 금액 = 차이(더 · 덜 쓴 금액), 아래 두 줄 = 이번 달 · 지난달 금액 막대 (길이 = 큰 쪽 대비)"""
     c, item = r["comparison"]["category" if r["item"].get("category") else "total"], r["item"]
@@ -751,15 +759,12 @@ def _view_one_compare(r):
         note = VIEW["from_zero"].format(delta=won(c["delta"]))
     else:
         note = c["delta"] and VIEW["rate_up" if c["delta"] > 0 else "rate_down"].format(rate=_plain(c["rate"])) or VIEW["same"]
-    top = max(now, before)
-    rows = [{"name": name, "amount": amount, "note": span(r[key]["period"]),
-             "ratio": str(percent(amount, top)["value"]) if top > 0 else "0"}
-            for name, key, amount in (("이번 달", "current", now), ("지난달", "previous", before))]
     caption = VIEW["more" if c["delta"] > 0 else "less" if c["delta"] < 0 else "even"]
     return _relabel_blocks([
         _head(f"{_name(item)} · 지난달 같은 기간과 비교"),
         {"kind": "total", "caption": caption, "amount": abs(c["delta"]), "note": note,
-         "direction": "up" if c["delta"] > 0 else "down" if c["delta"] < 0 else "same"}, {"kind": "rows", "rows": rows}], r)
+         "direction": "up" if c["delta"] > 0 else "down" if c["delta"] < 0 else "same"},
+        period_comparison_bars(now, before, r["current"]["period"], r["previous"]["period"])], r)
 
 
 def _view_compare(results, many):
@@ -841,6 +846,9 @@ def _view_one_query(r):
         caption = f"하루 평균 ({r['days']}일 · 고정지출 {_fixed_word(item)})" if m == "daily_avg" else QUERY_CAPTION[m]
         if m == "daily_avg" and fig["fixed"] and not note:
             note = f"고정지출 빼면 하루 {won(fig['daily_avg_living']['value'])}"
+        # 11/18 검수: 합계만 있으면 많은지 적은지 감이 없어 건수를 함께 (서버가 센 값 그대로)
+        if m == "sum" and not note and fig["count"]:
+            note = f"{fig['count']}건"
         total = {"kind": "total", "caption": caption, "amount": value, "note": note}
     blocks = [head, total]
     if _short_total(r) and r.get("fixed_excluded"):
@@ -1003,6 +1011,13 @@ def compose(results, notices=(), _alt=True):
         label = overview.get("period_label", "이번 달")
         topic = "변동 소비" if overview["item"].get("include_fixed") is False else "전체 소비"
         reply["lead"] = [f"먼저 {label} {topic}를 볼게요. 비교나 남은 예산은 아래 질문에서 이어서 확인할 수 있어요.", *reply.get("lead", [])]
+    # 11/18 검수: 한 달 · 한 카테고리 금액만 답하면 '분석'으로는 얇다 → 같은 달 · 같은 카테고리로 이어 볼 질문 (버튼 글자 그대로 다시 묻는다)
+    one = done[0] if len(done) == 1 else None
+    if one and not reply.get("examples") and narrowed(one["item"]) and len(one.get("periods") or []) == 1:
+        p = one["periods"][0]
+        if p.start.day == 1:
+            month, prev, name = f"{p.start.month}월", f"{(p.start.month - 2) % 12 + 1}월", scope(one["item"])
+            reply["examples"] = [f"{month} {name} {prev}과 비교해줘", f"{month} {name} 어디서 많이 썼어?"]
     if any((r.get("confirmed") or {}).get("over") for r in done if r["type"] in (3, 4)) or over_target(results):
         reply["suggest"] = ["budget_adjust"]  # 초과 뒤 예산 조정 제안 (문구 · 선택지는 라우터 안내가 붙인다)
     if excluded and not all(r["item"].get("include_fixed") is False for r in done):

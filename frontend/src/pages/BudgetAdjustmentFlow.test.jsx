@@ -301,14 +301,13 @@ it.each([
   ['NORMAL_ADJUSTMENT', false, '/api/budgets/proposals/proposal-1/approve/'],
 ])('%s 확인 팝업에서 유지 기본값을 바꿔 정확한 승인 경로로 보낸다', async (mode, initialKeep, path) => {
   const proposal = card({ mode, keepForNextCycle: initialKeep,
-    targetItems: [{ category: 'FASHION_SHOPPING', amount: null }], unlockCategories: ['FOOD'] })
+    targetItems: [{ category: 'FASHION_SHOPPING', amount: null }] })
   apiSend.mockResolvedValueOnce(proposalTalk(proposal)).mockResolvedValueOnce(saved(proposal))
   await mount()
   await submit('식비를 조정해줘')
   await click(button('예산 확정하기'))
   const dialog = host.querySelector('[role=dialog]')
   expect(dialog.textContent).toContain('385,000원')
-  expect(dialog.textContent).toContain('식비 잠금 해제')
   expect(dialog.textContent).toContain('패션·쇼핑 유지 목표 해제')
   const checkbox = dialog.querySelector('input[type=checkbox]')
   expect(checkbox.checked).toBe(initialKeep)
@@ -643,8 +642,8 @@ it.each([
 })
 
 it.each([
-  ['/budgets', 'approved', 'NORMAL_ADJUSTMENT', '챗봇으로 예산 조정'],
-  ['/budgets', 'validated', 'INITIAL_ADJUSTMENT', '챗봇으로 예산 조정'],
+  ['/budgets', 'approved', 'NORMAL_ADJUSTMENT', '쿠숑이와 예산 조정하기'],
+  ['/budgets', 'validated', 'INITIAL_ADJUSTMENT', '쿠숑이와 예산 조정하기'],
   ['/budgets/recommend', 'validated', 'INITIAL_ADJUSTMENT', '챗봇과 조정하기 ›'],
 ])('%s의 %s 예산에서 실제 기준 ID와 모드로 새 대화를 시작한다', async (path, status, mode, label) => {
   useApi.mockImplementation((url) => ({ data: url === '/api/budgets/' ? budgetData(status) : info, error: null }))
@@ -744,7 +743,6 @@ it('승인 전 초안 예산에서는 초과한 카테고리에 [예산 조정�
 })
 
 it.each([
-  ['locked_amount', 400000, 350000, -50000, '잠금액과 유지 목표가 달라요.'],
   ['minimum_amount', 300000, 350000, 50000, '유지 목표가 최소 보장액보다 작아요.'],
   ['amount_unit', 55555, 60000, 4445, '유지 목표를 5천 원 단위로 확인해 주세요.'],
   ['living_budget', 700000, 600000, -100000, '유지 목표를 현재 생활비 안에 모두 반영할 수 없어요.'],

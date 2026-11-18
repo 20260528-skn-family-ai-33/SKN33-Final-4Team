@@ -469,8 +469,9 @@ class SchedulePersistenceTest(TestCase):
     def test_changed_protection_requires_review_instead_of_scheduled_override(self):
         card = self.make_schedule()
         self.approve(card['proposal_id'])
-        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id='EDUCATION',
-                                             locked=True, locked_amount=50000)
+        # 11/18 자물쇠 기능 제거: 보호 조건 변경은 자물쇠 대신 최소 금액으로 만든다
+        from users.models import CategoryMinimum
+        CategoryMinimum.objects.create(user=self.user, category_id='EDUCATION', min_amount=50000)
         with transaction.atomic():
             activate_due_settings(self.user, self.profile, date(2026, 11, 25))
         self.profile.refresh_from_db()

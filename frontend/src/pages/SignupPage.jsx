@@ -6,6 +6,7 @@
 import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import Mascot from '../components/Mascot.jsx'
 import PasswordInput from '../components/PasswordInput.jsx'
 import { useLoggedInRedirect } from '../utils/useLoggedInRedirect.js'
 import TermsPopup from '../popups/TermsPopup.jsx'
@@ -160,11 +161,14 @@ export default function SignupPage() {
         </button>
       }
     >
-      <div className="mc-eyebrow">회원가입</div>
-      <h1>머니쿠션 계정을 만들어요</h1>
+      {/* 11/18 시안 O3: 큰 문장 + 오른쪽 쿠숑이. 입력 칸은 묶음 하나에 줄로 나눈다 (칸 상자가 너무 많다는 피드백) */}
+      <div className="mc-o3-head">
+        <h1>반가워요!<br />계정부터 만들어요</h1>
+        <Mascot mood="hello" size={96} />
+      </div>
 
       <form
-        className="mc-form"
+        className="mc-form mc-o2-form"
         id="mc-form"
         onSubmit={onSubmit}
         aria-busy={isSubmitting}
@@ -174,6 +178,7 @@ export default function SignupPage() {
           aria-label="회원가입 정보"
           style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}
         >
+          <div className="mc-o2-group">
           <label className="mc-field">
             이름
             <input
@@ -188,10 +193,7 @@ export default function SignupPage() {
               }
             />
             {/* 저축 후보 감지가 이체 적요의 이름과 비교한다 (11/4) */}
-            <span id="signup-nickname-hint" className="mc-muted" style={{ display: 'block', marginTop: 6 }}>
-              은행 거래내역에 나오는 실명으로 적어 주세요.<br />
-              내 계좌끼리 옮긴 돈을 소비로 잘못 세지 않도록 확인할 때 써요.
-            </span>
+            <span id="signup-nickname-hint" className="mc-o2-hint">은행 거래내역에 나오는 실명으로 적어 주세요</span>
           </label>
 
           {fieldErrors.nickname && (
@@ -284,13 +286,15 @@ export default function SignupPage() {
             {matchText}
           </p>
 
+          </div>
+
           {pwError && (
             <p id="signup-pw-error" className="mc-error" role="alert">
               {pwError}
             </p>
           )}
 
-          <div className="mc-card" ref={termsCard}>
+          <div className="mc-o2-terms" ref={termsCard}>
             {terms.error ? (
               <div role="alert">
                 <p className="mc-error">약관을 불러오지 못했어요. 약관을 확인해야 가입할 수 있어요.</p>

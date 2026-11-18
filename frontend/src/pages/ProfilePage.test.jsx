@@ -72,6 +72,10 @@ it('마이에서 들어오면 단계 표시줄 없이 저장하고 마이로 돌
 })
 
 it('사는 지역은 저장된 값으로 시도 · 시군구를 채우고 PUT 에 보낸다', async () => {
+  // 저장된 값이 다 있으면 마지막 확인 목록부터. 줄을 누르면 그 질문으로 돌아간다
+  expect(host.querySelector('select[aria-label="시도"]')).toBeNull()
+  expect(host.querySelector('[data-step="region"] b').textContent).toBe('서울특별시 관악구')
+  await act(async () => host.querySelector('[data-step="region"]').click())
   expect(host.querySelector('select[aria-label="시도"]').value).toBe('11000')
   expect(host.querySelector('select[aria-label="시군구"]').value).toBe('11620')
   await pick('시군구', '11110')
@@ -92,4 +96,24 @@ it('사는 지역을 고르지 않으면 저장하지 않는다 (필수)', async
   apiSend.mockResolvedValue({})
   await submit()
   expect(apiSend).toHaveBeenCalledWith('/api/profile/', 'PUT', expect.objectContaining({ regionCode: '36110' }))
+})
+
+it('처음 가입하면 한 번에 하나씩 묻고, [다음]은 빠진 대답을 막는다', async () => {
+  profile = { birthDate: null, gender: null, hasCar: null, housingType: null, regionCode: null, priorities: [], categoryMinimums: [] }
+  await act(() => root.render(<ProfilePage key="fresh" />))
+  expect(host.querySelector('#mc-birth')).not.toBeNull()
+  expect(host.querySelector('select[aria-label="시도"]')).toBeNull()
+  expect(host.querySelector('button[type=submit]').textContent).toBe('다음')
+  await submit()
+  expect(host.textContent).toContain('생년월일 6자리를 확인해 주세요.')
+  await act(async () => {
+    const input = host.querySelector('#mc-birth')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '980412')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await submit()
+  expect(host.querySelector('#mc-birth')).toBeNull()
+  expect(host.querySelector('.mc-o3-pill').textContent).toContain('2 / 7')
+  expect([...host.querySelectorAll('button')].some((b) => b.textContent === '여성')).toBe(true)
+  expect(apiSend).not.toHaveBeenCalled()
 })

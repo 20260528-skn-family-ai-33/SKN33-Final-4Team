@@ -213,6 +213,14 @@ tx.classification_source = USER_SOURCE   # 지금은 "user" (코드 확정되면
 - 다른 회원의 기록은 쓰지 않는다 (회원별로만 기억).
 
 
+## 2026-11-18: 자물쇠 기능 제거 — 칸 삭제 마이그레이션 요청 (김나은 makemigrations 필요)
+
+자물쇠(카테고리 금액 고정) 기능을 뺐다 (김혜리, 사용자 결정). 코드는 아래 칸을 더 이상 읽거나 쓰지 않는다.
+- `budget_category_setting.locked` · `locked_amount`, CHECK `bcs_locked_amount_gte_0` · `bcs_unlocked_no_amount`
+- 계산 입구(`recommend.budget_settings` · `adjustment_context` · `adjustment_schedule.protections`)는 늘 "잠긴 카테고리 없음"으로 동작하고, 새 주기에 자물쇠를 이어받지 않는다. `PATCH /api/budgets/<id>/categories/<code>/`는 삭제(`docs/api/budgets.md`).
+- 같은 표의 `change_count`(바꾼 횟수 잔소리) · `revision_no`는 아직 다른 코드가 읽어서 남긴다. 표 자체는 유지.
+- **요청:** 위 두 칸과 CHECK 2개를 지우는 마이그레이션. 지우기 전 기존 행의 값은 계산에 쓰이지 않으므로 옮길 데이터는 없다. 남은 참조: `budgets/api.py`의 `release_locks*`(옛 자물쇠를 푸는 코드 — 지금은 늘 빈 결과), `adjustment_service.py`의 `unlock_categories` 갱신 — 칸을 지울 때 같이 정리한다.
+
 ## 2026-11-13: 안 쓰는 칸 정리 (users/0014_remove_unused_profile_columns · finance/0015_remove_source_ref_ciphertext)
 
 서비스 코드가 읽지도 쓰지도 않는 칸 9개를 지운다. 저장소 전체 사용처 검수(Claude · Codex 각각) 결과 둘 다 '지워도 됨'으로 본 칸만이다.

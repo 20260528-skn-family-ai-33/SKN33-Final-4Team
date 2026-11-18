@@ -270,15 +270,11 @@ class SalaryTests(TestCase):
         self.assertEqual(response.status_code, 202, response.content)
         return Budget.objects.get(user=self.user, task_id=response.json()["task"]["taskId"])
 
-    def test_recommend_lock_approve_keep_scheduled_boundary(self):
+    def test_recommend_approve_keep_scheduled_boundary(self):
         self.prepare_budget_transition()
         budget = self.recommend_budget()
         cycle = self.assert_active_period(date(2026, 10, 25), date(2026, 11, 10))
         self.assertEqual(budget.cycle_id, cycle.pk)
-        response = self.client.patch(f"/api/budgets/{budget.pk}/categories/FOOD/",
-                                     {"locked": False}, format="json")
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assert_active_period(date(2026, 10, 25), date(2026, 11, 10))
         response = self.client.post(f"/api/budgets/{budget.pk}/approve/", {}, format="json",
                                     HTTP_IDEMPOTENCY_KEY=str(uuid4()))
         self.assertEqual(response.status_code, 200, response.content)
@@ -293,17 +289,6 @@ class SalaryTests(TestCase):
         cycle = self.assert_active_period(date(2026, 11, 10), date(2026, 12, 10))
         self.assertEqual(budget.cycle_id, cycle.pk)
         self.assertEqual(FinancialProfile.objects.get(user=self.user).payday, 10)
-
-    def test_lock_first_after_transition_rejects_previous_approved_budget(self):
-        self.prepare_budget_transition()
-        budget = self.make_budget(status="approved")
-        self.today.return_value = date(2026, 11, 10)
-        response = self.client.patch(f"/api/budgets/{budget.pk}/categories/FOOD/",
-                                     {"locked": False}, format="json")
-        self.assertEqual(response.status_code, 409, response.content)
-        self.assertEqual(response.json()["error"]["code"], "not_ready")
-        budget.refresh_from_db()
-        self.assertEqual(budget.status, "approved")
 
     def test_approve_first_after_transition_rejects_previous_approved_budget(self):
         self.prepare_budget_transition()

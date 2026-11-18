@@ -3,13 +3,14 @@
 //        activeTab = 켜진 탭 (탭 화면만. 있으면 하단 탭 + 오른쪽 위 마이 아이콘이 보인다)
 //        foot = 화면 맨 아래 고정 버튼 (없어도 됨)
 //        headAction = 오른쪽 위 메뉴 아이콘 왼쪽에 둘 버튼 (홈의 알림 종)
+//        bare = 상단 바 없이 (로그인)
 //        overlay = 기기 화면 전체를 덮는 안내 (쿠숑이 가이드 투어). 있으면 뒤 화면을 팝업처럼 잠근다
 //        children = 화면 본문
 import Header from './Header.jsx'
 import TabBar from './TabBar.jsx'
 import { usePopup } from '../popups/context.js'
 
-export default function Layout({ title, showBack = false, backTo, activeTab, foot, headAction, overlay, children }) {
+export default function Layout({ title, showBack = false, backTo, activeTab, foot, headAction, overlay, bare = false, children }) {
   const { popup } = usePopup()
   const locked = !!popup || !!overlay  // 팝업 · 안내가 떠 있으면 뒤 화면은 못 누르게 잠근다 (inert)
 
@@ -17,8 +18,10 @@ export default function Layout({ title, showBack = false, backTo, activeTab, foo
     // 디자인 CSS 가 전부 #mc-new-preview 아래에 걸려 있어서 id 를 그대로 쓴다
     <div id="mc-new-preview">
       <div className="mc-preview-stage">
-        <div className="mc-device">
-          <Header title={title} showBack={showBack} backTo={backTo} showMy={!!activeTab} action={headAction} inert={locked} />
+        {/* data-tab: 탭마다 머리 · 띠 색이 다르다 (styles/tabs.css, 11/18 시안 B) */}
+        <div className="mc-device" data-tab={activeTab}>
+          {/* bare = 머리 없이 (로그인 · 시작하기, 11/18 시안 O3) */}
+          {!bare && <Header title={title} showBack={showBack} backTo={backTo} showMy={!!activeTab} action={headAction} inert={locked} />}
           <div id="mc-toast" role="status"></div>
           <main id="mc-main" inert={locked}>
             <div className="mc-screen">

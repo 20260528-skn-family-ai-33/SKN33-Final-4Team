@@ -13,6 +13,22 @@ const month = { result: true, lines: [], lead: [], notices: ['이번 달 안내'
 const alt = { label: '예산 주기', baseLabel: '이번 달', lines: [], notices: ['주기 안내'], view: view('10월 25일~11월 11일 · 소비', 100000) }
 const render = (content) => act(() => root.render(<ChatReply content={content} title="소비 분석" active onPick={() => {}} />))
 
+it('같은 기간 비교 막대에 금액과 날짜를 표시하고 기존 지출 카드 안에 둔다', async () => {
+  await render({ ...month, view: [
+    { kind: 'head', title: '패션·쇼핑 · 지난달 같은 기간과 비교' },
+    { kind: 'total', amount: 140000, caption: '지난달보다 더 쓴 금액' },
+    { kind: 'rows', presentation: 'period_comparison', title: '기간별 지출 비교', rows: [
+      { name: '이번 달', amount: 300000, note: '10월 1일~29일', ratio: '100.00' },
+      { name: '지난달', amount: 160000, note: '9월 1일~29일', ratio: '53.33' },
+    ] },
+  ] })
+  const graph = host.querySelector('.mc-spend figure.mc-fx-period-bars')
+  expect(graph.getAttribute('aria-label')).toBe('기간별 지출 비교')
+  expect(graph.textContent).toContain('300,000원10월 1일~29일')
+  expect(graph.textContent).toContain('160,000원9월 1일~29일')
+  expect([...graph.querySelectorAll('[role="img"]')].map((bar) => bar.firstElementChild.style.width)).toEqual(['100%', '53.33%'])
+})
+
 it('저장된 옛 rows 응답도 확인 필요를 순위에서 빼고 하단에 보존한다', async () => {
   await render({ ...month, view: [
     { kind: 'head', title: '소비 분석' },
@@ -146,12 +162,12 @@ it('예산 주기 판이 없으면 기간 전환 버튼을 그리지 않는다',
 it('[이번 달 | 예산 주기]로 서버가 준 두 판을 바꿔 보여 준다', async () => {
   await render({ ...month, alt })
   expect(button('이번 달').getAttribute('aria-pressed')).toBe('true')
-  expect(host.textContent).toContain('11월 1일~11일 · 소비')
+  expect(host.querySelector('.mc-spend-head').textContent).toBe('소비11월 1일~11일')  // 11/18: 주제 크게 · 기간 작게
   expect(host.textContent).toContain('30,000원')
   expect(host.textContent).toContain('이번 달 안내')
   await act(() => button('예산 주기').click())
   expect(button('예산 주기').getAttribute('aria-pressed')).toBe('true')
-  expect(host.textContent).toContain('10월 25일~11월 11일 · 소비')
+  expect(host.querySelector('.mc-spend-head').textContent).toBe('소비10월 25일~11월 11일')
   expect(host.textContent).toContain('100,000원')
   expect(host.textContent).toContain('주기 안내')
   expect(host.textContent).not.toContain('30,000원')
@@ -224,7 +240,7 @@ it('분석 메뉴는 분석마다 설명을 보여 주고, 누르면 그 질문�
     { kind: 'head', title: '소비 분석 · 볼 수 있는 분석' },
     { kind: 'options', items: [
       { title: '소비 습관', desc: '매달 반복되는 소비를 짚어요.', ask: '내 소비 습관 어때?' },
-      { title: '지난달과 비교', desc: '더 쓴 이유를 찾아요.', ask: '이번 달 생활비 왜 이렇게 많이 나왔지?' },
+      { title: '지난달과 비교', desc: '더 쓰거나 덜 쓴 이유를 찾아요.', ask: '지난달과 달라진 소비는 뭐야?' },
     ] },
   ] }
   await act(() => root.render(<ChatReply content={content} title="소비 분석" active onPick={() => {}} onSend={onSend} />))
@@ -232,7 +248,7 @@ it('분석 메뉴는 분석마다 설명을 보여 주고, 누르면 그 질문�
   expect(cards).toHaveLength(2)
   expect(cards[0].textContent).toContain('매달 반복되는 소비를 짚어요.')
   await act(() => cards[1].click())
-  expect(onSend).toHaveBeenCalledWith('이번 달 생활비 왜 이렇게 많이 나왔지?')
+  expect(onSend).toHaveBeenCalledWith('지난달과 달라진 소비는 뭐야?')
   await act(() => root.render(<ChatReply content={content} title="소비 분석" active={false} onPick={() => {}} onSend={onSend} />))
   expect(host.querySelectorAll('.mc-fx-options button')).toHaveLength(0)
   expect(host.querySelector('.mc-fx-options').textContent).toContain('소비 습관')
@@ -711,4 +727,20 @@ it('휠 이동량이 줄 · 페이지 단위면 픽셀로 바꿔 넘기고, Ctrl
   const zoom = roll({ deltaY: 100, ctrlKey: true })
   expect(zoom.defaultPrevented).toBe(false)  // 확대 · 축소는 브라우저가 처리
   expect(bar.scrollLeft).toBe(348)
+})
+
+it('달 전체 · 한 카테고리 금액 답은 \'10월 식비\' 제목, 서버 답 문장, 보이는 분류 안내로 보여 준다 (11/18 검수)', async () => {
+  await render({ result: true, agent: 'spending', lines: ['10월(10월 1일~31일) 식비에 500,000원 썼어요.'],
+    notices: ['식비로 분류된 금액 기준이에요. 아직 카테고리를 정하지 않은 거래 10,000원이 있어서 금액이 늘 수 있어요.'],
+    view: [{ kind: 'head', title: '10월 1일~31일 · 식비' }, { kind: 'total', caption: '쓴 금액', amount: 500000, note: '12건' }] })
+  expect(host.querySelector('.mc-spend-head').textContent).toBe('10월 식비')
+  expect(host.querySelector('.mc-fx-answer').textContent).toBe('10월(10월 1일~31일) 식비에 500,000원 썼어요.')
+  expect(host.querySelector('.mc-fx-caveat').textContent).toContain('아직 카테고리를 정하지 않은 거래 10,000원')
+  expect(host.querySelector('.mc-fx-notes')).toBeNull()  // 다른 안내가 없으면 접힘도 없다
+})
+
+it('두 줄로 나뉜 답 문장은 마침표가 나올 때까지 이어 한 줄로 보여 준다 (11/18)', async () => {
+  await render({ result: true, agent: 'spending', lines: ['10월(10월 1일~31일) 소비', '9월(9월 1일~30일)과 비교했어요.', '다음 줄'], notices: [],
+    view: [{ kind: 'head', title: '식비 · 9월과 비교' }, { kind: 'total', caption: '9월보다 덜 쓴 금액', amount: 62000 }] })
+  expect(host.querySelector('.mc-fx-answer').textContent).toBe('10월(10월 1일~31일) 소비 9월(9월 1일~30일)과 비교했어요.')
 })

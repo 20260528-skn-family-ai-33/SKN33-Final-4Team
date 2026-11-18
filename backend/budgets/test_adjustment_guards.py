@@ -64,50 +64,6 @@ class AdjustmentGuardTest(TestCase):
         ordinary.save(update_fields=["task"])
         self.assertEqual(self.get()["budget"]["budgetId"], str(ordinary.pk))
 
-    def test_approved_derived_budget_remains_visible_and_lockable(self):
-        previous = self.make_budget("superseded")
-        approved = self.derived(previous, status="approved")
-        approved.task = self.task()
-        approved.save(update_fields=["task"])
-        self.assertEqual(self.get()["budget"]["budgetId"], str(approved.pk))
-        response = self.lock(approved, {"locked": True})
-        self.assertEqual(response.status_code, 200, response.content)
-        setting = BudgetCategorySetting.objects.get(user=self.user, cycle=self.cycle, category_id="FOOD")
-        self.assertEqual((setting.locked_amount, setting.revision_no), (700_000, 1))
-
-    def test_unapproved_proposal_lock_and_unlock_are_rejected_without_mutation(self):
-        base = self.make_budget("approved")
-        setting = BudgetCategorySetting.objects.create(
-            user=self.user, cycle=self.cycle, category_id="FOOD", locked=True,
-            locked_amount=1_000_000, change_count=2, revision_no=7,
-        )
-        proposals = [self.derived(base), self.derived(task_only=True)]
-        for proposal in proposals:
-            for locked in (True, False):
-                with self.subTest(proposal=str(proposal.pk), locked=locked):
-                    response = self.lock(proposal, {"locked": locked})
-                    self.assertEqual((response.status_code, response.json()["error"]["code"]), (409, "not_ready"))
-                    setting.refresh_from_db()
-                    self.assertEqual((setting.locked, setting.locked_amount, setting.change_count, setting.revision_no),
-                                     (True, 1_000_000, 2, 7))
-
-    def test_actual_lock_changes_increment_revision_and_identical_requests_do_not(self):
-        first = self.make_budget()
-        self.assertEqual(self.lock(first, {"locked": True}).status_code, 200)
-        setting = BudgetCategorySetting.objects.get(user=self.user, cycle=self.cycle, category_id="FOOD")
-        self.assertEqual((setting.change_count, setting.revision_no), (1, 1))
-        self.lock(first, {"locked": True})
-        setting.refresh_from_db()
-        self.assertEqual((setting.change_count, setting.revision_no), (1, 1))
-        second = self.make_budget(food=700_000)
-        self.lock(second, {"locked": True})
-        setting.refresh_from_db()
-        self.assertEqual((setting.locked_amount, setting.change_count, setting.revision_no), (700_000, 1, 2))
-        self.lock(second, {"locked": False})
-        self.lock(second, {"locked": False})
-        setting.refresh_from_db()
-        self.assertEqual((setting.locked, setting.locked_amount, setting.change_count, setting.revision_no), (False, None, 2, 3))
-
     def test_bulk_release_changes_only_current_locks_and_preserves_change_count(self):
         food = BudgetCategorySetting.objects.create(
             user=self.user, cycle=self.cycle, category_id="FOOD", locked=True,

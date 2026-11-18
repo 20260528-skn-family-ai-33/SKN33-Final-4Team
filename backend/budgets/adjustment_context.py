@@ -353,7 +353,7 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
     else:
         reasons["CUSHION_MONTHLY"] = "cushion_execution_unverified"
     settings = list(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, category_id__in=LIVING_CODES))
-    locks = _money_map({row.category_id: row.locked_amount for row in settings if row.locked}, allocations)
+    locks = {}  # 자물쇠 기능 제거 (11/18): 예전에 걸어 둔 DB 값은 읽지 않는다
     system_floors = ({"TRANSPORT_CAR": 100000 if profile.has_car else 60000}
                      if type(profile.has_car) is bool else {})
     transport = _transport_reference(chosen)

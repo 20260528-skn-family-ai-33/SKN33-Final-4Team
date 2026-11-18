@@ -355,6 +355,9 @@ def prepare(request):
         store.save_agent_state(KEY, 'budget', {})
         store.set_active(KEY, None)
         state = {}
+    if feature in (None, "budget", "spending"):
+        from budgets.rollover import sync_current_budget
+        sync_current_budget(request.user, today)
     adapter = AdjustmentAdapter(request.user, conversation=talk, today=today, **(state.get("entry_context") or {}))
     bot, route = answer(request.user, store, text=text, button=feature, budget_adapter=adapter, budget_hints=budget_hints,
                         suggested=choice is not None)  # 답변 선택지를 눌러 온 버튼 (소비 분석 초과 답변의 [예산 조정하기] 등)

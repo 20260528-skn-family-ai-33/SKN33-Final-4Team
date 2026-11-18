@@ -56,7 +56,7 @@ def cushion(request):
     """GET /api/budgets/cushion/ — 머니 쿠션 화면 데이터
     PATCH {"goalAmount": 원 | null} — 목표 금액을 직접 정하기, null 이면 기본(월급의 3배)으로 (11/13, docs/api/cushion.md).
     같은 값이면 그대로 성공"""
-    from .cushion import cushion_data
+    from .cushion import cushion_data, cushion_notices_today, savings_data
     if request.method == "PATCH":
         from finance.inputs import reject_unknown_fields
         from .protect import GOAL_MAX, GOAL_MIN, cushion_goal
@@ -82,7 +82,10 @@ def cushion(request):
                 profile.save(update_fields=fields)
                 # 쿠션 필수 판단 · 추천 쿠션이 바뀔 수 있어 만들어 둔 초안은 다시 추천받게 한다 (승인 예산은 그대로)
                 Budget.objects.filter(user=request.user, status__in=["draft", "validated"]).update(status="expired")
-    return Response(cushion_data(request.user))
+    from .rollover import sync_current_budget
+    sync_current_budget(request.user, timezone.localdate())
+    return Response({**cushion_data(request.user), "savings": savings_data(request.user),
+                     "notices": cushion_notices_today(request.user, timezone.localdate())})
 
 
 # ==================================================================
@@ -483,16 +486,24 @@ def run_recommend(task, cycle, snapshot, expected_spare, locks_released=()):
     task.save(update_fields=["status", "result", "error_code", "completed_at"])
 
 
-def recommended_budget_lines(snapshot, out):
+def fixed_budget_lines(fixed):
     from .models import Bucket
-    from .recommend import ALLOCATION_CODES
-    fixed, saved = snapshot["fixed"], snapshot["saved"]
+
     lines = [{"bucket": Bucket.FIXED, "category_id": code, "allocated_amount": amount}
              for code, amount in sorted(fixed["categories"].items()) if amount]
     lines += [{"bucket": Bucket.FIXED, "category_detail": detail, "allocated_amount": fixed[detail]}
               for detail in ("loan", "card_reserved") if fixed[detail]]
     if fixed.get('planned_reserve'):
         lines.append({'bucket': Bucket.RESERVE, 'category_id': 'TRAVEL_LODGING', 'reserve_id': fixed['planned_reserve_id'], 'allocated_amount': fixed['planned_reserve']})
+    return lines
+
+
+def recommended_budget_lines(snapshot, out):
+    from .models import Bucket
+    from .recommend import ALLOCATION_CODES
+
+    saved = snapshot["saved"]
+    lines = fixed_budget_lines(snapshot["fixed"])
     lines += [
         {"bucket": Bucket.SAVINGS, "allocated_amount": saved["saving_floor"]},
         {"bucket": Bucket.CUSHION, "allocated_amount": saved["cushion_monthly"]},
@@ -539,49 +550,6 @@ class BudgetExpired(APIException):
     status_code = 409
     default_code = "expired"
     default_detail = "조건이 바뀌어서 다시 추천받아야 해요."
-
-
-@api_view(["PATCH"])
-@permission_classes([IsAuthenticated])
-def budget_category(request, budget_id, code):
-    from .models import BudgetCategorySetting, BudgetItem
-    from .overview import LIVING_CODES, budget_nag, current_cycle
-
-    with transaction.atomic():
-        lock_user(request.user)
-        from users.privacy import require_bank_not_revoked
-        require_bank_not_revoked(request.user)
-        today = timezone.localdate()
-        profile = current_salary_profile(request.user, today)
-        chosen = get_object_or_404(Budget.objects.select_for_update(), pk=budget_id, user=request.user)
-        category = get_object_or_404(Category, pk=code, category_code__in=LIVING_CODES)
-        cycle = current_cycle(request.user, profile, today)
-        if cycle is None or chosen.cycle_id != cycle.pk or chosen.status not in ("validated", "approved"):
-            raise ProtectNotReady("지난 예산은 바꿀 수 없어요.")
-        if chosen.status != "approved" and (chosen.base_budget_id is not None
-                or chosen.task_id is not None and chosen.task.task_type == "budget_adjust"):
-            raise ProtectNotReady("조정안을 승인한 뒤 자물쇠를 바꿔 주세요.")
-        data = body_dict(request)
-        errors = {key: ["이 칸은 보낼 수 없어요."] for key in data if key != "locked"}
-        if type(data.get("locked")) is not bool:
-            errors["locked"] = ["자물쇠는 참 또는 거짓으로 보내 주세요."]
-        if errors:
-            raise ValidationError(errors)
-        amount = None
-        if data["locked"]:
-            amount = get_object_or_404(BudgetItem, budget=chosen, user=request.user, bucket="living", category=category).allocated_amount
-        setting, _ = BudgetCategorySetting.objects.get_or_create(user=request.user, cycle=cycle, category=category)
-        if setting.locked != data["locked"] or setting.locked_amount != amount:
-            setting.change_count += setting.locked != data["locked"]
-            setting.locked = data["locked"]
-            setting.locked_amount = amount
-            setting.revision_no = F("revision_no") + 1
-            setting.save(update_fields=["locked", "locked_amount", "change_count", "revision_no", "updated_at"])
-        return Response({
-            "category": category.pk, "category_name": category.display_name, "locked": setting.locked,
-            "locked_amount": setting.locked_amount, "change_count": setting.change_count,
-            "nag": budget_nag(request.user, cycle),
-        })
 
 
 @api_view(["POST"])

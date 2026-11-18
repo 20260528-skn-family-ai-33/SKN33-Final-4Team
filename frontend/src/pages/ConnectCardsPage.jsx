@@ -4,8 +4,9 @@
 //   - 고른 카드 전체 목록을 보낸다. 빈 목록 = 전체 선택 해제(카드는 0개도 됨). 하나라도 틀리면 전부 저장하지 않는다
 //   - 조회 실패를 '카드 없음'으로 보이지 않는다: 목록을 못 받으면 오류 카드, 받았는데 0건이면 '조회된 카드 없음'
 import { useState } from 'react'
-import { useNavigate } from 'react-router'
+import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import Mascot from '../components/Mascot.jsx'
 import AcctPick from '../components/AcctPick.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePicked } from '../utils/usePicked.js'
@@ -14,12 +15,13 @@ import { PATHS } from '../routes.js'
 
 export default function ConnectCardsPage() {
   const { data, error } = useApi('/api/finance/connect/cards/')
-  if (!data) return <Layout title="계좌 연결" showBack><ApiStatus error={error} /></Layout>
+  if (!data) return <Layout title="카드 연결" showBack><ApiStatus error={error} /></Layout>
   return <CardPick items={data.items} />
 }
 
 function CardPick({ items }) {
   const navigate = useNavigate()
+  const manage = useLocation().state?.from === 'manage'
   // 서버에 저장된 선택 그대로 (0개로 저장했으면 0개). 빈 선택을 전체로 바꾸면 '나중에 고를게요'가 되돌려진다
   const picked = usePicked(items.filter((c) => c.isSelected).map((c) => c.cardId))
   const [error, setError] = useState('')
@@ -31,7 +33,8 @@ function CardPick({ items }) {
     setError('')
     try {
       await apiSend('/api/finance/connect/cards/', 'PUT', { selectedCardIds: ids })
-      navigate(PATHS.connectDone)
+      // 11/18: 가입 과정은 다음 단계(대출 정보 연결)로, 연결 관리에서 왔으면 연결 관리로
+      navigate(manage ? PATHS.connections : PATHS.connectLoan, manage ? { replace: true } : undefined)
     } catch (err) {
       setError(err.fields?.selectedCardIds?.[0] ?? err.message)
       setBusy(false)
@@ -39,11 +42,12 @@ function CardPick({ items }) {
   }
 
   return (
-    <Layout title="계좌 연결" showBack
+    <Layout title="카드 연결" showBack
       foot={<button type="button" className="mc-primary" disabled={busy} onClick={() => save(picked.list)}>{busy ? '저장 중…' : `카드 ${picked.list.length}장으로 계속`}</button>}>
-      <div className="mc-eyebrow">카드 연결 · 선택</div>
-      <h1>사용할 카드를 골라 주세요</h1>
-      <p className="mc-muted">연결한 카드사에서 불러온 내 카드예요. 나중에 골라도 돼요.</p>
+      <div className="mc-o2-line">
+        <Mascot mood="shopping" size={64} />
+        <p className="mc-o2-bubble">쓰는 <b>카드</b>를 골라 주세요. 나중에 골라도 돼요.</p>
+      </div>
       {items.length === 0 ? (
         <div className="mc-card">
           <h2>조회된 카드가 없어요</h2>
