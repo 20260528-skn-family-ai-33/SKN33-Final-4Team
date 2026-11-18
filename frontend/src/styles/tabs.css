@@ -392,8 +392,6 @@ html body #mc-new-preview#mc-new-preview .mc-loan-manual { display: block; min-h
 html body #mc-new-preview .mc-notice-grp { margin: 16px 0 2px; font-size: 12px; font-weight: 700; color: #98A1B0; letter-spacing: 0; }
 html body #mc-new-preview .mc-notice-group:first-of-type .mc-notice-grp { margin-top: 4px; }
 html body #mc-new-preview .mc-notice-act { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 700; color: var(--mc-brand); }
-html body #mc-new-preview#mc-new-preview .mc-tile.mc-tone-amber { background: #FFF6E5; color: #B45309; }
-html body #mc-new-preview#mc-new-preview .mc-tile.mc-tone-navy { background: #14214A; color: #FFFFFF; }
 html body #mc-new-preview#mc-new-preview .mc-tile.mc-tone-lime { background: #F2FBD6; color: #41520C; }
 html body #mc-new-preview#mc-new-preview .mc-tile.mc-tone-red { background: var(--mc-warm); color: var(--mc-alert); }
 /* 쿠션 탭 알림 상자 (시안 K1) */
@@ -404,8 +402,21 @@ html body #mc-new-preview .mc-cushion-note .mc-tile svg { width: 16px; height: 1
 html body #mc-new-preview .mc-cushion-note.is-deposit { background: #F2FBD6; }
 html body #mc-new-preview .mc-cushion-note.is-deposit b { color: #41520C; }
 html body #mc-new-preview#mc-new-preview .mc-cushion-note.is-deposit .mc-tile { background: #DDF58C; color: #41520C; }
-html body #mc-new-preview .mc-cushion-note.is-low { background: var(--mc-warm); }
-html body #mc-new-preview .mc-cushion-note.is-low b { color: var(--mc-alert); }
-html body #mc-new-preview#mc-new-preview .mc-cushion-note.is-low .mc-tile { background: #FFFFFF; color: var(--mc-alert); }
+/* 11/19: 쿠션 탭은 네이비(머리) · 라임(적립일)만 고정, 나머지 안내는 서비스 기본 연파랑 한 가지로 */
+html body #mc-new-preview .mc-cushion-note.is-low { background: var(--mc-soft); }
+html body #mc-new-preview .mc-cushion-note.is-low b { color: var(--mc-brand); }
+html body #mc-new-preview#mc-new-preview .mc-cushion-note.is-low .mc-tile { background: #FFFFFF; color: var(--mc-brand); }
 /* 챗봇 잦은 조정 잔소리 (시안 C3): 말풍선 맨 위 주황 한 줄 */
 html body #mc-new-preview#mc-new-preview .mc-budget-nag { margin: 0 0 10px; padding: 8px 11px; border-radius: 10px; background: #FFF6E5; color: #B45309; font-size: 13.5px; font-weight: 700; line-height: 1.5; }
+
+/* 11/19 알림 팝업 줄 통일: 아이콘 네모 40px · 글자와 간격 12px · 줄 위아래 14px · 제목 1줄 · 본문 · 행동 글자 */
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-listrow { align-items: flex-start; gap: 12px; padding: 14px 0; }
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-tile { width: 40px; height: 40px; border-radius: 12px; }
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-title { font-size: 15px; line-height: 1.4; margin-bottom: 2px; }
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-text { display: block; font-size: 14px; line-height: 1.5; }
+html body #mc-new-preview#mc-new-preview .mc-notice-act { margin-top: 6px; font-size: 13px; }
+
+/* 11/19 줄바꿈: 한글 낱말 중간에서 끊지 않고(keep-all), 아주 긴 글자만 넘칠 때 끊는다. 제목은 줄 길이를 고르게, 문단은 끝줄 한 글자 방지 */
+html body #mc-new-preview { word-break: keep-all; overflow-wrap: break-word; }
+html body #mc-new-preview :is(h1, h2, h3, .mc-notice-title) { text-wrap: balance; }
+html body #mc-new-preview :is(p, li, .mc-notice-text) { text-wrap: pretty; }

@@ -58,7 +58,7 @@ export default function CushionPage() {
         {notices.balanceLow && (
           <div className="mc-cushion-note is-low" role="status">
             <span className="mc-tile"><Icon name="CircleAlert" /></span>
-            <div><b>통장 잔액이 쿠션보다 적어요</b>쿠션을 따로 잘 모으고 있는지 확인해 주세요.</div>
+            <div><b>쿠션을 한 번 점검해 주세요</b>쿠션을 따로 잘 모으고 있는지 확인해 보세요.</div>
           </div>
         )}
         <button type="button" className="mc-secondary" onClick={() => openPopup(<CushionPopup cushion={c} onSaved={reload} />)}>목표 바꾸기</button>

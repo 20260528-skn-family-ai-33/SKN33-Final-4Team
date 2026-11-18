@@ -115,7 +115,7 @@ it('예산을 넘긴 카테고리마다 종 알림에 한 줄이 생기고 누�
   await act(() => root.render(<HomePage />))
   await act(async () => host.querySelector('[aria-label="알림 1개"]').click())
   const [item] = openPopup.mock.calls.at(-1)[0].props.items
-  expect(item).toMatchObject({ key: 'over-FOOD', title: '예산 초과', icon: 'Utensils', text: '식비 예산을 12,000원 넘었어요' })
+  expect(item).toMatchObject({ key: 'over-FOOD', title: '예산을 초과했어요', icon: 'Utensils', text: '이번 달 식비가 12,000원 초과됐어요.', act: '예산 확인하기', tone: 'red' })
   item.go()
   expect(navigate).toHaveBeenCalledWith(PATHS.budget)
 })
@@ -129,7 +129,7 @@ it('예산을 자주 바꾸면 종 알림에 한 줄이 생기고 누르면 예�
   await act(() => root.render(<HomePage />))
   await act(async () => host.querySelector('[aria-label="알림 1개"]').click())
   const [item] = openPopup.mock.calls.at(-1)[0].props.items
-  expect(item).toMatchObject({ key: 'nag', title: '예산 변경', mark: '!', text: nag })
+  expect(item).toMatchObject({ key: 'nag', title: '예산을 자주 바꿨어요', mark: '!', text: nag, act: '예산 확인하기' })
   item.go()
   expect(navigate).toHaveBeenCalledWith(PATHS.budget)
 })
@@ -143,8 +143,9 @@ it('감지된 큰 지출 중 가장 큰 한 건만 알리고 승인 예산의 �
   const [item] = openPopup.mock.calls.at(-1)[0].props.items
   expect(item).toMatchObject({
     key: 'big-spending',
-    title: '무신사 · 300,000원',
-    text: '생활비 예산을 넘길 수 있어요. 지금 조정할까요?',
+    title: '큰 지출이 있었어요',
+    text: '무신사에서 300,000원을 썼어요. 예산을 확인해 보세요.',
+    act: '예산 조정하기',
   })
   item.go()
   expect(navigate).toHaveBeenCalledWith(PATHS.assistant, {
@@ -156,9 +157,9 @@ it('머니쿠션 적립일과 잔액 확인을 종 알림에 표시하고 머니
   await show({ budget: null, cushionNotices: { depositDue: true, balanceLow: true } })
   await act(async () => host.querySelector('[aria-label="알림 2개"]').click())
   const [deposit, balance] = openPopup.mock.calls.at(-1)[0].props.items
-  expect(deposit.text).toBe('쿠션 모으기 잊지 마세요!')
-  expect(balance.text).toContain('머니쿠션을 잘 모으고 있는지 확인해볼까요?')
-  expect([deposit.group, deposit.act, balance.group]).toEqual(['act', '쿠션 보기', 'check'])  // 11/18 종 팝업 묶음
+  expect([deposit.title, deposit.text]).toEqual(['쿠션 적립을 잊지 마세요', '오늘은 쿠션 넣는 날이에요. 이번 달 쿠션을 모아 보세요.'])
+  expect([balance.title, balance.text]).toEqual(['머니쿠션 확인이 필요해요', '쿠션을 한 번 점검해 주세요.'])
+  expect([deposit.group, deposit.act, deposit.tone, balance.group, balance.tone]).toEqual(['act', '쿠션 확인하기', 'lime', 'check', 'red'])  // 11/19 색 = 뜻
   deposit.go()
   balance.go()
   expect(navigate.mock.calls).toEqual([[PATHS.fund], [PATHS.fund]])
@@ -177,7 +178,7 @@ it.each([
   await act(async () => host.querySelector(season ? '[aria-label="알림 1개"]' : '[aria-label="알림"]').click())
   const items = openPopup.mock.calls.at(-1)[0].props.items
   if (season) {
-    expect(items[0].text).toBe(`${season}이 다가오고 있어요. 지출에 대비해 같이 예산을 조정해볼까요?`)
+    expect([items[0].title, items[0].text, items[0].act]).toEqual([`${season}이 다가오고 있어요`, '지출이 늘어날 수 있어요. 같이 예산을 조정해 볼까요?', '예산 조정하기'])
     items[0].go()
     expect(navigate).toHaveBeenCalledWith(PATHS.assistant, {
       state: { budgetContext: { baseBudgetId: 'approved-budget', mode: 'NORMAL_ADJUSTMENT' } },

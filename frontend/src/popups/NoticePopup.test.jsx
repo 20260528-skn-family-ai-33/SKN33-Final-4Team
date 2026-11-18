@@ -15,12 +15,12 @@ it('해 볼 일 · 확인 · 안내로 묶고, 해 볼 일에는 행동 글자�
   const go = vi.fn()
   await act(() => root.render(<NoticePopup items={[
     { key: 'p', title: '카테고리 확인', count: 3, text: '거래 3건', go },
-    { key: 'd', title: '머니쿠션 적립', text: '쿠션 모으기 잊지 마세요!', go, group: 'act', act: '쿠션 보기', tone: 'navy' },
+    { key: 'd', title: '머니쿠션 적립', text: '쿠션 모으기 잊지 마세요!', go, group: 'act', act: '쿠션 확인하기', tone: 'lime' },
     { key: 'w', title: '월급 입금', text: '월급이 아직 안 들어왔어요' },
   ]} />))
   expect([...host.querySelectorAll('.mc-notice-grp')].map((h) => h.textContent)).toEqual(['지금 해 볼 일', '확인해 주세요', '안내'])
-  expect(host.querySelector('.mc-notice-act').textContent).toBe('쿠션 보기 ›')
-  expect(host.querySelector('.mc-tone-navy')).not.toBeNull()
+  expect(host.querySelector('.mc-notice-act').textContent).toBe('쿠션 확인하기 ›')
+  expect(host.querySelector('.mc-tone-lime')).not.toBeNull()
   await act(async () => host.querySelector('.mc-notice-act').closest('button').click())
   expect(go).toHaveBeenCalled()
 })

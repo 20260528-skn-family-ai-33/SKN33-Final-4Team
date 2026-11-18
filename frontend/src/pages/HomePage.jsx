@@ -13,6 +13,7 @@ import { Navigate, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { comma, won } from '../utils/money.js'
+import { josa } from '../utils/adjust.js'
 import { useApi } from '../utils/api.js'
 import { needsCardValues, runFinanceSync, syncLines } from '../utils/financeSync.js'
 import ApiStatus from '../components/ApiStatus.jsx'
@@ -260,28 +261,30 @@ export default function HomePage() {
   const openSalary = () => openPopup(<SalaryCheckPopup onSaved={reload} />)
   // 11/13: 받은 월급이 등록한 실수령액과 꽤 다르면 (1만원 이상 · 3% 이상, 서버가 판단) 어떻게 할지 묻는다
   const gap = period?.salaryGap
-  const gapText = gap && `월급이 ${won(Math.abs(gap.diff))} ${gap.diff < 0 ? '덜' : '더'} 들어왔어요`
   const openGap = () => openPopup(<SalaryGapPopup gap={gap} onDone={reload} />)
+  const bigWhere = biggest && (biggest.merchantName || biggest.categoryName || '생활비')
   const notices = [
-    // 11/18 시안 N3: group 'act' = 지금 해 볼 일(act 글자 + tone 색) · 'check' = 확인해 주세요 · 갈 곳이 없으면 안내 (popups/NoticePopup.jsx)
-    gap && { key: 'salary-gap', title: '월급 차이', icon: 'Banknote', text: `${gapText}. 예산을 조정할까요?`, go: openGap, group: 'act', act: '예산 조정하기', tone: 'amber' },
-    b.budgetId && b.forecast && biggest && { key: 'big-spending', occurrence: biggest.transactionId,
-      title: `${biggest.merchantName || biggest.categoryName || '생활비 결제'} · ${won(biggest.amount)}`, icon: 'Banknote',
-      text: '생활비 예산을 넘길 수 있어요. 지금 조정할까요?', go: toAdjust, group: 'act', act: '쿠숑이와 조정하기', tone: 'amber' },
-    cushionNotices?.depositDue && { key: 'cushion-deposit', title: '머니쿠션 적립', icon: 'PiggyBank',
-      text: '쿠션 모으기 잊지 마세요!', go: toCushion, group: 'act', act: '쿠션 보기', tone: 'navy' },
-    cushionNotices?.balanceLow && { key: 'cushion-balance', title: '머니쿠션 확인',
-      text: '연결된 통장 잔액이 머니쿠션 추정액보다 적어요. 머니쿠션을 잘 모으고 있는지 확인해볼까요?', go: toCushion, group: 'check', icon: 'CircleAlert', tone: 'red' },
-    season && { key: 'season-budget', occurrence: season, title: season, icon: 'Sparkles',
-      text: `${season}이 다가오고 있어요. 지출에 대비해 같이 예산을 조정해볼까요?`, go: toAdjust, group: 'act', act: '예산 조정하기', tone: 'lime' },
-    period?.salaryCheckCount > 0 && { key: 'salary-check', title: '월급 확인', count: period.salaryCheckCount, text: '월급으로 보이는 입금이 있어요. 맞는지 확인해 주세요', go: openSalary },
-    period?.salaryState === 'waiting' && { key: 'salary-wait', title: '월급 입금', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
-    period?.salarySource === 'auto' && { key: 'salary-auto', title: '월급 자동 인식', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 자동 인식했어요`, go: openSalary },
-    period?.nextSalaryEarlyOn && { key: 'salary-early', title: '월급 입금', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
-    ...(b.overCategories ?? []).map((c) => ({ key: `over-${c.category}`, title: '예산 초과', icon: catIcon(c.categoryName), text: `${c.categoryName} 예산을 ${won(c.over)} 넘었어요`, go: () => navigate(PATHS.budget) })),
-    b.nag && { key: 'nag', title: '예산 변경', mark: '!', text: b.nag, go: () => navigate(PATHS.budget) },
-    pendingCount > 0 && { key: 'pending', title: '카테고리 확인', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
-    needsPaydayCount > 0 && { key: 'payday', title: '출금일 확인', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
+    // 11/19 알림 문구 통일: 제목 = 상황 1줄('~했어요') · 본문 = 구체 내용 2줄 이내('~해 보세요') · act = '~하기'
+    //   tone = 아이콘 네모 색을 뜻으로 맞춘다: red 경고 · 없음(연파랑) 확인 요청 · lime 쿠션 적립 · 이벤트
+    gap && { key: 'salary-gap', title: gap.diff < 0 ? '월급이 적게 들어왔어요' : '월급이 더 들어왔어요', icon: 'Banknote',
+      text: `등록한 월급보다 ${won(Math.abs(gap.diff))} ${gap.diff < 0 ? '적어요' : '많아요'}. 예산을 조정할까요?`, go: openGap, group: 'act', act: '예산 조정하기' },
+    b.budgetId && b.forecast && biggest && { key: 'big-spending', occurrence: biggest.transactionId, title: '큰 지출이 있었어요', icon: 'Banknote',
+      text: `${bigWhere}에서 ${won(biggest.amount)}${josa(won(biggest.amount))} 썼어요. 예산을 확인해 보세요.`, go: toAdjust, group: 'act', act: '예산 조정하기', tone: 'red' },
+    cushionNotices?.depositDue && { key: 'cushion-deposit', title: '쿠션 적립을 잊지 마세요', icon: 'PiggyBank',
+      text: '오늘은 쿠션 넣는 날이에요. 이번 달 쿠션을 모아 보세요.', go: toCushion, group: 'act', act: '쿠션 확인하기', tone: 'lime' },
+    cushionNotices?.balanceLow && { key: 'cushion-balance', title: '머니쿠션 확인이 필요해요', icon: 'CircleAlert',
+      text: '쿠션을 한 번 점검해 주세요.', go: toCushion, group: 'check', act: '쿠션 확인하기', tone: 'red' },
+    season && { key: 'season-budget', occurrence: season, title: `${season}이 다가오고 있어요`, icon: 'Sparkles',
+      text: '지출이 늘어날 수 있어요. 같이 예산을 조정해 볼까요?', go: toAdjust, group: 'act', act: '예산 조정하기', tone: 'lime' },
+    period?.salaryCheckCount > 0 && { key: 'salary-check', title: '월급으로 보이는 입금이 있어요', count: period.salaryCheckCount, text: '월급이 맞는지 확인해 주세요.', go: openSalary, act: '월급 확인하기' },
+    period?.salaryState === 'waiting' && { key: 'salary-wait', title: '월급 입금을 기다리고 있어요', icon: 'Banknote', text: '아직 월급으로 보이는 입금이 없어요.' },
+    period?.salarySource === 'auto' && { key: 'salary-auto', title: '월급을 자동으로 인식했어요', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 넣었어요.`, go: openSalary, act: '월급 확인하기' },
+    period?.nextSalaryEarlyOn && { key: 'salary-early', title: '월급이 미리 들어왔어요', icon: 'Banknote', text: `${mmdd(period.nextSalaryEarlyOn)}에 들어온 월급은 ${mmdd(period.nextPayday)}부터 예산에 넣을게요.` },
+    ...(b.overCategories ?? []).map((c) => ({ key: `over-${c.category}`, title: '예산을 초과했어요', icon: catIcon(c.categoryName), tone: 'red',
+      text: `이번 달 ${c.categoryName}${josa(c.categoryName, '이', '가')} ${won(c.over)} 초과됐어요.`, go: () => navigate(PATHS.budget), act: '예산 확인하기' })),
+    b.nag && { key: 'nag', title: '예산을 자주 바꿨어요', mark: '!', tone: 'red', text: b.nag, go: () => navigate(PATHS.budget), act: '예산 확인하기' },
+    pendingCount > 0 && { key: 'pending', title: '카테고리를 정할 거래가 있어요', count: pendingCount, text: `거래 ${pendingCount}건의 카테고리를 확인해 주세요.`, go: () => navigate(pendingUrl), act: '카테고리 정하기' },
+    needsPaydayCount > 0 && { key: 'payday', title: '출금일을 모르는 고정지출이 있어요', count: needsPaydayCount, text: `고정지출 ${needsPaydayCount}건의 출금일을 확인해 주세요.`, go: toFixed, act: '출금일 확인하기' },
   ].filter(Boolean)
   const currentNoticeIds = notices.map((notice) => JSON.stringify([period?.startDate, notice.key, notice.occurrence, notice.count]))
   const unreadCount = currentNoticeIds.filter((id) => !readNotices.ids.includes(id)).length
