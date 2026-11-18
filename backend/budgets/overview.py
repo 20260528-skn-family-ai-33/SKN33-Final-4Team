@@ -1,5 +1,8 @@
 """카테고리 예산 응답. 주기 준비가 있으므로 호출 쪽에서 회원 잠금 · 트랜잭션을 잡는다."""
+from datetime import date
+
 from django.db.models import Sum
+from django.utils import timezone
 
 from finance.api import listed_transactions, transaction_item
 from finance.spending import spending_summary
@@ -13,7 +16,8 @@ from .scope import OUT_OF_BUDGET, living_spent, outside_spent
 
 
 LIVING_CODES = (*ALLOCATION_CODES, "ETC")  # 예산 화면 · 자물쇠 대상. 예산 밖(scope.OUT_OF_BUDGET)은 없음
-NAG = "이번 달 예산을 여러 번 바꿨어요"
+NAG = "이번 급여 주기에 예산을 여러 번 바꿨어요."
+MONTHLY_NAG = "최근 3개월 동안 매달 예산을 변경했어요. 자주 바꾸는 항목의 예산을 점검해 보세요."
 
 
 def design_basis(design):
@@ -35,13 +39,27 @@ def current_cycle(user, profile, today):
     return ensure_cycle(user, start, end)
 
 
-def budget_nag(user, cycle):
-    changed = BudgetCategorySetting.objects.filter(
-        user=user, cycle=cycle, category_id__in=LIVING_CODES, change_count__gte=3,
-    ).exclude(category_id="TRANSPORT_CAR").exists()
-    if changed or Budget.objects.filter(user=user, cycle=cycle, approved_at__isnull=False, schedule__isnull=True).count() >= 3:
-        return NAG
-    return None
+def confirmed_adjustments(user):
+    # 최초 예산을 확정하는 대화와 복구도 budget_adjust 작업을 사용한다.
+    return Budget.objects.filter(
+        user=user, approved_at__isnull=False, task__task_type='budget_adjust', schedule__isnull=True,
+        validation_summary__design_recovery__isnull=True,
+    ).exclude(
+        input_snapshot__adjustment_context__mode__isnull=False,
+        input_snapshot__adjustment_context__mode='INITIAL_ADJUSTMENT',
+    )
+
+
+def budget_nag(user, cycle, today=None):
+    today = today or timezone.localdate()
+    history = confirmed_adjustments(user)
+    messages = [NAG] if history.filter(cycle=cycle).count() >= 2 else []
+    year, month = divmod(today.year * 12 + today.month - 3, 12)
+    months = history.filter(approved_at__date__gte=date(year, month + 1, 1),
+                            approved_at__date__lte=today).dates('approved_at', 'month')
+    if len(months) == 3:
+        messages.append(MONTHLY_NAG)
+    return '\n'.join(messages) or None
 
 
 def out_of_budget_json(summary):
@@ -70,6 +88,9 @@ def card_bills_ready(user, cycle, today, notes):
 def budget_data(user, today, *, selected=None):
     profile = current_salary_profile(user, today)
     cycle = current_cycle(user, profile, today)
+    if selected is None:
+        from .rollover import ensure_current_budget
+        ensure_current_budget(user, profile, cycle, today)
     rows = listed_transactions(user)
     if cycle:
         # 채팅(spending_analysis budget_left)과 같은 기간: 주기 시작일 ~ 오늘
@@ -106,17 +127,14 @@ def budget_data(user, today, *, selected=None):
     covered = min(over, spare)
     allocated = dict(selected.items.filter(bucket="living").values("category_id").annotate(total=Sum("allocated_amount")).values_list("category_id", "total"))
     minimums = dict(CategoryMinimum.objects.filter(user=user).values_list("category_id", "min_amount"))
-    settings = {s.category_id: s for s in BudgetCategorySetting.objects.filter(user=user, cycle=cycle)}
     design = (selected.validation_summary or {}).get('design', {})
     reasons = {e['category']: e['text'] for e in design.get('explanations', [])}
     categories = []
     for category in Category.objects.filter(pk__in=LIVING_CODES).order_by("display_order", "pk"):
-        setting = settings.get(category.pk)
         categories.append({
             "category": category.pk, "category_name": category.display_name,
             "allocated": allocated.get(category.pk, 0), "spent": summary["by_category"].get(category.pk, 0),
-            "min_amount": minimums.get(category.pk), "locked": setting.locked if setting else False,
-            "locked_amount": setting.locked_amount if setting else None, "reason": reasons.get(category.pk) or None,
+            "min_amount": minimums.get(category.pk), "reason": reasons.get(category.pk) or None,
         })
     card_notes = ((selected.input_snapshot or {}).get("fixed") or {}).get("card_notes", [])
     # 고정비 중 '지난 카드값' (11/12): 예산을 만들 때 저장한 카드 선차감 = 그 카드사 첫 청구서(가입 전 사용분) + 가입 전 할부의 이번 회차.
@@ -140,7 +158,7 @@ def budget_data(user, today, *, selected=None):
                   "cushion": totals.get("cushion", 0), "living": living, "spare": spare, "reserve": totals.get('reserve', 0)},
         "living": {"budget": living, "spent": spent, "remaining": max(living - spent, 0)},
         "overspend": {"over": over, "covered_by_spare": covered, "spare_remaining": spare - covered, "shortfall": over - covered},
-        "categories": categories, "nag": budget_nag(user, cycle),
+        "categories": categories, "nag": budget_nag(user, cycle, today),
         "out_of_budget": out_of_budget_json(summary),
     })
     return data

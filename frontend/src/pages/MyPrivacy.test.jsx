@@ -47,7 +47,7 @@ const render = (page = <MyPage />) => act(async () => root.render(<MemoryRouter 
   <Route path="/my" element={page} /><Route path="/my/info" element={<MyInfoPage />} /><Route path="*" element={<p>이동한 화면</p>} />
 </Routes><Location /></PopupProvider></MemoryRouter>))
 const click = (text) => act(async () => [...host.querySelectorAll('button')].find((button) => button.textContent.trim() === text).click())
-const open = async () => { await render(); await click('동의·데이터 관리　›') }
+const open = async () => { await render(); await click('동의·데이터 관리') }
 const input = (name, value) => act(() => {
   const element = host.querySelector(`input[name="${name}"]`)
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(element, value)
@@ -103,7 +103,7 @@ it('삭제 중 중복 요청을 막고 실패를 성공으로 표시하지 않�
 it('탈퇴는 로그인 비밀번호와 삭제 확인 후 실행하고 로그인으로 이동한다', async () => {
   sessionStorage.setItem('mc-chat-conversation', 'conversation-before-withdrawal')
   localStorage.setItem('moneycushion.savedEmail', 'synthetic@example.com')
-  await render(); await click('회원 탈퇴　›')
+  await render(); await click('회원 탈퇴')
   const submit = () => host.querySelector('[role=dialog] button[type=submit]')
   expect(submit().disabled).toBe(true)
   await input('withdrawPassword', 'Synthetic123!')
@@ -126,17 +126,17 @@ it('동의 조회 실패 시 임의 상태나 철회 버튼을 표시하지 않�
 it('탈퇴 버튼은 로그아웃 바로 아래에 있고 동의 관리 안에는 없다', async () => {
   await render()
   const buttons = [...host.querySelectorAll('button')]
-  const logoutIndex = buttons.findIndex((button) => button.textContent.trim() === '로그아웃　›')
-  expect(buttons[logoutIndex + 1].textContent).toBe('회원 탈퇴　›')
-  await click('동의·데이터 관리　›')
+  const logoutIndex = buttons.findIndex((button) => button.textContent.trim() === '로그아웃')
+  expect(buttons[logoutIndex + 1].textContent).toBe('회원 탈퇴')
+  await click('동의·데이터 관리')
   expect(host.querySelector('[role=dialog]').textContent).not.toContain('회원 탈퇴')
   expect(requests).toHaveLength(0)
 })
 
 it('탈퇴 취소는 삭제하지 않고 실패 시 비밀번호를 지우며 중복 제출을 막는다', async () => {
-  await render(); await click('회원 탈퇴　›'); await click('취소')
+  await render(); await click('회원 탈퇴'); await click('취소')
   expect(requests).toHaveLength(0)
-  await click('회원 탈퇴　›')
+  await click('회원 탈퇴')
   await input('withdrawPassword', 'Synthetic123!')
   await act(() => host.querySelector('[role=dialog] input[type=checkbox]').click())
   let finish
@@ -209,7 +209,7 @@ it('철회가 접수됐지만 삭제가 남으면 완료로 표시하지 않고 
 
 it('탈퇴가 접수됐지만 삭제가 남으면 탈퇴 완료로 이동하지 않고 접수 상태를 안내한다', async () => {
   send = async () => reply({ ok: false, status: 'retry_required' }, 202)
-  await render(); await click('회원 탈퇴　›')
+  await render(); await click('회원 탈퇴')
   await input('withdrawPassword', 'Synthetic123!')
   await act(() => host.querySelector('[role=dialog] input[type=checkbox]').click())
   await click('탈퇴하고 전체 데이터 삭제')
@@ -239,7 +239,7 @@ it('예산 조정 AI 전송 동의는 확인을 거쳐 그 동의만 철회한�
   const dialog = () => host.querySelector('[role=dialog]')
   expect(dialog().textContent).toContain('2026. 11. 11. 동의 · v1')
   await click('예산 조정 AI 전송 철회')
-  expect(dialog().textContent).toContain('승인한 예산과 금융자료, 최소 금액·자물쇠는 그대로 유지해요')
+  expect(dialog().textContent).toContain('승인한 예산과 금융자료, 최소 금액은 그대로 유지해요')
   expect(requests).toHaveLength(0)  // 확인 전에는 보내지 않는다
   await click('취소')
   expect(requests).toHaveLength(0)

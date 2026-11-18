@@ -10,6 +10,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
+import Mascot from '../components/Mascot.jsx'
 import AdjustForm from '../components/AdjustForm.jsx'
 import RegionSelect from '../components/RegionSelect.jsx'
 import KushongRunner from '../components/KushongRunner.jsx'
@@ -409,13 +410,20 @@ export default function AssistantPage() {
 
   return (
     <Layout
-      title="통합 챗봇"
+      title="챗봇"
       activeTab="assistant"
       foot={<>
         {/* 새 대화 (11/11): 대화가 있을 때만 입력란 왼쪽 위에 — 입력란과 함께 화면 아래에 붙어 있어 대화가 길어도 바로 누를 수 있다.
             지금 대화를 화면에서 비우고 다음 문장부터 새 대화로 보낸다 */}
+        {/* 11/18 검수: 대화 중에는 기능 버튼을 새 대화 옆 작은 칩 한 줄로 */}
         {!recovery && messages.length > 0 && (
-          <button type="button" className="mc-asst-new" disabled={blocked} onClick={startOver}><Icon name="RefreshCw" />새 대화</button>
+          <div className="mc-asst-quick">
+            <button type="button" className="mc-asst-new" disabled={blocked} onClick={startOver}><Icon name="RefreshCw" />새 대화</button>
+            {(info?.features ?? []).map((f) => {
+              const text = (LOOK[f.value] ?? { text: f.label }).text
+              return <button key={f.value} type="button" className="mc-asst-chip" disabled={blocked} onClick={() => send({ choice: f.value }, text)}>{text}</button>
+            })}
+          </div>
         )}
         <form className="mc-chat-in mc-asst-in" onSubmit={submit}>
           <input aria-label="챗봇에게 보낼 메시지" autoComplete="off" placeholder="예: 이번 달 얼마 썼어?" type="text" maxLength={500}
@@ -436,19 +444,23 @@ export default function AssistantPage() {
             </>}
         </div>}
         {info?.testMode && <p className="mc-fx-band" role="note">테스트 환경 · 기준일 {info.today}</p>}
-        <div className="mc-bc-ctx mc-asst-ctx">
-          <span className="mc-cat-ic mc-big-ic"><Icon name="Sparkles" /></span>
-          <div>
-            <em className="mc-asst-who">{agent ? `${AGENTS[agent]} 도우미` : '라우터'}</em>
-            <strong>머니쿠션 챗봇</strong>
-            <small>{agent ? `지금은 ${AGENTS[agent]} 도우미와 대화 중이에요` : '편하게 물어보면 맞는 도우미를 연결해 드려요'}</small>
+        {/* 11/18 시안 B: 대화 전에는 가운데 쿠숑이 인사, 대화가 시작되면 지금 연결된 도우미 한 줄 */}
+        {/* 11/18 검수: 대화 중에는 연결된 도우미를 한 줄로만 (같은 이름이 카드에 세 번 나오던 것) */}
+        {messages.length || recovery ? (
+          <p className="mc-asst-ctxline"><Icon name="Sparkles" />{agent ? `${AGENTS[agent]} 도우미와 대화 중` : '물어보면 맞는 도우미를 연결해 드려요'}</p>
+        ) : (
+          <div className="mc-asst-hello">
+            <Mascot mood="hello" size={128} />
+            <h1>안녕하세요, 쿠숑이에요</h1>
+            <p>예산 · 소비 · 청년 정책, 뭐든 물어봐요</p>
           </div>
-        </div>
+        )}
         <div className="mc-bc-log mc-chat-log mc-asst-log" aria-live="polite">
-          <div className="mc-msg bot">
+          {/* 11/18 검수: 인사는 대화 전 가운데 쿠숑이 화면에만 (대화가 시작된 뒤에 인사가 생겨 순서가 어색했다). 큰 기능 버튼도 대화 전에만 */}
+          {recovery && !messages.length && <div className="mc-msg bot">
             <div className="mc-bubble">안녕하세요! 쿠숑이에요. 무엇을 도와드릴까요?<br /><small>아래에서 고르거나 하고 싶은 말을 바로 적어 주세요.</small></div>
-          </div>
-          {features}
+          </div>}
+          {!messages.length && features}
           {entryUnavailable && !messages.length && <div className="mc-msg bot"><div className="mc-bubble" role="alert">예산 조정 서비스를 아직 사용할 수 없어요. 잠시 후 다시 열어 주세요.</div></div>}
           {first.error && !info && !entryUnavailable && (
             <div className="mc-msg bot"><div className="mc-bubble" role="alert">{errorText(first.error)}</div></div>

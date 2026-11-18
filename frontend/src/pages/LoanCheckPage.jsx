@@ -1,4 +1,5 @@
 // 대출 조회·상환 정보 보완. 각 대출을 저장한 뒤 다음 단계로 이동한다.
+// 11/18: 가입 과정에서는 대출 정보 연결(ConnectLoanPage) 바로 다음 — 계좌 연결 단계 안에서 끝내고 연결 결과로 간다 (전에는 저축 확인 뒤)
 import { useRef, useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
@@ -177,23 +178,23 @@ export default function LoanCheckPage() {
   // 11/9: 관리 화면에서 왔으면 새로 쌓지 않고 온 곳으로 돌아간다 (확인 마침 → 연결 관리 → 뒤로 가 다시 대출 확인이 뜨던 문제)
   //   주소를 직접 열어 앱 안 이전 화면이 없으면 그 화면으로 바꿔 이동
   const done = () => {
-    if (!manage) return navigate(PATHS.protect)
+    if (!manage) return navigate(PATHS.connectDone)
     if (window.history.state?.idx > 0) return navigate(-1)
     navigate(state?.from === 'home' ? PATHS.home : PATHS.connections, { replace: true })
   }
   const rows = [...(data?.items ?? [])].sort((a, b) => Number(b.loanId === state?.loanId) - Number(a.loanId === state?.loanId))
   return (
     <Layout title="대출 확인" showBack foot={<button type="button" className="mc-primary" disabled={unfinished} onClick={done}>{manage ? '확인 마침' : '다음'}</button>}>
-      {!manage && <StepBar step={4} />}
+      {!manage && <StepBar step={2} />}
       <h1>대출 확인</h1>
       <p className="mc-muted mc-loan-msg">대출별로 상환 정보를 확인하고 저장해 주세요.</p>
       {error ? <div className="mc-card">
         <p className="mc-error" role="alert">{error.code === 'consent_required' ? '기관 대출을 보려면 대출 조회 동의가 필요해요.' : error.status ? error.message : '대출 목록을 불러오지 못했어요.'}</p>
-        {error.code === 'consent_required' ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>연결 화면에서 동의하기</button> : <button type="button" className="mc-secondary" onClick={reload}>다시 시도</button>}
+        {error.code === 'consent_required' ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectLoan, { state: { from: manage ? 'manage' : undefined } })}>대출 조회에 동의하기</button> : <button type="button" className="mc-secondary" onClick={reload}>다시 시도</button>}
       </div> : !data ? <p role="status">대출을 불러오는 중…</p> : <>
         {data.hasInquiryConsent === false && <div className="mc-card">
           <p className="mc-note">직접 등록한 대출은 조회 동의 없이 확인하고 수정할 수 있어요. 금융기관에서 대출을 불러오려면 대출 조회에 동의해 주세요.</p>
-          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>기관 대출 조회에 동의하기</button>
+          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectLoan, { state: { from: manage ? 'manage' : undefined } })}>기관 대출 조회에 동의하기</button>
         </div>}
         {/* 11/9: '상환 종료한 대출'과 같은 카드. 없으면 카드 안에 안내, 있으면 제목 아래 대출 카드들 */}
         {rows.length === 0

@@ -6,7 +6,7 @@
 - 해결 가능한 분배 조건 충돌이면 추천 작업은 `succeeded`이며 `budgetId=null`을 유지한다. 공개 `result.handoff={mode:"DESIGN_RECOVERY", sourceTaskId:"<추천 작업 UUID>"}`만 추가한다. 전체 전달 자료는 기존 `AsyncTask.result._design_handoff`에 비공개 저장하며 `/api/tasks/<id>/` 응답에서는 제거한다. 기술적 실패·정책 오류·정상 추천에는 handoff를 주지 않는다.
 - `DESIGN_RECOVERY` 대화에서 범위 또는 재원을 선택하면 서버가 A/B 계산기를 다시 사용한다. 확인된 여윳돈을 먼저 쓰고, 저축·월 쿠션 여유분은 각각 선택한 경우에만 쓴다. 검수된 해결안만 `validated`로 저장한다.
 - 해결안 카드의 `mode`는 `INITIAL_ADJUSTMENT`, `baseBudgetId`는 `null`이며 `sourceTaskId`로 실패 작업을 가리킨다. 기존 `POST /api/budgets/<proposalId>/approve/`가 최신 재원·거래·보호 조건과 저장 항목을 검사한 뒤 `{adjustment,budget}`를 반환한다. 조건이 바뀐 조정안은 409 `expired`다.
-- 승인은 이번 주기 예산에 적용한다. `keepForNextCycle=true`를 선택한 경우에만 새 생활비·저축·월 쿠션을 프로필에도 저장한다. 카테고리 최소금액·잠금·우선순위·유지 목표는 승인 후에도 보존한다.
+- 최초로 확정한 배정은 다음 급여 주기로 자동으로 이어진다. ‘이번만’ 조정한 예산은 해당 주기에 적용한다. 같은 주기에 ‘계속’ 조정을 추가로 승인하면 이후 기본 배정에는 지속 승인한 항목과 금액만 반영한다. 유지 목표는 프로필에도 저장한다. 다음 주기의 수입·고정비·보호 조건과 현재 자차 보유 상태 및 검증된 소비 이력에 따른 교통비 하한을 충족할 때 자동 적용한다. 배정 조건을 충족하지 못하면 새 주기 예산을 다시 검토한다.
 ## 예산 AI 외부 전송 동의 — 2026-11-10 연결 (실제 서비스 외부 호출은 계속 OFF)
 
 - `GET /api/budgets/ai-consent/`: 로그인한 회원 자신의 `available`, `status`, `purpose="budget_ai"`, `document`, `documentVersion`, `documentHash`, `grantedAt`, `revokedAt`를 반환한다. 상태는 `not_granted / granted / revoked / needs_renewal`이다. available은 예산 기능과 외부 AI 설정이 모두 true일 때만 true다. false이면 새 동의 UI를 숨기고 PUT은 409 budget_ai_unavailable로 막는다. 기존 활성 동의의 조회·철회는 계속 허용하며 비활성 화면에서는 철회 UI만 보인다. 현재 문서의 버전과 원문 해시가 일치하는 미철회 기록만 유효하다.
@@ -49,8 +49,8 @@
 | 지킬 돈 보기 | `GET /api/budgets/protect/` | 비율 추천 · 저축 먼저 떼기 · 부족 판정 · 저장된 값 |
 | 지킬 돈 저장 | `PUT /api/budgets/protect/` | 생활비 · 저축 · 월 쿠션 적립금 저장 |
 | 추천 예산 만들기 | `POST /api/budgets/recommend/` | 작업 번호 방식 · 임시 함수 입출력 · 주기 중간 가입 |
-| 카테고리 예산 보기 | `GET /api/budgets/` | 초안 · 승인 예산 · 쓴 돈 · 자물쇠 |
-| 카테고리 금액 고정 · 해제 | `PATCH /api/budgets/<id>/categories/<code>/` | 자물쇠 · 잔소리 |
+| 카테고리 예산 보기 | `GET /api/budgets/` | 초안 · 승인 예산 · 쓴 돈 |
+| ~~카테고리 금액 고정 · 해제~~ | ~~`PATCH /api/budgets/<id>/categories/<code>/`~~ | 11/18 삭제 (자물쇠 기능 제거) |
 | 예산 승인 | `POST /api/budgets/<id>/approve/` | 버전 · 만료 · 중복 (조정안 승인과 공통) |
 | 조정안 조회 | `GET /api/budgets/proposals/<id>/` | 본인 제안의 현재 카드·저장 근거 |
 | 월중 조정안 승인 | `POST /api/budgets/proposals/<id>/approve/` | 변경 금액·유지 선택·최신 상태 재검수 |
@@ -132,7 +132,7 @@
 | `blocked` | 객체 / null | 예산을 못 만드는 경우만 (P-06 · P-12). `{ "reason", "shortfall" }` · `reason`: `fixed_over_income`(고정비만으로 월급 초과) · `savings_over_available`(정기 저축까지 빼면 남는 돈 없음) · `card_bill_pending`(카드 첫 청구서를 아직 확인 못 함) · `shortfall`: 모자란 금액, `card_bill_pending`이면 `null` |
 | `cardPending` | 배열 | 카드 선차감을 계산하지 못한 카드 `[{ "cardId", "reason" }]` (P-12). 보통은 `[]` |
 | `cardNotes` | 배열 | 차단하지 않는 카드 계산 안내. `first_bill_unavailable`은 청구서 미발행으로 이전 주기 카드값을 미반영했음을 뜻한다. |
-| `locksReleased` | 배열 | 이번 저장(PUT)으로 풀린 이번 주기 자물쇠 카테고리 코드 (P-13). GET은 항상 `[]` |
+| `locksReleased` | 배열 | 11/18 자물쇠 기능 제거로 늘 `[]` (형식만 유지). 예전: 이번 저장(PUT)으로 풀린 자물쇠 카테고리 코드 (P-13) |
 | `cardLoadTaskId` | UUID / null | 11/09. 카드 내역을 서버가 뒤에서 불러오는 중이면 그 작업 ID(`finance_sync` · `card_first_load`), 아니면 null. 화면은 카드 보류(`card_bill_pending`)여도 재조회를 권하지 않고 '불러오는 중'을 보여 주고, 작업이 끝나면(성공 · 실패 모두) 다시 읽는다. 상태 조회가 끊기거나 5분을 넘기면 3초 뒤 다시 읽고, 같은 ID가 오면 조회를 다시 시작한다(11/10) |
 | `saved` | 객체 / null | 사용자가 저장한 값 `{ "livingBudget", "savingFloor", "cushionMonthly", "spare", "updatedAt" }`. 한 번도 저장 안 했으면 `null` → 화면은 `recommended`로 칸을 채운다 |
 | `approvedBudget` | 객체 / 생략 | 현재 주기 승인 예산에 생활비 충당 기록이 있거나, 승인한 저축·월 쿠션 금액이 프로필 설정과 다를 때 GET·PUT에서 반환한다. `spare`는 승인 예산의 재원에서 예산 항목 합계를 뺀 금액이며 실제 초과 소비 차감 전이다. `savingFloor`와 `cushionMonthly`는 승인액이다. `spareTransfer`, `savingTransfer`, `cushionTransfer`는 해당 재원에서 생활비로 옮긴 승인 기록의 금액이며 기록이 없으면 0원이다. 설정 차이는 승인액과 `saved`를 비교해 별도로 표시한다. |
@@ -362,11 +362,10 @@
 | `categories[].allocated` | 정수 | 배정 금액 |
 | `categories[].spent` | 정수 | 이번 주기에 그 카테고리로 쓴 돈 (고정지출로 연결된 거래는 빼고, 거래 목록과 같은 기준) |
 | `categories[].minAmount` | 정수 / null | 내 정보에서 정한 최소 금액 |
-| `categories[].locked` · `lockedAmount` | 참/거짓 · 정수 / null | 자물쇠 · 잠긴 금액. 보고 있는 예산의 `allocated`와 다를 수 있다 (예: 초안에서 잠근 금액을 승인 예산 화면에서 볼 때) |
 | `categories[].reason` | 문자 / null | 추천 이유 한 줄 (에이전트가 주면) |
 | `unclassifiedCount` | 정수 | 이번 주기의 '확인 필요' 소비 거래 수 |
 | `outOfBudget` | 객체 / null | **예산 밖 지출 안내** (11/3, R-13) `{ "total", "categories": [{ "category", "spent" }] }`. 생활비 쪽으로 잡힌 주거·통신 · 여행·숙박 지출(고정지출로 연결된 거래는 빼고). 생활비 사용액과 같은 기간. 계산(사용액 · 남은 돈 · 하루 금액)에는 넣지 않고 안내만. 쓴 돈이 없으면 `total` 0 · `categories` `[]`, 예산이 없으면 `null`. 홈 `budget.outOfBudget` · 채팅 `outside_spent`와 같은 금액 |
-| `nag` | 문자 / null | 잔소리 문구 (아래 금액 고정 API 참고). 없으면 `null` |
+| `nag` | 문자 / null | 현재 급여 주기에서 확정한 조정 2회 이상 또는 이번 달 포함 최근 3개 달(한국 시간)에 매달 확정 조정이 있으면 안내. 최초 승인·미리보기·취소·다음 주기 예약·잠금 토글은 제외. 두 조건을 모두 충족하면 두 문장을 함께 반환하며, 없으면 `null` |
 
 ```json
 {
@@ -376,7 +375,7 @@
   "living": { "budget": 1120000, "spent": 0, "remaining": 1120000 },
   "overspend": { "over": 0, "coveredBySpare": 0, "spareRemaining": 100000, "shortfall": 0 },
   "categories": [
-    { "category": "FOOD", "categoryName": "식비", "allocated": 330000, "spent": 0, "minAmount": 300000, "locked": false, "lockedAmount": null, "reason": null }
+    { "category": "FOOD", "categoryName": "식비", "allocated": 330000, "spent": 0, "minAmount": 300000, "reason": null }
   ],
   "unclassifiedCount": 0,
   "outOfBudget": { "total": 0, "categories": [] },
@@ -392,49 +391,13 @@
 
 ---
 
-## 카테고리 금액 고정 · 해제
+## ~~카테고리 금액 고정 · 해제~~ (11/18 삭제)
 
-| 칸 | 내용 |
-|---|---|
-| 어떤 기능 | 예산 · 추천 예산 화면에서 카테고리 옆 자물쇠를 누를 때 |
-| 어디로 | `PATCH /api/budgets/<uuid:budget_id>/categories/<code>/` |
-| 로그인 필요 | O · 세션 쿠키 + CSRF |
-| 요청 번호 | 안 씀 (같은 값을 두 번 보내도 결과가 같다) |
-| 명세 상태 | 초안 |
-
-**자물쇠의 뜻** — 다시 추천받을 때 **그 카테고리 금액을 그대로 두고** 나머지만 다시 나눈다. 금액 자체를 바꾸는 건 이 API가 아니라 챗봇 조정(10/15 결정 — 예산 초안 수정은 챗봇으로).
-
-**보내는 값**
-
-| 이름 | 타입 | 필수 | 범위 · 설명 | 예시 |
-|---|---|---|---|---|
-| `locked` | 참/거짓 | O | 걸기 `true` · 풀기 `false` | `true` |
-
-**받는 값 (200)**
-
-| 이름 | 타입 | 뜻 |
-|---|---|---|
-| `category` · `categoryName` | 문자 | 카테고리 |
-| `locked` | 참/거짓 | 지금 상태 |
-| `lockedAmount` | 정수 / null | 잠긴 금액 (다시 추천해도 유지될 금액). 풀려 있으면 `null` |
-| `changeCount` | 정수 | 이번 주기에 이 카테고리 자물쇠를 바꾼 횟수 (값이 실제로 바뀔 때만 +1) |
-| `nag` | 문자 / null | 잔소리 문구. 없으면 `null` |
-
-**규칙**
-
-- 자물쇠는 **급여 주기 단위**로 저장한다(`budget_category_setting`). 같은 주기의 초안 · 승인 예산이 같은 자물쇠를 본다. **새 주기가 처음 만들어질 때 바로 전 주기의 자물쇠(잠긴 카테고리 · 잠긴 금액)를 이어받는다** — 자물쇠는 다음 달에도 적용 (10/28 기획 확인). 바꾼 횟수는 0부터 다시 센다(잔소리는 이번 주기 기준). 생활비가 바뀌어 안 맞으면 풀린다(P-13).
-- **걸 때 금액도 같이 저장한다** (리뷰 10/28): `budget_category_setting`에 **`locked_amount` 칸 추가**(DB 변경). 자물쇠를 거는 순간 **주소의 예산(`budget_id`)에서 그 카테고리 배정 금액**을 저장하고, 다시 추천받을 때 이 금액을 그대로 쓴다. 풀면 `null`. 이미 걸린 상태에서 다른 예산 화면에서 다시 `true`를 보내면 그 예산 금액으로 바꾼다 (`changeCount`는 안 늘림 — 잠금 여부는 그대로라서).
-- 잔소리 규칙(10/15 결정): ① 주거 · 통신, 교통 · 차량 **말고** 다른 카테고리의 자물쇠를 이번 주기에 **3번 이상** 바꾸면 ② 이번 주기에 예산을 **3번 이상 승인**하면 → `nag`에 문구. 문구: "이번 달 예산을 여러 번 바꿨어요" (10/28 확정 → 11/13 알림 줄에 맞게 바꿈, 전: "자주 바꾸고 있어요. 이번 달 계획을 한 번 정리해 볼까요?"). **11/13: 화면에서는 예산 · 추천 화면에 띄우지 않고 홈 종 알림 한 줄로만 보여 준다** (홈 `budget.nag`). API 응답 `nag`는 그대로
-- 바꿀 수 있는 예산: 이번 주기의 일반 `validated` 또는 `approved`. 미승인 조정안(`base_budget` 또는 `task_type=budget_adjust`)의 잠금 설정·해제는 거절한다. 승인된 파생 예산은 일반 승인 예산과 같이 처리한다. 지난 주기 · `superseded` · `expired` 예산은 409.
-
-**실패하면**
-
-| 상황 | 상태 | `code` | 화면 안내 |
-|---|---|---|---|
-| 없는 예산 · 남의 예산 · 없는 카테고리 코드 · `UNCLASSIFIED` (주소가 틀림) | 404 | `not_found` | "찾을 수 없어요" |
-| `locked` 없음 · 참/거짓 아님 | 400 | `invalid` | `fields.locked` |
-| 지난 예산 · 이미 바뀐 예산 | 409 | `not_ready` | "지난 예산은 바꿀 수 없어요." |
-| 로그인 안 함 | 403 | `not_authenticated` | 로그인 화면으로 |
+자물쇠 기능을 뺐다 (11/18 사용자 결정). `PATCH /api/budgets/<id>/categories/<code>/` 주소를 없앴고 부르면 404다.
+- 예산 · 추천 · 대화형 조정 · 분배 실패 복구 계산은 DB의 자물쇠 값을 읽지 않는다(늘 "잠긴 카테고리 없음"). 읽는 입구: `recommend.budget_settings` · `adjustment_context`(locks) · `adjustment_schedule.protections`. 새 주기에 자물쇠를 이어받지도 않는다.
+- 응답에서 `categories[].locked` · `lockedAmount`를 뺐다. `locksReleased`(지킬 돈 PUT · 추천 작업 결과)는 형식만 남아 늘 `[]`다.
+- 충돌 종류 `lock_below_minimum` · `locks_mismatch_living`과 목표 충돌 이유 `locked_amount`는 더 생기지 않는다.
+- DB 칸 `budget_category_setting.locked` · `locked_amount`는 아직 남아 있다(쓰지 않음). 칸 삭제 마이그레이션은 DB 담당(김나은)에게 요청 — `docs/DB_MODELS.md`.
 
 ---
 
@@ -526,7 +489,7 @@
 ## 남은 확인
 
 - 평균 비율 10개(R-05): ML 담당에게 `fallback_ratios` 숫자만 받기 (모델 파일은 저장소에 없음). 받기 전까지 임시 함수는 화면 시안 비율(`recommend.py` `FALLBACK_RATIOS`)을 쓴다.
-- 잔소리 문구는 위 금액 고정 규칙의 문장으로 확정 (10/28).
+- 변경 빈도 안내는 위 `nag`의 주기별·최근 3개 달 기준을 따른다. 챗봇은 현재 급여 주기에 확정한 조정이 1회 이상이면 추가 조정 전에 계속 여부를 확인한다. 계속 선택은 예산 승인이 아니며, 보관한 요청을 재개한다.
 
 
 ### 2026-11-06 A/B → 조정 참조 및 다음 주기 목표
@@ -592,7 +555,7 @@
 
 월급 변화는 `income_change={amount,mode:by|to,direction:up|down|null}` 또는 금액 없는 `action=salary_change`로 해석해 마이페이지로 안내한다. 미래 급여 변경 예약은 현재 챗봇에서 새로 만들지 않으며, 현재 적용된 월급만 수정하도록 명시한다. 기존 예정 지출의 다음 주기 계획은 유지한다. 아래 예약 저장·적용 계약은 예정 지출과 이미 저장된 예약의 호환성을 위해 유지한다.
 
-다음 주기 카드에는 `effectiveOn`, `incomeChange.before/after`가 포함된다. 기존 조정 승인 API에 `keepForNextCycle:false`를 보내면 `budget_adjustment_schedule`에 예약하며, 이번 주기 승인 예산·프로필 금액·잠금은 변경하지 않는다. 승인 응답의 `state=saved`는 이 경우 예약 저장을 뜻한다. 시작일 이후 홈·예산·급여 조회 또는 예산 생성 시 월급·배분 설정·카테고리 목표를 한 번 반영한다. 다음 주기의 실제 예산은 최신 수입·지출과 보호 조건으로 기존 생성·검수·승인 절차를 거친다. 예약 후 프로필 설정이 달라지면 덮어쓰지 않고 `scheduleStatus=needs_review`로 둔다. 새 예약 확정은 기존 미적용 예약을 교체한다. 새 테이블을 위한 `budgets.0009_budget_adjustment_schedule` 마이그레이션이 필요하다.
+다음 주기 카드에는 `effectiveOn`, `incomeChange.before/after`가 포함된다. 기존 조정 승인 API에 `keepForNextCycle:false`를 보내면 `budget_adjustment_schedule`에 예약하며, 이번 주기 승인 예산·프로필 금액·잠금은 변경하지 않는다. 승인 응답의 `state=saved`는 이 경우 예약 저장을 뜻한다. 시작일 이후 홈·예산·급여 조회 또는 예산 생성 시 월급·배분 설정·카테고리 목표를 한 번 반영한다. 다음 주기의 수입·고정비·보호 조건으로 예약한 배정이 가능하면 자동 적용한다. 예약 후 프로필 설정이 달라지면 덮어쓰지 않고 `scheduleStatus=needs_review`로 둔다. 새 예약 확정은 기존 미적용 예약을 교체한다. 새 테이블을 위한 `budgets.0009_budget_adjustment_schedule` 마이그레이션이 필요하다.
 
 일회성 예정 지출은 `one_off=true`, 별도로 준비한 돈은 `set_aside_amount`로 해석한다. 다음 주기의 총 필요액에서 이번 예산과 중복되지 않는 사용자 확인 준비금을 뺀 금액만 추가 조정한다. 준비금은 계좌 잔액이나 새 수입으로 만들지 않는다. 저축·월 쿠션 감액은 명시적 허용 전에는 제외한다. 여행은 `TRAVEL_LODGING`으로 유지하며 `ReservePlan`과 `BudgetItem(bucket=reserve)`로 저장하고 매달 생활비 카테고리로 바꾸지 않는다. 예약의 일회성 배분은 시작 급여 주기의 추천 스냅샷에만 반영하고 평소 프로필 배분은 유지한다. 이후 주기에는 재사용하지 않는다. 카드의 `oneOff`, `expense.total/setAside/additional`과 예산 조회 `split.reserve`로 범위를 표시한다. 일반 배분 편집 대신 자연어로 예정 지출 조건을 변경한다.
 

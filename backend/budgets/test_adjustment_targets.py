@@ -191,15 +191,6 @@ class TargetSnapshotTest(TestCase):
         self.assertEqual(conflict["reason"], "living_budget")
         self.assertEqual((conflict["possible_amount"], conflict["diff"]), (1000000, -5000))
 
-    def test_exact_etc_lock_overrides_no_target_and_remains_an_exact_exception(self):
-        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id="ETC", locked=True, locked_amount=37777)
-        snapshot = self.snapshot()
-        result = recommend_category_budgets(snapshot["engine_input"])
-        check_result(snapshot["engine_input"], result)
-        self.assertEqual(snapshot["etc"], 37777)
-        self.assertEqual(result["unallocated"], 2223)
-        self.assertTrue(set(result["allocations"]) == set(ALLOCATION_CODES))
-
     def test_existing_recommendation_save_keeps_residual_in_spare_and_budget_items_on_grid(self):
         from .api import save_recommended_budget
         self.profile.living_budget = 1000123

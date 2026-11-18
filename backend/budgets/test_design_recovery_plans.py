@@ -43,8 +43,8 @@ class RecoveryPlanAPITest(TestCase):
     def failure(self, minimum=1110001):
         # Fixture amounts only; no production minimum or rate is configured by these tests.
         CategoryMinimum.objects.create(user=self.user, category_id='FOOD', min_amount=minimum)
-        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id='EDUCATION',
-                                             locked=True, locked_amount=12345)
+        # 11/18 자물쇠 기능 제거: 예전 EDUCATION 자물쇠(12,345원) 대신 같은 금액의 최소 금액으로 돈이 모자란 상황을 만든다
+        CategoryMinimum.objects.create(user=self.user, category_id='EDUCATION', min_amount=12345)
         response = self.post_recommend()
         self.assertEqual(response.status_code, 202, response.content)
         from chat.models import AsyncTask
@@ -85,7 +85,7 @@ class RecoveryPlanAPITest(TestCase):
         source, chat, proposal = self.preview()
         before = self.protected()
         self.assertEqual(Budget.objects.count(), 1)
-        self.assertEqual(proposal.items.get(bucket='living', category_id='EDUCATION').allocated_amount, 12345)
+        self.assertGreaterEqual(proposal.items.get(bucket='living', category_id='EDUCATION').allocated_amount, 12345)
         self.assertGreaterEqual(proposal.items.get(bucket='living', category_id='FOOD').allocated_amount, 1110001)
         self.assertGreaterEqual(proposal.items.get(bucket='living', category_id='TRANSPORT_CAR').allocated_amount, 60000)
         key = str(uuid4())
@@ -108,36 +108,6 @@ class RecoveryPlanAPITest(TestCase):
         restored = self.client.get(f"/api/chat/conversations/{chat['conversationId']}/")
         self.assertEqual(restored.status_code, 200, restored.content)
         self.assertEqual(restored.json()['messages'][-1]['content']['budgetAdjustment']['proposal']['state'], 'saved')
-
-    def test_all_locked_surplus_review_preserves_locks_and_requires_approval(self):
-        from .recommend import ALLOCATION_CODES
-        from chat.models import AsyncTask
-        for code in ALLOCATION_CODES:
-            BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id=code,
-                                                 locked=True, locked_amount=100000)
-        before = self.protected()
-        response = self.post_recommend()
-        self.assertEqual(response.status_code, 202, response.content)
-        source = AsyncTask.objects.get(pk=response.json()['task']['taskId'])
-        self.assertIsNone(source.result['_design_handoff']['issue']['shortfall'])
-        entered = self.chat(source)
-        self.assertEqual(entered.status_code, 200, entered.content)
-        self.assertFalse(Budget.objects.exists())
-        response = self.pick(entered.json(), 'recovery_review')
-        self.assertEqual(response.status_code, 200, response.content)
-        card = response.json()['messages'][-1]['content']['budgetAdjustment']
-        self.assertTrue(card['canApprove'], response.content)
-        proposal = Budget.objects.get(pk=card['proposal']['proposalId'])
-        self.assertEqual(proposal.status, 'validated')
-        self.assertIsNone(proposal.approved_at)
-        self.assertEqual(dict(proposal.items.filter(bucket='living', category_id__in=ALLOCATION_CODES)
-                              .values_list('category_id', 'allocated_amount')), dict.fromkeys(ALLOCATION_CODES, 100000))
-        self.assertEqual(self.protected(), before)
-        approved = self.approve(proposal)
-        self.assertEqual(approved.status_code, 200, approved.content)
-        self.assertEqual(approved.json()['budget']['split']['spare'],
-                         proposal.funding_amount - sum(proposal.items.values_list('allocated_amount', flat=True)))
-        self.assertEqual(self.protected(), before)
 
     def test_explicit_keep_updates_only_upper_settings_after_approval(self):
         _, _, proposal = self.preview(ongoing=True)
@@ -277,17 +247,6 @@ class RecoveryPlanAPITest(TestCase):
         self.assertFalse(Budget.objects.exists())
         self.assertEqual(self.protected(), before)
 
-    def test_lock_below_minimum_cannot_be_solved_by_extra_money(self):
-        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id='FOOD',
-                                            locked=True, locked_amount=100000)
-        _, entered = self.failure()
-        before = self.protected()
-        response = self.chat(conversation=entered['conversationId'], text='조건을 유지해서 해결안 보기')
-        self.assertEqual(response.status_code, 200)
-        self.assertFalse(Budget.objects.exists())
-        self.ml.assert_not_called()
-        self.assertEqual(self.protected(), before)
-
     def test_duplicate_chat_request_does_not_create_second_proposal(self):
         _, entered = self.failure()
         key = str(uuid4())
@@ -330,20 +289,20 @@ class RecoveryPlanAPITest(TestCase):
 
     def test_verified_b_history_uses_exact_remaining_spare_for_rounding(self):
         with (patch.object(service, 'history_for_user', return_value=self.b_history()),
-              patch('budgets.design_recovery_plans.reserved_spare', return_value=(77655, 'fixture'))):
+              patch('budgets.design_recovery_plans.reserved_spare', return_value=(77655 - 2655, 'fixture'))):  # 11/18: 최소 금액 15,000원(옛 자물쇠 12,345원 대신)만큼 옮김
             _, _, proposal = self.preview()
             plan = proposal.validation_summary['design_recovery']
             self.assertEqual(plan['out']['_design']['selection']['plan'], 'b')
             self.assertEqual(plan['system_floors']['TRANSPORT_CAR'], 10000)
-            self.assertEqual(plan['out']['_design']['spare_transfer'], 2345)
-            self.assertEqual(plan['transfers'], {'SPARE': 22345})
-            self.assertEqual(proposal.items.get(bucket='living', category_id='EDUCATION').allocated_amount, 12345)
+            self.assertEqual(plan['out']['_design']['spare_transfer'], 5000)  # 11/18: 옛 자물쇠 12,345원 → 최소 금액 15,000원
+            self.assertEqual(plan['transfers'], {'SPARE': 25000})
+            self.assertEqual(proposal.items.get(bucket='living', category_id='EDUCATION').allocated_amount, 15000)
             self.ml.assert_called_once()
             self.assertEqual(self.approve(proposal).status_code, 200)
 
     def test_b_rounding_one_won_short_reports_exact_shortage_without_saving(self):
         with (patch.object(service, 'history_for_user', return_value=self.b_history()),
-              patch('budgets.design_recovery_plans.reserved_spare', return_value=(77656, 'fixture'))):
+              patch('budgets.design_recovery_plans.reserved_spare', return_value=(77656 - 2655, 'fixture'))):  # 11/18: 최소 금액 15,000원(옛 자물쇠 12,345원 대신)만큼 옮김
             _, entered = self.failure()
             before = self.protected()
             response = self.pick(entered, 'recovery_cycle')
@@ -356,56 +315,3 @@ class RecoveryPlanAPITest(TestCase):
         self.assertEqual(self.protected(), before)
         self.ml.assert_called_once()
 
-    def test_all_locked_can_leave_unused_living_as_spare_without_unlocking(self):
-        from .recommend import ALLOCATION_CODES
-        for code in ALLOCATION_CODES:
-            BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id=code,
-                                                locked=True, locked_amount=100000)
-        response = self.post_recommend()
-        from chat.models import AsyncTask
-        task = AsyncTask.objects.get(pk=response.json()['task']['taskId'])
-        entered = self.chat(task).json()
-        before = self.protected()
-        response = self.pick(entered, 'recovery_review')
-        self.assertEqual(response.status_code, 200)
-        card = response.json()['messages'][-1]['content']['budgetAdjustment']['proposal']
-        self.assertTrue(card['canApprove'])
-        proposal = Budget.objects.get(pk=card['proposalId'])
-        self.assertTrue(all(v == 100000 for v in card['allocations'].values() if v))
-        self.assertGreater(card['buckets']['SPARE'], 100000)
-        self.assertEqual(self.approve(proposal).status_code, 200)
-        self.assertEqual(self.protected(), before)
-
-    def test_all_locked_exact_shortfall_uses_confirmed_spare_without_rounding(self):
-        self.check_exact_shortfall(14000, [{'from': 'SPARE', 'to': 'LIVING', 'amount': 12345}])
-
-    def test_mixed_funding_uses_every_won_of_spare_before_savings(self):
-        self.check_exact_shortfall(8000, [{'from': 'SPARE', 'to': 'LIVING', 'amount': 8000},
-                                          {'from': 'SAVINGS', 'to': 'LIVING', 'amount': 4345}])
-
-    def check_exact_shortfall(self, spare, transfers):
-        from chat.models import AsyncTask
-        from .recommend import ALLOCATION_CODES
-        food = self.profile.living_budget + 12345 - 100000 * (len(ALLOCATION_CODES) - 1)
-        for code in ALLOCATION_CODES:
-            BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id=code,
-                                                locked=True, locked_amount=food if code == 'FOOD' else 100000)
-        response = self.post_recommend()
-        self.assertEqual(response.status_code, 202, response.content)
-        task = AsyncTask.objects.get(pk=response.json()['task']['taskId'])
-        handoff = task.result['_design_handoff']
-        self.assertEqual(handoff['issue']['shortfall'], 12345)
-        entered = self.chat(task)
-        self.assertEqual(entered.status_code, 200, entered.content)
-        reserve = handoff['budget']['available_spare'] - spare
-        with patch('budgets.design_recovery_plans.reserved_spare', return_value=(reserve, 'fixture')):
-            response = self.pick(entered.json(), 'recovery_cycle')
-            self.assertEqual(response.status_code, 200, response.content)
-            if spare < 12345:
-                self.assertFalse(response.json()['messages'][-1]['content']['budgetAdjustment']['canApprove'])
-                response = self.pick(response.json(), 'recovery_savings')
-                self.assertEqual(response.status_code, 200, response.content)
-            card = response.json()['messages'][-1]['content']['budgetAdjustment']['proposal']
-            self.assertEqual(card['transfers'], transfers)
-            self.assertEqual(card['allocations']['FOOD'], food)
-            self.assertEqual(self.approve(Budget.objects.get(pk=card['proposalId'])).status_code, 200)

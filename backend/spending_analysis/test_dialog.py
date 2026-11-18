@@ -748,6 +748,38 @@ class UserTestScenarioTest(SimpleTestCase):
 
 class FollowupOperationTest(SimpleTestCase):
     """비교 대상만 바꾸는 후속 질문과 새로운 수치 조회를 구별한다."""
+    def test_same_dates_repairs_period_and_anaphoric_category(self):
+        store = MemoryStateStore()
+        first = "지난달 같은 날까지랑 비교하면 내가 더 썼어?"
+        overall = {"mine": True, "target": "spend", "compare": "other_period", "period_said": "지난달 같은 날까지"}
+        followup = {"mine": True, "categories": ["FASHION_SHOPPING"], "refers_to": "unclear"}
+
+        def say(text, response, cid="talk"):
+            return dialog.step(store, cid, text, lambda system, payload: json.dumps(response))
+
+        decision = say(first, overall)
+        self.assertEqual(decision.items, (item(6),))
+        record_analysis(store, "talk", decision, run_items(decision.items, lambda _: {
+            "evidence": "confirmed", "period": PERIOD, "as_of": "2026-10-29T10:00:00+09:00", "facts": {},
+        }))
+        self.assertEqual(say("그중에 쇼핑만 따지면? 옷 같은거", followup).items, (item(7, "FASHION_SHOPPING"),))
+        self.assertEqual(say("그중에 쇼핑만?", followup, cid="new-talk").reason, "reference_unclear")
+
+    def test_same_dates_does_not_replace_a_different_explicit_period(self):
+        from .reading import read
+
+        response = {"mine": True, "target": "spend", "compare": "other_period", "period_said": "지난달 같은 날까지"}
+        for text, fields, expected in (
+            ("전월 동일한 날짜까지 비교해줘", {"period_said": "전월 동일한 날짜까지"}, "prev_month"),
+            ("이번 달 지출과 지난달 같은 날까지 비교해줘", {"period": "this_month"}, "prev_month"),
+            ("지난주랑 지난달 같은 날까지 비교해줘", {}, "other_period"),
+            ("지난달 같은 날 하루치랑 비교해줘", {"period_said": "지난달 같은 날"}, "other_period"),
+            ("작년 이맘때는?", {}, "other_period"),
+            ("지난달 같은 날까지랑 지난주를 비교해줘", {"period": "last_week"}, "other_period"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(read(text, None, lambda system, payload: json.dumps({**response, **fields})).compare, expected)
+
     def test_new_query_resets_only_implicit_comparison(self):
         from .reading import parse
         base = {"target": "spend", "compare": "prev_month", "categories": ["FOOD"], "weekday": ["weekend"]}

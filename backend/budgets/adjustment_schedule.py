@@ -5,7 +5,7 @@ from datetime import date
 from django.utils import timezone
 from users.models import CategoryMinimum, CategoryPriority
 
-from .models import BudgetAdjustmentSchedule, BudgetCategorySetting
+from .models import BudgetAdjustmentSchedule
 
 FIELDS = ('monthly_take_home_income', 'living_budget', 'savings_floor', 'cushion_monthly',
           'budget_category_targets', 'payday', 'payday_revision')
@@ -19,8 +19,7 @@ def protections(user, cycle_id):
     return {
         'minimums': dict(CategoryMinimum.objects.filter(user=user).values_list('category_id', 'min_amount')),
         'priorities': dict(CategoryPriority.objects.filter(user=user).values_list('category_id', 'rank')),
-        'locks': {row.category_id: [row.locked, row.locked_amount, row.revision_no] for row in
-                  BudgetCategorySetting.objects.filter(user=user, cycle_id=cycle_id)},
+        'locks': {},  # 자물쇠 기능 제거 (11/18): 보호 조건 비교에 자물쇠를 넣지 않는다
     }
 
 

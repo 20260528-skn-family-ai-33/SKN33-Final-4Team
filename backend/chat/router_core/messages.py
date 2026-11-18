@@ -21,7 +21,7 @@ CHOICES = (
 )
 CHOICE = {"spending": CHOICES[0], "budget_adjust": CHOICES[1], "policy": CHOICES[2]}
 
-OPENING = {"lines": ["안녕하세요! 무엇을 도와드릴까요?"], "hint": "아래에서 고르거나 하고 싶은 말을 바로 적어 주세요."}
+OPENING = {"lines": ["안녕하세요! 쿠숑이에요. 무엇을 도와드릴까요?"], "hint": "아래에서 고르거나 하고 싶은 말을 바로 적어 주세요."}
 
 ASK = {
     "intent": "무엇부터 도와드릴까요?",

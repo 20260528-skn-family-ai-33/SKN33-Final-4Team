@@ -194,6 +194,33 @@ class PersonaAnswerTest(TestCase):
     def setUpTestData(cls):
         seed.apply(DESIGN)
 
+    def test_same_date_comparison_keeps_period_when_narrowed_to_shopping(self):
+        first = "지난달 같은 날까지랑 비교하면 내가 더 썼어?"
+        narrowed = "그중에 쇼핑만 따지면? 옷 같은거"
+        standalone = "쇼핑 카테고리 분석해줘"
+        responses = {
+            first: {"mine": True, "target": "spend", "compare": "other_period", "period_said": "지난달 같은 날까지"},
+            narrowed: {"mine": True, "categories": ["FASHION_SHOPPING"], "refers_to": "unclear"},
+            standalone: {"mine": True, "target": "overview", "categories": ["FASHION_SHOPPING"], "refers_to": "none"},
+        }
+
+        def complete(system, payload):
+            reading = responses[json.loads(payload)["text"]] if system == spending_reading.PROMPT else {"intents": ["spending"]}
+            return json.dumps(reading, ensure_ascii=False)
+
+        chat = Chat(user("B"))
+        _, overall = chat.say(first, llm=complete)
+        _, shopping = chat.say(narrowed, llm=complete)
+        for reply, want in ((overall, (2_290_000, 1_856_000)), (shopping, (300_000, 160_000))):
+            comparison = next(block for block in reply["view"] if block["kind"] == "rows")
+            self.assertEqual(comparison["presentation"], "period_comparison")
+            self.assertEqual(tuple(row["amount"] for row in comparison["rows"]), want)
+            self.assertEqual([row["note"] for row in comparison["rows"]], ["10월 1일~29일", "9월 1일~29일"])
+        self.assertEqual(shopping["view"][0]["title"], "패션·쇼핑 · 지난달 같은 기간과 비교")
+        _, independent = chat.say(standalone, llm=complete)
+        self.assertIn("패션·쇼핑", independent["view"][0]["title"])
+        self.assertNotIn("지난달 같은 기간과 비교", independent["view"][0]["title"])
+
     def test_a_and_b_answers_types_1_to_9(self):
         expected = {
             "A": {
@@ -382,7 +409,7 @@ class PersonaAnswerTest(TestCase):
     def test_category_query_notes_unclassified_in_same_period(self):
         """11/2 2차 검수: 카테고리로 좁힌 범용 조회도 같은 기간 확인 필요가 있으면 안내. design.json: 지우(C) 10/21 확인 필요 25,000원"""
         out = Chat(user("C")).say("지난주 식비 얼마야?")[1]
-        self.assertIn("식비로 분류된 금액 기준이에요. 확인 필요 25,000원에 따라 달라질 수 있어요.", out["notices"])
+        self.assertIn("식비로 분류된 금액 기준이에요. 아직 카테고리를 정하지 않은 거래 25,000원이 있어서 금액이 늘 수 있어요.", out["notices"])
         # 고정지출 줄도 같은 조건(식비)으로 센다 — 지우의 지난주 고정지출 100,000원은 식비가 아니라 안내 · [고정지출 포함해서 보기] 없음
         self.assertFalse([l for l in out["lines"] if "고정지출" in l])
         self.assertNotIn("include_fixed", out.get("suggest", []))
@@ -452,7 +479,7 @@ class PersonaAnswerTest(TestCase):
                                           "일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",  # 한 번만
                                           "교통·차량 기준으로 저장된 거래는 10월 29일까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
                                           # 11/2 2차 검수: 같은 기간 확인 필요가 있으면 분류된 금액 기준 안내 (카테고리 여러 개도 한 줄)
-                                          "식비 · 교통·차량으로 분류된 금액 기준이에요. 확인 필요 50,000원에 따라 달라질 수 있어요."])
+                                          "식비 · 교통·차량으로 분류된 금액 기준이에요. 아직 카테고리를 정하지 않은 거래 50,000원이 있어서 금액이 늘 수 있어요."])
 
         def flaky(u, item, **kw):
             return {"state": "error", "reason": "db_error"} if item["category"] == "TRANSPORT_CAR" else analyze(u, item, **kw)
@@ -688,7 +715,7 @@ class UserTestAnswerTest(TestCase):
                                         "지난달 같은 기간(9월 1일~29일) 식비 지출은 확인할 수 있는 내역이 없어요."])
         self.assertEqual(out["notices"], ["식비 기준으로 저장된 거래는 10월 26일까지예요. 이후 거래가 추가되면 결과가 달라질 수 있어요.",
                                           "일부 내역이 빠져 있을 수 있어요. 현재 확인된 내역으로 계산했어요.",
-                                          "식비로 분류된 금액 기준이에요. 확인 필요 50,000원에 따라 달라질 수 있어요."])
+                                          "식비로 분류된 금액 기준이에요. 아직 카테고리를 정하지 않은 거래 50,000원이 있어서 금액이 늘 수 있어요."])
 
 
 @fixture_db_only

@@ -47,7 +47,46 @@ class CushionAPITest(TestCase):
                 "bar": 3.57, "pct": 4, "monthly": 210_000, "useRule": None,
                 "remain": 8_100_000, "eta": "39회 · 약 39개월", "etaMonths": 39,
             },
+            "savings": {"items": [], "total": None, "unknownCount": 0, "asOf": None},
+            "notices": {"depositDue": False, "balanceLow": False},
         })
+
+    def test_notices_match_home_deposit_day_and_need_existing_cycle(self):
+        # 11/18 쿠션 화면 알림: 홈과 같은 기준. 주기가 없으면 적립일 알림도 없다 (주기를 새로 만들지 않음)
+        from datetime import timedelta
+        from budgets.models import BudgetCycle
+        self.profile()
+        today = timezone.localdate()
+        self.assertEqual(self.get()["notices"], {"depositDue": False, "balanceLow": False})
+        self.assertFalse(BudgetCycle.objects.filter(user=self.user).exists())
+        BudgetCycle.objects.create(user=self.user, starts_on=today - timedelta(days=1), ends_before=today + timedelta(days=29))
+        self.assertTrue(self.get()["notices"]["depositDue"])
+
+    def test_savings_accounts_show_stored_balance_only(self):
+        """11/18 쿠션 화면: 저장된 예적금 잔액만 읽는다. 입출금 · 해제된 연결 · 남의 계좌는 빼고, 잔액 모름은 합계에 넣지 않는다"""
+        from finance.models import BankAccount, Connection
+        bank = Connection.objects.create(user=self.user, business_type="bank", organization_code="0004", status="connected")
+        gone = Connection.objects.create(user=self.user, business_type="bank", organization_code="0088",
+                                         status="disconnected", disconnected_at=timezone.now())
+        theirs = Connection.objects.create(user=self.other, business_type="bank", organization_code="0004", status="connected")
+        at = timezone.now()
+        add = lambda conn, key, **f: BankAccount.objects.create(user=conn.user, connection=conn, source_account_key=key, **f)
+        add(bank, "a", account_type="deposit", name="청년적금", masked_number="123-****-5678", balance=1_200_000, fetched_at=at)
+        add(bank, "b", account_type="other", field_states={"codef_deposit_code": "12"}, name="주택청약", balance=None)
+        add(bank, "c", account_type="demand", balance=500_000)
+        add(bank, "d", account_type="other", field_states={"codef_deposit_code": "13"}, balance=1)  # 신탁 등은 아직 아님
+        add(gone, "e", account_type="deposit", balance=9)
+        add(theirs, "f", account_type="deposit", balance=9)
+        savings = self.get()["savings"]
+        self.assertEqual([item["displayName"].split(" · ")[0] for item in savings["items"]], ["국민 청년적금", "국민 주택청약"])
+        self.assertEqual((savings["total"], savings["unknownCount"]), (1_200_000, 1))
+        self.assertIsNotNone(savings["asOf"])
+        self.assertEqual(savings["items"][0]["organizationName"], "국민은행")
+        self.assertNotIn("connectedId", str(savings))
+        foreign = add(bank, "usd", account_type="deposit", currency="USD", balance=900)
+        savings = self.get()["savings"]
+        self.assertIsNone(next(row["balance"] for row in savings["items"] if row["accountId"] == str(foreign.pk)))
+        self.assertEqual((savings["total"], savings["unknownCount"]), (1_200_000, 2))
 
     def test_anonymous_is_rejected(self):
         response = APIClient().get(URL)

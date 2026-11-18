@@ -36,13 +36,13 @@ beforeEach(() => {
 })
 afterEach(async () => { await act(() => root.unmount()); host.remove() })
 
-it('서버 금액·최소액·설명·여윳돈을 그대로 표시하고 제외 항목 자물쇠를 숨긴다', async () => {
+it('서버 금액·최소액·설명·여윳돈을 그대로 표시하고 자물쇠 버튼은 없다 (11/18 자물쇠 기능 제거)', async () => {
   await render()
   expect(host.textContent).toContain('245,000원')
   expect(host.textContent).toContain('240,001원')
   expect(host.textContent).toContain('200,000원')
   expect(host.textContent.match(/다른 항목을 더 줄일 수 없어/g)).toHaveLength(1)
-  expect(host.querySelector('[aria-label="여행·숙박 금액 고정"]')).toBeNull()
+  expect(host.querySelector('.mc-lockt')).toBeNull()
   expect(apiSend).toHaveBeenCalledTimes(1)
 })
 
@@ -82,17 +82,6 @@ it('명시적으로 승인한 뒤에만 승인 API를 호출한다', async () =>
   await act(async () => host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   expect(apiSend).toHaveBeenLastCalledWith('/api/budgets/old/approve/', 'POST', {}, { requestKey: 'synthetic-key' })
   expect(navigate).toHaveBeenCalledWith(PATHS.home)
-})
-
-it('자물쇠 요청 중 승인과 중복 자물쇠 클릭을 막는다', async () => {
-  await render()
-  let resolve
-  apiSend.mockImplementationOnce(() => new Promise(r => { resolve = r }))
-  await act(async () => host.querySelector('[aria-label="식비 금액 고정"]').click())
-  expect(host.querySelector('[aria-label="식비 금액 고정"]').disabled).toBe(true)
-  expect(host.querySelector('button[type=submit]').disabled).toBe(true)
-  await act(async () => resolve({ locked: true, lockedAmount: 245000 }))
-  expect(host.querySelector('[aria-label="식비 금액 고정"]').getAttribute('aria-pressed')).toBe('true')
 })
 
 it.each(['infeasible', 'needs_upper_allocation_review', 'needs_policy'])('추천 결과 %s를 성공 초안으로 보여주지 않는다', async outcome => {
@@ -188,16 +177,14 @@ it('ML 계산 실패를 안내하고 재시도 성공 후에만 새 초안을 �
 })
 
 it.each([
-  [{ type: 'lock_below_minimum', category: 'FOOD', lockedAmount: 100000, minAmount: 150000 }, '식비의 고정 금액(100,000원)이 최소 금액(150,000원)보다 작아요.'],
   [{ type: 'minimums_over_living', shortfall: 80000 }, '최소금액과 고정 금액을 모두 지키려면 생활비가 80,000원 부족해요.'],
-  [{ type: 'locks_mismatch_living', difference: 150000 }, '합계가 생활비와 150,000원 달라요.'],
 ])('최소금액·잠금 충돌을 설명하고 설정 확인 후 재추천할 수 있다: $type', async (conflict, text) => {
   await render({ ...data(), budget: { ...data().budget, status: 'approved' } })
   apiSend.mockResolvedValueOnce({ task: { taskId: 'conflict' } })
     .mockResolvedValueOnce({ status: 'succeeded', result: { outcome: 'infeasible', budgetId: null,
       summary: conflict.type === 'minimums_over_living'
         ? '최소금액과 잠금액을 모두 지키려면 생활비가 80,000원 부족해요.'
-        : '카테고리 최소 금액과 자물쇠 금액을 확인해 주세요.', conflicts: [conflict] } })
+        : '카테고리 최소 금액을 확인해 주세요.', conflicts: [conflict] } })
   await click('다시 추천받기')
   expect(host.querySelector('[role="alert"]').textContent).toContain(text)
   if (conflict.type === 'minimums_over_living') {
@@ -207,8 +194,6 @@ it.each([
   expect([...host.querySelectorAll('button')].find(b => b.textContent === '다시 추천받기').disabled).toBe(false)
   await click('최소금액 확인하기')
   expect(navigate).toHaveBeenLastCalledWith(PATHS.profile, { state: { from: 'my' } })
-  await click('자물쇠 확인하기')
-  expect(navigate).toHaveBeenLastCalledWith(PATHS.budget)
   expect(apiSend.mock.calls.some(([url]) => url.includes('/approve/'))).toBe(false)
   expect(apiSend.mock.calls.some(([, method]) => ['PUT', 'PATCH', 'DELETE'].includes(method))).toBe(false)
 
@@ -236,7 +221,6 @@ it('생활비가 부족하면 승인을 막고 지킬 돈 배분 확인으로 �
 
 it.each([
   [{ category: 'FOOD', reason: 'minimum_or_floor' }, '식비: 유지 목표가 최소금액이나 시스템 하한보다 작아요.'],
-  [{ categories: ['FOOD', 'EDUCATION'], reason: 'locked_amount' }, '식비 · 교육: 잠금액과 유지 목표가 달라요.'],
 ])('설계·조정의 목표 충돌 형식에 맞춰 카테고리와 이유를 표시한다', async (fields, text) => {
   await render({ ...data(), budget: { ...data().budget, status: 'approved' } })
   apiSend.mockResolvedValueOnce({ task: { taskId: 'target-conflict' } })

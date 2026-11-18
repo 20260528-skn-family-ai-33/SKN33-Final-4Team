@@ -46,8 +46,6 @@ class DesignIntegrationTest(TestCase):
                 pay_cycle_on=deposit.occurred_on, **confirmation_snapshot(deposit))
             self.deposits.append(deposit)
         CategoryMinimum.objects.create(user=self.user, category_id='FOOD', min_amount=150001)
-        BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle,
-            category_id='EDUCATION', locked=True, locked_amount=12345)
 
     def transaction(self, month, day, **values):
         return FinancialTransaction.objects.create(user=self.user, account=self.account,
@@ -68,14 +66,11 @@ class DesignIntegrationTest(TestCase):
 
     def assert_settings_preserved(self):
         self.assertEqual(CategoryMinimum.objects.get(user=self.user, category_id='FOOD').min_amount, 150001)
-        setting = BudgetCategorySetting.objects.get(user=self.user, cycle=self.cycle, category_id='EDUCATION')
-        self.assertEqual((setting.locked, setting.locked_amount), (True, 12345))
 
     def test_real_history_selects_b_saves_spare_and_approves_once(self):
         budget = self.propose('b')
         lines = {r.category_id: r.allocated_amount for r in budget.items.filter(bucket=Bucket.LIVING)}
         self.assertGreaterEqual(lines['FOOD'], 150001)
-        self.assertEqual(lines['EDUCATION'], 12345)
         before = list(budget.items.order_by('pk').values_list('pk', 'allocated_amount'))
         view = self.client.get('/api/budgets/').json()
         spare = budget.funding_amount-sum(budget.items.values_list('allocated_amount', flat=True))
@@ -148,7 +143,6 @@ class ActualModelAPITest(TestCase):
             response = self.client.get('/api/budgets/')
             self.assertEqual(response.status_code, 200)
             self.assertEqual({r['category']: r['allocated'] for r in response.json()['categories']}, before)
-            self.assertEqual(before['EDUCATION'], 12345)
             self.assertGreaterEqual(before['FOOD'], 150001)
             spare = response.json()['split']['spare']
             for _ in range(2):

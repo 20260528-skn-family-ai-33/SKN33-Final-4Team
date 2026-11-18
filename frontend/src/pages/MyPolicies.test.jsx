@@ -50,7 +50,7 @@ it('마이에서는 메뉴만 보이고 들어가면 목록이 나오며 뒤로 
   expect(host.querySelector('output').textContent).toBe('/my')
   expect(host.querySelector('article')).toBeNull()
   expect(fetch.mock.calls.some(([url]) => url === '/api/policies/saved/')).toBe(false)
-  await click('저장한 정책관심 있는 청년 정책 모아보기›')
+  await click('저장한 정책')
   expect(host.querySelector('output').textContent).toBe('/my/policies')
   expect([...host.querySelectorAll('article h3')].map((node) => node.textContent)).toEqual(['두 번째 정책', '마감된 정책'])
   expect(host.textContent).toContain('상시 신청')
@@ -113,10 +113,10 @@ it('로그아웃 실패 때는 대화를 유지하고 성공한 뒤 번호를 �
   sessionStorage.setItem('mc-chat-conversation', 'conversation-1')
   logoutFails = true
   await render()
-  await click('로그아웃　›')
+  await click('로그아웃')
   expect(sessionStorage.getItem('mc-chat-conversation')).toBe('conversation-1')
   logoutFails = false
-  await click('로그아웃　›')
+  await click('로그아웃')
   expect(sessionStorage.getItem('mc-chat-conversation')).toBeNull()
   expect(host.querySelector('output').textContent).toBe('/login')
 })

@@ -1,14 +1,13 @@
 // 추천 예산 확인 — 실제 초안 · 승인 (docs/api/budgets.md)
 //   초안 보기: GET /api/budgets/ (이번 주기 승인 전 초안 budget.status = validated)
 //   초안 만들기: POST /api/budgets/recommend/ → GET /api/tasks/<taskId>/ (작업 결과 outcome: proposed · infeasible)
-//   금액 고정: PATCH /api/budgets/<budgetId>/categories/<code>/ { locked }
 //   승인: POST /api/budgets/<budgetId>/approve/ (요청 번호 필수)
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
+import KushongRunner from '../components/KushongRunner.jsx'
 import Icon from '../components/Icon.jsx'
-import LockIcon from '../components/LockIcon.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import BudgetAIConsent from '../components/BudgetAIConsent.jsx'
 import CardReservedHelp from '../components/CardReservedHelp.jsx'
@@ -84,10 +83,10 @@ function MakingView({ children }) {
     return () => clearTimeout(timer)
   }, [step])
   return (
-    <Layout title="추천 예산 확인">
+    <Layout title="추천 예산 확인" showBack>
       <StepBar step={6} />
       <div className="mc-making" role="status" aria-live="polite">
-        <span className="mc-conn-busy"><Icon name="Loader" /></span>
+        <KushongRunner size={120} />
         <h1>예산을 짜고 있어요</h1>
         <p className="mc-muted">{MAKING_STEPS[step]}</p>
         <p className="mc-note">조금 걸릴 수 있어요. 다 되면 이 화면에서 바로 보여 드려요.</p>
@@ -100,28 +99,26 @@ function MakingView({ children }) {
 // 추천을 못 만든 이유 (작업 결과 conflicts) → 화면 문장
 function conflictText(c) {
   if (c.type === 'target_conflict') {
-    const reasons = { locked_amount: '잠금액과 유지 목표가 달라요.', minimum_amount: '유지 목표가 최소 보장액보다 작아요.',
+    const reasons = { minimum_amount: '유지 목표가 최소 보장액보다 작아요.',
       minimum_or_floor: '유지 목표가 최소금액이나 시스템 하한보다 작아요.', amount_unit: '유지 목표를 5천 원 단위로 확인해 주세요.',
       living_budget: '유지 목표를 현재 생활비 안에 모두 반영할 수 없어요.', invalid_target: '저장된 유지 목표를 확인해 주세요.' }
-    const basis = { locked_amount: '잠금액', minimum_amount: '최소액', minimum_or_floor: '하한액', amount_unit: '기준금액', living_budget: '반영 가능액' }
+    const basis = { minimum_amount: '최소액', minimum_or_floor: '하한액', amount_unit: '기준금액', living_budget: '반영 가능액' }
     const names = (c.categories ?? (c.category ? [c.category] : [])).map(catName).join(' · ')
     const amounts = Number.isSafeInteger(c.requestedAmount) && Number.isSafeInteger(c.possibleAmount)
       ? ` 목표 ${won(c.requestedAmount)} · ${basis[c.reason] ?? '기준금액'} ${won(c.possibleAmount)}${Number.isSafeInteger(c.diff) ? ` · 차이 ${won(Math.abs(c.diff))}` : ''}` : ''
     return `${names ? `${names}: ` : ''}${reasons[c.reason] ?? '유지 목표와 현재 예산 조건을 확인해 주세요.'}${amounts}`
   }
   if (c.type === 'minimums_over_living') return `최소금액과 고정 금액을 모두 지키려면 생활비가 ${won(c.shortfall)} 부족해요. 설정 금액이나 생활비 배분을 확인해 주세요.`
-  if (c.type === 'lock_below_minimum') return `${catName(c.category)}의 고정 금액(${won(c.lockedAmount)})이 최소 금액(${won(c.minAmount)})보다 작아요.`
-  if (c.type === 'locks_mismatch_living') return `모든 카테고리를 고정했는데 합계가 생활비와 ${won(Math.abs(c.difference))} 달라요. 자물쇠를 하나 풀어 주세요.`
   if (c.type === 'target_conflict') {
-    const reasons = { locked_amount: '잠금액과 유지 목표가 달라요.', minimum_amount: '유지 목표가 최소 보장액보다 작아요.',
+    const reasons = { minimum_amount: '유지 목표가 최소 보장액보다 작아요.',
       amount_unit: '유지 목표를 5천 원 단위로 확인해 주세요.', living_budget: '유지 목표를 현재 생활비 안에 모두 반영할 수 없어요.', invalid_target: '저장된 유지 목표를 확인해 주세요.' }
-    const basis = { locked_amount: '잠금액', minimum_amount: '최소액', amount_unit: '기준금액', living_budget: '반영 가능액' }
+    const basis = { minimum_amount: '최소액', amount_unit: '기준금액', living_budget: '반영 가능액' }
     const names = (c.categories ?? []).map(catName).join(' · ')
     const amounts = Number.isSafeInteger(c.requestedAmount) && Number.isSafeInteger(c.possibleAmount)
       ? ` 목표 ${won(c.requestedAmount)} · ${basis[c.reason] ?? '기준금액'} ${won(c.possibleAmount)}${Number.isSafeInteger(c.diff) ? ` · 차이 ${won(Math.abs(c.diff))}` : ''}` : ''
     return `${names ? `${names}: ` : ''}${reasons[c.reason] ?? '유지 목표와 현재 예산 조건을 확인해 주세요.'}${amounts}`
   }
-  return '카테고리 최소 금액과 자물쇠 금액을 확인해 주세요.'
+  return '카테고리 최소 금액을 확인해 주세요.'
 }
 
 export default function RecommendPage() {
@@ -132,7 +129,6 @@ export default function RecommendPage() {
   const [making, setMaking] = useState(false)  // 새 추천을 만드는 중 (11/12: 이때는 화면 전체를 기다림 안내로)
   const [problem, setProblem] = useState(null)  // { message, conflicts?, code? }
   const [draftBlocked, setDraftBlocked] = useState(false)
-  // 서버가 푼 자물쇠 (P-13): 지킬 돈에서 생활비를 바꿔 풀렸거나(이전 화면에서 넘겨받음), 추천할 때 막혀서 풀린 것
   const location = useLocation()
   const navState = location.state
   const context = salaryReviewContext(location)
@@ -140,7 +136,6 @@ export default function RecommendPage() {
   const [approved, setApproved] = useState(false)
   const returnedRecovery = navState?.recoveryReturn
   const [resumeRecovery, setResumeRecovery] = useState(() => returnedRecovery ?? null)
-  const [released, setReleased] = useState(() => navState?.locksReleased ?? [])
   const approveKeys = useRef(new Map())  // 초안 하나에 요청 번호 하나 (같은 초안을 다시 눌러도 한 번만 승인)
   const mounted = useRef(false)
   const [asking, setAsking] = useState(false)  // 예산 짜기 전 AI 동의 단계 (11/12)
@@ -198,7 +193,6 @@ export default function RecommendPage() {
           if (mounted.current) openRecovery(handoff.sourceTaskId)
           return
         }
-        if (now.result?.locksReleased?.length) setReleased(now.result.locksReleased)  // 막혀서 풀린 자물쇠 (P-13 ②)
         if (now.result?.outcome === 'proposed' && now.result.budgetId) {
           const next = await load()
           if (next?.budget?.status === 'validated' && next.budget.budgetId === now.result.budgetId) {
@@ -218,23 +212,6 @@ export default function RecommendPage() {
       setMaking(false)
     }
   }, [load, openRecovery, salaryReview])
-
-  const toggleLock = async (c) => {
-    if (!draft || busy || OUT_OF_BUDGET.includes(c.category)) return
-    setBusy(true)
-    setProblem(null)
-    try {
-      const saved = await apiSend(`/api/budgets/${draft.budgetId}/categories/${c.category}/`, 'PATCH', { locked: !c.locked })
-      setData((now) => ({
-        ...now,
-        categories: now.categories.map((x) => (x.category === c.category ? { ...x, locked: saved.locked, lockedAmount: saved.lockedAmount } : x)),
-      }))
-    } catch (err) {
-      setProblem({ message: err.message, code: err.code })
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const onSubmit = async (e) => {
     e.preventDefault()
@@ -299,7 +276,7 @@ export default function RecommendPage() {
   const foot = draft
     ? <button className="mc-primary" form="mc-form" type="submit" disabled={busy}>{busy ? '처리하는 중…' : '이 예산으로 시작하기'}</button>
     : null
-  const settingsConflict = problem?.conflicts?.some(c => ['minimums_over_living', 'lock_below_minimum', 'locks_mismatch_living'].includes(c.type))
+  const settingsConflict = problem?.conflicts?.some(c => ['minimums_over_living'].includes(c.type))
   const goProtect = () => salaryReview
     ? navigate(salaryReviewUrl(PATHS.protect, context), { state: { from: 'my', ...context } })
     : navigate(PATHS.protect)
@@ -310,7 +287,6 @@ export default function RecommendPage() {
       {settingsConflict && (
         <div className="mc-row" style={{ marginTop: 8, flexWrap: 'wrap', gap: 12 }}>
           <button type="button" className="mc-link" onClick={() => navigate(PATHS.profile, { state: { from: 'my' } })}>최소금액 확인하기</button>
-          {data.budget && <button type="button" className="mc-link" onClick={() => navigate(PATHS.budget)}>자물쇠 확인하기</button>}
         </div>
       )}
       {problem.code === 'not_ready' && !draft && (
@@ -336,7 +312,6 @@ export default function RecommendPage() {
         <div className="mc-eyebrow">추천 예산 확인</div>
         <h1>{data.budget?.status === 'approved' ? '이번 달 예산을 이미 쓰고 있어요' : '카테고리별 예산을 추천해 드릴게요'}</h1>
         <p className="mc-muted">추천안을 확인하고 승인해야 예산에 반영돼요. 새 추천을 만드는 동안에는 승인한 예산을 계속 사용해요.</p>
-        {released.length > 0 && <p className="mc-min-warn" role="status">생활비가 바뀌어서 이번 달 자물쇠({released.map(catName).join(' · ')})를 풀었어요. 필요하면 다시 걸어 주세요.</p>}
         {problemBox}
         {recoveryBox}
         <BudgetAIConsent />
@@ -362,7 +337,6 @@ export default function RecommendPage() {
       <p className="mc-muted">지킬 돈에서 정한 생활비를 카테고리별로 나눴어요.<BudgetBasisHelp basis={data.recommendation?.basis} /></p>
       {data.recommendation?.spareTransfer > 0 && <p className="mc-note" role="status">여윳돈 {won(data.recommendation.spareTransfer)}을 이번 예산 생활비에만 포함해요. 기존 생활비 설정은 유지돼요.</p>}
       {data.recommendation?.targetConflicts?.map((c) => <p key={c.category} className="mc-note" role="status">{catName(c.category)} 유지 목표 {won(c.requestedAmount)} → 이번 예산 {won(c.possibleAmount)} (차이 {won(c.diff)}). {c.reason === 'amount_unit' ? '최종 금액 단위를 맞췄어요.' : '생활비와 보호 조건을 함께 반영했어요.'} 저장된 유지 목표는 그대로예요.</p>)}
-      {released.length > 0 && <p className="mc-min-warn" role="status">생활비가 바뀌어서 이번 달 자물쇠({released.map(catName).join(' · ')})를 풀었어요. 필요하면 다시 걸어 주세요.</p>}
 
       <div className="mc-card">
         <div className="mc-row"><h2>한 달 나눠보기</h2><span className="mc-muted">월 {won(split.funding)}</span></div>
@@ -383,15 +357,12 @@ export default function RecommendPage() {
           <div className="mc-cat-legend">
             {cats.map((c) => <div key={c.category}><i style={{ background: c.color }}></i><span>{c.categoryName}</span><b>{Math.round(pct(c.allocated, livingTotal))}%</b></div>)}
           </div>
-          <div className="mc-row mc-cat-head"><span>카테고리별 예산</span><span>고정</span></div>
+          <div className="mc-row mc-cat-head"><span>카테고리별 예산</span></div>
           <div className="mc-cat-list">
             {cats.map((c) => (
               <div className="mc-catrow" key={c.category}>
                 <span className="mc-catname"><span className="mc-cat-ic"><Icon name={catIcon(c.categoryName)} /></span>{c.categoryName}{c.minAmount > 0 && <em className="mc-min-tag">최소 {manwon(c.minAmount)}</em>}</span>
                 <strong>{won(c.allocated)}</strong>
-                <button type="button" className="mc-lockt" aria-label={`${c.categoryName} 금액 고정`} aria-pressed={c.locked} disabled={busy} onClick={() => toggleLock(c)}>
-                  <LockIcon />
-                </button>
                 {typeof c.reason === 'string' && c.reason.trim() && <p className="mc-note" style={{ gridColumn: '1 / -1', margin: 0, padding: 0 }}>{c.reason}</p>}
               </div>
             ))}
@@ -405,7 +376,7 @@ export default function RecommendPage() {
         </div>
         {problemBox}
         {recoveryBox}
-        <p className="mc-note">최소 표시는 내 정보에서 정한 카테고리 최소 금액이에요. 그 밑으로는 줄지 않고, 자물쇠를 걸면 다음에 다시 추천받을 때 그 금액 그대로 고정돼요.</p>
+        <p className="mc-note">최소 표시는 내 정보에서 정한 카테고리 최소 금액이에요. 그 밑으로는 줄지 않아요.</p>
       </form>
       <SalaryReviewActions context={context} busy={busy} note={Boolean(problem)} />
     </Layout>

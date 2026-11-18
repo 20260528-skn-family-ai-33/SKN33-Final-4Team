@@ -1,7 +1,7 @@
 """카테고리 예산 조회 · 자물쇠 · 승인 계약 테스트."""
 import json
 import uuid
-from datetime import date
+from datetime import date, datetime, time
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -13,7 +13,7 @@ from finance.models import BankAccount, Card, Connection, FinancialTransaction, 
 from users.models import CategoryMinimum, FinancialProfile, IdempotencyRecord
 
 from .models import Budget, BudgetCategorySetting, BudgetCycle, BudgetItem, SpendingAllocation
-from .overview import LIVING_CODES, NAG
+from .overview import LIVING_CODES, NAG, MONTHLY_NAG, budget_nag
 from .recommend import POLICY_VERSION, budget_input_hash
 
 
@@ -106,17 +106,16 @@ class BudgetViewTest(TestCase):
         Budget.objects.filter(status="validated").update(status="expired")
         self.assertEqual(self.get()["budget"]["status"], "approved")
 
-    def test_split_categories_minimums_locks_and_order(self):
-        budget = self.make_budget()
+    def test_split_categories_minimums_and_order(self):
+        self.make_budget()
         CategoryMinimum.objects.create(user=self.user, category_id="FOOD", min_amount=155_000)
-        self.lock(budget, {"locked": True})
         data = self.get()
         self.assertEqual(data["split"], {"funding": 1_500_000, "fixed": 100_000, "cardReserved": 0, "saving": 200_000,
                                          "cushion": 100_000, "living": 1_000_000, "spare": 100_000, "reserve": 0})
         self.assertEqual([item["category"] for item in data["categories"]], list(LIVING_CODES))
         food = data["categories"][0]
         self.assertEqual(food, {"category": "FOOD", "categoryName": "식비", "allocated": 1_000_000, "spent": 0,
-                               "minAmount": 155_000, "locked": True, "lockedAmount": 1_000_000, "reason": None})
+                               "minAmount": 155_000, "reason": None})  # 11/18: locked · lockedAmount 칸 없음
         self.assertIsNone(data["categories"][1]["minAmount"])
 
     def test_reserve_is_visible_separately_and_not_in_living_or_spare(self):
@@ -197,7 +196,7 @@ class BudgetViewTest(TestCase):
         SalaryDecision.objects.create(user=self.user, transaction=tx, state="confirmed", pay_cycle_on=self.cycle.starts_on, **confirmation_snapshot(tx))
         self.assertTrue(self.get()["budget"]["salaryConfirmed"])
 
-    def test_nag_lock_counts_exclude_protected_categories(self):
+    def test_nag_does_not_count_lock_changes_as_budget_adjustments(self):
         self.make_budget()
         for code in ("HOUSING_TELECOM", "TRANSPORT_CAR"):
             BudgetCategorySetting.objects.create(user=self.user, cycle=self.cycle, category_id=code, change_count=3)
@@ -206,66 +205,74 @@ class BudgetViewTest(TestCase):
         self.assertIsNone(self.get()["nag"])
         setting.change_count = 3
         setting.save()
-        self.assertEqual(self.get()["nag"], NAG)
+        self.assertIsNone(self.get()["nag"])
 
     def test_nag_counts_historical_approvals(self):
-        self.make_budget()
-        for index in range(3):
-            budget = self.make_budget("superseded")
-            budget.approved_at = timezone.now()
-            budget.save()
-            self.assertEqual(self.get()["nag"], NAG if index == 2 else None)
+        self.make_budget('approved')
+        for index in range(2):
+            self.adjustment_history(TODAY)
+            self.assertEqual(self.get()['nag'], NAG if index == 1 else None)
 
-    def test_lock_unlock_and_idempotent_relock(self):
-        budget = self.make_budget()
-        response = self.lock(budget, {"locked": True})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual((response.json()["lockedAmount"], response.json()["changeCount"]), (1_000_000, 1))
-        self.assertEqual(self.lock(budget, {"locked": True}).json()["changeCount"], 1)
-        data = self.lock(budget, {"locked": False}).json()
-        self.assertEqual((data["locked"], data["lockedAmount"], data["changeCount"]), (False, None, 2))
-        self.assertEqual(self.lock(budget, {"locked": False}).json()["changeCount"], 2)
-        self.assertEqual(self.lock(budget, {"locked": True}).json()["nag"], NAG)
-        budget.refresh_from_db()
-        self.assertEqual(budget.status, "validated")
+    def adjustment_history(self, day, *, cycle=None):
+        from chat.models import AsyncTask
+        task = AsyncTask.objects.create(user=self.user, request_key=str(uuid.uuid4()),
+            task_type='budget_adjust', status='succeeded', input_hash='history')
+        budget = self.make_budget('superseded', cycle=cycle)
+        budget.task = task
+        budget.approved_at = timezone.make_aware(datetime.combine(day, time(12)))
+        budget.save(update_fields=['task', 'approved_at'])
+        return budget
 
-    def test_relock_from_another_budget_only_changes_amount(self):
-        first = self.make_budget("approved")
-        second = self.make_budget(food=700_000)
-        self.lock(first, {"locked": True})
-        data = self.lock(second, {"locked": True}).json()
-        self.assertEqual((data["lockedAmount"], data["changeCount"]), (700_000, 1))
-        first.refresh_from_db()
-        second.refresh_from_db()
-        self.assertEqual((first.status, second.status), ("approved", "validated"))
+    def test_nag_does_not_count_initial_approvals_or_unapproved_adjustments(self):
+        self.make_budget('approved')
+        for _ in range(2):
+            old = self.make_budget('superseded')
+            old.approved_at = timezone.now()
+            old.save(update_fields=['approved_at'])
+        pending = self.adjustment_history(TODAY)
+        pending.approved_at = None
+        pending.save(update_fields=['approved_at'])
+        self.assertIsNone(self.get()['nag'])
 
-    def test_lock_404_ownership_and_category(self):
-        budget = self.make_budget()
-        # 11/3: 예산 밖 카테고리(주거·통신 · 여행·숙박)는 자물쇠 대상이 아니다
-        for code in ("UNCLASSIFIED", "UNKNOWN", "HOUSING_TELECOM", "TRAVEL_LODGING"):
-            self.assertEqual(self.lock(budget, {"locked": True}, code).status_code, 404)
-        self.assertFalse(BudgetCategorySetting.objects.exists())
-        for pk in (uuid.uuid4(), budget.pk):
-            if pk == budget.pk:
-                self.client.force_authenticate(self.other)
-            response = self.client.patch(f"{URL}{pk}/categories/FOOD/", {"locked": True}, format="json")
-            self.assertEqual(response.status_code, 404)
+    def test_monthly_nag_requires_an_adjustment_in_each_of_three_calendar_months(self):
+        self.make_budget('approved')
+        august = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 8, 1), ends_before=date(2026, 9, 1))
+        september = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 9, 1), ends_before=date(2026, 10, 25))
+        self.adjustment_history(date(2026, 8, 31), cycle=august)
+        self.adjustment_history(date(2026, 9, 1), cycle=september)
+        self.assertIsNone(self.get()['nag'])
+        self.adjustment_history(date(2026, 10, 26))
+        self.assertEqual(self.get()['nag'], MONTHLY_NAG)
+        self.adjustment_history(date(2026, 10, 27))
+        self.assertEqual(self.get()['nag'], NAG + '\n' + MONTHLY_NAG)
 
-    def test_lock_409_for_wrong_state_or_cycle(self):
-        for status in ("draft", "expired", "superseded", "rejected"):
-            response = self.lock(self.make_budget(status), {"locked": True})
-            self.assertEqual((response.status_code, response.json()["error"]["code"]), (409, "not_ready"))
-        old = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 9, 25), ends_before=date(2026, 10, 25))
-        response = self.lock(self.make_budget(cycle=old), {"locked": True})
-        self.assertEqual(response.json()["error"]["message"], "지난 예산은 바꿀 수 없어요.")
-        self.assertFalse(BudgetCategorySetting.objects.exists())
+    def test_monthly_nag_ignores_gaps_old_records_and_future_approvals(self):
+        self.make_budget('approved')
+        old = BudgetCycle.objects.create(user=self.user, starts_on=date(2026, 7, 1), ends_before=date(2026, 10, 25))
+        for day in (date(2026, 7, 31), date(2026, 8, 1), date(2026, 8, 2)):
+            self.adjustment_history(day, cycle=old)
+        self.adjustment_history(date(2026, 10, 26))
+        self.assertIsNone(self.get()['nag'])
+        self.adjustment_history(date(2026, 10, 29), cycle=old)
+        self.assertIsNone(self.get()['nag'])
 
-    def test_lock_400_for_invalid_body(self):
-        budget = self.make_budget()
-        for body in (None, [], {}, {"locked": None}, {"locked": 1}, {"locked": "true"}, {"locked": True, "amount": 1}):
-            response = self.lock(budget, body)
-            self.assertEqual((response.status_code, response.json()["error"]["code"]), (400, "invalid"))
-        self.assertFalse(BudgetCategorySetting.objects.exists())
+    def test_monthly_nag_handles_year_boundary_and_korean_month_boundary(self):
+        from datetime import timezone as utc_timezone
+        self.adjustment_history(date(2026, 11, 1))
+        self.adjustment_history(date(2026, 12, 1))
+        january = self.adjustment_history(date(2027, 1, 1))
+        january.approved_at = datetime(2026, 12, 31, 15, 0, tzinfo=utc_timezone.utc)
+        january.save(update_fields=['approved_at'])
+        self.assertEqual(budget_nag(self.user, None, date(2027, 1, 1)), MONTHLY_NAG)
+
+    def test_nag_ignores_reserved_adjustments(self):
+        from .models import BudgetAdjustmentSchedule
+        self.make_budget('approved')
+        for _ in range(2):
+            budget = self.adjustment_history(TODAY)
+            BudgetAdjustmentSchedule.objects.create(user=self.user, proposal=budget, effective_on=date(2026, 11, 25),
+                status='replaced', settings={}, before_settings={})
+        self.assertIsNone(self.get()['nag'])
 
     def test_approval_supersedes_previous_and_returns_approved(self):
         previous = self.make_budget("approved")
@@ -420,12 +427,6 @@ class BudgetViewTest(TestCase):
             chosen.refresh_from_db()
             self.assertEqual(chosen.status, status)
 
-    def test_lock_changes_do_not_expire_or_change_hash(self):
-        chosen = self.make_budget()
-        self.assertEqual(self.lock(chosen, {"locked": True}).status_code, 200)
-        self.assertEqual(budget_input_hash(self.user, self.cycle), chosen.input_hash)
-        self.assertEqual(self.approve(chosen).status_code, 200)
-
     def test_approval_same_request_key_replays_original_response(self):
         chosen = self.make_budget()
         key = str(uuid.uuid4())
@@ -447,10 +448,15 @@ class BudgetViewTest(TestCase):
         self.assertEqual(self.approve(chosen).status_code, 404)
         self.assertEqual(self.client.post(f"{URL}{uuid.uuid4()}/approve/", {}, format="json", HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4())).status_code, 404)
 
+    def test_lock_endpoint_is_gone(self):
+        """11/18 자물쇠 기능 제거: 카테고리 자물쇠 주소가 없다"""
+        response = self.lock(self.make_budget(), {"locked": True})
+        self.assertEqual(response.status_code, 404)
+
     def test_all_endpoints_require_login(self):
         chosen = self.make_budget()
         self.client.force_authenticate(user=None)
-        for response in (self.client.get(URL), self.lock(chosen, {"locked": True}), self.approve(chosen)):
+        for response in (self.client.get(URL), self.approve(chosen)):
             self.assertEqual((response.status_code, response.json()["error"]["code"]), (403, "not_authenticated"))
 
 

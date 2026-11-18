@@ -1,0 +1,422 @@
+/*
+ * 탭 화면 디자인 (2026-11-18, 시안 B "탭 컬러 밴드")
+ * - 탭마다 머리 · 띠 색이 다르다: 홈 파랑 · 거래 흰색 · 예산 라임 · 쿠션 남색 · 챗봇 연파랑 (Layout 의 data-tab)
+ * - 띠(.mc-tabhero)에 문장 제목 + 쿠숑이, 바로 뒤 흰 시트(.mc-tabsheet)가 띠 위로 겹친다
+ * - 바탕은 한 단계 진한 회청색이라 흰 카드가 또렷하다. 강조색은 파랑 · 라임, 빨강은 초과 · 부족에만
+ * - app.css · shell.css 뒤에 불러온다. 탭 화면(.mc-device[data-tab])에만 걸려서 다른 화면은 그대로다
+ */
+html body #mc-new-preview .mc-device[data-tab] {
+  --mc-bg: #E8EDF5;
+  --gut: 20px;
+  --lime: #DDF58C; --lime-ink: #41520C;
+  --band: #FFFFFF; --band-ink: var(--mc-ink); --band-sub: var(--mc-sub); --band-em: var(--mc-brand);
+  --btn-bg: #EEF2F8; --btn-ink: var(--mc-ink);
+  --tab-shadow: 0 1px 2px rgba(20, 33, 74, .05), 0 6px 18px rgba(20, 33, 74, .06);
+  background: var(--mc-bg);
+}
+html body #mc-new-preview .mc-device[data-tab=home] { --band: #2459D9; --band-ink: #FFFFFF; --band-sub: #CBD8FF; --band-em: #DDF58C; --btn-bg: rgba(255, 255, 255, .16); --btn-ink: #FFFFFF; }
+html body #mc-new-preview .mc-device[data-tab=budget] { --band: #DDF58C; --band-ink: #1F2A06; --band-sub: #41520C; --band-em: #1F2A06; --btn-bg: rgba(255, 255, 255, .6); --btn-ink: #41520C; }
+html body #mc-new-preview .mc-device[data-tab=fund] { --band: #14214A; --band-ink: #FFFFFF; --band-sub: #AFC0F5; --band-em: #DDF58C; --btn-bg: rgba(255, 255, 255, .12); --btn-ink: #FFFFFF; }
+html body #mc-new-preview .mc-device[data-tab=assistant] { --mc-bg: #EAF0FF; --band: #EAF0FF; --btn-bg: #FFFFFF; }
+@media (max-width: 370px) { html body #mc-new-preview .mc-device[data-tab] { --gut: 16px; } }
+
+/* ---- 머리: 띠와 같은 색. 오른쪽 위 버튼(새로고침 · 알림 · 마이 메뉴)은 둥근 칸 ---- */
+html body #mc-new-preview .mc-device[data-tab] #mc-header { background: var(--band); color: var(--band-ink); padding-bottom: 6px; }
+html body #mc-new-preview .mc-device[data-tab] #mc-header strong { font-size: 22px; font-weight: 750; letter-spacing: -.8px; }
+html body #mc-new-preview .mc-device[data-tab] #mc-header .mc-head-r { gap: 8px; }
+html body #mc-new-preview .mc-device[data-tab] #mc-header .mc-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--btn-bg); color: var(--btn-ink); }
+html body #mc-new-preview .mc-device[data-tab] #mc-header .mc-icon svg { width: 19px; height: 19px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-bell-n { top: -2px; right: -2px; box-shadow: 0 0 0 2px var(--band); }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-logo { color: #FFFFFF; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-logo-ing { color: var(--lime); }
+html body #mc-new-preview .mc-device[data-tab] #mc-main { background: var(--mc-bg); }
+
+/* ---- 띠 ---- */
+html body #mc-new-preview .mc-device[data-tab] .mc-tabhero {
+  position: relative; background: var(--band); color: var(--band-ink);
+  margin: -20px calc(-1 * (var(--gut) + env(safe-area-inset-right))) 0 calc(-1 * (var(--gut) + env(safe-area-inset-left)));
+  padding: 4px calc(var(--gut) + env(safe-area-inset-right)) 62px calc(var(--gut) + env(safe-area-inset-left));
+}
+/* 뒤에 겹치는 시트가 없으면(거래) 띠를 짧게 끊고 아래 선 */
+html body #mc-new-preview .mc-device[data-tab] .mc-tabhero:not(:has(+ .mc-tabsheet)) { padding-bottom: 18px; border-bottom: 1px solid var(--mc-line); margin-bottom: 14px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-tabhero.has-mascot { min-height: 196px; }
+html body #mc-new-preview .mc-tabhero-eyebrow { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 32px; font-size: 13px; font-weight: 600; color: var(--band-sub); }
+html body #mc-new-preview .mc-tabhero-eyebrow > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html body #mc-new-preview .mc-device[data-tab] h1.mc-tabhero-title { position: relative; z-index: 1; margin: 6px 0 0; font-size: 25px; line-height: 1.36; letter-spacing: -.9px; font-weight: 750; color: var(--band-ink); font-variant-numeric: tabular-nums; word-break: keep-all; }
+html body #mc-new-preview .mc-tabhero-title em { font-style: normal; color: var(--band-em); }
+html body #mc-new-preview .mc-device[data-tab] .mc-tabhero-title .mc-home3-big { font-size: inherit; font-weight: inherit; letter-spacing: inherit; line-height: inherit; color: var(--band-em); }
+html body #mc-new-preview .mc-tabhero-title small { margin-left: 2px; font-size: .64em; font-weight: 650; letter-spacing: -.3px; }
+html body #mc-new-preview .mc-tabhero.has-mascot .mc-tabhero-title { padding-right: 112px; }
+html body #mc-new-preview .mc-tabhero .mc-mascot { position: absolute; z-index: 0; right: calc(var(--gut) - 8px + env(safe-area-inset-right)); bottom: 30px; }
+html body #mc-new-preview .mc-tabhero-pill { flex: none; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 0; background: var(--btn-bg); color: var(--btn-ink); font-size: 12.5px; font-weight: 650; }
+
+/* ---- 흰 시트 · 카드 ---- */
+html body #mc-new-preview .mc-device[data-tab] .mc-tabsheet {
+  position: relative; z-index: 1; margin: -44px 0 0; padding: 20px; border-radius: 28px;
+  background: var(--mc-paper); box-shadow: 0 10px 30px -12px rgba(20, 33, 74, .28); text-align: left;
+}
+html body #mc-new-preview .mc-device[data-tab] .mc-card { border-radius: 22px; box-shadow: var(--tab-shadow); }
+html body #mc-new-preview .mc-device[data-tab] .mc-tabsec { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 26px 4px 10px; font-size: 16px; font-weight: 700; letter-spacing: -.4px; color: var(--mc-ink); }
+html body #mc-new-preview .mc-device[data-tab] .mc-tabsec h2 { margin: 0; font-size: 16px; font-weight: 700; }
+html body #mc-new-preview .mc-device[data-tab] .mc-tabsec b { font-size: 15px; font-variant-numeric: tabular-nums; }
+html body #mc-new-preview .mc-tabsheet-go { display: flex; align-items: center; justify-content: center; gap: 2px; width: 100%; min-height: 48px; margin-top: 16px; border: 0; border-radius: 14px; background: var(--mc-soft); color: var(--mc-brand); font-size: 14.5px; font-weight: 700; }
+html body #mc-new-preview .mc-tabcta { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 56px; margin: 14px 0; padding: 0 18px; border: 0; border-radius: 18px; background: var(--mc-ink); color: #FFFFFF; font-size: 15px; font-weight: 650; text-align: left; }
+html body #mc-new-preview .mc-tabcta svg:first-child { color: var(--lime); }
+html body #mc-new-preview .mc-tabkv { display: grid; grid-template-columns: 1fr 1fr; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--mc-line); }
+html body #mc-new-preview .mc-tabkv > div + div { border-left: 1px solid var(--mc-line); padding-left: 14px; }
+html body #mc-new-preview .mc-tabkv small { display: block; font-size: 12px; color: var(--mc-sub); }
+html body #mc-new-preview .mc-tabkv b { display: block; margin-top: 3px; font-size: 16px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+:is(button, a).mc-tabsheet-go:active, .mc-tabcta:active { transform: scale(.98); }
+
+/* ---- 홈 ---- */
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-hero::before { display: none; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-week { display: flex; align-items: center; gap: 16px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-week strong { display: block; font-size: 17px; font-weight: 700; letter-spacing: -.5px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-ring { flex: none; width: 78px; height: 78px; margin: 0; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-ring circle { stroke-width: 16; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-ringin b { font-size: 16px; font-weight: 700; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-sub { margin: 3px 0 0; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-chip { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 5px 10px; background: #F2FBD6; color: var(--lime-ink); font-size: 12px; font-weight: 650; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-chip::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #9CC21F; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-chip.is-fast { background: #FDECEF; color: var(--mc-alert); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-chip.is-fast::before { background: var(--mc-alert); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-stats { gap: 0; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--mc-line); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-stats > div { align-items: flex-start; padding: 0; border: 0; border-radius: 0; background: none; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-stats > div + div { border-left: 1px solid var(--mc-line); padding-left: 14px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-stats > div:first-child { padding-right: 14px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-stats > div > span { font-size: 12px; font-weight: 500; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-mid { font-size: 17px; font-weight: 700; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-empty { margin: 0; padding: 0; border: 0; background: none; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-sheet { margin-top: 26px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-tile,
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-facts { border: 0; box-shadow: var(--tab-shadow); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-tile.is-over .mc-home3-minibar span { background: var(--mc-alert); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-tile.is-over small { color: var(--mc-alert); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-sheethead .mc-link { color: var(--mc-brand); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-todo { margin: 0 0 20px; padding: 2px 18px; border: 0; border-radius: 24px; background: var(--mc-paper); box-shadow: var(--tab-shadow); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-todo > li:last-child { border-bottom: 0; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-todo > li > button > svg:first-child,
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-due > summary > svg:first-child { box-sizing: content-box; width: 19px; height: 19px; padding: 10px; border-radius: 13px; background: var(--mc-soft); color: var(--mc-brand); }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-todo-name { font-weight: 600; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-dueitem { padding-left: 52px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-home3-dueall { margin-left: 52px; }
+
+/* ---- 거래 ---- */
+html body #mc-new-preview .mc-device[data-tab=txs] .mc-tabhero .mc-sumbar { flex: 1; display: flex; align-items: center; gap: 4px; margin: 0; padding: 0; background: none; box-shadow: none; color: var(--mc-ink); }
+html body #mc-new-preview .mc-device[data-tab=txs] .mc-sumbar .mc-icon { width: 30px; color: var(--mc-sub); }
+html body #mc-new-preview .mc-device[data-tab=txs] .mc-sumbar-m { font-size: 15px; }
+html body #mc-new-preview .mc-device[data-tab=txs] .mc-sumbar-toggle { margin-left: auto; }
+html body #mc-new-preview .mc-device[data-tab=txs] h1.mc-tabhero-title { font-size: 30px; letter-spacing: -1.1px; }
+html body #mc-new-preview .mc-daybars-bars { display: flex; align-items: flex-end; gap: 3px; height: 60px; margin-top: 16px; }
+html body #mc-new-preview .mc-daybars-bars i { flex: 1; min-width: 0; border-radius: 3px; background: #D3DFFA; }
+html body #mc-new-preview .mc-daybars-bars i.is-today { background: var(--mc-brand); }
+html body #mc-new-preview .mc-daybars-bars i.is-future { background: #EEF1F6; }
+html body #mc-new-preview .mc-daybars-axis { display: flex; justify-content: space-between; margin-top: 6px; font-size: 11px; color: var(--mc-sub); }
+html body #mc-new-preview .mc-device[data-tab] .mc-pend-banner { display: flex; align-items: center; gap: 10px; width: 100%; margin: 0 0 12px; padding: 8px 14px 8px 8px; border: 0; border-radius: 18px; background: var(--mc-soft); color: #1745B5; text-align: left; font-size: 14px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-pend-banner[aria-pressed=true] { box-shadow: inset 0 0 0 1.5px var(--mc-brand); }
+html body #mc-new-preview .mc-device[data-tab] .mc-pend-banner .mc-pend-dot { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px; margin: 0 2px; border-radius: 10px; font-size: 12px; vertical-align: 1px; }
+
+/* ---- 예산 ---- */
+html body #mc-new-preview .mc-device[data-tab=budget] .mc-tabsheet h2 { font-size: 16px; }
+
+/* ---- 쿠션 ---- */
+html body #mc-new-preview .mc-cushion-title { display: flex; align-items: center; gap: 4px; margin: 0; font-size: 17px; }
+html body #mc-new-preview .mc-cushion .mc-muted b { color: var(--mc-ink); font-variant-numeric: tabular-nums; }
+html body #mc-new-preview .mc-pillow { position: relative; height: 46px; margin: 16px 0 8px; border-radius: 16px; background: #F1F4FA; overflow: hidden; }
+html body #mc-new-preview .mc-pillow > span { position: absolute; inset: 0 auto 0 0; border-radius: 16px; background: var(--lime, #DDF58C); }
+html body #mc-new-preview .mc-pillow > em { position: relative; padding-left: 14px; line-height: 46px; font-style: normal; font-size: 13.5px; font-weight: 700; color: var(--lime-ink, #41520C); }
+html body #mc-new-preview .mc-cushion-goal { margin: 0; }
+html body #mc-new-preview .mc-savings { list-style: none; margin: 0 0 20px; padding: 2px 18px; }
+html body #mc-new-preview .mc-savings > li { display: flex; align-items: center; gap: 12px; min-height: 66px; border-bottom: 1px solid var(--mc-line); }
+html body #mc-new-preview .mc-savings > li:last-child { border-bottom: 0; }
+html body #mc-new-preview .mc-savings .mc-grow { flex: 1; min-width: 0; }
+html body #mc-new-preview .mc-savings strong { display: block; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+html body #mc-new-preview .mc-savings small { display: block; font-size: 12px; color: var(--mc-sub); }
+html body #mc-new-preview .mc-savings b { font-size: 15px; font-weight: 700; white-space: nowrap; font-variant-numeric: tabular-nums; }
+html body #mc-new-preview .mc-savings > li.mc-savings-asof { justify-content: flex-end; min-height: 40px; font-size: 12px; color: var(--mc-sub); }
+html body #mc-new-preview .mc-savings-empty { display: flex; align-items: center; gap: 12px; }
+html body #mc-new-preview .mc-savings-empty .mc-grow { flex: 1; min-width: 0; }
+html body #mc-new-preview .mc-savings-empty p { margin: 2px 0 0; }
+html body #mc-new-preview .mc-savings-empty .mc-link { flex: none; min-height: 44px; font-weight: 650; }
+
+/* ---- 챗봇 ---- */
+html body #mc-new-preview .mc-asst-hello { padding: 4px 0 8px; text-align: center; }
+html body #mc-new-preview .mc-asst-hello .mc-mascot { margin: 0 auto; }
+html body #mc-new-preview .mc-device[data-tab] .mc-asst-hello h1 { margin: 4px 0 4px; font-size: 22px; letter-spacing: -.8px; }
+html body #mc-new-preview .mc-asst-hello p { margin: 0; font-size: 14px; color: var(--mc-sub); }
+html body #mc-new-preview .mc-device[data-tab=assistant] .mc-asst-opt { border: 0; border-radius: 18px; background: var(--mc-paper); box-shadow: var(--tab-shadow); }
+
+@media (prefers-reduced-motion: reduce) { :is(button, a).mc-tabsheet-go:active, .mc-tabcta:active { transform: none; } }
+
+/* ---- 불러오는 중 (11/18): 카드 없이 본문 가운데. 화면 전체가 로딩이면 남은 높이 가운데, 목록 안이면 넉넉한 여백 ---- */
+html body #mc-new-preview .mc-run-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 48px 16px; margin: 0; background: none; box-shadow: none; text-align: center; }
+html body #mc-new-preview .mc-body:has(> .mc-run-card:only-child) { flex: 1; display: flex; flex-direction: column; }
+html body #mc-new-preview .mc-body > .mc-run-card:only-child { flex: 1; padding-bottom: 72px; }
+
+/* ---- 홈 여유 (11/18 2차): 간격 · 배치만 넓힌다. 글자 크기 · 굵기 · 색 · 모양은 위 규칙 그대로 ---- */
+html body #mc-new-preview .mc-device[data-tab=home] .mc-tabhero { padding-bottom: 70px; }
+html body #mc-new-preview .mc-device[data-tab=home] h1.mc-tabhero-title { margin-top: 10px; line-height: 1.42; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-tabsheet { padding: 24px 22px 22px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-week { gap: 18px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-sub { margin-top: 4px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-chip { margin-top: 10px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-stats { margin-top: 24px; padding-top: 20px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-stats > div { gap: 6px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-tabsheet-go { margin-top: 22px; }
+/* 많이 쓴 곳: 3칸 타일 → 한 카드 안의 세 줄 (배치만 바꿈. 아이콘 | 이름 · 막대 · 비율 | 금액) */
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-sheet { margin-top: 36px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-sheethead { margin: 0 4px 14px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-total { margin-top: 4px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-tiles { display: block; padding: 4px 20px; border-radius: 24px; background: var(--mc-paper); box-shadow: var(--tab-shadow); }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-tile { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; grid-template-areas: "ic nm amt" "ic bar bar" "ic sm sm"; column-gap: 14px; align-items: center; padding: 16px 0; border-radius: 0; background: none; box-shadow: none; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-tile + .mc-home3-tile { border-top: 1px solid var(--mc-line); }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-tile .mc-tile { grid-area: ic; align-self: start; margin: 0; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-tile-name { grid-area: nm; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-tile b { grid-area: amt; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-minibar { grid-area: bar; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-tile small { grid-area: sm; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-facts { margin-top: 12px; padding: 2px 20px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-facts > p,
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-facts > button { min-height: 56px; }
+/* 챙겨볼 것: 줄 높이 · 간격만 넉넉히 */
+html body #mc-new-preview .mc-device[data-tab=home] .mc-tabsec { margin-top: 36px; margin-bottom: 14px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-todo { padding: 4px 20px; margin-bottom: 28px; }
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-todo > li > button,
+html body #mc-new-preview .mc-device[data-tab=home] .mc-home3-due > summary { min-height: 72px; gap: 14px; }
+
+
+/* ---- 마이메뉴 (11/18 시안 M1) ---- */
+html body #mc-new-preview .mc-device:has(.mc-my-profile) { --mc-bg: #E8EDF5; background: var(--mc-bg); }
+html body #mc-new-preview .mc-device:has(.mc-my-profile) #mc-header,
+html body #mc-new-preview .mc-device:has(.mc-my-profile) #mc-main { background: var(--mc-bg); }
+html body #mc-new-preview .mc-device:has(.mc-my-profile) .mc-card { border: 0; border-radius: 22px; box-shadow: 0 1px 2px rgba(20, 33, 74, .05), 0 6px 18px rgba(20, 33, 74, .06); }
+html body #mc-new-preview .mc-my-profile { position: relative; overflow: hidden; min-height: 150px; padding: 20px 130px 20px 20px; border-radius: 26px; background: #14214A; color: #FFFFFF; }
+html body #mc-new-preview .mc-my-label { font-size: 12px; font-weight: 600; color: #AFC0F5; }
+html body #mc-new-preview .mc-my-profile h2 { margin-top: 4px; font-size: 20px; font-weight: 750; letter-spacing: -.5px; color: #FFFFFF; }
+html body #mc-new-preview .mc-my-mail { display: block; margin-top: 2px; font-size: 13px; color: #CBD5F5; overflow-wrap: anywhere; }
+html body #mc-new-preview .mc-my-info { min-height: 36px; margin-top: 10px; padding: 0 12px; border-radius: 999px; background: rgba(255, 255, 255, .14); color: #FFFFFF; font-size: 12.5px; font-weight: 650; }
+html body #mc-new-preview .mc-my-profile .mc-mascot { position: absolute; right: 6px; bottom: -8px; }
+html body #mc-new-preview .mc-my-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+html body #mc-new-preview .mc-my-grid > button { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 124px; padding: 16px; border: 0; border-radius: 20px; background: var(--mc-paper); text-align: left; box-shadow: 0 1px 2px rgba(20, 33, 74, .05), 0 6px 18px rgba(20, 33, 74, .06); }
+html body #mc-new-preview .mc-my-grid .mc-tile { width: 36px; height: 36px; border-radius: 12px; margin-bottom: 8px; }
+html body #mc-new-preview .mc-my-grid strong { font-size: 14.5px; font-weight: 700; color: var(--mc-ink); }
+html body #mc-new-preview .mc-my-grid .mc-muted { font-size: 12px; line-height: 1.45; }
+html body #mc-new-preview .mc-my-grid .mc-my-pending { display: block; color: var(--mc-brand); }
+html body #mc-new-preview .mc-my-list { margin-top: 10px; padding-top: 4px; padding-bottom: 4px; }
+html body #mc-new-preview .mc-my-list .mc-right { color: #B3BBC8; }
+
+/* ---- 온보딩 공통: 쿠숑이 말 줄 · 입력칸 (11/18 O3 에서 모양을 덮어쓴다) ---- */
+/* 말풍선: 쿠숑이 옆 줄(.mc-o2-line) · 질문(ChatAsk) */
+html body #mc-new-preview .mc-o2-line { display: flex; align-items: flex-end; gap: 10px; margin: 8px 0 0; }
+html body #mc-new-preview .mc-o2-line .mc-mascot { flex: none; }
+html body #mc-new-preview .mc-o2-bubble { margin: 0; padding: 13px 16px; border-radius: 20px 20px 20px 6px; background: var(--mc-paper); font-size: 15px; line-height: 1.55; color: var(--mc-ink); box-shadow: 0 1px 2px rgba(20, 33, 74, .05), 0 6px 18px rgba(20, 33, 74, .06); word-break: keep-all; }
+html body #mc-new-preview .mc-o2-bubble b { color: var(--mc-brand); }
+html body #mc-new-preview .mc-device:has(.mc-chat),
+html body #mc-new-preview .mc-device:has(.mc-o2-line) { --mc-bg: #F3F6FD; background: var(--mc-bg); }
+html body #mc-new-preview .mc-device:has(.mc-o2-line) #mc-header,
+html body #mc-new-preview .mc-device:has(.mc-o2-line) #mc-main { background: var(--mc-bg); }
+
+/* 옅은 입력칸 (로그인 · 가입) */
+html body #mc-new-preview .mc-o2-form .mc-field { margin: 12px 0; font-size: 13px; font-weight: 600; }
+html body #mc-new-preview .mc-o2-form .mc-field input:not([type=checkbox]),
+html body #mc-new-preview .mc-o2-form .mc-field select { min-height: 54px; border: 1.5px solid transparent; border-radius: 16px; background: #F3F6FD; }
+html body #mc-new-preview .mc-o2-form .mc-field input:not([type=checkbox]):focus { border-color: var(--mc-brand); background: #FFFFFF; outline: none; }
+html body #mc-new-preview .mc-o2-form .mc-primary { min-height: 54px; border-radius: 16px; font-size: 16px; }
+
+/* 11/18 손보기: 가운데 인사 장은 더 어둡게(글자가 뒤 화면과 겹치지 않게) · 가입 입력칸은 흰 칸 · 질문 칸은 카드 테두리 없이 */
+html body #mc-new-preview .mc-tour:has(.mc-tour-hello) .mc-tour-dim { background: rgba(14, 20, 36, .86); }
+html body #mc-new-preview .mc-device:has(.mc-o2-line) .mc-o2-form .mc-field input:not([type=checkbox]) { background: #FFFFFF; border-color: var(--mc-line); }
+
+/* ---- 11/18 덜어내기: 남은 글 정렬 ---- */
+html body #mc-new-preview .mc-device[data-tab] .mc-tx-tools { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; }
+html body #mc-new-preview .mc-device[data-tab] .mc-tx-tools .mc-tx-search { flex: 1; min-width: 0; margin: 0; }
+html body #mc-new-preview .mc-device[data-tab] .mc-tx-tools .mc-filter-btn { flex: none; min-height: 44px; }
+html body #mc-new-preview .mc-device[data-tab=budget] .mc-catuse > .mc-row .mc-catname { flex: 1; }
+html body #mc-new-preview .mc-device[data-tab=budget] .mc-catuse-left { font-size: 14px; font-weight: 650; white-space: nowrap; font-variant-numeric: tabular-nums; }
+html body #mc-new-preview .mc-device[data-tab=budget] .mc-catuse-left.is-over { color: var(--mc-alert); }
+html body #mc-new-preview#mc-new-preview .mc-device[data-tab=budget] .mc-catuse .mc-bar { margin: 10px 0 2px; }
+html body #mc-new-preview#mc-new-preview .mc-device[data-tab=budget] .mc-catuse .mc-bar.is-over span { background: var(--mc-alert); }
+html body #mc-new-preview .mc-device:has(.mc-my-profile) .mc-listrow { display: flex; align-items: center; gap: 12px; min-height: 56px; }
+html body #mc-new-preview .mc-device:has(.mc-my-profile) .mc-listrow .mc-grow { flex: 1; min-width: 0; }
+html body #mc-new-preview .mc-device:has(.mc-my-profile) .mc-listrow > svg { color: #B3BBC8; flex: none; }
+
+/* ---- 11/18 온보딩 2차 손보기 ---- */
+/* 로그인 · 가입: 입력 글자는 보통 굵기, 칸 이름은 옅게, 칸은 흰 바탕 + 또렷한 테두리 */
+html body #mc-new-preview .mc-o2-form .mc-field { color: var(--mc-sub); font-size: 13px; font-weight: 500; }
+html body #mc-new-preview#mc-new-preview .mc-o2-form .mc-field input:not([type=checkbox]) { min-height: 52px; margin-top: 7px; padding: 0 16px; border: 1px solid #D8DFEA; border-radius: 14px; background: #FFFFFF; color: var(--mc-ink); font-size: 16px; font-weight: 400; letter-spacing: 0; transition: border-color .15s, box-shadow .15s; }
+html body #mc-new-preview#mc-new-preview .mc-o2-form .mc-field input:not([type=checkbox]):focus { border-color: var(--mc-brand); box-shadow: 0 0 0 3px rgba(36, 89, 217, .12); outline: none; }
+html body #mc-new-preview .mc-o2-form .mc-field input::placeholder { color: #A9B1BF; font-weight: 400; }
+html body #mc-new-preview .mc-o2-form .mc-check { color: var(--mc-sub); font-weight: 400; }
+html body #mc-new-preview .mc-o2-form input[type=checkbox] { accent-color: var(--mc-brand); }
+html body #mc-new-preview .mc-o2-form .mc-primary { min-height: 54px; border-radius: 14px; font-size: 16px; font-weight: 600; }
+
+/* 가입: 큰 쿠숑이 + 입력 칸 묶음 하나 (칸마다 상자 대신 가는 줄) */
+html body #mc-new-preview .mc-o2-group { padding: 2px 18px; border-radius: 20px; background: var(--mc-paper); box-shadow: 0 1px 2px rgba(20, 33, 74, .05), 0 6px 18px rgba(20, 33, 74, .06); }
+html body #mc-new-preview#mc-new-preview .mc-o2-group .mc-field { margin: 0; padding: 14px 0 12px; border-bottom: 1px solid var(--mc-line); }
+html body #mc-new-preview#mc-new-preview .mc-o2-group .mc-field:focus-within { color: var(--mc-brand); }
+html body #mc-new-preview#mc-new-preview .mc-o2-group .mc-field input:not([type=checkbox]) { min-height: 34px; margin-top: 4px; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
+html body #mc-new-preview#mc-new-preview .mc-o2-group .mc-field input:not([type=checkbox]):focus { box-shadow: none; }
+html body #mc-new-preview#mc-new-preview .mc-o2-group .mc-pwinput { margin-top: 4px; }
+html body #mc-new-preview .mc-o2-group > :last-child,
+html body #mc-new-preview .mc-o2-group > .mc-field:has(+ .mc-pw-match:last-child) { border-bottom: 0; }
+html body #mc-new-preview .mc-o2-group .mc-pw-rules { margin: 8px 0 10px; }
+html body #mc-new-preview .mc-o2-group .mc-pw-match { margin: 8px 0 12px; font-size: 12px; }
+html body #mc-new-preview .mc-o2-group .mc-pw-match:empty { display: none; }
+html body #mc-new-preview .mc-o2-group .mc-field-error { margin: 6px 0 10px; }
+html body #mc-new-preview .mc-o2-hint { display: block; margin-top: 4px; font-size: 12px; font-weight: 400; color: #98A1B0; }
+html body #mc-new-preview .mc-o2-terms { margin: 22px 4px 0; }
+html body #mc-new-preview .mc-o2-terms .mc-terms-all { padding-bottom: 12px; border-bottom: 1px solid var(--mc-line); font-weight: 600; }
+
+/* 쿠숑이 대화 (내 정보 입력 · 계좌 연결): 질문 = 작은 쿠숑이 + 말풍선, 대답 = 가운데 넓은 흰 칸 */
+html body #mc-new-preview .mc-chat-ask { display: flex; align-items: flex-end; gap: 8px; margin: 24px 0 10px; }
+html body #mc-new-preview .mc-chat-ask .mc-mascot { flex: none; }
+html body #mc-new-preview .mc-chat-ask .mc-o2-bubble { padding: 11px 15px; font-weight: 600; }
+html body #mc-new-preview .mc-chat-ask .mc-opt { margin-left: 6px; }
+html body #mc-new-preview#mc-new-preview .mc-chat-answer { margin: 0 0 4px; padding: 18px; border: 1.5px solid #CFDAF5; border-radius: 20px; background: #FFFFFF; box-shadow: 0 8px 24px rgba(36, 89, 217, .08); }
+html body #mc-new-preview .mc-chat-answer .mc-field { margin: 0; }
+html body #mc-new-preview .mc-chat-answer .mc-field select { border-color: #CBD4E3; }
+html body #mc-new-preview .mc-chat-tools { display: flex; justify-content: flex-end; margin: -6px -4px 4px; }
+/* 생년월일: 6자리가 넉넉히 들어가게 크게, 가운데 */
+html body #mc-new-preview .mc-chat-answer .mc-birth-row { margin: 0; }
+html body #mc-new-preview .mc-chat-answer .mc-birth-row input { height: 60px; padding: 0 14px; border: 1px solid #CBD4E3; border-radius: 14px; font-size: 26px; font-weight: 600; letter-spacing: 6px; text-align: center; }
+html body #mc-new-preview .mc-chat-answer .mc-birth-row input:focus { border-color: var(--mc-brand); box-shadow: 0 0 0 3px rgba(36, 89, 217, .12); outline: none; }
+html body #mc-new-preview .mc-chat-answer .mc-birth-row input::placeholder { color: #C3CAD6; font-weight: 500; }
+html body #mc-new-preview .mc-chat-answer .mc-mini-note { margin-top: 8px; font-size: 12.5px; text-align: center; }
+/* 지난 대답 = 오른쪽 파란 말풍선 (누르면 고치기). 오래된 질문은 옅어지며 위로 밀려난다 */
+
+/* ---- 11/18 시안 O3 "라임 스토리 카드" (온보딩 화면만) ---- */
+/* 바탕은 흰색, 큰 버튼은 짙은 남색, 라임은 그림 칸 · 진행 표시 · 쿠숑이 팁에만 */
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) { --mc-bg: #FFFFFF; background: #FFFFFF; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) #mc-header, html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) #mc-main { background: #FFFFFF; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-foot .mc-primary, html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-o3-sheet .mc-primary { background: #182235; color: #FFFFFF; border-radius: 16px; min-height: 54px; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-step span.on { background: #182235; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-step span.on:has(+ span:not(.on)) { background: #C6E85A; }
+@keyframes mc-o3-in { from { opacity: 0; transform: translateX(26px); } to { opacity: 1; transform: none; } }
+
+/* 로그인: 라임 바탕 + 큰 문장 + 쿠숑이, 입력은 아래 흰 카드 */
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-o3-login-hero) { background: #DDF58C; }
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-o3-login-hero) #mc-main { background: #DDF58C; }
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-o3-login-hero) .mc-screen { padding: 20px 12px 12px; }
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-o3-login-hero) .mc-body, html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-o3-story) .mc-body { flex: 1; display: flex; flex-direction: column; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-login-hero { position: relative; min-height: 290px; padding: 36px 8px 0; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-login-hero h1 { margin: 0; font-size: 31px; font-weight: 800; line-height: 1.3; letter-spacing: -1.2px; color: #1F2A06; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-login-hero .mc-mascot { position: absolute; right: 4px; top: 128px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-sheet { margin-top: auto; padding: 24px 20px 14px; border-radius: 30px; background: #FFFFFF; box-shadow: 0 10px 40px rgba(65, 82, 12, .16); }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-sheet .mc-field:first-child { margin-top: 0; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-sheet .mc-foot { position: static; margin: 0; padding: 0; background: none; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-sheet .mc-primary { margin-top: 8px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-ghost { display: block; width: 100%; min-height: 48px; margin-top: 2px; font-size: 15px; font-weight: 600; color: #182235; }
+
+/* 시작하기: 넘겨 보는 카드 */
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-story { flex: 1; display: flex; flex-direction: column; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-skip { display: flex; justify-content: flex-end; min-height: 44px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-skip button { font-size: 14px; font-weight: 600; color: var(--mc-sub); }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-slide { animation: mc-o3-in .4s cubic-bezier(.2, .8, .2, 1) both; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-art { position: relative; height: 330px; margin-top: 8px; border-radius: 32px; background: #DDF58C; overflow: hidden; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-art .mc-mascot { position: absolute; right: 10px; bottom: 6px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-peek { position: absolute; left: 22px; top: 22px; padding: 12px 14px; border-radius: 16px; background: #FFFFFF; box-shadow: 0 6px 18px rgba(65, 82, 12, .14); }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-peek small { display: block; font-size: 12px; color: var(--mc-sub); }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-peek b { display: block; margin-top: 2px; font-size: 20px; font-weight: 750; letter-spacing: -.5px; color: #182235; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-chips { display: flex; gap: 6px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-chips i { padding: 6px 10px; border-radius: 999px; background: #EAF0FF; color: #2459D9; font-size: 13px; font-weight: 700; font-style: normal; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-chips i:nth-child(2) { background: #F2FBD6; color: #41520C; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-chips i:nth-child(3) { background: #14214A; color: #FFFFFF; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-slide h1 { margin: 28px 0 0; font-size: 24px; font-weight: 750; line-height: 1.4; letter-spacing: -.9px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-slide p { margin: 8px 0 0; font-size: 14.5px; line-height: 1.55; color: var(--mc-sub); }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-storyfoot { display: flex; align-items: center; justify-content: space-between; margin-top: auto; padding-top: 20px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-dots { display: flex; gap: 6px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-dots i { width: 8px; height: 8px; border-radius: 8px; background: #D5DDEA; transition: width .25s, background .25s; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-dots i.on { width: 22px; background: #182235; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-next { width: 124px; min-height: 52px; border-radius: 16px; background: #182235; color: #FFFFFF; font-size: 16px; font-weight: 600; }
+
+/* 가입: 큰 문장 + 쿠숑이, 입력 묶음은 옅은 회색 칸 */
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; margin: 8px 0 20px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-head h1 { margin: 0 0 6px; font-size: 24px; font-weight: 750; line-height: 1.4; letter-spacing: -.9px; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-o2-group { background: #F5F7FA; box-shadow: none; }
+
+/* 내 정보: 질문 하나 = 진행 알약 + 큰 질문 + 입력 */
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q { animation: mc-o3-in .4s cubic-bezier(.2, .8, .2, 1) both; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-pill { display: inline-block; padding: 5px 10px; border-radius: 999px; background: #F2FBD6; color: #41520C; font-size: 13px; font-weight: 700; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q h1 { margin: 18px 0 26px; font-size: 25px; font-weight: 750; line-height: 1.4; letter-spacing: -.9px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q h1 .mc-opt { font-size: 13px; margin-left: 8px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q .mc-birth-row { margin: 0; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q .mc-birth-row input { height: 64px; padding: 0 2px; border: 0; border-bottom: 2px solid #182235; border-radius: 0; background: none; font-size: 34px; font-weight: 750; letter-spacing: 5px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q .mc-birth-row input:focus { outline: none; border-bottom-color: #2459D9; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q .mc-birth-row input::placeholder { color: #C9D0DB; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q .mc-mini-note { margin-top: 10px; font-size: 13px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q .mc-seg button { min-height: 64px; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-prev { display: block; min-height: 44px; margin-top: 22px; padding: 0; font-size: 13.5px; font-weight: 600; color: var(--mc-sub); }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-review { margin: 0; padding: 0; list-style: none; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-review button { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 0; border-bottom: 1px solid var(--mc-line); text-align: left; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-review small { flex: none; width: 92px; font-size: 13px; color: var(--mc-sub); }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-review b { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; text-align: right; }
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-review span { color: #B3BBC8; }
+
+/* 계좌 연결 등: 쿠숑이 말은 라임 팁 상자로, 질문은 말풍선 대신 굵은 제목으로 */
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-o2-line { align-items: center; gap: 10px; margin: 4px 0 6px; padding: 10px 14px 10px 8px; border-radius: 18px; background: #F2FBD6; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-o2-line .mc-mascot { width: 44px; height: 44px; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-o2-line .mc-o2-bubble { padding: 0; background: none; box-shadow: none; font-size: 13.5px; font-weight: 600; line-height: 1.45; color: #41520C; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-o2-line .mc-o2-bubble b { color: inherit; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-chat-ask { margin: 28px 2px 12px; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-chat-ask .mc-mascot { display: none; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-chat-ask .mc-o2-bubble { padding: 0; background: none; box-shadow: none; font-size: 19px; font-weight: 750; letter-spacing: -.6px; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-chat-answer { border: 1px solid #E3E8F0; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) {
+  html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-slide, html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q { animation: none; }
+}
+/* O3: 흰 바탕에서도 고르는 칸이 보이게 옅은 회색 칸, 고른 칸은 파란 테두리 */
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask)) .mc-seg button { border-radius: 14px; background: #F2F4F8; }
+html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask)) .mc-seg button[aria-pressed=true] { background: #EAF0FF; color: #2459D9; }
+
+/* 11/18 main 병합 뒤: 데스크톱 기기 틀의 main 이 스크롤 칸을 양옆에 10px 씩 비워 두면(scrollbar-gutter: both-edges)
+   탭 화면의 색 띠가 머리보다 좁아진다. 탭 화면은 스크롤 칸 자리를 비우지 않고 스크롤 막대를 숨긴다 (휠 · 터치 스크롤은 그대로) */
+html body #mc-new-preview .mc-device[data-tab] #mc-main { scrollbar-gutter: auto; scrollbar-width: none; }
+html body #mc-new-preview .mc-device[data-tab] #mc-main::-webkit-scrollbar { display: none; }
+
+/* ---- 11/18 온보딩 3차 ---- */
+/* 로그인: 큰 문장과 쿠숑이를 한 줄에 붙여 위쪽 빈 공간 가운데에 (따로 떨어져 보이던 것) */
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-login-hero { flex: 1; display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 0; padding: 12px 4px 20px 8px; }
+/* 쿠숑이 높이 = 큰 문장 세 줄 높이(31px × 1.3 × 3 ≈ 121px). 그림 파일 둘레 여백만큼 키우고(그림 실제 높이 ≈ 파일의 69%) 음수 여백으로 자리 크기는 그대로 (11/18) */
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-login-hero .mc-mascot { position: static; flex: none; width: 160px; height: 160px; margin: -28px -14px -12px 0; }
+/* 단계 표시줄이 있는 첫 설정 화면(내 정보 ~ 추천 예산)은 큰 버튼 · 진행 표시를 같은 색으로 (계좌 연결까지만 남색이던 것) */
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-step) .mc-foot .mc-primary { background: #182235; color: #FFFFFF; border-radius: 16px; min-height: 54px; }
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-step) .mc-foot .mc-primary:disabled { opacity: .45; }
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-step) .mc-step span.on { background: #182235; }
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-step) .mc-step span.on:has(+ span:not(.on)) { background: #C6E85A; }
+html body #mc-new-preview#mc-new-preview .mc-device:has(.mc-step) .mc-foot .mc-o3-ghost { margin-top: 4px; }
+/* 대출 정보 연결: 은행 밖 대출 직접 등록 링크 */
+html body #mc-new-preview#mc-new-preview .mc-loan-manual { display: block; min-height: 44px; margin: 18px 0 0; padding: 0 2px; font-size: 13.5px; font-weight: 600; text-align: left; }
+
+/* ---- 11/18 알림 ---- */
+/* 종 팝업 묶음 (시안 N3): 묶음 머리글 · 해 볼 일 글자 · 네모 색 */
+html body #mc-new-preview .mc-notice-grp { margin: 16px 0 2px; font-size: 12px; font-weight: 700; color: #98A1B0; letter-spacing: 0; }
+html body #mc-new-preview .mc-notice-group:first-of-type .mc-notice-grp { margin-top: 4px; }
+html body #mc-new-preview .mc-notice-act { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 700; color: var(--mc-brand); }
+html body #mc-new-preview#mc-new-preview .mc-tile.mc-tone-lime { background: #F2FBD6; color: #41520C; }
+html body #mc-new-preview#mc-new-preview .mc-tile.mc-tone-red { background: var(--mc-warm); color: var(--mc-alert); }
+/* 쿠션 탭 알림 상자 (시안 K1) */
+html body #mc-new-preview .mc-cushion-note { display: flex; gap: 10px; align-items: flex-start; margin: 12px 0 0; padding: 12px; border-radius: 14px; font-size: 13px; line-height: 1.5; color: var(--mc-ink); }
+html body #mc-new-preview .mc-cushion-note b { display: block; font-size: 13.5px; }
+html body #mc-new-preview .mc-cushion-note .mc-tile { width: 30px; height: 30px; border-radius: 10px; }
+html body #mc-new-preview .mc-cushion-note .mc-tile svg { width: 16px; height: 16px; }
+html body #mc-new-preview .mc-cushion-note.is-deposit { background: #F2FBD6; }
+html body #mc-new-preview .mc-cushion-note.is-deposit b { color: #41520C; }
+html body #mc-new-preview#mc-new-preview .mc-cushion-note.is-deposit .mc-tile { background: #DDF58C; color: #41520C; }
+/* 11/19: 쿠션 탭은 네이비(머리) · 라임(적립일)만 고정, 나머지 안내는 서비스 기본 연파랑 한 가지로 */
+html body #mc-new-preview .mc-cushion-note.is-low { background: var(--mc-soft); }
+html body #mc-new-preview .mc-cushion-note.is-low b { color: var(--mc-brand); }
+html body #mc-new-preview#mc-new-preview .mc-cushion-note.is-low .mc-tile { background: #FFFFFF; color: var(--mc-brand); }
+/* 챗봇 잦은 조정 잔소리 (시안 C3): 말풍선 맨 위 주황 한 줄 */
+html body #mc-new-preview#mc-new-preview .mc-budget-nag { margin: 0 0 10px; padding: 8px 11px; border-radius: 10px; background: #FFF6E5; color: #B45309; font-size: 13.5px; font-weight: 700; line-height: 1.5; }
+
+/* 11/19 알림 팝업 줄 통일: 아이콘 네모 40px · 글자와 간격 12px · 줄 위아래 14px · 제목 1줄 · 본문 · 행동 글자 */
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-listrow { align-items: flex-start; gap: 12px; padding: 14px 0; }
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-tile { width: 40px; height: 40px; border-radius: 12px; }
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-title { font-size: 15px; line-height: 1.4; margin-bottom: 2px; }
+html body #mc-new-preview#mc-new-preview .mc-notice-list .mc-notice-text { display: block; font-size: 14px; line-height: 1.5; }
+html body #mc-new-preview#mc-new-preview .mc-notice-act { margin-top: 6px; font-size: 13px; }
+
+/* 11/19 줄바꿈: 한글 낱말 중간에서 끊지 않고(keep-all), 아주 긴 글자만 넘칠 때 끊는다. 제목은 줄 길이를 고르게, 문단은 끝줄 한 글자 방지 */
+html body #mc-new-preview { word-break: keep-all; overflow-wrap: break-word; }
+html body #mc-new-preview :is(h1, h2, h3, .mc-notice-title) { text-wrap: balance; }
+html body #mc-new-preview :is(p, li, .mc-notice-text) { text-wrap: pretty; }

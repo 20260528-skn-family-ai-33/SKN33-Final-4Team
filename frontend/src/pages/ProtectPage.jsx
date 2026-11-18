@@ -18,6 +18,7 @@ import Popup from '../popups/Popup.jsx'
 import { usePopup } from '../popups/context.js'
 import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 import HelpTip from '../components/HelpTip.jsx'
+import CushionIntro from '../components/CushionIntro.jsx'
 import { won } from '../utils/money.js'
 import { toast } from '../utils/toast.js'
 import { apiSend, useApi } from '../utils/api.js'
@@ -167,7 +168,7 @@ function ProtectForm() {
     try {
       const saved = await apiSend('/api/budgets/protect/', 'PUT', Object.fromEntries(ROWS.map(([k]) => [k, num(k)])))
       if (saved.approvedBudgetUpdated === false) {
-        navigate(PATHS.recommend, { state: { autoRecommend: true, refreshRecommendation: false, locksReleased: saved.locksReleased } })
+        navigate(PATHS.recommend, { state: { autoRecommend: true, refreshRecommendation: false } })
         return
       }
       toast('저장했어요. 이번 예산에도 반영했어요')
@@ -184,15 +185,14 @@ function ProtectForm() {
     setError('')
     setFieldErrors({})
     try {
-      const saved = await apiSend('/api/budgets/protect/', 'PUT', {
+      await apiSend('/api/budgets/protect/', 'PUT', {
         ...Object.fromEntries(ROWS.map(([k]) => [k, num(k)])),
         ...(context.salaryReview ? { updateApprovedBudget: false } : {}),
       })
-      // 저장 뒤 새 추천을 바로 만든다. 생활비가 바뀌어 풀린 자물쇠(P-13)는 다음 화면에서 알려 준다
+      // 저장 뒤 새 추천을 바로 만든다
       navigate(salaryReviewUrl(PATHS.recommend, context), { state: {
         ...context, autoRecommend: true,
         refreshRecommendation: context.salaryReview || Boolean(navState?.refreshRecommendation),
-        locksReleased: saved.locksReleased,
       } })
     } catch (err) {
       setError(err.fields?.nonFieldErrors?.[0] ?? err.message)
@@ -360,7 +360,10 @@ function ProtectForm() {
                   {/* 11/12: 두 줄 격자 — [이름 · 비율 | 입력칸] / [추천 ○원 | 기존보다 ±○원].
                       '기존보다' 칸은 바뀐 게 없어도 자리를 지켜서, 칸마다 추천 칸과 아래 설명 사이 간격이 같다 */}
                   <label className="mc-protect-line" htmlFor={`mc-p-${k}`}>
-                    <span><span className="mc-protect-name">{label}</span><b className="mc-protect-pct" aria-label={`배분 가능한 금액의 ${share(num(k))}`}>{share(num(k))}</b></span>
+                    <span><span className="mc-protect-name">{label}</span>
+                      {/* 11/18: 머니쿠션이 무엇인지 처음 정하는 사람을 위해 [!] → 쿠션 탭과 같은 소개 창 */}
+                      {k === 'cushionMonthly' && <HelpTip label="머니쿠션 안내" title="머니쿠션이란?" icon="CircleAlert" body={<CushionIntro />} />}
+                      <b className="mc-protect-pct" aria-label={`배분 가능한 금액의 ${share(num(k))}`}>{share(num(k))}</b></span>
                     <span className="mc-cat-input-wrap">
                       <MoneyInput aria-label={label} className={edited ? 'mc-cat-input mc-protect-input is-edited' : 'mc-cat-input mc-protect-input'}
                         id={`mc-p-${k}`} name={k}

@@ -12,6 +12,7 @@
 import { useState } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import Mascot from '../components/Mascot.jsx'
 import Icon from '../components/Icon.jsx'
 import InstRow from '../components/InstRow.jsx'
 import { PATHS } from '../routes.js'
@@ -42,7 +43,7 @@ function entry(inst, form) {
 export default function ConnectAuthPage() {
   const { state } = useLocation()
   // 앞 화면(동의 · 기관 고르기)을 거치지 않고 들어오면 처음으로
-  if (!state?.banks) return <Navigate to={PATHS.connect} replace />
+  if (!state?.banks && !state?.cards) return <Navigate to={PATHS.connect} replace />
   return <AuthList picked={state} />
 }
 
@@ -53,8 +54,8 @@ function AuthList({ picked }) {
   // [{ name, kind: 'bank' | 'card', code, status: todo·busy·sms·recheck·ok·loading·okNoSync·fail, error?, recheck? }]
   //   saved(이미 연결됨)는 여기 넣지 않고 그릴 때 서버 연결 목록으로 붙인다 (shown)
   const [insts, setInsts] = useState(() => [
-    ...picked.banks.map((name) => ({ name, kind: 'bank', code: codeOf[name], status: 'todo' })),
-    ...picked.cards.map((name) => ({ name, kind: 'card', code: codeOf[name], status: 'todo' })),
+    ...(picked.banks ?? []).map((name) => ({ name, kind: 'bank', code: codeOf[name], status: 'todo' })),
+    ...(picked.cards ?? []).map((name) => ({ name, kind: 'card', code: codeOf[name], status: 'todo' })),
   ])
   const [pageError, setPageError] = useState('')
   // 이미 연결된 기관 ('bank:0088' 꼴). 못 받으면 빈 목록 — 예전처럼 로그인부터
@@ -114,9 +115,16 @@ function AuthList({ picked }) {
   const connected = (i) => ['ok', 'loading', 'okNoSync', 'saved'].includes(i.status)
   const okBanks = shown.filter((i) => i.kind === 'bank' && connected(i)).length
   const okCards = shown.filter((i) => i.kind === 'card' && connected(i)).length
+  // 11/18: 은행(계좌 연결)과 카드사(카드 연결)를 따로 로그인한다 — picked.kind 'card' = 카드 연결 화면에서 옴
+  const cardMode = picked.kind === 'card'
   const next = () => {
+    if (cardMode) {
+      if (okCards === 0) { setPageError('카드사를 1곳 이상 연결해야 카드를 불러올 수 있어요.'); return }
+      navigate(PATHS.connectCards, { state: { from: picked.from } })
+      return
+    }
     if (okBanks === 0) { setPageError('은행을 1곳 이상 연결해야 계좌를 불러올 수 있어요.'); return }
-    navigate(PATHS.connectAccounts, { state: { cards: okCards > 0 } })
+    navigate(PATHS.connectAccounts, { state: { from: picked.from } })
   }
 
   const right = (i) => {
@@ -149,16 +157,17 @@ function AuthList({ picked }) {
 
   return (
     <Layout
-      title="계좌 연결"
+      title={cardMode ? '카드 연결' : '계좌 연결'}
       showBack
-      foot={<button type="button" className="mc-primary" onClick={next}>보유 계좌 보기 · 은행 {okBanks}곳</button>}
+      foot={<button type="button" className="mc-primary" onClick={next}>{cardMode ? `보유 카드 보기 · 카드사 ${okCards}곳` : `보유 계좌 보기 · 은행 ${okBanks}곳`}</button>}
     >
-      <div className="mc-eyebrow">계좌 연결</div>
-      <h1>기관마다 로그인해 주세요</h1>
-      <p className="mc-muted">로그인을 마친 기관부터 내 계좌·카드를 불러와요.</p>
+      <div className="mc-o2-line">
+        <Mascot mood="planner" size={64} />
+        <p className="mc-o2-bubble">고른 기관마다 <b>로그인</b>해 주세요. 마친 곳부터 불러와요.</p>
+      </div>
       {group('bank', '은행')}
       {group('card', '카드사')}
-      <p className="mc-note">연결에 실패한 기관이 있어도 성공한 기관의 계좌는 그대로 쓸 수 있어요. 카드사는 나중에 연결해도 돼요.</p>
+      <p className="mc-note">{cardMode ? '연결에 실패한 카드사가 있어도 성공한 카드사의 카드는 그대로 쓸 수 있어요.' : '연결에 실패한 은행이 있어도 성공한 은행의 계좌는 그대로 쓸 수 있어요.'}</p>
       {pageError && <div className="mc-error" role="alert">{pageError}</div>}
     </Layout>
   )

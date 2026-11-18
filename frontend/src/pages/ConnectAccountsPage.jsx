@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import Mascot from '../components/Mascot.jsx'
 import AcctPick from '../components/AcctPick.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePicked } from '../utils/usePicked.js'
@@ -48,9 +49,10 @@ function AccountPick({ items }) {
   if (items.length === 0) {
     return (
       <Layout title="계좌 연결" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.connect)}>은행 연결하기</button>}>
-        <div className="mc-eyebrow">계좌 연결</div>
-        <h1>연결된 계좌가 없어요</h1>
-        <p className="mc-muted">은행을 연결하면 입출금 계좌를 여기서 고를 수 있어요. 연결은 됐는데 계좌가 없으면 연결 결과 화면에서 다시 불러오기를 해 주세요.</p>
+        <div className="mc-o2-line">
+        <Mascot mood="basic" size={64} />
+        <p className="mc-o2-bubble">아직 <b>연결된 계좌</b>가 없어요. 은행을 연결하면 여기서 고를 수 있어요.</p>
+      </div>
       </Layout>
     )
   }
@@ -61,9 +63,10 @@ function AccountPick({ items }) {
       showBack
       foot={<button type="button" className="mc-primary" disabled={busy} onClick={next}>{busy ? '저장 중…' : `선택한 계좌 ${picked.list.length}개로 계속`}</button>}
     >
-      <div className="mc-eyebrow">계좌 연결</div>
-      <h1>사용할 계좌를 골라 주세요</h1>
-      <p className="mc-muted">연결한 은행에서 불러온 입출금 계좌예요. 예산에 쓸 계좌만 고르세요.</p>
+      <div className="mc-o2-line">
+        <Mascot mood="planner" size={64} />
+        <p className="mc-o2-bubble">예산에 쓸 <b>입출금 계좌</b>만 골라 주세요.</p>
+      </div>
       {banks.map((bank) => {
         const list = items.filter((a) => a.organizationName === bank)
         const relogin = list.some((a) => a.status === 'relogin')

@@ -14,8 +14,8 @@ export default function Header({ title, showBack = false, backTo, showMy = true,
     <header id="mc-header" inert={inert}>
       <div className="mc-head-left">
         {showBack && (
-          // 앞 화면 기록이 있으면 그 화면으로(navigate(-1)). 주소로 바로 열어 기록이 없으면 backTo 로 — 앱 밖으로 나가지 않게
-          <button type="button" className="mc-icon" onClick={() => (backTo && first ? navigate(backTo, { replace: true }) : navigate(-1))} aria-label="뒤로">
+          // 앞 화면 기록이 있으면 그 화면으로(navigate(-1)). 주소로 바로 열어 기록이 없으면 backTo, 없으면 홈으로 — 앱 밖으로 나가거나 눌러도 반응이 없지 않게 (11/18 검수)
+          <button type="button" className="mc-icon" onClick={() => (first ? navigate(backTo ?? PATHS.home, { replace: true }) : navigate(-1))} aria-label="뒤로">
             <ChevronLeft size={20} aria-hidden="true" />
           </button>
         )}

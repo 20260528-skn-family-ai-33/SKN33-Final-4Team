@@ -1,12 +1,20 @@
 """쿠션 확보액과 현재 설정으로 재적립 계획을 계산한다."""
+from datetime import datetime, time, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import Sum
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from finance.models import BankAccount
 from users.models import FinancialProfile
 from .models import CushionEntry
 from .salary import due_income
+
+CUSHION_ACCRUAL_DAYS = 2
+
+
+def cushion_total(user):
+    return CushionEntry.objects.filter(user=user).aggregate(total=Sum("amount"))["total"] or 0
 
 
 def cushion_data(user):
@@ -20,7 +28,7 @@ def cushion_data(user):
     custom = profile.cushion_goal_amount is not None if profile else False
     goal = cushion_goal(profile, income)
     default_goal = income * DEFAULT_GOAL_MULTIPLE if income is not None else None
-    now = CushionEntry.objects.filter(user=user).aggregate(total=Sum("amount"))["total"] or 0
+    now = cushion_total(user)
     remain = max(goal - now, 0) if goal is not None else None
     pct = bar = months = None
     if goal is not None:
@@ -51,6 +59,35 @@ def cushion_data(user):
     }
 
 
+# ---------------- 저축 계좌 잔액 (11/18, 쿠션 화면 B안) ----------------
+# 은행 연결 때 CODEF 가 입출금과 함께 예적금 계좌도 돌려줘서 이미 저장돼 있다 (finance/sync.py). 여기서는 저장된 값만 읽는다 — CODEF 를 부르지 않는다
+# sync 는 아직 11(입출금) 외를 모두 other 로 저장한다. 그중 CODEF 예금 구분 12(예적금)만 저축 계좌로 본다
+#   shortcut: 코드 12 매핑을 sync 에서 deposit 으로 바꾸면 이 OR 조건은 account_type="deposit" 하나로 줄인다
+
+def savings_data(user):
+    from finance.display import account_display, organization_name
+
+    accounts = (BankAccount.objects
+                .filter(user=user, connection__user=user, connection__business_type="bank",
+                        connection__disconnected_at__isnull=True)
+                .filter(Q(account_type="deposit") | Q(account_type="other", field_states__codef_deposit_code="12"))
+                .select_related("connection").order_by("connection__created_at", "masked_number", "account_id"))
+    items = [{
+        **account_display(account),
+        "organization_name": organization_name(account.connection),
+        "balance": account.balance if account.currency == "KRW" else None,
+        "fetched_at": account.fetched_at,
+    } for account in accounts]
+    known = [item["balance"] for item in items if item["balance"] is not None]
+    fetched = [item["fetched_at"] for item in items if item["fetched_at"] is not None]
+    return {
+        "items": items,
+        "total": sum(known) if known else None,       # 잔액을 하나도 모르면 0원이 아니라 null
+        "unknown_count": len(items) - len(known),
+        "as_of": max(fetched) if fetched else None,
+    }
+
+
 # ---------------- R27 보호 중인 쿠션: 예산 승인 때 쌓기 (11/13) ----------------
 # 예산을 승인할 때 그 주기의 쿠션 배정액(BudgetItem bucket=cushion 합계)을 쿠션 기록(CushionEntry)에 반영한다.
 # 같은 주기에 다시 승인(조정 · 분배 실패 복구 포함)하면 이미 반영한 금액과의 차액만 남긴다 (90만 + 30만 → 120만, 같은 주기 20만으로 → 110만).
@@ -70,13 +107,52 @@ def cycle_allocated(user_id, cycle_id):
                                        entry_type="allocation").aggregate(total=Sum("amount"))["total"] or 0
 
 
+def cushion_notices(user, cycle, today):
+    deposit_due = bool(cycle and today == cycle.starts_on + timedelta(days=1))
+    estimate = cushion_total(user)
+    balance_low = False
+    if estimate > 0:
+        accounts = BankAccount.objects.filter(
+            user=user, currency="KRW", connection__user=user, connection__business_type="bank",
+            connection__disconnected_at__isnull=True,
+        ).aggregate(total=Sum("balance"), count=Count("pk"),
+                    known=Count("balance", filter=Q(connection__status="connected")))
+        balance_low = (accounts["total"] is not None and accounts["count"] == accounts["known"]
+                       and accounts["total"] < estimate)
+    return {"deposit_due": deposit_due, "balance_low": balance_low}
+
+
+def cushion_notices_today(user, today):
+    """쿠션 화면용 (11/18): 오늘이 든 급여 주기로 홈과 같은 쿠션 알림. 주기를 새로 만들지 않는다(없으면 적립일 알림 없음)"""
+    from .models import BudgetCycle
+    cycle = BudgetCycle.objects.filter(user=user, starts_on__lte=today, ends_before__gt=today).order_by("-starts_on").first()
+    return cushion_notices(user, cycle, today)
+
+
 def _planned(budget):
     from .models import BudgetItem
     return BudgetItem.objects.filter(budget=budget, bucket="cushion").aggregate(total=Sum("allocated_amount"))["total"] or 0
 
 
-def record_approved_cushion(budget):
-    """승인 직후(같은 트랜잭션 · 회원 잠금 안)에 부른다. 같은 예산을 두 번 불러도 한 번만 반영한다 (request_key)"""
+def record_due_cushion(user, today):
+    from .models import Budget
+
+    keys = set(CushionEntry.objects.filter(user=user, request_key__startswith="budget-approve:")
+               .values_list("request_key", flat=True))
+    budgets = Budget.objects.filter(
+        user=user, status="approved", approved_at__isnull=False,
+        cycle__starts_on__lte=today - timedelta(days=CUSHION_ACCRUAL_DAYS),
+    ).select_related("cycle")
+    for budget in budgets.iterator():
+        if f"budget-approve:{budget.pk}" not in keys:
+            record_approved_cushion(budget, today)
+
+
+def record_approved_cushion(budget, today=None):
+    """월급날 +2일이 지나면 같은 주기 내 차액을 한 번 반영한다. 회원 잠금 안에서 사용한다."""
+    due = budget.cycle.starts_on + timedelta(days=CUSHION_ACCRUAL_DAYS)
+    if (today or timezone.localdate()) < due:
+        return None
     key = f"budget-approve:{budget.pk}"
     if CushionEntry.objects.filter(user_id=budget.user_id, request_key=key).exists():
         return None
@@ -84,9 +160,12 @@ def record_approved_cushion(budget):
     diff = _planned(budget) - recorded
     if diff == 0:
         return None
+    due_at = timezone.make_aware(datetime.combine(due, time.min))
+    automatically_carried = (budget.validation_summary or {}).get("rollover")
+    occurred_at = due_at if automatically_carried else max(budget.approved_at or timezone.now(), due_at)
     return CushionEntry.objects.create(
         user_id=budget.user_id, cycle_id=budget.cycle_id, budget=budget, entry_type="planned", amount=diff,
-        request_key=key, occurred_at=budget.approved_at or timezone.now(),
+        request_key=key, occurred_at=occurred_at,
         note="예산 승인" if recorded == 0 else "같은 주기 예산 다시 승인 (차액)",
     )
 
@@ -119,8 +198,9 @@ def update_approved_split(user, budget, saving, cushion):
     }]
     budget.validation_summary = summary
     budget.save(update_fields=["validation_summary"])
-    diff = cushion - _cycle_recorded(user.pk, budget.cycle_id)
-    if diff:
+    recorded = _cycle_recorded(user.pk, budget.cycle_id)
+    diff = cushion - recorded
+    if diff and (recorded or timezone.localdate() >= budget.cycle.starts_on + timedelta(days=CUSHION_ACCRUAL_DAYS)):
         from uuid import uuid4
         CushionEntry.objects.create(
             user=user, cycle_id=budget.cycle_id, budget=budget, entry_type="planned", amount=diff,

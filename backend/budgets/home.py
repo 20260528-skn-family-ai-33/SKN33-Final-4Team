@@ -18,13 +18,13 @@ from finance.api import UNCLASSIFIED, listed_transactions, transaction_item
 from finance.models import BankAccount, PaymentDue, RecurringExpense
 
 from .api import account_json, day_in_month, lock_user
-from .models import BudgetCategorySetting, BudgetCycle
+from .models import BudgetCycle
 from .scope import OUT_OF_BUDGET
 
 EARLY_DAYS = 7             # 월급날 7일 전부터 들어온 입금은 그 월급으로 본다 (명절 전 지급)
 REVIEW_AFTER_DAYS = 3      # 출금일 +3일이 지나도 출금을 못 찾으면 '미납 확인 필요'
 SHOW_STATES = ["unpaid", "partial", "needs_review"]
-BIG_SPENDING_PCT = 10      # 한 건이 생활비 예산의 이 비율(%) 이상이면 '큰 지출'로 알린다 (돌발 지출 감지 1단계, 11/11 — 팀 확정 전 시작값)
+BIG_SPENDING_OVER_PCT = 5
 
 
 # ---------------- ① 급여 주기 ----------------
@@ -67,7 +67,6 @@ def ensure_cycle(user, start, next_payday):
         cycle = BudgetCycle.objects.create(
             user=user, starts_on=start, ends_before=next_payday, expected_payday=next_payday, status="active",
         )
-        carry_over_locks(user, cycle)
         return cycle
     changed = []
     for field, value in (("ends_before", next_payday), ("expected_payday", next_payday), ("status", "active")):
@@ -77,24 +76,6 @@ def ensure_cycle(user, start, next_payday):
     if changed:
         cycle.save(update_fields=changed)
     return cycle
-
-
-def carry_over_locks(user, cycle):
-    """새 주기에 바로 전 주기의 자물쇠(잠긴 카테고리 · 잠긴 금액)를 이어받는다 (기획: 자물쇠는 다음 달에도 적용).
-
-    바꾼 횟수는 '이번 주기' 잔소리 기준이라 0부터 다시 센다. 지난 주기에 푼 카테고리는 가져오지 않는다.
-    """
-    previous = BudgetCycle.objects.filter(user=user, starts_on__lt=cycle.starts_on).order_by("-starts_on").first()
-    if previous is None:
-        return
-    from .models import BudgetAdjustmentSchedule
-    planned = BudgetAdjustmentSchedule.objects.filter(user=user, status='applied', effective_on=cycle.starts_on).first()
-    unlock = planned.settings.get('unlock_categories', []) if planned else []
-    BudgetCategorySetting.objects.bulk_create([
-        BudgetCategorySetting(user=user, cycle=cycle, category_id=setting.category_id,
-                              locked=True, locked_amount=setting.locked_amount)
-        for setting in BudgetCategorySetting.objects.filter(user=user, cycle=previous, locked=True).exclude(category_id__in=unlock)
-    ])
 
 
 def period_json(user, profile, today, cycle, start, next_payday):
@@ -272,33 +253,87 @@ def over_categories(categories):
     return sorted(over, key=lambda c: -c["over"])
 
 
-def big_spendings(user, cycle, today, living_budget):
-    """이번 주기에 한 건이 생활비 예산의 BIG_SPENDING_PCT% 이상인 지출 (홈 알림 줄, 돌발 지출 감지 1단계). 최신순.
-    대상: 생활비 쪽 소비(고정지출 연결 · 예산 밖 카테고리 제외) + 남에게 보낸 이체(납부로 연결된 이체 제외).
-    내 계좌 간 이체 · 저축 · 카드값 · 대출 상환은 거래 유형이 달라 들어오지 않는다. 알리기만 하고 어떤 숫자도 바꾸지 않는다"""
-    threshold = -(-living_budget * BIG_SPENDING_PCT // 100)  # 원 미만 올림
-    if threshold <= 0:
+def big_spendings(user, cycle, today, living_budget, spent):
+    """실제 생활비가 예산 이내일 때 주기 끝 전망을 예산 이내에서 5% 이상 초과로 바꾼 결제. 최신순."""
+    if living_budget <= 0 or spent > living_budget or today <= cycle.starts_on:
         return []
+    minimum_over = -(-living_budget * BIG_SPENDING_OVER_PCT // 100)  # 원 미만 올림
     rows = listed_transactions(user).filter(
-        direction="out", transaction_type__in=("spending", "transfer"), amount__gte=threshold,
+        direction="out", transaction_type="spending", amount__gte=minimum_over,
         occurred_on__gte=cycle.starts_on, occurred_on__lt=cycle.ends_before, occurred_on__lte=today,
     ).order_by("-occurred_on", "-amount")
     found = []
     for tx in rows:
         item = transaction_item(tx)
-        is_spending = item["transaction_type"] == "spending"
-        if item["net_amount"] < threshold:  # 취소분을 뺀 금액으로 본다
+        amount = item["net_amount"]
+        if amount < minimum_over or item["funding"] == "fixed" or item["category"] in OUT_OF_BUDGET:
             continue
-        if is_spending and (item["funding"] == "fixed" or item["category"] in OUT_OF_BUDGET):
-            continue
-        if not is_spending and tx.payment_matches.all():
+        # 이 결제가 남은 기간의 하루 평균까지 높이지 않도록 한 번만 더한다.
+        gap = forecast_json(today, cycle, living_budget, spent - amount)["gap"]
+        if gap < 0 or amount - gap < minimum_over:
             continue
         found.append({
             "transaction_id": item["transaction_id"], "occurred_on": item["occurred_on"], "merchant_name": item["merchant_name"],
-            "amount": item["net_amount"], "kind": item["transaction_type"],
+            "amount": amount, "kind": item["transaction_type"],
             "category": item["category"], "category_name": item["category_name"],
         })
     return found
+
+
+def living_spent_between(user, start, end):
+    """start ~ end(포함) 생활비 지출 — budget_data 와 같은 기준(고정지출 연결 · 예산 밖 제외). 그 기간 거래가 하나도 없으면 None"""
+    from finance.spending import spending_summary
+    from .scope import living_spent
+
+    items = [transaction_item(tx) for tx in listed_transactions(user).filter(occurred_on__gte=start, occurred_on__lte=end)]
+    return living_spent(spending_summary(items, living_only=True)) if items else None
+
+
+def week_json(user, today, cycle, budget, spent):
+    """이번 주(월요일 시작, 주기 시작일보다 앞서지 않음) 몫. 하루 금액은 카드 동기화가 늦으면 흔들려서 주 단위로 답한다 (11/17).
+    몫 = 이번 주 전까지 쓰고 남은 생활비 ÷ 이번 주를 포함한 남은 주 수 — 이번 주에 쓴 돈을 두 번 빼지 않는다"""
+    week_start = max(today - timedelta(days=today.weekday()), cycle.starts_on)
+    week_spent = living_spent_between(user, week_start, today) or 0
+    weeks_left = max(-(-(cycle.ends_before - week_start).days // 7), 1)
+    week_budget = max(budget - (spent - week_spent), 0) // weeks_left
+    return {"budget": week_budget, "spent": week_spent, "left": max(week_budget - week_spent, 0)}
+
+
+def forecast_json(today, cycle, budget, spent):
+    """지금까지 하루 평균 × 주기 전체 일수. 주기 첫날은 평균을 낼 수 없어 null. gap 이 음수면 모자람"""
+    passed = (today - cycle.starts_on).days + 1
+    if passed <= 1:
+        return None
+    total = spent * (cycle.ends_before - cycle.starts_on).days // passed
+    return {"total": total, "gap": budget - total}
+
+
+def vs_prev_json(user, today, cycle, spent):
+    """지난 주기 같은 기간(시작 ~ 같은 경과일) 대비 생활비 지출 차이 diff. 양수 = 더 씀. 지난 주기 기록 · 거래가 없으면 null"""
+    previous = BudgetCycle.objects.filter(user=user, starts_on__lt=cycle.starts_on).order_by("-starts_on").first()
+    if previous is None:
+        return None
+    end = min(previous.starts_on + (today - cycle.starts_on), previous.ends_before - timedelta(days=1))
+    before = living_spent_between(user, previous.starts_on, end)
+    return None if before is None else {"diff": spent - before}
+
+
+def top_categories(categories):
+    """이번 주기 생활비 지출 상위 3개 (budget_data 의 categories 를 정렬만). over 는 over_categories 와 같은 기준"""
+    spent = sorted((c for c in categories if c["spent"] > 0), key=lambda c: -c["spent"])[:3]
+    return [{"category": c["category"], "category_name": c["category_name"], "spent": c["spent"],
+             "allocated": c["allocated"], "over": 0 < c["allocated"] < c["spent"]} for c in spent]
+
+
+UPCOMING_DAYS = 7
+
+
+def upcoming_json(must_pay, balance_total, today):
+    """꼭 나갈 돈 중 오늘부터 7일 안. shortfall = 합계 − 계좌 잔액 (모자랄 때만, 잔액을 모르면 null)"""
+    last = (today + timedelta(days=UPCOMING_DAYS)).isoformat()
+    items = [p for p in must_pay if today.isoformat() <= p["due_date"] <= last]
+    total = sum(p["amount"] for p in items)
+    return {"total": total, "shortfall": None if balance_total is None else max(total - balance_total, 0), "items": items}
 
 
 def home_budget(user, today, cycle):
@@ -315,7 +350,7 @@ def home_budget(user, today, cycle):
     days_left = (cycle.ends_before - today).days - 1  # 오늘까지 쓴 돈을 뺀 뒤 내일부터 나눈다
     return {
         "budget_id": data["budget"]["budget_id"], "version_no": data["budget"]["version_no"],
-        "living_budget": budget, "living_left": living["remaining"],
+        "living_budget": budget, "living_left": living["remaining"], "living_spent": spent,  # 11/17: 홈 '그 밖' 계산용 (넘겨도 그대로)
         "living_pct": (spent * 100 + budget // 2) // budget if budget else (100 if spent else 0),  # 반올림, 100 넘어도 그대로
         "spare": data["overspend"]["spare_remaining"],
         "daily": living["remaining"] // days_left if days_left > 0 else None,  # 마지막 날은 null
@@ -323,10 +358,15 @@ def home_budget(user, today, cycle):
         "out_of_budget": data["out_of_budget"],
         "out_of_budget_allocated": data["budget"]["out_of_budget_allocated"],
         "over_categories": over_categories(data["categories"]),  # 예산을 넘긴 카테고리 → 홈 알림 줄
-        "big_spendings": big_spendings(user, cycle, today, budget),  # 생활비 예산 대비 큰 지출 → 홈 알림 줄
+        "big_spendings": big_spendings(user, cycle, today, budget, spent),
         "nag": data["nag"],  # 11/13: 예산을 자주 바꾸면 홈 종 알림 한 줄 (예산 화면 문구 대신)
         "card_notes": data["card_notes"],
         "card_bills_ready": data["card_bills_ready"],  # 그중 지금은 청구서가 나온 카드 (11/12)
+        # 11/17 홈 재설계: 이번 주 몫 · 주기 끝 전망 · 상위 카테고리 · 지난 주기 같은 기간
+        "week": week_json(user, today, cycle, budget, spent),
+        "forecast": forecast_json(today, cycle, budget, spent),
+        "top_categories": top_categories(data["categories"]),
+        "vs_prev": vs_prev_json(user, today, cycle, spent),
     }
 
 
@@ -334,6 +374,8 @@ def home_budget(user, today, cycle):
 
 @transaction.atomic
 def home_data(user, today):
+    from .cushion import cushion_notices
+    from .rollover import ensure_current_budget
     from .salary import current_salary_profile, salary_cycle_dates
 
     lock_user(user)
@@ -341,6 +383,7 @@ def home_data(user, today):
     payday = profile.payday if profile else None
 
     period = None
+    cycle = None
     must_pay = []
     if payday:
         start, next_payday, previous_start = salary_cycle_dates(profile, today)
@@ -355,12 +398,16 @@ def home_data(user, today):
         rematch_payments(user)
         period = period_json(user, profile, today, cycle, start, next_payday)
         must_pay = must_pay_json(user, next_payday, previous_start)
+        ensure_current_budget(user, profile, cycle, today)
 
+    balance = balance_json(user)
     return {
         "period": period,
-        "balance": balance_json(user),
+        "balance": balance,
+        "cushion_notices": cushion_notices(user, cycle, today),
         "pending_count": pending_count(user, today),
         "needs_payday_count": needs_payday_count(user),
         "must_pay": must_pay,
-        "budget": home_budget(user, today, cycle) if payday else None,  # H-06: 승인 예산이 없으면 null
+        "upcoming": upcoming_json(must_pay, balance["total"], today),  # 11/17: 7일 안에 나갈 돈 + 잔액 부족
+        "budget": home_budget(user, today, cycle) if cycle else None,  # H-06: 승인 예산이 없으면 null
     }

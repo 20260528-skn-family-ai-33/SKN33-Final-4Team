@@ -1,21 +1,25 @@
-// 홈 (2026-10-20 배치 개선안)
-// 위에서부터: 급여 주기 줄 → 하루에 쓸 수 있는 돈(파란 카드, 여윳돈 포함) → 계좌 잔액 → 예산 밖 지출(있을 때만) → 꼭 나갈 돈
-// 알림(확인할 거래 · 출금일 · 월급 안내)은 오른쪽 위 종 아이콘 팝업 (11/3)
-// 머니 쿠션은 쿠션 탭에서 따로 본다
+// 홈 (11/17 재설계, 시안 B) — 홈이 답하는 질문 셋: 이번 주 얼마 쓸 수 있나 · 어떻게 쓰고 있나 · 곧 할 일
+// 위에서부터 세 층, 아래로 갈수록 가볍다
+//   첫 카드: 이번 주 쓸 수 있는 돈(가장 큰 숫자) + 사용률 원 그래프 · 이달 남은 생활비 막대 · 주기 끝 전망 한 줄
+//   (11/17 피드백: 파란 배경이 너무 많아 흰 카드 + 진한 글자로. 파란색은 원 그래프 · 막대 · 링크에만)
+//   많이 쓴 곳: 카테고리 아이콘 타일 3개 · 지난달 이맘때 대비 · 가장 큰 지출
+//   할 일 목록: 곧 나갈 돈(7일) · 납부 확인 · 확인할 거래 · 입출금 계좌
+// 하루 금액 · 여윳돈 · 예산 밖 지출은 홈에서 뺐다 (예산 화면에 있음, 서버 값 daily · spare 는 채팅이 쓴다)
+// 알림(월급 · 예산 초과 · 확인할 거래 · 출금일)은 오른쪽 위 종 아이콘 팝업 (11/3) — 본문에 올린 항목도 종에서 빼지 않는다
 // 오른쪽 위 [새로고침] = 연결 전부 다시 불러오기 (docs/api/finance-connect.md) → 끝나면 홈 데이터를 다시 받는다
-// 되돌리기: 이 파일을 git 의 이전 버전으로 돌리고, app.css 맨 아래 "홈 개선안" 블록을 지우면 원래 화면으로 돌아간다
+// 응답 모양: docs/api/home.md
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Navigate, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import Icon from '../components/Icon.jsx'
 import { comma, won } from '../utils/money.js'
+import { josa } from '../utils/adjust.js'
 import { useApi } from '../utils/api.js'
 import { needsCardValues, runFinanceSync, syncLines } from '../utils/financeSync.js'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { PATHS } from '../routes.js'
 import { catIcon } from '../utils/categories.js'
 import { usePopup } from '../popups/context.js'
-import CalcPopup from '../popups/CalcPopup.jsx'
 import MustPayPopup from '../popups/MustPayPopup.jsx'
 import LoanPaymentPopup from '../popups/LoanPaymentPopup.jsx'
 import CardBillPopup from '../popups/CardBillPopup.jsx'
@@ -23,22 +27,56 @@ import NoticePopup from '../popups/NoticePopup.jsx'
 import SalaryCheckPopup from '../popups/SalaryCheckPopup.jsx'
 import SalaryGapPopup from '../popups/SalaryGapPopup.jsx'
 import CardCredentialPopup from '../popups/CardCredentialPopup.jsx'
-import OutOfBudgetPopup from '../popups/OutOfBudgetPopup.jsx'
-import { OldScopeNote } from '../components/OutOfBudgetLine.jsx'
 import UnreflectedCardNote from '../components/UnreflectedCardNote.jsx'
 import SyncResultPopup from '../popups/SyncResultPopup.jsx'
 import { toast } from '../utils/toast.js'
 import GuideTour from '../components/GuideTour.jsx'
+import TabHero from '../components/TabHero.jsx'
 import { markGuideTourSeen, needsGuideTour, takeGuideReplay } from '../utils/guideTour.js'
 
-// 홈 왼쪽 위 로고 (11/3): cushion = 서비스 파란색, -ing = 서비스 라임색
+// 홈 왼쪽 위 로고 (11/3): cushion = 서비스 파란색, -ing = 서비스 라임색 (홈에서는 머리 색에 맞춰 app.css 가 바꾼다)
 const LOGO = <span className="mc-logo">cushion<span className="mc-logo-ing">-ing</span></span>
 
 // '2026-10-24' → '10.24'
 const mmdd = (iso) => (iso ? `${iso.slice(5, 7)}.${iso.slice(8, 10)}` : '')
 
-// 기준 시각 '2026-10-21T09:30:00+09:00' → '10.21 09:30 기준' (없으면 빈 문자)
-const asOfText = (iso) => (iso ? `${mmdd(iso)} ${iso.slice(11, 16)} 기준` : '')
+function savedNoticeIds(key) {
+  if (!key) return []
+  try {
+    const ids = JSON.parse(window.localStorage.getItem(key))
+    return Array.isArray(ids) ? ids : []
+  } catch {
+    return []
+  }
+}
+
+const DAY_MS = 86_400_000
+const lunarDay = new Intl.DateTimeFormat('en-u-ca-dangi', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric' })
+
+function upcomingSeason({ nextPayday, dday }) {
+  // 급여일과 남은 일수에서 홈 API 기준의 서울 날짜를 복원한다.
+  const today = Date.parse(nextPayday) - dday * DAY_MS
+  if (new Date(today).toISOString().slice(5, 10) >= '12-18') return '연말'
+  if (lunarDay.resolvedOptions().calendar !== 'dangi') return null
+  for (let offset = 1; offset <= 14; offset += 1) {
+    const date = new Date(today + offset * DAY_MS)
+    const parts = lunarDay.formatToParts(date)
+    const month = parts.find((part) => part.type === 'month')?.value
+    const day = parts.find((part) => part.type === 'day')?.value
+    if (month === '1' && day === '1') return '설날'
+    if (month === '8' && day === '15') return '추석'
+  }
+  return null
+}
+
+
+// 화면 읽기용 금액: 215000 → '21만 5,000원'
+function spokenWon(n) {
+  const man = Math.floor(n / 10000)
+  const rest = n % 10000
+  if (!man) return won(rest)
+  return rest ? `${man}만 ${comma(rest)}원` : `${man}만원`
+}
 
 // 급여 주기 전체 일수: 시작일 ~ 마지막 날 (못 읽으면 null)
 function cycleDays(period) {
@@ -61,31 +99,63 @@ function pacePct(period) {
 function paceNote(usedPct, pace) {
   if (pace == null) return null
   const diff = Math.round(usedPct - pace)
-  if (diff > 2) return { tone: 'fast', text: `적정보다 ${diff}%p 빨라요` }
-  if (diff < -2) return { tone: 'slow', text: `적정보다 ${-diff}%p 여유 있어요` }
-  return { tone: 'ok', text: '적정 속도예요' }
+  if (diff > 2) return `${diff}%p 빠름`
+  if (diff < -2) return `${-diff}%p 여유`
+  return '적정 속도'
 }
 
-// 꼭 나갈 돈 상태 배지 (10/22 PR #26 리뷰, docs/api/home.md '미납 안내')
-//   needs_review = 출금일 +3일이 지나도 출금을 못 찾음 → "미납 확인 필요 ›" (누르면 고정지출 화면의 [고르기])
-//   unpaid 인데 출금일이 지남 = 실제 출금과 자동 연결(±3일)을 기다리는 중 → "출금 확인 중"
-//   지난 주기 미납은 다음 월급날이 되면 서버가 목록에서 뺀다 (화면은 받은 것만 그린다)
+// 이번 주 몫 중 쓴 비율. 몫이 0원이면 쓴 돈이 있을 때 100
+const weekPct = (week) => (week.budget ? Math.round((week.spent / week.budget) * 100) : (week.spent ? 100 : 0))
+
+// 지난달 이맘때 대비 한 줄 (vsPrev.diff = 이번 − 지난)
+function prevText(diff) {
+  if (diff > 0) return <>지난달 이맘때보다 <b>{won(diff)} 더</b> 썼어요</>
+  if (diff < 0) return <>지난달 이맘때보다 <b>{won(-diff)} 덜</b> 썼어요</>
+  return <>지난달 이맘때와 <b>같게</b> 썼어요</>
+}
+
+// 꼭 나갈 돈 상태 배지 (10/22 PR #26 리뷰, docs/api/home.md '미납 안내') — 팝업에 넘긴다
+//   needs_review = 출금일 +3일이 지나도 출금을 못 찾음 / unpaid 인데 출금일이 지남 = 자동 연결(±3일) 기다리는 중
 function payBadge(p) {
   if (p.userChecked) return { tone: 'check', text: '사용자 확인' }   // 카드 청구서: 앞으로 낼 금액을 사용자가 알려 줌 (11/06)
-  // 카드 청구서는 출금을 못 찾았다고 미납으로 보지 않는다 (다른 경로로 냈을 수 있음)
   if (p.paymentState === 'needs_review') return { tone: 'review', text: p.type === 'card_bill' ? '납부 확인 필요' : '미납 확인 필요' }
   const today = new Date().toLocaleDateString('sv-SE')   // 'YYYY-MM-DD' (내 컴퓨터 날짜 기준)
   if (p.paymentState === 'unpaid' && p.dueDate && p.dueDate < today) return { tone: 'check', text: '출금 확인 중' }
   return null
 }
 
-// 카드 청구서 금액이 아직 확정 전이면 "예상" 표시 (10/22 결정기록 Z, home.md mustPay[].isEstimated)
 function payBadges(p) {
   const out = []
   if (p.isEstimated) out.push({ tone: 'est', text: '예상' })
   const state = payBadge(p)
   if (state) out.push(state)
   return out
+}
+
+// 이번 주 몫 사용률 원 그래프. 가운데(children)에 사용률 (100%를 넘으면 원은 가득 차고 숫자는 그대로)
+function WeekRing({ pct, children }) {
+  const len = 2 * Math.PI * 92
+  return (
+    <div className="mc-home3-ring">
+      <svg viewBox="0 0 200 200" role="progressbar" aria-label="이번 주 몫 사용률"
+        aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(pct, 100)} aria-valuetext={`${pct}% 사용`}>
+        <circle cx="100" cy="100" r="92" className="t" />
+        {pct > 0 && <circle cx="100" cy="100" r="92" className="v" strokeDasharray={`${(len * Math.min(pct, 100)) / 100} ${len}`} />}
+      </svg>
+      <div className="mc-home3-ringin">{children}</div>
+    </div>
+  )
+}
+
+// 막대 하나 (0~100%로 자름). tick = 세로 눈금 위치(%)
+function Bar({ pct, label, tick, text }) {
+  return (
+    <div className="mc-home3-bar" role="progressbar" aria-label={label} aria-valuemin={0} aria-valuemax={100}
+      aria-valuenow={Math.min(pct, 100)} aria-valuetext={text}>
+      <span style={{ width: `${Math.min(pct, 100)}%` }}></span>
+      {tick != null && <i style={{ left: `${tick}%` }}></i>}
+    </div>
+  )
 }
 
 export default function HomePage() {
@@ -96,6 +166,16 @@ export default function HomePage() {
   const [sync, setSync] = useState({ busy: false })
   // 쿠숑이 가이드 투어 (11/16): 첫 예산 승인 뒤 홈에 처음 왔거나, 마이메뉴에서 [다시 보기]를 눌렀을 때 (utils/guideTour.js)
   const me = useApi('/api/auth/me/')
+  const readKey = me.data?.userId ? `moneycushion.homeNotices.${me.data.userId}` : null
+  const [readNotices, setReadNotices] = useState(() => ({ key: readKey, ids: savedNoticeIds(readKey) }))
+  if (readNotices.key !== readKey) {
+    const saved = savedNoticeIds(readKey)
+    setReadNotices({ key: readKey, ids: readNotices.key === null ? [...saved, ...readNotices.ids] : saved })
+  }
+  useEffect(() => {
+    if (!readNotices.key) return
+    try { window.localStorage.setItem(readNotices.key, JSON.stringify(readNotices.ids)) } catch { /* 화면에서는 읽은 상태를 유지 */ }
+  }, [readNotices])
   const [tour, setTour] = useState(false)
   const homeReady = Boolean(data)
   useEffect(() => {
@@ -154,183 +234,259 @@ export default function HomePage() {
     }
   }
 
-  // 아직 못 받았으면 "불러오는 중…" (실패하면 안내)
-  // 로그인이 풀렸으면 로그인 화면으로
+  // 아직 못 받았으면 "불러오는 중…" (실패하면 안내). 로그인이 풀렸으면 로그인 화면으로
   if (error?.code === 'not_authenticated') return <Navigate to={PATHS.login} replace />
   if (!data) return <Layout title={LOGO} activeTab="home"><ApiStatus error={error} onRetry={reload} /></Layout>
-  // 응답 모양: docs/api/home.md (budget = 이번 주기 승인 예산, 없으면 null)
-  const { period, balance, pendingCount, needsPaydayCount, mustPay, budget } = data
+  const { period, balance, cushionNotices, pendingCount, needsPaydayCount, mustPay, upcoming, budget } = data
   const b = budget ?? {}
   const toFixed = () => navigate(PATHS.fixed, { state: { from: 'home' } })  // 고정지출 관리 화면으로
-  const pace = pacePct(period)
-  const note = paceNote(b.livingPct, pace)
   // 카드 청구서 sourceId는 billId, 대출 sourceId는 loanId다.
-  const openPay = (p, badges) => {
+  const openPay = (p) => {
     const onManage = p.type === 'recurring' ? toFixed
       : p.type === 'card_bill' && p.sourceId ? () => openPopup(<CardBillPopup key={p.sourceId} billId={p.sourceId} onSaved={reload} />)
       : p.type === 'loan' && p.sourceId ? () => navigate(PATHS.loanCheck, { state: { from: 'home', loanId: p.sourceId } })
       : undefined
     const onCheckPayment = p.type === 'loan' && p.dueId ? () => openPopup(<LoanPaymentPopup key={p.dueId} dueId={p.dueId} onSaved={reload} />) : undefined
-    openPopup(<MustPayPopup item={p} date={mmdd(p.dueDate)} badges={badges} onManage={onManage} onCheckPayment={onCheckPayment} />)
+    openPopup(<MustPayPopup item={p} date={mmdd(p.dueDate)} badges={payBadges(p)} onManage={onManage} onCheckPayment={onCheckPayment} />)
   }
 
-  // 2. 알림 (11/3: 메인 카드 위 → 오른쪽 위 종 아이콘 팝업). 종에는 알림 개수
-  //   월급 상태 (H-01): 늦게 오면 '아직', 다음 달 월급이 미리 오면 안내
-  //   할 일: 확인할 거래 · 출금일을 모르는 고정지출 (H-05 — 출금일을 정해야 '꼭 나갈 돈'에 나오고 출금 확인을 해 준다)
-  //   R12: 후보만 있으면 '확인 필요'(받음 · 아직으로 단정하지 않음), 자동 인식이면 맞는지 바꿀 수 있게
-  //   예산 초과 (11/11): 예산을 넘긴 카테고리마다 한 줄 (budget.overCategories, 많이 넘긴 순). 누르면 예산 화면
-  //   자주 바꾸기 (11/13): 예산을 자주 바꾸면 '계획을 정리해 볼까요?' 한 줄 (budget.nag, 전에는 예산 화면에 있던 문구)
-  //   큰 지출 (11/11, budget.bigSpendings): 11/13 기준(생활비의 10%)이 아직 어색해서 알림 줄은 잠시 뺐다. 서버 값은 그대로 온다
+  // 알림 (11/3: 오른쪽 위 종 아이콘 팝업). 종에는 안 읽은 알림 개수
+  //   월급 상태 (H-01 · R12) · 예산 초과 (11/11) · 자주 바꾸기 (11/13) · 확인할 거래 · 출금일 모르는 고정지출 (H-05)
+  const biggest = (b.bigSpendings ?? []).reduce((max, s) => (!max || s.amount > max.amount ? s : max), null)
+  const season = b.budgetId && period && upcomingSeason(period)
+  const toCushion = () => navigate(PATHS.fund)
+  const toAdjust = () => navigate(PATHS.assistant, {
+    state: { budgetContext: { baseBudgetId: b.budgetId, mode: 'NORMAL_ADJUSTMENT' } },
+  })
   const openSalary = () => openPopup(<SalaryCheckPopup onSaved={reload} />)
   // 11/13: 받은 월급이 등록한 실수령액과 꽤 다르면 (1만원 이상 · 3% 이상, 서버가 판단) 어떻게 할지 묻는다
   const gap = period?.salaryGap
-  const gapText = gap && `월급이 ${won(Math.abs(gap.diff))} ${gap.diff < 0 ? '덜' : '더'} 들어왔어요`
   const openGap = () => openPopup(<SalaryGapPopup gap={gap} onDone={reload} />)
-  // 11/13: 줄마다 무슨 알림인지 굵은 이름(title)을 문장 위에 단다
+  const bigWhere = biggest && (biggest.merchantName || biggest.categoryName || '생활비')
   const notices = [
-    gap && { key: 'salary-gap', title: '월급 차이', icon: 'Banknote', text: `${gapText}. 예산을 조정할까요?`, go: openGap },
-    period?.salaryCheckCount > 0 && { key: 'salary-check', title: '월급 확인', count: period.salaryCheckCount, text: '월급으로 보이는 입금이 있어요. 맞는지 확인해 주세요', go: openSalary },
-    period?.salaryState === 'waiting' && { key: 'salary-wait', title: '월급 입금', icon: 'Banknote', text: '월급이 아직 안 들어왔어요' },
-    period?.salarySource === 'auto' && { key: 'salary-auto', title: '월급 자동 인식', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 자동 인식했어요`, go: openSalary },
-    period?.nextSalaryEarlyOn && { key: 'salary-early', title: '월급 입금', icon: 'Banknote', text: `월급이 ${mmdd(period.nextSalaryEarlyOn)}에 미리 들어왔어요. ${mmdd(period.nextPayday)}부터 예산에 넣을게요` },
-    ...(b.overCategories ?? []).map((c) => ({ key: `over-${c.category}`, title: '예산 초과', icon: catIcon(c.categoryName), text: `${c.categoryName} 예산을 ${won(c.over)} 넘었어요`, go: () => navigate(PATHS.budget) })),
-    b.nag && { key: 'nag', title: '예산 변경', mark: '!', text: b.nag, go: () => navigate(PATHS.budget) },  // 11/13: 예산을 자주 바꾸면 (예산 화면 문구 대신)
-    pendingCount > 0 && { key: 'pending', title: '카테고리 확인', count: pendingCount, text: `카테고리를 확인할 거래 ${pendingCount}건`, go: () => navigate(pendingUrl) },
-    needsPaydayCount > 0 && { key: 'payday', title: '출금일 확인', count: needsPaydayCount, text: `출금일을 확인할 고정지출 ${needsPaydayCount}건`, go: toFixed },
+    // 11/19 알림 문구 통일: 제목 = 상황 1줄('~했어요') · 본문 = 구체 내용 2줄 이내('~해 보세요') · act = '~하기'
+    //   tone = 아이콘 네모 색을 뜻으로 맞춘다: red 경고 · 없음(연파랑) 확인 요청 · lime 쿠션 적립 · 이벤트
+    gap && { key: 'salary-gap', title: gap.diff < 0 ? '월급이 적게 들어왔어요' : '월급이 더 들어왔어요', icon: 'Banknote',
+      text: `등록한 월급보다 ${won(Math.abs(gap.diff))} ${gap.diff < 0 ? '적어요' : '많아요'}. 예산을 조정할까요?`, go: openGap, group: 'act', act: '예산 조정하기' },
+    b.budgetId && b.forecast && biggest && { key: 'big-spending', occurrence: biggest.transactionId, title: '큰 지출이 있었어요', icon: 'Banknote',
+      text: `${bigWhere}에서 ${won(biggest.amount)}${josa(won(biggest.amount))} 썼어요. 예산을 확인해 보세요.`, go: toAdjust, group: 'act', act: '예산 조정하기', tone: 'red' },
+    cushionNotices?.depositDue && { key: 'cushion-deposit', title: '쿠션 적립을 잊지 마세요', icon: 'PiggyBank',
+      text: '오늘은 쿠션 넣는 날이에요. 이번 달 쿠션을 모아 보세요.', go: toCushion, group: 'act', act: '쿠션 확인하기', tone: 'lime' },
+    cushionNotices?.balanceLow && { key: 'cushion-balance', title: '머니쿠션 확인이 필요해요', icon: 'CircleAlert',
+      text: '쿠션을 한 번 점검해 주세요.', go: toCushion, group: 'check', act: '쿠션 확인하기', tone: 'red' },
+    season && { key: 'season-budget', occurrence: season, title: `${season}이 다가오고 있어요`, icon: 'Sparkles',
+      text: '지출이 늘어날 수 있어요. 같이 예산을 조정해 볼까요?', go: toAdjust, group: 'act', act: '예산 조정하기', tone: 'lime' },
+    period?.salaryCheckCount > 0 && { key: 'salary-check', title: '월급으로 보이는 입금이 있어요', count: period.salaryCheckCount, text: '월급이 맞는지 확인해 주세요.', go: openSalary, act: '월급 확인하기' },
+    period?.salaryState === 'waiting' && { key: 'salary-wait', title: '월급 입금을 기다리고 있어요', icon: 'Banknote', text: '아직 월급으로 보이는 입금이 없어요.' },
+    period?.salarySource === 'auto' && { key: 'salary-auto', title: '월급을 자동으로 인식했어요', icon: 'Banknote', text: `지난번 확인한 월급과 같아서 ${mmdd(period.salaryReceivedOn)} 입금을 월급으로 넣었어요.`, go: openSalary, act: '월급 확인하기' },
+    period?.nextSalaryEarlyOn && { key: 'salary-early', title: '월급이 미리 들어왔어요', icon: 'Banknote', text: `${mmdd(period.nextSalaryEarlyOn)}에 들어온 월급은 ${mmdd(period.nextPayday)}부터 예산에 넣을게요.` },
+    ...(b.overCategories ?? []).map((c) => ({ key: `over-${c.category}`, title: '예산을 초과했어요', icon: catIcon(c.categoryName), tone: 'red',
+      text: `이번 달 ${c.categoryName}${josa(c.categoryName, '이', '가')} ${won(c.over)} 초과됐어요.`, go: () => navigate(PATHS.budget), act: '예산 확인하기' })),
+    b.nag && { key: 'nag', title: '예산을 자주 바꿨어요', mark: '!', tone: 'red', text: b.nag, go: () => navigate(PATHS.budget), act: '예산 확인하기' },
+    pendingCount > 0 && { key: 'pending', title: '카테고리를 정할 거래가 있어요', count: pendingCount, text: `거래 ${pendingCount}건의 카테고리를 확인해 주세요.`, go: () => navigate(pendingUrl), act: '카테고리 정하기' },
+    needsPaydayCount > 0 && { key: 'payday', title: '출금일을 모르는 고정지출이 있어요', count: needsPaydayCount, text: `고정지출 ${needsPaydayCount}건의 출금일을 확인해 주세요.`, go: toFixed, act: '출금일 확인하기' },
   ].filter(Boolean)
+  const currentNoticeIds = notices.map((notice) => JSON.stringify([period?.startDate, notice.key, notice.occurrence, notice.count]))
+  const unreadCount = currentNoticeIds.filter((id) => !readNotices.ids.includes(id)).length
+  const openNotices = () => {
+    setReadNotices({ key: readKey, ids: currentNoticeIds })
+    openPopup(<NoticePopup items={notices} />)
+  }
   const headAction = (
     <>
       <button type="button" className="mc-icon" onClick={refresh} disabled={sync.busy} aria-busy={sync.busy} aria-label={sync.busy ? '새로고침 중' : '새로고침'}>
         <span className={sync.busy ? 'mc-conn-busy' : undefined}><Icon name="RefreshCw" /></span>
       </button>
-      <button type="button" className="mc-icon mc-bell" onClick={() => openPopup(<NoticePopup items={notices} />)}
-        aria-label={notices.length ? `알림 ${notices.length}개` : '알림'}>
+      <button type="button" className="mc-icon mc-bell" onClick={openNotices}
+        aria-label={unreadCount ? `알림 ${unreadCount}개` : '알림'}>
         <Icon name="Bell" />
-        {notices.length > 0 && <span className="mc-bell-n" aria-hidden="true">{notices.length}</span>}
+        {unreadCount > 0 && <span className="mc-bell-n" aria-hidden="true">{unreadCount}</span>}
       </button>
     </>
   )
 
+  const top = b.topCategories
+  const week = b.week
+  const weekLeft = Number.isFinite(week?.budget) && Number.isFinite(week?.spent) ? week.budget - week.spent : null
+  const forecast = b.forecast
+  const pace = pacePct(period)
+  const note = budget ? paceNote(b.livingPct, pace) : null
+  const reviews = mustPay.filter((p) => p.paymentState === 'needs_review')  // 출금일 +3일이 지나도 출금을 못 찾은 회차
+
   return (
     <Layout title={LOGO} activeTab="home" headAction={headAction} overlay={tour ? <GuideTour onClose={closeTour} /> : null}>
-      {/* 1. 급여 주기 + 월급날 칩 / 월급 상태 + 기준 시각 — 한 줄에 넷을 넣으면 폰 폭에서 줄바꿈이 깨져 두 줄로 (급여일을 아직 안 넣었으면 period 가 null) */}
-      {period && (
-        <div className="mc-home2-period">
-          <div className="mc-row">
-            <span className="mc-muted">{mmdd(period.startDate)} — {mmdd(period.endDate)} 급여 주기</span>
-            <span className="mc-badge">다음 월급날 D−{period.dday}</span>
+      {/* 11/18 시안 B: 파란 띠에 이번 주 쓸 수 있는 돈을 문장으로 + 쿠숑이. 급여 주기 · 월급 확인은 띠 맨 위 한 줄 */}
+      <TabHero
+        eyebrow={period && <>
+          <span>월급날 D−{period.dday}</span>
+          <button type="button" className="mc-tabhero-pill" onClick={openSalary}>
+            {period.salaryState === 'received' ? '월급 확인됨' : period.salaryState === 'needs_check' ? '월급 확인 필요' : '월급 확인'} ›
+          </button>
+        </>}
+        title={budget === null ? <>예산을 만들면<br />이번 주에 쓸 수 있는<br />돈이 보여요</> : weekLeft === null ? <>이번 주 쓸 수 있는 돈<br /><em>—</em></> : <>
+          이번 주는<br />
+          <em className="mc-home3-big" aria-label={`이번 주 쓸 수 있는 돈 ${spokenWon(Math.abs(weekLeft))}${weekLeft < 0 ? ' 넘게 씀' : ''}`}>
+            {comma(Math.abs(weekLeft))}원
+          </em>{weekLeft < 0 ? <><br />넘게 썼어요</> : <> 더<br />쓸 수 있어요</>}
+        </>}
+        mood={weekLeft === null ? 'basic' : weekLeft < 0 ? 'stretch' : 'home'}
+      />
+      {/* 흰 시트: 이번 주 몫 사용률 원 그래프 · 이달 남은 생활비 · 월급날 전망 · 예산 화면으로 */}
+      <section className="mc-tabsheet mc-home3-hero" aria-label="이번 주 예산">
+        {budget === null ? (
+          /* 예산이 아직 없으면 (H-06) */
+          <div className="mc-home3-empty">
+            <p className="mc-home3-sub">월급과 고정지출을 확인하고 지킬 돈을 정하면 카테고리별 예산을 추천해 드려요.</p>
+            <button type="button" className="mc-home3-cta" onClick={() => navigate(PATHS.salary)}>예산 만들기</button>
           </div>
-          <div className="mc-row">
-            <button type="button" className="mc-link" onClick={openSalary}>
-              {period.salaryState === 'received' ? '월급 확인됨'
-                : period.salaryState === 'needs_check' ? '월급 확인이 필요해요' : '월급 확인'} ›
+        ) : (
+          <>
+            {weekLeft !== null && <div className="mc-home3-week">
+              <WeekRing pct={weekPct(b.week)}><b>{weekPct(b.week)}%</b></WeekRing>
+              <div>
+                <strong>이번 주 예산 {weekPct(b.week)}% 썼어요</strong>
+                {note && <span className={`mc-home3-chip${note.endsWith('빠름') ? ' is-fast' : ''}`}>생활비 {note}</span>}
+              </div>
+            </div>}
+            {/* 같은 크기 두 칸: 이달 남은 생활비 | 주기 끝 전망 (주기 첫날은 forecast = null → 오른쪽 칸 없음) */}
+            <div className="mc-home3-stats">
+              <div>
+                <span>이달 남은 생활비</span>
+                <strong className="mc-home3-mid">{won(b.livingLeft)}</strong>
+                {/* 세로 눈금 = 오늘까지 이만큼 썼으면 딱 맞는 지점 */}
+                <Bar pct={b.livingPct} tick={pace} label="이번 주기 생활비 사용률" text={`${b.livingPct}% 사용${note ? `, ${note}` : ''}`} />
+              </div>
+              {forecast && (
+                <div className={forecast.gap < 0 ? 'is-short' : undefined}>
+                  <span>이대로 쓰면 월급날</span>
+                  <strong className="mc-home3-mid">{won(Math.abs(forecast.gap))}<em>{forecast.gap < 0 ? ' 부족' : ' 남음'}</em></strong>
+                  <Bar pct={b.livingBudget ? Math.round((forecast.total * 100) / b.livingBudget) : 100} label="예상 지출 비율"
+                    text={`예상 지출 ${won(forecast.total)}`} />
+                </div>
+              )}
+            </div>
+            {/* 11/18: 홈에서 예산 탭으로 바로 */}
+            <button type="button" className="mc-tabsheet-go" onClick={() => navigate(PATHS.budget)}>
+              예산 자세히 보기<Icon name="ChevronRight" size={18} />
             </button>
-            {balance.asOf && <span className="mc-muted mc-home2-asof">{asOfText(balance.asOf)}</span>}
-          </div>
-          {/* 11/13: 월급 차이 — 알림 줄과 같은 [아이콘 | 두 줄 | ›] 카드. 덜 들어오면 금액을 빨강, 더 들어오면 파랑 */}
-          {gap && (
-            <button type="button" className="mc-home2-gap" onClick={openGap}>
-              <span className="mc-tile"><Icon name="Banknote" /></span>
-              <span className="mc-grow">
-                <strong>월급이 <b className={gap.diff < 0 ? 'is-less' : 'is-more'}>{won(Math.abs(gap.diff))}</b> {gap.diff < 0 ? '덜' : '더'} 들어왔어요</strong>
-                <small>이번 예산을 맞출까요?</small>
-              </span>
-              <span className="mc-muted" aria-hidden="true">›</span>
-            </button>
-          )}
-        </div>
+          </>
+        )}
+      </section>
+
+      {/* 11/13: 월급 차이 — 덜 들어오면 금액을 빨강, 더 들어오면 파랑 */}
+      {gap && (
+        <button type="button" className="mc-home3-gap" onClick={openGap}>
+          <span className="mc-tile"><Icon name="Banknote" /></span>
+          <span className="mc-grow">
+            <strong>월급이 <b className={gap.diff < 0 ? 'is-less' : 'is-more'}>{won(Math.abs(gap.diff))}</b> {gap.diff < 0 ? '덜' : '더'} 들어왔어요</strong>
+            <small>이번 예산을 맞출까요?</small>
+          </span>
+          <span className="mc-muted" aria-hidden="true">›</span>
+        </button>
       )}
 
       <UnreflectedCardNote notes={b.cardNotes} readyIds={b.cardBillsReady} onRecalculate={() => navigate(PATHS.protect, { state: { from: 'my', refreshRecommendation: true } })} />
 
-      {/* 3. 예산이 아직 없으면 (budget: null, H-06) 파란 카드 자리에 안내 카드 */}
-      {budget === null ? (
-        <div className="mc-card mc-home2-nobudget">
-          <span className="mc-tile"><Icon name="Wallet" /></span>
-          <h2>예산을 만들면 여기에 하루에 쓸 수 있는 돈이 보여요</h2>
-          <p className="mc-muted">월급과 고정지출을 확인하고, 지킬 돈을 정하면 카테고리별 예산을 추천해 드려요.</p>
-          <button type="button" className="mc-primary" onClick={() => navigate(PATHS.salary)}>예산 만들기</button>
-        </div>
-      ) : (
-      /* 3. 하루에 쓸 수 있는 돈 (가장 중요한 숫자) + 사용 속도 + 여윳돈. 마지막 날은 daily = null → '—' */
-      <div className="mc-hero mc-budget-hero mc-home2-hero">
-        <div className="mc-row">
-          <span className="mc-hero-title">하루에 쓸 수 있는 돈</span>
-          <button type="button" className="mc-link" onClick={() => openPopup(<CalcPopup budget={b} />)}>계산 근거</button>
-        </div>
-        <div className="mc-budget-amount">
-          {b.daily == null ? <strong>—</strong> : <strong>{comma(b.daily)}<small>원</small></strong>}
-        </div>
-        <p className="mc-home2-left">남은 생활비 <strong>{won(b.livingLeft)}</strong> · 내일부터 {b.daysLeft}일 기준</p>
-        <OldScopeNote amount={b.outOfBudgetAllocated} className="mc-home2-left" />
-        <div className="mc-bar mc-home2-bar" role="progressbar" aria-label="이번 주기 생활비 사용률"
-          aria-valuemin={0} aria-valuemax={100} aria-valuenow={b.livingPct}
-          aria-valuetext={`${b.livingPct}% 사용${note ? `, ${note.text}` : ''}`}>
-          <span style={{ width: `${Math.min(b.livingPct, 100)}%` }}></span>
-          {pace != null && <i className="mc-home2-pace" style={{ left: `${pace}%` }}></i>}
-        </div>
-        <div className="mc-row mc-home2-usage">
-          <button type="button" className="mc-link mc-home2-used" onClick={() => navigate(PATHS.txs)}>
-            {won(b.livingBudget)} 중 {b.livingPct}% 사용 ›
-          </button>
-          {note && <span className={`mc-home2-note is-${note.tone}`}>{note.text}</span>}
-        </div>
-        {/* 여윳돈 = 아직 어느 예산에도 안 나눈 돈 */}
-        <div className="mc-row mc-home2-foot">
-          <span className="mc-home2-spare">여윳돈 <strong>{won(b.spare)}</strong></span>
-          <button type="button" className="mc-link" onClick={() => navigate(PATHS.assistant)}>예산 조정 ›</button>
-        </div>
-      </div>
+      {/* 2. 어떻게 쓰고 있나: 카테고리 아이콘 타일 3개 + 지난달 대비 · 가장 큰 지출 (예산이 있을 때만) */}
+      {budget && (
+        <section className="mc-home3-sheet" aria-labelledby="home3-spend">
+          <div className="mc-home3-sheethead">
+            <div>
+              <h2 id="home3-spend" className="mc-home3-eyebrow">이번 주기 많이 쓴 곳</h2>
+            </div>
+            <button type="button" className="mc-link" onClick={() => navigate(PATHS.budget)}>예산 보기 ›</button>
+          </div>
+          {Array.isArray(top) && (top.length === 0 ? <p className="mc-muted">아직 이번 주기 생활비 지출이 없어요</p> : (
+            <div className="mc-home3-tiles">
+              {top.map((c) => {
+                const pct = c.allocated ? Math.round((c.spent * 100) / c.allocated) : null
+                return (
+                  <div key={c.category} className={`mc-home3-tile${c.over ? ' is-over' : ''}`}>
+                    <span className="mc-tile"><Icon name={catIcon(c.categoryName)} /></span>
+                    <span className="mc-home3-tile-name">{c.categoryName}</span>
+                    <b>{won(c.spent)}</b>
+                    <div className="mc-home3-minibar" aria-hidden="true"><span style={{ width: `${Math.min(pct ?? 100, 100)}%` }}></span></div>
+                    {/* 11/18: 비율은 막대로 보이니 글은 넘었을 때만 */}
+                    {c.over && <small>{won(c.spent - c.allocated)} 초과</small>}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+          {(b.vsPrev || biggest) && (
+            <div className="mc-home3-facts">
+              {b.vsPrev && <p><Icon name="ChartNoAxesCombined" size={18} /><span>{prevText(b.vsPrev.diff)}</span></p>}
+              {biggest && (
+                <button type="button" onClick={() => navigate(PATHS.txs)}>
+                  <Icon name="Banknote" size={18} />
+                  <span>가장 큰 지출은 {mmdd(biggest.occurredOn)} {biggest.merchantName || (biggest.kind === 'transfer' ? '보낸 돈' : biggest.categoryName ?? '지출')} <b>{won(biggest.amount)}</b></span>
+                  <span className="mc-muted" aria-hidden="true">›</span>
+                </button>
+              )}
+            </div>
+          )}
+        </section>
       )}
 
-      {/* 4. 입출금 계좌 잔액 (한 줄). 잔액을 모르면 0원 대신 '—' (H-02)
-          + 예산 밖 지출 (주거·통신 · 여행·숙박, 있을 때만) — 계산에 안 넣는 참고 금액이라 파란 카드 밖, 같은 카드 안 둘째 줄. 누르면 카테고리별 팝업 (11/3) */}
-      <div className="mc-card mc-home2-balcard">
-        <button type="button" className="mc-home2-bal" onClick={() => navigate(PATHS.connections)}>
-          <span className="mc-muted">
-            입출금 계좌 {balance.accountCount}개
-            {balance.reloginCount > 0 && ' · 다시 연결 필요'}
-            {balance.unknownCount > 0 && ' · 잔액을 못 불러온 계좌가 있어요'}
-          </span>
-          <strong>{balance.total == null ? '—' : won(balance.total)} <span className="mc-muted">›</span></strong>
-        </button>
-        {b.outOfBudget?.total > 0 && (
-          <button type="button" className="mc-home2-bal" onClick={() => openPopup(<OutOfBudgetPopup value={b.outOfBudget} />)}>
-            <span className="mc-muted">예산 밖 지출</span>
-            <strong>{won(b.outOfBudget.total)} <span className="mc-muted">›</span></strong>
-          </button>
+      {/* 3. 할 일: 눌러서 다른 화면으로 가는 줄 모음 */}
+      <h2 className="mc-tabsec">챙겨볼 것</h2>
+      <ul className="mc-home3-todo">
+        {upcoming?.items?.length > 0 && (
+          <li>
+            <details className="mc-home3-due">
+              <summary>
+                <Icon name="Wallet" />
+                <span className="mc-home3-todo-name">곧 나갈 돈<small>7일 안 · {upcoming.items.length}건</small></span>
+                <b>{won(upcoming.total)}</b><span className="mc-home3-chev" aria-hidden="true">›</span>
+              </summary>
+              {upcoming.items.map((p) => (
+                <button type="button" key={p.dueId} className="mc-home3-dueitem" onClick={() => openPay(p)}>
+                  <span>{mmdd(p.dueDate)}</span>
+                  <span className="mc-grow">{p.name}{p.isEstimated && <small> 예상</small>}</span>
+                  <b>{won(p.amount)}</b>
+                </button>
+              ))}
+              <button type="button" className="mc-link mc-home3-dueall" onClick={toFixed}>고정지출 전체 보기 ›</button>
+            </details>
+            {upcoming.shortfall > 0 && <p className="mc-home3-warn" role="status">입출금 계좌 잔액보다 {won(upcoming.shortfall)} 많아요</p>}
+          </li>
         )}
-      </div>
-      <div className="mc-row mc-section"><h2>꼭 나갈 돈</h2></div>
-      <div className="mc-card">
-        {/* 목록.map(...) = 하나씩 꺼내서 그리기. key 는 항목마다 다른 값 */}
-        {mustPay.length === 0 && <p className="mc-muted" style={{ textAlign: 'center' }}>이번 주기에 아직 나갈 돈이 없어요</p>}
-        {/* 한 줄 = 이름 · 금액만. 날짜 · 계좌 · 상태는 누르면 팝업. 미납 확인 필요만 놓치지 않게 빨간 점 */}
-        {mustPay.map((p) => {
-          const badges = payBadges(p)
-          const review = badges.some((b) => b.tone === 'review')
-          return (
-            <button type="button" onClick={() => openPay(p, badges)} className="mc-listrow" key={p.dueId}>
-              <span className="mc-tile mc-tile-date">
-                <small>{Number(p.dueDate.slice(5, 7))}월</small><b>{Number(p.dueDate.slice(8, 10))}</b>
-              </span>
-              <span className="mc-grow">
-                <strong>{p.name}{review && <span className="mc-paydot" role="img" aria-label={p.type === 'card_bill' ? '납부 확인 필요' : '미납 확인 필요'}></span>}</strong>
-              </span>
-              <span className="mc-right">{won(p.amount)} <span className="mc-muted">›</span></span>
+        {reviews.map((p) => (
+          <li key={p.dueId}>
+            <button type="button" onClick={() => openPay(p)}>
+              <Icon name="CircleAlert" />
+              <span className="mc-home3-todo-name">{p.name}<small>{p.type === 'card_bill' ? '납부 확인 필요' : '미납 확인 필요'}</small></span>
+              <b>{won(p.amount)}</b><span className="mc-home3-chev" aria-hidden="true">›</span>
             </button>
-          )
-        })}
-        {/* 이번 주기에 안 나가는 고정지출 · 출금일 모르는 것까지 전부 보는 곳 (목록이 비어도 보임) */}
-        {/* 파란 버튼 · 카드 너비 90% · 가운데 (좌우 margin auto) */}
-        <button type="button" className="mc-primary" style={{ width: '90%', margin: '16px auto 0', padding: '10px 0' }} onClick={toFixed}>고정지출 전체 보기</button>
-      </div>
-
-      <div className="mc-home-action">
-        <button type="button" className="mc-action" onClick={() => navigate(PATHS.assistant)}>
-          <Icon name="MessageCircle" /> 챗봇에게 내 소비 물어보기
-        </button>
-      </div>
+          </li>
+        ))}
+        {pendingCount > 0 && (
+          <li>
+            <button type="button" onClick={() => navigate(pendingUrl)}>
+              <Icon name="CircleQuestionMark" />
+              <span className="mc-home3-todo-name">확인할 거래</span>
+              <b>{pendingCount}건<i className="mc-home3-dot"></i></b><span className="mc-home3-chev" aria-hidden="true">›</span>
+            </button>
+          </li>
+        )}
+        <li>
+          {balance.accountCount === 0 ? (
+            <button type="button" onClick={() => navigate(PATHS.connect)}>
+              <Icon name="Landmark" />
+              <span className="mc-home3-todo-name">입출금 계좌<small>연결된 계좌가 없어요</small></span>
+              <b>연결하기</b><span className="mc-home3-chev" aria-hidden="true">›</span>
+            </button>
+          ) : (
+            <button type="button" onClick={() => navigate(PATHS.connections)}>
+              <Icon name="Landmark" />
+              <span className="mc-home3-todo-name">
+                입출금 계좌<small>{balance.accountCount}개{balance.reloginCount > 0 ? ' · 다시 연결 필요' : balance.unknownCount > 0 ? ' · 일부 못 불러옴' : ''}</small>
+              </span>
+              <b>{balance.total == null ? '—' : won(balance.total)}</b><span className="mc-home3-chev" aria-hidden="true">›</span>
+            </button>
+          )}
+        </li>
+      </ul>
     </Layout>
   )
 }

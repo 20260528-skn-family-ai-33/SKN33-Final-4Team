@@ -64,6 +64,65 @@ class ServiceChatBase(TestCase):
 @fixture_db_only
 @SERVICE
 class ServiceChatTest(ServiceChatBase):
+    def test_generated_followup_and_habit_details_survive_reload_and_question_submission(self):
+        from chat.llm.fake import FakeReading
+        from spending_analysis import followups
+        fake = FakeReading()
+        questions = []
+
+        def complete(system, user, **kwargs):
+            if system == followups.PROMPT:
+                candidate = json.loads(user)["candidates"][0]
+                questions.append(candidate["question"])
+                return json.dumps({"questions": [{"id": candidate["id"], "text": candidate["question"]}]}, ensure_ascii=False)
+            return fake(system, user, **kwargs)
+
+        with mock.patch.object(engine, "reading", return_value=complete):
+            response = self.send("A", text="내 소비 습관 어때?")
+            content = self.bot(response)
+            cid = response.json()["conversationId"]
+            self.assertTrue(questions)
+            question = questions[0]
+            self.assertEqual(content["examples"], [question])
+            self.assertTrue(any(b["kind"] == "details" for b in content["view"]))
+            history = self.client_for("A").get(f"/api/chat/conversations/{cid}/").json()
+            self.assertEqual(history["messages"][-1]["content"]["view"], content["view"])
+            self.assertEqual(history["messages"][-1]["content"]["examples"], [question])
+            follow = self.bot(self.send("A", cid, text=question))
+            self.assertTrue(follow["text"])
+            self.assertNotIn("어떤 분석을 볼까요", follow["text"])
+
+    def test_shown_comparison_is_not_suggested_again_after_calculation(self):
+        from chat.llm.fake import FakeReading
+        from spending_analysis import followups
+        fake = FakeReading()
+        with mock.patch.object(engine, "reading", return_value=fake):
+            response = self.send("A", text="내 소비 습관 어때?")
+            cid, first = response.json()["conversationId"], self.bot(response)
+            self.assertTrue(any("지난달" in line for line in first["lines"]))
+            question = next(q for q in first["examples"] if followups.topic(q) == "calculation")
+            self.client_for("A").get(f"/api/chat/conversations/{cid}/")
+            calculated = self.bot(self.send("A", cid, text=question))
+            self.assertFalse({"reason", "forecast", "habit"} &
+                             {followups.topic(q) for q in calculated.get("examples", [])})
+            self.assertNotIn("_answered_topics", calculated)
+            # 추천에서 빠져도 사용자가 직접 다시 요청한 비교는 답한다.
+            repeated = self.bot(self.send("A", cid, text="지난달과 달라진 소비는 뭐야?"))
+            self.assertTrue(repeated["result"])
+            self.assertTrue(any("지난달" in line for line in repeated["lines"]))
+
+    def test_comparison_menu_sends_a_neutral_question_and_gets_comparison(self):
+        from chat.llm.fake import FakeReading
+        with mock.patch.object(engine, "reading", return_value=FakeReading()):
+            response = self.send("A", text="소비 분석으로 뭘 볼 수 있어?")
+            cid, menu = response.json()["conversationId"], self.bot(response)
+            items = next(block["items"] for block in menu["view"] if block["kind"] == "options")
+            question = next(row["ask"] for row in items if row["title"] == "지난달과 비교")
+            self.assertEqual(question, "지난달과 달라진 소비는 뭐야?")
+            compared = self.bot(self.send("A", cid, text=question))
+            self.assertTrue(compared["result"])
+            self.assertTrue(any("지난달" in line for line in compared["lines"]))
+
     @contextmanager
     def capture_summaries(self):
         summaries, summarize = [], insight.summarize
@@ -275,7 +334,7 @@ class ServiceChatTest(ServiceChatBase):
             content = self.bot(self.send("A", text="아무거나 분석해줘"))
         self.assertNotIn("chart", content)
         text = " ".join(content["lines"])
-        self.assertIn("확인된", text)
+        self.assertIn("시간대", text)
         # 비교 · 예상을 못 한 이유는 하단 안내에 한 줄씩 (본문은 확인된 모습만)
         self.assertTrue(any("총액 비교" in n and "제외" in n for n in content["notices"]))
         self.assertTrue(any("월말 예상액" in n and "보류" in n for n in content["notices"]))

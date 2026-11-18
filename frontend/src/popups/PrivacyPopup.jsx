@@ -69,7 +69,7 @@ export default function PrivacyPopup({ onChanged }) {
     {step === ADJUST_AI ? <form className="mc-form" onSubmit={submit}>
       <h3>{ADJUST_AI_NAME} 동의 철회</h3>
       <p>철회하면 다음 요청부터 예산 조정 챗봇이 예산 자료를 외부 AI로 보내지 않아요. 다시 이용하려면 챗봇에서 예산 조정을 요청할 때 동의하면 돼요.</p>
-      <p className="mc-note">승인한 예산과 금융자료, 최소 금액·자물쇠는 그대로 유지해요. 이미 보낸 내용은 되돌릴 수 없어요.</p>
+      <p className="mc-note">승인한 예산과 금융자료, 최소 금액은 그대로 유지해요. 이미 보낸 내용은 되돌릴 수 없어요.</p>
       <button type="submit" className="mc-primary" disabled={busy}>
         {busy ? '처리 중…' : '동의 철회'}
       </button>

@@ -6,7 +6,8 @@ LLM 호출은 complete(system, user) -> str 로 주입한다. 원문은 LLM 호�
 이 프롬프트는 아직 실제 LLM 으로 평가하지 않았다 (MEMO 13번 평가 계획).
 """
 import json
-from dataclasses import dataclass, field
+import re
+from dataclasses import dataclass, field, replace
 from importlib import import_module
 
 # shortcut: 초기 데이터 상수를 읽는다, 통합 때 Category(is_active=True, display_order 순) 조회로 바꾼다
@@ -22,6 +23,8 @@ WEEKDAYS = ("weekday", "weekend", "mon", "tue", "wed", "thu", "fri", "sat", "sun
 TIME_SLOTS = ("dawn", "morning", "lunch", "afternoon", "evening", "night", "late_night", "after_work")
 MEASURES = ("sum", "count", "avg", "daily_avg", "max")
 GROUPS = ("category", "merchant", "weekday", "time_slot", "month")
+SAME_DAYS = re.compile(r"(?<![가-힣])(?:지난\s*달|전월)\s*(?:같은|동일한?)\s*(?:기간|(?:날짜|일자|날)\s*까지)")
+OTHER_PERIOD = re.compile(r"(?:지지난\s*달|지난\s*달|전월|(?:지난|저번|이번)\s*주|지난\s*해|작년|전년|올해|\d+\s*(?:월|일|주|개월))")
 
 
 class ReadFailed(Exception):
@@ -243,11 +246,13 @@ pending.asking=analysis_detail이면 생활 패턴 확인 질문이다. 선택�
    이것은 지출 증감·지출 구성의 원인 질문이 아니다. 별도로 말하지 않은 지난달 비교나 소비 조회 조건을 만들지 않는다.
 1. 이번 문장에서 말한 조건만 채운다. 기본값·지원 여부·조건 충돌·날짜 계산은 서버가 처리한다. 말하지 않은 칸은 null/빈 목록.
 2. previous는 refers_to 판단에만 쓴다. 후속 질문도 이번에 바꾼 조건만 적고 이전 조건을 복사하지 않는다.
+   직전 비교에서 "그중에 쇼핑만 따지면?"처럼 항목만 좁히면 refers_to=previous, categories=[FASHION_SHOPPING]으로 두고 target·compare·period를 비운다.
 3. 기간·비교·개월·전체·카테고리처럼 실제로 따로 말한 조건은 모두 보존한다. 전체/생활비는 카테고리가 아니라 전체 범위다.
    생활비 잔액 요청은 target=budget_left, categories=[]이며 unknown/detail로 만들지 않는다.
    예산을 넘은(초과한) 카테고리가 무엇인지 · 있는지 묻는 말도 예산 조회다(예산을 바꾸는 요청이 아니다)
    → mine=true, target=budget_left, compare="category", categories=[] ("초과한 카테고리 뭐야?", "예산 넘은 항목 있어?").
 4. 지난달보다/대비 또는 지난달과·이랑·하고 비교·분석하는 요청은 현재와 지난달의 비교다 → compare=prev_month, period=null.
+   "지난달 같은 날까지랑 비교", "지난 달 같은 기간 대비", "전월 동일 날짜까지"처럼 이번 달의 경과일을 지난달에 맞추는 비교도 compare=prev_month, period=null이다.
    비교 기준만 말한 요청도 동일하다. 비교·증감 조회 자체는 이유 질문이 아니므로 explain=null, hypothesis=null이다.
    금액이 많은지·적은지·괜찮은지 평가만 덧붙여 물어도 이유 질문이 아니다(explain=null).
    지난달이 아닌 특정 달과 견주면 compare=month, 견줄 달을 compare_month에 적는다. 견주는 쪽이 특정 달이면 period=month와 month에, 이번 달이거나 말하지 않았으면 period=null.
@@ -335,4 +340,14 @@ def read(text, pending, complete, previous=None, chosen=False):
         data = json.loads(complete(PROMPT, json.dumps(payload, ensure_ascii=False)))
     except Exception as error:  # SDK · 호출 오류 종류를 모른다
         raise ReadFailed("call_limit" if getattr(error, "kind", None) == "call_limit" else "call") from error
-    return parse(data)
+    result = parse(data)
+    if (result.mine and result.compare == "other_period" and result.target != "budget_left"
+            and result.period in (None, "this_month") and result.period_said
+            and all(value is None for value in (result.month, result.months, result.compare_month, result.date_from, result.date_to))
+            and not result.include_current
+            and SAME_DAYS.match(result.period_said)):
+        match = SAME_DAYS.search(text)
+        if match and not OTHER_PERIOD.search(text[:match.start()] + " " + text[match.end():]):
+            # The model can mistake an aligned month comparison for an unsupported period.
+            return replace(result, compare="prev_month", period=None)
+    return result

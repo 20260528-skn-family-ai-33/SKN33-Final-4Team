@@ -36,7 +36,7 @@ class Command(BaseCommand):
             if not targets:
                 empty += 1
                 continue
-            task, created = tasks.start_or_reuse(user, TASK_TYPE, target_hash(targets), key_prefix="finance_sync_auto")
+            task, created = tasks.start_or_reuse(user, TASK_TYPE, target_hash(user, targets), key_prefix="finance_sync_auto")
             if not created:
                 busy += 1
                 continue

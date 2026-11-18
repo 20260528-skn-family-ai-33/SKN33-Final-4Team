@@ -121,7 +121,7 @@ function OnboardingView() {
         const ids = candidates.filter((c) => answers[c.savingId] === answer).map((c) => c.savingId)
         if (ids.length) await apiSend(`/api/budgets/savings/${path}/`, 'POST', { savingIds: ids }, { requestKey: newRequestKey() })
       }
-      navigate(PATHS.loanCheck)  // 대출 확인 후 지킬 돈 화면에서 서버의 savingsMin 을 다시 읽는다
+      navigate(PATHS.protect)  // 11/18: 대출 확인은 계좌 연결 단계로 옮겼다. 지킬 돈 화면이 서버의 savingsMin 을 다시 읽는다
     } catch (err) {
       setError(err.fields?.savingIds?.[0] ?? err.message)
       reload()  // 먼저 성공한 쪽은 저장돼 있으니 목록을 새로 받는다

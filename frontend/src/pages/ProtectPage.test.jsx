@@ -229,3 +229,10 @@ it('마이에서 생활비를 고치면 다시 추천 창을 연다 (11/13)', as
   expect(document.querySelector('[aria-label="예산 다시 추천"]')).not.toBeNull()
   expect(fetch.mock.calls.some(([, o]) => o?.method === 'PUT')).toBe(false)
 })
+
+it('월 쿠션 적립금 옆 [!]을 누르면 머니쿠션 소개 창이 열린다 (11/18)', async () => {
+  await render()
+  await act(async () => host.querySelector('[aria-label="머니쿠션 안내 보기"]').click())
+  expect(document.body.textContent).toContain('머니쿠션이란?')
+  expect(document.body.textContent).toContain('비상금')
+})

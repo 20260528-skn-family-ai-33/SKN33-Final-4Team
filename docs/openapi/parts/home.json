@@ -8,7 +8,7 @@
           "홈"
         ],
         "x-source": "docs/api/home.md",
-        "description": "기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정. budget은 이번 주기 approved 예산이 있을 때만 채우며(초안 제외) 계산은 GET /api/budgets/와 같습니다. 쿠션 계산은 아직 없습니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.",
+        "description": "기본 범위: 급여 주기·입출금 잔액·확인할 항목·납부 예정·머니쿠션 알림. budget은 이번 주기 approved 예산이 있을 때만 채우며(초안 제외) 계산은 GET /api/budgets/와 같습니다.\n\n급여 주기는 설정한 급여일에 바뀌며 없는 날짜는 말일입니다. 입금은 월 실수령액의 80% 이상을 기준으로 찾되 내 계좌 이체는 제외합니다. 이번 월급날 7일 전부터 다음 월급날 8일 전까지의 첫 입금을 이번 월급으로, 다음 월급날 7일 전부터의 입금을 미리 온 다음 월급으로 표시합니다.\n\n잔액은 선택된 입출금 계좌(저축 용도 포함)를 합산합니다. disconnected는 제외하며 relogin은 마지막 잔액과 시각을 유지합니다. 부분 조회 실패를 0원으로 대체하지 않습니다.\n\nmustPay는 이번 주기 및 바로 지난 주기의 미납 회차를 dueDate 오름차순·amount 내림차순으로 제공합니다. 출금일 +3일 이후 미확인 건은 needs_review. 카드 고정지출은 카드 청구서에 포함되어 중복 표시하지 않습니다. 출금일 모르는 고정지출은 needsPaydayCount로 안내합니다. 급여일 미입력 시 period=null, mustPay=[].\n\n홈 조회 시 필요한 현재 회차 납부 예정을 멱등하게 생성합니다. 온보딩 이동은 프런트가 auth/me의 onboardingCompleted로 판단하며 이 API 자체는 온보딩 미완료를 막지 않습니다.",
         "responses": {
           "200": {
             "description": "정상 처리",
@@ -42,6 +42,10 @@
                         "asOf": "2026-10-21T09:30:00+09:00"
                       },
                       "pendingCount": 4,
+                      "cushionNotices": {
+                        "depositDue": false,
+                        "balanceLow": false
+                      },
                       "needsPaydayCount": 1,
                       "mustPay": [
                         {
@@ -61,6 +65,28 @@
                           "userChecked": false
                         }
                       ],
+                      "upcoming": {
+                        "total": 700000,
+                        "shortfall": 0,
+                        "items": [
+                          {
+                            "dueId": "5b0d6c1e-8a2f-4f3b-9c7d-2e1a4b6c8d90",
+                            "type": "recurring",
+                            "sourceId": "a7c1d0e2-3b4f-4c68-9a12-8f30d5e1b6c4",
+                            "name": "월세",
+                            "dueDate": "2026-10-24",
+                            "amount": 700000,
+                            "paymentState": "unpaid",
+                            "paymentAccount": {
+                              "accountId": "27d3dbb3-1ee8-43b7-9134-9e8ff01991d4",
+                              "displayName": "국민 급여통장 · ****5678",
+                              "status": "connected"
+                            },
+                            "isEstimated": false,
+                            "userChecked": false
+                          }
+                        ]
+                      },
                       "budget": null
                     }
                   },
@@ -76,8 +102,17 @@
                         "asOf": null
                       },
                       "pendingCount": 0,
+                      "cushionNotices": {
+                        "depositDue": false,
+                        "balanceLow": false
+                      },
                       "needsPaydayCount": 0,
                       "mustPay": [],
+                      "upcoming": {
+                        "total": 0,
+                        "shortfall": null,
+                        "items": []
+                      },
                       "budget": null
                     }
                   }
@@ -262,6 +297,23 @@
             "minimum": 0,
             "description": "전체 기간 UNCLASSIFIED 소비 거래 수. 거래 목록의 summary.needsReviewCount와 같다."
           },
+          "cushionNotices": {
+            "type": "object",
+            "properties": {
+              "depositDue": {
+                "type": "boolean",
+                "description": "설정한 월급날의 다음 날이면 참"
+              },
+              "balanceLow": {
+                "type": "boolean",
+                "description": "연결된 원화 통장의 잔액을 모두 확인할 수 있고 합계가 머니쿠션 추정액보다 적을 때 참"
+              }
+            },
+            "required": [
+              "depositDue",
+              "balanceLow"
+            ]
+          },
           "needsPaydayCount": {
             "type": "integer",
             "minimum": 0,
@@ -276,7 +328,7 @@
           "budget": {
             "type": "object",
             "nullable": true,
-            "description": "이번 주기 승인 예산 (없으면 null). docs/api/home.md ⑤",
+            "description": "이번 주기 승인 예산. 수입·고정비·보호 조건을 충족하면 평소 예산의 배정액을 자동으로 이어 쓴다. 없으면 null",
             "properties": {
               "budgetId": {
                 "type": "string",
@@ -292,6 +344,10 @@
               "livingLeft": {
                 "type": "integer",
                 "description": "남은 생활비 (0 미만 없음)"
+              },
+              "livingSpent": {
+                "type": "integer",
+                "description": "11/17. 이번 주기 생활비 사용액 (생활비를 넘어도 그대로)"
               },
               "livingPct": {
                 "type": "integer",
@@ -316,7 +372,7 @@
               },
               "bigSpendings": {
                 "type": "array",
-                "description": "생활비 예산 대비 큰 지출 (홈 알림 줄, 돌발 지출 감지 1단계). 이번 주기에 한 건이 livingBudget의 10% 이상인 생활비 쪽 소비 · 남에게 보낸 이체. 최신순",
+                "description": "실제 사용액이 생활비 예산 이내인 상태에서, 주기 말 예상 지출을 예산 이내에서 5% 이상 초과로 바꾼 이번 주기 생활비 결제. 해당 결제를 뺀 하루 평균을 기준으로 예측한 뒤 순 결제액을 한 번 더한다. 최신순",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -340,14 +396,13 @@
                     "kind": {
                       "type": "string",
                       "enum": [
-                        "spending",
-                        "transfer"
+                        "spending"
                       ]
                     },
                     "category": {
                       "type": "string",
                       "nullable": true,
-                      "description": "소비의 카테고리 코드. 이체는 null"
+                      "description": "소비의 카테고리 코드"
                     },
                     "categoryName": {
                       "type": "string",
@@ -439,6 +494,91 @@
                   "total",
                   "categories"
                 ]
+              },
+              "week": {
+                "type": "object",
+                "description": "11/17. 이번 주(월요일 시작) 몫. budget = 이번 주 전까지 쓰고 남은 생활비 ÷ 남은 주 수(올림, 최소 1)",
+                "properties": {
+                  "budget": {
+                    "type": "integer"
+                  },
+                  "spent": {
+                    "type": "integer"
+                  },
+                  "left": {
+                    "type": "integer",
+                    "description": "max(budget − spent, 0)"
+                  }
+                },
+                "required": [
+                  "budget",
+                  "spent",
+                  "left"
+                ]
+              },
+              "forecast": {
+                "type": "object",
+                "nullable": true,
+                "description": "11/17. 지금까지 하루 평균 × 주기 전체 일수. 주기 첫날 null",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "gap": {
+                    "type": "integer",
+                    "description": "livingBudget − total. 음수면 모자람"
+                  }
+                },
+                "required": [
+                  "total",
+                  "gap"
+                ]
+              },
+              "topCategories": {
+                "type": "array",
+                "description": "11/17. 이번 주기 생활비 지출 상위 3개 (지출 0원 제외)",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "category": {
+                      "type": "string"
+                    },
+                    "categoryName": {
+                      "type": "string"
+                    },
+                    "spent": {
+                      "type": "integer"
+                    },
+                    "allocated": {
+                      "type": "integer"
+                    },
+                    "over": {
+                      "type": "boolean",
+                      "description": "overCategories 와 같은 기준"
+                    }
+                  },
+                  "required": [
+                    "category",
+                    "categoryName",
+                    "spent",
+                    "allocated",
+                    "over"
+                  ]
+                }
+              },
+              "vsPrev": {
+                "type": "object",
+                "nullable": true,
+                "description": "11/17. 지난 주기 같은 기간 대비. 지난 주기 거래가 없으면 null",
+                "properties": {
+                  "diff": {
+                    "type": "integer",
+                    "description": "이번 − 지난. 양수면 더 씀"
+                  }
+                },
+                "required": [
+                  "diff"
+                ]
               }
             },
             "required": [
@@ -446,6 +586,7 @@
               "versionNo",
               "livingBudget",
               "livingLeft",
+              "livingSpent",
               "livingPct",
               "spare",
               "daily",
@@ -453,7 +594,36 @@
               "outOfBudget",
               "outOfBudgetAllocated",
               "overCategories",
-              "bigSpendings"
+              "bigSpendings",
+              "week",
+              "forecast",
+              "topCategories",
+              "vsPrev"
+            ]
+          },
+          "upcoming": {
+            "type": "object",
+            "description": "11/17. mustPay 중 오늘 ~ 7일 뒤에 나갈 돈",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "shortfall": {
+                "type": "integer",
+                "nullable": true,
+                "description": "total − balance.total (모자랄 때만, 아니면 0). 잔액을 모르면 null"
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/HomePaymentDue"
+                }
+              }
+            },
+            "required": [
+              "total",
+              "shortfall",
+              "items"
             ]
           }
         },
@@ -461,8 +631,10 @@
           "period",
           "balance",
           "pendingCount",
+          "cushionNotices",
           "needsPaydayCount",
           "mustPay",
+          "upcoming",
           "budget"
         ]
       },

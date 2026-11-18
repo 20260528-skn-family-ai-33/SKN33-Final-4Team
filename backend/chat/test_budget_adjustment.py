@@ -60,6 +60,90 @@ class BudgetAdjustmentApiTest(TestCase):
         reply = self.say(cid, choice={"value": "plan_living", "turn": content["turn"]})
         return cid, reply["messages"][-1]["content"]
 
+    def adjustment_history(self, count, *, cycle=None, approved=True):
+        rows = []
+        for index in range(count):
+            task = AsyncTask.objects.create(user=self.user, request_key=str(uuid4()),
+                task_type='budget_adjust', status='succeeded', input_hash='history')
+            rows.append(Budget.objects.create(user=self.user, cycle=cycle or self.base.cycle,
+                version_no=Budget.objects.filter(user=self.user, cycle=cycle or self.base.cycle).count() + 1,
+                status='superseded' if approved else 'validated', funding_amount=3000000,
+                approved_at=timezone.now() if approved else None, task=task, base_budget=self.base))
+        return rows
+
+    def test_frequency_confirmation_counts_only_saved_adjustments_and_does_not_change_budget(self):
+        self.adjustment_history(2, approved=False)
+        recovery, = self.adjustment_history(1)
+        recovery.validation_summary = {'design_recovery': {}}
+        recovery.save(update_fields=['validation_summary'])
+        content = self.say(choice='budget')['messages'][-1]['content']
+        self.assertNotEqual(content['budgetAdjustment']['phase'], 'adjustment_frequency')
+        self.adjustment_history(1)
+        content = self.say(choice='budget')['messages'][-1]['content']
+        self.assertEqual(content['budgetAdjustment']['phase'], 'adjustment_frequency')
+        self.assertIn('1회', content['text'])
+        self.assertEqual({row['value'] for row in content['choices']}, {'continue_adjustment', 'keep_budget'})
+        self.base.refresh_from_db()
+        self.assertEqual(self.base.status, 'approved')
+
+    def test_frequency_continue_replays_original_request_once_and_creates_preview(self):
+        cid = self.say(choice='budget')['conversationId']
+        self.adjustment_history(1)
+        content = self.say(cid, text='식비를 1만 5천 원 늘려줘')
+        warning = content['messages'][-1]['content']
+        self.assertEqual(warning['budgetAdjustment']['phase'], 'adjustment_frequency')
+        count = Budget.objects.count()
+        comparison = self.say(cid, choice={'value': 'continue_adjustment', 'turn': warning['turn']})['messages'][-1]['content']
+        self.assertEqual(comparison['budgetAdjustment']['comparison']['basisAmount'], 15000)
+        self.assertEqual(Budget.objects.count(), count)
+        selected = self.say(cid, choice={'value': 'plan_living', 'turn': comparison['turn']})['messages'][-1]['content']
+        self.assertEqual(selected['budgetAdjustment']['proposal']['allocations']['FOOD'], 415000)
+        self.assertEqual(Budget.objects.count(), count + 1)
+
+    def test_frequency_keep_budget_ends_without_creating_a_proposal(self):
+        self.adjustment_history(1)
+        response = self.say(choice='budget')
+        warning = response['messages'][-1]['content']
+        count = Budget.objects.count()
+        kept = self.say(response['conversationId'], choice={'value': 'keep_budget', 'turn': warning['turn']})['messages'][-1]['content']
+        self.assertEqual(kept['budgetAdjustment']['status'], 'ended')
+        self.assertIn('지금 예산을 유지', kept['text'])
+        self.assertEqual(Budget.objects.count(), count)
+
+    def test_frequency_previous_cycle_and_future_reservations_are_not_counted(self):
+        from budgets.models import BudgetAdjustmentSchedule
+        old = BudgetCycle.objects.create(user=self.user, starts_on=date(2025, 1, 1), ends_before=date(2025, 2, 1))
+        self.adjustment_history(3, cycle=old)
+        for row in self.adjustment_history(3):
+            BudgetAdjustmentSchedule.objects.create(user=self.user, proposal=row, effective_on=date(2027, 1, 1),
+                status='replaced', settings={}, before_settings={})
+        content = self.say(choice='budget')['messages'][-1]['content']
+        self.assertNotEqual(content['budgetAdjustment']['phase'], 'adjustment_frequency')
+
+    def test_frequency_natural_language_choice_preserves_original_request(self):
+        from unittest.mock import Mock
+        from budgets.test_adjustment_core import Store, reading
+        from chat.budget_adjustment import frequency_check
+        original = {'mode': 'continue', 'text': '식비를 5만원 늘려줘'}
+        for choice in ('continue_adjustment', 'keep_budget'):
+            with self.subTest(choice=choice):
+                store = Store()
+                state = {'pending': {'kind': 'adjustment_frequency', 'line': '다시 조정할까요?',
+                    'choices': [('continue_adjustment', '계속 조정하기'), ('keep_budget', '지금 예산 유지하기')],
+                    'basis': [self.ctx['cycle_id'], 3], 'request': original}}
+                complete = Mock(return_value=json.dumps(reading(selected_choice=choice)))
+                result, resumed = frequency_check(self.user, store, 'talk', state,
+                    {'text': '응 그래도 계속할래' if choice == 'continue_adjustment' else '아냐 지금대로 둘래'},
+                    Mock(side_effect=AssertionError('선택 확인 중에는 예산을 재조회하지 않는다')), complete)
+                complete.assert_called_once()
+                if choice == 'continue_adjustment':
+                    self.assertIsNone(result)
+                    self.assertEqual(resumed, original)
+                    self.assertEqual(store.state['frequency_acknowledged'], [self.ctx['cycle_id'], 3])
+                else:
+                    self.assertEqual(result['status'], 'ended')
+                    self.assertFalse(store.state)
+
     def test_salary_handoff_keeps_preview_and_restores_it_without_saving(self):
         cid, preview = self.ready()
         proposal_id = preview['budgetAdjustment']['proposal']['proposalId']

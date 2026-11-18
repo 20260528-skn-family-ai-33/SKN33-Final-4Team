@@ -30,6 +30,21 @@ def projection(days=28):
 
 
 class InsightTest(SimpleTestCase):
+    def test_category_overview_compares_confirmed_amounts_on_the_first_card(self):
+        self.current = [transaction(300_000, "FASHION_SHOPPING")]
+        self.previous = [transaction(160_000, "FASHION_SHOPPING", month=10)]
+        request = decision(categories=("FASHION_SHOPPING",))
+        reply, reason = insight.answer(object(), request, TODAY, FakeReading(), question="쇼핑 카테고리 분석해줘")
+        self.assertIsNone(reason)
+        chart = reply["view"][2]
+        self.assertEqual(chart["presentation"], "period_comparison")
+        self.assertEqual([(r["amount"], r["note"]) for r in chart["rows"]],
+                         [(300_000, "11월 1일~12일"), (160_000, "10월 1일~12일")])
+
+        self.cover.return_value = {"state": "partial"}
+        reply, _ = insight.answer(object(), request, TODAY, FakeReading(), question="쇼핑 카테고리 분석해줘")
+        self.assertFalse(any(b.get("presentation") == "period_comparison" for b in reply["view"]))
+
     def test_one_saved_transaction_still_produces_observed_analysis(self):
         self.cover.return_value = {'state': 'partial'}
         self.current, self.previous = [transaction(13000, day=10)], []

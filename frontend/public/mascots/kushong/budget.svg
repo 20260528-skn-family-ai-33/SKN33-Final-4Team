@@ -1,0 +1,80 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="budget-title budget-desc">
+  <title id="budget-title">쿠숑이 · 예산</title>
+  <desc id="budget-desc">승인된 그림을 등비 배치한 서비스용 256px 벡터 이미지.</desc>
+  <g transform="translate(0 -19)">
+    <g transform="translate(41.6 31.28) scale(0.48)" id="budget-art">
+      <g>
+        <polygon points="104,350 256,350 292,402 68,402" fill="#DDF58C" stroke="#DDF58C" stroke-width="24" stroke-linejoin="round" />
+        <polygon points="104,350 256,350 292,402 68,402" fill="#182235" stroke="#182235" stroke-width="24" stroke-linejoin="round" opacity="0.26" />
+        <polygon points="104,338 256,338 292,390 68,390" fill="#DDF58C" stroke="#DDF58C" stroke-width="24" stroke-linejoin="round" />
+        <polygon points="112,345 248,345 284,391 76,391" fill="none" stroke="#182235" stroke-opacity="0.32" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 9" />
+      </g>
+      <g transform="">
+        <g>
+          <g>
+            <circle cx="252" cy="318" r="17" fill="#F6B55F" />
+            <path d="M252 308 a10 10 0 1 1 -9.5 7" fill="none" stroke="#E88F3C" stroke-width="3.5" stroke-linecap="round" />
+          </g>
+          <g id="back-carried-coin">
+            <circle cx="218" cy="294" r="32" fill="#FFC738" stroke="#E79F12" stroke-width="2.5" />
+            <circle cx="218" cy="294" r="25.5" fill="none" stroke="#E79F12" stroke-width="2" />
+          </g>
+          <path d="M132 262 C120 300 112 340 124 372 Q180 392 236 372 C248 340 240 300 228 262 Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" />
+          <ellipse cx="180" cy="272" rx="40" ry="24" fill="#F1E3BC" />
+          <g>
+            <path d="M126 344C117 346 108 349 104 355C99 361 100 372 107 378C115 385 129 387 140 382C148 378 153 372 150 364C148 356 137 345 126 344Z" fill="#FFF8E3" />
+            <path d="M115 349C107 352 101 358 101 365C100 373 108 381 118 383C131 387 146 381 150 373C153 366 148 358 143 353" fill="none" stroke="#E6D6A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+          <g transform="translate(360 0) scale(-1 1)">
+            <path d="M126 344C117 346 108 349 104 355C99 361 100 372 107 378C115 385 129 387 140 382C148 378 153 372 150 364C148 356 137 345 126 344Z" fill="#FFF8E3" />
+            <path d="M115 349C107 352 101 358 101 365C100 373 108 381 118 383C131 387 146 381 150 373C153 366 148 358 143 353" fill="none" stroke="#E6D6A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+        </g>
+        <g id="belly-harness">
+          <path d="M124 320C129 333 153 340 180 340C207 340 231 333 236 320" fill="none" stroke="#D2452F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+        </g>
+        <g>
+          <g transform="translate(238 258) rotate(7)">
+            <path d="M0 0 h64 v104 l-8 -9 l-8 9 l-8 -9 l-8 9 l-8 -9 l-8 9 l-8 -9 l-8 9 Z" fill="#FFFFFF" stroke="#2655DB" stroke-width="3.5" stroke-linejoin="round" />
+            <path d="M14 22 h36 M14 39 h36 M14 56 h22" stroke="#9FB3D9" stroke-width="4.5" stroke-linecap="round" />
+            <path d="m 25.981006,90 -1.404,-8.346 h -1.898 V 79.73 h 1.586 l -1.352,-8.294 h 2.938 l 1.274,8.294 h 1.794 l 1.43,-8.294 h 3.302 l 1.404,8.294 h 1.82 l 1.248,-8.294 h 2.938 l -1.352,8.294 h 1.612 v 1.924 h -1.924 l -1.404,8.346 h -3.64 l -1.56,-8.346 h -1.612 l -1.534,8.346 z m 5.434,-10.27 h 1.144 l -0.572,-4.264 z m -3.458,6.448 0.624,-4.524 h -1.17 z m 8.086,0 0.546,-4.524 h -1.196 z" id="fixed-currency-budget" style="fill:#2655db" aria-label="₩" />
+          </g>
+        </g>
+        <g>
+          <g>
+            <path d="M151 306C148 319 149 336 149 352C149 360 144 366 145 374C146 383 154 388 163 388C173 388 179 383 179 375C179 367 174 362 175 351C176 334 176 318 170 308Z" fill="#FFF8E3" />
+            <path d="M151 318C149 332 151 346 149 357C148 365 144 369 145 375C146 383 154 388 163 388C172 388 179 383 179 375C179 366 174 363 175 351C176 340 177 328 174 318" fill="none" stroke="#E6D6A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+          <g transform="translate(238 258) rotate(7)" data-anatomy="right-receipt-grip">
+            <path d="M64 33C70 31 76 34 78 40C81 44 80 48 80 52C80 59 75 64 68 65C61 66 55 62 54 56C53 51 56 47 60 47C57 42 58 36 64 33Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+            <path d="M60 47C63 45 67 46 68 49C68 52 65 54 61 54" fill="none" stroke="#E6D6A8" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" />
+          </g>
+        </g>
+        <g transform="">
+          <path d="M142 60 L51 30 Q34 24 38.5 41.5 L72 172 Z" fill="#F6B55F" />
+          <path d="M218 60 L309 30 Q326 24 321.5 41.5 L288 172 Z" fill="#F6B55F" />
+          <path d="M180 50 C243 50 294 101 294 164 C294 230 224 290 180 290 C136 290 66 230 66 164 C66 101 117 50 180 50 Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" />
+          <ellipse cx="146" cy="148" rx="18" ry="10" fill="#E88F3C" transform="rotate(24 146 148)" />
+          <ellipse cx="214" cy="148" rx="18" ry="10" fill="#E88F3C" transform="rotate(-24 214 148)" />
+          <g>
+            <circle cx="119" cy="204" r="27" fill="#1B2230" />
+            <circle cx="241" cy="204" r="27" fill="#1B2230" />
+            <circle cx="110" cy="194" r="6.5" fill="#fff" />
+            <circle cx="250" cy="194" r="6.5" fill="#fff" />
+          </g>
+          <ellipse cx="180" cy="262" rx="14" ry="9.5" fill="#33261F" />
+          <path d="M160 280 Q180 298 200 280" fill="none" stroke="#33261F" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+          <g>
+            <g fill="#FFFFFF" fill-opacity="0.18" stroke="#3A2A20" stroke-width="6">
+              <circle cx="119" cy="204" r="38" />
+              <circle cx="241" cy="204" r="38" />
+              <path d="M157 200 Q180 188 203 200" fill="none" />
+              <path d="M81 196 L64 184 M279 196 L296 184" fill="none" stroke-linecap="round" />
+            </g>
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

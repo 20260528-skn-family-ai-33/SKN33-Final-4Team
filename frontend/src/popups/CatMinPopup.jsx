@@ -1,6 +1,6 @@
 // 팝업: 카테고리 최소 금액 — 내 정보 입력의 "카테고리 최소 금액 설정" (2026-10-21)
 // 원하는 카테고리만 금액을 넣는다. 비워 두면 설정 안 함 (우선순위와 상관없이 어느 카테고리든 가능)
-// 자물쇠와 다름: 자물쇠 = 금액 그대로 고정 / 최소 금액 = 이 금액 밑으로만 안 내려감(올리는 건 가능)
+// 최소 금액 = 이 금액 밑으로만 안 내려감(올리는 건 가능). 자물쇠 기능은 11/18에 뺐다
 // 한 번에 5개씩 보여 주고 ‹ › 로 넘긴다 (목록이 길어서)
 import { useState } from 'react'
 import Popup from './Popup.jsx'
@@ -64,7 +64,7 @@ export default function CatMinPopup({ value = {}, onSave }) {
           <button type="button" aria-label="다음 카테고리" disabled={page === PAGES - 1} onClick={() => setPage(page + 1)}>›</button>
         </div>
         <p className="mc-note" style={{ paddingBottom: 0 }}>
-          금액을 그대로 고정하고 싶다면 추천 예산에서 <b>자물쇠</b>를 걸어 주세요. 최소 금액은 더 늘어날 수는 있어요.
+          이 금액 밑으로는 줄이지 않아요. 더 늘어날 수는 있어요.
         </p>
         <div className="mc-foot">
           <button className="mc-primary" form="mc-pop-form" type="submit">

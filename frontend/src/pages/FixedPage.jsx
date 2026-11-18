@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
 import StepBar from '../components/StepBar.jsx'
-import Icon from '../components/Icon.jsx'
+import KushongRunner from '../components/KushongRunner.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { usePopup } from '../popups/context.js'
 import FixedPopup from '../popups/FixedPopup.jsx'
@@ -268,7 +268,7 @@ function OnboardingView() {
       <h1>매달 이 돈이 나가나요?</h1>
       {loading && (
         <div className="mc-card mc-loading-card" role="status">
-          <span className="mc-conn-busy"><Icon name="Loader" /></span>
+          <KushongRunner size={48} />
           <span>
             <strong>{loading.institutions.length ? loading.institutions.join(' · ') : '카드'} 내역 불러오는 중</strong>
             <small className="mc-muted">끝나면 카드 고정지출도 찾아 드려요</small>

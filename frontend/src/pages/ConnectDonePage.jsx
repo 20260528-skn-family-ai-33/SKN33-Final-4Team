@@ -1,10 +1,12 @@
 // 계좌 연결 5: 연결 결과
 // 연결 목록(GET /api/finance/connections/) · 고른 계좌(GET /api/finance/connect/accounts/)를 그대로 보여 준다 (11/03 S2)
 // [다시 불러오기] = POST /api/finance/sync/ → 작업 결과의 기관별 성공 · 실패를 그대로 보여 준다 (실패를 0건으로 보이지 않기)
-// [다음] = 월급 입력. 대출 확인·직접 등록은 저축 확인 다음에 진행한다.
+// [다음] = 월급 입력. 대출 확인 · 직접 등록은 바로 앞 대출 정보 연결 단계에서 마쳤다 (11/18)
 import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import Layout from '../components/Layout.jsx'
+import Mascot from '../components/Mascot.jsx'
+import StepBar from '../components/StepBar.jsx'
 import InstRow from '../components/InstRow.jsx'
 import ApiStatus from '../components/ApiStatus.jsx'
 import { won } from '../utils/money.js'
@@ -39,9 +41,11 @@ export default function ConnectDonePage() {
 
   return (
     <Layout title="계좌 연결" showBack foot={<button type="button" className="mc-primary" onClick={() => navigate(PATHS.salary)}>다음</button>}>
-      <div className="mc-eyebrow">계좌 연결</div>
-      <h1>연결을 마쳤어요</h1>
-      <p className="mc-muted">은행 {banks.length}곳 · 고른 계좌 {selected.length}개 · 카드사 {cards.length}곳 · 카드 {cardCount}장이 연결돼 있어요.</p>
+      <StepBar step={2} />
+      <div className="mc-o2-line">
+        <Mascot mood="fun" size={64} />
+        <p className="mc-o2-bubble"><b>연결을 마쳤어요!</b><br />은행 {banks.length}곳 · 계좌 {selected.length}개 · 카드사 {cards.length}곳 · 카드 {cardCount}장</p>
+      </div>
       <div className="mc-card">
         <h2>고른 계좌</h2>
         {selected.length === 0 && <p className="mc-muted">고른 계좌가 없어요.</p>}

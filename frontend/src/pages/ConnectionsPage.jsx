@@ -209,14 +209,14 @@ function Connections({ conns, accts, cards, loans, reviews, fixed, savings, relo
         ))}
         <div className="mc-inline mc-conn-foot">
           {cards.data && <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectCards)}>카드 선택 바꾸기</button>}
-          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>+ 카드사 추가</button>
+          <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectCard, { state: { from: 'manage' } })}>+ 카드사 추가</button>
         </div>
       </div>
 
       <div className="mc-card">
         <div className="mc-row"><h2>대출{loans.data && ` ${loans.data.items.length}건`}</h2><span className="mc-hint">상환 중 · 조회 전용</span></div>
         <ListStatus q={loans} what="대출" />
-        {loans.data?.hasInquiryConsent === false && <p className="mc-note">직접 등록한 대출만 표시하고 있어요. 기관 대출도 불러오려면 <button type="button" className="mc-link" onClick={() => navigate(PATHS.connect)}>대출 조회에 동의해 주세요</button>.</p>}
+        {loans.data?.hasInquiryConsent === false && <p className="mc-note">직접 등록한 대출만 표시하고 있어요. 기관 대출도 불러오려면 <button type="button" className="mc-link" onClick={() => navigate(PATHS.connectLoan, { state: { from: 'manage' } })}>대출 조회에 동의해 주세요</button>.</p>}
         {items(loans).map((l) => (
           <button type="button" className="mc-listrow" key={l.loanId} onClick={() => navigate(PATHS.loanCheck, { state: { from: 'manage', loanId: l.loanId } })}>
             <span className="mc-tile"><Icon name="Landmark" /></span>

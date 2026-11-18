@@ -64,7 +64,7 @@
 | 37 | | 지킬 돈 저장 | `PUT /api/budgets/protect/` | budgets.md | 나은 | 10/28 구현 |
 | 38 | | 추천 예산 만들기 | `POST /api/budgets/recommend/` | budgets.md | 나은 | 10/28 임시 엔진 구현 |
 | 39 | | 카테고리 예산 보기 | `GET /api/budgets/` | budgets.md | 나은 | 10/28 구현 |
-| 40 | | 금액 고정 · 해제 | `PATCH /api/budgets/<id>/categories/<code>/` | budgets.md | 나은 | 10/28 구현 |
+| 40 | | ~~금액 고정 · 해제~~ | ~~PATCH /api/budgets/<id>/categories/<code>/~~ | budgets.md | 나은 | 11/18 삭제 (자물쇠 기능 제거) |
 | 41 | | 예산 승인 | `POST /api/budgets/<id>/approve/` | budgets.md | 나은 | 10/28 구현 |
 | 42 | 금융 연결 | 금융기관 인증 · 새 연결 | `POST /api/finance/connections/` | finance-connect.md | 혜리 | ✅ PR #53 구현 |
 | 43 | | 금융 정보 다시 불러오기 | `POST /api/finance/sync/` | finance-connect.md | 혜리 | ✅ PR #53 구현 |

@@ -24,7 +24,7 @@ export default function CardBillPopup({ billId, onSaved }) {
       <h2>카드 청구서 상세</h2>
       {error ? <>
         <p className="mc-error" role="alert">{error.code === 'consent_required' ? '청구서를 보려면 카드 조회 동의가 필요해요.' : error.code === 'not_found' ? '청구서를 찾을 수 없어요. 홈에서 다시 불러온 뒤 확인해 주세요.' : error.status ? error.message : '청구서를 불러오지 못했어요. 다시 시도해 주세요.'}</p>
-        {error.code === 'consent_required' ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connect)}>연결 화면에서 동의하기</button> : <button type="button" className="mc-secondary" onClick={reload}>다시 시도</button>}
+        {error.code === 'consent_required' ? <button type="button" className="mc-secondary" onClick={() => navigate(PATHS.connectCard, { state: { from: 'manage' } })}>카드 조회에 동의하기</button> : <button type="button" className="mc-secondary" onClick={reload}>다시 시도</button>}
       </> : <p role="status">청구서를 불러오는 중…</p>}
     </Popup>
   )

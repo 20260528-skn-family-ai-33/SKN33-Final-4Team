@@ -9,6 +9,59 @@ from budgets.adjustment_core.interpretation import InterpretationFailed
 from budgets.adjustment_core import followups
 
 
+def frequency_check(user, store, cid, state, request, get_context, complete):
+    from budgets.overview import confirmed_adjustments
+    from budgets.adjustment_core.agent import _ask, _result, _save, CANCEL
+    from budgets.adjustment_core.interpretation import read, dialogue_context
+
+    pending = state.get('pending') or {}
+    text = (request.get('text') or '').strip()
+    if request.get('mode') == 'cancel' or text in CANCEL:
+        return None, request
+    if pending.get('kind') == 'adjustment_frequency':
+        data = {}
+        choice = next((value for value, label in pending['choices'] if text in (value, label)), None)
+        if choice is None and text:
+            try:
+                data = read(text, complete, **dialogue_context(state))
+            except InterpretationFailed:
+                data = {}
+            if data.get('mine') is False:
+                from budgets.adjustment_core.conversation import not_mine
+                return not_mine(None, data.get('handoff'), data.get('handoff_category'), {}), request
+            choice = data.get('selected_choice')
+            if data.get('cancel'):
+                choice = 'keep_budget'
+        if choice == 'keep_budget':
+            _save(store, cid, None)
+            return _result('ended', ['지금 예산을 유지할게요.']), request
+        if choice == 'continue_adjustment':
+            state['frequency_acknowledged'] = pending['basis']
+            resumed = deepcopy(pending['request'])
+            if data.get('requests') or any(data.get(field) for field in ('sources', 'destinations', 'excluded', 'scope')):
+                resumed['text'] = '\n'.join(filter(None, [resumed.get('text'), text]))
+            state.pop('pending', None)
+            if pending.get('previous_pending'):
+                state['pending'] = pending['previous_pending']
+            _save(store, cid, state)
+            return None, resumed
+        return _result('awaiting_input', [pending['line']], choices=pending['choices'], explanation={}), request
+    if state.get('requests') or state.get('work_ref') or state.get('salary_handoff'):
+        return None, request
+    try:
+        context = get_context()
+    except ValueError:
+        return None, request
+    count = confirmed_adjustments(user).filter(cycle_id=context['cycle_id']).count()
+    basis = [context['cycle_id'], count]
+    if count < 1 or state.get('frequency_acknowledged') == basis:
+        return None, request
+    return _ask(store, cid, state, 'adjustment_frequency',
+                f'이번 급여 주기에 예산을 {count}회 조정했어요. 다시 조정할까요?',
+                [('continue_adjustment', '계속 조정하기'), ('keep_budget', '지금 예산 유지하기')],
+                explanation={}, basis=basis, request=deepcopy(request), previous_pending=deepcopy(pending)), request
+
+
 def handler(user, store, adapter, complete, conversation_key):
     def handle(request):
         if request.get("mode") != "cancel":
@@ -60,6 +113,7 @@ def handler(user, store, adapter, complete, conversation_key):
             called += 1
             return complete(system, text)
 
+        frequency_reply, request = frequency_check(user, store, conversation_key, previous, request, get_context, interpret)
         followup_answer = (followups.answer(previous, request.get('text'))
                            if request.get('mode') != 'cancel' and not previous.get('salary_handoff')
                            and task_state not in followups.TERMINAL else None)
@@ -96,7 +150,7 @@ def handler(user, store, adapter, complete, conversation_key):
                     '기존 요청을 먼저 반영하고, 남은 월급 증가분을 나눌게요. 저축할 비율을 확인해 주세요.',
                     [('salary_resume', '이전 예산 조정 이어하기')], explanation={})
                 salary_reply['continued_work'] = True
-        result = salary_reply or followup_answer or handle_expanded(
+        result = frequency_reply or salary_reply or followup_answer or handle_expanded(
             {**request, "conversation_id": conversation_key}, store=store, complete=interpret,
             get_context=get_context, simulate=adapter.simulate, propose=adapter.propose,
             task_status=adapter.task_status, cancel=adapter.cancel, allocator=adapter.allocator,
@@ -206,7 +260,7 @@ def handler(user, store, adapter, complete, conversation_key):
                 payload['increase_warning'] = warning
         if previous.get('work_ref') and not result.get('work_ref') and state.get('pending') and result['status'] == 'awaiting_input':
             result['continued_work'] = True
-        questions = [] if payload['phase'] in {'salary_handoff', 'salary_allocation_review'} else ([row for row in previous.get('followups', []) if row['question'] != request.get('text')]
+        questions = [] if payload['phase'] in {'salary_handoff', 'salary_allocation_review', 'adjustment_frequency'} else ([row for row in previous.get('followups', []) if row['question'] != request.get('text')]
                      if followup_answer is not None else followups.suggest(
                          reply, state, request.get('text'), complete if used + called < 10 else None))
         if questions:

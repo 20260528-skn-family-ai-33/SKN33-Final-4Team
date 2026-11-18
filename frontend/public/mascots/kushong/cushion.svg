@@ -1,0 +1,74 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="cushion-title cushion-desc">
+  <title id="cushion-title">쿠숑이 · 쿠션</title>
+  <desc id="cushion-desc">승인된 그림을 등비 배치한 서비스용 256px 벡터 이미지.</desc>
+  <g transform="translate(0 -31)">
+    <g transform="translate(41.6 31.28) scale(0.48)" id="cushion-art">
+      <g>
+        <polygon points="104,350 256,350 292,402 68,402" fill="#DDF58C" stroke="#DDF58C" stroke-width="24" stroke-linejoin="round" />
+        <polygon points="104,350 256,350 292,402 68,402" fill="#182235" stroke="#182235" stroke-width="24" stroke-linejoin="round" opacity="0.26" />
+        <polygon points="104,338 256,338 292,390 68,390" fill="#DDF58C" stroke="#DDF58C" stroke-width="24" stroke-linejoin="round" />
+        <polygon points="112,345 248,345 284,391 76,391" fill="none" stroke="#182235" stroke-opacity="0.32" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="0.1 9" />
+      </g>
+      <g transform="">
+        <g>
+          <g>
+            <circle cx="252" cy="318" r="17" fill="#F6B55F" />
+            <path d="M252 308 a10 10 0 1 1 -9.5 7" fill="none" stroke="#E88F3C" stroke-width="3.5" stroke-linecap="round" />
+          </g>
+          <g id="back-carried-coin">
+            <circle cx="218" cy="294" r="32" fill="#FFC738" stroke="#E79F12" stroke-width="2.5" />
+            <circle cx="218" cy="294" r="25.5" fill="none" stroke="#E79F12" stroke-width="2" />
+          </g>
+          <path d="M132 262 C120 300 112 340 124 372 Q180 392 236 372 C248 340 240 300 228 262 Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" />
+          <ellipse cx="180" cy="272" rx="40" ry="24" fill="#F1E3BC" />
+          <g>
+            <path d="M126 344C117 346 108 349 104 355C99 361 100 372 107 378C115 385 129 387 140 382C148 378 153 372 150 364C148 356 137 345 126 344Z" fill="#FFF8E3" />
+            <path d="M115 349C107 352 101 358 101 365C100 373 108 381 118 383C131 387 146 381 150 373C153 366 148 358 143 353" fill="none" stroke="#E6D6A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+          <g transform="translate(360 0) scale(-1 1)">
+            <path d="M126 344C117 346 108 349 104 355C99 361 100 372 107 378C115 385 129 387 140 382C148 378 153 372 150 364C148 356 137 345 126 344Z" fill="#FFF8E3" />
+            <path d="M115 349C107 352 101 358 101 365C100 373 108 381 118 383C131 387 146 381 150 373C153 366 148 358 143 353" fill="none" stroke="#E6D6A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+        </g>
+        <g id="belly-harness">
+          <path d="M124 320C129 333 153 340 180 340C207 340 231 333 236 320" fill="none" stroke="#D2452F" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
+        </g>
+        <g>
+          <g>
+            <circle cx="180" cy="336" r="58" fill="#FFC738" stroke="#E79F12" stroke-width="5" />
+            <circle cx="180" cy="336" r="46" fill="none" stroke="#E79F12" stroke-width="3" opacity="0.65" />
+            <path d="m 166.57301,357 -3.132,-18.618 h -4.234 v -4.292 h 3.538 l -3.016,-18.502 h 6.554 l 2.842,18.502 h 4.002 l 3.19,-18.502 h 7.366 l 3.132,18.502 h 4.06 l 2.784,-18.502 h 6.554 l -3.016,18.502 h 3.596 v 4.292 h -4.292 l -3.132,18.618 h -8.12 l -3.48,-18.618 h -3.596 l -3.422,18.618 z m 12.122,-22.91 h 2.552 l -1.276,-9.512 z m -7.714,14.384 1.392,-10.092 h -2.61 z m 18.038,0 1.218,-10.092 h -2.668 z" id="fixed-currency-cushion" style="fill:#8a5200" aria-label="₩" />
+          </g>
+        </g>
+        <g transform="">
+          <path d="M142 60 L51 30 Q34 24 38.5 41.5 L72 172 Z" fill="#F6B55F" />
+          <path d="M218 60 L309 30 Q326 24 321.5 41.5 L288 172 Z" fill="#F6B55F" />
+          <path d="M180 50 C243 50 294 101 294 164 C294 230 224 290 180 290 C136 290 66 230 66 164 C66 101 117 50 180 50 Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" />
+          <ellipse cx="146" cy="158" rx="18" ry="10" fill="#E88F3C" transform="rotate(24 146 158)" />
+          <ellipse cx="214" cy="158" rx="18" ry="10" fill="#E88F3C" transform="rotate(-24 214 158)" />
+          <g fill="#F6A5A0" opacity="0.75">
+            <ellipse cx="94" cy="246" rx="17" ry="9" />
+            <ellipse cx="266" cy="246" rx="17" ry="9" />
+          </g>
+          <g fill="none" stroke="#1B2230" stroke-width="9" stroke-linecap="round">
+            <path d="M96 212 Q119 184 142 212" />
+            <path d="M218 212 Q241 184 264 212" />
+          </g>
+          <ellipse cx="180" cy="262" rx="14" ry="9.5" fill="#33261F" />
+          <path d="M160 280 Q180 298 200 280" fill="none" stroke="#33261F" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" />
+        </g>
+        <g id="coin-gripping-hands">
+          <g data-part="coin-gripping-fist">
+            <path d="M124 305C118 305 113 309 112 315C110 321 112 330 117 334C122 338 132 338 137 335C142 332 144 326 142 321C145 317 144 311 140 309C136 306 131 306 127 308C126 306 125 305 124 305Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M138 312C133 310 129 313 129 317C129 321 135 323 141 320" fill="none" stroke="#E6D6A8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+          <g data-part="coin-gripping-fist" transform="translate(360 0) scale(-1 1)">
+            <path d="M124 305C118 305 113 309 112 315C110 321 112 330 117 334C122 338 132 338 137 335C142 332 144 326 142 321C145 317 144 311 140 309C136 306 131 306 127 308C126 306 125 305 124 305Z" fill="#FFF8E3" stroke="#E6D6A8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M138 312C133 310 129 313 129 317C129 321 135 323 141 320" fill="none" stroke="#E6D6A8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+          </g>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

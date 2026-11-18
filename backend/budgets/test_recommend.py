@@ -299,7 +299,6 @@ class RecommendAPITest(TestCase):
         other_cycle = BudgetCycle.objects.create(user=self.other, starts_on=date(2026, 10, 25), ends_before=date(2026, 11, 25))
         other = self.budget(cycle=other_cycle, user=self.other)
         self.minimum("BEAUTY", 155_000)
-        self.lock("FOOD", 333_333)
         key = str(uuid.uuid4())
         task = self.task(self.post(key))
         self.assertEqual(task.status, "succeeded")
@@ -317,9 +316,8 @@ class RecommendAPITest(TestCase):
                                        "locks_released": []})
         living = dict(budget.items.filter(bucket="living").values_list("category_id", "allocated_amount"))
         self.assertEqual(set(living), set(ALLOCATION_CODES) | {"ETC"})  # 11/3: 예산 밖 카테고리 줄은 만들지 않는다
-        self.assertEqual(sum(living.values()), 1_118_333)
-        self.assertEqual(living["FOOD"], 333_333)
-        self.assertTrue(all(amount % 5_000 == 0 for code, amount in living.items() if code != "FOOD"))
+        self.assertEqual(sum(living.values()), 1_120_000)  # 자물쇠가 없어 생활비 1,120,000원을 5천 원 단위로 모두 배분한다.
+        self.assertTrue(all(amount % 5_000 == 0 for amount in living.values()))
         self.assertGreaterEqual(living["BEAUTY"], 155_000)
         self.assertEqual(living["ETC"], 0)
         fixed = budget.items.filter(bucket="fixed")
@@ -329,7 +327,7 @@ class RecommendAPITest(TestCase):
         self.assertFalse(fixed.filter(category_detail="card_reserved").exists())
         self.assertEqual(budget.items.get(bucket="savings").allocated_amount, 610_000)
         self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 200_000)
-        self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 101_667)
+        self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 100_000)
         self.assertEqual(budget.items.exclude(user=self.user).count(), 0)
         for obj in previous + [old, other]:
             obj.refresh_from_db()
@@ -475,18 +473,9 @@ class RecommendAPITest(TestCase):
         self.assertEqual(budget.items.get(bucket="living", category_id="ETC").allocated_amount, 60_000)
         self.assertNotIn("ETC", budget.input_snapshot["engine_input"]["minimums"])
 
-    def test_etc_lock_takes_precedence_over_minimum(self):
-        self.minimum("ETC", 60_000)
-        self.lock("ETC", 90_000)
-        task = self.task(self.post())
-        budget = Budget.objects.get(task=task)
-        self.assertEqual(budget.input_snapshot["engine_input"]["target"], 1_030_000)
-        self.assertEqual(budget.items.get(bucket="living", category_id="ETC").allocated_amount, 90_000)
-        self.assertNotIn("ETC", budget.input_snapshot["engine_input"]["locks"])
-
     def test_etc_over_living_is_infeasible_without_expiring_draft(self):
-        self.budget("approved")  # 이번 주기 예산이 있어 그 화면에서 자물쇠를 풀 수 있음 → 자물쇠 유지 (P-13 ②)
-        self.lock("ETC", 1_120_001)
+        self.budget("approved")
+        self.minimum("ETC", 1_120_001)  # 11/18: 예전 ETC 자물쇠 대신 최소 금액
         draft = self.budget()
         task = self.task(self.post())
         self.assertEqual(task.status, "succeeded")
@@ -497,39 +486,14 @@ class RecommendAPITest(TestCase):
         self.assertEqual(draft.status, "draft")
         self.assertEqual(Budget.objects.count(), 2)
 
-    def test_locks_below_minimum_include_etc(self):
-        self.budget("approved")  # 자물쇠를 풀 수 있는 예산이 있음 (P-13 ②)
-        for code in ("FOOD", "ETC"):
-            minimum = self.minimum(code, 155_000)
-            lock = self.lock(code, 100_000)
-            task = self.task(self.post())
-            self.assertEqual(task.status, "succeeded")
-            self.assertEqual(task.result["outcome"], "infeasible")
-            self.assertEqual(task.result["conflicts"], [{"type": "lock_below_minimum", "category": code,
-                                                        "locked_amount": 100_000, "min_amount": 155_000}])
-            self.assertEqual(Budget.objects.count(), 1)
-            lock.delete()
-            minimum.delete()
-
-    def test_all_locks_mismatch_is_infeasible(self):
-        self.budget("approved")  # 자물쇠를 풀 수 있는 예산이 있음 (P-13 ②)
-        for code in ALLOCATION_CODES:  # 11/3: '모두 잠김'은 배분 대상 기준 (8 × 10만 − 112만)
-            self.lock(code, 100_000)
-        task = self.task(self.post())
-        self.assertEqual(task.status, "succeeded")
-        self.assertEqual(task.result["conflicts"], [{"type": "locks_mismatch_living", "difference": -320_000}])
-        self.assertEqual(Budget.objects.count(), 1)
-
-    def test_all_locks_mismatch_without_budget_releases_locks(self):
-        # 이번 주기 예산이 없으면 자물쇠를 풀 곳이 없으므로 풀고 추천한다 (P-13 ②)
+    def test_saved_locks_are_ignored_and_never_released(self):
+        # 11/18 자물쇠 기능 제거: DB에 남은 자물쇠는 계산에 쓰지 않고, 풀지도(locksReleased) 않는다
         for code in CATEGORY_CODES:
             self.lock(code, 100_000)
         task = self.task(self.post())
-        self.assertEqual(task.result["outcome"], "proposed")
-        # 11/3: 예산 밖 카테고리 자물쇠는 계산에 안 쓰므로 풀지 않고 DB에 그대로 둔다
-        self.assertEqual(task.result["locks_released"], list(Category.objects.filter(pk__in=ALLOCATION_CODES).order_by("display_order", "pk").values_list("pk", flat=True)))
-        self.assertEqual(set(BudgetCategorySetting.objects.filter(locked=True).values_list("category_id", flat=True)),
-                         {"HOUSING_TELECOM", "TRAVEL_LODGING"})
+        self.assertEqual(task.result["locks_released"], [])
+        self.assertFalse({"lock_below_minimum", "locks_mismatch_living"} & {c["type"] for c in task.result["conflicts"]})
+        self.assertEqual(BudgetCategorySetting.objects.filter(locked=True).count(), len(CATEGORY_CODES))
 
     def test_old_out_of_budget_priorities_are_skipped_and_reranked(self):
         # 예전에 여행·숙박 · 주거·통신을 순위에 넣은 회원도 추천이 성공하고, 엔진 입력 순위는 1부터 다시 매긴다 (DB 값은 그대로)
@@ -544,10 +508,9 @@ class RecommendAPITest(TestCase):
         self.assertEqual(snapshot["profile_inputs"]["priorities"], expected)
         self.assertEqual(CategoryPriority.objects.filter(user=self.user).count(), 4)
 
-    def test_old_out_of_budget_minimum_and_lock_are_ignored(self):
-        # 예전에 걸어 둔 주거·통신 · 여행·숙박 최소 금액 · 자물쇠가 있어도 추천은 성공하고 DB 값은 남는다
+    def test_old_out_of_budget_minimum_is_ignored(self):
+        # 예전에 걸어 둔 주거·통신 최소 금액이 있어도 추천은 성공하고 DB 값은 남는다 (11/18: 자물쇠 부분은 뺐다)
         self.minimum("HOUSING_TELECOM", 300_000)
-        self.lock("TRAVEL_LODGING", 200_000)
         task = self.task(self.post())
         self.assertEqual(task.result["outcome"], "proposed", task.result)
         budget = Budget.objects.get(task=task)
@@ -555,9 +518,7 @@ class RecommendAPITest(TestCase):
         self.assertEqual(set(living), set(ALLOCATION_CODES) | {"ETC"})
         self.assertEqual(sum(living.values()), 1_120_000)
         self.assertNotIn("HOUSING_TELECOM", budget.input_snapshot["minimums"])
-        self.assertNotIn("TRAVEL_LODGING", budget.input_snapshot["locks"])
         self.assertTrue(CategoryMinimum.objects.filter(user=self.user, category_id="HOUSING_TELECOM").exists())
-        self.assertTrue(BudgetCategorySetting.objects.filter(category_id="TRAVEL_LODGING", locked=True).exists())
 
     def test_minimums_over_living_is_infeasible(self):
         self.minimum("FOOD", 1_120_001)

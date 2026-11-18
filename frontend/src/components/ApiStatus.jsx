@@ -27,7 +27,8 @@ function describeError(error) {
 export default function ApiStatus({ error, onRetry }) {
   if (!error) {
     // 11/17: 쿠숑이가 달리는 로딩 표시 (그림은 꾸밈, 글자는 그대로)
-    return <div className="mc-card mc-run-card"><KushongRunner size={104} /><p className="mc-muted" role="status" style={{ margin: 0 }}>불러오는 중…</p></div>
+    // 11/18: 카드 없이 화면 가운데 (styles/tabs.css .mc-run-card)
+    return <div className="mc-run-card"><KushongRunner size={104} /><p className="mc-muted" role="status" style={{ margin: 0 }}>불러오는 중…</p></div>
   }
   const { title, text, to, retry } = describeError(error)
   return (

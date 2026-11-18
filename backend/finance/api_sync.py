@@ -192,11 +192,15 @@ def run_part(kind, connection, work):
     return {"kind": kind, "status": "succeeded"}, None
 
 
+def active_consents(user):
+    return Consent.objects.filter(
+        user=user, purpose=PURPOSE, revoked_at__isnull=True, granted_at__lte=timezone.now(),
+    )
+
+
 def current_scopes(user):
     """지금 유효한 동의 범위. 시작할 때 한 번 읽은 값을 계속 쓰지 않고 범위마다 다시 읽는다 (PR #53 리뷰)"""
-    return set(Consent.objects.filter(
-        user=user, purpose=PURPOSE, revoked_at__isnull=True, granted_at__lte=timezone.now(),
-    ).values_list("product_scope", flat=True))
+    return set(active_consents(user).values_list("product_scope", flat=True))
 
 
 MAIN_KIND = {institutions.BANK: "accounts", institutions.CARD: "cards"}
@@ -308,8 +312,15 @@ def sync_connections(user, connections, creds=None, today=None, task_id=None):
     return {"summary": summary, "items": items}
 
 
-def target_hash(connections):
-    return tasks.input_hash({"connections": sorted(str(row.connection_id) for row in connections)})
+def target_hash(user, connections):
+    scopes = {row.business_type for row in connections}
+    if institutions.BANK in scopes:
+        scopes.add("loan")
+    consent_ids = active_consents(user).filter(product_scope__in=scopes).values_list("pk", flat=True)
+    return tasks.input_hash({
+        "connections": sorted(str(row.connection_id) for row in connections),
+        "consents": sorted(str(pk) for pk in consent_ids),
+    })
 
 
 # ---------- view ----------
@@ -321,7 +332,7 @@ def sync(request):
     targets, creds = parse_body(request)
     # 카드 값을 새로 보냈으면(앞에서 '카드 비밀번호가 필요해요'를 받고 다시 누름) 1분 안이어도 다시 부른다
     task, created = tasks.start_or_reuse(
-        request.user, TASK_TYPE, target_hash(targets), reuse_within=None if creds else REUSE_WITHIN,
+        request.user, TASK_TYPE, target_hash(request.user, targets), reuse_within=None if creds else REUSE_WITHIN,
     )
     if created:
         user = request.user

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router'
 // 디자인: MVP 프로토타입에서 옮겨 온 CSS (app.css = 원본, shell.css = 모바일 웹 보정)
 import './styles/app.css'
 import './styles/shell.css'
+import './styles/tabs.css'  // 11/18 시안 B: 탭별 색 띠 · 흰 시트
 import App from './App.jsx'
 import PopupProvider from './popups/PopupProvider.jsx'
 

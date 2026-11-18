@@ -196,6 +196,16 @@ def _transport_reference(chosen):
         return {'status': 'unavailable'}
 
 
+def transport_budget_floors(profile, budget):
+    from .design_reality import system_floors
+
+    reference = _transport_reference(budget)
+    reality = {'has_vehicle': profile.has_car}
+    if reference['status'] == 'ready':
+        reality['transport_history'] = Fraction(reference['baseline_numerator'], reference['baseline_denominator'])
+    return system_floors(reality), reference
+
+
 def _validated_reference(engine_input, required, prediction):
     try:
         source = prediction.get('source', '')
@@ -353,13 +363,8 @@ def get_adjustment_context(user, *, today=None, base_budget_id=None, mode=None,
     else:
         reasons["CUSHION_MONTHLY"] = "cushion_execution_unverified"
     settings = list(BudgetCategorySetting.objects.filter(user=user, cycle=cycle, category_id__in=LIVING_CODES))
-    locks = _money_map({row.category_id: row.locked_amount for row in settings if row.locked}, allocations)
-    system_floors = ({"TRANSPORT_CAR": 100000 if profile.has_car else 60000}
-                     if type(profile.has_car) is bool else {})
-    transport = _transport_reference(chosen)
-    if transport['status'] == 'ready' and system_floors:
-        amount = Fraction(transport['baseline_numerator'], transport['baseline_denominator'])
-        system_floors['TRANSPORT_CAR'] = min(system_floors['TRANSPORT_CAR'], int(amount/1000+Fraction(1, 2))*1000)
+    locks = {}  # 자물쇠 기능 제거 (11/18): 예전에 걸어 둔 DB 값은 읽지 않는다
+    system_floors, transport = transport_budget_floors(profile, chosen)
     context = {
         "base_budget_id": str(chosen.pk), "cycle_id": str(cycle.pk), "mode": mode, "source_status": chosen.status,
         "budget_preview": collected["state"] != "complete", "policy_version": POLICY_VERSION, "automatic_unit": 10000, "fallback_unit": 5000,

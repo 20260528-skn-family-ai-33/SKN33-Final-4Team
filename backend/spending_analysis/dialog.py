@@ -13,6 +13,7 @@ DB · 계산 없음 (계산은 analyze, 실행은 agent.py). chat 의 라우터 
 - store.get_analysis / save_analysis = 직전 조회 {request, items[ok, evidence, limits, period, as_of, facts?]}
 - store.save_shared(cid, "spending", summary(...)) = 라우터 · 다른 에이전트에 공개하는 소비 요약 (이 모듈만 쓴다)
 """
+import re
 from dataclasses import asdict, dataclass, replace
 
 from . import reading, scope
@@ -183,6 +184,12 @@ def step(store, conversation_id, text, complete, *, mode="continue", chosen=Fals
     if not interp.mine:
         # 다른 분야 · 복합 의도 · 범위 밖 · 불분명 → 라우터가 다시 분류 (목적지는 정하지 않는다)
         return Decision("not_mine", reason="other_domain", interpretation=interp, agent=AGENT)
+    if (not asked and last and last["request"].get("compare") in ("prev_month", "month")
+            and interp.refers_to in (None, "unclear") and not (interp.other_person or interp.explain or interp.analysis_goal)
+            and interp.categories and all(isinstance(category, str) for category in interp.categories)
+            and all(getattr(interp, k) in (None, ()) for k in (*PERIOD_GROUP, *QUERY_CALC, *QUERY_FILTERS, "target", "payment"))
+            and re.match(r"^\s*그\s*중(?:에서|에)?\s+", text)):
+        interp = replace(interp, refers_to="previous")  # 기존 비교에서 항목만 좁히는 말
     if not asked or asked["asking"] != "analysis_detail" or interp.followup != "answer":
         interp = replace(interp, analysis_activity=None, analysis_planned=None)
     if (suggested_category and not asked and interp.target is not None and not interp.categories
