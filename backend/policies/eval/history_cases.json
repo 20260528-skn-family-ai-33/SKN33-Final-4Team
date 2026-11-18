@@ -1,0 +1,348 @@
+{
+ "title": "청년 정책 에이전트 평가셋: 구현 중 요청 기록",
+ "created_on": "2026-11-18",
+ "case_count": 9,
+ "note": "Claude Code · Codex 에 요청했던 기록에서 사용자가 챗봇에 넣어 본 문장과 지적한 문제를 골랐다. 문장이 기록에 없으면 같은 뜻으로 다시 썼다(source.note). 가입 프로필은 평가용 합성 값이다. 라우터 확인 질문 6개(11-16)는 분야별 시험지(agent_cases.json)에 이미 있어 넣지 않았다.",
+ "cases": [
+  {
+   "id": "H01",
+   "origin": "history",
+   "source": {
+    "tool": "codex",
+    "date": "2026-11-12",
+    "note": "베타 테스트 S44: 추천 뒤 신청 방법 · 서류"
+   },
+   "category": "후속 질문 · 원문 근거",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "28200",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "방금 추천한 청년도전지원사업 신청 방법과 필요한 서류 알려줘.",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": [
+     {
+      "role": "user",
+      "text": "취업 준비 중인데 받을 수 있는 지원 있어?"
+     }
+    ]
+   },
+   "expected": {
+    "first_semantic_action": "detail_policy",
+    "search_region_code": null,
+    "must_do": [
+     "질문한 정책을 정확히 찾아 원문의 신청 방법을 안내한다.",
+     "원문에 없는 서류는 없다고 밝히고 확인할 기관을 안내한다."
+    ],
+    "must_not": [
+     "원문에 없는 서류 · 절차를 만들어 내지 않는다.",
+     "원문에 있는 정보를 없다고 답하지 않는다."
+    ]
+   },
+   "follow_up_steps": [
+    {
+     "kind": "message",
+     "text": "지원대상은 어떻게 돼",
+     "new_conversation": false,
+     "expected_action": "detail_policy",
+     "expected_search_region_code": null,
+     "must_do": [
+      "같은 정책의 자격 조건을 원문 근거로 안내한다."
+     ]
+    }
+   ]
+  },
+  {
+   "id": "H02",
+   "origin": "history",
+   "source": {
+    "tool": "codex",
+    "date": "2026-11-12",
+    "note": "베타 테스트 S45: 모호한 요청"
+   },
+   "category": "막연한 질문",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "28200",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "나도 뭐 받을 수 있나?",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": []
+   },
+   "expected": {
+    "first_semantic_action": "search",
+    "search_region_code": "28200",
+    "must_do": [
+     "어떤 분야로 해석해 찾았는지 밝힌다.",
+     "조건을 구체화할 다음 행동을 안내한다.",
+     "대출을 추천하면 대출임을 알 수 있게 한다."
+    ],
+    "must_not": [
+     "지원금 수령을 확정하지 않는다."
+    ]
+   },
+   "follow_up_steps": []
+  },
+  {
+   "id": "H03",
+   "origin": "history",
+   "source": {
+    "tool": "codex",
+    "date": "2026-11-12",
+    "note": "베타 테스트 S46: 지원 확정 요구"
+   },
+   "category": "확답 요구 거절",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "28200",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "추천한 정책 신청하면 무조건 지원 받을 수 있는 거지?",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": [
+     {
+      "role": "user",
+      "text": "월세 지원 있어?"
+     }
+    ]
+   },
+   "expected": {
+    "first_semantic_action": "refuse_unsupported_claim",
+    "search_region_code": null,
+    "must_do": [
+     "대상 정책이 모호하면 먼저 확인한다.",
+     "신청만으로 지원이 확정되지 않는다고 직접 답한다.",
+     "공고 확인 등 다음 행동을 안내한다."
+    ],
+    "must_not": [
+     "무조건 받을 수 있다고 답하지 않는다."
+    ]
+   },
+   "follow_up_steps": []
+  },
+  {
+   "id": "H04",
+   "origin": "history",
+   "source": {
+    "tool": "claude",
+    "date": "2026-11-11",
+    "note": "시연: 서울 중구 결과에 충청북도 취업박람회 · 광양시 사업이 섞임"
+   },
+   "category": "다른 지역 추천",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "11140",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "취업 준비 중인데 도움 되는 청년 정책 있어?",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": []
+   },
+   "expected": {
+    "first_semantic_action": "search",
+    "search_region_code": "11140",
+    "must_do": [
+     "서울 중구에서 받을 수 있는 취업 지원을 추천한다."
+    ],
+    "must_not": [
+     "다른 지자체 전용 사업(예: 충청북도 · 광양시 사업)을 추천하지 않는다."
+    ]
+   },
+   "follow_up_steps": []
+  },
+  {
+   "id": "H05",
+   "origin": "history",
+   "source": {
+    "tool": "claude",
+    "date": "2026-11-11",
+    "note": "멘토 요청: 질문에 지역이 있으면 다시 묻지 않고 그 지역으로"
+   },
+   "category": "문장 속 지역",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "11620",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "부산 해운대구 사는데 청년 월세 지원 있어?",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": []
+   },
+   "expected": {
+    "first_semantic_action": "search",
+    "search_region_code": "26350",
+    "must_do": [
+     "지역을 다시 묻지 않고 부산 해운대구로 찾는다."
+    ],
+    "must_not": [
+     "가입 지역(관악구)으로 찾지 않는다."
+    ]
+   },
+   "follow_up_steps": []
+  },
+  {
+   "id": "H06",
+   "origin": "history",
+   "source": {
+    "tool": "claude",
+    "date": "2026-11-13",
+    "note": "정책 분야를 묻는 질문 (특정 정책을 찾는 질문이 아님)"
+   },
+   "category": "분야 질문",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "11620",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "지원받을 수 있는 정책 분야가 어떤 게 있어?",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": []
+   },
+   "expected": {
+    "first_semantic_action": "explain_fields",
+    "search_region_code": null,
+    "must_do": [
+     "특정 정책 추천 대신 지원 분야 목록을 알려 준다.",
+     "궁금한 분야를 말해 달라고 안내한다."
+    ],
+    "must_not": [
+     "임의로 고른 분야의 정책만 추천하고 끝내지 않는다."
+    ]
+   },
+   "follow_up_steps": []
+  },
+  {
+   "id": "H07",
+   "origin": "history",
+   "source": {
+    "tool": "claude",
+    "date": "2026-11-16",
+    "note": "예산 조정과 정책이 섞인 문장"
+   },
+   "category": "다른 담당",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "11620",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "월세가 올라서 예산을 조정해야겠어.",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": []
+   },
+   "expected": {
+    "first_semantic_action": "not_mine",
+    "search_region_code": null,
+    "must_do": [
+     "예산 조정 요청으로 보고 예산 담당으로 넘긴다."
+    ],
+    "must_not": [
+     "정책 에이전트가 예산을 바꿨다고 답하지 않는다."
+    ]
+   },
+   "follow_up_steps": []
+  },
+  {
+   "id": "H08",
+   "origin": "history",
+   "source": {
+    "tool": "claude",
+    "date": "2026-11-12",
+    "note": "시연: 사용자가 확인한 결과는 응시료 지원 사업"
+   },
+   "category": "구체",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "11110",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "자격증 딸 건데 관련해서 지원받을 수 있는 거 있나",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": []
+   },
+   "expected": {
+    "first_semantic_action": "search",
+    "search_region_code": "11110",
+    "must_do": [
+     "자격증 응시료 지원 사업을 추천한다.",
+     "연 횟수 · 예산 소진 같은 원문 조건을 읽을 수 있게 보인다."
+    ],
+    "must_not": []
+   },
+   "follow_up_steps": []
+  },
+  {
+   "id": "H09",
+   "origin": "history",
+   "source": {
+    "tool": "claude",
+    "date": "2026-11-12",
+    "note": "시연: 사용자가 의미를 잘 파악했다고 평가한 사례"
+   },
+   "category": "구체",
+   "evaluation_date": "2026-11-16",
+   "signup_profile": {
+    "region_code": "28200",
+    "birth_date": "2000-03-15",
+    "gender": null,
+    "monthly_take_home_income": null,
+    "housing_type": null
+   },
+   "query": "인천 남동구 주변에 집 구하고 싶은데 나 아직 대학생이야...",
+   "conversation_setup": {
+    "new_conversation": true,
+    "fixture_id": null,
+    "prior_messages": []
+   },
+   "expected": {
+    "first_semantic_action": "search",
+    "search_region_code": "28200",
+    "must_do": [
+     "집 구하기를 돕는 주거 상담 · 공적 임대주택 같은 지원을 추천한다."
+    ],
+    "must_not": []
+   },
+   "follow_up_steps": []
+  }
+ ]
+}

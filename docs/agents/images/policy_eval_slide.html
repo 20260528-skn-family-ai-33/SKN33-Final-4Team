@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>청년 정책 추천 평가</title>
+<style>
+:root{--blue:#2b4cf0;--ink:#111;--muted:#666;--bg:#f3f4f7;--card:#fff;--gray:#a3abbd;--grid:#eceef3}
+*{box-sizing:border-box;margin:0;padding:0;word-break:keep-all}
+body{width:1280px;height:640px;background:var(--bg);font-family:"Malgun Gothic",sans-serif;color:var(--ink);padding:26px 22px}
+.eyebrow{color:var(--blue);font-weight:700;font-size:15px}
+h1{font-size:34px;font-weight:800;margin:6px 0 8px}
+.sub{font-size:16px;color:#333;margin-bottom:20px}
+.grid{display:grid;grid-template-columns:330px 1fr;grid-template-rows:1fr 120px;gap:16px;height:452px}
+.hero{grid-row:1/3;background:var(--blue);color:#fff;border-radius:14px;padding:26px}
+.hero .t{font-size:21px;font-weight:800}
+.big{font-size:76px;font-weight:800;letter-spacing:-2px;margin-top:34px;line-height:1}
+.big small{font-size:34px;letter-spacing:0;margin-left:2px}
+.cap{font-size:16px;font-weight:700;margin-top:10px}
+.hero hr{border:0;border-top:1px solid rgba(255,255,255,.35);margin:30px 0 0}
+.card{background:var(--card);border-radius:14px;padding:18px 24px}
+.card .t{color:var(--blue);font-size:19px;font-weight:800}
+.chart{position:relative;display:grid;grid-template-columns:repeat(6,1fr);gap:18px;height:236px;margin-top:6px;align-items:end;border-bottom:1px solid #d5d9e2}
+.col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.col b{font-size:17px;font-weight:800;color:var(--blue);margin-bottom:5px}
+.col i{display:block;width:62%;background:var(--blue);border-radius:6px 6px 0 0;opacity:.55}
+.col.now i{opacity:1}
+.col.base b{color:#6b7385}.col.base i{background:var(--gray);opacity:1}
+.labels{display:grid;grid-template-columns:repeat(6,1fr);gap:18px;text-align:center;font-size:13px;margin-top:8px;line-height:1.35}
+.labels span{color:var(--muted)}.labels strong{display:block;color:var(--ink)}
+.jump{position:absolute;left:7.4%;top:4px;width:17%;text-align:center;font-size:14px;font-weight:800;color:var(--blue)}
+.jump:after{content:"";display:block;height:10px;margin-top:4px;border:2px solid var(--blue);border-bottom:0;border-radius:6px 6px 0 0}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.kpi{background:var(--card);border-radius:14px;padding:18px 24px}
+.kpi .v{font-size:38px;font-weight:800;color:var(--blue);line-height:1.1}
+.kpi .l{font-size:15px;font-weight:700;margin-top:6px}
+.kpi .l span{color:var(--muted);font-weight:400;margin-left:6px}
+</style></head><body>
+<div class="eyebrow">03. Chatbot Agent Evaluation</div>
+<h1>청년 정책 추천 평가</h1>
+<div class="sub">질문 327개 · 더 큰 LLM이 채점 (100점 만점)</div>
+<div class="grid">
+  <div class="hero">
+    <div class="t">평가셋 327개</div>
+    <div class="big">78.2<small>점</small></div>
+    <div class="cap">LLM 채점 총점</div>
+    <hr>
+    <div class="big">70.7%</div>
+    <div class="cap">첫 화면 정답률</div>
+  </div>
+  <div class="card">
+    <div class="t">고치기 전과 후 · 총점</div>
+    <div class="chart">
+      <div class="jump">LLM 도입 +21.6</div>
+      <div class="col base"><b>52.7</b><i style="height:110px"></i></div>
+      <div class="col"><b>74.3</b><i style="height:155px"></i></div>
+      <div class="col"><b>76.3</b><i style="height:159px"></i></div>
+      <div class="col"><b>75.1</b><i style="height:157px"></i></div>
+      <div class="col"><b>76.5</b><i style="height:160px"></i></div>
+      <div class="col now"><b>78.2</b><i style="height:163px"></i></div>
+    </div>
+    <div class="labels">
+      <div><strong>규칙만</strong><span>LLM 없음</span></div>
+      <div><strong>PR 97</strong><span>11-12</span></div>
+      <div><strong>베타 피드백</strong><span>11-12</span></div>
+      <div><strong>응답 개선</strong><span>11-14</span></div>
+      <div><strong>다시 검색</strong><span>11-16</span></div>
+      <div><strong>현재</strong><span>11-17</span></div>
+    </div>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">100%</div><div class="l">지역 정확도<span>41/41</span></div></div>
+    <div class="kpi"><div class="v">0건</div><div class="l">억지 추천<span>정책 없는 질문 26개</span></div></div>
+    <div class="kpi"><div class="v">9.5초</div><div class="l">평균 응답 시간<span>개선할 점</span></div></div>
+  </div>
+</div>
+</body></html>

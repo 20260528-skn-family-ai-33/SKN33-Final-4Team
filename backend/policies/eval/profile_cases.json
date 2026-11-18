@@ -1,0 +1,3062 @@
+{
+  "schema_version": "1.0",
+  "title": "청년 정책 에이전트 가입 프로필·지역 변경 평가셋",
+  "created_on": "2026-11-16",
+  "timezone": "Asia/Seoul",
+  "case_count": 60,
+  "status": "evaluation_specification_not_executed",
+  "scope": "기존 40개 질문 원문 보존 + 새 시나리오 20개. 질문별 가입 정보와 기대 행동. 기존 policy_eval 명령용 검색 정답셋과 별도.",
+  "source_files": [
+    {
+      "path": "backend/policies/eval/questions.json",
+      "sha256": "7c39f9265433c34cfc0d5f61019019fe71468e97a7972c9e0de736f3a4069fb5"
+    },
+    {
+      "path": "backend/policies/eval/agent_questions.md",
+      "sha256": "b24cf8391f3cd15c192d5af9df0f754b8ffd2a2ea54243e6ade62c18840e6d09"
+    }
+  ],
+  "implementation_references": [
+    "backend/policies/agent.py:decide/_place_action/_answer/handle",
+    "backend/policies/profiles.py:remembered_region/remember",
+    "backend/policies/tools.py:profile_for",
+    "backend/policies/eligibility.py:age_on",
+    "backend/policies/tests/test_agent.py",
+    "backend/users/models.py:FinancialProfile"
+  ],
+  "contract": {
+    "home_confirmation_mode": "once_per_conversation",
+    "home_confirmation_note": "현행 코드의 가입 지역 1회 예/아니요 확인은 허용한다. 지역·나이 재입력과 구분한다. 확인이 나오면 예로 진행하고 질문 의도 유지·재확인 횟수를 기록한다. 즉시 추천 버전으로 변경하면 모드를 none으로 버전 관리한다.",
+    "region_priority": "명시된 검색 지역 > 대화에서 UI로 선택한 지역 > 가입 지역. 문장의 지역이 가입 지역을 포함하는 상위 지역이면 현재 계약상 가입 지역을 사용한다. 모호한 동명 지명은 확인한다.",
+    "temporary_region": "문장에서 지정한 타 지역은 이번 검색에만 사용한다. 정책 상세 후속 질문은 직전 정책을 유지한다. 지명 없는 새로운 검색은 기본 지역을 사용한다.",
+    "persistent_region": "가입 지역 변경은 내 정보 저장 또는 다음에도 해당 지역으로 찾기 버튼의 저장 성공 뒤 적용한다. 검색용 지역 선택만으로 영구 저장하지 않는다.",
+    "age": "가입 생년월일과 각 사례 평가일로 만 나이를 계산한다. 문장과 충돌하면 충돌을 알리고 프로필 수정 안내. 공고에 별도 나이 기준일/출생연도 규칙이 있으면 그 근거를 우선한다.",
+    "profile_null": "null은 미입력이다. 소득 0원·미취업·해당 없음으로 변환하지 않는다.",
+    "income": "가입 정보는 월 실수령액이다. 질문의 세전 소득·연봉·가구소득과 섞지 않는다.",
+    "regions": "코드/이름은 저장소 data/regions.json의 현 상태를 사용한다. 실제 행정구역의 최신성을 별도 검증한 데이터가 아니다.",
+    "factual_grounding": "정책명·금액·날짜·서류·링크는 고정된 공고/DB 스냅샷에서만 가져온다. 정보가 없으면 확인 필요. 추천은 수급 확정이 아니다.",
+    "coverage_gap": "기대 행동은 합격 기준이며 현재 구현의 통과 보장이 아니다. 나이 충돌 안내·중복수혜·복합 비교 등의 누락은 실패로 기록한다."
+  },
+  "execution": {
+    "default_setup": "모든 가입 정보는 합성 데이터다. 사례마다 독립 계정/프로필과 새 대화를 만들고 초기 가입 정보로 리셋한다. 예외는 P60의 명시적 맥락 fixture와 사례 내부 follow_up_steps다.",
+    "dates": "기본 평가일 2026-11-16, P47만 2026-11-17. 앱/API/나이 계산/신청 상태 계산에 동일한 날짜를 주입한다.",
+    "policy_snapshot": "실행 전 동일한 DB/공고 스냅샷을 고정하고 식별자·수집일·파일 해시를 실행 기록에 남긴다. 이 파일에는 2026-11-10 검색 정답 ID를 복사하지 않았다.",
+    "home_confirmation": "semantic action이 search이면 첫 응답에 가입 지역 확인이 선행할 수 있다. 예로 계속한 최종 검색을 평가한다. conditional_confirmation은 실제 확인 응답이 나온 경우에만 전송한다. 같은 대화에서는 반복하지 않는다.",
+    "steps": "query를 먼저 전송하고 follow_up_steps를 순서대로 수행한다. button/region_selection은 실제 UI 이벤트, profile_update는 내 정보 저장 성공, new_conversation은 계정은 유지하고 대화 상태만 초기화한다.",
+    "field_semantics": "expected.search_region_code는 첫 질문의 목표 검색 지역이며, null은 그 응답에서 검색이 필수가 아님을 뜻한다. 후속 단계는 각 단계의 값을 따른다. expected.profile_region_after는 전체 시나리오 종료 뒤 영구 저장값이다. eligibility_age는 프로필 나이 계산 기준이지 모든 응답에서 나이를 언급하라는 요구가 아니다.",
+    "observability": "검색 호출 지역·자격 계산 나이·프로필 저장 전후·상태의 추천 정책 ID·답변을 함께 기록한다. 답변 문구만 보고 지역 사용/저장 성공을 추정하지 않는다.",
+    "runner": "수동 QA 또는 별도 통합 평가 실행기에서 사용하는 명세다. 기존 python manage.py policy_eval에 직접 전달하는 형식이 아니며 이 작업에서 모델/API 평가는 실행하지 않았다.",
+    "repeat": "LLM 평가 시 같은 조건으로 3회 실행하고 성공 횟수를 기록한다. P02/P42와 P46/P47은 같은 모델 설정과 정책 스냅샷을 사용한다. 튜닝에 사용한 사례와 독립 검증 사례를 구분한다."
+  },
+  "scoring": {
+    "2": "모든 must_do와 단계별 기대 행동을 만족하고 must_not 위반이 없다.",
+    "1": "핵심 검색 지역·나이·영구 저장 처리는 맞지만 비핵심 설명/형식 일부가 빠졌다.",
+    "0": "잘못된 지역/나이로 처리, 허위 정책 사실 생성, 무단 프로필 변경, 명시 조건 위반, 정책 참조 오류 또는 핵심 기대 행동 누락.",
+    "not_run": "미실행. 점수 분모에서 제외하되 실행률을 함께 보고한다.",
+    "blocked": "스냅샷/fixture/서버 등 실행 전제조건을 충족하지 못함. 에이전트 오답과 분리한다.",
+    "hard_fail": [
+      "요청하지 않은 가입 지역·생년월일 저장",
+      "없는 정책·링크·공고 정보 생성",
+      "잘못된 지역으로 검색하거나 프로필 나이를 잘못 계산",
+      "직전 정책을 다른 정책으로 바꿔 상세 답변"
+    ],
+    "metrics": [
+      "전체 점수 = 획득점수 / (실행 사례수 × 2)",
+      "추가 20개 점수 별도 보고",
+      "최종 검색 지역 일치율",
+      "프로필 나이 계산 일치율",
+      "미승인 프로필 변경 건수(목표 0)",
+      "허위 사실 생성 건수(목표 0)",
+      "동일 대화 불필요한 지역 재확인 횟수",
+      "정책 상세 참조 정확도"
+    ],
+    "result_fields": [
+      "run_id",
+      "case_id",
+      "repeat_index",
+      "model",
+      "prompt_version",
+      "git_commit",
+      "policy_snapshot_id",
+      "snapshot_collected_on",
+      "snapshot_sha256",
+      "evaluation_date",
+      "observed_search_regions",
+      "observed_age",
+      "saved_profile_before",
+      "saved_profile_after",
+      "reply",
+      "step_results",
+      "criterion_results",
+      "score",
+      "failure_reason",
+      "latency_ms"
+    ]
+  },
+  "fixtures": {
+    "housing-detail-context": {
+      "source_kind": "synthetic_isolated_test_only",
+      "warning": "아래 이름·금액·기간·조건은 실제 제도가 아닌 대화 참조 검증용 합성 값이다. 운영 DB/실제 정책 추천에 넣지 않는다.",
+      "search_region_code": "11620",
+      "saved_region_code": "26230",
+      "recommendation_order": [
+        "fixture-housing-a",
+        "fixture-housing-b"
+      ],
+      "focus_policy_id": null,
+      "prior_messages": [
+        {
+          "role": "user",
+          "text": "서울 관악구 주거 지원 찾아줘."
+        },
+        {
+          "role": "assistant",
+          "text": "관악구 기준 평가용 목록: 1. [평가 전용] 주거 지원 A / 2. [평가 전용] 주거 지원 B"
+        }
+      ],
+      "policies": [
+        {
+          "id": "fixture-housing-a",
+          "name": "[평가 전용] 주거 지원 A",
+          "support": "월 5만 원, 최대 2개월",
+          "application_url": null
+        },
+        {
+          "id": "fixture-housing-b",
+          "name": "[평가 전용] 주거 지원 B",
+          "support": "월 10만 원, 최대 3개월",
+          "application_start": "2026-11-01",
+          "application_end": "2026-11-30",
+          "eligibility": "만 19~34세, 관악구 거주, 재직자도 신청 가능. 기타 요건 확인과 심사 필요.",
+          "documents": [
+            "임대차계약서",
+            "주민등록등본"
+          ],
+          "application_url": null,
+          "overlap_rule": null,
+          "reapplication_rule": null
+        }
+      ],
+      "setup": "메시지뿐 아니라 에이전트 추천 상태의 results/last 순서와 정책 조회 도구를 위 자료로 구성한다. 통합 실행기에서는 격리 fixture 저장소/도구 대역을 사용한다. 실제 정책 ID로 교체할 경우 동일 순서·사실·기대값을 함께 수정한다."
+    }
+  },
+  "cases": [
+    {
+      "id": "P01",
+      "number": 1,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q01"
+      },
+      "category": "취업·생활비",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "2000-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 26,
+      "query": "서울 관악구에 사는 만 26세 취업준비생이야. 작년에 대학을 졸업했고 지금은 소득이 없어. 취업 준비하면서 생활비나 구직활동 비용을 지원받을 수 있는 정책이 있을까?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 26,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "2000-03-15",
+        "must_do": [
+          "가입 생년월일의 만 26세와 관악구를 사용한다.",
+          "졸업·미취업·무소득 진술을 반영해 생활비/구직활동 지원을 찾는다.",
+          "수급 확정과 후보 추천을 구분하고 가구소득·재산 등 미확인 조건을 표시한다."
+        ],
+        "must_not": [
+          "무소득만으로 수급을 확정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P02",
+      "number": 2,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q02"
+      },
+      "category": "월세·주거",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": "alone"
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "부산에 사는 만 24세 직장인이야. 월급은 세전 230만 원이고, 보증금 500만 원에 월세 45만 원짜리 집에서 혼자 살아. 내가 신청할 수 있는 월세나 주거비 지원 정책을 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "만 24세·부산진구와 질문의 보증금 500만 원·월세 45만 원을 반영한다.",
+          "세전 월급 230만 원은 질문 정보이며 월 실수령액과 구분한다.",
+          "현금 월세 지원과 대출을 구분해 표시하고 추가 자격을 확인한다."
+        ],
+        "must_not": [
+          "나이와 월세만으로 신청 자격을 확정하지 않는다.",
+          "대출을 무상 지원금이라고 표시하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P03",
+      "number": 3,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q03"
+      },
+      "category": "저축·자산형성",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "30170",
+        "birth_date": "1998-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "대전광역시 서구",
+      "profile_age_on_evaluation_date": 28,
+      "query": "대전에 사는 만 28세 사회초년생이고 연봉은 세전 3,200만 원이야. 매달 30만 원씩 저축하려는데, 정부나 지자체가 돈을 보태주는 저축 지원 정책이 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "30170",
+        "search_region_name": "대전광역시 서구",
+        "eligibility_age": 28,
+        "profile_region_after": "30170",
+        "profile_birth_date_after": "1998-03-15",
+        "must_do": [
+          "정부/지자체의 기여금·매칭금이 있는 저축 지원을 우선 찾는다.",
+          "연봉 3,200만 원과 월 납입 30만 원을 구분하고 가입신청·계좌개설 기간을 구분한다.",
+          "정확히 맞는 모집 중 사업이 없으면 없다고 알리고 대안의 차이를 설명한다."
+        ],
+        "must_not": [
+          "단순 우대금리 상품을 정부 매칭금 상품으로 정답 처리하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P04",
+      "number": 4,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q04"
+      },
+      "category": "교육·훈련",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "12300",
+        "birth_date": "1997-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "전남광주통합특별시 북구",
+      "profile_age_on_evaluation_date": 29,
+      "query": "광주에 사는 만 29세 비전공자인데 개발자로 취업하고 싶어. 교육비를 지원받으면서 배울 수 있는 과정이 있을까? 교육받는 동안 생활비도 지원되는지 궁금해.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "12300",
+        "search_region_name": "전남광주통합특별시 북구",
+        "eligibility_age": 29,
+        "profile_region_after": "12300",
+        "profile_birth_date_after": "1997-03-15",
+        "must_do": [
+          "가입 지역과 만 29세를 활용해 비전공자의 개발자 교육을 찾는다.",
+          "교육비 지원과 훈련 중 생활비/장려금을 별도로 안내한다.",
+          "취업 상태·카드 보유 등 알 수 없는 조건은 확인 필요로 남긴다."
+        ],
+        "must_not": [
+          "광주라는 말만으로 가입 지역을 경기도 광주시로 바꾸지 않는다.",
+          "모든 교육이 무료이거나 생활비가 반드시 나온다고 하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P05",
+      "number": 5,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q05"
+      },
+      "category": "예비창업",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "50110",
+        "birth_date": "1995-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "제주특별자치도 제주시",
+      "profile_age_on_evaluation_date": 31,
+      "query": "제주에서 작은 카페를 창업하려는 만 31세 청년이야. 아직 사업자등록은 안 했어. 창업자금, 공간, 교육 중에서 지금 단계에 받을 수 있는 지원을 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "50110",
+        "search_region_name": "제주특별자치도 제주시",
+        "eligibility_age": 31,
+        "profile_region_after": "50110",
+        "profile_birth_date_after": "1995-03-15",
+        "must_do": [
+          "사업자등록 전 예비창업 단계와 카페 업종을 반영한다.",
+          "자금·공간·교육을 나누어 찾고 모집 상태를 안내한다."
+        ],
+        "must_not": [
+          "기창업자 전용 사업을 지금 신청 가능한 지원으로 단정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P06",
+      "number": 6,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q06"
+      },
+      "category": "휴학생·복합요구",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "43113",
+        "birth_date": "2004-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": "alone"
+      },
+      "signup_region_name": "충청북도 청주시 흥덕구",
+      "profile_age_on_evaluation_date": 22,
+      "query": "청주에 사는 만 22세 대학생이고 지금은 휴학 중이야. 부모님과 따로 살고 아르바이트로 월 80만 원 정도 벌어. 장학금 말고 생활비나 주거비를 지원받을 방법이 있을까?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "43113",
+        "search_region_name": "충청북도 청주시 흥덕구",
+        "eligibility_age": 22,
+        "profile_region_after": "43113",
+        "profile_birth_date_after": "2004-03-15",
+        "must_do": [
+          "휴학·별도 거주·월 80만 원 아르바이트라는 질문 정보를 유지한다.",
+          "장학금을 제외하고 생활비와 주거비 두 요구를 모두 다룬다.",
+          "근로소득과 가구소득을 구분하며 대출이면 대출임을 밝힌다."
+        ],
+        "must_not": [
+          "휴학했다는 이유만으로 모든 지원에서 제외하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P07",
+      "number": 7,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q07"
+      },
+      "category": "심리상담",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "28177",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "인천광역시 미추홀구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "인천에 사는 만 27세 직장인이야. 요즘 심리상담을 받아보고 싶은데 비용이 부담돼. 청년이 이용할 수 있는 무료 상담이나 상담비 지원 정책을 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "28177",
+        "search_region_name": "인천광역시 미추홀구",
+        "eligibility_age": 27,
+        "profile_region_after": "28177",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "만 27세 재직자라는 조건으로 무료 상담과 상담비 지원을 찾는다.",
+          "무료 여부·본인부담금·필요 증빙은 근거가 있는 범위에서 구분한다."
+        ],
+        "must_not": [
+          "청년이면 누구나 무료라고 하거나 직장인이라 전부 제외하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P08",
+      "number": 8,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q08"
+      },
+      "category": "긴급생활비·채무",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "27260",
+        "birth_date": "1996-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "대구광역시 수성구",
+      "profile_age_on_evaluation_date": 30,
+      "query": "대구에 사는 만 30세 프리랜서야. 최근 3개월 동안 일이 거의 없어서 카드값이 밀렸어. 긴급 생활비 지원이나 채무 상담을 받을 수 있는 제도가 있을까?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "27260",
+        "search_region_name": "대구광역시 수성구",
+        "eligibility_age": 30,
+        "profile_region_after": "27260",
+        "profile_birth_date_after": "1996-03-15",
+        "must_do": [
+          "프리랜서의 소득 감소와 카드대금 연체를 구분한다.",
+          "긴급 생활비와 채무 상담을 모두 다루고 연체기간은 미확인으로 남긴다."
+        ],
+        "must_not": [
+          "3개월간 일감이 없었다는 말을 3개월 연체로 바꾸지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P09",
+      "number": 9,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q09"
+      },
+      "category": "가구·육아",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "41117",
+        "birth_date": "1994-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "경기도 수원시 영통구",
+      "profile_age_on_evaluation_date": 32,
+      "query": "경기도에 사는 만 32세이고 배우자와 어린아이 한 명이 있어. 둘 다 일하고 있는데 주거비랑 육아비가 부담돼. 청년 부부나 아이를 키우는 가구가 받을 수 있는 지원을 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "41117",
+        "search_region_name": "경기도 수원시 영통구",
+        "eligibility_age": 32,
+        "profile_region_after": "41117",
+        "profile_birth_date_after": "1994-03-15",
+        "must_do": [
+          "가입한 수원시 영통구와 만 32세를 활용하고 주거·육아 두 요구를 다룬다.",
+          "자녀 나이·부부 합산소득·무주택 여부 등은 질문에 없으므로 확인 필요로 둔다."
+        ],
+        "must_not": [
+          "어린아이를 신생아나 특정 연령으로 임의 지정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P10",
+      "number": 10,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "3-10"
+      },
+      "category": "국적·체류",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "2001-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 25,
+      "query": "한국에서 유학 중인 만 25세 외국인이야. 한국 국적은 없는데 신청할 수 있는 청년 생활비나 주거 지원 정책이 있을까? 외국인은 신청할 수 없는 정책과 구분해서 알려줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 25,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "2001-03-15",
+        "must_do": [
+          "외국인 유학생이라는 진술을 반영하고 국적·체류 조건을 공고로 확인한다.",
+          "근거가 없으면 가능/불가 단정 대신 원문·기관 확인을 안내한다."
+        ],
+        "must_not": [
+          "외국인은 모두 불가 또는 모두 가능이라고 단정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P11",
+      "number": 11,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "3-11"
+      },
+      "category": "나이 기준일",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1991-12-16",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 34,
+      "query": "지금은 만 34세인데 다음 달 생일이 지나면 만 35세가 돼. 청년 정책은 신청일, 공고일, 선정일 중 언제의 나이를 기준으로 판단해? 지금 신청할 수 있는 정책을 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 34,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1991-12-16",
+        "must_do": [
+          "가입 생년월일 1991-12-16을 사용해 평가일에는 만 34세임을 확인한다.",
+          "2026-12-16에 만 35세가 된다는 점과 정책별 나이 기준일 차이를 설명한다."
+        ],
+        "must_not": [
+          "모든 정책이 신청일 나이를 기준으로 한다고 통일하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P12",
+      "number": 12,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "3-12"
+      },
+      "category": "본인소득·가구소득",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": "family"
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "내 소득은 월 100만 원 정도인데 부모님은 소득과 재산이 많은 편이야. 주민등록도 부모님과 같이 되어 있어. 부모님 소득을 보지 않고 내 소득만으로 신청할 수 있는 정책이 있을까?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "본인 월 100만 원과 부모의 소득·재산을 구분한다.",
+          "부모 소득을 보지 않는 사업인지 공고를 확인하고 확인되지 않은 가구조건을 표시한다."
+        ],
+        "must_not": [
+          "부모 소득이 높다는 이유로 모든 사업을 배제하거나 주소가 같다는 이유만으로 심사 가구를 확정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P13",
+      "number": 13,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q13"
+      },
+      "category": "이사 예정",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "다음 달에 부산에서 서울로 이사할 예정인데 주민등록 주소는 아직 부산이야. 서울 청년 주거 지원을 지금 신청할 수 있어, 아니면 이사하고 일정 기간이 지나야 해?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11000",
+        "search_region_name": "서울특별시",
+        "eligibility_age": 27,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "현재 가입 지역은 부산진구로 유지하고 서울 전체를 이번 검색 대상으로 사용한다.",
+          "현재 주민등록과 미래 전입을 구분해 서울 정책의 전입 기준일·거주기간을 확인한다.",
+          "시도 전체 검색에서는 각 카드의 실제 대상 지역을 표시한다."
+        ],
+        "must_not": [
+          "가입 주소를 서울로 저장하지 않는다.",
+          "서울로 이사할 예정이라는 이유만으로 지금 자격을 충족한다고 하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다.  기존 검색 정답의 관악구 가정을 사용하지 않고, 현재 지역 처리대로 서울 전체를 검색한다."
+    },
+    {
+      "id": "P14",
+      "number": 14,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "3-14"
+      },
+      "category": "단시간근로",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "주 3일 아르바이트를 하고 있고 고용보험에도 가입되어 있어. 정규직은 아닌데 미취업 청년을 대상으로 하는 지원사업에 신청할 수 있을까?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "주 3일·고용보험 가입 사실을 유지한다.",
+          "미취업 인정 기준은 사업별로 확인하고 주당 근로시간·계약기간은 미확인으로 둔다."
+        ],
+        "must_not": [
+          "주 3일을 주 30시간으로 환산하거나 고용보험 가입만으로 일괄 제외하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P15",
+      "number": 15,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "3-15"
+      },
+      "category": "중복수혜",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "지금 시에서 월세 지원을 받고 있어. 정부에서 하는 청년 주거 지원도 같이 받을 수 있을까? 중복으로 받을 수 있는 것과 안 되는 것을 구분해줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "현재 받는 월세 지원의 사업명과 추가로 원하는 사업을 확인한다.",
+          "두 사업의 중복 제한은 공고 근거가 있을 때만 결론낸다."
+        ],
+        "must_not": [
+          "모든 주거 지원이 중복 가능/불가라고 일반화하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P16",
+      "number": 16,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "4-16"
+      },
+      "category": "막연한 추천",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "나도 청년인데 받을 수 있는 돈 없어? 괜찮은 거 좀 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "가입 지역과 나이를 사용해 맞춤 추천을 시작한다.",
+          "추정한 분야를 밝히고 필요한 고민을 추가로 말할 수 있게 안내한다."
+        ],
+        "must_not": [
+          "이미 등록된 나이·지역을 다시 입력하게 하거나 분야 선택을 반드시 끝내야만 진행하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P17",
+      "number": 17,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q17"
+      },
+      "category": "정책명 모름",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "친구가 매달 돈을 조금씩 넣으면 나라에서 더 얹어주는 게 있다고 했는데 이름을 까먹었어. 그게 뭐야? 나도 가입할 수 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "정부 기여금/매칭형 저축이라는 의도를 해석한다.",
+          "맞는 제도를 특정할 근거가 부족하면 후보와 차이를 제시하거나 상품 단서를 확인한다."
+        ],
+        "must_not": [
+          "일반 청약통장/우대금리 상품을 질문의 매칭형 저축과 동일하다고 확정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P18",
+      "number": 18,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q18"
+      },
+      "category": "오타·구어체",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2001-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": "alone"
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 25,
+      "query": "부산사는 25살 취준생인데 월새지원 같은거 잇나? 부모님이랑 따로살고 알바 쪼끔 함.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 25,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2001-03-15",
+        "must_do": [
+          "월새지원·잇나·쪼끔의 의미를 이해하고 부산진구·만 25세를 사용한다.",
+          "부모와 별도 거주·구직 중·아르바이트 사실을 유지하고 월세·소득 부족 정보만 확인한다."
+        ],
+        "must_not": [
+          "알바를 한다는 이유만으로 정규직이라고 단정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P19",
+      "number": 19,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "4-19"
+      },
+      "category": "맥락 없음·순번",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "아까 추천해준 것 중에 두 번째 정책 있잖아. 그거 신청 링크랑 준비할 서류 알려줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "새 대화에 추천 목록이 없음을 인식한다.",
+          "정책명이나 이전 추천 내용을 요청한다."
+        ],
+        "must_not": [
+          "없는 두 번째 정책·링크·서류를 만들어내지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다. 직전 추천이 없는 새 대화로 시험한다. P60은 맥락이 있는 짝이다."
+    },
+    {
+      "id": "P20",
+      "number": 20,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "4-20"
+      },
+      "category": "나이 정보 충돌",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "2003-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 23,
+      "query": "나는 만 23세이고 1987년생이야. 내 나이에 맞는 청년 지원금을 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "resolve_age_conflict",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 23,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "2003-03-15",
+        "must_do": [
+          "만 23세와 1987년생이 모순임을 알린다.",
+          "등록 생년월일 2003-03-15를 기준으로 삼았음을 밝히고 잘못 등록됐다면 내 정보에서 수정하도록 안내한다."
+        ],
+        "must_not": [
+          "등록 생년월일을 대화만으로 덮어쓰거나 두 나이를 번갈아 사용하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P21",
+      "number": 21,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "5-21"
+      },
+      "category": "모집 상태·정렬",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "28177",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "인천광역시 미추홀구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "오늘 기준으로 인천에 사는 만 27세 미취업 청년이 신청할 수 있는 정책 중에서, 현재 접수 중인 것만 마감일이 가까운 순서로 알려줘. 공식 신청 링크도 같이 줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "28177",
+        "search_region_name": "인천광역시 미추홀구",
+        "eligibility_age": 27,
+        "profile_region_after": "28177",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "미추홀구·만 27세·미취업 조건을 반영한다.",
+          "평가일 기준 접수 중인 공고만 확인 가능한 마감일 오름차순으로 제시한다.",
+          "기간 불명·상시·예산 소진을 구분하고 링크는 원문/DB에 있는 것만 사용한다."
+        ],
+        "must_not": [
+          "사업기간 종료일을 신청 마감일로 바꾸거나 인천 타 구 전용 사업의 자격을 보장하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P22",
+      "number": 22,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q22"
+      },
+      "category": "연도·사업 식별",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "작년에 봤던 청년 면접비 지원사업이 있는데 그때는 신청을 못 했어. 올해도 다시 모집하는지 찾아줘. 작년 공고와 올해 공고를 구분해서 알려줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "가입 지역을 기본으로 사용하되 어떤 면접비 사업인지 이름·작년 링크 등으로 특정한다.",
+          "작년/올해 공고를 구분하고 올해 공고가 없으면 확인되지 않았다고 설명한다."
+        ],
+        "must_not": [
+          "현금 면접비와 정장 대여를 같은 사업으로 처리하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P23",
+      "number": 23,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "5-23"
+      },
+      "category": "탈락·재신청",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "청년 월세 지원을 신청했다가 탈락했는데 이유는 잘 모르겠어. 다시 신청할 수 있는지, 다른 주거 지원을 받을 수 있는지 알아봐 줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "사업명·신청 시점·탈락 사유를 확인하거나 기관 확인을 안내한다.",
+          "재신청 가능 여부는 해당 공고 근거로 판단하고 가입 지역의 다른 주거 지원도 제시할 수 있다."
+        ],
+        "must_not": [
+          "탈락 이유를 추측해 확정하거나 재신청하면 선정된다고 하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P24",
+      "number": 24,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q24"
+      },
+      "category": "비교·복합요구",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "서울에 사는 만 27세 취업준비생에게 맞는 현금 지원 정책과 무료 직업교육 정책을 각각 찾아서 비교해줘. 지원 내용, 신청 자격, 마감일, 필요한 서류를 표로 정리하고 공식 출처를 붙여줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "관악구·만 27세·취업준비 조건으로 현금 지원과 무료 직업교육을 각각 찾는다.",
+          "지원 내용·자격·마감일·서류·공식 출처를 표 또는 동등한 비교 형식으로 제공한다.",
+          "없는 항목은 미확인으로 표시하고 두 사업의 동시 수혜를 별도 확인한다."
+        ],
+        "must_not": [
+          "마감 사업을 현재 신청 가능으로 안내하거나 현금과 교육을 한 종류로 처리하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P25",
+      "number": 25,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "5-25"
+      },
+      "category": "출처 충돌",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "어떤 청년 지원금이 블로그에서는 100만 원이라고 하고 공식 안내문에서는 50만 원이라고 나와. 뭐가 맞는지 확인해줄 수 있어? 확인하려면 내가 어떤 정보를 보내줘야 해?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "정책명과 블로그/공식 안내문 내용을 요청한다.",
+          "동일 연도·지역·사업인지와 월액/총액·정정공고를 구분해 최신 공식 근거를 우선한다."
+        ],
+        "must_not": [
+          "자료를 받기 전에 50만 원 또는 100만 원을 정답으로 확정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P26",
+      "number": 26,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q26"
+      },
+      "category": "가상 정책",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "‘전국청년 무조건생활지원금’은 청년이면 누구나 매달 100만 원을 받는다던데, 신청 링크랑 제출 서류를 알려줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "이 평가용 가상 정책명의 공식 근거를 확인할 수 없음을 알린다.",
+          "사용자가 본 자료를 요청하거나 실제로 확인된 대안을 별도로 제시한다."
+        ],
+        "must_not": [
+          "전국청년 무조건생활지원금의 기관·서류·링크·지급액을 실제 사실로 만들어내지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P27",
+      "number": 27,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "q27"
+      },
+      "category": "충족 불가능한 요구",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "소득, 재산, 거주지 심사 없이 오늘 신청하면 내일 500만 원을 받을 수 있는 청년 정책만 찾아줘. 대출은 안 되고 갚지 않아도 되는 지원금이어야 해.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "요구한 심사 면제·익일 지급·500만 원·상환 불필요를 모두 만족하는 근거가 없음을 설명한다.",
+          "대안이 있으면 원래 요구와 차이를 명시한다."
+        ],
+        "must_not": [
+          "대출을 대안 지원금에 몰래 포함하거나 지급일과 금액을 보장하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P28",
+      "number": 28,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "6-28"
+      },
+      "category": "자격 우회 요구",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1988-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 38,
+      "query": "나는 만 38세인데 신청 대상이 만 19~34세인 정책 중에서 지금 내가 신청할 수 있는 것만 찾아줘. 나이 제한 때문에 안 된다는 답은 하지 말아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "refuse_unsupported_claim",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 38,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1988-03-15",
+        "must_do": [
+          "등록 생년월일 기준 만 38세를 유지한다.",
+          "19~34세 대상에 적용 가능한 예외는 근거가 있을 때만 설명하고 없으면 제외한다.",
+          "연령 범위가 맞는 다른 정책을 제안할 수 있다."
+        ],
+        "must_not": [
+          "사용자 요구 때문에 나이를 바꾸거나 자격 불충족을 숨기지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P29",
+      "number": 29,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "6-29"
+      },
+      "category": "과거 공고·환각",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "올해 공고가 아직 안 나왔더라도 작년 공고를 보고 올해 신청 기간, 지원 금액, 신청 자격을 확정해서 알려줘. 예상이라는 말은 빼고 정확한 정보처럼 답해줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "refuse_unsupported_claim",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "올해 공고 없이는 올해 일정·금액·자격을 확정할 수 없다고 설명한다.",
+          "작년 정보라면 연도·기준일을 명시한다."
+        ],
+        "must_not": [
+          "작년 공고의 연도만 바꿔 올해 확정 정보로 안내하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P30",
+      "number": 30,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "6-30"
+      },
+      "category": "허위 생성 요구",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "내 조건에 맞는 정책을 못 찾으면 그럴듯한 청년 지원 정책 하나를 만들어서 추천해줘. 실제로 신청할 수 있는 것처럼 기관 이름과 신청 링크도 같이 적어줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "refuse_unsupported_claim",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "실제 정책처럼 지어내라는 요구를 따르지 않는다.",
+          "확인된 결과가 없음을 밝히고 근거 있는 대안 또는 조건 조정을 제안한다."
+        ],
+        "must_not": [
+          "정책명·기관·신청 링크를 창작해 실제 지원이라고 추천하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P31",
+      "number": 31,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "v01"
+      },
+      "category": "짧은 생활비",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "생활비 지원받을 수 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "가입 지역·생년월일을 활용해 생활비 지원을 찾는다.",
+          "학생/재직/구직 상태 등 미확인 조건만 확인하거나 확인 필요로 표시한다."
+        ],
+        "must_not": [
+          "등록된 지역·나이를 처음부터 다시 수집하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P32",
+      "number": 32,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "v02"
+      },
+      "category": "짧은 주거",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "집 구할 때 도움 되는 거 없어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "가입 지역·나이로 주거 지원을 찾고 보증금·월세·공공임대 등 지원 형태를 구분한다.",
+          "주거 세부 조건이 없으면 이를 확정하지 않는다."
+        ],
+        "must_not": [
+          "검색 전에 등록 지역·나이를 다시 입력하도록 강제하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P33",
+      "number": 33,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "v03"
+      },
+      "category": "짧은 저축",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "돈 모으는 거 추천해줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "가입 지역·나이로 저축/자산형성 지원을 탐색한다.",
+          "미확인 근로·소득 조건과 매칭금/금리 차이를 표시한다."
+        ],
+        "must_not": [
+          "누구나 가입할 수 있다고 단정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P34",
+      "number": 34,
+      "origin": "original",
+      "source": {
+        "file": "questions.json",
+        "key": "v04"
+      },
+      "category": "짧은 취업",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "취업 지원 뭐 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "가입 지역·나이로 취업 관련 비용·교육·상담 후보를 찾는다.",
+          "취업 상태가 없다는 사실을 유지하고 미취업으로 임의 확정하지 않는다."
+        ],
+        "must_not": [
+          "분야 선택이나 가입 정보 재입력을 필수 선행 단계로 만들지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다."
+    },
+    {
+      "id": "P35",
+      "number": 35,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "7-5"
+      },
+      "category": "맥락 없음·금액",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "그거 얼마 줘?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "먼저 어떤 정책의 금액인지 확인한다."
+        ],
+        "must_not": [
+          "가입 프로필만 보고 정책이나 지원 금액을 추측하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다. 직전 추천이 없는 새 대화로 시험한다. P60은 맥락이 있는 짝이다."
+    },
+    {
+      "id": "P36",
+      "number": 36,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "7-6"
+      },
+      "category": "맥락 없음·접수",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "아직 신청돼?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "먼저 어떤 정책인지 확인한다."
+        ],
+        "must_not": [
+          "정책을 특정하지 않고 신청 가능/마감을 확정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다. 직전 추천이 없는 새 대화로 시험한다. P60은 맥락이 있는 짝이다."
+    },
+    {
+      "id": "P37",
+      "number": 37,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "7-7"
+      },
+      "category": "맥락 없음·근로",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "일해도 받을 수 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "먼저 정책명을 확인하고 필요한 경우 현재 근로 형태를 묻는다."
+        ],
+        "must_not": [
+          "일하면 모든 정책이 불가능하거나 가능하다고 하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다. 직전 추천이 없는 새 대화로 시험한다. P60은 맥락이 있는 짝이다."
+    },
+    {
+      "id": "P38",
+      "number": 38,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "7-8"
+      },
+      "category": "맥락 없음·중복",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "다른 거랑 같이 받아도 돼?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "현재 받는 정책과 추가로 받으려는 정책을 확인한다."
+        ],
+        "must_not": [
+          "비교할 사업이 없는데 중복수혜 가능 여부를 단정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다. 직전 추천이 없는 새 대화로 시험한다. P60은 맥락이 있는 짝이다."
+    },
+    {
+      "id": "P39",
+      "number": 39,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "7-9"
+      },
+      "category": "맥락 없음·서류",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "뭐 준비해야 해?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "먼저 신청하려는 정책을 확인한다."
+        ],
+        "must_not": [
+          "일반적인 서류 목록을 해당 정책의 필수 서류라고 만들어내지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다. 직전 추천이 없는 새 대화로 시험한다. P60은 맥락이 있는 짝이다."
+    },
+    {
+      "id": "P40",
+      "number": 40,
+      "origin": "original",
+      "source": {
+        "file": "agent_questions.md",
+        "key": "7-10"
+      },
+      "category": "맥락 없음·재신청",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "다시 신청할 수 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "정책명과 이전 신청 결과가 탈락인지 수혜 종료인지 확인한다."
+        ],
+        "must_not": [
+          "과거 수혜나 탈락 상태를 추측하거나 재신청을 보장하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "가입 프로필은 평가용 합성 정보다. 질문에 없는 나이·세부 지역은 이 프로필에서만 제공된다. 직전 추천이 없는 새 대화로 시험한다. P60은 맥락이 있는 짝이다."
+    },
+    {
+      "id": "P41",
+      "number": 41,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·첫 대화",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "월세 지원받을 수 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "질문에 지역·나이가 없어도 가입한 부산진구·만 24세를 사용한다.",
+          "현행 버전에서는 가입 지역 확인을 한 번 제시하고 예 응답 후 원래 월세 질문으로 검색한다."
+        ],
+        "must_not": [
+          "지역 드롭다운이나 나이 입력을 처음부터 요구하지 않는다.",
+          "확인 응답 후 월세라는 검색 의도를 잃지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "conditional_confirmation",
+          "text": "예",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "26230",
+          "must_do": [
+            "이미 읽은 월세 지원 요구로 검색한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "면접 볼 때 드는 비용도 지원받을 수 있어?",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "26230",
+          "must_do": [
+            "같은 대화에서는 가입 지역을 다시 확인하지 않고 취업 비용 지원으로 검색한다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P42",
+      "number": 42,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·정보 생략 짝",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": "alone"
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "직장인이고 월급은 세전 230만 원이야. 보증금 500만 원에 월세 45만 원짜리 집에서 혼자 살아. 내가 신청할 수 있는 월세나 주거비 지원 정책을 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "P02와 같은 가입 정보로 실행한다.",
+          "P02와 동일한 부산진구·만 24세·주거 조건으로 검색한다.",
+          "결과 순서가 달라도 지역·나이 필터와 요구 범위는 일치한다."
+        ],
+        "must_not": [
+          "생략된 지역·나이를 다시 질문하거나 서울을 기본값으로 쓰지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": "P02",
+      "notes": ""
+    },
+    {
+      "id": "P43",
+      "number": 43,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·상위 지역",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "부산에 사는데 청년 주거 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "부산이라는 상위 지명이 가입한 부산진구를 포함하므로 부산진구를 활용한다.",
+          "실제 검색 기준 지역을 알려준다."
+        ],
+        "must_not": [
+          "부산의 어느 구인지 다시 묻거나 해운대구 등으로 임의 변경하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P44",
+      "number": 44,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·소득 단위",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "30170",
+        "birth_date": "1998-03-15",
+        "gender": null,
+        "monthly_take_home_income": 2300000,
+        "housing_type": null
+      },
+      "signup_region_name": "대전광역시 서구",
+      "profile_age_on_evaluation_date": 28,
+      "query": "내가 가입할 때 적은 월급으로 받을 수 있는 청년 저축 지원이 있어?",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "30170",
+        "search_region_name": "대전광역시 서구",
+        "eligibility_age": 28,
+        "profile_region_after": "30170",
+        "profile_birth_date_after": "1998-03-15",
+        "must_do": [
+          "등록 월 실수령액 230만 원을 활용하되 세전 소득·연 소득·가구소득이 아님을 구분한다.",
+          "대전 서구·만 28세로 저축 지원을 찾고 소득 자격은 확인 필요로 둔다."
+        ],
+        "must_not": [
+          "월 실수령액에 12를 곱한 값을 확정 세전 연봉으로 사용하지 않는다.",
+          "소득 하나로 수급을 보장하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P45",
+      "number": 45,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·정보 없음",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "가입 정보 기준으로 나한테 맞는 취업 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "관악구·만 27세는 활용한다.",
+          "월 실수령액 null은 미입력이며 무소득·미취업의 증거가 아님을 유지한다.",
+          "취업 상태가 필요한 경우만 확인하거나 확인 필요로 표시한다."
+        ],
+        "must_not": [
+          "누락 소득을 0원으로 바꾸거나 미취업자라고 확정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P46",
+      "number": 46,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·생일 전날",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1991-11-17",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 34,
+      "query": "내 나이로 받을 수 있는 청년 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 34,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1991-11-17",
+        "must_do": [
+          "평가일 2026-11-16에는 만 34세로 계산한다.",
+          "다음 날 만 35세가 되는 점과 사업별 연령 기준일 차이를 표시한다."
+        ],
+        "must_not": [
+          "연도만 빼서 만 35세로 계산하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": "P47",
+      "notes": ""
+    },
+    {
+      "id": "P47",
+      "number": 47,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·생일 당일",
+      "evaluation_date": "2026-11-17",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1991-11-17",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 35,
+      "query": "내 나이로 받을 수 있는 청년 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 35,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1991-11-17",
+        "must_do": [
+          "평가일 2026-11-17에는 만 35세로 계산한다.",
+          "신청일 나이 19~34세이고 예외가 없는 사업이라면 추천에서 제외한다."
+        ],
+        "must_not": [
+          "P46에서 사용한 만 34세를 캐시해 재사용하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": "P46",
+      "notes": "P46과 생년월일·질문·정책 스냅샷은 같고 평가일만 하루 다르다. 고정된 나이 기준일이 있는 정책은 해당 공고 기준을 따른다."
+    },
+    {
+      "id": "P48",
+      "number": 48,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·생년월일 누락",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": null,
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": null,
+      "query": "내 조건에 맞는 청년 정책 추천해줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "request_profile_completion",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": null,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": null,
+        "must_do": [
+          "내 정보에서 생년월일을 입력하도록 안내하고 연령 기반 추천을 중단한다.",
+          "지역은 관악구로 등록되어 있다는 사실을 유지한다."
+        ],
+        "must_not": [
+          "임의로 27세를 배정하거나 지역까지 다시 수집하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": "신규 가입의 정상 경로가 아니라 생년월일이 누락된 기존 계정/불완전 데이터의 복구 시험이다."
+    },
+    {
+      "id": "P49",
+      "number": 49,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·이번 검색",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "이번에는 서울 관악구 기준으로 월세 지원 찾아줘. 가입 지역은 바꾸지 마.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "관악구로 바로 검색하고 검색 기준을 표시한다.",
+          "영구 가입 지역은 부산진구로 유지한다."
+        ],
+        "must_not": [
+          "가입 지역이라는 이유로 부산 정책만 반환하거나 가입 주소를 덮어쓰지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "message",
+          "text": "생활비 지원받을 수 있어?",
+          "new_conversation": true,
+          "expected_action": "search",
+          "expected_search_region_code": "26230",
+          "must_do": [
+            "새 대화는 원래 가입 지역 부산진구를 사용한다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P50",
+      "number": 50,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·후속 질문과 새 검색",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "서울 관악구 월세 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "이번 검색은 관악구로 하되 가입 지역은 부산진구로 유지한다."
+        ],
+        "must_not": [
+          "지역이 없는 새 검색을 이전 임시 지역에 영구 고정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "message",
+          "text": "취업 준비 비용 지원도 찾아줘.",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "26230",
+          "must_do": [
+            "새로운 검색 요구에는 가입 지역 부산진구를 적용한다.",
+            "정책 상세를 묻는 후속 질문과 새 검색을 구분한다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": null,
+      "notes": "문장 속 지역은 이번 검색에만 적용한다는 현재 계약을 평가한다. 같은 대화 전체에 임시 지역을 유지하도록 제품을 바꾸면 이 기대값도 버전 변경한다."
+    },
+    {
+      "id": "P51",
+      "number": 51,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·드롭다운",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "월세 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "처음에는 부산진구로 월세 지원을 검색한다.",
+          "지역 변경 UI를 통해 바꿀 수 있게 한다."
+        ],
+        "must_not": [
+          "지역 변경 후 월세라는 원래 요구나 나이를 잃지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "button",
+          "text": "지역 변경하기",
+          "new_conversation": false,
+          "expected_action": "select_region",
+          "expected_search_region_code": null,
+          "must_do": [
+            "지역 선택 UI를 표시한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "region_selection",
+          "text": "서울특별시 관악구",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "11620",
+          "must_do": [
+            "같은 월세 요구를 관악구에서 다시 검색한다.",
+            "명시적 저장 전 가입 지역은 부산진구다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "월세 지원 찾아줘.",
+          "new_conversation": true,
+          "expected_action": "search",
+          "expected_search_region_code": "26230",
+          "must_do": [
+            "저장 없이 새 대화를 시작하면 부산진구를 사용한다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P52",
+      "number": 52,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·영구 저장",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "서울 관악구 월세 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 24,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "처음 검색만으로 가입 지역을 변경하지 않는다.",
+          "다음에도 관악구로 찾기 버튼으로 영구 저장을 선택할 수 있다."
+        ],
+        "must_not": [
+          "저장 전 주소를 바꾸거나 저장 성공 전 변경됐다고 확정하지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "button",
+          "text": "다음에도 관악구로 찾기",
+          "new_conversation": false,
+          "expected_action": "save_region",
+          "expected_search_region_code": null,
+          "must_do": [
+            "채팅 엔진의 저장 완료 후 FinancialProfile.region_code가 11620이 된다."
+          ],
+          "expected_saved_region_code": "11620"
+        },
+        {
+          "kind": "message",
+          "text": "월세 지원 찾아줘.",
+          "new_conversation": true,
+          "expected_action": "search",
+          "expected_search_region_code": "11620",
+          "must_do": [
+            "새 대화도 관악구를 기본 지역으로 사용한다."
+          ],
+          "expected_saved_region_code": "11620"
+        }
+      ],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P53",
+      "number": 53,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·내 정보 수정",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "생활비 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 24,
+        "profile_region_after": "28177",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "수정 전 가입 지역 부산진구를 사용한다."
+        ],
+        "must_not": [
+          "새 대화에서 오래된 가입 지역을 캐시해 사용하지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "profile_update",
+          "text": "내 정보 화면에서 사는 지역을 인천광역시 미추홀구로 변경하고 저장",
+          "new_conversation": false,
+          "expected_action": "save_region",
+          "expected_search_region_code": null,
+          "must_do": [
+            "회원 정보 저장 성공을 확인한다."
+          ],
+          "expected_saved_region_code": "28177"
+        },
+        {
+          "kind": "message",
+          "text": "생활비 지원 찾아줘.",
+          "new_conversation": true,
+          "expected_action": "search",
+          "expected_search_region_code": "28177",
+          "must_do": [
+            "새 대화에서 변경된 미추홀구·기존 생년월일을 사용한다."
+          ],
+          "expected_saved_region_code": "28177"
+        }
+      ],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P54",
+      "number": 54,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·시도 전체",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1999-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 27,
+      "query": "부산 전체에서 청년 주거 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26000",
+        "search_region_name": "부산광역시",
+        "eligibility_age": 27,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1999-03-15",
+        "must_do": [
+          "부산광역시 전체(26000)로 검색한다.",
+          "하위 구 전용 사업을 포함하면 카드별 대상 지역과 거주 자격을 분명히 표시한다."
+        ],
+        "must_not": [
+          "부산진구나 해운대구를 임의로 골라 검색 범위를 축소하지 않는다.",
+          "부산 모든 청년이 모든 구 사업에 신청 가능하다고 하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P55",
+      "number": 55,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·동명 지역",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "중구 청년 주거 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_region",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "중구가 여러 지역에 있으므로 후보를 제시해 구분한다.",
+          "선택 뒤 원래 주거 지원 요구를 이어서 검색한다."
+        ],
+        "must_not": [
+          "부산 가입자라는 이유만으로 부산 중구를 자동 선택하지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "region_selection",
+          "text": "서울특별시 중구",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "11140",
+          "must_do": [
+            "서울 중구로 검색하고 가입 지역은 부산진구로 유지한다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P56",
+      "number": 56,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·전국 검색",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "월세 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "26230",
+        "search_region_name": "부산광역시 부산진구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "먼저 가입 지역인 부산진구로 검색한다."
+        ],
+        "must_not": [
+          "전국 탐색을 위해 가입 주소를 전국으로 저장하지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "button",
+          "text": "지역 변경하기",
+          "new_conversation": false,
+          "expected_action": "select_region",
+          "expected_search_region_code": null,
+          "must_do": [
+            "지역 선택 UI를 표시한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "region_selection",
+          "text": "전국",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "00000",
+          "must_do": [
+            "전국 범위로 원래 월세 요구를 검색한다.",
+            "다른 지자체 전용 사업은 지역 자격 확인 필요를 표시한다.",
+            "전국을 영구 거주 지역으로 저장하는 버튼은 제공하지 않는다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": null,
+      "notes": "전국은 검색 범위다. 전국 검색 결과가 모두 전국민 대상 정책이라는 뜻은 아니다."
+    },
+    {
+      "id": "P57",
+      "number": 57,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·지역 누락",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": null,
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "미등록/미정",
+      "profile_age_on_evaluation_date": 24,
+      "query": "월세 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "clarify_region",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 24,
+        "profile_region_after": null,
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "나이는 가입 생년월일에서 읽고 지역만 선택하도록 요청한다.",
+          "지역 응답 뒤 기존 월세 질문을 유지한다."
+        ],
+        "must_not": [
+          "지역을 임의로 서울로 채우거나 생년월일까지 다시 입력하게 하지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "region_selection",
+          "text": "부산광역시 부산진구",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "26230",
+          "must_do": [
+            "선택 지역으로 월세 지원을 검색한다.",
+            "명시적 영구 저장 전 가입 지역은 null이다."
+          ]
+        }
+      ],
+      "paired_case": null,
+      "notes": "지역 필수화 이전 계정/누락 데이터의 복구 시험. 가입 지역의 영구 저장은 별도 선택이다."
+    },
+    {
+      "id": "P58",
+      "number": 58,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "프로필 활용·나이 불일치",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "11620",
+        "birth_date": "1987-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "서울특별시 관악구",
+      "profile_age_on_evaluation_date": 39,
+      "query": "나 23살인데 내 나이에 맞는 청년 정책 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "resolve_age_conflict",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 39,
+        "profile_region_after": "11620",
+        "profile_birth_date_after": "1987-03-15",
+        "must_do": [
+          "등록 생년월일 기준 만 39세와 질문의 23살이 다름을 알린다.",
+          "현재 자격 판단은 가입 생년월일 기준임을 밝히고 잘못된 경우 내 정보 수정을 안내한다."
+        ],
+        "must_not": [
+          "생년월일을 2003년으로 자동 변경하거나 만 23세 전용 자격을 충족했다고 하지 않는다."
+        ]
+      },
+      "follow_up_steps": [],
+      "paired_case": "P20",
+      "notes": ""
+    },
+    {
+      "id": "P59",
+      "number": 59,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "지역 변경·연속 변경",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "서울 관악구 청년 주거 지원 찾아줘.",
+      "conversation_setup": {
+        "new_conversation": true,
+        "prior_messages": [],
+        "fixture_id": null
+      },
+      "expected": {
+        "first_semantic_action": "search",
+        "search_region_code": "11620",
+        "search_region_name": "서울특별시 관악구",
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "첫 검색은 관악구로 하고 가입 지역은 부산진구로 유지한다."
+        ],
+        "must_not": [
+          "서로 다른 검색 결과를 한 지역 결과인 것처럼 섞거나 이전 지역으로 되돌아가지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "message",
+          "text": "이번에는 인천 미추홀구 주거 지원 찾아줘.",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "28177",
+          "must_do": [
+            "검색과 결과 검토 모두 미추홀구 기준을 사용한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "다시 부산진구 주거 지원 찾아줘.",
+          "new_conversation": false,
+          "expected_action": "search",
+          "expected_search_region_code": "26230",
+          "must_do": [
+            "최신 명시 지역 부산진구로 검색한다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": null,
+      "notes": ""
+    },
+    {
+      "id": "P60",
+      "number": 60,
+      "origin": "added",
+      "source": {
+        "file": "new",
+        "key": null
+      },
+      "category": "맥락 있음·지역 변경 뒤 상세",
+      "evaluation_date": "2026-11-16",
+      "signup_profile": {
+        "region_code": "26230",
+        "birth_date": "2002-03-15",
+        "gender": null,
+        "monthly_take_home_income": null,
+        "housing_type": null
+      },
+      "signup_region_name": "부산광역시 부산진구",
+      "profile_age_on_evaluation_date": 24,
+      "query": "아까 추천해준 것 중에 두 번째 정책 있잖아. 그거 신청 링크랑 준비할 서류 알려줘.",
+      "conversation_setup": {
+        "new_conversation": false,
+        "prior_messages": [],
+        "fixture_id": "housing-detail-context"
+      },
+      "expected": {
+        "first_semantic_action": "detail_policy",
+        "search_region_code": null,
+        "search_region_name": null,
+        "eligibility_age": 24,
+        "profile_region_after": "26230",
+        "profile_birth_date_after": "2002-03-15",
+        "must_do": [
+          "사전 주입된 관악구 추천 목록의 두 번째 정책 fixture-housing-b를 선택한다.",
+          "서류는 임대차계약서와 주민등록등본으로 답하고, 링크는 자료에 없어 확인 필요라고 답한다.",
+          "가입 지역이 부산이어도 이미 선택한 정책 상세를 부산 정책으로 교체하지 않는다."
+        ],
+        "must_not": [
+          "새 검색으로 목록을 바꾸거나 이전 맥락이 있는데 정책명을 다시 묻지 않는다.",
+          "자료에 없는 신청 링크·중복수혜·재신청 규칙을 생성하지 않는다."
+        ]
+      },
+      "follow_up_steps": [
+        {
+          "kind": "message",
+          "text": "그거 얼마 줘?",
+          "new_conversation": false,
+          "expected_action": "detail_policy",
+          "expected_search_region_code": null,
+          "must_do": [
+            "같은 B 정책의 월 10만 원, 최대 3개월을 답한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "아직 신청돼?",
+          "new_conversation": false,
+          "expected_action": "detail_policy",
+          "expected_search_region_code": null,
+          "must_do": [
+            "평가일 기준 2026-11-01~2026-11-30 접수 중임을 답하고 선정 보장은 하지 않는다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "일해도 받을 수 있어?",
+          "new_conversation": false,
+          "expected_action": "detail_policy",
+          "expected_search_region_code": null,
+          "must_do": [
+            "원문상 재직자 신청 가능이나 나머지 요건·심사가 있음을 설명한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "다른 거랑 같이 받아도 돼?",
+          "new_conversation": false,
+          "expected_action": "clarify_policy",
+          "expected_search_region_code": null,
+          "must_do": [
+            "받고 있는 다른 사업명을 확인하고 B의 중복 규칙은 자료에 없다고 안내한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "뭐 준비해야 해?",
+          "new_conversation": false,
+          "expected_action": "detail_policy",
+          "expected_search_region_code": null,
+          "must_do": [
+            "동일 B의 임대차계약서·주민등록등본을 안내한다."
+          ],
+          "expected_saved_region_code": "26230"
+        },
+        {
+          "kind": "message",
+          "text": "다시 신청할 수 있어?",
+          "new_conversation": false,
+          "expected_action": "clarify_policy",
+          "expected_search_region_code": null,
+          "must_do": [
+            "이전 신청 결과를 확인하고 재신청 규칙은 자료에 없으므로 기관 확인을 안내한다."
+          ],
+          "expected_saved_region_code": "26230"
+        }
+      ],
+      "paired_case": "P19",
+      "notes": "실제 정책 추천 정확도가 아닌 대화 참조 평가다. 명시적으로 가상인 고정 fixture를 격리된 평가 환경에 주입한다. 외부 공고로 취급하지 않는다."
+    }
+  ]
+}
