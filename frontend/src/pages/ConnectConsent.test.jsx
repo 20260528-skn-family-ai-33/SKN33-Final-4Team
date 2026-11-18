@@ -132,6 +132,7 @@ it('은행 목록 실패와 일부 은행의 대출 조회 누락은 기존 오�
   sync.mockResolvedValueOnce({ items: [ok('a'), { connectionId: 'b', status: 'succeeded',
     parts: [{ kind: 'accounts', status: 'succeeded' }, { kind: 'loans', status: 'skipped' }] }] })
     .mockResolvedValueOnce({ items: [ok('a')] })
+    .mockResolvedValueOnce({ items: [ok('a')] })
     .mockRejectedValueOnce(new Error('조회 시간 초과'))
     .mockResolvedValueOnce({ items: [ok('a'), ok('b')] })
   await act(() => root.render(<ConnectLoanPage />))
@@ -144,7 +145,26 @@ it('은행 목록 실패와 일부 은행의 대출 조회 누락은 기존 오�
   }
   await click(button('동의하고 불러오기'))
   expect(navigate).toHaveBeenCalledExactlyOnceWith('/finance/loans', { replace: false, state: { from: 'onboarding' } })
-  expect(sync).toHaveBeenCalledTimes(4)
+  expect(sync).toHaveBeenCalledTimes(5)
+})
+
+it.each([
+  ['동의 없음', [{ connectionId: 'b', status: 'succeeded',
+    parts: [{ kind: 'accounts', status: 'succeeded' }, { kind: 'loans', status: 'skipped', reason: 'no_consent' }] }]],
+  ['대상 은행 누락', []],
+])('진행 중이던 조회 결과에 %s이 있으면 해당 은행만 한 번 더 불러온다', async (_reason, otherItems) => {
+  useApi.mockReturnValue({ data: DOCS, error: null, reload })
+  apiSend.mockResolvedValueOnce({}).mockResolvedValueOnce({ items: [{ connectionId: 'a', businessType: 'bank' }, { connectionId: 'b', businessType: 'bank' }] })
+  const ok = (connectionId) => ({ connectionId, status: 'succeeded', parts: [{ kind: 'loans', status: 'succeeded' }] })
+  sync.mockResolvedValueOnce({ items: [ok('a'), ...otherItems] })
+    .mockResolvedValueOnce({ items: [ok('b')] })
+  await act(() => root.render(<ConnectLoanPage />))
+  await click(button('대출 정보 연결하기'))
+  await click(box('[선택] 대출'))
+  await click(button('동의하고 불러오기'))
+  expect(sync.mock.calls).toEqual([[{ connectionIds: ['a', 'b'] }], [{ connectionIds: ['b'] }]])
+  expect(host.querySelector('[role=alert]')).toBeNull()
+  expect(navigate).toHaveBeenCalledExactlyOnceWith('/finance/loans', { replace: false, state: { from: 'onboarding' } })
 })
 
 it('서버가 문서가 바뀌었다고 하면 다시 받고 체크를 지운다 · 새 버전에 이전 체크가 넘어가지 않는다', async () => {

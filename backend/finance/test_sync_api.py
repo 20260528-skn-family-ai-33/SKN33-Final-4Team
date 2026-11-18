@@ -334,6 +334,33 @@ class DuplicateTest(SyncBase):
         self.assertEqual(self.post(body).json(), after)
         self.loans.assert_called_once()
 
+    def test_loan_consent_added_while_previous_sync_is_running(self):
+        Consent.objects.filter(user=self.user, product_scope="loan").update(revoked_at=timezone.now())
+        self.loan_syncer.return_value = self.loans
+        self.card_syncer.return_value = self.cards
+        during = {}
+
+        def grant_while_card_syncs(*args, **kwargs):
+            during["consent"] = self.client.post("/api/finance/consents/", data=json.dumps({"consents": [
+                {"purpose": "finance_inquiry", "productScope": "loan", "documentVersion": "v2"},
+            ]}), content_type="application/json")
+            during["sync"] = self.post(self.body())
+            return {}
+
+        self.cards.side_effect = grant_while_card_syncs
+        before, task = self.run_sync({"connectionIds": [str(self.shinhan.connection_id), str(self.lotte.connection_id)]})
+        self.assertEqual(during["consent"].status_code, 201)
+        self.assertEqual(during["sync"].status_code, 202)
+        self.assertEqual(during["sync"].json(), {"taskId": before["taskId"], "status": "running"})
+        self.assertIn({"kind": "loans", "status": "skipped", "reason": "no_consent"}, self.items(task)["0088"]["parts"])
+        self.loans.assert_not_called()
+
+        after, task = self.run_sync(self.body())
+        self.assertNotEqual(after["taskId"], before["taskId"])
+        self.assertIn({"kind": "loans", "status": "succeeded"}, self.items(task)["0088"]["parts"])
+        self.loans.assert_called_once()
+        self.cards.assert_called_once()
+
     def test_unexpected_error_fails_task_with_safe_message(self):
         with patch("finance.api_sync.sync_connections", side_effect=RuntimeError("bug")), self.assertLogs("config.tasks", "ERROR"):
             started = self.post(self.body()).json()
