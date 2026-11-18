@@ -54,7 +54,7 @@ export default function GuideTour({ onClose }) {
       const size = Math.max(r.width, r.height) + PAD * 2
       const cx = r.left - d.left + r.width / 2
       const cy = r.top - d.top + r.height / 2
-      setSpot({ left: cx - size / 2, top: cy - size / 2, size, cardBottom: d.bottom - (cy - size / 2) + 14, caret: cx - 16 })
+      setSpot({ left: cx - size / 2, top: cy - size / 2, size, cardBottom: d.height - (cy - size / 2) + 14, caret: cx - 16 })
     }
     place()
     window.addEventListener('resize', place)

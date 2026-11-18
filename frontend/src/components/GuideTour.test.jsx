@@ -55,3 +55,14 @@ it('비출 탭을 찾지 못하면(기기 틀 밖) 화면 가운데 카드로 �
   expect(host.querySelector('.mc-tour-dots').getAttribute('aria-label')).toBe(`${GUIDE_STEPS.length - 2}단계 중 1단계`)
   expect(host.querySelectorAll(".mc-tour-dots i.on")).toHaveLength(1)  // 1 / 5 = 막대 하나
 })
+
+it('기기 위에 화면 여백이 있어도 카드 위치는 기기 내부 높이로 계산한다', async () => {
+  await act(() => root.render(<div className="mc-device">
+    <nav id="mc-nav"><a className="mc-home" href="/">홈</a></nav>
+    <GuideTour onClose={() => {}} />
+  </div>))
+  host.querySelector('.mc-device').getBoundingClientRect = () => new DOMRect(100, 24, 400, 852)
+  host.querySelector('.mc-home').getBoundingClientRect = () => new DOMRect(120, 810, 50, 50)
+  await next()
+  expect(host.querySelector('.mc-tour-card').style.bottom).toBe('90px')
+})

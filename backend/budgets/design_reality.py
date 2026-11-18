@@ -23,6 +23,6 @@ def system_floors(profile):
         if history is not None:
             if isinstance(history, bool) or history < 0:
                 raise ValueError('invalid_transport_history')
-            floor = min(floor, int(history / 1000 + 0.5) * 1000)
+            floor = min(floor, int((history + 500) // 1000) * 1000)
         return {'TRANSPORT_CAR': floor} if floor else {}
     return {}

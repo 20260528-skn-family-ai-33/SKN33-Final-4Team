@@ -6,7 +6,7 @@
 - 해결 가능한 분배 조건 충돌이면 추천 작업은 `succeeded`이며 `budgetId=null`을 유지한다. 공개 `result.handoff={mode:"DESIGN_RECOVERY", sourceTaskId:"<추천 작업 UUID>"}`만 추가한다. 전체 전달 자료는 기존 `AsyncTask.result._design_handoff`에 비공개 저장하며 `/api/tasks/<id>/` 응답에서는 제거한다. 기술적 실패·정책 오류·정상 추천에는 handoff를 주지 않는다.
 - `DESIGN_RECOVERY` 대화에서 범위 또는 재원을 선택하면 서버가 A/B 계산기를 다시 사용한다. 확인된 여윳돈을 먼저 쓰고, 저축·월 쿠션 여유분은 각각 선택한 경우에만 쓴다. 검수된 해결안만 `validated`로 저장한다.
 - 해결안 카드의 `mode`는 `INITIAL_ADJUSTMENT`, `baseBudgetId`는 `null`이며 `sourceTaskId`로 실패 작업을 가리킨다. 기존 `POST /api/budgets/<proposalId>/approve/`가 최신 재원·거래·보호 조건과 저장 항목을 검사한 뒤 `{adjustment,budget}`를 반환한다. 조건이 바뀐 조정안은 409 `expired`다.
-- 최초로 확정한 배정은 다음 급여 주기로 자동으로 이어진다. ‘이번만’ 조정한 예산은 해당 주기에 적용한다. `keepForNextCycle=true`로 승인한 예산은 이후 기본 배정이 되며, 선택한 유지 목표는 프로필에도 저장한다. 다음 주기의 수입·고정비·보호 조건으로 감당할 수 있는 배정만 자동 적용한다.
+- 최초로 확정한 배정은 다음 급여 주기로 자동으로 이어진다. ‘이번만’ 조정한 예산은 해당 주기에 적용한다. 같은 주기에 ‘계속’ 조정을 추가로 승인하면 이후 기본 배정에는 지속 승인한 항목과 금액만 반영한다. 유지 목표는 프로필에도 저장한다. 다음 주기의 수입·고정비·보호 조건과 현재 자차 보유 상태 및 검증된 소비 이력에 따른 교통비 하한을 충족할 때 자동 적용한다. 배정 조건을 충족하지 못하면 새 주기 예산을 다시 검토한다.
 ## 예산 AI 외부 전송 동의 — 2026-11-10 연결 (실제 서비스 외부 호출은 계속 OFF)
 
 - `GET /api/budgets/ai-consent/`: 로그인한 회원 자신의 `available`, `status`, `purpose="budget_ai"`, `document`, `documentVersion`, `documentHash`, `grantedAt`, `revokedAt`를 반환한다. 상태는 `not_granted / granted / revoked / needs_renewal`이다. available은 예산 기능과 외부 AI 설정이 모두 true일 때만 true다. false이면 새 동의 UI를 숨기고 PUT은 409 budget_ai_unavailable로 막는다. 기존 활성 동의의 조회·철회는 계속 허용하며 비활성 화면에서는 철회 UI만 보인다. 현재 문서의 버전과 원문 해시가 일치하는 미철회 기록만 유효하다.

@@ -412,7 +412,7 @@ class HomeApiTest(HomeFixture):
 
 
 class RecurringBudgetTest(HomeFixture):
-    def approve(self, day, *, food, cushion, keep=None):
+    def approve(self, day, *, food, cushion, keep=None, shopping=None, transport=None, target_changes=None):
         from .models import Budget, BudgetItem
 
         self.home(day)
@@ -420,10 +420,15 @@ class RecurringBudgetTest(HomeFixture):
         budgets = Budget.objects.filter(user=self.user, cycle=cycle)
         budgets.filter(status="approved").update(status="superseded")
         summary = None if keep is None else {"adjustment": {"approval": {"keep_for_next_cycle": keep}}}
+        if target_changes is not None:
+            summary["adjustment"]["approval"]["target_changes"] = target_changes
         budget = Budget.objects.create(user=self.user, cycle=cycle, version_no=budgets.count() + 1,
                                        status="validated", funding_amount=2_500_000, validation_summary=summary)
         BudgetItem.objects.bulk_create([
-            BudgetItem(user=self.user, budget=budget, bucket="living", category_id="FOOD", allocated_amount=food),
+            BudgetItem(user=self.user, budget=budget, bucket="living", category_id=code, allocated_amount=amount)
+            for code, amount in (("FOOD", food), ("FASHION_SHOPPING", shopping), ("TRANSPORT_CAR", transport))
+            if amount is not None
+        ] + [
             BudgetItem(user=self.user, budget=budget, bucket="savings", allocated_amount=200_000),
             BudgetItem(user=self.user, budget=budget, bucket="cushion", allocated_amount=cushion),
         ])
@@ -451,6 +456,41 @@ class RecurringBudgetTest(HomeFixture):
         with patch("django.utils.timezone.localdate", return_value=jan):
             page = self.client.get("/api/budgets/").json()
         self.assertEqual((page["living"]["budget"], page["split"]["cushion"]), (380_000, 150_000))
+
+    def test_later_ongoing_changes_do_not_carry_earlier_temporary_amounts(self):
+        october, november = date(2026, 10, 25), date(2026, 11, 25)
+        self.approve(october, food=400_000, shopping=100_000, cushion=100_000)
+        self.approve(october, food=500_000, shopping=100_000, cushion=150_000, keep=False, target_changes={})
+        self.approve(october, food=500_000, shopping=120_000, cushion=150_000, keep=True,
+                     target_changes={"FASHION_SHOPPING": 120_000})
+        self.approve(october, food=500_000, shopping=125_000, cushion=160_000, keep=True,
+                     target_changes={"FASHION_SHOPPING": 125_000, "CUSHION_MONTHLY": 160_000})
+        self.approve(october, food=500_000, shopping=130_000, cushion=175_000, keep=False, target_changes={})
+
+        for day in (november, date(2026, 12, 25)):
+            self.assertEqual(self.home(day)["budget"]["living_budget"], 525_000)
+            cycle = BudgetCycle.objects.get(user=self.user, starts_on=day)
+            items = cycle.budgets.get(status="approved").items
+            self.assertEqual(dict(items.filter(bucket="living").values_list("category_id", "allocated_amount")),
+                             {"FOOD": 400_000, "FASHION_SHOPPING": 125_000})
+            self.assertEqual(items.get(bucket="cushion").allocated_amount, 160_000)
+
+    def test_changed_vehicle_floor_blocks_rollover_without_verified_transport_history(self):
+        october, november = date(2026, 10, 25), date(2026, 11, 25)
+        self.profile.has_car = False
+        self.profile.save(update_fields=["has_car"])
+        source = self.approve(october, food=400_000, transport=60_000, cushion=100_000)
+        self.profile.has_car = True
+        self.profile.save(update_fields=["has_car"])
+        self.assertIsNone(self.home(november)["budget"])
+
+        source.input_snapshot = {"transport_history_reference": {
+            "status": "ready", "months": ["2026-07", "2026-08", "2026-09"],
+            "baseline_numerator": 60_000, "baseline_denominator": 1,
+            "history_fingerprint": "f" * 64, "version": "test",
+        }}
+        source.save(update_fields=["input_snapshot"])
+        self.assertEqual(self.home(november)["budget"]["living_budget"], 460_000)
 
     def test_cushion_is_counted_two_days_after_payday_and_once_per_cycle(self):
         from .cushion import cushion_total

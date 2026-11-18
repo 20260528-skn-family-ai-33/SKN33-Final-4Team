@@ -13,28 +13,40 @@ def recurring_budget(user, cycle):
     earlier = Budget.objects.filter(
         user=user, cycle__starts_on__lt=cycle.starts_on, approved_at__isnull=False,
         status__in=("approved", "superseded"), schedule__isnull=True,
-    ).select_related("cycle").order_by("-cycle__starts_on", "-version_no")
-    baseline = None
-    for budget in earlier.iterator():
-        summary = budget.validation_summary or {}
-        if (summary.get("rollover") or {}).get("one_off"):
-            continue
-        baseline = budget  # The first approved plan is the baseline even if made in chat.
-        adjustment = summary.get("adjustment") or summary.get("design_recovery") or {}
-        if (adjustment.get("approval") or {}).get("keep_for_next_cycle") is not False:
-            break
-
+    ).order_by("cycle__starts_on", "version_no")
+    baseline, targets, has_temporary_amounts = None, {}, False
     schedules = BudgetAdjustmentSchedule.objects.filter(
         user=user, status="applied", effective_on__lte=cycle.starts_on,
     ).select_related("proposal").order_by("-effective_on", "-applied_at")
     for schedule in schedules.iterator():
-        one_off = bool(schedule.settings.get("one_off"))
-        if one_off and schedule.effective_on != cycle.starts_on:
+        if schedule.settings.get("one_off"):
+            if schedule.effective_on == cycle.starts_on:
+                return schedule.proposal, True, {}
             continue
-        if baseline is None or baseline.cycle.starts_on < schedule.effective_on:
-            return schedule.proposal, one_off
+        baseline = schedule.proposal
+        earlier = earlier.filter(cycle__starts_on__gte=schedule.effective_on)
         break
-    return baseline, False
+
+    for budget in earlier.iterator():
+        summary = budget.validation_summary or {}
+        if (summary.get("rollover") or {}).get("one_off"):
+            has_temporary_amounts = True
+            continue
+        context = (budget.input_snapshot or {}).get("adjustment_context") or {}
+        approval = (summary.get("adjustment") or {}).get("approval") or {}
+        keep = approval.get("keep_for_next_cycle")
+        if baseline is None or keep is None or context.get("mode") == "INITIAL_ADJUSTMENT":
+            baseline, targets, has_temporary_amounts = budget, {}, False
+        elif keep is False:
+            has_temporary_amounts = True
+        elif has_temporary_amounts:
+            # A later approval can still include allocations from a temporary adjustment.
+            for code, amount in (approval.get("target_changes") or {}).items():
+                if amount is not None:
+                    targets[code] = amount
+        else:
+            baseline = budget
+    return baseline, False, targets
 
 
 def ensure_current_budget(user, profile, cycle, today):
@@ -44,9 +56,9 @@ def ensure_current_budget(user, profile, cycle, today):
     budgets = Budget.objects.filter(user=user, cycle=cycle)
     if not budgets.filter(status="approved").exists():
         # shortcut: only materialize the current cycle on demand, pending a periodic rollover job.
-        source, one_off = recurring_budget(user, cycle)
+        source, one_off, targets = recurring_budget(user, cycle)
         if source is not None:
-            carry_budget(user, profile, cycle, budgets, source, one_off)
+            carry_budget(user, profile, cycle, budgets, source, one_off, targets)
     record_due_cushion(user, today)
 
 
@@ -63,7 +75,8 @@ def sync_current_budget(user, today):
         ensure_current_budget(user, profile, current_cycle(user, profile, today), today)
 
 
-def carry_budget(user, profile, cycle, budgets, source, one_off):
+def carry_budget(user, profile, cycle, budgets, source, one_off, targets):
+    from .adjustment_context import transport_budget_floors
     from .api import fixed_budget_lines
     from .home import balance_json
     from .protect import cushion_goal, cushion_required, fixed_breakdown, savings_min
@@ -80,12 +93,26 @@ def carry_budget(user, profile, cycle, budgets, source, one_off):
     lines = list(source.items.filter(user=user, bucket__in=("living", "savings", "cushion")).values(
         "bucket", "category_id", "category_detail", "allocated_amount",
     ))
+    buckets = {"SAVINGS": "savings", "CUSHION_MONTHLY": "cushion"}
+    for code, amount in targets.items():
+        if code == "LIVING":
+            continue
+        bucket = buckets.get(code, "living")
+        category = code if bucket == "living" else None
+        lines = [row for row in lines if row["bucket"] != bucket
+                 or (category is not None and row["category_id"] != category)]
+        lines.append({"bucket": bucket, "category_id": category, "category_detail": None, "allocated_amount": amount})
     living = {row["category_id"]: row["allocated_amount"] for row in lines if row["bucket"] == "living"}
     saved = sum(row["allocated_amount"] for row in lines if row["bucket"] == "savings")
     cushion = sum(row["allocated_amount"] for row in lines if row["bucket"] == "cushion")
     minimums, _ = budget_settings(user, cycle)
+    system_floors, reference = transport_budget_floors(profile, source)
     if (not living or any(row["allocated_amount"] < 0 for row in lines) or saved < savings_min(user)
-            or any(living.get(code, 0) < amount for code, amount in minimums.items())):
+            or any(living.get(code, 0) < amount for code, amount in minimums.items())
+            or any(living.get(code, 0) < amount for code, amount in system_floors.items())):
+        return
+    # An aggregate target alone doesn't authorize new amounts for individual categories.
+    if "LIVING" in targets and sum(living.values()) != targets["LIVING"]:
         return
     if cushion == 0 and cushion_required(balance_json(user)["total"], income, cushion_goal(profile, income)):
         return
@@ -97,8 +124,6 @@ def carry_budget(user, profile, cycle, budgets, source, one_off):
     if sum(row["allocated_amount"] for row in lines) > income:
         return
 
-    stored = source.input_snapshot or {}
-    reference = stored.get("transport_history_reference") or (stored.get("adjustment_context") or {}).get("transport_history_reference")
     snapshot = {"fixed": fixed, "transport_history_reference": reference}
     version = (budgets.aggregate(last=Max("version_no"))["last"] or 0) + 1
     budget = Budget.objects.create(
