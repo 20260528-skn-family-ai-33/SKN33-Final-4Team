@@ -11,7 +11,6 @@ from collections import Counter
 from datetime import datetime
 import os
 
-from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
@@ -50,9 +49,8 @@ class Command(BaseCommand):
             validate_password(password)
         except ValidationError as exc:
             raise CommandError(' '.join(exc.messages)) from exc
-        User = get_user_model()
-        if not options['reset'] and User.objects.filter(email=cfg['email']).exists():
-            raise CommandError('같은 이메일의 계정이 이미 있어요. 다시 만들려면 --reset 을 붙이세요.')
+        if not options['reset'] and ps.persona_users(persona).exists():
+            raise CommandError('이 페르소나 계정이 이미 있어요(예전 이메일 포함). 다시 만들려면 --reset 을 붙이세요.')
 
         log = lambda text: self.stdout.write('  · ' + text)
         with transaction.atomic():  # 지우기와 새로 넣기를 한 번에: 넣다가 실패하면 지운 계정도 되돌린다

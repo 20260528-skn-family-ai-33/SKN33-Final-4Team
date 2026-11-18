@@ -14,7 +14,8 @@ from datetime import date, timedelta
 from pathlib import Path
 
 DATA = Path(__file__).with_name('data')
-SEED = 20262380  # 11/19 기준 식비만 8~10월 평균의 93%(거의 다 씀), 나머지는 87% 안쪽인 무작위 값 (11/16 골라서 고정)
+SEED = 20268315  # 이번 주기(10/25~11/19) 식비만 8~10월 평균의 89%(거의 다 씀), 나머지는 87% 안쪽인 무작위 값
+# (11/18 소비 현실화 후 다시 골라서 고정: 식비 약 53만 · 생활용품 약 5만 · 패션 약 11만 · 문화 약 12만)
 START, END = date(2026, 7, 1), date(2026, 11, 30)
 # 2026 평일 공휴일 (8/17 광복절 대체, 9/24~25 추석, 10/5 개천절 대체, 10/9 한글날)
 HOLIDAYS = {date(2026, 8, 17), date(2026, 9, 24), date(2026, 9, 25), date(2026, 10, 5), date(2026, 10, 9)}
@@ -31,8 +32,7 @@ FIXED = [
     ('ott', '넷플릭스', 17_000, 5, 'spending', 'CULTURE_LEISURE', 'D'),
     ('maintenance', '신림해오름원룸', 70_000, 10, 'spending', 'HOUSING_TELECOM', 'A'),
     ('telecom', 'SK텔레콤 자동납부', 55_000, 15, 'spending', 'HOUSING_TELECOM', 'A'),
-    ('student_loan', '한국장학재단 학자금상환', 150_000, 27, 'loan_repayment', '', 'A'),
-]
+]  # 11/18: 학자금 대출 없음 (생활비를 늘리려고 상환을 뺐다)
 SAVING = ('saving', '청년도약 적금 자동이체', 300_000, 26)
 
 # 친구 송금: (날짜, 시각, 이름, 금액, 방향, 정답 카테고리, 메모)
@@ -83,6 +83,11 @@ ONE_OFF = [
     (date(2026, 8, 1), '19:50', None, 'CGV 온라인 예매', 28_000, 'CULTURE_LEISURE'),
     (date(2026, 9, 19), '19:50', None, 'CGV 온라인 예매', 14_000, 'CULTURE_LEISURE'),
     (date(2026, 10, 31), '19:50', None, '롯데시네마 온라인 예매', 30_000, 'CULTURE_LEISURE'),
+    (date(2026, 7, 19), '20:30', None, '메가박스 온라인 예매', 15_000, 'CULTURE_LEISURE'),
+    (date(2026, 8, 23), '20:30', None, '메가박스 온라인 예매', 15_000, 'CULTURE_LEISURE'),
+    (date(2026, 9, 6), '20:30', None, 'CGV 온라인 예매', 15_000, 'CULTURE_LEISURE'),
+    (date(2026, 10, 17), '20:30', None, '메가박스 온라인 예매', 15_000, 'CULTURE_LEISURE'),
+    (date(2026, 11, 7), '20:30', None, 'CGV 온라인 예매', 15_000, 'CULTURE_LEISURE'),
     (date(2026, 8, 14), '23:20', None, '카카오_법인택시6', 16_400, 'TRANSPORT_CAR'),
     (date(2026, 9, 26), '00:40', None, '카카오_개인택시', 13_800, 'TRANSPORT_CAR'),
     (date(2026, 10, 24), '23:50', None, '카카오_법인택시6', 15_200, 'TRANSPORT_CAR'),
@@ -251,8 +256,8 @@ class Builder:
             # ----- 평일 -----
             if is_workday(d):
                 # 회사가 점심을 구내식당으로 준다(식대 지원) → 동료랑 밖에서 먹는 날만 내 카드로 나간다
-                if rng.random() < 0.12:
-                    self.spend(d, f'12:{rng.randrange(5, 40):02d}', 'lunch', 8_000, 12_000, zone='office',
+                if rng.random() < 0.22:
+                    self.spend(d, f'12:{rng.randrange(5, 40):02d}', 'lunch', 9_000, 13_000, zone='office',
                                regular=0.7, step=500)
                 if rng.random() < 0.35:  # 점심 먹고 커피
                     self.spend(d, f'12:{rng.randrange(45, 59):02d}', 'cafe', 2_500, 5_500, zone='office',
@@ -260,10 +265,10 @@ class Builder:
                 if rng.random() < 0.2:
                     self.spend(d, '15:20', 'convenience', 1_500, 5_000, zone='office', regular=0.9)
                 evening = rng.random()
-                if evening < (0.2 if heavy else 0.12):
+                if evening < (0.19 if heavy else 0.16):
                     self.spend(d, f'{rng.choice((19, 20, 21))}:{rng.randrange(0, 59):02d}', 'delivery',
                                17_000, 27_000, zone='home', regular=0.5, step=500)
-                elif evening < (0.35 if heavy else 0.27):
+                elif evening < (0.34 if heavy else 0.31):
                     self.spend(d, f'19:{rng.randrange(10, 50):02d}', 'home_meal', 8_000, 12_000, zone='home',
                                regular=0.6, step=500)
                 if rng.random() < 0.15:
@@ -275,8 +280,8 @@ class Builder:
                     self.outing(d, outings[d], skip_meal=d in paid_days)
                 else:
                     if d.weekday() == 6:
-                        self.spend(d, '16:30', 'grocery', 15_000, 35_000, zone='home', regular=0.8)
-                    if rng.random() < (0.45 if heavy else 0.3):
+                        self.spend(d, '16:30', 'grocery', 20_000, 40_000, zone='home', regular=0.8)
+                    if rng.random() < (0.4 if heavy else 0.35):
                         self.spend(d, '19:30', 'delivery', 18_000, 28_000, zone='home', regular=0.5, step=500)
                     if rng.random() < 0.35:
                         self.spend(d, '11:30', 'bakery', 4_000, 9_000, zone='home', regular=0.7)
@@ -285,6 +290,16 @@ class Builder:
                 self.spend(d, '10:30', 'laundry', 6_000, 12_000, zone='home', regular=1.0, step=1_000)
             if d.day == 21:  # 생필품은 한 달에 한 번 몰아서
                 self.spend(d, '20:30', 'household', 11_000, 16_000, zone='home')
+            if d.day == 6:  # 휴지 · 세제 · 샴푸는 쿠팡으로 (카드 명세 표기는 restyle 이 바꾼다)
+                self.add(d, '22:10', 'online_household', self.won(18_000, 28_000), name='쿠팡',
+                         category='HOUSEHOLD', note='생필품 (휴지·세제·샴푸)')
+            if d.day == 14:
+                self.add(d, '19:20', 'daiso', self.won(6_000, 12_000), name='다이소 신림역점',
+                         category='HOUSEHOLD', note='수납 · 주방 소품')
+            if d.day == 3:  # 옷은 온라인으로 한 달에 한 번 정도
+                self.add(d, '23:00', 'online_fashion', self.won(25_000, 50_000, 1_000),
+                         name=rng.choice(['에이블리', '지그재그', '29CM']), category='FASHION_SHOPPING',
+                         note='온라인 옷 쇼핑')
             if d.day == 23:
                 self.spend(d, '18:40', 'cosmetics', 12_000, 30_000, regular=0.5)
         self.extras()
@@ -299,16 +314,24 @@ class Builder:
             self.spend(d, '13:10', 'weekend_meal', *meal, zone=zone, step=500, note=kind)
         if kind == 'friend' or rng.random() < 0.5:  # 데이트 카페는 번갈아 냄 (상대가 내면 거래 없음)
             self.spend(d, '15:00', 'weekend_cafe', 5_500, 13_000, zone=zone, note=kind)
-        extra = rng.random()
-        if extra < 0.25:
-            self.spend(d, '16:30', 'dessert', 4_500, 12_000, zone=zone, note=kind)
-        elif extra < 0.4:
-            self.spend(d, '16:40', 'fashion', 25_000, 60_000, zone=zone, step=1_000, note=kind)
-        elif extra < 0.5 and kind == 'date':
-            self.spend(d, '17:00', 'gift', 15_000, 30_000, zone=zone, step=1_000, note=kind)
-        elif extra < 0.6:
-            self.spend(d, '18:00', 'fun', 6_000, 20_000, zone=zone if zone != 'yeouido' else 'yeonnam',
+        # 11/18: 서울 나들이 한 번에 나가는 돈을 현실에 맞게 늘림 (놀거리 · 옷 · 저녁을 따로 굴린다)
+        play = rng.random()
+        if play < 0.5:  # 전시 · 팝업 · 방탈출 · 공연 예매
+            self.add(d, '14:20', 'ticket', self.won(18_000, 40_000, 1_000),
+                     name=rng.choice(['인터파크티켓', 'YES24티켓', '네이버예약 방탈출', '티켓링크']),
+                     category='CULTURE_LEISURE', note=kind)
+        elif play < 0.65:
+            self.spend(d, '18:00', 'fun', 8_000, 25_000, zone=zone if zone != 'yeouido' else 'yeonnam',
                        step=1_000, note=kind)
+        if rng.random() < 0.3:
+            self.spend(d, '16:40', 'fashion', 30_000, 70_000, zone=zone, step=1_000, note=kind)
+        extra = rng.random()
+        if extra < 0.3:
+            self.spend(d, '16:30', 'dessert', 4_500, 12_000, zone=zone, note=kind)
+        elif extra < 0.45 and kind == 'date':
+            self.spend(d, '17:00', 'gift', 15_000, 30_000, zone=zone, step=1_000, note=kind)
+        if not skip_meal and rng.random() < 0.2:  # 저녁까지 먹고 들어오는 날
+            self.spend(d, '19:10', 'weekend_meal', *meal, zone=zone, step=500, note=kind + ' 저녁')
 
     def extras(self):
         for d, t, role, zone, amount in FRIEND_PAID:

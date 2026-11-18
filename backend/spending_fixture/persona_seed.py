@@ -28,7 +28,7 @@ NAMESPACE = uuid.UUID('6f8f4c1e-2d0b-4b1e-9c33-6d656d6f2d61')  # 페르소나 UU
 
 PERSONAS = {
     'a': {
-        'email': 'demo.jiwoo@moneycushion.test',
+        'email': 'jiwoo@cushion.com',  # 11/18: 시연 화면에서 자연스럽게 (전 demo.jiwoo@moneycushion.test)
         'nickname': '김지우',
         'csv': 'transactions_a.csv',
         'first_connected': date(2026, 7, 1),  # 수집 시작일 ('4달 전 1일')
@@ -53,10 +53,7 @@ PERSONAS = {
                   ('maintenance', '관리비', 70_000, 10, 'HOUSING_TELECOM', 'A'),
                   ('telecom', '휴대폰 요금', 55_000, 15, 'HOUSING_TELECOM', 'A'),
                   ('ott', '넷플릭스', 17_000, 5, 'CULTURE_LEISURE', 'D')],
-        # 대출: CODEF로 조회되지 않는 학자금은 대출 확인 화면의 '직접 등록'과 같은 API로 넣는다 (loans.md 11)
-        'loans': [{'lenderName': '한국장학재단', 'productName': '학자금대출', 'manualBalance': 8_400_000,
-                   'manualRate': 1.7, 'maturityDate': '2031-06-27', 'monthlyPayment': 150_000, 'paymentDay': 27,
-                   'repaymentMethod': 'equal_payment'}],
+        # 11/18: 학자금 대출 없음 (대출이 있는 페르소나는 'loans' 칸에 직접 등록할 대출을 넣는다, loans.md 11)
     },
     'b': {
         'email': 'demo.minjun@moneycushion.test',
@@ -423,5 +420,12 @@ def summarize(user, budget, log):
 def delete_persona(persona):
     from django.contrib.auth import get_user_model
 
-    User = get_user_model()
-    return User.objects.filter(email=PERSONAS[persona]['email']).delete()[0]
+    # 이메일을 바꾼 뒤에도 예전 이메일 계정이 지워지게 고정 ID(UUID5)로도 찾는다
+    return persona_users(persona).delete()[0]
+
+
+def persona_users(persona):
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    return get_user_model().objects.filter(Q(email=PERSONAS[persona]['email']) | Q(pk=uid(persona, 'user')))
