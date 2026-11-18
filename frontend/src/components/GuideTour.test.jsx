@@ -56,13 +56,16 @@ it('비출 탭을 찾지 못하면(기기 틀 밖) 화면 가운데 카드로 �
   expect(host.querySelectorAll(".mc-tour-dots i.on")).toHaveLength(1)  // 1 / 5 = 막대 하나
 })
 
-it('기기 위에 화면 여백이 있어도 카드 위치는 기기 내부 높이로 계산한다', async () => {
-  await act(() => root.render(<div className="mc-device">
-    <nav id="mc-nav"><a className="mc-home" href="/">홈</a></nav>
-    <GuideTour onClose={() => {}} />
-  </div>))
-  host.querySelector('.mc-device').getBoundingClientRect = () => new DOMRect(100, 24, 400, 852)
-  host.querySelector('.mc-home').getBoundingClientRect = () => new DOMRect(120, 810, 50, 50)
+// 카드는 기기 틀 안에 절대 배치 → bottom 도 기기 안 좌표(d.height 기준). 데스크톱에서 틀 위 여백(24px)이 겹쳐 들어가지 않게
+it('기기 틀이 화면에서 내려와 있어도 안내 카드 bottom 을 기기 안 좌표로 계산한다', async () => {
+  const device = document.createElement('div'); device.className = 'mc-device'
+  device.innerHTML = '<nav id="mc-nav"><button class="mc-home"></button></nav>'
+  document.body.append(device); device.append(host)
+  const rect = (top, left, width, height) => () => ({ top, left, width, height, right: left + width, bottom: top + height })
+  device.getBoundingClientRect = rect(24, 0, 393, 852)
+  device.querySelector('.mc-home').getBoundingClientRect = rect(810, 176, 40, 40)
+  await act(() => root.render(<GuideTour onClose={() => {}} />))
   await next()
-  expect(host.querySelector('.mc-tour-card').style.bottom).toBe('90px')
+  expect(host.querySelector('.mc-tour-card').style.bottom).toBe('90px')  // 852 - (806 - 30) + 14
+  device.remove()
 })
