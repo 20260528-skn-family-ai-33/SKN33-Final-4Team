@@ -2,23 +2,27 @@
 - 이번 달 조회(달력 한 달)에 같은 조회의 예산 주기 판(alt)이 함께 온다 — 화면이 [이번 달 | 예산 주기]로 바꿔 보여 준다
 - "초과한 카테고리 뭐야?" → 카테고리별 남은 예산 + 예산을 넘은 카테고리 한 줄 + [예산 조정하기]
 """
-from datetime import timedelta
+from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.test import TestCase, override_settings
-from django.utils import timezone
 
 from budgets.models import BudgetCycle
 from chat.test_agent_collab import SETTINGS, CollabFixture
 from finance.models import Card, Connection, FinancialTransaction, SyncRun
+from users.models import FinancialProfile
 
 
 @override_settings(**SETTINGS)
 class CycleViewTest(CollabFixture, TestCase):
     def setUp(self):
+        self.today = date(2026, 11, 18)
+        self.enterContext(patch("django.utils.timezone.localdate", return_value=self.today))
         super().setUp()
-        self.today = timezone.localdate()
-        self.start = self.today - timedelta(days=40)  # 주기가 지난달(또는 그 전)에 시작 — 달력 한 달과 다른 기간
-        BudgetCycle.objects.filter(user=self.user).update(starts_on=self.start)
+        self.start = date(2026, 10, 25)
+        # 채팅 진입 시 등록한 월급날에 맞춰 현재 주기를 동기화한다.
+        FinancialProfile.objects.filter(user=self.user).update(payday=25)
+        BudgetCycle.objects.filter(pk=self.base.cycle_id).update(starts_on=self.start, ends_before=date(2026, 11, 25))
         link = Connection.objects.create(user=self.user, business_type="card", organization_code="FIXTURE_CARD", status="connected")
         self.card = Card.objects.create(user=self.user, connection=link, origin="provider", source_card_key="cycle-view")
         SyncRun.objects.create(user=self.user, connection=link, card=self.card, product_code="card_approval_list", status="success",
@@ -47,6 +51,7 @@ class CycleViewTest(CollabFixture, TestCase):
         self.assertNotIn("first", alt)  # 넘겨 둔 예산 조정이 없으면 이번 달을 먼저 보인다
 
     def test_no_cycle_view_when_the_cycle_is_the_calendar_month(self):
+        FinancialProfile.objects.filter(user=self.user).update(payday=1)
         BudgetCycle.objects.filter(user=self.user).update(starts_on=self.today.replace(day=1))
         self.spend(self.today, 30000)
         data, answer = self.say("이번 달 얼마 썼어?")

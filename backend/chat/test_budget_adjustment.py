@@ -73,6 +73,9 @@ class BudgetAdjustmentApiTest(TestCase):
 
     def test_frequency_confirmation_counts_only_saved_adjustments_and_does_not_change_budget(self):
         self.adjustment_history(2, approved=False)
+        recovery, = self.adjustment_history(1)
+        recovery.validation_summary = {'design_recovery': {}}
+        recovery.save(update_fields=['validation_summary'])
         content = self.say(choice='budget')['messages'][-1]['content']
         self.assertNotEqual(content['budgetAdjustment']['phase'], 'adjustment_frequency')
         self.adjustment_history(1)

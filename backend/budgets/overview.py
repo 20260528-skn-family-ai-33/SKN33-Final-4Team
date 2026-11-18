@@ -40,8 +40,14 @@ def current_cycle(user, profile, today):
 
 
 def confirmed_adjustments(user):
-    return Budget.objects.filter(user=user, approved_at__isnull=False,
-                                 task__task_type='budget_adjust', schedule__isnull=True)
+    # 최초 예산을 확정하는 대화와 복구도 budget_adjust 작업을 사용한다.
+    return Budget.objects.filter(
+        user=user, approved_at__isnull=False, task__task_type='budget_adjust', schedule__isnull=True,
+        validation_summary__design_recovery__isnull=True,
+    ).exclude(
+        input_snapshot__adjustment_context__mode__isnull=False,
+        input_snapshot__adjustment_context__mode='INITIAL_ADJUSTMENT',
+    )
 
 
 def budget_nag(user, cycle, today=None):

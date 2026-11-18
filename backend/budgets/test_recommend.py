@@ -316,7 +316,7 @@ class RecommendAPITest(TestCase):
                                        "locks_released": []})
         living = dict(budget.items.filter(bucket="living").values_list("category_id", "allocated_amount"))
         self.assertEqual(set(living), set(ALLOCATION_CODES) | {"ETC"})  # 11/3: 예산 밖 카테고리 줄은 만들지 않는다
-        self.assertLessEqual(sum(living.values()), 1_120_000)  # 11/18: 자물쇠(FOOD 333,333원) 예외가 없어 모든 줄이 5천 원 단위
+        self.assertEqual(sum(living.values()), 1_120_000)  # 자물쇠가 없어 생활비 1,120,000원을 5천 원 단위로 모두 배분한다.
         self.assertTrue(all(amount % 5_000 == 0 for amount in living.values()))
         self.assertGreaterEqual(living["BEAUTY"], 155_000)
         self.assertEqual(living["ETC"], 0)
@@ -327,7 +327,7 @@ class RecommendAPITest(TestCase):
         self.assertFalse(fixed.filter(category_detail="card_reserved").exists())
         self.assertEqual(budget.items.get(bucket="savings").allocated_amount, 610_000)
         self.assertEqual(budget.items.get(bucket="cushion").allocated_amount, 200_000)
-        self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 101_667)
+        self.assertEqual(budget.funding_amount - budget.items.aggregate(total=Sum("allocated_amount"))["total"], 100_000)
         self.assertEqual(budget.items.exclude(user=self.user).count(), 0)
         for obj in previous + [old, other]:
             obj.refresh_from_db()
