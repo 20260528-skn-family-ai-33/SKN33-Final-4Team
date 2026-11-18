@@ -7,6 +7,7 @@ import './styles/shell.css'
 import './styles/tabs.css'  // 11/18 시안 B: 탭별 색 띠 · 흰 시트
 import App from './App.jsx'
 import PopupProvider from './popups/PopupProvider.jsx'
+import { startEdgeColor } from './utils/edgeColor.js'
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -19,3 +20,6 @@ createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </StrictMode>,
 )
+
+// 휴대폰 화면 위 · 아래 여백을 지금 화면 색으로 맞춘다
+startEdgeColor()
