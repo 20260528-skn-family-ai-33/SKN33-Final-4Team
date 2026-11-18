@@ -361,6 +361,8 @@ html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.
 html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-chat-ask .mc-mascot { display: none; }
 html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-chat-ask .mc-o2-bubble { padding: 0; background: none; box-shadow: none; font-size: 19px; font-weight: 750; letter-spacing: -.6px; }
 html body #mc-new-preview#mc-new-preview .mc-device:is(:has(.mc-o2-line), :has(.mc-o3-ask), :has(.mc-o3-head), :has(.mc-o3-story), :has(.mc-o3-login-hero)) .mc-chat-answer { border: 1px solid #E3E8F0; box-shadow: none; }
+/* 계좌 연결: 쿠숑이 안내와 은행 고르기 사이를 조금 더 띄움 */
+html body #mc-new-preview#mc-new-preview .mc-device .mc-o2-line + .mc-chat-ask:has(+ .mc-pick-bank) { margin-top: 40px; }
 @media (prefers-reduced-motion: reduce) {
   html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-slide, html body #mc-new-preview#mc-new-preview .mc-device .mc-o3-q { animation: none; }
 }

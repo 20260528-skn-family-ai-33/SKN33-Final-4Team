@@ -163,7 +163,7 @@ function AuthList({ picked }) {
     >
       <div className="mc-o2-line">
         <Mascot mood="planner" size={64} />
-        <p className="mc-o2-bubble">고른 기관마다 <b>로그인</b>해 주세요. 마친 곳부터 불러와요.</p>
+        <p className="mc-o2-bubble">고른 기관마다 <b>로그인</b>해 주세요.<br />마친 곳부터 불러와요.</p>
       </div>
       {group('bank', '은행')}
       {group('card', '카드사')}

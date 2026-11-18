@@ -58,7 +58,7 @@ export default function ConnectPage() {
       <div className="mc-chat">
         <div className="mc-o2-line">
           <Mascot mood="planner" size={64} />
-          <p className="mc-o2-bubble">먼저 <b>월급이 들어오는 은행</b>을 연결해요. 사용할 계좌는 다음 단계에서 골라요.</p>
+          <p className="mc-o2-bubble">먼저 <b>월급이 들어오는 은행</b>을 연결해요.<br />사용할 계좌는 다음 단계에서 골라요.</p>
         </div>
 
         <PickCard title="어느 은행을 쓰나요?" hint="여러 곳 가능" items={BANKS} picked={banks} moreLabel="준비 중인 은행" soon={NOT_SUPPORTED.bank} className="mc-pick-bank" />
