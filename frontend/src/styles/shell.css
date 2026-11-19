@@ -86,3 +86,11 @@ html body #mc-new-preview #mc-layer:empty { display: none; }
 /* 하단 '가상 데이터' 문구를 뺐으니, 그 자리(36px)만큼 띄워 두었던 시트를 바닥에 붙인다 */
 html body #mc-new-preview .mc-sheet { bottom: 0; max-height: calc(100% - 60px); }
 html body #mc-new-preview .mc-sheet:has(.mc-chat) { height: calc(100% - 60px); }
+
+/* 휴대폰: 아이폰은 글자가 16px보다 작은 입력칸을 누르면 화면을 확대해 그 칸으로 옮긴다 → 입력칸 · 고르기 칸 글자를 16px로
+ * - 첫 줄: 글자 크기를 따로 정하지 않은 칸 (원래 17px 이상인 칸은 더 구체적인 규칙이라 그대로)
+ * - 둘째 줄: 16px보다 작게 정해 둔 칸 (챗봇 · 거래 검색 · 직접 입력 · 기간 찾기 · 지역 고르기 · 계좌 별명 · 예산 나누기) */
+@media (max-width: 599px), (hover: none), (pointer: coarse) {
+  #mc-new-preview input, #mc-new-preview select, #mc-new-preview textarea { font-size: 16px; }
+  html body #mc-new-preview#mc-new-preview :is(.mc-chat-in input, .mc-tx-search input, .mc-cf select, .mc-cf-custom input, .mc-pay-range input, .mc-rem-in .mc-cat-input, .mc-alias-card .mc-alias-row input, .mc-alias-edit input, .mc-asst .mc-budget-distribution-stepper input) { font-size: 16px; }
+}
