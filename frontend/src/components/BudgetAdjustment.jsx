@@ -367,23 +367,45 @@ const shortWon = (n) => (n >= 10000 ? `${Math.floor(n / 1000) / 10}만` : won(n)
 const CAPACITY_HEAD = /^(.+) · (확인된 증액 한도) (.+)$/
 const CAPACITY_ROW = /^(.+?) · 최대 (.+)$/
 const CAPACITY_SUB = /^· (.+?) (\d.*원)$/  // '· 문화·여가 4만 5천 원' → 이름 · 금액 (금액은 첫 숫자부터)
+// 11/20: 첫 줄이 한도가 아니라 안내 문장('… 충분해 보여요')이어도 재원 줄이 있으면 같은 모양으로 보여 준다
+const CAPACITY_STATUS = /^([^\d·]+?) · (.+)$/  // 재원 이름(숫자 없음) · 금액 대신 사유
+const isCapacity = (lines) => CAPACITY_HEAD.test(lines[0] ?? '') || lines.some((line) => CAPACITY_ROW.test(line))
+// '17만 5천 원' → 175000. 막대 길이에만 쓴다 (금액 계산은 서버, 화면은 비율 표시만)
+function wonOf(text) {
+  const m = text.replace(/,/g, '').match(/^(?:(\d+)억)?\s*(?:(\d+)만)?\s*(?:(\d+)천)?\s*(\d+)?\s*원/)
+  if (!m || !m.slice(1).some(Boolean)) return null
+  const [, eok = 0, man = 0, cheon = 0, rest = 0] = m
+  return eok * 1e8 + man * 1e4 + cheon * 1e3 + Number(rest)
+}
 function CapacityLines({ lines }) {
-  const [, name, label, total] = lines[0].match(CAPACITY_HEAD)
-  const rows = [], notes = []
-  for (const line of lines.slice(1)) {
-    const row = line.match(CAPACITY_ROW), sub = line.match(CAPACITY_SUB)
-    if (row) rows.push({ name: row[1], amount: row[2], subs: [] })
+  const head = lines[0]?.match(CAPACITY_HEAD)
+  const lead = [], rows = [], notes = []
+  for (const line of head ? lines.slice(1) : lines) {
+    const row = line.match(CAPACITY_ROW), sub = line.match(CAPACITY_SUB), status = rows.length && line.match(CAPACITY_STATUS)
+    if (row) rows.push({ name: row[1], amount: row[2], value: wonOf(row[2]), subs: [] })
+    else if (status) rows.push({ name: status[1], status: status[2], value: null, subs: [] })  // '저축 · 사용 가능한 잔액 미확인'
     else if (sub && rows.length) rows.at(-1).subs.push({ name: sub[1], amount: sub[2] })
-    else notes.push(line)
+    else (rows.length ? notes : lead).push(line)
   }
+  const top = Math.max(0, ...rows.map((row) => row.value ?? 0))
   return <div className="mc-budget-capacity">
-    <div className="mc-budget-distribution-total"><div><span>{name} {label}</span><strong>{total}</strong></div></div>
-    {rows.length > 0 && <dl className="mc-budget-capacity-rows" aria-label="가져올 수 있는 곳">
-      {rows.map((row) => <div key={row.name}>
-        <dt>{row.name}</dt><dd>최대 {row.amount}</dd>
-        {row.subs.length > 0 && <dd className="mc-budget-capacity-subs"><ul>{row.subs.map((sub) => <li key={sub.name}><span>{sub.name}</span><span>{sub.amount}</span></li>)}</ul></dd>}
-      </div>)}
-    </dl>}
+    {lead.map((line) => <p key={line} className="mc-budget-capacity-lead">{line}</p>)}
+    {head && <div className="mc-budget-distribution-total"><div><span>{head[1]} {head[2]}</span><strong>{head[3]}</strong></div></div>}
+    {rows.length > 0 && <section className="mc-budget-capacity-box" aria-label="가져올 수 있는 곳">
+      <p className="mc-budget-capacity-title">어디서 얼마나 옮길 수 있나요</p>
+      <ol className="mc-budget-capacity-rows">
+        {rows.map((row, index) => <li key={row.name} className={row.name === '저축' ? 'is-last' : undefined}>
+          <span className="mc-budget-capacity-no" aria-hidden="true">{index + 1}</span>
+          <span className="mc-budget-capacity-name">{row.name}</span>
+          {row.status ? <span className="mc-budget-capacity-status">{row.status}</span> : <strong className="mc-budget-capacity-amount">최대 {row.amount}</strong>}
+          {top > 0 && row.value != null && <span className="mc-budget-capacity-bar" aria-hidden="true"><i style={{ width: `${Math.max(4, Math.round(row.value / top * 100))}%` }} /></span>}
+          {row.name === '저축' && <p className="mc-budget-capacity-last">마지막 대안</p>}
+          {row.subs.length > 0 && <ul className="mc-budget-capacity-subs" aria-label={`${row.name} 세부 항목`}>
+            {row.subs.map((sub) => <li key={sub.name}>{sub.name} <b>{sub.amount}</b></li>)}
+          </ul>}
+        </li>)}
+      </ol>
+    </section>}
     {notes.map((line) => <p key={line} className="mc-note">{line}</p>)}
   </div>
 }
@@ -499,6 +521,7 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
   const hasPreview = proposal || hasComparison
   const amountInput = !hasPreview && !TERMINAL.has(state) && adjustment.amountInput
   const distributionInput = !TERMINAL.has(state) && adjustment.distributionInput
+  const reasonLines = amountInput && guidance?.reason ? guidance.reason.split('\n').filter(Boolean) : []
   const inputNotice = (amountInput || distributionInput) && adjustment.explanation?.title === '추천에서 제외한 방법과 이유'
     ? adjustment.explanation.brief : null
   const options = hasPreview
@@ -526,11 +549,12 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
       || (guidance.kind === 'explanation' && !adjustment.recommendationAdvice)) && (() => {
       const lines = guidance.message.split('\n').filter(Boolean)
       // 11/17: 한도 안내(설명 단계로 오는 '○○ · 확인된 증액 한도 …')도 표 모양으로
-      return CAPACITY_HEAD.test(lines[0]) ? <CapacityLines lines={lines} />
+      return isCapacity(lines) ? <CapacityLines lines={lines} />
         : adjustment.phase === 'adjustment_frequency' ? <NagLines lines={lines} />
         : lines.map((line, index) => <p key={index} className={adjustment.phase === 'increase_review' ? 'mc-budget-warning' : undefined}>{line}</p>)
     })()}
-    {guidance?.reason && <p className="mc-budget-reason" role="note">{guidance.reason}</p>}
+    {guidance?.reason && (isCapacity(reasonLines) ? <CapacityLines lines={reasonLines} />
+      : <p className="mc-budget-reason" role="note">{guidance.reason}</p>)}
     {adjustment.increaseWarning && !TERMINAL.has(state) && <p className="mc-budget-warning" role="note">{adjustment.increaseWarning}</p>}
     {(adjustment.phase === 'salary_handoff' || adjustment.salaryChange) && !TERMINAL.has(state)
       && <SalaryChange active={active} onEdit={onSalaryEdit} />}
@@ -539,7 +563,7 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
     {distributionInput && <DistributionInput key={content.turn} value={distributionInput} active={active} onSend={onSend} />}
     {!guidance && !proposal && !hasComparison && !amountInput && !salaryAllocation && !adjustment.recommendationAdvice && (() => {
       const lines = (content.lines ?? (content.text ? [content.text] : [])).filter((line) => !distributionInput || !line.endsWith('어디에 나눌까요?'))
-      return CAPACITY_HEAD.test(lines[0] ?? '') ? <CapacityLines lines={lines} />
+      return isCapacity(lines) ? <CapacityLines lines={lines} />
         : adjustment.phase === 'adjustment_frequency' ? <NagLines lines={lines} /> : lines.map((line, i) => <p key={i}>{line}</p>)
     })()}
     {hasComparison && <Comparison comparison={adjustment.comparison} choices={content.choices} active={active} onPick={onPick} detail={adjustment.detail} />}

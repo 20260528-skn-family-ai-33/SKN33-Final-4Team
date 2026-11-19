@@ -633,18 +633,27 @@
 #mc-new-preview .mc-budget-plan-actions { column-gap: 4px; }
 #mc-new-preview .mc-budget-plan-actions > .mc-budget-select { padding-inline: 8px; }
 
-/* '○○ 어디까지 늘릴 수 있어?' (11/17): 한도 상자 + 재원 | 최대 줄 + 생활비 세부는 들여 쓴 작은 줄 */
-#mc-new-preview .mc-budget-capacity { display: flex; flex-direction: column; gap: 12px; }
-#mc-new-preview .mc-budget-capacity-rows { margin: 0; }
-#mc-new-preview .mc-budget-capacity-rows > div { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 4px 12px; padding: 11px 0; }
-#mc-new-preview .mc-budget-capacity-rows > div + div { border-top: 1px solid var(--mc-line); }
-#mc-new-preview .mc-budget-capacity-rows dt { font-size: 15px; font-weight: 600; }
-#mc-new-preview .mc-budget-capacity-rows dd { margin: 0; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
-#mc-new-preview .mc-budget-capacity-subs { grid-column: 1 / -1; }
-#mc-new-preview .mc-budget-capacity-subs ul { margin: 2px 0 0; padding: 8px 12px; list-style: none; border-radius: 10px; background: var(--mc-bg); }
-#mc-new-preview .mc-budget-capacity-subs li { display: flex; justify-content: space-between; padding: 3px 0; font-size: 13px; font-weight: 500; color: var(--mc-sub); }
+/* 이동 가능 금액 (11/20): 안내 문장 → 재원 상자(순서 번호 · 이름 · 최대 금액 · 막대 · 생활비 세부 칩) → 기준 안내 작은 글씨 */
+#mc-new-preview .mc-budget-capacity { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+#mc-new-preview .mc-budget-capacity-lead { margin: 0; font-size: 15px; line-height: 1.55; color: var(--mc-ink); }
+#mc-new-preview .mc-budget-capacity-box { padding: 14px 12px 6px; border-radius: 16px; background: var(--mc-soft); }
+#mc-new-preview .mc-budget-capacity-title { margin: 0 0 6px; font-size: 13px; font-weight: 700; color: var(--mc-brand); }
+#mc-new-preview .mc-budget-capacity-rows { margin: 0; padding: 0; list-style: none; }
+#mc-new-preview .mc-budget-capacity-rows > li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 6px 8px; padding: 12px 0; }
+#mc-new-preview .mc-budget-capacity-rows > li + li { border-top: 1px solid rgba(36, 89, 217, .12); }
+#mc-new-preview .mc-budget-capacity-no { width: 22px; height: 22px; border-radius: 50%; background: var(--mc-brand); color: #fff; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+#mc-new-preview .mc-budget-capacity-name { font-size: 15px; font-weight: 600; color: var(--mc-ink); word-break: keep-all; }
+#mc-new-preview .mc-budget-capacity-last { grid-column: 2 / -1; margin: 0; font-size: 12px; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-capacity-amount { font-size: 14.5px; font-weight: 700; color: var(--mc-brand); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#mc-new-preview .mc-budget-capacity-bar { grid-column: 2 / -1; height: 8px; border-radius: 999px; background: #fff; overflow: hidden; }
+#mc-new-preview .mc-budget-capacity-bar i { display: block; height: 100%; border-radius: inherit; background: var(--mc-brand); }
+#mc-new-preview .mc-budget-capacity-rows > li.is-last .mc-budget-capacity-no { background: var(--mc-sub); }
+#mc-new-preview .mc-budget-capacity-rows > li.is-last .mc-budget-capacity-amount { color: var(--mc-ink); }
+#mc-new-preview .mc-budget-capacity-rows > li.is-last .mc-budget-capacity-bar i { background: #b9c2d3; }
+#mc-new-preview .mc-budget-capacity-subs { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+#mc-new-preview .mc-budget-capacity-subs li { padding: 4px 10px; border-radius: 999px; background: #fff; font-size: 12.5px; color: var(--mc-sub); }
+#mc-new-preview .mc-budget-capacity-subs li b { color: var(--mc-ink); font-weight: 600; }
 #mc-new-preview .mc-budget-capacity .mc-note { margin: 0; font-size: 12px; }
-#mc-new-preview .mc-budget-capacity { margin-top: 14px; }  /* 11/17: 위 제목('○○ 늘리기')과 한도 상자 사이 */
 /* 11/17: 한 줄에 놓으면 선택 버튼이 너무 작아진다 → 선택 버튼은 폭 전체, '금액 바꾸기 ›' 같은 고치기 버튼은 그 아래 작은 글자로 */
 #mc-new-preview .mc-budget-plan-actions,
 #mc-new-preview .mc-budget-plan-actions:not(:has(.mc-chipbar > button + button)) { flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 2px; }
@@ -720,3 +729,4 @@
 #mc-new-preview .mc-asst-quick::-webkit-scrollbar { display: none; }
 #mc-new-preview#mc-new-preview .mc-asst-quick > button { flex: none; margin: 0; }
 #mc-new-preview .mc-asst-chip { min-height: 36px; padding: 0 13px; border-radius: 999px; background: var(--mc-paper); color: var(--mc-ink); font-size: 13px; font-weight: 600; box-shadow: 0 0 0 1px var(--mc-line); white-space: nowrap; }
+#mc-new-preview .mc-budget-capacity-status { font-size: 13px; font-weight: 600; color: var(--mc-sub); text-align: right; }
