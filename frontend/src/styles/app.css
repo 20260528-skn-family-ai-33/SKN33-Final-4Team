@@ -1339,15 +1339,11 @@
 #mc-new-preview .mc-tour button:focus-visible{outline:2px solid var(--mc-brand);outline-offset:2px}
 @media (prefers-reduced-motion:reduce){#mc-new-preview .mc-tour-spot{transition:none}}
 
-/* ---------- 첨부된 달리기 그림: SVG 내부 상하 움직임 + 화면 속 짧은 전진·속도선 ---------- */
+/* ---------- 달리기 로딩 그림: 다리·몸·속도선·그림자 움직임과 reduced-motion 처리는 SVG 안에 있다 ---------- */
 #mc-new-preview .mc-run-motion{position:relative;display:inline-block;flex:none;max-width:100%;vertical-align:middle}
-#mc-new-preview .mc-run-dog{display:block;max-width:100%;animation:mc-run-forward .54s ease-in-out infinite}
-#mc-new-preview .mc-run-motion::before{content:'';position:absolute;left:4%;top:54%;width:22%;height:2px;border-radius:2px;background:var(--mc-brand);box-shadow:-5px 8px var(--mc-brand),-2px -8px var(--mc-brand);animation:mc-run-speed .54s linear infinite}
+#mc-new-preview .mc-run-dog{display:block;max-width:100%}
 #mc-new-preview .mc-run-card{display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 16px;text-align:center}
 #mc-new-preview .mc-run-wait{display:inline-flex;align-items:center;gap:8px;padding:6px 14px 6px 10px}
-@keyframes mc-run-forward{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
-@keyframes mc-run-speed{from{transform:translateX(7px);opacity:0}35%{opacity:.55}to{transform:translateX(-5px);opacity:0}}
-@media (prefers-reduced-motion:reduce){#mc-new-preview .mc-run-dog,#mc-new-preview .mc-run-motion::before{animation:none}#mc-new-preview .mc-run-motion::before{opacity:0}}
 /* ===== 홈 재설계 (2026-11-17, 그래픽 강조형) — mc-home3-*. 큰 원 그래프가 주인공, 파란색은 그래프 · 막대 · 링크에만.
    금액 글자는 세 단계뿐: big(이번 주 36px) · mid(블록 대표 19px) · 줄 금액(15px). 새 색 없음 ===== */
 #mc-new-preview .mc-home3-meta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:-6px 2px 0;font-size:12.5px;color:var(--mc-sub)}
