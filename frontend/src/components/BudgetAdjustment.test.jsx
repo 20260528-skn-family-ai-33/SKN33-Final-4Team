@@ -86,7 +86,10 @@ it('가져올 수 있는 금액과 미확인 사유를 항목별로 한 줄씩 �
   const content = { budgetAdjustment: { status: 'awaiting_input', guidance: {
     kind: 'explanation', message: lines.join('\n'), details: [] } } }
   await act(() => root.render(<BudgetAdjustment content={content} active onSend={vi.fn()} />))
-  expect([...host.querySelectorAll('p')].map((row) => row.textContent)).toEqual(lines)
+  const rows = [...host.querySelectorAll('.mc-budget-capacity-rows > li')]
+  expect(rows.map((r) => r.querySelector('.mc-budget-capacity-name').textContent)).toEqual(['월 머니쿠션', '저축', '여윳돈'])
+  expect(rows[0].querySelector('.mc-budget-capacity-amount').textContent).toBe('최대 185,000원')
+  expect(rows.slice(1).map((r) => r.querySelector('.mc-budget-capacity-status').textContent)).toEqual(['사용 가능한 잔액 미확인', '남길 금액을 정하면 계산 가능'])
   expect(host.querySelector('details')).toBeNull()
 })
 
@@ -778,16 +781,50 @@ it('어디까지 늘릴 수 있는지 답은 한도 상자와 재원별 최대 �
   const lines = ['패션·쇼핑 · 확인된 증액 한도 103만 5천 원', '다른 생활비 · 최대 27만 원', '· 뷰티·미용 7만 원', '· 문화·여가 4만 5천 원',
     '여윳돈 · 최대 9만 원', '저축 · 최대 51만 원', '2026-11-16까지 불러온 내역 기준 · 최근 거래 미반영 가능 · 참고 금액']
   await act(() => root.render(<BudgetAdjustment content={{ lines, budgetAdjustment: { status: 'replied' } }} active />))
-  expect(host.querySelector('.mc-budget-capacity strong').textContent).toBe('103만 5천 원')
-  const rows = [...host.querySelectorAll('.mc-budget-capacity-rows > div')]
-  expect(rows.map((r) => r.querySelector('dt').textContent)).toEqual(['다른 생활비', '여윳돈', '저축'])
-  expect([...rows[0].querySelectorAll('li')].map((li) => li.textContent)).toEqual(['뷰티·미용7만 원', '문화·여가4만 5천 원'])
+  expect(host.querySelector('.mc-budget-distribution-total strong').textContent).toBe('103만 5천 원')
+  const rows = [...host.querySelectorAll('.mc-budget-capacity-rows > li')]
+  expect(rows.map((r) => r.querySelector('.mc-budget-capacity-name').textContent)).toEqual(['다른 생활비', '여윳돈', '저축'])
+  expect([...rows[0].querySelectorAll('.mc-budget-capacity-subs li')].map((li) => li.textContent)).toEqual(['뷰티·미용 7만 원', '문화·여가 4만 5천 원'])
+  // 막대는 가장 큰 재원(저축 51만) 기준 비율
+  expect(rows[1].querySelector('.mc-budget-capacity-bar i').style.width).toBe('18%')
+  expect(rows[2].className).toBe('is-last')
   expect(host.querySelector('.mc-budget-capacity .mc-note').textContent).toBe(lines[6])
   // 실제 서버 응답은 설명 단계 안내(guidance.message, 줄바꿈으로 이어 붙임)로 온다
   await act(() => root.render(<BudgetAdjustment content={{ lines, budgetAdjustment: { status: 'replied', requestSummary: '패션·쇼핑 늘리기',
     guidance: { kind: 'explanation', context: '패션·쇼핑 늘리기', message: lines.join('\n') } } }} active />))
   expect(host.querySelectorAll('.mc-budget-capacity')).toHaveLength(1)
-  expect(host.querySelectorAll('.mc-budget-capacity-rows > div')).toHaveLength(3)
+  expect(host.querySelectorAll('.mc-budget-capacity-rows > li')).toHaveLength(3)
+})
+
+it('첫 줄이 안내 문장이어도 재원 줄이 있으면 이동 가능 금액 상자로 보여 준다', async () => {
+  const lines = ['패션·쇼핑 예산은 현재 내역 기준으로 다음 급여일까지 충분해 보여요.', '다른 생활비 · 최대 17만 원', '· 교육 5만 원', '· 생활용품 6만 원',
+    '여윳돈 · 최대 8만 원', '월 머니쿠션 · 최대 17만 5천 원', '저축 · 최대 70만 원', '2026-11-12까지 불러온 내역 기준 · 최근 거래 미반영 가능 · 참고 금액']
+  await act(() => root.render(<BudgetAdjustment content={{ lines, budgetAdjustment: { status: 'replied', requestSummary: '패션·쇼핑 늘리기',
+    guidance: { kind: 'explanation', message: lines.join('\n') } } }} active />))
+  expect(host.querySelector('.mc-budget-capacity-lead').textContent).toBe(lines[0])
+  expect(host.querySelector('.mc-budget-distribution-total')).toBeNull()
+  const rows = [...host.querySelectorAll('.mc-budget-capacity-rows > li')]
+  expect(rows.map((r) => r.querySelector('.mc-budget-capacity-amount').textContent)).toEqual(['최대 17만 원', '최대 8만 원', '최대 17만 5천 원', '최대 70만 원'])
+  expect(rows[2].querySelector('.mc-budget-capacity-bar i').style.width).toBe('25%')
+  expect(host.querySelector('.mc-budget-capacity .mc-note').textContent).toBe(lines[7])
+})
+
+it('가능한 금액 확인 응답은 재원 상자와 금액 입력창을 함께 보여 준다', async () => {
+  const question = '패션·쇼핑 예산을 얼마 늘릴까요?'
+  const notice = '2026-11-12까지 불러온 내역 기준 · 최근 거래 미반영 가능 · 참고 금액'
+  const reason = ['패션·쇼핑 예산은 현재 내역 기준으로 다음 급여일까지 충분해 보여요.',
+    '다른 생활비 · 최대 17만 원', '· 교육 5만 원', '월 머니쿠션 · 최대 17만 5천 원', notice].join('\n')
+  const content = { lines: [question], budgetAdjustment: { status: 'awaiting_input', phase: 'amount',
+    amountInput: { category: 'FASHION_SHOPPING', direction: 'up', beforeAmount: 150000 },
+    guidance: { kind: 'question', message: question, reason } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onSend={vi.fn()} />))
+  const box = host.querySelector('.mc-budget-capacity')
+  expect([...box.querySelectorAll('.mc-budget-capacity-amount')].map((row) => row.textContent))
+    .toEqual(['최대 17만 원', '최대 17만 5천 원'])
+  expect(box.querySelector('.mc-note').textContent).toBe(notice)
+  expect(host.querySelector('.mc-budget-reason')).toBeNull()
+  expect(host.querySelector('legend').textContent).toBe(question)
+  expect(button('미리보기').disabled).toBe(true)
 })
 
 it('화면 안의 조정안 카드는 적용 후 전체 예산을 가운데 팝업 표로 보여 주고 거기서 바로 고를 수 있다', async () => {
