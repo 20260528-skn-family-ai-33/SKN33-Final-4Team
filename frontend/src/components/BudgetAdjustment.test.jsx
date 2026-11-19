@@ -827,6 +827,20 @@ it('가능한 금액 확인 응답은 재원 상자와 금액 입력창을 함�
   expect(button('미리보기').disabled).toBe(true)
 })
 
+it('실제 서버 모양: 재원 줄이 message 에 오고 reason 이 비어도 금액 입력창 위에 재원 상자를 보여 준다', async () => {
+  // backend responses.guidance: reply.lines(재원 줄) → message, 같은 글의 brief 는 중복 제거로 reason ''
+  const lines = ['패션·쇼핑 예산은 현재 내역 기준으로 다음 급여일까지 충분해 보여요.', '다른 생활비 · 최대 17만 원', '· 교육 5만 원',
+    '여윳돈 · 최대 8만 원', '저축 · 최대 70만 원', '2026-11-12까지 불러온 내역 기준 · 최근 거래 미반영 가능 · 참고 금액']
+  const content = { lines, budgetAdjustment: { status: 'awaiting_input', phase: 'amount',
+    amountInput: { category: 'FASHION_SHOPPING', direction: 'up', beforeAmount: 150000 },
+    guidance: { kind: 'question', message: lines.join('\n'), reason: '' } } }
+  await act(() => root.render(<BudgetAdjustment content={content} active onSend={vi.fn()} />))
+  expect(host.querySelectorAll('.mc-budget-capacity')).toHaveLength(1)
+  expect(host.querySelector('.mc-budget-capacity-lead').textContent).toBe(lines[0])
+  expect([...host.querySelectorAll('.mc-budget-capacity-amount')].map((row) => row.textContent)).toEqual(['최대 17만 원', '최대 8만 원', '최대 70만 원'])
+  expect(host.querySelector('legend').textContent).toBe('패션·쇼핑 예산을 얼마 늘릴까요?')
+})
+
 it('화면 안의 조정안 카드는 적용 후 전체 예산을 가운데 팝업 표로 보여 주고 거기서 바로 고를 수 있다', async () => {
   const { MemoryRouter } = await import('react-router')
   const { default: PopupProvider } = await import('../popups/PopupProvider.jsx')
