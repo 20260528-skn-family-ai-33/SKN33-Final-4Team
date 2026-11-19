@@ -1,0 +1,202 @@
+[
+ {
+  "id": "v01.4",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 4,
+   "facts": 4
+  }
+ },
+ {
+  "id": "c-rent.4",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 2,
+   "eligibility": 5,
+   "facts": 4
+  }
+ },
+ {
+  "id": "q03.2",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 2,
+   "eligibility": 4,
+   "facts": 4
+  }
+ },
+ {
+  "id": "f-st2.1",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 4,
+   "eligibility": 4,
+   "facts": 5
+  }
+ },
+ {
+  "id": "f-tr3.1",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 5,
+   "facts": 5
+  }
+ },
+ {
+  "id": "f-mi4.1",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 3,
+   "eligibility": 5,
+   "facts": 5
+  }
+ },
+ {
+  "id": "q01.3",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 5,
+   "facts": 5
+  }
+ },
+ {
+  "id": "n-bag.2",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 5,
+   "facts": 4
+  }
+ },
+ {
+  "id": "f-mi5.3",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 1,
+   "eligibility": 4,
+   "facts": 3
+  }
+ },
+ {
+  "id": "f-mi4",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 1,
+   "eligibility": 5,
+   "facts": 5
+  }
+ },
+ {
+  "id": "q08.3",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 2,
+   "eligibility": 5,
+   "facts": 5
+  }
+ },
+ {
+  "id": "q17",
+  "source": "agent_cases",
+  "judge": {
+   "action": 5,
+   "fit": 1,
+   "eligibility": 3,
+   "facts": 2
+  }
+ },
+ {
+  "id": "P53",
+  "source": "profile_cases",
+  "judge": {
+   "action": 4,
+   "fit": 5,
+   "eligibility": 4,
+   "facts": 5
+  }
+ },
+ {
+  "id": "P01",
+  "source": "profile_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 4,
+   "facts": 5
+  }
+ },
+ {
+  "id": "P07",
+  "source": "profile_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 3,
+   "facts": 5
+  }
+ },
+ {
+  "id": "P52",
+  "source": "profile_cases",
+  "judge": {
+   "action": 4,
+   "fit": 5,
+   "eligibility": 4,
+   "facts": 2
+  }
+ },
+ {
+  "id": "P18",
+  "source": "profile_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 4,
+   "facts": 5
+  }
+ },
+ {
+  "id": "H06",
+  "source": "history_cases",
+  "judge": {
+   "action": 1,
+   "fit": 2,
+   "eligibility": 4,
+   "facts": 3
+  }
+ },
+ {
+  "id": "H07",
+  "source": "history_cases",
+  "judge": {
+   "action": 5,
+   "fit": 5,
+   "eligibility": 5,
+   "facts": 5
+  }
+ },
+ {
+  "id": "H02",
+  "source": "history_cases",
+  "judge": {
+   "action": 5,
+   "fit": 4,
+   "eligibility": 4,
+   "facts": 4
+  }
+ }
+]

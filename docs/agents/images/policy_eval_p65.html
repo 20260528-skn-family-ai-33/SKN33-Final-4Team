@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>청년 정책 추천 평가</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=block" rel="stylesheet">
+<style>
+:root{--blue:#2f54eb;--ink:#111;--muted:#6b6f7b;--bg:#f2f4f9;--card:#fff;--gray:#d3d7e0;--line:#e3e6ee}
+*{box-sizing:border-box;margin:0;padding:0;word-break:keep-all}
+body{width:1920px;height:1080px;background:var(--bg);font-family:"Noto Sans KR","Malgun Gothic",sans-serif;color:var(--ink);position:relative}
+.brand{position:absolute;right:120px;top:70px;color:var(--blue);font-size:20px;font-weight:500}
+.head{position:absolute;left:120px;top:122px}
+.eyebrow{color:var(--blue);font-size:22px;font-weight:500}
+h1{font-size:48px;font-weight:800;margin-top:6px}
+.sub{font-size:22px;color:#333;margin-top:14px}
+.kpis{position:absolute;left:120px;right:120px;top:295px;height:210px;display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.kpi{background:var(--card);border-radius:16px;text-align:center;padding-top:30px;box-shadow:0 2px 8px rgba(20,30,60,.04)}
+.kpi .t{font-size:23px;color:#333}
+.kpi .v{font-size:72px;font-weight:500;color:var(--blue);line-height:1.15;margin-top:6px}
+.kpi .v small{font-size:44px}
+.kpi .d{font-size:19px;color:var(--muted);margin-top:4px}
+.chart{position:absolute;left:120px;top:530px;width:1012px;height:470px;background:var(--card);border-radius:16px;padding:30px 40px}
+.chart .t{font-size:23px;font-weight:500}
+.legend{position:absolute;right:40px;top:34px;font-size:18px;color:var(--muted)}
+.legend i{display:inline-block;width:14px;height:14px;border-radius:3px;margin:0 6px 0 18px;vertical-align:-1px}
+.plot{position:absolute;left:40px;right:40px;top:96px;height:240px;display:grid;grid-template-columns:repeat(6,1fr);gap:26px;align-items:end;border-bottom:1.5px solid var(--line)}
+.col{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
+.col b{font-size:22px;font-weight:500;margin-bottom:8px;color:#333}
+.col i{display:block;width:70%;background:var(--blue);border-radius:4px 4px 0 0}
+.col.base i{background:var(--gray)}
+.col.now b{color:var(--blue);font-weight:800}
+.names{position:absolute;left:40px;right:40px;top:350px;display:grid;grid-template-columns:repeat(6,1fr);gap:26px;text-align:center;font-size:19px;line-height:1.35}
+.names span{display:block;color:var(--muted);font-size:16px}
+.jump{position:absolute;left:107px;top:76px;width:160px;text-align:center;font-size:19px;font-weight:700;color:var(--blue)}
+.jump:after{content:"";display:block;height:10px;margin-top:4px;border:2px solid var(--blue);border-bottom:0;border-radius:6px 6px 0 0}
+.foot{position:absolute;left:40px;bottom:22px;font-size:17px;color:var(--muted)}
+.side{position:absolute;left:1168px;right:120px;top:530px;height:470px;background:var(--card);border-radius:16px;padding:34px 40px}
+.pill{display:inline-block;background:var(--blue);color:#fff;font-size:20px;font-weight:500;padding:4px 18px;border-radius:999px}
+.side ul{list-style:none;margin:18px 0 0}
+.side li{font-size:22px;line-height:1.5;padding-left:20px;position:relative;margin-bottom:12px}
+.side li:before{content:"";position:absolute;left:2px;top:14px;width:7px;height:7px;border-radius:50%;background:var(--blue)}
+.side li em{font-style:normal;color:var(--blue);font-weight:700}
+.side hr{border:0;border-top:1.5px solid var(--line);margin:8px 0 24px}
+</style></head><body>
+<div class="brand">cushion-ing</div>
+<div class="head">
+  <div class="eyebrow">03. Chatbot Agent Evaluation</div>
+  <h1>청년 정책 추천 평가</h1>
+  <div class="sub">테스트 질문 327개를 에이전트보다 큰 LLM이 정책 DB 원문과 대조해 채점했어요.</div>
+</div>
+<div class="kpis">
+  <div class="kpi"><div class="t">LLM 채점 총점</div><div class="v">78.2<small>점</small></div><div class="d">LLM 없는 규칙 방식 52.7점</div></div>
+  <div class="kpi"><div class="t">첫 화면 정답률</div><div class="v">70.7%</div><div class="d">첫 추천 3개 안에 정답 (195/276)</div></div>
+  <div class="kpi"><div class="t">억지 추천</div><div class="v">0<small>건</small></div><div class="d">맞는 정책이 없는 질문 26개</div></div>
+</div>
+<div class="chart">
+  <div class="t">고치기 전과 후 · 총점</div>
+  <div class="legend"><i style="background:var(--gray)"></i>규칙만 (LLM 없음)<i style="background:var(--blue)"></i>LLM 에이전트</div>
+  <div class="jump">LLM 도입 +21.6</div>
+  <div class="plot">
+    <div class="col base"><b>52.7</b><i style="height:116px"></i></div>
+    <div class="col"><b>74.3</b><i style="height:163px"></i></div>
+    <div class="col"><b>76.3</b><i style="height:168px"></i></div>
+    <div class="col"><b>75.1</b><i style="height:165px"></i></div>
+    <div class="col"><b>76.5</b><i style="height:168px"></i></div>
+    <div class="col now"><b>78.2</b><i style="height:172px"></i></div>
+  </div>
+  <div class="names">
+    <div>규칙만<span>LLM 없음</span></div>
+    <div>첫 연결<span>11-12</span></div>
+    <div>베타 피드백<span>11-12</span></div>
+    <div>응답 개선<span>11-14</span></div>
+    <div>다시 검색<span>11-16</span></div>
+    <div>현재<span>11-17</span></div>
+  </div>
+  <div class="foot">채점 기준 (가중치): 추천 적합성 55 · 자격·지역 20 · 사실 정확성 15 · 요청 이해 10</div>
+</div>
+<div class="side">
+  <span class="pill">결과</span>
+  <ul>
+    <li>LLM 도입 후 총점 <em>+25.5점</em>, 정답률 <em>+29.4%p</em></li>
+    <li>지역이 정해진 질문 41개 모두 맞는 지역으로 찾음</li>
+  </ul>
+  <hr>
+  <span class="pill">개선점</span>
+  <ul>
+    <li>응답이 느림 (평균 <em>9.5초</em>)</li>
+    <li>"방금 추천한 ○○"처럼 앞 대화를 가리키는 질문에 약함</li>
+  </ul>
+</div>
+</body></html>
