@@ -522,6 +522,9 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
   const amountInput = !hasPreview && !TERMINAL.has(state) && adjustment.amountInput
   const distributionInput = !TERMINAL.has(state) && adjustment.distributionInput
   const reasonLines = amountInput && guidance?.reason ? guidance.reason.split('\n').filter(Boolean) : []
+  // '가능한 금액 확인' 답(11/20): 서버는 재원 줄을 message 에 담고 같은 글의 brief 는 중복이라 reason 이 빈다 → 입력창이 있어도 message 의 재원 상자는 보여 준다
+  const messageLines = (guidance?.message ?? '').split('\n').filter(Boolean)
+  const capacityMessage = !hasPreview && isCapacity(messageLines)
   const inputNotice = (amountInput || distributionInput) && adjustment.explanation?.title === '추천에서 제외한 방법과 이유'
     ? adjustment.explanation.brief : null
   const options = hasPreview
@@ -545,15 +548,15 @@ export default function BudgetAdjustment({ content, active, onPick, onApprove, o
       <ul>{adjustment.recommendationAdvice.reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
     </section>}
     {!guidance && inputNotice && <p className="mc-budget-reason" role="note">{inputNotice}</p>}
-    {guidance?.message && !salaryAllocation && (guidance.kind === 'error' || (!amountInput && !distributionInput && !hasPreview && !adjustment.recommendationAdvice)
+    {guidance?.message && !salaryAllocation && (guidance.kind === 'error' || capacityMessage || (!amountInput && !distributionInput && !hasPreview && !adjustment.recommendationAdvice)
       || (guidance.kind === 'explanation' && !adjustment.recommendationAdvice)) && (() => {
-      const lines = guidance.message.split('\n').filter(Boolean)
+      const lines = messageLines
       // 11/17: 한도 안내(설명 단계로 오는 '○○ · 확인된 증액 한도 …')도 표 모양으로
       return isCapacity(lines) ? <CapacityLines lines={lines} />
         : adjustment.phase === 'adjustment_frequency' ? <NagLines lines={lines} />
         : lines.map((line, index) => <p key={index} className={adjustment.phase === 'increase_review' ? 'mc-budget-warning' : undefined}>{line}</p>)
     })()}
-    {guidance?.reason && (isCapacity(reasonLines) ? <CapacityLines lines={reasonLines} />
+    {guidance?.reason && (isCapacity(reasonLines) ? !capacityMessage && <CapacityLines lines={reasonLines} />
       : <p className="mc-budget-reason" role="note">{guidance.reason}</p>)}
     {adjustment.increaseWarning && !TERMINAL.has(state) && <p className="mc-budget-warning" role="note">{adjustment.increaseWarning}</p>}
     {(adjustment.phase === 'salary_handoff' || adjustment.salaryChange) && !TERMINAL.has(state)
