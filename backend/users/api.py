@@ -1,5 +1,11 @@
+from django.conf import settings
 from django.contrib.auth import authenticate, login as django_login, logout as django_logout
+from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -12,7 +18,12 @@ from budgets.models import Budget
 
 from .consent_documents import consent_hash, current_items
 from .models import Consent, User
-from .serializers import LoginSerializer, SignupSerializer
+from .serializers import (
+    LoginSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
+    SignupSerializer,
+)
 
 
 # 로그인 전에는 IP별, 로그인 후에는 회원별로 센다. 횟수는 settings 의 DEFAULT_THROTTLE_RATES
@@ -22,6 +33,10 @@ class LoginThrottle(UserRateThrottle):
 
 class SignupThrottle(UserRateThrottle):
     scope = "signup"
+
+
+class PasswordResetThrottle(UserRateThrottle):
+    scope = "password_reset"
 
 
 class WithdrawThrottle(UserRateThrottle):
@@ -178,6 +193,71 @@ def signup(request):
         "nickname": user.nickname,
         "onboarding_completed": False,
     }, status=201)
+
+
+def can_log_in(user):
+    return user.is_active and user.status != User.Status.WITHDRAWN
+
+
+RESET_LINK_INVALID = "링크가 만료됐거나 이미 사용됐어요. 비밀번호 찾기를 다시 해 주세요."
+
+
+# 비밀번호 찾기 1단계: 재설정 링크를 메일로 보낸다.
+# 가입 여부를 알려 주지 않으려고 없는 이메일·탈퇴 계정에도 똑같이 {"ok": true} 로 답한다
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@throttle_classes([PasswordResetThrottle])
+def password_reset(request):
+    SessionAuthentication().enforce_csrf(request)
+
+    serializer = PasswordResetRequestSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    user = User.objects.filter(email=serializer.validated_data["email"]).first()
+
+    if user is not None and can_log_in(user):
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = default_token_generator.make_token(user)
+        link = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
+        send_mail(
+            "[머니쿠션] 비밀번호 재설정 안내",
+            "아래 링크에서 새 비밀번호를 정해 주세요. 링크는 1시간 동안 한 번만 쓸 수 있어요.\n\n"
+            f"{link}\n\n"
+            "비밀번호 찾기를 요청하지 않았다면 이 메일을 무시해 주세요.",
+            None,
+            [user.email],
+        )
+
+    return Response({"ok": True})
+
+
+# 비밀번호 찾기 2단계: 메일 링크의 uid·token 을 확인하고 새 비밀번호로 바꾼다.
+# 토큰은 비밀번호 해시가 바뀌면 무효가 되어 한 번만 쓰이고, 다른 기기의 로그인 세션도 함께 끊긴다
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def password_reset_confirm(request):
+    SessionAuthentication().enforce_csrf(request)
+
+    serializer = PasswordResetConfirmSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+
+    try:
+        user = User.objects.get(pk=force_str(urlsafe_base64_decode(data["uid"])))
+    except (TypeError, ValueError, OverflowError, DjangoValidationError, User.DoesNotExist):
+        user = None
+
+    if (
+        user is None
+        or not can_log_in(user)
+        or not default_token_generator.check_token(user, data["token"])
+    ):
+        raise ValidationError({"detail": RESET_LINK_INVALID})
+
+    user.set_password(data["password"])
+    user.save(update_fields=["password"])
+
+    return Response({"ok": True})
 
 
 # 동의 문서 — 회원가입 전에도 읽어야 해서 로그인 없이 연다. 화면은 받은 document 를 그대로 그리고 version 만 돌려보낸다

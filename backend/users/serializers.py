@@ -2,6 +2,40 @@ import re
 from rest_framework import serializers
 from .models import User, normalize_email
 
+def check_password_rule(value):
+    """가입·비밀번호 재설정 공통 규칙: 영문·숫자·특수문자 중 2가지 이상 (길이는 각 칸의 min/max_length)"""
+    kinds = [
+        bool(re.search(r"[A-Za-z]", value)),
+        bool(re.search(r"[0-9]", value)),
+        bool(re.search(r"[^A-Za-z0-9\s]", value)),
+    ]
+
+    if sum(kinds) < 2:
+        raise serializers.ValidationError(
+            "영문·숫자·특수문자 중 2가지 이상 포함해 주세요."
+        )
+
+    return value
+
+
+def reject_unknown_or_non_string(serializer, data):
+    """표에 없는 칸·문자열이 아닌 값을 400으로 막는다 (DRF는 모르는 칸을 조용히 무시하므로)"""
+    if not isinstance(data, dict):
+        raise serializers.ValidationError({
+            "non_field_errors": ["JSON 객체로 보내 주세요."]
+        })
+
+    errors = {}
+    for name, value in data.items():
+        if name not in serializer.fields:
+            errors[name] = ["이 칸은 보낼 수 없어요."]
+        elif not isinstance(value, str):
+            errors[name] = ["문자열로 입력해 주세요."]
+
+    if errors:
+        raise serializers.ValidationError(errors)
+
+
 class LoginSerializer(serializers.Serializer):
     email = serializers.EmailField(max_length=255)
 
@@ -114,18 +148,7 @@ class SignupSerializer(serializers.Serializer):
         return email
 
     def validate_password(self, value):
-        kinds = [
-            bool(re.search(r"[A-Za-z]", value)),
-            bool(re.search(r"[0-9]", value)),
-            bool(re.search(r"[^A-Za-z0-9\s]", value)),
-        ]
-
-        if sum(kinds) < 2:
-            raise serializers.ValidationError(
-                "영문·숫자·특수문자 중 2가지 이상 포함해 주세요."
-            )
-
-        return value
+        return check_password_rule(value)
 
     def validate_consents(self, value):
         purposes = {consent["purpose"] for consent in value}
@@ -136,3 +159,33 @@ class SignupSerializer(serializers.Serializer):
             )
 
         return value
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    email = serializers.EmailField(max_length=255)
+
+    def to_internal_value(self, data):
+        reject_unknown_or_non_string(self, data)
+        return super().to_internal_value(data)
+
+    def validate_email(self, value):
+        return normalize_email(value)
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    # 메일 링크에 붙어 온 값 그대로
+    uid = serializers.CharField(max_length=100)
+    token = serializers.CharField(max_length=100)
+
+    password = serializers.CharField(
+        min_length=8,
+        max_length=25,
+        write_only=True,
+        trim_whitespace=False,
+    )
+
+    def to_internal_value(self, data):
+        reject_unknown_or_non_string(self, data)
+        return super().to_internal_value(data)
+
+    def validate_password(self, value):
+        return check_password_rule(value)

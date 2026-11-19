@@ -167,6 +167,9 @@ export default function LoginPage() {
             />
             아이디 저장
           </label>
+          <button type="button" className="mc-link" onClick={() => navigate(PATHS.passwordReset)}>
+            비밀번호 찾기
+          </button>
         </div>
 
         <div className="mc-error" role="alert">
